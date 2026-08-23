@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { NUMBER_FORMAT_CATEGORIES } from '../src/renderer/number-format'
+import { numberFormatCategories } from '../src/renderer/number-format'
+import { getSystemShortDate, setSystemShortDate } from '../src/shared/short-date'
 import {
   DATE_PATTERNS,
+  datePatterns,
   DEFAULT_NUMFMT_OPTIONS,
   FRACTION_PATTERNS,
   NEGATIVE_STYLES,
@@ -137,7 +139,7 @@ describe('ribbon convergence', () => {
       Scientific: 'scientific',
       Text: 'text',
     }
-    for (const { label, pattern } of NUMBER_FORMAT_CATEGORIES) {
+    for (const { label, pattern } of numberFormatCategories()) {
       expect(numfmtOptionsOf(pattern).category).toBe(expected[label])
     }
   })
@@ -164,5 +166,22 @@ describe('preview', () => {
   it('todaySerial is a plausible 1900-system serial', () => {
     const serial = todaySerial(new Date(2026, 0, 1, 12, 0, 0))
     expect(serial).toBeCloseTo(46023.5, 3)
+  })
+})
+
+describe('system short date', () => {
+  it('classifies a non-US derived pattern as Date, listed first', () => {
+    const previous = getSystemShortDate()
+    try {
+      setSystemShortDate('dd/mm/yyyy')
+      expect(numfmtOptionsOf('dd/mm/yyyy').category).toBe('date')
+      expect(numfmtOptionsOf('dd/mm/yyyy').datePattern).toBe('dd/mm/yyyy')
+      expect(datePatterns()[0]).toBe('dd/mm/yyyy')
+      // Patterns already in the static list are not duplicated.
+      setSystemShortDate('yyyy/m/d')
+      expect(datePatterns()).toEqual(DATE_PATTERNS)
+    } finally {
+      setSystemShortDate(previous)
+    }
   })
 })

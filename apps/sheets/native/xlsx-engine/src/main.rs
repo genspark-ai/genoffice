@@ -22,6 +22,8 @@ enum Command {
         path: PathBuf,
         #[serde(default = "default_locale")]
         locale: String,
+        #[serde(default, rename = "shortDateFormat")]
+        short_date_format: Option<String>,
     },
     ReadRange {
         #[serde(rename = "sessionId")]
@@ -166,8 +168,12 @@ fn handle_line(
 
     let request_id = request.request_id;
     let result = match request.command {
-        Command::Open { path, locale } => sessions
-            .open_with_locale(&path, &locale)
+        Command::Open {
+            path,
+            locale,
+            short_date_format,
+        } => sessions
+            .open_with_locale(&path, &locale, short_date_format.as_deref())
             .and_then(to_json_value),
         Command::ReadRange {
             session_id,

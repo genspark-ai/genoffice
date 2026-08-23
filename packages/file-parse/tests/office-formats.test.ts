@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { parseFileToText } from '../src/index'
 import {
@@ -6,6 +7,21 @@ import {
   buildXlsxFixture,
   writeFixture,
 } from './helpers/fixtures'
+
+function legacyFixture(name: string): string {
+  return fileURLToPath(new URL(`fixtures/${name}`, import.meta.url))
+}
+
+describe('parseFileToText: doc', () => {
+  it('extracts body text from a Word 97-2003 document', async () => {
+    const result = await parseFileToText(legacyFixture('legacy-sample.doc'))
+    expect(result.ok).toBe(true)
+    expect(result.kind).toBe('text')
+    expect(result.text).toContain('Legacy Report')
+    expect(result.text).toContain('Legacy DOC body text')
+    expect(result.text).toContain('Second paragraph from Word 97-2003.')
+  })
+})
 
 describe('parseFileToText: docx', () => {
   it('extracts headings, paragraphs and tables', async () => {
@@ -17,6 +33,19 @@ describe('parseFileToText: docx', () => {
     expect(result.text).toContain('First paragraph hello docx')
     expect(result.text).toContain('Metric | Value')
     expect(result.text).toContain('Revenue | 100')
+  })
+})
+
+describe('parseFileToText: ppt', () => {
+  it('extracts one text section per slide from a PowerPoint 97-2003 presentation', async () => {
+    const result = await parseFileToText(legacyFixture('legacy-sample.ppt'))
+    expect(result.ok).toBe(true)
+    expect(result.kind).toBe('text')
+    expect(result.text).toContain('## Slide 1')
+    expect(result.text).toContain('Legacy PPT title')
+    expect(result.text).toContain('First slide body')
+    expect(result.text).toContain('## Slide 2')
+    expect(result.text).toContain('Second legacy slide')
   })
 })
 

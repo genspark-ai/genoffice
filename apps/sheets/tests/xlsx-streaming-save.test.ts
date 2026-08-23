@@ -93,6 +93,88 @@ describe('saveWorkbookViaSidecar', () => {
     expect(sheet).toContain('<c r="A5"><v>41</v></c>')
     expect(sheet).toContain('<c r="A6"><v>42</v></c>')
   })
+
+  it('saves a large constant fill without a per-cell edit payload', async () => {
+    const sourcePath = join(directory, 'bulk-source.xlsx')
+    const targetPath = join(directory, 'bulk-saved.xlsx')
+    await writeFile(sourcePath, await buildEditFixture())
+
+    await saveWorkbookViaSidecar({
+      client,
+      sourcePath,
+      targetPath,
+      edits: [],
+      bulkConstantFills: [
+        {
+          sheetName: 'Data',
+          startRow: 1,
+          endRow: 9_999,
+          startColumn: 1,
+          endColumn: 1,
+          value: 'merrick',
+        },
+      ],
+    })
+
+    const savedZip = await JSZip.loadAsync(await readFile(targetPath))
+    const sheet = await savedZip.file('xl/worksheets/sheet1.xml')?.async('text')
+    expect(sheet).toContain(
+      '<c r="B2" t="inlineStr"><is><t xml:space="preserve">merrick</t></is></c>',
+    )
+    expect(sheet).toContain(
+      '<c r="B10000" t="inlineStr"><is><t xml:space="preserve">merrick</t></is></c>',
+    )
+  })
+
+  it('combines a column insertion, explicit header, and constant fill in final coordinates', async () => {
+    const sourcePath = join(directory, 'insert-fill-source.xlsx')
+    const targetPath = join(directory, 'insert-fill-saved.xlsx')
+    await writeFile(sourcePath, await buildEditFixture())
+
+    await saveWorkbookViaSidecar({
+      client,
+      sourcePath,
+      targetPath,
+      edits: [
+        {
+          sheetName: 'Data',
+          row: 0,
+          column: 1,
+          writeValue: true,
+          cell: { value: 'Owner' },
+        },
+      ],
+      structuralOps: [
+        {
+          sheetName: 'Data',
+          ops: [{ kind: 'insert-cols', index: 1, count: 1 }],
+        },
+      ],
+      bulkConstantFills: [
+        {
+          sheetName: 'Data',
+          startRow: 1,
+          endRow: 9,
+          startColumn: 1,
+          endColumn: 1,
+          value: 'merrick',
+        },
+      ],
+    })
+
+    const savedZip = await JSZip.loadAsync(await readFile(targetPath))
+    const sheet = await savedZip.file('xl/worksheets/sheet1.xml')?.async('text')
+    expect(sheet).toContain(
+      '<c r="B1" t="inlineStr"><is><t xml:space="preserve">Owner</t></is></c>',
+    )
+    expect(sheet).toContain(
+      '<c r="B2" t="inlineStr"><is><t xml:space="preserve">merrick</t></is></c>',
+    )
+    expect(sheet).toContain(
+      '<c r="B10" t="inlineStr"><is><t xml:space="preserve">merrick</t></is></c>',
+    )
+    expect(sheet).toContain('<dimension ref="A1:D10"/>')
+  })
 })
 
 describe('assertManifestPreserved', () => {

@@ -94,6 +94,7 @@ describe('native editable tables', () => {
           vertAlign: null,
           em: null,
           caps: null,
+          cs: null,
           styleId: null,
           rawRPr:
             '<w:rPr><w:rFonts w:ascii="Calibri" w:eastAsia="Calibri"/><w:b/><w:color w:val="1F4E78"/></w:rPr>',
@@ -190,6 +191,23 @@ describe('native editable tables', () => {
     editor.destroy()
   })
 
+  it('persists a table alignment change (tblAlign → w:jc) through save and reload', async () => {
+    const { editor, parsed } = await openTable()
+    const table = editor.state.doc.firstChild!
+    // the Table Layout ribbon sets tblAlign via updateAttributes('docTable', …)
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, { ...table.attrs, tblAlign: 'center' }),
+    )
+
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(1)
+    const reparsed = await parseDocx(await saveDocx(parsed, plan.saveBlocks))
+    expect(reparsed.blocks[0].table?.align).toBe('center')
+    expect(reparsed.blocks[0].originalXml).toContain('<w:jc w:val="center"/>')
+    expect(reparsed.blocks[0].originalXml).toContain('<w:tblStyle w:val="TableGrid"/>')
+    editor.destroy()
+  })
+
   it('round-trips clamped Ribbon and drag-resized column grids', async () => {
     const { editor, parsed } = await openTable()
     const firstCell = cellPositions(editor)[0]
@@ -252,6 +270,30 @@ describe('native editable tables', () => {
       'width:min(1200px,calc(100% + var(--doc-margin-right,0px) - 96.7px))',
     )
     expect(spec[1].style).toContain('margin-left:96.7px')
+    editor.destroy()
+  })
+
+  it('a floating table (w:tblpPr) drops alignment/indent margins for the float gaps', async () => {
+    const { editor } = await openTable()
+    const table = editor.state.doc.firstChild!
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...table.attrs,
+        widthPx: 400,
+        tblFloat: 'right',
+        tblAlign: 'center',
+        indentTwips: 1450,
+      }),
+    )
+    const spec = editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+      string,
+      Record<string, string>,
+    ]
+    expect(spec[1].class).toContain('doc-table-float-right')
+    expect(spec[1].style ?? '').not.toContain('margin-left:')
+    expect(spec[1].style ?? '').not.toContain('margin-right:')
+    // the indent must not shrink the float width either
+    expect(spec[1].style ?? '').not.toContain('96.7px')
     editor.destroy()
   })
 

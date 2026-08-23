@@ -182,9 +182,13 @@ describe('ommlToLatex', () => {
 
   it('returns null for structures outside the subset', () => {
     expect(
-      ommlToLatex('<m:oMath><m:sPre><m:sub><m:r><m:t>a</m:t></m:r></m:sub><m:e><m:r><m:t>X</m:t></m:r></m:e></m:sPre></m:oMath>'),
+      ommlToLatex(
+        '<m:oMath><m:sPre><m:sub><m:r><m:t>a</m:t></m:r></m:sub><m:e><m:r><m:t>X</m:t></m:r></m:e></m:sPre></m:oMath>',
+      ),
     ).toBeNull()
-    expect(ommlToLatex(`<m:oMath>${latexToOmml('a')}</m:oMath><m:oMath>${latexToOmml('b')}</m:oMath>`)).toBeNull()
+    expect(
+      ommlToLatex(`<m:oMath>${latexToOmml('a')}</m:oMath><m:oMath>${latexToOmml('b')}</m:oMath>`),
+    ).toBeNull()
   })
 
   it('escapes parser-special characters', () => {
@@ -206,7 +210,7 @@ describe('formula parse + save integration', () => {
   })
 
   it('parses paragraphs mixing math and text into editable runs with math runs', async () => {
-    const mixed = `<w:p><w:r><w:t>see </w:t></w:r>${FRACTION_OMATH}<w:r><w:t> here</w:t></w:r></w:p>`
+    const mixed = `<w:p><w:r><w:t xml:space="preserve">see </w:t></w:r>${FRACTION_OMATH}<w:r><w:t xml:space="preserve"> here</w:t></w:r></w:p>`
     const parsed = await parseDocx(await buildDocx({ bodyXml: mixed }))
     const block = parsed.blocks[0]
     expect(block.type).toBe('paragraph')
@@ -215,7 +219,7 @@ describe('formula parse + save integration', () => {
   })
 
   it('a mixed paragraph regenerates with the math run emitted verbatim', async () => {
-    const mixed = `<w:p><w:r><w:t>see </w:t></w:r>${FRACTION_OMATH}</w:p>`
+    const mixed = `<w:p><w:r><w:t xml:space="preserve">see </w:t></w:r>${FRACTION_OMATH}</w:p>`
     const parsed = await parseDocx(await buildDocx({ bodyXml: mixed }))
     const block = parsed.blocks[0]
     const bytes = await saveDocx(parsed, [
@@ -242,7 +246,9 @@ describe('formula parse + save integration', () => {
   })
 
   it('an inserted equation paragraph survives save and reparse', async () => {
-    const parsed = await parseDocx(await buildDocx({ bodyXml: '<w:p><w:r><w:t>hi</w:t></w:r></w:p>' }))
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:t>hi</w:t></w:r></w:p>' }),
+    )
     const omml = latexToOmml('a^2 + b^2 = c^2')
     const bytes = await saveDocx(parsed, [
       { kind: 'original', docxIndex: parsed.blocks[0].docxIndex! },

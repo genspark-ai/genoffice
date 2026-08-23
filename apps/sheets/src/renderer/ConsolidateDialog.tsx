@@ -1,5 +1,7 @@
 import { useState } from 'react'
 
+import { Dropdown } from '@genoffice/ui'
+
 import {
   isValidConsolidateReference,
   type ConsolidateConfig,
@@ -58,17 +60,24 @@ export function ConsolidateDialog({
         <div className="dialog-grid">
           <label>
             {t('dlgConsFunction')}
-            <select value={fn} onChange={(event) => setFn(event.target.value as ConsolidateFn)}>
-              <option value="sum">{t('dlgPivotAggSum')}</option>
-              <option value="count">{t('dlgPivotAggCount')}</option>
-              <option value="average">{t('dlgPivotAggAverage')}</option>
-              <option value="max" disabled={leftLabels}>
-                {t('dlgPivotAggMax')}
-              </option>
-              <option value="min" disabled={leftLabels}>
-                {t('dlgPivotAggMin')}
-              </option>
-            </select>
+            {/* max/min were disabled options in label mode; the shared Dropdown
+                has no per-option disabling, so they drop out of the list */}
+            <Dropdown
+              ariaLabel={t('dlgConsFunction')}
+              value={fn}
+              options={[
+                { value: 'sum', label: t('dlgPivotAggSum') },
+                { value: 'count', label: t('dlgPivotAggCount') },
+                { value: 'average', label: t('dlgPivotAggAverage') },
+                ...(leftLabels
+                  ? []
+                  : [
+                      { value: 'max', label: t('dlgPivotAggMax') },
+                      { value: 'min', label: t('dlgPivotAggMin') },
+                    ]),
+              ]}
+              onPick={(v) => setFn(v as ConsolidateFn)}
+            />
           </label>
           <label className="dialog-span">
             {t('dlgConsReference')}

@@ -40,6 +40,39 @@ describe('sseLines', () => {
   })
 })
 
+describe('streamForProvider: temperature policy', () => {
+  const okTurn = () =>
+    okResponse(sseStream(['data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}']))
+
+  it('omits temperature for fixed-sampling endpoints (Kimi) and keeps 0.3 elsewhere', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(okTurn()))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamForProvider(
+      'kimi',
+      { apiKey: 'k', model: 'kimi-k3' },
+      'sys',
+      [],
+      [],
+      100,
+      collector().cb,
+    )
+    await streamForProvider(
+      'openai',
+      { apiKey: 'k', model: 'gpt-4.1-mini' },
+      'sys',
+      [],
+      [],
+      100,
+      collector().cb,
+    )
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse((call[1] as RequestInit).body as string),
+    )
+    expect('temperature' in bodies[0]).toBe(false)
+    expect(bodies[1].temperature).toBe(0.3)
+  })
+})
+
 describe('streamForProvider: empty SSE streams surface as errors', () => {
   // A 200 SSE stream with zero text and zero tool calls previously dissolved
   // into an empty "successful" turn; the UI then showed a generic "no content"

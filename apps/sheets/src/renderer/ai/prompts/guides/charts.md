@@ -41,7 +41,7 @@
 ## Editing shapes / inserting images
 
 - `{op:"edit_shape", visualId, text?, fillColor?, anchorCell?}` — edits a shape/text box **added this session** (change text, change fill, move; size is preserved). Get visualId from read_sheet_features; shapes that came with the file cannot be modified.
-- `{op:"add_image", sheetId, path:"~/logo.png", anchorCell:"B2"}` — inserts a local image the user specified (PNG/JPEG/GIF, ≤20MB, absolute path or ~/ prefixed). Size is computed automatically from the image's aspect ratio; written into the file on save. **path must be explicitly given by the user** — never guess file locations.
+- `{op:"add_image", sheetId, path:"~/logo.png", anchorCell:"B2"}` — inserts an image (PNG/JPEG/GIF). path is either a local file the user specified (≤20MB, absolute path or ~/ prefixed — **must be explicitly given by the user**, never guess file locations) or an https URL returned by image_search / generate_image. Size is computed automatically from the image's aspect ratio; written into the file on save.
 
 ## Rules
 

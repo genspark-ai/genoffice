@@ -10,14 +10,17 @@ import { parseSlide } from '../src/parse'
 import {
   openPptx,
   savePptx,
+  cleanupSupersededSlideResources,
   duplicateSlide,
   ensureRunLinkRels,
   getRunLinks,
+  patchSlideXml,
   patchTextElementXml,
   type OpenedPptx,
   type TextElement,
 } from '../src/index'
 import type { Theme } from '../src/theme'
+import { relsPathFor } from '../src/zip'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -186,5 +189,49 @@ describe('ensureRunLinkRels + save round-trip', () => {
       runIndex: ri,
       target: { kind: 'url', url: 'https://live.example/' },
     })
+  })
+
+  it('prunes obsolete run hyperlink relationships on replace and clear', async () => {
+    let opened = await openPptx(fx('01_standard_business.pptx'))
+    let found = findTextRun(opened)
+    let slide = opened.deck.slides[0]!
+    let previousXml = patchSlideXml(slide)
+    let run = found.el.text!.paragraphs[found.pi]!.runs[found.ri]!
+    run.hyperlink = 'https://old.run.dev'
+    delete run.hyperlinkRId
+    ensureRunLinkRels(opened, 0, found.el.text!.paragraphs)
+    found.el.dirty = true
+    cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+
+    opened = await openPptx(await savePptx(opened))
+    found = findTextRun(opened)
+    slide = opened.deck.slides[0]!
+    run = found.el.text!.paragraphs[found.pi]!.runs[found.ri]!
+    const oldRid = run.hyperlinkRId!
+    previousXml = patchSlideXml(slide)
+    run.hyperlink = 'https://new.run.dev'
+    delete run.hyperlinkRId
+    delete run.hyperlinkAction
+    ensureRunLinkRels(opened, 0, found.el.text!.paragraphs)
+    found.el.dirty = true
+    cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+
+    let rels = opened.archive.readText(relsPathFor(slide.path))!
+    expect(rels).not.toContain(`Id="${oldRid}"`)
+    expect(rels).not.toContain('Target="https://old.run.dev"')
+    expect(rels).toContain('Target="https://new.run.dev"')
+
+    const newRid = run.hyperlinkRId!
+    previousXml = patchSlideXml(slide)
+    delete run.hyperlink
+    delete run.hyperlinkRId
+    delete run.hyperlinkAction
+    delete run.hyperlinkTooltip
+    found.el.dirty = true
+    cleanupSupersededSlideResources(opened, slide, previousXml, patchSlideXml(slide))
+
+    rels = opened.archive.readText(relsPathFor(slide.path))!
+    expect(rels).not.toContain(`Id="${newRid}"`)
+    expect(rels).not.toContain('Target="https://new.run.dev"')
   })
 })

@@ -56,7 +56,23 @@ export type Fill =
       /** <a:fillToRect> insets as fractions (may exceed 0..1); defines the gradient focus */
       fillTo?: { l: number; t: number; r: number; b: number }
     }
-  | { type: 'image'; mediaRef: string; mode?: 'stretch' | 'tile' }
+  | {
+      type: 'image'
+      mediaRef: string
+      mode?: 'stretch' | 'tile'
+      /** <a:blip><a:alphaModFix amt> (0-1, translucent picture fills e.g. washed-out backgrounds) */
+      alpha?: number
+      /** <a:stretch><a:fillRect> insets as fractions: the image maps into this subrect of the shape */
+      fillRect?: { l: number; t: number; r: number; b: number }
+      /** <a:blip><a:duotone>: [dark, light] colors mapped over image luminance (theme texture backgrounds) */
+      duotone?: [string, string]
+      /** <a:blip><a:clrChange>: pixels matching `from` are replaced with `to` (#RRGGBB or #RRGGBBAA; alpha 0 = color-to-transparent) */
+      clrChange?: { from: string; to: string }
+      /** <a:blip><a:lum>: legacy brightness/contrast picture adjustment (-1..1 each) */
+      lum?: { bright: number; contrast: number }
+      /** <a:tile>: offsets (EMU), scale fractions and anchor alignment of the tile grid */
+      tile?: { tx: number; ty: number; sx: number; sy: number; algn: string }
+    }
   | { type: 'pattern'; fg: ResolvedColor; bg: ResolvedColor; preset: string }
 
 /** OOXML arrowhead size: sm/med/lg (width or length direction), med by default */
@@ -78,6 +94,10 @@ export interface Stroke {
   width: number
   dash?: string
   cap?: 'flat' | 'round' | 'square'
+  /** Line join <a:round>/<a:bevel>/<a:miter> (omitted when absent) */
+  join?: 'round' | 'bevel' | 'miter'
+  /** Compound line type (<a:ln cmpd>, single when absent) */
+  compound?: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
   /** Line head decoration <a:headEnd> (omitted when absent or none) */
   headEnd?: ArrowEnd
   /** Line tail decoration <a:tailEnd> (omitted when absent or none) */
@@ -164,6 +184,14 @@ export interface TextRun {
   field?: string
   /** Text outline <a:rPr><a:ln> (common in WordArt); width in EMU */
   outline?: { color: ResolvedColor; widthEmu: number }
+  /** Run-level outer shadow (<a:rPr>/defRPr <a:effectLst><a:outerShdw>) */
+  shadow?: ShadowEffect
+  /** WordArt gradient text fill (<a:rPr><a:gradFill>); color keeps a mid-stop fallback */
+  gradient?: { stops: Array<{ pos: number; color: ResolvedColor }>; angle?: number }
+  /** Run-level glow (<a:rPr><a:effectLst><a:glow>) */
+  glow?: GlowEffect
+  /** Run-level reflection (<a:rPr><a:effectLst><a:reflection>), rendered as a faded mirror */
+  reflection?: boolean
 }
 
 export type TextAlign = 'left' | 'center' | 'right' | 'justify'
@@ -171,6 +199,8 @@ export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 export interface Paragraph {
   runs: TextRun[]
   align?: TextAlign
+  /** right-to-left paragraph (a:pPr rtl="1"); generated content only (pdf2pptx) */
+  rtl?: boolean
   /** Indent level (bullet level) */
   level?: number
   /** Line spacing (%, 100 = single) or absolute (pt, via lineExact) */
@@ -191,6 +221,8 @@ export interface Paragraph {
     sizePct?: number
     /** <a:buAutoNum type> (arabicPeriod/romanLcParen…) */
     numType?: string
+    /** <a:buAutoNum startAt>: first number of the sequence (default 1) */
+    startAt?: number
   }
   /** Paragraph left indent marL (EMU) */
   marL?: number
@@ -230,6 +262,12 @@ export interface TextBody {
   wrap?: boolean
   /** <a:bodyPr vert>: vertical text (Japanese tategaki etc.). Read-only display — write-back keeps original bodyPr bytes */
   vert?: 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
+  /** <a:bodyPr numCol>: body text flows across N columns (fill one, then the next) */
+  numCol?: number
+  /** <a:bodyPr spcCol>: gap between columns (EMU) */
+  spcCol?: number
+  /** <a:bodyPr><a:scene3d>+<a:sp3d>: WordArt text extrusion (camera angles in degrees) */
+  extrusion3d?: { color: ResolvedColor; depthEmu: number; latDeg: number; lonDeg: number }
 }
 
 // ── Elements ───────────────────────────────────────────────────────────
@@ -324,6 +362,31 @@ export interface CustomGeometry {
   strokePath?: string
 }
 
+/**
+ * <a:scene3d> + <a:sp3d>: 3D scene (camera + light rig) and shape extrusion.
+ * Angles are in 1/60000 degree (OOXML ST_Angle); lengths in EMU.
+ */
+export interface Scene3D {
+  /** <a:camera prst> preset name (ST_PresetCameraType) */
+  cameraPreset: string
+  /** <a:camera><a:rot>: overrides the preset's angles when present */
+  cameraRot?: { lat: number; lon: number; rev: number }
+  /** <a:lightRig rig> preset name (ST_LightRigType) */
+  lightRig?: string
+  /** <a:lightRig dir>: rig rotation in 45° steps (tl/t/tr/l/r/bl/b/br) */
+  lightDir?: string
+  /** <a:lightRig><a:rot> */
+  lightRot?: { lat: number; lon: number; rev: number }
+  /** <a:sp3d extrusionH> extrusion depth (EMU) */
+  extrusionEmu?: number
+  /** <a:sp3d z> shape z-position in the scene (EMU) */
+  zEmu?: number
+  /** <a:sp3d><a:extrusionClr> resolved color for the extruded side walls */
+  extrusionColor?: ResolvedColor
+  /** <a:sp3d prstMaterial> (legacyWireframe renders edges only) */
+  material?: string
+}
+
 export interface TextElement extends ElementBase {
   type: 'text' | 'shape'
   /** Shape's preset geometry (rect/ellipse/roundRect/…); absent for text */
@@ -333,9 +396,15 @@ export interface TextElement extends ElementBase {
   /** Custom geometry (mutually exclusive with presetGeometry) */
   customGeometry?: CustomGeometry
   fill?: Fill
+  /** <p:sp useBgFill="1">: painted with the slide's effective background fill (fill is only a fallback) */
+  useBgFill?: boolean
+  /** <a:effectLst><a:fillOverlay>: second fill composited over the base (PowerPoint blends
+   *  with the record's blend mode; the renderer approximates every mode as multiply) */
+  fillOverlay?: Fill
   stroke?: Stroke
   shadow?: ShadowEffect
   glow?: GlowEffect
+  scene3d?: Scene3D
   text?: TextBody
 }
 
@@ -359,7 +428,14 @@ export interface PictureElement extends ElementBase {
   /** Picture outline geometry <a:prstGeom> (ellipse avatars/rounded-corner frames etc. from picture styles; rect omitted) */
   presetGeometry?: string
   adjust?: Record<string, number>
+  /** Shape fill from the pic's own spPr, drawn as a backdrop behind the image */
   fill?: Fill
+  /** <a:blip><a:duotone> on the picture blip */
+  duotone?: [string, string]
+  /** <a:blip><a:clrChange> on the picture blip */
+  clrChange?: { from: string; to: string }
+  /** <a:blip><a:lum> brightness/contrast on the picture blip (-1..1 each) */
+  lum?: { bright: number; contrast: number }
   stroke?: Stroke
   shadow?: ShadowEffect
   glow?: GlowEffect
@@ -384,6 +460,8 @@ export interface PassthroughElement extends ElementBase {
   previewShapes?: SlideElement[]
   /** OLE read-only preview: the preview picture embedded in the graphicFrame (stretched to fill the frame when rendering). */
   previewPicture?: PictureElement
+  /** Render nothing (no placeholder chip): unparseable mc:AlternateContent kept only for byte fidelity */
+  noChip?: boolean
 }
 
 // ── Table (p:graphicFrame → a:tbl) ───────────────────────────────────
@@ -420,6 +498,10 @@ export interface TableElement extends ElementBase {
   rows: TableCell[][]
   /** tblPr's header-row/banded-rows toggles (echoed in the Ribbon's "Table Design") */
   styleFlags?: { firstRow: boolean; bandRow: boolean }
+  /** tblPr rtl="1": PowerPoint mirrors the grid horizontally (logical column 1 renders rightmost) */
+  rtl?: boolean
+  /** Table-style <a:tblBg>: drawn under the cells (alpha band fills composite over it) */
+  bgFill?: Fill
 }
 
 // ── Chart (p:graphicFrame → c:chart reference) ───────────────────────
@@ -451,6 +533,10 @@ export interface Slide {
   masterPath?: string
   /** Background (inheritance resolved) */
   background?: Fill
+  /** The slide carries its own <p:bg> override (false/absent = inherited from layout/master) */
+  bgOwn?: boolean
+  /** <p:sld showMasterSp="0">: master/layout background graphics hidden on this slide */
+  masterSpHidden?: boolean
   /**
    * master/layout decoration layer (read-only render, never written back):
    * non-placeholder concrete shapes on the master (logos/color bars) + enabled

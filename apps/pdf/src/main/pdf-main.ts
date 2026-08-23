@@ -1,7 +1,16 @@
-import { existsSync } from 'node:fs'
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import {
+  constants,
+  copyFileSync,
+  existsSync,
+  linkSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import type { WebContents } from 'electron'
 import {
@@ -14,10 +23,12 @@ import {
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { gskGenerateImage, hasGskAuth } from '@genoffice/ai-search'
+import { cloudToolsEnabled, type AiSettings } from '@genoffice/ai-provider'
 import { PDF_CHANNELS } from '../shared/ipc'
 import type {
   ExportImagesRequest,
   ExportImagesResult,
+  PdfAutoRenameResult,
   ExtractPagesRequest,
   ExtractPagesResult,
   InsertBlankPageRequest,
@@ -45,6 +56,7 @@ import type {
   ValidateTextEditsRequest,
 } from '../shared/ipc'
 import type { SavedSignature } from '../shared/ipc'
+import { writePdfAtomically } from './atomic-write'
 import {
   cropPagesBytes,
   extractPagesBytes,
@@ -456,6 +468,143 @@ export function pdfIsDirty(webContentsId: number): boolean {
   return dirtyByWc.has(webContentsId)
 }
 
+// ── Content-derived auto-naming (pdf's analog of sheets' autoRenameWorkbook) ──
+
+/** Paths of shell-created blank PDFs still carrying their untitled name; only these may auto-rename */
+const untitledPdfPaths = new Set<string>()
+/** Shell hook fired after an auto-rename so the tab title / recents / project mapping follow the file */
+let pdfRenamedHook: ((wc: WebContents, oldPath: string, newPath: string) => void) | null = null
+
+/** Called by the shell right after "New PDF" writes the blank file to disk */
+export function markPdfUntitledPath(path: string): void {
+  untitledPdfPaths.add(path)
+}
+
+export function setPdfRenamedHook(
+  hook: (wc: WebContents, oldPath: string, newPath: string) => void,
+): void {
+  pdfRenamedHook = hook
+}
+
+/** Sanitize a proposed base name into a safe filename: strip illegal path chars, collapse whitespace, cap length; null if nothing survives. (Mirrors docs' deriveAutoFileName.) */
+function sanitizeAutoRenameBase(raw: string): string | null {
+  const cleaned = raw
+    // eslint-disable-next-line no-control-regex -- stripping control chars is the point here
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^\.+|\.+$/g, '')
+    .trim()
+  if (!cleaned) return null
+  return cleaned.length > 40 ? cleaned.slice(0, 40).trim() : cleaned
+}
+
+export type NoClobberMoveResult = 'moved' | 'occupied' | 'failed'
+
+export interface NoClobberFileOps {
+  link(source: string, target: string): void
+  copyExclusive(source: string, target: string): void
+  unlink(path: string): void
+  identity(path: string): string
+  readSource(path: string): Buffer
+  matchesSource(path: string, bytes: Buffer): boolean
+  restoreSource(path: string, bytes: Buffer): void
+}
+
+const defaultNoClobberFileOps: NoClobberFileOps = {
+  link: linkSync,
+  copyExclusive: (source, target) => copyFileSync(source, target, constants.COPYFILE_EXCL),
+  unlink: unlinkSync,
+  identity: (path) => {
+    const stats = statSync(path, { bigint: true })
+    return `${stats.dev}:${stats.ino}`
+  },
+  readSource: (path) => readFileSync(path),
+  matchesSource: (path, bytes) => readFileSync(path).equals(bytes),
+  restoreSource: (path, bytes) => writeFileSync(path, bytes, { flag: 'wx', flush: true }),
+}
+
+function fileErrorCode(error: unknown): string | undefined {
+  return error && typeof error === 'object' && 'code' in error
+    ? String((error as NodeJS.ErrnoException).code)
+    : undefined
+}
+
+const LINK_COPY_FALLBACK_CODES = new Set(['ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV'])
+
+/**
+ * Same-directory no-clobber move. A hard link reserves the exact destination
+ * atomically and without copying PDF bytes; filesystems without hard-link
+ * support fall back to an exclusive copy. Removing the old directory entry
+ * completes the move. If that final unlink fails, the reserved destination is
+ * removed only while it is still the exact entry we created.
+ */
+export function movePdfFileNoClobber(
+  source: string,
+  target: string,
+  overrides: Partial<NoClobberFileOps> = {},
+): NoClobberMoveResult {
+  const ops = { ...defaultNoClobberFileOps, ...overrides }
+  let sourceBytes: Buffer
+  try {
+    sourceBytes = ops.readSource(source)
+  } catch {
+    return 'failed'
+  }
+  try {
+    ops.link(source, target)
+  } catch (linkError) {
+    const code = fileErrorCode(linkError)
+    if (code === 'EEXIST') return 'occupied'
+    if (!code || !LINK_COPY_FALLBACK_CODES.has(code)) return 'failed'
+    try {
+      ops.copyExclusive(source, target)
+    } catch (copyError) {
+      return fileErrorCode(copyError) === 'EEXIST' ? 'occupied' : 'failed'
+    }
+  }
+
+  let createdIdentity: string
+  try {
+    createdIdentity = ops.identity(target)
+  } catch {
+    // The source is still intact. Do not remove a target that no longer
+    // proves to be the entry this operation created.
+    return 'failed'
+  }
+
+  try {
+    ops.unlink(source)
+  } catch {
+    try {
+      if (ops.identity(target) === createdIdentity && ops.matchesSource(target, sourceBytes)) {
+        ops.unlink(target)
+      }
+    } catch {
+      // Preserve an entry that no longer proves to be ours.
+    }
+    return 'failed'
+  }
+
+  try {
+    if (ops.identity(target) === createdIdentity && ops.matchesSource(target, sourceBytes)) {
+      return 'moved'
+    }
+  } catch {
+    // Restore below from the in-memory source snapshot.
+  }
+
+  // A concurrent actor replaced or removed target between reservation and
+  // source unlink. Recreate the original source path before reporting failure.
+  try {
+    ops.restoreSource(source, sourceBytes)
+  } catch {
+    // Best effort: an actor with write access to the directory may also have
+    // raced the source path. Never claim success or grant the suspect target.
+  }
+  return 'failed'
+}
+
 /**
  * Close guard for the pdf renderer: true means proceed with closing.
  * Clean → true; dirty → Save / Don't Save / Cancel. On Save, ask the renderer to
@@ -562,6 +711,16 @@ function withSignatures(
 
 let ipcRegistered = false
 
+/** live read of the shared ai-settings.json (written by the shell settings pane) */
+function gskCloudToolsOn(): boolean {
+  try {
+    const raw = readFileSync(join(app.getPath('userData'), 'ai-settings.json'), 'utf8')
+    return cloudToolsEnabled(JSON.parse(raw) as Partial<AiSettings>)
+  } catch {
+    return true // no settings file yet = default on
+  }
+}
+
 function registerPdfIpc(): void {
   if (ipcRegistered) return
   ipcRegistered = true
@@ -610,6 +769,60 @@ function registerPdfIpc(): void {
       return { ok: false, error: err instanceof Error ? err.message : String(err) }
     }
   })
+
+  ipcMain.handle(PDF_CHANNELS.isUntitled, (e, path: unknown): boolean => {
+    return (
+      typeof path === 'string' &&
+      !!allowedByWc.get(e.sender.id)?.has(path) &&
+      untitledPdfPaths.has(path)
+    )
+  })
+
+  ipcMain.handle(
+    PDF_CHANNELS.autoRename,
+    (e, path: unknown, baseName: unknown): PdfAutoRenameResult => {
+      if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
+        return { renamed: false }
+      }
+      // Only shell-created blanks still carrying their untitled name; user-chosen names never move
+      if (!untitledPdfPaths.has(path)) return { renamed: false }
+      if (typeof baseName !== 'string') return { renamed: false }
+      const base = sanitizeAutoRenameBase(baseName)
+      if (!base) return { renamed: false }
+      const dir = dirname(path)
+      // The file being renamed does not occupy its own name: a proposed base equal
+      // to the current stem must be a no-op, not a hop to the next numbered suffix
+      let target: string | null = null
+      for (let suffix = 1; suffix <= 10_000; suffix++) {
+        const candidate = join(dir, suffix === 1 ? `${base}.pdf` : `${base}-${suffix}.pdf`)
+        if (candidate === path) return { renamed: false }
+        const result = movePdfFileNoClobber(path, candidate)
+        if (result === 'moved') {
+          target = candidate
+          break
+        }
+        if (result === 'failed') {
+          console.warn('[pdf] auto-rename failed')
+          return { renamed: false }
+        }
+      }
+      if (!target) return { renamed: false }
+
+      // Replace rather than mutate the grant set: the old path is revoked in
+      // the same operation that grants the new one, even if it is recreated.
+      allowedByWc.set(e.sender.id, new Set([target]))
+      if (openPathByWc.get(e.sender.id) === path) openPathByWc.set(e.sender.id, target)
+      untitledPdfPaths.delete(path)
+      try {
+        pdfRenamedHook?.(e.sender, path, target)
+      } catch (err) {
+        // Filesystem and renderer bookkeeping are already committed. A shell
+        // title/recents hook must not make the renderer keep using oldPath.
+        console.warn('[pdf] auto-rename hook failed:', err)
+      }
+      return { renamed: true, path: target, name: basename(target) }
+    },
+  )
 
   ipcMain.handle(PDF_CHANNELS.listPageImages, async (e, path: unknown) => {
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
@@ -705,6 +918,20 @@ function registerPdfIpc(): void {
   })
 
   ipcMain.handle(
+    PDF_CHANNELS.canDrawText,
+    async (_e, text: unknown, font: unknown, bold: unknown, italic: unknown): Promise<boolean> => {
+      if (typeof text !== 'string') return false
+      const { canDrawText } = await import('./text-edit')
+      return canDrawText(
+        text,
+        typeof font === 'string' ? font : undefined,
+        bold === true,
+        italic === true,
+      )
+    },
+  )
+
+  ipcMain.handle(
     PDF_CHANNELS.extractPages,
     async (e, request: ExtractPagesRequest): Promise<ExtractPagesResult> => {
       const { path, pages, suggestedName } = request ?? {}
@@ -752,9 +979,7 @@ function registerPdfIpc(): void {
           new Uint8Array(await readFile(other)),
           typeof afterPageIndex === 'number' ? afterPageIndex : -1,
         )
-        const tmp = `${path}.gensave-${process.pid}.tmp`
-        await writeFile(tmp, merged)
-        await rename(tmp, path)
+        await writePdfAtomically(path, merged)
         return { ok: true, insertedCount: count }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -774,9 +999,7 @@ function registerPdfIpc(): void {
           new Uint8Array(await readFile(path)),
           typeof afterPageIndex === 'number' ? afterPageIndex : -1,
         )
-        const tmp = `${path}.gensave-${process.pid}.tmp`
-        await writeFile(tmp, bytes)
-        await rename(tmp, path)
+        await writePdfAtomically(path, bytes)
         return { ok: true }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -909,9 +1132,7 @@ function registerPdfIpc(): void {
           new Uint8Array(await readFile(other)),
           pages,
         )
-        const tmp = `${path}.gensave-${process.pid}.tmp`
-        await writeFile(tmp, merged)
-        await rename(tmp, path)
+        await writePdfAtomically(path, merged)
         return { ok: true, removed, inserted }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -931,9 +1152,7 @@ function registerPdfIpc(): void {
       }
       try {
         const bytes = await setPageSizeBytes(new Uint8Array(await readFile(path)), width, height)
-        const tmp = `${path}.gensave-${process.pid}.tmp`
-        await writeFile(tmp, bytes)
-        await rename(tmp, path)
+        await writePdfAtomically(path, bytes)
         return { ok: true }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -981,9 +1200,7 @@ function registerPdfIpc(): void {
       }
       try {
         const bytes = await cropPagesBytes(new Uint8Array(await readFile(path)), pages, rect)
-        const tmp = `${path}.gensave-${process.pid}.tmp`
-        await writeFile(tmp, bytes)
-        await rename(tmp, path)
+        await writePdfAtomically(path, bytes)
         return { ok: true }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
@@ -1028,6 +1245,11 @@ function registerPdfIpc(): void {
       if (!hasGskAuth())
         return {
           error: 'Genspark account is not logged in on this machine; ask the user to log in first',
+        }
+      if (!gskCloudToolsOn())
+        return {
+          error:
+            'Genspark cloud tools are turned off in Settings (AI Model); enable them to use this tool',
         }
       const prompt = String(op?.prompt ?? '').trim()
       if (!prompt) return { error: 'prompt must not be empty' }

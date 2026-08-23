@@ -226,7 +226,7 @@ export function LayoutTab({
               <span>{t('ribbonMargins')}</span>
             </button>
             {dropdown === 'margins' && section && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {(() => {
                   const storedLastCustom = readLastCustomMargins()
                   const lastCustom =
@@ -295,7 +295,7 @@ export function LayoutTab({
               <span>{t('ribbonOrientation')}</span>
             </button>
             {dropdown === 'orient' && section && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 <button
                   className={section.orientation === 'portrait' ? 'active' : ''}
                   onClick={() => setOrientation('portrait')}
@@ -325,7 +325,7 @@ export function LayoutTab({
               <span>{t('ribbonPaperSize')}</span>
             </button>
             {dropdown === 'paper' && section && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {PAPER_SIZES.map((p) => {
                   const portraitW = Math.min(section.pageWidth, section.pageHeight)
                   return (
@@ -356,7 +356,7 @@ export function LayoutTab({
               <span>{t('ribbonColumns')}</span>
             </button>
             {dropdown === 'columns' && section && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {[1, 2, 3].map((n) => (
                   <button
                     key={n}
@@ -390,7 +390,7 @@ export function LayoutTab({
               <span>{t('ribbonSectionBreak')}</span>
             </button>
             {dropdown === 'sectbreak' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 <button
                   onClick={() => {
                     onInsertSectionBreak('nextPage')
@@ -472,7 +472,7 @@ export function LayoutTab({
               <span>{t('ribbonPosition')}</span>
             </button>
             {dropdown === 'arrange-pos' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 <button
                   className={currentWrap ? '' : 'active'}
                   onClick={() => applyInlinePosition()}
@@ -513,7 +513,7 @@ export function LayoutTab({
               <span>{t('ribbonWrapText')}</span>
             </button>
             {dropdown === 'arrange-wrap' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {WRAP_OPTIONS.map((opt) => (
                   <button
                     key={String(opt.value)}

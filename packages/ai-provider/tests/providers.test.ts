@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { AI_PROVIDERS, defaultAiSettings, resolveAiSettings } from '../src/providers'
+import {
+  AI_PROVIDERS,
+  activeProvider,
+  cloudToolsEnabled,
+  defaultAiSettings,
+  resolveAiSettings,
+} from '../src/providers'
+import type { AiProviderId } from '../src/types'
 
 describe('defaultAiSettings', () => {
   it('gives every provider its default model and an empty key by default', () => {
@@ -58,8 +65,61 @@ describe('resolveAiSettings', () => {
       defaults,
     )
     expect(resolved.provider).toBe('gemini')
-    expect(resolved.providers.gemini).toEqual({ apiKey: 'stored-gemini-key', model: 'gemini-2.5-pro' })
+    expect(resolved.providers.gemini).toEqual({
+      apiKey: 'stored-gemini-key',
+      model: 'gemini-2.5-pro',
+    })
     // provider not mentioned in stored.providers keeps the computed default
     expect(resolved.providers.anthropic.apiKey).toBe('preset-key')
+  })
+})
+
+describe('activeProvider', () => {
+  it('honors a configured BYOK provider and falls back to genspark otherwise', () => {
+    const settings = defaultAiSettings()
+    expect(activeProvider(settings)).toBe('genspark')
+
+    settings.provider = 'kimi'
+    expect(activeProvider(settings)).toBe('genspark') // no key yet
+    settings.providers.kimi.apiKey = 'sk-user'
+    expect(activeProvider(settings)).toBe('kimi')
+  })
+
+  it('requires a base URL for providers that declare needsBaseUrl', () => {
+    const settings = defaultAiSettings()
+    settings.provider = 'custom'
+    settings.providers.custom.apiKey = 'k'
+    expect(activeProvider(settings)).toBe('genspark')
+    settings.providers.custom.baseUrl = 'http://localhost:1234/v1'
+    expect(activeProvider(settings)).toBe('genspark') // custom's default model is empty
+    settings.providers.custom.model = 'my-model'
+    expect(activeProvider(settings)).toBe('custom')
+  })
+
+  it('falls back to genspark for unknown ids from a hand-edited settings file', () => {
+    const settings = defaultAiSettings()
+    settings.provider = 'nonsense' as AiProviderId
+    expect(activeProvider(settings)).toBe('genspark')
+  })
+
+  it('genspark never requires a key (injected from the gsk login at request time)', () => {
+    const settings = defaultAiSettings()
+    settings.provider = 'genspark'
+    expect(activeProvider(settings)).toBe('genspark')
+  })
+})
+
+describe('gskToolsEnabled', () => {
+  it('defaults on, survives resolveAiSettings, and only an explicit false turns it off', () => {
+    expect(cloudToolsEnabled(defaultAiSettings())).toBe(true)
+    // pre-toggle settings file (field absent) stays on
+    const legacy = resolveAiSettings({ providers: {} as never }, defaultAiSettings())
+    expect(cloudToolsEnabled(legacy)).toBe(true)
+    const off = resolveAiSettings(
+      { providers: {} as never, gskToolsEnabled: false },
+      defaultAiSettings(),
+    )
+    expect(off.gskToolsEnabled).toBe(false)
+    expect(cloudToolsEnabled(off)).toBe(false)
   })
 })

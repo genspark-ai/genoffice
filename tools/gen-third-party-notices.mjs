@@ -289,7 +289,17 @@ if (crates === null) {
   for (const [text, first] of texts) out += `\n[first seen in ${first}]\n${text}\n`
 }
 
-/** Bundled fonts (for docs rendering; all metric-compatible replacements for Microsoft fonts) */
+const GOTHIC_KR_COPYRIGHT = [
+  'Copyright (c) 2010, NHN Corporation (http://www.nhncorp.com),',
+  'with Reserved Font Name Nanum, Naver Nanum, NanumGothic, Naver ',
+  'NanumGothic, NanumMyeongjo, Naver NanumMyeongjo, NanumBrush, Naver',
+  'NanumBrush, NanumPen, Naver NanumPen.',
+].join('\n')
+
+/**
+ * Bundled web/document fonts. KaTeX code remains separately covered by its
+ * npm-package MIT notice above; its webfonts carry OFL terms.
+ */
 const FONTS = [
   [
     'Liberation Sans / Serif / Mono 2.1.5',
@@ -310,6 +320,35 @@ const FONTS = [
     'Noto Sans CJK SC / Noto Serif CJK SC (subset)',
     'SIL OFL 1.1',
     '© Adobe / Google. This bundle ships a subset of the original fonts (reduced glyph coverage for size);\nno other modifications were made.',
+  ],
+  [
+    'GenOffice Sans KR / GenOffice Serif KR (Noto Sans/Serif CJK KR derivative)',
+    'SIL OFL 1.1',
+    '© Adobe / Google, original Reserved Font Name "Noto". Subset with modified advance widths;\nrenamed per OFL 1.1.',
+  ],
+  [
+    'Noto Naskh Arabic / Noto Sans Arabic (subset)',
+    'SIL OFL 1.1',
+    '© The Noto Project Authors. This bundle ships a subset of the original fonts;\nglyphs and metrics are unmodified.',
+  ],
+  [
+    'GenOffice Gothic KR (NanumGothic derivative)',
+    'SIL OFL 1.1',
+    `${GOTHIC_KR_COPYRIGHT}\nSubset with unmodified metrics; renamed per OFL 1.1.`,
+  ],
+  [
+    'GenOffice Tamil (Noto Sans Tamil derivative)',
+    'SIL OFL 1.1',
+    '© The Noto Project Authors, original Reserved Font Name "Noto". Modified advance widths;\nrenamed per OFL 1.1.',
+  ],
+  [
+    'KaTeX webfonts',
+    'SIL OFL 1.1',
+    'Copyright (c) 2009-2010, Design Science, Inc. (<www.mathjax.org>)\n' +
+      'Copyright (c) 2014-2018 Khan Academy (<www.khanacademy.org>),\n' +
+      'with Reserved Font Names KaTeX_AMS, KaTeX_Caligraphic, KaTeX_Fraktur, ' +
+      'KaTeX_Main, KaTeX_Math, KaTeX_SansSerif, KaTeX_Script, KaTeX_Size1, ' +
+      'KaTeX_Size2, KaTeX_Size3, KaTeX_Size4, and KaTeX_Typewriter.',
   ],
 ]
 

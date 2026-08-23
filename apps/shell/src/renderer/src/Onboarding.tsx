@@ -5,8 +5,8 @@ import type { StringKey } from './locale'
 import './onboarding.css'
 
 interface OnboardingProps {
-  /** called when the user finishes the last slide or clicks skip */
-  onDone: () => void
+  /** persists completion; analytics remains enabled unless opted out in Settings */
+  onDone: () => Promise<boolean>
 }
 
 interface Slide {
@@ -21,6 +21,8 @@ interface Slide {
   showOffer?: boolean
   /** closing slide shows the "star us on GitHub" hint */
   showStar?: boolean
+  /** closing slide explains default-on analytics and how to disable it */
+  showAnalyticsNotice?: boolean
   art: 'logo' | 'gift' | 'check'
 }
 
@@ -33,6 +35,7 @@ const SLIDES: readonly Slide[] = [
     bodyKey: 'onbNote3',
     bodyDim: true,
     showStar: true,
+    showAnalyticsNotice: true,
     art: 'check',
   },
 ]
@@ -92,13 +95,22 @@ function SlideArt({ kind }: { kind: Slide['art'] }) {
 export function Onboarding({ onDone }: OnboardingProps) {
   const { t } = useI18n()
   const [index, setIndex] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
   const slide = SLIDES[index]
   const isLast = index === SLIDES.length - 1
 
+  const finish = () => {
+    if (submitting) return
+    setSubmitting(true)
+    void onDone()
+      .catch(() => false)
+      .finally(() => setSubmitting(false))
+  }
+
   const next = () => {
-    if (isLast) onDone()
-    else setIndex(index + 1)
+    if (isLast) finish()
+    else setIndex((current) => current + 1)
   }
 
   // move focus into the dialog on mount so keyboard users start inside it
@@ -122,7 +134,7 @@ export function Onboarding({ onDone }: OnboardingProps) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onDone()
+        finish()
         return
       }
       if (event.key === 'Tab') {
@@ -200,6 +212,14 @@ export function Onboarding({ onDone }: OnboardingProps) {
                   </button>
                 </div>
               )}
+              {s.showAnalyticsNotice && (
+                <div className="onb-consent">
+                  <span className="onb-consent-copy">
+                    <span className="onb-consent-title">{t('setAnalytics')}</span>
+                    <span className="onb-consent-desc">{t('setAnalyticsDesc')}</span>
+                  </span>
+                </div>
+              )}
               {s.showOffer && (
                 <div className="onb-offer">
                   <p className="onb-credits">{renderEmphasis(t('onbCredits'))}</p>
@@ -234,15 +254,19 @@ export function Onboarding({ onDone }: OnboardingProps) {
             ))}
           </div>
           <div className="onb-nav">
-            <button className="onb-skip" onClick={onDone}>
+            <button className="onb-skip" disabled={submitting} onClick={finish}>
               {t('onbSkip')}
             </button>
             {index > 0 && (
-              <button className="onb-back" onClick={() => setIndex(index - 1)}>
+              <button
+                className="onb-back"
+                disabled={submitting}
+                onClick={() => setIndex(index - 1)}
+              >
                 {t('onbBack')}
               </button>
             )}
-            <button className="onb-next" onClick={next}>
+            <button className="onb-next" disabled={submitting} onClick={next}>
               {isLast ? t('onbStart') : t('onbNext')}
             </button>
           </div>

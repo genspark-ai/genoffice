@@ -257,6 +257,32 @@ describe('duplicated border containers merge per side, later wins', () => {
     expect(cell.borders?.top).toEqual({ style: 'nil' })
   })
 
+  it('w:tblpPr marks a floating table with its wrap side (tdf#97090)', async () => {
+    const wrap = (tblpPr: string) =>
+      `<w:tbl><w:tblPr>${tblpPr}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>` +
+      '<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const right = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap('<w:tblpPr w:horzAnchor="margin" w:tblpXSpec="right" w:vertAnchor="text"/>'),
+      }),
+    )
+    expect(right.blocks[0].table!.floatSide).toBe('right')
+    const farX = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap('<w:tblpPr w:vertAnchor="text" w:horzAnchor="page" w:tblpX="7523"/>'),
+      }),
+    )
+    expect(farX.blocks[0].table!.floatSide).toBe('right')
+    const nearX = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap('<w:tblpPr w:vertAnchor="text" w:tblpX="100" w:tblpY="10"/>'),
+      }),
+    )
+    expect(nearX.blocks[0].table!.floatSide).toBe('left')
+    const plain = await parseDocx(await buildDocx({ bodyXml: wrap('') }))
+    expect(plain.blocks[0].table!.floatSide).toBeUndefined()
+  })
+
   it('a second w:tblBorders overrides the sides of the first one', async () => {
     const xml =
       '<w:tbl><w:tblPr>' +

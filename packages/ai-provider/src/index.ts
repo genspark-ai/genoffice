@@ -13,11 +13,21 @@ export type {
 export {
   AI_PROVIDERS,
   GENSPARK_LLM_BASE_URLS,
+  activeProvider,
+  cloudToolsEnabled,
   defaultAiSettings,
   resolveAiSettings,
 } from './providers'
+export { AI_PROVIDER_ADAPTERS, getProviderAdapter } from './registry'
+export type {
+  AiProtocol,
+  ProviderAdapter,
+  ProviderCapabilities,
+  ResolvedEndpoint,
+} from './registry'
 export { chatForProvider } from './chat'
 export { setRescueFetch } from './fetch'
+export { isAiNetworkError } from './network-error'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
 export {

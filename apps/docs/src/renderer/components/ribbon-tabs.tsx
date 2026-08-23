@@ -1,6 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
-import { SHAPE_GALLERY_GROUPS, wordArtSolidColor, type WordArtPreset } from '@genoffice/ui'
+import {
+  SHAPE_GALLERY_GROUPS,
+  useDismissablePopover,
+  wordArtSolidColor,
+  type WordArtPreset,
+} from '@genoffice/ui'
 import {
   buildLineParagraphXml,
   buildShapeParagraphXml,
@@ -57,6 +62,7 @@ export {
   CrossRefModal,
   InsertTab,
   LinkInsertModal,
+  TableInsertModal,
 } from './ribbon-insert-tab'
 export { DesignTab } from './ribbon-design-tab'
 export { LayoutTab } from './ribbon-layout-tab'
@@ -116,10 +122,21 @@ export async function imageSizeOf(dataUrl: string): Promise<{ width: number; hei
 
 /* insert commands shared by the ribbon and the native application menu */
 
+/** Word's Insert Table dialog column limit */
+export const MAX_TABLE_COLS = 63
+/** row cap keeps a single insert from freezing layout (Word allows 32767) */
+export const MAX_TABLE_ROWS = 200
+
 export function insertTableAt(editor: Editor, rows: number, cols: number): void {
+  rows = Math.min(MAX_TABLE_ROWS, Math.max(1, Math.round(rows)))
+  cols = Math.min(MAX_TABLE_COLS, Math.max(1, Math.round(cols)))
+  // Word default single 0.5pt borders: also what generateTableModelXml writes on
+  // save — without them the freshly inserted table renders invisible until reload
+  const line = { style: 'single', szEighths: 4, color: 'auto' }
   const table = {
     rows: Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ paras: [''] }))),
     colWidthsPct: Array.from({ length: cols }, () => 100 / cols),
+    borders: { top: line, bottom: line, left: line, right: line, insideH: line, insideV: line },
   }
   // inside a cell a top-level docTable insert would split the outer table
   // — Word semantics is a nested child table at the end of the cell
@@ -487,7 +504,7 @@ const TRANSLATE_TARGETS: Array<{ labelKey: StringKey }> = [
 ]
 
 /** One-time "AI rewrites the whole document" acknowledgement */
-const AI_REWRITE_ACK_KEY = 'docs-ai-rewrite-ack'
+export const AI_REWRITE_ACK_KEY = 'docs-ai-rewrite-ack'
 
 /** Revision display modes: All Markup (default) / No Markup (as accepted) / Original (as rejected) */
 export type RevisionDisplayMode = 'all' | 'none' | 'original'
@@ -507,9 +524,15 @@ interface ReviewTabProps extends TabProps {
   onAcceptRevision: (all: boolean) => void
   onRejectRevision: (all: boolean) => void
   onGotoRevision: (dir: 1 | -1) => void
-  /** Restrict Editing (read-only) is enforced */
+  /** an editing restriction or write lock makes the body read-only */
   isProtected: boolean
-  onToggleProtection: () => void
+  /** comments restriction: adding comments stays allowed although the body is read-only */
+  commentsAllowed: boolean
+  /** trackedChanges restriction: the recorder is forced on (toggle and accept/reject disabled) */
+  trackChangesForced: boolean
+  /** any protection is configured (highlights the Protect Document button) */
+  protectActive: boolean
+  onProtectDoc: () => void
   onCompare: () => void
 }
 
@@ -531,7 +554,10 @@ export function ReviewTab({
   onRejectRevision,
   onGotoRevision,
   isProtected,
-  onToggleProtection,
+  commentsAllowed,
+  trackChangesForced,
+  protectActive,
+  onProtectDoc,
   onCompare,
 }: ReviewTabProps) {
   const { t } = useI18n()
@@ -588,7 +614,7 @@ export function ReviewTab({
               <span>{t('ribbonTranslate')}</span>
             </button>
             {dropdown === 'translate' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {TRANSLATE_TARGETS.map((lang) => (
                   <button
                     key={lang.labelKey}
@@ -615,7 +641,7 @@ export function ReviewTab({
         <div className="ribbon-group-items">
           <button
             className="rb-big"
-            disabled={!hasDoc || !canComment || isProtected}
+            disabled={!hasDoc || !canComment || (isProtected && !commentsAllowed)}
             data-tip={canComment ? t('ribbonNewCommentTip') : t('ribbonNewCommentSelectTip')}
             onClick={onNewComment}
           >
@@ -645,7 +671,7 @@ export function ReviewTab({
         <div className="ribbon-group-items">
           <button
             className={`rb-big ${trackChanges ? 'active' : ''}`}
-            disabled={!hasDoc || isProtected}
+            disabled={!hasDoc || isProtected || trackChangesForced}
             data-tip={t('ribbonTrackChangesTip')}
             onClick={() => onTrackChanges(!trackChanges)}
           >
@@ -668,7 +694,7 @@ export function ReviewTab({
               <span>{t('ribbonRevDisplay')}</span>
             </button>
             {dropdown === 'revDisplay' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {(
                   [
                     ['all', t('ribbonRevDisplayAll')],
@@ -693,7 +719,7 @@ export function ReviewTab({
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              disabled={!hasDoc || revisionCount === 0 || isProtected}
+              disabled={!hasDoc || revisionCount === 0 || isProtected || trackChangesForced}
               data-tip={t('ribbonAcceptTip', { count: revisionCount })}
               onClick={() => toggleDropdown(setDropdown, 'acceptRev')}
             >
@@ -704,7 +730,7 @@ export function ReviewTab({
               <span>{t('ribbonAccept')}</span>
             </button>
             {dropdown === 'acceptRev' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 <button
                   onClick={() => {
                     onAcceptRevision(false)
@@ -727,7 +753,7 @@ export function ReviewTab({
           <div className="rb-split-wrap">
             <button
               className="rb-big"
-              disabled={!hasDoc || revisionCount === 0 || isProtected}
+              disabled={!hasDoc || revisionCount === 0 || isProtected || trackChangesForced}
               data-tip={t('ribbonRejectTip', { count: revisionCount })}
               onClick={() => toggleDropdown(setDropdown, 'rejectRev')}
             >
@@ -738,7 +764,7 @@ export function ReviewTab({
               <span>{t('ribbonReject')}</span>
             </button>
             {dropdown === 'rejectRev' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 <button
                   onClick={() => {
                     onRejectRevision(false)
@@ -808,15 +834,15 @@ export function ReviewTab({
       <div className="ribbon-group">
         <div className="ribbon-group-items">
           <button
-            className={`rb-big ${isProtected ? 'active' : ''}`}
+            className={`rb-big ${protectActive ? 'active' : ''}`}
             disabled={!hasDoc}
-            data-tip={isProtected ? t('ribbonStopProtectionTip') : t('ribbonRestrictEditingTip')}
-            onClick={onToggleProtection}
+            title={t('ribbonProtectDocTip')}
+            onClick={onProtectDoc}
           >
             <span className="rb-big-icon">
               <IconLock size={BIG} />
             </span>
-            <span>{t('ribbonRestrictEditing')}</span>
+            <span>{t('ribbonProtectDoc')}</span>
           </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupProtect')}</div>
@@ -883,11 +909,19 @@ export function ViewTab({
   const { t } = useI18n()
   const [winMenuOpen, setWinMenuOpen] = useState(false)
   const [windows, setWindows] = useState<DocsTabInfo[]>([])
+  /** wrap holding both the switch-tabs trigger and its menu */
+  const winMenuRef = useRef<HTMLDivElement>(null)
 
   const toggleWinMenu = async () => {
     if (!winMenuOpen) setWindows(await window.desktop.listDocsTabs())
     setWinMenuOpen((v) => !v)
   }
+
+  // presses inside the wrap (trigger + menu) are handled by their own onClick;
+  // anything else — including window blur / shell chrome presses — closes it
+  useDismissablePopover(winMenuOpen, () => setWinMenuOpen(false), {
+    inside: () => [winMenuRef.current],
+  })
 
   return (
     <>
@@ -1112,7 +1146,7 @@ export function ViewTab({
             </span>
             <span>{t('ribbonSplit')}</span>
           </button>
-          <div className="rb-split-wrap">
+          <div className="rb-split-wrap" ref={winMenuRef}>
             <button
               className="rb-big"
               data-tip={t('ribbonSwitchTabsTip')}

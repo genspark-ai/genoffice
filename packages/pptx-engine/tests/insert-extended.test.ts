@@ -34,6 +34,7 @@ import {
   type PictureElement,
   type TextElement,
 } from '../src/index'
+import { relsPathFor } from '../src/zip'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -494,22 +495,21 @@ describe('addMedia / addModel3d', () => {
 })
 
 describe('unsupported chart kinds', () => {
-  // Classic-namespace chart type the model doesn't support (same bucket as stock/surface;
-  // chartex parts like waterfall/funnel never even reach parseChartXml)
-  const BUBBLE_CHART = `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>
-<c:bubbleChart><c:ser><c:idx val="0"/>
-  <c:xVal><c:numRef><c:f>x</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numCache></c:numRef></c:xVal>
-  <c:yVal><c:numRef><c:f>y</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numCache></c:numRef></c:yVal>
-  <c:bubbleSize><c:numRef><c:f>s</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>5</c:v></c:pt><c:pt idx="1"><c:v>9</c:v></c:pt></c:numCache></c:numRef></c:bubbleSize>
-</c:ser></c:bubbleChart>
+  // Classic-namespace chart type the model doesn't support (surface; chartex parts
+  // like waterfall/funnel never even reach parseChartXml)
+  const SURFACE_CHART = `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea><c:layout/>
+<c:surface3DChart><c:ser><c:idx val="0"/>
+  <c:cat><c:strRef><c:f>c</c:f><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strCache></c:strRef></c:cat>
+  <c:val><c:numRef><c:f>v</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt><c:pt idx="1"><c:v>20</c:v></c:pt></c:numCache></c:numRef></c:val>
+</c:ser></c:surface3DChart>
 </c:plotArea></c:chart></c:chartSpace>`
 
-  it('parseChartXml returns null for a bubble chart (no recognizable plot)', () => {
-    expect(parseChartXml(BUBBLE_CHART)).toBeNull()
+  it('parseChartXml returns null for a surface chart (no recognizable plot)', () => {
+    expect(parseChartXml(SURFACE_CHART)).toBeNull()
   })
 
   it('an unsupported chart degrades to a passthrough element and survives an unrelated edit + save byte-for-byte', async () => {
-    // Build a deck with a chart, then swap its part for a bubble chart on disk
+    // Build a deck with a chart, then swap its part for a surface chart on disk
     const opened = await openPptx(fx('01_standard_business.pptx'))
     addChart(opened, 0, {
       kind: 'bar',
@@ -521,7 +521,7 @@ describe('unsupported chart kinds', () => {
     const chartPart = [...staged.archive.entries.keys()].find((p) =>
       /^ppt\/charts\/chart\d+\.xml$/.test(p),
     )!
-    staged.archive.entries.set(chartPart, Buffer.from(BUBBLE_CHART, 'utf8'))
+    staged.archive.entries.set(chartPart, Buffer.from(SURFACE_CHART, 'utf8'))
     const buf = await savePptx(staged)
 
     // Reopen: the graphicFrame no longer parses as a chart — it must become a passthrough chip, not vanish
@@ -538,7 +538,7 @@ describe('unsupported chart kinds', () => {
     const saved = await openPptx(await savePptx(reopened))
 
     // The chart part and the graphicFrame bytes are untouched
-    expect(saved.archive.readText(chartPart)).toBe(BUBBLE_CHART)
+    expect(saved.archive.readText(chartPart)).toBe(SURFACE_CHART)
     const pt2 = saved.deck.slides[0]!.elements.find(
       (e) => e.type === 'passthrough',
     ) as PassthroughElement
@@ -586,8 +586,51 @@ describe('setElementLink / getElementLink', () => {
     const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
     const s1 = setElementLink(opened, 0, el.id, { kind: 'url', url: 'https://x.dev' })!
     const linked = s1.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
     const s2 = setElementLink(opened, 0, linked.id, null)!
     expect(getElementLink(opened, 0, s2.elements.at(-1)!.id)).toBeNull()
+    expect(opened.archive.readText(relsPathFor(s2.path))).not.toContain(`Id="${oldRid}"`)
+  })
+
+  it('replacing a link prunes the obsolete hyperlink relationship', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const first = setElementLink(opened, 0, el.id, { kind: 'url', url: 'https://old.dev' })!
+    const linked = first.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
+
+    const second = setElementLink(opened, 0, linked.id, { kind: 'url', url: 'https://new.dev' })!
+    const rels = opened.archive.readText(relsPathFor(second.path))!
+    expect(rels).not.toContain(`Id="${oldRid}"`)
+    expect(rels).not.toContain('Target="https://old.dev"')
+    expect(rels).toContain('Target="https://new.dev"')
+  })
+
+  it('keeps an old hyperlink relationship while another element still uses its rId', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, { kind: 'rect', offset: { ...OFF } })
+    const linkedSlide = setElementLink(opened, 0, el.id, {
+      kind: 'url',
+      url: 'https://shared.dev',
+    })!
+    const linked = linkedSlide.elements.at(-1)!
+    const oldRid = /r:id="([^"]+)"/.exec(linked.anchor.originalXml)![1]!
+    const sharer = addElement(linkedSlide, {
+      kind: 'ellipse',
+      offset: { ...OFF, x: 5486400 },
+    })
+    // Newborn cNvPr carries a creationId extLst (paired tag); hlinkClick goes
+    // right after the opening tag — its schema slot is before extLst
+    sharer.anchor.originalXml = sharer.anchor.originalXml.replace(
+      /(<p:cNvPr[^>]*>)/,
+      `$1<a:hlinkClick r:id="${oldRid}"/>`,
+    )
+    linkedSlide.structureDirty = true
+
+    setElementLink(opened, 0, linked.id, { kind: 'url', url: 'https://new.dev' })
+    expect(opened.archive.readText(relsPathFor(linkedSlide.path))).toContain(`Id="${oldRid}"`)
   })
 
   it('getSlideLinks collects every linked element on the slide', async () => {

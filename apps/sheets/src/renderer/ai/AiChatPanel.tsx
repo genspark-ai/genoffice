@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
-import { AiSettingsDialog } from '@genoffice/ui'
-import type { AiSettings } from '@genoffice/ai-provider'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
@@ -190,7 +188,7 @@ export interface AiChatMessage {
   /** the run failed because Genspark is signed out — render an inline sign-in button */
   readonly loginRequired?: boolean | undefined
   /** Set when this message reflects an auto-applied plan; renders an inline [Undo] button. */
-  readonly autoApplied?: { readonly opCount: number } | undefined
+  readonly autoApplied?: { readonly opCount: number; readonly undoSteps: number } | undefined
   /** attachments consumed from the composer by this user message (read-only echo chips) */
   readonly attachments?: readonly AttachmentMeta[] | undefined
 }
@@ -216,8 +214,6 @@ export function AiChatPanel({
   onUndo,
   onExpand,
   onCollapse,
-  settings,
-  onSettingsChange,
 }: {
   readonly isOpen: boolean
   /** the workbook has cells with content — empty workbooks get "build me a sheet" copy instead */
@@ -243,16 +239,11 @@ export function AiChatPanel({
   readonly onSend: (instruction?: string, attachments?: readonly AttachmentMeta[]) => void
   readonly onStop: () => void
   readonly onNewChat: () => void
-  readonly onUndo: () => void
+  readonly onUndo: (steps: number) => void
   readonly onExpand: () => void
   readonly onCollapse: () => void
-  /// Current AI settings (provider selection), for the in-panel settings dialog
-  readonly settings: AiSettings | null
-  /// Persist a new provider/API-key selection (saves to ai-settings.json)
-  readonly onSettingsChange: (next: AiSettings) => void
 }): React.JSX.Element {
   const { t } = useI18n()
-  const [showSettings, setShowSettings] = useState(false)
   const chatRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const stickToBottomRef = useRef(true)
@@ -474,26 +465,6 @@ export function AiChatPanel({
           Genspark
         </span>
         <div className="ai-panel-header-actions">
-          <button
-            className="ai-header-btn"
-            onClick={() => setShowSettings(true)}
-            title="AI Settings"
-            aria-label="AI Settings"
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-            </svg>
-          </button>
           {(chat.length > 0 || historicChat.length > 0) && (
             <button
               className="ai-header-btn"
@@ -585,7 +556,11 @@ export function AiChatPanel({
                     <span className="ai-auto-applied-text">
                       {t('aiAutoApplied', { count: entry.autoApplied.opCount })}
                     </span>
-                    <button className="ai-undo-btn" onClick={onUndo} data-tip={t('aiUndoTitle')}>
+                    <button
+                      className="ai-undo-btn"
+                      onClick={() => onUndo(Math.max(1, entry.autoApplied?.undoSteps ?? 1))}
+                      data-tip={t('aiUndoTitle')}
+                    >
                       {t('aiUndo')}
                     </button>
                   </div>
@@ -756,28 +731,6 @@ export function AiChatPanel({
           onPasteFiles={onPasteFiles}
         />
       </div>
-      {showSettings && settings && (
-        <AiSettingsDialog
-          settings={settings}
-          onClose={() => setShowSettings(false)}
-          onSave={(next) => {
-            setShowSettings(false)
-            onSettingsChange(next)
-            void window.desktopApi.setAiSettings(next)
-          }}
-          labels={{
-            title: 'AI 设置',
-            provider: '模型服务商',
-            apiKey: 'API 密钥',
-            model: '模型',
-            baseUrl: 'Base URL（OpenAI 兼容）',
-            save: '保存',
-            cancel: '取消',
-            gensparkNote:
-              'Genspark 使用已登录的 Genspark 账号，无需 API 密钥。通过 Genspark 服务路由 Claude / GPT / Gemini。',
-          }}
-        />
-      )}
     </aside>
   )
 }

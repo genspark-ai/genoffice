@@ -1,5 +1,6 @@
 import type {
   WorkbookCellEdit,
+  WorkbookBulkConstantFill,
   WorkbookChartEdit,
   WorkbookHyperlinkEdit,
   WorkbookRichRun,
@@ -33,6 +34,21 @@ export interface JournalEntry {
   /// Clear Formats / Clear All: the cell returns to the default style before
   /// any remaining `style` delta applies.
   readonly styleReset?: boolean
+}
+
+interface JournalBulkConstantFill extends WorkbookBulkConstantFill {
+  readonly journalId: number
+}
+
+let bulkConstantFillSequence = 0
+
+/// alignment/@textRotation → Univer tr: 1-90 counter-clockwise, 91-180
+/// encodes clockwise as 90+deg, 255 is vertically stacked; 0 clears.
+export function ooxmlTextRotationToUniver(value: number): { a: number; v?: number } | null {
+  if (value === 255) return { a: 0, v: 1 }
+  if (value > 180) return null
+  if (value > 90) return { a: 90 - value }
+  return value > 0 ? { a: value } : null
 }
 
 export type StructuralJournalOp =
@@ -101,6 +117,9 @@ export interface SheetJournal {
 
 export interface EditJournal {
   readonly cells: Map<string, Map<string, JournalEntry>>
+  /// Constant range fills stay declarative so whole-column AI operations do
+  /// not allocate one JournalEntry (and one save object) per cell.
+  readonly bulkConstantFills: Map<string, JournalBulkConstantFill[]>
   /// Ordered per sheet; cell entries are kept in post-operation coordinates.
   readonly structuralOps: Map<string, StructuralJournalOp[]>
   /// Keyed by chart part path; successive edits to one chart merge.
@@ -130,6 +149,16 @@ export interface EditJournal {
   readonly dvDirty: Set<string>
   /// Desired sheet-protection state (dropped when toggled back to original).
   readonly sheetProtection: Map<string, boolean>
+  /// Desired workbook structure-protection state (null = untouched).
+  readonly workbookProtection: { desired: boolean | null }
+  /// Sheets whose allow-edit-range set changed; the save snapshots the live
+  /// set (same recipe as filters).
+  readonly protectedRangesDirty: Set<string>
+  /// Document theme change; only the halves the user touched are present.
+  readonly theme: {
+    colors?: { name: string; values: string[] }
+    fonts?: { name: string; major: string; minor: string }
+  }
   /// The defined-name set changed; the save snapshots the full model.
   readonly definedNames: { dirty: boolean }
   /// sheetId → "row:column" → link target ('#Sheet!A1' internal, URL
@@ -185,6 +214,8 @@ export interface PageSetupJournalState {
   showGridlines?: boolean
   /// sheetView/@showFormulas: the sheet renders formulas instead of values.
   showFormulas?: boolean
+  /// sheetView/@showRowColHeaders: row/column heading strips.
+  showHeadings?: boolean
   /// A1 range to print, or null to clear the print area.
   printArea?: string | null
   /// Rows repeated at the top of every page ("1:2"), or null to clear.
@@ -195,6 +226,10 @@ export interface PageSetupJournalState {
   /// Printed header/footer, or null to clear; saved as <headerFooter>.
   header?: HeaderFooterParts | null
   footer?: HeaderFooterParts | null
+  /// Manual page breaks (0-based index of the row/column after the break).
+  /// Presence replaces the sheet's break set; [] clears all manual breaks.
+  rowBreaks?: number[]
+  colBreaks?: number[]
 }
 
 interface CellRange {
@@ -207,6 +242,7 @@ interface CellRange {
 export function createEditJournal(): EditJournal {
   return {
     cells: new Map(),
+    bulkConstantFills: new Map(),
     structuralOps: new Map(),
     chartEdits: new Map(),
     visualAdds: [],
@@ -225,6 +261,9 @@ export function createEditJournal(): EditJournal {
     cfDirty: new Set(),
     dvDirty: new Set(),
     sheetProtection: new Map(),
+    workbookProtection: { desired: null },
+    protectedRangesDirty: new Set(),
+    theme: {},
     definedNames: { dirty: false },
     hyperlinks: new Map(),
     pageSetup: new Map(),
@@ -279,6 +318,35 @@ export function toSavePageSetupStates(
 
 export function recordDefinedNamesChange(journal: EditJournal): void {
   journal.definedNames.dirty = true
+}
+
+export function recordWorkbookProtection(
+  journal: EditJournal,
+  desired: boolean,
+  original: boolean,
+): void {
+  journal.workbookProtection.desired = desired === original ? null : desired
+}
+
+export function recordProtectedRangesChange(journal: EditJournal, sheetId: string): void {
+  journal.protectedRangesDirty.add(sheetId)
+}
+
+export function recordThemeColors(
+  journal: EditJournal,
+  name: string,
+  values: readonly string[],
+): void {
+  journal.theme.colors = { name, values: [...values] }
+}
+
+export function recordThemeFonts(
+  journal: EditJournal,
+  name: string,
+  major: string,
+  minor: string,
+): void {
+  journal.theme.fonts = { name, major, minor }
 }
 
 export function recordSheetProtection(
@@ -362,6 +430,21 @@ export function recordSheetDuplicate(
   const sourceCells = journal.cells.get(sourceSheetId)
   if (sourceCells && sourceCells.size > 0) {
     journal.cells.set(sheetId, new Map(sourceCells))
+  }
+  const sourceFills = journal.bulkConstantFills.get(sourceSheetId)
+  if (sourceFills && sourceFills.length > 0) {
+    const copiedIds = new Map<number, number>()
+    journal.bulkConstantFills.set(
+      sheetId,
+      sourceFills.map((fill) => {
+        let journalId = copiedIds.get(fill.journalId)
+        if (journalId === undefined) {
+          journalId = ++bulkConstantFillSequence
+          copiedIds.set(fill.journalId, journalId)
+        }
+        return { ...fill, sheetId, journalId }
+      }),
+    )
   }
   const sourceLinks = journal.hyperlinks.get(sourceSheetId)
   if (sourceLinks && sourceLinks.size > 0) {
@@ -620,6 +703,8 @@ export interface VisualEditEntry {
   readonly drawingIndex: number
   readonly remove?: true
   readonly anchor?: WorkbookVisualObject['anchor']
+  /// New xfrm ext in EMU (a rotated shape resized through its AABB).
+  readonly frameSize?: { readonly width: number; readonly height: number }
 }
 
 /// Records a move/resize or removal of a visual that already lives in the
@@ -628,19 +713,25 @@ export interface VisualEditEntry {
 export function recordVisualEdit(
   journal: EditJournal,
   visual: WorkbookVisualObject,
-  changes: { remove?: true; anchor?: WorkbookVisualObject['anchor'] },
+  changes: {
+    remove?: true
+    anchor?: WorkbookVisualObject['anchor']
+    frameSize?: { width: number; height: number }
+  },
 ): boolean {
   if (visual.drawingPath === undefined || visual.drawingIndex === undefined) return false
   const previous = journal.visualEdits.get(visual.id)
   // A removal wins over any earlier move; a later move revives nothing.
   const remove = changes.remove ?? previous?.remove
   const anchor = changes.anchor ?? previous?.anchor
+  const frameSize = changes.frameSize ?? previous?.frameSize
   journal.visualEdits.set(visual.id, {
     sheetId: visual.sheetId,
     drawingPath: visual.drawingPath,
     drawingIndex: visual.drawingIndex,
     ...(remove ? { remove: true as const } : {}),
     ...(anchor ? { anchor } : {}),
+    ...(frameSize ? { frameSize } : {}),
   })
   return true
 }
@@ -689,6 +780,7 @@ export function toSaveVisualEdits(journal: EditJournal): WorkbookVisualEdit[] {
       drawingIndex: entry.drawingIndex,
       ...(entry.remove ? { remove: true as const } : {}),
       ...(entry.anchor ? { anchor: entry.anchor } : {}),
+      ...(entry.frameSize ? { frameSize: entry.frameSize } : {}),
     })
   }
   return edits
@@ -1084,6 +1176,46 @@ export function recordStructuralOp(
     }
     journal.cells.set(sheetId, shifted)
   }
+  const fills = journal.bulkConstantFills.get(sheetId)
+  if (fills && fills.length > 0) {
+    const shiftedFills: JournalBulkConstantFill[] = []
+    for (const fill of fills) {
+      const start = axis === 'row' ? fill.startRow : fill.startColumn
+      const end = axis === 'row' ? fill.endRow : fill.endColumn
+      let segmentStart: number | null = null
+      let segmentEnd: number | null = null
+      const flush = () => {
+        if (segmentStart === null || segmentEnd === null) return
+        shiftedFills.push(
+          axis === 'row'
+            ? { ...fill, startRow: segmentStart, endRow: segmentEnd }
+            : { ...fill, startColumn: segmentStart, endColumn: segmentEnd },
+        )
+        segmentStart = null
+        segmentEnd = null
+      }
+      for (let position = start; position <= end; position += 1) {
+        const moved = movePosition(position)
+        if (moved === null) {
+          flush()
+          continue
+        }
+        if (segmentStart === null || segmentEnd === null) {
+          segmentStart = moved
+          segmentEnd = moved
+        } else if (moved === segmentEnd + 1) {
+          segmentEnd = moved
+        } else {
+          flush()
+          segmentStart = moved
+          segmentEnd = moved
+        }
+      }
+      flush()
+    }
+    if (shiftedFills.length > 0) journal.bulkConstantFills.set(sheetId, shiftedFills)
+    else journal.bulkConstantFills.delete(sheetId)
+  }
   const links = journal.hyperlinks.get(sheetId)
   if (links && links.size > 0) {
     const shiftedLinks = new Map<string, string | null>()
@@ -1096,6 +1228,21 @@ export function recordStructuralOp(
       shiftedLinks.set(next, target)
     }
     journal.hyperlinks.set(sheetId, shiftedLinks)
+  }
+  // Journaled manual page breaks are a screen-space replacement set; a break
+  // sitting on a deleted line disappears with it.
+  const pageSetup = journal.pageSetup.get(sheetId)
+  const breaksKey = axis === 'row' ? 'rowBreaks' : 'colBreaks'
+  const breaks = pageSetup?.[breaksKey]
+  if (pageSetup && breaks !== undefined) {
+    const moved = [
+      ...new Set(
+        breaks
+          .map(movePosition)
+          .filter((position): position is number => position !== null && position > 0),
+      ),
+    ].sort((a, b) => a - b)
+    journal.pageSetup.set(sheetId, { ...pageSetup, [breaksKey]: moved })
   }
   // Session visuals and pending chart edits follow the same shift: the save
   // appends/applies them after the file's own structural pass, so they must
@@ -1139,6 +1286,150 @@ export function toSaveStructuralOps(journal: EditJournal): WorkbookStructuralOp[
     for (const op of sheetOps) ops.push({ sheetId, ...op })
   }
   return ops
+}
+
+export interface BulkConstantFillRecord {
+  readonly fill: JournalBulkConstantFill
+  /// The value entries the fill superseded, as plain data: the fill's undo
+  /// must put them back or undoing the fill would also revert the clear/copy
+  /// that preceded it.
+  readonly purgedCells: JournalEntry[]
+}
+
+export function recordBulkConstantFill(
+  journal: EditJournal,
+  fill: WorkbookBulkConstantFill,
+): BulkConstantFillRecord {
+  const entry: JournalBulkConstantFill =
+    'journalId' in fill && typeof fill.journalId === 'number'
+      ? (fill as JournalBulkConstantFill)
+      : { ...fill, journalId: ++bulkConstantFillSequence }
+  const fills = journal.bulkConstantFills.get(fill.sheetId) ?? []
+  fills.push(entry)
+  journal.bulkConstantFills.set(fill.sheetId, fills)
+  // Earlier per-cell value entries under the fill (a clear_range that emptied
+  // the column, a stale write) must not outlive it: reads give cell entries
+  // priority and the save planner applies them after fills, so leaving them
+  // in place silently reverts the filled cells. Drop their value part; keep
+  // styling, which the fill does not touch.
+  const purgedCells: JournalEntry[] = []
+  const cells = journal.cells.get(fill.sheetId)
+  if (cells) {
+    for (const [key, cell] of cells) {
+      if (
+        !cell.hasValue ||
+        cell.row < fill.startRow ||
+        cell.row > fill.endRow ||
+        cell.column < fill.startColumn ||
+        cell.column > fill.endColumn
+      )
+        continue
+      purgedCells.push(cell)
+      if (cell.style !== undefined || cell.styleReset !== undefined) {
+        cells.set(key, {
+          row: cell.row,
+          column: cell.column,
+          hasValue: false,
+          value: null,
+          ...(cell.style === undefined ? {} : { style: cell.style }),
+          ...(cell.styleReset === undefined ? {} : { styleReset: cell.styleReset }),
+        })
+      } else {
+        cells.delete(key)
+      }
+    }
+  }
+  return { fill: entry, purgedCells }
+}
+
+/// Reinstates entries a bulk fill purged, when that fill is undone.
+export function restoreJournalCells(
+  journal: EditJournal,
+  sheetId: string,
+  entries: readonly JournalEntry[],
+): void {
+  if (entries.length === 0) return
+  let cells = journal.cells.get(sheetId)
+  if (!cells) {
+    cells = new Map()
+    journal.cells.set(sheetId, cells)
+  }
+  for (const entry of entries) cells.set(`${entry.row}:${entry.column}`, entry)
+}
+
+export function removeBulkConstantFill(journal: EditJournal, fill: WorkbookBulkConstantFill): void {
+  const fills = journal.bulkConstantFills.get(fill.sheetId)
+  if (!fills) return
+  const journalId =
+    'journalId' in fill && typeof fill.journalId === 'number' ? fill.journalId : undefined
+  if (journalId === undefined) {
+    const at = fills.lastIndexOf(fill as JournalBulkConstantFill)
+    if (at >= 0) fills.splice(at, 1)
+  } else {
+    for (let at = fills.length - 1; at >= 0; at -= 1) {
+      if (fills[at]?.journalId === journalId) fills.splice(at, 1)
+    }
+  }
+  if (fills.length === 0) journal.bulkConstantFills.delete(fill.sheetId)
+}
+
+export function toSaveBulkConstantFills(journal: EditJournal): WorkbookBulkConstantFill[] {
+  const fills: WorkbookBulkConstantFill[] = []
+  for (const [sheetId, entries] of journal.bulkConstantFills) {
+    if (isSheetRemoved(journal, sheetId)) continue
+    for (const { journalId: _journalId, ...fill } of entries) fills.push(fill)
+  }
+  return fills
+}
+
+/// Ordered range fills use last-write-wins semantics; an explicit per-cell
+/// journal entry always wins because it represents a later/specific edit.
+export function bulkConstantFillValueAt(
+  journal: EditJournal,
+  sheetId: string,
+  row: number,
+  column: number,
+): { found: true; value: WorkbookBulkConstantFill['value'] } | { found: false } {
+  if (journal.cells.get(sheetId)?.get(`${row}:${column}`)?.hasValue) return { found: false }
+  const fills = journal.bulkConstantFills.get(sheetId)
+  if (!fills) return { found: false }
+  for (let at = fills.length - 1; at >= 0; at -= 1) {
+    const fill = fills[at]
+    if (
+      fill &&
+      row >= fill.startRow &&
+      row <= fill.endRow &&
+      column >= fill.startColumn &&
+      column <= fill.endColumn
+    ) {
+      return { found: true, value: fill.value }
+    }
+  }
+  return { found: false }
+}
+
+export function journalCellContentAt(
+  journal: EditJournal,
+  sheetId: string,
+  row: number,
+  column: number,
+):
+  | {
+      found: true
+      value: WorkbookBulkConstantFill['value']
+      formula: string | null
+    }
+  | { found: false } {
+  const entry = journal.cells.get(sheetId)?.get(`${row}:${column}`)
+  if (entry?.hasValue) {
+    return {
+      found: true,
+      value: entry.value,
+      formula: entry.formula ?? null,
+    }
+  }
+  const fill = bulkConstantFillValueAt(journal, sheetId, row, column)
+  return fill.found ? { found: true, value: fill.value, formula: null } : fill
 }
 
 /// Ingests a `sheet.mutation.set-range-values` payload. Returns the entries
@@ -1590,14 +1881,7 @@ export function fromNeutralStyle(style: WorkbookStyleEdit): Record<string, unkno
   }
   if (style.wrapText !== undefined) s.tb = style.wrapText ? 3 : null
   if (style.textRotation !== undefined) {
-    s.tr =
-      style.textRotation === 0
-        ? null
-        : style.textRotation === 255
-          ? { a: 0, v: 1 }
-          : style.textRotation > 90
-            ? { a: 90 - style.textRotation }
-            : { a: style.textRotation }
+    s.tr = ooxmlTextRotationToUniver(style.textRotation)
   }
   if (style.numberFormat !== undefined) s.n = { pattern: style.numberFormat }
   if (style.indent !== undefined) {
@@ -1674,6 +1958,12 @@ export function journalSize(journal: EditJournal): number {
     if (!isSheetRemoved(journal, sheetId)) total += 1
   }
   if (journal.definedNames.dirty) total += 1
+  if (journal.workbookProtection.desired !== null) total += 1
+  for (const sheetId of journal.protectedRangesDirty) {
+    if (!isSheetRemoved(journal, sheetId)) total += 1
+  }
+  if (journal.theme.colors !== undefined) total += 1
+  if (journal.theme.fonts !== undefined) total += 1
   for (const [sheetId, state] of journal.pageSetup) {
     if (!isSheetRemoved(journal, sheetId) && Object.keys(state).length > 0) total += 1
   }
@@ -1689,6 +1979,9 @@ export function journalSize(journal: EditJournal): number {
   }
   for (const [sheetId, sheetEntries] of journal.cells) {
     if (!isSheetRemoved(journal, sheetId)) total += sheetEntries.size
+  }
+  for (const [sheetId, fills] of journal.bulkConstantFills) {
+    if (!isSheetRemoved(journal, sheetId)) total += fills.length
   }
   return total
 }

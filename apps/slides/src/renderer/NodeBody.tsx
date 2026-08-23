@@ -21,6 +21,10 @@ import type {
 import {
   featheredImage,
   fillToKonva,
+  processedImage,
+  processedImageKey,
+  flatColorImage,
+  isDegenerateImage,
   strokeToKonva,
   shadowToKonva,
   cropToKonva,
@@ -41,6 +45,9 @@ export interface NodeBodyProps {
   hideText?: boolean
   /** Table cell being edited (model coordinates): skip drawing that cell's text */
   hideCellText?: { row: number; col: number }
+  /** Accumulated mirror parity from flipped ancestor groups (their transform also mirrors this node's text) */
+  flipHInherited?: boolean
+  flipVInherited?: boolean
 }
 
 /**
@@ -52,6 +59,8 @@ export const NodeBody = React.memo(function NodeBody({
   images,
   hideText,
   hideCellText,
+  flipHInherited,
+  flipVInherited,
 }: NodeBodyProps) {
   const { box } = node
 
@@ -61,7 +70,13 @@ export const NodeBody = React.memo(function NodeBody({
     return (
       <Group>
         {g.children.map((c) => (
-          <StaticNode key={c.id} node={c} images={images} />
+          <StaticNode
+            key={c.id}
+            node={c}
+            images={images}
+            flipHInherited={!!box.flipH !== !!flipHInherited}
+            flipVInherited={!!box.flipV !== !!flipVInherited}
+          />
         ))}
       </Group>
     )
@@ -69,22 +84,33 @@ export const NodeBody = React.memo(function NodeBody({
 
   if (node.type === 'picture') {
     const pic = node as PictureRenderNode
-    const img = pic.dataUrl ? images.get(pic.dataUrl) : undefined
+    const rawImg = pic.dataUrl ? images.get(pic.dataUrl) : undefined
+    // clrChange/duotone recolor the pixels; the derived key keeps processed variants out of raw cache slots
+    const srcKey = processedImageKey(pic.dataUrl ?? '', pic.clrChange, pic.duotone, pic.lum)
+    const procImg =
+      rawImg && (pic.clrChange || pic.duotone || pic.lum)
+        ? (processedImage(
+            rawImg,
+            pic.dataUrl ?? '',
+            pic.clrChange,
+            pic.duotone,
+            pic.lum,
+          ) as HTMLImageElement)
+        : rawImg
+    // ≤2×2 pictures stretch to one flat color in PowerPoint (crop is meaningless there)
+    const tiny = !!procImg && isDegenerateImage(procImg)
+    const img = procImg && tiny ? (flatColorImage(procImg, srcKey) as HTMLImageElement) : procImg
     const clip = pic.clip
     const image = img ? (
       <KImage
         image={
           pic.softEdgePx && img.width
-            ? featheredImage(
-                img,
-                pic.dataUrl ?? '',
-                pic.softEdgePx * (img.width / Math.max(box.w, 1)),
-              )
+            ? featheredImage(img, srcKey, pic.softEdgePx * (img.width / Math.max(box.w, 1)))
             : img
         }
         width={box.w}
         height={box.h}
-        {...cropToKonva(pic, img)}
+        {...(tiny ? {} : cropToKonva(pic, img))}
         {...(pic.opacity != null ? { opacity: pic.opacity } : {})}
         {...(clip ? {} : { ...strokeToKonva(pic.stroke), ...shadowToKonva(pic.shadow, pic.glow) })}
       />
@@ -126,6 +152,11 @@ export const NodeBody = React.memo(function NodeBody({
               ctx.closePath()
             }}
           >
+            {/* spPr fill: PowerPoint always paints it behind the image, even a translucent one */}
+            {pic.fill &&
+              outline({ ...fillToKonva(pic.fill, box.w, box.h, images, { x: box.x, y: box.y }) })}
+            {/* Backdrop only for fully opaque previews: with partial opacity the two alphas would stack */}
+            {pic.bgColor && (pic.opacity ?? 1) >= 1 && outline({ fill: pic.bgColor })}
             {image}
           </Group>
           {'stroke' in strokeProps && outline({ ...strokeProps, fillEnabled: false })}
@@ -135,6 +166,18 @@ export const NodeBody = React.memo(function NodeBody({
     }
     return (
       <>
+        {/* spPr fill: PowerPoint always paints it behind the image, even a translucent one */}
+        {pic.fill && (
+          <Rect
+            width={box.w}
+            height={box.h}
+            {...fillToKonva(pic.fill, box.w, box.h, images, { x: box.x, y: box.y })}
+          />
+        )}
+        {/* Backdrop only for fully opaque previews: with partial opacity the two alphas would stack */}
+        {pic.bgColor && img && (pic.opacity ?? 1) >= 1 && (
+          <Rect width={box.w} height={box.h} fill={pic.bgColor} />
+        )}
         {image}
         {pic.media && <MediaBadge kind={pic.media} w={box.w} h={box.h} />}
       </>
@@ -143,8 +186,19 @@ export const NodeBody = React.memo(function NodeBody({
 
   if (node.type === 'table') {
     const table = node as TableRenderNode
+    const tblW = table.gridX[table.gridX.length - 1] ?? node.box.w
+    const tblH = table.gridY[table.gridY.length - 1] ?? node.box.h
     return (
       <>
+        {table.bgFill && (
+          <Rect
+            x={0}
+            y={0}
+            width={tblW}
+            height={tblH}
+            {...fillToKonva(table.bgFill, tblW, tblH, images, { x: box.x, y: box.y })}
+          />
+        )}
         {table.cells.map((cell, i) => {
           const cellGlyphs =
             hideCellText && cell.row === hideCellText.row && cell.col === hideCellText.col
@@ -157,7 +211,10 @@ export const NodeBody = React.memo(function NodeBody({
                 y={cell.y}
                 width={cell.w}
                 height={cell.h}
-                {...fillToKonva(cell.fill, cell.w, cell.h, images)}
+                {...fillToKonva(cell.fill, cell.w, cell.h, images, {
+                  x: box.x + cell.x,
+                  y: box.y + cell.y,
+                })}
               />
               {cell.borders?.t && (
                 <Line
@@ -215,6 +272,14 @@ export const NodeBody = React.memo(function NodeBody({
                   {...(g.stroke
                     ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
                     : {})}
+                  {...(g.shadowEnabled
+                    ? {
+                        shadowColor: g.shadowColor,
+                        shadowBlur: g.shadowBlur,
+                        shadowOffsetX: g.shadowOffsetX,
+                        shadowOffsetY: g.shadowOffsetY,
+                      }
+                    : {})}
                 />
               ))}
             </React.Fragment>
@@ -255,8 +320,8 @@ export const NodeBody = React.memo(function NodeBody({
 
   // shape / text
   const shape = node as ShapeRenderNode
-  const fillProps = fillToKonva(shape.fill, box.w, box.h, images)
-  const strokeProps = strokeToKonva(shape.stroke)
+  const fillProps = fillToKonva(shape.fill, box.w, box.h, images, { x: box.x, y: box.y })
+  const strokeProps = strokeToKonva(shape.stroke, { w: box.w, h: box.h })
   const shadowProps = shadowToKonva(shape.shadow, shape.glow)
   const glyphs = hideText ? [] : shapeGlyphs(shape)
 
@@ -357,7 +422,28 @@ export const NodeBody = React.memo(function NodeBody({
   }
 
   let geom: React.ReactNode
-  if (shape.pathData || shape.fillPathData || shape.strokePathData) {
+  if (shape.extrusion) {
+    // scene3d/sp3d extrusion: pre-projected shaded faces in painter order replace the flat geometry
+    geom = (
+      <>
+        {shape.extrusion.faces.map((f, i) => (
+          <Path
+            key={i}
+            data={f.path}
+            {...(f.front
+              ? fillProps
+              : f.color === 'transparent'
+                ? { fillEnabled: false }
+                : { fill: normalizeColor(f.color) })}
+            {...(f.stroke
+              ? { stroke: normalizeColor(f.stroke), strokeWidth: f.strokeWidthPx ?? 1 }
+              : {})}
+            lineJoin="round"
+          />
+        ))}
+      </>
+    )
+  } else if (shape.pathData || shape.fillPathData || shape.strokePathData) {
     // custGeom / arc-type presets: SVG path (local px; flip/rot handled by the outer container)
     geom = (
       <>
@@ -414,47 +500,167 @@ export const NodeBody = React.memo(function NodeBody({
     )
   }
 
+  // fillOverlay: PowerPoint blends the overlay against the shape's own fill in isolation.
+  // Approximation: an opaque white underlay + base fill + overlay with multiply — where the
+  // base fill is absent/translucent the multiply hits white (= plain overlay color) instead
+  // of bleeding in whatever lies under the shape.
+  let overlayUnder: React.ReactNode = null
+  let overlayGeom: React.ReactNode = null
+  // Extrusion replaces the flat geometry, so a flat-geometry overlay would paint over the
+  // 3D faces — the base fill already went through scene3d shading, skip the overlay.
+  if (shape.fillOverlay && !shape.extrusion) {
+    const oProps = fillToKonva(shape.fillOverlay, box.w, box.h, images, { x: box.x, y: box.y })
+    const sameGeom = (props: Record<string, unknown>): React.ReactNode => {
+      const common = { listening: false, ...props }
+      if (shape.fillPathData || shape.pathData)
+        return <Path data={(shape.fillPathData ?? shape.pathData)!} {...common} />
+      if (shape.polygonPoints) return <Line points={shape.polygonPoints} closed {...common} />
+      if (presetToShapeKind(shape.presetGeometry) === 'ellipse')
+        return (
+          <Ellipse
+            x={box.w / 2}
+            y={box.h / 2}
+            radiusX={box.w / 2}
+            radiusY={box.h / 2}
+            {...common}
+          />
+        )
+      return (
+        <Rect width={box.w} height={box.h} cornerRadius={shape.cornerRadiusPx ?? 0} {...common} />
+      )
+    }
+    overlayUnder = sameGeom({ fill: '#ffffff' })
+    const isEllipse =
+      !shape.fillPathData &&
+      !shape.pathData &&
+      !shape.polygonPoints &&
+      presetToShapeKind(shape.presetGeometry) === 'ellipse'
+    overlayGeom = sameGeom({
+      ...(isEllipse ? centerFillProps(oProps, box.w, box.h) : oProps),
+      globalCompositeOperation: 'multiply' as const,
+    })
+  }
+
   return (
     <>
       {/* Text is drawn as individual glyph runs, so line spacing and insets otherwise
           have no hit area. Cover every text-bearing shape (including round/custom
           geometry) so clicks inside its text frame cannot reach a picture underneath. */}
       {needsTextFrameHitArea(shape) && <Rect width={box.w} height={box.h} fill="transparent" />}
+      {overlayUnder}
       {geom}
-      {/* Text highlight backgrounds: all rects first so a run's highlight never covers a neighbor's glyphs */}
-      {glyphs.map(
-        (g, i) =>
-          g.highlight && (
-            <Rect
-              key={`hl${i}`}
-              x={(shape.text?.insets.l ?? 0) + g.highlight.x}
-              y={(shape.text?.insets.t ?? 0) + g.highlight.y}
-              width={g.highlight.w}
-              height={g.highlight.h}
-              fill={g.highlight.color}
-              listening={false}
-            />
-          ),
-      )}
-      {glyphs.map((g, i) => (
-        <Text
-          key={i}
-          x={(shape.text?.insets.l ?? 0) + g.x}
-          y={(shape.text?.insets.t ?? 0) + g.y}
-          text={g.text}
-          fontSize={g.fontSize}
-          fontFamily={g.fontFamily}
-          fontStyle={g.fontStyle}
-          textDecoration={g.textDecoration}
-          rotation={g.rotation ?? 0}
-          letterSpacing={g.letterSpacing ?? 0}
-          fill={g.fill}
-          direction={g.direction ?? 'inherit'}
-          {...(g.stroke
-            ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
-            : {})}
-        />
-      ))}
+      {overlayGeom}
+      {/* PowerPoint flips geometry only: text in a flipped shape stays readable. The
+          container Group mirrors everything, so counter-flip the text layer. */}
+      <Group
+        scaleX={!!box.flipH !== !!flipHInherited ? -1 : 1}
+        scaleY={!!box.flipV !== !!flipVInherited ? -1 : 1}
+        x={!!box.flipH !== !!flipHInherited ? box.w : 0}
+        y={!!box.flipV !== !!flipVInherited ? box.h : 0}
+      >
+        {/* Text highlight backgrounds: all rects first so a run's highlight never covers a neighbor's glyphs */}
+        {glyphs.map(
+          (g, i) =>
+            g.highlight && (
+              <Rect
+                key={`hl${i}`}
+                x={(shape.text?.insets.l ?? 0) + g.highlight.x}
+                y={(shape.text?.insets.t ?? 0) + g.highlight.y}
+                width={g.highlight.w}
+                height={g.highlight.h}
+                fill={g.highlight.color}
+                listening={false}
+              />
+            ),
+        )}
+        {/* WordArt text extrusion: dark offset layers behind every glyph; PowerPoint's 3D
+          material also tints the face glyphs with the extrusion color (front stays lighter) */}
+        {shape.text?.extrusion &&
+          glyphs.flatMap((g, i) =>
+            [1, 0.5].map((k) => (
+              <Text
+                key={`x${i}-${k}`}
+                x={(shape.text?.insets.l ?? 0) + g.x + shape.text!.extrusion!.dx * k}
+                y={(shape.text?.insets.t ?? 0) + g.y + shape.text!.extrusion!.dy * k}
+                text={g.text}
+                fontSize={g.fontSize}
+                fontFamily={g.fontFamily}
+                fontStyle={g.fontStyle}
+                rotation={g.rotation ?? 0}
+                letterSpacing={g.letterSpacing ?? 0}
+                fill={normalizeColor(shadeHex(shape.text!.extrusion!.color, 0.7))}
+                listening={false}
+              />
+            )),
+          )}
+        {glyphs.map((g, i) => (
+          <Text
+            key={i}
+            x={(shape.text?.insets.l ?? 0) + g.x}
+            y={(shape.text?.insets.t ?? 0) + g.y}
+            text={g.text}
+            fontSize={g.fontSize}
+            fontFamily={g.fontFamily}
+            fontStyle={g.fontStyle}
+            textDecoration={g.textDecoration}
+            rotation={g.rotation ?? 0}
+            letterSpacing={g.letterSpacing ?? 0}
+            fill={
+              shape.text?.extrusion
+                ? normalizeColor(shadeHex(shape.text.extrusion.color, 0.35))
+                : g.fill
+            }
+            direction={g.direction ?? 'inherit'}
+            {...(g.fillPriority && !shape.text?.extrusion
+              ? {
+                  fillPriority: g.fillPriority,
+                  fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                  fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                  fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+                }
+              : {})}
+            {...(g.stroke
+              ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
+              : {})}
+            {...(g.shadowEnabled
+              ? {
+                  shadowColor: g.shadowColor,
+                  shadowBlur: g.shadowBlur,
+                  shadowOffsetX: g.shadowOffsetX,
+                  shadowOffsetY: g.shadowOffsetY,
+                }
+              : {})}
+          />
+        ))}
+        {/* Reflections: faded mirror below each run (PowerPoint fades it out; approximated flat) */}
+        {glyphs.map(
+          (g, i) =>
+            g.reflection && (
+              <Text
+                key={`rf${i}`}
+                x={(shape.text?.insets.l ?? 0) + g.x}
+                y={(shape.text?.insets.t ?? 0) + g.y + g.fontSize * 1.8}
+                scaleY={-1}
+                text={g.text}
+                fontSize={g.fontSize}
+                fontFamily={g.fontFamily}
+                fontStyle={g.fontStyle}
+                letterSpacing={g.letterSpacing ?? 0}
+                fill={g.fill}
+                opacity={0.15}
+                listening={false}
+                {...(g.fillPriority
+                  ? {
+                      fillPriority: g.fillPriority,
+                      fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                      fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                      fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+                    }
+                  : {})}
+              />
+            ),
+        )}
+      </Group>
     </>
   )
 })
@@ -463,6 +669,17 @@ export const NodeBody = React.memo(function NodeBody({
  * ArrowHead — draws a custom arrowhead (stealth/diamond/oval/arrow) at a polyline's start or end.
  * The arrowhead always faces the segment direction (angle taken from the tangent at the end point).
  */
+/** Darken a #RRGGBB color by factor (extrusion side layers). */
+function shadeHex(color: string, f: number): string {
+  const m = /^#([0-9a-f]{6})/i.exec(color)
+  if (!m) return color
+  const ch = (i: number) =>
+    Math.round(parseInt(m[1]!.slice(i, i + 2), 16) * f)
+      .toString(16)
+      .padStart(2, '0')
+  return `#${ch(0)}${ch(2)}${ch(4)}`
+}
+
 function ArrowHead({
   end,
   pts,
@@ -608,11 +825,21 @@ function MediaBadge({ kind, w, h }: { kind: 'video' | 'audio'; w: number; h: num
  * Statically positioned node: container (position/rotation/flip) + NodeBody.
  * Rotation and flip pivot on the box center (boxPivotProps), matching OOXML.
  */
-export const StaticNode = React.memo(function StaticNode({ node, images }: NodeBodyProps) {
+export const StaticNode = React.memo(function StaticNode({
+  node,
+  images,
+  flipHInherited,
+  flipVInherited,
+}: NodeBodyProps) {
   const { box } = node
   return (
     <Group {...boxPivotProps(box)} listening={false}>
-      <NodeBody node={node} images={images} />
+      <NodeBody
+        node={node}
+        images={images}
+        flipHInherited={flipHInherited}
+        flipVInherited={flipVInherited}
+      />
     </Group>
   )
 })

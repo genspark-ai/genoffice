@@ -913,6 +913,119 @@ describe('AgentLoop compaction', () => {
   })
 })
 
+describe('AgentLoop: verifyResponse (claimed-action guard)', () => {
+  const claimText = (cb: AgentStreamCallbacks) => {
+    cb.onDelta('I have selected the row for you')
+    cb.onDone()
+  }
+
+  it('forces one corrective turn when the final text fails verification', async () => {
+    const transport = scriptedTransport([
+      claimText,
+      (cb) => {
+        cb.onDelta('Sorry — nothing was selected; tell me if you want me to do it')
+        cb.onDone()
+      },
+    ])
+    const verifyResponse = vi.fn().mockReturnValueOnce('[System check] claim not backed by a tool')
+    const onDone = vi.fn()
+    const onTurnEnd = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: { ...makeSkill(), verifyResponse },
+      events: { onDone, onTurnEnd },
+    })
+    loop.run('locate the row')
+    await flush()
+    await flush()
+    expect(verifyResponse).toHaveBeenCalledWith('I have selected the row for you', [])
+    expect(transport.requests).toHaveLength(2)
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'Sorry — nothing was selected; tell me if you want me to do it',
+      }),
+    )
+    // no onTurnEnd on the correction: UIs seal the current assistant bubble on
+    // that event, which would keep the rejected claim visible; the corrective
+    // turn must overwrite the bubble in place instead
+    expect(onTurnEnd).not.toHaveBeenCalled()
+    // history keeps the claim, the corrective instruction, and the fixed reply
+    expect(loop.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect((loop.messages[2] as { text: string }).text).toContain('[System check]')
+  })
+
+  it('lets the corrective turn actually call the missing tool', async () => {
+    const transport = scriptedTransport([
+      claimText,
+      (cb) => {
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('Now it is really selected')
+        cb.onDone()
+      },
+    ])
+    const verifyResponse = vi.fn((_text: string, executed: readonly { name: string }[]) =>
+      executed.some((c) => c.name === 'do_thing') ? null : 'call the tool first',
+    )
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: { ...makeSkill(), verifyResponse },
+      events: { onDone },
+    })
+    loop.run('locate the row')
+    for (let i = 0; i < 4; i++) await flush()
+    expect(transport.requests).toHaveLength(3)
+    // the guard fired once on the unbacked claim; after the corrective turn
+    // ran the tool, the run completed without re-verifying (once per run)
+    expect(verifyResponse).toHaveBeenCalledTimes(1)
+    expect(verifyResponse).toHaveBeenCalledWith('I have selected the row for you', [])
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Now it is really selected' }),
+    )
+  })
+
+  it('applies the correction at most once per run (no loop on a stubborn model)', async () => {
+    const transport = scriptedTransport([claimText, claimText])
+    const verifyResponse = vi.fn().mockReturnValue('still unbacked')
+    const onDone = vi.fn()
+    const loop = new AgentLoop({
+      transport,
+      skill: { ...makeSkill(), verifyResponse },
+      events: { onDone },
+    })
+    loop.run('locate the row')
+    await flush()
+    await flush()
+    expect(verifyResponse).toHaveBeenCalledTimes(1)
+    expect(transport.requests).toHaveLength(2)
+    expect(onDone).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'I have selected the row for you' }),
+    )
+    expect(loop.busy).toBe(false)
+  })
+
+  it('passes successful and failed executions with their ok flag', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: { fail: true } })
+        cb.onDone()
+      },
+      claimText,
+    ])
+    const verifyResponse = vi.fn().mockReturnValue(null)
+    const skill = makeSkill(() => ({ output: 'boom', isError: true, summary: 'failed' }))
+    const loop = new AgentLoop({ transport, skill: { ...skill, verifyResponse } })
+    loop.run('x')
+    for (let i = 0; i < 3; i++) await flush()
+    expect(verifyResponse).toHaveBeenCalledWith('I have selected the row for you', [
+      { name: 'do_thing', ok: false },
+    ])
+  })
+})
+
 describe('composeSkills', () => {
   it('merges prompts, tools and context, and routes execution', async () => {
     const a: AgentSkill = {
@@ -937,6 +1050,31 @@ describe('composeSkills', () => {
     expect(unknown.isError).toBe(true)
   })
 
+  it('reflects a sub-skill whose tools vary at runtime (capability gating)', () => {
+    let enabled = true
+    const base = { name: 'base', description: '', inputSchema: {} }
+    const gated = { name: 'gated', description: '', inputSchema: {} }
+    const skill: AgentSkill = {
+      id: 'dyn',
+      get systemPrompt() {
+        return enabled ? 'with gated' : 'without gated'
+      },
+      get tools() {
+        return enabled ? [base, gated] : [base]
+      },
+      executeTool: () => ({ output: 'ok', summary: '' }),
+    }
+    const composed = composeSkills('x', '', [skill])
+    expect(composed.tools.map((t) => t.name)).toEqual(['base', 'gated'])
+    expect(composed.systemPrompt).toBe('with gated')
+    enabled = false
+    expect(composed.tools.map((t) => t.name)).toEqual(['base'])
+    expect(composed.systemPrompt).toBe('without gated')
+    // a call to the now-hidden tool routes as unknown
+    const result = composed.executeTool({ id: '1', name: 'gated', input: {} })
+    expect(result).toMatchObject({ isError: true })
+  })
+
   it('rejects duplicate tool names', () => {
     const tool = { name: 'same', description: '', inputSchema: {} }
     const make = (id: string): AgentSkill => ({
@@ -945,6 +1083,25 @@ describe('composeSkills', () => {
       tools: [tool],
       executeTool: () => ({ output: '', summary: '' }),
     })
-    expect(() => composeSkills('x', '', [make('a'), make('b')])).toThrow(/duplicate/)
+    // the check moved into the lazy tools getter (tools can vary per request)
+    expect(() => composeSkills('x', '', [make('a'), make('b')]).tools).toThrow(/duplicate/)
+  })
+
+  it('verifyResponse returns the first non-null correction across skills', () => {
+    const make = (id: string, correction: string | null): AgentSkill => ({
+      id,
+      systemPrompt: '',
+      tools: [],
+      executeTool: () => ({ output: '', summary: '' }),
+      verifyResponse: () => correction,
+    })
+    const merged = composeSkills('x', '', [
+      make('a', null),
+      make('b', 'fix from b'),
+      make('c', 'fix from c'),
+    ])
+    expect(merged.verifyResponse?.('text', [])).toBe('fix from b')
+    const clean = composeSkills('y', '', [make('a', null)])
+    expect(clean.verifyResponse?.('text', [])).toBeNull()
   })
 })

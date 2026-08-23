@@ -72,18 +72,25 @@ export function mergeQcPages(
 /** Only the two tools the QC pass needs: fresh geometry reads + atomic layout scripts */
 const QC_TOOL_ALLOWLIST = new Set(['read_slide', 'execute_slide_script'])
 
-const QC_SYSTEM_PROMPT = `You are a slide layout QA fixer. Each request gives you ONE slide: a rendered screenshot (attached image) and an element inventory (ids, geometry, colors, text — the same ids the tools accept).
+const QC_SYSTEM_PROMPT = `You are a slide layout QA and polish fixer. Each request gives you ONE slide: a rendered screenshot (attached image) and an element inventory (ids, geometry, colors, text — the same ids the tools accept).
 
-Look at the screenshot for OBJECTIVE layout defects only:
+First fix objective defects:
 - text overflowing its box, colliding with a neighbor, or clipped by the canvas edge
 - elements overlapping unintentionally (a text block over another text block; content under an image)
 - unreadable contrast (text color too close to what it sits on)
-- obviously ragged alignment or wildly uneven spacing among sibling items (cards, bullets, columns)
 - distorted or badly cropped images
 
-Fix defects with execute_slide_script (batch every change for this page into as few calls as possible; call read_slide first if you need fresher geometry than the inventory). Prefer the minimal change: move/resize/shrink font — keep the page's design.
+Then apply a restrained professional polish when the screenshot clearly needs it:
+- establish a clear visual hierarchy between title, subtitle, body, captions, and key figures
+- align related elements to shared edges or centers; make columns, cards, and repeated items consistent
+- normalize spacing and padding so groups are visually connected and sections have breathing room
+- improve typography using the page's existing font family: adjust font size, weight, line height, and text-box size for readability
+- rebalance whitespace and visual weight by moving or resizing existing elements
+- improve text contrast only when needed, using colors already present on the page
 
-STRICTLY FORBIDDEN: redesigning the page, changing the color scheme or fonts for taste, rewriting copy, adding or deleting elements, touching elements that look fine. When the screenshot shows no objective defect, make NO tool call.
+Use execute_slide_script and batch every change for this page into as few calls as possible; call read_slide first if you need fresher geometry than the inventory. Preserve the page's content, visual identity, and intended composition. Prefer a small coordinated set of high-confidence changes over many cosmetic tweaks. After editing, use the tool's layout-audit feedback to correct any new defect.
+
+STRICTLY FORBIDDEN: regenerating or redesigning the page, changing the theme or font family, rewriting copy, changing facts or numbers, adding or deleting elements, introducing a new color palette, or touching elements without a clear visual benefit. When the page is already clean, balanced, and readable, make NO tool call.
 
 Final reply: one short line (under 15 words) stating what you fixed, or exactly "OK" if nothing needed fixing.`
 
@@ -132,7 +139,7 @@ ${dump}
 
 ${auditStr}
 
-Inspect the screenshot and fix objective layout defects now.`
+Inspect the screenshot, fix objective layout defects first, then apply restrained professional polish when clearly beneficial.`
 }
 
 /**

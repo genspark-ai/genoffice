@@ -13,6 +13,7 @@ import type {
   MarkupType,
   PageImageRef,
   TextEditInput,
+  TextInsertInput,
 } from '../../shared/ipc'
 import { groupPageBlocks } from '../text-block'
 import { joinBlockLines, measurePt, wrapText } from '../text-wrap'
@@ -38,6 +39,8 @@ export interface PdfAiDeps {
   addMarkup(type: MarkupType, origIdx: number, rects: [number, number, number, number][]): void
   /** Queue a pending text edit (dry-run validated against the file when possible); null = accepted, string = rejection reason */
   editText(input: TextEditInput): Promise<string | null>
+  /** Queue a pending insert of a new text object (same pipeline as the UI "add text" tool) */
+  insertText(input: TextInsertInput): void
   /** Edit-font ids available on this machine (EDIT_FONTS subset) */
   editFonts(): string[]
   formEdits(): ReadonlyMap<string, FormValueInput>
@@ -69,6 +72,8 @@ export interface PdfAiDeps {
   /** Queue a pending delete of an existing image */
   deleteImage(ref: PageImageRef): void
   searchImages(query: string, maxResults: number): Promise<ImageSearchResponse>
+  /** live predicate: gsk login && the Genspark-cloud-tools toggle; false hides generate_image */
+  gskTools?(): boolean
   generateImage(op: { prompt: string; aspectRatio?: string }): Promise<{
     url?: string
     error?: string
@@ -210,6 +215,47 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         italic: { type: 'boolean', description: 'Set the paragraph in the italic variant' },
       },
       required: ['page', 'paragraph_text', 'new_text'],
+    },
+  },
+  {
+    name: 'insert_text',
+    description:
+      'Add NEW text to a page (drawn as new content on top of the page; takes effect on save). Use this for blank pages or empty areas — to change text that already exists, use edit_text or edit_block instead. x/y are the TOP-LEFT corner of the text block in points measured from the page top-left as displayed; with no x/y the block is centered horizontally near the top. "\\n" starts a new line; pass max_width to auto-wrap long paragraphs within that width.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        text: { type: 'string', description: 'Text to insert; "\\n" separates lines/paragraphs' },
+        x: {
+          type: 'number',
+          description: 'Left edge of the text block in points from the page left edge',
+        },
+        y: {
+          type: 'number',
+          description: 'Top edge of the text block in points from the page TOP edge',
+        },
+        font_size: { type: 'number', description: 'Font size in PDF points; defaults to 14' },
+        color: { type: 'string', description: 'Text color as #RRGGBB hex; defaults to black' },
+        max_width: {
+          type: 'number',
+          description:
+            'Wrap width in points: paragraphs are re-wrapped to fit; omit to keep the given line breaks as-is',
+        },
+        align: {
+          type: 'string',
+          enum: ['left', 'center', 'right'],
+          description: 'Line alignment within max_width (or the widest line); defaults to left',
+        },
+        font: {
+          type: 'string',
+          enum: ['arial', 'times', 'courier'],
+          description:
+            'Font for the text; ignored when the face lacks glyphs for it (e.g. CJK). Omit for automatic',
+        },
+        bold: { type: 'boolean', description: 'Set the text in the bold variant' },
+        italic: { type: 'boolean', description: 'Set the text in the italic variant' },
+      },
+      required: ['page', 'text'],
     },
   },
   {
@@ -762,6 +808,103 @@ async function editBlock(deps: PdfAiDeps, input: Record<string, unknown>): Promi
   }
 }
 
+/** Insert a brand-new text block (the blank-page counterpart of edit_text/edit_block) */
+async function insertTextTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+): Promise<ToolExecution> {
+  const summary = t('aiToolInsertText', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const geom = deps.pageGeom(r.origIdx)
+  if (!geom) return err('Document not ready', summary)
+  const text = String(input.text ?? '')
+    .replace(/\r\n/g, '\n')
+    .trim()
+  if (!text) return err('text must not be empty', summary)
+
+  const fontSize = input.font_size === undefined ? 14 : Number(input.font_size)
+  if (!(fontSize > 0)) return err('font_size must be a positive number', summary)
+  let color: [number, number, number] = [0, 0, 0]
+  if (input.color !== undefined) {
+    const hex = HEX_COLOR.exec(String(input.color))
+    if (!hex) return err(`Invalid color "${String(input.color)}"; use #RRGGBB`, summary)
+    const v = parseInt(hex[1]!, 16)
+    color = [(v >> 16) & 255, (v >> 8) & 255, v & 255]
+  }
+  const font = input.font === undefined ? undefined : String(input.font)
+  if (font !== undefined && !deps.editFonts().includes(font)) {
+    const avail = deps.editFonts()
+    return err(
+      avail.length > 0
+        ? `Font "${font}" is not available; choose one of: ${avail.join(', ')}`
+        : 'No selectable fonts are available on this machine; omit the font parameter',
+      summary,
+    )
+  }
+  const align = input.align === undefined ? 'left' : String(input.align)
+  if (align !== 'left' && align !== 'center' && align !== 'right')
+    return err("align must be 'left', 'center' or 'right'", summary)
+  const maxWidth = input.max_width === undefined ? undefined : Number(input.max_width)
+  if (maxWidth !== undefined && !(maxWidth > 0))
+    return err('max_width must be a positive number', summary)
+
+  // measure/wrap with the face that will actually be embedded (same as edit_block)
+  const bold = input.bold === true ? true : undefined
+  const italic = input.italic === true ? true : undefined
+  const cssFamily =
+    (font ? EDIT_FONTS.find((f) => f.id === font)?.css : undefined) ??
+    getComputedStyle(document.body).fontFamily
+  const cssStyle = `${italic ? 'italic ' : ''}${bold ? 'bold' : ''}`.trim()
+  const lines = maxWidth
+    ? text
+        .split('\n')
+        .flatMap((p) => (p.trim() ? wrapText(p, maxWidth, fontSize, cssFamily, cssStyle) : ['']))
+    : text.split('\n')
+  const lineWidths = lines.map((l) => measurePt(l, fontSize, cssFamily, cssStyle))
+  const blockW = maxWidth ?? Math.max(...lineWidths, 1)
+  const lineLeading = fontSize * 1.2
+  const blockH = lineLeading * (lines.length - 1) + fontSize * 1.2
+
+  // display-space position (top-left origin, points at scale 1), clamped to the page
+  const size = geomDispSize(geom)
+  let tx = input.x === undefined ? (size.width - blockW) / 2 : Number(input.x)
+  let ty = input.y === undefined ? 72 : Number(input.y)
+  if (!Number.isFinite(tx) || !Number.isFinite(ty))
+    return err('x and y must be numbers (points from the page top-left as displayed)', summary)
+  tx = Math.min(Math.max(tx, 0), Math.max(size.width - blockW, 0))
+  ty = Math.min(Math.max(ty, 0), Math.max(size.height - blockH, 0))
+
+  deps.insertText({
+    pageIndex: r.origIdx,
+    // TextInsertInput.origin is the first-line baseline in PDF user space
+    origin: viewToPdf(geom, tx, ty + fontSize),
+    text: lines.join('\n'),
+    fontSize,
+    color,
+    font,
+    bold,
+    italic,
+    lineLeading,
+    lineXOffsets:
+      align === 'left'
+        ? undefined
+        : lineWidths.map((w) => {
+            const slack = Math.max(0, blockW - w)
+            return align === 'center' ? slack / 2 : slack
+          }),
+    align: align === 'left' ? undefined : align,
+    rotate: ((geom.rot % 360) + 360) % 360,
+  })
+  deps.gotoPage(r.origIdx + 1)
+  return {
+    output: `Inserted ${lines.length} line(s) of text on page ${r.origIdx + 1} at x=${fmt(tx)}, y=${fmt(ty)}, ${fontSize} pt (unsaved; the user can drag/edit it, undo with ⌘Z, save with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
 // ── Image tools ─────────────────────────────────────────────────────
 // Model-facing coordinates are display-space points: what the user sees, with a
 // top-left origin and page rotation applied (viewToPdf/pdfRectToCss, same as the
@@ -1238,6 +1381,8 @@ export async function executePdfTool(
       return editText(deps, input)
     case 'edit_block':
       return editBlock(deps, input)
+    case 'insert_text':
+      return insertTextTool(deps, input)
     case 'image_search':
       return imageSearchTool(deps, input)
     case 'generate_image':

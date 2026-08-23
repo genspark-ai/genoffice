@@ -48,18 +48,36 @@ export function removeCommentFromDoc(editor: Editor, id: string): void {
   const tr = state.tr
   tr.setMeta(TRACK_IGNORE, true)
   state.doc.descendants((node, pos) => {
-    if (!node.isText) return
-    const existing = node.marks.find((m) => m.type === markType)
-    if (!existing) return
-    const ids = String(existing.attrs.ids ?? '')
-      .split(' ')
-      .filter(Boolean)
-    if (!ids.includes(id)) return
-    const remaining = ids.filter((x) => x !== id)
-    const from = pos
-    const to = pos + node.nodeSize
-    if (remaining.length === 0) tr.removeMark(from, to, markType)
-    else tr.addMark(from, to, markType.create({ ids: remaining.join(' ') }))
+    if (node.isText) {
+      const existing = node.marks.find((m) => m.type === markType)
+      if (!existing) return
+      const ids = String(existing.attrs.ids ?? '')
+        .split(' ')
+        .filter(Boolean)
+      if (!ids.includes(id)) return
+      const remaining = ids.filter((x) => x !== id)
+      const from = pos
+      const to = pos + node.nodeSize
+      if (remaining.length === 0) tr.removeMark(from, to, markType)
+      else tr.addMark(from, to, markType.create({ ids: remaining.join(' ') }))
+      return
+    }
+
+    // Cross-paragraph ranges live on block attrs rather than text marks.
+    // Clear both endpoints in the same transaction so a deleted comment can
+    // never be serialized back as orphaned commentRangeStart/End markers.
+    const starts = Array.isArray(node.attrs?.commentStarts)
+      ? (node.attrs.commentStarts as string[])
+      : []
+    const ends = Array.isArray(node.attrs?.commentEnds) ? (node.attrs.commentEnds as string[]) : []
+    if (!starts.includes(id) && !ends.includes(id)) return
+    const remainingStarts = starts.filter((value) => value !== id)
+    const remainingEnds = ends.filter((value) => value !== id)
+    tr.setNodeMarkup(pos, undefined, {
+      ...node.attrs,
+      commentStarts: remainingStarts.length > 0 ? remainingStarts : null,
+      commentEnds: remainingEnds.length > 0 ? remainingEnds : null,
+    })
   })
   if (tr.steps.length > 0) editor.view.dispatch(tr)
 }

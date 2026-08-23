@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { Dropdown } from '@genoffice/ui'
 import { pdfRectToCss } from './annotations'
 import type { PageGeom } from './annotations'
 import type { FormValueInput } from '../shared/ipc'
@@ -115,28 +116,35 @@ export function FormLayer({
         if (w.kind === 'choice') {
           const known = w.options.some((o) => o.exportValue === value)
           const missing = w.required && !value
+          // Unknown current value: keep a disabled entry showing the raw export
+          // value (the native select's hidden empty <option> equivalent) so the
+          // list has no blank clickable row re-committing a bogus value.
+          const options = [
+            ...(known ? [] : [{ value, label: value, disabled: true }]),
+            ...w.options.map((o) => ({ value: o.exportValue, label: o.displayValue })),
+          ]
           return (
-            <select
+            <span
               key={w.id}
-              ref={(element) => registerControl?.(w.id, element)}
+              // Focus (⇥ field navigation) must land on the inner trigger button
+              ref={(element) =>
+                registerControl?.(w.id, element?.querySelector<HTMLElement>('.gs-dd-btn') ?? null)
+              }
               className={`pdf-form-select${missing ? ' is-required-empty' : ''}${active}`}
               style={{ ...style, fontSize: Math.max(9, Math.min(14, style.height * 0.55)) }}
-              disabled={readOnly || w.readOnly}
-              value={value}
-              required={w.required}
-              aria-required={w.required}
-              aria-invalid={missing}
               title={w.fieldName}
               onFocus={() => onFocus?.(w)}
-              onChange={(e) => onEdit({ name: w.fieldName, kind: 'choice', value: e.target.value })}
             >
-              {!known && <option value={value} hidden />}
-              {w.options.map((o, j) => (
-                <option key={j} value={o.exportValue}>
-                  {o.displayValue}
-                </option>
-              ))}
-            </select>
+              <Dropdown
+                value={value}
+                options={options}
+                disabled={readOnly || w.readOnly}
+                ariaLabel={w.fieldName}
+                ariaRequired={w.required || undefined}
+                ariaInvalid={missing || undefined}
+                onPick={(v) => onEdit({ name: w.fieldName, kind: 'choice', value: v })}
+              />
+            </span>
           )
         }
         const fontSize = Math.max(9, Math.min(14, style.height * 0.55))

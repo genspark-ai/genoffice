@@ -45,6 +45,8 @@ function paraStyle(para: HfParagraph): React.CSSProperties {
         ? para.align
         : 'justify'
   }
+  // frame placement wins over the paragraph's own jc (mirrors makeGapHfEl)
+  if (para.frameXAlign) style.textAlign = para.frameXAlign
   if (para.shadingFill) style.backgroundColor = `#${para.shadingFill}`
   if (para.borders) {
     const line = (side: 't' | 'b' | 'l' | 'r') => paraBorderCss(para.borderLines?.[side])
@@ -183,30 +185,32 @@ export function HeaderFooterArea({
         if (!readOnly && !editing) setEditing(true)
       }}
     >
-      {images && images.length > 0 && (
+      {images && images.some((im) => !im.floating) && (
         <div
           className="page-hf-images"
           contentEditable={false}
           style={
-            images[0].align === 'right'
+            images.find((im) => !im.floating)?.align === 'right'
               ? { justifyContent: 'flex-end' }
-              : images[0].align === 'center'
+              : images.find((im) => !im.floating)?.align === 'center'
                 ? { justifyContent: 'center' }
                 : undefined
           }
         >
-          {images.map((img, i) => (
-            <img
-              key={i}
-              src={img.dataUrl}
-              alt=""
-              draggable={false}
-              style={{
-                ...(img.widthPx ? { width: img.widthPx } : {}),
-                ...(img.heightPx ? { height: img.heightPx } : {}),
-              }}
-            />
-          ))}
+          {images
+            .filter((img) => !img.floating)
+            .map((img, i) => (
+              <img
+                key={i}
+                src={img.dataUrl}
+                alt=""
+                draggable={false}
+                style={{
+                  ...(img.widthPx ? { width: img.widthPx } : {}),
+                  ...(img.heightPx ? { height: img.heightPx } : {}),
+                }}
+              />
+            ))}
         </div>
       )}
       {editing ? (
@@ -263,11 +267,28 @@ function HfContent({
                     : {}),
                 }}
               >
-                {cell.runs.length === 0 ? ' ' : null}
-                {cell.runs.map((run, k) => (
-                  <span key={k} style={runStyle(run)}>
-                    {display(run.text)}
-                  </span>
+                {/* one block line per cell paragraph (mirrors makeGapHfEl) */}
+                {(cell.paras.length > 0 ? cell.paras : [[]]).map((runs, k) => (
+                  <div key={k} className="page-hf-cell-para">
+                    {runs.length === 0 ? ' ' : null}
+                    {runs.map((run, l) => (
+                      <span key={l} style={runStyle(run)}>
+                        {run.image && (
+                          <img
+                            className="page-hf-cell-img"
+                            src={run.image.dataUrl}
+                            alt=""
+                            draggable={false}
+                            style={{
+                              ...(run.image.widthPx ? { width: run.image.widthPx } : {}),
+                              ...(run.image.heightPx ? { height: run.image.heightPx } : {}),
+                            }}
+                          />
+                        )}
+                        {display(run.text)}
+                      </span>
+                    ))}
+                  </div>
                 ))}
               </div>
             ))}
@@ -277,7 +298,11 @@ function HfContent({
             const tabbed = hfTabSegments(para)
             if (!tabbed) {
               return (
-                <div key={i} className="page-hf-para" style={paraStyle(para)}>
+                <div
+                  key={i}
+                  className={`page-hf-para${para.frameXAlign ? ' page-hf-frame' : ''}`}
+                  style={paraStyle(para)}
+                >
                   {para.runs.length === 0 ? ' ' : null}
                   {para.runs.map((run, j) => (
                     <span key={j} style={runStyle(run)}>
@@ -290,7 +315,7 @@ function HfContent({
             return (
               <div
                 key={i}
-                className="page-hf-para page-hf-tabbed"
+                className={`page-hf-para page-hf-tabbed${para.frameXAlign ? ' page-hf-frame' : ''}`}
                 style={{
                   ...paraStyle(para),
                   ...(tabbed.minHeightPt ? { minHeight: `${tabbed.minHeightPt}pt` } : {}),

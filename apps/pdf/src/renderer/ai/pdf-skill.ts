@@ -14,17 +14,29 @@ const SYSTEM_PROMPT = `You are GenOffice's PDF assistant, helping the user read,
 - The text passed to markup_text must be a verbatim fragment that actually exists on the page; read first, then mark; one call marks one passage.
 - edit_text replaces text in place without reflowing the page: keep the replacement close to the original length, and edit one short run per call (a phrase or a line). old_text must be verbatim from the page.
 - edit_block rewrites a whole paragraph and reflows it within the paragraph's width (it may grow downward but never pushes other content). Use it when the change affects more than a line's worth of text; paragraph_text must uniquely identify the paragraph.
+- insert_text adds NEW text and never touches existing text — use it to write on blank pages or into empty areas (titles, notes, drafting content from scratch). Position with x/y in points from the page's top-left; pass max_width to auto-wrap paragraphs. A PDF page has no reflow: place blocks yourself and mind the page bounds (a typical A4 page is 595 × 842 pt). For existing text always use edit_text/edit_block instead.
 - To add an image: get a direct URL first (image_search for real photos, generate_image for illustrations/icons), then insert_image. When the user names a location ("next to the title"), position with anchor_text taken verbatim from the page; explicit coordinates are PDF points measured from the page's top-left corner.
 - To move, resize, rotate, replace, or delete an image that is already in the document, call list_page_images first and reference its per-page image numbers. For "change/AI-edit this image": generate_image with the desired edit, then replace_image with the returned URL — never delete + reinsert (that loses the footprint and z-order).
 - Before filling forms, you must call list_form_fields to learn field names, types, and options.
 - All modifications are in an unsaved state; when done, remind the user they can save with ⌘S and undo with ⌘Z.
 - Cite page numbers when quoting document content. Answer in Markdown and keep it concise.`
 
+const GSK_TOOLS_OFF_NOTE =
+  '\n\nNote: generate_image is currently unavailable (Genspark cloud tools are off or the user is signed out). Do not call or promise it; use image_search for imagery.'
+
 export function createPdfSkill(deps: PdfAiDeps): AgentSkill {
   return {
     id: 'pdf',
-    systemPrompt: SYSTEM_PROMPT,
-    tools: AGENT_TOOLS,
+    // live like tools: the off-note overrides the prose that still mentions generate_image
+    get systemPrompt() {
+      return deps.gskTools?.() === false ? SYSTEM_PROMPT + GSK_TOOLS_OFF_NOTE : SYSTEM_PROMPT
+    },
+    // live view: gskTools (login && cloud-tools toggle) is re-read before every model request
+    get tools() {
+      return deps.gskTools?.() === false
+        ? AGENT_TOOLS.filter((t) => t.name !== 'generate_image')
+        : AGENT_TOOLS
+    },
     buildContext: () => {
       const parts = [
         `Current document: "${deps.fileName()}", ${deps.pageCount()} pages; the user is viewing page ${deps.currentPage()}.`,

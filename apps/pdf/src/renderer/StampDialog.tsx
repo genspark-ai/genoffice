@@ -1,12 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK } from './stamps'
 import type { HeaderFooterConfig, WatermarkConfig } from './stamps'
 import type { TFunc } from './i18n/locale'
-import { ColorPalette } from './ColorPalette'
-
-const WM_COLORS = ['#000000', '#ffffff', '#d0342c', '#d4a017', '#2b66ff', '#217346']
-const WM_COLOR_PRESETS = WM_COLORS.map((value) => ({ value }))
+import { ColorPickerPopover } from './ColorPicker'
 
 /** Watermark / header-footer config dialog; on confirm App generates stamps and marks unsaved changes */
 export function StampDialog({
@@ -21,6 +18,26 @@ export function StampDialog({
   const [tab, setTab] = useState<'watermark' | 'hf'>('watermark')
   const [wm, setWm] = useState<WatermarkConfig>(DEFAULT_WATERMARK)
   const [hf, setHf] = useState<HeaderFooterConfig>(DEFAULT_HEADER_FOOTER)
+  const [colorOpen, setColorOpen] = useState(false)
+  const colorWrapRef = useRef<HTMLSpanElement>(null)
+
+  // outside-click / Escape close for the color popover (no blur close: the
+  // native "More Colors" dialog blurs the window while it is open)
+  useEffect(() => {
+    if (!colorOpen) return
+    const onDown = (event: MouseEvent): void => {
+      if (!colorWrapRef.current?.contains(event.target as Node)) setColorOpen(false)
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setColorOpen(false)
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [colorOpen])
 
   const hfUsed =
     hf.pageNumber ||
@@ -111,13 +128,25 @@ export function StampDialog({
             </label>
             <div className="pdf-field">
               <span>{t('drawColor')}</span>
-              <ColorPalette
-                value={wm.color}
-                presets={WM_COLOR_PRESETS}
-                moreColorsLabel={t('moreColors')}
-                onChange={(value) => setWm({ ...wm, color: value })}
-                columns={WM_COLOR_PRESETS.length}
-              />
+              <span ref={colorWrapRef} className="pdf-color-well-wrap">
+                <button
+                  type="button"
+                  className="pdf-color-well"
+                  style={{ background: wm.color }}
+                  aria-label={t('drawColor')}
+                  aria-haspopup="dialog"
+                  aria-expanded={colorOpen}
+                  onClick={() => setColorOpen((v) => !v)}
+                />
+                {colorOpen && (
+                  <ColorPickerPopover
+                    className="pdf-color-well-pop"
+                    value={wm.color}
+                    onPick={(hex) => setWm((prev) => ({ ...prev, color: hex }))}
+                    onClose={() => setColorOpen(false)}
+                  />
+                )}
+              </span>
             </div>
             <div
               className="pdf-wm-preview"

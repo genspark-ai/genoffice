@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readAppSettings, writeAppSetting } from '../src/main/app-settings'
+import { readAppSettings, writeAppSetting, writeAppSettings } from '../src/main/app-settings'
 
 /**
  * userData/app-settings.json helpers (src/main/app-settings.ts): a flat JSON
@@ -69,5 +69,17 @@ describe('writeAppSetting', () => {
     writeFileSync(settingsPath, '{broken')
     writeAppSetting(settingsPath, 'language', 'en')
     expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({ language: 'en' })
+  })
+})
+
+describe('writeAppSettings', () => {
+  it('persists onboarding completion and analytics choice together', () => {
+    writeFileSync(settingsPath, JSON.stringify({ language: 'en' }))
+    writeAppSettings(settingsPath, { onboardingSeen: true, analyticsEnabled: false })
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))).toEqual({
+      language: 'en',
+      onboardingSeen: true,
+      analyticsEnabled: false,
+    })
   })
 })

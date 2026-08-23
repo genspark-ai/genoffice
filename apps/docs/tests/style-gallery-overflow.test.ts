@@ -115,7 +115,10 @@ function ribbonProps(editor: Editor) {
     onRejectRevision: noop,
     onGotoRevision: noop,
     isProtected: false,
-    onToggleProtection: noop,
+    commentsAllowed: false,
+    trackChangesForced: false,
+    protectActive: false,
+    onProtectDoc: noop,
     onCompare: noop,
     filePath: null,
     viewMode: 'print' as const,
@@ -130,9 +133,22 @@ function ribbonProps(editor: Editor) {
   }
 }
 
-function setWidths(el: Element, scrollWidth: number, clientWidth: number) {
-  Object.defineProperty(el, 'scrollWidth', { configurable: true, value: scrollWidth })
-  Object.defineProperty(el, 'clientWidth', { configurable: true, value: clientWidth })
+/**
+ * The gallery wraps whole cards onto a clipped second row; overflow detection
+ * reads each card's offsetTop. jsdom has no layout, so emulate it: the first
+ * `visibleCount` cards sit on row 0, the rest wrap to a second row.
+ */
+function setRowLayout(gallery: Element, visibleCount: number) {
+  const cards = gallery.querySelectorAll<HTMLElement>('.style-card')
+  cards.forEach((card, i) => {
+    const row2 = i >= visibleCount
+    Object.defineProperty(card, 'offsetTop', { configurable: true, value: row2 ? 66 : 0 })
+    Object.defineProperty(card, 'offsetLeft', {
+      configurable: true,
+      value: (row2 ? i - visibleCount : i) * 78,
+    })
+    Object.defineProperty(card, 'offsetWidth', { configurable: true, value: 74 })
+  })
 }
 
 describe('style gallery overflow', () => {
@@ -163,21 +179,25 @@ describe('style gallery overflow', () => {
     expect(container.querySelector('.style-gallery-more')).toBeNull()
   })
 
-  it('shows the expander when cards are clipped and hides it when they fit again', () => {
+  it('shows the expander when cards wrap out of view and hides it when they fit again', () => {
     const gallery = container.querySelector('.style-gallery')!
-    setWidths(gallery, 460, 200)
-    act(() => FakeResizeObserver.fire(gallery))
+    const wrap = gallery.parentElement!
+    setRowLayout(gallery, 2)
+    act(() => FakeResizeObserver.fire(wrap))
     expect(container.querySelector('.style-gallery-more')).not.toBeNull()
+    // the gallery is capped right after the last visible card (2 × 78 - 4 gap)
+    expect((gallery as HTMLElement).style.maxWidth).toBe('152px')
 
-    setWidths(gallery, 460, 460)
-    act(() => FakeResizeObserver.fire(gallery))
+    setRowLayout(gallery, 6)
+    act(() => FakeResizeObserver.fire(wrap))
     expect(container.querySelector('.style-gallery-more')).toBeNull()
+    expect((gallery as HTMLElement).style.maxWidth).toBe('')
   })
 
   it('expander opens a grid with every style, and picking one applies it and closes', () => {
     const gallery = container.querySelector('.style-gallery')!
-    setWidths(gallery, 460, 200)
-    act(() => FakeResizeObserver.fire(gallery))
+    setRowLayout(gallery, 2)
+    act(() => FakeResizeObserver.fire(gallery.parentElement!))
 
     const more = container.querySelector<HTMLButtonElement>('.style-gallery-more')!
     expect(more.getAttribute('aria-label')).toBeTruthy()

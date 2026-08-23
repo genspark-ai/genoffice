@@ -1,4 +1,4 @@
-import type { AgentSkill } from './skill'
+import type { AgentSkill, ExecutedToolCall } from './skill'
 import type {
   AgentImage,
   AgentMessage,
@@ -174,6 +174,10 @@ export class AgentLoop<TSnapshot = unknown> {
   /** raw reasoning/thinking text of the in-flight turn (DeepSeek); undefined until the provider streams any */
   private turnReasoning: string | undefined = undefined
   private toolCalls: AgentToolCall[] = []
+  /** tools actually executed during this run, fed to skill.verifyResponse */
+  private executedCalls: ExecutedToolCall[] = []
+  /** verifyResponse may force one extra corrective turn per run — never more */
+  private verifyRetryUsed = false
   /** user message of the in-flight run; a failed run rolls it (and everything after) back out of history */
   private runUserMsg: AgentMessage | null = null
   /** invalidates stale transport callbacks after cancel/reset */
@@ -240,6 +244,8 @@ export class AgentLoop<TSnapshot = unknown> {
     this.finalizing = false
     this.mutationSeen = false
     this.inputParseFails = 0
+    this.executedCalls = []
+    this.verifyRetryUsed = false
     this.abortController = new AbortController()
     const context = this.options.skill.buildContext?.() ?? ''
     const format =
@@ -513,6 +519,29 @@ export class AgentLoop<TSnapshot = unknown> {
     const { events, skill, captureSnapshot } = this.options
     const toolCalls = this.toolCalls
 
+    // Claimed-action guard: before accepting a final text turn, let the skill
+    // check the claims in it against the tools that actually ran this run.
+    // A returned correction forces one more model turn (tools stay available,
+    // so the model can perform the missing action or reword its claim).
+    if (toolCalls.length === 0 && !this.cancelled && !this.finalizing) {
+      // snapshot copy: the live array keeps growing if the corrective turn
+      // runs more tools, and the hook must see the state at check time
+      const correction =
+        !this.verifyRetryUsed && this.turnText && skill.verifyResponse
+          ? skill.verifyResponse(this.turnText, [...this.executedCalls])
+          : null
+      if (correction) {
+        this.verifyRetryUsed = true
+        this.history.push({ role: 'assistant', text: this.turnText })
+        this.history.push({ role: 'user', text: correction })
+        // No onTurnEnd here: UIs use it to seal the current assistant bubble,
+        // which would keep the rejected claim visible. Without it, the
+        // corrective turn's cumulative onText overwrites the bubble in place.
+        this.startTurn()
+        return
+      }
+    }
+
     // final turn: no tools requested, the user stopped the run, or the
     // no-tools finalizing turn after hitting the limit
     // (a cancelled turn drops its tool calls — no results would follow)
@@ -544,10 +573,16 @@ export class AgentLoop<TSnapshot = unknown> {
       return
     }
 
+    // Strip turn-local execution hints (inputError/truncated) from the stored
+    // history: they are not model context, and transports with strict message
+    // schemas (the Electron IPC bridge) reject unknown tool-call keys when the
+    // history is echoed back on the next turn. The OpenAI-compatible stream
+    // paths attach `inputError: undefined` on every parsed call, so without
+    // this the second turn of any custom-provider agent run fails validation.
     this.history.push({
       role: 'assistant',
       text: this.turnText,
-      toolCalls,
+      toolCalls: toolCalls.map(({ id, name, input }) => ({ id, name, input })),
       ...(this.turnReasoning !== undefined ? { reasoning: this.turnReasoning } : {}),
     })
     const generation = this.generation
@@ -592,6 +627,7 @@ export class AgentLoop<TSnapshot = unknown> {
         }
       }
       if (generation !== this.generation) return // reset while a tool was running
+      this.executedCalls.push({ name: call.name, ok: !execution.isError })
       const firstMutation = !!execution.mutated && !this.mutationSeen
       if (execution.mutated) this.mutationSeen = true
       results.push({

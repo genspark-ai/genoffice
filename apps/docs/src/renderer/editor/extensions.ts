@@ -46,19 +46,31 @@ import {
   patchMathTokens,
   type ChartDisplay,
   type DiagramDisplay,
+  type DocDefaults,
   type FieldDisplay,
   type FormulaDisplay,
   type NewChart,
   type NumberingDef,
+  type Run,
+  type StyleDisplay,
+  type StyleInfo,
   type TableCell,
   type TableModel,
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
-import { bulletMarkerScale, computeListMarkerInfos, type ListItemRef } from './numbering'
+import {
+  bulletMarkerScale,
+  computeListMarkerInfos,
+  markerTabAdvance,
+  type ListItemRef,
+} from './numbering'
 import { symbolFontCovers } from '../font-check'
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
 import { paraBorderCss } from './hf-dom'
 import { PaginationGapsExtension } from './pagination-gaps'
+import { CaretMarksMemory } from './caret-marks'
+import { ColumnLayoutExtension } from './column-layout'
+import { TableHandle } from './table-handle'
 import { TrackChangesExtension } from './revisions'
 import { inlineToRuns, runsToInline, textboxParaSignature, type PmNode as PmJson } from './convert'
 import { constrainTableWidthAtCell } from './table-sizing'
@@ -71,12 +83,14 @@ import { constrainTableWidthAtCell } from './table-sizing'
 
 import {
   CHART_MAX_WIDTH_PX,
+  CHART_TITLE_ROW_PX,
   drawChartSvg,
   renderChartSpec,
   renderFieldSpec,
   renderFormulaSpec,
   renderTableSpec,
   renderTextboxSpec,
+  runSpanSpecs,
   textboxBoxStyle,
   wireChartEditing,
 } from './protected-render'
@@ -100,13 +114,18 @@ import {
   DropCapExtension,
   MoveRevisionExtension,
   PPrChangeExtension,
+  ParaBorderMergeExtension,
+  ParaMarkDelExtension,
   PendingCommentHighlightExtension,
   ResolvedCommentsExtension,
   SdtExtension,
   SearchHighlightExtension,
   TabStopExtension,
+  WsRunLineHeightExtension,
 } from './decoration-extensions'
 import { AutoDirectionExtension } from './direction'
+import { InactiveSelectionExtension } from './inactive-selection'
+import { PageGapNavExtension } from './page-gap-nav'
 export * from './marks'
 export * from './decoration-extensions'
 
@@ -142,6 +161,8 @@ const anchorAttrs = {
   shadingFill: { default: null as string | null },
   /** w:sz (half-points) of the paragraph mark / dropped empty runs; sizes the line of run-less paragraphs */
   emptyRunSize: { default: null as number | null },
+  /** w:rFonts of the paragraph mark / dropped empty runs; faces the line of run-less paragraphs */
+  emptyRunFont: { default: null as string | null },
   /** subset of "tblr": which sides have a single-line border */
   borders: { default: null as string | null },
   /** JSON per-side {color?,szPt?} for `borders` (w:pBdr declared look) */
@@ -156,8 +177,15 @@ const anchorAttrs = {
   moveRevision: { default: null as string | null },
   /** JSON {author,date?,id?} when the paragraph has a pPrChange tracked format change */
   pPrChange: { default: null as string | null },
+  /** JSON {author,date?,id?} when the paragraph mark is a tracked deletion (w:pPr/w:rPr/w:del) */
+  paraMarkDel: { default: null as string | null },
   /** top-level insertion/deletion revision ({kind,author,date?}) */
   blockRevision: { default: null as Record<string, string> | null },
+  /** JSON marks snapshot for an empty block's caret (Word's pilcrow
+      formatting): stamped while the caret holds stored marks in an empty
+      block, restored as storedMarks when the caret re-enters bare — arrow
+      navigation must not drop the pending format (alpha ledger r114) */
+  caretMarks: { default: null as string | null },
 }
 
 /** Max explicit run size (half-points) when *every* text child declares one, else null.
@@ -263,6 +291,79 @@ function paraLineFactor(node: {
   return undeclaredCjk ? `max(${scriptVar}, ${declaredMax})` : String(declaredMax)
 }
 
+/**
+ * Paragraph FORMATTING attrs that survive the clipboard HTML round-trip
+ * (renderHTML emits them as data-para JSON; parseHTML restores them), typed so
+ * a crafted/corrupt payload can't smuggle wrong-typed values into the model.
+ * Identity/anchor attrs stay out on purpose: a pasted paragraph is NEW content,
+ * so docxIndex (save patch anchor), bookmarks, comment endpoints, sdtShell and
+ * revision metadata must not be duplicated by copy/paste (alpha ledger r117).
+ */
+const CLIPBOARD_PARA_ATTR_TYPES: Record<string, 'string' | 'number' | 'boolean'> = {
+  styleId: 'string',
+  align: 'string',
+  lineSpacing: 'number',
+  lineRule: 'string',
+  lineRawTwips: 'number',
+  snapToGrid: 'boolean',
+  indentLeft: 'number',
+  indentRight: 'number',
+  indentFirstLine: 'number',
+  spaceBefore: 'number',
+  spaceAfter: 'number',
+  pageBreakBefore: 'boolean',
+  bidi: 'boolean',
+  autoSpace: 'boolean',
+  shadingFill: 'string',
+  emptyRunSize: 'number',
+  emptyRunFont: 'string',
+  borders: 'string',
+  borderLines: 'string',
+  tabStops: 'string',
+  dropCap: 'string',
+  // docListItem identity (paragraphs never set them; ProseMirror drops attrs
+  // unknown to the parsing node type). numId stays out: a pasted copy pointing
+  // at another document's numbering table would dangle.
+  kind: 'string',
+  ilvl: 'number',
+}
+
+/** data-para payload for a block node, or null when everything is at defaults */
+function clipboardParaPayload(attrs: Record<string, unknown>): string | null {
+  const clip: Record<string, unknown> = {}
+  for (const key of Object.keys(CLIPBOARD_PARA_ATTR_TYPES)) {
+    const v = attrs[key]
+    if (v == null) continue
+    // false IS meaningful for snapToGrid/autoSpace (explicit opt-out); for the
+    // false-by-default flags it's just the default and stays out of the payload
+    if (v === false && (key === 'pageBreakBefore' || key === 'bidi')) continue
+    clip[key] = v
+  }
+  return Object.keys(clip).length > 0 ? JSON.stringify(clip) : null
+}
+
+/** Inverse of clipboardParaPayload for parseHTML getAttrs: restores only
+ *  whitelisted keys whose runtime type matches, null when absent/malformed. */
+export function clipboardParaAttrs(el: HTMLElement): Record<string, unknown> | null {
+  const raw = el.getAttribute?.('data-para')
+  if (!raw) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  const attrs: Record<string, unknown> = {}
+  for (const [key, type] of Object.entries(CLIPBOARD_PARA_ATTR_TYPES)) {
+    const v = (parsed as Record<string, unknown>)[key]
+    if (typeof v !== type) continue
+    if (type === 'number' && !Number.isFinite(v)) continue
+    attrs[key] = v
+  }
+  return Object.keys(attrs).length > 0 ? attrs : null
+}
+
 function blockAttrs(
   node: {
     attrs: Record<string, unknown>
@@ -276,6 +377,10 @@ function blockAttrs(
 ): Record<string, string> {
   const attrs: Record<string, string> = {}
   if (node.attrs.docxIndex !== null) attrs['data-idx'] = String(node.attrs.docxIndex)
+  // paragraph formatting round-trips the clipboard through this attribute:
+  // the CSS below renders it, but nothing parses that CSS back (r117)
+  const clip = clipboardParaPayload(node.attrs)
+  if (clip) attrs['data-para'] = clip
   // per-document style CSS (generated from styles.xml) targets this attribute
   if (node.attrs.styleId) attrs['data-style'] = String(node.attrs.styleId)
   // bookmark jump targets ([data-bookmarks~="name"]; names cannot contain spaces)
@@ -322,9 +427,16 @@ function blockAttrs(
     // line by the runs on it, so the strut must never exceed the inherited size
     const strut = explicitStrutHalfPoints(node)
     if (strut) styles.push(`--doc-strut:${strut / 2}pt`, 'font-size:min(var(--doc-strut), 1em)')
-  } else if (node.attrs.emptyRunSize) {
+  } else if (node.attrs.emptyRunSize || node.attrs.emptyRunFont) {
     // Word sizes an empty line by the paragraph mark / empty run, both directions
-    styles.push(`font-size:${Number(node.attrs.emptyRunSize) / 2}pt`)
+    if (node.attrs.emptyRunSize) styles.push(`font-size:${Number(node.attrs.emptyRunSize) / 2}pt`)
+    // CJK mark faces stay on the document factor: table cells deliberately keep
+    // the Latin factor for empty lines, and KR/JP line height is calibrated
+    // doc-wide — scoping to Western faces fixes their hairline surplus only
+    const fam = node.attrs.emptyRunFont ? String(node.attrs.emptyRunFont) : null
+    if (fam && !isCjkFontName(fam)) {
+      styles.push(`--doc-line-factor:${lineHeightFactor(fam)}`, `font-family:${cssFontFamily(fam)}`)
+    }
   }
   const lh = cssLineHeight(
     (node.attrs.lineRule as 'auto' | 'atLeast' | 'exact' | null) ?? undefined,
@@ -512,6 +624,14 @@ export const DocInlineImage = Node.create({
       widthPx: { default: null as number | null },
       heightPx: { default: null as number | null },
       xml: { default: '' },
+      /** floating (wp:anchor) picture: wrap kind + anchor offsets (display only) */
+      wrap: { default: null as string | null },
+      offsetXEmu: { default: null as number | null },
+      offsetYEmu: { default: null as number | null },
+      /** picture outline (pic:spPr a:ln solid fill, display-only) */
+      border: { default: null as { color: string; widthPt: number } | null },
+      /** positionV line/center: the picture centers on its anchor line (display only) */
+      lineCenterV: { default: false },
     }
   },
   parseHTML() {
@@ -526,6 +646,38 @@ export const DocInlineImage = Node.create({
     const w = Number(node.attrs.widthPx)
     const h = Number(node.attrs.heightPx)
     if (w > 0) attrs.style = `width:${w}px;${h > 0 ? `height:${h}px` : 'height:auto'}`
+    const ib = node.attrs.border as { color: string; widthPt: number } | null
+    if (ib) {
+      // picture outline (document data, not chrome)
+      attrs.style =
+        `${attrs.style ? `${attrs.style};` : ''}border:${((ib.widthPt * 96) / 72).toFixed(1)}px ` +
+        `solid #${String(ib.color).replace(/[^0-9A-Fa-f]/g, '')}`
+    }
+    const wrap = node.attrs.wrap as string | null
+    if (wrap === 'front' || wrap === 'behind') {
+      // no-wrap / behind-text anchor: absolute overlay at the anchor offset from
+      // the run position (zero flow footprint, like Word); behind approximated
+      // by reduced opacity — the flowing canvas has no z layer under the text
+      const left = Number(node.attrs.offsetXEmu ?? 0) / EMU_PER_PX
+      const top = Number(node.attrs.offsetYEmu ?? 0) / EMU_PER_PX
+      attrs.style =
+        `${attrs.style ?? ''};position:absolute;left:${left.toFixed(1)}px;` +
+        `top:${top.toFixed(1)}px;max-width:none`
+      if (wrap === 'behind') attrs.class += ' doc-inline-img--behind'
+      return [
+        'span',
+        { class: 'doc-inline-img-anchor', 'data-inline-image-anchor': '1' },
+        ['img', attrs],
+      ]
+    }
+    // square/tight/through wrap → real CSS float so the surrounding text wraps;
+    // topBottom → block line of its own
+    if (wrap) attrs.class += ` doc-inline-img--wrap-${wrap}`
+    // positionV line/center: lift so the picture centers on the anchor line
+    // (0.75em ≈ half a single-spaced line) instead of hanging below it
+    if (node.attrs.lineCenterV && h > 0) {
+      attrs.style = `${attrs.style ?? ''};margin-top:calc(0.75em - ${(h / 2).toFixed(1)}px)`
+    }
     return ['img', attrs]
   },
 })
@@ -617,13 +769,23 @@ export const DocHardBreak = Node.create({
     return {
       // in-paragraph page break (w:br w:type="page"): the pagination engine breaks after the containing block
       pageBreak: { default: false },
+      // column break (w:br w:type="column"): next column, or next page in a single-column section
+      colBreak: { default: false },
     }
   },
   parseHTML() {
-    return [{ tag: 'br.doc-page-br', attrs: { pageBreak: true } }, { tag: 'br' }]
+    return [
+      { tag: 'br.doc-page-br', attrs: { pageBreak: true } },
+      { tag: 'br.doc-col-br', attrs: { colBreak: true } },
+      { tag: 'br' },
+    ]
   },
   renderHTML({ node }) {
-    return node.attrs.pageBreak ? ['br', { class: 'doc-page-br' }] : ['br']
+    return node.attrs.pageBreak
+      ? ['br', { class: 'doc-page-br' }]
+      : node.attrs.colBreak
+        ? ['br', { class: 'doc-col-br' }]
+        : ['br']
   },
   addKeyboardShortcuts() {
     return {
@@ -640,7 +802,8 @@ export const DocParagraph = Node.create({
     return { ...anchorAttrs }
   },
   parseHTML() {
-    return [{ tag: 'p' }]
+    // getAttrs null = match with defaults (foreign HTML); data-para restores formatting
+    return [{ tag: 'p', getAttrs: (el) => clipboardParaAttrs(el as HTMLElement) }]
   },
   renderHTML({ node }) {
     return ['p', blockAttrs(node), 0]
@@ -655,7 +818,10 @@ export const DocHeading = Node.create({
     return { ...anchorAttrs, level: { default: 1 } }
   },
   parseHTML() {
-    return [1, 2, 3, 4, 5, 6].map((level) => ({ tag: `h${level}`, attrs: { level } }))
+    return [1, 2, 3, 4, 5, 6].map((level) => ({
+      tag: `h${level}`,
+      getAttrs: (el) => ({ level, ...clipboardParaAttrs(el as HTMLElement) }),
+    }))
   },
   renderHTML({ node }) {
     const level = Math.min(Math.max(Number(node.attrs.level) || 1, 1), 6)
@@ -689,7 +855,26 @@ export const DocListItem = Node.create({
         getAttrs: (el) => ({
           kind: (el as HTMLElement).closest('ol') ? 'ordered' : 'bullet',
           ilvl: ilvlOf(el as HTMLElement),
+          ...clipboardParaAttrs(el as HTMLElement),
         }),
+      },
+      // our own clipboard HTML: renderHTML emits <div class="doc-li …">, which
+      // no rule matched before r117 — pasting a GenOffice list item degraded it
+      // to plain text. kind/ilvl ride in data-para; classes are the fallback.
+      {
+        tag: 'div.doc-li',
+        getAttrs: (el) => {
+          const div = el as HTMLElement
+          const attrs = clipboardParaAttrs(div) ?? {}
+          if (attrs.kind === undefined) {
+            attrs.kind = div.classList.contains('doc-li-ordered') ? 'ordered' : 'bullet'
+          }
+          if (attrs.ilvl === undefined) {
+            const m = /(?:^|\s)ilvl-(\d)(?:\s|$)/.exec(div.className)
+            attrs.ilvl = m ? Number(m[1]) : 0
+          }
+          return attrs
+        },
       },
     ]
   },
@@ -771,6 +956,10 @@ interface DocListCommands {
 export interface ListNumberingStorage {
   /** numId -> definition, from the open document's numbering.xml */
   defs: Map<string, NumberingDef>
+  /** style/docDefaults display info: marker measurement reads the same font
+   *  chain the ::before inherits (data-style rule -> .doc-page baseline) */
+  styles?: Map<string, StyleInfo>
+  docDefaults?: DocDefaults
 }
 
 declare module '@tiptap/core' {
@@ -956,6 +1145,59 @@ function firstRunSizeHalfPoints(node: PmNode): number | null {
   return sz
 }
 
+/** the font the ::before marker actually inherits: the item's [data-style] rule,
+ *  else the .doc-page baseline (Normal / docDefaults) — same chain as doc-style-css */
+function markerParagraphFont(
+  styleId: unknown,
+  storage: ListNumberingStorage,
+): { family: string; sizeHalf: number; bold: boolean } {
+  const style = typeof styleId === 'string' ? storage.styles?.get(styleId)?.display : undefined
+  let normal: StyleDisplay | undefined
+  for (const info of storage.styles?.values() ?? []) {
+    if (info.isDefault && info.type === 'paragraph' && info.display) {
+      normal = info.display
+      break
+    }
+  }
+  const dd = storage.docDefaults
+  return {
+    // ascii slot first: dual-slot font-family rules put the Latin face first,
+    // and markers are Latin/digit text
+    family:
+      style?.fontAscii ??
+      style?.font ??
+      normal?.fontAscii ??
+      dd?.asciiFont ??
+      normal?.font ??
+      dd?.eastAsiaFont ??
+      'Calibri',
+    sizeHalf: style?.sizeHalfPoints ?? normal?.sizeHalfPoints ?? dd?.sizeHalfPoints ?? 22,
+    bold: style?.bold ?? normal?.bold ?? dd?.bold ?? false,
+  }
+}
+
+let markerMeasureCtx: CanvasRenderingContext2D | null | undefined
+/** marker advance in twips via canvas metrics; null in DOM-less test envs */
+function measureMarkerTwips(
+  text: string,
+  family: string,
+  sizePt: number,
+  bold: boolean,
+): number | null {
+  if (markerMeasureCtx === undefined) {
+    try {
+      markerMeasureCtx = document.createElement('canvas').getContext('2d')
+    } catch {
+      markerMeasureCtx = null
+    }
+  }
+  if (!markerMeasureCtx) return null
+  const weight = bold ? '600 ' : ''
+  markerMeasureCtx.font = `${weight}${(sizePt * 4) / 3}px "${family.replaceAll('"', '')}", Calibri, sans-serif`
+  const w = markerMeasureCtx.measureText(text).width
+  return Number.isFinite(w) && w > 0 ? Math.round(w * 15) : null
+}
+
 export const ListNumberingExtension = Extension.create<object, ListNumberingStorage>({
   name: 'listNumbering',
   addStorage() {
@@ -1010,8 +1252,40 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
           if (!nodeAttrs.indentFirstLine && level.hanging) {
             styles.push(`--li-hang:${level.hanging / 20}pt`)
           }
-          const szHalf = level.szHalfPoints ?? firstRunSizeHalfPoints(nodes[i].node)
+          const szHalf = level.szHalfPoints ?? firstRunSizeHalfPoints(nodes[i].node) ?? undefined
           if (szHalf) styles.push(`--li-marker-size:${szHalf / 2}pt`)
+          if (level.suff === 'space' || level.suff === 'nothing') attrs['data-suff'] = level.suff
+
+          // Word's default tab after the marker: a marker that escapes the hanging
+          // area (or a level with positive w:firstLine) pushes first-line text to
+          // the next default tab stop, not right up against the marker
+          if (level.suff === undefined || level.suff === 'tab') {
+            const leftTw = Number(nodeAttrs.indentLeft) || level.indentLeft || 0
+            const nodeFirst = Number(nodeAttrs.indentFirstLine) || 0
+            if (leftTw > 0 && nodeFirst <= 0 && text) {
+              const hangTw =
+                nodeFirst < 0
+                  ? -nodeFirst
+                  : level.firstLine
+                    ? -level.firstLine
+                    : (level.hanging ?? 360)
+              // no level/run size -> the marker renders at the li's 1em; family always
+              // inherits from the li (level.font only applies to symbol bullets)
+              const para = markerParagraphFont(nodeAttrs.styleId, storage)
+              const widthTw = measureMarkerTwips(
+                text,
+                para.family,
+                (szHalf ?? para.sizeHalf) / 2,
+                para.bold,
+              )
+              const adv =
+                widthTw !== null ? markerTabAdvance(leftTw - hangTw, widthTw, leftTw) : null
+              if (adv !== null) {
+                if (hangTw < 0) styles.push(`--li-hang:${hangTw / 20}pt`)
+                styles.push(`--li-tab:${adv / 20}pt`)
+              }
+            }
+          }
         }
         if (styles.length > 0) attrs.style = styles.join(';')
         decos.push(Decoration.node(nodes[i].pos, nodes[i].pos + nodes[i].node.nodeSize, attrs))
@@ -1215,8 +1489,11 @@ export const DocTable = Node.create({
       cellMar: { default: null as Record<string, number> | null },
       borders: { default: null as Record<string, unknown> | null },
       tblAlign: { default: null as string | null },
+      tblFloat: { default: null as string | null },
       indentTwips: { default: null as number | null },
       tblStyleId: { default: null as string | null },
+      /** SDT shell JSON when the table is a content-control member (chrome hit-testing) */
+      sdtShell: { default: null as string | null },
       /** RTL table (tblPr w:bidiVisual): columns right to left */
       bidiVisual: { default: false },
       originalStructure: { default: null as string | null },
@@ -1231,6 +1508,8 @@ export const DocTable = Node.create({
     const attrs: Record<string, string> = { class: 'doc-table' }
     if (node.attrs.docxIndex !== null) attrs['data-idx'] = String(node.attrs.docxIndex)
     if (node.attrs.tblStyleId) attrs['data-tbl-style'] = String(node.attrs.tblStyleId)
+    const tblFloated = node.attrs.tblFloat === 'left' || node.attrs.tblFloat === 'right'
+    if (tblFloated) attrs.class += ` doc-table-float-${node.attrs.tblFloat}`
     if (node.attrs.bidiVisual) attrs.dir = 'rtl'
     const styles: string[] = []
     let centerMargin: string | null = null
@@ -1243,13 +1522,14 @@ export const DocTable = Node.create({
     // left-aligned ones spill right; indent comes out of the spill allowance
     else if (node.attrs.widthPx) {
       const widthPx = Number(node.attrs.widthPx)
-      if (node.attrs.tblAlign === 'center') {
+      if (node.attrs.tblAlign === 'center' && !tblFloated) {
         const paper =
           'calc(100% + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))'
         styles.push(`width:min(${widthPx}px,${paper})`)
         centerMargin = `margin-left:calc((100% - min(${widthPx}px,${paper}))/2)`
       } else {
-        const indented = node.attrs.tblAlign !== 'right' && Number(node.attrs.indentTwips) > 0
+        const indented =
+          !tblFloated && node.attrs.tblAlign !== 'right' && Number(node.attrs.indentTwips) > 0
         const indentPx = indented ? Number(node.attrs.indentTwips) / 15 : 0
         const spill = indentPx
           ? `calc(100% + var(--doc-margin-right,0px) - ${indentPx.toFixed(1)}px)`
@@ -1260,7 +1540,11 @@ export const DocTable = Node.create({
     const pad = cellPadCss(node.attrs.cellMar as Record<string, number> | null)
     if (pad) styles.push(`--doc-cell-pad:${pad}`)
     styles.push(...tableBordersCss(node.attrs.borders as TableBordersAttr | null))
-    if (node.attrs.tblAlign === 'center') {
+    // w:tblpPr positioning supersedes w:jc / w:tblInd: alignment or indent
+    // margins would override the float stylesheet's wrap gaps
+    if (tblFloated) {
+      // no alignment/indent margins
+    } else if (node.attrs.tblAlign === 'center') {
       if (centerMargin) styles.push(centerMargin)
       else styles.push('margin-left:auto', 'margin-right:auto')
     } else if (node.attrs.tblAlign === 'right') styles.push('margin-left:auto')
@@ -1336,7 +1620,7 @@ export const DocTableRow = Node.create({
 
 export const DocTableCell = Node.create({
   name: 'docTableCell',
-  content: '(docParagraph | docListItem | docNestedTable)+',
+  content: '(docParagraph | docListItem | docNestedTable | docCellBoxes)+',
   isolating: true,
   addAttributes() {
     return tableCellAttrs
@@ -1351,7 +1635,7 @@ export const DocTableCell = Node.create({
 
 export const DocTableHeader = Node.create({
   name: 'docTableHeader',
-  content: '(docParagraph | docListItem | docNestedTable)+',
+  content: '(docParagraph | docListItem | docNestedTable | docCellBoxes)+',
   isolating: true,
   addAttributes() {
     return tableCellAttrs
@@ -1361,6 +1645,55 @@ export const DocTableHeader = Node.create({
   },
   renderHTML({ node }) {
     return tableCellSpec('th', node)
+  },
+})
+
+/** Anchored shapes/textboxes inside a table cell (display-only): Word renders them
+ *  in the cell and grows the row to hold them, so the wrapper takes the boxes'
+ *  bottom extent as in-flow height (pagination then pushes the row like Word) */
+export const DocCellBoxes = Node.create({
+  name: 'docCellBoxes',
+  atom: true,
+  selectable: false,
+  addAttributes() {
+    return { boxes: { default: null as TextboxDisplay[] | null } }
+  },
+  parseHTML() {
+    return []
+  },
+  renderHTML({ node }) {
+    const boxes = (node.attrs.boxes as TextboxDisplay[] | null) ?? []
+    if (boxes.length === 0) return ['div', { class: 'doc-cell-boxes' }]
+    let bottom = 0
+    for (const b of boxes) {
+      bottom = Math.max(
+        bottom,
+        (b.offsetYEmu ?? 0) / EMU_PER_PX + (b.heightPx ?? b.minHeightPx ?? 0),
+      )
+    }
+    return [
+      'div',
+      {
+        class: 'doc-cell-boxes',
+        contenteditable: 'false',
+        // zero-width leading float: the cell (a BFC) grows to max(text, boxes)
+        // like Word, without displacing the cell's own text
+        style: bottom > 0 ? `height:${bottom.toFixed(1)}px` : '',
+      },
+      // floating boxes self-position from their anchor offsets; in-flow boxes get
+      // the same offsets via a positioned wrapper (Word places both in the cell)
+      ...boxes.map((b): DomSpec => {
+        const spec = renderTextboxSpec(b)
+        if (b.floating) return spec
+        const left = (b.offsetXEmu ?? 0) / EMU_PER_PX
+        const top = (b.offsetYEmu ?? 0) / EMU_PER_PX
+        return [
+          'div',
+          { style: `position:absolute;left:${left.toFixed(1)}px;top:${top.toFixed(1)}px` },
+          spec,
+        ]
+      }),
+    ]
   },
 })
 
@@ -1604,6 +1937,12 @@ export const DocProtected = Node.create({
       imageAlign: { default: null as string | null },
       imageWrap: { default: null as string | null },
       /**
+       * Stacking rank of a floating image among overlapping anchors
+       * (bring-to-front / send-to-back). Written to the anchor's
+       * relativeHeight; higher paints in front. Null = base level.
+       */
+      imageZOrder: { default: null as number | null },
+      /**
        * Free-position offset (EMU) of a floating image with wp:posOffset.
        * Used for drag-to-reposition. Null when the image uses named alignment
        * or is inline.
@@ -1629,6 +1968,9 @@ export const DocProtected = Node.create({
       invisibleMarker: { default: false },
       /** display-only anchored textboxes (code boxes, callout cards) */
       textboxes: { default: null as TextboxDisplay[] | null },
+      /** the anchor paragraph's own runs next to content textboxes (display-only) */
+      strayRuns: { default: null as Run[] | null },
+      strayStyleId: { default: null as string | null },
       /** editable OMML leaf tokens; formula structure remains protected */
       formulaDisplay: { default: null as FormulaDisplay | null },
       /** embedded chart data model; cached texts/numbers editable, structure protected */
@@ -1645,6 +1987,8 @@ export const DocProtected = Node.create({
       imageRotDeg: { default: null as number | null },
       imageFlipH: { default: false },
       imageFlipV: { default: false },
+      /** picture outline (pic:spPr a:ln solid fill, display-only) */
+      imageBorder: { default: null as { color: string; widthPt: number } | null },
       /** replacement bytes for an original image (crop/background removal/replace):
        *  the drawing XML — and with it docxIndex, wrap and position — survives */
       imageReplace: { default: null as { base64: string; mime: string } | null },
@@ -1745,6 +2089,28 @@ export const DocProtected = Node.create({
  */
 function diagramSpecOf(diagram: DiagramDisplay): DomSpec {
   const shapeSpecs: DomSpec[] = diagram.shapes.map((s) => {
+    // connectors (prst=line, zero cx or cy) render as solid rules along the axis
+    if (s.lnHex && (s.wPx <= 0 || s.hPx <= 0)) {
+      const w = Math.max(1, s.lnWPx ?? 1)
+      const style = (
+        s.hPx <= 0
+          ? [
+              `left:${s.xPx}px`,
+              `top:${(s.yPx - w / 2).toFixed(1)}px`,
+              `width:${s.wPx}px`,
+              `height:${w}px`,
+            ]
+          : [
+              `left:${(s.xPx - w / 2).toFixed(1)}px`,
+              `top:${s.yPx}px`,
+              `width:${w}px`,
+              `height:${s.hPx}px`,
+            ]
+      )
+        .concat(`background:#${s.lnHex}`)
+        .join(';')
+      return ['span', { class: 'doc-diagram-shape', style }] as DomSpec
+    }
     const radius =
       s.prst === 'ellipse' || s.prst === 'circle'
         ? '50%'
@@ -1758,6 +2124,9 @@ function diagramSpecOf(diagram: DiagramDisplay): DomSpec {
       `height:${s.hPx}px`,
       `border-radius:${radius}`,
       s.fillHex ? `background:#${s.fillHex}` : '',
+      s.lnHex
+        ? `border:${Math.max(1, s.lnWPx ?? 1)}px solid #${s.lnHex};box-sizing:border-box`
+        : '',
       s.rotDeg ? `transform:rotate(${s.rotDeg}deg)` : '',
       s.fontSizePt ? `font-size:${s.fontSizePt}pt` : '',
       s.textColorHex ? `color:#${s.textColorHex}` : '',
@@ -1802,6 +2171,12 @@ function diagramSpecOf(diagram: DiagramDisplay): DomSpec {
   ]
 }
 
+/** wrapTopAndBottom band bottom (px) for a box at the given (live) height */
+export function textboxBandBottom(box: TextboxDisplay, height = box.heightPx): number {
+  if (box.bandTopPx !== undefined && height !== undefined) return box.bandTopPx + height
+  return box.bandBottomPx ?? 0
+}
+
 /** shared DOM spec for protected blocks (renderHTML + node view) */
 function protectedDomSpec(node: PmNode): DomSpec {
   const {
@@ -1843,27 +2218,60 @@ function protectedDomSpec(node: PmNode): DomSpec {
   }
   if (Array.isArray(textboxes) && textboxes.length > 0) {
     attrs.class += ' doc-protected-textboxes'
+    // paragraph justification centers inline shapes (WordArt) like Word
+    const boxAlign = node.attrs.imageAlign
+    if (boxAlign === 'center' || boxAlign === 'right') {
+      attrs.class += ` doc-protected-boxes-${boxAlign}`
+    }
     const boxes = textboxes as TextboxDisplay[]
     const diagram = node.attrs.diagramDisplay as DiagramDisplay | null
     // every box floats at its own anchor offset (wrapNone / multi-drawing
     // paragraphs): the wrapper leaves the flow like Word instead of stacking
     const allFloating = boxes.every((b) => b.floating) && (!diagram || diagram.floating)
+    const strayRuns = node.attrs.strayRuns as Run[] | null
+    let strayStyle = ''
     if (allFloating) {
       attrs.class += ' doc-protected-floating'
+      // wrapTopAndBottom band: the wrapper reserves flow height down to the
+      // lowest such box bottom so following text resumes below (min-height,
+      // not a sum — stray flow content on the same paragraph must not add)
+      const band = Math.max(0, ...boxes.map((b) => textboxBandBottom(b)))
+      if (band > 0) attrs.style = `min-height:${band}px`
+      // stray text keeps the anchor paragraph's flow line in Word, so the
+      // wrapper must not collapse to height 0 (next block would overlap it)
+      if (strayRuns?.length) attrs.class += ' doc-protected-floating-stray'
     } else {
       const offsetX = node.attrs.imageOffsetXEmu
       const offsetY = node.attrs.imageOffsetYEmu
       if (offsetX != null || offsetY != null) {
-        attrs.style =
-          `transform:translate(${Number(offsetX ?? 0) / EMU_PER_PX}px,` +
-          `${Number(offsetY ?? 0) / EMU_PER_PX}px)`
+        const dx = Number(offsetX ?? 0) / EMU_PER_PX
+        const dy = Number(offsetY ?? 0) / EMU_PER_PX
+        attrs.style = `transform:translate(${dx}px,${dy}px)`
+        // the drawing offset moves the boxes only; stray text stays put
+        strayStyle = `transform:translate(${-dx}px,${-dy}px)`
       }
     }
     const children: DomSpec[] = boxes.map(renderTextboxSpec)
+    // the anchor paragraph's own text (e.g. a heading sharing its paragraph
+    // with a sidebar box) renders as a display-only line before the boxes
+    if (strayRuns?.length) {
+      const strayAttrs: Record<string, string> = { class: 'doc-textbox-stray' }
+      if (strayStyle) strayAttrs.style = strayStyle
+      if (node.attrs.strayStyleId) strayAttrs['data-style'] = String(node.attrs.strayStyleId)
+      children.unshift(['div', strayAttrs, ...strayRuns.flatMap((run) => runSpanSpecs(run))])
+    }
     if (diagram?.shapes?.length) children.push(diagramSpecOf(diagram))
     // corner resize handle; multi-box nodes keep per-box autogrow semantics only
     if (boxes.length === 1 && !diagram) {
       children.push(['span', { class: 'box-resize-handle', contenteditable: 'false' }])
+    }
+    // page-type w:br the anchor paragraph carries next to the boxes: Word keeps
+    // the anchor's flow line, so render the break chip as a stray line (nonzero
+    // height — a zero-height carrier cannot advance the pagination Y coordinate)
+    if ((fieldDisplay as FieldDisplay | null)?.kind === 'pageBreak') {
+      attrs.class += ' doc-protected-floating-stray'
+      const spec = renderFieldSpec(fieldDisplay as FieldDisplay)
+      if (spec) children.push(spec)
     }
     return ['div', attrs, moveHandleSpec(t('editorMoveTextbox')), ...children]
   }
@@ -1898,23 +2306,43 @@ function protectedDomSpec(node: PmNode): DomSpec {
       attrs['style'] = `text-align:${imageAlign}`
     }
     if (imageWrap) attrs.class += ` img-wrap-${String(imageWrap)}`
-    // no-wrap / behind-text floats: approximate the anchor position — margin
-    // alignment via text-align, numeric posOffset via a transform on the INNER
-    // wrap (the outer block's rect feeds pagination measurement, which must
-    // stay at the flow position; transforms leak into getBoundingClientRect)
+    // no-wrap / behind-text anchors leave the flow like floating textboxes:
+    // zero-height wrapper (doc-img-float), absolutely positioned inner wrap
+    // (Word overlays them on the text instead of reserving a line)
     let imgWrapTransform = ''
+    let imgFloatPos = ''
     if (imageWrap === 'front' || imageWrap === 'behind') {
+      attrs.class += ' doc-img-float'
+      // z-index bands keep behind-text pictures under the body text and
+      // front pictures over it, while imageZOrder ranks overlapping anchors
+      // within each band (Word bring-forward / send-back).
+      const z = node.attrs.imageZOrder != null ? Number(node.attrs.imageZOrder) : 0
+      // behind band: negative (below text). front band: >=1 (above text; the
+      // text layer sits at auto/0). Parse compresses wild relativeHeight
+      // values to compact ranks, but the floor still guards the band: the
+      // wrap semantics always win over the rank. No ceiling — the editor
+      // content root is isolated (styles.css), so ranks can never climb
+      // above editor chrome outside it (table handles, menus).
+      const zi = imageWrap === 'behind' ? Math.min(-1, -1000 + z) : Math.max(1, 2 + z)
+      const imgZIndexCss = `;z-index:${Math.round(zi)}`
       const posH = node.attrs.imagePosH
-      if ((posH === 'center' || posH === 'right') && !attrs['style']) {
-        attrs['style'] = `text-align:${String(posH)}`
-      }
       const tx =
         node.attrs.imageOffsetXEmu != null ? Number(node.attrs.imageOffsetXEmu) / EMU_PER_PX : 0
       const ty =
         node.attrs.imageOffsetYEmu != null ? Number(node.attrs.imageOffsetYEmu) / EMU_PER_PX : 0
-      if (tx !== 0 || ty !== 0) {
-        imgWrapTransform = `transform:translate(${tx.toFixed(1)}px,${ty.toFixed(1)}px)`
+      if (posH === 'center') {
+        imgFloatPos = `left:50%;top:${ty.toFixed(1)}px${imgZIndexCss}`
+        imgWrapTransform = 'transform:translateX(-50%)'
+      } else if (posH === 'right') {
+        imgFloatPos = `right:0;top:${ty.toFixed(1)}px${imgZIndexCss}`
+      } else {
+        imgFloatPos = `left:${tx.toFixed(1)}px;top:${ty.toFixed(1)}px${imgZIndexCss}`
       }
+    } else if (imageWrap && node.attrs.imageOffsetYEmu != null) {
+      // wrapped floats keep their flow slot, but a negative vertical anchor
+      // offset lifts the image (Word: logo above its anchor line must not push)
+      const ty = Number(node.attrs.imageOffsetYEmu) / EMU_PER_PX
+      if (ty < 0) imgWrapTransform = `margin-top:${ty.toFixed(1)}px`
     }
     const imgAttrs: Record<string, string> = {
       src: String(imageDataUrl),
@@ -1925,6 +2353,12 @@ function protectedDomSpec(node: PmNode): DomSpec {
         `width:${Number(imageWidthPx)}px;` +
         (imageHeightPx ? `height:${Number(imageHeightPx)}px` : 'height:auto')
     }
+    // picture outline (document data, not chrome): border adds outside the
+    // extent, approximating Word's centered stroke
+    const ib = node.attrs.imageBorder as { color: string; widthPt: number } | null
+    const borderCss = ib
+      ? `border:${((ib.widthPt * 96) / 72).toFixed(1)}px solid #${String(ib.color).replace(/[^0-9A-Fa-f]/g, '')}`
+      : ''
     // DrawingML order: flip mirrors the source, rot turns the result
     // (CSS applies right-to-left, so scale sits last)
     const xf: string[] = []
@@ -1962,7 +2396,9 @@ function protectedDomSpec(node: PmNode): DomSpec {
         `width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;max-width:none`
       // rot/flip turn the whole crop window, not the source inside it
       const wrapXf = [
-        ...(imgWrapTransform ? [imgWrapTransform.slice('transform:'.length)] : []),
+        ...(imgWrapTransform.startsWith('transform:')
+          ? [imgWrapTransform.slice('transform:'.length)]
+          : []),
         ...xf,
       ]
       return [
@@ -1973,7 +2409,7 @@ function protectedDomSpec(node: PmNode): DomSpec {
           'span',
           {
             class: 'doc-img-wrap doc-img-crop',
-            style: `position:relative;display:inline-block;overflow:hidden;width:${W}px;height:${H}px${wrapXf.length ? `;transform:${wrapXf.join(' ')}` : ''}`,
+            style: `position:${imgFloatPos ? `absolute;${imgFloatPos}` : 'relative'};display:inline-block;overflow:hidden;width:${W}px;height:${H}px${wrapXf.length ? `;transform:${wrapXf.join(' ')}` : ''}${imgWrapTransform && !imgWrapTransform.startsWith('transform:') ? `;${imgWrapTransform}` : ''}${borderCss ? `;${borderCss}` : ''}`,
           },
           ['img', imgAttrs],
           ['span', { class: 'img-resize-handle' }],
@@ -1984,6 +2420,9 @@ function protectedDomSpec(node: PmNode): DomSpec {
       imgAttrs['style'] =
         `${imgAttrs['style'] ? `${imgAttrs['style']};` : ''}transform:${xf.join(' ')}`
     }
+    if (borderCss) {
+      imgAttrs['style'] = `${imgAttrs['style'] ? `${imgAttrs['style']};` : ''}${borderCss}`
+    }
     return [
       'div',
       attrs,
@@ -1992,7 +2431,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
         'span',
         {
           class: 'doc-img-wrap',
-          ...(imgWrapTransform ? { style: `display:inline-block;${imgWrapTransform}` } : {}),
+          ...(imgFloatPos || imgWrapTransform
+            ? {
+                style: `${imgFloatPos ? `position:absolute;${imgFloatPos};` : ''}display:inline-block${imgWrapTransform ? `;${imgWrapTransform}` : ''}`,
+              }
+            : {}),
         },
         ['img', imgAttrs],
         ['span', { class: 'img-resize-handle' }],
@@ -2452,6 +2895,7 @@ function textboxDocJson(box: TextboxDisplay): Record<string, unknown> {
   const paras = box.paras.map((para) => ({
     type: 'docParagraph',
     attrs: {
+      styleId: para.styleId ?? null,
       align: para.align ?? null,
       lineSpacing: para.lineSpacing ?? null,
       indentLeft: para.indentLeft ?? null,
@@ -2473,6 +2917,7 @@ function subEditorParas(sub: Editor): TextboxPara[] {
     const para: TextboxPara = { runs: inlineToRuns(p.content ?? []) }
     const attrs = p.attrs ?? {}
     const keys = [
+      'styleId',
       'align',
       'lineSpacing',
       'indentLeft',
@@ -2517,6 +2962,13 @@ function mountTextboxEditors(
   const minHeights = knownBoxes.map((box) => box.minHeightPx ?? box.heightPx)
   const measuredHeights = knownBoxes.map((box) => box.heightPx)
   const resizeFrames: Array<number | undefined> = []
+  // wrapTopAndBottom band on the wrapper must follow autogrow, or the text
+  // below would overlap a box that outgrew its parse-time height
+  const refreshBand = () => {
+    if (!knownBoxes || !dom.classList.contains('doc-protected-floating')) return
+    const band = Math.max(0, ...knownBoxes.map((b, i) => textboxBandBottom(b, measuredHeights[i])))
+    if (band > 0) dom.style.minHeight = `${band}px`
+  }
   const measureBox = (index: number) => {
     const el = boxEls[index]
     const minHeight = minHeights[index]
@@ -2527,6 +2979,7 @@ function mountTextboxEditors(
     const nextHeight = Math.max(minHeight, naturalHeight)
     el.style.height = `${nextHeight}px`
     measuredHeights[index] = nextHeight
+    refreshBand()
   }
   const scheduleMeasure = (index: number) => {
     if (resizeFrames[index] !== undefined) cancelAnimationFrame(resizeFrames[index]!)
@@ -2609,6 +3062,7 @@ function mountTextboxEditors(
       minHeights[i] = box.minHeightPx ?? box.heightPx
       measuredHeights[i] = box.heightPx
     })
+    refreshBand()
   }
 
   dom.addEventListener('focusout', (e) => {
@@ -2702,7 +3156,9 @@ function imageResizePlugin(): Plugin {
                     chartDisplay: {
                       ...display,
                       widthPx: Math.round(w),
-                      heightPx: Math.round(h),
+                      // the handle measures the plot SVG; heightPx spans title row + plot
+                      heightPx:
+                        Math.round(h) + (display.title !== undefined ? CHART_TITLE_ROW_PX : 0),
                     },
                   }),
                 )
@@ -2951,6 +3407,7 @@ const TextboxParagraph = Node.create({
   content: 'inline*',
   addAttributes() {
     return {
+      styleId: { default: null as string | null },
       align: { default: null as string | null },
       lineSpacing: { default: null as number | null },
       indentLeft: { default: null as number | null },
@@ -2969,6 +3426,7 @@ const TextboxParagraph = Node.create({
     const attrs: Record<string, string> = {
       class: `doc-textbox-para${node.content.size === 0 ? ' doc-textbox-para-empty' : ''}`,
     }
+    if (node.attrs.styleId) attrs['data-style'] = String(node.attrs.styleId)
     const styles = [
       node.attrs.align
         ? `text-align:${node.attrs.align === 'distribute' ? 'justify' : node.attrs.align}`
@@ -2994,6 +3452,7 @@ const textboxSubExtensions = [
   DocText,
   DocHardBreak,
   TextboxParagraph,
+  InactiveSelectionExtension,
   BoldMark,
   ItalicMark,
   UnderlineMark,
@@ -3032,6 +3491,7 @@ export const editorExtensions = [
   DocTableCell,
   DocTableHeader,
   DocNestedTable,
+  DocCellBoxes,
   DocProtected,
   BoldMark,
   ItalicMark,
@@ -3050,15 +3510,23 @@ export const editorExtensions = [
   PendingCommentHighlightExtension,
   ResolvedCommentsExtension,
   NativeTableSupport,
+  TableHandle,
   TrackChangesExtension,
   LineFactorExtension,
   ListNumberingExtension,
   PaginationGapsExtension,
+  InactiveSelectionExtension,
+  PageGapNavExtension,
+  CaretMarksMemory,
+  ColumnLayoutExtension,
   TabStopExtension,
+  WsRunLineHeightExtension,
   DropCapExtension,
+  ParaBorderMergeExtension,
   SdtExtension,
   MoveRevisionExtension,
   PPrChangeExtension,
+  ParaMarkDelExtension,
   RevisionOriginalExtension,
   AutoDirectionExtension,
 ]

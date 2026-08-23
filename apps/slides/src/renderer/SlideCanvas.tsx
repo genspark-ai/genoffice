@@ -50,6 +50,7 @@ import {
   type DrawRect,
 } from './draw-shape'
 import { shapePreviewPath } from './components/gallery-previews'
+import { adjustHandleSpecs } from './adjust-handles'
 
 /** Whether a node is a connector (read-only, no Transformer attached). */
 function isConnectorNode(node: RenderNode): boolean {
@@ -309,6 +310,8 @@ interface Props {
   onDrawCommit?: (rect: DrawRect) => void
   /** Draw mode cancelled from inside the canvas (Escape) */
   onDrawCancel?: () => void
+  /** Yellow adjust-handle drag: full avLst map; preview=true during the drag, false on release */
+  onAdjust?: (sourceId: string, adjust: Record<string, number>, preview: boolean) => void
 }
 
 /**
@@ -414,6 +417,96 @@ function applyChromeZoom(tr: Konva.Transformer, zoom: number, nodeCount: number)
   tr.getLayer()?.batchDraw()
 }
 
+/** PowerPoint's adjust-handle yellow — canvas editing chrome, identical in both
+ * themes (like the Transformer's white anchors). */
+const ADJUST_HANDLE_FILL = '#ffc94d'
+const ADJUST_HANDLE_STROKE = '#a97d00'
+
+/**
+ * Yellow adjust handles for the single selected adjustable shape (preset avLst
+ * edit). The handle position derives from the committed node; during a drag it
+ * is pinned imperatively to the constraint path, and onAdjust fires throttled
+ * preview commits (the rebuilt slide re-renders the geometry live) with a final
+ * non-preview commit on release — one whole drag = one undo step.
+ */
+function AdjustHandles({
+  node,
+  zoom,
+  chromeScale,
+  onAdjust,
+}: {
+  node: ShapeRenderNode
+  zoom: number
+  chromeScale: number
+  onAdjust: (adjust: Record<string, number>, preview: boolean) => void
+}) {
+  const specs = adjustHandleSpecs(node)
+  if (!specs.length) return null
+  const b = node.box
+  const val = (k: string, d: number) => node.adjust?.[k] ?? d
+  /** Committed values for every handle key (the engine rewrites the whole avLst) */
+  const fullAdjust = (): Record<string, number> => {
+    const out: Record<string, number> = { ...(node.adjust ?? {}) }
+    for (const sp of specs) for (const k of sp.keys) if (out[k.name] == null) out[k.name] = k.def
+    return out
+  }
+  const rot = ((b.rotationDeg || 0) * Math.PI) / 180
+  const cos = Math.cos(rot)
+  const sin = Math.sin(rot)
+  const toStage = (px: number, py: number) => {
+    const lx = b.flipH ? b.w - px : px
+    const ly = b.flipV ? b.h - py : py
+    const dx = lx - b.w / 2
+    const dy = ly - b.h / 2
+    return { x: b.x + b.w / 2 + dx * cos - dy * sin, y: b.y + b.h / 2 + dx * sin + dy * cos }
+  }
+  const toLocal = (sx: number, sy: number) => {
+    const dx = sx - (b.x + b.w / 2)
+    const dy = sy - (b.y + b.h / 2)
+    let lx = b.w / 2 + dx * cos + dy * sin
+    let ly = b.h / 2 - dx * sin + dy * cos
+    if (b.flipH) lx = b.w - lx
+    if (b.flipV) ly = b.h - ly
+    return { x: lx, y: ly }
+  }
+  const z = Math.max(zoom, 0.1)
+  return (
+    <>
+      {specs.map((spec) => {
+        const p = spec.pos(b.w, b.h, val)
+        const s = toStage(p.x, p.y)
+        const valuesAt = (t: Konva.Node) => {
+          const l = toLocal(t.x(), t.y())
+          return spec.values(b.w, b.h, l.x, l.y, val)
+        }
+        return (
+          <Circle
+            key={spec.keys.map((k) => k.name).join('-')}
+            x={s.x}
+            y={s.y}
+            radius={(5 * chromeScale) / z}
+            fill={ADJUST_HANDLE_FILL}
+            stroke={ADJUST_HANDLE_STROKE}
+            strokeWidth={1 / z}
+            draggable
+            onDragMove={(e) => {
+              const merged = { ...fullAdjust(), ...valuesAt(e.target) }
+              // pin the handle onto its constraint path
+              const np = spec.pos(b.w, b.h, (k, d) => merged[k] ?? d)
+              const ns = toStage(np.x, np.y)
+              e.target.position(ns)
+              onAdjust(merged, true)
+            }}
+            onDragEnd={(e) => {
+              onAdjust({ ...fullAdjust(), ...valuesAt(e.target) }, false)
+            }}
+          />
+        )
+      })}
+    </>
+  )
+}
+
 export function SlideCanvas({
   slide,
   selectedIds,
@@ -436,6 +529,7 @@ export function SlideCanvas({
   drawMode,
   onDrawCommit,
   onDrawCancel,
+  onAdjust,
 }: Props) {
   const trRef = useRef<Konva.Transformer>(null)
   const layerRef = useRef<Konva.Layer>(null)
@@ -456,18 +550,20 @@ export function SlideCanvas({
     return () => window.clearTimeout(t)
   }, [zoom, settledZoom])
 
-  // Bundled @font-face fonts (Carlito) may finish loading after the first draw; canvas
-  // text drawn with a fallback face must be redrawn once the real font is available.
+  // Bundled @font-face fonts (Carlito) and Office-private FontFaces (doc-fonts.ts) may finish
+  // loading after the first draw; canvas text drawn with a fallback face must be redrawn once
+  // the real font is available. 'loadingdone' covers faces added at any later point.
   useEffect(() => {
     let live = true
-    document.fonts?.ready
-      ?.then(() => {
-        if (!live) return
-        for (const l of stageRef.current?.getLayers() ?? []) l.batchDraw()
-      })
-      .catch(() => {})
+    const redraw = () => {
+      if (!live) return
+      for (const l of stageRef.current?.getLayers() ?? []) l.batchDraw()
+    }
+    document.fonts?.ready?.then(redraw).catch(() => {})
+    document.fonts?.addEventListener?.('loadingdone', redraw)
     return () => {
       live = false
+      document.fonts?.removeEventListener?.('loadingdone', redraw)
     }
   }, [])
 
@@ -983,14 +1079,17 @@ export function SlideCanvas({
           // One grip per grid boundary; only boundaries a merged cell spans across are skipped
           const spansX = (b: number) => tbl.cells.some((c) => c.x < b - 0.5 && c.x + c.w > b + 0.5)
           const spansY = (b: number) => tbl.cells.some((c) => c.y < b - 0.5 && c.y + c.h > b + 0.5)
+          // rtl tables render mirrored: gridX stays logical, so visual boundary = width − gridX
+          const tblGridW = tbl.gridX[tbl.gridX.length - 1] ?? n.box.w
+          const visX = (i: number) => (tbl.rtl ? tblGridW - tbl.gridX[i]! : tbl.gridX[i]!)
           return [
-            ...tbl.gridX.slice(1).flatMap((b, col) =>
-              spansX(b)
+            ...tbl.gridX.slice(1).flatMap((_, col) =>
+              spansX(visX(col + 1))
                 ? []
                 : [
                     <Rect
                       key={`colgrip_${col}`}
-                      x={n.box.x + b - 3}
+                      x={n.box.x + visX(col + 1) - 3}
                       y={n.box.y}
                       width={6}
                       height={n.box.h}
@@ -1006,7 +1105,13 @@ export function SlideCanvas({
                         if (st) st.container().style.cursor = 'default'
                       }}
                       onDragEnd={(e) => {
-                        const newW = Math.max(12, e.target.x() + 3 - (n.box.x + tbl.gridX[col]!))
+                        // rtl: the grip is the column's visual-left edge; width grows leftward
+                        const newW = Math.max(
+                          12,
+                          tbl.rtl
+                            ? n.box.x + visX(col) - (e.target.x() + 3)
+                            : e.target.x() + 3 - (n.box.x + tbl.gridX[col]!),
+                        )
                         onTableColResize(n.sourceId, col, newW)
                       }}
                     />,
@@ -1172,6 +1277,24 @@ export function SlideCanvas({
             setSizeMatch(null)
           }}
         />
+        {onAdjust &&
+          selectedIds.length === 1 &&
+          !editingText &&
+          (() => {
+            // Top-level shapes only: entered-group children live in group-local
+            // coordinates, which the handle math doesn't map yet
+            const n = slide.nodes.find((x) => x.sourceId === selectedIds[0])
+            if (!n || (n.type !== 'shape' && n.type !== 'text') || isConnectorNode(n)) return null
+            const id = n.sourceId
+            return (
+              <AdjustHandles
+                node={n as ShapeRenderNode}
+                zoom={zoom}
+                chromeScale={chromeScale}
+                onAdjust={(adjust, preview) => onAdjust(id, adjust, preview)}
+              />
+            )
+          })()}
       </Layer>
     </Stage>
   )
@@ -1409,6 +1532,26 @@ function NodeView({
   /** Node position captured on every transform event: boxPivotProps derives Konva x/y from
    * box.w/h, so a live-preview re-render would otherwise teleport the node mid-gesture. */
   const gesturePosRef = useRef<{ x: number; y: number } | null>(null)
+  // Option+drag ghost: while Alt is held mid-drag, the dragged node becomes the semi-transparent
+  // "copy" (dashed frame) and a static render of the original stays at the source position.
+  const [altDragging, setAltDragging] = useState(false)
+  const altDraggingRef = useRef(false)
+  const setAltDrag = (on: boolean) => {
+    if (altDraggingRef.current === on) return
+    altDraggingRef.current = on
+    setAltDragging(on)
+  }
+  /** Window key listeners active during a drag, so pressing/releasing Alt with a still pointer
+   * still toggles the ghost (drop semantics keep reading Alt from the mouse event on release). */
+  const altKeyCleanupRef = useRef<(() => void) | null>(null)
+  /** Live drag position: the ghost toggle re-renders mid-drag, and the controlled x/y from
+   * boxPivotProps must not teleport the node back to the model position (same idea as gesturePosRef). */
+  const dragPosRef = useRef<{ x: number; y: number } | null>(null)
+  useLayoutEffect(() => {
+    const g = groupRef.current
+    if (g && dragPosRef.current && g.isDragging()) g.position(dragPosRef.current)
+  })
+  useEffect(() => () => altKeyCleanupRef.current?.(), [])
 
   // The Transformer's frame/scale basis defaults to getClientRect() (content bounding box). When text
   // overflows the shape box (autofit off and content too tall), overflowing glyphs inflate the bounding
@@ -1478,7 +1621,22 @@ function NodeView({
       onSelect(node.sourceId, e.evt.shiftKey || e.evt.metaKey)
     },
     onTap: () => onSelect(node.sourceId),
+    onDragStart: () => {
+      dragPosRef.current = null
+      if (!(onDuplicateTo && !multiDrag && !insideGroupId)) return
+      const onKey = (ev: KeyboardEvent) => setAltDrag(ev.altKey)
+      window.addEventListener('keydown', onKey)
+      window.addEventListener('keyup', onKey)
+      altKeyCleanupRef.current = () => {
+        window.removeEventListener('keydown', onKey)
+        window.removeEventListener('keyup', onKey)
+        altKeyCleanupRef.current = null
+      }
+    },
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
+      // Alt held mid-drag = duplicate gesture: show the ghost (Alt can be pressed/released at any time during the drag)
+      setAltDrag(!!(e.evt?.altKey && onDuplicateTo && !multiDrag && !insideGroupId))
+      dragPosRef.current = { x: e.target.x(), y: e.target.y() }
       // Children in in-group editing use a different coordinate system from page snap targets; don't snap
       if (insideGroupId) {
         onDragGuides([])
@@ -1526,9 +1684,13 @@ function NodeView({
       }
       if (fx != null) t.x(raw.x + (fx - bb.x) + box.w / 2)
       if (fy != null) t.y(raw.y + (fy - bb.y) + box.h / 2)
+      dragPosRef.current = { x: t.x(), y: t.y() }
       onDragGuides(snap.guides, indicators)
     },
     onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
+      altKeyCleanupRef.current?.()
+      dragPosRef.current = null
+      setAltDrag(false)
       onDragGuides([])
       const dropX = e.target.x() - box.w / 2
       const dropY = e.target.y() - box.h / 2
@@ -1709,67 +1871,85 @@ function NodeView({
     )
   })()
   return (
-    <Group
-      ref={groupRef}
-      {...common}
-      {...(editable
-        ? {
-            onDblClick: (e: Konva.KonvaEventObject<MouseEvent>) =>
-              onEditText(node.sourceId, { x: e.evt.clientX, y: e.evt.clientY }),
-            onDblTap: () => onEditText(node.sourceId),
+    <>
+      {/* Option+drag: the original stays rendered at the source position while the dragged ghost travels */}
+      {altDragging && <StaticNode key="ghost-src" node={node} images={images} />}
+      <Group
+        key="node"
+        ref={groupRef}
+        opacity={altDragging ? 0.5 : 1}
+        {...common}
+        {...(editable
+          ? {
+              onDblClick: (e: Konva.KonvaEventObject<MouseEvent>) =>
+                onEditText(node.sourceId, { x: e.evt.clientX, y: e.evt.clientY }),
+              onDblTap: () => onEditText(node.sourceId),
+            }
+          : node.type === 'group' && !insideGroupId && onEnterGroup
+            ? { onDblClick: onGroupDblClick, onDblTap: onGroupDblClick }
+            : node.type === 'table' && !insideGroupId
+              ? { onDblClick: onTableDblClick, onDblTap: onTableDblClick }
+              : isMedia && !insideGroupId
+                ? {
+                    onDblClick: () => onPlayMedia!(node.sourceId),
+                    onDblTap: () => onPlayMedia!(node.sourceId),
+                  }
+                : {})}
+      >
+        {/* group children don't take hits (listening=false); add a transparent hit area so the whole group can be selected/dragged */}
+        {node.type === 'group' && <Rect width={box.w} height={box.h} fill="transparent" />}
+        <NodeBody
+          node={node}
+          images={images}
+          hideText={!!editingText && editingText.sourceId === node.sourceId && !editingText.cell}
+          hideCellText={
+            editingText && editingText.sourceId === node.sourceId ? editingText.cell : undefined
           }
-        : node.type === 'group' && !insideGroupId && onEnterGroup
-          ? { onDblClick: onGroupDblClick, onDblTap: onGroupDblClick }
-          : node.type === 'table' && !insideGroupId
-            ? { onDblClick: onTableDblClick, onDblTap: onTableDblClick }
-            : isMedia && !insideGroupId
-              ? {
-                  onDblClick: () => onPlayMedia!(node.sourceId),
-                  onDblTap: () => onPlayMedia!(node.sourceId),
-                }
-              : {})}
-    >
-      {/* group children don't take hits (listening=false); add a transparent hit area so the whole group can be selected/dragged */}
-      {node.type === 'group' && <Rect width={box.w} height={box.h} fill="transparent" />}
-      <NodeBody
-        node={node}
-        images={images}
-        hideText={!!editingText && editingText.sourceId === node.sourceId && !editingText.cell}
-        hideCellText={
-          editingText && editingText.sourceId === node.sourceId ? editingText.cell : undefined
-        }
-      />
-      {/* Multi-select: PowerPoint-style per-element border so every selected element is visibly selected
-          (the shared Transformer only draws one combined box). Lives inside the node group so it follows drags/transforms. */}
-      {multiDrag && !isConnectorNode(node) && (
-        <Rect
-          width={box.w}
-          height={box.h}
-          stroke={selStroke}
-          strokeWidth={selHairline ?? chromeHairline(zoom)}
-          strokeScaleEnabled={false}
-          listening={false}
         />
-      )}
-      {phPrompt &&
-        (() => {
-          const sh = node as ShapeRenderNode
-          const ins = sh.text?.insets ?? { l: 8, t: 4, r: 8, b: 4 }
-          return (
-            <Text
-              text={phPrompt}
-              x={ins.l}
-              y={ins.t}
-              width={Math.max(box.w - ins.l - ins.r, 20)}
-              height={Math.max(box.h - ins.t - ins.b, 16)}
-              align={sh.placeholder === 'body' ? 'left' : 'center'}
-              verticalAlign={sh.text?.anchor ?? (sh.placeholder === 'body' ? 'top' : 'middle')}
-              fontSize={Math.min(28, Math.max(14, box.h * 0.22))}
-              fill="#8e8e93"
-            />
-          )
-        })()}
-    </Group>
+        {/* Multi-select: PowerPoint-style per-element border so every selected element is visibly selected
+          (the shared Transformer only draws one combined box). Lives inside the node group so it follows drags/transforms. */}
+        {multiDrag && !isConnectorNode(node) && (
+          <Rect
+            width={box.w}
+            height={box.h}
+            stroke={selStroke}
+            strokeWidth={selHairline ?? chromeHairline(zoom)}
+            strokeScaleEnabled={false}
+            listening={false}
+          />
+        )}
+        {/* Option+drag ghost: dashed frame marks the travelling copy */}
+        {altDragging && (
+          <Rect
+            width={box.w}
+            height={box.h}
+            stroke={selStroke}
+            strokeWidth={selHairline ?? chromeHairline(zoom)}
+            strokeScaleEnabled={false}
+            dash={[4, 4]}
+            listening={false}
+          />
+        )}
+        {phPrompt &&
+          (() => {
+            const sh = node as ShapeRenderNode
+            const ins = sh.text?.insets ?? { l: 8, t: 4, r: 8, b: 4 }
+            return (
+              <Text
+                text={phPrompt}
+                x={ins.l}
+                y={ins.t}
+                width={Math.max(box.w - ins.l - ins.r, 20)}
+                height={Math.max(box.h - ins.t - ins.b, 16)}
+                align={sh.placeholder === 'body' ? 'left' : 'center'}
+                verticalAlign={sh.text?.anchor ?? (sh.placeholder === 'body' ? 'top' : 'middle')}
+                fontSize={Math.min(28, Math.max(14, box.h * 0.22))}
+                fill="#8e8e93"
+              />
+            )
+          })()}
+      </Group>
+    </>
   )
 }
 

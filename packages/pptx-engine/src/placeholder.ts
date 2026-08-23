@@ -36,12 +36,26 @@ export interface LevelTextStyle {
   /** Character casing <a:defRPr cap>: 'all' | 'small' | 'none' */
   cap?: string
   color?: string
+  /** <a:defRPr><a:effectLst><a:outerShdw> (rare; e.g. watermark text boxes) */
+  shadow?: import('./types').ShadowEffect
   latinFont?: string
   eaFont?: string
   csFont?: string
   align?: TextAlign
   /** Bullet default (master bodyStyle levels commonly use buChar '•') */
-  bullet?: { type: 'none' | 'char' | 'number'; char?: string }
+  bullet?: {
+    type: 'none' | 'char' | 'number'
+    char?: string
+    /** <a:buFont> typeface (symbol fonts like Wingdings) */
+    font?: string
+    color?: string
+    /** <a:buSzPct> (%, 100 = same size as text) */
+    sizePct?: number
+    /** <a:buAutoNum type> (arabicPeriod/romanLcParen…) */
+    numType?: string
+    /** <a:buAutoNum startAt> */
+    startAt?: number
+  }
   /** Paragraph left indent (EMU) */
   marL?: number
   /** First-line indent (EMU, negative = hanging) */
@@ -73,6 +87,10 @@ export interface PlaceholderGeom {
   transform: Transform | null
   /** Default text style from this placeholder txBody's <a:lstStyle> */
   textStyle?: TextStyleLevels
+  /** Vertical anchor from this placeholder's <a:bodyPr anchor=""> */
+  anchor?: 'top' | 'middle' | 'bottom'
+  /** Raw spPr node when it carries an explicit fill (parse.ts resolves it with the part's rels) */
+  fillSpPr?: unknown
 }
 
 /** Placeholder geometry table for one layer (layout or master). */
@@ -82,6 +100,14 @@ export interface PlaceholderMap {
 
 const TITLE_TYPES = new Set(['title', 'ctrTitle'])
 const BODY_TYPES = new Set(['body', 'subTitle', 'obj', ''])
+
+const ANCHOR_MAP: Record<string, PlaceholderGeom['anchor']> = {
+  t: 'top',
+  ctr: 'middle',
+  b: 'bottom',
+}
+
+const FILL_TAGS = ['a:solidFill', 'a:gradFill', 'a:blipFill', 'a:pattFill', 'a:noFill']
 
 function parseXfrmNode(xfrmRaw: unknown): Transform | null {
   if (!xfrmRaw) return null
@@ -128,10 +154,21 @@ export function parsePlaceholderMap(layoutOrMasterXml: string, theme?: Theme): P
     const ph = asXmlNode(phRaw)
     const type = String(ph['@_type'] ?? 'body')
     const idx = ph['@_idx'] != null ? String(ph['@_idx']) : ''
-    const transform = parseXfrmNode(asXmlNode(sp['p:spPr'])['a:xfrm'])
+    const spPr = asXmlNode(sp['p:spPr'])
+    const transform = parseXfrmNode(spPr['a:xfrm'])
     const textStyle = parseLstStyleLevels(asXmlNode(sp['p:txBody'])['a:lstStyle'], theme)
-    if (!transform && !textStyle) continue
-    entries.push({ type, idx, transform, ...(textStyle ? { textStyle } : {}) })
+    const anchorAttr = asXmlNode(asXmlNode(sp['p:txBody'])['a:bodyPr'])['@_anchor']
+    const anchor = ANCHOR_MAP[String(anchorAttr ?? '')]
+    const hasFill = FILL_TAGS.some((tag) => tag in spPr)
+    if (!transform && !textStyle && !anchor && !hasFill) continue
+    entries.push({
+      type,
+      idx,
+      transform,
+      ...(textStyle ? { textStyle } : {}),
+      ...(anchor ? { anchor } : {}),
+      ...(hasFill ? { fillSpPr: spPr } : {}),
+    })
   }
   return { entries }
 }
@@ -192,7 +229,21 @@ function parseLvlPPr(pPrRaw: unknown, theme?: Theme): LevelTextStyle | undefined
   if (pPr['a:buNone'] !== undefined) out.bullet = { type: 'none' }
   else if (buChar != null) {
     out.bullet = { type: 'char', char: decodeAttrCharRefs(String(buChar)) }
-  } else if (pPr['a:buAutoNum']) out.bullet = { type: 'number' }
+  } else if (pPr['a:buAutoNum']) {
+    out.bullet = { type: 'number' }
+    const an = asXmlNode(pPr['a:buAutoNum'])
+    if (an['@_type'] != null) out.bullet.numType = String(an['@_type'])
+    const startAt = parseInt(String(an['@_startAt']), 10)
+    if (Number.isFinite(startAt) && startAt > 1) out.bullet.startAt = startAt
+  }
+  if (out.bullet && out.bullet.type !== 'none') {
+    const buFont = typefaceAttr(pPr['a:buFont'])
+    if (buFont) out.bullet.font = buFont
+    const buColor = resolveColorNode(pPr['a:buClr'], theme)
+    if (buColor) out.bullet.color = buColor
+    const buSz = asXmlNode(pPr['a:buSzPct'])['@_val']
+    if (buSz != null) out.bullet.sizePct = (parseInt(String(buSz), 10) || 0) / 1000
+  }
   if (pPr['@_marL'] != null) {
     const v = parseInt(String(pPr['@_marL']), 10)
     if (!Number.isNaN(v)) out.marL = v
@@ -210,6 +261,20 @@ function parseLvlPPr(pPrRaw: unknown, theme?: Theme): LevelTextStyle | undefined
     if (defRPr['@_cap'] != null) out.cap = String(defRPr['@_cap'])
     const color = resolveColorNode(defRPr['a:solidFill'], theme)
     if (color) out.color = color
+    const shdw = asXmlNode(asXmlNode(defRPr['a:effectLst'])['a:outerShdw'])
+    const shdwColor = resolveColorNode(shdw, theme)
+    if (shdwColor) {
+      const num = (k: string) => {
+        const v = parseInt(String(shdw[k] ?? ''), 10)
+        return Number.isFinite(v) ? v : 0
+      }
+      out.shadow = {
+        color: shdwColor,
+        blurRad: num('@_blurRad'),
+        dist: num('@_dist'),
+        dirDeg: num('@_dir') / 60000,
+      }
+    }
     const latin = resolveFontRef(typefaceAttr(defRPr['a:latin']), theme)
     if (latin) out.latinFont = latin
     const ea = resolveFontRef(typefaceAttr(defRPr['a:ea']), theme)
@@ -227,6 +292,20 @@ export function parseLstStyleLevels(lst: unknown, theme?: Theme): TextStyleLevel
   const levels: Array<LevelTextStyle | undefined> = []
   for (let i = 1; i <= 9; i++) levels[i - 1] = parseLvlPPr(l[`a:lvl${i}pPr`], theme)
   return levels.some(Boolean) ? { levels } : undefined
+}
+
+/** presentation.xml <p:defaultTextStyle> → base defaults for non-placeholder text boxes. */
+export function parseDefaultTextStyle(
+  presentationXml: string,
+  theme?: Theme,
+): TextStyleLevels | undefined {
+  let doc: XmlNode
+  try {
+    doc = asXmlNode(phParser.parse(presentationXml))
+  } catch {
+    return undefined
+  }
+  return parseLstStyleLevels(asXmlNode(doc['p:presentation'])['p:defaultTextStyle'], theme)
 }
 
 /** master <p:txStyles> → default styles for the title/body/other families. */
@@ -269,6 +348,35 @@ function findStyleInMap(
   if (!hit && TITLE_TYPES.has(t)) hit = styled.find((e) => TITLE_TYPES.has(e.type))
   if (!hit && BODY_TYPES.has(t)) hit = styled.find((e) => BODY_TYPES.has(e.type))
   return hit?.textStyle
+}
+
+/** Find the bodyPr anchor in a layer's map by placeholder (type, idx). Unlike
+ *  findStyleInMap there is no idx-only step: master placeholders reuse idx values
+ *  across types (a dt idx="2" must not anchor a body idx="2" to the bottom). */
+function findAnchorInMap(
+  map: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): PlaceholderGeom['anchor'] {
+  if (!map || map.entries.length === 0) return undefined
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  const anchored = map.entries.filter((e) => e.anchor)
+  let hit = anchored.find((e) => e.type === t && e.idx === i)
+  if (!hit) hit = anchored.find((e) => e.type === t)
+  if (!hit && TITLE_TYPES.has(t)) hit = anchored.find((e) => TITLE_TYPES.has(e.type))
+  if (!hit && BODY_TYPES.has(t)) hit = anchored.find((e) => BODY_TYPES.has(e.type))
+  return hit?.anchor
+}
+
+/** Resolve a placeholder's inherited vertical anchor: layout first, master as fallback. */
+export function resolvePlaceholderAnchor(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): PlaceholderGeom['anchor'] {
+  return findAnchorInMap(layout, type, idx) ?? findAnchorInMap(master, type, idx)
 }
 
 /**
@@ -319,6 +427,7 @@ export function mergeTextStyleChain(
     if (out.italic == null && lvl.italic != null) out.italic = lvl.italic
     if (out.cap == null && lvl.cap != null) out.cap = lvl.cap
     if (out.color == null && lvl.color != null) out.color = lvl.color
+    if (out.shadow == null && lvl.shadow != null) out.shadow = lvl.shadow
     if (out.latinFont == null && lvl.latinFont != null) out.latinFont = lvl.latinFont
     if (out.eaFont == null && lvl.eaFont != null) out.eaFont = lvl.eaFont
     if (out.csFont == null && lvl.csFont != null) out.csFont = lvl.csFont
@@ -385,6 +494,40 @@ function findInMap(
   if (BODY_TYPES.has(t)) {
     hit = geo.find((e) => BODY_TYPES.has(e.type))
     if (hit) return hit.transform!
+  }
+  return undefined
+}
+
+/**
+ * Placeholder fill inheritance: the nearest layer (layout, then master) whose matching
+ * placeholder spPr carries an explicit fill — including <a:noFill>, which stops the fallback.
+ * Returns the raw spPr plus its layer so the caller resolves blip rIds in that part's rels.
+ */
+export function resolvePlaceholderFillSpPr(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): { spPr: unknown; layer: 'layout' | 'master' } | undefined {
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  for (const [map, layer] of [
+    [layout, 'layout'],
+    [master, 'master'],
+  ] as const) {
+    if (!map) continue
+    // Match the placeholder first (same order as geometry inheritance), THEN take its
+    // fill. Filtering to fill-carrying entries up front made an unrelated same-type
+    // sibling donate its fill when the true match had none (fed deck: a body ph
+    // picked up a decorative content placeholder's dark fill).
+    const entries = map.entries
+    const hit =
+      entries.find((e) => e.type === t && e.idx === i) ??
+      (i !== '' ? entries.find((e) => e.idx === i) : undefined) ??
+      entries.find((e) => e.type === t) ??
+      (TITLE_TYPES.has(t) ? entries.find((e) => TITLE_TYPES.has(e.type)) : undefined) ??
+      (BODY_TYPES.has(t) ? entries.find((e) => BODY_TYPES.has(e.type)) : undefined)
+    if (hit?.fillSpPr != null) return { spPr: hit.fillSpPr, layer }
   }
   return undefined
 }

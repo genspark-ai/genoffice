@@ -36,9 +36,36 @@ describe('text + inline image mixed paragraphs', () => {
     expect(doc.blocks[0].imageDataUrl).toMatch(/^data:image\/png;base64,/)
   })
 
-  it('an anchored picture with stray text keeps the image-block treatment', async () => {
-    const bodyXml = `<w:p><w:r><w:t>caption</w:t></w:r>${ANCHORED_IMAGE_RUN}</w:p>`
+  it('an anchored picture sharing the paragraph with text keeps the text', async () => {
+    const bodyXml = `<w:p>${ANCHORED_IMAGE_RUN}<w:r><w:t>Lorem ipsum body text</w:t></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('paragraph')
+    expect(block.runs!.map((r) => r.text).join('')).toBe('Lorem ipsum body text')
+    const imageRun = block.runs!.find((r) => r.image)
+    expect(imageRun?.image?.dataUrl).toMatch(/^data:image\/png;base64,/)
+    // no wrap element on the anchor = in front of text
+    expect(imageRun?.image?.wrap).toBe('front')
+  })
+
+  it('carries the anchor posOffset on the run image', async () => {
+    const anchored = ANCHORED_IMAGE_RUN.replace(
+      '<wp:extent',
+      '<wp:positionH relativeFrom="column"><wp:posOffset>1882747</wp:posOffset></wp:positionH>' +
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>-104609</wp:posOffset></wp:positionV>' +
+        '<wp:extent',
+    )
+    const bodyXml = `<w:p>${anchored}<w:r><w:t>wrapped text</w:t></w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const imageRun = doc.blocks[0].runs!.find((r) => r.image)
+    expect(imageRun?.image?.offsetXEmu).toBe(1882747)
+    expect(imageRun?.image?.offsetYEmu).toBe(-104609)
+  })
+
+  it('an anchored picture without text is still an image block', async () => {
+    const bodyXml = `<w:p>${ANCHORED_IMAGE_RUN}</w:p>`
     const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
     expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].imageDataUrl).toMatch(/^data:image\/png;base64,/)
   })
 })

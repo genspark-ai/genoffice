@@ -258,4 +258,24 @@ describe('empty paragraph line size (emptyRunSize attr)', () => {
     expect(p.style.fontSize).toBe('1pt')
     editor.destroy()
   })
+
+  it('lays the empty line with the paragraph-mark face metrics (Western only)', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          { type: 'docParagraph', attrs: { emptyRunFont: 'Times New Roman' } },
+          { type: 'docParagraph', attrs: { emptyRunFont: '맑은 고딕' } },
+        ],
+      } as never,
+    })
+    const [tnr, malgun] = Array.from(editor.view.dom.querySelectorAll('p')) as HTMLElement[]
+    expect(tnr.style.getPropertyValue('--doc-line-factor')).toBe('1.15')
+    expect(tnr.style.fontFamily).toContain('Times New Roman')
+    // CJK mark faces keep the document factor (empty cells stay on the Latin rule)
+    expect(malgun.style.getPropertyValue('--doc-line-factor')).toBe('')
+    editor.destroy()
+  })
 })

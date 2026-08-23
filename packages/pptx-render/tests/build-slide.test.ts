@@ -287,6 +287,113 @@ describe('buildRenderSlide (end-to-end on real fixture)', () => {
     expect(node.cells[1].w).toBeCloseTo(node.box.w / 2, 1)
   })
 
+  it('table renders at its grid width when the frame ext is a stale placeholder', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const el: any = {
+      id: 'tbl_1',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      // ext cx=3000000 is stale: the grid below sums to 6593050 EMU (real prod deck shape)
+      transform: {
+        offset: { x: 0, y: 0, cx: 3000000, cy: 3000000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      colWidths: [1449850, 5143200],
+      rowHeights: [645100, 645100],
+      rows: [
+        [{}, {}],
+        [{}, {}],
+      ],
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    const emuPerPx = deck.size.cx / 1280
+    expect(node.box.w).toBeCloseTo(6593050 / emuPerPx, 0)
+    expect(node.cells[1].w / node.cells[0].w).toBeCloseTo(5143200 / 1449850, 1)
+  })
+
+  it('a table inside a scaled group keeps the group scale on its grid sizes', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const tbl: any = {
+      id: 'tbl_g',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 3810000, cy: 1905000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      colWidths: [1905000, 1905000],
+      rowHeights: [952500, 952500],
+      rows: [
+        [{}, {}],
+        [{}, {}],
+      ],
+    }
+    const grp: any = {
+      id: 'grp_1',
+      type: 'group',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      // group is half the size of its child coordinate space -> children scale by 0.5
+      transform: {
+        offset: { x: 0, y: 0, cx: 1905000, cy: 952500 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      childOffset: { x: 0, y: 0, cx: 3810000, cy: 1905000 },
+      children: [tbl],
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [grp], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    const table = node.children[0]
+    const emuPerPx = deck.size.cx / 1280
+    expect(table.box.w).toBeCloseTo(1905000 / emuPerPx, 0)
+    expect(table.cells[0].w).toBeCloseTo(952500 / emuPerPx, 0)
+  })
+
+  it('rtl table mirrors the grid: logical column 1 renders rightmost, borders swap sides', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const stroke = { fill: { type: 'solid', color: '#FF0000' }, widthPt: 1 }
+    const el: any = {
+      id: 'tbl_rtl',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 2857500, cy: 952500 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      rtl: true,
+      colWidths: [952500, 1905000],
+      rowHeights: [952500],
+      rows: [[{ borders: { l: stroke } }, {}]],
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    const [c0, c1] = node.cells
+    // logical col 0 (narrow) sits at the right edge, col 1 at x=0
+    expect(c1.x).toBeCloseTo(0, 1)
+    expect(c0.x).toBeCloseTo(c1.w, 1)
+    expect(c0.x + c0.w).toBeCloseTo(node.box.w, 1)
+    // the logical-left border of col 0 lands on its visual right edge
+    expect(c0.borders?.r).toBeTruthy()
+    expect(c0.borders?.l).toBeUndefined()
+  })
+
   it('cells after a mid-row merge keep their grid position (continuation tc is not double-counted)', async () => {
     const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
     const slide = deck.slides[0]!
@@ -615,5 +722,237 @@ describe('buildRenderSlide (end-to-end on real fixture)', () => {
     expect(n.polygonPoints).toBeUndefined()
     expect(n.pathData).toMatch(/^M .* C /)
     expect(n.pathData.endsWith('Z')).toBe(true)
+  })
+
+  it('useBgFill shapes take the slide background fill (tdf93868)', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const bg = {
+      type: 'gradient',
+      stops: [
+        { pos: 0, color: '#000000' },
+        { pos: 1, color: '#3F3F3F' },
+      ],
+      angle: 16200000,
+    }
+    const el: any = {
+      id: 'bgsp1',
+      type: 'shape',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      presetGeometry: 'roundRect',
+      fill: { type: 'solid', color: '#FFFFFF' },
+      useBgFill: true,
+    }
+    const rs = buildRenderSlide(
+      { ...slide, elements: [el], decorations: [], background: bg as any },
+      deck.size,
+      { fitWidthPx: 1280 },
+    )
+    const n = rs.nodes[0] as any
+    expect(n.fill.kind).toBe('gradient')
+    expect(n.fill.stops).toEqual([
+      { pos: 0, color: '#000000' },
+      { pos: 1, color: '#3F3F3F' },
+    ])
+    // without a resolvable background the parsed fill stays as fallback
+    const rs2 = buildRenderSlide(
+      { ...slide, elements: [el], decorations: [], background: undefined },
+      deck.size,
+      { fitWidthPx: 1280 },
+    )
+    expect((rs2.nodes[0] as any).fill).toEqual({ kind: 'solid', color: '#FFFFFF' })
+
+    // useBgFill also applies inside groups
+    const group: any = {
+      id: 'g1',
+      type: 'group',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: el.transform,
+      children: [{ ...el, id: 'bgsp2' }],
+      childOffset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+    }
+    const rs3 = buildRenderSlide(
+      { ...slide, elements: [group], decorations: [], background: bg as any },
+      deck.size,
+      { fitWidthPx: 1280 },
+    )
+    const child = (rs3.nodes[0] as any).children[0]
+    expect(child.fill.kind).toBe('gradient')
+  })
+})
+
+describe('table row heights are absolute (napierone 0032: h="0" rows size to content)', () => {
+  it('does not stretch a lone non-zero header row across the whole frame', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const el: any = {
+      id: 'tbl_1',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 8208912, cy: 4566280 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      colWidths: [4104456, 4104456],
+      // header has an explicit height; the rest are h="0" (auto)
+      rowHeights: [360040, 360040, 0],
+      rows: [
+        [{}, {}],
+        [{}, {}],
+        [{}, {}],
+      ],
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    expect(node.type).toBe('table')
+    // EMU heights convert absolutely: 360040 EMU of a 4566280 EMU frame ≈ 7.9% of box.h,
+    // not box.h/2 (the old proportional split over the two non-zero rows)
+    const expected = (360040 / 4566280) * node.box.h
+    expect(node.gridY[1]).toBeCloseTo(expected, 1)
+    expect(node.gridY[2] - node.gridY[1]).toBeCloseTo(expected, 1)
+    // empty h="0" row stays at content height (zero here)
+    expect(node.gridY[3]).toBeCloseTo(node.gridY[2], 1)
+  })
+})
+
+describe('picture spPr fill backdrop (napierone 0027)', () => {
+  it('threads a solid pic fill through to the render node', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const el: any = {
+      id: 'pic_1',
+      type: 'picture',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 1000000, cy: 1000000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      mediaRef: 'ppt/media/image1.png',
+      opacity: 0.26,
+      fill: { type: 'solid', color: '#000000' },
+      duotone: ['#111111', '#EEEEEE'],
+      clrChange: { from: '#000000', to: '#00000000' },
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    expect(node.type).toBe('picture')
+    expect(node.fill).toEqual({ kind: 'solid', color: '#000000' })
+    expect(node.opacity).toBeCloseTo(0.26, 5)
+    expect(node.duotone).toEqual(['#111111', '#EEEEEE'])
+    expect(node.clrChange).toEqual({ from: '#000000', to: '#00000000' })
+  })
+})
+
+describe('metafile pictures get an opaque white backdrop (PlanS academy banner)', () => {
+  it('sets bgColor for EMF data URLs and leaves raster images alone', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const mk = (dataUrl: string): any => ({
+      id: 'pic_m',
+      type: 'picture',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 1000000, cy: 1000000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      mediaRef: '',
+      dataUrl,
+    })
+    const rs = buildRenderSlide(
+      {
+        ...slide,
+        elements: [mk('data:image/x-emf;base64,AAAA'), mk('data:image/png;base64,AAAA')],
+        decorations: [],
+      },
+      deck.size,
+      { fitWidthPx: 1280 },
+    )
+    const [emf, png] = rs.nodes as any[]
+    expect(emf.bgColor).toBe('#FFFFFF')
+    expect(png.bgColor).toBeUndefined()
+  })
+
+  it('a clrChange metafile drops the white DC backing (the recolor sees through it)', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const el: any = {
+      id: 'pic_cc',
+      type: 'picture',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 1000000, cy: 1000000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      mediaRef: '',
+      dataUrl: 'data:image/x-emf;base64,AAAA',
+      clrChange: { from: '#FFFFFF', to: '#FFFFFF00' },
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    expect(node.bgColor).toBeUndefined()
+    expect(node.clrChange).toEqual({ from: '#FFFFFF', to: '#FFFFFF00' })
+
+    // non-white keys never touch the DC; an opaque white key recolors it
+    const build = (clrChange: any) =>
+      buildRenderSlide({ ...slide, elements: [{ ...el, clrChange }], decorations: [] }, deck.size, {
+        fitWidthPx: 1280,
+      }).nodes[0] as any
+    expect(build({ from: '#FF0000', to: '#00FF0000' }).bgColor).toBe('#FFFFFF')
+    expect(build({ from: '#FFFFFF', to: '#00FF00' }).bgColor).toBe('#00FF00')
+    // partial alpha stays on the backing (canvas accepts #RRGGBBAA)
+    expect(build({ from: '#FFFFFF', to: '#00FF0080' }).bgColor).toBe('#00FF0080')
+  })
+})
+
+describe('durable ids on render nodes', () => {
+  it('nodes carry the durable id resolved from the element bytes', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const rs = buildRenderSlide(slide, deck.size, { fitWidthPx: 1280 })
+    // Every element has at least the cNvPr fallback in its bytes
+    for (const n of rs.nodes) {
+      expect(n.durableId).toMatch(/^e_/)
+    }
+    // Ids are unique per slide
+    const ids = rs.nodes.map((n) => n.durableId)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('durable ids on chart nodes', () => {
+  it('charts (and their placeholder chips) carry durable ids too', async () => {
+    const opened = await openPptx(enginePptx('01_standard_business.pptx'))
+    const { addChart } = await import('@genoffice/pptx-engine')
+    const r = addChart(opened, 0, {
+      kind: 'bar',
+      categories: ['Q1', 'Q2'],
+      series: [{ name: 'Rev', values: [3, 5] }],
+      offset: { x: 914400, y: 914400, cx: 4572000, cy: 2743200 },
+    })
+    expect(r).toBeTruthy()
+    const rs = buildRenderSlide(opened.deck.slides[0]!, opened.deck.size, { fitWidthPx: 1280 })
+    const chart = rs.nodes.find((n) => n.type === 'chart' || n.type === 'placeholder-chip')
+    expect(chart).toBeTruthy()
+    expect(chart!.durableId).toMatch(/^e_[0-9a-f]{8}$/)
   })
 })

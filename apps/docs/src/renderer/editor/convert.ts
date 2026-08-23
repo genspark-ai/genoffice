@@ -5,6 +5,7 @@ import {
   ommlToLatex,
   patchFieldParagraphXml,
   applyImageWrap,
+  applyImageZOrder,
   patchImageParagraphXml,
   patchMathTokens,
   patchTableCellTexts,
@@ -100,6 +101,7 @@ function formatAttrs(format: ParaFormat | undefined): Record<string, unknown> {
     autoSpace: format?.autoSpace ?? null,
     snapToGrid: format?.snapToGrid ?? null,
     emptyRunSize: format?.emptyRunSizeHalfPoints ?? null,
+    emptyRunFont: format?.emptyRunFontFamily ?? null,
   }
 }
 
@@ -407,6 +409,7 @@ function blockToPmNode(
           commentStarts: block.commentStarts ?? null,
           commentEnds: block.commentEnds ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
+          paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format),
         },
@@ -427,6 +430,7 @@ function blockToPmNode(
           commentStarts: block.commentStarts ?? null,
           commentEnds: block.commentEnds ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
+          paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format),
         },
@@ -446,6 +450,7 @@ function blockToPmNode(
           sdtShell: block.sdtShell ? JSON.stringify(block.sdtShell) : null,
           moveRevision: block.moveRevision ?? null,
           pPrChange: block.pPrChangeInfo ? JSON.stringify(block.pPrChangeInfo) : null,
+          paraMarkDel: block.paraMarkDel ? JSON.stringify(block.paraMarkDel) : null,
           blockRevision: block.blockRevision ?? null,
           ...formatAttrs(block.format),
         },
@@ -453,7 +458,7 @@ function blockToPmNode(
       }
     case 'table': {
       const table = block.table ?? { rows: [[{ paras: [''] }]] }
-      return tableModelToPmNode(
+      const node = tableModelToPmNode(
         table,
         block.docxIndex,
         block.blockRevision ?? null,
@@ -462,6 +467,9 @@ function blockToPmNode(
         budget?.fit ?? null,
         budget?.paper ?? null,
       )
+      // content-control member tables need the shell for chrome hit-testing
+      if (block.sdtShell) node.attrs = { ...node.attrs, sdtShell: JSON.stringify(block.sdtShell) }
+      return node
     }
     default:
       // image / passthrough: protected whole-unit blocks
@@ -482,6 +490,7 @@ function blockToPmNode(
           imageFillRect: block.imageFillRect ?? null,
           imageAlign: block.imageAlign ?? null,
           imageWrap: block.imageWrap ?? null,
+          imageZOrder: block.imageZOrder ?? null,
           imageOffsetXEmu: block.imageOffsetXEmu ?? null,
           imageOffsetYEmu: block.imageOffsetYEmu ?? null,
           imagePosH: block.imagePosH ?? null,
@@ -489,6 +498,7 @@ function blockToPmNode(
           imageRotDeg: block.imageRotDeg ?? null,
           imageFlipH: block.imageFlipH ?? false,
           imageFlipV: block.imageFlipV ?? false,
+          imageBorder: block.imageBorder ?? null,
           table: displayTable(block.table ?? null, rowCapTwips, budget),
           fieldDisplay: block.fieldDisplay ?? null,
           diagramDisplay: block.diagramDisplay ?? null,
@@ -499,6 +509,8 @@ function blockToPmNode(
           brokenImage: block.brokenImage ?? false,
           invisibleMarker: block.invisibleMarker ?? false,
           textboxes: block.textboxes ?? null,
+          strayRuns: block.strayRuns ?? null,
+          strayStyleId: block.strayStyleId ?? null,
           formulaDisplay: block.formulaDisplay ?? null,
           chartDisplay: block.chartDisplay ?? null,
         },
@@ -575,6 +587,16 @@ export function tableModelToPmNode(
     : model.colWidthsPct?.map((width) => Math.max(24, Math.round(width * 6.24)))
   const hasHeaderRow =
     model.rows.length > 1 && model.rows[0].every((cell) => cell.bold || cell.fill !== undefined)
+  // w:tblpPr tables taller than any single page cannot float: Word flows/splits
+  // them across pages, while the zero-flow-height float model collapses the
+  // whole document to one page (137-row glossary, LO batch2 sample 0219).
+  // Minimum height = one 12pt line per row; 12960 twips ≈ the shortest common
+  // usable page (Letter, 1in margins).
+  const minHeightTwips = model.rows.reduce(
+    (sum, _row, i) => sum + Math.max(model.rowHeightsTwips?.[i] ?? 0, 240),
+    0,
+  )
+  const tblFloat = minHeightTwips > 12960 ? null : (model.floatSide ?? null)
   const table: PmNode = {
     type: 'docTable',
     attrs: {
@@ -589,6 +611,7 @@ export function tableModelToPmNode(
       cellMar: model.cellMarTwips ?? null,
       borders: model.borders ?? null,
       tblAlign: model.align ?? null,
+      tblFloat,
       indentTwips: model.indentTwips ?? null,
       tblStyleId: model.tblStyleId ?? null,
       bidiVisual: model.bidiVisual ?? false,
@@ -649,11 +672,13 @@ function cellContentNodes(cell: TableCell): PmNode[] {
         }))
   ).map((paragraph) => {
     const list = 'list' in paragraph ? paragraph.list : undefined
+    const styleId = ('styleId' in paragraph ? paragraph.styleId : undefined) ?? null
     return list
       ? {
           type: 'docListItem',
           attrs: {
             ...formatAttrs(paragraph),
+            styleId,
             kind: list.kind,
             numId: list.numId,
             ilvl: list.ilvl,
@@ -662,7 +687,7 @@ function cellContentNodes(cell: TableCell): PmNode[] {
         }
       : {
           type: 'docParagraph',
-          attrs: formatAttrs(paragraph),
+          attrs: { ...formatAttrs(paragraph), styleId },
           content: runsToInline(paragraph.runs),
         }
   })
@@ -673,6 +698,11 @@ function cellContentNodes(cell: TableCell): PmNode[] {
     const at = Math.min(cell.nestedTableAnchors?.[i] ?? paraNodes.length, paraNodes.length)
     content.splice(at, 0, { type: 'docNestedTable', attrs: { model: nested[i] } })
   }
+  // anchored shapes/textboxes in the cell (display-only): a leading zero-width
+  // float strut, so the row height becomes max(text, boxes) exactly like Word
+  if (cell.anchoredBoxes?.length) {
+    content.unshift({ type: 'docCellBoxes', attrs: { boxes: cell.anchoredBoxes } })
+  }
   return content
 }
 
@@ -680,6 +710,7 @@ export function tableStructureSignature(table: PmNode): string {
   return JSON.stringify({
     widths: table.attrs?.colWidthsPct ?? null,
     tblStyle: table.attrs?.tblStyleId ?? null,
+    tblAlign: table.attrs?.tblAlign ?? null,
     rows: (table.content ?? []).map((row) => [
       row.attrs?.heightTwips ?? null,
       // accepting/rejecting revisions strips records from trPr/tcPr: include them in the signature to trigger regeneration (works for empty rows too)
@@ -804,11 +835,14 @@ export function pmTableToModel(table: PmNode): TableModel {
       const nestedModels: TableModel[] = []
       const nestedAnchors: number[] = []
       let paraCount = 0
+      let cellBoxes: TableCell['anchoredBoxes']
       for (const n of cellNode.content ?? []) {
         if (n.type === 'docParagraph' || n.type === 'docListItem') paraCount++
         else if (n.type === 'docNestedTable' && n.attrs?.model) {
           nestedModels.push(n.attrs.model as TableModel)
           nestedAnchors.push(paraCount)
+        } else if (n.type === 'docCellBoxes' && Array.isArray(n.attrs?.boxes)) {
+          cellBoxes = n.attrs.boxes as TableCell['anchoredBoxes']
         }
       }
       entries.push({
@@ -832,6 +866,7 @@ export function pmTableToModel(table: PmNode): TableModel {
           ...(nestedModels.length > 0
             ? { nestedTables: nestedModels, nestedTableAnchors: nestedAnchors }
             : {}),
+          ...(cellBoxes?.length ? { anchoredBoxes: cellBoxes } : {}),
           colSpan: colspan > 1 ? colspan : undefined,
           vMerge: rowspan > 1 ? 'restart' : undefined,
         },
@@ -872,6 +907,9 @@ export function pmTableToModel(table: PmNode): TableModel {
     ...(rowRevisions.some((revision) => revision !== null) ? { rowRevisions } : {}),
     // null (cleared) → '' removes explicitly; undefined leaves it alone
     ...(tblStyleAttr !== undefined ? { tblStyleId: tblStyleAttr ?? '' } : {}),
+    // explicit only when set ('left' = remove w:jc); null leaves the original
+    // tblPr untouched so unmapped w:jc values (e.g. 'start') survive rebuilds
+    ...(table.attrs?.tblAlign ? { align: table.attrs.tblAlign as TableModel['align'] } : {}),
   }
 }
 
@@ -933,10 +971,11 @@ export function runsToInline(runs: Run[]): PmNode[] {
       continue
     }
     const marks = runMarks(run)
-    // \n = soft line break, \f = in-paragraph page break (w:br w:type="page")
-    for (const segment of run.text.split(/([\n\f])/)) {
+    // \n = soft line break, \f = in-paragraph page break, \v = column break
+    for (const segment of run.text.split(/([\n\f\v])/)) {
       if (segment === '\n') nodes.push({ type: 'hardBreak' })
       else if (segment === '\f') nodes.push({ type: 'hardBreak', attrs: { pageBreak: true } })
+      else if (segment === '\v') nodes.push({ type: 'hardBreak', attrs: { colBreak: true } })
       else if (segment !== '') {
         nodes.push({ type: 'text', text: segment, ...(marks.length > 0 ? { marks } : {}) })
       }
@@ -951,6 +990,11 @@ export function runsToInline(runs: Run[]): PmNode[] {
           widthPx: run.image.widthPx ?? null,
           heightPx: run.image.heightPx ?? null,
           xml: run.image.xml,
+          wrap: run.image.wrap ?? null,
+          offsetXEmu: run.image.offsetXEmu ?? null,
+          offsetYEmu: run.image.offsetYEmu ?? null,
+          border: run.image.border ?? null,
+          lineCenterV: run.image.lineCenterV ?? false,
         },
       })
     }
@@ -974,7 +1018,10 @@ function runMarks(run: Run): PmMark[] {
     })
   if (run.refField !== undefined) marks.push({ type: 'refField', attrs: { name: run.refField } })
   if (run.instrField !== undefined)
-    marks.push({ type: 'instrField', attrs: { instr: run.instrField } })
+    marks.push({
+      type: 'instrField',
+      attrs: { instr: run.instrField, beginXml: run.fldBeginXml ?? null },
+    })
   if (run.commentIds?.length)
     marks.push({ type: 'comment', attrs: { ids: run.commentIds.join(' ') } })
   if (run.ins) {
@@ -1012,6 +1059,7 @@ function runMarks(run: Run): PmMark[] {
     run.vertAlign ||
     run.em ||
     run.caps ||
+    run.cs ||
     run.styleId ||
     run.rawRPr
   ) {
@@ -1032,6 +1080,7 @@ function runMarks(run: Run): PmMark[] {
         vertAlign: run.vertAlign ?? null,
         em: run.em ?? null,
         caps: run.caps ?? null,
+        cs: run.cs ?? null,
         styleId: run.styleId ?? null,
         rawRPr: run.rawRPr ?? null,
       },
@@ -1067,6 +1116,31 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
   for (const block of originalBlocks) {
     if (!block.hidden && block.docxIndex !== null) originalByIndex.set(block.docxIndex, block)
   }
+
+  // Mixed-encoding guard: parse compresses wild producer relativeHeight values
+  // (LibreOffice writes 1, 2, …) to compact ranks, but the raw XML keeps the
+  // wild bytes. Word paints by the raw value, so rewriting ONE anchor to the
+  // base+rank encoding while wild siblings survive would invert the saved
+  // paint order. Once any wrap/z-order edit exists, every normalized anchor is
+  // rewritten to base+rank; untouched documents still keep their bytes.
+  const hasZOrderEdit = (nodes: PmNode[] | undefined): boolean => {
+    for (const n of nodes ?? []) {
+      if (n.type === 'docProtected' && n.attrs?.blockType === 'image') {
+        const idx = n.attrs.docxIndex as number | null | undefined
+        const orig = idx !== null && idx !== undefined ? originalByIndex.get(idx) : undefined
+        if (orig) {
+          const wrap = (n.attrs.imageWrap as ImageWrap | null) ?? null
+          const z = n.attrs.imageZOrder != null ? Number(n.attrs.imageZOrder) : undefined
+          if (wrap !== (orig.imageWrap ?? null) || (z !== undefined && z !== orig.imageZOrder))
+            return true
+        }
+      }
+      if (hasZOrderEdit(n.content)) return true
+    }
+    return false
+  }
+  const harmonizeZOrders =
+    originalBlocks.some((b) => b.imageZOrderNormalized) && hasZOrderEdit(doc.content)
 
   // Multi-block sdt groups (one w:sdt split into N blocks): the shell open/close
   // bytes live on the first/last member. Track which surviving member emits
@@ -1252,12 +1326,39 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
               posOffset === undefined && imagePatch.posH && imagePatch.posV
                 ? { h: imagePatch.posH, v: imagePatch.posV }
                 : undefined
-            xml = applyImageWrap(xml, imagePatch.wrap, posOffset, marginAlign)
+            // a wrap-only change must not reset an existing stacking rank: the
+            // patch carries zOrder only when the rank itself changed
+            xml = applyImageWrap(
+              xml,
+              imagePatch.wrap,
+              posOffset,
+              marginAlign,
+              imagePatch.zOrder ?? original.imageZOrder,
+            )
+          } else if (
+            imagePatch?.zOrder !== undefined &&
+            (node.attrs?.imageWrap as ImageWrap | null) != null
+          ) {
+            // z-order changed without a wrap-mode change on a still-floating
+            // image: re-encode ONLY relativeHeight — a full anchor rebuild
+            // would reset the position basis (relativeFrom) and distances
+            xml = applyImageZOrder(xml, imagePatch.zOrder)
           } else if (
             imagePatch &&
             (imagePatch.posOffsetX !== undefined || imagePatch.posOffsetY !== undefined)
           ) {
             // posOffset changed without wrap change: patchImageParagraphXml already rewrote it
+          } else if (
+            harmonizeZOrders &&
+            original.type === 'image' &&
+            original.imageZOrderNormalized &&
+            (node.attrs?.imageWrap as ImageWrap | null) != null
+          ) {
+            // geometry-only edit (resize/align/rotate) on a sibling that still
+            // carries a wild producer relativeHeight: re-encode base+rank on
+            // top of the geometry patch — relativeHeight only, the anchor's
+            // position basis and wrap bytes must survive (see applyImageZOrder)
+            xml = applyImageZOrder(xml, original.imageZOrder)
           }
           pushBlock({
             kind: 'xml',
@@ -1300,6 +1401,23 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
           pushBlock({
             kind: 'xml',
             xml: patchDrawingExtent(original.originalXml, chartSize.w, chartSize.h),
+          })
+        } else if (
+          harmonizeZOrders &&
+          original.type === 'image' &&
+          original.imageZOrderNormalized &&
+          original.imageWrap &&
+          original.originalXml
+        ) {
+          // untouched anchor still carrying a wild producer relativeHeight:
+          // re-encode ONLY that attribute to base+rank so it stays ordered
+          // against the anchors this session re-encoded (harmonizeZOrders
+          // pre-scan). Position/wrap bytes stay untouched — the picture must
+          // not shift from a reorder it wasn't even part of.
+          changedCount++
+          pushBlock({
+            kind: 'xml',
+            xml: applyImageZOrder(original.originalXml, original.imageZOrder),
           })
         } else {
           pushBlock({ kind: 'original', docxIndex: idx })
@@ -1388,6 +1506,7 @@ export function pmDocToSavePlan(doc: PmNode, originalBlocks: Block[]): SavePlan 
         if (align) image.align = align
         const wrap = node.attrs.imageWrap as ImageWrap | null
         if (wrap) image.wrap = wrap
+        if (node.attrs.imageZOrder != null) image.zOrder = Number(node.attrs.imageZOrder)
         if (node.attrs.imageRotDeg) image.rotDeg = Number(node.attrs.imageRotDeg)
         if (node.attrs.imageFlipH) image.flipH = true
         if (node.attrs.imageFlipV) image.flipV = true
@@ -1560,6 +1679,7 @@ function imageFromProtectedAttrs(node: PmNode): NewImage | null {
   if (align) image.align = align
   const wrap = node.attrs?.imageWrap as ImageWrap | null
   if (wrap) image.wrap = wrap
+  if (node.attrs?.imageZOrder != null) image.zOrder = Number(node.attrs.imageZOrder)
   if (node.attrs?.imageRotDeg) image.rotDeg = Number(node.attrs.imageRotDeg)
   if (node.attrs?.imageFlipH) image.flipH = true
   if (node.attrs?.imageFlipV) image.flipV = true
@@ -1628,6 +1748,8 @@ interface ImageBlockPatch {
   align?: 'left' | 'center' | 'right' | null
   /** null = back to inline; undefined = wrap unchanged */
   wrap?: ImageWrap | null
+  /** stacking rank among overlapping anchors (bring-forward/send-back); undefined = keep */
+  zOrder?: number
   /** posOffset in EMU for free-position floating images; undefined = keep */
   posOffsetX?: number
   posOffsetY?: number
@@ -1657,6 +1779,10 @@ function imagePatchOf(node: PmNode, original: Block): ImageBlockPatch | null {
   const wrap = (node.attrs?.imageWrap as ImageWrap | null) ?? null
   if (wrap !== (original.imageWrap ?? null)) {
     patch.wrap = wrap
+  }
+  const zOrder = node.attrs?.imageZOrder != null ? Number(node.attrs.imageZOrder) : undefined
+  if (zOrder !== undefined && zOrder !== (original.imageZOrder ?? undefined)) {
+    patch.zOrder = zOrder
   }
   // posOffset for free-position floating images
   const posOffsetX =
@@ -1916,6 +2042,7 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
     }
   }
   if (node.attrs?.emptyRunSize) format.emptyRunSizeHalfPoints = Number(node.attrs.emptyRunSize)
+  if (node.attrs?.emptyRunFont) format.emptyRunFontFamily = String(node.attrs.emptyRunFont)
   return Object.keys(format).length > 0 ? format : undefined
 }
 
@@ -2019,7 +2146,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
   const runs: Run[] = []
   for (const node of content) {
     if (node.type === 'hardBreak') {
-      const ch = node.attrs?.pageBreak ? '\f' : '\n'
+      const ch = node.attrs?.pageBreak ? '\f' : node.attrs?.colBreak ? '\v' : '\n'
       const prev = runs[runs.length - 1]
       const prevAtomic =
         prev && (prev.noteRef || prev.xeTerm !== undefined || prev.math || prev.ruby || prev.image)
@@ -2089,6 +2216,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
         run.refField = String(mark.attrs?.name ?? '')
       } else if (mark.type === 'instrField') {
         run.instrField = String(mark.attrs?.instr ?? '')
+        if (mark.attrs?.beginXml) run.fldBeginXml = String(mark.attrs.beginXml)
       } else if (mark.type === 'comment') {
         const ids = String(mark.attrs?.ids ?? '')
           .split(' ')
@@ -2113,6 +2241,7 @@ export function inlineToRuns(content: PmNode[]): Run[] {
           run.vertAlign = mark.attrs.vertAlign
         }
         if (mark.attrs?.em) run.em = mark.attrs.em as NonNullable<Run['em']>
+        if (mark.attrs?.cs) run.cs = true
         if (mark.attrs?.styleId) run.styleId = String(mark.attrs.styleId)
         if (mark.attrs?.rawRPr) run.rawRPr = String(mark.attrs.rawRPr)
       } else if (mark.type === 'rprChange') {
@@ -2135,15 +2264,18 @@ function mergeRuns(runs: Run[]): Run[] {
   const merged: Run[] = []
   for (const run of runs) {
     const prev = merged[merged.length - 1]
-    // reference markers / index entries / inline math are atomic and never merge
+    // reference markers / index entries / inline math / fields are atomic and
+    // never merge — two identical FORMCHECKBOX runs must stay two fields
     const atomic =
       run.noteRef ||
       run.xeTerm !== undefined ||
+      run.instrField !== undefined ||
       run.math ||
       run.ruby ||
       run.image ||
       prev?.noteRef ||
       prev?.xeTerm !== undefined ||
+      prev?.instrField !== undefined ||
       prev?.math ||
       prev?.ruby ||
       prev?.image
@@ -2176,6 +2308,7 @@ function runStyleKey(run: Run): string {
     run.xeTerm ?? null,
     run.refField ?? null,
     run.instrField ?? null,
+    run.fldBeginXml ?? null,
     run.math?.omml ?? null,
     run.ruby?.xml ?? null,
   ])
@@ -2217,6 +2350,7 @@ function normalizedRuns(runs: Run[]): unknown[] {
     r.xeTerm ?? null,
     r.refField ?? null,
     r.instrField ?? null,
+    r.fldBeginXml ?? null,
     r.math?.omml ?? null,
     r.ruby?.xml ?? null,
   ])

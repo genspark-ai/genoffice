@@ -116,6 +116,17 @@ describe('generateTableModelXml', () => {
     expect(model.colWidthsPct?.map(Math.round)).toEqual([25, 35, 40])
   })
 
+  it('emits and round-trips the table left indent (w:tblInd, P17)', async () => {
+    const xml = generateTableModelXml({
+      colWidthsTwips: [2000, 2000],
+      indentTwips: 1300,
+      rows: [[{ paras: ['a'] }, { paras: ['b'] }]],
+    })
+    expect(xml).toContain('<w:tblInd w:w="1300" w:type="dxa"/>')
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(parsed.blocks[0].table!.indentTwips).toBe(1300)
+  })
+
   it('reuses the imported tblPr while regenerating rows and rich runs', async () => {
     const template =
       '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/>' +
@@ -160,6 +171,31 @@ describe('generateTableModelXml', () => {
       font: 'Arial',
       sizeHalfPoints: 30,
     })
+  })
+
+  it('writes w:jc after w:tblW for an explicit alignment and round-trips it', async () => {
+    const xml = generateTableModelXml({
+      align: 'center',
+      rows: [[{ paras: ['a'] }, { paras: ['b'] }]],
+    })
+    expect(xml).toMatch(/<w:tblW[^>]*\/><w:jc w:val="center"\/>/)
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(parsed.blocks[0].table!.align).toBe('center')
+  })
+
+  it("align 'left' strips the original w:jc; undefined keeps it", () => {
+    const template =
+      '<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/><w:jc w:val="right"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>Old</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const model = { rows: [[{ paras: ['New'] }]] }
+    expect(generateTableModelXml({ ...model, align: 'left' as const }, template)).not.toContain(
+      '<w:jc',
+    )
+    expect(generateTableModelXml(model, template)).toContain('<w:jc w:val="right"/>')
+    expect(generateTableModelXml({ ...model, align: 'center' as const }, template)).toContain(
+      '<w:jc w:val="center"/>',
+    )
   })
 })
 

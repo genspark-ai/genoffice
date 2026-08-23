@@ -46,6 +46,8 @@ import {
   insertTextboxAt,
   insertTopLevelBlockAtSelection,
   insertWordArtAt,
+  MAX_TABLE_COLS,
+  MAX_TABLE_ROWS,
   setParaAttrs,
   toggleDropdown,
 } from './ribbon-tabs'
@@ -118,7 +120,7 @@ function HfEditor({
   const { t } = useI18n()
   const [text, setText] = useState(current)
   return (
-    <div className="hf-menu">
+    <div data-rb-panel="" className="hf-menu">
       <div className="hf-menu-title">{label}</div>
       <input
         autoFocus
@@ -462,6 +464,62 @@ export function ChartInsertModal({ editor, onClose }: { editor: Editor; onClose:
   )
 }
 
+/** Word's Insert Table dialog: explicit row/column counts beyond the hover grid's reach */
+export function TableInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
+  const { t } = useI18n()
+  const modalKeys = useModalKeys(onClose)
+  const [cols, setCols] = useState(5)
+  const [rows, setRows] = useState(2)
+
+  const insert = () => {
+    if (!editor.isEditable) return
+    insertTableAt(editor, rows, cols)
+    onClose()
+  }
+
+  const countInput = (label: string, value: number, max: number, set: (v: number) => void) => (
+    <label>
+      {label}
+      <input
+        type="number"
+        min={1}
+        max={max}
+        value={value}
+        onChange={(e) => {
+          const v = Math.round(Number(e.target.value))
+          set(Number.isFinite(v) ? Math.min(max, Math.max(1, v)) : 1)
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && insert()}
+      />
+    </label>
+  )
+
+  return (
+    <div
+      className="modal-backdrop"
+      ref={modalKeys.ref}
+      onKeyDown={modalKeys.onKeyDown}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="modal">
+        <h2>{t('ribbonTableInsertDialog')}</h2>
+        <div className="font-dialog-row">
+          {countInput(t('ribbonTableColsLabel'), cols, MAX_TABLE_COLS, setCols)}
+          {countInput(t('ribbonTableRowsLabel'), rows, MAX_TABLE_ROWS, setRows)}
+        </div>
+        <div className="modal-actions">
+          <button className="btn-ghost" onClick={onClose}>
+            {t('ribbonCancel')}
+          </button>
+          <button className="btn-primary" onClick={insert}>
+            {t('ribbonOk')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Insert Hyperlink dialog, shared by the ribbon and the native application menu */
 export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const { t } = useI18n()
@@ -574,6 +632,7 @@ export function InsertTab({
 }: InsertTabProps) {
   const { t } = useI18n()
   const [grid, setGrid] = useState<{ r: number; c: number }>({ r: 0, c: 0 })
+  const [tableDialogOpen, setTableDialogOpen] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
   const [equationOpen, setEquationOpen] = useState(false)
   const [bookmarkOpen, setBookmarkOpen] = useState(false)
@@ -604,7 +663,7 @@ export function InsertTab({
               <span>{t('ribbonCoverPage')}</span>
             </button>
             {dropdown === 'cover' && (
-              <div className="cover-gallery">
+              <div data-rb-panel="" className="cover-gallery">
                 {COVER_PRESETS.map((preset) => (
                   <button
                     key={preset.id}
@@ -666,15 +725,19 @@ export function InsertTab({
               <span>{t('ribbonTable')}</span>
             </button>
             {dropdown === 'table' && (
-              <div className="table-picker" onMouseLeave={() => setGrid({ r: 0, c: 0 })}>
+              <div
+                data-rb-panel=""
+                className="table-picker"
+                onMouseLeave={() => setGrid({ r: 0, c: 0 })}
+              >
                 <div className="table-picker-title">
                   {grid.r > 0
                     ? t('ribbonTableSize', { r: grid.r, c: grid.c })
                     : t('ribbonTablePickSize')}
                 </div>
                 <div className="table-picker-grid">
-                  {Array.from({ length: 6 }, (_, ri) =>
-                    Array.from({ length: 8 }, (_, ci) => (
+                  {Array.from({ length: 8 }, (_, ri) =>
+                    Array.from({ length: 10 }, (_, ci) => (
                       <button
                         key={`${ri}-${ci}`}
                         className={`table-cell ${ri < grid.r && ci < grid.c ? 'hot' : ''}`}
@@ -684,6 +747,15 @@ export function InsertTab({
                     )),
                   )}
                 </div>
+                <button
+                  className="table-picker-custom"
+                  onClick={() => {
+                    setDropdown(() => null)
+                    setTableDialogOpen(true)
+                  }}
+                >
+                  {t('ribbonTableInsertDialog')}
+                </button>
               </div>
             )}
           </div>
@@ -731,7 +803,7 @@ export function InsertTab({
               <span>{t('ribbonShapes')}</span>
             </button>
             {dropdown === 'shape' && (
-              <div className="shape-palette rb-shape-gallery">
+              <div data-rb-panel="" className="shape-palette rb-shape-gallery">
                 {DOC_SHAPE_GROUPS.map((group) => (
                   <div key={group.groupKey}>
                     <div className="rb-drop-title">{t(group.groupKey as StringKey)}</div>
@@ -794,7 +866,7 @@ export function InsertTab({
               <span>{t('ribbonWordArt')}</span>
             </button>
             {dropdown === 'wordArt' && (
-              <div className="wordart-palette">
+              <div data-rb-panel="" className="wordart-palette">
                 {WORDART_PRESETS.map((p) => (
                   <button
                     key={p.id}
@@ -836,7 +908,7 @@ export function InsertTab({
               <span>{t('ribbonDropCap')}</span>
             </button>
             {dropdown === 'dropCap' && (
-              <div className="dropcap-menu">
+              <div data-rb-panel="" className="dropcap-menu">
                 {(
                   [
                     { val: null, label: t('ribbonNone'), desc: t('ribbonDropCapNoneDesc') },
@@ -885,7 +957,7 @@ export function InsertTab({
               <span>{t('ribbonField')}</span>
             </button>
             {dropdown === 'field' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {(
                   [
                     ['DATE', t('ribbonFieldDate')],
@@ -1032,7 +1104,7 @@ export function InsertTab({
               <span>{t('ribbonPageNumber')}</span>
             </button>
             {dropdown === 'pagenum' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {(
                   [
                     [t('ribbonPnTopLeft'), 'header', 'left'],
@@ -1119,7 +1191,7 @@ export function InsertTab({
               <span>{t('ribbonSymbol')}</span>
             </button>
             {dropdown === 'symbol' && (
-              <div className="symbol-palette">
+              <div data-rb-panel="" className="symbol-palette">
                 {SYMBOLS.map((s) => (
                   <button
                     key={s}
@@ -1163,6 +1235,9 @@ export function InsertTab({
         <div className="ribbon-group-label">{t('ribbonGroupSymbols')}</div>
       </div>
 
+      {tableDialogOpen && (
+        <TableInsertModal editor={editor} onClose={() => setTableDialogOpen(false)} />
+      )}
       {linkOpen && <LinkInsertModal editor={editor} onClose={() => setLinkOpen(false)} />}
       {equationOpen && <EquationModal editor={editor} onClose={() => setEquationOpen(false)} />}
       {bookmarkOpen && <BookmarkModal editor={editor} onClose={() => setBookmarkOpen(false)} />}

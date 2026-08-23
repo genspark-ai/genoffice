@@ -29,20 +29,22 @@ function chartAddition(overrides: Partial<SheetVisualAddition['chart']> = {}): S
     chart: {
       chartType: 'column',
       title: 'Users by <Country>',
-      series: [{
-        name: 'Users',
-        categories: ['US', 'KR', 'BR'],
-        values: [8, 6, 3],
-        valuesRef: "'Data'!$B$2:$B$4",
-        categoriesRef: "'Data'!$A$2:$A$4",
-      }],
+      series: [
+        {
+          name: 'Users',
+          categories: ['US', 'KR', 'BR'],
+          values: [8, 6, 3],
+          valuesRef: "'Data'!$B$2:$B$4",
+          categoriesRef: "'Data'!$A$2:$A$4",
+        },
+      ],
       ...overrides,
     },
   }
 }
 
 async function planWith(additions: SheetVisualAddition[], buffer?: Buffer) {
-  const source = await createBufferEntrySource(buffer ?? await buildEditFixture())
+  const source = await createBufferEntrySource(buffer ?? (await buildEditFixture()))
   return planCellEditsToXlsx(source, [], [], [], undefined, [], [], [], [], [], null, additions)
 }
 
@@ -75,7 +77,9 @@ describe('visual additions: fresh sheet without a drawing', () => {
 
     const worksheet = plan.replaced.get('xl/worksheets/sheet1.xml')
     expect(worksheet).toContain('<drawing r:id="rId1"/>')
-    expect(worksheet).toContain('xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"')
+    expect(worksheet).toContain(
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"',
+    )
 
     const contentTypes = plan.replaced.get('[Content_Types].xml')
     expect(contentTypes).toContain('PartName="/xl/charts/chart2.xml"')
@@ -92,9 +96,11 @@ describe('visual additions: fresh sheet without a drawing', () => {
   })
 
   it('falls back to literal caches when range refs are absent', async () => {
-    const plan = await planWith([chartAddition({
-      series: [{ name: 'S', categories: ['a'], values: [1] }],
-    })])
+    const plan = await planWith([
+      chartAddition({
+        series: [{ name: 'S', categories: ['a'], values: [1] }],
+      }),
+    ])
     const chartXml = plan.added.get('xl/charts/chart2.xml')
     expect(chartXml).toContain('<c:numLit>')
     expect(chartXml).toContain('<c:strLit>')
@@ -116,11 +122,13 @@ describe('visual additions: fresh sheet without a drawing', () => {
 
 describe('visual additions: shapes and text boxes', () => {
   it('writes a shape anchor with fill, no chart part, no drawing rels', async () => {
-    const plan = await planWith([{
-      sheetName: 'Data',
-      anchor: ANCHOR,
-      shape: { shapeType: 'hexagon', fillColor: '#ddebf7' },
-    }])
+    const plan = await planWith([
+      {
+        sheetName: 'Data',
+        anchor: ANCHOR,
+        shape: { shapeType: 'hexagon', fillColor: '#ddebf7' },
+      },
+    ])
     const drawingXml = plan.added.get('xl/drawings/drawing1.xml')
     expect(drawingXml).toContain('<a:prstGeom prst="hexagon">')
     expect(drawingXml).toContain('<a:srgbClr val="DDEBF7"/>')
@@ -129,16 +137,20 @@ describe('visual additions: shapes and text boxes', () => {
     expect(plan.added.get('xl/charts/chart2.xml')).toBeUndefined()
     expect(plan.added.get('xl/drawings/_rels/drawing1.xml.rels')).toBeUndefined()
     // drawing part still registers in content types and the sheet rels
-    expect(plan.replaced.get('[Content_Types].xml')).toContain('PartName="/xl/drawings/drawing1.xml"')
+    expect(plan.replaced.get('[Content_Types].xml')).toContain(
+      'PartName="/xl/drawings/drawing1.xml"',
+    )
     expect(plan.added.get('xl/worksheets/_rels/sheet1.xml.rels')).toContain('relationships/drawing')
   })
 
   it('text boxes carry txBox, an outline, and the text body', async () => {
-    const plan = await planWith([{
-      sheetName: 'Data',
-      anchor: ANCHOR,
-      shape: { shapeType: 'rect', fillColor: '#FFFFFF', text: 'Hello <world>', isTextBox: true },
-    }])
+    const plan = await planWith([
+      {
+        sheetName: 'Data',
+        anchor: ANCHOR,
+        shape: { shapeType: 'rect', fillColor: '#FFFFFF', text: 'Hello <world>', isTextBox: true },
+      },
+    ])
     const drawingXml = plan.added.get('xl/drawings/drawing1.xml')
     expect(drawingXml).toContain('<xdr:cNvSpPr txBox="1"/>')
     expect(drawingXml).toContain('name="TextBox 2"')
@@ -160,14 +172,18 @@ describe('visual additions: shapes and text boxes', () => {
 })
 
 describe('visual additions: pictures', () => {
-  const PNG_BASE64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64')
+  const PNG_BASE64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString(
+    'base64',
+  )
 
   it('writes media bytes, a Default content type, and a pic anchor', async () => {
-    const plan = await planWith([{
-      sheetName: 'Data',
-      anchor: ANCHOR,
-      image: { mediaType: 'image/png', base64: PNG_BASE64 },
-    }])
+    const plan = await planWith([
+      {
+        sheetName: 'Data',
+        anchor: ANCHOR,
+        image: { mediaType: 'image/png', base64: PNG_BASE64 },
+      },
+    ])
     const media = plan.addedBinary.get('xl/media/image1.png')
     expect(media).toBeDefined()
     expect(Buffer.from(media!).subarray(0, 4)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
@@ -197,35 +213,45 @@ describe('visual additions: pictures', () => {
 })
 
 describe('visual additions: sheet with an existing drawing', () => {
-  async function buildDrawingFixture(): Promise<Buffer> {
+  const EMPTY_SELF_CLOSED_DRAWING =
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"' +
+    ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>'
+
+  async function buildDrawingFixture(drawingXml?: string): Promise<Buffer> {
     const zip = await JSZip.loadAsync(await buildEditFixture())
     const worksheet = await zip.file('xl/worksheets/sheet1.xml')!.async('string')
     zip.file(
       'xl/worksheets/sheet1.xml',
       worksheet
-        .replace('<worksheet ', '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ')
+        .replace(
+          '<worksheet ',
+          '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ',
+        )
         .replace('</worksheet>', '<drawing r:id="rId9"/></worksheet>'),
     )
     zip.file(
       'xl/worksheets/_rels/sheet1.xml.rels',
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      + '<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>'
-      + '</Relationships>',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>' +
+        '</Relationships>',
     )
     zip.file(
       'xl/drawings/drawing1.xml',
-      '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">'
-      + '<xdr:twoCellAnchor><xdr:graphicFrame><xdr:nvGraphicFramePr>'
-      + '<xdr:cNvPr id="3" name="Chart 3"/></xdr:nvGraphicFramePr></xdr:graphicFrame></xdr:twoCellAnchor>'
-      + '</xdr:wsDr>',
+      drawingXml ??
+        '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"' +
+          ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+          '<xdr:twoCellAnchor><xdr:graphicFrame><xdr:nvGraphicFramePr>' +
+          '<xdr:cNvPr id="3" name="Chart 3"/></xdr:nvGraphicFramePr></xdr:graphicFrame></xdr:twoCellAnchor>' +
+          '</xdr:wsDr>',
     )
     zip.file(
       'xl/drawings/_rels/drawing1.xml.rels',
-      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-      + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>'
-      + '</Relationships>',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>' +
+        '</Relationships>',
     )
     return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
   }
@@ -248,10 +274,37 @@ describe('visual additions: sheet with an existing drawing', () => {
     const worksheet = plan.replaced.get('xl/worksheets/sheet1.xml')
     expect(worksheet ?? '').not.toContain('rId10')
   })
+
+  it('expands a self-closed empty wsDr root (Google Sheets exports)', async () => {
+    const plan = await planWith(
+      [chartAddition()],
+      await buildDrawingFixture(EMPTY_SELF_CLOSED_DRAWING),
+    )
+    const drawingXml = plan.replaced.get('xl/drawings/drawing1.xml')
+    expect(drawingXml).toContain('<xdr:twoCellAnchor>')
+    expect(drawingXml).toMatch(/<\/xdr:wsDr>$/)
+    expect(drawingXml).not.toContain('/><xdr:twoCellAnchor>')
+    expect(drawingXml).toContain('<xdr:graphicFrame')
+  })
+
+  it('declares missing namespaces on the inserted anchor', async () => {
+    const drawing =
+      '<wsDr xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>'
+    const plan = await planWith([chartAddition()], await buildDrawingFixture(drawing))
+    const drawingXml = plan.replaced.get('xl/drawings/drawing1.xml')
+    expect(drawingXml).toContain(
+      '<xdr:twoCellAnchor' +
+        ' xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"' +
+        ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">',
+    )
+    expect(drawingXml).toMatch(/<\/wsDr>$/)
+  })
 })
 
 describe('visual additions: sheets created in the same save', () => {
-  const PNG_BASE64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64')
+  const PNG_BASE64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString(
+    'base64',
+  )
 
   function sheetPlanWith(additions: SheetEditPlan['additions']): SheetEditPlan {
     return {
@@ -270,7 +323,17 @@ describe('visual additions: sheets created in the same save', () => {
     const source = await buildSheetsFixture()
     const plan = await planCellEditsToXlsx(
       await createBufferEntrySource(source),
-      edits, [], [], sheetPlan, [], [], [], [], [], null, additions,
+      edits,
+      [],
+      [],
+      sheetPlan,
+      [],
+      [],
+      [],
+      [],
+      [],
+      null,
+      additions,
     )
     const mutation = await assembleWithJsZip(source, plan)
     assertOnlyTouchedEntriesChanged(mutation)
@@ -322,7 +385,13 @@ describe('visual additions: sheets created in the same save', () => {
 
   it('shape on an added sheet without cell edits', async () => {
     const mutation = await saveWithSheetPlan(
-      [{ sheetName: 'Extra', anchor: ANCHOR, shape: { shapeType: 'hexagon', fillColor: '#ddebf7' } }],
+      [
+        {
+          sheetName: 'Extra',
+          anchor: ANCHOR,
+          shape: { shapeType: 'hexagon', fillColor: '#ddebf7' },
+        },
+      ],
       sheetPlanWith([{ name: 'Extra' }]),
     )
     const worksheet = await entryText(mutation.buffer, 'xl/worksheets/sheet4.xml')
@@ -330,13 +399,20 @@ describe('visual additions: sheets created in the same save', () => {
     const drawingXml = await entryText(mutation.buffer, 'xl/drawings/drawing1.xml')
     expect(drawingXml).toContain('<a:prstGeom prst="hexagon">')
     expect(drawingXml).toContain('<a:srgbClr val="DDEBF7"/>')
-    expect(await entryText(mutation.buffer, '[Content_Types].xml'))
-      .toContain('PartName="/xl/drawings/drawing1.xml"')
+    expect(await entryText(mutation.buffer, '[Content_Types].xml')).toContain(
+      'PartName="/xl/drawings/drawing1.xml"',
+    )
   })
 
   it('image on an added sheet writes media bytes and the Default extension', async () => {
     const mutation = await saveWithSheetPlan(
-      [{ sheetName: 'Extra', anchor: ANCHOR, image: { mediaType: 'image/png', base64: PNG_BASE64 } }],
+      [
+        {
+          sheetName: 'Extra',
+          anchor: ANCHOR,
+          image: { mediaType: 'image/png', base64: PNG_BASE64 },
+        },
+      ],
       sheetPlanWith([{ name: 'Extra' }]),
     )
     expect(mutation.addedEntries).toContain('xl/media/image1.png')
@@ -350,20 +426,18 @@ describe('visual additions: sheets created in the same save', () => {
     expect(drawingXml).toContain('r:embed="rId1"')
     const drawingRels = await entryText(mutation.buffer, 'xl/drawings/_rels/drawing1.xml.rels')
     expect(drawingRels).toContain('Target="../media/image1.png"')
-    expect(await entryText(mutation.buffer, 'xl/worksheets/sheet4.xml'))
-      .toContain('<drawing r:id="rId1"/>')
+    expect(await entryText(mutation.buffer, 'xl/worksheets/sheet4.xml')).toContain(
+      '<drawing r:id="rId1"/>',
+    )
   })
 
   it('chart on a duplicated sheet: clone keeps its content and gains the drawing', async () => {
-    const mutation = await saveWithSheetPlan(
-      [{ ...chartAddition(), sheetName: 'Data Copy' }],
-      {
-        renames: [],
-        additions: [{ name: 'Data Copy', sourceSheetName: 'Data' }],
-        removals: [],
-        order: ['Data', 'Data Copy', 'Other', 'My Sheet'],
-      },
-    )
+    const mutation = await saveWithSheetPlan([{ ...chartAddition(), sheetName: 'Data Copy' }], {
+      renames: [],
+      additions: [{ name: 'Data Copy', sourceSheetName: 'Data' }],
+      removals: [],
+      order: ['Data', 'Data Copy', 'Other', 'My Sheet'],
+    })
     const copy = await entryText(mutation.buffer, 'xl/worksheets/sheet4.xml')
     expect(copy).toContain("<f>'My Sheet'!A1*2</f>")
     expect(copy).toContain('<drawing r:id="rId1"/>')
@@ -374,7 +448,9 @@ describe('visual additions: sheets created in the same save', () => {
     expect(sheetRels).toContain('Target="../drawings/drawing1.xml"')
     const drawingRels = await entryText(mutation.buffer, 'xl/drawings/_rels/drawing1.xml.rels')
     expect(drawingRels).toContain('Target="../charts/chart2.xml"')
-    expect(await entryText(mutation.buffer, 'xl/charts/chart2.xml')).toContain('<c:barDir val="col"/>')
+    expect(await entryText(mutation.buffer, 'xl/charts/chart2.xml')).toContain(
+      '<c:barDir val="col"/>',
+    )
     const workbook = await entryText(mutation.buffer, 'xl/workbook.xml')
     expect(workbook).toContain('<sheet name="Data Copy" sheetId="4" r:id="rId6"/>')
   })

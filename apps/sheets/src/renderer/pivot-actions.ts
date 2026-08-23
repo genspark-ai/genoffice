@@ -396,6 +396,24 @@ export function isSelectionInPivot(ctx: PivotActionContext): boolean {
   )
 }
 
+/// Data › Refresh All: every pivot table on every sheet, one journaled pass.
+export function handleRefreshAllPivots(ctx: PivotActionContext): string | null {
+  const state = ctx.lazyWorkbookRef.current
+  if (!ctx.univerRef.current || !state) return t('appOpenXlsxFirst')
+  const pivotSheets = state.file.sheets.filter((sheet) => sheet.pivotTables.length > 0)
+  if (pivotSheets.length === 0) return t('appWorkbookNoPivot')
+  let count = 0
+  try {
+    for (const sheet of pivotSheets) {
+      count += refreshPivotTables(ctx, sheet.id)
+    }
+  } catch (e) {
+    return e instanceof Error ? e.message : t('appRefreshFailed')
+  }
+  ctx.setMessage(t('appPivotsRefreshed', { count }))
+  return null
+}
+
 export function handleRefreshPivot(ctx: PivotActionContext): string | null {
   const runtime = ctx.univerRef.current
   const state = ctx.lazyWorkbookRef.current

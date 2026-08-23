@@ -8,7 +8,12 @@
       // resolve workspace types from this checkout's sources: in a git worktree
       // node_modules is a symlink into the main checkout, so bare specifiers
       // would typecheck against the other checkout's (possibly stale) types
-      "@genoffice/docx-engine": ["../../packages/docx-engine/src/index.ts"]
+      "@genoffice/docx-engine": ["../../packages/docx-engine/src/index.ts"],
+      "@genoffice/font-metrics": ["../../packages/font-metrics/src/index.ts"],
+      "@genoffice/electron-utils": ["../../packages/electron-utils/src/index.ts"],
+      "@genoffice/ai-provider": ["../../packages/ai-provider/src/index.ts"],
+      "@genoffice/i18n": ["../../packages/i18n/src/index.ts"],
+      "@genoffice/ui": ["../../packages/ui/src/index.ts"]
     }
   },
   "include": ["src", "tests", "electron.vite.config.ts", "vitest.config.ts"]

@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
 
+import { Dropdown } from '@genoffice/ui'
+
 import { useI18n, type StringKey } from './i18n/locale'
 
 /// Excel's Insert Function, minimal: browse/search the catalog, read the
@@ -351,13 +353,14 @@ export function InsertFunctionDialog({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <select value={category} onChange={(event) => setCategory(event.target.value)}>
-            {CATEGORIES.map((name) => (
-              <option key={name} value={name}>
-                {CATEGORY_LABELS[name] ? t(CATEGORY_LABELS[name]) : name}
-              </option>
-            ))}
-          </select>
+          <Dropdown
+            value={category}
+            options={CATEGORIES.map((name) => ({
+              value: name,
+              label: CATEGORY_LABELS[name] ? t(CATEGORY_LABELS[name]) : name,
+            }))}
+            onPick={setCategory}
+          />
         </div>
         <div className="fn-list" role="listbox">
           {matches.map((spec) => (

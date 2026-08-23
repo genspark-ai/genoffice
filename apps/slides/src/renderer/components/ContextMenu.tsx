@@ -58,6 +58,26 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
     }
   }, [onClose])
 
+  const swatchRow = (swatches: string[], onSwatch?: (color: string) => void) => (
+    <div className="ctx-swatches-row">
+      {swatches.map((c) => (
+        <button
+          key={c}
+          className={`ctx-swatch ${c === 'none' ? 'ctx-swatch-none' : ''}`}
+          style={c === 'none' ? undefined : { background: c }}
+          data-tip={c}
+          aria-label={c}
+          onClick={() => {
+            onClose()
+            onSwatch?.(c)
+          }}
+        >
+          {c === 'none' ? '✕' : ''}
+        </button>
+      ))}
+    </div>
+  )
+
   return (
     <div
       ref={ref}
@@ -71,23 +91,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
         ) : item.swatches ? (
           <div key={i} className="ctx-swatches">
             <span className="ctx-swatches-label">{item.label}</span>
-            <div className="ctx-swatches-row">
-              {item.swatches.map((c) => (
-                <button
-                  key={c}
-                  className={`ctx-swatch ${c === 'none' ? 'ctx-swatch-none' : ''}`}
-                  style={c === 'none' ? undefined : { background: c }}
-                  data-tip={c}
-                  aria-label={c}
-                  onClick={() => {
-                    onClose()
-                    item.onSwatch?.(c)
-                  }}
-                >
-                  {c === 'none' ? '✕' : ''}
-                </button>
-              ))}
-            </div>
+            {swatchRow(item.swatches, item.onSwatch)}
           </div>
         ) : (
           <button

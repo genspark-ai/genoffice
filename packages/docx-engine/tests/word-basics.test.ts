@@ -42,6 +42,36 @@ describe('paragraph shading and borders', () => {
     expect(doc.blocks[0].format?.borders).toBe('tb')
   })
 
+  it('borderStyle sets color, thickness and text gap on the border sides', async () => {
+    const xml = generateParagraphXml(
+      {
+        type: 'paragraph',
+        format: {
+          borders: 't',
+          borderStyle: { color: '0A3C61', szEighths: 12, spacePt: 11 },
+        },
+        runs: [{ text: 'ruled title' }],
+      },
+      CTX,
+    )
+    expect(xml).toContain('<w:top w:val="single" w:sz="12" w:space="11" w:color="0A3C61"/>')
+
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].format?.borders).toBe('t')
+  })
+
+  it("borderStyle clamps w:space to Word's 31pt limit and floors w:sz", async () => {
+    const xml = generateParagraphXml(
+      {
+        type: 'paragraph',
+        format: { borders: 'b', borderStyle: { szEighths: 1, spacePt: 99 } },
+        runs: [{ text: 'x' }],
+      },
+      CTX,
+    )
+    expect(xml).toContain('<w:bottom w:val="single" w:sz="2" w:space="31" w:color="auto"/>')
+  })
+
   it('keeps declared pBdr color and width (w:sz eighth-points -> pt)', async () => {
     const xml =
       '<w:p><w:pPr><w:pBdr>' +

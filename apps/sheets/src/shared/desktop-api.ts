@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { MAX_SAVE_EDITS, MAX_SAVE_EDITS_TOTAL, SAVE_EDITS_CHUNK_MAX } from './ipc-channels'
 import { ADDABLE_SHAPE_TYPES } from './shape-types'
 import type {
   AiChatRequest,
@@ -26,6 +27,9 @@ const worksheetMetadataSchema = z
     name: z.string().min(1),
     rowCount: z.number().int().positive(),
     columnCount: z.number().int().positive(),
+    /// Uncompressed worksheet XML size reported by the sidecar. Optional for
+    /// compatibility with an older sidecar binary.
+    sourceXmlBytes: z.number().int().nonnegative().optional(),
     columnWidths: z.array(
       z
         .object({
@@ -56,6 +60,8 @@ const worksheetMetadataSchema = z
     showGridLines: z.boolean(),
     /// sheetView/@showFormulas — the sheet opens in formula view.
     showFormulas: z.boolean().optional(),
+    /// sheetView/@showRowColHeaders — false hides the heading strips.
+    showRowColHeaders: z.boolean().optional(),
     tables: z.array(
       z
         .object({
@@ -63,10 +69,41 @@ const worksheetMetadataSchema = z
           headerRowCount: z.number().int().nonnegative(),
           showRowStripes: z.boolean(),
           showColumnStripes: z.boolean(),
+          /// table/@displayName (falling back to @name) — the structured-reference token.
+          name: z.string().optional(),
+          /// tableColumn/@name in column order, for the formula engine's titleMap.
+          columns: z.array(z.string()).optional(),
           styleName: z.string().optional(),
           headerFill: z.string().optional(),
           headerFontColor: z.string().optional(),
           stripeFill: z.string().optional(),
+          secondRowStripeFill: z.string().optional(),
+          columnStripeFill: z.string().optional(),
+          secondColumnStripeFill: z.string().optional(),
+          wholeTableFill: z.string().optional(),
+          firstColumnFill: z.string().optional(),
+          lastColumnFill: z.string().optional(),
+          totalRowFill: z.string().optional(),
+          totalRowFontColor: z.string().optional(),
+          /// Rule Excel draws across the top of the totals band.
+          totalRowBorderColor: z.string().optional(),
+          totalRowBorderStyle: z.string().optional(),
+          /// Data-band text color (Dark families paint white on the solid body).
+          bodyFontColor: z.string().optional(),
+          firstHeaderCellFontColor: z.string().optional(),
+          /// table/@totalsRowCount — bottom rows styled as the totals band.
+          totalsRowCount: z.number().int().nonnegative().optional(),
+          /// Style frame color (outline + header rule) for border-drawn families.
+          borderColor: z.string().optional(),
+          /// Custom-style wholeTable borders: outline + inner grid + header rule.
+          wholeTableBorderColor: z.string().optional(),
+          wholeTableBorderStyle: z.string().optional(),
+          innerHorizontalBorderColor: z.string().optional(),
+          innerHorizontalBorderStyle: z.string().optional(),
+          innerVerticalBorderColor: z.string().optional(),
+          innerVerticalBorderStyle: z.string().optional(),
+          headerBottomBorderColor: z.string().optional(),
+          headerBottomBorderStyle: z.string().optional(),
         })
         .strict(),
     ),
@@ -91,6 +128,14 @@ const worksheetMetadataSchema = z
             path: z.string().min(1),
             cachePath: z.string().min(1).nullable(),
             outputRef: z.string().min(1),
+            /// Pivot style band fill (header + grand-total rows).
+            headerFill: z.string().optional(),
+            headerFontColor: z.string().optional(),
+            /// Body band fill for solid families (Dark); stripe overlays it.
+            wholeTableFill: z.string().optional(),
+            stripeFill: z.string().optional(),
+            firstDataRow: z.number().int().nonnegative().optional(),
+            rowGrandTotals: z.boolean().optional(),
           })
           .strict(),
       )
@@ -161,6 +206,12 @@ const conditionalRuleSchema = z
     iconSetName: z.string().optional(),
     iconReverse: z.boolean(),
     showValue: z.boolean(),
+    /// x14:dataBar negativeFillColor merged from the worksheet extLst.
+    negativeColor: z.string().optional(),
+    /// x14:dataBar/@negativeBarColorSameAsPositive; absent means no x14 twin.
+    negativeSameAsPositive: z.boolean().optional(),
+    /// x14:dataBar/@gradient; absent means the ECMA default (gradient fill).
+    gradient: z.boolean().optional(),
   })
   .strict()
 const borderEdgeSchema = z
@@ -180,10 +231,20 @@ const cellStyleSchema = z
     wrapText: z.boolean(),
     fontColor: z.string().optional(),
     fillColor: z.string().optional(),
+    /// Theme provenance (palette slot + tint) for theme-resolved colors, so
+    /// the renderer can re-resolve them when the document theme changes.
+    fontColorTheme: z.number().int().nonnegative().optional(),
+    fontColorTint: z.number().min(-1).max(1).optional(),
+    fillColorTheme: z.number().int().nonnegative().optional(),
+    fillColorTint: z.number().min(-1).max(1).optional(),
+    /// font/scheme: the family follows the theme's major/minor font.
+    fontScheme: z.enum(['major', 'minor']).optional(),
     horizontalAlignment: z.string().optional(),
     verticalAlignment: z.string().optional(),
     /// OOXML alignment indent steps read from the xf; absent when 0.
     indent: z.number().int().nonnegative().optional(),
+    /// alignment/@textRotation: 1-90 ccw, 91-180 encodes cw, 255 stacked.
+    textRotation: z.number().int().min(1).max(255).optional(),
     numberFormat: z.string().optional(),
     borderTop: borderEdgeSchema.optional(),
     borderBottom: borderEdgeSchema.optional(),
@@ -206,6 +267,19 @@ const drawingAnchorSchema = z
     toColumnOffset: z.number().int(),
   })
   .strict()
+const chartAxisInfoSchema = z
+  .object({
+    title: z.string().optional(),
+    min: z.number().finite().optional(),
+    max: z.number().finite().optional(),
+    majorUnit: z.number().finite().optional(),
+    numFmt: z.string().optional(),
+    majorGridlines: z.boolean(),
+    /// c:delete — the axis scales series but is not drawn.
+    hidden: z.boolean().default(false),
+  })
+  .strict()
+
 const visualObjectSchema = z
   .object({
     id: z.string().min(1),
@@ -254,6 +328,11 @@ const visualObjectSchema = z
                     .strict(),
                 )
                 .optional(),
+              /// spPr/a:ln color; "none" for an explicit noFill line.
+              lineColor: z.string().optional(),
+              smooth: z.boolean().optional(),
+              /// c:marker symbol — "none" hides scatter/line markers.
+              marker: z.string().optional(),
             })
             .strict(),
         ),
@@ -288,6 +367,22 @@ const visualObjectSchema = z
         categoryAxisFormat: z.string().optional(),
         gapWidthPct: z.number().optional(),
         holeSizePct: z.number().optional(),
+        /// Per-side axes (b/t → x, l/r → y): titles, explicit scale, numFmt.
+        xAxis: chartAxisInfoSchema.optional(),
+        yAxis: chartAxisInfoSchema.optional(),
+        /// Second left/right value axis (combo charts).
+        secondaryYAxis: chartAxisInfoSchema.optional(),
+        /// c:scatterStyle — whether scatter points connect with lines.
+        scatterStyle: z.string().optional(),
+        /// c:title/c:txPr//a:defRPr shorthand.
+        titleStyle: z
+          .object({
+            size: z.number().finite().optional(),
+            bold: z.boolean().optional(),
+            color: z.string().optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
@@ -300,8 +395,70 @@ const visualObjectSchema = z
     name: z.string().optional(),
     shapeType: z.string().optional(),
     fillColor: z.string().optional(),
+    /// xdr:style fillRef resolved against a theme fillStyleLst gradient;
+    /// fillColor stays the flat approximation.
+    fillGradient: z
+      .object({
+        /// Degrees clockwise, 0 = left-to-right.
+        angle: z.number().finite(),
+        stops: z
+          .array(
+            z
+              .object({
+                /// 0..1 along the gradient axis.
+                position: z.number().min(0).max(1),
+                color: z.string(),
+              })
+              .strict(),
+          )
+          .min(2),
+      })
+      .strict()
+      .optional(),
+    /// Shape outline (spPr/a:ln or xdr:style lnRef); "none" = no outline.
+    lineColor: z.string().optional(),
+    /// a:ln width in points.
+    lineWidth: z.number().finite().optional(),
+    /// a:ln/a:prstDash val — solid when absent.
+    lineDash: z.string().optional(),
+    /// a:ln cap — rnd | sq | flat.
+    lineCap: z.string().optional(),
+    /// a:xfrm flipH/flipV — mirror the preset geometry.
+    flipH: z.boolean().optional(),
+    flipV: z.boolean().optional(),
+    /// xdr:style fontRef color — default run color.
+    textColor: z.string().optional(),
+    /// a:bodyPr anchor — t | ctr | b.
+    textAnchor: z.string().optional(),
+    /// txBody paragraphs with per-run styling; `text` stays the flat join.
+    paragraphs: z
+      .array(
+        z
+          .object({
+            align: z.string().optional(),
+            runs: z.array(
+              z
+                .object({
+                  text: z.string(),
+                  color: z.string().optional(),
+                  bold: z.boolean().optional(),
+                  italic: z.boolean().optional(),
+                  underline: z.boolean().optional(),
+                  size: z.number().finite().optional(),
+                })
+                .strict(),
+            ),
+          })
+          .strict(),
+      )
+      .max(200)
+      .optional(),
     text: z.string().optional(),
     rotation: z.number().finite().optional(),
+    /// a:xfrm ext in EMU — a rotated shape's true unrotated frame (the
+    /// anchor stores rotated bounds, centered on the shape center).
+    frameWidth: z.number().finite().positive().optional(),
+    frameHeight: z.number().finite().positive().optional(),
     /// Save-side edit locator: the drawing part this visual lives in and its
     /// anchor index within that part (document order, skipped anchors counted).
     drawingPath: z
@@ -322,6 +479,9 @@ export const workbookFileSchema = z
     sha256: z.string().length(64),
     entryCount: z.number().int().nonnegative(),
     sheets: z.array(worksheetMetadataSchema).min(1),
+    /// workbookView/@activeTab — sheet index Excel had active on save.
+    /// Defaulted so a stale sidecar binary keeps opening on the first sheet.
+    activeTab: z.number().int().nonnegative().default(0),
     styles: z.array(cellStyleSchema),
     dxfStyles: z.array(cellStyleSchema),
     visuals: z.array(visualObjectSchema),
@@ -339,6 +499,27 @@ export const workbookFileSchema = z
     /// Converted import (.xls/.csv): the first save opens a Save As dialog,
     /// so background flows (AutoSave) must not trigger mode 'save'.
     needsSaveAs: z.boolean().optional(),
+    /// Session opened from a restored crash-recovery copy: Save silently
+    /// writes back to the original file, and the 30s recovery writer stands
+    /// down (it would overwrite the copy the sidecar is streaming from).
+    restoredFromRecovery: z.boolean().optional(),
+    /// Very large worksheet XML entries use too much memory in the current
+    /// string-based patcher to rewrite safely every 30 seconds. Manual Save
+    /// remains available; only the background crash-recovery copy is disabled.
+    automaticRecoveryDisabled: z.boolean().optional(),
+    /// Theme palette as #RRGGBB in theme index order [lt1, dk1, lt2, dk2,
+    /// accent1-6, hlink, folHlink]; absent without a readable theme.
+    themeColors: z.array(z.string()).length(12).optional(),
+    themeFonts: z.object({ major: z.string(), minor: z.string() }).strict().optional(),
+    /// workbook.xml <workbookProtection>; absent when the element is missing.
+    workbookProtection: z
+      .object({ lockStructure: z.boolean(), hasPassword: z.boolean() })
+      .strict()
+      .optional(),
+    /// workbookPr/@date1904: serial dates count from 1904-01-01.
+    date1904: z.boolean().optional(),
+    /// System short-date pattern the sidecar applied to builtin numFmtIds 14/22.
+    shortDateFormat: z.string().optional(),
   })
   .strict()
 
@@ -391,6 +572,9 @@ export const workbookRangeResultSchema = z
           .object({
             row: z.number().int().nonnegative(),
             height: z.number().nonnegative().optional(),
+            /// customHeight="1": user-fixed height (clip); absent means ht is
+            /// an auto-fit result the renderer may grow past.
+            customHeight: z.boolean().optional(),
             hidden: z.boolean(),
             outlineLevel: z.number().int().min(1).max(7).optional(),
             collapsed: z.boolean().optional(),
@@ -444,6 +628,22 @@ export const workbookRangeResultSchema = z
       })
       .strict()
       .nullable(),
+    /// Manual page breaks (0-based index of the row/column after the break);
+    /// sheet-wide, complete-only.
+    rowBreaks: z.array(z.number().int().nonnegative()).max(1_024),
+    colBreaks: z.array(z.number().int().nonnegative()).max(1_024),
+    /// Allow-edit ranges (<protectedRanges>); sheet-wide, complete-only.
+    protectedRanges: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1),
+            sqref: z.string().min(1),
+            hasPassword: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(1_024),
     indexedThroughRow: z.number().int().nonnegative().nullable(),
     indexingComplete: z.boolean(),
   })
@@ -537,7 +737,6 @@ export const workbookRecalcResultSchema = z
   })
   .strict()
 
-const MAX_SAVE_EDITS = 10_000
 const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/)
 
 /// OOXML border line styles the editor can write.
@@ -623,6 +822,23 @@ export const workbookCellEditSchema = z
   .strict()
   .refine((edit) => edit.writeValue || edit.style !== undefined || edit.styleReset === true, {
     message: 'A style-only edit needs a style delta or a reset.',
+  })
+
+/// One constant value painted over a rectangular range. Large lazy-workbook
+/// fills stay declarative through renderer journal, IPC, and save planning
+/// instead of allocating one object per cell.
+export const workbookBulkConstantFillSchema = z
+  .object({
+    sheetId: z.string().min(1),
+    startRow: z.number().int().nonnegative().max(1_048_575),
+    endRow: z.number().int().nonnegative().max(1_048_575),
+    startColumn: z.number().int().nonnegative().max(16_383),
+    endColumn: z.number().int().nonnegative().max(16_383),
+    value: cellScalarSchema,
+  })
+  .strict()
+  .refine((fill) => fill.endRow >= fill.startRow && fill.endColumn >= fill.startColumn, {
+    message: 'Invalid bulk constant-fill range.',
   })
 
 /// One structural operation, in the coordinate space produced by all
@@ -768,6 +984,7 @@ export const workbookPageSetupStateSchema = z
     printHeadings: z.boolean().optional(),
     showGridlines: z.boolean().optional(),
     showFormulas: z.boolean().optional(),
+    showHeadings: z.boolean().optional(),
     printArea: z.union([z.string().min(1).max(255), z.null()]).optional(),
     printTitles: z.union([z.string().regex(/^\d{1,7}:\d{1,7}$/), z.null()]).optional(),
     /// Frozen pane counts; both present together, 0/0 removes the pane.
@@ -776,6 +993,10 @@ export const workbookPageSetupStateSchema = z
     /// Printed header/footer sections, or null to clear that half.
     header: z.union([headerFooterPartsSchema, z.null()]).optional(),
     footer: z.union([headerFooterPartsSchema, z.null()]).optional(),
+    /// Manual page breaks (0-based index of the row/column after the break).
+    /// Presence replaces the sheet's break set; [] clears all manual breaks.
+    rowBreaks: z.array(z.number().int().min(1).max(1_048_575)).max(1_023).optional(),
+    colBreaks: z.array(z.number().int().min(1).max(16_383)).max(1_023).optional(),
   })
   .strict()
   .refine((state) => Object.keys(state).length > 1, {
@@ -927,6 +1148,15 @@ export const workbookVisualEditSchema = z
     drawingIndex: z.number().int().nonnegative().max(10_000),
     remove: z.literal(true).optional(),
     anchor: drawingAnchorSchema.optional(),
+    /// New xfrm ext in EMU — sent with `anchor` when a rotated shape is
+    /// resized (its anchor stores the rotated AABB, not the true frame).
+    frameSize: z
+      .object({
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((edit) => edit.remove === true || edit.anchor !== undefined, {
@@ -1327,11 +1557,52 @@ export const workbookPivotAddSchema = z
   })
   .strict()
 
+/// Chunked transfer for edit sets too large to inline in one save request.
+/// The renderer opens a transfer, uploads ordered slices, then references the
+/// transfer from the save request; the main process concatenates the slices
+/// back into one edits array before applying.
+export const workbookSaveEditsBeginSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    transferId: z.string().uuid(),
+    total: z.number().int().positive().max(MAX_SAVE_EDITS_TOTAL),
+  })
+  .strict()
+
+export const workbookSaveEditsChunkSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    transferId: z.string().uuid(),
+    /// 0-based slice index; chunks must arrive in order.
+    seq: z.number().int().nonnegative(),
+    edits: z.array(workbookCellEditSchema).min(1).max(SAVE_EDITS_CHUNK_MAX),
+  })
+  .strict()
+
+/// Renderer-initiated cleanup when an upload or its save fails: frees the
+/// accumulated edits immediately instead of waiting for the idle expiry.
+export const workbookSaveEditsAbortSchema = z
+  .object({
+    sessionId: z.string().uuid(),
+    transferId: z.string().uuid(),
+  })
+  .strict()
+
 export const workbookSaveRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
     mode: z.enum(['save', 'save-as']),
+    /// Restored crash-recovery session writing back to the original file: the
+    /// change is the workbook bytes themselves, so the request is valid with
+    /// an otherwise empty payload (like an explicit Save As).
+    restoreWriteBack: z.boolean().optional(),
     edits: z.array(workbookCellEditSchema).max(MAX_SAVE_EDITS),
+    /// Edit sets above MAX_SAVE_EDITS arrive through the chunked transfer
+    /// (saveEditsBegin/saveEditsChunk) instead of inline: the request then
+    /// carries the transfer id and an empty edits array, and the main process
+    /// splices the accumulated chunks back in before applying.
+    editsTransferId: z.string().uuid().optional(),
+    bulkConstantFills: z.array(workbookBulkConstantFillSchema).max(1_000).optional(),
     structuralOps: z.array(workbookStructuralOpSchema).max(1_000),
     chartEdits: z.array(workbookChartEditSchema).max(100),
     visualEdits: z.array(workbookVisualEditSchema).max(100),
@@ -1439,14 +1710,67 @@ export const workbookSaveRequestSchema = z
       })
       .strict()
       .nullable(),
+    /// Document theme change (null = untouched): rewrites theme1.xml's
+    /// clrScheme and/or fontScheme. Colors are #RRGGBB in theme index order.
+    themeState: z
+      .object({
+        colors: z
+          .object({
+            name: z.string().min(1).max(64),
+            values: z.array(hexColorSchema).length(12),
+          })
+          .strict()
+          .optional(),
+        fonts: z
+          .object({
+            name: z.string().min(1).max(64),
+            major: z.string().min(1).max(128),
+            minor: z.string().min(1).max(128),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
+    /// Desired workbook structure protection (null = untouched, no password).
+    workbookProtectionState: z
+      .object({ lockStructure: z.boolean() })
+      .strict()
+      .nullable()
+      .default(null),
+    /// Full allow-edit-range snapshots for sheets whose set changed.
+    protectedRangeStates: z
+      .array(
+        z
+          .object({
+            sheetId: z.string().min(1),
+            ranges: z
+              .array(
+                z
+                  .object({
+                    name: z.string().min(1).max(255),
+                    sqref: z.string().min(1).max(1_024),
+                  })
+                  .strict(),
+              )
+              .max(1_000),
+          })
+          .strict(),
+      )
+      .max(1_000)
+      .default([]),
   })
   .strict()
   .refine(
     (request) =>
-      // Explicit Save As is a valid request even with nothing to apply: it
-      // writes the unchanged workbook to a new path.
+      // Explicit Save As and the restore write-back are valid requests even
+      // with nothing to apply: they write the unchanged workbook to a path.
       request.mode === 'save-as' ||
+      request.restoreWriteBack === true ||
+      request.editsTransferId !== undefined ||
       request.edits.length > 0 ||
+      (request.bulkConstantFills?.length ?? 0) > 0 ||
       request.structuralOps.length > 0 ||
       request.chartEdits.length > 0 ||
       request.visualEdits.length > 0 ||
@@ -1461,6 +1785,9 @@ export const workbookSaveRequestSchema = z
       request.pivotRefreshUpdates.length > 0 ||
       request.sheetProtections.length > 0 ||
       request.definedNamesState !== null ||
+      request.themeState !== null ||
+      request.workbookProtectionState !== null ||
+      request.protectedRangeStates.length > 0 ||
       request.visualAdditions.length > 0 ||
       request.tableAdditions.length > 0 ||
       request.pivotAdditions.length > 0 ||
@@ -1687,6 +2014,7 @@ export const workbookMediaResultSchema = z
 export type WorkbookFile = z.infer<typeof workbookFileSchema>
 export type WorkbookStyleEdit = z.infer<typeof workbookStyleEditSchema>
 export type WorkbookCellEdit = z.infer<typeof workbookCellEditSchema>
+export type WorkbookBulkConstantFill = z.infer<typeof workbookBulkConstantFillSchema>
 export type WorkbookStructuralOp = z.infer<typeof workbookStructuralOpSchema>
 export type WorkbookChartEdit = z.infer<typeof workbookChartEditSchema>
 export type WorkbookVisualEdit = z.infer<typeof workbookVisualEditSchema>
@@ -1698,6 +2026,9 @@ export type WorkbookNoteState = z.infer<typeof workbookNoteStateSchema>
 export type WorkbookSheetOp = z.infer<typeof workbookSheetOpSchema>
 export type WorkbookFilterState = z.infer<typeof workbookFilterStateSchema>
 export type WorkbookSaveRequest = z.infer<typeof workbookSaveRequestSchema>
+export type WorkbookSaveEditsBegin = z.infer<typeof workbookSaveEditsBeginSchema>
+export type WorkbookSaveEditsChunk = z.infer<typeof workbookSaveEditsChunkSchema>
+export type WorkbookSaveEditsAbort = z.infer<typeof workbookSaveEditsAbortSchema>
 export type WorkbookSaveResult = z.infer<typeof workbookSaveResultSchema>
 export type WorkbookRangeRequest = z.infer<typeof workbookRangeRequestSchema>
 export type WorkbookFormulaCellsRequest = z.infer<typeof workbookFormulaCellsRequestSchema>
@@ -1740,6 +2071,7 @@ export const aiSettingsInputSchema = z
   .object({
     provider: z.string().min(1),
     providers: z.record(z.string(), aiProviderConfigSchema),
+    gskToolsEnabled: z.boolean().optional(),
   })
   .strict()
 
@@ -1902,6 +2234,18 @@ export interface AttachmentImageResult {
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
+/** Autosave-recovery prompt raised by main during workbook open (strings pre-localized). */
+export interface RecoveryPromptPayload {
+  title: string
+  body: string
+  restoreLabel: string
+  discardLabel: string
+  /** base name of the workbook being opened */
+  fileName: string
+  /** mtime of the recovery copy (epoch ms) — when the unsaved work was last autosaved */
+  savedAtMs: number
+}
+
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
@@ -1932,6 +2276,14 @@ export interface DesktopApi {
   /// null when the source vanished between listing and capture.
   captureScreenSource(request: ScreenCaptureRequest): Promise<ScreenCaptureResult | null>
   saveWorkbookEdits(request: WorkbookSaveRequest): Promise<WorkbookSaveResult>
+  /// Chunked upload of a large save's cell edits (above MAX_SAVE_EDITS):
+  /// begin a transfer, send ordered slices, then reference the transfer via
+  /// editsTransferId in the following save/recovery request.
+  beginSaveEditsTransfer(request: WorkbookSaveEditsBegin): Promise<void>
+  sendSaveEditsChunk(request: WorkbookSaveEditsChunk): Promise<void>
+  /// Frees an unconsumed transfer after a failed upload or save; silent no-op
+  /// if the transfer was already consumed or expired.
+  abortSaveEditsTransfer(request: WorkbookSaveEditsAbort): Promise<void>
   /// Crash-recovery copy of the pending edits, written under userData.
   /// Best-effort: never prompts, never touches the opened file.
   writeWorkbookRecovery(request: WorkbookSaveRequest): Promise<{ ok: boolean }>
@@ -1954,6 +2306,11 @@ export interface DesktopApi {
   /// Main asks the renderer to save before closing; reply via reportCloseSaveResult.
   onCloseSaveRequest(callback: () => void): () => void
   reportCloseSaveResult(ok: boolean): void
+  /// Main found a newer autosaved recovery copy while opening a workbook; the
+  /// renderer shows the styled restore prompt and replies via replyRecoveryPrompt.
+  /// Strings arrive pre-localized from the main process.
+  onRecoveryPrompt(callback: (prompt: RecoveryPromptPayload) => void): () => void
+  replyRecoveryPrompt(restore: boolean): void
   /// Returns true once when this tab was opened via "New Spreadsheet" from the
   /// shell home.
   consumeNewBlankWorkbook(): Promise<boolean>
@@ -1974,6 +2331,12 @@ export interface DesktopApi {
   aiGskLogin(): Promise<void>
   /// Web search (main-process Serper/DuckDuckGo, shared with docs/slides)
   webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
+  /// Image search (same shared main-process channel as docs/slides)
+  imageSearch(query: string, maxResults?: number): Promise<ImageSearchResponse>
+  /// AI image generation via the Genspark account (sheets-owned channel)
+  generateImage(op: { prompt: string; aspectRatio?: string }): Promise<GenerateImageResult>
+  /// Downloads an image URL in the main process (SSRF-guarded); null on failure
+  fetchImage(url: string): Promise<{ base64: string; mime: string } | null>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   /// Chat attachments: multi-select file dialog (returns null on cancel)
   pickAttachments(): Promise<AttachmentAddResult | null>
@@ -1996,4 +2359,25 @@ export interface WebSearchResult {
   results: Array<{ title: string; url: string; snippet: string }>
   answer?: string
   method: string
+  /** failure reason when method === 'error' */
+  error?: string
+}
+
+export interface ImageSearchResponse {
+  images: Array<{
+    title: string
+    imageUrl: string
+    sourceUrl: string
+    source: string
+    width?: number
+    height?: number
+  }>
+  method: string
+  /** failure reason when method === 'error' */
+  error?: string
+}
+
+export interface GenerateImageResult {
+  url?: string
+  error?: string
 }

@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./table-grid": "./src/table-grid.ts",
+    "./identity": "./src/identity.ts",
     "./background-promote": "./src/background-promote.ts"
   },
   "scripts": {

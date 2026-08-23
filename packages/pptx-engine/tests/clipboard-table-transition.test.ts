@@ -155,9 +155,9 @@ describe('editTableCellText', () => {
     const slide = r.slide
     const tblId = r.elementId
 
-    expect(editTableCellText(slide, tblId, 0, 1, [{ runs: [{ text: 'Header B', bold: true }] }])).toBe(
-      true,
-    )
+    expect(
+      editTableCellText(slide, tblId, 0, 1, [{ runs: [{ text: 'Header B', bold: true }] }]),
+    ).toBe(true)
     expect(editTableCellText(slide, tblId, 1, 0, [{ runs: [{ text: 'data' }] }])).toBe(true)
     // Out of range rejected
     expect(editTableCellText(slide, tblId, 5, 0, [{ runs: [{ text: 'x' }] }])).toBe(false)
@@ -243,6 +243,21 @@ describe('table structure ops', () => {
     const tbl2 = reopened.deck.slides[0]!.elements.at(-1) as TableElement
     expect(tbl2.colWidths[0]).toBe(w0 * 2)
     expect(tbl2.transform.offset.cx).toBe(w0 * 2 + tbl2.colWidths[1]!)
+  })
+
+  it('rtl table: growing a column shifts the origin left (visual-right edge anchored)', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const { slide, elementId } = addTable(opened, 0, { rows: 2, cols: 2, offset: { ...TBL_OFF } })!
+    const tbl = slide.elements.find((e) => e.id === elementId) as TableElement
+    tbl.anchor.originalXml = tbl.anchor.originalXml.replace('<a:tblPr', '<a:tblPr rtl="1"')
+    tbl.rtl = true
+    const w0 = tbl.colWidths[0]!
+    const x0 = tbl.transform.offset.x
+
+    expect(setTableColWidth(slide, elementId, 0, w0 + 91440)).toBe(true)
+    expect(tbl.transform.offset.x).toBe(x0 - 91440)
+    expect(tbl.transform.offset.cx).toBe(w0 + 91440 + tbl.colWidths[1]!)
+    expect(tbl.anchor.originalXml).toContain(`x="${x0 - 91440}"`)
   })
 })
 

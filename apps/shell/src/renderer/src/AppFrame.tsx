@@ -37,9 +37,15 @@ export function AppFrame({ initialOnboardingSeen }: AppFrameProps) {
     }
   }, [showOnboarding])
 
-  const finishOnboarding = () => {
-    setShowOnboarding(false)
-    void window.aiOffice.setOnboardingSeen().catch(() => {})
+  const finishOnboarding = async (): Promise<boolean> => {
+    try {
+      const persisted = await window.aiOffice.setOnboardingSeen()
+      if (!persisted) return false
+      setShowOnboarding(false)
+      return true
+    } catch {
+      return false
+    }
   }
 
   return (

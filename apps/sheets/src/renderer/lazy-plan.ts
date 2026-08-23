@@ -1,5 +1,10 @@
 import {
+  clearRangeOpLabel,
+  convertToValuesOpLabel,
+  copyOpLabel,
   expandToPrimitiveOps,
+  fillOpLabel,
+  findReplaceOpLabel,
   formatOpLabel,
   isLayoutOp,
   isStructuralOp,
@@ -11,21 +16,37 @@ import type { CellState, ChangePlan } from '../domain/workbook.types'
 
 /// Builds an AI change preview against a live (imported) workbook: "before"
 /// states come from the current on-screen cells, and the same reader is used
-/// at apply time to detect drift since the preview.
+/// at apply time to detect drift since the preview. Operations carry their
+/// own sheetId (which may differ from the active sheet), so the reader and
+/// the sheet-name lookup are both sheet-addressed.
 
-export type CellReader = (address: string) => CellState
+export type CellReader = (address: string, sheetId: string) => CellState
 
 export function buildLazyChangePlan(
   batch: WorkbookCommandBatch,
   readCell: CellReader,
-  currentSheetName: string,
+  sheetNameById: (sheetId: string) => string,
 ): ChangePlan {
   const cellChanges: ChangePlan['cellChanges'][number][] = []
   const sheetRenames: ChangePlan['sheetRenames'][number][] = []
   const structuralChanges: ChangePlan['structuralChanges'][number][] = []
   const formatChanges: ChangePlan['formatChanges'][number][] = []
-  for (const operation of expandToPrimitiveOps(batch.operations, (address) => readCell(address))) {
-    if (operation.op === 'format_range') {
+  for (const operation of expandToPrimitiveOps(batch.operations, readCell)) {
+    if (operation.op === 'fill_range') {
+      // Range-level bulk op: no per-cell before-state (like layout ops);
+      // the apply executor performs one setValues over the target.
+      structuralChanges.push({ op: operation, label: fillOpLabel(operation) })
+    } else if (operation.op === 'copy_range') {
+      structuralChanges.push({ op: operation, label: copyOpLabel(operation) })
+    } else if (operation.op === 'convert_to_values') {
+      structuralChanges.push({ op: operation, label: convertToValuesOpLabel(operation) })
+    } else if (operation.op === 'clear_range') {
+      structuralChanges.push({ op: operation, label: clearRangeOpLabel(operation) })
+    } else if (operation.op === 'find_replace') {
+      // Only >MAX_EXPANDED_CELL_OPS ranges arrive range-level; smaller ones
+      // were expanded into ordinary per-cell changes above.
+      structuralChanges.push({ op: operation, label: findReplaceOpLabel(operation) })
+    } else if (operation.op === 'format_range') {
       formatChanges.push({
         sheetId: operation.sheetId,
         range: operation.range,
@@ -40,27 +61,27 @@ export function buildLazyChangePlan(
       cellChanges.push({
         sheetId: operation.sheetId,
         address: operation.address,
-        before: readCell(operation.address),
+        before: readCell(operation.address, operation.sheetId),
         after: { value: operation.value },
       })
     } else if (operation.op === 'set_formula') {
       cellChanges.push({
         sheetId: operation.sheetId,
         address: operation.address,
-        before: readCell(operation.address),
+        before: readCell(operation.address, operation.sheetId),
         after: { value: null, formula: operation.formula },
       })
     } else if (operation.op === 'clear_cell') {
       cellChanges.push({
         sheetId: operation.sheetId,
         address: operation.address,
-        before: readCell(operation.address),
+        before: readCell(operation.address, operation.sheetId),
         after: { value: null },
       })
     } else {
       sheetRenames.push({
         sheetId: operation.sheetId,
-        before: currentSheetName,
+        before: sheetNameById(operation.sheetId),
         after: operation.name.trim(),
       })
     }
@@ -81,7 +102,7 @@ export function buildLazyChangePlan(
 /// the sheet-existence check and Univer's own command gating at apply time.
 export function planStillMatches(plan: ChangePlan, readCell: CellReader): boolean {
   return plan.cellChanges.every((change) => {
-    const current = readCell(change.address)
+    const current = readCell(change.address, change.sheetId)
     if ((current.formula ?? undefined) !== (change.before.formula ?? undefined)) return false
     // Formula cells only compare formula text: computed values fluctuate with
     // recalcs/dependency changes and are not user-edit conflicts

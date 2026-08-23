@@ -9,6 +9,7 @@ import {
   splitSheetRef,
   withDefaultBarLabels,
   type ChartVisualState,
+  valueAxisScale,
 } from '../src/domain/chart-visual'
 
 const base = (): ChartVisualState => ({
@@ -96,8 +97,9 @@ describe('withDefaultBarLabels', () => {
     return { ...chart, series: chart.series.slice(0, 1) }
   }
 
-  it('upgrades a single-series bar chart with labels off or unset', () => {
-    expect(withDefaultBarLabels({ ...single(), dataLabels: 'none' }).dataLabels).toBe('value')
+  it('upgrades a single-series bar chart only when the file has no dLbls', () => {
+    // Explicit showVal="0" must stay off — fidelity beats the product default.
+    expect(withDefaultBarLabels({ ...single(), dataLabels: 'none' }).dataLabels).toBe('none')
     expect(withDefaultBarLabels(single()).dataLabels).toBe('value')
   })
 
@@ -350,5 +352,31 @@ describe('chartDataFromValues scatter X column', () => {
     ])
     expect(parsed?.hasCategoryColumn).toBe(false)
     expect(parsed?.series).toHaveLength(2)
+  })
+})
+
+describe('valueAxisScale', () => {
+  it('matches Excel defaults on the run5 corpus', () => {
+    // 60509: data max 11162 → 0..12000 step 2000
+    expect(valueAxisScale(11162)).toEqual({
+      min: 0,
+      max: 12000,
+      ticks: [0, 2000, 4000, 6000, 8000, 10000, 12000],
+    })
+    // budget: 3750 → 0..4000 step 500
+    expect(valueAxisScale(3750).max).toBe(4000)
+    expect(valueAxisScale(3750).ticks).toHaveLength(9)
+    // 57362: 13 → 0..14 step 2
+    expect(valueAxisScale(13)).toEqual({ min: 0, max: 14, ticks: [0, 2, 4, 6, 8, 10, 12, 14] })
+  })
+
+  it('honours explicit bounds and unit', () => {
+    expect(valueAxisScale(999, { min: -180, max: 180, majorUnit: 60 }).ticks).toEqual([
+      -180, -120, -60, 0, 60, 120, 180,
+    ])
+  })
+
+  it('survives degenerate spans', () => {
+    expect(valueAxisScale(0).max).toBeGreaterThan(0)
   })
 })

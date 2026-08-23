@@ -1,4 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
+import {
+  addPicture,
+  createBlankPptx,
+  openPptx,
+  replacePictureBytes,
+  type PictureElement,
+} from '@genoffice/pptx-engine'
 import type { Session } from '../src/main/session-state'
 import {
   beginHistoryBatch,
@@ -9,6 +16,7 @@ import {
   restoreAiSnapshot,
   restoreSnapshot,
   settleStaleHistoryBatch,
+  takeSnapshot,
 } from '../src/main/session-state'
 
 vi.mock('electron', () => ({
@@ -179,5 +187,74 @@ describe('Slides main-process history batching', () => {
 
     restoreSnapshot(session, session.undoStack.pop()!)
     expect(valueOf(session)).toBe('before')
+  })
+
+  it('undo and redo restore resource bytes and relationships pruned by picture replacement', async () => {
+    const png = new Uint8Array(
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XwV2AAAAAElFTkSuQmCC',
+        'base64',
+      ),
+    )
+    const gif = new Uint8Array(
+      Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'),
+    )
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const picture = addPicture(opened, slide, {
+      bytes: png,
+      ext: 'png',
+      offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+    })!
+    const session: Session = {
+      path: '',
+      opened,
+      fitWidthPx: 1280,
+      undoStack: [],
+      redoStack: [],
+    }
+    const oldMedia = picture.mediaRef
+    const slash = slide.path.lastIndexOf('/')
+    const relsPath = `${slide.path.slice(0, slash)}/_rels/${slide.path.slice(slash + 1)}.rels`
+    const oldRels = opened.archive.readText(relsPath)!
+
+    // The IPC mutation path snapshots first, then replacement prunes the old
+    // relationship/media as soon as the element points at the new bytes.
+    pushHistory(session)
+    expect(replacePictureBytes(opened, slide, picture.id, gif, 'gif')).toBe(true)
+    const newMedia = picture.mediaRef
+    const newRels = opened.archive.readText(relsPath)!
+    expect(opened.archive.entries.has(oldMedia)).toBe(false)
+    expect(opened.archive.readBytes(newMedia)).toEqual(gif)
+
+    // Production undo stores the cleaned state for redo, then restores the
+    // pre-mutation snapshot.
+    session.redoStack.push(takeSnapshot(session))
+    restoreSnapshot(session, session.undoStack.pop()!)
+    expect(session.opened.archive.readBytes(oldMedia)).toEqual(png)
+    expect(session.opened.archive.entries.has(newMedia)).toBe(false)
+    expect(session.opened.archive.readText(relsPath)).toBe(oldRels)
+    expect(
+      (
+        session.opened.deck.slides[0]!.elements.find(
+          (element) => element.type === 'picture',
+        ) as PictureElement
+      ).mediaRef,
+    ).toBe(oldMedia)
+
+    // Production redo snapshots the restored state and reapplies the cleaned
+    // archive/model snapshot.
+    session.undoStack.push(takeSnapshot(session))
+    restoreSnapshot(session, session.redoStack.pop()!)
+    expect(session.opened.archive.entries.has(oldMedia)).toBe(false)
+    expect(session.opened.archive.readBytes(newMedia)).toEqual(gif)
+    expect(session.opened.archive.readText(relsPath)).toBe(newRels)
+    expect(
+      (
+        session.opened.deck.slides[0]!.elements.find(
+          (element) => element.type === 'picture',
+        ) as PictureElement
+      ).mediaRef,
+    ).toBe(newMedia)
   })
 })

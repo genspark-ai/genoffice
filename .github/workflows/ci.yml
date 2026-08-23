@@ -82,6 +82,11 @@ jobs:
           fi
           npm run check:theme-colors
 
+      # Keep tracked code comments and contributor-facing documentation
+      # English-only; functional CJK strings and AI prompt examples are allowed.
+      - name: Check comments/docs are English-only
+        run: npm run check:english-comments
+
       - name: Lint
         run: npm run lint
 

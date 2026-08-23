@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildSlashItems, filterSlashItems } from '../src/renderer/editor/slashCommand'
 import { resolveImageSrc, unresolveImageSrc } from '../src/renderer/editor/localImage'
 
@@ -7,6 +7,7 @@ import { resolveImageSrc, unresolveImageSrc } from '../src/renderer/editor/local
 const editors: import('@tiptap/core').Editor[] = []
 afterEach(() => {
   for (const e of editors.splice(0)) e.destroy()
+  vi.restoreAllMocks()
 })
 
 describe('filterSlashItems', () => {
@@ -226,5 +227,52 @@ describe('buildPrintHtml', () => {
     expect(html).toContain('x = 1')
     expect(html).not.toContain('md-codeblock-bar')
     expect(html).not.toContain('<select')
+  })
+})
+
+describe('BlockDragHandle teardown', () => {
+  it('removes every long-lived listener and restores the container style', async () => {
+    const { Editor } = await import('@tiptap/core')
+    const { buildExtensions } = await import('../src/renderer/editor/extensions')
+    const wrapper = document.createElement('div')
+    const element = document.createElement('div')
+    wrapper.appendChild(element)
+    document.body.appendChild(wrapper)
+    const editor = new Editor({
+      element,
+      extensions: buildExtensions({
+        slashController: { onOpen() {}, onUpdate() {}, onKeyDown: () => false, onClose() {} },
+        slashItems: () => [],
+      }),
+      content: 'block',
+    })
+
+    const handle = wrapper.querySelector<HTMLElement>('.md-block-gutter')!
+    const grip = handle.querySelector<HTMLButtonElement>('.md-gutter-grip')!
+    const plus = handle.querySelector<HTMLButtonElement>('.md-gutter-plus')!
+    const handleRemove = vi.spyOn(handle, 'removeEventListener')
+    const gripRemove = vi.spyOn(grip, 'removeEventListener')
+    const plusRemove = vi.spyOn(plus, 'removeEventListener')
+    const documentRemove = vi.spyOn(document, 'removeEventListener')
+    const editorRemove = vi.spyOn(editor.view.dom, 'removeEventListener')
+
+    editor.destroy()
+
+    expect(editorRemove).toHaveBeenCalledWith('mousemove', expect.any(Function))
+    expect(editorRemove).toHaveBeenCalledWith('mouseenter', expect.any(Function))
+    expect(editorRemove).toHaveBeenCalledWith('mouseleave', expect.any(Function))
+    expect(handleRemove).toHaveBeenCalledWith('mousemove', expect.any(Function))
+    expect(handleRemove).toHaveBeenCalledWith('mouseenter', expect.any(Function))
+    expect(handleRemove).toHaveBeenCalledWith('mouseleave', expect.any(Function))
+    expect(gripRemove).toHaveBeenCalledWith('dragstart', expect.any(Function))
+    expect(gripRemove).toHaveBeenCalledWith('click', expect.any(Function))
+    expect(plusRemove).toHaveBeenCalledWith('click', expect.any(Function))
+    expect(documentRemove).toHaveBeenCalledWith('scroll', expect.any(Function), true)
+    expect(wrapper.style.position).toBe('')
+    expect(wrapper.querySelector('.md-block-gutter')).toBeNull()
+    expect(wrapper.querySelector('.md-block-menu')).toBeNull()
+
+    wrapper.remove()
+    vi.restoreAllMocks()
   })
 })

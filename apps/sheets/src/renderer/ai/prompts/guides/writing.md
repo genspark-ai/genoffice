@@ -7,13 +7,17 @@
 - `{op:"clear_cell", sheetId, address}` — clears a single cell.
 - `{op:"set_range", sheetId, start:"B2", values:[[row1], [row2], …]}` — bulk write: a 2D array laid out by rows, spreading right and down from start. **values must be rectangular — every row the same length** (use null for a cell to clear; a shorter row would silently leave stale content behind). Instead of start you may pass `range:"B2:D5"`, whose size must exactly match values. **Strings starting with = are written as formulas.** Always use set_range for contiguous regions; never split them into many set_cell ops.
 - **When rewriting rows of an existing table, cover the full row span**: values rows should span all of the table's columns (or the write should be paired with clear_range for the leftover cells) so no stale fragments from the old content survive next to the new one.
-- `{op:"clear_range", sheetId, range:"A1:C10"}` — clears a rectangular region.
+- `{op:"fill_range", sheetId, source:"B2", target:"B2:B88588", sourceSheetId?}` — fill/copy, Excel's fill handle as one operation: the source block's values **and formulas** tile across the target. Relative references shift per copy (=A2+1 filled down becomes =A3+1, =A4+1, …); `$`-anchored axes stay pinned. **This is THE way to fill a formula or pattern down a whole column** — one small op instead of spelling out thousands of set_range rows. Rules: write/verify the source cell(s) first, then fill; source ≤ 2000 cells; target up to **200,000 cells** and each dimension a whole multiple of the source's; an overlapping source must sit at the target's top-left (fill-down/right includes the source as the first tile); `sourceSheetId` lets the source live on another sheet (copy header rows between sheets). Fills of formulas that re-scan a large absolute range per copy (=SUM(B$2:B$88588), lookups against big tables) are rejected — use relative references so each row touches only its own cells.
+- `{op:"copy_range", sheetId, source:"A1:F5000", target:"H1", sourceSheetId?}` — copies one block to one destination exactly once (Excel copy → paste as one operation), values **and formulas**; relative references shift by the block's offset, `$`-anchored axes stay pinned. `target` is the destination's top-left cell (or a range exactly the source's size). Unlike fill_range there is no tiling and the source may be large — up to **200,000 cells** — so this is THE way to duplicate a big table or move a column's data (source and target must not overlap; `sourceSheetId` copies across sheets).
+- `{op:"convert_to_values", sheetId, range:"B2:B88588"}` — freezes formulas into their current computed values (Excel's copy → paste-values), up to **200,000 cells**. Only formula cells change; values, text, and formatting stay untouched. Use when the user asks to "remove the formulas but keep the results", or before deleting source data that formulas reference. It reads what the grid holds **now**, so it must not share a batch with ops writing formulas into its range (rejected) — write the formulas in one batch, verify the results, then convert in a follow-up batch.
+- `{op:"clear_range", sheetId, range:"A1:C10"}` — clears a rectangular region (up to 200,000 cells — whole columns are fine).
 
-Limit: at most 2000 expanded cell changes per batch.
+Limit: at most 2000 expanded cell changes per batch — the range-level ops fill_range / copy_range / convert_to_values / clear_range / find_replace / format_range are exempt and handle up to 200,000 cells each.
 
 ## Formula rules
 
 - **Always leave calculations to formulas** — never compute values yourself and hard-code them; the table should update automatically when source data changes.
+- **No array-criteria formulas over large ranges**: formulas where a criteria/lookup function receives a large range as its per-element argument — e.g. the distinct-count idiom `SUMPRODUCT(1/COUNTIF(A2:A88588,A2:A88588))` — evaluate quadratically, would freeze the app, and are rejected. For distinct counts / frequency statistics use the aggregate_range tool and report the answer in text.
 - If a reference can be expressed with relative/absolute references ($), don't write a constant.
 - Stay consistent with existing conventions: if earlier rows use formulas, new rows use formulas too; if earlier tax amounts are negative, newly filled ones should be negative too.
 
@@ -44,6 +48,6 @@ Limit: at most 2000 expanded cell changes per batch.
 
 `{op:"find_replace", sheetId, range:"A1:D50", find:"old text", replace:"new text", matchCase?, wholeCell?}`
 
-- Replaces **text values only**: formula cells and numbers are untouched; expands into per-cell set_cell, so preview/undo match manual input.
+- Replaces **text values only**: formula cells and numbers are untouched.
 - Case-insensitive by default (matchCase:true enables case sensitivity); with wholeCell:true a cell is replaced only when its whole content matches exactly.
-- range is required and ≤2000 cells; in large files it can only act on loaded regions — unloaded regions are rejected.
+- range is required, up to **200,000 cells** (a whole used column is fine). Ranges ≤2000 cells expand into per-cell edits (preview/undo match manual input) and must be loaded first; larger ranges apply as one range-level scan that loads each region itself.

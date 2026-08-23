@@ -1,5 +1,7 @@
 import { numfmt } from '@univerjs/core'
 
+import { getSystemShortDate } from '../shared/short-date'
+
 /// Model behind the Format Cells → Number tab: category + sub-options ⇄
 /// OOXML pattern. The ribbon's category dropdown (number-format.ts) derives
 /// its representative patterns from the same builders.
@@ -62,6 +64,13 @@ export const DATE_PATTERNS: readonly string[] = [
   'm"月"d"日"',
   'yyyy-mm-dd hh:mm',
 ]
+
+/// The Date list with the workbook's system short date first, so a pattern
+/// applied by the ribbon's Short Date category classifies as Date.
+export function datePatterns(): readonly string[] {
+  const system = getSystemShortDate()
+  return DATE_PATTERNS.includes(system) ? DATE_PATTERNS : [system, ...DATE_PATTERNS]
+}
 
 export const TIME_PATTERNS: readonly string[] = [
   'h:mm',
@@ -169,7 +178,7 @@ export function numfmtOptionsOf(pattern: string): NumfmtOptions {
   const defaults = DEFAULT_NUMFMT_OPTIONS
   if (!pattern || pattern === 'General') return { ...defaults, category: 'general' }
   if (pattern === '@') return { ...defaults, category: 'text' }
-  if (DATE_PATTERNS.includes(pattern))
+  if (datePatterns().includes(pattern))
     return { ...defaults, category: 'date', datePattern: pattern }
   if (TIME_PATTERNS.includes(pattern))
     return { ...defaults, category: 'time', timePattern: pattern }

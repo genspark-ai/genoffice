@@ -9,13 +9,17 @@ interface IconProps {
 /** Constant painted stroke instead of proportional scaling: ~1.5px lines on
  *  20px+ glyphs, ~1.25px on the 13-19px ones, ~1.1px below (a proportional
  *  1-unit stroke would paint 1.75px at 28px and hairlines at small sizes).
- *  stroke-width is in 16-canvas units: units = painted-px × 16 / rendered-px. */
-function pinnedStroke(size: number): number {
-  const painted = size >= 20 ? 1.5 : size >= 13 ? 1.25 : 1.1
+ *  stroke-width is in 16-canvas units: units = painted-px × 16 / rendered-px.
+ *  `paint` overrides the painted px: diagonal-heavy letterform icons pass 1.4
+ *  as optical compensation — a slanted stroke's anti-aliasing spreads its ink
+ *  over a wider footprint, so at an equal nominal width it reads a touch
+ *  fatter than the axis-aligned line icons (pixel-measured on the ribbon). */
+function pinnedStroke(size: number, paint?: number): number {
+  const painted = paint ?? (size >= 20 ? 1.5 : size >= 13 ? 1.25 : 1.1)
   return (painted * 16) / size
 }
 
-function Svg({ size = 20, children }: IconProps & { children: ReactNode }) {
+function Svg({ size = 20, paint, children }: IconProps & { paint?: number; children: ReactNode }) {
   return (
     <svg
       width={size}
@@ -23,7 +27,7 @@ function Svg({ size = 20, children }: IconProps & { children: ReactNode }) {
       viewBox="0 0 16 16"
       fill="none"
       stroke="currentColor"
-      strokeWidth={pinnedStroke(size)}
+      strokeWidth={pinnedStroke(size, paint)}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -36,10 +40,10 @@ function Svg({ size = 20, children }: IconProps & { children: ReactNode }) {
 export function IconBullets(props: IconProps) {
   return (
     <Svg {...props}>
-      <circle cx="3.66" cy="4.45" r="0.87" fill="currentColor" stroke="none" />
-      <circle cx="3.66" cy="8" r="0.87" fill="currentColor" stroke="none" />
-      <circle cx="3.66" cy="11.56" r="0.87" fill="currentColor" stroke="none" />
-      <path d="M 6.42 4.45 h 6.32 M 6.42 8 h 6.32 M 6.42 11.56 h 6.32" />
+      <circle cx="3.66" cy="4.31" r="0.87" fill="currentColor" stroke="none" />
+      <circle cx="3.66" cy="8.21" r="0.87" fill="currentColor" stroke="none" />
+      <circle cx="3.66" cy="12.11" r="0.87" fill="currentColor" stroke="none" />
+      <path d="M 6.42 4.31 h 6.32 M 6.42 8.21 h 6.32 M 6.42 12.11 h 6.32" />
     </Svg>
   )
 }
@@ -85,12 +89,12 @@ export function IconNumbered(props: IconProps) {
 export function IconMultilevel(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="2.61" y="3.84" width="1.39" height="1.39" fill="currentColor" stroke="none" />
-      <path d="M 5.69 4.54 h 6.93" />
-      <rect x="4.54" y="7.31" width="1.39" height="1.39" fill="currentColor" stroke="none" />
-      <path d="M 7.62 8 h 5.01" />
-      <rect x="6.46" y="10.77" width="1.39" height="1.39" fill="currentColor" stroke="none" />
-      <path d="M 9.54 11.47 h 3.08" />
+      <rect x="2.61" y="3.62" width="1.39" height="1.39" fill="currentColor" stroke="none" />
+      <path d="M 5.69 4.31 h 6.93" />
+      <rect x="4.54" y="7.52" width="1.39" height="1.39" fill="currentColor" stroke="none" />
+      <path d="M 7.62 8.21 h 5.01" />
+      <rect x="6.46" y="11.42" width="1.39" height="1.39" fill="currentColor" stroke="none" />
+      <path d="M 9.54 12.11 h 3.08" />
     </Svg>
   )
 }
@@ -113,10 +117,12 @@ export function IconIndentInc(props: IconProps) {
   )
 }
 
+/* the whole "lines" family (align/indent/spacing/lists) shares the ink band
+   y 3.44→12.98 so the row reads as one height */
 export function IconAlignLeft(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 3.02 3.85 h 9.96 M 3.02 6.34 h 6.64 M 3.02 8.83 h 9.96 M 3.02 11.32 h 6.64" />
+      <path d="M 3.02 3.44 h 9.96 M 3.02 6.62 h 6.64 M 3.02 9.8 h 9.96 M 3.02 12.98 h 6.64" />
     </Svg>
   )
 }
@@ -124,7 +130,7 @@ export function IconAlignLeft(props: IconProps) {
 export function IconAlignCenter(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 3.02 3.85 h 9.96 M 4.68 6.34 h 6.64 M 3.02 8.83 h 9.96 M 4.68 11.32 h 6.64" />
+      <path d="M 3.02 3.44 h 9.96 M 4.68 6.62 h 6.64 M 3.02 9.8 h 9.96 M 4.68 12.98 h 6.64" />
     </Svg>
   )
 }
@@ -132,7 +138,7 @@ export function IconAlignCenter(props: IconProps) {
 export function IconAlignRight(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 3.02 3.85 h 9.96 M 6.34 6.34 h 6.64 M 3.02 8.83 h 9.96 M 6.34 11.32 h 6.64" />
+      <path d="M 3.02 3.44 h 9.96 M 6.34 6.62 h 6.64 M 3.02 9.8 h 9.96 M 6.34 12.98 h 6.64" />
     </Svg>
   )
 }
@@ -140,7 +146,7 @@ export function IconAlignRight(props: IconProps) {
 export function IconAlignJustify(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 3.02 3.85 h 9.96 M 3.02 6.34 h 9.96 M 3.02 8.83 h 9.96 M 3.02 11.32 h 9.96" />
+      <path d="M 3.02 3.44 h 9.96 M 3.02 6.62 h 9.96 M 3.02 9.8 h 9.96 M 3.02 12.98 h 9.96" />
     </Svg>
   )
 }
@@ -166,58 +172,102 @@ export function IconDirRtl(props: IconProps) {
 export function IconLineSpacing(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 8 3.9 h 4.92 M 8 6.69 h 4.92 M 8 9.48 h 4.92 M 8 12.26 h 4.92" />
-      <path d="M 4.31 4.06 v 7.87 M 2.92 5.7 l 1.39 -1.64 1.39 1.64 M 2.92 10.3 l 1.39 1.64 1.39 -1.64" />
+      <path d="M 8 3.44 h 4.92 M 8 6.62 h 4.92 M 8 9.8 h 4.92 M 8 12.98 h 4.92" />
+      <path d="M 4.31 3.75 v 8.9 M 2.92 5.39 l 1.39 -1.64 1.39 1.64 M 2.92 11.01 l 1.39 1.64 1.39 -1.64" />
     </Svg>
   )
 }
 
 export function IconClearFormat(props: IconProps) {
   return (
-    <Svg {...props}>
-      {/* letter A with a wiped-off stroke at its top left (matches slides) */}
-      <path d="M 2.5 12.5 5.5 4 l 3 8.5" />
-      <path d="M 3.7 9.5 h 3.6" />
-      <path d="M 2.9 5.9 l 1.2 -1.2" />
-      {/* compact diagonal eraser at the lower right, outline only, band facing the A */}
-      <g transform="rotate(45 11.6 11.6)">
-        <rect
-          x="9.1"
-          y="9.8"
-          width="5"
-          height="3.6"
-          rx="0.5"
-          stroke="var(--ribbon-accent-2, #A33FB5)"
-        />
-        <path d="M 10.5 9.8 v 3.6" stroke="var(--ribbon-accent-2, #A33FB5)" />
+    <Svg {...props} paint={1.4}>
+      {/* the shared letter A with a wiped-off stroke at its top left */}
+      <LetterA dx={-0.45} />
+      <path d="M 2.45 5.9 l 1.2 -1.2" />
+      {/* compact diagonal eraser at the lower right, outline only, band facing the A;
+          monochrome per the toolbar's uniform-ink rule. Kept high enough that its
+          rotated corner doesn't sink the icon below the shared A baseline band */}
+      <g transform="rotate(45 11.55 11.05)">
+        <rect x="8.95" y="9.15" width="5.2" height="3.8" rx="0.55" />
+        <path d="M 10.5 9.15 v 3.8" />
       </g>
     </Svg>
   )
 }
 
+/* THE letter A — one canonical path shared by grow/shrink font, clear
+   formatting, change case and font color, so every A in the ribbon is
+   literally the same glyph (apex y4 → baseline y12.5, cap ≈ the 15px letter
+   glyphs' cap height). dx slides it horizontally to make room for the
+   companion element (arrow, eraser, lowercase a, …). */
+function LetterA({ dx = 0 }: { dx?: number }) {
+  return <path d={`M${2.43 + dx} 12.5 ${5.67 + dx} 4l3.25 8.5M${3.55 + dx} 9.56h4.24`} />
+}
+
 export function IconGrowFont(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M2.17 12.67 5.67 3.5l3.5 9.17M3.4 9.5h4.55" />
-      <path d="M12 11.67V4.5M9.93 6.57 12 4.5l2.07 2.07" />
+    <Svg {...props} paint={1.4}>
+      <LetterA />
+      <path d="M12 12.1V4.6M9.93 6.67 12 4.6l2.07 2.07" />
     </Svg>
   )
 }
 
 export function IconShrinkFont(props: IconProps) {
   return (
-    <Svg {...props}>
-      <path d="M2.17 12.67 5.67 3.5l3.5 9.17M3.4 9.5h4.55" />
-      <path d="M12 4.5v7.17M9.93 9.6 12 11.67l2.07-2.07" />
+    <Svg {...props} paint={1.4}>
+      <LetterA />
+      <path d="M12 4.6v7.5M9.93 10.03 12 12.1l2.07-2.07" />
+    </Svg>
+  )
+}
+
+/** change case (Aa): the shared A + a stroke-drawn lowercase a on the same baseline */
+export function IconChangeCase(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <LetterA dx={-0.9} />
+      <circle cx="11.3" cy="10.55" r="1.95" fill="none" />
+      <path d="M13.25 8.15v4.35" />
+    </Svg>
+  )
+}
+
+/** font color: the shared A alone, centered; the color bar is rendered by the button */
+export function IconFontColorA(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <LetterA dx={2.33} />
+    </Svg>
+  )
+}
+
+/* Fluent-style sub/superscript: lowercase-x strokes + a stroked digit 2 in the
+   corner (replaces the old HTML x<sub>2</sub> text glyphs that rendered smaller
+   and thinner than the neighbouring 15px B/I/U letterforms) */
+export function IconSuperscript(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <path d="M2.7 6.6 8.3 13M8.3 6.6 2.7 13" />
+      <path d="M10.6 4.7a1.5 1.5 0 0 1 3 0c0 .9-.85 1.6-3 3.1h3.15" />
+    </Svg>
+  )
+}
+
+export function IconSubscript(props: IconProps) {
+  return (
+    <Svg {...props} paint={1.4}>
+      <path d="M2.7 4.6 8.3 11M8.3 4.6 2.7 11" />
+      <path d="M10.6 9.9a1.5 1.5 0 0 1 3 0c0 .9-.85 1.6-3 3.1h3.15" />
     </Svg>
   )
 }
 
 export function IconHighlight(props: IconProps) {
   return (
-    <Svg {...props}>
+    <Svg {...props} paint={1.4}>
       <path d="M3 10.5 9.5 4a1.4 1.4 0 0 1 2 0l0.5 0.5a1.4 1.4 0 0 1 0 2L5.5 13H3z" fill="none" />
-      <path d="M2.2 13h4" strokeWidth="1" />
+      <path d="M2.2 13h4" />
     </Svg>
   )
 }
@@ -291,8 +341,10 @@ export function IconCopy(props: IconProps) {
 export function IconFormatPainter(props: IconProps) {
   return (
     <Svg {...props}>
-      <path d="M 11 2.67 H 2.65 V 7.14 H 11 Z" />
-      <path d="M 11.01 4.75 H 13.68 V 9.56 L 6.53 10.48 V 14" />
+      <rect x="7.1" y="2.7" width="1.8" height="3.4" rx="0.9" />
+      <rect x="3" y="6.1" width="10" height="7.2" rx="1" />
+      <path d="M 3 8.9 H 13" />
+      <path d="M 6.2 10.9 V 12.1 M 9.8 10.9 V 12.1" />
     </Svg>
   )
 }
@@ -1008,6 +1060,44 @@ export function IconLock(props: IconProps) {
   )
 }
 
+export function IconKey(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="5.4" cy="10.6" r="2.5" />
+      <path d="M 7.3 8.7 L 12.9 3.1 M 10.4 5.6 l 1.7 1.7 M 12.1 3.9 l 1.4 1.4" />
+    </Svg>
+  )
+}
+
+export function IconEye(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 1.7 8 C 3.1 5.15 5.35 3.6 8 3.6 s 4.9 1.55 6.3 4.4 C 12.9 10.85 10.65 12.4 8 12.4 S 3.1 10.85 1.7 8 Z" />
+      <circle cx="8" cy="8" r="1.95" />
+    </Svg>
+  )
+}
+
+export function IconEyeOff(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 3.5 4.65 C 2.78 5.5 2.18 6.62 1.7 8 c 1.4 2.85 3.65 4.4 6.3 4.4 c 1.02 0 1.97 -0.23 2.84 -0.68 M 6.4 3.82 C 6.91 3.67 7.44 3.6 8 3.6 c 2.65 0 4.9 1.55 6.3 4.4 c -0.4 0.82 -0.87 1.54 -1.4 2.15" />
+      <path d="M 6.62 6.62 a 1.95 1.95 0 0 0 2.76 2.76" />
+      <path d="M 2.7 2.7 l 10.6 10.6" />
+    </Svg>
+  )
+}
+
+export function IconAlert(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="8" cy="8" r="6.2" />
+      <path d="M 8 4.9 v 3.5" />
+      <circle cx="8" cy="10.9" r="0.75" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
 /* ---------- View ---------- */
 
 function Magnifier({ children }: { children?: ReactNode }) {
@@ -1339,10 +1429,9 @@ function SvgRatio({ size = 24, children }: IconProps & { children: ReactNode }) 
 export function IconSave(props: IconProps) {
   return (
     <SvgRatio {...props}>
-      <path d="M3 4.5C3 3.67158 3.67158 3 4.5 3H17.1407L21 6.60325V19.5C21 20.3285 20.3285 21 19.5 21H4.5C3.67158 21 3 20.3285 3 19.5V4.5Z" />
-      <path d="M12.0042 3L12 6.6923C12 6.86225 11.7761 7 11.5 7H7.5C7.22385 7 7 6.86225 7 6.6923V3H12.0042Z" />
-      <path d="M7 13H17" />
-      <path d="M7 17H12.0042" />
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <path d="M17 21v-8H7v8" />
+      <path d="M7 3v5h8V3" />
     </SvgRatio>
   )
 }
@@ -1488,9 +1577,9 @@ export function IconPilcrow(props: IconProps) {
 export function IconShading(props: IconProps) {
   return (
     <Svg {...props}>
-      <rect x="2.99" y="3.91" width="10.01" height="8.19" rx="0.46" />
+      <rect x="2.99" y="3.44" width="10.01" height="9.54" rx="0.46" />
       <path
-        d="M 2.99 7.55 6.64 3.91 M 2.99 11.18 10.27 3.91 M 5.27 12.1 13.01 4.36 M 8.91 12.1 13.01 8"
+        d="M 2.99 7.7 7.25 3.44 M 2.99 11.9 11.45 3.44 M 5.5 12.98 13 5.48 M 9.2 12.98 13 9.18"
         opacity="0.55"
       />
     </Svg>

@@ -27,8 +27,11 @@ export interface FontMetrics {
   ascent: number
   /** Descent at the font size (baseline to bottom, px, positive) */
   descent: number
-  /** Suggested line height (px) */
+  /** Suggested line height (px) — the line box, without external leading */
   lineHeight: number
+  /** External leading (hhea lineGap, px): advances the next line but sits outside the
+   *  line box (CoreText/PowerPoint single-spacing = lineHeight + externalLeading) */
+  externalLeading?: number
 }
 
 export interface FontMetricsProvider {
@@ -166,6 +169,8 @@ export interface OpentypeFontLike {
   unitsPerEm: number
   ascender: number
   descender: number
+  /** hhea lineGap (external leading, font units); part of the single-spacing line height */
+  lineGap?: number
   getAdvanceWidth(text: string, fontSize: number): number
   /** Optional: char → glyph index (0 = missing glyph). Used for the missing-glyph heuristic fallback. */
   charToGlyphIndex?(char: string): number
@@ -187,7 +192,17 @@ export class OpentypeMetrics implements FontMetricsProvider {
     const scale = style.fontSizePx / font.unitsPerEm
     const ascent = font.ascender * scale
     const descent = Math.abs(font.descender) * scale
-    return { ascent, descent, lineHeight: ascent + descent }
+    // Single spacing includes the hhea lineGap as EXTERNAL leading: CoreText — and with
+    // it PowerPoint for Mac — paces Times New Roman/Arial at (asc+desc+gap) = 1.15em,
+    // not the bare asc+desc 1.107/1.117em (dropping the gap made multi-line text creep
+    // upward). The gap advances lines but stays outside the line box.
+    const lineGap = (font.lineGap ?? 0) * scale
+    return {
+      ascent,
+      descent,
+      lineHeight: ascent + descent,
+      ...(lineGap > 0 ? { externalLeading: lineGap } : {}),
+    }
   }
 
   measure(text: string, style: RunStyle): number {

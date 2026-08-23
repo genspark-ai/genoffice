@@ -12,6 +12,40 @@ const FONTS = join(__dirname, '../src/renderer/fonts')
 const sans = readWoff2(join(FONTS, 'GenOfficeSansKR-Regular-subset.woff2'))
 const serif = readWoff2(join(FONTS, 'GenOfficeSerifKR-Regular-subset.woff2'))
 
+const PRIMARY_NAME_IDS = new Set([1, 2, 3, 4, 6, 16, 17, 18, 20, 21, 22, 25])
+
+function decodeUtf16Be(value: Buffer): string {
+  const swapped = Buffer.alloc(value.length)
+  for (let i = 0; i + 1 < value.length; i += 2) {
+    swapped[i] = value[i + 1]
+    swapped[i + 1] = value[i]
+  }
+  return swapped.toString('utf16le')
+}
+
+function primaryFontNames(font: ReturnType<typeof readWoff2>): Array<{
+  nameId: number
+  value: string
+}> {
+  const table = font.tables.get('name')
+  if (!table) throw new Error('font has no name table')
+  const count = table.readUInt16BE(2)
+  const storageOffset = table.readUInt16BE(4)
+  const names = []
+  for (let i = 0; i < count; i++) {
+    const recordOffset = 6 + i * 12
+    const platformId = table.readUInt16BE(recordOffset)
+    const nameId = table.readUInt16BE(recordOffset + 6)
+    if (!PRIMARY_NAME_IDS.has(nameId)) continue
+    const length = table.readUInt16BE(recordOffset + 8)
+    const offset = table.readUInt16BE(recordOffset + 10)
+    const raw = table.subarray(storageOffset + offset, storageOffset + offset + length)
+    const value = platformId === 0 || platformId === 3 ? decodeUtf16Be(raw) : raw.toString('latin1')
+    names.push({ nameId, value })
+  }
+  return names
+}
+
 describe('GenOffice Sans KR (Malgun-normalized)', () => {
   it('hangul syllables and compatibility jamo stay 1.0em', () => {
     for (const cp of [0xac00, 0xae4e, 0xd558, 0x3131]) {
@@ -62,6 +96,35 @@ describe('GenOffice Serif KR (Batang-normalized)', () => {
     for (let cp = 0x30; cp <= 0x39; cp++) {
       expect(advanceEm(serif, cp), `digit ${cp - 0x30}`).toBeCloseTo(0.596, 3)
     }
+  })
+})
+
+describe('GenOffice Gothic KR (real source metrics, unmodified)', () => {
+  const gothicKr = readWoff2(join(FONTS, 'GenOfficeGothicKR-Regular-subset.woff2'))
+
+  it('keeps the M3 probe truth: hangul 0.94em, space 0.28em, digits 0.606em', () => {
+    for (const cp of [0xac00, 0xd55c, 0xae00]) {
+      expect(advanceEm(gothicKr, cp), `U+${cp.toString(16)}`).toBeCloseTo(0.94, 3)
+    }
+    expect(advanceEm(gothicKr, 0x20)).toBeCloseTo(0.28, 3)
+    for (let cp = 0x30; cp <= 0x39; cp++) {
+      expect(advanceEm(gothicKr, cp), `digit ${cp - 0x30}`).toBeCloseTo(0.606, 3)
+    }
+  })
+
+  it('covers KS X 1001 syllables and Basic Latin', () => {
+    expect(advanceEm(gothicKr, 0xd558)).toBeCloseTo(0.94, 3)
+    expect(advanceEm(gothicKr, 0x41)).toBeGreaterThan(0)
+  })
+
+  it('keeps every primary font identifier clear of Reserved Font Names', () => {
+    const names = primaryFontNames(gothicKr)
+    expect(names.length).toBeGreaterThan(0)
+    for (const { nameId, value } of names) {
+      expect(value, `name ID ${nameId}`).not.toMatch(/nanum/i)
+    }
+    expect(names).toContainEqual({ nameId: 1, value: 'GenOffice Gothic KR' })
+    expect(names).toContainEqual({ nameId: 6, value: 'GenOfficeGothicKR-Regular' })
   })
 })
 

@@ -53,6 +53,36 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
+function imageSourcesFromEditor(editor: Editor): string[] {
+  const sources: string[] = []
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === 'image' && typeof node.attrs.src === 'string') {
+      sources.push(node.attrs.src)
+    }
+  })
+  return sources
+}
+
+function applyImageRewrites(
+  editor: Editor,
+  rewrites: ReadonlyArray<{ from: string; to: string }>,
+): void {
+  const bySource = new Map(rewrites.map(({ from, to }) => [from, to]))
+  if (bySource.size === 0) return
+  let transaction = editor.state.tr
+  let changed = false
+  editor.state.doc.descendants((node, pos) => {
+    if (node.type.name !== 'image') return
+    const replacement = bySource.get(String(node.attrs.src ?? ''))
+    if (!replacement || replacement === node.attrs.src) return
+    transaction = transaction.setNodeMarkup(pos, undefined, { ...node.attrs, src: replacement })
+    changed = true
+  })
+  if (!changed) return
+  transaction.setMeta('addToHistory', false).setMeta('uiOnly', true)
+  editor.view.dispatch(transaction)
+}
+
 /** Measure a document image via the DOM (the editor already displays it) */
 function measureImage(displaySrc: string): Promise<{ width: number; height: number } | null> {
   return new Promise((resolvePromise) => {
@@ -85,7 +115,8 @@ export default function App() {
   const [slashState, setSlashState] = useState<SlashMenuState | null>(null)
   const [fmOpen, setFmOpen] = useState(false)
   const [fmText, setFmText] = useState('')
-  const [aiOpen, setAiOpen] = useState(true)
+  // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
+  const [aiOpen, setAiOpen] = useState(() => localStorage.getItem('mdapp.showAi') !== '0')
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('mdapp.autoSave') === '1')
   const [zoom, setZoom] = useState(100)
@@ -219,11 +250,16 @@ export default function App() {
       const fmAtSave = envelopeRef.current.frontmatter
       const body = current.getMarkdown()
       const text = serializeDocText(envelopeRef.current, body)
-      const result = await window.markdownApi.save({ text, mode, suggestedName })
+      const imageSources = imageSourcesFromEditor(current)
+      const result = await window.markdownApi.save({ text, imageSources, mode, suggestedName })
       if (result.ok && 'path' in result) {
-        setFilePath(result.path)
         const unchanged =
           editorRef.current?.state.doc === docAtSave && envelopeRef.current.frontmatter === fmAtSave
+        if (result.imageRewrites?.length && editorRef.current) {
+          applyImageRewrites(editorRef.current, result.imageRewrites)
+        }
+        setImageBaseDir(dirOf(result.path))
+        setFilePath(result.path)
         if (unchanged) {
           dirtyRef.current = false
           setDirty(false)
@@ -398,6 +434,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('mdapp.autoSave', autoSave ? '1' : '0')
   }, [autoSave])
+
+  useEffect(() => {
+    localStorage.setItem('mdapp.showAi', aiOpen ? '1' : '0')
+  }, [aiOpen])
 
   // autosave: every 30s and on window blur, silently persist pending changes
   // (same policy as the docs app; untitled documents are skipped — the first

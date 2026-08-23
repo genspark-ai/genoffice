@@ -87,10 +87,13 @@ export function applyStructuralOps(
     }
     const axis: Axis = axisOf(op)
     const shift = toShift(op)
-    xml = axis === 'row' ? transformSheetRows(xml, shift) : transformSheetColumns(xml, shift)
-    xml = transformFormulas(xml, sheetName, shift, axis)
-    xml = transformRangedFeatures(xml, shift, axis)
-    if (axis === 'column') xml = transformColDefinitions(xml, shift)
+    if (axis === 'column') {
+      xml = transformColumnOperation(xml, sheetName, shift)
+    } else {
+      xml = transformSheetRows(xml, shift)
+      xml = transformFormulas(xml, sheetName, shift, axis)
+      xml = transformRangedFeatures(xml, shift, axis)
+    }
   }
   if (outlineTouched) xml = syncOutlineSummaryLevels(xml)
   return xml
@@ -826,6 +829,128 @@ function sortSheetDataRows(xml: string): string {
     `${section[0].slice(0, section[0].indexOf('>') + 1)}${body}</sheetData>` +
     xml.slice(section.index + section[0].length)
   )
+}
+
+/**
+ * A column operation used to run four whole-worksheet replacements in
+ * sequence (row spans/cells, formulas, ranged features, and <col> metadata).
+ * A dense 300MB worksheet retained several generations of those strings and
+ * exhausted Electron's V8 heap. Split around sheetData so all row/cell work
+ * happens in one pass while the small prefix/suffix carry the metadata work.
+ */
+function transformColumnOperation(xml: string, sheetName: string, shift: Shift): string {
+  const sheetDataOpen = /<sheetData\b[^>]*>/.exec(xml)
+  const closeIndex = xml.lastIndexOf('</sheetData>')
+  if (!sheetDataOpen || closeIndex < sheetDataOpen.index) {
+    let fallback = transformSheetColumns(xml, shift)
+    fallback = transformFormulas(fallback, sheetName, shift, 'column')
+    fallback = transformRangedFeatures(fallback, shift, 'column')
+    return transformColDefinitions(fallback, shift)
+  }
+  const bodyStart = sheetDataOpen.index + sheetDataOpen[0].length
+  const originalPrefix = xml.slice(0, bodyStart)
+  const body = xml.slice(bodyStart, closeIndex)
+  const originalSuffix = xml.slice(closeIndex)
+
+  let prefix = transformFormulas(originalPrefix, sheetName, shift, 'column')
+  prefix = transformRangedFeatures(prefix, shift, 'column')
+  prefix = transformColDefinitions(prefix, shift)
+  let suffix = transformFormulas(originalSuffix, sheetName, shift, 'column')
+  suffix = transformRangedFeatures(suffix, shift, 'column')
+
+  // Cursor walk with a per-row early exit: a row whose rightmost cell sits
+  // left of the shift and that holds no formulas cannot change, so it stays
+  // inside a contiguous zero-copy slice of the original body (and keeps its
+  // still-accurate spans hint). Appending a column to an 88k-row sheet used
+  // to rebuild all 300MB of rows for nothing.
+  const affectsFrom = shift.swap
+    ? Math.min(shift.swap.first.start, shift.swap.second.start)
+    : shift.deleted
+      ? shift.deleted.start
+      : shift.boundary
+  const rowOpenPattern = /<row\b[^>]*>/g
+  const parts: string[] = []
+  let cursor = 0
+  // Rolling occurrence pointers: every '<f' and ' r="' position in the body
+  // is visited once across all rows, keeping the per-row skip test O(1)
+  // amortized (a bounded indexOf per row would rescan to the end of a 300MB
+  // body on every formula-free row).
+  let formulaAt = body.indexOf('<f')
+  let referenceAt = body.indexOf(' r="')
+  let openMatch: RegExpExecArray | null
+  while ((openMatch = rowOpenPattern.exec(body)) !== null) {
+    const openTag = openMatch[0]
+    const rowStart = openMatch.index
+    let rowEnd: number
+    if (openTag.endsWith('/>')) {
+      rowEnd = rowStart + openTag.length
+    } else {
+      const closePosition = body.indexOf('</row>', rowStart + openTag.length)
+      if (closePosition === -1) break
+      rowEnd = closePosition + '</row>'.length
+      rowOpenPattern.lastIndex = rowEnd
+    }
+    while (formulaAt !== -1 && formulaAt < rowStart) formulaAt = body.indexOf('<f', formulaAt + 2)
+    let lastReference = -1
+    while (referenceAt !== -1 && referenceAt < rowEnd) {
+      if (referenceAt >= rowStart) lastReference = referenceAt
+      referenceAt = body.indexOf(' r="', referenceAt + 4)
+    }
+    const hasFormula = formulaAt !== -1 && formulaAt < rowEnd
+    if (!hasFormula && columnShiftSkipsRow(body, lastReference, rowEnd, affectsFrom)) continue
+    const full = body.slice(rowStart, rowEnd)
+    let row = full.replace(/(<row\b[^>]*?)\s+spans="[^"]*"/, (_match, start: string) => start)
+    row = row.replace(
+      /<c\b[^>]*?\br="([A-Z]{1,3})[0-9]+"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g,
+      (cell, letters: string) => {
+        const column = lettersToColumn(letters)
+        const moved = movePosition(column, shift)
+        if (moved === null) return ''
+        if (moved === column) return cell
+        return cell.replace(
+          /(<c\b[^>]*?\br=")[A-Z]{1,3}([0-9]+")/,
+          (_match, start: string, end: string) => `${start}${columnToLetters(moved)}${end}`,
+        )
+      },
+    )
+    row = transformFormulas(row, sheetName, shift, 'column')
+    if (row === full) continue
+    parts.push(body.slice(cursor, openMatch.index), row)
+    cursor = rowEnd
+  }
+  // Full identity: hand back the original string so downstream regex passes
+  // never flatten a rope into one more full-size generation.
+  if (parts.length === 0 && prefix === originalPrefix && suffix === originalSuffix) return xml
+  const transformedBody = parts.length === 0 ? body : parts.join('') + body.slice(cursor)
+  return `${prefix}${transformedBody}${suffix}`
+}
+
+/// True when a column shift provably cannot alter the formula-free row whose
+/// rightmost ' r="' occurrence starts at lastReference: that reference is
+/// left of every shifted column. Works on the parent string with index
+/// arithmetic so a skipped row allocates nothing. Conservative — any doubt
+/// returns false and the row takes the full transform.
+function columnShiftSkipsRow(
+  body: string,
+  lastReference: number,
+  end: number,
+  affectsFrom: number,
+): boolean {
+  // No reference at all: a row with no addressed cells.
+  if (lastReference === -1) return true
+  let index = lastReference + 4
+  let column = 0
+  let sawLetter = false
+  while (index < end) {
+    const code = body.charCodeAt(index)
+    if (code < 65 || code > 90) break
+    column = column * 26 + (code - 64)
+    sawLetter = true
+    index += 1
+  }
+  // Letterless r= is the row's own number attribute: a row with no cells.
+  if (!sawLetter) return true
+  return column - 1 < affectsFrom
 }
 
 function transformSheetColumns(xml: string, shift: Shift): string {

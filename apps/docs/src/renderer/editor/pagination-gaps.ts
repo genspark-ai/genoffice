@@ -2,6 +2,7 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
+import type { LineAnchor } from '../pagination'
 
 const key = new PluginKey<DecorationSet>('paginationGaps')
 
@@ -106,11 +107,36 @@ export type PageGapSpec = {
   /** page forced by an explicit break (w:br page / pageBreakBefore): Word drops the
    *  lead block's space-before, so a node decoration zeroes its margin-top */
   suppressLeadMt?: boolean
+  /** mixed-column page above: pull the gap (and everything below) up over the
+   *  vacated stacked-column space (negative margin-top, neutralized while measuring) */
+  pullUp?: number
 } & ({ el: HTMLElement } | { pos: number; kind?: Exclude<GapKind, 'block'> })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
-export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
+export function setPageGaps(
+  view: EditorView,
+  gaps: PageGapSpec[],
+  /** first page's floating header images (later pages get theirs via their gap):
+   *  a zero-height page-float-host widget that measurement/clones ignore
+   *  (not page-gap: page-boundary consumers must not count it as a page) */
+  firstPageEls?: { els: HTMLElement[]; key: string },
+): void {
   const decos: Decoration[] = []
+  if (firstPageEls?.els.length) {
+    decos.push(
+      Decoration.widget(
+        0,
+        () => {
+          const wrap = document.createElement('div')
+          wrap.className = 'page-float-host page-first-floats'
+          wrap.contentEditable = 'false'
+          for (const el of firstPageEls.els) wrap.appendChild(el)
+          return wrap
+        },
+        { side: -1, key: `page-first-floats-${firstPageEls.key}` },
+      ),
+    )
+  }
   let ordinal = -1
   for (const gap of gaps) {
     ordinal++
@@ -138,12 +164,16 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
       pos = gap.pos
       kind = gap.kind ?? 'inline'
     }
-    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight}`
+    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)}`
     decos.push(
       Decoration.widget(
         pos,
         () => {
           const el = makeGapEl(metrics, kind)
+          // margins don't apply to table-rows and cuts are zero-height markers;
+          // tables inside mixed-column regions are out of scope anyway (v1)
+          if (gap.pullUp && kind !== 'cut' && kind !== 'table')
+            el.style.marginTop = `-${gap.pullUp}px`
           if (notes) el.appendChild(notes)
           if (hfEls && (kind === 'block' || kind === 'inline' || kind === 'cell')) {
             for (const hf of hfEls) el.appendChild(hf)
@@ -191,6 +221,51 @@ export function setPageGaps(view: EditorView, gaps: PageGapSpec[]): void {
     syncPhantomRowspans(view.dom as HTMLElement)
   } finally {
     obs?.start()
+  }
+}
+
+/** Line top of a cut anchor (screen px); falls back to the parent element's top. */
+function anchorTop(a: LineAnchor): number | null {
+  if (a.node.length > 0) {
+    const range = document.createRange()
+    range.setStart(a.node, Math.min(a.charOffset, a.node.length - 1))
+    range.setEnd(a.node, Math.min(a.charOffset + 1, a.node.length))
+    for (const r of range.getClientRects()) if (r.height > 0) return r.top
+  }
+  return a.node.parentElement?.getBoundingClientRect().top ?? null
+}
+
+/**
+ * Cut markers whose anchor lives in a non-PM-addressable subtree (the read-only
+ * nested-table NodeView renders arbitrarily deep tables as one PM node): a widget
+ * decoration would collapse to the node's start position, stacking every page gap
+ * at one spot. Draw them as zero-height absolute overlays on the page wrap instead
+ * (no layout height, matching the multi-cell in-row cut markers).
+ */
+export function syncCutOverlays(
+  wrap: HTMLElement,
+  anchors: LineAnchor[],
+  zoomFactor: number,
+): void {
+  let layer = wrap.querySelector(':scope > .page-cut-overlays') as HTMLElement | null
+  if (anchors.length === 0) {
+    layer?.remove()
+    return
+  }
+  if (!layer) {
+    layer = document.createElement('div')
+    layer.className = 'page-cut-overlays'
+    wrap.appendChild(layer)
+  }
+  layer.textContent = ''
+  const wrapTop = wrap.getBoundingClientRect().top
+  for (const a of anchors) {
+    const top = anchorTop(a)
+    if (top == null) continue
+    const el = document.createElement('div')
+    el.className = 'page-gap-cut page-cut-overlay'
+    el.style.top = `${(top - wrapTop) / zoomFactor}px`
+    layer.appendChild(el)
   }
 }
 
@@ -256,4 +331,85 @@ function sameGaps(a: DecorationSet, b: DecorationSet): boolean {
     af.length === bf.length &&
     af.every((d, i) => d.from === bf[i].from && keyOf(d) === keyOf(bf[i]))
   )
+}
+
+/**
+ * Canvas display correction for floating boxes: a box is absolutely positioned
+ * from its anchor's flow position, so page-gap bands inserted between the anchor
+ * and the box's virtual Y are not reflected in its offset — the box would overlap
+ * the gray gap / next page header area. Translate each box by the gap height
+ * above its virtual position (idempotent; runs after setPageGaps).
+ */
+export function syncFloatShifts(
+  pm: HTMLElement,
+  floats: Array<{ el: HTMLElement; top: number }>,
+  origin: number,
+  factor: number,
+): void {
+  if (floats.length === 0) return
+  const gaps: Array<{ v: number; h: number }> = []
+  let acc = 0
+  for (const el of Array.from(pm.children) as HTMLElement[]) {
+    if (
+      el.classList.contains('page-gap') ||
+      el.classList.contains('page-float-host') ||
+      el.classList.contains('page-repeat-header')
+    ) {
+      const r = el.getBoundingClientRect()
+      gaps.push({ v: (r.top - origin - acc) / factor, h: r.height })
+      acc += r.height
+    }
+  }
+  for (const f of floats) {
+    let above = 0
+    for (const g of gaps) if (g.v <= f.top) above += g.h
+    const desired = origin + f.top * factor + above
+    const applied = parseFloat(f.el.dataset.pageFloatDy ?? '0') || 0
+    const cur = f.el.getBoundingClientRect().top
+    const next = applied + (desired - cur) / factor
+    if (Math.abs(next) < 0.5) {
+      f.el.style.removeProperty('--page-float-dy')
+      delete f.el.dataset.pageFloatDy
+    } else if (Math.abs(next - applied) > 0.5 || !f.el.dataset.pageFloatDy) {
+      f.el.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
+      f.el.dataset.pageFloatDy = String(next)
+    }
+  }
+}
+
+/**
+ * Word keeps anchored objects on the page: a cell-anchored box whose negative
+ * offset lifts it above the paper top (0219: a glossary title box -82pt above
+ * a first-row cell paragraph rendered clipped off the paper) is pushed back
+ * down to the paper edge. Cell boxes are overlay-only (zero flow footprint),
+ * so the shift has no layout feedback. Idempotent via the same
+ * --page-float-dy channel as syncFloatShifts.
+ */
+export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: number): void {
+  for (const box of Array.from(
+    pm.querySelectorAll<HTMLElement>('.doc-cell-boxes > .doc-textbox, .doc-cell-boxes > div'),
+  )) {
+    const r = box.getBoundingClientRect()
+    if (r.height <= 0) continue
+    const applied = parseFloat(box.dataset.pageFloatDy ?? '0') || 0
+    const naturalTop = r.top - applied * factor
+    const next = Math.max(0, (paperTop - naturalTop) / factor)
+    if (next < 0.5) {
+      if (box.dataset.pageFloatDy) {
+        box.style.removeProperty('--page-float-dy')
+        delete box.dataset.pageFloatDy
+      }
+    } else if (Math.abs(next - applied) > 0.5 || !box.dataset.pageFloatDy) {
+      box.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
+      box.dataset.pageFloatDy = String(next)
+    }
+  }
+}
+
+/** remove all float display shifts (leaving print view) */
+export function clearFloatShifts(pm: HTMLElement): void {
+  for (const el of Array.from(pm.querySelectorAll<HTMLElement>('[data-page-float-dy]'))) {
+    el.style.removeProperty('--page-float-dy')
+    delete el.dataset.pageFloatDy
+  }
 }

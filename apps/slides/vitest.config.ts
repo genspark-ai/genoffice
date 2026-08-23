@@ -13,6 +13,10 @@ export default defineConfig({
         here,
         '../../packages/pptx-engine/src/table-grid.ts',
       ),
+      '@genoffice/pptx-engine/identity': resolve(
+        here,
+        '../../packages/pptx-engine/src/identity.ts',
+      ),
       '@genoffice/pptx-engine/background-promote': resolve(
         here,
         '../../packages/pptx-engine/src/background-promote.ts',
@@ -23,6 +27,10 @@ export default defineConfig({
         '../../packages/pptx-render/src/preset-geometry.ts',
       ),
       '@genoffice/pptx-render': resolve(here, '../../packages/pptx-render/src/index.ts'),
+      '@genoffice/docx-engine/metafile': resolve(
+        here,
+        '../../packages/docx-engine/src/metafile.ts',
+      ),
     },
   },
   test: {

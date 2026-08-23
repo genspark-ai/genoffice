@@ -1,9 +1,11 @@
 import {
+  copyTargetBounds,
   expandToPrimitiveOps,
   formatOpLabel,
   isLayoutOp,
   isStructuralOp,
   layoutOpLabel,
+  MAX_EXPANDED_CELL_OPS,
   parseWorkbookCommandBatch,
   structuralOpLabel,
   type CellFormatPatch,
@@ -28,7 +30,13 @@ import {
   type ChartStateEdit,
   type SheetVisual,
 } from './chart-visual'
-import { shiftFormulaRefs, shiftIndex, shiftSpecForOp, type ShiftSpec } from './formula-shift'
+import {
+  offsetFormulaRefs,
+  shiftFormulaRefs,
+  shiftIndex,
+  shiftSpecForOp,
+  type ShiftSpec,
+} from './formula-shift'
 import type {
   CellChange,
   CellFormatState,
@@ -101,6 +109,106 @@ export class InMemoryWorkbookAdapter implements WorkbookAdapter {
     }
 
     for (const operation of expandToPrimitiveOps(batch.operations, readCell)) {
+      if (operation.op === 'fill_range') {
+        // Demo workbooks clone every cell per revision, so fills stay at the
+        // per-cell preview scale; imported files get the range-level executor
+        // with the 200k cap instead.
+        const target = parseRange(operation.target)
+        if (rangeCellCount(target) > MAX_EXPANDED_CELL_OPS) {
+          throw new WorkbookConflictError(
+            `fill_range on an in-memory workbook is limited to ${MAX_EXPANDED_CELL_OPS} cells per operation (imported xlsx files allow up to 200,000).`,
+          )
+        }
+        const source = parseRange(operation.source)
+        // Captured once: when source and target overlap they share their
+        // top-left corner (validated at expansion), so the only source cells
+        // rewritten during the loop are identity copies of themselves.
+        const sourceSheet = findSheet(working, operation.sourceSheetId ?? operation.sheetId)
+        const targetBefore = findSheet(working, operation.sheetId)
+        const sourceRows = source.endRow - source.startRow + 1
+        const sourceColumns = source.endColumn - source.startColumn + 1
+        for (let row = target.startRow; row <= target.endRow; row += 1) {
+          for (let column = target.startColumn; column <= target.endColumn; column += 1) {
+            const sourceRow = source.startRow + ((row - target.startRow) % sourceRows)
+            const sourceColumn =
+              source.startColumn + ((column - target.startColumn) % sourceColumns)
+            const cell = sourceSheet.cells[formatAddress(sourceRow, sourceColumn)] ?? {
+              value: null,
+            }
+            const after: CellState = cell.formula
+              ? {
+                  value: null,
+                  formula: offsetFormulaRefs(cell.formula, row - sourceRow, column - sourceColumn),
+                }
+              : { value: cell.value }
+            const address = formatAddress(row, column)
+            const before = targetBefore.cells[address] ?? { value: null }
+            cellChanges.push({ sheetId: targetBefore.id, address, before, after })
+            replaceCell(working, targetBefore.id, address, after)
+          }
+        }
+        continue
+      }
+      if (operation.op === 'copy_range') {
+        // Same per-cell scale as fill_range: demo workbooks clone every cell
+        // per revision, so big-block copies belong to imported files.
+        const target = copyTargetBounds(operation)
+        if (rangeCellCount(target) > MAX_EXPANDED_CELL_OPS) {
+          throw new WorkbookConflictError(
+            `copy_range on an in-memory workbook is limited to ${MAX_EXPANDED_CELL_OPS} cells per operation (imported xlsx files allow up to 200,000).`,
+          )
+        }
+        const source = parseRange(operation.source)
+        const sourceSheet = findSheet(working, operation.sourceSheetId ?? operation.sheetId)
+        const targetBefore = findSheet(working, operation.sheetId)
+        const rowDelta = target.startRow - source.startRow
+        const columnDelta = target.startColumn - source.startColumn
+        for (let row = source.startRow; row <= source.endRow; row += 1) {
+          for (let column = source.startColumn; column <= source.endColumn; column += 1) {
+            const cell = sourceSheet.cells[formatAddress(row, column)] ?? { value: null }
+            const after: CellState = cell.formula
+              ? { value: null, formula: offsetFormulaRefs(cell.formula, rowDelta, columnDelta) }
+              : { value: cell.value }
+            const address = formatAddress(row + rowDelta, column + columnDelta)
+            const before = targetBefore.cells[address] ?? { value: null }
+            cellChanges.push({ sheetId: targetBefore.id, address, before, after })
+            replaceCell(working, targetBefore.id, address, after)
+          }
+        }
+        continue
+      }
+      if (operation.op === 'convert_to_values') {
+        // The AI propose path pre-expands this into set_cell ops using the
+        // live grid's computed values (this snapshot only stores what was
+        // written, not what formulas evaluate to).
+        throw new WorkbookConflictError(
+          'convert_to_values reaches the in-memory adapter only above the ' +
+            `${MAX_EXPANDED_CELL_OPS}-cell demo limit — convert smaller ranges, or work on an imported xlsx file.`,
+        )
+      }
+      if (operation.op === 'find_replace') {
+        // Only >MAX_EXPANDED_CELL_OPS ranges arrive range-level; smaller
+        // ones were already expanded into plain set_cell edits.
+        throw new WorkbookConflictError(
+          `find_replace on an in-memory workbook is limited to ${MAX_EXPANDED_CELL_OPS} cells per operation (imported xlsx files allow up to 200,000).`,
+        )
+      }
+      if (operation.op === 'clear_range') {
+        // Range-level clear (only ranges above the per-cell expansion cap
+        // arrive in this form): existing cells become ordinary cell changes,
+        // empty ones need no work.
+        const bounds = parseRange(operation.range)
+        const sheet = findSheet(working, operation.sheetId)
+        for (const [address, cell] of Object.entries(sheet.cells)) {
+          const parsed = parseAddress(address)
+          if (parsed.row < bounds.startRow || parsed.row > bounds.endRow) continue
+          if (parsed.column < bounds.startColumn || parsed.column > bounds.endColumn) continue
+          if (cell.value === null && cell.formula === undefined) continue
+          cellChanges.push({ sheetId: sheet.id, address, before: cell, after: { value: null } })
+          replaceCell(working, sheet.id, address, { value: null })
+        }
+        continue
+      }
       if (isLayoutOp(operation)) {
         applyLayoutOp(working, operation)
         structuralChanges.push({ op: operation, label: layoutOpLabel(operation) })
@@ -191,7 +299,9 @@ export class InMemoryWorkbookAdapter implements WorkbookAdapter {
     }
     for (const change of plan.structuralChanges) {
       if (isLayoutOp(change.op)) applyLayoutOp(next, change.op)
-      else applyStructuralOp(next, change.op)
+      else if (isStructuralOp(change.op)) applyStructuralOp(next, change.op)
+      // fill_range / clear_range never reach the demo adapter as range-level
+      // entries — plan() expands them into ordinary cellChanges above.
     }
     for (const change of plan.cellChanges) {
       replaceCell(next, change.sheetId, change.address, change.after)

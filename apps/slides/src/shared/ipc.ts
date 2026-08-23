@@ -138,6 +138,66 @@ export interface EditParagraph {
   spaceAfterPt?: number
 }
 
+/** One geometry primitive collected by the edit-script sandbox (px, viewport space). */
+export interface ScriptBoxOp {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  rotation: number
+  /** Group child: converted to child-space EMU by the main-process shim */
+  groupId?: string
+}
+
+/** setStyle's style-override fields (pass only what changes; align is paragraph-level, the rest override per run). */
+export interface ScriptStylePatch {
+  fontSize?: number
+  color?: string
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  fontFamily?: string
+  align?: 'left' | 'center' | 'right'
+}
+
+/** One non-geometry primitive collected by the edit-script sandbox, in script call order. */
+export type ScriptEditOp = (
+  | { kind: 'text'; paragraphs: EditParagraph[] }
+  | { kind: 'style'; style: ScriptStylePatch }
+  | { kind: 'fill'; fill: string }
+  | { kind: 'stroke'; stroke: { color: string; widthPt: number } | null }
+) & { id: string; groupId?: string }
+
+/** A raw op transaction from the AI batch surface (ops are validated by the registry; coordinates are document-space EMU). */
+export interface ApplyTxnOp {
+  ops: unknown[]
+  /** atomic (default): all-or-nothing. per_op: independent, failures skip. */
+  isolation?: 'atomic' | 'per_op'
+  /** Validate and return the plan without touching the deck. */
+  dryRun?: boolean
+}
+
+export interface ApplyTxnResult {
+  applied: boolean
+  dryRun?: boolean
+  /** dry-run: one line per validated op */
+  plan?: string[]
+  failures?: Array<{ index: number; error: string }>
+  /** compact journal echo: op name, target, ids minted by additive ops */
+  records?: Array<{ op: string; target?: string; created?: string[] }>
+  /** full deck after a mutation (a transaction may touch any slide) */
+  slides?: RenderSlide[]
+}
+
+/** The whole edit script as one atomic transaction (surface px; the main-process shim converts). */
+export interface ApplyEditScriptOp {
+  slideIndex: number
+  fitWidthPx: number
+  boxes: ScriptBoxOp[]
+  edits: ScriptEditOp[]
+}
+
 /**
  * Text edit intent (run-level rich text): replace the element's text by paragraph/run structure.
  * The editor preserves each run's independent formatting (no longer flattens the whole box to one format).
@@ -317,7 +377,19 @@ export interface FlipElementOp {
 /** Fill edit: solid color value #RRGGBB or 'none'. */
 /** Gradient fill (UI two colors + direction; radial=radial) */
 export interface GradientFillSpec {
-  gradient: { from: string; to: string; angleDeg?: number; radial?: boolean }
+  gradient: {
+    from: string
+    to: string
+    /** Full stop list (overrides from/to when present); colors may carry #RRGGBBAA alpha */
+    stops?: Array<{ pos: number; color: string }>
+    angleDeg?: number
+    /** Legacy alias for path: 'circle' */
+    radial?: boolean
+    /** Path gradient kind (PPT: radial/rectangular/path); linear when absent */
+    path?: 'circle' | 'rect' | 'shape'
+    /** Path gradient focus point (0..1 fractions; default center 0.5/0.5) */
+    center?: { x: number; y: number }
+  }
 }
 
 export interface EditFillOp {
@@ -329,21 +401,57 @@ export interface EditFillOp {
   groupId?: string
 }
 
-/** Stroke edit: null = no stroke; widthPt is the line width (points); dash is an OOXML prstDash preset ('solid' clears it, undefined keeps the file's value). */
+/**
+ * Picture/texture fill: the main process shows the system image picker once and
+ * applies the pick to every target (one media part, one rel per slide).
+ * mode 'tile' = texture-style repeat at natural size, 'stretch' = fit bounds.
+ */
+export interface EditFillImageOp {
+  slideIndex: number
+  targets: Array<{ sourceId: string; groupId?: string }>
+  mode: 'stretch' | 'tile'
+  /** Inline image bytes (bundled texture presets); when set, no picker dialog is shown */
+  source?: { base64: string; ext: string }
+}
+
+/** Stroke edit: null = no stroke; widthPt is the line width (points); dash is an OOXML prstDash
+ * preset ('solid' clears it, undefined keeps the file's value); cap/join/compound likewise keep
+ * the file's bytes when undefined. color may carry alpha (#RRGGBBAA) for line transparency;
+ * gradient turns the line into a gradient line (color then only feeds fallbacks). */
 export interface EditStrokeOp {
   slideIndex: number
   sourceId: string
-  stroke: { color: string; widthPt: number; dash?: string } | null
+  stroke: {
+    color: string
+    widthPt: number
+    dash?: string
+    cap?: 'flat' | 'rnd' | 'sq'
+    join?: 'round' | 'bevel' | 'miter'
+    compound?: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
+    gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
+  } | null
   /** In-group editing: sourceId is a direct child of that group */
   groupId?: string
 }
 
-/** Solid page background; slideIndex=-1 applies to all pages. */
-export interface EditBackgroundOp {
+/**
+ * Page background edit; slideIndex=-1 applies to all pages.
+ * - solid/gradient: explicit fill
+ * - image: pick=true opens the system picker; pick=false reuses the current
+ *   image background of sourceSlideIndex (e.g. "apply to all" after picking)
+ * - reset: drop the slide's own <p:bg> (falls back to layout/master)
+ * - hideGraphics: toggle <p:sld showMasterSp> (hide master/layout decorations)
+ */
+export type EditBackgroundOp = {
   slideIndex: number
-  color: string
   fitWidthPx: number
-}
+} & (
+  | { kind: 'solid'; color: string }
+  | { kind: 'gradient'; from: string; to: string; angleDeg?: number; radial?: boolean }
+  | { kind: 'image'; mode: 'stretch' | 'tile'; pick?: boolean; sourceSlideIndex?: number }
+  | { kind: 'reset' }
+  | { kind: 'hideGraphics'; hidden: boolean }
+)
 
 /** Copy the selected elements to the in-app clipboard (any type, including tables/charts/groups). */
 export interface CopyElementsOp {
@@ -1028,6 +1136,13 @@ export interface SlidesApi {
   setShowFullScreen: (on: boolean) => Promise<void>
   openPptx: (fitWidthPx: number) => Promise<OpenResult | null>
   openPptxPath: (path: string, fitWidthPx: number) => Promise<OpenResult | null>
+  /** Office-private faces referenced by layouts so far; the renderer registers them as FontFaces
+   *  (files invisible to Chromium — DFonts/cloud fonts), so drawing uses the measuring font. */
+  privateFontFaces: () => Promise<
+    Array<{ id: string; family: string; bold: boolean; italic: boolean }>
+  >
+  /** Single-face sfnt bytes for one private face (null = gone/unreadable) */
+  privateFontData: (id: string) => Promise<ArrayBuffer | null>
   consumePendingOpen: (fitWidthPx: number) => Promise<OpenResult | null>
   /** New blank presentation (single blank 16:9 page, untitled) */
   newBlank: (fitWidthPx: number) => Promise<OpenResult>
@@ -1064,6 +1179,10 @@ export interface SlidesApi {
     width?: number
     height?: number
   }) => Promise<{ ok: boolean; marker?: string; error?: string }>
+  /** Local single-page generation: a JSON slide spec (LLM output) built directly into a one-slide pptx; same marker kind as the cloud path */
+  localGeneratePage: (op: {
+    specJson: string
+  }) => Promise<{ ok: boolean; marker?: string; error?: string; imageFailures?: string[] }>
   editText: (op: EditTextOp) => Promise<RenderSlide | null>
   /** Change font/size on selected elements wholesale (elements without text ignored; returns null if all ignored) */
   setElementFont: (op: SetElementFontOp) => Promise<RenderSlide | null>
@@ -1091,7 +1210,24 @@ export interface SlidesApi {
   /** Whole-picture opacity */
   editPictureOpacity: (op: EditPictureOpacityOp) => Promise<RenderSlide | null>
   /** Shape picture fill (the main process shows the image picker dialog; cancel returns null) */
-  editImageFill: (op: { slideIndex: number; sourceId: string }) => Promise<RenderSlide | null>
+  editImageFill: (op: EditFillImageOp) => Promise<RenderSlide | null>
+  /** Change a shape's preset geometry (keeps transform/fill/outline/text); returns the updated page.
+   * groupId targets a child inside a group (in-group editing). */
+  changeShape: (op: {
+    slideIndex: number
+    sourceId: string
+    prst: string
+    groupId?: string
+  }) => Promise<RenderSlide | null>
+  /** Preset-geometry adjust values ("yellow handle" drag). preview follows the
+   * edit-transform gesture semantics: one whole drag = one undo step. */
+  setShapeAdjust: (op: {
+    slideIndex: number
+    sourceId: string
+    adjust: Record<string, number>
+    groupId?: string
+    preview?: boolean
+  }) => Promise<RenderSlide | null>
   /** Text box vertical alignment */
   setTextAnchor: (op: {
     slideIndex: number
@@ -1265,6 +1401,12 @@ export interface SlidesApi {
       The outermost end registers an AI rollback point and returns its id (null when nothing changed). */
   beginHistoryBatch: () => Promise<boolean>
   endHistoryBatch: () => Promise<number | null>
+  /** Apply an edit script's collected primitives as ONE atomic op transaction (the executor rolls back on any failure); returns the rebuilt slide or a guided error */
+  applyEditScript: (
+    op: ApplyEditScriptOp,
+  ) => Promise<{ slide: RenderSlide } | { error: string } | null>
+  /** AI batch surface: apply raw ops as one transaction (atomic/per_op, dry-run supported) */
+  applyTxn: (op: ApplyTxnOp) => Promise<ApplyTxnResult | null>
   /** Roll the deck back to an AI rollback point; returns the restored full RenderSlide array, null when the id is unknown */
   aiSnapshotRestore: (id: number) => Promise<RenderSlide[] | null>
   /** Undo/redo (main-process snapshot history): returns the restored full RenderSlide array, null when nothing to undo */
@@ -1341,6 +1483,8 @@ export interface SlidesApi {
     results: Array<{ title: string; url: string; snippet: string }>
     answer?: string
     method: string
+    /** failure reason when method === 'error' */
+    error?: string
   }>
   imageSearch: (
     query: string,
@@ -1355,6 +1499,8 @@ export interface SlidesApi {
       height?: number
     }>
     method: string
+    /** failure reason when method === 'error' */
+    error?: string
   }>
   insertImageUrl: (op: {
     slideIndex: number

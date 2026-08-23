@@ -27,8 +27,25 @@ const api: DesktopApi = {
     ipcRenderer.on('app:theme-changed', listener)
     return () => ipcRenderer.removeListener('app:theme-changed', listener)
   },
+  onChromePressed: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('app:chrome-pressed', listener)
+    return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
+  },
   openDocx: () => ipcRenderer.invoke('docs:open'),
   openDocxPath: (path: string) => ipcRenderer.invoke('docs:open-path', path),
+  openDocxDecrypt: (path: string, password: string) =>
+    ipcRenderer.invoke('docs:open-decrypt', path, password),
+  setDocPassword: (filePath: string | null, password: string | null) =>
+    ipcRenderer.invoke('docs:set-password', filePath, password),
+  docPasswordIntentRevision: async () => {
+    const revision: unknown = await ipcRenderer.invoke('docs:password-intent-revision')
+    return typeof revision === 'number' && Number.isSafeInteger(revision) && revision >= 0
+      ? revision
+      : 0
+  },
+  discardDocPasswordIntents: (throughRevision: number) =>
+    ipcRenderer.invoke('docs:discard-password-intents', throughRevision),
   consumePendingOpenDocx: () => ipcRenderer.invoke('docs:consume-pending-open'),
   consumeNewBlankDoc: () => ipcRenderer.invoke('docs:consume-new-blank'),
   onOpenDocx: (handler) => {
@@ -52,8 +69,8 @@ const api: DesktopApi = {
     ipcRenderer.on('docs:teardown', listener)
     return () => ipcRenderer.removeListener('docs:teardown', listener)
   },
-  saveDocxAs: (defaultName: string, data: ArrayBuffer) =>
-    ipcRenderer.invoke('docs:save-as', defaultName, data),
+  saveDocxAs: (defaultName: string, data: ArrayBuffer, sourcePath?: string | null) =>
+    ipcRenderer.invoke('docs:save-as', defaultName, data, sourcePath ?? null),
   saveDocxNew: (defaultName: string, data: ArrayBuffer) =>
     ipcRenderer.invoke('docs:save-new', defaultName, data),
   getRecentFiles: () => ipcRenderer.invoke('docs:recent'),

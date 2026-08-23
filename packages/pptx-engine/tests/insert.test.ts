@@ -28,7 +28,10 @@ describe('add/delete element', () => {
     const el2: any = slide2.elements[slide2.elements.length - 1]
     expect(el2.type).toBe('text')
     expect(el2.transform.offset).toEqual(OFF)
-    const text = el2.text.paragraphs.flatMap((p: any) => p.runs).map((r: any) => r.text).join('')
+    const text = el2.text.paragraphs
+      .flatMap((p: any) => p.runs)
+      .map((r: any) => r.text)
+      .join('')
     expect(text).toBe('Newly inserted textbox')
     expect(el2.text.paragraphs[0].runs[0].bold).toBe(true)
   })
@@ -76,7 +79,7 @@ describe('add/delete element', () => {
     const before = slide.elements.length
     expect(before).toBeGreaterThan(1)
     const victim = slide.elements[0]!
-    expect(deleteElement(slide, victim.id)).toBe(true)
+    expect(deleteElement(opened, slide, victim.id)).toBe(true)
 
     const reopened = await openPptx(await savePptx(opened))
     expect(reopened.deck.slides[0]!.elements.length).toBe(before - 1)
@@ -85,7 +88,7 @@ describe('add/delete element', () => {
   it('delete-only edit still marks the deck dirty for save', async () => {
     const opened = await openPptx(fx('01_standard_business.pptx'))
     const slide = opened.deck.slides[0]!
-    deleteElement(slide, slide.elements[0]!.id)
+    deleteElement(opened, slide, slide.elements[0]!.id)
     expect(slide.structureDirty).toBe(true)
   })
 })

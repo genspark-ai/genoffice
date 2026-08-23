@@ -309,4 +309,146 @@ describe('image wrap in the editor', () => {
     expect(reparsed2.blocks[0].imageFillRect).toBeUndefined()
     editor.destroy()
   })
+
+  // LibreOffice-style anchors: arbitrary raw relativeHeight (1, 7) instead of
+  // Word's 251658240+rank encoding. Parse compresses them to compact ranks.
+  const WILD_ANCHOR_XML =
+    '<w:p><w:r><w:drawing>' +
+    '<wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+    '<wp:simplePos x="0" y="0"/>' +
+    '<wp:positionH relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionH>' +
+    '<wp:positionV relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionV>' +
+    '<wp:extent cx="914400" cy="914400"/>' +
+    '<wp:wrapNone/>' +
+    '<wp:docPr id="1" name="pic 1"/>' +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>'
+  const WILD_TWO_ANCHORS_XML =
+    WILD_ANCHOR_XML +
+    WILD_ANCHOR_XML.replace('relativeHeight="1"', 'relativeHeight="7"').replace(
+      'id="1" name="pic 1"',
+      'id="2" name="pic 2"',
+    )
+
+  it('untouched wild-relativeHeight anchors stay byte-identical on save', async () => {
+    const { editor, parsed, source } = await openImageDoc(WILD_TWO_ANCHORS_XML)
+    expect(parsed.blocks[0].imageZOrder).toBeUndefined() // compact rank 0
+    expect(parsed.blocks[1].imageZOrder).toBe(1)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(0)
+    expect(await saveDocx(parsed, plan.saveBlocks)).toEqual(source)
+    editor.destroy()
+  })
+
+  it('a z-order edit harmonizes wild sibling anchors to base+rank encoding', async () => {
+    const { editor, parsed } = await openImageDoc(WILD_TWO_ANCHORS_XML)
+    // send the SECOND picture (rank 1, on top) to the back, like the Arrange menu
+    let pos = -1
+    editor.state.doc.descendants((n, p) => {
+      if (n.type.name === 'docProtected' && n.attrs.imageZOrder === 1) pos = p
+      return pos === -1
+    })
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)))
+    editor.commands.updateAttributes('docProtected', { imageZOrder: -1 })
+
+    // both anchors rewritten: the edited one AND its wild sibling (Word paints
+    // by raw relativeHeight, so mixed encodings would invert the order)
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(2)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const docXml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    const rels = [...docXml.matchAll(/relativeHeight="(\d+)"/g)].map((m) => Number(m[1]))
+    expect(rels).toEqual([251658240, 251658239]) // base+0, base-1 — raw order matches intent
+    // harmonization is surgical: page anchoring and wrap bytes survive on BOTH
+    // anchors (a full rebuild would reset relativeFrom to the editor default)
+    expect(docXml.match(/relativeFrom="page"/g)?.length).toBe(4)
+    expect(docXml.match(/<wp:wrapNone\/>/g)?.length).toBe(2)
+
+    // reopen: ranks decode small (no wild values left), order preserved
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks[0].imageZOrder).toBeUndefined()
+    expect(reparsed.blocks[1].imageZOrder).toBe(-1)
+    editor.destroy()
+  })
+
+  it('a wrap-only change keeps an existing stacking rank', async () => {
+    const xml = IMAGE_PARAGRAPH_XML // inline image, then float it with a rank
+    const { editor, parsed } = await openImageDoc(xml)
+    editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, 0)))
+    editor.commands.updateAttributes('docProtected', { imageWrap: 'front', imageZOrder: 3 })
+    const saved = await saveDocx(
+      parsed,
+      pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks).saveBlocks,
+    )
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks[0].imageZOrder).toBe(3)
+
+    // now change ONLY the wrap mode; the rank must survive the rewrite
+    const editor2 = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(reparsed.blocks) as never,
+    })
+    editor2.view.dispatch(editor2.state.tr.setSelection(NodeSelection.create(editor2.state.doc, 0)))
+    editor2.commands.updateAttributes('docProtected', { imageWrap: 'behind' })
+    const saved2 = await saveDocx(
+      reparsed,
+      pmDocToSavePlan(editor2.getJSON() as PmNode, reparsed.blocks).saveBlocks,
+    )
+    const reparsed2 = await parseDocx(saved2)
+    expect(reparsed2.blocks[0].imageWrap).toBe('behind')
+    expect(reparsed2.blocks[0].imageZOrder).toBe(3)
+    editor.destroy()
+    editor2.destroy()
+  })
+
+  it('harmonizes a geometry-only edited sibling carrying a wild relativeHeight', async () => {
+    // Bugbot #767: when one picture's z-order changes, a SIBLING that was only
+    // resized/aligned/rotated must also be re-encoded from its wild producer
+    // relativeHeight to base+rank — otherwise Word paints the raw-valued
+    // sibling above the re-encoded pictures and inverts the stacking.
+    const { editor, parsed } = await openImageDoc(WILD_TWO_ANCHORS_XML)
+    // resize the FIRST picture (rank 0) — a pure geometry patch, no wrap/z change
+    let firstPos = -1
+    let secondPos = -1
+    editor.state.doc.descendants((n, p) => {
+      if (n.type.name === 'docProtected') {
+        if (n.attrs.imageZOrder === 1) secondPos = p
+        else if (firstPos === -1) firstPos = p
+      }
+      return true
+    })
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(firstPos, undefined, {
+        ...editor.state.doc.nodeAt(firstPos)!.attrs,
+        imageWidthPx: 48,
+        imageHeightPx: 48,
+      }),
+    )
+    // and send the SECOND picture to the back (the z-order edit that triggers
+    // the harmonize pre-scan)
+    editor.view.dispatch(
+      editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, secondPos)),
+    )
+    editor.commands.updateAttributes('docProtected', { imageZOrder: -1 })
+
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    const saved = await saveDocx(parsed, plan.saveBlocks)
+    const docXml = await (await JSZip.loadAsync(saved)).file('word/document.xml')!.async('string')
+    const rels = [...docXml.matchAll(/relativeHeight="(\d+)"/g)].map((m) => Number(m[1]))
+    // BOTH anchors carry base+rank encoding: no wild 1/7 value survives
+    expect(rels.every((r) => r >= 251658000)).toBe(true)
+    expect(rels).toEqual([251658240, 251658239]) // first base+0, second base-1
+    // the re-encode is surgical: page anchoring survives on both anchors
+    expect(docXml.match(/relativeFrom="page"/g)?.length).toBe(4)
+
+    const reparsed = await parseDocx(saved)
+    // geometry patch preserved on the first picture
+    expect(reparsed.blocks[0].imageWidthPx).toBe(48)
+    // ranks decode small (no wild values left), order preserved
+    expect(reparsed.blocks[0].imageZOrder).toBeUndefined()
+    expect(reparsed.blocks[1].imageZOrder).toBe(-1)
+    editor.destroy()
+  })
 })

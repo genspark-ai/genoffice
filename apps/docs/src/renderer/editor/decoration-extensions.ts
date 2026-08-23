@@ -14,6 +14,7 @@ import { type TabStop } from '@genoffice/docx-engine'
 
 import { SearchHighlight } from './extensions'
 import { revisionDisplayState } from './marks'
+import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
 
 export const searchPluginKey = new PluginKey<DecorationSet>('docSearch')
 
@@ -137,8 +138,19 @@ export const ResolvedCommentsExtension = Extension.create({
 const tabStopPluginKey = new PluginKey<DecorationSet>('tabStops')
 
 const TWIPS_PER_PX = 15
-/** w:defaultTabStop; 720 twips (0.5") is Word's default (settings.xml is not parsed yet) */
+/** fallback when the document's settings.xml declares no w:defaultTabStop (Word: 0.5") */
 const DEFAULT_TAB_TWIPS = 720
+
+export interface TabStopStorage {
+  /** settings.xml w:defaultTabStop (twips); 0 = zero-width default tabs (Word barely advances) */
+  defaultTabStopTwips: number | null
+}
+
+declare module '@tiptap/core' {
+  interface Storage {
+    tabStops: TabStopStorage
+  }
+}
 
 interface MeasuredTab {
   pos: number
@@ -197,7 +209,10 @@ class TabLayoutView {
     this.measure()
   }
 
-  constructor(private view: EditorView) {
+  constructor(
+    private view: EditorView,
+    private storage: TabStopStorage,
+  ) {
     this.measure()
     document.fonts?.addEventListener('loadingdone', this.onFontsLoaded)
     if (typeof ResizeObserver !== 'undefined') {
@@ -395,8 +410,14 @@ class TabLayoutView {
         val = next.val
         leader = next.leader
       } else {
-        const grid = DEFAULT_TAB_TWIPS / TWIPS_PER_PX
-        target = (Math.floor((x + 0.5) / grid) + 1) * grid
+        const gridTwips = this.storage.defaultTabStopTwips ?? DEFAULT_TAB_TWIPS
+        if (gridTwips > 0) {
+          const grid = gridTwips / TWIPS_PER_PX
+          target = (Math.floor((x + 0.5) / grid) + 1) * grid
+        } else {
+          // defaultTabStop 0: Word advances the caret imperceptibly (tdf#168607)
+          target = x + 0.5
+        }
       }
 
       // Width of the text between this tab and the next tab (or paragraph
@@ -447,7 +468,11 @@ class TabLayoutView {
 
 export const TabStopExtension = Extension.create({
   name: 'tabStops',
+  addStorage() {
+    return { defaultTabStopTwips: null } as TabStopStorage
+  },
   addProseMirrorPlugins() {
+    const storage = this.storage as TabStopStorage
     return [
       new Plugin({
         key: tabStopPluginKey,
@@ -464,7 +489,7 @@ export const TabStopExtension = Extension.create({
             return this.getState(state)
           },
         },
-        view: (view) => new TabLayoutView(view),
+        view: (view) => new TabLayoutView(view, storage),
       }),
     ]
   },
@@ -501,9 +526,91 @@ export const DropCapExtension = Extension.create({
   },
 })
 
+// ---- whitespace-only run line height (Word ignores their font size) ----
+
+const wsRunPluginKey = new PluginKey<DecorationSet>('wsRunLineHeight')
+
+/**
+ * Word ignores the font size of whitespace-only runs (spaces/tabs) for line
+ * height (tdf#137335): the oversized whitespace keeps its advance but the line
+ * box stays governed by the text portions (strut on blank lines). Recomputed
+ * from the live text so editing into such a run drops the suppression, and a
+ * character style's font size is covered the same as a direct w:sz.
+ */
+export const WsRunLineHeightExtension = Extension.create({
+  name: 'wsRunLineHeight',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: wsRunPluginKey,
+        props: {
+          decorations(state) {
+            const decos: Decoration[] = []
+            state.doc.descendants((node, pos) => {
+              if (!node.isText || !node.text) return
+              if (!/^[ \t]+$/.test(node.text)) return
+              // only runs with a font-size source can inflate the line
+              const styled = node.marks.some(
+                (m) =>
+                  m.type.name === 'docTextStyle' && (m.attrs.sizeHalfPoints || m.attrs.styleId),
+              )
+              if (!styled) return
+              decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'doc-ws-run' }))
+            })
+            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
+          },
+        },
+      }),
+    ]
+  },
+})
+
+// ---- adjacent-paragraph border merging (Word border groups) ----
+
+const paraBorderMergePluginKey = new PluginKey<DecorationSet>('paraBorderMerge')
+
+/**
+ * Word border groups (ECMA-376 §17.3.1.24): adjacent top-level paragraphs with
+ * identical borders/shading draw top/bottom lines only at the group edges.
+ * Display-only classes; the borders attrs still serialize unchanged on save.
+ */
+export const ParaBorderMergeExtension = Extension.create({
+  name: 'paraBorderMerge',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: paraBorderMergePluginKey,
+        props: {
+          decorations(state) {
+            const items: ParaBorderAttrs[] = []
+            const spans: Array<{ from: number; to: number }> = []
+            state.doc.forEach((node, offset) => {
+              // non-paragraph blocks (tables...) enter as border-less entries: they break adjacency
+              items.push(node.isTextblock ? (node.attrs as ParaBorderAttrs) : {})
+              spans.push({ from: offset, to: offset + node.nodeSize })
+            })
+            const decos: Decoration[] = []
+            borderMergeFlags(items).forEach((f, i) => {
+              if (!f.suppressTop && !f.suppressBottom) return
+              const cls = [
+                f.suppressTop ? 'pbdr-suppress-top' : '',
+                f.suppressBottom ? 'pbdr-suppress-bottom' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')
+              decos.push(Decoration.node(spans[i].from, spans[i].to, { class: cls }))
+            })
+            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
+          },
+        },
+      }),
+    ]
+  },
+})
+
 // ---- SDT (structured document tag) rendering extension ----
 
-const sdtPluginKey = new PluginKey<DecorationSet>('sdt')
+const sdtPluginKey = new PluginKey<boolean>('sdt')
 
 export const SdtExtension = Extension.create({
   name: 'sdt',
@@ -511,27 +618,85 @@ export const SdtExtension = Extension.create({
     return [
       new Plugin({
         key: sdtPluginKey,
+        // plugin state = "editor focused"; decorations() can't reach the view,
+        // and focus changes don't dispatch transactions on their own
+        state: {
+          init: () => false,
+          apply: (tr, focused) => (tr.getMeta(sdtPluginKey) as boolean | undefined) ?? focused,
+        },
+        // after a ribbon click the editor's own blur already fired (with a
+        // relatedTarget), so a later alt-tab only blurs the ribbon control;
+        // the window blur is the reliable "chrome must disappear" signal
+        view: (editorView) => {
+          const onWindowBlur = () => {
+            if (sdtPluginKey.getState(editorView.state)) {
+              editorView.dispatch(editorView.state.tr.setMeta(sdtPluginKey, false))
+            }
+          }
+          window.addEventListener('blur', onWindowBlur)
+          return { destroy: () => window.removeEventListener('blur', onWindowBlur) }
+        },
         props: {
+          handleDOMEvents: {
+            focus: (view) => {
+              view.dispatch(view.state.tr.setMeta(sdtPluginKey, true))
+              return false
+            },
+            blur: (view, event) => {
+              // Word keeps control chrome while formatting from the toolbar:
+              // only clear when focus leaves the document (relatedTarget null —
+              // window switch / screenshot), not on ribbon clicks
+              if ((event as FocusEvent).relatedTarget) return false
+              view.dispatch(view.state.tr.setMeta(sdtPluginKey, false))
+              return false
+            },
+          },
           decorations(state) {
-            const decos: Decoration[] = []
+            // Word shows content-control chrome only while the editor has focus
+            // and the cursor is inside the control; a static document view
+            // (export, screenshot, unfocused window) renders the content alone.
+            // "Inside" means fully contained — a doc-wide selection (initial
+            // AllSelection, ctrl-A) must not light up every control.
+            if (!sdtPluginKey.getState(state)) return DecorationSet.empty
+            const { from, to } = state.selection
+            // A multi-paragraph control (blocks sharing sdtShell.group) is one
+            // control: the caret anywhere inside lights up every member block.
+            type Entry = { offset: number; end: number; alias: string; group?: number }
+            const entries: Entry[] = []
             state.doc.forEach((node, offset) => {
               const raw = node.attrs?.sdtShell as string | null
               if (!raw) return
               let alias = ''
+              let group: number | undefined
               try {
                 const parsed = JSON.parse(raw)
                 alias = parsed?.alias || parsed?.tag || t('editorContentControl')
+                if (typeof parsed?.group === 'number') group = parsed.group
               } catch {
                 /* ignore */
               }
-              decos.push(
-                Decoration.node(offset, offset + node.nodeSize, {
-                  'data-sdt-alias': alias,
-                  class: 'has-sdt',
-                }),
-              )
+              entries.push({ offset, end: offset + node.nodeSize, alias, group })
             })
-            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
+            const rangeOf = (e: Entry): [number, number] => {
+              if (e.group === undefined) return [e.offset, e.end]
+              const members = entries.filter((m) => m.group === e.group)
+              return [members[0].offset, members[members.length - 1].end]
+            }
+            const hit = entries.find((e) => {
+              const [start, end] = rangeOf(e)
+              return from >= start && to <= end
+            })
+            if (!hit) return DecorationSet.empty
+            const members =
+              hit.group === undefined ? [hit] : entries.filter((m) => m.group === hit.group)
+            const decos = members.map((m, i) =>
+              Decoration.node(m.offset, m.end, {
+                // one control-wide box: the alias tab renders once, on the first member
+                ...(i === 0 ? { 'data-sdt-alias': m.alias } : {}),
+                class: i === 0 ? 'has-sdt' : 'has-sdt has-sdt-follow',
+              }),
+            )
+            return DecorationSet.create(state.doc, decos)
           },
         },
       }),
@@ -559,6 +724,46 @@ export const MoveRevisionExtension = Extension.create({
                 Decoration.node(offset, offset + node.nodeSize, {
                   'data-move-revision': rev,
                   class: rev === 'from' ? 'has-move-from' : 'has-move-to',
+                }),
+              )
+            })
+            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
+          },
+        },
+      }),
+    ]
+  },
+})
+
+// ---- deleted paragraph mark (w:pPr/w:rPr/w:del) collapse extension ----
+
+const paraMarkDelPluginKey = new PluginKey<DecorationSet>('paraMarkDel')
+
+/**
+ * A paragraph whose mark is a tracked deletion and whose inline content is all
+ * deleted leaves no trace in Word's All Markup view (the text lives in a margin
+ * balloon); collapse it so pagination matches. Partially deleted paragraphs
+ * (Word joins them into the next one) keep their height — approximate, but the
+ * remaining text still occupies a line either way.
+ */
+export const ParaMarkDelExtension = Extension.create({
+  name: 'paraMarkDel',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: paraMarkDelPluginKey,
+        props: {
+          decorations(state) {
+            const decos: Decoration[] = []
+            state.doc.forEach((node, offset) => {
+              if (!node.attrs?.paraMarkDel) return
+              let visible = false
+              node.forEach((child) => {
+                if (!child.marks.some((m) => m.type.name === 'del')) visible = true
+              })
+              decos.push(
+                Decoration.node(offset, offset + node.nodeSize, {
+                  class: visible ? 'doc-para-mark-del' : 'doc-para-mark-del doc-para-del-collapse',
                 }),
               )
             })

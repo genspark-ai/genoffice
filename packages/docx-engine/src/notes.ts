@@ -108,8 +108,12 @@ function noteRichParas(entryXml: string): NoteRun[][] {
     }
     out.push(runs)
   }
-  // Strip the first paragraph's leading space (spacer after the self-reference mark)
-  if (out[0]?.[0]) out[0][0].text = out[0][0].text.replace(/^\s+/, '')
+  // Strip the first paragraph's leading space (spacer after the self-reference
+  // mark); a spacer that was its own run empties out and is dropped entirely
+  if (out[0]?.[0]) {
+    out[0][0].text = out[0][0].text.replace(/^\s+/, '')
+    if (out[0][0].text === '') out[0].shift()
+  }
   return out
 }
 
@@ -161,9 +165,51 @@ function separatorEntries(kind: NoteKind): string {
   )
 }
 
+/** one rich display run → run XML (size/font/bold…; save-side of NoteRun) */
+function noteRunXml(run: NoteRun): string {
+  const props: string[] = []
+  const fonts: string[] = []
+  if (run.fontAscii) {
+    fonts.push(
+      `w:ascii="${escapeXmlAttr(run.fontAscii)}" w:hAnsi="${escapeXmlAttr(run.fontAscii)}"`,
+    )
+  }
+  if (run.font) fonts.push(`w:eastAsia="${escapeXmlAttr(run.font)}"`)
+  if (fonts.length > 0) props.push(`<w:rFonts ${fonts.join(' ')}/>`)
+  if (run.bold) props.push('<w:b/>')
+  if (run.italic) props.push('<w:i/>')
+  if (run.underline) props.push('<w:u w:val="single"/>')
+  if (run.strike) props.push('<w:strike/>')
+  if (run.color) props.push(`<w:color w:val="${escapeXmlAttr(run.color)}"/>`)
+  if (run.sizeHalfPoints) {
+    props.push(`<w:sz w:val="${run.sizeHalfPoints}"/><w:szCs w:val="${run.sizeHalfPoints}"/>`)
+  }
+  const rPr = props.length > 0 ? `<w:rPr>${props.join('')}</w:rPr>` : ''
+  return `<w:r>${rPr}<w:t xml:space="preserve">${escapeXmlText(run.text)}</w:t></w:r>`
+}
+
 function noteEntryXml(kind: NoteKind, note: NoteInfo): string {
   const entry = ENTRY[kind]
   const refTag = kind === 'footnote' ? 'w:footnoteRef' : 'w:endnoteRef'
+  if (note.richParas?.length) {
+    // rich rebuild (P17): runs keep their measured size/font, the reference
+    // mark + spacer shrink to the first run's size, and the paragraph pins
+    // single spacing — a note rendered from measured source content must not
+    // inflate past its source area via template docDefaults (after=120,
+    // line=276) or a body-sized marker run
+    const paras = note.richParas.map((runs, i) => {
+      const sz = runs[0]?.sizeHalfPoints
+      const szXml = sz ? `<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>` : ''
+      const refRun =
+        i === 0
+          ? `<w:r><w:rPr><w:vertAlign w:val="superscript"/>${szXml}</w:rPr><${refTag}/></w:r>` +
+            `<w:r>${sz ? `<w:rPr>${szXml}</w:rPr>` : ''}<w:t xml:space="preserve"> </w:t></w:r>`
+          : ''
+      const pPr = '<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>'
+      return `<w:p>${pPr}${refRun}${runs.map(noteRunXml).join('')}</w:p>`
+    })
+    return `<${entry} w:id="${escapeXmlAttr(note.id)}">${paras.join('')}</${entry}>`
+  }
   const paras = note.text.split('\n').map((line, i) => {
     // OOXML convention: the note body starts with the self-reference mark
     const refRun =

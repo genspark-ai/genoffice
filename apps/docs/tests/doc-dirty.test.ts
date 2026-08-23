@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { isDocDirty, type DocDirtyState } from '../src/renderer/doc-dirty'
+import { openedFileStartsDirty } from '../src/renderer/doc-state'
 
 function cleanState(): DocDirtyState {
   return {
@@ -36,6 +37,13 @@ describe('isDocDirty', () => {
 
   it('is true when only the body changed', () => {
     expect(isDocDirty({ ...cleanState(), dirtyRef: { current: true } })).toBe(true)
+  })
+
+  it('treats restored recovery content as unsaved body content', () => {
+    const state = cleanState()
+    state.dirtyRef.current = openedFileStartsDirty({ recovered: true })
+    expect(isDocDirty(state)).toBe(true)
+    expect(openedFileStartsDirty({})).toBe(false)
   })
 
   // the regression: autosave ignored comment/protection edits; the recovery push ignored everything but the body

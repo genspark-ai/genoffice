@@ -20,8 +20,8 @@ export interface IpcStreamChunk {
   reasoning?: string
   toolCall?: AgentToolCall
   error?: string
-  /** machine-readable error cause; maps to the localized timeout/credits message */
-  errorCode?: 'timeout' | 'credits'
+  /** machine-readable error cause; maps to the localized timeout/credits/network message */
+  errorCode?: 'timeout' | 'credits' | 'network'
   /** normalized stop reason on 'done' ('max_tokens' = cut off by the token limit) */
   stopReason?: string
 }
@@ -57,6 +57,8 @@ export interface IpcTransportOptions<S> {
   timeoutErrorText?(): string
   /** localized message for exhausted credits (errorCode 'credits') */
   creditsErrorText?(): string
+  /** localized message for network connectivity failures (errorCode 'network') */
+  networkErrorText?(): string
 }
 
 /**
@@ -112,7 +114,9 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
               ? timeoutText()
               : chunk.errorCode === 'credits'
                 ? (options.creditsErrorText?.() ?? chunk.error ?? options.unknownErrorText())
-                : (chunk.error ?? options.unknownErrorText()),
+                : chunk.errorCode === 'network'
+                  ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                  : (chunk.error ?? options.unknownErrorText()),
           )
         }
       })

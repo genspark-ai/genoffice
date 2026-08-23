@@ -4,11 +4,12 @@
  * Used by both the App component (App.tsx) and the module-level sync
  * helpers (univer-sync.ts).
  */
-import { BorderType, type IRange } from '@univerjs/core'
+import { BorderType, LocalUndoRedoService, type IRange } from '@univerjs/core'
 
 import type { WorkbookFile, WorkbookPivotDefinition } from '../shared/desktop-api'
 import type { createUniver } from './create-univer'
 import type { EditJournal } from './edit-journal'
+import { netAxisDelta } from './view-transform'
 
 export type UniverRuntime = ReturnType<typeof createUniver>
 export type ActiveWorkbook = NonNullable<
@@ -27,8 +28,20 @@ export interface LazyWorkbookState {
   readonly appliedCfSheets: Set<string>
   readonly appliedFilterSheets: Set<string>
   readonly appliedDvSheets: Set<string>
+  /// Sheets whose last range read predated the sidecar's indexingComplete:
+  /// conditional formatting / filters / validations were not yet available,
+  /// so an already-loaded range must not satisfy the next load request.
+  readonly decorationsPendingSheets: Set<string>
   /// File-side worksheet protection, known once a sheet finishes indexing.
   readonly sheetProtections: Map<string, { protected: boolean; hasPassword: boolean }>
+  /// File-side manual page breaks (0-based index of the row/column after the
+  /// break, file coordinates), known once a sheet finishes indexing.
+  readonly sheetPageBreaks: Map<string, { rowBreaks: number[]; colBreaks: number[] }>
+  /// File-side allow-edit ranges, known once a sheet finishes indexing.
+  readonly sheetProtectedRanges: Map<
+    string,
+    { name: string; sqref: string; hasPassword: boolean }[]
+  >
   /// Defined names the Univer engine rejected at install — preserved verbatim
   /// by the declarative defined-names save.
   readonly uninstalledDefinedNames: Set<string>
@@ -59,6 +72,10 @@ export interface LazyWorkbookState {
   /// readWorkbookFormulas, so the formula bar can show formulas even when the
   /// closure gave up and the engine never sees them. Display-only.
   readonly formulaText: Map<string, Map<string, string>>
+  /// File-cached formula results per sheet ('row:col', screen coordinates),
+  /// shown in place of the engine's result when its recalculation errors
+  /// (unsupported function, unresolved name). Display-only.
+  readonly cachedFormulaValues: Map<string, Map<string, string | number | boolean>>
   /// Parsed pivot definitions keyed by part path, loaded eagerly at open so
   /// pivot refresh stays synchronous.
   readonly pivotDefinitions: Map<string, WorkbookPivotDefinition>
@@ -89,17 +106,52 @@ export interface PinnedClosureCell {
   readonly v?: string | number | boolean | null
 }
 
+/// Data extent in screen coordinates: the file extent shifted by this
+/// session's structural row/column ops. Null when the sheet is unknown.
+export function lazySheetScreenExtent(
+  state: LazyWorkbookState,
+  sheetId: string,
+): { rows: number; columns: number } | null {
+  const sheet = state.file.sheets.find((candidate) => candidate.id === sheetId)
+  if (!sheet) return null
+  const ops = state.editJournal.structuralOps.get(sheetId) ?? []
+  return {
+    rows: Math.max(sheet.rowCount + netAxisDelta(ops, 'row'), 0),
+    columns: Math.max(sheet.columnCount + netAxisDelta(ops, 'column'), 0),
+  }
+}
+
 /// Budget for closure mode: formula cells plus every precedent they read.
 export const CLOSURE_MAX_CELLS = 50_000
 
 /// Streaming re-installs viewport cells through the same mutation user edits
 /// produce; this flag keeps programmatic patches out of the edit journal AND
-/// out of the undo stack (App.tsx wraps the Univer undo service's
-/// pushUndoRedo to drop entries while it is active) — otherwise a freshly
-/// opened workbook already "has undo", and undoing would strip loaded file
-/// content/layout instead of user edits.
+/// out of the undo stack (installJournalSuppressionUndoFilter patches the
+/// Univer undo service to drop entries while it is active) — otherwise a
+/// freshly opened workbook already "has undo", and undoing would strip loaded
+/// file content/layout instead of user edits.
 /// Shared mutable state between App.tsx and univer-sync.ts.
 export const journalSuppression = { active: false }
+
+let undoFilterInstalled = false
+
+/// Drops undo-stack entries pushed while journalSuppression is active.
+/// This must patch LocalUndoRedoService.prototype: the DI injector hands out
+/// a lazy redi proxy, so assigning a wrapper onto the resolved instance only
+/// shadows the proxy — Univer-internal command handlers resolve the real
+/// instance and would keep calling the unwrapped method (which is exactly how
+/// file opens used to leak load-time set-range-values entries into undo).
+export function installJournalSuppressionUndoFilter(): void {
+  if (undoFilterInstalled) return
+  undoFilterInstalled = true
+  const proto = LocalUndoRedoService.prototype as unknown as {
+    pushUndoRedo(item: { unitID: string }): void
+  }
+  const originalPush = proto.pushUndoRedo
+  proto.pushUndoRedo = function (this: unknown, item: { unitID: string }) {
+    if (!journalSuppression.active) originalPush.call(this, item)
+  }
+}
 
 export const BORDER_COMMAND_TYPES: Record<string, BorderType> = {
   all: BorderType.ALL,

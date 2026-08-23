@@ -8,7 +8,7 @@
  * fine, but "Edit Data" is unavailable).
  */
 import type { EmuRect, Slide } from './types'
-import { escapeXmlAttr, escapeXmlText } from './xml-utils'
+import { escapeXmlAttr, escapeXmlText, creationIdXml } from './xml-utils'
 import { relsPathFor } from './zip'
 import { appendRawElements, type OpenedPptx } from './index'
 import { nextCNvPrId } from './insert'
@@ -339,7 +339,7 @@ export function addChart(
   const name = opts.title ? `Chart ${id} - ${opts.title}` : `Chart ${id}`
   // descr="aislides-chart" marks charts created by this app (like the ink marker); recognized as editable charts on reopen
   const frameXml =
-    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}" descr="aislides-chart"/>` +
+    `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}" descr="aislides-chart">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>' +
     `<p:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></p:xfrm>` +
     `<a:graphic><a:graphicData uri="${C_NS}">` +

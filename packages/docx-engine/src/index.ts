@@ -1,5 +1,5 @@
 export * from './types'
-export { parseDocx, type ParseExtras } from './parse'
+export { parseDocx, styleRunFormat, type ParseExtras } from './parse'
 export {
   saveDocx,
   findChartWorkbookPath,
@@ -12,9 +12,13 @@ export {
 export {
   TABLE_HEADER_FILL,
   applyImageWrap,
+  applyImageZOrder,
+  buildAnchoredTextboxParagraphXml,
   buildShapeParagraphXml,
   buildTextboxParagraphXml,
   buildWordArtParagraphXml,
+  type AnchoredTextboxOptions,
+  type TextboxContentParagraph,
   generateCaptionXml,
   generateIndexFieldXml,
   generateParagraphXml,
@@ -98,7 +102,9 @@ export {
   bulletMarkerScale,
   computeListMarkerInfos,
   computeListMarkers,
+  customEnumItems,
   formatNumber,
+  markerTabAdvance,
   type ListItemRef,
   type ListMarkerInfo,
 } from './list-markers'

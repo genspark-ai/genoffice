@@ -262,7 +262,7 @@ export function DesignTab({
               <span>{t('ribbonThemes')}</span>
             </button>
             {dropdown === 'theme' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {THEME_PRESETS.map((p) => (
                   <button key={p.nameKey} onClick={() => applyTheme(p)}>
                     <span className="theme-accent-row">
@@ -294,7 +294,7 @@ export function DesignTab({
               <span>{t('ribbonFonts')}</span>
             </button>
             {dropdown === 'themefonts' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {THEME_FONT_PRESETS.map((p) => (
                   <button
                     key={p.nameKey}
@@ -328,7 +328,7 @@ export function DesignTab({
               <span>{t('ribbonColors')}</span>
             </button>
             {dropdown === 'themecolors' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {THEME_COLOR_PRESETS.map((p) => (
                   <button
                     key={p.nameKey}
@@ -378,7 +378,7 @@ export function DesignTab({
               <span>{t('ribbonPageColor')}</span>
             </button>
             {dropdown === 'pagecolor' && (
-              <div className="color-palette color-palette-page">
+              <div data-rb-panel="" className="color-palette color-palette-page">
                 {PAGE_COLORS.map((c) => (
                   <button
                     key={c.hex ?? 'auto'}
@@ -418,7 +418,7 @@ export function DesignTab({
               <span>{t('ribbonWatermark')}</span>
             </button>
             {dropdown === 'watermark' && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 {watermarkPresets.map((text) => (
                   <button
                     key={text}
@@ -458,7 +458,7 @@ export function DesignTab({
               <span>{t('ribbonPageBorders')}</span>
             </button>
             {dropdown === 'pgborders' && section && (
-              <div className="layout-menu">
+              <div data-rb-panel="" className="layout-menu">
                 <button
                   className={section.pageBorder ? 'active' : ''}
                   onClick={() => {

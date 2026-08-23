@@ -32,8 +32,13 @@ export class XlsxSidecarClient {
 
   constructor(private readonly binaryPath: string) {}
 
-  async open(path: string, locale = 'zh'): Promise<unknown> {
-    return this.request({ command: 'open', path, locale })
+  async open(path: string, locale = 'zh', shortDateFormat?: string): Promise<unknown> {
+    return this.request({
+      command: 'open',
+      path,
+      locale,
+      ...(shortDateFormat === undefined ? {} : { shortDateFormat }),
+    })
   }
 
   async readRange(input: {

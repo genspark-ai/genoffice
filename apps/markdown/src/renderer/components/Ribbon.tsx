@@ -2,13 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Editor } from '@tiptap/core'
 import { useEditorState } from '@tiptap/react'
+import { Dropdown, useDismissablePopover } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import type { StringKey } from '../i18n/locale'
 import { GensparkMark } from '../ai/AiPanel'
 import { liftFromList } from '../editor/slashCommand'
 import {
   IconBullets,
-  IconCaret,
   IconHr,
   IconInlineCode,
   IconLink,
@@ -194,15 +194,9 @@ export function Ribbon({
     if (linkOpen) linkInputRef.current?.focus()
   }, [linkOpen])
 
-  useEffect(() => {
-    if (!linkOpen) return
-    const close = (e: MouseEvent) => {
-      if (linkAnchorRef.current && !linkAnchorRef.current.contains(e.target as Node))
-        setLinkOpen(false)
-    }
-    window.addEventListener('mousedown', close)
-    return () => window.removeEventListener('mousedown', close)
-  }, [linkOpen])
+  useDismissablePopover(linkOpen, () => setLinkOpen(false), {
+    inside: () => [linkAnchorRef.current],
+  })
 
   const off = disabled || !editor || !state
 
@@ -320,23 +314,16 @@ export function Ribbon({
 
         <div className="ribbon-group">
           <div className="ribbon-group-items">
-            <span className="rb-style-wrap">
-              <select
-                className="rb-style"
-                value={state?.style ?? 'paragraph'}
-                disabled={off}
-                onChange={(e) => editor && applyBlockStyle(editor, e.target.value as BlockStyle)}
-              >
-                {(Object.keys(STYLE_LABEL) as BlockStyle[]).map((s) => (
-                  <option key={s} value={s}>
-                    {t(STYLE_LABEL[s])}
-                  </option>
-                ))}
-              </select>
-              <span className="rb-style-caret">
-                <IconCaret />
-              </span>
-            </span>
+            <Dropdown
+              className="rb-style"
+              value={state?.style ?? 'paragraph'}
+              disabled={off}
+              options={(Object.keys(STYLE_LABEL) as BlockStyle[]).map((s) => ({
+                value: s,
+                label: t(STYLE_LABEL[s]),
+              }))}
+              onPick={(s) => editor && applyBlockStyle(editor, s)}
+            />
           </div>
         </div>
 
