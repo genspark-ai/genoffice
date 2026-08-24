@@ -93,6 +93,8 @@ export interface AgentStreamCallbacks {
   onDelta(text: string): void
   /** complete parsed tool call (arguments finished streaming) */
   onToolCall(call: AgentToolCall): void
+  /** reasoning/thinking fragments streamed before the final answer (DeepSeek reasoning_content, etc.) */
+  onThinking?(text: string): void
   /** Phase changes within the model stream (thinking / responding / tool-input); older transports may omit this */
   onPhase?(phase: AgentPhase): void
   /** normalized stop reason of the turn ('max_tokens' = cut off by the token limit); transports may omit this */

@@ -43,6 +43,8 @@ export interface AgentInterruptedEvent {
 export interface AgentLoopEvents<TSnapshot> {
   /** cumulative assistant text of the current turn (call per delta) */
   onText?(text: string): void
+  /** cumulative thinking/reasoning text of the current run (call per thinking delta) */
+  onThinking?(text: string): void
   /** a tool is about to execute (UI shows a live "running" indicator; onToolExecuted always follows) */
   onToolStart?(call: AgentToolCall): void
   onToolExecuted?(event: ToolExecutedEvent<TSnapshot>): void
@@ -194,6 +196,7 @@ export class AgentLoop<TSnapshot = unknown> {
   private inputParseFails = 0
   private turnStopReason: string | null = null
   private turnText = ''
+  private runThinking = ''
   private toolCalls: AgentToolCall[] = []
   /** user message of the in-flight run; a failed run rolls it (and everything after) back out of history */
   private runUserMsg: AgentMessage | null = null
@@ -267,6 +270,7 @@ export class AgentLoop<TSnapshot = unknown> {
     this.inputParseFails = 0
     this.abortController = new AbortController()
     this.fastMode = this.options.skill.isFastPath?.(instruction) ?? false
+    this.runThinking = ''
     // fast-path telemetry (visible in renderer devtools; no effect on logic)
     if (this.fastMode) {
       try {
@@ -559,6 +563,11 @@ export class AgentLoop<TSnapshot = unknown> {
             } catch {}
           }
           this.options.events?.onText?.(this.turnText)
+        },
+        onThinking: (text) => {
+          if (generation !== this.generation || settled) return
+          this.runThinking += text
+          this.options.events?.onThinking?.(this.runThinking)
         },
         onToolCall: (call) => {
           if (generation !== this.generation || settled) return

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop, type MemoryStoreAdapter } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { AiComposer, AiTypingIndicator, Markdown, useOnlineStatus } from '@genoffice/ui'
+import { AiComposer, AiThinkingBlock, AiTypingIndicator, Markdown, useOnlineStatus } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { PDF_CONTINUE_INSTRUCTION } from './continuation'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -59,6 +59,8 @@ export function AiPanel({
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
+  const [thinking, setThinking] = useState('')
+  const [runningTool, setRunningTool] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase>('thinking')
   const [noProvider, setNoProvider] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
@@ -182,11 +184,13 @@ export function AiPanel({
       skill: createPdfSkill(deps, memoryRef.current),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
+        onThinking: (text) => setThinking(text),
         onText: (text) => {
           setPhase('replying')
           patchLast({ text })
         },
         onToolExecuted: ({ call, execution }) => {
+          setRunningTool(null)
           setPhase('working')
           patchLast((last) => ({
             tools: [
@@ -209,6 +213,7 @@ export function AiPanel({
           const final = turnLimit
             ? [text, tGlobal('aiTurnLimit')].filter(Boolean).join('\n\n')
             : text || (cancelled ? tGlobal('aiStopped') : '')
+          setRunningTool(null)
           patchLast((last) => ({
             streaming: false,
             text: final || (last.tools?.length ? last.text : tGlobal('aiNoReply')),
@@ -523,7 +528,10 @@ export function AiPanel({
           )
         })}
         {/* In-progress state: a standalone three-dot row at the end of the stream, kept until done */}
-        {busy && <AiTypingIndicator label={typingLabel} />}
+        {thinking && (
+          <AiThinkingBlock text={thinking} done={!busy} labelThinking={t('aiThinking')} labelThoughtFor={(n: number) => t('aiThoughtFor', { n })} />
+        )}
+        {busy && <AiTypingIndicator label={runningTool ? t('aiStatusRunning', { tool: runningTool.replace(/_/g, ' ') }) : thinking ? t('aiThinking') : t('aiStatusAnalyzing')} />}
       </div>
 
       <div className="ai-composer">

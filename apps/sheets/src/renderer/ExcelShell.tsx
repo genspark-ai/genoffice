@@ -148,6 +148,8 @@ interface ExcelShellProps {
   /** open the bring-your-own-key model settings dialog */
   readonly onOpenSettings: () => void
   readonly noProvider?: boolean
+  readonly thinking: string
+  readonly runningTool: string | null
   /** Resume an interrupted run with the app's continuation instruction */
   readonly onResume: () => void
   /** Re-send the last instruction after an interrupted run with no tool work */
@@ -268,6 +270,8 @@ export function ExcelShell({
   onUndo,
   onOpenSettings,
   noProvider,
+  thinking,
+  runningTool,
   onResume,
   onRetry,
   onCommand,
@@ -465,6 +469,8 @@ export function ExcelShell({
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}
           onOpenSettings={onOpenSettings}
+          thinking={thinking}
+          runningTool={runningTool}
           onResume={onResume}
           onRetry={onRetry}
           {...{ noProvider: noProvider === true }}

@@ -1,5 +1,6 @@
 export { AiComposer } from './AiComposer'
 export { AiTypingIndicator } from './AiTypingIndicator'
+export { AiThinkingBlock } from './AiThinkingBlock'
 export { IconSend, IconStop, type IconProps } from './icons'
 export { Markdown } from './Markdown'
 export { AiSettingsButton, AiSettingsDialog, type AiSettingsDialogProps, type AiTestResult } from './AiSettingsDialog'

@@ -24,7 +24,7 @@ import { renderSlidesToPngBase64 } from '../export-render'
 import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
 import { SLIDES_CONTINUE_INSTRUCTION } from './continuation'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { Markdown, AiSettingsButton, useOnlineStatus } from '@genoffice/ui'
+import { AiThinkingBlock, Markdown, AiSettingsButton, useOnlineStatus } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -337,6 +337,8 @@ export function AiPanel({
   const { t } = useI18n()
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [thinking, setThinking] = useState('')
+  const [runningTool, setRunningTool] = useState<string | null>(null)
   const [chat, setChat] = useState<ChatEntry[]>([])
   const [snapshots, setSnapshots] = useState<DeckSnapshot[]>([])
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
@@ -1126,8 +1128,10 @@ export function AiPanel({
       // Page-by-page deck generation needs more tool rounds
       maxTurns: 24,
       events: {
+        onThinking: (text) => setThinking(text),
         onText: (text) => patchLastAssistant({ text }),
         onToolStart: (call) => {
+          setRunningTool(call.name)
           // Live "running" chip: replaced in place by onToolExecuted
           const activity: ToolActivity = {
             name: call.name,
@@ -1137,6 +1141,7 @@ export function AiPanel({
           patchLastAssistant((last) => ({ tools: [...(last.tools ?? []), activity] }))
         },
         onToolExecuted: ({ call, execution }) => {
+          setRunningTool(null)
           const activity: ToolActivity = {
             name: call.name,
             summary: execution.summary,
@@ -1373,6 +1378,8 @@ export function AiPanel({
     if (!settings.provider || !instruction || !loop || loop.busy || runStartingRef.current || qcRunningRef.current) return
     runStartingRef.current = true
     pendingResumeRef.current = null
+    setThinking('')
+    setRunningTool(null)
     setInput('')
     inputEditedSinceRunRef.current = false
     instructionRef.current = instruction
@@ -1779,10 +1786,18 @@ export function AiPanel({
               key={i}
               className={`ai-msg ai-msg-${entry.role}${entry.role === 'assistant' && entry.streaming ? ' ai-msg-streaming' : ''}`}
             >
+              {thinking && entry.streaming && (
+                <AiThinkingBlock
+                  text={thinking}
+                  done={!busy}
+                  labelThinking={t('aiThinking')}
+                  labelThoughtFor={(n: number) => t('aiThoughtFor', { n })}
+                />
+              )}
               {entry.role === 'assistant' && !entry.text && entry.streaming ? (
                 <span className="ai-typing-row">
                   <AiTypingIndicator
-                    label={entry.tools?.length ? t('aiContinuing') : t('aiThinking')}
+                    label={runningTool ? t('aiStatusRunning', { tool: runningTool.replace(/_/g, ' ') }) : thinking ? t('aiThinking') : t('aiStatusAnalyzing')}
                   />
                 </span>
               ) : entry.role === 'assistant' ? (

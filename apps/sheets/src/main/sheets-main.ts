@@ -2207,6 +2207,7 @@ export function registerSheetsAiIpc(): void {
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onToolCall: (toolCall) => send({ requestId, type: 'tool-call', toolCall }),
+        onThinking: (text) => send({ requestId, type: 'thinking', text }),
         onActivity: ping,
       })
       send({ requestId, type: 'done' })

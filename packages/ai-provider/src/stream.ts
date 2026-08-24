@@ -31,6 +31,8 @@ export interface StreamCallbacks {
   onToolCall: (call: AgentToolCall) => void
   /** normalized stop reason ('max_tokens' when the output was cut off by the token limit) */
   onStopReason?: (reason: string) => void
+  /** reasoning/thinking fragments (Anthropic thinking_delta, DeepSeek reasoning_content, Gemini thought) — billed, so counted as content for retry guard */
+  onThinking?: (text: string) => void
   /** bytes arrived on the wire (fires per network chunk, including SSE pings; used for keepalive) */
   onActivity?: () => void
   signal: AbortSignal
@@ -143,6 +145,10 @@ export async function retryStreamForProvider(
       onToolCall: (call) => {
         sawContent = true
         cb.onToolCall(call)
+      },
+      onThinking: (text) => {
+        sawContent = true
+        cb.onThinking?.(text)
       },
     }
     const timeouts: StreamTimeouts | undefined =
@@ -471,6 +477,13 @@ async function anthropicTurn(
       if (event.delta?.type === 'text_delta' && event.delta.text) {
         emitted = true
         cb.onDelta(event.delta.text)
+      } else if (event.delta?.type === 'thinking_delta') {
+        // Anthropic extended thinking (thinking.type: enabled) — streamed as thinking deltas
+        const thinking = (event.delta as { thinking?: string }).thinking
+        if (typeof thinking === 'string' && thinking) {
+          emitted = true
+          cb.onThinking?.(thinking)
+        }
       } else if (event.delta?.type === 'input_json_delta') {
         const pending = pendingTools.get(event.index ?? 0)
         if (pending) pending.json += event.delta.partial_json ?? ''
@@ -766,9 +779,15 @@ async function geminiTurn(
     if (finishReason === 'MAX_TOKENS') stopReason = 'max_tokens'
     else if (finishReason && finishReason !== 'STOP') abnormalFinish = finishReason
     for (const part of event.candidates?.[0]?.content?.parts ?? []) {
+      const thought = (part as { thought?: boolean }).thought
       if (part.text) {
-        emitted = true
-        cb.onDelta(part.text)
+        if (thought) {
+          emitted = true
+          cb.onThinking?.(part.text)
+        } else {
+          emitted = true
+          cb.onDelta(part.text)
+        }
       }
       // Gemini emits function calls whole, never as partial JSON
       if (part.functionCall?.name) {
@@ -999,6 +1018,15 @@ async function openAiCompatibleTurn(
     if (event.error) throw new Error(sseErrorText(event.error, 'Model stream error'))
     const choice = event.choices?.[0]
     if (!choice) continue
+    // DeepSeek R1 / OpenRouter reasoning deltas (reasoning_content / reasoning) — streamed before the final answer
+    const reasoning =
+      (choice.delta as { reasoning_content?: string; reasoning?: string } | undefined)
+        ?.reasoning_content ??
+      (choice.delta as { reasoning_content?: string; reasoning?: string } | undefined)?.reasoning
+    if (typeof reasoning === 'string' && reasoning) {
+      emitted = true
+      cb.onThinking?.(reasoning)
+    }
     if (choice.delta?.content) {
       emitted = true
       cb.onDelta(choice.delta.content)

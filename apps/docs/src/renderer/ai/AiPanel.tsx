@@ -14,7 +14,7 @@ import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
-import { AiComposer, AiSettingsButton, AiTypingIndicator, useOnlineStatus } from '@genoffice/ui'
+import { AiComposer, AiSettingsButton, AiThinkingBlock, AiTypingIndicator, useOnlineStatus } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
@@ -244,6 +244,8 @@ export function AiPanel({
   const { t } = useI18n()
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [thinking, setThinking] = useState('')
+  const [runningTool, setRunningTool] = useState<string | null>(null)
   /** Wall-clock start of the current run, drives the elapsed badge */
   const runStartedAtRef = useRef(0)
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -529,7 +531,9 @@ export function AiPanel({
       captureSnapshot: () => editorRef.current.getJSON() as PmNode,
       events: {
         onText: (text) => patchLastAssistant({ text }),
+        onThinking: (text) => setThinking(text),
         onToolStart: (call) => {
+          setRunningTool(call.name)
           // Live "running" chip: replaced in place by onToolExecuted
           patchLastAssistant((last) => ({
             tools: [
@@ -539,6 +543,7 @@ export function AiPanel({
           }))
         },
         onToolExecuted: ({ call, execution, snapshotBefore }) => {
+          setRunningTool(null)
           if (snapshotBefore) {
             setSnapshots((prev) =>
               [
@@ -608,6 +613,7 @@ export function AiPanel({
               toolResults: runToolsRef.current.length,
               partialText: truncatedText.length > 0,
             }
+            setRunningTool(null)
             setBusy(false)
             window.dispatchEvent(new Event('ai-docs-run-done'))
             if (!cancelled && (truncatedText || runToolsRef.current.length > 0)) {
@@ -671,6 +677,7 @@ export function AiPanel({
               })
             })
             .catch(() => {})
+          setRunningTool(null)
           setBusy(false)
         },
         onInterrupted: ({ error, partialText, toolResults }) => {
@@ -693,6 +700,7 @@ export function AiPanel({
             toolResults,
             partialText: partialText.length > 0,
           }
+          setRunningTool(null)
           setBusy(false)
           // persist the partial context so a reload can restore the resume point
           if (partialText || runToolsRef.current.length > 0) {
@@ -797,6 +805,8 @@ export function AiPanel({
     const loop = loopRef.current
     if (noProvider || !instruction || !loop || loop.busy) return
     pendingResumeRef.current = null
+    setThinking('')
+    setRunningTool(null)
     setInput('')
     instructionRef.current = instruction
     lastInstructionRef.current = instruction
@@ -829,6 +839,8 @@ export function AiPanel({
   const newChat = () => {
     loopRef.current?.reset()
     pendingResumeRef.current = null
+    setThinking('')
+    setRunningTool(null)
     setBusy(false)
     setChat([])
     inputRef.current?.focus()
@@ -1075,10 +1087,24 @@ export function AiPanel({
               key={i}
               className={`ai-msg ai-msg-${entry.role}${entry.role === 'assistant' && entry.streaming ? ' ai-msg-streaming' : ''}`}
             >
+              {entry.role === 'assistant' && thinking && entry.streaming && (
+                <AiThinkingBlock
+                  text={thinking}
+                  done={!busy}
+                  labelThinking={t('aiThinking')}
+                  labelThoughtFor={(n: number) => t('aiThoughtFor', { n })}
+                />
+              )}
               {entry.role === 'assistant' && !entry.text && entry.streaming ? (
                 <span className="ai-typing-row">
                   <AiTypingIndicator
-                    label={entry.tools?.length ? t('aiWorking') : t('aiThinking')}
+                    label={
+                      runningTool
+                        ? t('aiStatusRunning', { tool: runningTool.replace(/_/g, ' ') })
+                        : thinking
+                          ? t('aiThinking')
+                          : t('aiStatusAnalyzing')
+                    }
                   />
                 </span>
               ) : entry.role === 'assistant' ? (

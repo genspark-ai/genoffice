@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { AiComposer, AiSettingsButton, AiTypingIndicator } from '@genoffice/ui'
+import { AiComposer, AiSettingsButton, AiThinkingBlock, AiTypingIndicator } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
@@ -176,6 +176,8 @@ export function AiChatPanel({
   onCollapse,
   onOpenSettings,
   noProvider,
+  thinking,
+  runningTool,
   onResume,
   onRetry,
 }: {
@@ -209,6 +211,8 @@ export function AiChatPanel({
   readonly onCollapse: () => void
   readonly onOpenSettings: () => void
   readonly noProvider?: boolean
+  readonly thinking: string
+  readonly runningTool: string | null
   /** Resume an interrupted run with a continuation instruction (connectivity restored) */
   readonly onResume: () => void
   /** Re-send the last instruction for an interrupted run with no tool work */
@@ -494,7 +498,7 @@ export function AiChatPanel({
                   entry.streaming && (
                     <span className="ai-typing-row">
                       <AiTypingIndicator
-                        label={entry.tools.length > 0 ? t('aiWorking') : t('aiThinking')}
+                        label={runningTool ? t('aiStatusRunning', { tool: runningTool.replace(/_/g, ' ') }) : thinking ? t('aiThinking') : entry.tools.length > 0 ? t('aiWorking') : t('aiStatusAnalyzing')}
                       />
                     </span>
                   )
@@ -555,6 +559,14 @@ export function AiChatPanel({
           </div>
         ))}
 
+        {thinking && (
+          <AiThinkingBlock
+            text={thinking}
+            done={!aiBusy}
+            labelThinking={t('aiThinking')}
+            labelThoughtFor={(n: number) => t('aiThoughtFor', { n })}
+          />
+        )}
         {preview && (
           <section className="preview ai-preview-card" aria-label={t('aiPreviewAria')}>
             <h3>{t('aiProposedChanges')}</h3>

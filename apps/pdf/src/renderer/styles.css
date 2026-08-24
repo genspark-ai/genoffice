@@ -2381,6 +2381,49 @@ button {
   user-select: none;
 }
 
+.ai-thinking {
+  margin: 8px 0;
+  border: 1px solid var(--border, #e0e0e0);
+  border-left: 3px solid #8b8bff;
+  border-radius: 6px;
+  background: rgba(139, 139, 255, 0.06);
+  font-size: 12.5px;
+  overflow: hidden;
+}
+
+.ai-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim, #666);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ai-thinking-chevron {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.ai-thinking-body {
+  padding: 0 10px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim, #666);
+  white-space: pre-wrap;
+  max-height: 160px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border, #e0e0e0);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
 .ai-msg-undelivered {
   margin-top: 6px;
   display: flex;

@@ -553,6 +553,8 @@ export function App(): React.JSX.Element {
   aiSettingsRef.current = aiSettings
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
   const [aiBusy, setAiBusy] = useState(false)
+  const [thinking, setThinking] = useState('')
+  const [runningTool, setRunningTool] = useState<string | null>(null)
   // Display history survives restarts via localStorage; the AgentLoop's model
   // context does not, so restored turns are read-only transcript.
   const [chat, setChat] = useState<readonly AiChatMessage[]>([])
@@ -821,6 +823,7 @@ export function App(): React.JSX.Element {
       // guide loading adds a tool round; the default 8 cuts off multi-step work
       maxTurns: 24,
       events: {
+        onThinking: (text) => setThinking(text),
         onText: (text) => {
           if (text) runLastTextRef.current = text
           setMessage(text || t('appAiThinking'))
@@ -830,6 +833,7 @@ export function App(): React.JSX.Element {
           patchLastAssistant((entry) => ({ ...entry, text, isError: false }))
         },
         onToolStart: (call) => {
+          setRunningTool(call.name)
           // Live "running" chip: replaced in place by onToolExecuted
           patchLastAssistant((entry) => ({
             ...entry,
@@ -845,6 +849,7 @@ export function App(): React.JSX.Element {
           }))
         },
         onToolExecuted: ({ call, execution }) => {
+          setRunningTool(null)
           if (execution.mutated) runMutatedRef.current = true
           const input = safeJsonInput(call.input)
           const output = execution.output
@@ -898,6 +903,7 @@ export function App(): React.JSX.Element {
             if (!cancelled && (tText || runToolsRef.current.length > 0)) {
               persistChatMessage('assistant', tText || '', runToolsRef.current)
             }
+            setRunningTool(null)
             void autoSaveCompletedAiRun().finally(() => setAiBusy(false))
             return
           }
@@ -947,6 +953,7 @@ export function App(): React.JSX.Element {
           if (!cancelled && finalText) {
             persistChatMessage('assistant', finalText, runToolsRef.current)
           }
+          setRunningTool(null)
           void autoSaveCompletedAiRun().finally(() => setAiBusy(false))
         },
         onError: (error) => {
@@ -1118,6 +1125,8 @@ export function App(): React.JSX.Element {
   function handleNewChat(): void {
     agentLoopRef.current?.reset()
     pendingResumeRef.current = null
+    setThinking('')
+    setRunningTool(null)
     setAiBusy(false)
     setChat([])
     setHistoricChat([])
@@ -2084,6 +2093,8 @@ export function App(): React.JSX.Element {
       return
     }
     pendingResumeRef.current = null
+    setThinking('')
+    setRunningTool(null)
     lastInstructionRef.current = instruction
     runToolsRef.current = []
     appendChat({ role: 'user', text: displayInstruction ?? instruction, tools: [] })
@@ -3155,6 +3166,8 @@ export function App(): React.JSX.Element {
         onUndo={handleUndo}
         onOpenSettings={() => setAiSettingsOpen(true)}
         noProvider={!aiSettingsRef.current?.provider}
+        thinking={thinking}
+        runningTool={runningTool}
         onResume={handleResume}
         onRetry={handleRetry}
         onCommand={handleRibbonCommand}
