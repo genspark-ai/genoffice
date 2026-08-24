@@ -127,8 +127,7 @@ const KO_FONT_RE =
  * LO-era values exactly; the CJK entries moved a lot because Word renders
  * with its own bundled faces (SimSun/Batang/PMingLiU at 1.3029, Malgun
  * 1.7371, Meiryo 1.9429, YaHei 1.7143, Yu 1.44) instead of the macOS
- * substitutes LO measured. Unprobed names (SC/TC display classes, SimHei,
- * KaiTi) keep their LO values until probed.
+ * substitutes LO measured. Unprobed names keep their LO values until probed.
  */
 export function lineHeightFactor(fontFamily: string): number {
   const f = fontFamily.toLowerCase()
@@ -143,6 +142,11 @@ export function lineHeightFactor(fontFamily: string): number {
   // reproduces Batang 1.3029, Malgun 1.7371, Meiryo 1.9429, Yu 1.44);
   // ink-band measured 20.24pt at 10pt/1.35x on regression sample run7/19
   if (/nanum ?gothic|나눔 ?고딕/.test(f)) return 1.495
+  // NanumMyeongjo: the OS downloadable asset renders real (Word probe
+  // 2026-08-24: 18pt @12pt and 53.9pt @36pt = 1.5, its hhea 1.154 x 1.3);
+  // NanumBarunGothic instead substitutes to Batang (probe 1.3042) and keeps
+  // the KO_FONT_RE value below
+  if (/nanum ?myeongjo|나눔 ?명조/.test(f)) return 1.5
   // Korean faces (Word probe 2026-08-13: Malgun 1.7371, Batang class 1.3029)
   if (KO_FONT_RE.test(f)) return /malgun|맑은/.test(f) ? 1.7371 : 1.3029
   // Japanese faces: MS (P)Mincho/Gothic substitute into the Hiragino class
@@ -166,6 +170,10 @@ export function lineHeightFactor(fontFamily: string): number {
   if (/(^|\s)(songti|stsong)\b/.test(f)) return 1.7
   // STZhongsong ships with Office and renders real (probe 2026-08-23: hhea x 1.3)
   if (/zhongsong|中宋/.test(f)) return 1.725
+  // STXihei (HuaWen XiHei) is a macOS system face Word renders real (probe
+  // 2026-08-23: 21.5pt @12pt, 64.5pt @36pt); other vendors' thin-hei cuts
+  // are missing faces that substitute into the SimSun class instead
+  if (/stxihei|华文细黑/.test(f)) return 1.79
   // FZ XiaoBiaoSong and KaiTi GB2312/GBK: Word for Mac lacks them and substitutes
   // Microsoft YaHei wholesale (probe 2026-08-23, gov-doc sample confirmed)
   if (/xiaobiaosong|小标宋/.test(f)) return 1.7143
@@ -173,7 +181,10 @@ export function lineHeightFactor(fontFamily: string): number {
   // SimHei ships with Office; Word renders it at the SimSun-class pitch
   // (probe 2026-08-23: 15.6pt @12pt — the old 1.0 was a macOS-Heiti LO value)
   if (f.includes('黑体') || f.includes('simhei')) return 1.3029
-  if ((f.includes('楷体') || f.includes('kaiti')) && !/gb2312|_gbk|gbk/.test(f)) return 1.0
+  // KaiTi ships with Office for Mac and renders real at the SimSun-class pitch
+  // (probe 2026-08-23: 15.6pt @12pt and 46.7pt @36pt, Latin runs the same —
+  // the old 1.0 was a macOS-Kaiti LO value)
+  if ((f.includes('楷体') || f.includes('kaiti')) && !/gb2312|_gbk|gbk/.test(f)) return 1.3029
   if (f.includes('microsoft yahei') || f.includes('microsoftyahei') || f.includes('雅黑'))
     return 1.7143
   // missing GB faces and other zh names substitute into the PingFang class
@@ -210,7 +221,10 @@ export function lineHeightFactor(fontFamily: string): number {
   // so the big Office faces get their real values.
   if (f.includes('times') || f.includes('liberation serif')) return 1.15
   if (f.includes('georgia')) return 1.1375
-  if (f.includes('cambria') || f.includes('caladea')) return 1.17
+  // 1.172 = Cambria's Win metrics (1172/1000), probe 2026-08-23 measured
+  // 1.1724 at 36pt; the unknown-name fallback below substitutes to Cambria
+  // and must stay in lockstep
+  if (f.includes('cambria') || f.includes('caladea')) return 1.172
   // Palatino Linotype ships with Office and Word renders it real (probe
   // 2026-08-23: 1.35 = its Win metrics); macOS Palatino is the same design
   // with compact metrics (probed 1.105)
@@ -227,11 +241,14 @@ export function lineHeightFactor(fontFamily: string): number {
   if (f === 'arial' || f.startsWith('arial ') || f.includes('liberation sans')) return 1.15
   if (f.includes('calibri') || f.includes('carlito')) return 1.22
   if (f.includes('tahoma')) return 1.2083
-  if (f.includes('verdana')) return 1.2167
+  // DejaVu faces are missing and substitute to Verdana (probe 2026-08-23)
+  if (f.includes('verdana') || f.includes('dejavu')) return 1.2167
   // consolas first: the mono css chain carries 'Courier New' as fallback
   if (f.includes('consolas')) return 1.1667
   if (f.includes('courier')) return 1.1333
-  if (f.includes('century') && !f.includes('gothic')) return 1.15
+  // Century Gothic / Century ship with Office and render real (probe 2026-08-23)
+  if (f.includes('century gothic')) return 1.226
+  if (f.includes('century') && !f.includes('gothic')) return 1.206
   // Book Antiqua ships with Office (probe 2026-08-23; the old 1.1 was LO-era)
   if (f.includes('book antiqua')) return 1.21
   if (f.includes('segoe')) return 1.15
@@ -239,8 +256,30 @@ export function lineHeightFactor(fontFamily: string): number {
   // Tamil faces: Word renders missing Noto Sans Tamil / Latha with Latha
   // metrics (probe 2026-08-13)
   if (/tamil|latha|vijaya|inaimathi/.test(f)) return 1.6686
-  // default (Lato, unknown Western)
-  return 1.2
+  // Faces Word for Mac resolves for real — macOS-installed or Office cloud
+  // fonts — keep their own metrics (probe 2026-08-23, prod-corpus sweep)
+  if (f.includes('lato')) return 1.2
+  if (f.includes('trebuchet')) return 1.1615
+  if (f === 'inter' || f.startsWith('inter ')) return 1.21
+  if (f.includes('ubuntu')) return 1.15
+  if (f.includes('avenir')) return 1.369
+  if (f.includes('lucida console')) return 1.0
+  if (f.includes('lucida sans')) return 1.179
+  if (f.includes('bradley hand')) return 1.25
+  if (f.includes('open sans')) return 1.365
+  if (f.includes('roboto')) return 1.169
+  if (f.includes('shonar bangla')) return 1.0
+  // IRANYekan substitutes to Arial like the Iranian B/XB faces (probe 2026-08-23)
+  if (f.includes('iranyekan')) return 1.15
+  // missing hangul-named vendor faces substitute into the Batang/SimSun class
+  // for KR and Latin runs alike (probe 2026-08-23: 휴먼고딕 → Batang/SimSun 1.30)
+  if (/[가-힣]/.test(f)) return 1.3029
+  // missing ideograph-named faces substitute SimSun (probe 2026-08-22/23)
+  if (/[一-鿿]/.test(f)) return 1.3029
+  // unknown Western names: Word for Mac substitutes Cambria (probe 2026-08-23:
+  // fabricated names and HCI Poppy both render as Cambria) — same factor as
+  // the cambria branch above
+  return 1.172
 }
 
 /**
@@ -699,6 +738,15 @@ export function cssFontFamily(font: string, followAltName = true): string {
     // substitution. Installed Nanum still resolves at the literal head.
     if (/nanum ?gothic|나눔 ?고딕/i.test(nfkc)) {
       return `${chain(font, 'GenOffice Gothic KR', ...KO_SANS)},sans-serif`
+    }
+    // -Che fixed-pitch faces render real in Word with half-width Latin
+    // (0.5em fixed, probe 2026-08-24); ASCII rides the bundled Che face,
+    // hangul falls through to the KR chains (GungsuhChe keeps the
+    // calligraphic GungSeo hangul the Gungsuh branch below uses)
+    if (/(?:batang|gulim|dotum|gungsuh) ?che\b|(?:바탕|굴림|돋움|궁서)체/i.test(nfkc)) {
+      const cheGungsuh = /gungsuh|궁서/i.test(nfkc)
+      const cheSerif = cheGungsuh || /batang|바탕/i.test(nfkc)
+      return `${chain(font, 'GenOffice Che Latin KR', ...(cheGungsuh ? ['GungSeo'] : []), ...(cheSerif ? KO_SERIF : KO_SANS))},${cheSerif ? 'serif' : 'sans-serif'}`
     }
     // Gungsuh ships with Office (batang.ttc) and Word renders it real; its
     // Latin is typewriter-slab at ~0.58em advances — Courier New is the

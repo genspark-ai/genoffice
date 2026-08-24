@@ -18,6 +18,8 @@ import {
   setElementTextAnchor,
   setElementTextBodyProps,
   type TextBodyPropsPatch,
+  setElementEffects,
+  type EffectsPatch,
   setPictureOpacity,
   setShapePresetGeometry,
   setGroupChildShapePresetGeometry,
@@ -471,6 +473,32 @@ register({
       throw new GuidedError(`op "setTextBodyProps": element "${el.id}" has no text body.`)
     }
     return { op, after: op.props }
+  },
+})
+
+register({
+  name: 'setEffects',
+  validate(op, ctx) {
+    resolveElement(ctx, op)
+    const p = op.effects as EffectsPatch | undefined
+    if (
+      !p ||
+      (p.shadow === undefined &&
+        p.glow === undefined &&
+        p.reflection === undefined &&
+        p.softEdge === undefined)
+    ) {
+      throw new GuidedError(
+        'op "setEffects" needs "effects" with at least one of shadow/glow/reflection/softEdge (null clears).',
+      )
+    }
+  },
+  apply(op, ctx): OpRecord {
+    const { slide, el } = resolveElement(ctx, op)
+    if (!setElementEffects(slide, el.id, op.effects as EffectsPatch)) {
+      throw new GuidedError(`op "setEffects": element "${el.id}" does not support effects.`)
+    }
+    return { op, after: op.effects }
   },
 })
 

@@ -16,6 +16,7 @@ const api: PdfApi = {
     ipcRenderer.invoke(PDF_CHANNELS.canDrawText, text, font, bold, italic),
   listPageImages: (path) => ipcRenderer.invoke(PDF_CHANNELS.listPageImages, path),
   listStaticFormFills: (path) => ipcRenderer.invoke(PDF_CHANNELS.listStaticFormFills, path),
+  ocrPage: (png) => ipcRenderer.invoke(PDF_CHANNELS.ocrPage, png),
   pageImagePng: (request) => ipcRenderer.invoke(PDF_CHANNELS.pageImagePng, request),
   pagePreviewPng: (request) => ipcRenderer.invoke(PDF_CHANNELS.pagePreviewPng, request),
   extractPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.extractPages, request),
@@ -30,6 +31,7 @@ const api: PdfApi = {
   cropPages: (request) => ipcRenderer.invoke(PDF_CHANNELS.cropPages, request),
   exportImages: (request) => ipcRenderer.invoke(PDF_CHANNELS.exportImages, request),
   convertOffice: (format) => ipcRenderer.invoke(PDF_CHANNELS.convertOffice, format),
+  createDocument: (request) => ipcRenderer.invoke(PDF_CHANNELS.createDocument, request),
   imageSearch: (query, maxResults) =>
     ipcRenderer.invoke(AI_CHANNELS.imageSearch, query, maxResults),
   fetchImage: (url) => ipcRenderer.invoke(AI_CHANNELS.fetchImage, url),
@@ -89,4 +91,17 @@ const api: PdfApi = {
   },
 }
 
+// Shared project chat store (registered app-wide by the shell's main init):
+// AI PDF conversations persist per file, like Docs/Sheets (alpha ledger r142)
+const projectApi = {
+  resolveChat: (args: { filePath: string | null; tempChatId?: string }) =>
+    ipcRenderer.invoke('project:resolveChat', args),
+  appendChat: (args: unknown) => ipcRenderer.invoke('project:appendChat', args),
+  loadChat: (args: { projectId: string; chatId: string; limit?: number }) =>
+    ipcRenderer.invoke('project:loadChat', args),
+  rebindChat: (args: { projectId: string; tempChatId: string; newFilePath: string }) =>
+    ipcRenderer.invoke('project:rebindChat', args),
+}
+
 contextBridge.exposeInMainWorld('pdfApi', api)
+contextBridge.exposeInMainWorld('projectApi', projectApi)

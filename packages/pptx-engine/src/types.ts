@@ -110,7 +110,19 @@ export interface GlowEffect {
   radius: number
 }
 
-/** Outer shadow <a:outerShdw> (the most common effectLst entry) */
+/** Reflection <a:reflection>: flipped fading copy below the shape */
+export interface ReflectionEffect {
+  /** Blur radius (EMU) */
+  blurRad: number
+  /** Opacity at the touching edge (0..1, <a:reflection stA>) */
+  startA: number
+  /** Fade extent as a fraction of the shape (0..1, <a:reflection endPos>) */
+  endPos: number
+  /** Offset distance (EMU) */
+  dist: number
+}
+
+/** Outer or inner shadow (<a:outerShdw> / <a:innerShdw>; the most common effectLst entries) */
 export interface ShadowEffect {
   color: ResolvedColor
   /** Blur radius (EMU) */
@@ -119,6 +131,16 @@ export interface ShadowEffect {
   dist: number
   /** Direction (degrees, clockwise, 0 = right) */
   dirDeg: number
+  /** <a:innerShdw> (shadow cast inside the shape edges) instead of <a:outerShdw> */
+  inner?: boolean
+  /** Perspective outerShdw silhouette scale (1 = 100%; sy may be negative = flipped) */
+  sx?: number
+  sy?: number
+  /** Perspective outerShdw silhouette skew (degrees) */
+  kxDeg?: number
+  kyDeg?: number
+  /** Shadow alignment anchor (<a:outerShdw algn>, e.g. 'b', 'bl', 'br') */
+  algn?: string
 }
 
 // ── Text ───────────────────────────────────────────────────────────────
@@ -145,6 +167,14 @@ export interface TextRun {
   kern?: number
   /** Font family (final font name after theme inheritance, for render/editor display) */
   fontFamily?: string
+  /**
+   * CJK script hint for substituting fontFamily when it is missing, mirroring
+   * PowerPoint: the run's altLang/lang CJK tag wins (prod_043: KR font declared
+   * charset=134 but altLang="ko-KR" → Malgun), else the @charset declared on the
+   * picked rPr font bucket (prod_079: JP-named font, no altLang, charset=134
+   * GB2312 → Microsoft YaHei). Name classification is only the last resort.
+   */
+  fontScriptHint?: 'ja' | 'ko' | 'sc' | 'tc'
   /**
    * Original <a:latin>/<a:ea> typeface text (incl. +mj-lt/+mn-ea theme refs).
    * Present = the user has not changed the font: patches keep the original bytes
@@ -409,6 +439,7 @@ export interface TextElement extends ElementBase {
   stroke?: Stroke
   shadow?: ShadowEffect
   glow?: GlowEffect
+  reflection?: ReflectionEffect
   scene3d?: Scene3D
   text?: TextBody
 }
@@ -448,6 +479,7 @@ export interface PictureElement extends ElementBase {
   stroke?: Stroke
   shadow?: ShadowEffect
   glow?: GlowEffect
+  reflection?: ReflectionEffect
 }
 
 export interface GroupElement extends ElementBase {

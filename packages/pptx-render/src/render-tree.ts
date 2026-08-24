@@ -108,11 +108,35 @@ export interface RenderGlow {
   blurPx: number
 }
 
+/** Reflection: flipped fading copy drawn below the node. */
+export interface RenderReflection {
+  blurPx: number
+  /** Opacity at the touching edge (0..1) */
+  startAlpha: number
+  /** Fade extent as a fraction of the node height (0..1) */
+  endPos: number
+  distPx: number
+}
+
 export interface RenderShadow {
   color: string
   blurPx: number
   offsetX: number
   offsetY: number
+  /** Source distance (px) and direction (deg) — offsetX/offsetY lose the direction
+   * when the distance is 0 (perspective presets), so editors read these instead */
+  distPx?: number
+  dirDeg?: number
+  /** Inner shadow (cast inside the shape edges) — the renderer draws an inset overlay instead of canvas shadow props */
+  inner?: boolean
+  /** Perspective silhouette scale (1 = 100%; scaleY may be negative = flipped upward) */
+  scaleX?: number
+  scaleY?: number
+  /** Perspective silhouette skew (degrees) */
+  skewXDeg?: number
+  skewYDeg?: number
+  /** Silhouette anchor edge/corner ('b', 'bl', 'br', ...) */
+  algn?: string
 }
 
 /** A laid-out text glyph block (one contiguous same-format span within a line). */
@@ -160,8 +184,10 @@ export interface GlyphRun {
   justifyExtraPx?: number
   /** Super/subscript baseline shift (px, positive = up; <a:rPr baseline>), already baked into baselineY */
   baselineShiftPx?: number
-  /** Latin word in vertical text: drawn rotated 90° clockwise (x/baselineY is the rotation anchor) */
+  /** Drawn rotated 90° clockwise (x/baselineY is the rotation anchor): Latin words in eaVert columns, or every glyph of a vert block */
   rotate90?: boolean
+  /** Drawn rotated 90° counterclockwise (vert270 blocks; x/baselineY is the rotation anchor) */
+  rotate270?: boolean
   /** Bullet glyph (non-body content injected by layout; text editors should skip it) */
   isBullet?: boolean
   /** RTL direction-level run (Arabic/Hebrew): the renderer must set canvas direction=rtl so punctuation/neutral chars land on the far side */
@@ -220,7 +246,9 @@ export interface RenderTextLayout {
   wrap: boolean
   /** bodyPr autofit mode (noAutofit/normAutofit/spAutoFit), surfaced for the format pane */
   autofit?: 'none' | 'shrink' | 'resize'
-  /** bodyPr vert: vertical column layout (lines = columns, right→left); vert/vert270/wordArtVert degrade to eaVert */
+  /** bodyPr vert. eaVert/wordArtVert: vertical column layout (lines = columns, right→left;
+   * wordArtVert keeps Latin upright too). vert/vert270: whole-block rotation (lines keep
+   * pre-rotation tops/heights; every run carries rotate90/rotate270). */
   vert?: 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
   /** WordArt text extrusion: glyphs get offset copies in this color behind them (px) */
   extrusion?: { color: string; dx: number; dy: number }
@@ -269,6 +297,7 @@ export interface ShapeRenderNode extends RenderNodeBase {
   stroke?: RenderStroke
   shadow?: RenderShadow
   glow?: RenderGlow
+  reflection?: RenderReflection
   /** scene3d+sp3d extrusion: pre-projected shaded faces (painter order) replacing the flat geometry */
   extrusion?: { faces: ExtrusionFaceRender[]; wireframe?: boolean }
   text?: RenderTextLayout
@@ -300,6 +329,7 @@ export interface PictureRenderNode extends RenderNodeBase {
   stroke?: RenderStroke
   shadow?: RenderShadow
   glow?: RenderGlow
+  reflection?: RenderReflection
   /** Source element cNvPr name (the edit layer identifies its own elements, e.g. freehand ink) */
   name?: string
   /** Source element cNvPr descr payload (freehand ink vector points etc.) */

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { numfmt } from '@univerjs/core'
+import { BooleanNumber, numfmt } from '@univerjs/core'
 import { isMetafileMime, metafileToDataUrl } from '@genoffice/docx-engine/metafile'
 import { Dropdown, shapePreviewPath, useDismissablePopover } from '@genoffice/ui'
 
@@ -214,7 +214,15 @@ export function installWorkbookVisuals(
     const framed = width > 0 || height > 0
     const frameWidth = Math.max(width, 1)
     const frameHeight = Math.max(height, 1)
-    const layout = framed ? { width: frameWidth, height: frameHeight, marginX, marginY } : {}
+    // RTL sheets mirror the float too (Excel keeps logical anchors; the box
+    // lands mirrored). Univer positions the DOM from the anchor cell's
+    // mirrored left edge, so restate the margin as "mirrored box left minus
+    // that edge": colWidth(from) - marginX - width.
+    const rtl = worksheet.getSheet().getConfig().rightToLeft === BooleanNumber.TRUE
+    const anchoredMarginX = rtl ? columnWidth(fromColumn) - marginX - frameWidth : marginX
+    const layout = framed
+      ? { width: frameWidth, height: frameHeight, marginX: anchoredMarginX, marginY }
+      : {}
     const frame = framed ? { width: frameWidth, height: frameHeight } : undefined
     const component =
       shapeEditing && editable
@@ -566,7 +574,12 @@ function useIsSelected(visualId: string): boolean {
 }
 
 const RESIZE_CORNERS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
-type ResizeCorner = (typeof RESIZE_CORNERS)[number]
+export type ResizeCorner = (typeof RESIZE_CORNERS)[number]
+
+/// RTL mirrors the x-axis: a screen-space handle grabs the opposite logical
+/// edge (pair with negating the screen dx).
+export const mirrorCornerX = (corner: ResizeCorner): ResizeCorner =>
+  (({ nw: 'ne', n: 'n', ne: 'nw', e: 'w', se: 'sw', s: 's', sw: 'se', w: 'e' }) as const)[corner]
 
 const cornerEast = (corner: ResizeCorner): boolean =>
   corner === 'ne' || corner === 'e' || corner === 'se'
@@ -698,7 +711,7 @@ function EditableShapeVisual({
 
   const commitDrag = (
     mode: 'move' | 'resize',
-    corner: ResizeCorner,
+    screenCorner: ResizeCorner,
     dxRaw: number,
     dyRaw: number,
   ): boolean => {
@@ -724,7 +737,11 @@ function EditableShapeVisual({
     let fromY = markerFrom(anchor.fromRow, anchor.fromRowOffset)
     let toX = markerFrom(anchor.toColumn, anchor.toColumnOffset)
     let toY = markerFrom(anchor.toRow, anchor.toRowOffset)
-    const dx = dxRaw / zoom
+    // RTL sheets render mirrored geometry from logical anchors, so a screen
+    // drag maps to the opposite logical x-shift and the opposite logical edge.
+    const rtl = config.rightToLeft === BooleanNumber.TRUE
+    const corner = rtl ? mirrorCornerX(screenCorner) : screenCorner
+    const dx = (rtl ? -dxRaw : dxRaw) / zoom
     const dy = dyRaw / zoom
     if (mode === 'move') {
       // Free placement: keep the frame size. The grid edge caps

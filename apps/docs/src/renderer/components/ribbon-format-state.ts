@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import { isInTable, mergeCells, selectedRect, splitCell } from '@tiptap/pm/tables'
-import type { DocDefaults, StyleInfo } from '@genoffice/docx-engine'
+import type { DocDefaults, Run, StyleInfo, TextboxDisplay } from '@genoffice/docx-engine'
 import { getActiveSubEditor } from '../editor/active-editor'
 import { effectiveSizeHalfPoints } from '../editor/text-style-resolve'
 import { textHasCjk } from '../line-metrics'
@@ -36,6 +36,20 @@ export interface RibbonFormatState {
   shapeFill: string | null
   shapeBorderColor: string | null
   shapePrst: string | null
+  /**
+   * What the selected shape's own text agrees on, for the Shape Format Text
+   * group. Selecting a shape as an object leaves no text selection for a mark to
+   * hang off, so Word formats every run at once and lights a button only while
+   * the shape agrees throughout: one bold word among plain ones leaves Bold off,
+   * and pressing it bolds all of them. Null fields mean the runs disagree; a
+   * shape with no text to format has shapeHasText false.
+   */
+  shapeHasText: boolean
+  shapeTextBold: boolean
+  shapeTextItalic: boolean
+  shapeTextUnderline: boolean
+  shapeTextColor: string | null
+  shapeTextAlign: string | null
   cellKey: number | null
   cellHeightCm: number | null
   cellWidthCm: number | null
@@ -86,6 +100,12 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   shapeFill: null,
   shapeBorderColor: null,
   shapePrst: null,
+  shapeHasText: false,
+  shapeTextBold: false,
+  shapeTextItalic: false,
+  shapeTextUnderline: false,
+  shapeTextColor: null,
+  shapeTextAlign: null,
   cellKey: null,
   cellHeightCm: null,
   cellWidthCm: null,
@@ -127,6 +147,49 @@ function paraAttrsOf(editor: Editor): Record<string, unknown> {
   if (editor.isActive('docHeading')) return editor.getAttributes('docHeading')
   if (editor.isActive('docListItem')) return editor.getAttributes('docListItem')
   return editor.getAttributes('docParagraph')
+}
+
+/**
+ * Fold every run and paragraph of a shape into what they all share. A run with
+ * no color of its own draws in the shape style's default (a:fontRef), so that is
+ * what the swatch reports — otherwise a new white-on-blue shape would read as
+ * having no color at all.
+ */
+function shapeTextStateOf(
+  box: TextboxDisplay | undefined,
+): Pick<
+  RibbonFormatState,
+  | 'shapeHasText'
+  | 'shapeTextBold'
+  | 'shapeTextItalic'
+  | 'shapeTextUnderline'
+  | 'shapeTextColor'
+  | 'shapeTextAlign'
+> {
+  const runs = box && !box.readOnly ? box.paras.flatMap((p) => p.runs) : []
+  if (!box || runs.length === 0) {
+    return {
+      shapeHasText: false,
+      shapeTextBold: false,
+      shapeTextItalic: false,
+      shapeTextUnderline: false,
+      shapeTextColor: null,
+      shapeTextAlign: null,
+    }
+  }
+  const every = (has: (run: Run) => boolean): boolean => runs.every(has)
+  const firstColor = runs[0].color ?? box.textColor ?? null
+  const firstAlign = box.paras[0]?.align ?? null
+  return {
+    shapeHasText: true,
+    shapeTextBold: every((r) => r.bold === true),
+    shapeTextItalic: every((r) => r.italic === true),
+    shapeTextUnderline: every((r) => r.underline === true),
+    shapeTextColor: every((r) => (r.color ?? box.textColor ?? null) === firstColor)
+      ? firstColor
+      : null,
+    shapeTextAlign: box.paras.every((p) => (p.align ?? null) === firstAlign) ? firstAlign : null,
+  }
 }
 
 export function computeFormatState(
@@ -210,6 +273,11 @@ export function computeFormatState(
     shapePrst: Array.isArray(protAttrs.textboxes)
       ? str((protAttrs.textboxes[0] as { prst?: string } | undefined)?.prst)
       : null,
+    ...shapeTextStateOf(
+      Array.isArray(protAttrs.textboxes)
+        ? (protAttrs.textboxes[0] as TextboxDisplay | undefined)
+        : undefined,
+    ),
     cellKey,
     cellHeightCm,
     cellWidthCm,

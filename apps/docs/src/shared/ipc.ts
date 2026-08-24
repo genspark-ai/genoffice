@@ -153,8 +153,33 @@ export type MenuCommand =
   | 'export-pdf'
   | 'word-count'
   | 'ai-proofread'
+  | 'shortcuts'
 
 export type UiTheme = 'light' | 'dark' | 'system'
+
+/** target file type of the AI create_document tool */
+export type CreateDocumentType = 'docx' | 'pdf' | 'md'
+
+export interface CreateDocumentRequest {
+  type: CreateDocumentType
+  /** file name stem (sanitized main-side) */
+  title: string
+  /** docx/pdf: restricted HTML; md: Markdown source */
+  content: string
+}
+
+export interface CreateDocumentResult {
+  ok: boolean
+  /** the created file, when it is written directly (pdf/md); docx opens as a new tab that saves itself */
+  path?: string
+  error?: string
+}
+
+/** AI-authored content queued for a docs tab spawned by create_document */
+export interface AiDocContent {
+  title: string
+  html: string
+}
 
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
@@ -187,6 +212,10 @@ export interface DesktopApi {
   consumePendingOpenDocx(): Promise<OpenDocxResult>
   /** returns true when this tab was created via "New Document" and should start blank */
   consumeNewBlankDoc(): Promise<boolean>
+  /** AI-authored content queued for this tab by create_document; one-shot, null when none */
+  consumeAiDocContent(): Promise<AiDocContent | null>
+  /** AI create_document: build a new standalone file and open it in a new tab */
+  createDocument(request: CreateDocumentRequest): Promise<CreateDocumentResult>
   /** receive documents opened from Finder/Explorer while the app is running */
   onOpenDocx(handler: (result: Exclude<OpenDocxResult, null>) => void): () => void
   /** File was renamed externally (renamed in the shell Home list) — pushes old and new paths; renderer syncs its save path and title bar */

@@ -43,9 +43,11 @@ import {
   installJournalSuppressionUndoFilter,
   installLoadAutoHeightGate,
   journalSuppression,
+  lazySheetScreenExtent,
   type ActiveWorkbook,
   type LazyWorkbookState,
   type UniverRuntime,
+  type UniverWorksheet,
 } from './univer-state'
 import { pushBulkFillUndo } from './bulk-fill-undo'
 import {
@@ -154,8 +156,22 @@ import {
 } from './cross-highlight'
 import type { ApplyOutcome, ChangePlan } from '../domain/workbook.types'
 import { createElectronTransport } from './ai/transport'
-import { MAX_READ_RANGE_CELLS, type ActiveSheetInfo, type SheetsSkillDeps } from './ai/tools'
+import {
+  MAX_READ_RANGE_CELLS,
+  type ActiveSheetInfo,
+  type FrozenSelection,
+  type SheetsSkillDeps,
+} from './ai/tools'
 import type { AiChatMessage } from './ai/AiChatPanel'
+import { parseSheetNavHref } from './ai/sheet-nav'
+import {
+  boundsToA1,
+  clampBoundsToExtent,
+  columnScopeHeaders,
+  resolveScopeChip,
+  type DataExtent,
+} from './ai/selection-scope'
+import { isSelectionDrag, type Point, type SelectionAskAnchor } from './ai/selection-ask'
 import { createWorkbookSkill } from './ai/workbook-skill'
 import { findWorkbookCells, selectWorkbookRange } from './ai/workbook-search'
 import { traceWorkbookDependents, traceWorkbookPrecedents } from './ai/formula-audit'
@@ -278,7 +294,9 @@ import { installSheetRenameFix } from './sheet-rename-fix'
 import { installSelectionWrapGuard } from './selection-wrap-fix'
 import { installCellClipAnchorFix } from './cell-clip-anchor-fix'
 import { installMergeBorderFix } from './merge-border-fix'
+import { installRichTextBidiFix } from './rich-text-bidi-fix'
 import { installRtlTextDirectionFix } from './rtl-text-fix'
+import { installRtlGridMirror } from './rtl-grid-mirror'
 import { installMultiRowAutofit } from './autofit-multi-row'
 import { installCopyMaterialize } from './copy-materialize'
 import { applyUniverLocale } from './univer-locales'
@@ -526,6 +544,29 @@ export function App(): React.JSX.Element {
   /// A1 label of the active cell, echoed live by the Name Box. Updated from
   /// the same SelectionChanged refresh that keeps selectionFormat current.
   const [activeCellA1, setActiveCellA1] = useState('')
+  /// The multi-cell selection the AI composer shows as its scope chip, or null.
+  /// A resting single-cell selection carries no intent, so it gets no chip —
+  /// only a range the user deliberately dragged or shift-selected does.
+  const [aiScope, setAiScope] = useState<FrozenSelection | null>(null)
+  const [aiSelectionAskAnchor, setAiSelectionAskAnchor] = useState<SelectionAskAnchor | null>(null)
+  const selectionDragRef = useRef<{
+    start: Point
+    initialRangeKey: string | null
+    dragged: boolean
+    selectionChanged: boolean
+  } | null>(null)
+  /// The user clicked × on the scope chip: this run targets the sheet at large.
+  /// Re-arms on the next selection change, so a fresh drag means a fresh scope.
+  const [aiScopeDismissed, setAiScopeDismissed] = useState(false)
+  /// Selection scope of the run in flight. undefined = no run owns a scope
+  /// (report the live selection); null = the user dropped it. The ref is what
+  /// the skill's getActiveSheetInfo reads mid-run; the state is what the chip
+  /// renders from, so both are written together by setAiRunScope.
+  const aiRunScopeRef = useRef<FrozenSelection | null | undefined>(undefined)
+  const [aiRunScope, setAiRunScopeState] = useState<FrozenSelection | null | undefined>(undefined)
+  /// `sheetId!A1` of the scope currently on the chip; the refresh compares
+  /// against it so an unchanged selection never resets the dismissed flag.
+  const aiScopeKeyRef = useRef<string | null>(null)
   /// Non-null while the Advanced Filter dialog is open: the column choices
   /// sampled from the active filter range's header row.
   const [advancedFilterColumns, setAdvancedFilterColumns] = useState<
@@ -1081,6 +1122,7 @@ export function App(): React.JSX.Element {
           if (!cancelled && finalText) {
             persistChatMessage('assistant', finalText, runToolsRef.current)
           }
+          setAiRunScope(undefined)
           void autoSaveCompletedAiRun().finally(() => setAiBusy(false))
         },
         onError: (error) => {
@@ -1123,6 +1165,7 @@ export function App(): React.JSX.Element {
               })
             })
             .catch(() => {})
+          setAiRunScope(undefined)
           void autoSaveCompletedAiRun().finally(() => setAiBusy(false))
         },
       },
@@ -1169,6 +1212,10 @@ export function App(): React.JSX.Element {
     const loop = agentLoopRef.current
     if (!instruction.trim() || !loop || loop.busy || runStartingRef.current) return
     runStartingRef.current = true
+    // Freeze the selection scope for the whole run: users go on clicking around
+    // while the AI works, so a live read would retarget "this column" mid-run.
+    // Released in onDone/onError, which own the rest of the run teardown.
+    setAiRunScope(aiScopeDismissed ? null : aiScope)
     aiApplyPromisesRef.current = []
     runLastTextRef.current = ''
     runMutatedRef.current = false
@@ -1221,8 +1268,18 @@ export function App(): React.JSX.Element {
     agentLoopRef.current?.cancel()
   }
 
+  /// A citation link in an AI answer ([B12](sheetnav://B12)): jump the grid to
+  /// the cited cell or range through the same path the Name Box uses.
+  function handleAiCitation(href: string): void {
+    const ref = parseSheetNavHref(href)
+    if (ref === null) return
+    const error = goToReferenceImpl(dataToolsContext(), ref)
+    if (error !== null) setMessage(error)
+  }
+
   function handleNewChat(): void {
     agentLoopRef.current?.reset()
+    setAiRunScope(undefined)
     setAiBusy(false)
     setChat([])
     setHistoricChat([])
@@ -1240,7 +1297,7 @@ export function App(): React.JSX.Element {
   }
 
   function getActiveSheetInfo(): ActiveSheetInfo {
-    return getActiveSheetInfoImpl(readContext())
+    return getActiveSheetInfoImpl(readContext(), aiRunScopeRef.current)
   }
 
   function sheetsSkillDeps(): SheetsSkillDeps {
@@ -1374,7 +1431,10 @@ export function App(): React.JSX.Element {
     // registered at bootstrap), so reading the attribute here is safe; the
     // matchMedia listener covers OS appearance flips while in system mode
     const themeService = runtime.univer.__getInjector().get(ThemeService)
-    const applyUniverDark = () => themeService.setDarkMode(isDarkTheme())
+    const applyUniverDark = () => {
+      themeService.setDarkMode(isDarkTheme())
+      crossHighlightRef.current?.refresh()
+    }
     const offThemeChanged = window.desktopApi?.onThemeChanged?.(applyUniverDark)
     prefersDark.addEventListener('change', applyUniverDark)
     // Undo/redo stack occupancy: the QAT buttons grey out when there is nothing to apply
@@ -1403,6 +1463,10 @@ export function App(): React.JSX.Element {
     // Mixed-direction cell text (e.g. Arabic year suffixes) must follow
     // Excel's context reading order instead of always rendering ltr.
     installRtlTextDirectionFix()
+    // sheetView rightToLeft="1": mirror the grid geometry (column A on the
+    // right, headers on the right) while keeping logical indices.
+    installRtlGridMirror()
+    installRichTextBidiFix()
     // The window always starts blank now; still consume the one-shot
     // new-blank flag so it doesn't leak into the next workbook open.
     void window.desktopApi?.consumeNewBlankWorkbook?.()
@@ -1489,35 +1553,15 @@ export function App(): React.JSX.Element {
     // Ctrl+F covers every row of a streamed workbook, not just the loaded
     // window: the bridge pages the underlying file for out-of-window hits.
     const lazyFindDisposable = installLazyFindBridge({ runtime, lazyWorkbookRef, setMessage })
-    // Cross-highlight bands track the active cell while the View toggle is on.
+    // A canvas extension highlights the active row and column without
+    // allocating per-selection float DOM or covering interactive visuals.
     crossHighlightRef.current = installCrossHighlight(runtime, {
-      extents: () => {
-        // Mirror page-break preview: bands must reach past the data extent,
-        // so take the max of the file-backed numbers (shifted through the
-        // journal's structural ops) and whatever has already streamed in —
-        // clicking a legitimate grid cell beyond the last data row keeps its
-        // row/column highlighted.
-        const state = lazyWorkbookRef.current
-        const worksheet = univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
-        if (!worksheet) return null
-        const sheetId = worksheet.getSheetId()
-        const loadedRows = worksheet.getLastRow() + 1
-        const loadedColumns = worksheet.getLastColumn() + 1
-        const fileSheet = state?.file.sheets.find((sheet) => sheet.id === sheetId)
-        if (!state || !fileSheet) {
-          return { rows: loadedRows, columns: loadedColumns }
-        }
-        const ops = state.editJournal.structuralOps.get(sheetId) ?? []
-        return {
-          rows: Math.max(fileSheet.rowCount + netAxisDelta(ops, 'row'), loadedRows),
-          columns: Math.max(fileSheet.columnCount + netAxisDelta(ops, 'column'), loadedColumns),
-        }
-      },
+      theme: () => (isDarkTheme() ? 'dark' : 'light'),
     })
-    crossHighlightRef.current.setVisible(crossHighlightVisible)
     const scrollDisposable = runtime.univerAPI.addEvent(
       runtime.univerAPI.Event.Scroll,
       (params) => {
+        setAiSelectionAskAnchor(null)
         const { worksheet } = params
         // The event carries the true post-scroll position; getVisibleRange
         // inside loadVisibleRange lags a frame.
@@ -1560,6 +1604,7 @@ export function App(): React.JSX.Element {
     const zoomDisposable = runtime.univerAPI.addEvent(
       runtime.univerAPI.Event.SheetZoomChanged,
       ({ worksheet }) => {
+        setAiSelectionAskAnchor(null)
         setZoomPercent(Math.round(worksheet.getZoom() * 100))
       },
     )
@@ -1569,6 +1614,7 @@ export function App(): React.JSX.Element {
       runtime.univerAPI.Event.SheetEditStarted,
       () => {
         editingCellRef.current = true
+        setAiSelectionAskAnchor(null)
       },
     )
     const editEndDisposable = runtime.univerAPI.addEvent(
@@ -1580,6 +1626,7 @@ export function App(): React.JSX.Element {
     const sheetDisposable = runtime.univerAPI.addEvent(
       runtime.univerAPI.Event.ActiveSheetChanged,
       ({ activeSheet }) => {
+        setAiSelectionAskAnchor(null)
         void loadVisibleRange(runtime, lazyWorkbookRef, activeSheet, setMessage)
         // formula view is per-sheet (sheetView/@showFormulas)
         applyShowFormulasView(runtime, lazyWorkbookRef.current, activeSheet.getSheetId())
@@ -2289,9 +2336,95 @@ export function App(): React.JSX.Element {
     const unsubscribeCloseSave =
       window.desktopApi?.onCloseSaveRequest?.(() => void closeSaveRef.current()) ??
       (() => undefined)
+    const gridHost = document.getElementById('univer-container')
+    let selectionAskRaf: number | null = null
+    let selectionAskSettleRaf: number | null = null
+    let selectionAskSettling = false
+    const activeRangeKey = (): string | null => {
+      try {
+        const range = runtime.univerAPI.getActiveWorkbook()?.getActiveRange()?.getRange()
+        return range
+          ? `${range.startRow}:${range.startColumn}:${range.endRow}:${range.endColumn}`
+          : null
+      } catch {
+        return null
+      }
+    }
+    const onSelectionPointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0 || gridHost?.classList.contains('sheet-shape-drawing')) return
+      setAiSelectionAskAnchor(null)
+      selectionDragRef.current = {
+        start: { x: event.clientX, y: event.clientY },
+        initialRangeKey: activeRangeKey(),
+        dragged: false,
+        selectionChanged: false,
+      }
+    }
+    const onSelectionPointerMove = (event: PointerEvent): void => {
+      const gesture = selectionDragRef.current
+      if (!gesture || gesture.dragged) return
+      gesture.dragged = isSelectionDrag(gesture.start, { x: event.clientX, y: event.clientY })
+    }
+    const finishSelectionPointer = (event: PointerEvent): void => {
+      const gesture = selectionDragRef.current
+      selectionDragRef.current = null
+      if (!gesture?.dragged || event.type === 'pointercancel') return
+      const pointer = { x: event.clientX, y: event.clientY }
+      selectionAskSettling = true
+      if (selectionAskRaf !== null) cancelAnimationFrame(selectionAskRaf)
+      selectionAskRaf = requestAnimationFrame(() => {
+        selectionAskRaf = null
+        if (editingCellRef.current || !gridHost) {
+          selectionAskSettling = false
+          return
+        }
+        try {
+          const bounds = runtime.univerAPI.getActiveWorkbook()?.getActiveRange()?.getRange()
+          if (
+            !bounds ||
+            (bounds.endRow === bounds.startRow && bounds.endColumn === bounds.startColumn)
+          ) {
+            setAiSelectionAskAnchor(null)
+            return
+          }
+          const finalRangeKey = activeRangeKey()
+          if (!gesture.selectionChanged && finalRangeKey === gesture.initialRangeKey) return
+          const viewport = gridHost.getBoundingClientRect()
+          setAiSelectionAskAnchor({
+            pointer,
+            bounds: {
+              left: viewport.left,
+              top: viewport.top,
+              right: viewport.right,
+              bottom: viewport.bottom,
+            },
+          })
+        } catch {
+          setAiSelectionAskAnchor(null)
+        } finally {
+          if (selectionAskSettleRaf !== null) cancelAnimationFrame(selectionAskSettleRaf)
+          selectionAskSettleRaf = requestAnimationFrame(() => {
+            selectionAskSettleRaf = null
+            selectionAskSettling = false
+          })
+        }
+      })
+    }
+    const cancelSelectionPointer = (): void => {
+      if (!selectionDragRef.current) return
+      selectionDragRef.current = null
+      setAiSelectionAskAnchor(null)
+    }
+    gridHost?.addEventListener('pointerdown', onSelectionPointerDown, true)
+    window.addEventListener('pointermove', onSelectionPointerMove, true)
+    window.addEventListener('pointerup', finishSelectionPointer, true)
+    window.addEventListener('pointercancel', finishSelectionPointer, true)
+    window.addEventListener('blur', cancelSelectionPointer)
     const selectionDisposable = runtime.univerAPI.addEvent(
       runtime.univerAPI.Event.SelectionChanged,
       () => {
+        if (selectionDragRef.current) selectionDragRef.current.selectionChanged = true
+        else if (!selectionAskSettling) setAiSelectionAskAnchor(null)
         refreshSelectionFormatRef.current()
         // A grid click ends any floating-visual selection.
         clearVisualSelection()
@@ -2384,6 +2517,13 @@ export function App(): React.JSX.Element {
       clickDisposable.dispose()
       if (contentTimer) clearTimeout(contentTimer)
       contentDisposable.dispose()
+      gridHost?.removeEventListener('pointerdown', onSelectionPointerDown, true)
+      window.removeEventListener('pointermove', onSelectionPointerMove, true)
+      window.removeEventListener('pointerup', finishSelectionPointer, true)
+      window.removeEventListener('pointercancel', finishSelectionPointer, true)
+      window.removeEventListener('blur', cancelSelectionPointer)
+      if (selectionAskRaf !== null) cancelAnimationFrame(selectionAskRaf)
+      if (selectionAskSettleRaf !== null) cancelAnimationFrame(selectionAskSettleRaf)
       if (visualInstallTimerRef.current) clearTimeout(visualInstallTimerRef.current)
       disposeVisuals(visualDisposablesRef.current)
       visualViewportKeyRef.current = ''
@@ -2398,7 +2538,7 @@ export function App(): React.JSX.Element {
     }
   }, [])
 
-  // The bands live outside React; mirror the toggle into the installer.
+  // Canvas render state lives outside React; mirror the toggle into it.
   useEffect(() => {
     crossHighlightRef.current?.setVisible(crossHighlightVisible)
   }, [crossHighlightVisible])
@@ -3755,6 +3895,76 @@ export function App(): React.JSX.Element {
     }
   }
 
+  /// Moves the run's scope in the ref and in state together: the ref is read
+  /// mid-run by getActiveSheetInfo, the state is what the chip renders, and a
+  /// chip fed from anything else would drift from the run it describes.
+  function setAiRunScope(scope: FrozenSelection | null | undefined): void {
+    aiRunScopeRef.current = scope
+    setAiRunScopeState(scope)
+  }
+
+  /// Data extent of a sheet, floored by the file's own used range: cells stream
+  /// into Univer lazily, so getLastRow/getLastColumn undercount a sheet the user
+  /// has not scrolled through yet. The floor comes from the same screen-space
+  /// extent the AI's workbook context reports, so the chip's range and the data
+  /// area the model is told about survive inserted or deleted rows together.
+  function sheetDataExtent(worksheet: UniverWorksheet): DataExtent {
+    const state = lazyWorkbookRef.current
+    const fileExtent = state ? lazySheetScreenExtent(state, worksheet.getSheetId()) : null
+    return {
+      lastRow: Math.max(worksheet.getLastRow(), (fileExtent?.rows ?? 0) - 1),
+      lastColumn: Math.max(worksheet.getLastColumn(), (fileExtent?.columns ?? 0) - 1),
+    }
+  }
+
+  /// Nulls the key too, so re-selecting the same range later still re-arms the
+  /// chip instead of being mistaken for an unchanged selection.
+  function clearAiScope(): void {
+    aiScopeKeyRef.current = null
+    setAiScope(null)
+    setAiScopeDismissed(false)
+  }
+
+  /// Keeps the AI composer's scope chip in sync with the grid selection. Only a
+  /// multi-cell range becomes a scope; moving to a different range re-arms a
+  /// chip the user had dismissed, so a fresh drag means a fresh scope.
+  function refreshAiScope(range: NonNullable<ReturnType<ActiveWorkbook['getActiveRange']>>): void {
+    const worksheet = univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveSheet()
+    const sheetId = worksheet?.getSheetId()
+    let bounds: IRange
+    try {
+      bounds = range.getRange()
+    } catch {
+      // a disposing workbook or a stale cross-sheet range can race the read
+      return
+    }
+    const multiCell = bounds.endRow > bounds.startRow || bounds.endColumn > bounds.startColumn
+    if (!multiCell || !worksheet || !sheetId) {
+      clearAiScope()
+      return
+    }
+    let scope: FrozenSelection
+    try {
+      const extent = sheetDataExtent(worksheet)
+      const clamped = clampBoundsToExtent(bounds, extent)
+      // Display text, so a date header names itself rather than its serial.
+      const columns = columnScopeHeaders(clamped, extent, (column) =>
+        String(worksheet.getRange(0, column, 1, 1).getDisplayValue() ?? ''),
+      )
+      scope = { a1: boundsToA1(clamped), sheetId, ...(columns ? { columns } : {}) }
+    } catch {
+      // same disposing-workbook race as above, now over the extent/header reads
+      return
+    }
+    // Keyed on the clamped range: two whole-column drags of different heights
+    // are the same scope, and re-selecting one must not re-arm a dismissed chip.
+    const key = `${sheetId}!${scope.a1}`
+    if (aiScopeKeyRef.current === key) return
+    aiScopeKeyRef.current = key
+    setAiScope(scope)
+    setAiScopeDismissed(false)
+  }
+
   refreshSelectionFormatRef.current = () => {
     let range: ReturnType<ActiveWorkbook['getActiveRange']> | undefined
     try {
@@ -3768,9 +3978,11 @@ export function App(): React.JSX.Element {
     if (!range) {
       setSelectionFormat(null)
       setActiveCellA1('')
+      clearAiScope()
       return
     }
     setActiveCellA1(`${columnLetter(range.getColumn())}${range.getRow() + 1}`)
+    refreshAiScope(range)
     let pattern: string
     try {
       pattern = range.getNumberFormat()
@@ -4236,6 +4448,8 @@ export function App(): React.JSX.Element {
     }
   })()
 
+  const aiScopeChip = resolveScopeChip(aiRunScope, aiScope, aiScopeDismissed)
+
   return (
     <>
       <ToastHost />
@@ -4294,6 +4508,16 @@ export function App(): React.JSX.Element {
         onStop={handleStopAgent}
         onNewChat={handleNewChat}
         onUndo={handleUndo}
+        aiScopeRange={aiScopeChip.range}
+        aiScopeColumns={aiScopeChip.columns ?? null}
+        aiScopeLocked={aiScopeChip.locked}
+        aiSelectionAskAnchor={aiSelectionAskAnchor}
+        onAiSelectionAskDismiss={() => setAiSelectionAskAnchor(null)}
+        onAiScopeDismiss={() => {
+          setAiScopeDismissed(true)
+          setAiSelectionAskAnchor(null)
+        }}
+        onAiCitation={handleAiCitation}
         canUndo={univerHist.canUndo || (!lazyWorkbookRef.current && adapterRef.current.canUndo)}
         canRedo={univerHist.canRedo}
         onCommand={handleRibbonCommand}

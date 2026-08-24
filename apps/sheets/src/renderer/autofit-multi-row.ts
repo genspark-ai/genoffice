@@ -10,7 +10,7 @@ import type { IRange } from '@univerjs/core'
 
 import type { UniverRuntime } from './univer-state'
 
-export const SET_ROW_IS_AUTO_HEIGHT_COMMAND = 'sheet.command.set-worksheet-row-is-auto-height'
+export const SET_ROW_IS_AUTO_HEIGHT_COMMAND = 'sheet.command.set-row-is-auto-height'
 
 /// Full-row spans: selections made from the row headers or a select-all.
 function isFullRowSpan(range: IRange, columnCount: number): boolean {

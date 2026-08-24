@@ -123,6 +123,33 @@ export function setParaAttrs(
   chain.run()
 }
 
+/** direct paragraph formatting dropped by Word's Ctrl+Q (the style's own values then show through) */
+const DIRECT_PARA_ATTRS: Record<string, unknown> = {
+  align: null,
+  lineSpacing: null,
+  lineRule: null,
+  lineRawTwips: null,
+  indentLeft: null,
+  indentRight: null,
+  indentFirstLine: null,
+  spaceBefore: null,
+  spaceAfter: null,
+  spaceBeforeAuto: null,
+  spaceAfterAuto: null,
+  contextualSpacing: null,
+  shadingFill: null,
+  borders: null,
+  borderLines: null,
+  tabStops: null,
+  dropCap: null,
+  pageBreakBefore: false,
+}
+
+/** Word's Ctrl+Q: reset the paragraph to its style, keeping the text and its character formatting */
+export function clearParagraphFormatting(editor: Editor): void {
+  setParaAttrs(editor, { ...DIRECT_PARA_ATTRS })
+}
+
 /** apply a gallery paragraph style; not for textbox sub-editors (no docHeading in their schema) */
 export function applyParagraphStyle(editor: Editor, key: 'p' | 'h1' | 'h2' | 'h3'): void {
   let c = editor.chain().focus()
@@ -368,13 +395,18 @@ export function insertShapeAt(
     borderHex: '2F5496',
     withTextbox: true,
   })
+  // mirrors what buildShapeParagraphXml just wrote: centered both ways, and the
+  // light text the shape style's a:fontRef resolves to. Without this the shape
+  // reads top-left and black until the file is saved and reopened.
   const textbox: TextboxDisplay = {
     fill: '4472C4',
     borderColor: '2F5496',
     widthPx: Math.round(widthEmu / 9525),
     heightPx: Math.round(heightEmu / 9525),
     prst,
-    paras: [{ runs: [{ text: '' }] }],
+    vAlign: 'center',
+    textColor: 'FFFFFF',
+    paras: [{ runs: [{ text: '' }], align: 'center' }],
   }
   const content = {
     type: 'docProtected',

@@ -2757,6 +2757,27 @@ body.vib .slide-list {
 
 /* Anchored annotation popover: fixed-size, mounted at the app root so the
  * canvas zoom transform never scales it */
+.ai-ask-trigger {
+  position: fixed;
+  z-index: 59;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--color-ai-action);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: var(--slides-shadow-popup);
+  cursor: pointer;
+}
+
+.ai-ask-trigger:hover {
+  background: var(--hover);
+}
+
 .ai-ask-pop {
   position: fixed;
   z-index: 60;
@@ -2770,7 +2791,30 @@ body.vib .slide-list {
   box-shadow: var(--slides-shadow-popup);
 }
 
+.ai-ask-pop-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.ai-ask-pop-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
 .ai-ask-pop-title {
+  padding-right: 24px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
@@ -2849,8 +2893,12 @@ body.vib .slide-list {
 
 .ai-ask-confirm {
   border: 1px solid transparent;
-  background: var(--accent);
-  color: var(--slides-on-accent);
+  background: var(--color-ai-action);
+  color: var(--color-ai-action-text);
+}
+
+.ai-ask-confirm:hover:not(:disabled) {
+  background: var(--color-ai-action-hover);
 }
 
 .ai-ask-confirm:disabled {
@@ -3786,6 +3834,156 @@ body.vib .slide-list {
 .fp-prow .gs-dd {
   width: 120px;
   flex-shrink: 0;
+}
+
+/* position "From" pickers: same width as the value spinners above them (fp-unitstep) */
+.fp-prow .gs-dd.fp-dd-narrow {
+  width: 74px;
+}
+
+/* PPT-style shadow preset gallery: thumbnail trigger + grouped grid of live shadow tiles */
+.fp-shadowgal {
+  position: relative;
+  display: inline-flex;
+  anchor-name: --fp-shadowgal;
+  anchor-scope: --fp-shadowgal;
+}
+
+.fp-shadowgal-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 5px 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.fp-shadowgal-btn:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* fixed + anchored (same technique as gs-dd-pop) so pane scroll overflow never clips it;
+ * right-aligned to the trigger because the pane hugs the window's right edge */
+.fp-shadowgal-pop {
+  position: fixed;
+  position-anchor: --fp-shadowgal;
+  top: calc(anchor(bottom) + 2px);
+  right: anchor(right);
+  position-try-fallbacks: flip-block;
+  position-visibility: anchors-visible;
+  z-index: 80;
+  box-sizing: border-box;
+  width: 176px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: var(--shadow-menu);
+}
+
+.fp-shadowgal-group {
+  margin: 4px 2px 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.fp-shadowgal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.fp-galopt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.fp-galopt:hover {
+  background: var(--hover);
+}
+
+.fp-galopt.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* tile face: a miniature preview of the document effect, deliberately theme-static */
+.fp-galtile {
+  --fp-gal-face: #f4f4f4;
+  --fp-gal-edge: #b9b9b9;
+  --fp-gal-shadow: rgba(0, 0, 0, 0.45);
+  display: block;
+  box-sizing: border-box;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: var(--fp-gal-face);
+  border: 1px solid var(--fp-gal-edge);
+}
+
+.fp-galtile-cur {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  /* fixed "shadow" glyph (PPT-style): a white tile casting a small bottom-right shadow */
+  --fp-gal-face: #ffffff;
+  box-shadow: 1.5px 1.5px 2.5px var(--fp-gal-shadow);
+}
+
+/* reflection tiles: face + a fading mirrored bar below it */
+.fp-refltile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.fp-refltile .fp-refltile-face {
+  width: 22px;
+  height: 16px;
+}
+
+.fp-refltile-fade {
+  /* preview of a document effect, deliberately theme-static */
+  --fp-refl-fade-from: rgba(0, 0, 0, 0.35);
+  display: block;
+  width: 22px;
+  border-radius: 2px;
+  background: linear-gradient(var(--fp-refl-fade-from), transparent);
+}
+
+.fp-refltile-cur .fp-refltile-face {
+  --fp-gal-face: #ffffff;
+  width: 15px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.fp-refltile-cur .fp-refltile-fade {
+  width: 15px;
+}
+
+/* text-direction options: PPT-style direction glyph + label in the list; the
+ * 120px trigger can't fit the glyph next to the long rotate labels, so it
+ * stays text-only (matching PowerPoint's pane field) */
+.fp-dd-textdir .gs-dd-value .fp-dirico {
+  display: none;
+}
+
+.gs-dd-item .fp-dirico {
+  flex-shrink: 0;
+  margin-right: 8px;
+  color: var(--text-dim);
 }
 
 /* line previews inside dropdown triggers/options (compound + dash pickers) */

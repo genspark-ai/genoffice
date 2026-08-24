@@ -240,6 +240,19 @@
   font-style: normal;
 }
 
+/* -Che (fixed-pitch) KR faces: Word renders the real BatangChe/GulimChe/
+ * DotumChe/GungsuhChe whose Latin is 0.5 em fixed (probe 2026-08-24). ASCII
+ * rides this bundled half-width face (tools/build-kr-che-latin-font.py:
+ * Sans KR outlines reshaped to DotumChe ink boxes); hangul falls through to
+ * the KR chains. */
+@font-face {
+  font-family: 'GenOffice Che Latin KR';
+  src: url('./GenOfficeCheLatinKR.woff2') format('woff2');
+  unicode-range: U+0020-007E;
+  font-weight: normal;
+  font-style: normal;
+}
+
 /*
  * Arabic fallback: unmodified Noto Naskh/Sans Arabic subsets (Arabic blocks +
  * presentation forms + digits/punctuation). Without them, missing Arabic fonts

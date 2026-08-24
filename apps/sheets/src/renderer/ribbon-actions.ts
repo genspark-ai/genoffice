@@ -66,6 +66,7 @@ import {
   applyFormatPatchToRange,
   characterWidthToPixels,
   attachVisualUndoToLastStep,
+  getScrollAnchor,
   normalizeLinkTarget,
   topUndoElement,
   pushVisualUndo,
@@ -1071,12 +1072,25 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     const column = horizontal
       ? clamp(active.getColumn() + direction * page, maxColumn)
       : active.getColumn()
-    const viewRow = horizontal
-      ? visible.startRow
-      : clamp(visible.startRow + direction * page, maxRow)
+    // Anchor from the scroll state, not visible.start*: on RTL sheets
+    // getVisibleRange().startColumn is not what scrollToCell anchors, and a
+    // vertical page must keep the horizontal scroll bit-exact (and vice
+    // versa). Paging keeps logical direction, like the arrow keys.
+    const rtl = sheet.getSheet().getConfig().rightToLeft === BooleanNumber.TRUE
+    const anchor = getScrollAnchor(workbook, sheet) ?? {
+      row: visible.startRow,
+      column: rtl ? visible.endColumn : visible.startColumn,
+    }
+    // The RTL scroll state records home as a flush-right sentinel (column 0).
+    // scrollToCell round-trips it absolutely (vertical pages keep it so the
+    // horizontal position stays capped at exactly flush), but horizontal page
+    // arithmetic needs the true visually-left column.
+    const anchorColumn =
+      rtl && horizontal ? Math.max(anchor.column, visible.endColumn) : anchor.column
+    const viewRow = horizontal ? anchor.row : clamp(anchor.row + direction * page, maxRow)
     const viewColumn = horizontal
-      ? clamp(visible.startColumn + direction * page, maxColumn)
-      : visible.startColumn
+      ? clamp(anchorColumn + direction * page, maxColumn)
+      : anchor.column
     workbook.setActiveRange(sheet.getRange(row, column))
     sheet.scrollToCell(viewRow, viewColumn)
     return

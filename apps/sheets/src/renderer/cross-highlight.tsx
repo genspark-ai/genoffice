@@ -1,70 +1,113 @@
 /**
- * Cross-highlight ("reading mode"): while navigating, the active cell's whole
- * row and column carry a translucent band so wide sheets stay readable
- * (issue #112). The bands are float-DOM layers anchored to ranges — the same
- * mechanism the page-break preview and formula-audit traces use — so they
- * scroll and zoom with the grid. Off by default; the View tab toggles it and
- * the choice persists in localStorage.
+ * Cross-highlight ("reading mode"): a lightweight canvas extension paints
+ * the active cell's visible row and column. Drawing inside the grid avoids
+ * float-DOM observer leaks, never sits above chart/shape DOM, and naturally
+ * works in blank cells and sheets larger than the used-data extent.
  */
+import type { IRange, IScale } from '@univerjs/core'
+import {
+  IRenderManagerService,
+  SheetExtension,
+  SpreadsheetExtensionRegistry,
+  type IDrawInfo,
+  type SpreadsheetSkeleton,
+  type UniverRenderingContext,
+} from '@univerjs/engine-render'
 import type { UniverRuntime } from './univer-state'
 
-interface Disposable {
-  dispose(): void
+/** Canvas chrome colors, kept out of document data and keyed by UI theme. */
+export const CROSS_HIGHLIGHT_CANVAS_COLORS = {
+  light: {
+    fill: 'rgba(31, 90, 168, 0.07)',
+    line: 'rgba(31, 90, 168, 0.30)',
+  },
+  dark: {
+    fill: 'rgba(96, 165, 250, 0.12)',
+    line: 'rgba(96, 165, 250, 0.35)',
+  },
+} as const
+
+export type CrossHighlightTheme = keyof typeof CROSS_HIGHLIGHT_CANVAS_COLORS
+
+interface CellRect {
+  readonly startX: number
+  readonly startY: number
+  readonly endX: number
+  readonly endY: number
 }
 
-/// Float-DOM layers are not free: cap the walked extent so a million-row
-/// sheet cannot freeze the grid (the page-break preview draws the line at
-/// the same numbers). Beyond the cap the bands simply stop short.
-export const CROSS_HIGHLIGHT_MAX_ROWS = 20_000
-export const CROSS_HIGHLIGHT_MAX_COLUMNS = 2_000
-
-/** One translucent band anchored over the grid. */
-export interface CrossHighlightLayer {
+export interface CrossHighlightRect {
   readonly key: 'row' | 'column'
-  readonly startRow: number
-  readonly startColumn: number
-  readonly rowCount: number
-  readonly columnCount: number
+  readonly left: number
+  readonly top: number
+  readonly width: number
+  readonly height: number
 }
 
-/// The row and column bands covering an active cell, clamped to the walked
-/// extent. Empty when the cell sits outside the extent (freshly inserted
-/// rows before metadata catches up, for example).
-export function crossHighlightLayers(
+/**
+ * Rectangles needed in the current viewport(s). Only visible cells are
+ * inspected, so empty sheets and rows beyond the old 20k cap cost the same
+ * two rectangles as a small populated sheet.
+ */
+export function crossHighlightRects(
   activeRow: number,
   activeColumn: number,
-  extentRows: number,
-  extentColumns: number,
-): CrossHighlightLayer[] {
-  // Zero/negative extents mean the sheet metadata is not ready yet.
-  if (!(extentRows > 0) || !(extentColumns > 0)) return []
-  const rows = Math.min(Math.max(Math.floor(extentRows), 1), CROSS_HIGHLIGHT_MAX_ROWS)
-  const columns = Math.min(Math.max(Math.floor(extentColumns), 1), CROSS_HIGHLIGHT_MAX_COLUMNS)
-  if (!Number.isFinite(activeRow) || !Number.isFinite(activeColumn)) return []
-  if (activeRow < 0 || activeColumn < 0 || activeRow >= rows || activeColumn >= columns) return []
-  return [
-    { key: 'row', startRow: activeRow, startColumn: 0, rowCount: 1, columnCount: columns },
-    { key: 'column', startRow: 0, startColumn: activeColumn, rowCount: rows, columnCount: 1 },
-  ]
+  viewRanges: readonly IRange[],
+  cellAt: (row: number, column: number) => CellRect | null,
+): CrossHighlightRect[] {
+  if (
+    !Number.isInteger(activeRow) ||
+    !Number.isInteger(activeColumn) ||
+    activeRow < 0 ||
+    activeColumn < 0
+  ) {
+    return []
+  }
+  const rects: CrossHighlightRect[] = []
+  const seen = new Set<string>()
+  const push = (rect: CrossHighlightRect): void => {
+    if (!(rect.width > 0) || !(rect.height > 0)) return
+    const key = `${rect.key}:${rect.left}:${rect.top}:${rect.width}:${rect.height}`
+    if (seen.has(key)) return
+    seen.add(key)
+    rects.push(rect)
+  }
+  for (const range of viewRanges) {
+    const startRow = Math.max(0, Math.floor(range.startRow))
+    const endRow = Math.max(startRow, Math.floor(range.endRow))
+    const startColumn = Math.max(0, Math.floor(range.startColumn))
+    const endColumn = Math.max(startColumn, Math.floor(range.endColumn))
+    if (activeRow >= startRow && activeRow <= endRow) {
+      const first = cellAt(activeRow, startColumn)
+      const last = cellAt(activeRow, endColumn)
+      if (first && last) {
+        push({
+          key: 'row',
+          left: first.startX,
+          top: first.startY,
+          width: last.endX - first.startX,
+          height: first.endY - first.startY,
+        })
+      }
+    }
+    if (activeColumn >= startColumn && activeColumn <= endColumn) {
+      const first = cellAt(startRow, activeColumn)
+      const last = cellAt(endRow, activeColumn)
+      if (first && last) {
+        push({
+          key: 'column',
+          left: first.startX,
+          top: first.startY,
+          width: first.endX - first.startX,
+          height: last.endY - first.startY,
+        })
+      }
+    }
+  }
+  return rects
 }
 
 const STORAGE_KEY = 'ai-sheets-cross-highlight'
-
-/**
- * Per-axis maximum of two extent sources (either may be missing): the
- * file-backed sheet extent and the grid's loaded extent. Null only when
- * neither source knows anything.
- */
-export function mergeExtents(
-  primary: { rows: number; columns: number } | null | undefined,
-  secondary: { rows: number; columns: number } | null | undefined,
-): { rows: number; columns: number } | null {
-  if (!primary && !secondary) return null
-  return {
-    rows: Math.max(primary?.rows ?? 0, secondary?.rows ?? 0),
-    columns: Math.max(primary?.columns ?? 0, secondary?.columns ?? 0),
-  }
-}
 
 /** The persisted View-tab toggle; defaults to off (also headless-safe). */
 export function loadCrossHighlightPreference(): boolean {
@@ -85,151 +128,198 @@ export function storeCrossHighlightPreference(enabled: boolean): void {
 }
 
 export interface CrossHighlightOptions {
-  /// Sheet data extent in screen coordinates; under lazy streaming
-  /// getLastRow/getLastColumn only see what already streamed in, so the app
-  /// supplies the file-backed numbers (null falls back to the loaded ones).
-  extents: () => { rows: number; columns: number } | null
+  readonly theme: () => CrossHighlightTheme
 }
 
 export interface CrossHighlightHandle {
   setVisible(visible: boolean): void
+  refresh(): void
   dispose(): void
 }
 
-/** Milliseconds of selection settle time before reinstalling the bands. */
-const SETTLE_MS = 60
+export interface CrossHighlightTarget {
+  readonly workbookId: string
+  readonly sheetId: string
+  readonly row: number
+  readonly column: number
+}
+
+interface CrossHighlightWorkbook {
+  getId(): string
+  getActiveSheet(): { getSheetId(): string } | null
+  getActiveCell(): { getRow(): number; getColumn(): number } | null
+}
+
+/** Resolve the selection's primary cell, not the range rectangle's top-left. */
+export function resolveCrossHighlightTarget(
+  workbook: CrossHighlightWorkbook | null,
+): CrossHighlightTarget | null {
+  if (!workbook) return null
+  const worksheet = workbook.getActiveSheet()
+  const cell = workbook.getActiveCell()
+  if (!worksheet || !cell) return null
+  const row = cell.getRow()
+  const column = cell.getColumn()
+  if (!Number.isInteger(row) || !Number.isInteger(column) || row < 0 || column < 0) return null
+  return {
+    workbookId: workbook.getId(),
+    sheetId: worksheet.getSheetId(),
+    row,
+    column,
+  }
+}
+
+interface CrossHighlightRenderState extends CrossHighlightTarget {
+  readonly visible: boolean
+  readonly theme: CrossHighlightTheme
+}
+
+let renderState: CrossHighlightRenderState = {
+  visible: false,
+  workbookId: '',
+  sheetId: '',
+  row: -1,
+  column: -1,
+  theme: 'light',
+}
 
 /**
- * Subscribes to selection/sheet changes once and keeps two float-DOM bands
- * tracking the active cell whenever the feature is enabled. Reinstalling a
- * band means disposing and re-adding it (float anchors are static), which
- * is why moves are debounced and skipped when the cell did not change.
+ * Grid extension ordered just above authored cell backgrounds and below
+ * fonts/borders. It renders no document content and is disabled for print.
+ */
+export class CrossHighlightExtension extends SheetExtension {
+  readonly uKey = 'GenOfficeCrossHighlightExtension'
+  protected Z_INDEX = 22
+
+  override draw(
+    ctx: UniverRenderingContext,
+    _parentScale: IScale,
+    skeleton: SpreadsheetSkeleton,
+    _diffRanges: IRange[] | undefined,
+    drawInfo?: IDrawInfo,
+  ): void {
+    if (!renderState.visible || ctx.__mode === 'printing') return
+    const worksheet = skeleton.worksheet
+    if (
+      !worksheet ||
+      worksheet.unitId !== renderState.workbookId ||
+      worksheet.getSheetId() !== renderState.sheetId
+    ) {
+      return
+    }
+    const viewRanges = drawInfo?.viewRanges?.length
+      ? drawInfo.viewRanges
+      : [skeleton.rowColumnSegment]
+    const rects = crossHighlightRects(
+      renderState.row,
+      renderState.column,
+      viewRanges,
+      (row, column) => skeleton.getCellWithCoordByIndex(row, column, false),
+    )
+    if (rects.length === 0) return
+    const colors = CROSS_HIGHLIGHT_CANVAS_COLORS[renderState.theme]
+    ctx.save()
+    ctx.fillStyle = colors.fill
+    for (const rect of rects) ctx.fillRect(rect.left, rect.top, rect.width, rect.height)
+    const { scaleX, scaleY } = ctx.getScale()
+    ctx.strokeStyle = colors.line
+    ctx.lineWidth = 1 / Math.max(scaleX, scaleY, 1)
+    ctx.beginPath()
+    for (const rect of rects) {
+      if (rect.key === 'row') {
+        ctx.moveTo(rect.left, rect.top + rect.height)
+        ctx.lineTo(rect.left + rect.width, rect.top + rect.height)
+      } else {
+        ctx.moveTo(rect.left + rect.width, rect.top)
+        ctx.lineTo(rect.left + rect.width, rect.top + rect.height)
+      }
+    }
+    ctx.stroke()
+    ctx.closePath()
+    ctx.restore()
+  }
+}
+
+SpreadsheetExtensionRegistry.add(CrossHighlightExtension)
+
+function markRenderDirty(runtime: UniverRuntime, workbookId: string): void {
+  if (!workbookId) return
+  try {
+    const render = runtime.univer
+      .__getInjector()
+      .get(IRenderManagerService)
+      .getRenderById(workbookId)
+    render?.mainComponent?.makeDirty(true)
+    render?.scene?.makeDirty(true)
+  } catch {
+    // Render modules may not exist yet during workbook replacement.
+  }
+}
+
+/**
+ * Keeps the shared canvas state aligned with the active workbook selection.
+ * Selection moves update four numbers and repaint; no per-move resources are
+ * allocated, so long navigation sessions cannot accumulate observers.
  */
 export function installCrossHighlight(
   runtime: UniverRuntime,
   options: CrossHighlightOptions,
 ): CrossHighlightHandle {
   let visible = false
-  let layers: Disposable[] = []
-  let installedKey = ''
-  let prefix = 0
-  let settleTimer: ReturnType<typeof setTimeout> | null = null
+  let disposed = false
 
-  const clearLayers = (): void => {
-    for (const layer of layers) {
+  const sync = (): void => {
+    if (disposed) return
+    const previousWorkbookId = renderState.visible ? renderState.workbookId : ''
+    const target = (() => {
       try {
-        layer.dispose()
+        return visible ? resolveCrossHighlightTarget(runtime.univerAPI.getActiveWorkbook()) : null
       } catch {
-        // The float layer already died with a closed workbook or sheet.
+        return null
       }
-    }
-    layers = []
-    installedKey = ''
-  }
-
-  const apply = (): void => {
-    settleTimer = null
-    if (!visible) return
-    let position: { sheetId: string; row: number; column: number } | null = null
-    try {
-      const workbook = runtime.univerAPI.getActiveWorkbook()
-      const worksheet = workbook?.getActiveSheet()
-      const range = workbook?.getActiveRange()
-      if (workbook && worksheet && range) {
-        position = {
-          sheetId: worksheet.getSheetId(),
-          row: range.getRow(),
-          column: range.getColumn(),
+    })()
+    const next: CrossHighlightRenderState = target
+      ? { ...target, visible: true, theme: options.theme() }
+      : {
+          visible: false,
+          workbookId: '',
+          sheetId: '',
+          row: -1,
+          column: -1,
+          theme: options.theme(),
         }
-      }
-    } catch {
-      position = null
-    }
-    if (!position) {
-      clearLayers()
+    if (
+      next.visible === renderState.visible &&
+      next.workbookId === renderState.workbookId &&
+      next.sheetId === renderState.sheetId &&
+      next.row === renderState.row &&
+      next.column === renderState.column &&
+      next.theme === renderState.theme
+    ) {
       return
     }
-    const key = `${position.sheetId}:${position.row}:${position.column}`
-    if (key === installedKey) return
-    clearLayers()
-    const loaded = (() => {
-      try {
-        const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
-        if (!worksheet) return null
-        return { rows: worksheet.getLastRow() + 1, columns: worksheet.getLastColumn() + 1 }
-      } catch {
-        return null
-      }
-    })()
-    // Mirror page-break preview: the bands must reach past the data extent,
-    // so take the max of what the app reports (file-backed, journal-shifted)
-    // and whatever has already streamed into the grid.
-    const extent = mergeExtents(options.extents(), loaded)
-    const bands = crossHighlightLayers(
-      position.row,
-      position.column,
-      extent?.rows ?? 1,
-      extent?.columns ?? 1,
-    )
-    if (bands.length === 0) return
-    prefix += 1
-    const worksheet = (() => {
-      try {
-        return runtime.univerAPI.getActiveWorkbook()?.getSheetBySheetId(position!.sheetId) ?? null
-      } catch {
-        return null
-      }
-    })()
-    if (!worksheet) return
-    for (const band of bands) {
-      const componentKey = `sheets-crosshair-${prefix}-${band.key}`
-      try {
-        layers.push(
-          runtime.univerAPI.registerComponent(componentKey, () => (
-            <div className={`sheets-crosshair-band crosshair-${band.key}`} />
-          )),
-        )
-        const floating = worksheet.addFloatDomToRange(
-          worksheet.getRange(band.startRow, band.startColumn, band.rowCount, band.columnCount),
-          { componentKey, allowTransform: false, eventPassThrough: true },
-          {},
-          componentKey,
-        )
-        if (floating) layers.push(floating)
-      } catch {
-        // Closed workbook mid-install; drop whatever landed.
-        clearLayers()
-        return
-      }
-    }
-    installedKey = key
+    renderState = next
+    markRenderDirty(runtime, previousWorkbookId)
+    if (next.workbookId !== previousWorkbookId) markRenderDirty(runtime, next.workbookId)
   }
 
-  const schedule = (): void => {
-    if (!visible) return
-    if (settleTimer !== null) clearTimeout(settleTimer)
-    settleTimer = setTimeout(apply, SETTLE_MS)
-  }
-
-  const disposables: Disposable[] = []
-  disposables.push(runtime.univerAPI.addEvent(runtime.univerAPI.Event.SelectionChanged, schedule))
-  disposables.push(runtime.univerAPI.addEvent(runtime.univerAPI.Event.ActiveSheetChanged, schedule))
+  const disposables = [
+    runtime.univerAPI.addEvent(runtime.univerAPI.Event.SelectionChanged, sync),
+    runtime.univerAPI.addEvent(runtime.univerAPI.Event.ActiveSheetChanged, sync),
+  ]
 
   return {
     setVisible(next: boolean): void {
       visible = next
-      if (!next) {
-        if (settleTimer !== null) clearTimeout(settleTimer)
-        settleTimer = null
-        clearLayers()
-        return
-      }
-      apply()
+      sync()
+    },
+    refresh(): void {
+      sync()
     },
     dispose(): void {
-      if (settleTimer !== null) clearTimeout(settleTimer)
-      settleTimer = null
-      clearLayers()
+      visible = false
+      sync()
+      disposed = true
       for (const disposable of disposables) disposable.dispose()
     },
   }

@@ -9,6 +9,7 @@ import {
   coveredByWindow,
   extraComparator,
   installLazyFindBridge,
+  journalShadowKeys,
   mergeFindMatches,
   planLazyFind,
   scalarToText,
@@ -84,6 +85,12 @@ describe('buildLazyCellTest', () => {
     expect(test?.({ value: '240', formula: undefined })).toBe(false)
     const valueTest = buildLazyCellTest(query({ findString: '240', findBy: 'value' }))
     expect(valueTest?.({ value: '240', formula: '=A2*2' })).toBe(true)
+  })
+
+  it('trims the needle like the built-in preprocessor', () => {
+    const test = buildLazyCellTest(query({ findString: '  Total  ' }))!
+    expect(test({ value: 'subtotal', formula: undefined })).toBe(true)
+    expect(buildLazyCellTest(query({ findString: '   ' }))).toBeNull()
   })
 
   it('rejects an empty needle', () => {
@@ -190,13 +197,14 @@ describe('extraComparator', () => {
 type FakeOverrides = {
   preloadComplete?: boolean
   journalCells?: LazyWorkbookState['editJournal']['cells']
+  rowCount?: number
 }
 
 function state(overrides: FakeOverrides): LazyWorkbookState {
   return {
     file: {
       sessionId: 'session-1',
-      sheets: [{ id: 's1', name: 'Sheet1', rowCount: 1000, columnCount: 8 }],
+      sheets: [{ id: 's1', name: 'Sheet1', rowCount: overrides.rowCount ?? 1000, columnCount: 8 }],
     },
     generation: 1,
     loadedRanges: new Map<string, IRange>([
@@ -300,20 +308,75 @@ class FakeInnerModel extends FindModel {
   focusSelection(): void {}
 }
 
+/** Index-cursor navigation like the built-in SheetFindModel: currentMatch
+ *  advances by list index, loop takes the modulo, exhaustion resets the
+ *  cursor, ignoreSelection starts from the first/last match. */
+class CursorInnerModel extends FakeInnerModel {
+  private cursor = -1
+  /** Like the built-in, focusSelection moves the grid selection to the
+   *  current match. */
+  onFocus: ((row: number, column: number) => void) | null = null
+
+  constructor(private readonly list: IFindMatch[]) {
+    super(list)
+  }
+
+  override focusSelection(): void {
+    if (this.cursor < 0 || !this.onFocus) return
+    const bounds = (this.list[this.cursor] as LazyCellMatch).range.range
+    this.onFocus(bounds.startRow, bounds.startColumn)
+  }
+
+  override moveToNextMatch(params?: { loop?: boolean }): IFindMatch | null {
+    return this.step(1, params)
+  }
+
+  override moveToPreviousMatch(params?: { loop?: boolean }): IFindMatch | null {
+    return this.step(-1, params)
+  }
+
+  private step(delta: number, params?: { loop?: boolean }): IFindMatch | null {
+    if (this.list.length === 0) return null
+    if (this.cursor < 0) {
+      this.cursor = delta > 0 ? 0 : this.list.length - 1
+      return this.list[this.cursor]!
+    }
+    const next = this.cursor + delta
+    if (next < 0 || next >= this.list.length) {
+      if (params?.loop) {
+        this.cursor = (next + this.list.length) % this.list.length
+        return this.list[this.cursor]!
+      }
+      this.cursor = -1
+      return null
+    }
+    this.cursor = next
+    return this.list[next]!
+  }
+}
+
 function facade(lazyState: LazyWorkbookState | null) {
   const setValues = vi.fn()
+  // Selection follows activation, like the live grid does.
+  const active = { row: 0, column: 0 }
   const worksheet = {
     getSheetId: () => 's1',
     getSheetName: () => 'Sheet1',
     scrollToCell: vi.fn(),
-    getRange: vi.fn(() => ({ activate: vi.fn(), setValues })),
+    getRange: vi.fn((row: number, column: number) => ({
+      activate: () => {
+        active.row = row
+        active.column = column
+      },
+      setValues,
+    })),
   }
   const workbook = {
     getId: () => 'workbook-1',
     getSheets: () => [worksheet],
     getActiveSheet: () => worksheet,
     getSheetBySheetId: (sheetId: string) => (sheetId === 's1' ? worksheet : null),
-    getActiveRange: () => ({ getRow: () => 0, getColumn: () => 0 }),
+    getActiveRange: () => ({ getRow: () => active.row, getColumn: () => active.column }),
     setActiveSheet: vi.fn(),
   }
   const providers = new Set<unknown>()
@@ -346,6 +409,7 @@ function facade(lazyState: LazyWorkbookState | null) {
     providers,
     service,
     registrations,
+    active,
   }
 }
 
@@ -456,6 +520,256 @@ describe('installLazyFindBridge', () => {
     const model = models[0]!
     await vi.waitFor(() => expect(harness.setMessage).toHaveBeenCalled())
     expect(model.getMatches()).toHaveLength(0)
+    // A failed first read scanned nothing — the message must say so instead
+    // of quoting the budget cap.
+    expect(harness.setMessage.mock.calls[0]![0]).toContain('"cells":"0"')
+    bridge.dispose()
+  })
+
+  it('stops scanning by scanned extent, not by hit count', async () => {
+    // 1M rows x 8 columns = 8M cells; the 400k budget must cut the scan off
+    // after ~23 of the ~445 batches even though nothing matches.
+    const harness = facade(state({ rowCount: 1_000_000 }))
+    const inner = new FakeInnerModel([])
+    const builtin = { find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() }
+    harness.providers.add(builtin)
+    const bridge = installLazyFindBridge(harness)
+
+    mockRead.mockResolvedValue(mapped([]))
+
+    await harnessLookup(harness)(query())
+    await vi.waitFor(() => expect(harness.setMessage).toHaveBeenCalled())
+    expect(mockRead.mock.calls.length).toBeLessThan(30)
+    const message = harness.setMessage.mock.calls[0]![0] as string
+    expect(message).toContain('appFindScanTruncated')
+    // Actual scanned extent (414k), not the 400,000 constant.
+    expect(message).toMatch(/414/)
+    bridge.dispose()
+  })
+
+  it('walks past in-window hits into the extras and wraps globally', async () => {
+    const harness = facade(state({}))
+    const inner = new CursorInnerModel([match('s1', 1, 1), match('s1', 2, 2)])
+    inner.onFocus = (row, column) => {
+      harness.active.row = row
+      harness.active.column = column
+    }
+    const builtin = { find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() }
+    harness.providers.add(builtin)
+    const bridge = installLazyFindBridge(harness)
+
+    mockRead.mockResolvedValue(mapped([{ row: 500, column: 3, value: 'deep needle' }]))
+
+    const models = await harnessLookup(harness)(query())
+    const model = models[0]!
+    await vi.waitFor(() => expect(model.getMatches()).toHaveLength(3))
+
+    // The dialog's Find Next always passes loop: true on a single model.
+    const move = () => model.moveToNextMatch({ loop: true }) as LazyCellMatch | null
+    expect(move()!.range.range.startRow).toBe(1)
+    expect(move()!.range.range.startRow).toBe(2)
+    expect(move()!.range.range.startRow).toBe(500)
+    expect(harness.worksheet.scrollToCell).toHaveBeenCalledWith(500, 3)
+    // Extras exhausted: wrap back into the inner session, full cycle.
+    expect(move()!.range.range.startRow).toBe(1)
+    expect(move()!.range.range.startRow).toBe(2)
+    expect(move()!.range.range.startRow).toBe(500)
+    bridge.dispose()
+  })
+
+  it('keeps file matches findable under style-only journal edits', async () => {
+    const journalCells = new Map([
+      [
+        's1',
+        new Map([
+          ['500:3', { row: 500, column: 3, value: null, hasValue: false, style: { bold: true } }],
+          ['600:3', { row: 600, column: 3, value: 'overwritten', hasValue: true }],
+        ]),
+      ],
+    ]) as unknown as LazyWorkbookState['editJournal']['cells']
+    const lazyState = state({ journalCells })
+    expect(journalShadowKeys(lazyState, 's1')).toEqual(new Set(['600:3']))
+
+    const harness = facade(lazyState)
+    const inner = new FakeInnerModel([])
+    const builtin = { find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() }
+    harness.providers.add(builtin)
+    const bridge = installLazyFindBridge(harness)
+
+    mockRead.mockResolvedValue(
+      mapped([
+        { row: 500, column: 3, value: 'file needle under style edit' },
+        { row: 600, column: 3, value: 'file needle overwritten in session' },
+      ]),
+    )
+
+    const models = await harnessLookup(harness)(query())
+    const model = models[0]!
+    await settle(model)
+    const rows = model.getMatches().map((hit) => (hit as LazyCellMatch).range.range.startRow)
+    // The style-only edit leaves the file value findable; the overwrite hides it.
+    expect(rows).toEqual([500])
+    bridge.dispose()
+  })
+
+  it('follows column-major order for by-column searches', async () => {
+    const harness = facade(state({}))
+    const inner = new FakeInnerModel([])
+    const builtin = { find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() }
+    harness.providers.add(builtin)
+    const bridge = installLazyFindBridge(harness)
+
+    mockRead.mockResolvedValue(
+      mapped([
+        { row: 100, column: 2, value: 'needle a' },
+        { row: 500, column: 1, value: 'needle b' },
+      ]),
+    )
+
+    const models = await harnessLookup(harness)(query({ findDirection: 'column' }))
+    const model = models[0]!
+    await vi.waitFor(() => expect(model.getMatches()).toHaveLength(2))
+
+    const first = model.moveToNextMatch() as LazyCellMatch
+    expect(first.range.range.startColumn).toBe(1)
+    expect(first.range.range.startRow).toBe(500)
+    bridge.dispose()
+  })
+
+  it('drops the extra cursor once the inner session resumes', async () => {
+    const harness = facade(state({}))
+    const inner = new CursorInnerModel([match('s1', 1, 1)])
+    inner.onFocus = (row, column) => {
+      harness.active.row = row
+      harness.active.column = column
+    }
+    const builtin = { find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() }
+    harness.providers.add(builtin)
+    const bridge = installLazyFindBridge(harness)
+
+    mockRead.mockResolvedValue(mapped([{ row: 500, column: 3, value: 'deep needle' }]))
+
+    const models = await harnessLookup(harness)(query())
+    const model = models[0]!
+    await vi.waitFor(() => expect(model.getMatches()).toHaveLength(2))
+
+    const move = () => model.moveToNextMatch({ loop: true }) as LazyCellMatch | null
+    expect(move()!.range.range.startRow).toBe(1)
+    expect(move()!.range.range.startRow).toBe(500)
+    expect(move()!.range.range.startRow).toBe(1)
+
+    // Inner owns the cursor again: neither focus nor replace may touch the
+    // stale extra.
+    harness.worksheet.scrollToCell.mockClear()
+    model.focusSelection()
+    expect(harness.worksheet.scrollToCell).not.toHaveBeenCalled()
+    await model.replace('x')
+    expect(harness.setValues).not.toHaveBeenCalled()
+    bridge.dispose()
+  })
+
+  it('does not touch the grid once the workbook state went stale', async () => {
+    const harness = facade(state({}))
+    const inner = new FakeInnerModel([])
+    const builtin = { find: vi.fn().mockResolvedValue([inner]), terminate: vi.fn() }
+    harness.providers.add(builtin)
+    const bridge = installLazyFindBridge(harness)
+
+    mockRead.mockResolvedValue(mapped([{ row: 500, column: 3, value: 'deep needle' }]))
+
+    const models = await harnessLookup(harness)(query())
+    const model = models[0]!
+    await settle(model)
+
+    harness.lazyWorkbookRef.current = null
+    model.moveToNextMatch()
+    expect(harness.worksheet.scrollToCell).not.toHaveBeenCalled()
+    expect(mockEnsure).not.toHaveBeenCalled()
+    bridge.dispose()
+  })
+})
+
+/** A model whose disposal is observable, like the built-in SheetFindModel. */
+class DisposableInnerModel extends FakeInnerModel {
+  disposed = false
+
+  override dispose(): void {
+    this.disposed = true
+    super.dispose()
+  }
+}
+
+/** Mimics SheetsFindReplaceProvider: find() first terminates prior models. */
+function univerLikeBuiltin(matches: IFindMatch[]) {
+  let liveModels: DisposableInnerModel[] = []
+  const terminate = () => {
+    liveModels.forEach((model) => model.dispose())
+    liveModels = []
+  }
+  return {
+    findCalls: 0,
+    async find(_query: unknown) {
+      this.findCalls += 1
+      terminate()
+      const model = new DisposableInnerModel(matches)
+      liveModels = [model]
+      return [model]
+    },
+    terminate,
+    liveModel: () => liveModels[0] ?? null,
+  }
+}
+
+/** Mirrors FindReplaceModel._startSearching: dispatches to EVERY provider in
+ *  the service's live set — the semantics that made append-only registration
+ *  double-run the built-in. */
+async function dispatchLikeUniver(harness: ReturnType<typeof facade>): Promise<FindModel[]> {
+  const list = Array.from(harness.providers) as {
+    find(q: unknown): Promise<FindModel[]>
+  }[]
+  return (await Promise.all(list.map((provider) => provider.find(query())))).flat()
+}
+
+describe('service-level dispatch (Univer semantics)', () => {
+  beforeEach(() => {
+    mockRead.mockReset()
+    mockEnsure.mockReset()
+    mockEnsure.mockResolvedValue(true)
+  })
+
+  it('detaches the built-in so a search reaches it exactly once', async () => {
+    const harness = facade(state({}))
+    const builtin = univerLikeBuiltin([match('s1', 1, 1)])
+    harness.providers.add(builtin)
+    const bridge = installLazyFindBridge(harness)
+    expect([...harness.providers]).toHaveLength(1)
+
+    mockRead.mockResolvedValue(mapped([]))
+    const models = await dispatchLikeUniver(harness)
+    expect(builtin.findCalls).toBe(1)
+    expect(models).toHaveLength(1)
+    expect(models[0]!.getMatches()).toHaveLength(1)
+    expect(builtin.liveModel()!.disposed).toBe(false)
+
+    bridge.dispose()
+    expect([...harness.providers]).toContain(builtin)
+  })
+
+  it('sweeps up a built-in that registers after the bridge', async () => {
+    const harness = facade(state({}))
+    const bridge = installLazyFindBridge(harness)
+    const builtin = univerLikeBuiltin([match('s1', 1, 1)])
+    harness.service.registerFindReplaceProvider(builtin)
+
+    mockRead.mockResolvedValue(mapped([]))
+    await dispatchLikeUniver(harness)
+    expect([...harness.providers]).not.toContain(builtin)
+
+    const before = builtin.findCalls
+    const models = await dispatchLikeUniver(harness)
+    expect(builtin.findCalls).toBe(before + 1)
+    expect(models).toHaveLength(1)
+    expect(models[0]!.getMatches()).toHaveLength(1)
     bridge.dispose()
   })
 })

@@ -538,6 +538,11 @@ impl ColorContext {
 pub struct ThemeFonts {
     pub major: String,
     pub minor: String,
+    /// minorFont `<a:ea typeface>` when non-empty: the East-Asian face a CJK
+    /// Excel resolves scheme="minor" fonts to (the latin face only covers
+    /// Latin text, but column-width MDW follows the Normal font's EA face).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minor_ea: Option<String>,
 }
 
 pub fn read_theme_fonts(
@@ -553,20 +558,29 @@ pub fn read_theme_fonts(
     else {
         return Ok(None);
     };
-    let latin = |name: &str| -> Option<String> {
+    let typeface = |name: &str, script: &str| -> Option<String> {
         scheme
             .children()
             .find(|child| child.has_tag_name(name))?
             .children()
-            .find(|child| child.has_tag_name("latin"))?
+            .find(|child| child.has_tag_name(script))?
             .attribute("typeface")
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned)
     };
-    Ok(match (latin("majorFont"), latin("minorFont")) {
-        (Some(major), Some(minor)) => Some(ThemeFonts { major, minor }),
-        _ => None,
-    })
+    Ok(
+        match (
+            typeface("majorFont", "latin"),
+            typeface("minorFont", "latin"),
+        ) {
+            (Some(major), Some(minor)) => Some(ThemeFonts {
+                major,
+                minor,
+                minor_ea: typeface("minorFont", "ea"),
+            }),
+            _ => None,
+        },
+    )
 }
 
 /// Children with the given local tag, resolving mc:AlternateContent wrappers
@@ -606,9 +620,9 @@ pub fn read_styles(
     theme_fonts: Option<&ThemeFonts>,
     locale: &str,
     short_date_format: Option<&str>,
-) -> Result<(Vec<CellStyle>, Vec<CellStyle>), SidecarError> {
+) -> Result<(Vec<CellStyle>, Vec<CellStyle>, Option<String>), SidecarError> {
     let Some(xml) = read_optional_xml(archive, "xl/styles.xml")? else {
-        return Ok((vec![CellStyle::default()], Vec::new()));
+        return Ok((vec![CellStyle::default()], Vec::new(), None));
     };
     let document = parse_document(&xml, "styles.xml")?;
     // Only the top-level <numFmts> table: dxf-local <numFmt> entries reuse
@@ -654,9 +668,19 @@ pub fn read_styles(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let styles = document
+    let cell_xfs = document
         .descendants()
-        .find(|node| node.has_tag_name("cellXfs"))
+        .find(|node| node.has_tag_name("cellXfs"));
+    // Literal cached <name val> of the Normal (cellXfs[0]) font: for scheme
+    // fonts the theme substitution below erases it, but Excel derives the
+    // column-width MDW from this face (a ja workbook caches the locale
+    // resolution, e.g. MS PGothic, while the theme latin says Calibri).
+    let normal_font_name = cell_xfs
+        .and_then(|node| mc_children(node, "xf").into_iter().next())
+        .and_then(|xf| numeric_attribute(xf, "fontId"))
+        .and_then(|index| fonts.get(index))
+        .and_then(|font| font.family.clone());
+    let styles = cell_xfs
         .map(|node| {
             mc_children(node, "xf")
                 .into_iter()
@@ -754,7 +778,7 @@ pub fn read_styles(
     } else {
         styles
     };
-    Ok((styles, dxfs))
+    Ok((styles, dxfs, normal_font_name))
 }
 
 /// Differential (dxf) styles referenced by conditional-formatting rules.

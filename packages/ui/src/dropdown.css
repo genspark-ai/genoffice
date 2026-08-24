@@ -63,7 +63,13 @@
   top: calc(anchor(bottom) + 2px);
   left: anchor(left);
   min-width: anchor-size(width);
-  position-try-fallbacks: flip-block;
+  /* flip-inline: a popover wider than its trigger near the window's right edge would
+   * otherwise run offscreen and clip (fixed positioning clips at the viewport) —
+   * flipping right-aligns it to the trigger so it grows leftwards instead */
+  position-try-fallbacks:
+    flip-block,
+    flip-inline,
+    flip-block flip-inline;
   position-visibility: anchors-visible;
   z-index: 80;
   box-sizing: border-box;

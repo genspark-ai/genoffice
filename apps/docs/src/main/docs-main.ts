@@ -8,7 +8,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import {
   BrowserWindow,
@@ -24,11 +24,13 @@ import {
 } from 'electron'
 import {
   appMenuLabels,
+  buildPrintableHtml,
   configuredDefaultSaveDir,
   contextMenuLabels,
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
+  printHtmlToPdf,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
@@ -74,10 +76,13 @@ import {
   imageSearch,
 } from '@genoffice/ai-search'
 import type {
+  AiDocContent,
   AttachmentAddResult,
   AttachmentImageResult,
   AttachmentMeta,
   AttachmentReadResult,
+  CreateDocumentRequest,
+  CreateDocumentResult,
   DecryptOpenResult,
   DocsTabInfo,
   MenuCommand,
@@ -206,6 +211,7 @@ const tMain = createI18n({
     menuAiProofread: 'AI 校对',
     menuWindow: '窗口',
     menuHelp: '帮助',
+    menuShortcuts: '键盘快捷键',
     menuDocsHelp: 'GenOffice Docs 帮助',
   },
   en: {
@@ -299,6 +305,7 @@ const tMain = createI18n({
     menuAiProofread: 'AI Proofread',
     menuWindow: 'Window',
     menuHelp: 'Help',
+    menuShortcuts: 'Keyboard Shortcuts',
     menuDocsHelp: 'GenOffice Docs Help',
   },
   ja: {
@@ -392,6 +399,7 @@ const tMain = createI18n({
     menuAiProofread: 'AI 校正',
     menuWindow: 'ウィンドウ',
     menuHelp: 'ヘルプ',
+    menuShortcuts: 'キーボードショートカット',
     menuDocsHelp: 'GenOffice Docs ヘルプ',
   },
   ko: {
@@ -486,6 +494,7 @@ const tMain = createI18n({
     menuAiProofread: 'AI 교정',
     menuWindow: '창',
     menuHelp: '도움말',
+    menuShortcuts: '키보드 바로 가기',
     menuDocsHelp: 'GenOffice Docs 도움말',
   },
   fr: {
@@ -581,6 +590,7 @@ const tMain = createI18n({
     menuAiProofread: 'Relecture IA',
     menuWindow: 'Fenêtre',
     menuHelp: 'Aide',
+    menuShortcuts: 'Raccourcis clavier',
     menuDocsHelp: 'Aide GenOffice Docs',
   },
   de: {
@@ -676,6 +686,7 @@ const tMain = createI18n({
     menuAiProofread: 'KI-Korrektur',
     menuWindow: 'Fenster',
     menuHelp: 'Hilfe',
+    menuShortcuts: 'Tastenkombinationen',
     menuDocsHelp: 'GenOffice Docs-Hilfe',
   },
   es: {
@@ -770,6 +781,7 @@ const tMain = createI18n({
     menuAiProofread: 'Corrección con IA',
     menuWindow: 'Ventana',
     menuHelp: 'Ayuda',
+    menuShortcuts: 'Atajos de teclado',
     menuDocsHelp: 'Ayuda de GenOffice Docs',
   },
   th: {
@@ -863,6 +875,7 @@ const tMain = createI18n({
     menuAiProofread: 'พิสูจน์อักษรด้วย AI',
     menuWindow: 'หน้าต่าง',
     menuHelp: 'วิธีใช้',
+    menuShortcuts: 'แป้นพิมพ์ลัด',
     menuDocsHelp: 'วิธีใช้ GenOffice Docs',
   },
   id: {
@@ -956,6 +969,7 @@ const tMain = createI18n({
     menuAiProofread: 'Koreksi AI',
     menuWindow: 'Jendela',
     menuHelp: 'Bantuan',
+    menuShortcuts: 'Pintasan Papan Ketik',
     menuDocsHelp: 'Bantuan GenOffice Docs',
   },
   ru: {
@@ -1050,6 +1064,7 @@ const tMain = createI18n({
     menuAiProofread: 'ИИ-корректура',
     menuWindow: 'Окно',
     menuHelp: 'Справка',
+    menuShortcuts: 'Сочетания клавиш',
     menuDocsHelp: 'Справка GenOffice Docs',
   },
   ar: {
@@ -1144,6 +1159,7 @@ const tMain = createI18n({
     menuAiProofread: 'تدقيق بالذكاء الاصطناعي',
     menuWindow: 'نافذة',
     menuHelp: 'تعليمات',
+    menuShortcuts: 'اختصارات لوحة المفاتيح',
     menuDocsHelp: 'تعليمات GenOffice Docs',
   },
   pt: {
@@ -1238,6 +1254,7 @@ const tMain = createI18n({
     menuAiProofread: 'Revisão com IA',
     menuWindow: 'Janela',
     menuHelp: 'Ajuda',
+    menuShortcuts: 'Atalhos de Teclado',
     menuDocsHelp: 'Ajuda do GenOffice Docs',
   },
   it: {
@@ -1332,6 +1349,7 @@ const tMain = createI18n({
     menuAiProofread: 'Correzione IA',
     menuWindow: 'Finestra',
     menuHelp: 'Aiuto',
+    menuShortcuts: 'Scelte rapide da tastiera',
     menuDocsHelp: 'Guida di GenOffice Docs',
   },
   pl: {
@@ -1426,6 +1444,7 @@ const tMain = createI18n({
     menuAiProofread: 'Korekta AI',
     menuWindow: 'Okno',
     menuHelp: 'Pomoc',
+    menuShortcuts: 'Skróty klawiaturowe',
     menuDocsHelp: 'Pomoc GenOffice Docs',
   },
   nl: {
@@ -1520,6 +1539,7 @@ const tMain = createI18n({
     menuAiProofread: 'AI-proeflezen',
     menuWindow: 'Venster',
     menuHelp: 'Help',
+    menuShortcuts: 'Sneltoetsen',
     menuDocsHelp: 'GenOffice Docs Help',
   },
   ms: {
@@ -1614,6 +1634,7 @@ const tMain = createI18n({
     menuAiProofread: 'Pembacaan Pruf AI',
     menuWindow: 'Tetingkap',
     menuHelp: 'Bantuan',
+    menuShortcuts: 'Pintasan Papan Kekunci',
     menuDocsHelp: 'Bantuan GenOffice Docs',
   },
   he: {
@@ -1706,6 +1727,7 @@ const tMain = createI18n({
     menuAiProofread: 'הגהת AI',
     menuWindow: 'חלון',
     menuHelp: 'עזרה',
+    menuShortcuts: 'קיצורי מקלדת',
     menuDocsHelp: 'עזרה של GenOffice Docs',
   },
   hi: {
@@ -1800,6 +1822,7 @@ const tMain = createI18n({
     menuAiProofread: 'AI प्रूफ़रीडिंग',
     menuWindow: 'विंडो',
     menuHelp: 'सहायता',
+    menuShortcuts: 'कीबोर्ड शॉर्टकट',
     menuDocsHelp: 'GenOffice Docs सहायता',
   },
   'zh-TW': {
@@ -1891,6 +1914,7 @@ const tMain = createI18n({
     menuAiProofread: 'AI 校對',
     menuWindow: '視窗',
     menuHelp: '說明',
+    menuShortcuts: '鍵盤快速鍵',
     menuDocsHelp: 'GenOffice Docs 說明',
   },
 })
@@ -1933,6 +1957,14 @@ const pendingNewBlankIds = new Set<number>()
 /** mark a docs webContents as "open blank on first consume" (called by the shell for home:new-doc) */
 export function markDocsNewBlank(wcId: number): void {
   pendingNewBlankIds.add(wcId)
+}
+
+/** AI-authored content waiting for its create_document tab, keyed by webContents id */
+const pendingAiDocContents = new Map<number, AiDocContent>()
+
+/** queue AI content for a fresh blank docs tab (called by the shell right after creating the view) */
+export function queueDocsAiContent(wcId: number, content: AiDocContent): void {
+  pendingAiDocContents.set(wcId, content)
 }
 
 /** the single real BrowserWindow hosting the tab strip, used as dialog parent in tab mode */
@@ -3073,6 +3105,13 @@ export function registerDocsIpc(): void {
     return false
   })
 
+  /** one-shot AI content queued by create_document for this tab; null when none */
+  ipcMain.handle('docs:consume-ai-doc-content', (event): AiDocContent | null => {
+    const content = pendingAiDocContents.get(event.sender.id) ?? null
+    pendingAiDocContents.delete(event.sender.id)
+    return content
+  })
+
   ipcMain.handle(
     'docs:save',
     async (event, filePath: string, data: ArrayBuffer, auto?: boolean) => {
@@ -3245,6 +3284,12 @@ export function registerDocsIpc(): void {
       return { ok: false, error: String(err) }
     }
   })
+
+  ipcMain.handle(
+    'docs:create-document',
+    (_event, request: CreateDocumentRequest): Promise<CreateDocumentResult> =>
+      createAiDocument(request),
+  )
 
   ipcMain.handle('docs:recent', () =>
     readJson<string[]>(RECENT_PATH(), []).filter((p) => existsSync(p)),
@@ -3429,7 +3474,7 @@ export function registerDocsIpc(): void {
           margins: { top: 0, bottom: 0, left: 0, right: 0 },
         })
         writeFileSync(filePath, data)
-        openExportedPdf(filePath)
+        openGeneratedFile(filePath)
         return { ok: true, path: filePath }
       } catch (err) {
         return { ok: false, error: String(err) }
@@ -3484,7 +3529,7 @@ export function registerDocsIpc(): void {
           for (const page of pages) merged.addPage(page)
         }
         writeFileSync(filePath, Buffer.from(await merged.save()))
-        openExportedPdf(filePath)
+        openGeneratedFile(filePath)
         return { ok: true, path: filePath }
       } catch (err) {
         return { ok: false, error: String(err) }
@@ -3528,6 +3573,8 @@ export function registerDocsIpc(): void {
  * and falls back to real multi-BrowserWindow behavior. */
 interface DocsShellHooks {
   openTab(openPath?: string, options?: { newBlank?: boolean }): void
+  /** open a blank docs tab that consumes the queued AI content on boot (create_document) */
+  openAiDocTab?(content: AiDocContent): void
   listTabs(): DocsTabInfo[]
   focusTab(id: string): void
   /** closes the calling tab instead of the whole shell window (Cmd+W / role:'close') */
@@ -3540,16 +3587,76 @@ export function setDocsShellHooks(hooks: DocsShellHooks | null): void {
   shellHooks = hooks
 }
 
-/** After a successful Docs → PDF export: open the file in a PDF tab (shell)
- * or reveal it in the folder (standalone). Tab-opening failure must not
- * report the export itself as failed — the file is already persisted. */
-function openExportedPdf(path: string): void {
+/** After writing an exported/AI-generated file: open it in the right tab
+ * (shell) or reveal it in the folder (standalone). Tab-opening failure must
+ * not report the write itself as failed — the file is already persisted. */
+function openGeneratedFile(path: string): void {
   try {
     if (shellHooks?.openGeneratedPath?.(path)) return
   } catch (err) {
-    console.warn('[docs] Failed to open exported PDF:', err)
+    console.warn('[docs] Failed to open generated file:', err)
   }
   shell.showItemInFolder(path)
+}
+
+/** Pick a safe file-name stem for an AI-created document. */
+export function sanitizeAiDocFileBase(title: string): string {
+  // Control characters are intentionally rejected from generated file names.
+  const cleaned = String(title ?? '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[/\\:*?"<>|\u0000-\u001f]/g, '_')
+    .trim()
+    .slice(0, 80)
+    .trim()
+  return cleaned && cleaned !== '.' && cleaned !== '..' ? cleaned : 'Untitled'
+}
+
+/**
+ * AI create_document: build a new standalone file in the default folder and
+ * open it in a new tab. docx routes through a fresh blank docs tab that
+ * inserts the queued content on boot and saves itself (the full-fidelity
+ * HTML → docx conversion lives in the docs renderer); pdf and md are written
+ * directly here. Also called by other apps' mains via shell-wired hooks.
+ */
+export async function createAiDocument(
+  request: CreateDocumentRequest,
+): Promise<CreateDocumentResult> {
+  const type = request?.type
+  const title = sanitizeAiDocFileBase(request?.title)
+  const content = String(request?.content ?? '')
+  if (!content.trim()) return { ok: false, error: 'content must not be empty' }
+  try {
+    if (type === 'docx') {
+      const payload: AiDocContent = { title, html: content }
+      if (shellHooks?.openAiDocTab) shellHooks.openAiDocTab(payload)
+      else {
+        const win = createDocsWindow(undefined)
+        markDocsNewBlank(win.webContents.id)
+        queueDocsAiContent(win.webContents.id, payload)
+      }
+      return { ok: true }
+    }
+    if (type === 'pdf') {
+      const bytes = await printHtmlToPdf(
+        buildPrintableHtml(title, content),
+        () =>
+          new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } }),
+      )
+      const filePath = uniquePathIn(defaultSaveDir(), `${title}.pdf`)
+      await writeFile(filePath, bytes)
+      openGeneratedFile(filePath)
+      return { ok: true, path: filePath }
+    }
+    if (type === 'md') {
+      const filePath = uniquePathIn(defaultSaveDir(), `${title}.md`)
+      await writeFile(filePath, content, 'utf8')
+      openGeneratedFile(filePath)
+      return { ok: true, path: filePath }
+    }
+    return { ok: false, error: `unsupported document type: ${String(type)}` }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 // ---- application menu ----
@@ -3805,7 +3912,15 @@ export function buildDocsMenu(): void {
     {
       label: tm('menuHelp'),
       role: 'help',
-      submenu: [{ label: tm('menuDocsHelp'), enabled: false }],
+      submenu: [
+        {
+          label: tm('menuShortcuts'),
+          accelerator: 'CmdOrCtrl+/',
+          click: () => sendCommand('shortcuts'),
+        },
+        { type: 'separator' },
+        { label: tm('menuDocsHelp'), enabled: false },
+      ],
     },
   ]
 

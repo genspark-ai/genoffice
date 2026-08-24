@@ -5,6 +5,7 @@ import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
 import { useI18n, type TFunc } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
+import { SHEET_NAV_SCHEME } from './sheet-nav'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
@@ -100,6 +101,16 @@ function truncateCardName(name: string): string {
     else hi = mid - 1
   }
   return `${name.slice(0, lo).replace(/[-_.\s]+$/, '')}…`
+}
+
+/** Name the scope the way the user thinks of it: by column header when the
+ *  selection covers whole columns, by range only when it cannot be named. */
+function scopeLabel(range: string, columns: readonly string[] | null, t: TFunc): string {
+  if (columns?.length === 1) return t('aiScopeColumn', { name: columns[0] ?? '' })
+  if (columns && columns.length > 1) {
+    return t('aiScopeColumns', { names: columns.join(', '), count: columns.length })
+  }
+  return t('aiScopeRange', { range })
 }
 
 function formatAttachmentSize(bytes: number): string {
@@ -212,6 +223,11 @@ export function AiChatPanel({
   onStop,
   onNewChat,
   onUndo,
+  scopeRange,
+  scopeColumns,
+  scopeLocked,
+  onScopeDismiss,
+  onCitation,
   onExpand,
   onCollapse,
 }: {
@@ -240,6 +256,19 @@ export function AiChatPanel({
   readonly onStop: () => void
   readonly onNewChat: () => void
   readonly onUndo: (steps: number) => void
+  /** A1 notation of the range this run is scoped to, or null when there is no
+   *  scope — a resting single-cell selection carries no intent worth showing,
+   *  and dismissing the chip clears it until the next selection change */
+  readonly scopeRange: string | null
+  /** header names when the scope covers whole columns; they label the chip in
+   *  place of the range */
+  readonly scopeColumns: readonly string[] | null
+  /** the range belongs to a run in flight: it is what that run targets, so it
+   *  is shown without the dismiss control */
+  readonly scopeLocked: boolean
+  readonly onScopeDismiss: () => void
+  /** citation link in an answer ([B12](sheetnav://B12)) */
+  readonly onCitation: (href: string) => void
   readonly onExpand: () => void
   readonly onCollapse: () => void
 }): React.JSX.Element {
@@ -404,6 +433,9 @@ export function AiChatPanel({
 
   const canSend = prompt.trim().length > 0 && !aiBusy
 
+  /** [B12](sheetnav://B12) links in answers jump the grid to the cited range */
+  const citationNav = { scheme: SHEET_NAV_SCHEME, onNavigate: onCitation }
+
   const send = (): void => {
     if (!canSend) return
     stickToBottomRef.current = true
@@ -496,7 +528,7 @@ export function AiChatPanel({
                   <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
                 )}
                 {entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
-                {entry.text && <Markdown text={entry.text} />}
+                {entry.text && <Markdown text={entry.text} nav={citationNav} />}
               </div>
             ))}
             <div className="ai-history-sep">{t('aiHistorySep')}</div>
@@ -541,7 +573,7 @@ export function AiChatPanel({
               <>
                 {entry.tools.length > 0 && <ToolChipList tools={entry.tools} />}
                 {entry.text ? (
-                  <Markdown text={entry.text} />
+                  <Markdown text={entry.text} nav={citationNav} />
                 ) : (
                   entry.streaming && (
                     <span className="ai-typing-row">
@@ -631,75 +663,107 @@ export function AiChatPanel({
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
         <AiComposer
           header={
-            attachments.length > 0 && (
-              <div className="ai-attachments" onScroll={onAttachmentsScroll}>
-                {attachments.map((attachment) =>
-                  ATTACHMENT_IMAGE_EXTS.has(attachment.ext) ? (
-                    <span
-                      key={attachment.path}
-                      className="ai-attachment-thumb"
-                      data-tip={attachment.path}
-                    >
-                      {attachmentPreviews[attachment.path] ? (
-                        <img src={attachmentPreviews[attachment.path]} alt={attachment.name} />
-                      ) : (
-                        <span className="ai-attachment-thumb-pending" aria-hidden>
-                          <img src={fileImageIcon} alt="" />
-                        </span>
-                      )}
+            <>
+              {/* Only a deliberate multi-cell selection shows here: it tells the
+                  user what "this column / these rows" will resolve to, and the
+                  send freezes it so mid-run clicking cannot retarget the run.
+                  While that frozen scope is what shows, dropping it could not
+                  change the run any more, so the × goes away with it. */}
+              {scopeRange !== null && (
+                <div className="ai-scope-row">
+                  <span
+                    className={`ai-scope-hint${scopeLocked ? ' is-locked' : ''}`}
+                    data-tip={t('aiScopeRangeTip')}
+                  >
+                    {scopeLabel(scopeRange, scopeColumns, t)}
+                    {!scopeLocked && (
                       <button
-                        className="ai-attachment-thumb-remove"
-                        onClick={() => onRemoveAttachment(attachment.path)}
-                        data-tip={t('aiRemoveAttachment')}
-                        aria-label={t('aiRemoveAttachment')}
+                        className="ai-scope-clear"
+                        onClick={onScopeDismiss}
+                        data-tip={t('aiScopeClearTitle')}
+                        aria-label={t('aiScopeClearTitle')}
                       >
-                        <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
+                        <svg width="12" height="12" viewBox="0 0 32 32" aria-hidden>
                           <path
                             d="M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6L24 9.4z"
                             fill="currentColor"
-                            stroke="currentColor"
-                            strokeWidth="0.25"
                           />
                         </svg>
                       </button>
-                    </span>
-                  ) : (
-                    <span
-                      key={attachment.path}
-                      className="ai-attachment-card"
-                      data-tip={attachment.path}
-                    >
-                      <span className="ai-attachment-card-icon">
-                        <AttachmentCardIcon ext={attachment.ext} />
-                      </span>
-                      <span className="ai-attachment-card-meta">
-                        <span className="ai-attachment-card-name">
-                          {truncateCardName(attachment.name)}
-                        </span>
-                        <span className="ai-attachment-card-size">
-                          {formatAttachmentSize(attachment.sizeBytes)}
-                        </span>
-                      </span>
-                      <button
-                        className="ai-attachment-thumb-remove"
-                        onClick={() => onRemoveAttachment(attachment.path)}
-                        data-tip={t('aiRemoveAttachment')}
-                        aria-label={t('aiRemoveAttachment')}
+                    )}
+                  </span>
+                </div>
+              )}
+              {attachments.length > 0 && (
+                <div className="ai-attachments" onScroll={onAttachmentsScroll}>
+                  {attachments.map((attachment) =>
+                    ATTACHMENT_IMAGE_EXTS.has(attachment.ext) ? (
+                      <span
+                        key={attachment.path}
+                        className="ai-attachment-thumb"
+                        data-tip={attachment.path}
                       >
-                        <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
-                          <path
-                            d="M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6L24 9.4z"
-                            fill="currentColor"
-                            stroke="currentColor"
-                            strokeWidth="0.25"
-                          />
-                        </svg>
-                      </button>
-                    </span>
-                  ),
-                )}
-              </div>
-            )
+                        {attachmentPreviews[attachment.path] ? (
+                          <img src={attachmentPreviews[attachment.path]} alt={attachment.name} />
+                        ) : (
+                          <span className="ai-attachment-thumb-pending" aria-hidden>
+                            <img src={fileImageIcon} alt="" />
+                          </span>
+                        )}
+                        <button
+                          className="ai-attachment-thumb-remove"
+                          onClick={() => onRemoveAttachment(attachment.path)}
+                          data-tip={t('aiRemoveAttachment')}
+                          aria-label={t('aiRemoveAttachment')}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
+                            <path
+                              d="M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6L24 9.4z"
+                              fill="currentColor"
+                              stroke="currentColor"
+                              strokeWidth="0.25"
+                            />
+                          </svg>
+                        </button>
+                      </span>
+                    ) : (
+                      <span
+                        key={attachment.path}
+                        className="ai-attachment-card"
+                        data-tip={attachment.path}
+                      >
+                        <span className="ai-attachment-card-icon">
+                          <AttachmentCardIcon ext={attachment.ext} />
+                        </span>
+                        <span className="ai-attachment-card-meta">
+                          <span className="ai-attachment-card-name">
+                            {truncateCardName(attachment.name)}
+                          </span>
+                          <span className="ai-attachment-card-size">
+                            {formatAttachmentSize(attachment.sizeBytes)}
+                          </span>
+                        </span>
+                        <button
+                          className="ai-attachment-thumb-remove"
+                          onClick={() => onRemoveAttachment(attachment.path)}
+                          data-tip={t('aiRemoveAttachment')}
+                          aria-label={t('aiRemoveAttachment')}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 32 32" aria-hidden>
+                            <path
+                              d="M24 9.4L22.6 8L16 14.6L9.4 8L8 9.4l6.6 6.6L8 22.6L9.4 24l6.6-6.6l6.6 6.6l1.4-1.4l-6.6-6.6L24 9.4z"
+                              fill="currentColor"
+                              stroke="currentColor"
+                              strokeWidth="0.25"
+                            />
+                          </svg>
+                        </button>
+                      </span>
+                    ),
+                  )}
+                </div>
+              )}
+            </>
           }
           value={prompt}
           busy={aiBusy}

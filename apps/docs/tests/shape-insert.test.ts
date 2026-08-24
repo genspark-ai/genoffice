@@ -21,6 +21,7 @@ import {
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import { insertShapeAt } from '../src/renderer/components/ribbon-tabs'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
+import { textboxBoxStyle } from '../src/renderer/editor/protected-render'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 
 const WIDTH_EMU = 1800000
@@ -117,6 +118,29 @@ describe('shape insertion', () => {
     expect(box?.vAlign).toBe('center')
     expect(box?.textColor).toBe('FFFFFF')
     expect(box?.paras[0]?.align).toBe('center')
+  })
+
+  // The XML above is only half of it: the editor renders from the display model
+  // handed to the node, so if that model is not centered too, a fresh shape reads
+  // top-left and black until the file is saved and reopened.
+  it('the shape shown right after inserting is centered, not just the saved bytes', async () => {
+    const { editor } = await openBlankDoc()
+    insertShapeAt(editor, 'rect')
+    let box: TextboxDisplay | undefined
+    editor.state.doc.descendants((node) => {
+      const boxes = node.attrs?.textboxes as TextboxDisplay[] | null
+      if (boxes?.length) box = boxes[0]
+      return true
+    })
+    expect(box).toBeTruthy()
+    expect(box!.vAlign).toBe('center')
+    expect(box!.textColor).toBe('FFFFFF')
+    expect(box!.paras[0]?.align).toBe('center')
+
+    const css = textboxBoxStyle(box!)
+    expect(css).toContain('justify-content:center')
+    expect(css).toContain('color:#FFFFFF')
+    editor.destroy()
   })
 
   // The two builders are deliberately asymmetric: Insert > Text Box stays top-left

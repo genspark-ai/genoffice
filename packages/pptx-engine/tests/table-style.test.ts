@@ -114,6 +114,19 @@ describe('tableStyles.xml custom styles', () => {
     expect(def.firstRow?.textColor).toBe('#FFFFFF')
   })
 
+  it('tint on a part fill blends in linear gamma (PPT semantics, prod_043 pixel-verified)', () => {
+    const tinted =
+      '<?xml version="1.0"?><a:tblStyleLst xmlns:a="a" def="{T}">' +
+      '<a:tblStyle styleId="{T}" styleName="Tinted">' +
+      '<a:wholeTbl><a:tcStyle><a:fill><a:solidFill>' +
+      '<a:schemeClr val="accent1"><a:tint val="20000"/></a:schemeClr>' +
+      '</a:solidFill></a:fill></a:tcStyle></a:wholeTbl>' +
+      '</a:tblStyle></a:tblStyleLst>'
+    const def = resolveTableStyle('{T}', tinted, theme)!
+    // straight-sRGB mixing would give #DBE3F3; linear gives the lighter #E8EBF5
+    expect(def.wholeTbl?.fill).toEqual({ type: 'solid', color: '#E8EBF5' })
+  })
+
   it('unknown styleId that is not built-in → undefined (stays unstyled)', () => {
     expect(resolveTableStyle('{DEAD-BEEF}', xml, theme)).toBeUndefined()
     expect(resolveTableStyle(undefined, xml, theme)).toBeUndefined()
@@ -161,8 +174,9 @@ describe('tableStyles.xml custom styles', () => {
     expect(def.tblBgRef).toEqual({ idx: 3, phClr: '#4472C4' })
     // alpha 20% → #RRGGBBAA suffix (composites over tblBg at render time)
     expect(def.band1H?.fill).toEqual({ type: 'solid', color: '#FFFFFF33' })
-    // lnRef: phClr from the ref child (tint 50% of accent1), width from the theme lnStyle template
-    expect(def.insideH).toEqual({ fill: { type: 'solid', color: '#A2B9E2' }, width: 25400 })
+    // lnRef: phClr from the ref child (tint 50% of accent1 in linear gamma, PPT semantics),
+    // width from the theme lnStyle template
+    expect(def.insideH).toEqual({ fill: { type: 'solid', color: '#BFC8E4' }, width: 25400 })
     // explicit <a:ln><a:noFill/> → no inside-vertical line
     expect(def.insideV).toBeUndefined()
   })

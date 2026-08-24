@@ -35,7 +35,7 @@ import {
   type ThemeColors,
   type ThemeFonts,
 } from '@genoffice/docx-engine'
-import type { AiSettings, OpenDocxResult } from '../shared/ipc'
+import type { AiDocContent, AiSettings, OpenDocxResult } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
 import { AiPanel, AI_REVISION_AUTHOR } from './ai/AiPanel'
 import type { AiCommentsAccess, AiHeaderFooterAccess } from './ai/tools'
@@ -137,6 +137,7 @@ import {
   LinkInsertModal,
   TableInsertModal,
   applyParagraphStyle,
+  clearParagraphFormatting,
   insertImageFromDataUrl,
   insertImageViaDialog,
   insertPageBreakAt,
@@ -153,6 +154,10 @@ import {
   type ContextMenuState,
 } from './components/ContextMenu'
 import { PromptModal } from './components/PromptModal'
+import { ShortcutsDialog } from './components/ShortcutsDialog'
+import { WordCountDialog, type DocStats } from './components/WordCountDialog'
+import { applyCase, nextCaseMode, selectionText } from './editor/case-transform'
+import { stepHangingIndent, stepParagraphIndent } from './editor/indent'
 import { PasswordDialog } from './components/PasswordDialog'
 import { ProtectDialog, type ProtectDialogResult } from './components/ProtectDialog'
 import { t, useI18n } from './i18n/locale'
@@ -190,6 +195,7 @@ import {
   type PendingNumbering,
 } from './doc-state'
 import {
+  applyAiDocContent as applyAiDocContentImpl,
   exportPdf as exportPdfImpl,
   loadFile as loadFileImpl,
   newFile as newFileImpl,
@@ -223,7 +229,7 @@ import {
   type ReviewContext,
 } from './review-actions'
 
-const _IS_MAC = navigator.platform.toLowerCase().includes('mac')
+const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 
 const twipsToPx = (twips: number) => (twips / 1440) * 96
 
@@ -346,18 +352,6 @@ function makeGapNotesEl(
   return wrap
 }
 
-/** fields of Word's Word Count dialog */
-interface DocStats {
-  pages: number
-  words: number
-  asianChars: number
-  nonAsianWords: number
-  charsNoSpace: number
-  charsWithSpace: number
-  paragraphs: number
-  lines: number
-}
-
 const DEFAULT_SETTINGS: AiSettings = {
   provider: 'anthropic',
   providers: Object.fromEntries(
@@ -373,7 +367,9 @@ export function App() {
   const { lang } = useI18n()
   const [doc, setDoc] = useState<DocState | null>(null)
   /** true until the pending-open / new-blank boot checks settle; the start screen stays hidden meanwhile */
-  const bootPendingRef = useRef<Promise<[OpenDocxResult, boolean]> | null>(null)
+  const bootPendingRef = useRef<Promise<[OpenDocxResult, boolean, AiDocContent | null]> | null>(
+    null,
+  )
   const bootHandledRef = useRef(false)
   /** password prompt for an ECMA-376 encrypted docx; submit retries via openDocxDecrypt */
   const [docPwdPrompt, setDocPwdPrompt] = useState<{
@@ -583,7 +579,11 @@ export function App() {
   const [splitHtml, setSplitHtml] = useState('')
   const [showFind, setShowFind] = useState(false)
   const [findFocusReplace, setFindFocusReplace] = useState(0)
-  const ribbonActionsRef = useRef<{ stepFontSize?: (dir: 1 | -1) => void }>({})
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const ribbonActionsRef = useRef<{
+    stepFontSize?: (dir: 1 | -1) => void
+    nudgeFontSize?: (dir: 1 | -1) => void
+  }>({})
   const [showComments, setShowComments] = useState(false)
   /** Style definitions pending write-back (key = styleId), saved via SaveOptions.styleUpserts */
   const [styleUpserts, setStyleUpserts] = useState<Record<string, StyleUpsert>>({})
@@ -714,10 +714,36 @@ export function App() {
         const data = event.clipboardData
         if (!data) return false
         const html = data.getData('text/html')
+        // web-copied images (r139): "Copy image" in a browser puts a bitmap +
+        // an <img src="http..."> HTML fragment + often the URL as text/plain
+        // on the clipboard. Detect image-only HTML so the bitmap wins over
+        // text parsing, and so a bitmap-less copy can fetch the referenced
+        // image instead of pasting nothing (our parse rules are data:-only).
+        let htmlImgSrcs: string[] = []
+        let htmlHasText = false
+        if (html) {
+          try {
+            const imgDom = new window.DOMParser().parseFromString(html, 'text/html')
+            htmlImgSrcs = [...imgDom.querySelectorAll('img')]
+              .map((img) => img.getAttribute('src') ?? '')
+              .filter(Boolean)
+            htmlHasText = (imgDom.body.textContent ?? '').trim().length > 0
+          } catch {
+            /* unparseable html: treat as not-an-image copy */
+          }
+        }
+        // remote-only: in-app data: copies carry data-image-meta and must keep
+        // going through the DocProtected parse rules (size/align/wrap round-trip
+        // — bugbot); only web copies divert to bitmap/fetch handling
+        const imageOnlyHtml =
+          htmlImgSrcs.length > 0 &&
+          !htmlHasText &&
+          htmlImgSrcs.every((src) => /^https?:\/\//i.test(src))
         // pasting block HTML onto an empty paragraph: replace wholesale (ProseMirror's default
         // first-block merge would demote headings to body text; Word keeps the source block format on empty paragraphs)
         const { $from, empty: selEmpty } = view.state.selection
         if (
+          !imageOnlyHtml &&
           html &&
           selEmpty &&
           $from.parent.isTextblock &&
@@ -741,7 +767,9 @@ export function App() {
           .find((item) => item.type.startsWith('image/'))
           ?.getAsFile()
         const text = data.getData('text/plain')
-        if (imageFile && !text.trim()) {
+        // image-only copies keep the bitmap even when text/plain carries the
+        // source URL (browser "Copy image" does that) — Word pastes the picture
+        if (imageFile && (!text.trim() || imageOnlyHtml)) {
           const reader = new FileReader()
           reader.onload = () => {
             const ed = editorRef.current
@@ -750,6 +778,25 @@ export function App() {
             }
           }
           reader.readAsDataURL(imageFile)
+          return true
+        }
+        // bitmap-less web image copy: fetch the referenced image(s) through the
+        // hardened main-process fetcher (SSRF-guarded, CDN headers) and insert
+        if (!imageFile && imageOnlyHtml) {
+          void (async () => {
+            for (const src of htmlImgSrcs.slice(0, 10)) {
+              const ed = editorRef.current
+              if (!ed) return
+              const fetched = await window.desktop.fetchImage(src)
+              if (fetched) {
+                await insertImageFromDataUrl(
+                  ed,
+                  `data:${fetched.mime};base64,${fetched.base64}`,
+                  'Image (pasted)',
+                )
+              }
+            }
+          })()
           return true
         }
         // text/plain-only Markdown (code blocks, terminals, .md files, LLM
@@ -1113,9 +1160,10 @@ export function App() {
       window.desktop.consumePendingOpenDocx(),
       // Still consume the one-shot new-blank flag so it doesn't leak into the next open
       window.desktop.consumeNewBlankDoc(),
+      window.desktop.consumeAiDocContent(),
     ])
     void bootPendingRef.current
-      .then(async ([pending]) => {
+      .then(async ([pending, , aiContent]) => {
         if (bootHandledRef.current) return
         bootHandledRef.current = true
         // A failed open (corrupt file etc.) falls back to a blank document —
@@ -1124,6 +1172,13 @@ export function App() {
         // 'password': the prompt is up; its cancel path lands on blank instead.
         const outcome = pending ? await loadFile(pending) : 'canceled'
         if (outcome === 'failed' || outcome === 'canceled') await newFile()
+        if (aiContent && !pending) {
+          // fileCtxRef refreshes per render: wait until newFile's setDoc landed
+          for (let i = 0; i < 100 && !fileCtxRef.current.doc; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 20))
+          }
+          await applyAiDocContentImpl(fileCtxRef.current, aiContent)
+        }
       })
       // Open failures also land on a blank document, or the tab stays at "Opening…" forever
       .catch(() => {
@@ -1771,7 +1826,8 @@ export function App() {
       const b = doc?.parsed.blocks.find((bl) => bl.docxIndex === docxIndex)
       if (!b) return undefined
       if (b.type === 'table') {
-        if (!b.originalXml || !/tblHeader|cantSplit/.test(b.originalXml)) return undefined
+        if (!b.originalXml || !/tblHeader|cantSplit|<w:trHeight\b/.test(b.originalXml))
+          return undefined
         return {
           tableRowFlags: tableRowFlags(b.originalXml),
           ...((doc?.parsed.compatibilityMode ?? 0) >= 15 ? { modernTableHeaders: true } : {}),
@@ -2911,6 +2967,19 @@ export function App() {
     })
   }, [editor, zoom, pageInfo.total])
 
+  // Review > Editor, the Tools menu and Word's F7 all run the same AI proofread
+  // behind the one-time whole-document-rewrite acknowledgement
+  const runAiProofread = useCallback(() => {
+    if (
+      localStorage.getItem(AI_REWRITE_ACK_KEY) !== '1' &&
+      !window.confirm(t('ribbonAiRewriteConfirm'))
+    )
+      return
+    localStorage.setItem(AI_REWRITE_ACK_KEY, '1')
+    setShowAi(true)
+    setAiPreset({ text: t('ribbonEditorPrompt'), nonce: Date.now(), autoRun: true })
+  }, [])
+
   // "has unsaved changes" check shared by the close guard and autosave; refreshed on every
   // render (all edit paths forceRender), so the guard's query reads the latest value
   const anyDirtyRef = useRef(false)
@@ -3098,10 +3167,128 @@ export function App() {
         e.preventDefault()
         ribbonActionsRef.current.stepFontSize?.(e.code === 'Period' ? 1 : -1)
       }
+      // Word's one-point nudge ⌘] / ⌘[
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        (e.code === 'BracketRight' || e.code === 'BracketLeft') &&
+        editor &&
+        canEdit
+      ) {
+        e.preventDefault()
+        ribbonActionsRef.current.nudgeFontSize?.(e.code === 'BracketRight' ? 1 : -1)
+      }
+      // Superscript / subscript. Word's own ⌘= / ⇧⌘= collide with the zoom
+      // accelerators for the "=" half only, so the unshifted pair is on ⌘. / ⌘,
+      // (the same keys the shifted grow/shrink pair uses).
+      const vertAlign = e.shiftKey
+        ? e.code === 'Equal'
+          ? 'superscript'
+          : null
+        : e.code === 'Period'
+          ? 'superscript'
+          : e.code === 'Comma'
+            ? 'subscript'
+            : null
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && vertAlign && editor && canEdit) {
+        e.preventDefault()
+        const target = getActiveSubEditor() ?? editor
+        const current = target.getAttributes('docTextStyle').vertAlign
+        target
+          .chain()
+          .focus()
+          .setMark('docTextStyle', { vertAlign: current === vertAlign ? null : vertAlign })
+          .run()
+      }
+      // Word's Shift+F3 case ring
+      if (e.shiftKey && e.key === 'F3' && editor && canEdit) {
+        e.preventDefault()
+        const target = getActiveSubEditor() ?? editor
+        applyCase(target, nextCaseMode(selectionText(target)))
+      }
+      // Clear character formatting ⌃␣ (Word uses Ctrl+Space on both platforms)
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.code === 'Space' && canEdit) {
+        e.preventDefault()
+        ;(getActiveSubEditor() ?? editor)?.chain().focus().unsetAllMarks().run()
+      }
+      // Indent ⌃M / outdent ⌃⇧M and hanging indent ⌘T / ⇧⌘T. Ctrl-only on both
+      // platforms: ⌘M minimizes the window, and indenting a paragraph on the way
+      // out would be a silent edit.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'KeyM' && editor && canEdit) {
+        e.preventDefault()
+        if (!getActiveSubEditor()) stepParagraphIndent(editor, e.shiftKey ? -1 : 1)
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.code === 'KeyT' && editor && canEdit) {
+        e.preventDefault()
+        if (!getActiveSubEditor()) stepHangingIndent(editor, e.shiftKey ? -1 : 1)
+      }
+      // Clear paragraph formatting — Word's Ctrl+Q (⌘Q quits on macOS)
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyQ' && canEdit) {
+        e.preventDefault()
+        if (editor && !getActiveSubEditor()) clearParagraphFormatting(editor)
+      }
+      // Formatting marks: ⌘8 in Word for Mac, Ctrl+Shift+8 on Windows
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.code === 'Digit8' && doc) {
+        e.preventDefault()
+        setShowMarks((v) => !v)
+      }
+      // Track changes ⇧⌘E; forced by an editing restriction it cannot be turned off
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyE' && doc) {
+        e.preventDefault()
+        if (!trackChangesForced) setTrackChanges((v) => !v)
+      }
+      // Word count ⇧⌘G
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyG' && doc) {
+        e.preventDefault()
+        openStats()
+      }
+      // New comment ⌥⌘A (Word for Mac; Windows Word's Ctrl+Alt+M stays on the
+      // Paragraph dialog here)
+      if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyA' && doc && canEdit) {
+        e.preventDefault()
+        setShowComments(true)
+        startNewComment()
+      }
+      // Footnote ⌥⌘F, endnote ⌥⌘E on the Mac / Ctrl+Alt+D on Windows. The
+      // endnote key is platform-exclusive: ⌥⌘D belongs to the macOS Dock.
+      if ((e.metaKey || e.ctrlKey) && e.altKey && doc && canEdit) {
+        const endnoteCode = IS_MAC ? 'KeyE' : 'KeyD'
+        const note = e.code === 'KeyF' ? 'footnote' : e.code === endnoteCode ? 'endnote' : null
+        if (note) {
+          e.preventDefault()
+          insertNote(note)
+        }
+      }
+      // Date / time fields ⌥⇧D / ⌥⇧T
+      if (e.altKey && e.shiftKey && !e.metaKey && !e.ctrlKey && doc && canEdit) {
+        const instr = e.code === 'KeyD' ? 'DATE' : e.code === 'KeyT' ? 'TIME' : null
+        if (instr) {
+          e.preventDefault()
+          insertField(instr)
+        }
+      }
+      // Proofread F7 (Word's spelling & grammar check)
+      if (e.key === 'F7' && !e.shiftKey && doc) {
+        e.preventDefault()
+        runAiProofread()
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [save, openFile, editor, doc, updateFields])
+  }, [
+    save,
+    openFile,
+    editor,
+    doc,
+    updateFields,
+    openStats,
+    startNewComment,
+    insertNote,
+    insertField,
+    runAiProofread,
+    trackChangesForced,
+  ])
 
   // double-click an inline equation / click an equation block's edit button (ones with LaTeX source) → reopen the equation dialog for editing
   useEffect(() => {
@@ -3195,18 +3382,10 @@ export function App() {
           if (doc) openStats()
           break
         case 'ai-proofread':
-          // Same flow as Review > Editor: one-time whole-document-rewrite ack,
-          // then auto-run the AI proofread preset
-          if (doc) {
-            if (
-              localStorage.getItem(AI_REWRITE_ACK_KEY) === '1' ||
-              window.confirm(t('ribbonAiRewriteConfirm'))
-            ) {
-              localStorage.setItem(AI_REWRITE_ACK_KEY, '1')
-              setShowAi(true)
-              setAiPreset({ text: t('ribbonEditorPrompt'), nonce: Date.now(), autoRun: true })
-            }
-          }
+          if (doc) runAiProofread()
+          break
+        case 'shortcuts':
+          setShowShortcuts(true)
           break
         case 'bold':
           editor?.chain().focus().toggleMark('bold').run()
@@ -3255,6 +3434,7 @@ export function App() {
     zoomFit,
     openStats,
     startNewComment,
+    runAiProofread,
   ])
 
   // Word: TOC entries jump on ⌘/Ctrl+click only; a plain click just places the
@@ -3672,9 +3852,43 @@ export function App() {
   const canvasBox = canvasSection ? sectionPageBox(canvasSection) : null
   const canvasTop = canvasSection ? effectiveTopPx(canvasSection, singleHfPx.headerPx) : 0
   const canvasBottom = canvasSection ? effectiveBottomPx(canvasSection, singleHfPx.footerPx) : 0
+  // the shared paper must cover the widest section or its content lays out past
+  // the paper edge onto the editor background (a white band down the right side)
+  const paperW = canvasBox
+    ? Math.max(canvasBox.width, ...sections.map((s) => twipsToPx(s.settings.pageWidth)))
+    : 0
+  // the trailing footer strip belongs to the LAST page, which is always in the
+  // last section; on differing-width docs the stylesheet centering (50% of the
+  // first-section paper) puts it at the wrong x, so pin it to its own section
+  const lastSection = sections[sections.length - 1]?.settings ?? section
+  const lastBox = lastSection ? sectionPageBox(lastSection) : null
+  // pin whenever the shared paper is wider than the footer's own section (a wider
+  // middle section widens the paper too) or the strip width differs from the
+  // first-section default
+  const edgeFooterStyle =
+    lastBox &&
+    canvasBox &&
+    (paperW - lastBox.width > 0.5 || Math.abs(lastBox.contentWidth - canvasBox.contentWidth) > 0.5)
+      ? {
+          width: `${lastBox.contentWidth}px`,
+          left: `${twipsToPx(lastSection!.marginLeft)}px`,
+          transform: 'none',
+          bottom: `${lastBox.footerDist}px`,
+        }
+      : undefined
+  // symmetric pin for the leading header (it belongs to the first section): the
+  // widened shared paper would otherwise re-center it at the wrong x
+  const edgeHeaderStyle =
+    canvasBox && canvasSection && paperW - canvasBox.width > 0.5
+      ? {
+          width: `${canvasBox.contentWidth}px`,
+          left: `${twipsToPx(canvasSection.marginLeft)}px`,
+          transform: 'none',
+        }
+      : undefined
   const docZoomStyle = {
     zoom: zoom / 100,
-    '--page-w': canvasBox ? `${canvasBox.width}px` : undefined,
+    '--page-w': canvasBox ? `${paperW}px` : undefined,
     '--page-h': canvasBox ? `${canvasBox.height}px` : undefined,
     '--section-content-w': canvasBox ? `${canvasBox.contentWidth}px` : undefined,
     '--page-pad': canvasSection
@@ -3920,6 +4134,7 @@ export function App() {
                           readOnly={isProtected || readMode}
                           onCommit={(next) => commitHf('header', next)}
                           pageTotal={pageInfo.total}
+                          style={edgeHeaderStyle}
                         />
                       )}
                       <EditorContent editor={editor} />
@@ -3952,6 +4167,7 @@ export function App() {
                           onCommit={(next) => commitHf('footer', next)}
                           pageNo={lastPageNo?.text ?? pageInfo.total}
                           pageTotal={pageInfo.total}
+                          style={edgeFooterStyle}
                         />
                       )}
                       {(inkAnnotations.length > 0 || inkTool !== 'select') && !readMode && (
@@ -4071,6 +4287,7 @@ export function App() {
         </div>
       </div>
 
+      {showShortcuts && <ShortcutsDialog onClose={() => setShowShortcuts(false)} />}
       {showLinkModal && <LinkInsertModal editor={editor} onClose={() => setShowLinkModal(false)} />}
       {showTableModal && (
         <TableInsertModal editor={editor} onClose={() => setShowTableModal(false)} />
@@ -4190,57 +4407,7 @@ export function App() {
 
       {doc && showPrintDialog && <PrintDialog onClose={closePrintDialog} setStatus={setStatus} />}
 
-      {stats && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(e) => e.target === e.currentTarget && setStats(null)}
-        >
-          <div className="modal">
-            <h2>{t('appWordCountTitle')}</h2>
-            <table className="stats-table">
-              <tbody>
-                <tr>
-                  <td>{t('appStatPages')}</td>
-                  <td>{stats.pages}</td>
-                </tr>
-                <tr>
-                  <td>{t('appStatWords')}</td>
-                  <td>{stats.words}</td>
-                </tr>
-                <tr>
-                  <td>{t('appStatAsianChars')}</td>
-                  <td>{stats.asianChars}</td>
-                </tr>
-                <tr>
-                  <td>{t('appStatNonAsianWords')}</td>
-                  <td>{stats.nonAsianWords}</td>
-                </tr>
-                <tr>
-                  <td>{t('appStatCharsNoSpaces')}</td>
-                  <td>{stats.charsNoSpace}</td>
-                </tr>
-                <tr>
-                  <td>{t('appStatCharsWithSpaces')}</td>
-                  <td>{stats.charsWithSpace}</td>
-                </tr>
-                <tr>
-                  <td>{t('appStatParagraphs')}</td>
-                  <td>{stats.paragraphs}</td>
-                </tr>
-                <tr>
-                  <td>{t('appStatLines')}</td>
-                  <td>{stats.lines}</td>
-                </tr>
-              </tbody>
-            </table>
-            <div className="modal-actions">
-              <button className="btn-primary" onClick={() => setStats(null)}>
-                {t('appClose')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {stats && <WordCountDialog stats={stats} onClose={() => setStats(null)} />}
 
       {docPwdPrompt && (
         <PasswordDialog

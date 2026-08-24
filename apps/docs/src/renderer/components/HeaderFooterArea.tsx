@@ -77,6 +77,7 @@ export function HeaderFooterArea({
   onCommit,
   pageNo,
   pageTotal,
+  style,
 }: {
   kind: 'header' | 'footer'
   value: HfValue
@@ -88,6 +89,8 @@ export function HeaderFooterArea({
   pageNo?: number | string
   /** Total page count shown for TOTAL_PAGES_MARK (NUMPAGES field), defaults to 1 */
   pageTotal?: number
+  /** geometry override: on differing-width sections the strip is pinned to its own section's box */
+  style?: React.CSSProperties
 }) {
   const { t } = useI18n()
   const [editing, setEditing] = useState(false)
@@ -138,6 +141,7 @@ export function HeaderFooterArea({
   return (
     <div
       className={`page-hf page-hf-${kind}${editing ? ' page-hf-editing' : ''}`}
+      style={style}
       data-tip={
         readOnly
           ? undefined

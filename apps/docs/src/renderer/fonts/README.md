@@ -49,10 +49,11 @@ chain order; advances are 1.0em everywhere, so line breaking is unchanged.
 
 ## Korean fallback
 
-| Font                              | Role                                             |
-| --------------------------------- | ------------------------------------------------ |
-| GenOffice Serif KR (subset woff2) | Batang-metric stand-in for Korean serif families |
-| GenOffice Sans KR (subset woff2)  | fallback for Korean sans families (Malgun etc.)  |
+| Font                                 | Role                                                      |
+| ------------------------------------ | --------------------------------------------------------- |
+| GenOffice Serif KR (subset woff2)    | Batang-metric stand-in for Korean serif families          |
+| GenOffice Sans KR (subset woff2)     | fallback for Korean sans families (Malgun etc.)           |
+| GenOffice Che Latin KR (ASCII woff2) | half-width Latin for BatangChe/GulimChe/DotumChe families |
 
 Source: Noto Serif/Sans CJK KR Regular from [notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)
 (SIL OFL 1.1), subset with fonttools to the 2,350 KS X 1001 syllables + jamo
@@ -65,9 +66,20 @@ would shift line breaks ~8% vs Word), serif digits → 0.596em and space →
 measured Malgun Gothic advances (space 0.352em, digits 0.551em; Noto's 0.224em
 space alone drifted Korean sans line breaks ~3%/line —
 `tools/normalize-kr-sans-hmtx.py`, asserted by `tests/kr-font-metrics.test.ts`).
-Renamed because OFL reserves the "Noto" name
-for unmodified builds. Conjoining jamo keep native advances (shaping). Word
-counterpart line factors live in `lineHeightFactor()` of `line-metrics.ts`.
+The printable Latin outlines are also horizontally transformed to the measured
+ink widths and side bearings of Batang/Malgun
+(`tools/normalize-kr-latin-metrics.py`,
+`tools/scale-kr-sans-latin-ink.py`).
+
+`GenOfficeCheLatinKR.woff2` is an ASCII-only derivative of GenOffice Sans KR.
+`tools/build-kr-che-latin-font.py` gives its Noto-derived outlines fixed 0.5em
+advances and transforms them to measured DotumChe ink boxes. Microsoft Office
+fonts are build-time measurement references only; no Microsoft outlines are
+included. All three derivatives are renamed because OFL reserves the "Noto"
+name for unmodified builds. Conjoining jamo keep native advances (shaping).
+Word counterpart line factors live in `lineHeightFactor()` of
+`line-metrics.ts`. The Adobe/Google copyright and full OFL 1.1 text are in
+`LICENSE-OFL.txt`.
 
 ### GenOffice Gothic KR
 

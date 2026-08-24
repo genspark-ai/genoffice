@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { ChartDisplay, CommentInfo, NewChart } from '@genoffice/docx-engine'
-import type { AgentToolCall, AgentToolDef } from '../../shared/ipc'
+import type { AgentToolCall, AgentToolDef, CreateDocumentType } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 import { executeCommands, type Command, type CommandEnvelope } from './commands'
 import {
@@ -294,6 +294,28 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       required: ['kind', 'text'],
     },
   },
+  {
+    name: 'create_document',
+    description:
+      'Create a NEW standalone file in the default save folder and open it in a new tab; the current document is not modified. Use when the user asks to put content into a new/separate document instead of this one. ' +
+      "type 'docx' (default) and 'pdf' take the same restricted HTML as insert_content in content; type 'md' takes Markdown source. Images and charts are not supported in the new file's initial content.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['docx', 'pdf', 'md'],
+          description: "target file type (default 'docx')",
+        },
+        title: { type: 'string', description: 'document title, used as the file name' },
+        content: {
+          type: 'string',
+          description: 'full document content: restricted HTML for docx/pdf, Markdown for md',
+        },
+      },
+      required: ['title', 'content'],
+    },
+  },
 ]
 
 /**
@@ -514,6 +536,38 @@ async function executeAsyncTool(
         },
       )
     }
+    case 'create_document': {
+      const typeRaw = call.input.type === undefined ? 'docx' : String(call.input.type)
+      if (typeRaw !== 'docx' && typeRaw !== 'pdf' && typeRaw !== 'md')
+        return fail(t('aiSumCreateDocument'), 'type must be one of docx/pdf/md')
+      const type: CreateDocumentType = typeRaw
+      const title = String(call.input.title ?? '').trim()
+      if (!title) return fail(t('aiSumCreateDocument'), 'title must not be empty')
+      const content = String(call.input.content ?? '')
+      if (!content.trim()) return fail(t('aiSumCreateDocument'), 'content must not be empty')
+      if (type !== 'md') {
+        const echo = toolEchoError(content)
+        if (echo) return fail(t('aiSumCreateDocument'), echo)
+        // the new docx tab fills itself after this tool already returned, so
+        // unparseable HTML must be rejected here, where the model can retry
+        try {
+          if (parseHtmlFragment(content, { bullet: null, ordered: null }).length === 0)
+            return fail(t('aiSumCreateDocument'), 'content did not parse into any content blocks')
+        } catch (e) {
+          return fail(t('aiSumCreateDocument'), e instanceof Error ? e.message : String(e))
+        }
+      }
+      const r = await window.desktop.createDocument({ type, title, content })
+      if (!r.ok) return fail(t('aiSumCreateDocument'), r.error ?? 'creating the document failed')
+      const name = `${title}.${type}`
+      return {
+        output: r.path
+          ? `Created the new document at ${r.path} and opened it in a new tab.`
+          : `Created the new document "${name}" in a new tab; it saves itself into the default folder.`,
+        mutated: false,
+        summary: t('aiSumCreatedDocument', { name }),
+      }
+    }
     default:
       return fail(t('aiSumUnknownTool'), call.name)
   }
@@ -619,7 +673,8 @@ export function executeTool(
     call.name === 'web_search' ||
     call.name === 'image_search' ||
     call.name === 'insert_image' ||
-    call.name === 'generate_image'
+    call.name === 'generate_image' ||
+    call.name === 'create_document'
   ) {
     return executeAsyncTool(editor, call, signal)
   }

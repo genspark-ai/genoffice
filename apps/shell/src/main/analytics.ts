@@ -12,6 +12,7 @@ import { readAppSettings, writeAppSetting } from './app-settings'
  *
  * Privacy rules (also documented in README):
  * - events carry a random install id (client_id), never account identity
+ * - country is the OS locale's ISO code; no city, region, or IP is added
  * - no document content, file names, or paths are ever sent
  * - official builds report by default; the user can turn reporting off in Settings → General
  *   (ANALYTICS_ENABLED_KEY in userData/app-settings.json)
@@ -105,14 +106,33 @@ export interface AnalyticsOptions {
   /** attached to every event; evaluated per event so live-changeable values
    * (UI language) stay fresh */
   baseParams?: () => Record<string, string | number>
+  /** OS-locale ISO 3166-1 alpha-2 code used for country-only GA geography */
+  getCountryCode?: () => string | null | undefined
   /** injectable for tests; defaults to global fetch */
   fetchFn?: typeof fetch
 }
 
 const SEND_TIMEOUT_MS = 5000
+const COUNTRY_CODE_RE = /^[A-Za-z]{2}$/
+
+function readCountryCode(getCountryCode: () => string | null | undefined): string | null {
+  try {
+    const value = getCountryCode()
+    return typeof value === 'string' && COUNTRY_CODE_RE.test(value) ? value.toUpperCase() : null
+  } catch {
+    return null
+  }
+}
 
 export function createAnalytics(options: AnalyticsOptions): Analytics {
-  const { keys, getClientId, isEnabled, baseParams = () => ({}), fetchFn = fetch } = options
+  const {
+    keys,
+    getClientId,
+    isEnabled,
+    baseParams = () => ({}),
+    getCountryCode = () => null,
+    fetchFn = fetch,
+  } = options
   if (!keys) return { active: false, track: () => {} }
 
   const endpoint =
@@ -129,8 +149,10 @@ export function createAnalytics(options: AnalyticsOptions): Analytics {
       if (!isValidEventName(name)) return
       try {
         if (!isEnabled()) return
+        const countryCode = readCountryCode(getCountryCode)
         const body = JSON.stringify({
           client_id: getClientId(),
+          ...(countryCode ? { user_location: { country_id: countryCode } } : {}),
           events: [
             {
               name,

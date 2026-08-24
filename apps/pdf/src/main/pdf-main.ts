@@ -14,10 +14,12 @@ import { basename, dirname, join } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import type { WebContents } from 'electron'
 import {
+  buildPrintableHtml,
   configuredDefaultSaveDir,
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
+  printHtmlToPdf,
   safeExternalUrl,
   showOpenDialogWithMemory,
 } from '@genoffice/electron-utils'
@@ -52,6 +54,8 @@ import type {
   SavePdfResult,
   CropPagesRequest,
   CropPagesResult,
+  CreateDocumentRequest,
+  CreateDocumentResult,
   TextEditValidation,
   ValidateTextEditsRequest,
 } from '../shared/ipc'
@@ -429,12 +433,84 @@ interface RuntimePaths {
   rendererFile?: string
   /** Shell router used to open generated PDFs in a new GenOffice tab. */
   openGeneratedPath?: (path: string) => boolean
+  /** Host-owned cross-app document creator (the shell routes DOCX into Docs). */
+  createDocument?: (request: CreateDocumentRequest) => Promise<CreateDocumentResult>
 }
 
 let runtime: RuntimePaths = { preloadPath: '' }
 
 export function configurePdfRuntime(paths: RuntimePaths): void {
   runtime = paths
+}
+
+const MAX_CREATE_DOCUMENT_TITLE_CHARS = 200
+const MAX_CREATE_DOCUMENT_CONTENT_CHARS = 2_000_000
+
+function parseCreateDocumentRequest(request: unknown): CreateDocumentRequest | null {
+  if (!request || typeof request !== 'object') return null
+  const { type, title, content } = request as Record<string, unknown>
+  if (type !== 'docx' && type !== 'pdf' && type !== 'md') return null
+  if (
+    typeof title !== 'string' ||
+    title.trim() === '' ||
+    title.length > MAX_CREATE_DOCUMENT_TITLE_CHARS
+  )
+    return null
+  if (
+    typeof content !== 'string' ||
+    content.trim() === '' ||
+    content.length > MAX_CREATE_DOCUMENT_CONTENT_CHARS
+  )
+    return null
+  return { type, title: title.trim(), content }
+}
+
+function sanitizeGeneratedDocumentTitle(title: string): string {
+  const cleaned = title
+    // eslint-disable-next-line no-control-regex -- generated file names must reject controls
+    .replace(/[/\\:*?"<>|\u0000-\u001f]/g, '_')
+    .trim()
+    .slice(0, 80)
+    .trim()
+  return cleaned && cleaned !== '.' && cleaned !== '..' ? cleaned : 'Untitled'
+}
+
+function uniqueGeneratedMarkdownPath(dir: string, title: string): string {
+  const stem = sanitizeGeneratedDocumentTitle(title)
+  let candidate = join(dir, `${stem}.md`)
+  for (let i = 2; existsSync(candidate); i += 1) candidate = join(dir, `${stem}-${i}.md`)
+  return candidate
+}
+
+async function createStandaloneDocument(
+  request: CreateDocumentRequest,
+): Promise<CreateDocumentResult> {
+  if (request.type === 'docx') {
+    return {
+      ok: false,
+      error: 'Creating DOCX files requires the GenOffice shell or Docs app.',
+    }
+  }
+  const title = sanitizeGeneratedDocumentTitle(request.title)
+  try {
+    if (request.type === 'pdf') {
+      const bytes = await printHtmlToPdf(
+        buildPrintableHtml(title, request.content),
+        () =>
+          new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } }),
+      )
+      const path = uniqueGeneratedPdfPath(configuredDefaultSaveDir(app), `${title}.pdf`)
+      await writeFile(path, bytes)
+      openGeneratedPdf(path)
+      return { ok: true, path }
+    }
+    const path = uniqueGeneratedMarkdownPath(configuredDefaultSaveDir(app), title)
+    await writeFile(path, request.content, 'utf8')
+    shell.showItemInFolder(path)
+    return { ok: true, path }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 function openGeneratedPdf(path: string): void {
@@ -748,6 +824,24 @@ function registerPdfIpc(): void {
     return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
   })
 
+  ipcMain.handle(
+    PDF_CHANNELS.createDocument,
+    async (e, request: unknown): Promise<CreateDocumentResult> => {
+      if (!allowedByWc.has(e.sender.id)) {
+        return { ok: false, error: 'pdf: sender is not a registered PDF view' }
+      }
+      const parsed = parseCreateDocumentRequest(request)
+      if (!parsed) return { ok: false, error: 'pdf: invalid create-document request' }
+      const create = runtime.createDocument
+      if (!create) return { ok: false, error: 'pdf: document creation is unavailable in this host' }
+      try {
+        return await create(parsed)
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+
   ipcMain.handle(PDF_CHANNELS.save, async (e, request: SavePdfRequest): Promise<SavePdfResult> => {
     const path = request?.path
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
@@ -843,6 +937,13 @@ function registerPdfIpc(): void {
       throw new Error('pdf: path not granted to this view')
     }
     return readStaticFormFills(new Uint8Array(await readFile(path)))
+  })
+
+  ipcMain.handle(PDF_CHANNELS.ocrPage, async (_e, png: unknown) => {
+    // bad payload = failed page ([]), never "no engine" (null) — null stops the caller's pass
+    if (typeof png !== 'string' || png.length === 0 || png.length > 64 * 1024 * 1024) return []
+    const { ocrPagePng } = await import('./ocr')
+    return ocrPagePng(png)
   })
 
   ipcMain.handle(
@@ -1314,9 +1415,11 @@ function registerPdfIpc(): void {
 
 function grantAndTrack(wc: WebContents, openPath?: string | null): void {
   const wcId = wc.id
+  const allowedPaths = new Set<string>()
+  allowedByWc.set(wcId, allowedPaths)
   if (openPath && existsSync(openPath)) {
     openPathByWc.set(wcId, openPath)
-    allowedByWc.set(wcId, new Set([openPath]))
+    allowedPaths.add(openPath)
   }
   // External links inside the PDF (Link annots with target=_blank) go to the system browser
   wc.setWindowOpenHandler(({ url }) => {
@@ -1366,6 +1469,7 @@ export function startPdfStandalone(): void {
     preloadPath: join(__dirname, '../preload/index.js'),
     rendererUrl: process.env.ELECTRON_RENDERER_URL,
     rendererFile: join(__dirname, '../renderer/index.html'),
+    createDocument: createStandaloneDocument,
   })
   void app.whenReady().then(() => {
     registerPdfIpc()

@@ -337,12 +337,48 @@ export function hfFloatPagePos(
  * marginTop above the next page's content. host 'lead': anchored in the
  * zero-height first-page widget at the content-box origin.
  */
+/** <img> for a header/footer picture; an a:srcRect crop becomes an
+ *  overflow-hidden window over a scaled and offset image (body-path technique) */
+function hfImgNode(img: {
+  dataUrl: string
+  widthPx?: number
+  heightPx?: number
+  crop?: HfImage['crop']
+}): HTMLElement {
+  const im = document.createElement('img')
+  im.src = img.dataUrl
+  im.alt = ''
+  im.draggable = false
+  const c = img.crop
+  if (c && img.widthPx && img.heightPx) {
+    const span = (a: number, b: number) => Math.max(0.01, 1 - a - b)
+    const sw = img.widthPx / span(c.l, c.r)
+    const sh = img.heightPx / span(c.t, c.b)
+    const win = document.createElement('span')
+    win.style.display = 'inline-block'
+    win.style.overflow = 'hidden'
+    win.style.width = `${img.widthPx}px`
+    win.style.height = `${img.heightPx}px`
+    im.style.cssText =
+      `position:absolute;left:${(-c.l * sw).toFixed(1)}px;top:${(-c.t * sh).toFixed(1)}px;` +
+      `width:${sw.toFixed(1)}px;height:${sh.toFixed(1)}px;max-width:none`
+    // the window anchors the absolute img even when the caller's class does
+    // not position the wrapper itself
+    win.style.position = 'relative'
+    win.append(im)
+    return win
+  }
+  if (img.widthPx) im.style.width = `${img.widthPx}px`
+  if (img.heightPx) im.style.height = `${img.heightPx}px`
+  return im
+}
+
 export function makeHfFloatImgEl(img: HfImage, box: HfFloatBox, host: 'gap' | 'lead'): HTMLElement {
-  const el = document.createElement('img')
+  const el = hfImgNode(img)
   el.className = 'page-hf-float-img'
-  el.src = img.dataUrl
-  el.alt = ''
-  el.draggable = false
+  // a crop wrapper carries an inline position:relative for the strip hosts;
+  // the float path must stay absolute (inline style beats the class)
+  el.style.position = 'absolute'
   const p = hfFloatPagePos(img, box)
   if (host === 'gap') {
     el.style.left = `${p.x}px`
@@ -386,13 +422,7 @@ export function makeGapHfEl(opts: {
     if (images[0].align === 'right') imgWrap.style.justifyContent = 'flex-end'
     else if (images[0].align === 'center') imgWrap.style.justifyContent = 'center'
     for (const img of images) {
-      const el = document.createElement('img')
-      el.src = img.dataUrl
-      el.alt = ''
-      el.draggable = false
-      if (img.widthPx) el.style.width = `${img.widthPx}px`
-      if (img.heightPx) el.style.height = `${img.heightPx}px`
-      imgWrap.append(el)
+      imgWrap.append(hfImgNode(img))
     }
     wrap.append(imgWrap)
   }
@@ -422,13 +452,8 @@ export function makeGapHfEl(opts: {
           if (runs.length === 0) paraEl.textContent = ' '
           for (const run of runs) {
             if (run.image) {
-              const im = document.createElement('img')
-              im.className = 'page-hf-cell-img'
-              im.src = run.image.dataUrl
-              im.alt = ''
-              im.draggable = false
-              if (run.image.widthPx) im.style.width = `${run.image.widthPx}px`
-              if (run.image.heightPx) im.style.height = `${run.image.heightPx}px`
+              const im = hfImgNode(run.image)
+              im.classList.add('page-hf-cell-img')
               paraEl.append(im)
               if (!run.text) continue
             }

@@ -528,6 +528,8 @@ export interface HfImage {
   washout?: boolean
   /** w:jc of the containing paragraph (inline images follow paragraph alignment) */
   align?: 'left' | 'center' | 'right'
+  /** source crop (a:srcRect) as fractions of the source picture (display-only) */
+  crop?: { l: number; t: number; r: number; b: number }
 }
 
 /** Parsed content of one header/footer part (any w:type variant). */
@@ -1152,6 +1154,9 @@ export interface TextboxDisplay {
    *  canvas re-pins the box to its page top (Word treats the offset as
    *  absolute on the anchor's page, wherever the anchor sits) */
   pageRelV?: boolean
+  /** page/margin-relative X: absolute on the page in Word — a column-translated
+   *  anchor block must not drag the box sideways (the canvas undoes --col-dx) */
+  pageRelX?: boolean
   /** wrapTopAndBottom (paragraph/line-relative V): the anchor paragraph keeps
    *  flow height down to this box bottom (px) so following text resumes below */
   bandBottomPx?: number
@@ -1507,6 +1512,8 @@ export interface ParsedDoc {
   compatibilityMode?: number
   /** settings.xml <w:autoHyphenation/> — Word breaks words at line ends automatically */
   autoHyphenation?: boolean
+  /** settings.xml <w:balanceSingleByteDoubleByteWidth/> — rPr w:spacing counts double on double-byte characters */
+  balanceDbcsSpacing?: boolean
   /** settings.xml w:defaultTabStop in twips (absent = Word's 720); 0 = zero-width default tabs */
   defaultTabStopTwips?: number
   /** first-page header/footer parts (w:type="first"), null when absent */

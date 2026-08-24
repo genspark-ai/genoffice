@@ -130,6 +130,7 @@ var EMR_STRETCHDIBITS = 81;
 var EMR_EXTCREATEFONTINDIRECTW = 82;
 var EMR_EXTTEXTOUTW = 84;
 var EMR_ALPHABLEND = 114;
+var EMR_GRADIENTFILL = 118;
 var EMR_POLYBEZIER16 = 85;
 var EMR_POLYGON16 = 86;
 var EMR_POLYLINE16 = 87;
@@ -1891,9 +1892,83 @@ function handleEmfGdiTextBitmapRecord(rCtx, recType, offset, dataOff, recSize) {
       return handleExcludeClipRect(rCtx, dataOff, recSize);
     case EMR_OFFSETCLIPRGN:
       return handleOffsetClipRgn(rCtx, dataOff, recSize);
+    case EMR_GRADIENTFILL:
+      return handleGradientFill(rCtx, dataOff, recSize);
     default:
       return false;
   }
+}
+
+// EMR_GRADIENTFILL (MS-EMF 2.3.5.12): TriVertex array + GRADIENT_RECT/TRIANGLE index
+// objects. Excel data bars in OLE table previews are drawn with H-mode rects.
+function handleGradientFill(rCtx, dataOff, recSize) {
+  const { ctx, view } = rCtx;
+  if (recSize < 36) return true;
+  const nVer = view.getUint32(dataOff + 16, true);
+  const nTri = view.getUint32(dataOff + 20, true);
+  const ulMode = view.getUint32(dataOff + 24, true);
+  if (nVer === 0 || nVer > MAX_GRADIENT_ELEMENTS || nTri > MAX_GRADIENT_ELEMENTS) return true;
+  const vtxOff = dataOff + 28;
+  const idxOff = vtxOff + nVer * 16;
+  const vtx = (i) => {
+    const o = vtxOff + i * 16;
+    return {
+      x: view.getInt32(o, true),
+      y: view.getInt32(o + 4, true),
+      // 16-bit color channels; GDI uses the high byte (the Alpha field is ignored by GDI)
+      color: `rgb(${view.getUint16(o + 8, true) >> 8},${view.getUint16(o + 10, true) >> 8},${view.getUint16(o + 12, true) >> 8})`,
+    };
+  };
+  if (ulMode === 2) {
+    // GRADIENT_FILL_TRIANGLE: flat-fill each triangle with its average color (rare in decks)
+    for (let t = 0; t < nTri; t++) {
+      const o = idxOff + t * 12;
+      if (o + 12 > dataOff + recSize - 8) break;
+      const a = vtx(view.getUint32(o, true) % nVer);
+      const b = vtx(view.getUint32(o + 4, true) % nVer);
+      const c = vtx(view.getUint32(o + 8, true) % nVer);
+      ctx.beginPath();
+      ctx.moveTo(gmx(rCtx, a.x), gmy(rCtx, a.y));
+      ctx.lineTo(gmx(rCtx, b.x), gmy(rCtx, b.y));
+      ctx.lineTo(gmx(rCtx, c.x), gmy(rCtx, c.y));
+      ctx.closePath();
+      const prev = ctx.fillStyle;
+      ctx.fillStyle = a.color;
+      ctx.fill();
+      ctx.fillStyle = prev;
+    }
+    return true;
+  }
+  // GRADIENT_FILL_RECT_H (0) / _V (1): each index pair = upper-left / lower-right vertex
+  for (let t = 0; t < nTri; t++) {
+    const o = idxOff + t * 8;
+    if (o + 8 > dataOff + recSize - 8) break;
+    const ul = vtx(view.getUint32(o, true) % nVer);
+    const lr = vtx(view.getUint32(o + 4, true) % nVer);
+    // Map both corners first, then normalize in device space — a negative world/
+    // viewport Y scale (common in GDI EMFs) inverts the mapped coords, and the
+    // gradient must still run ul→lr in the flipped direction
+    const ux = gmx(rCtx, ul.x);
+    const uy = gmy(rCtx, ul.y);
+    const lx = gmx(rCtx, lr.x);
+    const ly = gmy(rCtx, lr.y);
+    const x0 = Math.min(ux, lx);
+    const y0 = Math.min(uy, ly);
+    const x1 = Math.max(ux, lx);
+    const y1 = Math.max(uy, ly);
+    if (!(x1 > x0) || !(y1 > y0)) continue;
+    const grad =
+      ulMode === 1
+        ? ctx.createLinearGradient(x0, uy, x0, ly)
+        : ctx.createLinearGradient(ux, y0, lx, y0);
+    grad.addColorStop(0, ul.color);
+    grad.addColorStop(1, lr.color);
+    const prev = ctx.fillStyle;
+    ctx.fillStyle = grad;
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.fillStyle = prev;
+  }
+  return true;
 }
 
 // src/emf-gdi-draw-handlers.ts

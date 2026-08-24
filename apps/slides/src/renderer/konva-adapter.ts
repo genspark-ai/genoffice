@@ -456,9 +456,15 @@ export function strokeToKonva(
   }
 }
 
-/** Outer shadow → Konva shadow attributes; without a shadow, glow is approximated with a zero-offset shadow. */
+/** Inner/perspective shadows can't be expressed as canvas shadow props — they draw as an offscreen overlay instead. */
+export function isOverlayShadow(s: RenderShadow | undefined): boolean {
+  return !!s && (!!s.inner || s.scaleX != null || s.scaleY != null || !!s.skewXDeg || !!s.skewYDeg)
+}
+
+/** Outer shadow → Konva shadow attributes; without a shadow, glow is approximated with a zero-offset shadow.
+ * Overlay shadows (inner/perspective) are excluded here — see shapeShadowOverlay. */
 export function shadowToKonva(
-  shadow: RenderShadow | undefined,
+  rawShadow: RenderShadow | undefined,
   glow?: RenderGlow,
 ): {
   shadowColor?: string
@@ -467,6 +473,7 @@ export function shadowToKonva(
   shadowOffsetY?: number
   shadowEnabled?: boolean
 } {
+  const shadow = isOverlayShadow(rawShadow) ? undefined : rawShadow
   if (!shadow && glow) {
     return {
       shadowColor: normalizeColor(glow.color),
@@ -484,6 +491,132 @@ export function shadowToKonva(
     shadowOffsetY: shadow.offsetY,
     shadowEnabled: true,
   }
+}
+
+// ── Overlay shadows (inner / perspective) ───────────────────────────────
+// Canvas shadow props can only cast a blurred copy outward; inner shadows and the
+// skewed/scaled perspective silhouettes are rendered into an offscreen canvas that
+// NodeBody stacks as a Konva.Image around the geometry.
+
+/** Shape geometry in local box px, expressible as a Path2D. */
+export type ShadowGeom =
+  | { kind: 'rect'; w: number; h: number; cornerRadius?: number }
+  | { kind: 'ellipse'; w: number; h: number }
+  | { kind: 'polygon'; points: number[] }
+  | { kind: 'path'; data: string }
+
+function geomPath2D(g: ShadowGeom): Path2D {
+  const p = new Path2D()
+  if (g.kind === 'rect') {
+    if (g.cornerRadius) p.roundRect(0, 0, g.w, g.h, g.cornerRadius)
+    else p.rect(0, 0, g.w, g.h)
+  } else if (g.kind === 'ellipse') {
+    p.ellipse(g.w / 2, g.h / 2, g.w / 2, g.h / 2, 0, 0, Math.PI * 2)
+  } else if (g.kind === 'polygon') {
+    for (let i = 0; i + 1 < g.points.length; i += 2) {
+      if (i === 0) p.moveTo(g.points[0]!, g.points[1]!)
+      else p.lineTo(g.points[i]!, g.points[i + 1]!)
+    }
+    p.closePath()
+  } else {
+    return new Path2D(g.data)
+  }
+  return p
+}
+
+export interface ShadowOverlay {
+  canvas: HTMLCanvasElement
+  /** Placement relative to the shape box's top-left (local px) */
+  x: number
+  y: number
+  /** Local px covered by the canvas (draw size for the Konva.Image) */
+  w: number
+  h: number
+  /** True = paint under the geometry (perspective silhouette); false = over it (inner shadow) */
+  under: boolean
+}
+
+const shadowOverlayCache = new Map<string, ShadowOverlay | null>()
+
+/** algn anchor → local point of the shape box the perspective transform pivots on ('b' is the OOXML default). */
+function algnPoint(algn: string | undefined, w: number, h: number): [number, number] {
+  const a = algn ?? 'b'
+  const x = a.includes('l') ? 0 : a.includes('r') ? w : w / 2
+  const y = a.includes('t') ? 0 : a.includes('b') ? h : h / 2
+  return [x, y]
+}
+
+/**
+ * Build the overlay canvas for an inner or perspective shadow.
+ * Inner: clip to the geometry and fill its INVERSE (evenodd) offset by the shadow
+ * distance — only the cast shadow lands inside the clip, giving a true inset shadow.
+ * Perspective: the geometry silhouette filled with the shadow color, run through the
+ * outerShdw sx/sy/kx/ky transform around the algn anchor and gaussian-blurred.
+ * Returns null when the shadow needs no overlay or no 2D context exists (jsdom).
+ */
+export function shapeShadowOverlay(
+  shadow: RenderShadow | undefined,
+  geom: ShadowGeom,
+  boxW: number,
+  boxH: number,
+): ShadowOverlay | null {
+  if (!shadow || !isOverlayShadow(shadow) || boxW < 1 || boxH < 1) return null
+  const key = JSON.stringify([shadow, geom, Math.round(boxW * 4), Math.round(boxH * 4)])
+  const hit = shadowOverlayCache.get(key)
+  if (hit !== undefined) return hit
+  if (shadowOverlayCache.size > 200) shadowOverlayCache.clear()
+  const dpr = Math.min(globalThis.devicePixelRatio || 1, 2)
+  const build = (): ShadowOverlay | null => {
+    const path = geomPath2D(geom)
+    if (shadow.inner) {
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.ceil(boxW * dpr))
+      canvas.height = Math.max(1, Math.ceil(boxH * dpr))
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return null
+      ctx.scale(dpr, dpr)
+      ctx.clip(path)
+      // canvas shadow params live in device space (transforms don't apply to them)
+      ctx.shadowColor = normalizeColor(shadow.color)
+      ctx.shadowBlur = shadow.blurPx * dpr
+      ctx.shadowOffsetX = shadow.offsetX * dpr
+      ctx.shadowOffsetY = shadow.offsetY * dpr
+      const pad = shadow.blurPx + Math.abs(shadow.offsetX) + Math.abs(shadow.offsetY) + 4
+      const inv = new Path2D()
+      inv.rect(-pad, -pad, boxW + 2 * pad, boxH + 2 * pad)
+      inv.addPath(path)
+      ctx.fillStyle = '#000'
+      ctx.fill(inv, 'evenodd')
+      return { canvas, x: 0, y: 0, w: boxW, h: boxH, under: false }
+    }
+    // Perspective silhouette: generous padding for skew/flip/blur/offset overhang
+    const pad =
+      shadow.blurPx + Math.abs(shadow.offsetX) + Math.abs(shadow.offsetY) + Math.max(boxW, boxH)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.ceil((boxW + 2 * pad) * dpr))
+    canvas.height = Math.max(1, Math.ceil((boxH + 2 * pad) * dpr))
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.scale(dpr, dpr)
+    if (shadow.blurPx) ctx.filter = `blur(${shadow.blurPx / 2}px)`
+    const [ax, ay] = algnPoint(shadow.algn, boxW, boxH)
+    ctx.translate(pad + shadow.offsetX + ax, pad + shadow.offsetY + ay)
+    ctx.transform(
+      shadow.scaleX ?? 1,
+      Math.tan(((shadow.skewYDeg ?? 0) * Math.PI) / 180),
+      Math.tan(((shadow.skewXDeg ?? 0) * Math.PI) / 180),
+      shadow.scaleY ?? 1,
+      0,
+      0,
+    )
+    ctx.translate(-ax, -ay)
+    ctx.fillStyle = normalizeColor(shadow.color)
+    ctx.fill(path)
+    return { canvas, x: -pad, y: -pad, w: boxW + 2 * pad, h: boxH + 2 * pad, under: true }
+  }
+  const built = build()
+  shadowOverlayCache.set(key, built)
+  return built
 }
 
 // softEdge feathering: source image + radius → offscreen canvas with edges fading to transparent (cached by url+radius)
@@ -992,7 +1125,7 @@ export interface GlyphDraw {
   fillAfterStrokeEnabled?: boolean
   /** RTL run: feeds Konva Text's direction so neutral punctuation lands on the correct side */
   direction?: 'rtl'
-  /** Vertical latin word: rotated 90° clockwise (x/y is the rotation anchor) */
+  /** Rotated glyph (eaVert latin words / vert blocks: 90; vert270 blocks: -90; x/y is the rotation anchor) */
   rotation?: number
   /** Text highlight (<a:rPr><a:highlight>): background rect drawn behind the run, covering the line box */
   highlight?: { x: number; y: number; w: number; h: number; color: string }
@@ -1142,7 +1275,7 @@ export function glyphToDraw(run: GlyphRun): GlyphDraw {
         }
       : {}),
     ...(run.rtl ? { direction: 'rtl' as const } : {}),
-    ...(run.rotate90 ? { rotation: 90 } : {}),
+    ...(run.rotate90 ? { rotation: 90 } : run.rotate270 ? { rotation: -90 } : {}),
     ...(run.shadow
       ? {
           shadowColor: normalizeColor(run.shadow.color),

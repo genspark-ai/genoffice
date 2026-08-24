@@ -97,6 +97,9 @@ export interface TableRowBox {
   /** bottom of the lowest content band (text/image rects) relative to row top (px, 0 = empty row):
    *  lets pagination clip declared-height fill below the content instead of pushing pages */
   contentBottom?: number
+  /** declared atLeast trHeight (px): reserved space Word never breaks inside —
+   *  when it overflows the page remainder the whole row pushes to the next page */
+  minHPx?: number
 }
 
 /** One column of a multi-column page: a content range in the continuous flow (in-column break semantics match pages) */
@@ -198,11 +201,26 @@ export function computeSectionedSlices(
   totalHeight: number,
 ): PageSlice[] {
   const total = Math.max(totalHeight, 0)
-  const initSection = blocks[0]?.section ?? 0
+  // see computeSectionedSlicesF2: block-less sections (lone sectPr chips)
+  // still claim their own pages ahead of true page starts
+  const sectionHasBlocks = new Set<number>()
+  for (const b of blocks) sectionHasBlocks.add(b.section ?? 0)
+  const firstSection = blocks[0]?.section ?? 0
   if (geoms.length === 0 || geoms.every((g) => g.contentHeight <= 0)) {
-    return [{ start: 0, end: total, section: initSection }]
+    return [{ start: 0, end: total, section: firstSection }]
   }
   const geomOf = (s: number) => geoms[Math.max(0, Math.min(s, geoms.length - 1))]
+  const emptySectionClaimsPage = (s: number) => {
+    // only true page starts keep a blank page for an empty preceding section;
+    // a promoted nextColumn (single-column, n#750255) or a continuous size
+    // change absorbs it (Word skips the blank first page there)
+    const st = geomOf(s).startType
+    return (
+      (st === undefined || st === 'nextPage' || st === 'evenPage' || st === 'oddPage') &&
+      !sectionHasBlocks.has(s - 1)
+    )
+  }
+  const initSection = firstSection > 0 && emptySectionClaimsPage(1) ? 0 : firstSection
 
   const starts: Array<{ y: number; section: number }> = [{ y: 0, section: initSection }]
   let pageStart = 0
@@ -216,7 +234,12 @@ export function computeSectionedSlices(
   for (const block of blocks) {
     const bSection = block.section ?? curSection
     if (bSection !== curSection) {
-      if (geomOf(bSection).forceBreak && block.top > pageStart) newPage(block.top, bSection)
+      for (let s = curSection + 1; s <= bSection; s++) {
+        const gs = geomOf(s)
+        if (gs.forceBreak && (block.top > pageStart || emptySectionClaimsPage(s))) {
+          newPage(block.top, s)
+        }
+      }
       curSection = bSection
       contentH = Math.max(geomOf(curSection).contentHeight, 1)
     }
@@ -294,12 +317,28 @@ export function computeSectionedSlicesF2(
   totalHeight: number,
 ): PageSlice[] {
   const total = Math.max(totalHeight, 0)
-  const initSection = blocks[0]?.section ?? 0
+  // sections whose every block collapsed to a zero-height chip (lone sectPr
+  // paragraphs) never appear in the measured blocks; they still claim their
+  // own (blank) pages ahead of true page starts
+  const sectionHasBlocks = new Set<number>()
+  for (const b of blocks) sectionHasBlocks.add(b.section ?? 0)
+  const firstSection = blocks[0]?.section ?? 0
   if (geoms.length === 0 || geoms.every((g) => g.contentHeight <= 0)) {
-    return [{ start: 0, end: total, section: initSection }]
+    return [{ start: 0, end: total, section: firstSection }]
   }
   const geomOf = (s: number) => geoms[Math.max(0, Math.min(s, geoms.length - 1))]
   const colsOf = (s: number) => Math.max(1, geomOf(s).cols ?? 1)
+  const emptySectionClaimsPage = (s: number) => {
+    // only true page starts keep a blank page for an empty preceding section;
+    // a promoted nextColumn (single-column, n#750255) or a continuous size
+    // change absorbs it (Word skips the blank first page there)
+    const st = geomOf(s).startType
+    return (
+      (st === undefined || st === 'nextPage' || st === 'evenPage' || st === 'oddPage') &&
+      !sectionHasBlocks.has(s - 1)
+    )
+  }
+  const initSection = firstSection > 0 && emptySectionClaimsPage(1) ? 0 : firstSection
 
   type ColEntry = { y: number; repeatHeader?: { top: number; height: number } }
   type Region = { top: number; height: number; section: number; cols: number; entries: ColEntry[] }
@@ -491,19 +530,40 @@ export function computeSectionedSlicesF2(
     // section change
     const bSection = block.section ?? curSection
     if (bSection !== curSection) {
+      // sections crossed without any measured block (a lone sectPr paragraph
+      // renders as a zero-height chip) still claim their own page in Word:
+      // break once per crossed next-page boundary
+      for (let s = curSection + 1; s < bSection; s++) {
+        const gs = geomOf(s)
+        if (gs.forceBreak && (block.top > pageStart || emptySectionClaimsPage(s))) {
+          contentH = Math.max(gs.contentHeight, 1)
+          startPage(block.top, s)
+        }
+      }
       const g = geomOf(bSection)
       const newCols = colsOf(bSection)
       curSection = bSection
       contentH = Math.max(g.contentHeight, 1)
-      if (g.forceBreak && block.top > pageStart) {
+      if (g.forceBreak && (block.top > pageStart || emptySectionClaimsPage(bSection))) {
         startPage(block.top, bSection)
       } else if (newCols !== colCount) {
         // continuous section changing column count: balance the closed multi-column
         // region (Word), then open a new region in the remaining page height; if the
-        // page is used up, turn the page
+        // page is used up, turn the page. An unbalanced region ends at its
+        // tallest column's content, NOT the full column height: a short
+        // letterhead row split by an explicit column break must not eat the
+        // page (prod100r3/45 lost its whole first page to a 2-line region) —
+        // natural overflow still yields a full first-column segment.
         const balancedH = tryBalanceRegion(bi, block.top)
-        const regionBottom =
-          regionTop + (balancedH ?? (colIdx > 0 ? colH : Math.min(usedInCol, colH)))
+        const entries = pages[pages.length - 1].regions.at(-1)?.entries ?? []
+        const segMax = entries.length
+          ? Math.max(
+              ...entries.map(
+                (e, i) => (i + 1 < entries.length ? entries[i + 1].y : block.top) - e.y,
+              ),
+            )
+          : usedInCol
+        const regionBottom = regionTop + (balancedH ?? Math.min(Math.max(segMax, 0), colH))
         if (regionBottom >= contentH - 1) {
           startPage(block.top, bSection)
         } else {
@@ -912,6 +972,16 @@ function _placeTable(
       // like any row. Only tblHeader/cantSplit rows push whole. Over-page header/
       // cantSplit rows Word overflow-clips instead; we split them (DOM clipping is
       // costly) — a deliberate deviation.
+      // Declared atLeast height is reserved space, not breakable content: when
+      // the declared minimum overflows the page remainder, Word starts the row
+      // on a fresh page instead of splitting into the remainder (near-empty
+      // TOC pages, prod100r3/50; Word probe 2026-08-23). Rows taller than a
+      // full page still split afterwards — from the fresh page.
+      let turnedForMinH = false
+      if (row.minHPx !== undefined && row.minHPx > remain() + 0.01 && !pageEmpty()) {
+        newPage(rowCursor, curSection, repeatH, block.top)
+        turnedForMinH = true
+      }
       const keepWhole = row.isHeader && ri < leadHeaderRows && row.height <= contentH + 0.01
       let cuts = !row.cantSplit && !keepWhole && row.cutYs ? [...row.cutYs] : []
       const placeSegments = (bounds: number[]) => {
@@ -964,8 +1034,10 @@ function _placeTable(
         if (row.isHeader && ri < headerRows) placedHeader = true
         continue
       }
-      // cantSplit / empty / no cut points: the row is atomic; turn the page first if it doesn't fit
-      if (!pageEmpty()) newPage(rowCursor, curSection, repeatH, block.top)
+      // cantSplit / empty / no cut points: the row is atomic; turn the page
+      // first if it doesn't fit. A repeated header keeps the fresh page
+      // non-empty, so the minH turn above must not double up here.
+      if (!pageEmpty() && !turnedForMinH) newPage(rowCursor, curSection, repeatH, block.top)
     }
     place(row.height)
     rowCursor += row.height
@@ -2146,6 +2218,7 @@ export function fillLineBoxes(
           rows.forEach((r, i) => {
             if (flags[i]?.isHeader) r.isHeader = true
             if (flags[i]?.cantSplit) r.cantSplit = true
+            if (flags[i]?.minHPx) r.minHPx = flags[i].minHPx
           })
         block.tableRows = rows
         changed = true
@@ -2181,14 +2254,23 @@ function tileBoxes(
   }))
 }
 
-/** Extract each tr's tblHeader/cantSplit flags from table XML (header repetition across breaks / unsplittable rows) */
-export function tableRowFlags(tableXml: string): Array<{ isHeader: boolean; cantSplit: boolean }> {
-  const flags: Array<{ isHeader: boolean; cantSplit: boolean }> = []
+/** Extract each tr's tblHeader/cantSplit/atLeast-trHeight flags from table XML (header repetition across breaks / unsplittable rows / reserved row heights) */
+export function tableRowFlags(
+  tableXml: string,
+): Array<{ isHeader: boolean; cantSplit: boolean; minHPx?: number }> {
+  const flags: Array<{ isHeader: boolean; cantSplit: boolean; minHPx?: number }> = []
   for (const m of tableXml.matchAll(/<w:tr[\s>][\s\S]*?(?=<w:tr[\s>]|<\/w:tbl>)/g)) {
     const trPr = m[0].match(/<w:trPr>[\s\S]*?<\/w:trPr>/)?.[0] ?? ''
+    // non-exact w:trHeight = atLeast (parse.ts semantics); exact rows keep the
+    // split path (deliberate clip deviation, see _placeTable). Clamp mirrors
+    // parse.ts (MS-OI29500 2.1.51: 31680 twips / 22in).
+    const trH = trPr.match(/<w:trHeight\b[^>]*>/)?.[0] ?? ''
+    const val = Number(/w:val="(\d+)"/.exec(trH)?.[1])
+    const atLeast = Number.isFinite(val) && val > 0 && !/w:hRule="exact"/.test(trH)
     flags.push({
       isHeader: /<w:tblHeader(?!\s+w:val="(?:0|false)")/.test(trPr),
       cantSplit: /<w:cantSplit(?!\s+w:val="(?:0|false)")/.test(trPr),
+      ...(atLeast ? { minHPx: Math.min(val, 31680) / 15 } : {}),
     })
   }
   return flags
@@ -2210,8 +2292,8 @@ export interface BlockMeta {
   breakBefore?: boolean
   /** false only when explicitly disabled (Word default on) */
   widowControl?: false
-  /** table blocks: per-tr header/unsplittable flags (applied by fillLineBoxes when collecting rows) */
-  tableRowFlags?: Array<{ isHeader: boolean; cantSplit: boolean }>
+  /** table blocks: per-tr header/unsplittable/reserved-height flags (applied by fillLineBoxes when collecting rows) */
+  tableRowFlags?: Array<{ isHeader: boolean; cantSplit: boolean; minHPx?: number }>
   /** Word 2013+ layout (settings compatibilityMode >= 15): a multirow tblHeader block that doesn't fit the remaining space pushes the table to a fresh page */
   modernTableHeaders?: boolean
   /** page-bottom height reserved for footnote refs inside the block (px): merged into block height and space-after (doesn't consume text capacity) */

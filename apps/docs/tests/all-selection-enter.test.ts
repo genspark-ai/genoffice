@@ -138,6 +138,45 @@ describe('Enter keeps the replaced selection start marks (r133)', () => {
   })
 })
 
+describe('Enter-replace keeps the format on the FIRST emptied line (r133 residual)', () => {
+  it('restores the carried marks when arrowing up into the first empty paragraph', () => {
+    const CALIBRI = { font: 'Calibri', sizeHalfPoints: 24 }
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            content: [
+              {
+                type: 'text',
+                text: 'texte calibri',
+                marks: [{ type: 'docTextStyle', attrs: CALIBRI }],
+              },
+            ],
+          },
+          { type: 'docParagraph', content: [{ type: 'text', text: 'suite' }] },
+        ],
+      } as never,
+    })
+    // Home + Shift+Down shape: block starts of para1 and para2
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, 1, 16)),
+    )
+    expect(pressEnter(editor)).toBe(true)
+    // arrow up into the FIRST emptied paragraph (navigation clears storedMarks;
+    // the pilcrow memory must restore them from the stamp)
+    editor.commands.setTextSelection(1)
+    const restored = editor.state.storedMarks
+    expect(restored).not.toBeNull()
+    const ts = restored!.find((m) => m.type.name === 'docTextStyle')
+    expect(ts?.attrs).toMatchObject(CALIBRI)
+    editor.destroy()
+  })
+})
+
 describe('Enter replaces an AllSelection (r125)', () => {
   it('deletes everything and leaves a paragraph break, like Word', () => {
     const editor = makeEditor()

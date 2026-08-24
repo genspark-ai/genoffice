@@ -63,16 +63,23 @@ export function scalarToText(value: unknown): string | null {
   return String(value)
 }
 
+/// Mirrors the built-in provider's _preprocessQuery: lowercase unless
+/// case-sensitive, then trim.
+export function preprocessNeedle(query: IFindQuery): string {
+  const raw = query.findString ?? ''
+  return (query.caseSensitive === true ? raw : raw.toLowerCase()).trim()
+}
+
 /// Mirrors Univer's matchCellData/hitCell semantics for file-backed cells:
 /// substring vs whole-cell (spaces trimmed, line breaks kept), case
 /// sensitivity, and formula-vs-value look-in.
 export function buildLazyCellTest(query: IFindQuery): LazyCellTest | null {
-  const needleRaw = query.findString
-  if (!needleRaw) return null
   const caseSensitive = query.caseSensitive === true
-  // The built-in model lowercases the needle once up front (its parsed
-  // query); do the same here so both models agree on what a hit is.
-  const needle = caseSensitive ? needleRaw : needleRaw.toLowerCase()
+  // The built-in provider preprocesses the query once up front (lowercase
+  // unless case-sensitive, then trim); mirror it so both models agree on
+  // what a hit is.
+  const needle = preprocessNeedle(query)
+  if (!needle) return null
   const matches = (text: string | null | undefined): boolean => {
     if (text === null || text === undefined) return false
     const haystack = caseSensitive ? text : text.toLowerCase()
@@ -150,11 +157,15 @@ export function collectJournalMatches(
   return found
 }
 
-/** Coordinates whose file cell is shadowed by a journal edit this session. */
+/** Coordinates whose file cell is shadowed by a journal edit this session.
+ *  Style-only entries (hasValue false) leave the file's content authoritative
+ *  and must stay findable. */
 export function journalShadowKeys(state: LazyWorkbookState, sheetId: string): Set<string> {
   const shadowed = new Set<string>()
   const journal = state.editJournal.cells.get(sheetId)
-  for (const entry of journal?.values() ?? []) shadowed.add(`${entry.row}:${entry.column}`)
+  for (const entry of journal?.values() ?? []) {
+    if (entry.hasValue) shadowed.add(`${entry.row}:${entry.column}`)
+  }
   return shadowed
 }
 
@@ -213,23 +224,33 @@ interface InnerFindModel extends FindModel {
 /**
  * Replaces the registered sheets find provider with a wrapper while the app
  * lives. Non-streamed workbooks flow straight through; streamed ones get the
- * extended model. Nothing is restored on dispose: the whole runtime dies
- * with the component that installed the bridge.
+ * extended model. On dispose the adopted providers go back into the service.
  */
 export function installLazyFindBridge(deps: LazyFindBridgeDeps): { dispose(): void } {
   const service = deps.runtime.univer.__getInjector().get(IFindReplaceService)
   const providers = service.getProviders()
+  const adopted = new Set<IFindReplaceProvider>()
   let generation = 0
+  // Registering only APPENDS to the service's live provider set, and
+  // _startSearching dispatches to every provider in it — leaving the built-in
+  // registered would run it twice per search (double-counted in-window
+  // matches, and its second find() disposes the first session's model).
+  // Detach built-ins into `adopted` so the service reaches them only through
+  // the wrapper; re-sweep on every call in case one registered later.
+  const adoptForeign = () => {
+    for (const provider of [...providers]) {
+      if (provider === wrapper) continue
+      providers.delete(provider)
+      adopted.add(provider)
+    }
+  }
   const wrapper: IFindReplaceProvider = {
     async find(query: IFindQuery) {
       generation += 1
       const liveGeneration = generation
-      // Adopt whichever built-in providers exist now — the sheets controller
-      // registers one per workbook, while this wrapper survives across
-      // workbooks for the lifetime of the renderer.
+      adoptForeign()
       const models: FindModel[] = []
-      for (const builtin of [...providers]) {
-        if (builtin === wrapper) continue
+      for (const builtin of [...adopted]) {
         models.push(...(await builtin.find(query)))
       }
       const state = deps.lazyWorkbookRef.current
@@ -247,16 +268,18 @@ export function installLazyFindBridge(deps: LazyFindBridgeDeps): { dispose(): vo
     },
     terminate() {
       generation += 1
-      for (const builtin of [...providers]) {
-        if (builtin !== wrapper) builtin.terminate()
-      }
+      adoptForeign()
+      for (const builtin of adopted) builtin.terminate()
     },
   }
   const registration = service.registerFindReplaceProvider(wrapper)
+  adoptForeign()
   return {
     dispose() {
       generation += 1
       registration.dispose()
+      for (const builtin of adopted) providers.add(builtin)
+      adopted.clear()
     },
   }
 }
@@ -318,38 +341,70 @@ export class LazyExtendedFindModel extends FindModel {
   }
 
   moveToNextMatch(params?: IFindMoveParams): LazyCellMatch | null {
-    const candidate = this.innerNeighbor('next', params)
-    if (candidate) {
-      if (!params?.noFocus) this.safeInnerFocus()
-      return candidate as LazyCellMatch
-    }
-    const target = this.neighborExtra('next', params)
-    if (!target) return null
-    if (!params?.noFocus) this.focusExtra(target)
-    return target
+    return this.moveThroughMatches('next', params)
   }
 
   moveToPreviousMatch(params?: IFindMoveParams): LazyCellMatch | null {
-    const candidate = this.innerNeighbor('previous', params)
-    if (candidate) {
-      if (!params?.noFocus) this.safeInnerFocus()
-      return candidate as LazyCellMatch
+    return this.moveThroughMatches('previous', params)
+  }
+
+  /**
+   * Segmented cursor: the inner (index-cursor) session first, then the
+   * extras, then wrap back to the inner. The upstream `loop` must never
+   * reach the inner model — its loop takes the modulo of its own match list
+   * and would cycle in-window hits forever, starving the extras. When the
+   * inner runs out it resets its own cursor, so the wrap-around re-entry
+   * uses ignoreSelection to land on its first/last match. Boundary order is
+   * not strict document order (a mid-sheet window hands over to the
+   * top-most extra) — accepted simplification.
+   */
+  private moveThroughMatches(
+    direction: 'next' | 'previous',
+    params?: IFindMoveParams,
+  ): LazyCellMatch | null {
+    if (!this.lastFocusedExtra) {
+      const candidate = this.innerNeighbor(direction, params)
+      if (candidate) {
+        if (!params?.noFocus) this.safeInnerFocus()
+        return candidate as LazyCellMatch
+      }
     }
-    const target = this.neighborExtra('previous', params)
-    if (!target) return null
-    if (!params?.noFocus) this.focusExtra(target)
-    return target
+    const target = this.neighborExtra(direction)
+    if (target) {
+      if (!params?.noFocus) this.focusExtra(target)
+      else this.lastFocusedExtra = target
+      return target
+    }
+    if (params?.loop === false) return null
+    this.lastFocusedExtra = null
+    const wrapped = this.innerNeighbor(direction, { ...params, ignoreSelection: true })
+    if (wrapped) {
+      if (!params?.noFocus) this.safeInnerFocus()
+      return wrapped as LazyCellMatch
+    }
+    // No inner matches at all — cycle within the extras themselves.
+    const candidates = this.currentExtras()
+    const first =
+      direction === 'next' ? (candidates[0] ?? null) : (candidates[candidates.length - 1] ?? null)
+    if (!first) return null
+    if (!params?.noFocus) this.focusExtra(first)
+    else this.lastFocusedExtra = first
+    return first
   }
 
   async replace(replaceString: string): Promise<boolean> {
-    try {
-      if (await this.inner.replace(replaceString)) return true
-    } catch {
-      /* no inner current match — fall through to the extension's */
-    }
+    // Only an extra that currently holds the segmented cursor may be
+    // written; otherwise the inner session owns the current match.
     const extra = this.lastFocusedExtra
-    if (!extra || extra.replaceable !== true) return false
-    return this.writeExtraReplacement(extra, replaceString)
+    if (extra) {
+      if (extra.replaceable !== true) return false
+      return this.writeExtraReplacement(extra, replaceString)
+    }
+    try {
+      return await this.inner.replace(replaceString)
+    } catch {
+      return false
+    }
   }
 
   async replaceAll(replaceString: string): Promise<IReplaceAllResult> {
@@ -393,10 +448,13 @@ export class LazyExtendedFindModel extends FindModel {
     direction: 'next' | 'previous',
     params?: IFindMoveParams,
   ): IFindMatch | null {
+    // loop stays stripped: the inner model's own loop cycles its list
+    // forever and would never yield to the extras.
+    const stripped = { ...params, noFocus: true, loop: false }
     try {
       return direction === 'next'
-        ? this.inner.moveToNextMatch({ ...params, noFocus: true })
-        : this.inner.moveToPreviousMatch({ ...params, noFocus: true })
+        ? this.inner.moveToNextMatch(stripped)
+        : this.inner.moveToPreviousMatch(stripped)
     } catch {
       return null
     }
@@ -424,38 +482,41 @@ export class LazyExtendedFindModel extends FindModel {
   }
 
   /**
-   * Steps into the extension's territory: the first out-of-window hit after
-   * (or before) the current selection, looping like the built-in model.
+   * The first out-of-window hit after (or before) the current selection.
+   * Exhaustion returns null — wrapping across the segments is
+   * moveThroughMatches' job.
    */
-  private neighborExtra(
-    direction: 'next' | 'previous',
-    params?: IFindMoveParams,
-  ): LazyCellMatch | null {
+  private neighborExtra(direction: 'next' | 'previous'): LazyCellMatch | null {
     const candidates = this.currentExtras()
     if (candidates.length === 0) return null
     const order = this.sheetOrderIndex()
+    const columnDirection = this.query.findDirection === 'column'
+    const axes = (row: number, column: number): [number, number] =>
+      columnDirection ? [column, row] : [row, column]
+    const sign = direction === 'next' ? 1 : -1
     const positionOf = (match: LazyCellMatch): [number, number, number] => {
       const bounds = match.range.range
+      const [primary, secondary] = axes(bounds.startRow, bounds.startColumn)
       return [
-        order.get(match.range.subUnitId) ?? Number.MAX_SAFE_INTEGER,
-        direction === 'next' ? bounds.startRow : -bounds.startRow,
-        direction === 'next' ? bounds.startColumn : -bounds.startColumn,
+        sign * (order.get(match.range.subUnitId) ?? Number.MAX_SAFE_INTEGER),
+        sign * primary,
+        sign * secondary,
       ]
     }
     const reference = this.referencePosition(order)
     if (!reference) {
       return direction === 'next' ? candidates[0]! : candidates[candidates.length - 1]!
     }
-    const referencePosition_: [number, number, number] =
-      direction === 'next'
-        ? [reference.sheetIndex, reference.row, reference.column]
-        : [reference.sheetIndex, -reference.row, -reference.column]
+    const [referencePrimary, referenceSecondary] = axes(reference.row, reference.column)
+    const referencePosition_: [number, number, number] = [
+      sign * reference.sheetIndex,
+      sign * referencePrimary,
+      sign * referenceSecondary,
+    ]
     const ordered = [...candidates].sort((a, b) => compareTriples(positionOf(a), positionOf(b)))
-    const neighbor =
+    return (
       ordered.find((match) => compareTriples(positionOf(match), referencePosition_) > 0) ?? null
-    if (neighbor) return neighbor
-    if (params?.loop === false) return null
-    return direction === 'next' ? ordered[0]! : ordered[ordered.length - 1]!
+    )
   }
 
   private sheetOrderIndex(): Map<string, number> {
@@ -491,8 +552,16 @@ export class LazyExtendedFindModel extends FindModel {
     }
   }
 
+  /** Guards against a session outliving its workbook: after a workbook
+   *  switch, sheetIds may collide and getActiveWorkbook() targets the wrong
+   *  book. */
+  private stateIsCurrent(): boolean {
+    return this.deps.lazyWorkbookRef.current === this.state
+  }
+
   /** Activate the sheet, load the region, scroll to it, and select the cell. */
   private focusExtra(match: LazyCellMatch): void {
+    if (!this.stateIsCurrent()) return
     this.lastFocusedExtra = match
     try {
       const workbook = this.deps.runtime.univerAPI.getActiveWorkbook()
@@ -532,6 +601,7 @@ export class LazyExtendedFindModel extends FindModel {
     match: LazyCellMatch,
     replaceString: string,
   ): Promise<boolean> {
+    if (!this.stateIsCurrent()) return false
     try {
       const workbook = this.deps.runtime.univerAPI.getActiveWorkbook()
       const worksheet = workbook?.getSheetBySheetId(match.range.subUnitId)
@@ -573,6 +643,10 @@ export class LazyExtendedFindModel extends FindModel {
     const sheetOrder = new Map(sheets.map((sheet, index) => [sheet.getSheetId(), index] as const))
     const comparator = extraComparator(sheetOrder, this.query.findDirection === 'column')
     const collected: (ScanCell & { sheetId: string })[] = []
+    // Budget counts scanned extent, not hits — the AI-side findInLazyWorkbook
+    // semantics. Counting hits would scan sparse multi-million-cell sheets
+    // end to end.
+    let scannedCells = 0
 
     for (const worksheet of targets) {
       const sheetId = worksheet.getSheetId()
@@ -594,9 +668,9 @@ export class LazyExtendedFindModel extends FindModel {
       const shadowed = journalShadowKeys(this.state, sheetId)
       const batchRows = Math.max(1, Math.floor(FILE_READ_BATCH_CELLS / screenColumns))
       for (let startRow = 0; startRow < screenRows; startRow += batchRows) {
-        if (!this.alive || !this.isLiveGeneration()) return
+        if (!this.alive || !this.isLiveGeneration() || !this.stateIsCurrent()) return
         if (this.truncated) break
-        if (collected.length >= MAX_SCAN_CELLS) {
+        if (scannedCells >= MAX_SCAN_CELLS) {
           this.truncated = true
           break
         }
@@ -614,6 +688,7 @@ export class LazyExtendedFindModel extends FindModel {
           break
         }
         if (!mapped) continue
+        scannedCells += (endRow - startRow + 1) * screenColumns
         if (
           !mapped.raw.indexingComplete &&
           (mapped.indexedThroughScreen === null || mapped.indexedThroughScreen < endRow)
@@ -640,7 +715,9 @@ export class LazyExtendedFindModel extends FindModel {
 
     this.refreshExtras(collected, comparator, unitId)
     if (this.truncated && this.alive && this.isLiveGeneration()) {
-      this.deps.setMessage(t('appFindScanTruncated', { cells: MAX_SCAN_CELLS.toLocaleString() }))
+      // Report what was actually scanned — truncation can also come from a
+      // failed read or indexing lag long before the budget.
+      this.deps.setMessage(t('appFindScanTruncated', { cells: scannedCells.toLocaleString() }))
     }
     this.emitMerged()
   }
@@ -660,7 +737,7 @@ export class LazyExtendedFindModel extends FindModel {
 /// Substring replacement honoring the query's case sensitivity, replacing
 /// every occurrence like Excel's Replace All.
 function replaceAllOccurrences(text: string, query: IFindQuery, replaceString: string): string {
-  const needle = query.caseSensitive === true ? query.findString : query.findString.toLowerCase()
+  const needle = preprocessNeedle(query)
   if (!needle) return text
   const haystack = query.caseSensitive === true ? text : text.toLowerCase()
   let result = ''

@@ -97,6 +97,23 @@ describe('GenOffice Serif KR (Batang-normalized)', () => {
       expect(advanceEm(serif, cp), `digit ${cp - 0x30}`).toBeCloseTo(0.596, 3)
     }
   })
+
+  it('letters carry Batang advances (probe 2026-08-24: Word renders real Batang)', () => {
+    const expected: Record<string, number> = { M: 0.895, W: 0.945, A: 0.736, o: 0.583 }
+    for (const [ch, adv] of Object.entries(expected)) {
+      expect(advanceEm(serif, ch.codePointAt(0)!), ch).toBeCloseTo(adv, 3)
+    }
+  })
+})
+
+describe('GenOffice Che Latin KR (fixed-pitch half-width)', () => {
+  const che = readWoff2(join(FONTS, 'GenOfficeCheLatinKR.woff2'))
+
+  it('every printable ASCII advance is exactly 0.5em (probe 2026-08-24: real -Che faces)', () => {
+    for (let cp = 0x20; cp <= 0x7e; cp++) {
+      expect(advanceEm(che, cp), `U+${cp.toString(16)}`).toBeCloseTo(0.5, 3)
+    }
+  })
 })
 
 describe('GenOffice Gothic KR (real source metrics, unmodified)', () => {

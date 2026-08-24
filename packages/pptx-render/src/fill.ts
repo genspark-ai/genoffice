@@ -115,6 +115,19 @@ export function resolveGlow(
   return { color: glow.color, blurPx: emuToPx(glow.radius, vp.scale) }
 }
 
+export function resolveReflection(
+  reflection: import('@genoffice/pptx-engine').ReflectionEffect | undefined,
+  vp: Viewport,
+): import('./render-tree').RenderReflection | undefined {
+  if (!reflection) return undefined
+  return {
+    blurPx: emuToPx(reflection.blurRad, vp.scale),
+    startAlpha: reflection.startA,
+    endPos: reflection.endPos,
+    distPx: emuToPx(reflection.dist, vp.scale),
+  }
+}
+
 export function resolveShadow(
   shadow: ShadowEffect | undefined,
   vp: Viewport,
@@ -127,6 +140,14 @@ export function resolveShadow(
     blurPx: emuToPx(shadow.blurRad, vp.scale),
     offsetX: Math.cos(rad) * distPx,
     offsetY: Math.sin(rad) * distPx,
+    distPx,
+    dirDeg: shadow.dirDeg,
+    ...(shadow.inner ? { inner: true } : {}),
+    ...(shadow.sx != null ? { scaleX: shadow.sx } : {}),
+    ...(shadow.sy != null ? { scaleY: shadow.sy } : {}),
+    ...(shadow.kxDeg ? { skewXDeg: shadow.kxDeg } : {}),
+    ...(shadow.kyDeg ? { skewYDeg: shadow.kyDeg } : {}),
+    ...(shadow.algn ? { algn: shadow.algn } : {}),
   }
 }
 

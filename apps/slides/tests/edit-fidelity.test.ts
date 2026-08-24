@@ -360,8 +360,8 @@ describe('normAutofit fontScale: files already shrunk by PowerPoint render at th
     }
     const out = layoutText({ body, boxWidthPx: 800, boxHeightPx: 400, metrics, vp })
     expect(out.fontScale).toBeCloseTo(0.625, 3)
-    // 20pt × 96/72 × 0.625 ≈ 16.67px
-    expect(out.lines[0]!.runs[0]!.fontSizePx).toBeCloseTo(20 * (96 / 72) * 0.625, 1)
+    // 20pt × 0.625 = 12.5pt → PPT quantizes autofit sizes to whole points (13pt = 17.33px)
+    expect(out.lines[0]!.runs[0]!.fontSizePx).toBeCloseTo(13 * (96 / 72), 1)
   })
 
   it('stored scale renders as-is; refitAutofit (edit flow) bisects downward below it', () => {
@@ -885,5 +885,49 @@ describe('run hyperlinks: overlay round-trip + merge semantics', () => {
       { runs: [{ text: 'x edited', srcRun: 0, link: null }], srcPara: 0 },
     ])
     expect(out[0]!.runs[0]!.hyperlinkRId).toBe('rId9')
+  })
+})
+
+describe('vertical text editing (bodyPr vert)', () => {
+  const vertLayout = (paragraphs: Paragraph[]) =>
+    layoutText({
+      body: { paragraphs, insets: NO_INSETS, vert: 'vert' },
+      boxWidthPx: 96,
+      boxHeightPx: 104,
+      metrics,
+      vp,
+    })
+
+  it('column fragments round-trip back to the source paragraph text', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    const text = '上建设潇洒历史'
+    const lines = vertLayout([{ runs: [{ text }] }]).lines
+    expect(lines.length).toBeGreaterThan(1) // the narrow box splits the paragraph into columns
+    populateEditorDom(div, lines, 0, undefined, true)
+    // One DOM paragraph per source paragraph, not one per layout column
+    expect(div.children.length).toBe(1)
+    const out = extractParagraphs(div, 1)
+    expect(out.map((p) => p.runs.map((r) => r.text).join('')).join('\n')).toBe(text)
+    div.remove()
+  })
+
+  it('skips horizontal-flow metric baking (line-height, gaps, fixed advances)', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+    populateEditorDom(
+      div,
+      vertLayout([{ runs: [{ text: '上建设潇洒历史' }] }]).lines,
+      0,
+      undefined,
+      true,
+    )
+    const p = div.firstElementChild as HTMLElement
+    expect(p.style.lineHeight).toBe('')
+    expect(p.style.marginTop).toBe('')
+    const fragments = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')]
+    expect(fragments.length).toBeGreaterThan(0)
+    expect(fragments.every((f) => f.style.width === '' && f.style.display === '')).toBe(true)
+    div.remove()
   })
 })

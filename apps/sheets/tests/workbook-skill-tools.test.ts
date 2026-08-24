@@ -145,6 +145,100 @@ describe('buildWorkbookContext', () => {
   })
 })
 
+describe('getActiveSheetInfo: the run selection scope', () => {
+  const SHEETS = [
+    { id: 'sh1', name: 'Data', cells: { A1: {} } },
+    { id: 'sh2', name: 'My Summary', cells: {} },
+  ]
+
+  function demoReadContext(
+    liveSelection: string | null,
+    activeSheetId = 'sh1',
+  ): Parameters<typeof getActiveSheetInfo>[0] {
+    const worksheet = (id: string) => ({
+      getSheetId: () => id,
+      getSheetName: () => SHEETS.find((sheet) => sheet.id === id)?.name ?? '',
+      getMergedRanges: () => [],
+    })
+    return {
+      univerRef: {
+        current: {
+          univerAPI: {
+            getActiveWorkbook: () => ({
+              getActiveRange: () =>
+                liveSelection === null ? null : { getA1Notation: () => liveSelection },
+              getActiveSheet: () => worksheet(activeSheetId),
+              getSheetBySheetId: (id: string) =>
+                SHEETS.some((sheet) => sheet.id === id) ? worksheet(id) : null,
+              getSheets: () => SHEETS.map((sheet) => worksheet(sheet.id)),
+            }),
+          },
+        },
+      },
+      lazyWorkbookRef: { current: null },
+      adapterRef: { current: { getSnapshot: () => ({ revision: 3, sheets: SHEETS }) } },
+    } as unknown as Parameters<typeof getActiveSheetInfo>[0]
+  }
+
+  it('reports the live selection when no run owns a scope', () => {
+    const info = getActiveSheetInfo(demoReadContext('B2:B50'))
+    expect(info.selection).toBe('B2:B50')
+    expect(info.selectionFrozen).toBeUndefined()
+    expect(buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))).toContain(
+      'Current selection: B2:B50',
+    )
+  })
+
+  it('keeps the send-time snapshot while the user clicks elsewhere mid-run', () => {
+    const info = getActiveSheetInfo(demoReadContext('D9'), { a1: 'B2:B50', sheetId: 'sh1' })
+    expect(info.selection).toBe('B2:B50')
+    expect(info.selectionFrozen).toBe(true)
+    const text = buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))
+    expect(text).toContain('User selection: B2:B50')
+    expect(text).toContain('captured when the user sent this message')
+    expect(text).not.toContain('D9')
+  })
+
+  it('qualifies a snapshot taken on a sheet that is no longer active', () => {
+    const info = getActiveSheetInfo(demoReadContext('A1', 'sh1'), {
+      a1: 'B2:D9',
+      sheetId: 'sh2',
+    })
+    expect(info.selection).toBe('My Summary!B2:D9')
+  })
+
+  it('names the columns a whole-column scope covers', () => {
+    const info = getActiveSheetInfo(demoReadContext('D9'), {
+      a1: 'B1:B417',
+      sheetId: 'sh1',
+      columns: ['Amount'],
+    })
+    expect(info.selectionColumns).toEqual(['Amount'])
+    const text = buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))
+    expect(text).toContain('User selection: B1:B417 (the whole "Amount" column) — captured')
+  })
+
+  it('pluralizes a scope covering several columns', () => {
+    const info = getActiveSheetInfo(demoReadContext('D9'), {
+      a1: 'B1:C417',
+      sheetId: 'sh1',
+      columns: ['Amount', 'Qty'],
+    })
+    expect(buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))).toContain(
+      '(the whole "Amount", "Qty" columns)',
+    )
+  })
+
+  it('reports no selection at all once the user drops the scope', () => {
+    const info = getActiveSheetInfo(demoReadContext('B2:B50'), null)
+    expect(info.selection).toBeUndefined()
+    expect(info.selectionFrozen).toBeUndefined()
+    expect(buildWorkbookContext(fakeDeps({ getActiveSheetInfo: () => info }))).not.toContain(
+      'selection',
+    )
+  })
+})
+
 describe('getActiveSheetInfo: lazy extents after structural ops', () => {
   function lazyReadContext(
     structuralOps: Map<string, unknown[]>,

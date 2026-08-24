@@ -155,6 +155,7 @@ describe('createAnalytics', () => {
       getClientId: () => 'client-1',
       isEnabled: () => true,
       baseParams: () => ({ app_version: '1.0.0', platform: 'darwin' }),
+      getCountryCode: () => 'us',
       fetchFn,
     })
     expect(analytics.active).toBe(true)
@@ -167,9 +168,11 @@ describe('createAnalytics', () => {
     )
     const payload = JSON.parse(init.body as string) as {
       client_id: string
+      user_location?: { country_id: string }
       events: Array<{ name: string; params: Record<string, unknown> }>
     }
     expect(payload.client_id).toBe('client-1')
+    expect(payload.user_location).toEqual({ country_id: 'US' })
     expect(payload.events).toHaveLength(1)
     expect(payload.events[0].name).toBe('file_open')
     expect(payload.events[0].params.ext).toBe('docx')
@@ -179,29 +182,53 @@ describe('createAnalytics', () => {
     expect(payload.events[0].params.engagement_time_msec).toBe(100)
   })
 
+  it('keeps sending without geography when the OS country code is unavailable', () => {
+    const fetchFn = okFetch()
+    const analytics = createAnalytics({
+      keys: KEYS,
+      getClientId: () => 'c',
+      isEnabled: () => true,
+      getCountryCode: () => {
+        throw new Error('locale unavailable')
+      },
+      fetchFn,
+    })
+    analytics.track('app_launch')
+
+    const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit]
+    const payload = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(payload.user_location).toBeUndefined()
+    expect(payload.events).toHaveLength(1)
+  })
+
   it('honors the runtime gate and stops immediately after opt-out', () => {
     const fetchFn = okFetch()
     const getClientId = vi.fn(() => 'c')
+    const getCountryCode = vi.fn(() => 'US')
     let enabled = false
     const analytics = createAnalytics({
       keys: KEYS,
       getClientId,
       isEnabled: () => enabled,
+      getCountryCode,
       fetchFn,
     })
     analytics.track('pre_consent')
     expect(fetchFn).not.toHaveBeenCalled()
     expect(getClientId).not.toHaveBeenCalled()
+    expect(getCountryCode).not.toHaveBeenCalled()
 
     enabled = true
     analytics.track('post_consent')
     expect(fetchFn).toHaveBeenCalledTimes(1)
     expect(getClientId).toHaveBeenCalledTimes(1)
+    expect(getCountryCode).toHaveBeenCalledTimes(1)
 
     enabled = false
     analytics.track('after_opt_out')
     expect(fetchFn).toHaveBeenCalledTimes(1)
     expect(getClientId).toHaveBeenCalledTimes(1)
+    expect(getCountryCode).toHaveBeenCalledTimes(1)
   })
 
   it('creates and persists the client id only when an eligible consented event needs it', () => {

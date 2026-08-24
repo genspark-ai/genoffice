@@ -51,6 +51,20 @@ export interface ChartRef {
   readonly sheetId: string
 }
 
+/**
+ * The user's selection captured when they sent the message. The grid selection
+ * is live: users keep clicking around while the AI works, so reading it at
+ * tool-call time would silently retarget "this column" mid-run.
+ */
+export interface FrozenSelection {
+  /** A1 notation on the sheet it was taken from, clamped to the data extent so
+   *  a whole-column click is not reported as a million rows */
+  readonly a1: string
+  readonly sheetId: string
+  /** header names when the selection covers whole columns */
+  readonly columns?: readonly string[]
+}
+
 export interface ActiveSheetInfo {
   readonly mode: 'demo' | 'lazy' | 'none'
   readonly sheetId: string
@@ -63,8 +77,14 @@ export interface ActiveSheetInfo {
   readonly loadedRange?: string | undefined
   /** every sheet in the workbook, active one included */
   readonly sheets: readonly SheetRef[]
-  /** current selection in A1 notation, when one exists */
+  /** the selection to interpret "this column / these rows" against, in A1
+   * notation (sheet-qualified when it is not the active sheet) */
   readonly selection?: string | undefined
+  /** the selection above is the send-time snapshot rather than a live read */
+  readonly selectionFrozen?: boolean | undefined
+  /** header names of the columns the selection covers, when it covers whole
+   * ones — what the user means by "this column" */
+  readonly selectionColumns?: readonly string[] | undefined
   /** merged ranges on the active sheet (A1 notation) */
   readonly merges?: readonly string[] | undefined
   /** charts in the workbook (imported files only) */
@@ -377,8 +397,9 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
     name: 'select_range',
     description:
       "Select a range in the grid and scroll the user's view to it, activating its sheet. " +
-      'Use when pointing the user at a location ("the issue is in C42") so the spot is visible on screen. ' +
-      'Pure view navigation — changes no data.',
+      'Pure view navigation — changes no data, but it does replace whatever the user had selected. ' +
+      'Use it only when they asked to be moved ("take me there", "select those rows"); to merely point at a ' +
+      'location, cite it as [C42](sheetnav://C42) in your reply and let them click.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -563,7 +584,19 @@ export function buildWorkbookContext(deps: SheetsSkillDeps): string {
     )
   }
   if (info.selection) {
-    lines.push(`Current selection: ${info.selection}`)
+    const named = info.selectionColumns ?? []
+    // The range alone leaves the model to re-derive which column the user meant
+    // from the header row; name it here so "this column" resolves by meaning.
+    const columns = named.length
+      ? ` (the whole ${named.map((name) => `"${name}"`).join(', ')} column${named.length > 1 ? 's' : ''})`
+      : ''
+    lines.push(
+      info.selectionFrozen
+        ? `User selection: ${info.selection}${columns} — captured when the user sent this message, so it is ` +
+            'what "this column / these rows / the selected part" refers to. It stays fixed for the ' +
+            'whole run even if the user clicks elsewhere while you work.'
+        : `Current selection: ${info.selection}${columns}`,
+    )
   }
   if (info.loadedRange) {
     lines.push(`Currently loaded viewport: ${info.loadedRange} (not the worksheet data extent)`)

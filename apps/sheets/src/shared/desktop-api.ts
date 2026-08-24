@@ -66,6 +66,8 @@ const worksheetMetadataSchema = z
     showFormulas: z.boolean().optional(),
     /// sheetView/@showRowColHeaders — false hides the heading strips.
     showRowColHeaders: z.boolean().optional(),
+    /// sheetView/@rightToLeft — the grid is mirrored (column A at the right).
+    rightToLeft: z.boolean().optional(),
     tables: z.array(
       z
         .object({
@@ -538,7 +540,18 @@ export const workbookFileSchema = z
     /// Theme palette as #RRGGBB in theme index order [lt1, dk1, lt2, dk2,
     /// accent1-6, hlink, folHlink]; absent without a readable theme.
     themeColors: z.array(z.string()).length(12).optional(),
-    themeFonts: z.object({ major: z.string(), minor: z.string() }).strict().optional(),
+    themeFonts: z
+      .object({
+        major: z.string(),
+        minor: z.string(),
+        /// minorFont <a:ea typeface> when non-empty (CJK scheme-font face).
+        minorEa: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    /// Literal cached <name val> of the Normal (cellXfs[0]) font before
+    /// theme-scheme substitution; column-width MDW follows this face.
+    normalFontName: z.string().optional(),
     /// workbook.xml <workbookProtection>; absent when the element is missing.
     workbookProtection: z
       .object({ lockStructure: z.boolean(), hasPassword: z.boolean() })

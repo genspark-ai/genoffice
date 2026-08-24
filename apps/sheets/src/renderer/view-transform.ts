@@ -141,73 +141,107 @@ interface Span {
   end: number
 }
 
-/// Envelope of a span's image through an insertion: a monotone shift, so the
-/// span ends map to the envelope ends.
-function insertEnvelope(span: Span, index: number, count: number): Span {
-  return {
-    start: span.start >= index ? span.start + count : span.start,
-    end: span.end >= index ? span.end + count : span.end,
+/// Image of a segment through an insertion: lines at or past the index shift
+/// apart; a straddling segment splits around the inserted block.
+function insertSegments(segment: Span, index: number, count: number): Span[] {
+  if (segment.end < index) return [segment]
+  if (segment.start >= index) return [{ start: segment.start + count, end: segment.end + count }]
+  return [
+    { start: segment.start, end: index - 1 },
+    { start: index + count, end: segment.end + count },
+  ]
+}
+
+/// Image of a segment through a removal: the part inside the removed block is
+/// gone, survivors past it shift down.
+function removeSegments(segment: Span, index: number, count: number): Span[] {
+  const out: Span[] = []
+  if (segment.start < index) {
+    out.push({ start: segment.start, end: Math.min(segment.end, index - 1) })
   }
+  if (segment.end >= index + count) {
+    out.push({ start: Math.max(segment.start, index + count) - count, end: segment.end - count })
+  }
+  return out
 }
 
-/// Envelope of a span's image through a removal; null when the whole span
-/// falls inside the removed block.
-function removeEnvelope(span: Span, index: number, count: number): Span | null {
-  const left = span.start < index ? { start: span.start, end: Math.min(span.end, index - 1) } : null
-  const right =
-    span.end >= index + count
-      ? { start: Math.max(span.start, index + count) - count, end: span.end - count }
-      : null
-  if (left && right) return { start: left.start, end: right.end }
-  return left ?? right
-}
-
-/// Envelope of a span's image through one move. The map is a translation on
-/// each swap block and the identity elsewhere, so extremes over the span sit
-/// at the span ends or at block boundaries inside the span.
-function moveEnvelope(
-  span: Span,
+/// Image of a segment through one move: a translation on each swap block and
+/// the identity elsewhere, so the segment splits into at most four pieces.
+function moveSegments(
+  segment: Span,
   op: Extract<RowColumnOp, { before: number }>,
   forward: boolean,
-): Span {
+): Span[] {
   const [a, b] = swapImageBlocks(op, forward)
-  let start = Infinity
-  let end = -Infinity
-  for (const position of [span.start, span.end, a.start, a.end, b.start, b.end]) {
-    if (position < span.start || position > span.end) continue
-    const mapped = swapMap(position, op, forward)
-    start = Math.min(start, mapped)
-    end = Math.max(end, mapped)
+  const aLength = a.end - a.start + 1
+  const bLength = b.end - b.start + 1
+  const out: Span[] = []
+  if (segment.start < a.start) {
+    out.push({ start: segment.start, end: Math.min(segment.end, a.start - 1) })
   }
-  return { start, end }
+  const inFirst = {
+    start: Math.max(segment.start, a.start) + bLength,
+    end: Math.min(segment.end, a.end) + bLength,
+  }
+  if (inFirst.start <= inFirst.end) out.push(inFirst)
+  const inSecond = {
+    start: Math.max(segment.start, b.start) - aLength,
+    end: Math.min(segment.end, b.end) - aLength,
+  }
+  if (inSecond.start <= inSecond.end) out.push(inSecond)
+  if (segment.end > b.end) {
+    out.push({ start: Math.max(segment.start, b.end + 1), end: segment.end })
+  }
+  return out
 }
 
-/// Envelope of a span's image through the whole op sequence (`forward` =
-/// file → screen). Moves make the composite non-monotonic, so the envelope is
-/// tracked op by op: each op's blocks are evaluated in the intermediate
-/// coordinate space that op actually ran in. Over-reading is safe, tearing is
-/// not. Null when nothing in the span survives the mapping.
+/// Disjoint images of a span through the whole op sequence (`forward` =
+/// file → screen). Moves make the composite non-monotonic, so segments are
+/// tracked op by op, each op evaluated in the intermediate coordinate space
+/// it actually ran in. Tracking exact occupancy (not a bounding box) keeps
+/// removals honest: a move that pulls unrelated lines through the tracked
+/// area never leaves phantom coverage behind. Empty when nothing in the span
+/// survives the mapping.
+function spanSegments(
+  ops: readonly StructuralOp[],
+  axis: Axis,
+  span: Span,
+  forward: boolean,
+): Span[] {
+  const relevant = rowColumnOps(ops, axis)
+  if (!forward) relevant.reverse()
+  let segments: Span[] = [span]
+  for (const op of relevant) {
+    if (segments.length === 0) break
+    if ('before' in op) {
+      segments = segments.flatMap((segment) => moveSegments(segment, op, forward))
+    } else if (isInsert(op) === forward) {
+      // Inserts applied forward and removals inverted both shift lines apart.
+      segments = segments.flatMap((segment) => insertSegments(segment, op.index, op.count))
+    } else {
+      segments = segments.flatMap((segment) => removeSegments(segment, op.index, op.count))
+    }
+  }
+  return segments
+}
+
+/// Bounding envelope of the surviving segments; null when none survive. May
+/// still span gaps between segments, but both ends sit on real survivors.
 function spanEnvelope(
   ops: readonly StructuralOp[],
   axis: Axis,
   span: Span,
   forward: boolean,
 ): Span | null {
-  const relevant = rowColumnOps(ops, axis)
-  if (!forward) relevant.reverse()
-  let current: Span | null = span
-  for (const op of relevant) {
-    if (!current) return null
-    if ('before' in op) {
-      current = moveEnvelope(current, op, forward)
-    } else if (isInsert(op) === forward) {
-      // Inserts applied forward and removals inverted both shift lines apart.
-      current = insertEnvelope(current, op.index, op.count)
-    } else {
-      current = removeEnvelope(current, op.index, op.count)
-    }
+  const segments = spanSegments(ops, axis, span, forward)
+  if (segments.length === 0) return null
+  let start = Infinity
+  let end = -Infinity
+  for (const segment of segments) {
+    start = Math.min(start, segment.start)
+    end = Math.max(end, segment.end)
   }
-  return current
+  return { start, end }
 }
 
 /// File-space range backing a screen-space range. The result may span file
@@ -253,6 +287,28 @@ export function fileRangeToScreenRange(
     startColumn: columns.start,
     endColumn: columns.end,
   }
+}
+
+/// Exact screen-space images of a file-space range, as disjoint rectangles
+/// (surviving row segments × surviving column segments). Unlike the envelope
+/// above, the rectangles never cover lines that were deleted or unrelated
+/// lines a move shuffled between the survivors. Empty when nothing survives.
+export function fileRangeToScreenRanges(ops: readonly StructuralOp[], range: CellArea): CellArea[] {
+  const rows = spanSegments(ops, 'row', { start: range.startRow, end: range.endRow }, true)
+  const columns = spanSegments(
+    ops,
+    'column',
+    { start: range.startColumn, end: range.endColumn },
+    true,
+  )
+  return rows.flatMap((row) =>
+    columns.map((column) => ({
+      startRow: row.start,
+      endRow: row.end,
+      startColumn: column.start,
+      endColumn: column.end,
+    })),
+  )
 }
 
 /// Screen position of the indexing cutoff: the last screen row whose file

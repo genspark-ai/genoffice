@@ -22,15 +22,18 @@ import type {
   CustomNumberingLevel,
   DocDefaults,
   HeaderFooter,
+  Run,
   SectionSettings,
   SourceInfo,
   StyleInfo,
   TextboxDisplay,
+  TextboxParaDisplay,
   ThemeColors,
   ThemeFonts,
 } from '@genoffice/docx-engine'
 import { ColorPicker, Dropdown, isSymbolFontFamily, useDismissablePopover } from '@genoffice/ui'
 import { HIGHLIGHT_CSS } from '../editor/extensions'
+import { applyCase, type CaseMode } from '../editor/case-transform'
 import { setParagraphDirection, setSelectionAlign } from '../editor/direction'
 import { setInactiveSelectionShown } from '../editor/inactive-selection'
 import { stepParagraphIndent } from '../editor/indent'
@@ -115,7 +118,10 @@ import {
 } from './icons'
 interface RibbonProps {
   /** App keyboard shortcuts reuse ribbon closures through here (font-size stepping keeps its coalescing) */
-  actionsRef?: React.MutableRefObject<{ stepFontSize?: (dir: 1 | -1) => void }>
+  actionsRef?: React.MutableRefObject<{
+    stepFontSize?: (dir: 1 | -1) => void
+    nudgeFontSize?: (dir: 1 | -1) => void
+  }>
   /** Quick-access area on the tab row's left (save/undo-redo/autosave), matching the WPS/Office QAT */
   quickActions?: React.ReactNode
   /** Right side of the tab row (file name, etc.) */
@@ -272,19 +278,6 @@ const PAINTER_BLOCK_EXTRA: Record<string, string[]> = {
   docParagraph: [],
   docHeading: ['level'],
   docListItem: ['kind', 'numId', 'ilvl'],
-}
-
-function transformCase(s: string, mode: 'upper' | 'lower' | 'title' | 'sentence'): string {
-  switch (mode) {
-    case 'upper':
-      return s.toUpperCase()
-    case 'lower':
-      return s.toLowerCase()
-    case 'title':
-      return s.toLowerCase().replace(/(^|\s)(\p{L})/gu, (m) => m.toUpperCase())
-    case 'sentence':
-      return s.toLowerCase().replace(/(^\s*\p{L})|([.!?。!?]\s*\p{L})/gu, (m) => m.toUpperCase())
-  }
 }
 
 // Word for Mac has no File ribbon tab: file actions live in the native menu
@@ -736,7 +729,11 @@ function RibbonInner({
   }, [inImage])
 
   // ---- Shape Format (contextual tab when a floating box is selected, same mechanism) ----
-  const inShape = !sub && fs.textboxSelected
+  // Unlike the picture tab this one survives `sub`: double-clicking into the
+  // shape's text keeps the object selected in the main editor, and Word leaves
+  // Shape Format standing throughout — dropping it there is what forced a trip
+  // back to Home to change so much as the weight of the text just typed.
+  const inShape = fs.textboxSelected
   const shapeIsLine = !!fs.shapePrst?.startsWith('line')
   const wasInShape = useRef(false)
 
@@ -772,6 +769,80 @@ function RibbonInner({
       .focus()
       .updateAttributes('docProtected', { textboxes: [box, ...boxes.slice(1)] })
       .run()
+  }
+
+  /**
+   * Rewrite every run and paragraph of the selected shape. Only for object mode:
+   * with the shape selected there is no text selection for a mark command to act
+   * on, so Word reformats the whole shape and `editRun`/`editPara` see each part
+   * of it in turn. While a sub-editor holds focus the ordinary mark and alignment
+   * commands already target the text, and shapeTextCommand routes there instead.
+   *
+   * Confined to the first box like setShapeStyle: a paragraph anchoring several
+   * shapes packs them into one docProtected node, and the ribbon reads and writes
+   * only that one — reformatting the rest would hit shapes it is not showing.
+   *
+   * The node view re-feeds its sub-editors from the new attrs, so the shape
+   * repaints even while its text is being edited.
+   */
+  const setShapeText = (
+    editRun?: (run: Run) => Run,
+    editPara?: (para: TextboxParaDisplay) => TextboxParaDisplay,
+  ) => {
+    if (!canEdit) return
+    const attrs = editor.getAttributes('docProtected')
+    const boxes = attrs?.textboxes as TextboxDisplay[] | null
+    if (!Array.isArray(boxes) || boxes.length === 0 || boxes[0].readOnly) return
+    const box = {
+      ...boxes[0],
+      paras: boxes[0].paras.map((para) => {
+        const withRuns = editRun ? { ...para, runs: para.runs.map(editRun) } : para
+        return editPara ? editPara(withRuns) : withRuns
+      }),
+    }
+    editor
+      .chain()
+      .focus()
+      .updateAttributes('docProtected', { textboxes: [box, ...boxes.slice(1)] })
+      .run()
+  }
+
+  /** drop a run property rather than storing an explicit "off" Word would have to write out */
+  const withRunFlag = (run: Run, key: 'bold' | 'italic' | 'underline', on: boolean): Run => {
+    const next = { ...run }
+    if (on) next[key] = true
+    else delete next[key]
+    return next
+  }
+
+  /** Shape Format text buttons: the sub-editor when inside the text, the whole shape otherwise */
+  const shapeTextCommand = {
+    toggleMark: (name: 'bold' | 'italic' | 'underline', active: boolean) => {
+      if (sub) chain().toggleMark(name).run()
+      else setShapeText((run) => withRunFlag(run, name, !active))
+    },
+    setColor: (hex: string | null) => {
+      if (sub) setTextStyle({ color: hex })
+      else
+        setShapeText((run) => {
+          const next = { ...run }
+          if (hex) next.color = hex
+          else delete next.color
+          return next
+        })
+    },
+    setAlign: (align: 'left' | 'center' | 'right' | 'justify') => {
+      if (sub) setSelectionAlign(ed, align)
+      else setShapeText(undefined, (para) => ({ ...para, align }))
+    },
+  }
+
+  const shapeTextActive = {
+    bold: sub ? fs.bold : fs.shapeTextBold,
+    italic: sub ? fs.italic : fs.shapeTextItalic,
+    underline: sub ? fs.underline : fs.shapeTextUnderline,
+    color: sub ? fs.textColor : fs.shapeTextColor,
+    align: sub ? fs.align : fs.shapeTextAlign,
   }
 
   /**
@@ -1219,18 +1290,7 @@ function RibbonInner({
     stepParagraphIndent(editor, delta)
   }
 
-  const stepFontSize = (dir: 1 | -1) => {
-    const step = (base: number): number => {
-      const idx = FONT_SIZES.findIndex((s) => s >= base)
-      if (dir === 1)
-        return FONT_SIZES[
-          Math.min(
-            idx === -1 ? FONT_SIZES.length : idx + (FONT_SIZES[idx] === base ? 1 : 0),
-            FONT_SIZES.length - 1,
-          )
-        ]
-      return FONT_SIZES[Math.max(idx === -1 ? FONT_SIZES.length - 1 : idx - 1, 0)]
-    }
+  const applyFontStep = (step: (base: number) => number) => {
     // Every applied size change re-paginates the whole document synchronously —
     // ~700ms per click on table-heavy documents — so clicking A+/A- in a burst
     // froze the UI for seconds. Apply the first click immediately (a single
@@ -1275,9 +1335,28 @@ function RibbonInner({
     }, FONT_STEP_COALESCE_MS)
   }
 
+  /** A+/A- and ⇧⌘. / ⇧⌘,: walk Word's preset size list */
+  const stepFontSize = (dir: 1 | -1) =>
+    applyFontStep((base) => {
+      const idx = FONT_SIZES.findIndex((s) => s >= base)
+      if (dir === 1)
+        return FONT_SIZES[
+          Math.min(
+            idx === -1 ? FONT_SIZES.length : idx + (FONT_SIZES[idx] === base ? 1 : 0),
+            FONT_SIZES.length - 1,
+          )
+        ]
+      return FONT_SIZES[Math.max(idx === -1 ? FONT_SIZES.length - 1 : idx - 1, 0)]
+    })
+
+  /** Word's ⌘] / ⌘[: exactly one point, within Word's 1–1638pt range */
+  const nudgeFontSize = (dir: 1 | -1) =>
+    applyFontStep((base) => Math.min(Math.max(Math.round(base) + dir, 1), 1638))
+
   useEffect(() => {
     if (!actionsRef) return
     actionsRef.current.stepFontSize = stepFontSize
+    actionsRef.current.nudgeFontSize = nudgeFontSize
   })
 
   const toggleVertAlign = (kind: 'superscript' | 'subscript') => {
@@ -1534,30 +1613,9 @@ function RibbonInner({
     }
   }, [painter, editor])
 
-  const changeCase = (mode: 'upper' | 'lower' | 'title' | 'sentence') => {
+  const changeCase = (mode: CaseMode) => {
     if (!canEdit) return
-    const { from, to } = ed.state.selection
-    if (from === to) return
-    ed.chain()
-      .focus()
-      .command(({ state, tr }) => {
-        state.doc.nodesBetween(from, to, (node, pos) => {
-          if (!node.isText || !node.text) return
-          const start = Math.max(from, pos)
-          const end = Math.min(to, pos + node.nodeSize)
-          const slice = node.text.slice(start - pos, end - pos)
-          const next = transformCase(slice, mode)
-          if (next !== slice) {
-            tr.replaceWith(
-              tr.mapping.map(start),
-              tr.mapping.map(end),
-              state.schema.text(next, node.marks),
-            )
-          }
-        })
-        return true
-      })
-      .run()
+    applyCase(ed, mode)
     setDropdown(null)
   }
 
@@ -1628,6 +1686,39 @@ function RibbonInner({
       onClick={() => chain().toggleMark(name).run()}
     >
       {label}
+    </button>
+  )
+
+  const shapeMarkBtn = (
+    name: 'bold' | 'italic' | 'underline',
+    active: boolean,
+    title: string,
+    label: ReactNode,
+  ) => (
+    <button
+      className={`rb-icon ${active ? 'active' : ''}`}
+      disabled={!canEdit}
+      data-tip={title}
+      aria-label={title}
+      onClick={() => shapeTextCommand.toggleMark(name, active)}
+    >
+      {label}
+    </button>
+  )
+
+  const shapeAlignBtn = (
+    align: 'left' | 'center' | 'right' | 'justify',
+    title: string,
+    icon: ReactNode,
+  ) => (
+    <button
+      className={`rb-icon ${shapeTextActive.align === align ? 'active' : ''}`}
+      disabled={!canEdit}
+      data-tip={title}
+      aria-label={title}
+      onClick={() => shapeTextCommand.setAlign(align)}
+    >
+      {icon}
     </button>
   )
 
@@ -1804,6 +1895,69 @@ function RibbonInner({
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupShapeStyles')}</div>
             </div>
+            {fs.shapeHasText && (
+              <div className="ribbon-group">
+                <div className="ribbon-group-items">
+                  <div className="rb-col">
+                    <div className="rb-row">
+                      {shapeMarkBtn('bold', shapeTextActive.bold, t('ribbonBoldTip'), <b>B</b>)}
+                      {shapeMarkBtn(
+                        'italic',
+                        shapeTextActive.italic,
+                        t('ribbonItalicTip'),
+                        <i>I</i>,
+                      )}
+                      {shapeMarkBtn(
+                        'underline',
+                        shapeTextActive.underline,
+                        t('ribbonUnderlineTip'),
+                        <u>U</u>,
+                      )}
+                      <div className="rb-split-wrap">
+                        <button
+                          className="rb-icon rb-color-btn"
+                          disabled={!canEdit}
+                          data-tip={t('ribbonFontColor')}
+                          aria-label={t('ribbonFontColor')}
+                          onClick={() =>
+                            setDropdown((v) => (v === 'shapeTextColor' ? null : 'shapeTextColor'))
+                          }
+                        >
+                          <span className="rb-color-glyph rb-color-glyph-svg">
+                            <IconFontColorA />
+                            <span
+                              className="rb-color-bar"
+                              style={{
+                                background: shapeTextActive.color
+                                  ? `#${shapeTextActive.color}`
+                                  : 'transparent',
+                              }}
+                            />
+                          </span>
+                        </button>
+                        {dropdown === 'shapeTextColor' && (
+                          <ShapeColorPalette
+                            current={shapeTextActive.color}
+                            noneLabel={t('ribbonAutomatic')}
+                            onPick={(hex) => {
+                              shapeTextCommand.setColor(hex)
+                              setDropdown(null)
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <div className="rb-row">
+                      {shapeAlignBtn('left', t('ribbonAlignLeftTip'), <IconAlignLeft />)}
+                      {shapeAlignBtn('center', t('ribbonAlignCenterTip'), <IconAlignCenter />)}
+                      {shapeAlignBtn('right', t('ribbonAlignRightTip'), <IconAlignRight />)}
+                      {shapeAlignBtn('justify', t('ribbonJustifyTip'), <IconAlignJustify />)}
+                    </div>
+                  </div>
+                </div>
+                <div className="ribbon-group-label">{t('ribbonGroupText')}</div>
+              </div>
+            )}
           </div>
         ) : tab === 'pictureFormat' && inImage ? (
           <div className="table-ribbon-body">

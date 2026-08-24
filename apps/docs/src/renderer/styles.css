@@ -2162,6 +2162,14 @@ th.cell-rev-del {
   transform: translate(var(--col-dx, 0px), var(--col-dy, 0px));
 }
 
+/* page/margin-relative X anchors are absolute on the page in Word: undo the
+   column shift for boxes riding a column-translated block (Y keeps following
+   the anchor paragraph). Boxes with their own inline transform (rotation)
+   keep it — inline wins — a rare combination accepted as-is. */
+.editor-scroll .doc-page:not(.measuring-columns) .doc-col-block [data-page-rel-x='1'] {
+  transform: translateX(calc(-1 * var(--col-dx, 0px)));
+}
+
 /* single-flow measuring state: transforms and the column-space pull-up must not
    distort the 1-D virtual coordinates */
 .editor-scroll .doc-page.measuring-columns .page-gap {
@@ -6031,13 +6039,13 @@ body.docs-crop-active
   z-index: 59;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
+  gap: 5px;
+  padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--accent);
-  font-size: 11.5px;
+  color: var(--color-ai-action);
+  font-size: 14px;
   font-weight: 500;
   box-shadow: var(--docs-shadow-menu);
   cursor: pointer;
@@ -6145,8 +6153,12 @@ body.docs-crop-active
 
 .ai-ask-confirm {
   border: 1px solid transparent;
-  background: var(--accent);
-  color: var(--docs-on-accent);
+  background: var(--color-ai-action);
+  color: var(--color-ai-action-text);
+}
+
+.ai-ask-confirm:hover:not(:disabled) {
+  background: var(--color-ai-action-hover);
 }
 
 .ai-ask-confirm:disabled {
@@ -6938,6 +6950,82 @@ body.docs-crop-active
   border-color: var(--color-btn-primary-hover);
   background: var(--color-btn-primary-hover);
   color: var(--color-btn-primary-text);
+}
+
+/* ---- keyboard shortcuts sheet ---- */
+
+.modal-shortcuts {
+  width: 620px;
+  max-height: min(78vh, 720px);
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-shortcuts .sc-filter {
+  display: block;
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.modal-shortcuts .sc-filter:focus {
+  border-color: var(--word-blue);
+}
+
+.modal-shortcuts .sc-list {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 14px;
+  padding-right: 4px;
+}
+
+.modal-shortcuts .sc-group + .sc-group {
+  margin-top: 18px;
+}
+
+.modal-shortcuts .sc-group h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.modal-shortcuts .sc-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.modal-shortcuts .sc-row:last-child {
+  border-bottom: none;
+}
+
+.modal-shortcuts .sc-keys {
+  flex: none;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--hover);
+  border-radius: 6px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.modal-shortcuts .sc-empty {
+  margin: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-dim);
 }
 
 .modal-actions {

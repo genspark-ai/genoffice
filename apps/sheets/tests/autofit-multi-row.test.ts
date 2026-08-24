@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { expandAutoHeightRanges } from '../src/renderer/autofit-multi-row'
+import { SetWorksheetRowIsAutoHeightCommand } from '@univerjs/sheets'
+
+import {
+  expandAutoHeightRanges,
+  SET_ROW_IS_AUTO_HEIGHT_COMMAND,
+} from '../src/renderer/autofit-multi-row'
 
 const COLUMNS = 26
 const fullRows = (startRow: number, endRow: number) => ({
@@ -10,6 +15,12 @@ const fullRows = (startRow: number, endRow: number) => ({
   endColumn: COLUMNS - 1,
 })
 const clicked = (row: number) => [{ startRow: row, endRow: row, startColumn: 0, endColumn: 5 }]
+
+describe('SET_ROW_IS_AUTO_HEIGHT_COMMAND', () => {
+  it("matches Univer's row-header double-click autofit command id", () => {
+    expect(SET_ROW_IS_AUTO_HEIGHT_COMMAND).toBe(SetWorksheetRowIsAutoHeightCommand.id)
+  })
+})
 
 describe('expandAutoHeightRanges', () => {
   it('grows a single-row autofit to the full multi-row selection', () => {

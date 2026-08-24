@@ -57,9 +57,6 @@
    * #1f5aa8 arrows in trace-arrows.tsx) and page-break preview lines */
   --sheets-excel-blue: #1f5aa8;
   --sheets-excel-blue-bg: rgb(31 90 168 / 6%);
-  /* Cross-highlight ("reading mode") bands over the active row/column */
-  --sheets-crosshair-bg: rgb(31 90 168 / 7%);
-  --sheets-crosshair-line: rgb(31 90 168 / 30%);
   --sheets-el-selected: #107c41;
   --sheets-float-btn-bg: rgb(255 255 255 / 92%);
   --sheets-shape-border: #aeb4b8;
@@ -127,8 +124,6 @@
   --sheets-chip-bg: #24312a;
   --sheets-member-bg: #2f2f2f;
   --sheets-member-ink: #a9b2ac;
-  --sheets-crosshair-bg: rgb(96 165 250 / 12%);
-  --sheets-crosshair-line: rgb(96 165 250 / 35%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -157,8 +152,6 @@
     --sheets-chip-bg: #24312a;
     --sheets-member-bg: #2f2f2f;
     --sheets-member-ink: #a9b2ac;
-    --sheets-crosshair-bg: rgb(96 165 250 / 12%);
-    --sheets-crosshair-line: rgb(96 165 250 / 35%);
   }
 }
 
@@ -219,38 +212,9 @@
     local('Arial Bold Italic');
 }
 
-@font-face {
-  font-family: 'Aptos Narrow';
-  src:
-    local('Aptos Narrow'), local('Calibri'), local('Carlito'), url('./fonts/Carlito-Regular.ttf'),
-    local('Helvetica Neue'), local('Arial');
-}
-
-@font-face {
-  font-family: 'Aptos Narrow';
-  font-weight: bold;
-  src:
-    local('Aptos Narrow Bold'), local('Calibri Bold'), local('Carlito Bold'),
-    url('./fonts/Carlito-Bold.ttf'), local('Helvetica Neue Bold'), local('Arial Bold');
-}
-
-@font-face {
-  font-family: 'Aptos Narrow';
-  font-style: italic;
-  src:
-    local('Aptos Narrow Italic'), local('Calibri Italic'), local('Carlito Italic'),
-    url('./fonts/Carlito-Italic.ttf'), local('Helvetica Neue Italic'), local('Arial Italic');
-}
-
-@font-face {
-  font-family: 'Aptos Narrow';
-  font-weight: bold;
-  font-style: italic;
-  src:
-    local('Aptos Narrow Bold Italic'), local('Calibri Bold Italic'), local('Carlito Bold Italic'),
-    url('./fonts/Carlito-BoldItalic.ttf'), local('Helvetica Neue Bold Italic'),
-    local('Arial Bold Italic');
-}
+/* 'Aptos Narrow' lives in CELL_FONT_ALIASES (cell-font-fallback.ts): a CSS
+ * face here would shadow the width-corrected substitute for italic runs.
+ * Italics synthesize from the corrected upright faces. */
 
 @font-face {
   font-family: Carlito;
@@ -309,36 +273,9 @@
     local('Arial Bold Italic');
 }
 
-/* Localized CJK cell-font aliases (document data): Korean-produced workbooks
- * name fonts in Hangul; without these the canvas family is unresolvable and
- * Hangul falls back through Chromium's serif default. */
-@font-face {
-  font-family: '맑은 고딕';
-  src: local('Malgun Gothic'), local('Apple SD Gothic Neo'), local('AppleGothic');
-}
-
-@font-face {
-  font-family: '맑은 고딕';
-  font-weight: bold;
-  src:
-    local('Malgun Gothic Bold'), local('MalgunGothicBold'), local('Apple SD Gothic Neo Bold'),
-    local('AppleSDGothicNeo-Bold'), local('AppleGothic');
-}
-
-@font-face {
-  font-family: '돋움';
-  src: local('Dotum'), local('AppleGothic'), local('Apple SD Gothic Neo');
-}
-
-/* Korean faces ship no italics; only weight needs a rule (font-synthesis is
- * off for DOM surfaces — the grid canvas synthesizes on its own). */
-@font-face {
-  font-family: '돋움';
-  font-weight: bold;
-  src:
-    local('Dotum Bold'), local('Apple SD Gothic Neo Bold'), local('AppleSDGothicNeo-Bold'),
-    local('AppleGothic');
-}
+/* Hangul-named cell-font aliases ('맑은 고딕', '돋움') live in
+ * CELL_FONT_ALIASES (cell-font-fallback.ts), which supports the per-script
+ * width correction Malgun Gothic needs. */
 
 * {
   box-sizing: border-box;
@@ -1683,6 +1620,129 @@ button.check-item:hover {
   background: var(--surface);
 }
 
+/* Floating selection Ask AI entry and send-now popover (docs/slides parity). */
+.ai-ask-trigger {
+  position: fixed;
+  z-index: 59;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-30);
+  background: var(--surface);
+  color: var(--color-ai-action);
+  font-family: var(--gs-font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  box-shadow: var(--sheets-shadow-menu);
+  cursor: pointer;
+}
+
+.ai-ask-trigger:hover {
+  background: var(--hover);
+}
+
+.ai-ask-pop {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--sheets-shadow-menu);
+  font-family: var(--gs-font-sans);
+}
+
+.ai-ask-pop-title {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-ask-pop-sub {
+  margin-top: -4px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.ai-ask-pop-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-8);
+  outline: none;
+  background: var(--color-bg-page);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 14px;
+}
+
+.ai-ask-pop-input:focus {
+  border-color: var(--accent);
+}
+
+.ai-ask-pop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-ask-chip {
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-30);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.ai-ask-chip:hover {
+  background: var(--hover);
+  color: var(--color-text-primary);
+}
+
+.ai-ask-pop-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ai-ask-cancel,
+.ai-ask-confirm {
+  padding: 6px 12px;
+  border-radius: var(--radius-6);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ai-ask-cancel {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.ai-ask-confirm {
+  border: 1px solid transparent;
+  background: var(--color-ai-action);
+  color: var(--color-ai-action-text);
+}
+
+.ai-ask-confirm:hover:not(:disabled) {
+  background: var(--color-ai-action-hover);
+}
+
+.ai-ask-confirm:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .copilot {
   position: relative;
   display: flex;
@@ -2326,24 +2386,6 @@ textarea:focus {
   border: 1.5px solid var(--sheets-excel-blue);
   background: var(--sheets-excel-blue-bg);
   pointer-events: none;
-}
-
-/* Cross-highlight bands over the active row and column (View tab toggle);
- * pass-through float DOM so cell clicks and edits land on the grid */
-.sheets-crosshair-band {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-  background: var(--sheets-crosshair-bg);
-  pointer-events: none;
-}
-
-.sheets-crosshair-band.crosshair-row {
-  border-bottom: 1px solid var(--sheets-crosshair-line);
-}
-
-.sheets-crosshair-band.crosshair-column {
-  border-right: 1px solid var(--sheets-crosshair-line);
 }
 
 .trace-arrow-layer {
@@ -3866,6 +3908,14 @@ textarea:focus {
   font-size: 14px;
 }
 
+/* in-answer citation links: click jumps the grid to the cited cell/range */
+.ai-md .ai-md-nav {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 /* Collapsible tool-activity group.
    Unlike docs/slides, this app renders the group BEFORE the reply text, so the
    gap to the surrounding content comes from margin-bottom, not margin-top. */
@@ -4496,6 +4546,52 @@ textarea:focus {
 
 .ai-attach-btn:hover {
   filter: brightness(0.7);
+}
+
+/* Selection-scope chip above the composer: shown only for a deliberate
+   multi-cell selection, so the resting single-cell state adds no chrome. */
+.ai-scope-row {
+  padding: 13px 14px 0;
+}
+
+.ai-scope-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px 3px 10px;
+  border-radius: var(--radius-30);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: var(--text-caption);
+  font-weight: 500;
+}
+
+/* the run in flight owns this scope: no dismiss control, so no room for one */
+.ai-scope-hint.is-locked {
+  padding-right: 10px;
+}
+
+.ai-scope-hint::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ai-scope-clear {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+.ai-scope-clear:hover {
+  opacity: 1;
 }
 
 /* attachment chips above the composer */

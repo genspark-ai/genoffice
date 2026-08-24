@@ -2367,13 +2367,13 @@ div.tiptap-mathematics-render {
   z-index: 59;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
+  gap: 5px;
+  padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
-  color: var(--accent);
-  font-size: 11.5px;
+  color: var(--color-ai-action);
+  font-size: 14px;
   font-weight: 500;
   box-shadow: var(--md-pop-shadow);
   cursor: pointer;
@@ -2481,8 +2481,12 @@ div.tiptap-mathematics-render {
 
 .ai-ask-confirm {
   border: 1px solid transparent;
-  background: var(--accent);
-  color: var(--md-on-accent);
+  background: var(--color-ai-action);
+  color: var(--color-ai-action-text);
+}
+
+.ai-ask-confirm:hover:not(:disabled) {
+  background: var(--color-ai-action-hover);
 }
 
 .ai-ask-confirm:disabled {

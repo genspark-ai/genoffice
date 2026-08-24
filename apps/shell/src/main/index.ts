@@ -106,6 +106,7 @@ import {
   setDocsExtraFileMenuItems,
   setDocsMenuGate,
   setDocsShellHooks,
+  createAiDocument,
   projectFileRenamed,
   setDocsShellWindow,
   setDocsFileSavedHook,
@@ -263,6 +264,7 @@ configurePdfRuntime({
   rendererUrl: process.env.PDF_RENDERER_URL,
   rendererFile: join(PDF_OUT, 'renderer', 'index.html'),
   openGeneratedPath: (path) => openGeneratedDocument(path),
+  createDocument: createAiDocument,
 })
 configureMarkdownRuntime({
   preloadPath: join(MARKDOWN_OUT, 'preload', 'index.js'),
@@ -364,6 +366,9 @@ function initAnalytics(): void {
       keys: resolveAnalyticsKeys(),
       getClientId: () => ensureAnalyticsClientId(APP_SETTINGS_PATH()),
       isEnabled: analyticsEnabled,
+      // Country-only approximation from OS regional settings. This avoids an
+      // IP lookup while populating GA4's built-in Country dimension.
+      getCountryCode: () => app.getLocaleCountryCode(),
       // evaluated per event: ui_lang follows live language switches
       baseParams: () => ({
         app_version: app.getVersion(),
@@ -2397,6 +2402,8 @@ function createShellWindow(): void {
   setSlidesShowBleed((wc, on) => manager.setContentBleed(wc, on))
   setDocsShellHooks({
     openTab: (openPath, options) => manager.openDocsTab(openPath, options),
+    openAiDocTab: (content) =>
+      manager.openDocsTab(undefined, { newBlank: true, aiContent: content }),
     listTabs: () =>
       manager
         .list()

@@ -70,6 +70,15 @@ describe('header/footer images (display-only Logo)', () => {
     expect(await saveDocx(doc, blocks)).toEqual(bytes)
   })
 
+  it('parses a:srcRect crop fractions (two same-image crops read as one picture each)', async () => {
+    const headerXml = HEADER_XML.replace(
+      '<a:blip r:embed="rId1"/>',
+      '<a:blip r:embed="rId1"/><a:srcRect t="69600" r="77114"/>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages![0].crop).toEqual({ l: 0, t: 0.696, r: 0.77114, b: 0 })
+  })
+
   it('inline image follows its paragraph alignment (POI headerPic: w:jc right)', async () => {
     const headerXml = HEADER_XML.replace(
       '<w:p><w:r><w:drawing>',

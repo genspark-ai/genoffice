@@ -7,6 +7,9 @@ import { geomDispSize, pdfRectToCss, quadToRect, viewToPdf } from '../annotation
 import type { PageGeom } from '../annotations'
 import { EDIT_FONTS } from '../../shared/ipc'
 import type {
+  CreateDocumentRequest,
+  CreateDocumentResult,
+  CreateDocumentType,
   FormValueInput,
   ImageLayer,
   ImageSearchResponse,
@@ -17,6 +20,7 @@ import type {
 } from '../../shared/ipc'
 import { groupPageBlocks } from '../text-block'
 import { joinBlockLines, measurePt, wrapText } from '../text-wrap'
+import { isScannedText } from '../ocr-layer'
 import { t } from '../i18n/locale'
 import { buildFormCatalog } from '../form-catalog'
 import { flattenThread, type NoteThreadItem } from '../note-threads'
@@ -32,6 +36,8 @@ export interface PdfAiDeps {
   /** Original page number of the currently visible page (1-based) */
   currentPage(): number
   readOnly(): boolean
+  /** OCR-recovered text of a scanned page; null when the page was not OCR'd */
+  ocrText(origIdx: number): string | null
   /** Text selection cached at mouseup (native DOM selections collapse when focus moves
       into the panel); page..lastPage is the original-page span it covers */
   selection(): { page: number; lastPage: number; text: string } | null
@@ -105,6 +111,8 @@ export interface PdfAiDeps {
   }>
   /** Download a URL (main-process, SSRF-guarded) and re-encode as PNG; null on failure */
   fetchImage(url: string): Promise<{ png: string; width: number; height: number } | null>
+  /** AI create_document: write a new standalone file (pdf/docx/md) into the default folder and open it in a new tab */
+  createDocument(request: CreateDocumentRequest): Promise<CreateDocumentResult>
 }
 
 export const AGENT_TOOLS: AgentToolDef[] = [
@@ -569,10 +577,43 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       'Read the document outline (bookmarks) tree, including entry titles. Returns empty if the document has no outline.',
     inputSchema: { type: 'object', properties: {} },
   },
+  {
+    name: 'create_document',
+    description:
+      'Create a NEW standalone file in the default save folder and open it in a new tab; the current PDF is not modified. Use when the user asks to put content (a summary, an extraction, an analysis result) into a new/separate document. ' +
+      "type 'pdf' (default) and 'docx' take simple HTML in content (<h1>-<h6>, <p>, <ul>/<ol>/<li>, <table>, <pre>, <blockquote>; inline <strong>/<em>/<u>/<s>); type 'md' takes Markdown source. Images are not supported in the new file's content.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['pdf', 'docx', 'md'],
+          description: "target file type (default 'pdf')",
+        },
+        title: { type: 'string', description: 'document title, used as the file name' },
+        content: {
+          type: 'string',
+          description: 'full document content: simple HTML for pdf/docx, Markdown for md',
+        },
+      },
+      required: ['title', 'content'],
+    },
+  },
 ]
 
 const READONLY_OUTPUT =
   'The document is encrypted and read-only; it cannot be modified. Inform the user.'
+
+/** mirror of the docs tool-echo guard: reject tool-protocol output pasted as document content */
+function contentEchoError(content: string): string | null {
+  if (/<\/?tool_response>/i.test(content)) {
+    return 'content contains a literal <tool_response> tag — that is tool-protocol output, not document content; retry with the actual document HTML'
+  }
+  if (/"index"\s*:\s*\d+\s*,\s*"type"\s*:\s*"/.test(content)) {
+    return 'content contains a raw JSON dump, not an HTML fragment; retry with simple HTML (e.g. <p>…</p>)'
+  }
+  return null
+}
 
 function err(output: string, summary: string): ToolExecution {
   return { output, isError: true, summary }
@@ -611,6 +652,12 @@ async function readPages(deps: PdfAiDeps, input: Record<string, unknown>): Promi
       }
     }
     page.cleanup()
+    if (isScannedText(text)) {
+      const ocr = deps.ocrText(n - 1)
+      if (ocr && ocr.trim()) {
+        text = `(recovered by OCR; may contain recognition errors)\n${ocr}`
+      }
+    }
     out += `[Page ${n}]\n${text.trim()}\n\n`
     if (out.length > READ_CHUNK_CHARS) {
       out = `${out.slice(0, READ_CHUNK_CHARS)}\n… (truncated; read the rest in further calls)`
@@ -1718,6 +1765,30 @@ export async function executePdfTool(
       return {
         output: lines.join('\n') || 'The document has no outline',
         summary: t('aiToolOutline'),
+      }
+    }
+    case 'create_document': {
+      const typeRaw = input.type === undefined ? 'pdf' : String(input.type)
+      const summary = t('aiToolCreateDocument')
+      if (typeRaw !== 'pdf' && typeRaw !== 'docx' && typeRaw !== 'md')
+        return err('type must be one of pdf/docx/md', summary)
+      const type: CreateDocumentType = typeRaw
+      const title = String(input.title ?? '').trim()
+      if (!title) return err('title must not be empty', summary)
+      const content = String(input.content ?? '')
+      if (!content.trim()) return err('content must not be empty', summary)
+      if (type !== 'md') {
+        const echo = contentEchoError(content)
+        if (echo) return err(echo, summary)
+      }
+      const r = await deps.createDocument({ type, title, content })
+      if (!r.ok) return err(r.error ?? 'creating the document failed', summary)
+      const name = `${title}.${type}`
+      return {
+        output: r.path
+          ? `Created the new document at ${r.path} and opened it in a new tab.`
+          : `Created the new document "${name}" in a new tab; it saves itself into the default folder.`,
+        summary: t('aiToolCreatedDocument', { name }),
       }
     }
     default:

@@ -346,6 +346,16 @@ export function AiAskPopover({
             <>
               <button
                 className="ai-ask-cancel"
+                disabled={!canSubmit}
+                onClick={() => {
+                  onSendNow(text.trim())
+                  close()
+                }}
+              >
+                {t('aiAskSendNow')}
+              </button>
+              <button
+                className="ai-ask-confirm"
                 disabled={!canSubmit || queueFull}
                 data-tip={queueFull ? t('aiQueueFullNotice', { max: EDIT_QUEUE_MAX }) : undefined}
                 onClick={() => {
@@ -354,16 +364,6 @@ export function AiAskPopover({
                 }}
               >
                 {t('aiAskQueue')}
-              </button>
-              <button
-                className="ai-ask-confirm"
-                disabled={!canSubmit}
-                onClick={() => {
-                  onSendNow(text.trim())
-                  close()
-                }}
-              >
-                {t('aiAskSendNow')}
               </button>
             </>
           )}
@@ -383,7 +383,7 @@ export function AiAskPopover({
           onMouseDown={(e) => e.preventDefault()}
           onClick={openFromSelection}
         >
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" aria-hidden>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden>
             <path
               d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3zM19 15l.85 2.3L22 18.15l-2.15.85L19 21.3l-.85-2.3-2.15-.85 2.15-.85L19 15z"
               fill="currentColor"

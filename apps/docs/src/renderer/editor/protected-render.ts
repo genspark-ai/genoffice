@@ -766,6 +766,8 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
   if (style) boxAttrs.style = style
   // page-absolute V rendered from the anchor: syncFloatShifts re-pins it
   if (box.floating && box.pageRelV) boxAttrs['data-page-rel-v'] = '1'
+  // page-absolute X: the column-layout counter-translate keys on this
+  if (box.floating && box.pageRelX) boxAttrs['data-page-rel-x'] = '1'
 
   const paras: DomSpec[] = box.paras.map((para) => {
     const spans: DomSpec[] = runSpansWithPads(para.runs, para.autoSpace)

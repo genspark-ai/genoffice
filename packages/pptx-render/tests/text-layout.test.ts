@@ -559,7 +559,7 @@ describe('spcPct paragraph spacing + justify alignment', () => {
     expect(layout.lines[1]!.top).toBeCloseTo(28.8 + 14.4, 1)
   })
 
-  it('justify: wrapped lines fill the available width, the last line of a paragraph stays left-aligned', () => {
+  it('justify: wrapped lines widen word gaps to fill the width (PowerPoint keeps letter spacing), the last line stays left-aligned', () => {
     const long = 'word '.repeat(20).trim()
     const layout = layoutText({
       body: body({ paragraphs: [{ runs: [{ text: long, fontSize: 18 }], align: 'justify' }] }),
@@ -568,21 +568,41 @@ describe('spcPct paragraph spacing + justify alignment', () => {
       metrics: new HeuristicMetrics(),
       vp,
     })
+    const m = new HeuristicMetrics()
+    const wordW = m.measure('word', {
+      fontFamily: 'Calibri',
+      fontSizePx: 24, // 18pt at scale 1 = 24px
+      bold: false,
+      italic: false,
+    })
     expect(layout.lines.length).toBeGreaterThan(1)
     for (let i = 0; i < layout.lines.length; i++) {
       const ln = layout.lines[i]!
       const last = ln.runs[ln.runs.length - 1]!
-      const per = last.justifyExtraPx ?? 0
-      // Last glyph's right edge = x + width - the extra trailing letter-space
-      const rightEdge = last.x + last.widthPx - per * (per ? 1 : 0)
-      if (i < layout.lines.length - 1) {
-        expect(per).toBeGreaterThan(0)
-        expect(rightEdge).toBeCloseTo(200, 0)
-      } else {
-        expect(per).toBe(0)
-        expect(rightEdge).toBeLessThan(200)
+      const rightEdge = last.x + last.widthPx
+      for (const r of ln.runs) {
+        expect(r.justifyExtraPx).toBeUndefined()
+        // words keep their natural advance; only space fragments absorb the extra
+        if (r.text === 'word') expect(r.widthPx).toBeCloseTo(wordW, 1)
       }
+      if (i < layout.lines.length - 1) expect(rightEdge).toBeCloseTo(200, 0)
+      else expect(rightEdge).toBeLessThan(200)
     }
+  })
+
+  it('justify without spaces (CJK) falls back to spreading between characters', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [{ runs: [{ text: '字'.repeat(30), fontSize: 18 }], align: 'justify' }],
+      }),
+      boxWidthPx: 200,
+      boxHeightPx: 2000,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.lines.length).toBeGreaterThan(1)
+    const first = layout.lines[0]!.runs[0]!
+    expect(first.justifyExtraPx ?? 0).toBeGreaterThan(0)
   })
 
   it('justify does not affect lines ended by a soft break', () => {
@@ -644,6 +664,33 @@ describe('shrink discrete steps + superscript/subscript baseline', () => {
     // rather than re-fitting (a bare <a:normAutofit/> even renders at 100%).
     expect(layout.fontScale).toBe(0.7)
     expect(layout.lnSpcReduction).toBe(0.2)
+  })
+
+  it('autofit glyph size quantizes to whole points (round half up, PPT probe-measured)', () => {
+    const layoutAt = (fontScale: number, fontSize: number) => {
+      const layout = layoutText({
+        body: body({
+          autofit: 'shrink',
+          fontScale,
+          lnSpcReduction: 0,
+          paragraphs: [{ runs: [{ text: 'HX', fontSize }] }] as any,
+        }),
+        boxWidthPx: 800,
+        boxHeightPx: 600,
+        metrics: new HeuristicMetrics(),
+        vp,
+      })
+      return (layout.lines[0]!.runs[0] as any).fontSizePx
+    }
+    const px = (pt: number) => (pt * 96) / 72
+    // 20pt × 47.5% = 9.5 → 10pt; × 46% = 9.2 → 9pt; 28pt × 46% = 12.88 → 13pt;
+    // 20pt × 52% = 10.4 → 10pt (nearest, not the 10.5 half-point list)
+    expect(layoutAt(0.475, 20)).toBeCloseTo(px(10), 4)
+    expect(layoutAt(0.46, 20)).toBeCloseTo(px(9), 4)
+    expect(layoutAt(0.46, 28)).toBeCloseTo(px(13), 4)
+    expect(layoutAt(0.52, 20)).toBeCloseTo(px(10), 4)
+    // no autofit scale → explicit fractional sizes stay fractional
+    expect(layoutAt(1, 10.5)).toBeCloseTo(px(10.5), 4)
   })
 
   it('refitAutofit (edit flows): steps below the stored scale, capped by it', () => {
@@ -750,17 +797,102 @@ describe('vertical text (bodyPr vert) column layout', () => {
     )
   })
 
-  it('vert/vert270/wordArtVert degrade to the same column layout as eaVert (vert flag preserved)', () => {
-    const mk = (vert: TextBody['vert']) =>
-      layoutV(body({ vert, paragraphs: [{ runs: [{ text: '縦書', fontSize: 18 }] }] }))
-    const coords = (l: ReturnType<typeof mk>) =>
-      l.lines.map((ln) => ln.runs.map((r) => [r.text, r.x, r.baselineY]))
-    const ea = mk('eaVert')
-    for (const v of ['vert', 'vert270', 'wordArtVert'] as const) {
-      const l = mk(v)
-      expect(l.vert).toBe(v)
-      expect(coords(l)).toEqual(coords(ea))
+  it('wordArtVert (stacked): upright glyphs, columns flow left→right (ECMA wordArtVertRtl is the RTL variant)', () => {
+    // Latin stacks one upright letter per cell instead of rotating as a word
+    const latin = layoutV(
+      body({ vert: 'wordArtVert', paragraphs: [{ runs: [{ text: 'ABC', fontSize: 18 }] }] }),
+    )
+    expect(latin.vert).toBe('wordArtVert')
+    const runs = latin.lines.flatMap((l) => l.runs)
+    expect(runs.map((r) => r.text)).toEqual(['A', 'B', 'C'])
+    expect(runs.every((r) => !r.rotate90)).toBe(true)
+    for (let i = 1; i < runs.length; i++)
+      expect(runs[i]!.baselineY).toBeGreaterThan(runs[i - 1]!.baselineY)
+    // anchor=top → the first column hugs the LEFT edge (eaVert hugs the right)
+    for (const r of runs) expect(r.x).toBeLessThan(30)
+    // Two paragraphs → two columns, the second further RIGHT
+    const two = layoutV(
+      body({
+        vert: 'wordArtVert',
+        paragraphs: [
+          { runs: [{ text: '縦書', fontSize: 18 }] },
+          { runs: [{ text: '二列', fontSize: 18 }] },
+        ],
+      }),
+    )
+    const [c1, c2] = two.lines
+    expect(c2!.runs[0]!.x).toBeGreaterThan(c1!.runs[0]!.x)
+  })
+
+  it('vert rotates the whole block 90° cw: rotate90 glyphs read top→bottom from the right edge', () => {
+    const layout = layoutV(
+      body({ vert: 'vert', paragraphs: [{ runs: [{ text: '縦書きABC', fontSize: 18 }] }] }),
+    )
+    expect(layout.vert).toBe('vert')
+    const runs = layout.lines.flatMap((l) => l.runs)
+    // Every glyph rotates — CJK included (unlike eaVert)
+    expect(runs.every((r) => r.rotate90)).toBe(true)
+    expect(runs.map((r) => r.text).join('')).toBe('縦書きABC')
+    // Line direction maps to downward: baselines strictly increase along the text
+    for (let i = 1; i < runs.length; i++)
+      expect(runs[i]!.baselineY).toBeGreaterThan(runs[i - 1]!.baselineY)
+    // anchor=top → the (single) line hugs the right edge of the 200px box
+    for (const r of runs) {
+      expect(r.x).toBeGreaterThan(200 - 30)
+      expect(r.x).toBeLessThanOrEqual(200)
     }
+  })
+
+  it('vert270 rotates 90° ccw: rotate270 glyphs read bottom→top from the left edge', () => {
+    const layout = layoutV(
+      body({ vert: 'vert270', paragraphs: [{ runs: [{ text: '縦書き', fontSize: 18 }] }] }),
+    )
+    expect(layout.vert).toBe('vert270')
+    const runs = layout.lines.flatMap((l) => l.runs)
+    expect(runs.every((r) => r.rotate270)).toBe(true)
+    // Reading direction is upward: baselines strictly decrease along the text
+    for (let i = 1; i < runs.length; i++)
+      expect(runs[i]!.baselineY).toBeLessThan(runs[i - 1]!.baselineY)
+    // anchor=top → the line hugs the left edge, rotation anchors stay inside the
+    // 300px-tall box (the renderer's node origin is baselineY - 0.8em)
+    for (const r of runs) {
+      expect(r.x).toBeGreaterThanOrEqual(0)
+      expect(r.x).toBeLessThan(30)
+      expect(r.baselineY - 0.8 * r.fontSizePx).toBeLessThanOrEqual(300)
+    }
+  })
+
+  it('vert contentHeight is the REAL vertical extent (autofit-resize writes it into the shape height)', () => {
+    // 3 CJK glyphs at 18pt (24px): one rotated line spanning ~72px downward — the
+    // pre-rotation layout's contentHeight (~29px line box) measures the wrong axis
+    const layout = layoutV(
+      body({ vert: 'vert', paragraphs: [{ runs: [{ text: '縦書き', fontSize: 18 }] }] }),
+    )
+    expect(layout.contentHeight).toBeGreaterThan(60)
+    expect(layout.contentHeight).toBeLessThan(100)
+    expect(layout.inkBottom).toBeUndefined()
+  })
+
+  it('vert wrap: lines break at the box HEIGHT and stack right→left as rotated columns', () => {
+    const layout = layoutV(
+      body({
+        vert: 'vert',
+        paragraphs: [{ runs: [{ text: '縦書きテスト'.repeat(5), fontSize: 18 }] }],
+      }),
+      300,
+      100,
+    )
+    expect(layout.lines.length).toBeGreaterThan(1)
+    // Later lines sit further left (stacking direction after 90° cw rotation)
+    const xs = layout.lines.map((l) => l.runs[0]!.x)
+    for (let i = 1; i < xs.length; i++) expect(xs[i]!).toBeLessThan(xs[i - 1]!)
+    // Content is lossless
+    expect(layout.lines.flatMap((l) => l.runs.map((r) => r.text)).join('')).toBe(
+      '縦書きテスト'.repeat(5),
+    )
+    // Glyphs stay within the box height (wrap happened against the height, not the width)
+    for (const r of layout.lines.flatMap((l) => l.runs))
+      expect(r.baselineY).toBeLessThanOrEqual(100 + 24) // one glyph box of slack at the wrap edge
   })
 
   it('anchor acts along the text flow: bottom hugs the left, middle centers', () => {
@@ -947,6 +1079,36 @@ describe('buAutoNum startAt', () => {
     })
     const b = layout.lines[0]!.runs.find((r: any) => r.isBullet) as any
     expect(b.text).toBe('1.')
+  })
+
+  it('formats the glyph by numType (ST_TextAutonumberScheme)', () => {
+    const cases: Array<[string, string[]]> = [
+      ['circleNumDbPlain', ['①', '②']],
+      ['circleNumWdBlackPlain', ['❶', '❷']],
+      ['circleNumWdWhitePlain', ['①', '②']],
+      ['arabicParenR', ['1)', '2)']],
+      ['arabicParenBoth', ['(1)', '(2)']],
+      ['alphaLcPeriod', ['a.', 'b.']],
+      ['alphaUcParenR', ['A)', 'B)']],
+      ['romanUcPeriod', ['I.', 'II.']],
+      ['romanLcParenBoth', ['(i)', '(ii)']],
+      ['arabicPlain', ['1', '2']],
+    ]
+    for (const [numType, expected] of cases) {
+      const withType = (text: string) => ({ ...para(text), bullet: { type: 'number', numType } })
+      const layout = layoutText({
+        body: body({ paragraphs: [withType('first'), withType('second')] as any }),
+        boxWidthPx: 800,
+        boxHeightPx: 200,
+        metrics: m,
+        vp,
+      })
+      const bullets = layout.lines
+        .map((l) => l.runs.find((r: any) => r.isBullet))
+        .filter(Boolean)
+        .map((r: any) => r.text)
+      expect(bullets, numType).toEqual(expected)
+    }
   })
 })
 

@@ -72,7 +72,7 @@ import { symbolFontCovers } from '../font-check'
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
 import { paraBorderCss } from './hf-dom'
 import { PaginationGapsExtension } from './pagination-gaps'
-import { CaretMarksMemory, FORMAT_MARKS } from './caret-marks'
+import { CaretMarksMemory, FORMAT_MARKS, serializeMarks } from './caret-marks'
 import { ColumnLayoutExtension } from './column-layout'
 import { TableHandle } from './table-handle'
 import { TrackChangesExtension } from './revisions'
@@ -131,6 +131,7 @@ import { AutoDirectionExtension } from './direction'
 import { InactiveSelectionExtension } from './inactive-selection'
 import { AiQueueAnchorsExtension } from './ai-queue-anchors'
 import { PageGapNavExtension } from './page-gap-nav'
+import { moveBlocks } from './move-block'
 export * from './marks'
 export * from './decoration-extensions'
 
@@ -896,9 +897,25 @@ export const EnterReplacesSelection = Extension.create({
             FORMAT_MARKS.has(mark.type.name),
           )
           if (found.length > 0) {
-            this.editor.view.dispatch(
-              this.editor.state.tr.setStoredMarks([...found]).setMeta('addToHistory', false),
-            )
+            const tr = this.editor.state.tr.setMeta('addToHistory', false)
+            // Word keeps the pending format on BOTH empty paragraphs the
+            // replace leaves behind. The caret-marks memory stamps only the
+            // block the caret sits in (the second), so arrowing up to the
+            // FIRST emptied line reverted typing to the theme font and the
+            // font box to "(Body)" (alpha ledger r133 residual). The stamp
+            // step must precede setStoredMarks: a doc-changing step resets
+            // the transaction's stored marks.
+            const $head = this.editor.state.selection.$from
+            const boundary = $head.before($head.depth)
+            const prev = this.editor.state.doc.resolve(boundary).nodeBefore
+            if (prev && prev.isTextblock && prev.content.size === 0 && 'caretMarks' in prev.attrs) {
+              tr.setNodeMarkup(boundary - prev.nodeSize, undefined, {
+                ...prev.attrs,
+                caretMarks: serializeMarks(found),
+              })
+            }
+            tr.setStoredMarks([...found])
+            this.editor.view.dispatch(tr)
           }
         }
         if (sel instanceof AllSelection) {
@@ -920,9 +937,14 @@ export const EnterReplacesSelection = Extension.create({
   },
 })
 
-/** Word's Ctrl/Cmd+Enter: insert a page break (issue #126) */
-export const PageBreakShortcut = Extension.create({
-  name: 'pageBreakShortcut',
+/**
+ * Word's insert-and-move chords that must only fire with editor focus. Kept
+ * out of the application menu on purpose: a menu accelerator would
+ * swallow Cmd+Enter from the renderer inputs that submit with it (comments
+ * panel, prompt modal).
+ */
+export const WordEditorShortcuts = Extension.create({
+  name: 'wordEditorShortcuts',
   addKeyboardShortcuts() {
     return {
       'Mod-Enter': () =>
@@ -930,6 +952,13 @@ export const PageBreakShortcut = Extension.create({
           type: 'docParagraph',
           attrs: { pageBreakBefore: true },
         }),
+      'Mod-Shift-Enter': () =>
+        this.editor.commands.insertContent({ type: 'hardBreak', attrs: { colBreak: true } }),
+      // U+00A0 and U+2011: the characters Word inserts for these two chords
+      'Mod-Shift-Space': () => this.editor.commands.insertContent('\u00a0'),
+      'Mod-Shift--': () => this.editor.commands.insertContent('\u2011'),
+      'Alt-Shift-ArrowUp': () => moveBlocks(this.editor, -1),
+      'Alt-Shift-ArrowDown': () => moveBlocks(this.editor, 1),
     }
   },
 })
@@ -4031,7 +4060,7 @@ export const editorExtensions = [
   PageGapNavExtension,
   ImageCopyExtension,
   EnterReplacesSelection,
-  PageBreakShortcut,
+  WordEditorShortcuts,
   CaretMarksMemory,
   ColumnLayoutExtension,
   TabStopExtension,

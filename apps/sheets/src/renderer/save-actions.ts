@@ -27,6 +27,7 @@ import { showToast } from './toast-bus'
 import { captureUndoCarry, hasPendingUndoCarry, stashUndoCarry } from './undo-carry'
 import {
   collectCfStates,
+  getScrollAnchor,
   collectDefinedNamesState,
   collectDvStates,
   collectFilterStates,
@@ -74,23 +75,19 @@ export async function handleSave(
     const sheet = workbook?.getActiveSheet()
     if (!workbook || !sheet) return null
     const range = workbook.getActiveRange()
-    // Visible-range start = the viewport's top-left cell; restoring through
-    // scrollToCell(viewRow, viewColumn) reproduces the original scroll
-    // instead of yanking the selection cell to the corner.
-    let viewStart: { startRow?: number; startColumn?: number } | null = null
-    try {
-      viewStart = sheet.getVisibleRange()
-    } catch {
-      // No scroll render controller yet — fall back to the selection cell.
-    }
+    // Capture the scroll anchor, not getVisibleRange: scrollToCell feeds the
+    // same sheetViewStartRow/Column channel, so the restore round-trips
+    // exactly — including RTL sheets (see getScrollAnchor). Fall back to the
+    // selection cell while no scroll render controller exists yet.
+    const anchor = getScrollAnchor(workbook, sheet)
     const row = range?.getRow() ?? 0
     const column = range?.getColumn() ?? 0
     return {
       sheetId: sheet.getSheetId(),
       row,
       column,
-      viewRow: viewStart?.startRow ?? row,
-      viewColumn: viewStart?.startColumn ?? column,
+      viewRow: anchor?.row ?? row,
+      viewColumn: anchor?.column ?? column,
     }
   })()
   if (!state) {

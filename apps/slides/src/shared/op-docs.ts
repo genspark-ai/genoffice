@@ -88,6 +88,10 @@ export const OP_DOCS: Record<string, OpDoc> = {
     sig: '{props:{vert?:"horz"|"eaVert"|"vert"|"vert270"|"wordArtVert",autofit?:"none"|"shrink"|"resize",insets?:{l?,t?,r?,b?} (EMU),wrap?:boolean}}',
     group: 'element',
   },
+  setEffects: {
+    sig: '{effects:{shadow?:{color:"#RRGGBB(AA)",blurRad,dist,dirDeg,inner?,sx?,sy?,kxDeg?}|null,glow?:{color,radius}|null,reflection?:{blurRad,startA(0..1),endPos(0..1),dist}|null,softEdge?:EMU|null}} — null clears; EMU distances (12700/pt)',
+    group: 'element',
+  },
   setLink: {
     sig: '{link:{kind:"url",url}|{kind:"slide",slideIndex}|null}',
     group: 'element',

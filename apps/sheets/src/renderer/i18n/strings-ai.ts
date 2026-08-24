@@ -10,6 +10,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: '未发送成功',
     aiRetry: '重试',
     aiOpenAssistant: '打开 AI 助手',
+    aiAskBtn: 'AI 修改',
     aiCheckBtn: 'AI 校验',
     aiCheckPrompt:
       '检查这个表格的问题:1) 公式错误(#REF!、#DIV/0! 等)、引用范围没覆盖全部数据、合计行漏加列;2) 同一列数字和文本混用、日期格式不统一、明显的异常值和重复行;3) 合计与明细对不上、百分比加总不是 100% 等结构问题。列出发现的问题并给出修复建议',
@@ -94,6 +95,11 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: '追踪 {address} 的引用来源',
     aiToolTraceDependents: '追踪引用者',
     aiToolTraceDependentsOf: '追踪 {address} 的引用者（{count} 处）',
+    aiScopeRange: '已选中 {range}',
+    aiScopeColumn: '已选中「{name}」列',
+    aiScopeColumns: '已选中 {names} 共 {count} 列',
+    aiScopeRangeTip: 'AI 会把"这一列 / 这些行 / 选中部分"理解为该区域；发送后本轮固定不变',
+    aiScopeClearTitle: '取消该区域范围，本次针对整张表',
   },
   en: {
     aiComposerPlaceholderBuild: 'Describe the table, data, or chart to create…',
@@ -103,6 +109,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Not sent',
     aiRetry: 'Retry',
     aiOpenAssistant: 'Open AI assistant',
+    aiAskBtn: 'Ask AI',
     aiCheckBtn: 'AI Check',
     aiCheckPrompt:
       'Check this sheet for problems: 1) formula errors (#REF!, #DIV/0!, etc.), ranges that do not cover all the data, totals rows missing columns; 2) numbers and text mixed in one column, inconsistent date formats, obvious outliers and duplicate rows; 3) totals that do not match the detail rows, percentage columns that do not add up to 100%. List the issues found and suggest fixes',
@@ -192,6 +199,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Traced precedents of {address}',
     aiToolTraceDependents: 'Trace dependents',
     aiToolTraceDependentsOf: 'Traced dependents of {address} ({count})',
+    aiScopeRange: 'Selected {range}',
+    aiScopeColumn: 'Selected the "{name}" column',
+    aiScopeColumns: 'Selected {names} — {count} columns',
+    aiScopeRangeTip:
+      'AI reads "this column / these rows / the selected part" as this range, and it stays fixed for the run once you send',
+    aiScopeClearTitle: 'Drop the range scope and target the whole sheet',
   },
   ja: {
     aiComposerPlaceholderBuild: '作りたい表・データ・グラフを入力…',
@@ -201,6 +214,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: '送信できませんでした',
     aiRetry: '再試行',
     aiOpenAssistant: 'AI アシスタントを開く',
+    aiAskBtn: 'AI に修正依頼',
     aiCheckBtn: 'AI チェック',
     aiCheckPrompt:
       'このシートの問題をチェックしてください:1) 数式エラー(#REF!、#DIV/0! など)、データ全体をカバーしていない参照範囲、合計行の列漏れ;2) 同じ列での数値と文字列の混在、日付形式の不統一、明らかな外れ値や重複行;3) 合計と明細の不一致、パーセント列の合計が100%にならないなどの構造的な問題。見つかった問題を挙げて修正案を提示してください',
@@ -289,6 +303,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: '{address} の参照元をトレース',
     aiToolTraceDependents: '参照先をトレース',
     aiToolTraceDependentsOf: '{address} の参照先をトレース（{count} 件）',
+    aiScopeRange: '{range} を選択中',
+    aiScopeColumn: '「{name}」列を選択中',
+    aiScopeColumns: '{names} の {count} 列を選択中',
+    aiScopeRangeTip:
+      'AI は「この列 / これらの行 / 選択部分」をこの範囲として解釈します。送信すると今回の実行中は固定されます',
+    aiScopeClearTitle: '範囲指定を解除してシート全体を対象にする',
   },
   ko: {
     aiComposerPlaceholderBuild: '만들 표, 데이터, 차트를 설명하세요…',
@@ -298,6 +318,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: '전송되지 않았습니다',
     aiRetry: '다시 시도',
     aiOpenAssistant: 'AI 도우미 열기',
+    aiAskBtn: 'AI 수정 요청',
     aiCheckBtn: 'AI 검사',
     aiCheckPrompt:
       '이 시트의 문제를 검사해 주세요: 1) 수식 오류(#REF!, #DIV/0! 등), 데이터 전체를 포함하지 않는 참조 범위, 합계 행에서 누락된 열 2) 같은 열에 숫자와 텍스트 혼용, 일관되지 않은 날짜 형식, 명백한 이상값과 중복 행 3) 합계와 세부 내역 불일치, 100%가 되지 않는 백분율 열 등 구조 문제. 발견한 문제를 나열하고 수정 방안을 제안해 주세요',
@@ -385,6 +406,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: '{address}의 참조되는 셀 추적',
     aiToolTraceDependents: '참조하는 셀 추적',
     aiToolTraceDependentsOf: '{address}의 참조하는 셀 추적({count}개)',
+    aiScopeRange: '{range} 선택됨',
+    aiScopeColumn: "'{name}' 열 선택됨",
+    aiScopeColumns: '{names} 등 {count}개 열 선택됨',
+    aiScopeRangeTip:
+      'AI는 "이 열 / 이 행들 / 선택한 부분"을 이 범위로 해석하며, 전송하면 이번 실행 동안 고정됩니다',
+    aiScopeClearTitle: '범위 지정을 해제하고 시트 전체를 대상으로 하기',
   },
   fr: {
     aiComposerPlaceholderBuild: 'Décrivez le tableau, les données ou le graphique à créer…',
@@ -395,6 +422,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Non envoyé',
     aiRetry: 'Réessayer',
     aiOpenAssistant: "Ouvrir l'assistant IA",
+    aiAskBtn: "Demander à l'IA",
     aiCheckBtn: 'Vérification IA',
     aiCheckPrompt:
       'Vérifiez cette feuille : 1) erreurs de formule (#REF!, #DIV/0!, etc.), plages ne couvrant pas toutes les données, colonnes manquantes dans les lignes de total ; 2) nombres et texte mélangés dans une même colonne, formats de date incohérents, valeurs aberrantes et doublons ; 3) totaux ne correspondant pas au détail, colonnes de pourcentages ne totalisant pas 100 %. Listez les problèmes trouvés et proposez des corrections',
@@ -484,6 +512,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Antécédents de {address}',
     aiToolTraceDependents: 'Repérer les dépendants',
     aiToolTraceDependentsOf: 'Dépendants de {address} ({count})',
+    aiScopeRange: 'Sélection : {range}',
+    aiScopeColumn: 'Colonne « {name} » sélectionnée',
+    aiScopeColumns: 'Sélection : {names} ({count} colonnes)',
+    aiScopeRangeTip:
+      "L'IA interprète « cette colonne / ces lignes / la partie sélectionnée » comme cette plage, figée pendant toute l'exécution dès l'envoi",
+    aiScopeClearTitle: 'Retirer la portée de la plage et viser toute la feuille',
   },
   de: {
     aiComposerPlaceholderBuild: 'Beschreibe die zu erstellende Tabelle, Daten oder Diagramme…',
@@ -494,6 +528,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Nicht gesendet',
     aiRetry: 'Erneut versuchen',
     aiOpenAssistant: 'KI-Assistenten öffnen',
+    aiAskBtn: 'KI fragen',
     aiCheckBtn: 'KI-Prüfung',
     aiCheckPrompt:
       'Prüfe dieses Blatt auf Probleme: 1) Formelfehler (#REF!, #DIV/0! usw.), Bezüge, die nicht alle Daten abdecken, fehlende Spalten in Summenzeilen; 2) Zahlen und Text in derselben Spalte gemischt, uneinheitliche Datumsformate, offensichtliche Ausreißer und doppelte Zeilen; 3) Summen, die nicht zu den Detailzeilen passen, Prozentspalten, die nicht 100 % ergeben. Liste die gefundenen Probleme auf und schlage Korrekturen vor',
@@ -583,6 +618,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Vorgänger von {address}',
     aiToolTraceDependents: 'Spur zum Nachfolger',
     aiToolTraceDependentsOf: 'Nachfolger von {address} ({count})',
+    aiScopeRange: 'Ausgewählt: {range}',
+    aiScopeColumn: 'Spalte „{name}“ ausgewählt',
+    aiScopeColumns: 'Ausgewählt: {names} ({count} Spalten)',
+    aiScopeRangeTip:
+      'Die KI versteht „diese Spalte / diese Zeilen / die Auswahl“ als diesen Bereich; beim Senden wird er für den Lauf fixiert',
+    aiScopeClearTitle: 'Bereichsvorgabe aufheben und das ganze Blatt verwenden',
   },
   es: {
     aiComposerPlaceholderBuild: 'Describe la tabla, los datos o el gráfico a crear…',
@@ -593,6 +634,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'No enviado',
     aiRetry: 'Reintentar',
     aiOpenAssistant: 'Abrir el asistente de IA',
+    aiAskBtn: 'Pedir a la IA',
     aiCheckBtn: 'Revisión IA',
     aiCheckPrompt:
       'Revisa esta hoja en busca de problemas: 1) errores de fórmula (#REF!, #DIV/0!, etc.), rangos que no cubren todos los datos, columnas omitidas en filas de totales; 2) números y texto mezclados en una misma columna, formatos de fecha inconsistentes, valores atípicos evidentes y filas duplicadas; 3) totales que no cuadran con el detalle, columnas de porcentajes que no suman 100%. Enumera los problemas encontrados y sugiere correcciones',
@@ -682,6 +724,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Precedentes de {address}',
     aiToolTraceDependents: 'Rastrear dependientes',
     aiToolTraceDependentsOf: 'Dependientes de {address} ({count})',
+    aiScopeRange: 'Seleccionado: {range}',
+    aiScopeColumn: 'Columna «{name}» seleccionada',
+    aiScopeColumns: 'Seleccionado: {names} ({count} columnas)',
+    aiScopeRangeTip:
+      'La IA interpreta «esta columna / estas filas / la parte seleccionada» como este rango, y al enviar queda fijo durante toda la ejecución',
+    aiScopeClearTitle: 'Quitar el ámbito del rango y usar toda la hoja',
   },
   th: {
     aiComposerPlaceholderBuild: 'อธิบายตาราง ข้อมูล หรือแผนภูมิที่จะสร้าง…',
@@ -691,6 +739,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'ส่งไม่สำเร็จ',
     aiRetry: 'ลองอีกครั้ง',
     aiOpenAssistant: 'เปิดผู้ช่วย AI',
+    aiAskBtn: 'ถาม AI',
     aiCheckBtn: 'ตรวจสอบ AI',
     aiCheckPrompt:
       'ตรวจสอบปัญหาในชีตนี้: 1) ข้อผิดพลาดของสูตร (#REF!, #DIV/0! ฯลฯ) ช่วงอ้างอิงที่ไม่ครอบคลุมข้อมูลทั้งหมด แถวผลรวมที่ขาดบางคอลัมน์ 2) ตัวเลขปนข้อความในคอลัมน์เดียวกัน รูปแบบวันที่ไม่สอดคล้อง ค่าผิดปกติและแถวซ้ำ 3) ผลรวมไม่ตรงกับรายละเอียด คอลัมน์เปอร์เซ็นต์รวมกันไม่เท่ากับ 100% แสดงรายการปัญหาที่พบพร้อมข้อเสนอแนะในการแก้ไข',
@@ -779,6 +828,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'เซลล์ต้นทางของ {address}',
     aiToolTraceDependents: 'ตรวจสอบเซลล์ปลายทาง',
     aiToolTraceDependentsOf: 'เซลล์ปลายทางของ {address} ({count} รายการ)',
+    aiScopeRange: 'เลือก {range}',
+    aiScopeColumn: 'เลือกคอลัมน์ "{name}"',
+    aiScopeColumns: 'เลือก {names} รวม {count} คอลัมน์',
+    aiScopeRangeTip:
+      'AI จะตีความ "คอลัมน์นี้ / แถวเหล่านี้ / ส่วนที่เลือก" เป็นช่วงนี้ และจะถูกตรึงไว้ตลอดการทำงานเมื่อคุณส่ง',
+    aiScopeClearTitle: 'ยกเลิกขอบเขตช่วงนี้และใช้ทั้งแผ่นงาน',
   },
   id: {
     aiComposerPlaceholderBuild: 'Jelaskan tabel, data, atau bagan yang akan dibuat…',
@@ -789,6 +844,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Tidak terkirim',
     aiRetry: 'Coba lagi',
     aiOpenAssistant: 'Buka asisten AI',
+    aiAskBtn: 'Tanya AI',
     aiCheckBtn: 'Pemeriksaan AI',
     aiCheckPrompt:
       'Periksa masalah di sheet ini: 1) kesalahan rumus (#REF!, #DIV/0!, dll.), rentang yang tidak mencakup seluruh data, kolom yang terlewat di baris total; 2) angka dan teks tercampur dalam satu kolom, format tanggal tidak konsisten, pencilan yang jelas dan baris duplikat; 3) total yang tidak cocok dengan rincian, kolom persentase yang jumlahnya tidak 100%. Daftarkan masalah yang ditemukan dan sarankan perbaikannya',
@@ -877,6 +933,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Preseden dari {address}',
     aiToolTraceDependents: 'Lacak dependen',
     aiToolTraceDependentsOf: 'Dependen dari {address} ({count})',
+    aiScopeRange: 'Terpilih: {range}',
+    aiScopeColumn: 'Kolom "{name}" terpilih',
+    aiScopeColumns: 'Terpilih: {names} ({count} kolom)',
+    aiScopeRangeTip:
+      'AI membaca "kolom ini / baris ini / bagian yang dipilih" sebagai rentang ini, dan dikunci selama proses berjalan setelah Anda mengirim',
+    aiScopeClearTitle: 'Hapus cakupan rentang dan gunakan seluruh lembar',
   },
   ru: {
     aiComposerPlaceholderBuild: 'Опишите таблицу, данные или диаграмму для создания…',
@@ -886,6 +948,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Не отправлено',
     aiRetry: 'Повторить',
     aiOpenAssistant: 'Открыть ИИ-помощника',
+    aiAskBtn: 'Спросить ИИ',
     aiCheckBtn: 'ИИ-проверка',
     aiCheckPrompt:
       'Проверьте этот лист на проблемы: 1) ошибки формул (#REF!, #DIV/0! и т. д.), диапазоны, не охватывающие все данные, пропущенные столбцы в итоговых строках; 2) числа и текст в одном столбце, разнобой в форматах дат, явные выбросы и повторяющиеся строки; 3) итоги, не совпадающие с детализацией, столбцы процентов, не дающие в сумме 100%. Перечислите найденные проблемы и предложите исправления',
@@ -975,6 +1038,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Влияющие ячейки для {address}',
     aiToolTraceDependents: 'Зависимые ячейки',
     aiToolTraceDependentsOf: 'Зависимые ячейки для {address} ({count})',
+    aiScopeRange: 'Выделено: {range}',
+    aiScopeColumn: 'Выделен столбец «{name}»',
+    aiScopeColumns: 'Выделено: {names} — столбцов: {count}',
+    aiScopeRangeTip:
+      'ИИ понимает «этот столбец / эти строки / выделенную часть» как этот диапазон; после отправки он фиксируется на весь запуск',
+    aiScopeClearTitle: 'Снять область диапазона и работать со всем листом',
   },
   ar: {
     aiComposerPlaceholderBuild: 'صف الجدول أو البيانات أو المخطط المطلوب إنشاؤه…',
@@ -984,6 +1053,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'لم يتم الإرسال',
     aiRetry: 'إعادة المحاولة',
     aiOpenAssistant: 'فتح مساعد الذكاء الاصطناعي',
+    aiAskBtn: 'اسأل الذكاء الاصطناعي',
     aiCheckBtn: 'فحص AI',
     aiCheckPrompt:
       'افحص هذا الجدول بحثًا عن المشكلات: 1) أخطاء الصيغ (#REF! و#DIV/0! وغيرها)، ونطاقات لا تغطي كل البيانات، وأعمدة ناقصة في صفوف الإجمالي؛ 2) خلط الأرقام والنصوص في العمود نفسه، وتنسيقات تواريخ غير موحدة، وقيم شاذة وصفوف مكررة؛ 3) إجماليات لا تطابق التفاصيل، وأعمدة نسب مئوية لا يبلغ مجموعها 100%. اذكر المشكلات التي وجدتها واقترح الإصلاحات',
@@ -1072,6 +1142,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'الخلايا المؤثرة في {address}',
     aiToolTraceDependents: 'تتبع الخلايا التابعة',
     aiToolTraceDependentsOf: 'الخلايا التابعة لـ {address} ({count})',
+    aiScopeRange: 'المحدد: {range}',
+    aiScopeColumn: 'تم تحديد عمود "{name}"',
+    aiScopeColumns: 'المحدد: {names} ({count} أعمدة)',
+    aiScopeRangeTip:
+      'يفهم الذكاء الاصطناعي "هذا العمود / هذه الصفوف / الجزء المحدد" على أنه هذا النطاق، ويُثبَّت طوال التشغيل بعد الإرسال',
+    aiScopeClearTitle: 'إلغاء نطاق التحديد واستهداف الورقة بأكملها',
   },
   pt: {
     aiComposerPlaceholderBuild: 'Descreva a tabela, os dados ou o gráfico a criar…',
@@ -1081,6 +1157,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Não enviado',
     aiRetry: 'Tentar novamente',
     aiOpenAssistant: 'Abrir assistente de IA',
+    aiAskBtn: 'Perguntar à IA',
     aiCheckBtn: 'Verificação IA',
     aiCheckPrompt:
       'Verifique esta planilha em busca de problemas: 1) erros de fórmula (#REF!, #DIV/0!, etc.), intervalos que não cobrem todos os dados, colunas faltando nas linhas de total; 2) números e texto misturados na mesma coluna, formatos de data inconsistentes, valores discrepantes evidentes e linhas duplicadas; 3) totais que não batem com o detalhamento, colunas de percentuais que não somam 100%. Liste os problemas encontrados e sugira correções',
@@ -1170,6 +1247,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Precedentes de {address}',
     aiToolTraceDependents: 'Rastrear dependentes',
     aiToolTraceDependentsOf: 'Dependentes de {address} ({count})',
+    aiScopeRange: 'Selecionado: {range}',
+    aiScopeColumn: 'Coluna "{name}" selecionada',
+    aiScopeColumns: 'Selecionado: {names} ({count} colunas)',
+    aiScopeRangeTip:
+      'A IA interpreta "esta coluna / estas linhas / a parte selecionada" como este intervalo, que fica fixo durante toda a execução ao enviar',
+    aiScopeClearTitle: 'Remover o escopo do intervalo e usar a planilha inteira',
   },
   it: {
     aiComposerPlaceholderBuild: 'Descrivi la tabella, i dati o il grafico da creare…',
@@ -1180,6 +1263,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Non inviato',
     aiRetry: 'Riprova',
     aiOpenAssistant: "Apri l'assistente IA",
+    aiAskBtn: "Chiedi all'IA",
     aiCheckBtn: 'Verifica IA',
     aiCheckPrompt:
       'Controlla questo foglio alla ricerca di problemi: 1) errori nelle formule (#REF!, #DIV/0!, ecc.), intervalli che non coprono tutti i dati, colonne mancanti nelle righe dei totali; 2) numeri e testo mescolati nella stessa colonna, formati data incoerenti, valori anomali evidenti e righe duplicate; 3) totali che non corrispondono al dettaglio, colonne di percentuali che non sommano al 100%. Elenca i problemi trovati e suggerisci le correzioni',
@@ -1269,6 +1353,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Precedenti di {address}',
     aiToolTraceDependents: 'Individua dipendenti',
     aiToolTraceDependentsOf: 'Dipendenti di {address} ({count})',
+    aiScopeRange: 'Selezionato: {range}',
+    aiScopeColumn: 'Colonna «{name}» selezionata',
+    aiScopeColumns: 'Selezionato: {names} ({count} colonne)',
+    aiScopeRangeTip:
+      "L'IA interpreta «questa colonna / queste righe / la parte selezionata» come questo intervallo, che all'invio resta fisso per tutta l'esecuzione",
+    aiScopeClearTitle: "Rimuovi l'ambito dell'intervallo e usa tutto il foglio",
   },
   pl: {
     aiComposerPlaceholderBuild: 'Opisz tabelę, dane lub wykres do utworzenia…',
@@ -1278,6 +1368,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Nie wysłano',
     aiRetry: 'Ponów',
     aiOpenAssistant: 'Otwórz asystenta AI',
+    aiAskBtn: 'Zapytaj AI',
     aiCheckBtn: 'Kontrola AI',
     aiCheckPrompt:
       'Sprawdź ten arkusz pod kątem problemów: 1) błędy formuł (#REF!, #DIV/0! itd.), zakresy nieobejmujące wszystkich danych, brakujące kolumny w wierszach sum; 2) liczby i tekst wymieszane w jednej kolumnie, niespójne formaty dat, wyraźne wartości odstające i zduplikowane wiersze; 3) sumy niezgodne ze szczegółami, kolumny procentowe niesumujące się do 100%. Wypisz znalezione problemy i zaproponuj poprawki',
@@ -1367,6 +1458,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Poprzedniki {address}',
     aiToolTraceDependents: 'Śledź zależności',
     aiToolTraceDependentsOf: 'Zależności {address} ({count})',
+    aiScopeRange: 'Zaznaczono: {range}',
+    aiScopeColumn: 'Zaznaczono kolumnę „{name}”',
+    aiScopeColumns: 'Zaznaczono: {names} (kolumny: {count})',
+    aiScopeRangeTip:
+      'AI rozumie „tę kolumnę / te wiersze / zaznaczoną część” jako ten zakres; po wysłaniu pozostaje on stały przez cały przebieg',
+    aiScopeClearTitle: 'Usuń zakres zaznaczenia i obejmij cały arkusz',
   },
   nl: {
     aiComposerPlaceholderBuild: 'Beschrijf de tabel, gegevens of grafiek om te maken…',
@@ -1377,6 +1474,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Niet verzonden',
     aiRetry: 'Opnieuw proberen',
     aiOpenAssistant: 'AI-assistent openen',
+    aiAskBtn: 'Vraag AI',
     aiCheckBtn: 'AI-controle',
     aiCheckPrompt:
       'Controleer dit blad op problemen: 1) formulefouten (#REF!, #DIV/0!, enz.), bereiken die niet alle gegevens dekken, ontbrekende kolommen in totaalrijen; 2) cijfers en tekst gemengd in één kolom, inconsistente datumnotaties, duidelijke uitschieters en dubbele rijen; 3) totalen die niet kloppen met de detailregels, percentagekolommen die niet optellen tot 100%. Som de gevonden problemen op en stel correcties voor',
@@ -1466,6 +1564,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Broncellen van {address}',
     aiToolTraceDependents: 'Doelcellen traceren',
     aiToolTraceDependentsOf: 'Doelcellen van {address} ({count})',
+    aiScopeRange: 'Geselecteerd: {range}',
+    aiScopeColumn: 'Kolom "{name}" geselecteerd',
+    aiScopeColumns: 'Geselecteerd: {names} ({count} kolommen)',
+    aiScopeRangeTip:
+      'AI leest "deze kolom / deze rijen / het geselecteerde deel" als dit bereik; bij verzenden wordt het voor de hele run vastgezet',
+    aiScopeClearTitle: 'Bereikbereik wissen en het hele blad gebruiken',
   },
   ms: {
     aiComposerPlaceholderBuild: 'Terangkan jadual, data atau carta untuk dijana…',
@@ -1476,6 +1580,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'Tidak dihantar',
     aiRetry: 'Cuba lagi',
     aiOpenAssistant: 'Buka pembantu AI',
+    aiAskBtn: 'Tanya AI',
     aiCheckBtn: 'Semakan AI',
     aiCheckPrompt:
       'Semak helaian ini untuk masalah: 1) ralat formula (#REF!, #DIV/0!, dll.), julat yang tidak meliputi semua data, lajur yang tertinggal dalam baris jumlah; 2) nombor dan teks bercampur dalam satu lajur, format tarikh tidak konsisten, nilai luar biasa yang ketara dan baris pendua; 3) jumlah yang tidak sepadan dengan perincian, lajur peratusan yang tidak berjumlah 100%. Senaraikan masalah yang ditemui dan cadangkan pembetulan',
@@ -1565,6 +1670,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'Presedens {address}',
     aiToolTraceDependents: 'Jejak dependen',
     aiToolTraceDependentsOf: 'Dependen {address} ({count})',
+    aiScopeRange: 'Dipilih: {range}',
+    aiScopeColumn: 'Lajur "{name}" dipilih',
+    aiScopeColumns: 'Dipilih: {names} ({count} lajur)',
+    aiScopeRangeTip:
+      'AI membaca "lajur ini / baris ini / bahagian yang dipilih" sebagai julat ini, dan ia dikunci sepanjang larian selepas anda hantar',
+    aiScopeClearTitle: 'Buang skop julat dan gunakan seluruh helaian',
   },
   he: {
     aiComposerPlaceholderBuild: 'תארו את הטבלה, הנתונים או התרשים ליצירה…',
@@ -1574,6 +1685,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'לא נשלח',
     aiRetry: 'נסה שוב',
     aiOpenAssistant: 'פתיחת עוזר ה-AI',
+    aiAskBtn: 'שאל את ה-AI',
     aiCheckBtn: 'בדיקת AI',
     aiCheckPrompt:
       'בדוק את הגיליון הזה לאיתור בעיות: 1) שגיאות נוסחה (#REF!,‏ #DIV/0! וכו׳), טווחים שאינם מכסים את כל הנתונים, עמודות חסרות בשורות סיכום; 2) מספרים וטקסט מעורבבים באותה עמודה, פורמטים לא אחידים של תאריכים, חריגים בולטים ושורות כפולות; 3) סיכומים שאינם תואמים את הפירוט, עמודות אחוזים שאינן מסתכמות ל-100%. פרט את הבעיות שנמצאו והצע תיקונים',
@@ -1658,6 +1770,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: 'מקורות של {address}',
     aiToolTraceDependents: 'איתור תלויות',
     aiToolTraceDependentsOf: 'תלויות של {address} ({count})',
+    aiScopeRange: 'נבחר: {range}',
+    aiScopeColumn: 'נבחרה העמודה "{name}"',
+    aiScopeColumns: 'נבחרו: {names} ({count} עמודות)',
+    aiScopeRangeTip:
+      'ה-AI מפרש "העמודה הזו / השורות האלה / החלק הנבחר" כטווח הזה, והוא מקובע לכל ההרצה עם השליחה',
+    aiScopeClearTitle: 'ביטול טווח הבחירה ומיקוד בגיליון כולו',
   },
   hi: {
     aiComposerPlaceholderBuild: 'बनाने के लिए तालिका, डेटा या चार्ट बताएँ…',
@@ -1667,6 +1785,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: 'भेजा नहीं गया',
     aiRetry: 'फिर से कोशिश करें',
     aiOpenAssistant: 'AI सहायक खोलें',
+    aiAskBtn: 'AI से पूछें',
     aiCheckBtn: 'AI जाँच',
     aiCheckPrompt:
       'इस शीट में समस्याएँ जाँचें: 1) सूत्र त्रुटियाँ (#REF!, #DIV/0! आदि), ऐसी रेंज जो पूरा डेटा कवर नहीं करतीं, योग पंक्तियों में छूटे कॉलम; 2) एक ही कॉलम में संख्या और टेक्स्ट का मिश्रण, असंगत दिनांक प्रारूप, स्पष्ट विषम मान और डुप्लिकेट पंक्तियाँ; 3) योग का विवरण से मेल न खाना, प्रतिशत कॉलम का जोड़ 100% न होना। मिली समस्याएँ सूचीबद्ध करें और सुधार सुझाएँ',
@@ -1756,6 +1875,12 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: '{address} के पूर्ववर्ती',
     aiToolTraceDependents: 'आश्रित सेल ट्रेस करें',
     aiToolTraceDependentsOf: '{address} के आश्रित ({count})',
+    aiScopeRange: 'चयनित: {range}',
+    aiScopeColumn: '"{name}" कॉलम चयनित',
+    aiScopeColumns: 'चयनित: {names} ({count} कॉलम)',
+    aiScopeRangeTip:
+      'AI "इस कॉलम / इन पंक्तियों / चयनित भाग" को इसी श्रेणी के रूप में समझता है; भेजने पर यह पूरे रन के लिए तय हो जाता है',
+    aiScopeClearTitle: 'श्रेणी दायरा हटाएँ और पूरी शीट पर काम करें',
   },
   'zh-TW': {
     aiComposerPlaceholderBuild: '描述要生成的表格、資料或圖表…',
@@ -1765,6 +1890,7 @@ export const aiStrings = defineStrings({
     aiUndelivered: '未傳送成功',
     aiRetry: '重試',
     aiOpenAssistant: '開啟 AI 助手',
+    aiAskBtn: 'AI 修改',
     aiCheckBtn: 'AI 校驗',
     aiCheckPrompt:
       '檢查這個表格的問題:1) 公式錯誤(#REF!、#DIV/0! 等)、參照範圍沒涵蓋全部資料、合計列漏加欄位;2) 同一欄數字和文字混用、日期格式不一致、明顯的異常值和重複列;3) 合計與明細對不上、百分比加總不是 100% 等結構問題。列出發現的問題並提出修復建議',
@@ -1849,5 +1975,10 @@ export const aiStrings = defineStrings({
     aiToolTracePrecedentsOf: '追蹤 {address} 的前導參照',
     aiToolTraceDependents: '追蹤從屬參照',
     aiToolTraceDependentsOf: '追蹤 {address} 的從屬參照（{count} 處）',
+    aiScopeRange: '已選取 {range}',
+    aiScopeColumn: '已選取「{name}」欄',
+    aiScopeColumns: '已選取 {names} 共 {count} 欄',
+    aiScopeRangeTip: 'AI 會把「這一欄 / 這些列 / 選取部分」理解為該範圍；送出後本輪固定不變',
+    aiScopeClearTitle: '取消該範圍，本次針對整張工作表',
   },
 })

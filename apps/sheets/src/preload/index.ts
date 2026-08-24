@@ -787,6 +787,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
       showGridLines: sheet.showGridLines,
       showFormulas: sheet.showFormulas === true,
       showRowColHeaders: sheet.showRowColHeaders !== false,
+      rightToLeft: sheet.rightToLeft === true,
       tables,
       comments,
       pivotRanges: sheet.pivotRanges.map(parseCellArea),
@@ -804,7 +805,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
   ) {
     throw new Error('Invalid workbook theme palette response.')
   }
-  let parsedThemeFonts: { major: string; minor: string } | undefined
+  let parsedThemeFonts: { major: string; minor: string; minorEa?: string } | undefined
   if (themeFonts !== undefined) {
     if (
       !isRecord(themeFonts) ||
@@ -813,7 +814,11 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
     ) {
       throw new Error('Invalid workbook theme fonts response.')
     }
-    parsedThemeFonts = { major: themeFonts.major, minor: themeFonts.minor }
+    parsedThemeFonts = {
+      major: themeFonts.major,
+      minor: themeFonts.minor,
+      ...(typeof themeFonts.minorEa === 'string' ? { minorEa: themeFonts.minorEa } : {}),
+    }
   }
   let parsedWorkbookProtection: { lockStructure: boolean; hasPassword: boolean } | undefined
   if (workbookProtection !== undefined) {
@@ -850,6 +855,9 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
     ...(restoredFromRecovery === undefined ? {} : { restoredFromRecovery }),
     ...(themeColors === undefined ? {} : { themeColors: themeColors as string[] }),
     ...(parsedThemeFonts === undefined ? {} : { themeFonts: parsedThemeFonts }),
+    ...(typeof input.normalFontName === 'string' && input.normalFontName !== ''
+      ? { normalFontName: input.normalFontName }
+      : {}),
     ...(parsedWorkbookProtection === undefined
       ? {}
       : { workbookProtection: parsedWorkbookProtection }),

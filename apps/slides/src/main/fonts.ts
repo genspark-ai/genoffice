@@ -187,6 +187,12 @@ const ALIASES: Record<string, string[]> = {
   gulimche: ['Gulim'],
   dotum: ['Gulim'],
   돋움: ['Gulim'],
+  // Hangul-localized Nanum names (Google-Slides exports carry both spellings in one deck;
+  // the alias keeps them on the same downloadable NanumGothic asset instead of a substitute)
+  나눔고딕: ['NanumGothic'],
+  나눔바른고딕: ['NanumBarunGothic', 'NanumGothic'],
+  나눔명조: ['NanumMyeongjo'],
+  나눔스퀘어: ['NanumSquare', 'NanumGothic'],
   // —— Traditional Chinese ——
   'microsoft jhenghei': ['MSJH'],
   微軟正黑體: ['Microsoft JhengHei', 'MSJH'],
@@ -231,12 +237,24 @@ function classifyFamily(family: string): 'serif' | 'sans' | 'mono' {
   return 'sans'
 }
 
-function substitutesFor(family: string): string[] {
-  const script = classifyCjkScript(family)
+// PowerPoint substitutes a missing font by the run's declared language/charset, not by
+// classifying the font name (see TextRun.fontScriptHint): prod_079's JP-named font with
+// charset=134 renders with Microsoft YaHei; prod_043's altLang="ko-KR" runs get Malgun.
+function substitutesFor(family: string, substScript?: 'ja' | 'ko' | 'sc' | 'tc'): string[] {
+  const script = substScript ?? classifyCjkScript(family)
   if (!script) return SUBSTITUTES[classifyFamily(family)]
   const serif = SERIF_RE.test(family)
   const mac = process.platform === 'darwin'
   switch (script) {
+    case 'sc':
+      // Office-bundled YaHei first (msyh.ttc in DFonts) to mirror PPT's pick
+      return serif
+        ? mac
+          ? ['Songti SC', 'SimSun']
+          : ['SimSun']
+        : mac
+          ? ['Microsoft YaHei', 'PingFang SC', 'Heiti SC']
+          : ['Microsoft YaHei', 'DengXian', 'SimSun']
     case 'ja':
       return serif
         ? mac
@@ -577,9 +595,18 @@ class FontRegistry {
    * fall back to regular; within a ttc, pick a face by the name table. Returns the matched font
    * and its "drawing family name" (the face's English family, guaranteed CSS-resolvable).
    */
-  resolve(
-    style: RunStyle,
-  ): { font: OpentypeFontLike; family: string; path: string; offset: number } | undefined {
+  resolve(style: RunStyle):
+    | {
+        font: OpentypeFontLike
+        family: string
+        path: string
+        offset: number
+        /** True when the hit came from same-script/class substitution — the requested
+         *  family (and its aliases) is missing. Alias hits (Calibri→Carlito) are NOT
+         *  substitutions: PowerPoint has those fonts and kerns them. */
+        substituted?: boolean
+      }
+    | undefined {
     this.buildIndex()
     const candidates: string[] = []
     const seen = new Set<string>()
@@ -595,7 +622,7 @@ class FontRegistry {
     // Candidates after this index are same-script/class substitutes, not the requested
     // family — the sub-family cloud fallback below must run before them
     const substituteStart = candidates.length
-    for (const s of substitutesFor(style.fontFamily)) {
+    for (const s of substitutesFor(style.fontFamily, style.substScript)) {
       push(s)
       for (const a of aliasesOf(s)) push(a)
     }
@@ -654,7 +681,7 @@ class FontRegistry {
     }
     for (const family of candidates.slice(substituteStart)) {
       const hit = tryFamily(family)
-      if (hit) return hit
+      if (hit) return { ...hit, substituted: true }
     }
     return undefined
   }
@@ -819,14 +846,17 @@ export function getPrivateFontData(id: string): ArrayBuffer | null {
 export function createSystemFontMetrics(): FontMetricsProvider {
   initShapedMetrics()
   const registry = new FontRegistry()
-  const cache = new Map<string, { font: OpentypeFontLike; family: string } | undefined>()
+  const cache = new Map<
+    string,
+    { font: OpentypeFontLike; family: string; substituted?: boolean } | undefined
+  >()
   const resolveEntry = (
     style: RunStyle,
-  ): { font: OpentypeFontLike; family: string } | undefined => {
-    const key = `${style.fontFamily}|${style.bold ? 1 : 0}${style.italic ? 1 : 0}`
+  ): { font: OpentypeFontLike; family: string; substituted?: boolean } | undefined => {
+    const key = `${style.fontFamily}|${style.bold ? 1 : 0}${style.italic ? 1 : 0}|${style.substScript ?? ''}`
     if (cache.has(key)) return cache.get(key)
     const raw = registry.resolve(style)
-    let entry: { font: OpentypeFontLike; family: string } | undefined
+    let entry: { font: OpentypeFontLike; family: string; substituted?: boolean } | undefined
     // Weight-in-name requests (Hiragino Kaku Gothic ProN W3) resolve to a specific face of a system
     // collection, but CSS matches that family by weight only (normal → W4) — register the
     // exact face under a synthetic "<family> W<n>" name so drawing uses the measured face.
@@ -897,7 +927,7 @@ export function createSystemFontMetrics(): FontMetricsProvider {
           }
         }
       }
-      entry = { font, family: raw.family }
+      entry = { font, family: raw.family, ...(raw.substituted ? { substituted: true } : {}) }
     }
     cache.set(key, entry)
     return entry
@@ -913,5 +943,6 @@ export function createSystemFontMetrics(): FontMetricsProvider {
     // Substituted fonts return the substitute family; the renderer draws with it (same font file for measuring/drawing)
     displayFamily: (style, text) =>
       (text != null ? shapedFamily(text) : null) ?? resolveEntry(style)?.family ?? style.fontFamily,
+    substituted: (style) => resolveEntry(style)?.substituted === true,
   }
 }

@@ -10,6 +10,7 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
       pageCount: () => 3,
       currentPage: () => 2,
       readOnly: () => false,
+      ocrText: () => null,
       selection: () => null,
       pendingSummary: () => '',
       annotationSummary: () => '',

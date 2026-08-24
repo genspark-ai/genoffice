@@ -6,10 +6,12 @@ import {
   createDocsView,
   docsQueryDirty,
   markDocsNewBlank,
+  queueDocsAiContent,
   requestDocsClose,
   setActiveDocsResolver,
   teardownDocsRenderer,
 } from '../../../docs/src/main/docs-main'
+import type { AiDocContent } from '../../../docs/src/shared/ipc'
 import {
   createMarkdownView,
   markdownIsDirty,
@@ -150,10 +152,14 @@ export class TabManager {
     this.activateTab(HOME_ID)
   }
 
-  openDocsTab(openPath?: string, options?: { newBlank?: boolean }): string {
+  openDocsTab(
+    openPath?: string,
+    options?: { newBlank?: boolean; aiContent?: AiDocContent },
+  ): string {
     const view = createDocsView(openPath)
     const id = `t${this.nextId++}`
     if (options?.newBlank) markDocsNewBlank(view.webContents.id)
+    if (options?.aiContent) queueDocsAiContent(view.webContents.id, options.aiContent)
     this.shellWindow.contentView.addChildView(view)
     view.setVisible(false)
     this.trackHtmlFullScreen(id, view)

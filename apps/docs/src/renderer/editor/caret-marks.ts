@@ -23,7 +23,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
  *  ins/del revisions) must never extend onto new typing */
 export const FORMAT_MARKS = new Set(['bold', 'italic', 'underline', 'strike', 'docTextStyle'])
 
-const serializeMarks = (marks: readonly Mark[]): string | null => {
+export const serializeMarks = (marks: readonly Mark[]): string | null => {
   const kept = marks
     .filter((mark) => FORMAT_MARKS.has(mark.type.name))
     .map((mark) => ({ type: mark.type.name, attrs: mark.attrs }))

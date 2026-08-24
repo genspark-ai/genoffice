@@ -15,6 +15,7 @@ import {
   resolvePlaceholderPresetGeom,
   resolvePlaceholderTransform,
   resolvePlaceholderAnchor,
+  resolvePlaceholderInsets,
   resolvePlaceholderFillSpPr,
   parseLstStyleLevels,
   placeholderStyleChain,
@@ -389,7 +390,10 @@ function parseSpShape(
   // master txStyles color — PowerPoint behavior, bnc904423)
   const fontRefColor = resolveColorNode(node['p:style']?.['a:fontRef'], ctx)
   const chainLayers = fontRefColor ? [{ levels: [{ color: fontRefColor }] }, ...phChain] : phChain
-  const text = txBody ? parseTextBody(txBody, ctx, chainLayers) : undefined
+  const phInsets = ph
+    ? resolvePlaceholderInsets(ctx.layoutPlaceholders, ctx.masterPlaceholders, phType, phIdx)
+    : undefined
+  const text = txBody ? parseTextBody(txBody, ctx, chainLayers, phInsets) : undefined
   // bodyPr anchor inherits along the placeholder chain (e.g. master titles anchor="ctr")
   if (ph && text && !text.anchor) {
     const inherited = resolvePlaceholderAnchor(
@@ -404,6 +408,7 @@ function parseSpShape(
   let stroke = parseStroke(spPr, ctx)
   let shadow = parseShadow(spPr, ctx)
   let glow = parseGlow(spPr, ctx)
+  const reflection = parseReflection(spPr)
   const scene3d = parseScene3D(spPr, ctx)
   // <a:fillOverlay> holds a second fill element directly (a:gradFill/…), so parseFill reads it like an spPr
   const overlayNode = spPr?.['a:effectLst']?.['a:fillOverlay']
@@ -486,6 +491,7 @@ function parseSpShape(
     ...(stroke ? { stroke } : {}),
     ...(shadow ? { shadow } : {}),
     ...(glow ? { glow } : {}),
+    ...(reflection ? { reflection } : {}),
     ...(scene3d ? { scene3d } : {}),
     text,
   }
@@ -634,16 +640,39 @@ function parseGlow(spPr: any, ctx: ParseContext): import('./types').GlowEffect |
   return { color, radius: Number.isFinite(rad) ? rad : 0 }
 }
 
+/** <a:effectLst><a:reflection> element-level reflection (flipped fading copy). */
+function parseReflection(spPr: any): import('./types').ReflectionEffect | undefined {
+  const r = spPr?.['a:effectLst']?.['a:reflection']
+  if (!r || typeof r !== 'object') return undefined
+  return {
+    blurRad: intOr(r['@_blurRad'], 0),
+    startA: r['@_stA'] != null ? intOr(r['@_stA'], 100000) / 100000 : 1,
+    endPos: r['@_endPos'] != null ? intOr(r['@_endPos'], 100000) / 100000 : 1,
+    dist: intOr(r['@_dist'], 0),
+  }
+}
+
 function parseShadow(spPr: any, ctx: ParseContext): ShadowEffect | undefined {
-  const shdw = spPr?.['a:effectLst']?.['a:outerShdw']
+  const outer = spPr?.['a:effectLst']?.['a:outerShdw']
+  const shdw = outer ?? spPr?.['a:effectLst']?.['a:innerShdw']
   if (!shdw || typeof shdw !== 'object') return undefined
   const color = resolveColorNode(shdw, ctx)
   if (!color) return undefined
+  const sx = shdw['@_sx'] != null ? intOr(shdw['@_sx'], 100000) / 100000 : undefined
+  const sy = shdw['@_sy'] != null ? intOr(shdw['@_sy'], 100000) / 100000 : undefined
+  const kx = shdw['@_kx'] != null ? intOr(shdw['@_kx'], 0) / 60000 : undefined
+  const ky = shdw['@_ky'] != null ? intOr(shdw['@_ky'], 0) / 60000 : undefined
   return {
     color,
     blurRad: intOr(shdw['@_blurRad'], 0),
     dist: intOr(shdw['@_dist'], 0),
     dirDeg: intOr(shdw['@_dir'], 0) / 60000,
+    ...(outer ? {} : { inner: true }),
+    ...(sx != null ? { sx } : {}),
+    ...(sy != null ? { sy } : {}),
+    ...(kx ? { kxDeg: kx } : {}),
+    ...(ky ? { kyDeg: ky } : {}),
+    ...(typeof shdw['@_algn'] === 'string' ? { algn: shdw['@_algn'] } : {}),
   }
 }
 
@@ -935,6 +964,7 @@ function parsePicture(
   const stroke = parseStroke(spPr, ctx)
   const shadow = parseShadow(spPr, ctx)
   const glow = parseGlow(spPr, ctx)
+  const reflection = parseReflection(spPr)
   // Pic's own spPr fill: PowerPoint draws it as a backdrop behind the (possibly translucent) blip
   const fill = parseFill(spPr, ctx)
   const duotone = parseDuotone(blip, ctx)
@@ -977,6 +1007,7 @@ function parsePicture(
     ...(stroke ? { stroke } : {}),
     ...(shadow ? { shadow } : {}),
     ...(glow ? { glow } : {}),
+    ...(reflection ? { reflection } : {}),
   }
 }
 
@@ -2962,7 +2993,14 @@ function resolveColorNode(node: any, ctx: ParseContext): string | undefined {
 
 // ── Text ─────────────────────────────────────────────────────────────
 
-function parseTextBody(txBody: any, ctx: ParseContext, phChain: TextStyleLevels[] = []): TextBody {
+function parseTextBody(
+  txBody: any,
+  ctx: ParseContext,
+  phChain: TextStyleLevels[] = [],
+  // Per-attribute bodyPr inset inheritance from the placeholder chain (layout over master);
+  // only attrs absent on this bodyPr fall through to it (then to the spec defaults)
+  inheritedInsets?: { l?: number; t?: number; r?: number; b?: number },
+): TextBody {
   const bodyPrRaw = txBody['a:bodyPr']
   const bodyPr = bodyPrRaw && typeof bodyPrRaw === 'object' ? bodyPrRaw : {}
   const anchorMap: Record<string, TextBody['anchor']> = { t: 'top', ctr: 'middle', b: 'bottom' }
@@ -3017,10 +3055,10 @@ function parseTextBody(txBody: any, ctx: ParseContext, phChain: TextStyleLevels[
     paragraphs,
     anchor: bodyPr['@_anchor'] ? anchorMap[bodyPr['@_anchor']] : undefined,
     insets: {
-      l: intOr(bodyPr['@_lIns'], DEFAULT_BODY_INSETS.l),
-      t: intOr(bodyPr['@_tIns'], DEFAULT_BODY_INSETS.t),
-      r: intOr(bodyPr['@_rIns'], DEFAULT_BODY_INSETS.r),
-      b: intOr(bodyPr['@_bIns'], DEFAULT_BODY_INSETS.b),
+      l: intOr(bodyPr['@_lIns'], inheritedInsets?.l ?? DEFAULT_BODY_INSETS.l),
+      t: intOr(bodyPr['@_tIns'], inheritedInsets?.t ?? DEFAULT_BODY_INSETS.t),
+      r: intOr(bodyPr['@_rIns'], inheritedInsets?.r ?? DEFAULT_BODY_INSETS.r),
+      b: intOr(bodyPr['@_bIns'], inheritedInsets?.b ?? DEFAULT_BODY_INSETS.b),
     },
     autofit,
     ...(fontScale != null ? { fontScale } : {}),
@@ -3221,14 +3259,51 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   // not the latin font; applied when the run is entirely PUA (the common single-glyph case)
   const puaOnly =
     sym != null && /^[\uf000-\uf0ff]+$/.test(text.replace(/\s+/g, '')) && !!text.trim()
+  // Substitution script hint (PowerPoint order): run altLang/lang CJK tag first,
+  // then the @charset declared on the bucket the family came from (own rPr only)
+  const CHARSET_SCRIPT: Record<number, 'ja' | 'ko' | 'sc' | 'tc'> = {
+    128: 'ja', // SHIFTJIS
+    129: 'ko', // HANGUL
+    130: 'ko', // JOHAB
+    134: 'sc', // GB2312
+    136: 'tc', // CHINESEBIG5
+  }
+  const langScript = (tag: unknown): 'ja' | 'ko' | 'sc' | 'tc' | undefined => {
+    const t = String(tag ?? '').toLowerCase()
+    if (t.startsWith('ja')) return 'ja'
+    if (t.startsWith('ko')) return 'ko'
+    if (/^zh(-(tw|hk|mo|hant))/.test(t)) return 'tc'
+    if (t.startsWith('zh')) return 'sc'
+    return undefined
+  }
+  const runLangScript = langScript(rPr['@_altLang']) ?? langScript(rPr['@_lang'])
+  const charsetOf = (bucket: string): ('ja' | 'ko' | 'sc' | 'tc') | undefined => {
+    if (runLangScript) return runLangScript
+    if (rPr[bucket]?.['@_typeface'] == null) return undefined
+    const v = rPr[bucket]['@_charset']
+    if (v == null) return undefined
+    const n = parseInt(String(v), 10)
+    return Number.isFinite(n) ? CHARSET_SCRIPT[n & 0xff] : undefined
+  }
   // Pick the bucket by script: complex script → a:cs, CJK → a:ea, otherwise → a:latin; fall back through buckets when missing
-  const fontFamily = puaOnly
-    ? sym
+  const csPair = cs != null ? { f: cs, cset: charsetOf('a:cs') } : undefined
+  const eaPair = ea != null ? { f: ea, cset: charsetOf('a:ea') } : undefined
+  const latinPair = latin != null ? { f: latin, cset: charsetOf('a:latin') } : undefined
+  const picked = puaOnly
+    ? sym != null
+      ? { f: sym, cset: undefined }
+      : undefined
     : ((CS_RE.test(text)
-        ? (cs ?? latin ?? ea)
+        ? (csPair ?? latinPair ?? eaPair)
         : CJK_RE.test(text)
-          ? (ea ?? latin)
-          : (latin ?? ea)) ?? ctx.theme?.minorFont)
+          ? (eaPair ?? latinPair)
+          : (latinPair ?? eaPair)) ??
+      (ctx.theme?.minorFont != null ? { f: ctx.theme.minorFont, cset: undefined } : undefined))
+  const fontFamily = picked?.f
+  // The hint steers CJK-glyph substitution only: latin-text runs substitute as western
+  // even when the run carries a CJK altLang (prod_043's "Rakuten Sans" ko-KR runs render
+  // with a latin substitute in PPT, not Malgun)
+  const fontScriptHint = CJK_RE.test(text) ? picked?.cset : undefined
   const bAttr = rPr['@_b']
   const iAttr = rPr['@_i']
   // Text outline <a:rPr><a:ln> (WordArt): only solid-color outlines are modeled, kept by the rebuild path
@@ -3274,6 +3349,7 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(rPr['@_kern'] != null ? { kern: (parseInt(rPr['@_kern'], 10) || 0) / 100 } : {}),
     ...(rPr['@_baseline'] ? { baseline: parseInt(rPr['@_baseline'], 10) / 1000 } : {}),
     fontFamily,
+    ...(fontScriptHint != null ? { fontScriptHint } : {}),
     color,
     ...(colorFollowsTheme ? { colorFollowsTheme } : {}),
     ...(colorInherited ? { colorInherited } : {}),

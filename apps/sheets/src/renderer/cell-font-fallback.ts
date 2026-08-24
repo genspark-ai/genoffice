@@ -55,14 +55,77 @@ export function withSansSerifFallback(font: string): string {
   return `${trimmed}, ${serifIntent(trimmed) ? 'serif' : 'sans-serif'}, ${EMOJI_FALLBACK}`
 }
 
+const canvasScopedFamilies = new Map<string, string>()
+/// Families whose registered face is a substitute (the skipIfLocal probe
+/// found no genuine font): only these carry alias-calibrated metrics.
+const substitutedFamilies = new Set<string>()
+
+export function isSubstitutedCellFamily(family: string): boolean {
+  return substitutedFamilies.has(family.toLowerCase())
+}
+
+const PASSTHROUGH_FAMILY =
+  /^(?:serif|sans-serif|monospace|cursive|fantasy|system-ui|math|ui-serif|ui-sans-serif|ui-monospace|ui-rounded|-apple-system|BlinkMacSystemFont)$/i
+
+export function rewriteScopedFamilies(
+  font: string,
+  scoped: ReadonlyMap<string, string> = canvasScopedFamilies,
+): string {
+  if (scoped.size === 0) return font
+  const segments = font.split(',')
+  const families = segments.map((s) => segmentFamily(s))
+  const scopedIdx = families.findIndex((f) => scoped.has(f.toLowerCase()))
+  if (scopedIdx === -1) return font
+  // Substitute only a sole cell family (plus generics): an explicit fallback
+  // stack is a UI measurement mirroring CSS and must fall through natively,
+  // exactly like the DOM it matches.
+  if (families.some((f, i) => i !== scopedIdx && !PASSTHROUGH_FAMILY.test(f))) return font
+  const target = scoped.get(families[scopedIdx]!.toLowerCase())!
+  const segment = segments[scopedIdx]!
+  const quoted = /["'][^"']*["']/.exec(segment)
+  segments[scopedIdx] = quoted
+    ? segment.replace(quoted[0], `"${target}"`)
+    : segment.replace(/\S+(\s*)$/, `"${target}"$1`)
+  return segments.join(',')
+}
+
 export interface CellFontAlias {
   readonly family: string
   /// local() face names, tried in order; genuine (Windows) names first so the
-  /// alias is a no-op where the real font exists.
+  /// alias is a no-op where the real font exists. Items containing '(' are
+  /// raw src tokens (e.g. url(...) for bundled fonts).
   readonly regular: readonly string[]
   /// Real bold faces only — never a regular face, which would suppress
   /// synthetic bold where no true bold exists.
   readonly bold?: readonly string[]
+  /// size-adjust % matching the substitute's advances to the original's
+  /// Excel-print advances (weighted per-char ratio measured from production
+  /// ref PDFs). Requires skipIfLocal: the adjustment is derived for the
+  /// substitute face and must never distort the genuine font.
+  readonly sizeAdjust?: string
+  readonly boldSizeAdjust?: string
+  /// local() names (family/PostScript/full) proving the genuine font exists;
+  /// when any resolves, the whole alias is skipped so real metrics win.
+  readonly skipIfLocal?: readonly string[]
+  /// Faces registered instead when skipIfLocal finds the genuine font: a
+  /// plain rename mapping (no width correction) for spellings the OS matcher
+  /// cannot resolve itself — Chromium on macOS never matches localized
+  /// family names, so '맑은 고딕' needs an explicit map to Malgun Gothic.
+  readonly whenGenuine?: { readonly regular: readonly string[]; readonly bold?: readonly string[] }
+  /// Register the faces under an internal name reachable only through the
+  /// patched ctx.font setter: UI chrome stacks reference 'Segoe UI', and a
+  /// document-wide web face under that name would restyle the ribbon.
+  readonly scopeToCanvas?: true
+  /// Latin/digit sub-face registered after the base faces with
+  /// unicodeRange U+0-2CFF, so dual-metric fonts (e.g. Malgun Gothic:
+  /// hangul matches AppleGothic exactly, digits do not) can correct each
+  /// script independently.
+  readonly latin?: {
+    readonly regular: readonly string[]
+    readonly bold?: readonly string[]
+    readonly sizeAdjust?: string
+    readonly boldSizeAdjust?: string
+  }
 }
 
 const JP_SANS = ['Hiragino Sans', 'HiraginoSans-W3', 'Hiragino Kaku Gothic ProN'] as const
@@ -80,7 +143,28 @@ const SONG_BOLD = ['STSongti-SC-Bold', 'Songti SC Bold']
 const KAI = ['KaiTi', 'Kaiti SC', 'STKaitiSC-Regular', 'STKaiti']
 const MING_TC = ['PMingLiU', 'Songti TC', 'Apple LiSung']
 const KR_SANS = ['Malgun Gothic', 'Apple SD Gothic Neo', 'AppleGothic']
-const KR_SANS_BOLD = ['Malgun Gothic Bold', 'AppleSDGothicNeo-Bold', 'Apple SD Gothic Neo Bold']
+/// Carlito is bundled, not installed — local() alone can never resolve it.
+const CARLITO_SRC = [
+  'Carlito',
+  `url(${new URL('./fonts/Carlito-Regular.ttf', import.meta.url).href})`,
+]
+const CARLITO_BOLD_SRC = [
+  'Carlito Bold',
+  `url(${new URL('./fonts/Carlito-Bold.ttf', import.meta.url).href})`,
+]
+/// Malgun Gothic prints hangul at 1.0em — exactly AppleGothic — but digits at
+/// 0.6em vs AppleGothic's 0.68em, so number tails clipped while hangul was
+/// perfect. Latin/digit runs go to width-corrected Helvetica Neue instead.
+const MALGUN_ALIAS: Omit<CellFontAlias, 'family'> = {
+  regular: ['Malgun Gothic', 'AppleGothic'],
+  skipIfLocal: ['Malgun Gothic', 'MalgunGothic'],
+  latin: {
+    regular: ['Helvetica Neue'],
+    sizeAdjust: '104%',
+    bold: ['Helvetica Neue Bold'],
+    boldSizeAdjust: '109.4%',
+  },
+}
 const KR_SERIF = ['Batang', 'AppleMyungjo', 'Nanum Myeongjo']
 const TIMES_BOLD = ['Times New Roman Bold', 'TimesNewRomanPS-BoldMT']
 
@@ -140,7 +224,20 @@ export const CELL_FONT_ALIASES: readonly CellFontAlias[] = [
   { family: '標楷體', regular: ['DFKai-SB', 'BiauKai', 'Kaiti TC', 'Kaiti SC'] },
   { family: 'DFKai-SB', regular: ['DFKai-SB', 'BiauKai', 'Kaiti TC', 'Kaiti SC'] },
   // Korean
-  { family: 'Malgun Gothic', regular: KR_SANS, bold: KR_SANS_BOLD },
+  { family: 'Malgun Gothic', ...MALGUN_ALIAS },
+  {
+    family: '맑은 고딕',
+    ...MALGUN_ALIAS,
+    whenGenuine: {
+      regular: ['Malgun Gothic'],
+      bold: ['Malgun Gothic Bold', 'MalgunGothicBold'],
+    },
+  },
+  {
+    family: '돋움',
+    regular: ['Dotum', 'AppleGothic', 'Apple SD Gothic Neo'],
+    bold: ['Dotum Bold', 'Apple SD Gothic Neo Bold', 'AppleSDGothicNeo-Bold'],
+  },
   { family: 'Gulim', regular: ['Gulim', 'Dotum', ...KR_SANS] },
   { family: '굴림', regular: ['Gulim', 'Dotum', ...KR_SANS] },
   { family: 'Dotum', regular: ['Dotum', ...KR_SANS] },
@@ -168,6 +265,60 @@ export const CELL_FONT_ALIASES: readonly CellFontAlias[] = [
     bold: TIMES_BOLD,
   },
   { family: 'PT Serif', regular: ['PT Serif', 'Times New Roman', 'Georgia'] },
+  // Width-corrected substitutes for fonts absent on macOS. Excel sized the
+  // author's columns for the original font; a substitute with different
+  // advances clips tail characters or wraps an extra line. size-adjust values
+  // are weighted per-char advance ratios (original from production ref-PDF
+  // glyph positions / substitute from live canvas measurement).
+  {
+    family: 'Bahnschrift',
+    regular: ['Helvetica Neue'],
+    sizeAdjust: '96.7%',
+    bold: ['Helvetica Neue Bold'],
+    boldSizeAdjust: '92.7%',
+    skipIfLocal: ['Bahnschrift'],
+  },
+  {
+    family: 'Segoe UI',
+    regular: ['Helvetica Neue'],
+    sizeAdjust: '96.7%',
+    bold: ['Helvetica Neue Bold'],
+    boldSizeAdjust: '98.3%',
+    skipIfLocal: ['Segoe UI', 'SegoeUI'],
+    scopeToCanvas: true,
+  },
+  {
+    family: 'Dosis',
+    regular: CARLITO_SRC,
+    sizeAdjust: '96.3%',
+    bold: CARLITO_BOLD_SRC,
+    boldSizeAdjust: '99.2%',
+    skipIfLocal: ['Dosis', 'Dosis-Regular', 'Dosis Regular'],
+  },
+  {
+    family: 'Aptos Narrow',
+    regular: CARLITO_SRC,
+    sizeAdjust: '96%',
+    bold: CARLITO_BOLD_SRC,
+    boldSizeAdjust: '96%',
+    skipIfLocal: ['Aptos Narrow', 'AptosNarrow'],
+  },
+  // Excel maps the Demi/Light family names onto the base family's bold and
+  // regular when they are missing, so the substitutes mirror that weight
+  // mapping; Helvetica Neue already matches LT Pro widths within 0.5%.
+  {
+    family: 'Avenir Next LT Pro',
+    regular: ['AvenirNextLTPro-Regular', 'Helvetica Neue'],
+    bold: ['AvenirNextLTPro-Bold', 'Helvetica Neue Bold'],
+  },
+  {
+    family: 'Avenir Next LT Pro Demi',
+    regular: ['AvenirNextLTPro-Demi', 'Helvetica Neue Bold'],
+  },
+  {
+    family: 'Avenir Next LT Pro Light',
+    regular: ['AvenirNextLTPro-Lt', 'Helvetica Neue'],
+  },
 ]
 
 const ALIAS_FAMILY_NAMES: ReadonlySet<string> = new Set(
@@ -181,7 +332,7 @@ function patchFontSetter(proto: object): void {
   Object.defineProperty(proto, 'font', {
     ...desc,
     set(value: string) {
-      nativeSet.call(this, withSansSerifFallback(String(value)))
+      nativeSet.call(this, withSansSerifFallback(rewriteScopedFamilies(String(value))))
     },
   })
 }
@@ -192,24 +343,92 @@ export function installCanvasFontFallback(): void {
     patchFontSetter(OffscreenCanvasRenderingContext2D.prototype)
 }
 
+/// Everything below the CJK blocks: latin sub-faces cover digits/latin/punct
+/// while hangul & friends stay on the base face (a later-registered face wins
+/// where unicode ranges overlap).
+const LATIN_RANGE = 'U+0-2CFF'
+
+function faceSrc(items: readonly string[]): string {
+  return items.map((n) => (n.includes('(') ? n : `local('${n}')`)).join(', ')
+}
+
+function genuineLocalExists(names: readonly string[]): Promise<boolean> {
+  const probes = names.map((n) =>
+    new FontFace('__genoffice-font-probe', `local('${n}')`).load().then(
+      () => true,
+      () => false,
+    ),
+  )
+  return Promise.all(probes).then((hits) => hits.some(Boolean))
+}
+
+/// lib.dom is missing size-adjust (supported since Chromium 92).
+type FontFaceWidthDescriptors = FontFaceDescriptors & { sizeAdjust?: string | undefined }
+
+function addFace(
+  family: string,
+  src: readonly string[],
+  descriptors: FontFaceWidthDescriptors,
+  loads: Promise<unknown>[],
+): void {
+  try {
+    const face = new FontFace(family, faceSrc(src), descriptors)
+    document.fonts.add(face)
+    loads.push(face.load().catch(() => {}))
+  } catch {
+    /* invalid descriptor on this platform — keep the rest */
+  }
+}
+
+function registerAlias(alias: CellFontAlias, loads: Promise<unknown>[]): void {
+  let family = alias.family
+  if (alias.scopeToCanvas) {
+    family = `__cell-scope ${alias.family}`
+    canvasScopedFamilies.set(alias.family.toLowerCase(), family)
+  }
+  addFace(family, alias.regular, { weight: '400', sizeAdjust: alias.sizeAdjust }, loads)
+  if (alias.bold)
+    addFace(family, alias.bold, { weight: '700', sizeAdjust: alias.boldSizeAdjust }, loads)
+  const latin = alias.latin
+  if (!latin) return
+  addFace(
+    family,
+    latin.regular,
+    { weight: '400', sizeAdjust: latin.sizeAdjust, unicodeRange: LATIN_RANGE },
+    loads,
+  )
+  if (latin.bold)
+    addFace(
+      family,
+      latin.bold,
+      { weight: '700', sizeAdjust: latin.boldSizeAdjust, unicodeRange: LATIN_RANGE },
+      loads,
+    )
+}
+
 /// Register + load alias faces before the first skeleton: canvas fillText
 /// never triggers lazy @font-face loads, and Univer measures only once.
 export function registerCellFontAliases(): Promise<unknown> {
   const loads: Promise<unknown>[] = []
+  const gated: Promise<unknown>[] = []
   for (const alias of CELL_FONT_ALIASES) {
-    const variants: [readonly string[], string][] = [[alias.regular, '400']]
-    if (alias.bold) variants.push([alias.bold, '700'])
-    for (const [locals, weight] of variants) {
-      try {
-        const face = new FontFace(alias.family, locals.map((n) => `local('${n}')`).join(', '), {
-          weight,
-        })
-        document.fonts.add(face)
-        loads.push(face.load().catch(() => {}))
-      } catch {
-        /* invalid descriptor on this platform — keep the rest */
-      }
+    if (alias.skipIfLocal) {
+      gated.push(
+        genuineLocalExists(alias.skipIfLocal).then((genuine) => {
+          const gatedLoads: Promise<unknown>[] = []
+          if (genuine) {
+            if (alias.whenGenuine)
+              registerAlias({ family: alias.family, ...alias.whenGenuine }, gatedLoads)
+          } else {
+            substitutedFamilies.add(alias.family.toLowerCase())
+            registerAlias(alias, gatedLoads)
+          }
+          return Promise.all(gatedLoads)
+        }),
+      )
+    } else {
+      registerAlias(alias, loads)
     }
   }
-  return Promise.all(loads)
+  return Promise.all([...loads, ...gated])
 }

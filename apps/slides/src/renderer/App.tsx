@@ -26,6 +26,7 @@ import type {
   MasterPartItem,
   PasteSlideMode,
   SectionInfo,
+  SetEffectsPatch,
   SlideComment,
   TransitionKind,
 } from '../shared/ipc'
@@ -55,7 +56,12 @@ import { formatClock, type CustomShow } from './slideshow-utils'
 import { ContextMenu } from './components/ContextMenu'
 import { ShapeGalleryPopover } from './components/ShapeGalleryPopover'
 import { PasteOptionsFloater } from './components/PasteOptionsFloater'
-import { AiAskPopover, type AnchorRect, type AskTarget } from './components/AiAskPopover'
+import {
+  AiAskPopover,
+  AiAskTrigger,
+  type AnchorRect,
+  type AskTarget,
+} from './components/AiAskPopover'
 import {
   anchorId,
   describeNode,
@@ -72,13 +78,7 @@ import { EquationDialog, HeaderFooterDialog, LinkDialog } from './components/Ins
 import { CutoutDialog } from './components/CutoutDialog'
 import type { WordArtPreset } from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
-import {
-  GensparkMark,
-  IconAiAskSelection,
-  IconAiBeautify,
-  IconAiFactCheck,
-  IconAiImage,
-} from './components/icons'
+import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
 import { ToastHost } from './components/toast'
 import { showToast } from './components/toast-bus'
 import { t, useI18n } from './i18n/locale'
@@ -1123,57 +1123,68 @@ export function App() {
     })
   }, [askState, findNodeCtx])
 
-  /** Viewport rect of the annotated selection; the popover re-measures it while the canvas scrolls */
-  const getAskAnchorRect = useCallback((): AnchorRect | null => {
-    const rel = stageRelRef.current
-    const slide = slides[current]
-    if (!rel || !slide || !askState) return null
-    const r = rel.getBoundingClientRect()
-    const scale = slide.widthPx > 0 ? r.width / slide.widthPx : 1
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    for (const id of askState.ids) {
-      const ctx = findNodeCtx(id)
-      if (!ctx) continue
-      // Children of an entered group carry group-local coordinates
-      const parent = ctx.groupId ? findNodeCtx(ctx.groupId)?.node : null
-      const ox = parent?.box.x ?? 0
-      const oy = parent?.box.y ?? 0
-      const b = ctx.node.box
-      minX = Math.min(minX, ox + b.x)
-      minY = Math.min(minY, oy + b.y)
-      maxX = Math.max(maxX, ox + b.x + b.w)
-      maxY = Math.max(maxY, oy + b.y + b.h)
-    }
-    if (!Number.isFinite(minX)) return null
-    // Anchor to the visible part of the element and hand the canvas band along:
-    // a full-bleed picture would otherwise push the popover over the ribbon
-    const view = stageRelRef.current?.closest('.stage-wrap')?.getBoundingClientRect()
-    const rect = {
-      left: Math.max(r.left + minX * scale, view?.left ?? -Infinity),
-      top: Math.max(r.top + minY * scale, view?.top ?? -Infinity),
-      right: Math.min(r.left + maxX * scale, view?.right ?? Infinity),
-      bottom: Math.min(r.top + maxY * scale, view?.bottom ?? Infinity),
-      viewTop: view?.top ?? 0,
-      viewBottom: view?.bottom ?? window.innerHeight,
-    }
-    return rect.right <= rect.left || rect.bottom <= rect.top ? null : rect
-  }, [askState, findNodeCtx, slides, current])
+  /** Viewport rect of a set of element ids; re-measured while the canvas scrolls or zooms */
+  const selectionRect = useCallback(
+    (ids: string[]): AnchorRect | null => {
+      const rel = stageRelRef.current
+      const slide = slides[current]
+      if (!rel || !slide) return null
+      const r = rel.getBoundingClientRect()
+      const scale = slide.widthPx > 0 ? r.width / slide.widthPx : 1
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const id of ids) {
+        const ctx = findNodeCtx(id)
+        if (!ctx) continue
+        // Children of an entered group carry group-local coordinates
+        const parent = ctx.groupId ? findNodeCtx(ctx.groupId)?.node : null
+        const ox = parent?.box.x ?? 0
+        const oy = parent?.box.y ?? 0
+        const b = ctx.node.box
+        minX = Math.min(minX, ox + b.x)
+        minY = Math.min(minY, oy + b.y)
+        maxX = Math.max(maxX, ox + b.x + b.w)
+        maxY = Math.max(maxY, oy + b.y + b.h)
+      }
+      if (!Number.isFinite(minX)) return null
+      // Anchor to the visible part of the element and hand the canvas band along:
+      // a full-bleed picture would otherwise push the popover over the ribbon
+      const view = stageRelRef.current?.closest('.stage-wrap')?.getBoundingClientRect()
+      const rect = {
+        left: Math.max(r.left + minX * scale, view?.left ?? -Infinity),
+        top: Math.max(r.top + minY * scale, view?.top ?? -Infinity),
+        right: Math.min(r.left + maxX * scale, view?.right ?? Infinity),
+        bottom: Math.min(r.top + maxY * scale, view?.bottom ?? Infinity),
+        viewTop: view?.top ?? 0,
+        viewBottom: view?.bottom ?? window.innerHeight,
+      }
+      return rect.right <= rect.left || rect.bottom <= rect.top ? null : rect
+    },
+    [findNodeCtx, slides, current],
+  )
+
+  const getAskAnchorRect = useCallback(
+    (): AnchorRect | null => (askState ? selectionRect(askState.ids) : null),
+    [askState, selectionRect],
+  )
+
+  /** Anchor for the floating Ask AI chip that follows the live selection */
+  const getAskTriggerRect = useCallback(
+    (): AnchorRect | null => (selectedIds.length > 0 ? selectionRect(selectedIds) : null),
+    [selectedIds, selectionRect],
+  )
 
   const openAskPopover = useCallback(() => {
     if (editing || editingCell || selectedIds.length === 0) return
-    // Clicking the trigger while the popover is open dismisses it through the
-    // capture-phase outside-click handler, which runs before this click — without
-    // the guard the trigger could only ever reopen what it just closed
+    // Clicking the trigger while the popover is open dismisses it through
+    // the capture-phase outside-click handler before onClick runs.
     if (Date.now() - askClosedAtRef.current < 250) return
-    if (editQueue.length >= EDIT_QUEUE_MAX) {
-      setStatus(t('aiAskQueueFull', { max: EDIT_QUEUE_MAX }))
-      return
-    }
+    // A full queue only disables "Add to queue" inside the popover; "Send now"
+    // never touches the queue, so the popover still opens
     setAskState({ ids: selectedIds })
-  }, [editing, editingCell, selectedIds, editQueue.length])
+  }, [editing, editingCell, selectedIds])
 
   const commitAsk = useCallback(
     (instruction: string) => {
@@ -1224,6 +1235,36 @@ export function App() {
     setSlides((s) => s.map((sl, i) => (i === slideIndex ? updated : sl)))
     setDirty(true)
   }, [])
+
+  // Effect sliders fire continuously while dragging; each tick costs an IPC round trip
+  // (XML patch + full slide relayout). Keep exactly one request in flight and remember
+  // only the LATEST pending value — without the gate, requests pile up faster than the
+  // main process can serve them and the drag lags further and further behind.
+  const effectsInFlight = useRef(false)
+  const effectsPending = useRef<{
+    slideIndex: number
+    id: string
+    effects: SetEffectsPatch
+  } | null>(null)
+  const sendEffects = useCallback(
+    (slideIndex: number, id: string, effects: SetEffectsPatch) => {
+      if (effectsInFlight.current) {
+        effectsPending.current = { slideIndex, id, effects }
+        return
+      }
+      effectsInFlight.current = true
+      void window.slidesApi
+        .setEffects({ slideIndex, sourceId: id, effects })
+        .then((r) => r && applySlide(slideIndex, r))
+        .finally(() => {
+          effectsInFlight.current = false
+          const p = effectsPending.current
+          effectsPending.current = null
+          if (p) sendEffects(p.slideIndex, p.id, p.effects)
+        })
+    },
+    [applySlide],
+  )
 
   const insertElement = useCallback(
     (kind: InsertKind) => insertActions.insertElement(ctxRef.current, kind),
@@ -3394,20 +3435,6 @@ export function App() {
                               </>
                             )}
                           </div>
-                          {/* Its own pill: everything above acts on the whole deck or page,
-                        this is the only entry that reads the selection */}
-                          {selectedIds.length > 0 && !editing && !editingCell && (
-                            <div className="stage-ai-group">
-                              <button
-                                className={`stage-ai-btn${askState ? ' active' : ''}`}
-                                data-tip={t('aiAskBtnTip')}
-                                onClick={openAskPopover}
-                              >
-                                <IconAiAskSelection size={14} />
-                                <span>{t('aiAskBtn')}</span>
-                              </button>
-                            </div>
-                          )}
                         </div>
                         <div
                           ref={stageScaleRef}
@@ -3763,6 +3790,7 @@ export function App() {
                         .setTextBodyProps({ slideIndex: current, sourceId: id, props })
                         .then((r) => r && applySlide(current, r))
                     }
+                    onEffects={(id, effects) => sendEffects(current, id, effects)}
                     onStroke={(id, stroke) => void onStroke(id, stroke)}
                     onCollapse={() => setShowFormat(false)}
                     onPictureCrop={startCrop}
@@ -3962,10 +3990,21 @@ export function App() {
         </div>
       )}
 
+      {!askState &&
+        !editing &&
+        !editingCell &&
+        !cropTarget &&
+        !cutoutTarget &&
+        inkTool === 'select' &&
+        selectedIds.length > 0 && (
+          <AiAskTrigger getAnchorRect={getAskTriggerRect} onOpen={openAskPopover} />
+        )}
+
       {askState && askTargets.length > 0 && (
         <AiAskPopover
           targets={askTargets}
           getAnchorRect={getAskAnchorRect}
+          queueFull={editQueue.length >= EDIT_QUEUE_MAX}
           onSubmit={(instruction) => {
             askClosedAtRef.current = Date.now()
             commitAsk(instruction)
@@ -3974,6 +4013,17 @@ export function App() {
             askClosedAtRef.current = Date.now()
             setAskState(null)
           }}
+          onSendNow={
+            askState.itemKey
+              ? undefined
+              : (instruction) => {
+                  askClosedAtRef.current = Date.now()
+                  setAskState(null)
+                  // A normal run reads the live canvas selection, so the
+                  // instruction lands scoped to the still-selected element(s)
+                  pushAiPreset(instruction)
+                }
+          }
         />
       )}
 

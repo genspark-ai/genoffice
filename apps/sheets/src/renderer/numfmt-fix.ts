@@ -26,6 +26,7 @@ import { ConditionalFormattingService } from '@univerjs/preset-sheets-conditiona
 import { INTERCEPTOR_POINT, SheetInterceptorService } from '@univerjs/sheets'
 
 import { getWorkbookMdw } from './app-constants'
+import { isSubstitutedCellFamily } from './cell-font-fallback'
 import type { UniverRuntime } from './univer-state'
 
 /// Shares the per-workbook max-digit-width with characterWidthToPixels
@@ -312,7 +313,8 @@ export function hashFill(columnWidthPx: number, measure: (text: string) => numbe
 /// locally the canvas measures a substitute (Helvetica ≈9% wider), biasing
 /// borderline cells into a spurious ####. Scale such measurements back to
 /// the known GDI digit width; installed fonts already measure true.
-const EXCEL_DIGIT_PER_PT: Record<string, number> = {
+/// Also the workbook MDW source (measureNormalFontMdw): MDW = digit/pt × pt.
+export const EXCEL_DIGIT_PER_PT: Record<string, number> = {
   Calibri: 7 / 11,
   Verdana: 8 / 10,
   // Korean Excel's default; its GDI digit width matches Calibri (MDW 7px at
@@ -321,12 +323,35 @@ const EXCEL_DIGIT_PER_PT: Record<string, number> = {
   // columns turned into spurious ####.
   'Malgun Gothic': 7 / 11,
   '맑은 고딕': 7 / 11,
+  // MDW 8 at 11pt, solved from Excel print geometry of the ja prod refs
+  // (five columns match floor((w+16/256)*8) within 1pt; MDW 7 misses by
+  // 20%+). The styles.css alias (Carlito) measures Calibri-like 7.3px.
+  'Aptos Narrow': 8 / 11,
+  // JIS legacy faces keep em/2 digit advances → 8px at 11pt GDI, matching
+  // the grid-derived MS PGothic value (ja Excel's classic 72px default
+  // column vs Calibri's 64px).
+  'ＭＳ Ｐゴシック': 8 / 11,
+  'MS PGothic': 8 / 11,
+  'ＭＳ ゴシック': 8 / 11,
+  'MS Gothic': 8 / 11,
+  'ＭＳ Ｐ明朝': 8 / 11,
+  'MS PMincho': 8 / 11,
+  'ＭＳ 明朝': 8 / 11,
+  'MS Mincho': 8 / 11,
+  // GB/Big5 legacy faces share the em/2 digit advance.
+  宋体: 8 / 11,
+  SimSun: 8 / 11,
+  NSimSun: 8 / 11,
+  新細明體: 8 / 11,
+  PMingLiU: 8 / 11,
+  細明體: 8 / 11,
+  MingLiU: 8 / 11,
 }
 
 /// Families whose @font-face alias substitutes a metrically different local
 /// face: the family "resolves", but the canvas measures the substitute, so
 /// the GDI scale-back must apply even though fontAvailable() is true.
-const ALIAS_SUBSTITUTED = new Set(['Malgun Gothic', '맑은 고딕'])
+const ALIAS_SUBSTITUTED = new Set(['Malgun Gothic', '맑은 고딕', 'Aptos Narrow'])
 
 const fontAvailabilityCache = new Map<string, boolean>()
 
@@ -334,7 +359,7 @@ const fontAvailabilityCache = new Map<string, boolean>()
 /// document.fonts.check, whose answer for uninstalled system fonts varies
 /// across Chromium versions: a family that renders must differ from at
 /// least one generic; a missing one falls back and matches both.
-function fontAvailable(family: string): boolean {
+export function fontAvailable(family: string): boolean {
   let known = fontAvailabilityCache.get(family)
   if (known === undefined) {
     known = false
@@ -362,6 +387,7 @@ export function excelWidthScale(
   family: string | undefined,
   sizePt: number,
   measureDigit: () => number,
+  substituteActive?: boolean,
 ): number {
   if (!family) return 1
   const perPt = EXCEL_DIGIT_PER_PT[family]
@@ -369,7 +395,12 @@ export function excelWidthScale(
   if (!ALIAS_SUBSTITUTED.has(family) && fontAvailable(family)) return 1
   const digit = measureDigit()
   if (!(digit > 0)) return 1
-  return Math.min(1, (perPt * sizePt) / digit)
+  const scale = (perPt * sizePt) / digit
+  // Only our own registered substitute is calibrated in both directions — a
+  // narrower substitute (Aptos Narrow -> 96% Carlito) must still trip Excel's
+  // #### on GDI overflow. Genuine fonts and uncalibrated fallbacks only ever
+  // scale back.
+  return (substituteActive ?? isSubstitutedCellFamily(family)) ? scale : Math.min(1, scale)
 }
 
 /**

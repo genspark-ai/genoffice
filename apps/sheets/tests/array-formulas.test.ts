@@ -47,4 +47,35 @@ describe('collectArrayFollowers', () => {
     )
     expect([...followers]).toEqual(['4:0'])
   })
+
+  it('adds no followers when the array extent was fully deleted', () => {
+    const followers = new Set<string>()
+    // genspark-ai/genoffice#135 op stack: file rows 6-7 are both removed, but
+    // box-envelope tracking reported screen row 8 (unrelated content) as a
+    // survivor and blanked it.
+    collectArrayFollowers(
+      followers,
+      [{ row: 5, column: 0, value: 7, formula: '=X', arrayRef: 'A7:A8' }],
+      [
+        { kind: 'move-rows', index: 11, count: 1, before: 7 },
+        { kind: 'remove-rows', index: 8, count: 1 },
+        { kind: 'move-rows', index: 10, count: 2, before: 2 },
+        { kind: 'remove-rows', index: 8, count: 1 },
+      ],
+    )
+    expect(followers.size).toBe(0)
+  })
+
+  it('keeps unrelated rows a move shuffled between the survivors out', () => {
+    const followers = new Set<string>()
+    // The move splits the extent: file rows 0-1 land on screen rows 0 and 4,
+    // with unrelated file rows 2-4 sitting on screen 1-3 in between. The
+    // envelope would blank all of 1-4; only screen row 4 is a real follower.
+    collectArrayFollowers(
+      followers,
+      [{ row: 0, column: 0, value: 7, formula: '=X', arrayRef: 'A1:A2' }],
+      [{ kind: 'move-rows', index: 2, count: 3, before: 1 }],
+    )
+    expect([...followers]).toEqual(['4:0'])
+  })
 })

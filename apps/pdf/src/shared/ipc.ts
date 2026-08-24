@@ -13,6 +13,7 @@ export const PDF_CHANNELS = {
   listPageImages: 'pdf:list-page-images',
   listStaticFormFills: 'pdf:list-static-form-fills',
   pageImagePng: 'pdf:page-image-png',
+  ocrPage: 'pdf:ocr-page',
   pagePreviewPng: 'pdf:page-preview-png',
   extractPages: 'pdf:extract-pages',
   insertPdf: 'pdf:insert-pdf',
@@ -26,6 +27,7 @@ export const PDF_CHANNELS = {
   cropPages: 'pdf:crop-pages',
   exportImages: 'pdf:export-images',
   convertOffice: 'pdf:convert-office',
+  createDocument: 'pdf:create-document',
   generateImage: 'pdf:generate-image',
   listSignatures: 'pdf:list-signatures',
   addSignature: 'pdf:add-signature',
@@ -72,6 +74,24 @@ export interface SavedSignature {
 }
 
 export type PdfConvertFormat = 'docx' | 'xlsx' | 'pptx'
+
+/** target file type of the AI create_document tool (mirrors the docs app's contract) */
+export type CreateDocumentType = 'docx' | 'pdf' | 'md'
+
+export interface CreateDocumentRequest {
+  type: CreateDocumentType
+  /** file name stem (sanitized main-side) */
+  title: string
+  /** docx/pdf: restricted HTML; md: Markdown source */
+  content: string
+}
+
+export interface CreateDocumentResult {
+  ok: boolean
+  /** the created file, when it is written directly (pdf/md); docx opens as a new tab that saves itself */
+  path?: string
+  error?: string
+}
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
@@ -387,6 +407,15 @@ export interface StaticFormFillRecord {
   align?: 'left' | 'center' | 'right'
 }
 
+/** One OCR line from the system engine: normalized bottom-left boxes relative to
+    the submitted image ([x0,y0,x1,y1], 0..1), with optional word-level char boxes. */
+export interface PdfOcrLine {
+  text: string
+  confidence: number
+  box: [number, number, number, number]
+  chars?: { text: string; box: [number, number, number, number] }[]
+}
+
 /** Live-preview render request: a page region with some images removed */
 export interface PagePreviewRequest {
   path: string
@@ -664,6 +693,9 @@ export interface PdfApi {
   listPageImages(path: string): Promise<PageImageRef[]>
   /** Read GenOffice static-fill metadata stored inside the PDF. */
   listStaticFormFills(path: string): Promise<StaticFormFillRecord[]>
+  /** System-OCR one rendered page image (PNG, base64); null when no engine is
+      available on this platform, [] when recognition failed for this image */
+  ocrPage(png: string): Promise<PdfOcrLine[] | null>
   /** Render one existing image object to PNG (base64) for move/resize ghost previews; null if it can't be matched */
   pageImagePng(request: {
     path: string
@@ -689,6 +721,8 @@ export interface PdfApi {
   exportImages(request: ExportImagesRequest): Promise<ExportImagesResult>
   /** Convert the current PDF to Word / Excel / PowerPoint via the shell's local conversion flows */
   convertOffice(format: PdfConvertFormat): Promise<void>
+  /** AI create_document: build a new standalone file in the default folder and open it in a new tab */
+  createDocument(request: CreateDocumentRequest): Promise<CreateDocumentResult>
   /** Web image search for AI tools (app-wide ai:image-search handler) */
   imageSearch(query: string, maxResults?: number): Promise<ImageSearchResponse>
   /** Download an image URL in the main process (SSRF-guarded, avoids CORS); null on failure */

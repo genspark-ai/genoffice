@@ -7,9 +7,31 @@ import {
   setWorkbookMdw,
 } from '../src/renderer/app-constants'
 import { generalCharBudget } from '../src/renderer/numfmt-fix'
-import { characterWidthToPixels, toUniverStyle } from '../src/renderer/univer-sync'
+import {
+  characterWidthToPixels,
+  measureNormalFontMdw,
+  resolveNormalMdwFamily,
+  toUniverStyle,
+} from '../src/renderer/univer-sync'
 
 afterEach(() => setWorkbookMdw(7))
+
+type Workbook = Parameters<typeof measureNormalFontMdw>[0]
+
+function workbook(overrides: {
+  fontFamily?: string
+  fontSize?: number
+  fontScheme?: 'major' | 'minor'
+  normalFontName?: string
+  minorEa?: string
+}): Workbook {
+  const { fontFamily, fontSize, fontScheme, normalFontName, minorEa } = overrides
+  return {
+    styles: [{ fontFamily, fontSize, fontScheme }],
+    ...(normalFontName === undefined ? {} : { normalFontName }),
+    ...(minorEa === undefined ? {} : { themeFonts: { major: 'X', minor: 'Y', minorEa } }),
+  } as unknown as Workbook
+}
 
 describe('workbook MDW', () => {
   it('defaults to Calibri 11 (7px) and keeps the historical conversion', () => {
@@ -42,6 +64,92 @@ describe('workbook MDW', () => {
     expect(getWorkbookMdw()).toBe(7)
     setWorkbookMdw(Number.NaN)
     expect(getWorkbookMdw()).toBe(7)
+  })
+})
+
+describe('measureNormalFontMdw', () => {
+  it('derives the ja MDW from the literal cached Normal-font name', () => {
+    // prod ja workbooks: <name val="MS PGothic (fullwidth)"/> with
+    // scheme="minor" under theme latin Calibri — Excel lays out per
+    // MS PGothic (MDW 8, the classic 72px default column), not Calibri 7.
+    const file = workbook({
+      fontFamily: 'Calibri',
+      fontSize: 11,
+      fontScheme: 'minor',
+      normalFontName: 'ＭＳ Ｐゴシック',
+    })
+    expect(resolveNormalMdwFamily(file)).toBe('ＭＳ Ｐゴシック')
+    expect(measureNormalFontMdw(file)).toBe(8)
+  })
+
+  it('strips the ja vertical-text @ prefix', () => {
+    const file = workbook({
+      fontFamily: 'Calibri',
+      fontScheme: 'minor',
+      normalFontName: '@ＭＳ ゴシック',
+    })
+    expect(measureNormalFontMdw(file)).toBe(8)
+  })
+
+  it('falls back to the theme minor <a:ea> face when no name is cached', () => {
+    const file = workbook({
+      fontFamily: 'Calibri',
+      fontScheme: 'minor',
+      minorEa: 'ＭＳ Ｐゴシック',
+    })
+    expect(measureNormalFontMdw(file)).toBe(8)
+  })
+
+  it('uses the GDI table for Aptos Narrow instead of the Carlito alias', () => {
+    // MDW 8 solved from Excel print geometry of the Aptos Narrow prod ref;
+    // measuring the styles.css Carlito alias yields Calibri-like 7.
+    const file = workbook({ fontFamily: 'Aptos Narrow', fontSize: 11 })
+    expect(measureNormalFontMdw(file)).toBe(8)
+  })
+
+  it('keeps Malgun Gothic workbooks on MDW 7', () => {
+    const file = workbook({
+      fontFamily: 'Calibri',
+      fontSize: 11,
+      fontScheme: 'minor',
+      normalFontName: '맑은 고딕',
+    })
+    expect(measureNormalFontMdw(file)).toBe(7)
+  })
+
+  it('scales table entries by the Normal font size', () => {
+    expect(measureNormalFontMdw(workbook({ fontFamily: 'Calibri', fontSize: 22 }))).toBe(14)
+    expect(measureNormalFontMdw(workbook({ fontFamily: 'Verdana', fontSize: 10 }))).toBe(8)
+  })
+
+  it('ignores a differing literal that names no known or renderable face', () => {
+    const file = workbook({
+      fontFamily: 'Calibri',
+      fontSize: 11,
+      fontScheme: 'minor',
+      normalFontName: 'Nonexistent Face',
+    })
+    expect(resolveNormalMdwFamily(file)).toBe('Calibri')
+    expect(measureNormalFontMdw(file)).toBe(7)
+  })
+
+  it('quotes the family for canvas measurement so odd names still measure', () => {
+    const fonts: string[] = []
+    const context = {
+      set font(value: string) {
+        fonts.push(value)
+      },
+      measureText: () => ({ width: 9 }),
+    }
+    const documentStub = { createElement: () => ({ getContext: () => context }) }
+    Object.defineProperty(globalThis, 'document', { value: documentStub, configurable: true })
+    try {
+      const file = workbook({ fontFamily: '12WeirdDigits', fontSize: 11 })
+      expect(measureNormalFontMdw(file)).toBe(9)
+      expect(fonts).toContain(`${(11 * 96) / 72}px "12WeirdDigits"`)
+    } finally {
+      Reflect.deleteProperty(globalThis, 'document')
+    }
   })
 })
 

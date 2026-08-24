@@ -15,7 +15,11 @@ import {
 
 export class VisualEditError extends Error {}
 
-const ANCHOR_PATTERN = /<xdr:(twoCellAnchor|oneCellAnchor|absoluteAnchor)\b[\s\S]*?<\/xdr:\1>/g
+// The spreadsheetDrawing namespace is conventionally bound to `xdr:`, but
+// openpyxl writes it as the DEFAULT namespace (no prefix) — and the sidecar
+// counts anchors by local name, so the index pairing must see those too.
+const ANCHOR_PATTERN =
+  /<([A-Za-z_][\w.-]*:)?(twoCellAnchor|oneCellAnchor|absoluteAnchor)\b[\s\S]*?<\/\1\2>/g
 const ATTRIBUTE_PATTERN = /\s[\w:.-]+="([^"]*)"/g
 const CHART_OWNED_RELATIONSHIP_TYPES =
   /\/(?:chartStyle|chartColorStyle|package|oleObject|theme|themeOverride|chartUserShapes|image|externalLink)$/
@@ -231,7 +235,9 @@ async function cleanupEmptyDrawingHookup(
   drawingXml: string,
   touchedEntries: Set<string>,
 ): Promise<void> {
-  const inner = /<xdr:wsDr\b[^>]*>([\s\S]*)<\/xdr:wsDr>/.exec(drawingXml)?.[1]
+  const inner = /<(?:[A-Za-z_][\w.-]*:)?wsDr\b[^>]*>([\s\S]*)<\/(?:[A-Za-z_][\w.-]*:)?wsDr>/.exec(
+    drawingXml,
+  )?.[1]
   if (inner === undefined || inner.trim() !== '') return
   const drawingRelsPath = relsPathFor(drawingPath)
   if (
@@ -313,6 +319,8 @@ function xmlHasAttributeValue(xml: string, value: string): boolean {
   return false
 }
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 function applyOneEdit(
   xml: string,
   edit: WorkbookVisualEdit,
@@ -326,19 +334,20 @@ function applyOneEdit(
     )
   }
   const anchorXml = match[0]
-  const kind = match[1]
+  const p = match[1] ?? ''
+  const kind = match[2]
   if (edit.remove) {
     // A chart's graphicFrame anchor cascades: its rel, part, and override
     // are collected here and removed after the drawing XML is final.
-    if (anchorXml.includes('<xdr:graphicFrame')) {
-      const relId = /<c:chart\b[^>]*\br:id="([^"]+)"/.exec(anchorXml)?.[1]
+    if (anchorXml.includes(`<${p}graphicFrame`)) {
+      const relId = /<(?:[A-Za-z_][\w.-]*:)?chart\b[^>]*\br:id="([^"]+)"/.exec(anchorXml)?.[1]
       if (!relId) {
         throw new VisualEditError(
           'This graphic frame is not a chart — deleting it is not supported.',
         )
       }
       removedRelationships.push({ id: relId, kind: 'chart' })
-    } else if (anchorXml.includes('<xdr:pic')) {
+    } else if (anchorXml.includes(`<${p}pic`)) {
       for (const match of anchorXml.matchAll(/\s[\w.-]+:(?:embed|link)="([^"]+)"/g)) {
         const id = match[1]
         if (id !== undefined) removedRelationships.push({ id, kind: 'image' })
@@ -351,25 +360,26 @@ function applyOneEdit(
   if (kind === 'absoluteAnchor') {
     throw new VisualEditError('This visual uses an absolute anchor — moving it is not supported.')
   }
+  const pre = escapeRegExp(p)
   const from =
-    `<xdr:from><xdr:col>${anchor.fromColumn}</xdr:col>` +
-    `<xdr:colOff>${anchor.fromColumnOffset}</xdr:colOff>` +
-    `<xdr:row>${anchor.fromRow}</xdr:row>` +
-    `<xdr:rowOff>${anchor.fromRowOffset}</xdr:rowOff></xdr:from>`
-  let patched = anchorXml.replace(/<xdr:from>[\s\S]*?<\/xdr:from>/, () => from)
-  if (patched === anchorXml && !anchorXml.includes('<xdr:from>')) {
+    `<${p}from><${p}col>${anchor.fromColumn}</${p}col>` +
+    `<${p}colOff>${anchor.fromColumnOffset}</${p}colOff>` +
+    `<${p}row>${anchor.fromRow}</${p}row>` +
+    `<${p}rowOff>${anchor.fromRowOffset}</${p}rowOff></${p}from>`
+  let patched = anchorXml.replace(new RegExp(`<${pre}from>[\\s\\S]*?</${pre}from>`), () => from)
+  if (patched === anchorXml && !anchorXml.includes(`<${p}from>`)) {
     throw new VisualEditError('Drawing anchor has no from marker — moving it is not supported.')
   }
   if (kind === 'twoCellAnchor') {
     const to =
-      `<xdr:to><xdr:col>${anchor.toColumn}</xdr:col>` +
-      `<xdr:colOff>${anchor.toColumnOffset}</xdr:colOff>` +
-      `<xdr:row>${anchor.toRow}</xdr:row>` +
-      `<xdr:rowOff>${anchor.toRowOffset}</xdr:rowOff></xdr:to>`
+      `<${p}to><${p}col>${anchor.toColumn}</${p}col>` +
+      `<${p}colOff>${anchor.toColumnOffset}</${p}colOff>` +
+      `<${p}row>${anchor.toRow}</${p}row>` +
+      `<${p}rowOff>${anchor.toRowOffset}</${p}rowOff></${p}to>`
     // An unchanged edge replaces to an identical string, so presence must be
     // checked directly (an NW resize touches only the from marker).
-    const withTo = patched.replace(/<xdr:to>[\s\S]*?<\/xdr:to>/, () => to)
-    if (withTo === patched && !patched.includes('<xdr:to>')) {
+    const withTo = patched.replace(new RegExp(`<${pre}to>[\\s\\S]*?</${pre}to>`), () => to)
+    if (withTo === patched && !patched.includes(`<${p}to>`)) {
       throw new VisualEditError('Drawing anchor has no to marker — moving it is not supported.')
     }
     patched = withTo

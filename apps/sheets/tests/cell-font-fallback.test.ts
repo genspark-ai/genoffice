@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { CELL_FONT_ALIASES, withSansSerifFallback } from '../src/renderer/cell-font-fallback'
+import {
+  CELL_FONT_ALIASES,
+  rewriteScopedFamilies,
+  withSansSerifFallback,
+} from '../src/renderer/cell-font-fallback'
 
 const EMOJI = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"'
 
@@ -129,6 +133,94 @@ describe('CELL_FONT_ALIASES', () => {
     for (const alias of CELL_FONT_ALIASES) {
       if (!alias.bold) continue
       for (const face of alias.bold) expect(alias.regular).not.toContain(face)
+    }
+  })
+
+  it('pairs every size-adjusted substitute with a genuine-font gate', () => {
+    for (const alias of CELL_FONT_ALIASES) {
+      const adjusted =
+        alias.sizeAdjust ??
+        alias.boldSizeAdjust ??
+        alias.latin?.sizeAdjust ??
+        alias.latin?.boldSizeAdjust
+      if (adjusted) expect(alias.skipIfLocal?.length, alias.family).toBeGreaterThan(0)
+    }
+  })
+
+  it('width-corrects the missing-on-macOS families from the prod clusters', () => {
+    for (const family of ['Bahnschrift', 'Segoe UI', 'Dosis', 'Aptos Narrow']) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(alias?.sizeAdjust, family).toMatch(/^\d+(\.\d+)?%$/)
+    }
+    for (const family of [
+      'Avenir Next LT Pro',
+      'Avenir Next LT Pro Demi',
+      'Avenir Next LT Pro Light',
+    ]) {
+      expect(
+        CELL_FONT_ALIASES.some((a) => a.family === family),
+        family,
+      ).toBe(true)
+    }
+  })
+
+  it('splits Malgun Gothic per script: hangul stays exact, latin is corrected', () => {
+    for (const family of ['Malgun Gothic', '맑은 고딕']) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(alias?.regular, family).toContain('AppleGothic')
+      expect(alias?.sizeAdjust, family).toBeUndefined()
+      expect(alias?.latin?.sizeAdjust, family).toBe('104%')
+      expect(alias?.latin?.boldSizeAdjust, family).toBe('109.4%')
+      expect(alias?.skipIfLocal, family).toContain('Malgun Gothic')
+    }
+  })
+
+  it('keeps chrome-stack families out of document.fonts via canvas scoping', () => {
+    // The UI stack starts with 'Segoe UI'; an unscoped size-adjusted face
+    // would restyle the ribbon on hosts without the genuine font.
+    const alias = CELL_FONT_ALIASES.find((a) => a.family === 'Segoe UI')
+    expect(alias?.scopeToCanvas).toBe(true)
+  })
+
+  it('rewrites a sole scoped cell family but never an explicit UI fallback stack', () => {
+    const scoped = new Map([['segoe ui', '__cell-scope Segoe UI']])
+    expect(rewriteScopedFamilies('italic bold 11pt "Segoe UI"', scoped)).toBe(
+      'italic bold 11pt "__cell-scope Segoe UI"',
+    )
+    expect(rewriteScopedFamilies('16px "Segoe UI", monospace', scoped)).toBe(
+      '16px "__cell-scope Segoe UI", monospace',
+    )
+    // UI measurements mirror a CSS stack with real fallbacks — they must fall
+    // through natively like the DOM they match (truncateCardName).
+    expect(
+      rewriteScopedFamilies(
+        "500 13px 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif",
+        scoped,
+      ),
+    ).toBe("500 13px 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif")
+    expect(rewriteScopedFamilies('16px Carlito', scoped)).toBe('16px Carlito')
+  })
+
+  it('keeps a plain rename mapping for the Hangul Malgun spelling when the genuine font exists', () => {
+    // The OS matcher never resolves localized family names (probed on macOS),
+    // so skipping the alias entirely would drop '맑은 고딕' to the sans
+    // fallback on hosts that do have Malgun Gothic.
+    const alias = CELL_FONT_ALIASES.find((a) => a.family === '맑은 고딕')
+    expect(alias?.whenGenuine?.regular).toContain('Malgun Gothic')
+    expect(alias?.whenGenuine?.bold).toContain('Malgun Gothic Bold')
+  })
+
+  it('backs Dosis and Aptos Narrow with the bundled Carlito, not local()-only', () => {
+    for (const family of ['Dosis', 'Aptos Narrow']) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(
+        alias?.regular.some((s) => s.startsWith('url(')),
+        family,
+      ).toBe(true)
+      expect(
+        alias?.bold?.some((s) => s.startsWith('url(')),
+        family,
+      ).toBe(true)
     }
   })
 

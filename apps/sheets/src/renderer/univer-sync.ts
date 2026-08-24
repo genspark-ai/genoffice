@@ -81,11 +81,13 @@ import { isPlainArithmeticFormula } from './formula-cached-fallback'
 import { degradeQuadraticFormulaCells } from './formula-cost'
 import { DEFAULT_SHORT_DATE, setSystemShortDate } from '../shared/short-date'
 import { getWorkbookMdw, setWorkbookMdw } from './app-constants'
+import { EXCEL_DIGIT_PER_PT, fontAvailable } from './numfmt-fix'
 import { t } from './i18n/locale'
 import { mapProtectedRanges } from './protected-ranges'
 import { INDENT_STEP_PX } from './selection-format'
 import {
   fileRangeToScreenRange,
+  fileRangeToScreenRanges,
   indexedThroughScreenRow,
   mapRangeResultToScreen,
   netAxisDelta,
@@ -375,6 +377,7 @@ export function loadWorkbookSkeleton(runtime: UniverRuntime | null, file: Workbo
             columnCount,
             hidden: sheet.hidden ? BooleanNumber.TRUE : BooleanNumber.FALSE,
             showGridlines: sheet.showGridLines ? BooleanNumber.TRUE : BooleanNumber.FALSE,
+            ...(sheet.rightToLeft ? { rightToLeft: BooleanNumber.TRUE } : {}),
             ...(sheet.showRowColHeaders === false
               ? {
                   rowHeader: { width: 46, hidden: BooleanNumber.TRUE },
@@ -421,22 +424,61 @@ export function characterWidthToPixels(width: number): number {
   return width === 0 ? 0 : Math.floor(((256 * width + Math.floor(128 / mdw)) / 256) * mdw) + 5
 }
 
+const CJK_FAMILY_NAME =
+  /[\u1100-\u11ff\u3000-\u303f\u3040-\u30ff\u3130-\u318f\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/
+
+const clampMdw = (mdw: number): number => Math.max(4, Math.min(30, mdw))
+
+/// The face Excel derives the column-width MDW from. For scheme fonts the
+/// sidecar substitutes the theme latin face into styles[0], but Excel lays
+/// CJK workbooks out per the Normal font's author-locale resolution — the
+/// literal cached <name val> (e.g. MS PGothic under theme latin Calibri) —
+/// with the theme's minor <a:ea> face as the fallback when no name is
+/// cached. Only trust a differing literal that names a face we know.
+export function resolveNormalMdwFamily(file: WorkbookFile): string {
+  const normal = file.styles?.[0]
+  const themeResolved = normal?.fontFamily ?? 'Calibri'
+  // ja vertical-text names prefix the base face with '@'.
+  let literal = (file.normalFontName ?? '').replace(/^@/, '')
+  if (literal === '' && normal?.fontScheme === 'minor') {
+    literal = file.themeFonts?.minorEa ?? ''
+  }
+  if (literal === '' || literal === themeResolved) return themeResolved
+  if (
+    EXCEL_DIGIT_PER_PT[literal] !== undefined ||
+    CJK_FAMILY_NAME.test(literal) ||
+    fontAvailable(literal)
+  ) {
+    return literal
+  }
+  return themeResolved
+}
+
 /// Excel's column-width unit is the Normal font's max digit width (MDW).
 /// The hardcoded 7 only holds for Calibri 11; e.g. Verdana 10 workbooks use
 /// MDW 8, and trusting 7 renders every column ~11% narrower than Excel,
-/// wrapping text a line early.
+/// wrapping text a line early. Known GDI digit widths win over canvas
+/// measurement: alias-substituted faces (Aptos Narrow → Carlito, CJK names →
+/// macOS faces) measure the substitute's digits, which is wrong in either
+/// direction.
 export function measureNormalFontMdw(file: WorkbookFile): number {
-  const normal = file.styles?.[0]
-  const family = normal?.fontFamily ?? 'Calibri'
-  const size = normal?.fontSize ?? 11
+  const size = file.styles?.[0]?.fontSize ?? 11
+  const family = resolveNormalMdwFamily(file)
   if (family === 'Calibri' && size === 11) return 7
+  const perPt = EXCEL_DIGIT_PER_PT[family]
+  if (perPt !== undefined) return clampMdw(Math.round(perPt * size))
+  // CJK faces without a table entry: canvas would measure a macOS
+  // substitute; every grounded legacy CJK face is em/2 → 8px at 11pt.
+  if (CJK_FAMILY_NAME.test(family)) return clampMdw(Math.round((8 / 11) * size))
   if (typeof document === 'undefined') return 7
   try {
     const context = document.createElement('canvas').getContext('2d')
     if (!context) return 7
-    context.font = `${(size * 96) / 72}px ${family}`
+    // Quote the family: an unquoted leading digit or '@' silently no-ops
+    // the whole ctx.font assignment and measures the 10px canvas default.
+    context.font = `${(size * 96) / 72}px "${family.replace(/["\\]/g, '')}"`
     const width = context.measureText('0').width
-    return width > 0 ? Math.max(4, Math.min(30, Math.round(width))) : 7
+    return width > 0 ? clampMdw(Math.round(width)) : 7
   } catch {
     return 7
   }
@@ -905,6 +947,39 @@ function createColumnData(
   return data
 }
 
+/**
+ * The viewport's scroll anchor as scrollToCell arguments: the scroll state's
+ * sheetViewStartRow/Column plus the freeze split round-trips exactly, and on
+ * RTL sheets it is the only correct source — getVisibleRange().startColumn is
+ * the logically LOWEST visible column there, while scrollToCell (and the lazy
+ * streaming anchor) interpret the start column as the viewport's visually-left
+ * (highest) logical index.
+ */
+export function getScrollAnchor(
+  workbook: {
+    getScrollStateBySheetId(
+      sheetId: string,
+    ): { sheetViewStartRow?: number; sheetViewStartColumn?: number } | null | undefined | void
+  },
+  sheet: {
+    getSheetId(): string
+    getSheet(): { getFreeze(): { xSplit: number; ySplit: number } }
+  },
+): { row: number; column: number } | null {
+  try {
+    const scroll = workbook.getScrollStateBySheetId(sheet.getSheetId())
+    if (scroll?.sheetViewStartRow == null || scroll.sheetViewStartColumn == null) return null
+    const freeze = sheet.getSheet().getFreeze()
+    return {
+      row: scroll.sheetViewStartRow + freeze.ySplit,
+      column: scroll.sheetViewStartColumn + freeze.xSplit,
+    }
+  } catch {
+    // No scroll render controller yet (still booting).
+    return null
+  }
+}
+
 export async function loadVisibleRange(
   runtime: UniverRuntime,
   lazyWorkbookRef: { current: LazyWorkbookState | null },
@@ -934,11 +1009,17 @@ export async function loadVisibleRange(
   // range is the OLD spot — already loaded, so nothing loads and no later
   // event corrects it. Re-anchor at the actual scroll position.
   if (viewportStart) {
+    const columnSpan = visible ? visible.endColumn - visible.startColumn : 15
+    // On an RTL sheet the scroll state's start column is the viewport's
+    // visually-left column — the HIGHEST visible logical index.
+    const startColumn = sheet.rightToLeft
+      ? Math.max(0, viewportStart.column - columnSpan)
+      : viewportStart.column
     visible = {
       startRow: viewportStart.row,
       endRow: viewportStart.row + (visible ? visible.endRow - visible.startRow : 79),
-      startColumn: viewportStart.column,
-      endColumn: viewportStart.column + (visible ? visible.endColumn - visible.startColumn : 15),
+      startColumn,
+      endColumn: startColumn + columnSpan,
     }
   }
   const range = createBufferedRange(
@@ -1042,6 +1123,15 @@ export async function activateFormulaClosure(
         return giveUp()
       }
       if (lazyWorkbookRef.current !== state) return
+      // Same hazard as the pre-install guard: a structural edit landing while
+      // the read was in flight shifts screen coordinates, so this file-space
+      // result (and its pinned keys) would install at stale positions. Drop
+      // pins from already-installed sheets too — a partial closure must not
+      // keep re-applying on eviction.
+      if (state.editJournal.structuralOps.size > 0) {
+        state.closure.pinned.clear()
+        return giveUp()
+      }
       const picked = result.cells.filter((cell) => cells.has(cellKey(cell.row, cell.column)))
       recordCachedFormulaValues(state, sheetId, picked)
       const wanted = degradeCostlyFormulas(state, sheetMeta.name, picked)
@@ -2500,12 +2590,15 @@ function patchWorksheetRange(
         arrayFollowers,
         rowColStyleKeys,
         inheritedWrap,
+        pinned?.size ? new Set(pinned.keys()) : undefined,
       )
-      // Closure cells were just evicted or clobbered with static cached
-      // values; re-pin them first — the journal overlay runs after so user
-      // edits always win over pinned originals. Engine-recalculated values
-      // sit between the two for the same reason.
-      if (pinned?.size) applyPinnedOverlay(worksheet, pinned, previousRange, range)
+      // Closure cells are engine-owned: streaming skips them entirely (see
+      // pinnedKeys in the inner patcher) instead of evict-and-re-pin — every
+      // rewrite re-dirtied the whole dependency web, so each scroll chunk
+      // re-ran thousands of formulas and painted mid-cascade values (an
+      // incremental date chain recomputed from an emptied anchor shows year
+      // 1900 — alpha ledger r141). The journal overlay still runs after so
+      // user edits always win.
       if (recalcOverlay?.size) applyPinnedOverlay(worksheet, recalcOverlay, previousRange, range)
       if (journal) applyJournalOverlay(worksheet, journal, range)
     })
@@ -2789,6 +2882,7 @@ function patchWorksheetRangeInner(
   arrayFollowers?: ReadonlySet<string>,
   rowColStyleKeys?: ReadonlySet<string>,
   inheritedWrap?: (row: number, column: number) => boolean,
+  pinnedKeys?: ReadonlySet<string>,
 ): void {
   if (previousRange) {
     // Frozen rows/columns stay visible while scrolling, so never evict them —
@@ -2796,14 +2890,31 @@ function patchWorksheetRangeInner(
     const clearStartRow = Math.max(previousRange.startRow, freeze?.frozenRows ?? 0)
     const clearStartColumn = Math.max(previousRange.startColumn, freeze?.frozenColumns ?? 0)
     if (clearStartRow <= previousRange.endRow && clearStartColumn <= previousRange.endColumn) {
-      const previous = worksheet.getRange(
-        clearStartRow,
-        clearStartColumn,
-        previousRange.endRow - clearStartRow + 1,
-        previousRange.endColumn - clearStartColumn + 1,
-      )
-      previous.clearContent()
-      previous.clearFormat()
+      if (pinnedKeys?.size) {
+        // Engine-owned closure cells must survive the eviction: one matrix
+        // write clears everything else ({} is a merge no-op, so pinned cells
+        // stay untouched — clearing and re-installing a formula re-dirties
+        // its whole dependency web, alpha ledger r141).
+        const clearRows = previousRange.endRow - clearStartRow + 1
+        const clearColumns = previousRange.endColumn - clearStartColumn + 1
+        const wipe: ICellData[][] = Array.from({ length: clearRows }, (_unused, rowOffset) =>
+          Array.from({ length: clearColumns }, (_unusedColumn, columnOffset) =>
+            pinnedKeys.has(`${clearStartRow + rowOffset}:${clearStartColumn + columnOffset}`)
+              ? {}
+              : { v: null, f: null, si: null, p: null, s: null, t: null },
+          ),
+        )
+        worksheet.getRange(clearStartRow, clearStartColumn, clearRows, clearColumns).setValues(wipe)
+      } else {
+        const previous = worksheet.getRange(
+          clearStartRow,
+          clearStartColumn,
+          previousRange.endRow - clearStartRow + 1,
+          previousRange.endColumn - clearStartColumn + 1,
+        )
+        previous.clearContent()
+        previous.clearFormat()
+      }
     }
   }
   const rows = range.endRow - range.startRow + 1
@@ -2821,6 +2932,9 @@ function patchWorksheetRangeInner(
     ) {
       continue
     }
+    // Engine-owned closure cell: leave the {} merge no-op in the matrix —
+    // rewriting the formula would re-dirty its dependency web (r141).
+    if (pinnedKeys?.has(`${cell.row}:${cell.column}`)) continue
     const keepsCache = useFormulas && cell.formula ? formulaKeepsCache(cell.formula) : false
     // A kept (cache-only) formula with no cached value must show blank —
     // falling back to the formula string would print it as literal text.
@@ -3383,19 +3497,22 @@ export function collectArrayFollowers(
 ): void {
   for (const cell of cells) {
     if (!cell.arrayRef || !cell.formula) continue
-    let bounds: IRange | null
+    let bounds: IRange
     try {
       bounds = parseRange(cell.arrayRef)
     } catch {
       continue
     }
     if (rangeCellCount(bounds) > 100_000) continue
-    if (ops.length > 0) bounds = fileRangeToScreenRange(ops, bounds)
-    if (!bounds) continue
-    for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
-      for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {
-        if (row === cell.row && column === cell.column) continue
-        followers.add(`${row}:${column}`)
+    // Exact rectangles, not the envelope: a follower marking blanks the cell,
+    // so unrelated lines moved or left between the survivors must stay out.
+    const rects = ops.length > 0 ? fileRangeToScreenRanges(ops, bounds) : [bounds]
+    for (const rect of rects) {
+      for (let row = rect.startRow; row <= rect.endRow; row += 1) {
+        for (let column = rect.startColumn; column <= rect.endColumn; column += 1) {
+          if (row === cell.row && column === cell.column) continue
+          followers.add(`${row}:${column}`)
+        }
       }
     }
   }

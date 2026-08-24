@@ -11,7 +11,7 @@ import type { CellFormatState, CellScalar } from '../../domain/workbook.types'
 import { toSelectionFormat } from '../selection-format'
 import { lazyCellReader } from '../univer-sync'
 import { lazySheetScreenExtent, type LazyWorkbookState, type UniverRuntime } from '../univer-state'
-import type { ActiveSheetInfo } from './tools'
+import type { ActiveSheetInfo, FrozenSelection } from './tools'
 
 /** The App refs the readers need; passed per call so they never go stale. */
 export interface WorkbookReadContext {
@@ -272,9 +272,31 @@ export function readFormats(
   return result
 }
 
-export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
+/**
+ * `frozen` is the selection scope of the run in flight: `undefined` when no run
+ * owns one (report the live grid selection), `null` when the user dropped the
+ * scope off the composer chip, otherwise the send-time snapshot.
+ */
+export function getActiveSheetInfo(
+  ctx: WorkbookReadContext,
+  frozen?: FrozenSelection | null,
+): ActiveSheetInfo {
   const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
-  const selection = workbook?.getActiveRange()?.getA1Notation() ?? undefined
+  const live = workbook?.getActiveRange()?.getA1Notation() ?? undefined
+  // A frozen snapshot taken on another sheet has to carry its sheet name, or
+  // the model reads a bare A1 as an address on whatever sheet is active now.
+  const frozenLabel = frozen
+    ? frozen.sheetId === workbook?.getActiveSheet()?.getSheetId()
+      ? frozen.a1
+      : `${workbook?.getSheetBySheetId(frozen.sheetId)?.getSheetName() ?? frozen.sheetId}!${frozen.a1}`
+    : undefined
+  const selection = frozen === undefined ? live : frozenLabel
+  const frozenFields = frozenLabel
+    ? {
+        selectionFrozen: true,
+        ...(frozen?.columns?.length ? { selectionColumns: frozen.columns } : {}),
+      }
+    : {}
   const state = ctx.lazyWorkbookRef.current
   if (state) {
     const worksheet = workbook?.getActiveSheet()
@@ -301,6 +323,7 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
         }
       }),
       selection,
+      ...frozenFields,
       merges: worksheet.getMergedRanges().map((range) => range.getA1Notation()),
       // Session-added charts have no chart part yet; their visual id
       // doubles as the edit_chart path.
@@ -341,6 +364,7 @@ export function getActiveSheetInfo(ctx: WorkbookReadContext): ActiveSheetInfo {
       }
     }),
     selection,
+    ...frozenFields,
     merges: sheet.merges ?? [],
     charts: snapshot.sheets.flatMap((entry) =>
       (entry.visuals ?? []).map((visual) => ({

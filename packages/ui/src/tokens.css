@@ -48,6 +48,9 @@
   --color-btn-primary: #232425;
   --color-btn-primary-hover: #393a3b;
   --color-btn-primary-text: #ffffff;
+  --color-ai-action: #e8663f;
+  --color-ai-action-hover: #d4552f;
+  --color-ai-action-text: #ffffff;
   --color-brand-secondary: #0f7fff;
   --color-text-primary: #232425;
   --color-text-secondary: #606366;
@@ -112,6 +115,9 @@
   --color-btn-primary: #e4e4e4;
   --color-btn-primary-hover: #d0d0d0;
   --color-btn-primary-text: #1e1e1e;
+  --color-ai-action: #e8663f;
+  --color-ai-action-hover: #f07a55;
+  --color-ai-action-text: #ffffff;
   --color-brand-secondary: #4a9eff;
   --color-text-primary: #e4e4e4;
   --color-text-secondary: #a0a0a0;
@@ -164,6 +170,9 @@
     --color-btn-primary: #e4e4e4;
     --color-btn-primary-hover: #d0d0d0;
     --color-btn-primary-text: #1e1e1e;
+    --color-ai-action: #e8663f;
+    --color-ai-action-hover: #f07a55;
+    --color-ai-action-text: #ffffff;
     --color-brand-secondary: #4a9eff;
     --color-text-primary: #e4e4e4;
     --color-text-secondary: #a0a0a0;

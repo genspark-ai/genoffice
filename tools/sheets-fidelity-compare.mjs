@@ -73,8 +73,11 @@ function sheetInfo(xlsx) {
       maxBuffer: 64e6,
       stdio: ['ignore', 'pipe', 'ignore'],
     }).toString()
+    // Attribute order varies by writer (some put Target before Id).
     const relTargets = Object.fromEntries(
-      [...rels.matchAll(/Id="([^"]+)"[^>]*Target="([^"]+)"/g)].map((m) => [m[1], m[2]]),
+      [...rels.matchAll(/<Relationship [^>]*>/g)]
+        .map((m) => [m[0].match(/ Id="([^"]+)"/)?.[1], m[0].match(/ Target="([^"]+)"/)?.[1]])
+        .filter(([id, target]) => id && target),
     )
     const sheets = [...wb.matchAll(/<sheet [^>]*>/g)].map((m) => ({
       name: m[0]
@@ -102,7 +105,21 @@ function sheetInfo(xlsx) {
       }
     }
     const target = sheets.find((s) => s.visible && hasCells(s)) ?? sheets.find((s) => s.visible)
-    if (target) target.active = true
+    if (target) {
+      target.active = true
+      const part = relTargets[target.relId]?.replace(/^\/?(xl\/)?/, 'xl/').replace('xl/./', 'xl/')
+      if (part) {
+        try {
+          const xml = execFileSync('unzip', ['-p', xlsx, part], {
+            maxBuffer: 256e6,
+            stdio: ['ignore', 'pipe', 'ignore'],
+          }).toString()
+          target.rightToLeft = /<sheetView [^>]*rightToLeft="(1|true)"/.test(xml)
+        } catch {
+          /* keep undefined */
+        }
+      }
+    }
     return sheets
   } catch {
     return []
@@ -157,6 +174,8 @@ function exportRef(xlsx, dir) {
 async function shootOurs(xlsx, dir, sheets) {
   const names = sheets.map((s) => s.name)
   const firstVisible = sheets.find((s) => s.active)?.name
+  // RTL sheets put the row-header strip on the RIGHT — crop that side instead.
+  const rightToLeft = sheets.find((s) => s.active)?.rightToLeft === true
   fs.mkdirSync(dir, { recursive: true })
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'genoffice-fidelity-'))
   const app = await electron.launch({
@@ -274,7 +293,7 @@ async function shootOurs(xlsx, dir, sheets) {
     // the click, select the drawing, and leave the load-time selection behind.
     {
       const box = await page
-        .evaluate(() => {
+        .evaluate((rtl) => {
           const c = [...document.querySelectorAll('#univer-container canvas')].find(
             (x) => x.width > 200 && x.height > 200,
           )
@@ -282,7 +301,9 @@ async function shootOurs(xlsx, dir, sheets) {
           const r = c.getBoundingClientRect()
           for (let dx = 50; dx < r.width - 100; dx += 120) {
             for (const dy of [50, 170, 290]) {
-              const x = r.right - dx
+              // The far corner is bottom-left on a mirrored sheet (and the
+              // right edge hosts the header strip + scrollbar there).
+              const x = rtl ? r.left + dx : r.right - dx
               const y = r.bottom - dy
               const hit = document.elementFromPoint(x, y)
               // Univer stacks several canvases; any of them means "the grid".
@@ -292,7 +313,7 @@ async function shootOurs(xlsx, dir, sheets) {
             }
           }
           return null
-        })
+        }, rightToLeft)
         .catch(() => null)
       if (box) {
         await page.mouse.click(box.x, box.y).catch(() => {})
@@ -310,14 +331,19 @@ async function shootOurs(xlsx, dir, sheets) {
     // and text boxes render as a DOM overlay (WorkbookVisuals), not into the
     // Univer canvases — a canvas-only composite silently drops the whole
     // drawing layer (run1/run5 mis-triaged it as "never rendered").
-    const clip = await page.evaluate(() => {
+    const clip = await page.evaluate((rtl) => {
       const c = [...document.querySelectorAll('#univer-container canvas')].find(
         (x) => x.width > 200 && x.height > 200,
       )
       if (!c) return null
       const r = c.getBoundingClientRect()
-      return { x: r.left + 46, y: r.top + 24, width: r.width - 46, height: r.height - 24 }
-    })
+      return {
+        x: r.left + (rtl ? 0 : 46),
+        y: r.top + 24,
+        width: r.width - 46,
+        height: r.height - 24,
+      }
+    }, rightToLeft)
     if (!clip) throw new Error('grid canvas not found')
     const f = path.join(dir, 'ours-1.png')
     await page.screenshot({ path: f, clip })

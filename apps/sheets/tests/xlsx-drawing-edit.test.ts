@@ -564,3 +564,149 @@ describe('applyVisualEdits', () => {
     ).rejects.toThrow(VisualEditError)
   })
 })
+
+// openpyxl writes the spreadsheetDrawing namespace as the DEFAULT namespace:
+// anchors, markers, pic and graphicFrame all carry no prefix. The sidecar
+// counts anchors by local name, so edits must find and rewrite these too.
+const DEFAULT_NS_DRAWING =
+  '<wsDr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+  'xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ' +
+  'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
+  'xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">' +
+  '<oneCellAnchor><from><col>3</col><colOff>0</colOff><row>1</row><rowOff>0</rowOff></from>' +
+  '<ext cx="5400000" cy="2700000"/><graphicFrame><a:graphic><a:graphicData>' +
+  '<c:chart r:id="rId7"/></a:graphicData></a:graphic></graphicFrame>' +
+  '<clientData/></oneCellAnchor>' +
+  '<twoCellAnchor><from><col>1</col><colOff>0</colOff><row>2</row><rowOff>0</rowOff></from>' +
+  '<to><col>4</col><colOff>0</colOff><row>8</row><rowOff>0</rowOff></to>' +
+  '<pic><blipFill><a:blip r:embed="rId8"/></blipFill></pic>' +
+  '<clientData/></twoCellAnchor>' +
+  '</wsDr>'
+
+function packageWithDefaultNsDrawing(): Map<string, string> {
+  return new Map([
+    [PATH, DEFAULT_NS_DRAWING],
+    ['xl/drawings/_rels/drawing1.xml.rels', DRAWING_RELS],
+    ['xl/charts/chart3.xml', '<c:chartSpace/>'],
+    ['xl/charts/_rels/chart3.xml.rels', '<Relationships/>'],
+    ['xl/media/image1.png', 'png'],
+    ['[Content_Types].xml', CONTENT_TYPES],
+  ])
+}
+
+describe('applyVisualEdits on default-namespace (openpyxl) drawings', () => {
+  it('moves an unprefixed two-cell anchor, keeping its markers unprefixed', async () => {
+    const entries = packageWithDefaultNsDrawing()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [{ drawingPath: PATH, drawingIndex: 1, anchor: ANCHOR }],
+      new Set(),
+    )
+    const xml = entries.get(PATH)!
+    expect(xml).toContain(
+      '<from><col>1</col><colOff>9525</colOff><row>2</row><rowOff>0</rowOff></from>',
+    )
+    expect(xml).toContain(
+      '<to><col>7</col><colOff>0</colOff><row>12</row><rowOff>-9525</rowOff></to>',
+    )
+    expect(xml).not.toContain('xdr:')
+  })
+
+  it('moves an unprefixed one-cell anchor by its from marker only', async () => {
+    const entries = packageWithDefaultNsDrawing()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [{ drawingPath: PATH, drawingIndex: 0, anchor: ANCHOR }],
+      new Set(),
+    )
+    const xml = entries.get(PATH)!
+    expect(xml).toContain(
+      '<from><col>1</col><colOff>9525</colOff><row>2</row><rowOff>0</rowOff></from>',
+    )
+    expect(xml).toContain('<ext cx="5400000" cy="2700000"/>')
+  })
+
+  it('removes an unprefixed picture anchor and cascades its image relationship', async () => {
+    const entries = packageWithDefaultNsDrawing()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [{ drawingPath: PATH, drawingIndex: 1, remove: true }],
+      new Set(),
+    )
+    expect(entries.get(PATH)!).not.toContain('<pic>')
+    expect(entries.get('xl/drawings/_rels/drawing1.xml.rels')).not.toContain('rId8')
+    expect(entries.has('xl/media/image1.png')).toBe(false)
+  })
+
+  it('removes an unprefixed chart graphic frame and cascades the chart part', async () => {
+    const entries = packageWithDefaultNsDrawing()
+    await applyVisualEdits(
+      fakePackage(entries),
+      [{ drawingPath: PATH, drawingIndex: 0, remove: true }],
+      new Set(),
+    )
+    expect(entries.get(PATH)!).not.toContain('<graphicFrame>')
+    expect(entries.get('xl/drawings/_rels/drawing1.xml.rels')).not.toContain('rId7')
+    expect(entries.has('xl/charts/chart3.xml')).toBe(false)
+  })
+
+  it('keeps anchor indexes aligned across mixed prefixed and unprefixed anchors', async () => {
+    const entries = packageWithDefaultNsDrawing()
+    entries.set(
+      PATH,
+      DEFAULT_NS_DRAWING.replace(
+        '<oneCellAnchor>',
+        '<xdr:twoCellAnchor xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">' +
+          `${marker('from', 0, 0)}${marker('to', 2, 2)}<xdr:sp/><xdr:clientData/>` +
+          '</xdr:twoCellAnchor><oneCellAnchor>',
+      ),
+    )
+    await applyVisualEdits(
+      fakePackage(entries),
+      [{ drawingPath: PATH, drawingIndex: 2, remove: true }],
+      new Set(),
+    )
+    const xml = entries.get(PATH)!
+    expect(xml).toContain('<xdr:sp/>')
+    expect(xml).toContain('<graphicFrame>')
+    expect(xml).not.toContain('<pic>')
+  })
+
+  it('cleans the final default-namespace drawing hookup once it is empty', async () => {
+    const entries = new Map([
+      [
+        PATH,
+        '<wsDr xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ' +
+          'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+          'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+          '<twoCellAnchor><from><col>0</col><colOff>0</colOff><row>0</row><rowOff>0</rowOff></from>' +
+          '<to><col>2</col><colOff>0</colOff><row>2</row><rowOff>0</rowOff></to>' +
+          '<pic><a:blip r:embed="rId8"/></pic><clientData/></twoCellAnchor></wsDr>',
+      ],
+      [
+        'xl/drawings/_rels/drawing1.xml.rels',
+        '<Relationships><Relationship Id="rId8" ' +
+          'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" ' +
+          'Target="../media/image1.png"/></Relationships>',
+      ],
+      ['xl/media/image1.png', 'png'],
+      ['xl/worksheets/sheet1.xml', '<worksheet><sheetData/><drawing r:id="rId5"/></worksheet>'],
+      [
+        'xl/worksheets/_rels/sheet1.xml.rels',
+        '<Relationships><Relationship Id="rId5" ' +
+          'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" ' +
+          'Target="../drawings/drawing1.xml"/></Relationships>',
+      ],
+      ['[Content_Types].xml', CONTENT_TYPES],
+    ])
+
+    await applyVisualEdits(
+      fakePackage(entries),
+      [{ drawingPath: PATH, drawingIndex: 0, remove: true }],
+      new Set(),
+    )
+
+    expect(entries.has(PATH)).toBe(false)
+    expect(entries.get('xl/worksheets/sheet1.xml')).not.toContain('<drawing')
+  })
+})

@@ -61,6 +61,7 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     pageCount: () => 2,
     currentPage: () => 1,
     readOnly: () => false,
+    ocrText: () => null,
     selection: () => null,
     pendingSummary: () => '',
     annotationSummary: () => '',
@@ -102,6 +103,7 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     })),
     generateImage: vi.fn(async () => ({ url: 'https://img.example/generated.png' })),
     fetchImage: vi.fn(async () => ({ png: 'PNGB64', width: 400, height: 300 })),
+    createDocument: vi.fn(async () => ({ ok: true, path: '/tmp/out.pdf' })),
     ...over,
   }
 }
@@ -1036,5 +1038,72 @@ describe('annotations tools', () => {
     )
     expect(result.isError).toBe(true)
     expect(deps.insertText).not.toHaveBeenCalled()
+  })
+})
+
+describe('create_document', () => {
+  it('defaults to a new PDF and reports the saved path', async () => {
+    const deps = makeDeps()
+    const result = await executePdfTool(
+      deps,
+      call('create_document', { title: 'Summary', content: '<h1>S</h1><p>Body</p>' }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(deps.createDocument).toHaveBeenCalledWith({
+      type: 'pdf',
+      title: 'Summary',
+      content: '<h1>S</h1><p>Body</p>',
+    })
+    expect(result.output).toContain('/tmp/out.pdf')
+  })
+
+  it('passes an explicit cross-type (docx) request through', async () => {
+    const deps = makeDeps({ createDocument: vi.fn(async () => ({ ok: true })) })
+    const result = await executePdfTool(
+      deps,
+      call('create_document', { type: 'docx', title: 'Report', content: '<p>x</p>' }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(deps.createDocument).toHaveBeenCalledWith({
+      type: 'docx',
+      title: 'Report',
+      content: '<p>x</p>',
+    })
+    expect(result.output).toContain('Report.docx')
+  })
+
+  it('rejects bad input without calling the bridge', async () => {
+    const deps = makeDeps()
+    for (const input of [
+      { type: 'xlsx', title: 'T', content: '<p>x</p>' },
+      { title: '  ', content: '<p>x</p>' },
+      { title: 'T', content: '   ' },
+    ]) {
+      const result = await executePdfTool(deps, call('create_document', input))
+      expect(result.isError).toBe(true)
+    }
+    expect(deps.createDocument).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a main-process failure', async () => {
+    const deps = makeDeps({ createDocument: vi.fn(async () => ({ ok: false, error: 'boom' })) })
+    const result = await executePdfTool(
+      deps,
+      call('create_document', { title: 'T', content: '<p>x</p>' }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain('boom')
+  })
+
+  it('rejects echoed tool-protocol output as content', async () => {
+    const deps = makeDeps()
+    for (const content of [
+      '<tool_response>{"ok":true}</tool_response>',
+      '{"index": 3, "type": "paragraph"}',
+    ]) {
+      const result = await executePdfTool(deps, call('create_document', { title: 'T', content }))
+      expect(result.isError).toBe(true)
+    }
+    expect(deps.createDocument).not.toHaveBeenCalled()
   })
 })

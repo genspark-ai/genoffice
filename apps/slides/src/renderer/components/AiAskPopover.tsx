@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { useI18n, type StringKey } from '../i18n/locale'
 import {
   EDIT_INSTRUCTION_MAX,
+  EDIT_QUEUE_MAX,
   NODE_NOUN_KEY,
   truncate,
   type NodeDescriptor,
@@ -41,6 +42,10 @@ interface Props {
   getAnchorRect: () => AnchorRect | null
   onSubmit: (text: string) => void
   onCancel: () => void
+  /** Run the instruction right away as a normal selection-scoped request (new asks only) */
+  onSendNow?: (text: string) => void
+  /** Disables "Add to queue" only; sending now never touches the queue */
+  queueFull?: boolean
 }
 
 const WIDTH = 340
@@ -50,6 +55,79 @@ const GAP = 10
 const EDGE = 8
 /** Height assumed before the first measurement, used only to pick a side */
 const EST_HEIGHT = 150
+
+interface TriggerProps {
+  /** Re-measured on scroll/zoom/selection change; null hides the chip */
+  getAnchorRect: () => AnchorRect | null
+  onOpen: () => void
+}
+
+/** Floating Ask AI chip that follows the selected element(s), matching Docs. */
+export function AiAskTrigger({ getAnchorRect, onOpen }: TriggerProps): React.JSX.Element | null {
+  const { t } = useI18n()
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const pointerDownRef = useRef(false)
+
+  useLayoutEffect(() => {
+    const update = () => {
+      const rect = pointerDownRef.current ? null : getAnchorRect()
+      if (!rect) {
+        setPos(null)
+        return
+      }
+      const w = btnRef.current?.offsetWidth ?? 96
+      const h = btnRef.current?.offsetHeight ?? 32
+      const bottom = Math.min(rect.viewBottom, window.innerHeight)
+      setPos({
+        left: Math.min(rect.right + 6, window.innerWidth - w - EDGE),
+        top: Math.min(rect.bottom + 4, bottom - h - EDGE),
+      })
+    }
+    update()
+    const onPointerDown = (event: PointerEvent) => {
+      if (btnRef.current?.contains(event.target as Node)) return
+      pointerDownRef.current = true
+      setPos(null)
+    }
+    const onPointerUp = () => {
+      pointerDownRef.current = false
+      update()
+    }
+    const scroller = document.querySelector('.stage-wrap')
+    scroller?.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    document.addEventListener('pointerdown', onPointerDown, true)
+    document.addEventListener('pointerup', onPointerUp, true)
+    document.addEventListener('pointercancel', onPointerUp, true)
+    return () => {
+      scroller?.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+      document.removeEventListener('pointerdown', onPointerDown, true)
+      document.removeEventListener('pointerup', onPointerUp, true)
+      document.removeEventListener('pointercancel', onPointerUp, true)
+    }
+  }, [getAnchorRect])
+
+  if (!pos) return null
+  return (
+    <button
+      ref={btnRef}
+      className="ai-ask-trigger"
+      style={{ left: pos.left, top: pos.top }}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onOpen}
+    >
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden>
+        <path
+          d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3zM19 15l.85 2.3L22 18.15l-2.15.85L19 21.3l-.85-2.3-2.15-.85 2.15-.85L19 15z"
+          fill="currentColor"
+        />
+      </svg>
+      {t('aiAskBtn')}
+    </button>
+  )
+}
 
 /** At most four suggestions, keyed by what is selected; each fills the input rather than submitting */
 function chipKeys(targets: AskTarget[]): StringKey[] {
@@ -77,6 +155,8 @@ export function AiAskPopover({
   getAnchorRect,
   onSubmit,
   onCancel,
+  onSendNow,
+  queueFull,
 }: Props): React.JSX.Element | null {
   const { t } = useI18n()
   const [text, setText] = useState(initialText ?? '')
@@ -105,12 +185,15 @@ export function AiAskPopover({
     }
   }, [getAnchorRect])
 
+  // A full queue blocks queueing only for new asks; edits update in place
+  const queueBlocked = Boolean(queueFull && onSendNow)
+
   /** Clicking away keeps whatever was typed: it lands in the queue, where it can still be edited or removed */
   const commitOrCancel = useCallback(() => {
     const value = textRef.current.trim()
-    if (value) onSubmit(value)
+    if (value && !queueBlocked) onSubmit(value)
     else onCancel()
-  }, [onSubmit, onCancel])
+  }, [onSubmit, onCancel, queueBlocked])
 
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
@@ -173,6 +256,16 @@ export function AiAskPopover({
         }
       }}
     >
+      <button className="ai-ask-pop-close" aria-label={t('paneCancel')} onClick={onCancel}>
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" aria-hidden>
+          <path
+            d="M6 6l12 12M18 6L6 18"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </button>
       <div className="ai-ask-pop-title">
         {targets.length === 1
           ? t('aiAskTitle', { label: noun })
@@ -189,7 +282,9 @@ export function AiAskPopover({
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            if (canSubmit) onSubmit(text.trim())
+            if (!canSubmit) return
+            if (queueBlocked) onSendNow?.(text.trim())
+            else onSubmit(text.trim())
           }
         }}
       />
@@ -209,16 +304,38 @@ export function AiAskPopover({
         ))}
       </div>
       <div className="ai-ask-pop-foot">
-        <button className="ai-ask-cancel" onClick={onCancel}>
-          {t('paneCancel')}
-        </button>
-        <button
-          className="ai-ask-confirm"
-          disabled={!canSubmit}
-          onClick={() => canSubmit && onSubmit(text.trim())}
-        >
-          {t('aiAskConfirm')}
-        </button>
+        {onSendNow ? (
+          <>
+            <button
+              className="ai-ask-cancel"
+              disabled={!canSubmit}
+              onClick={() => canSubmit && onSendNow(text.trim())}
+            >
+              {t('aiAskSendNow')}
+            </button>
+            <button
+              className="ai-ask-confirm"
+              disabled={!canSubmit || queueFull}
+              data-tip={queueFull ? t('aiAskQueueFull', { max: EDIT_QUEUE_MAX }) : undefined}
+              onClick={() => canSubmit && !queueFull && onSubmit(text.trim())}
+            >
+              {t('aiAskQueue')}
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="ai-ask-cancel" onClick={onCancel}>
+              {t('paneCancel')}
+            </button>
+            <button
+              className="ai-ask-confirm"
+              disabled={!canSubmit}
+              onClick={() => canSubmit && onSubmit(text.trim())}
+            >
+              {t('aiAskConfirm')}
+            </button>
+          </>
+        )}
       </div>
     </div>
   )

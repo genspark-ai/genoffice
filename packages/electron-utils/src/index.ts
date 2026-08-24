@@ -32,3 +32,10 @@ export {
   type FetchWithSsrfGuardOptions,
 } from './safe-remote-url'
 export { fetchRemoteImage, remoteImageHeaders } from './remote-image'
+export {
+  buildPrintableHtml,
+  printHtmlToPdf,
+  sanitizePrintableBody,
+  type PrintableHtml,
+  type PrintWindow,
+} from './print-html-pdf'

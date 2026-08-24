@@ -22,6 +22,9 @@ export interface RunStyle {
   italic: boolean
   /** Apply kern pairs when measuring (PowerPoint kerns only at fontSize ≥ rPr kern; default true) */
   kerning?: boolean
+  /** CJK substitution script for a missing fontFamily (from run altLang/lang or the
+   *  bucket @charset, PowerPoint semantics); overrides name-based classification */
+  substScript?: 'ja' | 'ko' | 'sc' | 'tc'
 }
 
 export interface FontMetrics {
@@ -50,6 +53,13 @@ export interface FontMetricsProvider {
    * script (complex-script runs measure/draw with the same shaping font).
    */
   displayFamily?(style: RunStyle, text?: string): string
+  /**
+   * True when the requested family is missing and a same-script/class font was
+   * substituted. PowerPoint never kerns substituted text, so layout drops kerning for
+   * these runs. Metric-compatible alias resolutions (Calibri→Carlito) are NOT
+   * substitutions — PowerPoint has those fonts and kerns them. Unimplemented = never.
+   */
+  substituted?(style: RunStyle): boolean
 }
 
 // ── Grapheme clusters ───────────────────────────────────────────────

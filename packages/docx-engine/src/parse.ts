@@ -313,6 +313,7 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
   }
   applyTocEntryNumbers(blocks, numbering)
   normalizeImageZOrders(blocks)
+  applyProtectedLeadingBreaks(blocks)
 
   const header = await readHeaderFooterPart(
     zip,
@@ -373,6 +374,22 @@ export async function parseDocx(bytes: Uint8Array): Promise<ParsedDoc & { extras
   const compatibilityMode = await parseCompatibilityMode(zip)
   const layoutSettings = await parseLayoutSettings(zip)
   const hfParts = await parseAllHfParts(zip, rels, styles, theme.colors)
+  if (layoutSettings.balanceDbcsSpacing) {
+    const hfGroups: Array<Run[] | undefined> = []
+    for (const part of [header, footer, headerFirst, footerFirst, headerEven, footerEven]) {
+      for (const para of part?.paras ?? []) {
+        hfGroups.push(para.runs)
+        for (const cell of para.cells ?? []) hfGroups.push(...cell.paras)
+      }
+    }
+    for (const part of Object.values(hfParts ?? {})) {
+      for (const para of part.paras) {
+        hfGroups.push(para.runs)
+        for (const cell of para.cells ?? []) hfGroups.push(...cell.paras)
+      }
+    }
+    applyBalancedDbcsSpacing([...blockRunGroups(blocks), ...hfGroups])
+  }
 
   // ink annotations (freehand strokes): our own anchored floating pictures, restored
   // into an editable overlay layer instead of being shown as image blocks
@@ -2752,14 +2769,21 @@ function extractTextboxes(
     // page/margin-anchored drawing sitting outside the body column (Word
     // resume sidebars): absolute placement at the resolved position instead
     // of stacking in the flow, wrap kind notwithstanding
+    // page/margin-relative X is absolute on the page in Word: a
+    // column-translated anchor block must not drag the box sideways
+    const relXAbsolute = meta.relH === 'page' || meta.relH === 'margin'
     if (pagePos?.outsideColumn) {
       // group children already carry a group-relative offset: the anchor adds
       box.offsetXEmu = (box.offsetXEmu ?? 0) + pagePos.xEmu
       box.offsetYEmu = (box.offsetYEmu ?? 0) + (pagePos.yEmu ?? meta.offsetYEmu ?? 0)
       box.floating = true
+      if (relXAbsolute) box.pageRelX = true
       return
     }
-    if (meta.offsetXEmu !== undefined) box.offsetXEmu = (box.offsetXEmu ?? 0) + meta.offsetXEmu
+    if (meta.offsetXEmu !== undefined) {
+      box.offsetXEmu = (box.offsetXEmu ?? 0) + meta.offsetXEmu
+      if (relXAbsolute) box.pageRelX = true
+    }
     // margin-aligned X (wp:align left/center/right) on a floating drawing (photo
     // rows): resolve against the margin box; in-flow wrapSquare boxes keep the
     // legacy flow placement
@@ -2770,6 +2794,7 @@ function extractTextboxes(
       (meta.topBottom || meta.noWrap || multiDrawing)
     ) {
       box.offsetXEmu = (box.offsetXEmu ?? 0) + pagePos.xEmu
+      if (relXAbsolute) box.pageRelX = true
     }
     if (meta.offsetYEmu !== undefined) box.offsetYEmu = (box.offsetYEmu ?? 0) + meta.offsetYEmu
     // page/margin-relative posOffset V is absolute on the anchor's page in
@@ -4699,6 +4724,18 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
     const cy = parseInt(/cy="(\d+)"/.exec(extent)?.[1] ?? '', 10)
     if (Number.isFinite(cx) && cx > 0) image.widthPx = Math.round(cx / EMU_PER_PX)
     if (Number.isFinite(cy) && cy > 0) image.heightPx = Math.round(cy / EMU_PER_PX)
+    // a:srcRect source crop: two same-image anchors cropped to different
+    // regions read as duplicated pictures without it (prod100r1 sample 90)
+    const srcRect = /<a:srcRect\s[^>]*\/>/.exec(frag)?.[0]
+    if (srcRect) {
+      const crop = {
+        l: rectFrac(srcRect, 'l'),
+        t: rectFrac(srcRect, 't'),
+        r: rectFrac(srcRect, 'r'),
+        b: rectFrac(srcRect, 'b'),
+      }
+      if (crop.l || crop.t || crop.r || crop.b) image.crop = crop
+    }
     if (/<wp:anchor[\s>]/.test(frag)) {
       image.floating = true
       const anchorTag = /<wp:anchor[^>]*>/.exec(frag)?.[0] ?? ''
@@ -4847,9 +4884,11 @@ async function parseCompatibilityMode(zip: JSZip): Promise<number> {
 }
 
 /** settings.xml w:autoHyphenation + w:defaultTabStop (absent = Word's 720 twips) */
-async function parseLayoutSettings(
-  zip: JSZip,
-): Promise<{ autoHyphenation?: boolean; defaultTabStopTwips?: number }> {
+async function parseLayoutSettings(zip: JSZip): Promise<{
+  autoHyphenation?: boolean
+  defaultTabStopTwips?: number
+  balanceDbcsSpacing?: boolean
+}> {
   const file = zip.file('word/settings.xml')
   if (!file) return {}
   const xml = await file.async('string')
@@ -4857,6 +4896,7 @@ async function parseLayoutSettings(
   return {
     ...(xmlFlagOn(xml, 'w:autoHyphenation') ? { autoHyphenation: true } : {}),
     ...(tab ? { defaultTabStopTwips: parseInt(tab[1], 10) } : {}),
+    ...(xmlFlagOn(xml, 'w:balanceSingleByteDoubleByteWidth') ? { balanceDbcsSpacing: true } : {}),
   }
 }
 
@@ -5442,6 +5482,94 @@ function fieldDisplayOf(xml: string, styles?: Map<string, StyleInfo>): FieldDisp
  * image by its decoded value (stable by document order) starting at 0; rank 0
  * is the base level, so its attribute is dropped like an untouched anchor.
  */
+/**
+ * A protected image block swallows the paragraph's runs, so a page-break run
+ * written before the drawing (`<w:p><w:r><w:br w:type="page"/></w:r><w:r>
+ * <w:drawing>...`) would silently vanish while Word turns the page there.
+ * Nothing visible can sit between such a break and the drawing, so the
+ * paragraph-level pageBreakBefore is an equivalent model.
+ */
+function applyProtectedLeadingBreaks(blocks: Block[]): void {
+  for (const b of blocks) {
+    if (b.type !== 'image' || b.format?.pageBreakBefore) continue
+    const xml = b.originalXml
+    if (!xml) continue
+    const drawing = xml.search(/<w:drawing[\s>]|<w:pict[\s>]|<w:object[\s>]/)
+    const head = xml.slice(0, drawing === -1 ? xml.length : drawing)
+    const br = head.search(/<w:br\s[^>]*w:type="page"/)
+    if (br === -1) continue
+    const textBefore = [...head.slice(0, br).matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
+      .map((m) => m[1])
+      .join('')
+    if (textBefore.trim() === '') b.format = { ...b.format, pageBreakBefore: true }
+  }
+}
+
+/** wide (double-byte) glyph fraction of a run's text (CJK/hangul/fullwidth forms) */
+function wideGlyphFraction(text: string): number {
+  let wide = 0
+  let n = 0
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!
+    if (
+      (cp >= 0x1100 && cp <= 0x11ff) ||
+      (cp >= 0x2e80 && cp <= 0x9fff) ||
+      (cp >= 0xac00 && cp <= 0xd7af) ||
+      (cp >= 0xf900 && cp <= 0xfaff) ||
+      (cp >= 0xff00 && cp <= 0xff60) ||
+      cp >= 0x20000
+    )
+      wide++
+    n++
+  }
+  return n > 0 ? wide / n : 0
+}
+
+/**
+ * settings.xml balanceSingleByteDoubleByteWidth (standard in HWP-exported
+ * docx) makes rPr w:spacing count double on double-byte characters: a Word
+ * probe (2026-08-24) moves hangul advances 2pt per 20 twips with the flag and
+ * 1pt without, Latin runs unchanged either way. CSS letter-spacing cannot
+ * vary per character, so scale the display-only charSpacingTwips by each
+ * run's wide-glyph mix (the charScaleEm approximation precedent); saving
+ * stays byte-faithful through rawRPr.
+ */
+function applyBalancedDbcsSpacing(runGroups: Array<Run[] | undefined>): void {
+  for (const runs of runGroups) {
+    if (!runs) continue
+    for (const r of runs) {
+      if (!r.charSpacingTwips || !r.text) continue
+      const frac = wideGlyphFraction(r.text)
+      if (frac > 0) r.charSpacingTwips = Math.round(r.charSpacingTwips * (1 + frac) * 10) / 10
+    }
+  }
+}
+
+/** every run container reachable from the parsed blocks (tables, textboxes, nested tables) */
+function blockRunGroups(blocks: Block[]): Array<Run[] | undefined> {
+  const groups: Array<Run[] | undefined> = []
+  const fromBoxes = (boxes?: TextboxDisplay[]) => {
+    for (const box of boxes ?? []) for (const para of box.paras) groups.push(para.runs)
+  }
+  const fromTable = (table?: TableModel) => {
+    if (!table) return
+    for (const row of table.rows) {
+      for (const cell of row) {
+        for (const para of cell.richParas ?? []) groups.push(para.runs)
+        fromBoxes(cell.anchoredBoxes)
+        for (const nested of cell.nestedTables ?? []) fromTable(nested)
+      }
+    }
+  }
+  for (const b of blocks) {
+    groups.push(b.runs)
+    groups.push(b.strayRuns)
+    fromTable(b.table ?? undefined)
+    fromBoxes(b.textboxes)
+  }
+  return groups
+}
+
 function normalizeImageZOrders(blocks: Block[]): void {
   const anchored = blocks.filter((b) => b.imageZOrder !== undefined)
   if (!anchored.some((b) => Math.abs(b.imageZOrder!) > 10000)) return

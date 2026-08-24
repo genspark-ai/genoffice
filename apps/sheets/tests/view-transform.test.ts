@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { StructuralOp } from '../src/gateway/xlsx-structure'
 import {
   fileRangeToScreenRange,
+  fileRangeToScreenRanges,
   fileToScreen,
   indexedThroughScreenRow,
   mapRangeResultToScreen,
@@ -261,5 +262,112 @@ describe('move-rows mapping', () => {
     expect(range).not.toBeNull()
     expect(range?.startRow).toBeLessThanOrEqual(0)
     expect(range?.endRow).toBeGreaterThanOrEqual(5)
+  })
+
+  it('returns null when moves shuffled unrelated rows through a deleted span', () => {
+    // genspark-ai/genoffice#135: box-edge tracking reported screen row 8 as a
+    // survivor of file span [6..7] even though both file rows were removed —
+    // step 3's move pulls unrelated file row 11 into the tracked box.
+    const ops = [move(11, 1, 7), removeRows(8, 1), move(10, 2, 2), removeRows(8, 1)]
+    expect(fileToScreen(ops, 'row', 6)).toBeNull()
+    expect(fileToScreen(ops, 'row', 7)).toBeNull()
+    const range = fileRangeToScreenRange(ops, {
+      startRow: 6,
+      endRow: 7,
+      startColumn: 0,
+      endColumn: 0,
+    })
+    expect(range).toBeNull()
+  })
+
+  it('keeps envelope ends on surviving lines under move + remove stacks', () => {
+    const ops = [move(0, 2, 8), removeRows(3, 2), move(3, 3, 9), removeRows(1, 1)]
+    for (let start = 0; start < 12; start += 1) {
+      for (let end = start; end < 12; end += 1) {
+        const screens = []
+        for (let file = start; file <= end; file += 1) {
+          const screen = fileToScreen(ops, 'row', file)
+          if (screen !== null) screens.push(screen)
+        }
+        const range = fileRangeToScreenRange(ops, {
+          startRow: start,
+          endRow: end,
+          startColumn: 0,
+          endColumn: 0,
+        })
+        if (screens.length === 0) {
+          expect(range).toBeNull()
+        } else {
+          expect(range?.startRow).toBe(Math.min(...screens))
+          expect(range?.endRow).toBe(Math.max(...screens))
+        }
+      }
+    }
+  })
+
+  it('keeps the inverse envelope exact under move + insert stacks', () => {
+    const ops = [move(0, 2, 8), insertRows(3, 2), move(3, 3, 9), insertRows(1, 1)]
+    for (let start = 0; start < 13; start += 1) {
+      for (let end = start; end < 13; end += 1) {
+        const files = []
+        for (let screen = start; screen <= end; screen += 1) {
+          const file = screenToFile(ops, 'row', screen)
+          if (file !== null) files.push(file)
+        }
+        const range = screenRangeToFileRange(ops, {
+          startRow: start,
+          endRow: end,
+          startColumn: 0,
+          endColumn: 0,
+        })
+        if (files.length === 0) {
+          expect(range).toBeNull()
+        } else {
+          expect(range?.startRow).toBe(Math.min(...files))
+          expect(range?.endRow).toBe(Math.max(...files))
+        }
+      }
+    }
+  })
+})
+
+describe('fileRangeToScreenRanges', () => {
+  const move = (index: number, count: number, before: number) =>
+    ({ kind: 'move-rows', index, count, before }) as const
+
+  it('matches the per-cell image exactly under stacked ops', () => {
+    const ops = [
+      move(11, 1, 7),
+      removeRows(8, 1),
+      move(10, 2, 2),
+      insertCols(1, 2),
+      removeRows(8, 1),
+    ]
+    const range = { startRow: 4, endRow: 9, startColumn: 0, endColumn: 2 }
+    const expected = new Set<string>()
+    for (let row = range.startRow; row <= range.endRow; row += 1) {
+      for (let column = range.startColumn; column <= range.endColumn; column += 1) {
+        const screenRow = fileToScreen(ops, 'row', row)
+        const screenColumn = fileToScreen(ops, 'column', column)
+        if (screenRow !== null && screenColumn !== null) {
+          expected.add(`${screenRow}:${screenColumn}`)
+        }
+      }
+    }
+    const actual = new Set<string>()
+    for (const rect of fileRangeToScreenRanges(ops, range)) {
+      for (let row = rect.startRow; row <= rect.endRow; row += 1) {
+        for (let column = rect.startColumn; column <= rect.endColumn; column += 1) {
+          actual.add(`${row}:${column}`)
+        }
+      }
+    }
+    expect(actual).toEqual(expected)
+  })
+
+  it('returns no rectangles when every row in the range was deleted', () => {
+    const ops = [move(11, 1, 7), removeRows(8, 1), move(10, 2, 2), removeRows(8, 1)]
+    const range = { startRow: 6, endRow: 7, startColumn: 0, endColumn: 3 }
+    expect(fileRangeToScreenRanges(ops, range)).toEqual([])
   })
 })

@@ -188,6 +188,7 @@ import type {
   ApplyTxnResult,
   AnimationItem,
   ShapeKey,
+  SetEffectsPatch,
 } from '../shared/ipc'
 import { buildPrintDocumentHtml } from '../shared/print-html'
 
@@ -3031,6 +3032,35 @@ export function registerSlidesIpc(): void {
             op: 'setTextBodyProps',
             target: { slide: op.slideIndex, el: op.sourceId },
             props: op.props,
+          },
+        ],
+      })
+      if (!r) return null
+      // Autofit must take effect immediately on toggle, not only on the next text edit:
+      // 'resize' fits the shape height to the content now, 'shrink' runs the ladder and
+      // writes the used fontScale back into bodyPr (a bare <a:normAutofit/> opens at
+      // 100% in PowerPoint). Insets/wrap/vert changes re-fit under the same rules.
+      const rendered = applyAutofitResize(
+        session,
+        op.slideIndex,
+        op.sourceId,
+        rebuildSlide(session, op.slideIndex),
+      )
+      return syncAutofitScale(session, op.slideIndex, op.sourceId, rendered)
+    },
+  )
+
+  ipcMain.handle(
+    'slides:set-effects',
+    (e, op: { slideIndex: number; sourceId: string; effects: SetEffectsPatch }) => {
+      const session = sessions.get(e.sender.id)
+      if (!session) return null
+      const r = sessionTxn(session, {
+        ops: [
+          {
+            op: 'setEffects',
+            target: { slide: op.slideIndex, el: op.sourceId },
+            effects: op.effects,
           },
         ],
       })

@@ -82,6 +82,7 @@ import type {
   OpenResult,
   SlidesApi,
   UiTheme,
+  SetEffectsPatch,
 } from '../shared/ipc'
 
 const api: SlidesApi = {
@@ -179,6 +180,8 @@ const api: SlidesApi = {
       wrap?: boolean
     }
   }) => ipcRenderer.invoke('slides:set-text-body-props', op),
+  setEffects: (op: { slideIndex: number; sourceId: string; effects: SetEffectsPatch }) =>
+    ipcRenderer.invoke('slides:set-effects', op),
   clipboardExternal: () => ipcRenderer.invoke('slides:clipboard-external'),
   groupElements: (op: GroupElementsOp) => ipcRenderer.invoke('slides:group-elements', op),
   ungroupElement: (op: UngroupElementOp) => ipcRenderer.invoke('slides:ungroup-element', op),

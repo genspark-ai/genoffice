@@ -33,6 +33,29 @@ export type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
+/** Effects patch for setEffects (mirrors pptx-engine's EffectsPatch): null clears an
+ * effect, undefined leaves it untouched. Distances/radii in EMU (12700 per pt),
+ * colors #RRGGBB or #RRGGBBAA. */
+export interface SetEffectsPatch {
+  /** inner = <a:innerShdw>; sx/sy/kxDeg/kyDeg/algn are the outerShdw perspective attributes */
+  shadow?: {
+    color: string
+    blurRad: number
+    dist: number
+    dirDeg: number
+    inner?: boolean
+    sx?: number
+    sy?: number
+    kxDeg?: number
+    kyDeg?: number
+    algn?: string
+  } | null
+  glow?: { color: string; radius: number } | null
+  /** startA/endPos as 0..1 fractions, blurRad/dist in EMU */
+  reflection?: { blurRad: number; startA: number; endPos: number; dist: number } | null
+  softEdge?: number | null
+}
+
 export interface OpenResult {
   path: string
   slides: RenderSlide[]
@@ -1251,6 +1274,12 @@ export interface SlidesApi {
     slideIndex: number
     sourceId: string
     anchor: 'top' | 'middle' | 'bottom'
+  }) => Promise<RenderSlide | null>
+  /** Shape/picture effects (shadow / glow / soft edge); null clears an effect */
+  setEffects: (op: {
+    slideIndex: number
+    sourceId: string
+    effects: SetEffectsPatch
   }) => Promise<RenderSlide | null>
   /** Text box body properties (direction / autofit / internal margins / wrap) */
   setTextBodyProps: (op: {

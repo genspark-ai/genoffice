@@ -49,6 +49,11 @@ pub struct WorkbookMetadata {
     pub theme_colors: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub theme_fonts: Option<ThemeFonts>,
+    /// Literal cached <name val> of the Normal (cellXfs[0]) font, before any
+    /// theme-scheme substitution; the renderer derives column-width MDW from
+    /// it the way Excel does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub normal_font_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workbook_protection: Option<WorkbookProtectionInfo>,
     /// workbookPr/@date1904: serial dates count from 1904-01-01.
@@ -104,6 +109,8 @@ pub struct SheetMetadata {
     pub show_formulas: bool,
     /// sheetView/@showRowColHeaders: row/column heading strips.
     pub show_row_col_headers: bool,
+    /// sheetView/@rightToLeft: the grid is mirrored (column A at the right).
+    pub right_to_left: bool,
     pub tables: Vec<TableInfo>,
     pub comments: Vec<CommentInfo>,
     /// PivotTable output areas — protected from edits by the renderer.
@@ -592,7 +599,7 @@ impl WorkbookSessions {
         let (declarations, workbook_protection, active_tab, date_1904) =
             read_sheet_declarations(&mut archive)?;
         let relationships = read_workbook_relationships(&mut archive)?;
-        let (styles, dxf_styles) = visuals::read_styles(
+        let (styles, dxf_styles, normal_font_name) = visuals::read_styles(
             &mut archive,
             &color_context,
             theme_fonts.as_ref(),
@@ -683,6 +690,7 @@ impl WorkbookSessions {
                 show_grid_lines: dimensions.show_grid_lines,
                 show_formulas: dimensions.show_formulas,
                 show_row_col_headers: dimensions.show_row_col_headers,
+                right_to_left: dimensions.right_to_left,
                 tables,
                 comments,
                 pivot_ranges,
@@ -748,6 +756,7 @@ impl WorkbookSessions {
             defined_names,
             theme_colors,
             theme_fonts,
+            normal_font_name,
             workbook_protection,
             date1904: date_1904,
             short_date_format: short_date_format.map(ToOwned::to_owned),
@@ -1273,6 +1282,7 @@ struct SheetDimensions {
     show_grid_lines: bool,
     show_formulas: bool,
     show_row_col_headers: bool,
+    right_to_left: bool,
 }
 
 fn read_sheet_dimensions(
@@ -1299,6 +1309,7 @@ fn read_sheet_dimensions(
     let mut show_grid_lines = true;
     let mut show_formulas = false;
     let mut show_row_col_headers = true;
+    let mut right_to_left = false;
     loop {
         match reader.read_event_into(&mut buffer)? {
             Event::Start(element) | Event::Empty(element)
@@ -1331,6 +1342,9 @@ fn read_sheet_dimensions(
                 }
                 if let Some(value) = attribute_value(&reader, &element, b"showRowColHeaders")? {
                     show_row_col_headers = value != "0" && value != "false";
+                }
+                if let Some(value) = attribute_value(&reader, &element, b"rightToLeft")? {
+                    right_to_left = value == "1" || value == "true";
                 }
             }
             Event::Start(element) | Event::Empty(element)
@@ -1432,6 +1446,7 @@ fn read_sheet_dimensions(
                     show_grid_lines,
                     show_formulas,
                     show_row_col_headers,
+                    right_to_left,
                 });
             }
             Event::Start(element) | Event::Empty(element)
@@ -1475,6 +1490,7 @@ fn read_sheet_dimensions(
                     show_grid_lines,
                     show_formulas,
                     show_row_col_headers,
+                    right_to_left,
                 });
             }
             _ => {}
@@ -3591,6 +3607,7 @@ mod tests {
             show_grid_lines: true,
             show_formulas: false,
             show_row_col_headers: true,
+            right_to_left: false,
             tables: Vec::new(),
             comments: Vec::new(),
             pivot_ranges: Vec::new(),
@@ -3748,6 +3765,7 @@ mod tests {
             show_grid_lines: true,
             show_formulas: false,
             show_row_col_headers: true,
+            right_to_left: false,
             tables: Vec::new(),
             comments: Vec::new(),
             pivot_ranges: Vec::new(),
@@ -3825,6 +3843,38 @@ mod tests {
         let metadata = sessions.open(&path).unwrap();
         assert_eq!(metadata.sheets[0].row_count, 2);
         assert_eq!(metadata.sheets[0].column_count, 2);
+    }
+
+    #[test]
+    fn parses_sheet_view_right_to_left() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="R" sheetId="1" r:id="rId1"/><sheet name="L" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews>
+<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetViews><sheetView workbookViewId="0"/></sheetViews>
+<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert!(metadata.sheets[0].right_to_left);
+        assert!(!metadata.sheets[1].right_to_left);
     }
 
     /// OpenXML-SDK writers leave a stale single-row dimension (A1:G1) behind;
@@ -3911,6 +3961,47 @@ mod tests {
         assert_eq!(metadata.sheets.len(), 1);
         assert_eq!(metadata.sheets[0].row_count, 1);
         assert_eq!(metadata.sheets[0].column_count, 2);
+    }
+
+    /// Theme substitution keeps rendering on the theme latin face, but the
+    /// literal cached Normal-font name and the theme's minor <a:ea> face
+    /// still reach the wire — the renderer needs them for the column MDW.
+    #[test]
+    fn normal_font_name_survives_theme_substitution() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/theme/theme1.xml",
+                r#"<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:themeElements><a:fontScheme name="Office"><a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/><a:ea typeface="Yu Gothic"/></a:minorFont></a:fontScheme></a:themeElements></a:theme>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="ＭＳ Ｐゴシック"/><scheme val="minor"/></font></fonts><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellXfs></styleSheet>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert_eq!(metadata.styles[0].font_family.as_deref(), Some("Calibri"));
+        assert_eq!(
+            metadata.normal_font_name.as_deref(),
+            Some("ＭＳ Ｐゴシック")
+        );
+        let theme_fonts = metadata.theme_fonts.as_ref().unwrap();
+        assert_eq!(theme_fonts.minor_ea.as_deref(), Some("Yu Gothic"));
+        let json = serde_json::to_string(&metadata).unwrap();
+        assert!(json.contains("\"normalFontName\""));
+        assert!(json.contains("\"minorEa\""));
     }
 
     /// An empty <v/> on a t="s" cell degrades to a valueless styled cell;

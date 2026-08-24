@@ -39,7 +39,14 @@ import {
   type PlacedBox,
   type ParentPlacement,
 } from './coords'
-import { resolveFill, resolveStroke, resolveShadow, resolveGlow, type MediaResolver } from './fill'
+import {
+  resolveFill,
+  resolveStroke,
+  resolveShadow,
+  resolveGlow,
+  resolveReflection,
+  type MediaResolver,
+} from './fill'
 import { layoutText } from './text-layout'
 import { HeuristicMetrics, type FontMetricsProvider } from './metrics'
 import {
@@ -425,6 +432,8 @@ function buildShape(
   if (shadow) node.shadow = shadow
   const glow = resolveGlow(el.glow, vp)
   if (glow) node.glow = glow
+  const reflection = resolveReflection(el.reflection, vp)
+  if (reflection) node.reflection = reflection
   if (el.scene3d) applyScene3D(el, node, vp)
   if (el.text && el.text.paragraphs.length) {
     node.text = layoutText({
@@ -570,6 +579,8 @@ function buildPicture(
   if (shadow) node.shadow = shadow
   const glow = resolveGlow(el.glow, vp)
   if (glow) node.glow = glow
+  const reflection = resolveReflection(el.reflection, vp)
+  if (reflection) node.reflection = reflection
   return node
 }
 

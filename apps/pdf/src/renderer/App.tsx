@@ -8,6 +8,13 @@ import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { AiPanel, GensparkMark } from './ai/AiPanel'
 import { AiAskPopover, type AskAnchorRect } from './AiAskPopover'
 import { loadSavedAnnots } from './annotation-catalog'
+import {
+  OcrTextLayer,
+  buildOcrPageData,
+  isScannedEntry,
+  renderPageForOcr,
+  type OcrPageData,
+} from './ocr-layer'
 import type { PdfAiDeps } from './ai/tools'
 import {
   MARKUP_COLORS,
@@ -111,6 +118,7 @@ import type {
   TextEditInput,
   TextInsertFailure,
   TextInsertInput,
+  PdfOcrLine,
 } from '../shared/ipc'
 import {
   ZOOM_STEPS,
@@ -734,6 +742,8 @@ export default function App() {
   const [docFonts, setDocFonts] = useState<Map<string, DocFontStyle>>(new Map())
   const docFontsRef = useRef(docFonts)
   docFontsRef.current = docFonts
+  /** OCR results for scanned pages, keyed by original page index (reset per doc) */
+  const [ocrPages, setOcrPages] = useState<Map<number, OcrPageData>>(new Map())
   const searchIndexRef = useRef<{ doc: PDFDocumentProxy; promise: Promise<SearchIndex> } | null>(
     null,
   )
@@ -762,6 +772,13 @@ export default function App() {
     },
     [sizes, baseRots, rotDelta],
   )
+  /** Latest geometry for async pipelines that must not rebind on rotation (OCR) */
+  const pageGeomRef = useRef(pageGeom)
+  pageGeomRef.current = pageGeom
+  /** Current original page index, readable without rebinding the OCR pass on scroll */
+  const currentOrigIdxRef = useRef(0)
+  currentOrigIdxRef.current = visList[currentPage - 1] ?? 0
+
   /** Page display size (width/height swapped under rotation) */
   const dispSize = useCallback(
     (origIdx: number): PageSize => geomDispSize(pageGeom(origIdx)),
@@ -1518,14 +1535,58 @@ export default function App() {
 
   // ── Full-text search ──
 
-  /** Text index cached per doc; invalidated and rebuilt after a save reload */
+  /** Text index cached per doc; invalidated and rebuilt after a save reload.
+      Scanned pages recognized by OCR overlay their entry so search, markups and
+      AI tools address them like born-digital text. */
   const getSearchIndex = useCallback((): Promise<SearchIndex> | null => {
     if (!doc) return null
     if (searchIndexRef.current?.doc !== doc) {
       searchIndexRef.current = { doc, promise: buildSearchIndex(doc) }
     }
-    return searchIndexRef.current.promise
-  }, [doc])
+    const base = searchIndexRef.current.promise
+    if (ocrPages.size === 0) return base
+    return base.then((idx) => idx.map((entry, i) => ocrPages.get(i)?.entry ?? entry))
+  }, [doc, ocrPages])
+
+  // Auto-OCR for scanned pages (issue #119): once the base index shows pages with
+  // no extractable text, recognize them sequentially in the background, starting
+  // at the current page. Boxes are stored in PDF space, so later zooms/rotations
+  // reproject.
+  useEffect(() => {
+    setOcrPages(new Map())
+    if (!doc || sizes.length !== doc.numPages) return
+    let stale = false
+    void (async () => {
+      const index = await buildSearchIndex(doc).catch(() => null)
+      if (!index || stale) return
+      const scanned = index
+        .map((entry, i) => (isScannedEntry(entry) ? i : -1))
+        .filter((i) => i >= 0)
+      const from = scanned.findIndex((i) => i >= currentOrigIdxRef.current)
+      const ordered = from > 0 ? [...scanned.slice(from), ...scanned.slice(0, from)] : scanned
+      for (const origIdx of ordered) {
+        if (stale) return
+        // one geometry snapshot for render and box conversion: a rotation between
+        // the two awaits must not remap boxes through different axes
+        const geom = pageGeomRef.current(origIdx)
+        const png = await renderPageForOcr(doc, origIdx, geom)
+        if (stale || !png) continue
+        let lines: PdfOcrLine[] | null
+        try {
+          lines = await window.pdfApi.ocrPage(png)
+        } catch {
+          continue // this page failed; the rest may still recognize
+        }
+        if (lines === null) return // no engine on this platform: stop trying
+        if (stale) return
+        const data = buildOcrPageData(lines, geom)
+        if (data) setOcrPages((prev) => new Map(prev).set(origIdx, data))
+      }
+    })()
+    return () => {
+      stale = true
+    }
+  }, [doc, sizes.length])
 
   /** Paragraph boxes are keyed to the loaded doc; drop them on save-reload */
   useEffect(() => {
@@ -4867,6 +4928,7 @@ export default function App() {
     pageCount: () => sizes.length,
     currentPage: () => (visList[currentPage - 1] ?? 0) + 1,
     readOnly: () => readOnly,
+    ocrText: (origIdx) => ocrPages.get(origIdx)?.entry.text ?? null,
     selection: () => aiSelection,
     pendingSummary: aiPendingSummary,
     annotationSummary: aiAnnotationSummary,
@@ -5023,6 +5085,7 @@ export default function App() {
         return null
       }
     },
+    createDocument: (request) => window.pdfApi.createDocument(request),
   }
 
   /**
@@ -6281,6 +6344,7 @@ export default function App() {
           )}
           <AiPanel
             api={aiApi}
+            filePath={filePath}
             preset={aiPreset}
             onCollapse={() => setAiCollapsed(true)}
             onRunDone={() => void autoSaveAfterAiRun()}
@@ -7431,6 +7495,12 @@ export default function App() {
                                   )}
                                 </div>
                               )}
+                              {(() => {
+                                const ocr = ocrPages.get(origIdx)
+                                return ocr ? (
+                                  <OcrTextLayer data={ocr} geom={geom} scale={scale} />
+                                ) : null
+                              })()}
                               <MarkupOverlay
                                 markups={markups.filter((m) => m.pageIndex === origIdx)}
                                 geom={geom}
@@ -7696,7 +7766,7 @@ export default function App() {
                   aria-label={t('aiAskBtn')}
                   onClick={openAskPopover}
                 >
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" aria-hidden>
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" aria-hidden>
                     <path
                       d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15.6l-1.7-4.6L6 9.3l4.3-1.7L12 3zM19 15l.85 2.3L22 18.15l-2.15.85L19 21.3l-.85-2.3-2.15-.85 2.15-.85L19 15z"
                       fill="currentColor"

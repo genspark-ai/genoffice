@@ -62,6 +62,9 @@ import type {
   GroupElement,
   Transform,
   Stroke,
+  ShadowEffect,
+  GlowEffect,
+  ReflectionEffect,
 } from './types'
 import { patchTableStyleXml, ensureTableStyleXml, type TableStyleEdit } from './table-edit'
 import { buildChartSpaceXml, type NewChartKind, type NewChartOptions } from './chart-insert'
@@ -105,7 +108,7 @@ export {
   type DecorationOptions,
 } from './parse'
 export { tableRowGridCols } from './table-grid'
-export { parseTheme, type Theme } from './theme'
+export { parseTheme, parseClrMap, resolveSchemeColor, type Theme } from './theme'
 export {
   patchTextElementXml,
   patchElementXfrm,
@@ -1195,6 +1198,201 @@ export function setElementTextBodyProps(
       delete t.text.fontScale
       delete t.text.lnSpcReduction
     }
+  }
+  slide.structureDirty = true
+  return true
+}
+
+/** Patch for setElementEffects; null clears an effect, undefined leaves it untouched. */
+export interface EffectsPatch {
+  /** Shadow (<a:outerShdw>, or <a:innerShdw> when inner); color may carry alpha as #RRGGBBAA.
+   * sx/sy/kxDeg/kyDeg/algn are the outer perspective attributes (scale fraction / skew degrees). */
+  shadow?: {
+    color: string
+    blurRad: number
+    dist: number
+    dirDeg: number
+    inner?: boolean
+    sx?: number
+    sy?: number
+    kxDeg?: number
+    kyDeg?: number
+    algn?: string
+  } | null
+  /** Glow (<a:glow>); radius in EMU */
+  glow?: { color: string; radius: number } | null
+  /** Reflection (<a:reflection>): startA/endPos as 0..1 fractions, blurRad/dist in EMU */
+  reflection?: { blurRad: number; startA: number; endPos: number; dist: number } | null
+  /** Soft-edge feather radius (<a:softEdge rad>, EMU); the renderer honors it on pictures */
+  softEdge?: number | null
+}
+
+/** #RRGGBB / #RRGGBBAA → <a:srgbClr> (alpha channel becomes an <a:alpha> child in 1000ths of a percent). */
+function effectColorXml(hex: string): string {
+  const m = /^#?([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(hex)
+  const val = (m?.[1] ?? '000000').toUpperCase()
+  const alpha = m?.[2] != null ? Math.round((parseInt(m[2], 16) / 255) * 100000) : 100000
+  return alpha < 100000
+    ? `<a:srgbClr val="${val}"><a:alpha val="${alpha}"/></a:srgbClr>`
+    : `<a:srgbClr val="${val}"/>`
+}
+
+/** ECMA-376 effectLst child order (children must be re-emitted in schema order). */
+const EFFECT_ORDER = [
+  'blur',
+  'fillOverlay',
+  'glow',
+  'innerShdw',
+  'outerShdw',
+  'prstShdw',
+  'reflection',
+  'softEdge',
+]
+
+/**
+ * Shape/picture effects (shadow / glow / soft edge): <a:effectLst> byte surgery inside
+ * the element's <p:spPr>, mirroring setElementTextBodyProps. Untouched effectLst children
+ * (fillOverlay, reflection, ...) are preserved and the list is re-emitted in schema order;
+ * an emptied effectLst is removed entirely.
+ */
+export function setElementEffects(slide: Slide, elementId: string, patch: EffectsPatch): boolean {
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape' && el.type !== 'picture')) return false
+  let xml = patchedElementXml(el)
+  const spPrM = /<p:spPr\b[^>]*>[\s\S]*?<\/p:spPr>/.exec(xml)
+  if (!spPrM) return false
+  let spPr = spPrM[0]
+
+  // Existing children (whole-element matches), keyed by local name
+  const children = new Map<string, string>()
+  const lstM = /<a:effectLst\b[^>]*\/>|<a:effectLst\b[^>]*>([\s\S]*?)<\/a:effectLst>/.exec(spPr)
+  if (lstM?.[1]) {
+    const childRe = /<a:(\w+)\b(?:[^>]*?\/>|[^>]*>[\s\S]*?<\/a:\1>)/g
+    for (let m = childRe.exec(lstM[1]); m; m = childRe.exec(lstM[1])) children.set(m[1]!, m[0])
+  }
+
+  if (patch.shadow !== undefined) {
+    children.delete('outerShdw')
+    children.delete('innerShdw')
+    if (patch.shadow !== null) {
+      const s = patch.shadow
+      const base = [
+        s.blurRad ? ` blurRad="${Math.max(0, Math.round(s.blurRad))}"` : '',
+        s.dist ? ` dist="${Math.max(0, Math.round(s.dist))}"` : '',
+        ` dir="${Math.round((((s.dirDeg % 360) + 360) % 360) * 60000)}"`,
+      ].join('')
+      if (s.inner) {
+        children.set('innerShdw', `<a:innerShdw${base}>${effectColorXml(s.color)}</a:innerShdw>`)
+      } else {
+        // CT_OuterShadowEffect attribute order: blurRad dist dir sx sy kx ky algn rotWithShape
+        const persp = [
+          s.sx != null && s.sx !== 1 ? ` sx="${Math.round(s.sx * 100000)}"` : '',
+          s.sy != null && s.sy !== 1 ? ` sy="${Math.round(s.sy * 100000)}"` : '',
+          s.kxDeg ? ` kx="${Math.round(s.kxDeg * 60000)}"` : '',
+          s.kyDeg ? ` ky="${Math.round(s.kyDeg * 60000)}"` : '',
+          s.algn ? ` algn="${s.algn}"` : '',
+        ].join('')
+        children.set(
+          'outerShdw',
+          `<a:outerShdw${base}${persp} rotWithShape="0">${effectColorXml(s.color)}</a:outerShdw>`,
+        )
+      }
+    }
+  }
+  if (patch.glow !== undefined) {
+    if (patch.glow === null) children.delete('glow')
+    else {
+      const rad = Math.max(0, Math.round(patch.glow.radius))
+      children.set('glow', `<a:glow rad="${rad}">${effectColorXml(patch.glow.color)}</a:glow>`)
+    }
+  }
+  if (patch.reflection !== undefined) {
+    if (patch.reflection === null) children.delete('reflection')
+    else {
+      const r = patch.reflection
+      // CT_ReflectionEffect attr order: blurRad stA … endA endPos dist dir … sy … algn rotWithShape.
+      // sy=-100% is the vertical flip; endA=0.3% matches PowerPoint's presets.
+      const attrs = [
+        r.blurRad ? ` blurRad="${Math.max(0, Math.round(r.blurRad))}"` : '',
+        ` stA="${Math.max(0, Math.min(100000, Math.round(r.startA * 100000)))}"`,
+        ' endA="300"',
+        ` endPos="${Math.max(0, Math.min(100000, Math.round(r.endPos * 100000)))}"`,
+        r.dist ? ` dist="${Math.max(0, Math.round(r.dist))}"` : '',
+        ' dir="5400000" sy="-100000" algn="bl" rotWithShape="0"',
+      ].join('')
+      children.set('reflection', `<a:reflection${attrs}/>`)
+    }
+  }
+  if (patch.softEdge !== undefined) {
+    if (patch.softEdge === null) children.delete('softEdge')
+    else children.set('softEdge', `<a:softEdge rad="${Math.max(0, Math.round(patch.softEdge))}"/>`)
+  }
+
+  const inner = [...children.entries()]
+    .sort(
+      (a, b) =>
+        (EFFECT_ORDER.indexOf(a[0]) + 1 || EFFECT_ORDER.length + 1) -
+        (EFFECT_ORDER.indexOf(b[0]) + 1 || EFFECT_ORDER.length + 1),
+    )
+    .map(([, frag]) => frag)
+    .join('')
+  const rebuilt = inner ? `<a:effectLst>${inner}</a:effectLst>` : ''
+  if (lstM) {
+    spPr = spPr.slice(0, lstM.index) + rebuilt + spPr.slice(lstM.index + lstM[0].length)
+  } else if (rebuilt) {
+    // schema order: effectLst sits after ln, before scene3d/sp3d/extLst
+    const anchorM = /<a:(?:scene3d|sp3d|extLst)\b/.exec(spPr)
+    const at = anchorM ? anchorM.index : spPr.lastIndexOf('</p:spPr>')
+    spPr = spPr.slice(0, at) + rebuilt + spPr.slice(at)
+  }
+  xml = xml.slice(0, spPrM.index) + spPr + xml.slice(spPrM.index + spPrM[0].length)
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+
+  // Mirror into the parsed model so re-renders see the new values without a reparse
+  const eff = el as {
+    shadow?: ShadowEffect
+    glow?: GlowEffect
+    reflection?: ReflectionEffect
+    softEdge?: number
+  }
+  if (patch.shadow !== undefined) {
+    if (patch.shadow === null) delete eff.shadow
+    else {
+      const s = patch.shadow
+      eff.shadow = {
+        color: s.color,
+        blurRad: Math.max(0, Math.round(s.blurRad)),
+        dist: Math.max(0, Math.round(s.dist)),
+        dirDeg: ((s.dirDeg % 360) + 360) % 360,
+        ...(s.inner ? { inner: true } : {}),
+        ...(s.sx != null && s.sx !== 1 && !s.inner ? { sx: s.sx } : {}),
+        ...(s.sy != null && s.sy !== 1 && !s.inner ? { sy: s.sy } : {}),
+        ...(s.kxDeg && !s.inner ? { kxDeg: s.kxDeg } : {}),
+        ...(s.kyDeg && !s.inner ? { kyDeg: s.kyDeg } : {}),
+        ...(s.algn && !s.inner ? { algn: s.algn } : {}),
+      }
+    }
+  }
+  if (patch.glow !== undefined) {
+    if (patch.glow === null) delete eff.glow
+    else eff.glow = { color: patch.glow.color, radius: Math.max(0, Math.round(patch.glow.radius)) }
+  }
+  if (patch.reflection !== undefined) {
+    if (patch.reflection === null) delete eff.reflection
+    else {
+      eff.reflection = {
+        blurRad: Math.max(0, Math.round(patch.reflection.blurRad)),
+        startA: Math.max(0, Math.min(1, patch.reflection.startA)),
+        endPos: Math.max(0, Math.min(1, patch.reflection.endPos)),
+        dist: Math.max(0, Math.round(patch.reflection.dist)),
+      }
+    }
+  }
+  if (patch.softEdge !== undefined) {
+    if (patch.softEdge === null) delete eff.softEdge
+    else eff.softEdge = Math.max(0, Math.round(patch.softEdge))
   }
   slide.structureDirty = true
   return true

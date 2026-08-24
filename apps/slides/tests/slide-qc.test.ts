@@ -4,11 +4,15 @@
  *  - createSlideFixSkill: tool allowlist wraps the full slides skill without losing the executor
  */
 import { describe, it, expect } from 'vitest'
+import type { AgentStreamRequest, AgentTransport } from '@genoffice/agent-core'
 import {
   generatedPageRange,
   mergeQcPages,
   createSlideFixSkill,
+  isUnsupportedImageInputError,
   isQcEnabled,
+  qcSlidePage,
+  settingsSupportVision,
 } from '../src/renderer/ai/slide-qc'
 import type { DeckAccess } from '../src/renderer/ai/slides-skill'
 
@@ -80,6 +84,12 @@ describe('createSlideFixSkill', () => {
     expect(r.isError).toBeFalsy()
     expect(r.output).toContain('Canvas 1280×720px')
   })
+
+  it('uses a geometry-only prompt when no screenshot can be sent', () => {
+    const skill = createSlideFixSkill(access, false)
+    expect(skill.systemPrompt).toContain('NO rendered screenshot is attached')
+    expect(skill.systemPrompt).toContain('DO NOT judge or change contrast')
+  })
 })
 
 describe('isQcEnabled', () => {
@@ -89,5 +99,91 @@ describe('isQcEnabled', () => {
     localStorage.setItem('ai-slides-qc', '0')
     expect(isQcEnabled()).toBe(false)
     localStorage.removeItem('ai-slides-qc')
+  })
+})
+
+describe('vision capability fallback', () => {
+  it('does not send screenshots to providers marked as text-only', () => {
+    expect(settingsSupportVision({ provider: 'deepseek' })).toBe(false)
+    expect(settingsSupportVision({ provider: 'glm' })).toBe(false)
+    expect(settingsSupportVision({ provider: 'gemini' })).toBe(true)
+  })
+
+  it('recognizes image-capability errors from optimistic custom endpoints', () => {
+    expect(isUnsupportedImageInputError('This model does not support image')).toBe(true)
+    expect(isUnsupportedImageInputError('Vision input is not supported by this model')).toBe(true)
+    expect(isUnsupportedImageInputError('HTTP 500: temporary provider failure')).toBe(false)
+  })
+
+  it('skips the model entirely when a geometry-only page passes the deterministic audit', async () => {
+    let streamed = false
+    const transport: AgentTransport = {
+      stream: () => {
+        streamed = true
+        return { cancel: () => {} }
+      },
+    }
+    const one: DeckAccess = {
+      ...access,
+      getSlides: () => [
+        {
+          widthPx: 1280,
+          heightPx: 720,
+          scale: 1,
+          nodes: [],
+        } as never,
+      ],
+    }
+    const result = await qcSlidePage({
+      access: one,
+      transport,
+      pageIndex: 0,
+      screenshot: null,
+    })
+    expect(result).toMatchObject({ ok: true, edited: false, reply: 'OK' })
+    expect(streamed).toBe(false)
+  })
+
+  it('runs an audited geometry issue without attaching an image', async () => {
+    let request: AgentStreamRequest | undefined
+    const transport: AgentTransport = {
+      stream: (next, callbacks) => {
+        request = next
+        queueMicrotask(() => {
+          callbacks.onDelta('OK')
+          callbacks.onDone()
+        })
+        return { cancel: () => {} }
+      },
+    }
+    const one: DeckAccess = {
+      ...access,
+      getSlides: () => [
+        {
+          widthPx: 1280,
+          heightPx: 720,
+          scale: 1,
+          nodes: [
+            {
+              type: 'picture',
+              sourceId: 'picture-1',
+              box: { x: 1270, y: 20, w: 100, h: 100, rotationDeg: 0 },
+            },
+          ],
+        } as never,
+      ],
+    }
+    const result = await qcSlidePage({
+      access: one,
+      transport,
+      pageIndex: 0,
+      screenshot: null,
+    })
+    expect(result.error).toBeUndefined()
+    const message = request?.messages[0]
+    expect(message).toMatchObject({ role: 'user' })
+    expect(message).not.toHaveProperty('images')
+    expect(request?.system).toContain('NO rendered screenshot is attached')
+    expect(message?.role === 'user' ? message.text : '').toContain('No image is attached')
   })
 })

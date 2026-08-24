@@ -1286,7 +1286,16 @@ function buildPieNode(
   const explAt = (i: number) =>
     Math.max(ser.pointExplosionPct?.[i] ?? ser.explosionPct ?? 0, 0) / 100
   const maxExpl = vals.reduce((m, v, i) => (v > 0 ? Math.max(m, explAt(i)) : m), 0)
-  const outerR = Math.max(Math.min(plotW, plotH) / 2, 5) / (1 + 2 * maxExpl)
+  // PowerPoint reserves a constant 4mm ring around the pie regardless of chart size
+  // (probe: frames 0.9"–4.5", margin 0.152–0.160" in every case, labels on or off).
+  // The ring is frame-relative (pad added back); frame-edge legends keep the clearance
+  // by construction, but 'l'/'t' legends sit pad inside the frame — cap so the pie
+  // keeps the same gap to their inner edge on large charts (pad > reserve).
+  const pieReservePx = emuToPx(144000, vp.scale)
+  let pieHalfPx = Math.min(plotW, plotH) / 2 + pad
+  if (legendPos === 'l') pieHalfPx = Math.min(pieHalfPx, plotW / 2)
+  if (legendPos === 't') pieHalfPx = Math.min(pieHalfPx, plotH / 2)
+  const outerR = Math.max(pieHalfPx - pieReservePx, 5) / (1 + 2 * maxExpl)
   const cx = plotX + plotW / 2
   let cy = plotY + plotH / 2
   const innerR = (outerR * Math.min(Math.max(model.holePct ?? 0, 0), 90)) / 100

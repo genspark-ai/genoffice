@@ -3505,6 +3505,23 @@ button {
   text-decoration-style: solid;
 }
 
+/* ---- OCR text layer on scanned pages: invisible but selectable ---- */
+
+.pdf-ocr-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+}
+
+.pdf-ocr-layer span {
+  position: absolute;
+  white-space: pre;
+  color: transparent;
+  cursor: text;
+  transform-origin: 0 0;
+}
+
 /* ---- Ask-AI entry on the markup bar + its anchored popover ---- */
 
 .pdf-sel-popup-sep {
@@ -3518,9 +3535,9 @@ button {
   width: auto;
   gap: 5px;
   padding: 0 9px;
-  font-size: 11.5px;
+  font-size: 14px;
   font-weight: 500;
-  color: var(--accent-dark);
+  color: var(--color-ai-action);
 }
 
 .ai-ask-pop {
@@ -3598,10 +3615,14 @@ button {
   padding: 5px 12px;
   border: 1px solid transparent;
   border-radius: var(--radius-6);
-  background: var(--accent);
-  color: var(--pdf-on-accent);
+  background: var(--color-ai-action);
+  color: var(--color-ai-action-text);
   font-size: 12px;
   cursor: pointer;
+}
+
+.ai-ask-confirm:hover:not(:disabled) {
+  background: var(--color-ai-action-hover);
 }
 
 .ai-ask-confirm:disabled {

@@ -6,12 +6,474 @@
  */
 import React, { useEffect, useRef, useState } from 'react'
 import type { PictureRenderNode, RenderNode, ShapeRenderNode } from '@genoffice/pptx-render'
-import type { GradientFillSpec } from '../../shared/ipc'
-import { Dropdown } from '@genoffice/ui'
+import type { GradientFillSpec, SetEffectsPatch } from '../../shared/ipc'
+import { Dropdown, useDismissablePopover } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import { pathGradientCanvas } from '../konva-adapter'
 import { ColorWell } from './ColorWell'
 import { IconSidebarCollapse } from './icons'
+
+/** PPT "Offset: Bottom Right" style defaults for a freshly enabled shadow (60% transparency, 4pt blur, 3pt dist). */
+const DEFAULT_SHADOW = { color: '#00000066', blurRad: 50800, dist: 38100, dirDeg: 45 }
+/** Fresh glow default: 5pt gold (PPT presets use theme accents; a fixed one keeps document colors theme-independent). */
+const DEFAULT_GLOW = { color: '#FFC000', radius: 63500 }
+/** Shadow offset presets: direction key → outerShdw dir angle (clockwise, 0 = right). */
+const SHADOW_DIRS = [
+  ['r', 0],
+  ['br', 45],
+  ['b', 90],
+  ['bl', 135],
+  ['l', 180],
+  ['tl', 225],
+  ['t', 270],
+  ['tr', 315],
+] as const
+const SHADOW_DIR_LABELS = {
+  r: 'paneEffDirR',
+  br: 'paneEffDirBR',
+  b: 'paneEffDirB',
+  bl: 'paneEffDirBL',
+  l: 'paneEffDirL',
+  tl: 'paneEffDirTL',
+  t: 'paneEffDirT',
+  tr: 'paneEffDirTR',
+} as const
+const GLOW_PT_PRESETS = [5, 8, 11, 18]
+const SOFT_EDGE_PT_PRESETS = [1, 2.5, 5, 10, 25]
+
+/** Gallery tile shadow offsets (px) per preset key — a miniature of the effect itself. */
+/** One gallery preset: the full shadow the tile applies (PPT's offset/inside/perspective values). */
+interface ShadowPresetDef {
+  inner?: boolean
+  dirDeg: number
+  dist: number
+  blurRad: number
+  sx?: number
+  sy?: number
+  kxDeg?: number
+  algn?: string
+  /** Preset color (the alpha byte is the preset's transparency; RGB keeps the user's pick) */
+  color: string
+}
+
+const OUTER = (dirDeg: number): ShadowPresetDef => ({
+  dirDeg,
+  dist: 38100,
+  blurRad: 50800,
+  color: '#00000066',
+})
+const INNER = (dirDeg: number): ShadowPresetDef => ({
+  inner: true,
+  dirDeg,
+  dist: 50800,
+  blurRad: 63500,
+  color: '#00000080',
+})
+/** Gallery presets. Inner dir points AWAY from the named edge (the outside mass casts
+ * inward from there — "Inside: Top Left" is dir 45°, matching PowerPoint's XML). */
+const SHADOW_PRESETS: Record<string, ShadowPresetDef> = {
+  r: OUTER(0),
+  br: OUTER(45),
+  b: OUTER(90),
+  bl: OUTER(135),
+  l: OUTER(180),
+  tl: OUTER(225),
+  t: OUTER(270),
+  tr: OUTER(315),
+  center: { dirDeg: 0, dist: 0, blurRad: 63500, color: '#00000066' },
+  'in-tl': INNER(45),
+  'in-t': INNER(90),
+  'in-tr': INNER(135),
+  'in-l': INNER(0),
+  'in-center': { inner: true, dirDeg: 0, dist: 0, blurRad: 114300, color: '#00000080' },
+  'in-r': INNER(180),
+  'in-bl': INNER(315),
+  'in-b': INNER(270),
+  'in-br': INNER(225),
+  // Perspective: ground shadows built from PowerPoint's real preset numbers ("Upper
+  // Left" reads back in PPT as angle 225° / distance 0pt / blur 6pt / transparency 80%):
+  // a flipped 23%-squashed silhouette hugging the bottom edge (dist 0), leaned by kx —
+  // positive kxDeg leans the slab's far edge LEFT. Row 2 drops farther with more lean.
+  'p-ul': {
+    dirDeg: 225,
+    dist: 0,
+    blurRad: 76200,
+    sx: 1,
+    sy: -0.23,
+    kxDeg: 13.34,
+    color: '#00000033',
+  },
+  'p-ur': {
+    dirDeg: 315,
+    dist: 0,
+    blurRad: 76200,
+    sx: 1,
+    sy: -0.23,
+    kxDeg: -13.34,
+    color: '#00000033',
+  },
+  'p-b': {
+    dirDeg: 90,
+    dist: 76200,
+    blurRad: 76200,
+    sx: 1,
+    sy: -0.23,
+    color: '#00000033',
+  },
+  'p-ll': {
+    dirDeg: 90,
+    dist: 114300,
+    blurRad: 76200,
+    sx: 1,
+    sy: -0.3,
+    kxDeg: 20,
+    color: '#00000040',
+  },
+  'p-lr': {
+    dirDeg: 90,
+    dist: 114300,
+    blurRad: 76200,
+    sx: 1,
+    sy: -0.3,
+    kxDeg: -20,
+    color: '#00000040',
+  },
+}
+
+/** PPT gallery orders (3×3 grids; perspective is a 3+2 row). */
+const SHADOW_GAL_OUTER = ['br', 'b', 'bl', 'r', 'center', 'l', 'tr', 't', 'tl'] as const
+const SHADOW_GAL_INNER = [
+  'in-tl',
+  'in-t',
+  'in-tr',
+  'in-l',
+  'in-center',
+  'in-r',
+  'in-bl',
+  'in-b',
+  'in-br',
+] as const
+const SHADOW_GAL_PERSP = ['p-ul', 'p-ur', 'p-b', 'p-ll', 'p-lr'] as const
+
+/** Perspective tiles: ground-shadow slabs matching PPT's gallery (bottom-hugging
+ * lean-left / lean-right, a detached flat bar below, then the two farther drops). */
+const PERSP_TILE_SHADOW: Record<string, string> = {
+  'p-ul': '-5px 4px 3px -1px var(--fp-gal-shadow)',
+  'p-ur': '5px 4px 3px -1px var(--fp-gal-shadow)',
+  'p-b': '0 8px 3px -4px var(--fp-gal-shadow)',
+  'p-ll': '-6px 9px 4px -2px var(--fp-gal-shadow)',
+  'p-lr': '6px 9px 4px -2px var(--fp-gal-shadow)',
+}
+
+function galTileShadow(key: string): React.CSSProperties | undefined {
+  if (key === 'none') return undefined
+  const persp = PERSP_TILE_SHADOW[key]
+  if (persp) return { boxShadow: persp }
+  const p = SHADOW_PRESETS[key]
+  if (!p) return undefined
+  const rad = (p.dirDeg * Math.PI) / 180
+  if (p.inner) {
+    if (!p.dist) return { boxShadow: 'inset 0 0 5px var(--fp-gal-shadow)' }
+    return {
+      boxShadow: `inset ${(Math.cos(rad) * 3).toFixed(1)}px ${(Math.sin(rad) * 3).toFixed(1)}px 4px var(--fp-gal-shadow)`,
+    }
+  }
+  if (!p.dist) return { boxShadow: '0 0 4px 1px var(--fp-gal-shadow)' }
+  return {
+    boxShadow: `${(Math.cos(rad) * 2.8).toFixed(1)}px ${(Math.sin(rad) * 2.8).toFixed(1)}px 3px var(--fp-gal-shadow)`,
+  }
+}
+
+/** Nearest direction key by angular distance. */
+function nearestDirKey(deg: number, dirs: ReadonlyArray<readonly [string, number]>): string {
+  const dist = (x: number) => {
+    const n = ((x % 360) + 360) % 360
+    return Math.min(n, 360 - n)
+  }
+  let best = dirs[0]![0]
+  let bestD = Infinity
+  for (const [k, a] of dirs) {
+    const d = dist(deg - a)
+    if (d < bestD) {
+      bestD = d
+      best = k
+    }
+  }
+  return best
+}
+
+/** Inner presets keyed by the edge the shadow hugs (dir points away from it). */
+const INNER_DIRS = [
+  ['in-tl', 45],
+  ['in-t', 90],
+  ['in-tr', 135],
+  ['in-l', 0],
+  ['in-r', 180],
+  ['in-bl', 315],
+  ['in-b', 270],
+  ['in-br', 225],
+] as const
+
+/** PPT-style shadow preset gallery: thumbnail trigger + grouped grid of live shadow tiles. */
+function ShadowPresetPicker({
+  current,
+  onPick,
+}: {
+  readonly current: string
+  readonly onPick: (key: string) => void
+}): React.JSX.Element {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  useDismissablePopover(open, () => setOpen(false), { inside: () => [wrapRef.current] })
+  const dirLabel = (dir: string) =>
+    dir === 'center'
+      ? t('paneEffCenter')
+      : t(SHADOW_DIR_LABELS[dir as keyof typeof SHADOW_DIR_LABELS])
+  const PERSP_DIR: Record<string, string> = {
+    'p-ul': 'tl',
+    'p-ur': 'tr',
+    'p-b': 'b',
+    'p-ll': 'bl',
+    'p-lr': 'br',
+  }
+  const label = (key: string) =>
+    key === 'none'
+      ? t('paneEffNoShadow')
+      : key.startsWith('p-')
+        ? `${t('paneEffPerspective')}: ${dirLabel(PERSP_DIR[key]!)}`
+        : key.startsWith('in-')
+          ? `${t('paneEffInner')}: ${dirLabel(key.slice(3))}`
+          : dirLabel(key)
+  const tile = (key: string) => (
+    <button
+      key={key}
+      type="button"
+      role="option"
+      aria-selected={current === key}
+      aria-label={label(key)}
+      title={label(key)}
+      className={`fp-galopt${current === key ? ' selected' : ''}`}
+      onClick={() => {
+        setOpen(false)
+        onPick(key)
+      }}
+    >
+      <span className="fp-galtile" style={galTileShadow(key)} />
+    </button>
+  )
+  return (
+    <span ref={wrapRef} className="fp-shadowgal">
+      <button
+        type="button"
+        className="fp-shadowgal-btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={t('paneEffPreset')}
+        title={label(current)}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {/* Fixed glyph: the trigger doesn't preview the current pick (matches PPT) */}
+        <span className="fp-galtile fp-galtile-cur" />
+        <span className="gs-dd-caret" aria-hidden="true">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M5.5 9.25 12 15.75l6.5-6.5"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
+      {open && (
+        <div className="fp-shadowgal-pop" role="listbox" aria-label={t('paneEffPreset')}>
+          <div className="fp-shadowgal-group">{t('paneEffNoShadow')}</div>
+          {tile('none')}
+          <div className="fp-shadowgal-group">{t('paneEffOuter')}</div>
+          <div className="fp-shadowgal-grid">{SHADOW_GAL_OUTER.map((k) => tile(k))}</div>
+          <div className="fp-shadowgal-group">{t('paneEffInner')}</div>
+          <div className="fp-shadowgal-grid">{SHADOW_GAL_INNER.map((k) => tile(k))}</div>
+          <div className="fp-shadowgal-group">{t('paneEffPerspective')}</div>
+          <div className="fp-shadowgal-grid">{SHADOW_GAL_PERSP.map((k) => tile(k))}</div>
+        </div>
+      )}
+    </span>
+  )
+}
+
+/** Reflection gallery (PPT's 3×3: tight/half/full × touching/4pt/8pt offset). */
+const REFL_KINDS = [
+  ['tight', 0.35],
+  ['half', 0.55],
+  ['full', 0.9],
+] as const
+const REFL_DISTS = [0, 50800, 101600] as const
+const DEFAULT_REFLECTION = { blurRad: 6350, startA: 0.52, endPos: 0.55, dist: 0 }
+const REFL_KIND_LABELS = {
+  tight: 'paneEffReflTight',
+  half: 'paneEffReflHalf',
+  full: 'paneEffReflFull',
+} as const
+
+/** PPT-style reflection preset gallery: tiles show a face with a fading mirrored bar. */
+function ReflectionPresetPicker({
+  current,
+  onPick,
+}: {
+  readonly current: string
+  readonly onPick: (key: string) => void
+}): React.JSX.Element {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  useDismissablePopover(open, () => setOpen(false), { inside: () => [wrapRef.current] })
+  const label = (key: string) => {
+    if (key === 'none') return t('paneEffNoReflection')
+    const [kind, di] = key.split('-') as [keyof typeof REFL_KIND_LABELS, string]
+    const dist = REFL_DISTS[Number(di)] ?? 0
+    return `${t(REFL_KIND_LABELS[kind])}: ${
+      dist ? `${dist / 12700} ${t('paneFormatPt')}` : t('paneEffReflTouch')
+    }`
+  }
+  const tile = (key: string) => {
+    const [kind, di] = key.split('-')
+    const endPos = REFL_KINDS.find(([k]) => k === kind)?.[1] ?? 0
+    return (
+      <button
+        key={key}
+        type="button"
+        role="option"
+        aria-selected={current === key}
+        aria-label={label(key)}
+        title={label(key)}
+        className={`fp-galopt${current === key ? ' selected' : ''}`}
+        onClick={() => {
+          setOpen(false)
+          onPick(key)
+        }}
+      >
+        <span className="fp-refltile">
+          <span className="fp-galtile fp-refltile-face" />
+          {key !== 'none' && (
+            <span
+              className="fp-refltile-fade"
+              style={{ height: 4 + endPos * 12, marginTop: 1 + Number(di) * 2 }}
+            />
+          )}
+        </span>
+      </button>
+    )
+  }
+  return (
+    <span ref={wrapRef} className="fp-shadowgal">
+      <button
+        type="button"
+        className="fp-shadowgal-btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={t('paneEffPreset')}
+        title={label(current)}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {/* Fixed glyph (matches the shadow picker): a tile with a mirrored fade */}
+        <span className="fp-refltile fp-refltile-cur">
+          <span className="fp-galtile fp-refltile-face" />
+          <span className="fp-refltile-fade" style={{ height: 6, marginTop: 1 }} />
+        </span>
+        <span className="gs-dd-caret" aria-hidden="true">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M5.5 9.25 12 15.75l6.5-6.5"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
+      {open && (
+        <div className="fp-shadowgal-pop" role="listbox" aria-label={t('paneEffPreset')}>
+          <div className="fp-shadowgal-group">{t('paneEffNoReflection')}</div>
+          {tile('none')}
+          <div className="fp-shadowgal-group">{t('paneEffPreset')}</div>
+          <div className="fp-shadowgal-grid">
+            {REFL_DISTS.map((_, di) => REFL_KINDS.map(([kind]) => tile(`${kind}-${di}`)))}
+          </div>
+        </div>
+      )}
+    </span>
+  )
+}
+
+type TextVert = 'horz' | 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
+
+/** PPT-style text-direction glyph: a CJK sample word + ABC laid out the way the
+ * option lays out text. Icon art (like WordArt previews), so the glyph text is fixed. */
+function TextDirIcon({ kind }: { readonly kind: TextVert }): React.JSX.Element {
+  const rows = (
+    <>
+      <text x="10" y="8.5" textAnchor="middle" fontSize="8">
+        文字
+      </text>
+      <text x="10" y="16.5" textAnchor="middle" fontSize="6.5">
+        ABC
+      </text>
+    </>
+  )
+  let body: React.ReactNode
+  if (kind === 'horz') body = rows
+  else if (kind === 'vert') body = <g transform="rotate(90 10 10)">{rows}</g>
+  else if (kind === 'vert270') body = <g transform="rotate(-90 10 10)">{rows}</g>
+  else if (kind === 'eaVert')
+    body = (
+      <>
+        <text x="14.5" y="9" textAnchor="middle" fontSize="8">
+          文
+        </text>
+        <text x="14.5" y="18" textAnchor="middle" fontSize="8">
+          字
+        </text>
+        <text x="5.5" y="12.5" textAnchor="middle" fontSize="6.5" transform="rotate(90 5.5 10)">
+          ABC
+        </text>
+      </>
+    )
+  else
+    body = (
+      <>
+        <text x="6" y="9" textAnchor="middle" fontSize="8">
+          文
+        </text>
+        <text x="6" y="18" textAnchor="middle" fontSize="8">
+          字
+        </text>
+        <text x="14.5" y="7" textAnchor="middle" fontSize="6">
+          A
+        </text>
+        <text x="14.5" y="13" textAnchor="middle" fontSize="6">
+          B
+        </text>
+        <text x="14.5" y="19" textAnchor="middle" fontSize="6">
+          C
+        </text>
+      </>
+    )
+  return (
+    <svg
+      className="fp-dirico"
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {body}
+    </svg>
+  )
+}
 
 interface Props {
   node: RenderNode | null
@@ -38,6 +500,8 @@ interface Props {
       wrap?: boolean
     },
   ) => void
+  /** Shape/picture effects (shadow / glow / soft edge); null clears an effect */
+  onEffects?: (sourceId: string, effects: SetEffectsPatch) => void
   onStroke: (
     sourceId: string,
     stroke: {
@@ -104,17 +568,34 @@ function SpinChevron({ up }: { up: boolean }) {
  * state so model round-trips never remount it mid-drag; commits are throttled
  * (~8/s leading + trailing) so the canvas previews live without flooding IPC.
  */
-function PctControl({ value, onChange }: { value: number; onChange: (pct: number) => void }) {
-  const [pct, setPct] = useState(value)
-  const [text, setText] = useState(`${value} %`)
+/** Slider + numeric box (PPT effect-pane row). Values are display units; text entry
+ * keeps one decimal, the slider moves in integer steps, sends are ~120ms throttled. */
+function SliderControl({
+  value,
+  min,
+  max,
+  unit,
+  onChange,
+}: {
+  value: number
+  min: number
+  max: number
+  /** Display suffix, including any leading space (' %', ' ' + localized pt, '°') */
+  unit: string
+  onChange: (v: number) => void
+}) {
+  const fmt = (v: number) => `${Math.round(v * 10) / 10}${unit}`
+  const [cur, setCur] = useState(value)
+  const [text, setText] = useState(fmt(value))
   const dragging = useRef(false)
   const lastSent = useRef(0)
   const trailing = useRef<number | null>(null)
   useEffect(() => {
     if (!dragging.current) {
-      setPct(value)
-      setText(`${value} %`)
+      setCur(value)
+      setText(fmt(value))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fmt is stable per unit
   }, [value])
   useEffect(
     () => () => {
@@ -133,29 +614,33 @@ function PctControl({ value, onChange }: { value: number; onChange: (pct: number
     }
   }
   const set = (v: number) => {
-    const clamped = Math.max(0, Math.min(100, Math.round(v)))
-    setPct(clamped)
-    setText(`${clamped} %`)
+    const clamped = Math.max(min, Math.min(max, Math.round(v * 10) / 10))
+    setCur(clamped)
+    setText(fmt(clamped))
     send(clamped, true)
   }
   return (
     <div className="fp-slider">
       <input
         type="range"
-        min={0}
-        max={100}
-        value={pct}
+        min={min}
+        max={max}
+        value={Math.round(cur)}
         // elapsed-track fill: the CSS gradient reads the current position from this var
-        style={{ '--fp-pct': `${pct}%` } as React.CSSProperties}
+        style={
+          {
+            '--fp-pct': `${((cur - min) / Math.max(max - min, 1)) * 100}%`,
+          } as React.CSSProperties
+        }
         onPointerDown={() => (dragging.current = true)}
         onPointerUp={() => {
           dragging.current = false
-          send(pct, true)
+          send(cur, true)
         }}
         onChange={(e) => {
           const v = Number(e.target.value)
-          setPct(v)
-          setText(`${v} %`)
+          setCur(v)
+          setText(fmt(v))
           send(v)
         }}
       />
@@ -166,9 +651,9 @@ function PctControl({ value, onChange }: { value: number; onChange: (pct: number
           value={text}
           onChange={(e) => {
             const raw = e.target.value
-            // free-form while editing, but entries beyond 100 are rejected as typed
+            // free-form while editing, but entries beyond the range are rejected as typed
             const num = parseFloat(raw)
-            if (!Number.isNaN(num) && num > 100) return
+            if (!Number.isNaN(num) && num > max) return
             setText(raw)
           }}
           onKeyDown={(e) => {
@@ -177,22 +662,44 @@ function PctControl({ value, onChange }: { value: number; onChange: (pct: number
           onBlur={() => {
             const num = parseFloat(text)
             if (Number.isNaN(num)) {
-              setText(`${pct} %`)
+              setText(fmt(cur))
               return
             }
             set(num)
           }}
         />
         <span className="fp-unitstep-btns">
-          <button type="button" aria-label="+1%" disabled={pct >= 100} onClick={() => set(pct + 1)}>
+          <button
+            type="button"
+            aria-label={`+1${unit}`}
+            disabled={cur >= max}
+            onClick={() => set(cur + 1)}
+          >
             <SpinChevron up />
           </button>
-          <button type="button" aria-label="−1%" disabled={pct <= 0} onClick={() => set(pct - 1)}>
+          <button
+            type="button"
+            aria-label={`−1${unit}`}
+            disabled={cur <= min}
+            onClick={() => set(cur - 1)}
+          >
             <SpinChevron up={false} />
           </button>
         </span>
       </div>
     </div>
+  )
+}
+
+function PctControl({ value, onChange }: { value: number; onChange: (pct: number) => void }) {
+  return (
+    <SliderControl
+      value={value}
+      min={0}
+      max={100}
+      unit=" %"
+      onChange={(v) => onChange(Math.round(v))}
+    />
   )
 }
 
@@ -290,6 +797,7 @@ export function FormatPane({
   onImageFill,
   onTextAnchor,
   onTextBodyProps,
+  onEffects,
   onStroke,
   onCollapse,
   onPictureCrop,
@@ -330,6 +838,10 @@ export function FormatPane({
   const [posFromV, setPosFromV] = useState<'tl' | 'center'>('tl')
   const [picOpen, setPicOpen] = useState(true)
   const [txtOpen, setTxtOpen] = useState(true)
+  const [effShadowOpen, setEffShadowOpen] = useState(true)
+  const [effReflOpen, setEffReflOpen] = useState(true)
+  const [effGlowOpen, setEffGlowOpen] = useState(true)
+  const [effSoftOpen, setEffSoftOpen] = useState(true)
   // Width-limit balloon (shown while a keystroke tries to exceed MAX_LINE_PT)
   const [widthLimitTip, setWidthLimitTip] = useState(false)
   const widthTipTimer = useRef<number | null>(null)
@@ -722,6 +1234,135 @@ export function FormatPane({
   const fmtNum = (v: number) => String(Math.round(v * 100) / 100)
   const fmtCm = (px: number) => `${fmtNum(px / pxPerCm)} ${t('paneSizeCm')}`
 
+  // ---- Effects section: values shown in pt/°/%, the op speaks EMU ----
+  const pxToEmu = (px: number) => Math.round((px / vscale) * 9525)
+  const ptToEmu = (pt: number) => Math.round(pt * 12700)
+  const fmtEmuPt = (emu: number) => `${fmtNum(emu / 12700)} ${t('paneFormatPt')}`
+  const effTarget = shape ?? pic
+  const shadowVals = effTarget?.shadow
+    ? {
+        color: effTarget.shadow.color,
+        blurRad: pxToEmu(effTarget.shadow.blurPx),
+        // Prefer the source values: the offset vector loses the direction at distance 0
+        dist: pxToEmu(
+          effTarget.shadow.distPx ?? Math.hypot(effTarget.shadow.offsetX, effTarget.shadow.offsetY),
+        ),
+        dirDeg:
+          effTarget.shadow.dirDeg != null
+            ? Math.round(((effTarget.shadow.dirDeg % 360) + 360) % 360)
+            : Math.round(
+                (Math.atan2(effTarget.shadow.offsetY, effTarget.shadow.offsetX) * 180) / Math.PI +
+                  360,
+              ) % 360,
+        // Kind/perspective fields ride along so blur/distance/angle/color edits keep
+        // an inner or perspective shadow what it is instead of degrading it to outer
+        ...(effTarget.shadow.inner ? { inner: true as const } : {}),
+        ...(effTarget.shadow.scaleX != null ? { sx: effTarget.shadow.scaleX } : {}),
+        ...(effTarget.shadow.scaleY != null ? { sy: effTarget.shadow.scaleY } : {}),
+        ...(effTarget.shadow.skewXDeg ? { kxDeg: effTarget.shadow.skewXDeg } : {}),
+        ...(effTarget.shadow.skewYDeg ? { kyDeg: effTarget.shadow.skewYDeg } : {}),
+        ...(effTarget.shadow.algn ? { algn: effTarget.shadow.algn } : {}),
+      }
+    : null
+  const glowVals = effTarget?.glow
+    ? { color: effTarget.glow.color, radius: pxToEmu(effTarget.glow.blurPx) }
+    : null
+  const reflVals = effTarget?.reflection
+    ? {
+        blurRad: pxToEmu(effTarget.reflection.blurPx),
+        startA: effTarget.reflection.startAlpha,
+        endPos: effTarget.reflection.endPos,
+        dist: pxToEmu(effTarget.reflection.distPx),
+      }
+    : null
+  const softEdgePt = pic?.softEdgePx != null ? pxToEmu(pic.softEdgePx) / 12700 : null
+  // Optimistic commit base: while an IPC round trip is in flight, the render node still
+  // carries pre-flight values — rebuilding the full effect from it would freeze the other
+  // fields and let a queued request overwrite the change that just landed. Each commit
+  // builds on the values last SENT for this element; the cache invalidates as soon as the
+  // render tree catches up (or an external edit / selection change replaces the node).
+  const sentEffects = useRef<{
+    key: string
+    shadow?: NonNullable<typeof shadowVals>
+    glow?: NonNullable<typeof glowVals>
+    reflection?: NonNullable<typeof reflVals>
+    lastCommitAt: number
+  }>({ key: '', lastCommitAt: 0 })
+  // Invalidate the optimistic base only after commits have gone QUIET: while edits are
+  // streaming, an in-flight IPC result is usually behind the values we already sent, and
+  // wiping the base on its arrival would let the next commit rebuild from stale render
+  // values. A node update with no commit in the last 600ms can only be our final
+  // response or an external edit (undo / AI) — both mean the node is the truth again.
+  useEffect(() => {
+    const clearBase = () => {
+      sentEffects.current.shadow = undefined
+      sentEffects.current.glow = undefined
+      sentEffects.current.reflection = undefined
+    }
+    const remaining = 600 - (performance.now() - sentEffects.current.lastCommitAt)
+    if (remaining <= 0) {
+      clearBase()
+      return
+    }
+    // A node update inside the quiet window may itself be the final state (undo landing
+    // right after a drag): re-check once the window expires so the base cannot stick
+    // until some unrelated future update. Fresh commits push lastCommitAt forward, and
+    // their responses re-run this effect, so the re-check always converges.
+    const timer = window.setTimeout(() => {
+      if (performance.now() - sentEffects.current.lastCommitAt >= 600) clearBase()
+    }, remaining + 20)
+    return () => window.clearTimeout(timer)
+  }, [effTarget?.shadow, effTarget?.glow, effTarget?.reflection])
+  const sentFor = (id: string) => {
+    if (sentEffects.current.key !== id) sentEffects.current = { key: id, lastCommitAt: 0 }
+    return sentEffects.current
+  }
+  // Effective current values: everything that BUILDS a patch (relative scaling, color /
+  // transparency recombination) must read these, not the render-tree values that lag
+  // behind while a round trip is in flight
+  const curShadow = (): NonNullable<typeof shadowVals> =>
+    (node ? sentFor(node.sourceId).shadow : undefined) ?? shadowVals ?? { ...DEFAULT_SHADOW }
+  const curGlow = (): NonNullable<typeof glowVals> =>
+    (node ? sentFor(node.sourceId).glow : undefined) ?? glowVals ?? { ...DEFAULT_GLOW }
+  const commitShadow = (patch: Partial<NonNullable<typeof shadowVals>>) => {
+    if (!node) return
+    const sent = sentFor(node.sourceId)
+    const next = { ...curShadow(), ...patch }
+    sent.shadow = next
+    sent.lastCommitAt = performance.now()
+    onEffects?.(node.sourceId, { shadow: next })
+  }
+  const commitGlow = (patch: Partial<NonNullable<typeof glowVals>>) => {
+    if (!node) return
+    const sent = sentFor(node.sourceId)
+    const next = { ...curGlow(), ...patch }
+    sent.glow = next
+    sent.lastCommitAt = performance.now()
+    onEffects?.(node.sourceId, { glow: next })
+  }
+  const commitReflection = (patch: Partial<NonNullable<typeof reflVals>>) => {
+    if (!node) return
+    const sent = sentFor(node.sourceId)
+    const next = { ...(sent.reflection ?? reflVals ?? DEFAULT_REFLECTION), ...patch }
+    sent.reflection = next
+    sent.lastCommitAt = performance.now()
+    onEffects?.(node.sourceId, { reflection: next })
+  }
+  // Color pickers / sliders fire repeatedly while dragging; debounce per CHANNEL before
+  // IPC — a shared timer would let a glow drag silently cancel a pending shadow edit
+  const effectTimers = useRef(new Map<string, number>())
+  const debouncedEffects = (channel: string, fire: () => void) => {
+    const prev = effectTimers.current.get(channel)
+    if (prev) window.clearTimeout(prev)
+    effectTimers.current.set(channel, window.setTimeout(fire, 200))
+  }
+  /** hex6 + transparency% → #RRGGBB(AA) */
+  const withAlpha = (hex6: string, transparencyPct: number) => {
+    const a = Math.round(((100 - transparencyPct) / 100) * 255)
+    return a >= 255 ? hex6 : `${hex6}${a.toString(16).padStart(2, '0')}`
+  }
+  const transparencyOf = (color: string) => Math.round(((255 - alphaOf(color)) / 255) * 100)
+
   /** Size commit honoring the aspect-ratio lock (editing one dim scales the other). */
   const sizeCommit = (patch: { w?: number; h?: number }) => {
     if (!box) return
@@ -980,13 +1621,18 @@ export function FormatPane({
                   )}
                   <div className="fp-prow">
                     <span>{t('panePosFrom')}</span>
-                    <select
+                    <Dropdown
+                      className="fp-dd-narrow"
                       value={posFromH}
-                      onChange={(e) => setPosFromH(e.target.value as 'tl' | 'center')}
-                    >
-                      <option value="tl">{t('panePosFromTL')}</option>
-                      <option value="center">{t('panePosFromCenter')}</option>
-                    </select>
+                      ariaLabel={t('panePosFrom')}
+                      options={(
+                        [
+                          ['tl', t('panePosFromTL')],
+                          ['center', t('panePosFromCenter')],
+                        ] as const
+                      ).map(([k, label]) => ({ value: k, label }))}
+                      onPick={setPosFromH}
+                    />
                   </div>
                   {spinRow(
                     t('panePosV'),
@@ -1009,13 +1655,18 @@ export function FormatPane({
                   )}
                   <div className="fp-prow">
                     <span>{t('panePosFrom')}</span>
-                    <select
+                    <Dropdown
+                      className="fp-dd-narrow"
                       value={posFromV}
-                      onChange={(e) => setPosFromV(e.target.value as 'tl' | 'center')}
-                    >
-                      <option value="tl">{t('panePosFromTL')}</option>
-                      <option value="center">{t('panePosFromCenter')}</option>
-                    </select>
+                      ariaLabel={t('panePosFrom')}
+                      options={(
+                        [
+                          ['tl', t('panePosFromTL')],
+                          ['center', t('panePosFromCenter')],
+                        ] as const
+                      ).map(([k, label]) => ({ value: k, label }))}
+                      onPick={setPosFromV}
+                    />
                   </div>
                 </>
               )}
@@ -1661,35 +2312,46 @@ export function FormatPane({
                 <>
                   <div className="fp-prow">
                     <span>{t('paneTextboxVAlign')}</span>
-                    <select
+                    <Dropdown
                       value={shape.text.anchor}
                       disabled={!onTextAnchor}
-                      onChange={(e) =>
-                        onTextAnchor?.(node.sourceId, e.target.value as 'top' | 'middle' | 'bottom')
-                      }
-                    >
-                      <option value="top">{t('paneVAlignTop')}</option>
-                      <option value="middle">{t('paneVAlignMiddle')}</option>
-                      <option value="bottom">{t('paneVAlignBottom')}</option>
-                    </select>
+                      ariaLabel={t('paneTextboxVAlign')}
+                      options={(
+                        [
+                          ['top', t('paneVAlignTop')],
+                          ['middle', t('paneVAlignMiddle')],
+                          ['bottom', t('paneVAlignBottom')],
+                        ] as const
+                      ).map(([k, label]) => ({ value: k, label }))}
+                      onPick={(anchor) => onTextAnchor?.(node.sourceId, anchor)}
+                    />
                   </div>
                   <div className="fp-prow">
                     <span>{t('paneTextboxDirection')}</span>
-                    <select
+                    <Dropdown
+                      className="fp-dd-textdir"
                       value={shape.text.vert ?? 'horz'}
-                      onChange={(e) =>
-                        onTextBodyProps(node.sourceId, {
-                          vert: e.target.value as
-                            'horz' | 'eaVert' | 'vert' | 'vert270' | 'wordArtVert',
-                        })
-                      }
-                    >
-                      <option value="horz">{t('paneTextDirH')}</option>
-                      <option value="eaVert">{t('paneTextDirV')}</option>
-                      <option value="vert">{t('paneTextDirRot90')}</option>
-                      <option value="vert270">{t('paneTextDirRot270')}</option>
-                      <option value="wordArtVert">{t('paneTextDirStacked')}</option>
-                    </select>
+                      ariaLabel={t('paneTextboxDirection')}
+                      options={(
+                        [
+                          ['horz', t('paneTextDirH')],
+                          ['eaVert', t('paneTextDirV')],
+                          ['vert', t('paneTextDirRot90')],
+                          ['vert270', t('paneTextDirRot270')],
+                          ['wordArtVert', t('paneTextDirStacked')],
+                        ] as const
+                      ).map(([k, label]) => ({
+                        value: k,
+                        label,
+                        render: (
+                          <>
+                            <TextDirIcon kind={k} />
+                            <span className="fp-dirico-label">{label}</span>
+                          </>
+                        ),
+                      }))}
+                      onPick={(vert) => onTextBodyProps(node.sourceId, { vert })}
+                    />
                   </div>
                   <div className="fp-radios">
                     {radioRow(
@@ -1751,8 +2413,343 @@ export function FormatPane({
             </>
           )}
 
-          {/* Sub-tabs whose options aren't editable yet (effects, text fill; fill&line for e.g. groups) */}
-          {((effTab === 'shape' && shapeSub === 'effects') ||
+          {/* PPT-style Effects tab: shadow / glow / soft edge (reflection & 3-D are not rendered yet) */}
+          {effTab === 'shape' && shapeSub === 'effects' && effTarget && onEffects && node && (
+            <>
+              {secHeader(t('paneEffShadow'), effShadowOpen, () => setEffShadowOpen((v) => !v))}
+              {effShadowOpen && (
+                <>
+                  <div className="fp-prow">
+                    <span>{t('paneEffPreset')}</span>
+                    <ShadowPresetPicker
+                      current={
+                        !shadowVals
+                          ? 'none'
+                          : shadowVals.inner
+                            ? shadowVals.dist < 2000
+                              ? 'in-center'
+                              : nearestDirKey(shadowVals.dirDeg, INNER_DIRS)
+                            : (shadowVals.sy ?? 1) < 0 || shadowVals.kxDeg
+                              ? Math.abs(shadowVals.kxDeg ?? 0) < 6
+                                ? 'p-b'
+                                : shadowVals.dist >= 50000
+                                  ? (shadowVals.kxDeg ?? 0) > 0
+                                    ? 'p-ll'
+                                    : 'p-lr'
+                                  : (shadowVals.kxDeg ?? 0) > 0
+                                    ? 'p-ul'
+                                    : 'p-ur'
+                              : shadowVals.dist < 2000
+                                ? 'center'
+                                : nearestDirKey(shadowVals.dirDeg, SHADOW_DIRS)
+                      }
+                      onPick={(v) => {
+                        if (v === 'none') {
+                          sentFor(node.sourceId).shadow = undefined
+                          return onEffects(node.sourceId, { shadow: null })
+                        }
+                        // Preset semantics: the tile applies the full PPT preset (blur /
+                        // distance / direction / perspective transform / transparency),
+                        // keeping only the user's color hue. Applied whole (not through
+                        // commitShadow) so stale kind/perspective fields never survive,
+                        // but still recorded as the optimistic base for follow-up edits.
+                        const p = SHADOW_PRESETS[v]!
+                        const a = alphaOf(p.color)
+                        const rgb = toHex6(
+                          sentFor(node.sourceId).shadow?.color ?? shadowVals?.color ?? p.color,
+                        )
+                        const next = {
+                          color: a >= 255 ? rgb : `${rgb}${a.toString(16).padStart(2, '0')}`,
+                          blurRad: p.blurRad,
+                          dist: p.dist,
+                          dirDeg: p.dirDeg,
+                          ...(p.inner ? { inner: true as const } : {}),
+                          ...(p.sx != null ? { sx: p.sx } : {}),
+                          ...(p.sy != null ? { sy: p.sy } : {}),
+                          ...(p.kxDeg ? { kxDeg: p.kxDeg } : {}),
+                          ...(p.algn ? { algn: p.algn } : {}),
+                        }
+                        sentFor(node.sourceId).shadow = next
+                        onEffects(node.sourceId, { shadow: next })
+                      }}
+                    />
+                  </div>
+                  <div className="fp-prow">
+                    <span>{t('paneGradientColor')}</span>
+                    <ColorWell
+                      value={toHex6(shadowVals?.color ?? DEFAULT_SHADOW.color)}
+                      label={t('paneEffShadow')}
+                      onPick={(hex) =>
+                        debouncedEffects('shadow', () =>
+                          commitShadow({
+                            color: withAlpha(hex, transparencyOf(curShadow().color)),
+                          }),
+                        )
+                      }
+                    />
+                  </div>
+                  <label className="fp-prow">
+                    <span>{t('ribbonTransparency')}</span>
+                    <PctControl
+                      value={transparencyOf(shadowVals?.color ?? DEFAULT_SHADOW.color)}
+                      onChange={(pct) =>
+                        debouncedEffects('shadow', () =>
+                          commitShadow({ color: withAlpha(toHex6(curShadow().color), pct) }),
+                        )
+                      }
+                    />
+                  </label>
+                  {/* Size = outerShdw sx/sy silhouette scale; <a:innerShdw> has no scale attrs */}
+                  {!shadowVals?.inner && (
+                    <label className="fp-prow">
+                      <span>{t('paneEffSize')}</span>
+                      <SliderControl
+                        value={Math.round(Math.abs(shadowVals?.sx ?? 1) * 100)}
+                        min={1}
+                        max={200}
+                        unit="%"
+                        onChange={(v) => {
+                          // Uniform silhouette scale. Perspective shadows keep their
+                          // squash/flip: both axes scale by the same factor.
+                          const base = curShadow()
+                          const k = v / 100 / Math.max(Math.abs(base.sx ?? 1), 0.01)
+                          commitShadow({ sx: (base.sx ?? 1) * k, sy: (base.sy ?? 1) * k })
+                        }}
+                      />
+                    </label>
+                  )}
+                  <label className="fp-prow">
+                    <span>{t('paneEffBlur')}</span>
+                    <SliderControl
+                      value={(shadowVals?.blurRad ?? 0) / 12700}
+                      min={0}
+                      max={100}
+                      unit={` ${t('paneFormatPt')}`}
+                      onChange={(v) => commitShadow({ blurRad: ptToEmu(v) })}
+                    />
+                  </label>
+                  <label className="fp-prow">
+                    <span>{t('paneEffDistance')}</span>
+                    <SliderControl
+                      value={(shadowVals?.dist ?? 0) / 12700}
+                      min={0}
+                      max={200}
+                      unit={` ${t('paneFormatPt')}`}
+                      onChange={(v) => commitShadow({ dist: ptToEmu(v) })}
+                    />
+                  </label>
+                  <label className="fp-prow">
+                    <span>{t('paneEffAngle')}</span>
+                    <SliderControl
+                      value={shadowVals?.dirDeg ?? DEFAULT_SHADOW.dirDeg}
+                      min={0}
+                      max={359}
+                      unit="°"
+                      onChange={(v) => commitShadow({ dirDeg: ((v % 360) + 360) % 360 })}
+                    />
+                  </label>
+                </>
+              )}
+
+              {secHeader(t('paneEffReflection'), effReflOpen, () => setEffReflOpen((v) => !v))}
+              {effReflOpen && (
+                <>
+                  <div className="fp-prow">
+                    <span>{t('paneEffPreset')}</span>
+                    <ReflectionPresetPicker
+                      current={
+                        !reflVals
+                          ? 'none'
+                          : `${REFL_KINDS.reduce(
+                              (best, [k, e]) =>
+                                Math.abs(reflVals.endPos - e) <
+                                Math.abs(
+                                  reflVals.endPos -
+                                    (REFL_KINDS.find(([bk]) => bk === best)?.[1] ?? 0),
+                                )
+                                  ? k
+                                  : best,
+                              'half' as string,
+                            )}-${REFL_DISTS.reduce<number>(
+                              (bi, d, i) =>
+                                Math.abs(reflVals.dist - d) <
+                                Math.abs(reflVals.dist - REFL_DISTS[bi]!)
+                                  ? i
+                                  : bi,
+                              0,
+                            )}`
+                      }
+                      onPick={(v) => {
+                        if (v === 'none') {
+                          sentFor(node.sourceId).reflection = undefined
+                          return onEffects(node.sourceId, { reflection: null })
+                        }
+                        const [kind, di] = v.split('-')
+                        commitReflection({
+                          endPos: REFL_KINDS.find(([k]) => k === kind)?.[1] ?? 0.55,
+                          dist: REFL_DISTS[Number(di)] ?? 0,
+                        })
+                      }}
+                    />
+                  </div>
+                  <label className="fp-prow">
+                    <span>{t('paneEffSize')}</span>
+                    <SliderControl
+                      value={Math.round((reflVals?.endPos ?? DEFAULT_REFLECTION.endPos) * 100)}
+                      min={1}
+                      max={100}
+                      unit="%"
+                      onChange={(v) => commitReflection({ endPos: v / 100 })}
+                    />
+                  </label>
+                  <label className="fp-prow">
+                    <span>{t('ribbonTransparency')}</span>
+                    <SliderControl
+                      value={Math.round(
+                        (1 - (reflVals?.startA ?? DEFAULT_REFLECTION.startA)) * 100,
+                      )}
+                      min={0}
+                      max={100}
+                      unit=" %"
+                      onChange={(v) => commitReflection({ startA: 1 - v / 100 })}
+                    />
+                  </label>
+                  <label className="fp-prow">
+                    <span>{t('paneEffBlur')}</span>
+                    <SliderControl
+                      value={(reflVals?.blurRad ?? DEFAULT_REFLECTION.blurRad) / 12700}
+                      min={0}
+                      max={100}
+                      unit={` ${t('paneFormatPt')}`}
+                      onChange={(v) => commitReflection({ blurRad: ptToEmu(v) })}
+                    />
+                  </label>
+                  <label className="fp-prow">
+                    <span>{t('paneEffDistance')}</span>
+                    <SliderControl
+                      value={(reflVals?.dist ?? 0) / 12700}
+                      min={0}
+                      max={100}
+                      unit={` ${t('paneFormatPt')}`}
+                      onChange={(v) => commitReflection({ dist: ptToEmu(v) })}
+                    />
+                  </label>
+                </>
+              )}
+
+              {secHeader(t('paneEffGlow'), effGlowOpen, () => setEffGlowOpen((v) => !v))}
+              {effGlowOpen && (
+                <>
+                  <div className="fp-prow">
+                    <span>{t('paneEffPreset')}</span>
+                    <Dropdown
+                      value={
+                        !glowVals
+                          ? 'none'
+                          : String(
+                              GLOW_PT_PRESETS.reduce((best, pt) =>
+                                Math.abs(glowVals.radius / 12700 - pt) <
+                                Math.abs(glowVals.radius / 12700 - best)
+                                  ? pt
+                                  : best,
+                              ),
+                            )
+                      }
+                      ariaLabel={t('paneEffPreset')}
+                      options={[
+                        { value: 'none', label: t('paneEffNone') },
+                        ...GLOW_PT_PRESETS.map((pt) => ({
+                          value: String(pt),
+                          label: `${pt} ${t('paneFormatPt')}`,
+                        })),
+                      ]}
+                      onPick={(v) => {
+                        if (v === 'none') {
+                          sentFor(node.sourceId).glow = undefined
+                          onEffects(node.sourceId, { glow: null })
+                        } else commitGlow({ radius: ptToEmu(parseFloat(v)) })
+                      }}
+                    />
+                  </div>
+                  <div className="fp-prow">
+                    <span>{t('paneGradientColor')}</span>
+                    <ColorWell
+                      value={toHex6(glowVals?.color ?? DEFAULT_GLOW.color)}
+                      label={t('paneEffGlow')}
+                      onPick={(hex) =>
+                        debouncedEffects('glow', () =>
+                          commitGlow({
+                            color: withAlpha(hex, transparencyOf(curGlow().color)),
+                          }),
+                        )
+                      }
+                    />
+                  </div>
+                  <label className="fp-prow">
+                    <span>{t('ribbonTransparency')}</span>
+                    <PctControl
+                      value={transparencyOf(glowVals?.color ?? DEFAULT_GLOW.color)}
+                      onChange={(pct) =>
+                        debouncedEffects('glow', () =>
+                          commitGlow({ color: withAlpha(toHex6(curGlow().color), pct) }),
+                        )
+                      }
+                    />
+                  </label>
+                  {spinRow(
+                    t('paneEffSize'),
+                    fmtEmuPt(glowVals?.radius ?? 0),
+                    (raw) => {
+                      const v = parseFloat(raw)
+                      if (!Number.isNaN(v)) commitGlow({ radius: ptToEmu(Math.max(0, v)) })
+                    },
+                    (dir) =>
+                      commitGlow({ radius: Math.max(0, (glowVals?.radius ?? 0) + dir * 12700) }),
+                  )}
+                </>
+              )}
+
+              {pic && (
+                <>
+                  {secHeader(t('paneEffSoftEdge'), effSoftOpen, () => setEffSoftOpen((v) => !v))}
+                  {effSoftOpen && (
+                    <div className="fp-prow">
+                      <span>{t('paneEffPreset')}</span>
+                      <Dropdown
+                        value={
+                          softEdgePt == null
+                            ? 'none'
+                            : String(
+                                SOFT_EDGE_PT_PRESETS.reduce((best, pt) =>
+                                  Math.abs(softEdgePt - pt) < Math.abs(softEdgePt - best)
+                                    ? pt
+                                    : best,
+                                ),
+                              )
+                        }
+                        ariaLabel={t('paneEffPreset')}
+                        options={[
+                          { value: 'none', label: t('paneEffNone') },
+                          ...SOFT_EDGE_PT_PRESETS.map((pt) => ({
+                            value: String(pt),
+                            label: `${pt} ${t('paneFormatPt')}`,
+                          })),
+                        ]}
+                        onPick={(v) =>
+                          onEffects(node.sourceId, {
+                            softEdge: v === 'none' ? null : ptToEmu(parseFloat(v)),
+                          })
+                        }
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {/* Sub-tabs whose options aren't editable yet (text fill; fill&line for e.g. groups) */}
+          {((effTab === 'shape' && shapeSub === 'effects' && !(effTarget && onEffects)) ||
             (effTab === 'shape' && shapeSub === 'fill' && !fillHasContent) ||
             (effTab === 'text' && (textSub === 'fill' || textSub === 'effects'))) && (
             <div className="fp-empty">{t('paneSubNone')}</div>

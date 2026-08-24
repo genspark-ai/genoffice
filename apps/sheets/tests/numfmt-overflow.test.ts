@@ -29,8 +29,17 @@ describe('excelWidthScale', () => {
     expect(excelWidthScale('Calibri', 11, () => 8.25)).toBeCloseTo(7 / 8.25)
   })
 
-  it('never inflates a measurement', () => {
+  it('never inflates an uncalibrated fallback measurement', () => {
     expect(excelWidthScale('Calibri', 11, () => 6)).toBe(1)
+  })
+
+  it('inflates a calibrated narrower substitute up to the GDI width', () => {
+    // 96%-Carlito digit at 11pt ≈ 7.14px vs Excel's GDI 8px — Excel hashes
+    // cells our substitute would still fit (prod_016).
+    expect(excelWidthScale('Aptos Narrow', 11, () => 7.14, true)).toBeCloseTo(8 / 7.14)
+    // With the genuine font installed (no substitute registered), never
+    // inflate past the live canvas measurement.
+    expect(excelWidthScale('Aptos Narrow', 11, () => 7.14, false)).toBe(1)
   })
 
   it('leaves unknown or unset families alone', () => {

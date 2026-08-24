@@ -1,6 +1,6 @@
 # GenOffice Privacy
 
-Last updated: August 19, 2026
+Last updated: August 24, 2026
 
 GenOffice opens, edits, and saves documents locally. Document editing does not
 upload files to GenOffice. AI features require a network connection and send
@@ -35,8 +35,14 @@ Every event includes:
 - a per-process `session_id` derived from the process start time
 - `engagement_time_msec` with the fixed value `100`
 
+When available, the payload also includes `country_id`, the two-letter country
+code from the operating system's regional locale. This can differ from the
+user's physical location.
+
 The Google Analytics 4 payload also uses a random install UUID as `client_id`.
-Neither identifier is a Genspark account or email address.
+The country code is sent through GA4's country-only `user_location` field; the
+app does not send a city or region. Neither identifier is a Genspark account or
+email address.
 
 ## Network information
 

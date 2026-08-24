@@ -1,5 +1,6 @@
-import { Text } from '@univerjs/engine-render'
-import { describe, expect, it, vi } from 'vitest'
+import { CellValueType, HorizontalAlign } from '@univerjs/core'
+import { Documents, SpreadsheetSkeleton, Text } from '@univerjs/engine-render'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { installRtlTextDirectionFix, resolveBidiDirection } from '../src/renderer/rtl-text-fix'
 
@@ -62,5 +63,83 @@ describe('installRtlTextDirectionFix', () => {
     textClass.drawWith(ltr.ctx, { text: 'plain' })
     expect(seen[1]).toEqual({ direction: 'inherit', textAlign: 'start' })
     expect(ltr.events).toEqual([])
+  })
+})
+
+describe('General alignment for RTL-first text (context reading order)', () => {
+  beforeAll(() => installRtlTextDirectionFix())
+  const skeletonProto = SpreadsheetSkeleton.prototype as unknown as {
+    _calculateOverflowCell(row: number, column: number, config: unknown): boolean
+  }
+  // Minimal host: the original implementation only touches _cellData here
+  // because an undefined wrapStrategy short-circuits both overflow branches.
+  const host = { _cellData: { getValue: () => ({}) } }
+  const docSkeleton = (text: string) => ({
+    getViewModel: () => ({ getDataModel: () => ({ getBody: () => ({ dataStream: text }) }) }),
+  })
+
+  it('resolves the font-cache entry to RIGHT for Arabic-first General text', () => {
+    const config = { horizontalAlign: HorizontalAlign.UNSPECIFIED, cellData: { v: 'مرحبا' } }
+    skeletonProto._calculateOverflowCell.call(host, 0, 0, config)
+    expect(config.horizontalAlign).toBe(HorizontalAlign.RIGHT)
+  })
+
+  it('reads rich-text cells through their document skeleton', () => {
+    const config = {
+      horizontalAlign: HorizontalAlign.UNSPECIFIED,
+      cellData: { v: null, p: {} },
+      documentSkeleton: docSkeleton('نص عربي'),
+    }
+    skeletonProto._calculateOverflowCell.call(host, 0, 0, config)
+    expect(config.horizontalAlign).toBe(HorizontalAlign.RIGHT)
+  })
+
+  it('leaves Latin text, numbers, explicit alignment and rotated cells alone', () => {
+    for (const config of [
+      { horizontalAlign: HorizontalAlign.UNSPECIFIED, cellData: { v: 'latin' } },
+      { horizontalAlign: HorizontalAlign.UNSPECIFIED, cellData: { v: 42 } },
+      {
+        horizontalAlign: HorizontalAlign.UNSPECIFIED,
+        cellData: { v: 42, t: CellValueType.NUMBER },
+      },
+      { horizontalAlign: HorizontalAlign.LEFT, cellData: { v: 'مرحبا' } },
+      { horizontalAlign: HorizontalAlign.UNSPECIFIED, cellData: { v: 'مرحبا' }, vertexAngle: 45 },
+    ]) {
+      const before = config.horizontalAlign
+      skeletonProto._calculateOverflowCell.call(host, 0, 0, config)
+      expect(config.horizontalAlign).toBe(before)
+    }
+  })
+
+  it('right-aligns the Documents page offset for Arabic-first General cells', () => {
+    const proto = Documents.prototype as unknown as {
+      _horizontalHandler(
+        pageWidth: number,
+        pagePaddingLeft: number,
+        pagePaddingRight: number,
+        horizontalAlign: number,
+        vertexAngleDeg?: number,
+        centerAngleDeg?: number,
+        cellValueType?: number,
+      ): number
+    }
+    const arabicHost = { width: 200, getSkeleton: () => docSkeleton('مرحبا بالعالم') }
+    const latinHost = { width: 200, getSkeleton: () => docSkeleton('hello') }
+    const offsetArabic = proto._horizontalHandler.call(
+      arabicHost,
+      80,
+      2,
+      3,
+      HorizontalAlign.UNSPECIFIED,
+    )
+    const offsetLatin = proto._horizontalHandler.call(
+      latinHost,
+      80,
+      2,
+      3,
+      HorizontalAlign.UNSPECIFIED,
+    )
+    expect(offsetArabic).toBe(200 - 80 - 3)
+    expect(offsetLatin).toBe(2)
   })
 })

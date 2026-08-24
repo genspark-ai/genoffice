@@ -16,8 +16,14 @@ export interface MarkdownNav {
   onNavigate: (href: string) => void
 }
 
-const INLINE_RE = /(`[^`\n]+`|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|\[[^\]\n]+\]\([^\s)]+\))/g
-const LINK_RE = /^\[([^\]]+)\]\(([^\s)]+)\)$/
+// Hrefs may carry one level of balanced parens (sheet names like `Data (2)`
+// arrive as sheetnav://Data%20(2)!B2), so the href cannot simply stop at ')'.
+const HREF = /(?:[^\s()]|\([^\s()]*\))+/.source
+const INLINE_RE = new RegExp(
+  `(\`[^\`\\n]+\`|\\*\\*[^*\\n]+?\\*\\*|\\*[^*\\n]+?\\*|\\[[^\\]\\n]+\\]\\(${HREF}\\))`,
+  'g',
+)
+const LINK_RE = new RegExp(`^\\[([^\\]]+)\\]\\((${HREF})\\)$`)
 
 function renderInline(text: string, nav?: MarkdownNav): ReactNode[] {
   const out: ReactNode[] = []

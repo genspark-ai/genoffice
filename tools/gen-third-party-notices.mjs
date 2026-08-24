@@ -324,7 +324,12 @@ const FONTS = [
   [
     'GenOffice Sans KR / GenOffice Serif KR (Noto Sans/Serif CJK KR derivative)',
     'SIL OFL 1.1',
-    '© Adobe / Google, original Reserved Font Name "Noto". Subset with modified advance widths;\nrenamed per OFL 1.1.',
+    '© Adobe / Google, original Reserved Font Name "Noto". Subset with modified advance widths\nand horizontally transformed Noto outlines to match measured Korean Office-family metrics;\nrenamed per OFL 1.1. No Microsoft font outlines are included.',
+  ],
+  [
+    'GenOffice Che Latin KR (Noto Sans CJK KR derivative)',
+    'SIL OFL 1.1',
+    '© Adobe / Google, original Reserved Font Name "Noto". ASCII subset with fixed 0.5em advances\nand horizontally transformed Noto outlines; Microsoft DotumChe is used only as a metric reference.\nRenamed per OFL 1.1. No Microsoft font outlines are included.',
   ],
   [
     'Noto Naskh Arabic / Noto Sans Arabic (subset)',

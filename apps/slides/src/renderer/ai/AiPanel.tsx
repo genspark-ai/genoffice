@@ -28,7 +28,14 @@ import {
 import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { renderSlidesToPngBase64 } from '../export-render'
-import { isQcEnabled, mergeQcPages, qcSlidePage, QC_MAX_PAGES } from './slide-qc'
+import {
+  isQcEnabled,
+  isUnsupportedImageInputError,
+  mergeQcPages,
+  qcSlidePage,
+  QC_MAX_PAGES,
+  settingsSupportVision,
+} from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import { GensparkMark } from '../components/icons'
@@ -1582,7 +1589,7 @@ export function AiPanel({
         // AI Beautify sends the current slide's rendering along, so the model sees what it edits;
         // the note rides on the model instruction only — the chat bubble stays the localized preset text
         let modelInstruction = instruction
-        if (opts?.slideShot) {
+        if (opts?.slideShot && settingsSupportVision(settingsRef.current)) {
           const shot = await captureSlideShot(currentRef.current)
           if (shot) {
             images.push(shot)
@@ -1700,10 +1707,11 @@ export function AiPanel({
   }
 
   /**
-   * Post-generation layout QC: each page landed by this run gets one focused vision pass in a
-   * fresh AgentLoop (screenshot + inventory → constrained fixes via execute_slide_script).
-   * Each page's edits sit in their own history batch; if the deterministic audit says the page
-   * got worse, that batch is rolled back. Progress streams into one assistant chat entry.
+   * Post-generation layout QC: each page landed by this run gets one focused pass in a fresh
+   * AgentLoop. Vision models receive screenshot + inventory; text-only models receive only
+   * deterministic geometry evidence. Each page's edits sit in their own history batch; if the
+   * deterministic audit says the page got worse, that batch is rolled back. Progress streams
+   * into one assistant chat entry.
    */
   const runQcPass = async () => {
     const pages = qcPagesRef.current
@@ -1732,16 +1740,20 @@ export function AiPanel({
     // First kept QC batch — the run's own batch takes precedence (it is earlier,
     // so restoring it rewinds past the QC edits too)
     let qcSnapshotId: number | null = null
+    // A custom endpoint may claim generic OpenAI-compatible vision support but reject the
+    // first image. Fall back for that page and keep the rest of this pass geometry-only.
+    let forceGeometryOnly = false
     try {
       for (const page of capped) {
         if (controller.signal.aborted) break
-        const shot = await captureSlideShot(page)
-        if (!shot) {
+        const useScreenshot = !forceGeometryOnly && settingsSupportVision(settingsRef.current)
+        const shot = useScreenshot ? await captureSlideShot(page) : null
+        if (useScreenshot && !shot) {
           if (slidesRef.current[page]) lines.push(tGlobal('aiQcPageSkipped', { n: page + 1 }))
           continue
         }
         const batchOpened = await window.slidesApi.beginHistoryBatch()
-        const result = await qcSlidePage({
+        let result = await qcSlidePage({
           access,
           transport,
           pageIndex: page,
@@ -1749,10 +1761,24 @@ export function AiPanel({
           systemSuffix: aiLangDirective,
           signal: controller.signal,
         })
+        if (shot && result.error && isUnsupportedImageInputError(result.error)) {
+          forceGeometryOnly = true
+          result = await qcSlidePage({
+            access,
+            transport,
+            pageIndex: page,
+            screenshot: null,
+            systemSuffix: aiLangDirective,
+            signal: controller.signal,
+          })
+        }
         const batchId = batchOpened ? await window.slidesApi.endHistoryBatch() : null
         if (controller.signal.aborted) break
         if (result.error) {
-          lines.push(tGlobal('aiQcPageFailed', { n: page + 1, error: result.error }))
+          // QC is optional polish. Keep provider/network details in diagnostics instead of
+          // exposing a noisy raw API error in the completed generation transcript.
+          console.warn(`[slides-qc] page ${page + 1} skipped:`, result.error)
+          lines.push(tGlobal('aiQcPageSkipped', { n: page + 1 }))
         } else if (result.edited && result.postIssues > result.preIssues) {
           // The fix made the deterministic audit worse — undo this page's batch
           if (typeof batchId === 'number') {
