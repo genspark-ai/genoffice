@@ -25,6 +25,8 @@ interface AuditEntry {
   preview: string
   /** Pixels by which the text content height exceeds the box height (only meaningful when >0) */
   overflowPx: number
+  /** Pixels by which the widest laid-out line exceeds the box inner width (wrap=false lines, over-wide tokens) */
+  overflowXPx: number
 }
 
 const PREVIEW_MAX = 18
@@ -46,6 +48,7 @@ function collectEntries(nodes: RenderNode[]): AuditEntry[] {
     let hasText = false
     let preview = ''
     let overflowPx = 0
+    let overflowXPx = 0
     if (n.type === 'shape' || n.type === 'text') {
       const sn = n as ShapeRenderNode
       preview = textPreview(sn)
@@ -53,13 +56,38 @@ function collectEntries(nodes: RenderNode[]): AuditEntry[] {
       if (sn.text && hasText) {
         const inner = h - sn.text.insets.t - sn.text.insets.b
         overflowPx = Math.round(sn.text.contentHeight - inner)
+        const innerW = w - sn.text.insets.l - sn.text.insets.r
+        // Laid-out right edge of the widest line (run.x already includes marL/indent/alignment,
+        // so the content-area comparison below is exact). Catches wrap=false lines and
+        // unbreakable tokens wider than the box -- the height-only check misses both, and
+        // the text then overlaps whatever sits next to it.
+        const widest = sn.text.lines.reduce(
+          (acc, ln) =>
+            Math.max(
+              acc,
+              ln.runs.reduce((m, r) => Math.max(m, r.x + r.widthPx), -Infinity),
+            ),
+          -Infinity,
+        )
+        overflowXPx = Math.round(Number.isFinite(widest) ? widest - innerW : 0)
       }
     } else if (n.type === 'group') {
       // If any child in the group has text, treat it as text content for overlap detection
       hasText = groupHasText(n as GroupRenderNode)
       preview = '(group)'
     }
-    out.push({ id: n.sourceId, type: n.type, x, y, w, h, hasText, preview, overflowPx })
+    out.push({
+      id: n.sourceId,
+      type: n.type,
+      x,
+      y,
+      w,
+      h,
+      hasText,
+      preview,
+      overflowPx,
+      overflowXPx,
+    })
   }
   return out
 }
@@ -123,6 +151,18 @@ export function auditSlideLayout(slide: RenderSlide): string[] {
     if (e.overflowPx > OVERFLOW_TOLERANCE_PX) {
       issues.push(
         `Text overflow: ${label(e)} content exceeds the box height by ${e.overflowPx}px (make the box taller or reduce the font size)`,
+      )
+    }
+  }
+
+  // 2b. Horizontal overflow: a line wider than the box (wrap=false, or a single token wider
+  // than the available width) spills over the box and overlaps neighbors. PowerPoint renders
+  // nowrap overflow as-is, so this is an audit-only signal that lets the AI widen the box,
+  // shrink the font, or enable wrapping instead of leaving invisible overlap.
+  for (const e of entries) {
+    if (e.overflowXPx > OVERFLOW_TOLERANCE_PX) {
+      issues.push(
+        `Text overflow (width): ${label(e)} content exceeds the box width by ${e.overflowXPx}px (widen the box, reduce the font size, or turn on wrapping)`,
       )
     }
   }
