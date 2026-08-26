@@ -102,6 +102,11 @@ export interface DeckAccess {
   /** Survey: shows a card with options and waits for the user's choices, returning an answer summary. */
   askClarification?(questions: ClarifyQuestion[]): Promise<{ answers: string; cancelled?: boolean }>
   /**
+   * Overwrite the speaker notes of a page (persisted into the pptx notesSlide part,
+   * undoable, marks the document dirty). Empty text clears the notes.
+   */
+  setSpeakerNotes?(slideIndex: number, text: string): Promise<boolean>
+  /**
    * In-tool image search (embedded in the tool):
    * given English keywords, returns an array of real image URLs (at most N).
    * On search failure returns an empty array (fail-open; doesn't block the main generation path).
@@ -285,6 +290,7 @@ Native tools (only for modifying/refining existing pages, not for generating fro
 - add_slide clones a layout into a new page (layout-preserving blank page); add_text_box lays out text; add_shape makes color blocks/accent bars (kind supports any OOXML preset geometry rect/roundRect/ellipse/star5…).
 - For data display use add_chart (native bar/line/pie charts); for structured comparisons use add_table (cells can pre-fill text; later edit_table_cell edits cells, edit_table_structure adds/removes rows/columns); for flows/cycles/hierarchies/lists use add_smartart.
 - set_slide_background sets a solid background (slideIndex=-1 for all pages); on dark backgrounds remember to lighten the text.
+- set_speaker_notes writes the page's speaker notes (演讲者备注/备注, shown in presenter view and saved into the .pptx); it does not touch canvas content. Use it when the user asks to add/update/clear notes for a page.
 - Refine page by page, element by element; 2–4 elements per page is enough — fewer beats crowded.
 - Keep replies short, say what you did; don't recite tool results back to the user.
 
@@ -1171,6 +1177,22 @@ const TOOLS: AgentToolDef[] = [
         },
       },
       required: ['ops'],
+    },
+  },
+  {
+    name: 'set_speaker_notes',
+    description:
+      "Overwrite the speaker notes (演讲者备注/备注) of a page. Notes are shown in presenter view and saved into the .pptx notesSlide part; they do not affect canvas content. text replaces the page's current notes entirely; pass text:\"\" to clear them. Call when the user asks to add/update/remove notes for a page.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slideIndex: { type: 'integer', description: 'Page number (0-based)' },
+        text: {
+          type: 'string',
+          description: 'Full speaker notes text; paragraphs separated by newlines. Empty string clears the notes.',
+        },
+      },
+      required: ['slideIndex', 'text'],
     },
   },
   {
@@ -3379,6 +3401,22 @@ async function executeTool(
           (failLines ? `\nSkipped (per_op):\n${failLines}` : ''),
         mutated: true,
         summary: t('aiSumApplyOps', { count: r.records?.length ?? 0 }),
+      }
+    }
+
+    case 'set_speaker_notes': {
+      const idx = Number(call.input.slideIndex)
+      if (!slides[idx])
+        return fail(t('aiFailSpeakerNotes'), `slideIndex out of range (0-${slides.length - 1})`)
+      const text = String(call.input.text ?? '')
+      const ok = await access.setSpeakerNotes?.(idx, text)
+      if (!ok) return fail(t('aiFailSpeakerNotes'), 'Writing speaker notes failed')
+      return {
+        output: text
+          ? `Wrote speaker notes for page ${idx + 1} (${text.length} characters).`
+          : `Cleared speaker notes for page ${idx + 1}.`,
+        mutated: true,
+        summary: t('aiSumSpeakerNotes', { n: idx + 1 }),
       }
     }
 

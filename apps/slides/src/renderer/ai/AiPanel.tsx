@@ -294,6 +294,8 @@ interface AiPanelProps {
   onUndo?: () => void
   /** Callback to update the path after AI generation lands on disk (title bar sync) */
   onPathChange?: (path: string) => void
+  /** Overwrite a page's speaker notes (persisted to the pptx, marks the deck dirty) */
+  onSetSpeakerNotes?: (slideIndex: number, text: string) => Promise<boolean>
   /** Generation progress callback (for the canvas top progress bar) */
   onDeckProgress?: (event: DeckProgressEvent | null) => void
   /** Absolute path of the currently open file (for chat history persistence) */
@@ -383,6 +385,7 @@ export function AiPanel({
   onExpand,
   onCollapse,
   onPathChange,
+  onSetSpeakerNotes,
   onDeckProgress,
   currentFilePath,
   editQueue,
@@ -497,6 +500,8 @@ export function AiPanel({
   applySlideRef.current = applySlide
   const applyDeckRef = useRef(applyDeck)
   applyDeckRef.current = applyDeck
+  const onSetSpeakerNotesRef = useRef(onSetSpeakerNotes)
+  onSetSpeakerNotesRef.current = onSetSpeakerNotes
   const onPathChangeRef = useRef(onPathChange)
   onPathChangeRef.current = onPathChange
   const onDeckProgressRef = useRef(onDeckProgress)
@@ -908,6 +913,7 @@ export function AiPanel({
       getSelectedIds: () => (queueRunResolverRef.current ? [] : selectedRef.current),
       applySlide: (i, updated) => applySlideRef.current(i, updated),
       applyDeck: (all, goTo) => applyDeckRef.current(all, goTo),
+      setSpeakerNotes: (i, text) => onSetSpeakerNotesRef.current?.(i, text) ?? Promise.resolve(false),
       landGeneratedPages: async (
         pageMarkers: string[],
         mode?: 'replace' | 'append' | 'insert_at',

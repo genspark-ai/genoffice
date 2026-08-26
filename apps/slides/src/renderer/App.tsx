@@ -3057,6 +3057,17 @@ export function App() {
                   setPath(p)
                   setDirty(false)
                 }}
+                onSetSpeakerNotes={(i, text) =>
+                  flushNotes()
+                    .then(() => window.slidesApi.setNotes({ slideIndex: i, text }))
+                    .then((ok) => {
+                      if (ok) {
+                        setDirty(true)
+                        setAnnotationsNonce((n) => n + 1)
+                      }
+                      return ok
+                    })
+                }
                 currentFilePath={path}
                 editQueue={editQueue}
                 onQueueEditInstruction={(key, instruction) =>
