@@ -81,8 +81,9 @@ export interface AiStreamRequest {
 
 export interface AiStreamChunk {
   requestId: string
-  /** 'ping' = wire-level keepalive so the renderer can tell a live stream from a dead one */
-  type: 'delta' | 'tool-call' | 'done' | 'error' | 'ping'
+  /** 'ping' = wire-level keepalive so the renderer can tell a live stream from a dead one;
+   * 'reasoning' = model thinking delta (text carries it), stored for interleaved-thinking echo */
+  type: 'delta' | 'reasoning' | 'tool-call' | 'done' | 'error' | 'ping'
   text?: string
   /** complete parsed tool call (emitted once its arguments finish streaming) */
   toolCall?: AgentToolCall

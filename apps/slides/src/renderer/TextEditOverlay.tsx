@@ -111,38 +111,6 @@ function browserFontBox(
   return m
 }
 
-/** Where the canvas actually draws the baseline, relative to the engine's baselineY.
- * The Konva adapter positions Text by top = baselineY − 0.8em, and Konva paints with
- * canvas2d 'middle' semantics — so the visible baseline lands at top + emHeightAscent,
- * i.e. engineBaseline + (emHeightAscent − 0.8em). ≈0 for Latin sans (the 0.8 was tuned
- * for it) but several px for CJK/serif metrics; the editor must match the pixels. */
-let baselineDropCtx: CanvasRenderingContext2D | null = null
-const baselineDropCache = new Map<string, number>()
-function konvaBaselineDrop(
-  family: string,
-  sizePx: number,
-  bold?: boolean,
-  italic?: boolean,
-): number {
-  const key = `${family}|${Math.round(sizePx * 10)}|${bold ? 'b' : ''}${italic ? 'i' : ''}`
-  const hit = baselineDropCache.get(key)
-  if (hit !== undefined) return hit
-  baselineDropCtx ??= document.createElement('canvas').getContext('2d')
-  if (!baselineDropCtx) return 0
-  const ctx = baselineDropCtx
-  ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${sizePx}px ${family}`
-  // Same ink measured from both baselines: the ascent difference IS the exact distance
-  // from the 'middle' anchor down to the alphabetic baseline for this font (measuring
-  // beats modelling — Chromium derives 'middle' from per-font metrics)
-  ctx.textBaseline = 'alphabetic'
-  const a1 = ctx.measureText('Hg').actualBoundingBoxAscent
-  ctx.textBaseline = 'middle'
-  const a2 = ctx.measureText('Hg').actualBoundingBoxAscent
-  const drop = a1 > 0 || a2 > 0 ? sizePx / 2 + (a1 - a2) - 0.8 * sizePx : 0
-  baselineDropCache.set(key, drop)
-  return drop
-}
-
 /**
  * Layout lines → the editor's initial DOM: one <div> per model paragraph (data-src-para records
  * the source paragraph index, with paragraph alignment); wrap/word-split fragments merged back
@@ -205,32 +173,20 @@ export function populateEditorDom(
     const indentPx = (!vertical && first.indentPx) || 0
     if (indentPx && !first.runs.some((r) => r.isBullet)) p.style.textIndent = `${indentPx}px`
     // ── Glyph-position fidelity vs the canvas renderer ──
-    // Vertical: the canvas draws the dominant run's baseline at
-    // lineTop + engineAscent + konvaBaselineDrop (the adapter's 0.8em top approximation
-    // filtered through Konva's 'middle'-baseline painting); CSS puts the DOM baseline at
+    // Vertical: the canvas paints the baseline exactly at the engine's position,
+    // lineTop + leadAbove + ascent (the Konva adapter converts baselineY to a node top
+    // with the measured per-font 'middle'-baseline offset); CSS puts the DOM baseline at
     // half-leading + browser ascent. The difference is several px on CJK/serif or
     // lnSpc ≠ 100% text and reads as the text jumping when editing starts. Measure both
     // sides and cancel the difference with a relative offset (flow is unaffected).
     let engineAscent = 0
     let domBaseline = 0
-    let dominant: GlyphRun | null = null
     for (const r of first.runs) {
       const a = r.ascentPx ?? r.fontSizePx * 0.8
-      if (a > engineAscent) {
-        engineAscent = a
-        dominant = r
-      }
+      if (a > engineAscent) engineAscent = a
     }
-    const drop = dominant
-      ? konvaBaselineDrop(
-          displayFontFamily(dominant.fontFamily ?? ''),
-          dominant.fontSizePx,
-          dominant.bold,
-          dominant.italic,
-        )
-      : 0
     // lnSpc>100%: the canvas pins glyphs to the slot bottom (leadAbove below the line top)
-    const canvasBaseline = (first.leadAbove ?? 0) + engineAscent + drop
+    const canvasBaseline = (first.leadAbove ?? 0) + engineAscent
     const participants: Array<{ family: string; size: number; bold?: boolean; italic?: boolean }> =
       first.runs.map((r) => ({
         family: displayFontFamily(r.fontFamily ?? ''),

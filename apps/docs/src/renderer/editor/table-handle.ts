@@ -31,6 +31,23 @@ function tablePosAt(view: EditorView, coords: { left: number; top: number }): nu
   return null
 }
 
+/** DOM hit-testing remains reliable for CSS-floated tables where posAtCoords may resolve to wrapped text. */
+function tablePosFromTarget(view: EditorView, target: EventTarget | null): number | null {
+  const element = target instanceof Element ? target : null
+  const table = element?.closest('table.doc-table')
+  if (!(table instanceof HTMLElement) || !view.dom.contains(table)) return null
+  let found: number | null = null
+  view.state.doc.descendants((node, pos) => {
+    if (found !== null) return false
+    if (node.type.name === 'docTable' && view.nodeDOM(pos) === table) {
+      found = pos
+      return false
+    }
+    return true
+  })
+  return found
+}
+
 const MOVE_SVG =
   '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
   'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -59,6 +76,8 @@ function tableHandlePlugin(): Plugin {
       }
 
       let tablePos: number | null = null
+      let suppressClick = false
+      let stopFloatDrag: (() => void) | null = null
 
       const hideHandle = () => {
         handle.style.display = 'none'
@@ -83,7 +102,9 @@ function tableHandlePlugin(): Plugin {
 
       const onMouseMove = (event: MouseEvent) => {
         if (!view.editable) return
-        const pos = tablePosAt(view, { left: event.clientX, top: event.clientY })
+        const pos =
+          tablePosFromTarget(view, event.target) ??
+          tablePosAt(view, { left: event.clientX, top: event.clientY })
         if (pos === null) {
           // moving toward the handle itself must not hide it (it sits outside the table box)
           if (tablePos !== null) scheduleHide()
@@ -105,6 +126,10 @@ function tableHandlePlugin(): Plugin {
       }
 
       const onClick = () => {
+        if (suppressClick) {
+          suppressClick = false
+          return
+        }
         const selection = selectTable()
         if (!selection) return
         view.dispatch(view.state.tr.setSelection(selection))
@@ -115,12 +140,77 @@ function tableHandlePlugin(): Plugin {
         if (!event.dataTransfer) return
         const selection = selectTable()
         if (!selection) return event.preventDefault()
+        if (selection.node.attrs.tblFloat === 'left' || selection.node.attrs.tblFloat === 'right') {
+          event.preventDefault()
+          return
+        }
         view.dispatch(view.state.tr.setSelection(selection))
         view.dragging = { slice: selection.content(), move: true }
         event.dataTransfer.effectAllowed = 'move'
         event.dataTransfer.setData('text/plain', ' ')
         const dom = view.nodeDOM(selection.from)
         if (dom instanceof HTMLElement) event.dataTransfer.setDragImage(dom, 0, 0)
+      }
+
+      // A floating table uses the same drag-to-position interaction as Word's
+      // anchored pictures. In-flow tables keep ProseMirror's native block move.
+      const onMouseDown = (event: MouseEvent) => {
+        if (event.button !== 0 || tablePos === null) return
+        const dragPos = tablePos
+        const node = view.state.doc.nodeAt(dragPos)
+        if (!node || (node.attrs.tblFloat !== 'left' && node.attrs.tblFloat !== 'right')) return
+        event.preventDefault()
+        event.stopPropagation()
+
+        const visual = view.nodeDOM(dragPos)
+        if (!(visual instanceof HTMLElement)) return
+        const zoomEl = document.querySelector('.doc-zoom') as HTMLElement | null
+        const zoom = zoomEl ? parseFloat(getComputedStyle(zoomEl).zoom || '1') || 1 : 1
+        const startX = event.clientX
+        const startY = event.clientY
+        const initialX = Number(node.attrs.tblFloatXTwips) || 0
+        const initialY = Number(node.attrs.tblFloatYTwips) || 0
+        const priorTransform = visual.style.transform
+
+        const cleanup = () => {
+          window.removeEventListener('mousemove', onMove)
+          window.removeEventListener('mouseup', onUp)
+          stopFloatDrag = null
+        }
+        const delta = (e: MouseEvent) => ({
+          x: (e.clientX - startX) / zoom,
+          y: (e.clientY - startY) / zoom,
+        })
+        const onMove = (e: MouseEvent) => {
+          const { x, y } = delta(e)
+          visual.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`
+        }
+        const onUp = (e: MouseEvent) => {
+          cleanup()
+          visual.style.transform = priorTransform
+          const { x, y } = delta(e)
+          if (Math.hypot(x, y) < 3) return
+          suppressClick = true
+          window.setTimeout(() => {
+            suppressClick = false
+          }, 0)
+          const current = view.state.doc.nodeAt(dragPos)
+          if (!current || current.type.name !== 'docTable') return
+          view.dispatch(
+            view.state.tr.setNodeMarkup(dragPos, undefined, {
+              ...current.attrs,
+              tblFloatSource: current.attrs.tblFloat,
+              tblFloatSuppressed: false,
+              tblFloatXTwips: Math.round(initialX + x * 15),
+              tblFloatYTwips: Math.round(initialY + y * 15),
+              tblFloatEdited: true,
+            }),
+          )
+        }
+        stopFloatDrag?.()
+        stopFloatDrag = cleanup
+        window.addEventListener('mousemove', onMove)
+        window.addEventListener('mouseup', onUp)
       }
 
       // the handle floats outside the table's corner, so reaching it always
@@ -147,6 +237,7 @@ function tableHandlePlugin(): Plugin {
       handle.addEventListener('mousemove', (e) => e.stopPropagation())
       handle.addEventListener('mouseenter', cancelHide)
       handle.addEventListener('mouseleave', scheduleHide)
+      handle.addEventListener('mousedown', onMouseDown)
       handle.addEventListener('click', onClick)
       handle.addEventListener('dragstart', onDragStart)
       document.addEventListener('scroll', onScroll, true)
@@ -157,6 +248,7 @@ function tableHandlePlugin(): Plugin {
           if (!prevState.doc.eq(view.state.doc)) hideHandle()
         },
         destroy() {
+          stopFloatDrag?.()
           cancelHide()
           view.dom.removeEventListener('mousemove', onMouseMove)
           view.dom.removeEventListener('mouseleave', scheduleHide)

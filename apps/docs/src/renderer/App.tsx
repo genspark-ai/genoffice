@@ -275,10 +275,48 @@ function posFromAnchor(view: Editor['view'], anchor: LineAnchor): number | undef
 
 /** Clean pasted Word/web HTML: mso conditional comments, <o:p>, and unwrapping <li><p>x</p></li> */
 function cleanPastedHtml(html: string): string {
-  return html
-    .replace(/<!--\[if[\s\S]*?<!\[endif\]-->/g, '')
-    .replace(/<o:p>[\s\S]*?<\/o:p>/g, '')
-    .replace(/<li([^>]*)>\s*<p[^>]*>([\s\S]*?)<\/p>\s*<\/li>/g, '<li$1>$2</li>')
+  return unwrapSingleCellTable(
+    html
+      .replace(/<!--\[if[\s\S]*?<!\[endif\]-->/g, '')
+      .replace(/<o:p>[\s\S]*?<\/o:p>/g, '')
+      .replace(/<li([^>]*)>\s*<p[^>]*>([\s\S]*?)<\/p>\s*<\/li>/g, '<li$1>$2</li>'),
+  )
+}
+
+/**
+ * Word parity: pasting a copy of a SINGLE spreadsheet cell inserts its
+ * content as text, not a 1x1 table (alpha ledger r146 — a lone cell copied
+ * from Sheets/Excel pasted into Docs as a table and flipped the ribbon into
+ * table tools). Only a payload whose entire content is one table with one
+ * cell unwraps; anything else — multi-cell tables, tables mixed with prose —
+ * stays intact.
+ */
+function unwrapSingleCellTable(html: string): string {
+  if (!/<table/i.test(html)) return html
+  try {
+    const doc = new window.DOMParser().parseFromString(html, 'text/html')
+    const body = doc.body
+    const tables = body.querySelectorAll('table')
+    if (tables.length !== 1) return html
+    const table = tables[0]!
+    // The table must be the only real content of the paste. Text equality
+    // covers prose ANYWHERE outside the table — including inside wrappers
+    // that also contain it — and Element.textContent excludes HTML comments,
+    // so Excel's StartFragment markers don't block the unwrap (bugbot).
+    if ((body.textContent ?? '').trim() !== (table.textContent ?? '').trim()) return html
+    // text-less content outside the table (images, separators) also keeps it
+    if (
+      [...body.querySelectorAll('img,svg,video,hr')].some((element) => !table.contains(element))
+    ) {
+      return html
+    }
+    const cells = table.querySelectorAll('td,th')
+    if (cells.length !== 1) return html
+    if (cells[0]!.querySelector('table')) return html
+    return cells[0]!.innerHTML
+  } catch {
+    return html
+  }
 }
 
 /** All runs a footnote/endnote reference may live in: paragraph runs, plus table
@@ -1537,6 +1575,8 @@ export function App() {
   // for real-device verification: trigger export directly via CDP (same as __pageDebug)
   useEffect(() => {
     ;(window as unknown as Record<string, unknown>).__exportPdf = exportPdf
+    ;(window as unknown as Record<string, unknown>).__openPagePreview = () =>
+      setShowPagePreview(true)
   }, [exportPdf])
 
   useEffect(() => {

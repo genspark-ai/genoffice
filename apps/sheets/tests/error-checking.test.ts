@@ -6,6 +6,7 @@ import {
   scanStreamedWorkbookErrors,
   type SheetError,
 } from '../src/renderer/error-checking'
+import { FILE_READ_BATCH_CELLS, MAX_SCAN_CELLS } from '../src/renderer/ai/workbook-search'
 import { ensureLazyRangeLoaded, readSheetRangeMapped } from '../src/renderer/univer-sync'
 import type { LazyWorkbookState } from '../src/renderer/univer-state'
 
@@ -154,6 +155,55 @@ describe('scanStreamedWorkbookErrors', () => {
     expect(scan.errors).toHaveLength(0)
     expect(scan.truncated).toBe(true)
   })
+
+  it('reads back journal formula results and reports their errors', async () => {
+    const lazyState = state()
+    lazyState.editJournal.cells.set(
+      's1',
+      new Map([['0', { row: 3, column: 1, value: null, formula: '=1/0', hasValue: true }]]),
+    )
+    mockRead.mockImplementation(async () => mapped([]))
+    const scan = await scanStreamedWorkbookErrors(lazyState, {
+      resolveFormulaValue: () => '#DIV/0!',
+    })
+    expect(scan.errors).toEqual([{ sheetId: 's1', row: 3, column: 1, value: '#DIV/0!' }])
+  })
+
+  it('does not let style-only journal entries hide file errors', async () => {
+    const lazyState = state()
+    lazyState.editJournal.cells.set(
+      's1',
+      new Map([['0', { row: 20, column: 2, value: null, hasValue: false }]]),
+    )
+    mockRead.mockImplementation(async (_state, sheetId) =>
+      sheetId === 's1' ? mapped([{ row: 20, column: 2, value: '#VALUE!' }]) : mapped([]),
+    )
+    const scan = await scanStreamedWorkbookErrors(lazyState)
+    expect(scan.errors).toEqual([{ sheetId: 's1', row: 20, column: 2, value: '#VALUE!' }])
+  })
+
+  it('follows live membership: session-added sheets scanned, deleted ones skipped', async () => {
+    const lazyState = state()
+    lazyState.editJournal.cells.set(
+      's3',
+      new Map([['0', { row: 1, column: 0, value: '#REF!', hasValue: true }]]),
+    )
+    mockRead.mockImplementation(async () => mapped([]))
+    const scan = await scanStreamedWorkbookErrors(lazyState, { liveSheetIds: ['s2', 's3'] })
+    expect(scan.errors).toEqual([{ sheetId: 's3', row: 1, column: 0, value: '#REF!' }])
+    // s1 was deleted this session: its file pages are never read.
+    expect(mockRead.mock.calls.every(([, sheetId]) => sheetId === 's2')).toBe(true)
+  })
+
+  it('stops at the scan-cell budget instead of paging the whole file', async () => {
+    const lazyState = state()
+    ;(lazyState.file.sheets as { rowCount: number }[])[0]!.rowCount = 300_000
+    mockRead.mockImplementation(async () => mapped([]))
+    const scan = await scanStreamedWorkbookErrors(lazyState)
+    expect(scan.truncated).toBe(true)
+    const cellsPerBatch = Math.floor(FILE_READ_BATCH_CELLS / 4) * 4
+    expect(mockRead).toHaveBeenCalledTimes(Math.ceil(MAX_SCAN_CELLS / cellsPerBatch))
+  })
 })
 
 describe('runStreamedErrorCheck', () => {
@@ -245,5 +295,26 @@ describe('runStreamedErrorCheck', () => {
     expect(
       harnessData.setMessage.mock.calls.filter(([text]) => text === 'appCheckingErrors'),
     ).toHaveLength(1)
+  })
+
+  it('bails out when the workbook is swapped mid-scan', async () => {
+    const harnessData = harness(state(), [])
+    mockRead.mockImplementation(async () => {
+      harnessData.lazyWorkbookRef.current = state() // file switch during the paged read
+      return mapped([{ row: 300, column: 0, value: '#DIV/0!' }])
+    })
+    await runStreamedErrorCheck(harnessData)
+    expect(mockEnsure).not.toHaveBeenCalled()
+    expect(harnessData.workbook.setActiveSheet).not.toHaveBeenCalled()
+    // Only the initial scanning status — no stale found/not-found result.
+    expect(harnessData.setMessage).toHaveBeenCalledTimes(1)
+    // The in-flight guard is released: the new workbook scans normally.
+    mockRead.mockImplementation(async () => mapped([]))
+    await runStreamedErrorCheck(harnessData)
+    expect(harnessData.setMessage.mock.calls.map(([text]) => text)).toEqual([
+      'appCheckingErrors',
+      'appCheckingErrors',
+      'appNoErrorsFound',
+    ])
   })
 })

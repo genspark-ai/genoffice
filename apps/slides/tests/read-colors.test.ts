@@ -86,10 +86,10 @@ const slideOf = (nodes: RenderNode[]): RenderSlide => ({
   nodes,
 })
 
-const access = (slide: RenderSlide): DeckAccess => ({
+const access = (slide: RenderSlide, selectedIds: string[] = []): DeckAccess => ({
   getSlides: () => [slide],
   getCurrent: () => 0,
-  getSelectedIds: () => [],
+  getSelectedIds: () => selectedIds,
   applySlide: () => {},
   applyDeck: () => {},
   fitWidthPx: 1280,
@@ -157,6 +157,27 @@ describe('deck outline main fills', () => {
     const slide = slideOf([picture('pic', box(0, 0, 100, 100))])
     const skill = createSlidesSkill(access(slide))
     expect(skill.buildContext!()).not.toContain('main fills')
+  })
+
+  it('reports a canvas source-id selection with the durable id shown in the outline', () => {
+    const title = {
+      ...shape('source-title', box(0, 0, 500, 100), {
+        runs: [{ text: 'Main title', color: '#FFFFFF' }],
+      }),
+      durableId: 'e_title',
+    }
+    const subtitle = {
+      ...shape('source-subtitle', box(0, 120, 500, 60), {
+        runs: [{ text: 'Subtitle below', color: '#FFFFFF' }],
+      }),
+      durableId: 'e_subtitle',
+    }
+    const outline = createSlidesSkill(access(slideOf([title, subtitle]), ['source-title']))
+      .buildContext!()
+    expect(outline).toContain('User selected elements: e_title')
+    expect(outline).not.toContain('User selected elements: source-title')
+    expect(outline).toContain('- e_title | shape | "Main title"')
+    expect(outline).toContain('- e_subtitle | shape | "Subtitle below"')
   })
 })
 

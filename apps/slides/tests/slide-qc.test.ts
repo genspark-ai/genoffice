@@ -14,6 +14,7 @@ import {
   qcSlidePage,
   settingsSupportVision,
 } from '../src/renderer/ai/slide-qc'
+import { defaultAiSettings, type AiProviderId } from '@genoffice/ai-provider'
 import type { DeckAccess } from '../src/renderer/ai/slides-skill'
 
 const access: DeckAccess = {
@@ -103,10 +104,22 @@ describe('isQcEnabled', () => {
 })
 
 describe('vision capability fallback', () => {
-  it('does not send screenshots to providers marked as text-only', () => {
-    expect(settingsSupportVision({ provider: 'deepseek' })).toBe(false)
-    expect(settingsSupportVision({ provider: 'glm' })).toBe(false)
-    expect(settingsSupportVision({ provider: 'gemini' })).toBe(true)
+  it('uses the selected model when a provider mixes text and vision models', () => {
+    const withProvider = (provider: AiProviderId) => ({ ...defaultAiSettings(), provider })
+    const deepseek = withProvider('deepseek')
+    expect(settingsSupportVision(deepseek)).toBe(false)
+    deepseek.providers.deepseek.model = 'deepseek-v4-flash-vision-exp'
+    expect(settingsSupportVision(deepseek)).toBe(true)
+    expect(settingsSupportVision(withProvider('glm'))).toBe(false)
+    expect(settingsSupportVision(withProvider('gemini'))).toBe(true)
+  })
+
+  it('does not send screenshots to text-only models under a vision-capable provider', () => {
+    const settings = defaultAiSettings()
+    settings.providers.genspark.model = 'deep-seek-v4-flash'
+    expect(settingsSupportVision(settings)).toBe(false)
+    settings.providers.genspark.model = 'claude-opus-4-7'
+    expect(settingsSupportVision(settings)).toBe(true)
   })
 
   it('recognizes image-capability errors from optimistic custom endpoints', () => {

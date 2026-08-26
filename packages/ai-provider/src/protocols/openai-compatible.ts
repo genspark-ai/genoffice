@@ -2,6 +2,7 @@ import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent
 import { aiFetch } from '../fetch'
 import { httpBodyDetail } from '../http-error'
 import { gensparkAttributionHeaders } from '../providers'
+import { modelEchoesReasoning } from '../registry'
 import type { AiChatResponse, AiProviderConfig } from '../types'
 import { createStreamWatchdog, type StreamWatchdog } from '../watchdog'
 import {
@@ -13,7 +14,11 @@ import {
   type StreamCallbacks,
 } from './shared'
 
-function openAiMessages(system: string, messages: AgentMessage[]): unknown[] {
+function openAiMessages(
+  system: string,
+  messages: AgentMessage[],
+  echoReasoning: boolean,
+): unknown[] {
   const out: unknown[] = [{ role: 'system', content: system }]
   for (const m of messages) {
     if (m.role === 'user') {
@@ -38,6 +43,7 @@ function openAiMessages(system: string, messages: AgentMessage[]): unknown[] {
       out.push({
         role: 'assistant',
         content: m.text || (hasTools ? null : '(no content)'),
+        ...(echoReasoning && m.reasoning ? { reasoning_content: m.reasoning } : {}),
         ...(hasTools
           ? {
               tool_calls: m.toolCalls!.map((call) => ({
@@ -63,6 +69,7 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
     choices?: Array<{
       message?: {
         content?: string | null
+        reasoning_content?: string
         tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>
       }
       finish_reason?: string | null
@@ -77,6 +84,7 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
   if (msg.error) throw new Error(sseErrorText(msg.error, 'Model error'))
   const choice = msg.choices?.[0]
   let emitted = false
+  if (choice?.message?.reasoning_content) cb.onReasoningDelta?.(choice.message.reasoning_content)
   if (choice?.message?.content) {
     emitted = true
     cb.onDelta(choice.message.content)
@@ -104,6 +112,8 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
 /** Per-endpoint request shaping resolved from the provider registry. */
 export interface OpenAiRequestOptions {
   omitTemperature?: boolean | undefined
+  /** send the output cap as OpenAI's renamed `max_completion_tokens` (GPT-5.x/o-series 400 on `max_tokens`) */
+  useMaxCompletionTokens?: boolean | undefined
   /** vendor-specific fields merged into the request body (e.g. DeepSeek's `thinking`) */
   bodyExtras?: Record<string, unknown> | undefined
 }
@@ -149,8 +159,10 @@ async function openAiCompatibleTurn(
     },
     body: JSON.stringify({
       model: config.model,
-      max_tokens: maxTokens,
-      messages: openAiMessages(system, messages),
+      ...(options.useMaxCompletionTokens
+        ? { max_completion_tokens: maxTokens }
+        : { max_tokens: maxTokens }),
+      messages: openAiMessages(system, messages, modelEchoesReasoning(config.model)),
       ...(tools.length > 0
         ? {
             tools: tools.map((t) => ({
@@ -212,6 +224,9 @@ async function openAiCompatibleTurn(
         choices?: Array<{
           delta?: {
             content?: string
+            /** DeepSeek/MiniMax native and LiteLLM-normalized thinking stream; OpenRouter uses `reasoning` */
+            reasoning_content?: string
+            reasoning?: string
             tool_calls?: Array<{
               index: number
               id?: string
@@ -228,6 +243,8 @@ async function openAiCompatibleTurn(
     if (event.error) throw new Error(sseErrorText(event.error, 'Model stream error'))
     const choice = event.choices?.[0]
     if (!choice) continue
+    const reasoning = choice.delta?.reasoning_content ?? choice.delta?.reasoning
+    if (typeof reasoning === 'string' && reasoning) cb.onReasoningDelta?.(reasoning)
     if (choice.delta?.content) {
       emitted = true
       cb.onDelta(choice.delta.content)

@@ -75,10 +75,10 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'deepseek',
     label: 'DeepSeek',
-    // V4 ids per api-docs.deepseek.com (2026-08). The deepseek-chat /
-    // deepseek-reasoner aliases were retired 2026-07-24; thinking mode is now
-    // a request parameter, so both ids drive the tool-calling agent loop.
-    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+    // V4 ids per api-docs.deepseek.com (2026-08). Vision Exp is available
+    // through the normal DeepSeek API key; indirect-route aliases such as
+    // `-openrouter` do not belong in this direct-provider list.
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'],
     defaultModel: 'deepseek-v4-pro',
     keyPlaceholder: 'sk-...',
   },

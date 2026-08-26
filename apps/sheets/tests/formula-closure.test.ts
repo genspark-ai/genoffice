@@ -10,6 +10,7 @@ import {
   shiftPinnedCells,
   type ClosureSheetInput,
 } from '../src/renderer/formula-closure'
+import { formulaKeepsCache } from '../src/renderer/univer-sync'
 
 const sheet = (
   id: string,
@@ -69,6 +70,21 @@ describe('containsUnresolvedNames', () => {
     expect(containsUnresolvedNames('IF(B18>0,B18*الافتراضات!$B$30,0)')).toBe(false)
     expect(containsUnresolvedNames('NPV(الافتراضات!$B$31,C16:G16)+B18')).toBe(false)
     expect(containsUnresolvedNames('合計*2')).toBe(true)
+  })
+})
+
+describe('formulaKeepsCache', () => {
+  it('keeps the cached value for Google Sheets __xludf exports (prod_016)', () => {
+    // Recalculating turns the float-repr fallback literal (46235.0) into a
+    // string the numfmt layer skips; the cached <v> is the computed value.
+    expect(formulaKeepsCache('IFERROR(__xludf.DUMMYFUNCTION("""COMPUTED_VALUE"""),46235.0)')).toBe(
+      true,
+    )
+    expect(formulaKeepsCache('IFERROR(__xludf.DUMMYFUNCTION("X"),"✖")')).toBe(true)
+  })
+
+  it('recalculates ordinary formulas', () => {
+    expect(formulaKeepsCache('SUM(A1:A5)')).toBe(false)
   })
 })
 

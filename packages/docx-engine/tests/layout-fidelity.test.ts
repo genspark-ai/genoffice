@@ -157,3 +157,52 @@ describe('settings.xml layout flags', () => {
     expect(doc.defaultTabStopTwips).toBe(709)
   })
 })
+
+describe('w:suppressAutoHyphens', () => {
+  const stylesWith = (docDefaultsPPr: string, styleExtra = '') =>
+    XML_DECL +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    `<w:docDefaults><w:pPrDefault><w:pPr>${docDefaultsPPr}</w:pPr></w:pPrDefault></w:docDefaults>` +
+    styleExtra +
+    '</w:styles>'
+
+  it('pPrDefault w:suppressAutoHyphens lands on docDefaults', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraParts: [settingsPart('<w:autoHyphenation/>')],
+        stylesXml: stylesWith('<w:suppressAutoHyphens/>'),
+      }),
+    )
+    expect(doc.autoHyphenation).toBe(true)
+    expect(doc.docDefaults?.suppressAutoHyphens).toBe(true)
+  })
+
+  it('explicit off at pPrDefault stays unset', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        stylesXml: stylesWith('<w:suppressAutoHyphens w:val="0"/>'),
+      }),
+    )
+    expect(doc.docDefaults?.suppressAutoHyphens).toBeUndefined()
+  })
+
+  it('style-level value is tri-state and survives the basedOn merge', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        stylesXml: stylesWith(
+          '',
+          '<w:style w:type="paragraph" w:styleId="NoHyph"><w:name w:val="NoHyph"/>' +
+            '<w:pPr><w:suppressAutoHyphens/></w:pPr></w:style>' +
+            '<w:style w:type="paragraph" w:styleId="ReHyph"><w:name w:val="ReHyph"/>' +
+            '<w:basedOn w:val="NoHyph"/>' +
+            '<w:pPr><w:suppressAutoHyphens w:val="false"/></w:pPr></w:style>',
+        ),
+      }),
+    )
+    expect(doc.styles.get('NoHyph')?.display?.suppressAutoHyphens).toBe(true)
+    expect(doc.styles.get('ReHyph')?.display?.suppressAutoHyphens).toBe(false)
+  })
+})

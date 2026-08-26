@@ -213,3 +213,40 @@ describe('empty paragraph line size', () => {
     expect(doc.blocks[2].format?.emptyRunFontFamily).toBe('Arial')
   })
 })
+
+describe('paragraph-mark w:vanish', () => {
+  it('collapses an empty paragraph with a hidden mark to an invisible marker', async () => {
+    const bodyXml =
+      '<w:p><w:r><w:t>before</w:t></w:r></w:p>' +
+      '<w:p><w:pPr><w:ind w:left="120"/><w:rPr><w:vanish/></w:rPr></w:pPr></w:p>' +
+      '<w:p><w:r><w:t>after</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[1].invisibleMarker).toBe(true)
+    expect(doc.blocks[1].originalXml).toContain('w:vanish')
+  })
+
+  it('keeps a paragraph with visible runs even when its mark is hidden', async () => {
+    const bodyXml =
+      '<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:t>shown</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].invisibleMarker).toBeUndefined()
+    expect(doc.blocks[0].runs?.[0]?.text).toBe('shown')
+  })
+
+  it('keeps a text-less paragraph whose run carries a page break or note mark', async () => {
+    const bodyXml =
+      '<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>' +
+      '<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:footnoteReference w:id="2"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].invisibleMarker).toBeUndefined()
+    expect(doc.blocks[1].invisibleMarker).toBeUndefined()
+  })
+
+  it('still collapses when only pPr tab stops are present', async () => {
+    const bodyXml =
+      '<w:p><w:pPr><w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs>' +
+      '<w:rPr><w:vanish/></w:rPr></w:pPr></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml }))
+    expect(doc.blocks[0].invisibleMarker).toBe(true)
+  })
+})

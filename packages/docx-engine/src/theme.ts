@@ -127,6 +127,23 @@ const THEME_COLOR_SLOTS: Record<string, keyof ThemeColors> = {
 
 const SLOT_FALLBACK: Partial<Record<keyof ThemeColors, string>> = { dk1: '000000', lt1: 'FFFFFF' }
 
+/** built-in Office palette: what Word resolves theme colors against when a
+ *  document ships no word/theme/theme1.xml part */
+export const DEFAULT_THEME_COLORS: Readonly<ThemeColors> = {
+  dk1: '000000',
+  lt1: 'FFFFFF',
+  dk2: '44546A',
+  lt2: 'E7E6E6',
+  accent1: '4472C4',
+  accent2: 'ED7D31',
+  accent3: 'A5A5A5',
+  accent4: 'FFC000',
+  accent5: '5B9BD5',
+  accent6: '70AD47',
+  hlink: '0563C1',
+  folHlink: '954F72',
+}
+
 /**
  * Resolve a w:themeColor reference (+ optional w:themeTint / w:themeShade,
  * hex 00-FF) against the palette. sRGB per-channel approximation of Word's
@@ -180,8 +197,8 @@ export function applyThemeColors(themeXml: string, colors: ThemeColors): string 
  * format scheme skeleton.
  */
 export function buildThemeXml(fonts: ThemeFonts, colors: ThemeColors): string {
-  const c = (tag: (typeof COLOR_TAGS)[number], fallback: string) =>
-    `<a:${tag}><a:srgbClr val="${colors[tag] ?? fallback}"/></a:${tag}>`
+  const c = (tag: (typeof COLOR_TAGS)[number]) =>
+    `<a:${tag}><a:srgbClr val="${colors[tag] ?? DEFAULT_THEME_COLORS[tag]}"/></a:${tag}>`
   const font = (tag: string, typeface: string) =>
     `<${tag}><a:latin typeface="${escapeXmlAttr(typeface)}"/>` +
     `<a:ea typeface="${escapeXmlAttr(fonts.eastAsia ?? '')}"/><a:cs typeface=""/></${tag}>`
@@ -192,16 +209,16 @@ export function buildThemeXml(fonts: ThemeFonts, colors: ThemeColors): string {
     `<a:clrScheme name="${escapeXmlAttr(colors.name ?? 'Office')}">` +
     '<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>' +
     '<a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>' +
-    c('dk2', '44546A') +
-    c('lt2', 'E7E6E6') +
-    c('accent1', '4472C4') +
-    c('accent2', 'ED7D31') +
-    c('accent3', 'A5A5A5') +
-    c('accent4', 'FFC000') +
-    c('accent5', '5B9BD5') +
-    c('accent6', '70AD47') +
-    '<a:hlink><a:srgbClr val="0563C1"/></a:hlink>' +
-    '<a:folHlink><a:srgbClr val="954F72"/></a:folHlink>' +
+    c('dk2') +
+    c('lt2') +
+    c('accent1') +
+    c('accent2') +
+    c('accent3') +
+    c('accent4') +
+    c('accent5') +
+    c('accent6') +
+    `<a:hlink><a:srgbClr val="${DEFAULT_THEME_COLORS.hlink}"/></a:hlink>` +
+    `<a:folHlink><a:srgbClr val="${DEFAULT_THEME_COLORS.folHlink}"/></a:folHlink>` +
     '</a:clrScheme>' +
     `<a:fontScheme name="Office">${font('a:majorFont', fonts.major)}${font('a:minorFont', fonts.minor)}</a:fontScheme>` +
     '<a:fmtScheme name="Office">' +

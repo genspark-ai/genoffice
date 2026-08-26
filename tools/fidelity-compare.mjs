@@ -119,8 +119,6 @@ function exportPdfViaPowerPoint(pptx, outPdf) {
   fs.mkdirSync(box, { recursive: true })
   const src = path.join(box, 'in.pptx')
   const pdf = path.join(box, 'out.pdf')
-  fs.copyFileSync(pptx, src)
-  fs.rmSync(pdf, { force: true })
   // Stale Office owner-lock files (~$in.pptx, left by a killed save) make every
   // subsequent open fail with -9074 until removed
   for (const f of fs.readdirSync(path.dirname(src))) {
@@ -133,19 +131,39 @@ function exportPdfViaPowerPoint(pptx, outPdf) {
       save p in (POSIX file "${pdf}") as save as PDF
       close p saving no
     end tell`
-  try {
-    execFileSync('osascript', ['-e', script], { stdio: 'pipe', timeout: pptTimeout })
-  } catch (e) {
+  const killPpt = () => {
     try {
       execFileSync('pkill', ['-x', 'Microsoft PowerPoint'], { stdio: 'ignore' })
     } catch {
       /* no process to kill */
     }
-    throw new Error('PowerPoint export failed: ' + (e.message ?? e), { cause: e })
-  } finally {
-    fs.rmSync(src, { force: true })
   }
-  if (!fs.existsSync(pdf)) throw new Error('PowerPoint produced no pdf')
+  const attempt = () => {
+    fs.copyFileSync(pptx, src)
+    fs.rmSync(pdf, { force: true })
+    try {
+      execFileSync('osascript', ['-e', script], { stdio: 'pipe', timeout: pptTimeout })
+    } catch (e) {
+      throw new Error('PowerPoint export failed: ' + (e.message ?? e), { cause: e })
+    } finally {
+      fs.rmSync(src, { force: true })
+    }
+    // A poison deck can leave PowerPoint alive but window-less; every later open
+    // then fails with -9074, so any failure mode must kill before the next deck.
+    if (!fs.existsSync(pdf)) throw new Error('PowerPoint produced no pdf')
+  }
+  try {
+    attempt()
+  } catch {
+    killPpt()
+    execFileSync('sleep', ['3'])
+    try {
+      attempt()
+    } catch (e) {
+      killPpt()
+      throw e
+    }
+  }
   fs.renameSync(pdf, outPdf)
 }
 

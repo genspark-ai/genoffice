@@ -10,6 +10,7 @@ import { generalCharBudget } from '../src/renderer/numfmt-fix'
 import {
   characterWidthToPixels,
   measureNormalFontMdw,
+  paddedBaseColumnWidth,
   resolveNormalMdwFamily,
   toUniverStyle,
 } from '../src/renderer/univer-sync'
@@ -64,6 +65,19 @@ describe('workbook MDW', () => {
     expect(getWorkbookMdw()).toBe(7)
     setWorkbookMdw(Number.NaN)
     expect(getWorkbookMdw()).toBe(7)
+  })
+
+  it('derives the built-in default width from baseColWidth (prod_039)', () => {
+    // MDW 7 reproduces the classic 8.7109375 chars Excel writes into files;
+    // MDW 8 gives 8.625 chars = 74px, matching live Excel's 8.0-char default
+    // column — narrow enough that 10-digit General numbers go scientific.
+    setWorkbookMdw(7)
+    expect(paddedBaseColumnWidth(null)).toBe(8.7109375)
+    setWorkbookMdw(8)
+    expect(paddedBaseColumnWidth(null)).toBe(8.625)
+    expect(characterWidthToPixels(paddedBaseColumnWidth(null))).toBe(74)
+    expect(generalCharBudget(74)).toBe(8)
+    expect(paddedBaseColumnWidth(10)).toBe(10.625)
   })
 })
 
@@ -130,7 +144,14 @@ describe('measureNormalFontMdw', () => {
       normalFontName: 'Nonexistent Face',
     })
     expect(resolveNormalMdwFamily(file)).toBe('Calibri')
-    expect(measureNormalFontMdw(file)).toBe(7)
+    expect(measureNormalFontMdw(file)).toBe(8)
+  })
+
+  it('lays Calibri 11 out at the Mac Excel MDW 8, not the GDI 7', () => {
+    // Live probes + ref print geometry: prod_054 50.86ch → 305pt and
+    // prod_027 32.44ch → 195pt both fit floor((w+16/256)*8); MDW 7 wraps
+    // wide wrap columns a line early and re-fits their rows too tall.
+    expect(measureNormalFontMdw(workbook({ fontFamily: 'Calibri', fontSize: 11 }))).toBe(8)
   })
 
   it('quotes the family for canvas measurement so odd names still measure', () => {

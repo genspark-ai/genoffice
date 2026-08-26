@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
@@ -16,6 +16,7 @@ use zip::ZipArchive;
 pub mod archive;
 pub mod convert;
 pub mod recalc;
+mod richdata;
 mod shared_formulas;
 mod visuals;
 
@@ -101,6 +102,9 @@ pub struct SheetMetadata {
     /// instead of auto-fitting them on open.
     pub default_row_height_fixed: bool,
     pub default_column_width: Option<f64>,
+    /// sheetFormatPr/@baseColWidth — Excel derives its built-in default
+    /// column width from this (default 8) when defaultColWidth is absent.
+    pub base_column_width: Option<f64>,
     pub freeze: Option<FreezePane>,
     pub hidden: bool,
     pub tab_color: Option<String>,
@@ -121,6 +125,26 @@ pub struct SheetMetadata {
     /// x14 sparkline groups from the worksheet extLst.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sparklines: Vec<SparklineGroupInfo>,
+    /// Saved `_xlnm.Print_Area` formula for this sheet (workbook.xml).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub print_area: Option<String>,
+    /// Saved `_xlnm.Print_Titles` formula for this sheet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub print_titles: Option<String>,
+    /// In-cell rich-value pictures ("place picture in cell").
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cell_images: Vec<CellImageInfo>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellImageInfo {
+    /// Media lookup key for the read_media command, like a visual id.
+    pub id: String,
+    pub row: usize,
+    pub column: usize,
+    #[serde(skip_serializing)]
+    pub media_path: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -160,6 +184,10 @@ pub struct PivotTableInfo {
     pub whole_table_fill: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stripe_fill: Option<String>,
+    /// pivotTableStyleInfo carries a style name: band rows stay bold even
+    /// when the resolved palette has no fills (Light 1-7, stripes off).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub styled: bool,
     /// location/@firstDataRow — rows above it inside the output ref are
     /// header rows.
     #[serde(skip_serializing_if = "is_zero")]
@@ -433,6 +461,9 @@ pub struct RangeResult {
     pub col_breaks: Vec<usize>,
     /// protectedRanges entries; sheet-wide, complete-only.
     pub protected_ranges: Vec<ProtectedRangeInfo>,
+    /// Saved print settings; sheet-wide, complete-only, None when the sheet
+    /// declares none.
+    pub page_setup: Option<PagePrintInfo>,
     pub indexed_through_row: Option<usize>,
     pub indexing_complete: bool,
 }
@@ -443,6 +474,48 @@ pub struct SheetProtectionInfo {
     pub protected: bool,
     /// password= (legacy) or algorithmName/hashValue (modern) present.
     pub has_password: bool,
+}
+
+/// Inches, from `<pageMargins>`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageMarginsInfo {
+    pub left: f64,
+    pub right: f64,
+    pub top: f64,
+    pub bottom: f64,
+    pub header: f64,
+    pub footer: f64,
+}
+
+/// The sheet's saved print settings (printOptions / pageMargins / pageSetup /
+/// sheetPr/pageSetUpPr / headerFooter), sanitized to Excel's valid ranges.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PagePrintInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub orientation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paper_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fit_to_width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fit_to_height: Option<u32>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub fit_to_page: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub margins: Option<PageMarginsInfo>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub print_gridlines: bool,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub print_headings: bool,
+    /// Excel-encoded odd header/footer text (&L/&C/&R sections, field codes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub odd_header: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub odd_footer: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -607,6 +680,8 @@ impl WorkbookSessions {
             short_date_format,
         )?;
         let custom_table_styles = read_custom_table_styles(&mut archive, &dxf_styles);
+        let rich_value_images = richdata::read_rich_value_images(&mut archive);
+        let mut cell_image_count = 0usize;
         let mut sheets = Vec::with_capacity(declarations.len());
         let mut runtimes = Vec::with_capacity(declarations.len());
         let mut visual_sources = Vec::with_capacity(declarations.len());
@@ -643,6 +718,12 @@ impl WorkbookSessions {
                 })
                 .collect();
             let sparklines = read_sheet_sparklines(&mut archive, &worksheet_path)?;
+            let cell_images = read_sheet_cell_images(
+                &mut archive,
+                &worksheet_path,
+                &rich_value_images,
+                &mut cell_image_count,
+            )?;
             let pivot_infos = visuals::read_pivot_tables(&mut archive, &worksheet_path)?;
             let pivot_ranges = pivot_infos
                 .iter()
@@ -657,6 +738,10 @@ impl WorkbookSessions {
                         header_font_color: palette.header_font_color,
                         whole_table_fill: palette.whole_table_fill,
                         stripe_fill: palette.stripe_fill.filter(|_| info.show_row_stripes),
+                        styled: info
+                            .style_name
+                            .as_deref()
+                            .is_some_and(|name| !name.is_empty()),
                         path: info.path,
                         cache_path: info.cache_path,
                         output_ref: info.output_ref,
@@ -684,6 +769,7 @@ impl WorkbookSessions {
                 default_row_height: dimensions.default_row_height,
                 default_row_height_fixed: dimensions.default_row_height_fixed,
                 default_column_width: dimensions.default_column_width,
+                base_column_width: dimensions.base_column_width,
                 freeze: dimensions.freeze,
                 hidden: declaration.hidden,
                 tab_color: dimensions.tab_color,
@@ -696,6 +782,9 @@ impl WorkbookSessions {
                 pivot_ranges,
                 pivot_tables,
                 sparklines,
+                print_area: None,
+                print_titles: None,
+                cell_images,
             });
             visual_sources.push(SheetVisualSource {
                 sheet_id: id,
@@ -720,7 +809,13 @@ impl WorkbookSessions {
         );
         let visual_objects =
             visuals::read_visual_objects(&mut archive, &visual_sources, &color_context)?;
-        let defined_names = read_defined_names(&mut archive)?;
+        let (defined_names, print_names) = read_defined_names(&mut archive)?;
+        for (sheet_index, sheet) in sheets.iter_mut().enumerate() {
+            if let Some(names) = print_names.get(&sheet_index) {
+                sheet.print_area = names.area.clone();
+                sheet.print_titles = names.titles.clone();
+            }
+        }
 
         let session_id = Uuid::new_v4().to_string();
         let cache_directory = std::env::temp_dir().join(format!("genspark-ai-excel-{session_id}"));
@@ -831,7 +926,20 @@ impl WorkbookSessions {
             .visuals
             .iter()
             .find(|visual| visual.id == visual_id)
-            .and_then(|visual| visual.media_path.as_deref())
+            .and_then(|visual| {
+                visual
+                    .media_path
+                    .as_deref()
+                    .or(visual.fill_media_path.as_deref())
+            })
+            .or_else(|| {
+                session
+                    .sheets
+                    .iter()
+                    .flat_map(|sheet| sheet.cell_images.iter())
+                    .find(|image| image.id == visual_id)
+                    .map(|image| image.media_path.as_str())
+            })
             .ok_or_else(|| SidecarError::InvalidRequest("Unknown workbook image.".into()))?;
         let file = File::open(&session.path)?;
         let mut archive = ZipArchive::new(file)?;
@@ -878,6 +986,15 @@ impl WorkbookSession {
         let shared_strings = Arc::clone(&self.shared_strings);
         let styled_xfs = Arc::clone(&self.styled_xfs);
         let color_context = Arc::clone(&self.color_context);
+        // The capped overlay list is the single source of truth: only cells
+        // that actually got a picture record lose their cached error.
+        let rich_image_cells: Arc<HashSet<(usize, usize)>> = Arc::new(
+            self.sheets[sheet_index]
+                .cell_images
+                .iter()
+                .map(|image| (image.row, image.column))
+                .collect(),
+        );
         let cancelled = Arc::clone(&self.cancelled);
         let handle = thread::Builder::new()
             .name(format!("xlsx-index-{sheet_index}"))
@@ -890,6 +1007,7 @@ impl WorkbookSession {
                     &shared_strings,
                     &styled_xfs,
                     &color_context,
+                    &rich_image_cells,
                     &state,
                     &cancelled,
                 );
@@ -998,6 +1116,11 @@ impl WorkbookSession {
         } else {
             Vec::new()
         };
+        let page_setup = if indexing_complete {
+            index.page_setup.clone()
+        } else {
+            None
+        };
         let first_chunk = range.start_row / CHUNK_ROW_COUNT;
         let last_available_row = indexed_through_row
             .map(|row| row.min(range.end_row))
@@ -1042,6 +1165,7 @@ impl WorkbookSession {
             row_breaks,
             col_breaks,
             protected_ranges,
+            page_setup,
             indexed_through_row,
             indexing_complete,
         })
@@ -1114,6 +1238,7 @@ struct SheetIndex {
     row_breaks: Vec<usize>,
     col_breaks: Vec<usize>,
     protected_ranges: Vec<ProtectedRangeInfo>,
+    page_setup: Option<PagePrintInfo>,
     /// Formula cells collected while indexing, capped at MAX_FORMULA_CELLS.
     formula_cells: Vec<CellRecord>,
     formula_truncated: bool,
@@ -1277,6 +1402,7 @@ struct SheetDimensions {
     default_row_height: Option<f64>,
     default_row_height_fixed: bool,
     default_column_width: Option<f64>,
+    base_column_width: Option<f64>,
     freeze: Option<FreezePane>,
     tab_color: Option<String>,
     show_grid_lines: bool,
@@ -1304,6 +1430,7 @@ fn read_sheet_dimensions(
     let mut default_row_height = None;
     let mut default_row_height_fixed = false;
     let mut default_column_width = None;
+    let mut base_column_width = None;
     let mut freeze = None;
     let mut tab_color = None;
     let mut show_grid_lines = true;
@@ -1361,6 +1488,9 @@ fn read_sheet_dimensions(
                     Some("1") | Some("true")
                 );
                 default_column_width = attribute_value(&reader, &element, b"defaultColWidth")?
+                    .and_then(|value| value.parse::<f64>().ok())
+                    .filter(|value| *value > 0.0);
+                base_column_width = attribute_value(&reader, &element, b"baseColWidth")?
                     .and_then(|value| value.parse::<f64>().ok())
                     .filter(|value| *value > 0.0);
             }
@@ -1441,6 +1571,7 @@ fn read_sheet_dimensions(
                     default_row_height,
                     default_row_height_fixed,
                     default_column_width,
+                    base_column_width,
                     freeze,
                     tab_color,
                     show_grid_lines,
@@ -1485,6 +1616,7 @@ fn read_sheet_dimensions(
                     default_row_height,
                     default_row_height_fixed,
                     default_column_width,
+                    base_column_width,
                     freeze,
                     tab_color,
                     show_grid_lines,
@@ -1665,6 +1797,7 @@ fn index_worksheet(
     shared_strings: &[SharedString],
     styled_xfs: &[bool],
     colors: &ColorContext,
+    rich_image_cells: &HashSet<(usize, usize)>,
     state: &Arc<(Mutex<SheetIndex>, Condvar)>,
     cancelled: &AtomicBool,
 ) -> Result<(), SidecarError> {
@@ -1715,6 +1848,12 @@ fn index_worksheet(
     let mut dv_rule: Option<DataValidationRule> = None;
     let mut in_dv_formula = false;
     let mut data_validations: Vec<DataValidationRule> = Vec::new();
+    let mut page_print = PagePrintInfo::default();
+    // customSheetView carries its own print elements; only sheet-level ones
+    // are what Excel prints.
+    let mut in_custom_sheet_views = false;
+    let mut in_odd_header = false;
+    let mut in_odd_footer = false;
 
     loop {
         if cancelled.load(Ordering::Acquire) {
@@ -1775,7 +1914,9 @@ fn index_worksheet(
                         )?;
                         chunk_index = cell_chunk;
                     }
-                    if let Some(cell) = builder.finish(shared_strings, styled_xfs)? {
+                    if let Some(cell) =
+                        builder.finish(shared_strings, styled_xfs, rich_image_cells)?
+                    {
                         chunk.cells.push(cell);
                     }
                 }
@@ -1854,6 +1995,16 @@ fn index_worksheet(
                             run.text.push_str(&decoded);
                         }
                     }
+                } else if in_odd_header {
+                    page_print
+                        .odd_header
+                        .get_or_insert_with(String::new)
+                        .push_str(&decoded);
+                } else if in_odd_footer {
+                    page_print
+                        .odd_footer
+                        .get_or_insert_with(String::new)
+                        .push_str(&decoded);
                 } else if in_cf_formula {
                     if let Some(formula) =
                         cf_rule.as_mut().and_then(|rule| rule.formulas.last_mut())
@@ -1885,6 +2036,16 @@ fn index_worksheet(
                             run.text.push_str(&decoded);
                         }
                     }
+                } else if in_odd_header {
+                    page_print
+                        .odd_header
+                        .get_or_insert_with(String::new)
+                        .push_str(&decoded);
+                } else if in_odd_footer {
+                    page_print
+                        .odd_footer
+                        .get_or_insert_with(String::new)
+                        .push_str(&decoded);
                 } else if in_cf_formula {
                     if let Some(formula) =
                         cf_rule.as_mut().and_then(|rule| rule.formulas.last_mut())
@@ -1932,7 +2093,9 @@ fn index_worksheet(
                         )?;
                         chunk_index = cell_chunk;
                     }
-                    if let Some(cell) = builder.finish(shared_strings, styled_xfs)? {
+                    if let Some(cell) =
+                        builder.finish(shared_strings, styled_xfs, rich_image_cells)?
+                    {
                         if cell.formula.is_some() {
                             pending_formulas.push(cell.clone());
                         }
@@ -1989,6 +2152,90 @@ fn index_worksheet(
                     protected,
                     has_password,
                 });
+            }
+            Event::Start(element) if element.local_name().as_ref() == b"customSheetViews" => {
+                in_custom_sheet_views = true;
+            }
+            Event::End(element) if element.local_name().as_ref() == b"customSheetViews" => {
+                in_custom_sheet_views = false;
+            }
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"pageSetUpPr" && !in_custom_sheet_views =>
+            {
+                page_print.fit_to_page = attribute_value(&reader, &element, b"fitToPage")?
+                    .is_some_and(|value| value == "1" || value == "true");
+            }
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"printOptions" && !in_custom_sheet_views =>
+            {
+                page_print.print_gridlines = attribute_value(&reader, &element, b"gridLines")?
+                    .is_some_and(|value| value == "1" || value == "true");
+                page_print.print_headings = attribute_value(&reader, &element, b"headings")?
+                    .is_some_and(|value| value == "1" || value == "true");
+            }
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"pageMargins" && !in_custom_sheet_views =>
+            {
+                if let (
+                    Some(left),
+                    Some(right),
+                    Some(top),
+                    Some(bottom),
+                    Some(header),
+                    Some(footer),
+                ) = (
+                    margin_attribute(&reader, &element, b"left")?,
+                    margin_attribute(&reader, &element, b"right")?,
+                    margin_attribute(&reader, &element, b"top")?,
+                    margin_attribute(&reader, &element, b"bottom")?,
+                    margin_attribute(&reader, &element, b"header")?,
+                    margin_attribute(&reader, &element, b"footer")?,
+                ) {
+                    page_print.margins = Some(PageMarginsInfo {
+                        left,
+                        right,
+                        top,
+                        bottom,
+                        header,
+                        footer,
+                    });
+                }
+            }
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"pageSetup" && !in_custom_sheet_views =>
+            {
+                page_print.orientation = attribute_value(&reader, &element, b"orientation")?
+                    .filter(|value| value == "portrait" || value == "landscape");
+                page_print.paper_size = attribute_value(&reader, &element, b"paperSize")?
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .filter(|value| (1..=256).contains(value));
+                // Excel's valid scale range; anything else means "as saved by
+                // a broken writer" and prints at 100.
+                page_print.scale = attribute_value(&reader, &element, b"scale")?
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .filter(|value| (10..=400).contains(value));
+                page_print.fit_to_width = attribute_value(&reader, &element, b"fitToWidth")?
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .filter(|value| *value <= 32_767);
+                page_print.fit_to_height = attribute_value(&reader, &element, b"fitToHeight")?
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .filter(|value| *value <= 32_767);
+            }
+            Event::Start(element)
+                if element.local_name().as_ref() == b"oddHeader" && !in_custom_sheet_views =>
+            {
+                in_odd_header = true;
+            }
+            Event::End(element) if element.local_name().as_ref() == b"oddHeader" => {
+                in_odd_header = false;
+            }
+            Event::Start(element)
+                if element.local_name().as_ref() == b"oddFooter" && !in_custom_sheet_views =>
+            {
+                in_odd_footer = true;
+            }
+            Event::End(element) if element.local_name().as_ref() == b"oddFooter" => {
+                in_odd_footer = false;
             }
             Event::Start(element) if element.local_name().as_ref() == b"rowBreaks" => {
                 in_row_breaks = true;
@@ -2290,6 +2537,12 @@ fn index_worksheet(
     index.row_breaks = row_breaks;
     index.col_breaks = col_breaks;
     index.protected_ranges = protected_ranges;
+    for text in [&mut page_print.odd_header, &mut page_print.odd_footer] {
+        if let Some(value) = text {
+            truncate_utf16_units(value, 500);
+        }
+    }
+    index.page_setup = (page_print != PagePrintInfo::default()).then_some(page_print);
     index.data_validations = data_validations;
     condition.notify_all();
     drop(index);
@@ -2364,11 +2617,52 @@ fn parse_cf_rule<R: std::io::BufRead>(
     })
 }
 
-fn read_defined_names(archive: &mut ZipArchive<File>) -> Result<Vec<DefinedName>, SidecarError> {
+/// Truncates in place to at most `max_units` UTF-16 code units — the wire
+/// caps (zod / preload) measure JavaScript string length, where non-BMP
+/// characters count as two.
+fn truncate_utf16_units(value: &mut String, max_units: usize) {
+    let mut units = 0usize;
+    for (byte_index, character) in value.char_indices() {
+        units += character.len_utf16();
+        if units > max_units {
+            value.truncate(byte_index);
+            return;
+        }
+    }
+}
+
+fn margin_attribute<R: std::io::BufRead>(
+    reader: &Reader<R>,
+    element: &BytesStart<'_>,
+    name: &[u8],
+) -> Result<Option<f64>, SidecarError> {
+    Ok(attribute_value(reader, element, name)?
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite() && (0.0..=10.0).contains(value)))
+}
+
+/// Sheet-scoped `_xlnm.Print_Area` / `_xlnm.Print_Titles` formulas, keyed by
+/// localSheetId (workbook sheet order).
+#[derive(Default)]
+struct SheetPrintNames {
+    area: Option<String>,
+    titles: Option<String>,
+}
+
+fn read_defined_names(
+    archive: &mut ZipArchive<File>,
+) -> Result<(Vec<DefinedName>, HashMap<usize, SheetPrintNames>), SidecarError> {
     let xml = read_zip_string(archive, "xl/workbook.xml")?;
     let mut reader = Reader::from_str(&xml);
     let mut names = Vec::new();
-    let mut current: Option<DefinedName> = None;
+    let mut print_names: HashMap<usize, SheetPrintNames> = HashMap::new();
+    struct Pending {
+        name: String,
+        hidden: bool,
+        sheet_index: Option<usize>,
+        formula: String,
+    }
+    let mut current: Option<Pending> = None;
     loop {
         match reader.read_event()? {
             Event::Start(element) if element.local_name().as_ref() == b"definedName" => {
@@ -2377,15 +2671,12 @@ fn read_defined_names(archive: &mut ZipArchive<File>) -> Result<Vec<DefinedName>
                     .is_some_and(|value| value == "1" || value == "true");
                 let sheet_index = attribute_value(&reader, &element, b"localSheetId")?
                     .and_then(|value| value.parse::<usize>().ok());
-                // _xlnm.* built-ins and hidden names stay file-only (the save
-                // preserves them verbatim; the editor never models them).
-                current = (!name.is_empty() && !name.starts_with("_xlnm") && !hidden).then_some(
-                    DefinedName {
-                        name,
-                        formula: String::new(),
-                        sheet_index,
-                    },
-                );
+                current = (!name.is_empty()).then_some(Pending {
+                    name,
+                    hidden,
+                    sheet_index,
+                    formula: String::new(),
+                });
             }
             Event::Text(text) => {
                 if let Some(defined) = &mut current {
@@ -2403,10 +2694,33 @@ fn read_defined_names(archive: &mut ZipArchive<File>) -> Result<Vec<DefinedName>
                 }
             }
             Event::End(element) if element.local_name().as_ref() == b"definedName" => {
-                if let Some(mut defined) = current.take() {
-                    if !defined.formula.is_empty() {
-                        defined.formula = strip_future_function_markers(&defined.formula);
-                        names.push(defined);
+                if let Some(defined) = current.take() {
+                    if defined.formula.is_empty() {
+                        continue;
+                    }
+                    if defined.name.starts_with("_xlnm") {
+                        // Print names feed the PDF export; other _xlnm.*
+                        // built-ins stay file-only. Oversized refs exceed the
+                        // wire cap and are dropped.
+                        if defined.formula.len() > 2_000 {
+                            continue;
+                        }
+                        if let Some(sheet_index) = defined.sheet_index {
+                            let entry = print_names.entry(sheet_index).or_default();
+                            if defined.name == "_xlnm.Print_Area" {
+                                entry.area = Some(defined.formula);
+                            } else if defined.name == "_xlnm.Print_Titles" {
+                                entry.titles = Some(defined.formula);
+                            }
+                        }
+                    // Hidden names stay file-only (the save preserves them
+                    // verbatim; the editor never models them).
+                    } else if !defined.hidden {
+                        names.push(DefinedName {
+                            name: defined.name,
+                            formula: strip_future_function_markers(&defined.formula),
+                            sheet_index: defined.sheet_index,
+                        });
                     }
                 }
             }
@@ -2414,7 +2728,7 @@ fn read_defined_names(archive: &mut ZipArchive<File>) -> Result<Vec<DefinedName>
             _ => {}
         }
     }
-    Ok(names)
+    Ok((names, print_names))
 }
 
 const DEFAULT_ACCENTS: [(u8, u8, u8); 6] = [
@@ -2574,9 +2888,8 @@ fn read_custom_table_styles(
     palettes
 }
 
-/// Light-family pivot styles paint header and grand-total bands with a light
-/// tint of the style's accent; Medium/Dark families are left unpainted until
-/// their (solid-fill, white-text) bands are modelled.
+/// Resolved fills for a built-in pivot style; see `pivot_style_palette` for
+/// the per-family calibration.
 #[derive(Clone, Debug, Default)]
 struct PivotStylePalette {
     header_fill: Option<String>,
@@ -2585,27 +2898,44 @@ struct PivotStylePalette {
     stripe_fill: Option<String>,
 }
 
-/// Built-in pivot style bands. Light families paint the header band only
-/// (tint 0.8 of the base). PivotStyleDark1 is pixel-calibrated against Excel
-/// (header/grand-total tint 0.5 with white bold text, body 0.65, stripe
-/// 0.75 of dk1); the accent Dark members and the Medium block stay unpainted
-/// until they get their own calibration pass.
+/// Built-in pivot style bands, pixel-calibrated against Excel ref renders.
+/// Light 1-7 leave the header unfilled (RelationalPivotB6, Light2) while
+/// Light 8+ tint it 0.8 (POI 54436, Light16); every Light stripe is tint 0.8
+/// of the base. Medium headers are the solid base with white bold text
+/// (aspose_sample1, Medium9); Medium stripes/body and the accent Dark
+/// members stay unpainted until they get their own calibration pass.
+/// PivotStyleDark1: header/grand-total tint 0.5 with white bold text, body
+/// 0.65, stripe 0.75 of dk1.
 fn pivot_style_palette(style_name: Option<&str>, colors: &ColorContext) -> PivotStylePalette {
     let Some(name) = style_name else {
         return PivotStylePalette::default();
+    };
+    let family_base = |number: usize| {
+        let accent_index = number.saturating_sub(1) % 7;
+        if accent_index == 0 {
+            visuals::theme_dark1(colors).unwrap_or((0x00, 0x00, 0x00))
+        } else {
+            visuals::theme_accent(colors, accent_index).unwrap_or(DEFAULT_ACCENTS[accent_index - 1])
+        }
     };
     if let Some(rest) = name.strip_prefix("PivotStyleLight") {
         let Some(number) = rest.parse::<usize>().ok() else {
             return PivotStylePalette::default();
         };
-        let accent_index = number.saturating_sub(1) % 7;
-        let base = if accent_index == 0 {
-            visuals::theme_dark1(colors).unwrap_or((0x00, 0x00, 0x00))
-        } else {
-            visuals::theme_accent(colors, accent_index).unwrap_or(DEFAULT_ACCENTS[accent_index - 1])
+        let band = visuals::tint_to_hex(family_base(number), 0.8);
+        return PivotStylePalette {
+            header_fill: (number > 7).then(|| band.clone()),
+            stripe_fill: Some(band),
+            ..PivotStylePalette::default()
+        };
+    }
+    if let Some(rest) = name.strip_prefix("PivotStyleMedium") {
+        let Some(number) = rest.parse::<usize>().ok() else {
+            return PivotStylePalette::default();
         };
         return PivotStylePalette {
-            header_fill: Some(visuals::tint_to_hex(base, 0.8)),
+            header_fill: Some(rgb_hex(family_base(number))),
+            header_font_color: Some("#FFFFFF".into()),
             ..PivotStylePalette::default()
         };
     }
@@ -2939,6 +3269,71 @@ fn argb_to_hex(value: &str) -> Option<String> {
         .then(|| format!("#{}", hex.to_ascii_uppercase()))
 }
 
+const MAX_CELL_IMAGES: usize = 500;
+
+/// Attribute-only scan for `<c vm=>` cells whose value metadata resolves to
+/// an image rich value. Runs at open time and only when the workbook carries
+/// richData image parts at all.
+fn read_sheet_cell_images(
+    archive: &mut ZipArchive<File>,
+    worksheet_path: &str,
+    images_by_vm: &HashMap<u32, String>,
+    image_count: &mut usize,
+) -> Result<Vec<CellImageInfo>, SidecarError> {
+    if images_by_vm.is_empty() {
+        return Ok(Vec::new());
+    }
+    let entry = zip_entry(archive, worksheet_path)?;
+    let mut reader = Reader::from_reader(BufReader::new(entry));
+    let mut buffer = Vec::new();
+    let mut current_row = 0usize;
+    let mut first_row = true;
+    let mut next_column = 0usize;
+    let mut cell_images = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buffer)? {
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"row" =>
+            {
+                current_row = attribute_value(&reader, &element, b"r")?
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .filter(|value| *value > 0)
+                    .map(|value| value - 1)
+                    .unwrap_or(if first_row { 0 } else { current_row + 1 });
+                first_row = false;
+                next_column = 0;
+            }
+            Event::Start(element) | Event::Empty(element)
+                if element.local_name().as_ref() == b"c" =>
+            {
+                let (row, column) = match attribute_value(&reader, &element, b"r")? {
+                    Some(address) => parse_address(&address)?,
+                    None => (current_row, next_column),
+                };
+                next_column = column + 1;
+                let media_path = attribute_value(&reader, &element, b"vm")?
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .and_then(|vm| images_by_vm.get(&vm));
+                if let Some(media_path) = media_path {
+                    if cell_images.len() < MAX_CELL_IMAGES {
+                        cell_images.push(CellImageInfo {
+                            id: format!("cell-image-{image_count}"),
+                            row,
+                            column,
+                            media_path: media_path.clone(),
+                        });
+                        *image_count += 1;
+                    }
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+        buffer.clear();
+    }
+    Ok(cell_images)
+}
+
 fn read_sheet_sparklines(
     archive: &mut ZipArchive<File>,
     worksheet_path: &str,
@@ -3257,6 +3652,7 @@ impl CellBuilder {
         self,
         shared_strings: &[SharedString],
         styled_xfs: &[bool],
+        rich_image_cells: &HashSet<(usize, usize)>,
     ) -> Result<Option<CellRecord>, SidecarError> {
         let formula = if self.formula.is_empty() {
             None
@@ -3289,6 +3685,9 @@ impl CellBuilder {
                 normalize_line_endings(&mut inline_text);
                 Some(CellValue::String(inline_text))
             }
+            // An error cell hosting an in-cell picture record renders as the
+            // picture, not as its cached #VALUE! placeholder.
+            Some("e") if rich_image_cells.contains(&(self.row, self.column)) => None,
             Some("str") | Some("e") => {
                 let mut raw_value = self.raw_value;
                 normalize_line_endings(&mut raw_value);
@@ -3601,6 +4000,7 @@ mod tests {
             default_row_height: None,
             default_row_height_fixed: false,
             default_column_width: None,
+            base_column_width: None,
             freeze: None,
             hidden: false,
             tab_color: None,
@@ -3613,6 +4013,9 @@ mod tests {
             pivot_ranges: Vec::new(),
             pivot_tables: Vec::new(),
             sparklines: Vec::new(),
+            print_area: None,
+            print_titles: None,
+            cell_images: Vec::new(),
         };
         let range = CellRange {
             start_row: 0,
@@ -3759,6 +4162,7 @@ mod tests {
             default_row_height: None,
             default_row_height_fixed: false,
             default_column_width: None,
+            base_column_width: None,
             freeze: None,
             hidden: false,
             tab_color: None,
@@ -3771,9 +4175,213 @@ mod tests {
             pivot_ranges: Vec::new(),
             pivot_tables: Vec::new(),
             sparklines: Vec::new(),
+            print_area: None,
+            print_titles: None,
+            cell_images: Vec::new(),
         };
         let json = serde_json::to_string(&sheet).unwrap();
         assert!(!json.contains("sparklines"));
+    }
+
+    fn rich_data_fixture_entries() -> Vec<(&'static str, &'static str)> {
+        vec![
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata" Target="metadata.xml"/><Relationship Id="rId5" Type="http://schemas.microsoft.com/office/2022/10/relationships/richValueRel" Target="richData/richValueRel.xml"/><Relationship Id="rId6" Type="http://schemas.microsoft.com/office/2017/06/relationships/rdRichValue" Target="richData/rdrichvalue.xml"/><Relationship Id="rId7" Type="http://schemas.microsoft.com/office/2017/06/relationships/rdRichValueStructure" Target="richData/rdrichvaluestructure.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="2"><c r="B2" t="e" vm="1"><v>#VALUE!</v></c><c r="C2" t="e"><v>#DIV/0!</v></c></row></sheetData>
+</worksheet>"#,
+            ),
+            (
+                "xl/metadata.xml",
+                r#"<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xlrd="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata"><metadataTypes count="1"><metadataType name="XLRICHVALUE" minSupportedVersion="120000"/></metadataTypes><futureMetadata name="XLRICHVALUE" count="1"><bk><extLst><ext uri="{3e2802c4-a4d2-4d8b-9148-e3be6c30e623}"><xlrd:rvb i="0"/></ext></extLst></bk></futureMetadata><valueMetadata count="1"><bk><rc t="1" v="0"/></bk></valueMetadata></metadata>"#,
+            ),
+            (
+                "xl/richData/richValueRel.xml",
+                r#"<richValueRels xmlns="http://schemas.microsoft.com/office/spreadsheetml/2022/richvaluerel" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><rel r:id="rId1"/></richValueRels>"#,
+            ),
+            (
+                "xl/richData/_rels/richValueRel.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/></Relationships>"#,
+            ),
+            (
+                "xl/richData/rdrichvalue.xml",
+                r#"<rvData xmlns="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata" count="1"><rv s="0"><v>0</v><v>5</v></rv></rvData>"#,
+            ),
+            (
+                "xl/richData/rdrichvaluestructure.xml",
+                r#"<rvStructures xmlns="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata" count="1"><s t="_localImage"><k n="_rvRel:LocalImageIdentifier" t="i"/><k n="CalcOrigin" t="i"/></s></rvStructures>"#,
+            ),
+            ("xl/media/image1.png", "fake-png-bytes"),
+        ]
+    }
+
+    #[test]
+    fn resolves_in_cell_rich_value_pictures() {
+        let (_dir, path) = open_fixture(&rich_data_fixture_entries());
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let images = &metadata.sheets[0].cell_images;
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].row, 1);
+        assert_eq!(images[0].column, 1);
+        assert_eq!(images[0].media_path, "xl/media/image1.png");
+
+        // The media lookup accepts the cell-image id like a visual id.
+        let media = sessions
+            .read_media(&metadata.session_id, &images[0].id)
+            .unwrap();
+        assert_eq!(media.media_type, "image/png");
+
+        // The cached #VALUE! stays out of the grid; unrelated error cells keep
+        // their values.
+        let range = CellRange {
+            start_row: 0,
+            end_row: 1,
+            start_column: 0,
+            end_column: 2,
+        };
+        let result = sessions
+            .read_range(&metadata.session_id, "sheet-1", &range)
+            .unwrap();
+        assert!(
+            !result
+                .cells
+                .iter()
+                .any(|cell| cell.row == 1 && cell.column == 1 && cell.value.is_some())
+        );
+        assert!(result.cells.iter().any(|cell| {
+            cell.row == 1
+                && cell.column == 2
+                && matches!(&cell.value, Some(CellValue::String(text)) if text == "#DIV/0!")
+        }));
+
+        // The wire payload carries only the lookup fields.
+        let json = serde_json::to_string(&metadata.sheets[0]).unwrap();
+        assert!(json.contains("cellImages"));
+        assert!(!json.contains("mediaPath"));
+    }
+
+    /// A valueMetadata bk may carry one rc per metadata type; XLRICHVALUE
+    /// still resolves when it is not the first record.
+    #[test]
+    fn resolves_rich_value_from_a_non_first_metadata_record() {
+        let metadata = r#"<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xlrd="http://schemas.microsoft.com/office/spreadsheetml/2017/richdata"><metadataTypes count="2"><metadataType name="XLDAPR" minSupportedVersion="120000"/><metadataType name="XLRICHVALUE" minSupportedVersion="120000"/></metadataTypes><futureMetadata name="XLRICHVALUE" count="1"><bk><extLst><ext uri="{3e2802c4-a4d2-4d8b-9148-e3be6c30e623}"><xlrd:rvb i="0"/></ext></extLst></bk></futureMetadata><valueMetadata count="1"><bk><rc t="1" v="7"/><rc t="2" v="0"/></bk></valueMetadata></metadata>"#;
+        let entries: Vec<(&str, &str)> = rich_data_fixture_entries()
+            .into_iter()
+            .map(|(name, content)| {
+                if name == "xl/metadata.xml" {
+                    (name, metadata)
+                } else {
+                    (name, content)
+                }
+            })
+            .collect();
+        let (_dir, path) = open_fixture(&entries);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let images = &metadata.sheets[0].cell_images;
+        assert_eq!(images.len(), 1);
+        assert_eq!((images[0].row, images[0].column), (1, 1));
+        assert_eq!(images[0].media_path, "xl/media/image1.png");
+    }
+
+    /// Past the per-sheet overlay cap the cell keeps its cached error: a
+    /// picture cell must render as the image or the error, never blank.
+    #[test]
+    fn over_cap_picture_cells_keep_the_cached_error() {
+        let cells: String = (0..=MAX_CELL_IMAGES)
+            .map(|index| {
+                format!(
+                    r#"<c r="{}1" t="e" vm="1"><v>#VALUE!</v></c>"#,
+                    column_label(index)
+                )
+            })
+            .collect();
+        let worksheet = format!(
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1">{cells}</row></sheetData>
+</worksheet>"#
+        );
+        let entries: Vec<(&str, &str)> = rich_data_fixture_entries()
+            .into_iter()
+            .map(|(name, content)| {
+                if name == "xl/worksheets/sheet1.xml" {
+                    (name, worksheet.as_str())
+                } else {
+                    (name, content)
+                }
+            })
+            .collect();
+        let (_dir, path) = open_fixture(&entries);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert_eq!(metadata.sheets[0].cell_images.len(), MAX_CELL_IMAGES);
+        let range = CellRange {
+            start_row: 0,
+            end_row: 0,
+            start_column: 0,
+            end_column: MAX_CELL_IMAGES,
+        };
+        let result = sessions
+            .read_range(&metadata.session_id, "sheet-1", &range)
+            .unwrap();
+        // Within the cap: suppressed. The one past it: error preserved.
+        assert!(
+            !result
+                .cells
+                .iter()
+                .any(|cell| cell.column < MAX_CELL_IMAGES && cell.value.is_some())
+        );
+        assert!(result.cells.iter().any(|cell| {
+            cell.column == MAX_CELL_IMAGES
+                && matches!(&cell.value, Some(CellValue::String(text)) if text == "#VALUE!")
+        }));
+    }
+
+    fn column_label(mut index: usize) -> String {
+        let mut label = String::new();
+        loop {
+            label.insert(0, (b'A' + (index % 26) as u8) as char);
+            if index < 26 {
+                return label;
+            }
+            index = index / 26 - 1;
+        }
+    }
+
+    #[test]
+    fn vm_without_rich_data_parts_keeps_the_cached_error() {
+        let entries = rich_data_fixture_entries();
+        let kept: Vec<(&str, &str)> = entries
+            .into_iter()
+            .filter(|(name, _)| !name.contains("richData") && *name != "xl/metadata.xml")
+            .collect();
+        let (_dir, path) = open_fixture(&kept);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert!(metadata.sheets[0].cell_images.is_empty());
+        let range = CellRange {
+            start_row: 0,
+            end_row: 1,
+            start_column: 0,
+            end_column: 2,
+        };
+        let result = sessions
+            .read_range(&metadata.session_id, "sheet-1", &range)
+            .unwrap();
+        assert!(result.cells.iter().any(|cell| {
+            cell.row == 1
+                && cell.column == 1
+                && matches!(&cell.value, Some(CellValue::String(text)) if text == "#VALUE!")
+        }));
     }
 
     fn open_fixture(entries: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
@@ -4048,6 +4656,120 @@ mod tests {
         assert!(
             matches!(&result.cells[0].value, Some(CellValue::String(text)) if text == "Partner ID")
         );
+    }
+
+    #[test]
+    fn reads_saved_print_settings_and_print_names() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">'S'!$A$1:$C$4</definedName><definedName name="_xlnm.Print_Titles" localSheetId="0">'S'!$1:$2</definedName><definedName name="Visible">S!$A$1</definedName></definedNames></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+<customSheetViews><customSheetView guid="{1}"><pageSetup paperSize="1" orientation="landscape"/><headerFooter><oddHeader>decoy</oddHeader></headerFooter></customSheetView></customSheetViews>
+<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+<printOptions gridLines="1" headings="true"/>
+<pageMargins left="0.25" right="0.3" top="0.75" bottom="0.8" header="0.3" footer="0.4"/>
+<pageSetup paperSize="9" scale="65" fitToWidth="2" fitToHeight="0" orientation="landscape"/>
+<headerFooter><oddHeader>&amp;CBudget &amp;A</oddHeader><oddFooter>&amp;CSeite &amp;P von &amp;N</oddFooter></headerFooter>
+</worksheet>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        assert_eq!(
+            metadata.sheets[0].print_area.as_deref(),
+            Some("'S'!$A$1:$C$4")
+        );
+        assert_eq!(
+            metadata.sheets[0].print_titles.as_deref(),
+            Some("'S'!$1:$2")
+        );
+        assert_eq!(metadata.defined_names.len(), 1);
+        assert_eq!(metadata.defined_names[0].name, "Visible");
+        let sheet_id = metadata.sheets[0].id.clone();
+        let range = CellRange {
+            start_row: 0,
+            end_row: 0,
+            start_column: 0,
+            end_column: 0,
+        };
+        let result = loop {
+            let result = sessions
+                .read_range(&metadata.session_id, &sheet_id, &range)
+                .unwrap();
+            if result.indexing_complete {
+                break result;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        let setup = result.page_setup.expect("page setup");
+        assert_eq!(setup.orientation.as_deref(), Some("landscape"));
+        assert_eq!(setup.paper_size, Some(9));
+        assert_eq!(setup.scale, Some(65));
+        assert_eq!(setup.fit_to_width, Some(2));
+        assert_eq!(setup.fit_to_height, Some(0));
+        assert!(setup.fit_to_page);
+        assert!(setup.print_gridlines);
+        assert!(setup.print_headings);
+        let margins = setup.margins.expect("margins");
+        assert_eq!(margins.left, 0.25);
+        assert_eq!(margins.footer, 0.4);
+        assert_eq!(setup.odd_header.as_deref(), Some("&CBudget &A"));
+        assert_eq!(setup.odd_footer.as_deref(), Some("&CSeite &P von &N"));
+    }
+
+    /// The wire caps header/footer text at 500 UTF-16 code units (JS string
+    /// length); an emoji-laden header must come out within that bound or the
+    /// schema rejects the whole range read.
+    #[test]
+    fn caps_header_text_by_utf16_length() {
+        let emoji_header = "😀".repeat(300);
+        let worksheet = format!(
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+<headerFooter><oddHeader>{emoji_header}</oddHeader></headerFooter>
+</worksheet>"#
+        );
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            ("xl/worksheets/sheet1.xml", worksheet.as_str()),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let sheet_id = metadata.sheets[0].id.clone();
+        let range = CellRange {
+            start_row: 0,
+            end_row: 0,
+            start_column: 0,
+            end_column: 0,
+        };
+        let result = loop {
+            let result = sessions
+                .read_range(&metadata.session_id, &sheet_id, &range)
+                .unwrap();
+            if result.indexing_complete {
+                break result;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        let header = result.page_setup.unwrap().odd_header.unwrap();
+        assert_eq!(header.encode_utf16().count(), 500);
+        assert!(header.chars().all(|character| character == '😀'));
     }
 
     /// Fully `x:`-prefixed table parts (common .NET writers) must still parse.
@@ -4429,6 +5151,74 @@ mod tests {
         assert_eq!(shape.line_width, Some(10.0));
     }
 
+    /// A workbook whose first sheet is a chartsheet keeps that sheet in the
+    /// tab list (name and order preserved) and its absoluteAnchor-ed chart
+    /// flows through the visuals pipeline like a worksheet drawing.
+    #[test]
+    fn chartsheet_keeps_its_tab_and_renders_its_chart() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Chart1" sheetId="9" r:id="rId1"/><sheet name="Sheet1" sheetId="1" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet" Target="chartsheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/chartsheets/sheet1.xml",
+                r#"<chartsheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr/><sheetViews><sheetView tabSelected="1" workbookViewId="0" zoomToFit="1"/></sheetViews><drawing r:id="rId1"/></chartsheet>"#,
+            ),
+            (
+                "xl/chartsheets/_rels/sheet1.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/drawings/drawing1.xml",
+                r#"<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><xdr:absoluteAnchor><xdr:pos x="0" y="0"/><xdr:ext cx="9304587" cy="6077107"/><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="2" name="Chart 1"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:absoluteAnchor></xdr:wsDr>"#,
+            ),
+            (
+                "xl/drawings/_rels/drawing1.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/charts/chart1.xml",
+                r#"<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:plotArea><c:barChart><c:barDir val="col"/><c:ser><c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>Bears</c:v></c:pt></c:strCache></c:strRef></c:tx><c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>8</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>8</v></c></row></sheetData></worksheet>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let names: Vec<&str> = metadata
+            .sheets
+            .iter()
+            .map(|sheet| sheet.name.as_str())
+            .collect();
+        assert_eq!(names, ["Chart1", "Sheet1"]);
+        assert_eq!(metadata.sheets[0].id, "sheet-9");
+        let chart = metadata
+            .visuals
+            .iter()
+            .find(|visual| visual.sheet_id == "sheet-9")
+            .expect("chartsheet chart visual");
+        assert_eq!(chart.kind, "chart");
+        assert_eq!(chart.chart_path.as_deref(), Some("xl/charts/chart1.xml"));
+        let chart_types = &chart.chart.as_ref().expect("parsed chart").chart_types;
+        assert_eq!(chart_types, &["barChart"]);
+        // absoluteAnchor: top-left cell markers with the xdr:ext as offsets.
+        assert_eq!(chart.anchor.from_row, 0);
+        assert_eq!(chart.anchor.from_column, 0);
+        assert_eq!(chart.anchor.from_row_offset, 0);
+        assert_eq!(chart.anchor.from_column_offset, 0);
+        assert_eq!(chart.anchor.to_row, 0);
+        assert_eq!(chart.anchor.to_column, 0);
+        assert_eq!(chart.anchor.to_row_offset, 6077107);
+        assert_eq!(chart.anchor.to_column_offset, 9304587);
+    }
+
     /// An OLE embed's hidden drawing fallback gets the object's progId as
     /// its caption so the placeholder reads as an embedded object.
     #[test]
@@ -4611,6 +5401,66 @@ mod tests {
         assert!(pivot.row_grand_totals);
         // Light16 -> accent1 tint 0.8; no theme part, so the default accent.
         assert!(pivot.header_fill.is_some());
+        assert!(pivot.styled);
+    }
+
+    /// Light 1-7 with stripes off resolve no fills but stay styled, so the
+    /// renderer keeps the header/grand-total bands bold.
+    #[test]
+    fn pivot_light_low_stripes_off_stays_styled() {
+        let (_dir, path) = open_fixture(&[
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="8"><c r="A8" t="str"><v>Row Labels</v></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/_rels/sheet1.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/pivotTables/pivotTable1.xml",
+                r#"<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="P" cacheId="1" rowGrandTotals="1"><location ref="A8:B11" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/><pivotTableStyleInfo name="PivotStyleLight2" showRowHeaders="1" showRowStripes="0"/></pivotTableDefinition>"#,
+            ),
+        ]);
+        let mut sessions = WorkbookSessions::new();
+        let metadata = sessions.open(&path).unwrap();
+        let pivot = &metadata.sheets[0].pivot_tables[0];
+        assert!(pivot.styled);
+        assert!(pivot.header_fill.is_none());
+        assert!(pivot.stripe_fill.is_none());
+        assert!(pivot.whole_table_fill.is_none());
+        let json = serde_json::to_string(pivot).unwrap();
+        assert!(json.contains("\"styled\":true"));
+    }
+
+    /// Pixel-calibrated pivot palettes (default theme accents): Light 1-7
+    /// stripe-only, Light 8+ tinted header, Medium solid header + white text.
+    #[test]
+    fn pivot_style_palette_calibrated_bands() {
+        let colors = ColorContext::default();
+        let light2 = pivot_style_palette(Some("PivotStyleLight2"), &colors);
+        assert!(light2.header_fill.is_none());
+        assert_eq!(light2.stripe_fill.as_deref(), Some("#DAE3F3"));
+        assert!(light2.header_font_color.is_none());
+        let light16 = pivot_style_palette(Some("PivotStyleLight16"), &colors);
+        assert_eq!(light16.header_fill.as_deref(), Some("#DAE3F3"));
+        assert_eq!(light16.stripe_fill.as_deref(), Some("#DAE3F3"));
+        let medium9 = pivot_style_palette(Some("PivotStyleMedium9"), &colors);
+        assert_eq!(medium9.header_fill.as_deref(), Some("#4472C4"));
+        assert_eq!(medium9.header_font_color.as_deref(), Some("#FFFFFF"));
+        assert!(medium9.stripe_fill.is_none());
+        assert!(medium9.whole_table_fill.is_none());
+        // Medium/Dark bodies are uncalibrated; Dark accents stay unpainted.
+        let dark2 = pivot_style_palette(Some("PivotStyleDark2"), &colors);
+        assert!(dark2.header_fill.is_none());
     }
 
     /// rowGrandTotals="0" must reach the renderer as an explicit false.

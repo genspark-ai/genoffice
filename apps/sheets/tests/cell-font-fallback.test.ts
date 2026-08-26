@@ -6,7 +6,7 @@ import {
   withSansSerifFallback,
 } from '../src/renderer/cell-font-fallback'
 
-const EMOJI = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"'
+const EMOJI = '"Cell Text Dingbats", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"'
 
 describe('withSansSerifFallback', () => {
   it('appends sans-serif to a bare family string', () => {

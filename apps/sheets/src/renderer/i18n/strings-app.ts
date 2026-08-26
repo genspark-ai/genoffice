@@ -461,6 +461,12 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'PDF 导出已取消。',
     appPdfExported: '已导出 {path}。',
     appPdfExportFailed: '无法导出 PDF。',
+    appCsvExportNeedsFullLoad: 'CSV 导出需要工作簿完整加载——请等待加载完成。',
+    appCsvExportTooLarge: '工作表太大,无法导出 CSV。',
+    appCsvExportCanceled: 'CSV 导出已取消。',
+    appCsvExported: '已导出 {path}。',
+    appCsvExportedActiveOnly: 'CSV 只包含一张工作表——已导出当前工作表“{name}”到 {path}。',
+    appCsvExportFailed: '无法导出 CSV。',
     appDemoNoSave: '演示模式的编辑只保存在内存——打开 XLSX 文件才能保存到磁盘。',
     appFilterSnapshotFailed: '无法快照筛选状态。',
     appColorFiltersUnsaveable: '颜色筛选暂时无法保存为 XLSX——请先清除再保存。',
@@ -1744,6 +1750,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'PDF export canceled.',
     appPdfExported: 'Exported {path}.',
     appPdfExportFailed: 'Unable to export the PDF.',
+    appCsvExportNeedsFullLoad:
+      'CSV export needs the fully loaded workbook — wait for loading to finish.',
+    appCsvExportTooLarge: 'The sheet is too large to export as CSV.',
+    appCsvExportCanceled: 'CSV export canceled.',
+    appCsvExported: 'Exported {path}.',
+    appCsvExportedActiveOnly:
+      'CSV holds a single sheet — exported the active sheet "{name}" to {path}.',
+    appCsvExportFailed: 'Unable to export the CSV.',
     appDemoNoSave: 'Demo edits stay in memory — open an XLSX file to save to disk.',
     appFilterSnapshotFailed: 'Unable to snapshot the filters.',
     appColorFiltersUnsaveable:
@@ -3074,6 +3088,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'PDF エクスポートをキャンセルしました。',
     appPdfExported: '{path} をエクスポートしました。',
     appPdfExportFailed: 'PDF をエクスポートできません。',
+    appCsvExportNeedsFullLoad:
+      'CSV エクスポートにはブックの完全読み込みが必要です — 読み込みの完了をお待ちください。',
+    appCsvExportTooLarge: 'シートが大きすぎるため、CSV をエクスポートできません。',
+    appCsvExportCanceled: 'CSV エクスポートをキャンセルしました。',
+    appCsvExported: '{path} をエクスポートしました。',
+    appCsvExportedActiveOnly:
+      'CSV ファイルには 1 枚のシートしか含められません — アクティブなシート「{name}」を {path} にエクスポートしました。',
+    appCsvExportFailed: 'CSV をエクスポートできません。',
     appDemoNoSave:
       'デモモードの編集はメモリ内にのみ保存されます — ディスクに保存するには XLSX ファイルを開いてください。',
     appFilterSnapshotFailed: 'フィルターの状態をスナップショットできません。',
@@ -4397,6 +4419,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'PDF 내보내기를 취소했습니다.',
     appPdfExported: '{path}을(를) 내보냈습니다.',
     appPdfExportFailed: 'PDF를 내보낼 수 없습니다.',
+    appCsvExportNeedsFullLoad:
+      'CSV 내보내기에는 통합 문서 전체 로드가 필요합니다 — 로드가 완료될 때까지 기다리십시오.',
+    appCsvExportTooLarge: '시트가 너무 커서 CSV로 내보낼 수 없습니다.',
+    appCsvExportCanceled: 'CSV 내보내기를 취소했습니다.',
+    appCsvExported: '{path}을(를) 내보냈습니다.',
+    appCsvExportedActiveOnly:
+      'CSV는 시트 하나만 포함합니다 — 활성 시트 "{name}"을(를) {path}(으)로 내보냈습니다.',
+    appCsvExportFailed: 'CSV를 내보낼 수 없습니다.',
     appDemoNoSave:
       '데모 모드의 편집은 메모리에만 저장됩니다 — 디스크에 저장하려면 XLSX 파일을 여십시오.',
     appFilterSnapshotFailed: '필터 상태의 스냅숏을 만들 수 없습니다.',
@@ -5762,6 +5792,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'Export PDF annulé.',
     appPdfExported: '{path} exporté.',
     appPdfExportFailed: "Impossible d'exporter le PDF.",
+    appCsvExportNeedsFullLoad:
+      "L'export CSV nécessite un classeur entièrement chargé — attendez la fin du chargement.",
+    appCsvExportTooLarge: 'La feuille est trop grande pour être exportée en CSV.',
+    appCsvExportCanceled: 'Export CSV annulé.',
+    appCsvExported: '{path} exporté.',
+    appCsvExportedActiveOnly:
+      "Les fichiers CSV ne contiennent qu'une seule feuille — la feuille active « {name} » a été exportée vers {path}.",
+    appCsvExportFailed: "Impossible d'exporter le CSV.",
     appDemoNoSave:
       'Les modifications en mode démo restent en mémoire — ouvrez un fichier XLSX pour enregistrer sur le disque.',
     appFilterSnapshotFailed: 'Impossible de prendre un instantané des filtres.',
@@ -7110,6 +7148,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'PDF-Export abgebrochen.',
     appPdfExported: '{path} exportiert.',
     appPdfExportFailed: 'PDF kann nicht exportiert werden.',
+    appCsvExportNeedsFullLoad:
+      'Der CSV-Export erfordert die vollständig geladene Arbeitsmappe — warten Sie, bis das Laden abgeschlossen ist.',
+    appCsvExportTooLarge: 'Das Blatt ist zu groß für den CSV-Export.',
+    appCsvExportCanceled: 'CSV-Export abgebrochen.',
+    appCsvExported: '{path} exportiert.',
+    appCsvExportedActiveOnly:
+      'CSV-Dateien enthalten nur ein Blatt — das aktive Blatt „{name}“ wurde nach {path} exportiert.',
+    appCsvExportFailed: 'CSV kann nicht exportiert werden.',
     appDemoNoSave:
       'Demo-Bearbeitungen bleiben im Speicher — öffnen Sie eine XLSX-Datei, um auf die Festplatte zu speichern.',
     appFilterSnapshotFailed: 'Momentaufnahme der Filter nicht möglich.',
@@ -8452,6 +8498,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'Exportación a PDF cancelada.',
     appPdfExported: 'Se exportó {path}.',
     appPdfExportFailed: 'No se puede exportar el PDF.',
+    appCsvExportNeedsFullLoad:
+      'La exportación a CSV requiere el libro completamente cargado — espere a que termine la carga.',
+    appCsvExportTooLarge: 'La hoja es demasiado grande para exportarla como CSV.',
+    appCsvExportCanceled: 'Exportación a CSV cancelada.',
+    appCsvExported: 'Se exportó {path}.',
+    appCsvExportedActiveOnly:
+      'Los archivos CSV solo contienen una hoja — se exportó la hoja activa «{name}» a {path}.',
+    appCsvExportFailed: 'No se puede exportar el CSV.',
     appDemoNoSave:
       'Las ediciones de demostración permanecen en memoria — abra un archivo XLSX para guardar en disco.',
     appFilterSnapshotFailed: 'No se puede tomar una instantánea de los filtros.',
@@ -9735,6 +9789,13 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'ยกเลิกการส่งออก PDF แล้ว',
     appPdfExported: 'ส่งออก {path} แล้ว',
     appPdfExportFailed: 'ส่งออก PDF ไม่ได้',
+    appCsvExportNeedsFullLoad: 'การส่งออก CSV ต้องรอให้เวิร์กบุ๊กโหลดเต็มก่อน — รอให้โหลดเสร็จ',
+    appCsvExportTooLarge: 'ชีตใหญ่เกินไป ส่งออกเป็น CSV ไม่ได้',
+    appCsvExportCanceled: 'ยกเลิกการส่งออก CSV แล้ว',
+    appCsvExported: 'ส่งออก {path} แล้ว',
+    appCsvExportedActiveOnly:
+      'ไฟล์ CSV มีได้เพียงชีตเดียว — ส่งออกชีตที่ใช้งานอยู่ “{name}” ไปยัง {path} แล้ว',
+    appCsvExportFailed: 'ส่งออก CSV ไม่ได้',
     appDemoNoSave:
       'การแก้ไขในโหมดสาธิตอยู่ในหน่วยความจำเท่านั้น — เปิดไฟล์ XLSX เพื่อบันทึกลงดิสก์',
     appFilterSnapshotFailed: 'บันทึกภาพรวมสถานะตัวกรองไม่ได้',
@@ -11023,6 +11084,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'Ekspor PDF dibatalkan.',
     appPdfExported: '{path} diekspor.',
     appPdfExportFailed: 'Tidak dapat mengekspor PDF.',
+    appCsvExportNeedsFullLoad:
+      'Ekspor CSV memerlukan buku kerja termuat penuh — tunggu pemuatan selesai.',
+    appCsvExportTooLarge: 'Lembar terlalu besar untuk diekspor sebagai CSV.',
+    appCsvExportCanceled: 'Ekspor CSV dibatalkan.',
+    appCsvExported: '{path} diekspor.',
+    appCsvExportedActiveOnly:
+      'File CSV hanya memuat satu lembar — lembar aktif “{name}” diekspor ke {path}.',
+    appCsvExportFailed: 'Tidak dapat mengekspor CSV.',
     appDemoNoSave: 'Pengeditan demo tetap di memori — buka file XLSX untuk menyimpan ke disk.',
     appFilterSnapshotFailed: 'Tidak dapat mengambil cuplikan status filter.',
     appColorFiltersUnsaveable:
@@ -12337,6 +12406,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'Экспорт в PDF отменён.',
     appPdfExported: 'Экспортировано: {path}.',
     appPdfExportFailed: 'Не удаётся экспортировать PDF.',
+    appCsvExportNeedsFullLoad:
+      'Экспорт в CSV требует полностью загруженной книги — дождитесь завершения загрузки.',
+    appCsvExportTooLarge: 'Лист слишком большой для экспорта в CSV.',
+    appCsvExportCanceled: 'Экспорт в CSV отменён.',
+    appCsvExported: 'Экспортировано: {path}.',
+    appCsvExportedActiveOnly:
+      'Файлы CSV содержат только один лист — активный лист «{name}» экспортирован в {path}.',
+    appCsvExportFailed: 'Не удаётся экспортировать CSV.',
     appDemoNoSave:
       'Изменения в демо-режиме остаются в памяти — откройте файл XLSX, чтобы сохранить на диск.',
     appFilterSnapshotFailed: 'Не удаётся сделать снимок состояния фильтров.',
@@ -13621,6 +13698,13 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'أُلغي تصدير PDF.',
     appPdfExported: 'تم التصدير: {path}.',
     appPdfExportFailed: 'يتعذر تصدير PDF.',
+    appCsvExportNeedsFullLoad: 'يتطلب تصدير CSV مصنفًا محمّلاً بالكامل — انتظر حتى ينتهي التحميل.',
+    appCsvExportTooLarge: 'الورقة كبيرة جدًا ولا يمكن تصديرها بتنسيق CSV.',
+    appCsvExportCanceled: 'أُلغي تصدير CSV.',
+    appCsvExported: 'تم التصدير: {path}.',
+    appCsvExportedActiveOnly:
+      'ملفات CSV تحتوي على ورقة واحدة فقط — تم تصدير الورقة النشطة «{name}» إلى {path}.',
+    appCsvExportFailed: 'يتعذر تصدير CSV.',
     appDemoNoSave: 'تبقى تعديلات الوضع التجريبي في الذاكرة — افتح ملف XLSX للحفظ على القرص.',
     appFilterSnapshotFailed: 'يتعذر أخذ لقطة لحالة عوامل التصفية.',
     appColorFiltersUnsaveable:
@@ -14941,6 +15025,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'Exportação de PDF cancelada.',
     appPdfExported: '{path} exportado.',
     appPdfExportFailed: 'Não foi possível exportar o PDF.',
+    appCsvExportNeedsFullLoad:
+      'A exportação de CSV requer a pasta de trabalho totalmente carregada — aguarde o carregamento terminar.',
+    appCsvExportTooLarge: 'A planilha é grande demais para exportar como CSV.',
+    appCsvExportCanceled: 'Exportação de CSV cancelada.',
+    appCsvExported: '{path} exportado.',
+    appCsvExportedActiveOnly:
+      'Arquivos CSV contêm apenas uma planilha — a planilha ativa “{name}” foi exportada para {path}.',
+    appCsvExportFailed: 'Não foi possível exportar o CSV.',
     appDemoNoSave:
       'Edições de demonstração ficam na memória — abra um arquivo XLSX para salvar no disco.',
     appFilterSnapshotFailed: 'Não foi possível capturar o estado dos filtros.',
@@ -16272,6 +16364,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'Esportazione PDF annullata.',
     appPdfExported: '{path} esportato.',
     appPdfExportFailed: 'Impossibile esportare il PDF.',
+    appCsvExportNeedsFullLoad:
+      "L'esportazione in CSV richiede la cartella di lavoro completamente caricata — attendi la fine del caricamento.",
+    appCsvExportTooLarge: 'Il foglio è troppo grande per essere esportato come CSV.',
+    appCsvExportCanceled: 'Esportazione CSV annullata.',
+    appCsvExported: '{path} esportato.',
+    appCsvExportedActiveOnly:
+      'I file CSV contengono un solo foglio — il foglio attivo “{name}” è stato esportato in {path}.',
+    appCsvExportFailed: 'Impossibile esportare il CSV.',
     appDemoNoSave: 'Le modifiche demo restano in memoria — apri un file XLSX per salvare su disco.',
     appFilterSnapshotFailed: 'Impossibile acquisire lo stato dei filtri.',
     appColorFiltersUnsaveable:
@@ -17599,6 +17699,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'Anulowano eksport do PDF.',
     appPdfExported: 'Wyeksportowano {path}.',
     appPdfExportFailed: 'Nie można wyeksportować pliku PDF.',
+    appCsvExportNeedsFullLoad:
+      'Eksport do CSV wymaga w pełni załadowanego skoroszytu — poczekaj na zakończenie ładowania.',
+    appCsvExportTooLarge: 'Arkusz jest za duży, aby wyeksportować go do CSV.',
+    appCsvExportCanceled: 'Anulowano eksport do CSV.',
+    appCsvExported: 'Wyeksportowano {path}.',
+    appCsvExportedActiveOnly:
+      'Pliki CSV zawierają tylko jeden arkusz — aktywny arkusz „{name}” wyeksportowano do {path}.',
+    appCsvExportFailed: 'Nie można wyeksportować pliku CSV.',
     appDemoNoSave:
       'Zmiany w trybie demo pozostają w pamięci — otwórz plik XLSX, aby zapisać na dysku.',
     appFilterSnapshotFailed: 'Nie można wykonać migawki stanu filtrów.',
@@ -18934,6 +19042,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'PDF-export geannuleerd.',
     appPdfExported: '{path} geëxporteerd.',
     appPdfExportFailed: 'Kan de PDF niet exporteren.',
+    appCsvExportNeedsFullLoad:
+      'CSV-export vereist een volledig geladen werkmap — wacht tot het laden is voltooid.',
+    appCsvExportTooLarge: 'Het blad is te groot om als CSV te exporteren.',
+    appCsvExportCanceled: 'CSV-export geannuleerd.',
+    appCsvExported: '{path} geëxporteerd.',
+    appCsvExportedActiveOnly:
+      'CSV-bestanden bevatten slechts één blad — het actieve blad “{name}” is geëxporteerd naar {path}.',
+    appCsvExportFailed: 'Kan de CSV niet exporteren.',
     appDemoNoSave:
       'Demobewerkingen blijven in het geheugen — open een XLSX-bestand om op schijf op te slaan.',
     appFilterSnapshotFailed: 'Kan geen momentopname van de filters maken.',
@@ -20239,6 +20355,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'Eksport PDF dibatalkan.',
     appPdfExported: '{path} dieksport.',
     appPdfExportFailed: 'Tidak dapat mengeksport PDF.',
+    appCsvExportNeedsFullLoad:
+      'Eksport CSV memerlukan buku kerja dimuatkan sepenuhnya — tunggu pemuatan selesai.',
+    appCsvExportTooLarge: 'Helaian terlalu besar untuk dieksport sebagai CSV.',
+    appCsvExportCanceled: 'Eksport CSV dibatalkan.',
+    appCsvExported: '{path} dieksport.',
+    appCsvExportedActiveOnly:
+      'Fail CSV hanya mengandungi satu helaian — helaian aktif “{name}” dieksport ke {path}.',
+    appCsvExportFailed: 'Tidak dapat mengeksport CSV.',
     appDemoNoSave: 'Suntingan demo kekal dalam memori — buka fail XLSX untuk menyimpan ke cakera.',
     appFilterSnapshotFailed: 'Tidak dapat mengambil syot kilat penapis.',
     appColorFiltersUnsaveable:
@@ -21503,6 +21627,13 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'ייצוא ה-PDF בוטל.',
     appPdfExported: '{path} יוצא.',
     appPdfExportFailed: 'לא ניתן לייצא את ה-PDF.',
+    appCsvExportNeedsFullLoad: 'ייצוא CSV דורש חוברת עבודה טעונה במלואה — המתן לסיום הטעינה.',
+    appCsvExportTooLarge: 'הגיליון גדול מדי לייצוא כ-CSV.',
+    appCsvExportCanceled: 'ייצוא ה-CSV בוטל.',
+    appCsvExported: '{path} יוצא.',
+    appCsvExportedActiveOnly:
+      'קובצי CSV מכילים גיליון אחד בלבד — הגיליון הפעיל "{name}" יוצא אל {path}.',
+    appCsvExportFailed: 'לא ניתן לייצא את ה-CSV.',
     appDemoNoSave: 'עריכות הדגמה נשארות בזיכרון — פתח קובץ XLSX כדי לשמור לדיסק.',
     appFilterSnapshotFailed: 'לא ניתן לצלם את מצב המסננים.',
     appColorFiltersUnsaveable: 'מסנני צבע אינם ניתנים לשמירה כ-XLSX עדיין — נקה אותם לפני השמירה.',
@@ -22789,6 +22920,14 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'PDF निर्यात रद्द किया गया।',
     appPdfExported: '{path} निर्यात किया गया।',
     appPdfExportFailed: 'PDF निर्यात नहीं किया जा सका।',
+    appCsvExportNeedsFullLoad:
+      'CSV निर्यात के लिए पूरी तरह लोड की गई कार्यपुस्तिका चाहिए — लोडिंग पूरी होने तक प्रतीक्षा करें।',
+    appCsvExportTooLarge: 'शीट बहुत बड़ी है, CSV के रूप में निर्यात नहीं की जा सकती।',
+    appCsvExportCanceled: 'CSV निर्यात रद्द किया गया।',
+    appCsvExported: '{path} निर्यात किया गया।',
+    appCsvExportedActiveOnly:
+      'CSV फ़ाइलों में केवल एक शीट होती है — सक्रिय शीट “{name}” को {path} पर निर्यात किया गया।',
+    appCsvExportFailed: 'CSV निर्यात नहीं किया जा सका।',
     appDemoNoSave: 'डेमो संपादन स्मृति में रहते हैं — डिस्क पर सहेजने के लिए XLSX फ़ाइल खोलें।',
     appFilterSnapshotFailed: 'फ़िल्टर की स्थिति का स्नैपशॉट नहीं लिया जा सका।',
     appColorFiltersUnsaveable:
@@ -24029,6 +24168,12 @@ export const appStrings = defineStrings({
     appPdfCanceled: 'PDF 匯出已取消。',
     appPdfExported: '已匯出 {path}。',
     appPdfExportFailed: '無法匯出 PDF。',
+    appCsvExportNeedsFullLoad: 'CSV 匯出需要活頁簿完整載入——請等待載入完成。',
+    appCsvExportTooLarge: '工作表太大,無法匯出 CSV。',
+    appCsvExportCanceled: 'CSV 匯出已取消。',
+    appCsvExported: '已匯出 {path}。',
+    appCsvExportedActiveOnly: 'CSV 只包含一張工作表——已匯出目前工作表「{name}」到 {path}。',
+    appCsvExportFailed: '無法匯出 CSV。',
     appDemoNoSave: '示範模式的編輯只保存在記憶體——開啟 XLSX 檔案才能儲存到磁碟。',
     appFilterSnapshotFailed: '無法擷取篩選狀態快照。',
     appColorFiltersUnsaveable: '色彩篩選暫時無法儲存為 XLSX——請先清除再儲存。',

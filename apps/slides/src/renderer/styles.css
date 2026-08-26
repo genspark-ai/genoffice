@@ -4523,6 +4523,64 @@ body.vib .slide-list {
   cursor: default;
 }
 
+.rb-font-download {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rb-font-download-tag {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.rb-font-install-local {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  color: var(--accent);
+}
+
+.font-missing-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  background: var(--accent-soft);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.font-missing-banner .fmb-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.font-missing-banner .fmb-fonts {
+  margin-left: 6px;
+  color: var(--text-secondary);
+}
+.font-missing-banner button {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.font-missing-banner button:hover {
+  background: var(--hover);
+}
+.font-missing-banner .fmb-download {
+  color: var(--accent);
+  font-weight: 600;
+}
+.font-missing-banner .fmb-download:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .rb-color-underbar {
   position: absolute;
   left: -1px;
@@ -7297,12 +7355,36 @@ body.show-curtain::after {
   }
 }
 
+.ai-clarify-question-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
 .ai-clarify-label {
+  flex: 1;
+  min-width: 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--color-text-primary);
-  margin: 0 0 8px;
+  margin: 0;
   line-height: 1.4;
+}
+
+.ai-clarify-multi-badge {
+  flex-shrink: 0;
+  margin-top: 2px;
+  padding: 2px 7px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .ai-clarify-desc {
@@ -7470,24 +7552,34 @@ body.show-curtain::after {
   margin-left: auto;
 }
 
-/* 32px filled advance arrow */
+/* Explicit multi-select advance action: text avoids looking like an unlabeled pager. */
 .ai-clarify-next {
-  width: 32px;
-  height: 32px;
+  min-width: 82px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  gap: 6px;
+  padding: 0 14px;
+  font-family: inherit;
   background: var(--color-btn-primary);
   color: var(--color-btn-primary-text);
   border: none;
   border-radius: 8px;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.ai-clarify-next:hover {
+.ai-clarify-next-arrow {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.ai-clarify-next:hover:not(:disabled) {
   opacity: 0.85;
 }
 
@@ -7496,9 +7588,14 @@ body.show-curtain::after {
   box-shadow: 0 0 0 3px var(--slides-focus-ring-soft);
 }
 
+.ai-clarify-next:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
 .ai-clarify-skip {
-  height: 29px;
-  padding: 0 16px;
+  height: 36px;
+  padding: 0 14px;
   font-family: inherit;
   font-size: 14px;
   font-weight: 500;
@@ -7506,6 +7603,7 @@ body.show-curtain::after {
   background: transparent;
   border: 1px solid var(--color-border-default);
   border-radius: 8px;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -7518,7 +7616,7 @@ body.show-curtain::after {
 }
 
 .ai-clarify-submit {
-  height: 29px;
+  height: 36px;
   padding: 0 16px;
   font-family: inherit;
   font-size: 14px;
@@ -7527,17 +7625,23 @@ body.show-curtain::after {
   background: var(--color-btn-primary);
   border: 1px solid transparent;
   border-radius: 8px;
+  white-space: nowrap;
   cursor: pointer;
   transition: filter 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.ai-clarify-submit:hover {
+.ai-clarify-submit:hover:not(:disabled) {
   filter: brightness(0.92);
 }
 
-.ai-clarify-submit:active {
+.ai-clarify-submit:active:not(:disabled) {
   filter: brightness(0.88);
   transform: scale(0.98);
+}
+
+.ai-clarify-submit:disabled {
+  opacity: 0.38;
+  cursor: default;
 }
 
 .ai-clarify-skip:focus-visible,

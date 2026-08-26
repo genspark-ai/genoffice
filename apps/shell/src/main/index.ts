@@ -53,8 +53,9 @@ import {
   ANALYTICS_ENABLED_KEY,
   analyticsEnabledFrom,
   createAnalytics,
-  ensureAnalyticsClientId,
+  ensureAnalyticsClientState,
   extractPackagedAnalyticsKeys,
+  markAnalyticsFirstLaunchSent,
 } from './analytics'
 import type { Analytics, AnalyticsKeys } from './analytics'
 import {
@@ -362,10 +363,14 @@ function persistAnalyticsPreference(enabled: boolean): boolean {
 
 function initAnalytics(): void {
   try {
+    let clientState: ReturnType<typeof ensureAnalyticsClientState> | null = null
+    const getClientState = () => (clientState ??= ensureAnalyticsClientState(APP_SETTINGS_PATH()))
     analytics = createAnalytics({
       keys: resolveAnalyticsKeys(),
-      getClientId: () => ensureAnalyticsClientId(APP_SETTINGS_PATH()),
+      getClientId: () => getClientState().clientId,
       isEnabled: analyticsEnabled,
+      shouldTrackFirstLaunch: () => getClientState().firstLaunchPending,
+      onFirstLaunchSent: () => markAnalyticsFirstLaunchSent(APP_SETTINGS_PATH()),
       // Country-only approximation from OS regional settings. This avoids an
       // IP lookup while populating GA4's built-in Country dimension.
       getCountryCode: () => app.getLocaleCountryCode(),

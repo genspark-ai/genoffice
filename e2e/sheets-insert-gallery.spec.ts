@@ -28,9 +28,9 @@ async function gridOrigin(page: Page): Promise<{ x: number; y: number }> {
   return grid
 }
 
-/** center of a cell: ~46px row header, ~24px column header, ~86px × ~23px cells */
+/** center of a cell: ~46px row header, ~24px column header, ~74px × ~23px cells */
 function cellPoint(origin: { x: number; y: number }, row: number, column: number) {
-  return { x: origin.x + 46 + column * 86 + 43, y: origin.y + 24 + row * 23 + 11 }
+  return { x: origin.x + 46 + column * 74 + 37, y: origin.y + 24 + row * 23 + 11 }
 }
 
 test.describe('sheets: Insert → Recommended Charts and Icons', () => {

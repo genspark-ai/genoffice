@@ -26,6 +26,8 @@ import type {
   SectionSettings,
   SourceInfo,
   StyleInfo,
+  TableAutoFitMode,
+  TableLook,
   TextboxDisplay,
   TextboxParaDisplay,
   ThemeColors,
@@ -41,6 +43,14 @@ import { formatNumber } from '../editor/numbering'
 import type { InkTool } from '../editor/ink'
 import type { RibbonFormatState } from './ribbon-format-state'
 import { setSelectedColumnWidth } from '../editor/table-sizing'
+import {
+  applyTablePreset,
+  repeatHeaderState,
+  setTableAutoFit,
+  setTableLookOption,
+  toggleRepeatHeaderRows,
+  updateSelectedTableAttrs,
+} from '../editor/table-properties'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
 import { useSystemFontFamilies } from '../system-fonts'
@@ -68,6 +78,7 @@ import {
   IconAlignJustify,
   IconAlignLeft,
   IconAlignRight,
+  IconAutoFit,
   IconBorderAll,
   IconBorderInner,
   IconBorderNone,
@@ -115,6 +126,8 @@ import {
   IconSubscript,
   IconSuperscript,
   IconTableDelete,
+  IconRepeatHeader,
+  IconTableProperties,
 } from './icons'
 interface RibbonProps {
   /** App keyboard shortcuts reuse ribbon closures through here (font-size stepping keeps its coalescing) */
@@ -299,6 +312,56 @@ type RibbonTab =
   | (typeof TABLE_TABS)[number]
   | (typeof IMAGE_TABS)[number]
   | (typeof SHAPE_TABS)[number]
+
+const TABLE_PRESETS = [
+  {
+    label: 'ribbonTablePresetGrid',
+    headerFill: null,
+    band1Fill: null,
+    band2Fill: null,
+    borderColor: '808080',
+  },
+  {
+    label: 'ribbonTablePresetBlueHeader',
+    headerFill: 'D9EAF7',
+    band1Fill: null,
+    band2Fill: null,
+    borderColor: '5B9BD5',
+  },
+  {
+    label: 'ribbonTablePresetBlueBanded',
+    headerFill: 'BDD7EE',
+    band1Fill: 'DDEBF7',
+    band2Fill: 'FFFFFF',
+    borderColor: '9DC3E6',
+  },
+  {
+    label: 'ribbonTablePresetGrayBanded',
+    headerFill: 'D9E1F2',
+    band1Fill: 'E7E6E6',
+    band2Fill: 'FFFFFF',
+    borderColor: 'A5A5A5',
+  },
+  {
+    label: 'ribbonTablePresetGreenHeader',
+    headerFill: 'E2F0D9',
+    band1Fill: null,
+    band2Fill: null,
+    borderColor: '70AD47',
+  },
+] as const satisfies ReadonlyArray<{
+  label: StringKey
+  headerFill: string | null
+  band1Fill: string | null
+  band2Fill: string | null
+  borderColor: string
+}>
+
+const TABLE_AUTO_FIT_OPTIONS: Array<[TableAutoFitMode, StringKey]> = [
+  ['contents', 'ribbonAutoFitContents'],
+  ['window', 'ribbonAutoFitWindow'],
+  ['fixed', 'ribbonFixedColumnWidth'],
+]
 
 // tab values double as internal-state / external tabRequest keys; translated for display via these string keys
 const TAB_LABEL_KEYS: Record<string, StringKey> = {
@@ -655,6 +718,7 @@ function RibbonInner({
   /** Picture Format → remove background / crop dialogs */
   const [pictureDialog, setPictureDialog] = useState<'cutout' | 'crop' | null>(null)
   const [listDialog, setListDialog] = useState(false)
+  const [tablePropertiesOpen, setTablePropertiesOpen] = useState(false)
 
   useEffect(() => {
     if (tabRequest && (TABS as readonly string[]).includes(tabRequest.tab)) {
@@ -1052,6 +1116,87 @@ function RibbonInner({
           widthCm: fs.cellWidthCm,
           vAlign: fs.cellVAlign,
         }
+
+  const tableAttrs = inTable ? editor.getAttributes('docTable') : {}
+  const tableHeader = inTable ? repeatHeaderState(editor.state) : { enabled: false, active: false }
+  const tableLook = (tableAttrs.tblLook as TableLook | null) ?? {
+    firstRow: true,
+    lastRow: false,
+    firstColumn: true,
+    lastColumn: false,
+    bandedRows: true,
+    bandedColumns: false,
+  }
+  const tableAutoFitMode: TableAutoFitMode =
+    tableAttrs.tblAutoFit === 'contents' || tableAttrs.tblAutoFit === 'window'
+      ? tableAttrs.tblAutoFit
+      : 'fixed'
+  const tableAutoFitLabel =
+    TABLE_AUTO_FIT_OPTIONS.find(([mode]) => mode === tableAutoFitMode)?.[1] ??
+    'ribbonFixedColumnWidth'
+
+  const applyTableProperties = (value: TablePropertiesValue) => {
+    if (!canEdit || !inTable) return
+    let measuredWidthPx = Number(tableAttrs.widthPx) || 0
+    if (!(measuredWidthPx > 0)) {
+      try {
+        const rect = selectedRect(editor.state)
+        const tableDom = editor.view.nodeDOM(rect.tableStart - 1)
+        if (tableDom instanceof HTMLElement) {
+          const zoomEl = document.querySelector('.doc-zoom') as HTMLElement | null
+          const zoom = zoomEl ? parseFloat(getComputedStyle(zoomEl).zoom || '1') || 1 : 1
+          measuredWidthPx = tableDom.getBoundingClientRect().width / zoom
+        }
+      } catch {
+        // A malformed table falls back to the section width below.
+      }
+    }
+    measuredWidthPx = Math.max(1, Math.round(measuredWidthPx || sectionContentWidthPx))
+    const positionedWidthPx =
+      value.autoFit === 'window' ? Math.round(sectionContentWidthPx) : measuredWidthPx
+    runTableCommand(setTableAutoFit(value.autoFit, sectionContentWidthPx))
+    const twips = (cm: number) => Math.max(0, Math.round(cm * TWIPS_PER_CM))
+    const signedTwips = (cm: number) => Math.round(cm * TWIPS_PER_CM)
+    const floatX =
+      value.wrap === 'right' && Math.abs(value.positionXCm) < 0.001
+        ? value.autoFit === 'window'
+          ? 0
+          : Math.max(0, Math.round((sectionContentWidthPx - positionedWidthPx) * 15))
+        : signedTwips(value.positionXCm)
+    const keepFloatSuppressed = value.floatSuppressed && value.wrap !== 'none'
+    runTableCommand(
+      updateSelectedTableAttrs({
+        tblFloatWidthPx: value.wrap === 'right' ? positionedWidthPx : null,
+        cellMar: {
+          top: twips(value.marginTopCm),
+          right: twips(value.marginRightCm),
+          bottom: twips(value.marginBottomCm),
+          left: twips(value.marginLeftCm),
+        },
+        cellMarEdited: true,
+        tblFloat: keepFloatSuppressed ? null : value.wrap,
+        tblFloatSource: value.wrap,
+        tblFloatSuppressed: keepFloatSuppressed,
+        tblFloatXTwips: value.wrap === 'none' ? null : floatX,
+        tblFloatYTwips: value.wrap === 'none' ? null : signedTwips(value.positionYCm),
+        tblFloatHorzAnchor:
+          value.wrap === 'none' ? null : (tableAttrs.tblFloatHorzAnchor ?? 'margin'),
+        tblFloatVertAnchor:
+          value.wrap === 'none' ? null : (tableAttrs.tblFloatVertAnchor ?? 'margin'),
+        tblFloatDistance:
+          value.wrap === 'none'
+            ? null
+            : {
+                top: twips(value.distanceCm),
+                right: twips(value.distanceCm),
+                bottom: twips(value.distanceCm),
+                left: twips(value.distanceCm),
+              },
+        tblFloatEdited: true,
+      }),
+    )
+    setTablePropertiesOpen(false)
+  }
 
   const activeCharStyleId = fs.charStyleId
   const presetAccent = themeColors?.accent1?.trim().toUpperCase() || DEFAULT_PRESET_ACCENT
@@ -2184,13 +2329,34 @@ function RibbonInner({
                   <span className="table-style-card-grid plain" />
                   <span>{t('ribbonNoStyle')}</span>
                 </button>
+                {TABLE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    className="table-style-card"
+                    data-tip={t(preset.label)}
+                    onClick={() => runTableCommand(applyTablePreset(preset))}
+                  >
+                    <span
+                      className="table-style-card-grid"
+                      style={{
+                        borderColor: `#${preset.borderColor}`,
+                        borderTopColor: `#${preset.headerFill ?? 'FFFFFF'}`,
+                        background: `repeating-linear-gradient(to bottom,#${preset.band1Fill ?? 'FFFFFF'} 0 50%,#${preset.band2Fill ?? preset.band1Fill ?? 'FFFFFF'} 50% 100%)`,
+                      }}
+                    />
+                    <span>{t(preset.label)}</span>
+                  </button>
+                ))}
                 {[...(styles?.values() ?? [])]
                   .filter((info) => info.type === 'table' && info.styleId !== 'TableNormal')
-                  .slice(0, 8)
                   .map((info) => (
                     <button
                       key={info.styleId}
-                      className="table-style-card"
+                      className={
+                        tableAttrs.tblStyleId === info.styleId
+                          ? 'table-style-card active'
+                          : 'table-style-card'
+                      }
                       data-tip={t('ribbonApplyTableStyleTip', { name: info.name })}
                       onClick={() =>
                         chain().updateAttributes('docTable', { tblStyleId: info.styleId }).run()
@@ -2212,6 +2378,36 @@ function RibbonInner({
                   ))}
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupTableStyles')}</div>
+            </div>
+            <div className="ribbon-sep" />
+            <div className="table-tool-group">
+              <div className="table-style-options">
+                {(
+                  [
+                    ['firstRow', 'ribbonTableFirstRow'],
+                    ['lastRow', 'ribbonTableLastRow'],
+                    ['bandedRows', 'ribbonTableBandedRows'],
+                    ['firstColumn', 'ribbonTableFirstColumn'],
+                    ['lastColumn', 'ribbonTableLastColumn'],
+                    ['bandedColumns', 'ribbonTableBandedColumns'],
+                  ] as Array<[keyof TableLook, StringKey]>
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={
+                      tableLook[key]
+                        ? 'table-option-toggle table-tool-button active'
+                        : 'table-option-toggle table-tool-button'
+                    }
+                    aria-pressed={tableLook[key]}
+                    onClick={() => runTableCommand(setTableLookOption(key, !tableLook[key]))}
+                  >
+                    <span className="table-option-check" aria-hidden="true" />
+                    <span>{t(label)}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="ribbon-group-label">{t('ribbonTableStyleOptions')}</div>
             </div>
             <div className="ribbon-sep" />
             <div className="table-tool-group">
@@ -2467,6 +2663,76 @@ function RibbonInner({
                 </label>
               </div>
               <div className="ribbon-group-label">{t('ribbonGroupCellSize')}</div>
+            </div>
+            <div className="ribbon-sep" />
+            <div className="table-tool-group table-tool-autofit">
+              <div className="table-tool-row">
+                <div className="rb-split-wrap table-autofit-wrap">
+                  <button
+                    className={`table-command-button${dropdown === 'tableAutoFit' ? ' active' : ''}`}
+                    data-tip={t('ribbonAutoFit')}
+                    aria-expanded={dropdown === 'tableAutoFit'}
+                    onClick={() =>
+                      setDropdown((current) => (current === 'tableAutoFit' ? null : 'tableAutoFit'))
+                    }
+                  >
+                    <IconAutoFit size={18} />
+                    <span className="table-command-copy">
+                      <span>{t('ribbonAutoFit')}</span>
+                      <small>{t(tableAutoFitLabel)}</small>
+                    </span>
+                    <IconCaret size={12} />
+                  </button>
+                  {dropdown === 'tableAutoFit' && (
+                    <div data-rb-panel="" className="layout-menu table-autofit-menu">
+                      {TABLE_AUTO_FIT_OPTIONS.map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          className={tableAutoFitMode === mode ? 'active' : ''}
+                          onClick={() => {
+                            runTableCommand(setTableAutoFit(mode, sectionContentWidthPx))
+                            setDropdown(null)
+                          }}
+                        >
+                          <IconAutoFit size={17} />
+                          <span>{t(label)}</span>
+                          <span className="table-menu-state" aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="ribbon-group-label">{t('ribbonAutoFit')}</div>
+            </div>
+            <div className="ribbon-sep" />
+            <div className="table-tool-group table-tool-advanced">
+              <div className="table-tool-stack">
+                <button
+                  className={
+                    tableHeader.active
+                      ? 'table-command-row table-tool-button active'
+                      : 'table-command-row table-tool-button'
+                  }
+                  disabled={!tableHeader.enabled}
+                  aria-pressed={tableHeader.active}
+                  onClick={() => runTableCommand(toggleRepeatHeaderRows())}
+                >
+                  <IconRepeatHeader size={17} />
+                  <span>{t('ribbonRepeatHeaderRows')}</span>
+                </button>
+                <button
+                  className="table-command-row"
+                  onClick={() => {
+                    setDropdown(null)
+                    setTablePropertiesOpen(true)
+                  }}
+                >
+                  <IconTableProperties size={17} />
+                  <span>{t('ribbonTableProperties')}</span>
+                </button>
+              </div>
+              <div className="ribbon-group-label">{t('ribbonTableData')}</div>
             </div>
           </div>
         ) : tab === 'home' ? (
@@ -3538,6 +3804,13 @@ function RibbonInner({
           onClose={() => setListDialog(false)}
         />
       )}
+      {tablePropertiesOpen && (
+        <TablePropertiesDialog
+          initial={tablePropertiesFromAttrs(tableAttrs)}
+          onApply={applyTableProperties}
+          onClose={() => setTablePropertiesOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -3569,6 +3842,222 @@ const LIST_FMT_SAMPLES: Record<string, string> = {
 }
 
 const TWIPS_PER_CM = 567
+
+type TableWrapMode = 'none' | 'left' | 'right'
+
+interface TablePropertiesValue {
+  autoFit: TableAutoFitMode
+  wrap: TableWrapMode
+  floatSuppressed: boolean
+  positionXCm: number
+  positionYCm: number
+  distanceCm: number
+  marginTopCm: number
+  marginRightCm: number
+  marginBottomCm: number
+  marginLeftCm: number
+}
+
+function tablePropertiesFromAttrs(attrs: Record<string, unknown>): TablePropertiesValue {
+  const cm = (value: unknown, fallback = 0) =>
+    +((Number.isFinite(Number(value)) ? Number(value) : fallback) / TWIPS_PER_CM).toFixed(2)
+  const margins = (attrs.cellMar as Record<string, number> | null) ?? {}
+  const distance = (attrs.tblFloatDistance as Record<string, number> | null) ?? {}
+  const wrap: TableWrapMode =
+    attrs.tblFloat === 'left' || attrs.tblFloat === 'right'
+      ? attrs.tblFloat
+      : attrs.tblFloatSource === 'left' || attrs.tblFloatSource === 'right'
+        ? attrs.tblFloatSource
+        : 'none'
+  return {
+    autoFit:
+      attrs.tblAutoFit === 'contents' || attrs.tblAutoFit === 'window' ? attrs.tblAutoFit : 'fixed',
+    wrap,
+    floatSuppressed: attrs.tblFloatSuppressed === true,
+    positionXCm: cm(attrs.tblFloatXTwips),
+    positionYCm: cm(attrs.tblFloatYTwips),
+    distanceCm: cm(distance.right ?? distance.left ?? distance.top ?? distance.bottom, 180),
+    marginTopCm: cm(margins.top),
+    marginRightCm: cm(margins.right, 108),
+    marginBottomCm: cm(margins.bottom),
+    marginLeftCm: cm(margins.left, 108),
+  }
+}
+
+function TablePropertiesDialog({
+  initial,
+  onApply,
+  onClose,
+}: {
+  initial: TablePropertiesValue
+  onApply: (value: TablePropertiesValue) => void
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const [value, setValue] = useState(initial)
+  const update = (patch: Partial<TablePropertiesValue>) =>
+    setValue((current) => ({ ...current, ...patch }))
+  const numberInput = (
+    key:
+      | 'positionXCm'
+      | 'positionYCm'
+      | 'distanceCm'
+      | 'marginTopCm'
+      | 'marginRightCm'
+      | 'marginBottomCm'
+      | 'marginLeftCm',
+  ) => (
+    <input
+      type="number"
+      min={key === 'positionXCm' || key === 'positionYCm' ? -50 : 0}
+      max={50}
+      step={0.1}
+      value={value[key]}
+      onChange={(event) => update({ [key]: Number(event.target.value) || 0 })}
+    />
+  )
+  const wrapLabel: StringKey =
+    value.wrap === 'left'
+      ? 'appWrapSquareLeft'
+      : value.wrap === 'right'
+        ? 'appWrapSquareRight'
+        : 'appWrapInline'
+  const autoFitLabel =
+    TABLE_AUTO_FIT_OPTIONS.find(([mode]) => mode === value.autoFit)?.[1] ?? 'ribbonFixedColumnWidth'
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal gs-form table-properties-dialog">
+        <div className="table-properties-header">
+          <span className="table-properties-header-icon" aria-hidden="true">
+            <IconTableProperties size={22} />
+          </span>
+          <div>
+            <h2>{t('ribbonTableProperties')}</h2>
+            <p className="modal-desc">
+              {t(autoFitLabel)} · {t(wrapLabel)}
+            </p>
+          </div>
+        </div>
+
+        <section className="table-properties-card">
+          <h3>{t('ribbonAutoFit')}</h3>
+          <div className="table-properties-segments">
+            {TABLE_AUTO_FIT_OPTIONS.map(([mode, label]) => (
+              <label key={mode} className="table-properties-segment">
+                <input
+                  type="radio"
+                  name="table-autofit"
+                  checked={value.autoFit === mode}
+                  onChange={() => update({ autoFit: mode })}
+                />
+                <span>{t(label)}</span>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="table-properties-card">
+          <h3>{t('ribbonWrapText')}</h3>
+          <div className="table-properties-segments">
+            {(
+              [
+                ['none', 'appWrapInline'],
+                ['left', 'appWrapSquareLeft'],
+                ['right', 'appWrapSquareRight'],
+              ] as Array<[TableWrapMode, StringKey]>
+            ).map(([mode, label]) => (
+              <label key={mode} className="table-properties-segment">
+                <input
+                  type="radio"
+                  name="table-wrap"
+                  checked={value.wrap === mode}
+                  onChange={() => update({ wrap: mode })}
+                />
+                <span>{t(label)}</span>
+              </label>
+            ))}
+          </div>
+          {value.wrap !== 'none' && (
+            <div className="table-properties-grid">
+              <label>
+                {t('ribbonHorizontalPosition')}
+                <span>
+                  {numberInput('positionXCm')}
+                  {t('ribbonCm')}
+                </span>
+              </label>
+              <label>
+                {t('ribbonVerticalPosition')}
+                <span>
+                  {numberInput('positionYCm')}
+                  {t('ribbonCm')}
+                </span>
+              </label>
+              <label>
+                {t('ribbonDistanceFromText')}
+                <span>
+                  {numberInput('distanceCm')}
+                  {t('ribbonCm')}
+                </span>
+              </label>
+            </div>
+          )}
+        </section>
+
+        <section className="table-properties-card table-properties-margins">
+          <h3>{t('ribbonCellMargins')}</h3>
+          <div className="table-properties-margin-layout">
+            <div className="table-properties-grid">
+              <label>
+                {t('ribbonMarginTop')}
+                <span>
+                  {numberInput('marginTopCm')}
+                  {t('ribbonCm')}
+                </span>
+              </label>
+              <label>
+                {t('ribbonMarginBottom')}
+                <span>
+                  {numberInput('marginBottomCm')}
+                  {t('ribbonCm')}
+                </span>
+              </label>
+              <label>
+                {t('ribbonMarginLeft')}
+                <span>
+                  {numberInput('marginLeftCm')}
+                  {t('ribbonCm')}
+                </span>
+              </label>
+              <label>
+                {t('ribbonMarginRight')}
+                <span>
+                  {numberInput('marginRightCm')}
+                  {t('ribbonCm')}
+                </span>
+              </label>
+            </div>
+            <div className="table-margin-preview" aria-hidden="true">
+              <span className="table-margin-value top">{value.marginTopCm}</span>
+              <span className="table-margin-value right">{value.marginRightCm}</span>
+              <span className="table-margin-value bottom">{value.marginBottomCm}</span>
+              <span className="table-margin-value left">{value.marginLeftCm}</span>
+              <span className="table-margin-preview-cell" />
+            </div>
+          </div>
+        </section>
+
+        <div className="modal-actions">
+          <button onClick={onClose}>{t('ribbonCancel')}</button>
+          <button className="primary" onClick={() => onApply(value)}>
+            {t('ribbonOk')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function ListDefineDialog({
   onApply,

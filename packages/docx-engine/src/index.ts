@@ -57,6 +57,7 @@ export {
   patchChartWorkbookXlsxBase64,
   parseChartPartXml,
   patchChartPartXml,
+  lumHex,
   CHART_WORKBOOK_REL_TYPE,
   type ChartPatch,
   type ChartSeriesPatch,

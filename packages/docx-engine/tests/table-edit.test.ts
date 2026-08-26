@@ -197,6 +197,96 @@ describe('generateTableModelXml', () => {
       '<w:jc w:val="center"/>',
     )
   })
+
+  it('round-trips AutoFit, cell margins, floating position, and table style options', async () => {
+    const xml = generateTableModelXml({
+      rows: [[{ paras: ['a'] }, { paras: ['b'] }]],
+      autoFit: 'window',
+      cellMarTwips: { top: 80, right: 160, bottom: 90, left: 170 },
+      floatSide: 'left',
+      floatPos: {
+        xTwips: 720,
+        yTwips: 360,
+        horzAnchor: 'margin',
+        vertAnchor: 'text',
+        distanceTwips: { top: 60, right: 120, bottom: 70, left: 130 },
+      },
+      tableLook: {
+        firstRow: true,
+        lastRow: true,
+        firstColumn: false,
+        lastColumn: true,
+        bandedRows: false,
+        bandedColumns: true,
+      },
+    })
+    expect(xml).toContain('<w:tblW w:w="5000" w:type="pct"/>')
+    expect(xml).toContain('<w:tblLayout w:type="autofit"/>')
+    expect(xml).toContain('w:tblpX="720"')
+    expect(xml).toContain('w:tblpY="360"')
+    expect(xml).toContain('w:rightFromText="120"')
+    expect(xml).toContain('<w:top w:w="80" w:type="dxa"/>')
+    expect(xml).toContain('w:lastRow="1"')
+    expect(xml).toContain('w:noHBand="1"')
+    expect(xml).toContain('w:noVBand="0"')
+
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const table = parsed.blocks[0].table!
+    expect(table.autoFit).toBe('window')
+    expect(table.cellMarTwips).toEqual({ top: 80, left: 170, bottom: 90, right: 160 })
+    expect(table.floatSide).toBe('left')
+    expect(table.floatPos).toMatchObject({
+      xTwips: 720,
+      yTwips: 360,
+      horzAnchor: 'margin',
+      vertAnchor: 'text',
+      distanceTwips: { top: 60, right: 120, bottom: 70, left: 130 },
+    })
+    expect(table.tableLook).toMatchObject({
+      firstRow: true,
+      lastRow: true,
+      firstColumn: false,
+      lastColumn: true,
+      bandedRows: false,
+      bandedColumns: true,
+    })
+  })
+
+  it('patches imported table properties and repeat-header rows explicitly', () => {
+    const template =
+      '<w:tbl><w:tblPr><w:tblpPr w:tblpXSpec="right"/><w:tblOverlap w:val="overlap"/>' +
+      '<w:tblW w:w="4000" w:type="dxa"/><w:tblLayout w:type="fixed"/>' +
+      '<w:tblCellMar><w:left w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+      '<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:r><w:t>Old</w:t></w:r></w:p></w:tc></w:tr>' +
+      '</w:tbl>'
+    const out = generateTableModelXml(
+      {
+        rows: [[{ paras: ['New'] }]],
+        autoFit: 'contents',
+        cellMarTwips: { top: 0, right: 108, bottom: 0, left: 108 },
+        floatSide: null,
+        repeatHeaderRows: [false],
+      },
+      template,
+    )
+    expect(out).toContain('<w:tblW w:w="0" w:type="auto"/>')
+    expect(out).toContain('<w:tblLayout w:type="autofit"/>')
+    expect(out).not.toContain('w:tblpPr')
+    expect(out).not.toContain('w:tblOverlap')
+    expect(out).not.toContain('w:tblHeader')
+    expect(out).toContain('<w:right w:w="108" w:type="dxa"/>')
+  })
+
+  it('writes repeating header rows without disturbing other trPr children', () => {
+    const xml = generateTableModelXml({
+      rows: [[{ paras: ['Header'] }], [{ paras: ['Body'] }]],
+      rawTrPrs: ['<w:trPr><w:cantSplit/></w:trPr>', null],
+      repeatHeaderRows: [true, false],
+    })
+    expect(xml).toContain('<w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>')
+    expect(xml.match(/<w:tblHeader\/>/g)).toHaveLength(1)
+  })
 })
 
 describe('tcPr/trPr fidelity and new attributes', () => {

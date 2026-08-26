@@ -129,6 +129,12 @@ pub struct DrawingAnchor {
     pub to_column: usize,
     pub to_row_offset: i64,
     pub to_column_offset: i64,
+    /// True when the file carried a real `<xdr:to>` marker. Excel clamps
+    /// such an offset at its cell edge; synthesized to markers
+    /// (oneCellAnchor ext, absoluteAnchor, group children) encode sizes as
+    /// offsets past the edge and must keep walking.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub explicit_to: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -164,11 +170,27 @@ pub struct ChartSeries {
     /// spPr/a:ln color; "none" for an explicit a:noFill line.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line_color: Option<String>,
+    /// spPr/a:ln/@w converted from EMU to CSS px (w / 12700 pt · 96/72).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_width: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub smooth: Option<bool>,
     /// c:marker/c:symbol — "none" hides scatter/line markers.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub marker: Option<String>,
+    /// First outer level of a multiLvlStrCache category axis; start/end are
+    /// positions in the compacted innermost `categories` (end exclusive).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category_groups: Option<Vec<CategoryGroup>>,
+}
+
+/// One outer-level group label spanning innermost categories [start, end).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryGroup {
+    pub label: String,
+    pub start: usize,
+    pub end: usize,
 }
 
 /// Per-point fill override from `c:dPt`, e.g. pie slice colors.
@@ -246,6 +268,8 @@ pub struct AxisInfo {
     pub major_gridlines: bool,
     /// c:delete — the axis exists for scaling but is not drawn.
     pub hidden: bool,
+    /// c:scaling/c:orientation val="maxMin" — categories/values run reversed.
+    pub reversed: bool,
 }
 
 /// Chart-title font shorthand from c:title/c:txPr//a:defRPr.
@@ -314,6 +338,9 @@ pub struct ChartMetadata {
     /// c:scatterStyle — whether scatter points connect with lines.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scatter_style: Option<String>,
+    /// Plot-level `c:lineChart/c:marker` flag; per-series symbols refine it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_markers: Option<bool>,
     /// Second left/right value axis (combo charts) — scaling for the line
     /// series and, when not hidden, a drawn right-hand scale.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -339,6 +366,15 @@ pub struct VisualObject {
     pub media_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
+    /// a:blip/a:alphaModFix amt as 0..1; absent when fully opaque.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f64>,
+    /// spPr/a:blipFill on a shape — the image painted clipped to the
+    /// preset geometry (the flat fill_color stays the loading fallback).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_media_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_media_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -435,9 +471,9 @@ pub struct SheetVisualSource {
 }
 
 #[derive(Clone)]
-struct Relationship {
-    target: String,
-    relationship_type: String,
+pub(crate) struct Relationship {
+    pub(crate) target: String,
+    pub(crate) relationship_type: String,
 }
 
 #[derive(Clone, Default)]
@@ -1214,6 +1250,9 @@ fn read_drawing(
                 chart_path: Some(chart_path.clone()),
                 media_path: None,
                 media_type: None,
+                opacity: None,
+                fill_media_path: None,
+                fill_media_type: None,
                 name: drawing_name(anchor_node),
                 shape_type: None,
                 custom_path: None,
@@ -1238,16 +1277,29 @@ fn read_drawing(
             });
             continue;
         }
-        if let Some(blip_node) = anchor_node
+        // Only an xdr:pic is a picture — an xdr:sp with a:blipFill keeps its
+        // geometry and outline and falls through to the shape branch.
+        if let Some(pic_node) = anchor_node
             .descendants()
-            .find(|node| node.has_tag_name("blip"))
+            .find(|node| node.has_tag_name("pic"))
         {
+            let Some(blip_node) = pic_node
+                .descendants()
+                .find(|node| node.has_tag_name("blip"))
+            else {
+                continue;
+            };
             let Some(id) = relationship_id(blip_node) else {
                 continue;
             };
             let Some(relationship) = relationships.get(&id) else {
                 continue;
             };
+            // Excel draws nothing for a picture whose anchor collapses to a
+            // point (from == to with equal offsets, or a 0x0 ext).
+            if anchor_is_zero_extent(&anchor) {
+                continue;
+            }
             let media_path = resolve_part_target(drawing_path, &relationship.target)?;
             visuals.push(VisualObject {
                 id: visual_id,
@@ -1258,6 +1310,9 @@ fn read_drawing(
                 chart_path: None,
                 media_type: media_type_for_path(&media_path).map(ToOwned::to_owned),
                 media_path: Some(media_path),
+                opacity: blip_opacity(blip_node),
+                fill_media_path: None,
+                fill_media_type: None,
                 name: drawing_name(anchor_node),
                 shape_type: None,
                 custom_path: None,
@@ -1294,6 +1349,7 @@ fn read_drawing(
                 drawing_name(anchor_node),
                 colors,
                 drawing_path,
+                &relationships,
                 Some(index),
             ));
         }
@@ -1321,6 +1377,7 @@ fn shape_visual(
     name: Option<String>,
     colors: &ColorContext,
     drawing_path: &str,
+    relationships: &HashMap<String, Relationship>,
     drawing_index: Option<usize>,
 ) -> VisualObject {
     {
@@ -1345,6 +1402,18 @@ fn shape_visual(
             } else {
                 shape_sppr.and_then(|sppr| drawing_fill_color(sppr, colors))
             };
+            let fill_media_path = shape_sppr
+                .and_then(|sppr| sppr.children().find(|node| node.has_tag_name("blipFill")))
+                .and_then(|fill| fill.descendants().find(|node| node.has_tag_name("blip")))
+                .and_then(relationship_id)
+                .and_then(|id| relationships.get(&id))
+                .and_then(|relationship| {
+                    resolve_part_target(drawing_path, &relationship.target).ok()
+                });
+            let fill_media_type = fill_media_path
+                .as_deref()
+                .and_then(media_type_for_path)
+                .map(ToOwned::to_owned);
             let xfrm = shape_node
                 .descendants()
                 .find(|node| node.has_tag_name("xfrm"));
@@ -1447,6 +1516,9 @@ fn shape_visual(
                 chart_path: None,
                 media_path: None,
                 media_type: None,
+                opacity: None,
+                fill_media_path,
+                fill_media_type,
                 name,
                 shape_type,
                 custom_path,
@@ -1689,6 +1761,7 @@ fn expand_group(
             to_row_offset: anchor.from_row_offset + (child_box.1 + child_box.3).round() as i64,
             to_column_offset: anchor.from_column_offset
                 + (child_box.0 + child_box.2).round() as i64,
+            explicit_to: false,
         };
         *counter += 1;
         let child_id = format!("{visual_id}-{counter}");
@@ -1706,6 +1779,7 @@ fn expand_group(
                 child_name,
                 colors,
                 drawing_path,
+                relationships,
                 None,
             ));
             continue;
@@ -1732,6 +1806,9 @@ fn expand_group(
                 chart_path: Some(chart_path),
                 media_path: None,
                 media_type: None,
+                opacity: None,
+                fill_media_path: None,
+                fill_media_type: None,
                 name: child_name,
                 shape_type: None,
                 custom_path: None,
@@ -1756,16 +1833,18 @@ fn expand_group(
             });
             continue;
         }
-        let Some(id) = child
-            .descendants()
-            .find(|node| node.has_tag_name("blip"))
-            .and_then(relationship_id)
-        else {
+        let Some(blip_node) = child.descendants().find(|node| node.has_tag_name("blip")) else {
+            continue;
+        };
+        let Some(id) = relationship_id(blip_node) else {
             continue;
         };
         let Some(relationship) = relationships.get(&id) else {
             continue;
         };
+        if anchor_is_zero_extent(&child_anchor) {
+            continue;
+        }
         let media_path = resolve_part_target(drawing_path, &relationship.target)?;
         visuals.push(VisualObject {
             id: child_id,
@@ -1776,6 +1855,9 @@ fn expand_group(
             chart_path: None,
             media_type: media_type_for_path(&media_path).map(ToOwned::to_owned),
             media_path: Some(media_path),
+            opacity: blip_opacity(blip_node),
+            fill_media_path: None,
+            fill_media_type: None,
             name: child_name,
             shape_type: None,
             custom_path: None,
@@ -1812,6 +1894,31 @@ const CHART_TYPE_NAMES: [&str; 7] = [
     "radarChart",
 ];
 
+/// 3D plot elements fold onto their flat pipeline at parse time (flat 2D
+/// projection of the right chart type); the wire only carries the 2D name.
+/// stockChart/surfaceChart stay unmapped.
+const CHART_TYPE_3D_FOLDS: [(&str, &str); 4] = [
+    ("bar3DChart", "barChart"),
+    ("line3DChart", "lineChart"),
+    ("pie3DChart", "pieChart"),
+    ("area3DChart", "areaChart"),
+];
+
+/// The 2D wire name of a plot element, folding 3D variants.
+fn flat_plot_name(node: Node<'_, '_>) -> Option<&'static str> {
+    let name = node.tag_name().name();
+    CHART_TYPE_NAMES
+        .iter()
+        .copied()
+        .find(|flat| *flat == name)
+        .or_else(|| {
+            CHART_TYPE_3D_FOLDS
+                .iter()
+                .find(|(three_d, _)| *three_d == name)
+                .map(|(_, flat)| *flat)
+        })
+}
+
 fn read_chart(
     archive: &mut ZipArchive<File>,
     chart_path: &str,
@@ -1825,7 +1932,11 @@ fn read_chart(
 fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetadata {
     let chart_types = CHART_TYPE_NAMES
         .iter()
-        .filter(|name| document.descendants().any(|node| node.has_tag_name(**name)))
+        .filter(|name| {
+            document
+                .descendants()
+                .any(|node| flat_plot_name(node) == Some(**name))
+        })
         .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
     // Only the chart-level title — axes carry their own c:title deeper down.
@@ -1922,6 +2033,13 @@ fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetada
             .find(|node| node.has_tag_name("scatterStyle"))
             .and_then(|node| node.attribute("val"))
             .map(ToOwned::to_owned),
+        // Direct child only: c:ser/c:marker (a symbol container) must not
+        // register as the plot flag. CT_Boolean: a bare <c:marker/> is true.
+        line_markers: document
+            .descendants()
+            .find(|node| node.has_tag_name("lineChart") || node.has_tag_name("line3DChart"))
+            .and_then(|plot| direct_child(plot, "marker"))
+            .map(|node| !matches!(node.attribute("val"), Some("0") | Some("false"))),
         secondary_y_axis,
         title_style,
         series,
@@ -1984,6 +2102,10 @@ fn axis_infos(document: &Document<'_>) -> (Option<AxisInfo>, Option<AxisInfo>, O
             // CT_Boolean: a bare <c:delete/> means true.
             hidden: direct_child(axis, "delete")
                 .is_some_and(|node| !matches!(node.attribute("val"), Some("0") | Some("false"))),
+            reversed: scaling
+                .and_then(|node| direct_child(node, "orientation"))
+                .and_then(|node| node.attribute("val"))
+                == Some("maxMin"),
         };
         let position = direct_child(axis, "axPos").and_then(|node| node.attribute("val"));
         let is_x = match position {
@@ -2083,7 +2205,7 @@ fn legend_position(document: &Document<'_>) -> String {
 fn data_labels_node<'a>(document: &'a Document<'a>) -> Option<Node<'a, 'a>> {
     let plot_labels = document
         .descendants()
-        .find(|node| CHART_TYPE_NAMES.iter().any(|name| node.has_tag_name(*name)))
+        .find(|node| flat_plot_name(*node).is_some())
         .and_then(|plot| direct_child(plot, "dLbls"));
     let series_labels = document
         .descendants()
@@ -2160,9 +2282,10 @@ fn axis_titles(document: &Document<'_>) -> Option<AxisTitles> {
 
 fn plot_grouping(document: &Document<'_>) -> Option<String> {
     let plot = document.descendants().find(|node| {
-        ["barChart", "areaChart", "lineChart"]
-            .iter()
-            .any(|name| node.has_tag_name(*name))
+        matches!(
+            flat_plot_name(*node),
+            Some("barChart") | Some("areaChart") | Some("lineChart")
+        )
     })?;
     direct_child(plot, "grouping")
         .and_then(|node| node.attribute("val"))
@@ -2186,10 +2309,14 @@ fn parse_chart_series(series: Node<'_, '_>, index: usize, colors: &ColorContext)
     };
     let name = cached_name.unwrap_or_else(|| format!("Series{}", index + 1));
     // Explicit series fill/line color, else the theme accent cycle Excel uses
-    // for automatic chart colors.
+    // for automatic chart colors — keyed by c:idx, not document position.
+    let accent_index = direct_child(series, "idx")
+        .and_then(|node| node.attribute("val"))
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(index);
     let color = direct_child(series, "spPr")
         .and_then(|sppr| drawing_fill_color(sppr, colors))
-        .or_else(|| theme_accent(colors, index % 6 + 1).map(|base| tint_to_hex(base, 0.0)));
+        .or_else(|| theme_accent(colors, accent_index % 6 + 1).map(|base| tint_to_hex(base, 0.0)));
     let category_node = direct_child(series, "cat").or_else(|| direct_child(series, "xVal"));
     let categories = category_node.map(cached_values).unwrap_or_default();
     let category_format = category_node.and_then(cache_format_code);
@@ -2231,14 +2358,18 @@ fn parse_chart_series(series: Node<'_, '_>, index: usize, colors: &ColorContext)
             })
         })
         .collect::<Vec<_>>();
-    let line_color = direct_child(series, "spPr")
-        .and_then(|sppr| sppr.children().find(|node| node.has_tag_name("ln")))
-        .and_then(|ln| {
-            if ln.children().any(|node| node.has_tag_name("noFill")) {
-                return Some("none".into());
-            }
-            drawing_fill_color(ln, colors)
-        });
+    let line = direct_child(series, "spPr")
+        .and_then(|sppr| sppr.children().find(|node| node.has_tag_name("ln")));
+    let line_color = line.and_then(|ln| {
+        if ln.children().any(|node| node.has_tag_name("noFill")) {
+            return Some("none".into());
+        }
+        drawing_fill_color(ln, colors)
+    });
+    let line_width = line
+        .and_then(|ln| ln.attribute("w"))
+        .and_then(|value| value.parse::<f64>().ok())
+        .map(|emu| emu / 12700.0 * (96.0 / 72.0));
     let smooth = direct_child(series, "smooth")
         .and_then(|node| node.attribute("val"))
         .map(|value| value == "1" || value == "true");
@@ -2261,8 +2392,10 @@ fn parse_chart_series(series: Node<'_, '_>, index: usize, colors: &ColorContext)
         explosion_pct,
         point_explosions: (!point_explosions.is_empty()).then_some(point_explosions),
         line_color,
+        line_width,
         smooth,
         marker,
+        category_groups: category_node.and_then(category_groups),
     }
 }
 
@@ -2295,6 +2428,27 @@ fn formula_ref(node: Node<'_, '_>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+/// Both markers coincide — a zero span on both axes. (The no-ext fallbacks
+/// in parse_anchor always produce a real span, so they never match.)
+fn anchor_is_zero_extent(anchor: &DrawingAnchor) -> bool {
+    anchor.from_row == anchor.to_row
+        && anchor.from_row_offset == anchor.to_row_offset
+        && anchor.from_column == anchor.to_column
+        && anchor.from_column_offset == anchor.to_column_offset
+}
+
+/// a:blip/a:alphaModFix amt (per-100000) → 0..1; None when absent or opaque.
+fn blip_opacity(blip_node: Node<'_, '_>) -> Option<f64> {
+    let amt = blip_node
+        .children()
+        .find(|node| node.has_tag_name("alphaModFix"))?
+        .attribute("amt")?
+        .parse::<f64>()
+        .ok()?;
+    let opacity = (amt / 100_000.0).clamp(0.0, 1.0);
+    (opacity < 1.0).then_some(opacity)
+}
+
 fn parse_anchor(anchor: Node<'_, '_>) -> Option<DrawingAnchor> {
     let Some(from) = direct_child(anchor, "from") else {
         // absoluteAnchor: xdr:pos + xdr:ext in sheet EMU. Encode both corners
@@ -2317,6 +2471,7 @@ fn parse_anchor(anchor: Node<'_, '_>) -> Option<DrawingAnchor> {
             to_column: 0,
             to_row_offset: y + cy,
             to_column_offset: x + cx,
+            explicit_to: false,
         });
     };
     let from_row = marker_value(from, "row")?;
@@ -2333,6 +2488,7 @@ fn parse_anchor(anchor: Node<'_, '_>) -> Option<DrawingAnchor> {
             to_column: marker_value(to, "col").unwrap_or(from_column + 8),
             to_row_offset: marker_signed_value(to, "rowOff").unwrap_or(0),
             to_column_offset: marker_signed_value(to, "colOff").unwrap_or(0),
+            explicit_to: true,
         });
     }
     // oneCellAnchor: the size lives in xdr:ext (EMU). Encode it as offsets
@@ -2354,6 +2510,7 @@ fn parse_anchor(anchor: Node<'_, '_>) -> Option<DrawingAnchor> {
             to_column: from_column,
             to_row_offset: from_row_offset + cy,
             to_column_offset: from_column_offset + cx,
+            explicit_to: false,
         }),
         _ => Some(DrawingAnchor {
             from_row,
@@ -2364,6 +2521,7 @@ fn parse_anchor(anchor: Node<'_, '_>) -> Option<DrawingAnchor> {
             to_column: from_column + 8,
             to_row_offset: 0,
             to_column_offset: 0,
+            explicit_to: false,
         }),
     }
 }
@@ -2448,7 +2606,7 @@ fn parse_fill(fill: Node<'_, '_>, colors: &ColorContext) -> FillInfo {
         .children()
         .find(|node| node.has_tag_name("patternFill"))
     else {
-        return FillInfo::default();
+        return parse_gradient_fill(fill, colors);
     };
     let pattern_type = pattern.attribute("patternType");
     if pattern_type == Some("none") {
@@ -2481,6 +2639,39 @@ fn parse_fill(fill: Node<'_, '_>, colors: &ColorContext) -> FillInfo {
         .map(|node| theme_provenance(node, colors))
         .unwrap_or((None, None));
     FillInfo { color, theme, tint }
+}
+
+/// The cell style model carries one flat color, so a gradientFill is
+/// approximated by the mid-gradient blend of its outermost stops. The blend
+/// carries no single theme provenance.
+fn parse_gradient_fill(fill: Node<'_, '_>, colors: &ColorContext) -> FillInfo {
+    let Some(gradient) = fill
+        .children()
+        .find(|node| node.has_tag_name("gradientFill"))
+    else {
+        return FillInfo::default();
+    };
+    let mut stops = gradient
+        .children()
+        .filter(|node| node.has_tag_name("stop"))
+        .filter_map(|stop| {
+            let position = stop.attribute("position")?.parse::<f64>().ok()?;
+            let color = stop
+                .children()
+                .find(|node| node.has_tag_name("color"))
+                .and_then(|node| parse_color(node, colors))?;
+            Some((position, color))
+        })
+        .collect::<Vec<_>>();
+    // Stops are not guaranteed document-ordered.
+    stops.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (Some((_, first)), Some((_, last))) = (stops.first(), stops.last()) else {
+        return FillInfo::default();
+    };
+    FillInfo {
+        color: mix_hex(first, last),
+        ..FillInfo::default()
+    }
 }
 
 fn mix_hex(first: &str, second: &str) -> Option<String> {
@@ -2972,7 +3163,7 @@ pub fn hyperlink_targets(
         .collect())
 }
 
-fn read_relationships(
+pub(crate) fn read_relationships(
     archive: &mut ZipArchive<File>,
     source_path: &str,
 ) -> Result<HashMap<String, Relationship>, SidecarError> {
@@ -3006,7 +3197,7 @@ fn read_relationships(
         .collect())
 }
 
-fn resolve_part_target(source_path: &str, target: &str) -> Result<String, SidecarError> {
+pub(crate) fn resolve_part_target(source_path: &str, target: &str) -> Result<String, SidecarError> {
     let candidate = if target.starts_with('/') {
         PathBuf::from(target.trim_start_matches('/'))
     } else {
@@ -3045,7 +3236,7 @@ fn read_xml(archive: &mut ZipArchive<File>, path: &str) -> Result<String, Sideca
         .ok_or_else(|| SidecarError::Workbook(format!("Workbook is missing {path}.")))
 }
 
-fn read_optional_xml(
+pub(crate) fn read_optional_xml(
     archive: &mut ZipArchive<File>,
     path: &str,
 ) -> Result<Option<String>, SidecarError> {
@@ -3057,7 +3248,7 @@ fn read_optional_xml(
     Ok(Some(xml))
 }
 
-fn parse_document<'a>(xml: &'a str, path: &str) -> Result<Document<'a>, SidecarError> {
+pub(crate) fn parse_document<'a>(xml: &'a str, path: &str) -> Result<Document<'a>, SidecarError> {
     Document::parse(xml)
         .map_err(|error| SidecarError::Workbook(format!("Invalid XML in {path}: {error}")))
 }
@@ -3081,7 +3272,17 @@ fn drawing_name(anchor: Node<'_, '_>) -> Option<String> {
 }
 
 fn cached_values(node: Node<'_, '_>) -> Vec<String> {
-    node.descendants()
+    // multiLvlStrCache: sweeping every c:pt would flatten L levels into one
+    // L×N array. The first c:lvl is the innermost (detail) level per OOXML.
+    let scope = node
+        .descendants()
+        .find(|child| child.has_tag_name("lvl"))
+        .unwrap_or(node);
+    // Document order, compacted: the numeric value path drops blanks the same
+    // way, so padding sparse c:pt/@idx gaps here would misalign categories
+    // against values. Aligning both caches by idx union needs a wire change.
+    scope
+        .descendants()
         .filter(|child| child.has_tag_name("pt"))
         .filter_map(|point| {
             point
@@ -3091,6 +3292,78 @@ fn cached_values(node: Node<'_, '_>) -> Vec<String> {
                 .map(ToOwned::to_owned)
         })
         .collect()
+}
+
+/// First outer level of a multiLvlStrCache: each pt idx marks a group start
+/// in cache-idx space; the span runs until the next pt (or ptCount). Spans
+/// are remapped onto the document-order positions `cached_values` emits, so
+/// sparse caches cannot misalign groups against categories. Ambiguity —
+/// an outer pt without an idx, or a group whose members are not contiguous
+/// in the emitted order — skips the groups entirely.
+fn category_groups(node: Node<'_, '_>) -> Option<Vec<CategoryGroup>> {
+    let cache = node
+        .descendants()
+        .find(|child| child.has_tag_name("multiLvlStrCache"))?;
+    let mut levels = cache.children().filter(|child| child.has_tag_name("lvl"));
+    let inner = levels.next()?;
+    let outer = levels.next()?;
+    let inner_idx: Vec<usize> = inner
+        .children()
+        .filter(|child| child.has_tag_name("pt"))
+        .enumerate()
+        .map(|(position, point)| numeric_attribute(point, "idx").unwrap_or(position))
+        .collect();
+    if inner_idx.is_empty() {
+        return None;
+    }
+    let outer_points: Vec<Node<'_, '_>> = outer
+        .children()
+        .filter(|child| child.has_tag_name("pt"))
+        .collect();
+    let mut starts: Vec<(usize, String)> = outer_points
+        .iter()
+        .filter_map(|point| {
+            Some((
+                numeric_attribute(*point, "idx")?,
+                direct_child(*point, "v")?.text()?.to_owned(),
+            ))
+        })
+        .collect();
+    if starts.is_empty() || starts.len() != outer_points.len() {
+        return None;
+    }
+    starts.sort_by_key(|(idx, _)| *idx);
+    let point_count = direct_child(cache, "ptCount")
+        .and_then(|count| numeric_attribute(count, "val"))
+        .unwrap_or_else(|| inner_idx.iter().max().map_or(0, |max| max + 1));
+    // A group's members are the emitted positions whose idx falls in
+    // [start, next); document order need not be idx order, so require the
+    // member positions to be contiguous before expressing them as a span.
+    let mut groups = Vec::new();
+    for (position, (idx, label)) in starts.iter().enumerate() {
+        let next = starts
+            .get(position + 1)
+            .map_or_else(|| point_count.max(*idx), |(next_idx, _)| *next_idx);
+        let members: Vec<usize> = inner_idx
+            .iter()
+            .enumerate()
+            .filter(|(_, inner)| (*idx..next).contains(*inner))
+            .map(|(emitted, _)| emitted)
+            .collect();
+        let (Some(&start), Some(&last)) = (members.first(), members.last()) else {
+            continue;
+        };
+        let end = last + 1;
+        if end - start != members.len() {
+            return None;
+        }
+        groups.push(CategoryGroup {
+            label: label.clone(),
+            start,
+            end,
+        });
+    }
+    (!groups.is_empty()).then_some(groups)
 }
 
 fn first_cached_value(node: Node<'_, '_>) -> Option<String> {
@@ -3133,6 +3406,7 @@ fn media_type_for_path(path: &str) -> Option<&'static str> {
         "jpg" | "jpeg" => Some("image/jpeg"),
         "gif" => Some("image/gif"),
         "bmp" => Some("image/bmp"),
+        "webp" => Some("image/webp"),
         "svg" => Some("image/svg+xml"),
         // GDI metafiles: the renderer rasterizes these to PNG before display.
         "emf" => Some("image/x-emf"),
@@ -3359,6 +3633,44 @@ mod tests {
         );
     }
 
+    fn fill_info(body: &str, colors: &ColorContext) -> FillInfo {
+        let xml = format!("<fill>{body}</fill>");
+        let document = Document::parse(&xml).unwrap();
+        parse_fill(document.root_element(), colors)
+    }
+
+    #[test]
+    fn gradient_fill_blends_outermost_stops() {
+        let colors = ColorContext {
+            theme: vec![
+                (0xFF, 0xFF, 0xFF),
+                (0x00, 0x00, 0x00),
+                (0x00, 0x00, 0x00),
+                (0x00, 0x00, 0x00),
+                (0x44, 0x72, 0xC4),
+            ],
+            ..ColorContext::default()
+        };
+        // Stops deliberately out of document order; theme stops resolve
+        // through the palette before blending.
+        let fill = fill_info(
+            r#"<gradientFill degree="270"><stop position="1"><color theme="4"/></stop><stop position="0.5"><color rgb="FFFF0000"/></stop><stop position="0"><color theme="0"/></stop></gradientFill>"#,
+            &colors,
+        );
+        assert_eq!(fill.color.as_deref(), Some("#A1B8E1"));
+        assert_eq!(fill.theme, None);
+        assert_eq!(fill.tint, None);
+    }
+
+    #[test]
+    fn gradient_fill_without_resolvable_stops_stays_unfilled() {
+        let fill = fill_info(
+            r#"<gradientFill><stop position="0"/></gradientFill>"#,
+            &ColorContext::default(),
+        );
+        assert_eq!(fill.color, None);
+    }
+
     #[test]
     fn indexed_palette_override_wins_below_system_slots() {
         let colors = ColorContext {
@@ -3387,11 +3699,149 @@ mod tests {
 
     #[test]
     fn media_types_cover_gdi_metafiles() {
-        assert_eq!(media_type_for_path("xl/media/image1.emf"), Some("image/x-emf"));
-        assert_eq!(media_type_for_path("xl/media/image1.WMF"), Some("image/x-wmf"));
-        assert_eq!(media_type_for_path("xl/media/image1.emz"), Some("image/x-emz"));
-        assert_eq!(media_type_for_path("xl/media/image1.wmz"), Some("image/x-wmz"));
+        assert_eq!(
+            media_type_for_path("xl/media/image1.emf"),
+            Some("image/x-emf")
+        );
+        assert_eq!(
+            media_type_for_path("xl/media/image1.WMF"),
+            Some("image/x-wmf")
+        );
+        assert_eq!(
+            media_type_for_path("xl/media/image1.emz"),
+            Some("image/x-emz")
+        );
+        assert_eq!(
+            media_type_for_path("xl/media/image1.wmz"),
+            Some("image/x-wmz")
+        );
         assert_eq!(media_type_for_path("xl/media/object1.bin"), None);
+    }
+
+    #[test]
+    fn media_types_cover_webp() {
+        assert_eq!(
+            media_type_for_path("xl/media/image.webp"),
+            Some("image/webp")
+        );
+        assert_eq!(
+            media_type_for_path("xl/media/IMAGE2.WEBP"),
+            Some("image/webp")
+        );
+    }
+
+    fn parsed_anchor(body: &str) -> DrawingAnchor {
+        let xml = format!(
+            r#"<xdr:anchor xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">{body}</xdr:anchor>"#
+        );
+        let document = Document::parse(&xml).unwrap();
+        parse_anchor(document.root_element()).unwrap()
+    }
+
+    #[test]
+    fn zero_extent_anchor_detection() {
+        let marker = |row: usize, col: usize| {
+            format!(
+                "<xdr:col>{col}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>{row}</xdr:row><xdr:rowOff>0</xdr:rowOff>"
+            )
+        };
+        // from == to with zero offsets: Excel shows no picture.
+        let degenerate = parsed_anchor(&format!(
+            "<xdr:from>{m}</xdr:from><xdr:to>{m}</xdr:to>",
+            m = marker(3, 2)
+        ));
+        assert!(anchor_is_zero_extent(&degenerate));
+        let spanning = parsed_anchor(&format!(
+            "<xdr:from>{}</xdr:from><xdr:to>{}</xdr:to>",
+            marker(3, 2),
+            marker(5, 4)
+        ));
+        assert!(!anchor_is_zero_extent(&spanning));
+        // oneCellAnchor with a real ext keeps its span.
+        let one_cell = parsed_anchor(&format!(
+            r#"<xdr:from>{}</xdr:from><xdr:ext cx="914400" cy="914400"/>"#,
+            marker(0, 0)
+        ));
+        assert!(!anchor_is_zero_extent(&one_cell));
+        // oneCellAnchor with a 0x0 ext collapses.
+        let one_cell_zero = parsed_anchor(&format!(
+            r#"<xdr:from>{}</xdr:from><xdr:ext cx="0" cy="0"/>"#,
+            marker(0, 0)
+        ));
+        assert!(anchor_is_zero_extent(&one_cell_zero));
+        // No ext at all: the 20x8-cell fallback frame stays visible.
+        let fallback = parsed_anchor(&format!("<xdr:from>{}</xdr:from>", marker(0, 0)));
+        assert!(!anchor_is_zero_extent(&fallback));
+        // absoluteAnchor with a real ext keeps its span.
+        let absolute =
+            parsed_anchor(r#"<xdr:pos x="100" y="100"/><xdr:ext cx="914400" cy="914400"/>"#);
+        assert!(!anchor_is_zero_extent(&absolute));
+        // Only real <xdr:to> markers are flagged for cell-edge clamping;
+        // synthesized to markers must keep the walk-past-the-edge encoding.
+        assert!(degenerate.explicit_to);
+        assert!(spanning.explicit_to);
+        assert!(!one_cell.explicit_to);
+        assert!(!fallback.explicit_to);
+        assert!(!absolute.explicit_to);
+    }
+
+    fn opacity_of(blip_body: &str) -> Option<f64> {
+        let xml = format!(
+            r#"<a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1">{blip_body}</a:blip>"#
+        );
+        let document = Document::parse(&xml).unwrap();
+        blip_opacity(document.root_element())
+    }
+
+    #[test]
+    fn alpha_mod_fix_becomes_opacity() {
+        assert_eq!(opacity_of(r#"<a:alphaModFix amt="20000"/>"#), Some(0.2));
+        assert_eq!(opacity_of(r#"<a:alphaModFix amt="100000"/>"#), None);
+        assert_eq!(opacity_of(r#"<a:alphaModFix amt="250000"/>"#), None);
+        assert_eq!(opacity_of(r#"<a:alphaModFix/>"#), None);
+        assert_eq!(opacity_of(""), None);
+    }
+
+    #[test]
+    fn shape_with_blip_fill_keeps_geometry_and_carries_fill_media() {
+        let xml = r#"<xdr:sp xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:spPr><a:prstGeom prst="heart"><a:avLst/></a:prstGeom><a:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></xdr:spPr></xdr:sp>"#;
+        let document = Document::parse(xml).unwrap();
+        let relationships = HashMap::from([(
+            "rId1".to_owned(),
+            Relationship {
+                target: "../media/image1.png".into(),
+                relationship_type: String::new(),
+            },
+        )]);
+        let anchor = DrawingAnchor {
+            from_row: 0,
+            from_column: 0,
+            from_row_offset: 0,
+            from_column_offset: 0,
+            to_row: 10,
+            to_column: 5,
+            to_row_offset: 0,
+            to_column_offset: 0,
+            explicit_to: false,
+        };
+        let visual = shape_visual(
+            document.root_element(),
+            anchor,
+            "visual-1".into(),
+            "sheet-1",
+            None,
+            &ColorContext::default(),
+            "xl/drawings/drawing1.xml",
+            &relationships,
+            Some(0),
+        );
+        assert_eq!(visual.kind, "shape");
+        assert_eq!(visual.shape_type.as_deref(), Some("heart"));
+        assert_eq!(
+            visual.fill_media_path.as_deref(),
+            Some("xl/media/image1.png")
+        );
+        assert_eq!(visual.fill_media_type.as_deref(), Some("image/png"));
     }
 
     #[test]
@@ -3483,6 +3933,7 @@ mod tests {
             to_column: 8,
             to_row_offset: 0,
             to_column_offset: 0,
+            explicit_to: false,
         };
         let mut visuals = Vec::new();
         let mut counter = 0;
@@ -3546,6 +3997,7 @@ mod tests {
             to_column: 5,
             to_row_offset: 0,
             to_column_offset: 0,
+            explicit_to: false,
         };
         let relationships = HashMap::from([(
             "rId7".to_owned(),
@@ -3607,6 +4059,7 @@ mod tests {
             to_column: 1,
             to_row_offset: 0,
             to_column_offset: 0,
+            explicit_to: false,
         };
         let visual = shape_visual(
             shape,
@@ -3616,6 +4069,7 @@ mod tests {
             None,
             &ColorContext::default(),
             "xl/drawings/drawing1.xml",
+            &HashMap::new(),
             Some(0),
         );
         assert_eq!(visual.rotation, Some(45.0));
@@ -3830,6 +4284,172 @@ mod tests {
                 .grouping
                 .is_none()
         );
+    }
+
+    #[test]
+    fn folds_3d_plot_types_onto_flat_pipelines() {
+        let pie = metadata("<c:plotArea><c:pie3DChart><c:ser/></c:pie3DChart></c:plotArea>");
+        assert_eq!(pie.chart_types, vec!["pieChart"]);
+        let bar = metadata(
+            r#"<c:plotArea><c:bar3DChart><c:barDir val="col"/><c:grouping val="percentStacked"/><c:ser/></c:bar3DChart></c:plotArea>"#,
+        );
+        assert_eq!(bar.chart_types, vec!["barChart"]);
+        assert_eq!(bar.grouping.as_deref(), Some("percentStacked"));
+        assert_eq!(bar.bar_direction.as_deref(), Some("col"));
+        let line = metadata("<c:plotArea><c:line3DChart/><c:area3DChart/></c:plotArea>");
+        assert_eq!(line.chart_types, vec!["lineChart", "areaChart"]);
+        // Unmapped 3D plots keep the old behavior: no chart type.
+        assert!(
+            metadata("<c:plotArea><c:surface3DChart/></c:plotArea>")
+                .chart_types
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn default_series_accent_follows_ser_idx() {
+        let body = r#"<c:plotArea><c:barChart>
+            <c:ser><c:idx val="2"/><c:spPr><a:solidFill><a:srgbClr val="FF8800"/></a:solidFill></c:spPr></c:ser>
+            <c:ser><c:idx val="0"/></c:ser>
+            <c:ser><c:idx val="1"/></c:ser>
+        </c:barChart></c:plotArea>"#;
+        let chart = metadata_with(body, &theme_colors());
+        // Explicit fill wins regardless of idx.
+        assert_eq!(chart.series[0].color.as_deref(), Some("#FF8800"));
+        // idx 0 → accent1 (theme slot 4), idx 1 → accent2 (slot 5).
+        assert_eq!(chart.series[1].color.as_deref(), Some("#042233"));
+        assert_eq!(chart.series[2].color.as_deref(), Some("#052233"));
+        // Without c:idx the document position keeps driving the cycle.
+        let plain = "<c:plotArea><c:barChart><c:ser/><c:ser/></c:barChart></c:plotArea>";
+        let chart = metadata_with(plain, &theme_colors());
+        assert_eq!(chart.series[0].color.as_deref(), Some("#042233"));
+        assert_eq!(chart.series[1].color.as_deref(), Some("#052233"));
+    }
+
+    #[test]
+    fn reads_plot_level_line_marker_flag() {
+        let on = r#"<c:plotArea><c:lineChart><c:ser><c:marker><c:symbol val="none"/></c:marker></c:ser><c:marker val="1"/></c:lineChart></c:plotArea>"#;
+        let chart = metadata(on);
+        assert_eq!(chart.line_markers, Some(true));
+        // The per-series marker container stays a symbol, not the plot flag.
+        assert_eq!(chart.series[0].marker.as_deref(), Some("none"));
+        let off = r#"<c:plotArea><c:lineChart><c:marker val="0"/></c:lineChart></c:plotArea>"#;
+        assert_eq!(metadata(off).line_markers, Some(false));
+        // Bare <c:marker/> is CT_Boolean true; absent stays absent.
+        let bare = r#"<c:plotArea><c:lineChart><c:marker/></c:lineChart></c:plotArea>"#;
+        assert_eq!(metadata(bare).line_markers, Some(true));
+        let series_only = r#"<c:plotArea><c:lineChart><c:ser><c:marker><c:symbol val="diamond"/></c:marker></c:ser></c:lineChart></c:plotArea>"#;
+        assert_eq!(metadata(series_only).line_markers, None);
+    }
+
+    #[test]
+    fn multi_level_categories_use_the_innermost_level_only() {
+        let body = r#"<c:plotArea><c:barChart><c:ser><c:cat><c:multiLvlStrRef><c:f>D!$B$2:$E$3</c:f><c:multiLvlStrCache><c:ptCount val="4"/>
+            <c:lvl><c:pt idx="0"><c:v>Qtr 1</c:v></c:pt><c:pt idx="1"><c:v>Qtr 2</c:v></c:pt><c:pt idx="2"><c:v>Qtr 3</c:v></c:pt><c:pt idx="3"><c:v>Qtr 4</c:v></c:pt></c:lvl>
+            <c:lvl><c:pt idx="0"><c:v>2008</c:v></c:pt></c:lvl>
+        </c:multiLvlStrCache></c:multiLvlStrRef></c:cat></c:ser></c:barChart></c:plotArea>"#;
+        assert_eq!(
+            metadata(body).series[0].categories,
+            vec!["Qtr 1", "Qtr 2", "Qtr 3", "Qtr 4"]
+        );
+    }
+
+    #[test]
+    fn reads_series_line_width_in_px() {
+        let body = r#"<c:plotArea><c:lineChart><c:ser><c:spPr><a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln></c:spPr></c:ser><c:ser/></c:lineChart></c:plotArea>"#;
+        let chart = metadata(body);
+        // 12700 EMU = 1pt = 4/3 px.
+        let width = chart.series[0].line_width.unwrap();
+        assert!((width - 4.0 / 3.0).abs() < 1e-9);
+        assert!(chart.series[1].line_width.is_none());
+        let json = serde_json::to_value(&chart).unwrap();
+        assert!(json["series"][0].get("lineWidth").is_some());
+        assert!(json["series"][1].get("lineWidth").is_none());
+    }
+
+    #[test]
+    fn outer_category_levels_become_groups_with_spans() {
+        let body = r#"<c:plotArea><c:barChart><c:ser><c:cat><c:multiLvlStrRef><c:multiLvlStrCache><c:ptCount val="8"/>
+            <c:lvl><c:pt idx="0"><c:v>Q1</c:v></c:pt><c:pt idx="1"><c:v>Q2</c:v></c:pt><c:pt idx="2"><c:v>Q3</c:v></c:pt><c:pt idx="3"><c:v>Q4</c:v></c:pt>
+                <c:pt idx="4"><c:v>Q1</c:v></c:pt><c:pt idx="5"><c:v>Q2</c:v></c:pt><c:pt idx="6"><c:v>Q3</c:v></c:pt><c:pt idx="7"><c:v>Q4</c:v></c:pt></c:lvl>
+            <c:lvl><c:pt idx="0"><c:v>2008</c:v></c:pt><c:pt idx="4"><c:v>2009</c:v></c:pt></c:lvl>
+        </c:multiLvlStrCache></c:multiLvlStrRef></c:cat></c:ser></c:barChart></c:plotArea>"#;
+        let groups = metadata(body).series[0].category_groups.clone().unwrap();
+        let spans: Vec<(&str, usize, usize)> = groups
+            .iter()
+            .map(|group| (group.label.as_str(), group.start, group.end))
+            .collect();
+        assert_eq!(spans, vec![("2008", 0, 4), ("2009", 4, 8)]);
+        let json = serde_json::to_value(metadata(body)).unwrap();
+        assert_eq!(
+            json["series"][0]["categoryGroups"][0],
+            serde_json::json!({ "label": "2008", "start": 0, "end": 4 })
+        );
+        // Single-level caches carry no groups.
+        let flat = r#"<c:plotArea><c:barChart><c:ser><c:cat><c:strRef><c:strCache><c:ptCount val="2"/>
+            <c:pt idx="0"><c:v>a</c:v></c:pt><c:pt idx="1"><c:v>b</c:v></c:pt>
+        </c:strCache></c:strRef></c:cat></c:ser></c:barChart></c:plotArea>"#;
+        assert!(metadata(flat).series[0].category_groups.is_none());
+    }
+
+    #[test]
+    fn category_group_spans_follow_the_compacted_innermost_positions() {
+        // Innermost idx 2 is missing: the compacted categories are [Q1, Q2,
+        // Q4, Q1] so the 2008 group must span 3 positions, not 4.
+        let body = r#"<c:plotArea><c:barChart><c:ser><c:cat><c:multiLvlStrRef><c:multiLvlStrCache><c:ptCount val="5"/>
+            <c:lvl><c:pt idx="0"><c:v>Q1</c:v></c:pt><c:pt idx="1"><c:v>Q2</c:v></c:pt><c:pt idx="3"><c:v>Q4</c:v></c:pt><c:pt idx="4"><c:v>Q1</c:v></c:pt></c:lvl>
+            <c:lvl><c:pt idx="0"><c:v>2008</c:v></c:pt><c:pt idx="4"><c:v>2009</c:v></c:pt></c:lvl>
+        </c:multiLvlStrCache></c:multiLvlStrRef></c:cat></c:ser></c:barChart></c:plotArea>"#;
+        let chart = metadata(body);
+        assert_eq!(chart.series[0].categories, vec!["Q1", "Q2", "Q4", "Q1"]);
+        let groups = chart.series[0].category_groups.clone().unwrap();
+        let spans: Vec<(&str, usize, usize)> = groups
+            .iter()
+            .map(|group| (group.label.as_str(), group.start, group.end))
+            .collect();
+        assert_eq!(spans, vec![("2008", 0, 3), ("2009", 3, 4)]);
+        // An outer pt without idx cannot be placed: no groups at all.
+        let no_idx = r#"<c:plotArea><c:barChart><c:ser><c:cat><c:multiLvlStrRef><c:multiLvlStrCache><c:ptCount val="2"/>
+            <c:lvl><c:pt idx="0"><c:v>Q1</c:v></c:pt><c:pt idx="1"><c:v>Q2</c:v></c:pt></c:lvl>
+            <c:lvl><c:pt><c:v>2008</c:v></c:pt></c:lvl>
+        </c:multiLvlStrCache></c:multiLvlStrRef></c:cat></c:ser></c:barChart></c:plotArea>"#;
+        assert!(metadata(no_idx).series[0].category_groups.is_none());
+    }
+
+    #[test]
+    fn category_group_spans_follow_document_order_not_idx_order() {
+        // Innermost pts arrive out of idx order: categories emit as
+        // [Q1'09, Q1'08, Q2'08], so the 2008 group sits at positions 1-2
+        // and the 2009 group at position 0.
+        let body = r#"<c:plotArea><c:barChart><c:ser><c:cat><c:multiLvlStrRef><c:multiLvlStrCache><c:ptCount val="3"/>
+            <c:lvl><c:pt idx="2"><c:v>Q1 09</c:v></c:pt><c:pt idx="0"><c:v>Q1 08</c:v></c:pt><c:pt idx="1"><c:v>Q2 08</c:v></c:pt></c:lvl>
+            <c:lvl><c:pt idx="0"><c:v>2008</c:v></c:pt><c:pt idx="2"><c:v>2009</c:v></c:pt></c:lvl>
+        </c:multiLvlStrCache></c:multiLvlStrRef></c:cat></c:ser></c:barChart></c:plotArea>"#;
+        let chart = metadata(body);
+        assert_eq!(chart.series[0].categories, vec!["Q1 09", "Q1 08", "Q2 08"]);
+        let groups = chart.series[0].category_groups.clone().unwrap();
+        let spans: Vec<(&str, usize, usize)> = groups
+            .iter()
+            .map(|group| (group.label.as_str(), group.start, group.end))
+            .collect();
+        assert_eq!(spans, vec![("2008", 1, 3), ("2009", 0, 1)]);
+        // Interleaved emission leaves a group non-contiguous: a span cannot
+        // express it, so no groups at all.
+        let interleaved = r#"<c:plotArea><c:barChart><c:ser><c:cat><c:multiLvlStrRef><c:multiLvlStrCache><c:ptCount val="3"/>
+            <c:lvl><c:pt idx="0"><c:v>Q1 08</c:v></c:pt><c:pt idx="2"><c:v>Q1 09</c:v></c:pt><c:pt idx="1"><c:v>Q2 08</c:v></c:pt></c:lvl>
+            <c:lvl><c:pt idx="0"><c:v>2008</c:v></c:pt><c:pt idx="2"><c:v>2009</c:v></c:pt></c:lvl>
+        </c:multiLvlStrCache></c:multiLvlStrRef></c:cat></c:ser></c:barChart></c:plotArea>"#;
+        assert!(metadata(interleaved).series[0].category_groups.is_none());
+    }
+
+    #[test]
+    fn sparse_caches_stay_compacted_in_document_order() {
+        // Both cache kinds compact sparse points the same way, keeping
+        // categories aligned with values (idx-union alignment is a leftover).
+        let body = r#"<c:plotArea><c:barChart><c:ser><c:cat><c:strRef><c:strCache><c:ptCount val="3"/>
+            <c:pt idx="2"><c:v>c</c:v></c:pt><c:pt idx="0"><c:v>a</c:v></c:pt>
+        </c:strCache></c:strRef></c:cat></c:ser></c:barChart></c:plotArea>"#;
+        assert_eq!(metadata(body).series[0].categories, vec!["c", "a"]);
     }
 
     #[test]

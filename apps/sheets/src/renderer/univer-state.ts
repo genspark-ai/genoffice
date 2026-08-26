@@ -7,7 +7,11 @@
 import { BorderType, LocalUndoRedoService, type IRange } from '@univerjs/core'
 import { SheetInterceptorService } from '@univerjs/sheets'
 
-import type { WorkbookFile, WorkbookPivotDefinition } from '../shared/desktop-api'
+import type {
+  WorkbookFile,
+  WorkbookPagePrintSettings,
+  WorkbookPivotDefinition,
+} from '../shared/desktop-api'
 import type { createUniver } from './create-univer'
 import type { EditJournal } from './edit-journal'
 import { netAxisDelta } from './view-transform'
@@ -43,6 +47,9 @@ export interface LazyWorkbookState {
   /// File-side manual page breaks (0-based index of the row/column after the
   /// break, file coordinates), known once a sheet finishes indexing.
   readonly sheetPageBreaks: Map<string, { rowBreaks: number[]; colBreaks: number[] }>
+  /// File-side saved print settings (pageSetup / margins / headerFooter),
+  /// known once a sheet finishes indexing.
+  readonly sheetFilePageSetups: Map<string, WorkbookPagePrintSettings>
   /// File-side allow-edit ranges, known once a sheet finishes indexing.
   readonly sheetProtectedRanges: Map<
     string,
@@ -104,6 +111,16 @@ export interface LazyWorkbookState {
     failures: number
     readonly formulaCells: Map<string, ReadonlySet<number>>
     readonly overlay: Map<string, Map<string, PinnedClosureCell>>
+    /// per-sheet: viewport row the last SUCCESSFUL overlay window was
+    /// anchored at and whether it covered every formula band; a partial
+    /// window re-anchors when the user scrolls far from it (alpha ledger
+    /// r141). Written only after the sidecar run succeeds — early writes
+    /// latched stale flags on failure (bugbot).
+    readonly follow: Map<string, { anchorRow: number; complete: boolean }>
+    /// re-anchor throttle: no new run while one is in flight, and at most
+    /// one every few seconds — each run reads thousands of sidecar cells
+    running: boolean
+    lastRunAt: number
   }
 }
 

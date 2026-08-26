@@ -71,6 +71,38 @@ describe('streamForProvider: temperature policy', () => {
     expect('temperature' in bodies[0]).toBe(false)
     expect(bodies[1].temperature).toBe(0.3)
   })
+
+  // issue genspark-ai/genoffice#147: every model in the OpenAI BYOK dropdown is GPT-5.x,
+  // and api.openai.com 400s `max_tokens` for that family
+  it('caps OpenAI via max_completion_tokens and other vendors via max_tokens', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(okTurn()))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamForProvider(
+      'openai',
+      { apiKey: 'k', model: 'gpt-5.6-luna' },
+      'sys',
+      [],
+      [],
+      100,
+      collector().cb,
+    )
+    await streamForProvider(
+      'kimi',
+      { apiKey: 'k', model: 'kimi-k3' },
+      'sys',
+      [],
+      [],
+      100,
+      collector().cb,
+    )
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse((call[1] as RequestInit).body as string),
+    )
+    expect(bodies[0].max_completion_tokens).toBe(100)
+    expect('max_tokens' in bodies[0]).toBe(false)
+    expect(bodies[1].max_tokens).toBe(100)
+    expect('max_completion_tokens' in bodies[1]).toBe(false)
+  })
 })
 
 describe('streamForProvider: empty SSE streams surface as errors', () => {
@@ -947,4 +979,63 @@ it('rejects an unknown provider id', async () => {
   await expect(
     streamForProvider('unknown' as never, { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb),
   ).rejects.toThrow(/Unknown provider/)
+})
+
+describe('streamForProvider: interleaved-thinking reasoning', () => {
+  const reasoningTurn = () =>
+    okResponse(
+      sseStream([
+        'data: {"choices":[{"delta":{"reasoning_content":"hmm "}}]}',
+        'data: {"choices":[{"delta":{"reasoning_content":"ok"}}]}',
+        'data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}',
+      ]),
+    )
+  const toolLoopMessages = [
+    { role: 'user' as const, text: 'q' },
+    {
+      role: 'assistant' as const,
+      text: '',
+      toolCalls: [{ id: 't1', name: 'f', input: {} }],
+      reasoning: 'earlier thoughts',
+    },
+    { role: 'tool' as const, results: [{ id: 't1', name: 'f', output: '42' }] },
+  ]
+
+  it('surfaces reasoning deltas and echoes stored reasoning for thinking families', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(reasoningTurn()))
+    vi.stubGlobal('fetch', fetchMock)
+    const reasoning: string[] = []
+    const { deltas, cb } = collector()
+    await streamForProvider(
+      'genspark',
+      { apiKey: 'k', model: 'deep-seek-v4-flash' },
+      'sys',
+      toolLoopMessages,
+      [],
+      100,
+      { ...cb, onReasoningDelta: (t) => reasoning.push(t) },
+    )
+    expect(reasoning.join('')).toBe('hmm ok')
+    expect(deltas.join('')).toBe('hi')
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)
+    const assistant = body.messages.find((m: { role: string }) => m.role === 'assistant')
+    expect(assistant.reasoning_content).toBe('earlier thoughts')
+  })
+
+  it('does not echo reasoning to families that never emitted it over this protocol', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(reasoningTurn()))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamForProvider(
+      'genspark',
+      { apiKey: 'k', model: 'gpt-5.6-luna' },
+      'sys',
+      toolLoopMessages,
+      [],
+      100,
+      collector().cb,
+    )
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)
+    const assistant = body.messages.find((m: { role: string }) => m.role === 'assistant')
+    expect('reasoning_content' in assistant).toBe(false)
+  })
 })

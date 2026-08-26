@@ -117,6 +117,28 @@ export function promptLabel(desc: NodeDescriptor): string {
   return desc.text ? `${kind}, "${truncate(desc.text, 60)}"` : kind
 }
 
+/**
+ * Freeze a selection-scoped "Send now" request into the model instruction.
+ * The popover already resolved canvas source ids to durable ids; carrying those
+ * refs here prevents a later live-selection read from substituting a nearby
+ * element while the AI panel opens.
+ */
+export function buildSelectionInstruction(
+  slideIndex: number,
+  targets: ReadonlyArray<{ id: string; desc: NodeDescriptor }>,
+  instruction: string,
+): string {
+  return [
+    'The user invoked "Send now" for a fixed canvas selection.',
+    `Apply the request on page ${slideIndex + 1} (slideIndex=${slideIndex}) to exactly these elements:`,
+    ...targets.map((target) => `- ${target.id} (${promptLabel(target.desc)})`),
+    '',
+    `Requested change: ${instruction}`,
+    '',
+    'Use the listed ids directly. Do not infer or substitute a nearby element, and do not modify unlisted elements.',
+  ].join('\n')
+}
+
 interface FoundNode {
   node: RenderNode
   /** 0 = top level, 1 = child of a top-level group, 2+ = deeper (edit tools patch one level only) */

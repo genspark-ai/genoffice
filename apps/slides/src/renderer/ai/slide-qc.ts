@@ -10,7 +10,7 @@ import {
   type AgentSkill,
   type AgentTransport,
 } from '@genoffice/agent-core'
-import { getProviderAdapter, type AiSettings } from '@genoffice/ai-provider'
+import { getProviderAdapter, modelLacksVision, type AiSettings } from '@genoffice/ai-provider'
 import { auditSlideLayout } from './layout-audit'
 import { createSlidesSkill, formatSlideDump, type DeckAccess } from './slides-skill'
 
@@ -23,9 +23,12 @@ export function isQcEnabled(): boolean {
 export const QC_MAX_PAGES = 20
 
 /** Unknown providers are treated as text-only: omitting an image is safer than a user-visible 400. */
-export function settingsSupportVision(settings: Pick<AiSettings, 'provider'>): boolean {
+export function settingsSupportVision(
+  settings: Pick<AiSettings, 'provider' | 'providers'>,
+): boolean {
   try {
-    return getProviderAdapter(settings.provider).capabilities.vision
+    if (!getProviderAdapter(settings.provider).capabilities.vision) return false
+    return !modelLacksVision(settings.providers?.[settings.provider]?.model ?? '')
   } catch {
     return false
   }

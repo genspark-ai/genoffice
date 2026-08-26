@@ -1324,6 +1324,34 @@ export function presetPath(
         .Z()
       return { path: b.d() }
     }
+    case 'swooshArrow': {
+      // ECMA-376 swooshArrow: rising swoosh body (two quad beziers) with an arrowhead at top-right
+      const a1 = Math.min(Math.max(adjust?.adj1 ?? 25000, 1), 75000) / 100000
+      const maxAdj2 = (70000 * w) / ss
+      const a2 = Math.min(Math.max(adjust?.adj2 ?? 16667, 0), maxAdj2)
+      const ad1 = h * a1
+      const ad2 = (ss * a2) / 100000
+      const ssd8 = ss / 8
+      const tanAlfa = Math.tan(Math.PI / 2 / 14)
+      const xB = w - ad2
+      const yB = ssd8
+      const xC = xB - ssd8 * tanAlfa
+      const yF = yB + ad1
+      const xF = xB + ad1 * tanAlfa
+      const xE = xF + ssd8 * tanAlfa
+      const yE = yF + ssd8
+      const yD = yE / 2 + h / 20
+      const b = new PathB()
+      b.M(0, h)
+        .Q(w / 6, h / 3, xB, yB)
+        .L(xC, 0)
+        .L(w, yD)
+        .L(xE, yE)
+        .L(xF, yF)
+        .Q(w / 4, yF + h / 12, 0, h)
+        .Z()
+      return { path: b.d() }
+    }
     case 'wedgeRoundRectCallout': {
       const r = ss * frac('adj3', 16667)
       const tipX = cx + w * adjRaw(adjust, 'adj1', -20833)

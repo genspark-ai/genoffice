@@ -40,6 +40,20 @@ const BUNDLED_FONTS: Record<string, string> = {
   'Carlito-BoldItalic': carlitoBoldItalic,
 }
 
+/**
+ * User font store (downloaded catalog fonts + fonts installed via the in-app entry).
+ * Injected by slides-main at startup (fonts.ts stays free of electron imports); invisible
+ * to Chromium, so faces resolved from here get the same private FontFace treatment as
+ * Office DFonts.
+ */
+let userFontDir: string | null = null
+export function setUserFontDir(dir: string): void {
+  userFontDir = dir
+}
+export function getUserFontDir(): string | null {
+  return userFontDir
+}
+
 function fontDirs(): string[] {
   switch (process.platform) {
     case 'darwin':
@@ -150,6 +164,9 @@ const ALIASES: Record<string, string[]> = {
   'lucida sans': ['Lucida Grande', 'Arial'],
   // —— Japanese ——
   'yu gothic': [...YU_GOTHIC, ...HIRAGINO_SANS],
+  // Yu Gothic UI faces live inside YuGothM/YuGothB.ttc (like Meiryo UI in meiryo.ttc);
+  // the origKey bonus in rankFaces picks them out of the alias target's collection
+  'yu gothic ui': [...YU_GOTHIC, ...HIRAGINO_SANS],
   游ゴシック: [...YU_GOTHIC, ...HIRAGINO_SANS],
   游ゴシック体: [...YU_GOTHIC, ...HIRAGINO_SANS],
   'yu mincho': [...YU_MINCHO, ...HIRAGINO_MINCHO],
@@ -483,6 +500,10 @@ class FontRegistry {
     }
     // System dirs first so same-named Office copies (arial.ttf…) resolve non-private
     for (const dir of fontDirs()) this.scanFlatDir(dir)
+    if (userFontDir) {
+      this.privateDirs.push(userFontDir)
+      this.scanFlatDir(userFontDir)
+    }
     for (const dir of officeFontDirs()) {
       this.privateDirs.push(dir)
       this.scanFlatDir(dir)
@@ -842,10 +863,40 @@ export function getPrivateFontData(id: string): ArrayBuffer | null {
   }
 }
 
+/** Process-wide registry; reset after the user font store changes so new files get indexed. */
+let sharedRegistry: FontRegistry | null = null
+function getRegistry(): FontRegistry {
+  return (sharedRegistry ??= new FontRegistry())
+}
+export function resetFontRegistry(): void {
+  sharedRegistry = null
+}
+
+/** True when the family resolves without same-script/class substitution (alias hits count as available). */
+export function familyAvailable(family: string): boolean {
+  const hit = getRegistry().resolve({
+    fontFamily: family,
+    fontSizePx: 100,
+    bold: false,
+    italic: false,
+  })
+  return !!hit && !hit.substituted
+}
+
+/** Family names (name 1/16) declared by a local font file; [] when unreadable. */
+export function fontFileFamilies(path: string): string[] {
+  try {
+    const faces = readFaceDir(readFileSync(path))
+    return [...new Set(faces.map((f) => f.display).filter(Boolean))]
+  } catch {
+    return []
+  }
+}
+
 /** Create a metrics provider injected with system fonts (falls back to heuristics per run when no font is found). */
 export function createSystemFontMetrics(): FontMetricsProvider {
   initShapedMetrics()
-  const registry = new FontRegistry()
+  const registry = getRegistry()
   const cache = new Map<
     string,
     { font: OpentypeFontLike; family: string; substituted?: boolean } | undefined

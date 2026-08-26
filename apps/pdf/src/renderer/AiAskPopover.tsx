@@ -103,6 +103,22 @@ export function AiAskPopover({
         }
       }}
     >
+      <button
+        type="button"
+        className="ai-ask-pop-close"
+        data-tip={t('noteClose')}
+        aria-label={t('noteClose')}
+        onClick={onClose}
+      >
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" aria-hidden>
+          <path
+            d="M6 6l12 12M18 6L6 18"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
+      </button>
       <div className="ai-ask-pop-title">{t('aiAskTitle')}</div>
       {shortExcerpt && (
         <div className="ai-ask-pop-sub">

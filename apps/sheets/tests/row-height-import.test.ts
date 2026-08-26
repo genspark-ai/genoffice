@@ -155,29 +155,34 @@ describe('wrapAutoFitRows', () => {
       [],
       [],
       false,
+      null,
       range,
     )
     expect(rows).toEqual([0, 1])
   })
 
-  it('keeps rows with a stored ht verbatim — Excel renders them as-is (#884)', () => {
+  it('re-fits cached-ht auto rows but keeps user-fixed and spacer rows (prod_054)', () => {
     const rows = wrapAutoFitRows(
       [
         { row: 0, column: 0, value: 'wrapping text', styleIndex: 0 },
         { row: 1, column: 0, value: 'wrapping text', styleIndex: 0 },
+        { row: 2, column: 0, value: 'wrapping text', styleIndex: 0 },
       ] as never,
       styles,
-      // Both an auto-fit cache (no customHeight) and a user-fixed height
-      // count: Excel never re-measures a stored ht on open.
+      // A cached ht without customHeight stays in auto mode — Excel re-fits
+      // it on open (live probe: ht="30" rows reopen at 16pt). customHeight
+      // and sub-default spacer heights stay verbatim.
       [
-        { row: 0, height: 38.25, hidden: false },
+        { row: 0, height: 30, hidden: false },
         { row: 1, height: 56, customHeight: true, hidden: false },
+        { row: 2, height: 6, hidden: false },
       ] as never,
       [],
       false,
+      15,
       range,
     )
-    expect(rows).toEqual([])
+    expect(rows).toEqual([0])
   })
 
   it('selects nothing when sheetFormatPr customHeight fixes the default (prod_012)', () => {
@@ -187,6 +192,7 @@ describe('wrapAutoFitRows', () => {
       [],
       [],
       true,
+      null,
       range,
     )
     expect(rows).toEqual([])
@@ -203,6 +209,7 @@ describe('wrapAutoFitRows', () => {
       [],
       [],
       false,
+      null,
       range,
     )
     expect(rows).toEqual([])
@@ -218,6 +225,7 @@ describe('wrapAutoFitRows', () => {
       [],
       [],
       false,
+      null,
       range,
     )
     expect(rows).toEqual([])
@@ -238,6 +246,7 @@ describe('wrapAutoFitRows', () => {
       ] as never,
       [{ startColumn: 2, endColumn: 5, hidden: false, styleIndex: 0 }] as never,
       false,
+      null,
       range,
     )
     expect(rows).toEqual([0, 1])
@@ -253,6 +262,7 @@ describe('wrapAutoFitRows', () => {
         { startColumn: 3, endColumn: 4, hidden: false, styleIndex: 1 },
       ] as never,
       false,
+      null,
       range,
     )
     expect(rows).toEqual([])

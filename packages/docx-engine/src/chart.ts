@@ -1,5 +1,5 @@
 import JSZip from 'jszip'
-import type { ChartDisplay, ChartSeries, NewChart } from './types'
+import type { ChartDisplay, ChartSeries, NewChart, ThemeColors } from './types'
 import {
   attrsOf,
   childrenOf,
@@ -22,62 +22,316 @@ const CHART_KINDS: Record<string, ChartDisplay['kind']> = {
   'c:doughnutChart': 'pie',
   'c:areaChart': 'area',
   'c:area3DChart': 'area',
+  'c:scatterChart': 'scatter',
+  'c:bubbleChart': 'bubble',
 }
 
 /**
  * Read the display model of a chart part (word/charts/chartN.xml). Only the
  * caches Word writes next to the data references (c:strCache / c:numCache)
  * are read — the embedded workbook is never opened. Returns null when the
- * part has no series with cached values (e.g. scatter charts).
+ * part has no series with cached values.
  */
-export function parseChartPartXml(xml: string, partPath: string): ChartDisplay | null {
+export function parseChartPartXml(
+  xml: string,
+  partPath: string,
+  theme?: ThemeColors | null,
+): ChartDisplay | null {
   const parsed = xmlParser.parse(xml) as XNode[]
   if (xml.includes('<cx:chartSpace')) return parseChartexPartXml(parsed, partPath)
   const space = parsed.find((n) => nameOf(n) === 'c:chartSpace')
   const chart = space ? findChild(space, 'c:chart') : undefined
   const plotArea = chart ? findChild(chart, 'c:plotArea') : undefined
-  if (!chart || !plotArea) return null
+  if (!space || !chart || !plotArea) return null
 
   // first plotted chart type wins (combo charts render their primary series)
   const plot = childrenOf(plotArea).find((c) => (nameOf(c) ?? '').endsWith('Chart'))
   if (!plot) return null
   const kind = CHART_KINDS[nameOf(plot) ?? ''] ?? 'other'
   const horizontal = kind === 'bar' && attrsOf(findChild(plot, 'c:barDir') ?? {})['val'] === 'bar'
+  const groupingVal = attrsOf(findChild(plot, 'c:grouping') ?? {})['val']
+  const grouping =
+    (kind === 'bar' || kind === 'area') &&
+    (groupingVal === 'stacked' || groupingVal === 'percentStacked')
+      ? groupingVal
+      : undefined
+  const scatterStyle = attrsOf(findChild(plot, 'c:scatterStyle') ?? {})['val']
+  const markers =
+    kind === 'line'
+      ? attrsOf(findChild(plot, 'c:marker') ?? {})['val'] === '1'
+      : kind === 'scatter'
+        ? scatterStyle === undefined || scatterStyle.toLowerCase().includes('marker')
+        : false
+  const scatterLines = kind === 'scatter' && /line|smooth/i.test(scatterStyle ?? '')
 
   let categories: string[] = []
   const series: ChartSeries[] = []
   for (const ser of findChildren(plot, 'c:ser')) {
-    const val = findChild(ser, 'c:val')
-    const rawValues = val ? cachePoints(val) : []
-    const values = rawValues.map((v) => {
-      if (v === null || v.trim() === '') return null
-      const n = Number(v)
-      return Number.isFinite(n) ? n : null
-    })
+    // scatter/bubble series carry x/y pairs instead of category/value caches
+    const val = findChild(ser, 'c:val') ?? findChild(ser, 'c:yVal')
+    const values = val ? cacheNumbers(val) : []
     if (values.length === 0) continue
-    const cat = findChild(ser, 'c:cat')
+    const cat = findChild(ser, 'c:cat') ?? findChild(ser, 'c:xVal')
     if (cat && categories.length === 0) {
       categories = cachePoints(cat).map((v) => v ?? '')
       // date-formatted numeric caches hold Excel serials; display them as dates
       const fmt = catFormatCode(cat)
       if (fmt && /[yd]/i.test(fmt)) {
         categories = categories.map((v) => serialDateText(v) ?? v)
+      } else if (nameOf(cat) === 'c:xVal') {
+        // x caches carry raw doubles (0.70000000000000062); trim for display
+        categories = categories.map((v) => {
+          const n = Number(v)
+          return v !== '' && Number.isFinite(n) ? String(Math.round(n * 10000) / 10000) : v
+        })
       }
     }
     const name = seriesName(ser)
-    series.push({ ...(name !== undefined ? { name } : {}), values })
+    const entry: ChartSeries = { ...(name !== undefined ? { name } : {}), values }
+    const color = solidFillHex(findChild(ser, 'c:spPr'), theme)
+    if (color) entry.color = color
+    const pointColors = dataPointColors(ser, theme)
+    if (pointColors) entry.pointColors = pointColors
+    if (kind === 'scatter' || kind === 'bubble') {
+      const xVal = findChild(ser, 'c:xVal')
+      const xValues = xVal ? cacheNumbers(xVal) : []
+      if (xValues.some((v) => v !== null)) entry.xValues = xValues
+      const sizeVal = findChild(ser, 'c:bubbleSize')
+      const sizes = sizeVal ? cacheNumbers(sizeVal) : []
+      if (sizes.some((v) => v !== null)) entry.sizes = sizes
+      if (scatterLines && !seriesLineHidden(ser)) entry.line = true
+    }
+    series.push(entry)
   }
   if (series.length === 0) return null
 
-  const title = chartTitle(chart)
+  const palette = chartPalette(chartStyleVal(space), theme)
+  let title = chartTitle(chart)
+  // Office names a single-series chart's auto title after the series
+  if (title === 'Chart Title' && series.length === 1 && series[0].name) title = series[0].name
   return {
     partPath,
     kind,
     ...(horizontal ? { horizontal } : {}),
+    ...(grouping ? { grouping } : {}),
+    ...(markers ? { markers } : {}),
     ...(title !== undefined ? { title } : {}),
     categories,
     series,
+    ...(palette ? { palette } : {}),
   }
+}
+
+/** numeric cache of a c:val / c:yVal / c:xVal / c:bubbleSize container */
+function cacheNumbers(container: XNode): (number | null)[] {
+  return cachePoints(container).map((v) => {
+    if (v === null || v.trim() === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  })
+}
+
+/** the series a:ln is an explicit a:noFill (scatter series drawn markers-only) */
+function seriesLineHidden(ser: XNode): boolean {
+  const ln = findChild(findChild(ser, 'c:spPr') ?? {}, 'a:ln')
+  return ln !== undefined && findChild(ln, 'a:noFill') !== undefined
+}
+
+/** c:dPt explicit fills, sparse by point index (pie slices, highlighted bars) */
+function dataPointColors(ser: XNode, theme?: ThemeColors | null): (string | null)[] | null {
+  const out: (string | null)[] = []
+  let any = false
+  for (const dPt of findChildren(ser, 'c:dPt')) {
+    const idx = parseInt(attrsOf(findChild(dPt, 'c:idx') ?? {})['val'] ?? '', 10)
+    if (!Number.isFinite(idx) || idx < 0) continue
+    const color = solidFillHex(findChild(dPt, 'c:spPr'), theme)
+    if (!color) continue
+    out[idx] = color
+    any = true
+  }
+  if (!any) return null
+  for (let i = 0; i < out.length; i++) out[i] ??= null
+  return out
+}
+
+// ---- chart style + color resolution ----
+
+/** scheme slots charts reference in fills, resolved against the doc theme */
+const SCHEME_SLOTS: Record<string, keyof ThemeColors> = {
+  accent1: 'accent1',
+  accent2: 'accent2',
+  accent3: 'accent3',
+  accent4: 'accent4',
+  accent5: 'accent5',
+  accent6: 'accent6',
+  dk1: 'dk1',
+  lt1: 'lt1',
+  dk2: 'dk2',
+  lt2: 'lt2',
+  tx1: 'dk1',
+  bg1: 'lt1',
+  tx2: 'dk2',
+  bg2: 'lt2',
+}
+
+/** resolve an spPr solid fill to hex (no '#'); schemeClr goes through the theme */
+function solidFillHex(spPr: XNode | undefined, theme?: ThemeColors | null): string | undefined {
+  if (!spPr) return undefined
+  const fill = findChild(spPr, 'a:solidFill')
+  if (!fill) return undefined
+  for (const clr of childrenOf(fill)) {
+    const name = nameOf(clr)
+    let base: string | undefined
+    if (name === 'a:srgbClr') base = attrsOf(clr)['val']
+    else if (name === 'a:sysClr') base = attrsOf(clr)['lastClr']
+    else if (name === 'a:schemeClr') {
+      const slot = SCHEME_SLOTS[attrsOf(clr)['val'] ?? '']
+      base = slot ? theme?.[slot] : undefined
+    }
+    if (!base || !/^[0-9A-Fa-f]{6}$/.test(base)) continue
+    return applyColorMods(base.toUpperCase(), clr)
+  }
+  return undefined
+}
+
+/** apply the transforms charts use (lumMod/lumOff/shade/tint) to a hex color */
+function applyColorMods(hex: string, clr: XNode): string {
+  let lumMod: number | undefined
+  let lumOff: number | undefined
+  let shadeV: number | undefined
+  let tintV: number | undefined
+  for (const child of childrenOf(clr)) {
+    const v = parseInt(attrsOf(child)['val'] ?? '', 10)
+    if (!Number.isFinite(v)) continue
+    const name = nameOf(child)
+    if (name === 'a:lumMod') lumMod = v / 100000
+    else if (name === 'a:lumOff') lumOff = v / 100000
+    else if (name === 'a:shade') shadeV = v / 100000
+    else if (name === 'a:tint') tintV = v / 100000
+  }
+  let out = hex
+  if (shadeV !== undefined) out = shadeHex(out, shadeV)
+  if (tintV !== undefined) out = tintHex(out, tintV)
+  if (lumMod !== undefined || lumOff !== undefined) out = lumHex(out, lumMod ?? 1, lumOff ?? 0)
+  return out
+}
+
+const hexRgb = (hex: string): [number, number, number] => [
+  parseInt(hex.slice(0, 2), 16),
+  parseInt(hex.slice(2, 4), 16),
+  parseInt(hex.slice(4, 6), 16),
+]
+
+const rgbHex = (r: number, g: number, b: number): string =>
+  [r, g, b]
+    .map((c) =>
+      Math.max(0, Math.min(255, Math.round(c)))
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')
+    .toUpperCase()
+
+/** a:shade — scale toward black */
+export function shadeHex(hex: string, factor: number): string {
+  const [r, g, b] = hexRgb(hex)
+  return rgbHex(r * factor, g * factor, b * factor)
+}
+
+/** a:tint — scale toward white */
+export function tintHex(hex: string, factor: number): string {
+  const [r, g, b] = hexRgb(hex)
+  const t = (c: number) => c * factor + 255 * (1 - factor)
+  return rgbHex(t(r), t(g), t(b))
+}
+
+/** a:lumMod/a:lumOff — HSL luminance L' = L*mod + off */
+export function lumHex(hex: string, mod: number, off: number): string {
+  const [r, g, b] = hexRgb(hex).map((c) => c / 255)
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  let h = 0
+  const l0 = (max + min) / 2
+  const d = max - min
+  let s = 0
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l0 - 1))
+    if (max === r) h = ((g - b) / d) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const l = Math.max(0, Math.min(1, l0 * mod + off))
+  const c = (1 - Math.abs(2 * l - 1)) * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = l - c / 2
+  const seg =
+    h < 60
+      ? [c, x, 0]
+      : h < 120
+        ? [x, c, 0]
+        : h < 180
+          ? [0, c, x]
+          : h < 240
+            ? [0, x, c]
+            : h < 300
+              ? [x, 0, c]
+              : [c, 0, x]
+  return rgbHex((seg[0] + m) * 255, (seg[1] + m) * 255, (seg[2] + m) * 255)
+}
+
+/**
+ * c:style 1-48 (Word 2010 wraps it: mc:Choice c14:style 101-148 with a
+ * c:style fallback). The gallery column decides the series colors: 1 =
+ * grayscale, 2 = accent cycle, 3-8 = single accent.
+ */
+function chartStyleVal(space: XNode): number | undefined {
+  let node = findChild(space, 'c:style')
+  if (!node) {
+    const alt = findChild(space, 'mc:AlternateContent')
+    const choice = alt ? findChild(alt, 'mc:Choice') : undefined
+    const fallback = alt ? findChild(alt, 'mc:Fallback') : undefined
+    node =
+      (choice ? childrenOf(choice).find((c) => (nameOf(c) ?? '').endsWith(':style')) : undefined) ??
+      (fallback ? findChild(fallback, 'c:style') : undefined)
+  }
+  let v = parseInt(attrsOf(node ?? {})['val'] ?? '', 10)
+  if (v > 100) v -= 100
+  return Number.isFinite(v) && v >= 1 && v <= 48 ? v : undefined
+}
+
+/** Word's grayscale chart-style series colors (style column 1), approximated */
+const GRAYSCALE_PALETTE = ['595959', 'D9D9D9', 'A6A6A6', '404040', 'BFBFBF', '8C8C8C']
+
+/** series color cycle for a chart style column, from the doc theme accents */
+function chartPalette(
+  styleVal: number | undefined,
+  theme?: ThemeColors | null,
+): string[] | undefined {
+  const pos = styleVal === undefined ? 2 : ((styleVal - 1) % 8) + 1
+  if (pos === 1) return GRAYSCALE_PALETTE
+  const accents = [
+    theme?.accent1,
+    theme?.accent2,
+    theme?.accent3,
+    theme?.accent4,
+    theme?.accent5,
+    theme?.accent6,
+  ]
+  if (accents.some((a) => !a || !/^[0-9A-Fa-f]{6}$/.test(a))) return undefined
+  const list = accents.map((a) => a!.toUpperCase())
+  if (pos === 2) return list
+  const base = list[pos - 3]
+  // monochromatic column: one hue, tint/shade ladder between series
+  return [
+    base,
+    tintHex(base, 0.6),
+    shadeHex(base, 0.75),
+    tintHex(base, 0.3),
+    shadeHex(base, 0.5),
+    tintHex(base, 0.8),
+  ]
 }
 
 /** cx layoutId → closest classic display kind (degrade: shapes differ, data/labels/title survive) */
@@ -100,7 +354,11 @@ const CHARTEX_KINDS: Record<string, ChartDisplay['kind']> = {
 function parseChartexPartXml(parsed: XNode[], partPath: string): ChartDisplay | null {
   const space = parsed.find((n) => nameOf(n) === 'cx:chartSpace')
   if (!space) return null
-  const chartData = findChild(space, 'cx:chartData')
+  // lenient lookup: consumers must skip unknown elements, and test corpora
+  // rename cx:chartData to prove it — accept any child that carries cx:data
+  const chartData =
+    findChild(space, 'cx:chartData') ??
+    childrenOf(space).find((c) => findChild(c, 'cx:data') !== undefined)
   // data id → {cats, vals}: strDim/numDim carry cx:lvl point caches (the first
   // strDim level holds the leaf labels of hierarchical charts)
   const dataById = new Map<string, { cats: string[]; vals: (number | null)[] }>()

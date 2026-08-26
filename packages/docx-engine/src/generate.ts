@@ -1678,6 +1678,58 @@ function tableCellXml(
  * after structural edits; untouched tables and text-only edits keep their
  * original XML through the byte-preserving patch paths.
  */
+const TBL_PR_ORDER = [
+  'w:tblStyle',
+  'w:tblpPr',
+  'w:tblOverlap',
+  'w:bidiVisual',
+  'w:tblStyleRowBandSize',
+  'w:tblStyleColBandSize',
+  'w:tblW',
+  'w:jc',
+  'w:tblCellSpacing',
+  'w:tblInd',
+  'w:tblBorders',
+  'w:shd',
+  'w:tblLayout',
+  'w:tblCellMar',
+  'w:tblLook',
+] as const
+
+/** Replace/remove/insert one tblPr child while keeping the OOXML schema order. */
+function setTblPrChild(tblPr: string, name: string, xml: string | null): string {
+  const selfClosing = /^<w:tblPr(?:\s[^>]*)?\/>$/.test(tblPr)
+  const open = selfClosing ? tblPr.replace(/\/>$/, '>') : /^<w:tblPr(?:\s[^>]*)?>/.exec(tblPr)?.[0]
+  if (!open) return tblPr
+  const inner = selfClosing ? '' : tblPr.slice(open.length, tblPr.lastIndexOf('</w:tblPr>'))
+  const children = splitXmlChildren(inner).filter((child) => child.name !== name)
+  if (xml) {
+    const order = TBL_PR_ORDER.indexOf(name as (typeof TBL_PR_ORDER)[number])
+    const at = children.findIndex((child) => {
+      const childOrder = TBL_PR_ORDER.indexOf(child.name as (typeof TBL_PR_ORDER)[number])
+      return order >= 0 && childOrder >= 0 && childOrder > order
+    })
+    children.splice(at < 0 ? children.length : at, 0, { name, xml })
+  }
+  return `${open}${children.map((child) => child.xml).join('')}</w:tblPr>`
+}
+
+function tableLookXml(look: NonNullable<TableModel['tableLook']>): string {
+  const val =
+    (look.firstRow ? 0x20 : 0) |
+    (look.lastRow ? 0x40 : 0) |
+    (look.firstColumn ? 0x80 : 0) |
+    (look.lastColumn ? 0x100 : 0) |
+    (look.bandedRows ? 0 : 0x200) |
+    (look.bandedColumns ? 0 : 0x400)
+  return (
+    `<w:tblLook w:val="${val.toString(16).toUpperCase().padStart(4, '0')}"` +
+    ` w:firstRow="${look.firstRow ? 1 : 0}" w:lastRow="${look.lastRow ? 1 : 0}"` +
+    ` w:firstColumn="${look.firstColumn ? 1 : 0}" w:lastColumn="${look.lastColumn ? 1 : 0}"` +
+    ` w:noHBand="${look.bandedRows ? 0 : 1}" w:noVBand="${look.bandedColumns ? 0 : 1}"/>`
+  )
+}
+
 export function generateTableModelXml(model: TableModel, originalTableXml?: string): string {
   const columnCount = Math.max(
     1,
@@ -1727,18 +1779,52 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
   const rows = model.rows
     .map((row, ri) => {
       let gridColumn = 0
-      const cells = row.map((cell) => {
+      const cells: string[] = []
+      // gridGap placeholders are the display stand-ins for w:gridBefore/w:gridAfter:
+      // they advance the grid but are never written as w:tc
+      const edges = { before: 0, wBefore: 0, after: 0, wAfter: 0 }
+      for (const cell of row) {
         const span = Math.max(1, cell.colSpan ?? 1)
         const width = widths
           .slice(gridColumn, gridColumn + span)
           .reduce((sum, value) => sum + value, 0)
         gridColumn += span
-        return tableCellXml(cell, width)
-      })
+        if (cell.gridGap) {
+          if (cells.length === 0) {
+            edges.before += span
+            edges.wBefore += width
+          } else {
+            edges.after += span
+            edges.wAfter += width
+          }
+          continue
+        }
+        cells.push(tableCellXml(cell, width))
+      }
       // trPr: original bytes passed through (tblHeader/cantSplit etc.); row height is
       // replaced/inserted/removed per the model
       let trPr = model.rawTrPrs?.[ri] ?? ''
       if (trPr && !trPr.endsWith('</w:trPr>')) trPr = ''
+      if (!trPr && (edges.before > 0 || edges.after > 0)) {
+        // CT_TrPr schema order: gridBefore, gridAfter, wBefore, wAfter
+        trPr =
+          '<w:trPr>' +
+          (edges.before > 0 ? `<w:gridBefore w:val="${edges.before}"/>` : '') +
+          (edges.after > 0 ? `<w:gridAfter w:val="${edges.after}"/>` : '') +
+          (edges.before > 0 ? `<w:wBefore w:w="${edges.wBefore}" w:type="dxa"/>` : '') +
+          (edges.after > 0 ? `<w:wAfter w:w="${edges.wAfter}" w:type="dxa"/>` : '') +
+          '</w:trPr>'
+      }
+      const repeatHeader = model.repeatHeaderRows?.[ri]
+      if (repeatHeader !== null && repeatHeader !== undefined) {
+        trPr = trPr.replace(/<w:tblHeader(?:\s[^>]*)?\/>/g, '')
+        if (repeatHeader) {
+          const tag = '<w:tblHeader/>'
+          trPr = trPr ? trPr.replace('</w:trPr>', `${tag}</w:trPr>`) : `<w:trPr>${tag}</w:trPr>`
+        } else if (/^<w:trPr(?:\s[^>]*)?>\s*<\/w:trPr>$/.test(trPr)) {
+          trPr = ''
+        }
+      }
       const h = model.rowHeightsTwips?.[ri]
       if (h != null && h > 0) {
         const rule = model.rowHeightRules?.[ri] === 'exact' ? 'exact' : 'atLeast'
@@ -1760,52 +1846,93 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
     model.indentTwips && Math.round(model.indentTwips) !== 0
       ? `<w:tblInd w:w="${Math.round(model.indentTwips)}" w:type="dxa"/>`
       : ''
-  // floating table (P19 canvas): tblpPr + tblOverlap lead the fresh tblPr
-  // (CT_TblPr order: tblStyle, tblpPr, tblOverlap, …, tblW)
-  const tblpPr = model.floatPos
-    ? `<w:tblpPr w:leftFromText="0" w:rightFromText="0"` +
-      ` w:vertAnchor="${model.floatPos.vertAnchor ?? 'page'}"` +
-      ` w:horzAnchor="${model.floatPos.horzAnchor ?? 'page'}"` +
-      ` w:tblpX="${Math.round(model.floatPos.xTwips)}"` +
-      ` w:tblpY="${Math.round(model.floatPos.yTwips)}"/>` +
-      '<w:tblOverlap w:val="overlap"/>'
-    : ''
   let tblPr =
     originalTblPr ??
-    `<w:tblPr>${tblpPr}<w:tblW w:w="${totalWidth}" w:type="dxa"/>${tblInd}${borders}` +
-      `<w:tblLayout w:type="fixed"/>${cellMar}</w:tblPr>`
+    `<w:tblPr><w:tblW w:w="${totalWidth}" w:type="dxa"/>${tblInd}${borders}</w:tblPr>`
   // Table style reference: '' = remove, non-empty = replace/insert (tblStyle is the
   // first tblPr child)
   if (model.tblStyleId !== undefined) {
-    tblPr = tblPr.replace(/<w:tblStyle[^>]*\/>/, '')
-    if (model.tblStyleId !== '') {
-      const tag = `<w:tblStyle w:val="${escapeXmlAttr(model.tblStyleId)}"/>`
-      tblPr = /<w:tblPr\/>/.test(tblPr)
-        ? tblPr.replace('<w:tblPr/>', `<w:tblPr>${tag}</w:tblPr>`)
-        : tblPr.replace(/(<w:tblPr(?:\s[^>]*)?>)/, `$1${tag}`)
-      // Style banding/header-row switches default to 04A0 (firstRow + banding)
-      if (!/<w:tblLook[\s/>]/.test(tblPr)) {
-        tblPr = tblPr.replace(
-          '</w:tblPr>',
-          '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/></w:tblPr>',
-        )
+    tblPr = setTblPrChild(
+      tblPr,
+      'w:tblStyle',
+      model.tblStyleId === '' ? null : `<w:tblStyle w:val="${escapeXmlAttr(model.tblStyleId)}"/>`,
+    )
+  }
+  // Floating positioning + wrapping. null explicitly returns the table to the
+  // text flow; undefined leaves an imported tblpPr byte-for-byte intact.
+  const requestedFloatSide =
+    model.floatSide === undefined && model.floatPos
+      ? model.floatPos.xTwips > 4680
+        ? 'right'
+        : 'left'
+      : model.floatSide
+  if (requestedFloatSide !== undefined || (!originalTblPr && model.floatPos)) {
+    if (!requestedFloatSide) {
+      tblPr = setTblPrChild(tblPr, 'w:tblpPr', null)
+      tblPr = setTblPrChild(tblPr, 'w:tblOverlap', null)
+    } else {
+      const pos = model.floatPos ?? {
+        xTwips: requestedFloatSide === 'right' ? Math.max(0, 9360 - totalWidth) : 0,
+        yTwips: 0,
       }
+      const distance = pos.distanceTwips ?? {}
+      const attr = (name: string, value: number | undefined) =>
+        value == null ? '' : ` w:${name}="${Math.max(0, Math.round(value))}"`
+      const tag =
+        `<w:tblpPr${attr('leftFromText', distance.left)}${attr('rightFromText', distance.right)}` +
+        `${attr('topFromText', distance.top)}${attr('bottomFromText', distance.bottom)}` +
+        ` w:vertAnchor="${pos.vertAnchor ?? 'page'}"` +
+        ` w:horzAnchor="${pos.horzAnchor ?? 'page'}"` +
+        ` w:tblpX="${Math.round(pos.xTwips)}" w:tblpY="${Math.round(pos.yTwips)}"/>`
+      tblPr = setTblPrChild(tblPr, 'w:tblpPr', tag)
+      tblPr = setTblPrChild(tblPr, 'w:tblOverlap', '<w:tblOverlap w:val="overlap"/>')
     }
+  }
+  const effectiveAutoFit =
+    model.autoFit ?? (!originalTblPr ? (model.autoLayout ? 'contents' : 'fixed') : null)
+  if (effectiveAutoFit) {
+    tblPr = setTblPrChild(
+      tblPr,
+      'w:tblW',
+      effectiveAutoFit === 'window'
+        ? '<w:tblW w:w="5000" w:type="pct"/>'
+        : effectiveAutoFit === 'contents'
+          ? '<w:tblW w:w="0" w:type="auto"/>'
+          : `<w:tblW w:w="${totalWidth}" w:type="dxa"/>`,
+    )
+    tblPr = setTblPrChild(
+      tblPr,
+      'w:tblLayout',
+      `<w:tblLayout w:type="${effectiveAutoFit === 'fixed' ? 'fixed' : 'autofit'}"/>`,
+    )
+  }
+  if (model.cellMarTwips !== undefined) {
+    tblPr = setTblPrChild(tblPr, 'w:tblCellMar', cellMar || null)
+  }
+  if (model.tableLook) {
+    tblPr = setTblPrChild(tblPr, 'w:tblLook', tableLookXml(model.tableLook))
+  } else if (model.tblStyleId && !/<w:tblLook[\s/>]/.test(tblPr)) {
+    tblPr = setTblPrChild(
+      tblPr,
+      'w:tblLook',
+      tableLookXml({
+        firstRow: true,
+        lastRow: false,
+        firstColumn: true,
+        lastColumn: false,
+        bandedRows: true,
+        bandedColumns: false,
+      }),
+    )
   }
   // Table alignment (w:jc): explicit align replaces/removes the original;
   // undefined keeps whatever the original tblPr carried
   if (model.align) {
-    tblPr = tblPr.replace(/<w:jc[^>]*\/>/, '')
-    if (model.align !== 'left') {
-      const tag = `<w:jc w:val="${model.align}"/>`
-      // schema order puts w:jc right after w:tblW (after w:tblStyle when there is no tblW)
-      if (/<w:tblW[^>]*\/>/.test(tblPr)) tblPr = tblPr.replace(/(<w:tblW[^>]*\/>)/, `$1${tag}`)
-      else if (/<w:tblStyle[^>]*\/>/.test(tblPr))
-        tblPr = tblPr.replace(/(<w:tblStyle[^>]*\/>)/, `$1${tag}`)
-      else if (/<w:tblPr\/>/.test(tblPr))
-        tblPr = tblPr.replace('<w:tblPr/>', `<w:tblPr>${tag}</w:tblPr>`)
-      else tblPr = tblPr.replace(/(<w:tblPr(?:\s[^>]*)?>)/, `$1${tag}`)
-    }
+    tblPr = setTblPrChild(
+      tblPr,
+      'w:jc',
+      model.align === 'left' ? null : `<w:jc w:val="${model.align}"/>`,
+    )
   }
   return `<w:tbl>${tblPr}${grid}${rows}</w:tbl>`
 }

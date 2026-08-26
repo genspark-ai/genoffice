@@ -248,7 +248,12 @@ describe('captions', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: generateCaptionXml('图', 1, '测试') }))
     const p = doc.blocks[0]
     expect(p.type).toBe('passthrough')
-    expect(p.fieldDisplay).toEqual({ kind: 'text', left: '图 1 测试' })
+    expect(p.fieldDisplay).toEqual({
+      kind: 'text',
+      left: '图 1 测试',
+      szHalfPoints: 18,
+      align: 'center',
+    })
   })
 })
 

@@ -65,6 +65,94 @@ describe('VML WordArt (v:textpath) display', () => {
     expect(box?.textOutline).toBeUndefined()
   })
 
+  it('keeps anchored DrawingML photos sharing the paragraph with the WordArt shape', async () => {
+    const anchoredPic = (blipXml: string, cx: number, cy: number): string =>
+      '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" ' +
+      'relativeHeight="2" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+      '<wp:positionH relativeFrom="column"><wp:posOffset>914400</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>457200</wp:posOffset></wp:positionV>' +
+      `<wp:extent cx="${cx}" cy="${cy}"/>` +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      `<pic:pic><pic:blipFill>${blipXml}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+      // pic:spPr carries an EMPTY a:blip in its own blipFill (real-world Word
+      // output): media resolution must not trip over it
+      '<pic:spPr><a:blipFill dpi="0" rotWithShape="0"><a:blip/></a:blipFill>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const bodyXml =
+      '<w:p><w:r><w:pict>' +
+      `<v:shape ${V_NS} id="wa1" type="#_x0000_t136" style="width:148.5pt;height:28.5pt" fillcolor="#9400ed">` +
+      '<v:textpath style="font-family:&quot;Arial Black&quot;;font-size:20pt" string="Moon Landing"/></v:shape>' +
+      '</w:pict></w:r>' +
+      anchoredPic('<a:blip r:embed="rId10"/>', 1418590, 1201420) +
+      // second blip carries both r:embed and r:link — the embedded part must resolve
+      anchoredPic('<a:blip r:embed="rId11" r:link="rId12"/>', 1448435, 1280160) +
+      '</w:p>'
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml,
+        withImage: true,
+        extraRels:
+          '<Relationship Id="rId11" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>' +
+          '<Relationship Id="rId12" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="http://example.com/moon.jpg" TargetMode="External"/>',
+      }),
+    )
+    const block = doc.blocks[0]
+    expect(block.label).toBe('Text box')
+    const boxes = block.textboxes ?? []
+    expect(boxes.some((b) => b.paras[0]?.runs[0]?.text === 'Moon Landing')).toBe(true)
+    const photos = boxes.filter((b) => b.fillImageDataUrl)
+    expect(photos).toHaveLength(2)
+    for (const photo of photos) {
+      expect(photo.fillImageDataUrl).toMatch(/^data:image\/png;base64,/)
+    }
+    expect(photos.map((p) => p.widthPx)).toEqual([149, 152])
+  })
+
+  it('does not lift a picture nested in VML textbox content into a page-level box', async () => {
+    const innerDrawing =
+      '<w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/>' +
+      '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:inline></w:drawing>'
+    const bodyXml =
+      `<w:p><w:r><w:pict><v:shape ${V_NS} id="tb1" type="#_x0000_t202" style="width:200pt;height:120pt">` +
+      '<v:textbox><w:txbxContent>' +
+      `<w:p><w:r><w:t>caption</w:t></w:r></w:p><w:p><w:r>${innerDrawing}</w:r></w:p>` +
+      '</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const boxes = doc.blocks[0].textboxes ?? []
+    expect(boxes).toHaveLength(1)
+    expect(boxes[0].fillImageDataUrl).toBeUndefined()
+    expect(boxes[0].paras[0]?.runs[0]?.text).toBe('caption')
+  })
+
+  it('page-pins page-anchored wrapNone photos next to WordArt like the drawing branch', async () => {
+    const pageAnchoredPic = (x: number, y: number): string =>
+      '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" ' +
+      'relativeHeight="2" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+      `<wp:positionH relativeFrom="page"><wp:posOffset>${x}</wp:posOffset></wp:positionH>` +
+      `<wp:positionV relativeFrom="page"><wp:posOffset>${y}</wp:posOffset></wp:positionV>` +
+      '<wp:extent cx="914400" cy="914400"/><wp:wrapNone/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+      '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+    const bodyXml =
+      '<w:p><w:r><w:t>logo line above</w:t></w:r></w:p>' +
+      `<w:p><w:r><w:pict><v:shape ${V_NS} id="wa1" type="#_x0000_t136" style="width:148.5pt;height:28.5pt">` +
+      '<v:textpath style="font-family:&quot;Arial Black&quot;" string="Cover Title"/></v:shape></w:pict></w:r>' +
+      pageAnchoredPic(914400, 1828800) +
+      pageAnchoredPic(2743200, 1828800) +
+      '</w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const photos = (doc.blocks[1].textboxes ?? []).filter((b) => b.fillImageDataUrl)
+    expect(photos).toHaveLength(2)
+    // raw page coordinates, pinned to the page box (not the paragraph origin)
+    expect(photos.map((p) => p.pagePinned)).toEqual([true, true])
+    expect(photos.map((p) => p.offsetXEmu)).toEqual([914400, 2743200])
+    expect(photos.map((p) => p.offsetYEmu)).toEqual([1828800, 1828800])
+  })
+
   it('ignores string-less v:textpath (shapetype template / watermark furniture)', async () => {
     const doc = await parseDocx(
       await buildDocx({

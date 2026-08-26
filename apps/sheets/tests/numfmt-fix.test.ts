@@ -179,6 +179,8 @@ describe('formatGeneral', () => {
   it('switches to scientific when the integer part cannot fit', () => {
     expect(formatGeneral(123456789012, 8)).toBe('1.23E+11')
     expect(formatGeneral(1234567890123456, 20)).toBe('1.23457E+15')
+    // prod_039: 10-digit phone numbers in a built-in-width column.
+    expect(formatGeneral(7028015141, 8)).toBe('7.03E+09')
   })
 
   it('uses scientific for tiny fractions instead of rounding to 0', () => {

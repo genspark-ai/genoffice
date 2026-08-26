@@ -400,6 +400,8 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   shading: 'string',
   vertAlign: 'string',
   em: 'string',
+  boldOff: 'boolean',
+  italicOff: 'boolean',
   caps: 'string',
   styleId: 'string',
 }
@@ -488,8 +490,11 @@ export const TextStyleMark = Mark.create({
       vertAlign: { default: null as 'superscript' | 'subscript' | null },
       // East Asian emphasis mark (w:em val); saving is kept faithful by rawRPr
       em: { default: null as string | null },
-      // w:caps ('all') / w:smallCaps ('small'); saving is kept faithful by rawRPr
-      caps: { default: null as 'all' | 'small' | null },
+      // run-level explicit off (w:b/w:i w:val="0"): counters style-inherited bold/italic CSS
+      boldOff: { default: null as boolean | null },
+      italicOff: { default: null as boolean | null },
+      // w:caps ('all') / w:smallCaps ('small'), 'none' = explicit off; saving is kept faithful by rawRPr
+      caps: { default: null as 'all' | 'small' | 'none' | null },
       // rtl run (w:rtl, explicit or style-inherited): save-side decode selects the Cs twins.
       // Position must match runMarks' attr order (mark attrs are JSON-compared in signatures)
       cs: { default: null as boolean | null, rendered: false },
@@ -553,8 +558,12 @@ export const TextStyleMark = Mark.create({
       const pos = em === 'comma' || em === 'circle' ? 'over' : 'under'
       styles.push(`text-emphasis:${shape}`, `text-emphasis-position:${pos} right`)
     }
+    if (mark.attrs.boldOff) styles.push('font-weight:normal')
+    if (mark.attrs.italicOff) styles.push('font-style:normal')
     if (mark.attrs.caps === 'all') styles.push('text-transform:uppercase')
     else if (mark.attrs.caps === 'small') styles.push('font-variant-caps:small-caps')
+    else if (mark.attrs.caps === 'none')
+      styles.push('text-transform:none', 'font-variant-caps:normal')
     // the attr value carries the exact attrs for clipboard round-trip; '1'
     // (nothing set) keeps the attribute present for CSS/selector consumers
     const clip: Record<string, unknown> = {}

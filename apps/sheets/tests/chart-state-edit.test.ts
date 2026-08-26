@@ -66,6 +66,18 @@ describe('applyChartStateEdit', () => {
     expect(next.series[0]?.categories).toEqual(['a', 'b'])
   })
 
+  it('drops the parsed outer-level groups when an edit replaces the categories', () => {
+    const chart = base()
+    const first = chart.series[0]
+    if (first) first.categoryGroups = [{ label: '2008', start: 0, end: 2 }]
+    const kept = applyChartStateEdit(chart, { series: [{ index: 0, values: [5, 6] }] })
+    expect(kept.series[0]?.categoryGroups).toEqual([{ label: '2008', start: 0, end: 2 }])
+    const replaced = applyChartStateEdit(chart, {
+      series: [{ index: 0, categories: ['x', 'y'] }],
+    })
+    expect(replaced.series[0]?.categoryGroups).toBeUndefined()
+  })
+
   it('merges slice explosions per point over the series default', () => {
     const pie = applyChartStateEdit(base(), { chartType: 'pie', explosionPct: 10 })
     expect(pie.chartTypes).toEqual(['pieChart'])
@@ -248,6 +260,7 @@ describe('transposeChartSeries', () => {
 describe('formatCategoryLabel', () => {
   it('formats numeric category text through its number format', () => {
     expect(formatCategoryLabel('44562', 'mmm\\-yy')).toBe('Jan-22')
+    expect(formatCategoryLabel('41387', 'mmm\\ yyyy')).toBe('Apr 2013')
     expect(formatCategoryLabel('0.152', '0.0%')).toBe('15.2%')
   })
 
@@ -368,6 +381,32 @@ describe('valueAxisScale', () => {
     expect(valueAxisScale(3750).ticks).toHaveLength(9)
     // 57362: 13 → 0..14 step 2
     expect(valueAxisScale(13)).toEqual({ min: 0, max: 14, ticks: [0, 2, 4, 6, 8, 10, 12, 14] })
+    // prod_055: 877 → 0..1000 step 100 (the earlier 900 reading came from a
+    // page-clipped ref; the plot area runs past the 900 gridline).
+    expect(valueAxisScale(877).max).toBe(1000)
+    expect(valueAxisScale(877).ticks).toHaveLength(11)
+  })
+
+  it('leaves Excel 5% auto-max headroom, calibrated on the real-run1 refs', () => {
+    // aspose_sample1 pivot chart: 18 → 0..20 step 2
+    expect(valueAxisScale(18)).toEqual({
+      min: 0,
+      max: 20,
+      ticks: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20],
+    })
+    // aspose_sampleModifyLineChart: 148 → 0..160 step 20
+    expect(valueAxisScale(148).max).toBe(160)
+    expect(valueAxisScale(148).ticks[1]).toBe(20)
+    // aspose_sampleGetFonts stacked: 289753.76 → 0..350000 step 50000
+    expect(valueAxisScale(289753.76).max).toBe(350000)
+    expect(valueAxisScale(289753.76).ticks[1]).toBe(50000)
+    // aspose_sampleDisableTextWrappingForDataLabels: 1000 → 0..1200 step
+    // 200 (the 5% bump makes 11 intervals of 100, pushing the unit to 200)
+    expect(valueAxisScale(1000).max).toBe(1200)
+    expect(valueAxisScale(1000).ticks[1]).toBe(200)
+    // phpss_32readwriteLineChartNoPointMarkers1: 3490 → 0..4000 step 500
+    expect(valueAxisScale(3490).max).toBe(4000)
+    expect(valueAxisScale(3490).ticks[1]).toBe(500)
   })
 
   it('honours explicit bounds and unit', () => {

@@ -18,6 +18,7 @@ afterEach(async () => {
 
 async function tempRoot(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'genoffice-slides-temp-test-'))
+  roots.push(root)
   return root
 }
 
@@ -37,12 +38,13 @@ describe('generated-page temp sweep', () => {
     const expiredOwned1 = join(cloudDir, `${expiredUuid1}.pptx`)
     const expiredOwned2 = join(localDir, `${expiredUuid2}.pptx`)
     const recentOwned = join(localDir, `${recentUuid}.pptx`)
-    const _arbitrary = join(localDir, 'random-file.txt')
+    const arbitrary = join(localDir, 'random-file.txt')
 
     await Promise.all([
       writeFile(expiredOwned1, 'old-expired'),
       writeFile(expiredOwned2, 'old-expired'),
       writeFile(recentOwned, 'recent'),
+      writeFile(arbitrary, 'unrelated'),
     ])
 
     // Use the TTL constant for cutoff
@@ -55,13 +57,15 @@ describe('generated-page temp sweep', () => {
 
     const removed = await cleanupExpiredGeneratedPages(root, now)
 
-    expect(removed).toEqual(expect.arrayContaining([expect.stringMatching(/\.pptx$/)]))
+    expect(removed).toEqual(expect.arrayContaining([expiredOwned1, expiredOwned2]))
+    expect(removed).toHaveLength(2)
     // Expired files should be gone
     for (const path of removed) {
       expect(existsSync(path)).toBe(false)
     }
     // Non-expired and non-matching files should remain (not deleted)
     expect(existsSync(recentOwned)).toBe(true)
+    expect(existsSync(arbitrary)).toBe(true)
   })
 
   it('skips directories and non-.pptx files', async () => {

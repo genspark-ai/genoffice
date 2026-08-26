@@ -17,6 +17,7 @@ import {
   liveSections,
   measureBlocks,
   pageNumbers,
+  pinnedFloatPage,
   sectionBidi,
   sectionColGeom,
   sectionFirstPages,
@@ -109,6 +110,25 @@ export function prunedCloneHtml(kids: CloneChild[], from: number, to: number): s
     lastKept = c
   }
   return parts.join('')
+}
+
+/**
+ * Page-pinned boxes (cover art) ride the full-document clone onto every page at
+ * the same page coordinates; only the copy on the owning page (data-pin-page,
+ * stamped on the canvas wrapper before cloning) may stay visible. Expressed as
+ * CSS rules because React re-assigns each clone's innerHTML on every re-render
+ * (the {__html} wrapper is a fresh object), wiping any imperative DOM fixup.
+ * visibility (not display): a stray-run wrapper carries flow height the slices
+ * were measured with, and hidden ink must not emit glyphs into the PDF layer.
+ */
+export function pinnedCloneCss(pageCount: number): string {
+  const rules: string[] = []
+  for (let i = 0; i < pageCount; i++) {
+    rules.push(
+      `.pv-page[data-pv-page="${i}"] .doc-protected-pagepinned[data-pin-page]:not([data-pin-page="${i}"]){visibility:hidden;}`,
+    )
+  }
+  return rules.join('\n')
 }
 
 export interface HfSet {
@@ -312,6 +332,13 @@ export function PaginationPreview({
           blockMetaOf,
         )
       }
+      // stamp each page-pinned box's owning page on its canvas wrapper before
+      // cloning so the per-page CSS rules can hide the copies on other pages
+      for (const f of floats) {
+        if (!f.pinned) continue
+        const wrap = f.el.closest<HTMLElement>('.doc-protected-pagepinned')
+        if (wrap) wrap.dataset.pinPage = String(pinnedFloatPage(computed, f.anchorTop))
+      }
       setSlices(computed)
       setPageNotes(pageFootnotesOf ? pageFootnotesOf(blocks, computed) : [])
       // Per-page full clones explode on large documents (pages × doc DOM →
@@ -467,6 +494,7 @@ export function PaginationPreview({
           {t('appClose')}
         </button>
       </div>
+      <style>{pinnedCloneCss(slices.length)}</style>
       <div className="pv-scroll">
         {slices.map((slice, i) => {
           const parts = hfFor(i)
@@ -498,6 +526,7 @@ export function PaginationPreview({
             <div
               key={i}
               className="pv-page"
+              data-pv-page={i}
               style={
                 {
                   width: pageW,

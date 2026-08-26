@@ -18,6 +18,8 @@ export interface ResolvedEndpoint {
   baseUrl: string
   /** the endpoint fixes its sampling and rejects a temperature field (Kimi K3: "only 1 is allowed") */
   omitTemperature?: boolean
+  /** the endpoint wants the output cap as OpenAI's renamed `max_completion_tokens` (GPT-5.x/o-series 400 on `max_tokens`) */
+  useMaxCompletionTokens?: boolean
   /** vendor-specific request fields merged into the chat-completions body */
   bodyExtras?: Record<string, unknown>
 }
@@ -45,6 +47,25 @@ export function modelHasFixedSampling(model: string): boolean {
 }
 
 /**
+ * Model ids that reject image input even under a vision-capable provider.
+ * DeepSeek V4 Pro and Flash are text-only; their -vision* branches are
+ * excluded so the direct Vision Exp model can receive screenshots.
+ */
+export function modelLacksVision(model: string): boolean {
+  return /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/.test(model)
+}
+
+/**
+ * Interleaved-thinking families whose vendors want the reasoning echoed back
+ * on assistant messages: MiniMax documents that stripping it degrades
+ * multi-turn tool use, and DeepSeek V4 rejects tool turns without it. Gated
+ * per model because other vendors may reject the unknown field.
+ */
+export function modelEchoesReasoning(model: string): boolean {
+  return /(^|\/)(minimax-m|deep-?seek-v4)/i.test(model)
+}
+
+/**
  * DeepSeek V4 thinks by default, and once a request carries `tools` the API
  * rejects (400) every later turn whose assistant messages don't echo back the
  * `reasoning_content` it produced. Our OpenAI-compatible transcript has no
@@ -58,7 +79,11 @@ const DEEPSEEK_NON_THINKING = { thinking: { type: 'disabled' } }
 function fixedEndpoint(
   protocol: AiProtocol,
   baseUrl: string,
-  extras?: { omitTemperature?: boolean; bodyExtras?: Record<string, unknown> },
+  extras?: {
+    omitTemperature?: boolean
+    useMaxCompletionTokens?: boolean
+    bodyExtras?: Record<string, unknown>
+  },
 ) {
   return (config: AiProviderConfig): ResolvedEndpoint => {
     const omit = extras?.omitTemperature || modelHasFixedSampling(config.model)
@@ -66,6 +91,7 @@ function fixedEndpoint(
       protocol,
       baseUrl: config.baseUrl || baseUrl,
       ...(omit ? { omitTemperature: true } : {}),
+      ...(extras?.useMaxCompletionTokens ? { useMaxCompletionTokens: true } : {}),
       ...(extras?.bodyExtras ? { bodyExtras: extras.bodyExtras } : {}),
     }
   }
@@ -103,7 +129,7 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   },
   deepseek: {
     meta: metaOf('deepseek'),
-    capabilities: { auth: 'api-key', vision: false },
+    capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1', {
       bodyExtras: DEEPSEEK_NON_THINKING,
     }),
@@ -111,7 +137,11 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   openai: {
     meta: metaOf('openai'),
     capabilities: { auth: 'api-key', vision: true },
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.openai.com/v1'),
+    // every current OpenAI model accepts the renamed field, so it is safe endpoint-wide;
+    // other openai-compatible vendors (and the LiteLLM-backed Genspark proxy) still expect `max_tokens`
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.openai.com/v1', {
+      useMaxCompletionTokens: true,
+    }),
   },
   kimi: {
     meta: metaOf('kimi'),

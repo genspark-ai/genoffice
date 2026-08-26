@@ -23,7 +23,9 @@ export function paraBorderCss(line?: { color?: string; szPt?: number }): string 
 
 function applyRunStyle(span: HTMLElement, run: Run): void {
   if (run.bold) span.style.fontWeight = '600'
+  else if (run.bold === false) span.style.fontWeight = 'normal'
   if (run.italic) span.style.fontStyle = 'italic'
+  else if (run.italic === false) span.style.fontStyle = 'normal'
   const deco = [run.underline && 'underline', run.strike && 'line-through'].filter(Boolean)
   if (deco.length > 0) span.style.textDecoration = deco.join(' ')
   if (run.color) span.style.color = `#${run.color}`
@@ -33,6 +35,10 @@ function applyRunStyle(span: HTMLElement, run: Run): void {
   if (run.font || run.fontAscii) span.style.fontFamily = cssRunFontFamily(run.fontAscii, run.font)
   if (run.caps === 'all') span.style.textTransform = 'uppercase'
   else if (run.caps === 'small') span.style.fontVariantCaps = 'small-caps'
+  else if (run.caps === 'none') {
+    span.style.textTransform = 'none'
+    span.style.fontVariantCaps = 'normal'
+  }
 }
 
 /** one tab-delimited chunk of a paragraph: the runs after the k-th tab, laid out at its stop */

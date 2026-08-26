@@ -345,6 +345,63 @@ describe('runLayoutScript security boundary', () => {
     ])
       expect(runLayoutScript(code, els, canvas).error).toBeTruthy()
   })
+
+  it('bounds catastrophic-backtracking regex instead of freezing', () => {
+    const r = runLayoutScript(
+      `
+        let long = '';
+        for (let i = 0; i < 200; i++) long += 'aaaaaaaaaa';
+        return /(a+)+$/.test(long + 'b');
+      `,
+      els,
+      canvas,
+    )
+    expect(r.error).toMatch(/execution budget/)
+    expect(r.ops).toEqual([])
+  })
+
+  it('supports the common regex subset with bounded execution', () => {
+    const cases: Array<[string, string]> = [
+      [`return /^(shape|text)$/.test(els[0].type);`, 'true'],
+      [`return /TITLE/i.test(els[0].text);`, 'true'],
+      [`return /\\d{2,4}/.test('year 2026');`, 'true'],
+      [`return /[a-z]+_[0-9]+/.test('shape_12');`, 'true'],
+      [`return /^\\s*$/.test('   ');`, 'true'],
+      [`return /b.t/s.test('b\\nt') && /^t/m.test('a\\nt');`, 'true'],
+      [`return /(a?)*$/.test('b');`, 'true'],
+      [`return /xyz/.test(els[0].text);`, 'false'],
+    ]
+    for (const [code, expected] of cases) {
+      const r = runLayoutScript(code, els, canvas)
+      expect(r.error).toBeUndefined()
+      expect(r.returned).toBe(expected)
+    }
+  })
+
+  it('scans long text and honors start anchors without exhausting the budget', () => {
+    const r = runLayoutScript(
+      `
+        let long = '';
+        for (let i = 0; i < 500; i++) long += 'lorem ipsum ';
+        return /needle|dolor$/.test(long + 'needle') && /^lorem/.test(long) && !/^needle/.test(long);
+      `,
+      els,
+      canvas,
+    )
+    expect(r.error).toBeUndefined()
+    expect(r.returned).toBe('true')
+  })
+
+  it('rejects regex features that cannot be bounded', () => {
+    for (const code of [
+      `return /(a)\\1/.test('aa');`,
+      `return /a(?=b)/.test('ab');`,
+      `return /(?<=a)b/.test('ab');`,
+      `return /\\p{L}/u.test('a');`,
+      `return /a/y.test('a');`,
+    ])
+      expect(runLayoutScript(code, els, canvas).error).toBeTruthy()
+  })
 })
 
 // ── execute_slide_script tool chain ────────────────────────────

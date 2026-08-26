@@ -64,6 +64,7 @@ import {
 } from './components/AiAskPopover'
 import {
   anchorId,
+  buildSelectionInstruction,
   describeNode,
   EDIT_QUEUE_MAX,
   resolveQueueItem,
@@ -271,6 +272,40 @@ export function App() {
     if (slides.length) void syncPrivateFonts()
   }, [slides])
   const [path, setPath] = useState<string | null>(null)
+  // Deck references catalog fonts that are missing locally → one-click download banner
+  const [missingFonts, setMissingFonts] = useState<string[]>([])
+  const [fontBannerBusy, setFontBannerBusy] = useState(false)
+  const missingFontsDismissed = useRef(false)
+  const refreshMissingFonts = useCallback(() => {
+    if (missingFontsDismissed.current) return
+    window.slidesApi
+      .fontMissing?.()
+      .then((m) => setMissingFonts(m ?? []))
+      .catch(() => {})
+  }, [])
+  const hasSlides = slides.length > 0
+  useEffect(() => {
+    missingFontsDismissed.current = false
+    if (hasSlides) refreshMissingFonts()
+  }, [path, hasSlides, refreshMissingFonts])
+  // Font store changed (download / local install): re-register FontFaces, refresh the banner
+  useEffect(
+    () =>
+      window.slidesApi.onFontsChanged?.(() => {
+        void syncPrivateFonts()
+        refreshMissingFonts()
+      }),
+    [refreshMissingFonts],
+  )
+  const downloadMissingFonts = useCallback(async () => {
+    setFontBannerBusy(true)
+    try {
+      for (const f of missingFonts) await window.slidesApi.fontDownload?.(f)
+    } finally {
+      setFontBannerBusy(false)
+      refreshMissingFonts()
+    }
+  }, [missingFonts, refreshMissingFonts])
   /** AiPanel reset key: incremented only on applyOpen (open/new file), not on draft path updates */
   const [aiPanelKey, setAiPanelKey] = useState(0)
   /** Theme body default font (fallback for the font box when the selection has no text element) */
@@ -370,6 +405,13 @@ export function App() {
   const [images, setImages] = useState<Map<string, HTMLImageElement>>(new Map())
   const imageLoaderRef = useRef<ReturnType<typeof createImageLoader> | null>(null)
   const [hasClipboard, setHasClipboard] = useState(false)
+  // The clipboard is app-wide (copies land from other windows) and external content counts too
+  useEffect(() => {
+    const probe = () => void window.slidesApi.clipboardProbe().then(setHasClipboard)
+    probe()
+    window.addEventListener('focus', probe)
+    return () => window.removeEventListener('focus', probe)
+  }, [])
   const [transition, setTransition] = useState<TransitionKind>('none')
   // ── Animations tab: current page's animation list + pane/preview ─────────────
   const [animations, setAnimations] = useState<AnimationItem[]>([])
@@ -1956,6 +1998,8 @@ export function App() {
   const onCanvasContextMenu = useCallback(
     (sourceId: string | null, x: number, y: number, cell?: { row: number; col: number }) => {
       if (editing) return
+      // The clipboard may have been filled from another window (or externally) since our last copy
+      void window.slidesApi.clipboardProbe().then(setHasClipboard)
       if (sourceId) {
         setSelectedIds((prev) => (prev.includes(sourceId) ? prev : [sourceId]))
         setCtxMenu({ kind: 'element', x, y, targetId: sourceId, ...(cell ? { cell } : {}) })
@@ -3095,6 +3139,30 @@ export function App() {
           </div>
         )}
         <div className="app-content">
+          {missingFonts.length > 0 && (
+            <div className="font-missing-banner">
+              <span className="fmb-text">
+                {t('fontMissingBanner')}
+                <span className="fmb-fonts">{missingFonts.join(', ')}</span>
+              </span>
+              <button
+                className="fmb-download"
+                disabled={fontBannerBusy}
+                onClick={() => void downloadMissingFonts()}
+              >
+                {fontBannerBusy ? t('ribbonFontDownloading') : t('fontMissingDownloadAll')}
+              </button>
+              <button
+                className="fmb-dismiss"
+                onClick={() => {
+                  missingFontsDismissed.current = true
+                  setMissingFonts([])
+                }}
+              >
+                {t('fontMissingDismiss')}
+              </button>
+            </div>
+          )}
           <div className="workspace">
             {!slide ? (
               <div className="start-screen start-booting">{t('appStartOpening')}</div>
@@ -4030,9 +4098,14 @@ export function App() {
               : (instruction) => {
                   askClosedAtRef.current = Date.now()
                   setAskState(null)
-                  // A normal run reads the live canvas selection, so the
-                  // instruction lands scoped to the still-selected element(s)
-                  pushAiPreset(instruction)
+                  // Carry the popover's frozen durable targets into the run.
+                  // The canvas keeps parse-time source ids for rendering, while
+                  // the AI inventory and edit tools speak durable ids.
+                  pushAiPreset(
+                    buildSelectionInstruction(current, askTargets, instruction),
+                    true,
+                    instruction,
+                  )
                 }
           }
         />

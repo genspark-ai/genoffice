@@ -459,11 +459,12 @@ function blockAttrs(
   } else if (node.attrs.emptyRunSize || node.attrs.emptyRunFont) {
     // Word sizes an empty line by the paragraph mark / empty run, both directions
     if (node.attrs.emptyRunSize) styles.push(`font-size:${Number(node.attrs.emptyRunSize) / 2}pt`)
-    // CJK mark faces stay on the document factor: table cells deliberately keep
-    // the Latin factor for empty lines, and KR/JP line height is calibrated
-    // doc-wide — scoping to Western faces fixes their hairline surplus only
+    // the mark face sizes the empty line, CJK included (empty-line probe
+    // 2026-08-25: SimSun 1.30 / DengXian 1.36 / Malgun 1.74 / Calibri 1.24 —
+    // each face's own text factor; the earlier Western-only scoping starved
+    // CJK marks down to the document factor and doubled their grid rows)
     const fam = node.attrs.emptyRunFont ? String(node.attrs.emptyRunFont) : null
-    if (fam && !isCjkFontName(fam)) {
+    if (fam) {
       styles.push(`--doc-line-factor:${lineHeightFactor(fam)}`, `font-family:${cssFontFamily(fam)}`)
     }
   }
@@ -687,6 +688,10 @@ export const DocInlineImage = Node.create({
       wrap: { default: null as string | null },
       offsetXEmu: { default: null as number | null },
       offsetYEmu: { default: null as number | null },
+      wrapDistTopEmu: { default: null as number | null },
+      wrapDistBottomEmu: { default: null as number | null },
+      wrapDistLeftEmu: { default: null as number | null },
+      wrapDistRightEmu: { default: null as number | null },
       /** picture outline (pic:spPr a:ln solid fill, display-only) */
       border: { default: null as { color: string; widthPt: number } | null },
       /** positionV line/center: the picture centers on its anchor line (display only) */
@@ -732,6 +737,34 @@ export const DocInlineImage = Node.create({
     // square/tight/through wrap → real CSS float so the surrounding text wraps;
     // topBottom → block line of its own
     if (wrap) attrs.class += ` doc-inline-img--wrap-${wrap}`
+    // free-position floats honor the numeric posOffset X like the block-image
+    // path: X measures from the column start; right floats convert it to a
+    // right-edge inset so the picture is not stuck flush against the margin
+    const tx = node.attrs.offsetXEmu != null ? Number(node.attrs.offsetXEmu) / EMU_PER_PX : null
+    if (tx != null && wrap) {
+      if (wrap.endsWith('-right') && w > 0) {
+        attrs.style = `${attrs.style ?? ''};margin-right:calc(100% - ${(tx + w).toFixed(1)}px);max-width:none`
+      } else if (wrap.endsWith('-left')) {
+        attrs.style = `${attrs.style ?? ''};margin-left:${tx.toFixed(1)}px;max-width:none`
+      }
+    }
+    if (wrap) {
+      const distancePx = (attr: string): number | null =>
+        node.attrs[attr] != null ? Number(node.attrs[attr]) / EMU_PER_PX : null
+      const top = distancePx('wrapDistTopEmu')
+      const bottom = distancePx('wrapDistBottomEmu')
+      const left = distancePx('wrapDistLeftEmu')
+      const right = distancePx('wrapDistRightEmu')
+      const distances = [
+        top != null ? `margin-top:${top.toFixed(1)}px` : '',
+        bottom != null ? `margin-bottom:${bottom.toFixed(1)}px` : '',
+        wrap.endsWith('-right') && left != null ? `margin-left:${left.toFixed(1)}px` : '',
+        wrap.endsWith('-left') && right != null ? `margin-right:${right.toFixed(1)}px` : '',
+      ].filter(Boolean)
+      if (distances.length) {
+        attrs.style = `${attrs.style ?? ''};${distances.join(';')}`
+      }
+    }
     // positionV line/center: lift so the picture centers on the anchor line
     // (0.75em ≈ half a single-spaced line) instead of hanging below it
     if (node.attrs.lineCenterV && h > 0) {
@@ -1499,6 +1532,8 @@ const tableCellAttrs = {
   textDirection: { default: null as string | null },
   /** inner clip-box height (twips) when the row is hRule="exact" (computed in convert.ts) */
   clipHeightTwips: { default: null as number | null },
+  /** display placeholder for the row's w:gridBefore/w:gridAfter columns (borderless, not saved as w:tc) */
+  gridGap: { default: false },
   colspan: { default: 1 },
   rowspan: { default: 1 },
   colwidth: { default: null as number[] | null },
@@ -1529,6 +1564,8 @@ export function borderLineCss(
 
 function tableCellHtml(node: PmNode): Record<string, string> {
   const attrs: Record<string, string> = {}
+  // gap placeholders never save back as w:tc, so typed text would vanish — keep them inert
+  if (node.attrs.gridGap) attrs.contenteditable = 'false'
   if (node.attrs.colspan > 1) attrs.colspan = String(node.attrs.colspan)
   if (node.attrs.rowspan > 1) attrs.rowspan = String(node.attrs.rowspan)
   if (node.attrs.colwidth) attrs['data-colwidth'] = (node.attrs.colwidth as number[]).join(',')
@@ -1545,6 +1582,8 @@ function tableCellHtml(node: PmNode): Record<string, string> {
   }
   const mar = node.attrs.cellMar as Record<string, number> | null
   const styles = [
+    // gridBefore/gridAfter placeholder: bare grid space (inline border beats the --doc-b-* cell rules)
+    node.attrs.gridGap ? 'border:none;background:none' : '',
     // vertical-text cells: tbRl = vertical right-to-left (vertical-rl), btLr = rotated 90° counterclockwise (sideways-lr)
     node.attrs.textDirection === 'tbRl'
       ? 'writing-mode:vertical-rl'
@@ -1656,11 +1695,30 @@ export const DocTable = Node.create({
       widthPx: { default: null as number | null },
       widthPct: { default: null as number | null },
       cellMar: { default: null as Record<string, number> | null },
+      /** w:tblCellSpacing (twips, half the inter-cell gap) → CSS border-spacing */
+      cellSpacingTwips: { default: null as number | null },
+      /** table shading (tblPr w:shd), hex without '#' */
+      tblFill: { default: null as string | null },
+      cellMarEdited: { default: false },
       borders: { default: null as Record<string, unknown> | null },
       tblAlign: { default: null as string | null },
       tblFloat: { default: null as string | null },
+      tblFloatSource: { default: null as string | null },
+      tblFloatSuppressed: { default: false },
+      tblFloatXTwips: { default: null as number | null },
+      tblFloatYTwips: { default: null as number | null },
+      tblFloatHorzAnchor: { default: null as string | null },
+      tblFloatVertAnchor: { default: null as string | null },
+      tblFloatDistance: { default: null as Record<string, number> | null },
+      /** display-only measured width used to place right AutoFit floats */
+      tblFloatWidthPx: { default: null as number | null },
+      tblFloatEdited: { default: false },
+      tblAutoFit: { default: 'fixed' as 'contents' | 'window' | 'fixed' },
+      tblAutoFitEdited: { default: false },
       indentTwips: { default: null as number | null },
       tblStyleId: { default: null as string | null },
+      tblLook: { default: null as Record<string, boolean> | null },
+      tblLookEdited: { default: false },
       /** SDT shell JSON when the table is a content-control member (chrome hit-testing) */
       sdtShell: { default: null as string | null },
       /** RTL table (tblPr w:bidiVisual): columns right to left */
@@ -1677,12 +1735,22 @@ export const DocTable = Node.create({
     const attrs: Record<string, string> = { class: 'doc-table' }
     if (node.attrs.docxIndex !== null) attrs['data-idx'] = String(node.attrs.docxIndex)
     if (node.attrs.tblStyleId) attrs['data-tbl-style'] = String(node.attrs.tblStyleId)
-    const tblFloated = node.attrs.tblFloat === 'left' || node.attrs.tblFloat === 'right'
+    const autoFit = node.attrs.tblAutoFit as 'contents' | 'window' | 'fixed'
+    // Imported auto-layout tables may carry a display-only expanded width from
+    // the fidelity pass. Keep that measured grid until the user explicitly
+    // chooses AutoFit Contents (the command clears widthPx).
+    const displayAutoFit = autoFit === 'contents' && node.attrs.widthPx ? 'fixed' : autoFit
+    attrs.class += ` doc-table-autofit-${displayAutoFit}`
+    const tblFloated =
+      !node.attrs.tblFloatSuppressed &&
+      (node.attrs.tblFloat === 'left' || node.attrs.tblFloat === 'right')
     if (tblFloated) attrs.class += ` doc-table-float-${node.attrs.tblFloat}`
     if (node.attrs.bidiVisual) attrs.dir = 'rtl'
     const styles: string[] = []
     let centerMargin: string | null = null
-    if (node.attrs.widthPct) styles.push(`width:${Number(node.attrs.widthPct)}%`)
+    if (displayAutoFit === 'contents') styles.push('width:auto')
+    else if (displayAutoFit === 'window') styles.push('width:100%')
+    else if (node.attrs.widthPct) styles.push(`width:${Number(node.attrs.widthPct)}%`)
     // Over-wide grids may spill into the page margins like Word/LO (clamping
     // them to the content box narrowed every column, wrapped cell text onto extra
     // lines and inflated PDF-converted documents by pages), but never past the paper:
@@ -1709,11 +1777,39 @@ export const DocTable = Node.create({
     }
     const pad = cellPadCss(node.attrs.cellMar as Record<string, number> | null)
     if (pad) styles.push(`--doc-cell-pad:${pad}`)
+    // w:tblCellSpacing: each cell contributes the value on its side, so the CSS
+    // gap between cells is twice it; cells render individually boxed like Word
+    if (node.attrs.cellSpacingTwips) {
+      const gapPx = ((Number(node.attrs.cellSpacingTwips) * 2) / 15).toFixed(1)
+      styles.push('border-collapse:separate', `border-spacing:${gapPx}px`)
+    }
+    if (node.attrs.tblFill) styles.push(`background-color:#${node.attrs.tblFill}`)
     styles.push(...tableBordersCss(node.attrs.borders as TableBordersAttr | null))
     // w:tblpPr positioning supersedes w:jc / w:tblInd: alignment or indent
     // margins would override the float stylesheet's wrap gaps
     if (tblFloated) {
-      // no alignment/indent margins
+      const distance = (node.attrs.tblFloatDistance as Record<string, number> | null) ?? {}
+      const px = (twips: unknown): number => (Number(twips) || 0) / 15
+      const x = px(node.attrs.tblFloatXTwips)
+      const y = px(node.attrs.tblFloatYTwips)
+      const top = y + Math.max(0, px(distance.top))
+      const bottom = Math.max(0, px(distance.bottom))
+      const left = Math.max(0, px(distance.left))
+      const right = Math.max(0, px(distance.right))
+      if (top) styles.push(`margin-top:${top.toFixed(1)}px`)
+      if (bottom) styles.push(`margin-bottom:${bottom.toFixed(1)}px`)
+      if (node.attrs.tblFloat === 'left') {
+        if (x) styles.push(`margin-left:${x.toFixed(1)}px`)
+        if (right) styles.push(`margin-right:${right.toFixed(1)}px`)
+      } else {
+        if (left) styles.push(`margin-left:${left.toFixed(1)}px`)
+        const width = Number(node.attrs.widthPx) || Number(node.attrs.tblFloatWidthPx)
+        if (node.attrs.tblFloatXTwips != null && width > 0) {
+          styles.push(
+            `margin-right:max(0px,calc(var(--doc-content-w,100%) - ${x.toFixed(1)}px - ${width.toFixed(1)}px))`,
+          )
+        }
+      }
     } else if (node.attrs.tblAlign === 'center') {
       if (centerMargin) styles.push(centerMargin)
       else styles.push('margin-left:auto', 'margin-right:auto')
@@ -1730,7 +1826,7 @@ export const DocTable = Node.create({
       firstRowCols += Number(cell.attrs.colspan) || 1
     })
     const rawPct = node.attrs.colWidthsPct as number[] | null
-    if (rawPct?.length) {
+    if (displayAutoFit !== 'contents' && rawPct?.length) {
       // zero-width grid slots get a small floor, short grids pad with the average —
       // dropping the whole colgroup falls back to fixed-layout even splitting, which
       // is always worse than an approximate grid
@@ -1762,6 +1858,8 @@ export const DocTableRow = Node.create({
     return {
       heightTwips: { default: null as number | null },
       heightRule: { default: null as 'atLeast' | 'exact' | null },
+      repeatHeader: { default: false },
+      repeatHeaderEdited: { default: false },
       rawTrPr: { default: null as string | null },
       /** trPr w:ins/w:del row-level revision ({kind, author, ...} | null) */
       rowRevision: { default: null as Record<string, string> | null },
@@ -1779,6 +1877,7 @@ export const DocTableRow = Node.create({
       attrs.style = `height:${((h / 1440) * 96).toFixed(1)}px`
       if (node.attrs.heightRule === 'exact') classes.push('row-h-exact')
     }
+    attrs['data-repeat-header'] = node.attrs.repeatHeader ? '1' : '0'
     if (rev?.kind) {
       classes.push(`row-rev-${rev.kind}`)
       if (rev.author) attrs.title = rev.author
@@ -2181,9 +2280,20 @@ export const DocProtected = Node.create({
       imageCrop: { default: null as { l: number; t: number; r: number; b: number } | null },
       /** fill placement (a:fillRect) fractions (negative = bleed), display-only */
       imageFillRect: { default: null as { l: number; t: number; r: number; b: number } | null },
+      imageLeadingText: { default: null as string | null },
+      imageLeadingFont: { default: null as string | null },
+      imageLeadingExplicitSpaceWidthPx: { default: null as number | null },
+      imageLeadingImplicitSpaceCount: { default: null as number | null },
+      imageParagraphIndentLeft: { default: null as number | null },
+      imageParagraphIndentRight: { default: null as number | null },
+      imageParagraphIndentFirstLine: { default: null as number | null },
       /** paragraph alignment of the image (w:jc) */
       imageAlign: { default: null as string | null },
       imageWrap: { default: null as string | null },
+      imageWrapDistTopEmu: { default: null as number | null },
+      imageWrapDistBottomEmu: { default: null as number | null },
+      imageWrapDistLeftEmu: { default: null as number | null },
+      imageWrapDistRightEmu: { default: null as number | null },
       /**
        * Stacking rank of a floating image among overlapping anchors
        * (bring-to-front / send-to-back). Written to the anchor's
@@ -2196,6 +2306,8 @@ export const DocProtected = Node.create({
        * or is inline.
        */
       imageOffsetXEmu: { default: null as number | null },
+      /** wp:anchor locked="1": keep the anchor paragraph fixed while dragging */
+      imageAnchorLocked: { default: false },
       /** margin-relative wp:align preset (Word position gallery) */
       imagePosH: { default: null as string | null },
       imagePosV: { default: null as string | null },
@@ -2651,11 +2763,65 @@ function protectedDomSpec(node: PmNode): DomSpec {
       attrs['style'] = `text-align:${imageAlign}`
     }
     if (imageWrap) attrs.class += ` img-wrap-${String(imageWrap)}`
+    const imageLeadingText = String(node.attrs.imageLeadingText ?? '')
+    const cjkFixedLeadingSpaces =
+      !imageWrap &&
+      /^[ ]+$/.test(imageLeadingText) &&
+      !!node.attrs.imageLeadingFont &&
+      isCjkFontName(String(node.attrs.imageLeadingFont))
+    // paragraph indents place the picture like its (possibly empty) first line;
+    // anchored pictures position from the column instead and ignore them
+    if (!imageWrap) {
+      const paragraphLayout = [
+        node.attrs.imageParagraphIndentLeft
+          ? `margin-inline-start:${Number(node.attrs.imageParagraphIndentLeft) / 20}pt`
+          : '',
+        node.attrs.imageParagraphIndentRight
+          ? `margin-inline-end:${Number(node.attrs.imageParagraphIndentRight) / 20}pt`
+          : '',
+        !cjkFixedLeadingSpaces && node.attrs.imageParagraphIndentFirstLine
+          ? `text-indent:${Number(node.attrs.imageParagraphIndentFirstLine) / 20}pt`
+          : '',
+      ].filter(Boolean)
+      if (paragraphLayout.length) {
+        attrs.style = `${attrs.style ? `${attrs.style};` : ''}${paragraphLayout.join(';')}`
+      }
+    }
+    const imageLeadingStyle = [
+      node.attrs.imageLeadingFont
+        ? `font-family:${cssFontFamily(String(node.attrs.imageLeadingFont))}`
+        : '',
+    ]
+      .filter(Boolean)
+      .join(';')
+    const imageLeadingSpecs: DomSpec[] =
+      imageLeadingText && !cjkFixedLeadingSpaces
+        ? [
+            [
+              'span',
+              {
+                class: 'doc-image-leading-space',
+                ...(imageLeadingStyle ? { style: imageLeadingStyle } : {}),
+              },
+              imageLeadingText,
+            ],
+          ]
+        : []
     // no-wrap / behind-text anchors leave the flow like floating textboxes:
     // zero-height wrapper (doc-img-float), absolutely positioned inner wrap
     // (Word overlays them on the text instead of reserving a line)
-    let imgWrapTransform = ''
+    const explicitSpaceWidthPx = Number(node.attrs.imageLeadingExplicitSpaceWidthPx ?? 0)
+    const implicitSpaceCount = Number(
+      node.attrs.imageLeadingImplicitSpaceCount ??
+        (explicitSpaceWidthPx > 0 ? 0 : imageLeadingText.length),
+    )
+    let imgWrapTransform = cjkFixedLeadingSpaces
+      ? `margin-left:calc(${Number(node.attrs.imageParagraphIndentFirstLine ?? 0) / 15 + explicitSpaceWidthPx}px + ${implicitSpaceCount * 0.5}em)`
+      : ''
     let imgFloatPos = ''
+    // the vertical posOffset margin must not be clobbered by a wrap-distance
+    // margin-top below (distT is clearance, the offset is position — position wins)
+    let hasOffsetTopMargin = false
     if (imageWrap === 'front' || imageWrap === 'behind') {
       attrs.class += ' doc-img-float'
       // z-index bands keep behind-text pictures under the body text and
@@ -2694,7 +2860,10 @@ function protectedDomSpec(node: PmNode): DomSpec {
         // a negative offset lifts via the inner wrap so the flow band keeps
         // its height (Word: logo above its anchor line must not push)
         if (ty < 0) imgWrapTransform = `margin-top:${ty.toFixed(1)}px`
-        else if (ty > 0) wrapperCss.push(`margin-top:${ty.toFixed(1)}px`)
+        else if (ty > 0) {
+          wrapperCss.push(`margin-top:${ty.toFixed(1)}px`)
+          hasOffsetTopMargin = true
+        }
       }
       if (node.attrs.imageOffsetXEmu != null) {
         const tx = Number(node.attrs.imageOffsetXEmu) / EMU_PER_PX
@@ -2715,6 +2884,30 @@ function protectedDomSpec(node: PmNode): DomSpec {
       }
       if (wrapperCss.length) {
         attrs['style'] = `${attrs['style'] ? `${attrs['style']};` : ''}${wrapperCss.join(';')}`
+      }
+    }
+    // wrap distances apply to in-flow wraps only: wrapNone (front/behind)
+    // anchors ignore them in Word, and margins on the zero-height wrapper
+    // would displace the following flow content
+    if (imageWrap && imageWrap !== 'front' && imageWrap !== 'behind') {
+      const distancePx = (attr: string): number | null =>
+        node.attrs[attr] != null ? Number(node.attrs[attr]) / EMU_PER_PX : null
+      const top = distancePx('imageWrapDistTopEmu')
+      const bottom = distancePx('imageWrapDistBottomEmu')
+      const left = distancePx('imageWrapDistLeftEmu')
+      const right = distancePx('imageWrapDistRightEmu')
+      const distances = [
+        !hasOffsetTopMargin && top != null ? `margin-top:${top.toFixed(1)}px` : '',
+        bottom != null ? `margin-bottom:${bottom.toFixed(1)}px` : '',
+        String(imageWrap).endsWith('-right') && left != null
+          ? `margin-left:${left.toFixed(1)}px`
+          : '',
+        String(imageWrap).endsWith('-left') && right != null
+          ? `margin-right:${right.toFixed(1)}px`
+          : '',
+      ].filter(Boolean)
+      if (distances.length) {
+        attrs.style = `${attrs.style ? `${attrs.style};` : ''}${distances.join(';')}`
       }
     }
     const imgAttrs: Record<string, string> = {
@@ -2778,14 +2971,23 @@ function protectedDomSpec(node: PmNode): DomSpec {
         'div',
         attrs,
         moveHandleSpec(t('editorMoveImage')),
+        ...(imageWrap ? [imageAnchorMarkerSpec()] : []),
+        ...imageLeadingSpecs,
         [
           'span',
           {
             class: 'doc-img-wrap doc-img-crop',
-            style: `position:${imgFloatPos ? `absolute;${imgFloatPos}` : 'relative'};display:inline-block;overflow:hidden;width:${W}px;height:${H}px${wrapXf.length ? `;transform:${wrapXf.join(' ')}` : ''}${imgWrapTransform && !imgWrapTransform.startsWith('transform:') ? `;${imgWrapTransform}` : ''}${borderCss ? `;${borderCss}` : ''}`,
+            style: `position:${imgFloatPos ? `absolute;${imgFloatPos}` : 'relative'};display:inline-block;width:${W}px;height:${H}px${wrapXf.length ? `;transform:${wrapXf.join(' ')}` : ''}${imgWrapTransform && !imgWrapTransform.startsWith('transform:') ? `;${imgWrapTransform}` : ''}${borderCss ? `;${borderCss}` : ''}`,
           },
-          ['img', imgAttrs],
-          ['span', { class: 'img-resize-handle' }],
+          [
+            'span',
+            {
+              class: 'doc-img-crop-viewport',
+              style: 'position:absolute;inset:0;overflow:hidden',
+            },
+            ['img', imgAttrs],
+          ],
+          ...imageSelectionControlsSpec(),
         ],
       ]
     }
@@ -2800,6 +3002,8 @@ function protectedDomSpec(node: PmNode): DomSpec {
       'div',
       attrs,
       moveHandleSpec(t('editorMoveImage')),
+      ...(imageWrap ? [imageAnchorMarkerSpec()] : []),
+      ...imageLeadingSpecs,
       [
         'span',
         {
@@ -2811,7 +3015,7 @@ function protectedDomSpec(node: PmNode): DomSpec {
             : {}),
         },
         ['img', imgAttrs],
-        ['span', { class: 'img-resize-handle' }],
+        ...imageSelectionControlsSpec(),
       ],
     ]
   }
@@ -2938,6 +3142,44 @@ function moveHandleSpec(label: string): DomSpec {
       contenteditable: 'false',
     },
     '↕',
+  ]
+}
+
+type ImageResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+
+const IMAGE_RESIZE_HANDLES: readonly ImageResizeHandle[] = [
+  'nw',
+  'n',
+  'ne',
+  'e',
+  'se',
+  's',
+  'sw',
+  'w',
+]
+
+function imageSelectionControlsSpec(): DomSpec[] {
+  return IMAGE_RESIZE_HANDLES.map((direction): DomSpec => [
+    'span',
+    {
+      class: `img-resize-handle img-resize-handle-${direction}`,
+      'data-resize-handle': direction,
+      contenteditable: 'false',
+      draggable: 'false',
+      'aria-hidden': 'true',
+    },
+  ])
+}
+
+function imageAnchorMarkerSpec(): DomSpec {
+  return [
+    'span',
+    {
+      class: 'doc-image-anchor-marker',
+      contenteditable: 'false',
+      'aria-hidden': 'true',
+    },
+    '⚓',
   ]
 }
 
@@ -3599,11 +3841,15 @@ function imageResizePlugin(): Plugin {
             window.addEventListener('mouseup', onUp)
             return true
           }
-          if (!target.classList?.contains('img-resize-handle')) return false
-          const wrapper = target.closest('.doc-protected') as HTMLElement | null
+          const handle = target.closest('.img-resize-handle') as HTMLElement | null
+          const direction = handle?.dataset.resizeHandle as ImageResizeHandle | undefined
+          if (!handle || !direction || !IMAGE_RESIZE_HANDLES.includes(direction)) return false
+          const wrapper = handle.closest('.doc-protected') as HTMLElement | null
+          const imageBox = handle.closest('.doc-img-wrap') as HTMLElement | null
           const img = wrapper?.querySelector('img.doc-protected-img') as HTMLImageElement | null
-          if (!wrapper || !img) return false
+          if (!wrapper || !imageBox || !img) return false
           event.preventDefault()
+          event.stopPropagation()
 
           let pos = -1
           view.state.doc.descendants((node, p) => {
@@ -3614,42 +3860,126 @@ function imageResizePlugin(): Plugin {
           if (pos === -1) return false
 
           view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)))
+          view.focus()
 
           // CSS `zoom` scales client coordinates; divide it back out
           const zoomEl = document.querySelector('.doc-zoom') as HTMLElement | null
           const zoom = zoomEl ? parseFloat(getComputedStyle(zoomEl).zoom || '1') || 1 : 1
           // Layout-box measurements: getBoundingClientRect would include the
           // rotation/flip transform, swapping width/height for 90°-rotated images
-          const startW = img.offsetWidth
-          const ratio = img.offsetHeight / Math.max(1, img.offsetWidth)
-          const priorStyle = img.getAttribute('style')
+          const selectedNode = view.state.doc.nodeAt(pos)
+          const modelW = Number(selectedNode?.attrs.imageWidthPx)
+          const modelH = Number(selectedNode?.attrs.imageHeightPx)
+          const startW = modelW > 0 ? modelW : imageBox.offsetWidth || img.offsetWidth
+          const startH = modelH > 0 ? modelH : imageBox.offsetHeight || img.offsetHeight
+          if (!(startW > 0) || !(startH > 0)) return false
+          const priorBoxStyle = imageBox.getAttribute('style')
+          const priorImgStyle = img.getAttribute('style')
+          const cropped = imageBox.classList.contains('doc-img-crop')
+          const startImgW = parseFloat(img.style.width) || img.offsetWidth || startW
+          const startImgH = parseFloat(img.style.height) || img.offsetHeight || startH
+          const startImgLeft = parseFloat(img.style.left) || 0
+          const startImgTop = parseFloat(img.style.top) || 0
+          const pxLeft = /^-?\d+(?:\.\d+)?px$/.test(imageBox.style.left)
+            ? parseFloat(imageBox.style.left)
+            : null
+          const pxTop = /^-?\d+(?:\.\d+)?px$/.test(imageBox.style.top)
+            ? parseFloat(imageBox.style.top)
+            : null
+          const shiftsInFlow = imageBox.style.position !== 'absolute'
           const startX = event.clientX
+          const startY = event.clientY
+          const west = direction.includes('w')
+          const east = direction.includes('e')
+          const north = direction.includes('n')
+          const south = direction.includes('s')
 
-          const widthAt = (e: MouseEvent) => Math.max(24, startW + (e.clientX - startX) / zoom)
+          const geometryAt = (e: MouseEvent) => {
+            const dx = (e.clientX - startX) / zoom
+            const dy = (e.clientY - startY) / zoom
+            let w = startW
+            let h = startH
+            if ((west || east) && (north || south)) {
+              // Project the pointer onto the aspect-ratio diagonal. Corner
+              // handles keep picture proportions, matching Word's default.
+              const sx = west ? -1 : 1
+              const sy = north ? -1 : 1
+              const delta =
+                (dx * sx * startW + dy * sy * startH) /
+                Math.max(1, startW * startW + startH * startH)
+              const minScale = Math.max(24 / startW, 24 / startH)
+              const scale = Math.max(minScale, 1 + delta)
+              w = startW * scale
+              h = startH * scale
+            } else if (west || east) {
+              w = Math.max(24, startW + (west ? -dx : dx))
+            } else if (north || south) {
+              h = Math.max(24, startH + (north ? -dy : dy))
+            }
+            return {
+              w,
+              h,
+              shiftX: west ? startW - w : 0,
+              shiftY: north ? startH - h : 0,
+            }
+          }
+
+          const restorePreview = () => {
+            if (priorBoxStyle === null) imageBox.removeAttribute('style')
+            else imageBox.setAttribute('style', priorBoxStyle)
+            if (priorImgStyle === null) img.removeAttribute('style')
+            else img.setAttribute('style', priorImgStyle)
+          }
           const onMove = (e: MouseEvent) => {
-            const w = widthAt(e)
-            img.style.width = `${w}px`
-            img.style.height = `${w * ratio}px`
+            const { w, h, shiftX, shiftY } = geometryAt(e)
+            imageBox.style.width = `${w}px`
+            imageBox.style.height = `${h}px`
+            if (pxLeft !== null) imageBox.style.left = `${pxLeft + shiftX}px`
+            else if (west && shiftsInFlow) imageBox.style.left = `${shiftX}px`
+            if (pxTop !== null) imageBox.style.top = `${pxTop + shiftY}px`
+            else if (north && shiftsInFlow) imageBox.style.top = `${shiftY}px`
+            if (cropped) {
+              const sx = w / startW
+              const sy = h / startH
+              img.style.left = `${startImgLeft * sx}px`
+              img.style.top = `${startImgTop * sy}px`
+              img.style.width = `${startImgW * sx}px`
+              img.style.height = `${startImgH * sy}px`
+            } else {
+              img.style.width = `${w}px`
+              img.style.height = `${h}px`
+            }
           }
           const onUp = (e: MouseEvent) => {
             window.removeEventListener('mousemove', onMove)
             window.removeEventListener('mouseup', onUp)
             // A plain click on the handle must not rewrite the stored size
-            if (Math.abs(e.clientX - startX) < 2) {
-              if (priorStyle === null) img.removeAttribute('style')
-              else img.setAttribute('style', priorStyle)
+            if (Math.abs(e.clientX - startX) < 2 && Math.abs(e.clientY - startY) < 2) {
+              restorePreview()
               return
             }
-            const w = Math.round(widthAt(e))
             const node = view.state.doc.nodeAt(pos)
-            if (!node) return
-            view.dispatch(
-              view.state.tr.setNodeMarkup(pos, undefined, {
-                ...node.attrs,
-                imageWidthPx: w,
-                imageHeightPx: Math.round(w * ratio),
-              }),
-            )
+            if (!node) {
+              restorePreview()
+              return
+            }
+            const geometry = geometryAt(e)
+            const w = Math.round(geometry.w)
+            const h = Math.round(geometry.h)
+            const attrs: Record<string, unknown> = {
+              ...node.attrs,
+              imageWidthPx: w,
+              imageHeightPx: h,
+            }
+            if (west && node.attrs.imageOffsetXEmu != null) {
+              attrs.imageOffsetXEmu =
+                Number(node.attrs.imageOffsetXEmu) + Math.round((startW - w) * EMU_PER_PX)
+            }
+            if (north && node.attrs.imageOffsetYEmu != null) {
+              attrs.imageOffsetYEmu =
+                Number(node.attrs.imageOffsetYEmu) + Math.round((startH - h) * EMU_PER_PX)
+            }
+            view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, attrs))
           }
           window.addEventListener('mousemove', onMove)
           window.addEventListener('mouseup', onUp)
@@ -3699,6 +4029,51 @@ export function findFloatImageAt(x: number, y: number): HTMLElement | null {
     if (wrap && wrap.closest('.doc-img-float')) return wrap
   }
   return null
+}
+
+interface ImageParagraphAnchor {
+  pos: number
+  node: PmNode
+  dom: HTMLElement
+  rect: DOMRect
+}
+
+const IMAGE_ANCHOR_NODE_TYPES = new Set(['docParagraph', 'docHeading', 'docListItem'])
+
+function imageParagraphAnchors(view: EditorView, imagePos: number): ImageParagraphAnchor[] {
+  const anchors: ImageParagraphAnchor[] = []
+  view.state.doc.forEach((node, pos) => {
+    if (pos === imagePos || !IMAGE_ANCHOR_NODE_TYPES.has(node.type.name)) return
+    const dom = view.nodeDOM(pos)
+    if (!(dom instanceof HTMLElement)) return
+    anchors.push({ pos, node, dom, rect: dom.getBoundingClientRect() })
+  })
+  return anchors
+}
+
+function pickImageParagraphAnchor(
+  anchors: ImageParagraphAnchor[],
+  x: number,
+  y: number,
+): ImageParagraphAnchor | null {
+  let best: ImageParagraphAnchor | null = null
+  let bestScore = Infinity
+  for (const anchor of anchors) {
+    const rect = anchor.dom.getBoundingClientRect()
+    anchor.rect = rect
+    const dy = y < rect.top ? rect.top - y : y > rect.bottom ? y - rect.bottom : 0
+    const dx = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0
+    // Vertical proximity determines the paragraph; horizontal proximity only
+    // breaks ties for multi-column lines at a similar Y.
+    const score = dy * 10000 + dx
+    // Stacked paragraphs share a bottom/top edge. At that exact boundary,
+    // prefer the paragraph beginning there instead of the one that just ended.
+    if (score < bestScore || (score === bestScore && rect.top > (best?.rect.top ?? -Infinity))) {
+      best = anchor
+      bestScore = score
+    }
+  }
+  return best
 }
 
 function floatingObjectDragPlugin(): Plugin {
@@ -3767,6 +4142,11 @@ function floatingObjectDragPlugin(): Plugin {
           // inline pictures) derive it from the rendered slot, so the drop
           // lands exactly where the user let go instead of jumping.
           const innerWrap = wrapper.querySelector('.doc-img-wrap') as HTMLElement | null
+          const startVisualRect = (innerWrap ?? wrapper).getBoundingClientRect()
+          const wrapperStartRect = wrapper.getBoundingClientRect()
+          const anchorLocked = !!node.attrs.imageAnchorLocked
+          const paragraphAnchors = isImage && !anchorLocked ? imageParagraphAnchors(view, pos) : []
+          let paragraphAnchor: ImageParagraphAnchor | null = null
           const wrapMode = (node.attrs.imageWrap as string | null) ?? null
           const isSideFloat = !!wrapMode && /^(?:square|tight|through)-/.test(wrapMode)
           const imgW = innerWrap?.offsetWidth || Number(node.attrs.imageWidthPx ?? 0) || 0
@@ -3817,6 +4197,11 @@ function floatingObjectDragPlugin(): Plugin {
           // must compose with it (prepended = applied in screen space) and the
           // original must come back on mouseup, or the orientation vanishes
           const baseTransform = visual?.style.transform ?? ''
+          const anchorMarker = isImage
+            ? (wrapper.querySelector('.doc-image-anchor-marker') as HTMLElement | null)
+            : null
+          const anchorMarkerTransform = anchorMarker?.style.transform ?? ''
+          const anchorMarkerLeft = anchorMarker?.style.left ?? ''
 
           // 3px threshold keeps plain clicks (select, first click of a
           // double-click-to-edit) from nudging the object
@@ -3830,12 +4215,33 @@ function floatingObjectDragPlugin(): Plugin {
               visual.style.transform =
                 `translate(${dx}px, ${dy}px)` + (baseTransform ? ` ${baseTransform}` : '')
             }
+            if (isImage) {
+              const clientDx = e.clientX - startX
+              const clientDy = e.clientY - startY
+              paragraphAnchor = pickImageParagraphAnchor(
+                paragraphAnchors,
+                startVisualRect.left + clientDx,
+                startVisualRect.top + clientDy,
+              )
+              if (anchorMarker && paragraphAnchor) {
+                const markerY = (paragraphAnchor.rect.top - wrapperStartRect.top) / zoom
+                const markerX = (paragraphAnchor.rect.left - wrapperStartRect.left) / zoom - 32
+                anchorMarker.style.transform = `translateY(${markerY.toFixed(1)}px)`
+                anchorMarker.style.left = `${markerX.toFixed(1)}px`
+                anchorMarker.dataset.anchorTargetPos = String(paragraphAnchor.pos)
+              }
+            }
           }
 
           const onUp = (e: MouseEvent) => {
             window.removeEventListener('mousemove', onMove)
             window.removeEventListener('mouseup', onUp)
             if (visual) visual.style.transform = baseTransform
+            if (anchorMarker) {
+              anchorMarker.style.transform = anchorMarkerTransform
+              anchorMarker.style.left = anchorMarkerLeft
+              delete anchorMarker.dataset.anchorTargetPos
+            }
 
             const dx = (e.clientX - startX) / zoom
             const dy = (e.clientY - startY) / zoom
@@ -3845,7 +4251,18 @@ function floatingObjectDragPlugin(): Plugin {
             // Word allows negative offsets (into the page margin / above the
             // anchor paragraph): no clamping
             const newX = Math.round((startPxX + dx) * EMU_PER_PX)
-            const newY = Math.round((startPxY + dy) * EMU_PER_PX)
+            if (isImage) {
+              paragraphAnchor = pickImageParagraphAnchor(
+                paragraphAnchors,
+                startVisualRect.left + (e.clientX - startX),
+                startVisualRect.top + (e.clientY - startY),
+              )
+            }
+            const newY = Math.round(
+              (paragraphAnchor
+                ? (startVisualRect.top + (e.clientY - startY) - paragraphAnchor.rect.top) / zoom
+                : startPxY + dy) * EMU_PER_PX,
+            )
 
             const currentNode = view.state.doc.nodeAt(pos)
             if (!currentNode) return
@@ -3872,16 +4289,36 @@ function floatingObjectDragPlugin(): Plugin {
                 const centerX = startPxX + dx + imgW / 2
                 nextWrap = `${kind}-${colW > 0 && centerX > colW / 2 ? 'right' : 'left'}`
               }
-              view.dispatch(
-                view.state.tr.setNodeMarkup(pos, undefined, {
-                  ...currentNode.attrs,
-                  imageWrap: nextWrap,
-                  imageOffsetXEmu: newX,
-                  imageOffsetYEmu: newY,
-                  imagePosH: null,
-                  imagePosV: null,
-                }),
-              )
+              const attrs = {
+                ...currentNode.attrs,
+                imageWrap: nextWrap,
+                imageOffsetXEmu: newX,
+                imageOffsetYEmu: newY,
+                imagePosH: null,
+                imagePosV: null,
+              }
+              if (
+                paragraphAnchor &&
+                !currentNode.attrs.imageAnchorLocked &&
+                !currentNode.attrs.blockRevision
+              ) {
+                // A floating picture's top-level atom is its OOXML anchor
+                // paragraph. Move that atom immediately before the paragraph
+                // selected by the drag, preserving docxIndex as the patch
+                // identity and rebasing Y to the new paragraph above.
+                const movedNode = currentNode.type.create(
+                  attrs,
+                  currentNode.content,
+                  currentNode.marks,
+                )
+                const tr = view.state.tr.delete(pos, pos + currentNode.nodeSize)
+                const insertPos = tr.mapping.map(paragraphAnchor.pos)
+                tr.insert(insertPos, movedNode)
+                tr.setSelection(NodeSelection.create(tr.doc, insertPos))
+                view.dispatch(tr)
+              } else {
+                view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, attrs))
+              }
             }
           }
 

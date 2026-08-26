@@ -1018,6 +1018,52 @@ export function duotoneImage(
   return c
 }
 
+/** Solid-fill shape with <a:softEdge>: the (rounded) rect pre-rendered with feathered edges. */
+const featherShapeCache = new Map<string, HTMLCanvasElement>()
+export function featheredShapeCanvas(
+  color: string,
+  w: number,
+  h: number,
+  radPx: number,
+  cornerRadiusPx = 0,
+  stroke?: { color: string; widthPx: number },
+): { canvas: HTMLCanvasElement; pad: number } {
+  const cw = Math.max(1, Math.round(w))
+  const ch = Math.max(1, Math.round(h))
+  const rad = Math.max(1, Math.round(radPx))
+  // Canvas strokes are centered on the path: pad the canvas so the outer half survives
+  const pad = stroke ? Math.ceil(stroke.widthPx / 2) : 0
+  const key = `${color}|${cw}|${ch}|${rad}|${Math.round(cornerRadiusPx)}|${stroke ? `${stroke.color}/${stroke.widthPx}` : ''}`
+  let c = featherShapeCache.get(key)
+  if (!c) {
+    c = document.createElement('canvas')
+    c.width = cw + 2 * pad
+    c.height = ch + 2 * pad
+    const ctx = c.getContext('2d')!
+    ctx.beginPath()
+    if (cornerRadiusPx > 0) ctx.roundRect(pad, pad, cw, ch, cornerRadiusPx)
+    else ctx.rect(pad, pad, cw, ch)
+    ctx.fillStyle = normalizeColor(color)
+    ctx.fill()
+    // The outline feathers together with the fill (PowerPoint applies softEdge to the composite)
+    if (stroke) {
+      ctx.strokeStyle = normalizeColor(stroke.color)
+      ctx.lineWidth = stroke.widthPx
+      ctx.stroke()
+    }
+    // Same alpha ramp as featheredImage: mask edge at 0.5r inset, blur 0.67r. The ramp
+    // starts from the composite's outer edge (stroke included) — the full padded canvas —
+    // so the padded outline half is inside the mask interior, not under its falloff.
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.filter = `blur(${(rad * 2) / 3}px)`
+    ctx.fillStyle = '#000'
+    ctx.fillRect(rad * 0.5, rad * 0.5, c.width - rad, c.height - rad)
+    if (featherShapeCache.size > 100) featherShapeCache.clear()
+    featherShapeCache.set(key, c)
+  }
+  return { canvas: c, pad }
+}
+
 export function featheredImage(
   img: HTMLImageElement,
   cacheKey: string,
@@ -1242,18 +1288,67 @@ export function displayFontFamily(name: string): string {
   return `'${name}', 'PingFang SC', 'Microsoft YaHei', sans-serif`
 }
 
+/**
+ * Distance from a Konva Text node's top to its visible alphabetic baseline, in px.
+ *
+ * Konva paints with canvas2d textBaseline='middle' anchored at half the line height
+ * (lineHeight defaults to 1 → 0.5em below the top). Where the alphabetic baseline sits
+ * relative to that 'middle' anchor is a per-font quantity Chromium derives from font
+ * metrics; measuring the same ink from both baselines yields it exactly. The ratio is
+ * measured once per family/style at a fixed size (font metrics scale linearly) so the
+ * engine's baselineY can be converted to a Konva top with no per-font error — the old
+ * fixed 0.8em approximation was tuned for Latin sans and sat several px high for
+ * CJK/serif fonts, drawing their glyphs visibly below the layout position.
+ */
+const MEASURE_PX = 100
+let baselineCtx: CanvasRenderingContext2D | null | undefined
+const baselineAscentRatio = new Map<string, number>()
+if (typeof document !== 'undefined')
+  // Web fonts (private/embedded faces) finish loading after first paint; drop ratios
+  // measured against the fallback font so the next render measures the real face.
+  document.fonts?.addEventListener?.('loadingdone', () => baselineAscentRatio.clear())
+
+export function konvaBaselineAscent(
+  family: string,
+  sizePx: number,
+  bold?: boolean,
+  italic?: boolean,
+): number {
+  const key = `${family}|${bold ? 'b' : ''}${italic ? 'i' : ''}`
+  const hit = baselineAscentRatio.get(key)
+  if (hit !== undefined) return hit * sizePx
+  if (baselineCtx === undefined)
+    baselineCtx =
+      typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null
+  if (!baselineCtx) return sizePx * 0.8 // no canvas (unit tests): legacy approximation
+  const ctx = baselineCtx
+  ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${MEASURE_PX}px ${family}`
+  // Same ink measured from both baselines: the ascent difference IS the exact distance
+  // from the 'middle' anchor down to the alphabetic baseline for this font
+  ctx.textBaseline = 'alphabetic'
+  const a1 = ctx.measureText('Hg').actualBoundingBoxAscent
+  ctx.textBaseline = 'middle'
+  const a2 = ctx.measureText('Hg').actualBoundingBoxAscent
+  const ratio = a1 > 0 || a2 > 0 ? 0.5 + (a1 - a2) / MEASURE_PX : 0.8
+  baselineAscentRatio.set(key, ratio)
+  return ratio * sizePx
+}
+
 export function glyphToDraw(run: GlyphRun): GlyphDraw {
   const styleParts: string[] = []
-  if (run.bold && !NO_SYNTHETIC_BOLD.has(run.fontFamily.normalize('NFKC').toLowerCase()))
-    styleParts.push('bold')
+  const effectiveBold =
+    !!run.bold && !NO_SYNTHETIC_BOLD.has(run.fontFamily.normalize('NFKC').toLowerCase())
+  if (effectiveBold) styleParts.push('bold')
   if (run.italic) styleParts.push('italic')
+  const family = displayFontFamily(run.fontFamily)
   return {
     text: run.text,
     x: run.x,
-    // Konva Text positions by top; its browser-backed text baseline is closest to 0.8em.
-    y: run.baselineY - run.fontSizePx * 0.8,
+    // Konva Text positions by top; place it so the painted baseline lands exactly on the
+    // engine's baselineY (see konvaBaselineAscent).
+    y: run.baselineY - konvaBaselineAscent(family, run.fontSizePx, effectiveBold, run.italic),
     fontSize: run.fontSizePx,
-    fontFamily: displayFontFamily(run.fontFamily),
+    fontFamily: family,
     fill: normalizeColor(run.color),
     fontStyle: styleParts.join(' ') || 'normal',
     textDecoration: [run.underline ? 'underline' : '', run.strike ? 'line-through' : '']

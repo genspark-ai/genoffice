@@ -109,7 +109,7 @@ import '@univerjs/preset-sheets-note/lib/index.css'
 import { UniverSheetsSortPreset } from '@univerjs/preset-sheets-sort'
 import UniverPresetSheetsSortEnUS from '@univerjs/preset-sheets-sort/locales/en-US'
 import '@univerjs/preset-sheets-sort/lib/index.css'
-import { UniverSheetsTablePreset } from '@univerjs/preset-sheets-table'
+import { UniverSheetsTablePreset, UniverSheetsTableUIPlugin } from '@univerjs/preset-sheets-table'
 import UniverPresetSheetsTableEnUS from '@univerjs/preset-sheets-table/locales/en-US'
 import '@univerjs/preset-sheets-table/lib/index.css'
 import { greenTheme } from '@univerjs/themes'
@@ -301,7 +301,7 @@ import { installMultiRowAutofit } from './autofit-multi-row'
 import { installCopyMaterialize } from './copy-materialize'
 import { applyUniverLocale } from './univer-locales'
 import { installRuleDetail } from './univer-rule-detail'
-import { installPopulatedDataValidationArrow } from './data-validation-arrow'
+import { installActiveCellDataValidationChrome } from './data-validation-dropdown'
 import { installFormulaNullResultFix } from './formula-null-result'
 import { installNumberFormatFix } from './numfmt-fix'
 import { installIfsEmptySetFix } from './ifs-empty-set'
@@ -316,6 +316,7 @@ import {
   handlePageLayoutCommand as handlePageLayoutCommandImpl,
   type PageLayoutContext,
 } from './page-layout-actions'
+import { handleExportCsv as handleExportCsvImpl, type CsvExportContext } from './csv-export'
 import { effectivePageBreaks, installPageBreakPreview } from './page-break-preview'
 import { mapProtectedRanges } from './protected-ranges'
 import { handleSave as handleSaveImpl, type SaveContext } from './save-actions'
@@ -489,9 +490,11 @@ export function App(): React.JSX.Element {
       const state = lazyWorkbookRef.current
       if (saving || !state || journalSize(state.editJournal) === 0) return
       // Never while the in-cell editor is open (saving reloads the workbook
-      // and would wipe the edit), and never for converted .xls/.csv imports
-      // whose first save opens a Save As dialog.
-      if (editingCellRef.current || state.file.needsSaveAs) return
+      // and would wipe the edit), never for converted .xls imports whose
+      // first save opens a Save As dialog, and never for CSV sessions —
+      // AutoSave would silently flatten the user's file.
+      if (editingCellRef.current || state.file.needsSaveAs || state.file.csvPath !== undefined)
+        return
       saving = true
       void handleSaveRef.current('save', true).finally(() => {
         saving = false
@@ -520,6 +523,7 @@ export function App(): React.JSX.Element {
       if (
         editingCellRef.current ||
         state.file.needsSaveAs ||
+        state.file.csvPath !== undefined ||
         state.file.restoredFromRecovery ||
         state.file.automaticRecoveryDisabled
       )
@@ -695,6 +699,15 @@ export function App(): React.JSX.Element {
       setMessage,
       setPendingEdits,
       refreshPageBreakPreview,
+    }
+  }
+
+  function csvExportContext(): CsvExportContext {
+    return {
+      univerRef,
+      lazyWorkbookRef,
+      setMessage,
+      requestSaveAs: () => void handleSaveRef.current('save-as'),
     }
   }
 
@@ -1418,6 +1431,9 @@ export function App(): React.JSX.Element {
         UniverSheetsFindReplacePreset(),
         UniverSheetsSortPreset(),
         UniverSheetsTablePreset(),
+        // No floating table-name chip: its 32px gap above row-0 tables shifts
+        // the grid vs Excel and strands the filter overlay at pre-gap coords.
+        { plugins: [[UniverSheetsTableUIPlugin, { hideAnchor: true }]] },
       ],
     })
     loadSnapshotIntoUniver(runtime, initialSnapshot, 'new-workbook', 'Untitled')
@@ -1521,7 +1537,9 @@ export function App(): React.JSX.Element {
     // imports (needsSaveAs) count as never-saved, like Excel.
     const cellFilenameDisposable = installCellFilenameFunction(runtime, () => {
       const file = lazyWorkbookRef.current?.file
-      return file && !file.needsSaveAs ? (file.path ?? null) : null
+      // A CSV session's on-disk identity is the original .csv, not the
+      // converted temp copy the session streams from.
+      return file && !file.needsSaveAs ? (file.csvPath ?? file.path ?? null) : null
     })
     // RATE converges near -100% via bisection instead of erroring.
     const rateFallbackDisposable = installRateFallback(runtime)
@@ -1542,8 +1560,8 @@ export function App(): React.JSX.Element {
     // Copy/cut load their selection into the lazy window first so streamed
     // workbooks don't serialize blanks for never-viewed rows.
     const copyMaterializeDisposable = installCopyMaterialize(runtime, lazyWorkbookRef, setMessage)
-    // List-validation arrows stay discoverable on values without cluttering empty template rows.
-    const dataValidationArrowDisposable = installPopulatedDataValidationArrow(runtime)
+    // Validation dropdowns and input messages follow the active cell, matching Excel.
+    const dataValidationChromeDisposable = installActiveCellDataValidationChrome(runtime)
     // Univer's own UI (rule-management panels, dialogs) follows the app
     // language instead of hard-coded English.
     void applyUniverLocale(runtime, getLang())
@@ -2499,7 +2517,7 @@ export function App(): React.JSX.Element {
       multiRowAutofitDisposable.dispose()
       nullResultDisposable.dispose()
       copyMaterializeDisposable.dispose()
-      dataValidationArrowDisposable.dispose()
+      dataValidationChromeDisposable.dispose()
       ruleDetailDisposable()
       lazyFindDisposable.dispose()
       crossHighlightRef.current?.dispose()
@@ -4046,6 +4064,7 @@ export function App(): React.JSX.Element {
       rowColStyleKeys: new Map(),
       sheetProtections: new Map(),
       sheetPageBreaks: new Map(),
+      sheetFilePageSetups: new Map(),
       sheetProtectedRanges: new Map(),
       uninstalledDefinedNames: new Set(),
       appliedCfSheets: new Set(),
@@ -4074,6 +4093,9 @@ export function App(): React.JSX.Element {
         failures: 0,
         formulaCells: new Map(),
         overlay: new Map(),
+        follow: new Map(),
+        running: false,
+        lastRunAt: 0,
       },
     }
     // Column outline levels arrive with the sheet metadata; seed them now.
@@ -4314,6 +4336,8 @@ export function App(): React.JSX.Element {
       void handleInspectWorkbook()
     } else if (action === 'export-pdf') {
       void handleExportPdfImpl(pageLayoutContext())
+    } else if (action === 'export-csv') {
+      void handleExportCsvImpl(csvExportContext())
     } else if (action === 'undo' || action === 'redo') {
       // The shell's own text fields (AI prompt, dialog inputs) keep native
       // text undo; everywhere else ⌘Z means workbook history.

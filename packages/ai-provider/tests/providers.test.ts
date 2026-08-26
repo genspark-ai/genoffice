@@ -27,6 +27,17 @@ describe('defaultAiSettings', () => {
   })
 })
 
+describe('provider model catalog', () => {
+  it('offers DeepSeek Vision Exp only through the direct BYOK provider', () => {
+    const genspark = AI_PROVIDERS.find((provider) => provider.id === 'genspark')!
+    const deepseek = AI_PROVIDERS.find((provider) => provider.id === 'deepseek')!
+
+    expect(deepseek.models).toContain('deepseek-v4-flash-vision-exp')
+    expect(genspark.models).not.toContain('deep-seek-v4-flash')
+    expect(genspark.models).not.toContain('deep-seek-v4-flash-vision-exp-openrouter')
+  })
+})
+
 describe('resolveAiSettings', () => {
   it('returns fresh defaults when nothing is stored', () => {
     const defaults = defaultAiSettings({ anthropic: 'sk-ant-preset' })

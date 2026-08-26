@@ -21,6 +21,7 @@ import {
   toSaveVisualAdds,
   toSaveVisualEdits,
 } from './edit-journal'
+import { activeCsvSheet, handleExportCsv, serializeActiveSheetCsv } from './csv-export'
 import { t } from './i18n/locale'
 import { abortStagedEditsTransfer, stageEditsForSave, type StagedEdits } from './save-edits-staging'
 import { showToast } from './toast-bus'
@@ -56,6 +57,10 @@ export interface SaveContext {
     } | null,
   ) => void
 }
+
+/// CSV files whose "keep this format?" question was already answered with
+/// "Continue as CSV" — asked once per file, like modern Excel's banner.
+const confirmedCsvSaves = new Set<string>()
 
 /**
  * mode 'recovery': assemble the very same payload but hand it to the
@@ -228,6 +233,40 @@ export async function handleSave(
     if (mode !== 'recovery') ctx.setMessage(t('appNoEditsToSave'))
     return
   }
+  // CSV session: Save keeps the CSV identity — Excel's "keep this format?"
+  // question once per file, then the active sheet rides the save request as
+  // serialized CSV text for the main process to write back.
+  let csvContent: string | undefined
+  if (mode === 'save' && state.file.csvPath !== undefined) {
+    const csvPath = state.file.csvPath
+    if (!state.flags.preloadComplete) {
+      ctx.setMessage(t('appCsvExportNeedsFullLoad'))
+      return
+    }
+    if (!confirmedCsvSaves.has(csvPath)) {
+      const choice = await window.desktopApi.confirmCsvSave()
+      if (choice === 'cancel') {
+        ctx.setMessage(t('appSaveCanceled'))
+        return
+      }
+      if (choice === 'xlsx') {
+        await handleSave(ctx, 'save-as', quiet)
+        return
+      }
+      confirmedCsvSaves.add(csvPath)
+    }
+    const active = activeCsvSheet(ctx.univerRef.current)
+    const serialized = active === null ? null : serializeActiveSheetCsv(active.sheet, state)
+    if (serialized === 'too-large') {
+      ctx.setMessage(t('appCsvExportTooLarge'))
+      return
+    }
+    if (serialized === null) {
+      ctx.setMessage(t('appSaveFailed'))
+      return
+    }
+    csvContent = serialized
+  }
   // Sheet ops rebuild workbook.xml's tab list, so the save needs the final
   // on-screen order.
   const sheetOrder =
@@ -306,6 +345,7 @@ export async function handleSave(
       sessionId: state.file.sessionId,
       mode,
       ...(restoreWriteBack ? { restoreWriteBack: true } : {}),
+      ...(csvContent === undefined ? {} : { csvContent }),
       edits: staged.edits,
       bulkConstantFills,
       ...(staged.editsTransferId === undefined ? {} : { editsTransferId: staged.editsTransferId }),
@@ -335,6 +375,21 @@ export async function handleSave(
     })
     if (ctx.lazyWorkbookRef.current !== state) return
     if (result.canceled) {
+      if (result.csvSaveAsPath !== undefined) {
+        // The user picked CSV in the Save As dialog: no xlsx was written —
+        // serialize the active sheet to the chosen path instead. The journal
+        // stays pending; the session keeps its identity (a copy semantics).
+        await handleExportCsv(
+          {
+            univerRef: ctx.univerRef,
+            lazyWorkbookRef: ctx.lazyWorkbookRef,
+            setMessage: ctx.setMessage,
+            requestSaveAs: () => void handleSave(ctx, 'save-as', quiet),
+          },
+          result.csvSaveAsPath,
+        )
+        return
+      }
       ctx.setMessage(t('appSaveCanceled'))
       return
     }

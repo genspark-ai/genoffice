@@ -235,3 +235,57 @@ describe('field-form OLE (EMBED/LINK field around w:object)', () => {
     expect(saved).toBe(bytes)
   })
 })
+
+describe('OLE preview inside a table cell', () => {
+  const CELL_TABLE =
+    '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+    '<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>' +
+    `<w:p>${OLE_OBJECT_RUN}</w:p>` +
+    '</w:tc></w:tr></w:tbl>'
+
+  it('the preview picture becomes a run image at the declared size', async () => {
+    const parsed = await parseDocx(await buildDocx({ bodyXml: CELL_TABLE, withImage: true }))
+    const cell = parsed.blocks[0].table!.rows[0][0]
+    const imageRun = cell.richParas?.[0]?.runs.find((r) => r.image)
+    expect(imageRun?.image?.dataUrl).toMatch(/^data:image\/png;base64,/)
+    // declared v:shape size (207.75pt x 15.75pt)
+    expect(imageRun?.image?.widthPx).toBe(277)
+    expect(imageRun?.image?.heightPx).toBe(21)
+  })
+})
+
+describe('OLE embed sharing a paragraph with an inline picture', () => {
+  const DRAWING_RUN =
+    '<w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/>' +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+
+  it('keeps both the OLE preview and the picture as run images', async () => {
+    const bodyXml = `<w:p>${OLE_OBJECT_RUN}${DRAWING_RUN}</w:p>`
+    const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = parsed.blocks[0]
+    expect(block.type).toBe('paragraph')
+    const images = (block.runs ?? []).filter((r) => r.image)
+    expect(images).toHaveLength(2)
+    expect(images[0].image?.widthPx).toBe(277)
+    expect(images[1].image?.widthPx).toBe(96)
+  })
+})
+
+describe('OLE run carrying an empty sibling w:pict', () => {
+  it('still resolves the object preview (first pict with a picture wins)', async () => {
+    const bodyXml =
+      '<w:p><w:r>' +
+      OLE_OBJECT_RUN.replace('<w:r>', '').replace('</w:r>', '') +
+      '<w:t>bit map object</w:t><w:pict></w:pict>' +
+      '</w:r></w:p>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = parsed.blocks[0]
+    expect(block.type).toBe('paragraph')
+    const imageRun = (block.runs ?? []).find((r) => r.image)
+    expect(imageRun?.image?.dataUrl).toMatch(/^data:image\/png;base64,/)
+    expect((block.runs ?? []).map((r) => r.text).join('')).toBe('bit map object')
+  })
+})

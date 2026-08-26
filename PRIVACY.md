@@ -1,6 +1,6 @@
 # GenOffice Privacy
 
-Last updated: August 24, 2026
+Last updated: August 26, 2026
 
 GenOffice opens, edits, and saves documents locally. Document editing does not
 upload files to GenOffice. AI features require a network connection and send
@@ -20,6 +20,8 @@ subsequent analytics events.
 
 When enabled, the app sends these events:
 
+- `install_first_launch` — marks the first analytics-enabled use of a newly
+  assigned anonymous `client_id`; used for retention cohorts
 - `app_launch` — no event-specific parameter
 - `file_open` — `ext`, the file extension such as `docx` or `xlsx`
 - `file_new` — `kind`, one of `docx`, `xlsx`, `pptx`, `md`, or `pdf`

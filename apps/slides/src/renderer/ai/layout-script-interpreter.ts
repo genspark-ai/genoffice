@@ -1,5 +1,7 @@
 import { parse } from 'acorn'
 
+import { compileBoundedRegex, type BoundedRegex } from './bounded-regex'
+
 type AstNode = {
   type: string
   start?: number
@@ -31,10 +33,11 @@ class ScriptFunction {
 }
 
 class RegexValue {
-  constructor(
-    readonly source: string,
-    readonly flags: string,
-  ) {}
+  readonly matcher: BoundedRegex
+
+  constructor(source: string, flags: string) {
+    this.matcher = compileBoundedRegex(source, flags)
+  }
 }
 
 class Scope {
@@ -402,8 +405,7 @@ export function interpretLayoutScript(
       throw new Error(`String property "${key}" is not available in layout scripts`)
     }
     if (target instanceof RegexValue) {
-      if (key === 'test')
-        return new Builtin((value) => new RegExp(target.source, target.flags).test(String(value)))
+      if (key === 'test') return new Builtin((value) => target.matcher.test(String(value)))
       throw new Error(`Regular-expression property "${key}" is not available in layout scripts`)
     }
     if (target instanceof Builtin) {

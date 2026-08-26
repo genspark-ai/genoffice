@@ -5,6 +5,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { openPptx, type TextElement, type PictureElement } from '@genoffice/pptx-engine'
+import { HeuristicMetrics } from '@genoffice/pptx-render'
 import { parsePageSpec, buildPagePptx, type PageSpec } from '../src/main/page-spec'
 
 // 1x1 red PNG
@@ -155,5 +156,75 @@ describe('buildPagePptx', () => {
     expect(pics).toHaveLength(1)
     // 200x100 source into a 640x720 portrait frame → horizontal crop applied
     expect(pics[0]!.srcRect?.l ?? 0).toBeGreaterThan(0)
+  })
+})
+
+describe('buildPagePptx text-box height fix', () => {
+  const deps = { fetchImage: async () => null, fontMetrics: new HeuristicMetrics() }
+  const EMU_PER_PX = 9525
+  const px = (emu: number) => emu / EMU_PER_PX
+  const bigTitle = (extra: Record<string, unknown> = {}) => ({
+    type: 'text' as const,
+    x: 100,
+    y: 100,
+    w: 600,
+    h: 30,
+    paragraphs: [{ runs: [{ text: '成都来了就不想走', sizePt: 40, bold: true }] }],
+    ...extra,
+  })
+  // 40pt = 53.33px glyphs on the default 1.2em line box → one line ≈ 64px
+  const oneLinePx = 40 * (96 / 72) * 1.2
+
+  it('grows an undersized top-anchored box to the measured content height', async () => {
+    const { bytes } = await buildPagePptx({ elements: [bigTitle()] }, deps)
+    const opened = await openPptx(bytes)
+    const el = opened.deck.slides[0]!.elements.find((e): e is TextElement => e.type === 'text')!
+    expect(px(el.transform.offset.cy)).toBeCloseTo(oneLinePx, 0)
+    // Top anchor: the box only grows downward, glyphs don't move
+    expect(el.transform.offset.y).toBe(100 * EMU_PER_PX)
+  })
+
+  it('shifts a middle-anchored box up so the rendered glyphs stay in place', async () => {
+    const { bytes } = await buildPagePptx({ elements: [bigTitle({ valign: 'middle' })] }, deps)
+    const opened = await openPptx(bytes)
+    const el = opened.deck.slides[0]!.elements.find((e): e is TextElement => e.type === 'text')!
+    expect(px(el.transform.offset.cy)).toBeCloseTo(oneLinePx, 0)
+    expect(px(el.transform.offset.y)).toBeCloseTo(100 - (oneLinePx - 30) / 2, 0)
+  })
+
+  it('leaves tall-enough boxes and undersized shape labels untouched', async () => {
+    const spec: PageSpec = {
+      elements: [
+        bigTitle({ h: 100 }),
+        {
+          type: 'shape',
+          shape: 'roundRect',
+          x: 100,
+          y: 400,
+          w: 600,
+          h: 30,
+          fill: '#FFFFFF',
+          paragraphs: [{ runs: [{ text: '成都来了就不想走', sizePt: 40 }] }],
+        },
+      ],
+    }
+    const { bytes } = await buildPagePptx(spec, deps)
+    const opened = await openPptx(bytes)
+    const slide = opened.deck.slides[0]!
+    const text = slide.elements.find((e): e is TextElement => e.type === 'text')!
+    const shape = slide.elements.find((e) => e.type === 'shape')!
+    // Content (≈64px) fits the 100px box → no change; shape height is design intent
+    expect(text.transform.offset.cy).toBe(100 * EMU_PER_PX)
+    expect(shape.transform.offset.cy).toBe(30 * EMU_PER_PX)
+  })
+
+  it('skips the fix entirely when no font metrics are injected', async () => {
+    const { bytes } = await buildPagePptx(
+      { elements: [bigTitle()] },
+      { fetchImage: async () => null },
+    )
+    const opened = await openPptx(bytes)
+    const el = opened.deck.slides[0]!.elements.find((e): e is TextElement => e.type === 'text')!
+    expect(el.transform.offset.cy).toBe(30 * EMU_PER_PX)
   })
 })

@@ -5,12 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ANALYTICS_CLIENT_ID_KEY,
   ANALYTICS_ENABLED_KEY,
+  ANALYTICS_FIRST_LAUNCH_PENDING_KEY,
+  INSTALL_FIRST_LAUNCH_EVENT,
   analyticsEnabledFrom,
   createAnalytics,
   ensureAnalyticsClientId,
+  ensureAnalyticsClientState,
   extractAnalyticsKeys,
   extractPackagedAnalyticsKeys,
   isValidEventName,
+  markAnalyticsFirstLaunchSent,
 } from '../src/main/analytics'
 
 /**
@@ -115,6 +119,30 @@ describe('ensureAnalyticsClientId', () => {
     const saved = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
     expect(saved.language).toBe('ja')
   })
+
+  it('keeps a new install pending until its cohort-start event is delivered', () => {
+    const created = ensureAnalyticsClientState(settingsPath)
+    expect(created.clientId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(created.firstLaunchPending).toBe(true)
+    expect(JSON.parse(readFileSync(settingsPath, 'utf8'))[ANALYTICS_FIRST_LAUNCH_PENDING_KEY]).toBe(
+      true,
+    )
+    expect(ensureAnalyticsClientState(settingsPath)).toEqual(created)
+
+    markAnalyticsFirstLaunchSent(settingsPath)
+    expect(ensureAnalyticsClientState(settingsPath)).toEqual({
+      clientId: created.clientId,
+      firstLaunchPending: false,
+    })
+  })
+
+  it('does not classify an id created before retention tracking as new', () => {
+    writeFileSync(settingsPath, JSON.stringify({ [ANALYTICS_CLIENT_ID_KEY]: 'legacy-install-id' }))
+    expect(ensureAnalyticsClientState(settingsPath)).toEqual({
+      clientId: 'legacy-install-id',
+      firstLaunchPending: false,
+    })
+  })
 })
 
 describe('isValidEventName', () => {
@@ -136,16 +164,19 @@ describe('createAnalytics', () => {
   it('is a strict no-op without keys', () => {
     const fetchFn = okFetch()
     const getClientId = vi.fn(() => 'c')
+    const shouldTrackFirstLaunch = vi.fn(() => true)
     const analytics = createAnalytics({
       keys: null,
       getClientId,
       isEnabled: () => true,
+      shouldTrackFirstLaunch,
       fetchFn,
     })
     expect(analytics.active).toBe(false)
     analytics.track('app_launch')
     expect(fetchFn).not.toHaveBeenCalled()
     expect(getClientId).not.toHaveBeenCalled()
+    expect(shouldTrackFirstLaunch).not.toHaveBeenCalled()
   })
 
   it('sends a Measurement Protocol payload with keys present', () => {
@@ -201,34 +232,103 @@ describe('createAnalytics', () => {
     expect(payload.events).toHaveLength(1)
   })
 
+  it('prepends one cohort-start event for a newly identified install', async () => {
+    const fetchFn = okFetch()
+    const shouldTrackFirstLaunch = vi.fn(() => true)
+    const onFirstLaunchSent = vi.fn()
+    const analytics = createAnalytics({
+      keys: KEYS,
+      getClientId: () => 'new-install-id',
+      isEnabled: () => true,
+      shouldTrackFirstLaunch,
+      onFirstLaunchSent,
+      baseParams: () => ({ app_version: '1.0.0' }),
+      fetchFn,
+    })
+
+    analytics.track('app_launch')
+    const firstPayload = JSON.parse((fetchFn.mock.calls[0][1] as RequestInit).body as string) as {
+      events: Array<{ name: string; params: Record<string, unknown> }>
+    }
+    expect(firstPayload.events.map((event) => event.name)).toEqual([
+      INSTALL_FIRST_LAUNCH_EVENT,
+      'app_launch',
+    ])
+    expect(firstPayload.events[0].params.app_version).toBe('1.0.0')
+    expect(firstPayload.events[0].params.session_id).toMatch(/^\d+$/)
+    await vi.waitFor(() => expect(onFirstLaunchSent).toHaveBeenCalledTimes(1))
+
+    analytics.track('file_open', { ext: 'docx' })
+    const laterPayload = JSON.parse((fetchFn.mock.calls[1][1] as RequestInit).body as string) as {
+      events: Array<{ name: string }>
+    }
+    expect(laterPayload.events.map((event) => event.name)).toEqual(['file_open'])
+    expect(shouldTrackFirstLaunch).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries the cohort-start event after a failed delivery', async () => {
+    const fetchFn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(new Response(null, { status: 204 }))
+    const onFirstLaunchSent = vi.fn()
+    const analytics = createAnalytics({
+      keys: KEYS,
+      getClientId: () => 'new-install-id',
+      isEnabled: () => true,
+      shouldTrackFirstLaunch: () => true,
+      onFirstLaunchSent,
+      fetchFn,
+    })
+
+    analytics.track('app_launch')
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1))
+    await Promise.resolve()
+    analytics.track('file_open')
+
+    const retryPayload = JSON.parse((fetchFn.mock.calls[1][1] as RequestInit).body as string) as {
+      events: Array<{ name: string }>
+    }
+    expect(retryPayload.events.map((event) => event.name)).toEqual([
+      INSTALL_FIRST_LAUNCH_EVENT,
+      'file_open',
+    ])
+    await vi.waitFor(() => expect(onFirstLaunchSent).toHaveBeenCalledTimes(1))
+  })
+
   it('honors the runtime gate and stops immediately after opt-out', () => {
     const fetchFn = okFetch()
     const getClientId = vi.fn(() => 'c')
     const getCountryCode = vi.fn(() => 'US')
+    const shouldTrackFirstLaunch = vi.fn(() => false)
     let enabled = false
     const analytics = createAnalytics({
       keys: KEYS,
       getClientId,
       isEnabled: () => enabled,
       getCountryCode,
+      shouldTrackFirstLaunch,
       fetchFn,
     })
     analytics.track('pre_consent')
     expect(fetchFn).not.toHaveBeenCalled()
     expect(getClientId).not.toHaveBeenCalled()
     expect(getCountryCode).not.toHaveBeenCalled()
+    expect(shouldTrackFirstLaunch).not.toHaveBeenCalled()
 
     enabled = true
     analytics.track('post_consent')
     expect(fetchFn).toHaveBeenCalledTimes(1)
     expect(getClientId).toHaveBeenCalledTimes(1)
     expect(getCountryCode).toHaveBeenCalledTimes(1)
+    expect(shouldTrackFirstLaunch).toHaveBeenCalledTimes(1)
 
     enabled = false
     analytics.track('after_opt_out')
     expect(fetchFn).toHaveBeenCalledTimes(1)
     expect(getClientId).toHaveBeenCalledTimes(1)
     expect(getCountryCode).toHaveBeenCalledTimes(1)
+    expect(shouldTrackFirstLaunch).toHaveBeenCalledTimes(1)
   })
 
   it('creates and persists the client id only when an eligible consented event needs it', () => {

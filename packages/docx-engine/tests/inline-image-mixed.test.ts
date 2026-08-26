@@ -4,7 +4,7 @@
  * classification used to drop every text run in the paragraph.
  */
 import { describe, expect, it } from 'vitest'
-import { parseDocx } from '../src/index'
+import { generateParagraphXml, parseDocx, type GenerateContext } from '../src/index'
 import { buildDocx, IMAGE_PARAGRAPH_XML } from './helpers/build-docx'
 
 const INLINE_IMAGE_RUN =
@@ -87,5 +87,45 @@ describe('text + inline image mixed paragraphs', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
     expect(doc.blocks[0].type).toBe('image')
     expect(doc.blocks[0].imageDataUrl).toMatch(/^data:image\/png;base64,/)
+  })
+})
+
+describe('one run carrying several inline drawings', () => {
+  const GEN_CTX: GenerateContext = {
+    headingStyleIds: new Map(),
+    allocateHyperlinkRel: () => 'rId999',
+  }
+
+  const inlineDrawing = (cx: number, cy: number): string =>
+    `<w:drawing><wp:inline><wp:extent cx="${cx}" cy="${cy}"/>` +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing>'
+
+  it('splits the run so every drawing survives as its own image run', async () => {
+    const bodyXml = `<w:p><w:r><w:rPr></w:rPr>${inlineDrawing(914400, 914400)}${inlineDrawing(457200, 457200)}</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('paragraph')
+    const imageRuns = block.runs!.filter((r) => r.image)
+    expect(imageRuns).toHaveLength(2)
+    expect(imageRuns.map((r) => r.image?.widthPx)).toEqual([96, 48])
+    // an edit-triggered rebuild must write both pictures back
+    const regen = generateParagraphXml({ type: 'paragraph', runs: block.runs! }, GEN_CTX)
+    expect(regen.match(/<w:drawing>/g)).toHaveLength(2)
+    expect(regen.match(/r:embed="rId10"/g)).toHaveLength(2)
+  })
+
+  it('keeps text between the drawings in document order', async () => {
+    const bodyXml =
+      `<w:p><w:r>${inlineDrawing(914400, 914400)}` +
+      `<w:t>mid</w:t>${inlineDrawing(457200, 457200)}</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml, withImage: true }))
+    const runs = doc.blocks[0].runs!
+    expect(runs.filter((r) => r.image)).toHaveLength(2)
+    expect(runs.map((r) => r.text).join('')).toBe('mid')
+    const regen = generateParagraphXml({ type: 'paragraph', runs }, GEN_CTX)
+    expect(regen.indexOf('mid')).toBeGreaterThan(regen.indexOf('<w:drawing>'))
+    expect(regen.indexOf('mid')).toBeLessThan(regen.lastIndexOf('<w:drawing>'))
   })
 })

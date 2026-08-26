@@ -22,6 +22,7 @@ import type {
 } from '@genoffice/pptx-render'
 import {
   featheredImage,
+  featheredShapeCanvas,
   fillToKonva,
   processedImage,
   processedImageKey,
@@ -575,16 +576,44 @@ export const NodeBody = React.memo(function NodeBody({
   } else {
     const rounded =
       presetToShapeKind(shape.presetGeometry) === 'roundRect' || shape.cornerRadiusPx != null
-    geom = (
-      <Rect
-        width={box.w}
-        height={box.h}
-        cornerRadius={rounded ? (shape.cornerRadiusPx ?? Math.min(box.w, box.h) * 0.167) : 0}
-        {...fillProps}
-        {...strokeProps}
-        {...shadowProps}
-      />
-    )
+    const cornerRadius = rounded ? (shape.cornerRadiusPx ?? Math.min(box.w, box.h) * 0.167) : 0
+    if (
+      shape.softEdgePx &&
+      shape.fill.kind === 'solid' &&
+      !shape.fillOverlay &&
+      box.w >= 1 &&
+      box.h >= 1
+    ) {
+      const feathered = featheredShapeCanvas(
+        shape.fill.color,
+        box.w,
+        box.h,
+        shape.softEdgePx,
+        cornerRadius,
+        shape.stroke ? { color: shape.stroke.color, widthPx: shape.stroke.widthPx } : undefined,
+      )
+      geom = (
+        <KImage
+          image={feathered.canvas}
+          x={-feathered.pad}
+          y={-feathered.pad}
+          width={box.w + 2 * feathered.pad}
+          height={box.h + 2 * feathered.pad}
+          {...shadowProps}
+        />
+      )
+    } else {
+      geom = (
+        <Rect
+          width={box.w}
+          height={box.h}
+          cornerRadius={cornerRadius}
+          {...fillProps}
+          {...strokeProps}
+          {...shadowProps}
+        />
+      )
+    }
   }
 
   // fillOverlay: PowerPoint blends the overlay against the shape's own fill in isolation.

@@ -382,6 +382,7 @@ function buildShape(
     ...(el.placeholder ? { placeholder: el.placeholder } : {}),
     ...(el.txBox ? { txBox: true } : {}),
     ...(el.presetGeometry ? { presetGeometry: el.presetGeometry } : {}),
+    ...(el.softEdge ? { softEdgePx: emuToPx(el.softEdge, vp.scale) } : {}),
   }
   // Raw avLst values ride along for the edit layer (yellow adjust handles)
   if (el.adjust) node.adjust = { ...el.adjust }

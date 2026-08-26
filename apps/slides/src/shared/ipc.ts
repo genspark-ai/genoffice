@@ -1183,6 +1183,23 @@ export interface SlidesApi {
   >
   /** Single-face sfnt bytes for one private face (null = gone/unreadable) */
   privateFontData: (id: string) => Promise<ArrayBuffer | null>
+  /** Curated downloadable (OFL) font catalog with per-family install state */
+  fontCatalog: () => Promise<
+    Array<{
+      family: string
+      script: 'latin' | 'ja' | 'ko' | 'sc' | 'tc'
+      installed: boolean
+      downloading: boolean
+    }>
+  >
+  /** Download a catalog family into the user font store; layouts refresh via deck-changed */
+  fontDownload: (family: string) => Promise<{ ok: boolean; error?: string }>
+  /** File picker → install local font files into the user font store */
+  fontInstallLocal: () => Promise<{ families: string[] }>
+  /** Families this deck references that are missing locally but downloadable */
+  fontMissing: () => Promise<string[]>
+  /** The user font store changed (download/local install): re-sync private FontFaces */
+  onFontsChanged: (handler: () => void) => () => void
   consumePendingOpen: (fitWidthPx: number) => Promise<OpenResult | null>
   /** New blank presentation (single blank 16:9 page, untitled) */
   newBlank: (fitWidthPx: number) => Promise<OpenResult>
@@ -1322,6 +1339,8 @@ export interface SlidesApi {
   ) => Promise<{ slides: RenderSlide[]; index: number; sourceId?: string } | null>
   /** Is there a slide on the clipboard? (drives the Paste Slide menu item) */
   hasSlideClipboard: () => Promise<boolean>
+  /** Is there anything a paste would act on (internal elements/slide, or external image/text)? Drives the Paste menu item */
+  clipboardProbe: () => Promise<boolean>
   /** Delete a slide (refused when only one page remains); returns the full RenderSlide array */
   deleteSlide: (slideIndex: number) => Promise<RenderSlide[] | null>
   /** Bring element to front/back or move one layer forward/backward */

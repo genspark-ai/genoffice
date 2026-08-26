@@ -39,6 +39,7 @@ function setup(
   })
   const cb = {
     onDelta: vi.fn(),
+    onReasoning: vi.fn(),
     onToolCall: vi.fn(),
     onStopReason: vi.fn(),
     onDone: vi.fn(),
@@ -63,6 +64,15 @@ describe('createIpcTransport', () => {
     expect(cb.onDelta).toHaveBeenNthCalledWith(1, 'hi')
     expect(cb.onDelta).toHaveBeenNthCalledWith(2, '')
     expect(cb.onToolCall).toHaveBeenCalledWith({ id: 'c1', name: 'read', input: {} })
+  })
+
+  it('forwards reasoning chunks separately from text deltas', () => {
+    const { cb, emit } = setup()
+    emit({ type: 'reasoning', text: 'thinking…' })
+    emit({ type: 'reasoning' }) // payload-less chunk carries nothing
+    expect(cb.onReasoning).toHaveBeenCalledTimes(1)
+    expect(cb.onReasoning).toHaveBeenCalledWith('thinking…')
+    expect(cb.onDelta).not.toHaveBeenCalled()
   })
 
   it('ignores chunks for other requestIds', () => {

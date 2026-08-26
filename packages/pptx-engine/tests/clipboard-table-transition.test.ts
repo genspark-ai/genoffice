@@ -17,6 +17,7 @@ import {
   openPptx,
   pasteElements,
   reorderElement,
+  setElementLink,
   savePptx,
   setSlideAnimations,
   setSlideTransition,
@@ -33,6 +34,14 @@ const SHIFT = { dx: 152400, dy: 152400 }
 const PNG_1PX = Uint8Array.from(
   Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  ),
+)
+
+// 1x1 blue PNG (distinct bytes from PNG_1PX)
+const PNG_BLUE = Uint8Array.from(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC',
     'base64',
   ),
 )
@@ -98,6 +107,74 @@ describe('copy/paste elements', () => {
       p.startsWith('ppt/media/'),
     )
     expect(mediaParts.filter((p) => p === pic.mediaRef).length).toBe(1)
+  })
+
+  it('pastes a picture into a different deck (media bytes travel with the clipboard)', async () => {
+    const source = await openPptx(fx('01_standard_business.pptx'))
+    const slide0 = source.deck.slides[0]!
+    const pic = addPicture(source, slide0, { bytes: PNG_1PX, ext: 'png', offset: { ...OFF } })!
+    const clip = copyElementData(source, slide0, pic)
+    expect(clip.parts?.[pic.mediaRef!]).toBeDefined()
+
+    const target = await openPptx(fx('01_standard_business.pptx'))
+    const before = target.deck.slides[0]!.elements.length
+    const r = pasteElements(target, 0, [clip], SHIFT)
+    expect(r).not.toBeNull()
+    expect(r!.slide.elements.length).toBe(before + 1)
+    const pasted = r!.slide.elements.at(-1) as PictureElement
+    expect(pasted.type).toBe('picture')
+    expect(Buffer.from(target.archive.readBytes(pasted.mediaRef!)!)).toEqual(Buffer.from(PNG_1PX))
+
+    const reopened = await openPptx(await savePptx(target))
+    const el2 = reopened.deck.slides[0]!.elements.at(-1) as PictureElement
+    expect(el2.type).toBe('picture')
+    expect(Buffer.from(reopened.archive.readBytes(el2.mediaRef!)!)).toEqual(Buffer.from(PNG_1PX))
+  })
+
+  it('cross-deck paste keeps a different image already at the same media path', async () => {
+    const source = await openPptx(fx('01_standard_business.pptx'))
+    const srcPic = addPicture(source, source.deck.slides[0]!, {
+      bytes: PNG_1PX,
+      ext: 'png',
+      offset: { ...OFF },
+    })!
+    const clip = copyElementData(source, source.deck.slides[0]!, srcPic)
+
+    // The target deck holds different bytes at the very same media path
+    const target = await openPptx(fx('01_standard_business.pptx'))
+    const tgtPic = addPicture(target, target.deck.slides[0]!, {
+      bytes: PNG_BLUE,
+      ext: 'png',
+      offset: { ...OFF },
+    })!
+    expect(tgtPic.mediaRef).toBe(srcPic.mediaRef)
+
+    const r = pasteElements(target, 0, [clip], SHIFT)!
+    const pasted = r.slide.elements.at(-1) as PictureElement
+    expect(pasted.mediaRef).not.toBe(tgtPic.mediaRef)
+    expect(Buffer.from(target.archive.readBytes(pasted.mediaRef!)!)).toEqual(Buffer.from(PNG_1PX))
+    expect(Buffer.from(target.archive.readBytes(tgtPic.mediaRef!)!)).toEqual(Buffer.from(PNG_BLUE))
+  })
+
+  it('slide-jump hyperlink does not drag the target slide graph into the clipboard', async () => {
+    const source = await openPptx(fx('01_standard_business.pptx'))
+    const slide0 = source.deck.slides[0]!
+    const el = addElement(slide0, {
+      kind: 'rect',
+      offset: { ...OFF },
+      paragraphs: [{ runs: [{ text: 'go to 2' }] }],
+    })
+    const linked = setElementLink(source, 0, el.id, { kind: 'slide', slideIndex: 1 })!
+    const clip = copyElementData(source, linked, linked.elements.at(-1)!)
+    expect(clip.rels.some((r) => r.target === source.deck.slides[1]!.path)).toBe(true)
+    expect(Object.keys(clip.parts ?? {})).toEqual([])
+
+    // Cross-deck paste imports nothing extra; the link resolves by path in the target
+    const target = await openPptx(fx('01_standard_business.pptx'))
+    const partsBefore = target.archive.entries.size
+    const r = pasteElements(target, 0, [clip], SHIFT)
+    expect(r).not.toBeNull()
+    expect(target.archive.entries.size).toBe(partsBefore)
   })
 
   it('pending text edits are baked into the copied xml', async () => {

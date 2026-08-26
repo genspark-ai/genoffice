@@ -120,6 +120,7 @@ describe('mapRangeResultToScreen', () => {
       rowBreaks: [],
       colBreaks: [],
       protectedRanges: [],
+      pageSetup: null,
       indexedThroughRow: null,
       indexingComplete: true,
     })

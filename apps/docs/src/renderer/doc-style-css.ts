@@ -151,17 +151,19 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     // re-resolve the snap with their 1em (exact/atLeast lines never snap)
     rules.push(`${gridBlocks} span { ${gridSpanSnap} }`)
   }
-  // settings.xml w:autoHyphenation: Word breaks words at line ends document-wide.
-  // Chromium hyphenates only under an explicit lang; file-actions sets it on the
-  // editor root from docDefaults w:lang.
-  if (parsed.autoHyphenation) {
-    rules.push('.doc-page { hyphens:auto; -webkit-hyphens:auto }')
-  }
   const dd = parsed.docDefaults
   // Word applies the w:default="1" paragraph style (Normal) to every paragraph
   // without a w:pStyle, so its display merges into the document baseline here
   // ([data-style] rules only reach explicitly styled paragraphs).
   const normal = defaultParaDisplay(parsed)
+  // settings.xml w:autoHyphenation: Word breaks words at line ends document-wide,
+  // except paragraphs opted out via w:suppressAutoHyphens (pPrDefault/Normal decide
+  // the baseline here; explicit style values override per style below). Chromium
+  // hyphenates only under an explicit lang; file-actions sets it on the editor root
+  // from docDefaults w:lang.
+  if (parsed.autoHyphenation && !(normal?.suppressAutoHyphens ?? dd?.suppressAutoHyphens)) {
+    rules.push('.doc-page { hyphens:auto; -webkit-hyphens:auto }')
+  }
   {
     const decls: string[] = []
     // Paragraph level also overrides this variable per paragraph's text (blockAttrs
@@ -332,8 +334,11 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     const decls: string[] = []
     if (d.sizeHalfPoints) decls.push(`font-size:${d.sizeHalfPoints / 2}pt`)
     if (d.color) decls.push(`color:#${d.color}`)
+    // explicit off (w:val="0") must out-rule an inherited on from .doc-page defaults
     if (d.bold) decls.push('font-weight:600')
+    else if (d.bold === false) decls.push('font-weight:400')
     if (d.italic) decls.push('font-style:italic')
+    else if (d.italic === false) decls.push('font-style:normal')
     if (d.underline || d.strike) {
       decls.push(
         `text-decoration:${[d.underline && 'underline', d.strike && 'line-through'].filter(Boolean).join(' ')}`,
@@ -365,6 +370,7 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     if (d.charSpacingTwips) decls.push(`letter-spacing:${d.charSpacingTwips / 20}pt`)
     if (d.caps === 'all') decls.push('text-transform:uppercase')
     else if (d.caps === 'small') decls.push('font-variant-caps:small-caps')
+    else if (d.caps === 'none') decls.push('text-transform:none', 'font-variant-caps:normal')
     const styleLh = cssLineHeight(d.lineRule, d.lineRawTwips, d.lineSpacing)
     if (styleLh) decls.push(`line-height:${styleLh}`)
     // grid span snapping scales by the style's multiple (an explicit single
@@ -406,6 +412,14 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     if (d.indentFirstLineTwips)
       decls.push(`text-indent:${(d.indentFirstLineTwips / 20).toFixed(1)}pt`)
     if (d.align) decls.push(`text-align:${d.align}`)
+    if (
+      parsed.autoHyphenation &&
+      info.type === 'paragraph' &&
+      d.suppressAutoHyphens !== undefined
+    ) {
+      const h = d.suppressAutoHyphens ? 'manual' : 'auto'
+      decls.push(`hyphens:${h}`, `-webkit-hyphens:${h}`)
+    }
     // style-level paragraph shading (explicit pPr w:shd is inline style and wins)
     if (d.shadingFill) decls.push(`background-color:#${d.shadingFill}`)
     // the static sheet guesses italic for h4-h6 (Word's built-in defaults);

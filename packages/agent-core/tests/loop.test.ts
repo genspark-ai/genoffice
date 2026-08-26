@@ -139,6 +139,39 @@ describe('AgentLoop', () => {
     expect(transport.requests[1].messageCount).toBe(3)
   })
 
+  it('stores streamed reasoning on the tool-calling assistant message and drops it on the next run', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onReasoning?.('the user wants ')
+        cb.onReasoning?.('a change')
+        cb.onToolCall({ id: 't1', name: 'do_thing', input: {} })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('All done')
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('Done again')
+        cb.onDone()
+      },
+    ])
+    const loop = new AgentLoop({ transport, skill: makeSkill() })
+    loop.run('make a change')
+    await flush()
+    await flush()
+    const withTools = loop.messages[1] as Extract<AgentMessage, { role: 'assistant' }>
+    expect(withTools.reasoning).toBe('the user wants a change')
+    // the final text-only turn carries no reasoning field
+    expect('reasoning' in (loop.messages[3] as object)).toBe(false)
+
+    // a new run strips reasoning from finished runs (echo only matters inside a run's tool loop)
+    loop.run('another change')
+    await flush()
+    const stripped = loop.messages[1] as Extract<AgentMessage, { role: 'assistant' }>
+    expect(stripped.reasoning).toBeUndefined()
+  })
+
   it('emits onToolStart before each execution, paired with onToolExecuted', async () => {
     const transport = scriptedTransport([
       (cb) => {

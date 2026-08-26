@@ -19,8 +19,10 @@ import {
   promoteSlideBackground,
   savePptx,
   type Paragraph,
+  type TextElement,
   type TextRun,
 } from '@genoffice/pptx-engine'
+import { buildRenderSlide, EMU_PER_PX_96, type FontMetricsProvider } from '@genoffice/pptx-render'
 import { coverCropFractions } from '../shared/cover-crop'
 
 export const SPEC_CANVAS_W = 1280
@@ -317,6 +319,47 @@ export interface BuildPageDeps {
   fetchImage: (url: string) => Promise<{ bytes: Uint8Array; ext: string } | null>
   /** Decodes natural pixel size for cover-cropping; null skips the crop */
   imageDims?: (bytes: Uint8Array) => { width: number; height: number } | null
+  /** Font metrics for the post-build text measurement; absent skips the box-height fix */
+  fontMetrics?: FontMetricsProvider
+}
+
+/**
+ * The LLM sizes text boxes from a rough chars-per-line heuristic, which routinely
+ * undersizes big CJK titles; the box has no autofit, so the canvas draws the overflow
+ * past the selection frame (and PowerPoint past the shape). Re-measure every text box
+ * with the real layout engine — on the reopened (parsed) model, the exact input the
+ * landed page will render from — and grow too-short boxes to their content height.
+ * Grow-only, plain text boxes only (shape label boxes are design intent); middle/bottom
+ * anchored boxes shift up so the rendered glyphs stay exactly where they were.
+ * Returns the re-saved bytes, or null when every box already fits.
+ */
+async function growTextBoxesToContent(
+  bytes: Uint8Array,
+  metrics: FontMetricsProvider,
+): Promise<Uint8Array | null> {
+  const opened = await openPptx(bytes)
+  const slide = opened.deck.slides[0]
+  if (!slide) return null
+  const baseWidthPx = opened.deck.size.cx / EMU_PER_PX_96 // native px → vp.scale = 1
+  const rendered = buildRenderSlide(slide, opened.deck.size, { fitWidthPx: baseWidthPx, metrics })
+  let changed = false
+  for (const node of rendered.nodes) {
+    if (node.type !== 'text' || !node.text) continue
+    const el = slide.elements.find((e) => e.id === node.sourceId)
+    if (el?.type !== 'text') continue
+    const t = node.text
+    const needH = Math.max(t.contentHeight, t.inkBottom ?? 0) + t.insets.t + t.insets.b
+    const growPx = needH - node.box.h
+    if (growPx < 0.5) continue
+    const tel = el as TextElement
+    const offset = { ...tel.transform.offset, cy: Math.max(1, Math.round(needH * EMU_PER_PX_96)) }
+    if (t.anchor === 'middle') offset.y -= Math.round((growPx / 2) * EMU_PER_PX_96)
+    else if (t.anchor === 'bottom') offset.y -= Math.round(growPx * EMU_PER_PX_96)
+    tel.transform = { ...tel.transform, offset }
+    tel.dirtyTransform = true
+    changed = true
+  }
+  return changed ? savePptx(opened) : null
 }
 
 function toEngineParagraphs(paragraphs: SpecParagraph[]): Paragraph[] {
@@ -440,5 +483,7 @@ export async function buildPagePptx(
   }
 
   promoteSlideBackground(slide, opened.deck.size)
-  return { bytes: await savePptx(opened), imageFailures }
+  let bytes = await savePptx(opened)
+  if (deps.fontMetrics) bytes = (await growTextBoxesToContent(bytes, deps.fontMetrics)) ?? bytes
+  return { bytes, imageFailures }
 }

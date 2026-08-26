@@ -294,6 +294,8 @@ export interface ShapeRenderNode extends RenderNodeBase {
   fill: RenderFill
   /** <a:fillOverlay>: second fill drawn over the base with multiply blending */
   fillOverlay?: RenderFill
+  /** Soft-edge feather radius (px) */
+  softEdgePx?: number
   stroke?: RenderStroke
   shadow?: RenderShadow
   glow?: RenderGlow

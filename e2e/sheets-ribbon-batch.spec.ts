@@ -139,7 +139,7 @@ test.describe('sheets: ribbon batch-2 features', () => {
       const status = sheets.locator('.workbook-status')
       const origin = await gridOrigin(sheets)
       const cell = (column: number, row: number): { x: number; y: number } => ({
-        x: origin.x + 87 * column + 43,
+        x: origin.x + 74 * column + 37,
         y: origin.y + 24 * row + 12,
       })
 

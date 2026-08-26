@@ -34,12 +34,23 @@ export async function exportPdf(
   try {
     await writeFile(htmlPath, request.html, 'utf8')
     await window.loadFile(htmlPath)
+    const displayHeaderFooter =
+      request.headerTemplate !== undefined || request.footerTemplate !== undefined
     const pdf = await window.webContents.printToPDF({
       landscape: request.landscape,
       pageSize: request.pageSize,
       margins: request.margins,
       scale: request.scale,
       printBackground: true,
+      ...(displayHeaderFooter
+        ? {
+            displayHeaderFooter: true,
+            // Chromium falls back to its own date/title header when a
+            // template is missing, so always pass both.
+            headerTemplate: request.headerTemplate ?? '<span></span>',
+            footerTemplate: request.footerTemplate ?? '<span></span>',
+          }
+        : {}),
     })
     await writeFile(selection.filePath, pdf)
     return { canceled: false, path: selection.filePath }

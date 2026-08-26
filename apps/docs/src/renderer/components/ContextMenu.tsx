@@ -185,8 +185,17 @@ export function EditorContextMenu({
     isImage ||
     (Array.isArray(protAttrs?.textboxes) && (protAttrs.textboxes as unknown[]).length > 0)
   const currentWrap = (protAttrs?.imageWrap as string | null) ?? null
-  const setWrap = (wrap: string | null) =>
-    editor.chain().focus().updateAttributes('docProtected', { imageWrap: wrap }).run()
+  const setWrap = (wrap: string | null) => {
+    const clearedPosition =
+      wrap === null
+        ? { imagePosH: null, imagePosV: null, imageOffsetXEmu: null, imageOffsetYEmu: null }
+        : {}
+    editor
+      .chain()
+      .focus()
+      .updateAttributes('docProtected', { imageWrap: wrap, ...clearedPosition })
+      .run()
+  }
   // Stacking order among overlapping floating pictures. z-order only has a
   // visible effect on floating (front/behind) images, so the menu enables it
   // there; a bring-forward on an inline image also floats it (Word parity).

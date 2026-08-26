@@ -55,7 +55,9 @@ the same command pipeline as manual edits.
    JSON-like, prototype-free data. Errors discard all buffered operations;
    logs are capped.
 5. Execution has statement/expression and call-depth limits to bound runaway
-   loops or recursion.
+   loops or recursion. Regular expressions run on an interpreter-owned matcher
+   with its own step budget (a supported subset; no native backtracking), so a
+   catastrophic pattern cannot stall the renderer past those limits.
 
 The Electron renderer sandbox remains defense in depth, but it is not the
 layout-script security boundary. The interpreter is designed so a layout

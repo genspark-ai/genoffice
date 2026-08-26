@@ -20,7 +20,7 @@ import {
   type FontMetricsProvider,
   type RenderSlide,
 } from '@genoffice/pptx-render'
-import { createSystemFontMetrics } from './fonts'
+import { createSystemFontMetrics, resetFontRegistry } from './fonts'
 import { tiffToPng } from './tiff-decode'
 import { neutralizeJpegOrientation } from './jpeg-orientation'
 import { displayMime } from './media-mime'
@@ -360,6 +360,12 @@ let fontMetrics: FontMetricsProvider | null = null
 export function getFontMetrics(): FontMetricsProvider {
   if (!fontMetrics) fontMetrics = createSystemFontMetrics()
   return fontMetrics
+}
+
+/** Drop the cached metrics (and its font registry) after the user font store changes. */
+export function resetFontMetrics(): void {
+  resetFontRegistry()
+  fontMetrics = null
 }
 
 export function buildAllRenderSlides(opened: OpenedPptx, fitWidthPx: number): RenderSlide[] {

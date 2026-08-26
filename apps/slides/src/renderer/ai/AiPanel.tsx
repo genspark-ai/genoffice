@@ -913,7 +913,8 @@ export function AiPanel({
       getSelectedIds: () => (queueRunResolverRef.current ? [] : selectedRef.current),
       applySlide: (i, updated) => applySlideRef.current(i, updated),
       applyDeck: (all, goTo) => applyDeckRef.current(all, goTo),
-      setSpeakerNotes: (i, text) => onSetSpeakerNotesRef.current?.(i, text) ?? Promise.resolve(false),
+      setSpeakerNotes: (i, text) =>
+        onSetSpeakerNotesRef.current?.(i, text) ?? Promise.resolve(false),
       landGeneratedPages: async (
         pageMarkers: string[],
         mode?: 'replace' | 'append' | 'insert_at',
@@ -2806,6 +2807,7 @@ function ClarifyCard({
   onSkip: () => void
 }) {
   const { t } = useI18n()
+  const decideAnswer = t('aiClarifyDecideAnswer')
   // Per question: set of selected options + the "Other" free text
   const [picked, setPicked] = useState<Record<string, Set<string>>>({})
   const [other, setOther] = useState<Record<string, string>>({})
@@ -2851,12 +2853,18 @@ function ClarifyCard({
 
   useEffect(() => cancelAdvance, [])
 
-  const toggle = (qid: string, opt: string, multi?: boolean) => {
+  const toggle = (qid: string, opt: string, multi?: boolean, exclusive?: boolean) => {
     setPicked((prev) => {
       const cur = new Set(prev[qid] ?? [])
       if (multi) {
-        if (cur.has(opt)) cur.delete(opt)
-        else cur.add(opt)
+        if (exclusive) {
+          cur.clear()
+          cur.add(opt)
+        } else {
+          cur.delete(decideAnswer)
+          if (cur.has(opt)) cur.delete(opt)
+          else cur.add(opt)
+        }
       } else {
         cur.clear()
         cur.add(opt)
@@ -2879,7 +2887,7 @@ function ClarifyCard({
   const q = questions[qIdx]
   const isLast = qIdx === questions.length - 1
   const selCount = picked[q.id]?.size ?? 0
-  const decideAnswer = t('aiClarifyDecideAnswer')
+  const hasAnswer = selCount > 0 || !!other[q.id]?.trim()
 
   const renderOpt = (opt: string, label: string) => (
     <button
@@ -2888,8 +2896,16 @@ function ClarifyCard({
       role={q.multi ? 'checkbox' : 'radio'}
       aria-checked={picked[q.id]?.has(opt) ?? false}
       onClick={() => {
-        toggle(q.id, opt, q.multi)
-        if (!q.multi) scheduleAdvance(qIdx)
+        const isDecide = opt === decideAnswer
+        toggle(q.id, opt, q.multi, isDecide)
+        if (isDecide) {
+          setOther((prev) => ({ ...prev, [q.id]: '' }))
+          scheduleAdvance(qIdx)
+        } else if (q.multi) {
+          cancelAdvance()
+        } else {
+          scheduleAdvance(qIdx)
+        }
       }}
     >
       <span className="ai-clarify-opt-box" aria-hidden />
@@ -2922,7 +2938,7 @@ function ClarifyCard({
           <button
             type="button"
             className="ai-clarify-head-arrow"
-            disabled={qIdx >= furthest}
+            disabled={qIdx >= furthest || !hasAnswer}
             onClick={() => goTo(qIdx + 1)}
             aria-label="›"
           >
@@ -2931,7 +2947,10 @@ function ClarifyCard({
         </span>
       </div>
       <div key={q.id} className={`ai-clarify-q slide-${slideDir}`}>
-        <div className="ai-clarify-label">{q.label}</div>
+        <div className="ai-clarify-question-head">
+          <div className="ai-clarify-label">{q.label}</div>
+          {q.multi && <span className="ai-clarify-multi-badge">{t('aiClarifyMulti')}</span>}
+        </div>
         {q.description && <div className="ai-clarify-desc">{q.description}</div>}
         <div className="ai-clarify-opts">
           {q.options.map((opt) => renderOpt(opt, opt))}
@@ -2943,7 +2962,15 @@ function ClarifyCard({
           value={other[q.id] ?? ''}
           onChange={(e) => {
             cancelAdvance()
-            setOther((p) => ({ ...p, [q.id]: e.target.value }))
+            const value = e.target.value
+            setOther((p) => ({ ...p, [q.id]: value }))
+            if (value.trim()) {
+              setPicked((prev) => {
+                const cur = new Set(prev[q.id] ?? [])
+                cur.delete(decideAnswer)
+                return { ...prev, [q.id]: cur }
+              })
+            }
           }}
         />
       </div>
@@ -2956,19 +2983,23 @@ function ClarifyCard({
             {t('aiClarifySkip')}
           </button>
           {isLast ? (
-            <button className="ai-clarify-submit" onClick={submit}>
+            <button className="ai-clarify-submit" onClick={submit} disabled={!hasAnswer}>
               {t('aiClarifySubmit')}
             </button>
           ) : (
-            /* Only multi-select advances via the filled foot arrow; single-select advances by picking */
+            /* Multi-select waits for an explicit Next; single-select advances by picking. */
             q.multi && (
               <button
                 type="button"
                 className="ai-clarify-next"
                 onClick={() => goTo(qIdx + 1)}
-                aria-label="›"
+                disabled={!hasAnswer}
+                aria-label={t('aiClarifyNext')}
               >
-                ›
+                <span>{t('aiClarifyNext')}</span>
+                <span className="ai-clarify-next-arrow" aria-hidden>
+                  →
+                </span>
               </button>
             )
           )}

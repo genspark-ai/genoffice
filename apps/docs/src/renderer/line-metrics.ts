@@ -187,6 +187,11 @@ export function lineHeightFactor(fontFamily: string): number {
   if ((f.includes('楷体') || f.includes('kaiti')) && !/gb2312|_gbk|gbk/.test(f)) return 1.3029
   if (f.includes('microsoft yahei') || f.includes('microsoftyahei') || f.includes('雅黑'))
     return 1.7143
+  // DengXian ships with Office for Mac and renders real (text probe
+  // 2026-08-13 and empty-line probe 2026-08-25 both 16.32pt @12pt = 1.36;
+  // under a 15.6pt grid 10.5pt fits one cell and 12pt takes two, matching
+  // Word — the old 1.775 PingFang-class value doubled the 10.5pt rows)
+  if (f.includes('dengxian') || f.includes('等线')) return 1.36
   // missing GB faces and other zh names substitute into the PingFang class
   if (
     f.includes('楷体') ||
@@ -195,8 +200,6 @@ export function lineHeightFactor(fontFamily: string): number {
     f.includes('microsoft yahei') ||
     f.includes('microsoftyahei') ||
     f.includes('雅黑') ||
-    f.includes('dengxian') ||
-    f.includes('等线') ||
     f.includes('simkai')
   ) {
     return 1.775

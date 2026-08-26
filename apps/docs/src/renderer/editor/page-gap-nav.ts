@@ -28,19 +28,32 @@ type Rect = { left: number; right: number; top: number; bottom: number }
  * PM's estimate is the fallback when the DOM selection is absent or elsewhere.
  */
 function caretRect(view: EditorView, head: number, dir: -1 | 1): Rect {
+  const estimate = view.coordsAtPos(head, dir === 1 ? -1 : 1)
   const domSel = (view.root as Document).getSelection?.()
   if (domSel?.focusNode && view.dom.contains(domSel.focusNode)) {
-    try {
-      const range = document.createRange()
-      range.setStart(domSel.focusNode, domSel.focusOffset)
-      range.collapse(true)
-      const r = range.getClientRects()[0] ?? range.getBoundingClientRect()
-      if (r && r.height > 0) return r
-    } catch {
-      /* element-boundary offsets: fall through to the estimate */
+    // A focus parked ON the gap widget (a click near the page seam leaves it
+    // there) yields the gap's own multi-hundred-px box as the "caret" rect;
+    // every downstream computation then runs on garbage and the dispatched
+    // jump can land paragraphs — or the whole document — past the boundary
+    // (alpha ledger r143). Only a text-line-sized rect off the gap counts.
+    const focusEl =
+      domSel.focusNode.nodeType === Node.TEXT_NODE
+        ? domSel.focusNode.parentElement
+        : (domSel.focusNode as HTMLElement)
+    if (!focusEl?.closest?.('.page-gap')) {
+      try {
+        const range = document.createRange()
+        range.setStart(domSel.focusNode, domSel.focusOffset)
+        range.collapse(true)
+        const r = range.getClientRects()[0] ?? range.getBoundingClientRect()
+        const estimateH = Math.max(estimate.bottom - estimate.top, 8)
+        if (r && r.height > 0 && r.height <= estimateH * 3) return r
+      } catch {
+        /* element-boundary offsets: fall through to the estimate */
+      }
     }
   }
-  return view.coordsAtPos(head, dir === 1 ? -1 : 1)
+  return estimate
 }
 
 /**
@@ -54,12 +67,32 @@ function caretRect(view: EditorView, head: number, dir: -1 | 1): Rect {
  * just past it ourselves; everywhere else the browser's native motion (with
  * its goal-column memory) stays in charge.
  */
+/** consume escape valve (r147): absorbing a press twice for the SAME
+ *  selection head means the geometry error is persistent, not a transient
+ *  reflow race — hand the press back to native rather than freezing the key.
+ *  One absorbed tick covers the r143 race; the next press either recomputes
+ *  cleanly (race) or goes native (persistent). */
+let lastConsumedHead = -1
+const consumePress = (head: number): boolean => {
+  const firstTime = head !== lastConsumedHead
+  lastConsumedHead = head
+  return firstTime
+}
+
 function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   const { selection, doc } = view.state
   if (!(selection instanceof TextSelection)) return false
   const caret = caretRect(view, selection.head, dir)
   const lineH = Math.max(caret.bottom - caret.top, 8)
-  const x = (caret.left + caret.right) / 2
+  // Horizontal comes from the POSITION estimate, not the DOM rect: under key
+  // repeat the DOM selection rect can be read mid-reflow and report a stale x
+  // at the page margin — every hit-test below then probes the wrong column,
+  // the band test passes vacuously and the landing resolves garbage (alpha
+  // ledger r143 reopen: page 2 selections jumped to page 4). The DOM rect
+  // stays authoritative for the VERTICAL line only (the r122 wrap-boundary
+  // ambiguity it was introduced for).
+  const estimate = view.coordsAtPos(selection.head, dir === 1 ? -1 : 1)
+  const x = (estimate.left + estimate.right) / 2
   // nearest gap in the pressed direction at this x (rect scan, not
   // elementFromPoint: the gap may sit outside the viewport)
   let gap: HTMLElement | null = null
@@ -128,12 +161,31 @@ function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
     }
   }
   const landingY = (r: DOMRect) => (dir === 1 ? r.bottom + lineH * 0.5 : r.top - lineH * 0.5)
-  let targetY = landingY(gapRect)
-  if (ensureVisible(targetY) !== 0) targetY = landingY(gap.getBoundingClientRect())
+  let landingGapRect: DOMRect = gapRect
+  let targetY = landingY(landingGapRect)
+  if (ensureVisible(targetY) !== 0) {
+    landingGapRect = gap.getBoundingClientRect()
+    targetY = landingY(landingGapRect)
+  }
   const target = view.posAtCoords({ left: x, top: targetY })
   if (!target) {
+    // the gap IS the adjacent line (the band check passed) — native cannot
+    // cross an inline gap and would jump a whole page, so CONSUME the press:
+    // one skipped key-repeat tick, and the next press recomputes fresh
     restore()
-    return false
+    return consumePress(selection.head)
+  }
+  // the landing must be the line adjacent to the gap: a hit-test that
+  // resolves further away (stale geometry, margins) would dispatch a
+  // multi-paragraph jump (r143)
+  const landed = view.coordsAtPos(target.pos)
+  if (
+    dir === 1
+      ? landed.top > landingGapRect.bottom + lineH * 2
+      : landed.bottom < landingGapRect.top - lineH * 2
+  ) {
+    restore()
+    return consumePress(selection.head)
   }
   const next = extend
     ? TextSelection.create(doc, selection.anchor, target.pos)
@@ -142,6 +194,10 @@ function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
     restore()
     return false
   }
+  // a successful crossing clears the absorb marker: a LATER transient
+  // failure at this same head must get its skipped tick again instead of
+  // falling straight to native (bugbot)
+  lastConsumedHead = -1
   view.dispatch(view.state.tr.setSelection(next).scrollIntoView())
   return true
 }

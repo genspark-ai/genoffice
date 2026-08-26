@@ -53,27 +53,47 @@ export function pickNextError(
   return ordered.find((error) => compare(rank(error), activeRank) > 0) ?? ordered[0]!
 }
 
+export interface StreamedErrorScanOptions {
+  /** Live sheet ids in workbook order: session-added sheets included, deleted
+      ones absent. Defaults to the file metas (tests). */
+  liveSheetIds?: readonly string[]
+  /** Computed result of a journal formula entry — the journal stores value:null
+      and the result lives in Univer, same backfill as findCells. */
+  resolveFormulaValue?: (sheetId: string, row: number, column: number) => unknown
+  /** The workbook was swapped mid-scan: stop paging right away. */
+  isStale?: () => boolean
+}
+
 /** Pages every sheet of the underlying file collecting #REF!-style errors. */
 export async function scanStreamedWorkbookErrors(
   state: LazyWorkbookState,
+  options?: StreamedErrorScanOptions,
 ): Promise<StreamedErrorScan> {
   const errors: SheetError[] = []
   let truncated = false
-  for (const meta of state.file.sheets) {
-    const sheetId = meta.id
-    // Journal edits first — they shadow file cells at the same coordinates,
-    // so an edit that clears or overwrites an error cell hides the file hit.
+  // Same budget semantics as Ctrl+F: cap by cells scanned, not by hits found.
+  let scanBudget = MAX_SCAN_CELLS
+  const sheetIds = options?.liveSheetIds ?? state.file.sheets.map((meta) => meta.id)
+  for (const sheetId of sheetIds) {
+    const meta = state.file.sheets.find((candidate) => candidate.id === sheetId)
+    // Journal edits first — value edits shadow file cells at the same
+    // coordinates (style-only entries leave the file content standing), and
+    // formula errors are read back from Univer since the journal stores null.
     const shadowed = new Set<string>()
     const journal = state.editJournal.cells.get(sheetId)
     for (const entry of journal?.values() ?? []) {
-      shadowed.add(`${entry.row}:${entry.column}`)
       if (!entry.hasValue) continue
-      if (typeof entry.value === 'string' && ERROR_VALUE_RE.test(entry.value)) {
-        errors.push({ sheetId, row: entry.row, column: entry.column, value: entry.value })
+      shadowed.add(`${entry.row}:${entry.column}`)
+      let value: unknown = entry.value
+      if (entry.formula && value === null) {
+        value = options?.resolveFormulaValue?.(sheetId, entry.row, entry.column) ?? null
+      }
+      if (typeof value === 'string' && ERROR_VALUE_RE.test(value)) {
+        errors.push({ sheetId, row: entry.row, column: entry.column, value })
       }
     }
     // Sheets added this session live entirely in the journal.
-    if (meta.rowCount <= 0 || meta.columnCount <= 0) continue
+    if (!meta || meta.rowCount <= 0 || meta.columnCount <= 0) continue
     const ops = state.editJournal.structuralOps.get(sheetId) ?? []
     const screenRows = Math.max(meta.rowCount + netAxisDelta(ops, 'row'), 0)
     const screenColumns = Math.max(meta.columnCount + netAxisDelta(ops, 'column'), 0)
@@ -81,11 +101,15 @@ export async function scanStreamedWorkbookErrors(
     const batchRows = Math.max(1, Math.floor(FILE_READ_BATCH_CELLS / screenColumns))
     for (let startRow = 0; startRow < screenRows; startRow += batchRows) {
       if (truncated) break
-      if (errors.length >= MAX_SCAN_CELLS) {
+      // The workbook was swapped mid-scan (file switch/reload): stop paging
+      // right away so the in-flight guard frees up for the new book.
+      if (options?.isStale?.()) return { errors, truncated: true }
+      if (scanBudget <= 0) {
         truncated = true
         break
       }
       const endRow = Math.min(startRow + batchRows - 1, screenRows - 1)
+      scanBudget -= (endRow - startRow + 1) * screenColumns
       let mapped
       try {
         mapped = await readSheetRangeMapped(
@@ -140,9 +164,25 @@ export async function runStreamedErrorCheck(deps: StreamedErrorCheckDeps): Promi
   scanInFlight.current = true
   try {
     deps.setMessage(t('appCheckingErrors'))
-    const scan = await scanStreamedWorkbookErrors(state)
     const workbook = deps.runtime.univerAPI.getActiveWorkbook()
     if (!workbook) return
+    const sheets = workbook.getSheets()
+    // Identity guard, same as the other lazy paths: a file switch during the
+    // paged scan must not drive selection on the new workbook with the old
+    // file's error coordinates.
+    const stale = () => deps.lazyWorkbookRef.current !== state
+    const scan = await scanStreamedWorkbookErrors(state, {
+      liveSheetIds: sheets.map((sheet) => sheet.getSheetId()),
+      resolveFormulaValue: (sheetId, row, column) => {
+        try {
+          return workbook.getSheetBySheetId(sheetId)?.getRange(row, column, 1, 1).getValue()
+        } catch {
+          return null
+        }
+      },
+      isStale: stale,
+    })
+    if (stale()) return
     if (scan.errors.length === 0) {
       deps.setMessage(
         scan.truncated
@@ -151,7 +191,6 @@ export async function runStreamedErrorCheck(deps: StreamedErrorCheckDeps): Promi
       )
       return
     }
-    const sheets = workbook.getSheets()
     const order = new Map(sheets.map((sheet, index) => [sheet.getSheetId(), index] as const))
     const activeSheet = workbook.getActiveSheet()
     let activeRow = -1
@@ -186,6 +225,7 @@ export async function runStreamedErrorCheck(deps: StreamedErrorCheckDeps): Promi
       endColumn: next.column,
     }
     await ensureLazyRangeLoaded(deps.runtime, deps.lazyWorkbookRef, target, bounds, deps.setMessage)
+    if (stale()) return
     target.getRange(next.row, next.column, 1, 1).activate()
     // Programmatic selection emits no SelectionChanged; refresh the echo.
     deps.refreshSelectionEcho()

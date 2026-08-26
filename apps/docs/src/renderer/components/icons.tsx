@@ -564,6 +564,42 @@ export function IconTableDelete(props: IconProps) {
   )
 }
 
+export function IconAutoFit(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.1" y="4" width="9.8" height="8" rx="0.65" />
+      <path d="M 6.35 4 v 8 M 9.65 4 v 8 M 3.1 8 h 9.8" strokeWidth="1" />
+      <path d="M 1.35 8 h 2.6 M 1.35 8 l 1 -1 M 1.35 8 l 1 1" />
+      <path d="M 14.65 8 h -2.6 M 14.65 8 l -1 -1 M 14.65 8 l -1 1" />
+    </Svg>
+  )
+}
+
+export function IconRepeatHeader(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="3.45" width="8.8" height="9.1" rx="0.65" />
+      <path d="M 3 6.2 h 8.8 M 3 9.35 h 8.8 M 7.4 3.45 v 9.1" strokeWidth="1" />
+      <path d="M 3.6 4.8 h 7.6" strokeWidth="1.5" />
+      <path d="M 11.35 10.15 a 2.15 2.15 0 1 1 -0.5 2.25" />
+      <path d="m 10.2 10.15 1.3 -0.05 -0.35 1.22" />
+    </Svg>
+  )
+}
+
+export function IconTableProperties(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.85" y="3.2" width="7.7" height="9.6" rx="0.65" />
+      <path d="M 2.85 6.4 h 7.7 M 2.85 9.6 h 7.7 M 6.7 3.2 v 9.6" strokeWidth="1" />
+      <path d="M 11.7 5.15 h 2.15 M 11.7 8 h 2.15 M 11.7 10.85 h 2.15" />
+      <circle cx="12.35" cy="5.15" r="0.55" fill="currentColor" stroke="none" />
+      <circle cx="13.15" cy="8" r="0.55" fill="currentColor" stroke="none" />
+      <circle cx="12.65" cy="10.85" r="0.55" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
 export function IconRowInsertAbove(props: IconProps) {
   return (
     <Svg {...props}>

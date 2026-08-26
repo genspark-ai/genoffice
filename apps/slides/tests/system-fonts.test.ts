@@ -83,6 +83,11 @@ describe.runIf(mac)(
       expect(ui).toBeLessThan(plain * 0.85)
     })
 
+    it.runIf(office)('Yu Gothic UI picks the UI face out of YuGothM/YuGothB.ttc', () => {
+      expect(m.displayFamily!(style('Yu Gothic UI'))).toBe('Yu Gothic UI')
+      expect(m.displayFamily!(style('Yu Gothic UI', { bold: true }))).toMatch(/Yu Gothic UI/)
+    })
+
     it.runIf(office)('legacy Korean fonts (Gulim/Batang) parse via layout-table strip', () => {
       expect(m.displayFamily!(style('굴림'))).toMatch(/Gulim/)
       expect(m.displayFamily!(style('바탕'))).toMatch(/Batang/)

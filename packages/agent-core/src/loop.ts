@@ -181,6 +181,7 @@ export class AgentLoop<TSnapshot = unknown> {
   private inputParseFails = 0
   private turnStopReason: string | null = null
   private turnText = ''
+  private turnReasoning = ''
   private toolCalls: AgentToolCall[] = []
   /** tools actually executed during this run, fed to skill.verifyResponse */
   private executedCalls: ExecutedToolCall[] = []
@@ -285,6 +286,11 @@ export class AgentLoop<TSnapshot = unknown> {
     // drop it so the model never sees two adjacent user turns as one combined instruction
     while (this.history.at(-1)?.role === 'user') this.history.pop()
     this.trimHistory()
+    // Reasoning echo only matters inside a run's own tool loop; drop it from
+    // finished runs so it stops costing tokens on every later request.
+    this.history = this.history.map((m) =>
+      m.role === 'assistant' && m.reasoning ? { ...m, reasoning: undefined } : m,
+    )
     if (userMsg.role === 'user') {
       userMsg = { ...userMsg, text: sanitizeAgentPayload(userMsg.text) }
     }
@@ -475,6 +481,7 @@ export class AgentLoop<TSnapshot = unknown> {
   private startTurn(retriesUsed = 0): void {
     const generation = this.generation
     this.turnText = ''
+    this.turnReasoning = ''
     this.toolCalls = []
     this.turnStopReason = null
     // Some transports emit an extra onDone after cancel — this turn may finalize only once
@@ -490,6 +497,10 @@ export class AgentLoop<TSnapshot = unknown> {
           if (generation !== this.generation || settled) return
           this.turnText += text
           this.options.events?.onText?.(this.turnText)
+        },
+        onReasoning: (text) => {
+          if (generation !== this.generation || settled) return
+          this.turnReasoning += text
         },
         onToolCall: (call) => {
           if (generation !== this.generation || settled) return
@@ -601,6 +612,8 @@ export class AgentLoop<TSnapshot = unknown> {
       role: 'assistant',
       text: this.turnText,
       toolCalls: toolCalls.map(({ id, name, input }) => ({ id, name, input })),
+      // interleaved-thinking models degrade in tool loops unless their reasoning is echoed back
+      ...(this.turnReasoning ? { reasoning: this.turnReasoning } : {}),
     })
     const generation = this.generation
     const results: AgentToolResult[] = []

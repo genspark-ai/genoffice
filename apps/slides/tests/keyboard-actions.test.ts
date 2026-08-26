@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { handleGlobalKeydown } from '../src/renderer/keyboard-actions'
 import * as clipboardActions from '../src/renderer/clipboard-actions'
 import * as slideActions from '../src/renderer/slide-actions'
+import * as showActions from '../src/renderer/show-actions'
 import type { ActionCtx } from '../src/renderer/action-context'
 
 vi.mock('../src/renderer/clipboard-actions', () => ({
@@ -49,6 +50,76 @@ function selectText(): void {
   sel.removeAllRanges()
   sel.addRange(range)
 }
+
+describe('slide show shortcuts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    document.body.innerHTML = ''
+  })
+
+  it('starts from the current slide with Command+Enter on macOS', () => {
+    const ctx = makeCtx({ current: 2, slides: [{}, {}, {}] })
+    const e = keydown('Enter')
+
+    handleGlobalKeydown(ctx, e, 'MacIntel')
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(showActions.startSlideShow).toHaveBeenCalledWith(ctx, false)
+  })
+
+  it('starts from the current slide with Shift+F5 on Windows', () => {
+    const ctx = makeCtx({ current: 2, slides: [{}, {}, {}] })
+    const e = keydown('F5', { metaKey: false, shiftKey: true })
+
+    handleGlobalKeydown(ctx, e, 'Win32')
+
+    expect(e.defaultPrevented).toBe(true)
+    expect(showActions.startSlideShow).toHaveBeenCalledWith(ctx, false)
+  })
+
+  it('does not repurpose Ctrl+Enter on Windows', () => {
+    const ctx = makeCtx()
+    const e = keydown('Enter', { metaKey: false, ctrlKey: true })
+
+    handleGlobalKeydown(ctx, e, 'Win32')
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(showActions.startSlideShow).not.toHaveBeenCalled()
+  })
+
+  it('does not start a show from a text field on macOS', () => {
+    const input = document.createElement('textarea')
+    document.body.appendChild(input)
+    input.focus()
+    const ctx = makeCtx()
+    const e = keydown('Enter')
+
+    handleGlobalKeydown(ctx, e, 'MacIntel')
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(showActions.startSlideShow).not.toHaveBeenCalled()
+  })
+
+  it('does not start a show when another handler consumed Enter', () => {
+    const ctx = makeCtx()
+    const e = keydown('Enter')
+    e.preventDefault()
+
+    handleGlobalKeydown(ctx, e, 'MacIntel')
+
+    expect(showActions.startSlideShow).not.toHaveBeenCalled()
+  })
+
+  it('does not start a show while confirming a crop', () => {
+    const ctx = makeCtx({ cropTarget: {} })
+    const e = keydown('Enter')
+
+    handleGlobalKeydown(ctx, e, 'MacIntel')
+
+    expect(e.defaultPrevented).toBe(false)
+    expect(showActions.startSlideShow).not.toHaveBeenCalled()
+  })
+})
 
 describe('copy shortcuts with a DOM text selection', () => {
   beforeEach(() => {

@@ -471,6 +471,7 @@ export class LazyExtendedFindModel extends FindModel {
 
   /** Extras that are still outside the (evolving) loaded window. */
   private currentExtras(): LazyCellMatch[] {
+    const isRowHidden = this.rowHiddenTest()
     return this.extras.filter((match) => {
       if (
         coveredByWindow(
@@ -485,22 +486,33 @@ export class LazyExtendedFindModel extends FindModel {
       // The in-memory scan skips rows hidden by an active filter; hold
       // out-of-window hits to the same visibility rules. Fails open when the
       // filter state is not reachable (sheet gone mid-session).
-      return !this.isRowHidden(match.range.subUnitId, match.range.range.startRow)
+      return !isRowHidden(match.range.subUnitId, match.range.range.startRow)
     })
   }
 
   /// Mirrors the built-in scan's worksheet.getRowFiltered check for cells
   /// that never streamed into Univer's matrix: the filter model lives on the
   /// workbook instance, not the grid, so it answers regardless of loading.
-  private isRowHidden(subUnitId: string, row: number): boolean {
+  /// The workbook resolves once per call — currentExtras runs on every
+  /// match-list read and extras can number in the thousands.
+  private rowHiddenTest(): (subUnitId: string, row: number) => boolean {
+    let resolved: Workbook | null = null
     try {
-      const workbook = this.deps.runtime.univer
-        .__getInjector()
-        .get(IUniverInstanceService)
-        .getUnit<Workbook>(this.unitId)
-      return workbook?.getSheetBySheetId(subUnitId)?.getRowFiltered(row) === true
+      resolved =
+        this.deps.runtime.univer
+          .__getInjector()
+          .get(IUniverInstanceService)
+          .getUnit<Workbook>(this.unitId) ?? null
     } catch {
-      return false
+      resolved = null
+    }
+    if (!resolved) return () => false
+    return (subUnitId, row) => {
+      try {
+        return resolved.getSheetBySheetId(subUnitId)?.getRowFiltered(row) === true
+      } catch {
+        return false
+      }
     }
   }
 

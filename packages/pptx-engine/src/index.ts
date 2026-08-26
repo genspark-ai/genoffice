@@ -71,7 +71,9 @@ import { buildChartSpaceXml, type NewChartKind, type NewChartOptions } from './c
 import { parseLayoutPlaceholders, placeholderSpXml, prepareInsertSlideWithLayout } from './layout'
 import {
   chooseLayout,
+  collectPart,
   collectSlideBundle,
+  importClipboardParts,
   importSourceLayout,
   materializeSlideBundle,
   type SlideBundle,
@@ -3601,6 +3603,10 @@ export interface ElementClipboardItem {
   xml: string
   /** rId referenced by the xml → absolute part path (External relationships keep the target verbatim) */
   rels: Array<{ rid: string; type: string; target: string; external?: boolean }>
+  /** Dependency part bytes (base64, keyed by absolute path), so the paste target can be a different deck */
+  parts?: Readonly<Record<string, string>>
+  /** ContentType per dependency: keyed by lower-case extension or by part path */
+  contentTypes?: Readonly<Record<string, string>>
 }
 
 const RID_ATTR_RE = /\br:(?:embed|link|id)="(rId\d+)"/g
@@ -3614,6 +3620,8 @@ export function copyElementData(
   const xml = patchedElementXml(el)
   const slideRels = opened.archive.readRels(slide.path)
   const rels: ElementClipboardItem['rels'] = []
+  const parts: Record<string, string> = {}
+  const contentTypes: Record<string, string> = {}
   const seen = new Set<string>()
   for (const m of xml.matchAll(RID_ATTR_RE)) {
     const rid = m[1]!
@@ -3622,14 +3630,20 @@ export function copyElementData(
     const rel = slideRels.get(rid)
     if (!rel) continue
     const external = rel.targetMode === 'External'
+    const target = external ? rel.target : resolveTarget(slide.path, rel.target)
+    // Slide-jump hyperlinks reference a whole slide; bundling it would drag in its
+    // layout/master/theme graph, so keep those as path-only references
+    if (!external && !rel.type.endsWith('/slide')) {
+      collectPart(opened.archive, target, parts, contentTypes)
+    }
     rels.push({
       rid,
       type: rel.type,
-      target: external ? rel.target : resolveTarget(slide.path, rel.target),
+      target,
       ...(external ? { external: true } : {}),
     })
   }
-  return { xml, rels }
+  return { xml, rels, ...(Object.keys(parts).length ? { parts, contentTypes } : {}) }
 }
 
 /** 'ppt/media/image1.png' → the relative Target '../media/image1.png' in the slide rels */
@@ -3638,10 +3652,11 @@ function relTargetFromSlide(absTarget: string): string {
 }
 
 /**
- * Paste: rels surgery (reuse the rId when the target slide already has a
- * relationship with the same type+target, otherwise create one pointing at the
- * same part — media bytes are not copied), renumber cNvPr ids, offset the whole
- * thing, append, and reparse.
+ * Paste: land bundled dependency parts (byte-identical ones already in the
+ * target are shared, so a same-deck paste copies no media), rels surgery
+ * (reuse the rId when the target slide already has a relationship with the
+ * same type+target), renumber cNvPr ids, offset the whole thing, append, and
+ * reparse.
  */
 export function pasteElements(
   opened: OpenedPptx,
@@ -3667,15 +3682,27 @@ export function pasteElements(
     byKey.set(`${rel.type} ${abs}`, rel.id)
   }
 
+  // Land dependency parts the target deck is missing (all items at once, so shared media imports once)
+  const bundledParts: Record<string, string> = {}
+  const bundledCT: Record<string, string> = {}
+  for (const item of items) {
+    Object.assign(bundledParts, item.parts ?? {})
+    Object.assign(bundledCT, item.contentTypes ?? {})
+  }
+  const pathMap = Object.keys(bundledParts).length
+    ? importClipboardParts(archive, bundledParts, bundledCT)
+    : null
+
   let nextId = nextCNvPrId(slide)
   const xmls = items.map((item) => {
     let xml = item.xml
     for (const rel of item.rels) {
-      const key = `${rel.type} ${rel.target}`
+      const landed = rel.external ? rel.target : (pathMap?.get(rel.target) ?? rel.target)
+      const key = `${rel.type} ${landed}`
       let rid = byKey.get(key)
       if (!rid) {
         rid = `rId${++maxRid}`
-        const target = rel.external ? rel.target : relTargetFromSlide(rel.target)
+        const target = rel.external ? rel.target : relTargetFromSlide(landed)
         const mode = rel.external ? ' TargetMode="External"' : ''
         relsXml = relsXml.replace(
           '</Relationships>',

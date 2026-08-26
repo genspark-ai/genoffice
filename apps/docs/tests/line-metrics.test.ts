@@ -884,8 +884,10 @@ describe('Korean line metrics', () => {
   it('Chinese/Japanese factors follow the Word probe (unprobed names keep LO values)', () => {
     expect(lineHeightFactor('SimSun')).toBe(1.3029)
     expect(lineHeightFactor('宋体')).toBe(1.3029)
-    expect(lineHeightFactor('DengXian')).toBe(1.775)
-    expect(lineHeightFactor('等线')).toBe(1.775)
+    // DengXian renders real in Office for Mac (probes 2026-08-13/25: 16.32pt @12pt)
+    expect(lineHeightFactor('DengXian')).toBe(1.36)
+    expect(lineHeightFactor('\u7b49\u7ebf')).toBe(1.36)
+    expect(lineHeightFactor('DengXian Light')).toBe(1.36)
     // FangSong renders in the SimSun class (Word probe 2026-08-22)
     expect(lineHeightFactor('FangSong')).toBe(1.3029)
     expect(lineHeightFactor('仿宋')).toBe(1.3029)

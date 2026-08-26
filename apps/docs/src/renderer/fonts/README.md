@@ -49,11 +49,11 @@ chain order; advances are 1.0em everywhere, so line breaking is unchanged.
 
 ## Korean fallback
 
-| Font                                 | Role                                                      |
-| ------------------------------------ | --------------------------------------------------------- |
-| GenOffice Serif KR (subset woff2)    | Batang-metric stand-in for Korean serif families          |
-| GenOffice Sans KR (subset woff2)     | fallback for Korean sans families (Malgun etc.)           |
-| GenOffice Che Latin KR (ASCII woff2) | half-width Latin for BatangChe/GulimChe/DotumChe families |
+| Font                                 | Role                                                        |
+| ------------------------------------ | ----------------------------------------------------------- |
+| GenOffice Serif KR (subset woff2)    | Batang-metric stand-in for Korean serif families            |
+| GenOffice Sans KR (subset woff2)     | fallback for Korean sans families (Malgun etc.)             |
+| GenOffice Che Latin KR (ASCII woff2) | half-width Latin for BatangChe/GulimChe/DotumChe/GungsuhChe |
 
 Source: Noto Serif/Sans CJK KR Regular from [notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)
 (SIL OFL 1.1), subset with fonttools to the 2,350 KS X 1001 syllables + jamo
@@ -75,11 +75,12 @@ ink widths and side bearings of Batang/Malgun
 `tools/build-kr-che-latin-font.py` gives its Noto-derived outlines fixed 0.5em
 advances and transforms them to measured DotumChe ink boxes. Microsoft Office
 fonts are build-time measurement references only; no Microsoft outlines are
-included. All three derivatives are renamed because OFL reserves the "Noto"
-name for unmodified builds. Conjoining jamo keep native advances (shaping).
-Word counterpart line factors live in `lineHeightFactor()` of
-`line-metrics.ts`. The Adobe/Google copyright and full OFL 1.1 text are in
-`LICENSE-OFL.txt`.
+included. All three derivatives are renamed because the upstream OFL notices
+reserve the name "Source"; "Noto" is the distribution family name, not the
+Reserved Font Name. Conjoining jamo keep native advances (shaping). Word
+counterpart line factors live in `lineHeightFactor()` of `line-metrics.ts`.
+The Sans/Che source copyright (Adobe 2014–2021 and Google LLC), Serif source
+copyright (Adobe 2017–2024), and full OFL 1.1 text are in `LICENSE-OFL.txt`.
 
 ### GenOffice Gothic KR
 

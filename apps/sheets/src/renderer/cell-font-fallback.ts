@@ -20,7 +20,25 @@ const SERIF_INTENT =
 /// Generic families never cover emoji code points on the canvas — without an
 /// explicit color-emoji face at the end of every chain, U+274C & friends draw
 /// as tofu. Listed after the generic so primary-font metrics never change.
-const EMOJI_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"'
+/// Emoji=Yes but Emoji_Presentation=No dingbats (✔✖❄❤ card suits …) render
+/// as text glyphs in the cell color in Excel, while a color-emoji bitmap
+/// ignores fillStyle (prod_016's CF-red ✖ drew charcoal) — a monochrome
+/// symbols face intercepts exactly those codepoints ahead of the emoji
+/// chain; EPres=Yes codepoints (U+274C …) stay on the color font.
+const TEXT_DINGBATS_FAMILY = 'Cell Text Dingbats'
+/// Faces that carry real outline glyphs for these codepoints (canvas-probed:
+/// Apple Symbols and Hiragino draw the color-emoji bitmap instead).
+const TEXT_DINGBATS_SOURCES = [
+  'Segoe UI Symbol',
+  'Arial Unicode MS',
+  'Zapf Dingbats',
+  'Menlo',
+] as const
+const TEXT_DINGBATS_RANGE =
+  'U+2611, U+2660, U+2663, U+2665-2666, U+2702, U+2708-2709, U+270C, U+270F, ' +
+  'U+2712, U+2714, U+2716, U+271D, U+2721, U+2733-2734, U+2744, U+2747, U+2763-2764'
+const EMOJI_FALLBACK =
+  '"Cell Text Dingbats", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji"'
 
 /// The family name inside one comma segment of a ctx.font string: the quoted
 /// name if quoted, otherwise the last whitespace token (the first segment
@@ -411,6 +429,12 @@ function registerAlias(alias: CellFontAlias, loads: Promise<unknown>[]): void {
 export function registerCellFontAliases(): Promise<unknown> {
   const loads: Promise<unknown>[] = []
   const gated: Promise<unknown>[] = []
+  addFace(
+    TEXT_DINGBATS_FAMILY,
+    TEXT_DINGBATS_SOURCES,
+    { weight: '400', unicodeRange: TEXT_DINGBATS_RANGE },
+    loads,
+  )
   for (const alias of CELL_FONT_ALIASES) {
     if (alias.skipIfLocal) {
       gated.push(

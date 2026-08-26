@@ -441,6 +441,8 @@ export interface TextElement extends ElementBase {
   glow?: GlowEffect
   reflection?: ReflectionEffect
   scene3d?: Scene3D
+  /** Soft edges <a:softEdge rad> (EMU feather radius) */
+  softEdge?: number
   text?: TextBody
 }
 

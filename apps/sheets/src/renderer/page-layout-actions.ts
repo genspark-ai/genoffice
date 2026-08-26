@@ -20,6 +20,7 @@ import { effectivePageBreaks } from './page-break-preview'
 import { COLOR_SCHEMES, FONT_SCHEMES, rethemeStyles, THEME_PRESETS } from './themes'
 import { loadVisibleRange } from './univer-sync'
 import { buildSheetPrintPayload, type PrintWorksheet } from './print-html'
+import { resolveEffectivePageSetup } from './print-settings'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
 
 const PAPER_NAMES: Record<string, string> = {
@@ -300,11 +301,23 @@ export async function handleExportPdf(ctx: PageLayoutContext): Promise<void> {
     return
   }
   try {
-    const pageSetup = state?.editJournal.pageSetup.get(worksheet.getSheetId()) ?? {}
+    const sheetId = worksheet.getSheetId()
+    const journal = state?.editJournal.pageSetup.get(sheetId) ?? {}
+    const fileSetup = state?.sheetFilePageSetups.get(sheetId) ?? null
+    const fileSheet = state?.file.sheets.find((sheet) => sheet.id === sheetId)
+    const setup = resolveEffectivePageSetup(
+      journal,
+      fileSetup,
+      {
+        ...(fileSheet?.printArea === undefined ? {} : { printArea: fileSheet.printArea }),
+        ...(fileSheet?.printTitles === undefined ? {} : { printTitles: fileSheet.printTitles }),
+      },
+      state?.editJournal.structuralOps.get(sheetId) ?? [],
+    )
     const baseName = (state?.file.name ?? 'Book1').replace(/\.[^.]+$/, '')
     const payload = buildSheetPrintPayload(
       worksheet as unknown as PrintWorksheet,
-      pageSetup,
+      setup,
       `${baseName}.pdf`,
       worksheet.getSheetName(),
     )

@@ -115,6 +115,48 @@ describe('image text wrap (wp:anchor)', () => {
     }
   })
 
+  it('floats a wide bothSides picture right when its center passes mid-body (public issue #118)', async () => {
+    // left edge before the midline, but the 3in-wide body fills the right half
+    const xml = ANCHOR_SQUARE_RIGHT_XML.replace(
+      '<wp:positionH relativeFrom="column"><wp:align>right</wp:align></wp:positionH>',
+      '<wp:positionH relativeFrom="column"><wp:posOffset>2407073</wp:posOffset></wp:positionH>',
+    ).replace('<wp:extent cx="914400" cy="914400"/>', '<wp:extent cx="2851200" cy="2138400"/>')
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    expect(doc.blocks[0].imageWrap).toBe('square-right')
+    expect(doc.blocks[0].imageOffsetXEmu).toBe(2407073)
+    expect(doc.blocks[0].imageWrapDistTopEmu).toBe(0)
+    expect(doc.blocks[0].imageWrapDistBottomEmu).toBe(0)
+    expect(doc.blocks[0].imageWrapDistLeftEmu).toBe(114300)
+    expect(doc.blocks[0].imageWrapDistRightEmu).toBe(114300)
+  })
+
+  it('keeps leading spaces and first-line indent on an atomic picture block (public issue #118)', async () => {
+    const xml = IMAGE_PARAGRAPH_XML.replace(
+      '<w:p>',
+      '<w:p><w:pPr><w:ind w:firstLine="420"/>' +
+        '<w:rPr><w:rFonts w:eastAsia="SimSun"/><w:sz w:val="24"/></w:rPr></w:pPr>' +
+        '<w:r><w:t xml:space="preserve">    </w:t></w:r>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('image')
+    expect(block.imageLeadingText).toBe('    ')
+    expect(block.imageLeadingFont).toBe('SimSun')
+    expect(block.imageLeadingImplicitSpaceCount).toBe(4)
+    expect(block.imageLeadingExplicitSpaceWidthPx).toBeUndefined()
+    expect(block.imageParagraphIndentFirstLine).toBe(420)
+    expect(block.imageWidthPx).toBe(96)
+
+    const explicit = xml.replace(
+      '<w:r><w:t xml:space="preserve">    </w:t></w:r>',
+      '<w:r><w:rPr><w:sz w:val="24"/></w:rPr>' + '<w:t xml:space="preserve">    </w:t></w:r>',
+    )
+    const explicitBlock = (await parseDocx(await buildDocx({ bodyXml: explicit, withImage: true })))
+      .blocks[0]
+    expect(explicitBlock.imageLeadingExplicitSpaceWidthPx).toBe(32)
+    expect(explicitBlock.imageLeadingImplicitSpaceCount).toBeUndefined()
+  })
+
   it('converts inline -> square anchor with position and wrap elements', () => {
     const out = applyImageWrap(IMAGE_PARAGRAPH_XML, 'square-left')
     expect(out).toContain('<wp:anchor')

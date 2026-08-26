@@ -32,6 +32,7 @@ export async function streamForProvider(
     case 'openai-compatible':
       return streamOpenAiCompatible(baseUrl, config, system, messages, tools, maxTokens, cb, {
         omitTemperature: endpoint.omitTemperature,
+        useMaxCompletionTokens: endpoint.useMaxCompletionTokens,
         bodyExtras: endpoint.bodyExtras,
       })
   }

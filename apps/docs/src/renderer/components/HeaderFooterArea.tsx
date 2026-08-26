@@ -26,7 +26,9 @@ export interface HfValue {
 function runStyle(run: Run): React.CSSProperties {
   const style: React.CSSProperties = {}
   if (run.bold) style.fontWeight = 600
+  else if (run.bold === false) style.fontWeight = 'normal'
   if (run.italic) style.fontStyle = 'italic'
+  else if (run.italic === false) style.fontStyle = 'normal'
   if (run.underline) style.textDecoration = 'underline'
   if (run.strike) style.textDecoration = `${style.textDecoration ?? ''} line-through`.trim()
   if (run.color) style.color = `#${run.color}`
@@ -36,6 +38,10 @@ function runStyle(run: Run): React.CSSProperties {
   if (run.font || run.fontAscii) style.fontFamily = cssRunFontFamily(run.fontAscii, run.font)
   if (run.caps === 'all') style.textTransform = 'uppercase'
   else if (run.caps === 'small') style.fontVariantCaps = 'small-caps'
+  else if (run.caps === 'none') {
+    style.textTransform = 'none'
+    style.fontVariantCaps = 'normal'
+  }
   return style
 }
 

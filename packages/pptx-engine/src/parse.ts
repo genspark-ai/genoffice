@@ -410,6 +410,7 @@ function parseSpShape(
   let glow = parseGlow(spPr, ctx)
   const reflection = parseReflection(spPr)
   const scene3d = parseScene3D(spPr, ctx)
+  const softEdgeRad = spPr?.['a:effectLst']?.['a:softEdge']?.['@_rad']
   // <a:fillOverlay> holds a second fill element directly (a:gradFill/…), so parseFill reads it like an spPr
   const overlayNode = spPr?.['a:effectLst']?.['a:fillOverlay']
   const fillOverlay = overlayNode ? parseFill(overlayNode, ctx) : undefined
@@ -493,6 +494,7 @@ function parseSpShape(
     ...(glow ? { glow } : {}),
     ...(reflection ? { reflection } : {}),
     ...(scene3d ? { scene3d } : {}),
+    ...(softEdgeRad != null ? { softEdge: intOr(softEdgeRad, 0) } : {}),
     text,
   }
   return el

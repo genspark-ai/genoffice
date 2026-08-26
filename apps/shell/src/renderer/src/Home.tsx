@@ -1440,7 +1440,12 @@ export function Home() {
   const moveFileTo = async (filePath: string, targetProjectId: string) => {
     setMoveFileMenu(null)
     setRowMenu(null)
-    await window.aiOfficeProject?.moveFile(filePath, targetProjectId)
+    try {
+      await window.aiOfficeProject?.moveFile(filePath, targetProjectId)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error))
+      return
+    }
     refresh()
     if (selectedProjectId) {
       setProjectFileEntries((prev) => prev.filter((e) => e.path !== filePath))
@@ -1454,10 +1459,17 @@ export function Home() {
     // re-selected or re-moved while the sequential IPC loop is in flight
     const moved = new Set(paths)
     setProjectFileEntries((prev) => prev.filter((e) => !moved.has(e.path)))
-    for (const path of paths) {
-      await window.aiOfficeProject?.moveFile(path, targetProjectId)
+    try {
+      for (const path of paths) {
+        await window.aiOfficeProject?.moveFile(path, targetProjectId)
+      }
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error))
+    } finally {
+      // A bulk move can fail after earlier paths succeeded; reload to restore
+      // unmoved rows while keeping successfully moved rows out of this project.
+      refresh()
     }
-    refresh()
   }
 
   // ── New file (passes projectId when a project is selected) ──

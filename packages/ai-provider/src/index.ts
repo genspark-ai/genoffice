@@ -18,7 +18,7 @@ export {
   defaultAiSettings,
   resolveAiSettings,
 } from './providers'
-export { AI_PROVIDER_ADAPTERS, getProviderAdapter } from './registry'
+export { AI_PROVIDER_ADAPTERS, getProviderAdapter, modelLacksVision } from './registry'
 export type {
   AiProtocol,
   ProviderAdapter,

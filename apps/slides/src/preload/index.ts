@@ -109,6 +109,15 @@ const api: SlidesApi = {
   setShowFullScreen: (on) => ipcRenderer.invoke('slides:show-fullscreen', on),
   privateFontFaces: () => ipcRenderer.invoke('slides:private-font-faces'),
   privateFontData: (id) => ipcRenderer.invoke('slides:private-font-data', id),
+  fontCatalog: () => ipcRenderer.invoke('slides:font-catalog'),
+  fontDownload: (family) => ipcRenderer.invoke('slides:font-download', family),
+  fontInstallLocal: () => ipcRenderer.invoke('slides:font-install-local'),
+  fontMissing: () => ipcRenderer.invoke('slides:font-missing'),
+  onFontsChanged: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on('slides:fonts-changed', listener)
+    return () => ipcRenderer.removeListener('slides:fonts-changed', listener)
+  },
   openPptx: (fitWidthPx) => ipcRenderer.invoke('slides:open', fitWidthPx),
   openPptxPath: (path, fitWidthPx) => ipcRenderer.invoke('slides:open-path', path, fitWidthPx),
   consumePendingOpen: (fitWidthPx) => ipcRenderer.invoke('slides:consume-pending-open', fitWidthPx),
@@ -216,6 +225,7 @@ const api: SlidesApi = {
   pasteSlide: (op: PasteSlideOp) => ipcRenderer.invoke('slides:paste-slide', op),
   repasteSlide: (op: RepasteSlideOp) => ipcRenderer.invoke('slides:repaste-slide', op),
   hasSlideClipboard: () => ipcRenderer.invoke('slides:has-slide-clipboard'),
+  clipboardProbe: () => ipcRenderer.invoke('slides:clipboard-probe'),
   deleteSlide: (slideIndex: number) => ipcRenderer.invoke('slides:delete-slide', slideIndex),
   reorderElement: (op: ReorderElementOp) => ipcRenderer.invoke('slides:reorder-element', op),
   editTableCell: (op: EditTableCellOp) => ipcRenderer.invoke('slides:edit-table-cell', op),

@@ -24,6 +24,19 @@ const TOC_ENTRY_PARAGRAPH =
 const FIELD_END_PAGEBREAK_PARAGRAPH =
   '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:br w:type="page"/></w:r></w:p>'
 
+// paste artifact from Word web copy: an INCLUDEPICTURE field with a dead local
+// path sandwiched between styled text runs (public issue #118 demo.docx shape)
+const RPR =
+  '<w:rPr><w:rFonts w:ascii="\u5b8b\u4f53" w:eastAsia="\u5b8b\u4f53"/><w:sz w:val="24"/></w:rPr>'
+const INCLUDEPICTURE_PARAGRAPH =
+  `<w:p><w:pPr><w:jc w:val="left"/>${RPR}</w:pPr>` +
+  `<w:r>${RPR}<w:t>\u9636\u8d70\u5230\u6cb3</w:t></w:r>` +
+  `<w:r>${RPR}<w:t xml:space="preserve">     </w:t></w:r>` +
+  `<w:r>${RPR}<w:fldChar w:fldCharType="begin"/></w:r>` +
+  `<w:r>${RPR}<w:instrText xml:space="preserve"> INCLUDEPICTURE "/tmp/x.jpeg" \\* MERGEFORMATINET </w:instrText></w:r>` +
+  `<w:r>${RPR}<w:fldChar w:fldCharType="end"/></w:r>` +
+  `<w:r>${RPR}<w:t>\u5cb8\u8fb9</w:t></w:r></w:p>`
+
 const PAGE_FIELD_PARAGRAPH =
   '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
   '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
@@ -54,6 +67,33 @@ describe('field paragraph display model', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: PAGE_FIELD_PARAGRAPH }))
     expect(doc.blocks[0].type).toBe('paragraph')
     expect(doc.blocks[0].runs?.[0]).toMatchObject({ text: '- 8 -', instrField: 'PAGE' })
+  })
+
+  it('a resultless INCLUDEPICTURE text field keeps spaces and run metrics (public issue #118)', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: INCLUDEPICTURE_PARAGRAPH }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('passthrough')
+    expect(block.fieldDisplay).toMatchObject({
+      kind: 'text',
+      left: '\u9636\u8d70\u5230\u6cb3     \u5cb8\u8fb9',
+      szHalfPoints: 24,
+      fontFamily: '\u5b8b\u4f53',
+      align: 'left',
+    })
+  })
+
+  it('a text field with an explicit line multiple carries the spacing', async () => {
+    const xml = INCLUDEPICTURE_PARAGRAPH.replace(
+      '<w:pPr><w:jc w:val="left"/>',
+      '<w:pPr><w:spacing w:line="360" w:lineRule="auto"/><w:jc w:val="left"/>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].fieldDisplay).toMatchObject({
+      kind: 'text',
+      lineRule: 'auto',
+      lineRawTwips: 360,
+      lineSpacing: 1.5,
+    })
   })
 
   it('TOC entry carries its hyperlink anchor for click-to-jump', async () => {
@@ -339,5 +379,53 @@ describe('FORMCHECKBOX form fields', () => {
       '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
     const doc = await parseDocx(await buildDocx({ bodyXml }))
     expect(doc.blocks[0].type).toBe('passthrough')
+  })
+})
+
+// Mail-merge label/business-card layout: the visible text lives entirely in
+// field results inside table cells (complex MERGEFIELD runs and fldSimple).
+const MERGE_CELL_PARAGRAPH =
+  '<w:p>' +
+  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r><w:instrText xml:space="preserve"> MERGEFIELD Vorname </w:instrText></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r><w:rPr><w:noProof/></w:rPr><w:t>Erika</w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+  '<w:r><w:t xml:space="preserve"> </w:t></w:r>' +
+  '<w:fldSimple w:instr=" MERGEFIELD Nachname ">' +
+  '<w:r><w:rPr><w:noProof/></w:rPr><w:t>Mustermann</w:t></w:r>' +
+  '</w:fldSimple>' +
+  '</w:p>'
+
+const NEXT_FIELD_PARAGRAPH =
+  '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r><w:instrText xml:space="preserve"> NEXT </w:instrText></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+
+function cellTable(content: string): string {
+  return (
+    '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+    '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+    '<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr>' +
+    content +
+    '</w:tc></w:tr></w:tbl>'
+  )
+}
+
+describe('field cached results in table cells', () => {
+  it('complex MERGEFIELD and fldSimple results stay visible as cell runs', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: cellTable(MERGE_CELL_PARAGRAPH) }))
+    const cell = doc.blocks[0].table!.rows[0][0]
+    const text = (cell.richParas?.[0]?.runs ?? []).map((r) => r.text).join('')
+    expect(text).toBe('Erika Mustermann')
+    // instruction text must not leak into the visible runs
+    expect(text).not.toContain('MERGEFIELD')
+  })
+
+  it('a resultless field (NEXT) contributes no text', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: cellTable(NEXT_FIELD_PARAGRAPH) }))
+    const cell = doc.blocks[0].table!.rows[0][0]
+    const text = (cell.richParas?.[0]?.runs ?? []).map((r) => r.text).join('')
+    expect(text).toBe('')
   })
 })

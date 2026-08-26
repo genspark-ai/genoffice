@@ -262,15 +262,17 @@ describe('w:themeColor resolution', () => {
     expect(doc.blocks[0].runs?.[1].color).toBe('335593')
   })
 
-  it('w:val alone still wins when the doc has no theme part', async () => {
+  it('resolves against the built-in Office palette when the doc has no theme part', async () => {
+    // Word materializes the default theme for themeless documents: accent1
+    // still beats the cached w:val
     const doc = await parseDocx(
       await buildDocx({
         bodyXml:
           '<w:p><w:r><w:rPr><w:color w:val="FF0000" w:themeColor="accent1"/></w:rPr><w:t>x</w:t></w:r></w:p>',
       }),
     )
-    expect(doc.themeColors).toBeNull()
-    expect(doc.blocks[0].runs?.[0].color).toBe('FF0000')
+    expect(doc.themeColors?.accent1).toBe('4472C4')
+    expect(doc.blocks[0].runs?.[0].color).toBe('4472C4')
   })
 
   it('an untouched themed document still saves byte-identical', async () => {

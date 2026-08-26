@@ -540,11 +540,23 @@ function blockToPmNode(
           imageHeightPx: block.imageHeightPx ?? null,
           imageCrop: block.imageCrop ?? null,
           imageFillRect: block.imageFillRect ?? null,
+          imageLeadingText: block.imageLeadingText ?? null,
+          imageLeadingFont: block.imageLeadingFont ?? null,
+          imageLeadingExplicitSpaceWidthPx: block.imageLeadingExplicitSpaceWidthPx ?? null,
+          imageLeadingImplicitSpaceCount: block.imageLeadingImplicitSpaceCount ?? null,
+          imageParagraphIndentLeft: block.imageParagraphIndentLeft ?? null,
+          imageParagraphIndentRight: block.imageParagraphIndentRight ?? null,
+          imageParagraphIndentFirstLine: block.imageParagraphIndentFirstLine ?? null,
           imageAlign: block.imageAlign ?? null,
           imageWrap: block.imageWrap ?? null,
+          imageWrapDistTopEmu: block.imageWrapDistTopEmu ?? null,
+          imageWrapDistBottomEmu: block.imageWrapDistBottomEmu ?? null,
+          imageWrapDistLeftEmu: block.imageWrapDistLeftEmu ?? null,
+          imageWrapDistRightEmu: block.imageWrapDistRightEmu ?? null,
           imageZOrder: block.imageZOrder ?? null,
           imageOffsetXEmu: block.imageOffsetXEmu ?? null,
           imageOffsetYEmu: block.imageOffsetYEmu ?? null,
+          imageAnchorLocked: block.imageAnchorLocked ?? false,
           imagePosH: block.imagePosH ?? null,
           imagePosV: block.imagePosV ?? null,
           imageRotDeg: block.imageRotDeg ?? null,
@@ -648,7 +660,9 @@ export function tableModelToPmNode(
     (sum, _row, i) => sum + Math.max(model.rowHeightsTwips?.[i] ?? 0, 240),
     0,
   )
-  const tblFloat = minHeightTwips > 12960 ? null : (model.floatSide ?? null)
+  const tblFloatSource = model.floatSide ?? null
+  const tblFloatSuppressed = minHeightTwips > 12960 && tblFloatSource !== null
+  const tblFloat = tblFloatSuppressed ? null : tblFloatSource
   const table: PmNode = {
     type: 'docTable',
     attrs: {
@@ -661,11 +675,28 @@ export function tableModelToPmNode(
           : null,
       widthPct: model.widthPct ?? null,
       cellMar: model.cellMarTwips ?? null,
+      cellSpacingTwips: model.cellSpacingTwips ?? null,
+      tblFill: model.fill ?? null,
+      cellMarEdited: false,
       borders: model.borders ?? null,
       tblAlign: model.align ?? null,
       tblFloat,
+      tblFloatSource,
+      tblFloatSuppressed,
+      tblFloatXTwips: model.floatPos?.xTwips ?? null,
+      tblFloatYTwips: model.floatPos?.yTwips ?? null,
+      tblFloatHorzAnchor: model.floatPos?.horzAnchor ?? null,
+      tblFloatVertAnchor: model.floatPos?.vertAnchor ?? null,
+      tblFloatDistance: model.floatPos?.distanceTwips ?? null,
+      tblFloatWidthPx:
+        tblFloatSource && widthPx ? widthPx.reduce((sum, width) => sum + width, 0) : null,
+      tblFloatEdited: false,
+      tblAutoFit: model.autoFit ?? (model.autoLayout ? 'contents' : 'fixed'),
+      tblAutoFitEdited: false,
       indentTwips: model.indentTwips ?? null,
       tblStyleId: model.tblStyleId ?? null,
+      tblLook: model.tableLook ?? null,
+      tblLookEdited: false,
       bidiVisual: model.bidiVisual ?? false,
       originalStructure: null,
       originalFormatting: null,
@@ -675,6 +706,8 @@ export function tableModelToPmNode(
       attrs: {
         heightTwips: model.rowHeightsTwips?.[rowIndex] ?? null,
         heightRule: model.rowHeightRules?.[rowIndex] ?? null,
+        repeatHeader: model.repeatHeaderRows?.[rowIndex] ?? false,
+        repeatHeaderEdited: false,
         rawTrPr: model.rawTrPrs?.[rowIndex] ?? null,
         rowRevision: model.rowRevisions?.[rowIndex] ?? null,
       },
@@ -691,6 +724,7 @@ export function tableModelToPmNode(
               rowspan,
               clipHeightTwips: cellClipTwips(model, rowIndex, cell, rowspan),
               colwidth: widthPx ? widthPx.slice(start, start + colspan) : null,
+              gridGap: cell.gridGap ?? false,
               cellMar: cell.cellMarTwips ?? null,
               textDirection: cell.textDirection ?? null,
               fill: cell.fill ?? null,
@@ -777,10 +811,27 @@ function cellContentNodes(cell: TableCell): PmNode[] {
 export function tableStructureSignature(table: PmNode): string {
   return JSON.stringify({
     widths: table.attrs?.colWidthsPct ?? null,
+    widthPx: table.attrs?.widthPx ?? null,
+    widthPct: table.attrs?.widthPct ?? null,
+    autoFit: table.attrs?.tblAutoFit ?? null,
+    autoFitEdited: table.attrs?.tblAutoFitEdited ?? false,
+    cellMar: table.attrs?.cellMar ?? null,
+    cellMarEdited: table.attrs?.cellMarEdited ?? false,
     tblStyle: table.attrs?.tblStyleId ?? null,
     tblAlign: table.attrs?.tblAlign ?? null,
+    tblFloat: table.attrs?.tblFloat ?? null,
+    tblFloatXTwips: table.attrs?.tblFloatXTwips ?? null,
+    tblFloatYTwips: table.attrs?.tblFloatYTwips ?? null,
+    tblFloatHorzAnchor: table.attrs?.tblFloatHorzAnchor ?? null,
+    tblFloatVertAnchor: table.attrs?.tblFloatVertAnchor ?? null,
+    tblFloatDistance: table.attrs?.tblFloatDistance ?? null,
+    tblFloatEdited: table.attrs?.tblFloatEdited ?? false,
+    tblLook: table.attrs?.tblLook ?? null,
+    tblLookEdited: table.attrs?.tblLookEdited ?? false,
     rows: (table.content ?? []).map((row) => [
       row.attrs?.heightTwips ?? null,
+      row.attrs?.repeatHeader ?? false,
+      row.attrs?.repeatHeaderEdited ?? false,
       // accepting/rejecting revisions strips records from trPr/tcPr: include them in the signature to trigger regeneration (works for empty rows too)
       row.attrs?.rawTrPr ?? null,
       row.attrs?.rowRevision ?? null,
@@ -855,12 +906,18 @@ export function pmTableToModel(table: PmNode): TableModel {
 
   const rowHeightsTwips: Array<number | null> = []
   const rowHeightRules: NonNullable<TableModel['rowHeightRules']> = []
+  const repeatHeaderRows: Array<boolean | null> = []
   const rawTrPrs: Array<string | null> = []
   const rowRevisions: TableModel['rowRevisions'] = []
   for (const rowNode of table.content ?? []) {
     rowHeightsTwips.push((rowNode.attrs?.heightTwips as number | null) ?? null)
     rowHeightRules.push(
       (rowNode.attrs?.heightRule as NonNullable<TableModel['rowHeightRules']>[number]) ?? null,
+    )
+    repeatHeaderRows.push(
+      rowNode.attrs?.repeatHeaderEdited || table.attrs?.docxIndex == null
+        ? !!rowNode.attrs?.repeatHeader
+        : null,
     )
     rawTrPrs.push((rowNode.attrs?.rawTrPr as string | null) ?? null)
     rowRevisions.push(
@@ -895,6 +952,7 @@ export function pmTableToModel(table: PmNode): TableModel {
         vAlign: (cellNode.attrs?.vAlign as TableCell['vAlign'] | null) ?? undefined,
         borders: (cellNode.attrs?.borders as TableCell['borders'] | null) ?? undefined,
         rawTcPr: (cellNode.attrs?.rawTcPr as string | null) ?? undefined,
+        gridGap: cellNode.attrs?.gridGap ? true : undefined,
       }
       const cellParas = (cellNode.content ?? []).filter(
         (n) => n.type === 'docParagraph' || n.type === 'docListItem',
@@ -972,11 +1030,56 @@ export function pmTableToModel(table: PmNode): TableModel {
     colWidthsPct = Array.from({ length: maximumColumns }, () => 100 / maximumColumns)
   }
   const tblStyleAttr = table.attrs?.tblStyleId as string | null | undefined
+  const isNew = table.attrs?.docxIndex == null
+  const tablePropsEdited = (name: string): boolean => isNew || table.attrs?.[name] === true
+  const visibleFloat =
+    table.attrs?.tblFloat === 'left' || table.attrs?.tblFloat === 'right'
+      ? (table.attrs.tblFloat as 'left' | 'right')
+      : null
+  const suppressedFloat =
+    table.attrs?.tblFloatSuppressed &&
+    (table.attrs?.tblFloatSource === 'left' || table.attrs?.tblFloatSource === 'right')
+      ? (table.attrs.tblFloatSource as 'left' | 'right')
+      : null
+  const floatSide = visibleFloat ?? suppressedFloat
+  const floatPosition =
+    floatSide && (table.attrs?.tblFloatXTwips != null || table.attrs?.tblFloatYTwips != null)
+      ? {
+          xTwips: Number(table.attrs?.tblFloatXTwips) || 0,
+          yTwips: Number(table.attrs?.tblFloatYTwips) || 0,
+          ...(table.attrs?.tblFloatHorzAnchor
+            ? {
+                horzAnchor: table.attrs.tblFloatHorzAnchor as NonNullable<
+                  TableModel['floatPos']
+                >['horzAnchor'],
+              }
+            : {}),
+          ...(table.attrs?.tblFloatVertAnchor
+            ? {
+                vertAnchor: table.attrs.tblFloatVertAnchor as NonNullable<
+                  TableModel['floatPos']
+                >['vertAnchor'],
+              }
+            : {}),
+          ...(table.attrs?.tblFloatDistance
+            ? {
+                distanceTwips: table.attrs.tblFloatDistance as NonNullable<
+                  TableModel['floatPos']
+                >['distanceTwips'],
+              }
+            : {}),
+        }
+      : undefined
   return {
     rows,
     ...(colWidthsPct ? { colWidthsPct } : {}),
     ...(colWidthsTwips ? { colWidthsTwips } : {}),
+    ...(table.attrs?.cellSpacingTwips
+      ? { cellSpacingTwips: Number(table.attrs.cellSpacingTwips) }
+      : {}),
+    ...(table.attrs?.tblFill ? { fill: String(table.attrs.tblFill) } : {}),
     ...(rowHeightsTwips.some((h) => h !== null) ? { rowHeightsTwips, rowHeightRules } : {}),
+    ...(repeatHeaderRows.some((value) => value !== null) ? { repeatHeaderRows } : {}),
     ...(rawTrPrs.some((r) => r !== null) ? { rawTrPrs } : {}),
     ...(rowRevisions.some((revision) => revision !== null) ? { rowRevisions } : {}),
     // null (cleared) → '' removes explicitly; undefined leaves it alone
@@ -984,6 +1087,18 @@ export function pmTableToModel(table: PmNode): TableModel {
     // explicit only when set ('left' = remove w:jc); null leaves the original
     // tblPr untouched so unmapped w:jc values (e.g. 'start') survive rebuilds
     ...(table.attrs?.tblAlign ? { align: table.attrs.tblAlign as TableModel['align'] } : {}),
+    ...(tablePropsEdited('tblAutoFitEdited')
+      ? { autoFit: table.attrs?.tblAutoFit as NonNullable<TableModel['autoFit']> }
+      : {}),
+    ...(tablePropsEdited('cellMarEdited') && table.attrs?.cellMar
+      ? { cellMarTwips: table.attrs.cellMar as NonNullable<TableModel['cellMarTwips']> }
+      : {}),
+    ...(tablePropsEdited('tblFloatEdited')
+      ? { floatSide, ...(floatPosition ? { floatPos: floatPosition } : {}) }
+      : {}),
+    ...(tablePropsEdited('tblLookEdited') && table.attrs?.tblLook
+      ? { tableLook: table.attrs.tblLook as NonNullable<TableModel['tableLook']> }
+      : {}),
   }
 }
 
@@ -1044,6 +1159,10 @@ export function runsToInline(runs: Run[]): PmNode[] {
           wrap: run.image.wrap ?? null,
           offsetXEmu: run.image.offsetXEmu ?? null,
           offsetYEmu: run.image.offsetYEmu ?? null,
+          wrapDistTopEmu: run.image.wrapDistTopEmu ?? null,
+          wrapDistBottomEmu: run.image.wrapDistBottomEmu ?? null,
+          wrapDistLeftEmu: run.image.wrapDistLeftEmu ?? null,
+          wrapDistRightEmu: run.image.wrapDistRightEmu ?? null,
           border: run.image.border ?? null,
           lineCenterV: run.image.lineCenterV ?? false,
         },
@@ -1109,6 +1228,8 @@ function runMarks(run: Run): PmMark[] {
     run.shading ||
     run.vertAlign ||
     run.em ||
+    run.bold === false ||
+    run.italic === false ||
     run.caps ||
     run.cs ||
     run.styleId ||
@@ -1130,6 +1251,8 @@ function runMarks(run: Run): PmMark[] {
         shading: run.shading ?? null,
         vertAlign: run.vertAlign ?? null,
         em: run.em ?? null,
+        boldOff: run.bold === false || null,
+        italicOff: run.italic === false || null,
         caps: run.caps ?? null,
         cs: run.cs ?? null,
         styleId: run.styleId ?? null,
@@ -1876,6 +1999,12 @@ function imagePatchOf(node: PmNode, original: Block): ImageBlockPatch | null {
   return Object.keys(patch).length > 0 ? patch : null
 }
 
+/** gridGap placeholders have no w:tc in the original XML: drop them so the
+ *  patch grid's indexes line up with document-order w:tc segments */
+function patchableCells(row: TableCell[] | undefined): TableCell[] {
+  return (row ?? []).filter((cell) => !cell.gridGap)
+}
+
 /** per-cell text changes on an original table block; null when untouched */
 function tableTextsPatch(node: PmNode, original: Block): (string[] | null)[][] | null {
   if (original.type !== 'table' || node.attrs?.blockType !== 'table') return null
@@ -1883,15 +2012,16 @@ function tableTextsPatch(node: PmNode, original: Block): (string[] | null)[][] |
   const orig = original.table
   if (!current || !orig) return null
   let changed = false
-  const texts = current.rows.map((row, r) =>
-    row.map((cell, c) => {
-      const originalCell = orig.rows[r]?.[c]
+  const texts = current.rows.map((row, r) => {
+    const origRow = patchableCells(orig.rows[r])
+    return patchableCells(row).map((cell, c) => {
+      const originalCell = origRow[c]
       if (!originalCell) return null
       if (cell.paras.join('\n') === originalCell.paras.join('\n')) return null
       changed = true
       return cell.paras
-    }),
-  )
+    })
+  })
   return changed ? texts : null
 }
 
@@ -1901,9 +2031,10 @@ function tableTextsPatchFromModel(
 ): (CellTextsPatch | null)[][] | null {
   if (original.type !== 'table' || !original.table) return null
   let changed = false
-  const texts = current.rows.map((row, r) =>
-    row.map((cell, c): CellTextsPatch | null => {
-      const originalCell = original.table!.rows[r]?.[c]
+  const texts = current.rows.map((row, r) => {
+    const origRow = patchableCells(original.table!.rows[r])
+    return patchableCells(row).map((cell, c): CellTextsPatch | null => {
+      const originalCell = origRow[c]
       if (!originalCell) return null
       // nested tables: diff cell texts per table; changes go through the recursive surgical patch
       if (cell.nestedTables?.length && originalCell.nestedTables?.length) {
@@ -1922,8 +2053,8 @@ function tableTextsPatchFromModel(
       if (cell.paras.join('\n') === originalCell.paras.join('\n')) return null
       changed = true
       return cell.paras
-    }),
-  )
+    })
+  })
   return changed ? texts : null
 }
 
@@ -1931,14 +2062,15 @@ function tableTextsPatchFromModel(
 function nestedTextsDiff(current: TableModel, original: TableModel): (string[] | null)[][] | null {
   if (current.rows.length !== original.rows.length) return null
   let changed = false
-  const grid = current.rows.map((row, r) =>
-    row.map((cell, c) => {
-      const originalCell = original.rows[r]?.[c]
+  const grid = current.rows.map((row, r) => {
+    const origRow = patchableCells(original.rows[r])
+    return patchableCells(row).map((cell, c) => {
+      const originalCell = origRow[c]
       if (!originalCell || cell.paras.join('\n') === originalCell.paras.join('\n')) return null
       changed = true
       return cell.paras
-    }),
-  )
+    })
+  })
   return changed ? grid : null
 }
 

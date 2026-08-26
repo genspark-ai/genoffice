@@ -234,9 +234,9 @@ describe('styleUpserts style write-back', () => {
 describe('toggle-off (w:val="0") overrides inherited formatting', () => {
   const TOGGLE_STYLES =
     '<w:style w:type="paragraph" w:styleId="BoldBase"><w:name w:val="Bold Base"/>' +
-    '<w:rPr><w:b/><w:i/><w:strike/><w:u w:val="single"/></w:rPr></w:style>' +
+    '<w:rPr><w:b/><w:i/><w:strike/><w:u w:val="single"/><w:smallCaps/></w:rPr></w:style>' +
     '<w:style w:type="paragraph" w:styleId="PlainChild"><w:name w:val="Plain Child"/><w:basedOn w:val="BoldBase"/>' +
-    '<w:rPr><w:b w:val="0"/><w:i w:val="false"/><w:strike w:val="0"/><w:u w:val="none"/></w:rPr></w:style>' +
+    '<w:rPr><w:b w:val="0"/><w:i w:val="false"/><w:strike w:val="0"/><w:u w:val="none"/><w:smallCaps w:val="0"/></w:rPr></w:style>' +
     '<w:style w:type="paragraph" w:styleId="GrandChild"><w:name w:val="Grand Child"/><w:basedOn w:val="PlainChild"/></w:style>'
 
   it('records explicit off in the style display and through basedOn chains', async () => {
@@ -251,23 +251,26 @@ describe('toggle-off (w:val="0") overrides inherited formatting', () => {
       italic: true,
       strike: true,
       underline: true,
+      caps: 'small',
     })
     const child = doc.styles.get('PlainChild')!.display!
     expect(child.bold).toBe(false)
     expect(child.italic).toBe(false)
     expect(child.strike).toBe(false)
     expect(child.underline).toBe(false)
+    expect(child.caps).toBe('none')
     // the grandchild inherits the explicit off, not the grandparent's on
     const grand = doc.styles.get('GrandChild')!.display!
     expect(grand.bold).toBe(false)
     expect(grand.underline).toBe(false)
+    expect(grand.caps).toBe('none')
   })
 
   it('records explicit off on runs as false, absent as undefined', async () => {
     const doc = await parseDocx(
       await buildDocx({
         bodyXml:
-          '<w:p><w:r><w:rPr><w:b w:val="0"/><w:u w:val="none"/></w:rPr><w:t>off</w:t></w:r>' +
+          '<w:p><w:r><w:rPr><w:b w:val="0"/><w:u w:val="none"/><w:caps w:val="0"/></w:rPr><w:t>off</w:t></w:r>' +
           '<w:r><w:rPr><w:b/></w:rPr><w:t>on</w:t></w:r>' +
           '<w:r><w:t>unset</w:t></w:r></w:p>',
       }),
@@ -275,8 +278,10 @@ describe('toggle-off (w:val="0") overrides inherited formatting', () => {
     const runs = doc.blocks[0].runs!
     expect(runs[0].bold).toBe(false)
     expect(runs[0].underline).toBe(false)
+    expect(runs[0].caps).toBe('none')
     expect(runs[1].bold).toBe(true)
     expect(runs[2].bold).toBeUndefined()
     expect(runs[2].underline).toBeUndefined()
+    expect(runs[2].caps).toBeUndefined()
   })
 })

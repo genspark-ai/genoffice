@@ -27,6 +27,7 @@ import {
 import { custGeomBackgroundCss, shapeBackgroundCss, shapeTextInsetsPx } from './shape-svg'
 import { t } from '../i18n/locale'
 import {
+  lumHex,
   type ChartDisplay,
   type FieldDisplay,
   type FormulaDisplay,
@@ -95,7 +96,35 @@ export function renderFieldSpec(field: FieldDisplay): DomSpec | null {
     return ['div', { class: 'doc-field-pagebreak' }, ['span', {}, t('editorPageBreak')]]
   }
   if (field.kind === 'text' && field.left) {
-    return ['div', { class: 'doc-field-text', contenteditable: 'false' }, field.left]
+    // carry the result runs' face/size: the passthrough div otherwise inherits
+    // the document default and mis-snaps on a typed line grid. Spaces must
+    // survive inline: prosemirror-view injects a higher-specificity
+    // `.ProseMirror [contenteditable=false] { white-space: normal }`
+    const styles: string[] = ['white-space:pre-wrap']
+    if (field.szHalfPoints) styles.push(`font-size:${field.szHalfPoints / 2}pt`)
+    if (field.align) styles.push(`text-align:${field.align}`)
+    if (field.fontFamily) {
+      styles.push(
+        `--doc-line-factor:${lineHeightFactor(field.fontFamily)}`,
+        `font-family:${cssFontFamily(field.fontFamily)}`,
+      )
+    }
+    if (field.szHalfPoints || field.fontFamily || field.lineRule) {
+      // explicit w:spacing beats the single-spacing snap; either way the line
+      // strut must recompute from the field's own size/face, not the
+      // wrapper's document-default computed box
+      styles.push(
+        `line-height:${cssLineHeight(field.lineRule, field.lineRawTwips, field.lineSpacing) ?? cssGridLineBase()}`,
+      )
+      const mult = cssAutoLineMult(field.lineRule, field.lineRawTwips, field.lineSpacing)
+      if (mult && mult !== 1) styles.push(`--doc-line-mult:${mult}`)
+    }
+    const attrs: Record<string, string> = {
+      class: 'doc-field-text',
+      contenteditable: 'false',
+      style: styles.join(';'),
+    }
+    return ['div', attrs, field.left]
   }
   return null
 }
@@ -127,10 +156,28 @@ export function renderFormulaSpec(formula: FormulaDisplay): DomSpec {
 
 // ---- embedded charts: SVG preview + editable data grid ----
 
-/** Office theme default accent colors, used for new charts */
+/** Office theme default accent colors, used for new charts / theme-less docs */
 const CHART_PALETTE = ['4472C4', 'ED7D31', 'A5A5A5', 'FFC000', '5B9BD5', '70AD47']
 
-const chartColor = (i: number) => `#${CHART_PALETTE[i % CHART_PALETTE.length]}`
+/** series/point cycle color; repeat rounds darken like Word (accentN lumMod 60%) */
+function chartColor(chart: ChartDisplay, i: number): string {
+  const palette = chart.palette?.length ? chart.palette : CHART_PALETTE
+  const base = palette[i % palette.length]
+  const round = Math.floor(i / palette.length)
+  return `#${round > 0 ? lumHex(base, 0.6 ** round, 0) : base}`
+}
+
+/** explicit c:ser fill beats the style cycle */
+function seriesColor(chart: ChartDisplay, s: number): string {
+  const explicit = chart.series[s]?.color
+  return explicit ? `#${explicit}` : chartColor(chart, s)
+}
+
+/** per-point fill (pie slices): c:dPt beats the cycle */
+function pointColor(chart: ChartDisplay, s: number, i: number): string {
+  const explicit = chart.series[s]?.pointColors?.[i]
+  return explicit ? `#${explicit}` : chartColor(chart, i)
+}
 
 /**
  * Chart preview + data grid. The grid is a chart data sheet
@@ -167,7 +214,7 @@ export function renderChartSpec(chart: ChartDisplay): DomSpec {
           class: `doc-chart-name${ser.name !== undefined ? ' doc-chart-cell' : ''}`,
           'data-ser': String(s),
           contenteditable: 'false',
-          style: `border-left-color:${chartColor(s)}`,
+          style: `border-left-color:${seriesColor(chart, s)}`,
         },
         ser.name ?? t('editorChartSeries', { num: s + 1 }),
       ],
@@ -224,9 +271,16 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   if (!canvas || !chart?.series.length) return
   // series-name legend inside the SVG: the data grid is an editing affordance
   // (hidden unless the block is selected), so the printed chart must carry the
-  // legend itself, like Word/LibreOffice output
-  const legendNames = chart.series.map((s, i) => s.name ?? t('editorChartSeries', { num: i + 1 }))
-  const showLegend = chart.series.length > 1 || chart.series.some((s) => s.name)
+  // legend itself, like Word/LibreOffice output. Pie legends list the
+  // categories (one colored slice each), not the series.
+  const isPie = chart.kind === 'pie'
+  const legendNames = isPie
+    ? chart.categories
+    : chart.series.map((s, i) => s.name ?? t('editorChartSeries', { num: i + 1 }))
+  const legendColor = (i: number) => (isPie ? pointColor(chart, 0, i) : seriesColor(chart, i))
+  const showLegend = isPie
+    ? legendNames.length > 0
+    : chart.series.length > 1 || chart.series.some((s) => s.name)
   // the title row renders above the SVG but Word draws the title inside the
   // drawing extent; shrink the plot so title + plot together fill heightPx,
   // or pagination gains ~22px per titled chart and drifts
@@ -254,6 +308,7 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   svg.style.height = `${geom.height}px`
 
   if (chart.kind === 'pie') drawPie(svg, chart, geom)
+  else if (chart.kind === 'scatter' || chart.kind === 'bubble') drawScatter(svg, chart, geom)
   else if (chart.kind === 'bar' && chart.horizontal) drawAxesHorizontal(svg, chart, geom)
   else drawAxes(svg, chart, geom)
 
@@ -266,7 +321,7 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
         y: String(geom.height - 15),
         width: '8',
         height: '8',
-        fill: chartColor(i),
+        fill: legendColor(i),
       })
       svgEl(
         svg,
@@ -298,21 +353,49 @@ function svgEl(
   return el
 }
 
+/** per-category positive/negative stack sums plus the absolute total (percentStacked base) */
+function stackSums(
+  chart: ChartDisplay,
+  cols: number,
+): { pos: number[]; neg: number[]; abs: number[] } {
+  const pos = new Array<number>(cols).fill(0)
+  const neg = new Array<number>(cols).fill(0)
+  const abs = new Array<number>(cols).fill(0)
+  for (const ser of chart.series) {
+    ser.values.forEach((v, c) => {
+      if (v === null || c >= cols) return
+      if (v >= 0) pos[c] += v
+      else neg[c] += v
+      abs[c] += Math.abs(v)
+    })
+  }
+  return { pos, neg, abs }
+}
+
 /** bar / line / area charts share the same axes and scale */
 function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
-  const values = chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
+  const cols = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
+  const stacked = (chart.kind === 'bar' || chart.kind === 'area') && chart.grouping !== undefined
+  const pct = stacked && chart.grouping === 'percentStacked'
+  const sums = stacked ? stackSums(chart, cols) : null
+  // percentStacked: each value becomes its share of the category's absolute total
+  const norm = (value: number, c: number) =>
+    pct ? (sums!.abs[c] > 0 ? (value / sums!.abs[c]) * 100 : 0) : value
+  const values = stacked
+    ? [...sums!.pos.map(norm), ...sums!.neg.map(norm)]
+    : chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
   // "nice" axis bounds (1/2/5×10ⁿ step, integer-friendly labels like Word/LO)
   const rawMax = Math.max(0, ...values)
   const rawMin = Math.min(0, ...values)
   const step = niceStep((rawMax - rawMin) / 5 || 1)
   const min = Math.floor(rawMin / step) * step
   // Word/LO leave headroom: the top tick sits strictly above the data maximum
+  // (percent axes stop at 100%)
   let max = Math.ceil(rawMax / step) * step || step
-  if (rawMax > 0 && max <= rawMax + 1e-9) max += step
+  if (!pct && rawMax > 0 && max <= rawMax + 1e-9) max += step
   const span = max - min || 1
   const plotW = geom.width - geom.left - geom.right
   const plotH = geom.height - geom.top - geom.bottom
-  const cols = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
   const yOf = (v: number) => geom.top + plotH - ((v - min) / span) * plotH
   const slotW = plotW / cols
 
@@ -337,7 +420,7 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
         class: 'doc-chart-axis-label',
         'text-anchor': 'end',
       },
-      formatAxisValue(v),
+      formatAxisValue(v) + (pct ? '%' : ''),
     )
   }
 
@@ -357,7 +440,31 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
     )
   })
 
-  if (chart.kind === 'bar') {
+  if (chart.kind === 'bar' && stacked) {
+    // one bar per category, series segments cumulated up (down for negatives)
+    const posBase = new Array<number>(cols).fill(0)
+    const negBase = new Array<number>(cols).fill(0)
+    const barPad = slotW * 0.2
+    chart.series.forEach((ser, s) => {
+      ser.values.forEach((value, c) => {
+        if (value === null || c >= cols) return
+        const v = norm(value, c)
+        const from = v >= 0 ? posBase[c] : negBase[c]
+        const to = from + v
+        const y0 = yOf(from)
+        const y1 = yOf(to)
+        svgEl(svg, 'rect', {
+          x: String(geom.left + slotW * c + barPad),
+          y: String(Math.min(y0, y1)),
+          width: String(slotW - barPad * 2),
+          height: String(Math.max(1, Math.abs(y0 - y1))),
+          fill: seriesColor(chart, s),
+        })
+        if (v >= 0) posBase[c] = to
+        else negBase[c] = to
+      })
+    })
+  } else if (chart.kind === 'bar') {
     const groupPad = slotW * 0.15
     const barW = (slotW - groupPad * 2) / chart.series.length
     chart.series.forEach((ser, s) => {
@@ -371,9 +478,32 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
           y: String(Math.min(y0, y1)),
           width: String(barW * 0.84),
           height: String(Math.max(1, Math.abs(y0 - y1))),
-          fill: chartColor(s),
+          fill: seriesColor(chart, s),
         })
       })
+    })
+  } else if (chart.kind === 'area' && stacked) {
+    // stacked / 100% stacked area: each band fills between the running total
+    // below it and its own cumulated top (empty cells count as 0, like Excel)
+    const bases = new Array<number>(cols).fill(0)
+    const xAt = (c: number) => geom.left + slotW * c + slotW / 2
+    chart.series.forEach((ser, s) => {
+      const tops = bases.map((b, c) => b + norm(ser.values[c] ?? 0, c))
+      const upper = tops.map((v, c) => `${xAt(c)},${yOf(v)}`)
+      const lower = bases.map((v, c) => `${xAt(c)},${yOf(v)}`).reverse()
+      svgEl(svg, 'polygon', {
+        points: [...upper, ...lower].join(' '),
+        fill: seriesColor(chart, s),
+        'fill-opacity': '0.35',
+        stroke: 'none',
+      })
+      svgEl(svg, 'polyline', {
+        points: upper.join(' '),
+        fill: 'none',
+        stroke: seriesColor(chart, s),
+        'stroke-width': '2',
+      })
+      tops.forEach((v, c) => (bases[c] = v))
     })
   } else {
     // line / area / other: one polyline per series through slot centers
@@ -389,7 +519,7 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
         const last = points[points.length - 1].split(',')[0]
         svgEl(svg, 'polygon', {
           points: `${first},${yOf(0)} ${points.join(' ')} ${last},${yOf(0)}`,
-          fill: chartColor(s),
+          fill: seriesColor(chart, s),
           'fill-opacity': '0.35',
           stroke: 'none',
         })
@@ -397,27 +527,169 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
       svgEl(svg, 'polyline', {
         points: points.join(' '),
         fill: 'none',
-        stroke: chartColor(s),
+        stroke: seriesColor(chart, s),
         'stroke-width': '2',
       })
+      if (chart.markers) {
+        for (const p of points) {
+          const [x, y] = p.split(',')
+          svgEl(svg, 'circle', { cx: x, cy: y, r: '2.5', fill: seriesColor(chart, s) })
+        }
+      }
     })
   }
+}
+
+/** scatter / bubble: numeric x-y plot; bubble radius scales by point size (area-true) */
+function drawScatter(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
+  interface Pt {
+    x: number
+    y: number
+    size: number | null
+    c: number
+  }
+  const pts: Pt[][] = chart.series.map((ser) =>
+    ser.values
+      .map((y, c) => {
+        // no xVal cache at all → 1-based index axis; a null inside the cache is a gap
+        const x = ser.xValues ? (ser.xValues[c] ?? null) : c + 1
+        return y === null || x === null ? null : { x, y, size: ser.sizes?.[c] ?? null, c }
+      })
+      .filter((p): p is Pt => p !== null),
+  )
+  const all = pts.flat()
+  if (all.length === 0) return
+  const axis = (vals: number[]) => {
+    let rawMax = Math.max(...vals)
+    let rawMin = Math.min(...vals)
+    // Excel-style auto minimum: anchor at 0 unless the data sits far above it
+    // (date-serial x values must not squash the points against the right edge)
+    if (rawMin > 0 && rawMin <= rawMax - rawMin) rawMin = 0
+    if (rawMax < 0) rawMax = 0
+    const step = niceStep((rawMax - rawMin) / 5 || 1)
+    const min = Math.floor(rawMin / step) * step
+    let max = Math.ceil(rawMax / step) * step || step
+    if (rawMax > 0 && max <= rawMax + 1e-9) max += step
+    return { min, max, step, span: max - min || 1 }
+  }
+  const ax = axis(all.map((p) => p.x))
+  const ay = axis(all.map((p) => p.y))
+  const plotW = geom.width - geom.left - geom.right
+  const plotH = geom.height - geom.top - geom.bottom
+  const xOf = (v: number) => geom.left + ((v - ax.min) / ax.span) * plotW
+  const yOf = (v: number) => geom.top + plotH - ((v - ay.min) / ay.span) * plotH
+
+  // horizontal gridlines with value labels, like the category charts
+  const ySteps = Math.max(1, Math.round(ay.span / ay.step))
+  for (let i = 0; i <= ySteps; i++) {
+    const v = ay.min + ay.step * i
+    const y = yOf(v)
+    svgEl(svg, 'line', {
+      x1: String(geom.left),
+      y1: String(y),
+      x2: String(geom.width - geom.right),
+      y2: String(y),
+      class: 'doc-chart-grid',
+    })
+    svgEl(
+      svg,
+      'text',
+      {
+        x: String(geom.left - 6),
+        y: String(y + 3),
+        class: 'doc-chart-axis-label',
+        'text-anchor': 'end',
+      },
+      formatAxisValue(v),
+    )
+  }
+
+  // x labels: date/text categories sit under their own data points (Word puts
+  // the cached texts along the axis); numeric x gets plain scale ticks
+  const catNumeric =
+    chart.categories.length === 0 ||
+    chart.categories.every((c) => c === '' || Number.isFinite(Number(c)))
+  const labelY = String(geom.height - geom.bottom + 14)
+  if (catNumeric) {
+    const xSteps = Math.max(1, Math.round(ax.span / ax.step))
+    for (let i = 0; i <= xSteps; i++) {
+      const v = ax.min + ax.step * i
+      svgEl(
+        svg,
+        'text',
+        { x: String(xOf(v)), y: labelY, class: 'doc-chart-axis-label', 'text-anchor': 'middle' },
+        formatAxisValue(v),
+      )
+    }
+  } else {
+    const anchor = pts[0] ?? []
+    let lastEnd = -Infinity
+    chart.categories.forEach((cat, c) => {
+      const p = anchor.find((pt) => pt.c === c)
+      if (!p) return
+      // greedy label thinning: drop labels that would overlap the previous one
+      const x = xOf(p.x)
+      const half = cat.length * 2.6
+      if (x - half < lastEnd + 4) return
+      lastEnd = x + half
+      svgEl(
+        svg,
+        'text',
+        { x: String(x), y: labelY, class: 'doc-chart-axis-label', 'text-anchor': 'middle' },
+        cat,
+      )
+    })
+  }
+
+  const maxSize = Math.max(0, ...all.map((p) => p.size ?? 0))
+  const rMax = Math.min(plotW, plotH) * 0.125
+  pts.forEach((points, s) => {
+    const color = seriesColor(chart, s)
+    if (chart.series[s]?.line && points.length > 1) {
+      svgEl(svg, 'polyline', {
+        points: points.map((p) => `${xOf(p.x)},${yOf(p.y)}`).join(' '),
+        fill: 'none',
+        stroke: color,
+        'stroke-width': '2',
+      })
+    }
+    // scatterStyle "line"/"smooth" draws no point markers on lined series
+    if (chart.kind === 'scatter' && !chart.markers && chart.series[s]?.line) return
+    for (const p of points) {
+      const bubble = chart.kind === 'bubble' && p.size !== null && maxSize > 0
+      const r = bubble ? Math.max(3, rMax * Math.sqrt(Math.abs(p.size!) / maxSize)) : 3
+      svgEl(svg, 'circle', {
+        cx: String(xOf(p.x)),
+        cy: String(yOf(p.y)),
+        r: String(r),
+        fill: color,
+        ...(bubble ? { 'fill-opacity': '0.85', stroke: '#fff', 'stroke-width': '1' } : {}),
+      })
+    }
+  })
 }
 
 /** horizontal bar charts (c:barDir="bar"): value axis on x, categories on y,
  * first category in the bottom row and series 1 at the bottom of each group, like Word */
 function drawAxesHorizontal(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
-  const values = chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
+  const rows = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
+  const stacked = chart.grouping !== undefined
+  const pct = chart.grouping === 'percentStacked'
+  const sums = stacked ? stackSums(chart, rows) : null
+  const norm = (value: number, c: number) =>
+    pct ? (sums!.abs[c] > 0 ? (value / sums!.abs[c]) * 100 : 0) : value
+  const values = stacked
+    ? [...sums!.pos.map(norm), ...sums!.neg.map(norm)]
+    : chart.series.flatMap((s) => s.values).filter((v): v is number => v !== null)
   const rawMax = Math.max(0, ...values)
   const rawMin = Math.min(0, ...values)
   const step = niceStep((rawMax - rawMin) / 5 || 1)
   const min = Math.floor(rawMin / step) * step
   let max = Math.ceil(rawMax / step) * step || step
-  if (rawMax > 0 && max <= rawMax + 1e-9) max += step
+  if (!pct && rawMax > 0 && max <= rawMax + 1e-9) max += step
   const span = max - min || 1
   const plotW = geom.width - geom.left - geom.right
   const plotH = geom.height - geom.top - geom.bottom
-  const rows = Math.max(chart.categories.length, ...chart.series.map((s) => s.values.length), 1)
   const xOf = (v: number) => geom.left + ((v - min) / span) * plotW
   const slotH = plotH / rows
 
@@ -442,7 +714,7 @@ function drawAxesHorizontal(svg: SVGElement, chart: ChartDisplay, geom: ChartGeo
         class: 'doc-chart-axis-label',
         'text-anchor': 'middle',
       },
-      formatAxisValue(v),
+      formatAxisValue(v) + (pct ? '%' : ''),
     )
   }
 
@@ -461,6 +733,32 @@ function drawAxesHorizontal(svg: SVGElement, chart: ChartDisplay, geom: ChartGeo
     )
   })
 
+  if (stacked) {
+    const posBase = new Array<number>(rows).fill(0)
+    const negBase = new Array<number>(rows).fill(0)
+    const barPad = slotH * 0.2
+    chart.series.forEach((ser, s) => {
+      ser.values.forEach((value, c) => {
+        if (value === null || c >= rows) return
+        const v = norm(value, c)
+        const from = v >= 0 ? posBase[c] : negBase[c]
+        const to = from + v
+        const x0 = xOf(from)
+        const x1 = xOf(to)
+        svgEl(svg, 'rect', {
+          x: String(Math.min(x0, x1)),
+          y: String(geom.top + plotH - slotH * (c + 1) + barPad),
+          width: String(Math.max(1, Math.abs(x0 - x1))),
+          height: String(slotH - barPad * 2),
+          fill: seriesColor(chart, s),
+        })
+        if (v >= 0) posBase[c] = to
+        else negBase[c] = to
+      })
+    })
+    return
+  }
+
   const groupPad = slotH * 0.15
   const barH = (slotH - groupPad * 2) / chart.series.length
   chart.series.forEach((ser, s) => {
@@ -474,7 +772,7 @@ function drawAxesHorizontal(svg: SVGElement, chart: ChartDisplay, geom: ChartGeo
         y: String(y + barH * 0.08),
         width: String(Math.max(1, Math.abs(x0 - x1))),
         height: String(barH * 0.84),
-        fill: chartColor(s),
+        fill: seriesColor(chart, s),
       })
     })
   })
@@ -502,7 +800,7 @@ function drawPie(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
       values.filter((v) => v > 0).length === 1
         ? `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy - 0.01} Z`
         : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`
-    svgEl(svg, 'path', { d, fill: chartColor(i), stroke: '#fff', 'stroke-width': '1' })
+    svgEl(svg, 'path', { d, fill: pointColor(chart, 0, i), stroke: '#fff', 'stroke-width': '1' })
   })
 }
 
@@ -713,8 +1011,8 @@ function textSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
   const letterSpacing = runLetterSpacingCss(run)
   const runStyle = [
     run.color ? `color:#${run.color}` : '',
-    run.bold ? 'font-weight:700' : '',
-    run.italic ? 'font-style:italic' : '',
+    run.bold ? 'font-weight:700' : run.bold === false ? 'font-weight:normal' : '',
+    run.italic ? 'font-style:italic' : run.italic === false ? 'font-style:normal' : '',
     run.underline ? 'text-decoration:underline' : '',
     run.font || run.fontAscii || cs
       ? `font-family:${
@@ -727,6 +1025,7 @@ function textSpanSpec(run: Run, autoSpace?: boolean): DomSpec {
     letterSpacing ? `letter-spacing:${letterSpacing}` : '',
     run.caps === 'all' ? 'text-transform:uppercase' : '',
     run.caps === 'small' ? 'font-variant-caps:small-caps' : '',
+    run.caps === 'none' ? 'text-transform:none;font-variant-caps:normal' : '',
     // explicit autoSpaceDE/DN off also disables the browser's native gap (same as the editor path)
     autoSpace === false ? 'text-autospace:no-autospace' : '',
   ]
@@ -963,6 +1262,8 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
         }
       }
       const style = [
+        // gridBefore/gridAfter placeholder: bare grid space, never bordered/filled
+        cell.gridGap ? 'border:none;background:none' : '',
         cell.textDirection === 'tbRl'
           ? 'writing-mode:vertical-rl'
           : cell.textDirection === 'btLr'
@@ -1084,6 +1385,12 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
   }
   const pad = cellPadCss(model.cellMarTwips ?? null)
   if (pad) tableStyles.push(`--doc-cell-pad:${pad}`)
+  // w:tblCellSpacing: the CSS gap is twice the per-cell-side value (see DocTable.renderHTML)
+  if (model.cellSpacingTwips) {
+    const gapPx = ((model.cellSpacingTwips * 2) / 15).toFixed(1)
+    tableStyles.push('border-collapse:separate', `border-spacing:${gapPx}px`)
+  }
+  if (model.fill) tableStyles.push(`background-color:#${model.fill}`)
   tableStyles.push(...tableBordersCss((model.borders as TableBordersAttr | undefined) ?? null))
   if (model.align === 'center') {
     if (centerMargin) tableStyles.push(centerMargin)

@@ -148,6 +148,16 @@ export interface PageSlice {
   physHeight?: number
 }
 
+/**
+ * Page owning a page-pinned float: the page its anchor lands on (anchorTop and
+ * slices share gapless virtual coordinates); out-of-range anchors clamp.
+ */
+export function pinnedFloatPage(slices: PageSlice[], anchorTop: number): number {
+  const idx = slices.findIndex((s) => anchorTop >= s.start && anchorTop < s.end)
+  if (idx >= 0) return idx
+  return anchorTop < (slices[0]?.start ?? 0) ? 0 : Math.max(0, slices.length - 1)
+}
+
 /** Pagination geometry for one section */
 export interface SectionGeom {
   contentHeight: number
@@ -1851,7 +1861,7 @@ export interface PageNoteItem {
       strike?: boolean
       color?: string
       sizeHalfPoints?: number
-      caps?: 'all' | 'small'
+      caps?: 'all' | 'small' | 'none'
     }>
   >
 }
@@ -2216,7 +2226,10 @@ export function fillLineBoxes(
           block.docxIndex !== undefined ? metaOf?.(block.docxIndex)?.tableRowFlags : undefined
         if (flags)
           rows.forEach((r, i) => {
-            if (flags[i]?.isHeader) r.isHeader = true
+            // Editable native tables publish an explicit live value on each tr;
+            // it must beat the source XML so turning repetition off takes effect
+            // before the document is saved and reopened.
+            if (r.isHeader === undefined && flags[i]?.isHeader) r.isHeader = true
             if (flags[i]?.cantSplit) r.cantSplit = true
             if (flags[i]?.minHPx) r.minHPx = flags[i].minHPx
           })
@@ -2360,7 +2373,14 @@ function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number):
       gapAbove,
       zoomFactor,
     )
-    return { height: b.height, contentBottom, ...(cuts.length > 0 ? { cutYs: cuts } : {}) }
+    return {
+      height: b.height,
+      contentBottom,
+      ...(trs[i].hasAttribute('data-repeat-header')
+        ? { isHeader: trs[i].getAttribute('data-repeat-header') === '1' }
+        : {}),
+      ...(cuts.length > 0 ? { cutYs: cuts } : {}),
+    }
   })
 }
 

@@ -204,6 +204,7 @@ import {
   dialogParent,
   endHistoryBatch,
   getFontMetrics,
+  resetFontMetrics,
   journalOps,
   makeMediaResolver,
   pushHistory,
@@ -226,6 +227,13 @@ import {
 } from './session-state'
 import { registerAiIpc, registerSlidesOnlyAiIpc } from './ai-ipc'
 import { listPrivateFontFaces, getPrivateFontData } from './fonts'
+import {
+  downloadFontFamily,
+  initFontStore,
+  installLocalFontFiles,
+  listFontCatalog,
+  missingCatalogFonts,
+} from './font-store'
 
 /** One slide, copied from any deck open in this process, waiting to be pasted into another. */
 let slideClipboard: { bundle: SlideBundle; png?: string } | null = null
@@ -362,7 +370,6 @@ function trackSlidesWebContents(wc: WebContents): void {
     else untitledRecovery.delete(wc.id)
     sessions.delete(wc.id)
     pendingByWc.delete(wc.id)
-    clipboards.delete(wc.id)
     lastSlidePaste.delete(wc.id)
     closeSaveWaiters.get(wc.id)?.(false)
     closeSaveWaiters.delete(wc.id)
@@ -371,8 +378,8 @@ function trackSlidesWebContents(wc: WebContents): void {
   })
 }
 
-// ── In-app element clipboard (isolated per webContents; pasteCount drives cascading offset) ─
-const clipboards = new Map<number, { items: ElementClipboardItem[]; pasteCount: number }>()
+// ── In-app element clipboard (app-wide, so elements copied in one deck paste into any other open deck; pasteCount drives cascading offset) ─
+let elementClipboard: { items: ElementClipboardItem[]; pasteCount: number } | null = null
 
 /** Shell hook: a view opened a file (including ⌘O inside a tab) — used to update tab titles and de-duplicate paths */
 let slidesOpenedHook: ((wc: WebContents, path: string) => void) | null = null
@@ -1031,6 +1038,50 @@ export function registerSlidesIpc(): void {
   ipcMain.handle('slides:private-font-faces', () => listPrivateFontFaces())
   ipcMain.handle('slides:private-font-data', (_e, id: string) => getPrivateFontData(id))
 
+  initFontStore()
+  // Fonts changed (download or local install): rebuild every open session with a fresh
+  // registry and push the relaid-out slides + a re-sync ping to all attached windows.
+  const afterFontsChanged = (): void => {
+    resetFontMetrics()
+    const seen = new Set<Session>()
+    for (const [wcId, session] of sessions) {
+      if (seen.has(session)) continue
+      seen.add(session)
+      const payload = {
+        slides: buildAllRenderSlides(session.opened, session.fitWidthPx),
+        size: { cx: session.opened.deck.size.cx, cy: session.opened.deck.size.cy },
+      }
+      for (const id of attachedIds(session))
+        webContents.fromId(id)?.send('slides:deck-changed', payload)
+      void wcId
+    }
+    for (const wc of webContents.getAllWebContents()) wc.send('slides:fonts-changed')
+  }
+  ipcMain.handle('slides:font-catalog', () => listFontCatalog())
+  ipcMain.handle('slides:font-download', async (_e, family: string) => {
+    try {
+      await downloadFontFamily(family)
+      afterFontsChanged()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  ipcMain.handle('slides:font-install-local', async () => {
+    const r = await showOpenDialogWithMemory(dialog, dialogParent(), {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Fonts', extensions: ['ttf', 'otf', 'ttc', 'otc'] }],
+    })
+    if (r.canceled || !r.filePaths.length) return { families: [] }
+    const families = installLocalFontFiles(r.filePaths)
+    if (families.length) afterFontsChanged()
+    return { families }
+  })
+  ipcMain.handle('slides:font-missing', (e) => {
+    const session = sessions.get(e.sender.id)
+    return session ? missingCatalogFonts(session.opened) : []
+  })
+
   // Shared shim core: one undo step wrapping a transaction; on failure the step is
   // erased (the executor already restored the model, so history stays consistent).
   // Handlers keep only surface translation and result shaping around this.
@@ -1512,7 +1563,9 @@ export function registerSlidesIpc(): void {
     ): Promise<{ ok: boolean; marker?: string; error?: string }> => {
       if (!cloudSlideEnabled()) return { ok: false, error: 'cloud slide generation is disabled' }
       try {
-        // ultra = opus-class model, matching the local path's quality tier; GENOFFICE_CLOUD_SLIDE_TIER=standard opts down
+        // Ultra resolves to the opus-class slide model server-side; standard is the
+        // lighter MiniMax M3 model. Keep an explicit escape hatch for quality
+        // comparisons and emergency rollback.
         const tier = process.env.GENOFFICE_CLOUD_SLIDE_TIER === 'standard' ? 'standard' : 'ultra'
         const started = Date.now()
         const { bytes, model } = await gskSlideGenerate({
@@ -1555,6 +1608,7 @@ export function registerSlidesIpc(): void {
       try {
         const started = Date.now()
         const { bytes, imageFailures } = await buildPagePptx(parsed.spec, {
+          fontMetrics: getFontMetrics(),
           fetchImage: async (url) => {
             const resp = await fetchRemoteImage(url)
             if (!resp || !resp.ok) return null
@@ -3074,23 +3128,33 @@ export function registerSlidesIpc(): void {
     },
   )
 
-  ipcMain.handle('slides:clipboard-external', () => {
-    // Our marker still present = the last copy came from this app -> use internal element paste
-    // (on macOS custom formats don't appear in availableFormats, so check via readBuffer)
-    const marker = (format: string) => {
-      try {
-        return clipboard.readBuffer(format).length > 0
-      } catch {
-        return false
-      }
+  // Our marker still present = the last copy came from this app -> use internal element paste
+  // (on macOS custom formats don't appear in availableFormats, so check via readBuffer)
+  const clipboardMarker = (format: string) => {
+    try {
+      return clipboard.readBuffer(format).length > 0
+    } catch {
+      return false
     }
-    if (slideClipboard && marker('io.genoffice.slides.slide')) return { kind: 'slide' }
-    if (marker('io.genoffice.slides.elements')) return { kind: 'internal' }
+  }
+
+  ipcMain.handle('slides:clipboard-external', () => {
+    if (slideClipboard && clipboardMarker('io.genoffice.slides.slide')) return { kind: 'slide' }
+    if (elementClipboard && clipboardMarker('io.genoffice.slides.elements'))
+      return { kind: 'internal' }
     const img = clipboard.readImage()
     if (!img.isEmpty()) return { kind: 'image', base64: img.toPNG().toString('base64'), ext: 'png' }
     const text = clipboard.readText()
     if (text.trim()) return { kind: 'text', text }
     return { kind: 'none' }
+  })
+
+  // Menu-enable probe: is there anything a paste would act on? (no image decode)
+  ipcMain.handle('slides:clipboard-probe', () => {
+    if (slideClipboard && clipboardMarker('io.genoffice.slides.slide')) return true
+    if (elementClipboard && clipboardMarker('io.genoffice.slides.elements')) return true
+    if (clipboard.availableFormats().some((f) => f.startsWith('image/'))) return true
+    return clipboard.readText().trim().length > 0
   })
 
   ipcMain.handle('slides:copy-elements', (e, op: CopyElementsOp) => {
@@ -3103,7 +3167,7 @@ export function registerSlidesIpc(): void {
       .filter((el): el is NonNullable<typeof el> => !!el)
       .map((el) => copyElementData(session.opened, slide, el))
     if (items.length) {
-      clipboards.set(e.sender.id, { items, pasteCount: 0 })
+      elementClipboard = { items, pasteCount: 0 }
       // Write our marker to the OS clipboard: an external copy overwrites it, so at paste time it tells whether internal or external is newer
       clipboard.writeBuffer('io.genoffice.slides.elements', Buffer.from('1'))
     }
@@ -3112,7 +3176,7 @@ export function registerSlidesIpc(): void {
 
   ipcMain.handle('slides:paste-elements', (e, op: PasteElementsOp) => {
     const session = sessions.get(e.sender.id)
-    const clip = clipboards.get(e.sender.id)
+    const clip = elementClipboard
     if (!session || !clip?.items.length) return null
     if (!session.opened.deck.slides[op.slideIndex]) return null
     const baseWidthPx = session.opened.deck.size.cx / EMU_PER_PX_96

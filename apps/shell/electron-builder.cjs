@@ -19,15 +19,37 @@
  * into the packaged app's package.json via extraMetadata and read back by
  * src/main/analytics.ts. When either is unset — every source/fork build —
  * nothing is injected and the app runs with analytics fully disabled.
+ *
+ * GENOFFICE_FONT_CDN_URL — base URL for the curated downloadable-font catalog.
+ * Official release jobs inject it through extraMetadata so the endpoint stays
+ * out of source. Without it, font download prompts/catalog entries are hidden;
+ * users can still install local font files.
  */
 
 const { execFileSync } = require('node:child_process')
 const { existsSync, rmSync } = require('node:fs')
 const { join } = require('node:path')
 
+function normalizeHttpsBaseUrl(name, value) {
+  if (!value || !value.trim()) return null
+  try {
+    const url = new URL(value.trim())
+    if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
+      throw new Error('invalid')
+    }
+    return `${url.origin}${url.pathname.replace(/\/+$/, '')}`
+  } catch {
+    throw new Error(`${name} must be an HTTPS base URL without credentials, query, or fragment`)
+  }
+}
+
 const updateUrl = process.env.GENOFFICE_UPDATE_URL
 const ga4MeasurementId = process.env.GENOFFICE_GA4_MEASUREMENT_ID
 const ga4ApiSecret = process.env.GENOFFICE_GA4_API_SECRET
+const fontCdnUrl = normalizeHttpsBaseUrl(
+  'GENOFFICE_FONT_CDN_URL',
+  process.env.GENOFFICE_FONT_CDN_URL,
+)
 
 // GENOFFICE_MAC_X64=1 — opt into packaging the Intel (x64) dmg/zip alongside
 // arm64. Off by default: Intel packages must only ever ship signed with the
@@ -469,15 +491,16 @@ if (updateUrl) {
   ]
 }
 
-// CI's "-c.extraMetadata.version=..." CLI override deep-merges with this
-// block, so both survive together in the packaged package.json.
+// CI's "-c.extraMetadata.version=..." CLI override deep-merges with this block,
+// so the version and all injected feature settings survive together.
+const extraMetadata = {}
 if (ga4MeasurementId && ga4ApiSecret) {
-  config.extraMetadata = {
-    genofficeAnalytics: {
-      measurementId: ga4MeasurementId,
-      apiSecret: ga4ApiSecret,
-    },
+  extraMetadata.genofficeAnalytics = {
+    measurementId: ga4MeasurementId,
+    apiSecret: ga4ApiSecret,
   }
 }
+if (fontCdnUrl) extraMetadata.genofficeFontCdn = { baseUrl: fontCdnUrl }
+if (Object.keys(extraMetadata).length) config.extraMetadata = extraMetadata
 
 module.exports = config

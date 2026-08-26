@@ -160,4 +160,35 @@ describe('page/margin-anchored textboxes outside the body column', () => {
     expect(box?.floating).toBe(true)
     expect(box?.offsetXEmu).toBe(Math.round((PAGE_W * 2000) / 100000) - MARGIN)
   })
+
+  it('centers a column-relative wp:align box in a single-column section', async () => {
+    const posH = `<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>`
+    const posV = `<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>`
+    const para = anchorPara(
+      posH,
+      posV,
+      textWsp({ offX: 0, offY: 0, cx: 600000, cy: 400000, text: 'boxed' }),
+      '<wp:extent cx="600000" cy="400000"/>',
+    ).replace('<wp:wrapSquare wrapText="bothSides"/>', '<wp:wrapNone/>')
+    const doc = await parseDocx(await buildDocx({ bodyXml: para }))
+    const [box] = doc.blocks[0].textboxes!
+    expect(box.floating).toBe(true)
+    expect(box.offsetXEmu).toBe(Math.round((PAGE_W - 2 * MARGIN - 600000) / 2))
+  })
+
+  it('keeps column-relative align on the flow placement in multi-column sections', async () => {
+    const posH = `<wp:positionH relativeFrom="column"><wp:align>center</wp:align></wp:positionH>`
+    const posV = `<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>`
+    const para = anchorPara(
+      posH,
+      posV,
+      textWsp({ offX: 0, offY: 0, cx: 600000, cy: 400000, text: 'boxed' }),
+      '<wp:extent cx="600000" cy="400000"/>',
+    ).replace('<wp:wrapSquare wrapText="bothSides"/>', '<wp:wrapNone/>')
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: para, sectPrExtra: '<w:cols w:num="2" w:space="708"/>' }),
+    )
+    const [box] = doc.blocks[0].textboxes!
+    expect(box.offsetXEmu).toBeUndefined()
+  })
 })

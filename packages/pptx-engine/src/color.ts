@@ -241,6 +241,19 @@ export function applyColorMods(hex: string, mods: XmlNode | undefined): string {
   const lumOff = pct('a:lumOff')
   const shade = pct('a:shade')
   const tint = pct('a:tint')
+  // SmartArt colorful cycles rotate node colors via HSL offsets (hueOff 1/60000 deg, satOff 1/1000 %)
+  const hueOffV = asXmlNode(mods?.['a:hueOff'])['@_val']
+  const hueOff = hueOffV != null ? (parseInt(String(hueOffV), 10) || 0) / 60000 : undefined
+  const satOff = pct('a:satOff')
+  if ((hueOff != null && hueOff !== 0) || (satOff != null && satOff !== 0)) {
+    const { h, s, l } = rgbToHsl(r, g, b)
+    const h2 = (((h + (hueOff ?? 0) / 360) % 1) + 1) % 1
+    const s2 = Math.max(0, Math.min(1, s + (satOff ?? 0)))
+    const rgb2 = hslToRgb(h2, s2, l)
+    r = rgb2.r
+    g = rgb2.g
+    b = rgb2.b
+  }
   // satMod (frequent in theme gradient templates): HSL saturation multiplier
   const satMod = pct('a:satMod')
   if (satMod != null) {
@@ -250,15 +263,16 @@ export function applyColorMods(hex: string, mods: XmlNode | undefined): string {
     g = rgb2.g
     b = rgb2.b
   }
-  if (lumMod != null) {
-    r *= lumMod
-    g *= lumMod
-    b *= lumMod
-  }
-  if (lumOff != null) {
-    r += 255 * lumOff
-    g += 255 * lumOff
-    b += 255 * lumOff
+  // lumMod/lumOff scale/offset HSL luminance with saturation preserved (Office semantics:
+  // accent2 7F0000 + lumMod40/lumOff60 renders #FF6666, and 4472C4 + lumMod75 renders
+  // #2F5496 — both match the HSL formula exactly, while an RGB multiply/add desaturates)
+  if (lumMod != null || lumOff != null) {
+    const { h, s, l } = rgbToHsl(r, g, b)
+    const l2 = Math.max(0, Math.min(1, l * (lumMod ?? 1) + (lumOff ?? 0)))
+    const rgb2 = hslToRgb(h, s, l2)
+    r = rgb2.r
+    g = rgb2.g
+    b = rgb2.b
   }
   // tint/shade blend in linear-gamma space (PowerPoint semantics: black + 55% tint
   // renders ≈#B1, not #73; verified against PowerPoint for Mac gradient stops)

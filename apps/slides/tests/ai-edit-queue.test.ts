@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 import type { PlacedBox, RenderSlide } from '@genoffice/pptx-render'
 import {
   buildPageInstruction,
+  buildSelectionInstruction,
   describeNode,
   groupByPage,
   resolveQueueItem,
@@ -164,6 +165,19 @@ describe('grouping and prompt assembly', () => {
     expect(prompt).toContain('dur-title')
     expect(prompt).toContain('Quarterly review')
     expect(prompt).toContain('Break into two lines')
+  })
+
+  it('freezes Send now to the selected durable id and visible text', () => {
+    const prompt = buildSelectionInstruction(
+      0,
+      [{ id: 'dur-title', desc: describeNode(title as never) }],
+      'Make the font red',
+    )
+    expect(prompt).toContain('slideIndex=0')
+    expect(prompt).toContain('dur-title')
+    expect(prompt).toContain('Quarterly review')
+    expect(prompt).toContain('Make the font red')
+    expect(prompt).toContain('do not modify unlisted elements')
   })
 })
 

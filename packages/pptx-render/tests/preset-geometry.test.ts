@@ -364,3 +364,22 @@ describe('arrow callouts (tdf150789 SmartArt section arrows)', () => {
     expect(pts[9]).toBe(100)
   })
 })
+
+describe('swooshArrow (prod SmartArt rising-arrow diagrams)', () => {
+  it('returns a curved arrow path, not a rect fallback', () => {
+    const r = presetPath('swooshArrow', 788, 358, { adj1: 25000, adj2: 25000 })
+    expect(r).toBeTruthy()
+    // Body sweep = two quad beziers; arrowhead = straight segments
+    expect((r!.path!.match(/Q /g) ?? []).length).toBe(2)
+    // Starts at bottom-left corner
+    expect(r!.path!.startsWith('M 0 358')).toBe(true)
+    // Arrowhead tip on the right edge, in the upper part (yD = yE/2 + h/20)
+    expect(r!.path).toContain('L 788 ')
+  })
+
+  it('clamps adj2 to maxAdj2 = 70000*w/ss', () => {
+    const r = presetPath('swooshArrow', 100, 100, { adj1: 25000, adj2: 999999 })
+    // ad2 capped at 70% of ss → xB = w - 70
+    expect(r!.path).toContain('Q 16.67 33.33 30 12.5')
+  })
+})

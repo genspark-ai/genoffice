@@ -43,8 +43,8 @@ export interface Run {
   rtl?: boolean
   /** Character spacing (w:spacing, twips, may be negative). Display only; saving is kept faithful by rawRPr */
   charSpacingTwips?: number
-  /** w:caps ('all') / w:smallCaps ('small') display transform. Display only; saving is kept faithful by rawRPr */
-  caps?: 'all' | 'small'
+  /** w:caps ('all') / w:smallCaps ('small') display transform, 'none' = explicit off. Display only; saving is kept faithful by rawRPr */
+  caps?: 'all' | 'small' | 'none'
   /** Horizontal character scale percent (w:w). Display only (approximated as spacing); saving is kept faithful by rawRPr */
   charScalePct?: number
   /** OOXML named highlight color (w:highlight), e.g. "yellow" */
@@ -142,6 +142,11 @@ export interface Run {
     wrap?: ImageWrap
     offsetXEmu?: number
     offsetYEmu?: number
+    /** wp:anchor text-wrap distances (EMU; display-only) */
+    wrapDistTopEmu?: number
+    wrapDistBottomEmu?: number
+    wrapDistLeftEmu?: number
+    wrapDistRightEmu?: number
     /** wp:anchor allowOverlap="0" (display-only collision hint) */
     noOverlap?: boolean
     /** picture outline (pic:spPr a:ln solid fill, display-only) */
@@ -556,8 +561,8 @@ export interface NoteRun {
   fontAscii?: string
   /** East-Asian font (w:eastAsia) — save-side only, parse does not recover it */
   font?: string
-  /** w:caps ('all') / w:smallCaps ('small') display transform */
-  caps?: 'all' | 'small'
+  /** w:caps ('all') / w:smallCaps ('small') display transform, 'none' = explicit off */
+  caps?: 'all' | 'small' | 'none'
 }
 
 /** One footnote or endnote (display/edit model; separators are preserved separately). */
@@ -587,6 +592,10 @@ export interface FieldDisplay {
   /** display-only metrics of the entry paragraph (direct pPr/run values; Word
    *  sizes TOC lines by them while the style carries nothing) */
   szHalfPoints?: number
+  /** face of the visible result runs (text fields): drives the line factor */
+  fontFamily?: string
+  /** explicit paragraph alignment (text fields): overrides the doc default */
+  align?: 'left' | 'center' | 'right'
   lineRule?: 'auto' | 'atLeast' | 'exact'
   lineRawTwips?: number
   lineSpacing?: number
@@ -608,6 +617,16 @@ export interface ChartSeries {
   name?: string
   /** cached numeric values by category position; null = gap in the cache */
   values: (number | null)[]
+  /** explicit series fill (c:ser/c:spPr solid fill), hex without '#' */
+  color?: string
+  /** explicit per-point fills (c:dPt), e.g. pie slice colors; sparse by point index */
+  pointColors?: (string | null)[]
+  /** scatter/bubble: numeric x of each point (c:xVal) */
+  xValues?: (number | null)[]
+  /** bubble: point sizes (c:bubbleSize) */
+  sizes?: (number | null)[]
+  /** scatter: connect the points (c:scatterStyle line*, unless the series line is a:noFill) */
+  line?: boolean
 }
 
 /**
@@ -619,13 +638,19 @@ export interface ChartSeries {
 export interface ChartDisplay {
   /** zip path of the chart part this model was read from */
   partPath: string
-  kind: 'bar' | 'line' | 'pie' | 'area' | 'other'
+  kind: 'bar' | 'line' | 'pie' | 'area' | 'scatter' | 'bubble' | 'other'
   /** bar charts: c:barDir="bar" (horizontal bars); default is column direction */
   horizontal?: boolean
+  /** c:grouping: series stack per category (percentStacked normalizes each category to 100%) */
+  grouping?: 'stacked' | 'percentStacked'
+  /** line charts: draw point markers (c:marker) */
+  markers?: boolean
   /** chart title; undefined when the chart has no title part (then not editable) */
   title?: string
   categories: string[]
   series: ChartSeries[]
+  /** series color cycle from the chart style + theme accents (hex, no '#'); absent = Office default */
+  palette?: string[]
   /** display size (from wp:extent), editable via the corner resize handle */
   widthPx?: number
   heightPx?: number
@@ -736,6 +761,8 @@ export interface TableCell {
   /** per nested table: how many cell paragraphs precede it (reading-order anchor); absent = after all paragraphs */
   nestedTableAnchors?: number[]
   colSpan?: number
+  /** display-only placeholder spanning a row's w:gridBefore/w:gridAfter columns (no borders/fill, not written back as w:tc) */
+  gridGap?: boolean
   /** 'restart' opens a vertical merge, 'continue' is a merged-away cell */
   vMerge?: 'restart' | 'continue'
   /** cell shading fill, hex without '#' (w:shd w:fill) */
@@ -759,6 +786,18 @@ export interface TableCell {
   cellRevision?: { kind: 'ins' | 'del' } & RevisionInfo
 }
 
+export type TableAutoFitMode = 'contents' | 'window' | 'fixed'
+
+/** Word's Table Style Options (w:tblLook). */
+export interface TableLook {
+  firstRow: boolean
+  lastRow: boolean
+  firstColumn: boolean
+  lastColumn: boolean
+  bandedRows: boolean
+  bandedColumns: boolean
+}
+
 /** Editable interchange model of a table block, extracted from or generated to OOXML. */
 export interface TableModel {
   rows: TableCell[][]
@@ -770,8 +809,14 @@ export interface TableModel {
   widthPct?: number
   /** autofit layout (no fixed w:tblLayout; w:tblW auto/absent/zero or pct): display may widen columns to min-content */
   autoLayout?: boolean
+  /** editable Word AutoFit mode (w:tblLayout + w:tblW) */
+  autoFit?: TableAutoFitMode
   /** table-level default cell margins (w:tblCellMar) */
   cellMarTwips?: CellMargins
+  /** w:tblCellSpacing (twips, half the gap between adjacent cells); cells render boxed with gaps */
+  cellSpacingTwips?: number
+  /** table shading (tblPr w:shd), hex without '#'; shows through transparent cells and cell-spacing gaps */
+  fill?: string
   /** table-level borders (w:tblBorders); undefined = not declared (default gridlines apply) */
   borders?: TableBorders
   /** table horizontal alignment (tblPr w:jc); default left */
@@ -788,19 +833,25 @@ export interface TableModel {
     yTwips: number
     horzAnchor?: 'page' | 'margin' | 'text'
     vertAnchor?: 'page' | 'margin' | 'text'
+    /** gap between the floating table and surrounding text (w:*FromText) */
+    distanceTwips?: CellMargins
   }
   /** floating table (w:tblpPr): text wraps around the side opposite the anchor */
-  floatSide?: 'left' | 'right'
+  floatSide?: 'left' | 'right' | null
   /** per-row height (twips, w:trHeight; null = not set), aligned with rows */
   rowHeightsTwips?: Array<number | null>
   /** per-row height rule (w:trHeight w:hRule; absent/legacy models = atLeast), aligned with rows */
   rowHeightRules?: Array<'atLeast' | 'exact' | null>
+  /** per-row repeat-as-header flag (w:trPr/w:tblHeader), aligned with rows */
+  repeatHeaderRows?: Array<boolean | null>
   /** per-row raw <w:trPr>…</w:trPr> bytes (passed through verbatim), aligned with rows */
   rawTrPrs?: Array<string | null>
   /** row-level revisions (trPr w:ins/w:del = inserted/deleted row), aligned with rows */
   rowRevisions?: Array<({ kind: 'ins' | 'del' } & RevisionInfo) | null>
   /** table style reference (w:tblStyle w:val); '' = explicitly no style, undefined = leave as-is */
   tblStyleId?: string
+  /** conditional table-style switches (w:tblLook) */
+  tableLook?: TableLook
   /** RTL table (tblPr w:bidiVisual): columns display right to left */
   bidiVisual?: boolean
 }
@@ -956,10 +1007,23 @@ export interface Block {
   imageCrop?: { l: number; t: number; r: number; b: number }
   /** fill placement (a:stretch/a:fillRect) as fractions of the shape box; negative = bleed (display-only) */
   imageFillRect?: { l: number; t: number; r: number; b: number }
+  /** Preserved whitespace before an inline picture and its paragraph indents (display-only). */
+  imageLeadingText?: string
+  imageLeadingFont?: string
+  imageLeadingExplicitSpaceWidthPx?: number
+  imageLeadingImplicitSpaceCount?: number
+  imageParagraphIndentLeft?: number
+  imageParagraphIndentRight?: number
+  imageParagraphIndentFirstLine?: number
   /** paragraph alignment of the image (w:jc) */
   imageAlign?: 'left' | 'center' | 'right'
   /** text wrapping of a floating image (wp:anchor); absent = inline (in line with text) */
   imageWrap?: ImageWrap
+  /** wp:anchor text-wrap distances (EMU; display-only) */
+  imageWrapDistTopEmu?: number
+  imageWrapDistBottomEmu?: number
+  imageWrapDistLeftEmu?: number
+  imageWrapDistRightEmu?: number
   /**
    * stacking rank of a floating image among overlapping anchors, decoded from
    * wp:anchor relativeHeight minus the 251658240 base (0 when at/below base).
@@ -984,6 +1048,8 @@ export interface Block {
    */
   imageOffsetXEmu?: number
   imageOffsetYEmu?: number
+  /** wp:anchor locked="1": moving the picture must not change its anchor paragraph */
+  imageAnchorLocked?: boolean
   /** margin-relative wp:align of a floating image (Word position-gallery presets) */
   imagePosH?: 'left' | 'center' | 'right'
   imagePosV?: 'top' | 'center' | 'bottom'
@@ -1246,8 +1312,8 @@ export interface StyleDisplay {
   charSpacingTwips?: number
   /** style-level pPr w:tabs (Word's built-in Header/Footer styles carry the center/right stops) */
   tabStops?: TabStop[]
-  /** w:caps ('all') / w:smallCaps ('small') display transform */
-  caps?: 'all' | 'small'
+  /** w:caps ('all') / w:smallCaps ('small') display transform, 'none' = explicit off */
+  caps?: 'all' | 'small' | 'none'
   /** multiple of single line spacing (w:spacing w:line, lineRule auto) */
   lineSpacing?: number
   /** F1: lineRule for accurate height calculation */
@@ -1269,6 +1335,8 @@ export interface StyleDisplay {
   keepLines?: boolean
   /** pageBreakBefore from style definition */
   pageBreakBefore?: boolean
+  /** w:suppressAutoHyphens from style definition (tri-state: explicit off overrides the chain) */
+  suppressAutoHyphens?: boolean
   /** F1: contextualSpacing from style definition */
   contextualSpacing?: boolean
   /** paragraph alignment from the style (w:pPr w:jc) */
@@ -1364,6 +1432,8 @@ export interface DocDefaults {
   spaceAfterAuto?: boolean
   /** rPrDefault w:lang w:val (BCP-47) — hyphenation/locale of the body text */
   lang?: string
+  /** pPrDefault w:suppressAutoHyphens — every paragraph opts out of w:autoHyphenation */
+  suppressAutoHyphens?: boolean
 }
 
 /** word/settings.xml w:documentProtection (only the editing restriction subset). */

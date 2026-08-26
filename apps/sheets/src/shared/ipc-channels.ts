@@ -15,6 +15,10 @@ export const MAX_SAVE_EDITS = 1_000_000
 export const SAVE_EDITS_CHUNK_MAX = 100_000
 export const MAX_SAVE_EDITS_TOTAL = 10_000_000
 
+/// Upper bound on one CSV export's serialized text (shared by the zod schema
+/// and the preload validator, like MAX_SAVE_EDITS above).
+export const MAX_CSV_EXPORT_CHARS = 64_000_000
+
 export const IPC_CHANNELS = {
   selectWorkbook: 'workbook:select',
   readWorkbookRange: 'workbook:read-range',
@@ -40,6 +44,8 @@ export const IPC_CHANNELS = {
   closeSaveRequest: 'workbook:close-save-request',
   closeSaveResult: 'workbook:close-save-result',
   exportPdf: 'workbook:export-pdf',
+  exportCsv: 'workbook:export-csv',
+  csvSaveConfirm: 'workbook:csv-save-confirm',
   openExternal: 'shell:open-external',
   menuAction: 'menu:action',
   aiGetSettings: 'ai:get-settings',

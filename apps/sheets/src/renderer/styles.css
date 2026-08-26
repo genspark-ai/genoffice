@@ -39,6 +39,10 @@
   --sheets-chip-bg: #f3f7f4;
   --sheets-member-bg: #f6f8f7;
   --sheets-member-ink: #5c6660;
+  --sheets-validation-prompt-bg: #ffffe1;
+  --sheets-validation-prompt-border: #808080;
+  --sheets-validation-prompt-ink: #555;
+  --sheets-validation-prompt-shadow: rgb(0 0 0 / 18%);
 
   /* content-side constants: charts, shapes and their selection chrome sit on
    * the paper-like grid and never follow the theme */
@@ -124,6 +128,10 @@
   --sheets-chip-bg: #24312a;
   --sheets-member-bg: #2f2f2f;
   --sheets-member-ink: #a9b2ac;
+  --sheets-validation-prompt-bg: #3c3826;
+  --sheets-validation-prompt-border: #8f8663;
+  --sheets-validation-prompt-ink: #f2ecd0;
+  --sheets-validation-prompt-shadow: rgb(0 0 0 / 45%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -152,6 +160,10 @@
     --sheets-chip-bg: #24312a;
     --sheets-member-bg: #2f2f2f;
     --sheets-member-ink: #a9b2ac;
+    --sheets-validation-prompt-bg: #3c3826;
+    --sheets-validation-prompt-border: #8f8663;
+    --sheets-validation-prompt-ink: #f2ecd0;
+    --sheets-validation-prompt-shadow: rgb(0 0 0 / 45%);
   }
 }
 
@@ -2160,6 +2172,9 @@ textarea:focus {
 
 .chart-svg {
   width: 100%;
+  /* Wide anchors: without a height cap the aspect-derived height overflows
+     the frame and clips the bottom axis rows (side-legend layouts). */
+  max-height: 100%;
   min-height: 0;
   flex: 1 1 auto;
 }
@@ -2394,6 +2409,69 @@ textarea:focus {
   display: block;
   overflow: visible;
   pointer-events: none;
+}
+
+.data-validation-dropdown-button {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  background: var(--surface-subtle);
+  color: var(--text-muted);
+  cursor: default;
+  appearance: none;
+}
+
+.univer-z-10:has(.data-validation-dropdown-button),
+.univer-z-10:has(.data-validation-input-message) {
+  overflow: visible !important;
+}
+
+.univer-z-10:has(.data-validation-input-message) > .univer-overflow-hidden {
+  overflow: visible !important;
+}
+
+.data-validation-dropdown-button:hover {
+  border-color: var(--border-hover);
+  background: var(--hover);
+  color: var(--text);
+}
+
+.data-validation-dropdown-button svg {
+  width: 8px;
+  height: 8px;
+  display: block;
+  fill: currentcolor;
+  pointer-events: none;
+}
+
+.data-validation-input-message {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid var(--sheets-validation-prompt-border);
+  background: var(--sheets-validation-prompt-bg);
+  box-shadow: 1px 1px 2px var(--sheets-validation-prompt-shadow);
+  color: var(--sheets-validation-prompt-ink);
+  font-family: inherit;
+  font-size: 9px;
+  line-height: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  user-select: none;
+  transform: translateY(4px);
+}
+
+.data-validation-input-message-title {
+  font-weight: 600;
 }
 
 .page-break-line {
@@ -2803,6 +2881,23 @@ textarea:focus {
 
 .xlsx-image {
   display: block;
+  object-fit: contain;
+}
+
+/* In-cell rich-value picture: fits the cell box, aspect preserved (Excel). */
+.xlsx-cell-image {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.xlsx-cell-image img {
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
 }
 

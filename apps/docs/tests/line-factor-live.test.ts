@@ -328,7 +328,7 @@ describe('empty paragraph line size (emptyRunSize attr)', () => {
     editor.destroy()
   })
 
-  it('lays the empty line with the paragraph-mark face metrics (Western only)', () => {
+  it('lays the empty line with the paragraph-mark face metrics (CJK included)', () => {
     const editor = new Editor({
       element: document.createElement('div'),
       extensions: editorExtensions,
@@ -337,14 +337,16 @@ describe('empty paragraph line size (emptyRunSize attr)', () => {
         content: [
           { type: 'docParagraph', attrs: { emptyRunFont: 'Times New Roman' } },
           { type: 'docParagraph', attrs: { emptyRunFont: '맑은 고딕' } },
+          { type: 'docParagraph', attrs: { emptyRunFont: '\u5b8b\u4f53' } },
         ],
       } as never,
     })
-    const [tnr, malgun] = Array.from(editor.view.dom.querySelectorAll('p')) as HTMLElement[]
+    const [tnr, malgun, simsun] = Array.from(editor.view.dom.querySelectorAll('p')) as HTMLElement[]
     expect(tnr.style.getPropertyValue('--doc-line-factor')).toBe('1.15')
     expect(tnr.style.fontFamily).toContain('Times New Roman')
-    // CJK mark faces keep the document factor (empty cells stay on the Latin rule)
-    expect(malgun.style.getPropertyValue('--doc-line-factor')).toBe('')
+    // empty-line probe 2026-08-25: CJK marks size by their own face too
+    expect(malgun.style.getPropertyValue('--doc-line-factor')).toBe('1.7371')
+    expect(simsun.style.getPropertyValue('--doc-line-factor')).toBe('1.3029')
     editor.destroy()
   })
 })
