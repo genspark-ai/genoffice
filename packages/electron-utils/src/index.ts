@@ -24,6 +24,14 @@ export {
   type PathProvider,
 } from './default-save-dir'
 export { installNavigationGuard } from './navigation-guard'
+export {
+  DROP_OPEN_CHANNEL,
+  droppableFilePaths,
+  installDropOpenBridge,
+  KNOWN_UNSUPPORTED_DOC_RE,
+  OPENABLE_DOC_RE,
+  partitionDropPayload,
+} from './drop-open'
 export { safeExternalUrl, type SafeExternalUrlOptions } from './safe-external-url'
 export {
   fetchWithSsrfGuard,

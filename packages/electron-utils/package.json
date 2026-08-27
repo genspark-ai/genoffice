@@ -6,7 +6,8 @@
   "type": "module",
   "description": "Shared helpers for the Electron main processes (no Electron dependency, pure TS)",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./drop-open": "./src/drop-open.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

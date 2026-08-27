@@ -1048,6 +1048,70 @@ function CloudProjectsView() {
   )
 }
 
+// ── Drop-to-open overlay ────────────────────────────────
+
+/**
+ * Full-window affordance while OS files hover over Home. Purely visual — the
+ * actual open is owned by the preload drop bridge (installDropOpenBridge), so
+ * this overlay stays pointer-events:none and never handles events itself.
+ * `dragover` fires continuously while hovering and stops on leave/cancel, so
+ * a short debounce is enough to show/hide without counting enter/leave pairs.
+ */
+function DropToOpenOverlay(): ReactElement | null {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    let hideTimer: ReturnType<typeof setTimeout> | undefined
+    const hasFiles = (ev: DragEvent): boolean => ev.dataTransfer?.types.includes('Files') ?? false
+    // NB: the preload drop bridge also listens here and cancels file drags, so
+    // defaultPrevented can't discriminate anything at this layer — only zones
+    // that stopPropagation (none on Home) would keep us out entirely.
+    const onDragOver = (ev: DragEvent) => {
+      if (!hasFiles(ev)) return
+      clearTimeout(hideTimer)
+      setVisible(true)
+      hideTimer = setTimeout(() => setVisible(false), 120)
+    }
+    const onHide = () => {
+      clearTimeout(hideTimer)
+      setVisible(false)
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onHide)
+    window.addEventListener('blur', onHide)
+    return () => {
+      clearTimeout(hideTimer)
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onHide)
+      window.removeEventListener('blur', onHide)
+    }
+  }, [])
+  const { t } = useI18n()
+  if (!visible) return null
+  return (
+    <div className="home-drop-overlay" aria-hidden="true">
+      <div className="home-drop-card">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 3.5v11M7.5 10.5l4.5 4.5 4.5-4.5"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M4 16.5v2A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-2"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </svg>
+        <h2>{t('dropToOpenTitle')}</h2>
+        <p>{OPEN_LOCAL_EXTENSIONS}</p>
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ──────────────────────────────────────
 
 export function Home() {
@@ -2177,6 +2241,8 @@ export function Home() {
           </div>
         </div>
       )}
+
+      <DropToOpenOverlay />
     </div>
   )
 }

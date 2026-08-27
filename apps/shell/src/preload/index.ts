@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { AI_PROVIDERS, getProviderAdapter } from '@genoffice/ai-provider'
 import type { AiSettings } from '@genoffice/ai-provider'
+import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import type {
   AccountLoginEvent,
   AccountStatus,
@@ -357,3 +358,6 @@ const tabsApi: TabsApi = {
 }
 
 contextBridge.exposeInMainWorld('aiOfficeTabs', tabsApi)
+
+// open documents dragged from the OS anywhere over Home or the tab strip
+installDropOpenBridge()
