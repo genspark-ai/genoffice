@@ -32,6 +32,11 @@
   --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 10%);
   /* same paper shadow as the pdf app's --pdf-shadow-page */
   --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+  /* toast pill is a dark surface in both themes */
+  --md-toast-bg: rgb(35 35 37 / 92%);
+  --md-toast-error-bg: rgb(196 49 75 / 95%);
+  --md-toast-ink: #ffffff;
+  --md-toast-ok: #34c759;
 }
 
 [data-theme='dark'] {
@@ -63,6 +68,10 @@
   --md-pop-shadow: 0 8px 24px rgb(0 0 0 / 50%);
   --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 35%);
   --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+  --md-toast-bg: rgb(35 35 37 / 92%);
+  --md-toast-error-bg: rgb(196 49 75 / 95%);
+  --md-toast-ink: #ffffff;
+  --md-toast-ok: #34c759;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -95,6 +104,10 @@
     --md-pop-shadow: 0 8px 24px rgb(0 0 0 / 50%);
     --md-tip-shadow: 0 4px 6px rgb(0 0 0 / 35%);
     --md-page-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+    --md-toast-bg: rgb(35 35 37 / 92%);
+    --md-toast-error-bg: rgb(196 49 75 / 95%);
+    --md-toast-ink: #ffffff;
+    --md-toast-ok: #34c759;
   }
 }
 
@@ -2706,4 +2719,51 @@ div.tiptap-mathematics-render {
 .ai-queue-discard:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* ================= transient toast (action feedback) ================= */
+
+.app-toast {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translate(-50%, -8px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--md-toast-bg);
+  color: var(--md-toast-ink);
+  font-size: 13px;
+  box-shadow: var(--md-pop-shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+  max-width: 60vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.app-toast.error {
+  background: var(--md-toast-error-bg);
+}
+
+.app-toast-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.app-toast.success .app-toast-icon {
+  color: var(--md-toast-ok);
 }

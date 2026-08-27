@@ -1,5 +1,7 @@
 import { Image } from '@tiptap/extension-image'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { t } from '../i18n/locale'
+import { showToast } from '../components/toast-bus'
 
 /** Directory of the open .md file; relative image paths resolve against it for display */
 let imageBaseDir: string | null = null
@@ -72,8 +74,11 @@ async function persistAndInsert(
     base64: btoa(binary),
     ext: EXT_BY_MIME[file.type]!,
   })
-  // untitled documents have no assets/ directory yet — drop silently
-  if (!rel) return
+  // untitled documents have no assets/ directory yet — tell the user to save first
+  if (!rel) {
+    showToast(t('imageNeedsSavedDocument'), 'error')
+    return
+  }
   const alt = file.name.replace(/\.[a-z0-9]+$/i, '')
   editor
     .chain()
