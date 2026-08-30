@@ -16,6 +16,8 @@ import {
   IconAlignCenter,
   IconAlignJustify,
   IconAlignLeft,
+  IconDirLtr,
+  IconDirRtl,
   IconAlignRight,
   IconBullets,
   IconClearFormat,
@@ -74,6 +76,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     canPaste,
     curBulletChar,
     curAlign,
+    curRtl,
     curFontFamily,
     curFontSizeMixed,
     curFontSizePt,
@@ -92,6 +95,7 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
     onAiPreset,
     onAskSelection,
     onAlign,
+    onDirection,
     onArrange,
     onFlip,
     onCopy,
@@ -1084,6 +1088,27 @@ export function RibbonHomeTab({ rb }: { rb: RibbonTabCtx }) {
                       onMouseDown={(e) => {
                         e.preventDefault()
                         if (editing || hasSelection) onAlign(align)
+                      }}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                  <span className="rb-mini-sep" />
+                  {(
+                    [
+                      [false, <IconDirLtr key="ltr" size={20} />, t('ribbonDirLtr')],
+                      [true, <IconDirRtl key="rtl" size={20} />, t('ribbonDirRtl')],
+                    ] as const
+                  ).map(([rtl, icon, label]) => (
+                    <button
+                      key={rtl ? 'rtl' : 'ltr'}
+                      className={`rb-icon ${curRtl === rtl ? 'active' : ''}`}
+                      disabled={!editing && !hasSelection}
+                      data-tip={label}
+                      aria-label={label}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        if (editing || hasSelection) onDirection(rtl)
                       }}
                     >
                       {icon}

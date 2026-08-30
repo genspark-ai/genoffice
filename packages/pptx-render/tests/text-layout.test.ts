@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { HeuristicMetrics, OpentypeMetrics, type OpentypeFontLike } from '../src/metrics'
 import { DEFAULT_INSETS_EMU, layoutText } from '../src/text-layout'
 import { makeViewport } from '../src/coords'
-import { DEFAULT_BODY_INSETS, type TextBody } from '@genoffice/pptx-engine'
+import { DEFAULT_BODY_INSETS, type Paragraph, type TextBody } from '@genoffice/pptx-engine'
 
 const vp = makeViewport({ cx: 9525 * 1000, cy: 9525 * 1000 }, 1000) // scale 1
 
@@ -71,6 +71,194 @@ describe('2.3 metrics', () => {
 })
 
 describe('2.3 text layout', () => {
+  it('vertical layout stamps effective rtl on columns (ribbon/editor state parity with horizontal)', () => {
+    const lay = (vert: 'eaVert' | 'vert') =>
+      layoutText({
+        body: body({
+          paragraphs: [{ runs: [{ text: '\u05d0\u05d1\u05d2', fontSize: 18 }] }],
+          vert,
+        }),
+        boxWidthPx: 200,
+        boxHeightPx: 200,
+        metrics: new HeuristicMetrics(),
+        vp,
+      })
+    expect(lay('eaVert').lines.every((l) => l.rtl === true)).toBe(true)
+    expect(lay('vert').lines.every((l) => l.rtl === true)).toBe(true)
+  })
+
+  describe('RTL list mirroring (PowerPoint probe-measured)', () => {
+    const HE = '\u05d0\u05d1\u05d2'
+    const lay = (paragraphs: Paragraph[]) =>
+      layoutText({
+        body: body({ paragraphs }),
+        boxWidthPx: 400,
+        boxHeightPx: 300,
+        metrics: new HeuristicMetrics(),
+        vp,
+      }).lines[0]!
+    const bulletOf = (l: ReturnType<typeof lay>) => l.runs.find((r) => r.isBullet)!
+    const textSpan = (l: ReturnType<typeof lay>) => {
+      const rs = l.runs.filter((r) => !r.isBullet)
+      return [Math.min(...rs.map((r) => r.x)), Math.max(...rs.map((r) => r.x + r.widthPx))]
+    }
+
+    it('RTL bullet hangs on the right of the text, flush right by default (marL from the right edge)', () => {
+      const marL = 228600 // 24px at scale 1
+      const line = lay([
+        {
+          runs: [{ text: HE, fontSize: 18 }],
+          rtl: true,
+          marL,
+          indent: -marL,
+          bullet: { type: 'char', char: '•' },
+        },
+      ])
+      const b = bulletOf(line)
+      const [tl, tr] = textSpan(line)
+      expect(b.x).toBeGreaterThan(tr) // glyph right of the body text
+      // bulletX = marL + indent = 0 → glyph right edge at the box right edge
+      expect(b.x + b.widthPx).toBeCloseTo(400, 0)
+      // body text ends marL short of the right edge
+      expect(tr).toBeCloseTo(400 - 24, 0)
+      expect(tl).toBeGreaterThan(0)
+    })
+
+    it('explicit physical left align keeps the RTL bullet adjacent at the text right', () => {
+      const marL = 228600
+      const line = lay([
+        {
+          runs: [{ text: HE, fontSize: 18 }],
+          rtl: true,
+          align: 'left',
+          marL,
+          indent: -marL,
+          bullet: { type: 'char', char: '•' },
+        },
+      ])
+      const b = bulletOf(line)
+      const [tl, tr] = textSpan(line)
+      expect(tl).toBeCloseTo(0, 0) // physical left, like PowerPoint
+      // reserved advance between text end and glyph = -indent - bulletW
+      expect(b.x - tr).toBeCloseTo(24 - b.widthPx, 0)
+    })
+
+    it('numbered RTL bullet renders with an RTL base ("1." displays as ".1")', () => {
+      const marL = 342900
+      const line = lay([
+        {
+          runs: [{ text: HE, fontSize: 18 }],
+          rtl: true,
+          marL,
+          indent: -marL,
+          bullet: { type: 'number' },
+        },
+      ])
+      expect(bulletOf(line).rtl).toBe(true)
+    })
+
+    it('justified RTL paragraph: spread and final lines share the mirrored right boundary', () => {
+      const marL = 228600 // 24px: mirrored to the right edge
+      const long = '\u05d0\u05d1\u05d2 '.repeat(20).trim()
+      const layout = layoutText({
+        body: body({
+          paragraphs: [{ runs: [{ text: long, fontSize: 18 }], rtl: true, align: 'justify', marL }],
+        }),
+        boxWidthPx: 200,
+        boxHeightPx: 400,
+        metrics: new HeuristicMetrics(),
+        vp,
+      })
+      expect(layout.lines.length).toBeGreaterThan(1)
+      const edges = layout.lines.map((l) => Math.max(...l.runs.map((r) => r.x + r.widthPx)))
+      for (const e of edges) expect(e).toBeCloseTo(200 - 24, 0)
+      expect(Math.min(...layout.lines[0]!.runs.map((r) => r.x))).toBeCloseTo(0, 0)
+    })
+
+    it('LTR control: bullet stays at the left', () => {
+      const marL = 228600
+      const line = lay([
+        {
+          runs: [{ text: 'Latin', fontSize: 18 }],
+          marL,
+          indent: -marL,
+          bullet: { type: 'char', char: '•' },
+        },
+      ])
+      const b = bulletOf(line)
+      const [tl] = textSpan(line)
+      expect(b.x).toBeCloseTo(0, 0)
+      expect(tl).toBeCloseTo(24, 0)
+      expect(b.rtl).toBeUndefined()
+    })
+  })
+
+  it('paragraph rtl=true: RTL base for pure-LTR text (trailing neutral moves left, default align right)', () => {
+    const lay = (rtl?: boolean) =>
+      layoutText({
+        body: body({ paragraphs: [{ runs: [{ text: 'Hi!', fontSize: 18 }], rtl }] }),
+        boxWidthPx: 400,
+        boxHeightPx: 200,
+        metrics: new HeuristicMetrics(),
+        vp,
+      }).lines[0]!
+    const rtlLine = lay(true)
+    // UAX#9 with an RTL base: the trailing '!' (neutral) takes the base level and
+    // renders at the visual left of the LTR word
+    const bang = rtlLine.runs.find((r) => r.text.includes('!'))!
+    const word = rtlLine.runs.find((r) => r.text.includes('Hi'))!
+    expect(bang.x).toBeLessThan(word.x)
+    // Default alignment is right (applied as an x offset; TextLine.align only carries explicit values)
+    const rightEdge = Math.max(...rtlLine.runs.map((r) => r.x + r.widthPx))
+    expect(rightEdge).toBeCloseTo(400, 0)
+    expect(rtlLine.align).toBeUndefined()
+    // Without the attribute the first strong char (LTR) wins: single run, no reorder, left aligned
+    const ltrLine = lay(undefined)
+    expect(ltrLine.runs.map((r) => r.text).join('')).toBe('Hi!')
+    expect(Math.min(...ltrLine.runs.map((r) => r.x))).toBeCloseTo(0, 0)
+  })
+
+  it('paragraph rtl=true: logical-first LTR run renders at the right in mixed text', () => {
+    const lay = (rtl?: boolean) =>
+      layoutText({
+        body: body({
+          paragraphs: [{ runs: [{ text: 'AB \u05d0\u05d1\u05d2', fontSize: 18 }], rtl }],
+        }),
+        boxWidthPx: 400,
+        boxHeightPx: 200,
+        metrics: new HeuristicMetrics(),
+        vp,
+      }).lines[0]!
+    const xOf = (line: ReturnType<typeof lay>, t: string) =>
+      line.runs.find((r) => r.text.includes(t))!.x
+    const rtlLine = lay(true)
+    expect(xOf(rtlLine, 'AB')).toBeGreaterThan(xOf(rtlLine, '\u05d0'))
+    // Inferred base is LTR here (first strong char is 'A'): 'AB' stays left
+    const autoLine = lay(undefined)
+    expect(xOf(autoLine, 'AB')).toBeLessThan(xOf(autoLine, '\u05d0'))
+  })
+
+  it('paragraph rtl=false: explicit LTR base overrides RTL-first inference (no default right align)', () => {
+    const lay = (rtl?: boolean) =>
+      layoutText({
+        body: body({
+          paragraphs: [{ runs: [{ text: '\u05d0\u05d1\u05d2 AB', fontSize: 18 }], rtl }],
+        }),
+        boxWidthPx: 400,
+        boxHeightPx: 200,
+        metrics: new HeuristicMetrics(),
+        vp,
+      }).lines[0]!
+    // Inferred RTL base right-aligns (as an x offset); explicit rtl="0" restores the left edge
+    const inferred = lay(undefined)
+    expect(Math.max(...inferred.runs.map((r) => r.x + r.widthPx))).toBeCloseTo(400, 0)
+    const ltrLine = lay(false)
+    expect(Math.min(...ltrLine.runs.map((r) => r.x))).toBeCloseTo(0, 0)
+    // Base LTR keeps the logical-first Hebrew run at the visual left
+    const xOf = (t: string) => ltrLine.runs.find((r) => r.text.includes(t))!.x
+    expect(xOf('\u05d0')).toBeLessThan(xOf('AB'))
+  })
+
   it('single short line stays one line', () => {
     const layout = layoutText({
       body: body({ paragraphs: [{ runs: [{ text: 'Hi', fontSize: 18 }] }] }),

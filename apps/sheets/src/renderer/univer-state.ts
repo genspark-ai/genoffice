@@ -109,6 +109,10 @@ export interface LazyWorkbookState {
     generation: number
     /// consecutive engine failures; a success resets it
     failures: number
+    /// a sheet's formula list came back truncated (>100k formulas): a cold
+    /// IronCalc import of such a workbook grinds for minutes and gigabytes,
+    /// so the engine fallback is off for the session — cached values stand
+    engineOverBudget: boolean
     readonly formulaCells: Map<string, ReadonlySet<number>>
     readonly overlay: Map<string, Map<string, PinnedClosureCell>>
     /// per-sheet: viewport row the last SUCCESSFUL overlay window was
@@ -156,6 +160,39 @@ export const CLOSURE_MAX_CELLS = 50_000
 /// Shared mutable state between App.tsx and univer-sync.ts.
 export const journalSuppression = { active: false }
 
+/// An AI batch whose applied payload exceeds this many cells keeps no undo
+/// entry: the stack retains the full mutation matrices both ways (five
+/// 200k-cell copies held ~336MB), and entries accumulate across proposals.
+/// The apply path surfaces a "too large to undo" notice instead.
+export const AI_UNDO_CELL_BUDGET = 100_000
+
+/// Raised around an AI plan apply. Batching merges each command's small item
+/// into the stack-top entry, so the budget must be tracked cumulatively over
+/// the activation; `dropped` reports the batch entry was discarded.
+export const aiBulkUndoGate = { active: false, dropped: false, cells: 0, pushed: 0 }
+
+export interface UndoRedoItemLike {
+  readonly unitID: string
+  readonly redoMutations?: readonly { params?: unknown }[]
+}
+
+/// Bounded: stops counting past `cap` (the budget check needs no exact total).
+export function undoPayloadCells(item: UndoRedoItemLike, cap: number): number {
+  let cells = 0
+  for (const mutation of item.redoMutations ?? []) {
+    const cellValue = (mutation.params as { cellValue?: Record<string, object> } | undefined)
+      ?.cellValue
+    if (!cellValue || typeof cellValue !== 'object') continue
+    for (const rowKey in cellValue) {
+      const row = cellValue[rowKey]
+      if (!row || typeof row !== 'object') continue
+      cells += Object.keys(row).length
+      if (cells > cap) return cells
+    }
+  }
+  return cells
+}
+
 let undoFilterInstalled = false
 
 /// Drops undo-stack entries pushed while journalSuppression is active.
@@ -168,11 +205,37 @@ export function installJournalSuppressionUndoFilter(): void {
   if (undoFilterInstalled) return
   undoFilterInstalled = true
   const proto = LocalUndoRedoService.prototype as unknown as {
-    pushUndoRedo(item: { unitID: string }): void
+    pushUndoRedo(item: UndoRedoItemLike): void
   }
   const originalPush = proto.pushUndoRedo
-  proto.pushUndoRedo = function (this: unknown, item: { unitID: string }) {
-    if (!journalSuppression.active) originalPush.call(this, item)
+  proto.pushUndoRedo = function (this: unknown, item: UndoRedoItemLike) {
+    if (journalSuppression.active) return
+    if (aiBulkUndoGate.active) {
+      if (aiBulkUndoGate.dropped) return
+      aiBulkUndoGate.cells += undoPayloadCells(item, AI_UNDO_CELL_BUDGET + 1)
+      if (aiBulkUndoGate.cells > AI_UNDO_CELL_BUDGET) {
+        aiBulkUndoGate.dropped = true
+        // Chunks already merged into the stack-top batch entry must go too —
+        // keeping them would make undo revert only part of the operation.
+        const service = this as {
+          _getUndoStack?: (unitId: string) => unknown[] | undefined
+          _getRedoStack?: (unitId: string) => unknown[] | undefined
+          _updateStatus?: () => void
+        }
+        if (aiBulkUndoGate.pushed > 0) {
+          const stack = service._getUndoStack?.(item.unitID)
+          if (Array.isArray(stack) && stack.length > 0) stack.pop()
+        }
+        // The original push clears redo on entry; a batch dropped on its
+        // first item must not leave a stale redo replayable over the change.
+        const redoStack = service._getRedoStack?.(item.unitID)
+        if (Array.isArray(redoStack)) redoStack.length = 0
+        service._updateStatus?.()
+        return
+      }
+      aiBulkUndoGate.pushed += 1
+    }
+    originalPush.call(this, item)
   }
 }
 

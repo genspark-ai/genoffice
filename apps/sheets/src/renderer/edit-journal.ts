@@ -485,7 +485,10 @@ export function recordSheetRename(
 ): void {
   const added = journal.sheets.added.get(sheetId)
   if (added) {
-    journal.sheets.added.set(sheetId, { name })
+    // Keep the duplicate provenance: dropping sourceSheetId here made a
+    // renamed copy save as a BLANK added sheet (duplicate_sheet with a name
+    // renames immediately, so the copied part silently lost all content).
+    journal.sheets.added.set(sheetId, { ...added, name })
     return
   }
   if (name === originalName) journal.sheets.renamed.delete(sheetId)

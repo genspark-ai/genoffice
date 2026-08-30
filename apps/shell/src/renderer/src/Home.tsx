@@ -1054,33 +1054,42 @@ function CloudProjectsView() {
  * Full-window affordance while OS files hover over Home. Purely visual — the
  * actual open is owned by the preload drop bridge (installDropOpenBridge), so
  * this overlay stays pointer-events:none and never handles events itself.
- * `dragover` fires continuously while hovering and stops on leave/cancel, so
- * a short debounce is enough to show/hide without counting enter/leave pairs.
+ * Visibility tracks a dragenter/dragleave depth counter: `dragover` stops
+ * being delivered while the cursor is stationary (macOS), so a debounce would
+ * hide the overlay mid-drag. Enter fires before the matching leave when
+ * moving between elements, so the depth never dips to zero inside the window.
  */
 function DropToOpenOverlay(): ReactElement | null {
   const [visible, setVisible] = useState(false)
   useEffect(() => {
-    let hideTimer: ReturnType<typeof setTimeout> | undefined
+    let depth = 0
     const hasFiles = (ev: DragEvent): boolean => ev.dataTransfer?.types.includes('Files') ?? false
     // NB: the preload drop bridge also listens here and cancels file drags, so
     // defaultPrevented can't discriminate anything at this layer — only zones
     // that stopPropagation (none on Home) would keep us out entirely.
-    const onDragOver = (ev: DragEvent) => {
+    const onDragEnter = (ev: DragEvent) => {
       if (!hasFiles(ev)) return
-      clearTimeout(hideTimer)
+      depth += 1
       setVisible(true)
-      hideTimer = setTimeout(() => setVisible(false), 120)
     }
+    const onDragLeave = (ev: DragEvent) => {
+      if (!hasFiles(ev)) return
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) setVisible(false)
+    }
+    // drop/blur reset the depth outright: leaving the window mid-drag can eat
+    // a dragleave, and a stuck overlay would be worse than a re-shown one
     const onHide = () => {
-      clearTimeout(hideTimer)
+      depth = 0
       setVisible(false)
     }
-    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragenter', onDragEnter)
+    window.addEventListener('dragleave', onDragLeave)
     window.addEventListener('drop', onHide)
     window.addEventListener('blur', onHide)
     return () => {
-      clearTimeout(hideTimer)
-      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragenter', onDragEnter)
+      window.removeEventListener('dragleave', onDragLeave)
       window.removeEventListener('drop', onHide)
       window.removeEventListener('blur', onHide)
     }

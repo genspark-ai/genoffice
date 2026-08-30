@@ -794,6 +794,26 @@ describe('executeWorkbookTool: propose_operations', () => {
     expect(result.output).toContain('Undo')
   })
 
+  it('surfaces apply-time notices from the applied outcome', async () => {
+    const proposeOperations = vi.fn().mockReturnValue({
+      ok: true,
+      plan: EMPTY_PLAN,
+      applied: Promise.resolve({
+        ok: true,
+        notices: ['copy_range A1:B2: 2 formula cell(s) were copied as their current values'],
+      }),
+    })
+    const result = await executeWorkbookTool(
+      call('propose_operations', {
+        operations: [{ op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 'new' }],
+        summary: 'Update A1',
+      }),
+      fakeDeps({ proposeOperations }),
+    )
+    expect(result.isError).toBeFalsy()
+    expect(result.output).toContain('Note: copy_range A1:B2')
+  })
+
   it('after writing a formula, reads back the computed value asynchronously (write → verify)', async () => {
     const plan: ChangePlan = {
       ...EMPTY_PLAN,

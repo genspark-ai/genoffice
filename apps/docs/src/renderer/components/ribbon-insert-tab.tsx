@@ -524,18 +524,40 @@ export function TableInsertModal({ editor, onClose }: { editor: Editor; onClose:
 export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
-  const [linkText, setLinkText] = useState('')
+  // Word parity: selected text pre-populates the display-text field, so a
+  // select-then-link flow only needs the address (alpha ledger r150).
+  const [selectionAtOpen] = useState(() => {
+    const { from, to } = editor.state.selection
+    return { from, to, text: from === to ? '' : editor.state.doc.textBetween(from, to, ' ') }
+  })
+  const [linkText, setLinkText] = useState(selectionAtOpen.text)
   const [linkUrl, setLinkUrl] = useState('')
 
   const insertLink = () => {
     const href = linkUrl.trim()
     const text = linkText.trim() || href
     if (!href || !editor.isEditable) return
-    editor
-      .chain()
-      .focus()
-      .insertContent({ type: 'text', text, marks: [{ type: 'link', attrs: { href, rId: null } }] })
-      .run()
+    if (selectionAtOpen.text && text === selectionAtOpen.text.trim()) {
+      // untouched display text: mark the ORIGINAL selection instead of
+      // re-inserting plain text — character formatting, comments and inline
+      // objects in the selection survive (bugbot)
+      editor
+        .chain()
+        .focus()
+        .setTextSelection({ from: selectionAtOpen.from, to: selectionAtOpen.to })
+        .setMark('link', { href, rId: null })
+        .run()
+    } else {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: 'text',
+          text,
+          marks: [{ type: 'link', attrs: { href, rId: null } }],
+        })
+        .run()
+    }
     onClose()
   }
 

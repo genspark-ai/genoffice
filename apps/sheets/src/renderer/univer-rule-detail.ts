@@ -137,7 +137,16 @@ function enhanceCfPanel(runtime: UniverRuntime): () => void {
     scheduled = true
     requestAnimationFrame(() => {
       scheduled = false
-      augment()
+      // Purely cosmetic panel decoration: it must never take the app down.
+      // getActiveWorkbook() can throw a redi CircularDependencyError when the
+      // rAF lands while a facade resolution is still on the injector stack
+      // (seen after add_table_column followed by a row delete) — uncaught,
+      // that unmounted the React tree.
+      try {
+        augment()
+      } catch {
+        /* retried on the next mutation */
+      }
     })
   })
   observer.observe(document.body, { childList: true, subtree: true })

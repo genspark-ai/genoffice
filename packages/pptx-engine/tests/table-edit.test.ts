@@ -28,6 +28,37 @@ describe('patchTableStyleXml', () => {
     expect(result).toContain('{2D5ABB26-0587-4C30-8999-92F81FD0307C}')
   })
 
+  it('style preset keeps an existing rtl flag (direction is orthogonal to style)', () => {
+    const rtlTable = patchTableStyleXml(MINIMAL_TABLE_XML, { rtl: true })
+    const preset = TABLE_STYLE_PRESETS['zebraBlue']!
+    const styled = patchTableStyleXml(rtlTable, { tblPrXml: preset.tblPrXml })
+    expect(styled).toContain('rtl="1"')
+    expect(styled).toContain(preset.styleId)
+    // A table without rtl does not gain one from the preset
+    const plain = patchTableStyleXml(MINIMAL_TABLE_XML, { tblPrXml: preset.tblPrXml })
+    expect(plain).not.toContain('rtl=')
+  })
+
+  it('rtl=true adds the tblPr rtl flag, rtl=false removes it; siblings untouched', () => {
+    const on = patchTableStyleXml(MINIMAL_TABLE_XML, { rtl: true })
+    expect(on).toContain('rtl="1"')
+    expect(on).toContain('firstRow="1"')
+    expect(on).toContain('{2D5ABB26-0587-4C30-8999-92F81FD0307C}')
+    const off = patchTableStyleXml(on, { rtl: false })
+    expect(off).not.toContain('rtl=')
+    expect(off).toContain('bandRow="1"')
+  })
+
+  it('rtl toggle expands a self-closing tblPr with attributes (trailing slash stripped)', () => {
+    const selfClosing = MINIMAL_TABLE_XML.replace(
+      /<a:tblPr[^>]*>.*?<\/a:tblPr>/,
+      '<a:tblPr firstRow="1"/>',
+    )
+    const result = patchTableStyleXml(selfClosing, { rtl: true })
+    expect(result).toContain('<a:tblPr firstRow="1" rtl="1"></a:tblPr>')
+    expect(result).not.toContain('/ rtl')
+  })
+
   it('set shading color → solidFill inserted in every tcPr, replacing existing fills', () => {
     const result = patchTableStyleXml(MINIMAL_TABLE_XML, { shadingColor: '#AABBCC' })
     expect(result).toContain('<a:srgbClr val="AABBCC"/>')

@@ -108,6 +108,7 @@ import {
   shiftDrawingAnchors,
   shiftTablePart,
   StructuralShiftError,
+  translateSharedFormula,
 } from './xlsx-structure'
 import { StylesheetEditor } from './xlsx-styles'
 
@@ -851,9 +852,10 @@ export async function planCellEditsToXlsx(
       fillsBySheet.get(sheetName) ?? [],
       editsBySheet.get(sheetName) ?? [],
     )
-    const dimensionPatch = worksheetDimensionPatcher(cellMutations, worksheetXml)
+    const materialized = materializeEditedSharedFormulaGroups(worksheetXml, cellMutations)
+    const dimensionPatch = worksheetDimensionPatcher(cellMutations, materialized)
     const edited = transformWorksheetCells(
-      worksheetXml,
+      materialized,
       cellMutations,
       (cellXml, rowNumber, column, mutation) => {
         let result = cellXml
@@ -1894,6 +1896,114 @@ interface CellMutation {
   edits?: CellEdit | CellEdit[]
 }
 
+/// Rewriting a shared-formula master as a plain formula orphans its
+/// followers: a bare `<f t="shared" si="N"/>` carries no text of its own, so
+/// the saved file reopens with empty formulas in every untouched follower.
+/// Before the edits apply, expand each affected group's followers into plain
+/// translated formulas (cached <v> and attributes stay untouched).
+function materializeEditedSharedFormulaGroups(
+  worksheetXml: string,
+  cellMutations: SheetCellItems<CellMutation>,
+): string {
+  if (!worksheetXml.includes('t="shared"')) return worksheetXml
+  const rewritten = new Set<string>()
+  for (const [rowNumber, columns] of cellMutations) {
+    for (const [column, mutation] of columns) {
+      const edits =
+        mutation.edits === undefined
+          ? []
+          : Array.isArray(mutation.edits)
+            ? mutation.edits
+            : [mutation.edits]
+      if (mutation.fill !== undefined || edits.some((edit) => edit.writeValue)) {
+        rewritten.add(toA1Address(rowNumber - 1, column))
+      }
+    }
+  }
+  if (rewritten.size === 0) return worksheetXml
+
+  interface SharedFragment {
+    start: number
+    end: number
+    address: string
+    row: number
+    column: number
+    si: string
+    isMaster: boolean
+    body: string
+  }
+  const fragments: SharedFragment[] = []
+  // Open tag matched alone: a greedy [^>]* would swallow the `/` of a
+  // self-closing follower and backtrack into pairing it with a later </f>.
+  const sharedOpen = /<f\b[^>]*?\bt="shared"[^>]*?(\/?)>/g
+  let match: RegExpExecArray | null
+  while ((match = sharedOpen.exec(worksheetXml)) !== null) {
+    const openTag = match[0]
+    const si = /\bsi="([^"]+)"/.exec(openTag)?.[1]
+    if (si === undefined) continue
+    const openEnd = match.index + openTag.length
+    let end = openEnd
+    let body = ''
+    if (match[1] !== '/') {
+      const close = worksheetXml.indexOf('</f>', openEnd)
+      if (close === -1) continue
+      body = worksheetXml.slice(openEnd, close)
+      end = close + '</f>'.length
+    }
+    const cellOpen = worksheetXml.lastIndexOf('<c', match.index)
+    const address = /\br="([A-Z]{1,3}[0-9]+)"/.exec(worksheetXml.slice(cellOpen, match.index))?.[1]
+    if (address === undefined) continue
+    const parsed = /^([A-Z]{1,3})([0-9]+)$/.exec(address)
+    if (!parsed) continue
+    fragments.push({
+      start: match.index,
+      end,
+      address,
+      row: Number(parsed[2]) - 1,
+      column: parseA1Column(address),
+      si,
+      isMaster: /\bref="/.test(openTag),
+      body,
+    })
+  }
+
+  const killedMasters = new Map<string, SharedFragment>()
+  for (const fragment of fragments) {
+    if (fragment.isMaster && fragment.body !== '' && rewritten.has(fragment.address)) {
+      killedMasters.set(fragment.si, fragment)
+    }
+  }
+  if (killedMasters.size === 0) return worksheetXml
+
+  const parts: string[] = []
+  let cursor = 0
+  for (const fragment of fragments) {
+    const master = killedMasters.get(fragment.si)
+    if (
+      master === undefined ||
+      fragment.isMaster ||
+      fragment.body !== '' ||
+      rewritten.has(fragment.address)
+    ) {
+      continue
+    }
+    const translated = translateSharedFormula(
+      decodeXmlText(master.body),
+      fragment.row - master.row,
+      fragment.column - master.column,
+    )
+    parts.push(worksheetXml.slice(cursor, fragment.start))
+    // Untranslatable follower (a shifted reference would leave the sheet —
+    // impossible for a group Excel itself wrote, but never leave a bare
+    // shared tag): degrade to its cached static value instead.
+    if (translated !== null) parts.push(`<f>${escapeXmlText(translated)}</f>`)
+    cursor = fragment.end
+  }
+  if (parts.length === 0) return worksheetXml
+  parts.push(worksheetXml.slice(cursor))
+  return parts.join('')
+}
+
 function groupCellMutations(
   fills: readonly BulkConstantFill[],
   edits: readonly CellEdit[],
@@ -2198,7 +2308,12 @@ function worksheetDimensionPatcher<T>(
   }
   let sawDimension = false
   const patch = (prefix: string): string => {
-    const dimension = /<dimension\b[^>]*\bref="([^"]+)"[^>]*\/?>/.exec(prefix)
+    // Also consume a paired empty form (<dimension ref="..."></dimension>) —
+    // replacing only the opening tag would orphan the closing tag and produce
+    // malformed XML.
+    const dimension = /<dimension\b[^>]*\bref="([^"]+)"[^>]*\/?>(?:\s*<\/dimension\s*>)?/.exec(
+      prefix,
+    )
     if (!dimension?.[1]) return prefix
     sawDimension = true
     let currentRow = 1

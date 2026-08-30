@@ -136,6 +136,24 @@ export function IconAlignLeft(props: IconProps) {
   )
 }
 
+export function IconDirLtr(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 4.53 5.78 h 14.94 M 4.53 9.51 h 9.96 M 4.53 16.98 h 10.65" />
+      <path d="M 14.7 14.1 l 4.35 2.88 -4.35 2.88 z" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+export function IconDirRtl(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M 4.53 5.78 h 14.94 M 9.51 9.51 h 9.96 M 8.82 16.98 h 10.65" />
+      <path d="M 9.3 14.1 l -4.35 2.88 4.35 2.88 z" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
 export function IconAlignCenter(props: IconProps) {
   return (
     <Svg {...props}>

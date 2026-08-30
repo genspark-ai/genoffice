@@ -414,18 +414,23 @@ function xmlSegments(
 }
 
 /**
- * Rebuild one cell's paragraphs with new text, keeping tcPr and the first
- * paragraph's pPr / first run's rPr (so header bold, alignment, shading stay).
+ * Rebuild one cell's paragraphs, keeping tcPr. String entries keep the legacy
+ * behavior (first paragraph's pPr / first run's rPr for every paragraph); rich
+ * entries regenerate full runs against their own original paragraph's pPr, and
+ * null entries keep the original paragraph bytes untouched.
  * Returns null when the cell is too complex to patch safely (nested table).
  */
-function patchCellXml(tcXml: string, paras: string[]): string | null {
+function patchCellXml(tcXml: string, paras: readonly CellParaPatch[]): string | null {
   if (tcXml.indexOf('<w:tbl', 1) !== -1) return null
   const openTag = /^<w:tc(?: [^>]*)?>/.exec(tcXml)?.[0]
   if (!openTag) return null
   const tcPr = /<w:tcPr[\s\S]*?<\/w:tcPr>|<w:tcPr[^>]*\/>/.exec(tcXml)?.[0] ?? ''
-  const firstP = /<w:p(?: [^>]*)?>[\s\S]*?<\/w:p>/.exec(tcXml)?.[0] ?? ''
-  const pPr = /<w:pPr[\s\S]*?<\/w:pPr>|<w:pPr[^>]*\/>/.exec(firstP)?.[0] ?? ''
-  const firstRun = /<w:r(?: [^>]*)?>[\s\S]*?<\/w:r>/.exec(firstP)?.[0] ?? ''
+  const originals = xmlSegments(tcXml, 'w:p', openTag.length, tcXml.length).map((seg) =>
+    tcXml.slice(seg.start, seg.end),
+  )
+  const pPrOf = (pXml: string) => /<w:pPr[\s\S]*?<\/w:pPr>|<w:pPr[^>]*\/>/.exec(pXml)?.[0] ?? ''
+  const firstPPr = pPrOf(originals[0] ?? '')
+  const firstRun = /<w:r(?: [^>]*)?>[\s\S]*?<\/w:r>/.exec(originals[0] ?? '')?.[0] ?? ''
   const rPr = /<w:rPr[\s\S]*?<\/w:rPr>/.exec(firstRun)?.[0] ?? ''
   // picture runs are not part of the text model; carry them over verbatim so a
   // text edit in a cell with an inline image doesn't drop the image
@@ -435,20 +440,88 @@ function patchCellXml(tcXml: string, paras: string[]): string | null {
         .filter((r) => r.includes('<w:drawing'))
         .join('')
     : ''
+  // The run model re-emits every drawing it resolved media for (run.image.xml),
+  // including Word's mc:Choice drawing whose VML w:pict fallback shares the same
+  // media relationship. Only drawings the model cannot see (shapes, textboxes,
+  // charts, blind pict/object) must ride over. Carried copies keep only the
+  // drawing payload children — run-level text belongs to the rich runs, while
+  // text nested inside the drawing (textbox content) stays intact.
+  const mediaRIds = (xml: string) =>
+    [...xml.matchAll(/<(?:a:blip|v:imagedata)\b[^>]*\br:(?:embed|link|id)="([^"]+)"/g)].map(
+      (m) => m[1],
+    )
+  const DRAWING_TAGS = new Set(['mc:AlternateContent', 'w:drawing', 'w:pict', 'w:object'])
+  const carriedRunsOf = (pXml: string, emittedMedia: Set<string>) => {
+    // a payload is a twin of an emitted image when all its media is already
+    // re-emitted and it carries no textbox text of its own
+    const isTwin = (payload: string) => {
+      const ids = mediaRIds(payload)
+      return (
+        ids.length > 0 &&
+        ids.every((id) => emittedMedia.has(id)) &&
+        !/<w:txbxContent[\s>]|<v:textbox[\s>]/.test(payload)
+      )
+    }
+    return xmlSegments(pXml, 'w:r', 0, pXml.length)
+      .map((seg) => pXml.slice(seg.start, seg.end))
+      .filter((r) => /<wp:anchor[\s>]|<w:pict[\s>]|<w:object[\s>]/.test(r))
+      .map((r) => {
+        const open = /^<w:r(?:\s[^>]*)?>/.exec(r)?.[0]
+        if (!open) return ''
+        const kept = splitXmlChildren(r.slice(open.length, r.length - '</w:r>'.length)).filter(
+          (c) => DRAWING_TAGS.has(c.name) && !isTwin(c.xml),
+        )
+        return kept.length > 0 ? `<w:r>${kept.map((c) => c.xml).join('')}</w:r>` : ''
+      })
+      .join('')
+  }
+  const aligned = paras.length === originals.length
   const body = paras
-    .map((t, i) => {
-      const keep = i === 0 ? drawingRuns : ''
-      return t === ''
-        ? `<w:p>${pPr}${keep}</w:p>`
-        : `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${escapeXmlText(t)}</w:t></w:r>${keep}</w:p>`
+    .map((entry, i) => {
+      if (entry === null) return originals[i] ?? ''
+      if (typeof entry === 'string') {
+        const keep = i === 0 ? drawingRuns : ''
+        return entry === ''
+          ? `<w:p>${firstPPr}${keep}</w:p>`
+          : `<w:p>${firstPPr}<w:r>${rPr}${cellRunContentXml(entry)}</w:r>${keep}</w:p>`
+      }
+      const template = originals[Math.min(i, originals.length - 1)] ?? ''
+      const emitted = runsXml(entry.runs, null)
+      const emittedMedia = new Set(mediaRIds(emitted))
+      const keep = aligned
+        ? carriedRunsOf(template, emittedMedia)
+        : i === 0
+          ? originals.map((p) => carriedRunsOf(p, emittedMedia)).join('')
+          : ''
+      return `<w:p>${pPrOf(template)}${emitted}${keep}</w:p>`
     })
     .join('')
   return openTag + tcPr + body + '</w:tc>'
 }
 
-/** per-cell patch: plain paragraph strings, or nested-table cell texts by nested index */
+/** cell paragraph texts carry tabs/breaks as control chars (extractRuns encoding);
+ *  they must go back as real elements, not literal characters inside w:t */
+function cellRunContentXml(text: string): string {
+  const CONTROL: Record<string, string> = {
+    '\t': '<w:tab/>',
+    '\n': '<w:br/>',
+    '\f': '<w:br w:type="page"/>',
+    '\v': '<w:br w:type="column"/>',
+  }
+  return text
+    .split(/([\t\n\f\v])/)
+    .map((seg) =>
+      seg === '' ? '' : (CONTROL[seg] ?? `<w:t xml:space="preserve">${escapeXmlText(seg)}</w:t>`),
+    )
+    .join('')
+}
+
+/** one cell paragraph: control-char text (legacy first-run-rPr rebuild), rich runs, or null = keep the original paragraph bytes */
+export type CellParaPatch = string | { runs: Run[] } | null
+
+/** per-cell patch: paragraph patches, or nested-table cell texts by nested index */
 export type CellTextsPatch =
-  | readonly string[]
+  | readonly CellParaPatch[]
   | {
       /** this cell's own text (optional; rewriting the outer text of a cell containing a nested table is not supported yet) */
       paras?: readonly string[] | null
@@ -2387,11 +2460,12 @@ function mergeRFontsXml(rawXml: string, run: Run): string {
     attrs.set(slot, escapeXmlAttr(value))
     attrs.delete(theme)
   }
-  if (run.fontAscii) {
+  // slots still equal to their theme-resolved value are untouched: keep the theme attrs
+  if (run.fontAscii && run.fontAscii !== run.themeRFonts?.fontAscii) {
     set('w:ascii', 'w:asciiTheme', run.fontAscii)
     set('w:hAnsi', 'w:hAnsiTheme', run.fontAscii)
   }
-  if (run.font && (hadEastAsia || run.font !== rawPrimary)) {
+  if (run.font && run.font !== run.themeRFonts?.font && (hadEastAsia || run.font !== rawPrimary)) {
     set('w:eastAsia', 'w:eastAsiaTheme', run.font)
   }
   if (run.fontCs) set('w:cs', 'w:cstheme', run.fontCs)
@@ -2519,9 +2593,13 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         // Runs drop unmodeled fields, and losing w:cs on an unrelated edit
         // would corrupt complex-script runs (mergeRFontsXml likewise only
         // writes w:cs when the model carries one)
+        // a model value resolved from a theme ref counts as untouched: the literal
+        // attrs can never equal it, and rebuilding would materialize the theme link
         return (
-          (rawAttr(attrs, 'w:eastAsia') ?? ascii) === run.font &&
-          ascii === run.fontAscii &&
+          ((rawAttr(attrs, 'w:eastAsia') ?? ascii) === run.font ||
+            (run.font !== undefined && run.font === run.themeRFonts?.font)) &&
+          (ascii === run.fontAscii ||
+            (run.fontAscii !== undefined && run.fontAscii === run.themeRFonts?.fontAscii)) &&
           (run.fontCs === undefined || rawAttr(attrs, 'w:cs') === run.fontCs)
         )
       }

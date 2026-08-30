@@ -72,21 +72,21 @@ describe('readSheetRangeMapped: over-cap reads are row-batched', () => {
   })
 
   it('splits a range that would exceed the sidecar cell budget', async () => {
-    // 200 columns x 300 rows = 60,000 cells; batches of floor(18_000/200)=90 rows.
+    // 200 columns x 1500 rows = 300,000 cells; batches of floor(90_000/200)=450 rows.
     const result = await readSheetRangeMapped(
       state(),
       's1',
-      { startRow: 0, endRow: 299, startColumn: 0, endColumn: 199 },
+      { startRow: 0, endRow: 1_499, startColumn: 0, endColumn: 199 },
       sheetMeta,
     )
     expect(readWorkbookRange).toHaveBeenCalledTimes(4)
     const calls = readWorkbookRange.mock.calls.map(([call]) => call.range)
-    expect(calls[0]).toMatchObject({ startRow: 0, endRow: 89 })
-    expect(calls[1]).toMatchObject({ startRow: 90, endRow: 179 })
-    expect(calls[2]).toMatchObject({ startRow: 180, endRow: 269 })
-    expect(calls[3]).toMatchObject({ startRow: 270, endRow: 299 })
-    expect(result?.fileEndRow).toBe(299)
-    expect(result?.indexedThroughScreen).toBe(299)
+    expect(calls[0]).toMatchObject({ startRow: 0, endRow: 449 })
+    expect(calls[1]).toMatchObject({ startRow: 450, endRow: 899 })
+    expect(calls[2]).toMatchObject({ startRow: 900, endRow: 1_349 })
+    expect(calls[3]).toMatchObject({ startRow: 1_350, endRow: 1_499 })
+    expect(result?.fileEndRow).toBe(1_499)
+    expect(result?.indexedThroughScreen).toBe(1_499)
   })
 
   it('stops early when indexing lags behind a batch', async () => {

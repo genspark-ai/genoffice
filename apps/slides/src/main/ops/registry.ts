@@ -32,6 +32,87 @@ import type { OpenedPptx, Slide, SlideElement } from '@genoffice/pptx-engine'
 
 export class GuidedError extends Error {}
 
+/** Color payloads go straight into srgbClr @val after a '#' strip — anything
+    but 6/8 hex digits produces schema-invalid XML PowerPoint flags for repair. */
+export function requireHexColor(value: unknown, opName: string, field: string): void {
+  if (typeof value !== 'string' || !/^#?[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?$/.test(value)) {
+    throw new GuidedError(
+      `op "${opName}": "${field}" must be a hex color "#RRGGBB" (or "#RRGGBBAA"), got ${JSON.stringify(value)}.`,
+    )
+  }
+}
+
+/** Numeric payloads written into XML attributes: NaN/Infinity would serialize verbatim. */
+export function requireFinite(
+  value: unknown,
+  opName: string,
+  field: string,
+): asserts value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new GuidedError(`op "${opName}": "${field}" must be a finite number.`)
+  }
+}
+
+const DATA_URL_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/bmp': 'bmp',
+  'image/webp': 'webp',
+  'image/tiff': 'tif',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'audio/mpeg': 'mp3',
+  'audio/wav': 'wav',
+  'audio/mp4': 'm4a',
+}
+
+/** File extension implied by a data URL's mime type, or null. */
+export function dataUrlExt(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.startsWith('data:')) return null
+  const semi = value.indexOf(';')
+  const comma = value.indexOf(',')
+  const end = semi > 0 && (comma < 0 || semi < comma) ? semi : comma
+  if (end < 0) return null
+  return DATA_URL_EXT[value.slice(5, end)] ?? null
+}
+
+/**
+ * Media bytes arrive as Uint8Array from in-process callers, or as a base64 /
+ * data-URL string from JSON surfaces — the AI tool channel cannot carry
+ * binary, so without string support these ops are unreachable for the model.
+ */
+export function coerceBytes(value: unknown, opName: string, field: string): Uint8Array {
+  if (value instanceof Uint8Array && value.length > 0) return value
+  if (typeof value === 'string' && value) {
+    const b64 = (value.startsWith('data:') ? value.slice(value.indexOf(',') + 1) : value).replace(
+      /\s+/g,
+      '',
+    )
+    if (/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) {
+      const buf = Buffer.from(b64, 'base64')
+      if (buf.length > 0) return new Uint8Array(buf)
+    }
+  }
+  throw new GuidedError(
+    `op "${opName}" needs "${field}": image/media bytes (base64 string, data URL, or Uint8Array).`,
+  )
+}
+
+export function requireGradientStops(stops: unknown, opName: string): void {
+  if (!Array.isArray(stops) || stops.length < 2) {
+    throw new GuidedError(`op "${opName}": a gradient needs "stops": at least two {pos, color}.`)
+  }
+  for (const s of stops as Array<{ pos?: unknown; color?: unknown }>) {
+    requireFinite(s?.pos, opName, 'stops[].pos')
+    if (s.pos < 0 || s.pos > 1) {
+      throw new GuidedError(`op "${opName}": "stops[].pos" must be a fraction 0..1.`)
+    }
+    requireHexColor(s?.color, opName, 'stops[].color')
+  }
+}
+
 export interface OpTarget {
   /** 0-based slide index, or the durable slide id ("s_<n>", from the part path — save never renames slide parts) */
   slide?: number | string

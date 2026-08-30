@@ -50,6 +50,8 @@ export type RenderFill =
       kind: 'gradient'
       stops: Array<{ pos: number; color: string }>
       angleDeg: number
+      /** <a:lin scaled="1">: angle stretches with the box aspect (45° runs corner-to-corner) */
+      scaled?: boolean
       radial?: boolean
       /** Actual <a:path path> kind (circle/rect/shape); rendering approximates all as radial */
       path?: 'circle' | 'rect' | 'shape'
@@ -98,7 +100,7 @@ export interface RenderStroke {
   /** Compound line type (<a:ln cmpd>; drawn single on canvas, kept for editing round-trip) */
   compound?: 'sng' | 'dbl' | 'thickThin' | 'thinThick' | 'tri'
   /** Gradient line (<a:ln><a:gradFill>); color then holds the first stop as a fallback */
-  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
+  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number; scaled?: boolean }
 }
 
 /** Outer shadow converted to px. */
@@ -175,7 +177,7 @@ export interface GlyphRun {
   /** Run outer shadow (px), drawn via canvas shadow props */
   shadow?: { color: string; blurPx: number; offsetX: number; offsetY: number }
   /** WordArt gradient text fill (resolved stops; angleDeg 0 = left→right, 90 = top→bottom) */
-  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
+  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number; scaled?: boolean }
   /** Run glow (zero-offset canvas shadow) */
   glow?: { color: string; blurPx: number }
   /** Run reflection: the renderer draws a faded mirrored copy below the baseline */
@@ -217,6 +219,8 @@ export interface TextLine {
   softBreakAfter?: number
   /** Paragraph horizontal alignment (editor display) */
   align?: 'left' | 'center' | 'right' | 'justify'
+  /** Effective paragraph base direction is RTL (explicit a:pPr rtl or first-strong-character inference); ribbon/editor display state */
+  rtl?: boolean
   /** Paragraph indent level (editor Tab multi-level list display) */
   level?: number
   /** Paragraph left margin in px (editor display: body text starts here, not at the inset edge) */

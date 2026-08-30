@@ -1320,8 +1320,6 @@ export function AiPanel({
         createSlidesSkill(access),
         createFilesSkill(availableAttachments, (path) => readAttachmentPathsRef.current.add(path)),
       ]),
-      // Page-by-page deck generation needs more tool rounds
-      maxTurns: 24,
       events: {
         onText: (text) => {
           streamedTextRef.current = text

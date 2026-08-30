@@ -20,6 +20,8 @@ import {
   type Paragraph,
 } from '@genoffice/pptx-engine'
 import {
+  coerceBytes,
+  dataUrlExt,
   GuidedError,
   register,
   resolveElement,
@@ -43,11 +45,19 @@ function reqRect(op: Op): { x: number; y: number; cx: number; cy: number } {
 }
 
 function reqBytes(op: Op, field = 'bytes'): Uint8Array {
-  const v = op[field]
-  if (!(v instanceof Uint8Array) || v.length === 0) {
-    throw new GuidedError(`op "${op.op}" needs "${field}": non-empty image/media bytes.`)
+  // JSON surfaces send base64/data URLs; decode once and write back so the
+  // repeated validate/apply passes reuse the decoded bytes
+  const coerced = coerceBytes(op[field], op.op, field)
+  op[field] = coerced
+  return coerced
+}
+
+/** Derive a missing ext from a data URL's mime before the bytes get decoded. */
+function fillExtFromDataUrl(op: Op, field = 'bytes'): void {
+  if (typeof op.ext !== 'string' || !op.ext) {
+    const hint = dataUrlExt(op[field])
+    if (hint) op.ext = hint
   }
-  return v
 }
 
 // ── addElement (textbox / preset shape / line) ──────────────────────────
@@ -82,6 +92,7 @@ register({
   validate(op, ctx) {
     resolveSlide(ctx, op)
     reqRect(op)
+    fillExtFromDataUrl(op)
     reqBytes(op)
     if (typeof op.ext !== 'string' || !op.ext) {
       throw new GuidedError('op "addPicture" needs "ext": the image extension (png/jpg/…).')
@@ -110,6 +121,7 @@ register({
   name: 'replacePicture',
   validate(op, ctx) {
     resolveElement(ctx, op)
+    fillExtFromDataUrl(op)
     reqBytes(op)
     if (typeof op.ext !== 'string' || !op.ext) {
       throw new GuidedError('op "replacePicture" needs "ext": the image extension.')
@@ -162,8 +174,17 @@ register({
     resolveSlide(ctx, op)
     reqRect(op)
     if (typeof op.kind !== 'string') throw new GuidedError('op "addChart" needs "kind".')
-    if (!Array.isArray(op.categories) || !Array.isArray(op.series)) {
-      throw new GuidedError('op "addChart" needs "categories" and "series" arrays.')
+    // The engine returns null on empty data, which reads as a generic
+    // "could not be inserted" — reject with the actual reason instead
+    if (!Array.isArray(op.categories) || op.categories.length === 0) {
+      throw new GuidedError('op "addChart" needs "categories": at least one category label.')
+    }
+    if (
+      !Array.isArray(op.series) ||
+      op.series.length === 0 ||
+      (op.series as Array<{ values?: unknown }>).some((s) => !Array.isArray(s?.values))
+    ) {
+      throw new GuidedError('op "addChart" needs "series": at least one {name, values[]}.')
     }
   },
   apply(op, ctx): OpRecord {
@@ -208,11 +229,23 @@ register({
   validate(op, ctx) {
     resolveSlide(ctx, op)
     reqRect(op)
+    fillExtFromDataUrl(op)
     reqBytes(op)
     if (op.kind !== 'video' && op.kind !== 'audio') {
       throw new GuidedError('op "addMedia" needs "kind": "video" or "audio".')
     }
     if (typeof op.ext !== 'string' || !op.ext) throw new GuidedError('op "addMedia" needs "ext".')
+    const poster = op.poster as { bytes?: unknown; ext?: unknown } | undefined
+    if (poster) {
+      if (typeof poster.ext !== 'string' || !poster.ext) {
+        const hint = dataUrlExt(poster.bytes)
+        if (hint) poster.ext = hint
+      }
+      poster.bytes = coerceBytes(poster.bytes, 'addMedia', 'poster.bytes')
+      if (typeof poster.ext !== 'string' || !poster.ext) {
+        throw new GuidedError('op "addMedia" needs "poster.ext" when a poster is given.')
+      }
+    }
   },
   apply(op, ctx): OpRecord {
     const { index } = resolveSlide(ctx, op)

@@ -37,6 +37,9 @@ export interface Run {
   fontAscii?: string
   /** complex-script-slot font (w:rFonts w:cs, literal attribute only — theme refs stay in rawRPr) */
   fontCs?: string
+  /** font/fontAscii values that were resolved from theme refs at parse time; generate
+   * treats model == resolved as untouched so the raw theme attrs are not materialized */
+  themeRFonts?: { font?: string; fontAscii?: string }
   /** Complex-script font (w:rFonts cs/cstheme, theme-resolved). Display only; saving is kept faithful by rawRPr */
   csFont?: string
   /** right-to-left run (w:rtl): text stored in logical order, rendered RTL */
@@ -45,6 +48,10 @@ export interface Run {
   charSpacingTwips?: number
   /** w:caps ('all') / w:smallCaps ('small') display transform, 'none' = explicit off. Display only; saving is kept faithful by rawRPr */
   caps?: 'all' | 'small' | 'none'
+  /** w:vanish hidden text, resolved through the style chain at parse (an explicit
+   *  run value wins; w:specVanish style separators stay visible). Display only;
+   *  saving is kept faithful by rawRPr */
+  vanish?: boolean
   /** Horizontal character scale percent (w:w). Display only (approximated as spacing); saving is kept faithful by rawRPr */
   charScalePct?: number
   /** OOXML named highlight color (w:highlight), e.g. "yellow" */
@@ -303,6 +310,10 @@ export interface ParaFormat {
   contextualSpacing?: boolean
   /** paragraph shading fill, hex without '#' (w:shd w:fill) */
   shadingFill?: string
+  /** display-only blend for pattern shading (w:shd pctNN/stripes over the fill):
+   *  drives the rendered background; never written back — the raw w:shd
+   *  round-trips through shadingFill */
+  shadingDisplay?: string
   /** paragraph borders, subset of "tblr" e.g. "b" or "tblr" (w:pBdr, single lines) */
   borders?: string
   /**
@@ -573,6 +584,15 @@ export interface NoteInfo {
   text: string
   /** rich display runs (one group per paragraph); gone when an edit rebuilds the note as plain text */
   richParas?: NoteRun[][]
+  /** w:pStyle of the first note paragraph (notes without one render with Normal metrics) */
+  styleId?: string
+  /** direct w:spacing of the first note paragraph (overrides the style chain) */
+  spacing?: {
+    beforeTwips?: number
+    afterTwips?: number
+    lineRule?: 'auto' | 'atLeast' | 'exact'
+    lineRawTwips?: number
+  }
 }
 
 /** Display/edit model for a protected field paragraph. */
@@ -594,6 +614,9 @@ export interface FieldDisplay {
   szHalfPoints?: number
   /** face of the visible result runs (text fields): drives the line factor */
   fontFamily?: string
+  /** per-run sizes for mixed-size text fields (a manual drop-cap letter next to
+   *  body text): rendered as sized spans; szHalfPoints keeps the dominant size */
+  runs?: Array<{ text: string; szHalfPoints?: number }>
   /** explicit paragraph alignment (text fields): overrides the doc default */
   align?: 'left' | 'center' | 'right'
   lineRule?: 'auto' | 'atLeast' | 'exact'

@@ -38,6 +38,134 @@ export const PaginationGapsExtension = Extension.create({
   },
 })
 
+const rowFillKey = new PluginKey<DecorationSet>('paginationRowFills')
+
+/**
+ * Split declared-height table rows: node decorations stretching the tr to the
+ * engine's target height (Word re-honors an atLeast trHeight on the continuation
+ * page fragment). Separate from the page-gap set: the pagination preview clears
+ * the gaps while measuring, but these heights are real layout that must persist.
+ */
+export const RowFillsExtension = Extension.create({
+  name: 'paginationRowFills',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<DecorationSet>({
+        key: rowFillKey,
+        state: {
+          init: () => DecorationSet.empty,
+          apply(tr, set) {
+            const next = tr.getMeta(rowFillKey) as DecorationSet | undefined
+            if (next) return next
+            return set.map(tr.mapping, tr.doc)
+          },
+        },
+        props: {
+          decorations(state) {
+            return rowFillKey.getState(state)
+          },
+        },
+      }),
+    ]
+  },
+})
+
+/** Apply/replace the split-row height patches (an empty list clears them). */
+export function setRowFills(
+  view: EditorView,
+  fills: Array<{ el: Element; targetPx: number }>,
+): void {
+  const decos: Decoration[] = []
+  for (const [i, fill] of fills.entries()) {
+    try {
+      const $inside = view.state.doc.resolve(view.posAtDOM(fill.el, 0))
+      for (let d = $inside.depth; d > 0; d--) {
+        if ($inside.node(d).type.name !== 'docTableRow') continue
+        decos.push(
+          Decoration.node(
+            $inside.before(d),
+            $inside.after(d),
+            { style: `height:${Math.round(fill.targetPx)}px` },
+            { key: `row-fill-${i}-${Math.round(fill.targetPx)}` },
+          ),
+        )
+        break
+      }
+    } catch {
+      // unmapped DOM (nested-table NodeView etc.): skip, the row keeps its natural height
+    }
+  }
+  const next = DecorationSet.create(view.state.doc, decos)
+  const prev = rowFillKey.getState(view.state)
+  if (!prev || !sameGaps(prev, next))
+    view.dispatch(view.state.tr.setMeta(rowFillKey, next).setMeta('addToHistory', false))
+}
+
+const floatVKey = new PluginKey<DecorationSet>('paginationFloatVShifts')
+
+/**
+ * Page/margin-anchored floated tables (w:tblpPr vertAnchor page|margin): node
+ * decorations carrying the engine's downward shift to the tblpY target as the
+ * --tblp-dy margin. Like the row fills, these are real layout (not page-gap
+ * decoration) and must persist through the preview's gap clearing.
+ */
+export const FloatVShiftsExtension = Extension.create({
+  name: 'paginationFloatVShifts',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<DecorationSet>({
+        key: floatVKey,
+        state: {
+          init: () => DecorationSet.empty,
+          apply(tr, set) {
+            const next = tr.getMeta(floatVKey) as DecorationSet | undefined
+            if (next) return next
+            return set.map(tr.mapping, tr.doc)
+          },
+        },
+        props: {
+          decorations(state) {
+            return floatVKey.getState(state)
+          },
+        },
+      }),
+    ]
+  },
+})
+
+/** Apply/replace the anchored-table shifts (an empty list clears them). */
+export function setFloatVShifts(
+  view: EditorView,
+  shifts: Array<{ el: Element; dyPx: number }>,
+): void {
+  const decos: Decoration[] = []
+  for (const [i, shift] of shifts.entries()) {
+    const dy = Math.round(shift.dyPx * 10) / 10
+    if (dy < 0.5) continue
+    try {
+      const $inside = view.state.doc.resolve(view.posAtDOM(shift.el, 0))
+      for (let d = $inside.depth; d > 0; d--) {
+        if ($inside.node(d).type.name !== 'docTable') continue
+        decos.push(
+          Decoration.node(
+            $inside.before(d),
+            $inside.after(d),
+            { style: `--tblp-dy:${dy}px`, 'data-tblp-dy': String(dy) },
+            { key: `tblp-dy-${i}-${dy}` },
+          ),
+        )
+        break
+      }
+    } catch {
+      // unmapped DOM: skip, the table keeps its flow position
+    }
+  }
+  const next = DecorationSet.create(view.state.doc, decos)
+  const prev = floatVKey.getState(view.state)
+  if (!prev || !sameGaps(prev, next))
+    view.dispatch(view.state.tr.setMeta(floatVKey, next).setMeta('addToHistory', false))
+}
+
 export interface GapMetrics {
   marginTop: number
   marginBottom: number
@@ -50,7 +178,7 @@ export const GAP_BAND = 28
 
 export type GapKind = 'block' | 'inline' | 'table' | 'cut' | 'cell'
 
-export function makeGapEl(m: GapMetrics, kind: GapKind): HTMLElement {
+export function makeGapEl(m: GapMetrics, kind: GapKind, cols?: number): HTMLElement {
   const gap = document.createElement(kind === 'table' ? 'tr' : 'div')
   gap.contentEditable = 'false'
   if (kind === 'cut') {
@@ -67,7 +195,12 @@ export function makeGapEl(m: GapMetrics, kind: GapKind): HTMLElement {
     // display:table-row, leaving a colored remnant in the gray page gutter.
     gap.className = 'page-gap page-gap-inline page-gap-table'
     const cell = document.createElement('td')
-    cell.colSpan = 1000
+    // colSpan must equal the table's real column count: a larger span widens the
+    // column grid, and in a fixed-layout table WITHOUT a <colgroup> (AI-inserted
+    // tables carry no colWidthsPct) Chromium then splits width:100% across all
+    // phantom columns, collapsing every real cell to ~1px — which changes the
+    // measured heights and sets off an endless remeasure/re-gap flicker loop
+    cell.colSpan = Math.max(1, Math.round(cols ?? 1))
     cell.contentEditable = 'false'
     const fill = document.createElement('div')
     fill.className = 'page-gap-table-fill'
@@ -113,6 +246,9 @@ export type PageGapSpec = {
   /** slice boundary (gapless flow px) this gap opens; syncFloatShifts prefers it
    *  over the widget's DOM position (they differ at trailing float-spill pages) */
   boundaryY?: number
+  /** table gaps: the host table's real column count (the spanning cell's colSpan
+   *  must not widen the column grid — see makeGapEl) */
+  cols?: number
 } & ({ el: HTMLElement } | { pos: number; kind?: Exclude<GapKind, 'block'> })
 
 /** Rebuild all page gaps (an empty list clears them); each gap carries its own margins (sections differ) */
@@ -168,12 +304,13 @@ export function setPageGaps(
       kind = gap.kind ?? 'inline'
     }
     // boundaryY in the key: a reused widget must not keep a stale boundary
-    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)},${Math.round(gap.boundaryY ?? -1)}`
+    // (cols too: a table-structure edit must rebuild the spanning cell)
+    const mKey = `${metrics.marginTop},${metrics.marginBottom},${metrics.marginLeft},${metrics.marginRight},${Math.round(gap.pullUp ?? 0)},${Math.round(gap.boundaryY ?? -1)},${gap.cols ?? 0}`
     decos.push(
       Decoration.widget(
         pos,
         () => {
-          const el = makeGapEl(metrics, kind)
+          const el = makeGapEl(metrics, kind, gap.cols)
           if (gap.boundaryY != null) el.dataset.boundaryY = gap.boundaryY.toFixed(1)
           // margins don't apply to table-rows and cuts are zero-height markers;
           // tables inside mixed-column regions are out of scope anyway (v1)

@@ -206,6 +206,28 @@ function linearRampStops(stops: Array<{ pos: number; color: string }>): Array<nu
   return out
 }
 
+/**
+ * Unit direction of an a:lin gradient. scaled="1" declares the angle in a square
+ * fill box that stretches with the shape, so the rendered direction is the angle
+ * unsquashed by the aspect ratio: tanθ' = tanθ × (w/h). Measured on prod_048's
+ * 45°-scaled full-width band: the ramp midline runs top-left → bottom-right through
+ * the near-vertical direction (h·cosθ, w·sinθ), pixel-matching PowerPoint's export;
+ * the untransformed 45° (and the diagonal direction (w·cosθ, h·sinθ)) both miss it.
+ */
+function linearGradientDirection(
+  angleDeg: number,
+  scaled: boolean | undefined,
+  w: number,
+  h: number,
+): [number, number] {
+  const rad = (angleDeg * Math.PI) / 180
+  if (!scaled) return [Math.cos(rad), Math.sin(rad)]
+  const vx = h * Math.cos(rad)
+  const vy = w * Math.sin(rad)
+  const n = Math.hypot(vx, vy) || 1
+  return [vx / n, vy / n]
+}
+
 /** Cached shape-sized pattern canvases for rect/shape path gradients. */
 const pathGradCache = new Map<string, HTMLCanvasElement>()
 
@@ -336,9 +358,7 @@ export function fillToKonva(
           fillRadialGradientColorStops: linearRampStops(fill.stops),
         }
       }
-      const rad = (fill.angleDeg * Math.PI) / 180
-      const dx = Math.cos(rad)
-      const dy = Math.sin(rad)
+      const [dx, dy] = linearGradientDirection(fill.angleDeg, fill.scaled, w, h)
       // Gradient vector length = the box's projection onto the gradient direction,
       // so the ramp spans exactly the shape (PowerPoint semantics for a:lin)
       const cx = w / 2
@@ -434,9 +454,7 @@ export function strokeToKonva(
   const grad = stroke.gradient
   let gradProps = {}
   if (grad && size) {
-    const rad = (grad.angleDeg * Math.PI) / 180
-    const dx = Math.cos(rad)
-    const dy = Math.sin(rad)
+    const [dx, dy] = linearGradientDirection(grad.angleDeg, grad.scaled, size.w, size.h)
     const cx = size.w / 2
     const cy = size.h / 2
     const len = Math.abs(dx) * size.w + Math.abs(dy) * size.h
@@ -1289,49 +1307,105 @@ export function displayFontFamily(name: string): string {
 }
 
 /**
- * Distance from a Konva Text node's top to its visible alphabetic baseline, in px.
+ * Baseline anchoring for painted text, measured per family/style at a fixed size
+ * (font metrics scale linearly). Konva paints with canvas2d textBaseline='middle'
+ * anchored 0.5em below the node top; the middle→alphabetic distance is a per-font
+ * quantity Chromium derives from the drawing font's metrics — measuring the same ink
+ * from both baselines yields it exactly.
  *
- * Konva paints with canvas2d textBaseline='middle' anchored at half the line height
- * (lineHeight defaults to 1 → 0.5em below the top). Where the alphabetic baseline sits
- * relative to that 'middle' anchor is a per-font quantity Chromium derives from font
- * metrics; measuring the same ink from both baselines yields it exactly. The ratio is
- * measured once per family/style at a fixed size (font metrics scale linearly) so the
- * engine's baselineY can be converted to a Konva top with no per-font error — the old
- * fixed 0.8em approximation was tuned for Latin sans and sat several px high for
- * CJK/serif fonts, drawing their glyphs visibly below the layout position.
+ * Whether to paint the alphabetic baseline exactly on the engine's baselineY splits
+ * by font resolution (both branches pixel-matched against PowerPoint on prod run3):
+ * - The requested family resolves to a real face (system font or a registered private
+ *   FontFace): exact anchoring matches PowerPoint — the fixed 0.8em legacy rule sat
+ *   several px low on JP faces (prod_020/024/072 Meiryo UI improved 3-5pp with exact).
+ * - The family falls back to a script default (localized names, missing fonts):
+ *   PowerPoint's own substitute rendering sits where the legacy 0.8em rule painted,
+ *   and exact anchoring via the fallback font's metrics lands ~2px high
+ *   (prod_050 bisected: the engine line model was calibrated through the 0.8em rule
+ *   for fallback-drawn text).
  */
 const MEASURE_PX = 100
 let baselineCtx: CanvasRenderingContext2D | null | undefined
-const baselineAscentRatio = new Map<string, number>()
+const baselineAnchor = new Map<string, { ratio: number; resolved: boolean }>()
+// Private/embedded FontFaces register after the first React render, and a Konva batchDraw
+// repaints existing nodes without recomputing their glyph y props — anchors measured
+// against the fallback font would stick. Bump an epoch on 'loadingdone' so glyph-building
+// components re-render (recomputing anchors against the now-loaded faces).
+let fontsEpoch = 0
+const fontsEpochSubs = new Set<() => void>()
 if (typeof document !== 'undefined')
-  // Web fonts (private/embedded faces) finish loading after first paint; drop ratios
-  // measured against the fallback font so the next render measures the real face.
-  document.fonts?.addEventListener?.('loadingdone', () => baselineAscentRatio.clear())
+  document.fonts?.addEventListener?.('loadingdone', () => {
+    baselineAnchor.clear()
+    fontsEpoch++
+    for (const cb of fontsEpochSubs) cb()
+  })
 
-export function konvaBaselineAscent(
-  family: string,
-  sizePx: number,
+export function subscribeFontsEpoch(cb: () => void): () => void {
+  fontsEpochSubs.add(cb)
+  return () => fontsEpochSubs.delete(cb)
+}
+export function getFontsEpoch(): number {
+  return fontsEpoch
+}
+
+const RESOLVE_PROBE = 'Ilmg19日本語'
+
+function measureBaselineAnchor(
+  familyList: string,
   bold?: boolean,
   italic?: boolean,
-): number {
-  const key = `${family}|${bold ? 'b' : ''}${italic ? 'i' : ''}`
-  const hit = baselineAscentRatio.get(key)
-  if (hit !== undefined) return hit * sizePx
+): { ratio: number; resolved: boolean } {
+  const key = `${familyList}|${bold ? 'b' : ''}${italic ? 'i' : ''}`
+  const hit = baselineAnchor.get(key)
+  if (hit) return hit
   if (baselineCtx === undefined)
     baselineCtx =
       typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null
-  if (!baselineCtx) return sizePx * 0.8 // no canvas (unit tests): legacy approximation
+  if (!baselineCtx) return { ratio: 0.8, resolved: false } // no canvas (unit tests): legacy rule
   const ctx = baselineCtx
-  ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${MEASURE_PX}px ${family}`
+  const style = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}`
+  // Does the primary family resolve? Its advance must differ from a bare generic under
+  // at least one generic fallback (a real face can't metric-match both serif and monospace)
+  const primary = /^'([^']+)'/.exec(familyList)?.[1] ?? familyList.split(',')[0]!.trim()
+  const w = (font: string) => {
+    ctx.font = `${style}${MEASURE_PX}px ${font}`
+    return ctx.measureText(RESOLVE_PROBE).width
+  }
+  const resolved =
+    w(`'${primary}', monospace`) !== w('monospace') || w(`'${primary}', serif`) !== w('serif')
   // Same ink measured from both baselines: the ascent difference IS the exact distance
-  // from the 'middle' anchor down to the alphabetic baseline for this font
+  // from the 'middle' anchor down to the alphabetic baseline for the drawing font
+  ctx.font = `${style}${MEASURE_PX}px ${familyList}`
   ctx.textBaseline = 'alphabetic'
   const a1 = ctx.measureText('Hg').actualBoundingBoxAscent
   ctx.textBaseline = 'middle'
   const a2 = ctx.measureText('Hg').actualBoundingBoxAscent
   const ratio = a1 > 0 || a2 > 0 ? 0.5 + (a1 - a2) / MEASURE_PX : 0.8
-  baselineAscentRatio.set(key, ratio)
-  return ratio * sizePx
+  const anchor = { ratio, resolved }
+  baselineAnchor.set(key, anchor)
+  return anchor
+}
+
+/** baselineY − node top for painted text (see measureBaselineAnchor for the split). */
+function konvaBaselineAscent(
+  familyList: string,
+  sizePx: number,
+  bold?: boolean,
+  italic?: boolean,
+): number {
+  const a = measureBaselineAnchor(familyList, bold, italic)
+  return (a.resolved ? a.ratio : 0.8) * sizePx
+}
+
+/** Painted-baseline − engine-baselineY delta (the edit overlay cancels it to match pixels). */
+export function konvaBaselineDrop(
+  familyList: string,
+  sizePx: number,
+  bold?: boolean,
+  italic?: boolean,
+): number {
+  const a = measureBaselineAnchor(familyList, bold, italic)
+  return a.resolved ? 0 : (a.ratio - 0.8) * sizePx
 }
 
 export function glyphToDraw(run: GlyphRun): GlyphDraw {
@@ -1344,8 +1418,6 @@ export function glyphToDraw(run: GlyphRun): GlyphDraw {
   return {
     text: run.text,
     x: run.x,
-    // Konva Text positions by top; place it so the painted baseline lands exactly on the
-    // engine's baselineY (see konvaBaselineAscent).
     y: run.baselineY - konvaBaselineAscent(family, run.fontSizePx, effectiveBold, run.italic),
     fontSize: run.fontSizePx,
     fontFamily: family,
@@ -1392,9 +1464,12 @@ export function glyphToDraw(run: GlyphRun): GlyphDraw {
       ? (() => {
           // Gradient in Text-node-local coords (origin = glyph top-left); 90° = top→bottom
           // across the em box, 0° = left→right across the run width
-          const rad = (run.gradient.angleDeg * Math.PI) / 180
-          const gx = Math.cos(rad)
-          const gy = Math.sin(rad)
+          const [gx, gy] = linearGradientDirection(
+            run.gradient.angleDeg,
+            run.gradient.scaled,
+            run.widthPx,
+            run.fontSizePx,
+          )
           const cx = run.widthPx / 2
           const cy = run.fontSizePx * 0.5
           // Same projection as shape fills: ramp length = the box's projection onto the direction

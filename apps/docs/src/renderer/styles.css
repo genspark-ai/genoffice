@@ -576,8 +576,9 @@ html.genoffice-popover-open .ribbon-tabs {
 .ribbon-body {
   display: flex;
   align-items: stretch;
-  /* band metrics shared with the slides ribbon */
-  padding: 6px 12px;
+  /* band metrics shared with the slides ribbon; the 5px scrollbar lane below
+     is carved out of the bottom padding so the 80px band stays unchanged */
+  padding: 6px 12px 1px;
   /* HARD-fixed height, not min-height: the ribbon height stays constant across
      tabs, so switching tabs or auto-jumping to Table Layout when the cursor
      enters a table never pushes the editing area below. A tab that outgrows this must
@@ -588,19 +589,35 @@ html.genoffice-popover-open .ribbon-tabs {
      the sheets/slides ribbons). Dropdown panels are NOT clipped by this —
      they escape the scroll container via anchor positioning (see
      .rb-split-wrap). */
-  overflow-x: auto;
+  /* `scroll`, not `auto`: styled scrollbars are classic (non-overlay), so
+     `scroll` keeps the 5px lane reserved even without overflow and crossing
+     the overflow threshold cannot cause a vertical layout jump (same
+     reasoning as the sheets ribbon). */
+  overflow-x: scroll;
   overflow-y: hidden;
-  scrollbar-width: none;
 }
 
+/* Slim visible scrollbar so mouse users can reach overflowed groups
+   (genspark-ai/genoffice#55 precedent from the sheets ribbon). */
 .ribbon-body::-webkit-scrollbar {
-  display: none;
+  height: 5px;
+}
+
+.ribbon-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ribbon-body::-webkit-scrollbar-thumb {
+  border-radius: 2.5px;
+  background: var(--docs-scroll-thumb);
 }
 
 .ribbon-group {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  /* never shrink below content — squeezed groups paint over each other */
+  flex-shrink: 0;
   padding: 2px 4px;
 }
 
@@ -2237,11 +2254,16 @@ th.cell-rev-del {
 /* Drop cap: first-letter floats to 3 lines height */
 .has-drop-cap::first-letter {
   float: left;
-  font-size: 3em;
   line-height: 0.85;
   margin-right: 0.05em;
   margin-top: 0.1em;
   font-weight: normal;
+}
+
+/* editor-created caps keep the body size on the run: scale the letter here;
+   Word-imported caps (drop-cap-own-size) already carry the enlarged run size */
+.has-drop-cap:not(.drop-cap-own-size)::first-letter {
+  font-size: 3em;
 }
 
 /* Margin drop cap (in-margin): negative left margin to push it outside text area */
@@ -3897,13 +3919,17 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .table-ribbon-body {
   display: flex;
   align-items: stretch;
-  min-width: 0;
+  /* keep the row at content width: shrinking it (the old min-width: 0) let
+     the groups squeeze and paint over each other instead of overflowing
+     .ribbon-body into its horizontal scroll */
+  flex-shrink: 0;
 }
 
 .table-tool-group {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  flex-shrink: 0;
   min-width: 66px;
   padding: 2px 6px;
 }
@@ -4281,6 +4307,19 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
    the wrapper takes the stray line's height instead of collapsing */
 .doc-protected.doc-protected-floating.doc-protected-floating-stray {
   height: auto;
+}
+
+/* preview: wrappers whose boxes are all page-relative V (data-pv-pagerel,
+   stamped before cloning) un-position like pinned covers so the boxes escape
+   the pv-clip (sized to the page's flow content) and resolve against the page
+   box. Their inline offsets are content-area coordinates: the page margins
+   (--pv-ml/--pv-mt, set per pv-page) shift them back onto the page. */
+.pv-page [data-pv-pagerel='1'] {
+  position: static;
+}
+.pv-page [data-pv-pagerel='1'] > .doc-textbox,
+.pv-page [data-pv-pagerel='1'] > .doc-img-wrap {
+  translate: var(--pv-ml, 0px) var(--pv-mt, 0px);
 }
 
 .ProseMirror-focused .doc-protected.doc-protected-textboxes.ProseMirror-selectednode {

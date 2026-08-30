@@ -97,7 +97,7 @@ export const OP_DOCS: Record<string, OpDoc> = {
     group: 'element',
   },
   setImageFill: {
-    sig: '{source:{mediaPath}|{bytes,ext},tile?} — bytes payload; use the image tools instead',
+    sig: '{source:{mediaPath}|{bytes:base64|dataURL,ext},tile?} — use the image tools instead',
     group: 'element',
     aiCallable: false,
   },
@@ -108,12 +108,12 @@ export const OP_DOCS: Record<string, OpDoc> = {
     group: 'insert',
   },
   addPicture: {
-    sig: '{bytes,ext,offset} — bytes payload; use insert_web_image instead',
+    sig: '{bytes:base64|dataURL,ext?,offset} — use insert_web_image instead',
     group: 'insert',
     aiCallable: false,
   },
   replacePicture: {
-    sig: '{bytes,ext} — bytes payload; use replace_image instead',
+    sig: '{bytes:base64|dataURL,ext?} — use replace_image instead',
     group: 'insert',
     aiCallable: false,
   },
@@ -124,7 +124,7 @@ export const OP_DOCS: Record<string, OpDoc> = {
   },
   addSmartArt: { sig: '{layout,items:[…],offset}', group: 'insert' },
   addMedia: {
-    sig: '{kind:"video"|"audio",bytes,ext,offset} — bytes payload',
+    sig: '{kind:"video"|"audio",bytes:base64|dataURL,ext,offset}',
     group: 'insert',
     aiCallable: false,
   },

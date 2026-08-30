@@ -6,7 +6,7 @@
  * - SlideCanvas: shape content inside the interactive Group + group children + decoration layer
  * - SlideThumb: whole page statically scaled down
  */
-import React, { useLayoutEffect, useRef, useState } from 'react'
+import React, { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type Konva from 'konva'
 import { Group, Rect, Ellipse, Text, Line, Arrow, Image as KImage, Path } from 'react-konva'
 import type {
@@ -40,6 +40,8 @@ import {
   normalizeColor,
   boxPivotProps,
   centerFillProps,
+  subscribeFontsEpoch,
+  getFontsEpoch,
 } from './konva-adapter'
 import { ChartBody } from './ChartBody'
 import { needsTextFrameHitArea } from './text-hit-area'
@@ -68,6 +70,10 @@ export const NodeBody = React.memo(function NodeBody({
   flipHInherited,
   flipVInherited,
 }: NodeBodyProps) {
+  // Late-loading FontFaces (private/embedded) change glyph baseline anchors; the epoch
+  // subscription re-renders past React.memo so glyph y props recompute (a batchDraw alone
+  // repaints stale positions).
+  useSyncExternalStore(subscribeFontsEpoch, getFontsEpoch)
   const { box } = node
 
   // Reflection: a flipped fading copy of the node drawn below it, then the node itself

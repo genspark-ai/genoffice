@@ -79,7 +79,16 @@ export async function handleSave(
     const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
     const sheet = workbook?.getActiveSheet()
     if (!workbook || !sheet) return null
-    const range = workbook.getActiveRange()
+    // A whole-column selection survives a row deletion with its old endRow,
+    // and building its FRange then throws "Range is out of bounds" — the
+    // view stash is cosmetic and must never block the save.
+    const range = (() => {
+      try {
+        return workbook.getActiveRange()
+      } catch {
+        return null
+      }
+    })()
     // Capture the scroll anchor, not getVisibleRange: scrollToCell feeds the
     // same sheetViewStartRow/Column channel, so the restore round-trips
     // exactly — including RTL sheets (see getScrollAnchor). Fall back to the
@@ -107,6 +116,7 @@ export async function handleSave(
   const visualAdditions = toSaveVisualAdds(state.editJournal)
   const tableAdditions = toSaveTableAdds(state.editJournal)
   const pivotAdditions = toSavePivotAdds(state.editJournal)
+  const sparklineAdditions = toSaveSparklineAdds(state.editJournal)
   const sheetOps = toSaveSheetOps(state.editJournal)
   const hyperlinkEdits = toSaveHyperlinkEdits(state.editJournal)
   let filterStates: WorkbookFilterState[]
@@ -224,7 +234,8 @@ export async function handleSave(
     visualAdditions.length +
     visualEdits.length +
     tableAdditions.length +
-    pivotAdditions.length
+    pivotAdditions.length +
+    sparklineAdditions.length
   // A restored crash-recovery session carries its changes in the workbook
   // bytes themselves, not the journal: a plain Save with nothing pending must
   // still write back to the original file (and clear the recovery copy).
@@ -239,10 +250,11 @@ export async function handleSave(
   let csvContent: string | undefined
   if (mode === 'save' && state.file.csvPath !== undefined) {
     const csvPath = state.file.csvPath
-    if (!state.flags.preloadComplete) {
-      ctx.setMessage(t('appCsvExportNeedsFullLoad'))
-      return
-    }
+    // The format question comes BEFORE the full-load guard: a large streamed
+    // session never reaches preloadComplete, so guarding first dead-ended ⌘S
+    // forever ("wait for loading to finish") with the Save-As-.xlsx escape
+    // hatch unreachable. Streamed sessions that insist on CSV still get the
+    // message (and are asked again next time instead of being remembered).
     if (!confirmedCsvSaves.has(csvPath)) {
       const choice = await window.desktopApi.confirmCsvSave()
       if (choice === 'cancel') {
@@ -253,7 +265,11 @@ export async function handleSave(
         await handleSave(ctx, 'save-as', quiet)
         return
       }
-      confirmedCsvSaves.add(csvPath)
+      if (state.flags.preloadComplete) confirmedCsvSaves.add(csvPath)
+    }
+    if (!state.flags.preloadComplete) {
+      ctx.setMessage(t('appCsvExportNeedsFullLoad'))
+      return
     }
     const active = activeCsvSheet(ctx.univerRef.current)
     const serialized = active === null ? null : serializeActiveSheetCsv(active.sheet, state)
@@ -319,7 +335,7 @@ export async function handleSave(
     pivotCacheRefreshPaths,
     pivotRefreshUpdates,
     sheetProtections,
-    sparklineAdditions: toSaveSparklineAdds(state.editJournal),
+    sparklineAdditions,
     formulaValues,
     definedNamesState,
     themeState,
@@ -366,7 +382,7 @@ export async function handleSave(
       pivotCacheRefreshPaths,
       pivotRefreshUpdates,
       sheetProtections,
-      sparklineAdditions: toSaveSparklineAdds(state.editJournal),
+      sparklineAdditions,
       formulaValues,
       definedNamesState: splitSave ? null : definedNamesState,
       themeState,

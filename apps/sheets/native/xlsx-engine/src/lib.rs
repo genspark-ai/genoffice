@@ -24,7 +24,7 @@ pub use visuals::{CellStyle, MediaResult, ThemeFonts, VisualObject};
 use visuals::{ColorContext, SheetVisualSource};
 
 const CHUNK_ROW_COUNT: usize = 256;
-const MAX_RANGE_CELLS: usize = 20_000;
+const MAX_RANGE_CELLS: usize = 100_000;
 const RANGE_WAIT: Duration = Duration::from_millis(750);
 /// Reads this far past the indexed row would only burn the full RANGE_WAIT;
 /// answer immediately instead and let the caller poll.
@@ -131,6 +131,10 @@ pub struct SheetMetadata {
     /// Saved `_xlnm.Print_Titles` formula for this sheet.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub print_titles: Option<String>,
+    /// Any localSheetId-scoped definedName targets this sheet (including
+    /// hidden and _xlnm.* built-ins): the save refuses to clone such a
+    /// sheet, so the host gates duplication up front on the same predicate.
+    pub has_scoped_defined_names: bool,
     /// In-cell rich-value pictures ("place picture in cell").
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub cell_images: Vec<CellImageInfo>,
@@ -784,6 +788,7 @@ impl WorkbookSessions {
                 sparklines,
                 print_area: None,
                 print_titles: None,
+                has_scoped_defined_names: false,
                 cell_images,
             });
             visual_sources.push(SheetVisualSource {
@@ -809,12 +814,13 @@ impl WorkbookSessions {
         );
         let visual_objects =
             visuals::read_visual_objects(&mut archive, &visual_sources, &color_context)?;
-        let (defined_names, print_names) = read_defined_names(&mut archive)?;
+        let (defined_names, print_names, scoped_sheets) = read_defined_names(&mut archive)?;
         for (sheet_index, sheet) in sheets.iter_mut().enumerate() {
             if let Some(names) = print_names.get(&sheet_index) {
                 sheet.print_area = names.area.clone();
                 sheet.print_titles = names.titles.clone();
             }
+            sheet.has_scoped_defined_names = scoped_sheets.contains(&sheet_index);
         }
 
         let session_id = Uuid::new_v4().to_string();
@@ -904,13 +910,12 @@ impl WorkbookSessions {
         session.close()
     }
 
-    pub fn cancel(&self, session_id: &str) -> Result<(), SidecarError> {
-        let session = self
-            .sessions
+    /// The workbook file behind a session, for cross-subsystem cleanup
+    /// (the recalc cache keys resident models by path).
+    pub fn session_path(&self, session_id: &str) -> Option<PathBuf> {
+        self.sessions
             .get(session_id)
-            .ok_or_else(|| SidecarError::InvalidRequest("Unknown workbook session.".into()))?;
-        session.cancelled.store(true, Ordering::Release);
-        Ok(())
+            .map(|session| session.path.clone())
     }
 
     pub fn read_media(
@@ -2651,11 +2656,15 @@ struct SheetPrintNames {
 
 fn read_defined_names(
     archive: &mut ZipArchive<File>,
-) -> Result<(Vec<DefinedName>, HashMap<usize, SheetPrintNames>), SidecarError> {
+) -> Result<(Vec<DefinedName>, HashMap<usize, SheetPrintNames>, HashSet<usize>), SidecarError> {
     let xml = read_zip_string(archive, "xl/workbook.xml")?;
     let mut reader = Reader::from_str(&xml);
     let mut names = Vec::new();
     let mut print_names: HashMap<usize, SheetPrintNames> = HashMap::new();
+    // Sheets with ANY localSheetId-scoped definedName, including hidden and
+    // _xlnm.* built-ins the editor never models — the save's duplicate guard
+    // matches the raw attribute, so the host's early gate must too.
+    let mut scoped_sheets: HashSet<usize> = HashSet::new();
     struct Pending {
         name: String,
         hidden: bool,
@@ -2695,6 +2704,9 @@ fn read_defined_names(
             }
             Event::End(element) if element.local_name().as_ref() == b"definedName" => {
                 if let Some(defined) = current.take() {
+                    if let Some(sheet_index) = defined.sheet_index {
+                        scoped_sheets.insert(sheet_index);
+                    }
                     if defined.formula.is_empty() {
                         continue;
                     }
@@ -2728,7 +2740,7 @@ fn read_defined_names(
             _ => {}
         }
     }
-    Ok((names, print_names))
+    Ok((names, print_names, scoped_sheets))
 }
 
 const DEFAULT_ACCENTS: [(u8, u8, u8); 6] = [
@@ -4015,11 +4027,12 @@ mod tests {
             sparklines: Vec::new(),
             print_area: None,
             print_titles: None,
+            has_scoped_defined_names: false,
             cell_images: Vec::new(),
         };
         let range = CellRange {
             start_row: 0,
-            end_row: 999,
+            end_row: 1_999,
             start_column: 0,
             end_column: 99,
         };
@@ -4177,6 +4190,7 @@ mod tests {
             sparklines: Vec::new(),
             print_area: None,
             print_titles: None,
+            has_scoped_defined_names: false,
             cell_images: Vec::new(),
         };
         let json = serde_json::to_string(&sheet).unwrap();
@@ -4694,6 +4708,9 @@ mod tests {
         );
         assert_eq!(metadata.defined_names.len(), 1);
         assert_eq!(metadata.defined_names[0].name, "Visible");
+        // The _xlnm print names above are localSheetId-scoped even though the
+        // modeled defined_names omit them — the duplicate gate keys off this.
+        assert!(metadata.sheets[0].has_scoped_defined_names);
         let sheet_id = metadata.sheets[0].id.clone();
         let range = CellRange {
             start_row: 0,

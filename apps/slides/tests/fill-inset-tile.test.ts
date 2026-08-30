@@ -79,6 +79,68 @@ describe('fillToKonva stretch fillRect insets (tdf153466)', () => {
   })
 })
 
+describe('a:lin scaled gradients stretch the angle with the box aspect (prod_048 measured)', () => {
+  it('45° scaled on a wide box turns near-vertical: direction ∝ (h·cosθ, w·sinθ)', () => {
+    const r = fillToKonva(
+      {
+        kind: 'gradient',
+        angleDeg: 45,
+        scaled: true,
+        stops: [
+          { pos: 0, color: '#FF0000' },
+          { pos: 1, color: '#00B050' },
+        ],
+      } as any,
+      1000,
+      100,
+    )
+    const s = r.fillLinearGradientStartPoint!
+    const e = r.fillLinearGradientEndPoint!
+    const [dx, dy] = [e.x - s.x, e.y - s.y]
+    // (h, w)/|.| = (100, 1000) normalized -> dy/dx = 10
+    expect(dy / dx).toBeCloseTo(10, 5)
+    expect(dx).toBeGreaterThan(0)
+  })
+
+  it('unscaled 45° keeps the true diagonal direction', () => {
+    const r = fillToKonva(
+      {
+        kind: 'gradient',
+        angleDeg: 45,
+        stops: [
+          { pos: 0, color: '#FF0000' },
+          { pos: 1, color: '#00B050' },
+        ],
+      } as any,
+      1000,
+      100,
+    )
+    const s = r.fillLinearGradientStartPoint!
+    const e = r.fillLinearGradientEndPoint!
+    expect((e.y - s.y) / (e.x - s.x)).toBeCloseTo(1, 5)
+  })
+
+  it('axis-aligned angles are unchanged by scaling', () => {
+    const r = fillToKonva(
+      {
+        kind: 'gradient',
+        angleDeg: 90,
+        scaled: true,
+        stops: [
+          { pos: 0, color: '#FF0000' },
+          { pos: 1, color: '#00B050' },
+        ],
+      } as any,
+      1000,
+      100,
+    )
+    const s = r.fillLinearGradientStartPoint!
+    const e = r.fillLinearGradientEndPoint!
+    expect(e.x - s.x).toBeCloseTo(0, 5)
+    expect(e.y - s.y).toBeCloseTo(100, 5)
+  })
+})
+
 describe('gradient ramps interpolate in linear sRGB (tdf105739)', () => {
   it('subdivides a two-stop ramp with linear-light midpoints', () => {
     const r = fillToKonva(

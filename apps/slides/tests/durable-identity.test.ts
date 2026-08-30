@@ -268,6 +268,40 @@ describe('progressive creationId injection (foreign decks)', () => {
     expect(cnvpr).toMatch(/<\/a:hlinkClick><a:extLst><a:ext uri="\{FF2B5EF4-/)
   })
 
+  it('groupElements resolves durable GUID refs, not just model ids', () => {
+    const a = addElement(opened.deck.slides[0]!, {
+      kind: 'rect',
+      offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+      fillColor: '#111111',
+    })
+    const b = addElement(opened.deck.slides[0]!, {
+      kind: 'rect',
+      offset: { x: 1828800, y: 0, cx: 914400, cy: 914400 },
+      fillColor: '#222222',
+    })
+    const refs = [elementDurableId(a)!, elementDurableId(b)!]
+    expect(refs[0]).toMatch(/^e_[0-9a-f]{8}$/)
+    expect(refs).not.toContain(a.id)
+    const g = runTxn(opened, {
+      ops: [{ op: 'groupElements', target: { slide: 0 }, els: refs }],
+    })
+    expect(g.applied).toBe(true)
+    expect(g.records![0]!.created).toHaveLength(1)
+    expect(els().find((x) => x.type === 'group')).toBeTruthy()
+  })
+
+  it('groupElements dedupes two ref forms naming the same element', () => {
+    const a = addElement(opened.deck.slides[0]!, {
+      kind: 'rect',
+      offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+      fillColor: '#111111',
+    })
+    const r = runTxn(opened, {
+      ops: [{ op: 'groupElements', target: { slide: 0 }, els: [a.id, elementDurableId(a)!] }],
+    })
+    expect(r.applied).toBe(false) // one element twice is not two elements
+  })
+
   it('the cNvPr alias resolves in group refs and flipElements after the upgrade', () => {
     const a = addElement(opened.deck.slides[0]!, {
       kind: 'rect',

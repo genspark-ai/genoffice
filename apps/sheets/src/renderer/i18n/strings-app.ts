@@ -259,6 +259,7 @@ export const appStrings = defineStrings({
     appFormulaTooExpensive:
       '该公式要对大区间做逐元素统计，计算量过大会导致界面卡死——已取消。请缩小引用区间后重试。',
     appPivotSheetNoStructural: '该工作表含数据透视表——暂不支持结构变更。',
+    appDeleteSpanFormulas: '有公式仅引用被删除的行/列——请先更新或删除这些公式。',
     appIconSetUnsupported: '该图标组合无法保存为 xlsx 文件，请换用其他图标集。',
     appNeedFullLoadSort:
       '排序、筛选、移动区域和分列需要完整加载模式——这个工作簿太大，只做了流式加载。',
@@ -268,6 +269,7 @@ export const appStrings = defineStrings({
     appDvNeedsIndexed: '编辑数据验证需要该工作表先完成索引——稍后再试。',
     appDuplicateNeedsFullLoad: '复制工作表需要完整加载模式——这个工作簿太大，只做了流式加载。',
     appPivotSheetNoDuplicate: '该工作表含数据透视表——暂不支持复制该表。',
+    appDuplicateScopedNames: '该工作表含表级定义名称——暂不支持复制该表。',
     appMoveRowsColsUnsaved: '整列移动暂时无法保存到导入的工作簿——整行移动已支持。',
     // Preview / apply / undo
     appNoWorkbookOpen: '当前没有打开的工作簿。',
@@ -1538,6 +1540,8 @@ export const appStrings = defineStrings({
       'This formula evaluates a large range once per element — the computation would freeze the app, so it was cancelled. Narrow the referenced range and try again.',
     appPivotSheetNoStructural:
       'This sheet contains a PivotTable — structural changes are not supported yet.',
+    appDeleteSpanFormulas:
+      'A formula references only the deleted rows/columns — update or remove it first.',
     appIconSetUnsupported:
       'This icon combination cannot be saved to xlsx — please choose a different icon set.',
     appNeedFullLoadSort:
@@ -1552,6 +1556,8 @@ export const appStrings = defineStrings({
       'Duplicating a sheet needs the fully-loaded mode — this workbook is too large and streams partially.',
     appPivotSheetNoDuplicate:
       'This sheet contains a PivotTable — duplicating it is not supported yet.',
+    appDuplicateScopedNames:
+      'This sheet has sheet-scoped defined names — duplicating it is not supported yet.',
     appMoveRowsColsUnsaved:
       'Moving whole columns cannot be saved to imported workbooks yet — moving whole rows is supported.',
     appNoWorkbookOpen: 'No workbook is open.',
@@ -2848,6 +2854,8 @@ export const appStrings = defineStrings({
       'この数式は大きな範囲を要素ごとに評価するため、計算でアプリがフリーズします — キャンセルしました。参照範囲を狭めて再試行してください。',
     appPivotSheetNoStructural:
       'このシートにはピボットテーブルが含まれています — 構造の変更には未対応です。',
+    appDeleteSpanFormulas:
+      '削除対象の行/列のみを参照する数式があります — 先にその数式を更新または削除してください。',
     appIconSetUnsupported:
       'このアイコンの組み合わせは xlsx に保存できません。別のアイコンセットを選択してください。',
     appNeedFullLoadSort:
@@ -2864,6 +2872,8 @@ export const appStrings = defineStrings({
       'シートのコピーには完全読み込みモードが必要です。このブックは大きすぎるため、ストリーミング読み込みのみ行われました。',
     appPivotSheetNoDuplicate:
       'このシートにはピボットテーブルが含まれています — このシートのコピーには未対応です。',
+    appDuplicateScopedNames:
+      'このシートにはシート スコープの定義済み名前があるため、複製はまだサポートされていません。',
     appMoveRowsColsUnsaved:
       '列全体の移動は、インポートしたブックには現時点では保存できません——行全体の移動には対応しています。',
     // Preview / apply / undo
@@ -4197,6 +4207,8 @@ export const appStrings = defineStrings({
     appFormulaTooExpensive:
       '이 수식은 큰 범위를 요소마다 평가하므로 계산으로 앱이 멈춥니다 — 취소되었습니다. 참조 범위를 줄인 뒤 다시 시도하세요.',
     appPivotSheetNoStructural: '이 시트에는 피벗 테이블이 있어 아직 구조 변경을 지원하지 않습니다.',
+    appDeleteSpanFormulas:
+      '삭제할 행/열만 참조하는 수식이 있습니다 — 먼저 해당 수식을 수정하거나 삭제하세요.',
     appIconSetUnsupported:
       '이 아이콘 조합은 xlsx로 저장할 수 없습니다. 다른 아이콘 집합을 선택하세요.',
     appNeedFullLoadSort:
@@ -4210,6 +4222,8 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       '시트 복제에는 전체 로드 모드가 필요합니다. 이 통합 문서는 너무 커서 스트리밍 방식으로만 로드되었습니다.',
     appPivotSheetNoDuplicate: '이 시트에는 피벗 테이블이 있어 아직 시트 복제를 지원하지 않습니다.',
+    appDuplicateScopedNames:
+      '이 시트에는 시트 범위로 정의된 이름이 있어 아직 시트 복제를 지원하지 않습니다.',
     appMoveRowsColsUnsaved:
       '전체 열 이동은 가져온 통합 문서에 아직 저장할 수 없습니다 — 전체 행 이동은 지원됩니다.',
     // Preview / apply / undo
@@ -5548,6 +5562,8 @@ export const appStrings = defineStrings({
       "Cette formule évalue une grande plage élément par élément — le calcul figerait l'application, elle a donc été annulée. Réduisez la plage référencée et réessayez.",
     appPivotSheetNoStructural:
       'Cette feuille contient un tableau croisé dynamique — les modifications structurelles ne sont pas encore prises en charge.',
+    appDeleteSpanFormulas:
+      'Une formule ne référence que les lignes/colonnes supprimées — mettez-la à jour ou supprimez-la d’abord.',
     appIconSetUnsupported:
       "Cette combinaison d'icônes ne peut pas être enregistrée en xlsx — choisissez un autre jeu d'icônes.",
     appNeedFullLoadSort:
@@ -5564,6 +5580,8 @@ export const appStrings = defineStrings({
       "La duplication d'une feuille nécessite le mode de chargement complet — ce classeur est trop volumineux et est chargé partiellement en flux.",
     appPivotSheetNoDuplicate:
       "Cette feuille contient un tableau croisé dynamique — sa duplication n'est pas encore prise en charge.",
+    appDuplicateScopedNames:
+      'Cette feuille contient des noms définis limités à la feuille — sa duplication n’est pas encore prise en charge.',
     appMoveRowsColsUnsaved:
       'Le déplacement de colonnes entières ne peut pas encore être enregistré dans les classeurs importés — le déplacement de lignes entières est pris en charge.',
     appNoWorkbookOpen: "Aucun classeur n'est ouvert.",
@@ -6909,6 +6927,8 @@ export const appStrings = defineStrings({
       'Diese Formel wertet einen großen Bereich pro Element aus — die Berechnung würde die App einfrieren, daher wurde sie abgebrochen. Verkleinern Sie den referenzierten Bereich und versuchen Sie es erneut.',
     appPivotSheetNoStructural:
       'Dieses Blatt enthält eine PivotTable — Strukturänderungen werden noch nicht unterstützt.',
+    appDeleteSpanFormulas:
+      'Eine Formel verweist nur auf die gelöschten Zeilen/Spalten — aktualisieren oder entfernen Sie sie zuerst.',
     appIconSetUnsupported:
       'Diese Symbolkombination kann nicht als xlsx gespeichert werden — bitte wählen Sie einen anderen Symbolsatz.',
     appNeedFullLoadSort:
@@ -6925,6 +6945,8 @@ export const appStrings = defineStrings({
       'Das Duplizieren eines Blatts erfordert den Volllademodus — diese Arbeitsmappe ist zu groß und wird teilweise per Streaming geladen.',
     appPivotSheetNoDuplicate:
       'Dieses Blatt enthält eine PivotTable — sein Duplizieren wird noch nicht unterstützt.',
+    appDuplicateScopedNames:
+      'Dieses Blatt enthält blattbezogene definierte Namen — das Duplizieren wird noch nicht unterstützt.',
     appMoveRowsColsUnsaved:
       'Das Verschieben ganzer Spalten kann bei importierten Arbeitsmappen noch nicht gespeichert werden — das Verschieben ganzer Zeilen wird unterstützt.',
     appNoWorkbookOpen: 'Keine Arbeitsmappe geöffnet.',
@@ -8263,6 +8285,8 @@ export const appStrings = defineStrings({
       'Esta fórmula evalúa un rango grande elemento por elemento — el cálculo congelaría la aplicación, así que se canceló. Reduzca el rango referenciado y vuelva a intentarlo.',
     appPivotSheetNoStructural:
       'Esta hoja contiene una tabla dinámica — los cambios estructurales aún no se admiten.',
+    appDeleteSpanFormulas:
+      'Una fórmula solo hace referencia a las filas/columnas eliminadas: actualícela o elimínela primero.',
     appIconSetUnsupported:
       'Esta combinación de iconos no se puede guardar en xlsx — elige otro conjunto de iconos.',
     appNeedFullLoadSort:
@@ -8278,6 +8302,8 @@ export const appStrings = defineStrings({
       'Duplicar una hoja requiere el modo de carga completa — este libro es demasiado grande y se carga parcialmente por streaming.',
     appPivotSheetNoDuplicate:
       'Esta hoja contiene una tabla dinámica — su duplicación aún no se admite.',
+    appDuplicateScopedNames:
+      'Esta hoja tiene nombres definidos con ámbito de hoja: duplicarla aún no es compatible.',
     appMoveRowsColsUnsaved:
       'Mover columnas enteras aún no se puede guardar en libros importados — mover filas enteras ya es compatible.',
     appNoWorkbookOpen: 'No hay ningún libro abierto.',
@@ -9583,6 +9609,8 @@ export const appStrings = defineStrings({
     appFormulaTooExpensive:
       'สูตรนี้ประเมินช่วงข้อมูลขนาดใหญ่ทีละองค์ประกอบ — การคำนวณจะทำให้แอปค้าง จึงถูกยกเลิก โปรดย่อช่วงที่อ้างอิงแล้วลองอีกครั้ง',
     appPivotSheetNoStructural: 'แผ่นงานนี้มี PivotTable — ยังไม่รองรับการเปลี่ยนโครงสร้าง',
+    appDeleteSpanFormulas:
+      'มีสูตรที่อ้างอิงเฉพาะแถว/คอลัมน์ที่จะถูกลบ — โปรดแก้ไขหรือลบสูตรนั้นก่อน',
     appIconSetUnsupported: 'ชุดไอคอนนี้ไม่สามารถบันทึกเป็น xlsx ได้ โปรดเลือกชุดไอคอนอื่น',
     appNeedFullLoadSort:
       'การเรียงลำดับ กรอง ย้ายช่วง และแยกข้อความเป็นคอลัมน์ต้องใช้โหมดโหลดเต็ม — เวิร์กบุ๊กนี้ใหญ่เกินไปจึงโหลดแบบสตรีมบางส่วน',
@@ -9594,6 +9622,8 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       'การทำสำเนาแผ่นงานต้องใช้โหมดโหลดเต็ม — เวิร์กบุ๊กนี้ใหญ่เกินไปจึงโหลดแบบสตรีมบางส่วน',
     appPivotSheetNoDuplicate: 'แผ่นงานนี้มี PivotTable — ยังไม่รองรับการทำสำเนาแผ่นงานนี้',
+    appDuplicateScopedNames:
+      'แผ่นงานนี้มีชื่อที่กำหนดระดับแผ่นงาน — ยังไม่รองรับการทำสำเนาแผ่นงานนี้',
     appMoveRowsColsUnsaved:
       'การย้ายทั้งคอลัมน์ยังบันทึกลงเวิร์กบุ๊กที่นำเข้าไม่ได้ — ส่วนการย้ายทั้งแถวรองรับแล้ว',
     appNoWorkbookOpen: 'ไม่มีเวิร์กบุ๊กที่เปิดอยู่',
@@ -10866,6 +10896,8 @@ export const appStrings = defineStrings({
     appFormulaTooExpensive:
       'Rumus ini mengevaluasi rentang besar per elemen — perhitungannya akan membekukan aplikasi, jadi dibatalkan. Persempit rentang yang dirujuk lalu coba lagi.',
     appPivotSheetNoStructural: 'Lembar ini berisi PivotTable — perubahan struktur belum didukung.',
+    appDeleteSpanFormulas:
+      'Ada rumus yang hanya merujuk baris/kolom yang dihapus — perbarui atau hapus rumus itu dahulu.',
     appIconSetUnsupported: 'Kombinasi ikon ini tidak dapat disimpan ke xlsx — pilih set ikon lain.',
     appNeedFullLoadSort:
       'Mengurutkan, memfilter, memindahkan rentang, dan memisahkan teks ke kolom memerlukan mode muat penuh — buku kerja ini terlalu besar dan dimuat sebagian secara streaming.',
@@ -10878,6 +10910,8 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       'Menduplikasi lembar memerlukan mode muat penuh — buku kerja ini terlalu besar dan dimuat sebagian secara streaming.',
     appPivotSheetNoDuplicate: 'Lembar ini berisi PivotTable — menduplikasinya belum didukung.',
+    appDuplicateScopedNames:
+      'Lembar ini memiliki nama terdefinisi berlingkup lembar — menduplikasinya belum didukung.',
     appMoveRowsColsUnsaved:
       'Memindahkan seluruh kolom belum dapat disimpan pada buku kerja yang diimpor — memindahkan seluruh baris sudah didukung.',
     appNoWorkbookOpen: 'Tidak ada buku kerja yang terbuka.',
@@ -12181,6 +12215,8 @@ export const appStrings = defineStrings({
       'Эта формула вычисляет большой диапазон поэлементно — расчёт заморозил бы приложение, поэтому он отменён. Сузьте диапазон и попробуйте снова.',
     appPivotSheetNoStructural:
       'Этот лист содержит сводную таблицу — структурные изменения пока не поддерживаются.',
+    appDeleteSpanFormulas:
+      'Формула ссылается только на удаляемые строки/столбцы — сначала обновите или удалите её.',
     appIconSetUnsupported:
       'Эту комбинацию значков нельзя сохранить в xlsx — выберите другой набор значков.',
     appNeedFullLoadSort:
@@ -12197,6 +12233,8 @@ export const appStrings = defineStrings({
       'Дублирование листа требует режима полной загрузки — эта книга слишком велика и загружается потоково частично.',
     appPivotSheetNoDuplicate:
       'Этот лист содержит сводную таблицу — его дублирование пока не поддерживается.',
+    appDuplicateScopedNames:
+      'Этот лист содержит определённые имена уровня листа — его дублирование пока не поддерживается.',
     appMoveRowsColsUnsaved:
       'Перемещение целых столбцов пока нельзя сохранить в импортированных книгах — перемещение целых строк уже поддерживается.',
     appNoWorkbookOpen: 'Нет открытой книги.',
@@ -13493,6 +13531,8 @@ export const appStrings = defineStrings({
       'هذه الصيغة تقيّم نطاقًا كبيرًا لكل عنصر — الحساب سيجمّد التطبيق، لذا تم إلغاؤها. ضيّق النطاق المُشار إليه وحاول مرة أخرى.',
     appPivotSheetNoStructural:
       'تحتوي هذه الورقة على جدول محوري — التغييرات الهيكلية غير مدعومة بعد.',
+    appDeleteSpanFormulas:
+      'هناك صيغة تشير فقط إلى الصفوف/الأعمدة المحذوفة — قم بتحديثها أو حذفها أولاً.',
     appIconSetUnsupported:
       'لا يمكن حفظ مجموعة الأيقونات هذه في xlsx — يرجى اختيار مجموعة أيقونات أخرى.',
     appNeedFullLoadSort:
@@ -13505,6 +13545,8 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       'يتطلب تكرار الورقة وضع التحميل الكامل — هذا المصنف كبير جدًا ومحمّل جزئيًا بالبث.',
     appPivotSheetNoDuplicate: 'تحتوي هذه الورقة على جدول محوري — تكرارها غير مدعوم بعد.',
+    appDuplicateScopedNames:
+      'تحتوي هذه الورقة على أسماء معرفة على مستوى الورقة — تكرارها غير مدعوم بعد.',
     appMoveRowsColsUnsaved:
       'لا يمكن بعد حفظ نقل أعمدة كاملة في المصنفات المستوردة — أما نقل صفوف كاملة فمدعوم.',
     appNoWorkbookOpen: 'لا يوجد مصنف مفتوح.',
@@ -14793,6 +14835,8 @@ export const appStrings = defineStrings({
       'Esta fórmula avalia um intervalo grande elemento por elemento — o cálculo congelaria o aplicativo, então foi cancelada. Reduza o intervalo referenciado e tente novamente.',
     appPivotSheetNoStructural:
       'Esta planilha contém uma Tabela Dinâmica — alterações estruturais ainda não são suportadas.',
+    appDeleteSpanFormulas:
+      'Uma fórmula referencia apenas as linhas/colunas excluídas — atualize-a ou remova-a primeiro.',
     appIconSetUnsupported:
       'Esta combinação de ícones não pode ser salva em xlsx — escolha outro conjunto de ícones.',
     appNeedFullLoadSort:
@@ -14809,6 +14853,8 @@ export const appStrings = defineStrings({
       'Duplicar uma planilha requer o modo de carregamento completo — esta pasta de trabalho é muito grande e é carregada parcialmente por streaming.',
     appPivotSheetNoDuplicate:
       'Esta planilha contém uma Tabela Dinâmica — duplicá-la ainda não é suportado.',
+    appDuplicateScopedNames:
+      'Esta planilha tem nomes definidos no escopo da planilha — duplicá-la ainda não é suportado.',
     appMoveRowsColsUnsaved:
       'Mover colunas inteiras ainda não pode ser salvo em pastas de trabalho importadas — mover linhas inteiras já é suportado.',
     appNoWorkbookOpen: 'Nenhuma pasta de trabalho aberta.',
@@ -16135,6 +16181,8 @@ export const appStrings = defineStrings({
       "Questa formula valuta un intervallo grande elemento per elemento — il calcolo bloccherebbe l'app, quindi è stata annullata. Riduci l'intervallo referenziato e riprova.",
     appPivotSheetNoStructural:
       'Questo foglio contiene una tabella pivot — le modifiche strutturali non sono ancora supportate.',
+    appDeleteSpanFormulas:
+      'Una formula fa riferimento solo alle righe/colonne eliminate — aggiornala o rimuovila prima.',
     appIconSetUnsupported:
       'Questa combinazione di icone non può essere salvata in xlsx — scegli un altro set di icone.',
     appNeedFullLoadSort:
@@ -16151,6 +16199,8 @@ export const appStrings = defineStrings({
       'La duplicazione di un foglio richiede la modalità a caricamento completo — questa cartella di lavoro è troppo grande e viene caricata parzialmente in streaming.',
     appPivotSheetNoDuplicate:
       'Questo foglio contiene una tabella pivot — la sua duplicazione non è ancora supportata.',
+    appDuplicateScopedNames:
+      'Questo foglio contiene nomi definiti a livello di foglio — la duplicazione non è ancora supportata.',
     appMoveRowsColsUnsaved:
       'Lo spostamento di intere colonne non può ancora essere salvato nelle cartelle di lavoro importate — lo spostamento di intere righe è supportato.',
     appNoWorkbookOpen: 'Nessuna cartella di lavoro aperta.',
@@ -17473,6 +17523,8 @@ export const appStrings = defineStrings({
       'Ta formuła ocenia duży zakres element po elemencie — obliczenia zawiesiłyby aplikację, więc ją anulowano. Zawęź zakres odwołań i spróbuj ponownie.',
     appPivotSheetNoStructural:
       'Ten arkusz zawiera tabelę przestawną — zmiany strukturalne nie są jeszcze obsługiwane.',
+    appDeleteSpanFormulas:
+      'Formuła odwołuje się wyłącznie do usuwanych wierszy/kolumn — najpierw ją zaktualizuj lub usuń.',
     appIconSetUnsupported:
       'Tej kombinacji ikon nie można zapisać w pliku xlsx — wybierz inny zestaw ikon.',
     appNeedFullLoadSort:
@@ -17489,6 +17541,8 @@ export const appStrings = defineStrings({
       'Duplikowanie arkusza wymaga trybu pełnego ładowania — ten skoroszyt jest zbyt duży i jest ładowany częściowo strumieniowo.',
     appPivotSheetNoDuplicate:
       'Ten arkusz zawiera tabelę przestawną — jego duplikowanie nie jest jeszcze obsługiwane.',
+    appDuplicateScopedNames:
+      'Ten arkusz zawiera nazwy zdefiniowane o zasięgu arkusza — jego duplikowanie nie jest jeszcze obsługiwane.',
     appMoveRowsColsUnsaved:
       'Przenoszenia całych kolumn nie można jeszcze zapisać w zaimportowanych skoroszytach — przenoszenie całych wierszy jest już obsługiwane.',
     appNoWorkbookOpen: 'Żaden skoroszyt nie jest otwarty.',
@@ -18808,6 +18862,8 @@ export const appStrings = defineStrings({
       'Deze formule evalueert een groot bereik per element — de berekening zou de app laten vastlopen, dus is deze geannuleerd. Verklein het bereik en probeer het opnieuw.',
     appPivotSheetNoStructural:
       'Dit werkblad bevat een draaitabel — structuurwijzigingen worden nog niet ondersteund.',
+    appDeleteSpanFormulas:
+      'Een formule verwijst alleen naar de verwijderde rijen/kolommen — werk deze eerst bij of verwijder deze.',
     appIconSetUnsupported:
       'Deze pictogramcombinatie kan niet worden opgeslagen als xlsx — kies een andere pictogramset.',
     appNeedFullLoadSort:
@@ -18824,6 +18880,8 @@ export const appStrings = defineStrings({
       'Het dupliceren van een werkblad vereist de volledig geladen modus — deze werkmap is te groot en wordt gedeeltelijk streamend geladen.',
     appPivotSheetNoDuplicate:
       'Dit werkblad bevat een draaitabel — dupliceren wordt nog niet ondersteund.',
+    appDuplicateScopedNames:
+      'Dit blad bevat gedefinieerde namen op bladniveau — dupliceren wordt nog niet ondersteund.',
     appMoveRowsColsUnsaved:
       'Het verplaatsen van hele kolommen kan nog niet worden opgeslagen in geïmporteerde werkmappen — het verplaatsen van hele rijen wordt wel ondersteund.',
     appNoWorkbookOpen: 'Er is geen werkmap geopend.',
@@ -20139,6 +20197,8 @@ export const appStrings = defineStrings({
       'Formula ini menilai julat besar bagi setiap elemen — pengiraan akan membekukan aplikasi, jadi ia dibatalkan. Kecilkan julat yang dirujuk dan cuba lagi.',
     appPivotSheetNoStructural:
       'Helaian ini mengandungi Jadual Pangsi — perubahan struktur belum disokong.',
+    appDeleteSpanFormulas:
+      'Ada formula yang hanya merujuk baris/lajur yang dipadam — kemas kini atau padam formula itu dahulu.',
     appIconSetUnsupported: 'Gabungan ikon ini tidak boleh disimpan ke xlsx — pilih set ikon lain.',
     appNeedFullLoadSort:
       'Mengisih, menapis, mengalihkan julat dan memisahkan teks memerlukan mod muat penuh — buku kerja ini terlalu besar dan distrim sebahagian.',
@@ -20152,6 +20212,8 @@ export const appStrings = defineStrings({
       'Menduplikasi helaian memerlukan mod muat penuh — buku kerja ini terlalu besar dan distrim sebahagian.',
     appPivotSheetNoDuplicate:
       'Helaian ini mengandungi Jadual Pangsi — pendupikasiannya belum disokong.',
+    appDuplicateScopedNames:
+      'Helaian ini mempunyai nama tertakrif berskop helaian — penduaan belum disokong.',
     appMoveRowsColsUnsaved:
       'Pengalihan keseluruhan lajur belum boleh disimpan ke buku kerja yang diimport — pengalihan keseluruhan baris sudah disokong.',
     appNoWorkbookOpen: 'Tiada buku kerja dibuka.',
@@ -21425,6 +21487,7 @@ export const appStrings = defineStrings({
     appFormulaTooExpensive:
       'נוסחה זו מחשבת טווח גדול עבור כל רכיב — החישוב היה מקפיא את היישום, ולכן בוטלה. צמצמו את הטווח ונסו שוב.',
     appPivotSheetNoStructural: 'גיליון זה מכיל טבלת ציר — שינויי מבנה אינם נתמכים עדיין.',
+    appDeleteSpanFormulas: 'נוסחה מפנה רק לשורות/עמודות שנמחקות — עדכן או הסר אותה תחילה.',
     appIconSetUnsupported: 'לא ניתן לשמור שילוב אייקונים זה בקובץ xlsx — בחרו ערכת אייקונים אחרת.',
     appNeedFullLoadSort:
       'מיון, סינון, הזזת טווחים ופיצול טקסט דורשים מצב טעינה מלאה — חוברת עבודה זו גדולה מדי ונטענת בהזרמה חלקית.',
@@ -21436,6 +21499,7 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       'שכפול גיליון דורש מצב טעינה מלאה — חוברת עבודה זו גדולה מדי ונטענת בהזרמה חלקית.',
     appPivotSheetNoDuplicate: 'גיליון זה מכיל טבלת ציר — שכפולו אינו נתמך עדיין.',
+    appDuplicateScopedNames: 'גיליון זה מכיל שמות מוגדרים ברמת הגיליון — שכפולו אינו נתמך עדיין.',
     appMoveRowsColsUnsaved:
       'הזזת עמודות שלמות אינה ניתנת לשמירה עדיין בחוברות עבודה מיובאות — הזזת שורות שלמות כבר נתמכת.',
     appNoWorkbookOpen: 'אין חוברת עבודה פתוחה.',
@@ -22704,6 +22768,8 @@ export const appStrings = defineStrings({
       'यह सूत्र बड़ी रेंज का प्रति-तत्व मूल्यांकन करता है — गणना से ऐप फ़्रीज़ हो जाता, इसलिए इसे रद्द किया गया। संदर्भित रेंज छोटी करके पुनः प्रयास करें।',
     appPivotSheetNoStructural:
       'इस शीट में पिवट टेबल है — संरचनात्मक परिवर्तन अभी समर्थित नहीं हैं।',
+    appDeleteSpanFormulas:
+      'कोई सूत्र केवल हटाई जा रही पंक्तियों/स्तंभों को संदर्भित करता है — पहले उसे अपडेट करें या हटाएँ।',
     appIconSetUnsupported:
       'यह आइकन संयोजन xlsx में सहेजा नहीं जा सकता — कृपया कोई अन्य आइकन सेट चुनें।',
     appNeedFullLoadSort:
@@ -22719,6 +22785,8 @@ export const appStrings = defineStrings({
     appDuplicateNeedsFullLoad:
       'शीट की प्रतिलिपि बनाने के लिए पूर्ण-लोड मोड चाहिए — यह कार्यपुस्तिका बहुत बड़ी है और आंशिक रूप से स्ट्रीम होती है।',
     appPivotSheetNoDuplicate: 'इस शीट में पिवट टेबल है — इसकी प्रतिलिपि बनाना अभी समर्थित नहीं है।',
+    appDuplicateScopedNames:
+      'इस शीट में शीट-स्तरीय परिभाषित नाम हैं — इसकी प्रतिलिपि बनाना अभी समर्थित नहीं है।',
     appMoveRowsColsUnsaved:
       'पूरे स्तंभ स्थानांतरित करना अभी आयातित कार्यपुस्तिकाओं में सहेजा नहीं जा सकता — पूरी पंक्तियाँ स्थानांतरित करना समर्थित है।',
     appNoWorkbookOpen: 'कोई कार्यपुस्तिका खुली नहीं है।',
@@ -23974,6 +24042,7 @@ export const appStrings = defineStrings({
     appFormulaTooExpensive:
       '該公式要對大範圍做逐元素統計，計算量過大會導致介面卡死——已取消。請縮小引用範圍後重試。',
     appPivotSheetNoStructural: '該工作表含樞紐分析表——暫不支援結構變更。',
+    appDeleteSpanFormulas: '有公式僅引用被刪除的列/欄——請先更新或刪除這些公式。',
     appIconSetUnsupported: '該圖示組合無法儲存為 xlsx 檔案，請改用其他圖示集。',
     appNeedFullLoadSort:
       '排序、篩選、移動範圍和資料剖析需要完整載入模式——這個活頁簿太大，只做了串流載入。',
@@ -23983,6 +24052,7 @@ export const appStrings = defineStrings({
     appDvNeedsIndexed: '編輯資料驗證需要該工作表先完成索引——請稍後再試。',
     appDuplicateNeedsFullLoad: '複製工作表需要完整載入模式——這個活頁簿太大，只做了串流載入。',
     appPivotSheetNoDuplicate: '該工作表含樞紐分析表——暫不支援複製該表。',
+    appDuplicateScopedNames: '該工作表含表級定義名稱——暫不支援複製該表。',
     appMoveRowsColsUnsaved: '整欄移動暫時無法儲存到匯入的活頁簿——整列移動已支援。',
     appNoWorkbookOpen: '目前沒有開啟的活頁簿。',
     appDvListOptions: '清單：{items}',

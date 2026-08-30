@@ -403,6 +403,7 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   boldOff: 'boolean',
   italicOff: 'boolean',
   caps: 'string',
+  vanish: 'boolean',
   styleId: 'string',
 }
 
@@ -495,12 +496,18 @@ export const TextStyleMark = Mark.create({
       italicOff: { default: null as boolean | null },
       // w:caps ('all') / w:smallCaps ('small'), 'none' = explicit off; saving is kept faithful by rawRPr
       caps: { default: null as 'all' | 'small' | 'none' | null },
+      // w:vanish hidden text (style chain resolved at parse); Word print hides it
+      vanish: { default: null as boolean | null },
       // rtl run (w:rtl, explicit or style-inherited): save-side decode selects the Cs twins.
       // Position must match runMarks' attr order (mark attrs are JSON-compared in signatures)
       cs: { default: null as boolean | null, rendered: false },
+      // explicit w:rtl (tri-state); generate rebuilds the w:rtl group from the model
+      rtl: { default: null as boolean | null, rendered: false },
       styleId: { default: null as string | null },
       // raw rPr slice pass-through (not rendered; on save mergeRPrModel preserves unmodeled attributes)
       rawRPr: { default: null as string | null, rendered: false },
+      // JSON of Run.themeRFonts (theme-resolved font values); keeps raw theme refs from materializing on save
+      themeRFonts: { default: null as string | null, rendered: false },
     }
   },
   parseHTML() {
@@ -560,6 +567,7 @@ export const TextStyleMark = Mark.create({
     }
     if (mark.attrs.boldOff) styles.push('font-weight:normal')
     if (mark.attrs.italicOff) styles.push('font-style:normal')
+    if (mark.attrs.vanish) styles.push('display:none')
     if (mark.attrs.caps === 'all') styles.push('text-transform:uppercase')
     else if (mark.attrs.caps === 'small') styles.push('font-variant-caps:small-caps')
     else if (mark.attrs.caps === 'none')

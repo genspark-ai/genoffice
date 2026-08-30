@@ -70,8 +70,38 @@ export function parseNotesXml(xml: string, kind: NoteKind): NoteInfo[] {
           r.bold || r.italic || r.underline || r.strike || r.color || r.sizeHalfPoints || r.caps,
       ),
     )
-    return { id, text, ...(hasFormat ? { richParas } : {}) }
+    const styleId = /<w:pStyle w:val="([^"]+)"/.exec(entryXml)?.[1]
+    const spacing = noteDirectSpacing(entryXml)
+    return {
+      id,
+      text,
+      ...(hasFormat ? { richParas } : {}),
+      ...(styleId ? { styleId } : {}),
+      ...(spacing ? { spacing } : {}),
+    }
   })
+}
+
+/** direct w:spacing attrs of the first note paragraph (they override the style chain) */
+function noteDirectSpacing(entryXml: string): NoteInfo['spacing'] {
+  const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(entryXml)?.[0]
+  const sp = pPr && /<w:spacing [^>]*\/>/.exec(pPr)?.[0]
+  if (!sp) return undefined
+  const num = (attr: string): number | undefined => {
+    const v = new RegExp(`w:${attr}="(-?\\d+)"`).exec(sp)?.[1]
+    return v === undefined ? undefined : parseInt(v, 10)
+  }
+  const rule = /w:lineRule="(auto|atLeast|exact)"/.exec(sp)?.[1] as
+    'auto' | 'atLeast' | 'exact' | undefined
+  const before = num('before')
+  const after = num('after')
+  const line = num('line')
+  if (before === undefined && after === undefined && line === undefined) return undefined
+  return {
+    ...(before !== undefined ? { beforeTwips: before } : {}),
+    ...(after !== undefined ? { afterTwips: after } : {}),
+    ...(line !== undefined ? { lineRawTwips: line, lineRule: rule ?? 'auto' } : {}),
+  }
 }
 
 /** Display runs per paragraph (bold/italic/underline/strike, color, size); the footnote self-reference mark run is skipped */

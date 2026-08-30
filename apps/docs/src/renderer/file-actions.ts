@@ -228,6 +228,9 @@ function resetEditorHistory(editor: Editor): void {
 /** doc-level layout inputs living outside CSS: default tab grid + hyphenation lang */
 function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   editor.storage.tabStops.defaultTabStopTwips = parsed.defaultTabStopTwips ?? null
+  // Word 2013+ justified lines pull words up by shrinking spaces; legacy
+  // compatibility modes (and new blank docs) never do
+  editor.storage.justifyShrink.enabled = (parsed.compatibilityMode ?? 0) >= 15
   // Chromium only hyphenates under an explicit lang (the app shell is zh-CN);
   // scoped to autoHyphenation docs so CJK font fallback is untouched elsewhere
   const lang = parsed.autoHyphenation ? parsed.docDefaults?.lang : undefined

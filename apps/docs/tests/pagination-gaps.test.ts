@@ -37,6 +37,17 @@ describe('in-row table cut decorations', () => {
     expect(makeGapEl(m, 'cut').className).toBe('page-gap-cut')
   })
 
+  it('table gap row spans exactly the host grid: phantom columns collapse colgroup-less fixed-layout tables', () => {
+    const gap = makeGapEl(m, 'table', 3)
+    expect(gap.tagName).toBe('TR')
+    const cell = gap.firstElementChild as HTMLTableCellElement
+    expect(cell.tagName).toBe('TD')
+    expect(cell.colSpan).toBe(3)
+    // no count supplied: never widen the grid
+    const bare = makeGapEl(m, 'table').firstElementChild as HTMLTableCellElement
+    expect(bare.colSpan).toBe(1)
+  })
+
   const rectOf = (top: number, height: number) =>
     ({ top, bottom: top + height, height, width: 100 }) as DOMRect
   const cellAnchorRow = (siblingBottom: number) => {

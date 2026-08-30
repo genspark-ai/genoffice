@@ -425,3 +425,63 @@ describe('run-level character shading (w:shd)', () => {
     expect(fresh).toContain('<w:shd w:val="clear" w:color="auto" w:fill="00B050"/>')
   })
 })
+
+// rFonts theme refs: parse resolves w:asciiTheme/w:eastAsiaTheme to literal font
+// names for the model; regeneration must not materialize the refs into literals
+const THEME_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office">' +
+  '<a:themeElements><a:fontScheme name="Office">' +
+  '<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>' +
+  '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>' +
+  '</a:fontScheme></a:themeElements></a:theme>'
+
+const THEMED_RFONTS = '<w:rFonts w:ascii="Georgia" w:eastAsiaTheme="minorHAnsi" w:hAnsi="Georgia"/>'
+const THEMED_PARA = `<w:p><w:r><w:rPr>${THEMED_RFONTS}</w:rPr><w:t>themed</w:t></w:r></w:p>`
+
+async function parseThemed() {
+  const doc = await parseDocx(
+    await buildDocx({
+      bodyXml: THEMED_PARA,
+      extraParts: [
+        {
+          path: 'word/theme/theme1.xml',
+          xml: THEME_XML,
+          contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+        },
+      ],
+    }),
+  )
+  return doc.blocks[0].runs![0]
+}
+
+describe('rFonts theme refs survive regeneration', () => {
+  it('parse resolves the ref and records its theme origin', async () => {
+    const run = await parseThemed()
+    expect(run.font).toBe('Calibri')
+    expect(run.fontAscii).toBe('Georgia')
+    expect(run.themeRFonts).toEqual({ font: 'Calibri' })
+  })
+
+  it('a text-only edit keeps the theme attrs instead of materializing them', async () => {
+    const run = await parseThemed()
+    const xml = generateParagraphXml(
+      { type: 'paragraph', runs: [{ ...run, text: 'edited' }] },
+      GEN_CTX,
+    )
+    expect(xml).toContain(THEMED_RFONTS)
+    expect(xml).not.toContain('w:eastAsia="Calibri"')
+  })
+
+  it('a real font edit still materializes the touched slot', async () => {
+    const run = await parseThemed()
+    const xml = generateParagraphXml(
+      { type: 'paragraph', runs: [{ ...run, font: 'Arial' }] },
+      GEN_CTX,
+    )
+    expect(xml).toContain('w:eastAsia="Arial"')
+    expect(xml).not.toContain('w:eastAsiaTheme')
+    // untouched Latin slot keeps its literal value
+    expect(xml).toContain('w:ascii="Georgia"')
+  })
+})

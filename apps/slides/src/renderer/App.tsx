@@ -36,7 +36,13 @@ import { createWheelPager } from './wheel-page-flip'
 import type { DrawRect } from './draw-shape'
 import { SlideThumb } from './SlideThumb'
 import { MasterView } from './MasterView'
-import { TextEditOverlay, firstFontFamily, liveAlign, liveBulletChar } from './TextEditOverlay'
+import {
+  TextEditOverlay,
+  firstFontFamily,
+  liveAlign,
+  liveBulletChar,
+  liveRtl,
+} from './TextEditOverlay'
 import { CropOverlay } from './CropOverlay'
 import { createImageLoader } from './image-loader'
 import { syncPrivateFonts } from './doc-fonts'
@@ -264,6 +270,25 @@ function collectAligns(node: RenderNode, out: Set<ParaAlign>) {
   else if (node.type === 'group') for (const child of node.children) collectAligns(child, out)
 }
 
+function collectBodyRtls(
+  text: { lines: Array<{ rtl?: boolean; paraStart?: boolean }> } | undefined,
+  out: Set<boolean>,
+) {
+  if (!text) return
+  if (!text.lines.length) {
+    out.add(false)
+    return
+  }
+  for (const line of text.lines) if (line.paraStart) out.add(line.rtl === true)
+}
+
+/** Effective paragraph base direction across a node's text bodies (mirrors collectAligns). */
+function collectRtls(node: RenderNode, out: Set<boolean>) {
+  if (node.type === 'shape' || node.type === 'text') collectBodyRtls(node.text, out)
+  else if (node.type === 'table') for (const cell of node.cells) collectBodyRtls(cell.text, out)
+  else if (node.type === 'group') for (const child of node.children) collectRtls(child, out)
+}
+
 export function App() {
   const { lang } = useI18n()
   const [slides, setSlides] = useState<RenderSlide[]>([])
@@ -468,15 +493,15 @@ export function App() {
     { axis: 'v', pos: 0.5 },
     { axis: 'h', pos: 0.5 },
   ])
-  // PowerPoint model: the notes pane is SHOWN by default as a thin one-line bar
-  // (type in place); the Notes buttons hide/show it entirely; drag its top edge
-  // to any height, all the way down to hide.
+  // PowerPoint model: the notes pane is SHOWN by default (type in place); the
+  // Notes buttons hide/show it entirely; drag its top edge to any height, all
+  // the way down to hide.
   const [showNotes, setShowNotes] = useState(true)
   const [notesText, setNotesText] = useState('')
   /** Unsaved notes draft (flushed before page switch/save) */
   const notesDraftRef = useRef<{ index: number; text: string } | null>(null)
-  /** Notes pane height (px): default = the thin one-line bar, drag-resizable */
-  const [notesHeight, setNotesHeight] = useState(30)
+  /** Notes pane height (px): default shows ~4 lines (PowerPoint-like), drag-resizable */
+  const [notesHeight, setNotesHeight] = useState(100)
   const notesDragRef = useRef<{ startY: number; startH: number } | null>(null)
   /** Splitter drag shared by the pane's top handle (startH = current height) and
    * the invisible pull-zone when hidden (startH = 0): below 20px = hidden
@@ -1921,15 +1946,15 @@ export function App() {
       setDropPos(before ? i : i + 1)
     },
     onDrop: (e: React.DragEvent) => {
+      // no reorder in flight: an OS file drop — leave it to the drop-open bridge
+      if (dragThumb == null) return
       e.preventDefault()
       // Recompute at the drop point (don't read dropPos state: the last dragover's setState may not have committed yet)
-      if (dragThumb != null) {
-        const r = e.currentTarget.getBoundingClientRect()
-        const before = horizontal
-          ? e.clientX < r.left + r.width / 2
-          : e.clientY < r.top + r.height / 2
-        void moveSlideTo(dragThumb, before ? i : i + 1)
-      }
+      const r = e.currentTarget.getBoundingClientRect()
+      const before = horizontal
+        ? e.clientX < r.left + r.width / 2
+        : e.clientY < r.top + r.height / 2
+      void moveSlideTo(dragThumb, before ? i : i + 1)
       setDragThumb(null)
       setDropPos(null)
     },
@@ -2338,11 +2363,14 @@ export function App() {
   const [selFont, setSelFont] = useState<{ family: string; sizePt: number } | null>(null)
   // Paragraph alignment at the editing caret/selection (overlay DOM); null outside editing
   const [selAlign, setSelAlign] = useState<ParaAlign | null>(null)
+  // Effective base direction at the editing caret/selection; null outside editing / mixed
+  const [selRtl, setSelRtl] = useState<boolean | null>(null)
   const inTextEdit = !!editing || !!editingCell
   useEffect(() => {
     if (!inTextEdit) {
       setSelFont(null)
       setSelAlign(null)
+      setSelRtl(null)
       return
     }
     const update = () => {
@@ -2350,6 +2378,7 @@ export function App() {
       const el = focus instanceof HTMLElement ? focus : focus?.parentElement
       if (!el?.isContentEditable) return
       setSelAlign(liveAlign() ?? null)
+      setSelRtl(liveRtl() ?? null)
       const cs = window.getComputedStyle(el)
       // Prefer the model font name baked into the run container (data-font) when the display font
       // is unchanged; the computed style may be a fallback/substitution product (e.g. Arial for DengXian)
@@ -2402,6 +2431,11 @@ export function App() {
     },
     [],
   )
+  const onDirection = useCallback((rtl: boolean) => {
+    styleActions.onParagraphFormat(ctxRef.current, { rtl })
+    // The in-edit path mutates only the overlay DOM — re-read so the ribbon toggle follows the click
+    if (ctxRef.current.editing || ctxRef.current.editingCell) setSelRtl(liveRtl() ?? null)
+  }, [])
   const onFill = useCallback(
     (sourceId: string, fill: string | GradientFillSpec) =>
       styleActions.onFill(ctxRef.current, sourceId, fill),
@@ -2482,13 +2516,12 @@ export function App() {
     [selectedNode],
   )
 
-  const tableStyleFlags = useMemo(
-    () =>
-      selectedNode?.type === 'table'
-        ? ((selectedNode as TableRenderNode).styleFlags ?? null)
-        : null,
-    [selectedNode],
-  )
+  const tableStyleFlags = useMemo(() => {
+    if (selectedNode?.type !== 'table') return null
+    const tbl = selectedNode as TableRenderNode
+    const flags = tbl.styleFlags ?? { firstRow: false, bandRow: false }
+    return { ...flags, rtl: tbl.rtl === true }
+  }, [selectedNode])
 
   const tableActiveCell = useMemo(
     () =>
@@ -2626,6 +2659,18 @@ export function App() {
     }
     return found.size === 1 ? [...found][0]! : null
   }, [inTextEdit, selAlign, selectedIds, findNodeCtx])
+
+  // Effective base direction for the ribbon LTR/RTL toggle; null = mixed/no text
+  const curRtl = useMemo((): boolean | null => {
+    if (inTextEdit) return selRtl
+    if (!selectedIds.length) return null
+    const found = new Set<boolean>()
+    for (const id of selectedIds) {
+      const node = findNodeCtx(id)?.node
+      if (node) collectRtls(node, found)
+    }
+    return found.size === 1 ? [...found][0]! : null
+  }, [inTextEdit, selRtl, selectedIds, findNodeCtx])
 
   // Refresh the action-module context every render so extracted actions never see stale state
   ctxRef.current = {
@@ -2847,8 +2892,10 @@ export function App() {
             : null
         }
         onParagraphFormat={onParagraphFormat}
+        onDirection={onDirection}
         curBulletChar={curBulletChar}
         curAlign={curAlign}
+        curRtl={curRtl}
         curFontFamily={fontStatus?.family ?? null}
         curFontSizePt={fontStatus?.sizePt ?? null}
         curFontSizeMixed={fontStatus?.sizeMixed ?? false}
@@ -3807,10 +3854,10 @@ export function App() {
                       {guideBubble.text}
                     </div>
                   )}
-                  {/* Notes pane, PowerPoint-style: shown by default as a thin
-                      one-line bar you type into directly; drag the top edge to
-                      any height (dragging to the very bottom hides it); the
-                      ribbon/status 备注 buttons hide/show it entirely. When
+                  {/* Notes pane, PowerPoint-style: shown by default at a few
+                      lines tall, typed into directly; drag the top edge to any
+                      height (dragging to the very bottom hides it); the
+                      ribbon/status Notes buttons hide/show it entirely. When
                       hidden, an invisible strip along the bottom edge stays
                       grabbable to pull the pane back out, like PPT's splitter. */}
                   {!showNotes && (

@@ -19,8 +19,8 @@ export interface IpcStreamChunk {
   text?: string
   toolCall?: AgentToolCall
   error?: string
-  /** machine-readable error cause; maps to the localized timeout/credits/network message */
-  errorCode?: 'timeout' | 'credits' | 'network'
+  /** machine-readable error cause; maps to the localized timeout/credits/network/overloaded message */
+  errorCode?: 'timeout' | 'credits' | 'network' | 'overloaded'
   /** normalized stop reason on 'done' ('max_tokens' = cut off by the token limit) */
   stopReason?: string
 }
@@ -58,6 +58,8 @@ export interface IpcTransportOptions<S> {
   creditsErrorText?(): string
   /** localized message for network connectivity failures (errorCode 'network') */
   networkErrorText?(): string
+  /** localized message for capacity/rate-limit failures (errorCode 'overloaded') */
+  overloadedErrorText?(): string
 }
 
 /**
@@ -115,7 +117,9 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
                 ? (options.creditsErrorText?.() ?? chunk.error ?? options.unknownErrorText())
                 : chunk.errorCode === 'network'
                   ? (options.networkErrorText?.() ?? chunk.error ?? options.unknownErrorText())
-                  : (chunk.error ?? options.unknownErrorText()),
+                  : chunk.errorCode === 'overloaded'
+                    ? (options.overloadedErrorText?.() ?? chunk.error ?? options.unknownErrorText())
+                    : (chunk.error ?? options.unknownErrorText()),
           )
         }
       })

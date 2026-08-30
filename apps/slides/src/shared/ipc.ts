@@ -159,6 +159,8 @@ export interface EditParagraph {
   lineSpacingPct?: number
   spaceBeforePt?: number
   spaceAfterPt?: number
+  /** Paragraph base direction toggled during this edit session (false = explicit LTR) */
+  rtl?: boolean
 }
 
 /** One geometry primitive collected by the edit-script sandbox (px, viewport space). */
@@ -294,6 +296,8 @@ export interface SetElementParagraphFormatOp {
   spaceBeforePt?: number
   spaceAfterPt?: number
   align?: 'left' | 'center' | 'right' | 'justify'
+  /** Paragraph base direction (false = explicit LTR) */
+  rtl?: boolean
   /** Indent level increment/decrement (multi-level lists; applies to all paragraphs) */
   indentDelta?: 1 | -1
   /** In-group editing: all sourceIds are direct children of that group */
@@ -1008,6 +1012,8 @@ export interface EditTableStyleOp {
   firstRow?: boolean
   /** Banded rows toggle */
   bandRow?: boolean
+  /** Right-to-left table toggle (tblPr rtl: mirrored grid) */
+  rtl?: boolean
   /** Shading color #RRGGBB or 'none' (null = unchanged) */
   shadingColor?: string | null
   /** Border color #RRGGBB (null = unchanged) */

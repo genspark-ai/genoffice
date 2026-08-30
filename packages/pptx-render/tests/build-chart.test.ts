@@ -338,6 +338,31 @@ describe('buildChartNode', () => {
     }
   })
 
+  it('horizontal bar honors the manual inner plot layout (labels stay in the reserved strip)', () => {
+    const model: ChartModel = {
+      kind: 'bar',
+      barDir: 'bar',
+      grouping: 'clustered',
+      categories: ['Alpha', 'Beta'],
+      series: [{ name: 's1', color: '#111111', values: [10, 30] }],
+      // Deck-authored inner rect: decks place hbar frames partly off-slide and
+      // rely on this for what stays visible
+      plotLayout: { x: 0.2, y: 0.05, w: 0.7, h: 0.8 },
+    }
+    const node = buildChartNode('r_hl', 'elhl', model, box, vp, metrics)!
+    for (const b of node.bars) {
+      expect(b.x).toBeCloseTo(0.2 * box.w, 5) // bars start at the manual plot left edge
+      expect(b.x + b.w).toBeLessThanOrEqual(0.9 * box.w + 1)
+    }
+    // Category labels sit inside the reserved left strip, right-aligned to the plot
+    const cats = node.labels.filter((l) => l.text === 'Alpha' || l.text === 'Beta')
+    expect(cats).toHaveLength(2)
+    for (const l of cats) {
+      expect(l.x).toBeGreaterThanOrEqual(0)
+      expect(l.x).toBeLessThan(0.2 * box.w)
+    }
+  })
+
   it('horizontal bar reversed (orientation maxMin): first category on top', () => {
     const model: ChartModel = {
       kind: 'bar',
@@ -349,6 +374,56 @@ describe('buildChartNode', () => {
     const node = buildChartNode('r_h2', 'elh2', model, box, vp, metrics)!
     const [b1, b2] = node.bars
     expect(b1!.y).toBeLessThan(b2!.y)
+  })
+
+  it('doughnut honors the manual inner plot rect and skips the 4mm ring on it', () => {
+    const model: ChartModel = {
+      kind: 'pie',
+      holePct: 50,
+      categories: ['A', 'B', 'C'],
+      series: [{ values: [8, 2, 2] }],
+      legendPos: 'b',
+      // the title must not shrink/shift the frame the manual rect measures against
+      title: 'Chart title',
+      plotLayout: { x: 0.2, y: 0.05, w: 0.5, h: 0.5 },
+    }
+    const node = buildChartNode('r_d', 'eld', model, box, vp, metrics)!
+    expect(node.wedges!.length).toBe(3)
+    const w0 = node.wedges![0]!
+    // Center = manual rect center; radius = half the rect's short side (no ring shrink)
+    expect(w0.cx).toBeCloseTo((0.2 + 0.25) * box.w, 3)
+    expect(w0.cy).toBeCloseTo((0.05 + 0.25) * box.h, 3)
+    expect(w0.outerR).toBeCloseTo(Math.min(0.5 * box.w, 0.5 * box.h) / 2, 3)
+  })
+
+  it('legend flows one entry per row inside a too-narrow manual rect, RTL rows right-aligned', () => {
+    const model: ChartModel = {
+      kind: 'pie',
+      categories: [
+        'first long legend entry text',
+        'second long legend entry text',
+        'third long legend entry text',
+      ],
+      series: [{ values: [5, 3, 2] }],
+      legendPos: 'b',
+      plotLayout: { x: 0.2, y: 0.05, w: 0.5, h: 0.5 },
+      legendLayout: { x: 0.05, xMode: 'edge', y: 0.6, yMode: 'edge', w: 0.3, h: 0.35 },
+      legendRtl: true,
+    }
+    const node = buildChartNode('r_dl', 'eldl', model, box, vp, metrics)!
+    const rows = node.labels.filter((l) => String(l.text).includes('legend entry'))
+    expect(rows).toHaveLength(3)
+    const ys = rows.map((l) => l.y)
+    expect(new Set(ys).size).toBe(3) // one row each
+    // right-aligned to the rect's right edge: every row ends at x + width ~= rect right
+    for (const l of rows) {
+      expect(l.x).toBeGreaterThanOrEqual(0.05 * box.w - 1)
+    }
+    // RTL: each row's swatch sits right of its text start
+    for (const swatch of node.swatches) {
+      const row = rows.find((l) => Math.abs(l.y - swatch.y + 0) < 20)!
+      expect(swatch.x).toBeGreaterThan(row.x)
+    }
   })
 
   it('builds scatter: positioned by two value axes, lineMarker draws points and lines by default', () => {

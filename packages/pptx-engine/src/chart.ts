@@ -140,7 +140,16 @@ export interface ChartModel {
   /** <c:legend><c:overlay val="1"/>: the legend floats over the plot, reserving no space */
   legendOverlay?: boolean
   /** c:legend manual layout: factor = offset from the auto position, edge = absolute, fractions of the frame */
-  legendLayout?: { x?: number; y?: number; xMode?: 'edge' | 'factor'; yMode?: 'edge' | 'factor' }
+  legendLayout?: {
+    x?: number
+    y?: number
+    w?: number
+    h?: number
+    xMode?: 'edge' | 'factor'
+    yMode?: 'edge' | 'factor'
+  }
+  /** Legend paragraphs are RTL (<c:legend><c:txPr>…<a:pPr rtl="1">): entries mirror (swatch right of the text, right-aligned rows) */
+  legendRtl?: boolean
   /** Chart part has a Microsoft chartStyle companion (style1.xml); without one PowerPoint uses black label text */
   hasStylePart?: boolean
   /** Plot-area inner rectangle (c:plotArea/c:layout/c:manualLayout layoutTarget=inner), fractions of the chart frame */
@@ -572,11 +581,13 @@ export function parseChartXml(
       }
       const mode = (k: string): 'edge' | 'factor' =>
         man[k]?.['@_val'] === 'edge' ? 'edge' : 'factor'
-      const [lx, ly] = [frac('c:x'), frac('c:y')]
+      const [lx, ly, lw, lh] = [frac('c:x'), frac('c:y'), frac('c:w'), frac('c:h')]
       if (lx !== undefined || ly !== undefined) {
         model.legendLayout = {
           ...(lx !== undefined ? { x: lx, xMode: mode('c:xMode') } : {}),
           ...(ly !== undefined ? { y: ly, yMode: mode('c:yMode') } : {}),
+          ...(lw !== undefined && lw > 0 ? { w: lw } : {}),
+          ...(lh !== undefined && lh > 0 ? { h: lh } : {}),
         }
       }
     }
@@ -587,6 +598,8 @@ export function parseChartXml(
     const legSz = parseInt(legRPr?.['@_sz'], 10)
     if (Number.isFinite(legSz) && legSz > 0) model.legendPt = legSz / 100
     if (legRPr?.['@_b'] === '1') model.legendBold = true
+    const legPPr = (Array.isArray(legP) ? legP[0] : legP)?.['a:pPr']
+    if (legPPr?.['@_rtl'] === '1') model.legendRtl = true
   }
 
   // Plot-area inner rectangle (edge-mode fractions of the chart frame); PowerPoint positions

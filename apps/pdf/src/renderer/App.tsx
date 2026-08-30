@@ -6389,8 +6389,10 @@ export default function App() {
                       }}
                       onDragLeave={() => setDragOver((o) => (o === v ? null : o))}
                       onDrop={(e) => {
+                        // no reorder in flight: an OS file drop — leave it to the drop-open bridge
+                        if (dragFrom === null) return
                         e.preventDefault()
-                        if (dragFrom !== null) movePage(dragFrom, v)
+                        movePage(dragFrom, v)
                         setDragFrom(null)
                         setDragOver(null)
                       }}

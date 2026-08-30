@@ -30,6 +30,8 @@ import { applyEditParagraphs, collectParagraphFormatPatches, levelsChanged } fro
 import {
   GuidedError,
   register,
+  requireFinite,
+  requireHexColor,
   resolveElement,
   resolveGroup,
   resolveGroupChildId,
@@ -181,6 +183,14 @@ register({
     if (typeof op.font !== 'object' || op.font === null) {
       throw new GuidedError('op "setFont" needs "font": an ElementFontPatch object.')
     }
+    const font = op.font as { color?: unknown; fontSizePt?: unknown }
+    if (font.color !== undefined) requireHexColor(font.color, 'setFont', 'font.color')
+    if (font.fontSizePt !== undefined) {
+      requireFinite(font.fontSizePt, 'setFont', 'font.fontSizePt')
+      if (font.fontSizePt <= 0) {
+        throw new GuidedError('op "setFont": "font.fontSizePt" must be > 0 (points).')
+      }
+    }
     if (op.group) {
       const { index, slide } = resolveSlide(ctx, op)
       resolveGroup(op, index, slide.elements)
@@ -216,6 +226,27 @@ register({
       throw new GuidedError(
         'op "setParagraphFormat" needs "format": a ParagraphFormatPatch object.',
       )
+    }
+    const fmt = op.format as Record<string, unknown>
+    for (const field of [
+      'lineSpacingPct',
+      'spaceBeforePt',
+      'spaceAfterPt',
+      'bulletSizePct',
+      'bulletHangEmu',
+    ]) {
+      if (fmt[field] !== undefined) {
+        requireFinite(fmt[field], 'setParagraphFormat', `format.${field}`)
+        if ((fmt[field] as number) < 0) {
+          throw new GuidedError(`op "setParagraphFormat": "format.${field}" must be >= 0.`)
+        }
+      }
+    }
+    if (fmt.bulletColor !== undefined) {
+      requireHexColor(fmt.bulletColor, 'setParagraphFormat', 'format.bulletColor')
+    }
+    if (fmt.rtl !== undefined && typeof fmt.rtl !== 'boolean') {
+      throw new GuidedError('op "setParagraphFormat": "format.rtl" must be a boolean.')
     }
     if (op.group) {
       const { index, slide } = resolveSlide(ctx, op)

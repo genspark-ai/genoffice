@@ -196,6 +196,8 @@ export interface AiChatMessage {
   readonly isError?: boolean | undefined
   /** the run failed and this user message was rolled back out of the model context */
   readonly undelivered?: boolean | undefined
+  /** this user message was written to the project-store chat log (Retry re-persists when it wasn't) */
+  readonly persisted?: boolean | undefined
   /** the run failed because Genspark is signed out — render an inline sign-in button */
   readonly loginRequired?: boolean | undefined
   /** Set when this message reflects an auto-applied plan; renders an inline [Undo] button. */
@@ -251,8 +253,13 @@ export function AiChatPanel({
   readonly aiBusy: boolean
   readonly onPromptChange: (prompt: string) => void
   /** Send the composer text, or the given instruction when provided (used by the
-   *  failed-run Retry, which also resends the message's original attachments) */
-  readonly onSend: (instruction?: string, attachments?: readonly AttachmentMeta[]) => void
+   *  failed-run Retry, which also resends the message's original attachments;
+   *  retryIndex is the failed bubble's chat index so the send replaces it in place) */
+  readonly onSend: (
+    instruction?: string,
+    attachments?: readonly AttachmentMeta[],
+    retryIndex?: number,
+  ) => void
   readonly onStop: () => void
   readonly onNewChat: () => void
   readonly onUndo: (steps: number) => void
@@ -561,7 +568,7 @@ export function AiChatPanel({
                     {!aiBusy && (
                       <button
                         className="ai-retry-btn"
-                        onClick={() => onSend(entry.text, entry.attachments ?? [])}
+                        onClick={() => onSend(entry.text, entry.attachments ?? [], index)}
                       >
                         {t('aiRetry')}
                       </button>
@@ -588,13 +595,18 @@ export function AiChatPanel({
                     <span className="ai-auto-applied-text">
                       {t('aiAutoApplied', { count: entry.autoApplied.opCount })}
                     </span>
-                    <button
-                      className="ai-undo-btn"
-                      onClick={() => onUndo(Math.max(1, entry.autoApplied?.undoSteps ?? 1))}
-                      data-tip={t('aiUndoTitle')}
-                    >
-                      {t('aiUndo')}
-                    </button>
+                    {/* undoSteps 0 = the batch exceeded the undo budget and
+                        kept no stack entry; a forced 1-step undo would revert
+                        the user's own previous action instead. */}
+                    {(entry.autoApplied.undoSteps ?? 1) > 0 && (
+                      <button
+                        className="ai-undo-btn"
+                        onClick={() => onUndo(Math.max(1, entry.autoApplied?.undoSteps ?? 1))}
+                        data-tip={t('aiUndoTitle')}
+                      >
+                        {t('aiUndo')}
+                      </button>
+                    )}
                   </div>
                 )}
                 {entry.loginRequired && (

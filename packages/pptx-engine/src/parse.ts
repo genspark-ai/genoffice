@@ -9,7 +9,7 @@ import { XMLParser } from 'fast-xml-parser'
 import { layoutHierTree, parseHierConstraints } from './dgm-hier'
 import { scanSlide, type SpElement } from './scan'
 import { tableRowGridCols } from './table-grid'
-import { type Theme, resolveFontRef, resolveSchemeColor } from './theme'
+import { type Theme, resolveFontRef, resolveSchemeColor, themeWithOverride } from './theme'
 import { resolveColorNode as resolveColorNodeShared } from './color'
 import {
   resolvePlaceholderPresetGeom,
@@ -134,6 +134,8 @@ export interface ParseContext {
   chartMediaRels?: Map<string, Map<string, string>>
   /** Chart rIds whose part has a Microsoft chartStyle companion (modern gray label defaults) */
   chartStyleRels?: Set<string>
+  /** chart rId → its themeOverride part XML (chart-local clrScheme/fontScheme) */
+  chartThemeOverrides?: Map<string, string>
   /** Diagram data rId → the drawing part's own image rels (SmartArt picture fills) */
   diagramMediaRels?: Map<string, Map<string, string>>
   /** ppt/tableStyles.xml source (table style definitions, read-only) */
@@ -1078,7 +1080,9 @@ function graphicFramePassthrough(node: any, anchor: ByteAnchor, ctx: ParseContex
   if (uri.includes('/chartex')) {
     const rid = data?.['cx:chart']?.['@_r:id']
     const chartXml = rid ? ctx.chartXmls?.get(String(rid)) : undefined
-    const model = chartXml ? parseChartExXml(chartXml, ctx.theme) : null
+    const ovXml = rid ? ctx.chartThemeOverrides?.get(String(rid)) : undefined
+    const chartTheme = ovXml ? themeWithOverride(ctx.theme, ovXml) : ctx.theme
+    const model = chartXml ? parseChartExXml(chartXml, chartTheme) : null
     if (model) {
       const cNvPr = node['p:nvGraphicFramePr']?.['p:cNvPr']
       return {
@@ -1095,10 +1099,17 @@ function graphicFramePassthrough(node: any, anchor: ByteAnchor, ctx: ParseContex
   if (uri.includes('/chart')) {
     const rid = data?.['c:chart']?.['@_r:id']
     const chartXml = rid ? ctx.chartXmls?.get(rid) : undefined
-    // Fill resolver bound to the chart part's own rels (blip rIds live there, not on the slide)
-    const chartFillCtx: ParseContext = { ...ctx, mediaRels: ctx.chartMediaRels?.get(String(rid)) }
+    const ovXml = rid ? ctx.chartThemeOverrides?.get(String(rid)) : undefined
+    const chartTheme = ovXml ? themeWithOverride(ctx.theme, ovXml) : ctx.theme
+    // Fill resolver bound to the chart part's own rels (blip rIds live there, not on
+    // the slide) and to the chart-local theme (accents may be remapped per chart)
+    const chartFillCtx: ParseContext = {
+      ...ctx,
+      mediaRels: ctx.chartMediaRels?.get(String(rid)),
+      theme: chartTheme,
+    }
     const model = chartXml
-      ? parseChartXml(chartXml, ctx.theme, (spPr) => parseFill(spPr, chartFillCtx))
+      ? parseChartXml(chartXml, chartTheme, (spPr) => parseFill(spPr, chartFillCtx))
       : null
     if (model && ctx.chartStyleRels?.has(String(rid))) model.hasStylePart = true
     if (model) {
@@ -2965,6 +2976,7 @@ function parseGradFill(grad: any, ctx: ParseContext): Fill | undefined {
   // directionless gradFill gets the measured vertical default
   const angle =
     lin != null ? parseInt(lin['@_ang'], 10) || 0 : grad['a:path'] == null ? 5400000 : undefined
+  const scaled = lin != null && (lin['@_scaled'] === '1' || lin['@_scaled'] === 'true')
   const ftr = grad['a:path']?.['a:fillToRect']
   // Omitted fillToRect attributes default to 0 (whole tile rect), not to a centered inset
   const frac = (v: unknown) => (v != null ? (parseInt(String(v), 10) || 0) / 100000 : 0)
@@ -2972,6 +2984,7 @@ function parseGradFill(grad: any, ctx: ParseContext): Fill | undefined {
     type: 'gradient',
     stops,
     ...(angle != null ? { angle } : {}),
+    ...(scaled ? { scaled: true } : {}),
     ...(pathType === 'circle' || pathType === 'rect' || pathType === 'shape'
       ? { path: pathType }
       : {}),
@@ -2991,6 +3004,49 @@ function parseGradFill(grad: any, ctx: ParseContext): Fill | undefined {
 /** Color resolution lives in color.ts (shared with placeholder style inheritance); this is a thin wrapper taking ctx.theme. */
 function resolveColorNode(node: any, ctx: ParseContext): string | undefined {
   return resolveColorNodeShared(node, ctx.theme, ctx.phClr)
+}
+
+const COLOR_NODE_TAGS = [
+  'a:srgbClr',
+  'a:schemeClr',
+  'a:sysClr',
+  'a:prstClr',
+  'a:hslClr',
+  'a:scrgbClr',
+]
+
+const xmlAttrEsc = (v: string): string =>
+  v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+
+/** Re-serialize a parsed color node (tag + attrs + flat modifier children like tint/lumMod)
+ * so the rebuild path can restore it verbatim instead of baking in the resolved value. */
+function colorNodeXml(fillNode: any): string | undefined {
+  for (const tag of COLOR_NODE_TAGS) {
+    const n = fillNode?.[tag]
+    if (n == null) continue
+    const node = typeof n === 'object' ? n : {}
+    const attrs = Object.keys(node)
+      .filter((k) => k.startsWith('@_'))
+      .map((k) => ` ${k.slice(2)}="${xmlAttrEsc(String(node[k]))}"`)
+      .join('')
+    const kids = Object.keys(node)
+      .filter((k) => k.startsWith('a:'))
+      .map((k) => {
+        const arr = Array.isArray(node[k]) ? node[k] : [node[k]]
+        return arr
+          .map((c: any) => {
+            const cAttrs = Object.keys(c ?? {})
+              .filter((x) => x.startsWith('@_'))
+              .map((x) => ` ${x.slice(2)}="${xmlAttrEsc(String(c[x]))}"`)
+              .join('')
+            return `<${k}${cAttrs}/>`
+          })
+          .join('')
+      })
+      .join('')
+    return kids ? `<${tag}${attrs}>${kids}</${tag}>` : `<${tag}${attrs}/>`
+  }
+  return undefined
 }
 
 // ── Text ─────────────────────────────────────────────────────────────
@@ -3174,6 +3230,16 @@ function parseParagraph(
   const marL = hasMarL ? marLRaw : dflt?.marL
   const indent = hasIndent ? indentRaw : dflt?.indent
 
+  // rtl attribute: "1"/"true" and "0"/"false" are both explicit (an explicit LTR base
+  // overrides first-strong-character inference in layout); absent stays undefined
+  const rtlAttr = pPr['@_rtl']
+  const rtl =
+    rtlAttr === '1' || rtlAttr === 'true'
+      ? true
+      : rtlAttr === '0' || rtlAttr === 'false'
+        ? false
+        : undefined
+
   // Record which properties come from an explicit pPr (the rebuild path writes only explicit items; inherited values are not baked in)
   const pPrExplicit: NonNullable<Paragraph['pPrExplicit']> = {
     ...(pPr['@_algn'] ? { align: true } : {}),
@@ -3188,6 +3254,7 @@ function parseParagraph(
   return {
     runs,
     align: pPr['@_algn'] ? alignMap[pPr['@_algn']] : dflt?.align,
+    ...(rtl != null ? { rtl } : {}),
     level,
     pPrExplicit,
     ...(lineHeight != null ? { lineHeight } : {}),
@@ -3236,7 +3303,11 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   if (rPr['a:gradFill'] && typeof rPr['a:gradFill'] === 'object') {
     const g = parseFill(rPr, ctx)
     if (g?.type === 'gradient' && g.stops.length) {
-      gradient = { stops: g.stops, ...(g.angle != null ? { angle: g.angle } : {}) }
+      gradient = {
+        stops: g.stops,
+        ...(g.angle != null ? { angle: g.angle } : {}),
+        ...(g.scaled ? { scaled: true } : {}),
+      }
     }
   }
   // PowerPoint styles linked runs with the theme hlink color unless the run has an explicit fill
@@ -3246,8 +3317,14 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     (hlinkTarget ? ctx.theme?.colors?.hlink : undefined) ??
     dflt?.color
   // Whether the color is display-only: from schemeClr/inheritance (not an explicit run srgbClr).
-  // The patch path uses this to avoid baking theme colors into srgbClr (theme switches must stay linked)
-  const colorFollowsTheme = color != null && !(fill && fill['a:srgbClr'])
+  // The patch path uses this to avoid baking theme colors into srgbClr (theme switches must stay linked).
+  // An srgbClr carrying transform children (lumMod/lumOff/alpha…) resolves to a computed display
+  // value too: rewriting would bake the computation in and drop the modifiers, so it gets the same
+  // keep-bytes-unless-changed treatment.
+  const srgb = fill?.['a:srgbClr']
+  const srgbHasMods =
+    srgb != null && typeof srgb === 'object' && Object.keys(srgb).some((k) => k.startsWith('a:'))
+  const colorFollowsTheme = color != null && (!(fill && srgb) || srgbHasMods)
   const colorInherited = color != null && !fill
   // Text highlight <a:highlight> (PowerPoint draws it as a background behind the run)
   const highlightNode = rPr['a:highlight']
@@ -3332,15 +3409,20 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   return {
     text,
     bold: bAttr != null ? bAttr === '1' || bAttr === 'true' : !!dflt?.bold,
+    ...(bAttr == null ? { boldImplicit: true } : {}),
     italic: iAttr != null ? iAttr === '1' || iAttr === 'true' : !!dflt?.italic,
+    ...(iAttr == null ? { italicImplicit: true } : {}),
     ...(() => {
       const cap = rPr['@_cap'] != null ? String(rPr['@_cap']) : dflt?.cap
       return cap && cap !== 'none' ? { cap } : {}
     })(),
+    ...(rPr['@_cap'] != null ? { capExplicit: String(rPr['@_cap']) } : {}),
     underline: (uAttr !== undefined && uAttr !== 'none') || linkUnderline,
     ...(uAttr !== undefined && uAttr !== 'none' ? { underlineStyle: String(uAttr) } : {}),
+    ...(uAttr === 'none' ? { underlineExplicitNone: true } : {}),
     ...(linkUnderline ? { underlineImplicit: true } : {}),
     ...(hasStrike ? { strike: true, strikeStyle: String(strikeAttr) } : {}),
+    ...(strikeAttr === 'noStrike' ? { strikeExplicitNone: true } : {}),
     ...(latinRaw ? { latinFont: String(latinRaw) } : {}),
     ...(eaRaw ? { eaFont: String(eaRaw) } : {}),
     ...(csRaw ? { csFont: String(csRaw) } : {}),
@@ -3354,6 +3436,13 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(fontScriptHint != null ? { fontScriptHint } : {}),
     color,
     ...(colorFollowsTheme ? { colorFollowsTheme } : {}),
+    // Captured independent of resolution (a themeless parse still must not bake values in)
+    ...(fill && !(srgb != null && !srgbHasMods)
+      ? (() => {
+          const raw = colorNodeXml(fill)
+          return raw ? { colorNodeXml: raw } : {}
+        })()
+      : {}),
     ...(colorInherited ? { colorInherited } : {}),
     ...(highlight ? { highlight } : {}),
     ...(outline ? { outline } : {}),

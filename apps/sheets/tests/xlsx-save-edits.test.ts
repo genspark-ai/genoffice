@@ -186,6 +186,31 @@ describe('applyCellEditsToXlsx style edits', () => {
     expect(worksheet).toContain('<dimension ref="A1:C3"/>')
   })
 
+  it('grows a paired-empty-tag dimension without orphaning its closing tag', async () => {
+    // Some producers write <dimension ref="..."></dimension> instead of the
+    // self-closing form; replacing only the opening tag leaves a stray
+    // </dimension> behind and the sheet XML no longer parses.
+    const zip = await JSZip.loadAsync(await buildEditFixture())
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      `<?xml version="1.0" encoding="UTF-8"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:A1"></dimension>
+  <sheetData>
+    <row r="1"><c r="A1"><v>1</v></c></row>
+    <row r="3"><c r="C3"><v>9</v></c></row>
+  </sheetData>
+</worksheet>`,
+    )
+    const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+    const mutation = await applyCellEditsToXlsx(buffer as Buffer, [
+      { sheetName: 'Data', row: 1, column: 1, writeValue: true, cell: { value: 'x' } },
+    ])
+    const worksheet = await entryText(mutation.buffer, 'xl/worksheets/sheet1.xml')
+    expect(worksheet).toContain('<dimension ref="A1:C3"/>')
+    expect(worksheet).not.toContain('</dimension>')
+  })
+
   it('bolds a styled cell via a new deduped xf without touching its content', async () => {
     const mutation = await applyCellEditsToXlsx(await buildEditFixture(), [
       styleEdit(0, 0, { bold: true }),

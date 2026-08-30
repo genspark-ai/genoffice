@@ -97,7 +97,9 @@ describe('slide master edit write-back (byte surgery)', () => {
     for (const p of title.text!.paragraphs)
       for (const r of p.runs) {
         r.color = '#FF0000'
-        delete r.colorFollowsTheme // user explicitly recolored: no longer follows the theme
+        // user explicitly recolored: no longer follows the theme or inheritance
+        delete r.colorFollowsTheme
+        delete r.colorInherited
       }
     title.dirty = true
     opened.archive.entries.set(masterPath, Buffer.from(patchSlideXml(master), 'utf8'))

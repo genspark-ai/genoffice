@@ -1,5 +1,9 @@
 import type { WorkbookCellEdit } from '../shared/desktop-api'
-import { MAX_SAVE_EDITS, MAX_SAVE_EDITS_TOTAL, SAVE_EDITS_CHUNK_MAX } from '../shared/ipc-channels'
+import {
+  MAX_SAVE_EDITS_TOTAL,
+  SAVE_EDITS_CHUNK_MAX,
+  SAVE_EDITS_INLINE_MAX,
+} from '../shared/ipc-channels'
 
 /// The slice of desktopApi the staging step needs (injectable for tests).
 export interface SaveEditsTransferApi {
@@ -12,7 +16,7 @@ export interface SaveEditsTransferApi {
     sessionId: string
     transferId: string
     seq: number
-    edits: WorkbookCellEdit[]
+    editsJson: string
   }): Promise<void>
   abortSaveEditsTransfer(request: { sessionId: string; transferId: string }): Promise<void>
 }
@@ -24,17 +28,18 @@ export interface StagedEdits {
 
 /**
  * Prepares a save's cell edits for the IPC hop. Small edit sets ride inline
- * in the save request as before; sets above MAX_SAVE_EDITS are uploaded to
- * the main process in bounded chunks first (keeping any single IPC message's
- * structured-clone spike at SAVE_EDITS_CHUNK_MAX edits), and the request
- * references the finished transfer instead.
+ * in the save request as before; sets above SAVE_EDITS_INLINE_MAX are
+ * uploaded to the main process as JSON-string chunks first (a flat string
+ * crosses the context bridge in milliseconds where the same edits as a live
+ * array cost microseconds per edit), and the request references the finished
+ * transfer instead.
  */
 export async function stageEditsForSave(
   api: SaveEditsTransferApi,
   sessionId: string,
   edits: WorkbookCellEdit[],
 ): Promise<StagedEdits> {
-  if (edits.length <= MAX_SAVE_EDITS) return { edits }
+  if (edits.length <= SAVE_EDITS_INLINE_MAX) return { edits }
   if (edits.length > MAX_SAVE_EDITS_TOTAL) {
     throw new Error(
       `This save contains ${edits.length.toLocaleString()} cell edits, above the ` +
@@ -49,7 +54,7 @@ export async function stageEditsForSave(
         sessionId,
         transferId,
         seq,
-        edits: edits.slice(start, start + SAVE_EDITS_CHUNK_MAX),
+        editsJson: JSON.stringify(edits.slice(start, start + SAVE_EDITS_CHUNK_MAX)),
       })
     }
   } catch (error) {

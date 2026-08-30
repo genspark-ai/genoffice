@@ -66,7 +66,7 @@ interface Token {
   /** Run outer shadow (px, offset resolved from dist/dir) */
   shadow?: { color: string; blurPx: number; offsetX: number; offsetY: number }
   /** WordArt gradient text fill (resolved stops + screen angle) */
-  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number }
+  gradient?: { stops: Array<{ pos: number; color: string }>; angleDeg: number; scaled?: boolean }
   /** Run glow (px radius) */
   glow?: { color: string; blurPx: number }
   /** Run reflection (faded mirror below the baseline) */
@@ -326,6 +326,7 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
               stops: run.gradient.stops.map((s) => ({ pos: s.pos, color: s.color })),
               // OOXML gradient angle is 1/60000° clockwise from the +x axis
               angleDeg: (run.gradient.angle ?? 5400000) / 60000,
+              ...(run.gradient.scaled ? { scaled: true } : {}),
             },
           }
         : {}),
@@ -517,11 +518,15 @@ let bidiApi: ReturnType<typeof bidiFactory> | null = null
  * logical order (UAX#9 requires wrap first, reorder after); visualOrder reorders
  * each line once formed.
  */
-function applyBidi(tokens: Token[]): Token[] {
+function applyBidi(tokens: Token[], baseRtl?: boolean): Token[] {
   const text = tokens.map((t) => t.text).join('')
-  if (!RTL_RE.test(text)) return tokens
+  // An explicit RTL base still needs analysis for pure-LTR text (neutrals move to the left edge)
+  if (!RTL_RE.test(text) && !baseRtl) return tokens
   bidiApi ??= bidiFactory()
-  const { levels } = bidiApi.getEmbeddingLevels(text)
+  const { levels } = bidiApi.getEmbeddingLevels(
+    text,
+    baseRtl == null ? undefined : baseRtl ? 'rtl' : 'ltr',
+  )
   const out: Token[] = []
   let off = 0
   for (const tok of tokens) {
@@ -568,8 +573,9 @@ function visualOrder(toks: Token[]): Token[] {
   return arr
 }
 
-/** Paragraph base direction: decided by the first strong-direction character (used for the default alignment; RTL paragraphs without explicit alignment align right). */
+/** Paragraph base direction: explicit a:pPr rtl wins, else the first strong-direction character (used for the default alignment; RTL paragraphs without explicit alignment align right). */
 function paraBaseRtl(p: Paragraph): boolean {
+  if (p.rtl != null) return p.rtl
   for (const r of p.runs) {
     for (const ch of r.text) {
       if (RTL_RE.test(ch)) return true
@@ -610,10 +616,12 @@ function layoutParagraph(
    *  pushes the first line's text start right, so it must wrap that much earlier. */
   firstLineShrinkPx = 0,
 ): LaidLine[] {
-  const tokens = applyBidi(tokenizeParagraph(p, scale, fontScale)).map((tok, logicalOrder) => ({
-    ...substituteKerning(tok, metrics),
-    logicalOrder,
-  }))
+  const tokens = applyBidi(tokenizeParagraph(p, scale, fontScale), p.rtl).map(
+    (tok, logicalOrder) => ({
+      ...substituteKerning(tok, metrics),
+      logicalOrder,
+    }),
+  )
   const lines: LaidLine[] = []
   let cur: Token[] = []
   let curW = 0
@@ -1142,6 +1150,7 @@ function layoutTextVertical(
     paraStart: boolean
     align?: Paragraph['align']
     alignExplicit?: boolean
+    rtl?: boolean
     softBreakAfter?: number
     /** Space-before/after maps to horizontal gaps between columns (carried by a paragraph's first/last column) */
     gapBefore: number
@@ -1321,6 +1330,7 @@ function layoutTextVertical(
         c.alignExplicit = true
       }
     }
+    if (paraBaseRtl(p)) for (const c of paraCols) c.rtl = true
     cols.push(...paraCols)
   }
 
@@ -1365,6 +1375,7 @@ function layoutTextVertical(
       paraStart: c.paraStart,
       ...(c.softBreakAfter != null ? { softBreakAfter: c.softBreakAfter } : {}),
       ...(c.alignExplicit && c.align ? { align: c.align } : {}),
+      ...(c.rtl ? { rtl: true } : {}),
     }
   })
 
@@ -1414,10 +1425,13 @@ function layoutAll(
 
     const textX = marLPx
     const avail = Math.max(availWidth - textX, 1)
-    // Paragraphs with an RTL base direction (first strong char is RTL) default to right
-    // alignment when none is explicit; affects layout only, not written back to
-    // TextLine.align (an editor commit would store it as an explicit value)
-    const align = p.align ?? (paraBaseRtl(p) ? ('right' as const) : undefined)
+    // RTL base direction mirrors the paragraph box (PowerPoint semantics, probe-measured):
+    // marL/indent measure from the RIGHT edge, the bullet glyph hangs on the right, and the
+    // default alignment is right. Explicit algn values stay physical (l = left edge).
+    const mirror = paraBaseRtl(p)
+    // Affects layout only, not written back to TextLine.align (an editor commit would
+    // store it as an explicit value)
+    const align = p.align ?? (mirror ? ('right' as const) : undefined)
     // Bullet glyph style/advance (drawn on the first line only). PowerPoint reserves
     // the glyph's advance like a tab stop: body text can never start before the glyph
     // ends, even when the glyph is wider than the hanging indent (-indent).
@@ -1535,7 +1549,21 @@ function layoutAll(
       }
       // Center/right alignment counts the overflow push so the text stays inside the box
       const off = alignOffset(align, avail, lineWidth + bulletShift)
-      const dx = textX + firstShift + bulletShift + off
+      let dx = textX + firstShift + bulletShift + off
+      // Mirrored box: the body's right boundary sits marL (+ first-line shifts) from the
+      // right edge; every line lives inside [0, rightEdge]. Spread justified lines fill
+      // that whole span (the spread width already equals it), unspread ones (paragraph-
+      // final, hard breaks) go flush right like PowerPoint.
+      const rightEdge = availWidth - textX - firstShift - bulletShift
+      const mirrorSpread = mirror && align === 'justify' && lineRuns !== ln.runs
+      if (mirror) {
+        dx =
+          mirrorSpread || align === 'left'
+            ? 0
+            : align === 'center'
+              ? (rightEdge - lineWidth) / 2
+              : rightEdge - lineWidth
+      }
       const runs = lineRuns.map((r) => ({
         ...r,
         x: r.x + dx,
@@ -1543,9 +1571,16 @@ function layoutAll(
       }))
       if (hasBullet && li === 0) {
         const st = bulletSt!
+        // Mirrored: the glyph keeps its reserved advance but on the right of the body text
+        // (right edge at availWidth - bulletX when the line is flush right); numbered
+        // glyphs render with an RTL base so "1." displays as ".1" like PowerPoint
+        const bx = mirror
+          ? dx + (mirrorSpread ? rightEdge : lineWidth) + (textX + bulletShift - bulletX - bulletW)
+          : bulletX + off
         runs.unshift({
           text: bulletText,
-          x: bulletX + off,
+          x: bx,
+          ...(mirror ? { rtl: true } : {}),
           baselineY: baseline,
           fontFamily: metrics.displayFamily?.(st, bulletText) ?? st.fontFamily,
           fontSizePx: st.fontSizePx,
@@ -1567,6 +1602,7 @@ function layoutAll(
         ...(ln.trailingSpace ? { trailingSpace: true } : {}),
         ...(ln.softBreakAfter != null ? { softBreakAfter: ln.softBreakAfter } : {}),
         ...(p.align ? { align: p.align } : {}),
+        ...(paraBaseRtl(p) ? { rtl: true } : {}),
         ...(p.level ? { level: p.level } : {}),
         ...(marLPx ? { marLPx } : {}),
         ...(indentPx ? { indentPx } : {}),

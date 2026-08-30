@@ -1324,6 +1324,25 @@ function headingLevelOf(
   return m ? parseInt(m[1], 10) : undefined
 }
 
+const defaultParaVanishCache = new WeakMap<Map<string, StyleInfo>, boolean>()
+
+/** Default paragraph style's w:vanish (cached per styles map): inherited by style-less paragraphs */
+function defaultParaVanish(styles?: Map<string, StyleInfo>): boolean | undefined {
+  if (!styles) return undefined
+  let v = defaultParaVanishCache.get(styles)
+  if (v === undefined) {
+    v = false
+    for (const info of styles.values()) {
+      if (info.isDefault && info.type === 'paragraph') {
+        v = info.display?.vanish === true
+        break
+      }
+    }
+    defaultParaVanishCache.set(styles, v)
+  }
+  return v || undefined
+}
+
 /** No run un-hides itself and nothing anchors here (bookmarks, comments, sectPr,
  *  drawings, numbering): safe to collapse a style-vanished paragraph entirely */
 function staysVanished(xml: string): boolean {
@@ -1371,6 +1390,12 @@ function buildTextParagraph(
   // whole paragraph hidden by style-level w:vanish (z-TopofForm/z-BottomofForm HTML
   // form markers): Word shows nothing; keep the original bytes at their body position
   if (styleId && ctx.styles.get(styleId)?.display?.vanish === true && staysVanished(xml)) {
+    return { ...base, type: 'passthrough', label: 'Hidden paragraph', invisibleMarker: true }
+  }
+  // style-less paragraph under a vanish-carrying default paragraph style: the
+  // mark inherits hidden, so Word gives the line no height (real_run2/93's
+  // trailing paragraph pushed a phantom second page)
+  if (!styleId && defaultParaVanish(ctx.styles) === true && staysVanished(xml)) {
     return { ...base, type: 'passthrough', label: 'Hidden paragraph', invisibleMarker: true }
   }
   // empty paragraph whose mark is hidden by direct w:vanish (label/card
@@ -3391,6 +3416,10 @@ function extractParaFormat(pPr: XNode): ParaFormat | undefined {
   if (shd) {
     const fill = attrsOf(shd)['w:fill']
     if (fill && fill !== 'auto') format.shadingFill = stripHash(fill)
+    // pattern shading (pctNN/stripes): white 20pt text on w:shd pct70 was
+    // invisible with the fill-only read (real_run2/61 Font Cascade)
+    const display = shdDisplayFill(shd)
+    if (display && display !== format.shadingFill) format.shadingDisplay = display
   }
   const pBdrs = findChildren(pPr, 'w:pBdr')
   if (pBdrs.length > 0) {
@@ -3557,6 +3586,12 @@ function extractRuns(
   // paragraph-style rtl inherits into runs without their own flag
   const pStyleId = attrsOf(findChild(findChild(pNode, 'w:pPr') ?? {}, 'w:pStyle') ?? {})['w:val']
   const paraRtl = pStyleId ? ctx.styles?.get(pStyleId)?.display?.rtl : undefined
+  // paragraph-style hidden text (w:vanish) inherits into runs without their own
+  // flag; style-less paragraphs read the default paragraph style (real_run2/93:
+  // a default style carrying vanish hides every run without an explicit off)
+  const paraVanish = pStyleId
+    ? ctx.styles?.get(pStyleId)?.display?.vanish
+    : defaultParaVanish(ctx.styles)
   // Comments are only tracked when the whole range lives inside this paragraph:
   // a regenerated paragraph can then re-emit its own markers, while ranges that
   // span paragraphs are left untouched (their runs get no commentIds).
@@ -3683,6 +3718,7 @@ function extractRuns(
           ctx.styles,
           paraRtl,
           ctx.xmlSpacePreserve,
+          paraVanish,
         )
         if (cached) {
           fieldCached += cached.text
@@ -3738,6 +3774,7 @@ function extractRuns(
         ctx.styles,
         paraRtl,
         ctx.xmlSpacePreserve,
+        paraVanish,
       )
       if (run) pushRun(run, rev)
     }
@@ -3893,7 +3930,14 @@ function themeLangEaSlotFont(fonts: ThemeFonts, eaRef: string | undefined): stri
 function themedRFonts(
   attrs: Record<string, string | undefined>,
   fonts: ThemeFonts | null | undefined,
-): { ascii?: string; hAnsi?: string; eastAsia?: string; cs?: string; eaSlotEmpty?: boolean } {
+): {
+  ascii?: string
+  hAnsi?: string
+  eastAsia?: string
+  cs?: string
+  eaSlotEmpty?: boolean
+  themed?: { ascii?: boolean; hAnsi?: boolean; eastAsia?: boolean }
+} {
   const themeVal = (ref: string | undefined): string | undefined => {
     if (!ref || !fonts) return undefined
     switch (ref) {
@@ -3919,12 +3963,19 @@ function themedRFonts(
   const themedEa = themeVal(eaRef)
   const eaSlotEmpty =
     !themedEa && !!fonts && (eaRef === 'majorEastAsia' || eaRef === 'minorEastAsia')
+  const themedAscii = themeVal(attrs['w:asciiTheme'])
+  const themedHAnsi = themeVal(attrs['w:hAnsiTheme'])
   return {
-    ascii: themeVal(attrs['w:asciiTheme']) ?? attrs['w:ascii'],
-    hAnsi: themeVal(attrs['w:hAnsiTheme']) ?? attrs['w:hAnsi'],
+    ascii: themedAscii ?? attrs['w:ascii'],
+    hAnsi: themedHAnsi ?? attrs['w:hAnsi'],
     eastAsia: themedEa ?? (eaSlotEmpty ? emptyEaSlotFont(fonts!, eaRef) : attrs['w:eastAsia']),
     cs: themeVal(attrs['w:cstheme']) ?? attrs['w:cs'],
     ...(eaSlotEmpty ? { eaSlotEmpty } : {}),
+    themed: {
+      ascii: themedAscii !== undefined,
+      hAnsi: themedHAnsi !== undefined,
+      eastAsia: themedEa !== undefined || eaSlotEmpty,
+    },
   }
 }
 
@@ -3945,6 +3996,7 @@ function buildRun(
   styles?: Map<string, StyleInfo>,
   paraRtl?: boolean,
   partPreserve?: boolean,
+  paraVanish?: boolean,
 ): Run | null {
   let text = ''
   for (const child of childrenOf(rNode)) {
@@ -4058,10 +4110,17 @@ function buildRun(
   if (link) run.link = link
   // a bare run under an rtl style still selects the Cs set from its style chain
   if (!rPr && paraRtl) run.cs = true
+  if (!rPr && paraVanish) run.vanish = true
   if (rPr) {
     run.rawRPr = serializeXNode(rPr)
     const rStyle = attrsOf(findChild(rPr, 'w:rStyle') ?? {})['w:val']
     if (rStyle && rStyle !== 'Hyperlink') run.styleId = rStyle
+    // hidden text: an explicit run w:vanish wins over the character/paragraph
+    // style chain; w:specVanish (style separator) keeps the run visible
+    const vanishOwn = onOffOf(rPr, 'w:specVanish') === true ? undefined : onOffOf(rPr, 'w:vanish')
+    const vanish =
+      vanishOwn ?? (rStyle ? styles?.get(rStyle)?.display?.vanish : undefined) ?? paraVanish
+    if (vanish === true) run.vanish = true
     // Word picks the whole property set by w:rtl (probed, Word for Mac 2026-08):
     // rtl runs read w:bCs/w:iCs/w:szCs with no fallback to w:b/w:i/w:sz; non-rtl
     // runs read the base props and ignore the Cs twins entirely. Script content
@@ -4090,6 +4149,20 @@ function buildRun(
     if (rf.eaSlotEmpty && font && font === rf.eastAsia) run.eaSlotEmpty = true
     const fontAscii = rf.ascii ?? rf.hAnsi
     if (fontAscii) run.fontAscii = fontAscii
+    // record which resolved values came from theme refs (per winning slot)
+    const fontThemed =
+      rf.eastAsia !== undefined
+        ? rf.themed?.eastAsia
+        : rf.ascii !== undefined
+          ? rf.themed?.ascii
+          : rf.themed?.hAnsi
+    const fontAsciiThemed = rf.ascii !== undefined ? rf.themed?.ascii : rf.themed?.hAnsi
+    if ((fontThemed && font) || (fontAsciiThemed && fontAscii)) {
+      run.themeRFonts = {
+        ...(fontThemed && font ? { font } : {}),
+        ...(fontAsciiThemed && fontAscii ? { fontAscii } : {}),
+      }
+    }
     // complex-script slot: literal attribute only — theme refs (w:cstheme) stay in
     // rawRPr so untouched runs keep their original bytes
     if (rfAttrs['w:cs']) run.fontCs = rfAttrs['w:cs']
@@ -5837,19 +5910,45 @@ function fieldDisplayOf(xml: string, styles?: Map<string, StyleInfo>): FieldDisp
     // face/size of the visible result runs (same rule as tocLine): without
     // them the passthrough div inherits the document default and a SimSun
     // field paragraph mis-snaps to a double cell on a typed line grid
-    let sz = 0
+    // dominant size = the size covering the most text: a manual drop-cap letter
+    // (one 48pt "L" before 10pt body) must not inflate the whole field's strut
+    // (real_run2/47 rendered the entire paragraph at 48pt, 10 -> 17 pages)
     let font: string | undefined
+    const sizedRuns: Array<{ text: string; szHalfPoints?: number }> = []
+    const szWeights = new Map<number, number>()
     const runRe = /<w:r(?:\s[^>]*)?>([\s\S]*?)<\/w:r>/g
     let run: RegExpExecArray | null
     while ((run = runRe.exec(xml)) !== null) {
       if (!/<w:t(?:\s|>)/.test(run[1]) || run[1].includes('<w:instrText')) continue
+      const text = decodeEntities(
+        Array.from(run[1].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g), (m) => m[1]).join(''),
+      )
       const v = parseInt(/<w:sz w:val="(\d+)"/.exec(run[1])?.[1] ?? '', 10)
-      if (v > sz) sz = v
+      sizedRuns.push({ text, ...(v > 0 ? { szHalfPoints: v } : {}) })
+      // unsized runs vote for the inherited default (key 0): one explicit
+      // drop-cap letter must not out-vote a body of default-sized text
+      const key = v > 0 ? v : 0
+      szWeights.set(key, (szWeights.get(key) ?? 0) + Math.max(text.length, 1))
       if (!font) {
         const fonts = /<w:rFonts [^/>]*/.exec(run[1])?.[0] ?? ''
         font = /w:eastAsia="([^"]+)"/.exec(fonts)?.[1] ?? /w:ascii="([^"]+)"/.exec(fonts)?.[1]
       }
     }
+    let sz = 0
+    let szWeight = -1
+    for (const [v, w] of szWeights) {
+      if (w > szWeight || (w === szWeight && v > sz)) {
+        sz = v
+        szWeight = w
+      }
+    }
+    // sized spans only for mixed sizes, and only when the runs reproduce the
+    // visible text (tabs/breaks fall back to the plain string)
+    const norm = (t: string) => t.replace(/\s+/g, ' ').trim()
+    const mixedRuns =
+      szWeights.size > 1 && norm(sizedRuns.map((r) => r.text).join('')) === norm(visible)
+        ? sizedRuns.filter((r) => r.text !== '')
+        : undefined
     // explicit paragraph alignment: the passthrough div would inherit the
     // document default (justify in CJK docs) and stretch short lines
     const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(xml)?.[0] ?? ''
@@ -5872,6 +5971,7 @@ function fieldDisplayOf(xml: string, styles?: Map<string, StyleInfo>): FieldDisp
       kind: 'text',
       left: visible,
       ...(sz > 0 ? { szHalfPoints: sz } : {}),
+      ...(mixedRuns ? { runs: mixedRuns } : {}),
       ...(font ? { fontFamily: font } : {}),
       ...(align ? { align } : {}),
       ...(line > 0 && lineRule
@@ -7366,8 +7466,8 @@ function styleDisplayOf(
     const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
     if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') display.align = jc
     else if (jc === 'both' || jc === 'distribute') display.align = 'justify'
-    const shdFill = attrsOf(findChild(pPr, 'w:shd') ?? {})['w:fill']
-    if (shdFill && shdFill !== 'auto') display.shadingFill = stripHash(shdFill)
+    const shdDisp = shdDisplayFill(findChild(pPr, 'w:shd'))
+    if (shdDisp) display.shadingFill = shdDisp
     const stops = tabStopsOf(pPr)
     if (stops) display.tabStops = stops
     const ind = findChild(pPr, 'w:ind')

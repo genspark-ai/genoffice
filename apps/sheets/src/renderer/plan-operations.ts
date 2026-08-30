@@ -28,7 +28,11 @@ import {
   type WorkbookOperation,
 } from '../domain/workbook-dsl'
 import type { ApplyOutcome, ChangePlan } from '../domain/workbook.types'
+import { offsetFormulaRefs } from '../domain/formula-shift'
+import { qualifierMatches, shiftFormulaText, StructuralShiftError } from '../gateway/xlsx-structure'
+import { MAX_PATCH_ENTRY_BYTES } from '../shared/desktop-api'
 import { isSheetRemoved } from './edit-journal'
+import { cellKey, parseFormulaReferences } from './formula-closure'
 import { fillFormulaCostError, quadraticFormulaError, type FormulaCostSheet } from './formula-cost'
 import { t } from './i18n/locale'
 import { buildLazyChangePlan } from './lazy-plan'
@@ -39,7 +43,7 @@ import {
   normalizeLinkTarget,
   protectSheetGuard,
 } from './univer-sync'
-import type { LazyWorkbookState, UniverRuntime } from './univer-state'
+import { CLOSURE_MAX_CELLS, type LazyWorkbookState, type UniverRuntime } from './univer-state'
 import { convertibleType } from './WorkbookVisuals'
 
 /** App-scope state the plan builders need, threaded explicitly. */
@@ -75,12 +79,13 @@ export function proposeOperations(
         summary,
         operations,
       })
-      // find_replace plans against the grid; unloaded cells read as empty
-      // and would silently miss matches — fail early instead. Ranges above
-      // the per-cell expansion cap are exempt: they stay range-level and the
-      // apply executor loads each chunk before scanning it.
+      // find_replace and sort_range plan against the grid; unloaded cells
+      // read as empty and would silently miss matches / sort real rows as
+      // blanks — fail early instead. Ranges above the per-cell expansion cap
+      // are exempt: they stay range-level and the apply executor loads each
+      // chunk before scanning it.
       for (const operation of batch.operations) {
-        if (operation.op !== 'find_replace') continue
+        if (operation.op !== 'find_replace' && operation.op !== 'sort_range') continue
         const bounds = parseRange(operation.range)
         if (rangeCellCount(bounds) > MAX_EXPANDED_CELL_OPS) continue
         const loaded = state.loadedRanges.get(operation.sheetId)
@@ -94,15 +99,41 @@ export function proposeOperations(
         if (!rangeLoaded) {
           return {
             ok: false,
-            error:
-              'The find_replace range is not fully loaded yet — narrow it to a loaded region, or read_range first and rewrite precisely with set_range.',
+            error: `The ${operation.op} range is not fully loaded yet — read_range it first (that loads it), then retry.`,
           }
         }
       }
       const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
       if (!workbook) return { ok: false, error: 'No workbook is open.' }
       const reader = lazyWorkbookCellReader(workbook)
+      // Built on first formula write of a streamed workbook (memoized):
+      // current sheet names with file extents for the streaming-mode
+      // precedent collector; the apply path pins the collected cells.
+      const streamedNeeds = new Map<string, Set<number>>()
+      let streamedRefSheetsCache: StreamedRefSheet[] | undefined
+      const streamedRefSheets = (): StreamedRefSheet[] | null => {
+        if (state.formulaMode) return null
+        streamedRefSheetsCache ??= streamedRefSheetList(state, workbook)
+        return streamedRefSheetsCache
+      }
+      // Bulk writes seen so far in this batch, per sheet. Apply runs the
+      // structural lane (fill/copy/visual ops) in op order BEFORE cell
+      // changes, so a later add_chart can chart data an earlier fill/copy in
+      // the same batch writes — the pre-apply grid can't be probed for it.
+      // set_cell/set_range data does NOT count: it lands after the chart.
+      type CellBounds = { startRow: number; endRow: number; startColumn: number; endColumn: number }
+      const pendingBulkWrites = new Map<string, CellBounds[]>()
+      const recordPendingWrite = (sheetId: string, range: CellBounds) => {
+        const ranges = pendingBulkWrites.get(sheetId) ?? []
+        ranges.push(range)
+        pendingBulkWrites.set(sheetId, ranges)
+      }
       for (const operation of expandToPrimitiveOps(batch.operations, reader)) {
+        if (operation.op === 'fill_range') {
+          recordPendingWrite(operation.sheetId, parseRange(operation.target))
+        } else if (operation.op === 'copy_range') {
+          recordPendingWrite(operation.sheetId, copyTargetBounds(operation))
+        }
         // Every sheet-addressed op must reference an existing sheet BEFORE the
         // batch starts applying: apply routes through sheetById and a mid-batch
         // throw would leave earlier ops committed while the tool reports the
@@ -255,13 +286,26 @@ export function proposeOperations(
                 bounds.endRow <= loaded.endRow &&
                 bounds.startColumn >= loaded.startColumn &&
                 bounds.endColumn <= loaded.endColumn)
+            // An earlier fill/copy in this batch may be about to write the
+            // chart's data (same apply lane, runs first) — the grid can't
+            // show it yet, so skip the numeric probe for those.
+            const writtenThisBatch = (pendingBulkWrites.get(operation.sheetId) ?? []).some(
+              (write) =>
+                write.startRow <= bounds.endRow &&
+                write.endRow >= bounds.startRow &&
+                write.startColumn <= bounds.endColumn &&
+                write.endColumn >= bounds.startColumn,
+            )
             const values = targetSheet.getRange(operation.dataRange).getRawValues() as (
               string | number | boolean | null | undefined
             )[][]
-            if (rangeLoaded && !chartDataFromValues(values)) {
+            if (rangeLoaded && !writtenThisBatch && !chartDataFromValues(values)) {
               return {
                 ok: false,
-                error: 'The chart dataRange needs at least one numeric column.',
+                error:
+                  'The chart dataRange needs at least one numeric column. ' +
+                  'set_cell/set_range data lands after charts within a batch — write the data in ' +
+                  'one batch, then add the chart in the next.',
               }
             }
           }
@@ -336,6 +380,24 @@ export function proposeOperations(
               error: 'This sheet contains a PivotTable — duplicating it is not supported yet.',
             }
           }
+          // The save clones the worksheet part and fails closed on
+          // sheet-scoped defined names; catching it here keeps the failure
+          // out of the apply-ok-save-fail gap. The sidecar flag covers
+          // hidden and _xlnm.* built-ins the modeled definedNames omit
+          // (bugbot); the scan remains as the older-sidecar fallback.
+          const fileIndex = state.file.sheets.findIndex((sheet) => sheet.id === operation.sheetId)
+          const scopedNames =
+            sheetMeta?.hasScopedDefinedNames ??
+            (fileIndex >= 0 &&
+              (state.file.definedNames ?? []).some((name) => name.sheetIndex === fileIndex))
+          if (!isAdded && scopedNames) {
+            return {
+              ok: false,
+              error:
+                'This sheet has sheet-scoped defined names — duplicating it is not supported yet. ' +
+                'Copy its data instead: add_sheet a new sheet and copy_range the used range across.',
+            }
+          }
           continue
         }
         if (
@@ -343,14 +405,15 @@ export function proposeOperations(
           operation.op === 'clear_range' ||
           operation.op === 'copy_range' ||
           operation.op === 'convert_to_values' ||
-          operation.op === 'find_replace'
+          operation.op === 'find_replace' ||
+          operation.op === 'sort_range'
         ) {
-          // Range-level bulk ops (fill / copy / convert / large clear and
-          // find_replace): validate the whole target rectangle at once — the
-          // per-cell checks below would never see these because they are not
-          // expanded. (find_replace only arrives here above the expansion
-          // cap.) Unloaded target regions are fine: the apply executor loads
-          // them chunk by chunk.
+          // Range-level bulk ops (fill / copy / convert / large clear,
+          // find_replace and sort_range): validate the whole target rectangle
+          // at once — the per-cell checks below would never see these because
+          // they are not expanded. (find_replace / sort_range only arrive
+          // here above the expansion cap.) Unloaded target regions are fine:
+          // the apply executor loads them chunk by chunk.
           const sheetMeta = state.file.sheets.find((sheet) => sheet.id === operation.sheetId)
           const targetSheet = workbook?.getSheetBySheetId(operation.sheetId)
           if (!targetSheet || isSheetRemoved(state.editJournal, operation.sheetId)) {
@@ -362,9 +425,16 @@ export function proposeOperations(
               : operation.op === 'copy_range'
                 ? copyTargetBounds(operation)
                 : parseRange(operation.range)
+          // A filtered copy's height is only known once the source is read;
+          // check the anchor row + column span here, the matched-row fit at
+          // apply time (which fails loud with the actual counts).
+          const gridBounds =
+            operation.op === 'copy_range' && operation.filterColumn !== undefined
+              ? { ...bounds, endRow: bounds.startRow }
+              : bounds
           if (
-            bounds.endRow >= targetSheet.getMaxRows() ||
-            bounds.endColumn >= targetSheet.getMaxColumns()
+            gridBounds.endRow >= targetSheet.getMaxRows() ||
+            gridBounds.endColumn >= targetSheet.getMaxColumns()
           ) {
             return {
               ok: false,
@@ -389,17 +459,40 @@ export function proposeOperations(
                 'If the source data changed, recompute with refresh_pivot instead.',
             }
           }
+          if (operation.op === 'sort_range') {
+            const keyColumn = columnIndex(operation.byColumn)
+            if (keyColumn < bounds.startColumn || keyColumn > bounds.endColumn) {
+              return {
+                ok: false,
+                error: `Sort column ${operation.byColumn} is outside the range ${operation.range}.`,
+              }
+            }
+            if (bounds.startRow + (operation.hasHeader ? 1 : 0) >= bounds.endRow) {
+              return { ok: false, error: 'The sort range needs at least two data rows.' }
+            }
+          }
           if (operation.op === 'copy_range') {
             // Source loadedness is NOT required: the executor reads it chunk
             // by chunk. No fill-style cost guard either — every copied
             // formula evaluates exactly once, the same load the originals
             // already impose on the engine.
             const sourceSheetId = operation.sourceSheetId ?? operation.sheetId
-            if (
-              !workbook?.getSheetBySheetId(sourceSheetId) ||
-              isSheetRemoved(state.editJournal, sourceSheetId)
-            ) {
+            const sourceSheet = workbook?.getSheetBySheetId(sourceSheetId)
+            if (!sourceSheet || isSheetRemoved(state.editJournal, sourceSheetId)) {
               return { ok: false, error: `Unknown sheet: ${sourceSheetId}` }
+            }
+            const sourceBounds = parseRange(operation.source)
+            if (
+              sourceBounds.endRow >= sourceSheet.getMaxRows() ||
+              sourceBounds.endColumn >= sourceSheet.getMaxColumns()
+            ) {
+              return {
+                ok: false,
+                error:
+                  `The source range ${operation.source} extends beyond the source sheet grid ` +
+                  `(${sourceSheet.getMaxRows()} rows × ${sourceSheet.getMaxColumns()} columns) — ` +
+                  'copy only cells that exist.',
+              }
             }
           }
           if (operation.op === 'fill_range') {
@@ -606,6 +699,18 @@ export function proposeOperations(
             lazyFormulaCostSheets(state),
           )
           if (costError) return { ok: false, error: costError }
+          const refSheets = streamedRefSheets()
+          if (refSheets) {
+            collectStreamedFormulaPrecedents(
+              operation.formula,
+              operation.sheetId,
+              refSheets,
+              streamedNeeds,
+              state.closure.pinned,
+            )
+            const budgetError = streamedPinBudgetError(state, streamedNeeds)
+            if (budgetError) return { ok: false, error: budgetError }
+          }
         }
         const target = parseAddress(operation.address)
         // Pivot output is baked into the worksheet (same guard as the cell
@@ -783,6 +888,7 @@ export function runDeterministicPlan(
           operation.op === 'convert_to_values' ||
           operation.op === 'clear_range' ||
           operation.op === 'find_replace' ||
+          operation.op === 'sort_range' ||
           operation.op === 'rename_sheet' ||
           operation.op === 'format_range' ||
           isLayoutOp(operation) ||
@@ -842,6 +948,13 @@ const PIVOT_GATED_OPS = new Set([
   'unmerge_cells',
 ])
 const FILTER_GATED_OPS = new Set(['set_filter', 'clear_filter', 'set_filter_criteria'])
+/// Ops that only rewrite workbook.xml, never the sheet's own part.
+const SHEET_PART_EXEMPT_OPS = new Set([
+  'rename_sheet',
+  'move_sheet',
+  'set_sheet_hidden',
+  'delete_sheet',
+])
 
 /** Mirrors the BeforeCommandExecute gates (App.tsx) that silently cancel the
  * facade commands these ops dispatch: checked at propose time and re-checked
@@ -854,6 +967,29 @@ export function lazyGateError(
   const sheetId =
     'sheetId' in operation && typeof operation.sheetId === 'string' ? operation.sheetId : undefined
   if (sheetId === undefined) return null
+  const isAddedSheet = state.editJournal.sheets.added.has(sheetId)
+  // Ops that write inside the worksheet part are unsavable when its XML is
+  // above the gateway patch cap; fail here so Apply never succeeds against
+  // a save that must fail. Workbook-level ops (rename/move/hide/delete a
+  // sheet) only rewrite workbook.xml and stay allowed. add_pivot reads
+  // `sheetId` and bakes its output onto `targetSheetId` — gate that one on
+  // the write target (bugbot).
+  const writeSheetId = operation.op === 'add_pivot' ? (operation.targetSheetId ?? sheetId) : sheetId
+  if (
+    !state.editJournal.sheets.added.has(writeSheetId) &&
+    !SHEET_PART_EXEMPT_OPS.has(operation.op)
+  ) {
+    const sheetMeta = state.file.sheets.find((sheet) => sheet.id === writeSheetId)
+    if (sheetMeta !== undefined && (sheetMeta.sourceXmlBytes ?? 0) > MAX_PATCH_ENTRY_BYTES) {
+      return (
+        `Sheet "${sheetMeta.name}" is read-only this session: its worksheet XML is ` +
+        `${Math.round((sheetMeta.sourceXmlBytes ?? 0) / 1024 / 1024)}MB uncompressed, above the ` +
+        `${Math.round(MAX_PATCH_ENTRY_BYTES / 1024 / 1024)}MB save limit, so edits there can never be saved. ` +
+        'Write results to another sheet instead — copy_range (with filterColumn/filterValues to ' +
+        'extract rows) and aggregate_range both read it fine.'
+      )
+    }
+  }
   if (PIVOT_GATED_OPS.has(operation.op)) {
     const sheetMeta = state.file.sheets.find((sheet) => sheet.id === sheetId)
     if (sheetMeta && sheetMeta.pivotRanges.length > 0) {
@@ -865,7 +1001,6 @@ export function lazyGateError(
     }
     return null
   }
-  const isAddedSheet = state.editJournal.sheets.added.has(sheetId)
   if (FILTER_GATED_OPS.has(operation.op)) {
     if (!isAddedSheet && (!state.formulaMode || !state.flags.preloadComplete)) {
       return state.formulaMode
@@ -885,6 +1020,359 @@ export function lazyGateError(
     return "This sheet's data-validation rules are still being indexed — retry after workbook indexing completes."
   }
   return null
+}
+
+export interface StreamedRefSheet {
+  readonly id: string
+  /** current display name (session renames included) */
+  readonly name: string
+  /** data extent, clamping whole-axis refs; undefined for sheets added this
+   * session — those live fully in the grid and are always safe to reference */
+  readonly fileExtent?: { readonly rows: number; readonly columns: number } | undefined
+}
+
+/** Current sheet list with file extents for the streamed-formula collector.
+ * Session-added sheets carry no extent — they live fully in the grid. */
+export function streamedRefSheetList(
+  state: LazyWorkbookState,
+  workbook: { getSheets(): { getSheetId(): string; getSheetName(): string }[] },
+): StreamedRefSheet[] {
+  return workbook.getSheets().map((sheet) => {
+    const meta = state.file.sheets.find((candidate) => candidate.id === sheet.getSheetId())
+    return {
+      id: sheet.getSheetId(),
+      name: sheet.getSheetName(),
+      ...(meta ? { fileExtent: { rows: meta.rowCount, columns: meta.columnCount } } : {}),
+    }
+  })
+}
+
+/** Excel sheet references are case-insensitive; mirror computeFormulaClosure's
+ * exact-then-lowercased resolution so a case-variant spelling still collects
+ * its precedents instead of silently skipping the pin (and the budget). */
+function resolveQualifiedSheet(
+  qualifier: string,
+  sheets: readonly StreamedRefSheet[],
+): StreamedRefSheet | undefined {
+  const exact = sheets.find((sheet) => qualifierMatches(qualifier, sheet.name))
+  if (exact) return exact
+  const unquoted = (
+    qualifier.startsWith("'") ? qualifier.slice(1, -1).replaceAll("''", "'") : qualifier
+  ).toLowerCase()
+  return sheets.find((sheet) => sheet.name.toLowerCase() === unquoted)
+}
+
+/**
+ * File-sheet cells a formula reads, added to `out` (per sheet id, cellKey
+ * sets in screen coordinates). On a streamed workbook Univer's grid only
+ * holds the streamed-in viewport of each file sheet, so before such a
+ * formula is written, the apply path loads & PINS these cells into the
+ * engine (pinStreamedPrecedents) — the formula then computes correctly and
+ * survives viewport eviction, exactly like closure-mode formulas. Whole-axis
+ * refs clamp to the sheet's data extent (cells past it are empty in the
+ * file); refs to session-added sheets and cells already pinned are skipped.
+ * Collection stops just past the session budget — the batch gets rejected
+ * then (streamedPinBudgetError), so unbounded key sets are never built.
+ */
+export function collectStreamedFormulaPrecedents(
+  formula: string,
+  hostSheetId: string,
+  sheets: readonly StreamedRefSheet[],
+  out: Map<string, Set<number>>,
+  alreadyPinned?: ReadonlyMap<string, ReadonlyMap<string, unknown>>,
+): void {
+  let total = 0
+  for (const cells of out.values()) total += cells.size
+  for (const reference of parseFormulaReferences(formula)) {
+    const target =
+      reference.qualifier === undefined
+        ? sheets.find((sheet) => sheet.id === hostSheetId)
+        : resolveQualifiedSheet(reference.qualifier, sheets)
+    if (!target?.fileExtent) continue
+    const { token } = reference
+    const lastRow = target.fileExtent.rows - 1
+    const lastColumn = target.fileExtent.columns - 1
+    const startRow = Math.max(token.startRow ?? 0, 0)
+    const endRow = Math.min(token.endRow ?? lastRow, lastRow)
+    const startColumn = Math.max(token.startColumn ?? 0, 0)
+    const endColumn = Math.min(token.endColumn ?? lastColumn, lastColumn)
+    if (endRow < startRow || endColumn < startColumn) continue
+    const pinned = alreadyPinned?.get(target.id)
+    let cells = out.get(target.id)
+    for (let row = startRow; row <= endRow; row += 1) {
+      for (let column = startColumn; column <= endColumn; column += 1) {
+        if (total > CLOSURE_MAX_CELLS) return
+        if (pinned?.has(`${row}:${column}`)) continue
+        const key = cellKey(row, column)
+        if (cells?.has(key)) continue
+        if (!cells) {
+          cells = new Set()
+          out.set(target.id, cells)
+        }
+        cells.add(key)
+        total += 1
+      }
+    }
+  }
+}
+
+/**
+ * Whether an unfiltered streamed copy can carry its source formulas live at
+ * the target. `carried` maps 'row:col' (source screen coordinates) to the
+ * harvested formula text; the copy shifts every text by one uniform block
+ * delta, so guards run per distinct text. Same discipline as any streamed
+ * formula write — quadratic-cost formulas and reference sets past the shared
+ * session pin budget refuse, and the caller falls back to the frozen-values
+ * copy with a notice instead of failing the batch. References inside the
+ * copy's own write rectangle are pinned like any other precedent: the copied
+ * cells are plain journal cells otherwise, and viewport eviction would wipe
+ * the ones outside the current window, leaving in-block formulas computing
+ * against blanks while still looking live (bugbot).
+ */
+export function carryCopyFormulasPlan(
+  state: LazyWorkbookState,
+  workbook: { getSheets(): { getSheetId(): string; getSheetName(): string }[] },
+  targetSheetId: string,
+  targetSheetName: string,
+  carried: ReadonlyMap<string, string>,
+  rowDelta: number,
+  columnDelta: number,
+): { ok: true; needs: Map<string, Set<number>> } | { ok: false; reason: string } {
+  const offsetTexts = new Set<string>()
+  for (const text of carried.values()) {
+    offsetTexts.add(offsetFormulaRefs(text, rowDelta, columnDelta))
+  }
+  const costSheets = lazyFormulaCostSheets(state)
+  for (const text of offsetTexts) {
+    if (quadraticFormulaError(text, targetSheetName, costSheets) !== null) {
+      return {
+        ok: false,
+        reason:
+          'a copied formula would be too expensive to evaluate live ' +
+          '(criteria/lookup function over a large range)',
+      }
+    }
+  }
+  const needs = new Map<string, Set<number>>()
+  const refSheets = streamedRefSheetList(state, workbook)
+  for (const text of offsetTexts) {
+    collectStreamedFormulaPrecedents(text, targetSheetId, refSheets, needs, state.closure.pinned)
+  }
+  if (streamedPinBudgetError(state, needs) !== null) {
+    return {
+      ok: false,
+      reason:
+        'their references exceed the live-formula session budget. Copy a smaller block, ' +
+        'or rebuild the formulas that must stay live with fill_range/set_formula',
+    }
+  }
+  return { ok: true, needs }
+}
+
+/**
+ * Session budget check for on-demand precedent pinning, shared with closure
+ * mode's own budget (CLOSURE_MAX_CELLS): beyond it the engine cannot hold
+ * the referenced data, so the batch fails closed with alternatives instead
+ * of letting the formulas display silently wrong results.
+ */
+/**
+ * The save rewrites every formula across a row/column deletion and fails
+ * closed when a reference lands fully inside the deleted span (the rewrite
+ * cannot produce #REF! yet) — which used to surface only at ⌘S, after the
+ * apply had reported success and the canvas showed the deletion. Run the
+ * exact same rewrite (shiftFormulaText) over the known formula texts at
+ * apply time and fail the batch loud instead, workbook untouched.
+ *
+ * Best-effort by design: prior structural session ops shift the file texts'
+ * coordinates (the save replays ops in sequence; this check does not), and a
+ * truncated or still-indexing formula index leaves texts unknown — those
+ * cases return null and keep today's save-time guard as the backstop.
+ */
+type DeleteSpanOp =
+  | { op: 'delete_rows'; sheetId: string; row: number; count: number }
+  | { op: 'delete_cols'; sheetId: string; column: string; count: number }
+
+function deleteSpanSpec(
+  state: LazyWorkbookState,
+  sheetNameOf: (sheetId: string) => string | undefined,
+  operation: DeleteSpanOp,
+): {
+  axis: 'row' | 'column'
+  shift: { boundary: number; delta: number; deleted: { start: number; end: number } }
+  deletedSheetName: string
+} {
+  const axis = operation.op === 'delete_cols' ? ('column' as const) : ('row' as const)
+  const index = operation.op === 'delete_cols' ? columnIndex(operation.column) : operation.row - 1
+  return {
+    axis,
+    shift: {
+      boundary: index,
+      delta: -operation.count,
+      deleted: { start: index, end: index + operation.count - 1 },
+    },
+    deletedSheetName:
+      state.file.sheets.find((sheet) => sheet.id === operation.sheetId)?.name ??
+      sheetNameOf(operation.sheetId) ??
+      '',
+  }
+}
+
+function deletedSpanTextError(
+  texts: readonly string[],
+  spec: ReturnType<typeof deleteSpanSpec>,
+  qualifiedOnly: boolean,
+): string | null {
+  for (const text of texts) {
+    try {
+      shiftFormulaText(text, spec.deletedSheetName, spec.shift, spec.axis, qualifiedOnly)
+    } catch (error) {
+      if (error instanceof StructuralShiftError) {
+        const span = spec.axis === 'column' ? 'columns' : 'rows'
+        return (
+          `A formula (${text.length > 80 ? `${text.slice(0, 80)}…` : text}) references only the ` +
+          `deleted ${span} — the save cannot rewrite it to #REF! yet, so the deletion would ` +
+          'fail there. Update or remove such formulas first (find_cells locates them), then retry.'
+        )
+      }
+      throw error
+    }
+  }
+  return null
+}
+
+export async function structuralDeleteFormulaError(
+  state: LazyWorkbookState,
+  workbook: { getSheets(): { getSheetId(): string; getSheetName(): string }[] },
+  operation: DeleteSpanOp,
+): Promise<string | null> {
+  if ([...state.editJournal.structuralOps.values()].some((ops) => ops.length > 0)) return null
+  const sheets = workbook.getSheets()
+  const spec = deleteSpanSpec(
+    state,
+    (id) => sheets.find((sheet) => sheet.getSheetId() === id)?.getSheetName(),
+    operation,
+  )
+  const fileSheetIds = new Set(state.file.sheets.map((sheet) => sheet.id))
+  for (const sheet of sheets) {
+    const sheetId = sheet.getSheetId()
+    if (isSheetRemoved(state.editJournal, sheetId)) continue
+    const journalCells = state.editJournal.cells.get(sheetId)
+    const texts: string[] = []
+    if (journalCells) {
+      for (const entry of journalCells.values()) if (entry.formula) texts.push(entry.formula)
+    }
+    if (fileSheetIds.has(sheetId)) {
+      let result
+      try {
+        result = await window.desktopApi.readWorkbookFormulas({
+          sessionId: state.file.sessionId,
+          sheetId,
+        })
+      } catch {
+        return null
+      }
+      if (result.truncated || !result.indexingComplete) return null
+      for (const cell of result.cells) {
+        if (!cell.formula) continue
+        // Only a CONTENT overwrite supersedes the file's formula text — a
+        // style-only journal entry leaves the formula in force (bugbot).
+        const entry = journalCells?.get(`${cell.row}:${cell.column}`)
+        if (entry && (entry.hasValue || entry.formula)) continue
+        texts.push(cell.formula)
+      }
+    }
+    // Formulas on other sheets only shift through explicit qualifiers —
+    // the same split the save applies.
+    const error = deletedSpanTextError(texts, spec, sheetId !== operation.sheetId)
+    if (error) return error
+  }
+  return null
+}
+
+/**
+ * Synchronous variant for the UI's BeforeCommandExecute delete gate. In
+ * full-load mode the model holds every live formula, so the scan is exact;
+ * on streamed workbooks only the harvested formula index and the journal
+ * are available synchronously — best-effort, with the save-time guard as
+ * the backstop either way.
+ */
+export function structuralDeleteFormulaErrorSync(
+  state: LazyWorkbookState,
+  workbook: {
+    getSheets(): {
+      getSheetId(): string
+      getSheetName(): string
+      getMaxRows(): number
+      getMaxColumns(): number
+      getRange(
+        row: number,
+        column: number,
+        rows: number,
+        columns: number,
+      ): { getFormulas(): string[][] }
+    }[]
+  },
+  operation: DeleteSpanOp,
+): string | null {
+  // Session structural ops only invalidate the STREAMED path's texts (the
+  // harvested index is in file coordinates); the full-load model already
+  // reflects them, so formulaMode keeps checking (bugbot).
+  const structuralShifted = [...state.editJournal.structuralOps.values()].some(
+    (ops) => ops.length > 0,
+  )
+  if (!state.formulaMode && structuralShifted) return null
+  const sheets = workbook.getSheets()
+  const spec = deleteSpanSpec(
+    state,
+    (id) => sheets.find((sheet) => sheet.getSheetId() === id)?.getSheetName(),
+    operation,
+  )
+  for (const sheet of sheets) {
+    const sheetId = sheet.getSheetId()
+    if (isSheetRemoved(state.editJournal, sheetId)) continue
+    const texts: string[] = []
+    if (state.formulaMode) {
+      // the live model already reflects every session edit
+      const formulas = sheet.getRange(0, 0, sheet.getMaxRows(), sheet.getMaxColumns()).getFormulas()
+      for (const row of formulas) for (const formula of row) if (formula) texts.push(formula)
+    } else {
+      const journalCells = state.editJournal.cells.get(sheetId)
+      if (journalCells) {
+        for (const entry of journalCells.values()) if (entry.formula) texts.push(entry.formula)
+      }
+      const harvested = state.formulaText.get(sheetId)
+      if (harvested) {
+        for (const [key, text] of harvested) {
+          const entry = journalCells?.get(key)
+          if (entry && (entry.hasValue || entry.formula)) continue
+          texts.push(text)
+        }
+      }
+    }
+    const error = deletedSpanTextError(texts, spec, sheetId !== operation.sheetId)
+    if (error) return error
+  }
+  return null
+}
+
+export function streamedPinBudgetError(
+  state: LazyWorkbookState,
+  needs: ReadonlyMap<string, ReadonlySet<number>>,
+): string | null {
+  let needed = 0
+  for (const cells of needs.values()) needed += cells.size
+  if (needed === 0) return null
+  let pinnedCount = 0
+  for (const pinned of state.closure.pinned.values()) pinnedCount += pinned.size
+  if (pinnedCount + needed <= CLOSURE_MAX_CELLS) return null
+  return (
+    'This workbook is too large for a full load — formulas stay live here by loading the file cells they reference ' +
+    `into the engine, within a session budget of ${CLOSURE_MAX_CELLS.toLocaleString('en-US')} cells. This batch's formulas need ` +
+    `~${needed.toLocaleString('en-US')} more cells (${pinnedCount.toLocaleString('en-US')} already loaded) and exceed it. ` +
+    'For statistics over bigger ranges use aggregate_range and write the result as a static value; to extract matching ' +
+    'rows use copy_range filterColumn/filterValues (static values, reads the real file data). Formulas referencing only ' +
+    'sheets added this session are always fine.'
+  )
 }
 
 /** Every formula a batch would write: set_formula plus "="-strings in set_range. */

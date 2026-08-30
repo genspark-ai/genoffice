@@ -61,6 +61,7 @@ export const aiStrings = defineStrings({
     aiSave: '保存',
     aiUnknownError: '未知错误',
     aiTimeoutError: 'AI 请求超时：网络长时间无响应，已停止。请检查网络后重试',
+    aiOverloadedError: 'AI 服务当前繁忙，请稍后重试',
     aiNetworkError: '网络有问题，无法连接 AI 服务。请检查网络后重试',
     aiCreditsExhausted: 'Genspark 积分已用完，请前往 genspark.ai/pricing 充值后重试',
     aiToolWorkbookContext: '读取工作表信息',
@@ -76,6 +77,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: '读取单元格',
     aiToolReadCellsCount: '读取 {count} 个单元格',
     aiToolPropose: '生成变更预览',
+    aiToolCreateDocument: '新建文件',
+    aiToolCreatedDocument: '已创建 {name}',
     aiToolReadAttachment: '读取附件',
     aiToolReadAttachmentOf: '读取附件 {name}',
     aiToolImageAttachment: '图片附件 {name}',
@@ -163,6 +166,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Unknown error',
     aiTimeoutError:
       'AI request timed out: no response from the network, so the run was stopped. Check your connection and try again',
+    aiOverloadedError: 'The AI service is busy right now — please try again in a moment',
     aiNetworkError:
       'Network problem: could not reach the AI service. Check your connection and try again',
     aiCreditsExhausted:
@@ -180,6 +184,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Read cells',
     aiToolReadCellsCount: 'Read {count} cells',
     aiToolPropose: 'Build change plan',
+    aiToolCreateDocument: 'Create new file',
+    aiToolCreatedDocument: 'Created {name}',
     aiToolReadAttachment: 'Read attachment',
     aiToolReadAttachmentOf: 'Read attachment {name}',
     aiToolImageAttachment: 'Image attachment {name}',
@@ -267,6 +273,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: '不明なエラー',
     aiTimeoutError:
       'AIリクエストがタイムアウトしました：ネットワークからの応答がないため中断しました。接続を確認して再試行してください',
+    aiOverloadedError: 'AI サービスが混み合っています。しばらくしてからもう一度お試しください',
     aiNetworkError:
       'ネットワークに問題があり、AI サービスに接続できません。接続を確認して再試行してください',
     aiCreditsExhausted:
@@ -284,6 +291,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'セルを読み取り',
     aiToolReadCellsCount: 'セル {count} 個を読み取り',
     aiToolPropose: '変更プレビューを生成',
+    aiToolCreateDocument: '新規ファイルを作成',
+    aiToolCreatedDocument: '{name} を作成しました',
     aiToolReadAttachment: '添付ファイルを読み取り',
     aiToolReadAttachmentOf: '添付ファイル {name} を読み取り',
     aiToolImageAttachment: '画像添付 {name}',
@@ -370,6 +379,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: '알 수 없는 오류',
     aiTimeoutError:
       'AI 요청 시간 초과: 네트워크 응답이 없어 중단되었습니다. 연결을 확인한 후 다시 시도해 주세요',
+    aiOverloadedError: 'AI 서비스가 혼잡합니다. 잠시 후 다시 시도해 주세요',
     aiNetworkError:
       '네트워크에 문제가 있어 AI 서비스에 연결할 수 없습니다. 연결을 확인한 후 다시 시도해 주세요',
     aiCreditsExhausted:
@@ -387,6 +397,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: '셀 읽기',
     aiToolReadCellsCount: '셀 {count}개 읽기',
     aiToolPropose: '변경 미리 보기 생성',
+    aiToolCreateDocument: '새 파일 만들기',
+    aiToolCreatedDocument: '{name} 생성됨',
     aiToolReadAttachment: '첨부 파일 읽기',
     aiToolReadAttachmentOf: '첨부 파일 {name} 읽기',
     aiToolImageAttachment: '이미지 첨부 {name}',
@@ -476,6 +488,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Erreur inconnue',
     aiTimeoutError:
       "Délai de la requête IA dépassé : aucune réponse du réseau, l'exécution a été interrompue. Vérifiez votre connexion et réessayez",
+    aiOverloadedError: "Le service d'IA est actuellement surchargé — réessayez dans un instant",
     aiNetworkError:
       'Problème réseau : impossible de joindre le service IA. Vérifiez votre connexion et réessayez',
     aiCreditsExhausted:
@@ -493,6 +506,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Lire les cellules',
     aiToolReadCellsCount: 'Lire {count} cellules',
     aiToolPropose: "Générer l'aperçu des modifications",
+    aiToolCreateDocument: 'Créer un nouveau fichier',
+    aiToolCreatedDocument: '{name} créé',
     aiToolReadAttachment: 'Lire la pièce jointe',
     aiToolReadAttachmentOf: 'Lire la pièce jointe {name}',
     aiToolImageAttachment: 'Image jointe {name}',
@@ -582,6 +597,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Unbekannter Fehler',
     aiTimeoutError:
       'Zeitüberschreitung der KI-Anfrage: keine Antwort vom Netzwerk, der Vorgang wurde abgebrochen. Prüfe deine Verbindung und versuche es erneut',
+    aiOverloadedError: 'Der KI-Dienst ist derzeit überlastet — bitte gleich erneut versuchen',
     aiNetworkError:
       'Netzwerkproblem: Der KI-Dienst ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut',
     aiCreditsExhausted:
@@ -599,6 +615,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Zellen lesen',
     aiToolReadCellsCount: '{count} Zellen lesen',
     aiToolPropose: 'Änderungsvorschau erstellen',
+    aiToolCreateDocument: 'Neue Datei erstellen',
+    aiToolCreatedDocument: '{name} erstellt',
     aiToolReadAttachment: 'Anlage lesen',
     aiToolReadAttachmentOf: 'Anlage {name} lesen',
     aiToolImageAttachment: 'Bildanlage {name}',
@@ -688,6 +706,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Error desconocido',
     aiTimeoutError:
       'La solicitud de IA agotó el tiempo de espera: no hubo respuesta de la red y se detuvo. Comprueba tu conexión e inténtalo de nuevo',
+    aiOverloadedError:
+      'El servicio de IA está saturado en este momento; inténtalo de nuevo en unos instantes',
     aiNetworkError:
       'Problema de red: no se pudo conectar con el servicio de IA. Comprueba tu conexión e inténtalo de nuevo',
     aiCreditsExhausted:
@@ -705,6 +725,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Leer celdas',
     aiToolReadCellsCount: 'Leer {count} celdas',
     aiToolPropose: 'Generar vista previa de cambios',
+    aiToolCreateDocument: 'Crear archivo nuevo',
+    aiToolCreatedDocument: '{name} creado',
     aiToolReadAttachment: 'Leer datos adjuntos',
     aiToolReadAttachmentOf: 'Leer datos adjuntos {name}',
     aiToolImageAttachment: 'Imagen adjunta {name}',
@@ -792,6 +814,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'ข้อผิดพลาดที่ไม่รู้จัก',
     aiTimeoutError:
       'คำขอ AI หมดเวลา: เครือข่ายไม่ตอบสนอง จึงหยุดการทำงาน โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
+    aiOverloadedError: 'บริการ AI มีผู้ใช้งานจำนวนมากในขณะนี้ โปรดลองอีกครั้งในอีกสักครู่',
     aiNetworkError:
       'เครือข่ายมีปัญหา ไม่สามารถเชื่อมต่อบริการ AI ได้ โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
     aiCreditsExhausted:
@@ -809,6 +832,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'อ่านเซลล์',
     aiToolReadCellsCount: 'อ่านเซลล์ {count} เซลล์',
     aiToolPropose: 'สร้างตัวอย่างการเปลี่ยนแปลง',
+    aiToolCreateDocument: 'สร้างไฟล์ใหม่',
+    aiToolCreatedDocument: 'สร้าง {name} แล้ว',
     aiToolReadAttachment: 'อ่านสิ่งที่แนบ',
     aiToolReadAttachmentOf: 'อ่านสิ่งที่แนบ {name}',
     aiToolImageAttachment: 'รูปภาพแนบ {name}',
@@ -897,6 +922,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Kesalahan tidak dikenal',
     aiTimeoutError:
       'Permintaan AI habis waktu: jaringan tidak merespons sehingga proses dihentikan. Periksa koneksi Anda lalu coba lagi',
+    aiOverloadedError: 'Layanan AI sedang sibuk — silakan coba lagi sebentar lagi',
     aiNetworkError:
       'Masalah jaringan: tidak dapat terhubung ke layanan AI. Periksa koneksi Anda lalu coba lagi',
     aiCreditsExhausted:
@@ -914,6 +940,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Baca sel',
     aiToolReadCellsCount: 'Baca {count} sel',
     aiToolPropose: 'Buat pratinjau perubahan',
+    aiToolCreateDocument: 'Buat file baru',
+    aiToolCreatedDocument: '{name} dibuat',
     aiToolReadAttachment: 'Baca lampiran',
     aiToolReadAttachmentOf: 'Baca lampiran {name}',
     aiToolImageAttachment: 'Lampiran gambar {name}',
@@ -1002,6 +1030,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Неизвестная ошибка',
     aiTimeoutError:
       'Тайм-аут запроса ИИ: сеть не отвечает, выполнение остановлено. Проверьте подключение и повторите попытку',
+    aiOverloadedError: 'Сервис ИИ сейчас перегружен — повторите попытку чуть позже',
     aiNetworkError:
       'Проблема с сетью: не удалось подключиться к сервису ИИ. Проверьте подключение и повторите попытку',
     aiCreditsExhausted:
@@ -1019,6 +1048,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Чтение ячеек',
     aiToolReadCellsCount: 'Чтение {count} ячеек',
     aiToolPropose: 'Создание предварительного просмотра изменений',
+    aiToolCreateDocument: 'Создание нового файла',
+    aiToolCreatedDocument: 'Создан {name}',
     aiToolReadAttachment: 'Чтение вложения',
     aiToolReadAttachmentOf: 'Чтение вложения {name}',
     aiToolImageAttachment: 'Вложенное изображение {name}',
@@ -1106,6 +1137,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'خطأ غير معروف',
     aiTimeoutError:
       'انتهت مهلة طلب الذكاء الاصطناعي: لا توجد استجابة من الشبكة وتم الإيقاف. تحقق من الاتصال وحاول مجددًا',
+    aiOverloadedError: 'خدمة الذكاء الاصطناعي مشغولة حاليًا — يرجى المحاولة مرة أخرى بعد قليل',
     aiNetworkError:
       'مشكلة في الشبكة: تعذّر الوصول إلى خدمة الذكاء الاصطناعي. تحقق من الاتصال وحاول مجددًا',
     aiCreditsExhausted:
@@ -1123,6 +1155,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'قراءة الخلايا',
     aiToolReadCellsCount: 'قراءة {count} من الخلايا',
     aiToolPropose: 'إنشاء معاينة التغييرات',
+    aiToolCreateDocument: 'إنشاء ملف جديد',
+    aiToolCreatedDocument: 'تم إنشاء {name}',
     aiToolReadAttachment: 'قراءة المرفق',
     aiToolReadAttachmentOf: 'قراءة المرفق {name}',
     aiToolImageAttachment: 'مرفق صورة {name}',
@@ -1211,6 +1245,8 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Erro desconhecido',
     aiTimeoutError:
       'A solicitação de IA expirou: sem resposta da rede, a execução foi interrompida. Verifique sua conexão e tente novamente',
+    aiOverloadedError:
+      'O serviço de IA está sobrecarregado no momento — tente novamente em instantes',
     aiNetworkError:
       'Problema de rede: não foi possível conectar ao serviço de IA. Verifique sua conexão e tente novamente',
     aiCreditsExhausted:
@@ -1228,6 +1264,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Ler células',
     aiToolReadCellsCount: 'Ler {count} células',
     aiToolPropose: 'Gerar visualização das alterações',
+    aiToolCreateDocument: 'Criar novo arquivo',
+    aiToolCreatedDocument: '{name} criado',
     aiToolReadAttachment: 'Ler anexo',
     aiToolReadAttachmentOf: 'Ler anexo {name}',
     aiToolImageAttachment: 'Anexo de imagem {name}',
@@ -1317,6 +1355,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Errore sconosciuto',
     aiTimeoutError:
       'Richiesta IA scaduta: nessuna risposta dalla rete, esecuzione interrotta. Controlla la connessione e riprova',
+    aiOverloadedError: 'Il servizio IA è momentaneamente sovraccarico — riprova tra poco',
     aiNetworkError:
       'Problema di rete: impossibile raggiungere il servizio IA. Controlla la connessione e riprova',
     aiCreditsExhausted:
@@ -1334,6 +1373,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Lettura delle celle',
     aiToolReadCellsCount: 'Lettura di {count} celle',
     aiToolPropose: "Creazione dell'anteprima delle modifiche",
+    aiToolCreateDocument: 'Crea nuovo file',
+    aiToolCreatedDocument: '{name} creato',
     aiToolReadAttachment: "Lettura dell'allegato",
     aiToolReadAttachmentOf: "Lettura dell'allegato {name}",
     aiToolImageAttachment: 'Immagine allegata {name}',
@@ -1422,6 +1463,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Nieznany błąd',
     aiTimeoutError:
       'Przekroczono limit czasu żądania AI: brak odpowiedzi sieci, przerwano. Sprawdź połączenie i spróbuj ponownie',
+    aiOverloadedError: 'Usługa AI jest obecnie przeciążona — spróbuj ponownie za chwilę',
     aiNetworkError:
       'Problem z siecią: nie można połączyć się z usługą AI. Sprawdź połączenie i spróbuj ponownie',
     aiCreditsExhausted:
@@ -1439,6 +1481,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Odczyt komórek',
     aiToolReadCellsCount: 'Odczyt {count} komórek',
     aiToolPropose: 'Tworzenie podglądu zmian',
+    aiToolCreateDocument: 'Utwórz nowy plik',
+    aiToolCreatedDocument: 'Utworzono {name}',
     aiToolReadAttachment: 'Odczyt załącznika',
     aiToolReadAttachmentOf: 'Odczyt załącznika {name}',
     aiToolImageAttachment: 'Załącznik graficzny {name}',
@@ -1528,6 +1572,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Onbekende fout',
     aiTimeoutError:
       'AI-verzoek verlopen: geen reactie van het netwerk, uitvoering gestopt. Controleer je verbinding en probeer het opnieuw',
+    aiOverloadedError: 'De AI-service is momenteel overbelast — probeer het zo opnieuw',
     aiNetworkError:
       'Netwerkprobleem: kan de AI-service niet bereiken. Controleer je verbinding en probeer het opnieuw',
     aiCreditsExhausted:
@@ -1545,6 +1590,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Cellen lezen',
     aiToolReadCellsCount: '{count} cellen lezen',
     aiToolPropose: 'Wijzigingsvoorbeeld maken',
+    aiToolCreateDocument: 'Nieuw bestand maken',
+    aiToolCreatedDocument: '{name} aangemaakt',
     aiToolReadAttachment: 'Bijlage lezen',
     aiToolReadAttachmentOf: 'Bijlage {name} lezen',
     aiToolImageAttachment: 'Afbeeldingsbijlage {name}',
@@ -1634,6 +1681,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'Ralat tidak diketahui',
     aiTimeoutError:
       'Permintaan AI tamat masa: rangkaian tidak memberi respons, proses dihentikan. Semak sambungan anda dan cuba lagi',
+    aiOverloadedError: 'Perkhidmatan AI sedang sibuk — sila cuba lagi sebentar lagi',
     aiNetworkError:
       'Masalah rangkaian: tidak dapat menghubungi perkhidmatan AI. Semak sambungan anda dan cuba lagi',
     aiCreditsExhausted:
@@ -1651,6 +1699,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'Baca sel',
     aiToolReadCellsCount: 'Baca {count} sel',
     aiToolPropose: 'Jana pratonton perubahan',
+    aiToolCreateDocument: 'Cipta fail baharu',
+    aiToolCreatedDocument: '{name} dicipta',
     aiToolReadAttachment: 'Baca lampiran',
     aiToolReadAttachmentOf: 'Baca lampiran {name}',
     aiToolImageAttachment: 'Lampiran imej {name}',
@@ -1736,6 +1786,7 @@ export const aiStrings = defineStrings({
     aiSave: 'שמירה',
     aiUnknownError: 'שגיאה לא ידועה',
     aiTimeoutError: 'תם הזמן לבקשת ה-AI: אין תגובה מהרשת וההרצה הופסקה. בדוק את החיבור ונסה שוב',
+    aiOverloadedError: 'שירות ה-AI עמוס כרגע — נסו שוב בעוד רגע',
     aiNetworkError: 'בעיית רשת: לא ניתן להתחבר לשירות ה-AI. בדוק את החיבור ונסה שוב',
     aiCreditsExhausted: 'קרדיטי Genspark שלך אזלו. טען מחדש ב-genspark.ai/pricing ונסה שוב',
     aiToolWorkbookContext: 'קריאת פרטי חוברת העבודה',
@@ -1751,6 +1802,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'קריאת תאים',
     aiToolReadCellsCount: 'קריאת {count} תאים',
     aiToolPropose: 'יצירת תצוגה מקדימה של שינויים',
+    aiToolCreateDocument: 'יצירת קובץ חדש',
+    aiToolCreatedDocument: '{name} נוצר',
     aiToolReadAttachment: 'קריאת קובץ מצורף',
     aiToolReadAttachmentOf: 'קריאת הקובץ המצורף {name}',
     aiToolImageAttachment: 'תמונה מצורפת {name}',
@@ -1839,6 +1892,7 @@ export const aiStrings = defineStrings({
     aiUnknownError: 'अज्ञात त्रुटि',
     aiTimeoutError:
       'AI अनुरोध का समय समाप्त: नेटवर्क से कोई प्रतिक्रिया नहीं मिली, इसलिए रोक दिया गया। कनेक्शन जांचें और फिर से प्रयास करें',
+    aiOverloadedError: 'AI सेवा अभी व्यस्त है — कृपया थोड़ी देर बाद फिर से प्रयास करें',
     aiNetworkError:
       'नेटवर्क समस्या: AI सेवा से कनेक्ट नहीं हो सका। कनेक्शन जांचें और फिर से प्रयास करें',
     aiCreditsExhausted:
@@ -1856,6 +1910,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: 'सेल पढ़ें',
     aiToolReadCellsCount: '{count} सेल पढ़ें',
     aiToolPropose: 'बदलाव पूर्वावलोकन बनाएं',
+    aiToolCreateDocument: 'नई फ़ाइल बनाएँ',
+    aiToolCreatedDocument: '{name} बनाई गई',
     aiToolReadAttachment: 'अनुलग्नक पढ़ें',
     aiToolReadAttachmentOf: 'अनुलग्नक {name} पढ़ें',
     aiToolImageAttachment: 'छवि अनुलग्नक {name}',
@@ -1941,6 +1997,7 @@ export const aiStrings = defineStrings({
     aiSave: '儲存',
     aiUnknownError: '未知錯誤',
     aiTimeoutError: 'AI 請求逾時：網路長時間無回應，已停止。請檢查網路後重試',
+    aiOverloadedError: 'AI 服務目前繁忙，請稍後重試',
     aiNetworkError: '網路有問題，無法連接 AI 服務。請檢查網路後重試',
     aiCreditsExhausted: 'Genspark 點數已用完，請前往 genspark.ai/pricing 儲值後重試',
     aiToolWorkbookContext: '讀取工作表資訊',
@@ -1956,6 +2013,8 @@ export const aiStrings = defineStrings({
     aiToolReadCells: '讀取儲存格',
     aiToolReadCellsCount: '讀取 {count} 個儲存格',
     aiToolPropose: '產生變更預覽',
+    aiToolCreateDocument: '建立新檔案',
+    aiToolCreatedDocument: '已建立 {name}',
     aiToolReadAttachment: '讀取附件',
     aiToolReadAttachmentOf: '讀取附件 {name}',
     aiToolImageAttachment: '圖片附件 {name}',

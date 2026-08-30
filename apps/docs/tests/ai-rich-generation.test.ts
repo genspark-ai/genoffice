@@ -102,6 +102,27 @@ describe('AI rich generation: blank template -> docx', () => {
     expect(listItems[0].list?.numId).toBe(BLANK_BULLET_NUM_ID)
   })
 
+  it('AI-inserted tables carry an equal column grid (a colgroup pins fixed layout against pagination widgets)', async () => {
+    const { editor } = await createBlankEditor()
+    const exec = await executeTool(
+      editor,
+      { id: 't', name: 'insert_content', input: { html: RICH_HTML } },
+      NUM_IDS,
+    )
+    expect(exec.isError).toBeFalsy()
+    let tableNode: PmNode | undefined
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'docTable') tableNode = node.toJSON() as PmNode
+      return !tableNode
+    })
+    expect(tableNode?.attrs?.colWidthsPct).toEqual([50, 50])
+    // the rendered DOM gets a colgroup: without it a page-gap row's spanning cell
+    // would widen the fixed-layout grid and collapse every column (flicker loop)
+    const cols = editor.view.dom.querySelectorAll('table.doc-table > colgroup > col')
+    expect(cols.length).toBe(2)
+    editor.destroy()
+  })
+
   it('read_blocks serializes tables/code blocks/blockquotes back to restricted HTML', async () => {
     const saved = await generateRichDocx()
     const reparsed = await parseDocx(saved)

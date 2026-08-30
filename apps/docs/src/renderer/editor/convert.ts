@@ -9,6 +9,7 @@ import {
   patchImageParagraphXml,
   patchMathTokens,
   patchTableCellTexts,
+  type CellParaPatch,
   type CellTextsPatch,
   patchDrawingExtent,
   patchTextboxSizes,
@@ -110,6 +111,7 @@ function formatAttrs(format: ParaFormat | undefined, runs?: Run[]): Record<strin
     contextualSpacing: format?.contextualSpacing ?? null,
     pageBreakBefore: format?.pageBreakBefore ?? false,
     shadingFill: format?.shadingFill ?? null,
+    shadingDisplay: format?.shadingDisplay ?? null,
     borders: format?.borders ?? null,
     borderLines: format?.borderLines ? JSON.stringify(format.borderLines) : null,
     tabStops: format?.tabStops ? JSON.stringify(format.tabStops) : null,
@@ -1231,7 +1233,9 @@ function runMarks(run: Run): PmMark[] {
     run.bold === false ||
     run.italic === false ||
     run.caps ||
+    run.vanish ||
     run.cs ||
+    run.rtl !== undefined ||
     run.styleId ||
     run.rawRPr
   ) {
@@ -1254,9 +1258,12 @@ function runMarks(run: Run): PmMark[] {
         boldOff: run.bold === false || null,
         italicOff: run.italic === false || null,
         caps: run.caps ?? null,
+        vanish: run.vanish ?? null,
         cs: run.cs ?? null,
+        rtl: run.rtl ?? null,
         styleId: run.styleId ?? null,
         rawRPr: run.rawRPr ?? null,
+        themeRFonts: run.themeRFonts ? JSON.stringify(run.themeRFonts) : null,
       },
     })
   }
@@ -2050,12 +2057,37 @@ function tableTextsPatchFromModel(
         }
         return null
       }
-      if (cell.paras.join('\n') === originalCell.paras.join('\n')) return null
+      const origTexts = parsedCellParaTexts(originalCell)
+      if (cell.paras.join('\n') === origTexts.join('\n')) return null
       changed = true
+      const rich = cell.richParas
+      // rich paragraph patches keep per-run formatting, hyperlinks and images;
+      // untouched paragraphs (per-index text match) keep their original bytes
+      if (rich && rich.length === cell.paras.length) {
+        if (rich.length === origTexts.length) {
+          return rich.map((p, i): CellParaPatch =>
+            p.runs.map((run) => run.text).join('') === origTexts[i] ? null : { runs: p.runs },
+          )
+        }
+        return rich.map((p): CellParaPatch => ({ runs: p.runs }))
+      }
       return cell.paras
     })
   })
   return changed ? texts : null
+}
+
+/**
+ * Original-cell paragraph texts in the same encoding the PM model uses (run
+ * texts with tabs/breaks/symbols as control/decoded chars). The parse-side
+ * paras cache is built with a plain text extractor that drops them, so
+ * comparing against it flags every break/tab/symbol cell as edited and sends
+ * the whole untouched table through the lossy cell-text patch.
+ */
+function parsedCellParaTexts(cell: TableCell): string[] {
+  return cell.richParas?.length
+    ? cell.richParas.map((p) => p.runs.map((run) => run.text).join(''))
+    : cell.paras
 }
 
 /** per-cell text diff of one nested table; null = untouched */
@@ -2458,8 +2490,13 @@ export function inlineToRuns(content: PmNode[]): Run[] {
         }
         if (mark.attrs?.em) run.em = mark.attrs.em as NonNullable<Run['em']>
         if (mark.attrs?.cs) run.cs = true
+        if (mark.attrs?.vanish) run.vanish = true
+        if (mark.attrs?.rtl != null) run.rtl = Boolean(mark.attrs.rtl)
         if (mark.attrs?.styleId) run.styleId = String(mark.attrs.styleId)
         if (mark.attrs?.rawRPr) run.rawRPr = String(mark.attrs.rawRPr)
+        if (mark.attrs?.themeRFonts) {
+          run.themeRFonts = JSON.parse(String(mark.attrs.themeRFonts)) as Run['themeRFonts']
+        }
       } else if (mark.type === 'rprChange') {
         run.rPrChange = {
           author: String(mark.attrs?.author ?? ''),

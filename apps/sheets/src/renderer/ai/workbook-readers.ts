@@ -6,6 +6,7 @@
  */
 import type { IRange } from '@univerjs/core'
 import { columnLabel, parseAddress } from '../../domain/cell-address'
+import { MAX_PATCH_ENTRY_BYTES } from '../../shared/desktop-api'
 import type { InMemoryWorkbookAdapter } from '../../domain/in-memory-workbook'
 import type { CellFormatState, CellScalar } from '../../domain/workbook.types'
 import { toSelectionFormat } from '../selection-format'
@@ -310,16 +311,20 @@ export function getActiveSheetInfo(
       : undefined
     return {
       mode: 'lazy',
+      streaming: !state.formulaMode,
       sheetId,
       sheetName: worksheet.getSheetName(),
       knownAddresses: [],
       loadedRange,
       sheets: workbook.getSheets().map((sheet) => {
         const extent = lazySheetScreenExtent(state, sheet.getSheetId())
+        const meta = state.file.sheets.find((candidate) => candidate.id === sheet.getSheetId())
+        const oversized = (meta?.sourceXmlBytes ?? 0) > MAX_PATCH_ENTRY_BYTES
         return {
           id: sheet.getSheetId(),
           name: sheet.getSheetName(),
           ...(extent ? { rows: extent.rows, columns: extent.columns } : {}),
+          ...(oversized ? { readOnlyOversized: true } : {}),
         }
       }),
       selection,

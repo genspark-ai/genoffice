@@ -5607,6 +5607,22 @@ body.vib .slide-list {
   color: var(--text-tertiary);
 }
 
+/* Long notes must stay readable at any pane height: native wheel scrolling
+ * plus a slim scrollbar (PowerPoint/WPS keep the notes pane scrollable even
+ * when it's dragged down to a single line) */
+.notes-pane textarea::-webkit-scrollbar {
+  width: 5px;
+}
+
+.notes-pane textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.notes-pane textarea::-webkit-scrollbar-thumb {
+  border-radius: 2.5px;
+  background: var(--slides-scroll-thumb);
+}
+
 /* Hidden pane: an invisible strip stays along the bottom edge so the splitter
  * remains grabbable — drag up to pull the notes pane back out (PPT behavior) */
 .notes-pull-zone {
@@ -5618,7 +5634,9 @@ body.vib .slide-list {
 /* Thin state (PowerPoint-style): dragged down to a one-line bar that stays
  * directly editable — click and type in place, or drag the handle back up.
  * The handle overlays the top edge (absolute) so the textarea gets the full
- * bar height and its line-height centers the single line vertically. */
+ * bar height and its line-height centers the single line vertically.
+ * Scrolling stays enabled (textarea default overflow) so multi-line notes
+ * remain reachable with the wheel even in the one-line bar. */
 .notes-pane.notes-thin {
   position: relative;
   padding-bottom: 0;
@@ -5631,7 +5649,6 @@ body.vib .slide-list {
 }
 
 .notes-pane.notes-thin textarea {
-  overflow-y: hidden;
   line-height: 30px;
 }
 

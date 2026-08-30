@@ -24,6 +24,7 @@ import {
   measureImage,
   navigateToAnchor,
   sniffImageMime,
+  pinStreamedPrecedents,
   preloadEntireWorkbook,
   protectSheetGuard,
   pushVisualUndo,
@@ -31,15 +32,19 @@ import {
   queueFormulaRecalc,
   queueSparklineInstall,
   resolveRenderedSheetId,
+  recalcOverBudgetAtOpen,
   RECALC_MAX_FAILURES,
   queueVisualInstall,
+  readCopySourceDirect,
   sheetOutline,
   syncUniver,
   univerDefinedNames,
   installFindRevealFix,
+  installInjectorResolutionGuard,
   installWrapMeasureLifecycle,
 } from './univer-sync'
 import {
+  aiBulkUndoGate,
   installJournalSuppressionUndoFilter,
   installLoadAutoHeightGate,
   journalSuppression,
@@ -60,10 +65,16 @@ import {
   renameChartRefsForSheet,
 } from './workbook-ops'
 import {
+  carryCopyFormulasPlan,
+  collectStreamedFormulaPrecedents,
   lazyGateError,
   proposeOperations as proposeOperationsImpl,
   runDeterministicPlan as runDeterministicPlanImpl,
+  streamedRefSheetList,
+  structuralDeleteFormulaError,
+  structuralDeleteFormulaErrorSync,
   type PlanContext,
+  type StreamedRefSheet,
 } from './plan-operations'
 import { isNumericIdentifierText } from './cell-warning'
 import { consumePendingUndoCarry, undoStackDepth } from './undo-carry'
@@ -124,10 +135,13 @@ import {
 import type { AiSettings } from '@genoffice/ai-provider'
 import {
   copyTargetBounds,
+  filteredCopySourceRows,
+  matchableCellText,
   replaceOccurrences,
   type WorkbookOperation,
 } from '../domain/workbook-dsl'
 import { offsetFormulaRefs } from '../domain/formula-shift'
+import { computeSortedRowOrder } from '../domain/sort-range'
 import {
   columnIndex,
   columnLabel,
@@ -163,6 +177,7 @@ import {
   type SheetsSkillDeps,
 } from './ai/tools'
 import type { AiChatMessage } from './ai/AiChatPanel'
+import { pruneFailedExchange } from './ai/retry-prune'
 import { parseSheetNavHref } from './ai/sheet-nav'
 import {
   boundsToA1,
@@ -172,6 +187,7 @@ import {
   type DataExtent,
 } from './ai/selection-scope'
 import { isSelectionDrag, type Point, type SelectionAskAnchor } from './ai/selection-ask'
+import { createAiDocument } from './ai/create-document'
 import { createWorkbookSkill } from './ai/workbook-skill'
 import { findWorkbookCells, selectWorkbookRange } from './ai/workbook-search'
 import { traceWorkbookDependents, traceWorkbookPrecedents } from './ai/formula-audit'
@@ -282,14 +298,17 @@ import {
 } from './data-tools-actions'
 import { installTsvClipboardFix } from './clipboard-tsv'
 import { installFilteredCopyHook } from './filtered-copy'
+import { installFormulaBarAutosize } from './formula-bar-autosize'
 import {
   applyShowFormulasView,
+  indexedFormulaText,
   installFormulaTextInterceptor,
   installFormulaViewInterceptor,
 } from './formula-view'
 import { installCachedValueFallbackInterceptor } from './formula-cached-fallback'
 import { installCellFilenameFunction } from './cell-function'
 import { installFormulaLexerFix } from './formula-lexer-fix'
+import { installCfFormulaFold } from './cf-formula-fold'
 import { installSheetRenameFix } from './sheet-rename-fix'
 import { installSelectionWrapGuard } from './selection-wrap-fix'
 import { installCellClipAnchorFix } from './cell-clip-anchor-fix'
@@ -402,6 +421,17 @@ import { ChartFormatPane, SelectDataDialog } from './ChartPanels'
 // Source sheet id of an in-flight copy-sheet command; the next insert-sheet
 // mutation is that copy and must journal as a duplicate, not a blank add.
 let pendingCopySource: string | undefined
+
+/// Plain text of a rich-text cell: neither the raw model nor the view model
+/// materializes a v for those — the text lives in the p document. The
+/// document-terminating \r\n is stripped (it would break wholeCell matches)
+/// and in-document paragraph breaks (\r) become \n, matching extractRichText
+/// and the text users actually type.
+function richCellText(cell: unknown): string | null {
+  const stream = (cell as { p?: { body?: { dataStream?: unknown } } } | null | undefined)?.p?.body
+    ?.dataStream
+  return typeof stream === 'string' ? stream.replace(/\r\n$/, '').replace(/\r/g, '\n') : null
+}
 
 export function App(): React.JSX.Element {
   const adapterRef = useRef(new InMemoryWorkbookAdapter(initialSnapshot))
@@ -958,10 +988,12 @@ export function App(): React.JSX.Element {
       output?: string
     }>,
     attachments?: readonly AttachmentMeta[],
-  ) => {
+  ): boolean => {
+    // Reports whether a write was issued: right after a workbook opens the
+    // chat refs resolve asynchronously, and a send in that window is dropped.
     const ids = chatRefIdsRef.current
     const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
-    if (!ids || !api) return
+    if (!ids || !api) return false
     void api
       .appendChat({
         projectId: ids.projectId,
@@ -985,6 +1017,7 @@ export function App(): React.JSX.Element {
       .catch(() => {
         /* silent */
       })
+    return true
   }
 
   function appendChat(entry: AiChatMessage): void {
@@ -1029,8 +1062,6 @@ export function App(): React.JSX.Element {
           () => gskLoggedInRef.current && aiSettingsRef.current?.gskToolsEnabled !== false,
         ),
       ]),
-      // guide loading adds a tool round; the default 8 cuts off multi-step work
-      maxTurns: 24,
       events: {
         onText: (text) => {
           if (text) runLastTextRef.current = text
@@ -1346,6 +1377,7 @@ export function App(): React.JSX.Element {
       traceDependents: (sheetId, address) =>
         traceWorkbookDependents(readContext(), sheetId, address),
       proposeOperations,
+      createDocument: (request) => createAiDocument({ univerRef, lazyWorkbookRef }, request),
     }
   }
 
@@ -1438,6 +1470,8 @@ export function App(): React.JSX.Element {
     })
     loadSnapshotIntoUniver(runtime, initialSnapshot, 'new-workbook', 'Untitled')
     univerRef.current = runtime
+    // a throwing construction must not poison the injector's depth counter
+    installInjectorResolutionGuard(runtime)
     // find-bar reveals share scrollToCell's broken freeze offset (r135)
     const findRevealDispose = installFindRevealFix(runtime)
     // Load-time wrap-row measures queue until Univer's auto-height
@@ -1524,6 +1558,8 @@ export function App(): React.JSX.Element {
     // Formula bar shows harvested formula text on streamed workbooks whose
     // closure gave up; display-only, the engine never sees it.
     const formulaTextDisposable = installFormulaTextInterceptor(runtime, lazyWorkbookRef)
+    // The fx bar grows to fit a wrapped formula instead of clipping it.
+    const formulaBarAutosizeDisposable = installFormulaBarAutosize(runtime)
     // A file formula the engine re-computes into an error shows the file's
     // cached result instead; display-only.
     const cachedValueDisposable = installCachedValueFallbackInterceptor(runtime, lazyWorkbookRef)
@@ -1554,6 +1590,10 @@ export function App(): React.JSX.Element {
     const selectionWrapGuardDisposable = installSelectionWrapGuard(runtime)
     // Row-header double-click autofits every selected row, like Excel.
     const multiRowAutofitDisposable = installMultiRowAutofit(runtime)
+    // Wide expression CF rules register folded/windowed formula ranges so
+    // the engine stops rebuilding millions of per-cell dependency trees on
+    // every stream-in recalculation (genoffice#158).
+    const cfFormulaFoldDisposable = installCfFormulaFold(runtime)
     // Empty-value formula results (IFERROR/IF/CHOOSE over blank refs)
     // display as 0 like Excel.
     const nullResultDisposable = installFormulaNullResultFix(runtime)
@@ -1859,6 +1899,18 @@ export function App(): React.JSX.Element {
           setPendingEdits(journalSize(state.editJournal))
           return
         }
+        // The sheets-note mutations name their sheet `sheetId`, not
+        // `subUnitId` — they must be handled before the generic subUnitId
+        // guard, which silently swallowed every note edit (notes changed on
+        // screen but never reached the save).
+        if (NOTE_MUTATIONS.has(event.id)) {
+          const noteSheetId = (params as { sheetId?: string }).sheetId ?? params.subUnitId
+          if (noteSheetId) {
+            recordNoteChange(state.editJournal, noteSheetId)
+            setPendingEdits(journalSize(state.editJournal))
+          }
+          return
+        }
         if (!params.subUnitId) return
         if (axisAttr) {
           const attrParams = event.params as {
@@ -1979,13 +2031,6 @@ export function App(): React.JSX.Element {
             recordPageSetup(state.editJournal, gridlines.subUnitId, {
               showGridlines: gridlines.showGridlines === 1,
             })
-            setPendingEdits(journalSize(state.editJournal))
-          }
-          return
-        }
-        if (NOTE_MUTATIONS.has(event.id)) {
-          if (params.subUnitId) {
-            recordNoteChange(state.editJournal, params.subUnitId)
             setPendingEdits(journalSize(state.editJournal))
           }
           return
@@ -2233,6 +2278,36 @@ export function App(): React.JSX.Element {
           if (sheet && sheet.pivotRanges.length > 0) {
             event.cancel = true
             setMessage(t('appPivotSheetNoStructural'))
+            return
+          }
+          // The save aborts when a formula references only the deleted span;
+          // reject the removal up front like the AI path does (#1134). The
+          // remove commands act on the selection unless a range is given.
+          if (sheet && /^sheet\.command\.remove-(row|col)/.test(event.id)) {
+            const uiWorkbook = runtime.univerAPI.getActiveWorkbook()
+            const range =
+              (event.params as { range?: IRange } | undefined)?.range ??
+              uiWorkbook?.getActiveRange()?.getRange()
+            if (range && uiWorkbook) {
+              const removeOp = event.id.includes('remove-row')
+                ? {
+                    op: 'delete_rows' as const,
+                    sheetId: sheet.id,
+                    row: range.startRow + 1,
+                    count: range.endRow - range.startRow + 1,
+                  }
+                : {
+                    op: 'delete_cols' as const,
+                    sheetId: sheet.id,
+                    column: columnLabel(range.startColumn),
+                    count: range.endColumn - range.startColumn + 1,
+                  }
+              if (structuralDeleteFormulaErrorSync(state, uiWorkbook, removeOp)) {
+                event.cancel = true
+                setMessage(t('appDeleteSpanFormulas'))
+                return
+              }
+            }
           }
           return
         }
@@ -2335,6 +2410,21 @@ export function App(): React.JSX.Element {
           if (sheet && sheet.pivotRanges.length > 0) {
             event.cancel = true
             setMessage(t('appPivotSheetNoDuplicate'))
+            return
+          }
+          // The save clones the worksheet part and fails closed on
+          // sheet-scoped defined names — reject before the copy so the user
+          // never sees Duplicate succeed and ⌘S fail. The sidecar flag covers
+          // hidden and _xlnm.* built-ins the modeled definedNames omit
+          // (bugbot); the scan remains as the older-sidecar fallback.
+          const sourceIndex = state.file.sheets.findIndex((candidate) => candidate.id === subUnitId)
+          const scopedNames =
+            sheet?.hasScopedDefinedNames ??
+            (sourceIndex >= 0 &&
+              (state.file.definedNames ?? []).some((name) => name.sheetIndex === sourceIndex))
+          if (!isAddedSheet && scopedNames) {
+            event.cancel = true
+            setMessage(t('appDuplicateScopedNames'))
             return
           }
           if (subUnitId !== undefined) pendingCopySource = subUnitId
@@ -2506,6 +2596,7 @@ export function App(): React.JSX.Element {
       tsvClipboardDisposable.dispose()
       formulaViewDisposable.dispose()
       formulaTextDisposable.dispose()
+      formulaBarAutosizeDisposable.dispose()
       cachedValueDisposable.dispose()
       numberFormatFixDisposable.dispose()
       cellFilenameDisposable.dispose()
@@ -2515,6 +2606,7 @@ export function App(): React.JSX.Element {
       sheetRenameFixDisposable.dispose()
       selectionWrapGuardDisposable.dispose()
       multiRowAutofitDisposable.dispose()
+      cfFormulaFoldDisposable.dispose()
       nullResultDisposable.dispose()
       copyMaterializeDisposable.dispose()
       dataValidationChromeDisposable.dispose()
@@ -2564,6 +2656,7 @@ export function App(): React.JSX.Element {
   function handleSend(
     overrideInstruction?: string,
     overrideAttachments?: readonly AttachmentMeta[],
+    retryIndex?: number,
   ): void {
     const instruction = (overrideInstruction ?? prompt).trim()
     if (!instruction || aiBusy) return
@@ -2573,13 +2666,24 @@ export function App(): React.JSX.Element {
     // Retry passes the failed message's original set instead.
     const sentAtts = overrideAttachments ?? attachmentsRef.current
     const agentConfigured = isAgentConfigured()
+    // Retry re-sends in place: drop the failed bubble and its error reply instead
+    // of stacking a "Not sent" duplicate above the resent copy.
+    const alreadyPersisted = retryIndex !== undefined && chat[retryIndex]?.persisted === true
+    if (retryIndex !== undefined) {
+      setChat((previous) => pruneFailedExchange(previous, retryIndex))
+    }
+    // A retried message was usually persisted by its original send — but that
+    // write is skipped while the chat refs are still resolving, so re-issue it
+    // then instead of dropping the question from the stored transcript.
+    const persisted =
+      alreadyPersisted || persistChatMessage('user', instruction, undefined, sentAtts)
     appendChat({
       role: 'user',
       text: instruction,
       tools: [],
+      persisted,
       ...(sentAtts.length > 0 ? { attachments: sentAtts } : {}),
     })
-    persistChatMessage('user', instruction, undefined, sentAtts)
     if (!overrideInstruction) setPrompt('')
     // the deterministic path consumes the composer too — the bubble already echoes the set
     if (!overrideAttachments && sentAtts.length > 0) {
@@ -2874,6 +2978,7 @@ export function App(): React.JSX.Element {
       string,
       { dataUrl: string; mediaType: string; width: number; height: number }
     >()
+    const notices: string[] = []
     try {
       for (const structural of stored.plan.structuralChanges) {
         if (structural.op.op !== 'add_image' || imageData.has(structural.op.path)) continue
@@ -2896,6 +3001,65 @@ export function App(): React.JSX.Element {
         }
         const size = await measureImage(dataUrl)
         imageData.set(structural.op.path, { dataUrl, mediaType, ...size })
+      }
+      // Deletion precheck runs up here with the other async prep — the
+      // mutation loop below stays synchronous so nothing interleaves with
+      // edits, and a failing delete rejects before ANY op has run. Only the
+      // batch's FIRST row/column-shifting op is checked: pre-batch formula
+      // texts are exact for it, while any later delete sees coordinates an
+      // earlier shift already moved (a stale check would false-reject —
+      // bugbot); those keep the save-time guard as the backstop. Table
+      // row/column deletes are whole-sheet deletes underneath (edit-eval
+      // wave 3: a session table's column delete aborted only at ⌘S), so
+      // they translate to the same span check.
+      const deleteSpanOf = (
+        op: (typeof stored.plan.structuralChanges)[number]['op'],
+      ):
+        | { op: 'delete_rows'; sheetId: string; row: number; count: number }
+        | { op: 'delete_cols'; sheetId: string; column: string; count: number }
+        | 'shifts'
+        | null => {
+        if (op.op === 'delete_rows' || op.op === 'delete_cols') return op
+        if (op.op === 'delete_table_row' || op.op === 'delete_table_column') {
+          const entry = state.editJournal.tableAdds.find(
+            (table) =>
+              table.sheetId === op.sheetId &&
+              table.name.toLowerCase() === op.tableName.toLowerCase(),
+          )
+          if (!entry) return 'shifts'
+          // mirrors applyAiTableRowDelete/applyAiTableColumnDelete addressing
+          return op.op === 'delete_table_row'
+            ? {
+                op: 'delete_rows',
+                sheetId: op.sheetId,
+                row: entry.area.startRow + op.row + 1,
+                count: op.count ?? 1,
+              }
+            : {
+                op: 'delete_cols',
+                sheetId: op.sheetId,
+                column: columnLabel(entry.area.startColumn + op.column - 1),
+                count: op.count ?? 1,
+              }
+        }
+        if (
+          op.op === 'insert_rows' ||
+          op.op === 'insert_cols' ||
+          op.op === 'add_table_row' ||
+          op.op === 'add_table_column'
+        ) {
+          return 'shifts'
+        }
+        return null
+      }
+      for (const structural of stored.plan.structuralChanges) {
+        const translated = deleteSpanOf(structural.op)
+        if (translated === null) continue
+        if (translated !== 'shifts') {
+          const spanError = await structuralDeleteFormulaError(state, workbook, translated)
+          if (spanError) throw new Error(spanError)
+        }
+        break
       }
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : t('appCannotReadImage')
@@ -2934,6 +3098,22 @@ export function App(): React.JSX.Element {
     const undoBatching = batchUnitId
       ? runtime.univer.__getInjector().get(IUndoRedoService).__tempBatchingUndoRedo(batchUnitId)
       : null
+    aiBulkUndoGate.active = true
+    aiBulkUndoGate.dropped = false
+    aiBulkUndoGate.cells = 0
+    aiBulkUndoGate.pushed = 0
+    // Disposing pushes the batched item through the undo gate, so the success
+    // path must settle before reading `dropped` (finally runs after return).
+    let batchSettled = false
+    const settleUndoBatch = (): void => {
+      if (batchSettled) return
+      batchSettled = true
+      try {
+        undoBatching?.dispose()
+      } finally {
+        aiBulkUndoGate.active = false
+      }
+    }
     // Set only AFTER a mutation actually committed (end of each op, plus the
     // intermediate commit points of multi-step handlers): a throw with the
     // flag still false really is "unchanged".
@@ -2995,7 +3175,18 @@ export function App(): React.JSX.Element {
           sheetById(op.sheetId).insertColumnsBefore(columnIndex(op.column), op.count)
         else if (op.op === 'delete_cols')
           sheetById(op.sheetId).deleteColumns(columnIndex(op.column), op.count)
-        else if (op.op === 'add_sheet') workbook.insertSheet(op.name)
+        else if (op.op === 'add_sheet')
+          workbook.insertSheet(
+            op.name,
+            op.rows !== undefined || op.columns !== undefined
+              ? {
+                  sheet: {
+                    ...(op.rows !== undefined ? { rowCount: op.rows } : {}),
+                    ...(op.columns !== undefined ? { columnCount: op.columns } : {}),
+                  },
+                }
+              : undefined,
+          )
         else if (op.op === 'delete_sheet') workbook.deleteSheet(op.sheetId)
         else if (op.op === 'merge_cells') sheetById(op.sheetId).getRange(op.range).merge()
         else if (op.op === 'unmerge_cells') sheetById(op.sheetId).getRange(op.range).breakApart()
@@ -3217,11 +3408,17 @@ export function App(): React.JSX.Element {
           type FillSourceCell = {
             value: string | number | boolean | null
             formula: string | null
+            t: number | null
+            s: Record<string, unknown> | null
           }
           // Source contents are captured up front: chunk loading evicts the
           // current window, so later reads from the grid could see blanks.
           const lazyState = lazyWorkbookRef.current
           const sourceSheetId = op.sourceSheetId ?? op.sheetId
+          // Raw model values and resolved styles, like copy_range: the view
+          // model's getValue() returns display text for dates/formatted
+          // numbers, and style-pool id strings save without their format.
+          const fillStyles = runtime.univerAPI.getActiveWorkbook()?.getWorkbook().getStyles()
           const sourceCells: FillSourceCell[][] = []
           for (let row = 0; row < sourceRows; row += 1) {
             const rowCells: FillSourceCell[] = []
@@ -3240,19 +3437,26 @@ export function App(): React.JSX.Element {
                     sourceColumn,
                   )
                 : { found: false as const }
+              const raw = cell.getCellDatas()[0]?.[0]
+              const style = raw?.s ? (fillStyles?.getStyleByCell(raw) ?? null) : null
               rowCells.push({
                 value:
                   plannedCell !== undefined
                     ? plannedCell.value
                     : journalCell.found
                       ? journalCell.value
-                      : ((cell.getValue() ?? null) as FillSourceCell['value']),
+                      : ((raw?.v ?? cell.getValue() ?? null) as FillSourceCell['value']),
                 formula:
                   plannedCell !== undefined
                     ? plannedCell.formula
                     : journalCell.found
                       ? journalCell.formula
                       : cell.getFormula() || null,
+                // Overlays supply value/formula (grid may lag the journal),
+                // but the resident grid cell still holds the latest applied
+                // style — session-formatted sources must not go out bare.
+                t: raw?.t ?? null,
+                s: style ? (style as Record<string, unknown>) : null,
               })
             }
             sourceCells.push(rowCells)
@@ -3261,6 +3465,8 @@ export function App(): React.JSX.Element {
             v: string | number | boolean | null
             f: string | null
             si: null
+            t?: number
+            s?: Record<string, unknown>
           }
           // Constant fills skip neighbor-column loads entirely: a target in a
           // freshly inserted column is then journal-owned and applies without
@@ -3269,7 +3475,17 @@ export function App(): React.JSX.Element {
           const fillWritesFormulas = sourceCells.some((row) =>
             row.some((cell) => cell.formula !== null),
           )
-          if (lazyState && !fillWritesFormulas && sourceRows === 1 && sourceColumns === 1) {
+          // The journal fast path records a bare value — a styled source
+          // (e.g. a date) would save without its number format, showing raw
+          // serials. Those fills take the chunked path, which carries t/s.
+          const fillCarriesStyle = sourceCells[0]?.[0]?.s != null
+          if (
+            lazyState &&
+            !fillWritesFormulas &&
+            !fillCarriesStyle &&
+            sourceRows === 1 &&
+            sourceColumns === 1
+          ) {
             const { fill, purgedCells } = recordBulkConstantFill(lazyState.editJournal, {
               sheetId: op.sheetId,
               startRow: dst.startRow,
@@ -3403,9 +3619,16 @@ export function App(): React.JSX.Element {
                       v: null,
                       f: offsetFormulaRefs(source.formula, rowDelta, columnDelta),
                       si: null,
+                      ...(source.s ? { s: source.s } : {}),
                     })
                   } else {
-                    matrixRow.push({ v: source?.value ?? null, f: null, si: null })
+                    matrixRow.push({
+                      v: source?.value ?? null,
+                      f: null,
+                      si: null,
+                      ...(source?.t != null ? { t: source.t } : {}),
+                      ...(source?.s ? { s: source.s } : {}),
+                    })
                   }
                 }
                 matrix.push(matrixRow)
@@ -3434,63 +3657,221 @@ export function App(): React.JSX.Element {
           const dst = copyTargetBounds(op)
           const rowDelta = dst.startRow - src.startRow
           const columnDelta = dst.startColumn - src.startColumn
-          type CopyCell = { v: string | number | boolean | null; f: string | null }
+          // v/t/s come from the raw cell model: getValues() reads the view
+          // model, where the numfmt interceptor has already replaced dates
+          // and formatted numbers with their display strings — copying that
+          // turns a date serial into text. The display string is still kept,
+          // but only for filter matching (its long-standing semantics).
+          type CopyCell = {
+            v: string | number | boolean | null
+            t: number | null
+            s: Record<string, unknown> | null
+            display: string | number | boolean | null
+            f: string | null
+          }
+          // Styles resolve to objects up front: the edit journal ignores
+          // style-pool id strings, so ids would save without their number
+          // format.
+          const workbookStyles = runtime.univerAPI.getActiveWorkbook()?.getWorkbook().getStyles()
           const sourceCells: CopyCell[][] = []
-          await applyRangeInLoadedChunks(
-            runtime,
-            lazyWorkbookRef,
-            sourceSheet,
-            src,
-            (chunk) => {
-              const chunkRange = sourceSheet.getRange(
-                chunk.startRow,
-                chunk.startColumn,
-                chunk.endRow - chunk.startRow + 1,
-                chunk.endColumn - chunk.startColumn + 1,
-              )
-              const values = chunkRange.getValues() as (string | number | boolean | null)[][]
-              const formulas = chunkRange.getFormulas()
-              for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
-                const rowCells: CopyCell[] = []
-                for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
-                  rowCells.push({
-                    v: values[row - chunk.startRow]?.[column - chunk.startColumn] ?? null,
-                    f: formulas[row - chunk.startRow]?.[column - chunk.startColumn] || null,
-                  })
+          // Streamed unfiltered copies read the sidecar payload directly —
+          // installing every source chunk into the grid and reading it back
+          // dominated bulk-copy time and transient memory. Filter matching
+          // needs the grid's display text, so filtered copies keep the grid
+          // path; so does full-load mode (already resident, no load cost).
+          const directSource =
+            op.filterColumn === undefined &&
+            lazyWorkbookRef.current &&
+            !lazyWorkbookRef.current.formulaMode
+              ? await readCopySourceDirect(
+                  lazyWorkbookRef,
+                  op.sourceSheetId ?? op.sheetId,
+                  src,
+                  setMessage,
+                )
+              : null
+          if (directSource) {
+            for (let row = 0; row < directSource.length; row += 1) {
+              const rowIn = directSource[row]
+              if (!rowIn) continue
+              sourceCells[row] = rowIn.map((cell) => ({
+                v: cell.v,
+                t: cell.t,
+                s: cell.s,
+                display: cell.v,
+                f: cell.f,
+              }))
+            }
+          }
+          if (!directSource)
+            await applyRangeInLoadedChunks(
+              runtime,
+              lazyWorkbookRef,
+              sourceSheet,
+              src,
+              (chunk) => {
+                const chunkRange = sourceSheet.getRange(
+                  chunk.startRow,
+                  chunk.startColumn,
+                  chunk.endRow - chunk.startRow + 1,
+                  chunk.endColumn - chunk.startColumn + 1,
+                )
+                const values = chunkRange.getValues() as (string | number | boolean | null)[][]
+                const rawCells = chunkRange.getCellDatas()
+                const formulas = chunkRange.getFormulas()
+                for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
+                  const rowCells: CopyCell[] = []
+                  for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
+                    const display =
+                      values[row - chunk.startRow]?.[column - chunk.startColumn] ?? null
+                    const raw = rawCells[row - chunk.startRow]?.[column - chunk.startColumn]
+                    const style = raw?.s ? (workbookStyles?.getStyleByCell(raw) ?? null) : null
+                    rowCells.push({
+                      // rich-text cells have no plain v anywhere (display
+                      // included); degrade to their dataStream text
+                      v: (raw?.v as CopyCell['v']) ?? richCellText(raw) ?? display,
+                      t: raw?.t ?? null,
+                      s: style ? (style as Record<string, unknown>) : null,
+                      display,
+                      f: formulas[row - chunk.startRow]?.[column - chunk.startColumn] || null,
+                    })
+                  }
+                  sourceCells[row - src.startRow] = rowCells
                 }
-                sourceCells[row - src.startRow] = rowCells
+              },
+              setMessage,
+              // Reading source values/formula text never needs neighbor columns.
+              { neighborColumns: false },
+            )
+          // A filtered copy keeps only the matching source rows, compacted at
+          // the target, as static values (per-row formula reference shifts
+          // would be irregular under compaction, and extraction wants data).
+          const filtered = op.filterColumn !== undefined
+          const sourceRows = filteredCopySourceRows(op, (row, column) => {
+            const cell = sourceCells[row - src.startRow]?.[column - src.startColumn]
+            return matchableCellText(cell?.display ?? null)
+          })
+          if (sourceRows === null) {
+            throw new Error(
+              `copy_range filter matched no source rows — no ${op.filterColumn} cell in ${op.source} equals ` +
+                `${(op.filterValues ?? []).join(', ')} (matching is trimmed and case-insensitive). ` +
+                'Read the column to check the actual values.',
+            )
+          }
+          const writeBounds = filtered
+            ? { ...dst, endRow: dst.startRow + sourceRows.length - 1 }
+            : { ...dst }
+          if (filtered && writeBounds.endRow >= targetSheet.getMaxRows()) {
+            throw new Error(
+              `copy_range filter matched ${sourceRows.length} rows, but the target sheet grid has only ` +
+                `${targetSheet.getMaxRows()} rows (the write would reach row ${writeBounds.endRow + 1}) — ` +
+                'create the target sheet with enough rows (add_sheet rows) or insert_rows first, then retry.',
+            )
+          }
+          // Streamed (cached-value) mode never installs `f` into the grid; the
+          // harvested formula index recovers the source formulas so an
+          // unfiltered copy carries them live — their referenced file cells
+          // are loaded & pinned into the engine like any streamed formula
+          // write. Over the shared session pin budget (or an over-expensive
+          // formula, or a failed pin read) the copy falls back to the source
+          // cells' current values and says so in the tool result.
+          const carriedFormulas = new Map<string, string>()
+          if (!filtered) {
+            const lazy = lazyWorkbookRef.current
+            if (lazy && !lazy.formulaMode) {
+              const copySourceSheetId = op.sourceSheetId ?? op.sheetId
+              for (let row = src.startRow; row <= src.endRow; row += 1) {
+                for (let column = src.startColumn; column <= src.endColumn; column += 1) {
+                  const cell = sourceCells[row - src.startRow]?.[column - src.startColumn]
+                  if (!cell || cell.f !== null) continue
+                  // The direct read carries the file's formula text per cell;
+                  // the grid path recovers it from the harvested index.
+                  const text = directSource
+                    ? directSource[row - src.startRow]?.[column - src.startColumn]?.fileFormula
+                    : indexedFormulaText(lazy, copySourceSheetId, row, column)
+                  if (text) carriedFormulas.set(`${row}:${column}`, text)
+                }
               }
-            },
-            setMessage,
-            // Reading source values/formula text never needs neighbor columns.
-            { neighborColumns: false },
-          )
+              if (carriedFormulas.size > 0 && workbook) {
+                const freezeAll = (reason: string): void => {
+                  notices.push(
+                    `copy_range ${op.source}: ${carriedFormulas.size} formula cell(s) were ` +
+                      `copied as their current values — ${reason}.`,
+                  )
+                  carriedFormulas.clear()
+                }
+                const carryPlan = carryCopyFormulasPlan(
+                  lazy,
+                  workbook,
+                  op.sheetId,
+                  targetSheet.getSheetName(),
+                  carriedFormulas,
+                  rowDelta,
+                  columnDelta,
+                )
+                if (!carryPlan.ok) {
+                  freezeAll(carryPlan.reason)
+                } else if (
+                  carryPlan.needs.size > 0 &&
+                  !(await pinStreamedPrecedents(runtime, lazyWorkbookRef, carryPlan.needs))
+                ) {
+                  freezeAll(
+                    'the cells they reference could not be loaded right now; ' +
+                      'retry the copy in a moment to carry them live',
+                  )
+                }
+              }
+            }
+          }
           // Copied formulas need real neighbor values at the target to
           // compute against; value-only copies load just the target columns.
-          const copyWritesFormulas = sourceCells.some((row) => row?.some((cell) => cell.f !== null))
+          const copyWritesFormulas =
+            carriedFormulas.size > 0 ||
+            (!filtered && sourceCells.some((row) => row?.some((cell) => cell.f !== null)))
           await applyRangeInLoadedChunks(
             runtime,
             lazyWorkbookRef,
             targetSheet,
-            { ...dst },
+            writeBounds,
             (chunk) => {
               const matrix: {
                 v: string | number | boolean | null
                 f: string | null
                 si: null
+                t?: number
+                s?: Record<string, unknown>
               }[][] = []
               for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
                 const matrixRow: (typeof matrix)[number] = []
+                const sourceRow = sourceRows[row - dst.startRow]
                 for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
-                  const cell = sourceCells[row - dst.startRow]?.[column - dst.startColumn]
-                  if (cell?.f) {
+                  const cell =
+                    sourceRow === undefined
+                      ? undefined
+                      : sourceCells[sourceRow - src.startRow]?.[column - dst.startColumn]
+                  const formulaText =
+                    !filtered && cell && sourceRow !== undefined
+                      ? (cell.f ??
+                        carriedFormulas.get(
+                          `${sourceRow}:${src.startColumn + (column - dst.startColumn)}`,
+                        ) ??
+                        null)
+                      : null
+                  if (formulaText && cell) {
                     matrixRow.push({
                       v: null,
-                      f: offsetFormulaRefs(cell.f, rowDelta, columnDelta),
+                      f: offsetFormulaRefs(formulaText, rowDelta, columnDelta),
                       si: null,
+                      ...(cell.s ? { s: cell.s } : {}),
                     })
                   } else {
-                    matrixRow.push({ v: cell?.v ?? null, f: null, si: null })
+                    matrixRow.push({
+                      v: cell?.v ?? null,
+                      f: null,
+                      si: null,
+                      ...(cell?.t != null ? { t: cell.t } : {}),
+                      ...(cell?.s ? { s: cell.s } : {}),
+                    })
                   }
                 }
                 matrix.push(matrixRow)
@@ -3525,18 +3906,45 @@ export function App(): React.JSX.Element {
                 chunk.endRow - chunk.startRow + 1,
                 chunk.endColumn - chunk.startColumn + 1,
               )
-              const values = chunkRange.getValues() as (string | number | boolean | null)[][]
+              // Raw model values: getValues() reads the view model, where the
+              // numfmt interceptor rewrote formatted results into display
+              // strings — freezing those would turn dates/percentages into
+              // text (the cell keeps its number format, so the raw value
+              // still renders identically). Formulas the engine cannot
+              // compute still SHOW the file's cached result via a
+              // display-only interceptor while the model holds an error —
+              // freezing that error would lose the visible value, so those
+              // fall back to the display text.
+              const rawCells = chunkRange.getCellDatas()
+              const displays = chunkRange.getValues() as (string | number | boolean | null)[][]
               const formulas = chunkRange.getFormulas()
               const updates: Record<
                 number,
-                Record<number, { v: string | number | boolean | null; f: null; si: null }>
+                Record<
+                  number,
+                  { v: string | number | boolean | null; t?: number; f: null; si: null }
+                >
               > = {}
               let touched = 0
               for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
                 for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
                   if (!formulas[row - chunk.startRow]?.[column - chunk.startColumn]) continue
-                  const value = values[row - chunk.startRow]?.[column - chunk.startColumn] ?? null
-                  ;(updates[row] ??= {})[column] = { v: value, f: null, si: null }
+                  const raw = rawCells[row - chunk.startRow]?.[column - chunk.startColumn]
+                  const display =
+                    displays[row - chunk.startRow]?.[column - chunk.startColumn] ?? null
+                  let value = (raw?.v as string | number | boolean | null | undefined) ?? null
+                  let keepType = true
+                  const engineError = typeof value === 'string' && value.startsWith('#')
+                  if ((value === null || engineError) && display !== null && display !== value) {
+                    value = display
+                    keepType = false
+                  }
+                  ;(updates[row] ??= {})[column] = {
+                    v: value,
+                    f: null,
+                    si: null,
+                    ...(keepType && raw?.t != null ? { t: raw.t } : {}),
+                  }
                   touched += 1
                 }
               }
@@ -3564,14 +3972,26 @@ export function App(): React.JSX.Element {
                 chunk.endRow - chunk.startRow + 1,
                 chunk.endColumn - chunk.startColumn + 1,
               )
-              const values = chunkRange.getValues() as (string | number | boolean | null)[][]
+              // Raw model values: the view model shows formatted numbers and
+              // dates as strings, so matching on it would overwrite them with
+              // replacement text (type corruption). Mirrors the per-cell path.
+              // Rich-text cells have no plain v — degrade them to display
+              // text, like copy_range, so they still participate.
+              const rawCells = chunkRange.getCellDatas()
               const formulas = chunkRange.getFormulas()
-              const updates: Record<number, Record<number, { v: string; f: null; si: null }>> = {}
+              const updates: Record<
+                number,
+                Record<number, { v: string; f: null; si: null; p?: null }>
+              > = {}
               let touched = 0
               for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
                 for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
                   if (formulas[row - chunk.startRow]?.[column - chunk.startColumn]) continue
-                  const value = values[row - chunk.startRow]?.[column - chunk.startColumn]
+                  const raw = rawCells[row - chunk.startRow]?.[column - chunk.startColumn]
+                  const isRich = raw?.p != null && raw?.v == null
+                  // rich cells materialize no v anywhere (display included) —
+                  // their text lives in the p dataStream
+                  const value = raw?.v ?? (isRich ? richCellText(raw) : null)
                   if (typeof value !== 'string') continue
                   const haystack = matchCase ? value : value.toLowerCase()
                   let next: string | null = null
@@ -3581,7 +4001,11 @@ export function App(): React.JSX.Element {
                     next = replaceOccurrences(value, op.find, op.replace, matchCase)
                   }
                   if (next === null || next === value) continue
-                  ;(updates[row] ??= {})[column] = { v: next, f: null, si: null }
+                  // rich-text matches must clear the document, or setValues
+                  // merges and the old rich text keeps rendering
+                  ;(updates[row] ??= {})[column] = isRich
+                    ? { v: next, f: null, si: null, p: null }
+                    : { v: next, f: null, si: null }
                   touched += 1
                 }
               }
@@ -3591,6 +4015,148 @@ export function App(): React.JSX.Element {
             // Replacing text in value cells never involves formulas.
             { neighborColumns: false },
           )
+        } else if (op.op === 'sort_range') {
+          // Range-level sort (>MAX_EXPANDED_CELL_OPS cells). Pass 1 loads
+          // every chunk and copies the raw cell payloads out (formulas reject
+          // loud — moving formula text re-targets relative references); the
+          // row order comes from the same comparator as the per-cell path;
+          // pass 2 reloads each chunk and rewrites the moved rows, carrying
+          // each value's own t (forced-text cells must not re-infer as
+          // numbers). Values move, formats stay, like the per-cell path — the
+          // value-only write keeps the target cell's existing style.
+          const targetSheet = sheetById(op.sheetId)
+          const bounds = parseRange(op.range)
+          const sortWidth = bounds.endColumn - bounds.startColumn + 1
+          const sortHeight = bounds.endRow - bounds.startRow + 1
+          const headerRows = (op.hasHeader ?? false) ? 1 : 0
+          type SortCell = {
+            v: string | number | boolean | null
+            t: number | null
+            rich: boolean
+          }
+          const sortCells: SortCell[][] = Array.from({ length: sortHeight }, () =>
+            Array.from({ length: sortWidth }, (): SortCell => ({ v: null, t: null, rich: false })),
+          )
+          await applyRangeInLoadedChunks(
+            runtime,
+            lazyWorkbookRef,
+            targetSheet,
+            bounds,
+            (chunk) => {
+              const chunkRange = targetSheet.getRange(
+                chunk.startRow,
+                chunk.startColumn,
+                chunk.endRow - chunk.startRow + 1,
+                chunk.endColumn - chunk.startColumn + 1,
+              )
+              const rawCells = chunkRange.getCellDatas()
+              const formulas = chunkRange.getFormulas()
+              for (let row = chunk.startRow; row <= chunk.endRow; row += 1) {
+                for (let column = chunk.startColumn; column <= chunk.endColumn; column += 1) {
+                  // Header cells never move, so a formula there is fine —
+                  // the per-cell path only reads from the first data row too.
+                  const isHeader = row < bounds.startRow + headerRows
+                  if (!isHeader && formulas[row - chunk.startRow]?.[column - chunk.startColumn]) {
+                    throw new Error(
+                      `The sort range contains a formula at ${formatAddress(row, column)} — ` +
+                        'sorting would silently re-target its references. Sort values only, ' +
+                        'or convert formulas to values first.',
+                    )
+                  }
+                  const raw = rawCells[row - chunk.startRow]?.[column - chunk.startColumn]
+                  // rich cells materialize no v anywhere — degrade to their
+                  // dataStream text, like copy_range / find_replace
+                  const isRich = raw?.p != null && raw?.v == null
+                  sortCells[row - bounds.startRow]![column - bounds.startColumn] = {
+                    v:
+                      (raw?.v as string | number | boolean | null | undefined) ??
+                      (isRich ? richCellText(raw) : null) ??
+                      null,
+                    t: isRich ? null : (raw?.t ?? null),
+                    rich: isRich,
+                  }
+                }
+              }
+            },
+            setMessage,
+            // Sorting only moves plain values; formulas are rejected above.
+            { neighborColumns: false },
+          )
+          const dataRows = sortCells.slice(headerRows)
+          const order = computeSortedRowOrder(
+            dataRows.map((row) => row.map((cell) => cell.v)),
+            columnIndex(op.byColumn) - bounds.startColumn,
+            op.order === 'asc',
+          )
+          const movedRows = order
+            .map((sourceIndex, target) => ({ sourceIndex, target }))
+            .filter((entry) => entry.sourceIndex !== entry.target)
+          if (movedRows.length > 0) {
+            await applyRangeInLoadedChunks(
+              runtime,
+              lazyWorkbookRef,
+              targetSheet,
+              bounds,
+              (chunk) => {
+                const updates: Record<
+                  number,
+                  Record<
+                    number,
+                    {
+                      v: string | number | boolean | null
+                      f: null
+                      si: null
+                      t: number | null
+                      p?: null
+                    }
+                  >
+                > = {}
+                let touched = 0
+                for (const { sourceIndex, target } of movedRows) {
+                  const row = bounds.startRow + headerRows + target
+                  if (row < chunk.startRow || row > chunk.endRow) continue
+                  const sourceRow = dataRows[sourceIndex]
+                  const targetRow = dataRows[target]
+                  if (!sourceRow || !targetRow) continue
+                  const startColumn = Math.max(chunk.startColumn, bounds.startColumn)
+                  const endColumn = Math.min(chunk.endColumn, bounds.endColumn)
+                  for (let column = startColumn; column <= endColumn; column += 1) {
+                    const offset = column - bounds.startColumn
+                    const sourceCell = sourceRow[offset]
+                    const targetCell = targetRow[offset]
+                    if (!sourceCell || !targetCell) continue
+                    ;(updates[row] ??= {})[column] = {
+                      v: sourceCell.v,
+                      f: null,
+                      si: null,
+                      // Always written: the sparse patch merges into the
+                      // target, so an omitted t would leave the target's old
+                      // type on the moved value (a number landing on a
+                      // forced-text cell would keep t=text).
+                      t: sourceCell.t,
+                      // targets that held rich text must clear the document,
+                      // or setValues merges and the old rich text keeps
+                      // rendering
+                      ...(targetCell.rich ? { p: null } : {}),
+                    }
+                    touched += 1
+                  }
+                }
+                if (touched > 0) {
+                  targetSheet
+                    .getRange(
+                      chunk.startRow,
+                      chunk.startColumn,
+                      chunk.endRow - chunk.startRow + 1,
+                      chunk.endColumn - chunk.startColumn + 1,
+                    )
+                    .setValues(updates)
+                }
+              },
+              setMessage,
+              { neighborColumns: false },
+            )
+          }
         } else if (op.op === 'set_note') {
           const target = sheetById(op.sheetId)
           const noteRange = target.getRange(op.address)
@@ -3616,13 +4182,49 @@ export function App(): React.JSX.Element {
         anyApplied = true
       }
       setPendingEdits(journalSize(state.editJournal))
+      // Streaming mode: formulas in this batch may reference file cells the
+      // engine does not hold — load & pin them first so the formulas compute
+      // correctly and survive eviction (propose checked the session budget).
+      if (!state.formulaMode) {
+        const streamedNeeds = new Map<string, Set<number>>()
+        let refSheets: StreamedRefSheet[] | undefined
+        for (const change of stored.plan.cellChanges) {
+          if (!change.after.formula) continue
+          refSheets ??= streamedRefSheetList(state, workbook)
+          collectStreamedFormulaPrecedents(
+            change.after.formula,
+            change.sheetId,
+            refSheets,
+            streamedNeeds,
+            state.closure.pinned,
+          )
+        }
+        if (
+          streamedNeeds.size > 0 &&
+          !(await pinStreamedPrecedents(runtime, lazyWorkbookRef, streamedNeeds))
+        ) {
+          throw new Error(
+            'The cells referenced by the formulas could not be loaded from the streamed workbook — ' +
+              'the formulas were not written; retry in a moment.',
+          )
+        }
+      }
       for (const change of stored.plan.cellChanges) {
         const range = sheetById(change.sheetId).getRange(change.address)
         if (change.after.formula) range.setFormula(change.after.formula)
         else if (change.after.value === null) range.clearContent()
-        // Explicit f/si null mirrors the cell editor: overwriting a formula
-        // cell with a value must clear the formula (in Univer and journal).
-        else range.setValues([[{ v: change.after.value, f: null, si: null }]])
+        else {
+          // Explicit f/si null mirrors the cell editor: overwriting a formula
+          // cell with a value must clear the formula (in Univer and journal).
+          // A rich-text target also needs p cleared, or setValues merges and
+          // the old document keeps rendering over the new value.
+          const wasRich = range.getCellDatas()[0]?.[0]?.p != null
+          range.setValues([
+            wasRich
+              ? [{ v: change.after.value, f: null, si: null, p: null }]
+              : [{ v: change.after.value, f: null, si: null }],
+          ])
+        }
         anyApplied = true
       }
       // Same facade setters as the ribbon, so the edit journal records them
@@ -3641,7 +4243,13 @@ export function App(): React.JSX.Element {
       lazyPreviewRef.current = null
       setPreview(null)
       setMessage(t('appAppliedJournaled'))
-      return { ok: true }
+      settleUndoBatch()
+      if (aiBulkUndoGate.dropped) {
+        notices.push(
+          'this change is too large for the undo history — the [Undo] button and ⌘Z will not revert it',
+        )
+      }
+      return notices.length > 0 ? { ok: true, notices } : { ok: true }
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : t('appApplyTxFailed')
       setMessage(reason)
@@ -3656,9 +4264,14 @@ export function App(): React.JSX.Element {
               isError: true,
             },
       )
-      return anyApplied ? { ok: false, reason, partiallyApplied: true } : { ok: false, reason }
+      // Settle here, not just in finally: the return value is computed first,
+      // and a budget-dropped batch must not advertise the ⌘Z rollback.
+      settleUndoBatch()
+      return anyApplied
+        ? { ok: false, reason, partiallyApplied: true, undoDropped: aiBulkUndoGate.dropped }
+        : { ok: false, reason }
     } finally {
-      undoBatching?.dispose()
+      settleUndoBatch()
     }
   }
 
@@ -4034,6 +4647,10 @@ export function App(): React.JSX.Element {
           : visual,
       ),
     }
+    const gridCellCount = selected.sheets.reduce(
+      (sum, sheet) => sum + sheet.rowCount * sheet.columnCount,
+      0,
+    )
     setWorkbookFile(selected)
     // Calculation mode is workbook state: the next file starts automatic,
     // in the engine and in the menu alike.
@@ -4077,9 +4694,7 @@ export function App(): React.JSX.Element {
       showFormulaSheets: new Set(
         selected.sheets.filter((sheet) => sheet.showFormulas).map((sheet) => sheet.id),
       ),
-      formulaMode:
-        selected.sheets.reduce((sum, sheet) => sum + sheet.rowCount * sheet.columnCount, 0) <=
-        FORMULA_MODE_MAX_CELLS,
+      formulaMode: gridCellCount <= FORMULA_MODE_MAX_CELLS,
       editJournal: createEditJournal(),
       flags: { preloadComplete: false },
       closure: { status: 'idle', pinned: new Map() },
@@ -4091,6 +4706,7 @@ export function App(): React.JSX.Element {
         timer: null,
         generation: 0,
         failures: 0,
+        engineOverBudget: recalcOverBudgetAtOpen(selected.fileBytes, gridCellCount),
         formulaCells: new Map(),
         overlay: new Map(),
         follow: new Map(),
@@ -4136,7 +4752,13 @@ export function App(): React.JSX.Element {
     // Univer commands (drag interactions are hard to synthesize over CDP).
     if (import.meta.env.DEV) {
       ;(window as unknown as Record<string, unknown>).__journal = state.editJournal
+      ;(window as unknown as Record<string, unknown>).__lazyState = state
+      ;(window as unknown as Record<string, unknown>).__univerRuntime = univerRef.current
       ;(window as unknown as Record<string, unknown>).__univerAPI = univerRef.current?.univerAPI
+      // Drivers exercise the AI tool layer (get_workbook_context /
+      // aggregate_range / propose_operations) without an LLM in the loop.
+      ;(window as unknown as Record<string, unknown>).__workbookSkill =
+        createWorkbookSkill(sheetsSkillDeps())
     }
     setRevision(0)
     setPreview(null)

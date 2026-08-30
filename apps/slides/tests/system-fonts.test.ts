@@ -7,6 +7,7 @@ vi.mock('../src/main/shaped-metrics', () => ({
   initShapedMetrics: () => {},
   shapedMeasure: () => null,
   shapedFamily: () => null,
+  complexScriptOf: () => null,
 }))
 
 import { createSystemFontMetrics } from '../src/main/fonts'

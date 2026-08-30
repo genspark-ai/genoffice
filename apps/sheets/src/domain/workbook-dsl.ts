@@ -78,6 +78,9 @@ const fillRangeSchema = z.object({
 // $-anchored axes stay pinned — exactly like pasting. Unlike fill_range
 // (small source tiled across a big target), copy_range moves one block of up
 // to 200,000 cells exactly once (duplicate a table, move a column's data).
+// With filterColumn/filterValues it becomes a row extraction: only matching
+// source rows copy, compacted at the target, as static values (no formulas) —
+// the way to split large/streamed data by a column's values.
 const copyRangeSchema = z.object({
   op: z.literal('copy_range'),
   sheetId: z.string().min(1),
@@ -87,6 +90,11 @@ const copyRangeSchema = z.object({
   sourceSheetId: z.string().min(1).optional(),
   /** destination: its top-left cell, or a range exactly the source's size */
   target: cellRangeSchema,
+  /** with filterValues: only source rows whose cell in this column (absolute
+   * sheet column letter, inside the source range) matches copy — compacted */
+  filterColumn: columnLabelSchema.optional(),
+  /** matched against the cell's value as text, trimmed, case-insensitive */
+  filterValues: z.array(z.string().trim().min(1).max(255)).min(1).max(100).optional(),
 })
 
 // Freezes formulas into their current computed values (Excel's copy →
@@ -132,6 +140,11 @@ const deleteColsSchema = z.object({
 const addSheetSchema = z.object({
   op: z.literal('add_sheet'),
   name: sheetNameSchema,
+  /** grid rows for the new sheet (default 1000) — writes and formula spills
+   * beyond the grid are rejected/truncated, so size it to the expected data */
+  rows: z.number().int().min(1).max(1_048_576).optional(),
+  /** grid columns for the new sheet (default 20) */
+  columns: z.number().int().min(1).max(16_384).optional(),
 })
 
 const deleteSheetSchema = z.object({
@@ -946,12 +959,13 @@ export type AddSparklineOperation = z.infer<typeof addSparklineSchema>
 export type FindReplaceOperation = z.infer<typeof findReplaceSchema>
 export type CopyRangeOperation = z.infer<typeof copyRangeSchema>
 export type ConvertToValuesOperation = z.infer<typeof convertToValuesSchema>
+export type SortRangeOperation = z.infer<typeof sortRangeSchema>
 export type CellContentOperation = SetCellOperation | SetFormulaOperation | ClearCellOperation
 /** what range ops expand into; the only shapes executors have to handle.
  * fill_range, copy_range, convert_to_values, and large clear_range /
- * find_replace (>MAX_EXPANDED_CELL_OPS cells) pass through as range-level
- * primitives — executors apply them with bulk grid reads/writes instead of
- * per-cell edits. */
+ * find_replace / sort_range (>MAX_EXPANDED_CELL_OPS cells) pass through as
+ * range-level primitives — executors apply them with bulk grid reads/writes
+ * instead of per-cell edits. */
 export type PrimitiveOperation =
   | CellContentOperation
   | FormatRangeOperation
@@ -960,6 +974,7 @@ export type PrimitiveOperation =
   | ConvertToValuesOperation
   | ClearRangeOperation
   | FindReplaceOperation
+  | SortRangeOperation
   | LayoutOperation
   | StructuralOperation
   | z.infer<typeof renameSheetSchema>
@@ -1141,6 +1156,39 @@ export function copyTargetBounds(operation: CopyRangeOperation): {
   return target
 }
 
+/** The text a copy_range filter compares a cell against: trimmed and
+ * lowercased (Excel filters are case-insensitive); booleans in their
+ * TRUE/FALSE display form; empty cells as "". */
+export function matchableCellText(value: string | number | boolean | null): string {
+  if (value === null) return ''
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  return String(value).trim().toLowerCase()
+}
+
+/**
+ * The ordered source-row indices a copy_range copies: every source row when
+ * unfiltered, only the filterValues matches when filtered. Returns null when
+ * a filter matched nothing (the executors fail loud — a silent no-op write
+ * would let the model report success over missing data).
+ */
+export function filteredCopySourceRows(
+  operation: CopyRangeOperation,
+  cellText: (row: number, column: number) => string,
+): number[] | null {
+  const source = parseRange(operation.source)
+  const rows: number[] = []
+  if (operation.filterColumn === undefined) {
+    for (let row = source.startRow; row <= source.endRow; row += 1) rows.push(row)
+    return rows
+  }
+  const column = columnIndex(operation.filterColumn)
+  const wanted = new Set((operation.filterValues ?? []).map((value) => value.trim().toLowerCase()))
+  for (let row = source.startRow; row <= source.endRow; row += 1) {
+    if (wanted.has(cellText(row, column))) rows.push(row)
+  }
+  return rows.length === 0 ? null : rows
+}
+
 /// copy_range geometry guards: one block, one destination. Overlaps are
 /// rejected outright — the executor reads the source chunk by chunk while
 /// writing the target, so an overlap would read back its own writes.
@@ -1174,6 +1222,22 @@ function validateCopyRange(operation: CopyRangeOperation): void {
     throw new Error(
       'copy_range source and target overlap — choose a destination outside the source block (to shift data by whole rows/columns, use insert_rows/insert_cols instead).',
     )
+  }
+  if ((operation.filterColumn === undefined) !== (operation.filterValues === undefined)) {
+    throw new Error('copy_range filterColumn and filterValues must be provided together.')
+  }
+  if (operation.filterColumn !== undefined) {
+    const filterColumn = columnIndex(operation.filterColumn)
+    if (filterColumn < source.startColumn || filterColumn > source.endColumn) {
+      throw new Error(
+        `copy_range filterColumn ${operation.filterColumn} lies outside the source range ${operation.source} — it must be one of the source's own columns.`,
+      )
+    }
+    if (rangeCellCount(rawTarget) !== 1) {
+      throw new Error(
+        'A filtered copy_range does not know its height in advance — pass just the destination top-left cell as target.',
+      )
+    }
   }
 }
 
@@ -1243,7 +1307,10 @@ export function fillOpLabel(op: FillRangeOperation): string {
 }
 
 export function copyOpLabel(op: CopyRangeOperation): string {
-  return `Copy ${op.source} → ${op.target}`
+  const filter = op.filterColumn
+    ? ` (rows where ${op.filterColumn} matches: ${(op.filterValues ?? []).join(', ')})`
+    : ''
+  return `Copy ${op.source} → ${op.target}${filter}`
 }
 
 export function convertToValuesOpLabel(op: ConvertToValuesOperation): string {
@@ -1256,6 +1323,10 @@ export function clearRangeOpLabel(op: ClearRangeOperation): string {
 
 export function findReplaceOpLabel(op: FindReplaceOperation): string {
   return `Replace "${op.find}" → "${op.replace}" in ${op.range}`
+}
+
+export function sortOpLabel(op: SortRangeOperation): string {
+  return `Sort ${op.range} by ${op.byColumn} ${op.order === 'asc' ? 'ascending' : 'descending'}`
 }
 
 export function replaceOccurrences(
@@ -1276,6 +1347,8 @@ export type ExpandCellReader = (
 ) => {
   value: string | number | boolean | null
   formula?: string | undefined
+  /** raw model value when `value` is rendered display text (see CellState) */
+  rawValue?: string | number | boolean | null | undefined
 }
 
 /// set_range guards, applied before any expansion. Jagged rows are rejected
@@ -1433,24 +1506,39 @@ export function expandToPrimitiveOps(
         for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {
           const address = formatAddress(row, column)
           const current = readCell(address, operation.sheetId)
-          if (current.formula !== undefined || typeof current.value !== 'string') continue
-          const haystack = matchCase ? current.value : current.value.toLowerCase()
+          // Match on the raw model value when available: `value` is display
+          // text, so formatted numbers/dates look like strings and a replace
+          // would overwrite them with text (type corruption).
+          const content = current.rawValue !== undefined ? current.rawValue : current.value
+          if (current.formula !== undefined || typeof content !== 'string') continue
+          const haystack = matchCase ? content : content.toLowerCase()
           let next: string | null = null
           if (operation.wholeCell) {
             if (haystack === needle) next = operation.replace
           } else if (haystack.includes(needle)) {
-            next = replaceOccurrences(current.value, operation.find, operation.replace, matchCase)
+            next = replaceOccurrences(content, operation.find, operation.replace, matchCase)
           }
-          if (next === null || next === current.value) continue
+          if (next === null || next === content) continue
           countCell()
           expanded.push({ op: 'set_cell', sheetId: operation.sheetId, address, value: next })
         }
       }
     } else if (operation.op === 'sort_range') {
-      if (!readCell) throw new Error('sort_range needs the current cell contents to plan against.')
-      if (rangeCellCount(parseRange(operation.range)) > MAX_EXPANDED_CELL_OPS) {
-        throw new Error(`sort_range covers more than ${MAX_EXPANDED_CELL_OPS} cells.`)
+      const sortCells = rangeCellCount(parseRange(operation.range))
+      if (sortCells > MAX_RANGE_OP_CELLS) {
+        throw new Error(
+          `sort_range covers more than ${MAX_RANGE_OP_CELLS.toLocaleString('en-US')} cells — sort a smaller range.`,
+        )
       }
+      if (sortCells > MAX_EXPANDED_CELL_OPS) {
+        // Large sorts stay range-level: a sort permutes nearly every cell, so
+        // per-cell expansion would blow the preview/apply paths. The executor
+        // reads the whole block, computes the row order, and writes it back
+        // in bulk.
+        expanded.push(operation)
+        continue
+      }
+      if (!readCell) throw new Error('sort_range needs the current cell contents to plan against.')
       const changes = computeSortChanges(
         {
           range: operation.range,
@@ -1879,7 +1967,7 @@ export function structuralOpLabel(op: StructuralOperation): string {
         ? `Delete column ${op.column}`
         : `Delete columns ${op.column}–${columnLabel(columnIndex(op.column) + op.count - 1)}`
     case 'add_sheet':
-      return `Add sheet "${op.name}"`
+      return `Add sheet "${op.name}"${op.rows || op.columns ? ` (${op.rows ?? 1000} rows × ${op.columns ?? 20} columns)` : ''}`
     case 'delete_sheet':
       return `Delete sheet ${op.sheetId}`
     case 'duplicate_sheet':

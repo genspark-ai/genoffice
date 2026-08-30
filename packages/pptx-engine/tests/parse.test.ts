@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import JSZip from 'jszip'
-import { openPptx, savePptx, reassembleSlideXml } from '../src/index'
+import { openPptx, savePptx, reassembleSlideXml, generateParagraphXml } from '../src/index'
 import { parseSlide } from '../src/parse'
 import { tableRowGridCols } from '../src/table-grid'
 import { parsePlaceholderMap, parseMasterTextStyles } from '../src/placeholder'
@@ -104,6 +104,24 @@ describe('fill / color-mod / background parsing', () => {
       { pos: 1, color: '#00FF00' },
     ])
     expect(el.fill.angle).toBe(2700000)
+    expect(el.fill.scaled).toBeUndefined()
+  })
+
+  it('gradient fill: a:lin scaled="1" surfaces the aspect-stretch flag', () => {
+    const sp =
+      '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"/><a:gradFill><a:gsLst>' +
+      '<a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs>' +
+      '<a:gs pos="100000"><a:srgbClr val="00FF00"/></a:gs>' +
+      '</a:gsLst><a:lin ang="2700000" scaled="1"/></a:gradFill></p:spPr></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(sp),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill.type).toBe('gradient')
+    expect(el.fill.scaled).toBe(true)
   })
 
   it('gradFill with no a:lin/a:path defaults to a vertical ramp (PowerPoint-measured)', () => {
@@ -387,6 +405,28 @@ describe('text body parsing fidelity', () => {
     expect(firstText(slide).paragraphs[0].lineExact).toBe(24)
   })
 
+  it('parses a:pPr rtl: "1"/"true" → true, "0" → false, absent → undefined', () => {
+    const rtlOf = (pPr: string) =>
+      firstText(
+        parseSlide({
+          path: 'ppt/slides/slide1.xml',
+          slideXml: slideWith(spWith(`<a:p>${pPr}<a:r><a:t>x</a:t></a:r></a:p>`)),
+          ctx: {},
+        }),
+      ).paragraphs[0].rtl
+    expect(rtlOf('<a:pPr rtl="1"/>')).toBe(true)
+    expect(rtlOf('<a:pPr rtl="true"/>')).toBe(true)
+    expect(rtlOf('<a:pPr rtl="0"/>')).toBe(false)
+    expect(rtlOf('<a:pPr/>')).toBeUndefined()
+    expect(rtlOf('')).toBeUndefined()
+  })
+
+  it('generateParagraphXml round-trips explicit rtl (true and false)', () => {
+    expect(generateParagraphXml({ runs: [{ text: 'x' }], rtl: true })).toContain('rtl="1"')
+    expect(generateParagraphXml({ runs: [{ text: 'x' }], rtl: false })).toContain('rtl="0"')
+    expect(generateParagraphXml({ runs: [{ text: 'x' }] })).not.toContain('rtl=')
+  })
+
   it('bodyPr vert: eaVert/vert/vert270/wordArtVert parsed, horz/absent undefined', () => {
     const spVert = (bodyPr: string) =>
       '<p:sp><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>' +
@@ -571,6 +611,28 @@ describe('placeholder text style inheritance', () => {
     const run = (slide.elements[0] as any).text.paragraphs[0].runs[0]
     expect(run.fontSize).toBe(20)
     expect(run.bold).toBe(false)
+  })
+
+  it('explicit srgbClr with modifiers resolves the display color but keeps byte linkage', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="8" name="T"/><p:nvSpPr/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr/><p:txBody><a:bodyPr/><a:p>' +
+      '<a:r><a:rPr><a:solidFill><a:srgbClr val="44546A"><a:lumMod val="75000"/></a:srgbClr></a:solidFill></a:rPr><a:t>modded</a:t></a:r>' +
+      '<a:r><a:rPr><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:rPr><a:t>plain</a:t></a:r>' +
+      '</a:p></p:txBody></p:sp>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideXmlWith(sp),
+      ctx: { theme },
+    })
+    const runs = (slide.elements[0] as any).text.paragraphs[0].runs
+    // lumMod'ed srgbClr: display value is computed, so a rewrite would bake it in
+    // and drop the modifier — the patch path must keep the original bytes
+    expect(runs[0].colorFollowsTheme).toBe(true)
+    expect(runs[0].color?.toUpperCase()).toBe('#333F50') // 44546A × lumMod 75%
+    // plain srgbClr stays directly patchable
+    expect(runs[1].colorFollowsTheme).toBeUndefined()
+    expect(runs[1].color?.toUpperCase()).toBe('#112233')
   })
 
   it('placeholder geometry inheritance still works with style-only entries present', () => {

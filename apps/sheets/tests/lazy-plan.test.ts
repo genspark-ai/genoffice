@@ -151,6 +151,64 @@ describe('buildLazyChangePlan: DSL v2 operations', () => {
     ])
   })
 
+  it('keeps a large sort_range range-level instead of expanding per cell', () => {
+    const reads: string[] = []
+    const result = buildLazyChangePlan(
+      workbookCommandBatchSchema.parse({
+        dslVersion: 1,
+        transactionId: 'tx-sort-big',
+        baseRevision: 0,
+        summary: 'sort big',
+        operations: [
+          { op: 'sort_range', sheetId: 'sheet-1', range: 'A1:B2000', byColumn: 'A', order: 'desc' },
+        ],
+      }),
+      (address) => {
+        reads.push(address)
+        return { value: null }
+      },
+      () => 'Data',
+    )
+    expect(result.cellChanges).toEqual([])
+    expect(result.structuralChanges).toEqual([
+      {
+        op: {
+          op: 'sort_range',
+          sheetId: 'sheet-1',
+          range: 'A1:B2000',
+          byColumn: 'A',
+          order: 'desc',
+        },
+        label: 'Sort A1:B2000 by A descending',
+      },
+    ])
+    expect(reads).toEqual([])
+  })
+
+  it('rejects sort_range beyond the range-op cell cap', () => {
+    expect(() =>
+      buildLazyChangePlan(
+        workbookCommandBatchSchema.parse({
+          dslVersion: 1,
+          transactionId: 'tx-sort-huge',
+          baseRevision: 0,
+          summary: 'sort huge',
+          operations: [
+            {
+              op: 'sort_range',
+              sheetId: 'sheet-1',
+              range: 'A1:J20001',
+              byColumn: 'A',
+              order: 'asc',
+            },
+          ],
+        }),
+        () => ({ value: null }),
+        () => 'Data',
+      ),
+    ).toThrow(/sort_range covers more than 200,000 cells/)
+  })
+
   it('previews layout operations as labeled entries', () => {
     const result = planBatch([
       { op: 'merge_cells', sheetId: 'sheet-1', range: 'A1:C1' },

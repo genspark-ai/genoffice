@@ -902,7 +902,11 @@ function parseTable(el: Element): PmNode | null {
       row.push({ paras: [''], ...(isHeader ? { bold: true, fill: TABLE_HEADER_FILL } : {}) })
     return row
   })
-  const table: TableModel = { rows }
+  // equal column grid, like the ribbon insert and the save-path backfill
+  // (pmTableToModel): without colWidthsPct the table renders with no <colgroup>,
+  // leaving the fixed-layout column grid to the browser — fragile against
+  // spanning pagination widgets and different from what a save/reload shows
+  const table: TableModel = { rows, colWidthsPct: Array.from({ length: cols }, () => 100 / cols) }
   return tableModelToPmNode(table)
 }
 

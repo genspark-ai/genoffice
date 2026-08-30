@@ -137,6 +137,29 @@ export function parseTheme(themeXml: string): Theme {
 }
 
 /**
+ * Chart-part theme override (<a:themeOverride>, referenced from the chart's own
+ * rels): the chart's schemeClr refs and default palette resolve against ITS
+ * clrScheme/fontScheme, not the deck theme's — decks legitimately remap accents
+ * per chart. Wrapping the override's themeElements as a full theme reuses
+ * parseTheme; fields the override omits fall back to the base theme.
+ */
+export function themeWithOverride(base: Theme | undefined, overrideXml: string): Theme {
+  const inner = /<a:themeOverride\b[^>]*>([\s\S]*)<\/a:themeOverride>/.exec(overrideXml)?.[1]
+  if (!inner) return base ?? { colors: {} }
+  const parsed = parseTheme(`<a:theme><a:themeElements>${inner}</a:themeElements></a:theme>`)
+  // Per-field merge: parseTheme lists absent fonts as undefined, which a plain
+  // spread would clobber the base values with. clrMap is a master concern and
+  // never part of the override.
+  const merged: Theme = { ...base, colors: { ...base?.colors, ...parsed.colors } }
+  for (const [k, v] of Object.entries(parsed)) {
+    if (k !== 'colors' && k !== 'clrMap' && v !== undefined) {
+      ;(merged as unknown as Record<string, unknown>)[k] = v
+    }
+  }
+  return merged
+}
+
+/**
  * Theme font reference ("+mj-lt" / "+mn-ea" etc.) → final font name.
  * Values not starting with "+" are returned as-is; returns undefined when the theme has no match.
  */

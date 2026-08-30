@@ -44,6 +44,10 @@ import {
   setSlideSize,
   setSlideTransition,
   elementSpid,
+  matchesElementRef,
+  ANIM_EFFECTS,
+  ANIM_TRIGGERS,
+  TRANSITION_KINDS,
   type SectionInfo,
   type ThemeSpec,
   type SlideAnimation,
@@ -51,8 +55,12 @@ import {
   type TextElement,
 } from '@genoffice/pptx-engine'
 import {
+  coerceBytes,
+  dataUrlExt,
   GuidedError,
   register,
+  requireFinite,
+  requireHexColor,
   resolveSlide,
   slideDurableId,
   type Op,
@@ -179,11 +187,22 @@ register({
 register({
   name: 'insertSlidePptx',
   validate(op, ctx) {
-    const source = op.source as { slideXml?: unknown } | null | undefined
+    const source = op.source as
+      | { slideXml?: unknown; rels?: unknown; media?: unknown; layoutChain?: unknown }
+      | null
+      | undefined
     if (typeof source !== 'object' || source === null || typeof source.slideXml !== 'string') {
       throw new GuidedError(
         'op "insertSlidePptx" needs "source": an extracted single-slide pptx (main-process payload).',
       )
+    }
+    // The merge dereferences these without guards; a missing key is a TypeError
+    for (const f of ['rels', 'media', 'layoutChain'] as const) {
+      if (!Array.isArray(source[f])) {
+        throw new GuidedError(
+          `op "insertSlidePptx": "source.${f}" must be an array (may be empty).`,
+        )
+      }
     }
     const total = ctx.opened.deck.slides.length
     const at = op.at
@@ -256,7 +275,14 @@ register({
 register({
   name: 'setSlideSize',
   validate(op) {
-    if (typeof op.cx !== 'number' || typeof op.cy !== 'number') {
+    if (
+      typeof op.cx !== 'number' ||
+      typeof op.cy !== 'number' ||
+      !Number.isFinite(op.cx) ||
+      !Number.isFinite(op.cy) ||
+      op.cx <= 0 ||
+      op.cy <= 0
+    ) {
       throw new GuidedError('op "setSlideSize" needs "cx"/"cy" (EMU).')
     }
   },
@@ -316,18 +342,28 @@ register({
     resolveSlide(ctx, op)
     const kind = op.kind
     if (kind === 'solid') {
-      if (typeof op.color !== 'string')
-        throw new GuidedError('op "setBackground" solid needs "color".')
+      requireHexColor(op.color, 'setBackground', 'color')
     } else if (kind === 'gradient') {
-      if (typeof op.from !== 'string' || typeof op.to !== 'string') {
-        throw new GuidedError('op "setBackground" gradient needs "from"/"to" colors.')
-      }
+      requireHexColor(op.from, 'setBackground', 'from')
+      requireHexColor(op.to, 'setBackground', 'to')
+      if (op.angleDeg !== undefined) requireFinite(op.angleDeg, 'setBackground', 'angleDeg')
     } else if (kind === 'image') {
-      const source = op.source as { bytes?: unknown; mediaPath?: unknown } | undefined
+      const source = op.source as
+        { bytes?: unknown; ext?: unknown; mediaPath?: unknown } | undefined
       if (!source || (!source.bytes && !source.mediaPath)) {
         throw new GuidedError(
           'op "setBackground" image needs "source": {bytes, ext} or {mediaPath}.',
         )
+      }
+      if (source.bytes != null) {
+        if (typeof source.ext !== 'string' || !source.ext) {
+          const hint = dataUrlExt(source.bytes)
+          if (hint) source.ext = hint
+        }
+        source.bytes = coerceBytes(source.bytes, 'setBackground', 'source.bytes')
+        if (typeof source.ext !== 'string' || !source.ext) {
+          throw new GuidedError('op "setBackground" image needs "source.ext".')
+        }
       }
     } else if (kind !== 'reset' && kind !== 'graphics') {
       throw new GuidedError('op "setBackground" needs "kind": solid/gradient/image/reset/graphics.')
@@ -395,7 +431,12 @@ register({
   name: 'setTransition',
   validate(op, ctx) {
     resolveSlide(ctx, op)
-    if (typeof op.kind !== 'string') throw new GuidedError('op "setTransition" needs "kind".')
+    // An unmapped kind would serialize as literal element text ("undefined")
+    if (!TRANSITION_KINDS.includes(op.kind as (typeof TRANSITION_KINDS)[number])) {
+      throw new GuidedError(
+        `op "setTransition" needs "kind": one of [${TRANSITION_KINDS.join(', ')}].`,
+      )
+    }
   },
   apply(op, ctx): OpRecord {
     const { slide } = resolveSlide(ctx, op)
@@ -408,13 +449,16 @@ register({
   name: 'setAdvanceTime',
   validate(op, ctx) {
     resolveSlide(ctx, op)
-    if (op.ms !== null && typeof op.ms !== 'number') {
-      throw new GuidedError('op "setAdvanceTime" needs "ms": milliseconds or null to clear.')
+    // advTm is xsd:unsignedInt — negatives/NaN would land verbatim
+    if (op.ms !== null && (typeof op.ms !== 'number' || !Number.isFinite(op.ms) || op.ms < 0)) {
+      throw new GuidedError(
+        'op "setAdvanceTime" needs "ms": non-negative milliseconds, or null to clear.',
+      )
     }
   },
   apply(op, ctx): OpRecord {
     const { slide } = resolveSlide(ctx, op)
-    setSlideAdvanceTime(slide, op.ms as number | null)
+    setSlideAdvanceTime(slide, op.ms == null ? null : Math.round(op.ms as number))
     return { op, after: op.ms }
   },
 })
@@ -426,14 +470,45 @@ register({
   validate(op, ctx) {
     resolveSlide(ctx, op)
     if (!Array.isArray(op.items)) throw new GuidedError('op "setAnimations" needs "items".')
+    for (const [i, raw] of (op.items as Array<Record<string, unknown>>).entries()) {
+      if (typeof raw?.sourceId !== 'string' || !raw.sourceId) {
+        throw new GuidedError(`op "setAnimations": items[${i}] needs "sourceId": an element id.`)
+      }
+      if (!ANIM_EFFECTS.includes(raw.effect as (typeof ANIM_EFFECTS)[number])) {
+        throw new GuidedError(
+          `op "setAnimations": items[${i}].effect must be one of [${ANIM_EFFECTS.join(', ')}].`,
+        )
+      }
+      if (!ANIM_TRIGGERS.includes(raw.trigger as (typeof ANIM_TRIGGERS)[number])) {
+        throw new GuidedError(
+          `op "setAnimations": items[${i}].trigger must be one of [${ANIM_TRIGGERS.join(', ')}].`,
+        )
+      }
+      for (const f of ['durationMs', 'delayMs'] as const) {
+        if (
+          typeof raw[f] !== 'number' ||
+          !Number.isFinite(raw[f] as number) ||
+          (raw[f] as number) < 0
+        ) {
+          throw new GuidedError(`op "setAnimations": items[${i}].${f} must be >= 0 milliseconds.`)
+        }
+      }
+    }
   },
   apply(op, ctx): OpRecord {
     const { slide } = resolveSlide(ctx, op)
     const anims: SlideAnimation[] = []
+    const unresolved: string[] = []
     for (const raw of op.items as Array<Record<string, unknown>>) {
-      const el = slide.elements.find((x) => x.id === raw.sourceId)
+      // Refs resolve like every other op — durable e_<guid8>/e_<cNvPr id> included.
+      // Silent dropping is not an option: a full-replace op that drops every item
+      // would wipe the slide's existing animations while reporting success.
+      const el = slide.elements.find((x) => matchesElementRef(x, String(raw.sourceId)))
       const spid = el ? elementSpid(el) : null
-      if (spid == null) continue
+      if (spid == null) {
+        unresolved.push(String(raw.sourceId))
+        continue
+      }
       anims.push({
         spid,
         effect: raw.effect as SlideAnimation['effect'],
@@ -445,6 +520,11 @@ register({
           : {}),
         ...(raw.paragraph != null ? { paragraph: raw.paragraph as number } : {}),
       })
+    }
+    if (unresolved.length) {
+      throw new GuidedError(
+        `op "setAnimations": no element ${unresolved.map((u) => `"${u}"`).join(', ')} on the slide. Available: [${slide.elements.map((x) => x.id).join(', ')}].`,
+      )
     }
     setSlideAnimations(slide, anims)
     return { op, after: { count: anims.length } }

@@ -42,6 +42,7 @@ export {
   buildLineParagraphXml,
   LINE_KINDS,
   type TextboxSizePatch,
+  type CellParaPatch,
   type CellTextsPatch,
   type FieldTextPatch,
   type GenerateContext,

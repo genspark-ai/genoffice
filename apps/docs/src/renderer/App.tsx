@@ -67,6 +67,7 @@ import {
   type LineAnchor,
   pageNumbers,
   sliceWithLineSplit,
+  type SliceOutputs,
   tableRowFlags,
   type BlockBox,
   type BlockMeta,
@@ -95,7 +96,9 @@ import {
   GAP_BAND,
   alignGapHfStrips,
   clearFloatShifts,
+  setFloatVShifts,
   setPageGaps,
+  setRowFills,
   syncAnchorBands,
   syncCutOverlays,
   syncFloatShifts,
@@ -118,6 +121,7 @@ import {
 } from './editor/hf-dom'
 import {
   estimateFootnoteHeight,
+  resolveNoteStyle,
   estimateHfHeight,
   hfHeaderGeom,
   footnoteLineHeightPx,
@@ -1785,6 +1789,20 @@ export function App() {
     }
   }, [readMode])
 
+  // note paragraph metrics per pStyle + direct spacing (notes without either use Normal/docDefaults)
+  const noteStyleOf = useMemo(() => {
+    const cache = new Map<string, ReturnType<typeof resolveNoteStyle>>()
+    return (note?: Pick<NoteInfo, 'styleId' | 'spacing'>) => {
+      const key = `${note?.styleId ?? ''}|${JSON.stringify(note?.spacing ?? null)}`
+      let v = cache.get(key)
+      if (!v) {
+        v = doc ? resolveNoteStyle(doc.parsed, note?.styleId, note?.spacing) : {}
+        cache.set(key, v)
+      }
+      return v
+    }
+  }, [doc])
+
   // page-bottom height (px) reserved for footnote references inside a block: same estimation model as the parity runner
   const footnoteExtraOf = useCallback(
     (b: Block): number => {
@@ -1797,12 +1815,20 @@ export function App() {
           sections.find((s) => (b.docxIndex ?? 0) <= s.lastBlockIndex)?.settings ?? section
         if (!sec) continue
         const contentW = twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight)
-        const fnText = footnotes.find((f) => f.id === run.noteRef!.id)?.text ?? ''
-        extra += estimateFootnoteHeight(fnText, contentW, sec.docGrid)
+        const fn = footnotes.find((f) => f.id === run.noteRef!.id)
+        extra += estimateFootnoteHeight(
+          fn?.text ?? '',
+          contentW,
+          sec.docGrid,
+          undefined,
+          noteStyleOf(fn),
+          fn?.richParas,
+        )
       }
-      return extra > 0 ? extra + FOOTNOTE_SEPARATOR_H : 0
+      // the once-per-page separator is charged by the pagination engine, not per block
+      return extra
     },
-    [footnotes, sections, section],
+    [footnotes, sections, section, noteStyleOf],
   )
 
   // typed w:docGrid line pitch (pt) when every section shares one; null = no snapping
@@ -1916,13 +1942,20 @@ export function App() {
             id,
             text: fn.text,
             ...(fn.richParas ? { richParas: fn.richParas } : {}),
-            height: estimateFootnoteHeight(fn.text, contentW, sec.docGrid),
+            height: estimateFootnoteHeight(
+              fn.text,
+              contentW,
+              sec.docGrid,
+              undefined,
+              noteStyleOf(fn),
+              fn.richParas,
+            ),
           })
         }
       }
       return out
     },
-    [doc, footnotes, sections, section],
+    [doc, footnotes, sections, section, noteStyleOf],
   )
 
   // endnote-area entries (placed together at the document end, shared by pagination preview and page slicing): height estimated with the final section's content width
@@ -1935,9 +1968,16 @@ export function App() {
       id: n.id,
       text: n.text,
       ...(n.richParas ? { richParas: n.richParas } : {}),
-      height: estimateFootnoteHeight(n.text, contentW, sec.docGrid),
+      height: estimateFootnoteHeight(
+        n.text,
+        contentW,
+        sec.docGrid,
+        undefined,
+        noteStyleOf(n),
+        n.richParas,
+      ),
     }))
-  }, [endnotes, sections, section])
+  }, [endnotes, sections, section, noteStyleOf])
 
   // canvas column mode:
   //  - 'uniform': every section shares one equal-width multi-column spec (and is LTR) —
@@ -2149,6 +2189,7 @@ export function App() {
         const flowH = flowWithFloats ?? withEndnotes?.totalHeight ?? totalHeight
         const hfHs = secList ? hfHeightsOf(secList) : null
         const t1 = performance.now()
+        const sliceOut: SliceOutputs = { rowFills: [], floatVShifts: [] }
         const s = secList
           ? sliceWithLineSplit(
               blocks,
@@ -2156,6 +2197,7 @@ export function App() {
               flowH,
               factor,
               blockMetaOf,
+              sliceOut,
             )
           : sliceWithLineSplit(
               blocks,
@@ -2163,11 +2205,20 @@ export function App() {
               flowH,
               factor,
               blockMetaOf,
+              sliceOut,
             )
         tSlice = performance.now() - t1
-        return { blocks, secList, hfHs, s, floats }
+        return {
+          blocks,
+          secList,
+          hfHs,
+          s,
+          floats,
+          rowFills: sliceOut.rowFills ?? [],
+          floatVShifts: sliceOut.floatVShifts ?? [],
+        }
       })
-      const { blocks, secList, hfHs, floats } = measured
+      const { blocks, secList, hfHs, floats, rowFills, floatVShifts } = measured
       slices = measured.s
       // document-end footer shows the last page's displayed number, not the physical count
       if (slices.length > 0) {
@@ -2563,6 +2614,23 @@ export function App() {
                         }
                       }
                     }
+                    // the spanning gap cell must cover exactly the table's column
+                    // grid: a wider colSpan adds phantom columns, which collapses
+                    // colgroup-less fixed-layout tables to ~1px columns (makeGapEl)
+                    const gridCols = Math.max(
+                      1,
+                      ...Array.from(
+                        tr
+                          .closest('table')
+                          ?.querySelectorAll<HTMLTableRowElement>(':scope > tbody > tr') ?? [],
+                      )
+                        .filter(
+                          (r) =>
+                            !r.classList.contains('page-gap') &&
+                            !r.classList.contains('page-repeat-header'),
+                        )
+                        .map((r) => Array.from(r.cells).reduce((s, c) => s + c.colSpan, 0)),
+                    )
                     for (let d = $pos.depth; d > 0; d--) {
                       if ($pos.node(d).type.name === 'docTableRow') {
                         // no notes area in table gaps: pad the full remainder
@@ -2570,6 +2638,7 @@ export function App() {
                         gaps.push({
                           pos: $pos.before(d),
                           kind: 'table',
+                          cols: gridCols,
                           boundaryY: slice.start,
                           metrics:
                             tablePad > 0
@@ -2720,6 +2789,30 @@ export function App() {
         }
         tGapsBuild = performance.now() - tGaps0
         const tSet0 = performance.now()
+        // split declared-height rows: resolve the engine's target heights to tr elements
+        const rowFillEls: Array<{ el: Element; targetPx: number }> = []
+        for (const f of rowFills) {
+          const b = blocks.find((bb) => bb.tableRows && Math.abs(bb.top - f.blockTop) < 0.5)
+          if (!b?.el) continue
+          const trs = Array.from(b.el.querySelectorAll('tr')).filter(
+            (tr) =>
+              !tr.closest('.doc-nested-table') &&
+              !tr.classList.contains('page-gap') &&
+              !tr.classList.contains('page-repeat-header'),
+          )
+          const tr = trs[f.row]
+          if (tr) rowFillEls.push({ el: tr, targetPx: f.targetPx })
+        }
+        setRowFills(editor.view, rowFillEls)
+        // page/margin-anchored floated tables: resolve the engine's Y shifts to table elements
+        const floatVEls: Array<{ el: Element; dyPx: number }> = []
+        for (const f of floatVShifts) {
+          const b = blocks.find(
+            (bb) => bb.pageRelVyPx !== undefined && Math.abs(bb.top - f.blockTop) < 0.5,
+          )
+          if (b?.el) floatVEls.push({ el: b.el, dyPx: f.dyPx })
+        }
+        setFloatVShifts(editor.view, floatVEls)
         setPageGaps(editor.view, gaps, firstPageFloats)
         // mixed-column canvas: paint the engine's regions via per-block width/translate decorations
         const colSpecs =
@@ -4429,7 +4522,8 @@ export function App() {
           clearPageGaps={() => {
             // column-layout decorations stay: the preview measures with the block widths
             // (line boxes must keep column wrapping); transforms are neutralized by its
-            // measuring-columns state
+            // measuring-columns state. Row-fill heights stay too: a split declared-height
+            // row keeps its stretched height as real layout for the preview measure.
             if (editor) setPageGaps(editor.view, [])
             const wrap = document.querySelector('.editor-scroll .page-wrap')
             if (wrap) {

@@ -54,6 +54,12 @@ export async function syncPrivateFonts(): Promise<void> {
   // ArrayBuffer-backed FontFaces parse synchronously in the constructor, so the set never
   // enters the loading state and never emits a real 'loadingdone' — canvases already
   // rastered with a fallback face would keep the stale pixels. Fire it by hand.
-  if (added.some(Boolean)) document.fonts.dispatchEvent(new Event('loadingdone'))
+  if (added.some(Boolean)) {
+    document.fonts.dispatchEvent(new Event('loadingdone'))
+    // The listeners redraw Konva layers on the next animation frame; the fidelity
+    // harness screenshots as soon as the synced flag flips, so hold it until the
+    // redraw has actually presented (two rAFs = schedule + commit).
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  }
   window.__genofficeDocFontsSynced = true
 }

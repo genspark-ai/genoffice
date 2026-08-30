@@ -17,6 +17,7 @@ import {
 } from '@genoffice/docx-engine'
 import type { DocsTabInfo } from '../../shared/ipc'
 import { tableModelToPmNode } from '../editor/convert'
+import { insertPageBreak } from '../editor/page-break'
 import { isStraightLineKind } from '../editor/shape-svg'
 import type { InkTool } from '../editor/ink'
 import { t, useI18n, type StringKey } from '../i18n/locale'
@@ -294,6 +295,21 @@ export async function insertImageFromDataUrl(
         },
       })
       .run()
+    // Pasting into an empty document leaves the image as the ONLY node with a
+    // node-selection on it: there is no text position to type at, and the
+    // next keystroke REPLACES the picture (alpha ledger r152). Ensure a
+    // paragraph follows the image and put a text caret there — also what
+    // Word does after inserting a picture.
+    {
+      const { doc, selection, schema } = editor.state
+      const after = Math.min(selection.to, doc.content.size)
+      const nextIsTextblock = doc.resolve(after).nodeAfter?.isTextblock === true
+      const chain = editor.chain()
+      if (!nextIsTextblock && schema.nodes.docParagraph) {
+        chain.insertContentAt(after, { type: 'docParagraph' })
+      }
+      chain.setTextSelection(after + 1).run()
+    }
     return true
   } catch {
     return false
@@ -526,11 +542,7 @@ export function insertWordArtAt(editor: Editor, preset: WordArtPreset): void {
 }
 
 export function insertPageBreakAt(editor: Editor): void {
-  editor
-    .chain()
-    .focus()
-    .insertContent({ type: 'docParagraph', attrs: { pageBreakBefore: true } })
-    .run()
+  insertPageBreak(editor)
 }
 
 /**

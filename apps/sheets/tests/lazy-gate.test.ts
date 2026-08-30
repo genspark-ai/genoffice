@@ -79,6 +79,73 @@ describe('lazyGateError', () => {
     ).toBeNull()
   })
 
+  it('blocks writes on a sheet whose XML is above the save-patch cap', () => {
+    const state = lazyState({
+      file: {
+        sessionId: 'session-1',
+        sheets: [
+          {
+            id: 'sh1',
+            name: 'Huge',
+            rowCount: 10,
+            columnCount: 5,
+            pivotRanges: [],
+            sourceXmlBytes: 501 * 1024 * 1024,
+          },
+        ],
+        visuals: [],
+      },
+    })
+    const error = lazyGateError(state, { op: 'set_cell', sheetId: 'sh1', address: 'A1', value: 1 })
+    expect(error).toContain('read-only')
+    expect(error).toContain('500MB')
+    // workbook.xml-only ops stay allowed
+    expect(lazyGateError(state, { op: 'rename_sheet', sheetId: 'sh1', name: 'X' })).toBeNull()
+    expect(
+      lazyGateError(state, { op: 'set_sheet_hidden', sheetId: 'sh1', hidden: true }),
+    ).toBeNull()
+    // at/below the cap: no gate
+    const under = lazyState()
+    expect(
+      lazyGateError(under, { op: 'set_cell', sheetId: 'sh1', address: 'A1', value: 1 }),
+    ).toBeNull()
+  })
+
+  it('gates add_pivot on its output sheet, not its source', () => {
+    const state = lazyState({
+      file: {
+        sessionId: 'session-1',
+        sheets: [
+          { id: 'small', name: 'Small', rowCount: 10, columnCount: 5, pivotRanges: [] },
+          {
+            id: 'huge',
+            name: 'Huge',
+            rowCount: 10,
+            columnCount: 5,
+            pivotRanges: [],
+            sourceXmlBytes: 501 * 1024 * 1024,
+          },
+        ],
+        visuals: [],
+      },
+    })
+    const pivot = (sheetId: string, targetSheetId?: string): WorkbookOperation => ({
+      op: 'add_pivot',
+      sheetId,
+      ...(targetSheetId === undefined ? {} : { targetSheetId }),
+      sourceRange: 'A1:B5',
+      targetCell: 'D1',
+      rowFields: 'h',
+      values: [{ field: 'h', agg: 'count' }],
+    })
+    // small source → oversized output: blocked
+    expect(lazyGateError(state, pivot('small', 'huge'))).toContain('read-only')
+    // oversized source read → small output: allowed
+    expect(lazyGateError(state, pivot('huge', 'small'))).toBeNull()
+    // default output = the source sheet
+    expect(lazyGateError(state, pivot('huge'))).toContain('read-only')
+  })
+
   it('allows filter ops on sheets added this session even while streaming', () => {
     const state = lazyState({
       formulaMode: false,
@@ -144,7 +211,13 @@ describe('proposeOperations: gate rejection (lazy workbook)', () => {
           getSheetName: () => sheet.name,
           getMaxRows: () => sheet.rowCount,
           getMaxColumns: () => sheet.columnCount,
-          getRange: () => ({ getValue: () => null, getRawValue: () => null }),
+          getRange: () => ({
+            getValue: () => null,
+            getRawValue: () => null,
+            getRawValues: () => [[null]],
+            getFormula: () => '',
+            getCellDatas: () => [[null]],
+          }),
         },
       ]),
     )
@@ -201,6 +274,137 @@ describe('proposeOperations: gate rejection (lazy workbook)', () => {
     const outcome = propose(lazyState(), { op: 'insert_rows', sheetId: 'sh1', row: 2, count: 1 })
     expect(outcome.ok).toBe(true)
   })
+
+  it('rejects a copy_range source beyond the source sheet grid at propose time', () => {
+    // Source sh1 is 10×5, target sh3 is 100×26: A1:A20 fits the target but
+    // reads source rows that do not exist. This used to fail only at apply
+    // time (the target-bounds check cannot catch it).
+    const state = lazyState({
+      file: {
+        sessionId: 'session-1',
+        sheets: [
+          { id: 'sh1', name: 'Data', rowCount: 10, columnCount: 5, pivotRanges: [] },
+          { id: 'sh3', name: 'Big', rowCount: 100, columnCount: 26, pivotRanges: [] },
+        ],
+        visuals: [],
+      },
+    })
+    const outcome = propose(state, {
+      op: 'copy_range',
+      sheetId: 'sh3',
+      sourceSheetId: 'sh1',
+      source: 'A1:A20',
+      target: 'C1',
+    })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('source range')
+  })
+
+  it('rejects duplicate_sheet at propose when the source has sheet-scoped defined names', () => {
+    // The save clones the part and fails closed on these — without the
+    // propose gate the tool reported success and only ⌘S failed.
+    const state = lazyState({
+      file: {
+        sessionId: 'session-1',
+        sheets: [
+          { id: 'sh1', name: 'Data', rowCount: 10, columnCount: 5, pivotRanges: [] },
+          { id: 'sh2', name: 'Other', rowCount: 10, columnCount: 5, pivotRanges: [] },
+        ],
+        visuals: [],
+        definedNames: [{ name: 'LocalName', formula: 'Data!$A$1', sheetIndex: 0 }],
+      },
+    })
+    const outcome = propose(state, { op: 'duplicate_sheet', sheetId: 'sh1' })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('sheet-scoped defined names')
+    // scoped to a different sheet: duplicating this one stays allowed
+    expect(propose(state, { op: 'duplicate_sheet', sheetId: 'sh2' }).ok).toBe(true)
+  })
+
+  it('rejects duplicate_sheet via the sidecar flag when only hidden/_xlnm names are scoped', () => {
+    // Hidden and _xlnm.* built-ins never reach file.definedNames; the sidecar
+    // reports them per sheet so the gate matches the save-side check exactly.
+    const state = lazyState({
+      file: {
+        sessionId: 'session-1',
+        sheets: [
+          {
+            id: 'sh1',
+            name: 'Data',
+            rowCount: 10,
+            columnCount: 5,
+            pivotRanges: [],
+            hasScopedDefinedNames: true,
+          },
+        ],
+        visuals: [],
+        definedNames: [],
+      },
+    })
+    const outcome = propose(state, { op: 'duplicate_sheet', sheetId: 'sh1' })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('sheet-scoped defined names')
+  })
+
+  it('accepts a copy_range whose source fits the source sheet grid', () => {
+    const outcome = propose(lazyState(), {
+      op: 'copy_range',
+      sheetId: 'sh1',
+      source: 'A1:A5',
+      target: 'C1',
+    })
+    expect(outcome.ok).toBe(true)
+  })
+
+  it('allows add_chart over data an earlier fill in the same batch writes', () => {
+    // fill/copy run in the same apply lane before the chart; the pre-apply
+    // grid cannot show their data, so the numeric probe is skipped.
+    const outcome = proposeOperations(
+      lazyContext(lazyState()),
+      [
+        { op: 'set_cell', sheetId: 'sh1', address: 'A1', value: 7 },
+        { op: 'fill_range', sheetId: 'sh1', source: 'A1:A1', target: 'A1:B3' },
+        { op: 'add_chart', sheetId: 'sh1', chartType: 'column', dataRange: 'A1:B3' },
+      ],
+      'test',
+    )
+    expect(outcome.ok).toBe(true)
+  })
+
+  it('rejects add_chart over set_range data from the same batch', () => {
+    // cell changes apply AFTER the visual lane — the chart would read an
+    // empty grid, so this stays rejected with split-batch guidance.
+    const outcome = proposeOperations(
+      lazyContext(lazyState()),
+      [
+        {
+          op: 'set_range',
+          sheetId: 'sh1',
+          range: 'A1:B3',
+          values: [
+            ['a', 1],
+            ['b', 2],
+            ['c', 3],
+          ],
+        },
+        { op: 'add_chart', sheetId: 'sh1', chartType: 'column', dataRange: 'A1:B3' },
+      ],
+      'test',
+    )
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('next')
+  })
+
+  it('rejects add_chart when nothing in the batch writes its empty range', () => {
+    const outcome = propose(lazyState(), {
+      op: 'add_chart',
+      sheetId: 'sh1',
+      chartType: 'column',
+      dataRange: 'A1:B3',
+    })
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('numeric column')
+  })
 })
 
 describe('proposeOperations: structural anchor bounds (10 rows × 5 columns grid)', () => {
@@ -216,7 +420,13 @@ describe('proposeOperations: structural anchor bounds (10 rows × 5 columns grid
           getSheetName: () => sheet.name,
           getMaxRows: () => sheet.rowCount,
           getMaxColumns: () => sheet.columnCount,
-          getRange: () => ({ getValue: () => null, getRawValue: () => null }),
+          getRange: () => ({
+            getValue: () => null,
+            getRawValue: () => null,
+            getRawValues: () => [[null]],
+            getFormula: () => '',
+            getCellDatas: () => [[null]],
+          }),
         },
       ]),
     )

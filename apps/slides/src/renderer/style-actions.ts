@@ -142,6 +142,7 @@ export interface ParagraphFormatPatch {
   lineSpacingPct?: number
   spaceBeforePt?: number
   spaceAfterPt?: number
+  rtl?: boolean
   indentDelta?: 1 | -1
 }
 
@@ -152,6 +153,7 @@ const SELECTION_PATCH_KEYS = new Set([
   'lineSpacingPct',
   'spaceBeforePt',
   'spaceAfterPt',
+  'rtl',
 ])
 
 // While editing, bullets/numbering/line spacing/paragraph spacing apply to the paragraphs covered
@@ -159,7 +161,12 @@ const SELECTION_PATCH_KEYS = new Set([
 // they apply element-wide. Clicking the same bullet kind again = turn off (toggle semantics);
 // editing mode judges by the paragraph div's marks, element mode by the render tree's bullet glyphs
 export function onParagraphFormat(ctx: ActionCtx, patch: ParagraphFormatPatch): void {
-  if (ctx.editing && Object.keys(patch).every((k) => SELECTION_PATCH_KEYS.has(k))) {
+  // Cell editing commits regenerate whole paragraphs from the overlay DOM, which round-trips
+  // the rtl mark; the other selection keys keep their historical element-wide semantics there
+  const selectable = ctx.editing
+    ? Object.keys(patch).every((k) => SELECTION_PATCH_KEYS.has(k))
+    : ctx.editingCell != null && Object.keys(patch).every((k) => k === 'rtl')
+  if (selectable) {
     const active = document.activeElement
     if (!(active instanceof HTMLElement && active.isContentEditable)) restoreEditSelection()
     if (applySelectionParagraphFormat(patch)) return

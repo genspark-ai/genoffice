@@ -653,10 +653,32 @@ export const DropCapExtension = Extension.create({
             state.doc.forEach((node, offset) => {
               const raw = node.attrs?.dropCap as string | null
               if (!raw) return
+              // Word-imported caps store the enlarged size on the run itself
+              // (a 52pt letter for lines=3): the 3em first-letter scale is only
+              // for editor-created caps whose run keeps the body size —
+              // stacking both painted an 8-line giant (real_run2/44). "Own
+              // size" means the first run is already enlarged: clearly larger
+              // than the paragraph's other text (or 24pt+ when the cap letter
+              // is the whole paragraph) — an ordinary explicit body size on
+              // the letter still gets the 3em scale (Bugbot).
+              const szOf = (n: ProseMirrorNode | null): number | undefined =>
+                n?.isText
+                  ? ((n.marks.find((m) => m.type.name === 'docTextStyle')?.attrs.sizeHalfPoints as
+                      number | undefined) ?? undefined)
+                  : undefined
+              const firstSz = szOf(node.firstChild)
+              let restSz: number | undefined
+              node.forEach((child, _off, i) => {
+                if (i === 0 || restSz !== undefined || !child.isText) return
+                restSz = szOf(child) ?? 0
+              })
+              const ownSize =
+                firstSz !== undefined &&
+                (restSz !== undefined ? firstSz >= Math.max(restSz, 20) * 1.8 : firstSz >= 48)
               decos.push(
                 Decoration.node(offset, offset + node.nodeSize, {
                   'data-drop-cap': raw,
-                  class: 'has-drop-cap',
+                  class: ownSize ? 'has-drop-cap drop-cap-own-size' : 'has-drop-cap',
                 }),
               )
             })

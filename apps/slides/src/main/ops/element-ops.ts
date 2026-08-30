@@ -5,6 +5,7 @@
  * surface translation and stays in the IPC shims.
  */
 import {
+  isConnectorXml,
   editGroupChildTransform,
   editPictureSrcRect,
   elementSpid,
@@ -29,12 +30,16 @@ import {
   updateConnectorsForMoved,
   type EmuRect,
   type ReorderDirection,
+  type Slide,
   type SlideElement,
 } from '@genoffice/pptx-engine'
 import {
+  coerceBytes,
+  dataUrlExt,
   GuidedError,
   matchesElementRef,
   register,
+  requireFinite,
   resolveElement,
   resolveGroup,
   resolveGroupChildId,
@@ -143,10 +148,21 @@ register({
 register({
   name: 'setConnectorEndpoints',
   validate(op, ctx) {
-    resolveElement(ctx, op)
+    const { el } = resolveElement(ctx, op)
+    // No engine-side type gate: applied to a plain shape this would silently
+    // rewrite its box
+    if (!isConnectorXml(el.anchor.originalXml)) {
+      throw new GuidedError(`op "setConnectorEndpoints": element "${el.id}" is not a connector.`)
+    }
     for (const k of ['p1', 'p2'] as const) {
       const p = op[k] as { x?: unknown; y?: unknown } | undefined
-      if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') {
+      if (
+        !p ||
+        typeof p.x !== 'number' ||
+        typeof p.y !== 'number' ||
+        !Number.isFinite(p.x) ||
+        !Number.isFinite(p.y)
+      ) {
         throw new GuidedError(`op "setConnectorEndpoints" needs "${k}": an EMU point {x, y}.`)
       }
     }
@@ -155,6 +171,14 @@ register({
     const { slide, el } = resolveElement(ctx, op)
     const p1 = op.p1 as { x: number; y: number }
     const p2 = op.p2 as { x: number; y: number }
+    // Resolve anchors before any mutation: per_op isolation does not roll back
+    // a failed apply, so a late throw would leave the connector moved
+    const start = toRef(
+      slide,
+      'start',
+      op.start as { targetId: string; idx: number } | null | undefined,
+    )
+    const end = toRef(slide, 'end', op.end as { targetId: string; idx: number } | null | undefined)
     const before = { ...el.transform.offset }
     el.transform = {
       ...el.transform,
@@ -169,22 +193,28 @@ register({
       flipV: p1.y > p2.y,
     }
     el.dirtyTransform = true
-    const toRef = (
-      v: { targetId: string; idx: number } | null | undefined,
-    ): { id: number; idx: number } | null | undefined => {
-      if (v === undefined) return undefined
-      if (v === null) return null
-      const target = slide.elements.find((x) => x.id === v.targetId)
-      const spid = target ? elementSpid(target) : null
-      return spid != null ? { id: spid, idx: v.idx } : null
-    }
-    setElementConnection(slide, el.id, {
-      start: toRef(op.start as { targetId: string; idx: number } | null | undefined),
-      end: toRef(op.end as { targetId: string; idx: number } | null | undefined),
-    })
+    setElementConnection(slide, el.id, { start, end })
     return { op, before, after: { p1, p2 } }
   },
 })
+
+// A bad targetId must not silently detach the end (null detaches explicitly)
+function toRef(
+  slide: Slide,
+  which: 'start' | 'end',
+  v: { targetId: string; idx: number } | null | undefined,
+): { id: number; idx: number } | null | undefined {
+  if (v === undefined) return undefined
+  if (v === null) return null
+  const target = slide.elements.find((x) => matchesElementRef(x, v.targetId))
+  const spid = target ? elementSpid(target) : null
+  if (spid == null) {
+    throw new GuidedError(
+      `op "setConnectorEndpoints": ${which}.targetId "${v.targetId}" does not resolve on this slide (null detaches explicitly).`,
+    )
+  }
+  return { id: spid, idx: v.idx }
+}
 
 // ── flipElements ────────────────────────────────────────────────────────
 register({
@@ -255,20 +285,37 @@ register({
   name: 'setPictureSrcRect',
   validate(op, ctx) {
     resolveElement(ctx, op)
-    if (typeof op.srcRect !== 'object' || op.srcRect === null) {
-      throw new GuidedError('op "setPictureSrcRect" needs "srcRect": fractions {l, t, r, b}.')
+    // null removes the crop (the documented contract; the engine already handles it)
+    if (op.srcRect !== null) {
+      if (typeof op.srcRect !== 'object' || op.srcRect === undefined) {
+        throw new GuidedError(
+          'op "setPictureSrcRect" needs "srcRect": fractions {l, t, r, b}, or null to remove the crop.',
+        )
+      }
+      const rect = op.srcRect as Record<string, unknown>
+      for (const side of ['l', 't', 'r', 'b']) {
+        if (rect[side] === undefined) continue
+        requireFinite(rect[side], 'setPictureSrcRect', `srcRect.${side}`)
+        if ((rect[side] as number) < 0 || (rect[side] as number) >= 1) {
+          throw new GuidedError(
+            `op "setPictureSrcRect": "srcRect.${side}" must be a fraction 0..1.`,
+          )
+        }
+      }
+      const num = (v: unknown) => (typeof v === 'number' ? v : 0)
+      if (num(rect.l) + num(rect.r) >= 1 || num(rect.t) + num(rect.b) >= 1) {
+        throw new GuidedError(
+          'op "setPictureSrcRect": opposing crops must leave a visible strip (< 1 combined).',
+        )
+      }
     }
     if (op.box !== undefined) emuRect(op)
   },
   apply(op, ctx): OpRecord {
     const { slide, el } = resolveElement(ctx, op)
-    if (
-      !editPictureSrcRect(
-        slide,
-        el.id,
-        op.srcRect as { l: number; t: number; r: number; b: number },
-      )
-    ) {
+    const raw = op.srcRect as { l?: number; t?: number; r?: number; b?: number } | null
+    const rect = raw && { l: raw.l ?? 0, t: raw.t ?? 0, r: raw.r ?? 0, b: raw.b ?? 0 }
+    if (!editPictureSrcRect(slide, el.id, rect)) {
       throw new GuidedError(
         `op "setPictureSrcRect": element "${el.id}" is not a croppable picture.`,
       )
@@ -288,9 +335,7 @@ register({
   name: 'setPictureOpacity',
   validate(op, ctx) {
     resolveElement(ctx, op)
-    if (typeof op.opacity !== 'number') {
-      throw new GuidedError('op "setPictureOpacity" needs "opacity": a number 0..1.')
-    }
+    requireFinite(op.opacity, 'setPictureOpacity', 'opacity') // NaN survives the engine clamp
   },
   apply(op, ctx): OpRecord {
     const { slide, el } = resolveElement(ctx, op)
@@ -524,11 +569,21 @@ register({
 register({
   name: 'setImageFill',
   validate(op, ctx) {
-    const source = op.source as { bytes?: unknown; mediaPath?: unknown } | undefined
+    const source = op.source as { bytes?: unknown; ext?: unknown; mediaPath?: unknown } | undefined
     if (!source || (!source.bytes && !source.mediaPath)) {
       throw new GuidedError(
         'op "setImageFill" needs "source": {bytes, ext} or {mediaPath} of an already-landed image.',
       )
+    }
+    if (source.bytes != null) {
+      if (typeof source.ext !== 'string' || !source.ext) {
+        const hint = dataUrlExt(source.bytes)
+        if (hint) source.ext = hint
+      }
+      source.bytes = coerceBytes(source.bytes, 'setImageFill', 'source.bytes')
+      if (typeof source.ext !== 'string' || !source.ext) {
+        throw new GuidedError('op "setImageFill" needs "source.ext": the image extension.')
+      }
     }
     if (op.group) {
       const { index, slide } = resolveSlide(ctx, op)

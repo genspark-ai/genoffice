@@ -6,7 +6,9 @@
 
 - Stable sort by **current values**: numbers < text < booleans; blank cells always sort last regardless of direction; string comparison is number-aware (item2 < item10).
 - byColumn must fall within range; when hasHeader is true the first row does not participate in the sort.
-- The sort expands into per-cell changes in the preview (with concurrency protection), so the user can see each cell's before/after values.
+- Ranges of ≤2000 cells expand into per-cell changes in the preview (with concurrency protection), so the user can see each cell's before/after values; the range must be loaded first (read_range loads it).
+- Larger ranges (up to 200,000 cells) apply as one range-level operation: the executor loads each region itself and writes the reordered rows in bulk — no per-cell preview.
+- Only values move; each cell's formatting stays at its position (unlike Excel, which drags formats along with rows). On a column with mixed number formats the moved values take on the format of the row they land in.
 - **A range containing formulas is rejected outright** — moving formula text silently changes what relative references point at. Explain the reason to the user (you may suggest converting the formula column to values first); do not try to work around it.
 - Sort the whole table together: range must cover all related columns — sorting a single column tears rows apart.
 

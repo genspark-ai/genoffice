@@ -53,7 +53,9 @@ export async function save(ctx: ActionCtx, quiet = false): Promise<boolean> {
   } else {
     const failed = t('appStatusSaveFailed', { error: r.error ?? t('appErrorCanceled') })
     ctx.setStatus(failed)
-    if (!quiet) showToast(failed, 'error')
+    // quiet suppresses the success toast only — a failed save (incl. the 30s
+    // auto-save) must surface, or edits silently stop reaching disk
+    showToast(failed, 'error')
   }
   return r.ok
 }

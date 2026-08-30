@@ -429,3 +429,38 @@ describe('field cached results in table cells', () => {
     expect(text).toBe('')
   })
 })
+
+describe('mixed-size text fields (manual drop cap)', () => {
+  const DROPCAP_FIELD_PARAGRAPH =
+    '<w:p>' +
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    '<w:r><w:instrText xml:space="preserve"> INCLUDEPICTURE "/tmp/x.jpeg" \\* MERGEFORMATINET </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+    '<w:r><w:rPr><w:sz w:val="96"/></w:rPr><w:t>L</w:t></w:r>' +
+    '<w:r><w:t>ight. Living give. Rule grass light.</w:t></w:r></w:p>'
+
+  it('one oversized letter does not set the whole field size; runs carry per-run sizes', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: DROPCAP_FIELD_PARAGRAPH }))
+    const field = doc.blocks[0].fieldDisplay!
+    expect(field.kind).toBe('text')
+    // dominant size = the inherited default (body text outweighs the cap letter)
+    expect(field.szHalfPoints).toBeUndefined()
+    expect(field.runs).toEqual([
+      { text: 'L', szHalfPoints: 96 },
+      { text: 'ight. Living give. Rule grass light.' },
+    ])
+  })
+
+  it('a uniform explicit size keeps the single-size shape (no runs)', async () => {
+    const xml =
+      '<w:p>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> INCLUDEPICTURE "/tmp/x.jpeg" \\* MERGEFORMATINET </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>uniform text</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const field = doc.blocks[0].fieldDisplay!
+    expect(field.szHalfPoints).toBe(24)
+    expect(field.runs).toBeUndefined()
+  })
+})

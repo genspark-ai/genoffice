@@ -12,6 +12,9 @@ export interface ParaBorderAttrs {
   /** JSON per-side {color?,szPt?} as stored in the borderLines attr */
   borderLines?: string | null
   shadingFill?: string | null
+  /** pattern-shading display blend: pctNN paragraphs share a raw fill (auto)
+   *  but differ visually, so the group comparison must see the blend */
+  shadingDisplay?: string | null
 }
 
 /** canonical per-side form of the borderLines JSON (key-order insensitive) */
@@ -34,7 +37,7 @@ export function sameBorderGroup(a: ParaBorderAttrs, b: ParaBorderAttrs): boolean
   if (!a.borders || !b.borders) return false
   return (
     a.borders === b.borders &&
-    (a.shadingFill ?? null) === (b.shadingFill ?? null) &&
+    (a.shadingDisplay ?? a.shadingFill ?? null) === (b.shadingDisplay ?? b.shadingFill ?? null) &&
     normLines(a.borderLines) === normLines(b.borderLines)
   )
 }

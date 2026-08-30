@@ -1,6 +1,8 @@
+import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -65,6 +67,44 @@ describe('XLSX Rust sidecar', () => {
     } finally {
       if (sessionId) await client.close(sessionId)
       client.stop()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('skips a queued request whose out-of-band cancel arrived first', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-cancel-test-'))
+    const path = join(directory, 'fixture.xlsx')
+    await writeFile(path, await buildCompatibilityFixture())
+    const child = spawn(sidecarBinaryPath(), [], { stdio: ['pipe', 'pipe', 'pipe'] })
+    try {
+      const lines = createInterface({ input: child.stdout })
+      const replies = new Map<string, { ok: boolean; error?: { code: string } }>()
+      const waiters = new Map<string, () => void>()
+      lines.on('line', (line) => {
+        const reply = JSON.parse(line) as { requestId: string; ok: boolean }
+        replies.set(reply.requestId, reply)
+        waiters.get(reply.requestId)?.()
+      })
+      const replyFor = (requestId: string) =>
+        new Promise<{ ok: boolean; error?: { code: string } }>((resolve) => {
+          const settled = replies.get(requestId)
+          if (settled) return resolve(settled)
+          waiters.set(requestId, () => resolve(replies.get(requestId)!))
+        })
+      const send = (request: Record<string, unknown>) =>
+        child.stdin.write(`${JSON.stringify({ version: 1, ...request })}\n`)
+
+      send({ requestId: 'c1', command: 'cancel', targetRequestId: 'victim' })
+      send({ requestId: 'victim', command: 'open', path })
+      send({ requestId: 'survivor', command: 'open', path })
+
+      expect((await replyFor('c1')).ok).toBe(true)
+      const victim = await replyFor('victim')
+      expect(victim.ok).toBe(false)
+      expect(victim.error?.code).toBe('cancelled')
+      expect((await replyFor('survivor')).ok).toBe(true)
+    } finally {
+      child.kill()
       await rm(directory, { recursive: true, force: true })
     }
   })
@@ -888,3 +928,21 @@ async function buildVisualFixture(): Promise<Buffer> {
   )
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
+
+// On Windows an unrunnable sidecar binary (corrupt exe, AV-blocked —
+// CreateProcess errors outside Node's delayed-error set) makes spawn() throw
+// synchronously ("spawn UNKNOWN"). An empty binary path reproduces the same
+// synchronous-throw class cross-platform without needing a broken exe.
+describe('XlsxSidecarClient spawn failure', () => {
+  it('start() prewarm swallows synchronous spawn failures instead of crashing the caller', () => {
+    const client = new XlsxSidecarClient('')
+    expect(() => client.start()).not.toThrow()
+  })
+
+  it('requests reject with the binary path when the sidecar cannot spawn', async () => {
+    const client = new XlsxSidecarClient('')
+    await expect(client.open(join(tmpdir(), 'missing.xlsx'))).rejects.toThrow(
+      /XLSX sidecar failed to start/,
+    )
+  })
+})

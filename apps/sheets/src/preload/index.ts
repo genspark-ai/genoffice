@@ -41,10 +41,12 @@ import type {
 } from '../shared/desktop-api'
 import {
   IPC_CHANNELS,
+  MAX_CREATE_DOCUMENT_CONTENT_CHARS,
+  MAX_CREATE_DOCUMENT_TITLE_CHARS,
   MAX_CSV_EXPORT_CHARS,
   MAX_SAVE_EDITS,
   MAX_SAVE_EDITS_TOTAL,
-  SAVE_EDITS_CHUNK_MAX,
+  SAVE_EDITS_CHUNK_JSON_MAX,
 } from '../shared/ipc-channels'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 
@@ -193,10 +195,12 @@ const desktopApi: DesktopApi = {
     if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
     if (typeof request.seq !== 'number' || !Number.isInteger(request.seq) || request.seq < 0)
       throw new Error('Invalid save transfer chunk index.')
+    // The edits stay a JSON string end to end here: the main process parses
+    // and validates each chunk against the cell-edit schema before storing.
     if (
-      !Array.isArray(request.edits) ||
-      request.edits.length === 0 ||
-      request.edits.length > SAVE_EDITS_CHUNK_MAX
+      typeof request.editsJson !== 'string' ||
+      request.editsJson.length < 2 ||
+      request.editsJson.length > SAVE_EDITS_CHUNK_JSON_MAX
     ) {
       throw new Error('Invalid save transfer chunk edits.')
     }
@@ -204,7 +208,7 @@ const desktopApi: DesktopApi = {
       sessionId: request.sessionId,
       transferId: request.transferId,
       seq: request.seq,
-      edits: request.edits,
+      editsJson: request.editsJson,
     })
   },
   async abortSaveEditsTransfer(request) {
@@ -309,6 +313,41 @@ const desktopApi: DesktopApi = {
       throw new Error('Invalid CSV save confirmation response.')
     }
     return result
+  },
+  async createDocument(request) {
+    if (
+      !isRecord(request) ||
+      (request.type !== 'xlsx' &&
+        request.type !== 'csv' &&
+        request.type !== 'docx' &&
+        request.type !== 'pdf' &&
+        request.type !== 'md') ||
+      typeof request.title !== 'string' ||
+      request.title.length === 0 ||
+      request.title.length > MAX_CREATE_DOCUMENT_TITLE_CHARS ||
+      typeof request.content !== 'string' ||
+      request.content.length === 0 ||
+      request.content.length >
+        (request.type === 'xlsx' || request.type === 'csv'
+          ? MAX_CSV_EXPORT_CHARS
+          : MAX_CREATE_DOCUMENT_CONTENT_CHARS) ||
+      (request.sheetName !== undefined &&
+        (typeof request.sheetName !== 'string' ||
+          request.sheetName.length === 0 ||
+          request.sheetName.length > 31))
+    ) {
+      throw new Error('Invalid create-document request.')
+    }
+    const result: unknown = await ipcRenderer.invoke(IPC_CHANNELS.createDocument, request)
+    if (
+      !isRecord(result) ||
+      typeof result.ok !== 'boolean' ||
+      (result.path !== undefined && typeof result.path !== 'string') ||
+      (result.error !== undefined && typeof result.error !== 'string')
+    ) {
+      throw new Error('Invalid create-document response.')
+    }
+    return result as { ok: boolean; path?: string; error?: string }
   },
   async closeWorkbook(sessionId) {
     if (!isUuid(sessionId)) throw new Error('Invalid workbook session.')
@@ -602,6 +641,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
     name,
     path,
     sha256,
+    fileBytes,
     entryCount,
     sheets,
     styles,
@@ -619,6 +659,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
     (path !== undefined && (typeof path !== 'string' || path.length === 0)) ||
     typeof sha256 !== 'string' ||
     !/^[a-f0-9]{64}$/.test(sha256) ||
+    (fileBytes !== undefined && !isNonnegativeInteger(fileBytes)) ||
     !isNonnegativeInteger(entryCount) ||
     !Array.isArray(sheets) ||
     !Array.isArray(styles) ||
@@ -824,6 +865,9 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
       name: sheet.name,
       rowCount: sheet.rowCount,
       columnCount: sheet.columnCount,
+      // The renderer's oversized-sheet write gate needs this; omitting it
+      // silently disables the gate (older sidecars don't report it).
+      ...(isPositiveInteger(sheet.sourceXmlBytes) ? { sourceXmlBytes: sheet.sourceXmlBytes } : {}),
       columnWidths,
       // Degrade instead of rejecting the workbook: 0 / malformed defaults
       // mean "use the built-in size".
@@ -845,6 +889,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
       cellImages: parseCellImages(sheet.cellImages ?? []),
       ...(isBoundedString(sheet.printArea, 2_000) ? { printArea: sheet.printArea } : {}),
       ...(isBoundedString(sheet.printTitles, 2_000) ? { printTitles: sheet.printTitles } : {}),
+      ...(sheet.hasScopedDefinedNames === true ? { hasScopedDefinedNames: true } : {}),
     }
   })
   if (parsedSheets.length === 0) throw new Error('Workbook contains no worksheets.')
@@ -895,6 +940,7 @@ function parseWorkbookFile(input: unknown): WorkbookFile {
     name,
     ...(path === undefined ? {} : { path }),
     sha256,
+    ...(fileBytes === undefined ? {} : { fileBytes }),
     entryCount,
     sheets: parsedSheets,
     activeTab,
@@ -936,7 +982,7 @@ function parseRangeRequest(input: WorkbookRangeRequest): WorkbookRangeRequest {
     !isNonnegativeInteger(endColumn) ||
     startRow > endRow ||
     startColumn > endColumn ||
-    (endRow - startRow + 1) * (endColumn - startColumn + 1) > 20_000
+    (endRow - startRow + 1) * (endColumn - startColumn + 1) > 100_000
   ) {
     throw new Error('Invalid workbook range request.')
   }
@@ -1087,15 +1133,15 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
   if (
     !isRecord(input) ||
     !Array.isArray(input.cells) ||
-    input.cells.length > 20_000 ||
+    input.cells.length > 100_000 ||
     !Array.isArray(input.rows) ||
-    input.rows.length > 20_000 ||
+    input.rows.length > 100_000 ||
     !Array.isArray(input.merges) ||
-    input.merges.length > 20_000 ||
+    input.merges.length > 100_000 ||
     !Array.isArray(input.hyperlinks) ||
-    input.hyperlinks.length > 20_000 ||
+    input.hyperlinks.length > 100_000 ||
     !Array.isArray(input.conditionalRules) ||
-    input.conditionalRules.length > 20_000 ||
+    input.conditionalRules.length > 100_000 ||
     (input.indexedThroughRow !== null && !isNonnegativeInteger(input.indexedThroughRow)) ||
     typeof input.indexingComplete !== 'boolean'
   ) {
@@ -1554,6 +1600,7 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
     input.visualAdditions.length === 0 &&
     input.tableAdditions.length === 0 &&
     input.pivotAdditions.length === 0 &&
+    (input.sparklineAdditions?.length ?? 0) === 0 &&
     input.sheetOps.length === 0 &&
     input.filterStates.length === 0 &&
     input.hyperlinkEdits.length === 0 &&

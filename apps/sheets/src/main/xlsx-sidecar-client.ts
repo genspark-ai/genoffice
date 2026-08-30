@@ -11,7 +11,14 @@ interface PendingRequest {
   readonly resolve: (value: unknown) => void
   readonly reject: (error: Error) => void
   readonly timeout: NodeJS.Timeout
+  readonly command: string
+  /** Session-scoped commands record it so close() can sweep their queue slots. */
+  readonly sessionId?: string
 }
+
+/** Pure reads a departing consumer can abandon; skipping a queued close (or
+ * save) instead would leave its side effects permanently undone. */
+const CANCELLABLE_READS = new Set(['read_range', 'read_formula_cells', 'read_media'])
 
 interface SidecarResponse {
   readonly version: number
@@ -62,6 +69,13 @@ export class XlsxSidecarClient {
   }
 
   async close(sessionId: string): Promise<void> {
+    // Skip the session's queued reads so close does not wait behind them;
+    // each settles with the sidecar's authoritative "cancelled" failure.
+    for (const [requestId, pending] of this.pending) {
+      if (pending.sessionId === sessionId && CANCELLABLE_READS.has(pending.command)) {
+        this.sendCancel(requestId)
+      }
+    }
     await this.request({ command: 'close', sessionId })
   }
 
@@ -130,9 +144,21 @@ export class XlsxSidecarClient {
     return this.request({ command: 'recalc_cells', ...input }, ARCHIVE_TIMEOUT_MS)
   }
 
-  /** spawn the sidecar ahead of the first request to hide process cold-start */
+  /**
+   * Spawn the sidecar ahead of the first request to hide process cold-start.
+   * The prewarm is best-effort: on Windows an unrunnable binary (corrupt,
+   * AV-blocked — CreateProcess errors outside Node's delayed-error set, e.g.
+   * UNKNOWN) makes spawn() throw synchronously, and letting that propagate
+   * crashed tab/window creation with an uncaught main-process exception. The
+   * first real request retries the spawn and surfaces the descriptive error
+   * through its own handled rejection path instead.
+   */
   start(): void {
-    this.ensureStarted()
+    try {
+      this.ensureStarted()
+    } catch (error) {
+      console.warn('[sheets] XLSX sidecar prewarm failed:', error)
+    }
   }
 
   getProcessId(): number | null {
@@ -147,6 +173,24 @@ export class XlsxSidecarClient {
     this.rejectPending(new Error('XLSX sidecar stopped.'))
   }
 
+  /**
+   * Fire-and-forget: handled out of band by the sidecar's reader thread, so
+   * it takes effect while earlier requests still wait in the queue. The
+   * reply matches no pending entry and is dropped.
+   */
+  private sendCancel(targetRequestId: string): void {
+    const child = this.process
+    if (!child || child.killed) return
+    child.stdin.write(
+      `${JSON.stringify({
+        version: PROTOCOL_VERSION,
+        requestId: crypto.randomUUID(),
+        command: 'cancel',
+        targetRequestId,
+      })}\n`,
+    )
+  }
+
   private request(
     command: Readonly<Record<string, unknown>>,
     timeoutMs: number = REQUEST_TIMEOUT_MS,
@@ -158,12 +202,26 @@ export class XlsxSidecarClient {
       requestId,
       ...command,
     })
+    const commandName = command.command
+    const sessionId = typeof command.sessionId === 'string' ? command.sessionId : undefined
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(requestId)
+        // Still queued sidecar-side, the request would execute for a reply
+        // nobody consumes (a 100k-cell range serializes ~5MB of JSON). A
+        // close is the exception: its side effect IS the cleanup, and no
+        // caller retries a timed-out close — skipping it would leak the
+        // session's index threads and cache for good.
+        if (commandName !== 'close') this.sendCancel(requestId)
         reject(new Error('XLSX sidecar request timed out.'))
       }, timeoutMs)
-      this.pending.set(requestId, { resolve, reject, timeout })
+      this.pending.set(requestId, {
+        resolve,
+        reject,
+        timeout,
+        command: String(commandName),
+        ...(sessionId === undefined ? {} : { sessionId }),
+      })
       child.stdin.write(`${payload}\n`, (error) => {
         if (!error) return
         const pending = this.pending.get(requestId)
@@ -177,10 +235,20 @@ export class XlsxSidecarClient {
 
   private ensureStarted(): ChildProcessWithoutNullStreams {
     if (this.process && !this.process.killed) return this.process
-    const child = spawn(this.binaryPath, [], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    })
+    let child: ChildProcessWithoutNullStreams
+    try {
+      child = spawn(this.binaryPath, [], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      })
+    } catch (error) {
+      // Synchronous spawn failures ("spawn UNKNOWN") carry no path in the
+      // message — rethrow with enough context to diagnose from a screenshot.
+      throw new Error(
+        `XLSX sidecar failed to start (${this.binaryPath}): ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      )
+    }
     this.process = child
     this.stderr = ''
     this.lines = createInterface({ input: child.stdout })
@@ -211,7 +279,13 @@ export class XlsxSidecarClient {
     try {
       response = JSON.parse(line) as SidecarResponse
     } catch {
-      this.rejectPending(new Error('XLSX sidecar returned invalid JSON.'))
+      // Library code inside the sidecar can print diagnostics to stdout
+      // (IronCalc's importer does, e.g. "Unexpected type (empty) in ...").
+      // Treat such lines as noise: rejecting every pending request here
+      // nuked all in-flight chunk loads whenever a recalc hit one of those
+      // workbooks. A genuinely garbled response surfaces as that one
+      // request's timeout instead.
+      this.stderr = `${this.stderr}[stdout] ${line}\n`.slice(-MAX_STDERR_LENGTH)
       return
     }
     if (
@@ -219,7 +293,7 @@ export class XlsxSidecarClient {
       typeof response.requestId !== 'string' ||
       typeof response.ok !== 'boolean'
     ) {
-      this.rejectPending(new Error('XLSX sidecar returned an invalid response.'))
+      this.stderr = `${this.stderr}[stdout] ${line}\n`.slice(-MAX_STDERR_LENGTH)
       return
     }
     const pending = this.pending.get(response.requestId)

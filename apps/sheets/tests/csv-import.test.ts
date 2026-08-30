@@ -5,6 +5,7 @@ import {
   blankXlsxBuffer,
   buildWorksheetXml,
   csvToXlsxBuffer,
+  sheetCsvToXlsxBuffer,
   decodeCsvBuffer,
   isNumericCell,
   parseCsv,
@@ -145,5 +146,25 @@ describe('blankXlsxBuffer', () => {
     expect(await zip.file('xl/workbook.xml')?.async('text')).toContain('<sheet name="Sheet1"')
     const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('text')
     expect(sheet).toContain('<dimension ref="A1:A1"/><sheetData></sheetData>')
+  })
+})
+
+describe('sheetCsvToXlsxBuffer (AI create_document)', () => {
+  it('never sniffs the delimiter: semicolon-heavy cells stay one column', async () => {
+    // csvField quotes neither ; nor \t — sniffing would split these cells
+    const buffer = await sheetCsvToXlsxBuffer('a;b;c,x\r\nd;e;f,y\r\n', 'de')
+    const zip = await JSZip.loadAsync(buffer)
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('text')
+    expect(sheet).toContain('<t xml:space="preserve">a;b;c</t>')
+    expect(sheet).toContain('<c r="B1"')
+    expect(sheet).not.toContain('<c r="C1"')
+    expect(await zip.file('xl/workbook.xml')?.async('text')).toContain('<sheet name="de"')
+  })
+
+  it('turns an all-empty grid into a valid blank workbook', async () => {
+    const zip = await JSZip.loadAsync(await sheetCsvToXlsxBuffer('\r\n', 'Empty'))
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('text')
+    expect(sheet).toContain('<sheetData></sheetData>')
+    expect(await zip.file('xl/workbook.xml')?.async('text')).toContain('<sheet name="Empty"')
   })
 })

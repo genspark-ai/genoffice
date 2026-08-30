@@ -9,7 +9,7 @@ import { DEFAULT_INSETS_EMU, emuToPx } from '@genoffice/pptx-render'
 import type { GlyphRun, ShapeRenderNode, TextLine } from '@genoffice/pptx-render'
 import type { EditParagraph, EditRun, LinkTargetOp } from '../shared/ipc'
 import { decodeLinkTarget, encodeLinkTarget } from '../shared/run-link'
-import { displayFontFamily } from './konva-adapter'
+import { displayFontFamily, konvaBaselineDrop } from './konva-adapter'
 import { ZOOM_PREVIEW_EVENT } from './zoom-preview'
 import { FONT_SIZES } from './components/ribbon-shared'
 
@@ -32,6 +32,22 @@ interface Props {
   frameColor?: string
   /** Canvas CSS zoom: the outline divides by it to keep a constant on-screen weight */
   zoom?: number
+}
+
+/** First-strong-character inference over a paragraph's logical text (mirrors what dir="auto" does). */
+function inferParaRtl(paraLines: TextLine[]): boolean {
+  const runs = paraLines
+    .flatMap((l) => l.runs)
+    .filter((r) => !r.isBullet)
+    .sort((a, b) => (a.logicalOrder ?? 0) - (b.logicalOrder ?? 0))
+  for (const r of runs) {
+    for (const ch of r.text) {
+      if (/[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]/.test(ch)) return true
+      // eslint-disable-next-line no-misleading-character-class -- broad strong-LTR ranges; combining marks inside are irrelevant for a per-char strong-direction probe
+      if (/[A-Za-z\u00c0-\u058f\u0900-\ud7ff\uf900-\ufdcf]/.test(ch)) return false
+    }
+  }
+  return false
 }
 
 /** Layout lines → paragraph grouping (paraStart marks wrap boundaries; missing means an independent paragraph, backward compatible). */
@@ -162,8 +178,11 @@ export function populateEditorDom(
     // The DOM block ends one advance below the last line top (external leading renders
     // inside the block, unlike the canvas) — margins of following paragraphs compensate
     prevEnd = last.top + (last.advance ?? last.height)
-    // RTL paragraphs (Arabic/Hebrew) align in editing as on canvas: the browser sets direction by the first strong character
-    p.dir = 'auto'
+    // RTL paragraphs (Arabic/Hebrew) align in editing as on canvas: the browser sets direction
+    // by the first strong character. An explicit a:pPr rtl can disagree with that inference
+    // (TextLine.rtl carries the effective base) — then the browser needs an explicit dir
+    const effRtl = first.rtl === true
+    p.dir = effRtl === inferParaRtl(paraLines) ? 'auto' : effRtl ? 'rtl' : 'ltr'
     const align = paraLines[0]?.align
     if (align) p.style.textAlign = align
     // Body text starts at marL, exactly like the canvas (lists/indent used to snap to the
@@ -173,20 +192,33 @@ export function populateEditorDom(
     const indentPx = (!vertical && first.indentPx) || 0
     if (indentPx && !first.runs.some((r) => r.isBullet)) p.style.textIndent = `${indentPx}px`
     // ── Glyph-position fidelity vs the canvas renderer ──
-    // Vertical: the canvas paints the baseline exactly at the engine's position,
-    // lineTop + leadAbove + ascent (the Konva adapter converts baselineY to a node top
-    // with the measured per-font 'middle'-baseline offset); CSS puts the DOM baseline at
-    // half-leading + browser ascent. The difference is several px on CJK/serif or
-    // lnSpc ≠ 100% text and reads as the text jumping when editing starts. Measure both
-    // sides and cancel the difference with a relative offset (flow is unaffected).
+    // Vertical: the canvas draws the dominant run's baseline at
+    // lineTop + engineAscent + konvaBaselineDrop (0 for resolved faces, the fallback
+    // font's offset from the legacy 0.8em rule otherwise — see the adapter); CSS puts
+    // the DOM baseline at half-leading + browser ascent. The difference is several px
+    // on fallback-drawn CJK/serif or lnSpc ≠ 100% text and reads as the text jumping
+    // when editing starts. Measure both sides and cancel the difference with a
+    // relative offset (flow is unaffected).
     let engineAscent = 0
     let domBaseline = 0
+    let dominant: GlyphRun | null = null
     for (const r of first.runs) {
       const a = r.ascentPx ?? r.fontSizePx * 0.8
-      if (a > engineAscent) engineAscent = a
+      if (a > engineAscent) {
+        engineAscent = a
+        dominant = r
+      }
     }
+    const drop = dominant
+      ? konvaBaselineDrop(
+          displayFontFamily(dominant.fontFamily ?? ''),
+          dominant.fontSizePx,
+          dominant.bold,
+          dominant.italic,
+        )
+      : 0
     // lnSpc>100%: the canvas pins glyphs to the slot bottom (leadAbove below the line top)
-    const canvasBaseline = (first.leadAbove ?? 0) + engineAscent
+    const canvasBaseline = (first.leadAbove ?? 0) + engineAscent + drop
     const participants: Array<{ family: string; size: number; bold?: boolean; italic?: boolean }> =
       first.runs.map((r) => ({
         family: displayFontFamily(r.fontFamily ?? ''),
@@ -830,6 +862,7 @@ export function extractParagraphs(root: HTMLElement, norm: number): EditParagrap
       if (sb != null) curFmt.spaceBeforePt = sb
       const sa = num(ds?.spaceAfterPt)
       if (sa != null) curFmt.spaceAfterPt = sa
+      if (ds?.rtl === '1' || ds?.rtl === '0') curFmt.rtl = ds.rtl === '1'
     }
     const style = el.style
     const cs = window.getComputedStyle(el)
@@ -982,6 +1015,7 @@ export function applySelectionParagraphFormat(patch: {
   lineSpacingPct?: number
   spaceBeforePt?: number
   spaceAfterPt?: number
+  rtl?: boolean
 }): boolean {
   const sel = window.getSelection()
   if (!sel?.rangeCount) return false
@@ -1019,8 +1053,33 @@ export function applySelectionParagraphFormat(patch: {
     }
     if (patch.spaceBeforePt != null) b.dataset.spaceBeforePt = String(patch.spaceBeforePt)
     if (patch.spaceAfterPt != null) b.dataset.spaceAfterPt = String(patch.spaceAfterPt)
+    if (patch.rtl != null) {
+      b.dataset.rtl = patch.rtl ? '1' : '0'
+      b.dir = patch.rtl ? 'rtl' : 'ltr' // live preview; the canvas re-lays out on commit
+    }
   }
   return true
+}
+
+/** Effective base direction at the editing selection, read from the overlay DOM (computed
+ * direction covers dir="auto" inference and explicit toggles alike). undefined = no overlay
+ * mounted; null = mixed. */
+export function liveRtl(): boolean | null | undefined {
+  const root = document.querySelector('[data-src-para]')?.parentElement
+  if (!(root instanceof HTMLElement)) return undefined
+  const blocks = Array.from(root.children).filter(
+    (el): el is HTMLElement => el instanceof HTMLElement && el.tagName === 'DIV',
+  )
+  if (!blocks.length) return false
+  const sel = window.getSelection()
+  const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null
+  const found = new Set<boolean>()
+  for (const b of blocks) {
+    if (range && !range.intersectsNode(b)) continue
+    found.add(window.getComputedStyle(b).direction === 'rtl')
+  }
+  if (!found.size) for (const b of blocks) found.add(window.getComputedStyle(b).direction === 'rtl')
+  return found.size === 1 ? [...found][0]! : null
 }
 
 /** Bullet-gallery highlight while editing: union of the live paragraph marks across the edit

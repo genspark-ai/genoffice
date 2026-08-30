@@ -1,8 +1,4 @@
-import type {
-  WorkbookCellEdit,
-  WorkbookSaveEditsBegin,
-  WorkbookSaveEditsChunk,
-} from '../shared/desktop-api'
+import type { WorkbookCellEdit, WorkbookSaveEditsBegin } from '../shared/desktop-api'
 import { MAX_SAVE_EDITS_TOTAL } from '../shared/ipc-channels'
 
 /// A tab keeps at most this many transfers open at once. A save consumes its
@@ -50,7 +46,15 @@ export class SaveEditsTransferStore {
     this.syncSweepTimer()
   }
 
-  addChunk(request: WorkbookSaveEditsChunk, nowMs = Date.now()): void {
+  addChunk(
+    request: {
+      readonly sessionId: string
+      readonly transferId: string
+      readonly seq: number
+      readonly edits: readonly WorkbookCellEdit[]
+    },
+    nowMs = Date.now(),
+  ): void {
     this.sweep(nowMs)
     const transfer = this.transfers.get(request.transferId)
     if (!transfer || transfer.sessionId !== request.sessionId) {

@@ -19,6 +19,9 @@ import {
 import {
   GuidedError,
   register,
+  requireFinite,
+  requireGradientStops,
+  requireHexColor,
   resolveElement,
   resolveGroup,
   resolveGroupChildId,
@@ -45,9 +48,15 @@ register({
 register({
   name: 'setFill',
   validate(op, ctx) {
-    if (typeof op.fill !== 'string' && (typeof op.fill !== 'object' || op.fill === null)) {
+    if (typeof op.fill === 'string') {
+      if (op.fill !== 'none') requireHexColor(op.fill, 'setFill', 'fill')
+    } else if (typeof op.fill === 'object' && op.fill !== null) {
+      const grad = op.fill as { stops?: unknown; angle?: unknown }
+      requireGradientStops(grad.stops, 'setFill')
+      if (grad.angle !== undefined) requireFinite(grad.angle, 'setFill', 'angle')
+    } else {
       throw new GuidedError(
-        'op "setFill" needs "fill": a solid color string or a gradient patch object.',
+        'op "setFill" needs "fill": "none", a "#RRGGBB" color, or a gradient patch object.',
       )
     }
     if (op.group) {
@@ -89,6 +98,19 @@ register({
       throw new GuidedError(
         'op "setStroke" needs "stroke": a stroke patch object, or null to remove the outline.',
       )
+    }
+    if (op.stroke !== null) {
+      const patch = op.stroke as { color?: unknown; widthEmu?: unknown; gradient?: unknown }
+      requireHexColor(patch.color, 'setStroke', 'stroke.color')
+      requireFinite(patch.widthEmu, 'setStroke', 'stroke.widthEmu')
+      if (patch.widthEmu <= 0) {
+        throw new GuidedError('op "setStroke": "stroke.widthEmu" must be > 0 (12700 EMU = 1pt).')
+      }
+      const grad = patch.gradient as { stops?: unknown; angle?: unknown } | undefined
+      if (grad !== undefined) {
+        requireGradientStops(grad?.stops, 'setStroke')
+        requireFinite(grad?.angle, 'setStroke', 'gradient.angle')
+      }
     }
     if (op.group) {
       const { index, slide } = resolveSlide(ctx, op)

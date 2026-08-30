@@ -1256,6 +1256,88 @@ function shiftReferenceToken(token: string, shift: Shift, axis: Axis): string | 
   )
 }
 
+const SHARED_MAX_ROW = 1_048_576
+const SHARED_MAX_COLUMN = 16_384
+
+/// Shared-formula expansion (OOXML 18.3.1.40): the master's relative
+/// references shift by the follower's (row, column) offset; `$`-anchored
+/// components stay put. Null when a shifted reference leaves the sheet.
+export function translateSharedFormula(
+  formula: string,
+  rowDelta: number,
+  columnDelta: number,
+): string | null {
+  if (rowDelta === 0 && columnDelta === 0) return formula
+  let failed = false
+  const translated = formula
+    .split('"')
+    .map((segment, index) =>
+      index % 2 === 1
+        ? segment
+        : segment.replace(
+            FORMULA_REFERENCE_PATTERN,
+            (full, lead: string, qualifier: string | undefined, token: string) => {
+              const moved = translateSharedToken(token, rowDelta, columnDelta)
+              if (moved === null) {
+                failed = true
+                return full
+              }
+              return `${lead}${qualifier === undefined ? '' : `${qualifier}!`}${moved}`
+            },
+          ),
+    )
+    .join('"')
+  return failed ? null : translated
+}
+
+function translateSharedToken(token: string, rowDelta: number, columnDelta: number): string | null {
+  const parts = token.split(':').map((part) => {
+    const cell = /^(\$?)([A-Z]{1,3})(\$?)([0-9]+)$/.exec(part)
+    if (cell) {
+      const column = translateOrdinal(
+        lettersToColumn(cell[2] ?? 'A'),
+        cell[1] === '$' ? 0 : columnDelta,
+        SHARED_MAX_COLUMN - 1,
+      )
+      const row = translateOrdinal(
+        Number(cell[4]) - 1,
+        cell[3] === '$' ? 0 : rowDelta,
+        SHARED_MAX_ROW - 1,
+      )
+      if (column === null || row === null) return null
+      return `${cell[1]}${columnToLetters(column)}${cell[3]}${row + 1}`
+    }
+    const wholeColumn = /^(\$?)([A-Z]{1,3})$/.exec(part)
+    if (wholeColumn) {
+      const column = translateOrdinal(
+        lettersToColumn(wholeColumn[2] ?? 'A'),
+        wholeColumn[1] === '$' ? 0 : columnDelta,
+        SHARED_MAX_COLUMN - 1,
+      )
+      if (column === null) return null
+      return `${wholeColumn[1]}${columnToLetters(column)}`
+    }
+    const wholeRow = /^(\$?)([0-9]+)$/.exec(part)
+    if (wholeRow) {
+      const row = translateOrdinal(
+        Number(wholeRow[2]) - 1,
+        wholeRow[1] === '$' ? 0 : rowDelta,
+        SHARED_MAX_ROW - 1,
+      )
+      if (row === null) return null
+      return `${wholeRow[1]}${row + 1}`
+    }
+    return part
+  })
+  if (parts.some((part) => part === null)) return null
+  return parts.join(':')
+}
+
+function translateOrdinal(value: number, delta: number, maximum: number): number | null {
+  const moved = value + delta
+  return moved < 0 || moved > maximum ? null : moved
+}
+
 export function qualifierMatches(qualifier: string, sheetName: string): boolean {
   const unquoted = qualifier.startsWith("'")
     ? qualifier.slice(1, -1).replaceAll("''", "'")

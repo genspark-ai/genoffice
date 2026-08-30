@@ -6,7 +6,7 @@
 - `{op:"delete_rows", sheetId, row, count}` — deletes count rows starting at row.
 - `{op:"insert_cols", sheetId, column:"C", count}` — new columns are inserted before that column; column uses the column letter.
 - `{op:"delete_cols", sheetId, column, count}`
-- `{op:"add_sheet", name}` — creates a blank worksheet (no sheetId needed).
+- `{op:"add_sheet", name, rows?, columns?}` — creates a blank worksheet (no sheetId needed). The grid defaults to **1000 rows × 20 columns**; writes beyond the grid are rejected and formula spills truncate at its edge, so pass `rows`/`columns` sized to the expected data (plus a little headroom) when it will hold more — e.g. `{op:"add_sheet", name:"ja", rows:6700}` before copying ~6600 rows into it.
 - `{op:"delete_sheet", sheetId}` — deletes a worksheet; the last remaining sheet cannot be deleted. Formulas on other sheets referencing the deleted sheet become #REF! (listed in the preview warnings); for real xlsx files there is an additional fail-closed guard on save (sheets referenced by formulas/charts/defined names refuse deletion).
 - `{op:"duplicate_sheet", sheetId, name?}` — copies a whole worksheet (contents and formats); name is auto-generated when omitted. Unavailable in large-file streaming mode; sheets containing pivot tables cannot be duplicated.
 - `{op:"set_sheet_hidden", sheetId, hidden:true|false}` — hides/shows a worksheet; at least one sheet must stay visible.

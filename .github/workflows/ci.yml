@@ -160,6 +160,15 @@ jobs:
             echo "kernel.apparmor_restrict_unprivileged_userns not present — skipping"
           fi
 
+      # Pixel baselines (docs-visual.spec.ts) depend on the font stack: pin
+      # Calibri/Cambria metric-compatible faces and CJK glyphs so renders are
+      # reproducible across runner images and contributor machines.
+      - name: Install document fonts (visual baselines)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            fonts-crosextra-carlito fonts-crosextra-caladea fonts-noto-cjk
+
       # Electron needs a display server on Linux runners. DEBUG=pw:browser
       # forwards the Electron process stdout/stderr into the CI log so launch
       # failures are diagnosable.

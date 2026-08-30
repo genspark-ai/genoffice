@@ -1121,12 +1121,14 @@ export function Ribbon({
   onTextColor,
   curBulletChar,
   curAlign,
+  curRtl,
   curFontFamily,
   curFontSizePt,
   curFontSizeMixed,
   onFontFamily,
   onFontSize,
   onAlign,
+  onDirection,
   onStrike,
   onTextToggle,
   onElementTextColor,
@@ -1573,6 +1575,7 @@ export function Ribbon({
     closePanels,
     curBulletChar,
     curAlign,
+    curRtl,
     curFontFamily,
     curFontSizeMixed,
     curFontSizePt,
@@ -1592,6 +1595,7 @@ export function Ribbon({
     onAiPreset,
     onAskSelection,
     onAlign,
+    onDirection,
     onArrange,
     onFlip,
     onCopy,
@@ -2685,6 +2689,13 @@ export function Ribbon({
                 disabled={!onEditTableStyle}
                 onClick={() => onEditTableStyle?.({ bandRow: true })}
                 offClick={() => onEditTableStyle?.({ bandRow: false })}
+              />
+              <TableToggleBtn
+                label={t('ribbonTableRtl')}
+                on={tableStyleFlags?.rtl ?? false}
+                disabled={!onEditTableStyle}
+                onClick={() => onEditTableStyle?.({ rtl: true })}
+                offClick={() => onEditTableStyle?.({ rtl: false })}
               />
             </Group>
             <div className="ribbon-sep" />

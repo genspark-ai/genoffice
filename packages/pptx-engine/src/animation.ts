@@ -47,6 +47,8 @@ export type AnimEffectKind =
   | 'motionPath'
 
 export type AnimTrigger = 'onClick' | 'withPrev' | 'afterPrev'
+
+export const ANIM_TRIGGERS: readonly AnimTrigger[] = ['onClick', 'withPrev', 'afterPrev']
 export type AnimClass = 'entrance' | 'emphasis' | 'exit' | 'path'
 
 export interface SlideAnimation {
@@ -100,7 +102,10 @@ export function elementSpid(el: SlideElement): number | null {
 // ── Write: SlideAnimation[] → <p:timing> ───────────────────────────────
 
 /** presetID/presetClass/presetSubtype (used by PowerPoint's animation pane to show effect names). */
-const PRESET: Record<AnimEffectKind, { id: number; cls: 'entr' | 'emph' | 'exit' | 'path'; sub: number }> = {
+const PRESET: Record<
+  AnimEffectKind,
+  { id: number; cls: 'entr' | 'emph' | 'exit' | 'path'; sub: number }
+> = {
   appear: { id: 1, cls: 'entr', sub: 0 },
   fade: { id: 10, cls: 'entr', sub: 0 },
   flyIn: { id: 2, cls: 'entr', sub: 4 }, // from bottom
@@ -124,6 +129,8 @@ const PRESET: Record<AnimEffectKind, { id: number; cls: 'entr' | 'emph' | 'exit'
 }
 
 /** presetClass:presetID(:presetSubtype) → effect (read-back mapping; unmodeled ones map to a same-class approximation). */
+export const ANIM_EFFECTS = Object.keys(PRESET) as readonly AnimEffectKind[]
+
 function effectFromPreset(cls: string, id: number, sub: number): AnimEffectKind {
   if (cls === 'path') return 'motionPath'
   // Effects sharing a presetID distinguished by subtype (e.g. wipe direction)
@@ -213,7 +220,14 @@ function keyframeAnimXml(
 }
 
 /** ppt_x/ppt_y translation animation (for fly in/out). */
-function moveAnimXml(gen: IdGen, tgt: string, dur: number, attr: 'ppt_x' | 'ppt_y', from: string, to: string): string {
+function moveAnimXml(
+  gen: IdGen,
+  tgt: string,
+  dur: number,
+  attr: 'ppt_x' | 'ppt_y',
+  from: string,
+  to: string,
+): string {
   return keyframeAnimXml(gen, tgt, dur, attr, [
     [0, from],
     [100000, to],
@@ -553,7 +567,8 @@ function rebuildTimingPreservingXml(timing: string, anims: SlideAnimation[]): st
     if (childOpen < 0) return null
     const childClose = findBalancedClose(timing, childOpen, 'p:childTnLst')
     if (childClose < 0) return null
-    newTiming = timing.slice(0, childOpen + '<p:childTnLst>'.length) + groupXml + timing.slice(childClose)
+    newTiming =
+      timing.slice(0, childOpen + '<p:childTnLst>'.length) + groupXml + timing.slice(childClose)
   } else {
     // Original timing has no main sequence (only trigger/media nodes): insert a brand-new <p:seq> at the end of the tmRoot childTnLst
     const rootM = /<p:cTn\b[^>]*\bnodeType="tmRoot"[^>]*>/.exec(timing)
@@ -584,7 +599,11 @@ export function patchSlideTimingXml(bodySuffix: string, anims: SlideAnimation[])
   if (timingM) {
     const rebuilt = rebuildTimingPreservingXml(timingM[0], anims)
     if (rebuilt != null)
-      return bodySuffix.slice(0, timingM.index) + rebuilt + bodySuffix.slice(timingM.index + timingM[0].length)
+      return (
+        bodySuffix.slice(0, timingM.index) +
+        rebuilt +
+        bodySuffix.slice(timingM.index + timingM[0].length)
+      )
   }
   const stripped = bodySuffix.replace(TIMING_RE, '')
   if (anims.length === 0) return stripped
@@ -772,7 +791,8 @@ function appendBldPs(timing: string, items: Placed[]): string {
   }
   // spids already having build="p": write only one paragraph bldP per shape
   const paraSeen = new Set<string>()
-  for (const m of timing.matchAll(/<p:bldP\b[^>]*\bspid="(\d+)"[^>]*\bbuild="p"/g)) paraSeen.add(m[1]!)
+  for (const m of timing.matchAll(/<p:bldP\b[^>]*\bspid="(\d+)"[^>]*\bbuild="p"/g))
+    paraSeen.add(m[1]!)
   const parts: string[] = []
   for (const p of items) {
     if (p.a.paragraph != null) {
@@ -827,7 +847,8 @@ export function patchSlideTimingIncrementalXml(
     // Mixing whole-shape and paragraph animations on one shape changes the bldP form
     // (plain ↔ build="p"); defer to a full rebuild
     const kindBySpid = new Map<number, number>()
-    for (const a of anims) kindBySpid.set(a.spid, (kindBySpid.get(a.spid) ?? 0) | (a.paragraph == null ? 1 : 2))
+    for (const a of anims)
+      kindBySpid.set(a.spid, (kindBySpid.get(a.spid) ?? 0) | (a.paragraph == null ? 1 : 2))
     if (added.some((a) => kindBySpid.get(a.spid) === 3)) return null
     const seqM = /<p:cTn\b[^>]*\bnodeType="mainSeq"[^>]*>/.exec(timing)
     if (!seqM) return null
@@ -842,7 +863,10 @@ export function patchSlideTimingIncrementalXml(
     const groups = placeAnims(added, grpBase)
     const groupsXml = groups.map((g) => groupParXml(gen, g)).join('')
     let newTiming = timing.slice(0, childClose) + groupsXml + timing.slice(childClose)
-    newTiming = appendBldPs(newTiming, groups.flatMap((g) => g.items))
+    newTiming = appendBldPs(
+      newTiming,
+      groups.flatMap((g) => g.items),
+    )
     return splice(newTiming)
   }
 
@@ -864,7 +888,9 @@ export function patchSlideTimingIncrementalXml(
     // Keep the original cTn's grpId (bldP is keyed on it); recompute from the list only when missing
     const origGrpId = /\bgrpId="(\d+)"/.exec(timing.slice(span.start, span.end))?.[1]
     const grpId =
-      origGrpId != null ? Number(origGrpId) : anims.slice(0, i).filter((x) => x.spid === a.spid).length
+      origGrpId != null
+        ? Number(origGrpId)
+        : anims.slice(0, i).filter((x) => x.spid === a.spid).length
     const par = effectParXml(gen, { a, startMs: absStarts(anims)[i]!, grpId })
     return splice(timing.slice(0, span.start) + par + timing.slice(span.end))
   }
@@ -888,4 +914,140 @@ export function setSlideAnimations(slide: Slide, anims: SlideAnimation[]): void 
 /** Read the current slide's animation list. */
 export function getSlideAnimations(slide: Slide): SlideAnimation[] {
   return readSlideTimingXml(slide.bodySuffix)
+}
+
+/** Innermost balanced <tag>…</tag> span containing the given index. */
+function enclosingTagSpan(
+  xml: string,
+  at: number,
+  tag: string,
+): { start: number; end: number } | null {
+  const re = new RegExp(`<${tag}\\b[^>]*>|</${tag}>`, 'g')
+  const stack: number[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null) {
+    if (m[0][1] !== '/') {
+      if (!m[0].endsWith('/>')) stack.push(m.index)
+    } else {
+      const start = stack.pop()
+      if (start === undefined) return null
+      if (start <= at && at < re.lastIndex) return { start, end: re.lastIndex }
+    }
+  }
+  return null
+}
+
+/** Nearest preceding open <tag> that is still open at `at` (self-closing and
+    already-closed occurrences skipped; these tags do not self-nest). */
+function wrappedBy(xml: string, at: number, tag: string): boolean {
+  let from = at
+  for (;;) {
+    const open = xml.lastIndexOf(`<${tag}`, from)
+    if (open < 0) return false
+    const gt = xml.indexOf('>', open)
+    if (gt < 0) return false
+    if (xml[gt - 1] === '/') {
+      from = open - 1
+      continue
+    }
+    return xml.indexOf(`</${tag}>`, gt) > at
+  }
+}
+
+/** Whether the spTgt at `at` is a trigger reference (wrapped by an open
+    <p:cond>) rather than an effect/media target — an effect block's own
+    already-closed delay cond (<p:cond delay="0"/> inside its cTn) must not
+    count as a wrapper. */
+function isTriggerRef(xml: string, at: number): boolean {
+  return wrappedBy(xml, at, 'p:cond')
+}
+
+/**
+ * Remove the effect blocks targeting the given cNvPr ids from the slide's
+ * <p:timing>. Element removal must go through this or the timing keeps
+ * dangling <p:spTgt spid> refs (PowerPoint flags the file). Byte surgery —
+ * unmodeled effect parameters elsewhere survive (no rebuild):
+ * - a trigger reference (<p:cond><p:tgtEl>) takes its whole interactiveSeq
+ *   with it (the animations only ever ran off the removed trigger shape);
+ * - an effect/media target removes the narrowest wrapper (video/audio/par)
+ *   that does not contain surviving shapes' targets — when no such wrapper
+ *   exists the ref is left in place rather than destroying other animations;
+ * - matching <p:bldP> build refs go too; a timing left with no targets and
+ *   no diagram builds is dropped entirely.
+ */
+export function pruneTimingForSpids(slide: Slide, spids: ReadonlySet<number>): boolean {
+  if (!spids.size) return false
+  const timing = /<p:timing>[\s\S]*?<\/p:timing>/.exec(slide.bodySuffix)?.[0]
+  if (!timing) return false
+  let xml = timing
+  let changed = false
+  for (;;) {
+    const hits = [...xml.matchAll(/<p:spTgt spid="(\d+)"/g)].filter((x) => spids.has(Number(x[1])))
+    let removed = false
+    for (const hit of hits) {
+      const at = hit.index
+      let span: { start: number; end: number } | null = null
+      if (isTriggerRef(xml, at)) {
+        const seq = enclosingTagSpan(xml, at, 'p:seq')
+        if (seq) {
+          const head = xml.slice(seq.start, seq.start + 400)
+          if (head.includes('nodeType="interactiveSeq"')) span = seq
+        }
+      }
+      if (!span) {
+        const candidates = ['p:video', 'p:audio', 'p:par']
+          .map((t) => enclosingTagSpan(xml, at, t))
+          .filter((sp): sp is { start: number; end: number } => sp !== null)
+          .sort((a, b) => a.end - a.start - (b.end - b.start))
+        span =
+          candidates.find(
+            (sp) =>
+              ![...xml.slice(sp.start, sp.end).matchAll(/<p:spTgt spid="(\d+)"/g)].some(
+                (m) => !spids.has(Number(m[1])),
+              ),
+          ) ?? null
+      }
+      if (!span) continue
+      xml = xml.slice(0, span.start) + xml.slice(span.end)
+      changed = true
+      removed = true
+      break
+    }
+    if (!removed) break
+  }
+  for (const id of spids) {
+    const re = new RegExp(
+      `<p:bldP spid="${id}"[^>]*/>|<p:bldP spid="${id}"[^>]*>[\\s\\S]*?</p:bldP>`,
+      'g',
+    )
+    if (re.test(xml)) {
+      xml = xml.replace(re, '')
+      changed = true
+    }
+  }
+  if (!changed) return false
+  xml = xml.replace(/<p:bldLst\s*\/>|<p:bldLst\s*>\s*<\/p:bldLst>/g, '')
+  if (/<p:spTgt\b/.test(xml)) {
+    // Collapse innermost pars that lost every target, then their emptied ancestors
+    let prev: string
+    do {
+      prev = xml
+      xml = xml.replace(/<p:par\b[^>]*>(?:(?!<p:par\b|<\/p:par>)[\s\S])*?<\/p:par>/g, (blk) =>
+        /<p:spTgt\b/.test(blk) ? blk : '',
+      )
+    } while (xml !== prev)
+  }
+  slide.bodySuffix =
+    /<p:spTgt\b/.test(xml) || /<p:bldDgm\b/.test(xml)
+      ? slide.bodySuffix.replace(timing, xml)
+      : slide.bodySuffix.replace(timing, '')
+  slide.structureDirty = true
+  return true
+}
+
+/** Every cNvPr id inside an element's XML fragment (group children included). */
+export function cNvPrIdsInXml(xml: string): Set<number> {
+  const out = new Set<number>()
+  for (const m of xml.matchAll(/<p:cNvPr\b[^>]*?\bid="(\d+)"/g)) out.add(Number(m[1]))
+  return out
 }

@@ -7,9 +7,9 @@ import { describe, expect, it } from 'vitest'
 import { stageEditsForSave, type SaveEditsTransferApi } from '../src/renderer/save-edits-staging'
 import type { WorkbookCellEdit } from '../src/shared/desktop-api'
 import {
-  MAX_SAVE_EDITS,
   MAX_SAVE_EDITS_TOTAL,
   SAVE_EDITS_CHUNK_MAX,
+  SAVE_EDITS_INLINE_MAX,
 } from '../src/shared/ipc-channels'
 
 const SESSION = '5d4f6f7a-1c2b-4e3d-9a8f-0b1c2d3e4f5a'
@@ -40,7 +40,8 @@ function recordingApi(options: { failChunkAt?: number } = {}) {
     },
     async sendSaveEditsChunk(request) {
       if (request.seq === options.failChunkAt) throw new Error('chunk upload failed')
-      chunks.push({ transferId: request.transferId, seq: request.seq, count: request.edits.length })
+      const parsed = JSON.parse(request.editsJson) as unknown[]
+      chunks.push({ transferId: request.transferId, seq: request.seq, count: parsed.length })
     },
     async abortSaveEditsTransfer(request) {
       aborts.push(request.transferId)
@@ -62,7 +63,7 @@ describe('stageEditsForSave', () => {
 
   it('chunks edit sets above the inline cap', async () => {
     const { api, begins, chunks } = recordingApi()
-    const total = MAX_SAVE_EDITS + SAVE_EDITS_CHUNK_MAX + 1
+    const total = SAVE_EDITS_CHUNK_MAX + 1
     const staged = await stageEditsForSave(api, SESSION, edits(total))
     expect(staged.edits).toEqual([])
     expect(staged.editsTransferId).toBe(begins[0]?.transferId)
@@ -77,7 +78,7 @@ describe('stageEditsForSave', () => {
   it('aborts the transfer when a chunk upload fails', async () => {
     const { api, begins, aborts } = recordingApi({ failChunkAt: 1 })
     await expect(
-      stageEditsForSave(api, SESSION, edits(MAX_SAVE_EDITS + SAVE_EDITS_CHUNK_MAX + 1)),
+      stageEditsForSave(api, SESSION, edits(SAVE_EDITS_INLINE_MAX + SAVE_EDITS_CHUNK_MAX + 1)),
     ).rejects.toThrow(/chunk upload failed/)
     expect(aborts).toEqual([begins[0]?.transferId])
   })

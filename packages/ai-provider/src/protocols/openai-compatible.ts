@@ -256,7 +256,16 @@ async function openAiCompatibleTurn(
         json: '',
       }
       if (tc.id) pending.id = tc.id
-      if (tc.function?.name) pending.name += tc.function.name
+      // Spec-compliant servers send the name once, but some local/proxy
+      // servers resend the full (or growing) name on every delta; naive
+      // concatenation then yields "read_fileread_file" and every call fails
+      // as an unknown tool. Treat a delta that extends the accumulated name
+      // as a resend, anything else as a fragment to append.
+      if (tc.function?.name) {
+        pending.name = tc.function.name.startsWith(pending.name)
+          ? tc.function.name
+          : pending.name + tc.function.name
+      }
       if (tc.function?.arguments) pending.json += tc.function.arguments
       pendingTools.set(tc.index, pending)
     }

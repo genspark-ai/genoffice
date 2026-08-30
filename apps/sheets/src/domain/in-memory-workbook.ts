@@ -1,10 +1,12 @@
 import {
   copyTargetBounds,
   expandToPrimitiveOps,
+  filteredCopySourceRows,
   formatOpLabel,
   isLayoutOp,
   isStructuralOp,
   layoutOpLabel,
+  matchableCellText,
   MAX_EXPANDED_CELL_OPS,
   parseWorkbookCommandBatch,
   structuralOpLabel,
@@ -163,13 +165,27 @@ export class InMemoryWorkbookAdapter implements WorkbookAdapter {
         const targetBefore = findSheet(working, operation.sheetId)
         const rowDelta = target.startRow - source.startRow
         const columnDelta = target.startColumn - source.startColumn
-        for (let row = source.startRow; row <= source.endRow; row += 1) {
+        // Filtered copies extract matching rows, compacted at the target, as
+        // static values (the snapshot only knows written values, not what
+        // formulas evaluate to — same values-only contract as the lazy path).
+        const sourceRows = filteredCopySourceRows(operation, (row, column) =>
+          matchableCellText(sourceSheet.cells[formatAddress(row, column)]?.value ?? null),
+        )
+        if (sourceRows === null) {
+          throw new WorkbookConflictError(
+            `copy_range filter matched no source rows — none of the ${operation.filterColumn} cells equal ${(operation.filterValues ?? []).join(', ')} (matching is trimmed and case-insensitive).`,
+          )
+        }
+        for (const [targetOffset, row] of sourceRows.entries()) {
           for (let column = source.startColumn; column <= source.endColumn; column += 1) {
             const cell = sourceSheet.cells[formatAddress(row, column)] ?? { value: null }
-            const after: CellState = cell.formula
-              ? { value: null, formula: offsetFormulaRefs(cell.formula, rowDelta, columnDelta) }
-              : { value: cell.value }
-            const address = formatAddress(row + rowDelta, column + columnDelta)
+            const after: CellState =
+              operation.filterColumn !== undefined
+                ? { value: cell.value }
+                : cell.formula
+                  ? { value: null, formula: offsetFormulaRefs(cell.formula, rowDelta, columnDelta) }
+                  : { value: cell.value }
+            const address = formatAddress(target.startRow + targetOffset, column + columnDelta)
             const before = targetBefore.cells[address] ?? { value: null }
             cellChanges.push({ sheetId: targetBefore.id, address, before, after })
             replaceCell(working, targetBefore.id, address, after)
@@ -191,6 +207,11 @@ export class InMemoryWorkbookAdapter implements WorkbookAdapter {
         // ones were already expanded into plain set_cell edits.
         throw new WorkbookConflictError(
           `find_replace on an in-memory workbook is limited to ${MAX_EXPANDED_CELL_OPS} cells per operation (imported xlsx files allow up to 200,000).`,
+        )
+      }
+      if (operation.op === 'sort_range') {
+        throw new WorkbookConflictError(
+          `sort_range on an in-memory workbook is limited to ${MAX_EXPANDED_CELL_OPS} cells per operation (imported xlsx files allow up to 200,000).`,
         )
       }
       if (operation.op === 'clear_range') {
@@ -420,7 +441,13 @@ function applyStructuralOp(snapshot: WorkbookSnapshot, op: StructuralOperation):
     const sheets = snapshot.sheets as WorksheetState[]
     let serial = sheets.length + 1
     while (sheets.some((sheet) => sheet.id === `sheet-${serial}`)) serial += 1
-    sheets.push({ id: `sheet-${serial}`, name: op.name, cells: {} })
+    sheets.push({
+      id: `sheet-${serial}`,
+      name: op.name,
+      cells: {},
+      ...(op.rows !== undefined ? { gridRows: op.rows } : {}),
+      ...(op.columns !== undefined ? { gridColumns: op.columns } : {}),
+    })
     return []
   }
 

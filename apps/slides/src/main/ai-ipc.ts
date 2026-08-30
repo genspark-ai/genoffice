@@ -20,6 +20,7 @@ import {
   AiCreditsError,
   AiTimeoutError,
   isAiNetworkError,
+  isAiOverloadedError,
   defaultAiSettings,
   activeProvider,
   cloudToolsEnabled,
@@ -198,7 +199,9 @@ export function registerAiIpc(): void {
               ? { errorCode: 'credits' as const }
               : isAiNetworkError(err)
                 ? { errorCode: 'network' as const }
-                : {}),
+                : isAiOverloadedError(err)
+                  ? { errorCode: 'overloaded' as const }
+                  : {}),
         })
       }
     } finally {

@@ -26,6 +26,9 @@ pub const MAX_RECALC_READ_CELLS: usize = 20_000;
 /// serves one document, so two covers the active file plus one recently
 /// closed-and-reopened neighbour.
 const MAX_RESIDENT_MODELS: usize = 2;
+/// Source files above this size (compressed bytes) count as heavy for the
+/// residency rule in `evict_beyond_cap`.
+const HEAVY_SOURCE_BYTES: u64 = 8_000_000;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,9 +94,10 @@ impl RecalcCache {
         Self::default()
     }
 
-    /// Drop the model for a path whose bytes are about to change (save).
+    /// Drop the model for a path whose bytes are about to change (save) or
+    /// whose session closed.
     pub fn purge(&mut self, path: &Path) {
-        self.entries.remove(path);
+        self.entries.remove(&cache_key(path));
     }
 
     fn evict_beyond_cap(&mut self) {
@@ -108,7 +112,34 @@ impl RecalcCache {
             };
             self.entries.remove(&oldest);
         }
+        // Heavy sources import into models that dwarf everything else in the
+        // process (a 31MB workbook's model holds ~1.2GB resident); keep at
+        // most one of those — the most recently used.
+        loop {
+            let mut heavy: Vec<(PathBuf, u64)> = self
+                .entries
+                .iter()
+                .filter(|(_, entry)| entry.size > HEAVY_SOURCE_BYTES)
+                .map(|(path, entry)| (path.clone(), entry.last_used))
+                .collect();
+            if heavy.len() <= 1 {
+                return;
+            }
+            heavy.sort_by_key(|(_, last_used)| *last_used);
+            let Some((oldest, _)) = heavy.first() else {
+                return;
+            };
+            self.entries.remove(&oldest.clone());
+        }
     }
+}
+
+/// Cache keys are canonicalized: sessions store the canonical workbook path
+/// (open() resolves it) while recalc requests carry the renderer's raw path,
+/// and on macOS temp files those differ (/var vs /private/var) — a raw key
+/// would make the close/save purge miss the resident model.
+fn cache_key(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
 pub fn recalc_cells(
@@ -146,10 +177,11 @@ pub fn recalc_cells(
         .map_err(|error| SidecarError::Io(error.to_string()))?;
     let size = metadata.len();
 
+    let key = cache_key(path);
     // Take the entry out while working on it: a panic or error mid-apply
     // leaves the model in an unknown state, and a removed entry can never be
     // reused by the next request.
-    let resident = cache.entries.remove(path).filter(|entry| {
+    let resident = cache.entries.remove(&key).filter(|entry| {
         entry.mtime == mtime
             && entry.size == size
             && entry.applied.keys().all(|key| {
@@ -172,7 +204,7 @@ pub fn recalc_cells(
     cache.tick += 1;
     let mut entry = entry;
     entry.last_used = cache.tick;
-    cache.entries.insert(path.to_path_buf(), entry);
+    cache.entries.insert(key, entry);
     cache.evict_beyond_cap();
 
     Ok(RecalcResult { cells, cached })
@@ -354,6 +386,32 @@ mod tests {
     }
 
     #[test]
+    fn keeps_at_most_one_heavy_model_resident() {
+        let mut cache = RecalcCache::new();
+        for (name, size) in [
+            ("heavy-old", HEAVY_SOURCE_BYTES + 1),
+            ("heavy-new", HEAVY_SOURCE_BYTES + 2),
+            ("light", 1),
+        ] {
+            cache.tick += 1;
+            cache.entries.insert(
+                PathBuf::from(name),
+                ResidentModel {
+                    model: Model::new_empty("fixture", "en", "UTC", "en").unwrap(),
+                    mtime: SystemTime::now(),
+                    size,
+                    applied: HashMap::new(),
+                    last_used: cache.tick,
+                },
+            );
+            cache.evict_beyond_cap();
+        }
+        assert!(!cache.entries.contains_key(Path::new("heavy-old")));
+        assert!(cache.entries.contains_key(Path::new("heavy-new")));
+        assert!(cache.entries.contains_key(Path::new("light")));
+    }
+
+    #[test]
     fn recalculates_after_edits() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("recalc.xlsx");
@@ -473,9 +531,27 @@ mod tests {
             paths.push(path);
         }
         assert_eq!(cache.entries.len(), MAX_RESIDENT_MODELS);
-        // the oldest was evicted, the newest survives
-        assert!(!cache.entries.contains_key(&paths[0]));
-        assert!(cache.entries.contains_key(&paths[2]));
+        // the oldest was evicted, the newest survives (entries key by
+        // canonical path)
+        assert!(!cache.entries.contains_key(&cache_key(&paths[0])));
+        assert!(cache.entries.contains_key(&cache_key(&paths[2])));
+    }
+
+    #[test]
+    fn purge_hits_regardless_of_path_spelling() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recalc.xlsx");
+        fixture(&path);
+        let mut cache = RecalcCache::new();
+        recalc_cells(&mut cache, &path, &[], &[read_a1_a3()]).unwrap();
+        assert_eq!(cache.entries.len(), 1);
+        // The raw and canonical spellings differ on macOS temp dirs
+        // (/var vs /private/var); the close/save purge may hold either.
+        cache.purge(&path);
+        assert!(cache.entries.is_empty());
+        recalc_cells(&mut cache, &path, &[], &[read_a1_a3()]).unwrap();
+        cache.purge(&cache_key(&path));
+        assert!(cache.entries.is_empty());
     }
 
     #[test]

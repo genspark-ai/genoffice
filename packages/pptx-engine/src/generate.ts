@@ -152,6 +152,7 @@ export function patchParagraphPPrXml(paraXml: string, p: Paragraph, which: PPrDi
     else openTag = openTag.replace(/^<a:pPr/, `<a:pPr ${name}="${escapeXmlAttr(value)}"`)
   }
   if (which.align) setPPrAttr('algn', p.align ? ALIGN_MAP[p.align] : undefined)
+  if (which.rtl) setPPrAttr('rtl', p.rtl != null ? (p.rtl ? '1' : '0') : undefined)
   if (which.level) setPPrAttr('lvl', p.level ? String(p.level) : undefined)
   if (which.indents) {
     setPPrAttr('marL', p.marL != null ? String(Math.round(p.marL)) : undefined)
@@ -278,8 +279,8 @@ function patchRun(runXml: string, run: TextRun): string {
 function patchRunProps(runXml: string, run: TextRun): string {
   const attrPatch = (rprOpen: string): string => {
     let tag = rprOpen
-    tag = setBoolAttr(tag, 'b', run.bold)
-    tag = setBoolAttr(tag, 'i', run.italic)
+    tag = setBoolAttr(tag, 'b', run.boldImplicit ? undefined : run.bold)
+    tag = setBoolAttr(tag, 'i', run.italicImplicit ? undefined : run.italic)
     // Underline: keep the original style (dbl/wavy… not collapsed to sng); on removal
     // an existing u becomes none, and no u is injected when there was none (keeping bytes).
     // underlineImplicit (hlink styling) is display-only — never bake it into a u attr
@@ -326,8 +327,9 @@ function patchRunProps(runXml: string, run: TextRun): string {
     // Color: patch or inject solidFill (child nodes can only be injected inside the paired form).
     // colorFollowsTheme = the display value comes from schemeClr/inheritance and the
     // user hasn't changed it → don't write, keep the original bytes (schemeClr with
-    // lumMod/alpha modifiers stays linked to the theme)
-    if (run.color && !run.colorFollowsTheme) {
+    // lumMod/alpha modifiers stays linked to the theme); colorInherited = the rPr has
+    // no solidFill at all → same deal, don't bake the resolved color in
+    if (run.color && !run.colorFollowsTheme && !run.colorInherited) {
       runXml = patchRunColor(runXml, run.color)
     }
     // Font: patch/inject <a:latin>/<a:ea> only when the user actually changed it.
@@ -341,9 +343,11 @@ function patchRunProps(runXml: string, run: TextRun): string {
     // No rPr: inject a minimal rPr after <a:r> (no font slots injected when the font is untouched,
     // so inheritance applies)
     const attrs = buildRPrAttrs(run)
-    const color = run.color
-      ? `<a:solidFill><a:srgbClr val="${hex6(run.color)}"/></a:solidFill>`
-      : ''
+    const color = run.colorNodeXml
+      ? `<a:solidFill>${run.colorNodeXml}</a:solidFill>`
+      : run.color && !run.colorFollowsTheme && !run.colorInherited
+        ? `<a:solidFill><a:srgbClr val="${hex6(run.color)}"/></a:solidFill>`
+        : ''
     const font =
       run.fontFamily && !run.fontImplicit && !run.latinFont && !run.eaFont
         ? fontSlotsXml(escapeXmlAttr(run.fontFamily))
@@ -575,15 +579,23 @@ function patchRunColor(runXml: string, color: string): string {
 }
 
 function buildRPrAttrs(run: TextRun): string {
+  // Explicit "off" values (b="0", u="none", strike="noStrike", spc="0"…) are
+  // overrides of inherited styling, not defaults — dropping them on a rebuild
+  // flips the run to whatever the placeholder/master says (fld bodies always
+  // rebuild, so slide-number placeholders were losing these).
   let s = ''
   if (run.fontSize != null && !run.fontSizeImplicit) s += ` sz="${Math.round(run.fontSize * 100)}"`
-  if (run.bold) s += ' b="1"'
-  if (run.italic) s += ' i="1"'
+  if (run.bold != null && !run.boldImplicit) s += ` b="${run.bold ? '1' : '0'}"`
+  if (run.italic != null && !run.italicImplicit) s += ` i="${run.italic ? '1' : '0'}"`
   if (run.underline && !run.underlineImplicit)
     s += ` u="${escapeXmlAttr(run.underlineStyle ?? 'sng')}"`
+  else if (run.underlineExplicitNone) s += ' u="none"'
   if (run.strike) s += ` strike="${escapeXmlAttr(run.strikeStyle ?? 'sngStrike')}"`
-  if (run.letterSpacing) s += ` spc="${Math.round(run.letterSpacing * 100)}"`
-  if (run.baseline) s += ` baseline="${Math.round(run.baseline * 1000)}"`
+  else if (run.strikeExplicitNone) s += ' strike="noStrike"'
+  if (run.kern != null) s += ` kern="${Math.round(run.kern * 100)}"`
+  if (run.capExplicit) s += ` cap="${escapeXmlAttr(run.capExplicit)}"`
+  if (run.letterSpacing != null) s += ` spc="${Math.round(run.letterSpacing * 100)}"`
+  if (run.baseline != null) s += ` baseline="${Math.round(run.baseline * 1000)}"`
   return s
 }
 
@@ -674,7 +686,7 @@ export function generateParagraphXml(p: Paragraph): string {
   if (p.marL != null && want('marL')) pPrAttrs.push(`marL="${Math.round(p.marL)}"`)
   if (p.indent != null && want('indent')) pPrAttrs.push(`indent="${Math.round(p.indent)}"`)
   if (p.align && want('align')) pPrAttrs.push(`algn="${alignMap[p.align]}"`)
-  if (p.rtl) pPrAttrs.push('rtl="1"')
+  if (p.rtl != null) pPrAttrs.push(`rtl="${p.rtl ? 1 : 0}"`)
   if (p.level) pPrAttrs.push(`lvl="${p.level}"`)
 
   // CT_TextParagraphProperties child order: lnSpc → spcBef → spcAft → buClr → buSzPct → buFont → bu*
@@ -735,10 +747,12 @@ function generateRunXml(r: TextRun): string {
   const ln = r.outline
     ? `<a:ln w="${Math.round(r.outline.widthEmu)}"><a:solidFill><a:srgbClr val="${hex6(r.outline.color)}"/></a:solidFill></a:ln>`
     : ''
-  // Color purely inherited (rPr has no solidFill) → don't write; the inheritance chain still resolves in PowerPoint;
-  // explicit schemeClr is materialized as srgbClr to keep visuals (the rebuild path can't restore the original scheme reference)
-  const color =
-    r.color && !r.colorInherited
+  // Color purely inherited (rPr has no solidFill) → don't write; the inheritance chain still resolves in PowerPoint.
+  // A non-plain-srgb original (schemeClr/prstClr/srgbClr+mods) restores its captured node verbatim
+  // so theme linkage and modifiers survive the rebuild; only a truly changed color bakes an srgbClr.
+  const color = r.colorNodeXml
+    ? `<a:solidFill>${r.colorNodeXml}</a:solidFill>`
+    : r.color && !r.colorInherited
       ? `<a:solidFill><a:srgbClr val="${hex6(r.color)}"/></a:solidFill>`
       : ''
   // Text highlight (CT_TextCharacterProperties order: after the fill group, before the font slots)
@@ -1281,6 +1295,21 @@ export type SlideTransitionKind =
   | 'dissolve'
   | 'zoom'
   | 'random'
+
+export const TRANSITION_KINDS = [
+  'none',
+  'morph',
+  'fade',
+  'push',
+  'wipe',
+  'split',
+  'circle',
+  'cover',
+  'pull',
+  'dissolve',
+  'zoom',
+  'random',
+] as const satisfies readonly SlideTransitionKind[]
 
 const TRANSITION_INNER: Record<Exclude<SlideTransitionKind, 'none' | 'morph'>, string> = {
   fade: '<p:fade/>',

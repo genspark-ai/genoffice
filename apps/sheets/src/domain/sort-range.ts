@@ -37,6 +37,25 @@ function compareScalars(a: CellScalar, b: CellScalar): number {
   return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' })
 }
 
+/// Stable data-row order for a sort: returns source-row indexes in their
+/// sorted sequence (order[target] = source). Blanks stay last in both
+/// directions (Excel behavior). Shared by the per-cell expansion path and the
+/// range-level bulk executor so both sort identically.
+export function computeSortedRowOrder(
+  rows: readonly (readonly CellScalar[])[],
+  keyOffset: number,
+  ascending: boolean,
+): number[] {
+  return rows
+    .map((row, index) => ({ key: row[keyOffset] ?? null, index }))
+    .sort((a, b) => {
+      const cmp = compareScalars(a.key, b.key)
+      const oriented = a.key === null || b.key === null || cmp === 0 ? cmp : ascending ? cmp : -cmp
+      return oriented !== 0 ? oriented : a.index - b.index
+    })
+    .map((entry) => entry.index)
+}
+
 export function computeSortChanges(
   spec: SortSpec,
   readCell: (address: string) => CellState,
@@ -61,27 +80,24 @@ export function computeSortChanges(
           `The sort range contains a formula at ${formatAddress(row, column)} — sorting would silently re-target its references. Sort values only, or convert formulas to values first.`,
         )
       }
-      cells.push(state.value)
+      // Raw model values: `value` is display text, so formatted numbers and
+      // dates would sort lexicographically AND be rewritten as text by the
+      // moves. Raw serials sort numerically — Excel's order.
+      cells.push(state.rawValue !== undefined ? state.rawValue : state.value)
     }
     rows.push({ key: cells[keyColumn - bounds.startColumn] ?? null, cells })
   }
 
-  // Stable sort; blanks stay last in both directions (Excel behavior).
-  const sorted = rows
-    .map((row, index) => ({ row, index }))
-    .sort((a, b) => {
-      const cmp = compareScalars(a.row.key, b.row.key)
-      const oriented = a.row.key === null || b.row.key === null || cmp === 0
-        ? cmp
-        : spec.ascending ? cmp : -cmp
-      return oriented !== 0 ? oriented : a.index - b.index
-    })
-    .map((entry) => entry.row)
+  const order = computeSortedRowOrder(
+    rows.map((row) => row.cells),
+    keyColumn - bounds.startColumn,
+    spec.ascending,
+  )
 
   const changes: SortComputedChange[] = []
-  sorted.forEach((row, offset) => {
+  order.forEach((sourceIndex, offset) => {
     const targetRow = firstDataRow + offset
-    row.cells.forEach((value, columnOffset) => {
+    rows[sourceIndex]?.cells.forEach((value, columnOffset) => {
       const address = formatAddress(targetRow, bounds.startColumn + columnOffset)
       const before = rows[offset]?.cells[columnOffset] ?? null
       if (before !== value) changes.push({ address, before, after: value })

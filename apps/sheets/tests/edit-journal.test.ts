@@ -739,6 +739,15 @@ describe('sheet lifecycle journal', () => {
     expect(journalSize(journal)).toBe(1)
   })
 
+  it('a duplicated sheet renamed later still saves as a duplicate', () => {
+    const journal = createEditJournal()
+    recordSheetDuplicate(journal, 'u-copy', 'Data (Copy)', 'sheet-1')
+    recordSheetRename(journal, 'u-copy', 'DataV2', undefined)
+    expect(toSaveSheetOps(journal)).toEqual([
+      { kind: 'duplicate-sheet', sheetId: 'u-copy', name: 'DataV2', sourceSheetId: 'sheet-1' },
+    ])
+  })
+
   it('adding then removing a sheet cancels out', () => {
     const journal = createEditJournal()
     recordSheetInsert(journal, 'u-new', 'Sheet4')

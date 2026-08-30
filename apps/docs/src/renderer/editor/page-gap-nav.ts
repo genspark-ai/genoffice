@@ -202,6 +202,46 @@ function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   return true
 }
 
+/** A vertical arrow press handed to native, with the gap doc-positions at
+ *  press time: whatever native does, ONE press may cross at most ONE page
+ *  boundary. Rect-based guards keep failing in ways we cannot fully
+ *  enumerate (alpha ledger r143, twice reopened) — document positions are
+ *  the only stable ground truth, so the invariant is enforced after the
+ *  fact on native's own transaction. */
+let nativeArrow: {
+  head: number
+  dir: -1 | 1
+  extend: boolean
+  anchor: number
+  gapPositions: number[]
+  at: number
+} | null = null
+
+function recordNativeArrow(view: EditorView, dir: -1 | 1, extend: boolean): void {
+  const { selection } = view.state
+  if (!(selection instanceof TextSelection)) {
+    nativeArrow = null
+    return
+  }
+  const gapPositions: number[] = []
+  for (const el of Array.from(view.dom.querySelectorAll<HTMLElement>('.page-gap'))) {
+    try {
+      gapPositions.push(view.posAtDOM(el, 0))
+    } catch {
+      /* detached widget */
+    }
+  }
+  gapPositions.sort((a, b) => a - b)
+  nativeArrow = {
+    head: selection.head,
+    dir,
+    extend,
+    anchor: selection.anchor,
+    gapPositions,
+    at: Date.now(),
+  }
+}
+
 export const PageGapNavExtension = Extension.create({
   name: 'pageGapArrowNav',
 
@@ -213,8 +253,82 @@ export const PageGapNavExtension = Extension.create({
           handleKeyDown(view, event) {
             if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return false
             if (event.altKey || event.ctrlKey || event.metaKey) return false
-            return crossPageGap(view, event.key === 'ArrowDown' ? 1 : -1, event.shiftKey)
+            const dir = event.key === 'ArrowDown' ? 1 : -1
+            const handled = crossPageGap(view, dir, event.shiftKey)
+            if (handled) nativeArrow = null
+            else recordNativeArrow(view, dir, event.shiftKey)
+            return handled
           },
+        },
+        appendTransaction(transactions, oldState, newState) {
+          const pending = nativeArrow
+          if (!pending) return null
+          if (!transactions.some((tr) => tr.selectionSet)) return null
+          // only the native motion right after the recorded press qualifies
+          if (Date.now() - pending.at > 300) {
+            nativeArrow = null
+            return null
+          }
+          nativeArrow = null
+          const selection = newState.selection
+          if (!(selection instanceof TextSelection)) return null
+          if (oldState.selection.head !== pending.head) return null
+          const moved = selection.head - pending.head
+          if (pending.dir === 1 ? moved <= 0 : moved >= 0) return null
+          // gaps between the old and new head. Inline gaps sit AT the first
+          // position of the new page, so the endpoint on the far side of the
+          // motion counts too: landing exactly on a downward gap position (or
+          // starting exactly on one going up) is a real crossing (bugbot)
+          const crossed = pending.gapPositions.filter((gapPos) =>
+            pending.dir === 1
+              ? gapPos > pending.head && gapPos <= selection.head
+              : gapPos <= pending.head && gapPos > selection.head,
+          )
+          if (crossed.length <= 1) return null
+          // eslint-disable-next-line no-console -- deliberate breadcrumb: the
+          // clamp firing means a native jump crossed 2+ page boundaries; when
+          // a user reports a jump we can ask for this line from their console
+          console.warn('[gap-nav] clamped a multi-boundary native jump', {
+            from: pending.head,
+            to: selection.head,
+            crossed: crossed.length,
+          })
+          // clamp to just past the FIRST crossed boundary. The gap position
+          // itself allows a cursor (inline widget), where Selection.near's
+          // bias is a no-op — nudge one position in the motion direction so
+          // an upward clamp really lands on the previous page's last line
+          // and a downward one on the new page's first (bugbot)
+          const firstGap = pending.dir === 1 ? Math.min(...crossed) : Math.max(...crossed)
+          // never nudge onto or past the NEXT boundary: a degenerate one-
+          // position page would otherwise still be skipped (bugbot) — in that
+          // case stay on the gap position itself
+          const neighborGap =
+            pending.dir === 1
+              ? Math.min(...pending.gapPositions.filter((gapPos) => gapPos > firstGap), Infinity)
+              : Math.max(...pending.gapPositions.filter((gapPos) => gapPos < firstGap), -Infinity)
+          const nudgedCandidate =
+            pending.dir === 1
+              ? Math.min(newState.doc.content.size, firstGap + 1)
+              : Math.max(0, firstGap - 1)
+          // Asymmetric bounds: a gap anchors at the FIRST position of the
+          // page below it. Downward, reaching the next gap means we entered
+          // the page after next — overshoot at equality. Upward, landing ON
+          // the previous gap position IS the destination (it's that page's
+          // first position), so only going strictly below it overshoots
+          // (bugbot: one-position pages were skipped on upward clamps).
+          const nudged =
+            pending.dir === 1
+              ? nudgedCandidate >= neighborGap
+                ? firstGap
+                : nudgedCandidate
+              : nudgedCandidate < neighborGap
+                ? firstGap
+                : nudgedCandidate
+          const clampedHead = Selection.near(newState.doc.resolve(nudged), pending.dir).head
+          const next = pending.extend
+            ? TextSelection.create(newState.doc, pending.anchor, clampedHead)
+            : Selection.near(newState.doc.resolve(clampedHead), pending.dir)
+          return newState.tr.setSelection(next).scrollIntoView()
         },
       }),
     ]

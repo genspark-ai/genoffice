@@ -132,3 +132,33 @@ describe('empty-paragraph size write-back (pPr w:rPr)', () => {
     )
   })
 })
+
+describe('pattern shading display blend', () => {
+  it('pct shading over an auto fill yields a display blend without a shadingFill', async () => {
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:p><w:pPr><w:shd w:val="pct40" w:color="auto" w:fill="auto"/></w:pPr>' +
+        '<w:r><w:t>cascade</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    const format = doc.blocks[0].format!
+    expect(format.shadingFill).toBeUndefined()
+    expect(format.shadingDisplay).toBe('999999')
+    // the raw pattern round-trips untouched (display is never written back)
+    expect(mergePPrFormat(doc.blocks[0].rawPPr!, format)).toContain(
+      '<w:shd w:val="pct40" w:color="auto" w:fill="auto"/>',
+    )
+  })
+
+  it('a plain clear fill sets no display blend', async () => {
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:p><w:pPr><w:shd w:val="clear" w:color="auto" w:fill="D9D9D9"/></w:pPr>' +
+        '<w:r><w:t>plain</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    const format = doc.blocks[0].format!
+    expect(format.shadingFill).toBe('D9D9D9')
+    expect(format.shadingDisplay).toBeUndefined()
+  })
+})

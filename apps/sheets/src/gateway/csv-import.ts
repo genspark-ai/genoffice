@@ -203,6 +203,17 @@ export async function csvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Pr
   return xlsxBufferFromRows(rows, sheetName)
 }
 
+/**
+ * xlsx from the app's OWN comma-serialized sheet grid (AI create_document):
+ * unlike the import path above, the delimiter is fixed to comma — cell text
+ * may legitimately hold more semicolons/tabs than commas (csvField quotes
+ * neither), and sniffing would then split the wrong columns — and an
+ * all-empty grid becomes a valid blank workbook instead of an import error.
+ */
+export async function sheetCsvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Promise<Buffer> {
+  return xlsxBufferFromRows(parseCsv(csvText, ','), sheetName)
+}
+
 /** minimal empty workbook: the backing file for a "new blank spreadsheet" tab */
 export async function blankXlsxBuffer(sheetName = 'Sheet1'): Promise<Buffer> {
   return xlsxBufferFromRows([], sheetName)

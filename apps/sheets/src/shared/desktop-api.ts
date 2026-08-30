@@ -1,9 +1,12 @@
 import { z } from 'zod'
 
 import {
+  MAX_CREATE_DOCUMENT_CONTENT_CHARS,
+  MAX_CREATE_DOCUMENT_TITLE_CHARS,
   MAX_CSV_EXPORT_CHARS,
   MAX_SAVE_EDITS,
   MAX_SAVE_EDITS_TOTAL,
+  SAVE_EDITS_CHUNK_JSON_MAX,
   SAVE_EDITS_CHUNK_MAX,
 } from './ipc-channels'
 import { ADDABLE_SHAPE_TYPES } from './shape-types'
@@ -16,7 +19,7 @@ import type {
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 
-const MAX_RANGE_CELLS = 20_000
+const MAX_RANGE_CELLS = 100_000
 const cellScalarSchema = z.union([z.string(), z.number().finite(), z.boolean(), z.null()])
 const cellAreaSchema = z
   .object({
@@ -188,6 +191,11 @@ const worksheetMetadataSchema = z
     /// sheet, verbatim from workbook.xml.
     printArea: z.string().min(1).max(2_000).optional(),
     printTitles: z.string().min(1).max(2_000).optional(),
+    /// Any localSheetId-scoped definedName targets this sheet (hidden and
+    /// _xlnm.* built-ins included); duplication is gated on it up front
+    /// because the save refuses to clone such sheets. Optional for an older
+    /// sidecar binary.
+    hasScopedDefinedNames: z.boolean().optional(),
     /// In-cell rich-value pictures (Excel "place picture in cell"): the id is
     /// a media lookup key for readWorkbookMedia, like a visual id.
     /// Defaulted for stale sidecar binaries, like sparklines.
@@ -559,6 +567,17 @@ const visualObjectSchema = z
   })
   .strict()
 
+/// The gateway's per-entry patch cap: only entries it patches must fit in
+/// memory. Large, densely styled worksheets routinely exceed 256 MiB as XML
+/// even when the .xlsx itself is modest (the 88k-row suppliers fixture is
+/// about 307 MiB). 500 MiB keeps those editable while retaining a finite
+/// decompression-bomb / main-process-memory bound — deliberately below V8's
+/// maximum string length (536,870,888 bytes), so an oversized entry fails
+/// with a clear message instead of blowing up mid-stringify. Shared so the
+/// renderer pre-rejects edits on a worksheet whose XML can never be
+/// rewritten, instead of letting Apply succeed and every save fail.
+export const MAX_PATCH_ENTRY_BYTES = 500 * 1024 * 1024
+
 export const workbookFileSchema = z
   .object({
     sessionId: z.string().uuid(),
@@ -567,6 +586,8 @@ export const workbookFileSchema = z
     /// that never touched disk.
     path: z.string().min(1).optional(),
     sha256: z.string().length(64),
+    /// Byte size of the opened snapshot; gates the IronCalc recalc fallback.
+    fileBytes: z.number().int().nonnegative().optional(),
     entryCount: z.number().int().nonnegative(),
     sheets: z.array(worksheetMetadataSchema).min(1),
     /// workbookView/@activeTab — sheet index Excel had active on save.
@@ -1727,9 +1748,19 @@ export const workbookSaveEditsChunkSchema = z
     transferId: z.string().uuid(),
     /// 0-based slice index; chunks must arrive in order.
     seq: z.number().int().nonnegative(),
-    edits: z.array(workbookCellEditSchema).min(1).max(SAVE_EDITS_CHUNK_MAX),
+    /// JSON-serialized WorkbookCellEdit[] — a flat string crosses the context
+    /// bridge and the IPC hop in milliseconds where a live array of the same
+    /// edits costs seconds; the main process parses and validates it against
+    /// saveEditsChunkArraySchema before storing.
+    editsJson: z.string().min(2).max(SAVE_EDITS_CHUNK_JSON_MAX),
   })
   .strict()
+
+/// Validates a chunk's parsed editsJson in the main process.
+export const saveEditsChunkArraySchema = z
+  .array(workbookCellEditSchema)
+  .min(1)
+  .max(SAVE_EDITS_CHUNK_MAX)
 
 /// Renderer-initiated cleanup when an upload or its save fails: frees the
 /// accumulated edits immediately instead of waiting for the idle expiry.
@@ -2393,6 +2424,50 @@ export const workbookExportCsvResultSchema = z.union([
 export type WorkbookExportCsvRequest = z.infer<typeof workbookExportCsvRequestSchema>
 export type WorkbookExportCsvResult = z.infer<typeof workbookExportCsvResultSchema>
 
+/// AI create_document: a new standalone file written into the default save
+/// folder (no dialog) under a unique sanitized name and opened in a new tab.
+/// xlsx/csv carry one worksheet's serialized CSV in content (the renderer
+/// reads the grid, mirroring the manual CSV export); docx/pdf/md carry
+/// AI-authored HTML/Markdown, routed by the shell into the docs-owned
+/// creation flow (#960).
+export const workbookCreateDocumentRequestSchema = z
+  .object({
+    type: z.enum(['xlsx', 'csv', 'docx', 'pdf', 'md']),
+    title: z.string().min(1).max(MAX_CREATE_DOCUMENT_TITLE_CHARS),
+    content: z.string().min(1).max(MAX_CSV_EXPORT_CHARS),
+    /// xlsx only: the worksheet name inside the created workbook (the source
+    /// sheet's name, so it already satisfies Excel's naming rules).
+    sheetName: z.string().min(1).max(31).optional(),
+  })
+  .strict()
+  .superRefine((request, ctx) => {
+    if (
+      request.type !== 'xlsx' &&
+      request.type !== 'csv' &&
+      request.content.length > MAX_CREATE_DOCUMENT_CONTENT_CHARS
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['content'],
+        message: `content must not exceed ${MAX_CREATE_DOCUMENT_CONTENT_CHARS} characters for docx/pdf/md`,
+      })
+    }
+  })
+
+/// Loose result shape (ok: boolean, not a literal union) so the shell can
+/// wire the docs-owned creator in directly — its CreateDocumentResult is
+/// structurally identical.
+export const workbookCreateDocumentResultSchema = z
+  .object({
+    ok: z.boolean(),
+    path: z.string().min(1).optional(),
+    error: z.string().optional(),
+  })
+  .strict()
+
+export type WorkbookCreateDocumentRequest = z.infer<typeof workbookCreateDocumentRequestSchema>
+export type WorkbookCreateDocumentResult = z.infer<typeof workbookCreateDocumentResultSchema>
+
 // ---- Chat attachments (local files fed to the agent via tools; same structure
 // as apps/docs and apps/slides) ----
 
@@ -2500,6 +2575,9 @@ export interface DesktopApi {
   exportCsv(request: WorkbookExportCsvRequest): Promise<WorkbookExportCsvResult>
   /// First Save of a CSV session: native "keep this format?" dialog.
   confirmCsvSave(): Promise<'csv' | 'xlsx' | 'cancel'>
+  /// AI create_document: write a new standalone file into the default save
+  /// folder (no dialog) and open it in a new tab.
+  createDocument(request: WorkbookCreateDocumentRequest): Promise<WorkbookCreateDocumentResult>
   closeWorkbook(sessionId: string): Promise<void>
   openExternal(url: string): Promise<void>
   /// Application-menu File commands (Open/Save/Save As); returns unsubscribe.

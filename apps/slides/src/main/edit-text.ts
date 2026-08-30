@@ -68,6 +68,7 @@ export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph
         if (r.color != null && hex6(r.color) !== hex6(oldRun?.color)) {
           delete merged.colorFollowsTheme
           delete merged.colorInherited
+          delete merged.colorNodeXml
         }
         // Same for fonts: only clear the latin/ea preservation markers on a real change
         // (otherwise the original dual-font/theme references are written back as-is)
@@ -82,6 +83,23 @@ export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph
         // Explicit underline toggle beats hlink-derived styling
         if (r.underline != null && r.underline !== oldRun?.underline) {
           delete merged.underlineImplicit
+        }
+        // A real un-underline/un-strike must survive a rebuild as an explicit
+        // "none" override (see buildRPrAttrs); the editor returns resolved
+        // booleans, so compare like bold does — unchanged values keep bytes.
+        // A link-derived underline (underlineImplicit) never had a u attr:
+        // dropping it (unlink) must keep omitting u, not bake u="none" in
+        if (
+          r.underline != null &&
+          !oldRun?.underlineImplicit &&
+          r.underline !== (oldRun?.underline ?? false)
+        ) {
+          if (r.underline) delete merged.underlineExplicitNone
+          else merged.underlineExplicitNone = true
+        }
+        if (r.strike != null && r.strike !== (oldRun?.strike ?? false)) {
+          if (r.strike) delete merged.strikeExplicitNone
+          else merged.strikeExplicitNone = true
         }
         // Hyperlink (r.link === undefined keeps the old link — see EditRun.link): the DOM
         // round-trips resolvable links, so compare against the resolved old value; a link the
@@ -117,6 +135,10 @@ export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph
         if (r.fontSize != null && r.fontSize !== oldRun?.fontSize) {
           delete merged.fontSizeImplicit
         }
+        // Bold/italic: the editor always returns the resolved booleans; an unchanged
+        // value keeps the implicit marker so the rebuild writes no b/i attribute
+        if (r.bold != null && r.bold !== (oldRun?.bold ?? false)) delete merged.boldImplicit
+        if (r.italic != null && r.italic !== (oldRun?.italic ?? false)) delete merged.italicImplicit
         return merged
       }),
       align: p.align ?? oldPara?.align,
@@ -162,6 +184,7 @@ export function collectParagraphFormatPatches(
       ...(p.lineSpacingPct != null ? { lineSpacingPct: p.lineSpacingPct } : {}),
       ...(p.spaceBeforePt != null ? { spaceBeforePt: p.spaceBeforePt } : {}),
       ...(p.spaceAfterPt != null ? { spaceAfterPt: p.spaceAfterPt } : {}),
+      ...(p.rtl != null ? { rtl: p.rtl } : {}),
     }
     if (Object.keys(patch).length) out.push({ index: i, patch })
   })

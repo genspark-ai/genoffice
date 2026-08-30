@@ -17,6 +17,8 @@ export interface TableStyleEdit {
   firstRow?: boolean
   /** Change only the bandRow flag */
   bandRow?: boolean
+  /** Right-to-left table (tblPr rtl: mirrored grid); false removes the attribute */
+  rtl?: boolean
   /** Shading color #RRGGBB or 'none' (<a:solidFill> / <a:noFill> per tc) */
   shadingColor?: string | null
   /** Border color + width (all = all borders; none = clear) */
@@ -189,39 +191,33 @@ export function patchTableStyleXml(originalXml: string, edit: TableStyleEdit): s
 
   // ── 1. Replace <a:tblPr> ──────────────────────────────────────────
   if (edit.tblPrXml !== undefined) {
-    // Whole-block replacement
-    xml = replaceTblPr(xml, edit.tblPrXml)
-  } else if (edit.firstRow !== undefined || edit.bandRow !== undefined) {
+    // Whole-block replacement. Presets carry their own firstRow/bandRow but never rtl —
+    // table direction is orthogonal state and survives a style change (PowerPoint behavior)
+    let next = edit.tblPrXml
+    const rtl = /<a:tblPr[^>]*\srtl="([^"]*)"/.exec(xml)?.[1]
+    if ((rtl === '1' || rtl === 'true') && !/\srtl="/.test(next)) {
+      next = next.replace(/^<a:tblPr/, '<a:tblPr rtl="1"')
+    }
+    xml = replaceTblPr(xml, next)
+  } else if (edit.firstRow !== undefined || edit.bandRow !== undefined || edit.rtl !== undefined) {
     // Change only the flags, keeping the rest (styleId etc.)
     const tblPrMatch = /<a:tblPr(\s[^>]*)?(\/?>)/s.exec(xml)
     if (tblPrMatch) {
-      if (tblPrMatch[2] === '/>') {
-        // Self-closing → expand, then change the flags
-        let attrs = tblPrMatch[1] ?? ''
-        if (edit.firstRow !== undefined)
-          attrs = setAttr(attrs, 'firstRow', edit.firstRow ? '1' : undefined)
-        if (edit.bandRow !== undefined)
-          attrs = setAttr(attrs, 'bandRow', edit.bandRow ? '1' : undefined)
-        // A closing </a:tblPr> for the self-closing form doesn't exist → only rewrite the open tag
-        const newOpen = `<a:tblPr${attrs}>`
-        // Expand <a:tblPr.../> into <a:tblPr...></a:tblPr>
-        xml =
-          xml.slice(0, tblPrMatch.index) +
-          newOpen +
-          '</a:tblPr>' +
-          xml.slice(tblPrMatch.index + tblPrMatch[0].length)
-      } else {
-        let attrs = tblPrMatch[1] ?? ''
-        if (edit.firstRow !== undefined)
-          attrs = setAttr(attrs, 'firstRow', edit.firstRow ? '1' : undefined)
-        if (edit.bandRow !== undefined)
-          attrs = setAttr(attrs, 'bandRow', edit.bandRow ? '1' : undefined)
-        const newOpen = `<a:tblPr${attrs}>`
-        xml =
-          xml.slice(0, tblPrMatch.index) +
-          newOpen +
-          xml.slice(tblPrMatch.index + tblPrMatch[0].length)
-      }
+      // With attributes present the greedy [^>]* swallows a trailing "/" into group 1,
+      // so self-closing must be detected on the whole tag and the slash stripped
+      const selfClosing = tblPrMatch[0].endsWith('/>')
+      let attrs = (tblPrMatch[1] ?? '').replace(/\/\s*$/, '')
+      if (edit.firstRow !== undefined)
+        attrs = setAttr(attrs, 'firstRow', edit.firstRow ? '1' : undefined)
+      if (edit.bandRow !== undefined)
+        attrs = setAttr(attrs, 'bandRow', edit.bandRow ? '1' : undefined)
+      if (edit.rtl !== undefined) attrs = setAttr(attrs, 'rtl', edit.rtl ? '1' : undefined)
+      // Self-closing expands into <a:tblPr...></a:tblPr>
+      xml =
+        xml.slice(0, tblPrMatch.index) +
+        `<a:tblPr${attrs}>` +
+        (selfClosing ? '</a:tblPr>' : '') +
+        xml.slice(tblPrMatch.index + tblPrMatch[0].length)
     }
   }
 

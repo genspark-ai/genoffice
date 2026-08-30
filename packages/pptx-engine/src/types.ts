@@ -51,6 +51,8 @@ export type Fill =
       type: 'gradient'
       stops: Array<{ pos: number; color: ResolvedColor }>
       angle?: number
+      /** <a:lin scaled="1">: the angle stretches with the fill box aspect (45° runs corner-to-corner) */
+      scaled?: boolean
       /** <a:path path>: circle/rect/shape = radial/path gradient (linear by default) */
       path?: 'circle' | 'rect' | 'shape'
       /** <a:fillToRect> insets as fractions (may exceed 0..1); defines the gradient focus */
@@ -149,13 +151,27 @@ export interface ShadowEffect {
 export interface TextRun {
   text: string
   bold?: boolean
+  /** Run has no explicit b (bold resolved from inheritance); rebuild/patch omits b to keep the master/layout linkage */
+  boldImplicit?: boolean
   italic?: boolean
+  /** Run has no explicit i (see boldImplicit) */
+  italicImplicit?: boolean
   underline?: boolean
   /** Original underline style (sng/dbl/wavy…); underline is the display boolean, write-back restores from this */
   underlineStyle?: string
   strike?: boolean
   /** Original strikethrough style (sngStrike/dblStrike); strike is the display boolean, write-back restores from this */
   strikeStyle?: string
+  /** Original rPr carried an explicit u="none" — an override of inherited underline the rebuild path must re-emit */
+  underlineExplicitNone?: boolean
+  /** Original rPr carried strike="noStrike" (see underlineExplicitNone) */
+  strikeExplicitNone?: boolean
+  /** Explicit cap attribute verbatim (incl. "none"); `cap` below holds the resolved display value, which may be inherited */
+  capExplicit?: string
+  /** Verbatim color node of the run's explicit solidFill when it is not a plain srgbClr
+   * (schemeClr/prstClr/sysClr/… or srgbClr with modifiers). The rebuild path re-emits it
+   * instead of baking the resolved display value in; cleared when the user changes the color. */
+  colorNodeXml?: string
   /** Font size (pt) */
   fontSize?: number
   /** Run has no explicit sz (inherits); rebuild/injected rPr omits sz to avoid baking in the master font size */
@@ -220,7 +236,11 @@ export interface TextRun {
   /** Run-level outer shadow (<a:rPr>/defRPr <a:effectLst><a:outerShdw>) */
   shadow?: ShadowEffect
   /** WordArt gradient text fill (<a:rPr><a:gradFill>); color keeps a mid-stop fallback */
-  gradient?: { stops: Array<{ pos: number; color: ResolvedColor }>; angle?: number }
+  gradient?: {
+    stops: Array<{ pos: number; color: ResolvedColor }>
+    angle?: number
+    scaled?: boolean
+  }
   /** Run-level glow (<a:rPr><a:effectLst><a:glow>) */
   glow?: GlowEffect
   /** Run-level reflection (<a:rPr><a:effectLst><a:reflection>), rendered as a faded mirror */
@@ -232,7 +252,7 @@ export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 export interface Paragraph {
   runs: TextRun[]
   align?: TextAlign
-  /** right-to-left paragraph (a:pPr rtl="1"); generated content only (pdf2pptx) */
+  /** Paragraph base direction (a:pPr rtl): true = RTL base, false = explicit LTR base, absent = inferred from the first strong character */
   rtl?: boolean
   /** Indent level (bullet level) */
   level?: number
@@ -335,6 +355,8 @@ export interface PPrDirty {
   spcBef?: boolean
   spcAft?: boolean
   align?: boolean
+  /** Paragraph base direction rtl attribute */
+  rtl?: boolean
   /** marL + indent as a pair (bullet indent linkage) */
   indents?: boolean
   /** Restrict the patch to these paragraph indices; absent = all paragraphs */

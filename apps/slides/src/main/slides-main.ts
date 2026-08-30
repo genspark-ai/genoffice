@@ -79,6 +79,7 @@ import {
   getSlideTransition,
   elementSpid,
   getSlideAnimations,
+  listEmbeddedFonts,
   openPptx,
   mergeSlideFromPptx,
   extractMergeSlideSource,
@@ -226,7 +227,7 @@ import {
   type Session,
 } from './session-state'
 import { registerAiIpc, registerSlidesOnlyAiIpc } from './ai-ipc'
-import { listPrivateFontFaces, getPrivateFontData } from './fonts'
+import { listPrivateFontFaces, getPrivateFontData, registerEmbeddedFonts } from './fonts'
 import {
   downloadFontFamily,
   initFontStore,
@@ -694,6 +695,15 @@ async function rejectLegacyPpt(path: string): Promise<boolean> {
   return true
 }
 
+/** Register the deck's usable embedded fonts before layout; new faces invalidate cached metrics. */
+function adoptEmbeddedFonts(opened: OpenedPptx): void {
+  try {
+    if (registerEmbeddedFonts(listEmbeddedFonts(opened.archive))) resetFontMetrics()
+  } catch {
+    // Embedded fonts are best-effort: a malformed fntdata must never block opening
+  }
+}
+
 async function openAndBuild(
   wc: WebContents,
   path: string,
@@ -721,6 +731,7 @@ async function openAndBuild(
   const { bytes, recovered } = await maybeRecoverBytes(path, new Uint8Array(raw))
   await shapedMetricsReady() // Lay out only after complex-script shaped metrics are ready, avoiding an init race falling back to estimation
   const opened = await openPptx(bytes)
+  adoptEmbeddedFonts(opened)
   sessions.set(wc.id, {
     path,
     opened,
@@ -1259,6 +1270,7 @@ export function registerSlidesIpc(): void {
       spaceBeforePt: op.spaceBeforePt,
       spaceAfterPt: op.spaceAfterPt,
       align: op.align,
+      rtl: op.rtl,
       indentDelta: op.indentDelta,
     }
     pushHistory(session)
@@ -2865,6 +2877,7 @@ export function registerSlidesIpc(): void {
       edit = {
         ...(op.firstRow !== undefined ? { firstRow: op.firstRow } : {}),
         ...(op.bandRow !== undefined ? { bandRow: op.bandRow } : {}),
+        ...(op.rtl !== undefined ? { rtl: op.rtl } : {}),
         ...(op.shadingColor !== undefined ? { shadingColor: op.shadingColor } : {}),
         ...(op.borderPreset !== undefined ? { borderPreset: op.borderPreset } : {}),
         ...(borderColor !== undefined ? { borderColor } : {}),

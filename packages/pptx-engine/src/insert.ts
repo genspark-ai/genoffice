@@ -8,6 +8,7 @@
  * Both change the spTree structure, driving a full-slide rebuild via
  * slide.structureDirty.
  */
+import { cNvPrIdsInXml, pruneTimingForSpids } from './animation'
 import type { EmuRect, Paragraph, PictureElement, Slide, SlideElement, TextElement } from './types'
 import { generateParagraphXml, generateXfrmXml } from './generate'
 import { creationIdXml, escapeXmlAttr } from './xml-utils'
@@ -494,6 +495,9 @@ export function deleteElement(opened: OpenedPptx, slide: Slide, elementId: strin
   slide.elements.splice(idx, 1)
   slide.structureDirty = true
   cleanupDeletedElementResources(opened, slide, removedXml)
+  // Animations targeting the removed shape (or its group children) would
+  // otherwise keep dangling <p:spTgt spid> refs
+  pruneTimingForSpids(slide, cNvPrIdsInXml(removedXml))
   return true
 }
 

@@ -26,6 +26,7 @@ export function resolveFill(
         kind: 'gradient',
         stops: fill.stops.map((s) => ({ pos: s.pos, color: s.color })),
         angleDeg: fill.angle != null ? fill.angle / 60000 : 0,
+        ...(fill.scaled ? { scaled: true } : {}),
         ...(fill.path ? { radial: true, path: fill.path } : {}),
         ...(fill.path && fill.fillTo
           ? {
@@ -86,6 +87,7 @@ export function resolveStroke(stroke: Stroke | undefined, vp: Viewport): RenderS
     gradient = {
       stops: rf.stops.map((s) => ({ pos: s.pos, color: s.color })),
       angleDeg: rf.angle != null ? rf.angle / 60000 : 0,
+      ...(rf.scaled ? { scaled: true } : {}),
     }
     color = rf.stops[0]!.color
   } else if (rf.type === 'none') return undefined

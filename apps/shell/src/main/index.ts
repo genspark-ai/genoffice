@@ -255,6 +255,9 @@ configureSheetsRuntime({
   rendererFile: join(SHEETS_OUT, 'renderer', 'index.html'),
   sidecarPath: SIDECAR_BIN,
   openGeneratedPath: (path) => openGeneratedDocument(path),
+  // The sheets AI's create_document (docx/pdf/md) funnels into the docs-owned
+  // creation flow, like the pdf app below.
+  createDocument: createAiDocument,
 })
 configureSlidesRuntime({
   preloadPath: join(SLIDES_OUT, 'preload', 'index.js'),

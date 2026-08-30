@@ -71,8 +71,13 @@ import {
 import { symbolFontCovers } from '../font-check'
 import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from './active-editor'
 import { paraBorderCss } from './hf-dom'
-import { PaginationGapsExtension } from './pagination-gaps'
+import {
+  FloatVShiftsExtension,
+  PaginationGapsExtension,
+  RowFillsExtension,
+} from './pagination-gaps'
 import { CaretMarksMemory, FORMAT_MARKS, serializeMarks } from './caret-marks'
+import { insertPageBreak } from './page-break'
 import { ColumnLayoutExtension } from './column-layout'
 import { TableHandle } from './table-handle'
 import { TrackChangesExtension } from './revisions'
@@ -127,6 +132,7 @@ import {
   TabStopExtension,
   WsRunLineHeightExtension,
 } from './decoration-extensions'
+import { JustifyShrinkExtension } from './justify-shrink'
 import { AutoDirectionExtension } from './direction'
 import { InactiveSelectionExtension } from './inactive-selection'
 import { AiQueueAnchorsExtension } from './ai-queue-anchors'
@@ -165,7 +171,10 @@ const anchorAttrs = {
   spaceAfterAuto: { default: null as boolean | null },
   /** w:contextualSpacing on the pPr itself; false = explicit off overriding the style */
   contextualSpacing: { default: null as boolean | null },
-  pageBreakBefore: { default: false },
+  // never copied to the second half of an Enter split: Word's page break is a
+  // character before the paragraph content, so a newline must not clone the
+  // break onto the new paragraph (alpha ledger r157)
+  pageBreakBefore: { default: false, keepOnSplit: false },
   /** RTL paragraph (w:bidi); align is already the visual value */
   bidi: { default: false },
   /** render-only RTL inferred from run w:rtl / RTL script when w:bidi is absent
@@ -174,6 +183,8 @@ const anchorAttrs = {
   /** CJK-Latin/digit auto spacing (w:autoSpaceDE/DN); null = Word default on */
   autoSpace: { default: null as boolean | null },
   shadingFill: { default: null as string | null },
+  /** display-only pattern-shading blend (w:shd pctNN); never saved back */
+  shadingDisplay: { default: null as string | null },
   /** w:sz (half-points) of the paragraph mark / dropped empty runs; sizes the line of run-less paragraphs */
   emptyRunSize: { default: null as number | null },
   /** w:rFonts of the paragraph mark / dropped empty runs; faces the line of run-less paragraphs */
@@ -336,6 +347,7 @@ const CLIPBOARD_PARA_ATTR_TYPES: Record<string, 'string' | 'number' | 'boolean'>
   bidiInferred: 'boolean',
   autoSpace: 'boolean',
   shadingFill: 'string',
+  shadingDisplay: 'string',
   emptyRunSize: 'number',
   emptyRunFont: 'string',
   borders: 'string',
@@ -529,7 +541,8 @@ function blockAttrs(
   if (node.attrs.contextualSpacing === true) classes.push('ctx-sp')
   else if (node.attrs.contextualSpacing === false) classes.push('ctx-sp-off')
   if (classes.length > 0) attrs['class'] = classes.join(' ')
-  if (node.attrs.shadingFill) styles.push(`background-color:#${node.attrs.shadingFill}`)
+  const shdBg = node.attrs.shadingDisplay ?? node.attrs.shadingFill
+  if (shdBg) styles.push(`background-color:#${shdBg}`)
   if (node.attrs.borders) {
     const borders = String(node.attrs.borders)
     let borderLines: Partial<Record<string, { color?: string; szPt?: number }>> = {}
@@ -980,11 +993,53 @@ export const WordEditorShortcuts = Extension.create({
   name: 'wordEditorShortcuts',
   addKeyboardShortcuts() {
     return {
-      'Mod-Enter': () =>
-        this.editor.commands.insertContent({
-          type: 'docParagraph',
-          attrs: { pageBreakBefore: true },
-        }),
+      // Enter inside a break paragraph: exactly ONE half keeps the break.
+      // Word's page break is a character right before the paragraph content,
+      // so the break stays with the half that starts with the original
+      // content — at offset 0 that is the second half (the new empty line
+      // above must not steal it), everywhere else the first (splitting must
+      // not clone the break onto the new paragraph and turn Enter into
+      // another page jump — alpha ledger r157). TipTap's keepOnSplit only
+      // filters end-of-paragraph splits, so mid-splits are fixed up here.
+      Enter: () => {
+        const { $from, empty } = this.editor.state.selection
+        if (!empty) return false
+        const parent = $from.parent
+        if (!parent.isTextblock || parent.attrs.pageBreakBefore !== true) return false
+        // empty block / list item: lift-out and list splits have their own semantics
+        if (parent.content.size === 0 || parent.type.name === 'docListItem') return false
+        const atStart = $from.parentOffset === 0
+        return this.editor
+          .chain()
+          .splitBlock()
+          .command(({ state, tr, dispatch }) => {
+            const caret = state.selection.$from
+            const secondPos = caret.before(caret.depth)
+            const firstHalf = state.doc.resolve(secondPos).nodeBefore
+            if (!firstHalf || !('pageBreakBefore' in firstHalf.attrs)) return false
+            if (dispatch) {
+              if (atStart) {
+                tr.setNodeMarkup(secondPos - firstHalf.nodeSize, undefined, {
+                  ...firstHalf.attrs,
+                  pageBreakBefore: false,
+                })
+                tr.setNodeMarkup(secondPos, undefined, {
+                  ...caret.parent.attrs,
+                  pageBreakBefore: true,
+                })
+              } else if (caret.parent.attrs.pageBreakBefore === true) {
+                tr.setNodeMarkup(secondPos, undefined, {
+                  ...caret.parent.attrs,
+                  pageBreakBefore: false,
+                })
+              }
+              dispatch(tr.scrollIntoView())
+            }
+            return true
+          })
+          .run()
+      },
+      'Mod-Enter': () => insertPageBreak(this.editor),
       'Mod-Shift-Enter': () =>
         this.editor.commands.insertContent({ type: 'hardBreak', attrs: { colBreak: true } }),
       // U+00A0 and U+2011: the characters Word inserts for these two chords
@@ -1792,21 +1847,48 @@ export const DocTable = Node.create({
       const px = (twips: unknown): number => (Number(twips) || 0) / 15
       const x = px(node.attrs.tblFloatXTwips)
       const y = px(node.attrs.tblFloatYTwips)
-      const top = y + Math.max(0, px(distance.top))
+      // w:tblpY under vertAnchor="page"/"margin" is a position on the landing
+      // page, not a flow offset (Word probe prod100r2/36: a missing vertAnchor
+      // is text-relative). The pagination engine resolves the page-relative
+      // target and applies the shift via --tblp-dy; flow CSS gets no margin.
+      const vAnchor = node.attrs.tblFloatVertAnchor
+      const pageRelV =
+        (vAnchor === 'page' || vAnchor === 'margin') && node.attrs.tblFloatYTwips != null
+      if (pageRelV) {
+        attrs['data-tblp-vy'] = y.toFixed(1)
+        attrs['data-tblp-vanchor'] = String(vAnchor)
+        styles.push('margin-top:var(--tblp-dy,0px)')
+      }
+      const top = pageRelV ? 0 : y + Math.max(0, px(distance.top))
       const bottom = Math.max(0, px(distance.bottom))
       const left = Math.max(0, px(distance.left))
       const right = Math.max(0, px(distance.right))
       if (top) styles.push(`margin-top:${top.toFixed(1)}px`)
       if (bottom) styles.push(`margin-bottom:${bottom.toFixed(1)}px`)
+      // w:tblpX with horzAnchor="page" measures from the PAGE edge, not the
+      // content box — subtract the left margin. And the offset is CLAMPED so
+      // the table never hangs past the right content edge: unclamped
+      // page-anchored deal-doc captables rendered half off-page (alpha
+      // ledger, #genoffice-feedback task #6). Word keeps floats on the page.
+      const fromPageEdge = node.attrs.tblFloatHorzAnchor === 'page'
+      const tblWidth = Number(node.attrs.widthPx) || Number(node.attrs.tblFloatWidthPx) || 0
+      const xExpr = fromPageEdge
+        ? `calc(${x.toFixed(1)}px - var(--doc-margin-left,0px))`
+        : `${x.toFixed(1)}px`
       if (node.attrs.tblFloat === 'left') {
-        if (x) styles.push(`margin-left:${x.toFixed(1)}px`)
+        if (x) {
+          const capped =
+            tblWidth > 0
+              ? `min(${xExpr},calc(var(--doc-content-w,100%) - ${tblWidth.toFixed(1)}px))`
+              : xExpr
+          styles.push(`margin-left:max(0px,${capped})`)
+        }
         if (right) styles.push(`margin-right:${right.toFixed(1)}px`)
       } else {
         if (left) styles.push(`margin-left:${left.toFixed(1)}px`)
-        const width = Number(node.attrs.widthPx) || Number(node.attrs.tblFloatWidthPx)
-        if (node.attrs.tblFloatXTwips != null && width > 0) {
+        if (node.attrs.tblFloatXTwips != null && tblWidth > 0) {
           styles.push(
-            `margin-right:max(0px,calc(var(--doc-content-w,100%) - ${x.toFixed(1)}px - ${width.toFixed(1)}px))`,
+            `margin-right:max(0px,calc(var(--doc-content-w,100%) - ${xExpr} - ${tblWidth.toFixed(1)}px))`,
           )
         }
       }
@@ -4451,6 +4533,54 @@ export interface SearchHighlight {
   activeIndex: number
 }
 
+/**
+ * Word's AutoFormat-as-you-type for links (alpha ledger r151): a URL followed
+ * by a space or Enter turns into a hyperlink. Runs on keydown BEFORE the key
+ * itself applies (marks the URL, then lets the key proceed), matching Word's
+ * behavior of linkifying the word just completed. Trailing punctuation stays
+ * outside the link, and existing links are left alone.
+ */
+// \ufffc is textBetween's stand-in for inline leaves (breaks, images, note refs):
+// a URL must stop there or the match would swallow the atom and the text after it
+const AUTOLINK_URL = /(?:https?:\/\/|www\.)[^\s\ufffc]+$/i
+const AUTOLINK_TRAILING = /[.,;:!?)\]}'"\u00bb\u203a]+$/
+
+export const AutoLinkOnDelimiter = Extension.create({
+  name: 'autoLinkOnDelimiter',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey('autoLinkOnDelimiter'),
+        props: {
+          handleKeyDown(view, event) {
+            if (event.key !== ' ' && event.key !== 'Enter') return false
+            if (event.altKey || event.ctrlKey || event.metaKey) return false
+            const { state } = view
+            const { $from, empty } = state.selection
+            if (!empty || !view.editable || !$from.parent.isTextblock) return false
+            const linkType = state.schema.marks.link
+            if (!linkType) return false
+            const before = $from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc')
+            const match = AUTOLINK_URL.exec(before)
+            if (!match) return false
+            let url = match[0]
+            const trailing = AUTOLINK_TRAILING.exec(url)
+            if (trailing) url = url.slice(0, -trailing[0].length)
+            if (url.length < 5) return false
+            const start = $from.pos - ($from.parentOffset - match.index)
+            const end = start + url.length
+            // already inside a link (typing after one, or re-delimiting): leave it
+            if (state.doc.rangeHasMark(start, end, linkType)) return false
+            const href = /^www\./i.test(url) ? `http://${url}` : url
+            view.dispatch(state.tr.addMark(start, end, linkType.create({ href, rId: null })))
+            return false // the space/Enter itself proceeds normally
+          },
+        },
+      }),
+    ]
+  },
+})
+
 export const editorExtensions = [
   DocDocument,
   DocText,
@@ -4492,15 +4622,19 @@ export const editorExtensions = [
   LineFactorExtension,
   ListNumberingExtension,
   PaginationGapsExtension,
+  RowFillsExtension,
+  FloatVShiftsExtension,
   InactiveSelectionExtension,
   AiQueueAnchorsExtension,
   PageGapNavExtension,
   ImageCopyExtension,
   EnterReplacesSelection,
+  AutoLinkOnDelimiter,
   WordEditorShortcuts,
   CaretMarksMemory,
   ColumnLayoutExtension,
   TabStopExtension,
+  JustifyShrinkExtension,
   WsRunLineHeightExtension,
   DropCapExtension,
   ParaBorderMergeExtension,

@@ -10,6 +10,8 @@ import {
   resizeTable,
   setTableRowHeight,
   setTableCellAnchor,
+  setTableColWidth,
+  editTableStructure,
   setElementTextAnchor,
   addElement,
   createBlankPptx,
@@ -115,5 +117,76 @@ describe('setElementTextAnchor', () => {
     expect((el as TextElement).text!.anchor).toBe('middle')
     expect(setElementTextAnchor(slide, el.id, 'top')).toBe(true)
     expect(el.anchor.originalXml).toMatch(/<a:bodyPr anchor="t"/)
+  })
+})
+
+// Google Slides exports attach an <a:extLst> a16:colId to every gridCol, so
+// the columns are paired tags, not self-closing — the surgery paths must not
+// assume the self-closing form (they used to, and missed or mis-indexed cols).
+function pairGridCols(tbl: TableElement): void {
+  let i = 0
+  tbl.anchor.originalXml = tbl.anchor.originalXml.replace(
+    /<a:gridCol w="(\d+)"\/>/g,
+    (_m, w: string) =>
+      `<a:gridCol w="${w}"><a:extLst><a:ext uri="{9D8B030D-6E8A-4147-A177-3AD203B41FA5}">` +
+      `<a16:colId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="${20000 + i++}"/>` +
+      `</a:ext></a:extLst></a:gridCol>`,
+  )
+}
+
+describe('paired-form gridCol (extLst children)', () => {
+  it('setTableColWidth patches the right column and keeps the extLst', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addTable(opened, 0, {
+      rows: 2,
+      cols: 3,
+      offset: { x: 0, y: 0, cx: 3000000, cy: 800000 },
+    })!
+    const tbl = r.slide.elements.find((e) => e.id === r.elementId) as TableElement
+    pairGridCols(tbl)
+    expect(setTableColWidth(r.slide, r.elementId, 1, 999000)).toBe(true)
+    const xml = tbl.anchor.originalXml
+    const cols = [...xml.matchAll(/<a:gridCol w="(\d+)">/g)].map((m) => Number(m[1]))
+    expect(cols[1]).toBe(999000)
+    expect(tbl.colWidths[1]).toBe(999000)
+    expect([...xml.matchAll(/a16:colId/g)]).toHaveLength(3)
+    const sum = tbl.colWidths.reduce((a, b) => a + b, 0)
+    expect(xml).toContain(`cx="${sum}"`)
+  })
+
+  it('resizeTable scales paired-form columns too', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addTable(opened, 0, {
+      rows: 2,
+      cols: 2,
+      offset: { x: 0, y: 0, cx: 2000000, cy: 800000 },
+    })!
+    const tbl = r.slide.elements.find((e) => e.id === r.elementId) as TableElement
+    pairGridCols(tbl)
+    expect(resizeTable(r.slide, r.elementId, 1000000, 400000)).toBe(true)
+    const xml = tbl.anchor.originalXml
+    const colSum = [...xml.matchAll(/<a:gridCol w="(\d+)">/g)].reduce((a, m) => a + Number(m[1]), 0)
+    expect(colSum).toBe(1000000)
+  })
+
+  it('editTableStructure counts paired-form columns and inserts a fresh colId-free clone', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addTable(opened, 0, {
+      rows: 2,
+      cols: 2,
+      offset: { x: 0, y: 0, cx: 2000000, cy: 800000 },
+    })!
+    const tbl = r.slide.elements.find((e) => e.id === r.elementId) as TableElement
+    pairGridCols(tbl)
+    const res = editTableStructure(opened, 0, r.elementId, { kind: 'insert-col', index: 1 })
+    expect(res).not.toBeNull()
+    const fresh = res!.slide.elements.find((e) => e.id === res!.elementId) as TableElement
+    expect(fresh.colWidths).toHaveLength(3)
+    // the clone must not duplicate the reference column's unique a16:colId
+    expect([...fresh.anchor.originalXml.matchAll(/a16:colId/g)]).toHaveLength(2)
+    const del = editTableStructure(opened, 0, res!.elementId, { kind: 'delete-col', index: 0 })
+    expect(del).not.toBeNull()
+    const after = del!.slide.elements.find((e) => e.id === del!.elementId) as TableElement
+    expect(after.colWidths).toHaveLength(2)
   })
 })

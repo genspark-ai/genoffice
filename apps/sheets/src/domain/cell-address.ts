@@ -11,7 +11,9 @@ export interface RangeBounds {
 }
 
 export function parseAddress(address: string): CellCoordinates {
-  const match = /^([A-Z]+)([1-9][0-9]*)$/.exec(address)
+  // $-anchored A1 notation is equivalent here; some producers store pivot
+  // location refs as $C$33 and refreshing such a pivot must not choke.
+  const match = /^\$?([A-Z]+)\$?([1-9][0-9]*)$/.exec(address)
   if (!match?.[1] || !match[2]) throw new Error(`Invalid cell address: ${address}`)
   let column = 0
   for (const character of match[1]) {

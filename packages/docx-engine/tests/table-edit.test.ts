@@ -479,3 +479,117 @@ describe('trailing empty cell paragraph size survives regeneration', () => {
     expect(out).toContain('<w:pPr><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr>')
   })
 })
+
+// rich cell paragraph patches: per-run formatting and hyperlinks survive a cell
+// edit; null paragraph entries keep the original bytes untouched
+const LINK_TABLE_XML =
+  '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/></w:tblPr>' +
+  '<w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+  '<w:tr><w:tc>' +
+  '<w:p><w:r><w:t xml:space="preserve">contact </w:t></w:r>' +
+  '<w:hyperlink r:id="rId7"><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>mail me</w:t></w:r></w:hyperlink></w:p>' +
+  '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>second</w:t></w:r></w:p>' +
+  '</w:tc></w:tr></w:tbl>'
+
+describe('patchTableCellTexts with rich paragraphs', () => {
+  it('keeps the hyperlink wrapper and rId on a real cell edit', () => {
+    const out = patchTableCellTexts(LINK_TABLE_XML, [
+      [
+        [
+          {
+            runs: [
+              { text: 'contactX ' },
+              { text: 'mail me', underline: true, link: { href: 'mailto:x@y.z', rId: 'rId7' } },
+            ],
+          },
+          null,
+        ],
+      ],
+    ])
+    expect(out).toContain('<w:hyperlink r:id="rId7">')
+    expect(out).toContain('<w:t xml:space="preserve">contactX </w:t>')
+    expect(out).toContain('<w:u w:val="single"/>')
+    // the untouched second paragraph keeps its exact original bytes
+    expect(out).toContain(
+      '<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:i/></w:rPr><w:t>second</w:t></w:r></w:p>',
+    )
+  })
+
+  it('a rebuilt paragraph reuses its own pPr, not the first paragraph’s', () => {
+    const out = patchTableCellTexts(LINK_TABLE_XML, [
+      [[null, { runs: [{ text: 'second edited', italic: true }] }]],
+    ])
+    // first paragraph untouched
+    expect(out).toContain('<w:hyperlink r:id="rId7">')
+    expect(out).toContain('<w:t>mail me</w:t>')
+    // second paragraph keeps centered pPr and italic run
+    expect(out).toMatch(
+      /<w:p><w:pPr><w:jc w:val="center"\/><\/w:pPr><w:r><w:rPr><w:i\/><w:iCs\/><\/w:rPr><w:t xml:space="preserve">second edited<\/w:t><\/w:r><\/w:p>/,
+    )
+  })
+})
+
+describe('rich cell patch drawing carryover', () => {
+  it('does not duplicate an image whose VML fallback shares the rId', () => {
+    const tbl =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:r><w:t>caption</w:t></w:r>' +
+      '<w:r><mc:AlternateContent><mc:Choice Requires="wps">' +
+      '<w:drawing><wp:inline><a:blip r:embed="rId5"/></wp:inline></w:drawing>' +
+      '</mc:Choice><mc:Fallback><w:pict><v:shape><v:imagedata r:id="rId5"/></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r>' +
+      '</w:p></w:tc></w:tr></w:tbl>'
+    const out = patchTableCellTexts(tbl, [
+      [
+        [
+          {
+            runs: [
+              { text: 'captionX' },
+              {
+                text: '',
+                image: {
+                  dataUrl: 'data:image/png;base64,x',
+                  xml: '<w:drawing><wp:inline><a:blip r:embed="rId5"/></wp:inline></w:drawing>',
+                },
+              },
+            ],
+          },
+        ],
+      ],
+    ])
+    expect(out.match(/rId5/g)?.length).toBe(1)
+    expect(out).not.toContain('<w:pict')
+    expect(out).toContain('captionX')
+  })
+
+  it('carries a media-less anchored shape over, keeping its textbox content', () => {
+    const tbl =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:r><w:t>label</w:t></w:r>' +
+      '<w:r><w:t>ghost</w:t><w:drawing><wp:anchor><wps:wsp><wps:txbx>' +
+      '<w:txbxContent><w:p><w:r><w:t>inside box</w:t></w:r></w:p></w:txbxContent>' +
+      '</wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r>' +
+      '</w:p></w:tc></w:tr></w:tbl>'
+    const out = patchTableCellTexts(tbl, [[[{ runs: [{ text: 'labelX' }, { text: 'ghost' }] }]]])
+    expect(out.match(/<wp:anchor/g)?.length).toBe(1)
+    // run-level text is not replayed by the carried copy (the rich runs own it) …
+    expect(out.match(/ghost/g)?.length).toBe(1)
+    // … but text nested inside the drawing survives
+    expect(out).toContain('<w:t>inside box</w:t>')
+    expect(out).toContain('labelX')
+  })
+
+  it('keeps a shape whose click-link shares an rId with an emitted hyperlink', () => {
+    const tbl =
+      '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc>' +
+      '<w:p><w:hyperlink r:id="rId7"><w:r><w:t>site</w:t></w:r></w:hyperlink>' +
+      '<w:r><w:drawing><wp:anchor><wps:wsp><a:hlinkClick r:id="rId7"/></wps:wsp></wp:anchor></w:drawing></w:r>' +
+      '</w:p></w:tc></w:tr></w:tbl>'
+    const out = patchTableCellTexts(tbl, [
+      [[{ runs: [{ text: 'siteX', link: { href: 'https://x.y', rId: 'rId7' } }] }]],
+    ])
+    expect(out).toContain('<w:hyperlink r:id="rId7">')
+    // the shape is not a picture twin: relationship reuse must not drop it
+    expect(out.match(/<wp:anchor/g)?.length).toBe(1)
+    expect(out).toContain('<a:hlinkClick r:id="rId7"/>')
+  })
+})

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SectionInfo } from '@genoffice/docx-engine'
 import {
+  type SliceOutputs,
   appendEndnotesBlock,
   assignSections,
   cellCutYs,
@@ -711,6 +712,99 @@ describe('computeSectionedSlicesF2 — line-level pagination', () => {
     expect(slices[1].start).toBe(150)
   })
 
+  it('a section break right after a page-filling floated table starts below its band', () => {
+    // a landscape form built as one positioned table: the float consumes no
+    // column height, but the next section must not cut into its band — the
+    // form page keeps the whole table, the next page starts below it
+    const geoms: SectionGeom[] = [
+      { contentHeight: 900, forceBreak: false, topPx: 96 },
+      { contentHeight: 550, forceBreak: true, topPx: 113 },
+      { contentHeight: 900, forceBreak: true, topPx: 96 },
+    ]
+    const blocks = [
+      block(0, 20, { section: 0 }),
+      {
+        ...block(20, 480, { section: 1 }),
+        floated: true,
+        pageRelVyPx: 33,
+        pageRelVAnchor: 'margin' as const,
+      },
+      block(25, 20, { section: 2 }),
+    ]
+    // dy = 33 (margin target) → float band ends at 20 + 33 + 480 = 533
+    const slices = computeSectionedSlicesF2(blocks, geoms, 553)
+    expect(slices.map((s) => [s.start, s.end, s.section])).toEqual([
+      [0, 20, 0],
+      [20, 533, 1],
+      [533, 553, 2],
+    ])
+  })
+
+  it('an empty section crossed after a float band claims its blank page below it, not above', () => {
+    // startPage resets the float bottom: the crossed empty section's second
+    // forced start must stay clamped at the previous start (no inverted slice)
+    const geoms: SectionGeom[] = [
+      { contentHeight: 900, forceBreak: false },
+      { contentHeight: 550, forceBreak: true },
+      { contentHeight: 900, forceBreak: true },
+      { contentHeight: 900, forceBreak: true },
+    ]
+    const blocks = [
+      block(0, 20, { section: 0 }),
+      { ...block(20, 480, { section: 1 }), floated: true },
+      block(25, 20, { section: 3 }),
+    ]
+    const slices = computeSectionedSlicesF2(blocks, geoms, 520)
+    expect(slices.map((s) => [s.start, s.end, s.section])).toEqual([
+      [0, 20, 0],
+      [20, 500, 1],
+      [500, 500, 2],
+      [500, 520, 3],
+    ])
+  })
+
+  it('a margin-anchored floated table shifts down to its tblpY target on the landing page', () => {
+    const out: SliceOutputs = { floatVShifts: [] }
+    const blocks = [
+      block(0, 100),
+      { ...block(100, 60), floated: true, pageRelVyPx: 150, pageRelVAnchor: 'margin' as const },
+      block(100, 40),
+    ]
+    computeSectionedSlicesF2(blocks, geoms1, 140, out)
+    expect(out.floatVShifts).toEqual([{ blockTop: 100, dyPx: 50 }])
+  })
+
+  it('a page-anchored tblpY target converts through the section top margin', () => {
+    const out: SliceOutputs = { floatVShifts: [] }
+    const geoms: SectionGeom[] = [{ contentHeight: 200, forceBreak: false, topPx: 40 }]
+    const blocks = [
+      block(0, 100),
+      { ...block(100, 60), floated: true, pageRelVyPx: 150, pageRelVAnchor: 'page' as const },
+    ]
+    computeSectionedSlicesF2(blocks, geoms, 100, out)
+    expect(out.floatVShifts).toEqual([{ blockTop: 100, dyPx: 10 }])
+  })
+
+  it('an anchor target above the flow position clamps to zero (floats never move up)', () => {
+    const out: SliceOutputs = { floatVShifts: [] }
+    const blocks = [
+      block(0, 100),
+      { ...block(100, 60), floated: true, pageRelVyPx: 30, pageRelVAnchor: 'margin' as const },
+    ]
+    computeSectionedSlicesF2(blocks, geoms1, 100, out)
+    expect(out.floatVShifts).toEqual([{ blockTop: 100, dyPx: 0 }])
+  })
+
+  it('an anchored float pushed to the next page targets that page instead', () => {
+    const out: SliceOutputs = { floatVShifts: [] }
+    const blocks = [
+      block(0, 150),
+      { ...block(150, 180), floated: true, pageRelVyPx: 20, pageRelVAnchor: 'margin' as const },
+    ]
+    computeSectionedSlicesF2(blocks, geoms1, 330, out)
+    expect(out.floatVShifts).toEqual([{ blockTop: 150, dyPx: 20 }])
+  })
+
   it('a leading w:br on the first content keeps the blank first page (fdo#78907)', () => {
     const b = { ...block(0, 100), breakBefore: true, breakBeforeBr: true }
     const slices = computeSectionedSlicesF2([b], geoms1, 100)
@@ -988,6 +1082,57 @@ describe('computeSectionedSlicesF2 — table row-level page breaks', () => {
   it('empty table does not crash', () => {
     const b = makeTableBlock(0, [])
     expect(() => computeSectionedSlicesF2([b], geoms1, 0)).not.toThrow()
+  })
+
+  it('split atLeast row: the continuation fragment re-honors the declared height (Word probe 2026-08-27)', () => {
+    // page 200px; a 40px row leaves 160 >= the declared 150, so no fresh-page
+    // turn: the 300px-content row starts mid-page and splits (cut at 200).
+    // The final fragment holds 100px of content; Word stretches it to the full
+    // declared 150 -> row target = 200 + 150 = 350
+    const rows: TableRowBox[] = [
+      { height: 40 },
+      { height: 300, minHPx: 150, cutYs: [200], contentBottom: 300 },
+    ]
+    const b = makeTableBlock(0, rows)
+    const out: SliceOutputs = { rowFills: [] }
+    const slices = computeSectionedSlicesF2(
+      [b],
+      [{ contentHeight: 200, forceBreak: false }],
+      340,
+      out,
+    )
+    expect(out.rowFills).toEqual([{ blockTop: 0, row: 1, targetPx: 350 }])
+    expect(slices.length).toBe(3)
+  })
+
+  it('split row without a declared height reports no fill', () => {
+    const rows: TableRowBox[] = [{ height: 80 }, { height: 160, cutYs: [80], contentBottom: 160 }]
+    const b = makeTableBlock(0, rows)
+    const out: SliceOutputs = { rowFills: [] }
+    computeSectionedSlicesF2([b], [{ contentHeight: 200, forceBreak: false }], 240, out)
+    expect(out.rowFills).toEqual([])
+  })
+
+  it('a previously patched split row re-emits the same target (no oscillation)', () => {
+    // same card as above but the tr already carries the 350px patch: the target
+    // must be re-emitted level-triggered, or clearing the decoration would
+    // shrink the row and pagination would oscillate (Bugbot 2026-08-27)
+    const rows: TableRowBox[] = [
+      { height: 40 },
+      { height: 350, minHPx: 150, cutYs: [200], contentBottom: 300 },
+    ]
+    const b = makeTableBlock(0, rows)
+    const out: SliceOutputs = { rowFills: [] }
+    computeSectionedSlicesF2([b], [{ contentHeight: 200, forceBreak: false }], 390, out)
+    expect(out.rowFills).toEqual([{ blockTop: 0, row: 1, targetPx: 350 }])
+  })
+
+  it('unsplit declared row reports no fill', () => {
+    const rows: TableRowBox[] = [{ height: 120, minHPx: 150, cutYs: [60], contentBottom: 120 }]
+    const b = makeTableBlock(0, rows)
+    const out: SliceOutputs = { rowFills: [] }
+    computeSectionedSlicesF2([b], [{ contentHeight: 200, forceBreak: false }], 130, out)
+    expect(out.rowFills).toEqual([])
   })
 
   it('tblHeader: continuation pages record repeatHeader and reserve header space', () => {
@@ -1321,6 +1466,53 @@ describe('fillLineBoxes — keepNext chain anchors', () => {
     expect(table.tableRows).toBeUndefined()
   })
 
+  it('samples a table that fits the page but not its mixed-column region', () => {
+    // real_run2/61: a table after a balanced 3-col region has only the second
+    // region's height; gating on the full page height left it row-less and the
+    // first pass placed it whole into the short region (collapse fixed point)
+    const table: BlockBox = { top: 1000, height: 150, section: 1, el: tableEl() }
+    const slices: PageSlice[] = [
+      {
+        start: 0,
+        end: 1150,
+        section: 0,
+        regions: [
+          {
+            top: 0,
+            height: 120,
+            section: 0,
+            columns: [
+              { start: 0, end: 500 },
+              { start: 500, end: 1000 },
+            ],
+          },
+          { top: 120, height: 80, section: 1, columns: [{ start: 1000, end: 1150 }] },
+        ],
+      },
+    ]
+    expect(fillLineBoxes([table], geoms, 1, slices)).toBe(true)
+    expect(table.tableRows).toBeDefined()
+  })
+
+  it('keeps a fitting table unsampled when its region holds it', () => {
+    // top offset from the column start: a block exactly at a column top is
+    // always sampled by the existing atPageTop rule
+    const table: BlockBox = { top: 1010, height: 60, section: 1, el: tableEl() }
+    const slices: PageSlice[] = [
+      {
+        start: 0,
+        end: 1150,
+        section: 0,
+        regions: [
+          { top: 0, height: 120, section: 0, columns: [{ start: 0, end: 1000 }] },
+          { top: 120, height: 80, section: 1, columns: [{ start: 1000, end: 1150 }] },
+        ],
+      },
+    ]
+    expect(fillLineBoxes([table], geoms, 1, slices)).toBe(false)
+    expect(table.tableRows).toBeUndefined()
+  })
+
   it('samples line boxes for paragraph anchors even when they fit on one page', () => {
     const heading: BlockBox = { top: 0, height: 20, keepNext: true }
     const el = document.createElement('p')
@@ -1341,6 +1533,38 @@ describe('fillLineBoxes — keepNext chain anchors', () => {
       { offsetInBlock: 0, height: 20 },
       { offsetInBlock: 20, height: 20 },
     ])
+  })
+})
+
+describe('measureBlocks — page-anchored floated tables', () => {
+  it('reads the tblp target and strips the applied shift back to the natural position', () => {
+    const rect = {
+      top: 140,
+      height: 60,
+      bottom: 200,
+      left: 0,
+      right: 100,
+      width: 100,
+      x: 0,
+      y: 140,
+      toJSON: () => ({}),
+    } as DOMRect
+    const pm = document.createElement('div')
+    const tbl = document.createElement('table')
+    tbl.className = 'doc-table-float-left'
+    tbl.dataset.tblpVy = '150'
+    tbl.dataset.tblpVanchor = 'page'
+    tbl.dataset.tblpDy = '40'
+    tbl.innerHTML = '<tbody><tr><td>x</td></tr></tbody>'
+    tbl.getBoundingClientRect = () => rect
+    pm.appendChild(tbl)
+    const { blocks } = measureBlocks(pm, 0, 1)
+    expect(blocks[0]).toMatchObject({
+      top: 100,
+      floated: true,
+      pageRelVyPx: 150,
+      pageRelVAnchor: 'page',
+    })
   })
 })
 
