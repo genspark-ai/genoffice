@@ -31,7 +31,7 @@ layer.
 - **PowerPoint-compatible presentations** — in-house `.pptx` engine with masters, layouts, smart guides, non-destructive crop.
 - **Markdown to Word, fully local** — the same OOXML engine, no Pandoc, no cloud.
 - **AI that edits documents** — block-level edits with snapshots and diffs, document-aware agents.
-- **Bring your own key (BYOK)** — run the AI on your own API key: Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, or any OpenAI-compatible endpoint — or sign in with Genspark and skip keys entirely.
+- **Bring your own key (BYOK)** — run the AI on your own API key: Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, OrcaRouter, or any OpenAI-compatible endpoint — or sign in with Genspark and skip keys entirely.
 - **Agent tools built in** — web/image search, image generation, media analysis.
 - **Light / dark / system themes.**
 - **macOS, Windows, Linux.**
@@ -101,8 +101,8 @@ apps sign in to a Genspark account through a device-code flow — no model API
 key to enter — and model calls route through the Genspark proxy (Claude,
 GPT, and Gemini families). Or bring your own key (BYOK) in the AI settings:
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, and OpenRouter are built in, plus a custom provider slot for any
-OpenAI-compatible endpoint (base URL + key), local servers included. A
+Mistral, OpenRouter, and OrcaRouter are built in, plus a custom provider slot
+for any OpenAI-compatible endpoint (base URL + key), local servers included. A
 Genspark account also unlocks the Genspark ("gsk") tool endpoints the agents
 build on — web and image search, image generation and editing,
 image/audio/video analysis, and audio transcription — all reachable through
@@ -198,8 +198,8 @@ to editable text rather than a page image.
 **Can I use my own AI model or API key?**
 Yes. Besides the keyless Genspark sign-in, GenOffice supports bring your own
 key (BYOK) for Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao,
-MiniMax, Grok, Mistral, and OpenRouter, plus any OpenAI-compatible endpoint
-— including local model servers.
+MiniMax, Grok, Mistral, OpenRouter, and OrcaRouter, plus any OpenAI-compatible
+endpoint — including local model servers.
 
 **Does GenOffice collect any data?**
 Official packaged builds send limited usage analytics by default, and you can

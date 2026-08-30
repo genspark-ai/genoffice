@@ -165,6 +165,24 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-or-...',
   },
   {
+    id: 'orcarouter',
+    label: 'OrcaRouter',
+    // vendor-prefixed slugs exactly as api.orcarouter.ai/v1/models lists them,
+    // mirroring OpenRouter; `orcarouter/auto` is the adaptive router default
+    models: [
+      'orcarouter/auto',
+      'orcarouter/fusion',
+      'orcarouter/fusion-flash',
+      'anthropic/claude-sonnet-5',
+      'anthropic/claude-fable-5',
+      'openai/gpt-5.6-sol',
+      'deepseek/deepseek-v4-flash',
+      'google/gemini-3.1-pro-preview',
+    ],
+    defaultModel: 'orcarouter/auto',
+    keyPlaceholder: 'ocr_...',
+  },
+  {
     id: 'custom',
     label: 'Custom',
     models: [],

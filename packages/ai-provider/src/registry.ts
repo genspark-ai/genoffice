@@ -188,6 +188,11 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://openrouter.ai/api/v1'),
   },
+  orcarouter: {
+    meta: metaOf('orcarouter'),
+    capabilities: { auth: 'api-key', vision: true },
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.orcarouter.ai/v1'),
+  },
   custom: {
     meta: metaOf('custom'),
     capabilities: { auth: 'api-key', vision: true },

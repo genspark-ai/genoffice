@@ -7,8 +7,8 @@ import type { AiProviderId } from '@genoffice/ai-provider'
 // hand-traced Genspark mark and a generic icon for the "custom" endpoint.
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
-// (OpenAI, Kimi, Grok, OpenRouter, Genspark, Custom) use currentColor so
-// they stay legible in dark mode.
+// (OpenAI, Kimi, Grok, OpenRouter, OrcaRouter, Genspark, Custom) use
+// currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
 // namespace their <linearGradient> ids per mount: the dropdown renders the
@@ -191,6 +191,11 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
   openrouter: (
     <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
       <path d="M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.175zM8.479 7.26a5.087 5.087 0 100 10.176 5.087 5.087 0 000-10.175z" />
+    </svg>
+  ),
+  orcarouter: (
+    <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M12 1.5a10.5 10.5 0 100 21 10.5 10.5 0 000-21zM5.2 9.6a6.6 6.6 0 0111.4-2.3c.36-.24.78-.38 1.2-.4a.84.84 0 00.13-1.66A8.7 8.7 0 003.55 9.95a.84.84 0 001.65-.34zm11.7 1.35a6.6 6.6 0 01-9.9 4.95.84.84 0 10-.86 1.45 8.28 8.28 0 007.4-.22 8.28 8.28 0 004.95-7.5.84.84 0 10-1.68 0 6.6 6.6 0 01.09 1.32zm-4.9-1.62a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
     </svg>
   ),
   custom: (

@@ -81,6 +81,7 @@ describe('provider registry', () => {
       ['xai', 'grok-4.6', 'https://api.x.ai/v1'],
       ['mistral', 'mistral-large-latest', 'https://api.mistral.ai/v1'],
       ['openrouter', 'openrouter/auto', 'https://openrouter.ai/api/v1'],
+      ['orcarouter', 'orcarouter/auto', 'https://api.orcarouter.ai/v1'],
     ]
     for (const [id, model, baseUrl] of cases) {
       expect(AI_PROVIDER_ADAPTERS[id].resolveEndpoint(config(model))).toEqual({

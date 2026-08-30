@@ -36,6 +36,14 @@ describe('provider model catalog', () => {
     expect(genspark.models).not.toContain('deep-seek-v4-flash')
     expect(genspark.models).not.toContain('deep-seek-v4-flash-vision-exp-openrouter')
   })
+
+  it('lists the orcarouter adaptive-router ids and defaults to orcarouter/auto', () => {
+    const orcarouter = AI_PROVIDERS.find((provider) => provider.id === 'orcarouter')!
+
+    expect(orcarouter.models).toContain('orcarouter/auto')
+    expect(orcarouter.models).toContain('anthropic/claude-sonnet-5')
+    expect(orcarouter.defaultModel).toBe('orcarouter/auto')
+  })
 })
 
 describe('resolveAiSettings', () => {
