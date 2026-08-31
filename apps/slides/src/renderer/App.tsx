@@ -31,6 +31,7 @@ import type {
   TransitionKind,
 } from '../shared/ipc'
 import { SlideCanvas, selectionChromeColor } from './SlideCanvas'
+import { tableCellOverlayBox } from './table-hit'
 import { ZOOM_PREVIEW_EVENT } from './zoom-preview'
 import { createWheelPager } from './wheel-page-flip'
 import type { DrawRect } from './draw-shape'
@@ -2175,13 +2176,7 @@ export function App() {
       type: 'shape',
       sourceId: tbl.sourceId,
       box: {
-        x: tbl.box.x + cell.x,
-        y: tbl.box.y + cell.y,
-        w: cell.w,
-        h: cell.h,
-        rotationDeg: 0,
-        flipH: false,
-        flipV: false,
+        ...tableCellOverlayBox(tbl.box, cell),
       },
       fill: { kind: 'none' },
       ...(cell.text ? { text: cell.text } : {}),

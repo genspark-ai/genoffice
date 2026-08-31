@@ -542,6 +542,8 @@ export function TextEditOverlay({
         top: box.y,
         width: box.w,
         height: box.h,
+        transform: `rotate(${box.rotationDeg ?? 0}deg) scale(${box.flipH ? -1 : 1}, ${box.flipV ? -1 : 1})`,
+        transformOrigin: 'center center',
         zIndex: 20,
         display: 'flex',
         // Vertical text: the row direction keeps the anchor mapping (top = the
