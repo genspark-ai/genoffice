@@ -626,6 +626,44 @@ describe('sectionWidthSpecs — differing-width sections wrap at their own conte
     expect(specs[2].contentWPx).toBeCloseTo(landscapeW, 1)
     expect(specs[3].widthPx).toBeCloseTo(portraitW, 1)
   })
+
+  it('blocks are placed at their own section’s left margin (full-bleed cover section)', () => {
+    // A cover section with w:pgMar w:left="0" must not strip the body sections'
+    // margins: the canvas pads by the first section, so every other section also
+    // needs a horizontal placement offset (dx), not just its own wrap width.
+    const cover = sec({ marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0 })
+    const body = sec({ marginLeft: 1701, marginRight: 1417 })
+    const secsList = [cover, body]
+    const blocks = [
+      block(0, 100, { section: 0, el: el() }),
+      block(100, 100, { section: 1, el: el() }),
+    ]
+    const specs = sectionWidthSpecs(blocks, secsList, sectionGeoms(secsList))
+    expect(specs).toHaveLength(2)
+    // the canvas section sits on the page padding: no offset
+    expect(specs[0].dx).toBe(0)
+    expect(specs[1].dx).toBeCloseTo((1701 / 1440) * 96, 1)
+    // width is the section's own content width, so the shifted block's right edge
+    // lands on its right margin (1701 + 8788 + 1417 = 11906)
+    expect(specs[1].widthPx).toBeCloseTo(((11906 - 1701 - 1417) / 1440) * 96, 1)
+  })
+
+  it('side-margin-only differences still get placement specs', () => {
+    // Mirrored margins keep the content width identical: nothing would be emitted
+    // on the width comparison alone, but the text column must move right.
+    const a = sec({ marginLeft: 720, marginRight: 2160 })
+    const b = sec({ marginLeft: 2160, marginRight: 720 })
+    const secsList = [a, b]
+    const blocks = [
+      block(0, 100, { section: 0, el: el() }),
+      block(100, 100, { section: 1, el: el() }),
+    ]
+    const specs = sectionWidthSpecs(blocks, secsList, sectionGeoms(secsList))
+    expect(specs).toHaveLength(2)
+    expect(specs[0].dx).toBe(0)
+    expect(specs[1].dx).toBeCloseTo(((2160 - 720) / 1440) * 96, 1)
+    expect(specs[1].widthPx).toBeCloseTo(((11906 - 2160 - 720) / 1440) * 96, 1)
+  })
 })
 
 describe('computeSectionedSlicesF2 — line-level pagination', () => {

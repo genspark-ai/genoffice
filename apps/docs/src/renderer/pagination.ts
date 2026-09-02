@@ -1505,10 +1505,14 @@ const isTableBlock = (el: HTMLElement) =>
   el.tagName === 'TABLE' || el.getAttribute('data-doc-protected') === 'table'
 
 /**
- * Per-block wrap widths for documents whose sections disagree on content width,
- * e.g. a landscape section in a portrait document. The canvas lays the whole flow
- * on one page width; these placements make each section's blocks wrap at their
- * own content width. Every block gets an explicit width (not just the differing
+ * Per-block wrap widths and horizontal placement for documents whose sections
+ * disagree on content width or side margins, e.g. a landscape section in a
+ * portrait document, or a full-bleed cover section (w:pgMar left="0") ahead of
+ * body sections with real margins. The canvas lays the whole flow on one page
+ * width and pads it by the FIRST section's margins (--page-pad), so a section
+ * that disagrees needs both its own wrap width and an x offset back onto its
+ * own left margin — otherwise every later page keeps the cover's margin-less
+ * text column. Every block gets an explicit width (not just the differing
  * sections'): preview clones render into per-section wrap widths, so any
  * container-relative block would reflow there. Tables keep their inline min()
  * width and get the section geometry via --doc-content-w / --doc-margin-* instead.
@@ -1519,11 +1523,19 @@ export function sectionWidthSpecs(
   geoms: SectionGeom[],
 ): ColumnBlockPlacement[] {
   const canvasW = geoms[0]?.contentWidth
-  if (
-    canvasW === undefined ||
-    !geoms.some((g) => g.contentWidth !== undefined && Math.abs(g.contentWidth - canvasW) > 0.5)
-  )
-    return []
+  // the canvas pads by sections[0] (App.tsx's canvasSection): placement offsets
+  // are relative to that inset, and the first section sits on it unshifted
+  const canvasInsetLeftPx = sections[0]?.settings ? twipsToPx(sections[0].settings.marginLeft) : 0
+  const differsAt = (i: number): boolean => {
+    const g = geoms[i]
+    const set = sections[i]?.settings
+    if (!g || !set) return false
+    const widthDiffers =
+      g.contentWidth !== undefined && Math.abs(g.contentWidth - (canvasW ?? 0)) > 0.5
+    const insetDiffers = Math.abs(twipsToPx(set.marginLeft) - canvasInsetLeftPx) > 0.5
+    return widthDiffers || insetDiffers
+  }
+  if (canvasW === undefined || !geoms.some((_, i) => differsAt(i))) return []
   const specs: ColumnBlockPlacement[] = []
   for (const b of blocks) {
     if (!b.el || b.floated) continue
@@ -1533,7 +1545,9 @@ export function sectionWidthSpecs(
     const set = sections[si]?.settings
     const spec: ColumnBlockPlacement = {
       el: b.el,
-      dx: 0,
+      // shift the block from the canvas' (first section's) text column onto its
+      // own section's left margin; dx composes with column/vAlign translates
+      dx: (set ? twipsToPx(set.marginLeft) : 0) - canvasInsetLeftPx,
       dy: 0,
       contentWPx: w,
       marginLeftPx: set ? twipsToPx(set.marginLeft) : 0,
