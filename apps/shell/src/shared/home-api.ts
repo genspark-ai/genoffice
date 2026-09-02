@@ -38,6 +38,9 @@ export interface RecentEntry {
   sizeBytes: number
   /** whether the user starred this file */
   starred: boolean
+  /** the path failed to stat (disconnected drive, moved, deleted) — kept
+      listed like Word's recents instead of silently dropped (r158) */
+  missing?: boolean
 }
 
 /** paged query for the home file lists */
@@ -63,7 +66,7 @@ export interface HomeApi {
   recents(query?: RecentQuery): Promise<RecentPage>
   /** starred files (independent of the recent list), newest first (paged) */
   starred(query?: RecentQuery): Promise<RecentPage>
-  /** stat a specific set of paths (project view); missing files are skipped */
+  /** stat a specific set of paths (project view); unstat-able files come back flagged `missing` */
   statPaths(paths: string[]): Promise<RecentEntry[]>
   /** star / unstar a file */
   toggleStar(path: string): Promise<void>

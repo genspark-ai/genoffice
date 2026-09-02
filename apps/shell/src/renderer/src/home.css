@@ -741,6 +741,13 @@ body.vib .home {
   text-overflow: ellipsis;
 }
 
+/* unavailable recents (disconnected drive / moved / deleted) stay listed, dimmed */
+.recent-item.missing .recent-name,
+.recent-item.missing .recent-path,
+.recent-item.missing .recent-icon {
+  opacity: 0.55;
+}
+
 .star-btn {
   display: flex;
   align-items: center;

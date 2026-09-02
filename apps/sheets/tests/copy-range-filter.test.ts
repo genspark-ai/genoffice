@@ -33,6 +33,40 @@ describe('copy_range filter schema and geometry validation', () => {
     expect(parsed).toMatchObject({ filterColumn: 'D', filterValues: ['ja', 'ko'] })
   })
 
+  it('accepts filter values up to the cell text cap (real cell contents are legal)', () => {
+    const longValue = 'x'.repeat(300)
+    const maxValue = 'y'.repeat(32_767)
+    const parsed = workbookOperationSchema.parse({
+      ...base,
+      filterColumn: 'D',
+      filterValues: [longValue, maxValue],
+    })
+    expect(parsed).toMatchObject({ filterValues: [longValue, maxValue] })
+    expect(() =>
+      workbookOperationSchema.parse({
+        ...base,
+        filterColumn: 'D',
+        filterValues: ['z'.repeat(32_768)],
+      }),
+    ).toThrow()
+  })
+
+  it('matches a long filter value against the cell text (trimmed, case-insensitive)', () => {
+    const longText = `Note: ${'x'.repeat(300)}`
+    const rows = filteredCopySourceRows(
+      {
+        op: 'copy_range',
+        sheetId: 'sheet-1',
+        source: 'A1:D6',
+        target: 'F1',
+        filterColumn: 'D',
+        filterValues: [` ${longText.toUpperCase()} `],
+      },
+      (row, column) => (column === 3 && row === 2 ? matchableCellText(longText) : ''),
+    )
+    expect(rows).toEqual([2])
+  })
+
   it('rejects filterValues without filterColumn (and vice versa)', () => {
     expect(() =>
       expandToPrimitiveOps([{ ...base, filterValues: ['ja'] } as WorkbookOperation]),

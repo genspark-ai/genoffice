@@ -131,6 +131,22 @@ describe('measureNormalFontMdw', () => {
     expect(measureNormalFontMdw(file)).toBe(7)
   })
 
+  it('keeps the Cordia New hash calibration out of the MDW derivation', () => {
+    // The em-exact digit width is #### -only; MDW stays on the canvas
+    // fallback (7 in the DOM-less test env), not round(0.485 × 11) = 5.
+    const file = workbook({ fontFamily: 'Cordia New', fontSize: 11 })
+    expect(measureNormalFontMdw(file)).toBe(7)
+  })
+
+  it('keeps the other Thai and Meiryo hash calibrations out of the MDW derivation too', () => {
+    // These families get width-corrected aliases, so the live canvas digit
+    // is the right MDW source by construction; the em-exact hash table must
+    // not leak into the grid-derived MDW path (7 in the DOM-less env).
+    for (const fontFamily of ['TH SarabunPSK', 'Angsana New', 'Meiryo', 'Yu Gothic UI']) {
+      expect(measureNormalFontMdw(workbook({ fontFamily, fontSize: 11 })), fontFamily).toBe(7)
+    }
+  })
+
   it('scales table entries by the Normal font size', () => {
     expect(measureNormalFontMdw(workbook({ fontFamily: 'Calibri', fontSize: 22 }))).toBe(14)
     expect(measureNormalFontMdw(workbook({ fontFamily: 'Verdana', fontSize: 10 }))).toBe(8)
@@ -152,6 +168,25 @@ describe('measureNormalFontMdw', () => {
     // prod_027 32.44ch → 195pt both fit floor((w+16/256)*8); MDW 7 wraps
     // wide wrap columns a line early and re-fits their rows too tall.
     expect(measureNormalFontMdw(workbook({ fontFamily: 'Calibri', fontSize: 11 }))).toBe(8)
+  })
+
+  it('rounds the canvas digit width with the calibrated 0.4 threshold', () => {
+    // Arial 10 (7.42px) prints at MDW 8; Arial 11 (8.16px) and Century
+    // Gothic 11 (8.13px) print at 8, not 9.
+    let measured = 7.42
+    const context = {
+      set font(_value: string) {},
+      measureText: () => ({ width: measured }),
+    }
+    const documentStub = { createElement: () => ({ getContext: () => context }) }
+    Object.defineProperty(globalThis, 'document', { value: documentStub, configurable: true })
+    try {
+      expect(measureNormalFontMdw(workbook({ fontFamily: 'SomeLatin', fontSize: 10 }))).toBe(8)
+      measured = 8.16
+      expect(measureNormalFontMdw(workbook({ fontFamily: 'SomeLatin', fontSize: 11 }))).toBe(8)
+    } finally {
+      Reflect.deleteProperty(globalThis, 'document')
+    }
   })
 
   it('quotes the family for canvas measurement so odd names still measure', () => {

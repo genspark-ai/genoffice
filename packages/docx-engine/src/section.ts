@@ -53,12 +53,21 @@ function pageBorderPropsOf(xml: string): SectionSettings['pageBorderProps'] {
   let spacePt = 0
   let szEighths = 0
   let color: string | undefined
+  const sides: NonNullable<SectionSettings['pageBorderProps']>['sides'] = {}
   for (const side of pgBorders.match(/<w:(?:top|left|bottom|right)\b[^>]*\/?>/g) ?? []) {
     const val = /w:val="([^"]*)"/.exec(side)?.[1]
     if (!val || val === 'none' || val === 'nil') continue
+    const name = /<w:(top|left|bottom|right)\b/.exec(side)![1] as keyof typeof sides
+    const sideColor = /w:color="([0-9A-Fa-f]{6})"/.exec(side)?.[1]
+    sides[name] = {
+      val,
+      widthPt: intAttr(side, 'w:sz', 0) / 8,
+      spacePt: intAttr(side, 'w:space', 0),
+      ...(sideColor ? { color: sideColor } : {}),
+    }
     spacePt = Math.max(spacePt, intAttr(side, 'w:space', 0))
     szEighths = Math.max(szEighths, intAttr(side, 'w:sz', 0))
-    color ??= /w:color="([0-9A-Fa-f]{6})"/.exec(side)?.[1]
+    color ??= sideColor
   }
   return {
     ...(display ? { display } : {}),
@@ -66,6 +75,7 @@ function pageBorderPropsOf(xml: string): SectionSettings['pageBorderProps'] {
     spacePt,
     widthPt: szEighths / 8,
     ...(color ? { color } : {}),
+    sides,
   }
 }
 

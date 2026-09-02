@@ -2,6 +2,8 @@
 /// External targets live as TargetMode="External" relationships referenced by
 /// r:id; internal anchors use the `location` attribute and need no rel.
 
+export { ensureRelationshipNamespace } from './xlsx-namespace'
+
 export class HyperlinkEditError extends Error {}
 
 export interface HyperlinkEdit {
@@ -21,9 +23,10 @@ export interface HyperlinkPatch {
 
 const HYPERLINK_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
-const EMPTY_RELS = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-  + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-  + '</Relationships>'
+const EMPTY_RELS =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+  '</Relationships>'
 
 export function applyHyperlinkEdits(
   worksheetXml: string,
@@ -43,10 +46,7 @@ export function applyHyperlinkEdits(
   }
   const dropUnusedRel = (relId: string): void => {
     if (rels === null || relIdsInUse().has(relId)) return
-    const next = rels.replace(
-      new RegExp(`<Relationship\\b[^>]*\\bId="${relId}"[^>]*/>`),
-      '',
-    )
+    const next = rels.replace(new RegExp(`<Relationship\\b[^>]*\\bId="${relId}"[^>]*/>`), '')
     if (next !== rels) {
       rels = next
       relsChanged = true
@@ -62,8 +62,9 @@ export function applyHyperlinkEdits(
       maximum = Math.max(maximum, Number(id[1]))
     }
     const relId = `rId${maximum + 1}`
-    const element = `<Relationship Id="${relId}" Type="${HYPERLINK_REL_TYPE}" `
-      + `Target="${escapeXmlAttribute(target)}" TargetMode="External"/>`
+    const element =
+      `<Relationship Id="${relId}" Type="${HYPERLINK_REL_TYPE}" ` +
+      `Target="${escapeXmlAttribute(target)}" TargetMode="External"/>`
     rels = rels.replace('</Relationships>', () => `${element}</Relationships>`)
     relsChanged = true
     return relId
@@ -73,9 +74,8 @@ export function applyHyperlinkEdits(
     const ref = toA1(edit.row, edit.column)
     const existingPattern = new RegExp(`<hyperlink\\b[^>]*?\\bref="${ref}"[^>]*/>`)
     const existing = existingPattern.exec(xml)?.[0]
-    const existingRelId = existing === undefined
-      ? undefined
-      : /\br:id="([^"]+)"/.exec(existing)?.[1]
+    const existingRelId =
+      existing === undefined ? undefined : /\br:id="([^"]+)"/.exec(existing)?.[1]
     if (existing !== undefined) {
       xml = xml.replace(existingPattern, '')
     }
@@ -101,25 +101,15 @@ function insertHyperlinkElement(xml: string, element: string): string {
   // Schema order: hyperlinks follows dataValidations / conditionalFormatting /
   // mergeCells / sheetData and precedes print-related elements and drawings.
   const anchor =
-    /<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/
-      .exec(xml)
+    /<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/.exec(
+      xml,
+    )
   if (anchor) {
     return xml.slice(0, anchor.index) + section + xml.slice(anchor.index)
   }
   const end = xml.lastIndexOf('</worksheet>')
   if (end === -1) throw new HyperlinkEditError('Worksheet has no closing element.')
   return xml.slice(0, end) + section + xml.slice(end)
-}
-
-/// Adding an r:id-based link needs the relationships namespace on the root.
-export function ensureRelationshipNamespace(worksheetXml: string): string {
-  const root = /<worksheet\b[^>]*>/.exec(worksheetXml)?.[0]
-  if (!root || root.includes('xmlns:r=')) return worksheetXml
-  const patched = root.replace(
-    /<worksheet\b/,
-    '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"',
-  )
-  return worksheetXml.replace(root, () => patched)
 }
 
 function toA1(row: number, column: number): string {

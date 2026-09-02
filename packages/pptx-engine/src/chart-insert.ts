@@ -55,6 +55,10 @@ export interface NewChartOptions extends ChartStyleOptions {
   barDir?: 'col' | 'bar'
   /** Per-point fills, [seriesIdx][pointIdx] (sparse; written as <c:dPt>, wins over the series color) */
   pointColors?: Array<Array<string | undefined> | undefined>
+  /** Per-series solid colors (#RRGGBB, cycled); line-like series color the stroke, others the fill */
+  colorScheme?: string[]
+  /** Doughnut hole size (percent, c:holeSize, default 50) */
+  holeSizePct?: number
 }
 
 const CHART_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
@@ -197,7 +201,7 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
   } else if (opts.kind === 'doughnut') {
     plot =
       `<c:doughnutChart><c:varyColors val="1"/>${sers}${dLbls}` +
-      '<c:firstSliceAng val="0"/><c:holeSize val="50"/></c:doughnutChart>'
+      `<c:firstSliceAng val="0"/><c:holeSize val="${Math.min(90, Math.max(1, Math.round(opts.holeSizePct ?? 50)))}"/></c:doughnutChart>`
   } else if (opts.kind === 'scatter') {
     // Scatter (XY): x values come from categories (numeric strings use their value,
     // otherwise ordinals 1..n), y values from the series values;
@@ -279,13 +283,39 @@ export function buildChartSpaceXml(opts: NewChartOptions): string {
     legendPos === 'none'
       ? ''
       : `<c:legend><c:legendPos val="${legendPos}"/><c:overlay val="0"/></c:legend>`
-  return (
+  const xml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
     `<c:chartSpace xmlns:c="${C_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">` +
     `<c:chart>${title}${view3D}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
     legend +
     '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>' +
     '</c:chartSpace>'
+  return injectSeriesColors(xml, opts)
+}
+
+/**
+ * Per-series <c:spPr> solid colors, inserted at the CT_*Ser schema position
+ * (after c:tx, before c:dPt/c:cat). The last series of a combo chart is the
+ * line: its color goes on an <a:ln> stroke (lines use stroke, bars/pies fill).
+ */
+function injectSeriesColors(xml: string, opts: NewChartOptions): string {
+  const scheme = opts.colorScheme
+  if (!scheme?.length) return xml
+  const lineFamily = opts.kind === 'line' || opts.kind === 'scatter' || opts.kind === 'radar'
+  const comboLineIdx =
+    opts.kind === 'comboBarLine' && opts.series.length >= 2 ? opts.series.length - 1 : -1
+  return xml.replace(
+    /<c:ser><c:idx val="(\d+)"\/><c:order val="\d+"\/>(?:<c:tx>.*?<\/c:tx>)?/gs,
+    (head, idx: string) => {
+      const i = Number(idx)
+      const color = scheme[i % scheme.length]!.replace('#', '').slice(0, 6).toUpperCase()
+      const fill = `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>`
+      const spPr =
+        lineFamily || i === comboLineIdx
+          ? `<c:spPr><a:ln w="28575">${fill}</a:ln></c:spPr>`
+          : `<c:spPr>${fill}</c:spPr>`
+      return head + spPr
+    },
   )
 }
 

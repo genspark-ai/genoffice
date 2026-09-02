@@ -3,15 +3,52 @@
 /// sheet's effective page setup (print areas, repeated title rows, gridlines,
 /// headings, header/footer). The main process turns the HTML into a PDF.
 
+import { BorderStyleTypes } from '@univerjs/core'
 import { htmlLang, type Lang } from '@genoffice/i18n'
 import { columnIndex, columnLabel } from '../domain/cell-address'
 
 import type { WorkbookExportPdfRequest } from '../shared/desktop-api'
 import type { HeaderFooterParts } from './edit-journal'
-import type { EffectivePageSetup, PrintMargins } from './print-settings'
+import {
+  fitToPageScale,
+  MAX_PRINT_SCALE,
+  MIN_PRINT_SCALE,
+  type PrintAreaHeights,
+} from './print-scale'
+import type { EffectivePageSetup, HeaderFooterPair, PrintMargins } from './print-settings'
 import { getLang, t } from './i18n/locale'
 
 export class PrintError extends Error {}
+
+/// A `&G` picture resolved to bytes for the print templates.
+export interface HeaderFooterPictureImage {
+  readonly dataUrl: string
+  readonly widthPt: number
+  readonly heightPt: number
+}
+
+/// Pictures keyed by VML slot: L/C/R × H/F plus an EVEN or FIRST suffix for
+/// the page variants (`LH`, `CFFIRST`, `RHEVEN`).
+export type HeaderFooterPictures = ReadonlyMap<string, HeaderFooterPictureImage>
+
+/// Pictures for the three sections of one header or footer.
+export interface SectionPictures {
+  readonly left?: HeaderFooterPictureImage | undefined
+  readonly center?: HeaderFooterPictureImage | undefined
+  readonly right?: HeaderFooterPictureImage | undefined
+}
+
+type PageVariant = 'odd' | 'even' | 'first'
+
+/// Chromium lays the print body out with Calibri 11pt unless the cell says
+/// otherwise; a text row is at least one line plus the cell padding tall,
+/// which can exceed Excel's saved row height by a point or so — the
+/// fit-to-page pagination must count the printed height, not the saved one.
+const LINE_HEIGHT_FACTOR = 1.25
+const CELL_VERTICAL_PADDING_PT = 2
+const DEFAULT_FONT_SIZE_PT = 11
+/// The row/column heading strip (8.5pt text, padding, border).
+const HEADING_ROW_HEIGHT_PT = 14
 
 /** UI-language CJK fallback for the print stack (mirrors the :lang() variables in styles.css) */
 function printCjkFonts(lang: Lang): string {
@@ -68,8 +105,26 @@ interface PrintCellStyle {
   readonly vt?: number
   readonly tb?: number
   readonly bd?: Partial<
-    Record<'t' | 'b' | 'l' | 'r', { cl?: { rgb?: string | null } | null } | null>
+    Record<'t' | 'b' | 'l' | 'r', { s?: number; cl?: { rgb?: string | null } | null } | null>
   > | null
+}
+
+/// Print weight of a cell border by Univer BorderStyleTypes value: Excel
+/// prints thin at 0.75pt (1px @ 96dpi), medium at 1.5pt and thick at
+/// 2.25pt — the same 1 : 2 : 3 ladder the grid draws. Dash patterns keep
+/// printing solid (unchanged); only the weight is mapped here.
+export function printBorderWidthPt(style: number | undefined): number {
+  switch (style) {
+    case BorderStyleTypes.MEDIUM:
+    case BorderStyleTypes.MEDIUM_DASHED:
+    case BorderStyleTypes.MEDIUM_DASH_DOT:
+    case BorderStyleTypes.MEDIUM_DASH_DOT_DOT:
+      return 1.5
+    case BorderStyleTypes.THICK:
+      return 2.25
+    default:
+      return 0.75
+  }
 }
 
 /// OOXML paper-size code → Electron pageSize (custom sizes in inches).
@@ -97,6 +152,7 @@ export function buildSheetPrintPayload(
   setup: EffectivePageSetup,
   fileName: string,
   sheetName: string,
+  pictures: HeaderFooterPictures = new Map(),
 ): WorkbookExportPdfRequest {
   const areas =
     setup.printAreas.length > 0 ? setup.printAreas.map(parseArea) : [usedArea(worksheet)]
@@ -116,6 +172,7 @@ export function buildSheetPrintPayload(
 
   let maxContentWidthPt = 0
   const tables: string[] = []
+  const areaHeights: PrintAreaHeights[] = []
   for (const area of areas) {
     const rows = area.endRow - area.startRow + 1
     const columns = area.endColumn - area.startColumn + 1
@@ -132,8 +189,12 @@ export function buildSheetPrintPayload(
       rowHeaderPt + columnWidthsPt.reduce((total, width) => total + width, 0),
     )
 
+    // Printed height of the row just laid out by bodyRow (saved height, or
+    // taller when a cell's text line does not fit it).
+    let printedRowHeightPt = 0
     const bodyRow = (row: number): string => {
       const cells: string[] = []
+      let textHeightPt = 0
       if (headings) {
         cells.push(`<th class="hd">${row + 1}</th>`)
       }
@@ -151,15 +212,23 @@ export function buildSheetPrintPayload(
           : cellDisplay(worksheet, row, column)
         const rawValue = inArea ? raw[row - area.startRow]?.[column - area.startColumn] : undefined
         const style = worksheet.getRange(row, column).getCellStyleData()
+        if (text !== '' && !anchor) {
+          textHeightPt = Math.max(
+            textHeightPt,
+            (style?.fs ?? DEFAULT_FONT_SIZE_PT) * LINE_HEIGHT_FACTOR + CELL_VERTICAL_PADDING_PT,
+          )
+        }
         cells.push(
           `<td${span} style="${cellCss(style, rawValue, gridlines)}">${escapeHtml(text)}</td>`,
         )
       }
       const heightPt = Math.max(worksheet.getRowHeight(row) * 0.75, 10)
+      printedRowHeightPt = Math.max(heightPt, textHeightPt)
       return `<tr style="height:${round(heightPt)}pt">${cells.join('')}</tr>`
     }
 
     const headParts: string[] = []
+    let repeatedHeightPt = headings ? HEADING_ROW_HEIGHT_PT : 0
     if (headings) {
       const letters = Array.from(
         { length: columns },
@@ -168,15 +237,21 @@ export function buildSheetPrintPayload(
       headParts.push(`<tr><th class="hd"></th>${letters.join('')}</tr>`)
     }
     if (titles) {
-      for (let row = titles.start; row <= titles.end; row += 1) headParts.push(bodyRow(row))
+      for (let row = titles.start; row <= titles.end; row += 1) {
+        headParts.push(bodyRow(row))
+        repeatedHeightPt += printedRowHeightPt
+      }
     }
 
     const bodyParts: string[] = []
+    const rowHeightsPt: number[] = []
     for (let row = area.startRow; row <= area.endRow; row += 1) {
       // Title rows already repeat via the table header.
       if (titles && row >= titles.start && row <= titles.end) continue
       bodyParts.push(bodyRow(row))
+      rowHeightsPt.push(printedRowHeightPt)
     }
+    areaHeights.push({ repeatedHeightPt, rowHeightsPt })
 
     const colgroup = `<colgroup>${headings ? `<col style="width:${rowHeaderPt}pt">` : ''}${columnWidthsPt
       .map((width) => `<col style="width:${round(width)}pt">`)
@@ -205,26 +280,80 @@ th.hd { background: #f1f1f1; border: 0.5pt solid #b7b7b7; color: #444;
   const landscape = setup.orientation === 'landscape'
   const now = new Date()
   const baseName = fileName.replace(/\.pdf$/, '')
-  const headerTemplate = setup.header
-    ? buildHeaderFooterTemplate(setup.header, 'header', margins, baseName, sheetName, now)
-    : undefined
-  const footerTemplate = setup.footer
-    ? buildHeaderFooterTemplate(setup.footer, 'footer', margins, baseName, sheetName, now)
-    : undefined
+  const scale = computeScale(setup, pageSize, landscape, margins, maxContentWidthPt, areaHeights)
+  // Excel's "scale with document" (the default) shrinks the header/footer
+  // text and pictures by the same factor as the sheet.
+  const templateScale = setup.headerFooterScaleWithDoc ? scale : 1
+  const templates = (pair: HeaderFooterPair, variant: PageVariant) => {
+    const headerTemplate = pair.header
+      ? buildHeaderFooterTemplate(
+          pair.header,
+          'header',
+          margins,
+          baseName,
+          sheetName,
+          now,
+          sectionPictures(pictures, 'header', variant),
+          templateScale,
+        )
+      : undefined
+    const footerTemplate = pair.footer
+      ? buildHeaderFooterTemplate(
+          pair.footer,
+          'footer',
+          margins,
+          baseName,
+          sheetName,
+          now,
+          sectionPictures(pictures, 'footer', variant),
+          templateScale,
+        )
+      : undefined
+    return {
+      ...(headerTemplate === undefined ? {} : { headerTemplate }),
+      ...(footerTemplate === undefined ? {} : { footerTemplate }),
+    }
+  }
   return {
     fileName,
     html,
     landscape,
     pageSize,
     margins: { top: margins.top, bottom: margins.bottom, left: margins.left, right: margins.right },
-    scale: computeScale(setup, pageSize, landscape, margins, maxContentWidthPt),
-    ...(headerTemplate === undefined ? {} : { headerTemplate }),
-    ...(footerTemplate === undefined ? {} : { footerTemplate }),
+    scale,
+    ...templates({ header: setup.header, footer: setup.footer }, 'odd'),
+    ...(setup.firstPage === null ? {} : { firstPage: templates(setup.firstPage, 'first') }),
+    ...(setup.evenPages === null ? {} : { evenPages: templates(setup.evenPages, 'even') }),
   }
 }
 
+/// The `&G` pictures of one header or footer's three sections, for one page
+/// variant (VML slot ids: LH/CH/RH, LF/CF/RF, plus EVEN/FIRST).
+export function sectionPictures(
+  pictures: HeaderFooterPictures,
+  kind: 'header' | 'footer',
+  variant: PageVariant,
+): SectionPictures {
+  const suffix = variant === 'odd' ? '' : variant.toUpperCase()
+  const slot = (section: 'L' | 'C' | 'R') =>
+    pictures.get(`${section}${kind === 'header' ? 'H' : 'F'}${suffix}`)
+  const left = slot('L')
+  const center = slot('C')
+  const right = slot('R')
+  return {
+    ...(left === undefined ? {} : { left }),
+    ...(center === undefined ? {} : { center }),
+    ...(right === undefined ? {} : { right }),
+  }
+}
+
+/// Header/footer text size before scaleWithDoc applies.
+const HEADER_FOOTER_FONT_SIZE_PT = 9
+
 /// One left/center/right header or footer as a Chromium print template
 /// (rendered in the page's margin box; undefined when the parts are empty).
+/// `scale` is the print scale the text and pictures follow (1 when the
+/// header/footer keeps its size).
 export function buildHeaderFooterTemplate(
   parts: HeaderFooterParts,
   kind: 'header' | 'footer',
@@ -232,21 +361,29 @@ export function buildHeaderFooterTemplate(
   fileName: string,
   sheetName: string,
   now: Date,
+  pictures: SectionPictures = {},
+  scale = 1,
 ): string | undefined {
   const sections = [parts.left ?? '', parts.center ?? '', parts.right ?? '']
   if (sections.every((text) => text === '')) return undefined
-  const rendered = sections.map((text) => renderHeaderFooterHtml(text, fileName, sheetName, now))
+  const sectionPicture = [pictures.left, pictures.center, pictures.right]
+  const rendered = sections.map((text, index) =>
+    renderHeaderFooterHtml(text, fileName, sheetName, now, sectionPicture[index], scale),
+  )
+  const fontSizePt = round(HEADER_FOOTER_FONT_SIZE_PT * scale)
   // Excel offsets the header/footer from the paper edge by its own margin.
   const offset =
     kind === 'header'
       ? `padding-top:${round(margins.header)}in`
       : `padding-bottom:${round(margins.footer)}in`
-  const spanStyle = 'flex:1;white-space:pre-wrap'
+  // Equal thirds like Excel's sections; an oversized picture or unbreakable
+  // text overflows its neighbours instead of squeezing them.
+  const spanStyle = 'flex:1;min-width:0;white-space:pre-wrap'
   // Chromium's template document is content-box; without an inline
   // border-box the width:100% + side padding overflows the page and
   // shifts/clips the sections.
   return (
-    `<div style="box-sizing:border-box;display:flex;width:100%;font-size:9pt;color:#000;` +
+    `<div style="box-sizing:border-box;display:flex;width:100%;font-size:${fontSizePt}pt;color:#000;` +
     `font-family:Calibri,'Helvetica Neue',Arial,sans-serif;` +
     `padding-left:${round(margins.left)}in;padding-right:${round(margins.right)}in;${offset}">` +
     `<span style="${spanStyle}">${rendered[0]}</span>` +
@@ -257,12 +394,15 @@ export function buildHeaderFooterTemplate(
 
 /// Field codes → template HTML: &P/&N become Chromium's live pageNumber/
 /// totalPages spans, static codes (&D &T &F &A, && literal) resolve now,
-/// everything else is HTML-escaped verbatim.
+/// &G becomes the section's picture (nothing when the slot has none, like
+/// Excel), everything else is HTML-escaped verbatim.
 export function renderHeaderFooterHtml(
   text: string,
   fileName: string,
   sheetName: string,
   now: Date,
+  picture?: HeaderFooterPictureImage,
+  scale = 1,
 ): string {
   let html = ''
   let literal = ''
@@ -306,6 +446,12 @@ export function renderHeaderFooterHtml(
       case 'A':
         literal += sheetName
         break
+      case 'G':
+        if (picture) {
+          flush()
+          html += pictureHtml(picture, scale)
+        }
+        break
       default:
         literal += `&${code}`
     }
@@ -314,31 +460,45 @@ export function renderHeaderFooterHtml(
   return html
 }
 
-/// Excel's fit-to-width only shrinks; an explicit scale applies as-is.
+/// The picture at its declared size times the print scale (points → CSS px
+/// at 96/72). The data URL is built from a validated media type and base64
+/// payload; escaping it anyway keeps the attribute closed no matter what.
+function pictureHtml(picture: HeaderFooterPictureImage, scale: number): string {
+  const width = round((picture.widthPt * scale * 96) / 72)
+  const height = round((picture.heightPt * scale * 96) / 72)
+  return (
+    `<img src="${escapeAttribute(picture.dataUrl)}" ` +
+    `style="width:${width}px;height:${height}px;vertical-align:bottom">`
+  )
+}
+
+/// Excel's fit-to-page only shrinks; an explicit scale applies as-is.
 function computeScale(
   setup: EffectivePageSetup,
   pageSize: WorkbookExportPdfRequest['pageSize'],
   landscape: boolean,
   margins: { left: number; right: number; top: number; bottom: number },
   contentWidthPt: number,
+  areas: readonly PrintAreaHeights[],
 ): number {
-  const fitPages = setup.fitToPage ? setup.fitToWidth : 0
-  if (fitPages > 0 && contentWidthPt > 0) {
-    const paperWidthIn =
-      typeof pageSize === 'string'
-        ? landscape
-          ? paperHeightInches(pageSize)
-          : (PAPER_WIDTH_INCHES[pageSize] ?? 8.27)
-        : landscape
-          ? pageSize.height
-          : pageSize.width
-    const printableWidthPt = (paperWidthIn - margins.left - margins.right) * 72
-    return clamp((printableWidthPt * fitPages) / contentWidthPt, 0.1, 1)
-  }
   if (!setup.fitToPage) {
-    return clamp(setup.scale / 100, 0.1, 2)
+    return clamp(setup.scale / 100, MIN_PRINT_SCALE, MAX_PRINT_SCALE)
   }
-  return 1
+  const [paperWidthIn, paperHeightIn] =
+    typeof pageSize === 'string'
+      ? [PAPER_WIDTH_INCHES[pageSize] ?? 8.27, paperHeightInches(pageSize)]
+      : [pageSize.width, pageSize.height]
+  const [acrossIn, downIn] = landscape
+    ? [paperHeightIn, paperWidthIn]
+    : [paperWidthIn, paperHeightIn]
+  return fitToPageScale({
+    printableWidthPt: (acrossIn - margins.left - margins.right) * 72,
+    printableHeightPt: (downIn - margins.top - margins.bottom) * 72,
+    fitToWidth: setup.fitToWidth,
+    fitToHeight: setup.fitToHeight,
+    contentWidthPt,
+    areas,
+  })
 }
 
 function paperHeightInches(name: string): number {
@@ -455,7 +615,9 @@ function cellCss(style: PrintCellStyle | null, rawValue: unknown, gridlines: boo
     const border = style?.bd?.[edge as 't' | 'b' | 'l' | 'r']
     rules.push(
       `border-${css}:${
-        border ? `0.75pt solid ${cssColor(border.cl?.rgb ?? '#000000')}` : defaultBorder
+        border
+          ? `${printBorderWidthPt(border.s)}pt solid ${cssColor(border.cl?.rgb ?? '#000000')}`
+          : defaultBorder
       }`,
     )
   }
@@ -468,6 +630,10 @@ function cssColor(rgb: string): string {
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value).replace(/"/g, '&quot;')
 }
 
 function clamp(value: number, min: number, max: number): number {

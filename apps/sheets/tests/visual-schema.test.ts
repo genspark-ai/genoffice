@@ -34,6 +34,18 @@ describe('visual object schema', () => {
     expect(parsed.drawingIndex).toBe(2)
   })
 
+  it('accepts the sidecar srcRect crop payload', () => {
+    const parsed = visualSchema.parse({
+      id: 'visual-5',
+      sheetId: 'sheet-1',
+      kind: 'image',
+      anchor,
+      mediaPath: 'xl/media/image1.png',
+      crop: { left: 0.22481, top: 0.11008, right: 0.2093, bottom: 0.38139 },
+    })
+    expect(parsed.crop).toEqual({ left: 0.22481, top: 0.11008, right: 0.2093, bottom: 0.38139 })
+  })
+
   it('accepts the sidecar custGeom path payload', () => {
     const parsed = visualSchema.parse({
       id: 'visual-3',

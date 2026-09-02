@@ -48,6 +48,8 @@ export function getSystemShortDate(): string {
 export function shortDateNumFmtId(pattern: string): number | undefined {
   const shortDate = getSystemShortDate()
   if (pattern === shortDate) return 14
-  if (pattern === `${shortDate} h:mm`) return 22
+  // hh:mm is the current load-side resolution; h:mm survives in documents
+  // saved before the leading-zero calibration.
+  if (pattern === `${shortDate} hh:mm` || pattern === `${shortDate} h:mm`) return 22
   return undefined
 }

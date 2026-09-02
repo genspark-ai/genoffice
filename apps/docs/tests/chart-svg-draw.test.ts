@@ -84,4 +84,53 @@ describe('chart svg drawing', () => {
     expect(labels).toContain('4')
     expect(dom.querySelectorAll('polygon').length).toBe(2)
   })
+
+  it('draws doughnut slices as rings and stacks the right legend vertically', () => {
+    const dom = draw({
+      partPath: 'word/charts/chart1.xml',
+      kind: 'pie',
+      holePct: 50,
+      legendPos: 'r',
+      categories: ['JSC', 'MX', 'ETC'],
+      series: [{ values: [67, 32, 1] }],
+    })
+    const paths = [...dom.querySelectorAll('path')]
+    expect(paths.length).toBe(3)
+    // each slice carries a counter-sweep inner arc (the hole edge)
+    for (const p of paths) {
+      expect(p.getAttribute('d')).toMatch(/A [\d.e-]+ [\d.e-]+ 0 \d 0 /)
+    }
+    const legendTexts = [...dom.querySelectorAll('text')].filter((t) =>
+      ['JSC', 'MX', 'ETC'].includes(t.textContent ?? ''),
+    )
+    expect(legendTexts.length).toBe(3)
+    const xs = legendTexts.map((t) => Number(t.getAttribute('x')))
+    const ys = legendTexts.map((t) => Number(t.getAttribute('y')))
+    // one column on the right half, entries flowing downward
+    expect(new Set(xs).size).toBe(1)
+    expect(xs[0]).toBeGreaterThan(560 / 2)
+    expect(ys[1]).toBeGreaterThan(ys[0])
+    expect(ys[2]).toBeGreaterThan(ys[1])
+    // the pie centers left of the legend gutter
+    const svg = dom.querySelector('svg')!
+    expect(svg.querySelectorAll('rect').length).toBe(3)
+  })
+
+  it('keeps solid pies and bottom legends unchanged without holePct/legendPos', () => {
+    const dom = draw({
+      partPath: 'word/charts/chart1.xml',
+      kind: 'pie',
+      categories: ['A', 'B'],
+      series: [{ values: [3, 1] }],
+    })
+    const paths = [...dom.querySelectorAll('path')]
+    expect(paths.length).toBe(2)
+    for (const p of paths) expect(p.getAttribute('d')!.startsWith('M 280 ')).toBe(true)
+    const legendTexts = [...dom.querySelectorAll('text')].filter((t) =>
+      ['A', 'B'].includes(t.textContent ?? ''),
+    )
+    // bottom row: same y, different x
+    expect(new Set(legendTexts.map((t) => t.getAttribute('y'))).size).toBe(1)
+    expect(new Set(legendTexts.map((t) => t.getAttribute('x'))).size).toBe(2)
+  })
 })

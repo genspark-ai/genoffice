@@ -148,9 +148,6 @@ The sheets app additionally needs a Rust toolchain for its xlsx sidecar
 (`cargo` on PATH); `npm run build -w @genoffice/sheets` compiles it
 automatically.
 
-Local UI/e2e driver scripts (Playwright + Electron, for local acceptance, not
-committed by default) live in [`scripts/drivers/`](scripts/drivers/README.md).
-
 ## Architecture notes (docx round trip)
 
 ```

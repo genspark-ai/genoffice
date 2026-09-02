@@ -110,7 +110,67 @@ export function applyStructuralOps(
     }
   }
   if (outlineTouched) xml = syncOutlineSummaryLevels(xml)
-  return xml
+  return shiftOleObjectAnchors(xml, ops)
+}
+
+/// Embedded OLE objects anchor through the worksheet's own `<oleObjects>`
+/// (`objectPr/anchor` with drawing-style from/to markers), not the drawing
+/// part, so `shiftDrawingAnchors` never sees them. The renderer shifts the
+/// in-memory `ole` visual on inserts/deletes; the saved anchor has to follow
+/// or the object jumps back over the wrong cells on reopen.
+export function shiftOleObjectAnchors(worksheetXml: string, ops: readonly StructuralOp[]): string {
+  if (!worksheetXml.includes('<oleObjects')) return worksheetXml
+  return worksheetXml.replace(/<oleObjects\b[\s\S]*?<\/oleObjects>/g, (block) =>
+    shiftDrawingAnchors(block, ops),
+  )
+}
+
+/// Legacy VML shapes carry an `<x:Anchor>` of eight comma-separated values:
+/// col, colOff(px), row, rowOff(px), col2, colOff2, row2, rowOff2. Only the
+/// OLE object shapes (`ObjectType="Pict"`) shift here — the renderer places
+/// the object by that anchor when the x14 `objectPr` has none. Note shapes
+/// stay untouched: their owning cell (`x:Row`/`x:Column`, comments part) is
+/// not shifted by the structural pass either.
+export function shiftVmlObjectAnchors(vmlXml: string, ops: readonly StructuralOp[]): string {
+  const shifting = rowColumnOps(ops)
+  if (shifting.length === 0 || !vmlXml.includes('ObjectType="Pict"')) return vmlXml
+  return vmlXml.replace(/<v:shape\b[\s\S]*?<\/v:shape>/g, (shape) => {
+    if (!/<x:ClientData\b[^>]*\bObjectType="Pict"/.test(shape)) return shape
+    return shape.replace(
+      /(<x:Anchor>)([^<]*)(<\/x:Anchor>)/,
+      (_m, open: string, inner: string, close: string) => {
+        const values = inner.split(',').map((part) => Number(part.trim()))
+        if (values.length !== 8 || values.some((value) => !Number.isFinite(value))) return _m
+        return `${open}${shiftVmlAnchorValues(values, shifting).join(', ')}${close}`
+      },
+    )
+  })
+}
+
+/// Mirrors the drawing-anchor rules: swaps judge from/to as a pair, deletes
+/// clamp marks inside the span to its start with a zeroed pixel offset.
+function shiftVmlAnchorValues(values: readonly number[], ops: readonly RowColumnOp[]): number[] {
+  const next = [...values]
+  for (const op of ops) {
+    const shift = toShift(op)
+    // [col, colOff, row, rowOff, col2, colOff2, row2, rowOff2]
+    const from = axisOf(op) === 'row' ? 2 : 0
+    const to = from + 4
+    if (shift.swap) {
+      const moved = moveRange(next[from]!, next[to]!, shift)
+      if (moved) {
+        next[from] = moved.start
+        next[to] = moved.end
+      }
+      continue
+    }
+    for (const at of [from, to]) {
+      const moved = moveAnchorMark(next[at]!, shift)
+      next[at] = moved.position
+      if (moved.clamped) next[at + 1] = 0
+    }
+  }
+  return next
 }
 
 /// Excel sizes the outline gutter from sheetFormatPr's outlineLevelRow/Col;
@@ -503,11 +563,12 @@ export function shiftDrawingAnchors(drawingXml: string, ops: readonly Structural
 /// (independent remapping could tear an anchor whose ends straddle a block
 /// boundary). moveRange supplies the three-way semantics: anchors outside or
 /// spanning the swapped blocks stay put, anchors inside one block move with
-/// it, partial contact fails closed.
+/// it, partial contact fails closed. A worksheet `oleObjects` `<anchor>` is
+/// the same from/to pair under another name.
 function swapDrawingAnchors(xml: string, shift: BlockSwap, tag: string): string {
   const markPattern = (kind: string): RegExp =>
     new RegExp(`(<(?:\\w+:)?${kind}>[\\s\\S]*?<(?:\\w+:)?${tag}>)([0-9]+)(</(?:\\w+:)?${tag}>)`)
-  const result = xml.replace(/<((?:\w+:)?)twoCellAnchor\b[\s\S]*?<\/\1twoCellAnchor>/g, (block) => {
+  const result = xml.replace(/<((?:\w+:)?)(twoCellAnchor|anchor)\b[\s\S]*?<\/\1\2>/g, (block) => {
     const from = markPattern('from').exec(block)
     const to = markPattern('to').exec(block)
     if (!from?.[2] || !to?.[2]) return block
@@ -551,12 +612,34 @@ function moveAnchorMark(
   }
 }
 
+export interface InsertedTableColumn {
+  /// 0-based sheet column of the new table column, post-shift.
+  column: number
+  /// tableColumn/@id assigned to the new element.
+  id: number
+  /// Generated unique column name written into the part.
+  name: string
+}
+
+export interface TableColumnInsertion {
+  /// 0-based sheet row of the table header, post-shift; null without a header.
+  headerRow: number | null
+  columns: InsertedTableColumn[]
+}
+
 /// Shifts a table part's ref/autoFilter/sortState ranges along the op stream.
-/// Fail-closed cases (the tableColumns list or table anatomy would have to
-/// change): deleting header/totals rows or the whole table, deleting all data
-/// rows, inserting/deleting columns inside the table, merging over it.
-export function shiftTablePart(tableXml: string, ops: readonly StructuralOp[]): string {
+/// Column inserts and deletes inside the table reshape its tableColumns list
+/// the way Excel does; each insertion is reported through `insertions` so the
+/// caller can reconcile header cells. Fail-closed cases: deleting
+/// header/totals rows, deleting all data rows or all table columns, merging
+/// over the table.
+export function shiftTablePart(
+  tableXml: string,
+  ops: readonly StructuralOp[],
+  insertions?: TableColumnInsertion[],
+): string {
   let xml = tableXml
+  const records: TableColumnInsertion[] = []
   for (const op of ops) {
     if ('start' in op) continue
     const table = parseTablePart(xml)
@@ -568,8 +651,9 @@ export function shiftTablePart(tableXml: string, ops: readonly StructuralOp[]): 
     }
     const axis: Axis = axisOf(op)
     const shift = toShift(op)
+    remapInsertionRecords(records, shift, axis)
     if (axis === 'row') assertTableRowShiftSupported(table, shift)
-    else assertTableColumnShiftSupported(table, shift)
+    else xml = reshapeTableColumns(xml, table, shift, records)
     xml = xml.replace(
       /(<(?:table|autoFilter|sortState|sortCondition)\b[^>]*?\bref=")([^"]+)(")/g,
       (full, prefix: string, ref: string, suffix: string) => {
@@ -578,7 +662,176 @@ export function shiftTablePart(tableXml: string, ops: readonly StructuralOp[]): 
       },
     )
   }
+  insertions?.push(...records)
   return xml
+}
+
+/// Earlier insertions recorded post-op coordinates; later ops in the same
+/// batch move them along.
+function remapInsertionRecords(records: TableColumnInsertion[], shift: Shift, axis: Axis): void {
+  for (const record of records) {
+    if (axis === 'row') {
+      if (record.headerRow === null) continue
+      record.headerRow = movePosition(record.headerRow, shift) ?? record.headerRow
+      continue
+    }
+    record.columns = record.columns.flatMap((column) => {
+      const moved = movePosition(column.column, shift)
+      return moved === null ? [] : [{ ...column, column: moved }]
+    })
+  }
+}
+
+interface TableColumnElement {
+  readonly start: number
+  readonly end: number
+  readonly id: number
+  readonly name: string
+}
+
+function listTableColumns(tableXml: string): TableColumnElement[] {
+  const elements: TableColumnElement[] = []
+  const pattern = /<tableColumn\b[^>]*?(?:\/>|>[\s\S]*?<\/tableColumn>)/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(tableXml)) !== null) {
+    const open = /^<tableColumn\b[^>]*/.exec(match[0])?.[0] ?? ''
+    elements.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      id: Number(/\bid="([0-9]+)"/.exec(open)?.[1] ?? '0'),
+      name: decodeEntities(/\bname="([^"]*)"/.exec(open)?.[1] ?? ''),
+    })
+  }
+  return elements
+}
+
+/// Excel semantics for column inserts/deletes overlapping the table: the ref
+/// grows or shrinks (done by the caller's ref pass), new plain tableColumn
+/// elements appear at the insertion point with unique "ColumnN" names, deleted
+/// columns disappear with their filter criteria, and filterColumn/@colId
+/// (table-relative) follows the reshaped list.
+function reshapeTableColumns(
+  tableXml: string,
+  table: TablePartArea,
+  shift: Shift,
+  records: TableColumnInsertion[],
+): string {
+  if (shift.swap) return tableXml
+  const width = table.endColumn - table.startColumn + 1
+  if (shift.deleted) {
+    const { start, end } = shift.deleted
+    if (!spansOverlap(start, end, table.startColumn, table.endColumn)) return tableXml
+    if (start <= table.startColumn && end >= table.endColumn) {
+      throw new StructuralShiftError(
+        `Deleting all columns of table "${table.name}" is not supported — delete the table first.`,
+      )
+    }
+    const first = Math.max(start, table.startColumn) - table.startColumn
+    const last = Math.min(end, table.endColumn) - table.startColumn
+    return removeTableColumns(tableXml, table, width, first, last)
+  }
+  if (shift.boundary <= table.startColumn || shift.boundary > table.endColumn) return tableXml
+  return insertTableColumns(tableXml, table, width, shift.boundary, shift.delta, records)
+}
+
+function tableColumnsOrAbort(
+  tableXml: string,
+  table: TablePartArea,
+  width: number,
+): TableColumnElement[] {
+  const columns = listTableColumns(tableXml)
+  if (columns.length !== width) {
+    throw new StructuralShiftError(
+      `Table "${table.name}" has ${columns.length} column entries for ${width} columns — aborted.`,
+    )
+  }
+  return columns
+}
+
+function insertTableColumns(
+  tableXml: string,
+  table: TablePartArea,
+  width: number,
+  boundary: number,
+  count: number,
+  records: TableColumnInsertion[],
+): string {
+  const columns = tableColumnsOrAbort(tableXml, table, width)
+  const position = boundary - table.startColumn
+  const taken = new Set(columns.map((column) => column.name.toLowerCase()))
+  let nextId = Math.max(0, ...columns.map((column) => column.id)) + 1
+  let seed = 1
+  const record: TableColumnInsertion = {
+    headerRow: table.headerRows > 0 ? table.startRow : null,
+    columns: [],
+  }
+  let inserted = ''
+  for (let offset = 0; offset < count; offset += 1) {
+    let name = `Column${seed}`
+    while (taken.has(name.toLowerCase())) {
+      seed += 1
+      name = `Column${seed}`
+    }
+    taken.add(name.toLowerCase())
+    inserted += `<tableColumn id="${nextId}" name="${name}"/>`
+    record.columns.push({ column: boundary + offset, id: nextId, name })
+    nextId += 1
+  }
+  records.push(record)
+  const at = columns[position]!.start
+  let xml = tableXml.slice(0, at) + inserted + tableXml.slice(at)
+  xml = setTableColumnsCount(xml, width + count)
+  return xml.replace(
+    /(<filterColumn\b[^>]*?\bcolId=")([0-9]+)(")/g,
+    (full, prefix: string, colId: string, suffix: string) =>
+      Number(colId) >= position ? `${prefix}${Number(colId) + count}${suffix}` : full,
+  )
+}
+
+function removeTableColumns(
+  tableXml: string,
+  table: TablePartArea,
+  width: number,
+  first: number,
+  last: number,
+): string {
+  const columns = tableColumnsOrAbort(tableXml, table, width)
+  const removed = last - first + 1
+  let xml = tableXml.slice(0, columns[first]!.start) + tableXml.slice(columns[last]!.end)
+  xml = setTableColumnsCount(xml, width - removed)
+  xml = xml.replace(
+    /<filterColumn\b[^>]*?\bcolId="([0-9]+)"[^>]*?(?:\/>|>[\s\S]*?<\/filterColumn>)/g,
+    (full, colId: string) => {
+      const id = Number(colId)
+      if (id >= first && id <= last) return ''
+      if (id > last) {
+        return full.replace(
+          /(\bcolId=")[0-9]+(")/,
+          (_m, prefix: string, suffix: string) => `${prefix}${id - removed}${suffix}`,
+        )
+      }
+      return full
+    },
+  )
+  // Sort conditions on removed columns would keep a stale ref (the shared ref
+  // pass leaves unmappable ranges alone) — drop them, and an emptied sortState.
+  const deletedStart = table.startColumn + first
+  const deletedEnd = table.startColumn + last
+  xml = xml.replace(/<sortCondition\b[^>]*?\bref="([^"]+)"[^>]*?\/>/g, (full, ref: string) => {
+    const parts = ref.split(':')
+    const startRef = parseA1(parts[0] ?? '')
+    const endRef = parseA1(parts[1] ?? parts[0] ?? '')
+    if (!startRef || !endRef) return full
+    return startRef.column >= deletedStart && endRef.column <= deletedEnd ? '' : full
+  })
+  return xml.replace(/<sortState\b[^>]*>\s*<\/sortState>/g, '')
+}
+
+function setTableColumnsCount(tableXml: string, count: number): string {
+  return tableXml.replace(
+    /(<tableColumns\b[^>]*?\bcount=")[0-9]+(")/,
+    (_m, prefix: string, suffix: string) => `${prefix}${count}${suffix}`,
+  )
 }
 
 interface TablePartArea extends CellArea {
@@ -672,23 +925,6 @@ function assertTableRowMoveSupported(table: TablePartArea, swap: BlockSwap['swap
   if (table.totalsRows > 0 && overlapsEnvelope(table.endRow - table.totalsRows + 1, table.endRow)) {
     throw new StructuralShiftError(
       `Moving the totals row of table "${table.name}" is not supported.`,
-    )
-  }
-}
-
-function assertTableColumnShiftSupported(table: TablePartArea, shift: Shift): void {
-  if (shift.swap) return
-  if (shift.deleted) {
-    if (spansOverlap(shift.deleted.start, shift.deleted.end, table.startColumn, table.endColumn)) {
-      throw new StructuralShiftError(
-        `Deleting columns of table "${table.name}" is not supported — delete the table first.`,
-      )
-    }
-    return
-  }
-  if (shift.boundary > table.startColumn && shift.boundary <= table.endColumn) {
-    throw new StructuralShiftError(
-      `Inserting columns inside table "${table.name}" is not supported.`,
     )
   }
 }

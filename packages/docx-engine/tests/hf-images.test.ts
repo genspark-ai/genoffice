@@ -179,6 +179,113 @@ describe('header/footer images (display-only Logo)', () => {
     expect(doc.headerImages).toHaveLength(1)
     expect(doc.headerImages![0].dataUrl.startsWith('data:image/png;base64,')).toBe(true)
   })
+
+  it('AlternateContent Fallback re-emitting the Choice picture parses once (prod_043)', async () => {
+    // anchored drawing in the Choice, inline copy of the same logo in the Fallback;
+    // the AC open tag carries attributes (the engine's own writer inlines xmlns:mc)
+    const drawingWith = (inner: string) =>
+      `<w:drawing>${inner}<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+      '<pic:pic><pic:blipFill><a:blip r:embed="rId1"/></pic:blipFill></pic:pic>' +
+      `</a:graphicData></a:graphic>${inner.startsWith('<wp:anchor') ? '</wp:anchor>' : '</wp:inline>'}</w:drawing>`
+    const anchor =
+      '<wp:anchor behindDoc="0" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" locked="0" layoutInCell="1" allowOverlap="1">' +
+      '<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="margin"><wp:posOffset>0</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="381000" cy="190500"/><wp:wrapNone/><wp:docPr id="2" name="Logo"/>'
+    const inline =
+      '<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="381000" cy="190500"/><wp:docPr id="3" name="Logo"/>'
+    const headerXml = HEADER_XML.replace(
+      /<w:p><w:r><w:drawing>[\s\S]*?<\/w:drawing><\/w:r><\/w:p>/,
+      '<w:p><w:r>' +
+        '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
+        `<mc:Choice Requires="wps">${drawingWith(anchor)}</mc:Choice>` +
+        `<mc:Fallback>${drawingWith(inline)}</mc:Fallback>` +
+        '</mc:AlternateContent>' +
+        '</w:r></w:p>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages).toHaveLength(1)
+
+    // when the Choice yields nothing (unresolvable media), the Fallback still counts
+    const brokenChoice = headerXml.replace(
+      /<mc:Choice Requires="wps">[\s\S]*?<\/mc:Choice>/,
+      `<mc:Choice Requires="wps">${drawingWith(anchor).replace('rId1', 'rId9')}</mc:Choice>`,
+    )
+    const doc2 = await parseDocx(await buildHeaderLogoDocx(brokenChoice))
+    expect(doc2.headerImages).toHaveLength(1)
+  })
+
+  it('VML picture watermark parses when w:pict carries attributes (prod_091)', async () => {
+    const headerXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+      ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+      ' xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"' +
+      ' xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">' +
+      '<w:p><w:r><w:pict w14:anchorId="7C49EC32">' +
+      '<v:shape id="WordPictureWatermark1" type="#_x0000_t75" style="position:absolute;' +
+      'margin-left:0;margin-top:0;width:480pt;height:360pt;z-index:-251655168;' +
+      'mso-position-horizontal:center;mso-position-vertical:center">' +
+      '<v:imagedata r:id="rId1" o:title="logo"/></v:shape>' +
+      '</w:pict></w:r></w:p></w:hdr>'
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages).toHaveLength(1)
+    const img = doc.headerImages![0]
+    expect(img.dataUrl.startsWith('data:image/png;base64,')).toBe(true)
+    expect(img.floating).toBe(true)
+    expect(img.behind).toBe(true)
+    expect(img.posH).toBe('center')
+    expect(img.posV).toBe('center')
+    expect(img.widthPx).toBe(640)
+    expect(img.heightPx).toBe(480)
+  })
+
+  it('textless custGeom shape group renders as one SVG float image (prod_044 ornaments)', async () => {
+    const headerXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+      ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+      ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"' +
+      ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
+      ' xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"' +
+      ' xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+      '<w:p><w:r><w:drawing><wp:anchor behindDoc="1">' +
+      '<wp:simplePos x="0" y="0"/>' +
+      '<wp:positionH relativeFrom="page"><wp:posOffset>952500</wp:posOffset></wp:positionH>' +
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>-190500</wp:posOffset></wp:positionV>' +
+      '<wp:extent cx="190500" cy="190500"/><wp:wrapNone/>' +
+      '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup">' +
+      '<wpg:wgp><wpg:cNvGrpSpPr/><wpg:grpSpPr bwMode="auto"><a:xfrm>' +
+      '<a:off x="0" y="0"/><a:ext cx="190500" cy="190500"/>' +
+      '<a:chOff x="0" y="0"/><a:chExt cx="381000" cy="381000"/>' +
+      '</a:xfrm></wpg:grpSpPr>' +
+      '<wps:wsp><wps:cNvPr id="2" name="Graphic 1"/><wps:cNvSpPr/><wps:spPr>' +
+      '<a:xfrm><a:off x="0" y="0"/><a:ext cx="381000" cy="381000"/></a:xfrm>' +
+      '<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="l" t="t" r="r" b="b"/>' +
+      '<a:pathLst><a:path w="381000" h="381000">' +
+      '<a:moveTo><a:pt x="0" y="0"/></a:moveTo>' +
+      '<a:lnTo><a:pt x="381000" y="0"/></a:lnTo>' +
+      '<a:lnTo><a:pt x="190500" y="381000"/></a:lnTo>' +
+      '<a:close/></a:path></a:pathLst></a:custGeom>' +
+      '<a:solidFill><a:srgbClr val="20093F"/></a:solidFill>' +
+      '</wps:spPr><wps:bodyPr/></wps:wsp>' +
+      '</wpg:wgp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p></w:hdr>'
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages).toHaveLength(1)
+    const img = doc.headerImages![0]
+    expect(img.floating).toBe(true)
+    expect(img.behind).toBe(true)
+    expect(img.posXPx).toBe(100)
+    expect(img.posYPx).toBe(-20)
+    expect(img.posVRel).toBe('paragraph')
+    expect(img.widthPx).toBe(20)
+    expect(img.heightPx).toBe(20)
+    expect(img.dataUrl.startsWith('data:image/svg+xml,')).toBe(true)
+    const svg = decodeURIComponent(img.dataUrl.slice('data:image/svg+xml,'.length))
+    expect(svg).toContain('viewBox="0 0 20 20"')
+    expect(svg).toContain('fill="#20093F"')
+    expect(svg).toContain('d="M 0 0 L 20 0 L 10 20 Z"')
+  })
 })
 
 describe('layout-table cell images (header logo in a w:tbl cell)', () => {

@@ -93,8 +93,9 @@ const copyRangeSchema = z.object({
   /** with filterValues: only source rows whose cell in this column (absolute
    * sheet column letter, inside the source range) matches copy — compacted */
   filterColumn: columnLabelSchema.optional(),
-  /** matched against the cell's value as text, trimmed, case-insensitive */
-  filterValues: z.array(z.string().trim().min(1).max(255)).min(1).max(100).optional(),
+  /** matched against the cell's value as text, trimmed, case-insensitive;
+   * capped at the cell text limit so any real cell value is a legal filter */
+  filterValues: z.array(z.string().trim().min(1).max(32_767)).min(1).max(100).optional(),
 })
 
 // Freezes formulas into their current computed values (Excel's copy →
@@ -494,7 +495,7 @@ const setFilterCriteriaSchema = z.object({
   op: z.literal('set_filter_criteria'),
   sheetId: z.string().min(1),
   column: columnLabelSchema,
-  values: z.array(z.string().max(255)).min(1).max(1000).nullable(),
+  values: z.array(z.string().max(32_767)).min(1).max(1000).nullable(),
 })
 
 const cfFormatSchema = z
@@ -815,7 +816,9 @@ const findReplaceSchema = z.object({
   op: z.literal('find_replace'),
   sheetId: z.string().min(1),
   range: cellRangeSchema,
-  find: z.string().min(1).max(255),
+  // find matches cell text so it shares the cell cap; replace stays short
+  // because every occurrence is written back into a 32,767-char cell.
+  find: z.string().min(1).max(32_767),
   replace: z.string().max(255),
   matchCase: z.boolean().optional(),
   /** match the whole cell text instead of substrings */

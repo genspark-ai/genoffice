@@ -261,41 +261,70 @@ function setAttr(attrs: string, key: string, value: string | undefined): string 
 }
 
 /** Apply the shading/border/clear parts of an edit to one tcPr's children. */
+/** One ln* element in either form — self-closing or paired (they cannot nest). */
+const LN_ELEMENT_RE =
+  /<a:(lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)(?:\s[^>]*)?\/>|<a:(lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)(?:\s[^>]*)?>.*?<\/a:\2>/gs
+
+/** Transform only the segments outside ln* elements: a:ln* carry their own
+    solidFill children, so cell-fill edits must not reach inside them. */
+function outsideLns(src: string, fn: (seg: string) => string): string {
+  let out = ''
+  let cursor = 0
+  for (const m of src.matchAll(LN_ELEMENT_RE)) {
+    out += fn(src.slice(cursor, m.index)) + m[0]
+    cursor = m.index + m[0].length
+  }
+  return out + fn(src.slice(cursor))
+}
+
 function applyTcPrEdit(inner: string, edit: TableStyleEdit): string {
   if (edit.clearDirectFormatting) {
-    inner = inner.replace(/<a:(solidFill|gradFill|pattFill|blipFill)>.*?<\/a:\1>/gs, '')
+    inner = inner.replace(/<a:(solidFill|gradFill|pattFill|blipFill)(?:\s[^>]*)?>.*?<\/a:\1>/gs, '')
     inner = inner.replace(/<a:(noFill|grpFill)\/>/g, '')
     inner = inner.replace(/<a:(lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)(\s[^>]*)?\/>/g, '')
     inner = inner.replace(/<a:(lnL|lnR|lnT|lnB|lnTlToBr|lnBlToTr)(\s[^>]*)?>.*?<\/a:\1>/gs, '')
   }
-  // Remove existing fill nodes
+  // CT_TableCellProperties is a sequence: ln* → cell3D → fill → headers/extLst.
+  // Misplaced children make the part schema-invalid and PowerPoint offers repair.
+  const insertFill = (fill: string) => {
+    const at = inner.search(/<a:(headers|extLst)[\s>/]/)
+    return at >= 0 ? inner.slice(0, at) + fill + inner.slice(at) : inner + fill
+  }
+  const insertLns = (lns: string) => {
+    const at = inner.search(
+      /<a:(lnTlToBr|lnBlToTr|cell3D|solidFill|gradFill|pattFill|blipFill|noFill|grpFill|headers|extLst)[\s>/]/,
+    )
+    return at >= 0 ? inner.slice(0, at) + lns + inner.slice(at) : inner + lns
+  }
+  // Replace existing cell-level fill nodes (border fills stay untouched)
   if (edit.shadingColor !== undefined) {
-    inner = inner.replace(/<a:solidFill>.*?<\/a:solidFill>/gs, '')
-    inner = inner.replace(/<a:noFill\/>/g, '')
-    inner = inner.replace(/<a:noFill><\/a:noFill>/g, '')
+    inner = outsideLns(inner, (seg) =>
+      seg
+        .replace(/<a:(solidFill|gradFill|pattFill|blipFill)(?:\s[^>]*)?>.*?<\/a:\1>/gs, '')
+        .replace(/<a:(noFill|grpFill)\/>/g, '')
+        .replace(/<a:(noFill|grpFill)><\/a:\1>/g, ''),
+    )
     if (edit.shadingColor === 'none') {
-      inner = '<a:noFill/>' + inner
+      inner = insertFill('<a:noFill/>')
     } else if (edit.shadingColor) {
       const c = edit.shadingColor.replace('#', '').toUpperCase()
-      inner = `<a:solidFill><a:srgbClr val="${c}"/></a:solidFill>` + inner
+      inner = insertFill(`<a:solidFill><a:srgbClr val="${c}"/></a:solidFill>`)
     }
   }
   // Border handling
   if (edit.borderPreset !== undefined) {
-    inner = inner.replace(/<a:lnL[^>]*>.*?<\/a:lnL>/gs, '')
-    inner = inner.replace(/<a:lnR[^>]*>.*?<\/a:lnR>/gs, '')
-    inner = inner.replace(/<a:lnT[^>]*>.*?<\/a:lnT>/gs, '')
-    inner = inner.replace(/<a:lnB[^>]*>.*?<\/a:lnB>/gs, '')
+    inner = inner.replace(/<a:(lnL|lnR|lnT|lnB)(?:\s[^>]*)?\/>/g, '')
+    inner = inner.replace(/<a:(lnL|lnR|lnT|lnB)(?:\s[^>]*)?>.*?<\/a:\1>/gs, '')
     if (edit.borderPreset === 'all' && edit.borderColor) {
       const c = edit.borderColor.replace('#', '').toUpperCase()
       const w = edit.borderWidthEmu ?? 12700
       const lnXml = (tag: string) =>
         `<${tag} w="${w}"><a:solidFill><a:srgbClr val="${c}"/></a:solidFill></${tag}>`
-      inner = inner + lnXml('a:lnL') + lnXml('a:lnR') + lnXml('a:lnT') + lnXml('a:lnB')
+      inner = insertLns(lnXml('a:lnL') + lnXml('a:lnR') + lnXml('a:lnT') + lnXml('a:lnB'))
     } else if (edit.borderPreset === 'none') {
-      inner =
-        inner +
-        '<a:lnL w="0"><a:noFill/></a:lnL><a:lnR w="0"><a:noFill/></a:lnR><a:lnT w="0"><a:noFill/></a:lnT><a:lnB w="0"><a:noFill/></a:lnB>'
+      inner = insertLns(
+        '<a:lnL w="0"><a:noFill/></a:lnL><a:lnR w="0"><a:noFill/></a:lnR><a:lnT w="0"><a:noFill/></a:lnT><a:lnB w="0"><a:noFill/></a:lnB>',
+      )
     }
   }
   return inner

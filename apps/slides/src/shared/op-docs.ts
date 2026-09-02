@@ -104,7 +104,7 @@ export const OP_DOCS: Record<string, OpDoc> = {
 
   // ── insert ────────────────────────────────────────────────────────────
   addElement: {
-    sig: '{kind:"textbox"|<preset geometry>,offset:{x,y,cx,cy},paragraphs?,fill?,stroke?}',
+    sig: '{kind:"textbox"|<preset geometry>,offset:{x,y,cx,cy},paragraphs?,fill?,stroke?,adjustments?:{<gd name>:val},bodyPr?:{autoFit?:"shrink"|"resize"}}',
     group: 'insert',
   },
   addPicture: {
@@ -117,9 +117,12 @@ export const OP_DOCS: Record<string, OpDoc> = {
     group: 'insert',
     aiCallable: false,
   },
-  addTable: { sig: '{rows,cols,offset:{x,y,cx,cy}}', group: 'insert' },
+  addTable: {
+    sig: '{rows,cols,offset:{x,y,cx,cy},colWidthsEmu?,rowHeightsEmu?,cellProps?:[[{gridSpan?,rowSpan?,hMerge?,vMerge?,anchor?}]]}',
+    group: 'insert',
+  },
   addChart: {
-    sig: '{kind:"bar"|"barStacked"|"line"|"area"|"pie"|"doughnut"|"scatter"|"radar"|"comboBarLine",categories:[…],series:[{name,values:[…]}],offset,title?}',
+    sig: '{kind:"bar"|"barStacked"|"line"|"area"|"pie"|"doughnut"|"scatter"|"radar"|"comboBarLine",categories:[…],series:[{name,values:[…]}],offset,title?,colorScheme?:["#RRGGBB"],holeSizePct?}',
     group: 'insert',
   },
   addSmartArt: { sig: '{layout,items:[…],offset}', group: 'insert' },

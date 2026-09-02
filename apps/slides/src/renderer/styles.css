@@ -1,53 +1,54 @@
 /* Bundled metric substitutes for fonts most decks assume but macOS/Linux lack:
  * Carlito ↔ Calibri (document content rendering — the canvas font chains in
- * konva-adapter.ts list Carlito right after Calibri). The files' internal family
- * name is "Carlito GO" (docs' Vietnamese-diacritics rebuild), which is what the
- * main-process metrics report as the draw family — declare both names. */
+ * konva-adapter.ts list Carlito right after Calibri). The files are the suite's
+ * shared copy (@genoffice/ui/fonts); their internal family name is "Carlito GO"
+ * (docs' Vietnamese-diacritics rebuild), which is what the main-process metrics
+ * report as the draw family — declare both names. */
 @font-face {
   font-family: 'Carlito';
-  src: url('./fonts/Carlito-Regular.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
   font-weight: normal;
   font-style: normal;
 }
 @font-face {
   font-family: 'Carlito';
-  src: url('./fonts/Carlito-Bold.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
   font-weight: bold;
   font-style: normal;
 }
 @font-face {
   font-family: 'Carlito';
-  src: url('./fonts/Carlito-Italic.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
   font-weight: normal;
   font-style: italic;
 }
 @font-face {
   font-family: 'Carlito';
-  src: url('./fonts/Carlito-BoldItalic.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
   font-weight: bold;
   font-style: italic;
 }
 @font-face {
   font-family: 'Carlito GO';
-  src: url('./fonts/Carlito-Regular.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
   font-weight: normal;
   font-style: normal;
 }
 @font-face {
   font-family: 'Carlito GO';
-  src: url('./fonts/Carlito-Bold.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
   font-weight: bold;
   font-style: normal;
 }
 @font-face {
   font-family: 'Carlito GO';
-  src: url('./fonts/Carlito-Italic.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
   font-weight: normal;
   font-style: italic;
 }
 @font-face {
   font-family: 'Carlito GO';
-  src: url('./fonts/Carlito-BoldItalic.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
   font-weight: bold;
   font-style: italic;
 }

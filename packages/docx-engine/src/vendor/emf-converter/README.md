@@ -37,3 +37,9 @@ Local modifications to `index.mjs` (2026-08, GenOffice):
   bounds-tight canvas got stretched to the frame's aspect by the display box
   (e.g. OLE preview text filling a third of a page-wide frame drew giant and
   deformed); matching frames keep the established bounds mapping
+- LOGFONTW FaceName read at offset +32 (upstream read +28, landing in the
+  OutPrecision/ClipPrecision/Quality/PitchAndFamily bytes — GDI+-generated EMFs
+  set those non-zero, prefixing the family with control chars; the invalid CSS
+  ident made `ctx.font` assignment fail silently and text drew at the default
+  10px); mapFontFamily now also strips control chars and quotes non-generic
+  families so a corrupt facename can never drop the font size again

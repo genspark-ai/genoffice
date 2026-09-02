@@ -45,3 +45,12 @@ system mode).
   launch.
 - `useI18n()`'s `t` is not referentially stable; never put it in a hook
   dependency array. Store the key and translate at render time.
+
+## UI strings (i18n)
+
+- Large dictionaries are sharded per locale: `i18n/strings-<domain>.ts` is a
+  thin aggregator over `i18n/<domain>/<lang>.ts` (one file per language, `zh`
+  defines the key set). Add a new key to `zh.ts` and to every sibling shard;
+  the `satisfies Record<keyof typeof zh, string>` on each shard turns a
+  missing or extra key into a type error. Never grow the aggregator back into
+  a single 19-locale object.

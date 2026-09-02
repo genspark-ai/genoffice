@@ -72,12 +72,16 @@ export function parseNotesXml(xml: string, kind: NoteKind): NoteInfo[] {
     )
     const styleId = /<w:pStyle w:val="([^"]+)"/.exec(entryXml)?.[1]
     const spacing = noteDirectSpacing(entryXml)
+    // Word draws the entry number only where a self-reference mark run exists
+    // (empty-body notes keep their line but show no numeral — Word probe 2026-09-01)
+    const noRefMark = !/<w:footnoteRef\/>|<w:endnoteRef\/>/.test(entryXml)
     return {
       id,
       text,
       ...(hasFormat ? { richParas } : {}),
       ...(styleId ? { styleId } : {}),
       ...(spacing ? { spacing } : {}),
+      ...(noRefMark ? { noRefMark: true as const } : {}),
     }
   })
 }

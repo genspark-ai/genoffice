@@ -130,9 +130,15 @@
   --docs-paper-sdt-border: #a0c0e8;
   --docs-paper-sdt-ink: #5080b0;
   --docs-paper-sdt-bg: #eef4fb;
-  --docs-paper-comment-bg: rgb(255 196 0 / 22%);
-  --docs-paper-comment-flash: rgb(255 170 0 / 55%);
-  --docs-paper-comment-line: #e8a33d;
+  /* Word-style comment anchor tint (Word paints #ECFDD7 over white paper) */
+  --docs-paper-comment-bg: rgb(179 247 95 / 25%);
+  --docs-paper-comment-flash: rgb(130 171 81 / 45%);
+  --docs-paper-comment-line: #82ab51;
+  /* printed markup is document output, not chrome: fixed values, identical in both themes;
+     the balloon fill is the anchor tint composited over white (balloons sit on the gray strip) */
+  --docs-print-markup-band: #f2f2f2;
+  --docs-print-comment-fill: #ecfdd7;
+  --docs-print-comment-ink: #262626;
   --docs-paper-ai-anchor-bg: rgb(80 128 220 / 14%);
   --docs-paper-ai-anchor-line: #5080dc;
   --docs-paper-xe-ink: #8a6d3b;
@@ -1815,6 +1821,34 @@ html.genoffice-popover-open .ribbon-tabs {
   overflow: clip;
 }
 
+/* w:textDirection cells: Word sizes the row from the horizontal cells / trHeight and
+   wraps the rotated text into the resulting cell height. Out of flow, the vertical
+   line no longer stretches the row group; padding:inherit keeps the cell insets. */
+.cell-vert {
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  overflow: clip;
+}
+
+/* a row with no other height source (no declared trHeight, every in-flow cell
+   rotated) sizes from the rotated text like Word: the wrapper drops back into
+   flow. Structural :has() rather than a rendered tr attribute: ProseMirror
+   reuses the tr DOM when only its children change, so a baked attribute goes
+   stale after column inserts/deletes. gridGap spacers are not in-flow evidence. */
+tr:not([style*='height']):not(
+    :has(
+      > td:not(.cell-vert-host):not([data-grid-gap]),
+      > th:not(.cell-vert-host):not([data-grid-gap])
+    )
+  )
+  > :is(td, th)
+  > .cell-vert {
+  position: static;
+  inset: auto;
+  padding: 0;
+}
+
 /* table row/cell revisions: insert = green background, delete = red background (inline text has separate ins/del underline/strike styles) */
 tr.row-rev-ins > td,
 tr.row-rev-ins > th,
@@ -2178,8 +2212,37 @@ th.cell-rev-del {
   width: var(--col-w, auto);
 }
 
+/* floating-anchor wrappers force width:100%, which beats the section-width
+   decoration above: their stray in-flow line then wraps at the full canvas
+   width on the canvas but at the section width in preview clones, drifting
+   every boundary below (prod100r4/049 split a line across two pages) */
+.doc-page .doc-col-block.doc-protected-floating,
+.doc-page .doc-col-block.doc-img-float {
+  width: var(--col-w, 100%);
+  max-width: var(--col-w, 100%);
+}
+
 .editor-scroll .doc-page:not(.measuring-columns) .doc-col-block {
   transform: translate(var(--col-dx, 0px), var(--col-dy, 0px));
+}
+
+/* w:docGrid charSpace character grid (Word probes 2026-09-02): every character
+   in a typed linesAndChars section advances by natural width + charSpace/4096pt
+   — plain letter-spacing, inherited into tables and textboxes but not into the
+   header/footer strips (they live outside .doc-page). Uniform docs get the
+   variable from App.tsx's .doc-page injection; mixed docs set it per block via
+   the layout decoration channel (doc-charspace-block). Both selectors also
+   reach preview/export clones (.pv-content carries the doc-page class). */
+.doc-page {
+  letter-spacing: var(--doc-char-space, normal);
+}
+.doc-page .doc-charspace-block {
+  letter-spacing: var(--doc-char-space, normal);
+}
+/* per-page header/footer strips are page-gap widgets inside the editor root,
+   but Word does not grid header/footer text (scope probe) */
+.doc-page .page-gap-hf {
+  letter-spacing: normal;
 }
 
 /* page/margin-relative X anchors are absolute on the page in Word: undo the
@@ -2207,6 +2270,13 @@ th.cell-rev-del {
 
 .page-border-overlay {
   position: absolute;
+}
+
+/* preview/print copy: same document-data border, one box per .pv-page sheet */
+.pv-page-border {
+  position: absolute;
+  pointer-events: none;
+  z-index: 3;
 }
 
 /* ---- tab stops (w:tabs) ---- */
@@ -2344,9 +2414,12 @@ th.cell-rev-del {
   left: 50%;
   transform: translateX(-50%);
   /* Word: header/footer strip spans the text column; paragraphs default to
-     left-aligned black text at the body size (alignment comes from w:jc) */
+     left-aligned black text at the body size (alignment comes from w:jc).
+     Word's Header/Footer styles are based on Normal, so runs without their own
+     w:sz take the document default size when it is smaller than the 10.5pt
+     static guess (docStyleCss emits the var shrink-only) */
   width: var(--section-content-w, calc(var(--page-w, 816px) - 120px));
-  font-size: 10.5pt;
+  font-size: var(--hf-default-fs, 10.5pt);
   color: var(--docs-paper-ink);
   overflow: hidden;
   z-index: 1;
@@ -3220,7 +3293,9 @@ th.cell-rev-del {
   display: none;
 }
 
-/* absolute: height 100% of an auto-height td resolves to 0, hiding the bands */
+/* absolute: height 100% of an auto-height td resolves to 0, hiding the bands.
+   left/width are re-anchored to the paper box by alignTableGapFills (inline
+   styles): the cell's own box follows the table, not the paper */
 .page-gap-table-fill {
   position: absolute;
   inset: 0;
@@ -3370,6 +3445,13 @@ th.cell-rev-del {
   margin-top: 0 !important;
 }
 
+/* Sole line taller than its column (oversized inline picture): Word overflow-clips
+   it at the page bottom. The max-height rides the setOversizeClips inline style;
+   unscoped so pv clones and direct print match */
+.doc-oversize-clip {
+  overflow: hidden;
+}
+
 /* Word border groups: adjacent paragraphs with identical w:pBdr + shading draw
    top/bottom lines only at the group edges (ParaBorderMergeExtension classes).
    !important beats the inline border style; unscoped so pv clones and print match */
@@ -3389,6 +3471,19 @@ th.cell-rev-del {
   display: flex;
   flex-direction: column;
   background: var(--docs-pv-canvas);
+}
+
+/* chunked PDF export: each printToPDF flips print<->screen media over the whole
+   document; parking the subtree layout of everything outside the printed group
+   (the editor is covered by the opaque preview overlay; skipped pages keep
+   their inline-sized box) keeps those flips from stalling Chromium for minutes
+   on hundreds of table-heavy pages */
+.app.pv-exporting > *:not(.pagination-preview) {
+  content-visibility: hidden;
+}
+
+.pv-page.pv-print-skip {
+  content-visibility: hidden;
 }
 
 .pv-toolbar {
@@ -3473,10 +3568,66 @@ th.cell-rev-del {
    clipping at the content box culled their leading characters from the exported text.
    The padding compensates the negative margin so the content position is unchanged —
    only the clip edge moves out to the paper edge. */
-.pv-page > .pv-clip {
+.pv-sheet > .pv-clip {
   margin-right: calc(-1 * var(--pv-mr, 0px));
   margin-left: calc(-1 * var(--pv-ml, 0px));
   padding-left: var(--pv-ml, 0px);
+}
+
+/* the page's layout lives on this wrapper so the whole sheet can scale as one
+   when the markup strip is on (Word's print-markup geometry) */
+.pv-sheet {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+}
+
+.pv-markup {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  font-family: 'Segoe UI', 'PingFang SC', sans-serif;
+}
+
+.pv-markup-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--docs-print-markup-band);
+}
+
+.pv-comment-leaders {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.pv-comment-leaders path {
+  fill: none;
+  stroke: var(--docs-paper-comment-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
+.pv-comment-bubble {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid var(--docs-paper-comment-line);
+  border-radius: 4px;
+  background: var(--docs-print-comment-fill);
+  color: var(--docs-print-comment-ink);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.pv-comment-label {
+  font-weight: 700;
 }
 
 /* column flow: regions stack vertically; narrow clipped columns sit side by side within a region */
@@ -3519,6 +3670,12 @@ th.cell-rev-del {
 
 .pv-page .page-hf {
   cursor: default;
+  /* anchor at the left margin, not left:50% + translateX(-50%): Chromium's
+     print fit-to-paper shrink measures the centered strip's untransformed box
+     (reaching 50% + content width past the paper edge) and uniformly scaled
+     down whole multi-page exports */
+  left: var(--pv-ml);
+  transform: none;
 }
 
 .pv-pageno {
@@ -3610,6 +3767,12 @@ th.cell-rev-del {
   margin-top: 0 !important;
 }
 
+/* auto space-before is also suppressed on the document's first paragraph (Word);
+   the page-1 float host is a zero-height widget that may precede the block */
+.doc-page > .sp-auto-b:nth-child(1 of :not(.page-float-host)) {
+  margin-top: 0 !important;
+}
+
 /* direct w:contextualSpacing between unstyled (Normal) paragraphs: same-style
    suppression (styled pairs are handled per style in doc-style-css.ts) */
 .doc-page p.ctx-sp:not([data-style]):has(+ p:not([data-style])) {
@@ -3622,9 +3785,13 @@ th.cell-rev-del {
 
 .doc-li::before {
   display: inline-block;
-  /* --li-tab: measured marker escaped the hanging area; box widens to the next default tab stop */
-  min-width: var(--li-tab, var(--li-hang, 0.25in));
-  margin-inline-start: calc(-1 * var(--li-hang, 0.25in));
+  /* --li-tab: measured marker escaped the hanging area; box widens to the next default tab stop.
+     --style-li-hang: style-level w:hanging fallback (doc-style-css.ts) */
+  min-width: var(--li-tab, var(--li-hang, var(--style-li-hang, 0.25in)));
+  margin-inline-start: calc(-1 * var(--li-hang, var(--style-li-hang, 0.25in)));
+  /* the marker box is a block container: an inherited first-line indent would
+     drag the glyphs out of the hanging area */
+  text-indent: 0;
   font-family: var(--li-marker-font, inherit);
   font-size: calc(var(--li-marker-size, 1em) * var(--li-marker-scale, 1));
   line-height: var(--li-marker-lh, inherit);
@@ -3675,7 +3842,7 @@ th.cell-rev-del {
    first-line text starts right after the marker (+ one space), wrapped lines keep the indent */
 .doc-page .doc-li[data-suff]::before {
   min-width: 0;
-  margin-inline-start: calc(-1 * var(--li-hang, 0));
+  margin-inline-start: calc(-1 * var(--li-hang, var(--style-li-hang, 0)));
 }
 
 .doc-page .doc-li[data-suff='space'][data-marker]::before {
@@ -3821,8 +3988,9 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .doc-table th {
   position: relative;
   box-sizing: border-box;
-  /* the w:docGrid line grid applies to the body flow only — Word/LO never snap
-     table-cell lines to it (grid docs' scoring tables would inflate ~50%) */
+  /* the w:docGrid line grid applies to the body flow only, UNLESS settings.xml
+     w:compat carries w:adjustLineHeightInTable — then docStyleCss restores the
+     pitch in cells and they snap like body lines (Word probe 2026-09-02) */
   --doc-grid-pitch: 0.0001px;
 }
 
@@ -4317,9 +4485,22 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 .pv-page [data-pv-pagerel='1'] {
   position: static;
 }
-.pv-page [data-pv-pagerel='1'] > .doc-textbox,
-.pv-page [data-pv-pagerel='1'] > .doc-img-wrap {
+.pv-page [data-pv-pagerel='1'] > .doc-textbox[data-page-rel-v='1'],
+.pv-page [data-pv-pagerel='1'] > .doc-img-wrap[data-page-rel-v='1'] {
   translate: var(--pv-ml, 0px) var(--pv-mt, 0px);
+}
+
+/* preview: wrappers whose boxes spill past the page's flow window (data-pv-hoist,
+   stamped before cloning — cover flows ending in an early page break, page-bottom
+   overhang) un-position the same way so the boxes escape the pv-clip (which cut
+   them at the flow end while the next page's window repainted the spilled part),
+   and re-pin to the page box: --pv-hoist-dy is the anchor's content-area Y. */
+.pv-page [data-pv-hoist='1'] {
+  position: static;
+}
+.pv-page [data-pv-hoist='1'] > .doc-textbox,
+.pv-page [data-pv-hoist='1'] > .doc-img-wrap {
+  translate: var(--pv-ml, 0px) calc(var(--pv-mt, 0px) + var(--pv-hoist-dy, 0px));
 }
 
 .ProseMirror-focused .doc-protected.doc-protected-textboxes.ProseMirror-selectednode {
@@ -4388,11 +4569,19 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   max-width: 100%;
 }
 
-/* floating (wp:anchor) run pictures: zero-size positioning origin at the run,
-   the picture overlays at the anchor offset without consuming flow space */
+/* floating (wp:anchor) run pictures: zero-size marker at the run, the picture
+   overlays without consuming flow space. The hosting paragraph is the
+   positioning origin — wp:posOffset measures from the column / paragraph top
+   (Word anchors the drawing run at the paragraph end, so a run-based origin
+   would push the picture off the page) */
 .doc-inline-img-anchor {
-  position: relative;
   display: inline;
+}
+
+/* set by the lineFactorLive decoration pass; a stylesheet :has() here OOMed
+   Blink's invalidation on long picture-heavy documents */
+.doc-page .doc-anchor-origin {
+  position: relative;
 }
 
 .doc-inline-img--behind {
@@ -8183,6 +8372,14 @@ body.docs-crop-active
     display: none !important;
   }
 
+  /* header/footer measuring probe (hf-dom.ts): a body-level .doc-page box.
+     Chromium print fragmentation counts it as content after the last visible
+     sheet, materializing that sheet's forced break-after into a trailing blank
+     page in every grouped mixed-paper export (prod100r4/68 p6). */
+  #hf-strip-probe {
+    display: none !important;
+  }
+
   /* more editor-only markers whose text leaks into the exported text layer:
      transparent ink still emits glyphs into the PDF, so they must not paint at
      all. visibility (not display) keeps their layout box — pagination sliced
@@ -8332,6 +8529,12 @@ body.docs-crop-active
   }
 
   .pv-page:last-child {
+    break-after: auto;
+  }
+
+  /* grouped export: the job's last page is rarely :last-child; its forced
+     break emitted one trailing blank sheet per merged chunk */
+  .pv-page.pv-print-tail {
     break-after: auto;
   }
 
@@ -9949,4 +10152,11 @@ tr > .page-gap-cut {
 .doc-page span[data-doc-style]:has(.doc-ws-run),
 .doc-page span[data-doc-style]:has(.doc-ws-run) span {
   line-height: 0;
+}
+
+/* Curly quotes in w:hint="eastAsia" runs: Word draws them with the East Asian
+   font at a fullwidth advance, while every macOS Chinese system face keeps them
+   proportional — only the bundled Noto subset matches Word's 1em cell. */
+.doc-ea-quotes {
+  font-family: 'Noto Serif CJK SC';
 }

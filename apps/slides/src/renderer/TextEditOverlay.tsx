@@ -69,7 +69,7 @@ function editorParaRuns(
   const segs: Array<{ run?: GlyphRun; srcRun?: number; text: string }> = []
   paraLines.forEach((line, li) => {
     if (li > 0 && paraLines[li - 1]!.trailingSpace && segs.length) {
-      segs[segs.length - 1]!.text += ' '
+      segs[segs.length - 1]!.text += paraLines[li - 1]!.trailingText ?? ' '
     }
     // Canvas consumes visual bidi order; contentEditable must receive logical source order and
     // lets Chromium perform bidi shaping/reordering itself.
@@ -574,7 +574,8 @@ export function TextEditOverlay({
         top: box.y,
         width: box.w,
         height: box.h,
-        transform: `rotate(${box.rotationDeg ?? 0}deg) scale(${box.flipH ? -1 : 1}, ${box.flipV ? -1 : 1})`,
+        // Rotation only — the canvas counter-flips text in flipped shapes (NodeBody), so the editor must not mirror
+        transform: `rotate(${box.rotationDeg ?? 0}deg)`,
         transformOrigin: 'center center',
         zIndex: 20,
         display: 'flex',

@@ -480,6 +480,7 @@ describe('XLSX Rust sidecar', () => {
           headerRowCount: 1,
           showRowStripes: true,
           showColumnStripes: false,
+          filterActive: true,
           name: 'Table1',
           columns: ['Item', 'B', 'C', 'D'],
           styleName: 'TableStyleMedium2',
@@ -568,6 +569,7 @@ describe('XLSX Rust sidecar', () => {
         formulas: ['6'],
         dxfIndex: 0,
         priority: 1,
+        stopIfTrue: true,
         ranges: [{ startRow: 1, startColumn: 0, endRow: 2, endColumn: 0 }],
       })
       expect(result.conditionalRules[1]).toMatchObject({
@@ -748,7 +750,7 @@ async function buildStructureFixture(): Promise<Buffer> {
       <autoFilter ref="A1:D4"/>
       <mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>
       <conditionalFormatting sqref="A2:A3">
-        <cfRule type="cellIs" dxfId="0" priority="1" operator="greaterThan"><formula>6</formula></cfRule>
+        <cfRule type="cellIs" dxfId="0" priority="1" operator="greaterThan" stopIfTrue="1"><formula>6</formula></cfRule>
         <cfRule type="dataBar" priority="2">
           <dataBar showValue="0"><cfvo type="min"/><cfvo type="max"/><color rgb="FF638EC6"/></dataBar>
           <extLst><ext uri="{B025F937-C7B1-47D3-B67F-A62EFF666E3E}"
@@ -798,6 +800,9 @@ async function buildStructureFixture(): Promise<Buffer> {
     `<?xml version="1.0"?>
     <table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
       id="1" name="Table1" displayName="Table1" ref="A1:D4" headerRowCount="1">
+      <autoFilter ref="A1:D4">
+        <filterColumn colId="0"><filters><filter val="x"/></filters></filterColumn>
+      </autoFilter>
       <tableColumns count="4">
         <tableColumn id="1" name="Item"/><tableColumn id="2" name="B"/>
         <tableColumn id="3" name="C"/><tableColumn id="4" name="D"/>

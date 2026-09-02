@@ -7,6 +7,7 @@ import {
   fixFormattedValue,
   formatGeneral,
   generalCharBudget,
+  mergedSpanWidth,
   yenLiteralDisplay,
 } from '../src/renderer/numfmt-fix'
 
@@ -42,6 +43,23 @@ describe('expandAsteriskFill', () => {
     const text = expandAsteriskFill(escapedSpace, 683638, 30, measure)
     expect(text).toBe(`${NBSP_CHAR}$${NBSP_CHAR}${NBSP_CHAR.repeat(14)}683,638${NBSP_CHAR}`)
   })
+
+  it('renders [$sym-LCID] currency tokens in the prefix', () => {
+    const usd = '_-[$$-409]* #,##0.00_ ;_-[$$-409]* \\-#,##0.00\\ ;_-[$$-409]* "-"??_ ;_-@_ '
+    expect(expandAsteriskFill(usd, 18500, 25, measure)).toBe(
+      `${NBSP_CHAR}$${NBSP_CHAR.repeat(8)}18,500.00${NBSP_CHAR}`,
+    )
+    const eur = '_-[$€-2]\\ * #,##0.00_-;\\-[$€-2]\\ * #,##0.00_-;_-[$€-2]\\ * "-"??_-;_-@_-'
+    expect(expandAsteriskFill(eur, 1234.5, 30, measure)).toBe(
+      `${NBSP_CHAR}€${NBSP_CHAR}${NBSP_CHAR.repeat(13)}1,234.50${NBSP_CHAR}`,
+    )
+  })
+
+  it('skips color tokens and bails on elapsed-time placeholders', () => {
+    const red = '[Red]"$"* #,##0'
+    expect(expandAsteriskFill(red, 5, 15, measure)).toBe(`$${NBSP_CHAR.repeat(8)}5`)
+    expect(expandAsteriskFill('[h]* 0', 5, 25, measure)).toBeNull()
+  })
 })
 
 describe('yenLiteralDisplay', () => {
@@ -61,6 +79,15 @@ describe('yenLiteralDisplay', () => {
     expect(yenLiteralDisplay(JIS_YEN, '\\5', 'Calibri')).toBeNull()
     expect(yenLiteralDisplay(JIS_YEN, '\\5', undefined)).toBeNull()
     expect(yenLiteralDisplay('#,##0', '5', 'Meiryo')).toBeNull()
+  })
+
+  it('maps the [$\\-LCID] currency token by primary language id', () => {
+    const jis = '[$\\-411]#,##0;[Red]"¥"\\-[$\\-411]#,##0'
+    expect(yenLiteralDisplay(jis, '\\1,500,400', 'Calibri')).toBe('¥1,500,400')
+    expect(yenLiteralDisplay(jis, '¥-\\1,500,400', undefined)).toBe('¥-¥1,500,400')
+    expect(yenLiteralDisplay('[$\\-412]#,##0', '\\5', undefined)).toBe('₩5')
+    // en LCID: 0x5C is a real backslash, leave it.
+    expect(yenLiteralDisplay('[$\\-409]#,##0', '\\5', undefined)).toBeNull()
   })
 })
 
@@ -195,6 +222,30 @@ describe('formatGeneral', () => {
   it('never crashes on degenerate budgets', () => {
     expect(generalCharBudget(0)).toBe(1)
     expect(typeof formatGeneral(0.326882822311, 1)).toBe('string')
+  })
+})
+
+describe('mergedSpanWidth', () => {
+  // prod_037 Z6:AE6: anchor 30px, AA-AC hidden, AD/AE 31px each.
+  const sheet = {
+    getMergedCell: (row: number, col: number) =>
+      row === 5 && col >= 25 && col <= 30 ? { startColumn: 25, endColumn: 30 } : null,
+    getColumnWidth: (col: number) => (col === 25 ? 30 : 31),
+    getColVisible: (col: number) => col < 26 || col > 28,
+  }
+
+  it('sums the visible columns of the merged span', () => {
+    expect(mergedSpanWidth(sheet, 5, 25)).toBe(92)
+  })
+
+  it('returns null outside a merge', () => {
+    expect(mergedSpanWidth(sheet, 4, 25)).toBeNull()
+  })
+
+  it('fits General against the span, not the anchor column (prod_037)', () => {
+    // Anchor-only budget forced 23566 into scientific; the span shows it.
+    expect(formatGeneral(23566, generalCharBudget(30))).toBe('2E+04')
+    expect(formatGeneral(23566, generalCharBudget(92))).toBe('23566')
   })
 })
 

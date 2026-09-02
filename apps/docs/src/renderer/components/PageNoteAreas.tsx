@@ -19,7 +19,7 @@ function NoteRow({
 }) {
   return (
     <div className="page-note">
-      <sup>{marker}</sup>
+      {!note.noRefMark && <sup>{marker}</sup>}
       <span className="page-note-text">{note.text}</span>
       <button
         className="page-note-btn"

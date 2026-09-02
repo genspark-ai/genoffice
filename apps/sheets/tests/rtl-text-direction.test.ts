@@ -2,7 +2,12 @@ import { CellValueType, HorizontalAlign } from '@univerjs/core'
 import { Documents, SpreadsheetSkeleton, Text } from '@univerjs/engine-render'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { installRtlTextDirectionFix, resolveBidiDirection } from '../src/renderer/rtl-text-fix'
+import {
+  installRtlTextDirectionFix,
+  resolveBidiDirection,
+  rightAlignRtlGeneralEditor,
+} from '../src/renderer/rtl-text-fix'
+import type { EditorLayoutLike } from '../src/renderer/rtl-text-fix'
 
 describe('resolveBidiDirection', () => {
   it('is rtl when the first strong character is Arabic, even after digits', () => {
@@ -141,5 +146,32 @@ describe('General alignment for RTL-first text (context reading order)', () => {
     )
     expect(offsetArabic).toBe(200 - 80 - 3)
     expect(offsetLatin).toBe(2)
+  })
+
+  it('edits an unrotated Arabic-first General cell right-aligned', () => {
+    const layout = (text: string, extra: Partial<EditorLayoutLike> = {}): EditorLayoutLike => ({
+      horizontalAlign: HorizontalAlign.UNSPECIFIED,
+      documentModel: { getBody: () => ({ dataStream: `${text}\r\n` }) },
+      ...extra,
+    })
+    const arabic = layout('مرحبا بالعالم mixed latin')
+    rightAlignRtlGeneralEditor(arabic)
+    expect(arabic.horizontalAlign).toBe(HorizontalAlign.RIGHT)
+
+    // a formula bar / bridge state without a layout is a no-op
+    rightAlignRtlGeneralEditor(null)
+    rightAlignRtlGeneralEditor(undefined)
+
+    for (const untouched of [
+      layout('latin عربي'),
+      layout('1446'),
+      layout('مرحبا', { horizontalAlign: HorizontalAlign.LEFT }),
+      layout('مرحبا', { textRotation: { a: 45 } }),
+      layout('مرحبا', { textRotation: { a: 0, v: 1 } }),
+    ]) {
+      const before = untouched.horizontalAlign
+      rightAlignRtlGeneralEditor(untouched)
+      expect(untouched.horizontalAlign).toBe(before)
+    }
   })
 })

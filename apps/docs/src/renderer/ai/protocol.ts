@@ -9,6 +9,7 @@ import {
 } from '@genoffice/docx-engine'
 import { pmTableToModel, tableModelToPmNode, type PmMark, type PmNode } from '../editor/convert'
 import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
+import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-formatting'
 import { collectRevisions, TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { countWords } from '../word-count'
 
@@ -74,7 +75,7 @@ export const COMMANDS_GUIDE = [
   'Discipline:',
   '- Read the "document block list" before issuing commands; anything like "paragraph N / a certain section" must be addressed with block indexes from the list — never guess;',
   '- Put only the properties the user explicitly asked for into fields;',
-  '- Protected blocks such as images cannot be modified with style commands (they are skipped); to change table content, use read_blocks to get the <table> and rewrite it wholesale with replace_blocks.',
+  '- Protected blocks such as images cannot be modified with style commands (they are skipped); to change table content, use read_blocks to get the <table> and rewrite it wholesale with replace_blocks (the table keeps its column widths, borders, shading and cell formatting; cells whose text you leave unchanged keep their content untouched).',
   '',
   'Known error cases (must avoid):',
   'BC-1 Putting properties the user did not ask for into fields, wiping existing formatting by mistake;',
@@ -110,7 +111,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '# Tool usage',
   '- Every user message carries the latest "document block list" (index|type|content preview; previews may be truncated); after modifications, call get_document_context if you need the latest state;',
   '- When a list preview is truncated, read the full content with read_blocks before rewriting; never rewrite based on a truncated preview;',
-  '- Content changes: use insert_content for new content, and replace_blocks to rewrite/replace existing blocks (pass a block index range and the new HTML);',
+  '- Content changes: use insert_content for new content, and replace_blocks to rewrite/replace existing blocks (pass a block index range and the new HTML); replaced blocks pass their paragraph and text formatting (font, size, color, indent, spacing, alignment) on to the new blocks automatically, and a rewritten table keeps its widths, borders, shading and cell formatting, so a rewrite never needs follow-up formatting commands;',
   '- Formatting, structure, and batch operations (color/font size/line spacing/alignment/indent/heading level/find & replace/delete/move/list conversion) go through apply_commands — do not rewrite whole blocks with replace_blocks;',
   '- Small in-place text fixes (changing a few words inside a sentence) go through apply_commands replaceAllText with a target — do not rewrite the whole block; styling every occurrence of a phrase (e.g. bold each "TODO") uses updateMatchedTextStyle;',
   '- When the user has text selected, the message includes the selection block indexes and content; rewrite-style requests apply to the selection by default;',
@@ -1023,20 +1024,96 @@ function revisionDate(): string {
 /** blocks whose content ins/del marks can fully represent (tracked replace) */
 const TRACKABLE_TYPES = new Set(['docParagraph', 'docHeading', 'docListItem'])
 
+// ---- formatting inheritance for rewrites ----
+
+/**
+ * Give the replacement blocks the formatting of the blocks they replace.
+ * New block i takes the next not-yet-used old block of the same role (scanning
+ * forward), else the nearest earlier one (an expansion of one paragraph into
+ * three gives all three the paragraph's formatting). A new table takes the
+ * next old table in the range (see inheritTableFormatting). Blocks with no
+ * same-role counterpart (a heading the model introduced, protected content)
+ * are left as parsed. Tracked-deleted old blocks are not current content and
+ * never serve as templates.
+ *
+ * `anchors`: also hand each template's docxIndex to the first new block it
+ * formats (the rewrite saves as an in-place edit of that paragraph/table).
+ * Every anchor is lent at most once and in document order, so docxIndex stays
+ * unique — the TrackChanges recorder and the save plan key blocks by it.
+ * Callers that keep the old blocks in the document (tracked rewrites) must
+ * pass false.
+ */
+export function inheritBlockFormatting(
+  editor: Editor,
+  startIndex: number,
+  endIndex: number,
+  nodes: PmNode[],
+  anchors: boolean,
+): PmNode[] {
+  const doc = editor.state.doc
+  const templates: Array<{ node: ProseMirrorNode; at: number }> = []
+  const tables: Array<{ node: ProseMirrorNode; at: number }> = []
+  for (let i = startIndex; i <= Math.min(endIndex, doc.childCount - 1); i++) {
+    const node = doc.child(i)
+    if (isTrackedDeleted(node)) continue
+    if (TRACKABLE_TYPES.has(node.type.name)) templates.push({ node, at: i })
+    else if (node.type.name === 'docTable') tables.push({ node, at: i })
+  }
+  if (templates.length === 0 && tables.length === 0) return nodes
+  let cursor = 0
+  let tableCursor = 0
+  // document index of the last block whose docxIndex was lent
+  let lastAnchored = -1
+  const used = new Set<number>()
+  return nodes.map((next) => {
+    if (next.type === 'docTable') {
+      const table = tables[tableCursor]
+      if (!table) return next
+      tableCursor++
+      const anchor = anchors && table.at > lastAnchored
+      if (anchor) lastAnchored = table.at
+      return inheritTableFormatting(table.node, next, { anchor })
+    }
+    if (!TRACKABLE_TYPES.has(next.type)) return next
+    let j = templates.findIndex((t, k) => k >= cursor && sameBlockRole(t.node, next))
+    if (j !== -1) cursor = j + 1
+    else {
+      for (let k = Math.min(cursor, templates.length) - 1; k >= 0; k--) {
+        if (sameBlockRole(templates[k].node, next)) {
+          j = k
+          break
+        }
+      }
+    }
+    if (j === -1) return next
+    const first = !used.has(j)
+    used.add(j)
+    // anchors additionally keep document order: a template reused out of
+    // order lends its formatting but not its docxIndex
+    const anchor = anchors && templates[j].at > lastAnchored
+    if (anchor) lastAnchored = templates[j].at
+    return inheritFrom(templates[j].node, next, { anchor, first })
+  })
+}
+
 /**
  * Replace the top-level block range with the parsed nodes (marked aiChanged).
- * With `track`, and when both sides are plain text blocks, this becomes a
- * tracked rewrite instead: the old blocks stay struck through
- * (del) and the new blocks follow with ins marks — accept/reject via Review.
+ * The new blocks inherit the replaced blocks' formatting (see
+ * inheritBlockFormatting). With `track`, and when both sides are plain text
+ * blocks, this becomes a tracked rewrite instead: the old blocks stay struck
+ * through (del) and the new blocks follow with ins marks — accept/reject via Review.
  */
 export function replaceBlockRange(
   editor: Editor,
   startIndex: number,
   endIndex: number,
-  nodes: PmNode[],
+  parsed: PmNode[],
   track?: AiTrack,
 ): boolean {
-  if (nodes.length === 0) return false
+  if (parsed.length === 0) return false
+  // a tracked rewrite keeps the old blocks (struck through) next to the new
+  // ones, so the anchors stay with the old blocks until the user accepts
+  const nodes = inheritBlockFormatting(editor, startIndex, endIndex, parsed, !track)
   const { from, to } = blockRangePositions(editor, startIndex, endIndex)
   const pmNodes = nodes.map((n) => editor.schema.nodeFromJSON(n))
 

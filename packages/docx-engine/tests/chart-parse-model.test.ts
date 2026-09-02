@@ -13,12 +13,12 @@ const THEME: ThemeColors = {
   accent6: 'F79646',
 }
 
-const chartSpace = (inner: string, pre = '') =>
+const chartSpace = (inner: string, pre = '', post = '') =>
   '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ' +
   'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
   'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" ' +
   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
-  `${pre}<c:chart><c:plotArea><c:layout/>${inner}</c:plotArea></c:chart></c:chartSpace>`
+  `${pre}<c:chart><c:plotArea><c:layout/>${inner}</c:plotArea>${post}</c:chart></c:chartSpace>`
 
 const numCache = (tag: string, values: (number | string)[], fmt = 'General') =>
   `<c:${tag}><c:numRef><c:f>S!$A$1</c:f><c:numCache><c:formatCode>${fmt}</c:formatCode>` +
@@ -163,6 +163,45 @@ describe('parseChartPartXml scatter and bubble', () => {
     expect(display.kind).toBe('bubble')
     expect(display.categories).toEqual(['0.7', '1.8'])
     expect(display.series[0].sizes).toEqual([10, 4])
+  })
+})
+
+describe('parseChartPartXml doughnut hole and legend position', () => {
+  const pieSer =
+    `<c:ser><c:idx val="0"/><c:order val="0"/>${strCache('tx', ['S1'])}` +
+    `${strCache('cat', ['A', 'B'])}${numCache('val', [67, 33])}</c:ser>`
+  const doughnut = (hole: string) =>
+    chartSpace(`<c:doughnutChart><c:varyColors val="1"/>${pieSer}${hole}</c:doughnutChart>`)
+
+  it('reads doughnut charts as pie carrying the hole size', () => {
+    const display = parseChartPartXml(doughnut('<c:holeSize val="65"/>'), 'p')!
+    expect(display.kind).toBe('pie')
+    expect(display.holePct).toBe(65)
+  })
+
+  it('defaults the hole to 50% when c:holeSize is absent', () => {
+    expect(parseChartPartXml(doughnut(''), 'p')!.holePct).toBe(50)
+  })
+
+  it('leaves plain pies without a hole', () => {
+    const xml = chartSpace(`<c:pieChart><c:varyColors val="1"/>${pieSer}</c:pieChart>`)
+    expect(parseChartPartXml(xml, 'p')!.holePct).toBeUndefined()
+  })
+
+  it('reads the legend position, defaulting an empty c:legend to right', () => {
+    const pie = (legend: string) =>
+      chartSpace(`<c:pieChart><c:varyColors val="1"/>${pieSer}</c:pieChart>`, '', legend)
+    expect(
+      parseChartPartXml(
+        pie('<c:legend><c:legendPos val="r"/><c:overlay val="0"/></c:legend>'),
+        'p',
+      )!.legendPos,
+    ).toBe('r')
+    expect(
+      parseChartPartXml(pie('<c:legend><c:legendPos val="b"/></c:legend>'), 'p')!.legendPos,
+    ).toBe('b')
+    expect(parseChartPartXml(pie('<c:legend/>'), 'p')!.legendPos).toBe('r')
+    expect(parseChartPartXml(pie(''), 'p')!.legendPos).toBeUndefined()
   })
 })
 

@@ -125,6 +125,8 @@ function charAdvanceEm(code: number): number {
   // substitutes a CJK font where these draw full-width. Over-estimating only widens
   // a gap; under-estimating makes bullet glyphs overlap the text they precede.
   if ((code >= 0x25a0 && code <= 0x25ff) || code === 0x203b) return 1.0
+  // Enclosed alphanumerics (① … ⑸ … ⓩ): same ambiguous-width fallback story as above
+  if (code >= 0x2460 && code <= 0x24ff) return 1.0
   // narrow characters
   if ("iIlj.,:;'!|".includes(String.fromCharCode(code))) return 0.28
   if (' ftr'.includes(String.fromCharCode(code))) return 0.32

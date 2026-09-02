@@ -206,8 +206,14 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
           : visual.id.startsWith('added-')
             ? 'added this session'
             : 'came with the file, not modifiable by the AI'
+        const label =
+          visual.kind === 'image'
+            ? 'image'
+            : visual.kind === 'ole'
+              ? `embedded object ${visual.progId ?? ''}`
+              : `shape ${visual.shapeType ?? ''}`
         lines.push(
-          `- ${visual.kind === 'image' ? 'image' : `shape ${visual.shapeType ?? ''}`} @ ` +
+          `- ${label} @ ` +
             `${columnLabel(visual.anchor.fromColumn)}${visual.anchor.fromRow + 1}` +
             `${visual.text ? ` text "${visual.text}"` : ''} (${origin})`,
         )

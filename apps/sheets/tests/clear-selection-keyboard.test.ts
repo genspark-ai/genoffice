@@ -140,4 +140,21 @@ describe('shouldInterceptClearSelection', () => {
     expect(SKIP_HOST_SELECTOR).toContain('[data-u-comp="panel"]')
     expect(SKIP_HOST_SELECTOR).toContain('[data-u-comp="formula-bar"]')
   })
+
+  it('does not intercept the sheet-tab rename editor (r161)', () => {
+    // a contenteditable INSIDE the sheet container — the in-container rule
+    // alone would intercept it, so the tab item must be in the skip list
+    expect(
+      shouldInterceptClearSelection(
+        keyEvent('Backspace', ['[data-u-comp="slide-tab-item"]', '#univer-container']),
+        false,
+      ),
+    ).toBe(false)
+    expect(
+      shouldInterceptClearSelection(
+        keyEvent('Delete', ['[data-u-comp="slide-tab-item"]', '#univer-container']),
+        false,
+      ),
+    ).toBe(false)
+  })
 })

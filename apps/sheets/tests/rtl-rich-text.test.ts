@@ -1,9 +1,15 @@
+import { DocumentSkeleton, FontCache } from '@univerjs/engine-render'
 import { describe, expect, it } from 'vitest'
 
 import {
   bidiVisualOrder,
   classifyBidiGlyph,
+  divideSelectionExtent,
+  glyphBoundaryX,
+  installRichTextBidiFix,
   logicalGlyphContent,
+  paragraphIsRtl,
+  REORDERED_EDITOR_IDS,
   reorderRichCellSkeleton,
   resolveBidiLevels,
 } from '../src/renderer/rich-text-bidi-fix'
@@ -91,6 +97,25 @@ describe('classifyBidiGlyph', () => {
   it('honors directional marks', () => {
     expect(classifyBidiGlyph('‏')).toBe('R')
     expect(classifyBidiGlyph('‎')).toBe('L')
+  })
+
+  it('treats Script=Common Arabic punctuation and tatweel as AL', () => {
+    // U+0640 is a modifier LETTER of Script=Common: without the explicit
+    // class it would read as strong LTR and detach from its Hijri "هـ"
+    expect(classifyBidiGlyph('\u0640')).toBe('AL')
+    expect(classifyBidiGlyph('\u061F')).toBe('AL')
+    expect(classifyBidiGlyph('\u061B')).toBe('AL')
+  })
+
+  it('keeps the Hijri suffix together after a year in an RTL paragraph', () => {
+    // "1446هـ" glyph-per-char: EN EN EN EN AL AL — the suffix is one RTL run
+    // seated left of the digits, tatweel closest to the left edge
+    const levels = resolveBidiLevels(
+      ['1', '4', '4', '6', 'ه', '\u0640'].map(classifyBidiGlyph),
+      true,
+    )
+    expect(levels.slice(4)).toEqual([1, 1])
+    expect(bidiVisualOrder(levels)).toEqual([5, 4, 0, 1, 2, 3])
   })
 })
 
@@ -196,14 +221,56 @@ describe('reorderRichCellSkeleton', () => {
     expect(visualContents(line.glyphs)).toEqual([AR_HEH, ' ', AR_PRICE])
   })
 
-  it('ignores non rich-cell documents (the in-cell editor)', () => {
+  it('reorders the in-cell editor and the formula bar like the cell', () => {
+    for (const id of REORDERED_EDITOR_IDS) {
+      const glyphs = univerGlyphs([reverse(AR_PRICE), ' ', reverse(AR_HEH)])
+      const dataStream = `${AR_PRICE} ${AR_HEH}\r\n`
+      const skeleton = makeSkeleton(id, dataStream, [
+        { paragraphIndex: dataStream.length - 2, glyphs },
+      ])
+      reorderRichCellSkeleton(skeleton)
+      expect(visualContents(glyphs)).toEqual([AR_HEH, ' ', AR_PRICE])
+      expect(glyphs[0]?.content).toBe(AR_PRICE)
+    }
+  })
+
+  it('ignores other internal editors', () => {
     const glyphs = univerGlyphs([reverse(AR_PRICE), ' ', reverse(AR_HEH)])
     const before = glyphs.map((g) => ({ ...g }))
-    const skeleton = makeSkeleton('__INTERNAL_EDITOR__DOCS_NORMAL', `${AR_PRICE} ${AR_HEH}\r\n`, [
+    const skeleton = makeSkeleton('__INTERNAL_EDITOR__DOCS_ZEN', `${AR_PRICE} ${AR_HEH}\r\n`, [
       { glyphs },
     ])
     reorderRichCellSkeleton(skeleton)
     expect(glyphs).toEqual(before)
+  })
+
+  it('keeps an edited formula LTR-based while flipping its Arabic literal', () => {
+    // =A1&"<AR> <HEH>" — the reference and operators stay in reading order,
+    // only the Arabic literal flips (an RTL base would reverse the whole line)
+    const glyphs = univerGlyphs([
+      '=',
+      'A',
+      '1',
+      '&',
+      '"',
+      reverse(AR_PRICE),
+      ' ',
+      reverse(AR_HEH),
+      '"',
+    ])
+    const dataStream = `=A1&"${AR_PRICE} ${AR_HEH}"\r\n`
+    const editor = makeSkeleton('__INTERNAL_EDITOR__DOCS_NORMAL', dataStream, [
+      { paragraphIndex: dataStream.length - 2, glyphs },
+    ])
+    reorderRichCellSkeleton(editor)
+    expect(visualContents(glyphs)).toEqual(['=', 'A', '1', '&', '"', AR_HEH, ' ', AR_PRICE, '"'])
+    // formula rule: '=' pins the base even when the first strong char is Arabic
+    const literal = `="${AR_PRICE}"\r\n`
+    expect(paragraphIsRtl(literal, literal.length - 2, true)).toBe(false)
+    // the same text painted in a cell is a plain string: first strong char rules
+    expect(paragraphIsRtl(literal, literal.length - 2)).toBe(true)
+    const text = `${AR_PRICE}=1\r\n`
+    expect(paragraphIsRtl(text, text.length - 2, true)).toBe(true)
   })
 
   it('leaves LTR-only rich documents untouched', () => {
@@ -224,5 +291,88 @@ describe('reorderRichCellSkeleton', () => {
     ])
     reorderRichCellSkeleton(skeleton)
     expect(visualContents(glyphs)).toEqual(['P', 'r', ' ', '1', '0', ' ', AR_PRICE])
+  })
+})
+
+describe('editor caret geometry over reordered glyphs', () => {
+  // Hebrew "שלום" typed into the editor: logical glyph i sits at visual slot
+  // 3-i, every glyph 10px wide, line anchored at x=0.
+  const he = [...HE_SHALOM].map((content, i) => ({ content, width: 10, left: (3 - i) * 10 }))
+  const rtl = () => true
+
+  it('puts the caret before an RTL glyph on its visual right edge', () => {
+    expect(glyphBoundaryX(he[0]!, true, true)).toBe(40)
+    expect(glyphBoundaryX(he[0]!, false, true)).toBe(30)
+    // LTR glyphs keep the stock mapping
+    expect(glyphBoundaryX({ left: 5, width: 10 }, true, false)).toBe(5)
+    expect(glyphBoundaryX({ left: 5, width: 10 }, false, false)).toBe(15)
+  })
+
+  it('collapses a caret to the mapped boundary', () => {
+    // offset 0 (before the first letter) = far right of the word
+    expect(divideSelectionExtent(he, 0, true, 0, true, rtl)).toEqual({ startX: 40, endX: 40 })
+    // after the last letter = far left
+    expect(divideSelectionExtent(he, 3, false, 3, false, rtl)).toEqual({ startX: 0, endX: 0 })
+  })
+
+  it('boxes a logical range by the union of its glyphs', () => {
+    // select the first two letters: visually the rightmost 20px
+    expect(divideSelectionExtent(he, 0, true, 1, false, rtl)).toEqual({ startX: 20, endX: 40 })
+    // Univer's "end before glyph 2" form of the same range
+    expect(divideSelectionExtent(he, 0, true, 2, true, rtl)).toEqual({ startX: 20, endX: 40 })
+    // whole word
+    expect(divideSelectionExtent(he, 0, true, 3, false, rtl)).toEqual({ startX: 0, endX: 40 })
+  })
+
+  it('spans a mixed-direction range with one bounding box', () => {
+    // "ab" + Hebrew word: a b at 0..20, word reversed at 20..60
+    const mixed = [
+      { width: 10, left: 0 },
+      { width: 10, left: 10 },
+      ...[...HE_SHALOM].map((_ch, i) => ({ width: 10, left: 20 + (3 - i) * 10 })),
+    ]
+    const isRtl = (glyph: { left: number }) => glyph.left >= 20
+    expect(divideSelectionExtent(mixed, 1, true, 3, false, isRtl)).toEqual({ startX: 10, endX: 60 })
+  })
+})
+
+describe('Arabic chunk measurement during layout', () => {
+  it('measures the logical string only while a reordered document lays out', () => {
+    const seen: string[] = []
+    const fontCache = FontCache as unknown as {
+      getTextSize(content: string, fontStyle: unknown): unknown
+    }
+    fontCache.getTextSize = (content: string) => {
+      seen.push(content)
+      return { width: content.length }
+    }
+    // stand-in for Univer's layout: ArabicHandler measures the reversed chunk
+    const proto = DocumentSkeleton.prototype as unknown as { calculate(this: unknown): void }
+    proto.calculate = function () {
+      fontCache.getTextSize(reverse(AR_PRICE), {})
+    }
+    installRichTextBidiFix()
+
+    proto.calculate.call(makeSkeleton('rich-cell', `${AR_PRICE}\r\n`, []))
+    proto.calculate.call(makeSkeleton(REORDERED_EDITOR_IDS[0]!, `${AR_PRICE}\r\n`, []))
+    // a document this module does not reorder keeps Univer's own widths
+    proto.calculate.call(makeSkeleton('zen-editor', `${AR_PRICE}\r\n`, []))
+    // whole-string callers outside layout (dropdown items) are untouched
+    fontCache.getTextSize(reverse(AR_PRICE), {})
+    // single letters and non-Arabic text never change
+    proto.calculate = function () {
+      fontCache.getTextSize('a', {})
+      fontCache.getTextSize(reverse(HE_SHALOM), {})
+    }
+    proto.calculate.call(makeSkeleton('rich-cell', `${HE_SHALOM}\r\n`, []))
+
+    expect(seen).toEqual([
+      AR_PRICE,
+      AR_PRICE,
+      reverse(AR_PRICE),
+      reverse(AR_PRICE),
+      'a',
+      reverse(HE_SHALOM),
+    ])
   })
 })

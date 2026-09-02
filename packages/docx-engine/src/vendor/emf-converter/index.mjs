@@ -424,12 +424,26 @@ function cssFontWeight(weight) {
   }
   return weight >= 700 ? "bold" : "";
 }
+var GENERIC_CSS_FAMILIES = /* @__PURE__ */ new Set([
+  "serif",
+  "sans-serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "system-ui"
+]);
 function mapFontFamily(face, map) {
-  const resolved = map?.[face.toLowerCase().trim()] ?? face;
-  if (/[\s,]/.test(resolved) && !/^["']/.test(resolved)) {
-    return `"${resolved}"`;
+  // Strip control chars (corrupt facenames): an invalid family makes the
+  // whole ctx.font assignment fail silently, dropping the size too
+  const cleaned = (face || "").replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  const resolved = map?.[cleaned.toLowerCase()] ?? cleaned;
+  if (!resolved) {
+    return "sans-serif";
   }
-  return resolved;
+  if (GENERIC_CSS_FAMILIES.has(resolved) || /^["']/.test(resolved)) {
+    return resolved;
+  }
+  return `"${resolved.replace(/["\\]/g, "")}"`;
 }
 function fontSizePx(state, scale = 1) {
   return Math.max(Math.abs(state.fontHeight) * Math.abs(scale || 1), 8);
@@ -2339,7 +2353,10 @@ function handleEmfObjectRecord(rCtx, recType, dataOff, recSize) {
         const italic = view.getUint8(dataOff + 24);
         const underline = view.getUint8(dataOff + 25);
         const strikeOut = view.getUint8(dataOff + 26);
-        const family = readUtf16LE(view, dataOff + 28, 32) || "sans-serif";
+        // LOGFONTW FaceName at +32: ihFont(4) Height..Weight(20)
+        // Italic/Underline/StrikeOut/CharSet(1 each) OutPrec/ClipPrec/Quality/
+        // PitchAndFamily(1 each) — +28 lands in the precision/quality bytes
+        const family = readUtf16LE(view, dataOff + 32, 32) || "sans-serif";
         rCtx.objectTable.set(ihFont, {
           kind: "font",
           height: Math.abs(height),

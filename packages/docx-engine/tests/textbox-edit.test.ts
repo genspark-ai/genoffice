@@ -457,4 +457,45 @@ describe('textbox patch addressing', () => {
     expect(out).toContain('second')
     expect(out.indexOf('second')).toBeGreaterThan(out.indexOf('hello'))
   })
+
+  const INLINE_PIC =
+    '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">' +
+    '<wp:extent cx="259200" cy="244800"/><wp:docPr id="9" name="Checkbox"/>' +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:nvPicPr><pic:cNvPr id="9" name="Checkbox"/><pic:cNvPicPr/></pic:nvPicPr>' +
+    '<pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="259200" cy="244800"/></a:xfrm>' +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>' +
+    '</a:graphicData></a:graphic></wp:inline></w:drawing>'
+
+  const picParagraphXml = () =>
+    TEXTBOX_PARAGRAPH.replaceAll(
+      '<w:t>**Current date:** {Month}</w:t></w:r></w:p>',
+      `<w:t>**Current date:** {Month}</w:t></w:r><w:r>${INLINE_PIC}</w:r></w:p>`,
+    )
+
+  it('keeps inline pictures inside textbox paragraphs as run images', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: picParagraphXml(), withImage: true }))
+    const box = doc.blocks[0].textboxes?.[0]
+    const img = box?.paras[0].runs.find((r) => r.image)?.image
+    expect(img?.dataUrl.startsWith('data:image/png')).toBe(true)
+    expect(img?.xml).toContain('r:embed="rId10"')
+    expect(img?.widthPx).toBe(27) // 259200 EMU / 9525
+  })
+
+  it('round-trips an inline picture when its textbox paragraph is regenerated', async () => {
+    const xml = picParagraphXml()
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml, withImage: true }))
+    const box = doc.blocks[0].textboxes?.[0]
+    expect(box?.txbxIndex).toBe(0)
+    // unchanged commit: paragraph rebuilt from the parsed runs keeps the drawing
+    const out = patchTextboxParas(xml, {
+      byIndex: [box!.paras.map((p) => para({ runs: p.runs, align: p.align ?? null }))],
+    })
+    expect(out).toContain(INLINE_PIC)
+    expect(out).toContain('**Current date:** {Month}')
+    expect(out).toContain('CRITICAL')
+    // untouched box: original bytes kept verbatim
+    expect(patchTextboxParas(xml, { byIndex: [undefined] })).toBe(xml)
+  })
 })

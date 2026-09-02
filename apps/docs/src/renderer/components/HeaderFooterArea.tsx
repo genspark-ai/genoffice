@@ -8,6 +8,7 @@ import {
 } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
 import {
+  hfDeclaredStrutPt,
   hfLeadIndentCss,
   hfSegLeftCss,
   hfTabSegments,
@@ -144,10 +145,17 @@ export function HeaderFooterArea({
     return hfUsesLegacyHash(value) ? t.replace('#', String(pageNo ?? 1)) : t
   }
 
+  // run-declared strip strut (shrink-only), mirroring makeGapHfEl so the
+  // preview/export strips lay out like the canvas gaps and the push-down probe
+  const strutPt = hfDeclaredStrutPt(paras)
   return (
     <div
       className={`page-hf page-hf-${kind}${editing ? ' page-hf-editing' : ''}`}
-      style={style}
+      style={
+        strutPt != null
+          ? { fontSize: `min(${strutPt}pt, var(--hf-default-fs, 10.5pt))`, ...style }
+          : style
+      }
       data-tip={
         readOnly
           ? undefined

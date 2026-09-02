@@ -10,6 +10,7 @@ import {
   signatureOfBlock,
   signatureOfGenerated,
   tableModelToPmNode,
+  textboxParaSignature,
   type PmNode,
 } from '../src/renderer/editor/convert'
 
@@ -70,6 +71,20 @@ describe('runsToInline image runs', () => {
         },
       },
     ])
+  })
+
+  it('round-trips a textbox image run without changing its signature', () => {
+    const para = {
+      runs: [
+        { text: 'tick ' },
+        { text: '', image: { dataUrl: 'data:image/png;base64,QUJD', xml: '<w:drawing/>' } },
+      ],
+    }
+    const roundtripped = { runs: inlineToRuns(runsToInline(para.runs)) }
+    expect(textboxParaSignature(roundtripped)).toBe(textboxParaSignature(para))
+    // deleting the image must surface as a change even when the text is intact
+    const dropped = { runs: [{ text: 'tick ' }] }
+    expect(textboxParaSignature(dropped)).not.toBe(textboxParaSignature(para))
   })
 
   it('emits only the image atom for a text-less drawing run', () => {
@@ -280,6 +295,51 @@ describe('oversize floating tables (w:tblpPr) lose the float', () => {
   it('declared row heights count toward the overflow estimate', () => {
     const model: TableModel = { rows: [row], rowHeightsTwips: [20000], floatSide: 'left' }
     expect(tableModelToPmNode(model).attrs!.tblFloat).toBeNull()
+  })
+
+  it('a text-anchored float at least as wide as the text column flows inline', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [6000, 6000],
+      floatSide: 'left',
+      floatPos: { xTwips: 300, yTwips: 0, horzAnchor: 'page', vertAnchor: 'text' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
+    expect(node.attrs!.tblFloat).toBeNull()
+    expect(node.attrs!.tblFloatSuppressed).toBe(true)
+  })
+
+  it('a page-anchored full-width float keeps floating', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [6000, 6000],
+      floatSide: 'left',
+      floatPos: { xTwips: 300, yTwips: 400, horzAnchor: 'page', vertAnchor: 'page' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
+    expect(node.attrs!.tblFloat).toBe('left')
+  })
+
+  it('a full-width float positioned mid-page keeps its clamped-float rendering', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [6000, 6000],
+      floatSide: 'left',
+      floatPos: { xTwips: 4000, yTwips: 200, horzAnchor: 'page', vertAnchor: 'text' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
+    expect(node.attrs!.tblFloat).toBe('left')
+  })
+
+  it('a narrow text-anchored float keeps floating', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [3000],
+      floatSide: 'right',
+      floatPos: { xTwips: 300, yTwips: 0, horzAnchor: 'margin', vertAnchor: 'text' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
+    expect(node.attrs!.tblFloat).toBe('right')
   })
 })
 

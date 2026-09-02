@@ -10,7 +10,7 @@ import { docLineFactor, docStyleCss, docThemeCss } from '../src/renderer/doc-sty
 describe('docThemeCss', () => {
   it('emits body and heading fonts from the theme font pair', () => {
     const css = docThemeCss({ major: 'Trebuchet MS', minor: 'Trebuchet MS' }, null)
-    expect(css).toContain('.doc-page {')
+    expect(css).toContain('.doc-page, .pv-page {')
     expect(css).toContain('Trebuchet MS')
     expect(css).toContain('.doc-page h1')
   })
@@ -124,7 +124,7 @@ describe('docStyleCss — typed line grid', () => {
     expect(css).toContain('--doc-grid-single-mult:1')
     // snapToGrid=0 paragraphs degrade to natural x mult on the paragraph AND its spans
     expect(css).toContain(
-      '.doc-page .doc-nosnap, .doc-page .doc-nosnap * { --doc-line-max:calc(var(--doc-line-factor,1.2) * 1em * var(--doc-line-mult,1)) }',
+      '.doc-page :is(.doc-nosnap, .doc-grid-nosnap), .doc-page :is(.doc-nosnap, .doc-grid-nosnap) * { --doc-line-max:calc(var(--doc-line-factor,1.2) * 1em * var(--doc-line-mult,1)) }',
     )
   })
 

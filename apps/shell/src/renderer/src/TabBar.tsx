@@ -237,6 +237,9 @@ export function TabBar() {
             <div
               key={tab.id}
               className={`tab-item ${tab.kind === 'home' ? 'tab-home' : ''} ${tab.active ? 'active' : ''} ${dragVisual?.id === tab.id ? 'drag-source' : ''}`}
+              // long file names ellipsize in the strip — hover reveals the
+              // full title (the close button's own tooltip still wins there)
+              title={tab.title}
               style={dragStyle}
               onPointerDown={(event) => {
                 if (event.button !== 0) return

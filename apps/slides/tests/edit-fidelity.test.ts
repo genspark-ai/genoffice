@@ -211,6 +211,127 @@ describe('applyEditParagraphs: srcPara/srcRun tracing + unedited fields preserve
     expect(out[0]!.runs[1]!.field).toBe('slidenum')
   })
 
+  it('untraced paragraphs past the end continue the last paragraph (AI tools send plain paragraphs)', () => {
+    const oldParas: Paragraph[] = [
+      { runs: [{ text: 'Title', bold: true, fontSize: 24 }] },
+      { runs: [{ text: 'One', fontSize: 14 }], bullet: { type: 'char', char: '•' }, level: 1 },
+    ]
+    const out = applyEditParagraphs(oldParas, [
+      { runs: [{ text: 'New title' }] },
+      { runs: [{ text: 'First' }] },
+      { runs: [{ text: 'Second' }] },
+      { runs: [{ text: 'Third' }] },
+    ])
+    expect(out[0]!.runs[0]).toMatchObject({ text: 'New title', bold: true, fontSize: 24 })
+    for (const [i, text] of [
+      [1, 'First'],
+      [2, 'Second'],
+      [3, 'Third'],
+    ] as const) {
+      expect(out[i]!.bullet).toEqual({ type: 'char', char: '•' })
+      expect(out[i]!.level).toBe(1)
+      expect(out[i]!.runs[0]).toMatchObject({ text, fontSize: 14 })
+      expect(out[i]!.runs[0]!.bold).toBeUndefined()
+    }
+    // a traced paragraph never falls back: an out-of-range source stays unformatted
+    expect(
+      applyEditParagraphs(oldParas, [{ runs: [{ text: 'x' }], srcPara: 7 }])[0]!.bullet,
+    ).toBeUndefined()
+  })
+
+  it('an untraced single run over a mixed paragraph takes the dominant run, not the label run', () => {
+    const oldParas: Paragraph[] = [
+      {
+        runs: [
+          { text: 'Revenue: ', bold: true, fontSize: 14 },
+          { text: 'up 5% year over year on strong demand', fontSize: 14, color: '595959' },
+        ],
+      },
+    ]
+    const [rewritten] = applyEditParagraphs(oldParas, [{ runs: [{ text: 'Revenue grew 5%' }] }])
+    expect(rewritten!.runs).toHaveLength(1)
+    expect(rewritten!.runs[0]).toMatchObject({
+      text: 'Revenue grew 5%',
+      fontSize: 14,
+      color: '595959',
+    })
+    expect(rewritten!.runs[0]!.bold).toBeUndefined()
+    // traced (editor) and positional multi-run edits keep the first run's formatting
+    const [traced] = applyEditParagraphs(oldParas, [{ runs: [{ text: 'Revenue', srcRun: 0 }] }])
+    expect(traced!.runs[0]!.bold).toBe(true)
+    const [twoRuns] = applyEditParagraphs(oldParas, [
+      { runs: [{ text: 'Sales: ' }, { text: 'flat' }] },
+    ])
+    expect(twoRuns!.runs[0]!.bold).toBe(true)
+    expect(twoRuns!.runs[1]!.bold).toBeUndefined()
+  })
+
+  it('the dominant run is never a field or a link: plain replacement text stays plain text', () => {
+    // the longest run is a datetime field — a rewrite must not become a field
+    // PowerPoint overwrites on open
+    const [dated] = applyEditParagraphs(
+      [
+        {
+          runs: [
+            { text: 'As of ', fontSize: 12, color: '595959' },
+            { text: 'September 2, 2026', field: 'datetime1', fontSize: 12, bold: true },
+          ],
+        },
+      ],
+      [{ runs: [{ text: 'Updated quarterly' }] }],
+    )
+    expect(dated!.runs[0]).toMatchObject({
+      text: 'Updated quarterly',
+      fontSize: 12,
+      color: '595959',
+    })
+    expect(dated!.runs[0]!.field).toBeUndefined()
+    expect(dated!.runs[0]!.bold).toBeUndefined()
+
+    // the longest run is a hyperlink — the rewrite keeps the trailing plain run's look
+    const [linked] = applyEditParagraphs(
+      [
+        {
+          runs: [
+            {
+              text: 'Read the full report',
+              hyperlink: 'https://a.com/report',
+              hyperlinkRId: 'rId7',
+              underline: true,
+              underlineImplicit: true,
+              fontSize: 12,
+            },
+            { text: ' (PDF)', fontSize: 12, color: '595959' },
+          ],
+        },
+      ],
+      [{ runs: [{ text: 'Summary attached' }] }],
+    )
+    expect(linked!.runs[0]).toMatchObject({
+      text: 'Summary attached',
+      fontSize: 12,
+      color: '595959',
+    })
+    expect(linked!.runs[0]!.hyperlink).toBeUndefined()
+    expect(linked!.runs[0]!.hyperlinkRId).toBeUndefined()
+    expect(linked!.runs[0]!.underline).toBeUndefined()
+
+    // a short plain run next to a field still wins over the field
+    const [footer] = applyEditParagraphs(
+      [
+        {
+          runs: [
+            { text: 'p', fontSize: 9 },
+            { text: '12', field: 'slidenum', fontSize: 11 },
+          ],
+        },
+      ],
+      [{ runs: [{ text: 'Page 12' }] }],
+    )
+    expect(footer!.runs[0]).toMatchObject({ text: 'Page 12', fontSize: 9 })
+    expect(footer!.runs[0]!.field).toBeUndefined()
+  })
+
   it('explicit bold:false is not overridden by the old value via ?? fallback (unbolding must take effect)', () => {
     const oldParas: Paragraph[] = [{ runs: [{ text: 'x', bold: true }] }]
     const out = applyEditParagraphs(oldParas, [

@@ -3,39 +3,41 @@ import { describe, expect, it } from 'vitest'
 import {
   clampColorScaleStops,
   evaluateArithmetic,
-  hasRelativeReference,
-  substituteRelativeReferences,
-} from '../src/renderer/univer-sync'
+  evaluateThresholdFormula,
+  type ThresholdReader,
+} from '../src/renderer/cf-thresholds'
 
 const num = (value: string) => ({ kind: 'num', value })
 
-describe('hasRelativeReference', () => {
-  it('flags relative and mixed cell references', () => {
-    expect(hasRelativeReference('2*A1+3')).toBe(true)
-    expect(hasRelativeReference('=$A1+1')).toBe(true)
-    expect(hasRelativeReference('A$1')).toBe(true)
+/// A1 = 1 on the rule's sheet; nothing else populated.
+const reader: ThresholdReader = {
+  readValues: async (sheetName, range) =>
+    sheetName === null && range.startRow === 0 && range.startColumn === 0 ? [1] : [],
+  definedName: () => null,
+  tableColumn: () => null,
+}
+
+describe('relative references in scale thresholds', () => {
+  it('zeroes relative and mixed refs and evaluates the rest like Excel', async () => {
+    // colorscale.xlsx sheet1 F3:F6 max threshold: Excel renders 2*A1+2 as 2
+    // although A1 holds 1.
+    expect(await evaluateThresholdFormula('2*A1+2', reader)).toBe(2)
+    expect(await evaluateThresholdFormula('=2*A1+3', reader)).toBe(3)
+    expect(await evaluateThresholdFormula('(1+B2)*4/2', reader)).toBe(2)
+    expect(await evaluateThresholdFormula('$A1+A$1', reader)).toBe(0)
   })
 
-  it('accepts absolute references, names, and functions', () => {
-    expect(hasRelativeReference('$A$1*2')).toBe(false)
-    expect(hasRelativeReference("'My Sheet'!$B$2")).toBe(false)
-    expect(hasRelativeReference('MyName+1')).toBe(false)
-    expect(hasRelativeReference('LOG10(5)')).toBe(false)
-    expect(hasRelativeReference('"A1 in a string"')).toBe(false)
+  it('reads absolute refs', async () => {
+    expect(await evaluateThresholdFormula('$A$1*2', reader)).toBe(2)
   })
 })
 
-describe('substituteRelativeReferences + evaluateArithmetic', () => {
-  it('zeroes relative refs and evaluates the rest like Excel', () => {
-    // colorscale.xlsx sheet1 F3:F6 max threshold: Excel renders 2*A1+2 as 2.
-    expect(evaluateArithmetic(substituteRelativeReferences('2*A1+2'))).toBe(2)
-    expect(evaluateArithmetic(substituteRelativeReferences('=2*A1+3'))).toBe(3)
-    expect(evaluateArithmetic(substituteRelativeReferences('(1+B2)*4/2'))).toBe(2)
-  })
-
-  it('keeps absolute refs and string literals intact', () => {
-    expect(substituteRelativeReferences('$A$1+B2')).toBe('$A$1+0')
-    expect(substituteRelativeReferences('"A1"&C3')).toBe('"A1"&0')
+describe('evaluateArithmetic', () => {
+  it('folds parenthesised substitutions and exponent literals', () => {
+    expect(evaluateArithmetic('2*(0)+3')).toBe(3)
+    expect(evaluateArithmetic('3-(-5)')).toBe(8)
+    expect(evaluateArithmetic('2*1e3')).toBe(2000)
+    expect(evaluateArithmetic('(1.5)/(3)')).toBe(0.5)
   })
 
   it('returns null for non-arithmetic leftovers', () => {

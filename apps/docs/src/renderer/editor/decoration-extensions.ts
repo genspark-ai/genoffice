@@ -729,6 +729,62 @@ export const WsRunLineHeightExtension = Extension.create({
   },
 })
 
+// ---- hinted East Asian curly quotes (w:hint="eastAsia") ----
+
+const eaHintQuotesPluginKey = new PluginKey<DecorationSet>('eaHintQuotes')
+
+/** the run's own w:rFonts carries w:hint="eastAsia" (revision snapshots inside w:rPrChange don't count) */
+const EA_HINT_RE = /<w:rFonts\b[^>]*\bw:hint="eastAsia"/
+
+const EA_QUOTES_RE = /[‘’“”]+/g
+
+/** quote ranges of `text` that Word renders with the East Asian font; exported for tests */
+export function eaHintQuoteRanges(
+  rawRPr: string | null | undefined,
+  text: string,
+): Array<{ from: number; to: number }> {
+  if (!rawRPr || !text || !/[‘’“”]/.test(text)) return []
+  if (!EA_HINT_RE.test(rawRPr.replace(/<w:rPrChange[\s\S]*?<\/w:rPrChange>/, ''))) return []
+  const ranges: Array<{ from: number; to: number }> = []
+  for (const m of text.matchAll(EA_QUOTES_RE)) {
+    ranges.push({ from: m.index, to: m.index + m[0].length })
+  }
+  return ranges
+}
+
+/**
+ * Curly quotes U+2018/2019/201C/201D are dual-width codepoints: Word renders
+ * them with the run's East Asian font (fullwidth advance) iff the run's
+ * w:rFonts carries w:hint="eastAsia" — surrounding text and w:lang play no
+ * part (Word for Mac probe 2026-09-01). Chromium resolves them through the
+ * Latin head of the font chain (halfwidth), so hinted quotes get a
+ * display-only decoration whose bundled CJK face restores the 1em advance.
+ */
+export const EaHintQuotesExtension = Extension.create({
+  name: 'eaHintQuotes',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: eaHintQuotesPluginKey,
+        props: {
+          decorations(state) {
+            const decos: Decoration[] = []
+            state.doc.descendants((node, pos) => {
+              if (!node.isText || !node.text) return
+              const style = node.marks.find((m) => m.type.name === 'docTextStyle')
+              const raw = style?.attrs.rawRPr as string | null | undefined
+              for (const r of eaHintQuoteRanges(raw, node.text)) {
+                decos.push(Decoration.inline(pos + r.from, pos + r.to, { class: 'doc-ea-quotes' }))
+              }
+            })
+            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
+          },
+        },
+      }),
+    ]
+  },
+})
+
 // ---- adjacent-paragraph border merging (Word border groups) ----
 
 const paraBorderMergePluginKey = new PluginKey<DecorationSet>('paraBorderMerge')

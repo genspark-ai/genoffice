@@ -220,6 +220,13 @@ class JustifyShrinkView {
       this.retryRaf = 0
     }
     const { view } = this
+    // PDF export parks the editor subtree (.app.pv-exporting); any layout
+    // read here would force the parked document to re-lay out per print chunk
+    if (view.dom.closest('.app.pv-exporting')) {
+      this.retries = 0
+      this.scheduleRetry()
+      return
+    }
     const old = justifyShrinkPluginKey.getState(view.state)
     if (!this.storage.enabled) {
       if (old && old !== DecorationSet.empty)

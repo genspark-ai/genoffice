@@ -77,6 +77,10 @@ import {
   columnLayoutSpecs,
   vAlignShiftSpecs,
   sectionWidthSpecs,
+  sectionGridPitchPt,
+  sectionGridPitchSpecs,
+  docCharSpacePt,
+  sectionCharSpaceSpecs,
   type ColumnBlockPlacement,
   sectionBidi,
   sectionColGeom,
@@ -95,8 +99,10 @@ import {
 import {
   GAP_BAND,
   alignGapHfStrips,
+  alignTableGapFills,
   clearFloatShifts,
   setFloatVShifts,
+  setOversizeClips,
   setPageGaps,
   setRowFills,
   syncAnchorBands,
@@ -104,7 +110,7 @@ import {
   syncFloatShifts,
   syncPageBorders,
   clampCellBoxTops,
-  type PageBorderStyle,
+  pageBorderStyleOf,
   type PageGapSpec,
 } from './editor/pagination-gaps'
 import { setColumnLayout } from './editor/column-layout'
@@ -115,6 +121,7 @@ import {
 } from './editor/margin-annotations'
 import {
   hfHasVisibleContent,
+  hfReservedHeightPx,
   makeGapHfEl,
   makeHfFloatImgEl,
   type HfFloatBox,
@@ -122,9 +129,9 @@ import {
 import {
   estimateFootnoteHeight,
   resolveNoteStyle,
-  estimateHfHeight,
   hfHeaderGeom,
   footnoteLineHeightPx,
+  noteLineHeightPx,
   FOOTNOTE_SEPARATOR_H,
   textHasCjk,
 } from './line-metrics'
@@ -207,6 +214,7 @@ import {
   save as saveImpl,
   writeRecoveryCopy as writeRecoveryCopyImpl,
   type FileActionContext,
+  type PendingPdfExport,
 } from './file-actions'
 import {
   allocateListNumId as allocateListNumIdImpl,
@@ -341,6 +349,75 @@ function blockNoteScanRuns(b: Block): NonNullable<Block['runs']> {
   return out
 }
 
+/** Note entry content: superscript number + styled runs (shared by the canvas gap area and the hidden height measurer) */
+function appendNoteRuns(row: HTMLElement, it: Omit<PageNoteItem, 'height' | 'id'>): void {
+  if (!it.noRefMark) {
+    const sup = document.createElement('sup')
+    sup.textContent = String(it.no)
+    row.append(sup)
+  }
+  if (it.richParas) {
+    it.richParas.forEach((para, pi) => {
+      if (pi > 0) row.append(document.createElement('br'))
+      for (const run of para) {
+        const span = document.createElement('span')
+        span.textContent = run.text
+        if (run.bold) span.style.fontWeight = '600'
+        if (run.italic) span.style.fontStyle = 'italic'
+        const deco = [run.underline && 'underline', run.strike && 'line-through'].filter(Boolean)
+        if (deco.length > 0) span.style.textDecoration = deco.join(' ')
+        if (run.color) span.style.color = `#${run.color}`
+        if (run.sizeHalfPoints) span.style.fontSize = `${run.sizeHalfPoints / 2}pt`
+        if (run.caps === 'all') span.style.textTransform = 'uppercase'
+        else if (run.caps === 'small') span.style.fontVariantCaps = 'small-caps'
+        row.append(span)
+      }
+    })
+  } else {
+    const span = document.createElement('span')
+    span.textContent = it.text
+    row.append(span)
+  }
+}
+
+/**
+ * Hidden DOM measurement of one note entry at the renderers' exact styles: the
+ * char-width estimate undercounts complex scripts (prod100r4/022 Arabic notes
+ * overprinted each other), so reservation and drawing share the DOM wrap truth.
+ */
+let noteMeasureHost: HTMLDivElement | null = null
+function measureNoteHeightDom(
+  entry: Pick<PageNoteItem, 'no' | 'text' | 'richParas' | 'noRefMark'>,
+  widthPx: number,
+  lineHeightPx: number,
+  fontSizePt: number,
+): number | null {
+  if (typeof document === 'undefined' || !document.body || widthPx <= 0) return null
+  if (!noteMeasureHost || !noteMeasureHost.isConnected) {
+    noteMeasureHost = document.createElement('div')
+    noteMeasureHost.style.cssText =
+      'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;text-align:left;text-indent:0;'
+    noteMeasureHost.style.fontFamily =
+      "Calibri, 'DengXian', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif"
+    document.body.appendChild(noteMeasureHost)
+  }
+  noteMeasureHost.style.width = `${widthPx}px`
+  noteMeasureHost.style.fontSize = `${fontSizePt}pt`
+  noteMeasureHost.style.lineHeight = `${lineHeightPx}px`
+  const row = document.createElement('div')
+  appendNoteRuns(row, entry)
+  // the renderers' sup style (CSS classes don't reach the detached host)
+  const sup = row.querySelector('sup')
+  if (sup) {
+    sup.style.fontSize = '0.65em'
+    sup.style.marginRight = '4px'
+  }
+  noteMeasureHost.replaceChildren(row)
+  const h = row.getBoundingClientRect().height
+  noteMeasureHost.replaceChildren()
+  return h > 0 ? h : null
+}
+
 /** Footnote area at the top of a page gap (previous page's bottom): absolutely positioned in the content area, double-click an entry to edit */
 function makeGapNotesEl(
   items: PageNoteItem[],
@@ -355,7 +432,7 @@ function makeGapNotesEl(
   wrap.style.left = `${leftPx}px`
   wrap.style.width = `${widthPx}px`
   wrap.style.height = `${heightPx}px`
-  // same line height as estimateFootnoteHeight; min-height keeps rows at the
+  // same line height as the reservation model; min-height keeps rows at the
   // reserved size while letting long entries overflow instead of clipping
   wrap.style.lineHeight = `${lineHeightPx}px`
   for (const it of items) {
@@ -363,31 +440,10 @@ function makeGapNotesEl(
     row.className = 'page-gap-note'
     row.title = t('appDblclickEditFootnote')
     row.style.minHeight = `${it.height}px`
-    const sup = document.createElement('sup')
-    sup.textContent = String(it.no)
-    row.append(sup)
-    if (it.richParas) {
-      it.richParas.forEach((para, pi) => {
-        if (pi > 0) row.append(document.createElement('br'))
-        for (const run of para) {
-          const span = document.createElement('span')
-          span.textContent = run.text
-          if (run.bold) span.style.fontWeight = '600'
-          if (run.italic) span.style.fontStyle = 'italic'
-          const deco = [run.underline && 'underline', run.strike && 'line-through'].filter(Boolean)
-          if (deco.length > 0) span.style.textDecoration = deco.join(' ')
-          if (run.color) span.style.color = `#${run.color}`
-          if (run.sizeHalfPoints) span.style.fontSize = `${run.sizeHalfPoints / 2}pt`
-          if (run.caps === 'all') span.style.textTransform = 'uppercase'
-          else if (run.caps === 'small') span.style.fontVariantCaps = 'small-caps'
-          row.append(span)
-        }
-      })
-    } else {
-      const span = document.createElement('span')
-      span.textContent = it.text
-      row.append(span)
-    }
+    // per-note resolved style: the entry's line boxes must match its reservation
+    if (it.lineHeightPx) row.style.lineHeight = `${it.lineHeightPx}px`
+    if (it.fontSizePt) row.style.fontSize = `${it.fontSizePt}pt`
+    appendNoteRuns(row, it)
     row.addEventListener('dblclick', () => onEdit(it.id))
     wrap.appendChild(row)
   }
@@ -718,6 +774,14 @@ export function App() {
   const [docCss, setDocCss] = useState('')
   // Live CJK-ness of the body while editing; overrides docCss's --doc-line-factor
   const [liveDocCjk, setLiveDocCjk] = useState<boolean | null>(null)
+  // header/footer push-down re-measures after the doc-scoped <style> elements
+  // commit: the DOM probe (hfReservedHeightPx) keys on the mounted CSS content,
+  // so a value computed in the render pass that introduced new CSS is replaced
+  // by a post-commit measure instead of going stale
+  const [hfMeasureEpoch, setHfMeasureEpoch] = useState(0)
+  useEffect(() => {
+    setHfMeasureEpoch((e) => e + 1)
+  }, [docCss, liveDocCjk, themeFonts, themeColors])
   const [stats, setStats] = useState<DocStats | null>(null)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [showTableModal, setShowTableModal] = useState(false)
@@ -1038,7 +1102,9 @@ export function App() {
   }, [splitView, editor])
 
   // Mixed-paper menu export: after the preview mounts and renders, the merge export resumes automatically
-  const pendingMixedExportRef = useRef<boolean | string>(false)
+  const pendingMixedExportRef = useRef<PendingPdfExport | false>(false)
+  // deferrals bump this so the effect re-arms even when the preview is already open
+  const [pendingExportTick, setPendingExportTick] = useState(0)
   // Print dialog (Word-style preview + range); the pagination preview is its print source
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   // the dialog auto-opened the pagination preview: close it again with the dialog
@@ -1053,6 +1119,7 @@ export function App() {
     saveInFlightRef,
     saveIncompleteRef,
     pendingMixedExportRef,
+    bumpPendingExportTick: () => setPendingExportTick((n) => n + 1),
     printAutoOpenedPreviewRef,
     setShowPrintDialog,
     setStatus,
@@ -1584,14 +1651,48 @@ export function App() {
   }, [exportPdf])
 
   useEffect(() => {
-    if (!showPagePreview || pendingMixedExportRef.current === false) return
     const pending = pendingMixedExportRef.current
-    pendingMixedExportRef.current = false
-    const timer = window.setTimeout(() => {
-      void exportPdf(typeof pending === 'string' ? pending : undefined)
+    if (pending === false) return
+    if (!showPagePreview) {
+      // preview dismissed while the export was parked: settle as canceled
+      pendingMixedExportRef.current = false
+      pending.resolve(false)
+      setStatus(t('appExportPdfCanceled'))
+      return
+    }
+    // The ref keeps holding `pending` while the wait runs; every settle path
+    // must claim it (identity check + clear in one sync segment), so a loop
+    // superseded by a newer deferral dies silently instead of double-settling
+    // or exporting concurrently.
+    const claim = () => {
+      if (pendingMixedExportRef.current !== pending) return false
+      pendingMixedExportRef.current = false
+      return true
+    }
+    const timer = window.setTimeout(async () => {
+      // preview pages mount asynchronously; the export needs at least one.
+      // Never re-enter exportPdf without a page: the pageless paths would
+      // defer again (unbounded loop) or repeat an already-failed direct print.
+      for (let i = 0; i < 40 && !document.querySelector('.pv-page'); i++) {
+        await new Promise((r) => window.setTimeout(r, 250))
+        if (pendingMixedExportRef.current !== pending) return
+        if (!document.querySelector('.pagination-preview')) {
+          if (!claim()) return
+          pending.resolve(false)
+          setStatus(t('appExportPdfCanceled'))
+          return
+        }
+      }
+      if (!claim()) return
+      if (!document.querySelector('.pv-page')) {
+        pending.resolve(false)
+        setStatus(t('appExportPdfFailed', { error: 'pagination preview produced no pages' }))
+        return
+      }
+      void exportPdf(pending.outPath).then(pending.resolve, () => pending.resolve(false))
     }, 1200)
     return () => window.clearTimeout(timer)
-  }, [showPagePreview, exportPdf])
+  }, [showPagePreview, pendingExportTick, exportPdf])
 
   const closePrintDialog = useCallback(() => {
     setShowPrintDialog(false)
@@ -1803,48 +1904,143 @@ export function App() {
     }
   }, [doc])
 
-  // page-bottom height (px) reserved for footnote references inside a block: same estimation model as the parity runner
-  const footnoteExtraOf = useCallback(
-    (b: Block): number => {
+  // per-note render metrics: resolved style line height/size plus the entry's
+  // height at the renderers' exact styles (DOM wrap truth; the char-width
+  // estimate stays as the DOM-less fallback and the parity runner's model)
+  const noteRenderInfoOf = useMemo(() => {
+    const cache = new Map<string, { height: number; lineHeightPx: number; fontSizePt: number }>()
+    return (
+      fn: NoteInfo | undefined,
+      no: number,
+      sec: SectionSettings,
+    ): { height: number; lineHeightPx: number; fontSizePt: number } => {
+      const contentW = twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight)
+      const key = `${fn?.id ?? ''}|${no}|${Math.round(contentW)}|${fn?.styleId ?? ''}|${fn?.text ?? ''}`
+      let v = cache.get(key)
+      if (!v) {
+        const style = noteStyleOf(fn)
+        const lineHeightPx = noteLineHeightPx(sec.docGrid, style)
+        const fontSizePt = style.sizeHalfPoints ? style.sizeHalfPoints / 2 : 10
+        const height =
+          measureNoteHeightDom(
+            {
+              no,
+              text: fn?.text ?? '',
+              ...(fn?.richParas ? { richParas: fn.richParas } : {}),
+              ...(fn?.noRefMark ? { noRefMark: true as const } : {}),
+            },
+            contentW,
+            lineHeightPx,
+            fontSizePt,
+          ) ??
+          estimateFootnoteHeight(
+            fn?.text ?? '',
+            contentW,
+            sec.docGrid,
+            undefined,
+            style,
+            fn?.richParas,
+          )
+        v = { height, lineHeightPx, fontSizePt }
+        cache.set(key, v)
+      }
+      return v
+    }
+    // note-list deps only reset the cache (keys carry the note text, but
+    // formatting-only edits keep it — a fresh map re-measures them)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [footnotes, endnotes, noteStyleOf])
+
+  // page-bottom heights (px) reserved for footnote references inside a block, one per reference in run order
+  const footnoteBandsOf = useCallback(
+    (b: Block): Array<{ heightPx: number }> => {
       const runs = blockNoteScanRuns(b)
-      if (runs.length === 0 || footnotes.length === 0) return 0
-      let extra = 0
+      if (runs.length === 0 || footnotes.length === 0) return []
+      const noOf = new Map(footnotes.map((f, i) => [f.id, i + 1]))
+      const bands: Array<{ heightPx: number }> = []
       for (const run of runs) {
         if (run.noteRef?.kind !== 'footnote') continue
         const sec =
           sections.find((s) => (b.docxIndex ?? 0) <= s.lastBlockIndex)?.settings ?? section
         if (!sec) continue
-        const contentW = twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight)
         const fn = footnotes.find((f) => f.id === run.noteRef!.id)
-        extra += estimateFootnoteHeight(
-          fn?.text ?? '',
-          contentW,
-          sec.docGrid,
-          undefined,
-          noteStyleOf(fn),
-          fn?.richParas,
-        )
+        bands.push({
+          heightPx: noteRenderInfoOf(fn, noOf.get(run.noteRef!.id) ?? 0, sec).height,
+        })
       }
       // the once-per-page separator is charged by the pagination engine, not per block
-      return extra
+      return bands
     },
-    [footnotes, sections, section, noteStyleOf],
+    [footnotes, sections, section, noteRenderInfoOf],
   )
 
   // typed w:docGrid line pitch (pt) when every section shares one; null = no snapping
   const gridPitchPt = useMemo(() => docGridPitchPt(sections), [sections])
+  // mixed grids: .doc-page keeps the first typed pitch as the inheritance
+  // fallback (floats/notes/web view); print blocks get per-section overrides
+  // via sectionGridPitchSpecs on the layout channel
+  const mixedGridPitchPt = useMemo(() => {
+    if (gridPitchPt != null) return null
+    for (const s of sections) {
+      const p = sectionGridPitchPt(s)
+      if (p != null) return p
+    }
+    return null
+  }, [sections, gridPitchPt])
+
+  // w:docGrid charSpace character grid: uniform per-character letter-spacing
+  // delta (pt); mixed docs deliver it per block via sectionCharSpaceSpecs
+  const charSpacePt = useMemo(() => docCharSpacePt(sections), [sections])
 
   // single-section header/footer push-down: body top = max(marginTop, headerDist + header height)
-  const singleHfPx = useMemo(() => {
+  const singleHfPx = useMemo((): SectionHfHeights => {
     if (!section) return { headerPx: 0, footerPx: 0 }
     const contentW = twipsToPx(section.pageWidth - section.marginLeft - section.marginRight)
     return {
-      headerPx: estimateHfHeight(header, contentW, doc?.parsed.headerImages, hfHeaderGeom(section)),
-      footerPx: estimateHfHeight(footer, contentW, doc?.parsed.footerImages),
+      headerPx: hfReservedHeightPx(
+        'header',
+        header,
+        contentW,
+        doc?.parsed.headerImages,
+        hfHeaderGeom(section),
+      ),
+      footerPx: hfReservedHeightPx('footer', footer, contentW, doc?.parsed.footerImages),
+      // live titlePg: the first page draws the live first-page variant (pageHfOf),
+      // so its reserved heights track the live state, not the parsed parts
+      ...(titlePg
+        ? {
+            firstHeaderPx: hfReservedHeightPx(
+              'header',
+              hfVariants.headerFirst,
+              contentW,
+              doc?.parsed.headerFirst?.images,
+              hfHeaderGeom(section),
+            ),
+            firstFooterPx: hfReservedHeightPx(
+              'footer',
+              hfVariants.footerFirst,
+              contentW,
+              doc?.parsed.footerFirst?.images,
+            ),
+          }
+        : {}),
     }
-  }, [section, header, footer, doc])
+    // hfMeasureEpoch: re-measure once the doc-scoped styles have committed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section, header, footer, titlePg, hfVariants, doc, hfMeasureEpoch])
   const effTopSingle = section ? effectiveTopPx(section, singleHfPx.headerPx) : 0
   const effBottomSingle = section ? effectiveBottomPx(section, singleHfPx.footerPx) : 0
+
+  // titlePg: the document's first page renders the first-page header/footer
+  // variant (pageHfOf), so single-section slicing gives it its own capacity
+  const singleFirstContentH = useMemo(() => {
+    if (!section || singleHfPx.firstHeaderPx === undefined) return undefined
+    return (
+      twipsToPx(section.pageHeight) -
+      effectiveTopPx(section, singleHfPx.firstHeaderPx) -
+      effectiveBottomPx(section, singleHfPx.firstFooterPx ?? 0)
+    )
+  }, [section, singleHfPx])
 
   // multi-section: estimated heights of each section's default-variant header/footer (capacity per section, variant differences ignored)
   const hfHeightsOf = useCallback(
@@ -1871,18 +2067,60 @@ export function App() {
           }
           return undefined
         }
+        // titlePg first-page variant: the section's first page renders these
+        // strips (pageHfOf/hfFor), so its slice capacity must match. A lone
+        // section draws the LIVE first-page state (pageHfOf's secList.length<=1
+        // branch), so its capacity tracks the live variant/toggle too.
+        const liveFirst = secs.length === 1
+        const firstOn = liveFirst ? titlePg : s.titlePg
+        const firstPart = (kind: 'header' | 'footer'): HeaderFooter | null => {
+          if (liveFirst) return kind === 'header' ? hfVariants.headerFirst : hfVariants.footerFirst
+          const rId = refs[i]?.[kind]?.first
+          return rId ? hfFromPart(doc?.parsed.hfParts?.[rId]) : null
+        }
+        const firstImagesOf = (kind: 'header' | 'footer') => {
+          if (liveFirst) {
+            return (
+              (kind === 'header'
+                ? doc?.parsed.headerFirst?.images
+                : doc?.parsed.footerFirst?.images) ?? undefined
+            )
+          }
+          const rId = refs[i]?.[kind]?.first
+          return rId ? doc?.parsed.hfParts?.[rId]?.images : undefined
+        }
         return {
-          headerPx: estimateHfHeight(
+          headerPx: hfReservedHeightPx(
+            'header',
             pick('header'),
             contentW,
             imagesOf('header'),
             hfHeaderGeom(set),
           ),
-          footerPx: estimateHfHeight(pick('footer'), contentW, imagesOf('footer')),
+          footerPx: hfReservedHeightPx('footer', pick('footer'), contentW, imagesOf('footer')),
+          ...(firstOn
+            ? {
+                firstHeaderPx: hfReservedHeightPx(
+                  'header',
+                  firstPart('header'),
+                  contentW,
+                  firstImagesOf('header'),
+                  hfHeaderGeom(set),
+                ),
+                firstFooterPx: hfReservedHeightPx(
+                  'footer',
+                  firstPart('footer'),
+                  contentW,
+                  firstImagesOf('footer'),
+                ),
+              }
+            : {}),
         }
       })
     },
-    [doc, header, footer, sectionHfEdits],
+    // hfMeasureEpoch: re-measure once the doc-scoped styles have committed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doc, header, footer, sectionHfEdits, titlePg, hfVariants, hfMeasureEpoch],
   )
 
   // pagination-constraint injection: docxIndex → parse-layer semantics (keepNext/keepLines/widow/table-row flags).
@@ -1904,17 +2142,18 @@ export function App() {
       const keepLines = b.format?.keepLines ?? styleDisplay?.keepLines
       const breakBefore = b.format?.pageBreakBefore ?? styleDisplay?.pageBreakBefore
       const widowOff = b.format?.widowControl === false
-      const fnExtra = footnoteExtraOf(b)
+      const fnBands = footnoteBandsOf(b)
+      const fnExtra = fnBands.reduce((s, band) => s + band.heightPx, 0)
       if (!keepNext && !keepLines && !breakBefore && !widowOff && fnExtra === 0) return undefined
       return {
         ...(keepNext ? { keepNext: true } : {}),
         ...(keepLines ? { keepLines: true } : {}),
         ...(breakBefore ? { breakBefore: true } : {}),
         ...(widowOff ? { widowControl: false as const } : {}),
-        ...(fnExtra > 0 ? { footnoteExtraPx: fnExtra } : {}),
+        ...(fnExtra > 0 ? { footnoteExtraPx: fnExtra, footnoteBands: fnBands } : {}),
       }
     },
-    [doc, footnoteExtraOf],
+    [doc, footnoteBandsOf],
   )
 
   // per-page footnote collection: the page of the referencing block → that page's footnote entries (number/text/estimated height)
@@ -1931,53 +2170,55 @@ export function App() {
           .filter((r) => r.noteRef?.kind === 'footnote')
           .map((r) => r.noteRef!.id)
         if (ids.length === 0) continue
-        const page = pageAt(slices, b.top + 0.5) - 1
+        const blockPage = pageAt(slices, b.top + 0.5) - 1
         const sec = sections.find((s) => b.docxIndex! <= s.lastBlockIndex)?.settings ?? section
-        const contentW = twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight)
-        for (const id of ids) {
+        for (let ri = 0; ri < ids.length; ri++) {
+          const id = ids[ri]
           const fn = footnotes.find((f) => f.id === id)
           if (!fn) continue
+          // notes go to the page holding their reference line (a split
+          // paragraph spreads its notes like Word); marker offsets were
+          // resolved into noteBands (run order) by applyBlockMeta
+          const band = b.noteBands?.length === ids.length ? b.noteBands[ri] : undefined
+          const page = band
+            ? pageAt(slices, b.top + (b.spaceBeforePx ?? 0) + band.offset + 0.5) - 1
+            : blockPage
+          const info = noteRenderInfoOf(fn, noOf.get(id) ?? 0, sec)
           out[page]?.push({
             no: noOf.get(id) ?? 0,
             id,
             text: fn.text,
             ...(fn.richParas ? { richParas: fn.richParas } : {}),
-            height: estimateFootnoteHeight(
-              fn.text,
-              contentW,
-              sec.docGrid,
-              undefined,
-              noteStyleOf(fn),
-              fn.richParas,
-            ),
+            ...(fn.noRefMark ? { noRefMark: true as const } : {}),
+            height: info.height,
+            lineHeightPx: info.lineHeightPx,
+            fontSizePt: info.fontSizePt,
           })
         }
       }
       return out
     },
-    [doc, footnotes, sections, section, noteStyleOf],
+    [doc, footnotes, sections, section, noteRenderInfoOf],
   )
 
-  // endnote-area entries (placed together at the document end, shared by pagination preview and page slicing): height estimated with the final section's content width
+  // endnote-area entries (placed together at the document end, shared by pagination preview and page slicing): height measured with the final section's content width
   const endnoteItems = useMemo<PageNoteItem[]>(() => {
     if (!section || endnotes.length === 0) return []
     const sec = sections[sections.length - 1]?.settings ?? section
-    const contentW = twipsToPx(sec.pageWidth - sec.marginLeft - sec.marginRight)
-    return endnotes.map((n, i) => ({
-      no: i + 1,
-      id: n.id,
-      text: n.text,
-      ...(n.richParas ? { richParas: n.richParas } : {}),
-      height: estimateFootnoteHeight(
-        n.text,
-        contentW,
-        sec.docGrid,
-        undefined,
-        noteStyleOf(n),
-        n.richParas,
-      ),
-    }))
-  }, [endnotes, sections, section, noteStyleOf])
+    return endnotes.map((n, i) => {
+      const info = noteRenderInfoOf(n, i + 1, sec)
+      return {
+        no: i + 1,
+        id: n.id,
+        text: n.text,
+        ...(n.richParas ? { richParas: n.richParas } : {}),
+        ...(n.noRefMark ? { noRefMark: true as const } : {}),
+        height: info.height,
+        lineHeightPx: info.lineHeightPx,
+        fontSizePt: info.fontSizePt,
+      }
+    })
+  }, [endnotes, sections, section, noteRenderInfoOf])
 
   // canvas column mode:
   //  - 'uniform': every section shares one equal-width multi-column spec (and is LTR) —
@@ -2074,7 +2315,15 @@ export function App() {
         const contentH = twipsToPx(section.pageHeight) - effTopSingle - effBottomSingle
         s = sliceWithLineSplit(
           blocks,
-          [{ contentHeight: contentH, forceBreak: false }],
+          [
+            {
+              contentHeight: contentH,
+              forceBreak: false,
+              ...(singleFirstContentH !== undefined
+                ? { firstContentHeight: singleFirstContentH }
+                : {}),
+            },
+          ],
           totalHeight,
           factor,
           blockMetaOf,
@@ -2102,6 +2351,7 @@ export function App() {
     blockMetaOf,
     effTopSingle,
     effBottomSingle,
+    singleFirstContentH,
     hfHeightsOf,
     measureSingleFlow,
     colGeomsFor,
@@ -2123,6 +2373,7 @@ export function App() {
     let timer: number | null = null
     let suppressSig = ''
     let secWidthSig = ''
+    let charSpaceSig = ''
     const pmEl = () => document.querySelector('.editor-scroll .ProseMirror') as HTMLElement | null
     const locate = () => {
       const pm = pmEl()
@@ -2189,7 +2440,7 @@ export function App() {
         const flowH = flowWithFloats ?? withEndnotes?.totalHeight ?? totalHeight
         const hfHs = secList ? hfHeightsOf(secList) : null
         const t1 = performance.now()
-        const sliceOut: SliceOutputs = { rowFills: [], floatVShifts: [] }
+        const sliceOut: SliceOutputs = { rowFills: [], floatVShifts: [], oversizeClips: [] }
         const s = secList
           ? sliceWithLineSplit(
               blocks,
@@ -2201,7 +2452,15 @@ export function App() {
             )
           : sliceWithLineSplit(
               blocks,
-              [{ contentHeight: contentH, forceBreak: false }],
+              [
+                {
+                  contentHeight: contentH,
+                  forceBreak: false,
+                  ...(singleFirstContentH !== undefined
+                    ? { firstContentHeight: singleFirstContentH }
+                    : {}),
+                },
+              ],
               flowH,
               factor,
               blockMetaOf,
@@ -2216,9 +2475,10 @@ export function App() {
           floats,
           rowFills: sliceOut.rowFills ?? [],
           floatVShifts: sliceOut.floatVShifts ?? [],
+          oversizeClips: sliceOut.oversizeClips ?? [],
         }
       })
-      const { blocks, secList, hfHs, floats, rowFills, floatVShifts } = measured
+      const { blocks, secList, hfHs, floats, rowFills, floatVShifts, oversizeClips } = measured
       slices = measured.s
       // document-end footer shows the last page's displayed number, not the physical count
       if (slices.length > 0) {
@@ -2383,6 +2643,17 @@ export function App() {
               el.style.width = `${Math.min(box.contentWidth, canvasPaperW)}px`
             }
           }
+          // strip geometry baked in at creation (sizeGapHf, --hf-ml): the gap key's
+          // mKey carries the NEXT section's side margins only, while the footer strip
+          // is sized and inset by the PREVIOUS section — a left-margin edit on that
+          // section alone must not reuse the old footer widget at its stale inset
+          const stripGeomSig = (set: typeof canvasSet) => {
+            if (!set) return ''
+            const b = sectionPageBox(set)
+            return [twipsToPx(set.marginLeft), b.contentWidth, b.headerDist, b.footerDist]
+              .map((v) => v.toFixed(1))
+              .join(',')
+          }
           slices.slice(1).forEach((slice, k) => {
             // a same-start predecessor that is zero-height is a deliberate blank page
             // (leading/double w:br, even/odd parity): it needs its own gap band so the
@@ -2392,14 +2663,30 @@ export function App() {
             // gap = previous page's (its section's) bottom margin + inter-page band + this page's (its section's) top margin
             const prevSec = secList?.[slices[k].section]?.settings ?? section
             const nextSec = secList?.[slice.section]?.settings ?? section
-            // effective margins after header/footer push-down (an over-tall header pushes the body down)
-            const nextHf = hfHs?.[slice.section] ?? singleHfPx
-            const prevHf = hfHs?.[slices[k].section] ?? singleHfPx
+            // effective margins after header/footer push-down (an over-tall header pushes
+            // the body down); a titlePg section's first page uses the first-page variant's
+            // heights so the gap band matches the slice capacity (firstContentHeight)
+            const hfOfPage = (idx: number): { headerPx: number; footerPx: number } => {
+              const h = hfHs?.[slices[idx].section] ?? singleHfPx
+              return firsts[idx]
+                ? {
+                    headerPx: h.firstHeaderPx ?? h.headerPx,
+                    footerPx: h.firstFooterPx ?? h.footerPx,
+                  }
+                : h
+            }
+            const nextHf = hfOfPage(k + 1)
+            const prevHf = hfOfPage(k)
             const metrics = {
               marginTop: effectiveTopPx(nextSec, nextHf.headerPx),
               marginBottom: effectiveBottomPx(prevSec, prevHf.footerPx),
               marginLeft: twipsToPx(nextSec.marginLeft),
               marginRight: twipsToPx(nextSec.marginRight),
+              // header/footer strip inset (alignGapHfStrips): survives the inline/
+              // in-cell gaps below overriding marginLeft/Right with the host block's
+              // paper offset (which folds in paragraph indents and cell positions)
+              sectionMarginLeft: twipsToPx(nextSec.marginLeft),
+              sectionMarginRight: twipsToPx(nextSec.marginRight),
             }
             // a page ended early (explicit break / section break / keepNext) leaves unused
             // content height; pad the gap so the canvas paints the full paper height and the
@@ -2442,6 +2729,9 @@ export function App() {
               el.style.top = 'auto'
               el.style.bottom = `${GAP_BAND + metrics.marginTop + box.footerDist}px`
               sizeGapHf(el, box)
+              // the footer belongs to the page ABOVE the gap: its own section's
+              // left margin, not the next section's (alignGapHfStrips)
+              el.style.setProperty('--hf-ml', `${twipsToPx(prevSec.marginLeft)}px`)
               hfEls.push(el)
             }
             if (hfHasVisibleContent(gapHeader.value, gapHeader.images)) {
@@ -2456,6 +2746,7 @@ export function App() {
               el.style.bottom = 'auto'
               el.style.top = `calc(100% - ${Math.max(0, metrics.marginTop - box.headerDist)}px)`
               sizeGapHf(el, box)
+              el.style.setProperty('--hf-ml', `${twipsToPx(nextSec.marginLeft)}px`)
               hfEls.push(el)
             }
             // next page's floating header images (picture watermarks): behind-text,
@@ -2469,8 +2760,9 @@ export function App() {
                 ? {
                     hfEls,
                     // key must cover everything baked into the widgets (both pages'
-                    // formatted numbers + total count), or stale PAGE/NUMPAGES survive reuse
-                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}`,
+                    // formatted numbers + total count, both sections' strip geometry),
+                    // or stale PAGE/NUMPAGES / strip insets survive reuse
+                    hfKey: `${pageNoTextOf(k)}·${pageNoTextOf(k + 1)}·${visiblePages}·${hfSig(gapFooter.value)}·${hfSig(gapHeader.value)}·f${floatSig(gapHeader.floats)}·g${mixedWidths ? 1 : 0}:${stripGeomSig(prevSec)}:${stripGeomSig(nextSec)}`,
                   }
                 : {}
             // previous page's footnotes: rendered into the top of the gap (page-bottom area), with the gap enlarged by the reserved height.
@@ -2593,27 +2885,6 @@ export function App() {
                       }
                       if (els.length > 0) repeatHeaderEls = els
                     }
-                    // a table gap's strips live inside .page-gap-table-fill, whose
-                    // containing block is the spanning cell (origin = the table's
-                    // left edge, not the paper's): shift page-coordinate floating
-                    // images left by the table's offset from the paper edge
-                    let tableHfProps: typeof hfProps = hfProps
-                    if (hfProps.hfEls && hfProps.hfKey) {
-                      const floatEls = hfProps.hfEls.filter((e) =>
-                        e.classList.contains('page-hf-float-img'),
-                      )
-                      const tblLeft = tr.closest('table')?.getBoundingClientRect().left
-                      const off = tblLeft != null ? (tblLeft - pmRect.left) / factor : 0
-                      if (floatEls.length > 0 && Math.abs(off) > 0.5) {
-                        for (const e of floatEls)
-                          e.style.left = `${parseFloat(e.style.left) - off}px`
-                        // table position is baked into the DOM now: key must follow it
-                        tableHfProps = {
-                          hfEls: hfProps.hfEls,
-                          hfKey: `${hfProps.hfKey}·tx${Math.round(off)}`,
-                        }
-                      }
-                    }
                     // the spanning gap cell must cover exactly the table's column
                     // grid: a wider colSpan adds phantom columns, which collapses
                     // colgroup-less fixed-layout tables to ~1px columns (makeGapEl)
@@ -2644,7 +2915,7 @@ export function App() {
                             tablePad > 0
                               ? { ...metrics, marginBottom: metrics.marginBottom + tablePad }
                               : metrics,
-                          ...tableHfProps,
+                          ...hfProps,
                           ...(repeatHeaderEls
                             ? {
                                 repeatHeaderEls,
@@ -2804,6 +3075,15 @@ export function App() {
           if (tr) rowFillEls.push({ el: tr, targetPx: f.targetPx })
         }
         setRowFills(editor.view, rowFillEls)
+        // oversized single-line blocks: resolve the engine's page-bottom clips to their elements
+        const oversizeEls: Array<{ el: HTMLElement; clipPx: number }> = []
+        for (const c of oversizeClips) {
+          const b = blocks.find(
+            (bb) => bb.oversizeLineH !== undefined && Math.abs(bb.top - c.blockTop) < 0.5,
+          )
+          if (b?.el) oversizeEls.push({ el: b.el, clipPx: c.clipPx })
+        }
+        setOversizeClips(editor.view, oversizeEls)
         // page/margin-anchored floated tables: resolve the engine's Y shifts to table elements
         const floatVEls: Array<{ el: Element; dyPx: number }> = []
         for (const f of floatVShifts) {
@@ -2829,9 +3109,18 @@ export function App() {
           viewMode === 'print' && !readMode && secList && hfHs
             ? sectionWidthSpecs(blocks, secList, sectionGeoms(secList, hfHs))
             : []
+        // sections disagreeing on the typed docGrid pitch: per-block pitch vars
+        const gridSpecs =
+          viewMode === 'print' && !readMode && secList ? sectionGridPitchSpecs(blocks, secList) : []
+        // sections disagreeing on the docGrid charSpace delta: per-block letter-spacing vars
+        const charSpecs =
+          viewMode === 'print' && !readMode && secList ? sectionCharSpaceSpecs(blocks, secList) : []
         // one spec per block: mixed-column placement wins the width, translates add up
-        let layoutSpecs = [...secWSpecs, ...colSpecs, ...vaSpecs]
-        if (secWSpecs.length > 0 && layoutSpecs.length > secWSpecs.length) {
+        const specLists = [gridSpecs, charSpecs, secWSpecs, colSpecs, vaSpecs].filter(
+          (l) => l.length > 0,
+        )
+        let layoutSpecs = specLists.flat()
+        if (specLists.length > 1) {
           const mergedSpecs = new Map<HTMLElement, ColumnBlockPlacement>()
           for (const s of layoutSpecs) {
             const prev = mergedSpecs.get(s.el)
@@ -2843,6 +3132,9 @@ export function App() {
           layoutSpecs = [...mergedSpecs.values()]
         }
         setColumnLayout(editor.view, layoutSpecs)
+        // in-table gap bands live in the spanning cell's coordinate space:
+        // re-anchor them to the paper before the strips are measured/aligned
+        alignTableGapFills(pm, factor)
         if (secWSpecs.length > 0 && section) {
           const cSet = secList?.[0]?.settings ?? section
           alignGapHfStrips(pm, twipsToPx(cSet.marginLeft), factor)
@@ -2857,26 +3149,7 @@ export function App() {
           // page border (w:pgBorders): per-page overlay boxes (w:display can
           // exclude pages; the border must not run through the page gaps)
           const pbSec = secList?.[0]?.settings ?? section
-          let borderStyle: PageBorderStyle | null = null
-          if (pbSec?.pageBorder) {
-            const p = pbSec.pageBorderProps
-            const spacePx = ((p?.spacePt ?? 24) * 4) / 3
-            const inset = (marginTwips: number) =>
-              !p || p.offsetFrom === 'page'
-                ? spacePx
-                : Math.max(0, twipsToPx(marginTwips) - spacePx)
-            borderStyle = {
-              ...(p?.display ? { display: p.display } : {}),
-              insetPx: {
-                top: inset(pbSec.marginTop),
-                right: inset(pbSec.marginRight),
-                bottom: inset(pbSec.marginBottom),
-                left: inset(pbSec.marginLeft),
-              },
-              widthPx: Math.max(1, ((p?.widthPt ?? 0.75) * 4) / 3),
-              color: p?.color ? `#${p.color}` : '#000000',
-            }
-          }
+          const borderStyle = pbSec ? pageBorderStyleOf(pbSec) : null
           syncPageBorders((pm.closest('.page-wrap') as HTMLElement) ?? pm, borderStyle, factor)
         }
         syncMarginAnnotations(
@@ -2900,6 +3173,15 @@ export function App() {
           .join(',')
         if (wSig !== secWidthSig) {
           secWidthSig = wSig
+          onUpdate()
+        }
+        // freshly applied per-block letter-spacing changes line breaks the same way
+        const cSig =
+          charSpecs.length === 0
+            ? ''
+            : `${charSpecs.length}:${[...new Set(charSpecs.map((s) => s.charSpacePt))].join(',')}`
+        if (cSig !== charSpaceSig) {
+          charSpaceSig = cSig
           onUpdate()
         }
         // the last page paints as a full sheet like the ones above it:
@@ -2954,6 +3236,7 @@ export function App() {
             section: b.section,
             empty: b.emptyPara,
             nLines: b.lineBoxes?.length,
+            oversize: b.oversizeLineH,
           })),
           tableRows: blocks
             .filter((b) => b.tableRows)
@@ -3020,6 +3303,7 @@ export function App() {
     editNote,
     effTopSingle,
     effBottomSingle,
+    singleFirstContentH,
     singleHfPx,
     hfHeightsOf,
     measureSingleFlow,
@@ -4045,13 +4329,17 @@ export function App() {
       className={`app ${readMode ? 'read-mode' : ''}${revisionDisplay !== 'all' ? ` rev-display-${revisionDisplay}` : ''}${revisionDisplay === 'all' && viewMode === 'print' ? ' rev-balloon' : ''}`}
     >
       <ToastHost />
-      {docCss && <style>{docCss}</style>}
+      {docCss && <style data-doc-css="">{docCss}</style>}
       {doc && liveDocCjk != null && (
-        <style>{`.doc-page { --doc-line-factor:${docLineFactor(doc.parsed, liveDocCjk)} }`}</style>
+        <style data-doc-css="">{`.doc-page { --doc-line-factor:${docLineFactor(doc.parsed, liveDocCjk)} }`}</style>
       )}
-      {doc && gridPitchPt != null && (
+      {doc && (gridPitchPt ?? mixedGridPitchPt) != null && (
         // typed w:docGrid: line-height round(up) expressions snap to this pitch
-        <style>{`.doc-page { --doc-grid-pitch:${gridPitchPt}pt }`}</style>
+        <style>{`.doc-page { --doc-grid-pitch:${gridPitchPt ?? mixedGridPitchPt}pt }`}</style>
+      )}
+      {doc && charSpacePt != null && (
+        // w:docGrid charSpace: every character advances natural width + this delta
+        <style>{`.doc-page { --doc-char-space:${Math.round(charSpacePt * 10000) / 10000}pt }`}</style>
       )}
       {doc && section && (
         // over-wide tables may spill into the margins (Word/LO), capped at the paper edge
@@ -4059,7 +4347,11 @@ export function App() {
       )}
       {/* Theme CSS comes from live state, so a Design ▸ Themes/Fonts/Colors pick shows
           on the page immediately instead of only in the saved file */}
-      {doc && <style>{docThemeCss(themeFonts, themeColors, !!docBodyFont(doc.parsed))}</style>}
+      {doc && (
+        <style data-doc-css="">
+          {docThemeCss(themeFonts, themeColors, !!docBodyFont(doc.parsed))}
+        </style>
+      )}
       {colFlow && viewMode === 'print' && (
         // columns (sectPr w:cols): column gap follows the document's w:space; measuring-columns
         // is the single-flow measuring state (columns removed, content-box width = column width,
@@ -4498,7 +4790,6 @@ export function App() {
           hfParts={doc.parsed.hfParts ?? {}}
           colFlow={viewMode === 'print' ? colFlow : null}
           colMode={viewMode === 'print' ? colMode : 'none'}
-          zoom={zoom}
           hf={{
             header,
             footer,
@@ -4519,6 +4810,8 @@ export function App() {
           pageFootnotesOf={pageFootnotesOf}
           endnoteItems={endnoteItems}
           sectionHfOverride={sectionHfOverride}
+          comments={comments}
+          anchorBlocks={doc.parsed.blocks}
           clearPageGaps={() => {
             // column-layout decorations stay: the preview measures with the block widths
             // (line boxes must keep column wrapping); transforms are neutralized by its

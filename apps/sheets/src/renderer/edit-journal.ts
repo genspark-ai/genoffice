@@ -15,6 +15,7 @@ import type {
 } from '../shared/desktop-api'
 import { columnLabel, parseRange } from '../domain/cell-address'
 import { splitSheetRef } from '../domain/chart-visual'
+import { CHART_CATEGORY_WIRE_MAX, CHART_TEXT_WIRE_MAX } from '../shared/desktop-api'
 import { ADDABLE_SHAPE_TYPES } from '../shared/shape-types'
 import { INDENT_STEP_PX } from './selection-format'
 
@@ -698,10 +699,27 @@ export function removeTableAdd(journal: EditJournal, sheetId: string, name: stri
 /// Session pivot adds for the save request; pivots whose output or source
 /// sheet was removed drop.
 export function toSavePivotAdds(journal: EditJournal): WorkbookPivotAdd[] {
-  return journal.pivotAdds.filter(
-    (pivot) =>
-      !isSheetRemoved(journal, pivot.sheetId) && !isSheetRemoved(journal, pivot.sourceSheetId),
-  )
+  // Field names and item captions are cell texts; the wire schema caps them
+  // at 255 (Excel's pivot caption limit), so truncate rather than fail.
+  const clampCaptions = (items: readonly string[]): string[] =>
+    items.map((item) => clampWireText(item, 255))
+  return journal.pivotAdds
+    .filter(
+      (pivot) =>
+        !isSheetRemoved(journal, pivot.sheetId) && !isSheetRemoved(journal, pivot.sourceSheetId),
+    )
+    .map((pivot) => ({
+      ...pivot,
+      fieldNames: clampCaptions(pivot.fieldNames),
+      rowItems: clampCaptions(pivot.rowItems),
+      ...(pivot.rowLevelItems === undefined
+        ? {}
+        : { rowLevelItems: pivot.rowLevelItems.map(clampCaptions) }),
+      ...(pivot.columnItems === undefined ? {} : { columnItems: clampCaptions(pivot.columnItems) }),
+      ...(pivot.colLevelItems === undefined
+        ? {}
+        : { colLevelItems: pivot.colLevelItems.map(clampCaptions) }),
+    }))
 }
 
 export function recordVisualAdd(journal: EditJournal, visual: WorkbookVisualObject): void {
@@ -797,6 +815,17 @@ export function toSaveVisualEdits(journal: EditJournal): WorkbookVisualEdit[] {
   return edits
 }
 
+/// Cell-derived text (chart caches, pivot captions) can exceed the wire
+/// schema's string caps; the save emitters truncate instead of letting the
+/// whole save fail schema validation.
+function clampWireText(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max) : text
+}
+
+function clampCategories(categories: readonly string[]): string[] {
+  return categories.map((label) => clampWireText(label, CHART_CATEGORY_WIRE_MAX))
+}
+
 /// Converts session visuals to the save-request wire shape. Skips visuals on
 /// removed sheets and anything that is not a supported chart or shape.
 export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
@@ -825,7 +854,7 @@ export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
         shape: {
           shapeType,
           ...(visual.fillColor === undefined ? {} : { fillColor: visual.fillColor }),
-          ...(visual.text === undefined ? {} : { text: visual.text }),
+          ...(visual.text === undefined ? {} : { text: clampWireText(visual.text, 1_000) }),
           ...(visual.name === 'TextBox' ? { isTextBox: true } : {}),
         },
       })
@@ -855,10 +884,10 @@ export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
     if (chartType === null) continue
     const axisTitles = {
       ...(typeof visual.chart.axisTitles?.category === 'string' && visual.chart.axisTitles.category
-        ? { category: visual.chart.axisTitles.category }
+        ? { category: clampWireText(visual.chart.axisTitles.category, CHART_TEXT_WIRE_MAX) }
         : {}),
       ...(typeof visual.chart.axisTitles?.value === 'string' && visual.chart.axisTitles.value
-        ? { value: visual.chart.axisTitles.value }
+        ? { value: clampWireText(visual.chart.axisTitles.value, CHART_TEXT_WIRE_MAX) }
         : {}),
     }
     additions.push({
@@ -866,10 +895,10 @@ export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
       anchor: visual.anchor,
       chart: {
         chartType,
-        title: visual.chart.title,
+        title: clampWireText(visual.chart.title, CHART_TEXT_WIRE_MAX),
         series: visual.chart.series.map((series) => ({
-          name: series.name,
-          categories: series.categories,
+          name: clampWireText(series.name, CHART_TEXT_WIRE_MAX),
+          categories: clampCategories(series.categories),
           values: series.values,
           ...(series.valuesRef === undefined ? {} : { valuesRef: series.valuesRef }),
           ...(series.categoriesRef === undefined ? {} : { categoriesRef: series.categoriesRef }),
@@ -928,7 +957,57 @@ export function toSaveVisualAdds(journal: EditJournal): WorkbookVisualAdd[] {
 }
 
 export function toSaveChartEdits(journal: EditJournal): WorkbookChartEdit[] {
-  return [...journal.chartEdits].map(([chartPath, edit]) => ({ chartPath, ...edit }))
+  return [...journal.chartEdits].map(([chartPath, edit]) => ({
+    chartPath,
+    ...edit,
+    ...(edit.title === undefined ? {} : { title: clampWireText(edit.title, CHART_TEXT_WIRE_MAX) }),
+    ...(edit.axisTitles === undefined
+      ? {}
+      : {
+          axisTitles: {
+            ...(edit.axisTitles.category === undefined
+              ? {}
+              : {
+                  category:
+                    edit.axisTitles.category === null
+                      ? null
+                      : clampWireText(edit.axisTitles.category, CHART_TEXT_WIRE_MAX),
+                }),
+            ...(edit.axisTitles.value === undefined
+              ? {}
+              : {
+                  value:
+                    edit.axisTitles.value === null
+                      ? null
+                      : clampWireText(edit.axisTitles.value, CHART_TEXT_WIRE_MAX),
+                }),
+          },
+        }),
+    ...(edit.series === undefined
+      ? {}
+      : {
+          series: edit.series.map((entry) => ({
+            ...entry,
+            ...(entry.name === undefined
+              ? {}
+              : { name: clampWireText(entry.name, CHART_TEXT_WIRE_MAX) }),
+            ...(entry.categories === undefined
+              ? {}
+              : { categories: clampCategories(entry.categories) }),
+          })),
+        }),
+    ...(edit.seriesSet === undefined
+      ? {}
+      : {
+          seriesSet: edit.seriesSet.map((entry) => ({
+            ...entry,
+            name: clampWireText(entry.name, CHART_TEXT_WIRE_MAX),
+            ...(entry.categories === undefined
+              ? {}
+              : { categories: clampCategories(entry.categories) }),
+          })),
+        }),
+  }))
 }
 
 interface RowColumnShift {

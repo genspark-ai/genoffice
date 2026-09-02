@@ -202,7 +202,10 @@ describe('lazyGateError', () => {
 })
 
 describe('proposeOperations: gate rejection (lazy workbook)', () => {
-  function lazyContext(state: LazyWorkbookState): PlanContext {
+  function lazyContext(
+    state: LazyWorkbookState,
+    rawValues: (string | number | null)[][] = [[null]],
+  ): PlanContext {
     const worksheets = new Map(
       state.file.sheets.map((sheet) => [
         sheet.id,
@@ -214,7 +217,7 @@ describe('proposeOperations: gate rejection (lazy workbook)', () => {
           getRange: () => ({
             getValue: () => null,
             getRawValue: () => null,
-            getRawValues: () => [[null]],
+            getRawValues: () => rawValues,
             getFormula: () => '',
             getCellDatas: () => [[null]],
           }),
@@ -393,6 +396,23 @@ describe('proposeOperations: gate rejection (lazy workbook)', () => {
     )
     expect(outcome.ok).toBe(false)
     if (!outcome.ok) expect(outcome.error).toContain('next')
+  })
+
+  it('accepts add_chart when only the mixed first column holds the numbers', () => {
+    // Numbered-list layouts: the numeric probe used to hand the only numeric
+    // column to the category axis and reject loaded, chartable data.
+    const outcome = proposeOperations(
+      lazyContext(lazyState(), [
+        ['Checklist', null],
+        ['No.', 'Task'],
+        [1, 'alpha'],
+        [2, 'beta'],
+        [3, 'gamma'],
+      ]),
+      [{ op: 'add_chart', sheetId: 'sh1', chartType: 'line', dataRange: 'A1:B5' }],
+      'test',
+    )
+    expect(outcome.ok).toBe(true)
   })
 
   it('rejects add_chart when nothing in the batch writes its empty range', () => {

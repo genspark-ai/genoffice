@@ -1,9 +1,11 @@
 import { z } from 'zod'
 
 import {
+  HEADER_FOOTER_PICTURE_POSITION,
   MAX_CREATE_DOCUMENT_CONTENT_CHARS,
   MAX_CREATE_DOCUMENT_TITLE_CHARS,
   MAX_CSV_EXPORT_CHARS,
+  MAX_PDF_TEMPLATE_CHARS,
   MAX_SAVE_EDITS,
   MAX_SAVE_EDITS_TOTAL,
   SAVE_EDITS_CHUNK_JSON_MAX,
@@ -80,6 +82,8 @@ const worksheetMetadataSchema = z
     showRowColHeaders: z.boolean().optional(),
     /// sheetView/@rightToLeft — the grid is mirrored (column A at the right).
     rightToLeft: z.boolean().optional(),
+    /// Saved normal-view zoom percent (10-400); omitted at the 100% default.
+    zoomScale: z.number().int().min(10).max(400).optional(),
     tables: z.array(
       z
         .object({
@@ -87,6 +91,9 @@ const worksheetMetadataSchema = z
           headerRowCount: z.number().int().nonnegative(),
           showRowStripes: z.boolean(),
           showColumnStripes: z.boolean(),
+          /// autoFilter has live criteria: Excel re-ranks row stripes by
+          /// visible order while a filter hides rows.
+          filterActive: z.boolean().optional(),
           /// table/@displayName (falling back to @name) — the structured-reference token.
           name: z.string().optional(),
           /// tableColumn/@name in column order, for the formula engine's titleMap.
@@ -146,16 +153,59 @@ const worksheetMetadataSchema = z
             path: z.string().min(1),
             cachePath: z.string().min(1).nullable(),
             outputRef: z.string().min(1),
-            /// Pivot style band fill (header + grand-total rows).
+            /// Pivot style bands resolved sidecar-side from pivotTableStyleInfo
+            /// (Excel keeps pivot styling out of cell xfs). Each band carries
+            /// fill / font color / bold; an absent value inherits the band
+            /// below it. Precedence, lowest first: wholeTable, row stripes,
+            /// column stripes, firstColumn, subheading / subtotal, header
+            /// (+ firstHeaderCell), totalRow.
             headerFill: z.string().optional(),
             headerFontColor: z.string().optional(),
-            /// Body band fill for solid families (Dark); stripe overlays it.
+            headerBold: z.boolean().optional(),
+            /// Top-left cell of the output area, above the header band.
+            firstHeaderCellFontColor: z.string().optional(),
+            firstHeaderCellBold: z.boolean().optional(),
             wholeTableFill: z.string().optional(),
+            wholeTableFontColor: z.string().optional(),
+            /// Row stripes: even offsets from firstDataRow take stripeFill,
+            /// odd ones secondRowStripeFill (only sent with showRowStripes).
             stripeFill: z.string().optional(),
+            secondRowStripeFill: z.string().optional(),
+            /// Column stripes over the data columns from firstDataCol (only
+            /// sent with showColStripes); they skip the header rows.
+            columnStripeFill: z.string().optional(),
+            secondColumnStripeFill: z.string().optional(),
+            /// Row-label columns left of firstDataCol (Excel "Row Headers").
+            firstColumnFill: z.string().optional(),
+            firstColumnBold: z.boolean().optional(),
+            /// Level-1 row subheadings (rowKinds 's').
+            subheadingFill: z.string().optional(),
+            subheadingFontColor: z.string().optional(),
+            subheadingBold: z.boolean().optional(),
+            /// Deeper row subheadings (rowKinds 'S').
+            subheading2Fill: z.string().optional(),
+            subheading2FontColor: z.string().optional(),
+            subheading2Bold: z.boolean().optional(),
+            /// Subtotal rows (rowKinds 't').
+            subtotalFill: z.string().optional(),
+            subtotalFontColor: z.string().optional(),
+            subtotalBold: z.boolean().optional(),
+            /// Grand-total row (rowKinds 'g').
+            totalRowFill: z.string().optional(),
+            totalRowFontColor: z.string().optional(),
+            totalRowBold: z.boolean().optional(),
             /// A named pivotTableStyleInfo: band rows bold even with no fills.
             styled: z.boolean().optional(),
             firstDataRow: z.number().int().nonnegative().optional(),
+            firstDataCol: z.number().int().nonnegative().optional(),
             rowGrandTotals: z.boolean().optional(),
+            /// One char per output row from firstDataRow down: d data, s/S
+            /// subheading level 1/deeper, t subtotal, g grand total, b blank.
+            rowKinds: z
+              .string()
+              .regex(/^[dsStgb]*$/)
+              .max(1_048_576)
+              .optional(),
           })
           .strict(),
       )
@@ -235,6 +285,8 @@ const conditionalRuleSchema = z
     text: z.string().optional(),
     dxfIndex: z.number().int().nonnegative().optional(),
     priority: z.number().int(),
+    /// cfRule/@stopIfTrue; optional so an older sidecar build stays parseable.
+    stopIfTrue: z.boolean().optional(),
     rank: z.number().int().nonnegative().optional(),
     percent: z.boolean(),
     bottom: z.boolean(),
@@ -257,6 +309,16 @@ const conditionalRuleSchema = z
     negativeSameAsPositive: z.boolean().optional(),
     /// x14:dataBar/@gradient; absent means the ECMA default (gradient fill).
     gradient: z.boolean().optional(),
+    /// x14:dataBar/@axisPosition; absent means automatic (or no x14 twin).
+    axisPosition: z.enum(['automatic', 'middle', 'none']).optional(),
+    /// x14:dataBar/axisColor as #RRGGBB (kept for the save side and future
+    /// renderers; Univer's bar painter has no axis line).
+    axisColor: z.string().optional(),
+    /// Effective bar extents (% of the cell width): 2006 minLength/maxLength
+    /// (defaults 10/90) or the x14 twin's (defaults 0/100). Only dataBar
+    /// rules carry them; an older sidecar omits them.
+    minLength: z.number().int().min(0).max(100).optional(),
+    maxLength: z.number().int().min(0).max(100).optional(),
   })
   .strict()
 const borderEdgeSchema = z
@@ -338,7 +400,9 @@ const visualObjectSchema = z
   .object({
     id: z.string().min(1),
     sheetId: z.string().min(1),
-    kind: z.enum(['chart', 'image', 'shape']),
+    /// `ole`: a worksheet <oleObject> embed, read-only — rendered from its
+    /// cached preview picture (mediaPath) or as an icon+caption placeholder.
+    kind: z.enum(['chart', 'image', 'shape', 'ole']),
     anchor: drawingAnchorSchema,
     chart: z
       .object({
@@ -354,6 +418,9 @@ const visualObjectSchema = z
               nameRef: z.string().optional(),
               categories: z.array(z.string()),
               values: z.array(z.number().finite()),
+              /// Blank value-cache slots (values hold a 0 filler there);
+              /// the chart-level dispBlanksAs decides how they plot.
+              blanks: z.array(z.number().int().nonnegative()).optional(),
               numberFormat: z.string().optional(),
               /// numCache formatCode of the category (or scatter X) data.
               categoryFormat: z.string().optional(),
@@ -452,6 +519,8 @@ const visualObjectSchema = z
         scatterStyle: z.string().optional(),
         /// Plot-level c:lineChart/c:marker flag; per-series symbols refine it.
         lineMarkers: z.boolean().optional(),
+        /// `c:dispBlanksAs` — how blank cells plot (OOXML defaults to zero).
+        dispBlanksAs: z.enum(['gap', 'zero', 'span']).optional(),
         /// c:title/c:txPr//a:defRPr shorthand.
         titleStyle: z
           .object({
@@ -469,6 +538,16 @@ const visualObjectSchema = z
     mediaType: z.string().optional(),
     /// a:blip/a:alphaModFix amt as 0..1 picture opacity.
     opacity: z.number().min(0).max(1).optional(),
+    /// a:srcRect as 0..1 fractions cut from each source edge.
+    crop: z
+      .object({
+        left: z.number().min(-1).max(1),
+        top: z.number().min(-1).max(1),
+        right: z.number().min(-1).max(1),
+        bottom: z.number().min(-1).max(1),
+      })
+      .strict()
+      .optional(),
     /// spPr/a:blipFill on a shape — the image painted clipped to the
     /// preset geometry.
     fillMediaPath: z.string().optional(),
@@ -552,6 +631,8 @@ const visualObjectSchema = z
       .max(200)
       .optional(),
     text: z.string().optional(),
+    /// <oleObject progId> of an `ole` visual (e.g. "Word.Document.12").
+    progId: z.string().optional(),
     rotation: z.number().finite().optional(),
     /// a:xfrm ext in EMU — a rotated shape's true unrotated frame (the
     /// anchor stores rotated bounds, centered on the shape center).
@@ -787,6 +868,33 @@ export const workbookRangeResultSchema = z
         /// Excel-encoded odd header/footer (&L/&C/&R sections, field codes).
         oddHeader: z.string().min(1).max(500).optional(),
         oddFooter: z.string().min(1).max(500).optional(),
+        /// headerFooter/@differentOddEven and @differentFirst: even pages
+        /// print the even* texts, page 1 the first* texts.
+        differentOddEven: z.boolean().optional(),
+        differentFirst: z.boolean().optional(),
+        /// headerFooter/@scaleWithDoc="0": the header/footer keeps its size
+        /// instead of following the print scale (Excel's default).
+        headerFooterFixedSize: z.boolean().optional(),
+        evenHeader: z.string().min(1).max(500).optional(),
+        evenFooter: z.string().min(1).max(500).optional(),
+        firstHeader: z.string().min(1).max(500).optional(),
+        firstFooter: z.string().min(1).max(500).optional(),
+        /// `&G` pictures (legacyDrawingHF): `id` is a readWorkbookMedia key,
+        /// `position` the VML slot (L/C/R × H/F, optional EVEN/FIRST suffix).
+        headerFooterPictures: z
+          .array(
+            z
+              .object({
+                id: z.string().min(1).max(64),
+                position: z.string().regex(HEADER_FOOTER_PICTURE_POSITION),
+                widthPt: z.number().positive().max(2_000),
+                heightPt: z.number().positive().max(2_000),
+                mediaType: z.string().regex(/^image\//),
+              })
+              .strict(),
+          )
+          .max(18)
+          .optional(),
       })
       .strict()
       .nullish()
@@ -1188,11 +1296,17 @@ export const workbookHyperlinkEditSchema = z
   })
   .strict()
 
+/// Caps for chart strings that carry cell-derived text on the save wire.
+/// The save-request emitters clamp to these, so a long cell can never fail
+/// the whole save with a schema rejection.
+export const CHART_TEXT_WIRE_MAX = 255
+export const CHART_CATEGORY_WIRE_MAX = 1_024
+
 export const workbookChartEditSchema = z
   .object({
     /// Constrained to the charts directory — the renderer chooses the path.
     chartPath: z.string().regex(/^xl\/charts\/[A-Za-z0-9._-]+\.xml$/),
-    title: z.string().max(255).optional(),
+    title: z.string().max(CHART_TEXT_WIRE_MAX).optional(),
     chartType: z.enum(['column', 'bar', 'line', 'area', 'pie', 'doughnut']).optional(),
     seriesColors: z.record(z.string().regex(/^[0-9]{1,3}$/), hexColorSchema).optional(),
     /// 'none' removes the legend; a side re-positions (creating it if needed).
@@ -1206,8 +1320,8 @@ export const workbookChartEditSchema = z
     /// null removes that axis title. Axis-based charts only.
     axisTitles: z
       .object({
-        category: z.string().max(255).nullable().optional(),
-        value: z.string().max(255).nullable().optional(),
+        category: z.string().max(CHART_TEXT_WIRE_MAX).nullable().optional(),
+        value: z.string().max(CHART_TEXT_WIRE_MAX).nullable().optional(),
       })
       .strict()
       .optional(),
@@ -1251,10 +1365,10 @@ export const workbookChartEditSchema = z
       .array(
         z
           .object({
-            name: z.string().max(255),
+            name: z.string().max(CHART_TEXT_WIRE_MAX),
             values: z.array(z.number().finite()).max(1_000),
             valuesRef: z.string().max(512).optional(),
-            categories: z.array(z.string().max(255)).max(1_000).optional(),
+            categories: z.array(z.string().max(CHART_CATEGORY_WIRE_MAX)).max(1_000).optional(),
             categoriesRef: z.string().max(512).optional(),
             color: hexColorSchema.optional(),
           })
@@ -1270,11 +1384,11 @@ export const workbookChartEditSchema = z
         z
           .object({
             index: z.number().int().min(0).max(255),
-            name: z.string().max(255).optional(),
+            name: z.string().max(CHART_TEXT_WIRE_MAX).optional(),
             valuesRef: z.string().max(512).optional(),
             values: z.array(z.number().finite()).max(1_000).optional(),
             categoriesRef: z.string().max(512).optional(),
-            categories: z.array(z.string().max(255)).max(1_000).optional(),
+            categories: z.array(z.string().max(CHART_CATEGORY_WIRE_MAX)).max(1_000).optional(),
           })
           .strict()
           .refine(
@@ -1351,7 +1465,8 @@ const filterColumnStateSchema = z
   .object({
     /// 0-based offset from the filter range's first column, per OOXML.
     colId: z.number().int().nonnegative().max(16_383),
-    values: z.array(z.string().max(255)).max(10_000).optional(),
+    /// Filter values are cell texts, so they share the cell's 32,767 cap.
+    values: z.array(z.string().max(32_767)).max(10_000).optional(),
     blank: z.boolean().optional(),
     customs: z
       .object({
@@ -1360,7 +1475,7 @@ const filterColumnStateSchema = z
           .array(
             z
               .object({
-                val: z.union([z.string().max(255), z.number().finite()]),
+                val: z.union([z.string().max(32_767), z.number().finite()]),
                 operator: customFilterOperatorSchema.optional(),
               })
               .strict(),
@@ -1465,13 +1580,13 @@ export const workbookVisualAddSchema = z
           'doughnut',
           'combo',
         ]),
-        title: z.string().max(255),
+        title: z.string().max(CHART_TEXT_WIRE_MAX),
         series: z
           .array(
             z
               .object({
-                name: z.string().max(255),
-                categories: z.array(z.string().max(255)).max(1_000),
+                name: z.string().max(CHART_TEXT_WIRE_MAX),
+                categories: z.array(z.string().max(CHART_CATEGORY_WIRE_MAX)).max(1_000),
                 values: z.array(z.number().finite()).max(1_000),
                 valuesRef: z.string().max(512).optional(),
                 categoriesRef: z.string().max(512).optional(),
@@ -1493,8 +1608,8 @@ export const workbookVisualAddSchema = z
         dataLabelFormat: z.string().max(64).optional(),
         axisTitles: z
           .object({
-            category: z.string().max(255).optional(),
-            value: z.string().max(255).optional(),
+            category: z.string().max(CHART_TEXT_WIRE_MAX).optional(),
+            value: z.string().max(CHART_TEXT_WIRE_MAX).optional(),
           })
           .strict()
           .optional(),
@@ -2350,6 +2465,13 @@ export type AiSettingsInput = z.infer<typeof aiSettingsInputSchema>
 export type AiChatRequestInput = z.infer<typeof aiChatRequestSchema>
 export type AiStreamRequestInput = z.infer<typeof aiStreamRequestSchema>
 
+const pdfPageVariantSchema = z
+  .object({
+    headerTemplate: z.string().min(1).max(MAX_PDF_TEMPLATE_CHARS).optional(),
+    footerTemplate: z.string().min(1).max(MAX_PDF_TEMPLATE_CHARS).optional(),
+  })
+  .strict()
+
 /// A rendered print job: the renderer lays the sheet out as HTML, the main
 /// process turns it into a PDF via a hidden window.
 export const workbookExportPdfRequestSchema = z
@@ -2378,9 +2500,16 @@ export const workbookExportPdfRequestSchema = z
       .strict(),
     scale: z.number().min(0.1).max(2),
     /// Chromium print header/footer templates (rendered in the margin
-    /// boxes; `pageNumber`/`totalPages` spans resolve per page).
-    headerTemplate: z.string().min(1).max(50_000).optional(),
-    footerTemplate: z.string().min(1).max(50_000).optional(),
+    /// boxes; `pageNumber`/`totalPages` spans resolve per page). These are
+    /// the odd-page (default) templates.
+    headerTemplate: z.string().min(1).max(MAX_PDF_TEMPLATE_CHARS).optional(),
+    footerTemplate: z.string().min(1).max(MAX_PDF_TEMPLATE_CHARS).optional(),
+    /// Excel's differentFirst / differentOddEven variants. Presence means
+    /// the variant is active (an empty object prints page 1 / even pages
+    /// with no header or footer); the main process renders them in extra
+    /// printToPDF passes and stitches the pages together.
+    firstPage: pdfPageVariantSchema.optional(),
+    evenPages: pdfPageVariantSchema.optional(),
   })
   .strict()
 
@@ -2544,6 +2673,10 @@ export interface DesktopApi {
    */
   onChromePressed(handler: () => void): () => void
   selectWorkbook(): Promise<WorkbookFile | null>
+  /** multi-select xlsx picker; each file opens a secondary sidecar session for merge reads */
+  selectWorkbooksForMerge(): Promise<WorkbookFile[] | null>
+  /** open explicit spreadsheet paths (chat attachments) as merge-source sessions */
+  openWorkbooksForMerge(paths: string[]): Promise<WorkbookFile[] | null>
   readWorkbookRange(request: WorkbookRangeRequest): Promise<WorkbookRangeResult>
   readWorkbookFormulas(request: WorkbookFormulaCellsRequest): Promise<WorkbookFormulaCellsResult>
   recalcWorkbook(request: WorkbookRecalcRequest): Promise<WorkbookRecalcResult>

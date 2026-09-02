@@ -31,6 +31,9 @@ export const SKIP_HOST_SELECTOR = [
   '[data-u-comp="multiple-select"]',
   '[data-u-comp="sheets-dropdown-list"]',
   '[data-u-comp="gallery"]',
+  // sheet-tab rename: a contenteditable span INSIDE the sheet container —
+  // swallowing Backspace/Delete there made tab names uncorrectable (r161)
+  '[data-u-comp="slide-tab-item"]',
   '.shape-editable',
   '.chart-editor',
   '.dialog-backdrop',

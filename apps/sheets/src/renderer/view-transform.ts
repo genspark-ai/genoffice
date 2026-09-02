@@ -126,6 +126,22 @@ export function screenToFile(
   return position
 }
 
+/// Screen position of a file line, falling back to the nearest earlier
+/// surviving line when it was deleted this session. Positional by design:
+/// inserts or deletes past the line must not move it (Ctrl+End's used-range
+/// target — a distant insert in the empty grid is not an extension).
+export function lastSurvivingScreenLine(
+  ops: readonly StructuralOp[],
+  axis: Axis,
+  fileIndex: number,
+): number | null {
+  for (let index = fileIndex; index >= 0; index -= 1) {
+    const screen = fileToScreen(ops, axis, index)
+    if (screen !== null) return screen
+  }
+  return null
+}
+
 /// Net size change of an axis: screen extent = file extent + delta.
 export function netAxisDelta(ops: readonly StructuralOp[], axis: Axis): number {
   let delta = 0

@@ -258,3 +258,78 @@ describe('custom table style outer borders (tcBdr left/right/top/bottom)', () =>
     expect(def.insideH?.fill).toEqual({ type: 'solid', color: '#9E9E9E' })
   })
 })
+
+describe('tcPr child order (CT_TableCellProperties is a sequence: ln* before fill)', () => {
+  it('borders added to a filled cell land before the cell fill node', () => {
+    const result = patchTableStyleXml(MINIMAL_TABLE_XML, {
+      borderPreset: 'all',
+      borderColor: '#000000',
+    })
+    const tcPr = result.slice(result.indexOf('<a:tcPr'), result.indexOf('</a:tcPr>'))
+    expect(tcPr.indexOf('<a:lnB')).toBeGreaterThan(-1)
+    expect(tcPr.indexOf('<a:lnB')).toBeLessThan(tcPr.indexOf('FF0000'))
+  })
+
+  it('clear-borders on a filled cell also lands before the cell fill node', () => {
+    const result = patchTableStyleXml(MINIMAL_TABLE_XML, { borderPreset: 'none' })
+    const tcPr = result.slice(result.indexOf('<a:tcPr'), result.indexOf('</a:tcPr>'))
+    expect(tcPr.indexOf('<a:lnL')).toBeLessThan(tcPr.indexOf('FF0000'))
+  })
+
+  it('shading added to a bordered cell lands after the ln* nodes and keeps border colors', () => {
+    const bordered = patchTableStyleXml(MINIMAL_TABLE_XML, {
+      borderPreset: 'all',
+      borderColor: '#00FF00',
+    })
+    const result = patchTableStyleXml(bordered, { shadingColor: '#AABBCC' })
+    const tcPr = result.slice(result.indexOf('<a:tcPr'), result.indexOf('</a:tcPr>'))
+    expect(tcPr.indexOf('AABBCC')).toBeGreaterThan(tcPr.lastIndexOf('<a:lnB'))
+    // Border fills are the ln elements' own children — shading must not eat them
+    expect((tcPr.match(/00FF00/g) ?? []).length).toBe(4)
+  })
+
+  it('a self-closing ln element is replaced, not duplicated', () => {
+    const selfClosing = MINIMAL_TABLE_XML.replace('<a:tcPr>', '<a:tcPr><a:lnB w="0"/>')
+    const result = patchTableStyleXml(selfClosing, {
+      borderPreset: 'all',
+      borderColor: '#000000',
+    })
+    const tcPr = result.slice(result.indexOf('<a:tcPr'), result.indexOf('</a:tcPr>'))
+    expect((tcPr.match(/<a:lnB[\s>]/g) ?? []).length).toBe(1)
+    expect(tcPr).not.toContain('<a:lnB w="0"/>')
+  })
+
+  it('shading replaces a gradient fill instead of stacking a second fill node', () => {
+    const grad = MINIMAL_TABLE_XML.replace(
+      '<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>',
+      '<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill>',
+    )
+    const result = patchTableStyleXml(grad, { shadingColor: '#AABBCC' })
+    expect(result).not.toContain('gradFill')
+    expect(result).toContain('AABBCC')
+  })
+})
+
+describe('fill strip matches attributed fill tags (Bugbot: gradFill almost always carries rotWithShape)', () => {
+  it('shading replaces an attributed gradFill instead of stacking a second fill', () => {
+    const grad = MINIMAL_TABLE_XML.replace(
+      '<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>',
+      '<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:srgbClr val="FF0000"/></a:gs></a:gsLst></a:gradFill>',
+    )
+    const result = patchTableStyleXml(grad, { shadingColor: '#AABBCC' })
+    expect(result).not.toContain('gradFill')
+    expect(result).toContain('AABBCC')
+  })
+
+  it('clearDirectFormatting also strips an attributed pattFill', () => {
+    const patt = MINIMAL_TABLE_XML.replace(
+      '<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>',
+      '<a:pattFill prst="pct5"><a:fgClr><a:srgbClr val="FF0000"/></a:fgClr></a:pattFill>',
+    )
+    const result = patchTableStyleXml(patt, {
+      tblPrXml: TABLE_STYLE_PRESETS['zebraGray']!.tblPrXml,
+      clearDirectFormatting: true,
+    })
+    expect(result).not.toContain('pattFill')
+  })
+})

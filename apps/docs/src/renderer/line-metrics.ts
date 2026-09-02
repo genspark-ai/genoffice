@@ -236,6 +236,9 @@ export function lineHeightFactor(fontFamily: string): number {
   // Nunito Sans is an Office cloud font Word downloads and renders real
   // (probe 2026-08-23: 1.365 = its Win metrics)
   if (f.includes('nunito')) return 1.365
+  // Poppins is an M365 cloud font Word downloads and renders real (probe
+  // 2026-09-01: exactly 1.500 at 10/12/16/28pt, regular and bold = hhea/typo)
+  if (f.includes('poppins')) return 1.5
   // Microsoft New Tai Lue ships with Office (probe 2026-08-23: 1.31 = Win metrics)
   if (f.includes('new tai lue')) return 1.31
   if (f.includes('helvetica')) return 1.0
@@ -295,12 +298,13 @@ export function lineHeightFactor(fontFamily: string): number {
  * unicode-range aliases to proportional Latin glyphs where 1.2 matches Word
  * (sample 40).
  */
+export const NOTO_HAN_REGIONAL_RE =
+  /^(?:noto|source han) (?:sans|serif)(?: cjk)? ?(jp|kr|sc|cn|tc|tw|hk)\b/
+
 export function cjkDeclaredLineFactor(fontFamily: string): number | null {
   const krName = krNameLineFactor(fontFamily)
   if (krName !== null) return krName
-  const m = /^(?:noto|source han) (?:sans|serif)(?: cjk)? ?(jp|kr|sc|cn|tc|tw|hk)\b/.exec(
-    fontFamily.toLowerCase(),
-  )
+  const m = NOTO_HAN_REGIONAL_RE.exec(fontFamily.toLowerCase())
   if (!m) return null
   if (m[1] === 'kr') return lineHeightFactor(fontFamily)
   return 1.3029
@@ -457,6 +461,7 @@ export const BUNDLED_FONTS = new Set([
   'GenOffice Sans KR',
   'GenOffice Serif KR',
   'GenOffice Gothic KR',
+  'GenOffice Poppins',
   'GenOffice Tamil',
   'GenOffice Fullwidth TC',
   'GenOffice Songti SC',
@@ -496,6 +501,34 @@ export function isFontAvailable(font: string): boolean {
   }
   fontAvailableCache.set(font, available)
   return available
+}
+
+/**
+ * Ascent/descent of a family chain's primary face, as percentages of the em
+ * (canvas fontBoundingBox at 1000px for 0.1% granularity). Fuels the typed-grid
+ * strut alias in doc-style-css; null where canvas metrics are unavailable (jsdom).
+ */
+const chainMetricsCache = new Map<string, { ascentPct: number; descentPct: number } | null>()
+export function fontChainMetricsPct(
+  chain: string,
+): { ascentPct: number; descentPct: number } | null {
+  const cached = chainMetricsCache.get(chain)
+  if (cached !== undefined) return cached
+  let out: { ascentPct: number; descentPct: number } | null = null
+  try {
+    const ctx = document.createElement('canvas').getContext('2d')
+    if (ctx) {
+      ctx.font = `1000px ${chain}`
+      const m = ctx.measureText('M')
+      if (typeof m.fontBoundingBoxAscent === 'number' && m.fontBoundingBoxAscent > 0) {
+        out = { ascentPct: m.fontBoundingBoxAscent / 10, descentPct: m.fontBoundingBoxDescent / 10 }
+      }
+    }
+  } catch {
+    out = null
+  }
+  chainMetricsCache.set(chain, out)
+  return out
 }
 
 // ─── Document fontTable (word/fontTable.xml substitution hints) ─────────────
@@ -584,6 +617,9 @@ export function cssFontFamily(font: string, followAltName = true): string {
   // Nunito Sans is an Office cloud font Word renders real; the size-adjusted
   // Helvetica alias (fonts.css) matches its advances (probe 2026-08-23)
   if (f.includes('nunito')) return `${chain(font, 'Nunito Sans GO', CJK_SANS)},sans-serif`
+  // Poppins is an M365 cloud font Word renders real; the bundled Latin subset
+  // (fonts.css) carries its true advances (probe 2026-09-01)
+  if (f.includes('poppins')) return `${chain(font, 'GenOffice Poppins', CJK_SANS)},sans-serif`
   // Microsoft New Tai Lue ships with Office; its Latin is Segoe-flavored with
   // Arial-class widths (probe 2026-08-23: +0.5% vs Helvetica)
   if (f.includes('new tai lue'))
@@ -1066,6 +1102,22 @@ export function cssSimsunGapLineExpr(multiple: number): string {
 /** single-spacing line height: snapped length in typed-grid docs, unitless factor otherwise */
 export function cssGridLineBase(): string {
   return 'var(--doc-line-grid,var(--doc-line-factor,1.2))'
+}
+
+/**
+ * Paragraph strut font-size from run-declared sizes. Word sizes each line by
+ * the runs on it: mixed run sizes keep the shrink-only clamp (a grown strut
+ * would inflate smaller-run lines), but a uniform run size IS every line's
+ * size, so the strut grows to match — left at the inherited size, a larger
+ * uniform run rides above the strut's half-leading and the union line box
+ * outgrows its height by ~1px/line (under a docGrid that pushed prod-sas 003's
+ * last two page-1 lines out).
+ */
+export function strutFontCss(strut: { halfPoints: number; uniform: boolean }): string[] {
+  return [
+    `--doc-strut:${strut.halfPoints / 2}pt`,
+    strut.uniform ? 'font-size:var(--doc-strut)' : 'font-size:min(var(--doc-strut), 1em)',
+  ]
 }
 
 /**
@@ -1672,6 +1724,8 @@ export function estimateHfHeight(
           runs: HfRunLike[]
           /** layout-table row: per-cell paragraph stacks (row height = tallest cell) */
           cells?: Array<{ paras: HfRunLike[][] }>
+          /** floating-textbox content: drawn at the anchor, no strip flow height */
+          boxAnchored?: boolean
           lineRule?: 'auto' | 'atLeast' | 'exact'
           lineRawTwips?: number
           lineSpacing?: number
@@ -1744,6 +1798,7 @@ export function estimateHfHeight(
     }).totalHeight
   let height = 0
   for (const p of paras) {
+    if (p.boxAnchored) continue
     if (p.cells?.length) {
       // table row: the tallest cell's paragraph stack sets the row height;
       // a cell-run image (logo) grows its line box like the display layer
@@ -1871,11 +1926,18 @@ export function estimateFootnoteHeight(
 }
 
 /**
- * Line height (px) of the footnote estimate model above (10pt default font,
- * docGrid-snapped). The gap-notes renderer sets this as its CSS line-height so
- * estimate and rendering share one line-box truth.
+ * Line height (px) of one note entry under the estimate model (note style
+ * resolved like estimateFootnoteHeight, docGrid-snapped). The note renderers
+ * set this as the entry's CSS line-height so estimate, reservation, and
+ * rendering share one line-box truth.
  */
+export function noteLineHeightPx(docGrid: DocGrid | undefined, style?: NoteStyleOpts): number {
+  const sizePt = style?.sizeHalfPoints ? style.sizeHalfPoints / 2 : 10
+  const naturalH = sizePt * (96 / 72) * lineHeightFactor(style?.fontFamily ?? DEFAULT_FONT_FAMILY)
+  return computeLineHeight(naturalH, style?.lineRule, style?.lineRawTwips, docGrid)
+}
+
+/** noteLineHeightPx of the default (styleless, 10pt) note model */
 export function footnoteLineHeightPx(docGrid: DocGrid | undefined): number {
-  const naturalH = 10 * (96 / 72) * lineHeightFactor(DEFAULT_FONT_FAMILY)
-  return computeLineHeight(naturalH, undefined, undefined, docGrid)
+  return noteLineHeightPx(docGrid)
 }

@@ -139,33 +139,51 @@ async function runChartDataSync(ctx: VisualSyncContext): Promise<void> {
   let changed = false
   for (const { editKey, visualId, chart } of charts) {
     const seriesEdits: NonNullable<ChartEditData['series']>[number][] = []
+    // A cache-less file vector (no strCache/numCache) reads back as [] —
+    // there is nothing to refresh, and "refreshing" it would bake grid
+    // values into the XML. The renderer hydrates such charts from the grid
+    // instead; a reinstall below re-runs that hydration with the new values.
+    let staleHydration = false
     for (const [index, series] of chart.series.entries()) {
       const wantValues = touched(series.valuesRef)
       const wantCategories = touched(series.categoriesRef)
       if (!wantValues && !wantCategories) continue
+      if (
+        (wantValues && series.valuesRef && series.values.length === 0) ||
+        (wantCategories && series.categoriesRef && series.categories.length === 0)
+      ) {
+        staleHydration = true
+      }
       const entry: NonNullable<ChartEditData['series']>[number] = { index }
-      if (wantValues && series.valuesRef) {
+      if (wantValues && series.valuesRef && series.values.length > 0) {
         const vector = await readVector(series.valuesRef)
         if (vector) {
           const values = vector.map((value) => {
             const numeric = typeof value === 'number' ? value : Number(String(value ?? '').trim())
             return Number.isFinite(numeric) ? numeric : 0
           })
-          if (JSON.stringify(values) !== JSON.stringify(series.values)) entry.values = values
+          if (JSON.stringify(values) !== JSON.stringify(series.values)) {
+            entry.values = values
+            entry.valuesRef = series.valuesRef
+          }
         }
       }
-      if (wantCategories && series.categoriesRef) {
+      if (wantCategories && series.categoriesRef && series.categories.length > 0) {
         const vector = await readVector(series.categoriesRef)
         if (vector) {
           const categories = vector.map((value) => String(value ?? '').slice(0, 255))
           if (JSON.stringify(categories) !== JSON.stringify(series.categories)) {
             entry.categories = categories
+            entry.categoriesRef = series.categoriesRef
           }
         }
       }
       if (entry.values !== undefined || entry.categories !== undefined) seriesEdits.push(entry)
     }
-    if (seriesEdits.length === 0) continue
+    if (seriesEdits.length === 0) {
+      if (staleHydration) changed = true
+      continue
+    }
     changed = true
     const edit: ChartEditData = { series: seriesEdits }
     if (!state) {

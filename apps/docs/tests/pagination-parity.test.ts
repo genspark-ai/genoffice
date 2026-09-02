@@ -602,7 +602,7 @@ async function runParity(stem: string, baseline: BaselineEntry): Promise<ParityR
     // ── Paragraph/image/passthrough ────────────────────────────────────────
     const paraData = computeParaLineData(block, contentWidthPx, docGrid, parsed)
 
-    // Footnote refs: footnote height is added to the paragraph's spaceAfterPx (reserving footnote space on that page)
+    // Footnote refs: footnote height is added to the paragraph's height (reserving footnote space on that page)
     let footnoteExtra = 0
     if (block.runs) {
       for (const run of block.runs) {
@@ -629,7 +629,7 @@ async function runParity(stem: string, baseline: BaselineEntry): Promise<ParityR
       height: Math.max(totalH, 1),
       lineBoxes: paraData.lineBoxes,
       spaceBeforePx: paraData.spaceBeforePx,
-      spaceAfterPx: paraData.spaceAfterPx + footnoteExtra,
+      spaceAfterPx: paraData.spaceAfterPx,
       ...(footnoteExtra > 0 ? { footnoteExtraPx: footnoteExtra } : {}),
       keepNext: style.keepNext || undefined,
       keepLines: style.keepLines || undefined,

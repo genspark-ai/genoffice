@@ -63,6 +63,9 @@ export const strings = {
     selectAll: '全选',
     selectFile: '选择 {name}',
     removeFromList: '从列表中移除',
+    missingFileTitle: '文件不可用',
+    missingFileBody:
+      '找不到“{name}”。它可能位于未连接的磁盘上，或已被移动或删除。要从列表中移除吗？',
     deleteFiles: '删除文件',
     cancel: '取消',
     star: '收藏',
@@ -257,6 +260,9 @@ export const strings = {
     selectAll: 'Select all',
     selectFile: 'Select {name}',
     removeFromList: 'Remove from list',
+    missingFileTitle: 'File unavailable',
+    missingFileBody:
+      '“{name}” can’t be found. It may be on a disconnected drive, or it was moved or deleted. Remove it from the list?',
     deleteFiles: 'Delete files',
     cancel: 'Cancel',
     star: 'Star',
@@ -457,6 +463,9 @@ export const strings = {
     selectAll: 'すべて選択',
     selectFile: '{name} を選択',
     removeFromList: 'リストから削除',
+    missingFileTitle: 'ファイルを利用できません',
+    missingFileBody:
+      '「{name}」が見つかりません。接続されていないドライブにあるか、移動または削除された可能性があります。リストから削除しますか？',
     deleteFiles: 'ファイルを削除',
     cancel: 'キャンセル',
     star: 'お気に入りに追加',
@@ -666,6 +675,9 @@ export const strings = {
     selectAll: '모두 선택',
     selectFile: '{name} 선택',
     removeFromList: '목록에서 제거',
+    missingFileTitle: '파일을 사용할 수 없음',
+    missingFileBody:
+      '“{name}”을(를) 찾을 수 없습니다. 연결되지 않은 드라이브에 있거나 이동 또는 삭제되었을 수 있습니다. 목록에서 제거할까요?',
     deleteFiles: '파일 삭제',
     cancel: '취소',
     star: '즐겨찾기에 추가',
@@ -873,6 +885,9 @@ export const strings = {
     selectAll: 'Tout sélectionner',
     selectFile: 'Sélectionner {name}',
     removeFromList: 'Retirer de la liste',
+    missingFileTitle: 'Fichier indisponible',
+    missingFileBody:
+      '« {name} » est introuvable. Il se trouve peut-être sur un disque déconnecté, ou il a été déplacé ou supprimé. Le retirer de la liste ?',
     deleteFiles: 'Supprimer les fichiers',
     cancel: 'Annuler',
     star: 'Ajouter aux favoris',
@@ -1083,6 +1098,9 @@ export const strings = {
     selectAll: 'Alle auswählen',
     selectFile: '{name} auswählen',
     removeFromList: 'Aus Liste entfernen',
+    missingFileTitle: 'Datei nicht verfügbar',
+    missingFileBody:
+      '„{name}“ wurde nicht gefunden. Sie befindet sich möglicherweise auf einem getrennten Laufwerk oder wurde verschoben oder gelöscht. Aus der Liste entfernen?',
     deleteFiles: 'Dateien löschen',
     cancel: 'Abbrechen',
     star: 'Zu Favoriten hinzufügen',
@@ -1295,6 +1313,9 @@ export const strings = {
     selectAll: 'Seleccionar todo',
     selectFile: 'Seleccionar {name}',
     removeFromList: 'Quitar de la lista',
+    missingFileTitle: 'Archivo no disponible',
+    missingFileBody:
+      'No se encuentra “{name}”. Puede estar en una unidad desconectada, o se ha movido o eliminado. ¿Quitarlo de la lista?',
     deleteFiles: 'Eliminar archivos',
     cancel: 'Cancelar',
     star: 'Destacar',
@@ -1504,6 +1525,9 @@ export const strings = {
     selectAll: 'เลือกทั้งหมด',
     selectFile: 'เลือก {name}',
     removeFromList: 'นำออกจากรายการ',
+    missingFileTitle: 'ไฟล์ไม่พร้อมใช้งาน',
+    missingFileBody:
+      'ไม่พบ “{name}” อาจอยู่ในไดรฟ์ที่ไม่ได้เชื่อมต่อ หรือถูกย้ายหรือลบไปแล้ว ต้องการนำออกจากรายการหรือไม่',
     deleteFiles: 'ลบไฟล์',
     cancel: 'ยกเลิก',
     star: 'เพิ่มในรายการโปรด',
@@ -1709,6 +1733,9 @@ export const strings = {
     selectAll: 'Pilih semua',
     selectFile: 'Pilih {name}',
     removeFromList: 'Hapus dari daftar',
+    missingFileTitle: 'Berkas tidak tersedia',
+    missingFileBody:
+      '“{name}” tidak ditemukan. Mungkin berada di drive yang terputus, atau telah dipindahkan atau dihapus. Hapus dari daftar?',
     deleteFiles: 'Hapus file',
     cancel: 'Batal',
     star: 'Beri bintang',
@@ -1915,6 +1942,9 @@ export const strings = {
     selectAll: 'Выбрать все',
     selectFile: 'Выбрать {name}',
     removeFromList: 'Убрать из списка',
+    missingFileTitle: 'Файл недоступен',
+    missingFileBody:
+      'Не удалось найти «{name}». Возможно, он находится на отключённом диске, либо был перемещён или удалён. Убрать его из списка?',
     deleteFiles: 'Удалить файлы',
     cancel: 'Отмена',
     star: 'В избранное',
@@ -2122,6 +2152,9 @@ export const strings = {
     selectAll: 'تحديد الكل',
     selectFile: 'تحديد {name}',
     removeFromList: 'إزالة من القائمة',
+    missingFileTitle: 'الملف غير متاح',
+    missingFileBody:
+      'تعذّر العثور على “{name}”. قد يكون على قرص غير متصل، أو تم نقله أو حذفه. هل تريد إزالته من القائمة؟',
     deleteFiles: 'حذف الملفات',
     cancel: 'إلغاء',
     star: 'إضافة إلى المفضلة',
@@ -2322,6 +2355,9 @@ export const strings = {
     selectAll: 'Selecionar tudo',
     selectFile: 'Selecionar {name}',
     removeFromList: 'Remover da lista',
+    missingFileTitle: 'Arquivo indisponível',
+    missingFileBody:
+      'Não foi possível encontrar “{name}”. Ele pode estar em uma unidade desconectada, ou foi movido ou excluído. Removê-lo da lista?',
     deleteFiles: 'Excluir arquivos',
     cancel: 'Cancelar',
     star: 'Adicionar aos favoritos',
@@ -2520,6 +2556,9 @@ export const strings = {
     selectAll: 'Seleziona tutto',
     selectFile: 'Seleziona {name}',
     removeFromList: "Rimuovi dall'elenco",
+    missingFileTitle: 'File non disponibile',
+    missingFileBody:
+      "Impossibile trovare “{name}”. Potrebbe trovarsi su un'unità disconnessa, oppure è stato spostato o eliminato. Rimuoverlo dall'elenco?",
     deleteFiles: 'Elimina file',
     cancel: 'Annulla',
     star: 'Aggiungi ai preferiti',
@@ -2717,6 +2756,9 @@ export const strings = {
     selectAll: 'Zaznacz wszystko',
     selectFile: 'Zaznacz {name}',
     removeFromList: 'Usuń z listy',
+    missingFileTitle: 'Plik niedostępny',
+    missingFileBody:
+      'Nie można znaleźć pliku „{name}”. Może znajdować się na odłączonym dysku albo został przeniesiony lub usunięty. Usunąć go z listy?',
     deleteFiles: 'Usuń pliki',
     cancel: 'Anuluj',
     star: 'Dodaj do ulubionych',
@@ -2916,6 +2958,9 @@ export const strings = {
     selectAll: 'Alles selecteren',
     selectFile: '{name} selecteren',
     removeFromList: 'Uit lijst verwijderen',
+    missingFileTitle: 'Bestand niet beschikbaar',
+    missingFileBody:
+      '“{name}” is niet gevonden. Het staat mogelijk op een losgekoppelde schijf, of het is verplaatst of verwijderd. Uit de lijst verwijderen?',
     deleteFiles: 'Bestanden verwijderen',
     cancel: 'Annuleren',
     star: 'Aan favorieten toevoegen',
@@ -3113,6 +3158,9 @@ export const strings = {
     selectAll: 'Pilih semua',
     selectFile: 'Pilih {name}',
     removeFromList: 'Alih keluar daripada senarai',
+    missingFileTitle: 'Fail tidak tersedia',
+    missingFileBody:
+      '“{name}” tidak ditemui. Ia mungkin berada pada pemacu yang terputus, atau telah dipindahkan atau dipadamkan. Alih keluar daripada senarai?',
     deleteFiles: 'Padam fail',
     cancel: 'Batal',
     star: 'Tambah bintang',
@@ -3309,6 +3357,9 @@ export const strings = {
     selectAll: 'בחירת הכול',
     selectFile: 'בחירת {name}',
     removeFromList: 'הסרה מהרשימה',
+    missingFileTitle: 'הקובץ אינו זמין',
+    missingFileBody:
+      'לא ניתן למצוא את “{name}”. ייתכן שהוא נמצא בכונן מנותק, או שהועבר או נמחק. להסיר אותו מהרשימה?',
     deleteFiles: 'מחיקת קבצים',
     cancel: 'ביטול',
     star: 'הוספה למועדפים',
@@ -3501,6 +3552,9 @@ export const strings = {
     selectAll: 'सभी चुनें',
     selectFile: '{name} चुनें',
     removeFromList: 'सूची से हटाएँ',
+    missingFileTitle: 'फ़ाइल उपलब्ध नहीं है',
+    missingFileBody:
+      '“{name}” नहीं मिली। यह किसी डिस्कनेक्ट की गई ड्राइव पर हो सकती है, या इसे स्थानांतरित या हटा दिया गया है। इसे सूची से हटाएँ?',
     deleteFiles: 'फ़ाइलें हटाएँ',
     cancel: 'रद्द करें',
     star: 'तारांकित करें',
@@ -3698,6 +3752,9 @@ export const strings = {
     selectAll: '全選',
     selectFile: '選取 {name}',
     removeFromList: '從清單中移除',
+    missingFileTitle: '檔案無法使用',
+    missingFileBody:
+      '找不到「{name}」。它可能位於未連接的磁碟上，或已被移動或刪除。要從清單中移除嗎？',
     deleteFiles: '刪除檔案',
     cancel: '取消',
     star: '收藏',

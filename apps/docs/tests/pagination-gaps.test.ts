@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   GAP_BAND,
   alignGapHfStrips,
+  alignTableGapFills,
   makeGapEl,
   syncCutOverlays,
   syncPhantomRowspans,
   clampCellBoxTops,
+  pageBorderStyleOf,
 } from '../src/renderer/editor/pagination-gaps'
 import { createLineRectsCache, singleCutCell } from '../src/renderer/pagination'
 
@@ -232,6 +234,52 @@ describe('clampCellBoxTops', () => {
   })
 })
 
+describe('alignTableGapFills', () => {
+  /** paper at x=0, 816 wide; the gap cell follows its table's box */
+  const pmWithFill = (cellLeft: number, cellWidth: number) => {
+    const pm = document.createElement('div')
+    pm.getBoundingClientRect = () => ({ left: 0, width: 816 }) as DOMRect
+    const gap = makeGapEl(m, 'table', 2)
+    const cell = gap.firstElementChild as HTMLElement
+    cell.getBoundingClientRect = () => ({ left: cellLeft, width: cellWidth }) as DOMRect
+    const fill = cell.firstElementChild as HTMLElement
+    pm.appendChild(gap)
+    return { pm, fill }
+  }
+
+  it('re-anchors the fill to the paper box (issue #174: indented full-width table)', () => {
+    // table starts 32px right of the paper edge and spills past the right margin
+    const { pm, fill } = pmWithFill(32, 794)
+    alignTableGapFills(pm, 1)
+    expect(fill.style.left).toBe('-32px')
+    expect(fill.style.width).toBe('816px')
+    expect(fill.style.right).toBe('auto')
+  })
+
+  it('widens a narrower-than-paper table band to the full paper width', () => {
+    const { pm, fill } = pmWithFill(196, 424) // centered half-width table
+    alignTableGapFills(pm, 1)
+    expect(fill.style.left).toBe('-196px')
+    expect(fill.style.width).toBe('816px')
+  })
+
+  it('divides zoomed rect deltas by the zoom factor', () => {
+    const { pm, fill } = pmWithFill(64, 1588)
+    pm.getBoundingClientRect = () => ({ left: 0, width: 1632 }) as DOMRect
+    alignTableGapFills(pm, 2)
+    expect(fill.style.left).toBe('-32px')
+    expect(fill.style.width).toBe('816px')
+  })
+
+  it('is idempotent: the cell rect does not move with the fill styles', () => {
+    const { pm, fill } = pmWithFill(32, 794)
+    alignTableGapFills(pm, 1)
+    alignTableGapFills(pm, 1)
+    expect(fill.style.left).toBe('-32px')
+    expect(fill.style.width).toBe('816px')
+  })
+})
+
 describe('alignGapHfStrips', () => {
   const STRIP_W = 600
   /** emulates layout: stylesheet centering (left:50% of a 786px gap + translateX(-50%))
@@ -269,5 +317,238 @@ describe('alignGapHfStrips', () => {
     alignGapHfStrips(pm, 96, 1)
     expect(strip.style.left).toBe(left)
     expect(strip.getBoundingClientRect().left).toBeCloseTo(96, 1)
+  })
+
+  // A full-bleed cover section (w:pgMar left="0") ahead of body sections with real
+  // margins: the canvas pads by the cover, so the body pages' strips must follow
+  // their own section inset (--gap-ml), not the canvas target
+  const COVER_ML = 0
+  const BODY_ML = 113.4 // 1701 twips
+  const INDENT = 48 // 720 twips
+  const gapWithStrip = (
+    pm: HTMLElement,
+    metrics: Parameters<typeof makeGapEl>[0],
+    kind: 'block' | 'inline',
+  ) => {
+    const gap = makeGapEl(metrics, kind)
+    pm.appendChild(gap)
+    const strip = stripEl(gap)
+    return { gap, strip }
+  }
+
+  it('block gaps place the strips on the next section’s own left margin', () => {
+    const pm = pmEl()
+    const { strip } = gapWithStrip(
+      pm,
+      { marginTop: 96, marginBottom: 96, marginLeft: BODY_ML, marginRight: 94.5 },
+      'block',
+    )
+    alignGapHfStrips(pm, COVER_ML, 1)
+    expect(strip.getBoundingClientRect().left).toBeCloseTo(BODY_ML, 1)
+  })
+
+  it('mid-paragraph gaps in an indented paragraph keep the strips on the section margin, not the indent', () => {
+    // inline gaps fold the host paragraph's paper offset (margin + indent) into
+    // marginLeft so the gray band spans the paper; the strip must not inherit that
+    const pm = pmEl()
+    const { gap, strip } = gapWithStrip(
+      pm,
+      {
+        marginTop: 96,
+        marginBottom: 96,
+        marginLeft: BODY_ML + INDENT,
+        marginRight: 94.5,
+        sectionMarginLeft: BODY_ML,
+        sectionMarginRight: 94.5,
+      },
+      'inline',
+    )
+    expect(gap.style.marginLeft).toBe(`-${BODY_ML + INDENT}px`) // bleed unchanged
+    expect(gap.style.getPropertyValue('--gap-ml')).toBe(`${BODY_ML}px`)
+    alignGapHfStrips(pm, COVER_ML, 1)
+    expect(strip.getBoundingClientRect().left).toBeCloseTo(BODY_ML, 1)
+  })
+
+  it('equal-margin landscape sections: the indent never leaks into the strip position', () => {
+    // the pre-existing differing-width case (portrait + landscape, 1in margins):
+    // strips at block and mid-paragraph gaps must agree
+    const pm = pmEl()
+    const ML = 96
+    const block = gapWithStrip(
+      pm,
+      { marginTop: 96, marginBottom: 96, marginLeft: ML, marginRight: ML },
+      'block',
+    )
+    const inline = gapWithStrip(
+      pm,
+      {
+        marginTop: 96,
+        marginBottom: 96,
+        marginLeft: ML + INDENT,
+        marginRight: ML,
+        sectionMarginLeft: ML,
+        sectionMarginRight: ML,
+      },
+      'inline',
+    )
+    alignGapHfStrips(pm, ML, 1)
+    expect(block.strip.getBoundingClientRect().left).toBeCloseTo(ML, 1)
+    expect(inline.strip.getBoundingClientRect().left).toBeCloseTo(ML, 1)
+  })
+
+  it('scales the section inset by the zoom factor', () => {
+    // zoomed canvas: inline left is CSS px, the measured rect is screen px (×2)
+    const pm = pmEl()
+    const gap = makeGapEl(
+      { marginTop: 96, marginBottom: 96, marginLeft: BODY_ML, marginRight: 94.5 },
+      'block',
+    )
+    pm.appendChild(gap)
+    const strip = document.createElement('div')
+    strip.className = 'page-gap-hf'
+    strip.getBoundingClientRect = () =>
+      ({ left: (parseFloat(strip.style.left) || 0) * 2, width: STRIP_W * 2 }) as DOMRect
+    strip.style.left = '0px'
+    strip.style.transform = 'none'
+    gap.appendChild(strip)
+    alignGapHfStrips(pm, COVER_ML, 2)
+    expect(parseFloat(strip.style.left)).toBeCloseTo(BODY_ML, 1)
+    expect(strip.getBoundingClientRect().left).toBeCloseTo(BODY_ML * 2, 1)
+  })
+
+  it('section-break gaps: the outgoing footer keeps the previous section’s margin, the incoming header takes the next one’s', () => {
+    // the gap between a full-bleed cover and the body hosts the cover's footer and
+    // the body's header; only the header belongs on the body column
+    const pm = pmEl()
+    const gap = makeGapEl(
+      { marginTop: 96, marginBottom: 96, marginLeft: BODY_ML, marginRight: 94.5 },
+      'block',
+    )
+    pm.appendChild(gap)
+    const footer = stripEl(gap)
+    footer.style.setProperty('--hf-ml', `${COVER_ML}px`)
+    const header = stripEl(gap)
+    header.style.setProperty('--hf-ml', `${BODY_ML}px`)
+    const legacy = stripEl(gap) // no --hf-ml: falls back to the gap's inset
+    alignGapHfStrips(pm, COVER_ML, 1)
+    expect(footer.getBoundingClientRect().left).toBeCloseTo(COVER_ML, 1)
+    expect(header.getBoundingClientRect().left).toBeCloseTo(BODY_ML, 1)
+    expect(legacy.getBoundingClientRect().left).toBeCloseTo(BODY_ML, 1)
+  })
+
+  it('table gap rows carry the section inset as well', () => {
+    const tr = makeGapEl(
+      {
+        marginTop: 96,
+        marginBottom: 96,
+        marginLeft: BODY_ML,
+        marginRight: 94.5,
+        sectionMarginLeft: BODY_ML,
+        sectionMarginRight: 94.5,
+      },
+      'table',
+    )
+    expect(tr.classList.contains('page-gap')).toBe(true)
+    expect(tr.style.getPropertyValue('--gap-ml')).toBe(`${BODY_ML}px`)
+    expect(tr.style.getPropertyValue('--gap-mr')).toBe('94.5px')
+  })
+})
+
+describe('pageBorderStyleOf', () => {
+  const margins = { marginTop: 1440, marginRight: 1080, marginBottom: 1440, marginLeft: 1080 }
+
+  it('maps single lines to solid with the document color and page-edge inset', () => {
+    const style = pageBorderStyleOf({
+      ...margins,
+      pageBorder: true,
+      pageBorderProps: {
+        offsetFrom: 'page',
+        spacePt: 24,
+        widthPt: 0.5,
+        color: '80340D',
+        sides: {
+          top: { val: 'single', widthPt: 0.5, spacePt: 24, color: '80340D' },
+          left: { val: 'single', widthPt: 0.5, spacePt: 24, color: '80340D' },
+        },
+      },
+    })
+    expect(style).not.toBeNull()
+    expect(style!.sides.top).toEqual({ css: '1px solid #80340D', insetPx: 32 })
+    expect(style!.sides.left).toEqual({ css: '1px solid #80340D', insetPx: 32 })
+    expect(style!.sides.right).toBeUndefined()
+    expect(style!.sides.bottom).toBeUndefined()
+  })
+
+  it('maps compound thin/thick lines to CSS double and art lines to solid', () => {
+    const style = pageBorderStyleOf({
+      ...margins,
+      pageBorder: true,
+      pageBorderProps: {
+        offsetFrom: 'page',
+        spacePt: 24,
+        widthPt: 3,
+        sides: {
+          top: { val: 'thinThickSmallGap', widthPt: 3, spacePt: 24 },
+          bottom: { val: 'twistedLines1', widthPt: 2.25, spacePt: 24 },
+        },
+      },
+    })
+    expect(style!.sides.top!.css).toBe('8px double #000000')
+    expect(style!.sides.bottom!.css).toBe('3px solid #000000')
+  })
+
+  it('offsetFrom=text measures the inset back from the margin edge', () => {
+    const style = pageBorderStyleOf({
+      ...margins,
+      pageBorder: true,
+      pageBorderProps: {
+        offsetFrom: 'text',
+        spacePt: 10,
+        widthPt: 0.75,
+        sides: { left: { val: 'single', widthPt: 0.75, spacePt: 10 } },
+      },
+    })
+    // 1080 twips = 72px margin, minus 10pt (13.33px) space
+    expect(style!.sides.left!.insetPx).toBeCloseTo(72 - (10 * 96) / 72, 5)
+  })
+
+  it('pageBorder without parse-side details falls back to a plain box', () => {
+    const style = pageBorderStyleOf({ ...margins, pageBorder: true })
+    for (const side of ['top', 'right', 'bottom', 'left'] as const) {
+      expect(style!.sides[side]).toEqual({ css: '1px solid #000000', insetPx: 32 })
+    }
+  })
+
+  it('display carries through and no border yields null', () => {
+    const style = pageBorderStyleOf({
+      ...margins,
+      pageBorder: true,
+      pageBorderProps: {
+        display: 'firstPage',
+        spacePt: 24,
+        widthPt: 0.75,
+        sides: { top: { val: 'single', widthPt: 0.75, spacePt: 24 } },
+      },
+    })
+    expect(style!.display).toBe('firstPage')
+    expect(pageBorderStyleOf({ ...margins, pageBorder: false })).toBeNull()
+  })
+  it('an auto-colored side stays black, never a sibling side color', () => {
+    const style = pageBorderStyleOf({
+      ...margins,
+      pageBorder: true,
+      pageBorderProps: {
+        offsetFrom: 'page',
+        spacePt: 24,
+        widthPt: 0.75,
+        color: 'FF0000',
+        sides: {
+          top: { val: 'single', widthPt: 0.75, spacePt: 24, color: 'FF0000' },
+          bottom: { val: 'single', widthPt: 0.75, spacePt: 24 },
+        },
+      },
+    })
+    expect(style!.sides.top!.css).toBe('1px solid #FF0000')
+    expect(style!.sides.bottom!.css).toBe('1px solid #000000')
   })
 })

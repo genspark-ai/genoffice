@@ -19,6 +19,7 @@ import {
   lineHeightFactor,
   paraLineFactorCss,
   runLetterSpacingCss,
+  strutFontCss,
   textHasCjk,
   textHasComplexScript,
   textHasHangul,
@@ -50,6 +51,8 @@ import {
   borderLineCss,
   cellClipStyle,
   cellPadCss,
+  cellVAlignGridCss,
+  cellWritingMode,
   preventProtectedLineBreak,
   protectedText,
   tableBordersCss,
@@ -269,6 +272,9 @@ interface ChartGeom {
   right: number
   top: number
   bottom: number
+  /** side-legend gutters; pies center in the remaining box (axes use left/right) */
+  sideLeft?: number
+  sideRight?: number
 }
 
 /** widest a chart draws at; the resize handle clamps to this too so mouseup never snaps back */
@@ -304,15 +310,26 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
     [...s].reduce((w, ch) => w + (isCjk(ch.codePointAt(0) ?? 0) ? 10 : 7), 0)
   const maxCatPx = Math.max(0, ...chart.categories.map(catLabelPx))
   const width = Math.min(chart.widthPx ?? 560, CHART_MAX_WIDTH_PX)
+  // l/r/tr legends stack vertically in a side gutter, like Word; other
+  // positions (and legacy models without legendPos) keep the bottom row
+  const sideLegend =
+    showLegend && (chart.legendPos === 'l' || chart.legendPos === 'r' || chart.legendPos === 'tr')
+  const legendW = sideLegend
+    ? Math.min(Math.round(width * 0.35), 20 + Math.max(0, ...legendNames.map(catLabelPx)))
+    : 0
+  const legendLeft = sideLegend && chart.legendPos === 'l'
   const geom: ChartGeom = {
     width,
     height: (chart.heightPx ?? 240) - titleRowPx,
     // also capped against the chart's own width: resize allows 120px-wide
     // charts, and a gutter wider than the plot would flip plotW negative
-    left: chart.kind === 'bar' && chart.horizontal ? Math.min(140, width * 0.4, 16 + maxCatPx) : 46,
-    right: 12,
+    left:
+      (chart.kind === 'bar' && chart.horizontal ? Math.min(140, width * 0.4, 16 + maxCatPx) : 46) +
+      (legendLeft ? legendW : 0),
+    right: 12 + (sideLegend && !legendLeft ? legendW : 0),
     top: 12,
-    bottom: 26 + (showLegend ? 18 : 0),
+    bottom: 26 + (showLegend && !sideLegend ? 18 : 0),
+    ...(sideLegend ? (legendLeft ? { sideLeft: legendW } : { sideRight: legendW }) : {}),
   }
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('viewBox', `0 0 ${geom.width} ${geom.height}`)
@@ -325,7 +342,30 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   else if (chart.kind === 'bar' && chart.horizontal) drawAxesHorizontal(svg, chart, geom)
   else drawAxes(svg, chart, geom)
 
-  if (showLegend) {
+  if (sideLegend) {
+    const entryH = 16
+    const x0 = legendLeft ? 4 : geom.width - legendW + 4
+    const y0 =
+      chart.legendPos === 'tr'
+        ? geom.top
+        : Math.max(geom.top, (geom.height - legendNames.length * entryH) / 2)
+    legendNames.forEach((name, i) => {
+      const y = y0 + entryH * i
+      svgEl(svg, 'rect', {
+        x: String(x0),
+        y: String(y),
+        width: '8',
+        height: '8',
+        fill: legendColor(i),
+      })
+      svgEl(
+        svg,
+        'text',
+        { x: String(x0 + 12), y: String(y + 8), class: 'doc-chart-axis-label' },
+        name,
+      )
+    })
+  } else if (showLegend) {
     const slot = geom.width / legendNames.length
     legendNames.forEach((name, i) => {
       const cx = slot * i + slot / 2
@@ -791,28 +831,43 @@ function drawAxesHorizontal(svg: SVGElement, chart: ChartDisplay, geom: ChartGeo
   })
 }
 
-/** pie preview renders the first series only */
+/** pie / doughnut preview renders the first series only */
 function drawPie(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
   const values = chart.series[0].values.map((v) => (v === null || v < 0 ? 0 : v))
   const total = values.reduce((a, b) => a + b, 0)
   if (total <= 0) return
-  const cx = geom.width / 2
+  const availW = geom.width - (geom.sideLeft ?? 0) - (geom.sideRight ?? 0)
+  const cx = (geom.sideLeft ?? 0) + availW / 2
   const cy = geom.height / 2
-  const r = Math.min(geom.width, geom.height) / 2 - 16
+  const r = Math.min(availW, geom.height) / 2 - 16
+  const ri = (r * Math.min(Math.max(chart.holePct ?? 0, 0), 90)) / 100
+  const single = values.filter((v) => v > 0).length === 1
   let angle = -Math.PI / 2
   values.forEach((value, i) => {
     if (value === 0) return
     const sweep = (value / total) * Math.PI * 2
     const x1 = cx + r * Math.cos(angle)
     const y1 = cy + r * Math.sin(angle)
+    const ix1 = cx + ri * Math.cos(angle)
+    const iy1 = cy + ri * Math.sin(angle)
     angle += sweep
     const x2 = cx + r * Math.cos(angle)
     const y2 = cy + r * Math.sin(angle)
+    const ix2 = cx + ri * Math.cos(angle)
+    const iy2 = cy + ri * Math.sin(angle)
     const large = sweep > Math.PI ? 1 : 0
-    const d =
-      values.filter((v) => v > 0).length === 1
-        ? `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy - 0.01} Z`
-        : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`
+    let d: string
+    if (single) {
+      d = `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy - 0.01} Z`
+      // reverse-sweep inner circle cuts the hole under the nonzero fill rule
+      if (ri > 0) d += ` M ${cx - ri} ${cy} A ${ri} ${ri} 0 1 0 ${cx - ri} ${cy - 0.01} Z`
+    } else if (ri > 0) {
+      d =
+        `M ${ix1} ${iy1} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} ` +
+        `L ${ix2} ${iy2} A ${ri} ${ri} 0 ${large} 0 ${ix1} ${iy1} Z`
+    } else {
+      d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`
+    }
     svgEl(svg, 'path', { d, fill: pointColor(chart, 0, i), stroke: '#fff', 'stroke-width': '1' })
   })
 }
@@ -970,8 +1025,13 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
       ? `-webkit-text-stroke:${box.textOutline.widthPx}px #${box.textOutline.colorHex}`
       : '',
     // behindDoc anchor: under the body text (per box, so paragraphs mixing
-    // behind and front drawings keep the split)
-    box.behind ? 'z-index:-1' : '',
+    // behind and front drawings keep the split); the relativeHeight rank
+    // orders overlapping floats within each band like the image z bands
+    box.behind
+      ? `z-index:${Math.min(-1, -1000 + (box.z ?? 0))}`
+      : box.floating && box.z !== undefined
+        ? `z-index:${Math.max(1, 2 + box.z)}`
+        : '',
     // WordArt strings never wrap; spill instead of clipping when the
     // font-size approximation runs slightly wide
     box.nowrap ? 'white-space:nowrap;overflow:visible' : '',
@@ -1093,8 +1153,7 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
       const fam = runsDeclaredFontFamily(para.runs)
       if (fam) fontStyles.push(`font-family:${fam}`)
       const strut = runStrutHalfPoints(para.runs)
-      if (strut)
-        fontStyles.push(`--doc-strut:${strut / 2}pt`, 'font-size:min(var(--doc-strut), 1em)')
+      if (strut) fontStyles.push(...strutFontCss(strut))
     }
     const lineMult = cssAutoLineMult(para.lineRule, para.lineRawTwips, para.lineSpacing)
     const lh = cssLineHeight(para.lineRule, para.lineRawTwips, para.lineSpacing)
@@ -1143,14 +1202,16 @@ export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
   return ['div', boxAttrs, ...paras]
 }
 
-/** Max explicit run size (half-points) when every run declares one (blockAttrs' strut rule). */
-function runStrutHalfPoints(runs: Run[]): number | null {
+/** Max explicit run size (half-points, plus uniformity) when every run declares one (blockAttrs' strut rule). */
+function runStrutHalfPoints(runs: Run[]): { halfPoints: number; uniform: boolean } | null {
   let max: number | null = null
+  let min: number | null = null
   for (const run of runs) {
     if (run.sizeHalfPoints == null) return null
     max = Math.max(max ?? 0, run.sizeHalfPoints)
+    min = Math.min(min ?? Infinity, run.sizeHalfPoints)
   }
-  return max
+  return max === null ? null : { halfPoints: max, uniform: max === min }
 }
 
 /** Run[] port of extensions' latinParaFactor (declared run fonts override the doc factor). */
@@ -1221,7 +1282,7 @@ function cellParaSpec(
     const fam = runs ? runsDeclaredFontFamily(runs) : null
     if (fam) styles.push(`font-family:${fam}`)
     const strut = runs ? runStrutHalfPoints(runs) : null
-    if (strut) styles.push(`--doc-strut:${strut / 2}pt`, 'font-size:min(var(--doc-strut), 1em)')
+    if (strut) styles.push(...strutFontCss(strut))
   }
   styles.push(
     `line-height:${cssLineHeight(fmt?.lineRule, fmt?.lineRawTwips, fmt?.lineSpacing) ?? cssGridLineBase()}`,
@@ -1277,11 +1338,8 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
       const style = [
         // gridBefore/gridAfter placeholder: bare grid space, never bordered/filled
         cell.gridGap ? 'border:none;background:none' : '',
-        cell.textDirection === 'tbRl'
-          ? 'writing-mode:vertical-rl'
-          : cell.textDirection === 'btLr'
-            ? 'writing-mode:sideways-lr'
-            : '',
+        // vertical-text cells: writing-mode rides the .cell-vert/.cell-clip wrapper below
+        cell.textDirection ? 'position:relative' : '',
         cell.color ? `color:#${cell.color}` : '',
         cell.bold ? 'font-weight:600' : '',
         cell.fill ? `background:#${cell.fill}` : '',
@@ -1305,6 +1363,8 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
         .join(';')
       const tdAttrs: Record<string, string> = {}
       if (style) tdAttrs.style = style
+      // not in-flow evidence for the .cell-vert switch (same as tableCellHtml)
+      if (cell.gridGap) tdAttrs['data-grid-gap'] = '1'
       if (cell.colSpan && cell.colSpan > 1) tdAttrs.colspan = String(cell.colSpan)
       if (rowSpan > 1) tdAttrs.rowspan = String(rowSpan)
       const paraBlocks: DomSpec[] = cell.richParas?.length
@@ -1332,15 +1392,25 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
       while (ni < nested.length) content.push(renderTableSpec(nested[ni++], true))
       if (content.length === 0) content.push('\u00a0')
       const clip = cellClipTwips(model, ri, cell, rowSpan)
+      const wm = cellWritingMode(cell.textDirection ?? null)
       if (clip !== null) {
+        const clipStyle = cellClipStyle(cell.vAlign ?? null, clip)
         tds.push([
           'td',
           tdAttrs,
-          [
-            'div',
-            { class: 'cell-clip', style: cellClipStyle(cell.vAlign ?? null, clip) },
-            ...content,
-          ],
+          ['div', { class: 'cell-clip', style: wm ? `${clipStyle};${wm}` : clipStyle }, ...content],
+        ])
+      } else if (wm) {
+        // rotated text wraps into the row height the horizontal cells produce
+        // instead of stretching the row (same rule as tableCellSpec); rows with
+        // no other height source drop the wrapper back into flow via the
+        // cell-vert-host :has() switch in styles.css
+        tdAttrs.class = tdAttrs.class ? `${tdAttrs.class} cell-vert-host` : 'cell-vert-host'
+        const av = cellVAlignGridCss(cell.vAlign ?? null)
+        tds.push([
+          'td',
+          tdAttrs,
+          ['div', { class: 'cell-vert', style: av ? `${wm};${av}` : wm }, ...content],
         ])
       } else {
         tds.push(['td', tdAttrs, ...content])
@@ -1387,7 +1457,12 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
     const widthPx = colPx.reduce((sum, w) => sum + w, 0)
     // --doc-content-w: per-block section content width (differing-width sections); defaults to the page content box
     const contentW = 'var(--doc-content-w,100%)'
-    if (!nested && model.align === 'center') {
+    // w:tblLayout fixed holds the declared widths even past the paper edge (see DocTable.renderHTML)
+    if (!nested && model.fixedLayout) {
+      tableStyles.push(`width:${widthPx}px`, 'max-width:none')
+      if (model.align === 'center')
+        centerMargin = `margin-left:calc((${contentW} - ${widthPx}px)/2)`
+    } else if (!nested && model.align === 'center') {
       const paper = `calc(${contentW} + var(--doc-margin-left,var(--doc-margin-right,0px)) + var(--doc-margin-right,0px))`
       tableStyles.push(`width:min(${widthPx}px,${paper})`)
       centerMargin = `margin-left:calc((${contentW} - min(${widthPx}px,${paper}))/2)`

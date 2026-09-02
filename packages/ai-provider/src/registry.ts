@@ -101,14 +101,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   genspark: {
     meta: metaOf('genspark'),
     capabilities: { auth: 'gsk-login', vision: true },
-    // The proxy exposes three protocol-specific endpoints; route by model id prefix: claude uses
-    // the Anthropic protocol (preserves image input fidelity), gemini uses Gemini, rest OpenAI-compatible
+    // Route by model id prefix: claude uses the Anthropic protocol (preserves image
+    // input fidelity), the rest OpenAI-compatible. The proxy's gemini endpoint was
+    // removed server-side (405 as of 2026-08-31) along with its gemini models.
     resolveEndpoint(config) {
       if (config.model.startsWith('claude')) {
         return { protocol: 'anthropic', baseUrl: GENSPARK_LLM_BASE_URLS.anthropic }
-      }
-      if (config.model.startsWith('gemini')) {
-        return { protocol: 'gemini', baseUrl: GENSPARK_LLM_BASE_URLS.gemini }
       }
       return {
         protocol: 'openai-compatible',

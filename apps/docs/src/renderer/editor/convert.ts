@@ -577,6 +577,7 @@ function blockToPmNode(
           textboxes: block.textboxes ?? null,
           strayRuns: block.strayRuns ?? null,
           strayStyleId: block.strayStyleId ?? null,
+          strayIndent: block.strayIndent ?? null,
           formulaDisplay: block.formulaDisplay ?? null,
           chartDisplay: block.chartDisplay ?? null,
         },
@@ -663,7 +664,22 @@ export function tableModelToPmNode(
     0,
   )
   const tblFloatSource = model.floatSide ?? null
-  const tblFloatSuppressed = minHeightTwips > 12960 && tblFloatSource !== null
+  // Word splits text-anchored floating tables across page boundaries instead of
+  // pushing them whole; a multi-row float at least as wide as the text column
+  // leaves no room for side text anyway, so flowing it inline reproduces the
+  // split and stops the push from opening a near-blank page (prod100r4/68).
+  // Only the degenerate subset that also STARTS at the column's left edge
+  // (within ~1in of the paper edge for page anchors, at the margin otherwise):
+  // inline flow reproduces its geometry, while a mid-page X keeps the
+  // clamped-float rendering (#1111 cap-table corpus).
+  const floatX = model.floatPos?.xTwips ?? 0
+  const floatFullWidth =
+    model.rows.length > 1 &&
+    (model.floatPos?.vertAnchor ?? 'text') === 'text' &&
+    (model.floatPos?.horzAnchor === 'page' ? floatX <= 1440 : floatX <= 720) &&
+    fitTwips != null &&
+    (model.colWidthsTwips?.reduce((a, b) => a + b, 0) ?? 0) >= fitTwips
+  const tblFloatSuppressed = tblFloatSource !== null && (minHeightTwips > 12960 || floatFullWidth)
   const tblFloat = tblFloatSuppressed ? null : tblFloatSource
   const table: PmNode = {
     type: 'docTable',
@@ -695,6 +711,7 @@ export function tableModelToPmNode(
       tblFloatEdited: false,
       tblAutoFit: model.autoFit ?? (model.autoLayout ? 'contents' : 'fixed'),
       tblAutoFitEdited: false,
+      tblFixedLayout: model.fixedLayout ?? false,
       indentTwips: model.indentTwips ?? null,
       tblStyleId: model.tblStyleId ?? null,
       tblLook: model.tableLook ?? null,
@@ -2222,16 +2239,34 @@ function formulaTokensPatch(node: PmNode, original: Block): string[] | null {
  * changes (type / style / list) fall back to a full rebuild.
  */
 function applyRawPPr(generated: GeneratedBlock, original: Block): void {
-  if (original.rawPPr === undefined) return
   const structureSame =
     original.type === generated.type &&
     (original.styleId ?? null) === (generated.styleId ?? null) &&
     JSON.stringify(original.list ?? null) === JSON.stringify(generated.list ?? null)
+  if (original.rawPPr === undefined) {
+    // a pPr-less paragraph laid out with the Normal style's character-unit
+    // indents: an indent edit must also write their cancel attributes
+    // (w:firstLineChars="0"…), which only mergePPrFormat knows how to do —
+    // the generator's plain rebuild would let the style indent win on reload
+    if (
+      !original.format?.charIndents ||
+      !structureSame ||
+      generated.type !== 'paragraph' ||
+      indentSame(original.format, generated.format)
+    )
+      return
+    let built = mergePPrFormat('', generated.format, original.format)
+    if (generated.pPrChange) built = setPPrChange(built, generated.pPrChange)
+    generated.rawPPr = built
+    return
+  }
   if (!structureSame) return
   const formatSame =
     JSON.stringify(normalizedFormat(original.format)) ===
     JSON.stringify(normalizedFormat(generated.format))
-  let rawPPr = formatSame ? original.rawPPr : mergePPrFormat(original.rawPPr, generated.format)
+  let rawPPr = formatSame
+    ? original.rawPPr
+    : mergePPrFormat(original.rawPPr, generated.format, original.format)
   // Strip pPrChange when the user accepted/rejected it (pPrChange: null in generated block)
   if (generated.pPrChange === null && original.pPrChangeInfo !== undefined) {
     rawPPr = stripPPrChange(rawPPr)
@@ -2247,7 +2282,8 @@ function nodeFormat(node: PmNode): ParaFormat | undefined {
   if (node.attrs?.lineSpacing) format.lineSpacing = Number(node.attrs.lineSpacing)
   if (node.attrs?.lineRule) format.lineRule = node.attrs.lineRule as ParaFormat['lineRule']
   if (node.attrs?.lineRawTwips) format.lineRawTwips = Number(node.attrs.lineRawTwips)
-  if (node.attrs?.indentLeft) format.indentLeft = Number(node.attrs.indentLeft)
+  // 0 kept: an explicit w:left="0" overrides a numbering-level indent
+  if (node.attrs?.indentLeft != null) format.indentLeft = Number(node.attrs.indentLeft)
   if (node.attrs?.indentRight) format.indentRight = Number(node.attrs.indentRight)
   if (node.attrs?.indentFirstLine) format.indentFirstLine = Number(node.attrs.indentFirstLine)
   if (node.attrs?.spaceBefore != null) format.spaceBefore = Number(node.attrs.spaceBefore)
@@ -2606,7 +2642,19 @@ function normalizedRuns(runs: Run[]): unknown[] {
     r.fldBeginXml ?? null,
     r.math?.omml ?? null,
     r.ruby?.xml ?? null,
+    r.image?.xml ?? null,
   ])
+}
+
+/** same indent twips in two paragraph formats (unset and 0 alike for right/first line, as emitted) */
+function indentSame(a: ParaFormat | undefined, b: ParaFormat | undefined): boolean {
+  const norm = (v: number | undefined) => (v !== undefined ? Math.round(v) : null)
+  const nz = (v: number | undefined) => (v ? Math.round(v) : null)
+  return (
+    norm(a?.indentLeft) === norm(b?.indentLeft) &&
+    nz(a?.indentRight) === nz(b?.indentRight) &&
+    nz(a?.indentFirstLine) === nz(b?.indentFirstLine)
+  )
 }
 
 function normalizedFormat(format: ParaFormat | undefined): unknown {

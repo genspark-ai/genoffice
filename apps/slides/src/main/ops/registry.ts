@@ -42,6 +42,40 @@ export function requireHexColor(value: unknown, opName: string, field: string): 
   }
 }
 
+/** XML 1.0 forbids C0 controls (minus tab/LF/CR), U+FFFE/FFFF and lone
+    surrogates even when escaped — one such byte makes the saved part
+    unparseable and PowerPoint offers repair. */
+// eslint-disable-next-line no-control-regex -- the forbidden chars are the subject
+const XML_INVALID_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|\p{Cs}/u
+
+/** Reject XML-forbidden characters in any string field of the op, at plan
+    time: text payloads flow into XML verbatim (modulo entity escaping), and
+    PDF-extracted text routinely carries \u000B. Scanned centrally so every
+    op — current and future — is covered. */
+export function assertXmlSafeStrings(op: Op): void {
+  const walk = (value: unknown, path: string): void => {
+    if (typeof value === 'string') {
+      if (XML_INVALID_RE.test(value)) {
+        throw new GuidedError(
+          `op "${op.op}": "${path}" contains characters XML 1.0 forbids (control chars like \\u000B or a lone surrogate) — ` +
+            `strip them first (PDF-extracted text often carries \\u000B; replace it with \\n).`,
+        )
+      }
+      return
+    }
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => walk(v, `${path}[${i}]`))
+      return
+    }
+    if (value && typeof value === 'object' && !ArrayBuffer.isView(value)) {
+      for (const [k, v] of Object.entries(value)) walk(v, path ? `${path}.${k}` : k)
+    }
+  }
+  for (const [k, v] of Object.entries(op)) {
+    if (k !== 'op') walk(v, k)
+  }
+}
+
 /** Numeric payloads written into XML attributes: NaN/Infinity would serialize verbatim. */
 export function requireFinite(
   value: unknown,

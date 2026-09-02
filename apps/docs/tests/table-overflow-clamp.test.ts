@@ -264,9 +264,14 @@ describe('autofit expansion wiring', () => {
 
   it('parse does not flag fixed-layout tables but keeps pct tables autofit', async () => {
     const fixed = AUTO_TABLE.replace('</w:tblPr>', '<w:tblLayout w:type="fixed"/></w:tblPr>')
-    expect((await parseDocx(await buildDocx({ bodyXml: fixed }))).blocks[0].table!.autoLayout).toBe(
-      undefined,
-    )
+    const fixedTable = (await parseDocx(await buildDocx({ bodyXml: fixed }))).blocks[0].table!
+    expect(fixedTable.autoLayout).toBe(undefined)
+    expect(fixedTable.fixedLayout).toBe(true)
+    expect(tableModelToPmNode(fixedTable).attrs?.tblFixedLayout).toBe(true)
+    // dxa width without w:tblLayout fixed keeps the fit-to-page display clamp
+    const auto = (await parseDocx(await buildDocx({ bodyXml: AUTO_TABLE }))).blocks[0].table!
+    expect(auto.fixedLayout).toBe(undefined)
+    expect(tableModelToPmNode(auto).attrs?.tblFixedLayout).toBe(false)
     // pct width picks the table size, not the layout algorithm: min-content still floors columns
     const pct = AUTO_TABLE.replace('w:type="auto" w:w="0"', 'w:type="pct" w:w="4000"')
     expect((await parseDocx(await buildDocx({ bodyXml: pct }))).blocks[0].table!.autoLayout).toBe(
@@ -289,6 +294,22 @@ describe('renderTableSpec width budget', () => {
     expect(spec[1].style).toContain('margin-left:96.7px')
     const nestedSpec = renderTableSpec(model, true) as Spec
     expect(nestedSpec[1].style).toContain('width:min(624px,calc(100% - 96.7px))')
+  })
+
+  it('fixed-layout tables hold the declared width past the paper edge (Word clips there)', () => {
+    const model: TableModel = {
+      rows: [[cell('a'), cell('b')]],
+      colWidthsTwips: [2340, 7020],
+      fixedLayout: true,
+    }
+    const style = (renderTableSpec(model) as Spec)[1].style
+    expect(style).toContain('width:624px')
+    expect(style).toContain('max-width:none')
+    expect(style).not.toContain('min(')
+    const centered = renderTableSpec({ ...model, align: 'center' }) as Spec
+    expect(centered[1].style).toContain('margin-left:calc((var(--doc-content-w,100%) - 624px)/2)')
+    // nested fixed tables stay capped by their cell
+    expect((renderTableSpec(model, true) as Spec)[1].style).toContain('width:min(624px,100%)')
   })
 
   it('centered tables ignore the indent and spill both margins symmetrically', () => {

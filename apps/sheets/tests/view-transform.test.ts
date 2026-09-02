@@ -6,6 +6,7 @@ import {
   fileRangeToScreenRanges,
   fileToScreen,
   indexedThroughScreenRow,
+  lastSurvivingScreenLine,
   mapRangeResultToScreen,
   netAxisDelta,
   screenRangeToFileRange,
@@ -370,5 +371,24 @@ describe('fileRangeToScreenRanges', () => {
     const ops = [move(11, 1, 7), removeRows(8, 1), move(10, 2, 2), removeRows(8, 1)]
     const range = { startRow: 6, endRow: 7, startColumn: 0, endColumn: 3 }
     expect(fileRangeToScreenRanges(ops, range)).toEqual([])
+  })
+})
+
+describe('lastSurvivingScreenLine (Ctrl+End used-range target)', () => {
+  it('shifts with inserts at or before the line, ignores inserts past it', () => {
+    const before = [{ kind: 'insert-rows' as const, index: 2, count: 3 }]
+    expect(lastSurvivingScreenLine(before, 'row', 10)).toBe(13)
+    const past = [{ kind: 'insert-rows' as const, index: 11, count: 5 }]
+    expect(lastSurvivingScreenLine(past, 'row', 10)).toBe(10)
+  })
+
+  it('falls back to the nearest earlier surviving line after a tail delete', () => {
+    const ops = [{ kind: 'remove-rows' as const, index: 9, count: 2 }]
+    expect(lastSurvivingScreenLine(ops, 'row', 10)).toBe(8)
+  })
+
+  it('returns null when every line up to the target was deleted', () => {
+    const ops = [{ kind: 'remove-rows' as const, index: 0, count: 11 }]
+    expect(lastSurvivingScreenLine(ops, 'row', 10)).toBeNull()
   })
 })

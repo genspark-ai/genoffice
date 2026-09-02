@@ -63,6 +63,14 @@ export function parseChartPartXml(
         ? scatterStyle === undefined || scatterStyle.toLowerCase().includes('marker')
         : false
   const scatterLines = kind === 'scatter' && /line|smooth/i.test(scatterStyle ?? '')
+  const holeVal = attrsOf(findChild(plot, 'c:holeSize') ?? {})['val']
+  const holePct =
+    nameOf(plot) === 'c:doughnutChart'
+      ? holeVal !== undefined
+        ? parseInt(holeVal, 10) || 0
+        : 50
+      : 0
+  const legendPos = legendPosOf(chart)
 
   let categories: string[] = []
   const series: ChartSeries[] = []
@@ -115,11 +123,23 @@ export function parseChartPartXml(
     ...(horizontal ? { horizontal } : {}),
     ...(grouping ? { grouping } : {}),
     ...(markers ? { markers } : {}),
+    ...(holePct > 0 ? { holePct } : {}),
+    ...(legendPos ? { legendPos } : {}),
     ...(title !== undefined ? { title } : {}),
     categories,
     series,
     ...(palette ? { palette } : {}),
   }
+}
+
+const LEGEND_POSITIONS = new Set(['b', 'l', 'r', 't', 'tr'])
+
+/** c:legend position; the schema default when c:legendPos is absent is "r" */
+function legendPosOf(chart: XNode): ChartDisplay['legendPos'] {
+  const legend = findChild(chart, 'c:legend')
+  if (!legend) return undefined
+  const val = attrsOf(findChild(legend, 'c:legendPos') ?? {})['val']
+  return (val !== undefined && LEGEND_POSITIONS.has(val) ? val : 'r') as ChartDisplay['legendPos']
 }
 
 /** numeric cache of a c:val / c:yVal / c:xVal / c:bubbleSize container */

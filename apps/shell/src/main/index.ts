@@ -101,6 +101,7 @@ import {
   readStarredFiles,
   recordRecentFile,
   removeRecentFiles,
+  removeStarredFiles,
   replaceRecentFile,
   registerAiIpc,
   registerProjectIpc,
@@ -187,7 +188,7 @@ import { HOME_CHANNELS } from '../shared/home-api'
 import type { TabKind } from '../shared/tabs-api'
 import { TABS_CHANNELS } from '../shared/tabs-api'
 import { showErrorDialog } from './error-dialog'
-import { normalizeRecentQuery, pageRecentPaths, statExistingPaths } from './recent-files'
+import { normalizeRecentQuery, pageRecentPaths, statPathEntries } from './recent-files'
 import { TabManager } from './tab-manager'
 import { applyUpdateChannel, initAutoUpdater } from './updater'
 import { isUpdateChannel, type UpdateChannel } from '../shared/update-api'
@@ -2816,7 +2817,7 @@ function startQueuedWorkbookNudge(): void {
 // ---- home IPC ----
 
 function statEntries(paths: string[]): RecentEntry[] {
-  return statExistingPaths(paths, new Set(readStarredFiles()))
+  return statPathEntries(paths, new Set(readStarredFiles()))
 }
 
 function registerHomeIpc(): void {
@@ -2953,7 +2954,11 @@ function registerHomeIpc(): void {
   })
 
   ipcMain.handle(HOME_CHANNELS.removeRecent, (_event, paths: unknown) => {
-    removeRecentFiles(stringPaths(paths))
+    const list = stringPaths(paths)
+    removeRecentFiles(list)
+    // an unavailable entry's star must go with it, or the Starred view keeps
+    // a dead dimmed row the recents list no longer shows
+    removeStarredFiles(list.filter((p) => !existsSync(p)))
   })
 
   ipcMain.handle(HOME_CHANNELS.revealPath, (_event, path: unknown) => {
@@ -3017,6 +3022,8 @@ function registerHomeIpc(): void {
       }
     }
     removeRecentFiles(list)
+    // the files were deliberately destroyed — stars must not survive as ghosts
+    removeStarredFiles(list)
   })
 
   ipcMain.handle(HOME_CHANNELS.openTrash, () => {

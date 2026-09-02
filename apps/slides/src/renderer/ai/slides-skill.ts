@@ -1022,7 +1022,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'edit_table_cell',
     description:
-      "Replace one table cell's text entirely. The table element id comes from the outline/read_slide (type=table); row/col are 0-based.",
+      "Replace one table cell's text entirely. The table element id comes from the outline/read_slide (type=table); row/col are 0-based. The cell keeps its current formatting (size, color, font, bold, alignment) unless a paragraph sets those fields explicitly.",
     inputSchema: {
       type: 'object',
       properties: {

@@ -7,6 +7,7 @@ vi.mock('../src/main/shaped-metrics', () => ({
   initShapedMetrics: () => {},
   shapedMeasure: () => null,
   shapedFamily: () => null,
+  gtMeasure: () => null,
   complexScriptOf: () => null,
 }))
 
@@ -68,6 +69,33 @@ describe.runIf(mac)(
         office ? /Malgun Gothic|Apple SD Gothic Neo/ : /^Apple SD Gothic Neo$/,
       )
       expect(m.measure('한', style('맑은 고딕', { bold: true }))).toBeGreaterThan(50)
+    })
+
+    it('unresolvable families substitute to Calibri regardless of apparent class (PPT probe truth)', () => {
+      const cal = office ? /^Calibri$/ : /^Carlito$/
+      expect(m.displayFamily!(style('Zxqvwt Nonexistent'))).toMatch(cal)
+      expect(m.displayFamily!(style('Qqzgaramond'))).toMatch(cal) // serif-looking name
+      expect(m.displayFamily!(style('Zxqvwt Mono Courier'))).toMatch(cal) // mono-looking name
+      expect(m.displayFamily!(style('Apercu Light'))).toMatch(cal) // weight suffix dropped too
+    })
+
+    it('a "Family Weight" request with an installed base family picks the sub-family face', () => {
+      expect(m.displayFamily!(style('Avenir Light'))).toBe('Avenir Light')
+      expect(m.measure('Hamburgefontsiv', style('Avenir Light'))).toBeGreaterThan(100)
+    })
+
+    it('two-word weight suffixes strip; a base family without the face keeps its own name', () => {
+      // Avenir Next Ultra Light is a real macOS face; Georgia has no Light face — the
+      // request must fall back to plain Georgia, not register Regular bytes under a lie
+      expect(m.displayFamily!(style('Avenir Next Ultra Light'))).toBe('Avenir Next Ultra Light')
+      expect(m.displayFamily!(style('Georgia Light'))).toBe('Georgia')
+    })
+
+    it.runIf(office)('a weight-suffix request picks the matching cloud face, not Regular', () => {
+      const w = (fam: string) =>
+        m.measure('contract', { fontFamily: fam, fontSizePx: 100, bold: false, italic: false })
+      // Office CloudFonts carry Montserrat in every weight as numeric files
+      expect(w('Montserrat SemiBold')).toBeGreaterThan(w('Montserrat') + 5)
     })
 
     it('non-CJK path is unaffected', () => {

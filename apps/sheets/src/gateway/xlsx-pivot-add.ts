@@ -1,3 +1,4 @@
+import { ensureRelationshipNamespace } from './xlsx-namespace'
 import { columnLabel } from '../domain/cell-address'
 import { shortDateNumFmtId } from '../shared/short-date'
 import { isValidPivotFilter, type PivotFilterDef } from '../domain/pivot-filters'
@@ -597,6 +598,7 @@ function maxCacheId(workbookXml: string): number {
 /// Adds a <pivotCache> entry; workbook.xml schema order puts pivotCaches
 /// after calcPr, before extLst.
 function addWorkbookPivotCache(workbookXml: string, cacheId: number, relId: string): string {
+  workbookXml = ensureRelationshipNamespace(workbookXml)
   const entry = `<pivotCache cacheId="${cacheId}" r:id="${relId}"/>`
   if (workbookXml.includes('</pivotCaches>')) {
     return workbookXml.replace('</pivotCaches>', `${entry}</pivotCaches>`)

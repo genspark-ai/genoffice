@@ -242,36 +242,55 @@ export function buildHeaderFooterXml(
   )
 }
 
-/// Replaces the first `<headerFooter>` (or inserts one after pageSetup).
-/// An undefined half keeps its existing odd text verbatim, null (or
-/// all-empty parts) clears it; both empty removes the element
-/// entirely. Even/first-page variants and the element's
-/// attributes are dropped: the session edits the odd header/footer, which
-/// applies to every page once differentOddEven/differentFirst are gone.
+/// One `<tag>…</tag>` (or self-closing) child of headerFooter.
+function headerFooterSectionPattern(tag: string): RegExp {
+  return new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>|<${tag}\\b[^>]*/>`)
+}
+
+/// Rewrites the odd header/footer inside the first `<headerFooter>` (or
+/// inserts the element after pageSetup). An undefined half keeps its
+/// existing odd text verbatim, null (or all-empty parts) clears it. The
+/// element's attributes (differentOddEven, differentFirst, scaleWithDoc,
+/// alignWithMargins) and its even/first-page sections stay byte-identical —
+/// Excel's own dialog edits the odd sections the same way, and the export
+/// honors the variants. The element is removed only when nothing is left.
 function setHeaderFooter(
   xml: string,
   header: HeaderFooterParts | null | undefined,
   footer: HeaderFooterParts | null | undefined,
 ): string {
-  const existing = /<headerFooter\b[^>]*?(?:\/>|>[\s\S]*?<\/headerFooter>)/.exec(xml)
-  const keep = (tag: 'oddHeader' | 'oddFooter'): string => {
-    if (!existing) return ''
-    const section = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`).exec(existing[0])
-    return section?.[1] ?? ''
+  const existing = /<headerFooter\b([^>]*?)(?:\/>|>([\s\S]*?)<\/headerFooter>)/.exec(xml)
+  const attributes = existing?.[1] ?? ''
+  let body = existing?.[2] ?? ''
+  const setSection = (tag: 'oddHeader' | 'oddFooter', text: string | undefined): void => {
+    if (text === undefined) return
+    const pattern = headerFooterSectionPattern(tag)
+    const element = text === '' ? '' : `<${tag}>${text}</${tag}>`
+    if (pattern.test(body)) {
+      body = body.replace(pattern, element)
+      return
+    }
+    if (element === '') return
+    // CT_HeaderFooter order: oddHeader, oddFooter, even*, first*.
+    const oddHeader =
+      tag === 'oddFooter' ? headerFooterSectionPattern('oddHeader').exec(body) : null
+    const at = oddHeader ? oddHeader.index + oddHeader[0].length : 0
+    body = body.slice(0, at) + element + body.slice(at)
   }
-  const oddHeader =
-    header === undefined
-      ? keep('oddHeader')
-      : header === null
+  const encode = (parts: HeaderFooterParts | null | undefined): string | undefined =>
+    parts === undefined
+      ? undefined
+      : parts === null
         ? ''
-        : escapeXml(encodeHeaderFooterSections(header))
-  const oddFooter =
-    footer === undefined
-      ? keep('oddFooter')
-      : footer === null
+        : escapeXml(encodeHeaderFooterSections(parts))
+  setSection('oddHeader', encode(header))
+  setSection('oddFooter', encode(footer))
+  const element =
+    body.trim() === ''
+      ? attributes.trim() === ''
         ? ''
-        : escapeXml(encodeHeaderFooterSections(footer))
-  const element = assembleHeaderFooterXml(oddHeader, oddFooter)
+        : `<headerFooter${attributes}/>`
+      : `<headerFooter${attributes}>${body}</headerFooter>`
   if (existing) {
     return xml.slice(0, existing.index) + element + xml.slice(existing.index + existing[0].length)
   }

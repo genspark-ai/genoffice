@@ -684,6 +684,8 @@ export function generateParagraphXml(p: Paragraph): string {
 
   const pPrAttrs: string[] = []
   if (p.marL != null && want('marL')) pPrAttrs.push(`marL="${Math.round(p.marL)}"`)
+  if (p.marR != null && want('marR')) pPrAttrs.push(`marR="${Math.round(p.marR)}"`)
+  if (p.defTabSz != null && want('defTabSz')) pPrAttrs.push(`defTabSz="${Math.round(p.defTabSz)}"`)
   if (p.indent != null && want('indent')) pPrAttrs.push(`indent="${Math.round(p.indent)}"`)
   if (p.align && want('align')) pPrAttrs.push(`algn="${alignMap[p.align]}"`)
   if (p.rtl != null) pPrAttrs.push(`rtl="${p.rtl ? 1 : 0}"`)
@@ -721,6 +723,14 @@ export function generateParagraphXml(p: Paragraph): string {
           ? `<a:buAutoNum type="${escapeXmlAttr(b.numType ?? 'arabicPeriod')}"${b.startAt != null ? ` startAt="${b.startAt}"` : ''}/>`
           : `<a:buChar char="${escapeXmlAttr(b.char ?? '•')}"/>`
     }
+  }
+  if (p.tabStops?.length && want('tabLst')) {
+    kids += `<a:tabLst>${p.tabStops
+      .map(
+        (t) =>
+          `<a:tab pos="${Math.round(t.pos)}"${t.algn ? ` algn="${escapeXmlAttr(t.algn)}"` : ''}/>`,
+      )
+      .join('')}</a:tabLst>`
   }
 
   const attrStr = pPrAttrs.length ? ` ${pPrAttrs.join(' ')}` : ''

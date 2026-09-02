@@ -36,6 +36,9 @@ export interface ChartSeriesVisualState {
   nameRef?: string | undefined
   categories: string[]
   values: number[]
+  /// Blank value-cache slots (`values` holds 0 there); the chart-level
+  /// dispBlanksAs decides whether they plot as gaps, zeros, or bridges.
+  blanks?: number[] | undefined
   numberFormat?: string | undefined
   /// numCache formatCode of the category (or scatter X) data.
   categoryFormat?: string | undefined
@@ -106,6 +109,8 @@ export interface ChartVisualState {
   scatterStyle?: string | undefined
   /// Plot-level c:lineChart/c:marker flag; per-series symbols refine it.
   lineMarkers?: boolean | undefined
+  /// `c:dispBlanksAs` — how blank cells plot (OOXML defaults to zero).
+  dispBlanksAs?: 'gap' | 'zero' | 'span' | undefined
   /// c:title/c:txPr//a:defRPr shorthand.
   titleStyle?:
     | { size?: number | undefined; bold?: boolean | undefined; color?: string | undefined }
@@ -435,7 +440,9 @@ export function applyChartStateEdit(
           ? { explosionPct: edit.explosionPct }
           : {}),
         ...(data?.name === undefined ? {} : { name: data.name }),
-        ...(data?.values === undefined ? {} : { values: data.values }),
+        // New values are dense numbers — stale blank markers must not
+        // survive them.
+        ...(data?.values === undefined ? {} : { values: data.values, blanks: undefined }),
         // Replacing the categories orphans the parsed outer-level spans.
         ...(data?.categories === undefined
           ? {}
@@ -526,6 +533,25 @@ export function chartDataFromValues(
       column,
     })
     if (series.length >= MAX_CHART_SERIES) break
+  }
+  // A mixed first column (labels plus numbers) gets claimed as the category
+  // axis; when every other column is text that claim starves the chart even
+  // though Excel still plots the numbers — chart it as the value series.
+  if (series.length === 0 && hasCategoryColumn && body.some((row) => isNumeric(row[0]))) {
+    const header = hasHeaderRow ? firstRow[0] : null
+    return {
+      byRow,
+      hasHeaderRow,
+      hasCategoryColumn: false,
+      categories: body.map((_, i) => String(i + 1)),
+      series: [
+        {
+          name: isBlank(header) ? 'Series 1' : String(header),
+          values: body.map((row) => toNumber(row[0])),
+          column: 0,
+        },
+      ],
+    }
   }
   return series.length > 0 ? { byRow, hasHeaderRow, hasCategoryColumn, categories, series } : null
 }

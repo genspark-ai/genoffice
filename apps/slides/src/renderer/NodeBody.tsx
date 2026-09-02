@@ -45,6 +45,7 @@ import {
 } from './konva-adapter'
 import { ChartBody } from './ChartBody'
 import { needsTextFrameHitArea } from './text-hit-area'
+import { warpGlyphs, measureGlyph } from './text-warp'
 
 export interface NodeBodyProps {
   node: RenderNode
@@ -417,7 +418,20 @@ export const NodeBody = React.memo(function NodeBody({
   const fillProps = fillToKonva(shape.fill, box.w, box.h, images, { x: box.x, y: box.y })
   const strokeProps = strokeToKonva(shape.stroke, { w: box.w, h: box.h })
   const shadowProps = shadowToKonva(shape.shadow, shape.glow)
-  const glyphs = hideText ? [] : shapeGlyphs(shape)
+  let glyphs = hideText ? [] : shapeGlyphs(shape)
+  // WordArt envelope warp: per-character transforms replace the straight runs
+  const txWarp = shape.text?.txWarp
+  const warped =
+    txWarp && glyphs.length
+      ? warpGlyphs(
+          glyphs,
+          Math.max(box.w - (shape.text?.insets.l ?? 0) - (shape.text?.insets.r ?? 0), 1),
+          Math.max(box.h - (shape.text?.insets.t ?? 0) - (shape.text?.insets.b ?? 0), 1),
+          txWarp,
+          measureGlyph,
+        )
+      : null
+  if (warped) glyphs = warped
 
   // Connector/straight line: polyline (flip already baked into points), with optional arrow endpoints
   if (shape.line) {
@@ -741,6 +755,10 @@ export const NodeBody = React.memo(function NodeBody({
                 fontFamily={g.fontFamily}
                 fontStyle={g.fontStyle}
                 rotation={g.rotation ?? 0}
+                scaleX={g.scaleX ?? 1}
+                scaleY={g.scaleY ?? 1}
+                offsetX={g.offsetX ?? 0}
+                offsetY={g.offsetY ?? 0}
                 letterSpacing={g.letterSpacing ?? 0}
                 fill={normalizeColor(shadeHex(shape.text!.extrusion!.color, 0.7))}
                 listening={false}
@@ -758,6 +776,10 @@ export const NodeBody = React.memo(function NodeBody({
             fontStyle={g.fontStyle}
             textDecoration={g.textDecoration}
             rotation={g.rotation ?? 0}
+            scaleX={g.scaleX ?? 1}
+            scaleY={g.scaleY ?? 1}
+            offsetX={g.offsetX ?? 0}
+            offsetY={g.offsetY ?? 0}
             letterSpacing={g.letterSpacing ?? 0}
             fill={
               shape.text?.extrusion

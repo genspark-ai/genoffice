@@ -49,6 +49,9 @@ function makeRecordingCtx(canvas: FakeOffscreenCanvas) {
       if (prop === 'globalCompositeOperation') {
         calls.push({ method: 'set:globalCompositeOperation', args: [value] })
       }
+      if (prop === 'font') {
+        calls.push({ method: 'set:font', args: [value] })
+      }
       return true
     },
   })
@@ -272,6 +275,112 @@ describe('EMR_ALPHABLEND (w-icon.emf)', () => {
     const texts = calls.filter((c) => c.method === 'fillText').map((c) => c.args[0])
     expect(texts).toContain('Документ-в-докуме')
     expect(texts).toContain('нте')
+  })
+})
+
+/**
+ * Minimal EMF: header + EXTCREATEFONTINDIRECTW + SELECTOBJECT + EXTTEXTOUTW +
+ * EOF, with GDI+-style non-zero OutPrecision/Quality/PitchAndFamily bytes in
+ * the LOGFONTW (the facename-offset regression trigger).
+ */
+function buildEmfWithText(faceName: string, text: string): ArrayBuffer {
+  const header = new Uint8Array(88)
+  const hv = new DataView(header.buffer)
+  hv.setUint32(0, 1, true) // EMR_HEADER
+  hv.setUint32(4, 88, true)
+  hv.setInt32(16, 200, true) // rclBounds right
+  hv.setInt32(20, 100, true) // rclBounds bottom
+  hv.setInt32(32, 5292, true) // rclFrame right (.01 mm, matches bounds)
+  hv.setInt32(36, 2646, true)
+  hv.setUint32(40, 0x464d4520, true) // ' EMF'
+  hv.setUint32(44, 0x00010000, true)
+  hv.setUint32(52, 5, true) // nRecords
+  hv.setUint16(56, 2, true) // nHandles
+  hv.setInt32(72, 1920, true) // szlDevice
+  hv.setInt32(76, 1080, true)
+  hv.setInt32(80, 508, true) // szlMillimeters
+  hv.setInt32(84, 286, true)
+
+  const font = new Uint8Array(332)
+  const fv = new DataView(font.buffer)
+  fv.setUint32(0, 82, true) // EMR_EXTCREATEFONTINDIRECTW
+  fv.setUint32(4, 332, true)
+  fv.setUint32(8, 1, true) // ihFont
+  fv.setInt32(12, -15, true) // lfHeight
+  fv.setInt32(28, 400, true) // lfWeight
+  fv.setUint8(35, 0x80) // lfCharSet
+  fv.setUint8(36, 4) // lfOutPrecision
+  fv.setUint8(38, 5) // lfQuality
+  fv.setUint8(39, 0x32) // lfPitchAndFamily
+  for (let i = 0; i < faceName.length && i < 31; i++) {
+    fv.setUint16(40 + i * 2, faceName.charCodeAt(i), true)
+  }
+
+  const select = new Uint8Array(12)
+  const sv = new DataView(select.buffer)
+  sv.setUint32(0, 37, true) // EMR_SELECTOBJECT
+  sv.setUint32(4, 12, true)
+  sv.setUint32(8, 1, true)
+
+  const textRec = new Uint8Array(76 + text.length * 2)
+  const tv = new DataView(textRec.buffer)
+  tv.setUint32(0, 84, true) // EMR_EXTTEXTOUTW
+  tv.setUint32(4, textRec.length, true)
+  tv.setUint32(24, 1, true) // GM_COMPATIBLE
+  tv.setInt32(36, 10, true) // reference x
+  tv.setInt32(40, 20, true) // reference y
+  tv.setUint32(44, text.length, true)
+  tv.setUint32(48, 76, true) // offString
+  for (let i = 0; i < text.length; i++) {
+    tv.setUint16(76 + i * 2, text.charCodeAt(i), true)
+  }
+
+  const eof = new Uint8Array(20)
+  const ev = new DataView(eof.buffer)
+  ev.setUint32(0, 14, true) // EMR_EOF
+  ev.setUint32(4, 20, true)
+
+  const parts = [header, font, select, textRec, eof]
+  const total = parts.reduce((n, p) => n + p.length, 0)
+  hv.setUint32(48, total, true) // nBytes
+  const emf = new Uint8Array(total)
+  let at = 0
+  for (const p of parts) {
+    emf.set(p, at)
+    at += p.length
+  }
+  return emf.buffer
+}
+
+function fontSets(): string[] {
+  return calls.filter((c) => c.method === 'set:font').map((c) => c.args[0] as string)
+}
+
+describe('EMR_EXTCREATEFONTINDIRECTW facename', () => {
+  it('reads the LOGFONTW FaceName at +32, past the precision/quality bytes', async () => {
+    reset()
+    const result = await convertEmfToDataUrl(buildEmfWithText('Segoe UI', 'Test'), { dpiScale: 2 })
+    expect(result).toMatch(/^data:image\/png;base64,/)
+    expect(calls.filter((c) => c.method === 'fillText').map((c) => c.args[0])).toContain('Test')
+    // regression: read at +28 prefixed the family with the OutPrecision/
+    // Quality bytes; the invalid CSS ident made the ctx.font assignment fail
+    // silently in a real canvas, dropping the 30px size with it
+    expect(fontSets()).toContain('30px "Segoe UI"')
+    for (const font of fontSets()) {
+      expect([...font].some((c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f)).toBe(false)
+    }
+  })
+
+  it('strips control chars from a corrupt facename instead of losing the size', async () => {
+    reset()
+    await convertEmfToDataUrl(buildEmfWithText('\u0004㈅Meiryo UI', 'Test'), { dpiScale: 2 })
+    expect(fontSets()).toContain('30px "㈅Meiryo UI"')
+  })
+
+  it('maps localized facenames through the wrapper fontFamilyMap', async () => {
+    reset()
+    await metafileToDataUrl(new Uint8Array(buildEmfWithText('游ゴシック', 'Test')), 'image/x-emf')
+    expect(fontSets()).toContain('30px "Yu Gothic"')
   })
 })
 

@@ -279,8 +279,14 @@ export interface Paragraph {
   }
   /** Paragraph left indent marL (EMU) */
   marL?: number
+  /** Paragraph right indent marR (EMU) */
+  marR?: number
   /** First-line indent (EMU, negative = hanging indent, common with bullets) */
   indent?: number
+  /** <a:tabLst> custom tab stops (EMU from the text-frame left inset; laid out as left stops) */
+  tabStops?: Array<{ pos: number; algn?: string }>
+  /** <a:pPr defTabSz>: default tab grid (EMU, PowerPoint default 914400 = 1") */
+  defTabSz?: number
   /**
    * Which paragraph properties come from an explicit <a:pPr> (rather than display
    * values inherited from lstStyle/placeholder/master). The rebuild path writes
@@ -295,7 +301,10 @@ export interface Paragraph {
     spcAft?: boolean
     bullet?: boolean
     marL?: boolean
+    marR?: boolean
     indent?: boolean
+    tabLst?: boolean
+    defTabSz?: boolean
   }
 }
 
@@ -304,6 +313,8 @@ export interface TextBody {
   paragraphs: Paragraph[]
   /** Vertical alignment */
   anchor?: 'top' | 'middle' | 'bottom'
+  /** <a:bodyPr anchorCtr="1">: center the text block's bounding box horizontally */
+  anchorCtr?: boolean
   /** Insets (EMU): left/top/right/bottom */
   insets?: { l: number; t: number; r: number; b: number }
   /** Autofit: none | shrink font to fit | resize box */
@@ -321,6 +332,8 @@ export interface TextBody {
   spcCol?: number
   /** <a:bodyPr><a:scene3d>+<a:sp3d>: WordArt text extrusion (camera angles in degrees) */
   extrusion3d?: { color: ResolvedColor; depthEmu: number; latDeg: number; lonDeg: number }
+  /** <a:bodyPr><a:prstTxWarp>: WordArt envelope warp (display only; saved via original bytes) */
+  txWarp?: { prst: string; adj?: Record<string, number> }
 }
 
 // ── Elements ───────────────────────────────────────────────────────────

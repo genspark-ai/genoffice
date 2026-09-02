@@ -36,8 +36,21 @@ export const MAX_CSV_EXPORT_CHARS = 64_000_000
 export const MAX_CREATE_DOCUMENT_TITLE_CHARS = 200
 export const MAX_CREATE_DOCUMENT_CONTENT_CHARS = 2_000_000
 
+/// One PDF-export header/footer template (shared by the zod schema and the
+/// preload validator). `&G` pictures ride along as base64 data URLs — the
+/// sidecar skips pictures over 2 MiB, so three slots fit under this cap.
+export const MAX_PDF_TEMPLATE_CHARS = 12_000_000
+
+/// VML shape id of a header/footer picture slot: left/center/right ×
+/// header/footer, with an EVEN or FIRST suffix for the page variants.
+export const HEADER_FOOTER_PICTURE_POSITION = /^[LCR][HF](EVEN|FIRST)?$/
+
 export const IPC_CHANNELS = {
   selectWorkbook: 'workbook:select',
+  /** Multi-file picker + sidecar sessions for merging into the current workbook */
+  selectWorkbooksForMerge: 'workbook:select-for-merge',
+  /** Open explicit paths (chat attachments) as merge-source sessions — no dialog */
+  openWorkbooksForMerge: 'workbook:open-for-merge',
   readWorkbookRange: 'workbook:read-range',
   readWorkbookFormulas: 'workbook:read-formulas',
   recalcWorkbook: 'workbook:recalc',

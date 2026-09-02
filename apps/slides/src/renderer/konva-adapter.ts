@@ -1205,6 +1205,11 @@ export interface GlyphDraw {
   fillLinearGradientColorStops?: Array<number | string>
   /** Run reflection: the renderer draws a faded mirrored copy below the text */
   reflection?: boolean
+  /** WordArt warp transforms (per-character; position is the char center when offsets are set) */
+  scaleX?: number
+  scaleY?: number
+  offsetX?: number
+  offsetY?: number
 }
 
 // Same-script fallback chains for Japanese/Korean/Traditional Chinese (win/mac family names back each other up); shared by FONT_STACK and the unknown-font fallback

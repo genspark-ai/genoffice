@@ -844,3 +844,77 @@ describe('category tick skips', () => {
     expect(m.catAxis?.tickMarkSkip).toBe(192)
   })
 })
+
+describe('buildChartSpaceXml colorScheme / holeSizePct (genpptx parity)', () => {
+  const BASE2 = {
+    kind: 'bar' as const,
+    categories: ['A', 'B'],
+    series: [
+      { name: 'S1', values: [1, 2] },
+      { name: 'S2', values: [3, 4] },
+    ],
+    offset: { x: 0, y: 0, cx: 100, cy: 100 },
+  }
+
+  it('per-series spPr lands at the schema position (after c:tx, before c:cat) and round-trips', () => {
+    const xml = buildChartSpaceXml({ ...BASE2, colorScheme: ['#C00000', '#00B050'] })
+    expect(xml).toMatch(
+      /<c:ser><c:idx val="0"\/><c:order val="0"\/><c:tx>.*?<\/c:tx><c:spPr><a:solidFill><a:srgbClr val="C00000"\/><\/a:solidFill><\/c:spPr><c:cat>/s,
+    )
+    const m = parseChartXml(xml)!
+    expect(m.series.map((s) => s.color)).toEqual(['#C00000', '#00B050'])
+  })
+
+  it('colors cycle over the series when the scheme is shorter', () => {
+    const xml = buildChartSpaceXml({ ...BASE2, colorScheme: ['#112233'] })
+    const m = parseChartXml(xml)!
+    expect(m.series.map((s) => s.color)).toEqual(['#112233', '#112233'])
+  })
+
+  it('combo chart: the line series gets a stroke color, not a fill', () => {
+    const xml = buildChartSpaceXml({
+      ...BASE2,
+      kind: 'comboBarLine',
+      colorScheme: ['#C00000', '#0070C0'],
+    })
+    expect(xml).toMatch(
+      /<c:lineChart>.*?<c:spPr><a:ln w="28575"><a:solidFill><a:srgbClr val="0070C0"\/><\/a:solidFill><\/a:ln><\/c:spPr>/s,
+    )
+  })
+
+  it('doughnut holeSizePct is written and round-trips (clamped to 1..90)', () => {
+    const opts = { ...BASE2, kind: 'doughnut' as const }
+    expect(buildChartSpaceXml({ ...opts, holeSizePct: 72 })).toContain('<c:holeSize val="72"/>')
+    expect(buildChartSpaceXml(opts)).toContain('<c:holeSize val="50"/>')
+    expect(buildChartSpaceXml({ ...opts, holeSizePct: 400 })).toContain('<c:holeSize val="90"/>')
+    const m = parseChartXml(buildChartSpaceXml({ ...opts, holeSizePct: 72 }))!
+    expect(m.holePct).toBe(72)
+  })
+})
+
+describe('colorScheme on line-family kinds (Bugbot: fill-only spPr keeps theme line colors)', () => {
+  it('plain line chart series get stroke colors, not fills', () => {
+    const xml = buildChartSpaceXml({
+      kind: 'line',
+      categories: ['A', 'B'],
+      series: [{ name: 'S1', values: [1, 2] }],
+      offset: { x: 0, y: 0, cx: 100, cy: 100 },
+      colorScheme: ['#FF00FF'],
+    })
+    expect(xml).toContain('<c:spPr><a:ln w="28575"><a:solidFill><a:srgbClr val="FF00FF"/>')
+    expect(xml).not.toMatch(/<c:spPr><a:solidFill>/)
+  })
+
+  it('scatter and radar are line-family too', () => {
+    for (const kind of ['scatter', 'radar'] as const) {
+      const xml = buildChartSpaceXml({
+        kind,
+        categories: ['1', '2'],
+        series: [{ name: 'S', values: [3, 4] }],
+        offset: { x: 0, y: 0, cx: 100, cy: 100 },
+        colorScheme: ['#123456'],
+      })
+      expect(xml, kind).toContain('<a:ln w="28575"><a:solidFill><a:srgbClr val="123456"/>')
+    }
+  })
+})

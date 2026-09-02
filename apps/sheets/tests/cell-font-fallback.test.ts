@@ -106,15 +106,24 @@ describe('CELL_FONT_ALIASES', () => {
     const expectations: Record<string, string> = {
       Cambria: 'Cambria Bold',
       Garamond: 'Garamond Bold',
+    }
+    for (const [family, face] of Object.entries(expectations)) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(alias?.bold?.[0], family).toBe(face)
+    }
+    // Gated JP families keep the genuine bold in the rename map used when
+    // the real font exists; the substitute chain is Hiragino-only.
+    const gated: Record<string, string> = {
       Meiryo: 'Meiryo Bold',
       メイリオ: 'Meiryo Bold',
       'Meiryo UI': 'Meiryo UI Bold',
       'Yu Gothic': 'Yu Gothic Bold',
       'Yu Gothic UI': 'Yu Gothic UI Bold',
     }
-    for (const [family, face] of Object.entries(expectations)) {
+    for (const [family, face] of Object.entries(gated)) {
       const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
-      expect(alias?.bold?.[0], family).toBe(face)
+      expect(alias?.whenGenuine?.bold?.[0], family).toBe(face)
+      expect(alias?.bold?.[0], family).toBe('HiraginoSans-W6')
     }
   })
 
@@ -131,8 +140,12 @@ describe('CELL_FONT_ALIASES', () => {
 
   it('never lists a regular face as a bold source (would suppress synthetic bold)', () => {
     for (const alias of CELL_FONT_ALIASES) {
-      if (!alias.bold) continue
-      for (const face of alias.bold) expect(alias.regular).not.toContain(face)
+      if (alias.bold) for (const face of alias.bold) expect(alias.regular).not.toContain(face)
+      if (alias.latin?.bold)
+        for (const face of alias.latin.bold) expect(alias.latin.regular).not.toContain(face)
+      if (alias.whenGenuine?.bold)
+        for (const face of alias.whenGenuine.bold)
+          expect(alias.whenGenuine.regular).not.toContain(face)
     }
   })
 
@@ -172,6 +185,113 @@ describe('CELL_FONT_ALIASES', () => {
       expect(alias?.latin?.sizeAdjust, family).toBe('104%')
       expect(alias?.latin?.boldSizeAdjust, family).toBe('109.4%')
       expect(alias?.skipIfLocal, family).toContain('Malgun Gothic')
+    }
+  })
+
+  const pct = (value: string | undefined): number => {
+    expect(value).toMatch(/^\d+(\.\d+)?%$/)
+    return Number.parseFloat(value!)
+  }
+
+  it('width-corrects the Thai Office faces per script (prod_066)', () => {
+    // Cordia New draws digits at 0.3645em and Thai at ~0.30em; Thonburi is
+    // 0.666em / ~0.44em, so both scripts need their own size-adjust and the
+    // Latin sub-face must leave the Thai block (inside U+0-2CFF) alone.
+    const families = [
+      'Cordia New',
+      'CordiaUPC',
+      'Angsana New',
+      'AngsanaUPC',
+      'TH SarabunPSK',
+      'TH Sarabun New',
+    ]
+    for (const family of families) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(alias, family).toBeDefined()
+      expect(alias!.regular, family).toEqual(['Thonburi'])
+      expect(alias!.bold, family).toContain('Thonburi-Bold')
+      expect(alias!.skipIfLocal, family).toContain(family)
+      const thai = pct(alias!.sizeAdjust)
+      const thaiBold = pct(alias!.boldSizeAdjust)
+      expect(thai, family).toBeGreaterThan(60)
+      expect(thai, family).toBeLessThan(80)
+      expect(thaiBold, family).toBeGreaterThan(60)
+      expect(thaiBold, family).toBeLessThan(80)
+      const latin = alias!.latin
+      expect(latin, family).toBeDefined()
+      expect(latin!.unicodeRange, family).toBe('U+0-DFF, U+E80-2CFF')
+      const latinAdjust = pct(latin!.sizeAdjust)
+      expect(latinAdjust, family).toBeGreaterThan(55)
+      expect(latinAdjust, family).toBeLessThan(75)
+      expect(pct(latin!.boldSizeAdjust), family).toBeGreaterThan(55)
+      expect(latin!.bold?.length, family).toBeGreaterThan(0)
+    }
+    // Cordia / Sarabun Latin is a narrow sans (Helvetica Neue); Angsana's
+    // Latin is Times New Roman at 66% and keeps the serif design.
+    expect(CELL_FONT_ALIASES.find((a) => a.family === 'Cordia New')?.latin?.regular).toEqual([
+      'Helvetica Neue',
+    ])
+    const angsana = CELL_FONT_ALIASES.find((a) => a.family === 'Angsana New')
+    expect(angsana?.latin?.regular).toEqual(['Times New Roman'])
+    expect(angsana?.latin?.sizeAdjust).toBe('66%')
+    expect(angsana?.latin?.bold).toContain('Times New Roman Bold')
+    // The UPC spellings are the same designs.
+    for (const [a, b] of [
+      ['Cordia New', 'CordiaUPC'],
+      ['Angsana New', 'AngsanaUPC'],
+      ['TH SarabunPSK', 'TH Sarabun New'],
+    ]) {
+      const first = CELL_FONT_ALIASES.find((x) => x.family === a)!
+      const second = CELL_FONT_ALIASES.find((x) => x.family === b)!
+      expect(second.sizeAdjust, b).toBe(first.sizeAdjust)
+      expect(second.latin?.sizeAdjust, b).toBe(first.latin?.sizeAdjust)
+    }
+  })
+
+  it('narrows the Latin runs of the JP gothic substitutes to the JIS half-width metrics', () => {
+    // MS (P/UI) Gothic digits are 0.5em vs Helvetica Neue 0.556em (≈90%);
+    // kana/kanji stay on the unadjusted Hiragino base face.
+    for (const family of [
+      'ＭＳ Ｐゴシック',
+      'MS PGothic',
+      'ＭＳ ゴシック',
+      'MS Gothic',
+      'MS UI Gothic',
+    ]) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(alias, family).toBeDefined()
+      expect(alias!.regular[0], family).toBe('Hiragino Sans')
+      expect(alias!.sizeAdjust, family).toBeUndefined()
+      expect(alias!.boldSizeAdjust, family).toBeUndefined()
+      expect(alias!.latin?.regular, family).toEqual(['Helvetica Neue'])
+      expect(alias!.latin?.unicodeRange, family).toBeUndefined()
+      const adjust = pct(alias!.latin?.sizeAdjust)
+      expect(adjust, family).toBeGreaterThan(88)
+      expect(adjust, family).toBeLessThan(93)
+      const boldAdjust = pct(alias!.latin?.boldSizeAdjust)
+      expect(boldAdjust, family).toBeGreaterThan(88)
+      expect(boldAdjust, family).toBeLessThan(93)
+      expect(alias!.skipIfLocal?.length, family).toBeGreaterThan(0)
+      // The fullwidth spellings stay resolvable when the genuine font exists.
+      expect(alias!.whenGenuine?.regular[0], family).toMatch(/^MS /)
+    }
+    // Yu Gothic's Latin already matches Helvetica Neue (0.5562em digits) —
+    // the fix is leaving Hiragino's 0.657em digits, not the adjustment.
+    for (const family of ['游ゴシック', '游ゴシック体', 'Yu Gothic']) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(alias?.latin?.regular, family).toEqual(['Helvetica Neue'])
+      expect(pct(alias?.latin?.sizeAdjust), family).toBeCloseTo(100.8, 5)
+      expect(pct(alias?.latin?.boldSizeAdjust), family).toBeGreaterThan(100)
+      expect(alias?.whenGenuine?.regular, family).toContain('YuGothic-Regular')
+    }
+    // Meiryo's Latin is the Verdana design.
+    for (const family of ['メイリオ', 'Meiryo', 'Meiryo UI']) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(alias?.latin?.regular, family).toEqual(['Verdana'])
+      expect(alias?.latin?.bold?.[0], family).toBe('Verdana Bold')
+      const adjust = pct(alias?.latin?.sizeAdjust)
+      expect(adjust, family).toBeGreaterThan(94)
+      expect(adjust, family).toBeLessThan(100)
     }
   })
 

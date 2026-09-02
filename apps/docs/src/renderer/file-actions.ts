@@ -68,6 +68,9 @@ import { defaultEastAsiaFontFor } from './font-list'
 import { hasPrintableHeaderFooter } from './pagination'
 import { showToast } from './components/toast-bus'
 
+/** An export waiting for the pagination preview to mount; resolve settles the caller's exportPdf promise. */
+export type PendingPdfExport = { outPath?: string; resolve: (ok: boolean) => void }
+
 /** The App state the file actions need; built fresh per call. */
 export interface FileActionContext {
   editor: Editor | null
@@ -75,7 +78,9 @@ export interface FileActionContext {
   dirtyRef: { current: boolean }
   saveInFlightRef: { current: boolean }
   saveIncompleteRef: { current: boolean }
-  pendingMixedExportRef: { current: boolean | string }
+  pendingMixedExportRef: { current: PendingPdfExport | false }
+  /** re-arms the deferred-export effect even when the preview is already open */
+  bumpPendingExportTick: () => void
   /** the print dialog auto-opened the pagination preview: closing the dialog closes it again */
   printAutoOpenedPreviewRef: { current: boolean }
   setShowPrintDialog: (show: boolean) => void
@@ -231,6 +236,7 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   // Word 2013+ justified lines pull words up by shrinking spaces; legacy
   // compatibility modes (and new blank docs) never do
   editor.storage.justifyShrink.enabled = (parsed.compatibilityMode ?? 0) >= 15
+  editor.storage.cjkPunctShrink.enabled = parsed.compressPunctuation === true
   // Chromium only hyphenates under an explicit lang (the app shell is zh-CN);
   // scoped to autoHyphenation docs so CJK font fallback is untouched elsewhere
   const lang = parsed.autoHyphenation ? parsed.docDefaults?.lang : undefined
@@ -938,132 +944,209 @@ export function printDoc(ctx: FileActionContext): void {
   ctx.setShowPrintDialog(true)
 }
 
-export async function exportPdf(ctx: FileActionContext, outPath?: string): Promise<void> {
-  const { doc } = ctx
-  if (!doc) return
-  ctx.setStatus(t('appExportingPdf'))
-  // with the pagination preview open: group by actual pv-page size. Mixed paper →
-  // print group by group (other pages hidden for printing), then merge in page order
-  // with pdf-lib; each page keeps its section's paper size
-  const pvPages = [...document.querySelectorAll('.pv-page')] as HTMLElement[]
-  if (pvPages.length > 0) {
-    const pxToTwips = (px: number) => Math.round((px / 96) * 1440)
-    const groups: Array<{ w: number; h: number; from: number; to: number }> = []
-    pvPages.forEach((page, i) => {
-      const w = pxToTwips(parseFloat(page.style.width))
-      const h = pxToTwips(parseFloat(page.style.height))
-      const last = groups[groups.length - 1]
-      if (last && last.w === w && last.h === h) last.to = i
-      else groups.push({ w, h, from: i, to: i })
-    })
-    // Chromium's printToPDF can non-deterministically paint later pages blank
-    // when one job carries hundreds of heavy pages (large table clones on
-    // 100+-page forms). Chunk long documents through the group-merge path so
-    // each print job stays small.
-    const PRINT_CHUNK = 40
-    if (pvPages.length > 60) {
-      const chunked: typeof groups = []
-      for (const g of groups) {
-        for (let s = g.from; s <= g.to; s += PRINT_CHUNK) {
-          chunked.push({ w: g.w, h: g.h, from: s, to: Math.min(s + PRINT_CHUNK - 1, g.to) })
-        }
+type PrintGroup = { w: number; h: number; from: number; to: number }
+
+function chunkPrintGroups(groups: PrintGroup[], size: number): PrintGroup[] {
+  const chunked: PrintGroup[] = []
+  for (const g of groups) {
+    for (let s = g.from; s <= g.to; s += size) {
+      chunked.push({ w: g.w, h: g.h, from: s, to: Math.min(s + size - 1, g.to) })
+    }
+  }
+  return chunked
+}
+
+async function printGroupsMerged(
+  ctx: FileActionContext,
+  fileName: string,
+  pvPages: HTMLElement[],
+  groups: PrintGroup[],
+  outPath?: string,
+): Promise<boolean> {
+  const parts: string[] = []
+  // every printToPDF flips the whole document between print and screen media;
+  // pv-exporting parks the covered editor's subtree layout for the export's
+  // duration so each flip only relays out the group's own pages (hundreds of
+  // table-heavy pages otherwise stall Chromium's print for minutes per chunk)
+  const appRoot = document.querySelector('.app')
+  appRoot?.classList.add('pv-exporting')
+  try {
+    const queue = [...groups]
+    while (queue.length > 0) {
+      const g = queue.shift() as PrintGroup
+      pvPages.forEach((page, i) => {
+        page.classList.toggle('pv-print-skip', i < g.from || i > g.to)
+        page.classList.toggle('pv-print-tail', i === g.to)
+      })
+      const part = await window.desktop.printPdfBuffer(g.w, g.h)
+      if (part.ok && part.base64) {
+        parts.push(part.base64)
+        continue
       }
-      groups.length = 0
-      groups.push(...chunked)
-    }
-    if (groups.length > 1) {
-      const parts: string[] = []
-      try {
-        for (const g of groups) {
-          pvPages.forEach((page, i) =>
-            page.classList.toggle('pv-print-skip', i < g.from || i > g.to),
-          )
-          const part = await window.desktop.printPdfBuffer(g.w, g.h)
-          if (!part.ok || !part.base64) {
-            ctx.setStatus(
-              t('appExportPdfFailed', { error: part.error ?? t('appPrintGroupFailed') }),
-            )
-            return
-          }
-          parts.push(part.base64)
-        }
-      } finally {
-        pvPages.forEach((page) => page.classList.remove('pv-print-skip'))
+      if (g.to > g.from) {
+        // Chromium rejects heavy print jobs non-deterministically; bisect the
+        // failed range so each retry carries fewer pages
+        const mid = Math.floor((g.from + g.to) / 2)
+        queue.unshift({ ...g, to: mid }, { ...g, from: mid + 1 })
+        continue
       }
-      const result = await window.desktop.saveMergedPdf(doc.fileName, parts, outPath)
-      ctx.setStatus(
-        result.ok
-          ? t('appExportedPdfMixed', { path: result.path ?? '', n: groups.length })
-          : result.error
-            ? t('appExportPdfFailed', { error: result.error })
-            : t('appExportPdfCanceled'),
-      )
-      return
+      ctx.setStatus(t('appExportPdfFailed', { error: part.error ?? t('appPrintGroupFailed') }))
+      return false
     }
-    // preview open but uniform paper: single export at the preview size
-    const g = groups[0]
-    if (g) {
-      const result = await window.desktop.exportPdf(doc.fileName, g.w, g.h, outPath)
-      ctx.setStatus(
-        result.ok
-          ? t('appExportedPdf', { path: result.path ?? '' })
-          : result.error
-            ? t('appExportPdfFailed', { error: result.error })
-            : t('appExportPdfCanceled'),
-      )
-      return
-    }
+  } finally {
+    appRoot?.classList.remove('pv-exporting')
+    pvPages.forEach((page) => page.classList.remove('pv-print-skip', 'pv-print-tail'))
   }
-  // preview closed: mixed paper auto-opens the preview and uses the merge path; uniform paper exports directly
-  const sizeKey = (w: number, h: number) => `${w}x${h}`
-  const counts = new Map<string, { w: number; h: number; n: number }>()
-  const list =
-    ctx.sections.length > 0
-      ? ctx.sections.map((sec) => sec.settings)
-      : ctx.section
-        ? [ctx.section]
-        : []
-  for (const st of list) {
-    const key = sizeKey(st.pageWidth, st.pageHeight)
-    const cur = counts.get(key) ?? { w: st.pageWidth, h: st.pageHeight, n: 0 }
-    cur.n += 1
-    counts.set(key, cur)
-  }
-  // headers/footers exist once on the edit canvas (not once per page), so direct
-  // print would show them on the last page only — force the preview-merge path too
-  const mixedPaper = counts.size > 1
-  if (
-    mixedPaper ||
-    hasPrintableHeaderFooter({
-      edited: [
-        ctx.header,
-        ctx.footer,
-        ...(ctx.titlePg ? [ctx.hfVariants.headerFirst, ctx.hfVariants.footerFirst] : []),
-        ...(ctx.evenOddHf ? [ctx.hfVariants.headerEven, ctx.hfVariants.footerEven] : []),
-        ...Object.values(ctx.sectionHfEdits),
-      ],
-      sections: ctx.sections,
-      hfParts: doc.parsed.hfParts ?? undefined,
-      evenOddHf: ctx.evenOddHf,
-    })
-  ) {
-    ctx.setShowPagePreview(true)
-    ctx.pendingMixedExportRef.current = outPath ?? true
-    if (mixedPaper) ctx.setStatus(t('appMixedExportOpening'))
-    return
-  }
-  const major = [...counts.values()][0]
-  const result = await window.desktop.exportPdf(
-    doc.fileName,
-    major?.w ?? ctx.section?.pageWidth ?? 12240,
-    major?.h ?? ctx.section?.pageHeight ?? 15840,
-    outPath,
-  )
+  const result = await window.desktop.saveMergedPdf(fileName, parts, outPath)
+  const mixed = groups.some((g) => g.w !== groups[0].w || g.h !== groups[0].h)
   ctx.setStatus(
     result.ok
-      ? t('appExportedPdf', { path: result.path ?? '' })
+      ? mixed
+        ? t('appExportedPdfMixed', { path: result.path ?? '', n: parts.length })
+        : t('appExportedPdf', { path: result.path ?? '' })
       : result.error
         ? t('appExportPdfFailed', { error: result.error })
         : t('appExportPdfCanceled'),
   )
+  return result.ok
+}
+
+/** Park the export until the preview mounts; the App effect re-runs it and settles the promise. */
+function deferExportToPreview(ctx: FileActionContext, outPath?: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const prev = ctx.pendingMixedExportRef.current
+    if (prev) prev.resolve(false)
+    ctx.pendingMixedExportRef.current = { outPath, resolve }
+    ctx.setShowPagePreview(true)
+    ctx.bumpPendingExportTick()
+  })
+}
+
+// Concurrent exports would trample each other's pv-print-skip classes and
+// interleave print jobs; while one is printing, further calls report busy.
+// A parked deferral must not hold the flag (its resume call has to get
+// through), so the defer paths return without await: the finally runs at
+// return time and the flag clears while the export is parked.
+let printJobActive = false
+
+/** Resolves true only when a PDF was written to disk. */
+export async function exportPdf(ctx: FileActionContext, outPath?: string): Promise<boolean> {
+  const { doc } = ctx
+  if (!doc) return false
+  if (printJobActive) {
+    ctx.setStatus(t('appExportingPdf'))
+    return false
+  }
+  printJobActive = true
+  try {
+    ctx.setStatus(t('appExportingPdf'))
+    // with the pagination preview open: group by actual pv-page size. Mixed paper →
+    // print group by group (other pages hidden for printing), then merge in page order
+    // with pdf-lib; each page keeps its section's paper size
+    const pvPages = [...document.querySelectorAll('.pv-page')] as HTMLElement[]
+    if (pvPages.length > 0) {
+      const pxToTwips = (px: number) => Math.round((px / 96) * 1440)
+      let groups: PrintGroup[] = []
+      pvPages.forEach((page, i) => {
+        const w = pxToTwips(parseFloat(page.style.width))
+        const h = pxToTwips(parseFloat(page.style.height))
+        const last = groups[groups.length - 1]
+        if (last && last.w === w && last.h === h) last.to = i
+        else groups.push({ w, h, from: i, to: i })
+      })
+      // Chromium's printToPDF can fail outright or paint later pages blank when
+      // one job carries many heavy pages (40 table-heavy pages fail reliably;
+      // repeated failed jobs can take down the renderer). Chunk through the
+      // group-merge path so each print job stays small.
+      const PRINT_CHUNK = 10
+      if (pvPages.length > PRINT_CHUNK) groups = chunkPrintGroups(groups, PRINT_CHUNK)
+      if (groups.length > 1) {
+        return await printGroupsMerged(ctx, doc.fileName, pvPages, groups, outPath)
+      }
+      // preview open but uniform paper: single export at the preview size
+      const g = groups[0]
+      if (g) {
+        const result = await window.desktop.exportPdf(doc.fileName, g.w, g.h, outPath)
+        if (result.ok) {
+          ctx.setStatus(t('appExportedPdf', { path: result.path ?? '' }))
+          return true
+        }
+        if (!result.error) {
+          ctx.setStatus(t('appExportPdfCanceled'))
+          return false
+        }
+        // whole-document print job failed: retry the same pages in smaller jobs
+        // and merge (the failed attempt already authorized result.path)
+        const retryPath = outPath ?? result.path
+        if (pvPages.length > 1 && retryPath) {
+          ctx.setStatus(t('appExportingPdf'))
+          return await printGroupsMerged(
+            ctx,
+            doc.fileName,
+            pvPages,
+            chunkPrintGroups([g], PRINT_CHUNK / 2),
+            retryPath,
+          )
+        }
+        ctx.setStatus(t('appExportPdfFailed', { error: result.error }))
+        return false
+      }
+    }
+    // preview closed: mixed paper auto-opens the preview and uses the merge path; uniform paper exports directly
+    const sizeKey = (w: number, h: number) => `${w}x${h}`
+    const counts = new Map<string, { w: number; h: number; n: number }>()
+    const list =
+      ctx.sections.length > 0
+        ? ctx.sections.map((sec) => sec.settings)
+        : ctx.section
+          ? [ctx.section]
+          : []
+    for (const st of list) {
+      const key = sizeKey(st.pageWidth, st.pageHeight)
+      const cur = counts.get(key) ?? { w: st.pageWidth, h: st.pageHeight, n: 0 }
+      cur.n += 1
+      counts.set(key, cur)
+    }
+    // headers/footers exist once on the edit canvas (not once per page), so direct
+    // print would show them on the last page only — force the preview-merge path too
+    const mixedPaper = counts.size > 1
+    if (
+      mixedPaper ||
+      hasPrintableHeaderFooter({
+        edited: [
+          ctx.header,
+          ctx.footer,
+          ...(ctx.titlePg ? [ctx.hfVariants.headerFirst, ctx.hfVariants.footerFirst] : []),
+          ...(ctx.evenOddHf ? [ctx.hfVariants.headerEven, ctx.hfVariants.footerEven] : []),
+          ...Object.values(ctx.sectionHfEdits),
+        ],
+        sections: ctx.sections,
+        hfParts: doc.parsed.hfParts ?? undefined,
+        evenOddHf: ctx.evenOddHf,
+      })
+    ) {
+      if (mixedPaper) ctx.setStatus(t('appMixedExportOpening'))
+      return deferExportToPreview(ctx, outPath)
+    }
+    const major = [...counts.values()][0]
+    const result = await window.desktop.exportPdf(
+      doc.fileName,
+      major?.w ?? ctx.section?.pageWidth ?? 12240,
+      major?.h ?? ctx.section?.pageHeight ?? 15840,
+      outPath,
+    )
+    if (result.ok) {
+      ctx.setStatus(t('appExportedPdf', { path: result.path ?? '' }))
+      return true
+    }
+    if (!result.error) {
+      ctx.setStatus(t('appExportPdfCanceled'))
+      return false
+    }
+    // direct print of a heavy canvas failed: reroute through the preview so the
+    // retry can print in chunks; the failed attempt already authorized result.path
+    return deferExportToPreview(ctx, outPath ?? result.path)
+  } finally {
+    printJobActive = false
+  }
 }

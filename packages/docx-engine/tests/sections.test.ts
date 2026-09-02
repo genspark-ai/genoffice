@@ -560,13 +560,30 @@ describe('pgBorders details', () => {
         '</w:pgBorders></w:sectPr>',
     )
     expect(s.pageBorder).toBe(true)
+    const side = { val: 'single', widthPt: 2.25, spacePt: 24, color: '1F497D' }
     expect(s.pageBorderProps).toEqual({
       display: 'firstPage',
       offsetFrom: 'page',
       spacePt: 24,
       widthPt: 2.25,
       color: '1F497D',
+      sides: { top: side, left: side, bottom: side, right: side },
     })
+  })
+
+  it('keeps per-side style/width for mixed compound borders', async () => {
+    const { sectionSettingsFromXml } = await import('../src/section')
+    const s = sectionSettingsFromXml(
+      '<w:sectPr><w:pgBorders w:offsetFrom="page">' +
+        '<w:top w:val="thinThickSmallGap" w:sz="24" w:space="24" w:color="auto"/>' +
+        '<w:bottom w:val="thickThinSmallGap" w:sz="24" w:space="24" w:color="auto"/>' +
+        '</w:pgBorders></w:sectPr>',
+    )
+    expect(s.pageBorderProps?.sides).toEqual({
+      top: { val: 'thinThickSmallGap', widthPt: 3, spacePt: 24 },
+      bottom: { val: 'thickThinSmallGap', widthPt: 3, spacePt: 24 },
+    })
+    expect(s.pageBorderProps?.color).toBeUndefined()
   })
 
   it('none-only sides leave pageBorderProps unset', async () => {

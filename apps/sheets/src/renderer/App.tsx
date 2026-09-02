@@ -192,6 +192,8 @@ import { createWorkbookSkill } from './ai/workbook-skill'
 import { findWorkbookCells, selectWorkbookRange } from './ai/workbook-search'
 import { traceWorkbookDependents, traceWorkbookPrecedents } from './ai/formula-audit'
 import { createFilesSkill } from './ai/files-skill'
+import { createMergeSkill } from './ai/merge-skill'
+import { mergeAttachedWorkbooks } from './merge-workbooks'
 import { createSearchSkill } from './ai/search-skill'
 import { createImageSkill } from './ai/image-skill'
 import { ATTACHMENT_IMAGE_EXTS } from '../shared/desktop-api'
@@ -306,6 +308,7 @@ import {
   installFormulaViewInterceptor,
 } from './formula-view'
 import { installCachedValueFallbackInterceptor } from './formula-cached-fallback'
+import { installSupportedFunctionProbe } from './function-registry-probe'
 import { installCellFilenameFunction } from './cell-function'
 import { installFormulaLexerFix } from './formula-lexer-fix'
 import { installCfFormulaFold } from './cf-formula-fold'
@@ -313,10 +316,14 @@ import { installSheetRenameFix } from './sheet-rename-fix'
 import { installSelectionWrapGuard } from './selection-wrap-fix'
 import { installCellClipAnchorFix } from './cell-clip-anchor-fix'
 import { installMergeBorderFix } from './merge-border-fix'
+import { installThickBorderFix } from './thick-border-fix'
+import { installCenterContinuousRender } from './center-continuous'
 import { installRichTextBidiFix } from './rich-text-bidi-fix'
 import { installRtlTextDirectionFix } from './rtl-text-fix'
 import { installRtlGridMirror } from './rtl-grid-mirror'
 import { installMultiRowAutofit } from './autofit-multi-row'
+import { registerExcelJumpNav } from './excel-jump-nav'
+import { registerExcelShortcuts } from './excel-shortcuts'
 import { installCopyMaterialize } from './copy-materialize'
 import { applyUniverLocale } from './univer-locales'
 import { installRuleDetail } from './univer-rule-detail'
@@ -324,6 +331,7 @@ import { installActiveCellDataValidationChrome } from './data-validation-dropdow
 import { installFormulaNullResultFix } from './formula-null-result'
 import { installNumberFormatFix } from './numfmt-fix'
 import { installIfsEmptySetFix } from './ifs-empty-set'
+import { installCriteriaCompareCacheFix } from './criteria-compare-cache'
 import { installRateFallback } from './rate-function'
 import {
   handleRibbonCommand as handleRibbonCommandImpl,
@@ -380,7 +388,7 @@ import {
 import { shiftPinnedCells } from './formula-closure'
 import { getLang, t, aiLangDirective } from './i18n/locale'
 import { planStillMatches } from './lazy-plan'
-import { netAxisDelta, screenToFile } from './view-transform'
+import { lastSurvivingScreenLine, netAxisDelta, screenToFile } from './view-transform'
 import { selectionFormatEquals, toSelectionFormat, type SelectionFormat } from './selection-format'
 import { ExcelShell } from './ExcelShell'
 import { RecoveryDialog } from './RecoveryDialog'
@@ -1057,6 +1065,14 @@ export function App(): React.JSX.Element {
       skill: composeSkills('sheets+files', '', [
         createWorkbookSkill(sheetsSkillDeps()),
         createFilesSkill(availableAttachments),
+        createMergeSkill({
+          getAttachments: availableAttachments,
+          mergePaths: (paths) => {
+            const runtime = univerRef.current
+            if (!runtime) throw new Error(t('appMergeWorkbooksFailed'))
+            return mergeAttachedWorkbooks({ runtime, lazyWorkbookRef, setMessage }, paths)
+          },
+        }),
         createSearchSkill(),
         createImageSkill(
           () => gskLoggedInRef.current && aiSettingsRef.current?.gskToolsEnabled !== false,
@@ -1510,6 +1526,9 @@ export function App(): React.JSX.Element {
     // Borders stored on a merged range's main cell must render their edge
     // segments like Excel; stock Univer drops them entirely.
     installMergeBorderFix()
+    // Thick borders must read visibly heavier than medium ones like Excel;
+    // stock Univer's 3px thick shares the footprint of its smeared 2px medium.
+    installThickBorderFix()
     // Mixed-direction cell text (e.g. Arabic year suffixes) must follow
     // Excel's context reading order instead of always rendering ltr.
     installRtlTextDirectionFix()
@@ -1517,6 +1536,9 @@ export function App(): React.JSX.Element {
     // right, headers on the right) while keeping logical indices.
     installRtlGridMirror()
     installRichTextBidiFix()
+    // Excel's "Center Across Selection": center anchor text over its run of
+    // blank same-format neighbors instead of folding it inside one cell.
+    installCenterContinuousRender()
     // The window always starts blank now; still consume the one-shot
     // new-blank flag so it doesn't leak into the next workbook open.
     void window.desktopApi?.consumeNewBlankWorkbook?.()
@@ -1563,6 +1585,10 @@ export function App(): React.JSX.Element {
     // A file formula the engine re-computes into an error shows the file's
     // cached result instead; display-only.
     const cachedValueDisposable = installCachedValueFallbackInterceptor(runtime, lazyWorkbookRef)
+    // A file formula calling a function the engine lacks keeps its cached
+    // value at install time — even when IFERROR/ISERROR would otherwise
+    // swallow the #NAME? into the fallback literal.
+    const functionProbeDisposable = installSupportedFunctionProbe(runtime)
     // Excel-parity number-format display: empty sections, text section,
     // _/* padding, General digit fitting, 1904 date-system serial shift.
     const numberFormatFixDisposable = installNumberFormatFix(
@@ -1581,6 +1607,9 @@ export function App(): React.JSX.Element {
     const rateFallbackDisposable = installRateFallback(runtime)
     // MINIFS/MAXIFS over zero matching cells return 0, not blank.
     const ifsEmptySetDisposable = installIfsEmptySetFix(runtime)
+    // Repeated *IF(S) '=' compares on text columns survive the inverted-
+    // index cache when the criteria was number-coerced ("2026-06").
+    const criteriaCompareCacheDisposable = installCriteriaCompareCacheFix()
     // Escaped quotes ("") no longer shift lexer indices and silently
     // rewrite committed formulas.
     const formulaLexerFixDisposable = installFormulaLexerFix(runtime)
@@ -1590,6 +1619,24 @@ export function App(): React.JSX.Element {
     const selectionWrapGuardDisposable = installSelectionWrapGuard(runtime)
     // Row-header double-click autofits every selected row, like Excel.
     const multiRowAutofitDisposable = installMultiRowAutofit(runtime)
+    // Ctrl/Cmd+Arrow data-edge jumps must stop at formula cells even when
+    // their values are empty strings or not yet materialized (cache mode).
+    registerExcelJumpNav(runtime)
+    // Excel-standard keys Univer doesn't ship: worksheet-tab switching,
+    // Ctrl+Home/End, Home, whole row/column selection. The used-end hint
+    // covers streamed workbooks whose cell matrix is a loaded window.
+    registerExcelShortcuts(runtime, (subUnitId) => {
+      const state = lazyWorkbookRef.current
+      if (!state) return null
+      const sheet = state.file.sheets.find((candidate) => candidate.id === subUnitId)
+      if (!sheet || sheet.rowCount <= 0 || sheet.columnCount <= 0) return null
+      // positional mapping: an insert/delete moves the used end only when it
+      // sits at or before it — a distant insert in the empty grid does not
+      const ops = state.editJournal.structuralOps.get(subUnitId) ?? []
+      const row = lastSurvivingScreenLine(ops, 'row', sheet.rowCount - 1)
+      const column = lastSurvivingScreenLine(ops, 'column', sheet.columnCount - 1)
+      return row !== null && column !== null ? { row, column } : null
+    })
     // Wide expression CF rules register folded/windowed formula ranges so
     // the engine stops rebuilding millions of per-cell dependency trees on
     // every stream-in recalculation (genoffice#158).
@@ -2598,10 +2645,12 @@ export function App(): React.JSX.Element {
       formulaTextDisposable.dispose()
       formulaBarAutosizeDisposable.dispose()
       cachedValueDisposable.dispose()
+      functionProbeDisposable.dispose()
       numberFormatFixDisposable.dispose()
       cellFilenameDisposable.dispose()
       rateFallbackDisposable.dispose()
       ifsEmptySetDisposable.dispose()
+      criteriaCompareCacheDisposable.dispose()
       formulaLexerFixDisposable.dispose()
       sheetRenameFixDisposable.dispose()
       selectionWrapGuardDisposable.dispose()
@@ -4701,6 +4750,8 @@ export function App(): React.JSX.Element {
       formulaText: new Map(),
       cachedFormulaValues: new Map(),
       pivotDefinitions: new Map(),
+      hiddenFileRows: new Map(),
+      hiddenRowsCoveredThrough: new Map(),
       outline: new Map(),
       recalc: {
         timer: null,
@@ -4759,6 +4810,14 @@ export function App(): React.JSX.Element {
       // aggregate_range / propose_operations) without an LLM in the loop.
       ;(window as unknown as Record<string, unknown>).__workbookSkill =
         createWorkbookSkill(sheetsSkillDeps())
+    }
+    // Built-app e2e hook, off by default: the preload exposes
+    // __genofficeDebugHooks only when GENOFFICE_DEBUG_HOOKS=1 (scroll/freeze
+    // drivers read Univer's render state through the Facade).
+    if ((window as unknown as Record<string, unknown>).__genofficeDebugHooks === true) {
+      ;(window as unknown as Record<string, unknown>).__genofficeDebug = {
+        univerAPI: univerRef.current?.univerAPI,
+      }
     }
     setRevision(0)
     setPreview(null)

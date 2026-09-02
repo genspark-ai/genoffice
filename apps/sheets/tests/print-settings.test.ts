@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildSheetPrintPayload, renderHeaderFooterHtml } from '../src/renderer/print-html'
+import {
+  buildSheetPrintPayload,
+  renderHeaderFooterHtml,
+  sectionPictures,
+} from '../src/renderer/print-html'
 import {
   decodeHeaderFooter,
   printAreasFromFormula,
@@ -23,16 +27,17 @@ describe('decodeHeaderFooter', () => {
   })
 
   it('strips font, size, color and unsupported codes', () => {
-    expect(decodeHeaderFooter('&C&"Broadway,Bold Italic"&12&KFF0000Big &BRed&B Title&G')).toEqual({
+    expect(decodeHeaderFooter('&C&"Broadway,Bold Italic"&12&KFF0000Big &BRed&B Title&Z')).toEqual({
       center: 'Big Red Title',
     })
   })
 
-  it('drops the picture/path codes but keeps the file code', () => {
-    expect(decodeHeaderFooter('&C&P / &N&R&Z&F')).toEqual({
+  it('drops the path code but keeps the file and picture codes', () => {
+    expect(decodeHeaderFooter('&C&P / &N&R&Z&F&G')).toEqual({
       center: '&P / &N',
-      right: '&F',
+      right: '&F&G',
     })
+    expect(decodeHeaderFooter('&L&G')).toEqual({ left: '&G' })
   })
 
   it('keeps escaped ampersands verbatim', () => {
@@ -40,7 +45,7 @@ describe('decodeHeaderFooter', () => {
   })
 
   it('returns null when everything strips away', () => {
-    expect(decodeHeaderFooter('&L&G')).toBeNull()
+    expect(decodeHeaderFooter('&L&Z')).toBeNull()
     expect(decodeHeaderFooter('')).toBeNull()
   })
 
@@ -136,6 +141,11 @@ describe('resolveEffectivePageSetup', () => {
     expect(setup.printTitles).toBe('17:17')
     expect(setup.footer).toEqual({ center: 'Seite &P von &N' })
     expect(setup.header).toBeNull()
+    // scaleWithDoc is Excel's default; only an explicit "0" pins the size
+    expect(setup.headerFooterScaleWithDoc).toBe(true)
+    expect(
+      resolveEffectivePageSetup({}, { headerFooterFixedSize: true }, null).headerFooterScaleWithDoc,
+    ).toBe(false)
   })
 
   it('lets the session journal win over the file', () => {
@@ -168,10 +178,64 @@ describe('resolveEffectivePageSetup', () => {
     expect(setup.printAreas).toEqual([])
   })
 
-  it('defaults fitToWidth to one page when the file only sets fitToPage', () => {
+  it('defaults fitToWidth/fitToHeight to one page when the file only sets fitToPage', () => {
     const setup = resolveEffectivePageSetup({}, { fitToPage: true }, null)
     expect(setup.fitToPage).toBe(true)
     expect(setup.fitToWidth).toBe(1)
+    expect(setup.fitToHeight).toBe(1)
+    const heightOnly = resolveEffectivePageSetup(
+      {},
+      { fitToPage: true, fitToWidth: 0, fitToHeight: 1 },
+      null,
+    )
+    expect(heightOnly.fitToWidth).toBe(0)
+    expect(heightOnly.fitToHeight).toBe(1)
+    expect(resolveEffectivePageSetup({}, null, null).firstPage).toBeNull()
+    expect(resolveEffectivePageSetup({}, null, null).evenPages).toBeNull()
+    expect(resolveEffectivePageSetup({}, null, null).headerFooterPictures).toEqual([])
+  })
+
+  it('exposes the first/even page variants only when their flag is set', () => {
+    const file = {
+      oddHeader: '&L&G&COdd',
+      oddFooter: '&P',
+      evenHeader: '&CEven',
+      firstFooter: '&RFirst &D',
+      headerFooterPictures: [
+        {
+          id: 'hf-picture-0-lh',
+          position: 'LH',
+          widthPt: 442.5,
+          heightPt: 43.5,
+          mediaType: 'image/png',
+        },
+      ],
+    }
+    const off = resolveEffectivePageSetup({}, file, null)
+    expect(off.header).toEqual({ left: '&G', center: 'Odd' })
+    expect(off.firstPage).toBeNull()
+    expect(off.evenPages).toBeNull()
+    expect(off.headerFooterPictures).toEqual(file.headerFooterPictures)
+
+    const on = resolveEffectivePageSetup(
+      {},
+      { ...file, differentOddEven: true, differentFirst: true },
+      null,
+    )
+    // differentFirst with no firstHeader: page 1 prints no header at all.
+    expect(on.firstPage).toEqual({ header: null, footer: { right: 'First &D' } })
+    expect(on.evenPages).toEqual({ header: { center: 'Even' }, footer: null })
+  })
+
+  it('keeps the file variants when the session edits the odd header', () => {
+    const setup = resolveEffectivePageSetup(
+      { header: { center: 'Session' }, footer: null },
+      { differentFirst: true, oddHeader: '&COdd', firstHeader: '&CFirst', oddFooter: '&P' },
+      null,
+    )
+    expect(setup.header).toEqual({ center: 'Session' })
+    expect(setup.footer).toBeNull()
+    expect(setup.firstPage).toEqual({ header: { center: 'First' }, footer: null })
   })
 
   it('shifts the file print area through rows inserted above', () => {
@@ -244,6 +308,37 @@ describe('renderHeaderFooterHtml', () => {
     const html = renderHeaderFooterHtml('&A <&F> && more', 'Bud<get', 'Sh&eet', now)
     expect(html).toBe('Sh&amp;eet &lt;Bud&lt;get&gt; &amp; more')
   })
+
+  it('replaces &G with the section picture at its declared size', () => {
+    const picture = { dataUrl: 'data:image/png;base64,AAAA', widthPt: 72, heightPt: 36 }
+    expect(renderHeaderFooterHtml('&G Logo', 'Book', 'S1', now, picture)).toBe(
+      '<img src="data:image/png;base64,AAAA" ' +
+        'style="width:96px;height:48px;vertical-align:bottom"> Logo',
+    )
+  })
+
+  it('prints nothing for &G when the slot has no picture', () => {
+    expect(renderHeaderFooterHtml('&GTitle', 'Book', 'S1', now)).toBe('Title')
+  })
+})
+
+describe('sectionPictures', () => {
+  const picture = (name: string) => ({ dataUrl: `data:${name}`, widthPt: 1, heightPt: 1 })
+  const pictures = new Map([
+    ['LH', picture('LH')],
+    ['RF', picture('RF')],
+    ['CHFIRST', picture('CHFIRST')],
+    ['LFEVEN', picture('LFEVEN')],
+  ])
+
+  it('maps the VML slots onto the sections of each variant', () => {
+    expect(sectionPictures(pictures, 'header', 'odd')).toEqual({ left: picture('LH') })
+    expect(sectionPictures(pictures, 'footer', 'odd')).toEqual({ right: picture('RF') })
+    expect(sectionPictures(pictures, 'header', 'first')).toEqual({ center: picture('CHFIRST') })
+    expect(sectionPictures(pictures, 'footer', 'first')).toEqual({})
+    expect(sectionPictures(pictures, 'footer', 'even')).toEqual({ left: picture('LFEVEN') })
+    expect(sectionPictures(pictures, 'header', 'even')).toEqual({})
+  })
 })
 
 const usedGrid = [
@@ -279,6 +374,7 @@ function payloadSetup(overrides: Partial<EffectivePageSetup>): EffectivePageSetu
     paperSize: 9,
     scale: 100,
     fitToWidth: 0,
+    fitToHeight: 0,
     fitToPage: false,
     margins: { left: 0.7, right: 0.7, top: 0.75, bottom: 0.75, header: 0.3, footer: 0.3 },
     printGridlines: false,
@@ -287,7 +383,27 @@ function payloadSetup(overrides: Partial<EffectivePageSetup>): EffectivePageSetu
     printTitles: null,
     header: null,
     footer: null,
+    firstPage: null,
+    evenPages: null,
+    headerFooterScaleWithDoc: true,
+    headerFooterPictures: [],
     ...overrides,
+  }
+}
+
+/// `rows` rows of 20px (15pt) with a value in column A.
+function tallWorksheet(rows: number): PrintWorksheet {
+  return {
+    getLastRow: () => rows - 1,
+    getLastColumn: () => 0,
+    getRowHeight: () => 20,
+    getColumnWidth: () => 100,
+    getMergedRanges: () => [],
+    getRange: ((row: number, _column: number, numRows?: number) => ({
+      getDisplayValues: () => Array.from({ length: numRows ?? 1 }, (_, i) => [`R${row + i}`]),
+      getValues: () => Array.from({ length: numRows ?? 1 }, (_, i) => [`R${row + i}`]),
+      getCellStyleData: () => null,
+    })) as PrintWorksheet['getRange'],
   }
 }
 
@@ -351,5 +467,131 @@ describe('buildSheetPrintPayload', () => {
       'S1',
     )
     expect(payload.scale).toBe(1)
+  })
+
+  it('shrinks to fit the height when fitToHeight is set', () => {
+    // 200 text rows: printed at ~15.75pt each (11pt line + padding) they
+    // need ~3150pt; A4 portrait leaves 733.5pt between 0.75in margins.
+    const onePage = buildSheetPrintPayload(
+      tallWorksheet(200),
+      payloadSetup({ fitToPage: true, fitToWidth: 0, fitToHeight: 1 }),
+      'Book.pdf',
+      'S1',
+    )
+    expect(onePage.scale).toBeLessThan(0.24)
+    expect(onePage.scale).toBeGreaterThan(0.2)
+    const twoPages = buildSheetPrintPayload(
+      tallWorksheet(200),
+      payloadSetup({ fitToPage: true, fitToWidth: 1, fitToHeight: 2 }),
+      'Book.pdf',
+      'S1',
+    )
+    expect(twoPages.scale).toBeGreaterThan(onePage.scale)
+    expect(twoPages.scale).toBeLessThan(0.47)
+    // Width alone is satisfied at 100%; the height axis decides.
+    expect(
+      buildSheetPrintPayload(
+        tallWorksheet(200),
+        payloadSetup({ fitToPage: true, fitToWidth: 1, fitToHeight: 0 }),
+        'Book.pdf',
+        'S1',
+      ).scale,
+    ).toBe(1)
+    // The saved scale is ignored while fit-to-page is on.
+    expect(
+      buildSheetPrintPayload(
+        tallWorksheet(3),
+        payloadSetup({ fitToPage: true, fitToWidth: 1, fitToHeight: 1, scale: 50 }),
+        'Book.pdf',
+        'S1',
+      ).scale,
+    ).toBe(1)
+  })
+
+  it('emits first/even page templates only for active variants', () => {
+    const plain = buildSheetPrintPayload(
+      fakeWorksheet(),
+      payloadSetup({ header: { center: 'Odd' } }),
+      'Book.pdf',
+      'S1',
+    )
+    expect(plain.firstPage).toBeUndefined()
+    expect(plain.evenPages).toBeUndefined()
+
+    const variants = buildSheetPrintPayload(
+      fakeWorksheet(),
+      payloadSetup({
+        header: { center: 'Odd' },
+        footer: { center: '&P' },
+        firstPage: { header: null, footer: { right: 'First' } },
+        evenPages: { header: { left: 'Even' }, footer: null },
+      }),
+      'Book.pdf',
+      'S1',
+    )
+    expect(variants.headerTemplate).toContain('Odd')
+    expect(variants.footerTemplate).toContain('pageNumber')
+    // differentFirst with a blank first header: page 1 prints no header.
+    expect(variants.firstPage).toEqual({
+      footerTemplate: expect.stringContaining('First') as string,
+    })
+    expect(variants.evenPages).toEqual({
+      headerTemplate: expect.stringContaining('Even') as string,
+    })
+  })
+
+  it('puts the &G picture of each variant into its own template', () => {
+    const pictures = new Map([
+      ['LH', { dataUrl: 'data:image/png;base64,ODD', widthPt: 300, heightPt: 30 }],
+      ['CHFIRST', { dataUrl: 'data:image/png;base64,FIRST', widthPt: 100, heightPt: 50 }],
+    ])
+    const payload = buildSheetPrintPayload(
+      fakeWorksheet(),
+      payloadSetup({
+        header: { left: '&G' },
+        firstPage: { header: { center: '&G' }, footer: null },
+      }),
+      'Book.pdf',
+      'S1',
+      pictures,
+    )
+    expect(payload.headerTemplate).toContain('src="data:image/png;base64,ODD"')
+    expect(payload.headerTemplate).toContain('width:400px;height:40px')
+    expect(payload.headerTemplate).not.toContain('FIRST')
+    expect(payload.firstPage?.headerTemplate).toContain('src="data:image/png;base64,FIRST"')
+    expect(payload.firstPage?.headerTemplate).not.toContain('ODD')
+  })
+
+  it('scales the header/footer with the document unless scaleWithDoc is off', () => {
+    // phpss_issue.1767: scale 65, a 442.5pt x 43.5pt logo in the left header.
+    const pictures = new Map([
+      ['LH', { dataUrl: 'data:image/png;base64,LOGO', widthPt: 442.5, heightPt: 43.5 }],
+    ])
+    const scaled = buildSheetPrintPayload(
+      fakeWorksheet(),
+      payloadSetup({ scale: 65, header: { left: '&G' }, footer: { center: 'Seite &P' } }),
+      'Book.pdf',
+      'S1',
+      pictures,
+    )
+    // 442.5pt * 0.65 = 287.6pt = 383.5px; 43.5pt * 0.65 = 28.3pt = 37.7px
+    expect(scaled.headerTemplate).toContain('width:383.5px;height:37.7px')
+    expect(scaled.headerTemplate).toContain('font-size:5.85pt')
+    expect(scaled.footerTemplate).toContain('font-size:5.85pt')
+
+    const fixed = buildSheetPrintPayload(
+      fakeWorksheet(),
+      payloadSetup({
+        scale: 65,
+        header: { left: '&G' },
+        footer: { center: 'Seite &P' },
+        headerFooterScaleWithDoc: false,
+      }),
+      'Book.pdf',
+      'S1',
+      pictures,
+    )
+    expect(fixed.headerTemplate).toContain('width:590px;height:58px')
+    expect(fixed.footerTemplate).toContain('font-size:9pt')
   })
 })

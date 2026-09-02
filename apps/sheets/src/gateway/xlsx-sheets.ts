@@ -1,4 +1,9 @@
 import { FORMULA_REFERENCE_PATTERN, qualifierMatches } from './xlsx-structure'
+import { ensureRelationshipNamespace } from './xlsx-namespace'
+
+/// '>' is legal inside XML attribute values (sheet names can carry it), so
+/// element scans consume quoted runs atomically instead of using [^>]*.
+const TAG_ATTRIBUTES = `(?:"[^"]*"|'[^']*'|[^>"'])*?`
 
 /// Sheet-level workbook surgery: rename, add, and remove worksheets. Renames
 /// rewrite every qualified reference (other sheets' formulas, defined names,
@@ -117,7 +122,7 @@ export function renameSheetReferencesInWorksheet(
       `<${tag}>${escapeXmlText(renameSheetInFormula(decodeEntities(body), oldName, newName))}</${tag}>`,
   )
   return xml.replace(
-    /(<hyperlink\b[^>]*\blocation=")([^"]+)(")/g,
+    new RegExp(`(<hyperlink\\b${TAG_ATTRIBUTES}\\blocation=")([^"]+)(")`, 'g'),
     (full, prefix: string, location: string, suffix: string) => {
       const renamed = renameHyperlinkLocation(decodeAttribute(location), oldName, newName)
       if (renamed === null) return full
@@ -264,7 +269,9 @@ export interface SheetElement {
 
 export function parseSheetElements(workbookXml: string): SheetElement[] {
   const elements: SheetElement[] = []
-  for (const match of workbookXml.matchAll(/<sheet\b[^>]*?(?:\/>|>[\s\S]*?<\/sheet>)/g)) {
+  for (const match of workbookXml.matchAll(
+    new RegExp(`<sheet\\b${TAG_ATTRIBUTES}(?:/>|>[\\s\\S]*?</sheet>)`, 'g'),
+  )) {
     const xml = match[0]
     const name = readAttribute(xml, 'name')
     if (name === undefined) continue
@@ -284,7 +291,9 @@ export function parseSheetElements(workbookXml: string): SheetElement[] {
 
 export function maxSheetIdInWorkbook(workbookXml: string): number {
   let max = 0
-  for (const match of workbookXml.matchAll(/<sheet\b[^>]*?\bsheetId="([0-9]+)"/g)) {
+  for (const match of workbookXml.matchAll(
+    new RegExp(`<sheet\\b${TAG_ATTRIBUTES}\\bsheetId="([0-9]+)"`, 'g'),
+  )) {
     max = Math.max(max, Number(match[1]))
   }
   return max
@@ -370,7 +379,7 @@ export function applySheetPlanToWorkbookXml(
   )
   result = result.replace(/<definedNames>\s*<\/definedNames>/, '')
 
-  return result.replace(
+  result = result.replace(
     /(<workbookView\b[^>]*?\bactiveTab=")([0-9]+)(")/,
     (_full, prefix: string, activeTab: string, suffix: string) => {
       const mapped = oldIndexToNew(Number(activeTab))
@@ -378,6 +387,10 @@ export function applySheetPlanToWorkbookXml(
       return `${prefix}${mapped ?? Math.max(fallback, 0)}${suffix}`
     },
   )
+
+  // Added <sheet> elements carry r:id; hosts that bind r per element only
+  // would leave the new element's prefix undeclared.
+  return additions.length > 0 ? ensureRelationshipNamespace(result) : result
 }
 
 /// Toggles a `<sheet>` element's state attribute. Unhiding also clears
@@ -526,7 +539,9 @@ export function definedNamesUseToken(
 /// case-insensitively, matching Excel.
 export function pivotCacheReadsFromSheet(cacheXml: string, sheetName: string): boolean {
   const target = sheetName.toLowerCase()
-  for (const match of cacheXml.matchAll(/<worksheetSource\b[^>]*>/g)) {
+  for (const match of cacheXml.matchAll(
+    new RegExp(`<worksheetSource\\b${TAG_ATTRIBUTES}/?>`, 'g'),
+  )) {
     const sheet = readAttribute(match[0], 'sheet')
     if (sheet !== undefined && decodeAttribute(sheet).toLowerCase() === target) return true
   }
@@ -542,7 +557,7 @@ export function renameSheetInPivotCacheSource(
   newName: string,
 ): string {
   const target = oldName.toLowerCase()
-  return cacheXml.replace(/<worksheetSource\b[^>]*>/g, (element) => {
+  return cacheXml.replace(new RegExp(`<worksheetSource\\b${TAG_ATTRIBUTES}/?>`, 'g'), (element) => {
     const sheet = readAttribute(element, 'sheet')
     if (sheet === undefined || decodeAttribute(sheet).toLowerCase() !== target) return element
     return element.replace(/\ssheet="[^"]*"/, () => ` sheet="${escapeXmlAttribute(newName)}"`)

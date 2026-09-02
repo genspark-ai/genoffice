@@ -195,6 +195,8 @@ function streamedState(options: {
     loadingKeys: new Map(),
     retryTimers: new Map(),
     decorationsPendingSheets: new Set(),
+    hiddenFileRows: new Map(),
+    hiddenRowsCoveredThrough: new Map(),
     editJournal: {
       structuralOps: new Map(options.ops ? [['sheet-1', options.ops]] : []),
       cells: new Map(

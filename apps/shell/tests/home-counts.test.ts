@@ -54,7 +54,7 @@ describe('home visible counts', () => {
     expect(page.entries.map((entry) => entry.path)).toEqual([bookPath, macroPath])
   })
 
-  it('excludes stale paths from totals and rows', () => {
+  it('keeps unavailable paths listed at their position, flagged missing (r158)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'shell-counts-'))
     tempDirs.push(dir)
     const existingPath = join(dir, 'existing.xlsx')
@@ -63,9 +63,16 @@ describe('home visible counts', () => {
 
     const page = pageRecentPaths([missingPath, existingPath], {}, new Set())
 
-    expect(page.total).toBe(1)
-    expect(page.totalAll).toBe(1)
-    expect(page.entries.map((entry) => entry.path)).toEqual([existingPath])
+    // a transiently unstat-able file (disconnected drive, pending mount) must
+    // not vanish from the list — it renders dimmed with an unavailable state
+    expect(page.total).toBe(2)
+    expect(page.totalAll).toBe(2)
+    expect(page.entries.map((entry) => [entry.path, entry.missing === true])).toEqual([
+      [missingPath, true],
+      [existingPath, false],
+    ])
+    expect(page.entries[0].mtimeMs).toBe(0)
+    expect(page.entries[0].ext).toBe('xlsx')
   })
 })
 

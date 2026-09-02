@@ -33,6 +33,8 @@ function closureState(): LazyWorkbookState {
     formulaText: new Map(),
     cachedFormulaValues: new Map(),
     rowColStyleKeys: new Map(),
+    hiddenFileRows: new Map(),
+    hiddenRowsCoveredThrough: new Map(),
   } as unknown as LazyWorkbookState
 }
 

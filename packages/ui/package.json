@@ -10,7 +10,8 @@
     "./tokens.css": "./src/tokens.css",
     "./screentip.css": "./src/screentip.css",
     "./color-picker.css": "./src/color-picker.css",
-    "./dropdown.css": "./src/dropdown.css"
+    "./dropdown.css": "./src/dropdown.css",
+    "./fonts/*": "./src/fonts/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -31,6 +31,7 @@ import type {
   SheetFormulaValues,
 } from './xlsx-gateway'
 import { planCellEditsToXlsx, syncFileBestEffort } from './xlsx-gateway'
+import { normalizeOoxmlPartPrefix } from './xlsx-namespace'
 import type { WorkbookThemeState } from './xlsx-theme'
 import type { SheetEditPlan } from './xlsx-sheets'
 
@@ -127,7 +128,7 @@ export async function readArchiveEntryText(
     )
     const filePath = extracted.entries[0]?.path
     if (!filePath) throw new Error(`Workbook is missing ${entryName}.`)
-    return readFileSync(filePath, 'utf8')
+    return normalizeOoxmlPartPrefix(readFileSync(filePath, 'utf8'))
   } finally {
     await rm(workDir, { recursive: true, force: true })
   }
@@ -252,7 +253,7 @@ function createSidecarEntrySource(
       )
       const filePath = extracted.entries[0]?.path
       if (!filePath) throw new Error(`Sidecar did not extract ${path}.`)
-      const content = readFileSync(filePath, 'utf8')
+      const content = normalizeOoxmlPartPrefix(readFileSync(filePath, 'utf8'))
       cache.set(path, content)
       return content
     },

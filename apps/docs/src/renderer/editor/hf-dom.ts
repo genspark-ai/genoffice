@@ -6,7 +6,7 @@ import {
   type HfParagraph,
   type Run,
 } from '@genoffice/docx-engine'
-import { cssRunFontFamily, runLetterSpacingCss } from '../line-metrics'
+import { cssRunFontFamily, estimateHfHeight, runLetterSpacingCss } from '../line-metrics'
 
 /**
  * Plain-DOM header/footer rendering for the canvas page gaps (M4 always-on
@@ -64,6 +64,16 @@ const TWIPS_PER_PX = 15
 const HF_DEFAULT_GRID_PX = 48
 const HF_DEFAULT_FONT_PT = 10.5
 
+/** effective strip base size (pt): the mounted --hf-default-fs (docStyleCss,
+ *  shrink-only) when present, so tab measures match what the strip paints */
+function hfBaseFontPt(): number {
+  if (typeof document === 'undefined') return HF_DEFAULT_FONT_PT
+  const host = document.querySelector('.page-wrap, .doc-page, .pv-page')
+  if (!host) return HF_DEFAULT_FONT_PT
+  const pt = parseFloat(getComputedStyle(host).getPropertyValue('--hf-default-fs'))
+  return Number.isFinite(pt) && pt > 0 ? pt : HF_DEFAULT_FONT_PT
+}
+
 let hfMeasureCtx: CanvasRenderingContext2D | null | undefined
 /** approximate rendered width of hf runs (px): canvas mirror of applyRunStyle's font mapping.
  *  `display` is the caller's field substitution (PAGE_MARK -> the page digits): the raw
@@ -74,12 +84,13 @@ function hfRunsWidthPx(runs: Run[], display: (text: string) => string): number {
       typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null
   }
   let w = 0
+  const basePt = hfBaseFontPt()
   for (const run of runs) {
     if (run.image?.widthPx) w += run.image.widthPx
     if (!run.text) continue
     const shown = display(run.text)
     const text = run.caps === 'all' ? shown.toUpperCase() : shown
-    const sizePt = run.sizeHalfPoints ? run.sizeHalfPoints / 2 : HF_DEFAULT_FONT_PT
+    const sizePt = run.sizeHalfPoints ? run.sizeHalfPoints / 2 : basePt
     if (hfMeasureCtx) {
       const family =
         run.font || run.fontAscii ? cssRunFontFamily(run.fontAscii, run.font) : 'sans-serif'
@@ -208,6 +219,38 @@ function parasOf(value: HeaderFooter): HfParagraph[] {
   return [{ align: 'center', runs }]
 }
 
+/**
+ * Largest declared run size (pt) when every text-bearing run of the strip
+ * declares one, else null (some run inherits the strip base). Whitespace-only
+ * runs don't size lines in Word and only count when nothing else does (an
+ * empty paragraph is sized by its mark).
+ */
+export function hfDeclaredStrutPt(paras: HfParagraph[]): number | null {
+  let text: number | null = null
+  let blank: number | null = null
+  const scan = (runs: Run[]): boolean => {
+    for (const run of runs) {
+      if (!run.text && run.image) continue
+      const sz = run.sizeHalfPoints
+      if (!(run.text ?? '').trim()) {
+        if (sz) blank = Math.max(blank ?? 0, sz)
+        continue
+      }
+      if (!sz) return false
+      text = Math.max(text ?? 0, sz)
+    }
+    return true
+  }
+  for (const p of paras) {
+    if (p.boxAnchored) continue
+    if (p.cells) {
+      for (const c of p.cells) for (const runs of c.paras) if (!scan(runs)) return null
+    } else if (!scan(p.runs)) return null
+  }
+  const half = text ?? blank
+  return half ? half / 2 : null
+}
+
 /** parsed parts carry PAGE fields as PAGE_MARK; only mark-free values fall back to the user-typed '#' (mirrors HeaderFooterArea) */
 function paraHasPageMark(p: HfParagraph): boolean {
   return [p.runs, ...(p.cells?.flatMap((c) => c.paras) ?? [])].some((rs) =>
@@ -270,6 +313,110 @@ export function hfHasVisibleContent(
     value.pageNumber ||
     value.paras?.some((p) => p.runs.length > 0 || p.cells?.length),
   )
+}
+
+/** rendered strip heights keyed by content signature (pagination recomputes per page) */
+const hfHeightCache = new Map<string, number>()
+
+function hfProbeHost(): HTMLElement | null {
+  if (typeof document === 'undefined' || !document.body) return null
+  let host = document.getElementById('hf-strip-probe')
+  if (!host) {
+    host = document.createElement('div')
+    host.id = 'hf-strip-probe'
+    // .doc-page: the probe inherits the same document-default font/line-height
+    // CSS the real gap strips get inside the editor root
+    host.className = 'doc-page'
+    host.style.cssText =
+      'position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none'
+    // editor-chrome floors (dashed separator, clickable-strip min-height) are
+    // not Word geometry: with them the measure over-reserves ~1 line per strip
+    // paragraph, costing body lines on every page of every footered document.
+    // In document.head because the probe host replaces its children per measure
+    const neutralize = document.createElement('style')
+    neutralize.textContent =
+      '#hf-strip-probe .page-hf { padding: 0; border: none; }' +
+      '#hf-strip-probe .page-hf-para { min-height: 0; }' +
+      // floating-box content draws at its anchor, not in the strip flow
+      '#hf-strip-probe .page-hf-box-anchored { display: none; }'
+    document.head.appendChild(neutralize)
+    document.body.appendChild(host)
+  }
+  return host
+}
+
+/** djb2 over the mounted doc-scoped stylesheets (memoized on the concatenated string) */
+let mountedCssMemo: { text: string; hash: string } | null = null
+function mountedDocCssSig(): string {
+  const text = Array.from(document.querySelectorAll('style[data-doc-css]'))
+    .map((s) => s.textContent ?? '')
+    .join(' ')
+  if (mountedCssMemo?.text === text) return mountedCssMemo.hash
+  let h = 5381
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0
+  const hash = `${text.length}:${h}`
+  mountedCssMemo = { text, hash }
+  return hash
+}
+
+/**
+ * Reserved height (px) of a header/footer strip for body push-down. The
+ * line-box estimate decides alone outside a DOM (tests); in the renderer the
+ * strip is additionally laid out in a hidden .doc-page probe — the same
+ * makeGapHfEl markup and CSS the canvas draws — so real wraps, borders and
+ * line heights count when font substitution renders taller than the estimate
+ * (the DOM value only ever raises the estimate: floating-image reservations
+ * are estimate-only and must not drop). The probe measures under whatever
+ * doc styles are mounted right now and the cache keys on their content, so a
+ * value computed before a new document's CSS commits is re-measured on the
+ * caller's post-commit pass (App's hfMeasureEpoch) instead of going stale.
+ */
+export function hfReservedHeightPx(
+  kind: 'header' | 'footer',
+  value: HeaderFooter | null,
+  contentWidthPx: number,
+  images?: HfImage[] | null,
+  geom?: { marginTopPx: number; headerDistPx: number },
+): number {
+  const est = estimateHfHeight(value, contentWidthPx, images, geom)
+  const inline = (images ?? []).filter((img) => !img.floating)
+  if (!hfHasVisibleContent(value, inline) || contentWidthPx <= 0) return est
+  if (typeof document === 'undefined' || !document.body) return est
+  // cell-run images can carry megabytes of base64: key on the dataUrl length only
+  const noDataUrl = (k: string, v: unknown) => (k === 'dataUrl' ? String(v).length : v)
+  const key =
+    `${kind}|${Math.round(contentWidthPx)}|${mountedDocCssSig()}|` +
+    `${JSON.stringify(value, noDataUrl)}|` +
+    inline.map((im) => `${im.widthPx ?? ''}x${im.heightPx ?? ''}:${im.dataUrl.length}`).join(',')
+  let dom = hfHeightCache.get(key)
+  if (dom === undefined) {
+    const host = hfProbeHost()
+    if (!host) return est
+    const el = makeGapHfEl({
+      kind,
+      value: value ?? { text: '' },
+      images: inline,
+      pageNo: 88,
+      pageTotal: 88,
+    })
+    el.style.position = 'static'
+    el.style.left = 'auto'
+    el.style.transform = 'none'
+    el.style.width = `${contentWidthPx}px`
+    // an empty paragraph still occupies its line in Word; with the chrome
+    // min-height neutralized it needs a real line box to measure that
+    for (const p of el.querySelectorAll('.page-hf-para')) {
+      if (!(p.textContent ?? '').length && p.childElementCount === 0) {
+        p.appendChild(document.createTextNode('\u200b'))
+      }
+    }
+    host.replaceChildren(el)
+    dom = el.getBoundingClientRect().height
+    host.replaceChildren()
+    if (hfHeightCache.size > 300) hfHeightCache.clear()
+    hfHeightCache.set(key, dom)
+  }
+  return dom > 0 ? Math.max(est, dom) : est
 }
 
 /** page (paper) geometry a floating header image positions against, px */
@@ -343,6 +490,15 @@ export function hfFloatPagePos(
  * marginTop above the next page's content. host 'lead': anchored in the
  * zero-height first-page widget at the content-box origin.
  */
+
+/**
+ * Word's washout preset (gain 19661f, blacklevel 22938f) is the linear map
+ * out = 0.3*in + 0.7 per channel (MS-ODRAW brightness/contrast), so white
+ * stays white and the image fades toward white. invert-brightness-invert
+ * reproduces it exactly: 1 - 0.3*(1 - in); brightness/contrast chains clamp
+ * at white and repaint white pixels as grey.
+ */
+export const HF_WASHOUT_FILTER = 'invert(1) brightness(0.3) invert(1)'
 /** <img> for a header/footer picture; an a:srcRect crop becomes an
  *  overflow-hidden window over a scaled and offset image (body-path technique) */
 function hfImgNode(img: {
@@ -398,7 +554,7 @@ export function makeHfFloatImgEl(img: HfImage, box: HfFloatBox, host: 'gap' | 'l
   }
   if (img.widthPx) el.style.width = `${img.widthPx}px`
   if (img.heightPx) el.style.height = `${img.heightPx}px`
-  if (img.washout) el.style.filter = 'brightness(1.6) contrast(0.35)'
+  if (img.washout) el.style.filter = HF_WASHOUT_FILTER
   return el
 }
 
@@ -422,6 +578,14 @@ export function makeGapHfEl(opts: {
   const wrap = document.createElement('div')
   wrap.className = `page-hf page-hf-${kind} page-gap-hf`
   wrap.contentEditable = 'false'
+  // Word sizes strip lines by their runs — the strip base is only the fallback
+  // for runs without w:sz. When every text run declares a size, the strip font
+  // (the em behind every strut/empty-line line-height) takes it, shrink-only
+  // (growth would over-reserve push-down, prod_008/091). SAS prod_043: an
+  // all-8pt header measured at the 10.5pt strut pushed the body top ~1px and
+  // cost every two-column page its 42nd grid row (+1 page).
+  const strutPt = hfDeclaredStrutPt(parasOf(value))
+  if (strutPt != null) wrap.style.fontSize = `min(${strutPt}pt, var(--hf-default-fs, 10.5pt))`
   if (images && images.length > 0) {
     const imgWrap = document.createElement('div')
     imgWrap.className = 'page-hf-images'
@@ -435,6 +599,9 @@ export function makeGapHfEl(opts: {
   for (const para of parasOf(value)) {
     const p = document.createElement('div')
     p.className = 'page-hf-para'
+    // floating-box content: displayed in the strip, but the push-down probe
+    // excludes it (Word draws it at the anchor, off the strip flow)
+    if (para.boxAnchored) p.classList.add('page-hf-box-anchored')
     if (para.cells) {
       // layout-table row: flex columns sized by the cell widths
       p.classList.add('page-hf-row')

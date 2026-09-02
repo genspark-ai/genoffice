@@ -13,25 +13,25 @@
    (tools/patch-carlito-vi.py); renamed per OFL Reserved Font Name clause */
 @font-face {
   font-family: 'Carlito GO';
-  src: url('./Carlito-Regular.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
   font-weight: normal;
   font-style: normal;
 }
 @font-face {
   font-family: 'Carlito GO';
-  src: url('./Carlito-Bold.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
   font-weight: bold;
   font-style: normal;
 }
 @font-face {
   font-family: 'Carlito GO';
-  src: url('./Carlito-Italic.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
   font-weight: normal;
   font-style: italic;
 }
 @font-face {
   font-family: 'Carlito GO';
-  src: url('./Carlito-BoldItalic.ttf');
+  src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
   font-weight: bold;
   font-style: italic;
 }
@@ -373,6 +373,24 @@
   font-style: italic;
 }
 
+/* Poppins is an M365 cloud font Word downloads and renders real (probe
+ * 2026-09-01: PDF embeds Poppins-Regular/Bold, line factor exactly 1.500).
+ * The Helvetica class runs ~12.6% narrower, so the real Latin subset is
+ * bundled (tools/build-poppins-font.py). A locally installed Poppins still
+ * precedes this face in the chain. */
+@font-face {
+  font-family: 'GenOffice Poppins';
+  src: url('./GenOfficePoppins-Regular-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'GenOffice Poppins';
+  src: url('./GenOfficePoppins-Bold-subset.woff2') format('woff2');
+  font-weight: bold;
+  font-style: normal;
+}
+
 /* Latin-range backstops closing dual-slot / eastAsia-only chains: Word
  * substitutes a missing w:ascii face with a Latin font and never draws Latin
  * glyphs from the eastAsia slot (probe 2026-08-23). The range covers letters,
@@ -473,14 +491,19 @@
  * and Greek as JIS fullwidth glyphs (Т measures 1em), exploding advances in
  * Russian/Mongolian text that falls through a CJK chain. These local() aliases
  * expose only the CJK ranges; other scripts continue down the chain to
- * proportional faces. Registered weight-normal (bold synthesized, like
- * 'GenOffice Songti SC') except Hiragino, which has real W6 faces. */
+ * proportional faces. Roman numerals (U+2160-217F) are included: East Asian
+ * faces draw them fullwidth like Word (prod_020 JP reference list). Registered weight-normal (bold synthesized, like
+ * 'GenOffice Songti SC') except Hiragino Sans, which has a real W6 face.
+ * Hiragino Mincho stays weight-normal on purpose: Word's JP serif faces
+ * (Yu Mincho, MS Mincho) ship no bold and Word synthesizes uniform thick
+ * strokes, while real Mincho W6 keeps hairline horizontals — a bold U+4E00
+ * reads as an arrow at body sizes (prod_070 table caption). */
 @font-face {
   font-family: 'GenOffice Hiragino Sans';
   src: local('Hiragino Sans'), local('HiraginoSans-W3'), local('MS Gothic');
   unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
+    U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: normal;
   font-style: normal;
 }
@@ -488,8 +511,8 @@
   font-family: 'GenOffice Hiragino Sans';
   src: local('HiraginoSans-W6'), local('Hiragino Sans W6');
   unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
+    U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: bold;
   font-style: normal;
 }
@@ -497,26 +520,17 @@
   font-family: 'GenOffice Hiragino Mincho';
   src: local('Hiragino Mincho ProN'), local('HiraMinProN-W3');
   unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
+    U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: normal;
-  font-style: normal;
-}
-@font-face {
-  font-family: 'GenOffice Hiragino Mincho';
-  src: local('HiraMinProN-W6'), local('Hiragino Mincho ProN W6');
-  unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
-  font-weight: bold;
   font-style: normal;
 }
 @font-face {
   font-family: 'GenOffice MS Mincho';
   src: local('MS Mincho'), local('MS PMincho');
   unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
+    U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: normal;
   font-style: normal;
 }
@@ -524,8 +538,8 @@
   font-family: 'GenOffice Batang';
   src: local('Batang'), local('BatangChe');
   unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
+    U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: normal;
   font-style: normal;
 }
@@ -533,8 +547,8 @@
   font-family: 'GenOffice Myungjo';
   src: local('AppleMyungjo');
   unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
+    U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: normal;
   font-style: normal;
 }
@@ -542,8 +556,8 @@
   font-family: 'GenOffice Heiti TC';
   src: local('Heiti TC'), local('Heiti TC Light'), local('STHeitiTC-Light');
   unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
+    U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: normal;
   font-style: normal;
 }
@@ -551,8 +565,8 @@
   font-family: 'GenOffice MingLiU';
   src: local('PMingLiU'), local('MingLiU');
   unicode-range:
-    U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF, U+FE30-FE4F,
-    U+FF00-FFEF, U+20000-2FA1F;
+    U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+AC00-D7A3, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: normal;
   font-style: normal;
 }
@@ -601,7 +615,7 @@
  * "Cu₂O" rendered as "Cu₂ O". Serve them from bundled latin faces instead. */
 @font-face {
   font-family: 'GenOffice Sans KR';
-  src: url('./Carlito-Regular.ttf') format('truetype');
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf') format('truetype');
   unicode-range: U+2070-209F, U+00B2-00B3, U+00B9;
   font-weight: normal;
   font-style: normal;
@@ -609,7 +623,7 @@
 @font-face {
   font-family: 'GenOffice Serif KR';
   /* Carlito, not Caladea/LiberationSerif: only Carlito covers the whole block */
-  src: url('./Carlito-Regular.ttf') format('truetype');
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf') format('truetype');
   unicode-range: U+2070-209F, U+00B2-00B3, U+00B9;
   font-weight: normal;
   font-style: normal;
@@ -637,7 +651,7 @@
 }
 @font-face {
   font-family: 'Noto Sans CJK SC';
-  src: url('./Carlito-Regular.ttf') format('truetype');
+  src: url('@genoffice/ui/fonts/Carlito-Regular.ttf') format('truetype');
   unicode-range: U+2070-2071, U+2074-2094;
   font-weight: normal;
   font-style: normal;

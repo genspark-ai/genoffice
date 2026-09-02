@@ -259,6 +259,38 @@ describe('native editable tables', () => {
     editor.destroy()
   })
 
+  it('fixed-layout tables hold the declared width instead of narrowing to the paper', async () => {
+    const { editor } = await openTable()
+    const table = editor.state.doc.firstChild!
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...table.attrs,
+        widthPx: 1200,
+        tblFixedLayout: true,
+      }),
+    )
+    const spec = editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+      string,
+      Record<string, string>,
+    ]
+    expect(spec[1].style).toContain('width:1200px')
+    expect(spec[1].style).toContain('max-width:none')
+    expect(spec[1].style).not.toContain('min(')
+
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...editor.state.doc.firstChild!.attrs,
+        tblAlign: 'center',
+      }),
+    )
+    const centered = editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+      string,
+      Record<string, string>,
+    ]
+    expect(centered[1].style).toContain('margin-left:calc((var(--doc-content-w,100%) - 1200px)/2)')
+    editor.destroy()
+  })
+
   it('resolves a pct table width against its own section column', async () => {
     // w:tblW type="pct" is a share of the section's TEXT COLUMN. The canvas pads by
     // the first section's margins, so a bare 100% made every table of a document
@@ -483,6 +515,42 @@ describe('native editable tables', () => {
     expect(clip.style.height).toBe('60.5px')
     expect(rows[1].querySelector('.cell-clip')).toBeNull()
     editor.destroy()
+  })
+
+  it('advances declared-height rows by the horizontal gridline width like Word', async () => {
+    const bordered =
+      '<w:tbl><w:tblPr><w:tblBorders>' +
+      '<w:top w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/>' +
+      '<w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/>' +
+      '</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+      '<w:tr><w:trPr><w:trHeight w:val="814"/></w:trPr>' +
+      '<w:tc><w:p><w:r><w:t>X</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: bordered }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const table = editor.view.dom.querySelector('table.doc-table') as HTMLElement
+    // sz=4 eighths = 0.5pt gridline = 0.67px at 96dpi
+    expect(table.style.getPropertyValue('--doc-row-eat')).toBe('0.67px')
+    const tr = table.querySelector('tr') as HTMLElement
+    expect(tr.getAttribute('style')).toContain('calc(54.3px + var(--doc-row-eat,0px))')
+    editor.destroy()
+
+    const borderless =
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+      '<w:tr><w:trPr><w:trHeight w:val="814"/></w:trPr>' +
+      '<w:tc><w:p><w:r><w:t>X</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const parsed2 = await parseDocx(await buildDocx({ bodyXml: borderless }))
+    const editor2 = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed2.blocks) as never,
+    })
+    const table2 = editor2.view.dom.querySelector('table.doc-table') as HTMLElement
+    expect(table2.style.getPropertyValue('--doc-row-eat')).toBe('')
+    editor2.destroy()
   })
 
   it('still wraps an exact row whose padding consumes the whole height (clip height 0)', async () => {

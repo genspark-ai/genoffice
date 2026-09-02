@@ -7,7 +7,12 @@
  * spread preserves fields the editor cannot express
  * (letterSpacing/field/outline, and hyperlinks whose rId didn't resolve).
  */
-import { encodeRunLink, type Paragraph, type ParagraphFormatPatch } from '@genoffice/pptx-engine'
+import {
+  encodeRunLink,
+  type Paragraph,
+  type ParagraphFormatPatch,
+  type TextRun,
+} from '@genoffice/pptx-engine'
 import type { EditParagraph } from '../shared/ipc'
 
 /** Normalize a color to 6-digit uppercase hex (strip #/alpha), for comparison. */
@@ -35,14 +40,57 @@ function fontKey(name?: string): string | undefined {
   return FONT_ALIAS[name] ?? name.toLowerCase()
 }
 
+/**
+ * The old paragraph an edited paragraph is rebuilt from: its traced source, or
+ * the paragraph at the same position. Untraced paragraphs past the end
+ * (programmatic callers — the AI tools and scripts — send plain text with no
+ * source indices) continue the last old paragraph, so a list that grows by two
+ * items keeps its bullet, level and spacing instead of falling back to defaults.
+ */
+function templateParagraph(
+  oldParas: Paragraph[],
+  p: EditParagraph,
+  pi: number,
+): Paragraph | undefined {
+  if (p.srcPara != null) return oldParas[p.srcPara]
+  return oldParas[pi] ?? oldParas[oldParas.length - 1]
+}
+
+/**
+ * The run carrying the most text — the paragraph's body, whose formatting a
+ * plain rewrite continues. Dynamic fields and hyperlinks never qualify: those
+ * properties are the identity of the old text (a slide number PowerPoint
+ * recomputes on open, a link target), not formatting, and plain replacement
+ * text must not become a live field or a link. A paragraph made only of such
+ * runs yields nothing and the caller falls back to positional matching.
+ */
+function dominantRun(runs: TextRun[]): TextRun | undefined {
+  let best: TextRun | undefined
+  for (const run of runs) {
+    if (run.field || run.hyperlink || run.hyperlinkRId || run.hyperlinkAction) continue
+    if (!best || run.text.length > best.text.length) best = run
+  }
+  return best
+}
+
 export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph[]): Paragraph[] {
   return edited.map((p, pi) => {
-    const oldPara = oldParas[p.srcPara ?? pi]
+    const oldPara = templateParagraph(oldParas, p, pi)
+    // An untraced single run replacing a mixed paragraph ("Label: text" with a
+    // bold label) takes the formatting of the run that carried the text, not
+    // the first run's — a rewrite of the whole paragraph is not a rewrite of
+    // its label. Traced runs and positional multi-run edits are unaffected.
+    const collapsed =
+      p.runs.length === 1 && p.runs[0]!.srcRun == null && (oldPara?.runs.length ?? 0) > 1
+        ? dominantRun(oldPara!.runs)
+        : undefined
     return {
       ...oldPara, // keep unedited paragraph attributes such as bullet/level/line spacing
       runs: p.runs.map((r, ri) => {
         const oldRun =
-          r.srcRun != null ? oldPara?.runs[r.srcRun] : (oldPara?.runs[ri] ?? oldPara?.runs[0])
+          r.srcRun != null
+            ? oldPara?.runs[r.srcRun]
+            : (collapsed ?? oldPara?.runs[ri] ?? oldPara?.runs[0])
         const merged = {
           ...oldRun,
           text: r.text,
@@ -195,7 +243,7 @@ export function collectParagraphFormatPatches(
 export function levelsChanged(oldParas: Paragraph[], edited: EditParagraph[]): boolean {
   return edited.some((p, pi) => {
     if (p.level == null) return false
-    const oldPara = oldParas[p.srcPara ?? pi]
+    const oldPara = templateParagraph(oldParas, p, pi)
     return p.level !== (oldPara?.level ?? 0)
   })
 }

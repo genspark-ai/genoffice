@@ -2585,6 +2585,8 @@ export function editChartElement(
     catAxisTitle?: string
     valAxisTitle?: string
     gapWidthPct?: number
+    /** Doughnut hole size percent (kept from the existing chart when unspecified) */
+    holeSizePct?: number
     /** Swap rows/columns: categories ↔ series (mutually exclusive with categories/series patches, triggered separately in the UI) */
     switchRowCol?: boolean
     /** Per-point fill overrides, seriesIdx → pointIdx → color; null clears back to the series color */
@@ -2693,6 +2695,10 @@ export function editChartElement(
   const colorScheme =
     patch.colorScheme ??
     (existingColors.every((c): c is string => !!c) ? existingColors : undefined)
+  // A custom doughnut hole used to reset to the build default on every rebuild.
+  // A plain pie parses as holePct 0 — forwarding that would clamp a pie→doughnut
+  // switch to a 1% hole, so only a real (nonzero) hole is preserved.
+  const holeSizePct = patch.holeSizePct ?? (existing.holePct || undefined)
 
   const opts: NewChartOptions = {
     kind,
@@ -2708,8 +2714,10 @@ export function editChartElement(
     ...(gapWidthPct != null ? { gapWidthPct } : {}),
     ...(barDir ? { barDir } : {}),
     ...(pointColors.some((row) => row?.some((c) => c != null)) ? { pointColors } : {}),
+    ...(colorScheme ? { colorScheme } : {}),
+    ...(holeSizePct != null ? { holeSizePct } : {}),
   }
-  const newXml = buildChartSpaceXmlWithColors(opts, colorScheme)
+  const newXml = buildChartSpaceXml(opts)
   archive.entries.set(chartPath, Buffer.from(newXml, 'utf8'))
   slide.structureDirty = true
   return true
@@ -2737,26 +2745,6 @@ export function markChartEditable(slide: Slide, elementId: string): boolean {
   chartEl.descr = 'aislides-chart'
   slide.structureDirty = true
   return true
-}
-
-/** Chart XML build with colors (spPr solidFill on each series). */
-function buildChartSpaceXmlWithColors(opts: NewChartOptions, colorScheme?: string[]): string {
-  const base = buildChartSpaceXml(opts)
-  if (!colorScheme || !colorScheme.length) return base
-  // The last series of a combo chart is the line: write the color as an <a:ln> stroke (lines use stroke color, bars/pies use fill color)
-  const lineSerIdx =
-    opts.kind === 'comboBarLine' && opts.series.length >= 2 ? opts.series.length - 1 : -1
-  let serIndex = 0
-  return base.replace(/<c:ser>/g, () => {
-    const color = colorScheme[serIndex % colorScheme.length]!.replace('#', '').toUpperCase()
-    const fill = `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>`
-    const spPr =
-      serIndex === lineSerIdx
-        ? `<c:spPr><a:ln w="28575">${fill}</a:ln></c:spPr>`
-        : `<c:spPr>${fill}</c:spPr>`
-    serIndex++
-    return `<c:ser>${spPr}`
-  })
 }
 
 /** Escape RegExp special characters. */
@@ -3015,7 +3003,16 @@ export interface ParagraphFormatPatch {
 /** PowerPoint default bullet hanging indent (0.25in = 228600 EMU) */
 const BULLET_HANG_EMU = 228600
 
-function applyParagraphFormat(paragraphs: Paragraph[], patch: ParagraphFormatPatch): PPrDirty {
+/**
+ * Apply a paragraph-format patch to model paragraphs in place. Exported for
+ * callers that rebuild a text body themselves (table cell edits) and need the
+ * same bullet/spacing/direction semantics as setElementParagraphFormat without
+ * its element-wide scope.
+ */
+export function applyParagraphFormat(
+  paragraphs: Paragraph[],
+  patch: ParagraphFormatPatch,
+): PPrDirty {
   const dirty: PPrDirty = {}
   for (const p of paragraphs) {
     // Missing pPrExplicit = newly created element (all-explicit semantics); change values only, don't build the flag table

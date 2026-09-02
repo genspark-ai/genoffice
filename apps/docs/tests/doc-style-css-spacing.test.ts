@@ -40,9 +40,38 @@ describe('docStyleCss spacing', () => {
     )
   })
 
+  it('suppresses style-level auto space-before on the document first block', () => {
+    const css = docStyleCss(parsedWith('web', { spaceBeforeAuto: true }))
+    expect(css).toContain(
+      '.doc-page > [data-style="web"]:nth-child(1 of :not(.page-float-host)) { margin-top:0 }',
+    )
+  })
+
+  it('suppresses default-level auto space-before on the document first block', () => {
+    const parsed = parsedWith('S', {})
+    ;(parsed as unknown as { docDefaults: object }).docDefaults = { spaceBeforeAuto: true }
+    const css = docStyleCss(parsed)
+    expect(css).toContain(
+      ':not([data-style]):nth-child(1 of :not(.page-float-host)) { margin-top:0 }',
+    )
+  })
+
   it('keeps the literal twips when autospacing is off', () => {
     const css = docStyleCss(parsedWith('S', { spaceBeforeTwips: 100, spaceAfterTwips: 100 }))
     expect(css).toContain('[data-style="S"] { margin-top:5.0pt;margin-bottom:5.0pt }')
+  })
+
+  it('marks fixed-line styles with --doc-line-fixed for the pagination fit', () => {
+    // style-level exact/atLeast lines have no doc-lh-fixed class; the marker
+    // stops measureBlocks dividing an inherited document auto multiple out of
+    // their full-height break-line box (Word probe 20260901: a style-level
+    // exact break line demands its full box like a direct one)
+    const exact = docStyleCss(parsedWith('BreakStyle', { lineRule: 'exact', lineRawTwips: 480 }))
+    expect(exact).toMatch(/\[data-style="BreakStyle"\] \{[^}]*--doc-line-fixed:1/)
+    const auto = docStyleCss(
+      parsedWith('Body', { lineRule: 'auto', lineRawTwips: 480, spaceAfterTwips: 100 }),
+    )
+    expect(auto).not.toContain('--doc-line-fixed')
   })
 
   it('lets a direct ctxSp off (.ctx-sp-off) escape the style-level suppression', () => {

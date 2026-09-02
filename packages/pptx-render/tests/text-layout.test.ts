@@ -1498,3 +1498,130 @@ describe('kerning threshold (rPr kern)', () => {
     expect(l2.lines[0]!.runs[0]!.kerningOff).toBeUndefined()
   })
 })
+
+describe('paragraph marR / tab stops / dash & wide-space wrapping', () => {
+  const m = new HeuristicMetrics()
+  const lay = (paragraphs: Paragraph[], boxWidthPx = 200) =>
+    layoutText({ body: body({ paragraphs }), boxWidthPx, boxHeightPx: 400, metrics: m, vp })
+
+  it('marR narrows the wrap width from the right', () => {
+    const p: Paragraph = { runs: [{ text: '一二三四五六七八', fontSize: 18 }] } // 8 × 24px
+    expect(lay([p]).lines).toHaveLength(1)
+    // marR = 100px → avail 100px → 4 chars per line
+    const wrapped = lay([{ ...p, marR: 952500 }]).lines
+    expect(wrapped).toHaveLength(2)
+    expect(wrapped[0]!.runs[0]!.x).toBe(0) // LTR: marR only narrows, the left edge stays
+  })
+
+  it('tab advances to the next custom stop, then to the default grid', () => {
+    const runs = [
+      { text: 'ab', fontSize: 18 },
+      { text: '\t', fontSize: 18 },
+      { text: 'cd', fontSize: 18 },
+    ]
+    const stopped = lay([{ runs, tabStops: [{ pos: 952500 }] }], 400).lines[0]!
+    expect(stopped.runs.find((r) => r.text === 'cd')!.x).toBeCloseTo(100, 0)
+    // No custom stop → the 1" (96px) default grid
+    const grid = lay([{ runs }], 400).lines[0]!
+    expect(grid.runs.find((r) => r.text === 'cd')!.x).toBeCloseTo(96, 0)
+  })
+
+  it('breaks after a dash instead of mid-word', () => {
+    const p: Paragraph = { runs: [{ text: 'Cloud–Edge', fontSize: 18 }] }
+    const lines = lay([p], 100).lines
+    expect(lines).toHaveLength(2)
+    expect(lines[0]!.runs.map((r) => r.text).join('')).toBe('Cloud–')
+    expect(lines[1]!.runs.map((r) => r.text).join('')).toBe('Edge')
+  })
+
+  it('ideographic spaces at a wrap point are swallowed, recorded verbatim, and never indent the next line', () => {
+    const p: Paragraph = { runs: [{ text: '一二三四　　五六七八', fontSize: 18 }] }
+    const lines = lay([p], 100).lines
+    expect(lines).toHaveLength(2)
+    expect(lines[0]!.trailingSpace).toBe(true)
+    expect(lines[0]!.trailingText).toBe('　　')
+    expect(lines[1]!.runs[0]!.x).toBe(0)
+    expect(lines[1]!.runs.map((r) => r.text).join('')).toBe('五六七八')
+  })
+})
+
+it('first-line tabs land on inset-absolute stops despite a first-line indent', () => {
+  const m = new HeuristicMetrics()
+  const lines = layoutText({
+    body: body({
+      paragraphs: [
+        {
+          runs: [
+            { text: 'ab', fontSize: 18 },
+            { text: '\t', fontSize: 18 },
+            { text: 'cd', fontSize: 18 },
+          ],
+          indent: 190500, // 20px first-line indent
+          tabStops: [{ pos: 952500 }], // 100px from the inset edge
+        },
+      ],
+    }),
+    boxWidthPx: 400,
+    boxHeightPx: 100,
+    metrics: m,
+    vp,
+  }).lines
+  // drawn x = line-local x + first-line shift; the stop is absolute, so 'cd' sits at 100px
+  expect(lines[0]!.runs.find((r) => r.text === 'cd')!.x).toBeCloseTo(100, 0)
+})
+
+it('a positive first-line indent consumes first-line wrap budget (hanging widens it)', () => {
+  const m = new HeuristicMetrics()
+  const lay = (indent?: number) =>
+    layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [{ text: '一二三四五六七八', fontSize: 18 }],
+            ...(indent != null ? { indent } : {}),
+          },
+        ],
+      }),
+      boxWidthPx: 100,
+      boxHeightPx: 400,
+      metrics: m,
+      vp,
+    }).lines
+  // 24px/char, 100px box: no indent → 4 chars on line 1
+  expect(lay()[0]!.runs.length).toBe(4)
+  // 20px first-line indent → 80px budget → 3 chars, drawn starting at 20px
+  const indented = lay(190500)
+  expect(indented[0]!.runs.length).toBe(3)
+  expect(indented[0]!.runs[0]!.x).toBeCloseTo(20, 0)
+  expect(indented[1]!.runs[0]!.x).toBe(0)
+})
+
+it('anchorCtr centers the text block bounding box horizontally (alignment stays within)', () => {
+  const m = new HeuristicMetrics()
+  const lay = (anchorCtr?: boolean) =>
+    layoutText({
+      body: body({
+        paragraphs: [
+          { runs: [{ text: '一二三四', fontSize: 18 }] }, // 96px
+          { runs: [{ text: '一二', fontSize: 18 }] }, // 48px
+        ],
+        ...(anchorCtr ? { anchorCtr } : {}),
+      }),
+      boxWidthPx: 200,
+      boxHeightPx: 200,
+      metrics: m,
+      vp,
+    }).lines
+  expect(lay()[0]!.runs[0]!.x).toBe(0)
+  const centered = lay(true)
+  // block width 96 → dx = (200-96)/2 = 52; the narrower line keeps its left alignment within the block
+  expect(centered[0]!.runs[0]!.x).toBeCloseTo(52, 0)
+  expect(centered[1]!.runs[0]!.x).toBeCloseTo(52, 0)
+})
+
+it('enclosed alphanumerics measure full-width in the missing-glyph fallback', () => {
+  const m = new HeuristicMetrics()
+  const style = { fontFamily: 'Century Gothic', fontSizePx: 100, bold: false, italic: false }
+  // ⑤ falls back to a CJK font at draw time; measuring it narrow overlaps the next run
+  expect(m.measure('⑤', style)).toBeCloseTo(100, 0)
+})

@@ -1147,6 +1147,8 @@ export function Home() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
+  // unavailable recent entry (missing flag) the user clicked — offer list removal
+  const [confirmMissing, setConfirmMissing] = useState<RecentEntry | null>(null)
   // name in the greeting; omitted when logged out
   const [accountName, setAccountName] = useState('')
   // Genspark Projects is web-account data, so its nav entry only shows when logged in
@@ -1283,16 +1285,17 @@ export function Home() {
 
   // Escape closes the row menu and the delete-confirm dialog
   useEffect(() => {
-    if (rowMenu === null && confirmDelete === null) return
+    if (rowMenu === null && confirmDelete === null && confirmMissing === null) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setRowMenu(null)
         setConfirmDelete(null)
+        setConfirmMissing(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [rowMenu, confirmDelete])
+  }, [rowMenu, confirmDelete, confirmMissing])
 
   // ── Project files state ────────────────────────────────
 
@@ -1627,15 +1630,18 @@ export function Home() {
     return (
       <li className="recent-row" key={entry.path}>
         <div
-          className="recent-item"
+          className={`recent-item${entry.missing ? ' missing' : ''}`}
           role="button"
           tabIndex={0}
           onClick={() => {
-            if (!isRenaming) void window.aiOffice.openPath(entry.path)
+            if (isRenaming) return
+            if (entry.missing) setConfirmMissing(entry)
+            else void window.aiOffice.openPath(entry.path)
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && event.target === event.currentTarget) {
-              void window.aiOffice.openPath(entry.path)
+              if (entry.missing) setConfirmMissing(entry)
+              else void window.aiOffice.openPath(entry.path)
             }
           }}
         >
@@ -1671,8 +1677,10 @@ export function Home() {
             <span className="recent-name">{entry.name}</span>
           )}
           <span className="recent-path">{parentDir(entry.path)}</span>
-          <span className="recent-time">{formatModified(entry.mtimeMs, i18n)}</span>
-          <span className="recent-size">{formatSize(entry.sizeBytes)}</span>
+          <span className="recent-time">
+            {entry.missing ? '—' : formatModified(entry.mtimeMs, i18n)}
+          </span>
+          <span className="recent-size">{entry.missing ? '—' : formatSize(entry.sizeBytes)}</span>
           <button
             className={`star-btn${entry.starred ? ' starred' : ''}`}
             aria-label={entry.starred ? t('unstar') : t('star')}
@@ -2245,6 +2253,40 @@ export function Home() {
               </button>
               <button className="btn btn-danger" onClick={confirmDeleteNow}>
                 {t('delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmMissing && (
+        <div className="modal-overlay" onClick={() => setConfirmMissing(null)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('missingFileTitle')}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3>{t('missingFileTitle')}</h3>
+            <p>{t('missingFileBody', { name: confirmMissing.name })}</p>
+            <div className="modal-buttons">
+              <button
+                className="btn btn-secondary"
+                autoFocus
+                onClick={() => setConfirmMissing(null)}
+              >
+                {t('cancel')}
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => {
+                  // main drops the star of an unavailable entry with the row
+                  removeRecent([confirmMissing.path])
+                  setConfirmMissing(null)
+                }}
+              >
+                {t('removeFromList')}
               </button>
             </div>
           </div>

@@ -78,6 +78,16 @@ describe('applyChartStateEdit', () => {
     expect(replaced.series[0]?.categoryGroups).toBeUndefined()
   })
 
+  it('drops stale blank markers when an edit replaces the values', () => {
+    const chart = base()
+    const first = chart.series[0]
+    if (first) first.blanks = [1]
+    const kept = applyChartStateEdit(chart, { series: [{ index: 0, name: 'R' }] })
+    expect(kept.series[0]?.blanks).toEqual([1])
+    const replaced = applyChartStateEdit(chart, { series: [{ index: 0, values: [5, 6] }] })
+    expect(replaced.series[0]?.blanks).toBeUndefined()
+  })
+
   it('merges slice explosions per point over the series default', () => {
     const pie = applyChartStateEdit(base(), { chartType: 'pie', explosionPct: 10 })
     expect(pie.chartTypes).toEqual(['pieChart'])
@@ -217,6 +227,60 @@ describe('chartDataFromValues orientation and header detection', () => {
     ])
     expect(parsed?.hasHeaderRow).toBe(false)
     expect(parsed?.series).toHaveLength(2)
+  })
+
+  it('charts a mixed first column when every other column is text', async () => {
+    // Numbered checklists: the only numeric column doubles as the row-label
+    // column, so claiming it for the category axis left zero series.
+    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const parsed = chartDataFromValues([
+      ['Monitoring checklist', null],
+      [null, null],
+      ['No.', 'Task'],
+      [1, 'cart'],
+      [2, 'cart'],
+      [3, 'carousel'],
+    ])
+    expect(parsed?.hasCategoryColumn).toBe(false)
+    expect(parsed?.series).toHaveLength(1)
+    expect(parsed?.series[0]?.column).toBe(0)
+    expect(parsed?.series[0]?.values).toEqual([0, 0, 0, 1, 2, 3])
+  })
+
+  it('charts a sparse numeric first column between blank filler rows', async () => {
+    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const parsed = chartDataFromValues([
+      [null, null],
+      ['id', 'employee'],
+      [1, 'Alice'],
+      [2, 'Bob'],
+      ['total', null],
+      [null, null],
+    ])
+    expect(parsed?.series).toHaveLength(1)
+    expect(parsed?.series[0]?.column).toBe(0)
+  })
+
+  it('keeps a mixed later column as a series despite text notes', async () => {
+    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const parsed = chartDataFromValues([
+      ['label', 'value'],
+      ['a', 1],
+      ['b', 'n/a'],
+      ['c', 3],
+    ])
+    expect(parsed?.hasCategoryColumn).toBe(true)
+    expect(parsed?.series[0]?.values).toEqual([1, 0, 3])
+  })
+
+  it('still rejects a range with no numeric cells anywhere', async () => {
+    const { chartDataFromValues } = await import('../src/domain/chart-visual')
+    const parsed = chartDataFromValues([
+      ['question', 'answer'],
+      ['agree', 'agree'],
+      ['disagree', 'agree'],
+    ])
+    expect(parsed).toBeNull()
   })
 })
 

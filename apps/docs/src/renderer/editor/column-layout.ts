@@ -56,6 +56,12 @@ export interface ColumnBlockSpec {
   /** owning section's side margins (--doc-margin-left/right overrides) */
   marginLeftPx?: number
   marginRightPx?: number
+  /** owning section's typed docGrid pitch (pt) in mixed-grid docs; 0 = untyped
+   *  section (opts out like snapToGrid=0 via doc-grid-nosnap) */
+  gridPitchPt?: number
+  /** owning section's character-grid letter-spacing delta (pt) in docs whose
+   *  sections disagree on docGrid charSpace (doc-charspace-block) */
+  charSpacePt?: number
   /** translate; dy < 0 pulls content up over vacated column space */
   dx: number
   dy: number
@@ -68,20 +74,48 @@ const PATCH_PROPS = [
   '--doc-content-w',
   '--doc-margin-left',
   '--doc-margin-right',
+  '--doc-grid-pitch',
+  '--doc-char-space',
 ]
+
+const PATCH_CLASSES = ['doc-col-block', 'doc-grid-block', 'doc-grid-nosnap', 'doc-charspace-block']
+
+/** pitch/charSpace-only specs get an inert marker class: .doc-col-block's
+ *  width/transform rules must not touch blocks that only carry their section's
+ *  grid pitch or character spacing. Pitch-0 opt-outs use their own class (same
+ *  CSS as doc-nosnap): reusing doc-nosnap would trip sectionGridPitchSpecs'
+ *  own-opt-out skip on the next pass and let patch cleanup strip a node's own
+ *  snapToGrid=0 class. */
+function specClass(spec: ColumnBlockSpec): string {
+  const varsOnly =
+    (spec.gridPitchPt !== undefined || spec.charSpacePt !== undefined) &&
+    spec.widthPx === undefined &&
+    spec.contentWPx === undefined &&
+    spec.dx === 0 &&
+    spec.dy === 0
+  let cls = varsOnly ? 'doc-grid-block' : 'doc-col-block'
+  if (spec.gridPitchPt === 0) cls += ' doc-grid-nosnap'
+  if (spec.charSpacePt !== undefined) cls += ' doc-charspace-block'
+  return cls
+}
 
 /** Rebuild the column-layout decorations (an empty list clears them). */
 export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): void {
   const decos: Decoration[] = []
-  const styleOf = new Map<HTMLElement, string>()
+  const styleOf = new Map<HTMLElement, { style: string; cls: string }>()
   for (const spec of specs) {
     const style =
       (spec.widthPx !== undefined ? `--col-w:${round2(spec.widthPx)}px;` : '') +
       (spec.contentWPx !== undefined
         ? `--doc-content-w:${round2(spec.contentWPx)}px;--doc-margin-left:${round2(spec.marginLeftPx ?? 0)}px;--doc-margin-right:${round2(spec.marginRightPx ?? 0)}px;`
         : '') +
+      (spec.gridPitchPt !== undefined
+        ? `--doc-grid-pitch:${spec.gridPitchPt > 0 ? `${round2(spec.gridPitchPt)}pt` : '0.0001px'};`
+        : '') +
+      (spec.charSpacePt !== undefined ? `--doc-char-space:${round4(spec.charSpacePt)}pt;` : '') +
       `--col-dx:${round2(spec.dx)}px;--col-dy:${round2(spec.dy)}px`
-    styleOf.set(spec.el, style)
+    const cls = specClass(spec)
+    styleOf.set(spec.el, { style, cls })
     let from: number
     let to: number
     try {
@@ -91,9 +125,7 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
     } catch {
       continue
     }
-    decos.push(
-      Decoration.node(from, to, { class: 'doc-col-block', style }, { key: `col-${style}` }),
-    )
+    decos.push(Decoration.node(from, to, { class: cls, style }, { key: `col-${cls}-${style}` }))
   }
   const next = DecorationSet.create(view.state.doc, decos)
   const prev = key.getState(view.state)
@@ -110,13 +142,15 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
     ) as HTMLElement[]) {
       if (styleOf.has(el)) continue
       el.removeAttribute('data-col-patch')
-      el.classList.remove('doc-col-block')
+      el.classList.remove(...PATCH_CLASSES)
       for (const p of PATCH_PROPS) el.style.removeProperty(p)
     }
-    for (const [el, style] of styleOf) {
-      if (el.classList.contains('doc-col-block') && !el.hasAttribute('data-col-patch')) continue
+    for (const [el, { style, cls }] of styleOf) {
+      const classes = cls.split(' ')
+      if (classes.every((c) => el.classList.contains(c)) && !el.hasAttribute('data-col-patch'))
+        continue
       el.setAttribute('data-col-patch', '1')
-      el.classList.add('doc-col-block')
+      el.classList.add(...classes)
       const parts = style.split(';')
       for (const p of PATCH_PROPS) el.style.removeProperty(p)
       for (const part of parts) {
@@ -130,6 +164,7 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100
+const round4 = (n: number) => Math.round(n * 10000) / 10000
 
 function sameCols(a: DecorationSet, b: DecorationSet): boolean {
   const fa = a.find()

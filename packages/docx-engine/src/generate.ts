@@ -1,4 +1,5 @@
 import type {
+  CharIndents,
   GeneratedBlock,
   ImageWrap,
   ParaFormat,
@@ -1153,7 +1154,8 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   // into the margin) are valid and must survive a paragraph rebuild; the
   // old > 0 guard silently dropped them, shifting rebuilt paragraphs
   // rightward on save (alpha ledger r116).
-  if (format.indentLeft) indAttrs.push(`w:left="${Math.round(format.indentLeft)}"`)
+  // explicit w:left="0" must be written back: it cancels a numbering-level indent
+  if (format.indentLeft !== undefined) indAttrs.push(`w:left="${Math.round(format.indentLeft)}"`)
   if (format.indentRight) indAttrs.push(`w:right="${Math.round(format.indentRight)}"`)
   if (format.indentFirstLine) {
     if (format.indentFirstLine > 0)
@@ -1289,14 +1291,14 @@ function rawIndUnchanged(raw: string | undefined, f: ParaFormat): boolean {
   const right = parseInt(rawAttr(raw, 'w:right') ?? rawAttr(raw, 'w:end') ?? '', 10)
   const firstLine = parseInt(rawAttr(raw, 'w:firstLine') ?? '', 10)
   const hanging = parseInt(rawAttr(raw, 'w:hanging') ?? '', 10)
-  const rawLeft = Number.isFinite(left) && left !== 0 ? left : undefined
+  // left mirrors the parse side: explicit 0 stays distinct from absent
+  const rawLeft = Number.isFinite(left) ? left : undefined
   const rawRight = Number.isFinite(right) && right !== 0 ? right : undefined
   const rawFirst = hanging > 0 ? -hanging : firstLine > 0 ? firstLine : undefined
   const norm = (v: number | undefined) => (v ? Math.round(v) : undefined)
+  const normLeft = f.indentLeft !== undefined ? Math.round(f.indentLeft) : undefined
   return (
-    rawLeft === norm(f.indentLeft) &&
-    rawRight === norm(f.indentRight) &&
-    rawFirst === norm(f.indentFirstLine)
+    rawLeft === normLeft && rawRight === norm(f.indentRight) && rawFirst === norm(f.indentFirstLine)
   )
 }
 
@@ -1376,7 +1378,47 @@ function rawFramePrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
 }
 
 /** True when re-parsing the raw child yields the current model value, i.e. the group was not edited */
-function pprGroupUnchanged(tag: string, raw: string | undefined, f: ParaFormat): boolean {
+/**
+ * Same indent in two format models (twips, rounded like the emitted attributes).
+ * Used when the caller knows the paragraph's parsed format: a raw w:ind whose
+ * character-unit attributes (w:firstLineChars…) resolved to the model's twips
+ * has no twips twin to compare against, so raw-vs-model would rebuild it and
+ * lose the character unit on an unrelated format edit.
+ */
+function sameIndent(a: ParaFormat, b: ParaFormat): boolean {
+  const norm = (v: number | undefined) => (v !== undefined ? Math.round(v) : undefined)
+  const nz = (v: number | undefined) => (v ? Math.round(v) : undefined)
+  return (
+    norm(a.indentLeft) === norm(b.indentLeft) &&
+    nz(a.indentRight) === nz(b.indentRight) &&
+    nz(a.indentFirstLine) === nz(b.indentFirstLine)
+  )
+}
+
+/**
+ * Cancel attributes for the character-unit indents a paragraph was laid out
+ * with. A rebuilt w:ind carries twips only, and Word keeps preferring a
+ * `*Chars` from the style chain over a twips twin (probed) — so an indent edit
+ * on a paragraph in a CJK "first line 2 characters" style must write the
+ * explicit `w:firstLineChars="0"` Word itself writes for pt indents, or the
+ * style's character indent supersedes the edit on reload.
+ */
+function charIndentCancelAttrs(chars: CharIndents | undefined): string[] {
+  if (!chars) return []
+  const out: string[] = []
+  if (chars.left) out.push('w:leftChars="0"')
+  if (chars.right) out.push('w:rightChars="0"')
+  if (chars.hanging) out.push('w:hangingChars="0"')
+  else if (chars.firstLine) out.push('w:firstLineChars="0"')
+  return out
+}
+
+function pprGroupUnchanged(
+  tag: string,
+  raw: string | undefined,
+  f: ParaFormat,
+  original?: ParaFormat,
+): boolean {
   switch (tag) {
     case 'w:pageBreakBefore':
       return rawBool(raw) === !!f.pageBreakBefore
@@ -1393,6 +1435,12 @@ function pprGroupUnchanged(tag: string, raw: string | undefined, f: ParaFormat):
     case 'w:spacing':
       return rawSpacingUnchanged(raw, f)
     case 'w:ind':
+      if (original !== undefined) {
+        if (sameIndent(original, f)) return true
+        // laid out with character-unit indents (possibly from the style alone, with no
+        // raw w:ind at all): the edit must rebuild so the cancel attributes get written
+        if (original.charIndents) return false
+      }
       return rawIndUnchanged(raw, f)
     case 'w:pBdr':
       return rawPBdrUnchanged(raw, f)
@@ -1419,16 +1467,38 @@ function pprGroupUnchanged(tag: string, raw: string | undefined, f: ParaFormat):
  * the current model value the group was not edited and keeps its original bytes,
  * so unmodeled attributes (w:firstLineChars, w:afterLines, autospacing, border
  * colors, shading patterns…) survive. Only genuinely changed groups are rebuilt
- * from the model (at their schema position) — a rebuilt w:ind intentionally drops
- * firstLineChars/leftChars so the user's new twips indent wins over the CJK
+ * from the model (at their schema position) — a rebuilt w:ind is written in twips
+ * and, when the paragraph was laid out with character-unit indents, carries the
+ * `*Chars="0"` that cancels them, so the user's new indent wins over the CJK
  * char-unit variant Word would otherwise prefer. Everything unmanaged — keepNext,
  * paragraph-mark rPr, pPrChange revision records... — keeps its original bytes.
  * When format.tabStops is set, w:tabs is also managed (replaced or removed).
  * When format.dropCap is set, w:framePr is also managed.
+ * `original` is the paragraph's parsed format when the caller has it: an indent
+ * equal to it keeps its raw bytes even when those bytes carry no twips twin
+ * (character-unit indents resolved at parse time), and its `charIndents` say
+ * which cancel attributes an indent edit has to write.
  */
-export function mergePPrFormat(rawPPr: string, format: ParaFormat | undefined): string {
+export function mergePPrFormat(
+  rawPPr: string,
+  format: ParaFormat | undefined,
+  original?: ParaFormat,
+): string {
   const open = /^<w:pPr(?: [^>]*)?>/.exec(rawPPr)?.[0]
   const fresh = formatPPrChildren(format)
+  // an indent edit on a paragraph laid out with character-unit indents: the
+  // twips-only rebuild also cancels them (`w:firstLineChars="0"`…), or Word — and
+  // this parser — would keep resolving the character indent over the new value
+  if (original?.charIndents && !sameIndent(original, format ?? {})) {
+    const cancel = charIndentCancelAttrs(original.charIndents)
+    const at = fresh.findIndex((c) => c.name === 'w:ind')
+    const xml =
+      at === -1
+        ? `<w:ind ${cancel.join(' ')}/>`
+        : fresh[at].xml.replace(/\/>$/, ` ${cancel.join(' ')}/>`)
+    if (at === -1) fresh.push({ name: 'w:ind', xml })
+    else fresh[at] = { name: 'w:ind', xml }
+  }
   if (!open) {
     // '<w:pPr/>' or unrecognized: rebuild from the format model alone, in schema order
     // (formatPPrChildren emits by concern, and CT_PPr order is not optional)
@@ -1447,7 +1517,7 @@ export function mergePPrFormat(rawPPr: string, format: ParaFormat | undefined): 
   const rawChildren = splitXmlChildren(inner)
   const rawOf = (tag: string) => rawChildren.find((c) => c.name === tag)?.xml
   const rebuilt = new Set(
-    [...managedTags].filter((tag) => !pprGroupUnchanged(tag, rawOf(tag), format ?? {})),
+    [...managedTags].filter((tag) => !pprGroupUnchanged(tag, rawOf(tag), format ?? {}, original)),
   )
   const rank = (n: string) => PPR_CHILD_ORDER.indexOf(n)
   // the interleave below walks freshOut once with a monotonic index, so it has to arrive in

@@ -483,12 +483,14 @@ describe('applyChartEdit series data', () => {
         '<c:ptCount val="2"/><c:pt idx="0"><c:v>44562</c:v></c:pt>',
     )
     expect(xml).not.toContain('<c:strRef><c:f>Data!$A$2:$A$3')
-    // Ref-less numeric categories become a numLit (c:f is mandatory in numRef).
-    const literal = applyChartEdit(dated, {
+    // A ref-less entry keeps the existing c:f — refreshing a cache must not
+    // demote the live reference to a literal.
+    const refless = applyChartEdit(dated, {
       chartPath: 'xl/charts/chart1.xml',
       series: [{ index: 0, categories: ['44562', '44593'] }],
     })
-    expect(literal).toContain('<c:cat><c:numLit><c:formatCode>mmm\\-yy</c:formatCode>')
+    expect(refless).toContain('<c:cat><c:numRef><c:f>Data!$A$2:$A$3</c:f>')
+    expect(refless).not.toContain('<c:numLit>')
     // Text categories still rewrite to the string shape.
     const texty = applyChartEdit(dated, {
       chartPath: 'xl/charts/chart1.xml',
@@ -496,6 +498,17 @@ describe('applyChartEdit series data', () => {
     })
     expect(texty).toContain('<c:cat><c:strRef><c:f>Data!$A$2:$A$3</c:f><c:strCache>')
     expect(texty).not.toContain('<c:cat><c:numRef>')
+  })
+
+  it('keeps existing string cat and val refs when the entry carries none', () => {
+    const xml = applyChartEdit(AXIS_CHART, {
+      chartPath: 'xl/charts/chart1.xml',
+      series: [{ index: 0, categories: ['x', 'y'], values: [3, 4] }],
+    })
+    expect(xml).toContain('<c:cat><c:strRef><c:f>Data!$A$2:$A$3</c:f><c:strCache>')
+    expect(xml).toContain('<c:val><c:numRef><c:f>Data!$B$2:$B$3</c:f>')
+    expect(xml).not.toContain('<c:strLit>')
+    expect(xml).not.toContain('<c:numLit>')
   })
 
   it('keeps the original number format when rewriting values', () => {
@@ -888,8 +901,9 @@ describe('applyChartEdit scatter series data', () => {
       series: [{ index: 0, values: [10, 20] }],
     })
     expect(xml).toContain('<c:xVal><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt>')
+    // The refresh keeps the existing yVal reference instead of demoting it.
     expect(xml).toContain(
-      '<c:yVal><c:numLit><c:formatCode>0.00</c:formatCode>' +
+      '<c:yVal><c:numRef><c:f>Data!$B$2:$B$3</c:f><c:numCache><c:formatCode>0.00</c:formatCode>' +
         '<c:ptCount val="2"/><c:pt idx="0"><c:v>10</c:v></c:pt>',
     )
   })

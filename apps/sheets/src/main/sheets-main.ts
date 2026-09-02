@@ -2254,6 +2254,89 @@ export function registerSheetsIpc(): void {
     return result
   })
 
+  // Merge sources: same open pipeline as selectWorkbook, but multi-select,
+  // never consuming the shell's queued open path and never retitling the tab
+  // (workbookOpenedHook) — these sessions exist only to be read from and
+  // closed by the renderer's merge routine.
+  /** Open the given spreadsheet paths as merge-source sessions; cleans up
+   *  everything already opened when a later file fails or the tab dies. */
+  const openMergeSources = async (
+    event: Electron.IpcMainInvokeEvent,
+    paths: readonly string[],
+  ): Promise<unknown[] | null> => {
+    const entry = sessionFor(event)
+    const opened: { sessionId: string }[] = []
+    const closeOpened = async () => {
+      for (const { sessionId } of opened) {
+        const session = entry.sessions.get(sessionId)
+        entry.sessions.delete(sessionId)
+        if (session !== undefined) {
+          await cleanupSessionResources({
+            tempRoot: app.getPath('temp'),
+            snapshotPath: session.snapshotPath,
+            importTempDir: session.importTempDir,
+            closeSidecar: () => entry.client.close(sessionId),
+          })
+        }
+      }
+    }
+    try {
+      for (const path of paths) {
+        const prepared = await prepareWorkbookForOpen(
+          entry.client,
+          path,
+          event.sender,
+          dialogParent(event),
+          { skipRecoveryPrompt: true },
+        )
+        if (event.sender.isDestroyed()) {
+          if (prepared.importTempDir !== undefined) {
+            await cleanupImportTempDirectory(app.getPath('temp'), prepared.importTempDir)
+          }
+          break
+        }
+        const result = await openWorkbookSession(entry.client, prepared.openPath, entry.sessions, {
+          suggestSaveAs: prepared.suggestSaveAs,
+          csvImport: prepared.csvImport,
+          csvSourcePath: prepared.csvSourcePath,
+          importTempDir: prepared.importTempDir,
+          restoreTarget: prepared.restoreTarget,
+        })
+        opened.push(result as { sessionId: string })
+        if (event.sender.isDestroyed()) break
+      }
+    } catch (error) {
+      // a later file failing must not strand the sessions already opened
+      await closeOpened()
+      throw error
+    }
+    if (event.sender.isDestroyed()) {
+      await closeOpened()
+      return null
+    }
+    return opened.length > 0 ? opened : null
+  }
+
+  ipcMain.handle(IPC_CHANNELS.selectWorkbooksForMerge, async (event) => {
+    const selection = await openFileDialog(event, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: tm('filterSpreadsheets'), extensions: ['xlsx', 'xlsm', 'xls', 'csv'] }],
+    })
+    if (selection.canceled || selection.filePaths.length === 0) return null
+    return openMergeSources(event, selection.filePaths)
+  })
+
+  const MERGE_SOURCE_EXTS = new Set(['xlsx', 'xlsm', 'xls', 'csv'])
+  ipcMain.handle(IPC_CHANNELS.openWorkbooksForMerge, async (event, input: unknown) => {
+    const paths = z.array(z.string().min(1)).min(1).max(20).parse(input)
+    for (const path of paths) {
+      const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
+      if (!MERGE_SOURCE_EXTS.has(ext)) throw new Error(`Unsupported merge source: ${ext}`)
+      if (!existsSync(path)) throw new Error('Merge source not found.')
+    }
+    return openMergeSources(event, paths)
+  })
+
   ipcMain.handle(IPC_CHANNELS.readWorkbookRange, async (event, input: unknown) => {
     const entry = sessionFor(event)
     const request = workbookRangeRequestSchema.parse(input)
@@ -3633,6 +3716,7 @@ async function prepareWorkbookForOpen(
   path: string,
   contents?: WebContents | undefined,
   parent?: BrowserWindow | undefined,
+  options?: { skipRecoveryPrompt?: boolean },
 ): Promise<{
   openPath: string
   suggestSaveAs?: string
@@ -3647,7 +3731,9 @@ async function prepareWorkbookForOpen(
     // opens it with restoreTarget pointing back at the original, so a plain
     // Save writes straight back over the file the user opened — the restore
     // prompt (which spells out the overwrite) was the confirmation.
-    const recovery = pendingRecoveryFor(path)
+    // Merge sources are read-only picks: never surface (or worse, discard)
+    // another workbook's crash recovery from here.
+    const recovery = options?.skipRecoveryPrompt ? undefined : pendingRecoveryFor(path)
     if (recovery) {
       const choice =
         contents && !contents.isDestroyed()

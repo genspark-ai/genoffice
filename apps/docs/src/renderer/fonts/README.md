@@ -16,7 +16,9 @@ freely redistributable with the app. Licenses: Carlito and Liberation are
 "Carlito GO" (`Carlito-*.ttf`) is a derivative of Carlito 1.103: a build-time patch
 (`tools/patch-carlito-vi.py`) rebuilds Vietnamese precomposed glyphs whose above mark
 (circumflex/breve) was dropped (Ậ/Ệ/Ộ in Regular/Bold); advance widths are unchanged.
-Renamed per OFL 1.1 §2 — "Carlito" is a Reserved Font Name.
+Renamed per OFL 1.1 §2 — "Carlito" is a Reserved Font Name. The files live in
+`packages/ui/src/fonts/` (shared with sheets and slides, which alias Calibri/Aptos
+to the same faces) and are referenced here as `@genoffice/ui/fonts/Carlito-*.ttf`.
 
 Purpose: when a Word font declared by the document is missing on this machine, the
 browser's silent fallback (Helvetica etc.) changes glyph widths, so line-break points
@@ -100,6 +102,24 @@ Basic Latin/punctuation/fullwidth forms), advances **unmodified**
 Reserved Font Names include "Nanum" and "NanumGothic"; subsetting is a
 modification). The exact NHN copyright/Reserved Font Name notice and the full
 OFL 1.1 text are in `LICENSE-OFL.txt`.
+
+## Poppins (M365 cloud font)
+
+| Font                             | Role                                 |
+| -------------------------------- | ------------------------------------ |
+| GenOffice Poppins (subset woff2) | real face for Poppins-declaring docs |
+
+Source: Poppins Regular/Bold from [google/fonts](https://github.com/google/fonts/tree/main/ofl/poppins)
+(SIL OFL 1.1). Poppins is an M365 cloud font: Word downloads the real face and
+lays out with its metrics (line box hhea = typo = 1.500em; Word probe
+2026-09-01 measured factor exactly 1.500 at 10/12/16/28pt, regular and bold,
+with the PDF embedding Poppins-Regular/Bold), while the Helvetica-class
+fallback runs ~12.6% narrower per line and 1.172-spaced — a 13-page document
+paginated as 11. Subset to Latin + Latin Extended + punctuation/currency,
+advances and vertical metrics **unmodified** (`tools/build-poppins-font.py`),
+checked in as `GenOfficePoppins-{Regular,Bold}-subset.woff2`. Renamed (no
+Reserved Font Name upstream) so a locally installed Poppins wins by chain
+order. Italic synthesizes oblique from these faces.
 
 ## Tamil fallback
 

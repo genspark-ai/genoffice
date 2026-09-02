@@ -89,6 +89,8 @@ export interface PlaceholderGeom {
   textStyle?: TextStyleLevels
   /** Vertical anchor from this placeholder's <a:bodyPr anchor=""> */
   anchor?: 'top' | 'middle' | 'bottom'
+  /** <a:bodyPr anchorCtr> (explicit 0 recorded too: it overrides an inherited 1) */
+  anchorCtr?: boolean
   /** Explicit bodyPr inset attrs (EMU); slide bodyPr attrs missing these inherit per-attribute */
   insets?: { l?: number; t?: number; r?: number; b?: number }
   /** Raw spPr node when it carries an explicit fill (parse.ts resolves it with the part's rels) */
@@ -163,6 +165,9 @@ export function parsePlaceholderMap(layoutOrMasterXml: string, theme?: Theme): P
     const textStyle = parseLstStyleLevels(asXmlNode(sp['p:txBody'])['a:lstStyle'], theme)
     const bodyPrNode = asXmlNode(asXmlNode(sp['p:txBody'])['a:bodyPr'])
     const anchor = ANCHOR_MAP[String(bodyPrNode['@_anchor'] ?? '')]
+    const anchorCtrRaw = bodyPrNode['@_anchorCtr']
+    const anchorCtr =
+      anchorCtrRaw != null ? String(anchorCtrRaw) === '1' || anchorCtrRaw === 'true' : undefined
     const insEntries = (['l', 't', 'r', 'b'] as const).flatMap((k) => {
       const v = bodyPrNode[`@_${k}Ins`]
       const n = v != null ? parseInt(String(v), 10) : NaN
@@ -174,13 +179,23 @@ export function parsePlaceholderMap(layoutOrMasterXml: string, theme?: Theme): P
     const prst = prstGeomNode['@_prst'] != null ? String(prstGeomNode['@_prst']) : undefined
     const presetGeom =
       prst && prst !== 'rect' ? { prst, avLstRaw: prstGeomNode['a:avLst'] } : undefined
-    if (!transform && !textStyle && !anchor && !insets && !hasFill && !presetGeom) continue
+    if (
+      !transform &&
+      !textStyle &&
+      !anchor &&
+      anchorCtr === undefined &&
+      !insets &&
+      !hasFill &&
+      !presetGeom
+    )
+      continue
     entries.push({
       type,
       idx,
       transform,
       ...(textStyle ? { textStyle } : {}),
       ...(anchor ? { anchor } : {}),
+      ...(anchorCtr !== undefined ? { anchorCtr } : {}),
       ...(insets ? { insets } : {}),
       ...(hasFill ? { fillSpPr: spPr } : {}),
       ...(presetGeom ? { presetGeom } : {}),
@@ -427,6 +442,33 @@ export function resolvePlaceholderAnchor(
   idx: string | undefined,
 ): PlaceholderGeom['anchor'] {
   return findAnchorInMap(layout, type, idx) ?? findAnchorInMap(master, type, idx)
+}
+
+/** Same matching as findAnchorInMap for anchorCtr (an explicit 0 in the layout wins over a master 1). */
+function findAnchorCtrInMap(
+  map: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): boolean | undefined {
+  if (!map || map.entries.length === 0) return undefined
+  const t = type ?? 'body'
+  const i = idx ?? ''
+  const marked = map.entries.filter((e) => e.anchorCtr !== undefined)
+  let hit = marked.find((e) => e.type === t && e.idx === i)
+  if (!hit) hit = marked.find((e) => e.type === t)
+  if (!hit && TITLE_TYPES.has(t)) hit = marked.find((e) => TITLE_TYPES.has(e.type))
+  if (!hit && BODY_TYPES.has(t)) hit = marked.find((e) => BODY_TYPES.has(e.type))
+  return hit?.anchorCtr
+}
+
+/** Resolve a placeholder's inherited anchorCtr: layout first, master as fallback. */
+export function resolvePlaceholderAnchorCtr(
+  layout: PlaceholderMap | undefined,
+  master: PlaceholderMap | undefined,
+  type: string | undefined,
+  idx: string | undefined,
+): boolean | undefined {
+  return findAnchorCtrInMap(layout, type, idx) ?? findAnchorCtrInMap(master, type, idx)
 }
 
 /**

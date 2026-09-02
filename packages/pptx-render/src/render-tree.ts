@@ -215,6 +215,8 @@ export interface TextLine {
   paraStart?: boolean
   /** Trailing whitespace swallowed when wrapping (the editor re-adds a space when joining lines; hard breaks/CJK wrapping don't set it) */
   trailingSpace?: boolean
+  /** The exact swallowed whitespace (spaces / U+3000 / tabs); absent on stored decks → a single space */
+  trailingText?: string
   /** The line ends with an <a:br/> soft break; value = the sentinel run's model index (the editor round-trips soft breaks with it) */
   softBreakAfter?: number
   /** Paragraph horizontal alignment (editor display) */
@@ -256,6 +258,8 @@ export interface RenderTextLayout {
   vert?: 'eaVert' | 'vert' | 'vert270' | 'wordArtVert'
   /** WordArt text extrusion: glyphs get offset copies in this color behind them (px) */
   extrusion?: { color: string; dx: number; dy: number }
+  /** WordArt envelope warp: the renderer bends glyphs along the preset's curves */
+  txWarp?: { prst: string; adj?: Record<string, number> }
 }
 
 /** Connector/line endpoint arrow description (for rendering, sizes converted to px). */

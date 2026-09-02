@@ -75,7 +75,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'replace_blocks',
     description:
-      'Replace a block range with new content (restricted HTML). For rewriting/translating/condensing/expanding existing content; the new block count may differ from the old.',
+      "Replace a block range with new content (restricted HTML). For rewriting/translating/condensing/expanding existing content; the new block count may differ from the old. New blocks inherit the replaced blocks' paragraph and text formatting (font, size, color, indent, spacing, alignment) automatically, and a rewritten <table> keeps the old table's column widths, borders, shading and cell formatting (unchanged cells keep their content); never try to restore formatting afterwards.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -788,7 +788,7 @@ function executeSyncTool(
         return fail(t('aiSumReplaceContent'), 'html did not parse into any content blocks')
       replaceBlockRange(editor, range.start, range.end, nodes, track)
       return {
-        output: `Replaced blocks ${range.start}-${range.end} with ${nodes.length} block(s). Block indexes have changed; use get_document_context if needed.`,
+        output: `Replaced blocks ${range.start}-${range.end} with ${nodes.length} block(s); the new blocks kept the replaced blocks' formatting. Block indexes have changed; use get_document_context if needed.`,
         mutated: true,
         summary: t('aiSumReplacedBlocks', { start: range.start, end: range.end }),
       }

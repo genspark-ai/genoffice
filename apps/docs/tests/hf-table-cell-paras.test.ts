@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { HeaderFooter, HfImage, SectionSettings } from '@genoffice/docx-engine'
 import {
+  HF_WASHOUT_FILTER,
   hfFloatPagePos,
   hfHasVisibleContent,
   makeGapHfEl,
@@ -156,7 +157,20 @@ describe('floating header image positioning', () => {
     expect(el.style.left).toBe('0px')
     expect(el.style.top).toBe('calc(100% - 96px)')
     expect(el.style.width).toBe('816px')
-    expect(el.style.filter).toContain('brightness')
+    expect(el.style.filter).toBe(HF_WASHOUT_FILTER)
+  })
+
+  it('washout filter fades toward white and keeps white pixels white (Word preset out = 0.3*in + 0.7)', () => {
+    const steps = [...HF_WASHOUT_FILTER.matchAll(/(invert|brightness)\(([\d.]+)\)/g)]
+    expect(steps).toHaveLength(3)
+    const apply = (v: number) =>
+      steps.reduce((c, [, fn, amt]) => {
+        const a = Number(amt)
+        return fn === 'invert' ? c * (1 - a) + (1 - c) * a : Math.min(1, c * a)
+      }, v)
+    expect(apply(1)).toBeCloseTo(1, 5)
+    expect(apply(0)).toBeCloseTo(0.7, 5)
+    expect(apply(0.5)).toBeCloseTo(0.85, 5)
   })
 
   it('lead-hosted element positions from the first page content origin', () => {
@@ -314,5 +328,35 @@ describe('wrapped anchored header images push the body below their bottom edge',
       },
     ]
     expect(estimateHfHeight(null, 600, images, geom)).toBe(0)
+  })
+})
+
+// content surfaced from a floating textbox (wp:anchor / absolute VML shape)
+// draws at its anchor, not in the strip flow: it must not push the body down
+describe('boxAnchored paragraphs (floating-textbox content)', () => {
+  const anchored: HeaderFooter = {
+    text: 'Manuel : Croque-feuilles',
+    paras: [
+      { runs: [{ text: 'Manuel : Croque-feuilles' }], boxAnchored: true },
+      { runs: [{ text: 'Niveau : CM1' }], boxAnchored: true },
+    ],
+  }
+
+  it('estimateHfHeight reserves nothing for them', () => {
+    expect(estimateHfHeight(anchored, 600)).toBe(0)
+    const mixed: HeaderFooter = {
+      text: 'x',
+      paras: [...anchored.paras!, { runs: [{ text: 'in-flow line' }] }],
+    }
+    const inFlowOnly: HeaderFooter = { text: 'x', paras: [{ runs: [{ text: 'in-flow line' }] }] }
+    expect(estimateHfHeight(mixed, 600)).toBeGreaterThan(0)
+    expect(estimateHfHeight(mixed, 600)).toBe(estimateHfHeight(inFlowOnly, 600))
+  })
+
+  it('makeGapHfEl marks them so the DOM probe can exclude them', () => {
+    const el = makeGapHfEl({ kind: 'header', value: anchored, pageNo: 1, pageTotal: 1 })
+    const paras = el.querySelectorAll('.page-hf-para')
+    expect(paras).toHaveLength(2)
+    for (const p of paras) expect(p.classList.contains('page-hf-box-anchored')).toBe(true)
   })
 })

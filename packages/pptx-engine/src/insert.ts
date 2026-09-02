@@ -36,6 +36,8 @@ export interface NewElementBodyPr {
   anchor?: 't' | 'ctr' | 'b'
   /** lIns/tIns/rIns/bIns (EMU); absent keeps PowerPoint defaults */
   insetsEmu?: { l: number; t: number; r: number; b: number }
+  /** <a:normAutofit/> (shrink text on overflow) or <a:spAutoFit/> (grow the shape) */
+  autoFit?: 'shrink' | 'resize'
 }
 
 export interface NewElementOptions {
@@ -48,6 +50,8 @@ export interface NewElementOptions {
   stroke?: { color: string; widthEmu: number }
   /** body geometry overrides; absent = `wrap="square" rtlCol="0"` as before */
   bodyPr?: NewElementBodyPr
+  /** prstGeom adjustment values (<a:avLst><a:gd name fmla="val N"/>), e.g. {adj: 25000} for roundRect radius */
+  adjustments?: Record<string, number>
 }
 
 /**
@@ -69,14 +73,23 @@ function srgbClrXml(color: string): string {
 function buildBodyPrXml(bodyPr: NewElementBodyPr | undefined): string {
   if (!bodyPr) return '<a:bodyPr wrap="square" rtlCol="0"/>'
   const ins = bodyPr.insetsEmu
-  return (
+  const attrs =
     `<a:bodyPr wrap="${bodyPr.wrap ?? 'square'}" rtlCol="0"` +
     (ins
       ? ` lIns="${Math.round(ins.l)}" tIns="${Math.round(ins.t)}" rIns="${Math.round(ins.r)}" bIns="${Math.round(ins.b)}"`
       : '') +
-    (bodyPr.anchor ? ` anchor="${bodyPr.anchor}"` : '') +
-    '/>'
+    (bodyPr.anchor ? ` anchor="${bodyPr.anchor}"` : '')
+  if (!bodyPr.autoFit) return attrs + '/>'
+  return (
+    attrs + `>${bodyPr.autoFit === 'shrink' ? '<a:normAutofit/>' : '<a:spAutoFit/>'}</a:bodyPr>`
   )
+}
+
+function buildAvLstXml(adjustments: Record<string, number> | undefined): string {
+  if (!adjustments) return '<a:avLst/>'
+  return `<a:avLst>${Object.entries(adjustments)
+    .map(([n, v]) => `<a:gd name="${escapeXmlAttr(n)}" fmla="val ${Math.round(v)}"/>`)
+    .join('')}</a:avLst>`
 }
 
 let insertCounter = 1
@@ -120,7 +133,7 @@ function buildCxnSpXml(
     `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${escapeXmlAttr(name)}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr>' +
     `<p:spPr><a:xfrm><a:off x="${o.x}" y="${o.y}"/><a:ext cx="${o.cx}" cy="${o.cy}"/></a:xfrm>` +
-    `<a:prstGeom prst="${def.prst}"><a:avLst/></a:prstGeom>` +
+    `<a:prstGeom prst="${def.prst}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>` +
     `<a:ln w="${Math.round(stroke.widthEmu)}" cap="flat">` +
     `<a:solidFill><a:srgbClr val="${color}"/></a:solidFill>${head}${tail}</a:ln>` +
     '</p:spPr></p:cxnSp>'
@@ -149,7 +162,7 @@ export function buildSpXml(slide: Slide, opts: NewElementOptions): string {
   // Parser convention: has txBody and no prstGeom → 'text'; textbox omits prstGeom
   const geom = isTextbox
     ? ''
-    : `<a:prstGeom prst="${escapeXmlAttr(opts.kind)}"><a:avLst/></a:prstGeom>`
+    : `<a:prstGeom prst="${escapeXmlAttr(opts.kind)}">${buildAvLstXml(opts.adjustments)}</a:prstGeom>`
   const fill = opts.fillColor ? `<a:solidFill>${srgbClrXml(opts.fillColor)}</a:solidFill>` : ''
   const ln = opts.stroke
     ? `<a:ln w="${Math.round(opts.stroke.widthEmu)}"><a:solidFill><a:srgbClr val="${opts.stroke.color.replace(/^#/, '').slice(0, 6).toUpperCase()}"/></a:solidFill></a:ln>`
@@ -180,6 +193,7 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
       },
       transform: { offset: { ...opts.offset }, rot: 0, flipH: false, flipV: false },
       presetGeometry: lineDef.prst,
+      ...(opts.adjustments ? { adjust: { ...opts.adjustments } } : {}),
       fill: { type: 'none' },
       stroke: {
         fill: { type: 'solid', color: stroke.color },
@@ -199,6 +213,7 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
     anchor: { spIndex: slide.elements.length, originalXml: xml, range: [0, 0] },
     transform: { offset: { ...opts.offset }, rot: 0, flipH: false, flipV: false },
     ...(opts.kind !== 'textbox' ? { presetGeometry: opts.kind } : {}),
+    ...(opts.kind !== 'textbox' && opts.adjustments ? { adjust: { ...opts.adjustments } } : {}),
     ...(opts.fillColor ? { fill: { type: 'solid' as const, color: opts.fillColor } } : {}),
     ...(opts.stroke
       ? {
@@ -208,7 +223,10 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
           },
         }
       : {}),
-    text: { paragraphs: opts.paragraphs?.length ? opts.paragraphs : [{ runs: [{ text: '' }] }] },
+    text: {
+      paragraphs: opts.paragraphs?.length ? opts.paragraphs : [{ runs: [{ text: '' }] }],
+      ...(opts.bodyPr?.autoFit ? { autofit: opts.bodyPr.autoFit } : {}),
+    },
   }
   slide.elements.push(el)
   slide.structureDirty = true
@@ -217,10 +235,24 @@ export function addElement(slide: Slide, opts: NewElementOptions): TextElement {
 
 // ── Table insertion (graphicFrame + a:tbl) ─────────────────────────────
 
+/** Per-cell structural attributes for buildTableXml (merges + vertical anchor). */
+export interface NewTableCellProps {
+  gridSpan?: number
+  rowSpan?: number
+  hMerge?: boolean
+  vMerge?: boolean
+  anchor?: 't' | 'ctr' | 'b'
+}
+
 export interface NewTableOptions {
   rows: number
   cols: number
   offset: EmuRect
+  /** explicit column widths / row heights (EMU); a length-matched list overrides the equal split */
+  colWidthsEmu?: number[]
+  rowHeightsEmu?: number[]
+  /** row-major per-cell attributes; absent entries = plain cell */
+  cellProps?: Array<Array<NewTableCellProps | undefined>>
 }
 
 /** PowerPoint's default style for new tables (Medium Style 2 - Accent 1, built-in fallback in the render layer) */
@@ -237,12 +269,31 @@ export function buildTableXml(slide: Slide, opts: NewTableOptions): string {
   const cols = Math.max(1, Math.floor(opts.cols))
   const colW = Math.max(1, Math.floor(opts.offset.cx / cols))
   const rowH = Math.max(1, Math.floor(opts.offset.cy / rows))
-  const grid = Array.from({ length: cols }, () => `<a:gridCol w="${colW}"/>`).join('')
-  const cell = '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p/></a:txBody><a:tcPr/></a:tc>'
-  const trs = Array.from(
-    { length: rows },
-    () => `<a:tr h="${rowH}">${cell.repeat(cols)}</a:tr>`,
-  ).join('')
+  const colWs =
+    opts.colWidthsEmu?.length === cols
+      ? opts.colWidthsEmu.map((w) => Math.max(1, Math.round(w)))
+      : Array.from({ length: cols }, () => colW)
+  const rowHs =
+    opts.rowHeightsEmu?.length === rows
+      ? opts.rowHeightsEmu.map((h) => Math.max(1, Math.round(h)))
+      : Array.from({ length: rows }, () => rowH)
+  const grid = colWs.map((w) => `<a:gridCol w="${w}"/>`).join('')
+  const cellXml = (r: number, c: number): string => {
+    const p = opts.cellProps?.[r]?.[c]
+    const attrs: string[] = []
+    if (p?.gridSpan && p.gridSpan > 1) attrs.push(`gridSpan="${Math.floor(p.gridSpan)}"`)
+    if (p?.rowSpan && p.rowSpan > 1) attrs.push(`rowSpan="${Math.floor(p.rowSpan)}"`)
+    if (p?.hMerge) attrs.push('hMerge="1"')
+    if (p?.vMerge) attrs.push('vMerge="1"')
+    const tcPr = p?.anchor && p.anchor !== 't' ? `<a:tcPr anchor="${p.anchor}"/>` : '<a:tcPr/>'
+    return `<a:tc${attrs.length ? ` ${attrs.join(' ')}` : ''}><a:txBody><a:bodyPr/><a:lstStyle/><a:p/></a:txBody>${tcPr}</a:tc>`
+  }
+  const trs = rowHs
+    .map(
+      (h, r) =>
+        `<a:tr h="${h}">${Array.from({ length: cols }, (_, c) => cellXml(r, c)).join('')}</a:tr>`,
+    )
+    .join('')
   return (
     `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table ${id}">${creationIdXml()}</p:cNvPr>` +
     '<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>' +

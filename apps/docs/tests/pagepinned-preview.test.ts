@@ -65,4 +65,21 @@ describe('pinnedCloneCss', () => {
   it('emits no rules for an empty preview', () => {
     expect(pinnedCloneCss(0)).toBe('')
   })
+
+  it('hides hoisted spill-float boxes on non-owning pages, box only (not the stray line)', () => {
+    const css = pinnedCloneCss(2)
+    const hoisted = (pin: number) =>
+      `<div class="doc-protected doc-protected-floating" data-pv-hoist="1" data-pin-page="${pin}">` +
+      `<div class="doc-anchor-strut"><br></div><div class="doc-textbox"></div></div>`
+    const p0 = page(0, hoisted(0) + hoisted(1))
+    const selectors = css
+      .split('\n')
+      .filter(Boolean)
+      .flatMap((r) => r.slice(0, r.indexOf('{')).split(','))
+    const hidden = (root: HTMLElement, sel: string) =>
+      Array.from(root.querySelectorAll(sel)).map((b) => selectors.some((s) => b.matches(s)))
+    // the escaped boxes hide on the foreign page's clone; the flow strut stays
+    expect(hidden(p0, '.doc-textbox')).toEqual([false, true])
+    expect(hidden(p0, '.doc-anchor-strut')).toEqual([false, false])
+  })
 })

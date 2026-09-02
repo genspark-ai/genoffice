@@ -7,7 +7,6 @@ import type { AiProviderId, AiProviderMeta, AiSettings, LegacyAiSettings } from 
  */
 export const GENSPARK_LLM_BASE_URLS = {
   anthropic: 'https://www.genspark.ai/api/anthropic',
-  gemini: 'https://www.genspark.ai/api/llm_proxy/gemini/v1beta',
   openai: 'https://www.genspark.ai/api/llm_proxy/v1',
 } as const
 
@@ -28,16 +27,14 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'genspark',
     label: 'Genspark',
+    // must stay within the proxy's served set (GET /api/llm_proxy/v1/models);
+    // bare gpt-5.6 and the gemini family dropped off it (verified 2026-08-31)
     models: [
       'claude-opus-4-7',
       'claude-opus-4-8',
       'claude-sonnet-4-6',
-      'gpt-5.6',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
-      'gemini-3.1-pro-preview',
-      'gemini-3-flash-preview',
-      'gemini-3.7-flash',
     ],
     defaultModel: 'claude-opus-4-7',
     keyPlaceholder: 'Not required - sign in to Genspark',
@@ -228,6 +225,15 @@ const RETIRED_MODELS: Partial<Record<AiProviderId, Record<string, string>>> = {
   deepseek: {
     'deepseek-chat': 'deepseek-v4-flash',
     'deepseek-reasoner': 'deepseek-v4-flash',
+  },
+  // proxy stopped serving bare gpt-5.6 (400) and removed the gemini route
+  // entirely (405), verified 2026-08-31; gemini selections fall back to the
+  // provider default since no gemini id is served at all
+  genspark: {
+    'gpt-5.6': 'gpt-5.6-terra',
+    'gemini-3.1-pro-preview': 'claude-opus-4-7',
+    'gemini-3-flash-preview': 'claude-opus-4-7',
+    'gemini-3.7-flash': 'claude-opus-4-7',
   },
 }
 

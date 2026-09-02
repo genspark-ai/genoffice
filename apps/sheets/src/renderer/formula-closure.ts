@@ -112,6 +112,10 @@ export function parseFormulaReferences(formula: string): FormulaReference[] {
 export function containsUnresolvedNames(formula: string): boolean {
   const segments = formula.split('"')
   for (let index = 0; index < segments.length; index += 2) {
+    // [n]Sheet!ref / '[n]Sheet name'!ref is an external-workbook reference:
+    // the reference pattern would swallow it as an ordinary sheet reference,
+    // but the closure can never resolve another workbook.
+    if (/\[\d+\]/.test(segments[index] ?? '')) return true
     // Strip references (and their qualifiers) so ref letters don't register.
     const stripped = (segments[index] ?? '').replace(
       FORMULA_REFERENCE_PATTERN,

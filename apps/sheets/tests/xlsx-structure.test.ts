@@ -8,8 +8,11 @@ import {
   shiftDefinedNames,
   shiftDrawingAnchors,
   shiftFormulaText,
+  shiftOleObjectAnchors,
   shiftTablePart,
+  shiftVmlObjectAnchors,
   StructuralShiftError,
+  type TableColumnInsertion,
 } from '../src/gateway/xlsx-structure'
 import { buildStructureFixture } from './fixture-builder'
 
@@ -287,6 +290,120 @@ describe('shiftDrawingAnchors', () => {
   })
 })
 
+const OLE_SHEET_XML =
+  '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">' +
+  '<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>' +
+  '<legacyDrawing r:id="rId2"/>' +
+  '<oleObjects><mc:AlternateContent><mc:Choice Requires="x14"><oleObject progId="Word.Document.12" shapeId="1025" r:id="rId3">' +
+  '<objectPr defaultSize="0" r:id="rId4"><anchor moveWithCells="1">' +
+  '<from><xdr:col>1</xdr:col><xdr:colOff>10</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>50</xdr:rowOff></from>' +
+  '<to><xdr:col>3</xdr:col><xdr:colOff>20</xdr:colOff><xdr:row>8</xdr:row><xdr:rowOff>60</xdr:rowOff></to>' +
+  '</anchor></objectPr></oleObject></mc:Choice>' +
+  '<mc:Fallback><oleObject progId="Word.Document.12" shapeId="1025" r:id="rId3"/></mc:Fallback></mc:AlternateContent></oleObjects>' +
+  '</worksheet>'
+
+const OLE_VML_XML =
+  '<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:x="urn:schemas-microsoft-com:office:excel">' +
+  '<v:shape id="_x0000_s1025" type="#_x0000_t75"><x:ClientData ObjectType="Pict"><x:Anchor>1, 10, 5, 50, 3, 20, 8, 60</x:Anchor></x:ClientData></v:shape>' +
+  '<v:shape id="_x0000_s1026" type="#_x0000_t202"><x:ClientData ObjectType="Note"><x:Anchor>4, 15, 6, 2, 6, 15, 9, 2</x:Anchor><x:Row>5</x:Row><x:Column>3</x:Column></x:ClientData></v:shape>' +
+  '</xml>'
+
+describe('applyStructuralOps oleObjects anchors', () => {
+  it('row insert shifts the objectPr markers past the boundary like a drawing anchor', () => {
+    const xml = applyStructuralOps(
+      OLE_SHEET_XML,
+      [{ kind: 'insert-rows', index: 6, count: 2 }],
+      SHEET,
+    )
+    expect(xml).toContain(
+      '<from><xdr:col>1</xdr:col><xdr:colOff>10</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>50</xdr:rowOff></from>',
+    )
+    expect(xml).toContain(
+      '<to><xdr:col>3</xdr:col><xdr:colOff>20</xdr:colOff><xdr:row>10</xdr:row><xdr:rowOff>60</xdr:rowOff></to>',
+    )
+    // The embedding rel, shapeId and fallback element are not touched.
+    expect(xml).toContain(
+      '<mc:Fallback><oleObject progId="Word.Document.12" shapeId="1025" r:id="rId3"/></mc:Fallback>',
+    )
+  })
+
+  it('row delete clamps covered markers with zeroed offsets; column ops move col marks', () => {
+    const removed = applyStructuralOps(
+      OLE_SHEET_XML,
+      [{ kind: 'remove-rows', index: 5, count: 4 }],
+      SHEET,
+    )
+    expect(removed).toContain('<xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff></from>')
+    expect(removed).toContain('<xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff></to>')
+    const cols = applyStructuralOps(
+      OLE_SHEET_XML,
+      [{ kind: 'insert-cols', index: 2, count: 1 }],
+      SHEET,
+    )
+    expect(cols).toContain('<from><xdr:col>1</xdr:col>')
+    expect(cols).toContain('<to><xdr:col>4</xdr:col>')
+  })
+
+  it('a row move carries an object inside the moved block and leaves a straddling one', () => {
+    // Rows 5-8 move up before row 2: the object lands on rows 2-5.
+    const moved = applyStructuralOps(
+      OLE_SHEET_XML,
+      [{ kind: 'move-rows', index: 5, count: 4, before: 2 }],
+      SHEET,
+    )
+    expect(moved).toContain('<xdr:row>2</xdr:row><xdr:rowOff>50</xdr:rowOff></from>')
+    expect(moved).toContain('<xdr:row>5</xdr:row><xdr:rowOff>60</xdr:rowOff></to>')
+    // Moving rows 0-1 below row 3 does not touch an object on rows 5-8
+    // (outside both swapped blocks: 0-1 and 2-3).
+    expect(
+      applyStructuralOps(
+        OLE_SHEET_XML,
+        [{ kind: 'move-rows', index: 0, count: 2, before: 4 }],
+        SHEET,
+      ),
+    ).toContain('<xdr:row>5</xdr:row><xdr:rowOff>50</xdr:rowOff></from>')
+  })
+
+  it('leaves worksheets without oleObjects untouched', async () => {
+    const source = await fixtureWorksheet()
+    expect(source).not.toContain('<oleObjects')
+    expect(shiftOleObjectAnchors(source, [{ kind: 'insert-rows', index: 1, count: 2 }])).toBe(
+      source,
+    )
+  })
+})
+
+describe('shiftVmlObjectAnchors', () => {
+  it('shifts the Pict shape anchor rows and leaves note shapes alone', () => {
+    const xml = shiftVmlObjectAnchors(OLE_VML_XML, [{ kind: 'insert-rows', index: 6, count: 2 }])
+    expect(xml).toContain('<x:Anchor>1, 10, 5, 50, 3, 20, 10, 60</x:Anchor>')
+    expect(xml).toContain('<x:Anchor>4, 15, 6, 2, 6, 15, 9, 2</x:Anchor><x:Row>5</x:Row>')
+  })
+
+  it('clamps deleted rows with a zero pixel offset and moves columns', () => {
+    const removed = shiftVmlObjectAnchors(OLE_VML_XML, [
+      { kind: 'remove-rows', index: 5, count: 4 },
+    ])
+    expect(removed).toContain('<x:Anchor>1, 10, 5, 0, 3, 20, 5, 0</x:Anchor>')
+    const cols = shiftVmlObjectAnchors(OLE_VML_XML, [{ kind: 'remove-cols', index: 2, count: 2 }])
+    expect(cols).toContain('<x:Anchor>1, 10, 5, 50, 2, 0, 8, 60</x:Anchor>')
+  })
+
+  it('moves the anchor with a row move and is a no-op without Pict shapes or shifting ops', () => {
+    const moved = shiftVmlObjectAnchors(OLE_VML_XML, [
+      { kind: 'move-rows', index: 5, count: 4, before: 2 },
+    ])
+    expect(moved).toContain('<x:Anchor>1, 10, 2, 50, 3, 20, 5, 60</x:Anchor>')
+    const notesOnly = OLE_VML_XML.replace(/<v:shape id="_x0000_s1025"[\s\S]*?<\/v:shape>/, '')
+    expect(shiftVmlObjectAnchors(notesOnly, [{ kind: 'insert-rows', index: 0, count: 1 }])).toBe(
+      notesOnly,
+    )
+    expect(
+      shiftVmlObjectAnchors(OLE_VML_XML, [{ kind: 'set-row-size', start: 0, end: 1, size: 20 }]),
+    ).toBe(OLE_VML_XML)
+  })
+})
+
 const TABLE_XML =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
   '<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="1" name="T1" displayName="T1" ref="B2:D5" totalsRowShown="0">' +
@@ -333,19 +450,85 @@ describe('shiftTablePart', () => {
     )
   })
 
-  it('column shifts outside the table move ref; inside fail closed', () => {
+  it('column shifts outside the table move ref without touching the columns', () => {
     const before = shiftTablePart(TABLE_XML, [{ kind: 'insert-cols', index: 0, count: 2 }])
     expect(before).toContain('ref="D2:F5"')
     expect(before).toContain('<autoFilter ref="D2:F5"/>')
+    expect(before).toContain('<tableColumns count="3">')
     const removedLeft = shiftTablePart(TABLE_XML, [{ kind: 'remove-cols', index: 0, count: 1 }])
     expect(removedLeft).toContain('ref="A2:C5"')
+    expect(removedLeft).toContain('<tableColumns count="3">')
     expect(shiftTablePart(TABLE_XML, [{ kind: 'insert-cols', index: 4, count: 1 }])).toBe(TABLE_XML)
-    expect(() => shiftTablePart(TABLE_XML, [{ kind: 'insert-cols', index: 2, count: 1 }])).toThrow(
-      /Inserting columns inside table/,
+    // An insert at the table's first column shifts the whole table right.
+    const atStart = shiftTablePart(TABLE_XML, [{ kind: 'insert-cols', index: 1, count: 1 }])
+    expect(atStart).toContain('ref="C2:E5"')
+    expect(atStart).toContain('<tableColumns count="3">')
+  })
+
+  it('inserting a column inside the table adds a tableColumn with a fresh id and name', () => {
+    const insertions: TableColumnInsertion[] = []
+    const xml = shiftTablePart(TABLE_XML, [{ kind: 'insert-cols', index: 2, count: 1 }], insertions)
+    expect(xml).toContain('ref="B2:E5"')
+    expect(xml).toContain('<autoFilter ref="B2:E5"/>')
+    expect(xml).toContain(
+      '<tableColumns count="4"><tableColumn id="1" name="a"/><tableColumn id="4" name="Column1"/>' +
+        '<tableColumn id="2" name="b"/><tableColumn id="3" name="c"/></tableColumns>',
     )
-    expect(() => shiftTablePart(TABLE_XML, [{ kind: 'remove-cols', index: 3, count: 1 }])).toThrow(
-      /Deleting columns of table/,
+    expect(insertions).toEqual([{ headerRow: 1, columns: [{ column: 2, id: 4, name: 'Column1' }] }])
+  })
+
+  it('generated names skip existing ColumnN entries; multi-count inserts stay ordered', () => {
+    const seeded = TABLE_XML.replace('name="a"', 'name="Column1"')
+    const xml = shiftTablePart(seeded, [{ kind: 'insert-cols', index: 3, count: 2 }])
+    expect(xml).toContain('ref="B2:F5"')
+    expect(xml).toContain(
+      '<tableColumn id="4" name="Column2"/><tableColumn id="5" name="Column3"/>' +
+        '<tableColumn id="3" name="c"/>',
     )
+    expect(xml).toContain('<tableColumns count="5">')
+  })
+
+  it('deleting a column inside the table removes its tableColumn', () => {
+    const xml = shiftTablePart(TABLE_XML, [{ kind: 'remove-cols', index: 2, count: 1 }])
+    expect(xml).toContain('ref="B2:C5"')
+    expect(xml).toContain(
+      '<tableColumns count="2"><tableColumn id="1" name="a"/><tableColumn id="3" name="c"/></tableColumns>',
+    )
+  })
+
+  it('a deletion straddling the table edge trims only the covered columns', () => {
+    const xml = shiftTablePart(TABLE_XML, [{ kind: 'remove-cols', index: 0, count: 2 }])
+    expect(xml).toContain('ref="A2:B5"')
+    expect(xml).toContain(
+      '<tableColumns count="2"><tableColumn id="2" name="b"/><tableColumn id="3" name="c"/></tableColumns>',
+    )
+  })
+
+  it('fails closed when a deletion covers every table column', () => {
+    expect(() => shiftTablePart(TABLE_XML, [{ kind: 'remove-cols', index: 1, count: 3 }])).toThrow(
+      /Deleting all columns of table/,
+    )
+    expect(() => shiftTablePart(TABLE_XML, [{ kind: 'remove-cols', index: 0, count: 10 }])).toThrow(
+      /delete the table first/,
+    )
+  })
+
+  it('filter criteria and sort conditions follow the reshaped columns', () => {
+    const filtered = TABLE_XML.replace(
+      '<autoFilter ref="B2:D5"/>',
+      '<autoFilter ref="B2:D5">' +
+        '<filterColumn colId="1"><filters><filter val="x"/></filters></filterColumn>' +
+        '<filterColumn colId="2"><filters><filter val="y"/></filters></filterColumn>' +
+        '</autoFilter><sortState ref="B3:D5"><sortCondition ref="C3:C5"/></sortState>',
+    )
+    const inserted = shiftTablePart(filtered, [{ kind: 'insert-cols', index: 2, count: 1 }])
+    expect(inserted).toContain('<filterColumn colId="2"><filters><filter val="x"/>')
+    expect(inserted).toContain('<filterColumn colId="3"><filters><filter val="y"/>')
+    expect(inserted).toContain('<sortState ref="B3:E5"><sortCondition ref="D3:D5"/></sortState>')
+    const removed = shiftTablePart(filtered, [{ kind: 'remove-cols', index: 2, count: 1 }])
+    expect(removed).not.toContain('val="x"')
+    expect(removed).toContain('<filterColumn colId="1"><filters><filter val="y"/>')
+    expect(removed).not.toContain('sortState')
   })
 
   it('fails closed on merges over the table, allows merges elsewhere', () => {
@@ -596,6 +779,55 @@ describe('structural save integration', () => {
     const drawing = await zip.file('xl/drawings/drawing1.xml')?.async('text')
     expect(drawing).toContain('<xdr:from><xdr:col>2</xdr:col>')
     expect(drawing).toContain('<xdr:to><xdr:col>4</xdr:col>')
+  })
+
+  it('a column insert inside the table adopts the header text saved in the same batch', async () => {
+    const mutation = await applyCellEditsToXlsx(
+      await buildAnchoredFixture(),
+      [{ sheetName: SHEET, row: 0, column: 1, writeValue: true, cell: { value: 'Extra' } }],
+      [{ sheetName: SHEET, ops: [{ kind: 'insert-cols', index: 1, count: 1 }] }],
+    )
+    expect(() => assertOnlyTouchedEntriesChanged(mutation)).not.toThrow()
+    const zip = await JSZip.loadAsync(mutation.buffer)
+    const table = await zip.file('xl/tables/table1.xml')?.async('text')
+    expect(table).toContain('ref="A1:C3"')
+    expect(table).toContain('<autoFilter ref="A1:C3"/>')
+    expect(table).toContain(
+      '<tableColumns count="3"><tableColumn id="1" name="a"/><tableColumn id="3" name="Extra"/>' +
+        '<tableColumn id="2" name="b"/></tableColumns>',
+    )
+  })
+
+  it('a column insert inside the table writes the generated name into an empty header cell', async () => {
+    const mutation = await applyCellEditsToXlsx(
+      await buildAnchoredFixture(),
+      [],
+      [{ sheetName: SHEET, ops: [{ kind: 'insert-cols', index: 1, count: 1 }] }],
+    )
+    const zip = await JSZip.loadAsync(mutation.buffer)
+    const table = await zip.file('xl/tables/table1.xml')?.async('text')
+    expect(table).toContain('<tableColumn id="3" name="Column1"/>')
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('text')
+    expect(sheet).toContain(
+      '<c r="B1" t="inlineStr"><is><t xml:space="preserve">Column1</t></is></c>',
+    )
+    // The spliced header cell must keep the row's column order (the fixture
+    // row holds A1 and the shifted D1).
+    expect(sheet!.indexOf('r="B1"')).toBeGreaterThan(sheet!.indexOf('r="A1"'))
+    expect(sheet!.indexOf('r="B1"')).toBeLessThan(sheet!.indexOf('r="D1"'))
+  })
+
+  it('a duplicate header gets an Excel-style suffix in both the part and the cell', async () => {
+    const mutation = await applyCellEditsToXlsx(
+      await buildAnchoredFixture(),
+      [{ sheetName: SHEET, row: 0, column: 1, writeValue: true, cell: { value: 'a' } }],
+      [{ sheetName: SHEET, ops: [{ kind: 'insert-cols', index: 1, count: 1 }] }],
+    )
+    const zip = await JSZip.loadAsync(mutation.buffer)
+    const table = await zip.file('xl/tables/table1.xml')?.async('text')
+    expect(table).toContain('<tableColumn id="3" name="a2"/>')
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('text')
+    expect(sheet).toContain('<t xml:space="preserve">a2</t>')
   })
 
   it('still fails closed when a deletion would hit the table header row', async () => {

@@ -15,12 +15,14 @@
  * cell whose first strong character is RTL right-aligns (in LTR and RTL
  * sheets alike; ref.pdf verified). Univer resolves General as number→right /
  * boolean→center / else left, so RTL-first text cells are patched to RIGHT at
- * the font-cache choke point (covers paint, overflow direction and clipping)
- * and in the document component's page handler (rich text / wrap path).
+ * the font-cache choke point (covers paint, overflow direction and clipping),
+ * in the document component's page handler (rich text / wrap path) and in the
+ * editor bridge state (in-cell editor margin, hence caret and hit-testing).
  */
 import { CellValueType, HorizontalAlign } from '@univerjs/core'
 import type { ICellData, Nullable } from '@univerjs/core'
 import { Documents, SpreadsheetSkeleton, Text } from '@univerjs/engine-render'
+import { EditorBridgeService } from '@univerjs/sheets-ui'
 
 const STRONG_RTL_MARK = /[\u200F\u061C]/ // RLM, ALM
 const LTR_MARK = '\u200E' // LRM
@@ -63,6 +65,30 @@ const isGeneralTextCell = (cell: Nullable<ICellData> | undefined): boolean => {
 const cellText = (config: FontCacheConfigLike): string =>
   config.documentSkeleton?.getViewModel().getDataModel().getBody()?.dataStream ??
   String(config.cellData?.v ?? '')
+
+export interface EditorLayoutLike {
+  horizontalAlign: HorizontalAlign
+  textRotation?: { a?: number; v?: number } | null
+  documentModel?: { getBody(): { dataStream?: string } | undefined } | null
+}
+
+interface EditCellStateLike {
+  documentLayoutObject?: EditorLayoutLike | null
+}
+
+/** The editor-bridge counterpart of the General rule: an unrotated,
+ *  unaligned cell whose text reads right-to-left edits right-aligned. */
+export function rightAlignRtlGeneralEditor(layout: EditorLayoutLike | null | undefined): void {
+  if (
+    layout &&
+    layout.horizontalAlign === HorizontalAlign.UNSPECIFIED &&
+    !layout.textRotation?.a &&
+    !layout.textRotation?.v &&
+    resolveBidiDirection(layout.documentModel?.getBody()?.dataStream ?? '') === 'rtl'
+  ) {
+    layout.horizontalAlign = HorizontalAlign.RIGHT
+  }
+}
 
 interface DirectionalContext {
   save(): void
@@ -145,6 +171,22 @@ export function installRtlTextDirectionFix(): void {
       centerAngleDeg,
       cellValueType,
     )
+  }
+
+  // The in-cell editor paints through the same Documents component, so the
+  // page handler above right-aligns its text too — but Univer seats the caret
+  // (and hit-tests clicks) from the document margin, which the editor bridge
+  // only widens for an explicit RIGHT alignment. Resolve General the same way
+  // in the bridge state so caret and text agree, and the editor grows away
+  // from its right edge like an explicitly right-aligned cell.
+  const bridgeProto = EditorBridgeService.prototype as unknown as {
+    getLatestEditCellState(): EditCellStateLike | null | undefined
+  }
+  const origLatestEditCellState = bridgeProto.getLatestEditCellState
+  bridgeProto.getLatestEditCellState = function () {
+    const state = origLatestEditCellState.call(this)
+    rightAlignRtlGeneralEditor(state?.documentLayoutObject)
+    return state
   }
 
   const textClass = Text as unknown as {

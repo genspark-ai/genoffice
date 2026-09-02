@@ -133,6 +133,68 @@ describe('buildConditionalRule', () => {
     expect(built?.rule).toMatchObject({ subType: 'text', operator: 'containsErrors' })
   })
 
+  it('builds containsText as a formula rule so matching is case-insensitive (prod_048)', () => {
+    // The rule text is "Short" but the cell holds "SHORT": Excel matches
+    // (SEARCH semantics), Univer's native text condition (indexOf) does not.
+    // The formula is synthesized against the sorted anchor, never taken from
+    // the file (whose formula is anchored to its first sqref cell instead).
+    const built = buildConditionalRule(
+      worksheet,
+      [dxf({ fillColor: '#FF0000' })],
+      cfRule({
+        ruleType: 'containsText',
+        text: 'Short',
+        dxfIndex: 0,
+        formulas: ['NOT(ISERROR(SEARCH("Short",D3)))'],
+      }),
+    )
+    expect(built?.rule).toMatchObject({
+      subType: 'formula',
+      value: '=NOT(ISERROR(SEARCH("Short",A1)))',
+    })
+  })
+
+  it('synthesizes the formula when the file rule carries none', () => {
+    const built = buildConditionalRule(
+      worksheet,
+      [],
+      cfRule({ ruleType: 'endsWith', text: 'x"y', formulas: [] }),
+    )
+    expect(built?.rule).toMatchObject({
+      subType: 'formula',
+      value: '=RIGHT(A1,LEN("x""y"))="x""y"',
+    })
+  })
+
+  it('keeps the native text condition for over-budget ranges', () => {
+    const built = buildConditionalRule(
+      worksheet,
+      [],
+      cfRule({
+        ruleType: 'containsText',
+        text: 'Short',
+        formulas: ['NOT(ISERROR(SEARCH("Short",A1)))'],
+        ranges: [{ startRow: 0, startColumn: 0, endRow: 99_999, endColumn: 4 }],
+      }),
+    )
+    expect(built?.rule).toMatchObject({ subType: 'text', operator: 'containsText' })
+  })
+
+  it('carries cfRule/@stopIfTrue onto the built rule', () => {
+    const built = buildConditionalRule(
+      worksheet,
+      [],
+      cfRule({ ruleType: 'containsText', text: 'x', formulas: [], stopIfTrue: true }),
+    )
+    expect((built as { stopIfTrue?: boolean }).stopIfTrue).toBe(true)
+    const without = buildConditionalRule(
+      worksheet,
+      [],
+      cfRule({ ruleType: 'containsText', text: 'x', formulas: [] }),
+    )
+    expect((without as { stopIfTrue?: boolean }).stopIfTrue).toBe(false)
+  })
+
   it('carries a dxf border onto the built cellIs rule style', () => {
     const built = buildConditionalRule(
       worksheet,

@@ -18,6 +18,9 @@ import {
 import { parseAddress } from '../domain/cell-address'
 import { ColorDropdown } from './ColorDropdown'
 import { t } from './i18n/locale'
+import { oleCaption, oleFrameStyle, oleRenderKind } from './ole-visual'
+import { VisualDeleteButton } from './VisualDeleteButton'
+import { shouldShowVisualDeleteButton } from './visual-delete-button'
 import type { WorkbookChartEdit, WorkbookFile, WorkbookVisualObject } from '../shared/desktop-api'
 
 type UniverRuntime = ReturnType<typeof createUniver>
@@ -476,6 +479,9 @@ function WorkbookVisual({
   }
   if (visual.kind === 'image') {
     return <ImageVisual file={file} visual={visual} />
+  }
+  if (visual.kind === 'ole') {
+    return <OleVisual file={file} visual={visual} />
   }
   return <ShapeVisual file={file} visual={visual} frame={frame} />
 }
@@ -1082,19 +1088,13 @@ function EditableShapeVisual({
           frame={frame}
         />
       )}
-      {!textEditing && (
-        <button
-          className="shape-delete-button"
-          data-tip={t('appDeleteVisualTitle')}
-          aria-label={t('appDeleteVisualTitle')}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation()
-            onEdit(visual.id, { remove: true })
-          }}
-        >
-          ✕
-        </button>
+      {shouldShowVisualDeleteButton({ selected: isSelected, textEditing }) && (
+        <VisualDeleteButton
+          hostRef={hostNodeRef}
+          worksheet={worksheet}
+          label={t('appDeleteVisualTitle')}
+          onDelete={() => onEdit(visual.id, { remove: true })}
+        />
       )}
       {textEditing && (
         <div
@@ -1334,6 +1334,9 @@ function ShapeVisual({
               height={boxHeight}
               preserveAspectRatio="none"
               clipPath={`url(#${clipId})`}
+              {...(visual.opacity !== undefined && visual.opacity < 1
+                ? { opacity: visual.opacity }
+                : {})}
             />
           </>
         )}
@@ -1503,15 +1506,90 @@ function ImageVisual({
 
   if (unavailable) return <div className="xlsx-visual-unavailable" />
   if (!source) return <div className="xlsx-visual-loading">{t('appImageLoading')}</div>
+  const opacity =
+    visual.opacity !== undefined && visual.opacity < 1 ? { opacity: visual.opacity } : undefined
+  const crop = visual.crop
+  // a:srcRect: stretch the source so the cropped window fills the frame
+  // (Excel fits the remaining region exactly, no letterboxing).
+  const visibleWidth = crop ? 1 - crop.left - crop.right : 1
+  const visibleHeight = crop ? 1 - crop.top - crop.bottom : 1
+  if (crop && visibleWidth > 0 && visibleHeight > 0) {
+    return (
+      <span className="xlsx-image-crop">
+        <img
+          src={source}
+          alt={visual.name ?? t('appWorkbookImageAlt')}
+          style={{
+            width: `${100 / visibleWidth}%`,
+            height: `${100 / visibleHeight}%`,
+            left: `${(-100 * crop.left) / visibleWidth}%`,
+            top: `${(-100 * crop.top) / visibleHeight}%`,
+            ...opacity,
+          }}
+        />
+      </span>
+    )
+  }
   return (
     <img
       className="xlsx-image"
       src={source}
       alt={visual.name ?? t('appWorkbookImageAlt')}
-      style={
-        visual.opacity !== undefined && visual.opacity < 1 ? { opacity: visual.opacity } : undefined
-      }
+      style={opacity}
     />
+  )
+}
+
+/// Embedded OLE object: Excel's cached preview picture (EMF/WMF rasterized
+/// like any other metafile) at the object's anchor, or — with no preview or
+/// an undecodable one — Excel's icon-and-caption box. Always read-only: the
+/// object lives in <oleObjects>/xl/embeddings, outside the drawing edit
+/// pipeline, so it is never moved, deleted or re-saved as a picture.
+function OleVisual({
+  file,
+  visual,
+}: {
+  readonly file: VisualHost
+  readonly visual: WorkbookVisualObject
+}): React.JSX.Element {
+  const { url, unavailable } = useWorkbookMediaUrl(
+    visual.mediaPath === undefined ? undefined : file.sessionId,
+    visual.id,
+  )
+  const caption = oleCaption(visual.progId)
+  // The legacy VML shape's stroke/fill are document colours (Excel's
+  // window/windowText by default): the frame Excel draws around every
+  // embedded object and the backdrop that hides the grid behind it.
+  const frame = oleFrameStyle(visual)
+  if (oleRenderKind(visual, unavailable) === 'preview') {
+    if (!url) return <div className="xlsx-visual-loading">{t('appImageLoading')}</div>
+    return (
+      <div className="xlsx-ole-frame" style={frame}>
+        <img className="xlsx-image xlsx-ole-preview" src={url} alt={caption} draggable={false} />
+      </div>
+    )
+  }
+  return (
+    <div
+      className="xlsx-ole-placeholder"
+      style={frame}
+      role="img"
+      aria-label={caption}
+      title={caption}
+    >
+      <svg className="xlsx-ole-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M6 2h8l5 5v15H6z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <path d="M14 2v5h5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M9 12h7M9 15h7M9 18h5" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+      <span className="xlsx-ole-caption">{caption}</span>
+    </div>
   )
 }
 
@@ -1873,6 +1951,7 @@ function ChartVisual({
             valueAxis={valueScaleInput}
             categoryFormat={categoryFormat}
             lineMarkers={chart.lineMarkers}
+            dispBlanksAs={chart.dispBlanksAs}
             onElement={selectElement}
             selectedEl={selectedEl}
           />
@@ -1894,6 +1973,8 @@ function ChartVisual({
             gapWidthPct={chart.gapWidthPct}
             categoryFormat={categoryFormat}
             categoryReversed={(isHorizontalBar ? chart.yAxis : chart.xAxis)?.reversed === true}
+            lineMarkers={chart.lineMarkers}
+            dispBlanksAs={chart.dispBlanksAs}
             onElement={selectElement}
             selectedEl={selectedEl}
           />
@@ -1904,6 +1985,7 @@ function ChartVisual({
             <SeriesLegend
               seriesList={populated}
               lineSwatches={legendUsesLineSwatches(types)}
+              lineSwatchFrom={isCombo && populated.length > 1 ? populated.length - 1 : undefined}
               selected={selectedEl?.kind === 'legend'}
               onSelect={
                 selectElement
@@ -2286,18 +2368,29 @@ function SeriesLegend({
   selected,
   onSelect,
   lineSwatches = false,
+  lineSwatchFrom,
 }: {
   readonly seriesList: readonly ChartSeries[]
   readonly selected?: boolean | undefined
   readonly onSelect?: ((event: React.MouseEvent) => void) | undefined
   /// Line-family charts: swatches mirror the drawn stroke color.
   readonly lineSwatches?: boolean | undefined
+  /// Combo charts: series from this index on render as lines.
+  readonly lineSwatchFrom?: number | undefined
 }): React.JSX.Element {
   return (
     <div className={`chart-legend${selected ? ' chart-el-selected' : ''}`} onClick={onSelect}>
       {seriesList.slice(0, 8).map((series, index) => (
         <span key={`${series.name}-${index}`}>
-          <i style={{ background: legendSwatchColor(series, index, lineSwatches) }} />
+          <i
+            style={{
+              background: legendSwatchColor(
+                series,
+                index,
+                lineSwatches || (lineSwatchFrom !== undefined && index >= lineSwatchFrom),
+              ),
+            }}
+          />
           {truncateLabel(series.name, 18)}
         </span>
       ))}
@@ -2321,12 +2414,17 @@ function BarChart({
   gapWidthPct,
   categoryFormat,
   categoryReversed,
+  lineMarkers,
+  dispBlanksAs,
   onElement,
   selectedEl,
 }: {
   readonly seriesList: readonly ChartSeries[]
   readonly lineSeries?: ChartSeries | undefined
   readonly isHorizontal: boolean
+  /// Plot-level c:lineChart/c:marker flag for the combo line.
+  readonly lineMarkers?: boolean | undefined
+  readonly dispBlanksAs?: ChartMetadata['dispBlanksAs']
   /// c:catAx orientation maxMin — categories read top-down (bar) /
   /// right-to-left (column) instead of Excel's minMax default.
   readonly categoryReversed?: boolean | undefined
@@ -2360,12 +2458,15 @@ function BarChart({
   const isPercent = grouping === 'percentStacked' && seriesList.length > 1
   const categoryTotal = (index: number): number =>
     seriesList.reduce((sum, series) => sum + Math.max(0, series.values[index] ?? 0), 0)
+  const barMax = isStacked
+    ? Math.max(...Array.from({ length: visibleCount }, (_, index) => categoryTotal(index)), 0)
+    : Math.max(...seriesList.flatMap((series) => [...series.values]), 0)
+  // A combo line without its own value axis shares the primary scale.
+  const lineOnPrimary = lineSeries !== undefined && secondaryAxis === undefined
   const bounds = isPercent
     ? { min: 0, max: 1, ticks: [0, 0.25, 0.5, 0.75, 1] }
     : axisBounds(
-        isStacked
-          ? Math.max(...Array.from({ length: visibleCount }, (_, index) => categoryTotal(index)), 0)
-          : Math.max(...seriesList.flatMap((series) => [...series.values]), 0),
+        lineOnPrimary ? Math.max(barMax, ...(lineSeries?.values ?? [])) : barMax,
         valueAxis,
       )
   const span = bounds.max - bounds.min
@@ -2562,28 +2663,46 @@ function BarChart({
     categoryReversed ? seriesList.length - 1 - seriesIndex : seriesIndex
   const groupLeft = (index: number): number =>
     62 + columnWidth * catSlot(index) + (columnWidth - groupWidth) / 2
-  // The combo line rides the secondary value axis (its own Excel-like auto
-  // scale when the file has no explicit bounds).
+  // The combo line rides the secondary value axis when the file has one;
+  // a single axis pair means it shares the primary scale (Excel never
+  // invents a right-hand axis).
   const lineScale = lineSeries
-    ? valueAxisScale(Math.max(...lineSeries.values, 0), secondaryAxis)
+    ? secondaryAxis
+      ? valueAxisScale(Math.max(...lineSeries.values, 0), secondaryAxis)
+      : bounds
     : undefined
-  const points =
+  const comboStroke = lineSeries ? lineStroke(lineSeries, seriesList.length) : null
+  const comboSegments =
     lineSeries && lineScale
-      ? lineSeries.values
-          .slice(0, visibleCount)
-          .map(
-            (value, index) =>
-              `${groupLeft(index) + groupWidth / 2},${
-                280 -
-                Math.max(
-                  0,
-                  Math.min(1, (value - lineScale.min) / (lineScale.max - lineScale.min || 1)),
-                ) *
-                  240
-              }`,
-          )
-          .join(' ')
-      : undefined
+      ? lineSegments(
+          Math.min(lineSeries.values.length, visibleCount),
+          lineSeries.blanks,
+          dispBlanksAs,
+        )
+      : []
+  const comboY = (index: number): number =>
+    280 -
+    (lineScale
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            ((lineSeries?.values[index] ?? 0) - lineScale.min) /
+              (lineScale.max - lineScale.min || 1),
+          ),
+        )
+      : 0) *
+      240
+  const comboPoint = (index: number): string =>
+    `${groupLeft(index) + groupWidth / 2},${comboY(index)}`
+  const comboSymbol =
+    lineSeries === undefined || lineSeries.marker === 'none'
+      ? null
+      : lineMarkers !== true && lineSeries.marker === undefined
+        ? null
+        : lineSeries.marker !== undefined && lineSeries.marker !== 'auto'
+          ? lineSeries.marker
+          : (AUTO_MARKER_SYMBOLS[seriesList.length % AUTO_MARKER_SYMBOLS.length] ?? 'circle')
   const showValueLabels =
     !isStacked &&
     (dataLabels === 'value' ||
@@ -2678,13 +2797,28 @@ function BarChart({
             />
           ) : null,
         )}
-      {points && (
-        <polyline
-          points={points}
-          fill="none"
-          stroke={seriesColor(lineSeries, seriesList.length)}
-          strokeWidth={lineSeries?.lineWidth ?? 3}
-        />
+      {comboStroke !== null &&
+        comboSegments.map((segment, segmentIndex) => (
+          <polyline
+            key={`combo-${segmentIndex}`}
+            points={segment.map(comboPoint).join(' ')}
+            fill="none"
+            stroke={comboStroke}
+            strokeWidth={lineSeries?.lineWidth ?? 3}
+          />
+        ))}
+      {lineSeries && comboSymbol !== null && (
+        <g>
+          {comboSegments.flat().map((index) => (
+            <MarkerGlyph
+              key={`combo-marker-${index}`}
+              x={groupLeft(index) + groupWidth / 2}
+              y={comboY(index)}
+              symbol={comboSymbol}
+              color={comboStroke ?? seriesColor(lineSeries, seriesList.length)}
+            />
+          ))}
+        </g>
       )}
       <CategoryGroupBand
         spans={columnGroups.map((group) => {
@@ -2700,7 +2834,8 @@ function BarChart({
       />
       {lineSeries &&
         lineScale &&
-        secondaryAxis?.hidden !== true &&
+        secondaryAxis !== undefined &&
+        secondaryAxis.hidden !== true &&
         lineScale.ticks.map((tick, index) => (
           <text
             key={index}
@@ -2805,6 +2940,37 @@ export function lineStroke(
   return series.lineColor ?? seriesColor(series, index)
 }
 
+/// Index runs a line plots as one stroke. Blank cells (c:dispBlanksAs)
+/// break the line on 'gap', are bridged on 'span', and plot their 0 filler
+/// on 'zero' — the OOXML default when the element is absent.
+export function lineSegments(
+  count: number,
+  blanks: readonly number[] | undefined,
+  mode: string | undefined,
+): number[][] {
+  const indices = Array.from({ length: count }, (_, index) => index)
+  if ((mode !== 'gap' && mode !== 'span') || blanks === undefined || blanks.length === 0) {
+    return count > 0 ? [indices] : []
+  }
+  const blankSet = new Set(blanks)
+  if (mode === 'span') {
+    const kept = indices.filter((index) => !blankSet.has(index))
+    return kept.length > 0 ? [kept] : []
+  }
+  const segments: number[][] = []
+  let current: number[] = []
+  for (const index of indices) {
+    if (blankSet.has(index)) {
+      if (current.length > 0) segments.push(current)
+      current = []
+    } else {
+      current.push(index)
+    }
+  }
+  if (current.length > 0) segments.push(current)
+  return segments
+}
+
 /// Whether the legend mirrors stroke colors: only when a line-drawing
 /// component wins the render cascade (pie → radar → scatter → area → line →
 /// bar) — a chart that also carries an areaChart/scatterChart paints fills.
@@ -2865,6 +3031,15 @@ function formatPieValue(value: number, formatCode: string | undefined): string {
     }
   }
   return formatLabelValue(value, formatCode, undefined)
+}
+
+/// Excel's showPercent default format is "0%" — integer rounding — unless
+/// the dLbls carry their own percent numFmt.
+export function formatPiePercent(share: number, formatCode: string | undefined): string {
+  if (formatCode !== undefined && formatCode.includes('%')) {
+    return formatLabelValue(share, formatCode, undefined)
+  }
+  return `${Math.round(share * 100)}%`
 }
 
 function formatLabelValue(
@@ -3104,6 +3279,7 @@ function LineChart({
   valueAxis,
   categoryFormat,
   lineMarkers,
+  dispBlanksAs,
   onElement,
   selectedEl,
 }: {
@@ -3115,6 +3291,7 @@ function LineChart({
   readonly valueAxis?: ChartValueAxis
   readonly categoryFormat?: string | undefined
   readonly lineMarkers?: boolean | undefined
+  readonly dispBlanksAs?: ChartMetadata['dispBlanksAs']
 } & ChartElementProps): React.JSX.Element {
   const primary = seriesList[0]
   if (!primary) return <></>
@@ -3152,6 +3329,14 @@ function LineChart({
   const span = bounds.max - bounds.min
   const categories = primary.categories.map((value) => formatCategoryLabel(value, categoryFormat))
   const count = Math.max(1, primary.values.length - 1)
+  // Stacked lines keep the 0 fillers (a blank contributes nothing to the
+  // stack); only flat lines honor gap/span.
+  const seriesSegments = (series: ChartSeries): number[][] =>
+    lineSegments(series.values.length, isStacked ? undefined : series.blanks, dispBlanksAs)
+  const isSkippedBlank = (series: ChartSeries, index: number): boolean =>
+    !isStacked &&
+    (dispBlanksAs === 'gap' || dispBlanksAs === 'span') &&
+    (series.blanks?.includes(index) ?? false)
   const categoryGroups = visibleCategoryGroups(primary.categoryGroups, primary.values.length)
   // The group band occupies y 284-314; a bottom axis title moves below it
   // on an extended canvas instead of overprinting.
@@ -3177,10 +3362,16 @@ function LineChart({
         const stroke = lineStroke(series, seriesIndex)
         if (stroke === null) return null
         const width = series.lineWidth ?? 3
-        return (
+        const values = displayValues(seriesIndex)
+        const denominator = Math.max(1, values.length - 1)
+        const pointAt = (index: number): string =>
+          `${60 + (index / denominator) * 500},${
+            280 - Math.max(0, Math.min(1, ((values[index] ?? 0) - bounds.min) / (span || 1))) * 240
+          }`
+        return seriesSegments(series).map((segment, segmentIndex) => (
           <polyline
-            key={seriesIndex}
-            points={linePoints(displayValues(seriesIndex), bounds.max, bounds.min)}
+            key={`${seriesIndex}-${segmentIndex}`}
+            points={segment.map(pointAt).join(' ')}
             fill="none"
             stroke={stroke}
             strokeWidth={
@@ -3197,7 +3388,7 @@ function LineChart({
                 : undefined
             }
           />
-        )
+        ))
       })}
       {seriesList.map((series, seriesIndex) => {
         // Plot flag on or explicit symbol; a series-level "none" always wins.
@@ -3214,15 +3405,17 @@ function LineChart({
         const color = lineStroke(series, seriesIndex) ?? seriesColor(series, seriesIndex)
         return (
           <g key={`markers-${seriesIndex}`}>
-            {values.map((value, index) => (
-              <MarkerGlyph
-                key={index}
-                x={60 + (index / pointCount) * 500}
-                y={280 - Math.max(0, Math.min(1, (value - bounds.min) / (span || 1))) * 240}
-                symbol={symbol}
-                color={color}
-              />
-            ))}
+            {values.map((value, index) =>
+              isSkippedBlank(series, index) ? null : (
+                <MarkerGlyph
+                  key={index}
+                  x={60 + (index / pointCount) * 500}
+                  y={280 - Math.max(0, Math.min(1, (value - bounds.min) / (span || 1))) * 240}
+                  symbol={symbol}
+                  color={color}
+                />
+              ),
+            )}
           </g>
         )
       })}
@@ -3257,17 +3450,19 @@ function LineChart({
         />
       ))}
       {dataLabels === 'value' &&
-        displayValues(0).map((displayed, index) => (
-          <text
-            key={`label-${index}`}
-            x={60 + (index / count) * 500}
-            y={272 - Math.max(0, Math.min(1, (displayed - bounds.min) / span)) * 240}
-            textAnchor="middle"
-            className="axis-label"
-          >
-            {formatAxisValue(primary.values[index] ?? 0, primary.numberFormat)}
-          </text>
-        ))}
+        displayValues(0).map((displayed, index) =>
+          isSkippedBlank(primary, index) ? null : (
+            <text
+              key={`label-${index}`}
+              x={60 + (index / count) * 500}
+              y={272 - Math.max(0, Math.min(1, (displayed - bounds.min) / span)) * 240}
+              textAnchor="middle"
+              className="axis-label"
+            >
+              {formatAxisValue(primary.values[index] ?? 0, primary.numberFormat)}
+            </text>
+          ),
+        )}
       <CategoryGroupBand
         spans={categoryGroups.map((group) => {
           const xAt = (index: number): number => 60 + (index / count) * 500
@@ -3595,10 +3790,16 @@ function ScatterChart({
       const parsed = Number.parseFloat(value)
       return Number.isFinite(parsed) ? parsed : index
     })
-    return { series, xValues }
+    // Blank cache slots are 0 fillers, not data — Excel plots no point.
+    const blankSet = new Set(series.blanks ?? [])
+    return { series, xValues, blankSet }
   })
-  const allX = points.flatMap((entry) => entry.xValues)
-  const allY = points.flatMap((entry) => [...entry.series.values])
+  const allX = points.flatMap((entry) =>
+    entry.xValues.filter((_, index) => !entry.blankSet.has(index)),
+  )
+  const allY = points.flatMap((entry) =>
+    entry.series.values.filter((_, index) => !entry.blankSet.has(index)),
+  )
   if (allY.length === 0) return <></>
   const boundsX = scatterAxisBounds(allX, xAxis)
   const boundsY = scatterAxisBounds(allY, valueAxis)
@@ -3657,12 +3858,15 @@ function ScatterChart({
           </text>
         </g>
       ))}
-      {points.map(({ series, xValues }, seriesIndex) => (
+      {points.map(({ series, xValues, blankSet }, seriesIndex) => (
         <g key={seriesIndex}>
           {styleWantsLines && series.lineColor !== 'none' && series.values.length > 1 && (
             <polyline
               points={series.values
-                .map((value, index) => `${plotX(xValues[index] ?? 0)},${plotY(value)}`)
+                .map((value, index) =>
+                  blankSet.has(index) ? null : `${plotX(xValues[index] ?? 0)},${plotY(value)}`,
+                )
+                .filter((point) => point !== null)
                 .join(' ')}
               fill="none"
               stroke={
@@ -3674,39 +3878,43 @@ function ScatterChart({
             />
           )}
           {series.marker !== 'none' &&
-            series.values.map((value, index) => (
-              <circle
-                key={index}
-                cx={plotX(xValues[index] ?? 0)}
-                cy={plotY(value)}
-                r={isSelectedPoint(selectedEl, seriesIndex, index) ? 6 : 4}
-                fill={seriesColor(series, seriesIndex)}
-                opacity="0.85"
-                {...(isSelectedPoint(selectedEl, seriesIndex, index)
-                  ? { stroke: '#107C41', strokeWidth: 2 }
-                  : {})}
-                onClick={
-                  onElement
-                    ? (event) => {
-                        event.stopPropagation()
-                        onElement(narrowSelection(selectedEl ?? null, seriesIndex, index))
-                      }
-                    : undefined
-                }
-              />
-            ))}
+            series.values.map((value, index) =>
+              blankSet.has(index) ? null : (
+                <circle
+                  key={index}
+                  cx={plotX(xValues[index] ?? 0)}
+                  cy={plotY(value)}
+                  r={isSelectedPoint(selectedEl, seriesIndex, index) ? 6 : 4}
+                  fill={seriesColor(series, seriesIndex)}
+                  opacity="0.85"
+                  {...(isSelectedPoint(selectedEl, seriesIndex, index)
+                    ? { stroke: '#107C41', strokeWidth: 2 }
+                    : {})}
+                  onClick={
+                    onElement
+                      ? (event) => {
+                          event.stopPropagation()
+                          onElement(narrowSelection(selectedEl ?? null, seriesIndex, index))
+                        }
+                      : undefined
+                  }
+                />
+              ),
+            )}
           {dataLabels === 'value' &&
-            series.values.map((value, index) => (
-              <text
-                key={`label-${index}`}
-                x={plotX(xValues[index] ?? 0)}
-                y={plotY(value) - 8}
-                textAnchor="middle"
-                className="axis-label"
-              >
-                {formatAxisValue(value, series.numberFormat)}
-              </text>
-            ))}
+            series.values.map((value, index) =>
+              blankSet.has(index) ? null : (
+                <text
+                  key={`label-${index}`}
+                  x={plotX(xValues[index] ?? 0)}
+                  y={plotY(value) - 8}
+                  textAnchor="middle"
+                  className="axis-label"
+                >
+                  {formatAxisValue(value, series.numberFormat)}
+                </text>
+              ),
+            )}
         </g>
       ))}
       <AxisTitleTexts bottom={axisTitles?.category} left={axisTitles?.value} />
@@ -3735,6 +3943,8 @@ function pieSliceLabels(
   geometry: { cx: number; cy: number; r: number; inner: number; offsets: readonly number[] },
   position?: ChartLabelPosition,
   formatCode?: string | undefined,
+  /// dLbls' own numFmt only — the source cells' format is not a percent.
+  percentFormat?: string | undefined,
 ): PieSliceLabel[] {
   const { cx, cy, r, inner, offsets } = geometry
   const labels: PieSliceLabel[] = []
@@ -3746,7 +3956,7 @@ function pieSliceLabels(
     // Excel labels every visible slice; only slivers too thin to aim a
     // leader line at go unlabeled.
     if (share < 0.005) continue
-    const percentText = `${(share * 100).toFixed(share >= 0.1 ? 0 : 1)}%`
+    const percentText = formatPiePercent(share, percentFormat)
     const valueText = formatPieValue(value, formatCode)
     const lines =
       mode === 'category-value-percent'
@@ -3893,6 +4103,7 @@ function PieChart({
           dataLabelPosition,
           // Labels without their own numFmt inherit the source cells' format.
           dataLabelFormat ?? series.numberFormat,
+          dataLabelFormat,
         )
       : []
   return (

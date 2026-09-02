@@ -31,6 +31,7 @@ function makeState(defaultRowHeight: number | null = null) {
   return {
     file: { styles: [], sheets: [{ id: 'sheet-1', defaultRowHeight }] },
     appliedRowKeys: new Map<string, Set<string>>(),
+    hiddenFileRows: new Map<string, Set<number>>(),
     outline: new Map(),
   }
 }
@@ -52,6 +53,17 @@ describe('applyRowProperties', () => {
       { method: 'auto', row: 1, suppressed: true },
       { method: 'hide', row: 2 },
     ])
+  })
+
+  it('records file-hidden rows so the viewport loader can budget by visible rows', () => {
+    const { worksheet } = makeWorksheet()
+    const state = makeState()
+    applyRowProperties(worksheet as never, state as never, 'sheet-1', [
+      { row: 0, hidden: false },
+      { row: 1, hidden: true },
+      { row: 2, hidden: true },
+    ] as never)
+    expect([...(state.hiddenFileRows.get('sheet-1') ?? [])]).toEqual([1, 2])
   })
 
   it('drops the suppression flag after the rows are applied', () => {
@@ -125,17 +137,16 @@ describe('applyRowProperties', () => {
 })
 
 describe('numericWrapOverride', () => {
-  it('unwraps plain numeric cells with a wrap style — Excel never wraps numbers', () => {
-    expect(numericWrapOverride(false, 45_123.87, true)).toBe(true)
+  it('unwraps numeric cells with a wrap style — Excel never wraps numbers', () => {
+    expect(numericWrapOverride(45_123.87, true)).toBe(true)
   })
 
-  it('leaves text, booleans, formulas, and non-wrap styles alone', () => {
-    expect(numericWrapOverride(false, 'long text', true)).toBe(false)
-    expect(numericWrapOverride(false, true, true)).toBe(false)
-    expect(numericWrapOverride(false, null, true)).toBe(false)
-    expect(numericWrapOverride(true, 45_123.87, true)).toBe(false)
-    expect(numericWrapOverride(false, 45_123.87, false)).toBe(false)
-    expect(numericWrapOverride(false, 45_123.87, undefined)).toBe(false)
+  it('leaves text, booleans, and non-wrap styles alone', () => {
+    expect(numericWrapOverride('long text', true)).toBe(false)
+    expect(numericWrapOverride(true, true)).toBe(false)
+    expect(numericWrapOverride(null, true)).toBe(false)
+    expect(numericWrapOverride(45_123.87, false)).toBe(false)
+    expect(numericWrapOverride(45_123.87, undefined)).toBe(false)
   })
 })
 

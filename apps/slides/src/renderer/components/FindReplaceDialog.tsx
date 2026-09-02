@@ -31,7 +31,7 @@ function layoutText(text?: RenderTextLayout): string {
       .filter((r) => !r.isBullet)
       .map((r) => r.text)
       .join('')
-    if (l.trailingSpace) out += ' '
+    if (l.trailingSpace) out += l.trailingText ?? ' '
   })
   return out
 }

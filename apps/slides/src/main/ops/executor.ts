@@ -23,6 +23,7 @@ import {
 } from '@genoffice/pptx-engine'
 import { opUsage } from '../../shared/op-docs'
 import {
+  assertXmlSafeStrings,
   GuidedError,
   lookup,
   resolveElement,
@@ -173,6 +174,7 @@ export function runTxn(opened: OpenedPptx, req: TxnRequest): TxnResult {
       if (typeof op !== 'object' || op === null || typeof op.op !== 'string') {
         throw new GuidedError('each op must be an object with an "op" name field.')
       }
+      assertXmlSafeStrings(op)
       lookup(op.op).validate(op, ctx)
       plan.push(planLine(i, op))
     } catch (e) {

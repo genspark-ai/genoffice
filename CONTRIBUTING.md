@@ -121,12 +121,10 @@ inline sign-in prompt, and web search falls back to a keyless backend.
   is cheap.
 - Tests live in `apps/*/tests` and `packages/*/tests` (vitest). New engine
   behavior needs a unit test; renderer-only UI tweaks generally don't.
-- Local Playwright/Electron acceptance drivers belong in `scripts/drivers/`
-  (gitignored, excluded from CI) — see `scripts/drivers/README.md`.
-- The Word-fidelity scripts (`scripts/docs-word-fidelity.mjs`,
-  `scripts/pagination-baseline-word.mjs`) need macOS with Microsoft Word
-  installed and AppleScript automation permission granted; they are optional
-  local tools and never run in CI.
+- Playwright/Electron acceptance drivers and Office-app comparison scripts
+  (anything that drives the built app or Word/Excel/PowerPoint on your
+  machine) are local, on-demand tools: keep them out of the tree (they are
+  gitignored) and never wire them into CI.
 - Keep files from growing without bound: if you are adding a substantial new
   concern to an already-large file, prefer a new module.
 

@@ -179,6 +179,67 @@ describe('applyPageSetupState headerFooter', () => {
     // No element to remove is a no-op, not an insertion of an empty one.
     expect(applyPageSetupState(BARE, { sheetName: 'S', header: null, footer: null })).toBe(BARE)
   })
+
+  const VARIANTS =
+    '<headerFooter differentOddEven="1" differentFirst="1" scaleWithDoc="0" alignWithMargins="0">' +
+    '<oddHeader>&amp;L&amp;G&amp;COdd</oddHeader><oddFooter>&amp;P</oddFooter>' +
+    '<evenHeader>&amp;CEven</evenHeader><evenFooter>&amp;R&amp;G</evenFooter>' +
+    '<firstHeader>&amp;CFirst</firstHeader><firstFooter>&amp;L&amp;D</firstFooter>' +
+    '</headerFooter>'
+
+  it('leaves an untouched headerFooter with variants byte-identical', () => {
+    const xml = `<worksheet><sheetData/><pageSetup paperSize="1"/>${VARIANTS}</worksheet>`
+    const patched = applyPageSetupState(xml, {
+      sheetName: 'S',
+      orientation: 'landscape',
+      fitToWidth: 1,
+      fitToHeight: 0,
+      fitToPage: true,
+    })
+    expect(patched).toContain(VARIANTS)
+    expect(patched).toContain('<pageSetup fitToHeight="0" orientation="landscape" paperSize="1"/>')
+  })
+
+  it('rewrites only the odd sections, keeping flags and even/first variants', () => {
+    const xml = `<worksheet><sheetData/>${VARIANTS}</worksheet>`
+    const patched = applyPageSetupState(xml, {
+      sheetName: 'S',
+      header: { center: 'New odd' },
+      footer: null,
+    })
+    expect(patched).toBe(
+      '<worksheet><sheetData/>' +
+        '<headerFooter differentOddEven="1" differentFirst="1" scaleWithDoc="0" alignWithMargins="0">' +
+        '<oddHeader>&amp;CNew odd</oddHeader>' +
+        '<evenHeader>&amp;CEven</evenHeader><evenFooter>&amp;R&amp;G</evenFooter>' +
+        '<firstHeader>&amp;CFirst</firstHeader><firstFooter>&amp;L&amp;D</firstFooter>' +
+        '</headerFooter></worksheet>',
+    )
+  })
+
+  it('inserts missing odd sections ahead of the variants in schema order', () => {
+    const xml =
+      '<worksheet><sheetData/><headerFooter differentFirst="1">' +
+      '<firstHeader>&amp;CFirst</firstHeader></headerFooter></worksheet>'
+    const patched = applyPageSetupState(xml, {
+      sheetName: 'S',
+      header: { left: 'H' },
+      footer: { right: 'F' },
+    })
+    expect(patched).toBe(
+      '<worksheet><sheetData/><headerFooter differentFirst="1">' +
+        '<oddHeader>&amp;LH</oddHeader><oddFooter>&amp;RF</oddFooter>' +
+        '<firstHeader>&amp;CFirst</firstHeader></headerFooter></worksheet>',
+    )
+  })
+
+  it('keeps the flags on an element whose odd sections were cleared', () => {
+    const xml =
+      '<worksheet><sheetData/><headerFooter differentOddEven="1">' +
+      '<oddHeader>&amp;COdd</oddHeader></headerFooter></worksheet>'
+    const patched = applyPageSetupState(xml, { sheetName: 'S', header: null })
+    expect(patched).toBe('<worksheet><sheetData/><headerFooter differentOddEven="1"/></worksheet>')
+  })
 })
 
 const WORKBOOK =

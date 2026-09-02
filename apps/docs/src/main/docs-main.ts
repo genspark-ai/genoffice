@@ -2089,9 +2089,11 @@ function pushRecent(filePath: string): void {
   buildDocsMenu() // keep File > Open Recent in sync
 }
 
-/** unified recents for the shell home screen (paths only; type = extension) */
+/** unified recents for the shell home screen (paths only; type = extension).
+ *  No existence filter: a transiently unavailable path (disconnected drive,
+ *  pending mount) must stay listed — the stat layer flags it instead (r158) */
 export function readRecentFiles(): string[] {
-  return readJson<string[]>(RECENT_PATH(), []).filter((p) => existsSync(p))
+  return readJson<string[]>(RECENT_PATH(), [])
 }
 
 export function recordRecentFile(filePath: string): void {
@@ -2148,8 +2150,11 @@ export function replaceRecentFile(oldPath: string, newPath: string): void {
 
 const STARRED_PATH = () => userDataPath('starred.json')
 
+/** No existence filter, same rationale as readRecentFiles: a transiently
+ *  unavailable starred file must keep its star and its Starred-view row —
+ *  filtering here also desynced the star state shown on recents rows (r158) */
 export function readStarredFiles(): string[] {
-  return readJson<string[]>(STARRED_PATH(), []).filter((p) => existsSync(p))
+  return readJson<string[]>(STARRED_PATH(), [])
 }
 
 export function toggleStarredFile(filePath: string): void {
@@ -2158,6 +2163,16 @@ export function toggleStarredFile(filePath: string): void {
     ? starred.filter((p) => p !== filePath)
     : [...starred, filePath]
   writeJson(STARRED_PATH(), next)
+}
+
+/** Bulk unstar (in-app delete, or removing an unavailable entry from the
+ *  recents list): the star must not outlive the row it pointed at (r158) */
+export function removeStarredFiles(filePaths: string[]): void {
+  const drop = new Set(filePaths)
+  if (drop.size === 0) return
+  const starred = readJson<string[]>(STARRED_PATH(), [])
+  const next = starred.filter((p) => !drop.has(p))
+  if (next.length !== starred.length) writeJson(STARRED_PATH(), next)
 }
 
 // ---- original archive (pass-through base: original file archived by content hash) ----
@@ -3507,7 +3522,8 @@ export function registerDocsIpc(): void {
         openGeneratedFile(filePath)
         return { ok: true, path: filePath }
       } catch (err) {
-        return { ok: false, error: String(err) }
+        // path is already authorized, so the renderer can retry chunked to the same target
+        return { ok: false, error: String(err), path: filePath }
       }
     },
   )

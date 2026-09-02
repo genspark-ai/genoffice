@@ -410,6 +410,33 @@ export function ExcelShell({
         event.preventDefault()
         onCommand('toggle-show-formulas')
       }
+      // Excel's strikethrough toggle (⌘5 / Ctrl+5).
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key === '5') {
+        event.preventDefault()
+        onCommand('strike')
+      }
+      // Excel's AutoSum (Alt+= / ⌥⌘= is reserved by macOS, Excel-mac uses ⇧⌘T;
+      // plain Alt+= covers win/linux and most mac keyboards).
+      if (event.altKey && !event.metaKey && !event.ctrlKey && event.key === '=') {
+        if (!onIsCellEditingRef.current()) {
+          event.preventDefault()
+          onCommand('autofn:SUM')
+        }
+      }
+      // Excel's insert current date / time (Ctrl+; / Ctrl+Shift+;).
+      if ((event.metaKey || event.ctrlKey) && event.code === 'Semicolon') {
+        if (!onIsCellEditingRef.current()) {
+          event.preventDefault()
+          onCommand(event.shiftKey ? 'insert-now:time' : 'insert-now:date')
+        }
+      }
+      // Excel's manual recalculation (F9 workbook, Shift+F9 active sheet).
+      if (event.key === 'F9' && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (!onIsCellEditingRef.current()) {
+          event.preventDefault()
+          onCommand(event.shiftKey ? 'calculate-sheet' : 'calculate-now')
+        }
+      }
       // Excel's PageUp/PageDown; Alt+ pages horizontally. Univer parks grid
       // focus on a hidden editable host, so app fields are told apart by
       // sitting OUTSIDE the grid container; in-cell editing is checked in the
@@ -2127,6 +2154,14 @@ function Ribbon({
             >
               <ToolSymbol symbol="🗎" />
               {t('appFromTextCsv')}
+            </button>
+            <button
+              className="styles-row as-button"
+              data-tip={t('appMergeWorkbooksTip')}
+              onClick={() => onCommand('merge-workbooks')}
+            >
+              <ToolSymbol symbol="⧉" />
+              {t('appMergeWorkbooks')}
             </button>
             <button
               className="styles-row as-button"

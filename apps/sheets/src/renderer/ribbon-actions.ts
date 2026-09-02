@@ -54,6 +54,7 @@ import {
 } from './edit-journal'
 import { applyShowFormulasView, formulaViewSheets } from './formula-view'
 import { t } from './i18n/locale'
+import { mergeWorkbooksIntoCurrent } from './merge-workbooks'
 import {
   handleOpenSlicerPicker,
   handleOpenTimelinePicker,
@@ -1350,6 +1351,52 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
             .setFormula(`=${argument}(${letter}${startRow + 1}:${letter}${lastRow + 1})`)
         }
         ctx.setMessage(t('appAutofnInserted', { fn: argument }))
+        return
+      }
+      case 'merge-workbooks': {
+        const runtime = ctx.univerRef.current
+        if (!runtime) return
+        void mergeWorkbooksIntoCurrent({
+          runtime,
+          lazyWorkbookRef: ctx.lazyWorkbookRef,
+          setMessage: ctx.setMessage,
+        })
+        return
+      }
+      case 'insert-now': {
+        // Excel's Ctrl+; / Ctrl+Shift+;: static current date / time into the
+        // ACTIVE cell (not the selection origin) as a real serial with a
+        // date/time format (silent, like Excel — typing-equivalent write, so
+        // the streaming guards apply).
+        if (!worksheet) return
+        const now = new Date()
+        const localAsUtc = Date.UTC(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+          now.getHours(),
+          now.getMinutes(),
+          now.getSeconds(),
+        )
+        const serial = (localAsUtc - Date.UTC(1899, 11, 30)) / 86400000
+        const primary = ctx.univerRef.current?.univerAPI
+          .getActiveWorkbook()
+          ?.getActiveSheet()
+          ?.getSelection()
+          ?.getCurrentCell()
+        const cell = worksheet.getRange(
+          primary?.actualRow ?? range.getRow(),
+          primary?.actualColumn ?? range.getColumn(),
+        )
+        if (argument === 'time') {
+          cell.setValue(serial - Math.floor(serial))
+          cell.setNumberFormat('h:mm')
+        } else {
+          // 1904-system workbooks store serials 1462 days lower
+          const dayShift = ctx.lazyWorkbookRef.current?.file.date1904 === true ? 1462 : 0
+          cell.setValue(Math.floor(serial) - dayShift)
+          cell.setNumberFormat('yyyy/m/d')
+        }
         return
       }
       case 'sort-custom': {

@@ -873,3 +873,45 @@ describe('3-D chart kinds survive insert and edit round-trips', () => {
     expect(el.chart.categories).toEqual(['A', 'B', 'C'])
   })
 })
+
+describe('editChartElement doughnut hole preservation', () => {
+  it('a custom holeSizePct survives a data-only rebuild and is patchable', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addChart(opened, 0, {
+      kind: 'doughnut',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [1, 2] }],
+      offset: { ...OFF },
+      holeSizePct: 72,
+    })!
+    const chartXml = (path: string) => {
+      const rels = opened.archive.readText(relsPathFor('ppt/slides/slide1.xml'))!
+      const target = /Target="([^"]*chart\d+\.xml)"/.exec(rels)![1]!
+      return opened.archive.readText(path || `ppt/charts/${target.split('/').pop()}`)!
+    }
+    expect(chartXml('')).toContain('<c:holeSize val="72"/>')
+    // Data-only edit: the hole used to reset to the build default (50)
+    expect(editChartElement(opened, 0, r.elementId, { categories: ['A', 'B', 'C'] })).toBe(true)
+    expect(chartXml('')).toContain('<c:holeSize val="72"/>')
+    // Explicit patch wins
+    expect(editChartElement(opened, 0, r.elementId, { holeSizePct: 30 })).toBe(true)
+    expect(chartXml('')).toContain('<c:holeSize val="30"/>')
+  })
+})
+
+describe('pie → doughnut type switch (Bugbot: parsed pie holePct 0 must not clamp to a 1% hole)', () => {
+  it('switching a pie to doughnut gets the default 50% hole', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const r = addChart(opened, 0, {
+      kind: 'pie',
+      categories: ['A', 'B'],
+      series: [{ name: 'S', values: [1, 2] }],
+      offset: { ...OFF },
+    })!
+    expect(editChartElement(opened, 0, r.elementId, { kind: 'doughnut' })).toBe(true)
+    const rels = opened.archive.readText(relsPathFor('ppt/slides/slide1.xml'))!
+    const target = /Target="([^"]*chart\d+\.xml)"/.exec(rels)![1]!
+    const xml = opened.archive.readText(`ppt/charts/${target.split('/').pop()}`)!
+    expect(xml).toContain('<c:holeSize val="50"/>')
+  })
+})

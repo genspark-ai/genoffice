@@ -5,8 +5,9 @@
  *    failure and falls back to the raw value, so `#,##0;(#,##0);` shows 0
  *  - string cells never enter the formatter, so the 4th (text) section of a
  *    pattern like `0.0_);(0.0);0.0_);@_)` is ignored
- *  - `_x`/`*x` padding comes out as plain spaces, which layout collapses on
+ *  - `_x` padding comes out as plain spaces, which layout collapses on
  *    right-aligned cells; re-render with NBSP so accounting columns align
+ *  - `*x` fill is dropped; re-render it as the run that fills the cell width
  *  - General is left at stripErrorMargin's 12 significant digits instead of
  *    Excel's "at most 11, shrunk to what the column width can hold"
  *
@@ -21,6 +22,7 @@ import {
   numfmt,
   WrapStrategy,
 } from '@univerjs/core'
+import { ERROR_TYPE_SET, type ErrorType } from '@univerjs/engine-formula'
 import { FontCache, getFontStyleString } from '@univerjs/engine-render'
 import { ConditionalFormattingService } from '@univerjs/preset-sheets-conditional-formatting'
 import { INTERCEPTOR_POINT, SheetInterceptorService } from '@univerjs/sheets'
@@ -29,11 +31,16 @@ import { getWorkbookMdw } from './app-constants'
 import { isSubstitutedCellFamily } from './cell-font-fallback'
 import type { UniverRuntime } from './univer-state'
 
+/// Horizontal room a cell's text never gets: Univer's 2+2px cell padding
+/// plus the 1px blur offset. Every width-vs-text rule here (General digit
+/// budget, #### overflow, `*x` fill) measures against `width - CELL_INSET_PX`.
+export const CELL_INSET_PX = 5
+
 /// Shares the per-workbook max-digit-width with characterWidthToPixels
 /// (univer-sync.ts), so a column imported as N chars yields a budget of
 /// floor(N) regardless of the render font.
 export function generalCharBudget(columnWidthPx: number): number {
-  return Math.max(1, Math.floor((columnWidthPx - 5) / getWorkbookMdw()))
+  return Math.max(1, Math.floor((columnWidthPx - CELL_INSET_PX) / getWorkbookMdw()))
 }
 
 function toScientific(value: number, decimals: number): string {
@@ -137,77 +144,139 @@ function patternSections(pattern: string): string[] {
 }
 
 /**
- * The literal text a section renders before its `*x` fill: `_x` padding
- * (NBSP), quoted literals, escaped characters, and plain literal symbols.
- * Null when the section has no fill or a placeholder precedes it — the fill
- * must sit in the prefix for the split to be unambiguous.
+ * The `*x` fill token a format section honours: its code-unit range in the
+ * section and the character to repeat. Quoted literals, `\x` escapes, `_x`
+ * skip-width tokens and `[...]` blocks are opaque (an asterisk inside them
+ * is not a fill). ECMA-376 18.8.31: a section shall have at most one
+ * asterisk, and when it has several, all but the LAST are ignored. A
+ * trailing bare `*` is not a fill. Null when the section has no fill.
  */
-function literalPrefixBeforeFill(section: string): { prefix: string; fill: string } | null {
-  let prefix = ''
+export function sectionFillToken(
+  section: string,
+): { start: number; end: number; fill: string } | null {
+  let token: { start: number; end: number; fill: string } | null = null
   for (let index = 0; index < section.length; index += 1) {
-    const character = section[index] ?? ''
-    if (character === '*') {
-      const fill = section[index + 1]
-      if (fill === undefined) return null
-      // numfmt's nbsp mode renders literal spaces (escaped or quoted) as
-      // NBSP too (`"$"\ * #,##0`), so the prefix must match that.
-      return { prefix: prefix.replace(/ /g, '\u00a0'), fill: fill === ' ' ? '\u00a0' : fill }
-    }
-    if (character === '_') {
-      prefix += '\u00a0'
-      index += 1
-      continue
-    }
-    if (character === '\\') {
-      prefix += section[index + 1] ?? ''
-      index += 1
-      continue
-    }
+    const character = section[index]
     if (character === '"') {
       const end = section.indexOf('"', index + 1)
       if (end === -1) return null
-      prefix += section.slice(index + 1, end)
       index = end
       continue
     }
-    // A digit/date placeholder or condition before the fill: unsupported.
-    if (/[0#?@[eEdmyhs]/.test(character)) return null
-    prefix += character
+    if (character === '[') {
+      const end = section.indexOf(']', index + 1)
+      if (end === -1) return null
+      index = end
+      continue
+    }
+    if (character === '\\' || character === '_') {
+      index += 1
+      continue
+    }
+    if (character === '*') {
+      const codePoint = section.codePointAt(index + 1)
+      if (codePoint === undefined) break
+      const fill = String.fromCodePoint(codePoint)
+      token = { start: index, end: index + 1 + fill.length, fill }
+      index += fill.length
+    }
   }
-  return null
+  return token
+}
+
+/// Private-use marker per section index: distinct so the rendered text
+/// tells which section (hence which fill character) numfmt selected.
+function fillSentinel(sectionIndex: number): string {
+  return String.fromCharCode(0xe000 + sectionIndex)
+}
+
+const FILL_SENTINEL_RANGE = /[\uE000-\uE0FF]/g
+
+interface FillRewrite {
+  /// The pattern with each section's honoured `*x` replaced by a quoted
+  /// sentinel literal, so numfmt renders the fill position in place.
+  pattern: string
+  /// Fill character per section index; undefined for sections without one.
+  fills: (string | undefined)[]
+}
+
+const fillRewriteCache = new Map<string, FillRewrite | null>()
+
+/// Null when no section carries a fill (the common case, cached).
+export function fillRewriteForPattern(pattern: string): FillRewrite | null {
+  let rewrite = fillRewriteCache.get(pattern)
+  if (rewrite !== undefined) return rewrite
+  rewrite = null
+  if (pattern.includes('*')) {
+    const sections = patternSections(pattern)
+    const fills: (string | undefined)[] = []
+    const rewritten = sections.map((section, index) => {
+      const token = sectionFillToken(section)
+      fills.push(token?.fill)
+      if (!token) return section
+      return `${section.slice(0, token.start)}"${fillSentinel(index)}"${section.slice(token.end)}`
+    })
+    if (fills.some((fill) => fill !== undefined)) {
+      rewrite = { pattern: rewritten.join(';'), fills }
+    }
+  }
+  if (fillRewriteCache.size > 5_000) fillRewriteCache.clear()
+  fillRewriteCache.set(pattern, rewrite)
+  return rewrite
+}
+
+/**
+ * How many whole fill characters fit beside the rest of the text: Excel
+ * repeats `x` until the next copy would overflow the cell, and shows none
+ * when the text alone already fills it (the text still renders; a too-wide
+ * number then takes the #### rule like any other).
+ */
+export function fillRepeatCount(
+  columnWidthPx: number,
+  textWidthPx: number,
+  fillWidthPx: number,
+): number {
+  if (!(fillWidthPx > 0)) return 0
+  return Math.max(0, Math.floor((columnWidthPx - CELL_INSET_PX - textWidthPx) / fillWidthPx))
 }
 
 /**
  * Excel repeats a pattern's `*x` fill character until the cell is full — the
  * accounting formats use `"$"* ` to pin the currency symbol to the left edge
- * while the amount stays right-aligned. numfmt drops the fill entirely, so
- * locate the fill point from the matched section's literal prefix and insert
- * the exact run that fills the column. NBSP fill so layout keeps the run on
- * right-aligned cells (same reasoning as the `_x` padding upgrade).
+ * while the amount stays right-aligned; `0*-` draws trailing dashes, `@*.`
+ * dot leaders. numfmt drops the token entirely, so re-render the value with
+ * the token swapped for a sentinel literal, split the text there and insert
+ * the exact run that fills the column. Space fills become NBSP runs so
+ * layout keeps them on right-aligned cells (same reasoning as the `_x`
+ * padding upgrade). Null when the pattern has no fill, when numfmt picked a
+ * section without one, when the marker changed anything but its own
+ * position, or when not even one fill character fits.
  */
 export function expandAsteriskFill(
   pattern: string,
-  value: number,
+  value: number | string,
   columnWidthPx: number,
   measure: (text: string) => number,
 ): string | null {
-  const sections = patternSections(pattern)
-  const section =
-    value < 0 && sections.length > 1
-      ? sections[1]
-      : value === 0 && sections.length > 2
-        ? sections[2]
-        : sections[0]
-  if (section === undefined || !section.includes('*')) return null
-  const split = literalPrefixBeforeFill(section)
-  if (!split) return null
-  const text = safeFormat(pattern, value)
-  if (text === null || !text.startsWith(split.prefix)) return null
-  const unit = measure(split.fill)
-  if (!(unit > 0)) return null
-  const count = Math.floor((columnWidthPx - 5 - measure(text)) / unit)
+  const rewrite = fillRewriteForPattern(pattern)
+  if (!rewrite) return null
+  const marked = safeFormat(rewrite.pattern, value)
+  if (marked === null) return null
+  const sentinels = marked.match(FILL_SENTINEL_RANGE)
+  if (sentinels === null || sentinels.length !== 1) return null
+  const sectionIndex = (sentinels[0] as string).charCodeAt(0) - 0xe000
+  const rawFill = rewrite.fills[sectionIndex]
+  if (rawFill === undefined) return null
+  const at = marked.indexOf(sentinels[0] as string)
+  const head = marked.slice(0, at)
+  const tail = marked.slice(at + 1)
+  // The sentinel must be the only difference from the plain render — a
+  // literal dropped into a digit run can change grouping or scaling.
+  if (head + tail !== safeFormat(pattern, value)) return null
+  const fill = rawFill === ' ' ? '\u00a0' : rawFill
+  const count = fillRepeatCount(columnWidthPx, measure(head + tail), measure(fill))
   if (count <= 0) return null
-  return split.prefix + split.fill.repeat(count) + text.slice(split.prefix.length)
+  return head + fill.repeat(count) + tail
 }
 
 // Only the canonical grouped prefix is allowed before the decimals: a
@@ -291,21 +360,62 @@ export function overflowHashes(
   columnWidthPx: number,
   measure: (text: string) => number,
   scale = 1,
+  calibrated = scale !== 1,
 ): string | null {
-  // 2+2 cell padding plus 1px blur offset, matching generalCharBudget.
-  const available = columnWidthPx - 5
-  // macOS glyph advances run a few percent wide of Excel's GDI metrics
-  // (Arial bold "2026/8/30" measures 65.2px here vs ≤63px in Excel), so a
-  // borderline overflow within that noise band is a spurious #### — clip
-  // instead, which loses a couple of pixels rather than the whole value.
-  if (display === '' || measure(display) * scale <= available * 1.05) return null
+  if (display === '') return null
+  const available = columnWidthPx - CELL_INSET_PX
+  // A calibrated (GDI-normalized) measurement follows Excel's real rule — a
+  // digit width of slack before hashing (prod refs pin it in both
+  // directions: 36.3px content hashes in a 42px cell, 75.5px shows in 98px).
+  // A genuine local face measuring at its GDI width counts as calibrated:
+  // its scale clamps to exactly 1 but the numbers are true. Uncalibrated
+  // measurements keep a 5% noise band instead: macOS glyph advances run a
+  // few percent wide of Excel's GDI metrics (Arial bold "2026/8/30"
+  // measures 65.2px here vs ≤63px in Excel), and a borderline spurious ####
+  // loses the whole value while a clip loses a few pixels.
+  const limit = calibrated ? available - measure('0') * scale : available * 1.05
+  if (measure(display) * scale <= limit) return null
   return hashFill(columnWidthPx, measure)
+}
+
+/// True for the faces whose GDI digit width is pinned em-exactly: when
+/// the genuine face is installed the scale clamps to exactly 1, but the
+/// measurement still matches Excel, so the digit-slack rule (not the noise
+/// band) applies. Deliberately NOT the wider MDW table — extending Excel's
+/// digit-slack semantics to every Calibri cell needs more calibration
+/// samples than the one Yu Gothic ref that pinned it.
+export function hasGdiDigitCalibration(family: string | undefined): boolean {
+  return family !== undefined && SUBSTITUTED_DIGIT_PER_PT[family] !== undefined
+}
+
+interface MergedSpanSheet {
+  // void: Univer's Nullable<IRange> includes it.
+  getMergedCell(
+    row: number,
+    col: number,
+  ): { startColumn: number; endColumn: number } | null | undefined | void
+  getColumnWidth(col: number): number
+  getColVisible(col: number): boolean
+}
+
+/// Display width of a merged cell's column span (hidden columns excluded),
+/// null when the cell is not merged. Excel fits General text and decides
+/// #### against the whole span, not the anchor column (prod_037: 23566 in a
+/// six-column merge whose anchor is 3.1 chars wide rendered 2E+04).
+export function mergedSpanWidth(sheet: MergedSpanSheet, row: number, col: number): number | null {
+  const merged = sheet.getMergedCell(row, col)
+  if (!merged) return null
+  let total = 0
+  for (let col2 = merged.startColumn; col2 <= merged.endColumn; col2 += 1) {
+    if (sheet.getColVisible(col2)) total += sheet.getColumnWidth(col2)
+  }
+  return total
 }
 
 export function hashFill(columnWidthPx: number, measure: (text: string) => number): string | null {
   const hashWidth = measure('#')
   if (!(hashWidth > 0)) return null
-  return '#'.repeat(Math.max(1, Math.floor((columnWidthPx - 5) / hashWidth)))
+  return '#'.repeat(Math.max(1, Math.floor((columnWidthPx - CELL_INSET_PX) / hashWidth)))
 }
 
 /// Excel decides overflow with its own GDI metrics. Column pixels follow the
@@ -353,6 +463,38 @@ export const EXCEL_DIGIT_PER_PT: Record<string, number> = {
 /// the GDI scale-back must apply even though fontAvailable() is true.
 const ALIAS_SUBSTITUTED = new Set(['Malgun Gothic', '맑은 고딕', 'Aptos Narrow'])
 
+/// Substituted faces with em-exact GDI digit widths (ja / Thai from the
+/// genuine font files' hmtx; Cordia New from the prod_066 ref print, which
+/// pins digits at 4pt per 11pt while the macOS fallback measures ~0.55 em
+/// and hashed amounts Excel fits; the UPC spellings are the same designs
+/// under the Thai codepage names; px = em × size × 4/3). Every family here
+/// has a width-corrected alias in cell-font-fallback.ts, so the canvas
+/// digit already lands on this value and the scale sits at ~1 — the entry
+/// mainly flags the measurement as calibrated (hasGdiDigitCalibration).
+/// Only for the #### scale-back — never for MDW, whose calibration is
+/// grid-derived (measureNormalFontMdw) and would round wrong from these
+/// exact per-pt values.
+const SUBSTITUTED_DIGIT_PER_PT: Record<string, number> = {
+  'ＭＳ Ｐゴシック': 0.5 * (4 / 3),
+  'MS PGothic': 0.5 * (4 / 3),
+  'ＭＳ ゴシック': 0.5 * (4 / 3),
+  'MS Gothic': 0.5 * (4 / 3),
+  'MS UI Gothic': 0.5 * (4 / 3),
+  游ゴシック: 0.556 * (4 / 3),
+  游ゴシック体: 0.556 * (4 / 3),
+  'Yu Gothic': 0.556 * (4 / 3),
+  'Yu Gothic UI': 0.539 * (4 / 3),
+  メイリオ: 0.621 * (4 / 3),
+  Meiryo: 0.621 * (4 / 3),
+  'Meiryo UI': 0.621 * (4 / 3),
+  'Cordia New': (4 / 11) * (4 / 3),
+  CordiaUPC: (4 / 11) * (4 / 3),
+  'Angsana New': 0.33 * (4 / 3),
+  AngsanaUPC: 0.33 * (4 / 3),
+  'TH SarabunPSK': 0.362 * (4 / 3),
+  'TH Sarabun New': 0.362 * (4 / 3),
+}
+
 const fontAvailabilityCache = new Map<string, boolean>()
 
 /// Canvas width comparison against generic fallbacks rather than
@@ -390,9 +532,18 @@ export function excelWidthScale(
   substituteActive?: boolean,
 ): number {
   if (!family) return 1
-  const perPt = EXCEL_DIGIT_PER_PT[family]
+  // The em-exact substituted value wins over the MDW table entry: MDW wants
+  // the grid-calibrated 8px/11pt, the hash threshold wants the face's true
+  // digit advance (MS PGothic 0.5 em = 7.33px at 11pt).
+  const substitutedPerPt = SUBSTITUTED_DIGIT_PER_PT[family]
+  const perPt = substitutedPerPt ?? EXCEL_DIGIT_PER_PT[family]
   if (perPt === undefined) return 1
-  if (!ALIAS_SUBSTITUTED.has(family) && fontAvailable(family)) return 1
+  // fontAvailable is self-polluted for alias-substituted names — our own
+  // FontFace registers under the original family — so it only gates
+  // families outside both substitution tables.
+  if (!ALIAS_SUBSTITUTED.has(family) && substitutedPerPt === undefined && fontAvailable(family)) {
+    return 1
+  }
   const digit = measureDigit()
   if (!(digit > 0)) return 1
   const scale = (perPt * sizePt) / digit
@@ -456,19 +607,32 @@ const JA_FONT_FAMILY =
 
 const JA_LOCALE_TAG = /\[\$[^\]]*-411\]/
 
+/// `[$\-LCID]` currency token whose symbol is the lone 0x5C code point.
+const LEGACY_0X5C_CURRENCY = /\[\$\\-([0-9A-Fa-f]{1,8})\]/
+
 /**
  * JIS legacy currency: ja-authored files store the yen sign at 0x5C
  * (`"\"#,##0` — on Shift-JIS systems U+00A5 occupies the backslash code
  * point) and Excel renders it as U+00A5 with Japanese fonts. Swap the
  * literal in the displayed text when the pattern carries the quoted lone
- * backslash and the context is Japanese (ja font or [$-411] tag).
+ * backslash and the context is Japanese (ja font or [$-411] tag), or when
+ * a `[$\-LCID]` currency token names a locale whose legacy charset maps
+ * 0x5C to a currency sign (Shift-JIS yen, KS X 1001 won).
  */
 export function yenLiteralDisplay(
   pattern: string,
   displayed: string,
   fontFamily: string | undefined,
 ): string | null {
-  if (!displayed.includes('\\') || !pattern.includes('"\\"')) return null
+  if (!displayed.includes('\\')) return null
+  const token = LEGACY_0X5C_CURRENCY.exec(pattern)
+  if (token) {
+    // Primary language id of the LCID: 0x11 ja, 0x12 ko.
+    const primary = parseInt(token[1] ?? '', 16) & 0x3ff
+    if (primary === 0x11) return displayed.replaceAll('\\', '¥')
+    if (primary === 0x12) return displayed.replaceAll('\\', '₩')
+  }
+  if (!pattern.includes('"\\"')) return null
   if (!JA_LOCALE_TAG.test(pattern) && !(fontFamily && JA_FONT_FAMILY.test(fontFamily))) return null
   return displayed.replaceAll('\\', '¥')
 }
@@ -508,11 +672,45 @@ export function installNumberFormatFix(
     effect: InterceptorEffectEnum.Value,
     handler: (cell, location, next) => {
       if (!cell || cell.p != null) return next(cell)
-      if (cell.t === CellValueType.BOOLEAN || cell.t === CellValueType.FORCE_STRING) {
+      if (cell.t === CellValueType.BOOLEAN) {
+        // Excel hashes a too-wide TRUE/FALSE like any non-text value — a
+        // logical never clips (ref prints ### for Arial FALSE in a 32px
+        // column). Univer stores the label as 0/1.
+        const style = location.workbook.getStyles().getStyleByCell(cell)
+        if (
+          style?.tb !== WrapStrategy.WRAP &&
+          !style?.tr?.a &&
+          !style?.tr?.v &&
+          !location.worksheet.getMergedCell(location.row, location.col)
+        ) {
+          const fontString = getFontStyleString(style ?? undefined).fontString
+          const measure = (text: string) => FontCache.getMeasureText(text, fontString).width
+          const hashes = overflowHashes(
+            cell.v === 0 || cell.v === false ? 'FALSE' : 'TRUE',
+            location.worksheet.getColumnWidth(location.col),
+            measure,
+            excelWidthScale(style?.ff ?? undefined, style?.fs ?? 11, () => measure('0')),
+            hasGdiDigitCalibration(style?.ff ?? undefined),
+          )
+          if (hashes !== null) return next({ ...cell, v: hashes, t: CellValueType.NUMBER })
+        }
+        return next(cell)
+      }
+      if (cell.t === CellValueType.FORCE_STRING) {
         return next(cell)
       }
       const rawValue = location.rawData?.v
       if (rawValue === undefined || rawValue === null || typeof rawValue === 'boolean') {
+        return next(cell)
+      }
+      // The cached-value fallback (priority 9997) replaces engine error
+      // literals with the file's cached value; the raw model still holds the
+      // error, so re-deriving the display from it would undo the rescue.
+      if (
+        typeof rawValue === 'string' &&
+        ERROR_TYPE_SET.has(rawValue as ErrorType) &&
+        cell.v !== rawValue
+      ) {
         return next(cell)
       }
       // Trust the model's type: a numeric string with t=NUMBER is a number
@@ -546,19 +744,21 @@ export function installNumberFormatFix(
         location.rawData?.f == null &&
         location.rawData?.si == null
       // Excel's #### rule for numeric cells whose text is wider than the
-      // column. Wrapped/rotated/merged cells and text-formatted values keep
-      // Univer's behavior; a negative serial under a date or time format is
-      // #### at any width (the 1900 calendar has no negative dates).
+      // column (a merged cell against its whole visible span). Wrapped/
+      // rotated cells and text-formatted values keep Univer's behavior; a
+      // negative serial under a date or time format is #### at any width
+      // (the 1900 calendar has no negative dates).
       const maybeHash = <T extends typeof cell>(outCell: T, patternUsed: unknown): T => {
         if (typeof raw !== 'number' || typeof patternUsed !== 'string') return outCell
         if (isDefaultFormat(patternUsed)) return outCell
         const type = patternType(patternUsed)
         if (type === 'text' || type === 'unknown') return outCell
         if (style?.tb === WrapStrategy.WRAP || style?.tr?.a || style?.tr?.v) return outCell
-        if (location.worksheet.getMergedCell(location.row, location.col)) return outCell
         const fontString = getFontStyleString(style ?? undefined).fontString
         const measure = (text: string) => FontCache.getMeasureText(text, fontString).width
-        const width = location.worksheet.getColumnWidth(location.col)
+        const width =
+          mergedSpanWidth(location.worksheet, location.row, location.col) ??
+          location.worksheet.getColumnWidth(location.col)
         const negativeDate =
           raw < 0 && !date1904 && (type === 'date' || type === 'datetime' || type === 'time')
         const hashes = negativeDate
@@ -568,6 +768,7 @@ export function installNumberFormatFix(
               width,
               measure,
               excelWidthScale(style?.ff ?? undefined, style?.fs ?? 11, () => measure('0')),
+              hasGdiDigitCalibration(style?.ff ?? undefined),
             )
         if (hashes === null) return outCell
         return { ...outCell, v: hashes, t: CellValueType.NUMBER }
@@ -598,7 +799,10 @@ export function installNumberFormatFix(
       }
       if (isDefaultFormat(pattern)) {
         if (cell.t !== CellValueType.NUMBER || typeof raw !== 'number') return next(cell)
-        const budget = generalCharBudget(location.worksheet.getColumnWidth(location.col))
+        const budget = generalCharBudget(
+          mergedSpanWidth(location.worksheet, location.row, location.col) ??
+            location.worksheet.getColumnWidth(location.col),
+        )
         const key = `G ${raw} ${budget}`
         let text = cache.get(key)
         if (text === undefined) {
@@ -620,23 +824,43 @@ export function installNumberFormatFix(
         if (text === null || text === String(cell.v)) return next(maybeHash(cell, pattern))
         return next(maybeHash({ ...cell, v: text, t: CellValueType.NUMBER }, pattern))
       }
-      // `*x` fill: expand to the column width (accounting's left-pinned $).
+      // `*x` fill: expand to the cell width (accounting's left-pinned $; a
+      // merged cell fills its whole visible span). Display-only — the model
+      // value, formula bar and copies keep the unfilled text. Wrapped and
+      // rotated cells keep Univer's render: the fill is a single-line width
+      // rule and Excel's own behaviour there is unverified.
       if (
-        typeof raw === 'number' &&
         typeof pattern === 'string' &&
         pattern.includes('*') &&
+        (typeof raw === 'number' ||
+          (typeof raw === 'string' && !ERROR_TYPE_SET.has(raw as ErrorType))) &&
         style?.tb !== WrapStrategy.WRAP &&
-        !location.worksheet.getMergedCell(location.row, location.col)
+        !style?.tr?.a &&
+        !style?.tr?.v
       ) {
         const fontString = getFontStyleString(style ?? undefined).fontString
         const measure = (text: string) => FontCache.getMeasureText(text, fontString).width
-        const width = location.worksheet.getColumnWidth(location.col)
-        const expanded = expandAsteriskFill(pattern, raw, width, measure)
+        const width =
+          mergedSpanWidth(location.worksheet, location.row, location.col) ??
+          location.worksheet.getColumnWidth(location.col)
+        // Width and font are part of the key: a column resize re-runs the
+        // interceptor (the skeleton is rebuilt) and must recompute the run.
+        const key = `* ${typeof raw} ${pattern} ${raw} ${width} ${fontString}`
+        let expanded = cache.get(key)
+        if (expanded === undefined) {
+          expanded = expandAsteriskFill(pattern, raw, width, measure)
+          if (cache.size > 50_000) cache.clear()
+          cache.set(key, expanded)
+        }
         if (expanded !== null && expanded !== String(cell.v)) {
-          // No hash pass: the fill was sized to the column, so the value
-          // fits by construction (a too-wide value returns null above and
-          // takes the normal path, hashes included).
-          return next({ ...cell, v: expanded, t: CellValueType.NUMBER })
+          // No hash pass: the fill was sized to the cell, so the value fits
+          // by construction (a too-wide value returns null above and takes
+          // the normal path, hashes included).
+          return next({
+            ...cell,
+            v: expanded,
+            t: typeof raw === 'string' ? CellValueType.STRING : CellValueType.NUMBER,
+          })
         }
       }
       const key = `${pattern} ${raw} ${cell.v}`

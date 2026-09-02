@@ -41,6 +41,22 @@ describe('PageEndnotes — canvas endnote area (Word parity)', () => {
     unmount()
   })
 
+  it('omits the numeral for notes without a self-reference mark run (Word probe: empty endnotes keep their line but show no number)', () => {
+    const { container, unmount } = render(
+      createElement(PageEndnotes, {
+        notes: [{ id: '1', text: '', noRefMark: true }, note('2', 'second')],
+        top: null,
+        onEdit: () => {},
+        onDelete: () => {},
+      }),
+    )
+    const rows = Array.from(container.querySelectorAll('.page-note'))
+    expect(rows).toHaveLength(2)
+    expect(rows[0].querySelector('sup')).toBeNull()
+    expect(rows[1].querySelector('sup')?.textContent).toBe('ii')
+    unmount()
+  })
+
   it('anchors at the measured flow end when a top is provided', () => {
     const { container, unmount } = render(
       createElement(PageEndnotes, {

@@ -92,6 +92,13 @@ export interface LazyWorkbookState {
   /// Parsed pivot definitions keyed by part path, loaded eagerly at open so
   /// pivot refresh stays synchronous.
   readonly pivotDefinitions: Map<string, WorkbookPivotDefinition>
+  /// File-declared hidden rows per sheet, recorded as row properties stream
+  /// in — lets the viewport loader budget its window by VISIBLE rows.
+  readonly hiddenFileRows: Map<string, Set<number>>
+  /// Row-property stream coverage per sheet, contiguous from row 0. Beyond
+  /// this row the hidden set is incomplete, so consumers ranking by VISIBLE
+  /// order (filtered-table stripes) must fall back to physical parity.
+  readonly hiddenRowsCoveredThrough: Map<string, number>
   /// Known row/column outline levels per sheet (file reads + this session's
   /// group edits). Rows outside loaded ranges default to level 0.
   readonly outline: Map<

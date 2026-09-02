@@ -142,6 +142,13 @@ describe('empty EA slot resolution priority', () => {
       themePart(HANG_SCRIPT),
     ])
     expect(doc.docDefaults?.eastAsiaFont).toBe('SimSun')
+    expect(doc.docDefaults?.eaFromLang).toBe(true)
+  })
+
+  it('a literal declared EA face is not flagged as a lang backfill', async () => {
+    const doc = await withDocDefaults('<w:rFonts w:eastAsia="Noto Sans CJK KR"/>', [])
+    expect(doc.docDefaults?.eastAsiaFont).toBe('Noto Sans CJK KR')
+    expect(doc.docDefaults?.eaFromLang).toBeUndefined()
   })
 
   it('themeFontLang alone must not invent an EA face when w:lang would not backfill', async () => {

@@ -14,6 +14,7 @@ import {
   patchSlideXml,
   savePptx,
   type OpenedPptx,
+  type SlideElement,
   type TextElement,
 } from '@genoffice/pptx-engine'
 import { runTxn, opNames, elementDurableId, slideDurableId } from '../src/main/ops'
@@ -1062,5 +1063,161 @@ describe('applyTheme op', () => {
     })
     expect(r.applied).toBe(false)
     expect(r.failures![0]!.error).toContain('colors.accent1')
+  })
+})
+
+describe('XML-invalid characters are rejected at plan time', () => {
+  const vt = String.fromCharCode(0x0b)
+
+  it('setText with a vertical tab fails guided, nothing applied', () => {
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'setText',
+          target: { slide: 0, el: titleId },
+          paragraphs: [{ runs: [{ text: `PDF${vt}line` }] }],
+        },
+      ],
+    })
+    expect(r.applied).toBe(false)
+    expect(r.failures![0]!.error).toContain('paragraphs[0].runs[0].text')
+    expect(r.failures![0]!.error).toContain('\\u000B')
+    const title = els().find((e) => e.id === titleId) as TextElement
+    expect(title.text!.paragraphs[0]!.runs[0]!.text).toBe('Title')
+  })
+
+  it('tab and newline are legal XML and pass', () => {
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'setText',
+          target: { slide: 0, el: titleId },
+          paragraphs: [{ runs: [{ text: 'a\tb\nc' }] }],
+        },
+      ],
+    })
+    expect(r.applied).toBe(true)
+  })
+
+  it('covers every string field, not just text payloads', () => {
+    const r = runTxn(opened, {
+      ops: [{ op: 'setNotes', target: { slide: 0 }, text: `n${String.fromCharCode(0)}` }],
+    })
+    expect(r.applied).toBe(false)
+    expect(r.failures![0]!.error).toContain('"text"')
+  })
+})
+
+describe('insert-time options (genpptx parity ops)', () => {
+  it('addTable rejects a length-mismatched colWidthsEmu with a guided error', () => {
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'addTable',
+          target: { slide: 0 },
+          rows: 2,
+          cols: 3,
+          offset: { x: 0, y: 0, cx: 3000000, cy: 1000000 },
+          colWidthsEmu: [1000000, 2000000],
+        },
+      ],
+    })
+    expect(r.applied).toBe(false)
+    expect(r.failures![0]!.error).toContain('exactly 3 positive EMU values')
+  })
+
+  it('addTable applies explicit widths/heights and cell merges', () => {
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'addTable',
+          target: { slide: 0 },
+          rows: 2,
+          cols: 2,
+          offset: { x: 0, y: 0, cx: 3000000, cy: 1000000 },
+          colWidthsEmu: [1000000, 2000000],
+          rowHeightsEmu: [400000, 600000],
+          cellProps: [[{ gridSpan: 2 }, { hMerge: true }], []],
+        },
+      ],
+    })
+    expect(r.applied).toBe(true)
+    const el = els().find((e) => e.id === r.records![0]!.created![0]) as SlideElement
+    expect(el.anchor.originalXml).toContain('<a:gridCol w="1000000"/><a:gridCol w="2000000"/>')
+    expect(el.anchor.originalXml).toContain('<a:tc gridSpan="2">')
+  })
+
+  it('addChart validates colorScheme entries and writes per-series colors', () => {
+    const bad = runTxn(opened, {
+      ops: [
+        {
+          op: 'addChart',
+          target: { slide: 0 },
+          kind: 'bar',
+          categories: ['A'],
+          series: [{ name: 'S', values: [1] }],
+          offset: { x: 0, y: 0, cx: 3000000, cy: 2000000 },
+          colorScheme: ['red'],
+        },
+      ],
+    })
+    expect(bad.applied).toBe(false)
+    expect(bad.failures![0]!.error).toContain('colorScheme[]')
+
+    const ok = runTxn(opened, {
+      ops: [
+        {
+          op: 'addChart',
+          target: { slide: 0 },
+          kind: 'doughnut',
+          categories: ['A', 'B'],
+          series: [{ name: 'S', values: [1, 2] }],
+          offset: { x: 0, y: 0, cx: 3000000, cy: 2000000 },
+          colorScheme: ['#C00000'],
+          holeSizePct: 72,
+        },
+      ],
+    })
+    expect(ok.applied).toBe(true)
+    const chartXml = [...opened.archive.entries.keys()]
+      .filter((p) => /^ppt\/charts\/chart\d+\.xml$/.test(p))
+      .map((p) => Buffer.from(opened.archive.entries.get(p) as Uint8Array).toString('utf8'))
+      .join('')
+    expect(chartXml).toContain('<a:srgbClr val="C00000"/>')
+    expect(chartXml).toContain('<c:holeSize val="72"/>')
+  })
+
+  it('addElement carries adjustments and bodyPr.autoFit into the shape XML', () => {
+    const bad = runTxn(opened, {
+      ops: [
+        {
+          op: 'addElement',
+          target: { slide: 0 },
+          kind: 'roundRect',
+          offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+          bodyPr: { autoFit: 'grow' },
+        },
+      ],
+    })
+    expect(bad.applied).toBe(false)
+    expect(bad.failures![0]!.error).toContain('"shrink"')
+
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'addElement',
+          target: { slide: 0 },
+          kind: 'roundRect',
+          offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+          adjustments: { adj: 25000 },
+          bodyPr: { autoFit: 'shrink' },
+          paragraphs: [{ runs: [{ text: 'chip' }] }],
+        },
+      ],
+    })
+    expect(r.applied).toBe(true)
+    const el = els().find((e) => e.id === r.records![0]!.created![0]) as SlideElement
+    expect(el.anchor.originalXml).toContain('<a:gd name="adj" fmla="val 25000"/>')
+    expect(el.anchor.originalXml).toContain('<a:normAutofit/>')
   })
 })

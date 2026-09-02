@@ -1,6 +1,11 @@
 import { convertEmfToDataUrl, convertWmfToDataUrl } from './vendor/emf-converter/index.mjs'
 
 const EMF_MIMES = new Set(['image/emf', 'image/x-emf'])
+// localized GDI facenames mapped to their CSS-resolvable names
+const FONT_FAMILY_MAP = {
+  游ゴシック: 'Yu Gothic', // yuu goshikku
+  游明朝: 'Yu Mincho', // yuu minchou
+}
 const WMF_MIMES = new Set(['image/wmf', 'image/x-wmf'])
 // gzip-compressed metafiles (.emz/.wmz)
 const EMZ_MIMES = new Set(['image/emz', 'image/x-emz'])
@@ -62,9 +67,10 @@ export async function metafileToDataUrl(
     if (looksLikeEmf(u8)) isEmf = true
     else if (looksLikeWmf(u8)) isEmf = false
     else isEmf = EMF_MIMES.has(mime) || EMZ_MIMES.has(mime)
+    const opts = { dpiScale: 2, fontFamilyMap: FONT_FAMILY_MAP }
     const result = isEmf
-      ? await convertEmfToDataUrl(buffer, { dpiScale: 2 })
-      : await convertWmfToDataUrl(buffer, { dpiScale: 2 })
+      ? await convertEmfToDataUrl(buffer, opts)
+      : await convertWmfToDataUrl(buffer, opts)
     if (result === null) {
       console.warn(`metafileToDataUrl: converter returned null (${mime}, ${u8.byteLength} bytes)`)
     }

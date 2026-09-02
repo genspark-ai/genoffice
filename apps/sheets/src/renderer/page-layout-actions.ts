@@ -5,6 +5,8 @@
  * per-sheet print settings; nothing renders in the grid (Univer has no
  * page-layout view), everything lands in the saved file.
  */
+import { isMetafileMime, metafileToDataUrl } from '@genoffice/docx-engine/metafile'
+
 import { columnLabel } from '../domain/cell-address'
 import {
   isSheetRemoved,
@@ -19,8 +21,12 @@ import { t } from './i18n/locale'
 import { effectivePageBreaks } from './page-break-preview'
 import { COLOR_SCHEMES, FONT_SCHEMES, rethemeStyles, THEME_PRESETS } from './themes'
 import { loadVisibleRange } from './univer-sync'
-import { buildSheetPrintPayload, type PrintWorksheet } from './print-html'
-import { resolveEffectivePageSetup } from './print-settings'
+import {
+  buildSheetPrintPayload,
+  type HeaderFooterPictureImage,
+  type PrintWorksheet,
+} from './print-html'
+import { resolveEffectivePageSetup, type HeaderFooterPictureSlot } from './print-settings'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
 
 const PAPER_NAMES: Record<string, string> = {
@@ -315,13 +321,17 @@ export async function handleExportPdf(ctx: PageLayoutContext): Promise<void> {
       state?.editJournal.structuralOps.get(sheetId) ?? [],
     )
     const baseName = (state?.file.name ?? 'Book1').replace(/\.[^.]+$/, '')
+    ctx.setMessage(t('appPdfRendering'))
+    const pictures = state
+      ? await loadHeaderFooterPictures(state.file.sessionId, setup.headerFooterPictures)
+      : new Map<string, HeaderFooterPictureImage>()
     const payload = buildSheetPrintPayload(
       worksheet as unknown as PrintWorksheet,
       setup,
       `${baseName}.pdf`,
       worksheet.getSheetName(),
+      pictures,
     )
-    ctx.setMessage(t('appPdfRendering'))
     const result = await window.desktopApi.exportPdf(payload)
     ctx.setMessage(
       result.canceled ? t('appPdfCanceled') : t('appPdfExported', { path: result.path }),
@@ -329,4 +339,38 @@ export async function handleExportPdf(ctx: PageLayoutContext): Promise<void> {
   } catch (error: unknown) {
     ctx.setMessage(error instanceof Error ? error.message : t('appPdfExportFailed'))
   }
+}
+
+/// Fetches the file's `&G` header/footer pictures as data URLs, keyed by
+/// VML slot. Metafiles rasterize to PNG (Chromium cannot paint EMF/WMF); a
+/// picture that fails to load is left out — its `&G` then prints nothing,
+/// which is also what Excel shows for a slot without a picture.
+async function loadHeaderFooterPictures(
+  sessionId: string,
+  slots: readonly HeaderFooterPictureSlot[],
+): Promise<Map<string, HeaderFooterPictureImage>> {
+  const pictures = new Map<string, HeaderFooterPictureImage>()
+  await Promise.all(
+    slots.map(async (slot) => {
+      try {
+        const media = await window.desktopApi.readWorkbookMedia({ sessionId, visualId: slot.id })
+        const dataUrl = isMetafileMime(media.mediaType)
+          ? await metafileToDataUrl(base64ToBytes(media.base64), media.mediaType)
+          : `data:${media.mediaType};base64,${media.base64}`
+        if (dataUrl) {
+          pictures.set(slot.position, { dataUrl, widthPt: slot.widthPt, heightPt: slot.heightPt })
+        }
+      } catch (reason: unknown) {
+        console.warn(`header/footer picture unavailable (${slot.position})`, reason)
+      }
+    }),
+  )
+  return pictures
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
 }

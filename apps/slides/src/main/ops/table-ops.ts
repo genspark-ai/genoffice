@@ -5,6 +5,7 @@
  * the selection.
  */
 import {
+  applyParagraphFormat,
   editChartElement,
   editTableCellText,
   editTableStructure,
@@ -14,12 +15,14 @@ import {
   setTableCellAnchor,
   setTableColWidth,
   setTableRowHeight,
-  type Paragraph,
+  type TableElement,
   type TableMergeOp,
   type TableStructureOp,
   type TableStyleEdit,
 } from '@genoffice/pptx-engine'
 import { editTableStyle } from '@genoffice/pptx-engine'
+import type { EditParagraph } from '../../shared/ipc'
+import { applyEditParagraphs, collectParagraphFormatPatches } from '../edit-text'
 import { GuidedError, register, resolveElement, type OpRecord } from './registry'
 
 register({
@@ -32,15 +35,28 @@ register({
   },
   apply(op, ctx): OpRecord {
     const { slide, el } = resolveElement(ctx, op, { types: ['table'] })
-    if (
-      !editTableCellText(
-        slide,
-        el.id,
-        op.row as number,
-        op.col as number,
-        op.paragraphs as Paragraph[],
-      )
-    ) {
+    const row = op.row as number
+    const col = op.col as number
+    // Callers (the cell editor, the AI tools, scripts) send EditParagraphs:
+    // rebuild them onto the cell's current paragraphs exactly like setText does
+    // for shapes, so the run/paragraph properties the caller cannot express
+    // (size, color, font, bold, bullets, theme links) stay with the cell instead
+    // of falling back to the table-style defaults.
+    const cell = (el as TableElement).rows[row]?.[col]
+    const edited = op.paragraphs as EditParagraph[]
+    const paragraphs = applyEditParagraphs(cell?.text?.paragraphs ?? [], edited)
+    // Bullets, spacing and direction toggled during the edit session ride along
+    // as per-paragraph patches (bullet/lineSpacingPct/spaceBeforePt/spaceAfterPt/
+    // rtl); setText applies them through setElementParagraphFormat, which is
+    // table-wide for a table, so patch the cell's rebuilt paragraphs directly.
+    for (const { index: pi, patch } of collectParagraphFormatPatches(edited)) {
+      const target = paragraphs[pi]
+      if (!target) continue
+      // the rebuild spread shares pPrExplicit with the cell's current paragraph
+      if (target.pPrExplicit) target.pPrExplicit = { ...target.pPrExplicit }
+      applyParagraphFormat([target], patch)
+    }
+    if (!editTableCellText(slide, el.id, row, col, paragraphs)) {
       throw new GuidedError(
         `op "setTableCell": cell (${op.row}, ${op.col}) does not exist on table "${el.id}".`,
       )
