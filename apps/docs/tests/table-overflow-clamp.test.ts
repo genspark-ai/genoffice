@@ -314,6 +314,11 @@ describe('renderTableSpec width budget', () => {
       colWidthsPct: [50, 50],
       widthPct: 80,
     }
-    expect((renderTableSpec(pct) as Spec)[1].style).toContain('width:80%')
+    // a top-level 'pct' table is a share of its SECTION column (differing-margin
+    // sections resolve through --doc-content-w); nested tables stay cell-relative
+    const pctStyle = (renderTableSpec(pct) as Spec)[1].style
+    expect(pctStyle).toContain('width:calc(var(--doc-content-w,100%) * 0.8)')
+    expect(pctStyle).not.toContain('width:80%')
+    expect((renderTableSpec(pct, true) as Spec)[1].style).toContain('width:80%')
   })
 })

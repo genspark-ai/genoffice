@@ -1804,8 +1804,13 @@ export const DocTable = Node.create({
     const styles: string[] = []
     let centerMargin: string | null = null
     if (displayAutoFit === 'contents') styles.push('width:auto')
-    else if (displayAutoFit === 'window') styles.push('width:100%')
-    else if (node.attrs.widthPct) styles.push(`width:${Number(node.attrs.widthPct)}%`)
+    // 'window' (w:tblLayout autofit with a full-width grid) and w:tblW type="pct"
+    // are both percentages of the section's TEXT COLUMN, not of the canvas' padding
+    // box: sections that disagree on margins/page width pad differently, so resolve
+    // through --doc-content-w (set per block by sectionWidthSpecs; unset → the old %)
+    else if (displayAutoFit === 'window') styles.push('width:var(--doc-content-w,100%)')
+    else if (node.attrs.widthPct)
+      styles.push(`width:calc(var(--doc-content-w,100%) * ${Number(node.attrs.widthPct) / 100})`)
     // Over-wide grids may spill into the page margins like Word/LO (clamping
     // them to the content box narrowed every column, wrapped cell text onto extra
     // lines and inflated PDF-converted documents by pages), but never past the paper:

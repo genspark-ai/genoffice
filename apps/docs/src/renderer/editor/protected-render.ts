@@ -1370,7 +1370,15 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
   if (model.bidiVisual) tableAttrs.dir = 'rtl'
   const tableStyles: string[] = []
   let centerMargin: string | null = null
-  if (model.widthPct) tableStyles.push(`width:${model.widthPct}%`)
+  if (model.widthPct)
+    // 'pct' table widths are a share of the section's TEXT COLUMN (see
+    // DocTable.renderHTML): differing-margin/width sections resolve through the
+    // per-block --doc-content-w; nested tables stay relative to their cell
+    tableStyles.push(
+      nested
+        ? `width:${model.widthPct}%`
+        : `width:calc(var(--doc-content-w,100%) * ${Number(model.widthPct) / 100})`,
+    )
   else if (colPx) {
     // nested tables are capped by their cell; top-level ones spill into the page
     // margins like Word (centered: both sides via negative-margin centering,

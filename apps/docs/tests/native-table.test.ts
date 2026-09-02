@@ -259,6 +259,56 @@ describe('native editable tables', () => {
     editor.destroy()
   })
 
+  it('resolves a pct table width against its own section column', async () => {
+    // w:tblW type="pct" is a share of the section's TEXT COLUMN. The canvas pads by
+    // the first section's margins, so a bare 100% made every table of a document
+    // with a full-bleed cover section (w:pgMar w:left="0") span the whole paper and
+    // hang off its right edge once the section's own left inset is applied.
+    const { editor } = await openTable()
+    const table = editor.state.doc.firstChild!
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...table.attrs,
+        tblAutoFit: 'fixed',
+        widthPx: null,
+        widthPct: 100,
+      }),
+    )
+    const spec = editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+      string,
+      Record<string, string>,
+    ]
+    expect(spec[1].style).toContain('width:calc(var(--doc-content-w,100%) * 1)')
+    expect(spec[1].style).not.toContain('width:100%')
+    editor.destroy()
+  })
+
+  it('resolves an AutoFit-to-Window table against its own section column', async () => {
+    // the imported shape the bug came in on: <w:tblLayout w:type="autofit"/> +
+    // <w:tblW w:w="5000" w:type="pct"/> parses as AutoFit to Window
+    const pctTable =
+      '<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/>' +
+      '<w:tblW w:w="5000" w:type="pct"/><w:tblLayout w:type="autofit"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    const source = await buildDocx({ bodyXml: pctTable })
+    const parsed = await parseDocx(source)
+    expect(parsed.blocks[0].table?.autoFit).toBe('window')
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const spec = editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+      string,
+      Record<string, string>,
+    ]
+    expect(spec[1].style).toContain('width:var(--doc-content-w,100%)')
+    expect(spec[1].style).not.toContain('width:100%')
+    editor.destroy()
+  })
+
   it('takes a positive table indent out of the right-margin spill allowance', async () => {
     const { editor } = await openTable()
     const table = editor.state.doc.firstChild!
