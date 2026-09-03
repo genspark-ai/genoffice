@@ -237,6 +237,33 @@ const RETIRED_MODELS: Partial<Record<AiProviderId, Record<string, string>>> = {
   },
 }
 
+/**
+ * Per-turn output cap applied when the settings carry none. Every app's AI IPC
+ * handler used to hardcode this 8192 with no user-facing way to raise it, which
+ * is exactly the budget a reasoning model burns on thinking before it writes any
+ * prose (see AiSettings.maxOutputTokens).
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8192
+/** bounds accepted for AiSettings.maxOutputTokens: below the first a short answer cannot even finish, above the second one turn risks the whole context window */
+export const MIN_MAX_OUTPUT_TOKENS = 1024
+export const MAX_MAX_OUTPUT_TOKENS = 131072
+
+/** Out-of-range or non-finite input falls back to a bound / the default (a mistyped settings field must not kill AI features) */
+export function clampMaxOutputTokens(value: unknown): number {
+  const n = typeof value === 'number' ? Math.floor(value) : Number.NaN
+  if (!Number.isFinite(n)) return DEFAULT_MAX_OUTPUT_TOKENS
+  return Math.min(MAX_MAX_OUTPUT_TOKENS, Math.max(MIN_MAX_OUTPUT_TOKENS, n))
+}
+
+/** The effective per-turn output cap of a settings object (clamped; absent → default) */
+export function maxOutputTokensOf(
+  settings: Pick<AiSettings, 'maxOutputTokens'> | null | undefined,
+): number {
+  return settings?.maxOutputTokens === undefined
+    ? DEFAULT_MAX_OUTPUT_TOKENS
+    : clampMaxOutputTokens(settings.maxOutputTokens)
+}
+
 /** pasted keys/URLs often carry stray whitespace, which turns into a 401 with a valid key */
 function trimConfigs(providers: AiSettings['providers']): AiSettings['providers'] {
   const trimmed = { ...providers }
@@ -284,5 +311,12 @@ export function resolveAiSettings(
     provider: stored.provider ?? defaults.provider,
     providers: trimConfigs(migrateRetiredModels({ ...defaults.providers, ...stored.providers })),
     gskToolsEnabled: stored.gskToolsEnabled ?? defaults.gskToolsEnabled ?? true,
+    // clamped on read: a hand-edited settings file with an absurd cap must not be
+    // forwarded to the endpoint verbatim
+    ...(stored.maxOutputTokens !== undefined || defaults.maxOutputTokens !== undefined
+      ? {
+          maxOutputTokens: clampMaxOutputTokens(stored.maxOutputTokens ?? defaults.maxOutputTokens),
+        }
+      : {}),
   }
 }

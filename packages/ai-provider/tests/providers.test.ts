@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   AI_PROVIDERS,
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  MAX_MAX_OUTPUT_TOKENS,
+  MIN_MAX_OUTPUT_TOKENS,
   activeProvider,
+  clampMaxOutputTokens,
   cloudToolsEnabled,
   defaultAiSettings,
+  maxOutputTokensOf,
   resolveAiSettings,
 } from '../src/providers'
 import type { AiProviderId } from '../src/types'
@@ -152,6 +157,50 @@ describe('resolveAiSettings', () => {
     )
     expect(resolved.providers.custom.apiKey).toBe('legacy-key')
     expect(resolved.providers.custom.baseUrl).toBe('https://legacy.example.com/v1')
+  })
+
+  it('carries a stored output cap and clamps a hand-edited one', () => {
+    // a multi-provider file (the legacy single-endpoint shape returns defaults wholesale)
+    const stored = { providers: {} as never }
+    expect(
+      resolveAiSettings({ ...stored, maxOutputTokens: 32768 }, defaultAiSettings()).maxOutputTokens,
+    ).toBe(32768)
+    // a settings file edited by hand must not forward an absurd budget to the endpoint
+    expect(
+      resolveAiSettings({ ...stored, maxOutputTokens: 1 }, defaultAiSettings()).maxOutputTokens,
+    ).toBe(MIN_MAX_OUTPUT_TOKENS)
+    expect(
+      resolveAiSettings({ ...stored, maxOutputTokens: 1e9 }, defaultAiSettings()).maxOutputTokens,
+    ).toBe(MAX_MAX_OUTPUT_TOKENS)
+    // absent stays absent: pre-existing settings files keep the default behaviour
+    expect('maxOutputTokens' in resolveAiSettings(stored, defaultAiSettings())).toBe(false)
+  })
+})
+
+describe('maxOutputTokensOf', () => {
+  it('falls back to the default when the setting is absent or unusable', () => {
+    expect(maxOutputTokensOf({})).toBe(DEFAULT_MAX_OUTPUT_TOKENS)
+    expect(maxOutputTokensOf(undefined)).toBe(DEFAULT_MAX_OUTPUT_TOKENS)
+    expect(maxOutputTokensOf({ maxOutputTokens: Number.NaN })).toBe(DEFAULT_MAX_OUTPUT_TOKENS)
+    expect(maxOutputTokensOf({ maxOutputTokens: '8192' as unknown as number })).toBe(
+      DEFAULT_MAX_OUTPUT_TOKENS,
+    )
+  })
+
+  it('honors a stored cap inside the bounds', () => {
+    expect(maxOutputTokensOf({ maxOutputTokens: 16384 })).toBe(16384)
+    expect(maxOutputTokensOf({ maxOutputTokens: 3.7 })).toBe(MIN_MAX_OUTPUT_TOKENS)
+    expect(maxOutputTokensOf({ maxOutputTokens: 20000 })).toBe(20000)
+  })
+})
+
+describe('clampMaxOutputTokens', () => {
+  it('floors, bounds and defaults whatever the settings field or the input box held', () => {
+    expect(clampMaxOutputTokens(16384.9)).toBe(16384)
+    expect(clampMaxOutputTokens(0)).toBe(MIN_MAX_OUTPUT_TOKENS)
+    expect(clampMaxOutputTokens(5e6)).toBe(MAX_MAX_OUTPUT_TOKENS)
+    expect(clampMaxOutputTokens(Number.POSITIVE_INFINITY)).toBe(DEFAULT_MAX_OUTPUT_TOKENS)
+    expect(clampMaxOutputTokens(undefined)).toBe(DEFAULT_MAX_OUTPUT_TOKENS)
   })
 })
 

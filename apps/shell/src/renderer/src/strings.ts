@@ -158,6 +158,9 @@ export const strings = {
     setAiTesting: '测试中…',
     setAiTestOk: '连接成功',
     setAiTestFail: '连接失败',
+    setAiMaxTokens: '单次输出上限（tokens）',
+    setAiMaxTokensDesc:
+      '一次回合的输出预算。推理模型会先消耗预算用于思考，预算用完时回复可能变成空白，遇到这种情况请调大此项。',
     setAiGskTools: 'Genspark 云工具',
     setAiGskToolsDesc:
       '网页搜索、AI 生图、媒体分析经 Genspark 云端并消耗积分；关闭后生图与媒体分析不可用，搜索改用免费来源。',
@@ -354,6 +357,9 @@ export const strings = {
     setAiTesting: 'Testing…',
     setAiTestOk: 'Connection OK',
     setAiTestFail: 'Connection failed',
+    setAiMaxTokens: 'Max output tokens',
+    setAiMaxTokensDesc:
+      'Output budget for one turn. Reasoning models spend part of it thinking, so an answer can come back empty once the budget runs out; raise this value if that happens.',
     setAiGskTools: 'Genspark cloud tools',
     setAiGskToolsDesc:
       'Web search, AI image generation and media analysis run through Genspark and use credits; when off, image tools are unavailable and search uses free sources.',
@@ -565,6 +571,9 @@ export const strings = {
     setAiTesting: 'テスト中…',
     setAiTestOk: '接続に成功しました',
     setAiTestFail: '接続に失敗しました',
+    setAiMaxTokens: '1 回あたりの出力トークン上限',
+    setAiMaxTokensDesc:
+      '1 ターンの出力予算です。推論モデルは思考に消費するため、耗尽すると返信が空になります。その場合は値を大きくしてください。',
     setAiGskTools: 'Genspark クラウドツール',
     setAiGskToolsDesc:
       'ウェブ検索・AI 画像生成・メディア分析は Genspark クラウド経由でクレジットを消費します。オフにすると画像ツールは使えず、検索は無料ソースを使用します。',
@@ -773,6 +782,9 @@ export const strings = {
     setAiTesting: '테스트 중…',
     setAiTestOk: '연결 성공',
     setAiTestFail: '연결 실패',
+    setAiMaxTokens: '턴당 출력 토큰 상한',
+    setAiMaxTokensDesc:
+      '한 턴의 출력 예산입니다. 추론 모델은 생각하는 데 소모하므로 예산이 떨어지면 응답이 비어 올 수 있습니다. 그럴 때 값을 키우세요.',
     setAiGskTools: 'Genspark 클라우드 도구',
     setAiGskToolsDesc:
       '웹 검색·AI 이미지 생성·미디어 분석은 Genspark 클라우드를 거치며 크레딧을 사용합니다. 끄면 이미지 도구를 사용할 수 없고 검색은 무료 소스를 사용합니다.',
@@ -986,6 +998,9 @@ export const strings = {
     setAiTesting: 'Test en cours…',
     setAiTestOk: 'Connexion réussie',
     setAiTestFail: 'Échec de la connexion',
+    setAiMaxTokens: 'Jetons de sortie max.',
+    setAiMaxTokensDesc:
+      'Budget de sortie pour un tour. Les modèles à raisonnement le dépensent en réflexion ; quand il est épuisé, la réponse arrive vide : augmentez cette valeur.',
     setAiGskTools: 'Outils cloud Genspark',
     setAiGskToolsDesc:
       "Recherche web, génération d'images et analyse de médias passent par Genspark et consomment des crédits ; désactivé, les outils d'image sont indisponibles et la recherche utilise des sources gratuites.",
@@ -1201,6 +1216,9 @@ export const strings = {
     setAiTesting: 'Wird getestet…',
     setAiTestOk: 'Verbindung erfolgreich',
     setAiTestFail: 'Verbindung fehlgeschlagen',
+    setAiMaxTokens: 'Max. Ausgabe-Tokens',
+    setAiMaxTokensDesc:
+      'Ausgabe-Budget pro Durchlauf. Denk-Modelle verbrauchen es beim Reasoning; ist es erschöpft, kommt eine leere Antwort zurück — dann diesen Wert erhöhen.',
     setAiGskTools: 'Genspark-Cloud-Tools',
     setAiGskToolsDesc:
       'Websuche, KI-Bilderzeugung und Medienanalyse laufen über Genspark und verbrauchen Guthaben; ausgeschaltet sind Bildtools nicht verfügbar und die Suche nutzt freie Quellen.',
@@ -1415,6 +1433,9 @@ export const strings = {
     setAiTesting: 'Probando…',
     setAiTestOk: 'Conexión correcta',
     setAiTestFail: 'Error de conexión',
+    setAiMaxTokens: 'Tokens de salida máx.',
+    setAiMaxTokensDesc:
+      'Presupuesto de salida por turno. Los modelos de razonamiento lo gastan en pensar; si se agota, la respuesta llega vacía: suba este valor.',
     setAiGskTools: 'Herramientas en la nube de Genspark',
     setAiGskToolsDesc:
       'La búsqueda web, la generación de imágenes y el análisis de medios pasan por Genspark y consumen créditos; desactivado, las herramientas de imagen no están disponibles y la búsqueda usa fuentes gratuitas.',
@@ -1623,6 +1644,9 @@ export const strings = {
     setAiTesting: 'กำลังทดสอบ…',
     setAiTestOk: 'เชื่อมต่อสำเร็จ',
     setAiTestFail: 'การเชื่อมต่อล้มเหลว',
+    setAiMaxTokens: 'จำนวนโทเคนขาออกสูงสุด',
+    setAiMaxTokensDesc:
+      'งบผลลัพท์ต่อหนึ่งรอบ โมเดลท่ีไตร่ตรองจะใช้ส่วนหนึ่่งไปกบการคิด หากงบหมด คำตอบจะกลบมาเปลา ให้เพิ่มคา่นี',
     setAiGskTools: 'เครื่องมือคลาวด์ Genspark',
     setAiGskToolsDesc:
       'ค้นเว็บ สร้างภาพ AI และวิเคราะห์สื่อผ่านคลาวด์ Genspark และใช้เครดิต ปิดแล้วเครื่องมือภาพจะใช้ไม่ได้ และการค้นหาใช้แหล่งฟรี',
@@ -1832,6 +1856,9 @@ export const strings = {
     setAiTesting: 'Menguji…',
     setAiTestOk: 'Koneksi berhasil',
     setAiTestFail: 'Koneksi gagal',
+    setAiMaxTokens: 'Token keluaran maks.',
+    setAiMaxTokensDesc:
+      'Anggaran keluaran untuk satu giliran. Model penalaran memakainya untuk berpikir; jika habis, balasan datang kosong — naikkan nilai ini.',
     setAiGskTools: 'Alat cloud Genspark',
     setAiGskToolsDesc:
       'Pencarian web, pembuatan gambar AI, dan analisis media berjalan lewat Genspark dan memakai kredit; jika dimatikan, alat gambar tidak tersedia dan pencarian memakai sumber gratis.',
@@ -2042,6 +2069,9 @@ export const strings = {
     setAiTesting: 'Проверка…',
     setAiTestOk: 'Подключение успешно',
     setAiTestFail: 'Ошибка подключения',
+    setAiMaxTokens: 'Макс. токенов на ответ',
+    setAiMaxTokensDesc:
+      'Бюджет вывода за один ход. Модели рассуждений тратят его на размышления: если бюджет иссякнет, ответ придёт пустым — увеличьте значение.',
     setAiGskTools: 'Облачные инструменты Genspark',
     setAiGskToolsDesc:
       'Веб-поиск, генерация изображений и анализ медиа идут через Genspark и расходуют кредиты; при отключении инструменты изображений недоступны, а поиск использует бесплатные источники.',
@@ -2250,6 +2280,9 @@ export const strings = {
     setAiTesting: 'جارٍ الاختبار…',
     setAiTestOk: 'نجح الاتصال',
     setAiTestFail: 'فشل الاتصال',
+    setAiMaxTokens: 'الحد الأقصى لرموز المخرجات',
+    setAiMaxTokensDesc:
+      'ميزانية الإخراج في الدورة الواحدة. نماذج الاستدلال تصرفها على التفكير، فإذا نفدت جاء الرد فارغًا؛ ارفع هذه القيمة عندئذ.',
     setAiGskTools: 'أدوات Genspark السحابية',
     setAiGskToolsDesc:
       'يمر بحث الويب وتوليد الصور وتحليل الوسائط عبر سحابة Genspark ويستهلك الرصيد؛ عند الإيقاف تصبح أدوات الصور غير متاحة ويستخدم البحث مصادر مجانية.',
@@ -2452,6 +2485,9 @@ export const strings = {
     setAiTesting: 'Testando…',
     setAiTestOk: 'Conexão bem-sucedida',
     setAiTestFail: 'Falha na conexão',
+    setAiMaxTokens: 'Máx. de tokens de saída',
+    setAiMaxTokensDesc:
+      'Orçamento de saída por turno. Modelos de raciocínio gastam-no pensando; se esgotar, a resposta vem vazia — aumente este valor.',
     setAiGskTools: 'Ferramentas na nuvem Genspark',
     setAiGskToolsDesc:
       'Busca na web, geração de imagens e análise de mídia passam pela Genspark e consomem créditos; desligado, as ferramentas de imagem ficam indisponíveis e a busca usa fontes gratuitas.',
@@ -2653,6 +2689,9 @@ export const strings = {
     setAiTesting: 'Test in corso…',
     setAiTestOk: 'Connessione riuscita',
     setAiTestFail: 'Connessione non riuscita',
+    setAiMaxTokens: 'Token di output massimi',
+    setAiMaxTokensDesc:
+      'Budget di uscita per singolo turno. I modelli di ragionamento lo consumano pensando: se si esaurisce, la risposta arriva vuota; aumentalo.',
     setAiGskTools: 'Strumenti cloud Genspark',
     setAiGskToolsDesc:
       'Ricerca web, generazione di immagini e analisi dei media passano da Genspark e consumano crediti; se disattivato, gli strumenti immagine non sono disponibili e la ricerca usa fonti gratuite.',
@@ -2853,6 +2892,9 @@ export const strings = {
     setAiTesting: 'Testowanie…',
     setAiTestOk: 'Połączenie działa',
     setAiTestFail: 'Połączenie nie powiodło się',
+    setAiMaxTokens: 'Maks. tokeny wyjścia',
+    setAiMaxTokensDesc:
+      'Budżet wyjścia na jedną turę. Modele rozumowania zużywają go na myślenie; gdy się wyczerpie, odpowiedź przychodzi pusta — zwiększ tę wartość.',
     setAiGskTools: 'Narzędzia chmurowe Genspark',
     setAiGskToolsDesc:
       'Wyszukiwanie w sieci, generowanie obrazów AI i analiza mediów przechodzą przez Genspark i zużywają kredyty; po wyłączeniu narzędzia obrazów są niedostępne, a wyszukiwanie korzysta z darmowych źródeł.',
@@ -3054,6 +3096,9 @@ export const strings = {
     setAiTesting: 'Testen…',
     setAiTestOk: 'Verbinding geslaagd',
     setAiTestFail: 'Verbinding mislukt',
+    setAiMaxTokens: 'Max. outputtokens',
+    setAiMaxTokensDesc:
+      'Uitvoerbudget voor één beurt. Redeneermodellen geven dit uit aan denken; is het op, dan komt een leeg antwoord terug — verhoog deze waarde.',
     setAiGskTools: 'Genspark-cloudtools',
     setAiGskToolsDesc:
       'Webzoeken, AI-beeldgeneratie en media-analyse lopen via Genspark en verbruiken tegoed; uitgeschakeld zijn beeldtools niet beschikbaar en gebruikt zoeken gratis bronnen.',
@@ -3254,6 +3299,9 @@ export const strings = {
     setAiTesting: 'Menguji…',
     setAiTestOk: 'Sambungan berjaya',
     setAiTestFail: 'Sambungan gagal',
+    setAiMaxTokens: 'Token output maks.',
+    setAiMaxTokensDesc:
+      'Belanjawan output untuk satu pusingan. Model penaakulan menghabiskannya untuk berfikir; jika habis, balasan datang kosong — tingkatkan nilai ini.',
     setAiGskTools: 'Alat awan Genspark',
     setAiGskToolsDesc:
       'Carian web, penjanaan imej AI dan analisis media melalui awan Genspark dan menggunakan kredit; jika dimatikan, alat imej tidak tersedia dan carian menggunakan sumber percuma.',
@@ -3451,6 +3499,9 @@ export const strings = {
     setAiTesting: 'בודק…',
     setAiTestOk: 'החיבור תקין',
     setAiTestFail: 'החיבור נכשל',
+    setAiMaxTokens: 'מקסימום טוקנים לתשובה',
+    setAiMaxTokensDesc:
+      'תקן פלט לסיבוב אחד. מודלי נימוק מבזבזים אותו על מחשבה, ואם הוא נגמר התשובה חוזרת ריקה — העלו את הערך.',
     setAiGskTools: 'כלי הענן של Genspark',
     setAiGskToolsDesc:
       'חיפוש ברשת, יצירת תמונות וניתוח מדיה עוברים דרך Genspark וצורכים קרדיטים; בכיבוי, כלי התמונות אינם זמינים והחיפוש משתמש במקורות חינמיים.',
@@ -3650,6 +3701,9 @@ export const strings = {
     setAiTesting: 'परख रहे हैं…',
     setAiTestOk: 'कनेक्शन सफल',
     setAiTestFail: 'कनेक्शन विफल',
+    setAiMaxTokens: 'अधिकतम आउटपुट टोकन',
+    setAiMaxTokensDesc:
+      'एक मोड़ का आउटपुट बजट। तरक मॉडल इसमें से क्छ हिस्सा सोचने पर खरच करते हैं; बजट खत्म होने पर उत्तर खाली आ सकता है — ज़रूरत पर इसे बढ़ाएँ।',
     setAiGskTools: 'Genspark क्लाउड टूल',
     setAiGskToolsDesc:
       'वेब खोज, AI छवि निर्माण और मीडिया विश्लेषण Genspark क्लाउड से होते हैं और क्रेडिट खर्च करते हैं; बंद करने पर छवि टूल अनुपलब्ध होंगे और खोज मुफ्त स्रोतों का उपयोग करेगी।',
@@ -3844,6 +3898,9 @@ export const strings = {
     setAiTesting: '測試中…',
     setAiTestOk: '連線成功',
     setAiTestFail: '連線失敗',
+    setAiMaxTokens: '單次輸出上限（tokens）',
+    setAiMaxTokensDesc:
+      '一次回合的輸出預算。推理模型會先消耗預算用於思考，預算用畢時回覆可能變成空白，遇到此情況請調高本項。',
     setAiGskTools: 'Genspark 雲端工具',
     setAiGskToolsDesc:
       '網頁搜尋、AI 生圖、媒體分析經 Genspark 雲端並消耗點數；關閉後生圖與媒體分析不可用，搜尋改用免費來源。',

@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Dropdown } from '@genoffice/ui'
+import {
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  MAX_MAX_OUTPUT_TOKENS,
+  MIN_MAX_OUTPUT_TOKENS,
+  clampMaxOutputTokens,
+} from '@genoffice/ai-provider'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n } from './locale'
 import type { StringKey, TFunc } from './locale'
@@ -153,6 +159,8 @@ function AiModelPane({ t }: { t: TFunc }) {
   const [saved, setSaved] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  /** free-typed value of the output-cap field; committed (and clamped) on blur */
+  const [maxTokensDraft, setMaxTokensDraft] = useState<string | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -192,6 +200,15 @@ function AiModelPane({ t }: { t: TFunc }) {
       ...settings,
       providers: { ...settings.providers, [provider]: { ...config, ...patch } },
     })
+    touch()
+  }
+  /** Commit the output-cap input: clamp what was typed and drop a no-op edit */
+  const commitMaxTokens = () => {
+    if (maxTokensDraft === null) return
+    setMaxTokensDraft(null)
+    const next = clampMaxOutputTokens(Number.parseInt(maxTokensDraft, 10))
+    if (next === (settings.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS)) return
+    setSettings({ ...settings, maxOutputTokens: next })
     touch()
   }
   const selectProvider = (id: AiSettings['provider']) => {
@@ -322,6 +339,27 @@ function AiModelPane({ t }: { t: TFunc }) {
           </div>
         </>
       )}
+      <div className="set-field">
+        <div className="set-field-text">
+          <div className="set-field-stack">
+            <label className="set-field-label" htmlFor="set-ai-max-tokens">
+              {t('setAiMaxTokens')}
+            </label>
+            <div className="set-field-desc">{t('setAiMaxTokensDesc')}</div>
+          </div>
+        </div>
+        <input
+          id="set-ai-max-tokens"
+          className="set-input"
+          type="number"
+          min={MIN_MAX_OUTPUT_TOKENS}
+          max={MAX_MAX_OUTPUT_TOKENS}
+          step={1024}
+          value={maxTokensDraft ?? String(settings.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS)}
+          onChange={(e) => setMaxTokensDraft(e.target.value)}
+          onBlur={commitMaxTokens}
+        />
+      </div>
       <div className="set-field">
         <div className="set-field-text">
           <div className="set-field-stack">

@@ -62,6 +62,7 @@ import {
   defaultAiSettings,
   activeProvider,
   cloudToolsEnabled,
+  maxOutputTokensOf,
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
@@ -3094,7 +3095,7 @@ export function registerSheetsAiIpc(): void {
     const request = aiStreamRequestSchema.parse(input)
     const { requestId, system, messages } = request
     const tools = request.tools ?? []
-    const maxTokens = request.maxTokens ?? 8192
+    const maxTokens = request.maxTokens ?? maxOutputTokensOf(request.settings)
     const provider = request.settings.provider as AiProviderId
     let config = request.settings.providers[provider]
     // Genspark's key never enters the settings file; it is read from the gsk

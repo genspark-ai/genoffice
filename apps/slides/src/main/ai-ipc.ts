@@ -24,6 +24,7 @@ import {
   defaultAiSettings,
   activeProvider,
   cloudToolsEnabled,
+  maxOutputTokensOf,
   resolveAiSettings,
   setRescueFetch,
   streamForProvider,
@@ -142,7 +143,7 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
     const { requestId, settings, system, messages } = request
     const tools = request.tools ?? []
-    const maxTokens = request.maxTokens ?? 8192
+    const maxTokens = request.maxTokens ?? maxOutputTokensOf(settings)
     const provider = settings.provider
     let config = settings.providers?.[provider]
     // The genspark key never enters the settings file; it is fetched from the gsk login state per request

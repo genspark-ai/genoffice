@@ -2383,6 +2383,10 @@ export const aiSettingsInputSchema = z
     provider: z.string().min(1),
     providers: z.record(z.string(), aiProviderConfigSchema),
     gskToolsEnabled: z.boolean().optional(),
+    // bounds are enforced by clampMaxOutputTokens on read; the schema only
+    // rejects nonsense (this object is .strict(), so an omitted key here would
+    // make the whole settings save fail)
+    maxOutputTokens: z.number().int().positive().optional(),
   })
   .strict()
 

@@ -49,6 +49,14 @@ export interface AiSettings {
    * unavailable regardless.
    */
   gskToolsEnabled?: boolean
+  /**
+   * Output-token cap for ONE model turn of agent runs (default
+   * DEFAULT_MAX_OUTPUT_TOKENS). Reasoning models bill their thinking against
+   * this same budget, so a heavy edit turn can consume all of it and close with
+   * finish_reason=length and no prose at all — raising it is the user's lever
+   * (absent = the default, so pre-existing settings files keep working).
+   */
+  maxOutputTokens?: number | undefined
 }
 
 /** pre-provider settings shape (single OpenAI-compatible endpoint); migrated into "custom" */
