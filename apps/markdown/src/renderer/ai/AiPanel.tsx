@@ -262,10 +262,16 @@ export function AiPanel({
           patchLast({ streaming: false })
           setChat((prev) => [...prev, { role: 'assistant', text: '', streaming: true }])
         },
-        onDone: ({ text, cancelled, turnLimit }) => {
-          const final = turnLimit
+        onDone: ({ text, cancelled, turnLimit, truncated }) => {
+          const base = turnLimit
             ? [text, tGlobal('aiTurnLimit')].filter(Boolean).join('\n\n')
             : text || (cancelled ? tGlobal('aiStopped') : '')
+          // A reasoning model can spend the entire output budget on thinking and close the
+          // turn with finish_reason=length and no prose at all — the bare "(no reply)" read
+          // as the assistant ignoring the user. Name the truncation, as docs already does.
+          const final = truncated
+            ? [base, tGlobal('aiTruncatedNote')].filter(Boolean).join('\n\n')
+            : base
           patchLast((last) => ({
             streaming: false,
             text: final || (last.tools?.length ? last.text : tGlobal('aiNoReply')),
