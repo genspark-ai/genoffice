@@ -54,7 +54,7 @@ const FILE_ICONS: Record<string, string> = {
 /* Formats the open-local card advertises. Too long for the card at any window
    width, so it ellipsizes and a hover ScreenTip carries the full list. Keep in
    sync with the main-process open-dialog filter (OPEN_DIALOG_EXTENSIONS). */
-const OPEN_LOCAL_EXTENSIONS = '.docx / .xlsx / .xlsm / .xls / .csv / .pptx / .pdf / .md'
+const OPEN_LOCAL_EXTENSIONS = '.docx / .doc / .xlsx / .xlsm / .xls / .csv / .pptx / .pdf / .md'
 
 function FileBadge({ ext, size }: { ext: string; size: number }) {
   const icon = FILE_ICONS[ext]
