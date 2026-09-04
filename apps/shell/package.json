@@ -25,6 +25,7 @@
     "@genoffice/docs": "*",
     "@genoffice/docx-engine": "*",
     "@genoffice/electron-utils": "*",
+    "@genoffice/file-parse": "*",
     "@genoffice/i18n": "*",
     "@genoffice/pptx-engine": "*",
     "@genoffice/pptx-render": "*",

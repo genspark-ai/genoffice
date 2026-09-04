@@ -78,6 +78,7 @@ import {
   syncCloudProjects,
 } from './cloud-projects'
 import { handleDroppedFiles } from './dropped-files'
+import { docToText } from '@genoffice/file-parse'
 import { ProjectStore } from '@genoffice/project-store'
 import {
   ensureGenofficeLogin,
@@ -492,6 +493,8 @@ const tMain = createI18n({
     errRenameFailed: '重命名失败',
     errNewTabFailed: '新建文档失败',
     errUnsupportedExt: '暂不支持 .{ext} 类型',
+    warnLegacyDocOpenedAsText:
+      '已按纯文本打开 .doc 文件，原格式与图片已丢失，请另存为 .docx 以保留编辑内容。',
     copySuffix: '副本',
     menuHelp: '帮助',
     thirdPartyNotices: '第三方软件声明',
@@ -581,6 +584,8 @@ const tMain = createI18n({
     errRenameFailed: 'Rename failed',
     errNewTabFailed: 'Could not create the new document',
     errUnsupportedExt: '.{ext} files are not supported',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'copy',
     menuHelp: 'Help',
     thirdPartyNotices: 'Third-Party Notices',
@@ -679,6 +684,8 @@ const tMain = createI18n({
     errRenameFailed: '名前の変更に失敗しました',
     errNewTabFailed: '新規ドキュメントを作成できませんでした',
     errUnsupportedExt: '.{ext} 形式には対応していません',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'コピー',
     menuHelp: 'ヘルプ',
     thirdPartyNotices: 'サードパーティソフトウェアに関する通知',
@@ -777,6 +784,8 @@ const tMain = createI18n({
     errRenameFailed: '이름 바꾸기에 실패했습니다',
     errNewTabFailed: '새 문서를 만들지 못했습니다',
     errUnsupportedExt: '.{ext} 형식은 지원되지 않습니다',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: '복사본',
     menuHelp: '도움말',
     thirdPartyNotices: '타사 소프트웨어 고지',
@@ -874,6 +883,8 @@ const tMain = createI18n({
     errRenameFailed: 'Échec du renommage',
     errNewTabFailed: 'Impossible de créer le nouveau document',
     errUnsupportedExt: 'les fichiers .{ext} ne sont pas pris en charge',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'copie',
     menuHelp: 'Aide',
     thirdPartyNotices: 'Mentions relatives aux logiciels tiers',
@@ -973,6 +984,8 @@ const tMain = createI18n({
     errRenameFailed: 'Umbenennen fehlgeschlagen',
     errNewTabFailed: 'Neues Dokument konnte nicht erstellt werden',
     errUnsupportedExt: '.{ext}-Dateien werden nicht unterstützt',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'Kopie',
     menuHelp: 'Hilfe',
     thirdPartyNotices: 'Hinweise zu Drittanbietersoftware',
@@ -1072,6 +1085,8 @@ const tMain = createI18n({
     errRenameFailed: 'No se pudo cambiar el nombre',
     errNewTabFailed: 'No se pudo crear el nuevo documento',
     errUnsupportedExt: 'los archivos .{ext} no son compatibles',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'copia',
     menuHelp: 'Ayuda',
     thirdPartyNotices: 'Avisos de software de terceros',
@@ -1171,6 +1186,8 @@ const tMain = createI18n({
     errRenameFailed: 'เปลี่ยนชื่อไม่สำเร็จ',
     errNewTabFailed: 'สร้างเอกสารใหม่ไม่สำเร็จ',
     errUnsupportedExt: 'ไม่รองรับไฟล์ .{ext}',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'สำเนา',
     menuHelp: 'วิธีใช้',
     thirdPartyNotices: 'ประกาศเกี่ยวกับซอฟต์แวร์ของบุคคลที่สาม',
@@ -1265,6 +1282,8 @@ const tMain = createI18n({
     errRenameFailed: 'Gagal mengganti nama',
     errNewTabFailed: 'Gagal membuat dokumen baru',
     errUnsupportedExt: 'file .{ext} tidak didukung',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'salinan',
     menuHelp: 'Bantuan',
     thirdPartyNotices: 'Pemberitahuan Perangkat Lunak Pihak Ketiga',
@@ -1364,6 +1383,8 @@ const tMain = createI18n({
     errRenameFailed: 'Не удалось переименовать',
     errNewTabFailed: 'Не удалось создать новый документ',
     errUnsupportedExt: 'файлы .{ext} не поддерживаются',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'копия',
     menuHelp: 'Справка',
     thirdPartyNotices: 'Уведомления о стороннем ПО',
@@ -1463,6 +1484,8 @@ const tMain = createI18n({
     errRenameFailed: 'فشلت إعادة التسمية',
     errNewTabFailed: 'تعذّر إنشاء المستند الجديد',
     errUnsupportedExt: 'ملفات .{ext} غير مدعومة',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'نسخة',
     menuHelp: 'تعليمات',
     thirdPartyNotices: 'إشعارات برامج الجهات الخارجية',
@@ -1557,6 +1580,8 @@ const tMain = createI18n({
     errRenameFailed: 'Falha ao renomear',
     errNewTabFailed: 'Falha ao criar o novo documento',
     errUnsupportedExt: 'arquivos .{ext} não são suportados',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'cópia',
     menuHelp: 'Ajuda',
     thirdPartyNotices: 'Avisos de software de terceiros',
@@ -1656,6 +1681,8 @@ const tMain = createI18n({
     errRenameFailed: 'Impossibile rinominare',
     errNewTabFailed: 'Impossibile creare il nuovo documento',
     errUnsupportedExt: 'i file .{ext} non sono supportati',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'copia',
     menuHelp: 'Aiuto',
     thirdPartyNotices: 'Note sul software di terze parti',
@@ -1755,6 +1782,8 @@ const tMain = createI18n({
     errRenameFailed: 'Nie udało się zmienić nazwy',
     errNewTabFailed: 'Nie udało się utworzyć nowego dokumentu',
     errUnsupportedExt: 'pliki .{ext} nie są obsługiwane',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'kopia',
     menuHelp: 'Pomoc',
     thirdPartyNotices: 'Informacje o oprogramowaniu innych firm',
@@ -1854,6 +1883,8 @@ const tMain = createI18n({
     errRenameFailed: 'Naam wijzigen mislukt',
     errNewTabFailed: 'Kan het nieuwe document niet maken',
     errUnsupportedExt: '.{ext}-bestanden worden niet ondersteund',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'kopie',
     menuHelp: 'Help',
     thirdPartyNotices: 'Kennisgevingen over software van derden',
@@ -1953,6 +1984,8 @@ const tMain = createI18n({
     errRenameFailed: 'Gagal menamakan semula',
     errNewTabFailed: 'Gagal mencipta dokumen baharu',
     errUnsupportedExt: 'fail .{ext} tidak disokong',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'salinan',
     menuHelp: 'Bantuan',
     thirdPartyNotices: 'Notis Perisian Pihak Ketiga',
@@ -2051,6 +2084,8 @@ const tMain = createI18n({
     errRenameFailed: 'שינוי השם נכשל',
     errNewTabFailed: 'יצירת המסמך החדש נכשלה',
     errUnsupportedExt: 'קובצי .{ext} אינם נתמכים',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'עותק',
     menuHelp: 'עזרה',
     thirdPartyNotices: 'הודעות על תוכנות צד שלישי',
@@ -2144,6 +2179,8 @@ const tMain = createI18n({
     errRenameFailed: 'नाम बदलने में विफल',
     errNewTabFailed: 'नया दस्तावेज़ बनाने में विफल',
     errUnsupportedExt: '.{ext} फ़ाइलें समर्थित नहीं हैं',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: 'प्रतिलिपि',
     menuHelp: 'सहायता',
     thirdPartyNotices: 'तृतीय-पक्ष सॉफ़्टवेयर सूचनाएँ',
@@ -2243,6 +2280,8 @@ const tMain = createI18n({
     errRenameFailed: '重新命名失敗',
     errNewTabFailed: '新建文件失敗',
     errUnsupportedExt: '暫不支援 .{ext} 類型',
+    warnLegacyDocOpenedAsText:
+      'Opened as plain text — formatting and images were dropped. Save as .docx to keep your edits.',
     copySuffix: '副本',
     menuHelp: '說明',
     thirdPartyNotices: '第三方軟體聲明',
@@ -2538,13 +2577,15 @@ function createShellWindow(): void {
 // ---- routing: one dispatch function for every open path ----
 
 const DOCX_RE = /\.docx$/i
+/** legacy Word 97-2003 — extracted to text and opened as an untitled doc (see routeDocumentPath) */
+const DOC_RE = /\.doc$/i
 const XLSX_RE = /\.(xlsx|xlsm|xls|csv)$/i
 const PPTX_RE = /\.pptx$/i
 const PDF_RE = /\.pdf$/i
 const MD_RE = /\.(md|markdown)$/i
 
 /** document formats we recognize but don't open — surfaced as a dialog, not silently dropped */
-const UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsb|pages|key|numbers)$/i
+const UNSUPPORTED_DOC_RE = /\.(rtf|odt|ppt|pps|odp|ods|xlsb|pages|key|numbers)$/i
 
 /**
  * Single source of truth for the open-dialog filter. Includes the
@@ -2570,6 +2611,7 @@ function supportedFileIn(argv: string[]): string | null {
     argv.find(
       (arg) =>
         (DOCX_RE.test(arg) ||
+          DOC_RE.test(arg) ||
           XLSX_RE.test(arg) ||
           PPTX_RE.test(arg) ||
           PDF_RE.test(arg) ||
@@ -2646,6 +2688,15 @@ function openGeneratedDocument(filePath: string): boolean {
   return openDocumentPath(filePath)
 }
 
+/** Plain text → restricted HTML paragraphs for the docs renderer. */
+function textToParagraphsHtml(text: string): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return text
+    .split('\n')
+    .map((line) => `<p>${esc(line) || '<br>'}</p>`)
+    .join('')
+}
+
 function routeDocumentPath(filePath: string): boolean {
   if (!existsSync(filePath) || !tabManager) return false
   if (DOCX_RE.test(filePath)) {
@@ -2653,6 +2704,30 @@ function routeDocumentPath(filePath: string): boolean {
     const existing = tabManager.findDocsTabByPath(filePath)
     if (existing) tabManager.activateTab(existing)
     else tabManager.openDocsTab(filePath)
+    return true
+  }
+  if (DOC_RE.test(filePath)) {
+    // Legacy Word 97-2003 has no in-place editor: extract readable text and
+    // open it as an untitled doc the user saves as .docx. Async by nature —
+    // the tab opens when extraction completes.
+    void (async () => {
+      try {
+        const text = await docToText(new Uint8Array(readFileSync(filePath)))
+        if (!text) {
+          notifyUnsupportedFile(filePath)
+          return
+        }
+        recordRecentFile(filePath)
+        const title = basename(filePath, extname(filePath))
+        tabManager?.openDocsTab(undefined, {
+          newBlank: true,
+          aiContent: { title, html: textToParagraphsHtml(text) },
+        })
+        showAppWarning(tm('warnLegacyDocOpenedAsText'))
+      } catch {
+        notifyUnsupportedFile(filePath)
+      }
+    })()
     return true
   }
   if (XLSX_RE.test(filePath)) {
