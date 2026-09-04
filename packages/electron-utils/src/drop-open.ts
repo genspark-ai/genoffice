@@ -15,13 +15,14 @@ import { ipcRenderer, webUtils } from 'electron'
 export const DROP_OPEN_CHANNEL = 'app:open-dropped-files'
 
 /** Extensions routed by apps/shell routeDocumentPath — keep in sync there and
- *  with OPEN_DIALOG_EXTENSIONS / OPEN_LOCAL_EXTENSIONS on the home screen. */
-export const OPENABLE_DOC_RE = /\.(docx|xlsx|xlsm|xls|csv|pptx|pdf|md|markdown)$/i
+ *  with OPEN_DIALOG_EXTENSIONS / OPEN_LOCAL_EXTENSIONS on the home screen.
+ *  Legacy .doc opens via the shell's extract-to-text converter. */
+export const OPENABLE_DOC_RE = /\.(docx|doc|xlsx|xlsm|xls|csv|pptx|pdf|md|markdown)$/i
 
 /** Recognized-but-unsupported formats: kept in the sent payload so the shell
  *  can show its "not supported" dialog instead of dropping them silently.
  *  Mirrors UNSUPPORTED_DOC_RE in apps/shell/src/main/index.ts. */
-export const KNOWN_UNSUPPORTED_DOC_RE = /\.(doc|rtf|odt|ppt|pps|odp|ods|xlsb|pages|key|numbers)$/i
+export const KNOWN_UNSUPPORTED_DOC_RE = /\.(rtf|odt|ppt|pps|odp|ods|xlsb|pages|key|numbers)$/i
 
 /** upper bound on how many files one drop may ask to open */
 const MAX_DROPPED_FILES = 20
