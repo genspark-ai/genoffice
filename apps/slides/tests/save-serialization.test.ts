@@ -7,7 +7,7 @@ vi.mock('../src/renderer/export-render', () => ({ renderSlidesToPngBase64: vi.fn
 vi.mock('../src/renderer/components/toast-bus', () => ({ showToast: vi.fn() }))
 vi.mock('../src/renderer/i18n/locale', () => ({ t: (k: string) => k }))
 
-import { save } from '../src/renderer/file-actions'
+import { save, saveAs } from '../src/renderer/file-actions'
 import type { ActionCtx } from '../src/renderer/action-context'
 
 function ctx(): ActionCtx {
@@ -50,6 +50,32 @@ describe('slides save serialization', () => {
     expect(b).toBe(true)
     expect(c).toBe(true)
     expect(mockSave).toHaveBeenCalledTimes(3)
+    expect(maxConcurrent).toBe(1)
+
+    vi.unstubAllGlobals()
+  })
+
+  it('serializes save against saveAs so their IPC writes never overlap', async () => {
+    let inFlight = 0
+    let maxConcurrent = 0
+    const track = async () => {
+      inFlight += 1
+      maxConcurrent = Math.max(maxConcurrent, inFlight)
+      // Simulate a slow write.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      inFlight -= 1
+      return { ok: true }
+    }
+    const mockSave = vi.fn(track)
+    const mockSaveAs = vi.fn(track)
+    vi.stubGlobal('window', { slidesApi: { save: mockSave, saveAs: mockSaveAs } })
+
+    // A manual save racing Save As (or close-save) must queue behind it.
+    const [saved, _] = await Promise.all([save(ctx(), true), saveAs(ctx())])
+
+    expect(saved).toBe(true)
+    expect(mockSave).toHaveBeenCalledTimes(1)
+    expect(mockSaveAs).toHaveBeenCalledTimes(1)
     expect(maxConcurrent).toBe(1)
 
     vi.unstubAllGlobals()
