@@ -4009,6 +4009,9 @@ export function App(): React.JSX.Element {
           const targetSheet = sheetById(op.sheetId)
           const matchCase = op.matchCase ?? false
           const needle = matchCase ? op.find : op.find.toLowerCase()
+          // Spaces trimmed, line breaks kept — same convention as the find
+          // dialog (lazy-find.ts) so chunk replaces agree with per-cell ones.
+          const trimSpaces = (s: string): string => s.replace(/^ +/g, '').replace(/ +$/g, '')
           await applyRangeInLoadedChunks(
             runtime,
             lazyWorkbookRef,
@@ -4045,7 +4048,7 @@ export function App(): React.JSX.Element {
                   const haystack = matchCase ? value : value.toLowerCase()
                   let next: string | null = null
                   if (op.wholeCell) {
-                    if (haystack === needle) next = op.replace
+                    if (trimSpaces(haystack) === needle.trim()) next = op.replace
                   } else if (haystack.includes(needle)) {
                     next = replaceOccurrences(value, op.find, op.replace, matchCase)
                   }

@@ -609,6 +609,23 @@ describe('find_replace expansion', () => {
     expect(wholeOps).toEqual([{ op: 'set_cell', sheetId: 's', address: 'A1', value: 'pear' }])
   })
 
+  it('wholeCell ignores surrounding spaces like the find dialog', () => {
+    const ops = expandToPrimitiveOps(
+      [
+        {
+          op: 'find_replace',
+          sheetId: 's',
+          range: 'A1:A2',
+          find: 'apple',
+          replace: 'pear',
+          wholeCell: true,
+        },
+      ],
+      reader({ A1: '  apple  ', A2: 'apple pie' }),
+    )
+    expect(ops).toEqual([{ op: 'set_cell', sheetId: 's', address: 'A1', value: 'pear' }])
+  })
+
   it('keeps a literal $ in the replacement and skips formula cells', () => {
     const ops = expandToPrimitiveOps(
       [
