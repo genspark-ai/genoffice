@@ -651,7 +651,7 @@ export default function App() {
               <button
                 type="button"
                 className="zoom-btn"
-                aria-label="Zoom out"
+                aria-label={t('zoomOut')}
                 onClick={zoomOut}
                 disabled={zoom <= MIN_ZOOM}
               >
@@ -664,13 +664,13 @@ export default function App() {
                 max={MAX_ZOOM}
                 step={ZOOM_STEP}
                 value={Math.round(zoom)}
-                aria-label="Zoom"
+                aria-label={t('zoom')}
                 onChange={(event) => setZoom(Number(event.target.value))}
               />
               <button
                 type="button"
                 className="zoom-btn"
-                aria-label="Zoom in"
+                aria-label={t('zoomIn')}
                 onClick={zoomIn}
                 disabled={zoom >= MAX_ZOOM}
               >
