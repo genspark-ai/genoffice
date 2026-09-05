@@ -147,6 +147,8 @@ export const id = {
   ribbonAllBordersTip: 'Tambahkan batas ke semua sisi sel yang dipilih',
   ribbonOuterBorders: 'Batas Luar',
   ribbonOuterBordersTip: 'Batas hanya di tepi luar pilihan',
+  ribbonCollapseTip: 'Ciutkan pita',
+  ribbonExpandTip: 'Luaskan pita',
   ribbonInnerBorders: 'Batas Dalam',
   ribbonInnerBordersTip: 'Batas hanya di bagian dalam pilihan',
   ribbonClearBordersTip: 'Hapus batas dari sel yang dipilih',

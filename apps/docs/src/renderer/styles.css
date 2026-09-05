@@ -404,6 +404,12 @@ button {
   -webkit-app-region: no-drag;
 }
 
+/* Word-style collapse (#210): the tab row (frameless drag area) stays while
+   the tool body hides; the body stays mounted so dropdown state survives */
+.ribbon.collapsed .ribbon-body {
+  display: none;
+}
+
 /* While a popover is open the row must deliver presses (drag regions swallow
    them), so outside-press dismissal can see presses on the blank band */
 html.genoffice-popover-open .ribbon-tabs {

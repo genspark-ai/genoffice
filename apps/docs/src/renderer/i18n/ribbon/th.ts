@@ -146,6 +146,8 @@ export const th = {
   ribbonAllBordersTip: 'เพิ่มเส้นขอบทุกด้านของเซลล์ที่เลือก',
   ribbonOuterBorders: 'เส้นขอบด้านนอก',
   ribbonOuterBordersTip: 'เส้นขอบเฉพาะรอบนอกของส่วนที่เลือกเท่านั้น',
+  ribbonCollapseTip: 'ยุบ Ribbon',
+  ribbonExpandTip: 'ขยาย Ribbon',
   ribbonInnerBorders: 'เส้นขอบด้านใน',
   ribbonInnerBordersTip: 'เส้นขอบเฉพาะด้านในของส่วนที่เลือกเท่านั้น',
   ribbonClearBordersTip: 'ล้างเส้นขอบของเซลล์ที่เลือก',

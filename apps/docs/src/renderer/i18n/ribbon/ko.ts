@@ -154,6 +154,8 @@ export const ko = {
   ribbonAllBordersTip: '선택한 셀의 모든 면에 테두리 추가',
   ribbonOuterBorders: '바깥쪽 테두리',
   ribbonOuterBordersTip: '선택 영역의 바깥쪽에만 테두리 추가',
+  ribbonCollapseTip: '리본 최소화',
+  ribbonExpandTip: '리본 확장',
   ribbonInnerBorders: '안쪽 테두리',
   ribbonInnerBordersTip: '선택 영역의 안쪽에만 테두리 추가',
   ribbonClearBordersTip: '선택한 셀의 테두리 지우기',

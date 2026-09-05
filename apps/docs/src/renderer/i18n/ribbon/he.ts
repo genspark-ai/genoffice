@@ -145,6 +145,8 @@ export const he = {
   ribbonAllBordersTip: 'הוסף גבולות לכל צידי התאים הנבחרים',
   ribbonOuterBorders: 'גבולות חיצוניים',
   ribbonOuterBordersTip: 'גבולות רק בהיקף החיצוני של הבחירה',
+  ribbonCollapseTip: 'כווץ את הסרט',
+  ribbonExpandTip: 'הרחב את הסרט',
   ribbonInnerBorders: 'גבולות פנימיים',
   ribbonInnerBordersTip: 'גבולות רק בתוך הבחירה',
   ribbonClearBordersTip: 'נקה גבולות מהתאים הנבחרים',

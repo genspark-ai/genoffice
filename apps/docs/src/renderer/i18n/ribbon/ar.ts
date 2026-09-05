@@ -145,6 +145,8 @@ export const ar = {
   ribbonAllBordersTip: 'إضافة حدود إلى كافة جوانب الخلايا المحددة',
   ribbonOuterBorders: 'الحدود الخارجية',
   ribbonOuterBordersTip: 'حدود على الحافة الخارجية للتحديد فقط',
+  ribbonCollapseTip: 'طي الشريط',
+  ribbonExpandTip: 'توسيع الشريط',
   ribbonInnerBorders: 'الحدود الداخلية',
   ribbonInnerBordersTip: 'حدود داخل التحديد فقط',
   ribbonClearBordersTip: 'مسح حدود الخلايا المحددة',

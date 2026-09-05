@@ -149,6 +149,8 @@ export const es = {
   ribbonAllBordersTip: 'Agregar bordes a los cuatro lados de las celdas seleccionadas',
   ribbonOuterBorders: 'Bordes externos',
   ribbonOuterBordersTip: 'Bordes solo en el contorno de la selección',
+  ribbonCollapseTip: 'Contraer la cinta de opciones',
+  ribbonExpandTip: 'Expandir la cinta de opciones',
   ribbonInnerBorders: 'Bordes internos',
   ribbonInnerBordersTip: 'Bordes solo en el interior de la selección',
   ribbonClearBordersTip: 'Borrar los bordes de las celdas seleccionadas',

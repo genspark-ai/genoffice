@@ -148,6 +148,8 @@ export const ru = {
   ribbonAllBordersTip: 'Добавить границы со всех сторон выделенных ячеек',
   ribbonOuterBorders: 'Внешние границы',
   ribbonOuterBordersTip: 'Границы только по внешнему краю выделения',
+  ribbonCollapseTip: 'Свернуть ленту',
+  ribbonExpandTip: 'Развернуть ленту',
   ribbonInnerBorders: 'Внутренние границы',
   ribbonInnerBordersTip: 'Границы только внутри выделения',
   ribbonClearBordersTip: 'Убрать границы выделенных ячеек',

@@ -149,6 +149,8 @@ export const de = {
   ribbonAllBordersTip: 'Rahmenlinien an allen Seiten der ausgewählten Zellen hinzufügen',
   ribbonOuterBorders: 'Rahmenlinien außen',
   ribbonOuterBordersTip: 'Rahmenlinien nur am äußeren Rand der Auswahl',
+  ribbonCollapseTip: 'Menüband minimieren',
+  ribbonExpandTip: 'Menüband erweitern',
   ribbonInnerBorders: 'Rahmenlinien innen',
   ribbonInnerBordersTip: 'Rahmenlinien nur innerhalb der Auswahl',
   ribbonClearBordersTip: 'Rahmenlinien der ausgewählten Zellen entfernen',

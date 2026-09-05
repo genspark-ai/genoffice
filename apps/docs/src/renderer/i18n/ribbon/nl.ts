@@ -150,6 +150,8 @@ export const nl = {
   ribbonAllBordersTip: 'Randen toevoegen aan alle zijden van de geselecteerde cellen',
   ribbonOuterBorders: 'Buitenranden',
   ribbonOuterBordersTip: 'Alleen randen aan de buitenkant van de selectie',
+  ribbonCollapseTip: 'Het lint samenvouwen',
+  ribbonExpandTip: 'Het lint uitvouwen',
   ribbonInnerBorders: 'Binnenranden',
   ribbonInnerBordersTip: 'Alleen randen binnen de selectie',
   ribbonClearBordersTip: 'Randen van de geselecteerde cellen wissen',

@@ -153,6 +153,8 @@ export const zh = {
   ribbonAllBordersTip: '选中单元格四边全部加框线',
   ribbonOuterBorders: '外侧框线',
   ribbonOuterBordersTip: '仅选区外侧加框线',
+  ribbonCollapseTip: '收起功能区',
+  ribbonExpandTip: '展开功能区',
   ribbonInnerBorders: '内侧框线',
   ribbonInnerBordersTip: '仅选区内部加框线',
   ribbonClearBordersTip: '清除选中单元格框线',

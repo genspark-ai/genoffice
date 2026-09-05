@@ -149,6 +149,8 @@ export const it = {
   ribbonAllBordersTip: 'Aggiungi bordi a tutti i lati delle celle selezionate',
   ribbonOuterBorders: 'Bordi esterni',
   ribbonOuterBordersTip: 'Bordi solo sul contorno esterno della selezione',
+  ribbonCollapseTip: 'Comprimi la barra multifunzione',
+  ribbonExpandTip: 'Espandi la barra multifunzione',
   ribbonInnerBorders: 'Bordi interni',
   ribbonInnerBordersTip: "Bordi solo all'interno della selezione",
   ribbonClearBordersTip: 'Rimuovi i bordi dalle celle selezionate',

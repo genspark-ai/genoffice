@@ -148,6 +148,8 @@ export const ms = {
   ribbonAllBordersTip: 'Tambah sempadan pada semua sisi sel yang dipilih',
   ribbonOuterBorders: 'Sempadan Luar',
   ribbonOuterBordersTip: 'Sempadan pada bahagian luar pilihan sahaja',
+  ribbonCollapseTip: 'Runtuhkan reben',
+  ribbonExpandTip: 'Kembangkan reben',
   ribbonInnerBorders: 'Sempadan Dalam',
   ribbonInnerBordersTip: 'Sempadan di bahagian dalam pilihan sahaja',
   ribbonClearBordersTip: 'Kosongkan sempadan daripada sel yang dipilih',

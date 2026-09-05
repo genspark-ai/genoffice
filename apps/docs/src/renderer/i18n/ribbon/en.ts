@@ -146,6 +146,8 @@ export const en = {
   ribbonAllBordersTip: 'Add borders to all sides of the selected cells',
   ribbonOuterBorders: 'Outside Borders',
   ribbonOuterBordersTip: 'Borders on the outer edge of the selection only',
+  ribbonCollapseTip: 'Collapse the ribbon',
+  ribbonExpandTip: 'Expand the ribbon',
   ribbonInnerBorders: 'Inside Borders',
   ribbonInnerBordersTip: 'Borders inside the selection only',
   ribbonClearBordersTip: 'Clear borders from the selected cells',

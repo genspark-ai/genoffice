@@ -148,6 +148,8 @@ export const pt = {
   ribbonAllBordersTip: 'Adicionar bordas a todos os lados das células selecionadas',
   ribbonOuterBorders: 'Bordas Externas',
   ribbonOuterBordersTip: 'Bordas apenas no contorno externo da seleção',
+  ribbonCollapseTip: 'Recolher a faixa',
+  ribbonExpandTip: 'Expandir a faixa',
   ribbonInnerBorders: 'Bordas Internas',
   ribbonInnerBordersTip: 'Bordas apenas no interior da seleção',
   ribbonClearBordersTip: 'Limpar as bordas das células selecionadas',

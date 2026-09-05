@@ -159,6 +159,10 @@ interface RibbonProps {
   onSaveAs: () => void
   showAi: boolean
   onToggleAi: () => void
+  /** Word-style collapse: the tab row (frameless drag area) stays, the tool body hides.
+      Optional so test-only mounts render the classic expanded ribbon. */
+  ribbonCollapsed?: boolean
+  onToggleRibbonCollapse?: () => void
   section: SectionSettings | null
   onSection: (next: SectionSettings) => void
   /** Multi-section documents: index of the cursor's section (0-based); null for single-section */
@@ -615,6 +619,8 @@ function RibbonInner({
   onSaveAs,
   showAi,
   onToggleAi,
+  ribbonCollapsed = false,
+  onToggleRibbonCollapse,
   section,
   onSection,
   activeSection,
@@ -1868,7 +1874,7 @@ function RibbonInner({
   )
 
   return (
-    <div className="ribbon">
+    <div className={`ribbon${ribbonCollapsed ? ' collapsed' : ''}`}>
       <div
         className={`ribbon-tabs ${IN_TAB ? '' : IS_MAC ? 'ribbon-tabs-mac' : 'ribbon-tabs-win'}`}
       >
@@ -1967,6 +1973,23 @@ function RibbonInner({
             </button>
           ))}
         <span className="ribbon-tabs-spacer" />
+        <button
+          className="ribbon-tab ribbon-collapse-btn"
+          onClick={onToggleRibbonCollapse}
+          data-tip={t(ribbonCollapsed ? 'ribbonExpandTip' : 'ribbonCollapseTip')}
+          aria-label={t(ribbonCollapsed ? 'ribbonExpandTip' : 'ribbonCollapseTip')}
+          aria-expanded={!ribbonCollapsed}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-flex',
+              transform: ribbonCollapsed ? undefined : 'rotate(180deg)',
+            }}
+          >
+            <IconCaret size={10} />
+          </span>
+        </button>
         {trailingActions}
       </div>
 

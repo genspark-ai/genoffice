@@ -148,6 +148,8 @@ export const pl = {
   ribbonAllBordersTip: 'Dodaj krawędzie ze wszystkich stron zaznaczonych komórek',
   ribbonOuterBorders: 'Krawędzie zewnętrzne',
   ribbonOuterBordersTip: 'Krawędzie tylko na zewnętrznym obrysie zaznaczenia',
+  ribbonCollapseTip: 'Zwiń wstążkę',
+  ribbonExpandTip: 'Rozwiń wstążkę',
   ribbonInnerBorders: 'Krawędzie wewnętrzne',
   ribbonInnerBordersTip: 'Krawędzie tylko wewnątrz zaznaczenia',
   ribbonClearBordersTip: 'Usuń krawędzie z zaznaczonych komórek',

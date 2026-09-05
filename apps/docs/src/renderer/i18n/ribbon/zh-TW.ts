@@ -144,6 +144,8 @@ export const zhTW = {
   ribbonAllBordersTip: '選取儲存格四邊全部加上框線',
   ribbonOuterBorders: '外框線',
   ribbonOuterBordersTip: '僅選取範圍外側加上框線',
+  ribbonCollapseTip: '收合功能區',
+  ribbonExpandTip: '展開功能區',
   ribbonInnerBorders: '內框線',
   ribbonInnerBordersTip: '僅選取範圍內部加上框線',
   ribbonClearBordersTip: '清除選取儲存格的框線',

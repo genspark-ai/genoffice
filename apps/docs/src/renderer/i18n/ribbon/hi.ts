@@ -148,6 +148,8 @@ export const hi = {
   ribbonAllBordersTip: 'चयनित कक्षों के सभी किनारों पर बॉर्डर जोड़ें',
   ribbonOuterBorders: 'बाहरी बॉर्डर',
   ribbonOuterBordersTip: 'केवल चयन के बाहरी किनारे पर बॉर्डर',
+  ribbonCollapseTip: 'रिबन समेटें',
+  ribbonExpandTip: 'रिबन फैलाएँ',
   ribbonInnerBorders: 'भीतरी बॉर्डर',
   ribbonInnerBordersTip: 'केवल चयन के भीतर बॉर्डर',
   ribbonClearBordersTip: 'चयनित कक्षों से बॉर्डर साफ़ करें',

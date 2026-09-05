@@ -493,6 +493,10 @@ export function App() {
   const [ribbonTabRequest, setRibbonTabRequest] = useState<{ tab: string; nonce: number } | null>(
     null,
   )
+  /** Word-style ribbon collapse (#210): tab row stays as the drag area, tool body hides; persisted */
+  const [ribbonCollapsed, setRibbonCollapsed] = useState(
+    () => localStorage.getItem('aidocs.ribbonCollapsed') === '1',
+  )
   const [status, setStatus] = useState('')
   const [zoom, setZoom] = useState(100)
   const [darkCanvas, setDarkCanvas] = useState(false)
@@ -975,6 +979,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem('aidocs.showAi', showAi ? '1' : '0')
   }, [showAi])
+
+  useEffect(() => {
+    localStorage.setItem('aidocs.ribbonCollapsed', ribbonCollapsed ? '1' : '0')
+  }, [ribbonCollapsed])
 
   useEffect(() => {
     localStorage.setItem('aidocs.autoSave', autoSave ? '1' : '0')
@@ -4370,6 +4378,8 @@ export function App() {
         styles={ribbonStyles}
         docDefaults={doc?.parsed.docDefaults}
         showAi={showAi}
+        ribbonCollapsed={ribbonCollapsed}
+        onToggleRibbonCollapse={() => setRibbonCollapsed((v) => !v)}
         section={sections[activeSection]?.settings ?? section}
         activeSection={sections.length > 1 ? activeSection : null}
         pageColor={pageColor}

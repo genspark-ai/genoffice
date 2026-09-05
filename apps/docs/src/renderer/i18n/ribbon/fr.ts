@@ -149,6 +149,8 @@ export const fr = {
   ribbonAllBordersTip: 'Ajouter des bordures aux quatre côtés des cellules sélectionnées',
   ribbonOuterBorders: 'Bordures extérieures',
   ribbonOuterBordersTip: 'Bordures uniquement sur le pourtour de la sélection',
+  ribbonCollapseTip: 'Réduire le ruban',
+  ribbonExpandTip: 'Développer le ruban',
   ribbonInnerBorders: 'Bordures intérieures',
   ribbonInnerBordersTip: "Bordures uniquement à l'intérieur de la sélection",
   ribbonClearBordersTip: 'Effacer les bordures des cellules sélectionnées',

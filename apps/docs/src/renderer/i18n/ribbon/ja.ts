@@ -156,6 +156,8 @@ export const ja = {
   ribbonAllBordersTip: '選択したセルの四辺すべてに罫線を追加',
   ribbonOuterBorders: '外枠',
   ribbonOuterBordersTip: '選択範囲の外側のみに罫線を追加',
+  ribbonCollapseTip: 'リボンを折りたたむ',
+  ribbonExpandTip: 'リボンを展開する',
   ribbonInnerBorders: '内側の罫線',
   ribbonInnerBordersTip: '選択範囲の内側のみに罫線を追加',
   ribbonClearBordersTip: '選択したセルの罫線をクリア',
