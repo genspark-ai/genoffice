@@ -874,6 +874,14 @@ export function AiPanel({
     loopRef.current?.reset()
     setBusy(false)
     setChat([])
+    // Restored history is painted above the live turn: without this the
+    // previous conversation survives "New chat" on screen (#195).
+    setHistoricChat([])
+    // Unsent composer attachments would otherwise ride into the next chat's
+    // file context (availableAttachments merges sent + live). The typed
+    // draft itself is kept — only staged files are dropped.
+    setAttachments([])
+    setAttachNotice(null)
     sentAttachmentsRef.current = []
     inputRef.current?.focus()
   }
@@ -1033,7 +1041,7 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
-          {chat.length > 0 && (
+          {(chat.length > 0 || historicChat.length > 0) && (
             <button
               className="ai-header-btn"
               onClick={newChat}

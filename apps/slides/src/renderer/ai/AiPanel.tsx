@@ -1862,6 +1862,9 @@ export function AiPanel({
     loopRef.current?.reset()
     setBusy(false)
     setChat([])
+    // Same as docs (#195): the restored transcript is painted above the live
+    // turn, so it must clear too — otherwise the old conversation survives.
+    setHistoricChat([])
     sentAttachmentsRef.current = []
     readAttachmentPathsRef.current.clear()
     inputRef.current?.focus()
@@ -1998,7 +2001,7 @@ export function AiPanel({
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
-          {chat.length > 0 && (
+          {(chat.length > 0 || historicChat.length > 0) && (
             <button
               className="ai-header-btn"
               onClick={newChat}
