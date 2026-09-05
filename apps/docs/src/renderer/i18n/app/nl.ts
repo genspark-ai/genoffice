@@ -238,6 +238,7 @@ export const nl = {
   appTabRight: 'Rechts',
   appTabDecimal: 'Decimaal',
   appTabBar: 'Balk',
+  appTabClear: 'Wissen',
   appAiSettings: 'AI-instellingen',
   appGensparkAccount: 'Genspark-account',
   appChecking: 'Controleren…',

@@ -236,6 +236,7 @@ export const zh = {
   appTabRight: '右',
   appTabDecimal: '小数点',
   appTabBar: '竖线',
+  appTabClear: '清除',
   // AI settings
   appAiSettings: 'AI 设置',
   appGensparkAccount: 'Genspark 账号',

@@ -247,6 +247,7 @@ export const ko = {
   appTabRight: '오른쪽',
   appTabDecimal: '소수점',
   appTabBar: '세로 막대',
+  appTabClear: '지우기',
   // AI settings
   appAiSettings: 'AI 설정',
   appGensparkAccount: 'Genspark 계정',

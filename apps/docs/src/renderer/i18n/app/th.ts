@@ -228,6 +228,7 @@ export const th = {
   appTabRight: 'ขวา',
   appTabDecimal: 'จุดทศนิยม',
   appTabBar: 'แถบ',
+  appTabClear: 'ล้าง',
   appAiSettings: 'การตั้งค่า AI',
   appGensparkAccount: 'บัญชี Genspark',
   appChecking: 'กำลังตรวจสอบ…',

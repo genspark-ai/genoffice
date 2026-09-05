@@ -223,6 +223,7 @@ export const he = {
   appTabRight: 'ימין',
   appTabDecimal: 'עשרוני',
   appTabBar: 'קו',
+  appTabClear: 'נקה',
   appAiSettings: 'הגדרות AI',
   appGensparkAccount: 'חשבון Genspark',
   appChecking: 'בודק…',

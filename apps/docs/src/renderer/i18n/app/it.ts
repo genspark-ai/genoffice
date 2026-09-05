@@ -232,6 +232,7 @@ export const it = {
   appTabRight: 'Destra',
   appTabDecimal: 'Decimale',
   appTabBar: 'Barra',
+  appTabClear: 'Cancella',
   appAiSettings: 'Impostazioni IA',
   appGensparkAccount: 'Account Genspark',
   appChecking: 'Verifica in corso…',

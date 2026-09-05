@@ -229,6 +229,7 @@ export const pt = {
   appTabRight: 'Direita',
   appTabDecimal: 'Decimal',
   appTabBar: 'Barra',
+  appTabClear: 'Limpar',
   appAiSettings: 'Configurações de IA',
   appGensparkAccount: 'Conta Genspark',
   appChecking: 'Verificando…',

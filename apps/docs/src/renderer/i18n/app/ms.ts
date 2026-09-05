@@ -232,6 +232,7 @@ export const ms = {
   appTabRight: 'Kanan',
   appTabDecimal: 'Perpuluhan',
   appTabBar: 'Bar',
+  appTabClear: 'Padam',
   appAiSettings: 'Tetapan AI',
   appGensparkAccount: 'Akaun Genspark',
   appChecking: 'Menyemak…',

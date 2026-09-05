@@ -238,6 +238,7 @@ export const de = {
   appTabRight: 'Rechts',
   appTabDecimal: 'Dezimal',
   appTabBar: 'Vertikale Linie',
+  appTabClear: 'Löschen',
   appAiSettings: 'KI-Einstellungen',
   appGensparkAccount: 'Genspark-Konto',
   appChecking: 'Wird überprüft…',

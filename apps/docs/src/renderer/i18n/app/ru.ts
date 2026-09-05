@@ -230,6 +230,7 @@ export const ru = {
   appTabRight: 'По правому краю',
   appTabDecimal: 'По разделителю',
   appTabBar: 'С чертой',
+  appTabClear: 'Очистить',
   appAiSettings: 'Настройки ИИ',
   appGensparkAccount: 'Учетная запись Genspark',
   appChecking: 'Проверка…',
