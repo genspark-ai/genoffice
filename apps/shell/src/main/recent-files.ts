@@ -52,8 +52,24 @@ export function normalizeRecentQuery(
   return { offset, limit, ext }
 }
 
-/** sidebar filter keys that stand for a family of extensions, not one exact ext */
-const EXT_FAMILY: Record<string, readonly string[]> = { xlsx: ['xlsx', 'xlsm'] }
+/** sidebar filter keys that stand for a family of extensions, not one exact ext.
+    Families mirror the extensions the shell router actually opens (XLSX_RE /
+    MD_RE in index.ts) so filtered-out-but-openable files cannot hide. */
+export const EXT_FAMILY: Record<string, readonly string[]> = {
+  // routeDocumentPath opens xlsx/xlsm/xls/csv alike
+  xlsx: ['xlsx', 'xlsm', 'xls', 'csv'],
+  // legacy .doc opens via the shell's extract-to-text converter, so it belongs
+  // under the Word filter with .docx
+  docx: ['docx', 'doc'],
+  // routeDocumentPath opens .md and .markdown alike
+  md: ['md', 'markdown'],
+}
+
+/** True when a recents/starred entry extension passes the sidebar filter key. */
+export function matchesExtFamily(filterExt: string | undefined, entryExt: string): boolean {
+  if (!filterExt) return true
+  return (EXT_FAMILY[filterExt] ?? [filterExt]).includes(entryExt)
+}
 
 /** Page over the recents paths, preserving the source's newest-first order (unavailable paths stay, flagged missing). */
 export function pageRecentPaths(
@@ -63,8 +79,7 @@ export function pageRecentPaths(
 ): RecentPage {
   const { offset, limit, ext } = normalizeRecentQuery(raw)
   const all = statPathEntries(paths, starredPaths)
-  const family = ext ? (EXT_FAMILY[ext] ?? [ext]) : undefined
-  const filtered = family ? all.filter((entry) => family.includes(entry.ext)) : all
+  const filtered = all.filter((entry) => matchesExtFamily(ext, entry.ext))
   return {
     entries: limit === 0 ? [] : filtered.slice(offset, offset + limit),
     total: filtered.length,
