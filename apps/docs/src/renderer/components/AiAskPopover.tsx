@@ -56,7 +56,7 @@ const CHIP_KEYS: Record<SelectionKind, StringKey[]> = {
   image: ['aiChipReplaceImage', 'aiChipRegenImage', 'aiChipImageCaption'],
   chart: ['aiChipChartData', 'aiChipChartTitle'],
   table: ['aiChipTableEdit', 'aiChipPolish', 'aiChipFixGrammar'],
-  text: ['aiChipPolish', 'aiChipShorten', 'aiChipExpand', 'aiChipFixGrammar'],
+  text: ['aiChipPolish', 'aiChipShorten', 'aiChipExpand', 'aiChipFixGrammar', 'aiChipTranslate'],
 }
 
 function selectionKind(editor: Editor): SelectionKind {

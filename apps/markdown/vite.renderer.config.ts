@@ -26,5 +26,13 @@ export default defineConfig({
   server: {
     port: Number(process.env.MARKDOWN_DEV_PORT) || 5177,
     strictPort: true,
+    // web version: same-origin proxy to the HTTP IPC bridge inside the running
+    // Electron main process (keeps the page CSP's connect-src 'self' intact)
+    proxy: {
+      '/api': {
+        target: `http://127.0.0.1:${Number(process.env.MARKDOWN_IPC_PORT) || 5277}`,
+        changeOrigin: true,
+      },
+    },
   },
 })

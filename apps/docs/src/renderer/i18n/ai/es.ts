@@ -32,6 +32,7 @@ export const es = {
   aiChipShorten: 'Hacer este pasaje más conciso',
   aiChipExpand: 'Ampliar este pasaje',
   aiChipFixGrammar: 'Corregir gramática y erratas',
+  aiChipTranslate: 'Traducir este pasaje',
   aiChipReplaceImage: 'Cambiar la imagen',
   aiChipRegenImage: 'Regenerar con IA',
   aiChipImageCaption: 'Añadir un pie de imagen',
@@ -55,6 +56,8 @@ export const es = {
   aiTidyBtn: 'Formato IA',
   aiTidyPrompt:
     'Ordena el formato de todo el documento; por ejemplo, corrige los niveles de título, unifica las listas, elimina negritas y cursivas innecesarias y homogeneiza la sangría de los párrafos. Ajusta solo el formato, sin cambiar el texto',
+  aiTranslateBtn: 'IA Traducir',
+  aiTranslatePrompt: 'Traduce este contenido al idioma de la interfaz del usuario, conservando el formato original (fuente, tamaño, color, sangría, listas, encabezados, tablas, alineación, etc.). Si hay selección, traduce solo la selección; de lo contrario, traduce todo el documento.',
   aiSwitchModelTitle: 'Cambiar modelo de IA',
   aiNewChatTitle: 'Nueva conversación',
   aiCollapseTitle: 'Contraer panel',

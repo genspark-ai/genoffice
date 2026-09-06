@@ -30,6 +30,7 @@ export const ko = {
   aiChipShorten: '이 문단 간결하게',
   aiChipExpand: '이 내용 확장하기',
   aiChipFixGrammar: '문법과 오탈자 수정',
+  aiChipTranslate: '이 부분 번역',
   aiChipReplaceImage: '이미지 교체',
   aiChipRegenImage: 'AI로 다시 생성',
   aiChipImageCaption: '캡션 추가',
@@ -53,6 +54,8 @@ export const ko = {
   aiTidyBtn: 'AI 서식 정리',
   aiTidyPrompt:
     '문서 전체 서식을 정리해 주세요. 예를 들어 제목 수준 수정, 목록 형식 통일, 불필요한 굵게/기울임 제거, 본문 단락 들여쓰기 정리 등. 서식만 조정하고 본문 텍스트는 절대 변경하지 마세요',
+  aiTranslateBtn: 'AI 번역',
+  aiTranslatePrompt: '이 내용을 UI 언어로 번역하고 원문의 서식(글꼴, 크기, 색, 들여쓰기, 목록, 제목, 표, 정렬 등)을 유지하세요. 선택 영역이 있으면 선택 영역만, 없으면 문서 전체를 번역합니다.',
   aiSwitchModelTitle: 'AI 모델 전환',
   aiNewChatTitle: '새 대화',
   aiCollapseTitle: '패널 접기',

@@ -62,6 +62,7 @@ export const he = {
   aiChipShorten: 'קיצור',
   aiChipExpand: 'הרחבה',
   aiChipVerify: 'בדיקת עובדות',
+  aiChipTranslate: 'תרגם',
   aiChipReplaceImage: 'החלפת תמונה',
   aiChipRemoveBg: 'הסרת רקע',
   aiChipRecolor: 'התאמת צבעים',

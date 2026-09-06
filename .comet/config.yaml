@@ -1,0 +1,25 @@
+# Comet 使用的配置格式版本，请勿修改此值。
+schema: comet.project.v1
+# `/comet` 默认进入的工作流；该值也必须出现在 workflows 中。
+default_workflow: native
+# 此项目启用的工作流，可填写 native、classic 或同时启用两者。
+workflows:
+  - native
+# 是否启用只读的环境感知恢复探针，同时作用于 Native 和 Classic；设为 false 可关闭自动工作流恢复。
+# ambient_resume: true | false
+ambient_resume: true
+# Native 工作流配置，不会改变 Classic 的状态或行为。
+native:
+  # Native 规格和 change 的存放根目录；运行时数据始终位于 .comet。
+  artifact_root: docs
+  # Native 工作流文档使用的产物语言。
+  # 可选值：en | zh-CN
+  language: zh-CN
+  # Native 提问澄清问题的方式：batch 每轮一次提出当前所有可回答的问题（默认），sequential 每轮只问一个。
+  # 可选值：batch | sequential
+  clarification_mode: batch
+  # Native 归档检查成功后自动归档，或等待用户明确确认。
+  # 可选值：automatic | required
+  archive_confirmation: automatic
+  # 同一个已确认验收目标最多允许的 Verify 失败次数；达到上限后停止完成循环。
+  max_verify_failures: 5

@@ -153,6 +153,15 @@ export function AiSelectionAsk({ anchor, range, onSend, onDismiss }: Props): Rea
         >
           {t('aiCheckBtn')}
         </button>
+        <button
+          className="ai-ask-chip"
+          onClick={() => {
+            setText(t('aiTranslatePrompt'))
+            inputRef.current?.focus()
+          }}
+        >
+          {t('aiTranslateBtn')}
+        </button>
       </div>
       <div className="ai-ask-pop-foot">
         <button className="ai-ask-cancel" onClick={onDismiss}>

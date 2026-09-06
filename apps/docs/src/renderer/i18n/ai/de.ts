@@ -32,6 +32,7 @@ export const de = {
   aiChipShorten: 'Diese Passage kürzen',
   aiChipExpand: 'Diese Passage ausbauen',
   aiChipFixGrammar: 'Grammatik und Tippfehler korrigieren',
+  aiChipTranslate: 'Diesen Abschnitt übersetzen',
   aiChipReplaceImage: 'Bild ersetzen',
   aiChipRegenImage: 'Mit KI neu generieren',
   aiChipImageCaption: 'Bildunterschrift hinzufügen',
@@ -55,6 +56,8 @@ export const de = {
   aiTidyBtn: 'KI-Formatierung',
   aiTidyPrompt:
     'Bringe die Formatierung des gesamten Dokuments in Ordnung – zum Beispiel Überschriftenebenen korrigieren, Listen vereinheitlichen, überflüssige Fett- und Kursivauszeichnungen entfernen, Absatzeinzüge angleichen. Passe nur die Formatierung an, ohne den Text zu verändern',
+  aiTranslateBtn: 'KI Übersetzen',
+  aiTranslatePrompt: 'Übersetzen Sie diesen Inhalt in die UI-Sprache des Benutzers und behalten Sie die ursprüngliche Formatierung bei (Schriftart, -größe, -farbe, Einrückung, Listen, Überschriften, Tabellen, Ausrichtung usw.). Ist eine Auswahl vorhanden, nur diese übersetzen; andernfalls das gesamte Dokument.',
   aiSwitchModelTitle: 'KI-Modell wechseln',
   aiNewChatTitle: 'Neuer Chat',
   aiCollapseTitle: 'Bereich einklappen',

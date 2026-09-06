@@ -41,3 +41,13 @@ __pycache__/
 # One-off verification tests kept while chasing a fix; promote to a real test
 # file (or delete) instead of committing them under this name.
 _scratch-*
+# >>> Comet managed project state >>>
+!/.comet/
+/.comet/*
+!/.comet/config.yaml
+# <<< Comet managed project state <<<
+
+# Local agent/editor tooling (machine-specific absolute paths)
+/.agents/
+/.codex/
+/.trae/

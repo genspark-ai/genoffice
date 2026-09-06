@@ -60,6 +60,7 @@ export const zh = {
   aiChipShorten: '缩短',
   aiChipExpand: '扩写',
   aiChipVerify: '核验',
+  aiChipTranslate: '翻译',
   aiChipReplaceImage: '换一张图',
   aiChipRemoveBg: '去除背景',
   aiChipRecolor: '调整配色',

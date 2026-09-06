@@ -16,6 +16,9 @@ export const fr = {
   aiAnalyzeBtn: 'Analyse IA',
   aiAnalyzePrompt:
     'Analysez les données de cette feuille et résumez les principaux constats, tendances et anomalies',
+    aiTranslateBtn: 'Traduire',
+  aiTranslatePrompt:
+    'Traduisez le contenu de ces cellules dans la langue cible (déduisez-la de la langue de l’interface). Conservez toute la mise en forme : formats numériques, alignement, police, taille, couleur, bordures, cellules fusionnées, commentaires. Ne modifiez que la valeur de la cellule ; ne touchez ni aux formules ni aux références à d’autres feuilles, et n’ajoutez ni ne supprimez de lignes ou colonnes.',
   aiSettingsTitle: 'Paramètres IA',
   aiSetUp: "Configurer l'IA",
   aiNewChat: 'Nouvelle conversation',

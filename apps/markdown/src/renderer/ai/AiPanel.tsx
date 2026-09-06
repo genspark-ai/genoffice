@@ -950,6 +950,76 @@ export function AiPanel({
         </div>
       )}
 
+      {!busy && (
+        <div className="ai-quick-actions" role="toolbar">
+          <button
+            type="button"
+            className="ai-quick-action"
+            data-tip={t('aiSummarizeBtn')}
+            onClick={() => {
+              setPrompt(t('aiSummarizePrompt'))
+              inputRef.current?.focus()
+            }}
+          >
+            <span className="ai-quick-action-icon" aria-hidden>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none">
+                <rect x="3" y="2.5" width="10" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M5.5 6h5M5.5 8.5h5M5.5 11h3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            </span>
+            {t('aiSummarizeBtn')}
+          </button>
+          <button
+            type="button"
+            className="ai-quick-action"
+            data-tip={t('aiPolishBtn')}
+            onClick={() => {
+              setPrompt(t('aiPolishPrompt'))
+              inputRef.current?.focus()
+            }}
+          >
+            <span className="ai-quick-action-icon" aria-hidden>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none">
+                <path d="M3 13l4-9 1.5 1.5M5 9l3 3M9 4l3-1 1 3-3 1z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            {t('aiPolishBtn')}
+          </button>
+          <button
+            type="button"
+            className="ai-quick-action"
+            data-tip={t('aiChipTranslate')}
+            onClick={() => {
+              setPrompt(t('aiChipTranslate'))
+              inputRef.current?.focus()
+            }}
+          >
+            <span className="ai-quick-action-icon" aria-hidden>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none">
+                <path d="M2 3h6M5 3v1.5C5 7 3.5 8.5 2 9M6 5.5C5.5 7 4.5 8 3 8.5M9 13l2-5 2 5M9.7 11.5h2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            {t('aiChipTranslate')}
+          </button>
+          <button
+            type="button"
+            className="ai-quick-action"
+            data-tip={t('aiTidyBtn')}
+            onClick={() => {
+              setPrompt(t('aiTidyPrompt'))
+              inputRef.current?.focus()
+            }}
+          >
+            <span className="ai-quick-action-icon" aria-hidden>
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none">
+                <path d="M3 4h10M3 8h7M3 12h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              </svg>
+            </span>
+            {t('aiTidyBtn')}
+          </button>
+        </div>
+      )}
+
       <div className="ai-composer">
         {activePartial && (
           <div className="ai-queue ai-partial-card" role="group" aria-label={t('aiPartialTitle')}>

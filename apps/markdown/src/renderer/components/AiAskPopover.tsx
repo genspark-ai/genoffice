@@ -59,7 +59,7 @@ const CHIP_KEYS: Record<SelectionKind, StringKey[]> = {
   table: ['aiChipTableEdit', 'aiChipPolish', 'aiChipFixGrammar'],
   code: ['aiChipExplainCode', 'aiChipFixCode', 'aiChipCommentCode'],
   task: ['aiChipSplitTasks', 'aiChipPrioritizeTasks', 'aiChipPolish'],
-  text: ['aiChipPolish', 'aiChipShorten', 'aiChipExpand', 'aiChipFixGrammar'],
+  text: ['aiChipPolish', 'aiChipShorten', 'aiChipExpand', 'aiChipFixGrammar', 'aiChipTranslate'],
 }
 
 function selectionKind(editor: Editor): SelectionKind {

@@ -64,6 +64,7 @@ export const en = {
   aiChipShorten: 'Shorten',
   aiChipExpand: 'Expand',
   aiChipVerify: 'Fact-check',
+  aiChipTranslate: 'Translate',
   aiChipReplaceImage: 'Replace image',
   aiChipRemoveBg: 'Remove background',
   aiChipRecolor: 'Restyle colors',

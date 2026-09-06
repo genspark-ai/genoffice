@@ -31,6 +31,7 @@ export const pl = {
   aiChipShorten: 'Skróć ten fragment',
   aiChipExpand: 'Rozwiń ten fragment',
   aiChipFixGrammar: 'Popraw gramatykę i literówki',
+  aiChipTranslate: 'Przetłumacz ten fragment',
   aiChipReplaceImage: 'Zmień obraz',
   aiChipRegenImage: 'Wygeneruj ponownie z AI',
   aiChipImageCaption: 'Dodaj podpis',
@@ -54,6 +55,8 @@ export const pl = {
   aiTidyBtn: 'Formatowanie AI',
   aiTidyPrompt:
     'Uporządkuj formatowanie całego dokumentu — na przykład popraw poziomy nagłówków, ujednolić listy, usuń zbędne pogrubienia i kursywę, wyrównaj wcięcia akapitów. Zmieniaj tylko formatowanie, nie zmieniając tekstu',
+  aiTranslateBtn: 'AI Tłumacz',
+  aiTranslatePrompt: 'Przetłumacz tę treść na język interfejsu użytkownika, zachowując oryginalne formatowanie (czcionka, rozmiar, kolor, wcięcie, listy, nagłówki, tabele, wyrównanie itp.). Jeśli jest zaznaczenie — przetłumacz tylko je; w przeciwnym razie przetłumacz cały dokument.',
   aiSwitchModelTitle: 'Przełącz model AI',
   aiNewChatTitle: 'Nowa rozmowa',
   aiCollapseTitle: 'Zwiń panel',

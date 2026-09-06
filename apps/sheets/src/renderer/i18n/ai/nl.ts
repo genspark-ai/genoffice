@@ -16,6 +16,9 @@ export const nl = {
   aiAnalyzeBtn: 'AI-analyse',
   aiAnalyzePrompt:
     'Analyseer de gegevens in dit blad en vat de belangrijkste bevindingen, trends en afwijkingen samen',
+    aiTranslateBtn: 'Vertalen',
+  aiTranslatePrompt:
+    'Vertaal de inhoud van deze cellen naar de doeltaal (af te leiden uit de UI-taal van de gebruiker). Behoud alle opmaak: getalnotaties, uitlijning, lettertype, grootte, kleur, randen, samengevoegde cellen, opmerkingen. Wijzig alleen de celwaarde; raak geen formules of verwijzingen naar andere werkbladen aan en voeg geen rijen/kolommen toe of verwijder ze niet.',
   aiSettingsTitle: 'AI-instellingen',
   aiSetUp: 'AI instellen',
   aiNewChat: 'Nieuw gesprek',

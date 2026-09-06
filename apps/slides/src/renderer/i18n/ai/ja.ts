@@ -63,6 +63,7 @@ export const ja = {
   aiChipShorten: '短くする',
   aiChipExpand: '詳しくする',
   aiChipVerify: '事実確認',
+  aiChipTranslate: '翻訳',
   aiChipReplaceImage: '画像を差し替え',
   aiChipRemoveBg: '背景を削除',
   aiChipRecolor: '配色を調整',

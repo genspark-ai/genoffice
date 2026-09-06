@@ -65,6 +65,7 @@ export const nl = {
   aiChipShorten: 'Inkorten',
   aiChipExpand: 'Uitbreiden',
   aiChipVerify: 'Feiten checken',
+  aiChipTranslate: 'Vertalen',
   aiChipReplaceImage: 'Afbeelding vervangen',
   aiChipRemoveBg: 'Achtergrond verwijderen',
   aiChipRecolor: 'Kleuren aanpassen',

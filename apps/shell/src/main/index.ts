@@ -8,7 +8,7 @@ import {
   renameSync,
   writeFileSync,
 } from 'node:fs'
-import { basename, dirname, extname, join } from 'node:path'
+import { basename, dirname, extname, join, resolve } from 'node:path'
 import {
   BrowserWindow,
   Menu,
@@ -92,6 +92,7 @@ import {
 } from './cloud-projects'
 import { handleDroppedFiles } from './dropped-files'
 import { ProjectStore } from '@genoffice/project-store'
+import { installHttpIpcBridge } from '@genoffice/ipc-bridge'
 import {
   genofficeLogout,
   gskLoginInfo,
@@ -4319,6 +4320,51 @@ app.on('second-instance', (_event, argv, _cwd, additionalData) => {
 
 installNavigationGuard(app)
 installContextMenu(app, () => contextMenuLabels(currentLang()))
+// Web dual-protocol: installed before every registration below (and before the
+// editor modules register theirs), so this process's first bridge serves all of
+// them; module-level installs reuse it (one bridge per process).
+void installHttpIpcBridge({
+  ipcMain,
+  port: Number(process.env.SHELL_IPC_PORT) || 5299,
+  staticDir: resolve(__dirname, '../renderer'),
+  // Every channel below now has a browser equivalent in the renderer
+  // web-bridges (home/tabs overrides in shell, editor overrides in the docs /
+  // sheets / slides / markdown tabs), so nothing is blocked over HTTP anymore.
+  nativeOnlyChannels: [
+    'home:browse',
+    'home:pick-default-save-dir',
+    'home:open-trash',
+    'home:reveal-path',
+    'win:new',
+    'win:list',
+    'win:focus',
+    /^tabs:/,
+    'docs:open',
+    'docs:pick-image',
+    'docs:print',
+    'docs:print-pdf-buffer',
+    'docs:export-pdf',
+    'docs:font-metrics',
+    'docs:copy-image-to-clipboard',
+    'files:pick',
+    'markdown:pick-image',
+    'workbook:select',
+    'workbook:select-for-merge',
+    'workbook:csv-save-confirm',
+    'sheets:files-pick',
+    'sheets:capture-screen-sources',
+    'sheets:capture-screen-source',
+    'slides:open',
+    'slides:insert-image',
+    'slides:insert-media',
+    'slides:insert-model3d',
+    'slides:pick-export-dir',
+    'slides:pick-export-pdf-path',
+    'slides:print',
+    'slides:native-clipboard',
+  ],
+})
+
 registerAiIpc()
 registerProjectIpc()
 registerDocsIpc()

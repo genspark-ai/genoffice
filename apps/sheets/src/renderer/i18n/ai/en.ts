@@ -15,6 +15,9 @@ export const en = {
   aiAnalyzeBtn: 'AI Analyze',
   aiAnalyzePrompt:
     'Analyze the data in this sheet and summarize key findings, trends, and anomalies',
+    aiTranslateBtn: 'Translate',
+  aiTranslatePrompt:
+    'Translate the contents of these cells into the target language (infer from the user’s UI language). Preserve all formatting: number formats, alignment, font, size, color, borders, merged cells, comments. Only change cell values; do not touch formulas, references to other worksheets, and do not add or remove rows or columns.',
   aiSettingsTitle: 'AI Settings',
   aiSetUp: 'Set up AI',
   aiNewChat: 'New conversation',

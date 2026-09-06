@@ -47,6 +47,7 @@
   },
   "author": "GenOffice",
   "dependencies": {
+    "@genoffice/ipc-bridge": "*",
     "@tiptap/extension-mathematics": "3.31.0",
     "katex": "^0.16.47",
     "mermaid": "^11.17.2"

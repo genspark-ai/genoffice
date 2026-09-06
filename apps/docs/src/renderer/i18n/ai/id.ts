@@ -31,6 +31,7 @@ export const id = {
   aiChipShorten: 'Buat bagian ini lebih ringkas',
   aiChipExpand: 'Kembangkan bagian ini',
   aiChipFixGrammar: 'Perbaiki tata bahasa dan salah ketik',
+  aiChipTranslate: 'Terjemahkan bagian ini',
   aiChipReplaceImage: 'Ganti gambar',
   aiChipRegenImage: 'Buat ulang dengan AI',
   aiChipImageCaption: 'Tambahkan keterangan gambar',
@@ -54,6 +55,8 @@ export const id = {
   aiTidyBtn: 'Format AI',
   aiTidyPrompt:
     'Rapikan format seluruh dokumen, misalnya perbaiki level judul, seragamkan format daftar, hapus cetak tebal/miring yang tidak perlu, dan samakan indentasi paragraf. Ubah format saja, jangan mengubah teks apa pun',
+  aiTranslateBtn: 'AI Terjemahan',
+  aiTranslatePrompt: 'Terjemahkan konten ini ke bahasa UI pengguna, dengan mempertahankan format asli (font, ukuran, warna, indentasi, daftar, judul, tabel, perataan, dll.). Jika ada pilihan, terjemahkan hanya pilihan tersebut; jika tidak, terjemahkan seluruh dokumen.',
   aiSwitchModelTitle: 'Ganti model AI',
   aiNewChatTitle: 'Obrolan baru',
   aiCollapseTitle: 'Ciutkan panel',

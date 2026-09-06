@@ -15,6 +15,9 @@ export const ms = {
   aiAnalyzeBtn: 'Analisis AI',
   aiAnalyzePrompt:
     'Analisis data dalam helaian ini dan rumuskan penemuan utama, arah aliran dan anomali',
+    aiTranslateBtn: 'Terjemahkan',
+  aiTranslatePrompt:
+    'Terjemahkan kandungan sel ini ke bahasa sasaran (tentukan daripada bahasa UI pengguna). Kekalkan semua pemformatan: format nombor, penjajaran, fon, saiz, warna, sempadan, sel gabungan, komen. Ubah nilai sel sahaja; jangan sentuh formula atau rujukan kepada lembaran kerja lain, dan jangan tambah/buang baris atau lajur.',
   aiSettingsTitle: 'Tetapan AI',
   aiSetUp: 'Sediakan AI',
   aiNewChat: 'Perbualan baharu',

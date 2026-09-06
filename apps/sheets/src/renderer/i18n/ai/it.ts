@@ -15,6 +15,9 @@ export const it = {
   aiAnalyzeBtn: 'Analisi IA',
   aiAnalyzePrompt:
     'Analizza i dati di questo foglio e riassumi risultati chiave, tendenze e anomalie',
+    aiTranslateBtn: 'Traduci',
+  aiTranslatePrompt:
+    'Traduci il contenuto di queste celle nella lingua di destinazione (desumila dalla lingua dell’interfaccia utente). Conserva tutta la formattazione: formati numerici, allineamento, carattere, dimensione, colore, bordi, celle unite, commenti. Modifica solo il valore della cella; non toccare formule né riferimenti ad altri fogli e non aggiungere o rimuovere righe o colonne.',
   aiSettingsTitle: 'Impostazioni IA',
   aiSetUp: 'Configura IA',
   aiNewChat: 'Nuova conversazione',

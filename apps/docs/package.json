@@ -95,6 +95,7 @@
     "@genoffice/font-metrics": "*",
     "electron-updater": "^6.8.9",
     "pdf-lib": "^1.17.1",
-    "@genoffice/pptx-render": "*"
+    "@genoffice/pptx-render": "*",
+    "@genoffice/ipc-bridge": "*"
   }
 }

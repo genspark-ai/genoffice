@@ -30,6 +30,7 @@ export const he = {
   aiChipShorten: 'קצר את הקטע הזה',
   aiChipExpand: 'הרחב את הקטע הזה',
   aiChipFixGrammar: 'תקן דקדוק ושגיאות הקלדה',
+  aiChipTranslate: 'תרגם קטע זה',
   aiChipReplaceImage: 'החלפת תמונה',
   aiChipRegenImage: 'יצירה מחדש עם AI',
   aiChipImageCaption: 'הוספת כיתוב',
@@ -52,6 +53,8 @@ export const he = {
   aiTidyBtn: 'עיצוב AI',
   aiTidyPrompt:
     'סדר את העיצוב של המסמך כולו — למשל תקן רמות כותרות, אחד את עיצוב הרשימות, הסר הדגשות והטיות מיותרות ויישר את הזחות הפסקאות. שנה רק את העיצוב, בלי לשנות את הטקסט',
+  aiTranslateBtn: 'בינה תרגום',
+  aiTranslatePrompt: 'תרגם את התוכן הזה לשפת ממשק המשתמש, תוך שמירה על העיצוב המקורי (גופן, גודל, צבע, הזחה, רשימות, כותרות, טבלאות, יישור וכו׳). אם יש בחירה — תרגם רק אותה; אחרת תרגם את כל המסמך.',
   aiSwitchModelTitle: 'החלפת מודל AI',
   aiNewChatTitle: 'שיחה חדשה',
   aiCollapseTitle: 'כיווץ החלונית',

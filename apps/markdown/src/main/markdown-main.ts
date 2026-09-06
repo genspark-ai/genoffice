@@ -29,6 +29,9 @@ import {
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool } from '@genoffice/ai-search'
+import { installHttpIpcBridge } from '@genoffice/ipc-bridge'
+import { cloudToolsEnabled, type AiSettings } from '@genoffice/ai-provider'
+import { gskGenerateImage, hasGskAuth } from '@genoffice/ai-search'
 import { atomicWriteFile } from './atomic-write'
 import {
   copyImageIntoOwnedAssets,
@@ -559,6 +562,22 @@ let ipcRegistered = false
 function registerMarkdownIpc(): void {
   if (ipcRegistered) return
   ipcRegistered = true
+
+  // Web dual-protocol: intercepts every registration below, so it must come
+  // first; loopback-only and disabled silently when the port is taken.
+  void installHttpIpcBridge({
+    ipcMain,
+    port: Number(process.env.MARKDOWN_IPC_PORT) || 5277,
+    staticDir: resolve(__dirname, '../renderer'),
+    // Every channel below now has a browser equivalent in the app's
+    // renderer web-bridge (file pickers, downloads, print, clipboard, fonts,
+    // fullscreen, tabs), so nothing is blocked over HTTP anymore.
+    nativeOnlyChannels: [
+      'markdown:pick-image',
+      'markdown:export-docx',
+      'markdown:export-pdf',
+    ],
+  })
 
   registerImageProtocol()
 

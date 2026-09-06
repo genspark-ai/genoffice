@@ -4655,6 +4655,48 @@ textarea:focus {
   background: var(--color-bg-page);
 }
 
+/* Quick-action chips above the input: clickable prompts that fill the composer.
+ * Hidden while the AI is busy so users don't queue mid-stream. */
+.ai-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ai-quick-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-30);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-page);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.ai-quick-action:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-subtle);
+}
+
+.ai-quick-action:active {
+  filter: brightness(0.88);
+  transform: scale(0.98);
+}
+
+.ai-quick-action-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-text-secondary);
+}
+
 /* composer card — 16px radius, default border, production float shadow */
 .ai-input-box {
   border: 1px solid var(--color-border-default);

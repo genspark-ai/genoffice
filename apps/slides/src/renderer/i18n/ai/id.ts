@@ -65,6 +65,7 @@ export const id = {
   aiChipShorten: 'Perpendek',
   aiChipExpand: 'Perluas',
   aiChipVerify: 'Cek fakta',
+  aiChipTranslate: 'Terjemahkan',
   aiChipReplaceImage: 'Ganti gambar',
   aiChipRemoveBg: 'Hapus latar',
   aiChipRecolor: 'Sesuaikan warna',

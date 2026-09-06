@@ -674,6 +674,12 @@ export function AiPanel({
               >
                 {t('aiQuickKeyPoints')}
               </button>
+              <button
+                className="ai-quick-btn"
+                onClick={() => send(t('aiChipTranslate'))}
+              >
+                {t('aiChipTranslate')}
+              </button>
             </div>
           </div>
         )}

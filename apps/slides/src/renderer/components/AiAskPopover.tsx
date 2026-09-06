@@ -144,7 +144,7 @@ function chipKeys(targets: AskTarget[]): StringKey[] {
       return ['aiChipUnify', 'aiChipRecolor']
     default:
       return only.text
-        ? ['aiChipPolish', 'aiChipShorten', 'aiChipExpand', 'aiChipVerify']
+        ? ['aiChipPolish', 'aiChipShorten', 'aiChipExpand', 'aiChipTranslate', 'aiChipVerify']
         : ['aiChipRecolor']
   }
 }

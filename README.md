@@ -287,6 +287,10 @@ No model call happens inside `genoffice`: the agent does the thinking, the CLI
 does the building and the checking, and the result opens in GenOffice or
 PowerPoint as an ordinary `.pptx`.
 
+GenOffice also runs the same renderer build in a browser against a local
+Electron main process: IPC for the desktop app and loopback HTTP/SSE for the
+web version. See [docs/web-electron.md](docs/web-electron.md).
+
 ## Download
 
 | Platform                             | Requirements                                          | Download                                                                                  |

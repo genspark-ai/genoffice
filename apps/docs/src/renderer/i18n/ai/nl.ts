@@ -32,6 +32,7 @@ export const nl = {
   aiChipShorten: 'Maak deze passage beknopter',
   aiChipExpand: 'Breid deze passage uit',
   aiChipFixGrammar: 'Corrigeer grammatica en typefouten',
+  aiChipTranslate: 'Vertaal deze passage',
   aiChipReplaceImage: 'Afbeelding vervangen',
   aiChipRegenImage: 'Opnieuw genereren met AI',
   aiChipImageCaption: 'Bijschrift toevoegen',
@@ -55,6 +56,8 @@ export const nl = {
   aiTidyBtn: 'AI-opmaak',
   aiTidyPrompt:
     'Ruim de opmaak van het hele document op — bijvoorbeeld kopniveaus corrigeren, lijsten uniform maken, overbodige vet- en cursiefopmaak verwijderen en alinea-inspringingen consistent maken. Pas alleen de opmaak aan, verander de tekst niet',
+  aiTranslateBtn: 'AI Vertalen',
+  aiTranslatePrompt: 'Vertaal deze inhoud naar de UI-taal van de gebruiker en behoud de oorspronkelijke opmaak (lettertype, grootte, kleur, inspringing, lijsten, koppen, tabellen, uitlijning, enz.). Is er een selectie, vertaal dan alleen die; anders vertaal je het hele document.',
   aiSwitchModelTitle: 'AI-model wisselen',
   aiNewChatTitle: 'Nieuw gesprek',
   aiCollapseTitle: 'Paneel samenvouwen',

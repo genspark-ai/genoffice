@@ -15,6 +15,9 @@ export const pt = {
   aiAnalyzeBtn: 'Análise IA',
   aiAnalyzePrompt:
     'Analise os dados desta planilha e resuma as principais descobertas, tendências e anomalias',
+    aiTranslateBtn: 'Traduzir',
+  aiTranslatePrompt:
+    'Traduza o conteúdo destas células para o idioma de destino (inferido a partir do idioma da interface do usuário). Preserve toda a formatação: formatos numéricos, alinhamento, fonte, tamanho, cor, bordas, células mescladas, comentários. Altere apenas o valor da célula; não toque em fórmulas nem em referências a outras planilhas, nem adicione/remova linhas/colunas.',
   aiSettingsTitle: 'Configurações de IA',
   aiSetUp: 'Configurar IA',
   aiNewChat: 'Nova conversa',

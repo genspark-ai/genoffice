@@ -11,6 +11,8 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- web version: install HTTP-backed window.* bridges before the app boots -->
+    <script type="module" src="./web-bridge.ts"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

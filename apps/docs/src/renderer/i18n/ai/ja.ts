@@ -30,6 +30,7 @@ export const ja = {
   aiChipShorten: 'この文章を簡潔にする',
   aiChipExpand: 'この内容を膨らませる',
   aiChipFixGrammar: '文法と誤字を修正する',
+  aiChipTranslate: 'この部分を翻訳',
   aiChipReplaceImage: '画像を差し替え',
   aiChipRegenImage: 'AI で再生成',
   aiChipImageCaption: 'キャプションを追加',
@@ -53,6 +54,8 @@ export const ja = {
   aiTidyBtn: 'AI 書式整理',
   aiTidyPrompt:
     '文書全体の書式を整えてください。例えば見出しレベルの修正、リスト形式の統一、不要な太字・斜体の削除、本文段落の字下げの調整など。書式のみを変更し、本文の文字は一切変更しないでください',
+  aiTranslateBtn: 'AI 翻訳',
+  aiTranslatePrompt: 'この内容を UI 言語に翻訳し、原文の書式(フォント、サイズ、色、インデント、リスト、見出し、表、配置など)を保持してください。選択範囲があれば選択範囲のみ、なければ文書全体を翻訳します。',
   aiSwitchModelTitle: 'AI モデルを切り替え',
   aiNewChatTitle: '新しいチャット',
   aiCollapseTitle: 'パネルを折りたたむ',

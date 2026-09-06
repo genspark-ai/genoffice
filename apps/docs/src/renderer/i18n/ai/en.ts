@@ -31,6 +31,7 @@ export const en = {
   aiChipShorten: 'Make this passage more concise',
   aiChipExpand: 'Expand this passage',
   aiChipFixGrammar: 'Fix grammar and typos',
+  aiChipTranslate: 'Translate this passage',
   aiChipReplaceImage: 'Replace image',
   aiChipRegenImage: 'Regenerate with AI',
   aiChipImageCaption: 'Add a caption',
@@ -53,6 +54,8 @@ export const en = {
   aiTidyBtn: 'AI Format',
   aiTidyPrompt:
     'Tidy up the document formatting — for example fix heading levels, unify list formatting, remove unnecessary bold and italics, and make paragraph indentation consistent. Adjust formatting only — do not change any text content',
+  aiTranslateBtn: 'AI Translate',
+  aiTranslatePrompt: 'Translate this content into the user’s UI language, preserving the original formatting (font, size, color, indentation, lists, headings, tables, alignment, etc.). If there is a selection, translate only the selection; otherwise translate the entire document.',
   aiSwitchModelTitle: 'Switch AI model',
   aiNewChatTitle: 'New chat',
   aiCollapseTitle: 'Collapse panel',

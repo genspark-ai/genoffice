@@ -64,6 +64,7 @@ export const ms = {
   aiChipShorten: 'Pendekkan',
   aiChipExpand: 'Kembangkan',
   aiChipVerify: 'Semak fakta',
+  aiChipTranslate: 'Terjemahkan',
   aiChipReplaceImage: 'Ganti imej',
   aiChipRemoveBg: 'Buang latar belakang',
   aiChipRecolor: 'Laraskan warna',

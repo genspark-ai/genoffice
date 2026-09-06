@@ -1,0 +1,15 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ channel: 'chrome' });
+const page = await browser.newPage();
+const logs = [];
+page.on('console', (m) => logs.push(`[${m.type()}] ${m.text().slice(0, 200)}`));
+page.on('pageerror', (e) => logs.push(`[pageerror] ${String(e).slice(0, 300)}`));
+await page.goto('http://localhost:5173/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+await page.waitForTimeout(8000);
+const title = await page.title();
+const editorVisible = await page.locator('.editor-scroll .ProseMirror, .doc-editor, #root *').first().isVisible().catch(() => false);
+const hasDesktop = await page.evaluate(() => typeof window.desktop !== 'undefined');
+const hasAidocs = await page.evaluate(() => typeof window.__aidocs !== 'undefined');
+const bodyText = (await page.locator('body').innerText()).slice(0, 300);
+console.log(JSON.stringify({ title, editorVisible, hasDesktop, hasAidocs, bodyText, logs: logs.slice(0, 20) }, null, 2));
+await browser.close();

@@ -30,6 +30,7 @@ export const zhTW = {
   aiChipShorten: '精簡這段文字',
   aiChipExpand: '擴寫這段內容',
   aiChipFixGrammar: '修正語法和錯別字',
+  aiChipTranslate: '翻譯這段文字',
   aiChipReplaceImage: '換一張圖',
   aiChipRegenImage: '用 AI 重新生成這張圖',
   aiChipImageCaption: '為圖片加上說明文字',
@@ -52,6 +53,8 @@ export const zhTW = {
   aiTidyBtn: 'AI 排版',
   aiTidyPrompt:
     '整理全文排版,例如修正標題層級、統一列表格式、移除多餘的粗體和斜體、為內文補齊首行縮排等;只調整格式,不要改動任何文字內容',
+  aiTranslateBtn: 'AI 翻譯',
+  aiTranslatePrompt: '把這些內容翻譯成 UI 語言,保留原文的格式(字型、字號、顏色、縮排、清單、標題、表格、對齊等)。如有選取範圍,只翻譯選取範圍;否則翻譯整篇文件。',
   aiSwitchModelTitle: '切換 AI 模型',
   aiNewChatTitle: '新對話',
   aiCollapseTitle: '收合面板',

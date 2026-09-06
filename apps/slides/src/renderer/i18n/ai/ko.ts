@@ -64,6 +64,7 @@ export const ko = {
   aiChipShorten: '줄이기',
   aiChipExpand: '늘리기',
   aiChipVerify: '사실 확인',
+  aiChipTranslate: '번역',
   aiChipReplaceImage: '이미지 교체',
   aiChipRemoveBg: '배경 제거',
   aiChipRecolor: '색상 조정',

@@ -29,6 +29,7 @@ export const zh = {
   aiChipShorten: '精简这段文字',
   aiChipExpand: '扩写这段内容',
   aiChipFixGrammar: '修正语法和错别字',
+  aiChipTranslate: '翻译这段文字',
   aiChipReplaceImage: '换一张图',
   aiChipRegenImage: '用 AI 重新生成这张图',
   aiChipImageCaption: '为图片添加说明文字',
@@ -51,6 +52,8 @@ export const zh = {
   aiTidyBtn: 'AI 排版',
   aiTidyPrompt:
     '整理全文排版,例如修正标题层级、统一列表格式、去除多余的加粗和斜体、为正文补齐首行缩进等;只调整格式,不要改动任何文字内容',
+  aiTranslateBtn: 'AI 翻译',
+  aiTranslatePrompt: '把这些内容翻译成 UI 语言,保留原文的格式(字体、字号、颜色、缩进、列表、标题、表格、对齐等)。如有选区,只翻译选区;否则翻译整篇文档。',
   aiSwitchModelTitle: '切换 AI 模型',
   aiNewChatTitle: '新对话',
   aiCollapseTitle: '收起面板',

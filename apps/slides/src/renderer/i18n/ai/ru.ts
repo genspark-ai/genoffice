@@ -64,6 +64,7 @@ export const ru = {
   aiChipShorten: 'Сократить',
   aiChipExpand: 'Расширить',
   aiChipVerify: 'Проверить факты',
+  aiChipTranslate: 'Перевести',
   aiChipReplaceImage: 'Заменить изображение',
   aiChipRemoveBg: 'Убрать фон',
   aiChipRecolor: 'Изменить цвета',

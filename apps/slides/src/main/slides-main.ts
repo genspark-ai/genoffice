@@ -59,6 +59,7 @@ import { buildPagePptx, parsePageSpec } from '@genoffice/pipelines/slides'
 import { sniffImageMime } from './media-mime'
 import { getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
+import { installHttpIpcBridge } from '@genoffice/ipc-bridge'
 import {
   copyElementData,
   findGroupChild,
@@ -1039,6 +1040,29 @@ let ipcRegistered = false
 export function registerSlidesIpc(): void {
   if (ipcRegistered) return
   ipcRegistered = true
+
+  // Web dual-protocol: intercepts every registration below, so it must come
+  // first; loopback-only and disabled silently when the port is taken.
+  void installHttpIpcBridge({
+    ipcMain,
+    port: Number(process.env.SLIDES_IPC_PORT) || 5275,
+    staticDir: resolve(__dirname, '../renderer'),
+    // Every channel below now has a browser equivalent in the app's
+    // renderer web-bridge (file pickers, downloads, print, clipboard, fonts,
+    // fullscreen, tabs), so nothing is blocked over HTTP anymore.
+    nativeOnlyChannels: [
+      'slides:open',
+      'slides:insert-image',
+      'slides:insert-media',
+      'slides:insert-model3d',
+      'slides:pick-export-dir',
+      'slides:pick-export-pdf-path',
+      'slides:print',
+      'slides:native-clipboard',
+      'slides:show-fullscreen',
+      'slides:font-install-local',
+    ],
+  })
 
   // AI-generated slide pages land in app-owned temp directories; sweep
   // expired ones at startup (never at land time — markers can be redeemed

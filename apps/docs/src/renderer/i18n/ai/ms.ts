@@ -31,6 +31,7 @@ export const ms = {
   aiChipShorten: 'Jadikan bahagian ini lebih ringkas',
   aiChipExpand: 'Kembangkan bahagian ini',
   aiChipFixGrammar: 'Betulkan tatabahasa dan kesalahan taip',
+  aiChipTranslate: 'Terjemahkan bahagian ini',
   aiChipReplaceImage: 'Ganti imej',
   aiChipRegenImage: 'Jana semula dengan AI',
   aiChipImageCaption: 'Tambah kapsyen',
@@ -54,6 +55,8 @@ export const ms = {
   aiTidyBtn: 'Format AI',
   aiTidyPrompt:
     'Kemaskan format keseluruhan dokumen, contohnya betulkan tahap tajuk, seragamkan format senarai, buang huruf tebal/condong yang tidak perlu, dan selaraskan inden perenggan. Laraskan format sahaja, jangan ubah sebarang teks',
+  aiTranslateBtn: 'AI Terjemahan',
+  aiTranslatePrompt: 'Terjemahkan kandungan ini ke bahasa UI pengguna, sambil mengekalkan pemformatan asal (fon, saiz, warna, indentasi, senarai, tajuk, jadual, penjajaran, dll.). Jika terdapat pilihan, terjemahkan pilihan itu sahaja; jika tidak, terjemahkan keseluruhan dokumen.',
   aiSwitchModelTitle: 'Tukar model AI',
   aiNewChatTitle: 'Perbualan baharu',
   aiCollapseTitle: 'Runtuhkan panel',

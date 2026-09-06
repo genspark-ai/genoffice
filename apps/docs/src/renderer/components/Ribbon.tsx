@@ -2952,6 +2952,37 @@ function RibbonInner({
                   </span>
                   <span>{t('aiTidyBtn')}</span>
                 </button>
+                <button
+                  className="rb-big ai-entry"
+                  disabled={docEmpty}
+                  data-tip={t('aiTranslateBtn')}
+                  onClick={() =>
+                    onAiPreset(
+                      editor.state.selection.empty ? t('aiTranslatePrompt') : t('aiTranslatePrompt'),
+                    )
+                  }
+                >
+                  <span className="rb-big-icon">
+                    <span className="ai-feature-icon" aria-hidden="true">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 5h8" strokeLinecap="round" />
+                        <path d="M9 3v2" strokeLinecap="round" />
+                        <path d="M5 5c0 4 2 6 4 7" strokeLinecap="round" />
+                        <path d="M5 5c0 1 .5 2 1.5 3" strokeLinecap="round" />
+                        <path d="M12 21l4-9 4 9" strokeLinecap="round" />
+                        <path d="M13.5 18h5" strokeLinecap="round" />
+                      </svg>
+                    </span>
+                  </span>
+                  <span>{t('aiTranslateBtn')}</span>
+                </button>
               </div>
               <div className="ribbon-group-label">Genspark AI</div>
             </div>

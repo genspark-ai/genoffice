@@ -16,6 +16,9 @@ export const de = {
   aiAnalyzeBtn: 'KI-Analyse',
   aiAnalyzePrompt:
     'Analysiere die Daten in diesem Blatt und fasse wichtige Erkenntnisse, Trends und Auffälligkeiten zusammen',
+    aiTranslateBtn: 'Übersetzen',
+  aiTranslatePrompt:
+    'Übersetze den Inhalt dieser Zellen in die Zielsprache (anhand der Benutzersprache der Oberfläche). Behalte alle Formatierungen: Zahlenformate, Ausrichtung, Schriftart, -größe, -farbe, Rahmen, verbundene Zellen, Kommentare. Ändere nur den Zellwert, fasse keine Formeln an, keine Verweise auf andere Tabellen, füge keine Zeilen/Spalten hinzu oder entferne sie.',
   aiSettingsTitle: 'KI-Einstellungen',
   aiSetUp: 'KI einrichten',
   aiNewChat: 'Neue Unterhaltung',

@@ -62,6 +62,7 @@ export const th = {
   aiChipShorten: 'ย่อให้สั้น',
   aiChipExpand: 'ขยายความ',
   aiChipVerify: 'ตรวจสอบข้อเท็จจริง',
+  aiChipTranslate: 'แปล',
   aiChipReplaceImage: 'เปลี่ยนรูป',
   aiChipRemoveBg: 'ลบพื้นหลัง',
   aiChipRecolor: 'ปรับโทนสี',

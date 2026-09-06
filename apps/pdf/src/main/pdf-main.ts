@@ -10,7 +10,7 @@ import {
 } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { userInfo } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { BrowserWindow, WebContentsView, app, dialog, ipcMain, shell } from 'electron'
 import type { WebContents } from 'electron'
 import {
@@ -28,6 +28,9 @@ import {
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool } from '@genoffice/ai-search'
+import { installHttpIpcBridge } from '@genoffice/ipc-bridge'
+import { gskGenerateImage, hasGskAuth } from '@genoffice/ai-search'
+import { cloudToolsEnabled, type AiSettings } from '@genoffice/ai-provider'
 import { PDF_CHANNELS } from '../shared/ipc'
 import type {
   ExportImagesRequest,
@@ -819,7 +822,27 @@ function registerPdfIpc(): void {
   if (ipcRegistered) return
   ipcRegistered = true
 
+  // Web dual-protocol: intercepts every registration below, so it must come
+  // first; loopback-only and disabled silently when the port is taken.
+  void installHttpIpcBridge({
+    ipcMain,
+    port: Number(process.env.PDF_IPC_PORT) || 5276,
+    staticDir: resolve(__dirname, '../renderer'),
+  })
+
   ipcMain.handle(PDF_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
+
+  // Web dual-protocol: the browser web-bridge opens a PDF by granting the path
+  // to its (bridge) sender, mirroring how the shell grants paths to real views.
+  ipcMain.handle('pdf:open-path', (e, path: unknown) => {
+    if (typeof path !== 'string' || !path || !existsSync(path)) return null
+    const wcId = e.sender.id
+    const allowed = allowedByWc.get(wcId) ?? new Set<string>()
+    allowed.add(path)
+    allowedByWc.set(wcId, allowed)
+    openPathByWc.set(wcId, path)
+    return path
+  })
 
   ipcMain.handle(PDF_CHANNELS.getUsername, () => {
     try {

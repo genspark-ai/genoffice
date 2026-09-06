@@ -61,6 +61,7 @@ export const zhTW = {
   aiChipShorten: '縮短',
   aiChipExpand: '擴寫',
   aiChipVerify: '查證',
+  aiChipTranslate: '翻譯',
   aiChipReplaceImage: '換一張圖',
   aiChipRemoveBg: '移除背景',
   aiChipRecolor: '調整配色',

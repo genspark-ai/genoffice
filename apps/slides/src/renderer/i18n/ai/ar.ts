@@ -62,6 +62,7 @@ export const ar = {
   aiChipShorten: 'اختصار',
   aiChipExpand: 'توسيع',
   aiChipVerify: 'تدقيق الحقائق',
+  aiChipTranslate: 'ترجم',
   aiChipReplaceImage: 'استبدال الصورة',
   aiChipRemoveBg: 'إزالة الخلفية',
   aiChipRecolor: 'ضبط الألوان',
