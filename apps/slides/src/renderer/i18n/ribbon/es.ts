@@ -14,6 +14,8 @@ export const es = {
   ribbonTabAnimations: 'Animaciones',
   ribbonTabSlideShow: 'Presentación con diapositivas',
   ribbonTabReview: 'Revisar',
+  ribbonCollapse: 'Contraer la cinta de opciones',
+  ribbonPin: 'Anclar la cinta de opciones',
   ribbonTabView: 'Vista',
   ribbonTabTableDesign: 'Diseño de tabla',
   ribbonTabChartDesign: 'Diseño de gráfico',

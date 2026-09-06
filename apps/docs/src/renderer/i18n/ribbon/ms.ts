@@ -12,6 +12,8 @@ export const ms = {
   ribbonTabLayout: 'Tataletak',
   ribbonTabReferences: 'Rujukan',
   ribbonTabReview: 'Semakan',
+  ribbonCollapse: 'Runtuhkan Reben',
+  ribbonPin: 'Semat Reben',
   ribbonTabView: 'Pandangan',
   ribbonTabTableDesign: 'Reka Bentuk Jadual',
   ribbonTabTableLayout: 'Tataletak Jadual',
@@ -297,6 +299,8 @@ export const ms = {
   ribbonChartAddCategory: '+ Kategori',
   ribbonChartAddSeries: '+ Siri',
   ribbonLinkInsertTitle: 'Sisipkan Hiperpautan',
+  ribbonLinkEditTitle: 'Edit Hiperpautan',
+  ribbonLinkRemove: 'Alih Keluar Pautan',
   ribbonLinkText: 'Teks untuk dipaparkan',
   ribbonLinkTextPh: 'Teks pautan (biarkan kosong untuk memaparkan alamat)',
   ribbonLinkAddress: 'Alamat',
@@ -577,6 +581,9 @@ export const ms = {
   ribbonEditorPrompt:
     'Semak keseluruhan dokumen: betulkan kesalahan taip, tanda baca dan tatabahasa tanpa mengubah maksud asal dan struktur perenggan.',
   ribbonGroupProofing: 'Pembacaan Pruf',
+  ribbonSpellcheckBtn: 'Ejaan',
+  ribbonSpellcheckTip:
+    'Semak ejaan semasa menaip — menggariskan merah perkataan yang mungkin salah eja',
   ribbonTranslate: 'Terjemah',
   ribbonTranslateTip: 'AI menterjemah dokumen',
   ribbonTranslatePrompt:

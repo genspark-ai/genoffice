@@ -31,7 +31,7 @@ layer.
 - **PowerPoint-compatible presentations** — in-house `.pptx` engine with masters, layouts, smart guides, non-destructive crop.
 - **Markdown to Word, fully local** — the same OOXML engine, no Pandoc, no cloud.
 - **AI that edits documents** — block-level edits with snapshots and diffs, document-aware agents.
-- **Bring your own key (BYOK)** — run the AI on your own API key: Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, or any OpenAI-compatible endpoint — or sign in with Genspark and skip keys entirely.
+- **Bring your own key (BYOK)** — run the AI on your own API key: Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, OpenCode Zen/Go, or any OpenAI-compatible endpoint — or sign in with Genspark and skip keys entirely.
 - **Agent tools built in** — web/image search, image generation, media analysis.
 - **Light / dark / system themes.**
 - **macOS, Windows, Linux.**
@@ -39,14 +39,15 @@ layer.
 
 ## Download
 
-| Platform                             | Requirements                                          | Download                                                                            |
-| ------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| **macOS** — Apple Silicon (arm64)    | macOS 11+                                             | [Latest `.dmg` (arm64)](https://github.com/genspark-ai/genoffice/releases/latest)   |
-| **macOS** — Intel (x64)              | macOS 11+                                             | [Latest `.dmg` (x64)](https://github.com/genspark-ai/genoffice/releases/latest)     |
-| **Windows** (x64)                    | Windows 10+                                           | [Latest `.exe` installer](https://github.com/genspark-ai/genoffice/releases/latest) |
-| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer)           | [Latest `.deb`](https://github.com/genspark-ai/genoffice/releases/latest)           |
-| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | [Latest `.rpm`](https://github.com/genspark-ai/genoffice/releases/latest)           |
-| **Linux** — other distributions      | x86_64, glibc 2.34+, FUSE 2                           | [Latest `.AppImage`](https://github.com/genspark-ai/genoffice/releases/latest)      |
+| Platform                             | Requirements                                          | Download                                                                                  |
+| ------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| **macOS** — Apple Silicon (arm64)    | macOS 11+                                             | [Latest `.dmg` (arm64)](https://github.com/genspark-ai/genoffice/releases/latest)         |
+| **macOS** — Intel (x64)              | macOS 11+                                             | [Latest `.dmg` (x64)](https://github.com/genspark-ai/genoffice/releases/latest)           |
+| **Windows** (x64)                    | Windows 10+                                           | [Latest `.exe` installer](https://github.com/genspark-ai/genoffice/releases/latest)       |
+| **Windows** on Arm (ARM64)           | Windows 11 on Arm (Snapdragon X and similar)          | [Latest `-arm64.exe` installer](https://github.com/genspark-ai/genoffice/releases/latest) |
+| **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer)           | [Latest `.deb`](https://github.com/genspark-ai/genoffice/releases/latest)                 |
+| **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | [Latest `.rpm`](https://github.com/genspark-ai/genoffice/releases/latest)                 |
+| **Linux** — other distributions      | x86_64, glibc 2.34+, FUSE 2                           | [Latest `.AppImage`](https://github.com/genspark-ai/genoffice/releases/latest)            |
 
 All builds come from `main`; the macOS and Windows installers are signed.
 Older versions are on the [Releases](https://github.com/genspark-ai/genoffice/releases) page.
@@ -93,16 +94,20 @@ state in the others.
 
 The whole suite ships light / dark / system UI themes built on shared design
 tokens (`packages/ui`), with a CI guard that keeps chrome colors on the token
-system. Document surfaces stay light in dark mode — Word-style dark chrome
-around white paper — so files render and export identically in both themes.
+system. Dark mode follows the Office apps it mirrors: Docs and Sheets render a
+dark page with contrast-remapped colors (Docs' View ▸ Dark Mode switches back to
+a white page, like Word's Switch Modes), while slides, PDF pages and every
+export keep the document's own colors — the theme only ever changes what is on
+screen, never what is in the file.
 
 **AI backends — Genspark sign-in or bring your own key.** By default the
 apps sign in to a Genspark account through a device-code flow — no model API
 key to enter — and model calls route through the Genspark proxy (Claude,
 GPT, and Gemini families). Or bring your own key (BYOK) in the AI settings:
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, and OpenRouter are built in, plus a custom provider slot for any
-OpenAI-compatible endpoint (base URL + key), local servers included. A
+Mistral, OpenRouter, and OpenCode Zen/Go are built in, plus a custom provider
+slot for any OpenAI-compatible endpoint (base URL + key), local servers
+included. A
 Genspark account also unlocks the Genspark ("gsk") tool endpoints the agents
 build on — web and image search, image generation and editing,
 image/audio/video analysis, and audio transcription — all reachable through
@@ -195,8 +200,8 @@ to editable text rather than a page image.
 **Can I use my own AI model or API key?**
 Yes. Besides the keyless Genspark sign-in, GenOffice supports bring your own
 key (BYOK) for Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao,
-MiniMax, Grok, Mistral, and OpenRouter, plus any OpenAI-compatible endpoint
-— including local model servers.
+MiniMax, Grok, Mistral, OpenRouter, and OpenCode Zen/Go, plus any
+OpenAI-compatible endpoint — including local model servers.
 
 **Does GenOffice collect any data?**
 Official packaged builds send limited usage analytics by default, and you can

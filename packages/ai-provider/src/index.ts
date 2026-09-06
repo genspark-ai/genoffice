@@ -31,9 +31,10 @@ export type {
   ResolvedEndpoint,
 } from './registry'
 export { chatForProvider } from './chat'
-export { setRescueFetch } from './fetch'
+export { setAiUserAgent, setRescueFetch } from './fetch'
 export { isAiNetworkError } from './network-error'
 export { isAiOverloadedError } from './overload-error'
+export { parseOutputCapRejection } from './output-cap'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
 export {

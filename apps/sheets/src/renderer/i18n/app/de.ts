@@ -299,6 +299,8 @@ export const de = {
   appAiDone: 'KI ist fertig',
   appAiTurnLimit:
     '(Limit der Toolaufruf-Runden für diese Anfrage erreicht; die Antwort oben basiert auf dem bisher Gelesenen und ist möglicherweise unvollständig.)',
+  appAiTruncatedNote:
+    '(Die Antwort wurde durch das Längenlimit abgeschnitten und ist möglicherweise unvollständig.)',
   appAiStopped: '(gestoppt)',
   appAiNoSummary: 'KI ist fertig, hat aber keine Zusammenfassung erstellt.',
   appAiNoAction:
@@ -320,6 +322,14 @@ export const de = {
     'Diese Symbolkombination kann nicht als xlsx gespeichert werden — bitte wählen Sie einen anderen Symbolsatz.',
   appNeedFullLoadSort:
     'Sortieren, Filtern, Verschieben von Bereichen und Text in Spalten erfordern den Volllademodus — diese Arbeitsmappe ist zu groß und wird teilweise per Streaming geladen.',
+  appFullLoadFilterTitle: 'Filtern erfordert vollständiges Laden',
+  appFullLoadFilterBody:
+    'Diese Arbeitsmappe ist groß und bisher nur teilweise geladen. Filtern (einschließlich Wertezählung) braucht die vollständigen Daten. Jetzt die gesamte Arbeitsmappe laden?',
+  appFullLoadStart: 'Alles laden',
+  appFullLoadRunning: 'Die gesamte Arbeitsmappe wird geladen — Filtern ist danach verfügbar…',
+  appFullLoadTooLarge:
+    'Diese Arbeitsmappe ist zu groß, um vollständig geladen zu werden; Filtern ist für diese Datei nicht verfügbar.',
+  appDialogCancel: 'Abbrechen',
   appPivotSheetNoMove:
     'Dieses Blatt enthält eine PivotTable — das Verschieben von Bereichen wird noch nicht unterstützt.',
   appTableFilterNoEdit:
@@ -686,6 +696,8 @@ export const de = {
   appTabFormulas: 'Formeln',
   appTabData: 'Daten',
   appTabReview: 'Überprüfen',
+  appRibbonCollapse: 'Menüband reduzieren',
+  appRibbonPin: 'Menüband anheften',
   appTabView: 'Ansicht',
   appTabAi: 'KI',
   appTabChartDesign: 'Diagrammentwurf',

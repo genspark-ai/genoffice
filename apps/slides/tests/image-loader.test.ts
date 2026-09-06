@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { metafileToDataUrl } from '@genoffice/docx-engine/metafile'
 import { createImageLoader } from '../src/renderer/image-loader'
+
+vi.mock('@genoffice/docx-engine/metafile', () => ({
+  metafileToDataUrl: vi.fn(async () => 'data:image/png;base64,AA=='),
+}))
 
 class FakeImage {
   static instances: FakeImage[] = []
@@ -75,5 +80,39 @@ describe('createImageLoader', () => {
     img('a').onload!()
     vi.runAllTimers()
     expect(apply).not.toHaveBeenCalled()
+  })
+})
+
+describe('metafile rasterization waits for private fonts', () => {
+  const flag = window as { __genofficeDocFontsSynced?: boolean }
+  beforeEach(() => {
+    FakeImage.instances = []
+    vi.stubGlobal('Image', FakeImage)
+    vi.useFakeTimers()
+    vi.stubGlobal('atob', (b: string) => Buffer.from(b, 'base64').toString('binary'))
+    vi.mocked(metafileToDataUrl).mockClear()
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+    delete flag.__genofficeDocFontsSynced
+  })
+
+  it('holds the EMF until the doc-fonts sync flag flips, then rasterizes', async () => {
+    flag.__genofficeDocFontsSynced = false
+    const loader = createImageLoader(vi.fn(), 16, 100)
+    loader.load(['data:image/x-emf;base64,AQAAAA=='])
+    await vi.advanceTimersByTimeAsync(300)
+    expect(metafileToDataUrl).not.toHaveBeenCalled()
+    flag.__genofficeDocFontsSynced = true
+    await vi.advanceTimersByTimeAsync(100)
+    expect(metafileToDataUrl).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not wait when no sync has started', async () => {
+    const loader = createImageLoader(vi.fn(), 16, 100)
+    loader.load(['data:image/x-emf;base64,AQAAAA=='])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(metafileToDataUrl).toHaveBeenCalledTimes(1)
   })
 })

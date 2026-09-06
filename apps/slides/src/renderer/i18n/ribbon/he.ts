@@ -13,6 +13,8 @@ export const he = {
   ribbonTabAnimations: 'הנפשות',
   ribbonTabSlideShow: 'הצגת שקופיות',
   ribbonTabReview: 'סקירה',
+  ribbonCollapse: 'כווץ את רצועת הכלים',
+  ribbonPin: 'הצמד את רצועת הכלים',
   ribbonTabView: 'תצוגה',
   ribbonTabTableDesign: 'עיצוב טבלה',
   ribbonTabChartDesign: 'עיצוב תרשים',

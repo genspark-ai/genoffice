@@ -13,6 +13,8 @@ export const zh = {
   ribbonTabAnimations: '动画',
   ribbonTabSlideShow: '幻灯片放映',
   ribbonTabReview: '审阅',
+  ribbonCollapse: '折叠功能区',
+  ribbonPin: '固定功能区',
   ribbonTabView: '视图',
   ribbonTabTableDesign: '表格设计',
   ribbonTabChartDesign: '图表设计',

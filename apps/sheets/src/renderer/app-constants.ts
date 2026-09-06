@@ -54,6 +54,15 @@ export const SET_NUMFMT_MUTATION = 'sheet.mutation.set.numfmt'
 // undo/redo re-records the restored state (ribbon handlers do not record).
 export const SET_FROZEN_MUTATION = 'sheet.mutation.set-frozen'
 export const TOGGLE_GRIDLINES_MUTATION = 'sheet.mutation.toggle-gridlines'
+export const SET_ZOOM_OPERATION = 'sheet.operation.set-zoom-ratio'
+export const SET_ZOOM_COMMAND = 'sheet.command.set-zoom-ratio'
+export const OPEN_FILTER_PANEL_OPERATION = 'sheet.operation.open-filter-panel'
+/// Full-preload offer cap: loading every cell into the Univer model costs
+/// renderer memory, and formula-dense sheets recalculate on install — a
+/// formula-heavy 480k-cell book blocked the renderer for minutes in testing,
+/// and sheet metadata carries no formula count to gate on. Above this the
+/// filter dialog explains instead of offering.
+export const FULL_LOAD_MAX_CELLS = 250_000
 // Undoing a numfmt set emits the remove mutation; only the ribbon echo cares.
 export const REMOVE_NUMFMT_MUTATION = 'sheet.mutation.remove.numfmt'
 // Row/column inserts/removals and merges are journaled and replayed at save

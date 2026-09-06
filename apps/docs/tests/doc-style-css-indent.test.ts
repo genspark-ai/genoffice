@@ -22,20 +22,24 @@ describe('docStyleCss first-line indent', () => {
       parsedWith('ListParagraph', { indentLeftTwips: 493, indentFirstLineTwips: -185 }),
     )
     expect(css).toContain(
-      '.doc-page [data-style="ListParagraph"]:not(.doc-li) { text-indent:-9.3pt }',
+      '.doc-page [data-style="ListParagraph"]:not(.doc-li, .doc-li-stray) { text-indent:-9.3pt }',
     )
-    expect(css).toContain('.doc-page .doc-li[data-style="ListParagraph"] { --style-li-hang:9.3pt }')
+    expect(css).toContain(
+      '.doc-page :is(.doc-li, .doc-li-stray)[data-style="ListParagraph"] { --style-li-hang:9.3pt }',
+    )
     // the shared style rule must not carry text-indent (it would hit .doc-li too)
     expect(css).not.toMatch(/\[data-style="ListParagraph"\] \{[^}]*text-indent/)
     // left indent keeps feeding the --li-left fallback chain
     expect(css).toContain(
-      '.doc-page .doc-li[data-style="ListParagraph"] { --style-li-left:24.6pt }',
+      '.doc-page :is(.doc-li, .doc-li-stray)[data-style="ListParagraph"] { --style-li-left:24.6pt }',
     )
   })
 
   it('keeps a positive first-line indent off list items without a hang fallback', () => {
     const css = docStyleCss(parsedWith('Body', { indentFirstLineTwips: 400 }))
-    expect(css).toContain('.doc-page [data-style="Body"]:not(.doc-li) { text-indent:20.0pt }')
+    expect(css).toContain(
+      '.doc-page [data-style="Body"]:not(.doc-li, .doc-li-stray) { text-indent:20.0pt }',
+    )
     expect(css).not.toContain('--style-li-hang')
   })
 })

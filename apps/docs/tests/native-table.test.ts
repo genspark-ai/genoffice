@@ -7,8 +7,11 @@ import {
   mergeCells,
   splitCell,
 } from '@tiptap/pm/tables'
+import { DOMSerializer } from '@tiptap/pm/model'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import {
@@ -17,7 +20,8 @@ import {
   pmTableToModel,
   type PmNode,
 } from '../src/renderer/editor/convert'
-import { editorExtensions } from '../src/renderer/editor/extensions'
+import { editorExtensions, rowHeightCss, tableRowEatCss } from '../src/renderer/editor/extensions'
+import { renderTableSpec } from '../src/renderer/editor/protected-render'
 import {
   constrainSelectedTableWidth,
   constrainTableWidthAtCell,
@@ -95,14 +99,17 @@ describe('native editable tables', () => {
           em: null,
           boldOff: null,
           italicOff: null,
+          kern: null,
           caps: null,
           vanish: null,
+          eaLang: null,
           cs: null,
           rtl: null,
           styleId: null,
           rawRPr:
             '<w:rPr><w:rFonts w:ascii="Calibri" w:eastAsia="Calibri"/><w:b/><w:color w:val="1F4E78"/></w:rPr>',
           themeRFonts: null,
+          themeColor: null,
         },
       },
     ])
@@ -362,6 +369,58 @@ describe('native editable tables', () => {
     editor.destroy()
   })
 
+  it('hangs a start-aligned bidiVisual table from the right margin, indent mirrored', async () => {
+    const { editor } = await openTable()
+    const table = editor.state.doc.firstChild!
+    const specOf = () =>
+      editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+        string,
+        Record<string, string>,
+      ]
+    // prod100 sas 073: fixed layout, 10253 twips wide, w:tblInd -893 — Word puts
+    // the right edge 60px past the right margin and lets the table spill left
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...table.attrs,
+        widthPx: 683,
+        tblFixedLayout: true,
+        bidiVisual: true,
+        indentTwips: -893,
+      }),
+    )
+    let spec = specOf()
+    expect(spec[1].dir).toBe('rtl')
+    expect(spec[1].style).toContain('width:683px')
+    expect(spec[1].style).toContain('margin-left:calc(var(--doc-content-w,100%) - 683px + 59.5px)')
+
+    // autofit grid with a positive indent: the spill allowance is the LEFT margin
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...editor.state.doc.firstChild!.attrs,
+        tblFixedLayout: false,
+        indentTwips: 1450,
+      }),
+    )
+    spec = specOf()
+    const width = 'min(683px,calc(var(--doc-content-w,100%) + var(--doc-margin-left,0px) - 96.7px))'
+    expect(spec[1].style).toContain(`width:${width}`)
+    expect(spec[1].style).toContain(
+      `margin-left:calc(var(--doc-content-w,100%) - ${width} - 96.7px)`,
+    )
+
+    // explicit right/center alignment keeps the LTR placement rules
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...editor.state.doc.firstChild!.attrs,
+        tblAlign: 'right',
+      }),
+    )
+    spec = specOf()
+    expect(spec[1].style).toContain('margin-left:auto')
+    expect(spec[1].style).not.toContain('96.7px')
+    editor.destroy()
+  })
+
   it('a floating table (w:tblpPr) drops alignment/indent margins for the float gaps', async () => {
     const { editor } = await openTable()
     const table = editor.state.doc.firstChild!
@@ -551,6 +610,166 @@ describe('native editable tables', () => {
     const table2 = editor2.view.dom.querySelector('table.doc-table') as HTMLElement
     expect(table2.style.getPropertyValue('--doc-row-eat')).toBe('')
     editor2.destroy()
+  })
+
+  it('advances declared-height rows by explicit tcBorders when the table has no tblBorders', async () => {
+    const cell = (borders: string, text: string): string =>
+      `<w:tc><w:tcPr><w:tcBorders>${borders}</w:tcBorders></w:tcPr><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`
+    const lined =
+      '<w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/>' +
+      '<w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/>'
+    const bare =
+      '<w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/>'
+    const xml =
+      '<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>' +
+      `<w:tr><w:trPr><w:trHeight w:val="225"/></w:trPr>${cell(bare, 'Title')}</w:tr>` +
+      `<w:tr><w:trPr><w:trHeight w:val="225"/></w:trPr>${cell(lined, 'A')}</w:tr>` +
+      `<w:tr><w:trPr><w:trHeight w:val="450"/></w:trPr>${cell(lined, 'B')}</w:tr>` +
+      '<w:tr><w:trPr><w:trHeight w:val="225"/></w:trPr><w:tc><w:p><w:r><w:t>C</w:t></w:r></w:p></w:tc></w:tr>' +
+      '</w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const table = editor.view.dom.querySelector('table.doc-table') as HTMLElement
+    expect(table.style.getPropertyValue('--doc-row-eat')).toBe('')
+    const rows = Array.from(table.querySelectorAll('tr')).map((tr) => tr.getAttribute('style'))
+    // explicit nil borders: no gridline, no advance; sz=4 = 0.5pt = 0.67px per lined row
+    expect(rows[0]).toMatch(/^height:\s*15(\.0)?px;?$/)
+    expect(rows[1]).toContain('calc(15.0px + 0.67px * var(--doc-row-grid,1))')
+    expect(rows[2]).toContain('calc(30.0px + 0.67px * var(--doc-row-grid,1))')
+    expect(rows[3]).toContain('calc(15.0px + var(--doc-row-eat,0px))')
+    editor.destroy()
+
+    const spec = renderTableSpec({
+      rows: [
+        [
+          {
+            paras: ['A'],
+            borders: {
+              top: { style: 'single', szEighths: 4 },
+              bottom: { style: 'single', szEighths: 4 },
+            },
+          },
+        ],
+        [{ paras: ['B'], borders: { top: { style: 'nil' }, bottom: { style: 'nil' } } }],
+      ],
+      rowHeightsTwips: [225, 225],
+    })
+    const dom = document.createElement('div')
+    dom.appendChild(DOMSerializer.renderSpec(document, spec as never).dom)
+    const trs = Array.from(dom.querySelectorAll('tr')).map((tr) => tr.getAttribute('style'))
+    expect(trs[0]).toContain('calc(15.0px + 0.67px * var(--doc-row-grid,1))')
+    expect(trs[1]).toMatch(/^height:\s*15(\.0)?px;?$/)
+  })
+
+  it('row gridline: mixed cells take the larger of cell line and table gridline, spaced tables none, gap cells ignored', () => {
+    const thin = { style: 'single', szEighths: 4 }
+    const thick = { style: 'single', szEighths: 12 }
+    // one cell explicit thin, one inheriting the table insideH: whichever is wider wins at render time
+    expect(rowHeightCss(225, [{ top: thin, bottom: thin }, null])).toBe(
+      'height:calc(15.0px + max(0.67px, var(--doc-row-eat,0px)) * var(--doc-row-grid,1))',
+    )
+    expect(rowHeightCss(225, [{ top: thick, bottom: thick }])).toBe(
+      'height:calc(15.0px + 2.00px * var(--doc-row-grid,1))',
+    )
+    expect(tableRowEatCss({ insideH: thin } as never, true)).toEqual(['--doc-row-grid:0'])
+    expect(tableRowEatCss({ insideH: thin } as never, false)).toEqual(['--doc-row-eat:0.67px'])
+    // an all-nil row keeps its bare height even though a gap placeholder (borders null) sits in it
+    const nil = { style: 'nil' }
+    expect(rowHeightCss(225, [{ top: nil, bottom: nil }])).toBe('height:15.0px')
+    // nested tables must not inherit a spaced parent's grid switch or its gridline
+    const css = readFileSync(resolve(__dirname, '../src/renderer/styles.css'), 'utf8')
+    expect(css).toMatch(/\.doc-table \{[^}]*--doc-row-eat: 0px;[^}]*--doc-row-grid: 1;/s)
+  })
+
+  it('insets cell text by max(margin, border/2) and spans the outer half-borders (Word probe 2026-09-03)', async () => {
+    const xml =
+      '<w:tbl><w:tblPr><w:tblBorders>' +
+      '<w:left w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/>' +
+      '<w:insideV w:val="single" w:sz="4"/></w:tblBorders>' +
+      '<w:tblCellMar><w:left w:w="108" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar>' +
+      '</w:tblPr><w:tblGrid><w:gridCol w:w="1700"/><w:gridCol w:w="1700"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:tcPr><w:tcW w:w="1700" w:type="dxa"/>' +
+      '<w:tcBorders><w:left w:val="single" w:sz="16"/></w:tcBorders>' +
+      '<w:tcMar><w:left w:w="200" w:type="dxa"/></w:tcMar></w:tcPr>' +
+      '<w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:tcPr><w:tcW w:w="1700" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const table = editor.view.dom.querySelector('table.doc-table') as HTMLElement
+    // 2 x 113px grid + half of the 1px outer borders on each side
+    expect(table.getAttribute('style')).toContain('width: min(227px,')
+    expect(table.style.getPropertyValue('--doc-bw-v')).toBe('1px')
+    expect(table.style.getPropertyValue('--doc-bw-l')).toBe('1px')
+    expect(table.style.getPropertyValue('--doc-cell-pad-l')).toBe('7.2px')
+    expect(table.style.getPropertyValue('--doc-cell-pad-t')).toBe('0.0px')
+    const [a, b] = [...table.querySelectorAll('td')] as HTMLElement[]
+    // the cell's own 2pt left border and tcMar feed the inset rule as variables, not as padding
+    expect(a.style.getPropertyValue('--cell-bw-l')).toBe('3px')
+    expect(a.style.getPropertyValue('--doc-cell-pad-l')).toBe('13.3px')
+    expect(a.style.paddingLeft).toBe('')
+    expect(b.style.getPropertyValue('--cell-bw-l')).toBe('')
+    editor.destroy()
+  })
+
+  it('hands the border snap delta back to the row height (Word probe 2026-09-04: rows grow by the true sz/8 pt width)', async () => {
+    const xml =
+      '<w:tbl><w:tblPr><w:tblBorders>' +
+      '<w:top w:val="single" w:sz="2"/><w:bottom w:val="single" w:sz="6"/>' +
+      '<w:insideH w:val="single" w:sz="4"/></w:tblBorders></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="1700"/><w:gridCol w:w="1700"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:tcPr><w:tcW w:w="1700" w:type="dxa"/>' +
+      '<w:tcBorders><w:bottom w:val="single" w:sz="8"/></w:tcBorders></w:tcPr>' +
+      '<w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:tcPr><w:tcW w:w="1700" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const table = editor.view.dom.querySelector('table.doc-table') as HTMLElement
+    // drawn 1px each; true widths 0.333 / 1.0 / 0.667px
+    expect(table.style.getPropertyValue('--doc-bd-t')).toBe('-0.667px')
+    expect(table.style.getPropertyValue('--doc-bd-b')).toBe('0.000px')
+    expect(table.style.getPropertyValue('--doc-bd-h')).toBe('-0.333px')
+    const [a, b] = [...table.querySelectorAll('td')] as HTMLElement[]
+    // a 1pt cell border is drawn 1px but measures 1.333px in Word
+    expect(a.style.getPropertyValue('--cell-bd-b')).toBe('0.333px')
+    expect(a.style.getPropertyValue('--cell-bd-t')).toBe('')
+    expect(b.style.getPropertyValue('--cell-bd-b')).toBe('')
+    editor.destroy()
+  })
+
+  it('keeps whole-border padding and the bare grid width for spaced (separate-border) tables', async () => {
+    const xml =
+      '<w:tbl><w:tblPr><w:tblCellSpacing w:w="30" w:type="dxa"/><w:tblBorders>' +
+      '<w:left w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/>' +
+      '<w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="1700"/><w:gridCol w:w="1700"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:tcPr><w:tcW w:w="1700" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>' +
+      '<w:tc><w:tcPr><w:tcW w:w="1700" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>' +
+      '</w:tr></w:tbl>'
+    const parsed = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    const table = editor.view.dom.querySelector('table.doc-table') as HTMLElement
+    expect(table.getAttribute('style')).toContain('width: min(226px,')
+    expect(table.style.getPropertyValue('--doc-bw-share')).toBe('0')
+    expect(table.style.getPropertyValue('--doc-bd-share')).toBe('1')
+    editor.destroy()
   })
 
   it('still wraps an exact row whose padding consumes the whole height (clip height 0)', async () => {

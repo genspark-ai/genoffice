@@ -276,6 +276,7 @@ export const en = {
   appAiDone: 'AI finished',
   appAiTurnLimit:
     '(Reached the tool-call turn limit for this request; the answer above is based on what was read so far and may be incomplete.)',
+  appAiTruncatedNote: '(The reply was cut off by the length limit and may be incomplete.)',
   appAiStopped: '(stopped)',
   appAiNoSummary: 'AI finished with no summary.',
   appAiNoAction: 'The AI made no changes and gave no reply. Try again or rephrase.',
@@ -294,6 +295,14 @@ export const en = {
     'This icon combination cannot be saved to xlsx — please choose a different icon set.',
   appNeedFullLoadSort:
     'Sorting, filtering, moving ranges, and splitting text need the fully-loaded mode — this workbook is too large and streams partially.',
+  appFullLoadFilterTitle: 'Filtering needs the full workbook',
+  appFullLoadFilterBody:
+    'This workbook is large and only partially streamed in. Filtering (including value counts) needs the complete data to be correct. Load the entire workbook now?',
+  appFullLoadStart: 'Load all',
+  appFullLoadRunning: 'Loading the entire workbook — filtering unlocks when it finishes…',
+  appFullLoadTooLarge:
+    'This workbook is too large to load fully into memory; filtering is unavailable for this file.',
+  appDialogCancel: 'Cancel',
   appPivotSheetNoMove: 'This sheet contains a PivotTable — moving ranges is not supported yet.',
   appTableFilterNoEdit:
     "This sheet's filter belongs to an Excel table — editing it cannot be saved yet.",
@@ -620,6 +629,8 @@ export const en = {
   appTabFormulas: 'Formulas',
   appTabData: 'Data',
   appTabReview: 'Review',
+  appRibbonCollapse: 'Collapse the Ribbon',
+  appRibbonPin: 'Pin the ribbon',
   appTabView: 'View',
   appTabAi: 'AI',
   appTabChartDesign: 'Chart Design',

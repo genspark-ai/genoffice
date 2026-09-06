@@ -11,6 +11,8 @@
     "./screentip.css": "./src/screentip.css",
     "./color-picker.css": "./src/color-picker.css",
     "./dropdown.css": "./src/dropdown.css",
+    "./ribbon-collapse.css": "./src/ribbon-collapse.css",
+    "./markdown.css": "./src/markdown.css",
     "./fonts/*": "./src/fonts/*"
   },
   "scripts": {

@@ -61,6 +61,9 @@ export interface ChartSeriesVisualState {
   /// First outer multiLvlStrCache level; start/end index the compacted
   /// `categories` (end exclusive).
   categoryGroups?: { label: string; start: number; end: number }[] | undefined
+  /// Parent plot group (barChart, lineChart, ...); combo charts draw each
+  /// series with its own group's type.
+  plot?: string | undefined
 }
 
 /// One plot axis keyed by its side (b/t → x, l/r → y).
@@ -637,8 +640,8 @@ const CHART_KIND_TO_TYPES: Record<BuildChartVisualInput['chartType'], string[]> 
   doughnut: ['doughnutChart'],
   scatter: ['scatterChart'],
   radar: ['radarChart'],
-  // Bar+line combo: the renderer draws the last series as a line (degrades to
-  // pure bars with a single series).
+  // Bar+line combo: series carry no plot tag here, so the renderer draws the
+  // last series as a line (degrades to pure bars with a single series).
   combo: ['barChart', 'lineChart'],
 }
 

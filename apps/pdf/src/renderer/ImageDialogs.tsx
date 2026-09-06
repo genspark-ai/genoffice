@@ -11,12 +11,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactElement, ReactNode } from 'react'
 import { removeBackground, sampleBackgroundColors, type PixelImage, type RGB } from './cutout'
-import type { CropFractions } from './image-bake'
+import { DEFAULT_CUTOUT_TOLERANCE, type CropFractions } from './image-bake'
 import type { StringKey, TFunc } from './i18n/locale'
 
 /** Longest side of the preview canvas (px) */
 const PREVIEW_MAX = 520
-const DEFAULT_TOLERANCE = 30
 const CROP_HANDLE_GUTTER = 6
 
 const fitPreview = (
@@ -40,6 +39,21 @@ const CHECKERBOARD: CSSProperties = {
 const toDataUrl = (b64: string): string => `data:image/png;base64,${b64}`
 const toBase64 = (dataUrl: string): string => dataUrl.split(',')[1] ?? ''
 
+/** Kept region of a decoded image as a base64 PNG (throws on canvas failure) */
+export function cropImagePng(img: HTMLImageElement, crop: CropFractions): string {
+  const w = img.naturalWidth
+  const h = img.naturalHeight
+  const sx = Math.round(crop.l * w)
+  const sy = Math.round(crop.t * h)
+  const sw = Math.max(1, Math.round((crop.r - crop.l) * w))
+  const sh = Math.max(1, Math.round((crop.b - crop.t) * h))
+  const c = document.createElement('canvas')
+  c.width = sw
+  c.height = sh
+  c.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+  return toBase64(c.toDataURL('image/png'))
+}
+
 /* ================= Remove background ================= */
 
 export function CutoutDialog({
@@ -55,7 +69,7 @@ export function CutoutDialog({
   onApply: (png: string) => void
   onCancel: () => void
 }): ReactElement {
-  const [tolerance, setTolerance] = useState(DEFAULT_TOLERANCE)
+  const [tolerance, setTolerance] = useState(DEFAULT_CUTOUT_TOLERANCE)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<StringKey | null>(null)
   const [removedPct, setRemovedPct] = useState(0)
@@ -114,7 +128,7 @@ export function CutoutDialog({
         canvas.height = preview.height
       }
       setLoaded(true)
-      renderPreview(DEFAULT_TOLERANCE)
+      renderPreview(DEFAULT_CUTOUT_TOLERANCE)
     }
     img.onerror = () => {
       if (!cancelled) setError('imageLoadFail')
@@ -327,18 +341,8 @@ export function CropDialog({
   const apply = useCallback(() => {
     const img = imgRef.current
     if (!img) return
-    const w = img.naturalWidth
-    const h = img.naturalHeight
-    const sx = Math.round(crop.l * w)
-    const sy = Math.round(crop.t * h)
-    const sw = Math.max(1, Math.round((crop.r - crop.l) * w))
-    const sh = Math.max(1, Math.round((crop.b - crop.t) * h))
     try {
-      const c = document.createElement('canvas')
-      c.width = sw
-      c.height = sh
-      c.getContext('2d')!.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
-      onApply(toBase64(c.toDataURL('image/png')), crop)
+      onApply(cropImagePng(img, crop), crop)
     } catch {
       setError('imageProcessFail')
     }

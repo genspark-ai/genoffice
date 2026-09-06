@@ -6,7 +6,6 @@ import {
   parseGskWebSearch,
   parseGskImageSearch,
   parseGskGeneratedImage,
-  parseGskConvertResult,
   parseGskPastProjects,
   extractGskText,
   parseToolCliNdjson,
@@ -226,29 +225,6 @@ describe('parseGskPastProjects', () => {
       total: 0,
       hasMore: false,
     })
-  })
-})
-
-describe('parseGskConvertResult', () => {
-  it('extracts the markdown link from the result text', () => {
-    const raw = {
-      status: 'ok',
-      data: {
-        result:
-          'Conversion complete. Download links:\n[report.docx](https://www.genspark.ai/api/files/s/JmS2WJHv)\n',
-      },
-    }
-    expect(parseGskConvertResult(raw)).toBe('https://www.genspark.ai/api/files/s/JmS2WJHv')
-  })
-
-  it('falls back to a bare URL without markdown', () => {
-    const raw = { status: 'ok', data: { result: 'Done: https://example.com/f.docx' } }
-    expect(parseGskConvertResult(raw)).toBe('https://example.com/f.docx')
-  })
-
-  it('throws when the result has no link', () => {
-    expect(() => parseGskConvertResult({ status: 'ok', data: { result: 'no link' } })).toThrow()
-    expect(() => parseGskConvertResult({ status: 'ok' })).toThrow()
   })
 })
 

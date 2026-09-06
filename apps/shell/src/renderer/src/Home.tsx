@@ -1948,7 +1948,7 @@ export function Home() {
                   />
                 </span>
                 <span className="col-name">{t('colName')}</span>
-                <span>{t('colLocation')}</span>
+                <span className="col-path">{t('colLocation')}</span>
                 {renderModifiedHeader()}
                 <span className="col-size">{t('colSize')}</span>
                 <span />
@@ -2079,7 +2079,7 @@ export function Home() {
                   />
                 </span>
                 <span className="col-name">{t('colName')}</span>
-                <span>{t('colLocation')}</span>
+                <span className="col-path">{t('colLocation')}</span>
                 {renderModifiedHeader()}
                 <span className="col-size">{t('colSize')}</span>
                 <span />

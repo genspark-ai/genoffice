@@ -295,6 +295,7 @@ export const nl = {
   appAiDone: 'AI is klaar',
   appAiTurnLimit:
     '(Limiet voor toolaanroepen voor deze aanvraag bereikt; het bovenstaande antwoord is gebaseerd op wat tot nu toe is gelezen en kan onvolledig zijn.)',
+  appAiTruncatedNote: '(Het antwoord is afgekapt door de lengtelimiet en is mogelijk onvolledig.)',
   appAiStopped: '(gestopt)',
   appAiNoSummary: 'AI is klaar zonder samenvatting.',
   appAiNoAction:
@@ -315,6 +316,14 @@ export const nl = {
     'Deze pictogramcombinatie kan niet worden opgeslagen als xlsx — kies een andere pictogramset.',
   appNeedFullLoadSort:
     'Sorteren, filteren, bereiken verplaatsen en tekst splitsen vereisen de volledig geladen modus — deze werkmap is te groot en wordt gedeeltelijk streamend geladen.',
+  appFullLoadFilterTitle: 'Filteren vereist volledig laden',
+  appFullLoadFilterBody:
+    'Deze werkmap is groot en slechts gedeeltelijk gestreamd. Filteren (inclusief waardetellingen) heeft de volledige gegevens nodig. De hele werkmap nu laden?',
+  appFullLoadStart: 'Alles laden',
+  appFullLoadRunning: 'De hele werkmap wordt geladen — filteren is beschikbaar zodra dit klaar is…',
+  appFullLoadTooLarge:
+    'Deze werkmap is te groot om volledig in het geheugen te laden; filteren is niet beschikbaar voor dit bestand.',
+  appDialogCancel: 'Annuleren',
   appPivotSheetNoMove:
     'Dit werkblad bevat een draaitabel — bereiken verplaatsen wordt nog niet ondersteund.',
   appTableFilterNoEdit:
@@ -674,6 +683,8 @@ export const nl = {
   appTabFormulas: 'Formules',
   appTabData: 'Gegevens',
   appTabReview: 'Controleren',
+  appRibbonCollapse: 'Het lint samenvouwen',
+  appRibbonPin: 'Het lint vastmaken',
   appTabView: 'Beeld',
   appTabAi: 'AI',
   appTabChartDesign: 'Grafiekontwerp',

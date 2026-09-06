@@ -4,6 +4,7 @@ import { httpBodyDetail } from '../http-error'
 import { gensparkAttributionHeaders } from '../providers'
 import type { AiChatResponse, AiProviderConfig } from '../types'
 import { createStreamWatchdog, type StreamWatchdog } from '../watchdog'
+import { toGeminiSchema } from './gemini-schema'
 import {
   jsonBodyInsteadOfSse,
   sseErrorText,
@@ -13,90 +14,6 @@ import {
 } from './shared'
 
 export const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
-
-/**
- * Convert a JSON Schema (with union types like `type: ['number','null']` and
- * `$ref`/`definitions`) into a Gemini-compatible Schema.
- *
- * Gemini's FunctionDeclaration parameters use a restricted subset of JSON
- * Schema: `type` must be a single string (not an array), `items` must be a
- * single Schema (not a tuple array), and `$ref`/`definitions` are not
- * understood. Union `['number','null']` appears in docs insert_chart/edit_chart
- * (`values: {type: ['number','null']}`) and triggers HTTP 400:
- *   "Unknown name \"type\" at '...value.items': Proto field is not repeating,
- *    cannot start list."
- * because the proto's `type` field is not repeated. See #186.
- */
-function sanitizeGeminiSchema(schema: unknown, definitions?: Record<string, unknown>): unknown {
-  if (schema == null || typeof schema !== 'object') return schema
-  if (Array.isArray(schema)) {
-    // Tuple `items: [ {...}, {...} ]` is not supported — take first element
-    return sanitizeGeminiSchema((schema as unknown[])[0], definitions)
-  }
-  const s = schema as Record<string, unknown>
-  // Resolve $ref (e.g. slides add_text_box paragraphs: {$ref: '#/definitions/paragraphs'})
-  if (typeof s.$ref === 'string') {
-    const ref = s.$ref as string
-    if (ref.startsWith('#/definitions/') && definitions) {
-      const key = ref.slice('#/definitions/'.length)
-      const resolved = (definitions as Record<string, unknown>)[key] as
-        Record<string, unknown> | undefined
-      if (resolved) {
-        const { $ref: _r, definitions: _d, ...rest } = s
-        const base = sanitizeGeminiSchema(resolved, definitions) as Record<string, unknown>
-        // Merge sibling fields (e.g. description) over the resolved base
-        if (Object.keys(rest).length === 0) return base
-        return { ...base, ...(sanitizeGeminiSchema(rest, definitions) as object) }
-      }
-    }
-    const { $ref: _r, ...rest } = s
-    return sanitizeGeminiSchema(rest, definitions)
-  }
-
-  const out: Record<string, unknown> = {}
-  // type: handle union like ['number','null'] -> 'number' + nullable
-  if (Array.isArray(s.type)) {
-    const arr = s.type as string[]
-    const nonNull = arr.filter((t) => t !== 'null')
-    if (nonNull.length > 0) out.type = nonNull[0]
-    if (arr.includes('null')) (out as Record<string, unknown>).nullable = true
-  } else if (typeof s.type === 'string') {
-    out.type = s.type
-  }
-  if (typeof s.description === 'string') out.description = s.description
-  if (s.enum !== undefined) out.enum = s.enum
-  if (typeof s.format === 'string') out.format = s.format
-  if (Array.isArray(s.required)) out.required = s.required
-  if (s.properties && typeof s.properties === 'object' && !Array.isArray(s.properties)) {
-    const props: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(s.properties as Record<string, unknown>)) {
-      props[k] = sanitizeGeminiSchema(v, definitions)
-    }
-    out.properties = props
-  }
-  if (s.items !== undefined) {
-    if (Array.isArray(s.items)) {
-      out.items = sanitizeGeminiSchema((s.items as unknown[])[0], definitions)
-    } else {
-      out.items = sanitizeGeminiSchema(s.items, definitions)
-    }
-  }
-  // definitions are resolved via $ref, not emitted
-  return out
-}
-
-function toGeminiParameters(inputSchema: unknown): unknown {
-  if (inputSchema == null || typeof inputSchema !== 'object') return inputSchema
-  const s = inputSchema as Record<string, unknown>
-  const defs = s.definitions as Record<string, unknown> | undefined
-  const sanitized = sanitizeGeminiSchema(s, defs) as Record<string, unknown>
-  // Strip definitions from top-level output
-  if (sanitized && typeof sanitized === 'object' && 'definitions' in sanitized) {
-    const { definitions: _d, ...rest } = sanitized as Record<string, unknown>
-    return rest
-  }
-  return sanitized
-}
 
 function geminiContents(messages: AgentMessage[]): unknown[] {
   return messages.map((m) => {
@@ -248,7 +165,9 @@ async function geminiTurn(
                 functionDeclarations: tools.map((t) => ({
                   name: t.name,
                   description: t.description,
-                  parameters: toGeminiParameters(t.inputSchema),
+                  // JSON Schema constructs the Gemini proto lacks (type unions,
+                  // $ref, ...) fail the whole request with HTTP 400
+                  parameters: toGeminiSchema(t.inputSchema),
                 })),
               },
             ],

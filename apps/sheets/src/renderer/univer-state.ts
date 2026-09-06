@@ -30,6 +30,13 @@ export interface LazyWorkbookState {
   readonly retryTimers: Map<string, ReturnType<typeof setTimeout>>
   readonly appliedMerges: Map<string, Set<string>>
   readonly appliedRowKeys: Map<string, Set<string>>
+  /// Per-sheet rows already run through the load-time wrap auto-fit measure.
+  /// Streamed windows re-patch constantly (indexing growth, evict/reload) and
+  /// a re-measure of an unchanged row still emits row-height mutations —
+  /// find-replace re-searches on every mutation and re-scrolls to its match,
+  /// so an unmemoized measure keeps the grid oscillating for as long as the
+  /// stream runs (alpha r167).
+  readonly measuredWrapRows: Map<string, Set<number>>
   /// Per-sheet union of IStyleData keys carried by <row s= customFormat> and
   /// <col style=> defaults. Univer composes row/col styles into every cell
   /// per-property, but an OOXML cell xf is complete: styled cells null these
@@ -73,7 +80,9 @@ export interface LazyWorkbookState {
   /// for live recalculation; large ones stream cached values only.
   readonly formulaMode: boolean
   readonly editJournal: EditJournal
-  readonly flags: { preloadComplete: boolean }
+  /// preloadRunning: preloadEntireWorkbook is filling the model — viewport
+  /// loads must not evict installed rows or shrink loadedRanges meanwhile.
+  readonly flags: { preloadComplete: boolean; preloadRunning: boolean }
   /// Closure mode: on streamed workbooks whose formula dependency closure is
   /// small, the closure cells are installed once and pinned (re-applied after
   /// viewport eviction) so the engine recalculates them live.

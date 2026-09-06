@@ -191,9 +191,9 @@ export const NodeBody = React.memo(function NodeBody({
               })}
         />
       </>
-    ) : (
+    ) : pic.dataUrl ? (
       <Rect width={box.w} height={box.h} fill="#eef" stroke="#99f" dash={[4, 4]} />
-    )
+    ) : null
     if (clip && img) {
       // picture styles shape clip: the image is clipped into the geometry, stroke follows the geometry outline;
       // shadow/glow is cast by an opaque backing shape (the image exactly covers it, so no color shows through)

@@ -5,6 +5,7 @@ import { editorExtensions } from '../src/renderer/editor/extensions'
 import { createDocsSkill } from '../src/renderer/ai/docs-skill'
 import { buildDocContext, countWords } from '../src/renderer/ai/protocol'
 import { executeTool } from '../src/renderer/ai/tools'
+import { appendStreamedNodes } from '../src/renderer/file-actions'
 
 /**
  * End-to-end through the local stack: AgentLoop -> docs skill -> tools ->
@@ -334,6 +335,20 @@ describe('external-edit guard (document freshness baseline)', () => {
       },
       NUM_IDS,
     )
+
+  it('a streamed load tail is not a user edit; a real edit after it still is', async () => {
+    const editor = createEditor(fixture())
+    await read(editor)
+    appendStreamedNodes(editor, [para('streamed tail')])
+    const written = await replace(editor)
+    expect(written.isError).toBeFalsy()
+    expect(editor.state.doc.child(1).textContent).toBe('rewritten')
+    editor.view.dispatch(editor.state.tr.insertText('typed by user ', 2))
+    appendStreamedNodes(editor, [para('later tail')])
+    const stale = await replace(editor)
+    expect(stale.isError).toBe(true)
+    expect(stale.output).toContain('edited by the user')
+  })
 
   it('index-addressed writes fail after a user edit, and succeed again after a re-read', async () => {
     const editor = createEditor(fixture())

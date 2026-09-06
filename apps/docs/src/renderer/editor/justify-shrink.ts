@@ -2,6 +2,8 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { rangeSlot } from '../dom-range'
+import { SettledParagraphCache } from './settled-measure'
 
 /**
  * Word 2013+ (settings compatibilityMode >= 15) justified line breaking pulls
@@ -136,6 +138,7 @@ interface LineAcc {
 }
 
 let spaceCtx: CanvasRenderingContext2D | null | undefined
+const wordRange = rangeSlot()
 
 function spaceAdvancePx(cs: CSSStyleDeclaration): number {
   if (spaceCtx === undefined) spaceCtx = document.createElement('canvas').getContext('2d')
@@ -157,6 +160,7 @@ class JustifyShrinkView {
   private retries = 0
   private resizeObserver?: ResizeObserver
   private lastDomWidth = -1
+  private results = new SettledParagraphCache<MeasuredShrink[]>()
   private onFontsLoaded = () => {
     this.invalidate()
     this.measure()
@@ -183,6 +187,7 @@ class JustifyShrinkView {
   private invalidate() {
     this.seenSigs.clear()
     this.frozen = false
+    this.results.clear()
     // decorations may have been dropped with the old doc (setContent/reload):
     // an unchanged shrink list must still re-dispatch
     this.lastSig = ''
@@ -245,15 +250,22 @@ class JustifyShrinkView {
       if (!node.isTextblock) return true
       if (node.attrs?.align !== 'justify') return false
       const text = node.textContent
-      if (!text.includes(' ') || text.includes('\t') || SKIP_SCRIPT_RE.test(text)) return false
+      if (!text.includes(' ') || SKIP_SCRIPT_RE.test(text)) return false
+      // a tab after the first space absorbs any shrink of the spaces before it
+      // (the segment re-anchors at its stop), so the word model only holds for
+      // leading tabs ("5.<tab>The claim...", "<tab>First line indent")
+      if (text.lastIndexOf('\t') > text.indexOf(' ')) return false
       paras.push({ node, pos })
       return false
     })
 
     const shrinks: MeasuredShrink[] = []
     let measurable = paras.length === 0
+    this.results.beginPass(view)
     for (const para of paras) {
-      const measured = this.measureParagraph(para.node, para.pos)
+      const measured = this.results.measure(view, para.node, para.pos, () =>
+        this.measureParagraph(para.node, para.pos),
+      )
       if (!measured) continue
       measurable = true
       shrinks.push(...measured)
@@ -335,8 +347,15 @@ class JustifyShrinkView {
     })
 
     const styleCache = new Map<Element, number>()
+    // a space starts where the previous word ended: the DOM is static within a pass
+    const domCache = new Map<number, { node: Node; offset: number }>()
+    const domAt = (p: number) => {
+      let d = domCache.get(p)
+      if (!d) domCache.set(p, (d = view.domAtPos(p)))
+      return d
+    }
     const spaceGap = (t: Extract<Token, { kind: 'space' }>): ShrinkGap => {
-      const dp = view.domAtPos(t.from)
+      const dp = domAt(t.from)
       const parent =
         dp.node.nodeType === Node.TEXT_NODE ? dp.node.parentElement : (dp.node as Element)
       let adv = styleCache.get(parent ?? el)
@@ -354,9 +373,9 @@ class JustifyShrinkView {
       if (dom instanceof HTMLElement) {
         rects = [dom.getBoundingClientRect()]
       } else {
-        const a = view.domAtPos(t.from)
-        const b = view.domAtPos(t.to)
-        const range = document.createRange()
+        const a = domAt(t.from)
+        const b = domAt(t.to)
+        const range = wordRange()
         try {
           range.setStart(a.node, a.offset)
           range.setEnd(b.node, b.offset)

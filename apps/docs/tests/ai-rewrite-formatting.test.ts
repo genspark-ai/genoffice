@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 import {
@@ -43,13 +43,30 @@ type BlockJson = {
   }>
 }
 
+// Every editor is destroyed after its test: a live view's DOMObserver can leave
+// a 20 ms flush timer behind (stop() with mutation records still queued), and if
+// that fires after the jsdom environment is torn down it touches `document`
+// and vitest reports an unhandled ReferenceError for this file.
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
+function track(editor: Editor): Editor {
+  liveEditors.push(editor)
+  return editor
+}
+
 async function createEditor(blocks: PmNode[]) {
   const { editorExtensions } = await import('../src/renderer/editor/extensions')
   const parsed = await parseDocx(await buildBlankDocx())
-  const editor = new Editor({
-    element: document.createElement('div'),
-    extensions: editorExtensions,
-  })
+  const editor = track(
+    new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    }),
+  )
   editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
   const pm = blocks.map((b) => editor.schema.nodeFromJSON(b))
   editor.view.dispatch(editor.state.tr.replaceWith(0, editor.state.doc.content.size, pm))
@@ -335,10 +352,12 @@ describe('replace_blocks keeps the replaced blocks formatting (issue #175)', () 
     )
     const parsed = await parseDocx(authored)
     const { editorExtensions } = await import('../src/renderer/editor/extensions')
-    const editor = new Editor({
-      element: document.createElement('div'),
-      extensions: editorExtensions,
-    })
+    const editor = track(
+      new Editor({
+        element: document.createElement('div'),
+        extensions: editorExtensions,
+      }),
+    )
     editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
     const before = parsed.blocks.find((b) => b.type === 'paragraph')!
     expect(before.format?.indentFirstLine).toBe(480)

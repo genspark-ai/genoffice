@@ -183,6 +183,9 @@ export interface TextRun {
   kern?: number
   /** Font family (final font name after theme inheritance, for render/editor display) */
   fontFamily?: string
+  /** Resolved a:latin family when fontFamily came from the ea/cs bucket: PowerPoint draws the
+   *  run's Latin characters with it (prod_026: "ISO 45001" inside Hangul runs sets in Calibri) */
+  latinFamily?: string
   /**
    * CJK script hint for substituting fontFamily when it is missing, mirroring
    * PowerPoint: the run's altLang/lang CJK tag wins (prod_043: KR font declared
@@ -204,6 +207,8 @@ export interface TextRun {
   csFont?: string
   /** Run has no explicit font declaration (inherits/theme); patches don't inject latin/ea when the font is unchanged */
   fontImplicit?: boolean
+  /** Textless marker synthesized from <a:endParaRPr> (empty paragraph): its props belong to the paragraph mark and are never written back as run props */
+  paraMark?: boolean
   /**
    * Effective character casing ('all' | 'small', explicit rPr cap or inherited from
    * placeholder styles). Display-only: the render layer uppercases; never written back.
@@ -249,6 +254,27 @@ export interface TextRun {
 
 export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 
+/**
+ * Modeled subset of <a:pPr><a:defRPr> (see Paragraph.defRPr). Typefaces keep the raw
+ * attribute (incl. +mn-lt/+mj-ea theme references); the color is resolved for display
+ * and materialized as srgbClr on rebuild, like run colors.
+ */
+export interface ParagraphDefaultRunProps {
+  /** sz (pt) */
+  fontSize?: number
+  bold?: boolean
+  italic?: boolean
+  /** cap: 'all' | 'small' | 'none' */
+  cap?: string
+  color?: ResolvedColor
+  /** Raw <a:solidFill> child (schemeClr/prstClr/srgbClr+mods) captured verbatim so a rebuild
+   *  re-emits the theme link and modifiers instead of baking the computed srgbClr. */
+  colorNodeXml?: string
+  latinFont?: string
+  eaFont?: string
+  csFont?: string
+}
+
 export interface Paragraph {
   runs: TextRun[]
   align?: TextAlign
@@ -268,6 +294,9 @@ export interface Paragraph {
     type: 'none' | 'char' | 'number'
     char?: string
     color?: ResolvedColor
+    /** Raw <a:buClr> child captured verbatim (schemeClr/prstClr/srgbClr+mods) so a rebuild
+     *  keeps the theme link instead of baking the computed srgbClr. */
+    colorNodeXml?: string
     /** <a:buFont> typeface (symbol fonts like Wingdings) */
     font?: string
     /** <a:buSzPct> (%, 100 = same size as text) */
@@ -287,6 +316,14 @@ export interface Paragraph {
   tabStops?: Array<{ pos: number; algn?: string }>
   /** <a:pPr defTabSz>: default tab grid (EMU, PowerPoint default 914400 = 1") */
   defTabSz?: number
+  /**
+   * Paragraph-level default run properties <a:pPr><a:defRPr>. PowerPoint resolves a
+   * run attribute as run rPr → this node → lstStyle/placeholder/master chain, so
+   * runs missing sz/b/fill take them from here (python-pptx `paragraph.font`, WPS
+   * exports). Parsed for display inheritance and written back by the rebuild path
+   * so the runs keep their look after a structural edit.
+   */
+  defRPr?: ParagraphDefaultRunProps
   /**
    * Which paragraph properties come from an explicit <a:pPr> (rather than display
    * values inherited from lstStyle/placeholder/master). The rebuild path writes

@@ -3,7 +3,7 @@ import type { AgentToolCall, AgentToolDef, ToolExecution } from '@genoffice/agen
 import type { OutlineNode } from '../OutlinePanel'
 import type { PageEntry, SearchIndex } from '../search'
 import { searchInIndex } from '../search'
-import { geomDispSize, pdfRectToCss, quadToRect, viewToPdf } from '../annotations'
+import { geomDispSize, pdfRectToCss, pdfToView, quadToRect, viewToPdf } from '../annotations'
 import type { PageGeom } from '../annotations'
 import { EDIT_FONTS } from '../../shared/ipc'
 import type {
@@ -14,21 +14,38 @@ import type {
   ImageLayer,
   ImageSearchResponse,
   MarkupType,
+  MetadataInput,
   PageImageRef,
   TextEditInput,
   TextInsertInput,
 } from '../../shared/ipc'
 import { groupPageBlocks } from '../text-block'
+import type { TextBlock } from '../text-block'
 import { joinBlockLines, measurePt, wrapText } from '../text-wrap'
 import { isScannedText } from '../ocr-layer'
 import { t } from '../i18n/locale'
 import { buildFormCatalog } from '../form-catalog'
 import { flattenThread, type NoteThreadItem } from '../note-threads'
+import type { StampConfig } from '../edit-state'
+import type { LocalTextInsert } from '../text-edit-preview'
+import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK } from '../stamps'
+import { STATIC_FORM_MARK_SIZE } from '../static-form-fill'
+import { PAPER_SIZES, parsePageRanges } from '../view-config'
+import { DEFAULT_CUTOUT_TOLERANCE, cropRect } from '../image-bake'
+import type { CropFractions, ImageBakeOp } from '../image-bake'
 
 /** Text cap per read_pages fed back to the model (the payload is resent in full each turn, so volume must be limited) */
 const READ_CHUNK_CHARS = 24_000
 
 /** Capability surface App provides to AI tools; all getters, since the loop outlives render closures */
+export type RotateDelta = 90 | -90 | 180
+export type TextAlign = 'left' | 'center' | 'right'
+
+/** Fields of a pending insert an edit may replace; offsets ride along when they were remeasured */
+export type TextInsertEdit = Partial<
+  Pick<TextInsertInput, 'text' | 'fontSize' | 'color' | 'align' | 'lineLeading' | 'lineXOffsets'>
+>
+
 export interface PdfAiDeps {
   doc(): PDFDocumentProxy | null
   fileName(): string
@@ -58,26 +75,70 @@ export interface PdfAiDeps {
   /** Note threads + text markups on a page: saved (minus pending deletions) with pending overlays */
   annotationsOn(origIdx: number): Promise<{
     threads: NoteThreadItem[]
-    markups: { type: MarkupType; quads: number[][]; saved: boolean }[]
+    markups: { key: string; type: MarkupType; quads: number[][]; saved: boolean }[]
   }>
   /** Counts of saved+pending annotations for the per-run context; '' when none */
   annotationSummary(): string
-  /** Queue a pending sticky note authored by the AI; returns its thread key */
-  addNote(origIdx: number, at: [number, number], contents: string): string
+  /** Queue a pending sticky note authored by the AI; returns its thread key.
+      color (rgb 0-1) omitted → the user's current draw color */
+  addNote(
+    origIdx: number,
+    at: [number, number],
+    contents: string,
+    color?: [number, number, number],
+  ): string
   /** Thread root by key ('S<objNum>' saved / 'P<id>' pending); null when not found */
   findNoteRoot(origIdx: number, rootKey: string): Promise<NoteThreadItem | null>
   /** Queue a pending AI-authored reply to a thread root */
   replyToThread(origIdx: number, root: NoteThreadItem, contents: string): void
+  /** Rewrite one comment's text (root or reply): pending notes in place, saved notes as a pending content edit */
+  editNote(origIdx: number, item: NoteThreadItem, contents: string): void
+  /** Remove markups by the keys annotationsOn reports (saved → pending deletion, session → dropped) */
+  deleteMarkups(origIdx: number, keys: string[]): Promise<void>
+  /** Delete a note thread root and every reply under it */
+  deleteNoteThread(origIdx: number, root: NoteThreadItem): void
   /** Queue a pending text edit (dry-run validated against the file when possible); null = accepted, string = rejection reason */
   editText(input: TextEditInput): Promise<string | null>
+  /** Queue a pending move of a whole paragraph by a PDF-user-space delta. Stacks onto a
+      pending edit that already owns the block, so moveBy is the block's total pending
+      displacement (not just this delta) */
+  moveTextBlock(
+    origIdx: number,
+    block: TextBlock,
+    delta: [number, number],
+  ): Promise<{ reason: string } | { moveBy: [number, number] }>
   /** Queue a pending insert of a new text object (same pipeline as the UI "add text" tool) */
-  insertText(input: TextInsertInput): void
+  /** Queue a check/cross mark on a static form at rect (PDF user space); same pipeline as the Fill Form ribbon marks */
+  addFormMark(
+    origIdx: number,
+    kind: 'check' | 'cross',
+    rect: [number, number, number, number],
+  ): void
+  /** Queue a new text block; returns its pending id */
+  insertText(input: TextInsertInput): string
+  /** Pending (unsaved) inserted text blocks */
+  textInserts(): LocalTextInsert[]
+  /** Merge edit over the pending block's input (same record the re-edit dialog commits) */
+  updateTextInsert(id: string, edit: TextInsertEdit): void
+  /** New first-line baseline origin in PDF user space */
+  moveTextInsert(id: string, origin: [number, number]): void
+  deleteTextInsert(id: string): void
   /** Edit-font ids available on this machine (EDIT_FONTS subset) */
   editFonts(): string[]
   formEdits(): ReadonlyMap<string, FormValueInput>
   applyFormEdit(v: FormValueInput): void
-  rotatePage(origIdx: number, dir: 90 | -90): void
+  /** Rotate the given pages (original indices) in one undo step */
+  rotatePages(origIdxs: number[], dir: RotateDelta): void
   deletePage(origIdx: number): boolean
+  /** Effective document properties: pending unsaved edits over the file's values */
+  metadata(): MetadataInput
+  /** Replace the pending document properties (applied on save) */
+  setMetadata(meta: MetadataInput): void
+  /** Current visible page order as original page indices (unsaved reorder applied, deleted pages excluded) */
+  pageOrder(): number[]
+  /** Move a page (original index) to visible position to (0-based) */
+  movePage(origIdx: number, to: number): void
+  reversePages(): void
   /** Page geometry (unrotated size + total display rotation); null while the document is loading */
   pageGeom(origIdx: number): PageGeom | null
   /** Content-stream images currently in the saved file (pending unsaved inserts not included) */
@@ -100,6 +161,9 @@ export interface PdfAiDeps {
   ): void
   /** Queue a pending in-place pixel swap of an existing image (footprint/z-order kept) */
   replaceImage(ref: PageImageRef, png: string): void
+  /** Re-encode an existing image's pixels through the floating-bar bakes; false when the
+      pixels could not be read, the signal aborted, or another pending edit claimed the image */
+  bakeImage(ref: PageImageRef, op: ImageBakeOp, signal?: AbortSignal): Promise<boolean>
   /** Queue a pending delete of an existing image */
   deleteImage(ref: PageImageRef): void
   searchImages(query: string, maxResults: number): Promise<ImageSearchResponse>
@@ -111,9 +175,55 @@ export interface PdfAiDeps {
   }>
   /** Download a URL (main-process, SSRF-guarded) and re-encode as PNG; null on failure */
   fetchImage(url: string): Promise<{ png: string; width: number; height: number } | null>
+  /** Session watermark / header-footer configuration; null when none is queued */
+  stamps(): StampConfig | null
+  /** Replace the session stamp configuration (null clears it); rendered on every page at save */
+  setStamps(cfg: StampConfig | null): void
   /** AI create_document: write a new standalone file (pdf/docx/md) into the default folder and open it in a new tab */
   createDocument(request: CreateDocumentRequest): Promise<CreateDocumentResult>
+  /** Inline confirmation card for a file-level operation; false when the user declines, the run is stopped, or the panel goes away */
+  confirmFileOp(req: FileOpConfirm, signal?: AbortSignal): Promise<boolean>
+  /** File-level page operations (below): flush unsaved edits, rewrite the file on disk or write a new
+      one, reload. Irreversible, so every call must pass confirmFileOp first. Page indices are positions
+      in the flushed file, i.e. visible positions. */
+  insertBlankPage(afterVisIdx: number): Promise<FileOpResult>
+  setPageSize(width: number, height: number): Promise<FileOpResult>
+  cropPages(visIdxs: number[], rect: CropRect): Promise<FileOpResult>
+  /** main pops a native picker for the replacement PDF */
+  replacePages(visIdxs: number[]): Promise<FileOpResult>
+  extractPages(visIdxs: number[]): Promise<NewFileResult>
+  /** main pops a native folder picker */
+  splitPdf(pagesPerFile: number): Promise<SplitPdfOutcome>
+  splitPages(perPage: 2 | 4 | 9): Promise<NewFileResult>
+  mergePages(
+    perSheet: number,
+    direction: 'horizontal' | 'vertical',
+    separator: boolean,
+  ): Promise<NewFileResult>
 }
+
+export interface FileOpConfirm {
+  summary: string
+  detail?: string
+}
+
+export type CropRect = { l: number; t: number; r: number; b: number }
+
+/** A native picker was dismissed; flushed = the pending edits had already been saved to disk first */
+export type FileOpCanceled = { ok: true; canceled: true; flushed: boolean }
+
+/** In-place rewrite: pageCount is read from the reloaded document */
+export type FileOpResult =
+  { ok: true; pageCount: number } | FileOpCanceled | { ok: false; error: string }
+
+export type NewFileResult =
+  { ok: true; savedPath: string } | FileOpCanceled | { ok: false; error: string }
+
+export type SplitPdfOutcome =
+  { ok: true; savedDir: string; count: number } | FileOpCanceled | { ok: false; error: string }
+
+/** App-side capability surface: everything but the confirmation card, which the panel renders */
+export type PdfAppDeps = Omit<PdfAiDeps, 'confirmFileOp'>
 
 export const AGENT_TOOLS: AgentToolDef[] = [
   {
@@ -183,7 +293,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'read_annotations',
     description:
-      'List the comment notes (sticky notes, with their reply threads) and text markups (highlight/underline/strikeout) in the document — both saved in the file and queued unsaved this session. Optional page range; omit to read the whole document. Reply to a note with reply_note using the returned note id.',
+      'List the comment notes (sticky notes, with their reply threads) and text markups (highlight/underline/strikeout) in the document — both saved in the file and queued unsaved this session. Optional page range; omit to read the whole document. Reply to a note with reply_note or change its text with edit_note using the returned note ids (replies have their own ids).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -207,6 +317,10 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         },
         x: { type: 'number', description: 'Pin x in points from the page left edge' },
         y: { type: 'number', description: 'Pin y in points from the page TOP edge' },
+        color: {
+          type: 'string',
+          description: "Note pin color as #RRGGBB hex; omit to use the user's current draw color",
+        },
       },
       required: ['page', 'text'],
     },
@@ -226,9 +340,61 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     },
   },
   {
+    name: 'edit_note',
+    description:
+      'Replace the text of an existing sticky-note comment — a thread root or a reply — keeping its author, position, and thread (takes effect on save). note_id is a note or reply id from read_annotations. Only edit notes the user explicitly asked to change.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based) the note is on' },
+        note_id: {
+          type: 'string',
+          description: 'Note or reply id from read_annotations (e.g. "S12", "Pd3k")',
+        },
+        text: { type: 'string', description: 'New note contents (replaces the old text)' },
+      },
+      required: ['page', 'note_id', 'text'],
+    },
+  },
+  {
+    name: 'delete_markup',
+    description:
+      'Remove text markups (highlight / underline / strikeout) from a page, whether saved in the file or added this session (takes effect on save). Call read_annotations first: it lists every markup with its id. Pass markup_ids to remove specific ones, or omit it to remove all markups on the page; type narrows either form to one kind.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        markup_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Markup ids from read_annotations; omit to target every markup on the page',
+        },
+        type: {
+          type: 'string',
+          enum: ['highlight', 'underline', 'strikeout'],
+          description: 'Only remove markups of this kind',
+        },
+      },
+      required: ['page'],
+    },
+  },
+  {
+    name: 'delete_note',
+    description:
+      'Delete a sticky-note thread (the root comment and all of its replies) from a page (takes effect on save). note_id is the thread id shown by read_annotations. Only delete notes the user explicitly asked to remove.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        note_id: { type: 'string', description: 'Thread id from read_annotations (e.g. "S12")' },
+      },
+      required: ['page', 'note_id'],
+    },
+  },
+  {
     name: 'edit_text',
     description:
-      'Replace a short text run on a page (rewrites the PDF content; takes effect on save). old_text must be a verbatim fragment that actually exists on that page (confirm with read_pages or search_text first); only the first occurrence on the page is edited unless occurrence is given. The replacement is drawn from the original position without reflowing the page, so keep it close to the original length; text cannot be deleted (new_text must not be empty).',
+      'Replace a short text run on a page (rewrites the PDF content; takes effect on save). old_text must be a verbatim fragment that actually exists on that page (confirm with read_pages or search_text first); only the first occurrence on the page is edited unless occurrence is given. The replacement is drawn from the original position without reflowing the page, so keep it close to the original length. An empty new_text deletes the run outright (the space it occupied stays blank; nothing moves up) — never substitute a placeholder such as "." for deletion. Alignment cannot be changed here (a run keeps its position); use edit_block with align for that.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -236,7 +402,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         old_text: { type: 'string', description: 'Verbatim text fragment currently on the page' },
         new_text: {
           type: 'string',
-          description: 'Replacement text; "\\n" splits it into stacked lines',
+          description: 'Replacement text; "\\n" splits it into stacked lines; "" deletes the run',
         },
         occurrence: {
           type: 'integer',
@@ -265,7 +431,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'edit_block',
     description:
-      "Rewrite a whole paragraph on a page (rewrites the PDF content; takes effect on save). The paragraph is located by paragraph_text — a distinctive verbatim fragment of it. The ENTIRE paragraph is replaced by new_text, which is re-wrapped automatically within the paragraph's original width (the block grows downward when the text is longer). Use edit_text instead to change a few words without reflowing.",
+      "Rewrite a whole paragraph on a page (rewrites the PDF content; takes effect on save). The paragraph is located by paragraph_text — a distinctive verbatim fragment of it. The ENTIRE paragraph is replaced by new_text, which is re-wrapped automatically within the paragraph's original width (the block grows downward when the text is longer). An empty new_text deletes the whole paragraph (its area stays blank; content below does not move up). Use edit_text instead to change a few words without reflowing.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -278,7 +444,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         new_text: {
           type: 'string',
           description:
-            'Full replacement for the paragraph; "\\n" separates paragraphs within the block',
+            'Full replacement for the paragraph; "\\n" separates paragraphs within the block; "" deletes the paragraph',
         },
         font_size: {
           type: 'number',
@@ -296,8 +462,36 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         },
         bold: { type: 'boolean', description: 'Set the paragraph in the bold variant' },
         italic: { type: 'boolean', description: 'Set the paragraph in the italic variant' },
+        align: {
+          type: 'string',
+          enum: ['left', 'center', 'right'],
+          description:
+            "Alignment of the reflowed lines within the paragraph's original width; omit to keep the paragraph's current alignment",
+        },
       },
       required: ['page', 'paragraph_text', 'new_text'],
+    },
+  },
+  {
+    name: 'move_text_block',
+    description:
+      'Move a whole paragraph to another position on its page without changing its text (takes effect on save; fonts and spacing are kept as-is). The paragraph is located like in edit_block: paragraph_text must match exactly one paragraph. dx/dy are the offset in PDF points as displayed: positive dx moves right, positive dy moves DOWN on screen (negative dy moves up). Nothing else on the page moves, so check the target area is free (read the page layout first). Typical use: after deleting a paragraph, move the following paragraph up by the deleted height to close the gap.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        paragraph_text: {
+          type: 'string',
+          description:
+            'Verbatim fragment identifying the paragraph; must match exactly one paragraph on the page',
+        },
+        dx: { type: 'number', description: 'Horizontal offset in points; positive moves right' },
+        dy: {
+          type: 'number',
+          description: 'Vertical offset in points as displayed; positive moves down, negative up',
+        },
+      },
+      required: ['page', 'paragraph_text', 'dx', 'dy'],
     },
   },
   {
@@ -349,6 +543,100 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         italic: { type: 'boolean', description: 'Set the text in the italic variant' },
       },
       required: ['page', 'text'],
+    },
+  },
+  {
+    name: 'add_form_mark',
+    description:
+      'Place a check mark or cross on a page (drawn as new content; takes effect on save). Use it to tick check boxes printed on non-interactive forms — interactive check boxes are set with fill_form_field instead. Position exactly like insert_text: anchor_text (verbatim fragment, e.g. the label next to the box) plus placement, with the mark centered against that side of the anchor, or x/y as the TOP-LEFT corner of the mark in points from the page top-left as displayed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        kind: { type: 'string', enum: ['check', 'cross'], description: 'Mark to draw' },
+        anchor_text: {
+          type: 'string',
+          description:
+            'Verbatim text fragment on the page (e.g. the box label) to position the mark against',
+        },
+        placement: {
+          type: 'string',
+          enum: ['right', 'left', 'below', 'above'],
+          description: 'Which side of anchor_text the mark goes on; defaults to right',
+        },
+        x: {
+          type: 'number',
+          description: 'Left edge of the mark in points from the page left edge',
+        },
+        y: { type: 'number', description: 'Top edge of the mark in points from the page TOP edge' },
+        size: {
+          type: 'number',
+          description: `Side of the square mark in points; defaults to ${STATIC_FORM_MARK_SIZE}`,
+        },
+      },
+      required: ['page', 'kind'],
+    },
+  },
+  {
+    name: 'list_inserted_text',
+    description:
+      'List the text blocks added with insert_text this session that are still unsaved: id, page, top-left position in points as displayed, font size, and a text preview. Their ids feed edit_inserted_text / move_inserted_text / delete_inserted_text. Once the user saves, inserted text becomes page content and is no longer listed — change it with edit_text then.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: {
+          type: 'integer',
+          description: 'Only list blocks on this page (1-based); omit for all',
+        },
+      },
+    },
+  },
+  {
+    name: 'edit_inserted_text',
+    description:
+      'Change an unsaved inserted text block (same as the user double-clicking it): new text, font size, color, or alignment; omitted fields keep their value. The block stays anchored where it is. Get ids from list_inserted_text or the insert_text output. For text that is already saved use edit_text instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Inserted text id (e.g. "Td3k9a1")' },
+        text: { type: 'string', description: 'Replacement text; "\\n" separates lines' },
+        font_size: { type: 'number', description: 'New font size in PDF points' },
+        color: { type: 'string', description: 'New text color as #RRGGBB hex' },
+        align: {
+          type: 'string',
+          enum: ['left', 'center', 'right'],
+          description: 'New line alignment',
+        },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'move_inserted_text',
+    description:
+      'Move an unsaved inserted text block (same as the user dragging it). Give x/y as the new TOP-LEFT corner in points from the page top-left as displayed, or dx/dy as an offset in points (positive dy moves down). Only pending inserts can be moved; saved text is page content.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Inserted text id from list_inserted_text' },
+        x: { type: 'number', description: 'New left edge in points from the page left edge' },
+        y: { type: 'number', description: 'New top edge in points from the page top edge' },
+        dx: { type: 'number', description: 'Horizontal offset in points (positive = right)' },
+        dy: { type: 'number', description: 'Vertical offset in points (positive = down)' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'delete_inserted_text',
+    description:
+      'Remove an unsaved inserted text block (same as the user pressing Delete on it). Only pending inserts can be removed this way; to delete saved text use edit_text with an empty new_text.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Inserted text id from list_inserted_text' },
+      },
+      required: ['id'],
     },
   },
   {
@@ -511,6 +799,101 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     },
   },
   {
+    name: 'flip_image',
+    description:
+      'Mirror an existing page image horizontally (left-right as displayed) or vertically (top-bottom as displayed) in place; footprint and z-order kept (takes effect on save). Call list_page_images first; image_number refers to that listing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        image_number: {
+          type: 'integer',
+          description: 'Image number from list_page_images (1-based, per page)',
+        },
+        axis: {
+          type: 'string',
+          enum: ['horizontal', 'vertical'],
+          description:
+            "'horizontal' mirrors left-right, 'vertical' mirrors top-bottom, both as the page is displayed",
+        },
+      },
+      required: ['page', 'image_number', 'axis'],
+    },
+  },
+  {
+    name: 'set_image_opacity',
+    description:
+      'Make an existing page image semi-transparent (fade/watermark look) by baking the opacity into its pixels; footprint and z-order kept (takes effect on save). Absolute, not cumulative. Call list_page_images first; image_number refers to that listing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        image_number: {
+          type: 'integer',
+          description: 'Image number from list_page_images (1-based, per page)',
+        },
+        opacity: {
+          type: 'number',
+          description:
+            'Resulting opacity from 0 (invisible) to 1 (fully opaque); e.g. 0.5 = half transparent',
+        },
+      },
+      required: ['page', 'image_number', 'opacity'],
+    },
+  },
+  {
+    name: 'crop_image',
+    description:
+      "Crop an existing page image: trims the given margins off the picture and shrinks its footprint on the page to the kept region (the kept pixels stay at their current size and place; z-order kept; takes effect on save). Each inset is a fraction 0-1 of the image's current displayed width (left/right) or height (top/bottom) as listed by list_page_images, measured inward from that edge; omitted insets are 0. Example: left 0.25 removes the left quarter. Call list_page_images first; image_number refers to that listing.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        image_number: {
+          type: 'integer',
+          description: 'Image number from list_page_images (1-based, per page)',
+        },
+        left: {
+          type: 'number',
+          description: 'Fraction of the width to trim from the left edge (0-1)',
+        },
+        top: {
+          type: 'number',
+          description: 'Fraction of the height to trim from the top edge (0-1)',
+        },
+        right: {
+          type: 'number',
+          description: 'Fraction of the width to trim from the right edge (0-1)',
+        },
+        bottom: {
+          type: 'number',
+          description: 'Fraction of the height to trim from the bottom edge (0-1)',
+        },
+      },
+      required: ['page', 'image_number'],
+    },
+  },
+  {
+    name: 'remove_image_background',
+    description:
+      'Remove the background of an existing page image (makes the edge-connected background color transparent, like "Remove Background" in Office); footprint and z-order kept (takes effect on save). Works best on photos/logos on a plain background. Call list_page_images first; image_number refers to that listing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: { type: 'integer', description: 'Page number (1-based)' },
+        image_number: {
+          type: 'integer',
+          description: 'Image number from list_page_images (1-based, per page)',
+        },
+        tolerance: {
+          type: 'number',
+          description: `Color tolerance 0-100 (default ${DEFAULT_CUTOUT_TOLERANCE}); raise it when background remains, lower it when parts of the subject disappear`,
+        },
+      },
+      required: ['page', 'image_number'],
+    },
+  },
+  {
     name: 'delete_image',
     description:
       'Delete an existing page image (takes effect on save; the user can undo before saving). Call list_page_images first; image_number refers to that listing.',
@@ -548,18 +931,34 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'rotate_page',
-    description: 'Rotate the given page 90 degrees clockwise or counterclockwise.',
+    description:
+      'Rotate one page, or every page with all=true, by a quarter or half turn (takes effect on save).',
     inputSchema: {
       type: 'object',
       properties: {
-        page: { type: 'integer', description: 'Page number (1-based)' },
+        page: { type: 'integer', description: 'Page number (1-based); ignored when all is true' },
         direction: {
           type: 'string',
-          enum: ['left', 'right'],
-          description: 'left = counterclockwise, right = clockwise',
+          enum: ['left', 'right', '180'],
+          description: 'left = 90° counterclockwise, right = 90° clockwise, 180 = half turn',
         },
+        all: { type: 'boolean', description: 'Rotate all pages instead of one (default false)' },
       },
-      required: ['page', 'direction'],
+      required: ['direction'],
+    },
+  },
+  {
+    name: 'set_metadata',
+    description:
+      'Set document properties (takes effect on save). Omitted fields keep their current value; pass "" to clear one. Call with no fields to read the current values.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        author: { type: 'string' },
+        subject: { type: 'string' },
+        keywords: { type: 'string', description: 'Comma-separated keywords' },
+      },
     },
   },
   {
@@ -572,10 +971,223 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     },
   },
   {
+    name: 'move_page',
+    description:
+      "Move a page to another position in the page order (takes effect on save). page is the document's original page number (as in the [Page N] markers, unchanged by earlier moves); to is the 1-based target position in the current visible order. Example: move_page(page 5, to 1) makes page 5 the first page.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        page: {
+          type: 'integer',
+          description: 'Original page number of the page to move (1-based)',
+        },
+        to: { type: 'integer', description: 'Target position in the current order (1-based)' },
+      },
+      required: ['page', 'to'],
+    },
+  },
+  {
+    name: 'reverse_pages',
+    description: 'Reverse the order of all pages (takes effect on save).',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'insert_blank_page',
+    description:
+      'Insert a blank page (same size as its neighbor) after the given page; after_page 0 inserts it as the first page. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer delete_page/move_page/rotate_page when they suffice.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        after_page: {
+          type: 'integer',
+          description:
+            'Original page number to insert after (1-based); 0 = insert as the first page',
+        },
+      },
+      required: ['after_page'],
+    },
+  },
+  {
+    name: 'set_page_size',
+    description:
+      'Resize every page of the document to a paper size (content scaled to fit, portrait). Pass either preset or both width and height in points. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer delete_page/move_page/rotate_page when they suffice.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        preset: {
+          type: 'string',
+          enum: PAPER_SIZES.map((p) => p.label),
+          description: 'Paper size preset',
+        },
+        width: { type: 'number', description: 'Page width in points (when no preset)' },
+        height: { type: 'number', description: 'Page height in points (when no preset)' },
+      },
+    },
+  },
+  {
+    name: 'crop_pages',
+    description:
+      'Crop pages to a sub-rectangle of the displayed page. left/top/right/bottom are fractions 0-1 of the page width/height describing the rectangle that is KEPT (left=0, top=0, right=1, bottom=1 is the whole page and is rejected); e.g. left 0.1, right 0.9 trims 10% off each side. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer delete_page/move_page/rotate_page when they suffice.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pages: {
+          type: 'string',
+          description: '"all" or original page numbers as a range string, e.g. "1-3,5"',
+        },
+        left: { type: 'number', description: 'Left edge of the kept area (0-1)' },
+        top: { type: 'number', description: 'Top edge of the kept area (0-1)' },
+        right: { type: 'number', description: 'Right edge of the kept area (0-1)' },
+        bottom: { type: 'number', description: 'Bottom edge of the kept area (0-1)' },
+      },
+      required: ['pages', 'left', 'top', 'right', 'bottom'],
+    },
+  },
+  {
+    name: 'extract_pages',
+    description:
+      'Copy the given pages into a new PDF. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved to disk (cannot be undone) and the result is written as a NEW file in the default save folder and opened in a new tab; the current document keeps its pages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pages: {
+          type: 'string',
+          description: 'Original page numbers as a range string, e.g. "1-3,5"',
+        },
+      },
+      required: ['pages'],
+    },
+  },
+  {
+    name: 'split_pdf',
+    description:
+      'Split the document into several PDF files of pages_per_file pages each (at least two files). A native folder picker opens for the user to choose where the files go; the current document keeps its pages. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved to disk (cannot be undone) and the result is written as a NEW file in the default save folder and opened in a new tab; the current document keeps its pages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pages_per_file: {
+          type: 'integer',
+          description: 'Pages per output file (1 to page count - 1)',
+        },
+      },
+      required: ['pages_per_file'],
+    },
+  },
+  {
+    name: 'split_pages',
+    description:
+      'Cut every page into a grid of 2, 4, or 9 smaller pages (inverse of merge_pages). IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved to disk (cannot be undone) and the result is written as a NEW file in the default save folder and opened in a new tab; the current document keeps its pages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        per_page: { type: 'integer', enum: [2, 4, 9], description: 'Pieces per page' },
+      },
+      required: ['per_page'],
+    },
+  },
+  {
+    name: 'merge_pages',
+    description:
+      'N-up imposition: place per_sheet consecutive pages onto one sheet (e.g. 2 = two pages side by side). IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved to disk (cannot be undone) and the result is written as a NEW file in the default save folder and opened in a new tab; the current document keeps its pages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        per_sheet: { type: 'integer', description: 'Pages per sheet, 2-16' },
+        direction: {
+          type: 'string',
+          enum: ['horizontal', 'vertical'],
+          description:
+            'Fill order: horizontal = left to right then down, vertical = top to bottom then right (default)',
+        },
+        separator: {
+          type: 'boolean',
+          description: 'Draw hairlines between the placed pages (default false)',
+        },
+      },
+      required: ['per_sheet'],
+    },
+  },
+  {
+    name: 'replace_pages',
+    description:
+      'Replace the given pages with all pages of another PDF. A native file picker opens for the user to choose that PDF. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer delete_page/move_page/rotate_page when they suffice.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pages: {
+          type: 'string',
+          description: 'Original page numbers to replace as a range string, e.g. "1-3,5"',
+        },
+      },
+      required: ['pages'],
+    },
+  },
+  {
     name: 'get_outline',
     description:
       'Read the document outline (bookmarks) tree, including entry titles. Returns empty if the document has no outline.',
     inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'set_watermark',
+    description:
+      'Add or replace a text watermark drawn diagonally across every page (takes effect on save); pass text "" to remove the watermark added this session. It is stamped above the page content and cannot remove a watermark that is part of the original document.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Watermark text; "" removes it' },
+        angle: {
+          type: 'number',
+          description: `Counterclockwise angle in degrees (default ${DEFAULT_WATERMARK.angle})`,
+        },
+        opacity: {
+          type: 'number',
+          description: `Opacity 0–1 (default ${DEFAULT_WATERMARK.opacity})`,
+        },
+        color: {
+          type: 'string',
+          description: `Text color as #RRGGBB (default ${DEFAULT_WATERMARK.color})`,
+        },
+        size: {
+          type: 'number',
+          description: `Font size as a fraction of the page width, 0.02–0.5 (default ${DEFAULT_WATERMARK.sizeRatio})`,
+        },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'set_header_footer',
+    description:
+      'Set the header and footer stamped on every page (takes effect on save): six text slots (header/footer × left/center/right) plus an automatic page number in the footer center. Text may contain {page} and {total} placeholders. The call replaces the header/footer set earlier this session — omitted slots become empty — and a call with every slot empty and page_number false removes it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        header_left: { type: 'string' },
+        header_center: { type: 'string' },
+        header_right: { type: 'string' },
+        footer_left: { type: 'string' },
+        footer_center: { type: 'string' },
+        footer_right: { type: 'string' },
+        page_number: {
+          type: 'boolean',
+          description:
+            'Print the page number in the footer center (overrides footer_center); default false',
+        },
+        start_at: {
+          type: 'integer',
+          description: `Number of the first page when page_number is on (default ${DEFAULT_HEADER_FOOTER.startAt})`,
+        },
+        font_size: {
+          type: 'number',
+          description: `Font size in points (default ${DEFAULT_HEADER_FOOTER.fontSize})`,
+        },
+        color: {
+          type: 'string',
+          description: `Text color as #RRGGBB (default ${DEFAULT_HEADER_FOOTER.color})`,
+        },
+      },
+    },
   },
   {
     name: 'create_document',
@@ -702,13 +1314,8 @@ async function markupText(deps: PdfAiDeps, input: Record<string, unknown>): Prom
   if ('bad' in r) return err(r.bad, summary)
   const text = String(input.text ?? '').trim()
   if (!text) return err('text must not be empty', summary)
-  let color: [number, number, number] | undefined
-  if (input.color !== undefined) {
-    const hex = HEX_COLOR.exec(String(input.color))
-    if (!hex) return err(`Invalid color "${String(input.color)}"; use #RRGGBB`, summary)
-    const v = parseInt(hex[1]!, 16)
-    color = [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
-  }
+  const color = hexToRgb01(input.color)
+  if (color === null) return err(`Invalid color "${String(input.color)}"; use #RRGGBB`, summary)
   const indexPromise = deps.searchIndex()
   if (!indexPromise) return err('Document not ready', summary)
   const index = await indexPromise
@@ -727,6 +1334,15 @@ async function markupText(deps: PdfAiDeps, input: Record<string, unknown>): Prom
     mutated: true,
     summary,
   }
+}
+
+/** #RRGGBB → rgb 0-1; undefined when omitted, null when malformed */
+const hexToRgb01 = (raw: unknown): [number, number, number] | undefined | null => {
+  if (raw === undefined) return undefined
+  const hex = HEX_COLOR.exec(String(raw))
+  if (!hex) return null
+  const v = parseInt(hex[1]!, 16)
+  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255]
 }
 
 const fmtNoteDate = (ms: number | null): string =>
@@ -773,7 +1389,7 @@ async function readAnnotations(
     for (const root of threads) {
       notes++
       for (const { item, depth } of flattenThread(root)) {
-        const head = depth === 0 ? `- Note ${root.key}` : `${'  '.repeat(depth)}- reply`
+        const head = depth === 0 ? `- Note ${root.key}` : `${'  '.repeat(depth)}- reply ${item.key}`
         const unsaved = item.saved ? '' : ' (unsaved)'
         lines.push(
           `${head}${unsaved} by ${item.author || 'unknown'}${fmtNoteDate(item.timeMs)}: ${JSON.stringify(item.contents)}`,
@@ -792,7 +1408,7 @@ async function readAnnotations(
       const quote = covered
         ? ` on ${JSON.stringify(covered.length > 120 ? `${covered.slice(0, 120)}…` : covered)}`
         : ''
-      lines.push(`- ${m.type}${m.saved ? '' : ' (unsaved)'}${quote}`)
+      lines.push(`- Markup ${m.key}: ${m.type}${m.saved ? '' : ' (unsaved)'}${quote}`)
     }
     if (lines.join('\n').length > READ_CHUNK_CHARS) {
       lines.push('…output truncated; call read_annotations with a narrower page range for the rest')
@@ -815,6 +1431,8 @@ async function addNoteTool(
   if ('bad' in r) return err(r.bad, summary)
   const text = String(input.text ?? '').trim()
   if (!text) return err('text must not be empty', summary)
+  const color = hexToRgb01(input.color)
+  if (color === null) return err(`Invalid color "${String(input.color)}"; use #RRGGBB`, summary)
   const geom = deps.pageGeom(r.origIdx)
   if (!geom) return err('Document not ready', summary)
   let at: [number, number]
@@ -841,7 +1459,7 @@ async function addNoteTool(
     return err('Position the note with anchor_text or x/y', summary)
   }
   if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
-  const key = deps.addNote(r.origIdx, at, text)
+  const key = deps.addNote(r.origIdx, at, text, color)
   deps.gotoPage(r.origIdx + 1)
   return {
     output: `Added note ${key} on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S).`,
@@ -875,6 +1493,42 @@ async function replyNoteTool(
   deps.gotoPage(r.origIdx + 1)
   return {
     output: `Replied to note ${noteId} on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function editNoteTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const summary = t('aiToolEditNote', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const page = r.origIdx + 1
+  const text = String(input.text ?? '').trim()
+  if (!text) return err('text must not be empty; use delete_note to remove a note', summary)
+  const noteId = String(input.note_id ?? '').trim()
+  if (!noteId) return err('note_id must not be empty', summary)
+  const { threads } = await deps.annotationsOn(r.origIdx)
+  const item = threads
+    .flatMap((root) => flattenThread(root))
+    .map(({ item: it }) => it)
+    .find((it) => it.key === noteId)
+  if (!item) {
+    return err(
+      `Note ${noteId} not found on page ${page}; call read_annotations for the current note and reply ids`,
+      summary,
+    )
+  }
+  if (text === item.contents) return { output: `Note ${noteId} already says that.`, summary }
+  if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
+  deps.editNote(r.origIdx, item, text)
+  deps.gotoPage(page)
+  return {
+    output: `Edited note ${noteId} on page ${page} (unsaved; the user saves with ⌘S).`,
     mutated: true,
     summary,
   }
@@ -928,6 +1582,573 @@ const countOccurrences = (entry: PageEntry, query: string): number => {
 
 const HEX_COLOR = /^#?([0-9a-f]{6})$/i
 
+const MARKUP_TYPES: MarkupType[] = ['highlight', 'underline', 'strikeout']
+
+async function deleteMarkupTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+): Promise<ToolExecution> {
+  const summary = t('aiToolDeleteMarkup', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const type = input.type === undefined ? undefined : (String(input.type) as MarkupType)
+  if (type !== undefined && !MARKUP_TYPES.includes(type)) {
+    return err(`Invalid type "${type}"; use one of ${MARKUP_TYPES.join(', ')}`, summary)
+  }
+  const raw = input.markup_ids
+  const ids =
+    raw === undefined
+      ? undefined
+      : Array.isArray(raw)
+        ? raw.map(String)
+        : typeof raw === 'string'
+          ? [raw]
+          : null
+  if (ids === null) return err('markup_ids must be an array of markup ids', summary)
+  const page = r.origIdx + 1
+  const { markups } = await deps.annotationsOn(r.origIdx)
+  let targets = markups
+  if (ids) {
+    const missing = ids.filter((id) => !markups.some((m) => m.key === id))
+    if (missing.length > 0) {
+      return err(
+        `No markup ${missing.join(', ')} on page ${page}; call read_annotations for the current ids`,
+        summary,
+      )
+    }
+    const want = new Set(ids)
+    targets = markups.filter((m) => want.has(m.key))
+  }
+  if (type) targets = targets.filter((m) => m.type === type)
+  if (targets.length === 0)
+    return err(`No ${type ? `${type} ` : ''}markups on page ${page}`, summary)
+  await deps.deleteMarkups(
+    r.origIdx,
+    targets.map((m) => m.key),
+  )
+  deps.gotoPage(page)
+  const counts = MARKUP_TYPES.map((k) => [k, targets.filter((m) => m.type === k).length] as const)
+    .filter(([, n]) => n > 0)
+    .map(([k, n]) => `${n} ${k}`)
+    .join(', ')
+  return {
+    output: `Removed ${counts} markup(s) from page ${page} (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+/** Optional numeric parameter within [min, max]; undefined when absent, string = rejection */
+function numberParam(
+  input: Record<string, unknown>,
+  name: string,
+  min: number,
+  max: number,
+): number | undefined | string {
+  if (input[name] === undefined) return undefined
+  const v = Number(input[name])
+  if (!Number.isFinite(v) || v < min || v > max)
+    return `${name} must be a number between ${min} and ${max}`
+  return v
+}
+
+const hexColorParam = (input: Record<string, unknown>): string | undefined | null => {
+  if (input.color === undefined) return undefined
+  const hex = HEX_COLOR.exec(String(input.color))
+  return hex ? `#${hex[1]!.toLowerCase()}` : null
+}
+
+const ROTATE_DELTAS: Record<string, RotateDelta> = { left: -90, right: 90, '180': 180 }
+
+function rotatePageTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const all = input.all === true
+  const summary = all ? t('aiToolRotateAll') : t('aiToolRotate', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const dir = ROTATE_DELTAS[String(input.direction)]
+  if (dir === undefined) return err('direction must be left, right, or 180', summary)
+  if (all) {
+    const pages = deps.pageOrder()
+    deps.rotatePages(pages, dir)
+    return {
+      output: `Rotated all ${pages.length} pages by ${dir}° (unsaved)`,
+      mutated: true,
+      summary,
+    }
+  }
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  deps.rotatePages([r.origIdx], dir)
+  deps.gotoPage(r.origIdx + 1)
+  return { output: `Rotated page ${r.origIdx + 1} by ${dir}° (unsaved)`, mutated: true, summary }
+}
+
+const METADATA_FIELDS = ['title', 'author', 'subject', 'keywords'] as const
+
+function describeMetadata(meta: MetadataInput): string {
+  return METADATA_FIELDS.map((k) => `${k}: ${meta[k] ? `"${meta[k]}"` : '(empty)'}`).join(', ')
+}
+
+function setMetadataTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const summary = t('aiToolSetMetadata')
+  const current = deps.metadata()
+  const next: MetadataInput = { ...current }
+  let changed = false
+  for (const k of METADATA_FIELDS) {
+    if (input[k] === undefined || input[k] === null) continue
+    const v = String(input[k]).trim()
+    if (v === (current[k] ?? '')) continue
+    next[k] = v
+    changed = true
+  }
+  if (!changed)
+    return { output: `Document properties unchanged: ${describeMetadata(current)}`, summary }
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  deps.setMetadata(next)
+  return {
+    output: `Document properties updated (unsaved; written on save): ${describeMetadata(next)}`,
+    mutated: true,
+    summary,
+  }
+}
+
+function setWatermarkTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const summary = t('aiToolWatermark')
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const prev = deps.stamps()
+  const text = String(input.text ?? '').trim()
+  if (!text) {
+    if (!prev?.wm) return err('No watermark was added this session', summary)
+    deps.setStamps(prev.hf ? { wm: null, hf: prev.hf } : null)
+    return { output: 'Removed the watermark (unsaved).', mutated: true, summary }
+  }
+  const angle = numberParam(input, 'angle', -180, 180)
+  const opacity = numberParam(input, 'opacity', 0, 1)
+  const size = numberParam(input, 'size', 0.02, 0.5)
+  for (const v of [angle, opacity, size]) if (typeof v === 'string') return err(v, summary)
+  const color = hexColorParam(input)
+  if (color === null) return err(`Invalid color "${String(input.color)}"; use #RRGGBB`, summary)
+  const base = prev?.wm ?? DEFAULT_WATERMARK
+  deps.setStamps({
+    wm: {
+      text,
+      angle: (angle as number | undefined) ?? base.angle,
+      opacity: (opacity as number | undefined) ?? base.opacity,
+      color: color ?? base.color,
+      sizeRatio: (size as number | undefined) ?? base.sizeRatio,
+    },
+    hf: prev?.hf ?? null,
+  })
+  return {
+    output: `Watermark "${text}" applied to every page (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function deleteNoteTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+): Promise<ToolExecution> {
+  const summary = t('aiToolDeleteNote', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const noteId = String(input.note_id ?? '').trim()
+  if (!noteId) return err('note_id must not be empty', summary)
+  const page = r.origIdx + 1
+  const root = await deps.findNoteRoot(r.origIdx, noteId)
+  if (!root) {
+    return err(
+      `Note ${noteId} not found on page ${page}; call read_annotations for the current ids`,
+      summary,
+    )
+  }
+  deps.deleteNoteThread(r.origIdx, root)
+  deps.gotoPage(page)
+  const replies = flattenThread(root).length - 1
+  const tail = replies > 0 ? ` and its ${replies} repl${replies === 1 ? 'y' : 'ies'}` : ''
+  return {
+    output: `Deleted note ${noteId}${tail} on page ${page} (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+/** Visible order as original page numbers, elided past 40 entries */
+function describeOrder(order: number[]): string {
+  const nums = order.map((i) => i + 1)
+  const shown = nums.length > 40 ? `${nums.slice(0, 40).join(', ')}, …` : nums.join(', ')
+  return `Current order (original page numbers): ${shown}`
+}
+
+function movePageTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const summary = t('aiToolMovePage', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const order = deps.pageOrder()
+  const to = Number(input.to)
+  if (!Number.isInteger(to) || to < 1 || to > order.length) {
+    return err(`to must be a position between 1 and ${order.length}`, summary)
+  }
+  const from = order.indexOf(r.origIdx)
+  if (from < 0) return err(`Page ${r.origIdx + 1} is not in the page order`, summary)
+  if (from === to - 1) {
+    return { output: `Page ${r.origIdx + 1} is already at position ${to}.`, summary }
+  }
+  deps.movePage(r.origIdx, to - 1)
+  return {
+    output: `Moved page ${r.origIdx + 1} to position ${to} (unsaved). ${describeOrder(deps.pageOrder())}`,
+    mutated: true,
+    summary,
+  }
+}
+
+const DECLINED_OUTPUT = 'The user declined the operation; nothing was changed.'
+const STOPPED_OUTPUT = 'The run was stopped before the user confirmed; nothing was changed.'
+
+/** Honest report for a dismissed picker: the flush before it may already have rewritten the file */
+const canceledOutput = (r: FileOpCanceled, what: string): string =>
+  r.flushed
+    ? `The user canceled the ${what}, so no pages were changed by this operation — but the pending edits had already been saved to the file first: page numbers now reflect the saved file (pending deletions/reorders baked in) and the undo history is cleared. Re-read with search_text/read_pages before any further edit.`
+    : `The user canceled the ${what}; nothing was changed.`
+
+const LAYOUT_CHANGED_OUTPUT =
+  'The pages changed while the confirmation card was open (a page was deleted, moved, or added), so the operation was not run; re-read the document with search_text/read_pages and ask again.'
+
+const sameList = (a: number[], b: number[]): boolean =>
+  a.length === b.length && a.every((v, i) => v === b[i])
+
+/** Model-facing tail of every in-place file operation */
+const reloadedNote = (pageCount: number): string =>
+  ` The file was saved, rewritten on disk (cannot be undone) and reloaded; it now has ${pageCount} pages. Original page numbers have changed (pending deletions/reorders were baked in), so re-read with search_text/read_pages before any further edit.`
+
+/** Gate shared by the file-level tools: null = confirmed, otherwise the output to return */
+async function fileOpGate(
+  deps: PdfAiDeps,
+  req: FileOpConfirm,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  if (await deps.confirmFileOp(req, signal)) return null
+  return signal?.aborted ? STOPPED_OUTPUT : DECLINED_OUTPUT
+}
+
+/** Range string of original page numbers → positions in the flushed file (= visible positions) */
+function resolveVisibleRange(
+  deps: PdfAiDeps,
+  raw: unknown,
+): { vis: number[]; map: number[]; label: string } | { bad: string } {
+  const text = String(raw ?? '').trim()
+  const order = deps.pageOrder()
+  if (text.toLowerCase() === 'all') {
+    const vis = order.map((_, i) => i)
+    return { vis, map: [...order], label: order.length > 1 ? `1-${order.length}` : '1' }
+  }
+  const pages = parsePageRanges(text, deps.pageCount())
+  if (!pages) {
+    return {
+      bad: `pages must be a range string like "1-3,5" within 1-${deps.pageCount()}${text ? '' : ' (got nothing)'}`,
+    }
+  }
+  const vis: number[] = []
+  for (const n of pages) {
+    const at = order.indexOf(n - 1)
+    if (at < 0) return { bad: `Page ${n} has been deleted (unsaved)` }
+    vis.push(at)
+  }
+  return { vis: [...vis].sort((a, b) => a - b), map: vis, label: text.replace(/\s+/g, '') }
+}
+
+/** The card describes a page→position mapping, but the document stays editable while it is
+    open; the mapping is taken again after Confirm and must match page for page */
+const rangeStillValid = (deps: PdfAiDeps, raw: unknown, map: number[]): boolean => {
+  const again = resolveVisibleRange(deps, raw)
+  return 'map' in again && sameList(again.map, map)
+}
+
+const fmtPath = (r: { savedPath: string }): string =>
+  `saved at ${r.savedPath} and opened in a new tab`
+
+async function insertBlankPageTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const after = Number(input.after_page)
+  const resolveAfterVis = (): number | { bad: string } => {
+    if (after === 0) return -1
+    const r = resolvePage(deps, input.after_page)
+    if ('bad' in r) return r
+    const vis = deps.pageOrder().indexOf(r.origIdx)
+    return vis < 0 ? { bad: `Page ${after} is not in the page order` } : vis
+  }
+  const afterVis = resolveAfterVis()
+  if (typeof afterVis !== 'number')
+    return err(afterVis.bad, t('aiToolInsertBlankPage', { pos: '?' }))
+  const pos = afterVis + 2
+  const summary = t('aiToolInsertBlankPage', { pos })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const denied = await fileOpGate(deps, { summary }, signal)
+  if (denied) return { output: denied, summary }
+  if (resolveAfterVis() !== afterVis) return { output: LAYOUT_CHANGED_OUTPUT, summary }
+  const r = await deps.insertBlankPage(afterVis)
+  if (!r.ok) return err(r.error, summary)
+  if ('canceled' in r) return { output: canceledOutput(r, 'operation'), summary }
+  return {
+    output: `Inserted a blank page as page ${pos}; every page from there on moved down by one.${reloadedNote(r.pageCount)}`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function setPageSizeTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  let size: { w: number; h: number }
+  let label: string
+  if (input.preset !== undefined) {
+    const wanted = String(input.preset).toLowerCase()
+    const preset = PAPER_SIZES.find((p) => p.label.toLowerCase() === wanted)
+    if (!preset) {
+      return err(
+        `preset must be one of ${PAPER_SIZES.map((p) => p.label).join('/')}`,
+        t('aiToolSetPageSize', { size: String(input.preset) }),
+      )
+    }
+    size = preset
+    label = `${preset.label} (${preset.w} × ${preset.h} pt)`
+  } else {
+    const unknown = t('aiToolSetPageSize', { size: '?' })
+    const w = numberParam(input, 'width', 72, 14_400)
+    if (typeof w === 'string') return err(w, unknown)
+    const h = numberParam(input, 'height', 72, 14_400)
+    if (typeof h === 'string') return err(h, unknown)
+    if (w === undefined || h === undefined) {
+      return err('pass a preset or both width and height in points', unknown)
+    }
+    size = { w, h }
+    label = `${Math.round(w)} × ${Math.round(h)} pt`
+  }
+  const summary = t('aiToolSetPageSize', { size: label })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const denied = await fileOpGate(deps, { summary }, signal)
+  if (denied) return { output: denied, summary }
+  const r = await deps.setPageSize(size.w, size.h)
+  if (!r.ok) return err(r.error, summary)
+  if ('canceled' in r) return { output: canceledOutput(r, 'operation'), summary }
+  return {
+    output: `Resized all pages to ${label}.${reloadedNote(r.pageCount)}`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function cropPagesTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const fallback = t('aiToolCropPages', { pages: '?', w: '?', h: '?' })
+  const edges = ['left', 'top', 'right', 'bottom'].map((k) => {
+    const v = input[k] === undefined ? `${k} is required` : numberParam(input, k, 0, 1)
+    return v
+  })
+  const bad = edges.find((v): v is string => typeof v === 'string')
+  if (bad) return err(bad, fallback)
+  const [l, tp, rt, b] = edges as [number, number, number, number]
+  if (l >= rt || tp >= b)
+    return err('left must be less than right and top less than bottom', fallback)
+  if (l <= 0 && tp <= 0 && rt >= 1 && b >= 1) {
+    return err('left 0, top 0, right 1, bottom 1 keeps the whole page; nothing to crop', fallback)
+  }
+  const range = resolveVisibleRange(deps, input.pages)
+  if ('bad' in range) return err(range.bad, fallback)
+  const pct = (v: number) => Math.round(v * 100)
+  const summary = t('aiToolCropPages', { pages: range.label, w: pct(rt - l), h: pct(b - tp) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const denied = await fileOpGate(deps, { summary }, signal)
+  if (denied) return { output: denied, summary }
+  if (!rangeStillValid(deps, input.pages, range.map))
+    return { output: LAYOUT_CHANGED_OUTPUT, summary }
+  const r = await deps.cropPages(range.vis, { l, t: tp, r: rt, b })
+  if (!r.ok) return err(r.error, summary)
+  if ('canceled' in r) return { output: canceledOutput(r, 'operation'), summary }
+  return {
+    output: `Cropped pages ${range.label} to the area left ${pct(l)}%, top ${pct(tp)}%, right ${pct(rt)}%, bottom ${pct(b)}% of the page.${reloadedNote(r.pageCount)}`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function extractPagesTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const range = resolveVisibleRange(deps, input.pages)
+  if ('bad' in range) return err(range.bad, t('aiToolExtractPages', { pages: '?' }))
+  const summary = t('aiToolExtractPages', { pages: range.label })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const denied = await fileOpGate(deps, { summary, detail: t('aiFileOpNewFile') }, signal)
+  if (denied) return { output: denied, summary }
+  if (!rangeStillValid(deps, input.pages, range.map))
+    return { output: LAYOUT_CHANGED_OUTPUT, summary }
+  const r = await deps.extractPages(range.vis)
+  if (!r.ok) return err(r.error, summary)
+  if ('canceled' in r) return { output: canceledOutput(r, 'operation'), summary }
+  return {
+    output: `Extracted pages ${range.label} into a new PDF ${fmtPath(r)}. The current document was saved and keeps all its pages.`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function splitPdfTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const n = Number(input.pages_per_file)
+  const total = deps.pageOrder().length
+  const summary = t('aiToolSplitPdf', { n: Number.isFinite(n) ? n : '?' })
+  if (!Number.isInteger(n) || n < 1 || n >= total) {
+    return err(
+      `pages_per_file must be an integer between 1 and ${total - 1} (the document has ${total} pages)`,
+      summary,
+    )
+  }
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const denied = await fileOpGate(deps, { summary, detail: t('aiFileOpPickFolder') }, signal)
+  if (denied) return { output: denied, summary }
+  if (deps.pageOrder().length !== total) return { output: LAYOUT_CHANGED_OUTPUT, summary }
+  const r = await deps.splitPdf(n)
+  if (!r.ok) return err(r.error, summary)
+  if ('canceled' in r) return { output: canceledOutput(r, 'folder picker'), summary }
+  return {
+    output: `Wrote ${r.count} PDF files of up to ${n} pages each into ${r.savedDir}. The current document was saved and keeps all its pages.`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function splitPagesTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const n = Number(input.per_page)
+  const summary = t('aiToolSplitPages', { n: Number.isFinite(n) ? n : '?' })
+  if (n !== 2 && n !== 4 && n !== 9) return err('per_page must be 2, 4, or 9', summary)
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const denied = await fileOpGate(deps, { summary, detail: t('aiFileOpNewFile') }, signal)
+  if (denied) return { output: denied, summary }
+  const r = await deps.splitPages(n)
+  if (!r.ok) return err(r.error, summary)
+  if ('canceled' in r) return { output: canceledOutput(r, 'operation'), summary }
+  return {
+    output: `Split every page into ${n} pages; the new PDF is ${fmtPath(r)}. The current document was saved and is unchanged.`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function mergePagesTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const n = Number(input.per_sheet)
+  const summary = t('aiToolMergePages', { n: Number.isFinite(n) ? n : '?' })
+  if (!Number.isInteger(n) || n < 2 || n > 16)
+    return err('per_sheet must be an integer between 2 and 16', summary)
+  const direction = input.direction === undefined ? 'vertical' : String(input.direction)
+  if (direction !== 'horizontal' && direction !== 'vertical') {
+    return err('direction must be horizontal or vertical', summary)
+  }
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const denied = await fileOpGate(deps, { summary, detail: t('aiFileOpNewFile') }, signal)
+  if (denied) return { output: denied, summary }
+  const r = await deps.mergePages(n, direction, input.separator === true)
+  if (!r.ok) return err(r.error, summary)
+  if ('canceled' in r) return { output: canceledOutput(r, 'operation'), summary }
+  return {
+    output: `Placed ${n} pages per sheet (${direction} order); the new PDF is ${fmtPath(r)}. The current document was saved and is unchanged.`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function replacePagesTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const range = resolveVisibleRange(deps, input.pages)
+  if ('bad' in range) return err(range.bad, t('aiToolReplacePages', { pages: '?' }))
+  const summary = t('aiToolReplacePages', { pages: range.label })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const denied = await fileOpGate(deps, { summary, detail: t('aiFileOpPickFile') }, signal)
+  if (denied) return { output: denied, summary }
+  if (!rangeStillValid(deps, input.pages, range.map))
+    return { output: LAYOUT_CHANGED_OUTPUT, summary }
+  const r = await deps.replacePages(range.vis)
+  if (!r.ok) return err(r.error, summary)
+  if ('canceled' in r) return { output: canceledOutput(r, 'file picker'), summary }
+  return {
+    output: `Replaced pages ${range.label} with the pages of the chosen PDF.${reloadedNote(r.pageCount)}`,
+    mutated: true,
+    summary,
+  }
+}
+
+function setHeaderFooterTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const summary = t('aiToolHeaderFooter')
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const prev = deps.stamps()
+  const slot = (name: string) => String(input[name] ?? '').trim()
+  const slots = {
+    headerLeft: slot('header_left'),
+    headerCenter: slot('header_center'),
+    headerRight: slot('header_right'),
+    footerLeft: slot('footer_left'),
+    footerCenter: slot('footer_center'),
+    footerRight: slot('footer_right'),
+  }
+  const pageNumber = input.page_number === true
+  if (!pageNumber && Object.values(slots).every((v) => !v)) {
+    if (!prev?.hf) return err('No header/footer was added this session', summary)
+    deps.setStamps(prev.wm ? { wm: prev.wm, hf: null } : null)
+    return { output: 'Removed the header/footer (unsaved).', mutated: true, summary }
+  }
+  const startAt = numberParam(input, 'start_at', 0, 100000)
+  const fontSize = numberParam(input, 'font_size', 4, 72)
+  for (const v of [startAt, fontSize]) if (typeof v === 'string') return err(v, summary)
+  const color = hexColorParam(input)
+  if (color === null) return err(`Invalid color "${String(input.color)}"; use #RRGGBB`, summary)
+  deps.setStamps({
+    wm: prev?.wm ?? null,
+    hf: {
+      ...slots,
+      pageNumber,
+      startAt: Math.trunc((startAt as number | undefined) ?? DEFAULT_HEADER_FOOTER.startAt),
+      fontSize: (fontSize as number | undefined) ?? DEFAULT_HEADER_FOOTER.fontSize,
+      color: color ?? DEFAULT_HEADER_FOOTER.color,
+    },
+  })
+  const filled = Object.entries(slots)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+  if (pageNumber) filled.push('page numbers in the footer center')
+  return {
+    output: `Header/footer applied to every page: ${filled.join(', ')} (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
 async function editText(deps: PdfAiDeps, input: Record<string, unknown>): Promise<ToolExecution> {
   const summary = t('aiToolEditText', { page: Number(input.page) })
   if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
@@ -938,7 +2159,9 @@ async function editText(deps: PdfAiDeps, input: Record<string, unknown>): Promis
     .replace(/\r\n/g, '\n')
     .trim()
   if (!oldText) return err('old_text must not be empty', summary)
-  if (!newText) return err('new_text must not be empty (edit_text cannot delete text)', summary)
+  if (input.align !== undefined) {
+    return err('edit_text cannot re-align a run; use edit_block with align', summary)
+  }
   const occurrence = Math.max(1, Math.trunc(Number(input.occurrence ?? 1)) || 1)
   let newColor: [number, number, number] | undefined
   if (input.color !== undefined) {
@@ -991,11 +2214,40 @@ async function editText(deps: PdfAiDeps, input: Record<string, unknown>): Promis
     total > 1 && input.occurrence === undefined
       ? ` Note: the page has ${total} occurrences of this text and only the first was edited; pass occurrence to target another.`
       : ''
+  const verb = newText ? 'Replaced' : 'Deleted'
   return {
-    output: `Replaced occurrence ${occurrence} of "${oldText}" on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S).${note}`,
+    output: `${verb} occurrence ${occurrence} of "${oldText}" on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S).${note}`,
     mutated: true,
     summary,
   }
+}
+
+/** The one clustered paragraph on a page containing `anchor` (whitespace-insensitive) */
+async function locateBlock(
+  deps: PdfAiDeps,
+  origIdx: number,
+  anchor: string,
+): Promise<{ block: TextBlock } | { bad: string }> {
+  const indexPromise = deps.searchIndex()
+  if (!indexPromise) return { bad: 'Document not ready' }
+  const entry = (await indexPromise)[origIdx]
+  if (!entry) return { bad: `Page ${origIdx + 1} has no extractable text` }
+  const squash = (s: string) => s.replace(/\s+/g, '')
+  const key = squash(anchor)
+  const hits = groupPageBlocks(entry).filter((b) =>
+    squash(b.lines.map((l) => l.text).join('')).includes(key),
+  )
+  if (hits.length === 0) {
+    return {
+      bad: `No paragraph on page ${origIdx + 1} contains "${anchor}"; use read_pages to verify the exact text`,
+    }
+  }
+  if (hits.length > 1) {
+    return {
+      bad: `${hits.length} paragraphs on page ${origIdx + 1} contain "${anchor}"; pass a longer, unique fragment`,
+    }
+  }
+  return { block: hits[0]! }
 }
 
 /** Rewrite one clustered paragraph, reflowed within the block's original width */
@@ -1009,7 +2261,6 @@ async function editBlock(deps: PdfAiDeps, input: Record<string, unknown>): Promi
     .replace(/\r\n/g, '\n')
     .trim()
   if (!anchor) return err('paragraph_text must not be empty', summary)
-  if (!newText) return err('new_text must not be empty (edit_block cannot delete text)', summary)
   let newColor: [number, number, number] | undefined
   if (input.color !== undefined) {
     const hex = HEX_COLOR.exec(String(input.color))
@@ -1031,29 +2282,9 @@ async function editBlock(deps: PdfAiDeps, input: Record<string, unknown>): Promi
       summary,
     )
   }
-  const indexPromise = deps.searchIndex()
-  if (!indexPromise) return err('Document not ready', summary)
-  const index = await indexPromise
-  const entry = index[r.origIdx]
-  if (!entry) return err(`Page ${r.origIdx + 1} has no extractable text`, summary)
-  const squash = (s: string) => s.replace(/\s+/g, '')
-  const key = squash(anchor)
-  const hits = groupPageBlocks(entry).filter((b) =>
-    squash(b.lines.map((l) => l.text).join('')).includes(key),
-  )
-  if (hits.length === 0) {
-    return err(
-      `No paragraph on page ${r.origIdx + 1} contains "${anchor}"; use read_pages to verify the exact text`,
-      summary,
-    )
-  }
-  if (hits.length > 1) {
-    return err(
-      `${hits.length} paragraphs on page ${r.origIdx + 1} contain "${anchor}"; pass a longer, unique fragment`,
-      summary,
-    )
-  }
-  const block = hits[0]!
+  const located = await locateBlock(deps, r.origIdx, anchor)
+  if ('bad' in located) return err(located.bad, summary)
+  const { block } = located
   const size = newFontSize ?? block.fontSize
   const widthPt = block.rect[2] - block.rect[0]
   // Measure with the face that will actually be embedded: an explicit font choice
@@ -1064,6 +2295,10 @@ async function editBlock(deps: PdfAiDeps, input: Record<string, unknown>): Promi
   const bold = input.bold === true ? true : undefined
   const italic = input.italic === true ? true : undefined
   const cssStyle = `${italic ? 'italic ' : ''}${bold ? 'bold' : ''}`.trim()
+  const align = input.align === undefined ? block.align : String(input.align)
+  if (align !== 'left' && align !== 'center' && align !== 'right') {
+    return err('align must be one of left, center, right', summary)
+  }
   const lines = newText
     .split('\n')
     .flatMap((p) => (p.trim() ? wrapText(p, widthPt, size, cssFamily, cssStyle) : []))
@@ -1081,18 +2316,128 @@ async function editBlock(deps: PdfAiDeps, input: Record<string, unknown>): Promi
     origin: [block.rect[0], block.lines[0]!.y],
     lineLeading: block.lineHeight * (size / block.fontSize),
     lineXOffsets:
-      block.align === 'left'
+      align === 'left'
         ? undefined
         : lines.map((l) => {
             const slack = widthPt - measurePt(l, size, cssFamily, cssStyle)
-            return Math.max(0, block.align === 'center' ? slack / 2 : slack)
+            return Math.max(0, align === 'center' ? slack / 2 : slack)
           }),
-    align: block.align === 'left' ? undefined : block.align,
+    align: align === 'left' ? undefined : align,
+    blockSource: newText,
   })
   if (reason) return err(`The edit could not be applied: ${reason}`, summary)
   deps.gotoPage(r.origIdx + 1)
   return {
-    output: `Replaced the paragraph containing "${anchor}" on page ${r.origIdx + 1} with ${lines.length} reflowed line(s) (unsaved; the user saves with ⌘S).`,
+    output: newText
+      ? `Replaced the paragraph containing "${anchor}" on page ${r.origIdx + 1} with ${lines.length} reflowed line(s) (unsaved; the user saves with ⌘S).`
+      : `Deleted the paragraph containing "${anchor}" on page ${r.origIdx + 1}; its area stays blank (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+async function addFormMarkTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const summary = t('aiToolAddFormMark', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const geom = deps.pageGeom(r.origIdx)
+  if (!geom) return err('Document not ready', summary)
+  const kind = String(input.kind ?? '')
+  if (kind !== 'check' && kind !== 'cross') return err("kind must be 'check' or 'cross'", summary)
+  const size = input.size === undefined ? STATIC_FORM_MARK_SIZE : Number(input.size)
+  if (!(size > 0)) return err('size must be a positive number', summary)
+
+  const disp = geomDispSize(geom)
+  let tx: number
+  let ty: number
+  const anchor = String(input.anchor_text ?? '').trim()
+  if (anchor) {
+    const indexPromise = deps.searchIndex()
+    if (!indexPromise) return err('Document not ready', summary)
+    const entry = (await indexPromise)[r.origIdx]
+    const located = entry ? locateOccurrence(entry, anchor, 1) : null
+    if (!located) {
+      return err(
+        `"${anchor}" not found on page ${r.origIdx + 1}; use read_pages to verify the exact text`,
+        summary,
+      )
+    }
+    const a = dispBox(geom, located.rect)
+    const placement = String(input.placement ?? 'right')
+    if (placement === 'above') {
+      tx = a.left + a.width / 2 - size / 2
+      ty = a.top - TEXT_GAP_PT - size
+    } else if (placement === 'below') {
+      tx = a.left + a.width / 2 - size / 2
+      ty = a.top + a.height + TEXT_GAP_PT
+    } else if (placement === 'left') {
+      tx = a.left - TEXT_GAP_PT - size
+      ty = a.top + a.height / 2 - size / 2
+    } else {
+      tx = a.left + a.width + TEXT_GAP_PT
+      ty = a.top + a.height / 2 - size / 2
+    }
+  } else if (input.x !== undefined || input.y !== undefined) {
+    tx = Number(input.x ?? 0)
+    ty = Number(input.y ?? 0)
+    if (!Number.isFinite(tx) || !Number.isFinite(ty))
+      return err('x and y must be numbers (points from the page top-left as displayed)', summary)
+  } else {
+    return err('Position the mark with anchor_text or x/y', summary)
+  }
+  tx = Math.min(Math.max(tx, 0), Math.max(disp.width - size, 0))
+  ty = Math.min(Math.max(ty, 0), Math.max(disp.height - size, 0))
+
+  if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
+  deps.addFormMark(r.origIdx, kind, dispToPdfRect(geom, tx, ty, size, size))
+  deps.gotoPage(r.origIdx + 1)
+  return {
+    output: `Placed a ${kind === 'check' ? 'check mark' : 'cross'} on page ${r.origIdx + 1}: ${fmt(size)} pt at x=${fmt(tx)}, y=${fmt(ty)} (unsaved; the user can drag/resize it, undo with ⌘Z, save with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+/** Translate one clustered paragraph by a display-space offset (the AI counterpart of dragging a block) */
+async function moveTextBlockTool(
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+): Promise<ToolExecution> {
+  const summary = t('aiToolMoveTextBlock', { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const anchor = String(input.paragraph_text ?? '').trim()
+  if (!anchor) return err('paragraph_text must not be empty', summary)
+  const dx = Number(input.dx ?? 0)
+  const dy = Number(input.dy ?? 0)
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return err('dx and dy must be numbers', summary)
+  if (dx === 0 && dy === 0) return err('dx and dy are both 0; nothing to move', summary)
+  const geom = deps.pageGeom(r.origIdx)
+  if (!geom) return err('Document not ready', summary)
+  const located = await locateBlock(deps, r.origIdx, anchor)
+  if ('bad' in located) return err(located.bad, summary)
+  const { block } = located
+  const [ax, ay] = viewToPdf(geom, 0, 0)
+  const [bx, by] = viewToPdf(geom, dx, dy)
+  const delta: [number, number] = [bx - ax, by - ay]
+  const res = await deps.moveTextBlock(r.origIdx, block, delta)
+  if ('reason' in res) return err(`The paragraph could not be moved: ${res.reason}`, summary)
+  deps.gotoPage(r.origIdx + 1)
+  const [mx, my] = res.moveBy
+  const moved = dispBox(geom, [
+    block.rect[0] + mx,
+    block.rect[1] + my,
+    block.rect[2] + mx,
+    block.rect[3] + my,
+  ])
+  return {
+    output: `Moved the paragraph containing "${anchor}" on page ${r.origIdx + 1} by dx ${fmt(dx)}, dy ${fmt(dy)} pt; its top-left is now at x ${fmt(moved.left)}, y ${fmt(moved.top)} from the page top-left as displayed (unsaved; the user saves with ⌘S).`,
     mutated: true,
     summary,
   }
@@ -1144,10 +2489,7 @@ async function insertTextTool(
   // measure/wrap with the face that will actually be embedded (same as edit_block)
   const bold = input.bold === true ? true : undefined
   const italic = input.italic === true ? true : undefined
-  const cssFamily =
-    (font ? EDIT_FONTS.find((f) => f.id === font)?.css : undefined) ??
-    getComputedStyle(document.body).fontFamily
-  const cssStyle = `${italic ? 'italic ' : ''}${bold ? 'bold' : ''}`.trim()
+  const { cssFamily, cssStyle } = faceCss(font, bold, italic)
   const lines = maxWidth
     ? text
         .split('\n')
@@ -1197,10 +2539,13 @@ async function insertTextTool(
   ty = Math.min(Math.max(ty, 0), Math.max(size.height - blockH, 0))
 
   if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
-  deps.insertText({
+  // origin.x is the alignment anchor, as the preview and the re-edit dialog read it:
+  // center/right lines hang left of it by their own width
+  const anchorX = align === 'center' ? tx + blockW / 2 : align === 'right' ? tx + blockW : tx
+  const record: TextInsertInput = {
     pageIndex: r.origIdx,
     // TextInsertInput.origin is the first-line baseline in PDF user space
-    origin: viewToPdf(geom, tx, ty + fontSize),
+    origin: viewToPdf(geom, anchorX, ty + fontSize),
     text: lines.join('\n'),
     fontSize,
     color,
@@ -1208,19 +2553,202 @@ async function insertTextTool(
     bold,
     italic,
     lineLeading,
-    lineXOffsets:
-      align === 'left'
-        ? undefined
-        : lineWidths.map((w) => {
-            const slack = Math.max(0, blockW - w)
-            return align === 'center' ? slack / 2 : slack
-          }),
+    lineXOffsets: align === 'left' ? undefined : alignOffsets(lineWidths, align),
     align: align === 'left' ? undefined : align,
     rotate: ((geom.rot % 360) + 360) % 360,
-  })
+  }
+  const id = deps.insertText(record)
   deps.gotoPage(r.origIdx + 1)
+  // report the position list_inserted_text/move_inserted_text will use, not the wrap box
+  const [px, py] = insertDispTopLeft(geom, { id, input: record })
   return {
-    output: `Inserted ${lines.length} line(s) of text on page ${r.origIdx + 1} at x=${fmt(tx)}, y=${fmt(ty)}, ${fontSize} pt (unsaved; the user can drag/edit it, undo with ⌘Z, save with ⌘S).`,
+    output: `Inserted ${lines.length} line(s) of text on page ${r.origIdx + 1} at x=${fmt(px)}, y=${fmt(py)}, ${fontSize} pt as T${id} (unsaved; the user can drag/edit it, undo with ⌘Z, save with ⌘S; edit_inserted_text / move_inserted_text / delete_inserted_text take this id until saved).`,
+    mutated: true,
+    summary,
+  }
+}
+
+// ── Pending inserted text lifecycle ─────────────────────────────────
+
+/** CSS face insert_text measures and previews with; the engine embeds the matching file */
+function faceCss(font: string | undefined, bold: boolean | undefined, italic: boolean | undefined) {
+  return {
+    cssFamily:
+      (font ? EDIT_FONTS.find((f) => f.id === font)?.css : undefined) ??
+      getComputedStyle(document.body).fontFamily,
+    cssStyle: `${italic ? 'italic ' : ''}${bold ? 'bold' : ''}`.trim(),
+  }
+}
+
+/** origin.x is the align anchor: center/right lines hang left of it by their own width */
+const alignOffsets = (widths: number[], align: TextAlign): number[] =>
+  widths.map((w) => (align === 'left' ? 0 : align === 'center' ? -w / 2 : -w))
+
+/** Offsets for a re-edited block, measured with the record's own face like insert_text did */
+function remeasureOffsets(
+  input: TextInsertInput,
+  text: string,
+  fontSize: number,
+  align: TextAlign,
+) {
+  const { cssFamily, cssStyle } = faceCss(input.font, input.bold, input.italic)
+  return alignOffsets(
+    text.split('\n').map((l) => measurePt(l, fontSize, cssFamily, cssStyle)),
+    align,
+  )
+}
+
+const INSERT_ID_HINT =
+  'call list_inserted_text for the current ids (only unsaved inserts qualify; saved text is page content — use edit_text)'
+
+function resolveInsert(deps: PdfAiDeps, raw: unknown): { ins: LocalTextInsert } | { bad: string } {
+  const key = String(raw ?? '').trim()
+  if (!key) return { bad: `id must not be empty; ${INSERT_ID_HINT}` }
+  const id = key.startsWith('T') ? key.slice(1) : key
+  const ins = deps.textInserts().find((i) => i.id === id)
+  return ins ? { ins } : { bad: `No pending inserted text "${key}"; ${INSERT_ID_HINT}` }
+}
+
+/** Displayed top-left (points, scale 1): origin.x is the align anchor, so center/right
+    blocks extend left of it by their most negative line offset */
+function insertDispTopLeft(geom: PageGeom, ins: LocalTextInsert): [number, number] {
+  const [vx, vy] = pdfToView(geom, ins.input.origin[0], ins.input.origin[1])
+  return [vx + Math.min(0, ...(ins.input.lineXOffsets ?? [])), vy - ins.input.fontSize]
+}
+
+const isAlign = (v: unknown): v is TextAlign => v === 'left' || v === 'center' || v === 'right'
+
+function listInsertedTextTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const summary = t('aiToolListInsertedText')
+  let inserts = deps.textInserts()
+  let where = ''
+  if (input.page !== undefined) {
+    const r = resolvePage(deps, input.page)
+    if ('bad' in r) return err(r.bad, summary)
+    inserts = inserts.filter((i) => i.input.pageIndex === r.origIdx)
+    where = ` on page ${r.origIdx + 1}`
+  }
+  if (inserts.length === 0) {
+    return {
+      output: `No pending inserted text blocks${where}. Text that was already saved is page content: use search_text and edit_text for it.`,
+      summary,
+    }
+  }
+  const lines = inserts.map((ins) => {
+    const geom = deps.pageGeom(ins.input.pageIndex)
+    const pos = geom ? insertDispTopLeft(geom, ins) : null
+    const flat = ins.input.text.replace(/\n/g, ' ⏎ ')
+    const preview = flat.length > 80 ? `${flat.slice(0, 80)}…` : flat
+    return `T${ins.id}: page ${ins.input.pageIndex + 1}, ${
+      pos ? `x=${fmt(pos[0])}, y=${fmt(pos[1])}` : 'position unavailable'
+    }, ${ins.input.fontSize} pt, ${ins.input.align ?? 'left'}, ${
+      ins.input.text.split('\n').length
+    } line(s): "${preview}"`
+  })
+  return {
+    output: `${inserts.length} pending inserted text block(s)${where} (unsaved; x/y = top-left in points as displayed):\n${lines.join('\n')}`,
+    summary,
+  }
+}
+
+function editInsertedTextTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const summary = t('aiToolEditInsertedText')
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolveInsert(deps, input.id)
+  if ('bad' in r) return err(r.bad, summary)
+  const cur = r.ins.input
+  if (
+    input.text === undefined &&
+    input.font_size === undefined &&
+    input.color === undefined &&
+    input.align === undefined
+  ) {
+    return err('Pass at least one of text, font_size, color, align', summary)
+  }
+  const text =
+    input.text === undefined ? cur.text : String(input.text).replace(/\r\n/g, '\n').trim()
+  if (!text)
+    return err('text must not be empty; use delete_inserted_text to remove the block', summary)
+  const fontSize = input.font_size === undefined ? cur.fontSize : Number(input.font_size)
+  if (!(fontSize > 0)) return err('font_size must be a positive number', summary)
+  let color = cur.color
+  if (input.color !== undefined) {
+    const hex = HEX_COLOR.exec(String(input.color))
+    if (!hex) return err(`Invalid color "${String(input.color)}"; use #RRGGBB`, summary)
+    const v = parseInt(hex[1]!, 16)
+    color = [(v >> 16) & 255, (v >> 8) & 255, v & 255]
+  }
+  const align = input.align === undefined ? (cur.align ?? 'left') : input.align
+  if (!isAlign(align)) return err("align must be 'left', 'center' or 'right'", summary)
+  const edit: TextInsertEdit = {}
+  if (input.text !== undefined) edit.text = text
+  if (input.font_size !== undefined) {
+    edit.fontSize = fontSize
+    edit.lineLeading = fontSize * 1.2
+  }
+  if (input.color !== undefined) edit.color = color
+  if (input.align !== undefined) edit.align = align
+  if (input.text !== undefined || input.font_size !== undefined || input.align !== undefined) {
+    edit.lineXOffsets = remeasureOffsets(cur, text, fontSize, align)
+  }
+  deps.updateTextInsert(r.ins.id, edit)
+  deps.gotoPage(cur.pageIndex + 1)
+  return {
+    output: `Updated inserted text T${r.ins.id} on page ${cur.pageIndex + 1}: ${text.split('\n').length} line(s), ${fontSize} pt, ${align} (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+function moveInsertedTextTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const summary = t('aiToolMoveInsertedText')
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolveInsert(deps, input.id)
+  if ('bad' in r) return err(r.bad, summary)
+  const { pageIndex, origin } = r.ins.input
+  const geom = deps.pageGeom(pageIndex)
+  if (!geom) return err('Document not ready', summary)
+  const has = (k: string) => input[k] !== undefined
+  const absolute = has('x') || has('y')
+  const relative = has('dx') || has('dy')
+  if (!absolute && !relative) {
+    return err('Pass x/y (new top-left) or dx/dy (offset), in points as displayed', summary)
+  }
+  if (absolute && relative) return err('Pass either x/y or dx/dy, not both', summary)
+  const [cx, cy] = insertDispTopLeft(geom, r.ins)
+  let nx = has('x') ? Number(input.x) : cx + (has('dx') ? Number(input.dx) : 0)
+  let ny = has('y') ? Number(input.y) : cy + (has('dy') ? Number(input.dy) : 0)
+  if (!Number.isFinite(nx) || !Number.isFinite(ny))
+    return err('x, y, dx, dy must be numbers', summary)
+  const size = geomDispSize(geom)
+  nx = Math.min(Math.max(nx, 0), size.width)
+  ny = Math.min(Math.max(ny, 0), size.height)
+  if (nx === cx && ny === cy) {
+    return {
+      output: `Inserted text T${r.ins.id} is already at x=${fmt(nx)}, y=${fmt(ny)}.`,
+      summary,
+    }
+  }
+  // same math as the drag handler: a display-space delta rotated into PDF user space
+  const [ax, ay] = viewToPdf(geom, 0, 0)
+  const [bx, by] = viewToPdf(geom, nx - cx, ny - cy)
+  deps.moveTextInsert(r.ins.id, [origin[0] + (bx - ax), origin[1] + (by - ay)])
+  deps.gotoPage(pageIndex + 1)
+  return {
+    output: `Moved inserted text T${r.ins.id} on page ${pageIndex + 1} to x=${fmt(nx)}, y=${fmt(ny)} (unsaved; the user saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
+function deleteInsertedTextTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
+  const summary = t('aiToolDeleteInsertedText')
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolveInsert(deps, input.id)
+  if ('bad' in r) return err(r.bad, summary)
+  deps.deleteTextInsert(r.ins.id)
+  return {
+    output: `Removed inserted text T${r.ins.id} from page ${r.ins.input.pageIndex + 1} (unsaved; undo with ⌘Z).`,
     mutated: true,
     summary,
   }
@@ -1584,6 +3112,148 @@ async function replaceImageTool(
   }
 }
 
+const BAKE_FAILED =
+  'The image pixels could not be read, or another pending edit claimed this image meanwhile; nothing was changed'
+
+/** Optional 0..1 fraction argument (undefined → 0) */
+function fraction01(raw: unknown, name: string): number | string {
+  if (raw === undefined || raw === null) return 0
+  const v = Number(raw)
+  if (!Number.isFinite(v) || v < 0 || v >= 1) return `${name} must be a fraction from 0 to below 1`
+  return v
+}
+
+/** Kept region given as fractions of the DISPLAYED box → fractions of the image's
+    object-space rect (what cropRect and the rendered pixels use); the two differ
+    whenever the page is shown rotated */
+function displayCropToObject(
+  geom: PageGeom,
+  rect: readonly [number, number, number, number],
+  disp: CropFractions,
+): CropFractions {
+  const box = dispBox(geom, rect)
+  const [kx1, ky1, kx2, ky2] = dispToPdfRect(
+    geom,
+    box.left + box.width * disp.l,
+    box.top + box.height * disp.t,
+    box.width * (disp.r - disp.l),
+    box.height * (disp.b - disp.t),
+  )
+  const [x1, y1, x2, y2] = rect
+  const w = x2 - x1 || 1
+  const h = y2 - y1 || 1
+  const unit = (v: number) => Math.min(1, Math.max(0, v))
+  return {
+    l: unit((kx1 - x1) / w),
+    t: unit((y2 - ky2) / h),
+    r: unit((kx2 - x1) / w),
+    b: unit((y2 - ky1) / h),
+  }
+}
+
+/** Parse the per-tool bake arguments (crop fractions still in display space); a string is
+    the rejection reason */
+function parseBakeOp(
+  name: keyof typeof BAKE_SUMMARY_KEYS,
+  input: Record<string, unknown>,
+): { op: ImageBakeOp; what: string } | string {
+  switch (name) {
+    case 'flip_image': {
+      const axis = String(input.axis ?? '')
+      if (axis !== 'horizontal' && axis !== 'vertical')
+        return "axis must be 'horizontal' or 'vertical'"
+      return {
+        op: { kind: 'flip', axis: axis === 'horizontal' ? 'h' : 'v' },
+        what: `Flipped ${axis === 'horizontal' ? 'left-right' : 'top-bottom'}`,
+      }
+    }
+    case 'set_image_opacity': {
+      const alpha = Number(input.opacity)
+      if (!Number.isFinite(alpha) || alpha < 0 || alpha > 1)
+        return 'opacity must be a number from 0 (invisible) to 1 (opaque)'
+      return {
+        op: { kind: 'opacity', alpha },
+        what: `Set the opacity to ${Math.round(alpha * 100)}%`,
+      }
+    }
+    case 'crop_image': {
+      const insets: number[] = []
+      for (const side of ['left', 'top', 'right', 'bottom'] as const) {
+        const v = fraction01(input[side], side)
+        if (typeof v === 'string') return v
+        insets.push(v)
+      }
+      const [l = 0, t = 0, r = 0, b = 0] = insets
+      if (l + r >= 1 || t + b >= 1)
+        return 'the insets leave no image: left + right and top + bottom must each stay below 1'
+      if (!l && !t && !r && !b) return 'at least one inset must be greater than 0'
+      return { op: { kind: 'crop', crop: { l, t, r: 1 - r, b: 1 - b } }, what: 'Cropped' }
+    }
+    case 'remove_image_background': {
+      const tolerance =
+        input.tolerance === undefined || input.tolerance === null
+          ? DEFAULT_CUTOUT_TOLERANCE
+          : Number(input.tolerance)
+      if (!Number.isFinite(tolerance) || tolerance < 0 || tolerance > 100)
+        return 'tolerance must be a number from 0 to 100'
+      return {
+        op: { kind: 'cutout', tolerance },
+        what: `Removed the background (tolerance ${tolerance}) of`,
+      }
+    }
+  }
+}
+
+const BAKE_SUMMARY_KEYS = {
+  flip_image: 'aiToolFlipImage',
+  set_image_opacity: 'aiToolSetImageOpacity',
+  crop_image: 'aiToolCropImage',
+  remove_image_background: 'aiToolRemoveImageBackground',
+} as const
+
+/** flip / opacity / crop / remove-background: one pixel bake on an existing image */
+async function bakeImageTool(
+  name: keyof typeof BAKE_SUMMARY_KEYS,
+  deps: PdfAiDeps,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<ToolExecution> {
+  const summary = t(BAKE_SUMMARY_KEYS[name], { page: Number(input.page) })
+  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+  const r = resolvePage(deps, input.page)
+  if ('bad' in r) return err(r.bad, summary)
+  const geom = deps.pageGeom(r.origIdx)
+  if (!geom) return err('Document not ready', summary)
+  const parsed = parseBakeOp(name, input)
+  if (typeof parsed === 'string') return err(parsed, summary)
+  const ref = await resolveImageRef(deps, r.origIdx, geom, input.image_number)
+  if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
+  if (typeof ref === 'string') return err(ref, summary)
+  // the bake runs on unrotated object-space pixels; the model speaks display space
+  const quarterTurned = geom.rot % 180 !== 0
+  const op: ImageBakeOp =
+    parsed.op.kind === 'crop'
+      ? { kind: 'crop', crop: displayCropToObject(geom, ref.rect, parsed.op.crop) }
+      : parsed.op.kind === 'flip' && quarterTurned
+        ? { kind: 'flip', axis: parsed.op.axis === 'h' ? 'v' : 'h' }
+        : parsed.op
+  const ok = await deps.bakeImage(ref, op, signal)
+  if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
+  if (!ok) return err(BAKE_FAILED, summary)
+  deps.gotoPage(r.origIdx + 1)
+  const where = `image ${Number(input.image_number)} on page ${r.origIdx + 1}`
+  let detail = 'footprint and z-order kept'
+  if (op.kind === 'crop') {
+    const kept = dispBox(geom, cropRect(ref.rect, op.crop))
+    detail = `now ${fmt(kept.width)} × ${fmt(kept.height)} pt at x=${fmt(kept.left)}, y=${fmt(kept.top)}; z-order kept`
+  }
+  return {
+    output: `${parsed.what} ${where} in place; ${detail} (unsaved; the user can undo with ⌘Z and saves with ⌘S).`,
+    mutated: true,
+    summary,
+  }
+}
+
 async function deleteImageTool(
   deps: PdfAiDeps,
   input: Record<string, unknown>,
@@ -1703,14 +3373,32 @@ export async function executePdfTool(
       return editText(deps, input)
     case 'edit_block':
       return editBlock(deps, input)
+    case 'move_text_block':
+      return moveTextBlockTool(deps, input)
     case 'insert_text':
       return insertTextTool(deps, input, signal)
+    case 'add_form_mark':
+      return addFormMarkTool(deps, input, signal)
+    case 'list_inserted_text':
+      return listInsertedTextTool(deps, input)
+    case 'edit_inserted_text':
+      return editInsertedTextTool(deps, input)
+    case 'move_inserted_text':
+      return moveInsertedTextTool(deps, input)
+    case 'delete_inserted_text':
+      return deleteInsertedTextTool(deps, input)
     case 'read_annotations':
       return readAnnotations(deps, input)
     case 'add_note':
       return addNoteTool(deps, input, signal)
     case 'reply_note':
       return replyNoteTool(deps, input, signal)
+    case 'edit_note':
+      return editNoteTool(deps, input, signal)
+    case 'delete_markup':
+      return deleteMarkupTool(deps, input)
+    case 'delete_note':
+      return deleteNoteTool(deps, input)
     case 'image_search':
       return imageSearchTool(deps, input)
     case 'generate_image':
@@ -1727,19 +3415,19 @@ export async function executePdfTool(
       return replaceImageTool(deps, input, signal)
     case 'delete_image':
       return deleteImageTool(deps, input, signal)
+    case 'flip_image':
+    case 'set_image_opacity':
+    case 'crop_image':
+    case 'remove_image_background':
+      return bakeImageTool(call.name, deps, input, signal)
     case 'list_form_fields':
       return listFormFields(deps)
     case 'fill_form_field':
       return fillFormField(deps, input)
-    case 'rotate_page': {
-      const summary = t('aiToolRotate', { page: Number(input.page) })
-      if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
-      const r = resolvePage(deps, input.page)
-      if ('bad' in r) return err(r.bad, summary)
-      deps.rotatePage(r.origIdx, input.direction === 'left' ? -90 : 90)
-      deps.gotoPage(r.origIdx + 1)
-      return { output: `Rotated page ${r.origIdx + 1} (unsaved)`, mutated: true, summary }
-    }
+    case 'rotate_page':
+      return rotatePageTool(deps, input)
+    case 'set_metadata':
+      return setMetadataTool(deps, input)
     case 'delete_page': {
       const summary = t('aiToolDelete', { page: Number(input.page) })
       if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
@@ -1752,6 +3440,39 @@ export async function executePdfTool(
         summary,
       }
     }
+    case 'move_page':
+      return movePageTool(deps, input)
+    case 'reverse_pages': {
+      const summary = t('aiToolReversePages')
+      if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
+      if (deps.pageOrder().length < 2) return err('The document has a single page', summary)
+      deps.reversePages()
+      return {
+        output: `Reversed the page order (unsaved). ${describeOrder(deps.pageOrder())}`,
+        mutated: true,
+        summary,
+      }
+    }
+    case 'insert_blank_page':
+      return insertBlankPageTool(deps, input, signal)
+    case 'set_page_size':
+      return setPageSizeTool(deps, input, signal)
+    case 'crop_pages':
+      return cropPagesTool(deps, input, signal)
+    case 'extract_pages':
+      return extractPagesTool(deps, input, signal)
+    case 'split_pdf':
+      return splitPdfTool(deps, input, signal)
+    case 'split_pages':
+      return splitPagesTool(deps, input, signal)
+    case 'merge_pages':
+      return mergePagesTool(deps, input, signal)
+    case 'replace_pages':
+      return replacePagesTool(deps, input, signal)
+    case 'set_watermark':
+      return setWatermarkTool(deps, input)
+    case 'set_header_footer':
+      return setHeaderFooterTool(deps, input)
     case 'get_outline': {
       const outline = deps.outline()
       const lines: string[] = []

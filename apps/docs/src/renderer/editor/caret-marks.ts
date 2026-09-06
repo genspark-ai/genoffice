@@ -14,7 +14,7 @@
  * storedMarks. Session-only: the attr is not persisted to the file.
  */
 import { Extension } from '@tiptap/core'
-import type { Mark } from '@tiptap/pm/model'
+import type { Mark, Node as PmNode } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 
 /// Only pending FORMATTING survives; structural/annotation marks (comments,
@@ -30,13 +30,28 @@ export const serializeMarks = (marks: readonly Mark[]): string | null => {
   return kept.length > 0 ? JSON.stringify(kept) : null
 }
 
+/** the first text node's marks in [from, to] — Word's "formatting of the
+ *  START of a range" rule, shared by Enter-replace and deletion carry */
+export const firstTextMarksIn = (doc: PmNode, from: number, to: number): readonly Mark[] | null => {
+  let marks: readonly Mark[] | null = null
+  doc.nodesBetween(from, to, (node) => {
+    if (marks) return false
+    if (node.isText) {
+      marks = node.marks
+      return false
+    }
+    return true
+  })
+  return marks
+}
+
 export const CaretMarksMemory = Extension.create({
   name: 'caretMarksMemory',
   addProseMirrorPlugins() {
     return [
       new Plugin({
         key: new PluginKey('caretMarksMemory'),
-        appendTransaction: (_transactions, _oldState, newState) => {
+        appendTransaction: (transactions, oldState, newState) => {
           const { selection, storedMarks, schema } = newState
           if (!selection.empty) return null
           const $from = selection.$from
@@ -59,7 +74,26 @@ export const CaretMarksMemory = Extension.create({
           // Bare re-entry: navigation cleared the stored marks — restore the
           // block's pilcrow memory.
           const stamped = block.attrs.caretMarks as string | null
-          if (!stamped) return null
+          if (!stamped) {
+            // A deletion just emptied this block (Delete/Backspace/Cut over a
+            // selection): Word keeps the formatting of the START of the
+            // removed text on the pilcrow, so typing or pasting here must not
+            // fall back to the theme font (alpha ledger r172; the typing-over
+            // and Enter-over paths carry marks already — plain deletion did not)
+            if (!transactions.some((tr) => tr.docChanged) || oldState.selection.empty) return null
+            const { from, to } = oldState.selection
+            const kept = (firstTextMarksIn(oldState.doc, from, to) ?? []).filter((mark) =>
+              FORMAT_MARKS.has(mark.type.name),
+            )
+            if (kept.length === 0) return null
+            return newState.tr
+              .setNodeMarkup(blockPos, undefined, {
+                ...block.attrs,
+                caretMarks: serializeMarks(kept),
+              })
+              .setStoredMarks(kept)
+              .setMeta('addToHistory', false)
+          }
           try {
             const parsed = JSON.parse(stamped) as { type: string; attrs: Record<string, unknown> }[]
             const marks = parsed.flatMap((entry) => {

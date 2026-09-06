@@ -145,4 +145,24 @@ describe('chatForProvider', () => {
     )
     expect(result).toEqual({ ok: false, error: 'AI returned an empty response' })
   })
+
+  it('anthropic: a 200 with an HTML body is an error, not a thrown SyntaxError', async () => {
+    const html = '<!doctype html><html><body>gateway</body></html>'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(html, { status: 200 })))
+    const result = await chatForProvider('anthropic', { apiKey: 'k', model: 'm' }, 'sys', 'hi')
+    expect(result.ok).toBe(false)
+    expect(result.error).toMatch(/non-JSON response/)
+    expect(result.error).toMatch(/web page instead of an API response/)
+  })
+
+  it('openai: a 200 with an empty body is an error, not a thrown SyntaxError', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })))
+    const result = await chatForProvider(
+      'openai',
+      { apiKey: 'k', model: 'gpt-4.1-mini' },
+      'sys',
+      'hi',
+    )
+    expect(result).toEqual({ ok: false, error: 'AI returned a non-JSON response: ' })
+  })
 })

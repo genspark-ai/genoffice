@@ -198,6 +198,10 @@ pub struct ChartSeries {
     /// positions in the compacted innermost `categories` (end exclusive).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category_groups: Option<Vec<CategoryGroup>>,
+    /// Parent plot group (`barChart`, `lineChart`, ...) so a combo chart
+    /// draws each series with its own group's type instead of by position.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plot: Option<String>,
 }
 
 /// One outer-level group label spanning innermost categories [start, end).
@@ -1586,12 +1590,13 @@ fn drawing_name(anchor: Node<'_, '_>) -> Option<String> {
 }
 
 fn media_type_for_path(path: &str) -> Option<&'static str> {
-    match Path::new(path)
+    // Some writers name parts after the full content type, leaving its
+    // parameters in the extension (`image1.jpeg;charset=iso-8859-1`).
+    let extension = Path::new(path)
         .extension()
-        .and_then(|value| value.to_str())?
-        .to_ascii_lowercase()
-        .as_str()
-    {
+        .and_then(|value| value.to_str())?;
+    let extension = extension.split(';').next().unwrap_or(extension);
+    match extension.to_ascii_lowercase().as_str() {
         "png" => Some("image/png"),
         "jpg" | "jpeg" => Some("image/jpeg"),
         "gif" => Some("image/gif"),

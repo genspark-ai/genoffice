@@ -34,6 +34,18 @@ describe('StylesheetEditor alignment carries', () => {
     expect(xf).toContain('horizontal="right"')
   })
 
+  it('keeps a vertical value the renderer approximates through an unrelated edit', () => {
+    const distributed = STYLES.replace(
+      '<alignment horizontal="right"',
+      '<alignment horizontal="right" vertical="distributed"',
+    )
+    const editor = new StylesheetEditor(distributed)
+    const index = editor.resolveStyle(1, { fillColor: '#FF0000' })
+    const xf = xfAt(editor.serialize(), index)
+    expect(xf).toContain('applyFill="1"')
+    expect(xf).toContain('vertical="distributed"')
+  })
+
   it('keeps them when the edit changes alignment itself', () => {
     const editor = new StylesheetEditor(STYLES)
     const index = editor.resolveStyle(1, { horizontalAlignment: 'center' })

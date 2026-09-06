@@ -437,3 +437,87 @@ describe('centered wrapSquare pictures', () => {
     expect(doc.blocks[0].imageWrap).toBe('square-left')
   })
 })
+
+describe('label group over an inline chart picture', () => {
+  // JP marketing decks overlay bar-chart labels as a wpg group of text boxes
+  // plus a thin white strip masking the picture's own axis row; the picture
+  // itself stays inline in a centered paragraph
+  const labelGroup =
+    `<wpg:wgp ${WPG_NS} ${WPS_NS}><wpg:cNvGrpSpPr/><wpg:grpSpPr>` +
+    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="4135267" cy="635391"/>` +
+    `<a:chOff x="0" y="0"/><a:chExt cx="4135267" cy="635391"/></a:xfrm></wpg:grpSpPr>` +
+    `<wps:wsp><wps:cNvSpPr txBox="1"/><wps:spPr>` +
+    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="913765" cy="493395"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></wps:spPr>` +
+    `<wps:txbx><w:txbxContent><w:p><w:r><w:t>Top 25%</w:t></w:r></w:p></w:txbxContent></wps:txbx>` +
+    `<wps:bodyPr/></wps:wsp>` +
+    `<wps:wsp><wps:cNvSpPr/><wps:spPr>` +
+    `<a:xfrm><a:off x="21102" y="513471"/><a:ext cx="3896995" cy="121920"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+    `<a:solidFill><a:schemeClr val="bg1"/></a:solidFill><a:ln><a:noFill/></a:ln></wps:spPr>` +
+    `<wps:bodyPr/></wps:wsp>` +
+    `</wpg:wgp>`
+  const inlinePic =
+    `<w:r><w:drawing><wp:inline><wp:extent cx="4698125" cy="2412895"/>` +
+    `<wp:docPr id="4" name="Picture 4"/>` +
+    `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="4698125" cy="2412895"/></a:xfrm></pic:spPr>` +
+    `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
+  const paragraph = (pPr: string) =>
+    anchorParagraph(labelGroup, GROUP_URI)
+      .replace('<w:p>', `<w:p>${pPr}`)
+      .replace(/<\/w:p>$/, '') + inlinePic
+
+  it('keeps the thin filled masking strip as a white box', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: paragraph('<w:pPr><w:jc w:val="center"/></w:pPr>'),
+        withImage: true,
+      }),
+    )
+    const boxes = doc.blocks[0].textboxes
+    expect(boxes?.length).toBe(2)
+    expect(boxes![0].paras[0]?.runs[0]?.text).toBe('Top 25%')
+    const strip = boxes![1]
+    expect(strip.fill).toBe('FFFFFF')
+    expect(strip.floating).toBe(true)
+    expect(strip.offsetXEmu).toBe(100000 + 21102)
+    expect(strip.offsetYEmu).toBe(200000 + 513471)
+    expect(strip.heightPx).toBe(13)
+  })
+
+  it('keeps a standalone filled strip anchored next to sibling drawings', async () => {
+    const strip =
+      `<wps:wsp ${WPS_NS}><wps:cNvSpPr/><wps:spPr>` +
+      `<a:xfrm><a:off x="0" y="0"/><a:ext cx="3896995" cy="121920"/></a:xfrm>` +
+      `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+      `<a:solidFill><a:schemeClr val="bg1"/></a:solidFill></wps:spPr><wps:bodyPr/></wps:wsp>`
+    const alone = await parseDocx(await buildDocx({ bodyXml: anchorParagraph(strip, SHAPE_URI) }))
+    expect(alone.blocks[0].textboxes ?? []).toHaveLength(0)
+    const withLabel = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          anchorParagraph(labelGroup, GROUP_URI).replace(/<\/w:p>$/, '') +
+          anchorParagraph(strip, SHAPE_URI).replace('<w:p>', ''),
+      }),
+    )
+    const boxes = withLabel.blocks[0].textboxes
+    expect(boxes?.length).toBe(3)
+    expect(boxes![2].fill).toBe('FFFFFF')
+    expect(boxes![2].heightPx).toBe(13)
+  })
+
+  it('the stray picture line follows the anchor paragraph justification', async () => {
+    const centered = await parseDocx(
+      await buildDocx({
+        bodyXml: paragraph('<w:pPr><w:jc w:val="center"/></w:pPr>'),
+        withImage: true,
+      }),
+    )
+    expect(centered.blocks[0].strayRuns?.find((r) => r.image)?.image?.widthPx).toBe(493)
+    expect(centered.blocks[0].strayAlign).toBe('center')
+    const plain = await parseDocx(await buildDocx({ bodyXml: paragraph(''), withImage: true }))
+    expect(plain.blocks[0].strayAlign).toBeUndefined()
+  })
+})

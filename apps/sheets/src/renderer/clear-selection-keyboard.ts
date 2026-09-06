@@ -66,7 +66,18 @@ export function shouldInterceptClearSelection(
   if (event.defaultPrevented) return false
   if (event.isComposing) return false
   if (isCellEditing) return false
-  const target = event.target
+  return isGridKeyTarget(event.target)
+}
+
+/**
+ * Whether a keydown aimed at `target` belongs to the sheet grid rather than a
+ * text field or other chrome. Native inputs are never the grid, even inside
+ * the Univer container (find/replace, rule panels, dialogs); a contenteditable
+ * is the grid only when it is Univer's hidden focus host, i.e. inside the
+ * sheet container and outside Univer's own chrome hosts. Shared by every
+ * window-level shortcut that writes to or scrolls the sheet.
+ */
+export function isGridKeyTarget(target: ClearSelectionKeyEvent['target']): boolean {
   if (!hasClosest(target)) return true
   if (target.closest(SKIP_HOST_SELECTOR)) return false
   // Find/replace, data-validation, CF, and app chrome all use native fields.

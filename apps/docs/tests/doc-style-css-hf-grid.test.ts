@@ -46,6 +46,28 @@ describe('docStyleCss header/footer strips under a typed grid', () => {
     expect(rule).toContain('line-height:22.0pt')
   })
 
+  it('lets mixed-script CJK stretches re-evaluate an atLeast line under the typed grid', () => {
+    const parsed = parsedWith(GRID_SECT)
+    ;(parsed as unknown as { docDefaults: object }).docDefaults = {
+      lineRule: 'atLeast',
+      lineRawTwips: 440,
+    }
+    const css = docStyleCss(parsed)
+    const gridSpan = css.indexOf(':not(.doc-lh-fixed) span { line-height:inherit }')
+    const stretch = css.indexOf(':not(.doc-lh-fixed) span.doc-run-lf { line-height:')
+    expect(gridSpan).toBeGreaterThan(-1)
+    // more specific and later than the grid inherit rule, so the stretch wins
+    expect(stretch).toBeGreaterThan(gridSpan)
+  })
+
+  it('declares the document line factor on .page-wrap for the canvas strips', () => {
+    const css = docStyleCss(parsedWith(null))
+    const wrap = /\.page-wrap \{ --doc-line-factor:([0-9.]+) \}/.exec(css)
+    const page = /\.doc-page, \.pv-page \{[^}]*--doc-line-factor:([0-9.]+)/.exec(css)
+    expect(wrap?.[1]).toBeDefined()
+    expect(wrap?.[1]).toBe(page?.[1])
+  })
+
   it('emits no strip override without a typed grid', () => {
     const css = docStyleCss(parsedWith(null))
     expect(css).not.toContain('.doc-page .page-hf')

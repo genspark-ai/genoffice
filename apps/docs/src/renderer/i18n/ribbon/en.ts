@@ -12,6 +12,8 @@ export const en = {
   ribbonTabLayout: 'Layout',
   ribbonTabReferences: 'References',
   ribbonTabReview: 'Review',
+  ribbonCollapse: 'Collapse the Ribbon',
+  ribbonPin: 'Pin the ribbon',
   ribbonTabView: 'View',
   ribbonTabTableDesign: 'Table Design',
   ribbonTabTableLayout: 'Table Layout',
@@ -295,6 +297,8 @@ export const en = {
   ribbonChartAddCategory: '+ Category',
   ribbonChartAddSeries: '+ Series',
   ribbonLinkInsertTitle: 'Insert Hyperlink',
+  ribbonLinkEditTitle: 'Edit Hyperlink',
+  ribbonLinkRemove: 'Remove Link',
   ribbonLinkText: 'Text to display',
   ribbonLinkTextPh: 'Link text (leave blank to show the address)',
   ribbonLinkAddress: 'Address',
@@ -573,6 +577,8 @@ export const en = {
   ribbonEditorPrompt:
     'Proofread the entire document: fix typos, punctuation and grammar errors while keeping the original meaning and paragraph structure unchanged.',
   ribbonGroupProofing: 'Proofing',
+  ribbonSpellcheckBtn: 'Spelling',
+  ribbonSpellcheckTip: 'Check spelling as you type — underlines possible misspellings in red',
   ribbonTranslate: 'Translate',
   ribbonTranslateTip: 'AI translates the document',
   ribbonTranslatePrompt:

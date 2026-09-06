@@ -40,6 +40,13 @@ export function colorFrom(
   return val && val !== 'auto' ? stripHash(val) : undefined
 }
 
+/** explicit `<w:color w:val="auto"/>` (Word's automatic colour): it overrides an inherited
+ *  style colour, so it is modeled as the literal 'auto' and resolved to the default ink on screen */
+export function autoColorOf(container: XNode | undefined): 'auto' | undefined {
+  if (!container) return undefined
+  return attrsOf(findChild(container, 'w:color') ?? {})['w:val'] === 'auto' ? 'auto' : undefined
+}
+
 /** OOXML on/off toggle, three-state: absent → undefined, explicit off → false */
 export function onOffOf(parent: XNode, name: string): boolean | undefined {
   const child = findChild(parent, name)

@@ -284,6 +284,7 @@ export const id = {
   appAiDone: 'AI selesai',
   appAiTurnLimit:
     '(Batas putaran panggilan alat untuk permintaan ini tercapai; jawaban di atas berdasarkan yang sudah dibaca dan mungkin tidak lengkap.)',
+  appAiTruncatedNote: '(Balasan terpotong karena batas panjang dan mungkin tidak lengkap.)',
   appAiStopped: '(dihentikan)',
   appAiNoSummary: 'AI selesai tanpa menghasilkan ringkasan.',
   appAiNoAction:
@@ -301,6 +302,14 @@ export const id = {
   appIconSetUnsupported: 'Kombinasi ikon ini tidak dapat disimpan ke xlsx — pilih set ikon lain.',
   appNeedFullLoadSort:
     'Mengurutkan, memfilter, memindahkan rentang, dan memisahkan teks ke kolom memerlukan mode muat penuh — buku kerja ini terlalu besar dan dimuat sebagian secara streaming.',
+  appFullLoadFilterTitle: 'Filter memerlukan pemuatan penuh',
+  appFullLoadFilterBody:
+    'Buku kerja ini besar dan baru dimuat sebagian secara streaming. Filter (termasuk hitungan nilai) memerlukan data lengkap agar benar. Muat seluruh buku kerja sekarang?',
+  appFullLoadStart: 'Muat semua',
+  appFullLoadRunning: 'Memuat seluruh buku kerja — filter tersedia setelah selesai…',
+  appFullLoadTooLarge:
+    'Buku kerja ini terlalu besar untuk dimuat sepenuhnya ke memori; filter tidak tersedia untuk file ini.',
+  appDialogCancel: 'Batal',
   appPivotSheetNoMove: 'Lembar ini berisi PivotTable — memindahkan rentang belum didukung.',
   appTableFilterNoEdit: 'Filter lembar ini milik tabel Excel — pengeditannya belum dapat disimpan.',
   appAutofillStreaming: 'IsiOtomatis ke area yang masih dimuat secara streaming belum diizinkan.',
@@ -639,6 +648,8 @@ export const id = {
   appTabFormulas: 'Rumus',
   appTabData: 'Data',
   appTabReview: 'Tinjau',
+  appRibbonCollapse: 'Ciutkan Pita',
+  appRibbonPin: 'Sematkan Pita',
   appTabView: 'Tampilan',
   appTabAi: 'AI',
   appTabChartDesign: 'Desain Bagan',

@@ -6,6 +6,7 @@ import {
   rtlFreezeLayout,
   rtlFreezeXSplit,
   rtlHorizontalScrollState,
+  rtlMainPaneCollapsed,
   rtlMaxViewportScrollX,
   rtlRevealScrollX,
 } from '../src/renderer/rtl-grid-mirror'
@@ -126,6 +127,53 @@ describe('rtlMaxViewportScrollX', () => {
     expect(max + paneWidth).toBe(46 + 60 * 74 - 11 * 74)
     // the stock LTR window [740, 814] would have overshot by the hidden width
     expect(rtlMaxViewportScrollX(sceneWidth, paneWidth, 1, 740, 814) - max).toBe(740)
+  })
+})
+
+describe('rtlMainPaneCollapsed', () => {
+  // Real geometry from a production RTL form: 22 used rows, ySplit=21 with
+  // topLeftCell A22, headers hidden, 90% zoom, in a 703px-tall engine.
+  const PX_PER_PT = 96 / 72
+  const rowHeightsPt = [
+    ...Array<number>(6).fill(18.95),
+    30,
+    30,
+    ...Array<number>(12).fill(30.75),
+    300,
+    300,
+  ]
+  const zoom = 0.9
+  const engineHeight = 703
+  const headerHeight = 0
+  const frozenGap = (ySplit: number) =>
+    rowHeightsPt.slice(0, ySplit).reduce((sum, pt) => sum + pt * PX_PER_PT, 0)
+  const mainPaneHeight = (ySplit: number) =>
+    engineHeight - (headerHeight + frozenGap(ySplit)) * zoom
+
+  it('flags a main pane swallowed by a frozen band taller than the engine', () => {
+    const height = mainPaneHeight(21)
+    expect(height).toBeLessThan(0)
+    expect(rtlMainPaneCollapsed(1194, height)).toBe(true)
+  })
+
+  it('keeps an ordinary row freeze on the stock scroll path', () => {
+    const height = mainPaneHeight(9)
+    expect(height).toBeGreaterThan(100)
+    expect(rtlMainPaneCollapsed(1194, height)).toBe(false)
+  })
+
+  it('treats an unmeasured or hairline pane as collapsed', () => {
+    expect(rtlMainPaneCollapsed(undefined, undefined)).toBe(true)
+    expect(rtlMainPaneCollapsed(1194, 1)).toBe(true)
+    expect(rtlMainPaneCollapsed(0, 500)).toBe(true)
+  })
+
+  it('still has a positive home X for that sheet, so the strips get a real anchor', () => {
+    // 23 sized columns (~2226px at 100%) plus the default tail keep the scene
+    // wider than the pane; the collapsed pane must take this value directly
+    // instead of the dead stock clamp.
+    const sceneWidth = 2226 + 16361 * 64
+    expect(rtlMaxViewportScrollX(sceneWidth, 1194, zoom)).toBeGreaterThan(0)
   })
 })
 

@@ -13,6 +13,8 @@ export const nl = {
   ribbonTabAnimations: 'Animaties',
   ribbonTabSlideShow: 'Diavoorstelling',
   ribbonTabReview: 'Controleren',
+  ribbonCollapse: 'Het lint samenvouwen',
+  ribbonPin: 'Het lint vastmaken',
   ribbonTabView: 'Beeld',
   ribbonTabTableDesign: 'Tabelontwerp',
   ribbonTabChartDesign: 'Grafiekontwerp',

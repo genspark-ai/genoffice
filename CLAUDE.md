@@ -23,11 +23,15 @@ system mode).
    `--accent-dark` / `--accent-soft` (and its dark-adjusted values) in its own
    `styles.css`. Shared rules reference `var(--accent)` and inherit the app's
    brand color.
-4. **Document content never follows the theme.** Page surfaces, cell fills,
-   slide content, PDF page bitmaps, export/print stylesheets, chart palettes,
-   highlight color maps, stamps, and WordArt presets are document data: they
-   stay hardcoded, must not reference chrome tokens, and must render/export
-   identically in both themes. (Word-style "dark chrome, white paper".)
+4. **Document content is never re-authored by the theme.** Page surfaces, cell
+   fills, slide content, PDF page bitmaps, export/print stylesheets, chart
+   palettes, highlight color maps, stamps, and WordArt presets are document
+   data: they stay hardcoded, must not reference chrome tokens, and every
+   save/export/print path must produce identical output in both themes. A
+   Word/Excel-style _dark page_ (Sheets via Univer's `darkMode`, Docs via
+   `apps/docs/src/renderer/editor/dark-page.ts`) is a display-time remap only:
+   the authored color stays the real declaration, the remapped twin lives in
+   a screen-only `--dk-*` / `.page-dark` layer, and print/export never see it.
 5. **Canvas-drawn UI affordances go through a constants table.** Konva/canvas
    editing chrome (selection frames, guides, handles) reads from the app's
    canvas color table (e.g. `canvas-colors.ts`) keyed by the current theme —

@@ -35,6 +35,21 @@ export function effectiveTopPx(set: SectionSettings, headerPx: number): number {
   return Math.max(twipsToPx(set.marginTop), headerPx > 0 ? dist + headerPx : 0)
 }
 
+/**
+ * Canvas content-area top (px). The shared canvas paper takes the first
+ * section's margins, so every flow measurement (canvas gaps, preview slices,
+ * TOC page numbers) must be relative to its effective top margin, not the body
+ * sectPr's; measuring against the last section shifted every virtual coordinate
+ * by the difference and the preview cut each page that many px early.
+ */
+export function canvasContentTopPx(
+  sections: SectionInfo[],
+  section: SectionSettings,
+  headerPx: number,
+): number {
+  return effectiveTopPx(sections[0]?.settings ?? section, headerPx)
+}
+
 /** Body bottom margin = max(marginBottom, footerDist + footer height) */
 export function effectiveBottomPx(set: SectionSettings, footerPx: number): number {
   const dist = twipsToPx(set.footerDist ?? 720)
@@ -192,7 +207,12 @@ export function columnLayoutSpecs(
           bi++
           if (!b.el || b.floated) continue
           if (b.top < col.start - 0.5) continue
-          specs.push({ el: b.el, ...(widthPx !== undefined ? { widthPx } : {}), dx, dy })
+          specs.push({
+            el: b.el,
+            ...(widthPx !== undefined ? { widthPx: blockColumnWidth(b.el, widthPx) } : {}),
+            dx,
+            dy,
+          })
         }
       }
     }
@@ -202,6 +222,24 @@ export function columnLayoutSpecs(
 
 const isTableBlock = (el: HTMLElement) =>
   el.tagName === 'TABLE' || el.getAttribute('data-doc-protected') === 'table'
+
+/** column width minus the block's own horizontal margins (w:ind) and, for
+ *  content-box blocks, padding/borders: the CSS width is the box, so a block
+ *  sized to the full column overflows its window by its indent and the
+ *  preview clips the last glyphs of every line */
+function blockColumnWidth(el: HTMLElement, colW: number): number {
+  if (isTableBlock(el) || el.style.width) return colW
+  const cs = getComputedStyle(el)
+  let extra = (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0)
+  if (cs.boxSizing !== 'border-box') {
+    extra +=
+      (parseFloat(cs.paddingLeft) || 0) +
+      (parseFloat(cs.paddingRight) || 0) +
+      (parseFloat(cs.borderLeftWidth) || 0) +
+      (parseFloat(cs.borderRightWidth) || 0)
+  }
+  return Math.max(0, colW - extra)
+}
 
 /**
  * Per-block wrap widths and horizontal placement for documents whose sections

@@ -60,6 +60,14 @@ export function rootAttributes(
   return base + missing
 }
 
+/**
+ * The note's self-reference mark run (`<w:footnoteRef/>` / `<w:endnoteRef/>`).
+ * Tolerates the spaced self-closing form (`<w:footnoteRef />`, .NET XmlWriter /
+ * Open XML SDK output) and the open/close pair; the exact `<w:footnoteRef/>`
+ * match hid every note number in such documents.
+ */
+const NOTE_REF_MARK_RE = /<w:(?:footnote|endnote)Ref\b\s*\/?>/
+
 /** real notes (separator entries excluded), in file order */
 export function parseNotesXml(xml: string, kind: NoteKind): NoteInfo[] {
   return noteEntriesOf(xml, kind).map(({ id, text, xml: entryXml }) => {
@@ -67,14 +75,21 @@ export function parseNotesXml(xml: string, kind: NoteKind): NoteInfo[] {
     const hasFormat = richParas.some((paras) =>
       paras.some(
         (r) =>
-          r.bold || r.italic || r.underline || r.strike || r.color || r.sizeHalfPoints || r.caps,
+          r.bold ||
+          r.italic ||
+          r.underline ||
+          r.strike ||
+          r.color ||
+          r.sizeHalfPoints ||
+          r.caps ||
+          r.fontAscii,
       ),
     )
     const styleId = /<w:pStyle w:val="([^"]+)"/.exec(entryXml)?.[1]
     const spacing = noteDirectSpacing(entryXml)
     // Word draws the entry number only where a self-reference mark run exists
     // (empty-body notes keep their line but show no numeral — Word probe 2026-09-01)
-    const noRefMark = !/<w:footnoteRef\/>|<w:endnoteRef\/>/.test(entryXml)
+    const noRefMark = !NOTE_REF_MARK_RE.test(entryXml)
     return {
       id,
       text,
@@ -121,7 +136,7 @@ function noteRichParas(entryXml: string): NoteRun[][] {
     let r: RegExpExecArray | null
     while ((r = rRe.exec(p[0])) !== null) {
       const inner = r[1]
-      if (/<w:footnoteRef\/>|<w:endnoteRef\/>/.test(inner)) continue
+      if (NOTE_REF_MARK_RE.test(inner)) continue
       const text = notePlainText(inner)
       if (!text) continue
       const rPr = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(inner)?.[0] ?? ''
@@ -136,6 +151,10 @@ function noteRichParas(entryXml: string): NoteRun[][] {
       if (color) run.color = color.toUpperCase()
       const sz = /<w:sz [^>]*w:val="(\d+)"/.exec(rPr)?.[1]
       if (sz) run.sizeHalfPoints = parseInt(sz, 10)
+      const rFonts = /<w:rFonts\b[^>]*>/.exec(rPr)?.[0]
+      const fontAscii =
+        rFonts && (/\bw:ascii="([^"]+)"/.exec(rFonts) ?? /\bw:hAnsi="([^"]+)"/.exec(rFonts))?.[1]
+      if (fontAscii) run.fontAscii = fontAscii
       if (flag(rPr, 'caps')) run.caps = 'all'
       else if (flag(rPr, 'smallCaps')) run.caps = 'small'
       runs.push(run)

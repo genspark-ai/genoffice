@@ -300,6 +300,8 @@ export const pt = {
   appAiDone: 'A IA terminou',
   appAiTurnLimit:
     '(Limite de chamadas de ferramentas atingido para esta solicitação; a resposta acima se baseia no que foi lido até agora e pode estar incompleta.)',
+  appAiTruncatedNote:
+    '(A resposta foi cortada pelo limite de comprimento e pode estar incompleta.)',
   appAiStopped: '(interrompido)',
   appAiNoSummary: 'A IA terminou sem gerar um resumo.',
   appAiNoAction: 'A IA não realizou nenhuma ação nem deu resposta. Tente novamente ou reformule.',
@@ -320,6 +322,15 @@ export const pt = {
     'Esta combinação de ícones não pode ser salva em xlsx — escolha outro conjunto de ícones.',
   appNeedFullLoadSort:
     'Classificar, filtrar, mover intervalos e dividir texto exigem o modo de carregamento completo — esta pasta de trabalho é muito grande e é carregada parcialmente por streaming.',
+  appFullLoadFilterTitle: 'A filtragem requer o carregamento completo',
+  appFullLoadFilterBody:
+    'Esta pasta de trabalho é grande e foi carregada apenas parcialmente em streaming. A filtragem (incluindo a contagem de valores) precisa dos dados completos. Carregar toda a pasta agora?',
+  appFullLoadStart: 'Carregar tudo',
+  appFullLoadRunning:
+    'Carregando toda a pasta de trabalho — a filtragem ficará disponível ao concluir…',
+  appFullLoadTooLarge:
+    'Esta pasta de trabalho é grande demais para ser totalmente carregada na memória; a filtragem não está disponível para este arquivo.',
+  appDialogCancel: 'Cancelar',
   appPivotSheetNoMove:
     'Esta planilha contém uma Tabela Dinâmica — mover intervalos ainda não é suportado.',
   appTableFilterNoEdit:
@@ -675,6 +686,8 @@ export const pt = {
   appTabFormulas: 'Fórmulas',
   appTabData: 'Dados',
   appTabReview: 'Revisão',
+  appRibbonCollapse: 'Recolher a Faixa de Opções',
+  appRibbonPin: 'Fixar a Faixa de Opções',
   appTabView: 'Exibir',
   appTabAi: 'IA',
   appTabChartDesign: 'Design do Gráfico',

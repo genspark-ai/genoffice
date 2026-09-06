@@ -14,6 +14,8 @@ export const de = {
   ribbonTabAnimations: 'Animationen',
   ribbonTabSlideShow: 'Bildschirmpräsentation',
   ribbonTabReview: 'Überprüfen',
+  ribbonCollapse: 'Menüband reduzieren',
+  ribbonPin: 'Menüband anheften',
   ribbonTabView: 'Ansicht',
   ribbonTabTableDesign: 'Tabellenentwurf',
   ribbonTabChartDesign: 'Diagrammentwurf',

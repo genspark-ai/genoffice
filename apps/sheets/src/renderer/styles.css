@@ -297,7 +297,7 @@
 
 body {
   margin: 0;
-  min-width: 900px;
+  min-width: 720px;
   min-height: 100vh;
   overflow: hidden;
   /* Grayscale antialiasing to match docs/slides: without it, same-weight text renders noticeably bolder on macOS */

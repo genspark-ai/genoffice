@@ -582,6 +582,10 @@ pub(crate) fn parse_chart_series(
         .and_then(|node| direct_child(node, "symbol"))
         .and_then(|node| node.attribute("val"))
         .map(ToOwned::to_owned);
+    let plot = series
+        .parent()
+        .and_then(flat_plot_name)
+        .map(ToOwned::to_owned);
     ChartSeries {
         name,
         name_ref,
@@ -602,6 +606,7 @@ pub(crate) fn parse_chart_series(
         smooth,
         marker,
         category_groups: category_node.and_then(category_groups),
+        plot,
     }
 }
 

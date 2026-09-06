@@ -10,12 +10,19 @@ export interface BlockBox {
   /** breakBefore comes from a leading w:br (real break character, not the
    *  pageBreakBefore property): honored even on the document's blank first page */
   breakBeforeBr?: boolean
-  /** block contains a page-break field (w:br type=page): force a page break after it */
+  /** block ends with a page-break field (w:br type=page, no text after it): force a page break after it */
   breakAfter?: boolean
+  /** mid-paragraph page breaks (w:br type=page with text on both sides):
+   *  element-relative Y of the line starting after each break (same space as
+   *  lineBoxes offsets); the engine turns the page there and the text before
+   *  stays on the current page like Word */
+  innerBreaks?: number[]
   /** zero-height break carrier (floating-textbox anchor): the break survives a blank page */
   breakForce?: boolean
   /** block contains a column break (w:br type=column): force a column change after it (new page on last column) */
   colBreakAfter?: boolean
+  /** the column break leads the block: the block itself opens the next column */
+  colBreakBefore?: boolean
   /** source DOM block (filled during canvas measurement, used to position page-gap decorations) */
   el?: HTMLElement
   /** the block's docxIndex (DOM data-idx; new unsaved blocks lack one) */
@@ -39,6 +46,10 @@ export interface BlockBox {
    *  the engine resolves it into a --tblp-dy shift (SliceOutputs.floatVShifts) */
   pageRelVyPx?: number
   pageRelVAnchor?: 'page' | 'margin'
+  /** inline-flowed w:tblpPr table with a negative text-relative w:tblpY: the
+   *  block starts this many px above its flow position (Word hangs it above
+   *  the anchor paragraph, into the top margin on a page start) */
+  liftPx?: number
   /** in-block line boundaries (relative to block top, ascending, each = a line's starting Y): used to split page-crossing blocks by line */
   lineOffsets?: number[]
   /** min lines kept on each side of a split (widow/orphan control): paragraphs 2, table rows 1 (default) */
@@ -57,6 +68,8 @@ export interface BlockBox {
   lineBoxes?: Array<{ offsetInBlock: number; height: number }>
   /** space before (px), from line-metrics output */
   spaceBeforePx?: number
+  /** first block only: leading space-before folded into height (top moved to 0) */
+  leadFoldPx?: number
   /** space after (px), from line-metrics output */
   spaceAfterPx?: number
   /** total page-bottom footnote reservation folded into `height` by
@@ -121,6 +134,9 @@ export interface TableRowBox {
   /** declared atLeast trHeight (px): reserved space Word never breaks inside —
    *  when it overflows the page remainder the whole row pushes to the next page */
   minHPx?: number
+  /** footnote heights of the row's references (px): the row only fits a page
+   *  that also holds its notes */
+  notesPx?: number
 }
 
 /** One column of a multi-column page: a content range in the continuous flow (in-column break semantics match pages) */
@@ -155,6 +171,9 @@ export interface PageSlice {
    * flow (virtual coordinates); the preview clones and crops accordingly.
    */
   repeatHeader?: { top: number; height: number }
+  /** px the page's clip window opens above `start` (a lifted block hanging
+   *  into the top margin, capped at the margin) */
+  liftTop?: number
   /**
    * Column flow: provided when this page has cols>1 regions (omitted for single-column
    * pages; consumers use the original path). start/end is still the whole-page flow
@@ -167,6 +186,14 @@ export interface PageSlice {
    * content height by stacking columns; canvas gap padding/compression uses this.
    */
   physHeight?: number
+  /**
+   * The page opens with a native table block. The previous page's preview
+   * window ends exactly at that table's top edge, and Chromium pixel-snaps the
+   * collapsed top border onto the row the window still shows (markTableSeamSlices).
+   */
+  leadTable?: true
+  /** The page opens inside a native table that began on an earlier page (markTableSeamSlices). */
+  cutTable?: true
 }
 
 /** Pagination geometry for one section */
@@ -276,6 +303,7 @@ export interface FloatBox {
   /** page/margin-relative V rendered from the anchor: `top` - `anchorTop` is
    *  the page-relative Y; the box belongs at that offset on the anchor's page */
   pageRelV: boolean
+  pageRelFromPage?: boolean
 }
 
 /** Page-bottom footnote entry (number/text/estimated height): shared by canvas page gaps and the pagination preview */
@@ -290,6 +318,8 @@ export interface PageNoteItem {
   lineHeightPx?: number
   /** resolved note-style base font size (pt) */
   fontSizePt?: number
+  /** resolved note font as a CSS family stack (run font over the style chain) */
+  fontFamily?: string
   /** rich display runs (one group per paragraph); omitted for unformatted footnotes, rendering falls back to plain text */
   richParas?: Array<
     Array<{
@@ -300,6 +330,7 @@ export interface PageNoteItem {
       strike?: boolean
       color?: string
       sizeHalfPoints?: number
+      fontAscii?: string
       caps?: 'all' | 'small' | 'none'
     }>
   >

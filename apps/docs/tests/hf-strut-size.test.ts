@@ -4,7 +4,7 @@
  * ~1px and cost every two-column page of SAS prod_043 its 42nd grid row.
  */
 import { describe, expect, it } from 'vitest'
-import { hfDeclaredStrutPt, makeGapHfEl } from '../src/renderer/editor/hf-dom'
+import { hfDeclaredStrutPt, hfParaLineHeightCss, makeGapHfEl } from '../src/renderer/editor/hf-dom'
 
 const p = (runs: object[]) => ({ runs }) as never
 
@@ -63,5 +63,41 @@ describe('makeGapHfEl strip strut', () => {
       pageTotal: 1,
     })
     expect(el.style.fontSize).toBe('')
+  })
+})
+
+describe('strip paragraph line spacing', () => {
+  it('maps the style-resolved w:spacing to a plain factor multiple or a fixed height', () => {
+    expect(hfParaLineHeightCss({ lineRule: 'auto', lineRawTwips: 240, lineSpacing: 1 })).toBe(
+      'calc(var(--doc-line-factor,1.2) * 1)',
+    )
+    expect(hfParaLineHeightCss({ lineRule: 'auto', lineRawTwips: 324 })).toBe(
+      'calc(var(--doc-line-factor,1.2) * 1.35)',
+    )
+    expect(hfParaLineHeightCss({ lineRule: 'exact', lineRawTwips: 360 })).toBe('18.0pt')
+    expect(hfParaLineHeightCss({})).toBe(null)
+  })
+
+  it('sets the paragraph line-height so the probe measures a single 8pt line', () => {
+    const el = makeGapHfEl({
+      kind: 'header',
+      value: {
+        text: '',
+        paras: [
+          {
+            lineRule: 'auto',
+            lineRawTwips: 240,
+            lineSpacing: 1,
+            runs: [{ text: 'Header', sizeHalfPoints: 16 }],
+          },
+          { runs: [{ text: 'Second', sizeHalfPoints: 16 }] },
+        ],
+      } as never,
+      pageNo: 1,
+      pageTotal: 1,
+    })
+    const paras = el.querySelectorAll<HTMLElement>('.page-hf-para')
+    expect(paras[0].style.lineHeight).toBe('calc(var(--doc-line-factor,1.2) * 1)')
+    expect(paras[1].style.lineHeight).toBe('')
   })
 })

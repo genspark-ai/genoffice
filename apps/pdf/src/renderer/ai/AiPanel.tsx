@@ -11,7 +11,7 @@ import sendStop from '../assets/send-stop.png'
 import { createPdfSkill } from './pdf-skill'
 import { createElectronTransport } from './transport'
 import { PDF_NAV_SCHEME, parsePdfNavHref } from './pdf-nav'
-import type { PdfAiDeps } from './tools'
+import type { FileOpConfirm, PdfAiDeps, PdfAppDeps } from './tools'
 
 // Word-parity count (same as docs/markdown): Asian chars one by one + non-Asian words
 const ASIAN_RE =
@@ -61,6 +61,11 @@ interface ChatEntry {
 
 type Phase = 'thinking' | 'replying' | 'working'
 
+interface PendingConfirm {
+  req: FileOpConfirm
+  settle: (ok: boolean) => void
+}
+
 export function AiPanel({
   api,
   filePath,
@@ -69,7 +74,7 @@ export function AiPanel({
   onRunDone,
   onClearSelection,
 }: {
-  api: PdfAiDeps
+  api: PdfAppDeps
   /** Absolute path of the open PDF (chat history is keyed to it) */
   filePath?: string
   onCollapse: () => void
@@ -262,6 +267,31 @@ export function AiPanel({
   /** Any tool in the current run reported mutated: true */
   const runMutatedRef = useRef(false)
 
+  /** Confirmation card for irreversible file operations; one at a time, a second request is refused */
+  const [fileOpConfirm, setFileOpConfirm] = useState<FileOpConfirm | null>(null)
+  const confirmRef = useRef<PendingConfirm | null>(null)
+  const requestFileOpConfirm = (req: FileOpConfirm, signal?: AbortSignal): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (confirmRef.current || signal?.aborted) {
+        resolve(false)
+        return
+      }
+      const pending: PendingConfirm = {
+        req,
+        settle: (ok) => {
+          if (confirmRef.current !== pending) return
+          confirmRef.current = null
+          setFileOpConfirm(null)
+          resolve(ok)
+        },
+      }
+      confirmRef.current = pending
+      setFileOpConfirm(req)
+      signal?.addEventListener('abort', () => pending.settle(false), { once: true })
+    })
+  // another document or the panel going away answers a pending card with "no"
+  useEffect(() => () => confirmRef.current?.settle(false), [filePath])
+
   const patchLast = (patch: Partial<ChatEntry> | ((last: ChatEntry) => Partial<ChatEntry>)) => {
     setChat((prev) => {
       const next = [...prev]
@@ -291,17 +321,42 @@ export function AiPanel({
       addMarkup: (type, idx, rects, color) => apiRef.current.addMarkup(type, idx, rects, color),
       annotationSummary: () => apiRef.current.annotationSummary(),
       createDocument: (request) => apiRef.current.createDocument(request),
+      confirmFileOp: requestFileOpConfirm,
+      insertBlankPage: (afterVis) => apiRef.current.insertBlankPage(afterVis),
+      setPageSize: (w, h) => apiRef.current.setPageSize(w, h),
+      cropPages: (vis, rect) => apiRef.current.cropPages(vis, rect),
+      replacePages: (vis) => apiRef.current.replacePages(vis),
+      extractPages: (vis) => apiRef.current.extractPages(vis),
+      splitPdf: (n) => apiRef.current.splitPdf(n),
+      splitPages: (n) => apiRef.current.splitPages(n),
+      mergePages: (n, direction, separator) => apiRef.current.mergePages(n, direction, separator),
+      stamps: () => apiRef.current.stamps(),
+      setStamps: (cfg) => apiRef.current.setStamps(cfg),
       annotationsOn: (idx) => apiRef.current.annotationsOn(idx),
-      addNote: (idx, at, contents) => apiRef.current.addNote(idx, at, contents),
+      addNote: (idx, at, contents, color) => apiRef.current.addNote(idx, at, contents, color),
       findNoteRoot: (idx, key) => apiRef.current.findNoteRoot(idx, key),
       replyToThread: (idx, root, contents) => apiRef.current.replyToThread(idx, root, contents),
+      editNote: (idx, item, contents) => apiRef.current.editNote(idx, item, contents),
+      deleteMarkups: (idx, keys) => apiRef.current.deleteMarkups(idx, keys),
+      deleteNoteThread: (idx, root) => apiRef.current.deleteNoteThread(idx, root),
       editText: (input) => apiRef.current.editText(input),
+      moveTextBlock: (idx, block, d) => apiRef.current.moveTextBlock(idx, block, d),
       insertText: (input) => apiRef.current.insertText(input),
+      addFormMark: (idx, kind, rect) => apiRef.current.addFormMark(idx, kind, rect),
+      textInserts: () => apiRef.current.textInserts(),
+      updateTextInsert: (id, edit) => apiRef.current.updateTextInsert(id, edit),
+      moveTextInsert: (id, origin) => apiRef.current.moveTextInsert(id, origin),
+      deleteTextInsert: (id) => apiRef.current.deleteTextInsert(id),
       editFonts: () => apiRef.current.editFonts(),
       formEdits: () => apiRef.current.formEdits(),
       applyFormEdit: (v) => apiRef.current.applyFormEdit(v),
-      rotatePage: (idx, dir) => apiRef.current.rotatePage(idx, dir),
+      rotatePages: (idxs, dir) => apiRef.current.rotatePages(idxs, dir),
       deletePage: (idx) => apiRef.current.deletePage(idx),
+      metadata: () => apiRef.current.metadata(),
+      setMetadata: (meta) => apiRef.current.setMetadata(meta),
+      pageOrder: () => apiRef.current.pageOrder(),
+      movePage: (from, to) => apiRef.current.movePage(from, to),
+      reversePages: () => apiRef.current.reversePages(),
       pageGeom: (idx) => apiRef.current.pageGeom(idx),
       listImages: () => apiRef.current.listImages(),
       isImageClaimed: (ref) => apiRef.current.isImageClaimed(ref),
@@ -309,6 +364,7 @@ export function AiPanel({
       transformImage: (ref, rect, layer, quarterTurns) =>
         apiRef.current.transformImage(ref, rect, layer, quarterTurns),
       replaceImage: (ref, png) => apiRef.current.replaceImage(ref, png),
+      bakeImage: (ref, op, signal) => apiRef.current.bakeImage(ref, op, signal),
       deleteImage: (ref) => apiRef.current.deleteImage(ref),
       searchImages: (query, max) => apiRef.current.searchImages(query, max),
       generateImage: (op) => apiRef.current.generateImage(op),
@@ -408,7 +464,7 @@ export function AiPanel({
     if (stickToBottomRef.current) {
       chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight })
     }
-  }, [chat, busy])
+  }, [chat, busy, fileOpConfirm])
 
   const onChatScroll = (): void => {
     const el = chatRef.current
@@ -634,6 +690,32 @@ export function AiPanel({
             </div>
           )
         })}
+        {fileOpConfirm && (
+          <div className="ai-confirm-card" role="group" aria-label={t('aiFileOpConfirmTitle')}>
+            <div className="ai-confirm-title">{t('aiFileOpConfirmTitle')}</div>
+            <div className="ai-confirm-summary">{fileOpConfirm.summary}</div>
+            {fileOpConfirm.detail && (
+              <div className="ai-confirm-detail">{fileOpConfirm.detail}</div>
+            )}
+            <div className="ai-confirm-warning">{t('aiFileOpConfirmWarning')}</div>
+            <div className="ai-confirm-actions">
+              <button
+                type="button"
+                className="pdf-modal-btn"
+                onClick={() => confirmRef.current?.settle(false)}
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                className="pdf-modal-btn primary"
+                onClick={() => confirmRef.current?.settle(true)}
+              >
+                {t('aiFileOpConfirm')}
+              </button>
+            </div>
+          </div>
+        )}
         {/* In-progress state: a standalone three-dot row at the end of the stream, kept until done */}
         {busy && <AiTypingIndicator label={typingLabel} />}
       </div>

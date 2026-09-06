@@ -83,7 +83,11 @@ describe('journal border mapping', () => {
   it('maps fill clearing through bg null', () => {
     const neutral = toNeutralStyle({ bg: null })
     expect(neutral).toEqual({ fillColor: null })
-    expect(fromNeutralStyle(neutral ?? {})).toEqual({ bg: null })
+    // The overlay replays a clear with the same empty-rgb sentinel the
+    // installer uses: bg: null would be stripped by the mutation's
+    // removeNull and let a <col style=> fill compose back through.
+    expect(fromNeutralStyle(neutral ?? {})).toEqual({ bg: { rgb: '' } })
+    expect(toNeutralStyle(fromNeutralStyle(neutral ?? {}))).toEqual({ fillColor: null })
   })
 })
 
@@ -150,7 +154,8 @@ describe('sidecar read side keeps styled blanks', () => {
         .map((cell) => ({ row: cell.row, column: cell.column, styleIndex: cell.styleIndex }))
         .sort((a, b) => a.row - b.row || a.column - b.column)
       expect(shape).toEqual([
-        { row: 0, column: 0, styleIndex: undefined },
+        // No s= is cellXfs[0], not "no style".
+        { row: 0, column: 0, styleIndex: 0 },
         { row: 0, column: 1, styleIndex: 1 },
         { row: 0, column: 2, styleIndex: 1 },
         { row: 1, column: 0, styleIndex: 2 },

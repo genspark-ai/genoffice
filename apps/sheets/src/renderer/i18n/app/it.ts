@@ -302,6 +302,8 @@ export const it = {
   appAiDone: "L'IA ha terminato",
   appAiTurnLimit:
     '(Raggiunto il limite di chiamate agli strumenti per questa richiesta; la risposta sopra si basa su quanto letto finora e potrebbe essere incompleta.)',
+  appAiTruncatedNote:
+    '(La risposta è stata troncata dal limite di lunghezza e potrebbe essere incompleta.)',
   appAiStopped: '(interrotto)',
   appAiNoSummary: "L'IA ha terminato senza generare un riepilogo.",
   appAiNoAction: "L'IA non ha eseguito alcuna azione né dato risposta. Riprova o riformula.",
@@ -322,6 +324,15 @@ export const it = {
     'Questa combinazione di icone non può essere salvata in xlsx — scegli un altro set di icone.',
   appNeedFullLoadSort:
     'Ordinamento, filtri, spostamento di intervalli e divisione del testo richiedono la modalità a caricamento completo — questa cartella di lavoro è troppo grande e viene caricata parzialmente in streaming.',
+  appFullLoadFilterTitle: 'Il filtro richiede il caricamento completo',
+  appFullLoadFilterBody:
+    'Questa cartella di lavoro è grande ed è stata caricata solo parzialmente in streaming. Il filtro (incluso il conteggio dei valori) richiede i dati completi. Caricare adesso tutta la cartella di lavoro?',
+  appFullLoadStart: 'Carica tutto',
+  appFullLoadRunning:
+    'Caricamento della cartella completa in corso: il filtro sarà disponibile al termine…',
+  appFullLoadTooLarge:
+    'Questa cartella di lavoro è troppo grande per essere caricata completamente in memoria; il filtro non è disponibile per questo file.',
+  appDialogCancel: 'Annulla',
   appPivotSheetNoMove:
     'Questo foglio contiene una tabella pivot — lo spostamento di intervalli non è ancora supportato.',
   appTableFilterNoEdit:
@@ -673,6 +684,8 @@ export const it = {
   appTabFormulas: 'Formule',
   appTabData: 'Dati',
   appTabReview: 'Revisione',
+  appRibbonCollapse: 'Riduci a icona la barra multifunzione',
+  appRibbonPin: 'Aggiungi la barra multifunzione',
   appTabView: 'Visualizza',
   appTabAi: 'IA',
   appTabChartDesign: 'Struttura grafico',

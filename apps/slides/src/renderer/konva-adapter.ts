@@ -1213,12 +1213,18 @@ export interface GlyphDraw {
 }
 
 // Same-script fallback chains for Japanese/Korean/Traditional Chinese (win/mac family names back each other up); shared by FONT_STACK and the unknown-font fallback
-const JA_SANS = "'Yu Gothic', 'Hiragino Sans', Meiryo, 'Noto Sans JP', sans-serif"
-const JA_SERIF = "'Yu Mincho', 'Hiragino Mincho ProN', 'MS Mincho', 'Noto Serif JP', serif"
+// Hangul outside a Korean face falls to Malgun Gothic (PowerPoint's script default; the main
+// process registers the private face when such text is measured), never the system default
+const HANGUL_TAIL = "'Malgun Gothic', "
+const JA_SANS =
+  "'Yu Gothic', 'Hiragino Sans', Meiryo, 'Noto Sans JP', " + HANGUL_TAIL + 'sans-serif'
+const JA_SERIF =
+  "'Yu Mincho', 'Hiragino Mincho ProN', 'MS Mincho', 'Noto Serif JP', " + HANGUL_TAIL + 'serif'
 const KO_SANS = "'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif"
 const KO_SERIF = "Batang, AppleMyungjo, 'Noto Serif KR', serif"
-const TC_SANS = "'Microsoft JhengHei', 'PingFang TC', 'Heiti TC', 'Noto Sans TC', sans-serif"
-const TC_SERIF = "PMingLiU, 'Songti TC', 'Noto Serif TC', serif"
+const TC_SANS =
+  "'Microsoft JhengHei', 'PingFang TC', 'Heiti TC', 'Noto Sans TC', " + HANGUL_TAIL + 'sans-serif'
+const TC_SERIF = "PMingLiU, 'Songti TC', 'Noto Serif TC', " + HANGUL_TAIL + 'serif'
 const SERIF_HINT_RE =
   /mincho|明朝|batang|바탕|myeongjo|명조|gungsuh|궁서|mingliu|細明|標楷|宋|song/i
 
@@ -1228,10 +1234,11 @@ const SERIF_HINT_RE =
  * Metrics are handled by the main process FontMetricsProvider's alias table.
  */
 const FONT_STACK: Record<string, string> = {
-  'microsoft yahei': "'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif",
-  微软雅黑: "'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', sans-serif",
-  'pingfang sc': "'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif",
-  苹方: "'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif",
+  'microsoft yahei':
+    "'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', " + HANGUL_TAIL + 'sans-serif',
+  微软雅黑: "'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', " + HANGUL_TAIL + 'sans-serif',
+  'pingfang sc': "'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', " + HANGUL_TAIL + 'sans-serif',
+  苹方: "'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', " + HANGUL_TAIL + 'sans-serif',
   宋体: "SimSun, 'Songti SC', serif",
   simsun: "SimSun, 'Songti SC', serif",
   黑体: "SimHei, 'Heiti SC', sans-serif",
@@ -1308,7 +1315,8 @@ export function displayFontFamily(name: string): string {
   if (script === 'ja') return `'${name}', ${SERIF_HINT_RE.test(name) ? JA_SERIF : JA_SANS}`
   if (script === 'ko') return `'${name}', ${SERIF_HINT_RE.test(name) ? KO_SERIF : KO_SANS}`
   if (script === 'tc') return `'${name}', ${SERIF_HINT_RE.test(name) ? TC_SERIF : TC_SANS}`
-  return `'${name}', 'PingFang SC', 'Microsoft YaHei', sans-serif`
+  // same tail as the gt-measure stack in shaped-metrics.ts
+  return `'${name}', 'PingFang SC', 'Microsoft YaHei', 'Yu Gothic', 'Malgun Gothic', sans-serif`
 }
 
 /**

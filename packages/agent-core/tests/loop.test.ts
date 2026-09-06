@@ -3,6 +3,7 @@ import {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
   composeSkills,
+  runtimePreamble,
   type AgentMessage,
   type AgentSkill,
   type AgentStreamCallbacks,
@@ -13,18 +14,22 @@ import {
 
 /** transport scripted turn by turn; exposes the callbacks for manual driving */
 function scriptedTransport(script: Array<(cb: AgentStreamCallbacks) => void>): AgentTransport & {
-  requests: Array<{ messageCount: number; toolCount: number }>
+  requests: Array<{ messageCount: number; toolCount: number; system: string }>
   cancels: number
 } {
   let turn = 0
   const transport = {
-    requests: [] as Array<{ messageCount: number; toolCount: number }>,
+    requests: [] as Array<{ messageCount: number; toolCount: number; system: string }>,
     cancels: 0,
     lastCallbacks: null as AgentStreamCallbacks | null,
-    stream(request: { messages: AgentMessage[]; tools: unknown[] }, cb: AgentStreamCallbacks) {
+    stream(
+      request: { system: string; messages: AgentMessage[]; tools: unknown[] },
+      cb: AgentStreamCallbacks,
+    ) {
       transport.requests.push({
         messageCount: request.messages.length,
         toolCount: request.tools.length,
+        system: request.system,
       })
       transport.lastCallbacks = cb
       const step = script[turn++]
@@ -52,7 +57,23 @@ function makeSkill(execute?: (call: AgentToolCall) => ToolExecution): AgentSkill
 
 const flush = () => new Promise((r) => setTimeout(r, 0))
 
+describe('runtimePreamble', () => {
+  it('formats the local calendar date', () => {
+    expect(runtimePreamble(new Date(2026, 8, 3, 23, 30))).toBe(
+      "Today's date is 2026-09-03; the current year is 2026.\n\n",
+    )
+  })
+})
+
 describe('AgentLoop', () => {
+  it('tells the model the current date at the top of the system prompt', async () => {
+    const transport = scriptedTransport([(cb) => cb.onDone()])
+    const loop = new AgentLoop({ transport, skill: makeSkill(), systemSuffix: () => '\nSUFFIX' })
+    loop.run('q')
+    await flush()
+    expect(transport.requests[0].system).toBe(runtimePreamble() + 'system\nSUFFIX')
+  })
+
   it('runs a plain-text turn to completion', async () => {
     const transport = scriptedTransport([
       (cb) => {

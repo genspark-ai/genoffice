@@ -671,6 +671,40 @@ fn opens_backslash_and_case_drifted_package() {
     assert_eq!(metadata.sheets[0].column_count, 2);
 }
 
+/// genoffice#196: a producer wrote every entry as `/xl/...`. The names never
+/// leave the archive, so they only need to stay inside the package root.
+#[test]
+fn opens_leading_slash_package() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "/xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "/xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "./xl//worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="1" topLeftCell="B2" state="frozen"/></sheetView></sheetViews><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c></row><row r="2"><c r="A2"><v>3</v></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    assert_eq!(metadata.sheets.len(), 1);
+    assert_eq!(metadata.sheets[0].row_count, 2);
+    assert_eq!(metadata.sheets[0].column_count, 2);
+    let freeze = metadata.sheets[0].freeze.as_ref().unwrap();
+    assert_eq!((freeze.frozen_rows, freeze.frozen_columns), (1, 1));
+}
+
+#[test]
+fn rejects_entries_escaping_the_package() {
+    let (_dir, path) = open_fixture(&[("xl/../../evil.xml", "<e/>")]);
+    let error = WorkbookSessions::new().open(&path).unwrap_err();
+    assert!(error.to_string().contains("unsafe ZIP path"));
+}
+
 /// Theme substitution keeps rendering on the theme latin face, but the
 /// literal cached Normal-font name and the theme's minor <a:ea> face
 /// still reach the wire — the renderer needs them for the column MDW.
@@ -2676,7 +2710,8 @@ fn keeps_value_less_cells_whose_style_paints_borders_or_fill() {
     assert_eq!(
         cells,
         vec![
-            (0, 0, true, None),
+            // No s= resolves to cellXfs[0], exactly like s="0".
+            (0, 0, true, Some(0)),
             // Self-closing and open-empty styled blanks both survive.
             (0, 1, false, Some(1)),
             (0, 2, false, Some(1)),
@@ -2689,6 +2724,68 @@ fn keeps_value_less_cells_whose_style_paints_borders_or_fill() {
         ]
     );
     assert_eq!(result.merges.len(), 1);
+}
+
+/// A <c> without s= is cellXfs[0] in Excel, so the record must carry that
+/// index: leaving it unset made the host fall back to the renderer's own
+/// default font, and columns mixing s-less and s="0" cells alternated
+/// between Calibri and Arial row by row (a production workbook).
+#[test]
+fn unstyled_cells_resolve_to_the_default_xf() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/styles.xml",
+            r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
+<cellStyleXfs count="1"><xf/></cellStyleXfs>
+<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyAlignment="1"><alignment horizontal="center"/></xf></cellXfs>
+</styleSheet>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>
+<row r="1"><c r="A1" t="inlineStr"><is><t>plain</t></is></c><c r="B1" s="0"><v>1</v></c><c r="C1" s="1"><f>B1*2</f><v>2</v></c><c r="D1"/></row>
+</sheetData>
+</worksheet>"#,
+        ),
+    ]);
+
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let sheet_id = metadata.sheets[0].id.clone();
+    let range = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 3,
+    };
+    let result = loop {
+        let result = sessions
+            .read_range(&metadata.session_id, &sheet_id, &range)
+            .unwrap();
+        if result.indexing_complete {
+            break result;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    let mut cells: Vec<(usize, Option<usize>)> = result
+        .cells
+        .iter()
+        .map(|cell| (cell.column, cell.style_index))
+        .collect();
+    cells.sort();
+    // A1 (no s=) and B1 (s="0") are indistinguishable; the value-less,
+    // style-less D1 is still dropped.
+    assert_eq!(cells, vec![(0, Some(0)), (1, Some(0)), (2, Some(1))]);
 }
 
 /// <row r=> and <c r=> are both optional (54288.xlsx omits r on all but

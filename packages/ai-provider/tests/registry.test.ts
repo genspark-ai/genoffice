@@ -43,6 +43,11 @@ describe('provider registry', () => {
       protocol: 'gemini',
       baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     })
+    expect(AI_PROVIDER_ADAPTERS.gemini.resolveEndpoint(config('gemini-3.7-flash'))).toEqual({
+      protocol: 'gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      omitTemperature: true,
+    })
     // thinking stays off: once tools are in play DeepSeek 400s any turn that
     // does not echo back the reasoning_content our transcript cannot carry
     expect(AI_PROVIDER_ADAPTERS.deepseek.resolveEndpoint(config('deepseek-v4-pro'))).toEqual({
@@ -107,6 +112,76 @@ describe('provider registry', () => {
       protocol: 'anthropic',
       baseUrl: 'https://api.anthropic.com',
     })
+  })
+
+  it('routes OpenCode Zen per model onto the protocol the gateway serves it on', () => {
+    const resolve = (model: string, baseUrl?: string) =>
+      AI_PROVIDER_ADAPTERS['opencode-zen'].resolveEndpoint(config(model, baseUrl))
+    expect(resolve('claude-sonnet-5')).toEqual({
+      protocol: 'anthropic',
+      baseUrl: 'https://opencode.ai/zen',
+    })
+    expect(resolve('qwen3.6-plus')).toEqual({
+      protocol: 'anthropic',
+      baseUrl: 'https://opencode.ai/zen',
+    })
+    // the Gemini 3 family keeps Google's default sampling on this route too
+    expect(resolve('gemini-3.7-flash')).toEqual({
+      protocol: 'gemini',
+      baseUrl: 'https://opencode.ai/zen/v1',
+      omitTemperature: true,
+    })
+    expect(resolve('gemini-2.5-flash')).toEqual({
+      protocol: 'gemini',
+      baseUrl: 'https://opencode.ai/zen/v1',
+    })
+    for (const model of ['deepseek-v4-pro', 'glm-5.2', 'minimax-m3']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://opencode.ai/zen/v1',
+      })
+    }
+    // Kimi fixes sampling on the K2 line as well as K3
+    for (const model of ['kimi-k3', 'kimi-k2.7-code']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://opencode.ai/zen/v1',
+        omitTemperature: true,
+      })
+    }
+    // a stored base URL replaces the gateway root, with or without the documented /v1
+    expect(resolve('claude-sonnet-5', 'https://mirror.example/zen/v1/')).toEqual({
+      protocol: 'anthropic',
+      baseUrl: 'https://mirror.example/zen',
+    })
+    expect(resolve('glm-5.2', 'https://mirror.example/zen')).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://mirror.example/zen/v1',
+    })
+  })
+
+  it('routes OpenCode Go with its own table (MiniMax rides Messages there, not chat-completions)', () => {
+    const resolve = (model: string) =>
+      AI_PROVIDER_ADAPTERS['opencode-go'].resolveEndpoint(config(model))
+    for (const model of ['minimax-m3', 'qwen3.8-flash']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'anthropic',
+        baseUrl: 'https://opencode.ai/zen/go',
+      })
+    }
+    for (const model of ['glm-5.3', 'deepseek-v4-flash', 'qwen3.8-max', 'longcat-2.0']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://opencode.ai/zen/go/v1',
+      })
+    }
+    expect(resolve('kimi-k2.7-code')).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://opencode.ai/zen/go/v1',
+      omitTemperature: true,
+    })
+    // Go has no Gemini route
+    expect(resolve('gemini-3.7-flash').protocol).toBe('openai-compatible')
   })
 
   it('uses the configured base URL for custom and rejects a missing one', () => {

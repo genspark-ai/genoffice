@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseSlide } from '../src/parse'
+import { parseDecorations, parseSlide } from '../src/parse'
 import {
   parseDefaultTextStyle,
   parsePlaceholderMap,
@@ -46,14 +46,26 @@ describe('presentation defaultTextStyle (napierone 0042)', () => {
 })
 
 describe('presentation defaultTextStyle scope', () => {
-  it('does not apply to plain autoshapes (only txBox text boxes)', () => {
-    const sp =
-      '<p:sp><p:nvSpPr><p:cNvPr id="6" name="Shape 5"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>' +
-      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm><a:prstGeom prst="rect"/></p:spPr>' +
-      '<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-GB"/><a:t>shape text</a:t></a:r></a:p></p:txBody></p:sp>'
+  // PowerPoint probe (defaultTextStyle 14pt vs master otherStyle 28pt): rect and text box,
+  // on the slide, layout and master, all render at 14pt — otherStyle is never consulted
+  const RECT =
+    '<p:sp><p:nvSpPr><p:cNvPr id="6" name="Shape 5"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>' +
+    '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm><a:prstGeom prst="rect"/></p:spPr>' +
+    '<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-GB"/><a:t>shape text</a:t></a:r></a:p></p:txBody></p:sp>'
+
+  it('applies to plain autoshapes as well as text boxes', () => {
     const ctx = { defaultTextStyle: parseDefaultTextStyle(PRES) }
-    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx })
-    expect((slide.elements[0] as any).text.paragraphs[0].runs[0].fontSize).not.toBe(12)
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(RECT), ctx })
+    expect((slide.elements[0] as any).text.paragraphs[0].runs[0].fontSize).toBe(12)
+  })
+
+  it('applies to layout/master decoration shapes', () => {
+    const layout =
+      '<?xml version="1.0"?><p:sldLayout xmlns:p="p" xmlns:a="a" xmlns:r="r"><p:cSld>' +
+      `<p:spTree><p:nvGrpSpPr/><p:grpSpPr/>${RECT}</p:spTree></p:cSld></p:sldLayout>`
+    const ctx = { defaultTextStyle: parseDefaultTextStyle(PRES) }
+    const els = parseDecorations(layout, ctx)
+    expect((els[0] as any).text.paragraphs[0].runs[0].fontSize).toBe(12)
   })
 })
 
@@ -78,5 +90,59 @@ describe('placeholder fill donor matching (fed deck body ph)', () => {
     const map = parsePlaceholderMap(LAYOUT)
     const hit = resolvePlaceholderFillSpPr(map, undefined, 'body', '13')
     expect(hit).toBeTruthy()
+  })
+})
+
+describe('mixed-script runs keep the a:latin face for Latin characters', () => {
+  const run = (text: string, lang = 'ko-KR') => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="7" name="T"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>' +
+      `<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="${lang}"><a:latin typeface="NanumSquareEB"/>` +
+      `<a:ea typeface="Malgun Gothic"/></a:rPr><a:t>${text}</a:t></a:r></a:p></p:txBody></p:sp>`
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx: {} })
+    return (slide.elements[0] as any).text.paragraphs[0].runs[0]
+  }
+  it('a Hangul run with Latin digits picks the ea face and remembers the latin face', () => {
+    const r = run('ISO 45001 안전')
+    expect(r.fontFamily).toBe('Malgun Gothic')
+    expect(r.latinFamily).toBe('NanumSquareEB')
+    expect(r.fontScriptHint).toBe('ko')
+  })
+  it('a complex-script run picks a:cs and records no latin alternate', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="8" name="T"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>' +
+      '<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="ar-SA"><a:latin typeface="Calibri"/>' +
+      '<a:cs typeface="Arial"/></a:rPr><a:t>مرحبا 2024</a:t></a:r></a:p></p:txBody></p:sp>'
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx: {} })
+    const r = (slide.elements[0] as any).text.paragraphs[0].runs[0]
+    expect(r.fontFamily).toBe('Arial')
+    expect(r.latinFamily).toBeUndefined()
+  })
+  it('a pure-Latin run draws with the latin face and carries no alternate', () => {
+    const r = run('Global Trend')
+    expect(r.fontFamily).toBe('NanumSquareEB')
+    expect(r.latinFamily).toBeUndefined()
+  })
+})
+
+describe('Latin-only runs: declared charset steers the substitute, lang alone does not', () => {
+  const run = (latinAttrs: string, lang = 'en-US', altLang = 'ko-KR') => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="9" name="T"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>' +
+      `<p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="${lang}" altLang="${altLang}"><a:latin ${latinAttrs}/>` +
+      '</a:rPr><a:t>ISO 45001</a:t></a:r></a:p></p:txBody></p:sp>'
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx: {} })
+    return (slide.elements[0] as any).text.paragraphs[0].runs[0]
+  }
+  it('charset=-127 (Hangul) on the latin face hints ko even for Latin text (prod_029)', () => {
+    const r = run('typeface="LG스마트체 Regular" charset="-127"')
+    expect(r.fontFamily).toBe('LG스마트체 Regular')
+    expect(r.fontScriptHint).toBe('ko')
+  })
+  it('no charset: Latin text carries no hint despite altLang ko-KR (prod_026)', () => {
+    expect(run('typeface="NanumSquareExtraBold"').fontScriptHint).toBeUndefined()
   })
 })

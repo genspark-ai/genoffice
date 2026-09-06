@@ -33,7 +33,14 @@ import type {
   ThemeColors,
   ThemeFonts,
 } from '@genoffice/docx-engine'
-import { ColorPicker, Dropdown, isSymbolFontFamily, useDismissablePopover } from '@genoffice/ui'
+import {
+  ColorPicker,
+  Dropdown,
+  RibbonCollapseButton,
+  isSymbolFontFamily,
+  useDismissablePopover,
+  useRibbonCollapse,
+} from '@genoffice/ui'
 import { HIGHLIGHT_CSS } from '../editor/extensions'
 import { applyCase, type CaseMode } from '../editor/case-transform'
 import { setParagraphDirection, setSelectionAlign } from '../editor/direction'
@@ -198,8 +205,8 @@ interface RibbonProps {
   onZoom: (zoom: number) => void
   /** compute zoom from the current window size (Word: page width / whole page) */
   onZoomFit: (mode: 'width' | 'page') => void
-  darkCanvas: boolean
-  onDarkCanvas: (v: boolean) => void
+  darkPage: boolean
+  onDarkPage: (v: boolean) => void
   onAiPreset: (instruction: string) => void
   /** external request (e.g. native menu Page Setup) to switch to a specific tab */
   tabRequest?: { tab: string; nonce: number } | null
@@ -230,6 +237,9 @@ interface RibbonProps {
   onNewComment: () => void
   trackChanges: boolean
   onTrackChanges: (on: boolean) => void
+  /** native check-as-you-type spellcheck (red squiggle) */
+  spellcheck: boolean
+  onSpellcheck: (on: boolean) => void
   revisionDisplay: RevisionDisplayMode
   onRevisionDisplay: (mode: RevisionDisplayMode) => void
   revisionCount: number
@@ -648,8 +658,8 @@ function RibbonInner({
   zoom,
   onZoom,
   onZoomFit,
-  darkCanvas,
-  onDarkCanvas,
+  darkPage,
+  onDarkPage,
   onAiPreset,
   tabRequest,
   header,
@@ -675,6 +685,8 @@ function RibbonInner({
   onNewComment,
   trackChanges,
   onTrackChanges,
+  spellcheck,
+  onSpellcheck,
   revisionDisplay,
   onRevisionDisplay,
   revisionCount,
@@ -699,6 +711,7 @@ function RibbonInner({
   onPagePreview,
 }: RibbonProps) {
   const { t, lang } = useI18n()
+  const collapse = useRibbonCollapse('aidocs.ribbonCollapsed')
   // The one-click AI actions need text to work on; grey them out on an empty document
   const docEmpty = !hasDoc || fs.docEmpty
   const [tab, setTab] = useState<RibbonTab>('home')
@@ -1110,6 +1123,19 @@ function RibbonInner({
           else if (mode === side && edge[side]) next[side] = solid
         }
         tr = tr.setNodeMarkup(pos, undefined, { ...node.attrs, borders: next })
+      }
+    }
+    if (mode === 'none') {
+      // table-level inside lines (Inside Horizontal/Vertical) would otherwise survive No Borders
+      const tablePos = rect.tableStart - 1
+      const tableNode = tr.doc.nodeAt(tablePos)
+      const prev = tableNode?.attrs.borders as Record<string, BorderSide> | null | undefined
+      if (tableNode?.type.name === 'docTable' && prev && (prev.insideH || prev.insideV)) {
+        const { insideH: _h, insideV: _v, ...rest } = prev
+        tr = tr.setNodeMarkup(tablePos, undefined, {
+          ...tableNode.attrs,
+          borders: Object.keys(rest).length ? rest : null,
+        })
       }
     }
     view.dispatch(tr)
@@ -1903,9 +1929,10 @@ function RibbonInner({
   )
 
   return (
-    <div className="ribbon">
+    <div className={`ribbon ${collapse.rootClass}`} ref={collapse.rootRef}>
       <div
         className={`ribbon-tabs ${IN_TAB ? '' : IS_MAC ? 'ribbon-tabs-mac' : 'ribbon-tabs-win'}`}
+        onDoubleClick={collapse.onTabsDoubleClick}
       >
         {!IS_MAC && (
           <div className="file-tab-wrap">
@@ -1953,6 +1980,7 @@ function RibbonInner({
             key={tabName}
             className={`ribbon-tab ${tab === tabName ? 'active' : ''}`}
             onClick={() => {
+              collapse.onTabPress(tab === tabName)
               lastRegularTab.current = tabName
               setTab(tabName)
               setDropdown(null)
@@ -1968,6 +1996,7 @@ function RibbonInner({
               key={tableTab}
               className={`ribbon-tab ${tab === tableTab ? 'active' : ''}`}
               onClick={() => {
+                collapse.onTabPress(tab === tableTab)
                 setTab(tableTab)
                 setDropdown(null)
               }}
@@ -1981,6 +2010,7 @@ function RibbonInner({
               key={imageTab}
               className={`ribbon-tab ${tab === imageTab ? 'active' : ''}`}
               onClick={() => {
+                collapse.onTabPress(tab === imageTab)
                 setTab(imageTab)
                 setDropdown(null)
               }}
@@ -1994,6 +2024,7 @@ function RibbonInner({
               key={shapeTab}
               className={`ribbon-tab ${tab === shapeTab ? 'active' : ''}`}
               onClick={() => {
+                collapse.onTabPress(tab === shapeTab)
                 setTab(shapeTab)
                 setDropdown(null)
               }}
@@ -2005,7 +2036,7 @@ function RibbonInner({
         {trailingActions}
       </div>
 
-      <div className="ribbon-body">
+      <div className="ribbon-body" data-ribbon-body="">
         {tab === 'shapeFormat' && inShape ? (
           <div className="table-ribbon-body">
             <div className="ribbon-group">
@@ -3813,6 +3844,8 @@ function RibbonInner({
             onNewComment={onNewComment}
             trackChanges={trackChanges}
             onTrackChanges={onTrackChanges}
+            spellcheck={spellcheck}
+            onSpellcheck={onSpellcheck}
             revisionDisplay={revisionDisplay}
             onRevisionDisplay={onRevisionDisplay}
             revisionCount={revisionCount}
@@ -3835,8 +3868,8 @@ function RibbonInner({
             onZoomFit={onZoomFit}
             showAi={showAi}
             onToggleAi={onToggleAi}
-            darkCanvas={darkCanvas}
-            onDarkCanvas={onDarkCanvas}
+            darkPage={darkPage}
+            onDarkPage={onDarkPage}
             showRuler={showRuler}
             onShowRuler={onShowRuler}
             showNav={showNav}
@@ -3853,6 +3886,10 @@ function RibbonInner({
           />
         )}
       </div>
+      <RibbonCollapseButton
+        state={collapse}
+        labels={{ collapse: t('ribbonCollapse'), pin: t('ribbonPin') }}
+      />
 
       {pictureDialog === 'cutout' && imageDataUrl && (
         <CutoutDialog

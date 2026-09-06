@@ -12,6 +12,8 @@ export const pl = {
   ribbonTabLayout: 'Układ',
   ribbonTabReferences: 'Odwołania',
   ribbonTabReview: 'Recenzja',
+  ribbonCollapse: 'Zwiń Wstążkę',
+  ribbonPin: 'Przypnij Wstążkę',
   ribbonTabView: 'Widok',
   ribbonTabTableDesign: 'Projekt tabeli',
   ribbonTabTableLayout: 'Układ tabeli',
@@ -297,6 +299,8 @@ export const pl = {
   ribbonChartAddCategory: '+ Kategoria',
   ribbonChartAddSeries: '+ Seria',
   ribbonLinkInsertTitle: 'Wstaw hiperlink',
+  ribbonLinkEditTitle: 'Edytuj hiperłącze',
+  ribbonLinkRemove: 'Usuń łącze',
   ribbonLinkText: 'Tekst do wyświetlenia',
   ribbonLinkTextPh: 'Tekst linku (pozostaw puste, aby wyświetlić adres)',
   ribbonLinkAddress: 'Adres',
@@ -577,6 +581,8 @@ export const pl = {
   ribbonEditorPrompt:
     'Zrób korektę całego dokumentu: popraw literówki, interpunkcję i błędy gramatyczne, zachowując pierwotny sens i strukturę akapitów.',
   ribbonGroupProofing: 'Sprawdzanie',
+  ribbonSpellcheckBtn: 'Pisownia',
+  ribbonSpellcheckTip: 'Sprawdzaj pisownię podczas pisania — podkreśla na czerwono możliwe błędy',
   ribbonTranslate: 'Przetłumacz',
   ribbonTranslateTip: 'AI przetłumaczy dokument',
   ribbonTranslatePrompt:

@@ -86,6 +86,28 @@ describe('setElementParagraphFormat', () => {
     expect(el.text!.paragraphs[1]!.bullet).toBeUndefined()
   })
 
+  it('a new bullet color replaces a captured theme buClr node (no stale schemeClr)', () => {
+    const theme = { colors: { accent1: '4472C4', dk1: '000000', lt1: 'FFFFFF' } } as any
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(
+        spWith(
+          '<a:bodyPr/><a:p><a:pPr marL="228600" indent="-228600">' +
+            '<a:buClr><a:schemeClr val="accent1"><a:lumMod val="75000"/></a:schemeClr></a:buClr>' +
+            '<a:buChar char="•"/></a:pPr><a:r><a:t>x</a:t></a:r></a:p>',
+        ),
+      ),
+      ctx: { theme },
+    })
+    const el = slide.elements[0] as TextElement
+    expect(el.text!.paragraphs[0]!.bullet!.colorNodeXml).toContain('schemeClr')
+    setElementParagraphFormat(slide, el.id, { bulletColor: '#0070C0' })
+    expect(el.text!.paragraphs[0]!.bullet!.colorNodeXml).toBeUndefined()
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buClr><a:srgbClr val="0070C0"/></a:buClr>')
+    expect(out).not.toContain('schemeClr')
+  })
+
   it('changing the bullet glyph keeps existing color/size', () => {
     const { slide, el } = parseOne('<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p>')
     setElementParagraphFormat(slide, el.id, { bullet: 'char' })

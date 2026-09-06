@@ -58,6 +58,43 @@ describe('field paragraph display model', () => {
     })
   })
 
+  it('a TOC entry carries the leading result run face and weight (Word draws the entry with its runs)', async () => {
+    const entry = (rPr: string) =>
+      '<w:p><w:pPr><w:pStyle w:val="TOC2"/><w:tabs><w:tab w:val="right" w:pos="8786"/></w:tabs>' +
+      '<w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>' +
+      '<w:hyperlink w:anchor="_Toc1">' +
+      `<w:r>${rPr}<w:t>Annexe 1-1 : Classification</w:t></w:r>` +
+      '<w:r><w:tab/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> PAGEREF _Toc1 \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>6</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '</w:hyperlink></w:p>'
+    const styled = entry(
+      '<w:rPr><w:rFonts w:ascii="Times New Roman" w:eastAsia="MS Gothic" w:hAnsi="Times New Roman"/><w:b/></w:rPr>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: styled + entry('') }))
+    expect(doc.blocks[0].fieldDisplay).toMatchObject({
+      kind: 'tocLine',
+      left: 'Annexe 1-1 : Classification',
+      right: '6',
+      fontFamily: 'Times New Roman',
+      bold: true,
+    })
+    // the paragraph mark's sz is not the entry's text size
+    expect(doc.blocks[0].fieldDisplay?.szHalfPoints).toBeUndefined()
+    expect(doc.blocks[1].fieldDisplay?.fontFamily).toBeUndefined()
+    expect(doc.blocks[1].fieldDisplay?.bold).toBeUndefined()
+    // a wholly deleted CJK entry still resolves the East Asian face
+    const deleted =
+      '<w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr><w:del w:id="1" w:author="a" w:date="2024-01-01T00:00:00Z">' +
+      '<w:r><w:rPr><w:rFonts w:ascii="Times New Roman" w:eastAsia="SimSun"/></w:rPr><w:delText>\u7b2c\u4e00\u7ae0</w:delText></w:r>' +
+      '</w:del></w:p>'
+    const del = await parseDocx(await buildDocx({ bodyXml: deleted }))
+    expect(del.blocks[0].fieldDisplay).toMatchObject({ deleted: true, fontFamily: 'SimSun' })
+  })
+
   it('field-end + page break paragraph shows as a pageBreak marker', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: FIELD_END_PAGEBREAK_PARAGRAPH }))
     expect(doc.blocks[0].fieldDisplay).toEqual({ kind: 'pageBreak' })
@@ -295,6 +332,24 @@ describe('FORMCHECKBOX form fields', () => {
     expect(doc.blocks[0].runs?.map((r) => r.text)).toEqual(['item: ', '☐'])
   })
 
+  it('sizes the glyph by the begin run rPr like a sizeAuto box', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: checkboxParagraph('<w:default w:val="0"/>').replace(
+          '<w:r><w:fldChar w:fldCharType="begin">',
+          '<w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="begin">',
+        ),
+      }),
+    )
+    expect(doc.blocks[0].runs?.[1]).toMatchObject({
+      text: '☐',
+      instrField: 'FORMCHECKBOX',
+      sizeHalfPoints: 16,
+      font: 'Calibri',
+    })
+    expect(doc.blocks[0].runs?.[1].fldBeginXml).toContain('<w:sz w:val="16"/>')
+  })
+
   it('checked state comes from w:checked (wins over w:default)', async () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: checkboxParagraph('<w:default w:val="0"/><w:checked/>') }),
@@ -446,12 +501,12 @@ describe('mixed-size text fields (manual drop cap)', () => {
     // dominant size = the inherited default (body text outweighs the cap letter)
     expect(field.szHalfPoints).toBeUndefined()
     expect(field.runs).toEqual([
-      { text: 'L', szHalfPoints: 96 },
+      { text: 'L', sizeHalfPoints: 96 },
       { text: 'ight. Living give. Rule grass light.' },
     ])
   })
 
-  it('a uniform explicit size keeps the single-size shape (no runs)', async () => {
+  it('a uniform explicit size keeps the dominant size on the wrapper', async () => {
     const xml =
       '<w:p>' +
       '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
@@ -461,6 +516,45 @@ describe('mixed-size text fields (manual drop cap)', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
     const field = doc.blocks[0].fieldDisplay!
     expect(field.szHalfPoints).toBe(24)
+    expect(field.runs).toEqual([{ text: 'uniform text', sizeHalfPoints: 24 }])
+  })
+})
+
+describe('citation text fields (ADDIN ZOTERO_ITEM in a justified body paragraph)', () => {
+  const CITATION_PARAGRAPH =
+    '<w:p><w:pPr><w:jc w:val="both"/></w:pPr>' +
+    '<w:r><w:t xml:space="preserve">Published in </w:t></w:r>' +
+    '<w:r><w:rPr><w:i/></w:rPr><w:t>European Radiology</w:t></w:r>' +
+    '<w:r><w:t xml:space="preserve">, this study </w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+    '<w:r><w:instrText xml:space="preserve"> ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"x"} </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+    '<w:r><w:rPr><w:i/></w:rPr><w:t>(21)</w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+    '<w:r><w:t xml:space="preserve">. </w:t></w:r></w:p>'
+
+  it('keeps the result runs formatted and the paragraph justified', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: CITATION_PARAGRAPH }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('passthrough')
+    const field = block.fieldDisplay!
+    expect(field.kind).toBe('text')
+    expect(field.align).toBe('justify')
+    expect(field.left).toBe('Published in European Radiology, this study (21).')
+    expect(field.runs).toEqual([
+      { text: 'Published in ' },
+      { text: 'European Radiology', italic: true },
+      { text: ', this study ' },
+      { text: '(21)', italic: true },
+      { text: '.' },
+    ])
+  })
+
+  it('falls back to the plain string when tabs keep the runs from reproducing it', async () => {
+    const xml = CITATION_PARAGRAPH.replace('<w:t>(21)</w:t>', '<w:tab/><w:t>(21)</w:t>')
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const field = doc.blocks[0].fieldDisplay!
     expect(field.runs).toBeUndefined()
+    expect(field.left).toBe('Published in European Radiology, this study (21).')
   })
 })

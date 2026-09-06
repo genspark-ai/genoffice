@@ -104,6 +104,7 @@ function runStyle(run: TextRun, scale: number, fontScale: number): RunStyle {
   return {
     fontFamily: run.fontFamily || DEFAULT_FONT,
     ...(run.fontScriptHint != null ? { substScript: run.fontScriptHint } : {}),
+    ...(run.text && !hasWideChar(run.text) ? { latinOnly: true } : {}),
     fontSizePx: ptToPx(effPt, scale),
     bold: !!run.bold,
     italic: !!run.italic,
@@ -296,10 +297,31 @@ function symbolRunText(text: string): string {
 }
 
 /** Splits a paragraph's runs into a breakable token stream (whitespace / single CJK chars / Latin words). */
+function hasWideChar(text: string): boolean {
+  for (const ch of text) if (isWideChar(ch.codePointAt(0) ?? 0)) return true
+  return false
+}
+
+/** Basic/Latin-1/Latin Extended letters, digits, general punctuation and currency signs. */
+const LATIN_WORD_RE = /^[\u0020-\u024f\u1e00-\u1eff\u2000-\u206f\u20a0-\u20cf\u2100-\u214f]+$/
+const HALFWIDTH_KANA_RE = /[\uff61-\uff9f]/
+
 function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Token[] {
   const tokens: Token[] = []
   p.runs.forEach((run, srcRun) => {
     const style = runStyle(run, scale, fontScale)
+    // Latin characters of a CJK-bucket run draw with the run's a:latin face (PowerPoint):
+    // the script hint stays with the CJK glyphs, Latin substitutes as western
+    // Also when both slots name the same missing CJK face: PowerPoint still sets the Latin
+    // characters in the Latin default (probe: "Noto Sans KR" Hangul lines' digits are Calibri).
+    // Latin-only runs stay whole: their hint is the declared @charset, which does steer them.
+    // Halfwidth kana are ea-bucket text for the parser without being EAW-wide
+    let latinStyle: RunStyle | undefined
+    const eaText = hasWideChar(run.text) || HALFWIDTH_KANA_RE.test(run.text)
+    if (run.latinFamily || (run.fontScriptHint != null && eaText)) {
+      latinStyle = { ...style, fontFamily: run.latinFamily ?? style.fontFamily, latinOnly: true }
+      delete latinStyle.substScript
+    }
     const color = run.color ?? '#000000'
     const underline = !!run.underline
     const ls = run.letterSpacing ? ptToPx(run.letterSpacing, scale) * fontScale : 0
@@ -366,13 +388,15 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
     let buf = ''
     const flushWord = () => {
       if (!buf) return
+      // only genuinely Latin words switch face; Arabic/Hebrew/Thai/halfwidth kana stay on the bucket face
+      const wordBase = latinStyle && LATIN_WORD_RE.test(buf) ? { ...base, style: latinStyle } : base
       if (WORD_SEG && SEA_RE.test(buf)) {
         // Southeast Asian scripts without spaces: ICU dictionary segmentation; word gaps are break opportunities
         for (const s of WORD_SEG.segment(buf)) {
-          tokens.push({ ...base, text: s.segment, breakable: true, isSpace: false })
+          tokens.push({ ...wordBase, text: s.segment, breakable: true, isSpace: false })
         }
       } else {
-        tokens.push({ ...base, text: buf, breakable: false, isSpace: false })
+        tokens.push({ ...wordBase, text: buf, breakable: false, isSpace: false })
       }
       buf = ''
     }
@@ -493,11 +517,14 @@ function formatAutoNum(n: number, numType: string | undefined): string {
 /**
  * Legacy symbol-font bullets (<a:buFont> Wingdings/Webdings): the glyph must be drawn
  * with that font, and ASCII bullet codes normalized into the font's F0xx PUA range
- * (files carry either encoding; the shipped fonts map the PUA).
+ * (files carry either encoding; the shipped fonts map the PUA). Adobe Symbol bullets
+ * (U+F0B7 "•", U+F0A7 "▪") go through the Symbol→Unicode table like Symbol runs do.
  */
 const SYMBOL_BULLET_RE = /^(wingdings|webdings)/i
 function symbolBulletText(font: string | undefined, char: string): string | undefined {
-  if (!font || !SYMBOL_BULLET_RE.test(font)) return undefined
+  if (!font) return undefined
+  if (SYMBOL_FONT_RE.test(font)) return symbolRunText(char)
+  if (!SYMBOL_BULLET_RE.test(font)) return undefined
   const cp = char.codePointAt(0) ?? 0
   if (cp >= 0xf000 && cp <= 0xf0ff) return char
   return cp >= 0x20 && cp <= 0xff ? String.fromCodePoint(0xf000 + cp) : char

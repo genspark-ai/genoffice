@@ -1,4 +1,4 @@
-/** AI picture tools: crop_image / set_picture_opacity / replace_image dispatch and guards. */
+/** AI picture tool replace_image: dispatch and guards (crop/opacity moved to apply_ops setPictureSrcRect/setPictureOpacity). */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createSlidesSkill, type DeckAccess } from '../src/renderer/ai/slides-skill'
 import type { RenderSlide, PlacedBox } from '@genoffice/pptx-render'
@@ -65,72 +65,6 @@ beforeEach(() => {
 })
 const api = () =>
   (window as unknown as { slidesApi: Record<string, ReturnType<typeof vi.fn>> }).slidesApi
-
-describe('crop_image', () => {
-  it('applies a clamped srcRect and reports mutation', async () => {
-    const r = await createSlidesSkill(mkAccess()).executeTool!(
-      call('crop_image', { l: 0.1, t: 0, r: 0.25, b: 0 }),
-    )
-    expect(r.mutated).toBe(true)
-    expect(api().editPictureSrcRect).toHaveBeenCalledWith({
-      slideIndex: 0,
-      sourceId: 'pic1',
-      srcRect: { l: 0.1, t: 0, r: 0.25, b: 0 },
-    })
-  })
-
-  it('all-zero fractions remove the crop (srcRect null)', async () => {
-    await createSlidesSkill(mkAccess()).executeTool!(call('crop_image', { l: 0, t: 0, r: 0, b: 0 }))
-    expect(api().editPictureSrcRect).toHaveBeenCalledWith(
-      expect.objectContaining({ srcRect: null }),
-    )
-  })
-
-  it('refuses a crop that removes the whole image', async () => {
-    const r = await createSlidesSkill(mkAccess()).executeTool!(
-      call('crop_image', { l: 0.6, t: 0, r: 0.6, b: 0 }),
-    )
-    expect(r.isError).toBe(true)
-    expect(api().editPictureSrcRect).not.toHaveBeenCalled()
-  })
-
-  it('refuses non-picture targets and grouped pictures', async () => {
-    const skill = createSlidesSkill(mkAccess())
-    const r1 = await skill.executeTool!(
-      call('crop_image', { sourceId: 'sh1', l: 0, t: 0, r: 0, b: 0 }),
-    )
-    expect(r1.isError).toBe(true)
-    expect(r1.output).toContain('not a picture')
-    const r2 = await skill.executeTool!(
-      call('crop_image', { sourceId: 'pic2', l: 0, t: 0, r: 0, b: 0 }),
-    )
-    expect(r2.isError).toBe(true)
-    expect(r2.output).toContain('group')
-    expect(api().editPictureSrcRect).not.toHaveBeenCalled()
-  })
-})
-
-describe('set_picture_opacity', () => {
-  it('applies a valid opacity', async () => {
-    const r = await createSlidesSkill(mkAccess()).executeTool!(
-      call('set_picture_opacity', { opacity: 0.35 }),
-    )
-    expect(r.mutated).toBe(true)
-    expect(api().editPictureOpacity).toHaveBeenCalledWith({
-      slideIndex: 0,
-      sourceId: 'pic1',
-      opacity: 0.35,
-    })
-  })
-
-  it('rejects out-of-range opacity', async () => {
-    const r = await createSlidesSkill(mkAccess()).executeTool!(
-      call('set_picture_opacity', { opacity: 1.5 }),
-    )
-    expect(r.isError).toBe(true)
-    expect(api().editPictureOpacity).not.toHaveBeenCalled()
-  })
-})
 
 describe('replace_image', () => {
   it('swaps in place and passes keepCrop through as keepSrcRect', async () => {

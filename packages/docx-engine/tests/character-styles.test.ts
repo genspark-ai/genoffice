@@ -104,6 +104,67 @@ describe('character styles (w:rStyle)', () => {
   })
 })
 
+describe('hyperlink runs keep their own rStyle', () => {
+  const LINK_RELS =
+    '<Relationship Id="rId20" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/>'
+  // localized Word builds give the Hyperlink style an opaque id ("ae", "a3")
+  const LOCAL_HYPERLINK =
+    '<w:style w:type="character" w:styleId="ae"><w:name w:val="Hyperlink"/>' +
+    '<w:rPr><w:u w:val="single"/></w:rPr></w:style>'
+
+  it('a localized style id on a link run survives a text edit', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:hyperlink r:id="rId20"><w:r><w:rPr><w:rStyle w:val="ae"/><w:sz w:val="16"/></w:rPr>' +
+          '<w:t>https://example.com/</w:t></w:r></w:hyperlink></w:p>',
+        extraRels: LINK_RELS,
+        extraStylesXml: LOCAL_HYPERLINK,
+      }),
+    )
+    const run = doc.blocks[0].runs![0]
+    expect(run.styleId).toBe('ae')
+    expect(run.link?.rId).toBe('rId20')
+    const xml = generateParagraphXml(
+      { type: 'paragraph', runs: [{ ...run, text: 'https://example.com/x' }] },
+      GEN_CTX,
+    )
+    expect(xml).toContain('<w:rStyle w:val="ae"/>')
+    expect(xml).not.toContain('Hyperlink')
+  })
+
+  it('an unstyled run inside an existing hyperlink stays unstyled', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:hyperlink r:id="rId20"><w:r><w:rPr><w:i/></w:rPr>' +
+          '<w:t>mail@example.com</w:t></w:r></w:hyperlink></w:p>',
+        extraRels: LINK_RELS,
+      }),
+    )
+    const run = doc.blocks[0].runs![0]
+    const xml = generateParagraphXml(
+      { type: 'paragraph', runs: [{ ...run, text: 'mail@example.com [1]' }] },
+      GEN_CTX,
+    )
+    expect(xml).toContain('<w:hyperlink r:id="rId20">')
+    expect(xml).toContain('<w:rPr><w:i/></w:rPr>')
+    expect(xml).not.toContain('<w:rStyle')
+  })
+
+  it('a newly linked run gets the implied Hyperlink style', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:rPr><w:i/></w:rPr><w:t>plain</w:t></w:r></w:p>' }),
+    )
+    const run = doc.blocks[0].runs![0]
+    const xml = generateParagraphXml(
+      { type: 'paragraph', runs: [{ ...run, link: { href: 'https://new.example/' } }] },
+      GEN_CTX,
+    )
+    expect(xml).toContain('<w:rStyle w:val="Hyperlink"/>')
+  })
+})
+
 describe('linkedStyle (w:link) and docDefaults backfill', () => {
   it('when a character-style shell has no rPr, run-level display attributes come from the linked paragraph style', async () => {
     const styles =

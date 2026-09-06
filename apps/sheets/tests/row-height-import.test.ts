@@ -22,9 +22,32 @@ function makeWorksheet() {
     setRowAutoHeight: (row: number) =>
       calls.push({ method: 'auto', row, suppressed: loadAutoHeightSuppression.active }),
     hideRows: (row: number) => calls.push({ method: 'hide', row }),
-    getSheet: () => ({ setRowStyle: () => undefined }),
+    getSheetId: () => 'sheet-1',
+    getSheet: () => ({
+      setRowStyle: () => undefined,
+      getUnitId: () => 'unit-1',
+      getColumnCount: () => 4,
+    }),
   }
-  return { worksheet, calls }
+  // Auto-height and hidden rows now arrive as one ranged command / mutation;
+  // expand them back to per-row entries so the expectations stay row-based.
+  const runtime = {
+    univerAPI: {
+      syncExecuteCommand: (
+        id: string,
+        params: { ranges: Array<{ startRow: number; endRow: number }> },
+      ) => {
+        for (const range of params.ranges) {
+          for (let row = range.startRow; row <= range.endRow; row += 1) {
+            if (id === 'sheet.command.set-row-is-auto-height') worksheet.setRowAutoHeight(row)
+            else if (id === 'sheet.mutation.set-row-hidden') worksheet.hideRows(row)
+          }
+        }
+        return true
+      },
+    },
+  }
+  return { worksheet, calls, runtime }
 }
 
 function makeState(defaultRowHeight: number | null = null) {
@@ -38,8 +61,8 @@ function makeState(defaultRowHeight: number | null = null) {
 
 describe('applyRowProperties', () => {
   it('applies stored heights verbatim and never re-measures on open', () => {
-    const { worksheet, calls } = makeWorksheet()
-    applyRowProperties(worksheet as never, makeState() as never, 'sheet-1', [
+    const { worksheet, calls, runtime } = makeWorksheet()
+    applyRowProperties(runtime as never, worksheet as never, makeState() as never, 'sheet-1', [
       // customHeight="1": the user fixed it — clip like Excel, stay locked.
       { row: 0, height: 56, customHeight: true, hidden: false },
       // Plain ht: Excel renders the stored value as-is on open; the row only
@@ -56,9 +79,9 @@ describe('applyRowProperties', () => {
   })
 
   it('records file-hidden rows so the viewport loader can budget by visible rows', () => {
-    const { worksheet } = makeWorksheet()
+    const { worksheet, runtime } = makeWorksheet()
     const state = makeState()
-    applyRowProperties(worksheet as never, state as never, 'sheet-1', [
+    applyRowProperties(runtime as never, worksheet as never, state as never, 'sheet-1', [
       { row: 0, hidden: false },
       { row: 1, hidden: true },
       { row: 2, hidden: true },
@@ -67,16 +90,16 @@ describe('applyRowProperties', () => {
   })
 
   it('drops the suppression flag after the rows are applied', () => {
-    const { worksheet } = makeWorksheet()
-    applyRowProperties(worksheet as never, makeState() as never, 'sheet-1', [
+    const { worksheet, runtime } = makeWorksheet()
+    applyRowProperties(runtime as never, worksheet as never, makeState() as never, 'sheet-1', [
       { row: 0, height: 20, hidden: false },
     ] as never)
     expect(loadAutoHeightSuppression.active).toBe(false)
   })
 
   it('keeps sub-default heights locked — spacer rows are not auto-fit results', () => {
-    const { worksheet, calls } = makeWorksheet()
-    applyRowProperties(worksheet as never, makeState() as never, 'sheet-1', [
+    const { worksheet, calls, runtime } = makeWorksheet()
+    applyRowProperties(runtime as never, worksheet as never, makeState() as never, 'sheet-1', [
       // Print-style layouts build vertical rhythm from tiny rows; an edit-time
       // auto-fit would balloon each to a full text line.
       { row: 0, height: 2.25, hidden: false },
@@ -95,8 +118,8 @@ describe('applyRowProperties', () => {
   it('treats Excel-default rows as auto rows when the file omits the default', () => {
     // No sheetFormatPr default → the cutoff is Excel's factory 15pt (20px),
     // not Univer's taller UI default, so ordinary 15pt rows keep auto mode.
-    const { worksheet, calls } = makeWorksheet()
-    applyRowProperties(worksheet as never, makeState(null) as never, 'sheet-1', [
+    const { worksheet, calls, runtime } = makeWorksheet()
+    applyRowProperties(runtime as never, worksheet as never, makeState(null) as never, 'sheet-1', [
       { row: 0, height: 15, hidden: false },
     ] as never)
     expect(calls).toEqual([
@@ -108,8 +131,8 @@ describe('applyRowProperties', () => {
   it('compares a row at a fractional default as at-default, not below', () => {
     // 14.3pt → 19.07px: both sides round to 19, so the row is not treated as
     // a spacer.
-    const { worksheet, calls } = makeWorksheet()
-    applyRowProperties(worksheet as never, makeState(14.3) as never, 'sheet-1', [
+    const { worksheet, calls, runtime } = makeWorksheet()
+    applyRowProperties(runtime as never, worksheet as never, makeState(14.3) as never, 'sheet-1', [
       { row: 0, height: 14.3, hidden: false },
     ] as never)
     expect(calls).toEqual([
@@ -119,13 +142,13 @@ describe('applyRowProperties', () => {
   })
 
   it('re-applies when the customHeight flag changes but dedupes repeats', () => {
-    const { worksheet, calls } = makeWorksheet()
+    const { worksheet, calls, runtime } = makeWorksheet()
     const state = makeState()
     const rows = [{ row: 0, height: 56, hidden: false }] as never
-    applyRowProperties(worksheet as never, state as never, 'sheet-1', rows)
-    applyRowProperties(worksheet as never, state as never, 'sheet-1', rows)
+    applyRowProperties(runtime as never, worksheet as never, state as never, 'sheet-1', rows)
+    applyRowProperties(runtime as never, worksheet as never, state as never, 'sheet-1', rows)
     expect(calls).toHaveLength(2)
-    applyRowProperties(worksheet as never, state as never, 'sheet-1', [
+    applyRowProperties(runtime as never, worksheet as never, state as never, 'sheet-1', [
       { row: 0, height: 56, customHeight: true, hidden: false },
     ] as never)
     expect(calls).toEqual([

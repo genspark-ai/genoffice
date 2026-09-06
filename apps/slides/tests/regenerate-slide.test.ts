@@ -1,4 +1,4 @@
-/** Skill-layer behavior of the regenerate_slide (redo one page in place) and delete_slide tools. */
+/** Skill-layer behavior of the regenerate_slide (redo one page in place) tool. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createSlidesSkill, type DeckAccess } from '../src/renderer/ai/slides-skill'
 import type { RenderSlide } from '@genoffice/pptx-render'
@@ -159,7 +159,7 @@ describe('regenerate_slide', () => {
     expect(r.output).toContain('conversion timeout')
   })
 
-  it('htmlGenerated=true after success (native tools no longer blocked by the anti-handcrafting gate)', async () => {
+  it('htmlGenerated=true after success (insert ops no longer blocked by the anti-handcrafting gate)', async () => {
     const skill = createSlidesSkill(
       mkAccess([page], {
         regenerateSlide: vi.fn(async () => ({ ok: true })),
@@ -168,44 +168,25 @@ describe('regenerate_slide', () => {
       }),
     )
     await skill.executeTool!(call('regenerate_slide', { slideIndex: 0, brief: 'x' }))
-    ;(window as any).slidesApi.addElement = vi.fn(async () => ({ slide: page, sourceId: 'e1' }))
+    ;(window as any).slidesApi.applyTxn = vi.fn(async () => ({
+      applied: true,
+      records: [{ op: 'addElement', target: '0', created: ['e1'] }],
+      slides: [page],
+    }))
     const r = await skill.executeTool!(
-      call('add_text_box', {
-        slideIndex: 0,
-        x: 1,
-        y: 1,
-        w: 10,
-        h: 10,
-        paragraphs: [{ text: 'x' }],
+      call('apply_ops', {
+        ops: [
+          {
+            op: 'addElement',
+            target: { slide: 0 },
+            kind: 'textbox',
+            offset: { x: 1, y: 1, cx: 10, cy: 10 },
+            paragraphs: [{ runs: [{ text: 'x' }] }],
+          },
+        ],
       }),
     )
     expect(r.isError).toBeUndefined()
-  })
-})
-
-describe('delete_slide', () => {
-  it('deletes the given slide and writes back via applyDeck', async () => {
-    const access = mkAccess([page, page, page])
-    const r = await createSlidesSkill(access).executeTool!(call('delete_slide', { slideIndex: 2 }))
-    expect(r.isError).toBeUndefined()
-    expect(r.mutated).toBe(true)
-    expect((window as any).slidesApi.deleteSlide).toHaveBeenCalledWith(2)
-    expect(access.applyDeck).toHaveBeenCalledOnce()
-    expect(r.output).toContain('has 2 pages')
-  })
-
-  it('only one slide left → refused', async () => {
-    const r = await createSlidesSkill(mkAccess([page])).executeTool!(
-      call('delete_slide', { slideIndex: 0 }),
-    )
-    expect(r.isError).toBe(true)
-    expect((window as any).slidesApi.deleteSlide).not.toHaveBeenCalled()
-  })
-
-  it('out of range → errors', async () => {
-    const r = await createSlidesSkill(mkAccess([page, page])).executeTool!(
-      call('delete_slide', { slideIndex: 5 }),
-    )
-    expect(r.isError).toBe(true)
+    expect((window as any).slidesApi.applyTxn).toHaveBeenCalledOnce()
   })
 })

@@ -17,7 +17,7 @@
  */
 import type { CommentInfo } from '@genoffice/docx-engine'
 import type { EditorView } from '@tiptap/pm/view'
-import type { Mark as PmMark } from '@tiptap/pm/model'
+import type { Mark as PmMark, Node as PmNode } from '@tiptap/pm/model'
 import { t } from '../i18n/locale'
 
 export const MARKUP_AREA_W = 200
@@ -118,7 +118,7 @@ function fmtDesc(old: Record<string, unknown>, marks: readonly PmMark[]): string
   return parts.join(', ') || t('editorFormatRevision')
 }
 
-type RevItem = { kind: 'del' | 'fmt'; from: number; to: number; text: string }
+export type RevItem = { kind: 'del' | 'fmt'; from: number; to: number; text: string }
 
 /**
  * Tracked revisions that live in balloons, in document order, merged over
@@ -126,9 +126,9 @@ type RevItem = { kind: 'del' | 'fmt'; from: number; to: number; text: string }
  * fully deleted paragraph chains with the next paragraph's leading deletion
  * into one balloon, matching Word's "XXX¶XXX¶" grouping.
  */
-function revGroupsOf(view: EditorView): RevItem[] {
+export function revGroupsOf(doc: PmNode): RevItem[] {
   const items: RevItem[] = []
-  view.state.doc.descendants((node, pos) => {
+  doc.descendants((node, pos) => {
     if (node.isTextblock) {
       if (node.attrs?.pPrChange) {
         items.push({ kind: 'fmt', from: pos + 1, to: pos + 1, text: t('editorFormatRevision') })
@@ -174,8 +174,14 @@ function revGroupsOf(view: EditorView): RevItem[] {
   return groups
 }
 
-/** Nearest on-screen box before a hidden position: previous visible sibling, walking up. */
-function visibleRectNear(el: HTMLElement | null, pm: HTMLElement): DOMRect | null {
+export type AnchorPoint = { top: number; bottom: number; left: number }
+
+/**
+ * On-screen point for a hidden element: the end of the previous visible
+ * sibling, else the first line of the nearest visible ancestor (a deletion
+ * opening a paragraph anchors at that paragraph's start), walking up.
+ */
+export function visiblePointNear(el: HTMLElement | null, pm: HTMLElement): AnchorPoint | null {
   let cur: HTMLElement | null = el
   while (cur && cur !== pm) {
     for (
@@ -184,21 +190,27 @@ function visibleRectNear(el: HTMLElement | null, pm: HTMLElement): DOMRect | nul
       sib = sib.previousElementSibling as HTMLElement | null
     ) {
       const rects = sib.getClientRects()
-      if (rects.length > 0) return rects[rects.length - 1]
+      if (rects.length > 0) {
+        const r = rects[rects.length - 1]
+        return { top: r.top, bottom: r.bottom, left: r.right }
+      }
     }
-    cur = cur.parentElement
+    const parent = cur.parentElement
+    if (!parent || parent === pm) break
+    const own = parent.getClientRects()
+    if (own.length > 0) {
+      const r = own[0]
+      return { top: r.top, bottom: r.top + Math.min(r.height, 16), left: r.left }
+    }
+    cur = parent
   }
   return null
 }
 
-function anchorPointFor(
-  view: EditorView,
-  pm: HTMLElement,
-  pos: number,
-): { top: number; bottom: number; left: number } | null {
+export function anchorPointFor(view: EditorView, pm: HTMLElement, pos: number): AnchorPoint | null {
   const clamped = Math.max(0, Math.min(pos, view.state.doc.content.size))
   try {
-    const c = view.coordsAtPos(clamped)
+    const c = view.coordsAtPos(clamped, -1)
     if (c && (c.top !== 0 || c.left !== 0 || c.bottom !== 0)) {
       return { top: c.top, bottom: c.bottom, left: c.left }
     }
@@ -206,14 +218,13 @@ function anchorPointFor(
     /* position renders inside hidden (balloon-collapsed) content */
   }
   try {
-    const { node } = view.domAtPos(clamped)
-    const el = (node instanceof HTMLElement ? node : node.parentElement) as HTMLElement | null
-    const rect = visibleRectNear(el, pm)
-    if (rect) return { top: rect.bottom, bottom: rect.bottom, left: rect.right }
+    const { node, offset } = view.domAtPos(clamped)
+    const child = node.childNodes[offset] ?? node.childNodes[offset - 1] ?? node
+    const el = (child instanceof HTMLElement ? child : child.parentElement) as HTMLElement | null
+    return visiblePointNear(el, pm)
   } catch {
-    /* fall through */
+    return null
   }
-  return null
 }
 
 /** Page bands (wrap coords) from the top-level page-gap widgets; one whole-doc band when absent. */
@@ -240,6 +251,7 @@ export function clearMarginAnnotations(wrap: HTMLElement): void {
 
 /** parsed block subset for anchoring comments that never produced a text mark */
 export interface AnchorBlock {
+  type?: string
   docxIndex?: number | null
   originalXml?: string | null
 }
@@ -323,7 +335,7 @@ export function syncMarginAnnotations(
   // revision balloons: only in balloon mode (print view, All Markup), where the
   // deleted text / format chips have left the flow
   if (view && wrap.closest('.rev-balloon')) {
-    for (const g of revGroupsOf(view)) {
+    for (const g of revGroupsOf(view.state.doc)) {
       const p = anchorPointFor(view, pm, g.from)
       if (!p) continue
       // hidden deletions have no rects for the bar pass above: mark their anchor

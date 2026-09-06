@@ -24,6 +24,19 @@ export function tocLevelOf(styleId: string, styles?: Map<string, StyleInfo>): nu
   return null
 }
 
+/** direct face of a run for its script: eastAsia for CJK text, else ascii (hAnsi fallback) */
+function leadingRunFont(rPr: string, text: string): string | undefined {
+  const fonts = /<w:rFonts [^/>]*/.exec(rPr)?.[0]
+  if (!fonts) return undefined
+  const ea = /[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/.test(text)
+    ? /w:eastAsia="([^"]+)"/.exec(fonts)?.[1]
+    : undefined
+  return ea ?? /w:ascii="([^"]+)"/.exec(fonts)?.[1] ?? /w:hAnsi="([^"]+)"/.exec(fonts)?.[1]
+}
+
+/** a w:del run wrapper with its content (not the self-closing paragraph-mark w:del in pPr/rPr) */
+const DEL_WRAPPER_RE = /<w:del(?:\s[^>]*)?(?<!\/)>[\s\S]*?<\/w:del>/g
+
 export function fieldDisplayOf(
   xml: string,
   styles?: Map<string, StyleInfo>,
@@ -34,10 +47,14 @@ export function fieldDisplayOf(
     // TOC entry: title <tab with dot leader> page number. The page number
     // follows the LAST tab — entries like "1.1.<tab>Title<tab>7" put a leading
     // outline number at the first tab stop, not the page number.
+    // tracked deletions leave the result: an entry whose every run is deleted
+    // shows its deleted text struck through (and vanishes in balloon view)
+    const live = xml.replace(DEL_WRAPPER_RE, '')
+    const deleted = !/<w:t(?:\s|>)/.test(live) && /<w:delText(?:\s|>)/.test(xml)
     const segs: string[] = ['']
-    const re = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>|<w:tab\/>/g
+    const re = /<w:(?:t|delText)(?:\s[^>]*)?>([\s\S]*?)<\/w:(?:t|delText)>|<w:tab\/>/g
     let m: RegExpExecArray | null
-    while ((m = re.exec(xml)) !== null) {
+    while ((m = re.exec(deleted ? xml : live)) !== null) {
       if (m[0] === '<w:tab/>') segs.push('')
       else segs[segs.length - 1] += m[1]
     }
@@ -70,12 +87,26 @@ export function fieldDisplayOf(
     // (fldChar/instrText) often carry the target heading's size and would
     // inflate the whole line
     let sz = 0
+    // face/weight of the leading visible run: Word draws the entry with the
+    // result runs' rPr (a Times bold TOC under a Calibri body), the paragraph
+    // style alone often says nothing
+    let font: string | undefined
+    let bold = false
     const runRe = /<w:r(?:\s[^>]*)?>([\s\S]*?)<\/w:r>/g
     let run: RegExpExecArray | null
     while ((run = runRe.exec(xml)) !== null) {
-      if (!/<w:t(?:\s|>)/.test(run[1]) || run[1].includes('<w:instrText')) continue
+      if (!/<w:(?:t|delText)(?:\s|>)/.test(run[1]) || run[1].includes('<w:instrText')) continue
       const v = parseInt(/<w:sz w:val="(\d+)"/.exec(run[1])?.[1] ?? '', 10)
       if (v > sz) sz = v
+      if (font === undefined) {
+        const rPr = /<w:rPr>[\s\S]*?<\/w:rPr>/.exec(run[1])?.[0] ?? ''
+        const text = Array.from(
+          run[1].matchAll(/<w:(?:t|delText)(?:\s[^>]*)?>([\s\S]*?)<\/w:(?:t|delText)>/g),
+          (m) => m[1],
+        ).join('')
+        font = leadingRunFont(rPr, text) ?? ''
+        bold = /<w:b(?:\s*\/>|\s(?![^>]*w:val="(?:0|false)")[^>]*\/>)/.test(rPr)
+      }
     }
     return {
       kind: 'tocLine',
@@ -84,7 +115,11 @@ export function fieldDisplayOf(
       level: tocLevel,
       ...(num ? { num } : {}),
       ...(anchor ? { anchor } : {}),
+      ...(deleted ? { deleted } : {}),
+      ...(deleted && /<w:del\b[^>]*\/>/.test(pPr) ? { markDeleted: true } : {}),
       ...(sz > 0 ? { szHalfPoints: sz } : {}),
+      ...(font ? { fontFamily: font } : {}),
+      ...(bold ? { bold } : {}),
       ...(line > 0 && lineRule
         ? {
             lineRule,
@@ -106,7 +141,6 @@ export function fieldDisplayOf(
     // (one 48pt "L" before 10pt body) must not inflate the whole field's strut
     // (real_run2/47 rendered the entire paragraph at 48pt, 10 -> 17 pages)
     let font: string | undefined
-    const sizedRuns: Array<{ text: string; szHalfPoints?: number }> = []
     const szWeights = new Map<number, number>()
     const runRe = /<w:r(?:\s[^>]*)?>([\s\S]*?)<\/w:r>/g
     let run: RegExpExecArray | null
@@ -116,7 +150,6 @@ export function fieldDisplayOf(
         Array.from(run[1].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g), (m) => m[1]).join(''),
       )
       const v = parseInt(/<w:sz w:val="(\d+)"/.exec(run[1])?.[1] ?? '', 10)
-      sizedRuns.push({ text, ...(v > 0 ? { szHalfPoints: v } : {}) })
       // unsized runs vote for the inherited default (key 0): one explicit
       // drop-cap letter must not out-vote a body of default-sized text
       const key = v > 0 ? v : 0
@@ -134,13 +167,6 @@ export function fieldDisplayOf(
         szWeight = w
       }
     }
-    // sized spans only for mixed sizes, and only when the runs reproduce the
-    // visible text (tabs/breaks fall back to the plain string)
-    const norm = (t: string) => t.replace(/\s+/g, ' ').trim()
-    const mixedRuns =
-      szWeights.size > 1 && norm(sizedRuns.map((r) => r.text).join('')) === norm(visible)
-        ? sizedRuns.filter((r) => r.text !== '')
-        : undefined
     // explicit paragraph alignment: the passthrough div would inherit the
     // document default (justify in CJK docs) and stretch short lines
     const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(xml)?.[0] ?? ''
@@ -152,7 +178,9 @@ export function fieldDisplayOf(
           ? 'right'
           : jc === 'center'
             ? 'center'
-            : undefined
+            : jc === 'both' || jc === 'distribute'
+              ? 'justify'
+              : undefined
     // explicit line spacing (same extraction as tocLine): the renderer must
     // not collapse a 1.5x field paragraph to single-spacing
     const spacingAttrs = /<w:spacing ([^/>]*)\/>/.exec(pPr)?.[1] ?? ''
@@ -163,7 +191,6 @@ export function fieldDisplayOf(
       kind: 'text',
       left: visible,
       ...(sz > 0 ? { szHalfPoints: sz } : {}),
-      ...(mixedRuns ? { runs: mixedRuns } : {}),
       ...(font ? { fontFamily: font } : {}),
       ...(align ? { align } : {}),
       ...(line > 0 && lineRule

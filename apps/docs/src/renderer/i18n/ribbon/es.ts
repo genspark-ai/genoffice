@@ -12,6 +12,8 @@ export const es = {
   ribbonTabLayout: 'Disposición',
   ribbonTabReferences: 'Referencias',
   ribbonTabReview: 'Revisar',
+  ribbonCollapse: 'Contraer la cinta de opciones',
+  ribbonPin: 'Anclar la cinta de opciones',
   ribbonTabView: 'Vista',
   ribbonTabTableDesign: 'Diseño de tabla',
   ribbonTabTableLayout: 'Disposición de tabla',
@@ -299,6 +301,8 @@ export const es = {
   ribbonChartAddCategory: '+ Categoría',
   ribbonChartAddSeries: '+ Serie',
   ribbonLinkInsertTitle: 'Insertar hipervínculo',
+  ribbonLinkEditTitle: 'Editar hipervínculo',
+  ribbonLinkRemove: 'Quitar vínculo',
   ribbonLinkText: 'Texto para mostrar',
   ribbonLinkTextPh: 'Texto del vínculo (déjelo en blanco para mostrar la dirección)',
   ribbonLinkAddress: 'Dirección',
@@ -580,6 +584,9 @@ export const es = {
   ribbonEditorPrompt:
     'Revisa todo el documento: corrige erratas, puntuación y errores gramaticales manteniendo el significado original y la estructura de los párrafos.',
   ribbonGroupProofing: 'Revisión',
+  ribbonSpellcheckBtn: 'Ortografía',
+  ribbonSpellcheckTip:
+    'Revisar la ortografía mientras escribe — subraya en rojo las palabras posiblemente mal escritas',
   ribbonTranslate: 'Traducir',
   ribbonTranslateTip: 'La IA traduce el documento',
   ribbonTranslatePrompt:

@@ -1,5 +1,6 @@
 export * from './types'
-export { parseFontTable } from './font-table'
+export { deobfuscateOdttf, isSfnt, parseFontTable, readEmbeddedFonts } from './font-table'
+export { decodeEntities } from './parse-xml-text'
 export { parseDocx, styleRunFormat, type ParseExtras } from './parse'
 export {
   saveDocx,

@@ -1,5 +1,6 @@
 // DOM line-box sampling for page-crossing blocks (cached per element), the
 // line-split re-slice, table row cut positions and line anchors.
+import { rangeSlot } from './dom-range'
 import { applyBlockMeta } from './pagination-measure'
 import {
   computeSectionedSlicesF2,
@@ -14,6 +15,11 @@ import type {
   SliceOutputs,
   TableRowBox,
 } from './pagination-types'
+
+const rowRange = rangeSlot()
+const lineRange = rangeSlot()
+const charRange = rangeSlot()
+const anchorRange = rangeSlot()
 
 /**
  * Two-pass slicing: slice by block first, then collect DOM line-box boundaries for
@@ -111,7 +117,11 @@ export function fillLineBoxes(
     // text lines (usually inside fixed, clipped boxes) are not page-break
     // points. Left line-less, an over-page block places whole and overlaps the
     // bottom margin; the next block turns the page (Word-like shape overflow).
-    if (block.el.classList.contains('doc-protected-textboxes')) continue
+    if (
+      block.el.classList.contains('doc-protected-textboxes') ||
+      block.el.classList.contains('img-wrap-band')
+    )
+      continue
     const contentH = geomOf(block.section ?? 0)?.contentHeight ?? 0
     if (contentH <= 0) continue
     const bottom = block.top + block.height
@@ -147,6 +157,8 @@ export function fillLineBoxes(
       block.height <= capH &&
       !crossing &&
       !atPageTop &&
+      // a mid-paragraph page break splits the block at a line boundary
+      !block.innerBreaks?.length &&
       // chain anchors always need line/row data: the chain only keeps with the
       // anchor's first line(s)/row, so the whole-block height is misleading
       !(i > 0 && blocks[i - 1].keepNext && !block.keepNext)
@@ -189,6 +201,9 @@ export function fillLineBoxes(
             if (flags[i]?.cantSplit) r.cantSplit = true
             if (flags[i]?.minHPx) r.minHPx = flags[i].minHPx
           })
+        const bands =
+          block.docxIndex !== undefined ? metaOf?.(block.docxIndex)?.footnoteBands : undefined
+        if (bands) applyRowNotes(block.el, rows, bands)
         block.tableRows = rows
         changed = true
       }
@@ -247,22 +262,45 @@ function tileBoxes(
 
 /** Table block: one line box per tr, heights tiling the block height (borders folded into first/last rows).
  *  In-table page gaps (table-break decoration rows) don't count as rows; their height is subtracted from the offsets of rows below */
+/** the outer table's real rows: nested-table trs are in-row content, and
+ *  decoration rows (page gaps / repeated tblHeader clones) are not page-split
+ *  units — counting them would add phantom boundaries and shift the
+ *  tableRowFlags index alignment */
+function outerTableRows(el: HTMLElement): HTMLElement[] {
+  return Array.from(el.querySelectorAll<HTMLElement>('tr')).filter(
+    (tr) =>
+      !tr.closest('.doc-nested-table') &&
+      !tr.classList.contains('page-gap') &&
+      !tr.classList.contains('page-repeat-header'),
+  )
+}
+
+/** Charge each footnote's height to the row holding its reference (bands and
+ *  refs are both in document order); a count mismatch keeps the block-level
+ *  reservation placed after the table */
+export function applyRowNotes(
+  el: HTMLElement,
+  rows: TableRowBox[],
+  bands: Array<{ heightPx: number }>,
+): void {
+  const refs = Array.from(
+    el.querySelectorAll('sup.doc-note-ref[data-note-kind="footnote"]'),
+  ).filter((ref) => !ref.closest('.page-gap, .page-float-host, .page-repeat-header'))
+  if (refs.length !== bands.length) return
+  const trs = outerTableRows(el)
+  refs.forEach((ref, i) => {
+    const ri = trs.findIndex((tr) => tr.contains(ref))
+    if (ri >= 0 && rows[ri]) rows[ri].notesPx = (rows[ri].notesPx ?? 0) + bands[i].heightPx
+  })
+}
+
 function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number): TableRowBox[] {
   const gaps = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
     g.getBoundingClientRect(),
   )
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
   const elTop = el.getBoundingClientRect().top
-  // take only the outer table's real rows: trs of nested tables inside cells
-  // (.doc-nested-table) are in-row content, and decoration rows (page gaps /
-  // repeated tblHeader clones) are not page-split units — counting them would
-  // add phantom boundaries and shift the tableRowFlags index alignment
-  const trs = Array.from(el.querySelectorAll('tr')).filter(
-    (tr) =>
-      !tr.closest('.doc-nested-table') &&
-      !tr.classList.contains('page-gap') &&
-      !tr.classList.contains('page-repeat-header'),
-  )
+  const trs = outerTableRows(el)
   const tops: number[] = []
   // skip trs[0]: the first row starts at box 0 by definition — its measured
   // offset is just the collapsed-border half-width (1px at w:sz=12), and
@@ -293,6 +331,8 @@ function domTableRows(el: HTMLElement, blockHeight: number, zoomFactor: number):
   })
 }
 
+const PARA_SELECTOR = 'p, h1, h2, h3, h4, h5, h6, .doc-li'
+
 /** In-row safe cut points (relative to row top, px, ascending): line-level candidates
  *  per cell (Word breaks between any two lines), rejecting cuts that would cross a
  *  line box in another cell. Also reports the lowest content-band bottom. */
@@ -305,7 +345,7 @@ function rowCutYs(
   zoomFactor: number,
 ): { cuts: number[]; contentBottom: number } {
   const cells = Array.from(tr.children).filter((c) => c.tagName === 'TD' || c.tagName === 'TH')
-  const range = document.createRange()
+  const range = rowRange()
   const cellBands: Array<Array<[number, number]>> = []
   const paraBands: Array<Array<[number, number]>> = []
   for (const cell of cells) {
@@ -319,7 +359,7 @@ function rowCutYs(
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const parent = n.parentElement
       if (parent?.closest('.page-gap, .page-float-host')) continue
-      const para = parent?.closest('p, h1, h2, h3, h4, h5, h6, .doc-li')
+      const para = parent?.closest(PARA_SELECTOR)
       range.selectNodeContents(n)
       for (const r of range.getClientRects()) {
         if (r.height <= 0 || r.width <= 0) continue
@@ -337,6 +377,19 @@ function rowCutYs(
       if (obj.closest('.page-gap, .page-float-host')) continue
       const r = obj.getBoundingClientRect()
       if (r.height > 0 && r.width > 0) bands.push(toBand(r))
+    }
+    // empty paragraphs above the cell's content are lines Word breaks between;
+    // trailing empty marks stay band-less (they drive the over-page tail fill)
+    const contentB = bands.reduce((m, [, b]) => Math.max(m, b), -Infinity)
+    for (const para of cell.querySelectorAll(PARA_SELECTOR)) {
+      if (byPara.has(para) || para.closest('.page-gap, .page-float-host')) continue
+      if (para.textContent?.trim() || para.querySelector('img, svg, canvas')) continue
+      const r = para.getBoundingClientRect()
+      if (r.height <= 0 || r.width <= 0) continue
+      const band = toBand(r)
+      if (band[0] >= contentB - 0.5) continue
+      bands.push(band)
+      byPara.set(para, [band])
     }
     if (bands.length > 0) cellBands.push(bands)
     for (const list of byPara.values()) paraBands.push(list)
@@ -461,7 +514,7 @@ function domLineRects(el: HTMLElement, zoomFactor: number): DomLineRect[] {
   )
   const gapAbove = (top: number) => gaps.reduce((s, g) => (g.top <= top ? s + g.height : s), 0)
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-  const range = document.createRange()
+  const range = lineRange()
   const rects: Array<{ r: DOMRect; node: Text | Element }> = []
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (n.parentElement?.closest('.page-gap, .page-float-host')) continue
@@ -554,7 +607,7 @@ export function anchorElement(a: LineAnchor): Element | null {
 function lineStartCharOffset(node: Text, lineTop: number): number {
   const len = node.length
   if (len === 0) return 0
-  const range = document.createRange()
+  const range = charRange()
   const topAt = (i: number): number => {
     range.setStart(node, i)
     range.setEnd(node, i + 1)
@@ -617,7 +670,7 @@ export function nextLineAnchor(
 function anchorLineTop(a: LineAnchor): number | null {
   if (a.node instanceof Element) return a.node.getBoundingClientRect().top
   if (a.node.length > 0) {
-    const range = document.createRange()
+    const range = anchorRange()
     range.setStart(a.node, Math.min(a.charOffset, a.node.length - 1))
     range.setEnd(a.node, Math.min(a.charOffset + 1, a.node.length))
     // jsdom has no Range.getClientRects: fall through to the parent box

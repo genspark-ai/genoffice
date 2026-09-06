@@ -40,6 +40,7 @@ describe('protected field and formula editing', () => {
     expect(title.getAttribute('contenteditable')).toBe('true')
     title.textContent = 'New & title'
     page.textContent = '12'
+    title.dispatchEvent(new Event('input', { bubbles: true }))
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
 
     const formula = editor.view.dom.querySelector('.doc-protected-formula') as HTMLElement
@@ -49,6 +50,7 @@ describe('protected field and formula editing', () => {
     expect(tokens[0].getAttribute('contenteditable')).toBe('true')
     tokens[0].textContent = 'x'
     tokens[1].textContent = 'y + 1'
+    tokens[0].dispatchEvent(new Event('input', { bubbles: true }))
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
 
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)

@@ -13,6 +13,8 @@ export const it = {
   ribbonTabAnimations: 'Animazioni',
   ribbonTabSlideShow: 'Presentazione',
   ribbonTabReview: 'Revisione',
+  ribbonCollapse: 'Riduci a icona la barra multifunzione',
+  ribbonPin: 'Aggiungi la barra multifunzione',
   ribbonTabView: 'Visualizza',
   ribbonTabTableDesign: 'Progettazione Tabella',
   ribbonTabChartDesign: 'Progettazione Grafico',

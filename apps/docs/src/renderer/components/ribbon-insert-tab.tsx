@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
+import { getMarkRange } from '@tiptap/core'
 import type { Editor } from '@tiptap/core'
 import { ShapePreview, WORDART_PRESETS, wordArtStrokePx } from '@genoffice/ui'
 import type { ChartDisplay, HeaderFooter, NewChart } from '@genoffice/docx-engine'
@@ -524,20 +525,72 @@ export function TableInsertModal({ editor, onClose }: { editor: Editor; onClose:
 export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const { t } = useI18n()
   const modalKeys = useModalKeys(onClose)
+  // Word parity: with the caret on an existing hyperlink the dialog EDITS it
+  // — text and address pre-filled, plus Remove Link. Imported links carry the
+  // same mark as in-app ones, but there was no way to view, change, or
+  // remove any link after creation (alpha ledger r164).
+  const [linkAtOpen] = useState(() => {
+    const { $from, empty } = editor.state.selection
+    const markType = editor.state.schema.marks.link
+    if (!markType) return null
+    const range = getMarkRange($from, markType)
+    if (!range) return null
+    // A non-empty selection reaching outside the link is a fresh insert over
+    // that selection, not an edit of the link under its endpoint.
+    const { from, to } = editor.state.selection
+    if (!empty && (from < range.from || to > range.to)) return null
+    // Read attrs from the run itself, not the selection: at the link's
+    // trailing edge $head.marks() drops inclusive:false marks, so
+    // getAttributes('link') comes back empty for a real link (bugbot).
+    const attrs = editor.state.doc
+      .nodeAt(range.from)
+      ?.marks.find((mark) => mark.type === markType)?.attrs
+    if (!attrs) return null
+    return {
+      from: range.from,
+      to: range.to,
+      text: editor.state.doc.textBetween(range.from, range.to, ' '),
+      href: typeof attrs.href === 'string' ? attrs.href : '',
+      tooltip: typeof attrs.tooltip === 'string' ? attrs.tooltip : null,
+    }
+  })
   // Word parity: selected text pre-populates the display-text field, so a
   // select-then-link flow only needs the address (alpha ledger r150).
   const [selectionAtOpen] = useState(() => {
     const { from, to } = editor.state.selection
     return { from, to, text: from === to ? '' : editor.state.doc.textBetween(from, to, ' ') }
   })
-  const [linkText, setLinkText] = useState(selectionAtOpen.text)
-  const [linkUrl, setLinkUrl] = useState('')
+  const [linkText, setLinkText] = useState(linkAtOpen ? linkAtOpen.text : selectionAtOpen.text)
+  const [linkUrl, setLinkUrl] = useState(linkAtOpen ? linkAtOpen.href : '')
 
   const insertLink = () => {
     const href = linkUrl.trim()
     const text = linkText.trim() || href
     if (!href || !editor.isEditable) return
-    if (selectionAtOpen.text && text === selectionAtOpen.text.trim()) {
+    if (linkAtOpen) {
+      if (text === linkAtOpen.text.trim()) {
+        // address-only change: re-mark the existing run so character
+        // formatting, comments and inline objects survive; the stored
+        // ScreenTip stays (Word keeps it on an address edit)
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: linkAtOpen.from, to: linkAtOpen.to })
+          .setMark('link', { href, rId: null, tooltip: linkAtOpen.tooltip })
+          .run()
+      } else {
+        editor
+          .chain()
+          .focus()
+          .deleteRange({ from: linkAtOpen.from, to: linkAtOpen.to })
+          .insertContentAt(linkAtOpen.from, {
+            type: 'text',
+            text,
+            marks: [{ type: 'link', attrs: { href, rId: null, tooltip: linkAtOpen.tooltip } }],
+          })
+          .run()
+      }
+    } else if (selectionAtOpen.text && text === selectionAtOpen.text.trim()) {
       // untouched display text: mark the ORIGINAL selection instead of
       // re-inserting plain text — character formatting, comments and inline
       // objects in the selection survive (bugbot)
@@ -561,6 +614,18 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
     onClose()
   }
 
+  const removeLink = () => {
+    if (!linkAtOpen || !editor.isEditable) return
+    // Word's Remove Hyperlink: the text stays, only the link goes.
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from: linkAtOpen.from, to: linkAtOpen.to })
+      .unsetMark('link')
+      .run()
+    onClose()
+  }
+
   return (
     <div
       className="modal-backdrop"
@@ -569,7 +634,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="modal">
-        <h2>{t('ribbonLinkInsertTitle')}</h2>
+        <h2>{t(linkAtOpen ? 'ribbonLinkEditTitle' : 'ribbonLinkInsertTitle')}</h2>
         <label>
           {t('ribbonLinkText')}
           <input
@@ -588,11 +653,16 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
           />
         </label>
         <div className="modal-actions">
+          {linkAtOpen && (
+            <button className="btn-ghost" onClick={removeLink}>
+              {t('ribbonLinkRemove')}
+            </button>
+          )}
           <button className="btn-ghost" onClick={onClose}>
             {t('ribbonCancel')}
           </button>
           <button className="btn-primary" disabled={!linkUrl.trim()} onClick={insertLink}>
-            {t('ribbonInsert')}
+            {t(linkAtOpen ? 'ribbonApply' : 'ribbonInsert')}
           </button>
         </div>
       </div>

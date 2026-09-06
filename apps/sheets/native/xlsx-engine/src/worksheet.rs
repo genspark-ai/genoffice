@@ -1194,6 +1194,9 @@ impl CellBuilder {
         if value.is_none() && formula.is_none() && !styled {
             return Ok(None);
         }
+        // A <c> without s= uses cellXfs[0] (the Normal xf), which may differ
+        // from the renderer's built-in default font.
+        let style_index = Some(self.style_index.unwrap_or(0));
         Ok(Some(CellRecord {
             row: self.row,
             column: self.column,
@@ -1204,7 +1207,7 @@ impl CellBuilder {
                 None
             },
             formula,
-            style_index: self.style_index,
+            style_index,
             rich,
         }))
     }

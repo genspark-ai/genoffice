@@ -115,6 +115,18 @@ const TURN_LIMIT_NOTE =
  */
 export const COMPLETED_VIA_TOOLS_TEXT = '(completed tool actions; no text reply)'
 
+/**
+ * Models default to their training-cutoff year without this (e.g. web searches
+ * for "... 2024"). Leads the system prompt and spells out the year: measured
+ * against claude-opus-4-7 with the docs prompt, the date alone (front or tail)
+ * still produced cutoff-year searches in 6/6 runs; naming the year fixed all.
+ */
+export function runtimePreamble(now = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  return `Today's date is ${date}; the current year is ${now.getFullYear()}.\n\n`
+}
+
 const SUMMARIZE_SYSTEM =
   'You are a conversation compressor. Compress this editing session between the user and the AI assistant into a concise summary so later turns can continue with context. ' +
   "Keep: the user's goals and key instructions, completed changes (which files/pages/elements were modified), important facts and data, and outstanding items. " +
@@ -514,7 +526,10 @@ export class AgentLoop<TSnapshot = unknown> {
     let settled = false
     this.handle = this.options.transport.stream(
       {
-        system: this.options.skill.systemPrompt + (this.options.systemSuffix?.() ?? ''),
+        system:
+          runtimePreamble() +
+          this.options.skill.systemPrompt +
+          (this.options.systemSuffix?.() ?? ''),
         messages: [...this.history],
         tools: this.finalizing ? [] : this.options.skill.tools,
       },

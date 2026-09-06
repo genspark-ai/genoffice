@@ -13,6 +13,8 @@ export const hi = {
   ribbonTabAnimations: 'एनिमेशन',
   ribbonTabSlideShow: 'स्लाइड शो',
   ribbonTabReview: 'समीक्षा',
+  ribbonCollapse: 'रिबन संक्षिप्त करें',
+  ribbonPin: 'रिबन पिन करें',
   ribbonTabView: 'दृश्य',
   ribbonTabTableDesign: 'तालिका डिज़ाइन',
   ribbonTabChartDesign: 'चार्ट डिज़ाइन',

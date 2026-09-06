@@ -158,6 +158,40 @@ describe('settings.xml layout flags', () => {
   })
 })
 
+describe('missing w:pPrDefault', () => {
+  const styles = (docDefaultsInner: string) =>
+    XML_DECL +
+    '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    `<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault>${docDefaultsInner}</w:docDefaults>` +
+    '</w:styles>'
+  const parse = async (stylesXml: string) =>
+    parseDocx(await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>', stylesXml }))
+
+  it('absent element takes Word built-in Normal spacing (after 8pt, line 1.15)', async () => {
+    const doc = await parse(styles(''))
+    expect(doc.docDefaults?.spaceAfterTwips).toBe(160)
+    expect(doc.docDefaults?.lineRawTwips).toBe(276)
+    expect(doc.docDefaults?.lineSpacing).toBe(1.15)
+    expect(doc.docDefaults?.sizeHalfPoints).toBe(22)
+  })
+
+  it('empty <w:pPrDefault/> keeps single spacing with no space after', async () => {
+    for (const inner of ['<w:pPrDefault/>', '<w:pPrDefault><w:pPr/></w:pPrDefault>']) {
+      const doc = await parse(styles(inner))
+      expect(doc.docDefaults?.spaceAfterTwips).toBeUndefined()
+      expect(doc.docDefaults?.lineSpacing).toBeUndefined()
+    }
+  })
+
+  it('explicit spacing wins over the built-in', async () => {
+    const doc = await parse(
+      styles('<w:pPrDefault><w:pPr><w:spacing w:after="0"/></w:pPr></w:pPrDefault>'),
+    )
+    expect(doc.docDefaults?.spaceAfterTwips).toBe(0)
+    expect(doc.docDefaults?.lineSpacing).toBeUndefined()
+  })
+})
+
 describe('w:suppressAutoHyphens', () => {
   const stylesWith = (docDefaultsPPr: string, styleExtra = '') =>
     XML_DECL +

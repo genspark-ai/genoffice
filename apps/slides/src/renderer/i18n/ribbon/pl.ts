@@ -13,6 +13,8 @@ export const pl = {
   ribbonTabAnimations: 'Animacje',
   ribbonTabSlideShow: 'Pokaz slajdów',
   ribbonTabReview: 'Recenzja',
+  ribbonCollapse: 'Zwiń Wstążkę',
+  ribbonPin: 'Przypnij Wstążkę',
   ribbonTabView: 'Widok',
   ribbonTabTableDesign: 'Projekt tabeli',
   ribbonTabChartDesign: 'Projekt wykresu',

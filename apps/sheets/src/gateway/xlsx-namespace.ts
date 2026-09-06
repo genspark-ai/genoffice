@@ -27,7 +27,9 @@ export function ensureRelationshipNamespace(partXml: string): string {
   const root = ROOT_START_TAG.exec(partXml)?.[0]
   if (!root || /\bxmlns:r\s*=/.test(root)) return partXml
   const bound = root.replace(/^<([^\s/>]+)/, `<$1 xmlns:r="${OFFICE_RELATIONSHIPS_NAMESPACE}"`)
-  return partXml.replace(root, bound)
+  // function replacer: a "$" inside the root tag's attribute values must not
+  // be read as a String.replace pattern
+  return partXml.replace(root, () => bound)
 }
 
 export function normalizeOoxmlPartPrefix(xml: string): string {
