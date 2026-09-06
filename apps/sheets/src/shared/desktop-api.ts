@@ -459,6 +459,8 @@ const visualObjectSchema = z
               smooth: z.boolean().optional(),
               /// c:marker symbol — "none" hides scatter/line markers.
               marker: z.string().optional(),
+              /// Parent plot group (barChart, lineChart, ...) of the series.
+              plot: z.string().optional(),
               /// First outer multiLvlStrCache level; start/end index the
               /// compacted `categories` (end exclusive).
               categoryGroups: z
@@ -1264,6 +1266,8 @@ export const workbookPageSetupStateSchema = z
     printGridlines: z.boolean().optional(),
     printHeadings: z.boolean().optional(),
     showGridlines: z.boolean().optional(),
+    /// sheetView/@zoomScale, normal-view zoom percent (alpha r165).
+    zoomScale: z.number().int().min(10).max(400).optional(),
     showFormulas: z.boolean().optional(),
     showHeadings: z.boolean().optional(),
     printArea: z.union([z.string().min(1).max(255), z.null()]).optional(),

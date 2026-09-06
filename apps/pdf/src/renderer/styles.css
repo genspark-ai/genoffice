@@ -4048,6 +4048,39 @@ button {
   background: var(--pdf-error-bg-hover);
 }
 
+/* File-operation confirmation card: ends the stream while the run waits for the user */
+.ai-confirm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: var(--color-bg-subtle);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+.ai-confirm-title {
+  font-weight: 600;
+}
+
+.ai-confirm-detail {
+  color: var(--color-text-secondary);
+}
+
+.ai-confirm-warning {
+  color: var(--danger);
+}
+
+.ai-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 /* ================= status bar (unified chrome shared with docs/sheets/slides) ================= */
 
 .status-bar {

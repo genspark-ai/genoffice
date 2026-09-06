@@ -146,6 +146,41 @@ describe('renderTableSpec rich cell content', () => {
     expect(span.compareDocumentPosition(img) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('a picture-only cell paragraph takes exactly the image height (no descender slack)', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          cell(
+            [''],
+            [
+              {
+                emptyRunSizeHalfPoints: 24,
+                emptyRunFontFamily: 'Times New Roman',
+                runs: [
+                  {
+                    text: '',
+                    image: {
+                      dataUrl: 'data:image/png;base64,AA==',
+                      widthPx: 300,
+                      heightPx: 200,
+                      xml: '<w:drawing/>',
+                    },
+                  },
+                ],
+              },
+            ],
+          ),
+        ],
+      ],
+    }
+    const para = renderTable(model).querySelector('td > div')!
+    expect(para.classList.contains('doc-p-picture')).toBe(true)
+    expect(para.classList.contains('doc-p-empty')).toBe(false)
+    expect(para.getAttribute('style')).toMatch(/line-height:\s*0(?:;|$)/)
+    expect(para.getAttribute('style')).not.toMatch(/font-size:12pt/)
+    expect(para.querySelector('img.doc-inline-img')).not.toBeNull()
+  })
+
   it('cell-level color/bold stay as td-level fallback', () => {
     const model: TableModel = {
       rows: [
@@ -316,6 +351,24 @@ describe('bidiVisual cell paragraph direction', () => {
     expect((paras[1] as HTMLElement).style.direction).toBe('rtl')
   })
 
+  it('a start-aligned bidiVisual table hangs from the right margin with a mirrored indent', () => {
+    const model: TableModel = {
+      bidiVisual: true,
+      fixedLayout: true,
+      indentTwips: -893,
+      colWidthsTwips: [5000, 5253],
+      rows: [[cell(['a']), cell(['b'])]],
+    }
+    // jsdom re-serializes the style attribute with spaces
+    const styleOf = (m: TableModel) =>
+      (renderTable(m).getAttribute('style') ?? '').replace(/\s/g, '')
+    const style = styleOf(model)
+    expect(style).toContain('width:683px')
+    expect(style).toContain('margin-left:calc(var(--doc-content-w,100%)-683px+59.5px)')
+    // LTR tables keep the left-margin indent
+    expect(styleOf({ ...model, bidiVisual: false })).toContain('margin-left:-59.5px')
+  })
+
   it('an explicit w:bidi cell paragraph stays rtl even with weak-only text', () => {
     const model: TableModel = {
       rows: [[cell(['50,0 %'], [{ runs: [{ text: '50,0 %' }], bidi: true }])]],
@@ -384,5 +437,67 @@ describe('vertical-text cells (w:textDirection)', () => {
     const td = renderTable(model).querySelector('td')!
     const clipEl = td.querySelector(':scope > .cell-clip') as HTMLElement
     expect(clipEl.getAttribute('style')).toMatch(/writing-mode:\s*vertical-rl/)
+  })
+})
+
+describe('renderTableSpec autospacing classes', () => {
+  it('marks auto-spaced cell paragraphs so the cell-boundary CSS can zero them', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          cell(
+            ['a', 'b'],
+            [
+              { runs: [{ text: 'a' }], spaceBeforeAuto: true, spaceAfterAuto: true },
+              { runs: [{ text: 'b' }], spaceBeforeAuto: true },
+            ],
+          ),
+        ],
+      ],
+    }
+    const divs = [...renderTable(model).querySelectorAll('td > div')]
+    expect(divs.map((d) => d.className)).toEqual(['sp-auto-b sp-auto-a', 'sp-auto-b'])
+    expect(divs[0].getAttribute('style')).toContain('margin-top: 14pt')
+  })
+})
+
+describe('renderTableSpec cell inset variables', () => {
+  it('emits border widths, per-side margins and the outer half-border table width', () => {
+    const model: TableModel = {
+      rows: [
+        [{ paras: ['a'], borders: { left: { style: 'single', szEighths: 16 } } }, cell(['b'])],
+      ],
+      colWidthsTwips: [1700, 1700],
+      borders: {
+        left: { style: 'single', szEighths: 4 },
+        right: { style: 'single', szEighths: 4 },
+        insideV: { style: 'single', szEighths: 4 },
+      },
+      cellMarTwips: { left: 108, right: 108 },
+    }
+    const table = renderTable(model)
+    expect(table.getAttribute('style')).toContain('width: min(227px,')
+    expect(table.style.getPropertyValue('--doc-bw-v')).toBe('1px')
+    expect(table.style.getPropertyValue('--doc-cell-pad-r')).toBe('7.2px')
+    const td = table.querySelector('td') as HTMLElement
+    expect(td.style.getPropertyValue('--cell-bw-l')).toBe('3px')
+  })
+
+  it('emits the horizontal border snap deltas the row-height spacer reads', () => {
+    const model: TableModel = {
+      rows: [[{ paras: ['a'], borders: { top: { style: 'single', szEighths: 8 } } }, cell(['b'])]],
+      colWidthsTwips: [1700, 1700],
+      borders: {
+        top: { style: 'single', szEighths: 4 },
+        bottom: { style: 'single', szEighths: 12 },
+        insideH: { style: 'dotted', szEighths: 4 },
+      },
+    }
+    const table = renderTable(model)
+    expect(table.style.getPropertyValue('--doc-bd-t')).toBe('-0.333px')
+    expect(table.style.getPropertyValue('--doc-bd-b')).toBe('0.000px')
+    expect(table.style.getPropertyValue('--doc-bd-h')).toBe('-0.333px')
+    const td = table.querySelector('td') as HTMLElement
+    expect(td.style.getPropertyValue('--cell-bd-t')).toBe('0.333px')
   })
 })

@@ -283,36 +283,49 @@ function parseLvlPPr(pPrRaw: unknown, theme?: Theme): LevelTextStyle | undefined
     const v = parseInt(String(pPr['@_indent']), 10)
     if (!Number.isNaN(v)) out.indent = v
   }
-  const defRPrRaw = pPr['a:defRPr']
-  if (defRPrRaw && typeof defRPrRaw === 'object') {
-    const defRPr = asXmlNode(defRPrRaw)
-    if (defRPr['@_sz']) out.fontSize = parseInt(String(defRPr['@_sz']), 10) / 100
-    if (defRPr['@_b'] != null) out.bold = defRPr['@_b'] === '1' || defRPr['@_b'] === 'true'
-    if (defRPr['@_i'] != null) out.italic = defRPr['@_i'] === '1' || defRPr['@_i'] === 'true'
-    if (defRPr['@_cap'] != null) out.cap = String(defRPr['@_cap'])
-    const color = resolveColorNode(defRPr['a:solidFill'], theme)
-    if (color) out.color = color
-    const shdw = asXmlNode(asXmlNode(defRPr['a:effectLst'])['a:outerShdw'])
-    const shdwColor = resolveColorNode(shdw, theme)
-    if (shdwColor) {
-      const num = (k: string) => {
-        const v = parseInt(String(shdw[k] ?? ''), 10)
-        return Number.isFinite(v) ? v : 0
-      }
-      out.shadow = {
-        color: shdwColor,
-        blurRad: num('@_blurRad'),
-        dist: num('@_dist'),
-        dirDeg: num('@_dir') / 60000,
-      }
+  Object.assign(out, parseDefRPrStyle(pPr['a:defRPr'], theme))
+  return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * <a:defRPr> (default run properties of a lstStyle level or of a paragraph's own
+ * <a:pPr>) → the run-level subset of LevelTextStyle. Colors and theme font
+ * references are resolved for display; undefined when the node is absent or empty.
+ */
+export function parseDefRPrStyle(
+  defRPrRaw: unknown,
+  theme?: Theme,
+  phClr?: string,
+): LevelTextStyle | undefined {
+  if (!defRPrRaw || typeof defRPrRaw !== 'object') return undefined
+  const defRPr = asXmlNode(defRPrRaw)
+  const out: LevelTextStyle = {}
+  if (defRPr['@_sz']) out.fontSize = parseInt(String(defRPr['@_sz']), 10) / 100
+  if (defRPr['@_b'] != null) out.bold = defRPr['@_b'] === '1' || defRPr['@_b'] === 'true'
+  if (defRPr['@_i'] != null) out.italic = defRPr['@_i'] === '1' || defRPr['@_i'] === 'true'
+  if (defRPr['@_cap'] != null) out.cap = String(defRPr['@_cap'])
+  const color = resolveColorNode(defRPr['a:solidFill'], theme, phClr)
+  if (color) out.color = color
+  const shdw = asXmlNode(asXmlNode(defRPr['a:effectLst'])['a:outerShdw'])
+  const shdwColor = resolveColorNode(shdw, theme, phClr)
+  if (shdwColor) {
+    const num = (k: string) => {
+      const v = parseInt(String(shdw[k] ?? ''), 10)
+      return Number.isFinite(v) ? v : 0
     }
-    const latin = resolveFontRef(typefaceAttr(defRPr['a:latin']), theme)
-    if (latin) out.latinFont = latin
-    const ea = resolveFontRef(typefaceAttr(defRPr['a:ea']), theme)
-    if (ea) out.eaFont = ea
-    const cs = resolveFontRef(typefaceAttr(defRPr['a:cs']), theme)
-    if (cs) out.csFont = cs
+    out.shadow = {
+      color: shdwColor,
+      blurRad: num('@_blurRad'),
+      dist: num('@_dist'),
+      dirDeg: num('@_dir') / 60000,
+    }
   }
+  const latin = resolveFontRef(typefaceAttr(defRPr['a:latin']), theme)
+  if (latin) out.latinFont = latin
+  const ea = resolveFontRef(typefaceAttr(defRPr['a:ea']), theme)
+  if (ea) out.eaFont = ea
+  const cs = resolveFontRef(typefaceAttr(defRPr['a:cs']), theme)
+  if (cs) out.csFont = cs
   return Object.keys(out).length ? out : undefined
 }
 

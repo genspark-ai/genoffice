@@ -78,6 +78,37 @@ export function modelEchoesReasoning(model: string): boolean {
  */
 const DEEPSEEK_NON_THINKING = { thinking: { type: 'disabled' } }
 
+/**
+ * OpenCode Zen / Go (opencode.ai) are protocol passthrough gateways: each
+ * model is served on exactly one vendor protocol and the other paths answer
+ * 500 (verified 2026-09-03 against the public free tier), so the route is
+ * picked per model id the way OpenCode's own client does (models.dev
+ * `provider.npm`). The two tiers route the same vendor differently — MiniMax
+ * is chat-completions on Zen but Anthropic Messages on Go — hence one table
+ * each. Every Kimi id omits temperature, mirroring the direct Kimi adapter.
+ */
+const OPENCODE_GATEWAY_ROOTS = {
+  zen: 'https://opencode.ai/zen',
+  go: 'https://opencode.ai/zen/go',
+} as const
+
+function opencodeEndpoint(
+  root: string,
+  routes: { anthropic: RegExp; gemini?: RegExp },
+): (config: AiProviderConfig) => ResolvedEndpoint {
+  return (config) => {
+    // a stored base URL replaces the gateway root; the documented `/v1` API base is tolerated
+    const base = (config.baseUrl || root).replace(/\/+$/, '').replace(/\/v1$/, '')
+    if (routes.anthropic.test(config.model)) return { protocol: 'anthropic', baseUrl: base }
+    const omit = modelHasFixedSampling(config.model) || config.model.startsWith('kimi-')
+    const sampling = omit ? { omitTemperature: true } : {}
+    if (routes.gemini?.test(config.model)) {
+      return { protocol: 'gemini', baseUrl: `${base}/v1`, ...sampling }
+    }
+    return { protocol: 'openai-compatible', baseUrl: `${base}/v1`, ...sampling }
+  }
+}
+
 /** a stored baseUrl overrides the default endpoint (regional mirrors, e.g. api.moonshot.cn vs .ai) */
 function fixedEndpoint(
   protocol: AiProtocol,
@@ -188,6 +219,25 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     meta: metaOf('openrouter'),
     capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://openrouter.ai/api/v1'),
+  },
+  'opencode-zen': {
+    meta: metaOf('opencode-zen'),
+    capabilities: { auth: 'api-key', vision: true },
+    // Claude and Qwen ride /v1/messages, Gemini its native generateContent path
+    resolveEndpoint: opencodeEndpoint(OPENCODE_GATEWAY_ROOTS.zen, {
+      anthropic: /^(claude-|qwen)/,
+      gemini: /^gemini-/,
+    }),
+  },
+  'opencode-go': {
+    meta: metaOf('opencode-go'),
+    capabilities: { auth: 'api-key', vision: true },
+    // MiniMax and Qwen 3.8 Flash ride /v1/messages; the rest is chat-completions
+    // (the Go docs table lists every Qwen on Messages, but the client config
+    // OpenCode ships routes only 3.8 Flash there — follow the running client)
+    resolveEndpoint: opencodeEndpoint(OPENCODE_GATEWAY_ROOTS.go, {
+      anthropic: /^(minimax-|qwen3\.8-flash$)/,
+    }),
   },
   custom: {
     meta: metaOf('custom'),

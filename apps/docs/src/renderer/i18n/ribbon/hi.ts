@@ -12,6 +12,8 @@ export const hi = {
   ribbonTabLayout: 'लेआउट',
   ribbonTabReferences: 'संदर्भ',
   ribbonTabReview: 'समीक्षा',
+  ribbonCollapse: 'रिबन संक्षिप्त करें',
+  ribbonPin: 'रिबन पिन करें',
   ribbonTabView: 'दृश्य',
   ribbonTabTableDesign: 'तालिका डिज़ाइन',
   ribbonTabTableLayout: 'तालिका लेआउट',
@@ -297,6 +299,8 @@ export const hi = {
   ribbonChartAddCategory: '+ श्रेणी',
   ribbonChartAddSeries: '+ शृंखला',
   ribbonLinkInsertTitle: 'हाइपरलिंक सम्मिलित करें',
+  ribbonLinkEditTitle: 'हाइपरलिंक संपादित करें',
+  ribbonLinkRemove: 'लिंक हटाएँ',
   ribbonLinkText: 'प्रदर्शित किया जाने वाला पाठ',
   ribbonLinkTextPh: 'लिंक पाठ (पता दिखाने के लिए खाली छोड़ें)',
   ribbonLinkAddress: 'पता',
@@ -576,6 +580,9 @@ export const hi = {
   ribbonEditorPrompt:
     'पूरे दस्तावेज़ को प्रूफ़रीड करें: वर्तनी, विराम चिह्न और व्याकरण की गलतियाँ सुधारें, मूल अर्थ और अनुच्छेद संरचना को अपरिवर्तित रखें।',
   ribbonGroupProofing: 'प्रूफ़िंग',
+  ribbonSpellcheckBtn: 'वर्तनी जाँच',
+  ribbonSpellcheckTip:
+    'टाइप करते समय वर्तनी जाँचें — संभावित गलत वर्तनी वाले शब्दों को लाल रेखा से रेखांकित करता है',
   ribbonTranslate: 'अनुवाद करें',
   ribbonTranslateTip: 'AI दस्तावेज़ का अनुवाद करता है',
   ribbonTranslatePrompt:

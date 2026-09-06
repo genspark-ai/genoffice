@@ -13,6 +13,8 @@ export const ms = {
   ribbonTabAnimations: 'Animasi',
   ribbonTabSlideShow: 'Tayangan Slaid',
   ribbonTabReview: 'Semakan',
+  ribbonCollapse: 'Runtuhkan Reben',
+  ribbonPin: 'Semat Reben',
   ribbonTabView: 'Pandangan',
   ribbonTabTableDesign: 'Reka Bentuk Jadual',
   ribbonTabChartDesign: 'Reka Bentuk Carta',

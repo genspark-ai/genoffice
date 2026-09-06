@@ -129,3 +129,24 @@ describe('one run carrying several inline drawings', () => {
     expect(regen.indexOf('mid')).toBeLessThan(regen.lastIndexOf('<w:drawing>'))
   })
 })
+
+describe('rotated run pictures', () => {
+  const ROTATED_CELL_PIC =
+    '<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr><w:jc w:val="center"/></w:pPr>' +
+    '<w:r><w:drawing><wp:inline><wp:extent cx="1905000" cy="952500"/>' +
+    '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+    '<pic:pic><pic:blipFill><a:blip r:embed="rId10"/></pic:blipFill>' +
+    '<pic:spPr><a:xfrm rot="5400000" flipH="1"><a:off x="0" y="0"/><a:ext cx="1905000" cy="952500"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+  it('keeps the pic xfrm rotation and flips on a table-cell run image', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: ROTATED_CELL_PIC, withImage: true }))
+    const cell = doc.blocks.find((b) => b.type === 'table')!.table!.rows[0][0]
+    const image = cell.richParas![0].runs[0].image!
+    expect(image.widthPx).toBe(200)
+    expect(image.heightPx).toBe(100)
+    expect(image.rotDeg).toBe(90)
+    expect(image.flipH).toBe(true)
+    expect(image.flipV).toBeUndefined()
+  })
+})

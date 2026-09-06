@@ -6,7 +6,7 @@
 import { Editor } from '@tiptap/core'
 import { afterEach, describe, expect, it } from 'vitest'
 import { editorExtensions } from '../src/renderer/editor/extensions'
-import { setDocFontTable } from '../src/renderer/line-metrics'
+import { lineHeightFactor, setDocFontTable } from '../src/renderer/line-metrics'
 
 const factorOf = (editor: Editor, index = 0): string => {
   const p = editor.view.dom.querySelectorAll('p')[index] as HTMLElement
@@ -40,8 +40,8 @@ describe('live line-height factor decorations', () => {
       extensions: editorExtensions,
       content: { type: 'doc', content: [{ type: 'docParagraph' }] } as never,
     })
-    // Created empty: no per-block factor, inherits the document-level variable
-    expect(factorOf(editor)).toBe('')
+    // Created empty: the mark's inherited ascii face sizes the line (Latin var)
+    expect(factorOf(editor)).toBe('var(--doc-line-factor-latin,1.2)')
 
     editor.commands.insertContentAt(1, '中文正文')
     expect(factorOf(editor)).toBe('var(--doc-line-factor-cjk,1.7)')
@@ -348,5 +348,128 @@ describe('empty paragraph line size (emptyRunSize attr)', () => {
     expect(malgun.style.getPropertyValue('--doc-line-factor')).toBe('1.7371')
     expect(simsun.style.getPropertyValue('--doc-line-factor')).toBe('1.3029')
     editor.destroy()
+  })
+
+  it('falls back to the Latin factor when the mark declares no face', () => {
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          { type: 'docParagraph', attrs: { emptyRunSize: 27 } },
+          { type: 'docParagraph' },
+          { type: 'docParagraph', content: [{ type: 'text', text: '\u4e2d\u6587' }] },
+        ],
+      } as never,
+    })
+    const [sized, bare, cjk] = Array.from(editor.view.dom.querySelectorAll('p')) as HTMLElement[]
+    // sample 028: half-point marks (sz 27) inheriting Times New Roman inflated
+    // 1.15 -> 1.30 per empty line and pushed the page-top padding onto p4/p9
+    expect(sized.style.fontSize).toBe('13.5pt')
+    expect(sized.style.getPropertyValue('--doc-line-factor')).toBe(
+      'var(--doc-line-factor-latin,1.2)',
+    )
+    expect(bare.style.getPropertyValue('--doc-line-factor')).toBe(
+      'var(--doc-line-factor-latin,1.2)',
+    )
+    expect(cjk.style.getPropertyValue('--doc-line-factor')).toBe('var(--doc-line-factor-cjk,1.7)')
+    editor.destroy()
+  })
+})
+
+describe('per-line factors in mixed-script paragraphs', () => {
+  const arial = { type: 'docTextStyle', attrs: { font: 'Arial', fontAscii: 'Arial' } }
+  const mixedDoc = (attrs: Record<string, unknown> = {}, latinInk = true) =>
+    ({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          attrs,
+          content: [
+            { type: 'text', text: latinInk ? '수소는 결정. 결함' : '수소는 결정 결함' },
+            { type: 'text', text: '(Dangling bond)', marks: [arial] },
+            { type: 'text', text: ' 결합해' },
+          ],
+        },
+      ],
+    }) as never
+  const open = (content: unknown) =>
+    new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: content as never,
+    })
+  const stretches = (editor: Editor) =>
+    Array.from(editor.view.dom.querySelectorAll('p span.doc-run-lf')) as HTMLElement[]
+
+  it('lays the strut at the Latin base and lifts only the Hangul stretches', () => {
+    const editor = open(mixedDoc())
+    expect(factorOf(editor)).toBe(
+      `max(var(--doc-line-factor-latin,1.2), ${lineHeightFactor('Arial')})`,
+    )
+    const lifted = stretches(editor)
+    expect(lifted.map((s) => s.textContent)).toEqual(['수소는 결정', '결함', '결합해'])
+    for (const s of lifted) {
+      expect(s.style.getPropertyValue('--doc-line-factor')).toBe('var(--doc-line-factor-kr,1.3029)')
+      expect(s.style.getPropertyValue('line-height')).toBe('')
+    }
+    const latin = editor.view.dom.querySelector('p span[data-doc-style]') as HTMLElement
+    expect(latin.textContent).toBe('(Dangling bond)')
+    expect(latin.querySelector('.doc-run-lf')).toBeNull()
+    editor.destroy()
+  })
+
+  it('takes the Latin base from the runs that carry Latin ink only', () => {
+    const editor = open(mixedDoc({}, false))
+    expect(factorOf(editor)).toBe(String(lineHeightFactor('Arial')))
+    editor.destroy()
+  })
+
+  it('keeps the paragraph-level factor for pure-CJK paragraphs', () => {
+    const editor = open({
+      type: 'doc',
+      content: [{ type: 'docParagraph', content: [{ type: 'text', text: '수소는 결정 결함' }] }],
+    } as never)
+    expect(factorOf(editor)).toBe('var(--doc-line-factor-kr,1.3029)')
+    expect(stretches(editor)).toHaveLength(0)
+    editor.destroy()
+  })
+
+  it('a stretch in a run with a declared CJK face takes that face', () => {
+    const editor = open({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [
+            {
+              type: 'text',
+              text: '中文 abc',
+              marks: [
+                { type: 'docTextStyle', attrs: { font: 'SimSun', fontAscii: 'Times New Roman' } },
+              ],
+            },
+          ],
+        },
+      ],
+    } as never)
+    expect(factorOf(editor)).toBe(String(lineHeightFactor('Times New Roman')))
+    const [zh] = stretches(editor)
+    expect(zh.textContent).toBe('中文')
+    expect(zh.style.getPropertyValue('--doc-line-factor')).toBe(String(lineHeightFactor('SimSun')))
+    editor.destroy()
+  })
+
+  it('mirrors an own atLeast rule on the stretch and never lifts exact lines', () => {
+    const atLeast = open(mixedDoc({ lineRule: 'atLeast', lineRawTwips: 240 }))
+    expect(stretches(atLeast)[0].style.getPropertyValue('line-height')).toBe(
+      'max(12.0pt, var(--doc-line-grid, calc(var(--doc-line-factor,1.2) * 1em)))',
+    )
+    atLeast.destroy()
+    const exact = open(mixedDoc({ lineRule: 'exact', lineRawTwips: 240 }))
+    expect(stretches(exact)).toHaveLength(0)
+    exact.destroy()
   })
 })

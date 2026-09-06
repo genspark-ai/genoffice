@@ -42,6 +42,7 @@ import { runStreamedErrorCheck } from './error-checking'
 import {
   isSheetRemoved,
   journalSize,
+  NO_FILL_STYLE,
   recordHyperlinkEdit,
   recordNeutralStyleEdit,
   recordPageSetup,
@@ -61,7 +62,7 @@ import {
   handleRefreshAllPivots,
   type PivotActionContext,
 } from './pivot-actions'
-import { INDENT_STEP_PX } from './selection-format'
+import { INDENT_STEP_PX, normalizeHexColor } from './selection-format'
 import { collectDependents, collectPrecedents, installTraceArrows } from './trace-arrows'
 import {
   absRangeRef,
@@ -1109,7 +1110,9 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
   // Excel persists select-all / full-column formatting as the columns'
   // DEFAULT format: new cells inherit it at any row, forever. Univer only
   // materializes styles onto cells within the current grid bounds, so
-  // without this a reopened workbook types in the theme font again (r124).
+  // without this a reopened workbook types in the theme font again (r124),
+  // and a column whose <col style=> carried a fill shows it again below the
+  // grid after No Fill.
   const recordFullHeightColumnStyle = (delta: WorkbookStyleEdit, undoTopBefore: unknown): void => {
     const state = ctx.lazyWorkbookRef.current
     const sheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
@@ -1299,11 +1302,31 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
         }
         break
       }
-      case 'fill':
-        // The facade types demand a string, but null is the documented way
-        // to clear the background (mirrors setFontWeight(null) above).
-        range.setBackground((argument === 'none' ? null : argument) as unknown as string)
+      case 'fill': {
+        const undoTopBefore = topUndoElement(runtime)
+        if (argument === 'none') {
+          // setBackground(null) reaches the mutation as bg: { rgb: null },
+          // which removeNull strips to a MISSING bg — and a <col style=> fill
+          // composes straight back through the cell the user just cleared.
+          // Pin the clear with the empty-rgb sentinel instead. SetStyleCommand
+          // (not range.setValue) so filtered-out rows stay untouched, exactly
+          // like the facade helper.
+          const workbook = runtime.univerAPI.getActiveWorkbook()
+          if (!workbook || !worksheet) return
+          runtime.univerAPI.syncExecuteCommand('sheet.command.set-style', {
+            unitId: workbook.getId(),
+            subUnitId: worksheet.getSheetId(),
+            range: range.getRange(),
+            style: { type: 'bg', value: { ...NO_FILL_STYLE } },
+          })
+          recordFullHeightColumnStyle({ fillColor: null }, undoTopBefore)
+        } else {
+          range.setBackground(argument)
+          const fillColor = normalizeHexColor(argument)
+          if (fillColor) recordFullHeightColumnStyle({ fillColor }, undoTopBefore)
+        }
         break
+      }
       case 'font-color':
         // 'auto' clears the explicit color back to the default (Excel's
         // Automatic); null is the documented reset, same as setBackground

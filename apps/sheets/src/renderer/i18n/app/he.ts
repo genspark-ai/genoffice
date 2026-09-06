@@ -263,6 +263,7 @@ export const he = {
   appAiDone: 'ה-AI סיים',
   appAiTurnLimit:
     '(הושגה מגבלת סבבי קריאות הכלים לבקשה זו; התשובה שלמעלה מבוססת על מה שנקרא עד כה ועשויה להיות חלקית.)',
+  appAiTruncatedNote: '(התשובה נחתכה בגלל מגבלת האורך וייתכן שאינה שלמה.)',
   appAiStopped: '(הופסק)',
   appAiNoSummary: 'ה-AI סיים ללא סיכום.',
   appAiNoAction: 'ה-AI לא ביצע שום פעולה ולא השיב. נסו שוב או נסחו מחדש.',
@@ -278,6 +279,14 @@ export const he = {
   appIconSetUnsupported: 'לא ניתן לשמור שילוב אייקונים זה בקובץ xlsx — בחרו ערכת אייקונים אחרת.',
   appNeedFullLoadSort:
     'מיון, סינון, הזזת טווחים ופיצול טקסט דורשים מצב טעינה מלאה — חוברת עבודה זו גדולה מדי ונטענת בהזרמה חלקית.',
+  appFullLoadFilterTitle: 'סינון דורש טעינה מלאה',
+  appFullLoadFilterBody:
+    'חוברת העבודה גדולה ונטענה רק חלקית בהזרמה. סינון (כולל ספירת ערכים) דורש את מלוא הנתונים. לטעון כעת את כל חוברת העבודה?',
+  appFullLoadStart: 'טען הכול',
+  appFullLoadRunning: 'טוען את כל חוברת העבודה — הסינון יהיה זמין בסיום…',
+  appFullLoadTooLarge:
+    'חוברת העבודה גדולה מכדי להיטען במלואה לזיכרון; הסינון אינו זמין עבור קובץ זה.',
+  appDialogCancel: 'ביטול',
   appPivotSheetNoMove: 'גיליון זה מכיל טבלת ציר — הזזת טווחים אינה נתמכת עדיין.',
   appTableFilterNoEdit: 'המסנן של גיליון זה שייך לטבלת Excel — לא ניתן עדיין לשמור את העריכה.',
   appAutofillStreaming: 'מילוי אוטומטי לאזור שעדיין נטען בהזרמה אינו מותר עדיין.',
@@ -588,6 +597,8 @@ export const he = {
   appTabFormulas: 'נוסחאות',
   appTabData: 'נתונים',
   appTabReview: 'סקירה',
+  appRibbonCollapse: 'כווץ את רצועת הכלים',
+  appRibbonPin: 'הצמד את רצועת הכלים',
   appTabView: 'תצוגה',
   appTabAi: 'AI',
   appTabChartDesign: 'עיצוב תרשים',

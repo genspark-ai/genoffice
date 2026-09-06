@@ -14,6 +14,8 @@ export const fr = {
   ribbonTabAnimations: 'Animations',
   ribbonTabSlideShow: 'Diaporama',
   ribbonTabReview: 'Révision',
+  ribbonCollapse: 'Réduire le ruban',
+  ribbonPin: 'Épingler le ruban',
   ribbonTabView: 'Affichage',
   ribbonTabTableDesign: 'Création de tableau',
   ribbonTabChartDesign: 'Création de graphique',

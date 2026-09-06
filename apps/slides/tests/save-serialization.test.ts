@@ -44,7 +44,7 @@ describe('slides save serialization', () => {
     vi.stubGlobal('window', { slidesApi: { save: mockSave } })
 
     // Fire three saves simultaneously — they must queue, not overlap.
-    const [a, b, c] = await Promise.all([save(ctx()), save(ctx(), true), save(ctx())])
+    const [a, b, c] = await Promise.all([save(ctx), save(ctx, true), save(ctx)])
 
     expect(a).toBe(true)
     expect(b).toBe(true)
@@ -71,7 +71,7 @@ describe('slides save serialization', () => {
     vi.stubGlobal('window', { slidesApi: { save: mockSave, saveAs: mockSaveAs } })
 
     // A manual save racing Save As (or close-save) must queue behind it.
-    const [saved, _] = await Promise.all([save(ctx(), true), saveAs(ctx())])
+    const [saved, _] = await Promise.all([save(ctx, true), saveAs(ctx)])
 
     expect(saved).toBe(true)
     expect(mockSave).toHaveBeenCalledTimes(1)
@@ -90,13 +90,34 @@ describe('slides save serialization', () => {
     })
     vi.stubGlobal('window', { slidesApi: { save: mockSave } })
 
-    const first = save(ctx(), true)
-    const second = save(ctx(), true)
+    const first = save(ctx, true)
+    const second = save(ctx, true)
     const [r1, r2] = await Promise.all([first, second])
 
     expect(r1).toBe(false)
     expect(r2).toBe(true)
     expect(mockSave).toHaveBeenCalledTimes(2)
+
+    vi.unstubAllGlobals()
+  })
+
+  it('resolves the context when a queued pass runs, not when it was queued', async () => {
+    let saves = 0
+    const mockSave = vi.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      saves += 1
+      return { ok: true }
+    })
+    vi.stubGlobal('window', { slidesApi: { save: mockSave } })
+
+    const seen: number[] = []
+    const getCtx = () => {
+      seen.push(saves)
+      return ctx()
+    }
+    await Promise.all([save(getCtx, true), save(getCtx, true)])
+
+    expect(seen).toEqual([0, 1])
 
     vi.unstubAllGlobals()
   })

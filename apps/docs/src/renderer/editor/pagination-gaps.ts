@@ -3,6 +3,9 @@ import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { LineAnchor } from '../pagination'
+import { rangeSlot } from '../dom-range'
+
+const anchorRange = rangeSlot()
 
 const key = new PluginKey<DecorationSet>('paginationGaps')
 
@@ -215,6 +218,7 @@ export interface GapMetrics {
    *  header/footer strips belong (alignGapHfStrips); defaults to marginLeft/Right */
   sectionMarginLeft?: number
   sectionMarginRight?: number
+  sectionMarginTop?: number
 }
 
 /** height of the gray inter-page band inside a page gap */
@@ -233,6 +237,9 @@ export function makeGapEl(m: GapMetrics, kind: GapKind, cols?: number): HTMLElem
   gap.style.height = `${m.marginBottom + GAP_BAND + m.marginTop}px`
   gap.style.setProperty('--gap-mb', `${m.marginBottom}px`)
   gap.style.setProperty('--gap-mt', `${m.marginTop}px`)
+  // written even when zero: a page without a header push must clear the previous one
+  if (m.sectionMarginTop !== undefined)
+    gap.dataset.topPush = Math.max(0, m.marginTop - m.sectionMarginTop).toFixed(1)
   // the next page's own section side margins: a section whose margins differ from
   // the canvas' first section gets its header/footer strips placed on ITS text
   // column (alignGapHfStrips), not the cover's margin-less one. Every gap kind
@@ -421,7 +428,7 @@ export function setPageGaps(
 function anchorTop(a: LineAnchor): number | null {
   if (a.node instanceof Element) return a.node.getBoundingClientRect().top
   if (a.node.length > 0) {
-    const range = document.createRange()
+    const range = anchorRange()
     range.setStart(a.node, Math.min(a.charOffset, a.node.length - 1))
     range.setEnd(a.node, Math.min(a.charOffset + 1, a.node.length))
     for (const r of range.getClientRects()) if (r.height > 0) return r.top
@@ -706,12 +713,14 @@ export function syncFloatShifts(
     anchorTop?: number
     pinned?: boolean
     pageRelV?: boolean
+    pageRelFromPage?: boolean
   }>,
   origin: number,
   factor: number,
+  firstPagePush = 0,
 ): void {
   if (floats.length === 0) return
-  const gaps: Array<{ v: number; h: number }> = []
+  const gaps: Array<{ v: number; h: number; push?: number }> = []
   let acc = 0
   // in-table gap rows / repeated-header clones displace the DOM below them just
   // like top-level gap widgets: a float anchored after a multi-page table would
@@ -724,12 +733,19 @@ export function syncFloatShifts(
     // while its boundary lies inside trailing float-spill space, which would
     // otherwise pull every below-flow box of the same page onto the next one
     const b = parseFloat(el.dataset.boundaryY ?? '')
-    gaps.push({ v: Number.isFinite(b) ? b : (r.top - origin - acc) / factor, h: r.height })
+    gaps.push({
+      v: Number.isFinite(b) ? b : (r.top - origin - acc) / factor,
+      h: r.height,
+      // only page gaps know their page's header push; float hosts and repeated
+      // header rows sit at the same virtual Y and must not clear it
+      push: el.dataset.topPush === undefined ? undefined : parseFloat(el.dataset.topPush) || 0,
+    })
     acc += r.height
   }
   for (const f of floats) {
     let above = 0
     let pageStart = 0
+    let pagePush = firstPagePush
     // page-absolute V boxes render on their ANCHOR's page at the page-relative
     // Y (Word): pinned tops already are page coords, pageRelV tops carry the
     // anchor position. Flow-positioned boxes keep their virtual Y.
@@ -738,10 +754,14 @@ export function syncFloatShifts(
     for (const g of gaps) {
       if (g.v <= ref) {
         above += g.h
-        if (abs) pageStart = Math.max(pageStart, g.v)
+        if (abs && g.v >= pageStart) {
+          pageStart = g.v
+          if (g.push !== undefined) pagePush = g.push
+        }
       }
     }
-    const rel = f.pageRelV ? f.top - (f.anchorTop ?? 0) : f.top
+    // page-edge V offsets count from the pgMar top, not the header-pushed flow start
+    const rel = f.pageRelV ? f.top - (f.anchorTop ?? 0) - (f.pageRelFromPage ? pagePush : 0) : f.top
     const desired = origin + (pageStart + rel) * factor + above
     const applied = parseFloat(f.el.dataset.pageFloatDy ?? '0') || 0
     const cur = f.el.getBoundingClientRect().top
@@ -796,6 +816,30 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
     }
     return out
   }
+  // a table-pushed band (data-band-beside) leaves side room: the empty
+  // paragraphs between the anchor and the table lay their lines beside the
+  // boxes in Word, so their heights come off the band instead of adding below
+  let besideBand: HTMLElement | null = null
+  let besideEmpties = 0
+  const isEmptyParagraph = (el: HTMLElement): boolean =>
+    el.tagName === 'P' && !(el.textContent ?? '').trim() && !el.querySelector('img, table')
+  const settleBeside = (next: HTMLElement | null): void => {
+    if (
+      besideBand &&
+      besideEmpties > 0 &&
+      next &&
+      (next.tagName === 'TABLE' || next.querySelector('table'))
+    ) {
+      const own = Math.round(parseFloat(besideBand.dataset.band ?? '0') || 0)
+      const line =
+        (besideBand
+          .querySelector(':scope > .doc-anchor-strut, :scope > .doc-textbox-stray')
+          ?.getBoundingClientRect().height ?? 0) / factor
+      apply(besideBand, Math.max(Math.round(line), Math.round(own - besideEmpties)))
+    }
+    besideBand = null
+    besideEmpties = 0
+  }
   const flush = (): void => {
     if (run.length > 1) {
       const intervals: Array<[number, number]> = []
@@ -836,6 +880,8 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
     } else if (run.length === 1) {
       apply(run[0], Math.round(parseFloat(run[0].dataset.band ?? '0') || 0))
     }
+    const last = run[run.length - 1]
+    if (last?.dataset.bandBeside === '1') besideBand = last
     run = []
   }
   for (const el of Array.from(pm.children) as HTMLElement[]) {
@@ -850,12 +896,23 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
       el.classList.contains('doc-protected-floating') &&
       !el.classList.contains('doc-protected-pagepinned')
     ) {
+      settleBeside(null)
       run.push(el)
       continue
     }
     flush()
+    if (besideBand && isEmptyParagraph(el)) {
+      const cs = getComputedStyle(el)
+      besideEmpties +=
+        el.getBoundingClientRect().height / factor +
+        (parseFloat(cs.marginTop) || 0) +
+        (parseFloat(cs.marginBottom) || 0)
+      continue
+    }
+    settleBeside(el)
   }
   flush()
+  settleBeside(null)
 }
 
 /**

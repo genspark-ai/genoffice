@@ -295,6 +295,7 @@ export const pl = {
   appAiDone: 'AI zakończyła pracę',
   appAiTurnLimit:
     '(Osiągnięto limit rund wywołań narzędzi dla tego żądania; powyższa odpowiedź opiera się na dotychczas odczytanych informacjach i może być niekompletna.)',
+  appAiTruncatedNote: '(Odpowiedź została ucięta przez limit długości i może być niepełna.)',
   appAiStopped: '(zatrzymano)',
   appAiNoSummary: 'AI zakończyła bez podsumowania.',
   appAiNoAction:
@@ -316,6 +317,15 @@ export const pl = {
     'Tej kombinacji ikon nie można zapisać w pliku xlsx — wybierz inny zestaw ikon.',
   appNeedFullLoadSort:
     'Sortowanie, filtrowanie, przenoszenie zakresów i dzielenie tekstu wymagają trybu pełnego ładowania — ten skoroszyt jest zbyt duży i jest ładowany częściowo strumieniowo.',
+  appFullLoadFilterTitle: 'Filtrowanie wymaga pełnego wczytania',
+  appFullLoadFilterBody:
+    'Ten skoroszyt jest duży i został wczytany tylko częściowo (strumieniowo). Filtrowanie (w tym zliczanie wartości) wymaga pełnych danych. Wczytać teraz cały skoroszyt?',
+  appFullLoadStart: 'Wczytaj wszystko',
+  appFullLoadRunning:
+    'Trwa pełne wczytywanie skoroszytu — filtrowanie będzie dostępne po zakończeniu…',
+  appFullLoadTooLarge:
+    'Ten skoroszyt jest zbyt duży, aby w pełni zmieścić się w pamięci; filtrowanie jest niedostępne dla tego pliku.',
+  appDialogCancel: 'Anuluj',
   appPivotSheetNoMove:
     'Ten arkusz zawiera tabelę przestawną — przenoszenie zakresów nie jest jeszcze obsługiwane.',
   appTableFilterNoEdit:
@@ -664,6 +674,8 @@ export const pl = {
   appTabFormulas: 'Formuły',
   appTabData: 'Dane',
   appTabReview: 'Recenzja',
+  appRibbonCollapse: 'Zwiń Wstążkę',
+  appRibbonPin: 'Przypnij Wstążkę',
   appTabView: 'Widok',
   appTabAi: 'AI',
   appTabChartDesign: 'Projekt wykresu',

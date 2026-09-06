@@ -237,6 +237,10 @@ import {
   SET_FROZEN_MUTATION,
   SET_NUMFMT_MUTATION,
   TOGGLE_GRIDLINES_MUTATION,
+  SET_ZOOM_OPERATION,
+  SET_ZOOM_COMMAND,
+  OPEN_FILTER_PANEL_OPERATION,
+  FULL_LOAD_MAX_CELLS,
   SET_RANGE_VALUES_MUTATION,
   SET_RANGE_VALUES_COMMAND,
   SHEET_LIFECYCLE_MUTATIONS,
@@ -311,6 +315,7 @@ import { installCachedValueFallbackInterceptor } from './formula-cached-fallback
 import { installSupportedFunctionProbe } from './function-registry-probe'
 import { installCellFilenameFunction } from './cell-function'
 import { installFormulaLexerFix } from './formula-lexer-fix'
+import { installCfDisplayKeyCompare } from './cf-duplicate-key'
 import { installCfFormulaFold } from './cf-formula-fold'
 import { installSheetRenameFix } from './sheet-rename-fix'
 import { installSelectionWrapGuard } from './selection-wrap-fix'
@@ -318,6 +323,9 @@ import { installCellClipAnchorFix } from './cell-clip-anchor-fix'
 import { installMergeBorderFix } from './merge-border-fix'
 import { installThickBorderFix } from './thick-border-fix'
 import { installCenterContinuousRender } from './center-continuous'
+import { installForceStringMarkGate, installLongTextRender } from './long-text-render'
+import { installHeaderUnhideDebounce } from './load-perf-patches'
+import { installFormulaStreamHold } from './formula-stream-hold'
 import { installRichTextBidiFix } from './rich-text-bidi-fix'
 import { installRtlTextDirectionFix } from './rtl-text-fix'
 import { installRtlGridMirror } from './rtl-grid-mirror'
@@ -435,6 +443,26 @@ let pendingCopySource: string | undefined
 /// document-terminating \r\n is stripped (it would break wholeCell matches)
 /// and in-document paragraph breaks (\r) become \n, matching extractRichText
 /// and the text users actually type.
+/// Interceptors run on every cell read (each frame per visible cell, plus
+/// every streamed chunk), and numfmt's date/time parser is slow on long
+/// strings, so classify each distinct string once. No date, time or number
+/// literal is longer than 64 characters.
+const dateTextKinds = new Map<string, 'date-like' | 'text'>()
+function dateTextKind(value: string): 'date-like' | 'text' {
+  if (value.length > 64) return 'text'
+  const cached = dateTextKinds.get(value)
+  if (cached) return cached
+  let kind: 'date-like' | 'text' = 'text'
+  if (isNumericIdentifierText(value)) kind = 'date-like'
+  else if (!isRealNum(value)) {
+    const parsed = getNumfmtParseValueFilter(value)
+    if (parsed?.z && /[ymdhs]/i.test(parsed.z)) kind = 'date-like'
+  }
+  if (dateTextKinds.size >= 50_000) dateTextKinds.clear()
+  dateTextKinds.set(value, kind)
+  return kind
+}
+
 function richCellText(cell: unknown): string | null {
   const stream = (cell as { p?: { body?: { dataStream?: unknown } } } | null | undefined)?.p?.body
     ?.dataStream
@@ -579,6 +607,12 @@ export function App(): React.JSX.Element {
     () => window.desktopApi?.onRecoveryPrompt?.((prompt) => setRecoveryPrompt(prompt)) ?? undefined,
     [],
   )
+  /// Streaming-mode filter gate (alpha r166/r169): the filter panel builds
+  /// value counts from whatever happens to be loaded and the apply command is
+  /// cancelled, so instead of a silent no-op the user gets an explicit offer
+  /// to fully load the workbook first.
+  const [fullLoadPrompt, setFullLoadPrompt] = useState<'ask' | 'tooLarge' | null>(null)
+  const fullLoadRunning = useRef(false)
   const [message, setMessage] = useState(t('appReadyInitial'))
   /// Zoom of the active sheet in percent, echoed by the status-bar slider.
   const [zoomPercent, setZoomPercent] = useState(100)
@@ -1135,7 +1169,7 @@ export function App(): React.JSX.Element {
             }
           })
         },
-        onDone: ({ text, cancelled, turnLimit }) => {
+        onDone: ({ text, cancelled, turnLimit, truncated }) => {
           // Prefer tool summaries when the model finished via tools with no prose
           // (agent-core fills history with COMPLETED_VIA_TOOLS_TEXT so follow-ups
           // stay provider-safe; the UI can show the real work that ran).
@@ -1165,9 +1199,12 @@ export function App(): React.JSX.Element {
             : runLastTextRef.current ||
               toolSummaries ||
               (runMutatedRef.current ? t('appAiNoSummary') : t('appAiNoAction'))
-          const finalText = turnLimit
+          const baseText = turnLimit
             ? [prose, t('appAiTurnLimit')].filter(Boolean).join('\n\n')
             : prose || fallback
+          const finalText = truncated
+            ? [baseText, t('appAiTruncatedNote')].filter(Boolean).join('\n\n')
+            : baseText
           setMessage(cancelled ? t('appAiStopped') : t('appAiDone'))
           patchLastAssistant((entry) => ({
             ...entry,
@@ -1539,6 +1576,14 @@ export function App(): React.JSX.Element {
     // Excel's "Center Across Selection": center anchor text over its run of
     // blank same-format neighbors instead of folding it inside one cell.
     installCenterContinuousRender()
+    // Paragraph-sized plain text cells: draw only the slice that can reach the
+    // clip box instead of shaping the whole string every frame.
+    installLongTextRender()
+    installHeaderUnhideDebounce()
+    installForceStringMarkGate(runtime.univer.__getInjector().get(SheetInterceptorService))
+    // Hold the formula engine's per-chunk recalculation while file data streams
+    // in; one merged cycle follows once the chunks stop.
+    installFormulaStreamHold(runtime)
     // The window always starts blank now; still consume the one-shot
     // new-blank flag so it doesn't leak into the next workbook open.
     void window.desktopApi?.consumeNewBlankWorkbook?.()
@@ -1562,10 +1607,7 @@ export function App(): React.JSX.Element {
         effect: InterceptorEffectEnum.Style,
         handler: (cell, _position, next) => {
           if (cell?.t === CellValueType.STRING && typeof cell.v === 'string') {
-            if (isNumericIdentifierText(cell.v)) return next({ ...cell, t: undefined })
-            if (isRealNum(cell.v)) return next(cell)
-            const parsed = getNumfmtParseValueFilter(cell.v)
-            if (parsed?.z && /[ymdhs]/i.test(parsed.z)) return next({ ...cell, t: undefined })
+            if (dateTextKind(cell.v) === 'date-like') return next({ ...cell, t: undefined })
           }
           return next(cell)
         },
@@ -1641,6 +1683,9 @@ export function App(): React.JSX.Element {
     // the engine stops rebuilding millions of per-cell dependency trees on
     // every stream-in recalculation (genoffice#158).
     const cfFormulaFoldDisposable = installCfFormulaFold(runtime)
+    // duplicateValues / uniqueValues compare display text like Excel (1981233
+    // and "1981233" are duplicates).
+    const cfDisplayKeyDisposable = installCfDisplayKeyCompare(runtime)
     // Empty-value formula results (IFERROR/IF/CHOOSE over blank refs)
     // display as 0 like Excel.
     const nullResultDisposable = installFormulaNullResultFix(runtime)
@@ -1843,7 +1888,9 @@ export function App(): React.JSX.Element {
           event.id !== MOVE_RANGE_MUTATION &&
           event.id !== MOVE_ROWS_MUTATION &&
           event.id !== SET_FROZEN_MUTATION &&
-          event.id !== TOGGLE_GRIDLINES_MUTATION
+          event.id !== TOGGLE_GRIDLINES_MUTATION &&
+          event.id !== SET_ZOOM_OPERATION &&
+          event.id !== SET_ZOOM_COMMAND
         ) {
           return
         }
@@ -2077,6 +2124,24 @@ export function App(): React.JSX.Element {
           ) {
             recordPageSetup(state.editJournal, gridlines.subUnitId, {
               showGridlines: gridlines.showGridlines === 1,
+            })
+            setPendingEdits(journalSize(state.editJournal))
+          }
+          return
+        }
+        if (event.id === SET_ZOOM_OPERATION || event.id === SET_ZOOM_COMMAND) {
+          // Excel persists the normal-view zoom in the file; without this the
+          // save keeps the stored zoom and the post-save session reload snaps
+          // the view back to it (alpha r165).
+          const zoom = event.params as { subUnitId?: string; zoomRatio?: number } | undefined
+          if (
+            zoom?.subUnitId &&
+            typeof zoom.zoomRatio === 'number' &&
+            Number.isFinite(zoom.zoomRatio) &&
+            !isSheetRemoved(state.editJournal, zoom.subUnitId)
+          ) {
+            recordPageSetup(state.editJournal, zoom.subUnitId, {
+              zoomScale: Math.min(400, Math.max(10, Math.round(zoom.zoomRatio * 100))),
             })
             setPendingEdits(journalSize(state.editJournal))
           }
@@ -2361,6 +2426,7 @@ export function App(): React.JSX.Element {
         if (
           SORT_COMMAND_PATTERN.test(event.id) ||
           FILTER_COMMAND_PATTERN.test(event.id) ||
+          event.id === OPEN_FILTER_PANEL_OPERATION ||
           event.id === MOVE_RANGE_COMMAND ||
           event.id === MOVE_ROWS_COMMAND
         ) {
@@ -2369,9 +2435,36 @@ export function App(): React.JSX.Element {
             runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()?.getSheetId()
           const isAddedSheet =
             subUnitId !== undefined && state.editJournal.sheets.added.has(subUnitId)
-          // Sorting, filtering, and range moves read/rewrite model content,
-          // so partially streamed data would silently produce wrong results.
-          if (!isAddedSheet && (!state.formulaMode || !state.flags.preloadComplete)) {
+          const isFilter =
+            FILTER_COMMAND_PATTERN.test(event.id) || event.id === OPEN_FILTER_PANEL_OPERATION
+          // Filtering only hides rows, so it is safe on the complete data
+          // even without live formulas — after a full preload it unlocks.
+          // The panel itself is also gated: opened mid-stream it builds its
+          // by-value counts from whatever happens to be loaded and reports
+          // them as the column's content (alpha r169: 24 rows of a value
+          // whose real count was 125, 2 008 phantom blanks).
+          if (isFilter && !isAddedSheet && !state.flags.preloadComplete) {
+            event.cancel = true
+            // A silent footer note read as "filtering is broken" (alpha
+            // r166) — raise an explicit offer to fully load instead.
+            if (fullLoadRunning.current || state.formulaMode) {
+              // formula-mode workbooks preload automatically at open — the
+              // gate only holds during that brief window
+              setMessage(t('appFullLoadRunning'))
+            } else {
+              const totalCells = state.file.sheets.reduce(
+                (sum, sheet) => sum + sheet.rowCount * sheet.columnCount,
+                0,
+              )
+              setFullLoadPrompt(totalCells > FULL_LOAD_MAX_CELLS ? 'tooLarge' : 'ask')
+            }
+            return
+          }
+          // Sorting and range moves read/rewrite model content: partially
+          // streamed data would silently produce wrong results, and in
+          // value mode a rewrite would detach formula cells from their
+          // sidecar-held formulas — those stay gated on formula mode.
+          if (!isFilter && !isAddedSheet && (!state.formulaMode || !state.flags.preloadComplete)) {
             event.cancel = true
             setMessage(t('appNeedFullLoadSort'))
             return
@@ -2656,6 +2749,7 @@ export function App(): React.JSX.Element {
       selectionWrapGuardDisposable.dispose()
       multiRowAutofitDisposable.dispose()
       cfFormulaFoldDisposable.dispose()
+      cfDisplayKeyDisposable.dispose()
       nullResultDisposable.dispose()
       copyMaterializeDisposable.dispose()
       dataValidationChromeDisposable.dispose()
@@ -4730,6 +4824,7 @@ export function App(): React.JSX.Element {
       retryTimers: new Map(),
       appliedMerges: new Map(),
       appliedRowKeys: new Map(),
+      measuredWrapRows: new Map(),
       rowColStyleKeys: new Map(),
       sheetProtections: new Map(),
       sheetPageBreaks: new Map(),
@@ -4748,7 +4843,7 @@ export function App(): React.JSX.Element {
       ),
       formulaMode: gridCellCount <= FORMULA_MODE_MAX_CELLS,
       editJournal: createEditJournal(),
-      flags: { preloadComplete: false },
+      flags: { preloadComplete: false, preloadRunning: false },
       closure: { status: 'idle', pinned: new Map() },
       formulaText: new Map(),
       cachedFormulaValues: new Map(),
@@ -5169,6 +5264,47 @@ export function App(): React.JSX.Element {
             window.desktopApi?.replyRecoveryPrompt?.(restore)
           }}
         />
+      )}
+      {fullLoadPrompt && (
+        <div className="dialog-backdrop">
+          <div
+            className="format-cells-dialog recovery-dialog"
+            role="dialog"
+            aria-label={t('appFullLoadFilterTitle')}
+          >
+            <section className="dialog-body">
+              <div className="recovery-heading">
+                <h2>{t('appFullLoadFilterTitle')}</h2>
+              </div>
+              <p className="recovery-body">
+                {t(fullLoadPrompt === 'ask' ? 'appFullLoadFilterBody' : 'appFullLoadTooLarge')}
+              </p>
+            </section>
+            <div className="dialog-actions">
+              <button className="secondary" onClick={() => setFullLoadPrompt(null)}>
+                {t('appDialogCancel')}
+              </button>
+              {fullLoadPrompt === 'ask' && (
+                <button
+                  className="primary-action"
+                  autoFocus
+                  onClick={() => {
+                    setFullLoadPrompt(null)
+                    const runtime = univerRef.current
+                    if (!runtime || fullLoadRunning.current) return
+                    fullLoadRunning.current = true
+                    setMessage(t('appFullLoadRunning'))
+                    void preloadEntireWorkbook(runtime, lazyWorkbookRef, setMessage).finally(() => {
+                      fullLoadRunning.current = false
+                    })
+                  }}
+                >
+                  {t('appFullLoadStart')}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       {chartDialog && chartDialogTarget && chartDialog.kind === 'format' && (
         <ChartFormatPane

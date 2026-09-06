@@ -1264,7 +1264,8 @@ describe('rebuildDocx: footnotes (P6)', () => {
     )
     expect(parsed.footnotes[0]!.text).toBe('Small print note.')
     expect(parsed.footnotes[0]!.richParas?.[0]).toEqual([
-      { text: 'Small print note.', sizeHalfPoints: 16 },
+      // the Latin face depends on the runner's installed fonts (Arial or its Liberation substitute)
+      { text: 'Small print note.', sizeHalfPoints: 16, fontAscii: expect.any(String) },
     ])
   })
 })

@@ -89,13 +89,20 @@ test.describe('theme visual adoption', () => {
     }
   })
 
-  test('docs chrome darkens while the page stays paper-white', async () => {
+  test('docs renders a dark page in dark theme; View ▸ Dark Mode switches back to white paper', async () => {
     const launched = await launchShell({ onboardingSeen: true, videoDir: 'theme-visual-docs' })
     try {
       const shellPage = await findShellPage(launched.app)
       await shellPage.locator('.quick-card', { hasText: 'AI Docs' }).click()
       const editorPage = await waitForPageWithUrl(launched.app, 'docs/out')
-      await expect(editorPage.locator('.doc-page').first()).toBeVisible()
+      const page = editorPage.locator('.doc-page').first()
+      await expect(page).toBeVisible()
+      const pageBg = () => page.evaluate((el) => getComputedStyle(el).backgroundColor)
+      const pageInk = () => page.evaluate((el) => getComputedStyle(el).color)
+
+      // light theme: white paper, dark ink
+      expect(luminance(await pageBg())).toBeGreaterThan(180)
+      expect(luminance(await pageInk())).toBeLessThan(60)
 
       await setTheme(shellPage, 'dark')
       // ribbon and the canvas gutter around pages darken
@@ -117,13 +124,17 @@ test.describe('theme visual adoption', () => {
             .evaluate((el) => getComputedStyle(el).backgroundColor),
         ),
       ).toBeLessThan(90)
-      // the paper and its ink stay untouched
-      const page = editorPage.locator('.doc-page').first()
-      expect(
-        luminance(await page.evaluate((el) => getComputedStyle(el).backgroundColor)),
-      ).toBeGreaterThan(180)
-      expect(luminance(await page.evaluate((el) => getComputedStyle(el).color))).toBeLessThan(60)
+      // Word-style dark page: the paper goes dark and the ink is remapped light
+      await expect.poll(async () => luminance(await pageBg())).toBeLessThan(60)
+      expect(luminance(await pageInk())).toBeGreaterThan(180)
       await editorPage.screenshot({ path: screenshotPath('theme-docs-dark') })
+
+      // View ▸ Dark Mode is Word's Switch Modes: back to white paper under the dark chrome
+      await editorPage.getByRole('button', { name: 'View', exact: true }).click()
+      await editorPage.getByRole('button', { name: 'Dark Mode', exact: true }).click()
+      await expect.poll(async () => luminance(await pageBg())).toBeGreaterThan(180)
+      expect(luminance(await pageInk())).toBeLessThan(60)
+      await editorPage.screenshot({ path: screenshotPath('theme-docs-dark-white-page') })
     } finally {
       await closeAndSaveVideo(launched, 'theme-visual-docs')
     }

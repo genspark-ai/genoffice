@@ -25,6 +25,10 @@ export interface RunStyle {
   /** CJK substitution script for a missing fontFamily (from run altLang/lang or the
    *  bucket @charset, PowerPoint semantics); overrides name-based classification */
   substScript?: 'ja' | 'ko' | 'sc' | 'tc'
+  /** The text has no CJK characters: a missing family substitutes as western even when
+   *  its name looks CJK (PowerPoint picks the substitute per character script — prod_026's
+   *  "ISO 45001" in a missing NanumSquare face sets in Calibri, not Malgun) */
+  latinOnly?: boolean
 }
 
 export interface FontMetrics {

@@ -17,6 +17,7 @@ export {
   AgentLoop,
   COMPLETED_VIA_TOOLS_TEXT,
   DEFAULT_MAX_TURNS,
+  runtimePreamble,
   sanitizeAgentPayload,
 } from './loop'
 export type {

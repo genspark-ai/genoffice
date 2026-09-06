@@ -3049,7 +3049,8 @@ function parseChart(input: unknown): NonNullable<WorkbookVisualObject['chart']> 
       !isOptionalString(entry.lineColor) ||
       !isOptionalFiniteNumber(entry.lineWidth) ||
       (entry.smooth !== undefined && typeof entry.smooth !== 'boolean') ||
-      !isOptionalString(entry.marker)
+      !isOptionalString(entry.marker) ||
+      !isOptionalString(entry.plot)
     ) {
       throw new Error('Invalid workbook chart series.')
     }
@@ -3075,6 +3076,7 @@ function parseChart(input: unknown): NonNullable<WorkbookVisualObject['chart']> 
       ...(entry.lineWidth === undefined ? {} : { lineWidth: entry.lineWidth }),
       ...(entry.smooth === undefined ? {} : { smooth: entry.smooth }),
       ...(entry.marker === undefined ? {} : { marker: entry.marker }),
+      ...(entry.plot === undefined ? {} : { plot: entry.plot }),
       ...(categoryGroups === undefined ? {} : { categoryGroups }),
     }
   })

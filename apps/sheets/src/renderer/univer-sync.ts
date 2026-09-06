@@ -13,14 +13,15 @@ import {
   CommandType,
   DataValidationRenderMode,
   HorizontalAlign,
-  ICommandService,
-  IUndoRedoService,
-  LifecycleStages,
-  VerticalAlign,
-  WrapStrategy,
   type ICellData,
+  ICommandService,
   type IRange,
   type IStyleData,
+  IUndoRedoService,
+  LifecycleStages,
+  RANGE_TYPE,
+  VerticalAlign,
+  WrapStrategy,
 } from '@univerjs/core'
 import { IFindReplaceService } from '@univerjs/preset-sheets-find-replace'
 import { FontCache, getFontStyleString, IRenderManagerService } from '@univerjs/engine-render'
@@ -77,6 +78,7 @@ import {
   journalCellContentAt,
   isSheetRemoved,
   journalEntriesInRange,
+  NO_FILL_STYLE,
   ooxmlTextRotationToUniver,
   recordHyperlinkEdit,
   recordSetRangeValues,
@@ -141,6 +143,7 @@ import {
   type UniverRuntime,
   type UniverWorksheet,
 } from './univer-state'
+import { noteFormulaStreamChunk } from './formula-stream-hold'
 
 export const MINIMUM_SHEET_ROW_COUNT = 1000
 
@@ -807,6 +810,25 @@ export async function revealCellBelowFreeze(
     )
       return
   }
+  // Already fully visible → nothing to reveal. getVisibleRange starts below
+  // the frozen pane, so a target hidden under it reads as out of range and
+  // still gets the corrective scroll. Without this short-circuit every
+  // re-emission of an unchanged match (find research after streamed patches)
+  // re-scrolls the viewport (alpha r167).
+  try {
+    const visible = sheet.getVisibleRange()
+    if (
+      visible &&
+      row >= visible.startRow &&
+      row <= visible.endRow &&
+      column >= visible.startColumn &&
+      column <= visible.endColumn
+    ) {
+      return
+    }
+  } catch {
+    // no scroll render controller yet — proceed with the reveal
+  }
   const aimRow = Math.max(0, row - 1)
   let scrollRow = aimRow
   let scrollColumn = column
@@ -890,9 +912,36 @@ export function installFindRevealFix(runtime: UniverRuntime): () => void {
   } catch {
     return () => {} // find-replace not installed in this runtime
   }
+  // currentMatch$ re-emits on every research pass — streamed grid patches
+  // re-run the search every throttle window, so an unchanged match would be
+  // re-revealed forever and the viewport could never leave it (alpha r167).
+  // Reveal only when the match moves; explicit find navigation clears the
+  // memo so Enter on a wrapped-around single match still jumps back.
+  let lastRevealed: string | null = null
+  const NAV_OPERATIONS = new Set([
+    'ui.operation.go-to-next-match',
+    'ui.operation.go-to-previous-match',
+    'ui.operation.open-find-dialog',
+    'ui.operation.open-replace-dialog',
+    'ui.operation.focus-selection',
+  ])
+  // Clear BEFORE the operation runs: the next/previous handler emits
+  // currentMatch$ synchronously, so an after-execution listener would clear
+  // the memo too late and a wrap-around Enter onto the same match would be
+  // skipped (bugbot).
+  const navListener = runtime.univerAPI.onBeforeCommandExecute((command: { id: string }) => {
+    if (NAV_OPERATIONS.has(command.id)) lastRevealed = null
+  })
   const subscription = service?.currentMatch$?.subscribe((match) => {
-    const range = (match as { range?: { range?: IRange } } | null)?.range?.range
+    const typed = match as {
+      unitId?: string
+      range?: { subUnitId?: string; range?: IRange }
+    } | null
+    const range = typed?.range?.range
     if (!range) return
+    const key = `${typed?.unitId}:${typed?.range?.subUnitId}:${range.startRow}:${range.startColumn}`
+    if (key === lastRevealed) return
+    lastRevealed = key
     // after the plugin's own (mis-offset) scroll settles
     window.setTimeout(() => {
       const sheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
@@ -900,7 +949,10 @@ export function installFindRevealFix(runtime: UniverRuntime): () => void {
       void revealCellBelowFreeze(sheet, range.startRow, range.startColumn)
     }, 0)
   })
-  return () => subscription?.unsubscribe()
+  return () => {
+    navListener.dispose()
+    subscription?.unsubscribe()
+  }
 }
 
 export function navigateToAnchor(
@@ -2488,7 +2540,10 @@ async function loadRange(
       // resident in Univer and can grow the renderer past 2 GiB.
       patchWorksheetRange(
         worksheet,
-        loaded,
+        // A running full preload owns residency: evicting here would wipe
+        // rows it already installed (and its final full-sheet loadedRanges
+        // must not be shrunk back to a viewport window).
+        state.flags.preloadRunning ? undefined : loaded,
         range,
         [],
         state.file.styles,
@@ -2505,7 +2560,7 @@ async function loadRange(
         undefined,
         hiddenRowsInfo(state, sheetId),
       )
-      state.loadedRanges.set(sheetId, range)
+      if (!state.flags.preloadRunning) state.loadedRanges.set(sheetId, range)
       return
     }
     const availableEndRow =
@@ -2522,7 +2577,8 @@ async function loadRange(
         recordHiddenFileRows(state, sheetId, mapped.screen.rows, availableRange)
         patchWorksheetRange(
           worksheet,
-          alreadyLoaded,
+          // See above: never evict while a full preload is installing rows.
+          state.flags.preloadRunning ? undefined : alreadyLoaded,
           availableRange,
           state.formulaMode
             ? degradeCostlyFormulas(state, sheetMeta.name, mapped.screen.cells)
@@ -2541,7 +2597,7 @@ async function loadRange(
           inheritedWrapLookup(state.file.styles, mapped.screen.rows, sheetMeta.columnWidths),
           hiddenRowsInfo(state, sheetId),
         )
-        state.loadedRanges.set(sheetId, availableRange)
+        if (!state.flags.preloadRunning) state.loadedRanges.set(sheetId, availableRange)
         patchedRange = availableRange
         // Partial recalc windows follow the user: far outside the anchored
         // window the grid would show raw (possibly poisoned) file cache —
@@ -2575,7 +2631,7 @@ async function loadRange(
     storeFormulaText(state, sheetId, hasStructuralOps ? result.cells : mapped.screen.cells)
     recordHyperlinks(state, sheetId, mapped.screen.hyperlinks)
     keepActiveSheet(worksheet, () => {
-      applyRowProperties(worksheet, state, sheetId, mapped.screen.rows)
+      applyRowProperties(runtime, worksheet, state, sheetId, mapped.screen.rows)
       applyMerges(worksheet, state, sheetId, mapped.screen.merges)
     })
     // After merges (merged-only rows never auto-fit) and stored heights.
@@ -2597,7 +2653,24 @@ async function loadRange(
         wrapWindow,
         mapped.screen.merges,
       )
-      if (patchedRange) measureWrapAutoFitRows(worksheet, qualifying)
+      // Measure each row once per session: streamed windows re-patch the same
+      // rows constantly (indexing growth, evict/reload) and re-measuring an
+      // unchanged row still emits row-height mutations. Find-replace re-runs
+      // its search on every mutation and re-scrolls to the current match, so
+      // an unmemoized measure turns Ctrl+F during streaming into an endless
+      // scroll/patch/measure loop — the grid visibly shakes until the stream
+      // ends (alpha r167). Heights survive eviction; a reload needs no
+      // re-measure. User edits re-fit through Univer's own auto-height path.
+      let measured = state.measuredWrapRows.get(sheetId)
+      if (!measured) {
+        measured = new Set()
+        state.measuredWrapRows.set(sheetId, measured)
+      }
+      const freshRows = qualifying.filter((row) => !measured.has(row))
+      if (patchedRange && freshRows.length > 0) {
+        measureWrapAutoFitRows(worksheet, freshRows)
+        for (const row of freshRows) measured.add(row)
+      }
       const sheetKey = `file-${state.file.sha256}:${sheetId}`
       if (result.indexingComplete) {
         const qualifyingWithoutMerges = wrapAutoFitRows(
@@ -2617,8 +2690,11 @@ async function loadRange(
           mapped.screen.rows,
           sheetMeta.defaultRowHeight,
         )
-      } else {
-        trackPreIndexMeasuredRows(sheetKey, qualifying)
+      } else if (patchedRange) {
+        // Only rows actually measured this pass are contamination candidates —
+        // the memoized skip keeps earlier passes' rows tracked from their own
+        // measure.
+        trackPreIndexMeasuredRows(sheetKey, freshRows)
       }
     }
     // Conditional formatting, filters, and validations install once with
@@ -2998,12 +3074,14 @@ export function withRowColOverrides(
 }
 
 export function applyRowProperties(
+  runtime: UniverRuntime,
   worksheet: UniverWorksheet,
   state: LazyWorkbookState,
   sheetId: string,
   rows: WorkbookRangeResult['rows'],
 ): void {
   if (rows.length === 0) return
+  noteFormulaStreamChunk()
   recordRowStyleKeys(state, sheetId, rows)
   let applied = state.appliedRowKeys.get(sheetId)
   if (!applied) {
@@ -3079,8 +3157,40 @@ export function applyRowProperties(
       }
     }
     if (run) worksheet.setRowHeightsForced(run.start, run.count, run.px)
-    forEachRowRun(autoRows, (start, count) => worksheet.setRowAutoHeight(start, count))
-    forEachRowRun(hiddenRows, (start, count) => worksheet.hideRows(start, count))
+    // One command per contiguous run still rebuilt the skeleton (and the
+    // header unhide arrows for every hidden run so far) each time: a filtered
+    // sheet with 1,257 hidden runs spent 16 s in that quadratic churn. Send
+    // every run in a single command / mutation instead.
+    const unitId = worksheet.getSheet().getUnitId()
+    const subUnitId = worksheet.getSheetId()
+    const rowRanges = (list: number[]) => {
+      const ranges: IRange[] = []
+      forEachRowRun(list, (start, count) => {
+        ranges.push({
+          startRow: start,
+          endRow: start + count - 1,
+          startColumn: 0,
+          endColumn: worksheet.getSheet().getColumnCount() - 1,
+        })
+      })
+      return ranges
+    }
+    if (autoRows.length > 0) {
+      runtime.univerAPI.syncExecuteCommand('sheet.command.set-row-is-auto-height', {
+        unitId,
+        subUnitId,
+        ranges: rowRanges(autoRows),
+      })
+    }
+    if (hiddenRows.length > 0) {
+      // The command variant also rewrites the selection to the hidden ranges;
+      // a file load must not move the selection, so apply the mutation.
+      runtime.univerAPI.syncExecuteCommand('sheet.mutation.set-row-hidden', {
+        unitId,
+        subUnitId,
+        ranges: rowRanges(hiddenRows).map((range) => ({ ...range, rangeType: RANGE_TYPE.ROW })),
+      })
+    }
   } finally {
     journalSuppression.active = false
     loadAutoHeightSuppression.active = false
@@ -3310,6 +3420,7 @@ function patchWorksheetRange(
   inheritedWrap?: (row: number, column: number) => boolean,
   hiddenRows?: HiddenRowsInfo,
 ): void {
+  noteFormulaStreamChunk()
   // Windowed CF formula registrations follow the loaded row window; report
   // it before the patch so rules installed right after see it. Best-effort:
   // without a sheet id (unit-test worksheet doubles) windowing simply stays
@@ -4636,6 +4747,21 @@ export async function preloadEntireWorkbook(
   const state = lazyWorkbookRef.current
   const workbook = runtime.univerAPI.getActiveWorkbook()
   if (!state || !workbook) return
+  state.flags.preloadRunning = true
+  try {
+    await preloadEntireWorkbookInner(runtime, state, workbook, lazyWorkbookRef, setMessage)
+  } finally {
+    state.flags.preloadRunning = false
+  }
+}
+
+async function preloadEntireWorkbookInner(
+  runtime: UniverRuntime,
+  state: LazyWorkbookState,
+  workbook: NonNullable<ReturnType<UniverRuntime['univerAPI']['getActiveWorkbook']>>,
+  lazyWorkbookRef: { current: LazyWorkbookState | null },
+  setMessage: (message: string) => void,
+): Promise<void> {
   for (const sheet of state.file.sheets) {
     const worksheet = workbook.getSheetBySheetId(sheet.id)
     if (!worksheet) continue
@@ -4681,9 +4807,14 @@ export async function preloadEntireWorkbook(
       const screenRange = ops.length === 0 ? range : fileRangeToScreenRange(ops, range)
       if (screenRange === null) continue
       const screen = ops.length === 0 ? result : mapRangeResultToScreen(ops, result)
-      recordCachedFormulaValues(state, sheetId, screen.cells)
-      const installable = degradeCostlyFormulas(state, sheet.name, screen.cells)
-      collectArrayFollowers(arrayFollowers, installable, ops)
+      if (state.formulaMode) recordCachedFormulaValues(state, sheetId, screen.cells)
+      // Value mode installs cached results (like loadRange): live formulas
+      // belong to the sidecar there, and a formula install would detach them
+      // and storm Univer's engine.
+      const installable = state.formulaMode
+        ? degradeCostlyFormulas(state, sheet.name, screen.cells)
+        : screen.cells
+      if (state.formulaMode) collectArrayFollowers(arrayFollowers, installable, ops)
       recordRowStyleKeys(state, sheetId, screen.rows)
       recordHiddenFileRows(state, sheetId, screen.rows, screenRange)
       patchWorksheetRange(
@@ -4696,19 +4827,24 @@ export async function preloadEntireWorkbook(
         sheet.tables,
         sheet.pivotTables,
         sheet.freeze,
-        true,
+        state.formulaMode,
         state.editJournal,
-        undefined,
-        undefined,
-        arrayFollowers,
+        state.closure.pinned.get(sheetId),
+        state.recalc.overlay.get(sheetId),
+        state.formulaMode ? arrayFollowers : undefined,
         sheetRowColStyleKeys(state, sheetId),
         inheritedWrapLookup(state.file.styles, screen.rows, sheet.columnWidths),
         hiddenRowsInfo(state, sheetId),
       )
-      if (state.formulaMode) storeFormulaText(state, sheetId, result.cells)
+      // Every mode needs formulaText for the formula bar (see loadRange):
+      // value-mode cells install cached results with no `f` in the grid, and
+      // after the preload declares full loadedRanges no later viewport load
+      // will harvest it. File coordinates, like loadRange under ops (screen
+      // equals result here when no ops exist).
+      storeFormulaText(state, sheetId, result.cells)
       recordHyperlinks(state, sheetId, screen.hyperlinks)
       keepActiveSheet(worksheet, () => {
-        applyRowProperties(worksheet, state, sheetId, screen.rows)
+        applyRowProperties(runtime, worksheet, state, sheetId, screen.rows)
         applyMerges(worksheet, state, sheetId, screen.merges)
       })
       const qualifying = wrapAutoFitRows(
@@ -6116,11 +6252,9 @@ export function toUniverStyle(style: WorkbookCellStyle): IStyleData {
     // Like tb above: an explicit xf without a fill must BLOCK a filled
     // column/row style at compose time — Univer merges styles by key, so a
     // missing bg lets a <col style=> fill bleed through explicitly-styled
-    // cells (Excel treats each xf as complete, never a merge). bg: null
-    // would be stripped by SetRangeValues' Tools.removeNull, so use an
-    // empty-rgb sentinel: defined (blocks the compose fallthrough) but
-    // falsy for every painter that checks bg.rgb.
-    ...(style.fillColor ? { bg: { rgb: style.fillColor } } : { bg: { rgb: '' } }),
+    // cells (Excel treats each xf as complete, never a merge). See
+    // NO_FILL_STYLE for why the sentinel rather than bg: null.
+    ...(style.fillColor ? { bg: { rgb: style.fillColor } } : { bg: { ...NO_FILL_STYLE } }),
     ...(style.numberFormat ? { n: { pattern: style.numberFormat } } : {}),
     ...(Object.keys(borders).length > 0 ? { bd: borders } : {}),
     ...(mapHorizontalAlignment(style.horizontalAlignment) === undefined
@@ -6192,6 +6326,9 @@ function mapVerticalAlignment(value: string | undefined): VerticalAlign | undefi
   if (value === 'top') return VerticalAlign.TOP
   if (value === 'center') return VerticalAlign.MIDDLE
   if (value === 'bottom') return VerticalAlign.BOTTOM
+  // Excel centres a justify/distributed block; Univer has no equivalent and
+  // would otherwise fall through to its bottom default.
+  if (value === 'justify' || value === 'distributed') return VerticalAlign.MIDDLE
   return undefined
 }
 

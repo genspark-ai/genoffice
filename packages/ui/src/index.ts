@@ -15,6 +15,17 @@ export {
   type PopoverDismissOptions,
 } from './popover-dismiss'
 export { Dropdown, type DropdownOption } from './dropdown'
+export {
+  useRibbonCollapse,
+  RibbonCollapseButton,
+  RibbonExpandButton,
+  installRibbonPeekDismiss,
+  isRibbonToggleShortcut,
+  readRibbonCollapsed,
+  RIBBON_TOGGLE_SHORTCUT,
+  type RibbonCollapse,
+  type RibbonCollapseLabels,
+} from './ribbon-collapse'
 export { AiTypingIndicator } from './AiTypingIndicator'
 export { IconSend, IconStop, type IconProps } from './icons'
 export { Markdown, type MarkdownNav } from './Markdown'

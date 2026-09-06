@@ -406,6 +406,11 @@ export function markDocSeen(editor: Editor): void {
   docBaseline.set(editor, editor.state.doc)
 }
 
+/** A streamed load tail is not a user edit: appending at the end keeps every block index the model saw valid. */
+export function carryDocSeen(editor: Editor, before: ProseMirrorNode): void {
+  if (docBaseline.get(editor) === before) docBaseline.set(editor, editor.state.doc)
+}
+
 function editedExternally(editor: Editor): boolean {
   const seen = docBaseline.get(editor)
   return seen !== undefined && seen !== editor.state.doc

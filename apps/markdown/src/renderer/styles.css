@@ -179,7 +179,7 @@ button {
 .editor-scroll {
   flex: 1;
   overflow-y: auto;
-  /* same canvas backdrop as the slides workspace; the doc page stays white */
+  /* same canvas backdrop as the slides workspace; .doc-page follows the theme surface */
   background: var(--canvas);
 }
 

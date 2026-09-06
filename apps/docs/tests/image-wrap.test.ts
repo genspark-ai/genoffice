@@ -793,3 +793,101 @@ describe('image wrap in the editor', () => {
     editor.destroy()
   })
 })
+
+const TIGHT_WRAP =
+  '<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/>' +
+  '<wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="21600" y="0"/>' +
+  '<wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>'
+
+function anchoredPicture(x: number, y: number, cx: number, cy: number): string {
+  return (
+    `<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="114300" distR="114300" simplePos="0" ` +
+    `relativeHeight="251658240" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">` +
+    `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>${x}</wp:posOffset></wp:positionH>` +
+    `<wp:positionV relativeFrom="paragraph"><wp:posOffset>${y}</wp:posOffset></wp:positionV>` +
+    `<wp:extent cx="${cx}" cy="${cy}"/>${TIGHT_WRAP}<wp:docPr id="1" name="Picture 1"/>` +
+    `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+    `<pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="Picture 1"/><pic:cNvPicPr/></pic:nvPicPr>` +
+    `<pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>` +
+    `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>` +
+    `</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>`
+  )
+}
+
+const FLOAT_TABLE_XML =
+  '<w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" ' +
+  'w:horzAnchor="page" w:tblpX="689" w:tblpY="331"/><w:tblW w:w="5766" w:type="dxa"/>' +
+  '<w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2883"/><w:gridCol w:w="2883"/></w:tblGrid>' +
+  '<w:tr><w:tc><w:tcPr><w:tcW w:w="2883" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>' +
+  '<w:tc><w:tcPr><w:tcW w:w="2883" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+describe('side-wrapped pictures that leave no room for text', () => {
+  it('renders a picture that cannot sit beside a floating table as a band at its offset', async () => {
+    const { editor } = await openImageDoc(
+      FLOAT_TABLE_XML + `<w:p>${anchoredPicture(3307080, 410210, 3159760, 3214370)}</w:p>`,
+    )
+    const block = editor.view.dom.querySelector<HTMLElement>('.doc-protected-image')!
+    expect(block.classList.contains('img-wrap-band')).toBe(true)
+    expect(block.classList.contains('doc-img-float')).toBe(true)
+    expect(block.classList.contains('img-wrap-tight-right')).toBe(false)
+    // band = offset 43.1px + height 337px
+    expect(parseFloat(block.style.minHeight)).toBeCloseTo(380.1, 0)
+    const wrap = block.querySelector<HTMLElement>('.doc-img-wrap')!
+    expect(wrap.style.position).toBe('absolute')
+    expect(wrap.style.left).toBe('347.2px')
+    expect(wrap.style.top).toBe('43.1px')
+    editor.destroy()
+  })
+
+  it('floats a run-level anchored picture below its anchor line by the posOffset Y', async () => {
+    const { editor } = await openImageDoc(
+      `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${anchoredPicture(5156200, 359410, 1498600, 1498600)}` +
+        `<w:r><w:t>Heading</w:t></w:r></w:p>`,
+    )
+    const img = editor.view.dom.querySelector<HTMLElement>('img.doc-inline-img--wrap-tight-right')!
+    expect(img.style.marginTop).toBe('37.7px')
+    editor.destroy()
+  })
+
+  it('composes the posOffset Y of a quarter-turned run-level float with its footprint inset', async () => {
+    // 157x100 turned 90deg sticks out (157-100)/2 = 28.5px above the extent box
+    const turned = anchoredPicture(5156200, 359410, 1498600, 952500).replace(
+      '<a:xfrm>',
+      '<a:xfrm rot="5400000">',
+    )
+    const { editor } = await openImageDoc(`<w:p>${turned}<w:r><w:t>Heading</w:t></w:r></w:p>`)
+    const img = editor.view.dom.querySelector<HTMLElement>('img.doc-inline-img--wrap-tight-right')!
+    // Word places the extent box at the offset and turns it about its centre,
+    // so the img box top stays at 37.7px and the visual reaches 9.2px above it
+    expect(img.style.marginTop).toBe('37.7px')
+    expect(img.style.transform).toContain('rotate(90deg)')
+    editor.destroy()
+  })
+})
+
+describe('quarter-turned block pictures', () => {
+  const turned = (x: number, y: number, cx: number, cy: number) =>
+    anchoredPicture(x, y, cx, cy).replace('<a:xfrm>', '<a:xfrm rot="5400000">')
+
+  it('lifts a side-wrapped picture by the inset when the offset is smaller', async () => {
+    // 371x309 turned: inset 31px; offset 8.3px puts the visual 22.7px above the anchor
+    const { editor } = await openImageDoc(`<w:p>${turned(-330835, 78740, 3532505, 2947035)}</w:p>`)
+    const block = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-tight-left')!
+    expect(block.style.marginTop).toBe('0px')
+    const wrap = block.querySelector<HTMLElement>('.doc-img-wrap')!
+    expect(parseFloat(wrap.style.marginTop)).toBeCloseTo(-22.7, 1)
+    expect(wrap.style.marginLeft).toBe('')
+    expect(block.style.marginLeft).toBe('-3.7px')
+    editor.destroy()
+  })
+
+  it('keeps the remaining offset as the wrapper margin', async () => {
+    // 288x144 turned: inset 72px; offset 86.4px leaves 14.4px
+    const { editor } = await openImageDoc(`<w:p>${turned(0, 822960, 2743200, 1371600)}</w:p>`)
+    const block = editor.view.dom.querySelector<HTMLElement>('.doc-protected.img-wrap-tight-left')!
+    expect(block.style.marginTop).toBe('14.4px')
+    expect(block.querySelector<HTMLElement>('.doc-img-wrap')!.style.marginTop).toBe('')
+    editor.destroy()
+  })
+})

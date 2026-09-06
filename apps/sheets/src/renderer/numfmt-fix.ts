@@ -73,9 +73,27 @@ export function formatGeneral(value: number, budget: number): string {
   return toScientific(value, 0)
 }
 
+const CURRENCY_LCID_TAG = /\[\$([^\]-]+)-[^\]]*\]/g
+
+/**
+ * `[$sym-LCID]` picks the currency symbol only; Excel keeps the thousands
+ * and decimal separators of the host locale (an EN machine prints
+ * `R$ 62,175` for `[$R$-416]`). numfmt lets the tag's locale override the
+ * `locale` option, so drop the LCID and keep the symbol. Bare `[$-LCID]`
+ * tags and date patterns keep theirs: the locale legitimately picks the
+ * month/day names there.
+ */
+export function hostLocalePattern(pattern: string): string {
+  const stripped = pattern.replace(CURRENCY_LCID_TAG, '[$$$1]')
+  if (stripped === pattern) return pattern
+  const type = patternType(pattern)
+  if (type === 'date' || type === 'datetime' || type === 'time') return pattern
+  return stripped
+}
+
 function safeFormat(pattern: string, value: number | string): string | null {
   try {
-    return numfmt.format(pattern, value, { nbsp: true, throws: false })
+    return numfmt.format(hostLocalePattern(pattern), value, { nbsp: true, throws: false })
   } catch {
     return null
   }
@@ -599,6 +617,8 @@ export function fixFormattedValue(
   ) {
     return text
   }
+  // Univer formatted with the LCID's separators; ours follow the host locale.
+  if (hostLocalePattern(pattern) !== pattern && text !== String(displayed ?? '')) return text
   return null
 }
 

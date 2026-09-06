@@ -38,6 +38,7 @@ function makeRecordingCtx(canvas: FakeOffscreenCanvas) {
         fn = (...args: unknown[]) => {
           calls.push({ method: name, args })
           if (name === 'measureText') return { width: 10 }
+          if (name === 'createPattern') return { pattern: args[0] }
           return undefined
         }
         fns.set(name, fn)
@@ -51,6 +52,9 @@ function makeRecordingCtx(canvas: FakeOffscreenCanvas) {
       }
       if (prop === 'font') {
         calls.push({ method: 'set:font', args: [value] })
+      }
+      if (prop === 'fillStyle') {
+        calls.push({ method: 'set:fillStyle', args: [value] })
       }
       return true
     },
@@ -365,7 +369,7 @@ describe('EMR_EXTCREATEFONTINDIRECTW facename', () => {
     // regression: read at +28 prefixed the family with the OutPrecision/
     // Quality bytes; the invalid CSS ident made the ctx.font assignment fail
     // silently in a real canvas, dropping the 30px size with it
-    expect(fontSets()).toContain('30px "Segoe UI"')
+    expect(fontSets()).toContain('30px "Segoe UI", sans-serif')
     for (const font of fontSets()) {
       expect([...font].some((c) => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f)).toBe(false)
     }
@@ -374,13 +378,13 @@ describe('EMR_EXTCREATEFONTINDIRECTW facename', () => {
   it('strips control chars from a corrupt facename instead of losing the size', async () => {
     reset()
     await convertEmfToDataUrl(buildEmfWithText('\u0004㈅Meiryo UI', 'Test'), { dpiScale: 2 })
-    expect(fontSets()).toContain('30px "㈅Meiryo UI"')
+    expect(fontSets()).toContain('30px "㈅Meiryo UI", sans-serif')
   })
 
   it('maps localized facenames through the wrapper fontFamilyMap', async () => {
     reset()
     await metafileToDataUrl(new Uint8Array(buildEmfWithText('游ゴシック', 'Test')), 'image/x-emf')
-    expect(fontSets()).toContain('30px "Yu Gothic"')
+    expect(fontSets()).toContain('30px "Yu Gothic", sans-serif')
   })
 })
 
@@ -405,5 +409,205 @@ describe('gzipped metafiles (.emz/.wmz)', () => {
     const result = await metafileToDataUrl(new Uint8Array(gz), 'image/x-emf')
     expect(result).toMatch(/^data:image\/png;base64,/)
     expect(canvases[0]?.width).toBe(380)
+  })
+})
+
+describe('EMF+ bitmap image object (synthetic)', () => {
+  // EMR_HEADER + one EMR_COMMENT(EMF+) holding EmfPlusHeader, EmfPlusObject
+  // (image → bitmap → BitmapDataType Pixel = 0, 4×2 32bppARGB), EmfPlusDrawImage,
+  // EmfPlusEndOfFile + EMR_EOF — the shape PowerPoint uses for a picture
+  // background exported as EMF+ (prod master bg drew a blank white page)
+  function buildEmfPlusBitmap(): ArrayBuffer {
+    const w = 4
+    const h = 2
+    const pixels = new Uint8Array(w * h * 4).fill(0x80)
+    const plus: number[] = []
+    const u16 = (v: number) => plus.push(v & 0xff, (v >> 8) & 0xff)
+    const u32s = (...vs: number[]) => {
+      for (const v of vs) plus.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >>> 24) & 0xff)
+    }
+    const f32s = (...vs: number[]) => plus.push(...new Uint8Array(new Float32Array(vs).buffer))
+    // EmfPlusHeader
+    u16(0x4001)
+    u16(1)
+    u32s(28, 16, 0xdbc01001, 0, 96, 96)
+    // EmfPlusObject: type Image (5) << 8 | id 1
+    const objData = 28 + pixels.length
+    u16(0x4008)
+    u16(0x0500 | 1)
+    u32s(12 + objData, objData, 0xdbc01002, 1, w, h, w * 4, 0x26200a, 0)
+    plus.push(...pixels)
+    // EmfPlusDrawImage: image id 1, src unit pixel, float RectF src/dest
+    u16(0x401a)
+    u16(1)
+    u32s(52, 40, 0, 2)
+    f32s(0, 0, w, h, 0, 0, w, h)
+    // EmfPlusEndOfFile
+    u16(0x4002)
+    u16(0)
+    u32s(12, 0)
+
+    const commentData = 4 + plus.length
+    const commentSize = 12 + commentData
+    const total = 108 + commentSize + 20
+    const header: number[] = [
+      1,
+      108, // EMR_HEADER
+      0,
+      0,
+      w,
+      h, // bounds (px)
+      0,
+      0,
+      Math.round((w * 2540) / 96),
+      Math.round((h * 2540) / 96), // frame (0.01 mm)
+      0x464d4520,
+      0x10000,
+      total,
+      3, // signature, version, bytes, records
+      0, // handles + reserved
+      0,
+      0,
+      0, // description, palette
+      1920,
+      1080,
+      508,
+      286, // device px / mm
+      0,
+      0,
+      0,
+      508000,
+      286000, // pixel format, OpenGL, micrometers
+      70,
+      commentSize,
+      commentData,
+      0x2b464d45, // EMR_COMMENT + 'EMF+'
+    ]
+    const buf = new ArrayBuffer(total)
+    const v = new DataView(buf)
+    header.forEach((x, i) => v.setUint32(i * 4, x >>> 0, true))
+    new Uint8Array(buf).set(plus, header.length * 4)
+    const eof = [14, 20, 0, 16, 20]
+    eof.forEach((x, i) => v.setUint32(total - 20 + i * 4, x, true))
+    return buf
+  }
+
+  it('decodes the pixel bitmap and draws it through DrawImage', async () => {
+    reset()
+    const created: Blob[] = []
+    const savedCIB = globals.createImageBitmap
+    globals.createImageBitmap = async (blob: Blob) => {
+      created.push(blob)
+      return { width: 4, height: 2, close() {} }
+    }
+    try {
+      const result = await convertEmfToDataUrl(buildEmfPlusBitmap(), { dpiScale: 1 })
+      expect(result).toMatch(/^data:image\/png;base64,/)
+      expect(canvases[0]?.width).toBe(4)
+      expect(canvases[0]?.height).toBe(2)
+      // regression: BitmapDataType was compared against 1/2 instead of 0/1, so the
+      // object never decoded and DrawImage had nothing to paint
+      expect(created).toHaveLength(1)
+      const bmp = new Uint8Array(await created[0].arrayBuffer())
+      expect(String.fromCharCode(bmp[0], bmp[1])).toBe('BM')
+      const draws = calls.filter((c) => c.method === 'drawImage')
+      expect(draws).toHaveLength(1)
+      expect(draws[0].args.slice(1)).toEqual([0, 0, 4, 2])
+    } finally {
+      if (savedCIB === undefined) delete globals.createImageBitmap
+      else globals.createImageBitmap = savedCIB
+    }
+  })
+})
+
+describe('EMR_CREATEDIBPATTERNBRUSHPT (synthetic)', () => {
+  // EMR_HEADER + CREATEDIBPATTERNBRUSHPT (8×8 1bpp checker DIB) + SELECTOBJECT + BITBLT
+  // PATCOPY + EOF — how Excel OLE previews draw dotted cell borders
+  function buildPatternBrushEmf(): ArrayBuffer {
+    const dib = [
+      40,
+      8,
+      8,
+      0x00010001,
+      0,
+      32,
+      0,
+      0,
+      2,
+      0, // BITMAPINFOHEADER (planes=1, bpp=1)
+      0x00000000,
+      0x00ffffff, // color table: black, white
+      0xaa55aa55,
+      0xaa55aa55,
+      0xaa55aa55,
+      0xaa55aa55,
+      0xaa55aa55,
+      0xaa55aa55,
+      0xaa55aa55,
+      0xaa55aa55, // 8 rows × 4 bytes
+    ]
+    const brushRec = [94, 32 + dib.length * 4, 1, 0, 32, 48, 80, 32, ...dib]
+    const select = [37, 12, 1]
+    // BITBLT: bounds, dest 10,10 40×2, PATCOPY, no source DIB
+    const bitblt = [
+      76, 100, 0, 0, 100, 100, 10, 10, 40, 2, 0xf00021, 0, 0, 0, 0, 0, 0, 0x1000000, 0, 0, 0, 0, 0,
+      0, 0,
+    ]
+    const body = [...brushRec, ...select, ...bitblt, 14, 20, 0, 16, 20]
+    const total = 108 + body.length * 4
+    const header = [
+      1,
+      108,
+      0,
+      0,
+      100,
+      100,
+      0,
+      0,
+      2646,
+      2646,
+      0x464d4520,
+      0x10000,
+      total,
+      5,
+      2,
+      0,
+      0,
+      0,
+      1920,
+      1080,
+      508,
+      286,
+      0,
+      0,
+      0,
+      508000,
+      286000,
+    ]
+    const buf = new ArrayBuffer(total)
+    const v = new DataView(buf)
+    ;[...header, ...body].forEach((x, i) => v.setUint32(i * 4, x >>> 0, true))
+    return buf
+  }
+
+  it('fills the PATCOPY blit with a repeating pattern built from the brush DIB', async () => {
+    reset()
+    const result = await convertEmfToDataUrl(buildPatternBrushEmf(), { dpiScale: 1 })
+    expect(result).toMatch(/^data:image\/png;base64,/)
+    // the 8×8 pattern tile is a second canvas next to the 100×100 page
+    const tile = canvases.find((c) => c.width === 8 && c.height === 8)
+    expect(tile).toBeDefined()
+    const patterns = calls.filter((c) => c.method === 'createPattern')
+    expect(patterns).toHaveLength(1)
+    expect(patterns[0].args[1]).toBe('repeat')
+    // regression: the record was unhandled, so the blit used the previous solid brush
+    const fillIdx = calls.findIndex((c) => c.method === 'fillRect')
+    expect(fillIdx).toBeGreaterThan(0)
+    const lastFillStyle = calls
+      .slice(0, fillIdx)
+      .reverse()
+      .find((c) => c.method === 'set:fillStyle')
+    expect(lastFillStyle?.args[0]).toEqual({ pattern: tile })
+    expect(calls[fillIdx].args).toEqual([10, 10, 40, 2])
   })
 })

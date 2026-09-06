@@ -390,6 +390,40 @@ describe('recordSetRangeValues', () => {
     expect(entry?.style).toEqual({ italic: true })
   })
 
+  it('journals the ribbon No Fill (bg: { rgb: null }) as a fill clear', () => {
+    // setBackground(null) reaches the mutation wrapped as { rgb: null }, not
+    // as a bare null. Dropping it left Save disabled and the fill in the
+    // file after the ribbon had already painted the cells clear.
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', { 0: { 2: { s: { bg: { rgb: null } } } } })
+    expect(journal.cells.get('sheet-1')?.get('0:2')).toEqual({
+      row: 0,
+      column: 2,
+      hasValue: false,
+      value: null,
+      style: { fillColor: null },
+    })
+    expect(journalSize(journal)).toBe(1)
+  })
+
+  it('journals the empty-rgb no-fill sentinel and a wrapped Automatic font color', () => {
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', {
+      0: { 0: { s: { bg: { rgb: '' }, cl: { rgb: null } } } },
+    })
+    expect(journal.cells.get('sheet-1')?.get('0:0')?.style).toEqual({
+      fillColor: null,
+      fontColor: null,
+    })
+  })
+
+  it('lets a later fill override a journaled clear', () => {
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { s: { bg: { rgb: null } } } } })
+    recordSetRangeValues(journal, 'sheet-1', { 0: { 0: { s: { bg: { rgb: '#00FF00' } } } } })
+    expect(journal.cells.get('sheet-1')?.get('0:0')?.style).toEqual({ fillColor: '#00FF00' })
+  })
+
   it('flattens rich-text edits to plain text', () => {
     const journal = createEditJournal()
     recordSetRangeValues(journal, 'sheet-1', {

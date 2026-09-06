@@ -1,25 +1,8 @@
-//! Workbook-level parts: archive validation, sheet declarations and
-//! relationships, `<dimension>` / sheet-view scans, the shared-string table
-//! and workbook defined names.
+//! Workbook-level parts: sheet declarations and relationships,
+//! `<dimension>` / sheet-view scans, the shared-string table and workbook
+//! defined names.
 
 use super::*;
-
-pub(crate) fn validate_archive(archive: &mut ZipArchive<File>) -> Result<(), SidecarError> {
-    if archive.len() > MAX_ENTRY_COUNT {
-        return Err(SidecarError::Workbook(
-            "Workbook contains too many ZIP entries.".into(),
-        ));
-    }
-    for index in 0..archive.len() {
-        let entry = archive.by_index(index)?;
-        if entry.enclosed_name().is_none() {
-            return Err(SidecarError::Workbook(
-                "Workbook contains an unsafe ZIP path.".into(),
-            ));
-        }
-    }
-    Ok(())
-}
 
 pub(crate) fn read_sheet_declarations(
     archive: &mut ZipArchive<File>,

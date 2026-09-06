@@ -14,6 +14,8 @@ export const ar = {
   ribbonTabAnimations: 'حركات',
   ribbonTabSlideShow: 'عرض الشرائح',
   ribbonTabReview: 'مراجعة',
+  ribbonCollapse: 'طي الشريط',
+  ribbonPin: 'تثبيت الشريط',
   ribbonTabView: 'عرض',
   ribbonTabTableDesign: 'تصميم الجدول',
   ribbonTabChartDesign: 'تصميم المخطط',

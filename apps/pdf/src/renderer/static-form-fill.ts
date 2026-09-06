@@ -55,10 +55,12 @@ export function renderStaticFormText(
   })
 }
 
+export const STATIC_FORM_MARK_SIZE = 22
+
 /** Vector-painted check/cross bitmap, inserted through the existing movable image pipeline. */
 export function renderStaticFormMark(
   kind: Exclude<StaticFormFillKind, 'text'>,
-  size = 22,
+  size = STATIC_FORM_MARK_SIZE,
   color = '#111111',
 ): Extract<SignatureData, { kind: 'image' }> | null {
   return canvasImage(size, size, (ctx) => {

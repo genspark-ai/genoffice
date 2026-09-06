@@ -41,6 +41,17 @@ describe('provider model catalog', () => {
     expect(genspark.models).not.toContain('deep-seek-v4-flash')
     expect(genspark.models).not.toContain('deep-seek-v4-flash-vision-exp-openrouter')
   })
+
+  it('keeps Responses-only models out of the OpenCode tiers (no such protocol yet)', () => {
+    for (const id of ['opencode-zen', 'opencode-go'] as const) {
+      const meta = AI_PROVIDERS.find((provider) => provider.id === id)!
+      expect(meta.models).toContain(meta.defaultModel)
+      expect(meta.needsBaseUrl).toBeUndefined()
+      for (const model of meta.models) {
+        expect(model).not.toMatch(/^(gpt-|grok-|muse-spark-)/)
+      }
+    }
+  })
 })
 
 describe('resolveAiSettings', () => {

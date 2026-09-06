@@ -60,6 +60,11 @@ describe('docLineFactor — CJK factor source', () => {
     expect(docLineFactor(parsed, true)).toBe(1.3029)
   })
 
+  it('a same-slot Japanese Normal (Meiryo in every slot) is an EA choice, not Latin-only', () => {
+    const parsed = parsedWith({ font: 'メイリオ', fontAscii: 'メイリオ' }, undefined)
+    expect(docLineFactor(parsed, true)).toBe(1.9429)
+  })
+
   it('falls back to the SimSun-class factor without any declared EA font', () => {
     expect(docLineFactor(parsedWith(undefined), true)).toBe(1.3029)
   })
@@ -153,10 +158,10 @@ describe('docStyleCss — style indent vs list geometry', () => {
   it('style w:ind skips list items and becomes the --li-left fallback', () => {
     const css = docStyleCss(parsedWithStyle({ indentLeftTwips: 720 }))
     expect(css).toContain(
-      '.doc-page [data-style="ListParagraph"]:not(.doc-li) { margin-inline-start:36.0pt }',
+      '.doc-page [data-style="ListParagraph"]:not(.doc-li, .doc-li-stray) { margin-inline-start:36.0pt }',
     )
     expect(css).toContain(
-      '.doc-page .doc-li[data-style="ListParagraph"] { --style-li-left:36.0pt }',
+      '.doc-page :is(.doc-li, .doc-li-stray)[data-style="ListParagraph"] { --style-li-left:36.0pt }',
     )
     expect(css).not.toContain('margin-left')
   })

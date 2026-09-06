@@ -162,6 +162,54 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-or-...',
   },
   {
+    id: 'opencode-zen',
+    label: 'OpenCode Zen',
+    // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET
+    // /zen/v1/models lists them (2026-09-03). GPT-5.x, Grok and Muse Spark
+    // are served only through the Responses API, which has no protocol here,
+    // so they stay out until one exists.
+    models: [
+      'claude-sonnet-5',
+      'claude-opus-5',
+      'claude-fable-5-1',
+      'claude-haiku-4-5',
+      'gemini-3.7-flash',
+      'gemini-3.1-pro',
+      'kimi-k3',
+      'kimi-k2.7-code',
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'glm-5.2',
+      'minimax-m3',
+      'qwen3.6-plus',
+    ],
+    defaultModel: 'claude-sonnet-5',
+    keyPlaceholder: 'API Key',
+  },
+  {
+    id: 'opencode-go',
+    label: 'OpenCode Go',
+    // $10/month subscription to open-weight coding models (opencode.ai/docs/go),
+    // same key as Zen; ids exactly as GET /zen/go/v1/models lists them
+    // (2026-09-03). GPT-5.6 Luna, Grok and Muse Spark are Responses-only and
+    // left out for the same reason as above.
+    models: [
+      'kimi-k2.7-code',
+      'kimi-k3',
+      'glm-5.3',
+      'glm-5.3-flash',
+      'deepseek-v4-pro',
+      'deepseek-v4-flash',
+      'qwen3.8-max',
+      'qwen3.8-flash',
+      'minimax-m3',
+      'mimo-v2.5-pro',
+      'longcat-2.0',
+    ],
+    defaultModel: 'kimi-k2.7-code',
+    keyPlaceholder: 'API Key',
+  },
+  {
     id: 'custom',
     label: 'Custom',
     models: [],
@@ -238,12 +286,13 @@ const RETIRED_MODELS: Partial<Record<AiProviderId, Record<string, string>>> = {
 }
 
 /**
- * Per-turn output cap applied when the settings carry none. Every app's AI IPC
- * handler used to hardcode this 8192 with no user-facing way to raise it, which
- * is exactly the budget a reasoning model burns on thinking before it writes any
- * prose (see AiSettings.maxOutputTokens).
+ * Per-turn output cap applied when the settings carry none. The historic 8192
+ * was the budget a reasoning model burns on thinking before it writes any prose,
+ * and too small for a large sheet DSL or long-form generation in one turn. Models
+ * whose own ceiling is lower reject this and are retried at that ceiling
+ * (see output-cap.ts).
  */
-export const DEFAULT_MAX_OUTPUT_TOKENS = 8192
+export const DEFAULT_MAX_OUTPUT_TOKENS = 32768
 /** bounds accepted for AiSettings.maxOutputTokens: below the first a short answer cannot even finish, above the second one turn risks the whole context window */
 export const MIN_MAX_OUTPUT_TOKENS = 1024
 export const MAX_MAX_OUTPUT_TOKENS = 131072

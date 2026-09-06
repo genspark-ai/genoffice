@@ -314,5 +314,19 @@ describe('wpg group children', () => {
     expect(star.widthPx).toBe(Math.round(Math.round(762000 / 9525) * sx))
     expect(star.heightPx).toBe(Math.round(Math.round(723900 / 9525) * sy))
     expect(arrow.offsetXEmu).toBe(100000 + Math.round((2038350 - 1323975) * sx))
+    expect(star.inlineExtentPx).toBeUndefined()
+  })
+
+  it('an inline group reserves its extent height for the anchor line (children still float)', async () => {
+    const inline = GROUP_PARA.replace(
+      /<wp:anchor[^>]*>[\s\S]*?<wp:wrapNone\/>/,
+      '<wp:inline><wp:extent cx="1476375" cy="723900"/>',
+    ).replace('</wp:anchor>', '</wp:inline>')
+    const doc = await parseDocx(await buildDocx({ bodyXml: inline }))
+    const [star, arrow] = doc.blocks[0].textboxes!
+    expect(star.floating).toBe(true)
+    expect(star.inlineExtentPx).toBe(Math.round(723900 / 9525))
+    expect(arrow.inlineExtentPx).toBe(Math.round(723900 / 9525))
+    expect(star.offsetXEmu).toBe(0)
   })
 })

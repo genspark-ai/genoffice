@@ -79,15 +79,24 @@ const api: DesktopApi = {
   getRecentFiles: () => ipcRenderer.invoke('docs:recent'),
   pickImage: () => ipcRenderer.invoke('docs:pick-image'),
   fontMetrics: (family: string) => ipcRenderer.invoke('docs:font-metrics', family),
-  print: () => ipcRenderer.invoke('docs:print'),
+  print: (scale?: number) => ipcRenderer.invoke('docs:print', scale),
   exportPdf: (
     defaultName: string,
     pageWidthTwips: number,
     pageHeightTwips: number,
     outPath?: string,
-  ) => ipcRenderer.invoke('docs:export-pdf', defaultName, pageWidthTwips, pageHeightTwips, outPath),
-  printPdfBuffer: (pageWidthTwips: number, pageHeightTwips: number) =>
-    ipcRenderer.invoke('docs:print-pdf-buffer', pageWidthTwips, pageHeightTwips),
+    scale?: number,
+  ) =>
+    ipcRenderer.invoke(
+      'docs:export-pdf',
+      defaultName,
+      pageWidthTwips,
+      pageHeightTwips,
+      outPath,
+      scale,
+    ),
+  printPdfBuffer: (pageWidthTwips: number, pageHeightTwips: number, scale?: number) =>
+    ipcRenderer.invoke('docs:print-pdf-buffer', pageWidthTwips, pageHeightTwips, scale),
   saveMergedPdf: (defaultName: string, base64Parts: string[], outPath?: string) =>
     ipcRenderer.invoke('docs:save-merged-pdf', defaultName, base64Parts, outPath),
   getAiSettings: () => ipcRenderer.invoke('ai:get-settings'),

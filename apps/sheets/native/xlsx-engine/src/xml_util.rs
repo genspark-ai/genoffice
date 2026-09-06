@@ -14,10 +14,7 @@ pub(crate) fn zip_entry<'a>(
         None
     } else {
         let normalize = |value: &str| {
-            value
-                .trim_start_matches(['/', '\\'])
-                .replace('\\', "/")
-                .to_ascii_lowercase()
+            crate::archive::canonical_entry_name(value).map(|name| name.to_ascii_lowercase())
         };
         let wanted = normalize(name);
         archive

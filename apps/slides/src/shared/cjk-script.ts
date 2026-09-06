@@ -15,3 +15,16 @@ export function classifyCjkScript(family: string): CjkScript | null {
   if (TC_RE.test(f)) return 'tc'
   return null
 }
+
+/**
+ * Script of the characters in the family name itself (no romanized keywords): PowerPoint
+ * substitutes a missing font's Latin text by this (plus the declared @charset), so
+ * '함초롬돋움' Latin digits set in Malgun while 'NanumSquareExtraBold' digits set in Calibri.
+ */
+export function classifyCjkScriptByNameScript(family: string): CjkScript | 'sc' | null {
+  const f = family.normalize('NFKC')
+  if (/[぀-ヿ]/.test(f)) return 'ja'
+  if (/[가-힣ᄀ-ᇿ㄰-㆏]/.test(f)) return 'ko'
+  if (/[一-鿿]/.test(f)) return JA_RE.test(f) ? 'ja' : TC_RE.test(f) ? 'tc' : 'sc'
+  return null
+}

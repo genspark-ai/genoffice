@@ -78,6 +78,37 @@ describe('VML textbox display extraction', () => {
     expect(box?.readOnly).toBe(true)
   })
 
+  it('keeps a numbered anchor paragraph in its list: strayRuns + strayList, no stray box', async () => {
+    const numberingXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="1"><w:start w:val="1"/>' +
+      '<w:numFmt w:val="lowerLetter"/><w:lvlText w:val="(%2)"/>' +
+      '<w:pPr><w:ind w:left="564" w:hanging="328"/></w:pPr></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="20"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const host = vmlTextboxParagraph('<w:p><w:r><w:t>$918,600</w:t></w:r></w:p>').replace(
+      '<w:p><w:r>',
+      '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="20"/></w:numPr>' +
+        '<w:ind w:left="537" w:hanging="301"/></w:pPr><w:r>',
+    )
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: host.replace(/<\/w:p>$/, '<w:r><w:t>Total Amount Requested:</w:t></w:r></w:p>'),
+        numberingXml,
+      }),
+    )
+    const block = doc.blocks[0]
+    expect(block.type).toBe('passthrough')
+    expect(block.label).toBe('Text box')
+    expect(block.strayRuns?.map((r) => r.text).join('')).toBe('Total Amount Requested:')
+    expect(block.strayList).toEqual({ numId: '20', ilvl: 1 })
+    expect(block.strayIndent).toEqual({ leftTwips: 537, firstLineTwips: -301 })
+    expect(block.textboxes).toHaveLength(1)
+    expect(block.textboxes?.[0].paras[0].runs[0].text).toBe('$918,600')
+    // the anchor line stays in the preview text like the DrawingML path
+    expect(block.previewText).toBe('Total Amount Requested:\n$918,600')
+  })
+
   it('keeps plain-paragraph textboxes editable (no readOnly flag)', async () => {
     const doc = await parseDocx(
       await buildDocx({

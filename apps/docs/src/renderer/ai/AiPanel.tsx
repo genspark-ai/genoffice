@@ -19,6 +19,8 @@ import {
 } from './edit-queue'
 import { applyRevisionsBy } from '../editor/revisions'
 import { DOCS_CONTINUE_INSTRUCTION } from './continuation'
+import { waitForFullContent } from '../phased-content'
+import { currentDocGeneration } from '../file-actions'
 import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
@@ -312,6 +314,8 @@ export function AiPanel({
   const [busy, setBusy] = useState(false)
   /** Wall-clock start of the current run, drives the elapsed badge */
   const runStartedAtRef = useRef(0)
+  /** a send waiting on a phased open's tail; Stop / New chat abort it before it runs */
+  const pendingSendRef = useRef<{ aborted: boolean } | null>(null)
   const [chat, setChat] = useState<ChatEntry[]>([])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
@@ -805,7 +809,7 @@ export function AiPanel({
     attachmentsOverride?: AttachmentMeta[],
   ) => {
     const loop = loopRef.current
-    if (!instruction || !loop || loop.busy) return
+    if (!instruction || !loop || loop.busy || pendingSendRef.current) return
     setInput('')
     // The message consumes the composer attachments: they ride along (echoed on the
     // bubble, images multimodal, files via the files skill) and the composer clears.
@@ -835,6 +839,10 @@ export function AiPanel({
     ])
     runStartedAtRef.current = Date.now()
     setBusy(true)
+    // claimed before the async image read so Stop / New chat can flag this send at any point
+    const generation = currentDocGeneration()
+    const pending = { aborted: false }
+    pendingSendRef.current = pending
     persistMessage('user', instruction, undefined, sentAtts)
     // a rejected image read must not strand the run (busy would stay true forever): degrade to a no-image send
     void collectImageAttachments(sentAtts)
@@ -843,10 +851,31 @@ export function AiPanel({
         window.setTimeout(() => setAttachNotice(null), 5000)
         return []
       })
-      .then((images) => loop.run(instruction, images))
+      // a phased open still streaming its tail: the context must describe the whole document
+      .then(async (images) => {
+        await waitForFullContent()
+        // a newer send (after New chat) owns the panel now: leave its state alone
+        if (pendingSendRef.current !== pending) return
+        pendingSendRef.current = null
+        // the wait ended because another document replaced this one, or the
+        // user stopped / reset the chat meanwhile: nothing to run
+        if (pending.aborted || currentDocGeneration() !== generation) {
+          setChat((prev) =>
+            prev.filter(
+              (m, i) => !(i === prev.length - 1 && m.role === 'assistant' && m.streaming),
+            ),
+          )
+          setBusy(false)
+          return
+        }
+        return loop.run(instruction, images)
+      })
   }
 
-  const cancel = () => loopRef.current?.cancel()
+  const cancel = () => {
+    if (pendingSendRef.current) pendingSendRef.current.aborted = true
+    loopRef.current?.cancel()
+  }
 
   /** submit every still-anchored queued edit as one batch run */
   const sendQueue = () => {
@@ -871,6 +900,10 @@ export function AiPanel({
   const continueRun = () => runWith(DOCS_CONTINUE_INSTRUCTION, t('aiContinue'))
 
   const newChat = () => {
+    if (pendingSendRef.current) {
+      pendingSendRef.current.aborted = true
+      pendingSendRef.current = null
+    }
     loopRef.current?.reset()
     setBusy(false)
     setChat([])

@@ -68,6 +68,11 @@ describe('runsToInline image runs', () => {
           wrapDistRightEmu: null,
           border: null,
           lineCenterV: false,
+          rotDeg: null,
+          flipH: false,
+          flipV: false,
+          rule: null,
+          rawRPr: null,
         },
       },
     ])
@@ -108,6 +113,11 @@ describe('runsToInline image runs', () => {
           wrapDistRightEmu: null,
           border: null,
           lineCenterV: false,
+          rotDeg: null,
+          flipH: false,
+          flipV: false,
+          rule: null,
+          rawRPr: null,
         },
       },
     ])
@@ -307,6 +317,36 @@ describe('oversize floating tables (w:tblpPr) lose the float', () => {
     const node = tableModelToPmNode(model, null, null, null, 10210, 10069, 11910)
     expect(node.attrs!.tblFloat).toBeNull()
     expect(node.attrs!.tblFloatSuppressed).toBe(true)
+  })
+
+  it('a single-row text-anchored float leaving under 1in beside it flows inline', () => {
+    const model: TableModel = {
+      rows: [row],
+      colWidthsTwips: [9074],
+      floatSide: 'left',
+      floatPos: {
+        xTwips: 0,
+        yTwips: -27,
+        horzAnchor: 'margin',
+        vertAnchor: 'text',
+        distanceTwips: { left: 180, right: 180 },
+      },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10390, 10390, 11910)
+    expect(node.attrs!.tblFloat).toBeNull()
+    expect(node.attrs!.tblFloatSuppressed).toBe(true)
+  })
+
+  it('a text-anchored float with at least 1in beside it keeps floating', () => {
+    const model: TableModel = {
+      rows: [row, row],
+      colWidthsTwips: [8700],
+      floatSide: 'left',
+      floatPos: { xTwips: 0, yTwips: 0, horzAnchor: 'margin', vertAnchor: 'text' },
+    }
+    const node = tableModelToPmNode(model, null, null, null, 10390, 10390, 11910)
+    expect(node.attrs!.tblFloat).toBe('left')
+    expect(node.attrs!.tblFloatSuppressed).toBe(false)
   })
 
   it('a page-anchored full-width float keeps floating', () => {

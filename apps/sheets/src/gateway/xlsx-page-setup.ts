@@ -28,6 +28,8 @@ export interface SheetPageSetupState {
   readonly printGridlines?: boolean | undefined
   readonly printHeadings?: boolean | undefined
   readonly showGridlines?: boolean | undefined
+  /// Normal-view zoom percent (10-400); 100 drops the attributes.
+  readonly zoomScale?: number | undefined
   readonly showFormulas?: boolean | undefined
   readonly showHeadings?: boolean | undefined
   readonly printArea?: string | null | undefined
@@ -267,7 +269,9 @@ function setHeaderFooter(
     const pattern = headerFooterSectionPattern(tag)
     const element = text === '' ? '' : `<${tag}>${text}</${tag}>`
     if (pattern.test(body)) {
-      body = body.replace(pattern, element)
+      // function replacer: the element carries user text, and "$'000" / "$&"
+      // in a header would otherwise expand as String.replace patterns
+      body = body.replace(pattern, () => element)
       return
     }
     if (element === '') return
@@ -337,6 +341,14 @@ export function applyPageSetupState(worksheetXml: string, state: SheetPageSetupS
   if (state.showFormulas !== undefined) {
     // showFormulas defaults to false; drop the attribute to restore it.
     xml = setSheetViewAttr(xml, 'showFormulas', state.showFormulas ? '1' : null)
+  }
+  if (state.zoomScale !== undefined) {
+    // 100 is the default — drop the attributes. zoomScaleNormal keeps the
+    // normal-view zoom authoritative for files saved in page-layout /
+    // page-break view (the open path prefers it there).
+    const zoom = state.zoomScale === 100 ? null : String(state.zoomScale)
+    xml = setSheetViewAttr(xml, 'zoomScale', zoom)
+    xml = setSheetViewAttr(xml, 'zoomScaleNormal', zoom)
   }
   if (state.showHeadings !== undefined) {
     // showRowColHeaders defaults to true; write "0" to hide.

@@ -19,6 +19,7 @@ import {
   resolvePlaceholderInsets,
   resolvePlaceholderFillSpPr,
   parseLstStyleLevels,
+  parseDefRPrStyle,
   placeholderStyleChain,
   mergeTextStyleChain,
   type PlaceholderMap,
@@ -36,6 +37,7 @@ import type {
   Transform,
   TextBody,
   Paragraph,
+  ParagraphDefaultRunProps,
   TextRun,
   Fill,
   Stroke,
@@ -120,7 +122,7 @@ export interface ParseContext {
   masterPlaceholders?: PlaceholderMap
   /** master <p:txStyles> text style defaults (title/body/other families) */
   masterTextStyles?: MasterTextStyles
-  /** presentation.xml <p:defaultTextStyle>: base defaults for non-placeholder text boxes */
+  /** presentation.xml <p:defaultTextStyle>: base defaults for every non-placeholder shape */
   defaultTextStyle?: TextStyleLevels
   /** Full layout XML (read-only, for background inheritance) */
   layoutBg?: string
@@ -376,7 +378,10 @@ function parseSpShape(
       : undefined
   let fill = parseFill(spPr, ctx)
   const txBody = node['p:txBody']
-  // Text style inheritance chain: placeholders inherit font size/color/font defaults from layout/master
+  // Text style inheritance chain: placeholders inherit font size/color/font defaults from
+  // layout/master; every other shape (text box or autoshape, on the slide, layout or master)
+  // sits on presentation.xml defaultTextStyle — the master otherStyle is not consulted
+  // (PowerPoint probe: defaultTextStyle 14pt / otherStyle 28pt → all seven shapes 14pt)
   const phChain = ph
     ? placeholderStyleChain(
         ctx.layoutPlaceholders,
@@ -385,7 +390,7 @@ function parseSpShape(
         phType,
         phIdx,
       )
-    : ctx.defaultTextStyle && node['p:nvSpPr']?.['p:cNvSpPr']?.['@_txBox'] === '1'
+    : ctx.defaultTextStyle
       ? [ctx.defaultTextStyle]
       : []
   // <p:style> fontRef color ranks between the shape's own lstStyle and the
@@ -1275,9 +1280,13 @@ function diagramTextColors(
 
 function parseDiagramDrawing(
   drawingXml: string,
-  ctx: ParseContext,
+  parentCtx: ParseContext,
   txColors?: Map<string, string>,
 ): SlideElement[] {
+  // SmartArt text inherits from the diagram's own text styles (theme minor font), not the
+  // presentation defaultTextStyle: POI customGeo has defaultTextStyle latin=Arial and
+  // PowerPoint still draws the diagram in Calibri
+  const ctx: ParseContext = { ...parentCtx, defaultTextStyle: undefined }
   const xml = drawingXml.replace(/<(\/?)dsp:/g, '<$1p:')
   let doc: any
   try {
@@ -3030,6 +3039,17 @@ const xmlAttrEsc = (v: string): string =>
 
 /** Re-serialize a parsed color node (tag + attrs + flat modifier children like tint/lumMod)
  * so the rebuild path can restore it verbatim instead of baking in the resolved value. */
+/** colorNodeXml, but only for non-plain colors (schemeClr/prstClr/srgbClr+mods): a bare
+ *  srgbClr already round-trips through the baked path, so it need not be stored. */
+function nonPlainColorNode(container: any): string | undefined {
+  if (container == null) return undefined
+  const srgb = container['a:srgbClr']
+  const srgbPlain =
+    srgb != null && typeof srgb === 'object' && !Object.keys(srgb).some((k) => k.startsWith('a:'))
+  if (srgbPlain) return undefined
+  return colorNodeXml(container)
+}
+
 function colorNodeXml(fillNode: any): string | undefined {
   for (const tag of COLOR_NODE_TAGS) {
     const n = fillNode?.[tag]
@@ -3188,9 +3208,16 @@ function parseParagraph(
   const level = pPr['@_lvl'] ? parseInt(pPr['@_lvl'], 10) : undefined
   // Inherited default style for this level (shape lstStyle → layout ph → master ph → master txStyles)
   const dflt = mergeTextStyleChain(chain, level ?? 0)
+  // The paragraph's own <a:pPr><a:defRPr> sits between the runs and that chain:
+  // PowerPoint resolves run rPr → paragraph defRPr → inherited level style, so a run
+  // without sz/b/fill takes them from here (python-pptx paragraph.font, WPS exports).
+  const defRPrNode = pPr['a:defRPr']
+  const paraStyle = parseDefRPrStyle(defRPrNode, ctx.theme, ctx.phClr)
+  const runDflt = paraStyle ? { ...dflt, ...paraStyle } : dflt
+  const defRPr = paraStyle ? parseParagraphDefRPr(defRPrNode, paraStyle) : undefined
   const runsRaw = p['a:r'] ? (Array.isArray(p['a:r']) ? p['a:r'] : [p['a:r']]) : []
   const runs: TextRun[] = runsRaw.map((r: any) => {
-    const run = parseRun(r, ctx, dflt)
+    const run = parseRun(r, ctx, runDflt)
     // a:fld rewritten to a:r by parseShapeFragment (a genuine a:r never carries @_type)
     if (r?.['@_type']) run.field = String(r['@_type'])
     return run
@@ -3200,7 +3227,7 @@ function parseParagraph(
   // legacy fallback — a footer fld usually owns its paragraph.
   const fldsRaw = p['a:fld'] ? (Array.isArray(p['a:fld']) ? p['a:fld'] : [p['a:fld']]) : []
   for (const f of fldsRaw) {
-    const run = parseRun(f, ctx, dflt)
+    const run = parseRun(f, ctx, runDflt)
     if (f?.['@_type']) run.field = String(f['@_type'])
     runs.push(run)
   }
@@ -3208,9 +3235,12 @@ function parseParagraph(
   // Empty paragraph: line height comes from <a:endParaRPr> (the paragraph mark) and
   // overrides even an empty run's own rPr (probe-measured; Google Slides exports lean
   // on this with 80pt marks between text blocks). Parsed as a textless marker run.
+  // A field with no cached text (<a:fld type="slidenum"> straight from the layout,
+  // never opened in PowerPoint) is not empty: its value is substituted at render time.
   const endPr = p['a:endParaRPr']
-  if (endPr && typeof endPr === 'object' && runs.every((r) => !r.text)) {
-    const mark = parseRun({ 'a:rPr': endPr, 'a:t': '' }, ctx, dflt)
+  if (endPr && typeof endPr === 'object' && runs.every((r) => !r.text && !r.field)) {
+    const mark = parseRun({ 'a:rPr': endPr, 'a:t': '' }, ctx, runDflt)
+    mark.paraMark = true
     runs.splice(0, runs.length, mark)
   }
 
@@ -3241,6 +3271,8 @@ function parseParagraph(
     if (pPr['a:buClr']) {
       const c = resolveColorNode(pPr['a:buClr'], ctx)
       if (c) bullet.color = c
+      const node = nonPlainColorNode(pPr['a:buClr'])
+      if (node) bullet.colorNodeXml = node
     }
     if (pPr['a:buFont']?.['@_typeface']) bullet.font = String(pPr['a:buFont']['@_typeface'])
     if (pPr['a:buSzPct']?.['@_val']) {
@@ -3315,6 +3347,34 @@ function parseParagraph(
     ...(indent != null ? { indent } : {}),
     ...(tabStops.length ? { tabStops } : {}),
     ...(hasDefTabSz ? { defTabSz: defTabSzRaw } : {}),
+    ...(defRPr ? { defRPr } : {}),
+  }
+}
+
+/**
+ * Model form of a paragraph's <a:pPr><a:defRPr> for write-back: the resolved display
+ * values (size/bold/italic/cap/color) plus the raw typeface attributes so theme font
+ * references (+mn-lt …) survive a rebuild.
+ */
+function parseParagraphDefRPr(defRPrNode: any, style: LevelTextStyle): ParagraphDefaultRunProps {
+  const typeface = (slot: string): string | undefined => {
+    const v = defRPrNode?.[slot]?.['@_typeface']
+    return v != null && v !== '' ? String(v) : undefined
+  }
+  const latinFont = typeface('a:latin')
+  const eaFont = typeface('a:ea')
+  const csFont = typeface('a:cs')
+  const colorNode = nonPlainColorNode(defRPrNode?.['a:solidFill'])
+  return {
+    ...(style.fontSize != null ? { fontSize: style.fontSize } : {}),
+    ...(style.bold != null ? { bold: style.bold } : {}),
+    ...(style.italic != null ? { italic: style.italic } : {}),
+    ...(style.cap != null ? { cap: style.cap } : {}),
+    ...(style.color != null ? { color: style.color } : {}),
+    ...(colorNode ? { colorNodeXml: colorNode } : {}),
+    ...(latinFont ? { latinFont } : {}),
+    ...(eaFont ? { eaFont } : {}),
+    ...(csFont ? { csFont } : {}),
   }
 }
 
@@ -3414,24 +3474,43 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     return Number.isFinite(n) ? CHARSET_SCRIPT[n & 0xff] : undefined
   }
   // Pick the bucket by script: complex script → a:cs, CJK → a:ea, otherwise → a:latin; fall back through buckets when missing
-  const csPair = cs != null ? { f: cs, cset: charsetOf('a:cs') } : undefined
-  const eaPair = ea != null ? { f: ea, cset: charsetOf('a:ea') } : undefined
-  const latinPair = latin != null ? { f: latin, cset: charsetOf('a:latin') } : undefined
+  // Declared @charset alone (no lang): what PowerPoint consults for Latin text in a missing face
+  const charsetAttrOf = (bucket: string): ('ja' | 'ko' | 'sc' | 'tc') | undefined => {
+    const v = rPr[bucket]?.['@_charset']
+    if (rPr[bucket]?.['@_typeface'] == null || v == null) return undefined
+    const n = parseInt(String(v), 10)
+    return Number.isFinite(n) ? CHARSET_SCRIPT[n & 0xff] : undefined
+  }
+  const csPair =
+    cs != null ? { f: cs, cset: charsetOf('a:cs'), decl: charsetAttrOf('a:cs') } : undefined
+  const eaPair =
+    ea != null ? { f: ea, cset: charsetOf('a:ea'), decl: charsetAttrOf('a:ea') } : undefined
+  const latinPair =
+    latin != null
+      ? { f: latin, cset: charsetOf('a:latin'), decl: charsetAttrOf('a:latin') }
+      : undefined
   const picked = puaOnly
     ? sym != null
-      ? { f: sym, cset: undefined }
+      ? { f: sym, cset: undefined, decl: undefined }
       : undefined
     : ((CS_RE.test(text)
         ? (csPair ?? latinPair ?? eaPair)
         : CJK_RE.test(text)
           ? (eaPair ?? latinPair)
           : (latinPair ?? eaPair)) ??
-      (ctx.theme?.minorFont != null ? { f: ctx.theme.minorFont, cset: undefined } : undefined))
+      (ctx.theme?.minorFont != null
+        ? { f: ctx.theme.minorFont, cset: undefined, decl: undefined }
+        : undefined))
   const fontFamily = picked?.f
+  // Only ea-bucket runs record it: complex-script runs keep a:cs for everything non-wide
+  const latinFamily =
+    picked && picked === eaPair && latinPair && latinPair.f !== picked.f ? latinPair.f : undefined
   // The hint steers CJK-glyph substitution only: latin-text runs substitute as western
   // even when the run carries a CJK altLang (prod_043's "Rakuten Sans" ko-KR runs render
   // with a latin substitute in PPT, not Malgun)
-  const fontScriptHint = CJK_RE.test(text) ? picked?.cset : undefined
+  // Latin-only text: only an explicitly declared CJK charset on the picked bucket steers the
+  // substitute (prod_029: LG스마트체 charset=129 → Malgun digits); lang alone does not
+  const fontScriptHint = CJK_RE.test(text) ? picked?.cset : picked?.decl
   const bAttr = rPr['@_b']
   const iAttr = rPr['@_i']
   // Text outline <a:rPr><a:ln> (WordArt): only solid-color outlines are modeled, kept by the rebuild path
@@ -3482,6 +3561,7 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(rPr['@_kern'] != null ? { kern: (parseInt(rPr['@_kern'], 10) || 0) / 100 } : {}),
     ...(rPr['@_baseline'] ? { baseline: parseInt(rPr['@_baseline'], 10) / 1000 } : {}),
     fontFamily,
+    ...(latinFamily ? { latinFamily } : {}),
     ...(fontScriptHint != null ? { fontScriptHint } : {}),
     color,
     ...(colorFollowsTheme ? { colorFollowsTheme } : {}),

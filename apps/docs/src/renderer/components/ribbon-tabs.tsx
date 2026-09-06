@@ -44,6 +44,7 @@ import {
   IconPrintLayout,
   IconReadMode,
   IconRuler,
+  IconSpellcheck,
   IconSplit,
   IconSwitchWindows,
   IconRedo,
@@ -642,6 +643,9 @@ interface ReviewTabProps extends TabProps {
   onNewComment: () => void
   trackChanges: boolean
   onTrackChanges: (on: boolean) => void
+  /** native check-as-you-type spellcheck (red squiggle) */
+  spellcheck: boolean
+  onSpellcheck: (on: boolean) => void
   revisionDisplay: RevisionDisplayMode
   onRevisionDisplay: (mode: RevisionDisplayMode) => void
   revisionCount: number
@@ -673,6 +677,8 @@ export function ReviewTab({
   onNewComment,
   trackChanges,
   onTrackChanges,
+  spellcheck,
+  onSpellcheck,
   revisionDisplay,
   onRevisionDisplay,
   revisionCount,
@@ -718,6 +724,17 @@ export function ReviewTab({
               </span>
             </span>
             <span>{t('ribbonEditorBtn')}</span>
+          </button>
+          <button
+            className={`rb-big ${spellcheck ? 'active' : ''}`}
+            disabled={!hasDoc}
+            data-tip={t('ribbonSpellcheckTip')}
+            onClick={() => onSpellcheck(!spellcheck)}
+          >
+            <span className="rb-big-icon">
+              <IconSpellcheck size={BIG} />
+            </span>
+            <span>{t('ribbonSpellcheckBtn')}</span>
           </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupProofing')}</div>
@@ -1049,8 +1066,8 @@ interface ViewTabProps {
   onZoomFit: (mode: 'width' | 'page') => void
   showAi: boolean
   onToggleAi: () => void
-  darkCanvas: boolean
-  onDarkCanvas: (v: boolean) => void
+  darkPage: boolean
+  onDarkPage: (v: boolean) => void
   showRuler: boolean
   onShowRuler: (v: boolean) => void
   showNav: boolean
@@ -1074,8 +1091,8 @@ export function ViewTab({
   onZoomFit,
   showAi,
   onToggleAi,
-  darkCanvas,
-  onDarkCanvas,
+  darkPage,
+  onDarkPage,
   showRuler,
   onShowRuler,
   showNav,
@@ -1251,9 +1268,9 @@ export function ViewTab({
             <span>{t('ribbonAiPanel')}</span>
           </button>
           <button
-            className={`rb-big ${darkCanvas ? 'active' : ''}`}
+            className={`rb-big ${darkPage ? 'active' : ''}`}
             data-tip={t('ribbonDarkModeTip')}
-            onClick={() => onDarkCanvas(!darkCanvas)}
+            onClick={() => onDarkPage(!darkPage)}
           >
             <span className="rb-big-icon">
               <IconMoon size={BIG} />

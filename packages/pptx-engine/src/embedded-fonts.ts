@@ -2,10 +2,11 @@
  * Embedded font extraction — <p:embeddedFontLst> declares document-embedded faces whose
  * fntdata parts are EOT containers. PowerPoint renders missing families with these faces,
  * so fidelity needs them registered for measuring and drawing. Only uncompressed payloads
- * are usable here: MicroType-Express-compressed EOTs (flag 0x4) need a licensed
- * decompressor and are skipped.
+ * are usable directly; MicroType-Express-compressed EOTs (flag 0x4) inflate through the
+ * vendored MTX decoder (vendor/mtx).
  */
 import { XMLParser } from 'fast-xml-parser'
+import { mtxToSfnt } from './vendor/mtx'
 import { PackageArchive, resolveTarget } from './zip'
 import { asXmlNode, xmlArray } from './xml-utils'
 
@@ -34,10 +35,14 @@ export function eotToSfnt(bytes: Uint8Array): Uint8Array | null {
   const flags = dv.getUint32(12, true)
   if (eotSize !== bytes.length || fontDataSize === 0 || fontDataSize > bytes.length - 16)
     return null
-  if (flags & EOT_FLAG_COMPRESSED) return null
   // The variable-length header precedes the payload, so the payload sits at the tail
-  let sfnt = bytes.slice(bytes.length - fontDataSize)
+  let sfnt: Uint8Array = bytes.slice(bytes.length - fontDataSize)
   if (flags & EOT_FLAG_XOR) sfnt = sfnt.map((b) => b ^ 0x50)
+  if (flags & EOT_FLAG_COMPRESSED) {
+    const inflated = mtxToSfnt(sfnt)
+    if (!inflated) return null
+    sfnt = inflated
+  }
   const magic = new DataView(sfnt.buffer, sfnt.byteOffset, 4).getUint32(0, false)
   if (!SFNT_MAGICS.includes(magic)) return null
   return sfnt

@@ -15,6 +15,11 @@ import type {
  * they are skipped and subtracted from subsequent block coordinates, yielding
  * "gapless continuous flow" virtual coordinates so slicing is independent of the gaps.
  */
+/** anchor offset painted as a wrapper translate (px): display-only, the flow slot is unshifted */
+export function anchorShiftPx(el: HTMLElement): number {
+  return parseFloat(el.dataset.anchorDy ?? '') || 0
+}
+
 export function measureBlocks(
   pm: HTMLElement,
   origin: number,
@@ -54,6 +59,7 @@ export function measureBlocks(
           anchorTop,
           pinned,
           pageRelV: (box as HTMLElement).dataset.pageRelV === '1',
+          ...((box as HTMLElement).dataset.pageRelFrom === 'page' ? { pageRelFromPage: true } : {}),
         })
       }
     }
@@ -71,15 +77,16 @@ export function measureBlocks(
       (b) => !b.closest('td, th, .doc-textbox'),
     )
     const hasBreak = breakEls.length > 0
-    const hasColBreak = Array.from(el.querySelectorAll('.doc-col-br')).some(
+    const colBreakEls = Array.from(el.querySelectorAll('.doc-col-br')).filter(
       (b) => !b.closest('td, th, .doc-textbox'),
     )
+    const hasColBreak = colBreakEls.length > 0
     // zero-height blocks are skipped, except a break carrier (e.g. a floating
     // textbox whose anchor paragraph holds a page-type w:br) must still be seen
     if (rect.height <= 0 && !hasBreak) continue
     // in-block gaps from mid-paragraph page breaks: subtract from block height and add to the gap accumulator for later blocks
     const innerGap = innerGapHeight(el)
-    const top = (rect.top - origin - gapAccum) / zoomFactor
+    const top = (rect.top - anchorShiftPx(el) * zoomFactor - origin - gapAccum) / zoomFactor
     const height = (rect.height - innerGap) / zoomFactor
     const idxAttr = el.getAttribute('data-idx')
     // break-only paragraph (br line + ProseMirror trailing-break phantom line): marked
@@ -122,6 +129,40 @@ export function measureBlocks(
       r.setEndBefore(breakEls[0])
       leadingBreak = !r.toString().trim()
     }
+    // a column break with nothing before it moves the whole paragraph (its own
+    // line included) to the next column top; a break-only paragraph likewise
+    let leadingColBreak = false
+    if (colBreakEls.length === 1) {
+      const r = document.createRange()
+      r.setStart(el, 0)
+      r.setEndBefore(colBreakEls[0])
+      leadingColBreak = !r.toString().trim()
+    }
+    // breaks with text on both sides split the paragraph across the page turn
+    // (Word keeps the text before on this page); only a trailing break pushes
+    // the next block. Y = the post-break line's ink top, element-relative and
+    // net of inline gaps a previous pass already inserted there
+    const innerBreaks: number[] = []
+    let trailingBreak = hasBreak
+    if (hasBreak && !leadingBreak) {
+      const gapRects = Array.from(el.querySelectorAll('.page-gap-inline')).map((g) =>
+        g.getBoundingClientRect(),
+      )
+      const gapAbove = (y: number) => gapRects.reduce((s, g) => (g.top <= y ? s + g.height : s), 0)
+      const r = document.createRange()
+      breakEls.forEach((b, i) => {
+        r.setStart(el, 0)
+        r.setEndBefore(b)
+        const before = r.toString().trim() !== ''
+        r.setStartAfter(b)
+        r.setEnd(el, el.childNodes.length)
+        const after = r.toString().trim() !== ''
+        if (i === breakEls.length - 1) trailingBreak = !after
+        if (!before || !after || !b.classList.contains('doc-page-br')) return
+        const first = Array.from(r.getClientRects()).find((c) => c.height > 0 && c.width > 0)
+        if (first) innerBreaks.push((first.top - rect.top - gapAbove(first.top)) / zoomFactor)
+      })
+    }
     const floated =
       /(?:^|\s)img-wrap-(?:square|tight|through)-(?:left|right)(?:\s|$)/.test(el.className) ||
       el.classList.contains('doc-table-float-left') ||
@@ -140,10 +181,12 @@ export function measureBlocks(
       el.classList.contains('doc-protected-textboxes') ||
       !!el.querySelector('table')
     const bandKeep = el.dataset.bandKeep === '1' && el.classList.contains('doc-protected-floating')
+    const liftPx = parseFloat(el.dataset.tblpLift ?? '')
     blocks.push({
       top: top - relVApplied,
       height,
       ...(floated ? { floated: true } : {}),
+      ...(liftPx > 0 ? { liftPx } : {}),
       ...(bandKeep ? { bandKeep: true } : {}),
       ...(bandKeep && wrapFloatBottom !== undefined ? { floatBottom: wrapFloatBottom } : {}),
       ...(Number.isFinite(relVy) && (relVAnchor === 'page' || relVAnchor === 'margin')
@@ -153,8 +196,10 @@ export function measureBlocks(
       ...(fixedWidth ? { fixedWidthPx: rect.width / zoomFactor } : {}),
       breakBefore: el.classList.contains('page-break-before') || leadingBreak || undefined,
       breakBeforeBr: leadingBreak || undefined,
-      breakAfter: (hasBreak && !leadingBreak) || undefined,
-      colBreakAfter: hasColBreak || undefined,
+      breakAfter: (hasBreak && !leadingBreak && trailingBreak) || undefined,
+      ...(innerBreaks.length > 0 ? { innerBreaks } : {}),
+      colBreakBefore: leadingColBreak || undefined,
+      colBreakAfter: (hasColBreak && !leadingColBreak) || undefined,
       breakForce: (hasBreak && rect.height <= 0) || undefined,
       el,
       ...(breakOnlyLineH !== undefined ? { breakOnlyLineH } : {}),
@@ -185,6 +230,7 @@ export function measureBlocks(
     blocks[0].spaceBeforePx = (blocks[0].spaceBeforePx ?? 0) + lead
     blocks[0].height += lead
     blocks[0].top = 0
+    blocks[0].leadFoldPx = lead
   }
   return { blocks, totalHeight, floats, sectBreaks }
 }
@@ -324,7 +370,7 @@ export function noteRefOffsets(el: HTMLElement, zoomFactor: number): number[] {
   for (const sup of Array.from(
     el.querySelectorAll('sup.doc-note-ref[data-note-kind="footnote"]'),
   )) {
-    if (sup.closest('.page-gap, .page-float-host')) continue
+    if (sup.closest('.page-gap, .page-float-host, .page-repeat-header')) continue
     const r = sup.getBoundingClientRect()
     out.push((r.top - elTop - gapAbove(r.top)) / zoomFactor)
   }
@@ -351,8 +397,8 @@ export function applyBlockMeta(blocks: BlockBox[], metaOf: BlockMetaOf, zoomFact
       b.footnoteExtraPx = (b.footnoteExtraPx ?? 0) + meta.footnoteExtraPx
       // marker offsets pair with the per-ref heights (both in document order):
       // a count mismatch keeps the block-level fallback (whole reservation on
-      // the paragraph's last line)
-      if (meta.footnoteBands && b.el && !b.tableRows && !b.el.querySelector('tr')) {
+      // the paragraph's last line; a table's notes all on its first page)
+      if (meta.footnoteBands && b.el) {
         const offsets = noteRefOffsets(b.el, zoomFactor)
         if (offsets.length === meta.footnoteBands.length) {
           b.noteBands = meta.footnoteBands.map((band, i) => ({

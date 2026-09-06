@@ -384,6 +384,62 @@ describe('manual download fallback', () => {
     }
   })
 
+  const winFiles = [
+    { url: 'GenOfficeSetup-v0.2.0.exe' },
+    { url: 'GenOfficeSetup-v0.2.0-arm64.exe' },
+  ]
+
+  it('picks the arm64 installer on Windows arm64', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    readFileSyncMock.mockReturnValue('url: https://cdn.example.com/win\n')
+    platformSpy?.restore()
+    setPlatform('win32')
+    const restoreArch = setArch('arm64')
+    try {
+      const actions = await failTwiceIntoManual(winFiles)
+      actions.onOpenDownload()
+      expect(openExternal).toHaveBeenCalledWith(
+        'https://cdn.example.com/win/GenOfficeSetup-v0.2.0-arm64.exe',
+      )
+    } finally {
+      restoreArch()
+    }
+  })
+
+  it('picks the arch-less installer on Windows x64 even when arm64 is listed', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    readFileSyncMock.mockReturnValue('url: https://cdn.example.com/win\n')
+    platformSpy?.restore()
+    setPlatform('win32')
+    const restoreArch = setArch('x64')
+    try {
+      const actions = await failTwiceIntoManual([...winFiles].reverse())
+      actions.onOpenDownload()
+      expect(openExternal).toHaveBeenCalledWith(
+        'https://cdn.example.com/win/GenOfficeSetup-v0.2.0.exe',
+      )
+    } finally {
+      restoreArch()
+    }
+  })
+
+  it('falls back to the x64 installer on Windows arm64 when the feed predates arm64', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
+    readFileSyncMock.mockReturnValue('url: https://cdn.example.com/win\n')
+    platformSpy?.restore()
+    setPlatform('win32')
+    const restoreArch = setArch('arm64')
+    try {
+      const actions = await failTwiceIntoManual([{ url: 'GenOfficeSetup-v0.2.0.exe' }])
+      actions.onOpenDownload()
+      expect(openExternal).toHaveBeenCalledWith(
+        'https://cdn.example.com/win/GenOfficeSetup-v0.2.0.exe',
+      )
+    } finally {
+      restoreArch()
+    }
+  })
+
   it('rebuilds absolute metadata URLs against the trusted feed base', async () => {
     Object.defineProperty(process, 'resourcesPath', { value: '/res', configurable: true })
     readFileSyncMock.mockReturnValue('url: https://cdn.example.com/mac\n')

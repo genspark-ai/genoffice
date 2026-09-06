@@ -21,6 +21,7 @@ import type {
   TextElement,
   TextBody,
   Paragraph,
+  ParagraphDefaultRunProps,
   TextRun,
   Transform,
   PPrDirty,
@@ -44,7 +45,7 @@ export function patchTextElementXml(el: TextElement, originalXml: string): strin
   const aligned =
     runSpans.length === modelRuns.length &&
     runSpans.length > 0 &&
-    runSpans.every((s, i) => (s.kind === 'br') === isSoftBreakRun(modelRuns[i]!))
+    runSpans.every((s, i) => (s.kind === 'br' || !!s.newlineOnly) === isSoftBreakRun(modelRuns[i]!))
   if (aligned) {
     let out = ''
     let cursor = 0
@@ -52,7 +53,7 @@ export function patchTextElementXml(el: TextElement, originalXml: string): strin
       const span = runSpans[i]!
       out += originalXml.slice(cursor, span.start)
       const slice = originalXml.slice(span.start, span.end)
-      out += span.kind === 'br' ? slice : patchRun(slice, modelRuns[i]!)
+      out += span.kind === 'br' || span.newlineOnly ? slice : patchRun(slice, modelRuns[i]!)
       cursor = span.end
     }
     out += originalXml.slice(cursor)
@@ -98,7 +99,8 @@ function buildPPrGroup(p: Paragraph, group: 'lnSpc' | 'spcBef' | 'spcAft' | 'bul
       if (!b) return ''
       if (b.type === 'none') return '<a:buNone/>'
       let s = ''
-      if (b.color) s += `<a:buClr><a:srgbClr val="${hex6(b.color)}"/></a:buClr>`
+      if (b.colorNodeXml) s += `<a:buClr>${b.colorNodeXml}</a:buClr>`
+      else if (b.color) s += `<a:buClr><a:srgbClr val="${hex6(b.color)}"/></a:buClr>`
       if (b.sizePct != null) s += `<a:buSzPct val="${Math.round(b.sizePct * 1000)}"/>`
       if (b.font) s += `<a:buFont typeface="${escapeXmlAttr(b.font)}"/>`
       s +=
@@ -226,6 +228,7 @@ interface Span {
   start: number
   end: number
   kind: 'r' | 'br'
+  newlineOnly?: boolean
 }
 
 /** Locate all top-level <a:r>…</a:r> and <a:br/> (incl. paired form) spans in document order. */
@@ -250,7 +253,10 @@ function findRunSpans(xml: string): Span[] {
     const close = xml.indexOf('</a:r>', re.lastIndex)
     if (close < 0) break
     const end = close + '</a:r>'.length
-    spans.push({ start, end, kind: 'r' })
+    // A run whose text is only a line break parses as a soft-break sentinel (XML folds
+    // CRLF to LF); keeping its bytes preserves the formatting a bare <a:br/> would drop
+    const newlineOnly = /<a:t(?:\s[^>]*)?>\r?\n<\/a:t>/.test(xml.slice(start, end))
+    spans.push({ start, end, kind: 'r', ...(newlineOnly ? { newlineOnly: true } : {}) })
     re.lastIndex = end
   }
   return spans
@@ -260,7 +266,14 @@ function findRunSpans(xml: string): Span[] {
 function patchRun(runXml: string, run: TextRun): string {
   let out = runXml
 
-  // 1. Replace the <a:t> text content (keeping attributes like xml:space)
+  // 1. Replace the <a:t> text content (keeping attributes like xml:space); a self-closing
+  // <a:t/> (empty run) opens up when text is typed into it
+  const selfClosingT = /<a:t(\s[^>]*?)?\/>/
+  if (run.text && selfClosingT.test(out)) {
+    out = out.replace(selfClosingT, (_all, attrs: string | undefined) => {
+      return `<a:t${attrs ?? ''}>${escapeXmlText(run.text)}</a:t>`
+    })
+  }
   out = out.replace(
     /(<a:t(?:\s[^>]*)?>)([\s\S]*?)(<\/a:t>)/,
     (_all, open: string, _text: string, close: string) => {
@@ -269,6 +282,9 @@ function patchRun(runXml: string, run: TextRun): string {
   )
   // If the original run has no <a:t> (rare), leave it alone
   if (!/<a:t/.test(runXml)) return out
+  // Still-empty paragraph-mark run: its props are <a:endParaRPr>'s, not the empty run's.
+  // Once text is typed into it the run is real and takes the mark's props as its rPr.
+  if (run.paraMark && !run.text) return out
 
   // 2. Patch <a:rPr> boolean/size attributes + solidFill color (only when the model has explicit values)
   out = patchRunProps(out, run)
@@ -715,7 +731,8 @@ export function generateParagraphXml(p: Paragraph): string {
     const b = p.bullet
     if (b.type === 'none') kids += '<a:buNone/>'
     else {
-      if (b.color) kids += `<a:buClr><a:srgbClr val="${hex6(b.color)}"/></a:buClr>`
+      if (b.colorNodeXml) kids += `<a:buClr>${b.colorNodeXml}</a:buClr>`
+      else if (b.color) kids += `<a:buClr><a:srgbClr val="${hex6(b.color)}"/></a:buClr>`
       if (b.sizePct != null) kids += `<a:buSzPct val="${Math.round(b.sizePct * 1000)}"/>`
       if (b.font) kids += `<a:buFont typeface="${escapeXmlAttr(b.font)}"/>`
       kids +=
@@ -732,6 +749,10 @@ export function generateParagraphXml(p: Paragraph): string {
       )
       .join('')}</a:tabLst>`
   }
+  // Paragraph default run properties come last (schema: … → tabLst → defRPr); the runs
+  // that inherit sz/b/fill from it write no attribute of their own, so dropping it here
+  // would grow them to the master default after a structural edit.
+  if (p.defRPr) kids += defRPrXml(p.defRPr)
 
   const attrStr = pPrAttrs.length ? ` ${pPrAttrs.join(' ')}` : ''
   const pPr = kids
@@ -741,6 +762,23 @@ export function generateParagraphXml(p: Paragraph): string {
       : ''
   const runs = p.runs.map((r) => generateRunXml(r)).join('')
   return `<a:p>${pPr}${runs}</a:p>`
+}
+
+/** <a:defRPr> from the modeled paragraph defaults (CT_TextCharacterProperties order: fill → latin → ea → cs). */
+function defRPrXml(d: ParagraphDefaultRunProps): string {
+  let attrs = ''
+  if (d.fontSize != null) attrs += ` sz="${Math.round(d.fontSize * 100)}"`
+  if (d.bold != null) attrs += ` b="${d.bold ? 1 : 0}"`
+  if (d.italic != null) attrs += ` i="${d.italic ? 1 : 0}"`
+  if (d.cap) attrs += ` cap="${escapeXmlAttr(d.cap)}"`
+  let inner = ''
+  if (d.colorNodeXml) inner += `<a:solidFill>${d.colorNodeXml}</a:solidFill>`
+  else if (d.color) inner += `<a:solidFill><a:srgbClr val="${hex6(d.color)}"/></a:solidFill>`
+  if (d.latinFont) inner += `<a:latin typeface="${escapeXmlAttr(d.latinFont)}"/>`
+  if (d.eaFont) inner += `<a:ea typeface="${escapeXmlAttr(d.eaFont)}"/>`
+  if (d.csFont) inner += `<a:cs typeface="${escapeXmlAttr(d.csFont)}"/>`
+  if (!attrs && !inner) return ''
+  return inner ? `<a:defRPr${attrs}>${inner}</a:defRPr>` : `<a:defRPr${attrs}/>`
 }
 
 function generateRunXml(r: TextRun): string {

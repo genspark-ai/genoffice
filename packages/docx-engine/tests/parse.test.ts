@@ -206,11 +206,16 @@ describe('empty paragraph line size', () => {
       '<w:p><w:r><w:t>before</w:t></w:r></w:p>' +
       '<w:p><w:pPr><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman"/></w:rPr></w:pPr></w:p>' +
       // no pPr rPr: falls back to the (dropped) empty run
-      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial"/></w:rPr><w:t></w:t></w:r></w:p>'
+      '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial"/></w:rPr><w:t></w:t></w:r></w:p>' +
+      // East Asian slot only: the inherited Latin face keeps sizing the line
+      // (Word probe 2026-09-05: a DengXian-only mark lays a 12pt line at the
+      // ascii face's 14.6pt, not DengXian's 16.4pt)
+      '<w:p><w:pPr><w:rPr><w:rFonts w:eastAsia="DengXian"/><w:lang w:eastAsia="zh-CN"/></w:rPr></w:pPr></w:p>'
     const doc = await parseDocx(await buildDocx({ bodyXml }))
     expect(doc.blocks[0].format?.emptyRunFontFamily).toBeUndefined()
     expect(doc.blocks[1].format?.emptyRunFontFamily).toBe('Times New Roman')
     expect(doc.blocks[2].format?.emptyRunFontFamily).toBe('Arial')
+    expect(doc.blocks[3].format?.emptyRunFontFamily).toBeUndefined()
   })
 })
 

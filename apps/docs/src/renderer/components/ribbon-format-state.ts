@@ -178,16 +178,17 @@ function shapeTextStateOf(
     }
   }
   const every = (has: (run: Run) => boolean): boolean => runs.every(has)
-  const firstColor = runs[0].color ?? box.textColor ?? null
+  // auto (Word's automatic colour) shows as "no colour" in the swatch
+  const colorOf = (r: Run): string | null =>
+    r.color === 'auto' ? null : (r.color ?? box.textColor ?? null)
+  const firstColor = colorOf(runs[0])
   const firstAlign = box.paras[0]?.align ?? null
   return {
     shapeHasText: true,
     shapeTextBold: every((r) => r.bold === true),
     shapeTextItalic: every((r) => r.italic === true),
     shapeTextUnderline: every((r) => r.underline === true),
-    shapeTextColor: every((r) => (r.color ?? box.textColor ?? null) === firstColor)
-      ? firstColor
-      : null,
+    shapeTextColor: every((r) => colorOf(r) === firstColor) ? firstColor : null,
     shapeTextAlign: box.paras.every((p) => (p.align ?? null) === firstAlign) ? firstAlign : null,
   }
 }
@@ -288,9 +289,9 @@ export function computeFormatState(
     strike: ed.isActive('strike'),
     vertAlign: str(textAttrs.vertAlign),
     highlight: str(textAttrs.highlight),
-    textColor: str(textAttrs.color),
+    textColor: textAttrs.color === 'auto' ? null : str(textAttrs.color),
     charStyleId: str(textAttrs.styleId),
-    fontSizePt: (effectiveSizeHalfPoints(ed, styles, docDefaults) ?? 22) / 2,
+    fontSizePt: (effectiveSizeHalfPoints(ed, styles, docDefaults) ?? 20) / 2,
     fontFamily: displayFont(),
     headingLevel: editor.isActive('docHeading')
       ? Number(editor.getAttributes('docHeading').level ?? 1)

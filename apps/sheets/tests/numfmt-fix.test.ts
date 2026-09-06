@@ -7,6 +7,7 @@ import {
   fixFormattedValue,
   formatGeneral,
   generalCharBudget,
+  hostLocalePattern,
   mergedSpanWidth,
   yenLiteralDisplay,
 } from '../src/renderer/numfmt-fix'
@@ -273,5 +274,46 @@ describe('decimal half-way rounding (Excel rounds the decimal literal)', () => {
     expect(decimalRoundForPattern('yyyy-mm-dd', 1.005)).toBeNull()
     expect(decimalRoundForPattern('# ?/?', 1.005)).toBeNull()
     expect(decimalRoundForPattern('0.00E+00', 1.005)).toBeNull()
+  })
+})
+
+describe('hostLocalePattern — [$sym-LCID] keeps host separators', () => {
+  const BRL = '_-[$R$-416]\\ * #,##0_-;\\-[$R$-416]\\ * #,##0_-;_-[$R$-416]\\ * "-"??_-;_-@_-'
+  const ARS = '[$$-2C0A]\\ #,##0.00;\\-[$$-2C0A]\\ #,##0.00'
+
+  it('drops the LCID but keeps the symbol', () => {
+    expect(hostLocalePattern(ARS)).toBe('[$$]\\ #,##0.00;\\-[$$]\\ #,##0.00')
+    expect(hostLocalePattern('[$€-x-euro2]#,##0.00')).toBe('[$€]#,##0.00')
+  })
+
+  it('leaves bare [$-LCID] tags and date patterns alone', () => {
+    expect(hostLocalePattern('[$-F800]dddd\\,\\ mmmm\\ dd\\,\\ yyyy')).toBe(
+      '[$-F800]dddd\\,\\ mmmm\\ dd\\,\\ yyyy',
+    )
+    expect(hostLocalePattern('[$€-410]dddd')).toBe('[$€-410]dddd')
+    expect(hostLocalePattern('#,##0.00')).toBe('#,##0.00')
+  })
+
+  it('pt-BR tag: 62175 renders R$ 62,175 on an en-US host', () => {
+    expect(fixFormattedValue(BRL, 62175, `${NBSP}R$ 62.175${NBSP}`)).toBe(
+      `${NBSP}R$${NBSP}62,175${NBSP}`,
+    )
+    expect(expandAsteriskFill(BRL, 62175, 20, (text) => text.length)).toBe(
+      `${NBSP}R$${NBSP.repeat(5)}62,175${NBSP}`,
+    )
+  })
+
+  it('es-AR tag: 5782059.91 renders 5,782,059.91 on an en-US host', () => {
+    expect(fixFormattedValue(ARS, 5782059.91, '$ 5.782.059,91')).toBe(`$${NBSP}5,782,059.91`)
+    expect(fixFormattedValue(ARS, -5782059.91, '-$ 5.782.059,91')).toBe(`-$${NBSP}5,782,059.91`)
+  })
+
+  it('is a no-op when Univer already matches', () => {
+    expect(fixFormattedValue(ARS, 5782059.91, `$${NBSP}5,782,059.91`)).toBeNull()
+  })
+
+  it('keeps the legacy yen tag working for the 0x5C swap', () => {
+    expect(fixFormattedValue('[$\\-411]#,##0', 1234, '\\1,234')).toBeNull()
+    expect(yenLiteralDisplay('[$\\-411]#,##0', '\\1,234', undefined)).toBe('¥1,234')
   })
 })

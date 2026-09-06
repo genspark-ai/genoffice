@@ -363,6 +363,75 @@ export class LazyExtendedFindModel extends FindModel {
     direction: 'next' | 'previous',
     params?: IFindMoveParams,
   ): LazyCellMatch | null {
+    if (this.lastFocusedExtra && params?.stayIfOnMatch) {
+      // Research re-establishes the current match after grid mutations (the
+      // service passes stayIfOnMatch + noFocus). Advancing the segmented
+      // cursor here would walk it — and the reveal subscriber's scroll —
+      // through the extras on every streamed patch: with two matches the
+      // viewport ping-pongs between them for as long as the stream keeps
+      // mutating (alpha r167). Stay on the current extra if it still exists.
+      const current = this.lastFocusedExtra.range
+      const stay = this.currentExtras().find(
+        (extra) =>
+          extra.range.subUnitId === current.subUnitId &&
+          extra.range.range.startRow === current.range.startRow &&
+          extra.range.range.startColumn === current.range.startColumn,
+      )
+      if (stay) {
+        this.lastFocusedExtra = stay
+        return stay
+      }
+      // Not an extra any more — the jumped-to region usually just
+      // materialized in the grid and the hit now belongs to the inner
+      // session. Hand the cursor over THROUGH the inner model (not by
+      // returning the match directly): later Next/Previous/Replace must
+      // continue from this position, not from a stale inner index (bugbot).
+      // With the selection sitting on the cell one stayIfOnMatch call lands
+      // there; otherwise walk the inner cursor to the position — never
+      // return an unverified landing (bugbot round 2: that restarted the
+      // cursor walk) and never park a ghost cursor (round 3: a held extra
+      // that currentExtras() dropped skipped the inner session on the next
+      // user nav and could not self-recover).
+      const samePos = (candidate: IFindMatch | null): candidate is LazyCellMatch => {
+        const range = candidate ? (candidate as LazyCellMatch).range : null
+        return (
+          !!range &&
+          range.subUnitId === current.subUnitId &&
+          range.range.startRow === current.range.startRow &&
+          range.range.startColumn === current.range.startColumn
+        )
+      }
+      const hasTakenOver = this.innerMatches().some((inner) => samePos(inner))
+      if (hasTakenOver) {
+        if (this.selectionOn(current)) {
+          const anchored = this.innerNeighbor(direction, params)
+          if (samePos(anchored)) {
+            this.lastFocusedExtra = null
+            return anchored
+          }
+        }
+        // index-walk: land on the first/last inner match, then step until
+        // the cursor sits on the taken-over cell (bounded by the list size).
+        // stayIfOnMatch must NOT ride along: with the selection on any other
+        // in-window hit each step would re-anchor there and never advance
+        // (bugbot round 4).
+        let candidate = this.innerNeighbor(direction, {
+          noFocus: true,
+          ignoreSelection: true,
+          stayIfOnMatch: false,
+        })
+        for (let step = this.innerMatches().length; candidate && step > 0; step -= 1) {
+          if (samePos(candidate)) {
+            this.lastFocusedExtra = null
+            return candidate
+          }
+          candidate = this.innerNeighbor(direction, { noFocus: true, stayIfOnMatch: false })
+        }
+        // the inner list changed mid-walk — retry on the next pass
+        return this.lastFocusedExtra
+      }
+      // truly gone (replaced/edited away) — fall through and advance
+    }
     if (!this.lastFocusedExtra) {
       const candidate = this.innerNeighbor(direction, params)
       if (candidate) {
@@ -592,6 +661,24 @@ export class LazyExtendedFindModel extends FindModel {
    *  book. */
   private stateIsCurrent(): boolean {
     return this.deps.lazyWorkbookRef.current === this.state
+  }
+
+  /** Whether the grid selection sits on the given hit — the anchor the inner
+   *  model's stayIfOnMatch re-establishes from. */
+  private selectionOn(position: LazyCellMatch['range']): boolean {
+    try {
+      const workbook = this.deps.runtime.univerAPI.getActiveWorkbook()
+      const range = workbook?.getActiveRange()
+      const activeSheet = workbook?.getActiveSheet()
+      if (!workbook || !range || !activeSheet) return false
+      return (
+        activeSheet.getSheetId() === position.subUnitId &&
+        range.getRow() === position.range.startRow &&
+        range.getColumn() === position.range.startColumn
+      )
+    } catch {
+      return false
+    }
   }
 
   /** Activate the sheet, load the region, scroll to it, and select the cell. */

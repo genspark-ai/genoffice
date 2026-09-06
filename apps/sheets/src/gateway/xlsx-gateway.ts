@@ -1674,12 +1674,39 @@ export function sha256(input: Buffer | string): string {
   return createHash('sha256').update(input).digest('hex')
 }
 
+/// Package-relative form of a ZIP entry name, null when it escapes the root.
+/// '\' separators, a leading '/' and empty segments are producer quirks Excel
+/// tolerates (genoffice#196 shipped `/xl/workbook.xml`); folding them keeps
+/// lookups and the saved package on conformant names.
+function canonicalEntryName(raw: string): string | null {
+  if (raw.includes('\0')) return null
+  const segments: string[] = []
+  for (const segment of raw.split(/[/\\]/)) {
+    if (segment === '' || segment === '.') continue
+    if (segment === '..') {
+      if (segments.pop() === undefined) return null
+      continue
+    }
+    segments.push(segment)
+  }
+  const name = segments.join('/')
+  return name && /[/\\]$/.test(raw) ? `${name}/` : name
+}
+
 async function loadSafeZip(buffer: Buffer): Promise<JSZip> {
   const zip = await JSZip.loadAsync(buffer, { checkCRC32: true })
   const paths = Object.keys(zip.files)
   if (paths.length > MAX_ENTRY_COUNT) throw new Error('Workbook contains too many ZIP entries.')
-  if (paths.some((path) => path.startsWith('/') || path.split('/').includes('..'))) {
-    throw new Error('Workbook contains an unsafe ZIP path.')
+  // Snapshot first: removing a folder entry such as "/" drops its children too.
+  const files = paths.map((path) => [path, zip.files[path]] as const)
+  for (const [path, file] of files) {
+    const canonical = canonicalEntryName(path)
+    if (canonical === null) throw new Error('Workbook contains an unsafe ZIP path.')
+    if (canonical === path) continue
+    zip.remove(path)
+    if (file && !file.dir && canonical && !zip.files[canonical]) {
+      zip.file(canonical, await file.async('nodebuffer'), { createFolders: false, date: file.date })
+    }
   }
   return zip
 }

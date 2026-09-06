@@ -284,6 +284,7 @@ export const ms = {
   appAiDone: 'AI selesai',
   appAiTurnLimit:
     '(Had pusingan panggilan alat untuk permintaan ini telah dicapai; jawapan di atas berdasarkan maklumat yang dibaca setakat ini dan mungkin tidak lengkap.)',
+  appAiTruncatedNote: '(Balasan terpotong kerana had panjang dan mungkin tidak lengkap.)',
   appAiStopped: '(dihentikan)',
   appAiNoSummary: 'AI selesai tanpa ringkasan.',
   appAiNoAction:
@@ -302,6 +303,14 @@ export const ms = {
   appIconSetUnsupported: 'Gabungan ikon ini tidak boleh disimpan ke xlsx — pilih set ikon lain.',
   appNeedFullLoadSort:
     'Mengisih, menapis, mengalihkan julat dan memisahkan teks memerlukan mod muat penuh — buku kerja ini terlalu besar dan distrim sebahagian.',
+  appFullLoadFilterTitle: 'Penapisan memerlukan muatan penuh',
+  appFullLoadFilterBody:
+    'Buku kerja ini besar dan hanya dimuatkan sebahagian secara penstriman. Penapisan (termasuk kiraan nilai) memerlukan data lengkap. Muatkan seluruh buku kerja sekarang?',
+  appFullLoadStart: 'Muat semua',
+  appFullLoadRunning: 'Memuatkan seluruh buku kerja — penapisan tersedia selepas selesai…',
+  appFullLoadTooLarge:
+    'Buku kerja ini terlalu besar untuk dimuatkan sepenuhnya ke ingatan; penapisan tidak tersedia untuk fail ini.',
+  appDialogCancel: 'Batal',
   appPivotSheetNoMove: 'Helaian ini mengandungi Jadual Pangsi — pengalihan julat belum disokong.',
   appTableFilterNoEdit:
     'Penapis helaian ini milik jadual Excel — pengeditannya belum boleh disimpan.',
@@ -639,6 +648,8 @@ export const ms = {
   appTabFormulas: 'Formula',
   appTabData: 'Data',
   appTabReview: 'Semakan',
+  appRibbonCollapse: 'Runtuhkan Reben',
+  appRibbonPin: 'Semat Reben',
   appTabView: 'Pandangan',
   appTabAi: 'AI',
   appTabChartDesign: 'Reka Bentuk Carta',

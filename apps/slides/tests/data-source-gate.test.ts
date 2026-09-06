@@ -70,39 +70,50 @@ function mkAccess(extra: Record<string, unknown> = {}): DeckAccess {
   } as unknown as DeckAccess
 }
 
+/** addChart through apply_ops; dataSource rides on the op and is checked by the preflight */
 const chartCall = (extra: Record<string, unknown> = {}): AgentToolCall => ({
   id: 't',
-  name: 'add_chart',
+  name: 'apply_ops',
   input: {
-    slideIndex: 0,
-    kind: 'bar',
-    categories: ['Q1', 'Q2'],
-    series: [{ name: 'Sales', values: [12.5, 48.2] }],
-    ...extra,
+    ops: [
+      {
+        op: 'addChart',
+        target: { slide: 0 },
+        kind: 'bar',
+        categories: ['Q1', 'Q2'],
+        series: [{ name: 'Sales', values: [12.5, 48.2] }],
+        offset: { x: 0, y: 0, cx: 1, cy: 1 },
+        ...extra,
+      },
+    ],
   },
 })
 
 beforeEach(() => {
   ;(window as any).slidesApi = {
-    addChart: vi.fn(async () => ({ slide: richDeck, sourceId: 'c1' })),
+    applyTxn: vi.fn(async () => ({
+      applied: true,
+      records: [{ op: 'addChart', target: '0', created: ['c1'] }],
+      slides: [richDeck],
+    })),
     editChart: vi.fn(async () => ({ slide: richDeck })),
     webSearch: vi.fn(async () => ({ answer: '', results: [] })),
   }
 })
 
-describe('add_chart provenance gate', () => {
+describe('apply_ops addChart provenance gate', () => {
   it('refuses without dataSource and names the accepted values', async () => {
     const r = await createSlidesSkill(mkAccess()).executeTool!(chartCall())
     expect(r.isError).toBe(true)
     expect(r.output).toContain('dataSource')
-    expect((window as any).slidesApi.addChart).not.toHaveBeenCalled()
+    expect((window as any).slidesApi.applyTxn).not.toHaveBeenCalled()
   })
 
   it("refuses dataSource 'search' when no web_search ran in this conversation", async () => {
     const r = await createSlidesSkill(mkAccess()).executeTool!(chartCall({ dataSource: 'search' }))
     expect(r.isError).toBe(true)
     expect(r.output).toContain('web_search')
-    expect((window as any).slidesApi.addChart).not.toHaveBeenCalled()
+    expect((window as any).slidesApi.applyTxn).not.toHaveBeenCalled()
   })
 
   it("accepts dataSource 'search' after a real web_search", async () => {
@@ -110,7 +121,7 @@ describe('add_chart provenance gate', () => {
     await skill.executeTool!({ id: 's', name: 'web_search', input: { query: 'heytea stores' } })
     const r = await skill.executeTool!(chartCall({ dataSource: 'search' }))
     expect(r.isError).toBeUndefined()
-    expect((window as any).slidesApi.addChart).toHaveBeenCalledOnce()
+    expect((window as any).slidesApi.applyTxn).toHaveBeenCalledOnce()
   })
 
   it("accepts 'sample' but forces disclosure in the output", async () => {

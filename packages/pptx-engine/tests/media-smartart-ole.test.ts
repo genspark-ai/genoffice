@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
 import { openPptx, createBlankPptx } from '../src/index'
 import { parseSlide } from '../src/parse'
+import { parseDefaultTextStyle } from '../src/placeholder'
 import { patchElementXfrm } from '../src/generate'
 import type { PassthroughElement, PictureElement, TextElement } from '../src/types'
 
@@ -97,6 +98,26 @@ describe('SmartArt prerendered drawing read-only preview', () => {
     const run = sp.text!.paragraphs[0]!.runs[0]!
     expect(run.text).toBe('Step One')
     expect(run.color).toBe('#FFFFFF')
+  })
+
+  it('drawing text does not inherit presentation defaultTextStyle (POI customGeo: Arial default, Calibri diagram)', () => {
+    const pres =
+      '<?xml version="1.0"?><p:presentation xmlns:p="p" xmlns:a="a"><p:defaultTextStyle>' +
+      '<a:lvl1pPr><a:defRPr sz="1200"><a:latin typeface="Arial"/></a:defRPr></a:lvl1pPr>' +
+      '</p:defaultTextStyle></p:presentation>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(SMARTART_FRAME),
+      ctx: {
+        theme,
+        diagramDrawings: new Map([['rId1', DIAGRAM_DRAWING]]),
+        defaultTextStyle: parseDefaultTextStyle(pres),
+      },
+    })
+    const sp = (slide.elements[0] as PassthroughElement).previewShapes![0] as TextElement
+    const run = sp.text!.paragraphs[0]!.runs[0]!
+    expect(run.fontSize).not.toBe(12)
+    expect(run.latinFont).not.toBe('Arial')
   })
 
   it('without a drawing part (ctx missing) it remains a plain placeholder passthrough', () => {

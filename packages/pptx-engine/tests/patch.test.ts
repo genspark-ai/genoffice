@@ -13,6 +13,7 @@ import {
   editTableCellText,
 } from '../src/index'
 import type { TextElement, TableElement } from '../src/types'
+import { parseSlide } from '../src/parse'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -232,5 +233,52 @@ describe('setElementFont (change font family/size for a whole selected element)'
       offset: { x: 0, y: 0, cx: 1905000, cy: 952500 },
     })!
     expect(setElementFont(r.slide, r.elementId, { fontSizePt: 14 })).toBe(true)
+  })
+})
+
+describe('identity round-trip keeps inherited run bytes (prod-import run4)', () => {
+  const slideWith = (sp: string) =>
+    '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a" xmlns:r="r"><p:cSld>' +
+    `<p:spTree><p:nvGrpSpPr/><p:grpSpPr/>${sp}</p:spTree></p:cSld></p:sld>`
+  const roundTrip = (body: string) => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="T"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>' +
+      `<p:txBody><a:bodyPr/>${body}</p:txBody></p:sp>`
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx: {} })
+    const el = slide.elements[0] as TextElement
+    return { sp, out: patchTextElementXml(el, el.anchor.originalXml) }
+  }
+
+  it('an empty run under <a:endParaRPr> does not get the mark props stamped as an rPr', () => {
+    const { sp, out } = roundTrip(
+      '<a:p><a:pPr algn="l"/><a:r><a:t/></a:r>' +
+        '<a:endParaRPr b="0" i="0" sz="3500" u="none" cap="none" strike="noStrike">' +
+        '<a:solidFill><a:srgbClr val="92D050"/></a:solidFill></a:endParaRPr></a:p>',
+    )
+    expect(out).toBe(sp)
+  })
+
+  it('typing into the paragraph mark writes the mark props onto the new run', () => {
+    const sp =
+      '<p:sp><p:nvSpPr><p:cNvPr id="2" name="T"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' +
+      '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm></p:spPr>' +
+      '<p:txBody><a:bodyPr/><a:p><a:r><a:t xml:space="preserve"/></a:r><a:endParaRPr b="1" sz="3500"/></a:p></p:txBody></p:sp>'
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(sp), ctx: {} })
+    const el = slide.elements[0] as TextElement
+    el.text!.paragraphs[0]!.runs[0]!.text = 'typed'
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    // the attributed self-closing form opens up too (Bugbot)
+    expect(out).toContain('<a:t xml:space="preserve">typed</a:t>')
+    expect(out).toMatch(/<a:rPr[^>]*\bsz="3500"/)
+    expect(out).toMatch(/<a:rPr[^>]*\bb="1"/)
+  })
+
+  it('a formatted run holding only a line break keeps its bytes instead of becoming <a:br/>', () => {
+    const { sp, out } = roundTrip(
+      '<a:p><a:r><a:rPr lang="ja-JP" sz="1800" b="1"><a:solidFill><a:srgbClr val="0F172A"/></a:solidFill></a:rPr><a:t>見出し</a:t></a:r>' +
+        '<a:r><a:rPr lang="en-US" sz="1800" b="1"><a:solidFill><a:srgbClr val="0F172A"/></a:solidFill></a:rPr><a:t>\n</a:t></a:r></a:p>',
+    )
+    expect(out).toBe(sp)
   })
 })

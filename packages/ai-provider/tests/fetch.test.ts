@@ -1,12 +1,47 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { aiFetch, setRescueFetch } from '../src/fetch'
+import { AI_DEFAULT_USER_AGENT, aiFetch, setAiUserAgent, setRescueFetch } from '../src/fetch'
 
 afterEach(() => {
   vi.unstubAllGlobals()
   setRescueFetch(null)
+  setAiUserAgent(AI_DEFAULT_USER_AGENT)
 })
 
+function sentHeaders(fetchMock: ReturnType<typeof vi.fn>): Headers {
+  const init = fetchMock.mock.calls[0]![1] as RequestInit
+  return new Headers(init.headers)
+}
+
 describe('aiFetch', () => {
+  it('identifies the client to gateways that flag anonymous traffic', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('ok'))
+    vi.stubGlobal('fetch', fetchMock)
+    await aiFetch('https://x/', { headers: { Authorization: 'Bearer k' } })
+    const headers = sentHeaders(fetchMock)
+    expect(headers.get('user-agent')).toBe('GenOffice')
+    expect(headers.get('authorization')).toBe('Bearer k')
+  })
+
+  it('lets the host refine the user agent and never overrides an explicit one', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('ok'))
+    vi.stubGlobal('fetch', fetchMock)
+    setAiUserAgent('GenOffice/1.2.3')
+    await aiFetch('https://x/', {})
+    expect(sentHeaders(fetchMock).get('user-agent')).toBe('GenOffice/1.2.3')
+
+    fetchMock.mockClear()
+    await aiFetch('https://x/', { headers: { 'User-Agent': 'custom/9' } })
+    expect(sentHeaders(fetchMock).get('user-agent')).toBe('custom/9')
+  })
+
+  it('passes the same identified request to the rescue fetch', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('fetch failed')))
+    const rescue = vi.fn().mockResolvedValue(new Response('rescued'))
+    setRescueFetch(rescue)
+    await aiFetch('https://x/', {})
+    expect(sentHeaders(rescue).get('user-agent')).toBe('GenOffice')
+  })
+
   it('returns the primary response without touching the rescue path', async () => {
     const ok = new Response('ok')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(ok))

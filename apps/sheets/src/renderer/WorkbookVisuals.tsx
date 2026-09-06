@@ -1803,8 +1803,22 @@ function ChartVisual({
   const isPie = types.includes('pieChart') || isDoughnut
   const isScatter = types.includes('scatterChart')
   const isCombo = types.includes('barChart') && types.includes('lineChart')
+  const comboLineIdx = isCombo ? comboLineIndices(populated) : new Set<number>()
+  const comboBarIdx = comboBarIndices(populated, comboLineIdx)
+  const comboBars = comboBarIdx.map((index) => populated[index] as ChartSeries)
+  const comboLines = populated.filter((_, index) => comboLineIdx.has(index))
+  // Element selection is resolved against chart.series, so the drawn bars
+  // carry their source indices instead of their filtered positions.
+  const populatedIdx = chart.series.flatMap((series, index) =>
+    series.values.length > 0 ? [index] : [],
+  )
+  const barSeriesIdx = isCombo
+    ? comboBarIdx.map((index) => populatedIdx[index] as number)
+    : populatedIdx
   const isArea = types.includes('areaChart') && !types.includes('barChart')
-  const isLine = types.includes('lineChart') && !types.includes('barChart')
+  const isLine =
+    (types.includes('lineChart') && !types.includes('barChart')) ||
+    (isCombo && comboBars.length === 0)
   const isRadar = types.includes('radarChart') && !types.includes('barChart')
   const categoryFormat = chartCategoryFormat(chart)
   const canEdit = chartEditing !== undefined
@@ -1957,11 +1971,11 @@ function ChartVisual({
           />
         ) : (
           <BarChart
-            seriesList={isCombo && populated.length > 1 ? populated.slice(0, -1) : populated}
+            seriesList={isCombo ? comboBars : populated}
+            seriesIndices={barSeriesIdx}
+            categorySeries={isCombo ? comboCategorySeries(populated) : undefined}
             isHorizontal={chart.barDirection === 'bar'}
-            lineSeries={
-              isCombo && populated.length > 1 ? populated[populated.length - 1] : undefined
-            }
+            lineSeriesList={isCombo ? comboLines : undefined}
             axisTitles={effectiveAxisTitles}
             dataLabels={chart.dataLabels}
             dataLabelPosition={chart.dataLabelPosition}
@@ -1985,7 +1999,7 @@ function ChartVisual({
             <SeriesLegend
               seriesList={populated}
               lineSwatches={legendUsesLineSwatches(types)}
-              lineSwatchFrom={isCombo && populated.length > 1 ? populated.length - 1 : undefined}
+              lineSwatchIndices={isCombo ? comboLineIdx : undefined}
               selected={selectedEl?.kind === 'legend'}
               onSelect={
                 selectElement
@@ -2368,15 +2382,15 @@ function SeriesLegend({
   selected,
   onSelect,
   lineSwatches = false,
-  lineSwatchFrom,
+  lineSwatchIndices,
 }: {
   readonly seriesList: readonly ChartSeries[]
   readonly selected?: boolean | undefined
   readonly onSelect?: ((event: React.MouseEvent) => void) | undefined
   /// Line-family charts: swatches mirror the drawn stroke color.
   readonly lineSwatches?: boolean | undefined
-  /// Combo charts: series from this index on render as lines.
-  readonly lineSwatchFrom?: number | undefined
+  /// Combo charts: the series drawn as lines.
+  readonly lineSwatchIndices?: ReadonlySet<number> | undefined
 }): React.JSX.Element {
   return (
     <div className={`chart-legend${selected ? ' chart-el-selected' : ''}`} onClick={onSelect}>
@@ -2387,7 +2401,7 @@ function SeriesLegend({
               background: legendSwatchColor(
                 series,
                 index,
-                lineSwatches || (lineSwatchFrom !== undefined && index >= lineSwatchFrom),
+                lineSwatches || lineSwatchIndices?.has(index) === true,
               ),
             }}
           />
@@ -2401,7 +2415,9 @@ function SeriesLegend({
 
 function BarChart({
   seriesList,
-  lineSeries,
+  seriesIndices,
+  categorySeries,
+  lineSeriesList = [],
   isHorizontal,
   axisTitles,
   dataLabels,
@@ -2420,9 +2436,13 @@ function BarChart({
   selectedEl,
 }: {
   readonly seriesList: readonly ChartSeries[]
-  readonly lineSeries?: ChartSeries | undefined
+  /// chart.series index of each seriesList entry (selection targets).
+  readonly seriesIndices?: readonly number[] | undefined
+  /// Series whose cached categories label the axis; defaults to seriesList[0].
+  readonly categorySeries?: ChartSeries | undefined
+  readonly lineSeriesList?: readonly ChartSeries[] | undefined
   readonly isHorizontal: boolean
-  /// Plot-level c:lineChart/c:marker flag for the combo line.
+  /// Plot-level c:lineChart/c:marker flag for the combo lines.
   readonly lineMarkers?: boolean | undefined
   readonly dispBlanksAs?: ChartMetadata['dispBlanksAs']
   /// c:catAx orientation maxMin — categories read top-down (bar) /
@@ -2447,12 +2467,20 @@ function BarChart({
   readonly gapWidthPct?: number | undefined
   readonly categoryFormat?: string | undefined
 } & ChartElementProps): React.JSX.Element {
-  const primary = seriesList[0]
-  if (!primary) return <></>
+  const primary = categorySeries ?? seriesList[0]
+  if (!primary || seriesList.length === 0) return <></>
   const categories = primary.categories.map((value) => formatCategoryLabel(value, categoryFormat))
+  // Every series on the shared category axis sizes it, not just the one that
+  // carries the labels.
+  const pointCount = Math.max(
+    primary.values.length,
+    ...seriesList.map((series) => series.values.length),
+    ...lineSeriesList.map((series) => series.values.length),
+  )
   // 20 was too tight for real corpora (38-county bar charts); 48 keeps
   // bars ≥ ~5px in the 600px plot while very wide data still truncates.
-  const visibleCount = Math.min(primary.values.length, 48)
+  const visibleCount = Math.min(pointCount, 48)
+  const chartIndex = (seriesIndex: number): number => seriesIndices?.[seriesIndex] ?? seriesIndex
   const isStacked =
     (grouping === 'stacked' || grouping === 'percentStacked') && seriesList.length > 1
   const isPercent = grouping === 'percentStacked' && seriesList.length > 1
@@ -2461,14 +2489,12 @@ function BarChart({
   const barMax = isStacked
     ? Math.max(...Array.from({ length: visibleCount }, (_, index) => categoryTotal(index)), 0)
     : Math.max(...seriesList.flatMap((series) => [...series.values]), 0)
-  // A combo line without its own value axis shares the primary scale.
-  const lineOnPrimary = lineSeries !== undefined && secondaryAxis === undefined
+  // Combo lines without their own value axis share the primary scale.
+  const lineValues = lineSeriesList.flatMap((series) => [...series.values])
+  const lineOnPrimary = lineSeriesList.length > 0 && secondaryAxis === undefined
   const bounds = isPercent
     ? { min: 0, max: 1, ticks: [0, 0.25, 0.5, 0.75, 1] }
-    : axisBounds(
-        lineOnPrimary ? Math.max(barMax, ...(lineSeries?.values ?? [])) : barMax,
-        valueAxis,
-      )
+    : axisBounds(lineOnPrimary ? Math.max(barMax, ...lineValues) : barMax, valueAxis)
   const span = bounds.max - bounds.min
   const norm = (value: number): number => Math.max(0, Math.min(1, (value - bounds.min) / span))
   // Stacked segments share the category slot; each value scales against the
@@ -2479,17 +2505,17 @@ function BarChart({
     const total = categoryTotal(index)
     return total === 0 ? 0 : value / total
   }
-  const axisNumberFormat = isPercent ? '0%' : (valueAxis?.numFmt ?? primary.numberFormat)
+  const axisNumberFormat = isPercent ? '0%' : (valueAxis?.numFmt ?? seriesList[0]?.numberFormat)
   // Excel gap width: the space between category groups, in % of one bar.
   const gap = (gapWidthPct ?? 150) / 100
   const pickBar = onElement
     ? (event: React.MouseEvent, seriesIndex: number, pointIndex: number): void => {
         event.stopPropagation()
-        onElement(narrowSelection(selectedEl ?? null, seriesIndex, pointIndex))
+        onElement(narrowSelection(selectedEl ?? null, chartIndex(seriesIndex), pointIndex))
       }
     : undefined
   const barStroke = (seriesIndex: number, pointIndex: number): Record<string, string> =>
-    isSelectedPoint(selectedEl, seriesIndex, pointIndex)
+    isSelectedPoint(selectedEl, chartIndex(seriesIndex), pointIndex)
       ? { stroke: '#107C41', strokeWidth: '2' }
       : {}
   const selectCategoryAxis = onElement
@@ -2644,7 +2670,7 @@ function BarChart({
             </g>
           )
         })}
-        <TruncationNote shown={visibleCount} total={primary.values.length} />
+        <TruncationNote shown={visibleCount} total={pointCount} />
         <AxisTitleTexts bottom={axisTitles?.value} left={axisTitles?.category} />
       </svg>
     )
@@ -2663,46 +2689,46 @@ function BarChart({
     categoryReversed ? seriesList.length - 1 - seriesIndex : seriesIndex
   const groupLeft = (index: number): number =>
     62 + columnWidth * catSlot(index) + (columnWidth - groupWidth) / 2
-  // The combo line rides the secondary value axis when the file has one;
-  // a single axis pair means it shares the primary scale (Excel never
+  // Combo lines ride the secondary value axis when the file has one; a
+  // single axis pair means they share the primary scale (Excel never
   // invents a right-hand axis).
-  const lineScale = lineSeries
-    ? secondaryAxis
-      ? valueAxisScale(Math.max(...lineSeries.values, 0), secondaryAxis)
-      : bounds
-    : undefined
-  const comboStroke = lineSeries ? lineStroke(lineSeries, seriesList.length) : null
-  const comboSegments =
-    lineSeries && lineScale
-      ? lineSegments(
-          Math.min(lineSeries.values.length, visibleCount),
-          lineSeries.blanks,
-          dispBlanksAs,
-        )
-      : []
-  const comboY = (index: number): number =>
-    280 -
-    (lineScale
-      ? Math.max(
-          0,
-          Math.min(
-            1,
-            ((lineSeries?.values[index] ?? 0) - lineScale.min) /
-              (lineScale.max - lineScale.min || 1),
-          ),
-        )
-      : 0) *
-      240
-  const comboPoint = (index: number): string =>
-    `${groupLeft(index) + groupWidth / 2},${comboY(index)}`
-  const comboSymbol =
-    lineSeries === undefined || lineSeries.marker === 'none'
-      ? null
-      : lineMarkers !== true && lineSeries.marker === undefined
+  const lineScale =
+    lineSeriesList.length > 0
+      ? secondaryAxis
+        ? valueAxisScale(Math.max(...lineValues, 0), secondaryAxis)
+        : bounds
+      : undefined
+  const lineSpan = lineScale ? lineScale.max - lineScale.min || 1 : 1
+  const comboX = (index: number): number => groupLeft(index) + groupWidth / 2
+  const comboLines = lineSeriesList.map((series, lineIndex) => {
+    // Palette slots continue after the bar series, as Excel cycles accents.
+    const paletteIndex = seriesList.length + lineIndex
+    const stroke = lineStroke(series, paletteIndex)
+    const y = (index: number): number =>
+      280 -
+      Math.max(0, Math.min(1, ((series.values[index] ?? 0) - (lineScale?.min ?? 0)) / lineSpan)) *
+        240
+    const symbol =
+      series.marker === 'none'
         ? null
-        : lineSeries.marker !== undefined && lineSeries.marker !== 'auto'
-          ? lineSeries.marker
-          : (AUTO_MARKER_SYMBOLS[seriesList.length % AUTO_MARKER_SYMBOLS.length] ?? 'circle')
+        : lineMarkers !== true && series.marker === undefined
+          ? null
+          : series.marker !== undefined && series.marker !== 'auto'
+            ? series.marker
+            : (AUTO_MARKER_SYMBOLS[paletteIndex % AUTO_MARKER_SYMBOLS.length] ?? 'circle')
+    return {
+      stroke,
+      width: series.lineWidth ?? 3,
+      markerColor: stroke ?? seriesColor(series, paletteIndex),
+      segments: lineSegments(
+        Math.min(series.values.length, visibleCount),
+        series.blanks,
+        dispBlanksAs,
+      ),
+      y,
+      symbol,
+    }
+  })
   const showValueLabels =
     !isStacked &&
     (dataLabels === 'value' ||
@@ -2797,29 +2823,32 @@ function BarChart({
             />
           ) : null,
         )}
-      {comboStroke !== null &&
-        comboSegments.map((segment, segmentIndex) => (
-          <polyline
-            key={`combo-${segmentIndex}`}
-            points={segment.map(comboPoint).join(' ')}
-            fill="none"
-            stroke={comboStroke}
-            strokeWidth={lineSeries?.lineWidth ?? 3}
-          />
-        ))}
-      {lineSeries && comboSymbol !== null && (
-        <g>
-          {comboSegments.flat().map((index) => (
-            <MarkerGlyph
-              key={`combo-marker-${index}`}
-              x={groupLeft(index) + groupWidth / 2}
-              y={comboY(index)}
-              symbol={comboSymbol}
-              color={comboStroke ?? seriesColor(lineSeries, seriesList.length)}
-            />
-          ))}
+      {comboLines.map(({ stroke, symbol, ...line }, lineIndex) => (
+        <g key={`combo-${lineIndex}`}>
+          {stroke !== null &&
+            line.segments.map((segment, segmentIndex) => (
+              <polyline
+                key={segmentIndex}
+                points={segment.map((index) => `${comboX(index)},${line.y(index)}`).join(' ')}
+                fill="none"
+                stroke={stroke}
+                strokeWidth={line.width}
+              />
+            ))}
+          {symbol !== null &&
+            line.segments
+              .flat()
+              .map((index) => (
+                <MarkerGlyph
+                  key={`marker-${index}`}
+                  x={comboX(index)}
+                  y={line.y(index)}
+                  symbol={symbol}
+                  color={line.markerColor}
+                />
+              ))}
         </g>
-      )}
+      ))}
       <CategoryGroupBand
         spans={columnGroups.map((group) => {
           const first = catSlot(group.start)
@@ -2832,22 +2861,21 @@ function BarChart({
         })}
         onClick={selectCategoryAxis}
       />
-      {lineSeries &&
-        lineScale &&
+      {lineScale &&
         secondaryAxis !== undefined &&
         secondaryAxis.hidden !== true &&
         lineScale.ticks.map((tick, index) => (
           <text
             key={index}
             x="596"
-            y={284 - ((tick - lineScale.min) / (lineScale.max - lineScale.min || 1)) * 240}
+            y={284 - ((tick - lineScale.min) / lineSpan) * 240}
             textAnchor="end"
             className="axis-label"
           >
-            {formatAxisValue(tick, secondaryAxis?.numFmt ?? lineSeries.numberFormat)}
+            {formatAxisValue(tick, secondaryAxis?.numFmt ?? lineSeriesList[0]?.numberFormat)}
           </text>
         ))}
-      <TruncationNote shown={visibleCount} total={primary.values.length} />
+      <TruncationNote shown={visibleCount} total={pointCount} />
       <AxisTitleTexts
         bottom={axisTitles?.category}
         left={axisTitles?.value}
@@ -2981,6 +3009,41 @@ export function legendUsesLineSwatches(types: readonly string[]): boolean {
   if (types.includes('scatterChart')) return false
   if (types.includes('areaChart') && noBar) return false
   return types.includes('lineChart') && noBar
+}
+
+/// Bar+line combo: series whose plot group is lineChart draw as lines.
+/// Untagged series (AI-built charts, older snapshots) keep the legacy rule of
+/// the last series being the line.
+export function comboLineIndices(
+  seriesList: readonly { readonly plot?: string | undefined }[],
+): Set<number> {
+  if (seriesList.every((series) => series.plot === undefined)) {
+    return new Set(seriesList.length > 1 ? [seriesList.length - 1] : [])
+  }
+  return new Set(
+    seriesList.flatMap((series, index) => (series.plot === 'lineChart' ? [index] : [])),
+  )
+}
+
+export function comboBarIndices(
+  seriesList: readonly unknown[],
+  lineIndices: ReadonlySet<number>,
+): number[] {
+  return seriesList.flatMap((_, index) => (lineIndices.has(index) ? [] : [index]))
+}
+
+/// Excel often caches the category list on the first plot group only, so a
+/// line-first combo must not read categories from the first bar series.
+export function comboCategorySeries<
+  T extends { readonly categories: readonly unknown[]; readonly values: readonly unknown[] },
+>(seriesList: readonly T[]): T | undefined {
+  return (
+    seriesList.find((series) => series.categories.length > 0) ??
+    seriesList.reduce<T | undefined>(
+      (best, series) => (best && best.values.length >= series.values.length ? best : series),
+      undefined,
+    )
+  )
 }
 
 /// Legend swatch color: line-family charts mirror the drawn stroke (an

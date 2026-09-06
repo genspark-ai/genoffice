@@ -12,6 +12,8 @@ export const nl = {
   ribbonTabLayout: 'Indeling',
   ribbonTabReferences: 'Verwijzingen',
   ribbonTabReview: 'Controleren',
+  ribbonCollapse: 'Het lint samenvouwen',
+  ribbonPin: 'Het lint vastmaken',
   ribbonTabView: 'Beeld',
   ribbonTabTableDesign: 'Tabelontwerp',
   ribbonTabTableLayout: 'Tabelindeling',
@@ -299,6 +301,8 @@ export const nl = {
   ribbonChartAddCategory: '+ Categorie',
   ribbonChartAddSeries: '+ Reeks',
   ribbonLinkInsertTitle: 'Hyperlink invoegen',
+  ribbonLinkEditTitle: 'Hyperlink bewerken',
+  ribbonLinkRemove: 'Koppeling verwijderen',
   ribbonLinkText: 'Weer te geven tekst',
   ribbonLinkTextPh: 'Koppelingstekst (laat leeg om het adres weer te geven)',
   ribbonLinkAddress: 'Adres',
@@ -579,6 +583,9 @@ export const nl = {
   ribbonEditorPrompt:
     'Corrigeer het hele document: herstel typefouten, interpunctie en grammaticale fouten zonder de oorspronkelijke betekenis en alineastructuur te wijzigen.',
   ribbonGroupProofing: 'Controle',
+  ribbonSpellcheckBtn: 'Spelling',
+  ribbonSpellcheckTip:
+    'Spelling controleren tijdens het typen — onderstreept mogelijke fouten rood',
   ribbonTranslate: 'Vertalen',
   ribbonTranslateTip: 'AI vertaalt het document',
   ribbonTranslatePrompt:

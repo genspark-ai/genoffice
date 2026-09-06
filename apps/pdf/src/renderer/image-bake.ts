@@ -15,6 +15,16 @@ export interface CropFractions {
   b: number
 }
 
+/** Remove-background tolerance (0..100) shared by the dialog slider and the AI tool */
+export const DEFAULT_CUTOUT_TOLERANCE = 30
+
+/** Pixel edits the AI can apply to an existing page image (same bakes as the floating bar) */
+export type ImageBakeOp =
+  | { kind: 'flip'; axis: 'h' | 'v' }
+  | { kind: 'opacity'; alpha: number }
+  | { kind: 'crop'; crop: CropFractions }
+  | { kind: 'cutout'; tolerance: number }
+
 /** Mirror pixels horizontally ('h') or vertically ('v'); returns a new array */
 export function flipPixels(img: PixelImage, axis: 'h' | 'v'): Uint8ClampedArray<ArrayBuffer> {
   const { data, width: w, height: h } = img

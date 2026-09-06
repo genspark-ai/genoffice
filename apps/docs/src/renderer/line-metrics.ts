@@ -57,6 +57,7 @@ const MONO_FONT_RE =
 /** Constant Latin advance for monospace families (chain-head name decides); null when proportional */
 export function monospaceAdvanceEm(fontFamily: string): number | null {
   const head = fontFamily.split(',')[0]
+  if (/^'?(ms gothic|ＭＳ ゴシック)'?$/i.test(head.trim())) return 0.5
   if (!MONO_FONT_RE.test(head)) return null
   return /consolas/i.test(head) ? 0.55 : 0.6
 }
@@ -116,6 +117,62 @@ export class HeuristicMetrics implements FontMetricsProvider {
   }
 }
 
+/**
+ * Real advances from an offscreen canvas in the renderer's family chain; the
+ * per-class heuristic runs ~15% wide on Times-like faces and over-grows autofit columns.
+ */
+export class CanvasMetrics implements FontMetricsProvider {
+  private cache = new Map<string, number>()
+  constructor(
+    private ctx: CanvasRenderingContext2D,
+    private fallback: FontMetricsProvider = new HeuristicMetrics(),
+  ) {
+    // document text renders unkerned by default (Word semantics, styles.css)
+    if ('fontKerning' in ctx) ctx.fontKerning = 'none'
+    // advances measured before a @font-face resolved are the fallback face's
+    if (typeof document !== 'undefined' && document.fonts?.addEventListener) {
+      document.fonts.addEventListener('loadingdone', () => this.cache.clear())
+    }
+  }
+
+  metrics(style: RunStyle): FontMetrics {
+    return this.fallback.metrics(style)
+  }
+
+  measure(text: string, style: RunStyle): number {
+    const font = `${style.italic ? 'italic ' : ''}${style.bold ? 'bold ' : ''}${style.fontSizePx}px ${cssFontFamily(style.fontFamily)}`
+    const key = `${font}|${text}`
+    let w = this.cache.get(key)
+    if (w === undefined) {
+      this.ctx.font = font
+      w = this.ctx.measureText(text).width
+      if (this.cache.size > 20000) this.cache.clear()
+      this.cache.set(key, w)
+    }
+    return w
+  }
+}
+
+function canvasContext(): CanvasRenderingContext2D | null {
+  try {
+    return typeof document === 'undefined'
+      ? null
+      : document.createElement('canvas').getContext('2d')
+  } catch {
+    return null
+  }
+}
+
+let canvasMetricsSingleton: FontMetricsProvider | null | undefined
+/** CanvasMetrics when a 2D context exists (renderer), else null (jsdom/tests) */
+export function canvasMetrics(): FontMetricsProvider | null {
+  if (canvasMetricsSingleton !== undefined) return canvasMetricsSingleton
+  const ctx = canvasContext()
+  canvasMetricsSingleton =
+    ctx && typeof ctx.measureText === 'function' ? new CanvasMetrics(ctx) : null
+  return canvasMetricsSingleton
+}
+
 /** Korean font names (Windows/Noto/Source Han/Nanum faces + bundled subsets) */
 const KO_FONT_RE =
   /malgun|맑은|batang|바탕|myeongjo|myungjo|명조|gungsuh|궁서|gulim|굴림|dotum|돋움|nanum|나눔|genoffice (sans|serif) kr|(noto|source han) (sans|serif)[^,]*\bk(r|orean)?\b/i
@@ -155,10 +212,12 @@ export function lineHeightFactor(fontFamily: string): number {
   // an LO-baseline value and doubled every empty line under an 18pt docGrid)
   if (/游|yu (gothic|mincho)|yugoth|yumin/.test(f)) return 1.44
   // Meiryo UI is the compact UI cut, far below Meiryo (Word probe 2026-08-22)
-  if (f.includes('meiryo ui')) return 1.65
+  if (/(meiryo|メイリオ) ?ui/.test(f)) return 1.65
   if (/meiryo|メイリオ/.test(f)) return 1.9429
-  if (/mincho|明朝|ゴシック|ms (ui )?p?gothic|hiragino|osaka|kozuka|小塚|biz ud/.test(f))
-    return 1.3029
+  // BIZ UD: Word for Mac lacks the UDP cuts and substitutes Yu Gothic wholesale
+  // (probe 2026-09-03: 1.44 at 10.5/11/12pt); an installed face renders real
+  if (f.includes('biz ud')) return bizUdSubstituted(fontFamily) ? 1.44 : 1.3029
+  if (/mincho|明朝|ゴシック|ms (ui )?p?gothic|hiragino|osaka|kozuka|小塚/.test(f)) return 1.3029
   // missing Noto/Source Han SC: Word substitutes SimSun at 1.3029 (probe
   // 2026-08-13; bare 'Noto Sans SC' presumed same substitution)
   if (/^noto sans sc$/.test(f)) return 1.3029
@@ -466,6 +525,8 @@ export const BUNDLED_FONTS = new Set([
   'GenOffice Fullwidth TC',
   'GenOffice Songti SC',
   'Carlito GO',
+  'Aptos GO',
+  'Aptos Display GO',
   'Caladea',
   'Liberation Serif',
   'Liberation Sans',
@@ -509,6 +570,12 @@ export function isFontAvailable(font: string): boolean {
  * strut alias in doc-style-css; null where canvas metrics are unavailable (jsdom).
  */
 const chainMetricsCache = new Map<string, { ascentPct: number; descentPct: number } | null>()
+
+/** embedded faces registered/revoked: their availability and every chain's metrics may have flipped */
+export function noteEmbeddedFontsChanged(families: readonly string[]): void {
+  for (const f of families) fontAvailableCache.delete(f)
+  chainMetricsCache.clear()
+}
 export function fontChainMetricsPct(
   chain: string,
 ): { ascentPct: number; descentPct: number } | null {
@@ -582,6 +649,13 @@ export function krNameLineFactor(font: string): number | null {
   return missing && panoseSerifHint(font) === 'sans' ? 1.7371 : 1.3029
 }
 
+/** missing BIZ UD face: Word substitutes Yu Gothic (sans, 1.44) whatever the name says */
+export function bizUdSubstituted(font: string): boolean {
+  const head = font.split(',')[0].replace(/['"]/g, '').trim()
+  if (!/biz ud/i.test(head)) return false
+  return isBundledFont(head) || !isFontAvailable(head)
+}
+
 export function cssFontFamily(font: string, followAltName = true): string {
   const f = font.toLowerCase()
   const chain = (...families: string[]) =>
@@ -593,12 +667,20 @@ export function cssFontFamily(font: string, followAltName = true): string {
   // the fullwidth CJK subset and overflow the column
   const BOX = 'GenOffice Box Drawing'
   if (f.includes('calibri')) return `${chain(font, 'Carlito GO', CJK_SANS)},sans-serif`
-  // Aptos (M365 cloud face, never installed locally): Word probe 2026-08-22 —
-  // line metrics equal Calibri's exactly, so it takes the Calibri chain.
+  // Aptos (M365 cloud face, never installed locally): line metrics equal
+  // Calibri's (Word probe 2026-08-22) but its advances do not, so the
+  // size-adjusted Carlito aliases in fonts.css stand in (probe 2026-09-03).
   // 'GenOffice PUA Blank' keeps AI-residue PUA tokens invisible like Word
-  // (Calibri/Carlito would otherwise supply a box .notdef for them).
+  // (Carlito would otherwise supply a box .notdef for them).
   if (f.includes('aptos')) {
-    return `${chain(font, 'Calibri', 'Carlito GO', 'GenOffice PUA Blank', CJK_SANS)},sans-serif`
+    // the aliases are calibrated for the body and Display cuts only; Aptos
+    // Narrow measures ~Carlito unscaled (0.92x Aptos), Mono/Serif are unprobed
+    const alias = /narrow|mono|serif/.test(f)
+      ? 'Carlito GO'
+      : f.includes('display')
+        ? 'Aptos Display GO'
+        : 'Aptos GO'
+    return `${chain(font, alias, 'GenOffice PUA Blank', CJK_SANS)},sans-serif`
   }
   // math faces would fall to the unknown-name sans fallback; STIX Two Math ships with macOS,
   // and on Windows the declared name resolves natively
@@ -754,17 +836,38 @@ export function cssFontFamily(font: string, followAltName = true): string {
     // hangul stays Batang (M3 probe sample 13); the alias claims printable
     // ASCII only, everything else falls through per glyph. Installed names and
     // Malgun/Batang declares keep the Latin-normalized subsets untouched.
-    const krLatin =
-      (region === 'kr' || region === 'k') && missingLocally() ? ['KR Theme Latin GO'] : []
-    return `${chain(...head, ...krLatin, ...chainFor)},${serif ? 'serif' : 'sans-serif'}`
+    const isKr = region === 'kr' || region === 'k'
+    const krLatin = isKr && missingLocally() ? ['KR Theme Latin GO'] : []
+    // Word substitutes a missing face per script, whatever region the name
+    // claims: hangul lands on Batang (1em, Word probe 2026-09-06). The
+    // SC/TC/JP chains carry no hangul, so without this tail Chromium falls to
+    // the system sans (Apple SD Gothic Neo, 0.865em) and lines wrap late
+    const hangulTail = !isKr && missingLocally() ? ['GenOffice Batang', 'GenOffice Serif KR'] : []
+    return `${chain(...head, ...krLatin, ...chainFor, ...hangulTail)},${serif ? 'serif' : 'sans-serif'}`
   }
   if (
     /[぀-ヿ]|mincho|meiryo|hiragino|osaka|yugoth|yu (gothic|mincho)|ms (ui )?p?(gothic|mincho)|明朝|biz ud|kozuka|小塚/i.test(
       nfkc,
     )
   ) {
-    const serif = /mincho|明朝/i.test(nfkc)
-    return `${chain(font, ...(serif ? JA_SERIF : JA_SANS))},${serif ? 'serif' : 'sans-serif'}`
+    const serif = /mincho|明朝/i.test(nfkc) && !bizUdSubstituted(font)
+    // Meiryo (UI): Word renders the real faces; the range-limited aliases
+    // (fonts.css) rescale the Hiragino/Verdana fallbacks to Meiryo advances
+    if (/meiryo|メイリオ/i.test(nfkc)) {
+      const alias = /(meiryo|メイリオ) ?ui/i.test(nfkc) ? 'Meiryo UI GO' : 'Meiryo GO'
+      return `${chain(font, alias, ...JA_SANS)},sans-serif`
+    }
+    // MS Gothic family renders real in Word (half-width mono Latin / proportional
+    // kana); the range-limited aliases (fonts.css) reproduce those advances
+    const msGothic = /^ms (ui )?(p)?(gothic|ゴシック)$/i.exec(nfkc.trim())
+    const msAlias = !msGothic
+      ? []
+      : msGothic[1]
+        ? ['MS UI Gothic GO', 'MS UI Gothic JA GO']
+        : msGothic[2]
+          ? ['MS PGothic GO', 'MS PGothic JA GO']
+          : ['MS Gothic GO']
+    return `${chain(font, ...msAlias, ...(serif ? JA_SERIF : JA_SANS))},${serif ? 'serif' : 'sans-serif'}`
   }
   if (
     /[가-힣ᄀ-ᇿ㄰-㆏]|malgun|batang|gulim|dotum|gungsuh|myeongjo|myungjo|nanum|apple (sd )?gothic/i.test(
@@ -866,7 +969,10 @@ function latinChainHead(ascii: string): string[] {
   const fams = cssFontFamily(ascii).split(',')
   const generic = fams[fams.length - 1]
   const latin = fams.filter(
-    (fam) => !/noto (sans|serif) cjk/i.test(fam) && !/^(serif|sans-serif|monospace)$/.test(fam),
+    (fam) =>
+      !/noto (sans|serif) cjk/i.test(fam) &&
+      !/ JA GO'$/.test(fam) &&
+      !/^(serif|sans-serif|monospace)$/.test(fam),
   )
   // mono chains already carry the bundled Liberation Mono
   if (generic !== 'monospace') {
@@ -953,6 +1059,27 @@ export function charScaleEm(text: string, scalePct: number): number {
 }
 
 /** letter-spacing CSS value for a run's w:spacing / w:w pair (null = none) */
+/**
+ * Word pair-kerns a run only under w:kern and from its half-point threshold up
+ * (Chromium kerns by default). undefined = no w:kern in effect; an unknown run
+ * size counts as reaching the threshold.
+ */
+export function wordKerns(
+  kernHalfPoints: number | undefined,
+  sizeHalfPoints: number | undefined,
+): boolean | undefined {
+  if (kernHalfPoints === undefined) return undefined
+  return kernHalfPoints > 0 && (sizeHalfPoints === undefined || sizeHalfPoints >= kernHalfPoints)
+}
+
+export function fontKerningCss(run: {
+  kernHalfPoints?: number
+  sizeHalfPoints?: number
+}): 'normal' | 'none' | null {
+  const on = wordKerns(run.kernHalfPoints, run.sizeHalfPoints)
+  return on === undefined ? null : on ? 'normal' : 'none'
+}
+
 export function runLetterSpacingCss(run: {
   text: string
   charSpacingTwips?: number
@@ -963,7 +1090,7 @@ export function runLetterSpacingCss(run: {
   if (spacingPt && scaleEm) return `calc(${spacingPt}pt + ${scaleEm}em)`
   if (spacingPt) return `${spacingPt}pt`
   if (scaleEm) return `${scaleEm}em`
-  return null
+  return run.charSpacingTwips === 0 ? '0' : null
 }
 
 /**
@@ -1029,6 +1156,38 @@ export function textHasHangul(text: string): boolean {
     if (isHangul(ch.codePointAt(0) ?? 0)) return true
   }
   return false
+}
+
+/** Text carries non-CJK ink: any character that is neither CJK nor whitespace */
+export function textHasLatinInk(text: string): boolean {
+  for (const ch of text) {
+    if (!/\s/.test(ch) && !isCjk(ch.codePointAt(0) ?? 0)) return true
+  }
+  return false
+}
+
+/**
+ * Maximal CJK stretches of a text (UTF-16 offsets); spaces between two CJK
+ * characters join them so a Korean phrase is one stretch, while any other
+ * character ends it. lineFactorLive lifts each stretch to its East Asian factor.
+ */
+export function cjkScriptRanges(text: string): Array<{ from: number; to: number }> {
+  const ranges: Array<{ from: number; to: number }> = []
+  let start = -1
+  let end = -1
+  let i = 0
+  for (const ch of text) {
+    if (isCjk(ch.codePointAt(0) ?? 0)) {
+      if (start < 0) start = i
+      end = i + ch.length
+    } else if (start >= 0 && ch !== ' ' && ch !== '\u00a0') {
+      ranges.push({ from: start, to: end })
+      start = -1
+    }
+    i += ch.length
+  }
+  if (start >= 0) ranges.push({ from: start, to: end })
+  return ranges
 }
 
 /** Per-paragraph --doc-line-factor value by script (approximates Word's max-of-inline-fonts line height) */
@@ -1200,10 +1359,11 @@ function isHangul(cp: number): boolean {
 
 // ─── CJK-Latin autospace pads ────────────────────────────────────────────────
 // Word's autoSpaceDE/DN gap measures ~1/4em while Chromium's text-autospace is
-// fixed at 1/8em; the renderer inserts a zero-width .doc-autospace-pad span
-// whose margin supplies the other 1/8em. Pads only go between a directly
-// adjacent CJK letter and a Latin letter/digit — never next to spaces or
-// punctuation — matching where Chromium applies its native gap.
+// fixed at 1/8em; the renderer wraps the character after each boundary in a
+// .doc-autospace-pad span whose start margin supplies the other 1/8em. Pads
+// only go between a directly adjacent CJK letter and a Latin letter/digit —
+// never next to spaces or punctuation — matching where Chromium applies its
+// native gap.
 
 /** Han/kana/hangul letters; CJK punctuation and full/halfwidth forms get no gap */
 function isCjkAutospaceSide(cp: number): boolean {
@@ -1242,6 +1402,11 @@ export function autospacePadBetween(prev: string, next: string): boolean {
   return needsAutospacePad(lastCodePoint(prev), next.codePointAt(0)!)
 }
 
+/** UTF-16 length of the code point starting at offset */
+export function codePointLengthAt(text: string, offset: number): number {
+  return text.codePointAt(offset)! > 0xffff ? 2 : 1
+}
+
 /** UTF-16 offsets inside text where a pad belongs (between offset-1 and offset) */
 export function autospaceBoundaries(text: string): number[] {
   const out: number[] = []
@@ -1251,6 +1416,50 @@ export function autospaceBoundaries(text: string): number[] {
     if (prev >= 0 && needsAutospacePad(prev, cp)) out.push(i)
     prev = cp
     i += cp > 0xffff ? 2 : 1
+  }
+  return out
+}
+
+// ─── Justification symbols ──────────────────────────────────────────────────
+// Chromium's Character::IsCJKIdeographOrSymbol (character_property_data.h)
+// also covers these symbols outside the CJK blocks and counts them as
+// justification opportunities like ideographs, so a justified line stretches
+// after them; Word stretches only spaces around them (prod 012: the gap after
+// U+2116 doubled). Emoji and the CJK blocks themselves are left to Chromium.
+const CHROMIUM_CJK_SYMBOLS = new Set([
+  0x2c7, 0x2ca, 0x2cb, 0x2d9, 0x2020, 0x2021, 0x2030, 0x203b, 0x203c, 0x2042, 0x2047, 0x2048,
+  0x2049, 0x2051, 0x20dd, 0x20de, 0x2100, 0x2103, 0x2105, 0x2109, 0x210a, 0x2113, 0x2116, 0x2121,
+  0x212b, 0x213b, 0x2150, 0x2151, 0x2152, 0x217f, 0x2189, 0x2307, 0x2312, 0x23ce, 0x2423, 0x25a0,
+  0x25a1, 0x25a2, 0x25aa, 0x25ab, 0x25b1, 0x25b2, 0x25b3, 0x25b6, 0x25b7, 0x25bc, 0x25bd, 0x25c0,
+  0x25c1, 0x25c6, 0x25c7, 0x25c9, 0x25cb, 0x25cc, 0x25ef, 0x2605, 0x2606, 0x260e, 0x2616, 0x2617,
+  0x26a0, 0x2713, 0x271a, 0x273f, 0x2740, 0x2756, 0x2763, 0x2b1a,
+])
+const CHROMIUM_CJK_SYMBOL_RANGES: ReadonlyArray<readonly [number, number]> = [
+  [0x2156, 0x215a],
+  [0x2160, 0x216b],
+  [0x2170, 0x217b],
+  [0x23be, 0x23cc],
+  [0x2460, 0x2492],
+  [0x249c, 0x24ff],
+  [0x25ce, 0x25d3],
+  [0x25e2, 0x25e6],
+  [0x2600, 0x2603],
+  [0x2660, 0x266f],
+  [0x2672, 0x267d],
+  [0x2776, 0x277f],
+]
+
+export function isChromiumCjkSymbol(cp: number): boolean {
+  if (cp < 0x2c7 || cp >= 0x2e80) return false
+  if (CHROMIUM_CJK_SYMBOLS.has(cp)) return true
+  return CHROMIUM_CJK_SYMBOL_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi)
+}
+
+/** UTF-16 ranges of the symbols Chromium would justify-expand after (all BMP) */
+export function justifySymbolRanges(text: string): Array<{ from: number; to: number }> {
+  const out: Array<{ from: number; to: number }> = []
+  for (let i = 0; i < text.length; i++) {
+    if (isChromiumCjkSymbol(text.charCodeAt(i))) out.push({ from: i, to: i + 1 })
   }
   return out
 }
@@ -1273,7 +1482,7 @@ export function isCjkFontName(fontFamily: string): boolean {
 }
 
 const CJK_FONT_NAME_RE =
-  /宋|黑|楷|仿|明|雅黑|等线|simsun|simhei|simkai|simfang|kaiti|fangsong|songti|stsong|yahei|dengxian|mingliu|jhenghei|biaukai|dfkai|kaiu|mincho|ms (ui )?p?gothic|yu gothic|ゴシック|meiryo|メイリオ|hiragino|osaka|kozuka|游|arial unicode|(noto|source han) (sans|serif)( cjk)? ?(sc|cn|jp|tc|kr)\b/i
+  /宋|黑|楷|仿|明|雅黑|等线|simsun|simhei|simkai|simfang|kaiti|fangsong|songti|stsong|yahei|dengxian|mingliu|jhenghei|biaukai|dfkai|kaiu|mincho|ms (ui )?p?gothic|yu gothic|ゴシック|meiryo|メイリオ|hiragino|osaka|kozuka|biz ud|游|arial unicode|(noto|source han) (sans|serif)( cjk)? ?(sc|cn|jp|tc|kr)\b/i
 
 function cjkLineHFactor(fontFamily: string): number {
   const f = fontFamily.toLowerCase()
@@ -1323,12 +1532,19 @@ export function simulateLines(
   let curLineW = 0
   let curLineH = 0 // max natural line height of the current line
   let curText = ''
+  // Word never breaks a line at a space: spaces past the right edge hang, and a
+  // run of several spaces is squeezed when that lets the next word end at the
+  // margin (prod-sas 047 footer: text + 172 spaces + text on one line)
+  let squeezableW = 0
+  let lastWasSpace = false
 
   const pushLine = (h: number) => {
     lines.push({ naturalLineH: h, text: curText })
     curLineW = 0
     curLineH = 0
     curText = ''
+    squeezableW = 0
+    lastWasSpace = false
   }
 
   const getStyle = (run: (typeof runs)[0]): RunStyle => ({
@@ -1356,9 +1572,15 @@ export function simulateLines(
       bufCjkH = 0
       const w = metrics.measure(buf, style)
       if (curLineW + w > availWidthPx && curLineW > 0) {
-        pushLine(Math.max(curLineH, lineH))
-        curLineH = lineH
+        if (curLineW - squeezableW + w <= availWidthPx) {
+          curLineW -= squeezableW
+          squeezableW = 0
+        } else {
+          pushLine(Math.max(curLineH, lineH))
+          curLineH = lineH
+        }
       }
+      lastWasSpace = false
       if (curLineW === 0 && w > availWidthPx) {
         // hard-break an overlong word
         let fragment = ''
@@ -1394,13 +1616,25 @@ export function simulateLines(
         curLineH = lineH
         continue
       }
-      if (ch === ' ' || ch === '\t') {
+      if (ch === ' ') {
+        flushWord()
+        const spW = metrics.measure(ch, style)
+        curLineH = Math.max(curLineH, lineH)
+        curText += ch
+        if (curLineW + spW <= availWidthPx || curLineW === 0) {
+          curLineW += spW
+          if (lastWasSpace) squeezableW += spW
+        }
+        lastWasSpace = true
+        continue
+      }
+      if (ch === '\t') {
         flushWord()
         const spW = metrics.measure(ch, style)
         if (curLineW + spW > availWidthPx && curLineW > 0) {
           pushLine(Math.max(curLineH, lineH))
           curLineH = lineH
-          // swallow the space at line start
+          // swallow the tab at line start
         } else {
           curLineW += spW
           curLineH = Math.max(curLineH, lineH)
@@ -1430,6 +1664,7 @@ export function simulateLines(
         curLineW += cw
         curText += ch
         curLineH = Math.max(curLineH, cjkH)
+        lastWasSpace = false
         continue
       }
       buf += ch
@@ -1724,6 +1959,8 @@ export function estimateHfHeight(
           runs: HfRunLike[]
           /** layout-table row: per-cell paragraph stacks (row height = tallest cell) */
           cells?: Array<{ paras: HfRunLike[][] }>
+          /** declared w:trHeight (twips): floors the row, or fixes it under hRule exact */
+          row?: { heightTwips?: number; heightRule?: 'atLeast' | 'exact' }
           /** floating-textbox content: drawn at the anchor, no strip flow height */
           boxAnchored?: boolean
           lineRule?: 'auto' | 'atLeast' | 'exact'
@@ -1802,7 +2039,13 @@ export function estimateHfHeight(
     if (p.cells?.length) {
       // table row: the tallest cell's paragraph stack sets the row height;
       // a cell-run image (logo) grows its line box like the display layer
+      const declared = (p.row?.heightTwips ?? 0) / 15
+      if (declared > 0 && p.row?.heightRule === 'exact') {
+        height += declared
+        continue
+      }
       height += Math.max(
+        declared,
         ...p.cells.map((c) =>
           (c.paras.length > 0 ? c.paras : [[]]).reduce((s, runs) => {
             const imgH = Math.max(0, ...runs.map((r) => r.image?.heightPx ?? 0))
@@ -1880,12 +2123,41 @@ export function resolveNoteStyle(
   const lineRule = direct?.lineRawTwips ? direct.lineRule : (d?.lineRule ?? dd?.lineRule)
   const lineRawTwips = direct?.lineRawTwips ?? d?.lineRawTwips ?? dd?.lineRawTwips
   return {
-    sizeHalfPoints: d?.sizeHalfPoints ?? dd?.sizeHalfPoints ?? 22,
+    sizeHalfPoints: d?.sizeHalfPoints ?? dd?.sizeHalfPoints ?? 20,
     ...(d?.font ? { fontFamily: d.font } : {}),
     ...(lineRule ? { lineRule } : {}),
     ...(lineRawTwips ? { lineRawTwips } : {}),
     spaceBeforeTwips: direct?.beforeTwips ?? d?.spaceBeforeTwips ?? dd?.spaceBeforeTwips ?? 0,
     spaceAfterTwips: direct?.afterTwips ?? d?.spaceAfterTwips ?? dd?.spaceAfterTwips ?? 0,
+  }
+}
+
+/** display run of a note entry (the NoteRun subset the height model reads) */
+export interface NoteRunMetrics {
+  text: string
+  sizeHalfPoints?: number
+  bold?: boolean
+  italic?: boolean
+  /** direct Latin font of the run */
+  fontAscii?: string
+}
+
+/**
+ * Note-level font/size owed to the entry's own runs: Word sizes the line boxes
+ * from the runs, so a 9pt Times note under a 10pt Calibri style chain must
+ * reserve Times 9pt lines. First paragraph only; the leading text run's font,
+ * the paragraph's largest run size.
+ */
+export function noteRunStyle(
+  richParas: NoteRunMetrics[][] | undefined,
+): Pick<NoteStyleOpts, 'fontFamily' | 'sizeHalfPoints'> {
+  const runs = richParas?.[0]?.filter((r) => r.text.trim()) ?? []
+  if (runs.length === 0) return {}
+  const font = runs.find((r) => r.fontAscii)?.fontAscii
+  const size = Math.max(0, ...runs.map((r) => r.sizeHalfPoints ?? 0))
+  return {
+    ...(font ? { fontFamily: font } : {}),
+    ...(size > 0 ? { sizeHalfPoints: size } : {}),
   }
 }
 
@@ -1895,19 +2167,17 @@ export function estimateFootnoteHeight(
   docGrid: DocGrid | undefined,
   metrics?: FontMetricsProvider,
   style?: NoteStyleOpts,
-  richParas?: Array<
-    Array<{ text: string; sizeHalfPoints?: number; bold?: boolean; italic?: boolean }>
-  >,
+  richParas?: NoteRunMetrics[][],
 ): number {
-  const paras: Array<
-    Array<{ text: string; sizeHalfPoints?: number; bold?: boolean; italic?: boolean }>
-  > =
+  const paras: NoteRunMetrics[][] =
     richParas && richParas.length > 0
       ? richParas
       : footnoteText.split('\n').map((t) => [{ text: t }])
   let total = 0
   for (const runs of paras) {
-    const nonEmpty = runs.filter((r) => r.text)
+    const nonEmpty = runs
+      .filter((r) => r.text)
+      .map(({ fontAscii, ...r }) => (fontAscii ? { ...r, fontFamily: fontAscii } : r))
     total += computeLineMetrics({
       runs: nonEmpty,
       availWidthPx: contentWidthPx - 40,

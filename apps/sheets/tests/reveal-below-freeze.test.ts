@@ -8,10 +8,25 @@ function range(startRow: number, startColumn: number): IRange {
 }
 
 describe('revealCellBelowFreeze', () => {
-  it('corrects the broken freeze offset until the aim row is visible', async () => {
-    // scrollToCell overshoots by 2 rows (custom-height frozen pane)
+  it('does nothing when the target is already fully visible', async () => {
+    // find research re-emits an unchanged match after every streamed patch;
+    // re-scrolling to a visible target kept the viewport hostage (r167)
     const calls: Array<[number, number]> = []
-    let scrolledRow = 0
+    const sheet = {
+      scrollToCell(row: number, column: number) {
+        calls.push([row, column])
+      },
+      getVisibleRange: () => range(2, 0),
+    }
+    await revealCellBelowFreeze(sheet, 10, 0)
+    expect(calls).toEqual([])
+  })
+
+  it('corrects the broken freeze offset until the aim row is visible', async () => {
+    // scrollToCell overshoots by 2 rows (custom-height frozen pane); the
+    // viewport starts below the target, so the reveal must engage
+    const calls: Array<[number, number]> = []
+    let scrolledRow = 20
     const sheet = {
       scrollToCell(row: number, column: number) {
         calls.push([row, column])
@@ -27,20 +42,18 @@ describe('revealCellBelowFreeze', () => {
   })
 
   it('stops early when the viewport clamps at the frozen pane', async () => {
-    // target on the first scrollable row: the aim (row - 1) sits inside the
-    // frozen pane, the viewport can never start above the pane edge
+    // target hidden under the pane and the viewport cannot move: after one
+    // correction with no progress the loop must bail — not march to row 0
     const calls: Array<[number, number]> = []
     const sheet = {
       scrollToCell(row: number, column: number) {
         calls.push([row, column])
       },
-      getVisibleRange: () => range(2, 0),
+      getVisibleRange: () => range(5, 0),
     }
-    await revealCellBelowFreeze(sheet, 2, 0)
-    // initial scroll plus one correction, then the no-progress bail — not
-    // four futile attempts marching toward row 0
+    await revealCellBelowFreeze(sheet, 3, 0)
     expect(calls).toEqual([
-      [1, 0],
+      [2, 0],
       [0, 0],
     ])
   })

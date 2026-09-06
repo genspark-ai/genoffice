@@ -1,4 +1,4 @@
-/** Hard guard against "building from scratch by hand": calling add_text_box/add_shape/add_smartart on an empty deck should be refused and redirected to generate_deck. */
+/** Hard guard against "building from scratch by hand": apply_ops insert ops (addElement/addSmartArt) on an empty deck are refused and redirected to generate_deck. */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createSlidesSkill, type DeckAccess } from '../src/renderer/ai/slides-skill'
 import type { RenderSlide, PlacedBox, ShapeRenderNode } from '@genoffice/pptx-render'
@@ -75,49 +75,57 @@ function mkAccess(slides: RenderSlide[]): DeckAccess {
     landGeneratedPages: async () => ({ ok: true, pages: 1 }),
   } as unknown as DeckAccess
 }
-const call = (name: string): AgentToolCall => ({
+const insert = (op: 'addElement' | 'addSmartArt'): AgentToolCall => ({
   id: 't',
-  name,
+  name: 'apply_ops',
   input: {
-    slideIndex: 0,
-    paragraphs: [{ runs: [{ text: 'x' }] }],
-    kind: 'rect',
-    x: 10,
-    y: 10,
-    w: 100,
-    h: 50,
-    layout: 'list',
-    items: ['a'],
+    ops: [
+      op === 'addElement'
+        ? {
+            op,
+            target: { slide: 0 },
+            kind: 'rect',
+            offset: { x: 10, y: 10, cx: 100, cy: 50 },
+            paragraphs: [{ runs: [{ text: 'x' }] }],
+          }
+        : {
+            op,
+            target: { slide: 0 },
+            layout: 'list',
+            items: ['a'],
+            offset: { x: 10, y: 10, cx: 100, cy: 50 },
+          },
+    ],
   },
 })
 
 beforeEach(() => {
   ;(window as any).slidesApi = {
-    addElement: vi.fn(async () => ({ slide: blankDeck, sourceId: 'e1' })),
-    addSmartArt: vi.fn(async () => ({ slide: blankDeck, sourceId: 's1' })),
+    applyTxn: vi.fn(async () => ({
+      applied: true,
+      records: [{ op: 'addElement', target: '0', created: ['e1'] }],
+      slides: [richDeck],
+    })),
   }
 })
 
 describe('anti hand-building from scratch', () => {
-  it('empty deck + add_text_box → refused with guidance toward generate_deck', async () => {
-    const r = await createSlidesSkill(mkAccess([blankDeck])).executeTool!(call('add_text_box'))
+  it('empty deck + addElement → refused with guidance toward generate_deck', async () => {
+    const r = await createSlidesSkill(mkAccess([blankDeck])).executeTool!(insert('addElement'))
     expect(r.isError).toBe(true)
+    expect(r.output).toContain('ops[0] addElement')
     expect(r.output).toContain('generate_deck')
-    expect((window as any).slidesApi.addElement).not.toHaveBeenCalled()
+    expect((window as any).slidesApi.applyTxn).not.toHaveBeenCalled()
   })
-  it('empty deck + add_shape → refused', async () => {
-    const r = await createSlidesSkill(mkAccess([blankDeck])).executeTool!(call('add_shape'))
+  it('empty deck + addSmartArt → refused', async () => {
+    const r = await createSlidesSkill(mkAccess([blankDeck])).executeTool!(insert('addSmartArt'))
     expect(r.isError).toBe(true)
+    expect((window as any).slidesApi.applyTxn).not.toHaveBeenCalled()
   })
-  it('empty deck + add_smartart → refused', async () => {
-    const r = await createSlidesSkill(mkAccess([blankDeck])).executeTool!(call('add_smartart'))
-    expect(r.isError).toBe(true)
-    expect((window as any).slidesApi.addSmartArt).not.toHaveBeenCalled()
-  })
-  it('existing rich deck (lots of content) + add_text_box → allowed (fine-tuning is legitimate)', async () => {
-    const r = await createSlidesSkill(mkAccess([richDeck])).executeTool!(call('add_text_box'))
+  it('existing rich deck (lots of content) + addElement → allowed (fine-tuning is legitimate)', async () => {
+    const r = await createSlidesSkill(mkAccess([richDeck])).executeTool!(insert('addElement'))
     expect(r.isError).toBeUndefined()
-    expect((window as any).slidesApi.addElement).toHaveBeenCalledOnce()
+    expect((window as any).slidesApi.applyTxn).toHaveBeenCalledOnce()
   })
   it('after cloud generation has run, allowed even with an empty deck (tweak scenario)', async () => {
     const access = {
@@ -137,7 +145,7 @@ describe('anti hand-building from scratch', () => {
         pages: [{ title: 'T', brief: 'b', layout: 'data', image_queries: [] }],
       },
     })
-    const r = await skill.executeTool!(call('add_text_box'))
+    const r = await skill.executeTool!(insert('addElement'))
     expect(r.isError).toBeUndefined()
   })
 })

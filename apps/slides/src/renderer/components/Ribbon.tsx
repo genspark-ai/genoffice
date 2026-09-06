@@ -15,7 +15,9 @@ import type { AnimEffectKind, GradientFillSpec, TransitionKind } from '../../sha
 import type { ChartStyleInfo } from '@genoffice/pptx-render'
 import {
   useDismissablePopover,
+  useRibbonCollapse,
   Dropdown,
+  RibbonCollapseButton,
   THEME_COLORS,
   THEME_COLOR_SHADES,
   STANDARD_COLORS,
@@ -1372,6 +1374,7 @@ export function Ribbon({
   // Expanded/collapsed widths are cached per group so the required width is
   // computable in every state (before the first fold the collapsed width is
   // an estimate, corrected by measurement as soon as the group first folds).
+  const collapse = useRibbonCollapse('ai-slides-ribbon-collapsed')
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const inlineWidthsRef = useRef(new Map<string, number>())
   const collapsedWidthsRef = useRef(new Map<string, number>())
@@ -1385,6 +1388,8 @@ export function Ribbon({
     const order = COLLAPSE_ORDER[tab] ?? []
     if (!order.length) return
     const evaluate = () => {
+      // hidden (collapsed ribbon): offsets read 0 and would poison the width caches
+      if (!el.clientWidth) return
       const kids = Array.from(el.children) as HTMLElement[]
       if (!kids.length) return
       const first = kids[0]!
@@ -1686,11 +1691,12 @@ export function Ribbon({
   }
 
   return (
-    <div className="ribbon">
+    <div className={`ribbon ${collapse.rootClass}`} ref={collapse.rootRef}>
       <div
         className={`ribbon-tabs ${IN_TAB ? '' : IS_MAC ? 'ribbon-tabs-mac' : 'ribbon-tabs-win'}${
           anyPanelOpen ? ' ribbon-tabs-nodrag' : ''
         }`}
+        onDoubleClick={collapse.onTabsDoubleClick}
       >
         {!IS_MAC && (
           <div className="file-tab-wrap">
@@ -1822,6 +1828,7 @@ export function Ribbon({
             key={tb}
             className={`ribbon-tab ${tab === tb ? 'active' : ''}`}
             onClick={() => {
+              collapse.onTabPress(tab === tb)
               setTab(tb)
               setFileOpen(false)
             }}
@@ -1833,7 +1840,10 @@ export function Ribbon({
           <button
             key={contextTab}
             className={`ribbon-tab ribbon-tab-context ${tab === contextTab ? 'active' : ''}`}
-            onClick={() => setTab(contextTab)}
+            onClick={() => {
+              collapse.onTabPress(tab === contextTab)
+              setTab(contextTab)
+            }}
             data-tip={t(TAB_LABEL[contextTab])}
           >
             {t(TAB_LABEL[contextTab])}
@@ -1842,7 +1852,7 @@ export function Ribbon({
         <span className="ribbon-tabs-spacer" />
       </div>
 
-      <div className="ribbon-body" ref={bodyRef}>
+      <div className="ribbon-body" data-ribbon-body="" ref={bodyRef}>
         {tab === 'home' ? (
           <RibbonHomeTab rb={tabCtx} />
         ) : tab === 'insert' ? (
@@ -3366,6 +3376,10 @@ export function Ribbon({
           </>
         ) : null}
       </div>
+      <RibbonCollapseButton
+        state={collapse}
+        labels={{ collapse: t('ribbonCollapse'), pin: t('ribbonPin') }}
+      />
     </div>
   )
 }

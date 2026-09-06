@@ -310,6 +310,8 @@ export const fr = {
   appAiDone: "L'IA a terminé",
   appAiTurnLimit:
     "(Limite de tours d'appels d'outils atteinte pour cette requête ; la réponse ci-dessus se base sur ce qui a été lu et peut être incomplète.)",
+  appAiTruncatedNote:
+    '(La réponse a été tronquée par la limite de longueur et peut être incomplète.)',
   appAiStopped: '(arrêté)',
   appAiNoSummary: "L'IA a terminé sans générer de résumé.",
   appAiNoAction: "L'IA n'a effectué aucune action ni donné de réponse. Réessayez ou reformulez.",
@@ -330,6 +332,15 @@ export const fr = {
     "Cette combinaison d'icônes ne peut pas être enregistrée en xlsx — choisissez un autre jeu d'icônes.",
   appNeedFullLoadSort:
     'Le tri, le filtrage, le déplacement de plages et la conversion en colonnes nécessitent le mode de chargement complet — ce classeur est trop volumineux et est chargé partiellement en flux.',
+  appFullLoadFilterTitle: 'Le filtrage nécessite le chargement complet',
+  appFullLoadFilterBody:
+    'Ce classeur est volumineux et seule une partie est chargée en flux. Le filtrage (y compris le comptage des valeurs) nécessite les données complètes. Charger tout le classeur maintenant ?',
+  appFullLoadStart: 'Tout charger',
+  appFullLoadRunning:
+    'Chargement complet du classeur en cours — le filtrage sera disponible une fois terminé…',
+  appFullLoadTooLarge:
+    'Ce classeur est trop volumineux pour être chargé entièrement en mémoire ; le filtrage est indisponible pour ce fichier.',
+  appDialogCancel: 'Annuler',
   appPivotSheetNoMove:
     "Cette feuille contient un tableau croisé dynamique — le déplacement de plages n'est pas encore pris en charge.",
   appTableFilterNoEdit:
@@ -697,6 +708,8 @@ export const fr = {
   appTabFormulas: 'Formules',
   appTabData: 'Données',
   appTabReview: 'Révision',
+  appRibbonCollapse: 'Réduire le ruban',
+  appRibbonPin: 'Épingler le ruban',
   appTabView: 'Affichage',
   appTabAi: 'IA',
   appTabChartDesign: 'Création de graphique',

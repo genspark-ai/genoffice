@@ -12,6 +12,8 @@ freely redistributable with the app. Licenses: Carlito and Liberation are
 | Liberation Serif | OFL 1.1    | Times New Roman                    |
 | Liberation Sans  | OFL 1.1    | Arial                              |
 | Liberation Mono  | OFL 1.1    | Courier New                        |
+| Aptos GO         | OFL 1.1    | Aptos (Carlito, size-adjusted)     |
+| Aptos Display GO | OFL 1.1    | Aptos Display (Carlito, adjusted)  |
 
 "Carlito GO" (`Carlito-*.ttf`) is a derivative of Carlito 1.103: a build-time patch
 (`tools/patch-carlito-vi.py`) rebuilds Vietnamese precomposed glyphs whose above mark
@@ -27,6 +29,15 @@ canvas line breaking aligned with Word, and stays consistent with the offline
 pagination model (`tests/helpers/lo-fonts.ts` measures the same set of files).
 
 Registration lives in `fonts.css`; family-name mapping in `cssFontFamily()` of `line-metrics.ts`.
+
+"Aptos GO" / "Aptos Display GO" are not separate files: they are `size-adjust`ed
+views of the Carlito faces (Word probe 2026-09-03 against Word's bundled Aptos).
+Aptos letters run ~6.8% wider than Carlito's, digits +5.4%, the space 10%
+narrower, so each weight registers three faces (general, `U+0030-0039`,
+`U+0020/00A0`) — later faces win inside their unicode-range. Aptos Display is
+close to Carlito for letters but shares the narrow space. Pitch stays Calibri's
+1.22 (`lineHeightFactor`). `tests/aptos-alias-metrics.test.ts` holds the probed
+sentence widths.
 
 ## CJK fallback
 
@@ -102,6 +113,25 @@ Basic Latin/punctuation/fullwidth forms), advances **unmodified**
 Reserved Font Names include "Nanum" and "NanumGothic"; subsetting is a
 modification). The exact NHN copyright/Reserved Font Name notice and the full
 OFL 1.1 text are in `LICENSE-OFL.txt`.
+
+### GenOffice UI Kana JP
+
+| Font                                      | Role                                                |
+| ----------------------------------------- | --------------------------------------------------- |
+| GenOffice UI Kana JP (Regular/Bold woff2) | Meiryo UI-advance kana/JP punctuation for the alias |
+
+Source: Noto Sans JP variable font from [notofonts/noto-cjk](https://github.com/notofonts/noto-cjk)
+(SIL OFL 1.1), instanced at wght 400/700. Word for Mac renders Meiryo UI with
+its private copy whose kana are proportional (Word probe 2026-09-03: あ
+0.816em, う 0.639em, ア 0.754em, ideographic space and 、。 0.664em, corner
+brackets and ・ 0.5em) at full glyph height; the Hiragino fallback keeps them
+at 1em, and a size-adjust alias shrinks height along with width. Subset to
+U+3000-30FF code points whose Meiryo UI advance differs from 1em, each glyph
+given that exact advance (`tools/meiryo-ui-kana-advances.json`) with the
+outline condensed horizontally to fit; vertical metrics set to the Hiragino
+class (0.88/-0.12) the glyphs sit next to (`tools/build-meiryo-ui-kana-font.py`).
+Renamed per OFL ("Source" is a Reserved Font Name of the upstream and the
+outlines are modified).
 
 ## Poppins (M365 cloud font)
 

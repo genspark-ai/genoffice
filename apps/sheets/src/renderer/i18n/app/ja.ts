@@ -296,6 +296,7 @@ export const ja = {
   appAiDone: 'AI が完了しました',
   appAiTurnLimit:
     '（1 回のリクエストのツール呼び出し上限に達したため、ここまでに読み取った情報に基づく回答です。不完全な場合があります。）',
+  appAiTruncatedNote: '（返信は長さ制限により途中で打ち切られ、不完全な可能性があります。）',
   appAiStopped: '（停止しました）',
   appAiNoSummary: 'AI は完了しましたが、要約は生成されませんでした。',
   appAiNoAction: 'AI は操作も返信も行いませんでした。もう一度試すか、言い換えてください。',
@@ -315,6 +316,14 @@ export const ja = {
     'このアイコンの組み合わせは xlsx に保存できません。別のアイコンセットを選択してください。',
   appNeedFullLoadSort:
     '並べ替え、フィルター、範囲の移動、区切り位置には完全読み込みモードが必要です。このブックは大きすぎるため、ストリーミング読み込みのみ行われました。',
+  appFullLoadFilterTitle: 'フィルターには完全読み込みが必要です',
+  appFullLoadFilterBody:
+    'このブックは大きいため、現在は一部のみストリーミング読み込みされています。フィルター（値の集計を含む）を正しく行うには完全なデータが必要です。今すぐブック全体を読み込みますか？',
+  appFullLoadStart: 'すべて読み込む',
+  appFullLoadRunning: 'ブック全体を読み込んでいます。完了するとフィルターが使用できます…',
+  appFullLoadTooLarge:
+    'このブックは大きすぎるため完全に読み込めません。このファイルではフィルターを使用できません。',
+  appDialogCancel: 'キャンセル',
   appPivotSheetNoMove:
     'このシートにはピボットテーブルが含まれています — 範囲の移動には未対応です。',
   appTableFilterNoEdit:
@@ -674,6 +683,8 @@ export const ja = {
   appTabFormulas: '数式',
   appTabData: 'データ',
   appTabReview: '校閲',
+  appRibbonCollapse: 'リボンを折りたたむ',
+  appRibbonPin: 'リボンの固定',
   appTabView: '表示',
   appTabAi: 'AI',
   appTabChartDesign: 'グラフのデザイン',

@@ -85,3 +85,48 @@ describe('nested table editing end to end', () => {
     editor.destroy()
   })
 })
+
+// the DOM read-back is not a faithful text encoding of the model (a trailing
+// empty paragraph renders as a stripped newline): only cells the user typed in
+// may be committed, or every save rewrote the untouched nested cell lossily
+const NESTED_TRAILING_EMPTY_XML = NESTED_TABLE_XML.replace(
+  '<w:t>InnerA</w:t></w:r></w:p>',
+  '<w:t>InnerA</w:t></w:r></w:p><w:p/>',
+)
+
+function nestedModel(editor: Editor): TableModel {
+  let model: TableModel | null = null
+  editor.state.doc.descendants((node) => {
+    if (!model && node.type.name === 'docNestedTable') model = node.attrs.model as TableModel
+  })
+  return model!
+}
+
+describe('nested cell pre-save commit', () => {
+  it('leaves untyped cells alone even when the DOM text differs from the model', async () => {
+    const bytes = await buildDocx({ bodyXml: NESTED_TRAILING_EMPTY_XML })
+    const parsed = await parseDocx(bytes)
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: blocksToPmDoc(parsed.blocks) as never,
+    })
+    expect(nestedModel(editor).rows[0][0].paras).toEqual(['InnerA', ''])
+    window.dispatchEvent(new Event('ai-docs-commit-tables'))
+    expect(nestedModel(editor).rows[0][0].paras).toEqual(['InnerA', ''])
+    const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
+    expect(plan.changedCount).toBe(0)
+    expect(await saveDocx(parsed, plan.saveBlocks)).toEqual(bytes)
+    editor.destroy()
+  })
+
+  it('commits the cell the user typed in', async () => {
+    const { editor } = await openNestedDoc()
+    const td = editor.view.dom.querySelector('.doc-nested-table td') as HTMLElement
+    td.textContent = 'Typed'
+    td.dispatchEvent(new Event('input', { bubbles: true }))
+    window.dispatchEvent(new Event('ai-docs-commit-tables'))
+    expect(nestedModel(editor).rows[0].map((c) => c.paras[0])).toEqual(['Typed', 'InnerB'])
+    editor.destroy()
+  })
+})

@@ -1831,6 +1831,39 @@ body.vib .home {
 }
 
 /* Motion accessibility: suppress all animation for users who opt out */
+/* PowerPoint-sized minimum window (720px): the fixed 232px sidebar and the
+   eight-column file grid no longer fit side by side */
+@media (max-width: 900px) {
+  .sidebar {
+    width: 200px;
+  }
+
+  .content {
+    padding: 28px 20px 40px;
+  }
+
+  .recents-toolbar {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .recents-heading {
+    white-space: nowrap;
+  }
+
+  .recent-columns,
+  .recent-item {
+    grid-template-columns: 18px 24px minmax(0, 1fr) 110px 24px 28px;
+  }
+
+  .recent-columns .col-path,
+  .recent-columns .col-size,
+  .recent-path,
+  .recent-size {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

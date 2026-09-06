@@ -56,6 +56,33 @@ describe('docStyleCss spacing', () => {
     )
   })
 
+  it('zeroes style-level auto spacing at the cell boundaries (Word probe 2026-09-03)', () => {
+    const css = docStyleCss(parsedWith('web', { spaceBeforeAuto: true, spaceAfterAuto: true }))
+    const cell = '.doc-table :is(td, th, .cell-clip, .cell-vert) > '
+    expect(css).toContain(
+      `${cell}[data-style="web"]:nth-child(1 of :not(.doc-cell-boxes)) { margin-top:0 }`,
+    )
+    expect(css).toContain(
+      `${cell}[data-style="web"]:nth-last-child(1 of :not(.doc-cell-boxes)) { margin-bottom:0 }`,
+    )
+  })
+
+  it('zeroes default-level auto spacing at the cell boundaries', () => {
+    const parsed = parsedWith('S', {})
+    ;(parsed as unknown as { docDefaults: object }).docDefaults = {
+      spaceBeforeAuto: true,
+      spaceAfterAuto: true,
+    }
+    const css = docStyleCss(parsed)
+    const cell = '.doc-table :is(td, th, .cell-clip, .cell-vert) > '
+    expect(css).toContain(
+      `${cell}:is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field):not([data-style]):nth-child(1 of :not(.doc-cell-boxes)) { margin-top:0 }`,
+    )
+    expect(css).toContain(
+      `${cell}:is(p, .doc-li, h1, h2, h3, h4, h5, h6, .doc-protected-field):not([data-style]):nth-last-child(1 of :not(.doc-cell-boxes)) { margin-bottom:0 }`,
+    )
+  })
+
   it('keeps the literal twips when autospacing is off', () => {
     const css = docStyleCss(parsedWith('S', { spaceBeforeTwips: 100, spaceAfterTwips: 100 }))
     expect(css).toContain('[data-style="S"] { margin-top:5.0pt;margin-bottom:5.0pt }')

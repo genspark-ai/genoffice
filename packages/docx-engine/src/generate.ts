@@ -388,8 +388,11 @@ function xmlSegments(
   while (i < to) {
     const o = xml.indexOf(openPrefix, i)
     const c = xml.indexOf(closeTag, i)
-    if (c === -1 || c >= to) break
-    if (o !== -1 && o < c) {
+    const hasOpen = o !== -1 && o < to
+    const hasClose = c !== -1 && c < to
+    // a trailing self-closing element (Word's empty <w:p/>) has no close tag after it
+    if (!hasOpen && !hasClose) break
+    if (hasOpen && (!hasClose || o < c)) {
       const after = xml.charAt(o + openPrefix.length)
       if (after !== '>' && after !== ' ' && after !== '/') {
         i = o + openPrefix.length // prefix of a longer tag (w:tr vs w:trPr)
@@ -404,6 +407,8 @@ function xmlSegments(
       if (depth === 0) segStart = o
       depth++
       i = o + openPrefix.length
+    } else if (depth === 0) {
+      break
     } else {
       depth--
       if (depth === 0) segs.push({ start: segStart, end: c + closeTag.length })
@@ -508,9 +513,11 @@ function cellRunContentXml(text: string): string {
     '\n': '<w:br/>',
     '\f': '<w:br w:type="page"/>',
     '\v': '<w:br w:type="column"/>',
+    '\u2011': '<w:noBreakHyphen/>',
+    '\u00ad': '<w:softHyphen/>',
   }
   return text
-    .split(/([\t\n\f\v])/)
+    .split(/([\t\n\f\v\u2011\u00ad])/)
     .map((seg) =>
       seg === '' ? '' : (CONTROL[seg] ?? `<w:t xml:space="preserve">${escapeXmlText(seg)}</w:t>`),
     )
@@ -526,9 +533,9 @@ export type CellTextsPatch =
   | {
       /** this cell's own text (optional; rewriting the outer text of a cell containing a nested table is not supported yet) */
       paras?: readonly string[] | null
-      /** one cell-text grid per direct nested table (null = leave that nested table untouched) */
+      /** one cell grid per direct nested table (null = leave that nested table untouched) */
       nested?: ReadonlyArray<ReadonlyArray<
-        ReadonlyArray<readonly string[] | null | undefined> | null | undefined
+        ReadonlyArray<readonly CellParaPatch[] | null | undefined> | null | undefined
       > | null>
     }
 
@@ -555,7 +562,7 @@ export function patchTableCellTexts(
       if (entry == null) return
       const tcXml = tableXml.slice(tc.start, tc.end)
       const patched = Array.isArray(entry)
-        ? patchCellXml(tcXml, entry as string[])
+        ? patchCellXml(tcXml, entry as CellParaPatch[])
         : patchNestedInCell(tcXml, (entry as { nested?: unknown }).nested as never)
       if (patched === null) return
       out += tableXml.slice(cursor, tc.start) + patched
@@ -570,7 +577,7 @@ function patchNestedInCell(
   tcXml: string,
   nested:
     | ReadonlyArray<ReadonlyArray<
-        ReadonlyArray<readonly string[] | null | undefined> | null | undefined
+        ReadonlyArray<readonly CellParaPatch[] | null | undefined> | null | undefined
       > | null>
     | undefined,
 ): string | null {
@@ -1156,9 +1163,9 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   // rightward on save (alpha ledger r116).
   // explicit w:left="0" must be written back: it cancels a numbering-level indent
   if (format.indentLeft !== undefined) indAttrs.push(`w:left="${Math.round(format.indentLeft)}"`)
-  if (format.indentRight) indAttrs.push(`w:right="${Math.round(format.indentRight)}"`)
-  if (format.indentFirstLine) {
-    if (format.indentFirstLine > 0)
+  if (format.indentRight !== undefined) indAttrs.push(`w:right="${Math.round(format.indentRight)}"`)
+  if (format.indentFirstLine !== undefined) {
+    if (format.indentFirstLine >= 0)
       indAttrs.push(`w:firstLine="${Math.round(format.indentFirstLine)}"`)
     else indAttrs.push(`w:hanging="${Math.round(-format.indentFirstLine)}"`)
   }
@@ -1291,14 +1298,22 @@ function rawIndUnchanged(raw: string | undefined, f: ParaFormat): boolean {
   const right = parseInt(rawAttr(raw, 'w:right') ?? rawAttr(raw, 'w:end') ?? '', 10)
   const firstLine = parseInt(rawAttr(raw, 'w:firstLine') ?? '', 10)
   const hanging = parseInt(rawAttr(raw, 'w:hanging') ?? '', 10)
-  // left mirrors the parse side: explicit 0 stays distinct from absent
+  // mirrors the parse side: an explicit 0 stays distinct from absent
   const rawLeft = Number.isFinite(left) ? left : undefined
-  const rawRight = Number.isFinite(right) && right !== 0 ? right : undefined
-  const rawFirst = hanging > 0 ? -hanging : firstLine > 0 ? firstLine : undefined
-  const norm = (v: number | undefined) => (v ? Math.round(v) : undefined)
-  const normLeft = f.indentLeft !== undefined ? Math.round(f.indentLeft) : undefined
+  const rawRight = Number.isFinite(right) ? right : undefined
+  const rawFirst =
+    hanging > 0
+      ? -hanging
+      : firstLine > 0
+        ? firstLine
+        : Number.isFinite(firstLine) || Number.isFinite(hanging)
+          ? 0
+          : undefined
+  const norm = (v: number | undefined) => (v !== undefined ? Math.round(v) : undefined)
   return (
-    rawLeft === normLeft && rawRight === norm(f.indentRight) && rawFirst === norm(f.indentFirstLine)
+    rawLeft === norm(f.indentLeft) &&
+    rawRight === norm(f.indentRight) &&
+    rawFirst === norm(f.indentFirstLine)
   )
 }
 
@@ -1387,11 +1402,10 @@ function rawFramePrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
  */
 function sameIndent(a: ParaFormat, b: ParaFormat): boolean {
   const norm = (v: number | undefined) => (v !== undefined ? Math.round(v) : undefined)
-  const nz = (v: number | undefined) => (v ? Math.round(v) : undefined)
   return (
     norm(a.indentLeft) === norm(b.indentLeft) &&
-    nz(a.indentRight) === nz(b.indentRight) &&
-    nz(a.indentFirstLine) === nz(b.indentFirstLine)
+    norm(a.indentRight) === norm(b.indentRight) &&
+    norm(a.indentFirstLine) === norm(b.indentFirstLine)
   )
 }
 
@@ -1633,7 +1647,10 @@ export function generateParagraphXml(block: GeneratedBlock, ctx: GenerateContext
   let styleId: string | undefined
   if (block.type === 'heading') {
     const level = Math.min(Math.max(block.level ?? 1, 1), 9)
-    styleId = block.styleId ?? ctx.headingStyleIds.get(level)
+    if (block.outlineOnly) {
+      styleId = block.styleId
+      children.push({ name: 'w:outlineLvl', xml: `<w:outlineLvl w:val="${level - 1}"/>` })
+    } else styleId = block.styleId ?? ctx.headingStyleIds.get(level)
   } else if (block.type === 'listItem') {
     styleId = block.styleId ?? ctx.listParagraphStyleId
   } else {
@@ -2250,13 +2267,16 @@ function runsXml(runs: Run[], allocate: ((href: string) => string) | null): stri
     while (i < to) {
       const run = runs[i]
       if (run.link) {
-        // group consecutive runs sharing the same link target
+        // group consecutive runs sharing the same link target; runs parsed from
+        // distinct w:hyperlink elements (own rId) stay separate so no relationship is orphaned
         const group: Run[] = []
         const groupStart = i
         const href = run.link.href
         let rId = run.link.rId
         while (i < to && runs[i].link && runs[i].link!.href === href) {
-          rId = rId ?? runs[i].link!.rId
+          const next = runs[i].link!.rId
+          if (group.length > 0 && next !== undefined && rId !== undefined && next !== rId) break
+          rId = rId ?? next
           group.push(runs[i])
           i++
         }
@@ -2342,7 +2362,7 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
   // atomic cell picture: the exact <w:drawing> fragment re-wrapped in a run
   if (run.image) {
     const text = run.text === '' ? '' : generateRunXml({ ...run, image: undefined }, insideLink)
-    return `${text}<w:r>${run.image.xml}</w:r>`
+    return `${text}<w:r>${run.rawRPr ?? ''}${run.image.xml}</w:r>`
   }
   if (run.noteRef) {
     const tag = run.noteRef.kind === 'footnote' ? 'w:footnoteReference' : 'w:endnoteReference'
@@ -2576,9 +2596,9 @@ function revisionRPrChangeXml(run: Run): string | null {
 /** Fresh rPr children for the modeled fields (one-to-one with what buildRun reads on the parse side) */
 function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   const out: PPrChild[] = []
-  if (insideLink) out.push({ name: 'w:rStyle', xml: '<w:rStyle w:val="Hyperlink"/>' })
-  else if (run.styleId)
-    out.push({ name: 'w:rStyle', xml: `<w:rStyle w:val="${escapeXmlAttr(run.styleId)}"/>` })
+  // a link run keeps the document's own character style (localized ids like "ae")
+  const styleId = run.styleId ?? (insideLink ? 'Hyperlink' : undefined)
+  if (styleId) out.push({ name: 'w:rStyle', xml: `<w:rStyle w:val="${escapeXmlAttr(styleId)}"/>` })
   if (run.font || run.fontAscii || run.fontCs) {
     out.push({ name: 'w:rFonts', xml: freshRFontsXml(run.font, run.fontAscii, run.fontCs) })
   }
@@ -2649,10 +2669,10 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
     switch (key) {
       case 'rStyle': {
         const raw = rawAttr(rawOf('w:rStyle'), 'w:val')
-        const modeled = insideLink ? 'Hyperlink' : run.styleId
-        // The parse side does not store Hyperlink in styleId: raw=Hyperlink with an empty
-        // model counts as equal
-        return raw === modeled || (raw === 'Hyperlink' && !modeled)
+        if (run.styleId) return raw === run.styleId
+        // the parse side never stores Hyperlink in styleId; a run that already sat in
+        // the document's hyperlink (rId) stays unstyled if it was unstyled
+        return raw === undefined ? !insideLink || !!run.link?.rId : raw === 'Hyperlink'
       }
       case 'rFonts': {
         // mirrors the parse side: primary = eastAsia ?? ascii ?? hAnsi, latin = ascii ?? hAnsi,
@@ -2681,7 +2701,9 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         return rawBool(rawOf('w:strike')) === !!run.strike
       case 'color': {
         const raw = rawAttr(rawOf('w:color'), 'w:val')
-        return (raw === 'auto' ? undefined : raw) === run.color
+        // a theme-resolved model value never equals the cached literal; rebuilding
+        // would materialize the theme link (same rule as rFonts above)
+        return raw === run.color || (run.themeColor !== undefined && run.color === run.themeColor)
       }
       case 'size': {
         const raw = rawAttr(rawOf(cs ? 'w:szCs' : 'w:sz'), 'w:val')
@@ -3227,6 +3249,12 @@ function generateRunXml(run: Run, insideLink: boolean): string {
     } else if (ch === '\v') {
       flush()
       segments.push('<w:br w:type="column"/>')
+    } else if (ch === '\u2011') {
+      flush()
+      segments.push('<w:noBreakHyphen/>')
+    } else if (ch === '\u00ad') {
+      flush()
+      segments.push('<w:softHyphen/>')
     } else {
       buffer += ch
     }

@@ -47,6 +47,11 @@ describe('docStyleCss --hf-default-fs', () => {
   it('stays silent at or above the 10.5pt static guess', () => {
     expect(docStyleCss(parsedWith({ ddSizeHalfPoints: 21 }))).not.toContain('--hf-default-fs')
     expect(docStyleCss(parsedWith({ ddSizeHalfPoints: 22 }))).not.toContain('--hf-default-fs')
-    expect(docStyleCss(parsedWith({}))).not.toContain('--hf-default-fs')
+  })
+
+  it("no size anywhere: Word's built-in 10pt default drives body and strips", () => {
+    const css = docStyleCss(parsedWith({}))
+    expect(css).toContain('font-size:10pt')
+    expect(css).toContain('--hf-default-fs:10pt')
   })
 })

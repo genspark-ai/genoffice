@@ -95,8 +95,8 @@ describe('text box rich-text edit and save', () => {
       'var(--doc-line-max, calc(var(--doc-line-factor,1.2) * 1.3))',
     )
     expect(firstPara.style.marginTop).toBe('10.55pt')
-    expect(firstPara.style.marginLeft).toBe('9pt')
-    expect(firstPara.style.marginRight).toBe('4.5pt')
+    expect(firstPara.style.getPropertyValue('margin-inline-start')).toBe('9pt')
+    expect(firstPara.style.getPropertyValue('margin-inline-end')).toBe('4.5pt')
     editor.destroy()
   })
 

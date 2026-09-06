@@ -155,6 +155,21 @@ export function rtlMaxViewportScrollX(
   return sceneWidth - Math.max(0, paddingEndX - paddingStartX) - viewportWidth / scaleX
 }
 
+/**
+ * Whether the RTL main pane has no canvas left (a frozen band taller/wider
+ * than the engine, e.g. a form whose freeze covers the whole used range).
+ * Univer never re-measures the scroll clamp of such a pane
+ * (`_updateScrollByViewportScrollValue` bails on a non-positive size), so a
+ * stock scroll would clamp the home X to NaN/stale and park every strip and
+ * the float layer on the empty far end of the mirrored scene.
+ */
+export function rtlMainPaneCollapsed(
+  width: number | undefined,
+  height: number | undefined,
+): boolean {
+  return !((width ?? 0) > 1 && (height ?? 0) > 1)
+}
+
 interface SkeletonLike {
   worksheet?: { getConfig?(): { rightToLeft?: BooleanNumber } } | null
   columnTotalWidth: number
@@ -293,30 +308,27 @@ function patchViewportMargin(): void {
         this._paddingStartX,
         this._paddingEndX,
       )
+      const collapsed = rtlMainPaneCollapsed(this.width, this.height)
       if (maxUseful > 0 && pos.viewportScrollX >= maxUseful) {
         // A request at or past the edge is the RTL "home" (state A1/0 maps
         // past the edge; wheel/reveal land exactly on it). Cap it, and keep
         // the clamped X out of the recorded scroll state (isTrigger=false)
         // so later restores re-cap against fresh geometry instead of
         // freezing a stale clamp.
-        const result = origScrollToViewportPos.call(
-          this,
-          { ...pos, viewportScrollX: maxUseful },
-          false,
-        )
-        // Untriggered scrolls bypass the stock header-strip sync.
-        for (const key of [
-          SHEET_VIEWPORT_KEY.VIEW_COLUMN_RIGHT,
-          SHEET_VIEWPORT_KEY.VIEW_MAIN_TOP,
-        ]) {
-          const sibling = this._scene.getViewport(key)
-          if (sibling) sibling.viewportScrollX = this.viewportScrollX
-        }
-        for (const key of [SHEET_VIEWPORT_KEY.VIEW_ROW_BOTTOM, SHEET_VIEWPORT_KEY.VIEW_MAIN_LEFT]) {
-          const sibling = this._scene.getViewport(key)
-          if (sibling) sibling.viewportScrollY = this.viewportScrollY
-        }
+        const home = { ...pos, viewportScrollX: maxUseful }
+        const result = collapsed
+          ? recordCollapsedScroll(this, home)
+          : origScrollToViewportPos.call(this, home, false)
+        syncRtlStrips(this)
         recordHomeScrollState(this)
+        return result
+      }
+      if (collapsed) {
+        const result = recordCollapsedScroll(this, {
+          ...pos,
+          viewportScrollX: Math.max(0, pos.viewportScrollX),
+        })
+        syncRtlStrips(this)
         return result
       }
       if (reapplyingRtlMainScroll) isTrigger = false
@@ -345,6 +357,33 @@ function patchViewportMargin(): void {
         viewportScrollY: this.viewportScrollY,
       })
     }
+  }
+}
+
+/** Untriggered / recorded scrolls bypass the stock header-strip sync. */
+function syncRtlStrips(viewport: any): void {
+  for (const key of [SHEET_VIEWPORT_KEY.VIEW_COLUMN_RIGHT, SHEET_VIEWPORT_KEY.VIEW_MAIN_TOP]) {
+    const sibling = viewport._scene.getViewport(key)
+    if (sibling) sibling.viewportScrollX = viewport.viewportScrollX
+  }
+  for (const key of [SHEET_VIEWPORT_KEY.VIEW_ROW_BOTTOM, SHEET_VIEWPORT_KEY.VIEW_MAIN_LEFT]) {
+    const sibling = viewport._scene.getViewport(key)
+    if (sibling) sibling.viewportScrollY = viewport.viewportScrollY
+  }
+}
+
+/** A pane with no canvas (rtlMainPaneCollapsed) takes the request as-is. */
+function recordCollapsedScroll(
+  viewport: any,
+  pos: { viewportScrollX?: number; viewportScrollY?: number },
+): { viewportScrollX: number; viewportScrollY: number; isLimitedX: boolean; isLimitedY: boolean } {
+  viewport.updateScrollVal(pos)
+  viewport._scene?.makeDirty?.(true)
+  return {
+    viewportScrollX: viewport.viewportScrollX,
+    viewportScrollY: viewport.viewportScrollY,
+    isLimitedX: false,
+    isLimitedY: false,
   }
 }
 

@@ -64,6 +64,7 @@ import {
   cloudToolsEnabled,
   maxOutputTokensOf,
   resolveAiSettings,
+  setAiUserAgent,
   setRescueFetch,
   streamForProvider,
   type AiProviderId,
@@ -1816,8 +1817,8 @@ export async function createSheetsWindow(
   const window = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1024,
-    minHeight: 680,
+    minWidth: 720,
+    minHeight: 550,
     show: false,
     title: 'GenOffice Sheets',
     // Traffic lights sit inside the toolbar row.
@@ -3030,6 +3031,7 @@ export function registerSheetsAiIpc(): void {
 
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
   setRescueFetch((url, init) => net.fetch(url, init))
+  setAiUserAgent(`GenOffice/${app.getVersion()}`)
 
   ipcMain.handle(IPC_CHANNELS.aiGetSettings, (event): AiSettings => {
     sessionFor(event)

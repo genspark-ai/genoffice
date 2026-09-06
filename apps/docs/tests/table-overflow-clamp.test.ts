@@ -117,6 +117,20 @@ describe('expandAutofitColWidths', () => {
     expect(model.colWidthsTwips).toEqual([567, 4000])
   })
 
+  it('takes real advances from an injected metrics provider with rounding slack only', () => {
+    const model: TableModel = {
+      rows: [[cell(ARABIC_HEADER), cell('ok')]],
+      colWidthsTwips: [567, 4000],
+      autoLayout: true,
+    }
+    // a measured 20px word + 2px edge: ceil(22 x 1.02 x 15) + 216 = 553 twips fits the declared 567
+    const narrow = { measure: () => 20, metrics: () => ({ ascent: 0, descent: 0, lineHeight: 0 }) }
+    expect(expandAutofitColWidths(model, 10772, 9638, narrow)).toBe(model)
+    // a measured 40px word needs ceil(42 x 1.02 x 15) + 216 = 859 twips, not the 1.08 heuristic floor
+    const wide = { ...narrow, measure: () => 40 }
+    expect(expandAutofitColWidths(model, 10772, 9638, wide).colWidthsTwips![0]).toBe(859)
+  })
+
   it('leaves fixed-layout tables and already-wide autofit columns alone', () => {
     const fixed: TableModel = {
       rows: [[cell(ARABIC_HEADER)]],

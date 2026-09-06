@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
-import { Dropdown, SHAPE_GALLERY_GROUPS, ShapePreview, useDismissablePopover } from '@genoffice/ui'
+import {
+  Dropdown,
+  RibbonCollapseButton,
+  SHAPE_GALLERY_GROUPS,
+  ShapePreview,
+  useDismissablePopover,
+  useRibbonCollapse,
+} from '@genoffice/ui'
 
 import {
   CaretIcon,
@@ -22,7 +29,7 @@ import { NameManagerDialog, type DefinedNameAction, type DefinedNameRow } from '
 import { categoryOptionForPattern, numberFormatCategories } from './number-format'
 import { type SelectionFormat } from './selection-format'
 import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
-import { shouldInterceptClearSelection } from './clear-selection-keyboard'
+import { isGridKeyTarget, shouldInterceptClearSelection } from './clear-selection-keyboard'
 
 import type { ChartSeriesVisualState } from '../domain/chart-visual'
 import type { ChangePlan } from '../domain/workbook.types'
@@ -365,6 +372,7 @@ export function ExcelShell({
 }: ExcelShellProps): React.JSX.Element {
   const { t } = useI18n()
   const [activeTab, setActiveTab] = useState<RibbonTab>('Home')
+  const collapse = useRibbonCollapse('ai-sheets-ribbon-collapsed')
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [isCopilotOpen, setIsCopilotOpen] = useState(
     () => localStorage.getItem('ai-sheets-show-ai') !== '0',
@@ -395,6 +403,13 @@ export function ExcelShell({
   onCommandRef.current = onCommand
   onIsCellEditingRef.current = onIsCellEditing
   useEffect(() => {
+    // Shortcuts that write to the sheet must not fire from a text field —
+    // neither app fields (AI chat, dialogs) nor Univer's own (find/replace,
+    // rule panels, formula bar), which are native inputs INSIDE the Univer
+    // container. isGridKeyTarget tells the grid's hidden focus host apart
+    // from all of those; only Univer knows whether a cell is being edited.
+    const canEditSheet = (event: KeyboardEvent): boolean =>
+      !onIsCellEditingRef.current() && isGridKeyTarget(event.target)
     const onKeyDown = (event: KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key === '1') {
         event.preventDefault()
@@ -410,22 +425,26 @@ export function ExcelShell({
         event.preventDefault()
         onCommand('toggle-show-formulas')
       }
-      // Excel's strikethrough toggle (⌘5 / Ctrl+5).
+      // Excel's strikethrough toggle (⌘5 / Ctrl+5). While a cell is being
+      // edited the range-level toggle would hit the wrong target (Excel
+      // strikes the selected text instead), so it only acts on the grid.
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key === '5') {
-        event.preventDefault()
-        onCommand('strike')
+        if (canEditSheet(event)) {
+          event.preventDefault()
+          onCommand('strike')
+        }
       }
       // Excel's AutoSum (Alt+= / ⌥⌘= is reserved by macOS, Excel-mac uses ⇧⌘T;
       // plain Alt+= covers win/linux and most mac keyboards).
       if (event.altKey && !event.metaKey && !event.ctrlKey && event.key === '=') {
-        if (!onIsCellEditingRef.current()) {
+        if (canEditSheet(event)) {
           event.preventDefault()
           onCommand('autofn:SUM')
         }
       }
       // Excel's insert current date / time (Ctrl+; / Ctrl+Shift+;).
       if ((event.metaKey || event.ctrlKey) && event.code === 'Semicolon') {
-        if (!onIsCellEditingRef.current()) {
+        if (canEditSheet(event)) {
           event.preventDefault()
           onCommand(event.shiftKey ? 'insert-now:time' : 'insert-now:date')
         }
@@ -437,10 +456,8 @@ export function ExcelShell({
           onCommand(event.shiftKey ? 'calculate-sheet' : 'calculate-now')
         }
       }
-      // Excel's PageUp/PageDown; Alt+ pages horizontally. Univer parks grid
-      // focus on a hidden editable host, so app fields are told apart by
-      // sitting OUTSIDE the grid container; in-cell editing is checked in the
-      // command handler via the workbook's own editing state.
+      // Excel's PageUp/PageDown; Alt+ pages horizontally. In-cell editing is
+      // checked in the command handler via the workbook's own editing state.
       if (
         (event.key === 'PageDown' || event.key === 'PageUp') &&
         !event.metaKey &&
@@ -448,11 +465,7 @@ export function ExcelShell({
         !event.shiftKey &&
         !event.defaultPrevented
       ) {
-        const target = event.target as HTMLElement | null
-        const inAppField =
-          !!target?.closest?.('input, textarea, [contenteditable="true"]') &&
-          !target?.closest?.('[data-u-comp], .univer-app-container, [class*="univer"]')
-        if (!inAppField) {
+        if (isGridKeyTarget(event.target)) {
           event.preventDefault()
           const axis = event.altKey ? 'page-col' : 'page-row'
           onCommand(`${axis}:${event.key === 'PageDown' ? 1 : -1}`)
@@ -488,10 +501,11 @@ export function ExcelShell({
 
   return (
     <main className={`app-shell ${isCopilotOpen ? '' : 'copilot-collapsed'}`}>
-      <header className="excel-header">
+      <header className={`excel-header ${collapse.rootClass}`} ref={collapse.rootRef}>
         <nav
           className={`ribbon-tabs ${IN_TAB ? '' : IS_MAC ? 'ribbon-tabs-mac' : 'ribbon-tabs-win'}`}
           aria-label="Workbook commands"
+          onDoubleClick={collapse.onTabsDoubleClick}
         >
           <button
             type="button"
@@ -550,7 +564,10 @@ export function ExcelShell({
             <button
               className={`${tab === activeTab ? 'active' : ''} ${tab === 'Chart Design' ? 'contextual' : ''}`}
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => {
+                collapse.onTabPress(tab === activeTab)
+                setActiveTab(tab)
+              }}
             >
               {t(TAB_LABEL[tab])}
             </button>
@@ -616,6 +633,10 @@ export function ExcelShell({
           }}
           aiOpen={isCopilotOpen}
           onAiToggle={() => setIsCopilotOpen((open) => !open)}
+        />
+        <RibbonCollapseButton
+          state={collapse}
+          labels={{ collapse: t('appRibbonCollapse'), pin: t('appRibbonPin') }}
         />
       </header>
 
@@ -1385,7 +1406,7 @@ function Ribbon({
       },
     ]
     return (
-      <div className="ribbon">
+      <div className="ribbon" data-ribbon-body="">
         <RibbonGroup label={t('appGroupChartLayouts')}>
           {canEditChart ? (
             largeMenu(t('appAddChartElement'), '📊', t('appAddChartElementTitle'), elementOptions)
@@ -1504,7 +1525,7 @@ function Ribbon({
 
   if (activeTab === 'Insert') {
     return (
-      <div className="ribbon">
+      <div className="ribbon" data-ribbon-body="">
         <RibbonGroup label={t('appGroupTables')}>
           <RibbonButton
             large
@@ -1775,7 +1796,7 @@ function Ribbon({
       narrow: t('appMarginNarrow'),
     } as const
     return (
-      <div className="ribbon">
+      <div className="ribbon" data-ribbon-body="">
         <RibbonGroup label={t('appGroupThemes')}>
           {largeMenu(
             t('appGroupThemes'),
@@ -1958,7 +1979,7 @@ function Ribbon({
       />
     )
     return (
-      <div className="ribbon">
+      <div className="ribbon" data-ribbon-body="">
         <RibbonGroup label={t('appGroupFunctionLibrary')}>
           <RibbonButton
             large
@@ -2125,7 +2146,7 @@ function Ribbon({
 
   if (activeTab === 'Data') {
     return (
-      <div className="ribbon">
+      <div className="ribbon" data-ribbon-body="">
         <RibbonGroup label={t('appPivotTable')}>
           <RibbonButton
             large
@@ -2282,7 +2303,7 @@ function Ribbon({
 
   if (activeTab === 'View') {
     return (
-      <div className="ribbon">
+      <div className="ribbon" data-ribbon-body="">
         <RibbonGroup label={t('appGroupWorkbookViews')}>
           <RibbonButton
             large
@@ -2379,7 +2400,7 @@ function Ribbon({
 
   if (activeTab === 'Review') {
     return (
-      <div className="ribbon">
+      <div className="ribbon" data-ribbon-body="">
         <RibbonGroup label={t('appGroupProofing')}>
           <RibbonButton
             large
@@ -2504,7 +2525,7 @@ function Ribbon({
     ? fontSizes
     : [...fontSizes, echoSize].sort((a, b) => a - b)
   return (
-    <div className="ribbon">
+    <div className="ribbon" data-ribbon-body="">
       <RibbonGroup label={t('appGroupAiAssistant')}>
         <button
           className={`ribbon-tool as-button large ai-entry ${aiOpen ? 'active' : ''}`}

@@ -6,6 +6,7 @@ import {
   parsePdfDate,
   threadSubtree,
   toSavedNote,
+  visibleNoteThreads,
 } from '../src/renderer/note-threads'
 import type { NoteInput, PdfJsAnnotData, SavedNoteAnnot } from '../src/renderer/note-threads'
 
@@ -146,5 +147,14 @@ describe('buildNoteThreads', () => {
     const roots = buildNoteThreads([saved({ objNum: 1 }), saved({ objNum: 2, inReplyTo: 1 })], [])
     expect(findThreadRoot(roots, 'S2')?.key).toBe('S1')
     expect(findThreadRoot(roots, 'S99')).toBeNull()
+  })
+
+  it('visibleNoteThreads hides notes queued for deletion and overlays pending edits', () => {
+    const notes = [saved({ objNum: 1 }), saved({ objNum: 2, contents: 'other' })]
+    const roots = visibleNoteThreads(notes, [pending('x')], new Set([1]), new Map([[2, 'fixed']]))
+    expect(roots.map((r) => r.key)).toEqual(['S2', 'Px'])
+    expect(roots[0]!.contents).toBe('fixed')
+    expect(roots[0]!.saved?.contents).toBe('other')
+    expect(findThreadRoot(roots, 'S1')).toBeNull()
   })
 })

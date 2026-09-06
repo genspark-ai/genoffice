@@ -68,7 +68,7 @@ describe('footer content inside a VML textbox', () => {
     const line = parsed.footerParas!.flatMap((p) => p.runs.map((r) => r.text)).join('')
     expect(line).toBe(`\u2014 ${PAGE_MARK} \u2014`)
     // run formatting from inside the textbox is preserved
-    const firstRun = parsed.footerParas![0].runs[0]
+    const firstRun = parsed.footerParas!.find((p) => p.runs.length > 0)!.runs[0]
     expect(firstRun.font).toBe('SimSun')
     expect(firstRun.sizeHalfPoints).toBe(28)
   })

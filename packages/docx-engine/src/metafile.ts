@@ -5,6 +5,12 @@ const EMF_MIMES = new Set(['image/emf', 'image/x-emf'])
 const FONT_FAMILY_MAP = {
   游ゴシック: 'Yu Gothic', // yuu goshikku
   游明朝: 'Yu Mincho', // yuu minchou
+  メイリオ: 'Meiryo',
+  'ｍｓ ｐゴシック': 'MS PGothic',
+  'ｍｓ ゴシック': 'MS Gothic',
+  'ｍｓ ｕｉゴシック': 'MS UI Gothic',
+  'ｍｓ ｐ明朝': 'MS PMincho',
+  'ｍｓ 明朝': 'MS Mincho',
 }
 const WMF_MIMES = new Set(['image/wmf', 'image/x-wmf'])
 // gzip-compressed metafiles (.emz/.wmz)

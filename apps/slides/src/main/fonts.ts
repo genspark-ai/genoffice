@@ -27,7 +27,7 @@ import {
   type OpentypeFontLike,
   type RunStyle,
 } from '@genoffice/pptx-render'
-import { classifyCjkScript } from '../shared/cjk-script'
+import { classifyCjkScript, classifyCjkScriptByNameScript } from '../shared/cjk-script'
 import {
   initShapedMetrics,
   shapedMeasure,
@@ -205,6 +205,9 @@ const ALIASES: Record<string, string[]> = {
   宋体: ['SimSun', 'Songti'],
   黑体: ['SimHei', 'Heiti SC'],
   微软雅黑: ['Microsoft YaHei', 'MSYH'],
+  // the English name has no file of its own here; msyh.ttc is indexed as MSYH (probe: Latin
+  // text in "Microsoft YaHei" fell to Calibri, 15% narrower than PowerPoint)
+  'microsoft yahei': ['MSYH', '微软雅黑'],
   楷体: ['KaiTi', 'Kaiti SC'],
   仿宋: ['FangSong', 'STFangsong'],
   helvetica: ['Arial'],
@@ -348,8 +351,17 @@ function weightTargetOf(family: string): number | undefined {
 // PowerPoint substitutes a missing font by the run's declared language/charset, not by
 // classifying the font name (see TextRun.fontScriptHint): prod_079's JP-named font with
 // charset=134 renders with Microsoft YaHei; prod_043's altLang="ko-KR" runs get Malgun.
-function substitutesFor(family: string, substScript?: 'ja' | 'ko' | 'sc' | 'tc'): string[] {
-  const script = substScript ?? classifyCjkScript(family)
+function substitutesFor(
+  family: string,
+  substScript?: 'ja' | 'ko' | 'sc' | 'tc',
+  latinOnly?: boolean,
+): string[] {
+  // Latin-only text takes a CJK substitute only when the requested family declares it — a
+  // CJK-lettered name (or the run's @charset, arriving as substScript) — not off romanized
+  // keywords: PowerPoint sets prod_026's "ISO 45001" in missing NanumSquareExtraBold in
+  // Calibri, but prod_064's digits in missing 함초롬돋움 in Malgun
+  const script =
+    substScript ?? (latinOnly ? classifyCjkScriptByNameScript(family) : classifyCjkScript(family))
   if (!script) return SUBSTITUTES[classifyFamily(family)]
   const serif = SERIF_RE.test(family)
   const mac = process.platform === 'darwin'
@@ -369,7 +381,9 @@ function substitutesFor(family: string, substScript?: 'ja' | 'ko' | 'sc' | 'tc')
           ? ['Hiragino Mincho ProN']
           : ['Yu Mincho', 'MS Mincho']
         : mac
-          ? ['Hiragino Sans']
+          ? // PowerPoint for Mac substitutes missing JP faces with Yu Gothic (probe: BIZ UDPGothic /
+            // Noto Sans KR / NanumSquare JP lines land on Yu Gothic widths; Hiragino ran 9% wide)
+            ['Yu Gothic', 'Hiragino Sans']
           : ['Yu Gothic', 'Meiryo', 'MS Gothic']
     case 'ko':
       // mac chains start with the Office-bundled faces to mirror the renderer's KO_SANS/
@@ -780,7 +794,7 @@ class FontRegistry {
     // Candidates after this index are same-script/class substitutes, not the requested
     // family — the sub-family cloud fallback below must run before them
     const substituteStart = candidates.length
-    for (const s of substitutesFor(style.fontFamily, style.substScript)) {
+    for (const s of substitutesFor(style.fontFamily, style.substScript, style.latinOnly)) {
       push(s)
       for (const a of aliasesOf(s)) push(a)
     }
@@ -1083,7 +1097,7 @@ export function createSystemFontMetrics(): FontMetricsProvider {
         offset: number
       }
     | undefined => {
-    const key = `${style.fontFamily}|${style.bold ? 1 : 0}${style.italic ? 1 : 0}|${style.substScript ?? ''}`
+    const key = `${style.fontFamily}|${style.bold ? 1 : 0}${style.italic ? 1 : 0}|${style.substScript ?? ''}|${style.latinOnly ? 'L' : ''}`
     if (cache.has(key)) return cache.get(key)
     const raw = registry.resolve(style)
     let entry:
@@ -1228,6 +1242,25 @@ export function createSystemFontMetrics(): FontMetricsProvider {
     return entry
   }
   const inner = new OpentypeMetrics((style) => resolveEntry(style)?.font, new HeuristicMetrics())
+  // Glyphs the resolved face lacks fall to PowerPoint's script default when the run's language
+  // names that script — Malgun Gothic for ko-KR Hangul, Yu Gothic for ja-JP kana (probe: Hangul
+  // in Meiryo/Yu Gothic/Calibri ko-KR lines measured 9% narrow on the OS default). Runs without
+  // the language tag keep the OS fallback, which is what PowerPoint does too (prod_049 en-US).
+  const scriptFallbackFor = (
+    text: string,
+    e: { font: OpentypeFontLike } | undefined,
+    style: RunStyle,
+  ): string | undefined => {
+    const lacks = (probe: string) => !e || e.font.charToGlyphIndex?.(probe) === 0
+    if (style.substScript === 'ko' && /[가-힣]/.test(text) && lacks('가')) return 'Malgun Gothic'
+    if (style.substScript === 'ja' && /[぀-ヿ]/.test(text) && lacks('あ')) return 'Yu Gothic'
+    return undefined
+  }
+  const withFallback = (style: RunStyle, family: string): RunStyle => {
+    const next = { ...style, fontFamily: family }
+    delete next.substScript
+    return next
+  }
   // Complex-script runs whose REQUESTED family resolved to a real (non-substituted)
   // face shape and draw with that face — decks ship real Arabic fonts via Office
   // CloudFonts/DFonts/embeds, and forcing the generic script substitute (Geeza Pro)
@@ -1249,7 +1282,7 @@ export function createSystemFontMetrics(): FontMetricsProvider {
       },
     }
   }
-  return {
+  const provider: FontMetricsProvider = {
     metrics: (style) => inner.metrics(style),
     // Complex scripts (ligatures/contextual forms) prefer HarfBuzz shaped metrics — opentype's
     // per-glyph accumulation measures isolated forms, drifting from actual drawing; falls back
@@ -1268,6 +1301,8 @@ export function createSystemFontMetrics(): FontMetricsProvider {
       // advances run a few percent off Chromium's rendering, visually swallowing word
       // spaces — take the renderer's measureText as ground truth (cached, refined in batch)
       const e = resolveEntry(style)
+      const fb = scriptFallbackFor(text, e, style)
+      if (fb) return provider.measure(text, withFallback(style, fb))
       if (e?.gtruth) {
         const gt = gtMeasure(text, e.family, style.fontSizePx, style.bold, style.italic)
         if (gt != null) return gt
@@ -1275,12 +1310,18 @@ export function createSystemFontMetrics(): FontMetricsProvider {
       return inner.measure(text, style)
     },
     // Substituted fonts return the substitute family; the renderer draws with it (same font file for measuring/drawing)
-    displayFamily: (style, text) =>
-      (text != null
-        ? shapedFamily(text, prefFaceFor(style, text), style.bold, style.italic)
-        : null) ??
-      resolveEntry(style)?.family ??
-      style.fontFamily,
+    displayFamily: (style, text) => {
+      const fb = text != null ? scriptFallbackFor(text, resolveEntry(style), style) : undefined
+      if (fb) return resolveEntry(withFallback(style, fb))?.family ?? fb
+      return (
+        (text != null
+          ? shapedFamily(text, prefFaceFor(style, text), style.bold, style.italic)
+          : null) ??
+        resolveEntry(style)?.family ??
+        style.fontFamily
+      )
+    },
     substituted: (style) => resolveEntry(style)?.substituted === true,
   }
+  return provider
 }

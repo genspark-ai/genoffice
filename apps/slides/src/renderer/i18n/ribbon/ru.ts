@@ -14,6 +14,8 @@ export const ru = {
   ribbonTabAnimations: 'Анимация',
   ribbonTabSlideShow: 'Слайд-шоу',
   ribbonTabReview: 'Рецензирование',
+  ribbonCollapse: 'Свернуть ленту',
+  ribbonPin: 'Закрепить ленту',
   ribbonTabView: 'Вид',
   ribbonTabTableDesign: 'Конструктор таблиц',
   ribbonTabChartDesign: 'Конструктор диаграмм',

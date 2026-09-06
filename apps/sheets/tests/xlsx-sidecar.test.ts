@@ -61,8 +61,8 @@ describe('XLSX Rust sidecar', () => {
         }),
       )
       expect(result.cells).toEqual([
-        { row: 0, column: 0, value: 'Old' },
-        { row: 0, column: 1, value: 10 },
+        { row: 0, column: 0, value: 'Old', styleIndex: 0 },
+        { row: 0, column: 1, value: 10, styleIndex: 0 },
       ])
     } finally {
       if (sessionId) await client.close(sessionId)
@@ -163,8 +163,8 @@ describe('XLSX Rust sidecar', () => {
         }),
       )
       expect(result.cells).toEqual([
-        { row: 0, column: 0, value: 'Shared\nBreak' },
-        { row: 0, column: 1, value: 'Inline\nBreak' },
+        { row: 0, column: 0, value: 'Shared\nBreak', styleIndex: 0 },
+        { row: 0, column: 1, value: 'Inline\nBreak', styleIndex: 0 },
       ])
     } finally {
       if (sessionId) await client.close(sessionId)

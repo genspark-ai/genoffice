@@ -115,18 +115,50 @@ const WINGDINGS: Record<number, string> = {
   0x75: '◆',
   0x76: '❖',
   0x78: '⌧',
+  0x9e: '·',
+  0x9f: '•',
+  0xa0: '▪',
+  0xa1: '○',
+  0xa2: '○',
+  0xa3: '○',
+  0xa4: '◉',
+  0xa5: '◎',
   0xa7: '▪',
   0xa8: '□',
+  0xaa: '✦',
   0xab: '★',
   0xd8: '➢',
+  0xdf: '⇦',
+  0xe0: '⇨',
+  0xe1: '⇧',
+  0xe2: '⇩',
+  0xef: '←',
+  0xf0: '→',
+  0xf1: '↑',
+  0xf2: '↓',
+  0xf3: '↔',
+  0xf4: '↕',
+  0xf5: '↖',
+  0xf6: '↗',
+  0xf7: '↙',
+  0xf8: '↘',
   0xfb: '✗',
   0xfc: '✓',
   0xfd: '☒',
   0xfe: '☑',
 }
 
-// 0x95-0xA6: circle/ring/square/box bullet series (sizes collapsed to the nearest Unicode shape)
+// 0x4F-0x56: check / cross marks and their boxed forms; 0x95-0xA6: circle/ring/square/box
+// bullet series (sizes collapsed to the nearest Unicode shape)
 const WINGDINGS_2: Record<number, string> = {
+  0x4f: '✕',
+  0x50: '✓',
+  0x51: '☒',
+  0x52: '☑',
+  0x53: '☒',
+  0x54: '☒',
+  0x55: '⊗',
+  0x56: '⊗',
   0x95: '•',
   0x96: '●',
   0x97: '●',
@@ -147,13 +179,38 @@ const WINGDINGS_2: Record<number, string> = {
   0xa6: '□',
 }
 
+const WINGDINGS_3: Record<number, string> = {
+  0x21: '←',
+  0x22: '→',
+  0x23: '↑',
+  0x24: '↓',
+  0x70: '▲',
+  0x71: '▼',
+  0x72: '△',
+  0x73: '▽',
+  0x74: '◀',
+  0x75: '▶',
+  0x76: '◁',
+  0x77: '▷',
+  0x7d: '►',
+  0x7e: '▲',
+}
+
+const WEBDINGS: Record<number, string> = {
+  0x3c: '■',
+  0x3d: '•',
+  0x67: '■',
+  0x6e: '●',
+  0x72: '✕',
+  0x78: '⊘',
+}
+
 const SYMBOL_FONT_MAPS: Record<string, Record<number, string>> = {
   symbol: SYMBOL,
   wingdings: WINGDINGS,
   'wingdings 2': WINGDINGS_2,
-  // recognized as symbol-encoded so unmapped glyphs get sane fallbacks, but no table yet
-  'wingdings 3': {},
-  webdings: {},
+  'wingdings 3': WINGDINGS_3,
+  webdings: WEBDINGS,
 }
 
 export function isSymbolFont(font: string | null | undefined): boolean {

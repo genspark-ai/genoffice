@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isClearSelectionHotkey,
+  isGridKeyTarget,
   shouldInterceptClearSelection,
   SKIP_HOST_SELECTOR,
   type ClearSelectionKeyEvent,
@@ -139,6 +140,28 @@ describe('shouldInterceptClearSelection', () => {
     expect(SKIP_HOST_SELECTOR).toContain('[data-u-comp="input"]')
     expect(SKIP_HOST_SELECTOR).toContain('[data-u-comp="panel"]')
     expect(SKIP_HOST_SELECTOR).toContain('[data-u-comp="formula-bar"]')
+  })
+
+  it('gates the cell-mutating shortcuts the same way (isGridKeyTarget)', () => {
+    // Shared with ⌘5 / Alt+= / Ctrl+; and PageUp/PageDown in ExcelShell: the
+    // grid's hidden focus host is the only editable that counts as the grid.
+    const grid = keyEvent('5', ['[contenteditable="true"]', '#univer-container']).target
+    expect(isGridKeyTarget(grid)).toBe(true)
+    expect(isGridKeyTarget(null)).toBe(true)
+    // Univer's own find/replace and rule-panel inputs sit INSIDE the Univer
+    // container yet must never be mistaken for the grid.
+    expect(
+      isGridKeyTarget(keyEvent('5', ['input, textarea, select', '#univer-container']).target),
+    ).toBe(false)
+    expect(
+      isGridKeyTarget(keyEvent('5', ['[data-u-comp="input"]', '#univer-container']).target),
+    ).toBe(false)
+    expect(
+      isGridKeyTarget(keyEvent('5', ['[data-u-comp="formula-bar"]', '#univer-container']).target),
+    ).toBe(false)
+    // App fields: AI composer (contenteditable outside the grid), dialogs.
+    expect(isGridKeyTarget(keyEvent('5', ['[contenteditable="true"]']).target)).toBe(false)
+    expect(isGridKeyTarget(keyEvent('5', ['[role="dialog"]']).target)).toBe(false)
   })
 
   it('does not intercept the sheet-tab rename editor (r161)', () => {

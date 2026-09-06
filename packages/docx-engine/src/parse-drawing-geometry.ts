@@ -216,6 +216,9 @@ export interface DrawingAnchorMeta {
   /** wp:extent (drawing size) */
   extentXEmu?: number
   extentYEmu?: number
+  /** wp:anchor distL/distR: text clearance beside a side-wrapped drawing */
+  distLEmu?: number
+  distREmu?: number
   /** relativeHeight − Word's 251658240 base: paint order among overlapping anchors */
   z?: number
 }
@@ -275,6 +278,10 @@ export function drawingAnchorMeta(frag: string): DrawingAnchorMeta {
   }
   meta.offsetXEmu = posOf('H')
   meta.offsetYEmu = posOf('V')
+  for (const side of ['L', 'R'] as const) {
+    const v = parseInt(new RegExp(`\\bdist${side}="(\\d+)"`).exec(anchorTag)?.[1] ?? '', 10)
+    if (Number.isFinite(v)) meta[`dist${side}Emu`] = v
+  }
   for (const dir of ['H', 'V'] as const) {
     const m = new RegExp(`<wp:position${dir}\\b([^>]*)>([\\s\\S]*?)</wp:position${dir}>`).exec(frag)
     if (!m) continue
@@ -299,15 +306,17 @@ export function drawingAnchorMeta(frag: string): DrawingAnchorMeta {
     meta.extentXEmu = parseInt(extent[1], 10)
     meta.extentYEmu = parseInt(extent[2], 10)
   }
-  if (frag.includes('<wp:wrapNone') || /behindDoc="(?:1|true)"/.test(anchorTag)) meta.noWrap = true
-  if (/behindDoc="(?:1|true)"/.test(anchorTag)) meta.behind = true
-  const relHeight = Number(/relativeHeight="(\d+)"/.exec(anchorTag)?.[1] ?? NaN)
-  if (Number.isFinite(relHeight) && relHeight - 251658240 !== 0) meta.z = relHeight - 251658240
   // the anchor's own wrap element sits before a:graphic; a nested drawing's
-  // wrap must not leak up. behindDoc="1" + wrapTopAndBottom coexist in
-  // generated docs — Word still excludes the band (behindDoc is z-order only)
+  // wrap must not leak up. behindDoc is z-order only: a behind-text picture
+  // with wrapTight/wrapSquare/wrapTopAndBottom still excludes the text
   const graphicAt = frag.indexOf('<a:graphic')
   const ownXml = graphicAt === -1 ? frag : frag.slice(0, graphicAt)
+  const behind = /behindDoc="(?:1|true)"/.test(anchorTag)
+  const ownWrapped = /<wp:wrap(?:Square|Tight|Through|TopAndBottom)\b/.test(ownXml)
+  if (frag.includes('<wp:wrapNone') || (behind && !ownWrapped)) meta.noWrap = true
+  if (behind) meta.behind = true
+  const relHeight = Number(/relativeHeight="(\d+)"/.exec(anchorTag)?.[1] ?? NaN)
+  if (Number.isFinite(relHeight) && relHeight - 251658240 !== 0) meta.z = relHeight - 251658240
   if (ownXml.includes('<wp:wrapTopAndBottom')) meta.topBottom = true
   return meta
 }
@@ -316,6 +325,8 @@ export const EMU_PER_TWIP = 635
 
 /** narrowest column gap beside a float that Word still fills with text (36px) */
 export const MIN_WRAP_SLIVER_EMU = 36 * 9525
+/** Word's default distL/distR clearance (0.125 in) */
+export const DEFAULT_WRAP_DIST_EMU = 114300
 
 /** anchor position resolved to EMU offsets from the paragraph flow origin
  *  (column left / body top), page coordinates recoverable via the margins */

@@ -23,13 +23,17 @@ import type {
   CellBorders,
   CellMargins,
   CharIndents,
+  ParaBorderLine,
+  ParaBorderSides,
   ParaFormat,
   RevisionInfo,
   Run,
   TableBorders,
   TableModel,
+  ThemeColors,
   ThemeFonts,
 } from './types'
+import { resolveThemeColor } from './theme'
 
 /** No run un-hides itself and nothing anchors here (bookmarks, comments, sectPr,
  *  drawings, numbering): safe to collapse a style-vanished paragraph entirely */
@@ -400,6 +404,26 @@ export function checkboxStateOf(beginRun: XNode | null): { checked: boolean } | 
 }
 
 /**
+ * Twips attributes a w:ind specifies (hanging as a negative firstLine). Explicit
+ * zeros are kept: in Word a direct or child-style 0 cancels that component's
+ * inherited value (a style firstLine, a Normal left, a numbering-level left).
+ */
+export function indentTwipsOf(ind: XNode): { left?: number; right?: number; firstLine?: number } {
+  const a = attrsOf(ind)
+  const out: { left?: number; right?: number; firstLine?: number } = {}
+  const left = parseInt(a['w:left'] ?? a['w:start'] ?? '', 10)
+  if (Number.isFinite(left)) out.left = left
+  const right = parseInt(a['w:right'] ?? a['w:end'] ?? '', 10)
+  if (Number.isFinite(right)) out.right = right
+  const firstLine = parseInt(a['w:firstLine'] ?? '', 10)
+  const hanging = parseInt(a['w:hanging'] ?? '', 10)
+  if (hanging > 0) out.firstLine = -hanging
+  else if (firstLine > 0) out.firstLine = firstLine
+  else if (Number.isFinite(firstLine) || Number.isFinite(hanging)) out.firstLine = 0
+  return out
+}
+
+/**
  * Character-unit attributes a w:ind specifies. Zeros are kept: Word writes
  * `w:firstLineChars="0"` next to an absolute `w:firstLine` to say the indent is
  * NOT character-based, and such a zero also cancels a *Chars inherited from
@@ -514,12 +538,8 @@ export function resolveCharIndents(
   }
   if (hanging > 0) f.indentFirstLine = -hanging
   else if (firstLine > 0) f.indentFirstLine = firstLine
-  else delete f.indentFirstLine
-  if (chars.right !== undefined) {
-    const right = twips(chars.right, units.normal)
-    if (right !== 0) f.indentRight = right
-    else delete f.indentRight
-  }
+  else if (f.indentFirstLine) delete f.indentFirstLine
+  if (chars.right !== undefined) f.indentRight = twips(chars.right, units.normal)
   return f
 }
 
@@ -547,10 +567,18 @@ export function emptyParaSizeHalfPoints(pNode: XNode, pPr: XNode | undefined): n
  * emptyParaSizeHalfPoints — Word lays the empty line with the mark's face
  * metrics, not the document default face.
  */
-export function emptyParaMarkFont(pNode: XNode, pPr: XNode | undefined): string | undefined {
+export function emptyParaMarkFont(
+  pNode: XNode,
+  pPr: XNode | undefined,
+  themeFonts?: ThemeFonts | null,
+): string | undefined {
   const pick = (rPr: XNode | undefined): string | undefined => {
     const a = attrsOf(findChild(rPr ?? {}, 'w:rFonts') ?? {})
-    return a['w:ascii'] ?? a['w:hAnsi'] ?? a['w:eastAsia']
+    // Latin slots follow theme refs (an empty-cs majorBidi mark sizes the line in Times);
+    // an East Asian slot alone leaves the inherited Latin face in charge (Word probe
+    // 2026-09-05: a DengXian-only mark lays its line with the ascii face)
+    const rf = themedRFonts(a, themeFonts)
+    return rf.ascii ?? rf.hAnsi
   }
   let font = pPr ? pick(findChild(pPr, 'w:rPr')) : undefined
   if (!font) {
@@ -628,6 +656,51 @@ const EA_LANG_SCRIPT: Record<string, string> = {
   'zh-mo': 'Hant',
 }
 
+/** themeFontLang w:bidi → theme script-table tag (<a:font script=…>) */
+const BIDI_LANG_SCRIPT: Record<string, string> = {
+  ar: 'Arab',
+  fa: 'Arab',
+  ur: 'Arab',
+  ps: 'Arab',
+  ug: 'Arab',
+  he: 'Hebr',
+  yi: 'Hebr',
+  th: 'Thai',
+  syr: 'Syrc',
+  dv: 'Thaa',
+  hi: 'Deva',
+  mr: 'Deva',
+  ne: 'Deva',
+  bn: 'Beng',
+  pa: 'Guru',
+  gu: 'Gujr',
+  ta: 'Taml',
+  te: 'Telu',
+  kn: 'Knda',
+  ml: 'Mlym',
+  si: 'Sinh',
+  km: 'Khmr',
+  lo: 'Laoo',
+  bo: 'Tibt',
+  my: 'Mymr',
+  am: 'Ethi',
+  ti: 'Ethi',
+  ka: 'Geor',
+  hy: 'Armn',
+  mn: 'Mong',
+}
+
+/** Word's face for an empty complex-script theme slot (<a:cs typeface=""/>): the font
+ * group's script-table entry for themeFontLang w:bidi, else Times New Roman (Word probe
+ * 2026-09-03: majorBidi → Times New Roman with or without a bidi lang; minorBidi →
+ * the minorFont Arab entry under bidi=ar-SA, Times New Roman without one) */
+function emptyCsSlotFont(fonts: ThemeFonts, csRef: string): string {
+  const lang = fonts.bidiLang?.toLowerCase().split('-')[0]
+  const script = lang ? BIDI_LANG_SCRIPT[lang] : undefined
+  const table = csRef === 'majorBidi' ? fonts.majorScripts : fonts.minorScripts
+  return (script ? table?.[script] : undefined) ?? 'Times New Roman'
+}
+
 function emptyEaSlotFont(fonts: ThemeFonts, eaRef: string | undefined): string {
   return themeLangEaSlotFont(fonts, eaRef) ?? EMPTY_EA_THEME_FONT
 }
@@ -689,13 +762,21 @@ export function themedRFonts(
   const themedEa = themeVal(eaRef)
   const eaSlotEmpty =
     !themedEa && !!fonts && (eaRef === 'majorEastAsia' || eaRef === 'minorEastAsia')
-  const themedAscii = themeVal(attrs['w:asciiTheme'])
-  const themedHAnsi = themeVal(attrs['w:hAnsiTheme'])
+  // an empty cs slot likewise keeps the theme's authority over the literal
+  const themedOrEmptyCs = (ref: string | undefined): string | undefined => {
+    const themed = themeVal(ref)
+    if (themed) return themed
+    return fonts && (ref === 'majorBidi' || ref === 'minorBidi')
+      ? emptyCsSlotFont(fonts, ref)
+      : undefined
+  }
+  const themedAscii = themedOrEmptyCs(attrs['w:asciiTheme'])
+  const themedHAnsi = themedOrEmptyCs(attrs['w:hAnsiTheme'])
   return {
     ascii: themedAscii ?? attrs['w:ascii'],
     hAnsi: themedHAnsi ?? attrs['w:hAnsi'],
     eastAsia: themedEa ?? (eaSlotEmpty ? emptyEaSlotFont(fonts!, eaRef) : attrs['w:eastAsia']),
-    cs: themeVal(attrs['w:cstheme']) ?? attrs['w:cs'],
+    cs: themedOrEmptyCs(attrs['w:cstheme']) ?? attrs['w:cs'],
     ...(eaSlotEmpty ? { eaSlotEmpty } : {}),
     themed: {
       ascii: themedAscii !== undefined,
@@ -846,6 +927,91 @@ function borderLinesOf(node: XNode | undefined, withInside: boolean): TableBorde
     }
   }
   return Object.keys(borders).length > 0 ? borders : undefined
+}
+
+/**
+ * w:pBdr sides of a pPr. Duplicated containers merge per side (later wins);
+ * none/nil is an explicit reset (Word writes nil to cancel a style-level side).
+ * Theme colors resolve only when a palette is passed (display-only consumers);
+ * model consumers keep the literal so raw/model save comparisons still match.
+ */
+export function paraBorderSidesOf(
+  pPr: XNode,
+  theme?: ThemeColors | null,
+): ParaBorderSides | undefined {
+  const pBdrs = findChildren(pPr, 'w:pBdr')
+  if (pBdrs.length === 0) return undefined
+  const sides: ParaBorderSides = {}
+  for (const [side, ch] of [
+    ['top', 't'],
+    ['bottom', 'b'],
+    ['left', 'l'],
+    ['right', 'r'],
+  ] as const) {
+    let el: XNode | undefined
+    for (const pBdr of pBdrs) el = findChild(pBdr, `w:${side}`) ?? el
+    if (!el) continue
+    const a = attrsOf(el)
+    const val = a['w:val']
+    if (val === 'none' || val === 'nil') {
+      sides[ch] = null
+      continue
+    }
+    const line: ParaBorderLine = {}
+    const themed =
+      theme && a['w:themeColor']
+        ? resolveThemeColor(a['w:themeColor'], theme, a['w:themeTint'], a['w:themeShade'])
+        : undefined
+    if (themed) line.color = themed
+    else if (a['w:color'] && a['w:color'] !== 'auto') line.color = stripHash(a['w:color'])
+    const sz = parseInt(a['w:sz'] ?? '', 10)
+    if (Number.isFinite(sz) && sz > 0) line.szPt = sz / 8
+    sides[ch] = line
+  }
+  return Object.keys(sides).length > 0 ? sides : undefined
+}
+
+/** model form of the sides: drawn "tblr" subset + declared look, reset sides apart */
+export function paraBordersOf(
+  sides: ParaBorderSides,
+): Pick<ParaFormat, 'borders' | 'borderLines' | 'borderReset'> {
+  const out: Pick<ParaFormat, 'borders' | 'borderLines' | 'borderReset'> = {}
+  let borders = ''
+  let reset = ''
+  const lines: NonNullable<ParaFormat['borderLines']> = {}
+  for (const ch of ['t', 'b', 'l', 'r'] as const) {
+    const line = sides[ch]
+    if (line === undefined) continue
+    if (line === null) {
+      reset += ch
+      continue
+    }
+    borders += ch
+    if (line.color !== undefined || line.szPt !== undefined) lines[ch] = line
+  }
+  if (borders) out.borders = borders
+  if (borders && Object.keys(lines).length > 0) out.borderLines = lines
+  if (reset) out.borderReset = reset
+  return out
+}
+
+/**
+ * Word merges pBdr per side: every side the direct pPr declares (drawn or reset)
+ * wins, the style fills in the rest. Model form for consumers without a style
+ * CSS layer (header/footer paragraphs).
+ */
+export function mergeStyleBorders(
+  sides: ParaBorderSides,
+  direct: Pick<ParaFormat, 'borders' | 'borderLines' | 'borderReset'> | undefined,
+): Pick<ParaFormat, 'borders' | 'borderLines'> {
+  const declared = `${direct?.borders ?? ''}${direct?.borderReset ?? ''}`
+  const merged: ParaBorderSides = {}
+  for (const ch of ['t', 'b', 'l', 'r'] as const) {
+    if (direct?.borders?.includes(ch)) merged[ch] = direct.borderLines?.[ch] ?? {}
+    else if (sides[ch] && !declared.includes(ch)) merged[ch] = sides[ch]
+  }
+  const { borders, borderLines } = paraBordersOf(merged)
+  return { ...(borders ? { borders } : {}), ...(borderLines ? { borderLines } : {}) }
 }
 
 /** Duplicated border containers (two w:tcBorders in one tcPr etc.): Word merges per side, later wins */

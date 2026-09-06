@@ -19,6 +19,14 @@ const rowOf = (cells: number): HTMLTableRowElement => {
 
 const m = { marginTop: 96, marginBottom: 96, marginLeft: 90, marginRight: 90 }
 
+describe('page gap header push', () => {
+  it('writes the push even when zero so a later page clears an earlier one', () => {
+    expect(makeGapEl({ ...m, sectionMarginTop: 70 }, 'cell').dataset.topPush).toBe('26.0')
+    expect(makeGapEl({ ...m, sectionMarginTop: 96 }, 'cell').dataset.topPush).toBe('0.0')
+    expect(makeGapEl(m, 'cell').dataset.topPush).toBeUndefined()
+  })
+})
+
 describe('in-row table cut decorations', () => {
   it('single-cell row: real inline gap band, not a zero-height cut marker', () => {
     const tr = rowOf(1)

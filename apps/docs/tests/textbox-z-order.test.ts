@@ -14,6 +14,19 @@ const box = (extra: Partial<TextboxDisplay>): TextboxDisplay => ({
   ...extra,
 })
 
+describe('textboxBoxStyle border', () => {
+  it('a stroked box always sets its border width (the CSS default reserves no edge)', () => {
+    expect(textboxBoxStyle(box({ borderColor: '000000' }))).toContain('border-width:1px')
+    expect(textboxBoxStyle(box({ borderColor: '000000', borderWidthPx: 2 }))).toContain(
+      'border-width:2px',
+    )
+  })
+
+  it('an unstroked fixed-size box keeps its full text rectangle', () => {
+    expect(textboxBoxStyle(box({ widthPx: 62, heightPx: 16 }))).not.toContain('border-width')
+  })
+})
+
 describe('textboxBoxStyle z bands', () => {
   it('front floats rank above the text layer', () => {
     expect(textboxBoxStyle(box({ z: 3 }))).toContain('z-index:5')

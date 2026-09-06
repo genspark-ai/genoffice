@@ -43,3 +43,14 @@ Local modifications to `index.mjs` (2026-08, GenOffice):
   ident made `ctx.font` assignment fail silently and text drew at the default
   10px); mapFontFamily now also strips control chars and quotes non-generic
   families so a corrupt facename can never drop the font size again
+- EmfPlusBitmap BitmapDataType compared against the MS-EMFPLUS values (Pixel = 0,
+  Compressed = 1; upstream tested 1/2, so no EMF+ image object ever decoded and
+  every EmfPlusDrawImage painted nothing — e.g. a PowerPoint master background
+  wrapped as EMF+ rendered as a blank white page)
+- EMR_CREATEDIBPATTERNBRUSHPT / EMR_CREATEMONOBRUSH implemented as repeating canvas
+  patterns (upstream left them unhandled, so the previously selected solid brush
+  painted the PATCOPY blits — Excel OLE previews drew their dotted cell borders as
+  solid lines)
+- Font strings carry a `sans-serif` generic fallback after the (quoted) facename; an
+  unknown facename otherwise fell to the browser default serif, so CJK Office text in
+  EMF previews (Meiryo UI, MS PGothic) drew in Mincho/Song

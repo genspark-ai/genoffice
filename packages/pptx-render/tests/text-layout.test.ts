@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { HeuristicMetrics, OpentypeMetrics, type OpentypeFontLike } from '../src/metrics'
+import {
+  HeuristicMetrics,
+  OpentypeMetrics,
+  type FontMetricsProvider,
+  type OpentypeFontLike,
+  type RunStyle,
+} from '../src/metrics'
 import { DEFAULT_INSETS_EMU, layoutText } from '../src/text-layout'
 import { makeViewport } from '../src/coords'
 import { DEFAULT_BODY_INSETS, type Paragraph, type TextBody } from '@genoffice/pptx-engine'
@@ -1624,4 +1630,193 @@ it('enclosed alphanumerics measure full-width in the missing-glyph fallback', ()
   const style = { fontFamily: 'Century Gothic', fontSizePx: 100, bold: false, italic: false }
   // ⑤ falls back to a CJK font at draw time; measuring it narrow overlaps the next run
   expect(m.measure('⑤', style)).toBeCloseTo(100, 0)
+})
+
+describe('Symbol-font bullets', () => {
+  const bulletOf = (paragraphs: Paragraph[]) =>
+    layoutText({
+      body: body({ paragraphs }),
+      boxWidthPx: 400,
+      boxHeightPx: 300,
+      metrics: new HeuristicMetrics(),
+      vp,
+    }).lines[0]!.runs.find((r) => r.isBullet)!
+
+  it('maps <a:buFont Symbol> PUA/byte bullet codes through the Symbol table (U+F0B7 → •)', () => {
+    // prod deck: every level-1 bullet drew as a tofu box because the PUA code stayed raw
+    const pua = bulletOf([
+      {
+        runs: [{ text: 'item', fontSize: 14 }],
+        bullet: { type: 'char', char: '', font: 'Symbol' },
+      },
+    ])
+    expect(pua.text).toBe('•')
+    expect(pua.fontFamily).toBe('Symbol')
+    const raw = bulletOf([
+      {
+        runs: [{ text: 'item', fontSize: 14 }],
+        bullet: { type: 'char', char: '·', font: 'Symbol' },
+      },
+    ])
+    expect(raw.text).toBe('•')
+  })
+
+  it('leaves Wingdings bullets in the F0xx range and plain-font bullets untouched', () => {
+    const wd = bulletOf([
+      {
+        runs: [{ text: 'item', fontSize: 14 }],
+        bullet: { type: 'char', char: '§', font: 'Wingdings' },
+      },
+    ])
+    expect(wd.text).toBe('')
+    const plain = bulletOf([
+      {
+        runs: [{ text: 'item', fontSize: 14 }],
+        bullet: { type: 'char', char: '', font: 'Arial' },
+      },
+    ])
+    expect(plain.text).toBe('')
+  })
+})
+
+describe('mixed-script runs', () => {
+  it('Latin tokens of a CJK-bucket run draw with the run latinFamily, wide chars keep the ea face', () => {
+    const { lines } = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              {
+                text: 'ISO 45001 안전 관리',
+                fontSize: 14,
+                fontFamily: 'Malgun Gothic',
+                latinFamily: 'NanumSquareEB',
+                fontScriptHint: 'ko',
+              },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 600,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = lines.flatMap((l) => l.runs)
+    const fam = (t: string) => runs.find((r) => r.text.includes(t))?.fontFamily
+    expect(fam('ISO')).toBe('NanumSquareEB')
+    expect(fam('45001')).toBe('NanumSquareEB')
+    expect(fam('안')).toBe('Malgun Gothic')
+    expect(fam('관')).toBe('Malgun Gothic')
+  })
+
+  it('non-Latin narrow scripts and halfwidth kana keep the bucket face', () => {
+    const { lines } = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              {
+                text: 'ｶﾅ שלום مرحبا AB 漢',
+                fontSize: 14,
+                fontFamily: 'Yu Gothic',
+                latinFamily: 'Arial',
+                fontScriptHint: 'ja',
+              },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 600,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const runs = lines.flatMap((l) => l.runs)
+    const fam = (t: string) => runs.find((r) => r.text.includes(t))?.fontFamily
+    expect(fam('ｶ')).toBe('Yu Gothic')
+    expect(fam('שלום')).toBe('Yu Gothic')
+    expect(fam('مرحبا')).toBe('Yu Gothic')
+    expect(fam('AB')).toBe('Arial')
+    expect(fam('漢')).toBe('Yu Gothic')
+  })
+})
+
+describe('latinOnly substitution hint', () => {
+  const seen: RunStyle[] = []
+  const recording: FontMetricsProvider = {
+    ...new HeuristicMetrics(),
+    measure: (text, style) => {
+      seen.push(style)
+      return new HeuristicMetrics().measure(text, style)
+    },
+    metrics: (style) => new HeuristicMetrics().metrics(style),
+  }
+  const lay = (runs: Paragraph['runs']) => {
+    seen.length = 0
+    layoutText({
+      body: body({ paragraphs: [{ runs }] }),
+      boxWidthPx: 600,
+      boxHeightPx: 200,
+      metrics: recording,
+      vp,
+    })
+    return seen
+  }
+  it('a Latin-only run in a CJK-named face measures with latinOnly, a CJK run does not', () => {
+    const latin = lay([{ text: 'ISO 45001', fontSize: 14, fontFamily: 'NanumSquareExtraBold' }])
+    expect(latin.length).toBeGreaterThan(0)
+    expect(latin.every((s) => s.latinOnly === true)).toBe(true)
+    const kr = lay([
+      { text: '안전 관리', fontSize: 14, fontFamily: 'NanumSquareExtraBold', fontScriptHint: 'ko' },
+    ])
+    expect(kr.some((s) => s.latinOnly)).toBe(false)
+  })
+  it('Latin tokens of a CJK-bucket run with one face for both slots still go latinOnly', () => {
+    const styles = lay([
+      { text: 'ISO 45001 안전', fontSize: 14, fontFamily: 'Noto Sans KR', fontScriptHint: 'ko' },
+    ])
+    expect(
+      styles.some(
+        (s) => s.fontFamily === 'Noto Sans KR' && s.latinOnly === true && s.substScript == null,
+      ),
+    ).toBe(true)
+    expect(styles.some((s) => s.fontFamily === 'Noto Sans KR' && s.substScript === 'ko')).toBe(true)
+  })
+  it('a Latin-only run keeps its declared-charset hint on every token', () => {
+    const styles = lay([
+      { text: 'ISO 45001', fontSize: 14, fontFamily: 'LG Smart', fontScriptHint: 'ko' },
+    ])
+    expect(styles.length).toBeGreaterThan(0)
+    expect(styles.every((s) => s.substScript === 'ko' && s.latinOnly === true)).toBe(true)
+  })
+  it('a halfwidth-kana run still splits its Latin tokens off', () => {
+    const styles = lay([
+      { text: 'ｶﾞｽ 123', fontSize: 14, fontFamily: 'Noto Sans JP', fontScriptHint: 'ja' },
+    ])
+    expect(styles.some((s) => s.latinOnly === true && s.substScript == null)).toBe(true)
+    expect(styles.some((s) => s.substScript === 'ja')).toBe(true)
+  })
+
+  it('Latin tokens of a mixed run carry latinOnly with the latin family, wide tokens do not', () => {
+    const styles = lay([
+      {
+        text: 'ISO 안전',
+        fontSize: 14,
+        fontFamily: 'Malgun Gothic',
+        latinFamily: 'NanumSquareEB',
+        fontScriptHint: 'ko',
+      },
+    ])
+    expect(
+      styles.some(
+        (s) => s.fontFamily === 'NanumSquareEB' && s.latinOnly === true && s.substScript == null,
+      ),
+    ).toBe(true)
+    expect(
+      styles.some(
+        (s) => s.fontFamily === 'Malgun Gothic' && !s.latinOnly && s.substScript === 'ko',
+      ),
+    ).toBe(true)
+  })
 })

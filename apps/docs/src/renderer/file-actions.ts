@@ -52,6 +52,14 @@ import {
 import { docStyleCss } from './doc-style-css'
 import type { CompareEntry } from './editor/compare'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from './editor/convert'
+import { TRACK_IGNORE } from './editor/revisions'
+import {
+  cancelPhasedContent,
+  isPhasedContentPending,
+  setContentPhased,
+  waitForFullContent,
+  type PhasedContentHost,
+} from './phased-content'
 import {
   annotationsFromParsed,
   buildInkImages,
@@ -60,12 +68,15 @@ import {
 } from './editor/ink'
 import { t, getLang } from './i18n/locale'
 import { isBlankDocument, parseHtmlFragment, replaceBlockRange } from './ai/protocol'
+import { carryDocSeen } from './ai/tools'
 import { isDocDirty } from './doc-dirty'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
 import { setDocFontTable } from './line-metrics'
+import { adoptEmbeddedFonts } from './embedded-fonts'
 import { defaultEastAsiaFontFor } from './font-list'
 import { hasPrintableHeaderFooter } from './pagination'
+import { clearPrintZoom, setPrintZoom } from './print-zoom'
 import { showToast } from './components/toast-bus'
 
 /** An export waiting for the pagination preview to mount; resolve settles the caller's exportPdf promise. */
@@ -90,6 +101,8 @@ export interface FileActionContext {
   setDoc: Dispatch<SetStateAction<DocState | null>>
   setAiPanelKey: Dispatch<SetStateAction<number>>
   setDocCss: (css: string) => void
+  /** true while a phased open streams the document tail (editor stays read-only) */
+  setDocLoading: (loading: boolean) => void
   setShowPagePreview: (show: boolean) => void
   section: SectionSettings | null
   sectionDirty: boolean
@@ -237,6 +250,9 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
   // compatibility modes (and new blank docs) never do
   editor.storage.justifyShrink.enabled = (parsed.compatibilityMode ?? 0) >= 15
   editor.storage.cjkPunctShrink.enabled = parsed.compressPunctuation === true
+  editor.storage.cjkPunctShrink.hangPunct = parsed.compressPunctuation !== true
+  editor.storage.cjkPunctShrink.legacyLayout = (parsed.compatibilityMode ?? 0) < 15
+  editor.storage.cjkPunctShrink.docEastAsiaLang = parsed.docDefaults?.eastAsiaLang ?? null
   // Chromium only hyphenates under an explicit lang (the app shell is zh-CN);
   // scoped to autoHyphenation docs so CJK font fallback is untouched elsewhere
   const lang = parsed.autoHyphenation ? parsed.docDefaults?.lang : undefined
@@ -250,7 +266,48 @@ function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
  * load error — the boot path falls back to a blank document instead of leaving
  * the tab on "Opening…" forever.
  */
-export type LoadFileOutcome = 'ok' | 'canceled' | 'password' | 'failed'
+export type LoadFileOutcome = 'ok' | 'canceled' | 'password' | 'failed' | 'superseded'
+
+/** appends a streamed tail chunk at the document end, outside undo history and the AI freshness baseline */
+export function appendStreamedNodes(editor: Editor, nodes: PmNode[]): void {
+  const before = editor.state.doc
+  const tr = editor.state.tr.insert(
+    before.content.size,
+    nodes.map((n) => editor.schema.nodeFromJSON(n)),
+  )
+  tr.setMeta('addToHistory', false)
+  // forced Track Changes must not record the streamed tail as insertions
+  tr.setMeta(TRACK_IGNORE, true)
+  editor.view.dispatch(tr)
+  carryDocSeen(editor, before)
+}
+
+/** binds the phased content streamer to the editor and App state behind ctx */
+function phasedHostFor(ctx: FileActionContext): PhasedContentHost {
+  return {
+    setContent: (doc) =>
+      ctx.editor
+        ?.chain()
+        .setMeta(TRACK_IGNORE, true)
+        .setContent(doc as never)
+        .run(),
+    appendNodes: (nodes) => {
+      if (ctx.editor) appendStreamedNodes(ctx.editor, nodes)
+    },
+    isDestroyed: () => !ctx.editor || ctx.editor.isDestroyed,
+    resetHistory: () => {
+      if (ctx.editor) resetEditorHistory(ctx.editor)
+    },
+    setLoading: ctx.setDocLoading,
+    getDirty: () => ctx.dirtyRef.current,
+    setDirty: (dirty) => {
+      ctx.dirtyRef.current = dirty
+    },
+  }
+}
+
+/** bumped when a document replacement starts; a slower one still parsing must not land */
+let openGeneration = 0
 
 export async function loadFile(
   ctx: FileActionContext,
@@ -261,15 +318,19 @@ export async function loadFile(
     ctx.promptDocxPassword({ path: result.path, name: result.name })
     return 'password'
   }
+  const generation = ++openGeneration
   try {
     const parsed = await parseDocx(new Uint8Array(result.data))
+    if (generation !== openGeneration) return 'superseded'
     // before setContent: blockAttrs/marks bake fontTable-driven factors and chains into the DOM
+    const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
+    if (!adopted || generation !== openGeneration) return 'superseded'
     setDocFontTable(parsed.fontTable)
     ctx.editor.storage.listNumbering.styles = parsed.styles
     ctx.editor.storage.listNumbering.docDefaults = parsed.docDefaults
     ctx.editor.storage.listNumbering.defs = parsed.numbering
     applyDocLayoutSettings(ctx.editor, parsed)
-    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks, readSections(parsed)) as never)
+    setContentPhased(phasedHostFor(ctx), blocksToPmDoc(parsed.blocks, readSections(parsed)))
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({
@@ -365,6 +426,7 @@ export async function loadFile(
     void window.desktop.getRecentFiles().then(ctx.setRecent)
     return 'ok'
   } catch (err) {
+    if (generation !== openGeneration) return 'superseded'
     // visible failure: the status-bar line alone is easy to miss under the start screen
     ctx.setStatus(t('appOpenFailed', { error: String(err) }))
     showToast(t('appOpenFailed', { error: String(err) }), 'error')
@@ -375,14 +437,20 @@ export async function loadFile(
 /** new document from the built-in blank template (AI can then generate into it) */
 export async function newFile(ctx: FileActionContext): Promise<boolean | undefined> {
   if (!ctx.editor) return
+  const generation = ++openGeneration
   try {
     const bytes = await buildBlankDocx({ eastAsiaFont: defaultEastAsiaFontFor(getLang()) })
     const parsed = await parseDocx(bytes)
+    if (generation !== openGeneration) return
+    const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
+    if (!adopted || generation !== openGeneration) return
     setDocFontTable(parsed.fontTable)
     ctx.editor.storage.listNumbering.styles = parsed.styles
     ctx.editor.storage.listNumbering.docDefaults = parsed.docDefaults
     ctx.editor.storage.listNumbering.defs = parsed.numbering
     applyDocLayoutSettings(ctx.editor, parsed)
+    // a tail still streaming for the previous document must never land in this one
+    cancelPhasedContent()
     ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks, readSections(parsed)) as never)
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
@@ -433,6 +501,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     ctx.setStatus(t('appNewDocCreated'))
     return true
   } catch (err) {
+    if (generation !== openGeneration) return
     ctx.setStatus(t('appNewFailed', { error: String(err) }))
     return false
   }
@@ -657,8 +726,16 @@ function discardStalePasswordIntents(): void {
  */
 let pathlessDocSavedPath: string | null = null
 
+/** bumps on every document replacement: a save that awaited across it belongs to the old document */
+let docGeneration = 0
+
 export function noteDocumentSwapped(): void {
   pathlessDocSavedPath = null
+  docGeneration++
+}
+
+export function currentDocGeneration(): number {
+  return docGeneration
 }
 
 export function save(
@@ -748,6 +825,11 @@ async function saveOnce(
   ctx.saveInFlightRef.current = true
   ctx.saveIncompleteRef.current = false
   try {
+    // a mid-stream save would serialize (and write) a truncated document
+    const generation = docGeneration
+    await waitForFullContent()
+    // the wait ended because another document replaced this one: nothing to write
+    if (docGeneration !== generation) return false
     // flush pending in-place table cell / textbox edits into the PM doc first
     window.dispatchEvent(new Event('ai-docs-commit-tables'))
     // identity snapshot: detects edits that arrive while the save is in flight
@@ -795,10 +877,13 @@ async function saveOnce(
       }
       passwordIntentPending = result.passwordIntentPending === true
     }
+    // parse before the identity check: a document opened during this await must not be rewritten
+    const reparsed = await parseDocx(bytes)
     if (editor.state.doc !== docSnapshot || passwordIntentPending) {
-      // The user kept editing or chose another password after the main process
-      // captured this save. Keep the live state dirty; replacing it with the
-      // saved snapshot or marking it clean would consume the newer intent.
+      // The user kept editing, opened another document or chose another
+      // password after the main process captured this save. Keep the live state
+      // dirty; replacing it with the saved snapshot or marking it clean would
+      // consume the newer intent.
       if (passwordIntentPending) ctx.dirtyRef.current = true
       ctx.saveIncompleteRef.current = true
       ctx.setDoc((prev) =>
@@ -819,7 +904,6 @@ async function saveOnce(
       return true
     }
     // Reload from saved bytes so docxIndex anchors point at the new file.
-    const reparsed = await parseDocx(bytes)
     setDocFontTable(reparsed.fontTable)
     editor.storage.listNumbering.styles = reparsed.styles
     editor.storage.listNumbering.docDefaults = reparsed.docDefaults
@@ -937,6 +1021,11 @@ async function saveOnce(
  */
 export function printDoc(ctx: FileActionContext): void {
   if (!ctx.doc) return
+  // the print sheet prints the live preview pages: needs the whole document mounted
+  if (isPhasedContentPending()) {
+    void waitForFullContent().then(() => printDoc(ctx))
+    return
+  }
   if (!document.querySelector('.pagination-preview')) {
     ctx.printAutoOpenedPreviewRef.current = true
     ctx.setShowPagePreview(true)
@@ -961,6 +1050,7 @@ async function printGroupsMerged(
   fileName: string,
   pvPages: HTMLElement[],
   groups: PrintGroup[],
+  scale: number,
   outPath?: string,
 ): Promise<boolean> {
   const parts: string[] = []
@@ -978,7 +1068,7 @@ async function printGroupsMerged(
         page.classList.toggle('pv-print-skip', i < g.from || i > g.to)
         page.classList.toggle('pv-print-tail', i === g.to)
       })
-      const part = await window.desktop.printPdfBuffer(g.w, g.h)
+      const part = await window.desktop.printPdfBuffer(g.w, g.h, scale)
       if (part.ok && part.base64) {
         parts.push(part.base64)
         continue
@@ -1033,6 +1123,7 @@ let printJobActive = false
 export async function exportPdf(ctx: FileActionContext, outPath?: string): Promise<boolean> {
   const { doc } = ctx
   if (!doc) return false
+  await waitForFullContent()
   if (printJobActive) {
     ctx.setStatus(t('appExportingPdf'))
     return false
@@ -1045,6 +1136,7 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
     // with pdf-lib; each page keeps its section's paper size
     const pvPages = [...document.querySelectorAll('.pv-page')] as HTMLElement[]
     if (pvPages.length > 0) {
+      const scale = setPrintZoom()
       const pxToTwips = (px: number) => Math.round((px / 96) * 1440)
       let groups: PrintGroup[] = []
       pvPages.forEach((page, i) => {
@@ -1061,12 +1153,12 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
       const PRINT_CHUNK = 10
       if (pvPages.length > PRINT_CHUNK) groups = chunkPrintGroups(groups, PRINT_CHUNK)
       if (groups.length > 1) {
-        return await printGroupsMerged(ctx, doc.fileName, pvPages, groups, outPath)
+        return await printGroupsMerged(ctx, doc.fileName, pvPages, groups, scale, outPath)
       }
       // preview open but uniform paper: single export at the preview size
       const g = groups[0]
       if (g) {
-        const result = await window.desktop.exportPdf(doc.fileName, g.w, g.h, outPath)
+        const result = await window.desktop.exportPdf(doc.fileName, g.w, g.h, outPath, scale)
         if (result.ok) {
           ctx.setStatus(t('appExportedPdf', { path: result.path ?? '' }))
           return true
@@ -1085,6 +1177,7 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
             doc.fileName,
             pvPages,
             chunkPrintGroups([g], PRINT_CHUNK / 2),
+            scale,
             retryPath,
           )
         }
@@ -1147,6 +1240,7 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
     // retry can print in chunks; the failed attempt already authorized result.path
     return deferExportToPreview(ctx, outPath ?? result.path)
   } finally {
+    clearPrintZoom()
     printJobActive = false
   }
 }

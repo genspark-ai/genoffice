@@ -5,6 +5,9 @@ import {} from '@tiptap/pm/tables'
 import { cssCsFontFamily, cssRunFontFamily } from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
+import { dkBackground } from './dark-page'
+import { fillInk } from './shading-ink'
+import { textColorDecls } from './text-color'
 import {} from '@genoffice/docx-engine'
 
 /**
@@ -104,10 +107,14 @@ export const LinkMark = Mark.create({
     return [
       {
         tag: 'a[href]',
-        getAttrs: (el) => ({
-          href: (el as HTMLElement).getAttribute('href') ?? '',
-          tooltip: (el as HTMLElement).getAttribute('title'),
-        }),
+        getAttrs: (el) => {
+          const href = (el as HTMLElement).getAttribute('href') ?? ''
+          const title = (el as HTMLElement).getAttribute('title')
+          // the render-side hover fallback (title = href) is display-only —
+          // parsing it back as a stored tooltip would write w:tooltip into
+          // the saved docx
+          return { href, tooltip: title === href ? null : title }
+        },
       },
     ]
   },
@@ -117,7 +124,9 @@ export const LinkMark = Mark.create({
       {
         href: mark.attrs.href,
         class: 'doc-link',
-        ...(mark.attrs.tooltip ? { title: String(mark.attrs.tooltip) } : {}),
+        // Word parity: hovering a link shows its target even without a
+        // stored tooltip (alpha ledger r164 — links were uninspectable)
+        title: mark.attrs.tooltip ? String(mark.attrs.tooltip) : String(mark.attrs.href ?? ''),
       },
       0,
     ]
@@ -276,7 +285,7 @@ export const RevisionOriginalExtension = Extension.create({
                 `font-weight:${old.bold ? 600 : 400}`,
                 `font-style:${old.italic ? 'italic' : 'normal'}`,
               ]
-              if (old.color) styles.push(`color:#${old.color}`)
+              if (old.color) styles.push(...textColorDecls(String(old.color)))
               if (old.sizeHalfPoints) styles.push(`font-size:${Number(old.sizeHalfPoints) / 2}pt`)
               if (old.font || old.fontAscii) {
                 const ea = old.font ? String(old.font) : null
@@ -396,6 +405,7 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   csFont: 'string',
   charSpacingTwips: 'number',
   charScaleEm: 'number',
+  kern: 'boolean',
   highlight: 'string',
   shading: 'string',
   vertAlign: 'string',
@@ -404,6 +414,7 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   italicOff: 'boolean',
   caps: 'string',
   vanish: 'boolean',
+  eaLang: 'string',
   styleId: 'string',
 }
 
@@ -485,6 +496,8 @@ export const TextStyleMark = Mark.create({
       charSpacingTwips: { default: null as number | null },
       // letter spacing (em, negative = condensed) converted from w:w scaling; precomputed by convert per run text
       charScaleEm: { default: null as number | null },
+      // w:kern resolved against the run size (Word kerns only when asked); null = document default
+      kern: { default: null as boolean | null },
       highlight: { default: null as string | null },
       // run shading fill, hex without '#' (w:shd w:fill)
       shading: { default: null as string | null },
@@ -498,6 +511,8 @@ export const TextStyleMark = Mark.create({
       caps: { default: null as 'all' | 'small' | 'none' | null },
       // w:vanish hidden text (style chain resolved at parse); Word print hides it
       vanish: { default: null as boolean | null },
+      // w:lang w:eastAsia of the run / its character style: gates Word's East Asian line rules
+      eaLang: { default: null as string | null },
       // rtl run (w:rtl, explicit or style-inherited): save-side decode selects the Cs twins.
       // Position must match runMarks' attr order (mark attrs are JSON-compared in signatures)
       cs: { default: null as boolean | null, rendered: false },
@@ -508,6 +523,8 @@ export const TextStyleMark = Mark.create({
       rawRPr: { default: null as string | null, rendered: false },
       // JSON of Run.themeRFonts (theme-resolved font values); keeps raw theme refs from materializing on save
       themeRFonts: { default: null as string | null, rendered: false },
+      // Run.themeColor (theme-resolved hex); keeps the raw w:themeColor ref and cached w:val on save
+      themeColor: { default: null as string | null, rendered: false },
     }
   },
   parseHTML() {
@@ -528,7 +545,8 @@ export const TextStyleMark = Mark.create({
   },
   renderHTML({ mark }) {
     const styles: string[] = []
-    if (mark.attrs.color) styles.push(`color:#${mark.attrs.color}`)
+    // authored colors stay the declaration; the --dk-* twins feed the dark page (dark-page.ts)
+    if (mark.attrs.color) styles.push(...textColorDecls(String(mark.attrs.color)))
     if (mark.attrs.sizeHalfPoints)
       styles.push(`font-size:${Number(mark.attrs.sizeHalfPoints) / 2}pt`)
     if (mark.attrs.font || mark.attrs.fontAscii || mark.attrs.csFont) {
@@ -548,11 +566,23 @@ export const TextStyleMark = Mark.create({
     if (spacingPt && scaleEm) styles.push(`letter-spacing:calc(${spacingPt}pt + ${scaleEm}em)`)
     else if (spacingPt) styles.push(`letter-spacing:${spacingPt}pt`)
     else if (scaleEm) styles.push(`letter-spacing:${scaleEm}em`)
+    else if (mark.attrs.charSpacingTwips === 0) styles.push('letter-spacing:0')
+    if (mark.attrs.kern != null) styles.push(`font-kerning:${mark.attrs.kern ? 'normal' : 'none'}`)
     // shading first: when both are set the later highlight declaration wins (Word behavior)
     if (mark.attrs.shading) styles.push(`background-color:#${mark.attrs.shading}`)
     if (mark.attrs.highlight) {
       styles.push(
         `background-color:${HIGHLIGHT_CSS[mark.attrs.highlight as string] ?? mark.attrs.highlight}`,
+      )
+    }
+    if (mark.attrs.highlight || mark.attrs.shading) {
+      // twin of whichever background wins (highlight over shading)
+      styles.push(
+        dkBackground(
+          mark.attrs.highlight
+            ? (HIGHLIGHT_CSS[mark.attrs.highlight as string] ?? String(mark.attrs.highlight))
+            : `#${mark.attrs.shading}`,
+        ),
       )
     }
     if (mark.attrs.vertAlign === 'superscript') styles.push('vertical-align:super;font-size:0.75em')
@@ -584,6 +614,10 @@ export const TextStyleMark = Mark.create({
       style: styles.join(';'),
     }
     if (mark.attrs.styleId) attrs['data-style'] = String(mark.attrs.styleId)
+    {
+      const ink = fillInk(mark.attrs.shading)
+      if (ink) attrs['data-ink'] = ink
+    }
     return ['span', attrs, 0]
   },
 })

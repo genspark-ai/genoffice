@@ -285,6 +285,7 @@ export const ko = {
   appAiDone: 'AI가 완료되었습니다',
   appAiTurnLimit:
     '(요청당 도구 호출 한도에 도달하여, 지금까지 읽은 정보를 기반으로 한 답변입니다. 불완전할 수 있습니다.)',
+  appAiTruncatedNote: '(응답이 길이 제한으로 잘려 내용이 불완전할 수 있습니다.)',
   appAiStopped: '(중지됨)',
   appAiNoSummary: 'AI가 완료되었지만 요약은 생성되지 않았습니다.',
   appAiNoAction:
@@ -304,6 +305,14 @@ export const ko = {
     '이 아이콘 조합은 xlsx로 저장할 수 없습니다. 다른 아이콘 집합을 선택하세요.',
   appNeedFullLoadSort:
     '정렬, 필터, 범위 이동, 텍스트 나누기에는 전체 로드 모드가 필요합니다. 이 통합 문서는 너무 커서 스트리밍 방식으로만 로드되었습니다.',
+  appFullLoadFilterTitle: '필터를 사용하려면 전체 로드가 필요합니다',
+  appFullLoadFilterBody:
+    '이 통합 문서는 커서 현재 일부만 스트리밍으로 로드되었습니다. 필터(값 개수 포함)가 정확하려면 전체 데이터가 필요합니다. 지금 전체를 로드할까요?',
+  appFullLoadStart: '모두 로드',
+  appFullLoadRunning: '통합 문서 전체를 로드하는 중입니다. 완료되면 필터를 사용할 수 있습니다…',
+  appFullLoadTooLarge:
+    '이 통합 문서는 너무 커서 메모리에 전부 로드할 수 없습니다. 이 파일에서는 필터를 사용할 수 없습니다.',
+  appDialogCancel: '취소',
   appPivotSheetNoMove: '이 시트에는 피벗 테이블이 있어 아직 범위 이동을 지원하지 않습니다.',
   appTableFilterNoEdit:
     '이 시트의 필터는 Excel 표에 속해 있어 편집 후에도 당분간 저장할 수 없습니다.',
@@ -650,6 +659,8 @@ export const ko = {
   appTabFormulas: '수식',
   appTabData: '데이터',
   appTabReview: '검토',
+  appRibbonCollapse: '리본 축소',
+  appRibbonPin: '리본 고정',
   appTabView: '보기',
   appTabAi: 'AI',
   appTabChartDesign: '차트 디자인',

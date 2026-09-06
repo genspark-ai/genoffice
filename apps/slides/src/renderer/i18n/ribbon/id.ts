@@ -14,6 +14,8 @@ export const id = {
   ribbonTabAnimations: 'Animasi',
   ribbonTabSlideShow: 'Peragaan Slide',
   ribbonTabReview: 'Tinjau',
+  ribbonCollapse: 'Ciutkan Pita',
+  ribbonPin: 'Sematkan Pita',
   ribbonTabView: 'Tampilan',
   ribbonTabTableDesign: 'Desain Tabel',
   ribbonTabChartDesign: 'Desain Bagan',

@@ -260,6 +260,111 @@ describe('w:cs slot (complex-script font)', () => {
     expect(doc.blocks[0].runs![0].csFont).toBe('Arabic Typesetting')
   })
 
+  describe('empty cs theme slot (Word probe 2026-09-03)', () => {
+    const themePart = (majorCs: string) => ({
+      path: 'word/theme/theme1.xml',
+      xml:
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T">' +
+        '<a:themeElements><a:fontScheme name="T">' +
+        `<a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface="${majorCs}"/>` +
+        '<a:font script="Arab" typeface="Times New Roman"/><a:font script="Hebr" typeface="Times New Roman"/></a:majorFont>' +
+        '<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/>' +
+        '<a:font script="Arab" typeface="Arial"/><a:font script="Hebr" typeface="Arial"/></a:minorFont>' +
+        '</a:fontScheme></a:themeElements></a:theme>',
+      contentType: 'application/vnd.openxmlformats-officedocument.theme+xml',
+    })
+    const settingsPart = (bidi: string) => ({
+      path: 'word/settings.xml',
+      xml:
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        `<w:themeFontLang w:val="fr-FR"${bidi}/></w:settings>`,
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+    })
+    const para = (rFonts: string) =>
+      `<w:p><w:r><w:rPr>${rFonts}</w:rPr><w:t>Objet</w:t></w:r></w:p>`
+    const MAJOR =
+      '<w:rFonts w:asciiTheme="majorBidi" w:hAnsiTheme="majorBidi" w:cstheme="majorBidi"/>'
+    const MINOR =
+      '<w:rFonts w:asciiTheme="minorBidi" w:hAnsiTheme="minorBidi" w:cstheme="minorBidi"/>'
+
+    it('majorBidi resolves to the major Arab entry under bidi=ar-SA', async () => {
+      const doc = await parseDocx(
+        await buildDocx({
+          bodyXml: para(MAJOR),
+          extraParts: [themePart(''), settingsPart(' w:bidi="ar-SA"')],
+        }),
+      )
+      const run = doc.blocks[0].runs![0]
+      expect(doc.themeFonts?.bidiLang).toBe('ar-SA')
+      expect(run.font).toBe('Times New Roman')
+      expect(run.fontAscii).toBe('Times New Roman')
+      expect(run.csFont).toBe('Times New Roman')
+      expect(run.themeRFonts).toEqual({ font: 'Times New Roman', fontAscii: 'Times New Roman' })
+    })
+
+    it('minorBidi resolves to the minor Arab entry under bidi=ar-SA', async () => {
+      const doc = await parseDocx(
+        await buildDocx({
+          bodyXml: para(MINOR),
+          extraParts: [themePart(''), settingsPart(' w:bidi="ar-SA"')],
+        }),
+      )
+      expect(doc.blocks[0].runs![0].font).toBe('Arial')
+      expect(doc.blocks[0].runs![0].csFont).toBe('Arial')
+    })
+
+    it('without a bidi lang an empty slot falls to Times New Roman', async () => {
+      const doc = await parseDocx(
+        await buildDocx({ bodyXml: para(MINOR), extraParts: [themePart(''), settingsPart('')] }),
+      )
+      expect(doc.blocks[0].runs![0].font).toBe('Times New Roman')
+    })
+
+    it('a populated cs slot is untouched', async () => {
+      const doc = await parseDocx(
+        await buildDocx({
+          bodyXml: para(MAJOR),
+          extraParts: [themePart('Arabic Typesetting'), settingsPart(' w:bidi="ar-SA"')],
+        }),
+      )
+      expect(doc.blocks[0].runs![0].font).toBe('Arabic Typesetting')
+    })
+
+    it('the empty-slot face supersedes a literal beside the theme attr', async () => {
+      const doc = await parseDocx(
+        await buildDocx({
+          bodyXml: para(
+            '<w:rFonts w:ascii="Arial" w:asciiTheme="majorBidi" w:hAnsi="Arial" w:hAnsiTheme="majorBidi"/>',
+          ),
+          extraParts: [themePart(''), settingsPart('')],
+        }),
+      )
+      expect(doc.blocks[0].runs![0].fontAscii).toBe('Times New Roman')
+    })
+
+    it('a run-less paragraph mark with majorBidi faces the empty line in Times New Roman', async () => {
+      const doc = await parseDocx(
+        await buildDocx({
+          bodyXml: `<w:p><w:pPr><w:rPr>${MAJOR}<w:b/></w:rPr></w:pPr></w:p>`,
+          extraParts: [themePart(''), settingsPart(' w:bidi="ar-SA"')],
+        }),
+      )
+      expect(doc.blocks[0].format?.emptyRunFontFamily).toBe('Times New Roman')
+    })
+
+    it('a run without theme refs keeps its literal fonts', async () => {
+      const doc = await parseDocx(
+        await buildDocx({
+          bodyXml: para('<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>'),
+          extraParts: [themePart(''), settingsPart(' w:bidi="ar-SA"')],
+        }),
+      )
+      expect(doc.blocks[0].runs![0].font).toBe('Arial')
+    })
+  })
+
   it('no cs slot means no csFont', async () => {
     const para =
       '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr>' +

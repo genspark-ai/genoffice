@@ -221,6 +221,10 @@ export interface PageSetupJournalState {
   printGridlines?: boolean
   printHeadings?: boolean
   showGridlines?: boolean
+  /// sheetView/@zoomScale (10-400): normal-view zoom percent. Excel persists
+  /// zoom in the file; unjournaled, the post-save session reload snapped the
+  /// view back to the file's stored zoom (alpha r165).
+  zoomScale?: number
   /// sheetView/@showFormulas: the sheet renders formulas instead of values.
   showFormulas?: boolean
   /// sheetView/@showRowColHeaders: row/column heading strips.
@@ -1883,6 +1887,14 @@ const UNIVER_VERTICAL: Record<number, WorkbookStyleEdit['verticalAlignment']> = 
   3: 'bottom',
 }
 
+/// "No fill" as a Univer bg value. Univer composes cell/row/column styles by
+/// key, so a MISSING bg lets a <col style=> fill bleed through the cell —
+/// and set-range-values strips `bg: null` (Tools.removeNull), so null cannot
+/// pin it. An empty rgb is defined (blocks the compose fallthrough) yet falsy
+/// for every painter that checks bg.rgb. Shared by the file installer, the
+/// journal overlay replay, and the ribbon's No Fill.
+export const NO_FILL_STYLE: { readonly rgb: '' } = { rgb: '' }
+
 /// Converts a Univer IStyleData delta (from a set-range-values mutation) to
 /// the renderer-neutral wire format. Unknown keys are ignored; `null` values
 /// mean "remove the attribute" and map to explicit `false`.
@@ -1902,14 +1914,15 @@ export function toNeutralStyle(s: Record<string, unknown>): WorkbookStyleEdit | 
     style.fontFamily = unescapeCssLeadingDigit(s.ff)
   }
   if (typeof s.fs === 'number' && Number.isFinite(s.fs) && s.fs > 0) style.fontSize = s.fs
-  if ('cl' in s && s.cl === null) {
-    style.fontColor = null
-  } else {
-    const fontColor = extractRgb(s.cl)
-    if (fontColor) style.fontColor = fontColor
+  if ('cl' in s) {
+    if (isColorClear(s.cl)) style.fontColor = null
+    else {
+      const fontColor = extractRgb(s.cl)
+      if (fontColor) style.fontColor = fontColor
+    }
   }
   if ('bg' in s) {
-    if (s.bg === null) style.fillColor = null
+    if (isColorClear(s.bg)) style.fillColor = null
     else {
       const fillColor = extractRgb(s.bg)
       if (fillColor) style.fillColor = fillColor
@@ -1976,6 +1989,20 @@ function extractRgb(value: unknown): string | undefined {
   return match?.[1] ? `#${match[1].toUpperCase()}` : undefined
 }
 
+/// The three shapes Univer uses for "no color": a bare `null` (Clear
+/// Formats / setFontColor(null)), `{ rgb: null }` (the facade's
+/// setBackground(null) and the reset-*-color commands — SetStyleCommand
+/// always wraps the value in `{ rgb }`), and the empty-rgb sentinel the
+/// installer writes for fill-less xfs (see toUniverStyle). Missing any of
+/// them left "No Fill" out of the journal: the ribbon showed the fill gone,
+/// Save stayed disabled, and the file kept the fill.
+function isColorClear(value: unknown): boolean {
+  if (value === null) return true
+  if (typeof value !== 'object') return false
+  const rgb = (value as Record<string, unknown>).rgb
+  return rgb === null || rgb === ''
+}
+
 const XLSX_HORIZONTAL_TO_UNIVER: Record<string, number> = {
   left: 1,
   center: 2,
@@ -2007,7 +2034,10 @@ export function fromNeutralStyle(style: WorkbookStyleEdit): Record<string, unkno
     s.cl = style.fontColor === null ? null : { rgb: style.fontColor }
   }
   if (style.fillColor !== undefined) {
-    s.bg = style.fillColor === null ? null : { rgb: style.fillColor }
+    // Same empty-rgb sentinel as toUniverStyle: a bare bg: null is stripped
+    // by the mutation's removeNull, after which a <col style=> fill composes
+    // straight back through the cell the user just cleared.
+    s.bg = style.fillColor === null ? { ...NO_FILL_STYLE } : { rgb: style.fillColor }
   }
   if (style.horizontalAlignment !== undefined) {
     s.ht = XLSX_HORIZONTAL_TO_UNIVER[style.horizontalAlignment]

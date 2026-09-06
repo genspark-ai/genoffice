@@ -340,7 +340,7 @@ export async function refineComplexWidths(wc: {
         }
         // Same font stack as the Konva renderer (generic fallback of konva-adapter displayFontFamily)
         ctx.font = (it.italic ? 'italic ' : '') + (it.bold ? 'bold ' : '') +
-          '100px "' + it.family + '", \\'PingFang SC\\', \\'Microsoft YaHei\\', sans-serif'
+          '100px "' + it.family + '", \\'PingFang SC\\', \\'Microsoft YaHei\\', \\'Yu Gothic\\', \\'Malgun Gothic\\', sans-serif'
         out[it.key] = ctx.measureText(it.text).width
       }
       return out

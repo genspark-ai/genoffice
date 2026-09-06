@@ -207,6 +207,32 @@ export function buildNoteThreads(
   return roots
 }
 
+/**
+ * Threads as the UI and AI tools see them: saved notes queued for deletion are dropped
+ * and pending content edits are overlaid on `item.contents` only — `item.saved` keeps
+ * the on-disk text that replies and the edits themselves match against at save.
+ */
+export function visibleNoteThreads(
+  saved: SavedNoteAnnot[],
+  pending: { id: string; input: NoteInput }[],
+  deletedObjNums: ReadonlySet<number>,
+  editedContents: ReadonlyMap<number, string>,
+): NoteThreadItem[] {
+  const roots = buildNoteThreads(
+    saved.filter((a) => !deletedObjNums.has(a.objNum)),
+    pending,
+  )
+  if (editedContents.size > 0) {
+    for (const root of roots) {
+      for (const { item } of flattenThread(root)) {
+        const text = item.saved ? editedContents.get(item.saved.objNum) : undefined
+        if (text !== undefined) item.contents = text
+      }
+    }
+  }
+  return roots
+}
+
 /** DFS flatten of a thread (root first), with the depth of each item */
 export function flattenThread(root: NoteThreadItem): { item: NoteThreadItem; depth: number }[] {
   const out: { item: NoteThreadItem; depth: number }[] = []

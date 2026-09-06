@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
 import {
   BLANK_BULLET_NUM_ID,
@@ -93,6 +93,14 @@ type Json = {
   marks?: Array<{ type: string; attrs?: Record<string, unknown> }>
 }
 
+// Destroyed after each test so no DOMObserver flush timer outlives the jsdom
+// environment (see ai-rewrite-formatting.test.ts).
+const liveEditors: Editor[] = []
+
+afterEach(() => {
+  for (const editor of liveEditors.splice(0)) editor.destroy()
+})
+
 async function open(bodyXml: string, withNumbering = false) {
   const parsed = await parseDocx(await buildDocx({ bodyXml, withNumbering }))
   const editor = new Editor({
@@ -100,6 +108,7 @@ async function open(bodyXml: string, withNumbering = false) {
     extensions: editorExtensions,
     content: blocksToPmDoc(parsed.blocks) as never,
   })
+  liveEditors.push(editor)
   return { editor, parsed }
 }
 

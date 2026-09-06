@@ -449,36 +449,6 @@ export async function gskSlideGenerate(
   return { bytes: new Uint8Array(await resp.arrayBuffer()), model: String(data.model ?? '') }
 }
 
-// ── File conversion (PDF → DOCX) ────────────────────────────────────
-
-/** Extracts the download link from file_convert's markdown result text (exported for tests) */
-export function parseGskConvertResult(raw: unknown): string {
-  const data = asRecord(asRecord(raw).data ?? raw)
-  const text = typeof data.result === 'string' ? data.result : ''
-  const url = /\((https?:\/\/[^)\s]+)\)/.exec(text)?.[1] ?? /https?:\/\/\S+/.exec(text)?.[0]
-  if (!url) {
-    throw new Error(`file_convert returned no link: ${JSON.stringify(raw).slice(0, 200)}`)
-  }
-  return url
-}
-
-/**
- * Uploads a local PDF and converts it to DOCX in the cloud (`gsk convert`,
- * costs 5 credits); returns the DOCX bytes.
- */
-export async function gskConvertPdfToDocx(
-  filePath: string,
-  signal?: AbortSignal,
-): Promise<Uint8Array> {
-  const wrapperUrl = await gskUpload(filePath)
-  const raw = await runGsk(['convert', wrapperUrl], GENERATE_TIMEOUT_MS, signal)
-  const link = parseGskConvertResult(raw)
-  const downloadUrl = await gskResolveDownloadUrl(link)
-  const resp = await fetch(downloadUrl, signal ? { signal } : undefined)
-  if (!resp.ok) throw new Error(`DOCX download failed: HTTP ${resp.status}`)
-  return new Uint8Array(await resp.arrayBuffer())
-}
-
 // ── Media analysis / transcription ──────────────────────────────────
 
 /** Best-effort text extraction from gsk analysis-type command output (shape varies by task, so be lenient; exported for tests) */
@@ -542,17 +512,6 @@ export async function gskTranscribe(
   if (options.model) args.push('-m', options.model)
   const raw = await runGsk(args, GENERATE_TIMEOUT_MS, signal)
   return extractGskText(raw)
-}
-
-// ── File upload / login ─────────────────────────────────────────────
-
-/** Uploads a local file and returns a file wrapper URL (usable as input to other gsk commands) */
-export async function gskUpload(filePath: string): Promise<string> {
-  const raw = asRecord(await runGsk(['upload', filePath], GENERATE_TIMEOUT_MS))
-  const dataRec = asRecord(raw.data)
-  const url = dataRec.file_wrapper_url ?? raw.url ?? dataRec.url
-  if (!url) throw new Error(`gsk upload did not return a URL: ${JSON.stringify(raw).slice(0, 200)}`)
-  return String(url)
 }
 
 // ── Past projects (Genspark web) ────────────────────────────────────

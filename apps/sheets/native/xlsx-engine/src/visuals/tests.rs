@@ -304,6 +304,22 @@ fn media_types_cover_gdi_metafiles() {
 }
 
 #[test]
+fn media_types_ignore_content_type_parameters_in_the_extension() {
+    assert_eq!(
+        media_type_for_path("xl/media/image24.jpeg;charset=iso-8859-1"),
+        Some("image/jpeg")
+    );
+    assert_eq!(
+        media_type_for_path("xl/media/image1.PNG;charset=utf-8"),
+        Some("image/png")
+    );
+    assert_eq!(
+        media_type_for_path("xl/media/image1.bin;charset=utf-8"),
+        None
+    );
+}
+
+#[test]
 fn media_types_cover_webp() {
     assert_eq!(
         media_type_for_path("xl/media/image.webp"),
@@ -1512,4 +1528,57 @@ fn resolves_style_fill_ref_theme_gradient() {
         let document = Document::parse(&style).unwrap();
         assert!(style_fill_gradient(Some(document.root_element()), &colors).is_none());
     }
+}
+
+/// A combo chart tags every series with its own plot group: one bar series
+/// plus a two-series lineChart on a secondary axis pair must not be typed by
+/// document position (which drew the first line as a bar).
+#[test]
+fn combo_series_carry_their_plot_group() {
+    let combo = r#"<c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/>
+            <c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>Leads</c:v></c:pt></c:strCache></c:strRef></c:tx>
+            <c:cat><c:strRef><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>Jan</c:v></c:pt><c:pt idx="1"><c:v>Feb</c:v></c:pt></c:strCache></c:strRef></c:cat>
+            <c:val><c:numRef><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>11484</c:v></c:pt><c:pt idx="1"><c:v>11085</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>
+            <c:axId val="1559191455"/><c:axId val="1419995791"/></c:barChart>
+        <c:lineChart><c:grouping val="standard"/>
+            <c:ser><c:idx val="1"/><c:order val="1"/><c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>Meetings</c:v></c:pt></c:strCache></c:strRef></c:tx><c:marker><c:symbol val="none"/></c:marker>
+            <c:val><c:numRef><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>1858</c:v></c:pt><c:pt idx="1"><c:v>1889</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>
+            <c:ser><c:idx val="2"/><c:order val="2"/><c:tx><c:strRef><c:strCache><c:pt idx="0"><c:v>Deals</c:v></c:pt></c:strCache></c:strRef></c:tx><c:marker><c:symbol val="none"/></c:marker>
+            <c:val><c:numRef><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>1120</c:v></c:pt><c:pt idx="1"><c:v>1125</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>
+            <c:marker val="1"/><c:axId val="1559070815"/><c:axId val="1419985231"/></c:lineChart>
+        <c:catAx><c:axId val="1559191455"/><c:axPos val="b"/><c:crossAx val="1419995791"/></c:catAx>
+        <c:valAx><c:axId val="1419995791"/><c:axPos val="l"/><c:crossAx val="1559191455"/></c:valAx>
+        <c:valAx><c:axId val="1419985231"/><c:axPos val="r"/><c:crossAx val="1559070815"/></c:valAx>
+        <c:catAx><c:axId val="1559070815"/><c:delete val="1"/><c:axPos val="b"/><c:crossAx val="1419985231"/></c:catAx>
+        </c:plotArea>"#;
+    let chart = metadata(combo);
+    assert_eq!(chart.chart_types, vec!["barChart", "lineChart"]);
+    assert!(chart.secondary_y_axis.is_some());
+    let plots = chart
+        .series
+        .iter()
+        .map(|series| (series.name.as_str(), series.plot.as_deref()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        plots,
+        vec![
+            ("Leads", Some("barChart")),
+            ("Meetings", Some("lineChart")),
+            ("Deals", Some("lineChart")),
+        ]
+    );
+    let json = serde_json::to_value(&chart).unwrap();
+    assert_eq!(json["series"][1]["plot"], "lineChart");
+    // Line groups placed before the bar group keep their own type too.
+    let line_first = r#"<c:plotArea><c:lineChart><c:ser><c:idx val="0"/><c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:lineChart>
+        <c:bar3DChart><c:ser><c:idx val="1"/><c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>2</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:bar3DChart></c:plotArea>"#;
+    let plots = metadata(line_first)
+        .series
+        .iter()
+        .map(|series| series.plot.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        plots,
+        vec![Some("lineChart".into()), Some("barChart".into())]
+    );
 }
