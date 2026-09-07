@@ -258,6 +258,12 @@ describe('createHangulSkill', () => {
     expect(
       skill.verifyResponse?.('Inserted two paragraphs.', [{ name: 'insert_content', ok: true }]),
     ).toBeNull()
+    expect(
+      skill.verifyResponse?.('문단을 바꿨습니다.', [{ name: 'replace_paragraph', ok: false }]),
+    ).toMatch(/get_paragraphs/i)
+    expect(
+      skill.verifyResponse?.('문단을 바꿨습니다.', [{ name: 'replace_paragraph', ok: false }]),
+    ).not.toMatch(/was not changed/i)
   })
 
   it('replaces a selection and a field', async () => {

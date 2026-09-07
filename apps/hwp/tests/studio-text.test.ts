@@ -244,6 +244,72 @@ describe('replaceCurrentParagraph', () => {
     expect(applyTextCommand).toHaveBeenCalledOnce()
   })
 
+  it('keeps a successful apply when focusTarget still has the old length', async () => {
+    const applyTextCommand = vi.fn(async () => ({
+      target: { kind: 'body_paragraph' as const, section: 0, paragraph: 0, charOffset: 0 as const, length: 8 },
+    }))
+    const focusTarget = vi.fn(async (target: { length: number }) => {
+      if (target.length !== 5) {
+        throw new Error('exact body paragraph target을 찾을 수 없습니다.')
+      }
+    })
+    const result = await replaceCurrentParagraph(
+      studio({
+        getDocumentState: async () => ({
+          documentEpoch: 1,
+          changeSeq: 0,
+          documentSha256: 'bb'.repeat(32),
+        }),
+        applyTextCommand,
+        focusTarget,
+        _request: async () => ({
+          editable: true,
+          reason: null,
+          target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 8 },
+          text: '8. 기대 효과',
+          textSha256: 'aa'.repeat(32),
+          formatSha256: 'cc'.repeat(32),
+          adjacentContextSha256: 'dd'.repeat(32),
+        }),
+      }),
+      '8. 효과',
+    )
+    expect(result).toEqual({ before: '8. 기대 효과', after: '8. 효과' })
+    expect(focusTarget).toHaveBeenCalledWith(
+      expect.objectContaining({ section: 0, paragraph: 0, length: 5 }),
+    )
+  })
+
+  it('does not fail the replace when focusTarget throws after apply', async () => {
+    const applyTextCommand = vi.fn(async () => ({
+      target: { kind: 'body_paragraph' as const, section: 0, paragraph: 0, charOffset: 0 as const, length: 8 },
+    }))
+    const result = await replaceCurrentParagraph(
+      studio({
+        getDocumentState: async () => ({
+          documentEpoch: 1,
+          changeSeq: 0,
+          documentSha256: 'bb'.repeat(32),
+        }),
+        applyTextCommand,
+        focusTarget: async () => {
+          throw new Error('exact body paragraph target을 찾을 수 없습니다.')
+        },
+        _request: async () => ({
+          editable: true,
+          reason: null,
+          target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 8 },
+          text: '8. 기대 효과',
+          textSha256: 'aa'.repeat(32),
+          formatSha256: 'cc'.repeat(32),
+          adjacentContextSha256: 'dd'.repeat(32),
+        }),
+      }),
+      '8. 효과',
+    )
+    expect(result).toEqual({ before: '8. 기대 효과', after: '8. 효과' })
+  })
+
   it('splices a selection inside the current paragraph', async () => {
     const applyTextCommand = vi.fn(async (command: { replacement: string }) => {
       expect(command.replacement).toBe('안녕 세상')

@@ -492,7 +492,13 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
       )
       if (!claimed) return null
       if (executed.some((call) => MUTATING_TOOLS.includes(call.name) && call.ok)) return null
-      return 'You claimed to edit the document, but no edit tool succeeded. Tell the user the document was not changed and do not claim an edit.'
+      if (executed.some((call) => MUTATING_TOOLS.includes(call.name) && !call.ok)) {
+        return (
+          'An edit tool failed after it may already have written. Call get_paragraphs and describe only what is actually in the document. ' +
+          'Do not tell the user the document is unchanged unless the list still has the pre-edit text.'
+        )
+      }
+      return 'You claimed to edit the document, but no edit tool ran. Tell the user the document was not changed and do not claim an edit.'
     },
   }
 }

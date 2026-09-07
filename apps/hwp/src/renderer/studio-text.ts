@@ -349,8 +349,23 @@ async function applyPrepared(
     expectedAdjacentContextSha256: prepared.adjacentContextSha256,
     replacement: after,
   })
-  await studio.focusTarget?.(receipt.target)
+  await focusReplacedParagraph(studio, receipt.target ?? prepared.target, after)
   return { before: prepared.text ?? '', after }
+}
+
+async function focusReplacedParagraph(
+  studio: StudioTextSource,
+  target: HangulParagraphTarget,
+  after: string,
+): Promise<void> {
+  if (!studio.focusTarget) return
+  try {
+    // applyTextCommand's receipt.target keeps the pre-apply length. After the
+    // write, studio's exact-length check throws TARGET_NOT_FOUND.
+    await studio.focusTarget({ ...target, length: after.length })
+  } catch {
+    // Apply already committed. Losing caret focus must not fail the tool.
+  }
 }
 
 export async function replaceCurrentParagraph(
