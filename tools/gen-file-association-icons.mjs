@@ -34,6 +34,7 @@ const TYPES = {
   pptx: 'file-pptx.svg',
   pdf: 'file-pdf.svg',
   md: 'file-md.svg',
+  hwp: 'file-hwp.svg',
 }
 
 // macOS icons carry the standard app-icon grid margin (824/1024 content, same
@@ -88,12 +89,16 @@ async function renderPng(page, svgDataUrl, canvasSize, contentSize) {
   return page.screenshot({ omitBackground: true })
 }
 
+const only = process.argv[2]
+if (only && !TYPES[only]) throw new Error(`unknown file-type icon: ${only}`)
+const types = only ? { [only]: TYPES[only] } : TYPES
+
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
 const page = await browser.newPage({ deviceScaleFactor: 1 })
 const tmp = mkdtempSync(join(tmpdir(), 'genoffice-file-icons-'))
 
 try {
-  for (const [type, svgName] of Object.entries(TYPES)) {
+  for (const [type, svgName] of Object.entries(types)) {
     const svg = readFileSync(join(svgDir, svgName))
     const dataUrl = `data:image/svg+xml;base64,${svg.toString('base64')}`
 
