@@ -8,8 +8,6 @@ export const PARAGRAPH_NOT_EDITABLE = 'paragraph is not editable'
 export const SELECTION_NOT_IN_PARAGRAPH = 'nothing is selected in this paragraph'
 export const PARAGRAPH_INDEX_OUT_OF_RANGE = 'paragraph index out of range'
 export const INSERT_CONTENT_EMPTY = 'insert text must not be empty'
-/** One insert_content call may add this many new body paragraphs. */
-export const INSERT_CONTENT_MAX_PARAS = 80
 export const FIELD_NOT_FOUND = 'field not found'
 export const TABLE_NOT_FOUND = 'table cell not found'
 export const TABLE_SIZE_INVALID = 'table size must be positive integers'
@@ -34,7 +32,6 @@ const PAPER_SIZES = {
   Letter: [62208, 80496],
   Legal: [62208, 102816],
 } as const
-export const FORMAT_MAX_PARAS = 40
 const FONT_SIZE_MIN_PT = 8
 const FONT_SIZE_MAX_PT = 72
 /** Hangul paragraph dialog: pt → stored indent/margin (same as studio LS()). */
@@ -360,9 +357,6 @@ export function splitInsertParagraphs(text: string): string[] {
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
   if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
     throw new Error(INSERT_CONTENT_EMPTY)
-  }
-  if (lines.length > INSERT_CONTENT_MAX_PARAS) {
-    throw new Error(`insert text must be at most ${INSERT_CONTENT_MAX_PARAS} paragraphs`)
   }
   return lines.map((line) => normalizeReplacement(line))
 }
@@ -1063,9 +1057,6 @@ export async function applyParagraphFormat(
   if (indexes != null) {
     if (!Array.isArray(indexes) || indexes.length === 0) {
       throw new Error('indexes must be a non-empty array of integers')
-    }
-    if (indexes.length > FORMAT_MAX_PARAS) {
-      throw new Error(`format at most ${FORMAT_MAX_PARAS} paragraphs at once`)
     }
     targets = indexes
   } else if (index != null) {

@@ -12,7 +12,6 @@ import {
   replaceParagraphAt,
   insertContent,
   splitInsertParagraphs,
-  INSERT_CONTENT_MAX_PARAS,
   listBodyParagraphs,
   listDocumentFields,
   setDocumentField,
@@ -396,9 +395,7 @@ describe('replaceCurrentParagraph', () => {
   it('splits insert text on newlines and rejects a trailing-only empty string', () => {
     expect(splitInsertParagraphs('안녕\n세상\n')).toEqual(['안녕', '세상'])
     expect(() => splitInsertParagraphs('')).toThrow(/must not be empty/)
-    expect(() => splitInsertParagraphs(`${'x'.repeat(8)}\n`.repeat(INSERT_CONTENT_MAX_PARAS + 1))).toThrow(
-      /at most/,
-    )
+    expect(splitInsertParagraphs(`${'x'.repeat(8)}\n`.repeat(81)).length).toBe(81)
   })
 
   it('fills an empty caret paragraph then inserts the rest', async () => {

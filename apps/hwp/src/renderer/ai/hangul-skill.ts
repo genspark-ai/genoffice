@@ -27,7 +27,7 @@ const SYSTEM_PROMPT = [
   '# Tool usage',
   '- Every user message carries the latest "body paragraph list" (index|status|preview). Previews may be truncated — get_paragraphs or get_document_text before rewriting a long paragraph.',
   '- After any mutation, indexes change — get_paragraphs before further index-based edits. If a tool reports success, do not retry it.',
-  '- New drafts: one insert_content call with the full text. Newlines become paragraphs. Cap: 80 paragraphs per call, 4000 characters per paragraph (fields/cells 8000). If the 80-paragraph cap rejects the call, insert only the remainder with afterIndex set to the last written paragraph.',
+  '- New drafts: one insert_content call with the full text. Newlines become paragraphs. Each paragraph is at most 4000 characters (fields/cells 8000).',
   '- If insert_content reports "Inserted N paragraph(s)", it succeeded. Do not call it again for the same draft.',
   '- replace_paragraph changes one existing paragraph, once per turn (hashes change after each apply). Prefer replace_selection when the user has a selection and wants only that span changed.',
   '- Small in-place fixes stay on replace_selection / one replace_paragraph. Multi-paragraph additions go through insert_content. Omit afterIndex / index to use the caret.',
@@ -101,7 +101,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'insert_content',
     description:
-      'Write new body paragraphs in one call. Pass the full draft; newlines become paragraphs. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph. If it reports Inserted N, do not resend the same draft. A rejected 80-paragraph cap is not success — send only the leftover lines with afterIndex.',
+      'Write new body paragraphs in one call. Pass the full draft; newlines become paragraphs. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph. If it reports Inserted N, do not resend the same draft.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -204,7 +204,7 @@ const TOOLS: AgentToolDef[] = [
         indexes: {
           type: 'array',
           items: { type: 'number' },
-          description: 'Format several paragraphs. At most 40. Overrides index.',
+          description: 'Format several paragraphs. Overrides index.',
         },
         table: {
           type: 'number',

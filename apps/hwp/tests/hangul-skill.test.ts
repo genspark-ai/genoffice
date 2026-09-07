@@ -60,7 +60,7 @@ describe('createHangulSkill', () => {
     expect(skill.systemPrompt).toMatch(/HG-2/)
     expect(skill.systemPrompt).toMatch(/insert_table/)
     expect(skill.systemPrompt).toMatch(/apply_format/)
-    expect(skill.systemPrompt).toMatch(/80-paragraph cap/)
+    expect(skill.systemPrompt).not.toMatch(/80-paragraph cap/)
     expect(skill.systemPrompt).toMatch(/starting index from that tool result/)
     expect(skill.systemPrompt).toMatch(/HG-5/)
     expect(skill.systemPrompt).toMatch(/HG-6[\s\S]*HG-7/)
