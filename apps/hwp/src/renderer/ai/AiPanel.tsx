@@ -4,7 +4,7 @@ import { AgentLoop, composeSkills } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiTypingIndicator, Markdown } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
-import { fileNameOf, type HangulStudioFacade } from '../studio-text'
+import { fileNameOf, type HangulParagraphPreview, type HangulStudioFacade } from '../studio-text'
 import {
   mapPersistedChat,
   shouldApplyRestoredChat,
@@ -84,6 +84,7 @@ export function AiPanel({
     currentPage: null as number | null,
     hasSelection: false,
     selectionPreview: null as string | null,
+    paragraphPreview: null as HangulParagraphPreview[] | null,
   })
   const runToolsRef = useRef<ToolActivity[]>([])
   const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
@@ -159,6 +160,7 @@ export function AiPanel({
       currentPage: () => contextRef.current.currentPage,
       hasSelection: () => contextRef.current.hasSelection,
       selectionPreview: () => contextRef.current.selectionPreview,
+      paragraphPreview: () => contextRef.current.paragraphPreview,
       getDocumentText: async () => {
         const studio = facadeRef.current
         if (!studio) throw new Error('Hangul editor is not ready')
@@ -373,19 +375,22 @@ export function AiPanel({
         currentPage: null,
         hasSelection: false,
         selectionPreview: null,
+        paragraphPreview: null,
       }
       return
     }
-    const [pageCount, sel, preview] = await Promise.all([
+    const [pageCount, sel, preview, paragraphs] = await Promise.all([
       studio.pageCount().catch(() => 0),
       studio.readSelectionState().catch(() => ({ page: null, hasSelection: false })),
       studio.getSelectionText().catch(() => null),
+      studio.listParagraphs().catch(() => null),
     ])
     contextRef.current = {
       pageCount,
       currentPage: sel.page,
       hasSelection: Boolean(preview?.trim()) || sel.hasSelection,
       selectionPreview: preview,
+      paragraphPreview: paragraphs,
     }
   }
 

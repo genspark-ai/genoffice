@@ -9,6 +9,7 @@ function deps(partial: Partial<HangulSkillDeps> = {}): HangulSkillDeps {
     currentPage: () => null,
     hasSelection: () => false,
     selectionPreview: () => null,
+    paragraphPreview: () => null,
     getDocumentText: async () => '문서 본문',
     getSelection: async () => null,
     replaceParagraph: async (text) => ({ before: 'old', after: text }),
@@ -46,8 +47,40 @@ describe('createHangulSkill', () => {
     expect(ctx).not.toContain('Current page:')
     expect(skill.systemPrompt).toMatch(/replace_paragraph/)
     expect(skill.systemPrompt).toMatch(/insert_content/)
+    expect(skill.systemPrompt).toMatch(/one insert_content/)
+    expect(skill.systemPrompt).toMatch(/# Intent resolution/)
+    expect(skill.systemPrompt).toMatch(/HG-2/)
     expect(skill.systemPrompt).not.toMatch(/no editing tools/i)
     expect(skill.systemPrompt).not.toMatch(/You cannot create new body paragraphs/)
+  })
+
+  it('includes a paragraph skeleton like Docs block lists', () => {
+    const skill = createHangulSkill(() =>
+      deps({
+        paragraphPreview: () => [
+          { index: 0, editable: false, reason: 'control', section: 0, paragraph: 0, text: '' },
+          { index: 1, editable: true, reason: null, section: 0, paragraph: 1, text: '프로젝트 계획서' },
+        ],
+      }),
+    )
+    const ctx = skill.buildContext?.() ?? ''
+    expect(ctx).toContain('Body paragraphs (2; index|status|preview):')
+    expect(ctx).toContain('0|locked:control|(empty)')
+    expect(ctx).toContain('1|editable|프로젝트 계획서')
+  })
+
+  it('marks a locked-only body as blank so drafts use insert_content', () => {
+    const skill = createHangulSkill(() =>
+      deps({
+        paragraphPreview: () => [
+          { index: 0, editable: false, reason: 'control', section: 0, paragraph: 0, text: '' },
+        ],
+      }),
+    )
+    const ctx = skill.buildContext?.() ?? ''
+    expect(ctx).toContain('The body looks blank')
+    expect(ctx).toContain('one insert_content')
+    expect(ctx).toContain('0|locked:control|(empty)')
   })
 
   it('includes the current page when known', () => {

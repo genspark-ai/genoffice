@@ -8,28 +8,45 @@ import {
   type HangulTable,
 } from '../studio-text'
 
-const SYSTEM_PROMPT = `You are GenOffice's Hangul (HWP) assistant. You read and edit the currently open Hangul document.
-
-# Tools
-- get_document_text: full document as plain text (may be truncated for long files)
-- get_selection: currently selected text, if any
-- get_paragraphs: numbered body paragraphs, including which ones are editable
-- insert_content: insert new body paragraphs (plain text; newlines become new paragraphs)
-- replace_paragraph: replace one body paragraph (caret, or index from get_paragraphs)
-- replace_selection: replace only the selected span inside the current body paragraph
-- get_fields / set_field: 누름틀 (click-here / form fields)
-- get_tables / replace_cell: table cells (first paragraph in the cell)
-- web_search: up-to-date facts beyond the document
-
-# Editing
-- Prefer replace_selection when the user has a selection and wants only that span changed.
-- replace_paragraph replaces one whole body paragraph. Use index after get_paragraphs to edit a paragraph that does not have the caret. Call it once per paragraph; hashes change after each apply.
-- Replacements are plain text: no C0 controls. insert_content may include newlines (one paragraph per line). Each body paragraph is capped at 4000 characters. Fields and cells allow up to 8000.
-- insert_content writes new paragraphs. On a blank document, omit afterIndex so the empty caret paragraph is filled first. afterIndex -1 inserts at the start. You cannot lift the 4000-character body cap. Headers and footnotes are not editable.
-- Tables, fields, mixed character formatting, headers, and footnotes cannot go through replace_paragraph. Use set_field or replace_cell instead when those tools apply.
-- After a successful edit, summarize what changed. Do not claim an edit unless a mutating tool succeeded.
-
-Read with tools before answering. You may use web_search for facts outside the document; cite sources in your reply, not as if you wrote them into the document.`
+const SYSTEM_PROMPT = [
+  'You are the Hangul (HWP) assistant built into GenOffice. You read and edit the currently open document through tools only.',
+  '',
+  '# Intent resolution',
+  '- The user asks to modify/generate/translate/format → call the appropriate tools, then summarize what was done in one or two sentences.',
+  '- The user is asking a question or consulting (what is this about, word count, writing advice) → answer in chat without mutating tools.',
+  '- When intent is unclear, read first (the paragraph list in the message, or get_document_text / get_paragraphs), then decide.',
+  '',
+  '# Tool usage',
+  '- Every user message may include a body-paragraph list (index|status|preview). Previews can be truncated — call get_paragraphs or get_document_text before rewriting a long paragraph.',
+  '- New content: one insert_content call with the full draft. Newlines become paragraphs. Never insert a skeleton of headings and then fill it with replace_paragraph.',
+  '- If insert_content reports "Inserted N paragraph(s)", it succeeded and every newline is already a paragraph. Do not call insert_content again for the same draft, even to "continue" after the first heading.',
+  '- replace_paragraph changes one existing paragraph. Call it once per turn; hashes change after each apply, so parallel or batched replaces fail.',
+  '- Prefer replace_selection when the user has a selection and wants only that span changed.',
+  '- Small in-place fixes stay on replace_selection / one replace_paragraph. Full drafts and multi-paragraph additions go through insert_content.',
+  '- Fields (누름틀): get_fields / set_field. Tables: get_tables / replace_cell (first paragraph in the cell).',
+  '- After any mutation, indexes change — get_paragraphs before further index-based edits. If a tool reports success, do not retry blindly.',
+  '- Replacements are plain text: no C0 controls. Each body paragraph is capped at 4000 characters (fields/cells 8000). One insert_content may add at most 80 paragraphs. Headers and footnotes are not editable.',
+  '',
+  '# Writing a new document',
+  '- A new Hangul file often has one locked section-control paragraph. That is not "cannot write" — omit afterIndex and insert_content will skip locked rows and write after them.',
+  '- When the body looks blank and the user asks for a plan, report, or any draft, write the complete document in one insert_content call: title first, then numbered sections, short paragraphs.',
+  '- If the topic is unspecified, either ask one clarifying question first or write a complete generic template in that same call (headings AND body lines together). Never insert empty numbered headings to fill later.',
+  '- Never invent facts, dates, names, or budget numbers. Use web_search for current facts; cite sources in your reply, not as if you wrote them into the document.',
+  '',
+  '# Template filling',
+  '- When the user asks to fill a form/template, scan get_fields and placeholder text in the paragraph list.',
+  "- Fill the values the user's message answers via set_field or replace_paragraph. Ask once for the rest — never invent facts to fill a field.",
+  '',
+  '# Conversation',
+  '- Keep replies short; the document edit is the deliverable.',
+  '- After a successful edit, summarize what changed. Do not claim an edit unless a mutating tool succeeded.',
+  '',
+  '# Known failures (must avoid)',
+  '- HG-1 Inserting a heading skeleton, then calling replace_paragraph once per line (slow; hashes break).',
+  '- HG-2 Retrying insert_content after "Inserted N paragraph(s)" (duplicates the draft).',
+  '- HG-3 Treating the first locked section-control paragraph as "the document cannot be edited".',
+  '- HG-4 Firing several replace_paragraph calls in the same turn.',
+].join('\n')
 
 const TOOLS: AgentToolDef[] = [
   {
@@ -51,7 +68,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'replace_paragraph',
     description:
-      'Replace one body paragraph with plain text. Omit index to use the paragraph that has the caret. Fails for tables, fields, mixed formatting, or text longer than 4000 characters.',
+      'Replace one existing body paragraph. Not for drafting: write new documents with insert_content. Omit index to use the caret paragraph. Call once per turn. Fails for tables, fields, mixed formatting, or text longer than 4000 characters.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -67,7 +84,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'insert_content',
     description:
-      'Insert new body paragraphs. Newlines become separate paragraphs. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph.',
+      'Write new body paragraphs in one call. Pass the full draft; newlines become paragraphs. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph. If it reports Inserted N, do not call it again.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -160,12 +177,45 @@ function optionalToolIndex(value: unknown, label = 'index'): number | undefined 
   return requireToolIndex(value, label)
 }
 
+const CONTEXT_PREVIEW_CHARS = 60
+const CONTEXT_PREVIEW_TIGHT = 20
+const CONTEXT_MAX_CHARS = 8000
+
+function clipPreview(text: string, max: number): string {
+  const one = text.replace(/\s+/g, ' ').trim() || '(empty)'
+  return one.length > max ? `${one.slice(0, max)}…` : one
+}
+
+function formatParagraphContext(items: HangulParagraphPreview[]): string {
+  if (items.length === 0) return 'The document has no body paragraphs yet.'
+  const blank = items.every((item) => !item.editable || !item.text.trim())
+  const render = (max: number) =>
+    items.map((item) => {
+      const status = item.editable ? 'editable' : `locked:${item.reason || 'unknown'}`
+      return `${item.index}|${status}|${clipPreview(item.text, max)}`
+    })
+  let lines = render(CONTEXT_PREVIEW_CHARS)
+  if (lines.join('\n').length > CONTEXT_MAX_CHARS) lines = render(CONTEXT_PREVIEW_TIGHT)
+  if (lines.join('\n').length > CONTEXT_MAX_CHARS && items.length > 35) {
+    lines = [
+      ...lines.slice(0, 25),
+      `…(${items.length - 35} paragraphs omitted; numbering is continuous)…`,
+      ...lines.slice(-10),
+    ]
+  }
+  const header = blank
+    ? `The body looks blank (${items.length} paragraph(s)). Locked control/field rows cannot be replaced — write with one insert_content call (omit afterIndex).`
+    : `Body paragraphs (${items.length}; index|status|preview):`
+  return [header, ...lines].join('\n')
+}
+
 export interface HangulSkillDeps {
   fileName(): string
   pageCount(): number
   currentPage(): number | null
   hasSelection(): boolean
   selectionPreview(): string | null
+  paragraphPreview(): HangulParagraphPreview[] | null
   getDocumentText(): Promise<string>
   getSelection(): Promise<string | null>
   listParagraphs(): Promise<HangulParagraphPreview[]>
@@ -223,6 +273,8 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
       const parts = [`Hangul document: "${deps.fileName()}", ${deps.pageCount()} page(s).`]
       const page = deps.currentPage()
       if (page) parts.push(`Current page: ${page}.`)
+      const paragraphs = deps.paragraphPreview()
+      if (paragraphs) parts.push(formatParagraphContext(paragraphs))
       if (deps.hasSelection()) {
         const preview = deps.selectionPreview()?.trim()
         if (preview) {
@@ -303,7 +355,7 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
         try {
           const result = await deps.insertContent(text, afterIndex)
           return {
-            output: `Inserted ${result.count} paragraph(s) starting at [${result.start}].`,
+            output: `Inserted ${result.count} paragraph(s) starting at [${result.start}]. The text you passed is already in the document. Do not call insert_content again unless the user asked for more content.`,
             mutated: true,
             summary: t('aiToolInsertContentDone'),
           }

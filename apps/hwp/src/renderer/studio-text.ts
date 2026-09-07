@@ -414,6 +414,44 @@ export async function replaceParagraphAt(
   return applyPrepared(studio, asPrepared(raw[index]), replacement)
 }
 
+function paragraphIsEmpty(item: HangulParagraphPreview): boolean {
+  return !item.text.trim()
+}
+
+async function caretListIndex(
+  studio: StudioTextSource,
+  items: HangulParagraphPreview[],
+): Promise<number | null> {
+  try {
+    const prepared = await prepareCurrentParagraph(studio)
+    if (!prepared.target) return null
+    const caret = items.findIndex(
+      (item) =>
+        item.section === prepared.target!.section && item.paragraph === prepared.target!.paragraph,
+    )
+    return caret >= 0 ? caret : null
+  } catch {
+    return null
+  }
+}
+
+/** One studio RPC: insert empties and applyTextCommand each line inside the agent. */
+async function fillInsertedParagraphs(
+  studio: StudioTextSource,
+  section: number,
+  insertAt: number,
+  writeFrom: number,
+  lines: string[],
+): Promise<number> {
+  const inserted = await requestStudio(studio, 'insertFilledParagraphs', {
+    section,
+    index: insertAt,
+    texts: lines,
+  })
+  if (!inserted || typeof inserted !== 'object') throw new Error(PARAGRAPH_PREPARE_UNAVAILABLE)
+  return writeFrom
+}
+
 export async function insertContent(
   studio: StudioTextSource,
   text: string,
@@ -421,69 +459,67 @@ export async function insertContent(
 ): Promise<{ count: number; start: number }> {
   const lines = splitInsertParagraphs(text)
   const items = await listBodyParagraphs(studio)
-  let fillExisting = false
+  let fillIndex: number | null = null
   let section = items[0]?.section ?? 0
-  let insertAt = 0
-  let firstListIndex = 0
+  let insertAt = items.length > 0 ? items[items.length - 1]!.paragraph + 1 : 0
+  let writeFrom = items.length
 
   if (afterIndex === -1) {
-    if (items[0] && !items[0].text.trim()) {
-      fillExisting = true
+    if (items[0]?.editable && paragraphIsEmpty(items[0])) {
+      fillIndex = 0
       section = items[0].section
       insertAt = items[0].paragraph + 1
-      firstListIndex = 0
+      writeFrom = 1
     } else {
+      section = items[0]?.section ?? 0
       insertAt = 0
-      firstListIndex = 0
+      writeFrom = 0
     }
   } else if (afterIndex == null) {
-    const prepared = await prepareCurrentParagraph(studio)
-    if (!prepared.target) throw new Error(prepared.reason || PARAGRAPH_NOT_EDITABLE)
-    const caret = items.findIndex(
-      (item) =>
-        item.section === prepared.target!.section && item.paragraph === prepared.target!.paragraph,
-    )
-    if (caret < 0) throw new Error(PARAGRAPH_INDEX_OUT_OF_RANGE)
-    section = items[caret].section
-    insertAt = items[caret].paragraph + 1
-    if (!items[caret].text.trim()) {
-      fillExisting = true
-      firstListIndex = caret
+    const caret = await caretListIndex(studio, items)
+    if (caret != null && items[caret]!.editable && paragraphIsEmpty(items[caret]!)) {
+      fillIndex = caret
+      section = items[caret]!.section
+      insertAt = items[caret]!.paragraph + 1
+      writeFrom = caret + 1
+    } else if (caret != null) {
+      section = items[caret]!.section
+      insertAt = items[caret]!.paragraph + 1
+      writeFrom = caret + 1
     } else {
-      firstListIndex = caret + 1
+      const last = items[items.length - 1]
+      section = last?.section ?? 0
+      insertAt = last != null ? last.paragraph + 1 : 0
+      writeFrom = items.length
     }
   } else {
     if (!Number.isInteger(afterIndex) || afterIndex < 0 || afterIndex >= items.length) {
       throw new Error(PARAGRAPH_INDEX_OUT_OF_RANGE)
     }
-    section = items[afterIndex].section
-    insertAt = items[afterIndex].paragraph + 1
-    firstListIndex = afterIndex + 1
+    section = items[afterIndex]!.section
+    insertAt = items[afterIndex]!.paragraph + 1
+    writeFrom = afterIndex + 1
   }
 
   let remaining = lines
-  if (fillExisting) {
-    await replaceParagraphAt(studio, firstListIndex, lines[0])
+  let start = fillIndex ?? writeFrom
+  if (fillIndex != null) {
+    await replaceParagraphAt(studio, fillIndex, lines[0]!)
     remaining = lines.slice(1)
-    firstListIndex += 1
   }
 
   if (remaining.length > 0) {
-    const inserted = await requestStudio(studio, 'insertBodyParagraphs', {
+    const filledStart = await fillInsertedParagraphs(
+      studio,
       section,
-      index: insertAt,
-      count: remaining.length,
-    })
-    if (!inserted || typeof inserted !== 'object') throw new Error(PARAGRAPH_PREPARE_UNAVAILABLE)
-    for (let i = 0; i < remaining.length; i += 1) {
-      await replaceParagraphAt(studio, firstListIndex + i, remaining[i])
-    }
+      insertAt,
+      writeFrom,
+      remaining,
+    )
+    if (fillIndex == null) start = filledStart
   }
 
-  return {
-    count: lines.length,
-    start: fillExisting ? firstListIndex - 1 : firstListIndex,
-  }
+  return { count: lines.length, start }
 }
 
 function asFields(value: unknown): HangulField[] {

@@ -360,17 +360,8 @@ describe('replaceCurrentParagraph', () => {
         _request: async (method, params) => {
           calls.push({ method, params })
           if (method === 'prepareTextCommand') return listed[0]
-          if (method === 'insertBodyParagraphs') {
-            listed.push({
-              editable: true,
-              reason: null,
-              target: { kind: 'body_paragraph', section: 0, paragraph: 1, charOffset: 0, length: 0 },
-              text: '',
-              textSha256: 'ee'.repeat(32),
-              formatSha256: 'ff'.repeat(32),
-              adjacentContextSha256: '11'.repeat(32),
-            })
-            return { section: 0, index: 1, count: 1 }
+          if (method === 'insertFilledParagraphs') {
+            return { section: 0, index: params?.index, count: (params?.texts as string[]).length }
           }
           if (method === 'listBodyParagraphs') return listed.map((item) => ({ ...item }))
           throw new Error(`unexpected ${method}`)
@@ -379,8 +370,9 @@ describe('replaceCurrentParagraph', () => {
       '안녕\n세상',
     )
     expect(result).toEqual({ count: 2, start: 0 })
-    expect(calls.some((call) => call.method === 'insertBodyParagraphs')).toBe(true)
-    expect(applyTextCommand.mock.calls.map((call) => call[0].replacement)).toEqual(['안녕', '세상'])
+    expect(calls.some((call) => call.method === 'insertFilledParagraphs')).toBe(true)
+    expect(calls.find((call) => call.method === 'insertFilledParagraphs')?.params?.texts).toEqual(['세상'])
+    expect(applyTextCommand.mock.calls.map((call) => call[0].replacement)).toEqual(['안녕'])
   })
 
   it('inserts after a numbered paragraph without rewriting it', async () => {
@@ -406,18 +398,9 @@ describe('replaceCurrentParagraph', () => {
           documentSha256: 'bb'.repeat(32),
         }),
         applyTextCommand,
-        _request: async (method) => {
-          if (method === 'insertBodyParagraphs') {
-            listed.push({
-              editable: true,
-              reason: null,
-              target: { kind: 'body_paragraph', section: 0, paragraph: 1, charOffset: 0, length: 0 },
-              text: '',
-              textSha256: 'ee'.repeat(32),
-              formatSha256: 'ff'.repeat(32),
-              adjacentContextSha256: '11'.repeat(32),
-            })
-            return { section: 0, index: 1, count: 1 }
+        _request: async (method, params) => {
+          if (method === 'insertFilledParagraphs') {
+            return { section: 0, index: params?.index, count: (params?.texts as string[]).length }
           }
           if (method === 'listBodyParagraphs') return listed.map((item) => ({ ...item }))
           throw new Error(`unexpected ${method}`)
@@ -427,8 +410,7 @@ describe('replaceCurrentParagraph', () => {
       0,
     )
     expect(result).toEqual({ count: 1, start: 1 })
-    expect(applyTextCommand).toHaveBeenCalledOnce()
-    expect(applyTextCommand.mock.calls[0]![0].replacement).toBe('추가')
+    expect(applyTextCommand).not.toHaveBeenCalled()
   })
 
   it('inserts at the start when afterIndex is -1 and the first paragraph has text', async () => {
@@ -456,22 +438,9 @@ describe('replaceCurrentParagraph', () => {
         }),
         applyTextCommand,
         _request: async (method, params) => {
-          if (method === 'insertBodyParagraphs') {
+          if (method === 'insertFilledParagraphs') {
             insertAt = params?.index as number
-            listed.unshift({
-              editable: true,
-              reason: null,
-              target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
-              text: '',
-              textSha256: 'ee'.repeat(32),
-              formatSha256: 'ff'.repeat(32),
-              adjacentContextSha256: '11'.repeat(32),
-            })
-            listed[1] = {
-              ...listed[1]!,
-              target: { ...listed[1]!.target, paragraph: 1 },
-            }
-            return { section: 0, index: 0, count: 1 }
+            return { section: 0, index: insertAt, count: (params?.texts as string[]).length }
           }
           if (method === 'listBodyParagraphs') return listed.map((item) => ({ ...item }))
           throw new Error(`unexpected ${method}`)
@@ -482,7 +451,211 @@ describe('replaceCurrentParagraph', () => {
     )
     expect(result).toEqual({ count: 1, start: 0 })
     expect(insertAt).toBe(0)
-    expect(applyTextCommand.mock.calls[0]![0].replacement).toBe('앞')
+    expect(applyTextCommand).not.toHaveBeenCalled()
+  })
+
+  it('skips a locked empty caret paragraph and inserts after it', async () => {
+    const applyTextCommand = vi.fn(async () => ({
+      target: { kind: 'body_paragraph' as const, section: 0, paragraph: 1, charOffset: 0 as const, length: 2 },
+    }))
+    const listed = [
+      {
+        editable: false,
+        reason: 'control',
+        target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
+        text: '',
+        textSha256: null,
+        formatSha256: null,
+        adjacentContextSha256: null,
+      },
+    ]
+    let insertAt: number | undefined
+    const result = await insertContent(
+      studio({
+        getDocumentState: async () => ({
+          documentEpoch: 1,
+          changeSeq: 0,
+          documentSha256: 'bb'.repeat(32),
+        }),
+        applyTextCommand,
+        _request: async (method, params) => {
+          if (method === 'prepareTextCommand') {
+            return {
+              editable: false,
+              reason: 'control',
+              target: listed[0]!.target,
+              text: '',
+              textSha256: null,
+              formatSha256: null,
+              adjacentContextSha256: null,
+            }
+          }
+          if (method === 'insertFilledParagraphs') {
+            insertAt = params?.index as number
+            return { section: 0, index: insertAt, count: (params?.texts as string[]).length }
+          }
+          if (method === 'listBodyParagraphs') return listed.map((item) => ({ ...item }))
+          throw new Error(`unexpected ${method}`)
+        },
+      }),
+      '계획서',
+    )
+    expect(result).toEqual({ count: 1, start: 1 })
+    expect(insertAt).toBe(1)
+    expect(applyTextCommand).not.toHaveBeenCalled()
+  })
+
+  it('inserts after the last paragraph when the caret has no body target', async () => {
+    const applyTextCommand = vi.fn(async () => ({
+      target: { kind: 'body_paragraph' as const, section: 0, paragraph: 1, charOffset: 0 as const, length: 2 },
+    }))
+    const listed = [
+      {
+        editable: false,
+        reason: 'not_editable',
+        target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
+        text: '',
+        textSha256: null,
+        formatSha256: null,
+        adjacentContextSha256: null,
+      },
+    ]
+    const result = await insertContent(
+      studio({
+        getDocumentState: async () => ({
+          documentEpoch: 1,
+          changeSeq: 0,
+          documentSha256: 'bb'.repeat(32),
+        }),
+        applyTextCommand,
+        _request: async (method) => {
+          if (method === 'prepareTextCommand') {
+            return {
+              editable: false,
+              reason: 'not_editable',
+              target: null,
+              text: null,
+              textSha256: null,
+              formatSha256: null,
+              adjacentContextSha256: null,
+            }
+          }
+          if (method === 'insertFilledParagraphs') {
+            return { section: 0, index: 1, count: 1 }
+          }
+          if (method === 'listBodyParagraphs') return listed.map((item) => ({ ...item }))
+          throw new Error(`unexpected ${method}`)
+        },
+      }),
+      '초안',
+    )
+    expect(result).toEqual({ count: 1, start: 1 })
+    expect(applyTextCommand).not.toHaveBeenCalled()
+  })
+
+  it('sends a locked-first draft in one insertFilledParagraphs call', async () => {
+    const applyTextCommand = vi.fn(async () => ({
+      target: { kind: 'body_paragraph' as const, section: 0, paragraph: 2, charOffset: 0 as const, length: 2 },
+    }))
+    const listed = [
+      {
+        editable: false,
+        reason: 'control',
+        target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
+        text: '',
+        textSha256: null,
+        formatSha256: null,
+        adjacentContextSha256: null,
+      },
+    ]
+    const result = await insertContent(
+      studio({
+        getDocumentState: async () => ({
+          documentEpoch: 1,
+          changeSeq: 0,
+          documentSha256: 'bb'.repeat(32),
+        }),
+        applyTextCommand,
+        _request: async (method, params) => {
+          if (method === 'prepareTextCommand') {
+            return {
+              editable: false,
+              reason: 'control',
+              target: listed[0]!.target,
+              text: '',
+              textSha256: null,
+              formatSha256: null,
+              adjacentContextSha256: null,
+            }
+          }
+          if (method === 'insertFilledParagraphs') {
+            return { section: 0, index: params?.index, count: 1 }
+          }
+          if (method === 'listBodyParagraphs') return listed.map((item) => ({ ...item }))
+          throw new Error(`unexpected ${method}`)
+        },
+      }),
+      '본문',
+    )
+    expect(result.start).toBe(1)
+    expect(applyTextCommand).not.toHaveBeenCalled()
+  })
+
+  it('writes every line of a multi-paragraph insert after a locked first paragraph', async () => {
+    const applyTextCommand = vi.fn(async (command: { replacement: string }) => ({
+      target: {
+        kind: 'body_paragraph' as const,
+        section: 0,
+        paragraph: 1,
+        charOffset: 0 as const,
+        length: command.replacement.length,
+      },
+    }))
+    const listed = [
+      {
+        editable: false,
+        reason: 'control',
+        target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
+        text: '',
+        textSha256: null,
+        formatSha256: null,
+        adjacentContextSha256: null,
+      },
+    ]
+    let filled: string[] | undefined
+    const result = await insertContent(
+      studio({
+        getDocumentState: async () => ({
+          documentEpoch: 1,
+          changeSeq: 0,
+          documentSha256: 'bb'.repeat(32),
+        }),
+        applyTextCommand,
+        _request: async (method, params) => {
+          if (method === 'prepareTextCommand') {
+            return {
+              editable: false,
+              reason: 'control',
+              target: listed[0]!.target,
+              text: '',
+              textSha256: null,
+              formatSha256: null,
+              adjacentContextSha256: null,
+            }
+          }
+          if (method === 'insertFilledParagraphs') {
+            filled = params?.texts as string[]
+            return { section: 0, index: params?.index, count: filled.length }
+          }
+          if (method === 'listBodyParagraphs') return listed.map((item) => ({ ...item }))
+          throw new Error(`unexpected ${method}`)
+        },
+      }),
+      '제목\n1. 개요\n본문',
+    )
+    expect(result).toEqual({ count: 3, start: 1 })
+    expect(filled).toEqual(['제목', '1. 개요', '본문'])
+    expect(applyTextCommand).not.toHaveBeenCalled()
   })
 
   it('rejects an out-of-range afterIndex', async () => {

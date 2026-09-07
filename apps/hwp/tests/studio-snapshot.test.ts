@@ -61,13 +61,34 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('case`listTables`')
     expect(next).toContain('case`setField`')
     expect(next).toContain('case`insertBodyParagraphs`')
-    expect(next).toContain('/*genoffice-prepare-text-v4*/')
+    expect(next).toContain('case`insertFilledParagraphs`')
+    expect(next).toContain('/*genoffice-prepare-text-v5*/')
+    expect(next).toContain('async insertFilledParagraphs(e,t,n){')
     expect(next).toContain('selectionStart')
     expect(next).toContain('Gk(this.deps.wasm,e.target)')
     expect(next).not.toMatch(/,listBodyParagraphs\(\)\{this\.syncGeneration\(\)/)
     expect(next).not.toMatch(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/)
     expect(next).toContain('listBodyParagraphs(){this.syncGeneration()')
-    expect(next).toContain('insertBodyParagraphs(e,t,n){this.syncGeneration()')
+    expect(next).toContain('let s=r.getParagraphCount(e);')
+    expect(next).toContain('r.splitParagraph(e,')
+    expect(next).not.toContain('r.insertParagraph(e,t+a)')
+    expect(next).toContain('async insertBodyParagraphs(e,t,n){if(await')
+    expect(next).not.toContain('insertBodyParagraphs(e.section,e.index,e.count)')
+    expect(next).toContain('selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration()')
+    expect(next).not.toMatch(/selectionEnd:i\}\}listBodyParagraphs\(\)\{this\.syncGeneration\(\)/)
+    expect(exposePrepareTextCommand(next)).toBe(next)
+  })
+
+  it('closes a v4 prepareTextCommand that was missing its method brace', () => {
+    const broken = [
+      '/*genoffice-prepare-text-v4*/prepareTextCommand(){return{selectionEnd:i}}listBodyParagraphs(){this.syncGeneration();return []}',
+      'insertBodyParagraphs(e,t,n){this.syncGeneration();let r=this.deps.wasm,i=Number(n);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||i<1)throw Error(`insert count must be a positive integer`);let s=r.getParagraphCount(e);if(!s)throw Error(`문서가 로드되지 않았습니다`);r.splitParagraph(e,0,0);return{section:e,index:t,count:i}}async applyTextCommand(e){return e}',
+      'async insertBodyParagraphs(e,t,n){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.insertBodyParagraphs(e,t,n)},async applyTextCommand(e){return e}',
+      'case`insertBodyParagraphs`:return n.insertBodyParagraphs(i.section,i.index,i.count);case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join('')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration()')
+    expect(next).not.toMatch(/selectionEnd:i\}\}listBodyParagraphs\(\)\{this\.syncGeneration\(\)/)
     expect(exposePrepareTextCommand(next)).toBe(next)
   })
 
@@ -79,11 +100,12 @@ describe('studio snapshot helpers', () => {
       'case`setField`:return n.setField(i.name,i.value);case`applyTextCommand`:return n.applyTextCommand(e)',
     ].join(';')
     const next = exposePrepareTextCommand(v2)
-    expect(next).toContain('/*genoffice-prepare-text-v4*/')
+    expect(next).toContain('/*genoffice-prepare-text-v5*/')
     expect(next).toContain('listTables(){')
     expect(next).toContain('case`listTables`')
     expect(next).toContain('case`replaceCell`')
     expect(next).toContain('case`insertBodyParagraphs`')
+    expect(next).toContain('case`insertFilledParagraphs`')
     expect(exposePrepareTextCommand(next)).toBe(next)
   })
 
@@ -95,10 +117,57 @@ describe('studio snapshot helpers', () => {
       'case`replaceCell`:return n.replaceCell(i.section,i.paragraph,i.control,i.cellIndex,i.text);case`applyTextCommand`:return n.applyTextCommand(e)',
     ].join(';')
     const next = exposePrepareTextCommand(v3)
-    expect(next).toContain('/*genoffice-prepare-text-v4*/')
-    expect(next).toContain('insertBodyParagraphs(e,t,n){this.syncGeneration()')
+    expect(next).toContain('/*genoffice-prepare-text-v5*/')
+    expect(next).toContain('async insertFilledParagraphs(e,t,n){')
+    expect(next).toContain('let s=r.getParagraphCount(e);')
+    expect(next).toContain('r.splitParagraph(e,')
     expect(next).toContain('case`insertBodyParagraphs`')
     expect(next).not.toMatch(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/)
+    expect(next).toContain('async insertBodyParagraphs(e,t,n){if(await')
+    expect(next).not.toContain('insertBodyParagraphs(e.section,e.index,e.count)')
+    expect(exposePrepareTextCommand(next)).toBe(next)
+  })
+
+  it('repairs an insert handler that expected a params object', () => {
+    const broken = [
+      '/*genoffice-prepare-text-v4*/prepareTextCommand(){return{selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration();return []}',
+      'insertBodyParagraphs(e,t,n){this.syncGeneration();let r=this.deps.wasm,i=Number(n);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||i<1)throw Error(`insert count must be a positive integer`);let s=r.getParagraphCount(e);r.splitParagraph(e,0,0);return{section:e,index:t,count:i}}async applyTextCommand(e){return e}',
+      'async insertBodyParagraphs(e){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.insertBodyParagraphs(e.section,e.index,e.count)},async applyTextCommand(e){return e}',
+      'case`insertBodyParagraphs`:return n.insertBodyParagraphs(i.section,i.index,i.count);case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join('')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('async insertBodyParagraphs(e,t,n){if(await $,!sA)')
+    expect(next).toContain('sA.insertBodyParagraphs(e,t,n)')
+    expect(next).not.toContain('insertBodyParagraphs(e.section,e.index,e.count)')
+    expect(exposePrepareTextCommand(next)).toBe(next)
+  })
+
+  it('repairs insertBodyParagraphs that called insertParagraph on the wasm facade', () => {
+    const broken = [
+      '/*genoffice-prepare-text-v4*/prepareTextCommand(){return{selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration();return []}',
+      'insertBodyParagraphs(e,t,n){this.syncGeneration();let r=this.deps.wasm,i=Number(n);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||i<1)throw Error(`insert count must be a positive integer`);for(let a=0;a<i;a+=1)r.insertParagraph(e,t+a);return{section:e,index:t,count:i}}async applyTextCommand(e){return e}',
+      'async insertBodyParagraphs(e,t,n){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.insertBodyParagraphs(e,t,n)},async applyTextCommand(e){return e}',
+      'case`insertBodyParagraphs`:return n.insertBodyParagraphs(i.section,i.index,i.count);case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join('')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('let s=r.getParagraphCount(e);')
+    expect(next).toContain('r.splitParagraph(e,')
+    expect(next).toContain('async insertFilledParagraphs(e,t,n){')
+    expect(next).not.toContain('r.insertParagraph(e,t+a)')
+    expect(exposePrepareTextCommand(next)).toBe(next)
+  })
+
+  it('repairs insertBodyParagraphs that used borrowDocumentHandle insertParagraph', () => {
+    const broken = [
+      '/*genoffice-prepare-text-v4*/prepareTextCommand(){return{selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration();return []}',
+      'insertBodyParagraphs(e,t,n){this.syncGeneration();let r=this.deps.wasm.borrowDocumentHandle();if(!r)throw Error(`문서가 로드되지 않았습니다`);let i=Number(n);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||i<1)throw Error(`insert count must be a positive integer`);for(let a=0;a<i;a+=1)r.insertParagraph(e,t+a);return{section:e,index:t,count:i}}async applyTextCommand(e){return e}',
+      'async insertBodyParagraphs(e,t,n){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.insertBodyParagraphs(e,t,n)},async applyTextCommand(e){return e}',
+      'case`insertBodyParagraphs`:return n.insertBodyParagraphs(i.section,i.index,i.count);case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join('')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('r.splitParagraph(e,')
+    expect(next).not.toContain('borrowDocumentHandle()')
+    expect(next).not.toContain('r.insertParagraph(e,t+a)')
     expect(exposePrepareTextCommand(next)).toBe(next)
   })
 
