@@ -19,7 +19,8 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
-const ROOT = resolve(__dirname, '../..')
+// ROOT is project root: apps/web-server/dist -> apps/web-server -> apps -> project root
+const ROOT = resolve(__dirname, '../../../')
 
 // 默认端口，可通过环境变量覆盖
 const PORT = Number(process.env.PORT) || 8080
