@@ -29,6 +29,7 @@ const BUILTIN = new Set(builtinModules)
  */
 const SRC_GLOBS = [
   'apps/docs/src',
+  'apps/hwp/src',
   'apps/markdown/src',
   'apps/pdf/src',
   'apps/sheets/src',
@@ -71,6 +72,8 @@ const NOTE = {
     'Copyright (c) Microsoft Corporation. Licensed under the MIT License.\nhttps://github.com/microsoft/fluentui-system-icons',
   '@genspark/cli':
     'Copyright (c) Genspark. Licensed under the MIT License.\nhttps://www.npmjs.com/package/@genspark/cli',
+  // npm tarball has no LICENSE file; text is the upstream MIT notice
+  '@rhwp/editor': readFileSync(join(ROOT, 'apps/hwp/LICENSE-RHWP.txt'), 'utf8').trim(),
 }
 
 /** SPDX strings that need a word on which side of a dual license we take */

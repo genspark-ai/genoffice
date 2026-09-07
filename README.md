@@ -239,6 +239,8 @@ GenOffice would not be possible without these open-source projects:
   of the Rust xlsx sidecar.
 - Liberation, Carlito, Caladea, and Noto CJK fonts (OFL/Apache-2.0) — bundled
   document fonts.
+- [rhwp](https://github.com/edwardkim/rhwp) (`@rhwp/editor` 0.8.6, MIT) —
+  the Hangul HWP/HWPX embed. License text: `apps/hwp/LICENSE-RHWP.txt`.
 
 ## Third-party notices
 

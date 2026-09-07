@@ -13,6 +13,14 @@ checkout.
 Bundled fonts and their licenses are documented in
 apps/docs/src/renderer/fonts/README.md.
 
+Hangul embed
+
+The Hangul tab embeds @rhwp/editor 0.8.6 and a vendored rhwp-studio snapshot
+from https://github.com/edwardkim/rhwp (MIT License, Copyright (c) 2025-2026
+Edward Kim). The license text is apps/hwp/LICENSE-RHWP.txt and is copied into
+THIRD-PARTY-NOTICES.txt at packaging time. Fonts that rhwp-studio ships
+(Nanum, Noto, Pretendard, and others) stay under each font's original license.
+
 Unicode Character Database
 
 apps/pdf/src/shared/radicals.ts contains a generated mapping derived from
