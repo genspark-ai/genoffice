@@ -27,6 +27,68 @@ const STATIC_ROOT = resolve(ROOT, 'apps')
 const DATA_DIR = process.env.DATA_DIR || '/tmp/genoffice-data'
 mkdirSync(DATA_DIR, { recursive: true })
 
+// ========== MiniMax AI 客户端 ==========
+const MINIMAX_API_URL = 'https://api.minimax.chat/v1'
+
+interface MiniMaxMessage {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+}
+
+interface MiniMaxResponse {
+  id: string
+  choices: Array<{
+    message: {
+      role: string
+      content: string
+    }
+    finish_reason: string
+  }>
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
+async function callMiniMax(
+  apiKey: string,
+  messages: MiniMaxMessage[],
+  model = 'MiniMax-M3',
+  stream = false
+): Promise<{ content: string; id: string; usage?: MiniMaxResponse['usage'] }> {
+  if (!apiKey) {
+    throw new Error('MiniMax API key not configured')
+  }
+
+  const response = await fetch(`${MINIMAX_API_URL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream,
+      max_tokens: 2048,
+      temperature: 0.7,
+    }),
+  })
+
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(`MiniMax API error: ${response.status} - ${error}`)
+  }
+
+  const data = await response.json() as MiniMaxResponse
+  return {
+    content: data.choices[0]?.message?.content || '',
+    id: data.id,
+    usage: data.usage,
+  }
+}
+
 // ========== 编码/解码 (与 @genoffice/ipc-bridge 对齐) ==========
 const BYTES_TAG = '__ipcBytes'
 const TYPED_ARRAY_CTORS = {
@@ -209,13 +271,43 @@ registerHandle('ai:gsk-login', () => ({
 
 registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
   const req = request as { message?: string; system?: string; sessionId?: string; context?: unknown }
-  // 增强的 AI 响应，结合文档上下文
   const message = req.message || ''
   const context = req.context
   
-  let content = generateAIResponse(message)
+  // 检查是否配置了 MiniMax API key
+  const minimaxKey = process.env.MINIMAX_API_KEY
+  const systemPrompt = req.system || '你是一个专业的办公助手，帮助用户处理文档、表格和幻灯片。'
   
-  // 如果有文档上下文，提供更有针对性的回答
+  try {
+    // 如果配置了 MiniMax API key，使用真实 API
+    if (minimaxKey) {
+      const result = await callMiniMax(
+        minimaxKey,
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message },
+        ],
+        aiSettings.model || 'MiniMax-M3'
+      )
+      
+      return {
+        id: result.id,
+        role: 'assistant',
+        content: result.content,
+        createdAt: Date.now(),
+        metadata: {
+          model: aiSettings.model || 'MiniMax-M3',
+          provider: 'minimax',
+          usage: result.usage,
+        }
+      }
+    }
+  } catch (error) {
+    console.error('MiniMax API error, falling back to mock:', error)
+  }
+  
+  // 回退到模拟响应
+  let content = generateAIResponse(message)
   if (context) {
     content = `基于您提供的文档内容，我来帮您分析：\n\n${content}\n\n如需进一步帮助，请告诉我具体问题。`
   }
@@ -226,8 +318,8 @@ registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
     content,
     createdAt: Date.now(),
     metadata: {
-      model: aiSettings.model,
-      provider: aiSettings.provider,
+      model: aiSettings.model || 'mock',
+      provider: minimaxKey ? 'minimax' : 'mock',
     }
   }
 })

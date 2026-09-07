@@ -212,8 +212,8 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   },
   minimax: {
     meta: metaOf('minimax'),
-    capabilities: { auth: 'api-key', vision: false },
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.minimax.io/v1'),
+    capabilities: { auth: 'api-key', vision: true },
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.minimax.chat/v1'),
   },
   xai: {
     meta: metaOf('xai'),
