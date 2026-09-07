@@ -72,6 +72,11 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('Number(a?.paraIdx??t)')
     expect(next).not.toContain('a&&a.paraIdx??t')
     expect(next).toContain('findOrCreateFontId(String(a.fontName))')
+    expect(next).toContain('applyCharFormat(e,t,n,r,JSON.stringify(a))')
+    expect(next).toContain('applyParaFormat(e,t,JSON.stringify(r))')
+    expect(next).toContain('insertTextInCell(e,t,n,r,0,0,x)')
+    expect(next).toContain('createTable(e,t,o,i,s)')
+    expect(next).not.toContain('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String')
     expect(next).toContain('selectionStart')
     expect(next).toContain('Gk(this.deps.wasm,e.target)')
     expect(next).not.toMatch(/,listBodyParagraphs\(\)\{this\.syncGeneration\(\)/)
@@ -129,6 +134,61 @@ describe('studio snapshot helpers', () => {
     expect(() => new Function(`return class { ${next.slice(methodsStart, methodsEnd)} }`)).not.toThrow()
   })
 
+  it('stringifies format payloads so WASM does not trap', () => {
+    const stock = [
+      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
+      'return{selectedTextSha256:o}}async applyTextCommand(e){return e}',
+      'async getSelectionContext(){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.getSelectionContext()},async applyTextCommand(e){return e}',
+      'case`getSelectionContext`:return ak(i,`getSelectionContext params`),n.getSelectionContext();case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join(';')
+    const patched = exposePrepareTextCommand(stock)
+    const broken = patched
+      .replaceAll('applyCharFormat(e,t,n,r,JSON.stringify(a))', 'applyCharFormat(e,t,n,r,a)')
+      .replaceAll('applyParaFormat(e,t,JSON.stringify(r))', 'applyParaFormat(e,t,r)')
+    expect(broken).toContain('applyCharFormat(e,t,n,r,a)')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('applyCharFormat(e,t,n,r,JSON.stringify(a))')
+    expect(next).toContain('applyParaFormat(e,t,JSON.stringify(r))')
+    expect(next).not.toMatch(/applyCharFormat\(e,t,n,r,a\)/)
+  })
+
+  it('inserts a table at the end of the host paragraph instead of offset 0', () => {
+    const stock = [
+      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
+      'return{selectedTextSha256:o}}async applyTextCommand(e){return e}',
+      'async getSelectionContext(){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.getSelectionContext()},async applyTextCommand(e){return e}',
+      'case`getSelectionContext`:return ak(i,`getSelectionContext params`),n.getSelectionContext();case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join(';')
+    const patched = exposePrepareTextCommand(stock)
+    const broken = patched.replace(
+      'let o=0;try{o=Number(this.deps.wasm.getParagraphLength(e,t))||0}catch{o=0}let a=this.deps.wasm.createTable(e,t,o,i,s)',
+      'let a=this.deps.wasm.createTable(e,t,0,i,s)',
+    )
+    expect(broken).toContain('createTable(e,t,0,i,s)')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('createTable(e,t,o,i,s)')
+    expect(next).toContain('getParagraphLength(e,t)')
+  })
+
+  it('rewrites deferred cell writes to insertTextInCell', () => {
+    const stock = [
+      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
+      'return{selectedTextSha256:o}}async applyTextCommand(e){return e}',
+      'async getSelectionContext(){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.getSelectionContext()},async applyTextCommand(e){return e}',
+      'case`getSelectionContext`:return ak(i,`getSelectionContext params`),n.getSelectionContext();case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join(';')
+    const patched = exposePrepareTextCommand(stock)
+    const broken = patched.replace(
+      /replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\);[\s\S]*?return s\}/,
+      'replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=a.getCellParagraphLength(e,t,n,r,0),s=a.replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String(i??``));if(typeof s==`string`)try{s=JSON.parse(s)}catch{}return s}',
+    )
+    expect(broken).toContain('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('insertTextInCell(e,t,n,r,0,0,x)')
+    expect(next).toContain('deleteTextInCell(e,t,n,r,0,0,o)')
+    expect(next).not.toContain('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String')
+  })
+
   it('closes a v4 prepareTextCommand that was missing its method brace', () => {
     const broken = [
       '/*genoffice-prepare-text-v4*/prepareTextCommand(){return{selectionEnd:i}}listBodyParagraphs(){this.syncGeneration();return []}',
@@ -174,6 +234,8 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('r.splitParagraph(e,')
     expect(next).toContain('case`insertBodyParagraphs`')
     expect(next).toContain('case`insertTable`')
+    expect(next).toContain('insertTextInCell(e,t,n,r,0,0,x)')
+    expect(next).not.toContain('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String')
     expect(next).not.toMatch(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/)
     expect(next).toContain('async insertBodyParagraphs(e,t,n){if(await')
     expect(next).not.toContain('insertBodyParagraphs(e.section,e.index,e.count)')

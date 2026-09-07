@@ -13,7 +13,9 @@ export const INSERT_CONTENT_MAX_PARAS = 80
 export const FIELD_NOT_FOUND = 'field not found'
 export const TABLE_NOT_FOUND = 'table cell not found'
 export const TABLE_SIZE_INVALID = 'table size must be positive integers'
+export const TABLE_CELLS_UNFILLED = 'table inserted but cell writes failed'
 export const FORMAT_EMPTY = 'format must include at least one property'
+export const FORMAT_EMPTY_RANGE = 'no characters to format in this paragraph'
 export const TABLE_MAX_ROWS = 20
 export const TABLE_MAX_COLS = 10
 export const FORMAT_MAX_PARAS = 40
@@ -279,10 +281,12 @@ export function splitInsertParagraphs(text: string): string[] {
   if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
     throw new Error(INSERT_CONTENT_EMPTY)
   }
-  if (lines.length > INSERT_CONTENT_MAX_PARAS) {
+  const kept = lines.map((line) => normalizeReplacement(line)).filter((line) => line.trim() !== '')
+  if (kept.length === 0) throw new Error(INSERT_CONTENT_EMPTY)
+  if (kept.length > INSERT_CONTENT_MAX_PARAS) {
     throw new Error(`insert text must be at most ${INSERT_CONTENT_MAX_PARAS} paragraphs`)
   }
-  return lines.map((line) => normalizeReplacement(line))
+  return kept
 }
 
 export function normalizeReplacement(
@@ -732,15 +736,27 @@ export async function insertDocumentTable(
   const rowCount = requireTableSize(rows, 'rows', TABLE_MAX_ROWS)
   const colCount = requireTableSize(cols, 'cols', TABLE_MAX_COLS)
   const fill = asTableCells(cells)
-  const { fillIndex, section, insertAt } = await resolveInsertAnchor(studio, afterIndex)
-  let paragraph = fillIndex != null ? insertAt - 1 : insertAt
-  if (fillIndex == null) {
-    await requestStudio(studio, 'insertBodyParagraphs', {
-      section,
-      index: insertAt,
-      count: 1,
-    })
-    paragraph = insertAt
+  const { items, fillIndex, section, insertAt } = await resolveInsertAnchor(studio, afterIndex)
+  let paragraph: number
+  if (fillIndex != null) {
+    paragraph = items[fillIndex]!.paragraph
+  } else {
+    const emptyDest = items.find(
+      (item) =>
+        item.section === section &&
+        item.paragraph === insertAt &&
+        item.editable &&
+        paragraphIsEmpty(item),
+    )
+    if (emptyDest) paragraph = emptyDest.paragraph
+    else {
+      await requestStudio(studio, 'insertBodyParagraphs', {
+        section,
+        index: insertAt,
+        count: 1,
+      })
+      paragraph = insertAt
+    }
   }
   const inserted = asInsertedTableLoc(
     await requestStudio(studio, 'insertTable', {
@@ -761,15 +777,19 @@ export async function insertDocumentTable(
   )
   if (!created) throw new Error(TABLE_NOT_FOUND)
   const unfilled: string[] = []
+  let attempted = 0
+  let firstError = ''
   if (fill) {
     for (let row = 0; row < Math.min(fill.length, rowCount); row += 1) {
       const line = fill[row] ?? []
       for (let col = 0; col < Math.min(line.length, colCount); col += 1) {
         const text = line[col] ?? ''
         if (!text) continue
+        attempted += 1
         const cell = created.cells.find((item) => item.row === row && item.col === col)
         if (!cell) {
           unfilled.push(`r${row}c${col}`)
+          if (!firstError) firstError = TABLE_NOT_FOUND
           continue
         }
         try {
@@ -780,11 +800,17 @@ export async function insertDocumentTable(
             cellIndex: cell.index,
             text: normalizeReplacement(text, FIELD_MAX_CODE_POINTS),
           })
-        } catch {
+        } catch (err) {
           unfilled.push(`r${row}c${col}`)
+          if (!firstError) firstError = err instanceof Error ? err.message : String(err)
         }
       }
     }
+  }
+  if (attempted > 0 && unfilled.length === attempted) {
+    throw new Error(
+      `${TABLE_CELLS_UNFILLED} (${unfilled.join(', ')}): ${firstError || 'unknown error'}. The table is already in the document — do not insert another.`,
+    )
   }
   return { table: created.index, rows: rowCount, cols: colCount, unfilled }
 }
@@ -913,7 +939,7 @@ function assertFormatable(prepared: PreparedParagraph): HangulParagraphTarget {
   if (!prepared.target) throw new Error(prepared.reason || PARAGRAPH_NOT_EDITABLE)
   if (prepared.editable) return prepared.target
   const reason = prepared.reason ?? ''
-  if (/mix/i.test(reason) || /format/i.test(reason)) return prepared.target
+  if (/mixed/i.test(reason)) return prepared.target
   throw new Error(reason || PARAGRAPH_NOT_EDITABLE)
 }
 
@@ -937,12 +963,12 @@ async function applyFormatToParagraph(
     start = prepared.selectionStart
     end = prepared.selectionEnd
   }
-  if (char) {
+  if (char && end > start) {
     await requestStudio(studio, 'applyBodyCharFormat', {
       section: target.section,
       paragraph: target.paragraph,
       start,
-      end: Math.max(end, start),
+      end,
       format: char,
     })
   }
@@ -953,6 +979,7 @@ async function applyFormatToParagraph(
       format: para,
     })
   }
+  if ((!char || end <= start) && !para) throw new Error(FORMAT_EMPTY_RANGE)
 }
 
 export async function applyParagraphFormat(
@@ -987,14 +1014,42 @@ export async function applyParagraphFormat(
     )
     return { indexes: [caret >= 0 ? caret : 0], applied }
   }
+  const formatted: number[] = []
+  let lockedReason: string | null = null
   for (const targetIndex of targets) {
     if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= items.length) {
       throw new Error(PARAGRAPH_INDEX_OUT_OF_RANGE)
     }
     const prepared = items[targetIndex]!
-    await applyFormatToParagraph(studio, prepared, format, false)
+    try {
+      await applyFormatToParagraph(studio, prepared, format, false)
+      formatted.push(targetIndex)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (!isLockedFormatError(message)) throw err
+      lockedReason = message
+    }
   }
-  return { indexes: targets, applied }
+  if (formatted.length === 0) {
+    const first = items.findIndex((item) => {
+      try {
+        assertFormatable(item)
+        return true
+      } catch {
+        return false
+      }
+    })
+    throw new Error(
+      `${lockedReason || PARAGRAPH_NOT_EDITABLE}. First editable paragraph is [${first < 0 ? 'none' : first}]`,
+    )
+  }
+  return { indexes: formatted, applied }
+}
+
+function isLockedFormatError(message: string): boolean {
+  return (
+    message === PARAGRAPH_NOT_EDITABLE || /table|control|field|locked/i.test(message)
+  )
 }
 
 export function createStudioFacade(studio: StudioTextSource): HangulStudioFacade {

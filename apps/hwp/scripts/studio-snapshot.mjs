@@ -98,20 +98,25 @@ function insertFilledMethod() {
 }
 
 function charFormatMethod() {
-  return `applyBodyCharFormat(e,t,n,r,i){this.syncGeneration();let a=i&&typeof i==\`object\`?Object.assign({},i):{};if(a.fontName){let o=this.deps.wasm.findOrCreateFontId(String(a.fontName));if(!(o>=0))throw Error(\`font not found\`);a.fontId=o;delete a.fontName}let s=this.deps.wasm.applyCharFormat(e,t,n,r,a);if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}if(s&&s.ok===!1)throw Error(String(s.error||s.message||\`applyCharFormat failed\`));return s}`
+  return `applyBodyCharFormat(e,t,n,r,i){this.syncGeneration();let a=i&&typeof i==\`object\`?Object.assign({},i):{};if(a.fontName){let o=this.deps.wasm.findOrCreateFontId(String(a.fontName));if(!(o>=0))throw Error(\`font not found\`);a.fontId=o;delete a.fontName}let s=this.deps.wasm.applyCharFormat(e,t,n,r,JSON.stringify(a));if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}if(s&&s.ok===!1)throw Error(String(s.error||s.message||\`applyCharFormat failed\`));return s}`
 }
 
 function formatAgentMethods() {
   // Dialog-free table + char/para format. Wasm bridge already wraps createTable / apply*.
-  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,r);if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}`
+  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let o=0;try{o=Number(this.deps.wasm.getParagraphLength(e,t))||0}catch{o=0}let a=this.deps.wasm.createTable(e,t,o,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r));if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}`
 }
 
 function insertAgentMethod() {
   return `${insertBodyMethod()}${insertFilledMethod()}${formatAgentMethods()}`
 }
 
+function replaceCellMethod() {
+  // Deferred cell replace patches the page tree; a burst of fills traps WASM.
+  return `replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=0;try{o=a.getCellParagraphLength(e,t,n,r,0)}catch{o=0}o=Number(o)||0;if(o>0){let d=a.deleteTextInCell(e,t,n,r,0,0,o);if(typeof d==\`string\`)try{d=JSON.parse(d)}catch{}if(d&&d.ok===!1)throw Error(String(d.error||d.message||\`deleteTextInCell failed\`))}let x=String(i??\`\`);if(!x)return{ok:!0};let s=a.insertTextInCell(e,t,n,r,0,0,x);if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}if(s&&s.ok===!1)throw Error(String(s.error||s.message||\`insertTextInCell failed\`));return s}`
+}
+
 function tableAgentMethods() {
-  return `listTables(){this.syncGeneration();let e=this.deps.wasm,t=[];for(let n=0;n<e.getSectionCount();n+=1)for(let r=0;r<e.getParagraphCount(n);r+=1)for(let i=0;i<${TABLE_CONTROLS_PER_PARA};i+=1){let a;try{a=e.getTableDimensions(n,r,i);if(typeof a==\`string\`)a=JSON.parse(a)}catch{continue}if(!a||!a.rowCount)continue;let o=[],s=Number(a.cellCount||0);for(let c=0;c<s;c+=1){try{let l=e.getCellInfo(n,r,i,c);if(typeof l==\`string\`)l=JSON.parse(l);let u=e.getCellParagraphCount(n,r,i,c),d=[];for(let f=0;f<u;f+=1){let p=e.getCellParagraphLength(n,r,i,c,f);d.push(p>0?e.getTextInCell(n,r,i,c,f,0,p):\`\`)}o.push({index:c,row:l.row,col:l.col,text:d.join(\`\\n\`)})}catch{}}t.push({section:n,paragraph:r,control:i,rows:a.rowCount,cols:a.colCount,cells:o})}return t}replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=a.getCellParagraphLength(e,t,n,r,0),s=a.replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String(i??\`\`));if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}return s}${insertAgentMethod()}`
+  return `listTables(){this.syncGeneration();let e=this.deps.wasm,t=[];for(let n=0;n<e.getSectionCount();n+=1)for(let r=0;r<e.getParagraphCount(n);r+=1)for(let i=0;i<${TABLE_CONTROLS_PER_PARA};i+=1){let a;try{a=e.getTableDimensions(n,r,i);if(typeof a==\`string\`)a=JSON.parse(a)}catch{continue}if(!a||!a.rowCount)continue;let o=[],s=Number(a.cellCount||0);for(let c=0;c<s;c+=1){try{let l=e.getCellInfo(n,r,i,c);if(typeof l==\`string\`)l=JSON.parse(l);let u=e.getCellParagraphCount(n,r,i,c),d=[];for(let f=0;f<u;f+=1){let p=e.getCellParagraphLength(n,r,i,c,f);d.push(p>0?e.getTextInCell(n,r,i,c,f,0,p):\`\`)}o.push({index:c,row:l.row,col:l.col,text:d.join(\`\\n\`)})}catch{}}t.push({section:n,paragraph:r,control:i,rows:a.rowCount,cols:a.colCount,cells:o})}return t}${replaceCellMethod()}${insertAgentMethod()}`
 }
 
 /** A missing `}` here leaves listBodyParagraphs inside prepareTextCommand — blank Hangul page. */
@@ -144,6 +149,34 @@ function repairStrippedFilledHandlerComma(js) {
   return js.replace(
     STRIPPED_FILLED_HANDLER_RE,
     '},async insertFilledParagraphs(e,t,n){if(await ',
+  )
+}
+
+/** WASM apply*Format encodes a JSON string; a raw object traps as OOB. */
+function repairFormatJsonStringify(js) {
+  return js
+    .replace(
+      /this\.deps\.wasm\.applyCharFormat\(e,t,n,r,a\)/g,
+      'this.deps.wasm.applyCharFormat(e,t,n,r,JSON.stringify(a))',
+    )
+    .replace(
+      /this\.deps\.wasm\.applyParaFormat\(e,t,r\)/g,
+      'this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r))',
+    )
+}
+
+const DEFERRED_REPLACE_CELL_RE =
+  /replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\);let a=this\.deps\.wasm,o=a\.getCellParagraphLength\(e,t,n,r,0\),s=a\.replaceTextInCellDeferredPagination\(e,t,n,r,0,0,o,String\(i\?\?\`\`\)\);if\(typeof s==`string`\)try\{s=JSON\.parse\(s\)\}catch\{\}return s\}/
+
+function repairDeferredCellWrite(js) {
+  return js.replace(DEFERRED_REPLACE_CELL_RE, replaceCellMethod())
+}
+
+function repairTableInsertOffset(js) {
+  if (js.includes('createTable(e,t,o,i,s)')) return js
+  return js.replace(
+    /let a=this\.deps\.wasm\.createTable\(e,t,0,i,s\)/,
+    'let o=0;try{o=Number(this.deps.wasm.getParagraphLength(e,t))||0}catch{o=0}let a=this.deps.wasm.createTable(e,t,o,i,s)',
   )
 }
 
@@ -187,6 +220,11 @@ function prepareSurfaceComplete(js) {
     js.includes('insertTable(e,t,n,r){') &&
     js.includes('Number(a?.paraIdx??t)') &&
     !js.includes('a&&a.paraIdx??t') &&
+    js.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') &&
+    js.includes('applyParaFormat(e,t,JSON.stringify(r))') &&
+    js.includes('insertTextInCell(e,t,n,r,0,0,x)') &&
+    js.includes('createTable(e,t,o,i,s)') &&
+    !js.includes('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String') &&
     js.includes('r.splitParagraph(e,') &&
     !js.includes('r.insertParagraph(e,t+a)') &&
     !js.includes('insertBodyParagraphs(e.section,e.index,e.count)') &&
@@ -245,7 +283,7 @@ function attachTableSurface(js) {
 }
 
 const REPLACE_CELL_CLASS_RE =
-  /replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\);let a=this\.deps\.wasm,o=a\.getCellParagraphLength\(e,t,n,r,0\),s=a\.replaceTextInCellDeferredPagination\(e,t,n,r,0,0,o,String\(i\?\?\`\`\)\);if\(typeof s==\`string\`\)try\{s=JSON\.parse\(s\)\}catch\{\}return s\}async applyTextCommand/
+  /replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\);[\s\S]*?return s\}async applyTextCommand/
 const REPLACE_CELL_HANDLER_RE =
   /async replaceCell\(e,t,n,r,i\)\{if\(await ([A-Za-z_$][\w$]*),!([A-Za-z_$][\w$]*)\)throw Error\(`Document agent is not initialized`\);return \2\.replaceCell\(e,t,n,r,i\)\},async applyTextCommand\(/
 const REPLACE_CELL_ROUTE_RE =
@@ -253,7 +291,10 @@ const REPLACE_CELL_ROUTE_RE =
 
 function attachInsertSurface(js) {
   let next = stripClassMethodCommas(js.replace(PREPARE_TEXT_V3_MARK, PREPARE_TEXT_V4_MARK))
-  next = next.replace(REPLACE_CELL_CLASS_RE, `replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=a.getCellParagraphLength(e,t,n,r,0),s=a.replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String(i??\`\`));if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}return s}${insertBodyMethod()}async applyTextCommand`)
+  next = next.replace(
+    REPLACE_CELL_CLASS_RE,
+    `${replaceCellMethod()}${insertBodyMethod()}async applyTextCommand`,
+  )
   next = next.replace(REPLACE_CELL_HANDLER_RE, (_, ready, agent) => {
     return `async replaceCell(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.replaceCell(e,t,n,r,i)},async insertBodyParagraphs(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertBodyParagraphs(e,t,n)},async applyTextCommand(`
   })
@@ -317,9 +358,15 @@ function attachFontSurface(js) {
 }
 
 export function exposePrepareTextCommand(js) {
-  const closed = repairStrippedFilledHandlerComma(
-    repairIllegalNullishMix(
-      closePrepareTextCommand(repairInsertHandler(repairInsertWasmCall(js))),
+  const closed = repairTableInsertOffset(
+    repairDeferredCellWrite(
+      repairFormatJsonStringify(
+        repairStrippedFilledHandlerComma(
+          repairIllegalNullishMix(
+            closePrepareTextCommand(repairInsertHandler(repairInsertWasmCall(js))),
+          ),
+        ),
+      ),
     ),
   )
   if (prepareSurfaceComplete(closed)) return closed
@@ -331,16 +378,23 @@ export function exposePrepareTextCommand(js) {
     closed.includes(PREPARE_TEXT_V3_MARK) ||
     closed.includes(PREPARE_TEXT_V2_MARK)
   ) {
-    const upgraded = repairStrippedFilledHandlerComma(
-      repairIllegalNullishMix(
-        attachFontSurface(
-          attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+    const upgraded = repairTableInsertOffset(
+      repairDeferredCellWrite(
+        repairFormatJsonStringify(
+          repairStrippedFilledHandlerComma(
+            repairIllegalNullishMix(
+              attachFontSurface(
+                attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+              ),
+            ),
+          ),
         ),
       ),
     )
     if (
       !upgraded.includes(PREPARE_TEXT_V7_MARK) ||
       !upgraded.includes('findOrCreateFontId(String(a.fontName))') ||
+      !upgraded.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') ||
       upgraded.includes('a&&a.paraIdx??t') ||
       upgraded.includes('}async insertFilledParagraphs(e,t,n){if(await')
     ) {
@@ -378,6 +432,9 @@ export function exposePrepareTextCommand(js) {
     !next.includes('case`insertFilledParagraphs`') ||
     !next.includes('case`insertTable`') ||
     !next.includes('Number(a?.paraIdx??t)') ||
+    !next.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') ||
+    !next.includes('insertTextInCell(e,t,n,r,0,0,x)') ||
+    !next.includes('createTable(e,t,o,i,s)') ||
     next.includes('a&&a.paraIdx??t') ||
     next.includes('}async insertFilledParagraphs(e,t,n){if(await')
   ) {

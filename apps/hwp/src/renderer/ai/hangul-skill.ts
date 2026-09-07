@@ -15,26 +15,23 @@ const SYSTEM_PROMPT = [
   '# Intent resolution',
   '- The user asks to modify/generate/translate/format → call the appropriate tools, then summarize what was done in one or two sentences.',
   '- The user is asking a question or consulting (what is this about, word count, writing advice) → answer in chat without mutating tools.',
-  '- When intent is unclear, read first (the paragraph list in the message, or get_document_text / get_paragraphs), then decide.',
+  '- When intent is unclear, read the body paragraph list in the message (or get_paragraphs / get_document_text), then decide.',
   '',
   '# Tool usage',
-  '- Every user message may include a body-paragraph list (index|status|preview). Previews can be truncated — call get_paragraphs or get_document_text before rewriting a long paragraph.',
-  '- New content: one insert_content call with the full draft. Newlines become paragraphs. Never insert a skeleton of headings and then fill it with replace_paragraph.',
-  '- If insert_content reports "Inserted N paragraph(s)", it succeeded and every newline is already a paragraph. Do not call insert_content again for the same draft, even to "continue" after the first heading.',
-  '- replace_paragraph changes one existing paragraph. Call it once per turn; hashes change after each apply, so parallel or batched replaces fail.',
-  '- Prefer replace_selection when the user has a selection and wants only that span changed.',
-  '- Small in-place fixes stay on replace_selection / one replace_paragraph. Full drafts and multi-paragraph additions go through insert_content.',
-  '- Fields (누름틀): get_fields / set_field. Existing tables: get_tables / replace_cell (first paragraph in the cell).',
-  '- New tables: insert_table (rows/cols, optional cells[][]). Do not fake a table with tabs or " | " text. Fill leftover cells with replace_cell.',
-  '- Formatting (bold/italic/underline/strikethrough, fontSize in points, color hex, font name, align, lineSpacing, indentLeft/Right/FirstLine in points, bullet/number lists): apply_format on existing paragraphs. Do not rewrite a paragraph just to change style.',
-  '- After any mutation, indexes change — get_paragraphs before further index-based edits. If a tool reports success, do not retry blindly.',
-  '- Replacements are plain text: no C0 controls. Each body paragraph is capped at 4000 characters (fields/cells 8000). One insert_content may add at most 80 paragraphs. Headers and footnotes are not editable.',
+  '- Every user message carries the latest "body paragraph list" (index|status|preview). Previews may be truncated — get_paragraphs or get_document_text before rewriting a long paragraph.',
+  '- After any mutation, indexes change — get_paragraphs before further index-based edits. If a tool reports success, do not retry it.',
+  '- New drafts: one insert_content call with the full text. Newlines become paragraphs. Do not pad the draft with blank lines — empty lines are dropped and will not create empty Hangul paragraphs. Cap: 80 paragraphs per call, 4000 characters per paragraph (fields/cells 8000). If the 80-paragraph cap rejects the call, insert only the remainder with afterIndex set to the last written paragraph.',
+  '- If insert_content reports "Inserted N paragraph(s)", it succeeded. Do not call it again for the same draft.',
+  '- replace_paragraph changes one existing paragraph, once per turn (hashes change after each apply). Prefer replace_selection when the user has a selection and wants only that span changed.',
+  '- Small in-place fixes stay on replace_selection / one replace_paragraph. Multi-paragraph additions go through insert_content. Omit afterIndex / index to use the caret.',
+  '- Fields (누름틀): get_fields / set_field. Existing tables: get_tables / replace_cell (one leftover cell). New tables: insert_table with cells[][] already filled — never insert an empty table and then call replace_cell once per cell. Never fake a table with tabs, markdown pipes, or ASCII.',
+  '- Formatting (bold/italic/underline/strikethrough, fontSize in points, color hex, font name, align, lineSpacing, indentLeft/Right/FirstLine in points, bullet/number lists): apply_format on existing paragraphs. Skip locked rows. After insert_content, format the title at the starting index from that tool result — not index 0 when that row is locked. Do not rewrite a paragraph just to change style. Do not tell the user formatting was applied unless apply_format succeeded.',
+  '- Replacements are plain text: no C0 controls. Headers and footnotes are not editable.',
   '',
   '# Writing a new document',
-  '- A new Hangul file often has one locked section-control paragraph. That is not "cannot write" — omit afterIndex and insert_content will skip locked rows and write after them.',
-  '- When the body looks blank and the user asks for a plan, report, or any draft, write the complete document in one insert_content call: title first, then numbered sections, short paragraphs.',
-  '- After that insert, use apply_format for the title (bold, larger fontSize, center) and insert_table for any tabular block. Do not put HTML or markdown tables in insert_content.',
-  '- If the topic is unspecified, either ask one clarifying question first or write a complete generic template in that same call (headings AND body lines together). Never insert empty numbered headings to fill later.',
+  '- A new file often has one locked section-control paragraph. That is not "cannot write" — omit afterIndex; insert_content skips locked rows.',
+  '- When the body is blank and the user wants a plan, report, or any draft, write the complete document in one insert_content call: title first, then numbered sections, short paragraphs. Then apply_format / insert_table as needed. Do not put HTML or markdown tables in insert_content. Do not leave blank paragraphs as placeholders for a table.',
+  '- If the topic is unspecified, ask one clarifying question or write a complete generic template (headings AND body together). Never insert empty numbered headings to fill later.',
   '- Never invent facts, dates, names, or budget numbers. Use web_search for current facts; cite sources in your reply, not as if you wrote them into the document.',
   '',
   '# Template filling',
@@ -46,12 +43,14 @@ const SYSTEM_PROMPT = [
   '- After a successful edit, summarize what changed. Do not claim an edit unless a mutating tool succeeded.',
   '',
   '# Known failures (must avoid)',
-  '- HG-1 Inserting a heading skeleton, then calling replace_paragraph once per line (slow; hashes break).',
-  '- HG-2 Retrying insert_content after "Inserted N paragraph(s)" (duplicates the draft).',
+  '- HG-1 Inserting a heading skeleton, then calling replace_paragraph once per line.',
+  '- HG-2 Retrying insert_content after "Inserted N paragraph(s)".',
   '- HG-3 Treating the first locked section-control paragraph as "the document cannot be edited".',
   '- HG-4 Firing several replace_paragraph calls in the same turn.',
   '- HG-5 Drawing a table with tabs, markdown pipes, or ASCII lines instead of insert_table.',
+  '- HG-7 Inserting an empty table, then firing many replace_cell calls. Pass cells[][] on insert_table.',
   '- HG-6 Rewriting a paragraph with replace_paragraph only to change bold/align/list/size.',
+  '- HG-8 Padding insert_content with blank lines, or inserting extra empty paragraphs before insert_table.',
 ].join('\n')
 
 const TOOLS: AgentToolDef[] = [
@@ -90,7 +89,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'insert_content',
     description:
-      'Write new body paragraphs in one call. Pass the full draft; newlines become paragraphs. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph. If it reports Inserted N, do not call it again.',
+      'Write new body paragraphs in one call. Pass the full draft; newlines become paragraphs. Blank lines are dropped — do not use them for spacing. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph. If it reports Inserted N, do not resend the same draft. A rejected 80-paragraph cap is not success — send only the leftover lines with afterIndex.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -159,7 +158,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'insert_table',
     description:
-      'Insert a new table. rows/cols are required. Optional cells is a row-major array of strings. Omit afterIndex to insert after the caret (uses an empty caret paragraph). afterIndex -1 inserts at the start. Fill leftover cells with replace_cell.',
+      'Insert a new table. rows/cols are required. Pass cells as a row-major string[][] whenever you know the contents — do not insert a blank table and fill it with replace_cell. Omit afterIndex to insert after the caret. afterIndex -1 inserts at the start.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -267,7 +266,7 @@ function clipPreview(text: string, max: number): string {
 }
 
 function formatParagraphContext(items: HangulParagraphPreview[]): string {
-  if (items.length === 0) return 'The document has no body paragraphs yet.'
+  if (items.length === 0) return 'The body is currently blank.'
   const blank = items.every((item) => !item.editable || !item.text.trim())
   const render = (max: number) =>
     items.map((item) => {
@@ -284,8 +283,8 @@ function formatParagraphContext(items: HangulParagraphPreview[]): string {
     ]
   }
   const header = blank
-    ? `The body looks blank (${items.length} paragraph(s)). Locked control/field rows cannot be replaced — write with one insert_content call (omit afterIndex).`
-    : `Body paragraphs (${items.length}; index|status|preview):`
+    ? `The body is currently blank (${items.length} paragraph(s); index|status|preview):`
+    : `Body paragraph list (${items.length}; index|status|preview):`
   return [header, ...lines].join('\n')
 }
 
@@ -373,17 +372,12 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
             preview.length > SELECTION_PREVIEW_CHARS
               ? `${preview.slice(0, SELECTION_PREVIEW_CHARS)}…`
               : preview
-          parts.push(`The user has selected the following text:\n"""\n${clipped}\n"""`)
-          parts.push(
-            'Use replace_selection to change only this span, or replace_paragraph to rewrite the whole paragraph that contains it.',
-          )
+          parts.push(`Content selected by the user:\n"""\n${clipped}\n"""`)
         } else {
-          parts.push('The user has a selection, but the raw selected text is not available.')
+          parts.push('The user has a selection, but the selected text is not available.')
         }
       } else {
-        parts.push(
-          'No text is selected. insert_content without afterIndex writes after the caret (or fills an empty caret paragraph). replace_paragraph without index changes the paragraph at the caret.',
-        )
+        parts.push('No text is selected.')
       }
       return parts.join('\n')
     },
@@ -446,7 +440,7 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
         try {
           const result = await deps.insertContent(text, afterIndex)
           return {
-            output: `Inserted ${result.count} paragraph(s) starting at [${result.start}]. The text you passed is already in the document. Do not call insert_content again unless the user asked for more content.`,
+            output: `Inserted ${result.count} paragraph(s) starting at [${result.start}]. The text you passed is already in the document. Do not call insert_content again unless the user asked for more content. Title/heading styles: apply_format on [${result.start}] (skip locked rows such as index 0).`,
             mutated: true,
             summary: t('aiToolInsertContentDone'),
           }
@@ -591,17 +585,17 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
           }
         }
         try {
-          const result = await deps.insertTable(
-            rows,
-            cols,
-            Array.isArray(call.input.cells) ? (call.input.cells as string[][]) : undefined,
-            afterIndex,
-          )
-          const leftover = result.unfilled.length
-            ? ` Unfilled cells: ${result.unfilled.join(', ')}.`
-            : ''
+          const cells = Array.isArray(call.input.cells) ? (call.input.cells as string[][]) : undefined
+          const result = await deps.insertTable(rows, cols, cells, afterIndex)
+          const leftover = !cells
+            ? ' Table is empty because cells[][] was omitted. Insert again only if the user asked for another table; otherwise leave it and tell the user the grid is blank. Do not fire one replace_cell per cell.'
+            : result.unfilled.length === 0
+              ? ' Cells were filled in this call. Do not call replace_cell unless a leftover cell is listed.'
+              : result.unfilled.length > 3
+                ? ` ${result.unfilled.length} cells stayed empty. Do not fire one replace_cell per cell. Tell the user the table is there but those cells are blank.`
+                : ` Unfilled cells: ${result.unfilled.join(', ')}. Fill only those leftover cells with replace_cell.`
           return {
-            output: `Inserted table[${result.table}] ${result.rows}x${result.cols}.${leftover} Fill leftover cells with replace_cell. Do not insert another table unless the user asked for more than one.`,
+            output: `Inserted table[${result.table}] ${result.rows}x${result.cols}.${leftover} Do not insert another table unless the user asked for more than one.`,
             mutated: true,
             summary: t('aiToolInsertTableDone'),
           }
@@ -665,6 +659,22 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
       return { output: `Unknown tool: ${call.name}`, isError: true, summary: call.name }
     },
     verifyResponse: (finalText, executed) => {
+      const formatOk = executed.some((call) => call.name === 'apply_format' && call.ok)
+      const claimedFormat =
+        /서식|굵게|기울임|밑줄|취소선|가운데|정렬했|지정했|formatted|fontSize|apply_format|\b\d+\s*pt\b/i.test(
+          finalText,
+        )
+      if (claimedFormat && !formatOk) {
+        if (executed.some((call) => call.name === 'apply_format' && !call.ok)) {
+          return (
+            'apply_format failed. Call get_paragraphs and apply_format on the first editable paragraph — the title is not index 0 when that row is locked. ' +
+            'Do not claim formatting succeeded.'
+          )
+        }
+        return (
+          'You claimed to format text, but apply_format did not run. Call apply_format on the first written paragraph from insert_content (the starting index in that tool result), then describe only what actually changed.'
+        )
+      }
       const claimed = /바꿨|수정했|고쳤|넣었|삽입했|filled|replaced|rewrote|inserted|formatted|edited the (document|paragraph|selection|cell|field|table)/i.test(
         finalText,
       )

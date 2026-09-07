@@ -48,7 +48,7 @@ describe('createHangulSkill', () => {
     expect(ctx).toContain('memo.hwp')
     expect(ctx).toContain('2 page')
     expect(ctx).toContain('No text is selected')
-    expect(ctx).toContain('replace_paragraph')
+    expect(ctx).not.toContain('insert_content without afterIndex')
     expect(ctx).not.toContain('Current page:')
     expect(skill.systemPrompt).toMatch(/replace_paragraph/)
     expect(skill.systemPrompt).toMatch(/insert_content/)
@@ -57,7 +57,11 @@ describe('createHangulSkill', () => {
     expect(skill.systemPrompt).toMatch(/HG-2/)
     expect(skill.systemPrompt).toMatch(/insert_table/)
     expect(skill.systemPrompt).toMatch(/apply_format/)
+    expect(skill.systemPrompt).toMatch(/80-paragraph cap/)
+    expect(skill.systemPrompt).toMatch(/starting index from that tool result/)
     expect(skill.systemPrompt).toMatch(/HG-5/)
+    expect(skill.systemPrompt).toMatch(/HG-7/)
+    expect(skill.systemPrompt).toMatch(/HG-8/)
     expect(skill.systemPrompt).not.toMatch(/no editing tools/i)
     expect(skill.systemPrompt).not.toMatch(/You cannot create new body paragraphs/)
   })
@@ -72,7 +76,7 @@ describe('createHangulSkill', () => {
       }),
     )
     const ctx = skill.buildContext?.() ?? ''
-    expect(ctx).toContain('Body paragraphs (2; index|status|preview):')
+    expect(ctx).toContain('Body paragraph list (2; index|status|preview):')
     expect(ctx).toContain('0|locked:control|(empty)')
     expect(ctx).toContain('1|editable|프로젝트 계획서')
   })
@@ -86,8 +90,8 @@ describe('createHangulSkill', () => {
       }),
     )
     const ctx = skill.buildContext?.() ?? ''
-    expect(ctx).toContain('The body looks blank')
-    expect(ctx).toContain('one insert_content')
+    expect(ctx).toContain('The body is currently blank')
+    expect(ctx).not.toContain('write with one insert_content')
     expect(ctx).toContain('0|locked:control|(empty)')
   })
 
@@ -102,7 +106,8 @@ describe('createHangulSkill', () => {
     )
     const ctx = skill.buildContext?.() ?? ''
     expect(ctx).toContain('선택 문장')
-    expect(ctx).toContain('replace_selection')
+    expect(ctx).toContain('Content selected by the user')
+    expect(ctx).not.toContain('Use replace_selection')
   })
 
   it('reads document and selection through tools', async () => {
@@ -278,6 +283,14 @@ describe('createHangulSkill', () => {
     expect(
       skill.verifyResponse?.('제목을 굵게 했습니다.', [{ name: 'apply_format', ok: true }]),
     ).toBeNull()
+    expect(
+      skill.verifyResponse?.('제목은 굵게 20pt 가운데 정렬로 서식을 지정했습니다.', [
+        { name: 'insert_content', ok: true },
+      ]),
+    ).toMatch(/apply_format did not run/)
+    expect(
+      skill.verifyResponse?.('제목을 굵게 했습니다.', [{ name: 'apply_format', ok: false }]),
+    ).toMatch(/apply_format failed/)
   })
 
   it('replaces a selection and a field', async () => {
@@ -338,6 +351,8 @@ describe('createHangulSkill', () => {
     expect(table.mutated).toBe(true)
     expect(table.output).toContain('table[1]')
     expect(table.output).toContain('2x3')
+    expect(table.output).toMatch(/Cells were filled/)
+    expect(table.output).not.toMatch(/Fill leftover cells/)
     expect(tableArgs).toEqual([2, 3, [['a', 'b', 'c']], undefined])
     const format = await skill.executeTool({
       id: '11',
@@ -349,6 +364,51 @@ describe('createHangulSkill', () => {
     expect(format.output).toContain('bold=true')
     expect(formatArgs?.[1]).toBe(0)
     expect(formatArgs?.[0]).toMatchObject({ bold: true, align: 'center', color: 'FF0000', lineSpacing: 1.5 })
+  })
+
+  it('does not ask the model to spray replace_cell after many unfilled cells', async () => {
+    const skill = createHangulSkill(() =>
+      deps({
+        insertTable: async (rows, cols) => ({
+          table: 0,
+          rows,
+          cols,
+          unfilled: ['r0c0', 'r0c1', 'r1c0', 'r1c1'],
+        }),
+      }),
+    )
+    const result = await skill.executeTool({
+      id: '10',
+      name: 'insert_table',
+      input: {
+        rows: 2,
+        cols: 2,
+        cells: [
+          ['a', 'b'],
+          ['c', 'd'],
+        ],
+      },
+    })
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toMatch(/4 cells stayed empty/)
+    expect(result.output).not.toMatch(/Fill leftover cells/)
+    expect(result.output).not.toMatch(/Fill only those leftover/)
+  })
+
+  it('tells the model an omitted cells grid stayed empty', async () => {
+    const skill = createHangulSkill(() =>
+      deps({
+        insertTable: async (rows, cols) => ({ table: 0, rows, cols, unfilled: [] }),
+      }),
+    )
+    const result = await skill.executeTool({
+      id: '10',
+      name: 'insert_table',
+      input: { rows: 2, cols: 2 },
+    })
+    expect(result.isError).toBeUndefined()
+    expect(result.output).toMatch(/cells\[\]\[\] was omitted/)
+    expect(result.output).not.toMatch(/Cells were filled/)
   })
 
   it('rejects a blank table size instead of writing a 0x0 table', async () => {
