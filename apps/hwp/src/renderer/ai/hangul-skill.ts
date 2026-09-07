@@ -3,7 +3,7 @@ import { clipPlainText, SELECTION_PREVIEW_CHARS } from '../studio-text'
 
 const SYSTEM_PROMPT = `You are GenOffice's Hangul (HWP) assistant. You read the currently open Hangul document and answer questions about it.
 
-This first release has no editing tools. Do not claim you changed the document, and do not invent document content.
+This release has no editing tools. Do not claim you changed the document, and do not invent document content. You may use web_search for facts outside the document.
 
 # Tools
 - get_document_text: full document as plain text (may be truncated for long files)
@@ -27,6 +27,7 @@ const TOOLS: AgentToolDef[] = [
 export interface HangulSkillDeps {
   fileName(): string
   pageCount(): number
+  currentPage(): number | null
   hasSelection(): boolean
   selectionPreview(): string | null
   getDocumentText(): Promise<string>
@@ -41,6 +42,8 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
     buildContext: () => {
       const deps = getDeps()
       const parts = [`Hangul document: "${deps.fileName()}", ${deps.pageCount()} page(s).`]
+      const page = deps.currentPage()
+      if (page) parts.push(`Current page: ${page}.`)
       if (deps.hasSelection()) {
         const preview = deps.selectionPreview()?.trim()
         if (preview) {

@@ -6,7 +6,7 @@ export const zhTW = {
   aiComposerPlaceholder: '問問這份韓文文件…',
   aiEditorNotReady: '編輯器尚未就緒…',
   aiEmptyTitle: '問問這份韓文文件',
-  aiEmptyBody: '可以摘要、翻譯或提問。此版本尚不能修改文件。',
+  aiEmptyBody: '可以摘要、翻譯或提問，也可以搜尋網路上的事實。此版本尚不能修改文件。',
   aiNewChat: '新對話',
   aiSend: '傳送',
   aiStop: '停止',
@@ -27,4 +27,6 @@ export const zhTW = {
   aiOverloadedError: 'AI 服務目前繁忙，請稍後重試',
   aiNetworkError: '網路有問題，無法連接 AI 服務。請檢查網路後重試',
   aiCreditsExhausted: '點數不足，請前往 genspark.ai 儲值',
+  aiToolWebSearch: '網路搜尋',
+  aiToolWebSearchDone: '搜尋「{query}」· {count} 筆結果',
 } satisfies Record<keyof typeof zh, string>

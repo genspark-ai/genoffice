@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Lang } from '@genoffice/i18n'
 import type { AiStreamChunk } from '@genoffice/ai-provider'
+import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import { AI_CHANNELS, HWP_CHANNELS } from '../shared/ipc'
 import type { HwpApi, SaveMode, UiTheme } from '../shared/ipc'
@@ -49,8 +50,18 @@ const api: HwpApi = {
   },
   aiGskStatus: (withEmail) => ipcRenderer.invoke(AI_CHANNELS.gskStatus, withEmail),
   aiGskLogin: () => ipcRenderer.invoke(AI_CHANNELS.gskLogin),
+  webSearch: (query, maxResults) => ipcRenderer.invoke(AI_CHANNELS.webSearch, query, maxResults),
+}
+
+/** Chat persistence: shared project:* handlers are registered once by the shell. */
+const projectApi: Pick<ProjectApi, 'resolveChat' | 'appendChat' | 'loadChat' | 'rebindChat'> = {
+  resolveChat: (args) => ipcRenderer.invoke('project:resolveChat', args),
+  appendChat: (args) => ipcRenderer.invoke('project:appendChat', args),
+  loadChat: (args) => ipcRenderer.invoke('project:loadChat', args),
+  rebindChat: (args) => ipcRenderer.invoke('project:rebindChat', args),
 }
 
 contextBridge.exposeInMainWorld('hwpApi', api)
+contextBridge.exposeInMainWorld('projectApi', projectApi)
 
 installDropOpenBridge()

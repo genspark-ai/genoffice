@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
-import { AgentLoop } from '@genoffice/agent-core'
+import { AgentLoop, composeSkills } from '@genoffice/agent-core'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { AiComposer, AiTypingIndicator, Markdown } from '@genoffice/ui'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { fileNameOf, type HangulStudioFacade } from '../studio-text'
+import {
+  mapPersistedChat,
+  shouldApplyRestoredChat,
+  shouldLoadAfterRebind,
+} from './chat-persist'
 import { createHangulSkill, type HangulSkillDeps } from './hangul-skill'
+import { createSearchSkill } from './search-skill'
 import { createElectronTransport } from './transport'
 
 const PANEL_WIDTH_KEY = 'hwp-ai-panel-width'
@@ -70,16 +76,71 @@ export function AiPanel({
   facadeRef.current = facade
   const filePathRef = useRef(filePath)
   filePathRef.current = filePath
+  const chatLenRef = useRef(0)
+  chatLenRef.current = chat.length
+  const skipHistoryRestoreRef = useRef(false)
   const contextRef = useRef({
     pageCount: 0,
+    currentPage: null as number | null,
     hasSelection: false,
     selectionPreview: null as string | null,
   })
+  const runToolsRef = useRef<ToolActivity[]>([])
+  const chatIdsRef = useRef<{ projectId: string; chatId: string } | null>(null)
+  const pendingPersistRef = useRef<
+    Array<{ role: 'user' | 'assistant'; text: string; tools?: ToolActivity[] }>
+  >([])
+  const loopRef = useRef<AgentLoop | null>(null)
 
   useEffect(() => {
     const dock = asideRef.current?.closest('.ai-dock') as HTMLElement | null
     dock?.style.setProperty('--ai-panel-width', `${panelWidth}px`)
   }, [panelWidth])
+
+  const applyRestoredChat = (
+    msgs: Array<{ role: 'user' | 'assistant'; text: string; tools?: ToolActivity[] }>,
+  ): void => {
+    if (
+      !shouldApplyRestoredChat({
+        messageCount: msgs.length,
+        chatAlreadyHasMessages: chatLenRef.current > 0,
+        loopBusy: Boolean(loopRef.current?.busy),
+        skipped: skipHistoryRestoreRef.current,
+      })
+    ) {
+      return
+    }
+    const mapped = mapPersistedChat(msgs)
+    let applied = false
+    setChat((prev) => {
+      if (prev.length > 0) return prev
+      applied = true
+      return mapped
+    })
+    if (applied && !loopRef.current?.busy) {
+      loopRef.current?.restore(mapped.map((m) => ({ role: m.role, text: m.text })))
+    }
+  }
+
+  const persistMessage = (role: 'user' | 'assistant', text: string, tools?: ToolActivity[]) => {
+    const ids = chatIdsRef.current
+    if (!window.projectApi) return
+    if (!ids) {
+      pendingPersistRef.current.push({ role, text, tools })
+      return
+    }
+    void window.projectApi
+      .appendChat({
+        projectId: ids.projectId,
+        chatId: ids.chatId,
+        role,
+        text,
+        ...(tools && tools.length > 0 ? { tools } : {}),
+      })
+      .catch(() => {
+        /* persistence failures are silent */
+      })
+  }
 
   const patchLast = (patch: Partial<ChatEntry> | ((last: ChatEntry) => Partial<ChatEntry>)) => {
     setChat((prev) => {
@@ -91,11 +152,11 @@ export function AiPanel({
     })
   }
 
-  const loopRef = useRef<AgentLoop | null>(null)
   if (!loopRef.current) {
     const skillDeps = (): HangulSkillDeps => ({
       fileName: () => fileNameOf(filePathRef.current),
       pageCount: () => contextRef.current.pageCount,
+      currentPage: () => contextRef.current.currentPage,
       hasSelection: () => contextRef.current.hasSelection,
       selectionPreview: () => contextRef.current.selectionPreview,
       getDocumentText: async () => {
@@ -111,7 +172,7 @@ export function AiPanel({
     })
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current!),
-      skill: createHangulSkill(skillDeps),
+      skill: composeSkills('hangul+search', '', [createHangulSkill(skillDeps), createSearchSkill()]),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {
         onText: (text) => {
@@ -133,6 +194,7 @@ export function AiPanel({
             summary: execution.summary,
             isError: execution.isError,
           }
+          runToolsRef.current.push(activity)
           patchLast((last) => {
             const tools = [...(last.tools ?? [])]
             if (tools.at(-1)?.name === call.name) tools.pop()
@@ -154,6 +216,7 @@ export function AiPanel({
             streaming: false,
             text: final || (last.tools?.length ? last.text : tGlobal('aiNoReply')),
           }))
+          persistMessage('assistant', final, runToolsRef.current)
           setBusy(false)
         },
         onError: (error) => {
@@ -201,6 +264,56 @@ export function AiPanel({
   }, [])
 
   useEffect(() => {
+    const api = window.projectApi
+    if (!api) return
+    const tempChatId = `unsaved-${Date.now()}`
+    void api
+      .resolveChat({ filePath: filePathRef.current ?? null, tempChatId })
+      .then((ids) => {
+        chatIdsRef.current = ids
+        for (const msg of pendingPersistRef.current.splice(0)) {
+          persistMessage(msg.role, msg.text, msg.tools)
+        }
+        return api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
+      })
+      .then((msgs) => {
+        applyRestoredChat(msgs)
+      })
+      .catch(() => {
+        /* history load failures are silent */
+      })
+  }, [])
+
+  useEffect(() => {
+    filePathRef.current = filePath
+    const api = window.projectApi
+    const ids = chatIdsRef.current
+    if (!api || !ids || !filePath || !ids.chatId.startsWith('unsaved-')) return
+    const previousChatId = ids.chatId
+    void api
+      .rebindChat({ projectId: ids.projectId, tempChatId: ids.chatId, newFilePath: filePath })
+      .then(async (r) => {
+        if (!r?.chatId) return
+        chatIdsRef.current = r
+        if (
+          !shouldLoadAfterRebind({
+            previousChatId,
+            nextChatId: r.chatId,
+            chatAlreadyHasMessages: chatLenRef.current > 0,
+            skipped: skipHistoryRestoreRef.current,
+          })
+        ) {
+          return
+        }
+        const msgs = await api.loadChat({ projectId: r.projectId, chatId: r.chatId, limit: 200 })
+        applyRestoredChat(msgs)
+      })
+      .catch(() => {
+        /* silent */
+      })
+  }, [filePath])
+
+  useEffect(() => {
     if (stickToBottomRef.current) {
       chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight })
     }
@@ -215,17 +328,23 @@ export function AiPanel({
   const refreshContext = async (): Promise<void> => {
     const studio = facadeRef.current
     if (!studio) {
-      contextRef.current = { pageCount: 0, hasSelection: false, selectionPreview: null }
+      contextRef.current = {
+        pageCount: 0,
+        currentPage: null,
+        hasSelection: false,
+        selectionPreview: null,
+      }
       return
     }
-    const [pageCount, preview, selected] = await Promise.all([
+    const [pageCount, sel, preview] = await Promise.all([
       studio.pageCount().catch(() => 0),
+      studio.readSelectionState().catch(() => ({ page: null, hasSelection: false })),
       studio.getSelectionText().catch(() => null),
-      studio.hasSelection().catch(() => false),
     ])
     contextRef.current = {
       pageCount,
-      hasSelection: Boolean(preview?.trim()) || selected,
+      currentPage: sel.page,
+      hasSelection: Boolean(preview?.trim()) || sel.hasSelection,
       selectionPreview: preview,
     }
   }
@@ -243,6 +362,8 @@ export function AiPanel({
     ])
     setPrompt('')
     setBusy(true)
+    runToolsRef.current = []
+    persistMessage('user', instruction)
     void (async () => {
       try {
         await refreshContext()
@@ -262,6 +383,30 @@ export function AiPanel({
   }
 
   const stop = (): void => loopRef.current?.cancel()
+
+  const startFreshChat = (): void => {
+    stop()
+    loopRef.current?.reset()
+    setBusy(false)
+    setChat([])
+    pendingPersistRef.current = []
+    skipHistoryRestoreRef.current = true
+    chatIdsRef.current = null
+    const api = window.projectApi
+    if (!api) return
+    const tempChatId = `unsaved-${Date.now()}`
+    void api
+      .resolveChat({ filePath: null, tempChatId })
+      .then((ids) => {
+        chatIdsRef.current = ids
+        for (const msg of pendingPersistRef.current.splice(0)) {
+          persistMessage(msg.role, msg.text, msg.tools)
+        }
+      })
+      .catch(() => {
+        chatIdsRef.current = null
+      })
+  }
 
   useEffect(() => {
     const onResize = (): void => setPanelWidth(clampPanelWidth(preferredWidthRef.current))
@@ -330,12 +475,7 @@ export function AiPanel({
           {chat.length > 0 && (
             <button
               className="ai-header-btn"
-              onClick={() => {
-                stop()
-                loopRef.current?.reset()
-                setBusy(false)
-                setChat([])
-              }}
+              onClick={startFreshChat}
               data-tip={t('aiNewChat')}
               aria-label={t('aiNewChat')}
             >

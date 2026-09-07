@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   clipPlainText,
   createStudioFacade,
+  currentPage,
   fileNameOf,
+  readSelectionState,
   getPlainText,
   getSelectionText,
   hasSelection,
@@ -127,6 +129,52 @@ describe('getSelectionText / hasSelection', () => {
   })
 })
 
+describe('readSelectionState', () => {
+  it('reads page and selection from one getSelectionContext call', async () => {
+    const getSelectionContext = vi.fn(async () => ({
+      collapsed: false,
+      selectedTextSha256: 'sha',
+      page: 2,
+    }))
+    expect(await readSelectionState(studio({ getSelectionContext }))).toEqual({
+      page: 2,
+      hasSelection: true,
+    })
+    expect(getSelectionContext).toHaveBeenCalledOnce()
+  })
+})
+
+describe('currentPage', () => {
+  it('returns a positive page from selection context', async () => {
+    expect(
+      await currentPage(
+        studio({
+          getSelectionContext: async () => ({
+            collapsed: true,
+            selectedTextSha256: null,
+            page: 3,
+          }),
+        }),
+      ),
+    ).toBe(3)
+  })
+
+  it('returns null when page is missing or not positive', async () => {
+    expect(await currentPage(studio())).toBeNull()
+    expect(
+      await currentPage(
+        studio({
+          getSelectionContext: async () => ({
+            collapsed: true,
+            selectedTextSha256: null,
+            page: 0,
+          }),
+        }),
+      ),
+    ).toBeNull()
+  })
+})
+
 describe('fileNameOf', () => {
   it('uses the last path segment and untitled fallback', () => {
     expect(fileNameOf('/tmp/a/memo.hwp')).toBe('memo.hwp')
@@ -144,6 +192,7 @@ describe('createStudioFacade', () => {
       }),
     )
     expect(await facade.pageCount()).toBe(3)
+    expect(await facade.currentPage()).toBeNull()
     expect(await facade.getPlainText()).toBe('body')
     expect(await facade.getSelectionText()).toBe('sel')
     expect(await facade.hasSelection()).toBe(true)

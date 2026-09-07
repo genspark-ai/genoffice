@@ -6,7 +6,7 @@ export const ar = {
   aiComposerPlaceholder: 'اسأل عن مستند الهانغول هذا…',
   aiEditorNotReady: 'محرر الهانغول ما زال قيد التحميل…',
   aiEmptyTitle: 'اسأل عن مستند الهانغول هذا',
-  aiEmptyBody: 'لخّص أو ترجم أو اطرح أسئلة. التحرير غير متاح في هذا الإصدار.',
+  aiEmptyBody: 'لخّص أو ترجم أو اطرح أسئلة. يمكنك أيضاً البحث على الويب. التحرير غير متاح في هذا الإصدار.',
   aiNewChat: 'محادثة جديدة',
   aiSend: 'إرسال',
   aiStop: 'إيقاف',
@@ -28,4 +28,6 @@ export const ar = {
   aiNetworkError:
     'مشكلة في الشبكة: تعذّر الوصول إلى خدمة الذكاء الاصطناعي. تحقق من الاتصال وحاول مجددًا',
   aiCreditsExhausted: 'نفدت الأرصدة — أعد الشحن على genspark.ai',
+  aiToolWebSearch: 'بحث ويب',
+  aiToolWebSearchDone: 'بحث عن "{query}" · {count} نتيجة',
 } satisfies Record<keyof typeof zh, string>

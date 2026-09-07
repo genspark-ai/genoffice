@@ -7,7 +7,7 @@ export const de = {
   aiEditorNotReady: 'Hangul-Editor wird noch geladen…',
   aiEmptyTitle: 'Fragen Sie zu diesem Hangul-Dokument',
   aiEmptyBody:
-    'Zusammenfassen, übersetzen oder Fragen stellen. Bearbeiten ist in dieser Version nicht möglich.',
+    'Zusammenfassen, übersetzen oder Fragen stellen. Sie können auch im Web suchen. Bearbeiten ist in dieser Version nicht möglich.',
   aiNewChat: 'Neuer Chat',
   aiSend: 'Senden',
   aiStop: 'Stopp',
@@ -30,4 +30,6 @@ export const de = {
   aiNetworkError:
     'Netzwerkproblem: Der KI-Dienst ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut',
   aiCreditsExhausted: 'Guthaben aufgebraucht — bei genspark.ai aufladen',
+  aiToolWebSearch: 'Websuche',
+  aiToolWebSearchDone: '„{query}" gesucht · {count} Treffer',
 } satisfies Record<keyof typeof zh, string>

@@ -7,7 +7,7 @@ export const ru = {
   aiEditorNotReady: 'Редактор Hangul ещё загружается…',
   aiEmptyTitle: 'Спросите об этом документе Hangul',
   aiEmptyBody:
-    'Суммируйте, переводите или задавайте вопросы. Редактирование в этой версии недоступно.',
+    'Суммируйте, переводите или задавайте вопросы. Можно также искать в интернете. Редактирование в этой версии недоступно.',
   aiNewChat: 'Новый чат',
   aiSend: 'Отправить',
   aiStop: 'Стоп',
@@ -29,4 +29,6 @@ export const ru = {
   aiNetworkError:
     'Проблема с сетью: не удалось подключиться к сервису ИИ. Проверьте подключение и повторите попытку',
   aiCreditsExhausted: 'Кредиты закончились — пополните на genspark.ai',
+  aiToolWebSearch: 'Веб-поиск',
+  aiToolWebSearchDone: 'Поиск «{query}» · {count} результатов',
 } satisfies Record<keyof typeof zh, string>

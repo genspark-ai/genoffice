@@ -7,7 +7,7 @@ export const nl = {
   aiEditorNotReady: 'Hangul-editor wordt nog geladen…',
   aiEmptyTitle: 'Vraag over dit Hangul-document',
   aiEmptyBody:
-    'Samenvatten, vertalen of vragen stellen. Bewerken is in deze versie niet beschikbaar.',
+    'Samenvatten, vertalen of vragen stellen. U kunt ook op het web zoeken. Bewerken is in deze versie niet beschikbaar.',
   aiNewChat: 'Nieuwe chat',
   aiSend: 'Verzenden',
   aiStop: 'Stoppen',
@@ -29,4 +29,6 @@ export const nl = {
   aiNetworkError:
     'Netwerkprobleem: kan de AI-service niet bereiken. Controleer je verbinding en probeer het opnieuw',
   aiCreditsExhausted: 'Credits op — waardeer op via genspark.ai',
+  aiToolWebSearch: 'Zoeken op internet',
+  aiToolWebSearchDone: 'Gezocht naar "{query}" · {count} resultaten',
 } satisfies Record<keyof typeof zh, string>

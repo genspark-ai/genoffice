@@ -6,7 +6,7 @@ export const hi = {
   aiComposerPlaceholder: 'इस हैंगुल दस्तावेज़ के बारे में पूछें…',
   aiEditorNotReady: 'हैंगुल संपादक अभी लोड हो रहा है…',
   aiEmptyTitle: 'इस हैंगुल दस्तावेज़ के बारे में पूछें',
-  aiEmptyBody: 'सारांश दें, अनुवाद करें या प्रश्न पूछें। इस संस्करण में संपादन उपलब्ध नहीं है।',
+  aiEmptyBody: 'सारांश दें, अनुवाद करें या प्रश्न पूछें। वेब पर भी खोज सकते हैं। इस संस्करण में संपादन उपलब्ध नहीं है।',
   aiNewChat: 'नई चैट',
   aiSend: 'भेजें',
   aiStop: 'रोकें',
@@ -28,4 +28,6 @@ export const hi = {
   aiNetworkError:
     'नेटवर्क समस्या: AI सेवा से कनेक्ट नहीं हो सका। कनेक्शन जांचें और फिर से प्रयास करें',
   aiCreditsExhausted: 'क्रेडिट समाप्त — genspark.ai पर रिचार्ज करें',
+  aiToolWebSearch: 'वेब खोज',
+  aiToolWebSearchDone: '"{query}" खोजा · {count} परिणाम',
 } satisfies Record<keyof typeof zh, string>

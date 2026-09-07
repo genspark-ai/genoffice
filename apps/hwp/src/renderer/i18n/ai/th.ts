@@ -6,7 +6,7 @@ export const th = {
   aiComposerPlaceholder: 'ถามเกี่ยวกับเอกสารฮันกึลนี้…',
   aiEditorNotReady: 'กำลังโหลดตัวแก้ไขฮันกึล…',
   aiEmptyTitle: 'ถามเกี่ยวกับเอกสารฮันกึลนี้',
-  aiEmptyBody: 'สรุป แปล หรือถามคำถามได้ เวอร์ชันนี้ยังแก้ไขเอกสารไม่ได้',
+  aiEmptyBody: 'สรุป แปล หรือถามคำถามได้ และค้นหาข้อเท็จจริงบนเว็บได้ เวอร์ชันนี้ยังแก้ไขเอกสารไม่ได้',
   aiNewChat: 'แชทใหม่',
   aiSend: 'ส่ง',
   aiStop: 'หยุด',
@@ -28,4 +28,6 @@ export const th = {
   aiNetworkError:
     'เครือข่ายมีปัญหา ไม่สามารถเชื่อมต่อบริการ AI ได้ โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
   aiCreditsExhausted: 'เครดิตหมด — เติมได้ที่ genspark.ai',
+  aiToolWebSearch: 'ค้นหาเว็บ',
+  aiToolWebSearchDone: 'ค้นหา "{query}" · {count} รายการ',
 } satisfies Record<keyof typeof zh, string>

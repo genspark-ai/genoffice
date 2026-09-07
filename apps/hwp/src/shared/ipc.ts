@@ -30,7 +30,16 @@ export const AI_CHANNELS = {
   streamCancel: 'ai:stream-cancel',
   gskStatus: 'ai:gsk-status',
   gskLogin: 'ai:gsk-login',
+  webSearch: 'ai:web-search',
 } as const
+
+export interface WebSearchResult {
+  answer?: string
+  results: Array<{ title: string; url: string; snippet: string }>
+  method: string
+  /** failure reason when method === 'error' */
+  error?: string
+}
 
 export type SaveMode = 'save' | 'saveAs'
 
@@ -67,4 +76,5 @@ export interface HwpApi {
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
   aiGskLogin(): Promise<void>
+  webSearch(query: string, maxResults?: number): Promise<WebSearchResult>
 }

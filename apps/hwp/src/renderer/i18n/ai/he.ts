@@ -6,7 +6,7 @@ export const he = {
   aiComposerPlaceholder: 'שאלו על מסמך ההאנגול הזה…',
   aiEditorNotReady: 'עורך ההאנגול עדיין נטען…',
   aiEmptyTitle: 'שאלו על מסמך ההאנגול הזה',
-  aiEmptyBody: 'סכמו, תרגמו או שאלו שאלות. עריכה אינה זמינה בגרסה זו.',
+  aiEmptyBody: 'סכמו, תרגמו או שאלו שאלות. אפשר גם לחפש באינטרנט. עריכה אינה זמינה בגרסה זו.',
   aiNewChat: 'שיחה חדשה',
   aiSend: 'שלח',
   aiStop: 'עצור',
@@ -27,4 +27,6 @@ export const he = {
   aiOverloadedError: 'שירות ה-AI עמוס כרגע — נסו שוב בעוד רגע',
   aiNetworkError: 'בעיית רשת: לא ניתן להתחבר לשירות ה-AI. בדוק את החיבור ונסה שוב',
   aiCreditsExhausted: 'נגמרו הקרדיטים — טענו ב-genspark.ai',
+  aiToolWebSearch: 'חיפוש ברשת',
+  aiToolWebSearchDone: 'חיפוש "{query}" · {count} תוצאות',
 } satisfies Record<keyof typeof zh, string>

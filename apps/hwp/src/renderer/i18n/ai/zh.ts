@@ -5,7 +5,7 @@ export const zh = {
   aiComposerPlaceholder: '问问这份韩文文档…',
   aiEditorNotReady: '编辑器尚未就绪…',
   aiEmptyTitle: '问问这份韩文文档',
-  aiEmptyBody: '可以总结、翻译或提问。这一版还不能修改文档。',
+  aiEmptyBody: '可以总结、翻译或提问，也可以检索网上的事实。这一版还不能修改文档。',
   aiNewChat: '新对话',
   aiSend: '发送',
   aiStop: '停止',
@@ -26,4 +26,6 @@ export const zh = {
   aiOverloadedError: 'AI 服务当前繁忙，请稍后重试',
   aiNetworkError: '网络有问题，无法连接 AI 服务。请检查网络后重试',
   aiCreditsExhausted: '积分不足，请前往 genspark.ai 充值',
+  aiToolWebSearch: '联网搜索',
+  aiToolWebSearchDone: '搜索"{query}" · {count} 条结果',
 }

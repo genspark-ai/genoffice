@@ -6,7 +6,8 @@ export const pt = {
   aiComposerPlaceholder: 'Pergunte sobre este documento Hangul…',
   aiEditorNotReady: 'O editor Hangul ainda está carregando…',
   aiEmptyTitle: 'Pergunte sobre este documento Hangul',
-  aiEmptyBody: 'Resuma, traduza ou faça perguntas. A edição ainda não está disponível.',
+  aiEmptyBody:
+    'Resuma, traduza ou faça perguntas. Também pode pesquisar na web. A edição ainda não está disponível.',
   aiNewChat: 'Nova conversa',
   aiSend: 'Enviar',
   aiStop: 'Parar',
@@ -28,4 +29,6 @@ export const pt = {
   aiNetworkError:
     'Problema de rede: não foi possível conectar ao serviço de IA. Verifique sua conexão e tente novamente',
   aiCreditsExhausted: 'Créditos esgotados — recarregue em genspark.ai',
+  aiToolWebSearch: 'Pesquisa na Web',
+  aiToolWebSearchDone: 'Pesquisa por "{query}" · {count} resultados',
 } satisfies Record<keyof typeof zh, string>

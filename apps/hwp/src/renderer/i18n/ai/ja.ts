@@ -6,7 +6,7 @@ export const ja = {
   aiComposerPlaceholder: 'このハングル文書について質問…',
   aiEditorNotReady: 'エディターを読み込んでいます…',
   aiEmptyTitle: 'このハングル文書について質問',
-  aiEmptyBody: '要約、翻訳、質問ができます。この版では文書を編集できません。',
+  aiEmptyBody: '要約、翻訳、質問ができ、ウェブで事実を調べられます。この版では文書を編集できません。',
   aiNewChat: '新しいチャット',
   aiSend: '送信',
   aiStop: '停止',
@@ -28,4 +28,6 @@ export const ja = {
   aiNetworkError:
     'ネットワークに問題があり、AI サービスに接続できません。接続を確認して再試行してください',
   aiCreditsExhausted: 'クレジット不足です。genspark.ai でチャージしてください',
+  aiToolWebSearch: 'ウェブ検索',
+  aiToolWebSearchDone: '「{query}」を検索 · {count} 件',
 } satisfies Record<keyof typeof zh, string>

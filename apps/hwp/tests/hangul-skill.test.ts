@@ -6,6 +6,7 @@ function deps(partial: Partial<HangulSkillDeps> = {}): HangulSkillDeps {
   return {
     fileName: () => 'memo.hwp',
     pageCount: () => 2,
+    currentPage: () => null,
     hasSelection: () => false,
     selectionPreview: () => null,
     getDocumentText: async () => '문서 본문',
@@ -22,7 +23,13 @@ describe('createHangulSkill', () => {
     expect(ctx).toContain('2 page')
     expect(ctx).toContain('No text is selected')
     expect(ctx).toContain('Editing tools are not available')
+    expect(ctx).not.toContain('Current page:')
     expect(skill.systemPrompt).toMatch(/no editing tools/i)
+  })
+
+  it('includes the current page when known', () => {
+    const skill = createHangulSkill(() => deps({ currentPage: () => 2 }))
+    expect(skill.buildContext?.()).toContain('Current page: 2')
   })
 
   it('includes a selection preview when present', () => {

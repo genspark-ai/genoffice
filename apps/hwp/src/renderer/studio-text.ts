@@ -4,8 +4,15 @@ export const PLAIN_TEXT_MAX_CHARS = 80_000
 export const SELECTION_PREVIEW_CHARS = 400
 export const PLAIN_TEXT_UNAVAILABLE = 'plain text unavailable'
 
+export interface HangulSelectionState {
+  page: number | null
+  hasSelection: boolean
+}
+
 export interface HangulStudioFacade {
   pageCount(): Promise<number>
+  currentPage(): Promise<number | null>
+  readSelectionState(): Promise<HangulSelectionState>
   getPlainText(): Promise<string>
   getSelectionText(): Promise<string | null>
   hasSelection(): Promise<boolean>
@@ -15,7 +22,11 @@ export interface StudioTextSource {
   pageCount(): Promise<number>
   exportHml(): Promise<Uint8Array>
   getHmlSaveState?(): Promise<{ hmlSavable: boolean }>
-  getSelectionContext(): Promise<{ collapsed: boolean; selectedTextSha256: string | null }>
+  getSelectionContext(): Promise<{
+    collapsed: boolean
+    selectedTextSha256: string | null
+    page?: number
+  }>
   hwpctrl: { call(method: string, args?: unknown[]): Promise<unknown> }
 }
 
@@ -99,13 +110,22 @@ export async function getSelectionText(studio: StudioTextSource): Promise<string
   return fromCtrl ? clipPlainText(fromCtrl) : null
 }
 
-export async function hasSelection(studio: StudioTextSource): Promise<boolean> {
+export async function readSelectionState(studio: StudioTextSource): Promise<HangulSelectionState> {
   try {
     const sel = await studio.getSelectionContext()
-    return !sel.collapsed && Boolean(sel.selectedTextSha256)
+    const page = typeof sel.page === 'number' && sel.page > 0 ? sel.page : null
+    return { page, hasSelection: !sel.collapsed && Boolean(sel.selectedTextSha256) }
   } catch {
-    return false
+    return { page: null, hasSelection: false }
   }
+}
+
+export async function hasSelection(studio: StudioTextSource): Promise<boolean> {
+  return (await readSelectionState(studio)).hasSelection
+}
+
+export async function currentPage(studio: StudioTextSource): Promise<number | null> {
+  return (await readSelectionState(studio)).page
 }
 
 export function fileNameOf(path: string | null): string {
@@ -117,6 +137,8 @@ export function fileNameOf(path: string | null): string {
 export function createStudioFacade(studio: StudioTextSource): HangulStudioFacade {
   return {
     pageCount: () => studio.pageCount(),
+    currentPage: () => currentPage(studio),
+    readSelectionState: () => readSelectionState(studio),
     getPlainText: () => getPlainText(studio),
     getSelectionText: () => getSelectionText(studio),
     hasSelection: () => hasSelection(studio),

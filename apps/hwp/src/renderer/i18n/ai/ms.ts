@@ -6,7 +6,8 @@ export const ms = {
   aiComposerPlaceholder: 'Tanya tentang dokumen Hangul ini…',
   aiEditorNotReady: 'Editor Hangul masih dimuatkan…',
   aiEmptyTitle: 'Tanya tentang dokumen Hangul ini',
-  aiEmptyBody: 'Ringkas, terjemah atau tanya. Penyuntingan belum tersedia dalam keluaran ini.',
+  aiEmptyBody:
+    'Ringkas, terjemah atau tanya. Anda juga boleh mencari di web. Penyuntingan belum tersedia dalam keluaran ini.',
   aiNewChat: 'Sembang baharu',
   aiSend: 'Hantar',
   aiStop: 'Berhenti',
@@ -28,4 +29,6 @@ export const ms = {
   aiNetworkError:
     'Masalah rangkaian: tidak dapat menghubungi perkhidmatan AI. Semak sambungan anda dan cuba lagi',
   aiCreditsExhausted: 'Kredit habis — tambah nilai di genspark.ai',
+  aiToolWebSearch: 'Carian web',
+  aiToolWebSearchDone: 'Cari "{query}" · {count} hasil',
 } satisfies Record<keyof typeof zh, string>

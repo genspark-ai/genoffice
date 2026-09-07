@@ -6,7 +6,8 @@ export const id = {
   aiComposerPlaceholder: 'Tanyakan tentang dokumen Hangul ini…',
   aiEditorNotReady: 'Editor Hangul masih dimuat…',
   aiEmptyTitle: 'Tanyakan tentang dokumen Hangul ini',
-  aiEmptyBody: 'Ringkas, terjemahkan, atau bertanya. Penyuntingan belum tersedia di rilis ini.',
+  aiEmptyBody:
+    'Ringkas, terjemahkan, atau bertanya. Anda juga bisa mencari di web. Penyuntingan belum tersedia di rilis ini.',
   aiNewChat: 'Obrolan baru',
   aiSend: 'Kirim',
   aiStop: 'Berhenti',
@@ -28,4 +29,6 @@ export const id = {
   aiNetworkError:
     'Masalah jaringan: tidak dapat terhubung ke layanan AI. Periksa koneksi Anda lalu coba lagi',
   aiCreditsExhausted: 'Kredit habis — isi ulang di genspark.ai',
+  aiToolWebSearch: 'Pencarian web',
+  aiToolWebSearchDone: 'Mencari "{query}" · {count} hasil',
 } satisfies Record<keyof typeof zh, string>

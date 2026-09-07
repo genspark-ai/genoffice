@@ -6,7 +6,8 @@ export const ko = {
   aiComposerPlaceholder: '이 한글 문서에 대해 질문하세요…',
   aiEditorNotReady: '한글 편집기를 불러오는 중…',
   aiEmptyTitle: '이 한글 문서에 대해 질문하세요',
-  aiEmptyBody: '요약, 번역, 질문을 할 수 있습니다. 이번 버전에서는 문서를 수정할 수 없습니다.',
+  aiEmptyBody:
+    '요약, 번역, 질문을 할 수 있고 웹에서 사실을 찾아볼 수 있습니다. 이번 버전에서는 문서를 수정할 수 없습니다.',
   aiNewChat: '새 대화',
   aiSend: '전송',
   aiStop: '중지',
@@ -28,4 +29,6 @@ export const ko = {
   aiNetworkError:
     '네트워크에 문제가 있어 AI 서비스에 연결할 수 없습니다. 연결을 확인한 후 다시 시도해 주세요',
   aiCreditsExhausted: '크레딧이 부족합니다. genspark.ai에서 충전하세요',
+  aiToolWebSearch: '웹 검색',
+  aiToolWebSearchDone: '"{query}" 검색 · 결과 {count}개',
 } satisfies Record<keyof typeof zh, string>

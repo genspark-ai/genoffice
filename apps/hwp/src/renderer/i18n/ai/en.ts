@@ -7,7 +7,7 @@ export const en = {
   aiEditorNotReady: 'Hangul editor is still loading…',
   aiEmptyTitle: 'Ask about this Hangul document',
   aiEmptyBody:
-    'Summarize, translate, or ask questions. Editing is not available in this first release.',
+    'Summarize, translate, or ask questions. You can also search the web. Editing is not available in this first release.',
   aiNewChat: 'New chat',
   aiSend: 'Send',
   aiStop: 'Stop',
@@ -29,4 +29,6 @@ export const en = {
   aiNetworkError:
     'Network problem: could not reach the AI service. Check your connection and try again',
   aiCreditsExhausted: 'Out of credits — top up at genspark.ai',
+  aiToolWebSearch: 'Web search',
+  aiToolWebSearchDone: 'Searched "{query}" · {count} results',
 } satisfies Record<keyof typeof zh, string>
