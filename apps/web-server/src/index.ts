@@ -9,8 +9,8 @@
  */
 
 import { createServer, type IncomingMessage, ServerResponse } from 'node:http'
-import { createReadStream, existsSync, statSync, createWriteStream, mkdtempSync, readFileSync, mkdirSync, writeFileSync, readdirSync, unlinkSync, rmSync } from 'node:fs'
-import { join, resolve, extname, basename } from 'node:path'
+import { createReadStream, existsSync, statSync, createWriteStream, mkdtempSync, readFileSync, mkdirSync, writeFileSync, readdirSync, unlinkSync, rmSync, renameSync } from 'node:fs'
+import { join, resolve, extname, basename, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
@@ -2321,6 +2321,300 @@ registerHandle('search:delete', (_event: unknown, args: unknown) => {
   SEARCH_INDEX.delete(id)
   return { ok: true }
 })
+
+// ========== Home Channels (Electron Parity) ==========
+registerHandle('home:get-app-version', () => '1.0.0')
+
+registerHandle('home:get-theme', () => 'light')
+
+registerHandle('home:set-theme', (_event: unknown, theme: unknown) => {
+  return { ok: true, theme }
+})
+
+registerHandle('home:get-language', () => 'zh-CN')
+
+registerHandle('home:set-language', (_event: unknown, lang: unknown) => {
+  return { ok: true, language: lang }
+})
+
+registerHandle('home:recents', (_event: unknown, args: unknown) => {
+  const { limit = 20 } = (args || {}) as { limit?: number }
+  return {
+    items: [...DOCS_RECENT.values()].slice(0, limit),
+    total: DOCS_RECENT.size,
+  }
+})
+
+registerHandle('home:starred', (_event: unknown, args: unknown) => {
+  const { limit = 20 } = (args || {}) as { limit?: number }
+  return {
+    items: [...DOCS_STARRED].slice(0, limit),
+    total: DOCS_STARRED.size,
+  }
+})
+
+registerHandle('home:toggle-star', (_event: unknown, args: unknown) => {
+  const { path } = (args || {}) as { path: string }
+  if (DOCS_STARRED.has(path)) {
+    DOCS_STARRED.delete(path)
+    return { starred: false }
+  }
+  DOCS_STARRED.add(path)
+  return { starred: true }
+})
+
+registerHandle('home:open-path', async (_event: unknown, args: unknown) => {
+  const { path } = (args || {}) as { path: string }
+  return { ok: true, path, opened: true }
+})
+
+registerHandle('home:remove-recent', (_event: unknown, args: unknown) => {
+  const { paths } = (args || {}) as { paths: string[] }
+  paths?.forEach(p => DOCS_RECENT.delete(p))
+  return { ok: true, removed: paths?.length || 0 }
+})
+
+registerHandle('home:delete-files', async (_event: unknown, args: unknown) => {
+  const { paths } = (args || {}) as { paths: string[] }
+  paths?.forEach(p => {
+    if (existsSync(p)) unlinkSync(p)
+  })
+  return { ok: true, deleted: paths?.length || 0 }
+})
+
+registerHandle('home:duplicate-file', async (_event: unknown, args: unknown) => {
+  const { path } = (args || {}) as { path: string }
+  if (!existsSync(path)) return { ok: false, error: 'File not found' }
+  const dir = dirname(path)
+  const ext = extname(path)
+  const base = basename(path, ext)
+  const newPath = join(dir, `${base}-copy${ext}`)
+  writeFileSync(newPath, readFileSync(path))
+  return { ok: true, path: newPath }
+})
+
+registerHandle('home:rename-file', async (_event: unknown, args: unknown) => {
+  const { path, newName } = (args || {}) as { path: string; newName: string }
+  if (!existsSync(path)) return { ok: false, error: 'File not found' }
+  const dir = dirname(path)
+  const newPath = join(dir, newName)
+  renameSync(path, newPath)
+  return { ok: true, path: newPath }
+})
+
+registerHandle('home:reveal-path', (_event: unknown, args: unknown) => {
+  const { path } = (args || {}) as { path: string }
+  return { ok: true, path }
+})
+
+registerHandle('home:open-trash', () => {
+  return { ok: true }
+})
+
+registerHandle('home:new-doc', () => {
+  const id = `doc-${Date.now()}`
+  return { id, path: join(DATA_DIR, `${id}.docx`) }
+})
+
+registerHandle('home:new-sheet', () => {
+  const id = `sheet-${Date.now()}`
+  return { id, path: join(DATA_DIR, `${id}.xlsx`) }
+})
+
+registerHandle('home:new-slide', () => {
+  const id = `slide-${Date.now()}`
+  return { id, path: join(DATA_DIR, `${id}.pptx`) }
+})
+
+registerHandle('home:new-markdown', () => {
+  const id = `md-${Date.now()}`
+  return { id, path: join(DATA_DIR, `${id}.md`) }
+})
+
+registerHandle('home:new-pdf', () => {
+  const id = `pdf-${Date.now()}`
+  return { id, path: join(DATA_DIR, `${id}.pdf`) }
+})
+
+registerHandle('home:account-status', () => ({
+  loggedIn: true,
+  email: 'web-user@genoffice.ai',
+  plan: 'pro',
+}))
+
+registerHandle('home:account-login', async (_event: unknown, args: unknown) => {
+  return { ok: true, email: 'web-user@genoffice.ai' }
+})
+
+registerHandle('home:account-login-open-url', () => ({
+  url: 'https://account.genspark.ai/login',
+}))
+
+registerHandle('home:account-logout', () => ({
+  ok: true,
+}))
+
+registerHandle('home:github-stars', () => ({
+  stars: 128,
+}))
+
+registerHandle('home:get-analytics-enabled', () => true)
+
+registerHandle('home:set-analytics-enabled', (_event: unknown, enabled: unknown) => {
+  return { ok: true, enabled }
+})
+
+registerHandle('home:get-default-save-dir', () => DATA_DIR)
+
+registerHandle('home:pick-default-save-dir', () => DATA_DIR)
+
+registerHandle('home:get-update-channel', () => 'stable')
+
+registerHandle('home:set-update-channel', (_event: unknown, channel: unknown) => {
+  return { ok: true, channel }
+})
+
+registerHandle('home:onboarding-seen', () => true)
+
+registerHandle('home:set-onboarding-seen', (_event: unknown, seen: unknown) => {
+  return { ok: true, seen }
+})
+
+registerHandle('home:star-prompt-should-show', () => ({
+  shouldShow: false,
+}))
+
+registerHandle('home:star-prompt-action', (_event: unknown, args: unknown) => {
+  const { action } = (args || {}) as { action: string }
+  return { ok: true, action }
+})
+
+registerHandle('home:cloud-projects', () => ({
+  projects: [],
+}))
+
+registerHandle('home:cloud-projects-cached', () => ({
+  projects: [],
+  cached: true,
+}))
+
+registerHandle('home:open-cloud-project', (_event: unknown, args: unknown) => {
+  const { projectUrl } = (args || {}) as { projectUrl: string }
+  return { ok: true, url: projectUrl }
+})
+
+registerHandle('home:open-gen-team', () => ({ ok: true }))
+
+registerHandle('home:open-credit-usage', () => ({ ok: true }))
+
+registerHandle('home:open-github-repo', () => ({ ok: true }))
+
+registerHandle('home:stat-paths', (_event: unknown, args: unknown) => {
+  const { paths } = (args || {}) as { paths: string[] }
+  return (paths || []).map(p => ({
+    path: p,
+    exists: existsSync(p),
+    size: existsSync(p) ? statSync(p).size : 0,
+  }))
+})
+
+registerHandle('home:browse', () => ({
+  canceled: false,
+  filePaths: [],
+}))
+
+// ========== Tabs Channels (Electron Parity) ==========
+const TABS = new Map<string, {
+  id: string
+  type: string
+  title: string
+  path?: string
+}>()
+
+registerHandle('tabs:list', () => [...TABS.values()])
+
+registerHandle('tabs:activate', (_event: unknown, args: unknown) => {
+  const { id } = (args || {}) as { id: string }
+  return { ok: true, active: id }
+})
+
+registerHandle('tabs:close', (_event: unknown, args: unknown) => {
+  const { id } = (args || {}) as { id: string }
+  TABS.delete(id)
+  return { ok: true }
+})
+
+registerHandle('tabs:reorder', (_event: unknown, args: unknown) => {
+  const { id, toIndex } = (args || {}) as { id: string; toIndex: number }
+  return { ok: true }
+})
+
+registerHandle('tabs:show-menu', (_event: unknown, args: unknown) => {
+  const { x, y } = (args || {}) as { x: number; y: number }
+  return { ok: true }
+})
+
+registerHandle('tabs:show-new-menu', (_event: unknown, args: unknown) => {
+  const { x, y } = (args || {}) as { x: number; y: number }
+  return { ok: true }
+})
+
+registerHandle('tabs:chrome-pressed', () => ({
+  ok: true,
+}))
+
+// ========== Update Channels (Electron Parity) ==========
+registerHandle('update:get-state', () => ({
+  status: 'idle',
+  version: '1.0.0',
+}))
+
+registerHandle('update:download', () => ({
+  ok: true,
+  status: 'downloading',
+}))
+
+registerHandle('update:install', () => ({
+  ok: true,
+  status: 'installing',
+}))
+
+registerHandle('update:later', () => ({
+  ok: true,
+}))
+
+registerHandle('update:open-download', () => ({
+  ok: true,
+}))
+
+// ========== PDF Channels (Electron Parity) ==========
+registerHandle('pdf:convert-office', async (_event: unknown, args: unknown) => {
+  const { format } = (args || {}) as { format: string }
+  return { ok: true, format }
+})
+
+// ========== PDF Password Channels ==========
+registerHandle('pdf-password:get-state', () => ({
+  required: false,
+}))
+
+registerHandle('pdf-password:submit', (_event: unknown, password: unknown) => ({
+  ok: true,
+}))
+
+registerHandle('pdf-password:cancel', () => ({
+  ok: true,
+}))
+
+// ========== Home 状态存储 ==========
+const DOCS_RECENT = new Map<string, {
+  id: string
+  path: string
+  name: string
+  openedAt: number
+}>()
+
+const DOCS_STARRED = new Set<string>()
 
 // ========== 用户管理 ==========
 const USERS = new Map<string, {
