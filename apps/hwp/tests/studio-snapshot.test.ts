@@ -60,14 +60,18 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('case`listBodyParagraphs`')
     expect(next).toContain('case`listTables`')
     expect(next).toContain('case`setField`')
+    expect(next).toContain('case`insertBodyParagraphs`')
+    expect(next).toContain('/*genoffice-prepare-text-v4*/')
     expect(next).toContain('selectionStart')
     expect(next).toContain('Gk(this.deps.wasm,e.target)')
     expect(next).not.toMatch(/,listBodyParagraphs\(\)\{this\.syncGeneration\(\)/)
+    expect(next).not.toMatch(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/)
     expect(next).toContain('listBodyParagraphs(){this.syncGeneration()')
+    expect(next).toContain('insertBodyParagraphs(e,t,n){this.syncGeneration()')
     expect(exposePrepareTextCommand(next)).toBe(next)
   })
 
-  it('upgrades a v2 prepare surface to include tables', () => {
+  it('upgrades a v2 prepare surface to include tables and inserts', () => {
     const v2 = [
       'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
       '/*genoffice-prepare-text-v2*/prepareTextCommand(){return 1},setField(e,t){this.syncGeneration();return this.deps.wasm.setFieldValueByName(String(e??``),String(t??``))}async applyTextCommand(e){return e}',
@@ -75,10 +79,26 @@ describe('studio snapshot helpers', () => {
       'case`setField`:return n.setField(i.name,i.value);case`applyTextCommand`:return n.applyTextCommand(e)',
     ].join(';')
     const next = exposePrepareTextCommand(v2)
-    expect(next).toContain('/*genoffice-prepare-text-v3*/')
+    expect(next).toContain('/*genoffice-prepare-text-v4*/')
     expect(next).toContain('listTables(){')
     expect(next).toContain('case`listTables`')
     expect(next).toContain('case`replaceCell`')
+    expect(next).toContain('case`insertBodyParagraphs`')
+    expect(exposePrepareTextCommand(next)).toBe(next)
+  })
+
+  it('upgrades a v3 table surface to insertBodyParagraphs', () => {
+    const v3 = [
+      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
+      '/*genoffice-prepare-text-v3*/prepareTextCommand(){return 1}setField(e,t){this.syncGeneration();return this.deps.wasm.setFieldValueByName(String(e??``),String(t??``))}listTables(){this.syncGeneration();return []}replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=a.getCellParagraphLength(e,t,n,r,0),s=a.replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String(i??``));if(typeof s==`string`)try{s=JSON.parse(s)}catch{}return s}async applyTextCommand(e){return e}',
+      'async replaceCell(e,t,n,r,i){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.replaceCell(e,t,n,r,i)},async applyTextCommand(e){return e}',
+      'case`replaceCell`:return n.replaceCell(i.section,i.paragraph,i.control,i.cellIndex,i.text);case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join(';')
+    const next = exposePrepareTextCommand(v3)
+    expect(next).toContain('/*genoffice-prepare-text-v4*/')
+    expect(next).toContain('insertBodyParagraphs(e,t,n){this.syncGeneration()')
+    expect(next).toContain('case`insertBodyParagraphs`')
+    expect(next).not.toMatch(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/)
     expect(exposePrepareTextCommand(next)).toBe(next)
   })
 

@@ -179,6 +179,11 @@ export function AiPanel({
         if (!studio) throw new Error('Hangul editor is not ready')
         return studio.listParagraphs()
       },
+      insertContent: async (text, afterIndex) => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.insertContent(text, afterIndex)
+      },
       replaceSelection: async (text) => {
         const studio = facadeRef.current
         if (!studio) throw new Error('Hangul editor is not ready')

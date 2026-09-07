@@ -16,6 +16,7 @@ function deps(partial: Partial<HangulSkillDeps> = {}): HangulSkillDeps {
     listParagraphs: async () => [
       { index: 0, editable: true, reason: null, section: 0, paragraph: 0, text: '첫 문단' },
     ],
+    insertContent: async (_text, afterIndex) => ({ count: 1, start: afterIndex == null ? 0 : afterIndex + 1 }),
     listFields: async () => [{ name: '기안자', value: '', type: 'clickhere' }],
     setField: async (name, value) => ({ name, before: '', after: value }),
     listTables: async () => [
@@ -44,7 +45,9 @@ describe('createHangulSkill', () => {
     expect(ctx).toContain('replace_paragraph')
     expect(ctx).not.toContain('Current page:')
     expect(skill.systemPrompt).toMatch(/replace_paragraph/)
+    expect(skill.systemPrompt).toMatch(/insert_content/)
     expect(skill.systemPrompt).not.toMatch(/no editing tools/i)
+    expect(skill.systemPrompt).not.toMatch(/You cannot create new body paragraphs/)
   })
 
   it('includes the current page when known', () => {
@@ -127,6 +130,49 @@ describe('createHangulSkill', () => {
     expect(result.output).toContain('[1]')
   })
 
+  it('inserts paragraphs and treats a blank afterIndex as the caret', async () => {
+    let seen: number | undefined
+    const skill = createHangulSkill(() =>
+      deps({
+        insertContent: async (text, afterIndex) => {
+          seen = afterIndex
+          expect(text).toBe('안녕\n세상')
+          return { count: 2, start: 1 }
+        },
+      }),
+    )
+    const result = await skill.executeTool({
+      id: '9',
+      name: 'insert_content',
+      input: { text: '안녕\n세상', afterIndex: '' },
+    })
+    expect(result.isError).toBeUndefined()
+    expect(result.mutated).toBe(true)
+    expect(seen).toBeUndefined()
+    expect(result.output).toContain('2 paragraph')
+    expect(result.output).toContain('[1]')
+  })
+
+  it('rejects a blank afterIndex that is only whitespace', async () => {
+    let called = false
+    const skill = createHangulSkill(() =>
+      deps({
+        insertContent: async () => {
+          called = true
+          return { count: 1, start: 0 }
+        },
+      }),
+    )
+    const result = await skill.executeTool({
+      id: '9',
+      name: 'insert_content',
+      input: { text: '안녕', afterIndex: '  ' },
+    })
+    expect(result.isError).toBe(true)
+    expect(result.output).toMatch(/must be an integer/)
+    expect(called).toBe(false)
+  })
+
   it('rejects a null or blank cell index instead of writing cell 0', async () => {
     let called = false
     const skill = createHangulSkill(() =>
@@ -174,6 +220,10 @@ describe('createHangulSkill', () => {
     ).toBeNull()
     expect(
       skill.verifyResponse?.('선택한 부분을 바꿨습니다.', [{ name: 'replace_selection', ok: true }]),
+    ).toBeNull()
+    expect(skill.verifyResponse?.('문단을 넣었습니다.', [])).toMatch(/was not changed/i)
+    expect(
+      skill.verifyResponse?.('Inserted two paragraphs.', [{ name: 'insert_content', ok: true }]),
     ).toBeNull()
   })
 

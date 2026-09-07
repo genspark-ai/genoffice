@@ -7,7 +7,7 @@ export const hi = {
   aiEditorNotReady: 'हैंगुल संपादक अभी लोड हो रहा है…',
   aiEmptyTitle: 'इस हैंगुल दस्तावेज़ के बारे में पूछें',
   aiEmptyBody:
-    'सारांश दें, अनुवाद करें या चयन/अनुच्छेद लिखें। फ़ील्ड भर सकते हैं, कक्ष संपादित कर सकते हैं, या वेब पर खोज सकते हैं।',
+    'सारांश दें, अनुवाद करें या चयन/अनुच्छेद लिखें। नए अनुच्छेद भी लिख सकते हैं, फ़ील्ड भर सकते हैं, कक्ष संपादित कर सकते हैं, या वेब पर खोज सकते हैं।',
   aiNewChat: 'नई चैट',
   aiSend: 'भेजें',
   aiStop: 'रोकें',
@@ -31,6 +31,8 @@ export const hi = {
   aiCreditsExhausted: 'क्रेडिट समाप्त — genspark.ai पर रिचार्ज करें',
   aiToolWebSearch: 'वेब खोज',
   aiToolWebSearchDone: '"{query}" खोजा · {count} परिणाम',
+  aiToolInsertContent: 'अनुच्छेद जोड़ें',
+  aiToolInsertContentDone: 'अनुच्छेद जोड़े गए',
   aiToolReplaceParagraph: 'अनुच्छेद बदलें',
   aiToolReplaceParagraphDone: 'वर्तमान अनुच्छेद बदला गया',
   aiToolReplaceSelection: 'चयन बदलें',

@@ -53,8 +53,9 @@ swallow as `[]`. `PutFieldText` is only a fallback after a successful field list
 - Re-apply page-turn / caret-below-page studio patches (`eb3c4f8` reverted them).
 - Call header/footnote WASM from the host. Undo and layout break.
 - Treat `null` / `''` / whitespace required indexes as `0`.
-- Restore `aiEmptyBody` to “편집 불가”. New AI strings go in
-  `apps/hwp/src/renderer/i18n/ai/zh.ts` and every sibling shard.
+- Restore `aiEmptyBody` to “편집 불가”. Every locale’s empty-state line must
+  describe the current edit tools, including writing new paragraphs. New AI
+  strings go in `apps/hwp/src/renderer/i18n/ai/zh.ts` and every sibling shard.
 
 ## Print / PDF (later)
 

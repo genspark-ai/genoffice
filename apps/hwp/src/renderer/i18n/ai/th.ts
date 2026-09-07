@@ -7,7 +7,7 @@ export const th = {
   aiEditorNotReady: 'กำลังโหลดตัวแก้ไขฮันกึล…',
   aiEmptyTitle: 'ถามเกี่ยวกับเอกสารฮันกึลนี้',
   aiEmptyBody:
-    'สรุป แปล หรือเขียนส่วนที่เลือกหรือย่อหน้าใหม่ได้ รวมถึงกรอกฟิลด์ แก้เซลล์ตาราง และค้นหาบนเว็บ',
+    'สรุป แปล หรือเขียนส่วนที่เลือกได้ รวมถึงเพิ่มย่อหน้าใหม่ กรอกฟิลด์ แก้เซลล์ตาราง และค้นหาบนเว็บ',
   aiNewChat: 'แชทใหม่',
   aiSend: 'ส่ง',
   aiStop: 'หยุด',
@@ -31,6 +31,8 @@ export const th = {
   aiCreditsExhausted: 'เครดิตหมด — เติมได้ที่ genspark.ai',
   aiToolWebSearch: 'ค้นหาเว็บ',
   aiToolWebSearchDone: 'ค้นหา "{query}" · {count} รายการ',
+  aiToolInsertContent: 'แทรกย่อหน้า',
+  aiToolInsertContentDone: 'แทรกย่อหน้าแล้ว',
   aiToolReplaceParagraph: 'แทนที่ย่อหน้า',
   aiToolReplaceParagraphDone: 'แทนที่ย่อหน้าปัจจุบันแล้ว',
   aiToolReplaceSelection: 'แทนที่ส่วนที่เลือก',

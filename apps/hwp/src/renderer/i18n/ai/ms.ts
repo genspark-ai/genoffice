@@ -7,7 +7,7 @@ export const ms = {
   aiEditorNotReady: 'Editor Hangul masih dimuatkan…',
   aiEmptyTitle: 'Tanya tentang dokumen Hangul ini',
   aiEmptyBody:
-    'Ringkas, terjemah atau tulis semula pilihan atau perenggan. Anda juga boleh mengisi medan, mengedit sel atau mencari di web.',
+    'Ringkas, terjemah atau tulis semula pilihan atau perenggan. Anda juga boleh menulis perenggan baharu, mengisi medan, mengedit sel atau mencari di web.',
   aiNewChat: 'Sembang baharu',
   aiSend: 'Hantar',
   aiStop: 'Berhenti',
@@ -31,6 +31,8 @@ export const ms = {
   aiCreditsExhausted: 'Kredit habis — tambah nilai di genspark.ai',
   aiToolWebSearch: 'Carian web',
   aiToolWebSearchDone: 'Cari "{query}" · {count} hasil',
+  aiToolInsertContent: 'Sisip perenggan',
+  aiToolInsertContentDone: 'Perenggan disisipkan',
   aiToolReplaceParagraph: 'Ganti perenggan',
   aiToolReplaceParagraphDone: 'Perenggan semasa diganti',
   aiToolReplaceSelection: 'Ganti pilihan',

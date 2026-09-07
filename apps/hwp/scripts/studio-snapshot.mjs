@@ -57,6 +57,7 @@ export function hasEmbedNewDoc(js) {
 export const PREPARE_TEXT_MARK = '/*genoffice-prepare-text*/'
 export const PREPARE_TEXT_V2_MARK = '/*genoffice-prepare-text-v2*/'
 export const PREPARE_TEXT_V3_MARK = '/*genoffice-prepare-text-v3*/'
+export const PREPARE_TEXT_V4_MARK = '/*genoffice-prepare-text-v4*/'
 
 const PREPARE_SNAP_RE = /try\{([A-Za-z_$][\w$]*)\(this\.deps\.wasm,i\),this\.currentFormat\(\)/
 const PREPARE_CLASS_RE =
@@ -79,20 +80,24 @@ const SET_FIELD_ROUTE_RE =
 /** Per-paragraph table-control scan cap. Controls past this index are skipped. */
 const TABLE_CONTROLS_PER_PARA = 8
 
+function insertAgentMethod() {
+  return `insertBodyParagraphs(e,t,n){this.syncGeneration();let r=this.deps.wasm,i=Number(n);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||i<1)throw Error(\`insert count must be a positive integer\`);for(let a=0;a<i;a+=1)r.insertParagraph(e,t+a);return{section:e,index:t,count:i}}`
+}
+
 function tableAgentMethods() {
-  return `listTables(){this.syncGeneration();let e=this.deps.wasm,t=[];for(let n=0;n<e.getSectionCount();n+=1)for(let r=0;r<e.getParagraphCount(n);r+=1)for(let i=0;i<${TABLE_CONTROLS_PER_PARA};i+=1){let a;try{a=e.getTableDimensions(n,r,i);if(typeof a==\`string\`)a=JSON.parse(a)}catch{continue}if(!a||!a.rowCount)continue;let o=[],s=Number(a.cellCount||0);for(let c=0;c<s;c+=1){try{let l=e.getCellInfo(n,r,i,c);if(typeof l==\`string\`)l=JSON.parse(l);let u=e.getCellParagraphCount(n,r,i,c),d=[];for(let f=0;f<u;f+=1){let p=e.getCellParagraphLength(n,r,i,c,f);d.push(p>0?e.getTextInCell(n,r,i,c,f,0,p):\`\`)}o.push({index:c,row:l.row,col:l.col,text:d.join(\`\\n\`)})}catch{}}t.push({section:n,paragraph:r,control:i,rows:a.rowCount,cols:a.colCount,cells:o})}return t}replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=a.getCellParagraphLength(e,t,n,r,0),s=a.replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String(i??\`\`));if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}return s}`
+  return `listTables(){this.syncGeneration();let e=this.deps.wasm,t=[];for(let n=0;n<e.getSectionCount();n+=1)for(let r=0;r<e.getParagraphCount(n);r+=1)for(let i=0;i<${TABLE_CONTROLS_PER_PARA};i+=1){let a;try{a=e.getTableDimensions(n,r,i);if(typeof a==\`string\`)a=JSON.parse(a)}catch{continue}if(!a||!a.rowCount)continue;let o=[],s=Number(a.cellCount||0);for(let c=0;c<s;c+=1){try{let l=e.getCellInfo(n,r,i,c);if(typeof l==\`string\`)l=JSON.parse(l);let u=e.getCellParagraphCount(n,r,i,c),d=[];for(let f=0;f<u;f+=1){let p=e.getCellParagraphLength(n,r,i,c,f);d.push(p>0?e.getTextInCell(n,r,i,c,f,0,p):\`\`)}o.push({index:c,row:l.row,col:l.col,text:d.join(\`\\n\`)})}catch{}}t.push({section:n,paragraph:r,control:i,rows:a.rowCount,cols:a.colCount,cells:o})}return t}replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=a.getCellParagraphLength(e,t,n,r,0),s=a.replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String(i??\`\`));if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}return s}${insertAgentMethod()}`
 }
 
 function prepareAgentMethods(snap) {
-  return `${PREPARE_TEXT_V3_MARK}prepareTextCommand(){let e=this.getSelectionContext(),n=this.deps.input.getSelection(),r=null,i=null;if(e.target&&n&&n.start&&n.end&&n.start.sectionIndex===e.target.section&&n.start.paragraphIndex===e.target.paragraph&&n.end.sectionIndex===e.target.section&&n.end.paragraphIndex===e.target.paragraph&&n.end.charOffset>n.start.charOffset){r=n.start.charOffset,i=n.end.charOffset}if(!e.editable||!e.target)return{editable:!1,reason:\`not_editable\`,target:e.target,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null,selectionStart:r,selectionEnd:i};try{let t=${snap}(this.deps.wasm,e.target);return{editable:!0,reason:null,target:e.target,text:t.text,textSha256:t.textSha256,formatSha256:t.formatSha256,adjacentContextSha256:t.adjacentContextSha256,selectionStart:r,selectionEnd:i}}catch(a){return{editable:!1,reason:String(a&&a.message||a),target:e.target,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null,selectionStart:r,selectionEnd:i}}listBodyParagraphs(){this.syncGeneration();let e=this.deps.wasm,t=[];for(let n=0;n<e.getSectionCount();n+=1)for(let r=0;r<e.getParagraphCount(n);r+=1){let i=e.getParagraphLength(n,r),a={kind:\`body_paragraph\`,section:n,paragraph:r,charOffset:0,length:i};try{let o=${snap}(e,a);t.push({editable:!0,reason:null,target:a,text:o.text,textSha256:o.textSha256,formatSha256:o.formatSha256,adjacentContextSha256:o.adjacentContextSha256})}catch(s){t.push({editable:!1,reason:String(s&&s.message||s),target:a,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null})}}return t}listFields(){this.syncGeneration();let e=this.deps.wasm.getFieldList();if(typeof e==\`string\`)try{e=JSON.parse(e)}catch{e=[]}if(!Array.isArray(e))return[];return e.map(t=>{let n=t&&(t.name||t.fieldName||t.fieldId||t.id)||\`\`,r=\`\`;if(n)try{let i=this.deps.wasm.getFieldValueByName(n);r=typeof i==\`string\`?i:i==null?\`\`:String(i)}catch{}return{name:n,value:r,type:t&&t.fieldType||null}}).filter(t=>t.name)}setField(e,t){this.syncGeneration();return this.deps.wasm.setFieldValueByName(String(e??\`\`),String(t??\`\`))}${tableAgentMethods()}`
+  return `${PREPARE_TEXT_V4_MARK}prepareTextCommand(){let e=this.getSelectionContext(),n=this.deps.input.getSelection(),r=null,i=null;if(e.target&&n&&n.start&&n.end&&n.start.sectionIndex===e.target.section&&n.start.paragraphIndex===e.target.paragraph&&n.end.sectionIndex===e.target.section&&n.end.paragraphIndex===e.target.paragraph&&n.end.charOffset>n.start.charOffset){r=n.start.charOffset,i=n.end.charOffset}if(!e.editable||!e.target)return{editable:!1,reason:\`not_editable\`,target:e.target,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null,selectionStart:r,selectionEnd:i};try{let t=${snap}(this.deps.wasm,e.target);return{editable:!0,reason:null,target:e.target,text:t.text,textSha256:t.textSha256,formatSha256:t.formatSha256,adjacentContextSha256:t.adjacentContextSha256,selectionStart:r,selectionEnd:i}}catch(a){return{editable:!1,reason:String(a&&a.message||a),target:e.target,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null,selectionStart:r,selectionEnd:i}}listBodyParagraphs(){this.syncGeneration();let e=this.deps.wasm,t=[];for(let n=0;n<e.getSectionCount();n+=1)for(let r=0;r<e.getParagraphCount(n);r+=1){let i=e.getParagraphLength(n,r),a={kind:\`body_paragraph\`,section:n,paragraph:r,charOffset:0,length:i};try{let o=${snap}(e,a);t.push({editable:!0,reason:null,target:a,text:o.text,textSha256:o.textSha256,formatSha256:o.formatSha256,adjacentContextSha256:o.adjacentContextSha256})}catch(s){t.push({editable:!1,reason:String(s&&s.message||s),target:a,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null})}}return t}listFields(){this.syncGeneration();let e=this.deps.wasm.getFieldList();if(typeof e==\`string\`)try{e=JSON.parse(e)}catch{e=[]}if(!Array.isArray(e))return[];return e.map(t=>{let n=t&&(t.name||t.fieldName||t.fieldId||t.id)||\`\`,r=\`\`;if(n)try{let i=this.deps.wasm.getFieldValueByName(n);r=typeof i==\`string\`?i:i==null?\`\`:String(i)}catch{}return{name:n,value:r,type:t&&t.fieldType||null}}).filter(t=>t.name)}setField(e,t){this.syncGeneration();return this.deps.wasm.setFieldValueByName(String(e??\`\`),String(t??\`\`))}${tableAgentMethods()}`
 }
 
 function prepareAgentHandlers(ready, agent) {
-  return `async getSelectionContext(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.getSelectionContext()},async prepareTextCommand(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.prepareTextCommand()},async listBodyParagraphs(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listBodyParagraphs()},async listFields(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listFields()},async setField(e,t){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.setField(e,t)},async listTables(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listTables()},async replaceCell(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.replaceCell(e,t,n,r,i)},async applyTextCommand(`
+  return `async getSelectionContext(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.getSelectionContext()},async prepareTextCommand(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.prepareTextCommand()},async listBodyParagraphs(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listBodyParagraphs()},async listFields(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listFields()},async setField(e,t){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.setField(e,t)},async listTables(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listTables()},async replaceCell(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.replaceCell(e,t,n,r,i)},async insertBodyParagraphs(e){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertBodyParagraphs(e.section,e.index,e.count)},async applyTextCommand(`
 }
 
 function prepareAgentRoutes(guard, params, host) {
-  return `case\`getSelectionContext\`:return ${guard}(${params},\`getSelectionContext params\`),${host}.getSelectionContext();case\`prepareTextCommand\`:return ${host}.prepareTextCommand();case\`listBodyParagraphs\`:return ${host}.listBodyParagraphs();case\`listFields\`:return ${host}.listFields();case\`setField\`:return ${host}.setField(${params}.name,${params}.value);case\`listTables\`:return ${host}.listTables();case\`replaceCell\`:return ${host}.replaceCell(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.text);case\`applyTextCommand\`:`
+  return `case\`getSelectionContext\`:return ${guard}(${params},\`getSelectionContext params\`),${host}.getSelectionContext();case\`prepareTextCommand\`:return ${host}.prepareTextCommand();case\`listBodyParagraphs\`:return ${host}.listBodyParagraphs();case\`listFields\`:return ${host}.listFields();case\`setField\`:return ${host}.setField(${params}.name,${params}.value);case\`listTables\`:return ${host}.listTables();case\`replaceCell\`:return ${host}.replaceCell(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.text);case\`insertBodyParagraphs\`:return ${host}.insertBodyParagraphs(${params}.section,${params}.index,${params}.count);case\`applyTextCommand\`:`
 }
 
 function stripClassMethodCommas(js) {
@@ -102,6 +107,7 @@ function stripClassMethodCommas(js) {
     .replace(/,setField\(e,t\)\{this\.syncGeneration\(\)/g, 'setField(e,t){this.syncGeneration()')
     .replace(/,listTables\(\)\{this\.syncGeneration\(\)/g, 'listTables(){this.syncGeneration()')
     .replace(/,replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\)/g, 'replaceCell(e,t,n,r,i){this.syncGeneration()')
+    .replace(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/g, 'insertBodyParagraphs(e,t,n){this.syncGeneration()')
 }
 
 function attachTableSurface(js) {
@@ -120,15 +126,36 @@ function attachTableSurface(js) {
   return next
 }
 
+const REPLACE_CELL_CLASS_RE =
+  /replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\);let a=this\.deps\.wasm,o=a\.getCellParagraphLength\(e,t,n,r,0\),s=a\.replaceTextInCellDeferredPagination\(e,t,n,r,0,0,o,String\(i\?\?\`\`\)\);if\(typeof s==\`string\`\)try\{s=JSON\.parse\(s\)\}catch\{\}return s\}async applyTextCommand/
+const REPLACE_CELL_HANDLER_RE =
+  /async replaceCell\(e,t,n,r,i\)\{if\(await ([A-Za-z_$][\w$]*),!([A-Za-z_$][\w$]*)\)throw Error\(`Document agent is not initialized`\);return \2\.replaceCell\(e,t,n,r,i\)\},async applyTextCommand\(/
+const REPLACE_CELL_ROUTE_RE =
+  /case`replaceCell`:return ([A-Za-z_$][\w$]*)\.replaceCell\(([A-Za-z_$][\w$]*)\.section,\2\.paragraph,\2\.control,\2\.cellIndex,\2\.text\);case`applyTextCommand`:/
+
+function attachInsertSurface(js) {
+  let next = stripClassMethodCommas(js.replace(PREPARE_TEXT_V3_MARK, PREPARE_TEXT_V4_MARK))
+  next = next.replace(REPLACE_CELL_CLASS_RE, `replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=a.getCellParagraphLength(e,t,n,r,0),s=a.replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String(i??\`\`));if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}return s}${insertAgentMethod()}async applyTextCommand`)
+  next = next.replace(REPLACE_CELL_HANDLER_RE, (_, ready, agent) => {
+    return `async replaceCell(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.replaceCell(e,t,n,r,i)},async insertBodyParagraphs(e){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertBodyParagraphs(e.section,e.index,e.count)},async applyTextCommand(`
+  })
+  next = next.replace(
+    REPLACE_CELL_ROUTE_RE,
+    'case`replaceCell`:return $1.replaceCell($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.text);case`insertBodyParagraphs`:return $1.insertBodyParagraphs($2.section,$2.index,$2.count);case`applyTextCommand`:',
+  )
+  return next
+}
+
 export function exposePrepareTextCommand(js) {
   const classComplete =
-    js.includes(PREPARE_TEXT_V3_MARK) &&
-    js.includes('listTables(){this.syncGeneration()') &&
-    !/,listBodyParagraphs\(\)\{this\.syncGeneration\(\)/.test(js)
+    js.includes(PREPARE_TEXT_V4_MARK) &&
+    js.includes('insertBodyParagraphs(e,t,n){this.syncGeneration()') &&
+    !/,listBodyParagraphs\(\)\{this\.syncGeneration\(\)/.test(js) &&
+    !/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/.test(js)
   if (classComplete) return js
-  if (js.includes(PREPARE_TEXT_V3_MARK) || js.includes(PREPARE_TEXT_V2_MARK)) {
-    const upgraded = attachTableSurface(js)
-    if (!upgraded.includes(PREPARE_TEXT_V3_MARK) || !upgraded.includes('case`listTables`')) {
+  if (js.includes(PREPARE_TEXT_V4_MARK) || js.includes(PREPARE_TEXT_V3_MARK) || js.includes(PREPARE_TEXT_V2_MARK)) {
+    const upgraded = attachInsertSurface(attachTableSurface(js))
+    if (!upgraded.includes(PREPARE_TEXT_V4_MARK) || !upgraded.includes('case`insertBodyParagraphs`')) {
       throw new Error('rhwp-studio prepareTextCommand surface changed — update exposePrepareTextCommand()')
     }
     return upgraded
@@ -147,14 +174,19 @@ export function exposePrepareTextCommand(js) {
     next = next.replace(
       /async prepareTextCommand\(\)\{if\(await ([A-Za-z_$][\w$]*),!([A-Za-z_$][\w$]*)\)throw Error\(`Document agent is not initialized`\);return \2\.prepareTextCommand\(\)\},async applyTextCommand\(/,
       (_, ready, agent) =>
-        `async prepareTextCommand(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.prepareTextCommand()},async listBodyParagraphs(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listBodyParagraphs()},async listFields(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listFields()},async setField(e,t){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.setField(e,t)},async listTables(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listTables()},async replaceCell(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.replaceCell(e,t,n,r,i)},async applyTextCommand(`,
+        `async prepareTextCommand(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.prepareTextCommand()},async listBodyParagraphs(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listBodyParagraphs()},async listFields(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listFields()},async setField(e,t){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.setField(e,t)},async listTables(){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.listTables()},async replaceCell(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.replaceCell(e,t,n,r,i)},async insertBodyParagraphs(e){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertBodyParagraphs(e.section,e.index,e.count)},async applyTextCommand(`,
     )
   }
   next = next.replace(PREPARE_ROUTE_RE, (_, guard, params, host) => prepareAgentRoutes(guard, params, host))
   if (PREPARE_V1_ROUTE_RE.test(next) && !next.includes('case`listBodyParagraphs`')) {
     next = next.replace(PREPARE_V1_ROUTE_RE, (_, guard, params, host) => prepareAgentRoutes(guard, params, host))
   }
-  if (!next.includes(PREPARE_TEXT_V3_MARK) || !next.includes('case`listTables`') || !next.includes('case`setField`')) {
+  if (
+    !next.includes(PREPARE_TEXT_V4_MARK) ||
+    !next.includes('case`listTables`') ||
+    !next.includes('case`setField`') ||
+    !next.includes('case`insertBodyParagraphs`')
+  ) {
     throw new Error('rhwp-studio prepareTextCommand surface changed — update exposePrepareTextCommand()')
   }
   return next
@@ -162,6 +194,7 @@ export function exposePrepareTextCommand(js) {
 
 export function hasPrepareTextCommand(js) {
   return (
+    js.includes(PREPARE_TEXT_V4_MARK) ||
     js.includes(PREPARE_TEXT_V3_MARK) ||
     js.includes(PREPARE_TEXT_V2_MARK) ||
     js.includes(PREPARE_TEXT_MARK)

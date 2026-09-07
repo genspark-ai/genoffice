@@ -14,6 +14,7 @@ const SYSTEM_PROMPT = `You are GenOffice's Hangul (HWP) assistant. You read and 
 - get_document_text: full document as plain text (may be truncated for long files)
 - get_selection: currently selected text, if any
 - get_paragraphs: numbered body paragraphs, including which ones are editable
+- insert_content: insert new body paragraphs (plain text; newlines become new paragraphs)
 - replace_paragraph: replace one body paragraph (caret, or index from get_paragraphs)
 - replace_selection: replace only the selected span inside the current body paragraph
 - get_fields / set_field: 누름틀 (click-here / form fields)
@@ -23,8 +24,8 @@ const SYSTEM_PROMPT = `You are GenOffice's Hangul (HWP) assistant. You read and 
 # Editing
 - Prefer replace_selection when the user has a selection and wants only that span changed.
 - replace_paragraph replaces one whole body paragraph. Use index after get_paragraphs to edit a paragraph that does not have the caret. Call it once per paragraph; hashes change after each apply.
-- Replacements are plain text: no C0 controls, no extra paragraph breaks. Body paragraphs are capped at 4000 characters. Fields and cells allow up to 8000.
-- You cannot create new body paragraphs or lift the 4000-character body cap. Headers and footnotes are not editable.
+- Replacements are plain text: no C0 controls. insert_content may include newlines (one paragraph per line). Each body paragraph is capped at 4000 characters. Fields and cells allow up to 8000.
+- insert_content writes new paragraphs. On a blank document, omit afterIndex so the empty caret paragraph is filled first. afterIndex -1 inserts at the start. You cannot lift the 4000-character body cap. Headers and footnotes are not editable.
 - Tables, fields, mixed character formatting, headers, and footnotes cannot go through replace_paragraph. Use set_field or replace_cell instead when those tools apply.
 - After a successful edit, summarize what changed. Do not claim an edit unless a mutating tool succeeded.
 
@@ -58,6 +59,26 @@ const TOOLS: AgentToolDef[] = [
         index: {
           type: 'number',
           description: '0-based paragraph index from get_paragraphs. Omit to use the caret paragraph.',
+        },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'insert_content',
+    description:
+      'Insert new body paragraphs. Newlines become separate paragraphs. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: 'Plain text to insert. Newlines start new paragraphs.',
+        },
+        afterIndex: {
+          type: 'number',
+          description:
+            'Insert after this 0-based paragraph index from get_paragraphs. -1 = start of document. Omit to use the caret.',
         },
       },
       required: ['text'],
@@ -114,7 +135,13 @@ const TOOLS: AgentToolDef[] = [
   },
 ]
 
-const MUTATING_TOOLS = ['replace_paragraph', 'replace_selection', 'set_field', 'replace_cell']
+const MUTATING_TOOLS = [
+  'insert_content',
+  'replace_paragraph',
+  'replace_selection',
+  'set_field',
+  'replace_cell',
+]
 
 function requireToolIndex(value: unknown, label: string): number {
   if (value == null || value === '' || typeof value === 'boolean') {
@@ -128,9 +155,9 @@ function requireToolIndex(value: unknown, label: string): number {
   return n
 }
 
-function optionalToolIndex(value: unknown): number | undefined {
+function optionalToolIndex(value: unknown, label = 'index'): number | undefined {
   if (value == null || value === '') return undefined
-  return requireToolIndex(value, 'index')
+  return requireToolIndex(value, label)
 }
 
 export interface HangulSkillDeps {
@@ -142,6 +169,7 @@ export interface HangulSkillDeps {
   getDocumentText(): Promise<string>
   getSelection(): Promise<string | null>
   listParagraphs(): Promise<HangulParagraphPreview[]>
+  insertContent(text: string, afterIndex?: number): Promise<{ count: number; start: number }>
   replaceParagraph(text: string, index?: number): Promise<{ before: string; after: string }>
   replaceSelection(text: string): Promise<{ before: string; after: string }>
   listFields(): Promise<HangulField[]>
@@ -211,7 +239,7 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
         }
       } else {
         parts.push(
-          'No text is selected. replace_paragraph without index changes the paragraph at the caret.',
+          'No text is selected. insert_content without afterIndex writes after the caret (or fills an empty caret paragraph). replace_paragraph without index changes the paragraph at the caret.',
         )
       }
       return parts.join('\n')
@@ -257,6 +285,33 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
             output: err instanceof Error ? err.message : String(err),
             isError: true,
             summary: 'Listed paragraphs',
+          }
+        }
+      }
+      if (call.name === 'insert_content') {
+        const text = String(call.input.text ?? '')
+        let afterIndex: number | undefined
+        try {
+          afterIndex = optionalToolIndex(call.input.afterIndex, 'afterIndex')
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolInsertContent'),
+          }
+        }
+        try {
+          const result = await deps.insertContent(text, afterIndex)
+          return {
+            output: `Inserted ${result.count} paragraph(s) starting at [${result.start}].`,
+            mutated: true,
+            summary: t('aiToolInsertContentDone'),
+          }
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolInsertContent'),
           }
         }
       }
@@ -380,7 +435,7 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
       return { output: `Unknown tool: ${call.name}`, isError: true, summary: call.name }
     },
     verifyResponse: (finalText, executed) => {
-      const claimed = /바꿨|수정했|고쳤|filled|replaced|rewrote|edited the (document|paragraph|selection|cell|field)/i.test(
+      const claimed = /바꿨|수정했|고쳤|넣었|삽입했|filled|replaced|rewrote|inserted|edited the (document|paragraph|selection|cell|field)/i.test(
         finalText,
       )
       if (!claimed) return null

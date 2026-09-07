@@ -7,7 +7,7 @@ export const pt = {
   aiEditorNotReady: 'O editor Hangul ainda está carregando…',
   aiEmptyTitle: 'Pergunte sobre este documento Hangul',
   aiEmptyBody:
-    'Resuma, traduza ou reescreva uma seleção ou parágrafo. Também pode preencher campos, editar células ou pesquisar na web.',
+    'Resuma, traduza ou reescreva uma seleção ou parágrafo. Também pode escrever novos parágrafos, preencher campos, editar células ou pesquisar na web.',
   aiNewChat: 'Nova conversa',
   aiSend: 'Enviar',
   aiStop: 'Parar',
@@ -31,6 +31,8 @@ export const pt = {
   aiCreditsExhausted: 'Créditos esgotados — recarregue em genspark.ai',
   aiToolWebSearch: 'Pesquisa na Web',
   aiToolWebSearchDone: 'Pesquisa por "{query}" · {count} resultados',
+  aiToolInsertContent: 'Inserir parágrafos',
+  aiToolInsertContentDone: 'Parágrafos inseridos',
   aiToolReplaceParagraph: 'Substituir parágrafo',
   aiToolReplaceParagraphDone: 'Parágrafo atual substituído',
   aiToolReplaceSelection: 'Substituir seleção',

@@ -7,7 +7,7 @@ export const ja = {
   aiEditorNotReady: 'エディターを読み込んでいます…',
   aiEmptyTitle: 'このハングル文書について質問',
   aiEmptyBody:
-    '要約、翻訳、選択範囲や段落の書き換え、フィールド入力、表セルの編集、ウェブ検索ができます。',
+    '要約、翻訳、選択範囲や段落の書き換え、新しい段落の追加、フィールド入力、表セルの編集、ウェブ検索ができます。',
   aiNewChat: '新しいチャット',
   aiSend: '送信',
   aiStop: '停止',
@@ -31,6 +31,8 @@ export const ja = {
   aiCreditsExhausted: 'クレジット不足です。genspark.ai でチャージしてください',
   aiToolWebSearch: 'ウェブ検索',
   aiToolWebSearchDone: '「{query}」を検索 · {count} 件',
+  aiToolInsertContent: '段落を挿入',
+  aiToolInsertContentDone: '段落を挿入しました',
   aiToolReplaceParagraph: '段落を置換',
   aiToolReplaceParagraphDone: '現在の段落を置換しました',
   aiToolReplaceSelection: '選択範囲を置換',

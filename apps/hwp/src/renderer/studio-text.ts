@@ -7,6 +7,9 @@ export const PARAGRAPH_PREPARE_UNAVAILABLE = 'paragraph prepare is unavailable'
 export const PARAGRAPH_NOT_EDITABLE = 'paragraph is not editable'
 export const SELECTION_NOT_IN_PARAGRAPH = 'nothing is selected in this paragraph'
 export const PARAGRAPH_INDEX_OUT_OF_RANGE = 'paragraph index out of range'
+export const INSERT_CONTENT_EMPTY = 'insert text must not be empty'
+/** One insert_content call may add this many new body paragraphs. */
+export const INSERT_CONTENT_MAX_PARAS = 80
 export const FIELD_NOT_FOUND = 'field not found'
 export const TABLE_NOT_FOUND = 'table cell not found'
 /** v1 applyTextCommand replacement cap (Unicode code points). */
@@ -58,6 +61,7 @@ export interface HangulStudioFacade {
   getSelectionText(): Promise<string | null>
   hasSelection(): Promise<boolean>
   listParagraphs(): Promise<HangulParagraphPreview[]>
+  insertContent(text: string, afterIndex?: number): Promise<{ count: number; start: number }>
   replaceParagraph(text: string, index?: number): Promise<{ before: string; after: string }>
   replaceSelection(text: string): Promise<{ before: string; after: string }>
   listFields(): Promise<HangulField[]>
@@ -224,6 +228,19 @@ export function fileNameOf(path: string | null): string {
   if (!path) return 'untitled.hwp'
   const parts = path.split(/[\\/]/)
   return parts[parts.length - 1] ?? path
+}
+
+export function splitInsertParagraphs(text: string): string[] {
+  const normalized = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const lines = normalized.split('\n')
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop()
+  if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
+    throw new Error(INSERT_CONTENT_EMPTY)
+  }
+  if (lines.length > INSERT_CONTENT_MAX_PARAS) {
+    throw new Error(`insert text must be at most ${INSERT_CONTENT_MAX_PARAS} paragraphs`)
+  }
+  return lines.map((line) => normalizeReplacement(line))
 }
 
 export function normalizeReplacement(
@@ -397,6 +414,78 @@ export async function replaceParagraphAt(
   return applyPrepared(studio, asPrepared(raw[index]), replacement)
 }
 
+export async function insertContent(
+  studio: StudioTextSource,
+  text: string,
+  afterIndex?: number,
+): Promise<{ count: number; start: number }> {
+  const lines = splitInsertParagraphs(text)
+  const items = await listBodyParagraphs(studio)
+  let fillExisting = false
+  let section = items[0]?.section ?? 0
+  let insertAt = 0
+  let firstListIndex = 0
+
+  if (afterIndex === -1) {
+    if (items[0] && !items[0].text.trim()) {
+      fillExisting = true
+      section = items[0].section
+      insertAt = items[0].paragraph + 1
+      firstListIndex = 0
+    } else {
+      insertAt = 0
+      firstListIndex = 0
+    }
+  } else if (afterIndex == null) {
+    const prepared = await prepareCurrentParagraph(studio)
+    if (!prepared.target) throw new Error(prepared.reason || PARAGRAPH_NOT_EDITABLE)
+    const caret = items.findIndex(
+      (item) =>
+        item.section === prepared.target!.section && item.paragraph === prepared.target!.paragraph,
+    )
+    if (caret < 0) throw new Error(PARAGRAPH_INDEX_OUT_OF_RANGE)
+    section = items[caret].section
+    insertAt = items[caret].paragraph + 1
+    if (!items[caret].text.trim()) {
+      fillExisting = true
+      firstListIndex = caret
+    } else {
+      firstListIndex = caret + 1
+    }
+  } else {
+    if (!Number.isInteger(afterIndex) || afterIndex < 0 || afterIndex >= items.length) {
+      throw new Error(PARAGRAPH_INDEX_OUT_OF_RANGE)
+    }
+    section = items[afterIndex].section
+    insertAt = items[afterIndex].paragraph + 1
+    firstListIndex = afterIndex + 1
+  }
+
+  let remaining = lines
+  if (fillExisting) {
+    await replaceParagraphAt(studio, firstListIndex, lines[0])
+    remaining = lines.slice(1)
+    firstListIndex += 1
+  }
+
+  if (remaining.length > 0) {
+    const inserted = await requestStudio(studio, 'insertBodyParagraphs', {
+      section,
+      index: insertAt,
+      count: remaining.length,
+    })
+    if (!inserted || typeof inserted !== 'object') throw new Error(PARAGRAPH_PREPARE_UNAVAILABLE)
+    for (let i = 0; i < remaining.length; i += 1) {
+      await replaceParagraphAt(studio, firstListIndex + i, remaining[i])
+    }
+  }
+
+  return {
+    count: lines.length,
+    start: fillExisting ? firstListIndex - 1 : firstListIndex,
+  }
+}
+
 function asFields(value: unknown): HangulField[] {
   if (!Array.isArray(value)) throw new Error(PARAGRAPH_PREPARE_UNAVAILABLE)
   return value
@@ -499,6 +588,7 @@ export function createStudioFacade(studio: StudioTextSource): HangulStudioFacade
     getSelectionText: () => getSelectionText(studio),
     hasSelection: () => hasSelection(studio),
     listParagraphs: () => listBodyParagraphs(studio),
+    insertContent: (text, afterIndex) => insertContent(studio, text, afterIndex),
     replaceParagraph: (text, index) =>
       index == null ? replaceCurrentParagraph(studio, text) : replaceParagraphAt(studio, index, text),
     replaceSelection: (text) => replaceCurrentSelection(studio, text),

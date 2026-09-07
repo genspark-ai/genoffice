@@ -7,7 +7,7 @@ export const de = {
   aiEditorNotReady: 'Hangul-Editor wird noch geladen…',
   aiEmptyTitle: 'Fragen Sie zu diesem Hangul-Dokument',
   aiEmptyBody:
-    'Zusammenfassen, übersetzen oder eine Auswahl bzw. einen Absatz umschreiben. Sie können auch Felder ausfüllen, Tabellenzellen bearbeiten oder im Web suchen.',
+    'Zusammenfassen, übersetzen oder eine Auswahl bzw. einen Absatz umschreiben. Sie können auch neue Absätze schreiben, Felder ausfüllen, Tabellenzellen bearbeiten oder im Web suchen.',
   aiNewChat: 'Neuer Chat',
   aiSend: 'Senden',
   aiStop: 'Stopp',
@@ -32,6 +32,8 @@ export const de = {
   aiCreditsExhausted: 'Guthaben aufgebraucht — bei genspark.ai aufladen',
   aiToolWebSearch: 'Websuche',
   aiToolWebSearchDone: '„{query}" gesucht · {count} Treffer',
+  aiToolInsertContent: 'Absätze einfügen',
+  aiToolInsertContentDone: 'Absätze eingefügt',
   aiToolReplaceParagraph: 'Absatz ersetzen',
   aiToolReplaceParagraphDone: 'Aktuellen Absatz ersetzt',
   aiToolReplaceSelection: 'Auswahl ersetzen',

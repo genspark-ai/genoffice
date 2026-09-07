@@ -7,7 +7,7 @@ export const ko = {
   aiEditorNotReady: '한글 편집기를 불러오는 중…',
   aiEmptyTitle: '이 한글 문서에 대해 질문하세요',
   aiEmptyBody:
-    '요약, 번역, 선택/문단 수정, 누름틀 채우기, 표 칸 수정, 웹에서 사실 검색을 할 수 있습니다.',
+    '요약, 번역, 선택/문단 수정, 새 문단 쓰기, 누름틀 채우기, 표 칸 수정, 웹에서 사실 검색을 할 수 있습니다.',
   aiNewChat: '새 대화',
   aiSend: '전송',
   aiStop: '중지',
@@ -31,6 +31,8 @@ export const ko = {
   aiCreditsExhausted: '크레딧이 부족합니다. genspark.ai에서 충전하세요',
   aiToolWebSearch: '웹 검색',
   aiToolWebSearchDone: '"{query}" 검색 · 결과 {count}개',
+  aiToolInsertContent: '문단 넣기',
+  aiToolInsertContentDone: '문단을 넣었습니다',
   aiToolReplaceParagraph: '문단 바꾸기',
   aiToolReplaceParagraphDone: '현재 문단을 바꿨습니다',
   aiToolReplaceSelection: '선택 바꾸기',

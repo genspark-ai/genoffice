@@ -7,7 +7,7 @@ export const ar = {
   aiEditorNotReady: 'محرر الهانغول ما زال قيد التحميل…',
   aiEmptyTitle: 'اسأل عن مستند الهانغول هذا',
   aiEmptyBody:
-    'لخّص أو ترجم أو أعد كتابة تحديد أو فقرة. يمكنك أيضاً تعبئة الحقول وتعديل الخلايا والبحث على الويب.',
+    'لخّص أو ترجم أو أعد كتابة تحديد أو فقرة. يمكنك أيضاً كتابة فقرات جديدة وتعبئة الحقول وتعديل الخلايا والبحث على الويب.',
   aiNewChat: 'محادثة جديدة',
   aiSend: 'إرسال',
   aiStop: 'إيقاف',
@@ -31,6 +31,8 @@ export const ar = {
   aiCreditsExhausted: 'نفدت الأرصدة — أعد الشحن على genspark.ai',
   aiToolWebSearch: 'بحث ويب',
   aiToolWebSearchDone: 'بحث عن "{query}" · {count} نتيجة',
+  aiToolInsertContent: 'إدراج فقرات',
+  aiToolInsertContentDone: 'تم إدراج الفقرات',
   aiToolReplaceParagraph: 'استبدال الفقرة',
   aiToolReplaceParagraphDone: 'تم استبدال الفقرة الحالية',
   aiToolReplaceSelection: 'استبدال التحديد',

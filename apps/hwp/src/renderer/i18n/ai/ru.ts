@@ -7,7 +7,7 @@ export const ru = {
   aiEditorNotReady: 'Редактор Hangul ещё загружается…',
   aiEmptyTitle: 'Спросите об этом документе Hangul',
   aiEmptyBody:
-    'Суммируйте, переводите или переписывайте выделение либо абзац. Можно также заполнять поля, править ячейки и искать в интернете.',
+    'Суммируйте, переводите или переписывайте выделение либо абзац. Можно также писать новые абзацы, заполнять поля, править ячейки и искать в интернете.',
   aiNewChat: 'Новый чат',
   aiSend: 'Отправить',
   aiStop: 'Стоп',
@@ -31,6 +31,8 @@ export const ru = {
   aiCreditsExhausted: 'Кредиты закончились — пополните на genspark.ai',
   aiToolWebSearch: 'Веб-поиск',
   aiToolWebSearchDone: 'Поиск «{query}» · {count} результатов',
+  aiToolInsertContent: 'Вставить абзацы',
+  aiToolInsertContentDone: 'Абзацы вставлены',
   aiToolReplaceParagraph: 'Заменить абзац',
   aiToolReplaceParagraphDone: 'Текущий абзац заменён',
   aiToolReplaceSelection: 'Заменить выделение',

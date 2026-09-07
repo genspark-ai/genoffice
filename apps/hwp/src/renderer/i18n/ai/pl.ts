@@ -7,7 +7,7 @@ export const pl = {
   aiEditorNotReady: 'Edytor Hangul nadal się wczytuje…',
   aiEmptyTitle: 'Zapytaj o ten dokument Hangul',
   aiEmptyBody:
-    'Streszczaj, tłumacz lub przepisuj zaznaczenie albo akapit. Możesz też wypełniać pola, edytować komórki i szukać w sieci.',
+    'Streszczaj, tłumacz lub przepisuj zaznaczenie albo akapit. Możesz też pisać nowe akapity, wypełniać pola, edytować komórki i szukać w sieci.',
   aiNewChat: 'Nowy czat',
   aiSend: 'Wyślij',
   aiStop: 'Zatrzymaj',
@@ -31,6 +31,8 @@ export const pl = {
   aiCreditsExhausted: 'Brak kredytów — doładuj na genspark.ai',
   aiToolWebSearch: 'Wyszukiwanie w sieci',
   aiToolWebSearchDone: 'Wyszukano „{query}" · {count} wyników',
+  aiToolInsertContent: 'Wstaw akapity',
+  aiToolInsertContentDone: 'Wstawiono akapity',
   aiToolReplaceParagraph: 'Zastąp akapit',
   aiToolReplaceParagraphDone: 'Zastąpiono bieżący akapit',
   aiToolReplaceSelection: 'Zastąp zaznaczenie',
