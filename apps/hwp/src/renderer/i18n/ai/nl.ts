@@ -31,4 +31,12 @@ export const nl = {
   aiCreditsExhausted: 'Credits op — waardeer op via genspark.ai',
   aiToolWebSearch: 'Zoeken op internet',
   aiToolWebSearchDone: 'Gezocht naar "{query}" · {count} resultaten',
+  aiToolReplaceParagraph: 'Alinea vervangen',
+  aiToolReplaceParagraphDone: 'Huidige alinea vervangen',
+  aiToolReplaceSelection: 'Selectie vervangen',
+  aiToolReplaceSelectionDone: 'Selectie vervangen',
+  aiToolSetField: 'Veld invullen',
+  aiToolSetFieldDone: 'Veld ingevuld',
+  aiToolReplaceCell: 'Cel vervangen',
+  aiToolReplaceCellDone: 'Cel vervangen',
 } satisfies Record<keyof typeof zh, string>

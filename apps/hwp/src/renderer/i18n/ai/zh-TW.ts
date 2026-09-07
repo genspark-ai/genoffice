@@ -29,4 +29,12 @@ export const zhTW = {
   aiCreditsExhausted: '點數不足，請前往 genspark.ai 儲值',
   aiToolWebSearch: '網路搜尋',
   aiToolWebSearchDone: '搜尋「{query}」· {count} 筆結果',
+  aiToolReplaceParagraph: '取代段落',
+  aiToolReplaceParagraphDone: '已取代目前段落',
+  aiToolReplaceSelection: '取代選取範圍',
+  aiToolReplaceSelectionDone: '已取代選取範圍',
+  aiToolSetField: '填寫欄位',
+  aiToolSetFieldDone: '已填寫欄位',
+  aiToolReplaceCell: '取代儲存格',
+  aiToolReplaceCellDone: '已取代儲存格',
 } satisfies Record<keyof typeof zh, string>

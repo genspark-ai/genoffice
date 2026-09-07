@@ -31,4 +31,12 @@ export const ms = {
   aiCreditsExhausted: 'Kredit habis — tambah nilai di genspark.ai',
   aiToolWebSearch: 'Carian web',
   aiToolWebSearchDone: 'Cari "{query}" · {count} hasil',
+  aiToolReplaceParagraph: 'Ganti perenggan',
+  aiToolReplaceParagraphDone: 'Perenggan semasa diganti',
+  aiToolReplaceSelection: 'Ganti pilihan',
+  aiToolReplaceSelectionDone: 'Pilihan diganti',
+  aiToolSetField: 'Isi medan',
+  aiToolSetFieldDone: 'Medan diisi',
+  aiToolReplaceCell: 'Ganti sel',
+  aiToolReplaceCellDone: 'Sel diganti',
 } satisfies Record<keyof typeof zh, string>

@@ -169,6 +169,41 @@ export function AiPanel({
         if (!studio) return null
         return studio.getSelectionText()
       },
+      replaceParagraph: async (text, index) => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.replaceParagraph(text, index)
+      },
+      listParagraphs: async () => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.listParagraphs()
+      },
+      replaceSelection: async (text) => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.replaceSelection(text)
+      },
+      listFields: async () => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.listFields()
+      },
+      setField: async (name, value) => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.setField(name, value)
+      },
+      listTables: async () => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.listTables()
+      },
+      replaceCell: async (table, row, col, text) => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.replaceCell(table, row, col, text)
+      },
     })
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current!),

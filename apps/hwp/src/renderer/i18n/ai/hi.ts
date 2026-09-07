@@ -30,4 +30,12 @@ export const hi = {
   aiCreditsExhausted: 'क्रेडिट समाप्त — genspark.ai पर रिचार्ज करें',
   aiToolWebSearch: 'वेब खोज',
   aiToolWebSearchDone: '"{query}" खोजा · {count} परिणाम',
+  aiToolReplaceParagraph: 'अनुच्छेद बदलें',
+  aiToolReplaceParagraphDone: 'वर्तमान अनुच्छेद बदला गया',
+  aiToolReplaceSelection: 'चयन बदलें',
+  aiToolReplaceSelectionDone: 'चयन बदला गया',
+  aiToolSetField: 'फ़ील्ड भरें',
+  aiToolSetFieldDone: 'फ़ील्ड भरा गया',
+  aiToolReplaceCell: 'कक्ष बदलें',
+  aiToolReplaceCellDone: 'कक्ष बदला गया',
 } satisfies Record<keyof typeof zh, string>
