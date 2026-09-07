@@ -2284,6 +2284,429 @@ registerHandle('notifications:clear', (_event: unknown, args: unknown) => {
   return { ok: true, cleared: count }
 })
 
+// ========== Doc AI Skill (文档 AI 能力) ==========
+registerHandle('ai:doc-write-continue', async (_event: unknown, args: unknown) => {
+  const { docId, content, cursor, length } = args as {
+    docId: string
+    content: string
+    cursor: number
+    length?: number
+  }
+  
+  // 模拟 AI 续写
+  const targetLength = length || 200
+  return {
+    text: `根据上文续写的内容，关于"${content.slice(0, 50)}..."的详细展开说明...`,
+    insertedAt: cursor,
+    length: targetLength,
+    style: 'continuation',
+  }
+})
+
+registerHandle('ai:doc-write-expand', async (_event: unknown, args: unknown) => {
+  const { content, targetLength } = args as { content: string; targetLength?: number }
+  
+  return {
+    text: `${content}\n\n详细说明：此处内容已被扩展，包含更多细节和示例。`,
+    originalLength: content.length,
+    expandedLength: (targetLength || content.length * 2),
+    changes: ['added_examples', 'added_details', 'added_explanations'],
+  }
+})
+
+registerHandle('ai:doc-write-shrink', async (_event: unknown, args: unknown) => {
+  const { content, ratio } = args as { content: string; ratio?: number }
+  const shrinkRatio = ratio || 0.5
+  const targetLength = Math.floor(content.length * shrinkRatio)
+  
+  return {
+    text: content.slice(0, targetLength) + '...',
+    originalLength: content.length,
+    shrunkLength: targetLength,
+    ratio: shrinkRatio,
+    summary: '原文核心内容已压缩',
+  }
+})
+
+registerHandle('ai:doc-write-rewrite', async (_event: unknown, args: unknown) => {
+  const { content, style } = args as { content: string; style?: 'formal' | 'casual' | 'simple' }
+  
+  const styleMap = {
+    formal: '正式',
+    casual: '轻松',
+    simple: '简洁',
+  }
+  
+  return {
+    text: `[${styleMap[style || 'formal']}风格改写]${content}`,
+    originalStyle: 'original',
+    newStyle: style || 'formal',
+    changes: ['rephrased', 'tone_adjusted'],
+  }
+})
+
+registerHandle('ai:doc-tone-adjust', async (_event: unknown, args: unknown) => {
+  const { content, tone } = args as {
+    content: string
+    tone: 'professional' | 'friendly' | 'persuasive' | 'academic'
+  }
+  
+  const toneDescriptions = {
+    professional: '专业正式的语调',
+    friendly: '友好亲切的语调',
+    persuasive: '有说服力的语调',
+    academic: '学术严谨的语调',
+  }
+  
+  return {
+    text: `[${toneDescriptions[tone]}调整后的内容]${content}`,
+    originalTone: 'neutral',
+    newTone: tone,
+  }
+})
+
+registerHandle('ai:doc-format-suggest', async (_event: unknown, args: unknown) => {
+  const { content } = args as { content: string }
+  
+  return {
+    suggestions: [
+      { type: 'heading', level: 1, text: '建议添加标题' },
+      { type: 'list', style: 'bullet', items: ['要点1', '要点2', '要点3'] },
+      { type: 'spacing', before: 12, after: 6 },
+      { type: 'font', name: '微软雅黑', size: 12 },
+    ],
+    score: 0.85,
+  }
+})
+
+registerHandle('ai:doc-format-apply', async (_event: unknown, args: unknown) => {
+  const { suggestions } = args as { suggestions: Array<{ type: string; [key: string]: unknown }> }
+  
+  return {
+    applied: suggestions.length,
+    changes: suggestions.map(s => ({ type: s.type, applied: true })),
+    preview: true,
+  }
+})
+
+// ========== Sheet AI Skill (表格 AI 能力) ==========
+registerHandle('ai:sheets-formula-suggest', async (_event: unknown, args: unknown) => {
+  const { dataRange, intent, sampleData } = args as {
+    dataRange: string
+    intent?: string
+    sampleData?: unknown[][]
+  }
+  
+  return {
+    formulas: [
+      {
+        formula: '=SUM(A1:A10)',
+        description: '求和公式，计算 A1 到 A10 的总和',
+        score: 0.95,
+      },
+      {
+        formula: '=AVERAGE(A1:A10)',
+        description: '平均值公式，计算 A1 到 A10 的平均值',
+        score: 0.90,
+      },
+      {
+        formula: '=IF(A1>100,"高","低")',
+        description: '条件判断，根据值返回不同结果',
+        score: 0.85,
+      },
+    ],
+    recommended: 0,
+    range: dataRange,
+  }
+})
+
+registerHandle('ai:sheets-formula-explain', async (_event: unknown, args: unknown) => {
+  const { formula } = args as { formula: string }
+  
+  const explanations: Record<string, string> = {
+    SUM: '对指定范围的所有数值求和',
+    AVERAGE: '计算指定范围的算术平均值',
+    IF: '根据条件返回不同的值',
+    VLOOKUP: '在表格中垂直查找并返回对应值',
+    INDEX: '返回指定行列交叉处的值',
+    MATCH: '返回指定值在范围中的位置',
+  }
+  
+  const funcName = formula.match(/=([A-Z]+)/)?.[1] || ''
+  
+  return {
+    formula,
+    function: funcName,
+    explanation: explanations[funcName] || '未知公式',
+    example: formula.replace(/[A-Z]+:/, 'A1:A10'),
+    parameters: ['参数1', '参数2'],
+  }
+})
+
+registerHandle('ai:sheets-data-analyze', async (_event: unknown, args: unknown) => {
+  const { dataRange, sampleData } = args as {
+    dataRange: string
+    sampleData?: unknown[][]
+  }
+  
+  return {
+    summary: {
+      rowCount: 100,
+      columnCount: 5,
+      numericColumns: ['A', 'C', 'E'],
+      textColumns: ['B', 'D'],
+    },
+    insights: [
+      { type: 'trend', description: 'C列呈上升趋势', confidence: 0.85 },
+      { type: 'outlier', description: 'A列发现3个异常值', confidence: 0.78 },
+      { type: 'correlation', description: 'A列与C列正相关', confidence: 0.82 },
+    ],
+    recommendations: [
+      '建议添加趋势线',
+      '考虑过滤异常值',
+      '可以创建数据透视表',
+    ],
+  }
+})
+
+registerHandle('ai:sheets-trend-predict', async (_event: unknown, args: unknown) => {
+  const { dataRange, periods } = args as {
+    dataRange: string
+    periods?: number
+  }
+  
+  const predictPeriods = periods || 3
+  return {
+    predictions: Array.from({ length: predictPeriods }, (_, i) => ({
+      period: i + 1,
+      value: 100 + Math.random() * 20,
+      lower: 90 + Math.random() * 10,
+      upper: 110 + Math.random() * 10,
+    })),
+    model: 'linear_regression',
+    confidence: 0.82,
+  }
+})
+
+registerHandle('ai:sheets-chart-suggest', async (_event: unknown, args: unknown) => {
+  const { dataRange, dataType } = args as {
+    dataRange: string
+    dataType?: 'categorical' | 'time_series' | 'numeric'
+  }
+  
+  const chartTypes = {
+    categorical: ['bar', 'column', 'pie'],
+    time_series: ['line', 'area', 'combo'],
+    numeric: ['scatter', 'bubble', 'histogram'],
+  }
+  
+  const suggested = dataType ? chartTypes[dataType] : chartTypes.numeric
+  
+  return {
+    suggestions: suggested.map((type, i) => ({
+      type,
+      score: 1 - i * 0.15,
+      reason: `${type}图表最适合展示此类数据`,
+    })),
+    recommended: suggested[0],
+  }
+})
+
+registerHandle('ai:sheets-chart-create', async (_event: unknown, args: unknown) => {
+  const { dataRange, chartType, options } = args as {
+    dataRange: string
+    chartType: string
+    options?: { title?: string; colors?: string[] }
+  }
+  
+  return {
+    chartId: `chart-${Date.now()}`,
+    type: chartType,
+    title: options?.title || 'AI 生成的图表',
+    dataRange,
+    options: {
+      showLegend: true,
+      showGrid: true,
+      colors: options?.colors || ['#3498db', '#e74c3c', '#2ecc71'],
+    },
+  }
+})
+
+registerHandle('ai:sheets-data-clean', async (_event: unknown, args: unknown) => {
+  const { dataRange } = args as { dataRange: string }
+  
+  return {
+    issues: [
+      { type: 'empty_cells', count: 5, suggestion: '填充或删除空单元格' },
+      { type: 'duplicates', count: 3, suggestion: '删除重复行' },
+      { type: 'formatting', count: 2, suggestion: '统一数字格式' },
+    ],
+    actions: [
+      { operation: 'fill_empty', range: 'A1:A10', value: 'N/A' },
+      { operation: 'remove_duplicates', range: 'A1:E100' },
+      { operation: 'format_numbers', range: 'C1:C100', format: '#,##0.00' },
+    ],
+  }
+})
+
+registerHandle('ai:sheets-data-fill', async (_event: unknown, args: unknown) => {
+  const { range, pattern } = args as {
+    range: string
+    pattern?: 'sequence' | 'copy' | 'formula'
+  }
+  
+  return {
+    filled: true,
+    range,
+    pattern: pattern || 'copy',
+    values: ['值1', '值2', '值3', '值4', '值5'],
+  }
+})
+
+// ========== Slide AI Skill (幻灯片 AI 能力) ==========
+registerHandle('ai:slides-generate-outline', async (_event: unknown, args: unknown) => {
+  const { topic, slideCount } = args as {
+    topic: string
+    slideCount?: number
+  }
+  
+  const count = slideCount || 5
+  return {
+    title: topic,
+    slides: [
+      { index: 1, type: 'title', title: '封面', subtitle: topic },
+      { index: 2, type: 'agenda', title: '目录' },
+      { index: 3, type: 'content', title: '背景介绍' },
+      { index: 4, type: 'content', title: '核心内容' },
+      { index: 5, type: 'content', title: '案例分析' },
+      { index: 6, type: 'content', title: '总结' },
+      { index: 7, type: 'end', title: '谢谢' },
+    ].slice(0, count + 2),
+  }
+})
+
+registerHandle('ai:slides-generate-content', async (_event: unknown, args: unknown) => {
+  const { slideIndex, slideTitle, context } = args as {
+    slideIndex: number
+    slideTitle: string
+    context?: string
+  }
+  
+  return {
+    slideIndex,
+    title: slideTitle,
+    content: {
+      bullets: [
+        `要点1：关于${slideTitle}的核心概念`,
+        `要点2：关键案例和示例`,
+        `要点3：实践建议和方法`,
+      ],
+      notes: `演讲备注：在本页重点强调...`,
+      talkingPoints: ['首先介绍...', '然后讲解...', '最后总结...'],
+    },
+  }
+})
+
+registerHandle('ai:slides-generate-full', async (_event: unknown, args: unknown) => {
+  const { topic, count, style } = args as {
+    topic: string
+    count?: number
+    style?: 'business' | 'creative' | 'academic'
+  }
+  
+  const slideCount = count || 8
+  const slides = Array.from({ length: slideCount }, (_, i) => ({
+    index: i + 1,
+    type: i === 0 ? 'title' : i === slideCount - 1 ? 'end' : 'content',
+    title: i === 0 ? topic : `第${i}部分内容`,
+    content: {
+      bullets: [`要点${i + 1}A`, `要点${i + 1}B`, `要点${i + 1}C`],
+      notes: `演讲备注：第${i + 1}页...`,
+    },
+  }))
+  
+  return {
+    presentationId: `pres-${Date.now()}`,
+    topic,
+    slideCount,
+    style: style || 'business',
+    slides,
+  }
+})
+
+registerHandle('ai:slides-style-apply', async (_event: unknown, args: unknown) => {
+  const { presentationId, style } = args as {
+    presentationId: string
+    style: 'minimal' | 'modern' | 'classic' | 'creative'
+  }
+  
+  return {
+    applied: true,
+    presentationId,
+    style,
+    changes: [
+      { element: 'colors', before: 'default', after: style === 'modern' ? '#2196F3' : '#333333' },
+      { element: 'fonts', before: 'Arial', after: style === 'classic' ? 'Georgia' : 'Inter' },
+      { element: 'layout', before: 'standard', after: 'optimized' },
+    ],
+  }
+})
+
+registerHandle('ai:slides-style-consistent', async (_event: unknown, args: unknown) => {
+  const { presentationId } = args as { presentationId: string }
+  
+  return {
+    checked: true,
+    inconsistencies: [
+      { slide: 3, issue: '字体不统一', suggestion: '使用统一的标题字体' },
+      { slide: 5, issue: '颜色偏差', suggestion: '调整为统一配色' },
+    ],
+    fixed: 2,
+  }
+})
+
+registerHandle('ai:slides-notes-generate', async (_event: unknown, args: unknown) => {
+  const { slideIndex, slideContent } = args as {
+    slideIndex: number
+    slideContent: string
+  }
+  
+  return {
+    slideIndex,
+    notes: `演讲备注：
+1. 开场问候听众
+2. 引入本页主题：${slideContent}
+3. 详细讲解要点
+4. 自然过渡到下一页`,
+    estimatedDuration: '1-2分钟',
+    keyPoints: ['要点1', '要点2', '要点3'],
+  }
+})
+
+registerHandle('ai:slides-translate', async (_event: unknown, args: unknown) => {
+  const { slideIndex, targetLanguage } = args as {
+    slideIndex: number
+    targetLanguage: 'en' | 'ja' | 'ko' | 'fr' | 'de'
+  }
+  
+  const translations: Record<string, string> = {
+    en: 'English',
+    ja: '日本語',
+    ko: '한국어',
+    fr: 'Français',
+    de: 'Deutsch',
+  }
+  
+  return {
+    slideIndex,
+    originalLanguage: 'zh-CN',
+    targetLanguage: targetLanguage,
+    translatedTitle: `[${translations[targetLanguage]}] 翻译后的标题`,
+    translatedContent: `翻译后的内容 (${translations[targetLanguage]})`,
+    translatedNotes: `翻译后的备注 (${translations[targetLanguage]})`,
+  }
+})
+
 // ========== Web 文件处理 ==========
 const WEB_TEMP_ROOT = join(tmpdir(), 'genoffice-web-temp')
 
