@@ -46,3 +46,30 @@ export function eagerPagePrefetch(js) {
 export function hasEagerPrefetch(js) {
   return js.includes(EAGER_PREFETCH_MARK)
 }
+
+/**
+ * Embed mode strips File new/open/save from the registry so the host owns those
+ * actions — and also skips boot-time `createNewDocument()`. Untitled tabs then
+ * have no pages. Keep only `file:new-doc` registered; OA() still hides the menu.
+ */
+export const EMBED_NEW_DOC_MARK = '/*genoffice-embed-new-doc*/'
+
+const EMBED_NEW_DOC_RE =
+  /bA\.registerAll\(yA===`embed`\?Ev\.filter\(e=>!sD\.includes\(e\.id\)\):Ev\)/
+
+export function keepEmbedNewDoc(js) {
+  if (js.includes(EMBED_NEW_DOC_MARK)) return js
+  if (!js.includes('file:new-doc') || !js.includes('registerAll')) return js
+  const next = js.replace(
+    EMBED_NEW_DOC_RE,
+    `bA.registerAll(yA===\`embed\`?Ev.filter(e=>${EMBED_NEW_DOC_MARK}e.id===\`file:new-doc\`||!sD.includes(e.id)):Ev)`,
+  )
+  if (next === js) {
+    throw new Error('rhwp-studio embed command filter changed — update keepEmbedNewDoc()')
+  }
+  return next
+}
+
+export function hasEmbedNewDoc(js) {
+  return js.includes(EMBED_NEW_DOC_MARK)
+}

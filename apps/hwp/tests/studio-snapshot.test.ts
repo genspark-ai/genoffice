@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { eagerPagePrefetch, hasEagerPrefetch, isPwaPath, stripPwaHtml } from '../scripts/studio-snapshot.mjs'
+import {
+  eagerPagePrefetch,
+  hasEagerPrefetch,
+  hasEmbedNewDoc,
+  isPwaPath,
+  keepEmbedNewDoc,
+  stripPwaHtml,
+} from '../scripts/studio-snapshot.mjs'
 
 describe('studio snapshot helpers', () => {
   it('strips the stock PWA registration from the published index', () => {
@@ -36,5 +43,21 @@ describe('studio snapshot helpers', () => {
     expect(() =>
       eagerPagePrefetch('schedulePrefetchPages(e){requestIdleCallback(n)}'),
     ).toThrow('prefetch idle deferral changed')
+  })
+
+  it('keeps file:new-doc registered in embed so the host can create untitled docs', () => {
+    const stock =
+      'bA.registerAll(yA===`embed`?Ev.filter(e=>!sD.includes(e.id)):Ev),file:new-doc'
+    const next = keepEmbedNewDoc(stock)
+    expect(hasEmbedNewDoc(next)).toBe(true)
+    expect(next).toContain('e.id===`file:new-doc`')
+    expect(next).toContain('!sD.includes(e.id)')
+    expect(keepEmbedNewDoc(next)).toBe(next)
+  })
+
+  it('fails loudly when the embed command filter is no longer in the bundle', () => {
+    expect(() => keepEmbedNewDoc('file:new-doc registerAll embed')).toThrow(
+      'embed command filter changed',
+    )
   })
 })

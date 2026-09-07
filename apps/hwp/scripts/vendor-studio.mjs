@@ -17,6 +17,7 @@ import {
   REQUIRED_RELATIVE,
   eagerPagePrefetch,
   isPwaPath,
+  keepEmbedNewDoc,
   stripPwaHtml,
 } from './studio-snapshot.mjs'
 
@@ -106,7 +107,7 @@ async function download(urlPath) {
   if (isTextPath(urlPath)) {
     let text = await res.text()
     if (dest.endsWith('index.html')) text = stripPwaHtml(text)
-    else if (dest.endsWith('.js')) text = tryEagerPrefetch(text, dest)
+    else if (dest.endsWith('.js')) text = patchStudioSource(text, dest)
     await writeFile(dest, text)
     return text
   }
@@ -126,15 +127,19 @@ async function stripPwaFiles() {
   await writeFile(index, next)
 }
 
-function tryEagerPrefetch(js, label) {
+function tryStudioPatch(fn, js, label) {
   try {
-    return eagerPagePrefetch(js)
+    return fn(js)
   } catch (err) {
     process.stderr.write(
-      `prefetch patch skipped (${label}): ${err instanceof Error ? err.message : err}\n`,
+      `studio patch skipped (${label}): ${err instanceof Error ? err.message : err}\n`,
     )
     return js
   }
+}
+
+function patchStudioSource(js, label) {
+  return tryStudioPatch(keepEmbedNewDoc, tryStudioPatch(eagerPagePrefetch, js, label), label)
 }
 
 async function patchStudioJs() {
@@ -143,7 +148,7 @@ async function patchStudioJs() {
   for (const name of readdirSync(dir)) {
     if (extname(name) !== '.js') continue
     const path = join(dir, name)
-    const next = tryEagerPrefetch(await readFile(path, 'utf8'), name)
+    const next = patchStudioSource(await readFile(path, 'utf8'), name)
     await writeFile(path, next)
   }
 }

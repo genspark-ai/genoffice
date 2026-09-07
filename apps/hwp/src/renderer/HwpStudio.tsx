@@ -113,6 +113,12 @@ export function HwpStudio({
             suppressDialogs: true,
           })
           onPathRef.current(openPath)
+        } else {
+          // embed boot skips createNewDocument(); the host owns File → New
+          const created = await studio.commands.execute('file:new-doc', {}, { allowDialog: false })
+          if (!created.ok) {
+            throw new Error(created.message ?? created.reason)
+          }
         }
         markDirty(false)
         poll = setInterval(() => {
