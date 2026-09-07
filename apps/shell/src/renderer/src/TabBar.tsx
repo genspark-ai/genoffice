@@ -103,17 +103,9 @@ function HangulIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 240 240" fill="none" aria-hidden="true">
       <rect width="240" height="240" rx="48" fill="#0B6E4F" />
-      <text
-        x="120"
-        y="158"
-        textAnchor="middle"
-        fill="#fff"
-        fontSize="118"
-        fontWeight="700"
-        fontFamily="system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif"
-      >
-        한
-      </text>
+      <circle cx="120" cy="52" r="20" fill="#fff" />
+      <rect x="50" y="84" width="140" height="24" rx="4" fill="#fff" />
+      <circle cx="120" cy="162" r="36" fill="none" stroke="#fff" strokeWidth="22" />
     </svg>
   )
 }
