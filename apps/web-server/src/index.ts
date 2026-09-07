@@ -1949,6 +1949,341 @@ registerHandle('visualization:get-chart-data', (_event: unknown, args: unknown) 
   }
 })
 
+// ========== 语音功能 ==========
+registerHandle('speech:recognize', async (_event: unknown, args: unknown) => {
+  const { audioBytes, language } = args as { audioBytes: ArrayBuffer; language?: string }
+  
+  // 模拟语音识别
+  return {
+    text: '这是模拟的语音识别结果',
+    confidence: 0.95,
+    language: language || 'zh-CN',
+    words: [
+      { word: '这是', start: 0, end: 0.5, confidence: 0.95 },
+      { word: '模拟的', start: 0.5, end: 1.0, confidence: 0.92 },
+      { word: '语音', start: 1.0, end: 1.5, confidence: 0.98 },
+      { word: '识别', start: 1.5, end: 2.0, confidence: 0.91 },
+      { word: '结果', start: 2.0, end: 2.5, confidence: 0.94 },
+    ],
+  }
+})
+
+registerHandle('speech:synthesize', async (_event: unknown, args: unknown) => {
+  const { text, voice, speed, pitch } = args as {
+    text: string
+    voice?: string
+    speed?: number
+    pitch?: number
+  }
+  
+  // 模拟语音合成 - 返回空白音频
+  return {
+    audioBytes: new ArrayBuffer(0),
+    duration: Math.ceil(text.length * 0.3), // 估算时长
+    format: 'mp3',
+    voice: voice || 'zh-CN-female',
+    speed: speed || 1.0,
+    pitch: pitch || 1.0,
+  }
+})
+
+registerHandle('speech:get-voices', () => {
+  return [
+    { id: 'zh-CN-female', name: '中文女声', language: 'zh-CN' },
+    { id: 'zh-CN-male', name: '中文男声', language: 'zh-CN' },
+    { id: 'en-US-female', name: 'English Female', language: 'en-US' },
+    { id: 'en-US-male', name: 'English Male', language: 'en-US' },
+    { id: 'ja-JP-female', name: '日本語女性', language: 'ja-JP' },
+  ]
+})
+
+// ========== 文件预览 ==========
+registerHandle('preview:get', async (_event: unknown, args: unknown) => {
+  const { filePath, width, height, format } = args as {
+    filePath: string
+    width?: number
+    height?: number
+    format?: 'thumbnail' | 'full'
+  }
+  
+  if (!existsSync(filePath as string)) {
+    return null
+  }
+  
+  const ext = extname(filePath as string).toLowerCase()
+  const bytes = readFileSync(filePath as string)
+  
+  // 根据文件类型生成预览
+  if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(ext)) {
+    return {
+      type: 'image',
+      base64: bytes.toString('base64'),
+      mimeType: `image/${ext.slice(1)}`,
+      width: width || 800,
+      height: height || 600,
+    }
+  } else if (ext === '.pdf') {
+    return {
+      type: 'pdf',
+      base64: bytes.toString('base64'),
+      pageCount: 1,
+    }
+  } else if (['.txt', '.md', '.json', '.xml', '.html', '.css', '.js', '.ts'].includes(ext)) {
+    return {
+      type: 'text',
+      content: bytes.toString('utf-8').slice(0, 10000),
+      truncated: bytes.length > 10000,
+    }
+  }
+  
+  return {
+    type: 'unsupported',
+    extension: ext,
+    message: `不支持预览 ${ext} 文件`,
+  }
+})
+
+// ========== 高级搜索 ==========
+const SEARCH_INDEX = new Map<string, {
+  id: string
+  type: string
+  title: string
+  content: string
+  tags: string[]
+  createdAt: number
+}>()
+
+registerHandle('search:index', (_event: unknown, args: unknown) => {
+  const { id, type, title, content, tags } = args as {
+    id: string
+    type: string
+    title: string
+    content: string
+    tags?: string[]
+  }
+  
+  SEARCH_INDEX.set(id, {
+    id,
+    type,
+    title,
+    content,
+    tags: tags || [],
+    createdAt: Date.now(),
+  })
+  
+  return { ok: true, indexed: SEARCH_INDEX.size }
+})
+
+registerHandle('search:query', (_event: unknown, args: unknown) => {
+  const { query, type, limit, offset } = args as {
+    query: string
+    type?: string
+    limit?: number
+    offset?: number
+  }
+  
+  const maxResults = limit || 20
+  const startOffset = offset || 0
+  const queryLower = query.toLowerCase()
+  
+  let results = [...SEARCH_INDEX.values()].filter(item => {
+    if (type && item.type !== type) return false
+    return (
+      item.title.toLowerCase().includes(queryLower) ||
+      item.content.toLowerCase().includes(queryLower) ||
+      item.tags.some(tag => tag.toLowerCase().includes(queryLower))
+    )
+  })
+  
+  const total = results.length
+  results = results.slice(startOffset, startOffset + maxResults)
+  
+  return {
+    results: results.map(r => ({
+      id: r.id,
+      type: r.type,
+      title: r.title,
+      snippet: r.content.slice(0, 200) + (r.content.length > 200 ? '...' : ''),
+      score: 1.0,
+    })),
+    total,
+    limit: maxResults,
+    offset: startOffset,
+  }
+})
+
+registerHandle('search:delete', (_event: unknown, args: unknown) => {
+  const { id } = args as { id: string }
+  if (!SEARCH_INDEX.has(id)) return { ok: false, error: 'Not found' }
+  SEARCH_INDEX.delete(id)
+  return { ok: true }
+})
+
+// ========== 用户管理 ==========
+const USERS = new Map<string, {
+  id: string
+  name: string
+  email: string
+  role: 'admin' | 'editor' | 'viewer'
+  createdAt: number
+}>()
+
+registerHandle('users:list', (_event: unknown) => {
+  return [...USERS.values()].map(u => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+  }))
+})
+
+registerHandle('users:get', (_event: unknown, args: unknown) => {
+  const { id } = args as { id: string }
+  return USERS.get(id) || null
+})
+
+registerHandle('users:create', (_event: unknown, args: unknown) => {
+  const { name, email, role } = args as { name: string; email: string; role?: string }
+  const id = `user-${Date.now()}`
+  USERS.set(id, {
+    id,
+    name,
+    email,
+    role: (role as 'admin' | 'editor' | 'viewer') || 'viewer',
+    createdAt: Date.now(),
+  })
+  return { ok: true, id }
+})
+
+registerHandle('users:update', (_event: unknown, args: unknown) => {
+  const { id, name, email, role } = args as { id: string; name?: string; email?: string; role?: string }
+  const user = USERS.get(id)
+  if (!user) return { ok: false, error: 'User not found' }
+  if (name) user.name = name
+  if (email) user.email = email
+  if (role) user.role = role as 'admin' | 'editor' | 'viewer'
+  return { ok: true }
+})
+
+registerHandle('users:delete', (_event: unknown, args: unknown) => {
+  const { id } = args as { id: string }
+  if (!USERS.has(id)) return { ok: false, error: 'User not found' }
+  USERS.delete(id)
+  return { ok: true }
+})
+
+// ========== 权限管理 ==========
+const PERMISSIONS = new Map<string, Map<string, string[]>>() // docId -> userId -> permissions
+
+registerHandle('permissions:get', (_event: unknown, args: unknown) => {
+  const { docId } = args as { docId: string }
+  const docPerms = PERMISSIONS.get(docId)
+  if (!docPerms) return []
+  
+  return [...docPerms.entries()].map(([userId, perms]) => ({
+    userId,
+    permissions: perms,
+  }))
+})
+
+registerHandle('permissions:grant', (_event: unknown, args: unknown) => {
+  const { docId, userId, permissions } = args as { docId: string; userId: string; permissions: string[] }
+  
+  if (!PERMISSIONS.has(docId)) {
+    PERMISSIONS.set(docId, new Map())
+  }
+  
+  PERMISSIONS.get(docId)!.set(userId, permissions)
+  return { ok: true }
+})
+
+registerHandle('permissions:revoke', (_event: unknown, args: unknown) => {
+  const { docId, userId } = args as { docId: string; userId: string }
+  const docPerms = PERMISSIONS.get(docId)
+  if (docPerms) {
+    docPerms.delete(userId)
+  }
+  return { ok: true }
+})
+
+registerHandle('permissions:check', (_event: unknown, args: unknown) => {
+  const { docId, userId, permission } = args as { docId: string; userId: string; permission: string }
+  
+  const docPerms = PERMISSIONS.get(docId)
+  if (!docPerms) return { allowed: false, reason: 'No permissions set' }
+  
+  const userPerms = docPerms.get(userId)
+  if (!userPerms) return { allowed: false, reason: 'User not found' }
+  
+  const hasPermission = userPerms.includes(permission) || userPerms.includes('*')
+  return { allowed: hasPermission, reason: hasPermission ? 'OK' : 'Permission denied' }
+})
+
+// ========== 通知系统 ==========
+const NOTIFICATIONS = new Map<string, Array<{
+  id: string
+  type: 'info' | 'success' | 'warning' | 'error'
+  title: string
+  message: string
+  timestamp: number
+  read: boolean
+}>>()
+
+registerHandle('notifications:send', (_event: unknown, args: unknown) => {
+  const { userId, type, title, message } = args as {
+    userId: string
+    type: 'info' | 'success' | 'warning' | 'error'
+    title: string
+    message: string
+  }
+  
+  if (!NOTIFICATIONS.has(userId)) {
+    NOTIFICATIONS.set(userId, [])
+  }
+  
+  const id = `notif-${Date.now()}`
+  NOTIFICATIONS.get(userId)!.push({
+    id,
+    type,
+    title,
+    message,
+    timestamp: Date.now(),
+    read: false,
+  })
+  
+  return { ok: true, id, unread: NOTIFICATIONS.get(userId)!.filter(n => !n.read).length }
+})
+
+registerHandle('notifications:list', (_event: unknown, args: unknown) => {
+  const { userId, unreadOnly } = args as { userId: string; unreadOnly?: boolean }
+  
+  const notifications = NOTIFICATIONS.get(userId) || []
+  if (unreadOnly) {
+    return notifications.filter(n => !n.read)
+  }
+  return notifications
+})
+
+registerHandle('notifications:mark-read', (_event: unknown, args: unknown) => {
+  const { userId, notificationId } = args as { userId: string; notificationId: string }
+  
+  const notifications = NOTIFICATIONS.get(userId)
+  if (!notifications) return { ok: false, error: 'User not found' }
+  
+  const notification = notifications.find(n => n.id === notificationId)
+  if (!notification) return { ok: false, error: 'Notification not found' }
+  
+  notification.read = true
+  return { ok: true }
+})
+
+registerHandle('notifications:clear', (_event: unknown, args: unknown) => {
+  const { userId } = args as { userId: string }
+  const count = NOTIFICATIONS.get(userId)?.length || 0
+  NOTIFICATIONS.delete(userId)
+  return { ok: true, cleared: count }
+})
+
 // ========== Web 文件处理 ==========
 const WEB_TEMP_ROOT = join(tmpdir(), 'genoffice-web-temp')
 
