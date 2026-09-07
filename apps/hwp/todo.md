@@ -1,25 +1,24 @@
 # Hangul — remaining
 
-본문 문단/선택/누름틀/표 칸 편집과 웹 검색·채팅 저장은 됨.
-아래는 Docs/Markdown AI와 맞추려면 남은 것. 4000자 본문 한도는 rhwp `applyTextCommand` 계약이라 풀지 않음.
+본문 읽기·문단/선택 수정·새 문단 삽입(`insert_content`)·누름틀·표 칸·웹 검색·채팅 저장은 됨.
+4000자 본문 한도는 rhwp `applyTextCommand` 계약이라 풀지 않음.
 
-## 편집 (스튜디오 표면이 더 필요)
+## 편집
 
-- [ ] 머리글/각주 읽기·수정 — Docs의 `set_header_footer`에 해당. 공개 API 없음. WASM 직접 호출은 undo/레이아웃이 깨질 수 있음
-- [ ] 새 문단 삽입 / 빈 문서에 글 쓰기 — Docs/Markdown `insert_content`. `applyTextCommand`가 `\n`을 거절해서 기존 문단 교체만 가능
+- [ ] 머리글/각주 읽기·수정 — 공개 API 없음. WASM 직접 호출은 undo/레이아웃이 깨질 수 있음
 
 ## 다른 문서 AI에 있고 한글에 없는 것
 
-- [ ] 첨부 파일 읽기 (`files-skill` / `read_attachment`) — Docs·Slides·Sheets에 있음
-- [ ] 이미지 검색·생성·삽입 — Docs·Markdown에 있음. 한글 쪽은 일부러 보류
-- [ ] `create_document` — Docs처럼 AI가 새 문서를 만들어 열기
+- [ ] 첨부 파일 읽기 (`files-skill` / `read_attachment`)
+- [ ] 이미지 검색·생성·삽입 — 일부러 보류
+- [ ] `create_document` — AI가 새 한글 문서를 만들어 열기
 
 ## 호스트 / 셸
 
-- [ ] 페이지 넘김 — canvas2d에서 다음 페이지가 끊김. 예전 패치는 `eb3c4f8`에서 되돌림. 그 패치를 다시 넣지 말 것
-- [ ] 인쇄 / PDF — rhwp-studio에 `file:print`, `file:print-to-pdf`가 있음. 페이지를 SVG로 그려 `print.html`에 넣고 브라우저 인쇄 창을 연다. embed 크롬은 스튜디오 메뉴를 가리고, 벤더 스냅샷에 `print.html`이 없음. 빈 같은 출처 셸을 스냅샷에 넣고 셸 File 메뉴에서 `commands.execute`로 연결해야 함
+- [ ] 페이지 넘김 — canvas2d에서 다음 페이지가 끊김. 예전 패치는 `eb3c4f8`에서 되돌림. 다시 넣지 말 것
+- [ ] 인쇄 / PDF — 후순위. 스튜디오에 `file:print` / `file:print-to-pdf`가 있음. `print.html`을 스냅샷에 넣고 셸 File 메뉴에서 호출하면 됨
 
 ## 하지 않음
 
-- 본문 4000자 한도 해제 — rhwp SDK 제한
-- 댓글/교정/차트 — Docs 전용. 한글 스튜디오에 호스트 경로 없음
+- 본문 4000자 한도 해제
+- 댓글/교정/차트 — 한글 스튜디오에 호스트 경로 없음
