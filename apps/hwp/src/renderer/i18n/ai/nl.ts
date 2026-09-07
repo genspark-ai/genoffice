@@ -7,7 +7,7 @@ export const nl = {
   aiEditorNotReady: 'Hangul-editor wordt nog geladen…',
   aiEmptyTitle: 'Vraag over dit Hangul-document',
   aiEmptyBody:
-    'Samenvatten, vertalen of een selectie of alinea herschrijven. U kunt ook nieuwe alinea’s schrijven, tabellen invoegen, vet/kleur/lettertype/inspringing/regelafstand toepassen, velden invullen, cellen bewerken of op het web zoeken.',
+    'Samenvatten, vertalen of een selectie of alinea herschrijven. U kunt ook nieuwe alinea’s schrijven, tabellen invoegen, rijen toevoegen of verwijderen, cellen samenvoegen, vulling instellen, de papierstand wijzigen, vet/kleur/lettertype/inspringing/regelafstand toepassen, velden invullen, cellen bewerken of op het web zoeken.',
   aiNewChat: 'Nieuwe chat',
   aiSend: 'Verzenden',
   aiStop: 'Stoppen',
@@ -45,4 +45,10 @@ export const nl = {
   aiToolInsertTableDone: 'Tabel ingevoegd',
   aiToolApplyFormat: 'Opmaak toepassen',
   aiToolApplyFormatDone: 'Opmaak toegepast',
+  aiToolEditTable: 'Tabelstructuur bewerken',
+  aiToolEditTableDone: 'Tabelstructuur bewerkt',
+  aiToolStyleTable: 'Tabel opmaken',
+  aiToolStyleTableDone: 'Tabel opgemaakt',
+  aiToolSetPage: 'Pagina instellen',
+  aiToolSetPageDone: 'Pagina ingesteld',
 } satisfies Record<keyof typeof zh, string>

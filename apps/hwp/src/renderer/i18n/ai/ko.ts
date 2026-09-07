@@ -7,7 +7,7 @@ export const ko = {
   aiEditorNotReady: '한글 편집기를 불러오는 중…',
   aiEmptyTitle: '이 한글 문서에 대해 질문하세요',
   aiEmptyBody:
-    '요약, 번역, 선택/문단 수정, 새 문단 쓰기, 표 넣기, 굵게·색·글꼴·들여쓰기·줄간격 서식, 누름틀 채우기, 표 칸 수정, 웹에서 사실 검색을 할 수 있습니다.',
+    '요약, 번역, 선택/문단 수정, 새 문단 쓰기, 표 넣기, 행·열 추가/삭제·셀 합치기, 칸 배경·용지 방향, 굵게·색·글꼴·들여쓰기·줄간격 서식, 누름틀 채우기, 표 칸 수정, 웹에서 사실 검색을 할 수 있습니다.',
   aiNewChat: '새 대화',
   aiSend: '전송',
   aiStop: '중지',
@@ -45,4 +45,10 @@ export const ko = {
   aiToolInsertTableDone: '표를 넣었습니다',
   aiToolApplyFormat: '서식 적용',
   aiToolApplyFormatDone: '서식을 적용했습니다',
+  aiToolEditTable: '표 구조 편집',
+  aiToolEditTableDone: '표 구조를 바꿨습니다',
+  aiToolStyleTable: '표 모양 지정',
+  aiToolStyleTableDone: '표 모양을 지정했습니다',
+  aiToolSetPage: '용지 설정',
+  aiToolSetPageDone: '용지를 설정했습니다',
 } satisfies Record<keyof typeof zh, string>

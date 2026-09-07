@@ -105,9 +105,17 @@ function cellFormatMethods() {
   return `applyCellCharFormat(e,t,n,r,i,a,o,s){this.syncGeneration();let c=s&&typeof s==\`object\`?Object.assign({},s):{};if(c.fontName){let f=this.deps.wasm.findOrCreateFontId(String(c.fontName));if(!(f>=0))throw Error(\`font not found\`);c.fontId=f;delete c.fontName}let x=this.deps.wasm.applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c));if(typeof x==\`string\`)try{x=JSON.parse(x)}catch{}if(x&&x.ok===!1)throw Error(String(x.error||x.message||\`applyCharFormatInCell failed\`));return x}applyCellParaFormat(e,t,n,r,i,a){this.syncGeneration();let p=a&&typeof a==\`object\`?Object.assign({},a):{};let x=this.deps.wasm.applyParaFormatInCell(e,t,n,r,i,JSON.stringify(p));if(typeof x==\`string\`)try{x=JSON.parse(x)}catch{}if(x&&x.ok===!1)throw Error(String(x.error||x.message||\`applyParaFormatInCell failed\`));return x}`
 }
 
+function unwrapWasm(assign, fail) {
+  return `if(typeof ${assign}==\`string\`)try{${assign}=JSON.parse(${assign})}catch{}if(${assign}&&${assign}.ok===!1)throw Error(String(${assign}.error||${assign}.message||\`${fail}\`));return ${assign}`
+}
+
+function tableEditMethods() {
+  return `insertTableRow(e,t,n,r,i){this.syncGeneration();let x=this.deps.wasm.insertTableRow(e,t,n,r,i===!0||i===1);${unwrapWasm('x', 'insertTableRow failed')}}insertTableColumn(e,t,n,r,i){this.syncGeneration();let x=this.deps.wasm.insertTableColumn(e,t,n,r,i===!0||i===1);${unwrapWasm('x', 'insertTableColumn failed')}}deleteTableRow(e,t,n,r){this.syncGeneration();let x=this.deps.wasm.deleteTableRow(e,t,n,r);${unwrapWasm('x', 'deleteTableRow failed')}}deleteTableColumn(e,t,n,r){this.syncGeneration();let x=this.deps.wasm.deleteTableColumn(e,t,n,r);${unwrapWasm('x', 'deleteTableColumn failed')}}mergeTableCells(e,t,n,r,i,a,o){this.syncGeneration();let x=this.deps.wasm.mergeTableCells(e,t,n,r,i,a,o);${unwrapWasm('x', 'mergeTableCells failed')}}splitTableCellInto(e,t,n,r,i,a,o,s,c){this.syncGeneration();let x=this.deps.wasm.splitTableCellInto(e,t,n,r,i,a,o,s,c);${unwrapWasm('x', 'splitTableCellInto failed')}}setCellProperties(e,t,n,r,i){this.syncGeneration();let x=this.deps.wasm.setCellProperties(e,t,n,r,i);${unwrapWasm('x', 'setCellProperties failed')}}setTableProperties(e,t,n,r){this.syncGeneration();let x=this.deps.wasm.setTableProperties(e,t,n,r);${unwrapWasm('x', 'setTableProperties failed')}}getTableProperties(e,t,n){this.syncGeneration();let x=this.deps.wasm.getTableProperties(e,t,n);${unwrapWasm('x', 'getTableProperties failed')}}getPageDef(e){this.syncGeneration();let x=this.deps.wasm.getPageDef(e);${unwrapWasm('x', 'getPageDef failed')}}setPageDef(e,t){this.syncGeneration();let x=this.deps.wasm.setPageDef(e,t);${unwrapWasm('x', 'setPageDef failed')}}getColumnDef(e){this.syncGeneration();let x=this.deps.wasm.getColumnDef(e);${unwrapWasm('x', 'getColumnDef failed')}}setColumnDef(e,t,n,r,i){this.syncGeneration();let x=this.deps.wasm.setColumnDef(e,t,n,r,i);${unwrapWasm('x', 'setColumnDef failed')}}`
+}
+
 function formatAgentMethods() {
   // Dialog-free table + char/para format. Wasm bridge already wraps createTable / apply*.
-  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r));if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}${cellFormatMethods()}`
+  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r));if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}${cellFormatMethods()}${tableEditMethods()}`
 }
 
 function insertAgentMethod() {
@@ -218,7 +226,15 @@ function insertHandler(ready, agent) {
 }
 
 function formatHandler(ready, agent) {
-  return `async insertTable(e,t,n,r){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertTable(e,t,n,r)},async applyBodyCharFormat(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyCharFormat(e,t,n,r,i)},async applyBodyParaFormat(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyParaFormat(e,t,n)},async applyCellCharFormat(e,t,n,r,i,a,o,s){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellCharFormat(e,t,n,r,i,a,o,s)},async applyCellParaFormat(e,t,n,r,i,a){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellParaFormat(e,t,n,r,i,a)}`
+  return `async insertTable(e,t,n,r){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertTable(e,t,n,r)},async applyBodyCharFormat(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyCharFormat(e,t,n,r,i)},async applyBodyParaFormat(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyParaFormat(e,t,n)},async applyCellCharFormat(e,t,n,r,i,a,o,s){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellCharFormat(e,t,n,r,i,a,o,s)},async applyCellParaFormat(e,t,n,r,i,a){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellParaFormat(e,t,n,r,i,a)},${tableEditHandler(ready, agent)}`
+}
+
+function tableEditRoutes(host, params) {
+  return `case\`insertTableRow\`:return ${host}.insertTableRow(${params}.section,${params}.paragraph,${params}.control,${params}.row,${params}.after);case\`insertTableColumn\`:return ${host}.insertTableColumn(${params}.section,${params}.paragraph,${params}.control,${params}.col,${params}.after);case\`deleteTableRow\`:return ${host}.deleteTableRow(${params}.section,${params}.paragraph,${params}.control,${params}.row);case\`deleteTableColumn\`:return ${host}.deleteTableColumn(${params}.section,${params}.paragraph,${params}.control,${params}.col);case\`mergeTableCells\`:return ${host}.mergeTableCells(${params}.section,${params}.paragraph,${params}.control,${params}.startRow,${params}.startCol,${params}.endRow,${params}.endCol);case\`splitTableCellInto\`:return ${host}.splitTableCellInto(${params}.section,${params}.paragraph,${params}.control,${params}.row,${params}.col,${params}.rows,${params}.cols,${params}.equalHeight,${params}.mergeFirst);case\`setCellProperties\`:return ${host}.setCellProperties(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.props);case\`setTableProperties\`:return ${host}.setTableProperties(${params}.section,${params}.paragraph,${params}.control,${params}.props);case\`getTableProperties\`:return ${host}.getTableProperties(${params}.section,${params}.paragraph,${params}.control);case\`getPageDef\`:return ${host}.getPageDef(${params}.section);case\`setPageDef\`:return ${host}.setPageDef(${params}.section,${params}.props);case\`getColumnDef\`:return ${host}.getColumnDef(${params}.section);case\`setColumnDef\`:return ${host}.setColumnDef(${params}.section,${params}.count,${params}.columnType,${params}.sameWidth,${params}.spacing);`
+}
+
+function tableEditHandler(ready, agent) {
+  return `async insertTableRow(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertTableRow(e,t,n,r,i)},async insertTableColumn(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertTableColumn(e,t,n,r,i)},async deleteTableRow(e,t,n,r){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.deleteTableRow(e,t,n,r)},async deleteTableColumn(e,t,n,r){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.deleteTableColumn(e,t,n,r)},async mergeTableCells(e,t,n,r,i,a,o){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.mergeTableCells(e,t,n,r,i,a,o)},async splitTableCellInto(e,t,n,r,i,a,o,s,c){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.splitTableCellInto(e,t,n,r,i,a,o,s,c)},async setCellProperties(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.setCellProperties(e,t,n,r,i)},async setTableProperties(e,t,n,r){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.setTableProperties(e,t,n,r)},async getTableProperties(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.getTableProperties(e,t,n)},async getPageDef(e){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.getPageDef(e)},async setPageDef(e,t){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.setPageDef(e,t)},async getColumnDef(e){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.getColumnDef(e)},async setColumnDef(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.setColumnDef(e,t,n,r,i)}`
 }
 
 function prepareSurfaceComplete(js) {
@@ -231,6 +247,9 @@ function prepareSurfaceComplete(js) {
     js.includes('case`insertTable`') &&
     js.includes('case`applyBodyCharFormat`') &&
     js.includes('case`applyCellCharFormat`') &&
+    js.includes('case`insertTableRow`') &&
+    js.includes('case`setPageDef`') &&
+    js.includes('insertTableRow(e,t,n,r,i){') &&
     js.includes('insertTable(e,t,n,r){') &&
     js.includes('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))') &&
     js.includes('applyParaFormatInCell(e,t,n,r,i,JSON.stringify(p))') &&
@@ -263,7 +282,7 @@ function prepareAgentHandlers(ready, agent) {
 }
 
 function prepareAgentRoutes(guard, params, host) {
-  return `case\`getSelectionContext\`:return ${guard}(${params},\`getSelectionContext params\`),${host}.getSelectionContext();case\`prepareTextCommand\`:return ${host}.prepareTextCommand();case\`listBodyParagraphs\`:return ${host}.listBodyParagraphs();case\`listFields\`:return ${host}.listFields();case\`setField\`:return ${host}.setField(${params}.name,${params}.value);case\`listTables\`:return ${host}.listTables();case\`replaceCell\`:return ${host}.replaceCell(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.text);case\`insertBodyParagraphs\`:return ${host}.insertBodyParagraphs(${params}.section,${params}.index,${params}.count);case\`insertFilledParagraphs\`:return ${host}.insertFilledParagraphs(${params}.section,${params}.index,${params}.texts);case\`insertTable\`:return ${host}.insertTable(${params}.section,${params}.index,${params}.rows,${params}.cols);case\`applyBodyCharFormat\`:return ${host}.applyBodyCharFormat(${params}.section,${params}.paragraph,${params}.start,${params}.end,${params}.format);case\`applyBodyParaFormat\`:return ${host}.applyBodyParaFormat(${params}.section,${params}.paragraph,${params}.format);case\`applyCellCharFormat\`:return ${host}.applyCellCharFormat(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.cellPara,${params}.start,${params}.end,${params}.format);case\`applyCellParaFormat\`:return ${host}.applyCellParaFormat(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.cellPara,${params}.format);case\`applyTextCommand\`:`
+  return `case\`getSelectionContext\`:return ${guard}(${params},\`getSelectionContext params\`),${host}.getSelectionContext();case\`prepareTextCommand\`:return ${host}.prepareTextCommand();case\`listBodyParagraphs\`:return ${host}.listBodyParagraphs();case\`listFields\`:return ${host}.listFields();case\`setField\`:return ${host}.setField(${params}.name,${params}.value);case\`listTables\`:return ${host}.listTables();case\`replaceCell\`:return ${host}.replaceCell(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.text);case\`insertBodyParagraphs\`:return ${host}.insertBodyParagraphs(${params}.section,${params}.index,${params}.count);case\`insertFilledParagraphs\`:return ${host}.insertFilledParagraphs(${params}.section,${params}.index,${params}.texts);case\`insertTable\`:return ${host}.insertTable(${params}.section,${params}.index,${params}.rows,${params}.cols);case\`applyBodyCharFormat\`:return ${host}.applyBodyCharFormat(${params}.section,${params}.paragraph,${params}.start,${params}.end,${params}.format);case\`applyBodyParaFormat\`:return ${host}.applyBodyParaFormat(${params}.section,${params}.paragraph,${params}.format);case\`applyCellCharFormat\`:return ${host}.applyCellCharFormat(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.cellPara,${params}.start,${params}.end,${params}.format);case\`applyCellParaFormat\`:return ${host}.applyCellParaFormat(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.cellPara,${params}.format);${tableEditRoutes(host, params)}case\`applyTextCommand\`:`
 }
 
 function stripClassMethodCommas(js) {
@@ -283,6 +302,19 @@ function stripClassMethodCommas(js) {
     .replace(/,applyBodyParaFormat\(e,t,n\)\{/g, 'applyBodyParaFormat(e,t,n){')
     .replace(/,applyCellCharFormat\(e,t,n,r,i,a,o,s\)\{/g, 'applyCellCharFormat(e,t,n,r,i,a,o,s){')
     .replace(/,applyCellParaFormat\(e,t,n,r,i,a\)\{/g, 'applyCellParaFormat(e,t,n,r,i,a){')
+    .replace(/,insertTableRow\(e,t,n,r,i\)\{/g, 'insertTableRow(e,t,n,r,i){')
+    .replace(/,insertTableColumn\(e,t,n,r,i\)\{/g, 'insertTableColumn(e,t,n,r,i){')
+    .replace(/,deleteTableRow\(e,t,n,r\)\{/g, 'deleteTableRow(e,t,n,r){')
+    .replace(/,deleteTableColumn\(e,t,n,r\)\{/g, 'deleteTableColumn(e,t,n,r){')
+    .replace(/,mergeTableCells\(e,t,n,r,i,a,o\)\{/g, 'mergeTableCells(e,t,n,r,i,a,o){')
+    .replace(/,splitTableCellInto\(e,t,n,r,i,a,o,s,c\)\{/g, 'splitTableCellInto(e,t,n,r,i,a,o,s,c){')
+    .replace(/,setCellProperties\(e,t,n,r,i\)\{/g, 'setCellProperties(e,t,n,r,i){')
+    .replace(/,setTableProperties\(e,t,n,r\)\{/g, 'setTableProperties(e,t,n,r){')
+    .replace(/,getTableProperties\(e,t,n\)\{/g, 'getTableProperties(e,t,n){')
+    .replace(/,getPageDef\(e\)\{/g, 'getPageDef(e){')
+    .replace(/,setPageDef\(e,t\)\{/g, 'setPageDef(e,t){')
+    .replace(/,getColumnDef\(e\)\{/g, 'getColumnDef(e){')
+    .replace(/,setColumnDef\(e,t,n,r,i\)\{/g, 'setColumnDef(e,t,n,r,i){')
 }
 
 function attachTableSurface(js) {
@@ -362,7 +394,7 @@ function attachFormatSurface(js) {
   })
   next = next.replace(
     INSERT_FILLED_ROUTE_END_RE,
-    'case`insertFilledParagraphs`:return $1.insertFilledParagraphs($2.section,$2.index,$2.texts);case`insertTable`:return $1.insertTable($2.section,$2.index,$2.rows,$2.cols);case`applyBodyCharFormat`:return $1.applyBodyCharFormat($2.section,$2.paragraph,$2.start,$2.end,$2.format);case`applyBodyParaFormat`:return $1.applyBodyParaFormat($2.section,$2.paragraph,$2.format);case`applyCellCharFormat`:return $1.applyCellCharFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.start,$2.end,$2.format);case`applyCellParaFormat`:return $1.applyCellParaFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.format);case`applyTextCommand`:',
+    `case\`insertFilledParagraphs\`:return $1.insertFilledParagraphs($2.section,$2.index,$2.texts);case\`insertTable\`:return $1.insertTable($2.section,$2.index,$2.rows,$2.cols);case\`applyBodyCharFormat\`:return $1.applyBodyCharFormat($2.section,$2.paragraph,$2.start,$2.end,$2.format);case\`applyBodyParaFormat\`:return $1.applyBodyParaFormat($2.section,$2.paragraph,$2.format);case\`applyCellCharFormat\`:return $1.applyCellCharFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.start,$2.end,$2.format);case\`applyCellParaFormat\`:return $1.applyCellParaFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.format);${tableEditRoutes('$1', '$2')}case\`applyTextCommand\`:`,
   )
   return next
 }
@@ -398,7 +430,31 @@ function attachCellFormatSurface(js) {
   })
   next = next.replace(
     APPLY_PARA_ROUTE_END_RE,
-    'case`applyBodyParaFormat`:return $1.applyBodyParaFormat($2.section,$2.paragraph,$2.format);case`applyCellCharFormat`:return $1.applyCellCharFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.start,$2.end,$2.format);case`applyCellParaFormat`:return $1.applyCellParaFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.format);case`applyTextCommand`:',
+    `case\`applyBodyParaFormat\`:return $1.applyBodyParaFormat($2.section,$2.paragraph,$2.format);case\`applyCellCharFormat\`:return $1.applyCellCharFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.start,$2.end,$2.format);case\`applyCellParaFormat\`:return $1.applyCellParaFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.format);${tableEditRoutes('$1', '$2')}case\`applyTextCommand\`:`,
+  )
+  return next
+}
+
+const APPLY_CELL_PARA_HANDLER_END_RE =
+  /async applyCellParaFormat\(e,t,n,r,i,a\)\{if\(await ([A-Za-z_$][\w$]*),!([A-Za-z_$][\w$]*)\)throw Error\(`Document agent is not initialized`\);return \2\.applyCellParaFormat\(e,t,n,r,i,a\)\},async applyTextCommand\(/
+const APPLY_CELL_PARA_ROUTE_END_RE =
+  /case`applyCellParaFormat`:return ([A-Za-z_$][\w$]*)\.applyCellParaFormat\(([A-Za-z_$][\w$]*)\.section,\2\.paragraph,\2\.control,\2\.cellIndex,\2\.cellPara,\2\.format\);case`applyTextCommand`:/
+
+function attachTableEditSurface(js) {
+  if (js.includes('insertTableRow(e,t,n,r,i){') && js.includes('case`setPageDef`')) {
+    return js
+  }
+  let next = stripClassMethodCommas(js)
+  next = next.replace(
+    /applyParaFormatInCell failed`\)\);return x\}async applyTextCommand/,
+    `applyParaFormatInCell failed\`));return x}${tableEditMethods()}async applyTextCommand`,
+  )
+  next = next.replace(APPLY_CELL_PARA_HANDLER_END_RE, (_, ready, agent) => {
+    return `async applyCellParaFormat(e,t,n,r,i,a){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellParaFormat(e,t,n,r,i,a)},${tableEditHandler(ready, agent)},async applyTextCommand(`
+  })
+  next = next.replace(
+    APPLY_CELL_PARA_ROUTE_END_RE,
+    `case\`applyCellParaFormat\`:return $1.applyCellParaFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.format);${tableEditRoutes('$1', '$2')}case\`applyTextCommand\`:`,
   )
   return next
 }
@@ -432,9 +488,11 @@ export function exposePrepareTextCommand(js) {
           repairFormatJsonStringify(
             repairStrippedFilledHandlerComma(
               repairIllegalNullishMix(
-                attachCellFormatSurface(
-                  attachFontSurface(
-                    attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+                attachTableEditSurface(
+                  attachCellFormatSurface(
+                    attachFontSurface(
+                      attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+                    ),
                   ),
                 ),
               ),
@@ -458,6 +516,12 @@ export function exposePrepareTextCommand(js) {
         !upgraded.includes('case`applyCellCharFormat`'))
     ) {
       throw new Error('rhwp-studio cell format surface changed — update attachCellFormatSurface()')
+    }
+    if (
+      closed.includes('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))') &&
+      (!upgraded.includes('insertTableRow(e,t,n,r,i){') || !upgraded.includes('case`setPageDef`'))
+    ) {
+      throw new Error('rhwp-studio table-edit surface changed — update attachTableEditSurface()')
     }
     return upgraded
   }
@@ -491,6 +555,9 @@ export function exposePrepareTextCommand(js) {
     !next.includes('case`insertFilledParagraphs`') ||
     !next.includes('case`insertTable`') ||
     !next.includes('case`applyCellCharFormat`') ||
+    !next.includes('case`insertTableRow`') ||
+    !next.includes('case`setPageDef`') ||
+    !next.includes('insertTableRow(e,t,n,r,i){') ||
     !next.includes('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))') ||
     !next.includes('Number(a?.paraIdx??t)') ||
     !next.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') ||

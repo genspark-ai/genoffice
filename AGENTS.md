@@ -46,6 +46,17 @@ paragraphs are inserted first, then each is filled. Re-list immediately before
 every apply — adjacent hashes change. List RPCs that are not arrays throw; never
 swallow as `[]`. `PutFieldText` is only a fallback after a successful field list.
 
+Studio cell/table/page calls also go through those Document methods, not host
+WASM: `applyCharFormatInCell` / `applyParaFormatInCell` (`apply_format` with
+`table`+`row`), `insertTableRow` / `insertTableColumn` / `deleteTableRow` /
+`deleteTableColumn` / `mergeTableCells` / `splitTableCellInto` (`edit_table`),
+`setCellProperties` / `setTableProperties` (`style_table`), `getPageDef` /
+`setPageDef` / `getColumnDef` / `setColumnDef` (`set_page`). Cell char ranges
+are UTF-16 (`string.length`), matching WASM offsets. `table: 0` is a valid
+index — do not treat it as omitted. After a JS snapshot patch, run
+`node apps/hwp/scripts/vendor-studio.mjs --ensure` and close/reopen the Hangul
+tab.
+
 ## Do not
 
 - Lift the 4000-character body cap.
@@ -54,8 +65,9 @@ swallow as `[]`. `PutFieldText` is only a fallback after a successful field list
 - Call header/footnote WASM from the host. Undo and layout break.
 - Treat `null` / `''` / whitespace required indexes as `0`.
 - Restore `aiEmptyBody` to “편집 불가”. Every locale’s empty-state line must
-  describe the current edit tools, including writing new paragraphs. New AI
-  strings go in `apps/hwp/src/renderer/i18n/ai/zh.ts` and every sibling shard.
+  describe the current edit tools, including new paragraphs, tables, row/column
+  edits, cell fill, and page setup. New AI strings go in
+  `apps/hwp/src/renderer/i18n/ai/zh.ts` and every sibling shard.
 
 ## Print / PDF (later)
 

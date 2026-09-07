@@ -7,7 +7,7 @@ export const ar = {
   aiEditorNotReady: 'محرر الهانغول ما زال قيد التحميل…',
   aiEmptyTitle: 'اسأل عن مستند الهانغول هذا',
   aiEmptyBody:
-    'لخّص أو ترجم أو أعد كتابة تحديد أو فقرة. يمكنك أيضاً كتابة فقرات جديدة وإدراج جداول وتطبيق غامق/لون/خط/مسافة بادئة/تباعد الأسطر وتعبئة الحقول وتعديل الخلايا والبحث على الويب.',
+    'لخّص أو ترجم أو أعد كتابة تحديد أو فقرة. يمكنك أيضاً كتابة فقرات جديدة وإدراج جداول وإضافة الصفوف أو حذفها ودمج الخلايا وتعبئتها وتغيير اتجاه الورق وتطبيق غامق/لون/خط/مسافة بادئة/تباعد الأسطر وتعبئة الحقول وتعديل الخلايا والبحث على الويب.',
   aiNewChat: 'محادثة جديدة',
   aiSend: 'إرسال',
   aiStop: 'إيقاف',
@@ -45,4 +45,10 @@ export const ar = {
   aiToolInsertTableDone: 'تم إدراج الجدول',
   aiToolApplyFormat: 'تطبيق التنسيق',
   aiToolApplyFormatDone: 'تم تطبيق التنسيق',
+  aiToolEditTable: 'تعديل بنية الجدول',
+  aiToolEditTableDone: 'تم تعديل بنية الجدول',
+  aiToolStyleTable: 'تنسيق الجدول',
+  aiToolStyleTableDone: 'تم تنسيق الجدول',
+  aiToolSetPage: 'إعداد الصفحة',
+  aiToolSetPageDone: 'تم إعداد الصفحة',
 } satisfies Record<keyof typeof zh, string>

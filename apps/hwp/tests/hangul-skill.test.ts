@@ -37,6 +37,9 @@ function deps(partial: Partial<HangulSkillDeps> = {}): HangulSkillDeps {
       indexes: indexes ?? [index ?? 0],
       applied: ['bold=true'],
     }),
+    editTable: async (spec) => ({ table: spec.table, action: spec.action, detail: 'ok' }),
+    styleTable: async (spec) => ({ table: spec.table, applied: ['fill=#eeeeee'] }),
+    setPage: async () => ({ applied: ['orientation=landscape'] }),
     ...partial,
   }
 }
@@ -62,6 +65,10 @@ describe('createHangulSkill', () => {
     expect(skill.systemPrompt).toMatch(/HG-5/)
     expect(skill.systemPrompt).toMatch(/HG-6[\s\S]*HG-7/)
     expect(skill.systemPrompt).toMatch(/HG-8/)
+    expect(skill.systemPrompt).toMatch(/HG-9/)
+    expect(skill.systemPrompt).toMatch(/edit_table/)
+    expect(skill.systemPrompt).toMatch(/style_table/)
+    expect(skill.systemPrompt).toMatch(/set_page/)
     expect(skill.systemPrompt).toMatch(/table \+ row/)
     expect(skill.systemPrompt).not.toMatch(/no editing tools/i)
     expect(skill.systemPrompt).not.toMatch(/You cannot create new body paragraphs/)
@@ -405,6 +412,70 @@ describe('createHangulSkill', () => {
     })
     expect(mixed.isError).toBe(true)
     expect(mixed.output).toMatch(/do not mix table\/row/)
+  })
+
+  it('edits table structure, styles a row, and sets the page', async () => {
+    let editSpec: unknown = null
+    let styleSpec: unknown = null
+    let pageSpec: unknown = null
+    const skill = createHangulSkill(() =>
+      deps({
+        editTable: async (spec) => {
+          editSpec = spec
+          return { table: spec.table, action: spec.action, detail: 'row after 0' }
+        },
+        styleTable: async (spec) => {
+          styleSpec = spec
+          return { table: spec.table, applied: ['fill=#eeeeee', 'valign=center'] }
+        },
+        setPage: async (spec) => {
+          pageSpec = spec
+          return { applied: ['orientation=landscape', 'paper=A4'] }
+        },
+      }),
+    )
+    const edit = await skill.executeTool({
+      id: '20',
+      name: 'edit_table',
+      input: { action: 'insert_row', table: 0, row: 0 },
+    })
+    expect(edit.isError).toBeUndefined()
+    expect(edit.output).toContain('insert_row')
+    expect(editSpec).toMatchObject({ action: 'insert_row', table: 0, row: 0 })
+    const style = await skill.executeTool({
+      id: '21',
+      name: 'style_table',
+      input: { table: 0, row: 0, fill: 'EEE', valign: 'center' },
+    })
+    expect(style.output).toContain('fill=#eeeeee')
+    expect(styleSpec).toMatchObject({ table: 0, row: 0, fill: 'EEE', valign: 'center' })
+    const page = await skill.executeTool({
+      id: '22',
+      name: 'set_page',
+      input: { orientation: 'landscape', paper: 'A4' },
+    })
+    expect(page.output).toContain('landscape')
+    expect(pageSpec).toEqual({ orientation: 'landscape', paper: 'A4' })
+    expect(
+      skill.verifyResponse?.('행을 추가했습니다.', [{ name: 'insert_table', ok: true }]),
+    ).toMatch(/edit_table/)
+    expect(
+      skill.verifyResponse?.('첫 행 배경을 회색으로 지정했습니다.', [{ name: 'apply_format', ok: true }]),
+    ).toMatch(/style_table/)
+    expect(skill.verifyResponse?.('가로 용지로 바꿨습니다.', [])).toMatch(/set_page/)
+    expect(
+      skill.verifyResponse?.('첫 행 배경을 회색으로 지정했습니다.', [
+        { name: 'style_table', ok: true },
+      ]),
+    ).toBeNull()
+    expect(
+      skill.verifyResponse?.('배경을 설명하는 보고서를 넣었습니다.', [
+        { name: 'insert_content', ok: true },
+      ]),
+    ).toBeNull()
+    expect(
+      skill.verifyResponse?.('용지 사용 안내를 작성했습니다.', [{ name: 'insert_content', ok: true }]),
+    ).toBeNull()
   })
 
   it('does not ask the model to spray replace_cell after many unfilled cells', async () => {

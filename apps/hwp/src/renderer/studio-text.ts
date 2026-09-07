@@ -16,8 +16,24 @@ export const TABLE_SIZE_INVALID = 'table size must be positive integers'
 export const TABLE_CELLS_UNFILLED = 'table inserted but cell writes failed'
 export const FORMAT_EMPTY = 'format must include at least one property'
 export const FORMAT_EMPTY_RANGE = 'no characters to format in this paragraph'
+export const TABLE_EDIT_EMPTY = 'table edit must include a valid action'
+export const TABLE_STYLE_EMPTY = 'table style must include fill, valign, border, or width'
+export const PAGE_SETUP_EMPTY = 'page setup must include orientation, paper, margin, or columns'
 export const TABLE_MAX_ROWS = 20
 export const TABLE_MAX_COLS = 10
+const HWP_PER_MM = 7200 / 25.4
+const PAGE_MARGIN_MAX_MM = 80
+const TABLE_WIDTH_MIN_MM = 20
+const TABLE_WIDTH_MAX_MM = 300
+const PAGE_COLUMNS_MAX = 4
+const PAPER_SIZES = {
+  A4: [59528, 84188],
+  A3: [84188, 119055],
+  B4: [72850, 103040],
+  B5: [51502, 72850],
+  Letter: [62208, 80496],
+  Legal: [62208, 102816],
+} as const
 export const FORMAT_MAX_PARAS = 40
 const FONT_SIZE_MIN_PT = 8
 const FONT_SIZE_MAX_PT = 72
@@ -118,12 +134,60 @@ export interface HangulStudioFacade {
     indexes?: number[],
     cell?: HangulCellFormatTarget,
   ): Promise<{ indexes: number[]; applied: string[]; table?: number; row?: number }>
+  editTable(spec: HangulTableEditSpec): Promise<{ table: number; action: HangulTableEditAction; detail: string }>
+  styleTable(spec: HangulTableStyleSpec): Promise<{ table: number; applied: string[] }>
+  setPage(spec: HangulPageSetupSpec): Promise<{ applied: string[] }>
 }
 
 export interface HangulCellFormatTarget {
   table: number
   row: number
   col?: number
+}
+
+export type HangulTableEditAction =
+  | 'insert_row'
+  | 'insert_column'
+  | 'delete_row'
+  | 'delete_column'
+  | 'merge'
+  | 'split'
+
+export interface HangulTableEditSpec {
+  action: HangulTableEditAction
+  table: number
+  row?: number
+  col?: number
+  after?: boolean
+  endRow?: number
+  endCol?: number
+  splitRows?: number
+  splitCols?: number
+}
+
+export type HangulVAlign = 'top' | 'center' | 'bottom'
+export type HangulPaper = keyof typeof PAPER_SIZES
+export type HangulOrientation = 'portrait' | 'landscape'
+
+export interface HangulTableStyleSpec {
+  table: number
+  row?: number
+  col?: number
+  fill?: string
+  valign?: HangulVAlign
+  border?: string | false
+  width?: number
+}
+
+export interface HangulPageSetupSpec {
+  orientation?: HangulOrientation
+  paper?: HangulPaper
+  marginTop?: number
+  marginBottom?: number
+  marginLeft?: number
+  marginRight?: number
+  columns?: number
+  columnSpacing?: number
 }
 
 export interface StudioTextSource {
@@ -1097,6 +1161,258 @@ export async function applyTableCellFormat(
   return { table: target.table, row: target.row, cols, applied }
 }
 
+async function requireTable(studio: StudioTextSource, tableIndex: number): Promise<HangulTable> {
+  const tables = await listDocumentTables(studio)
+  const table = tables[tableIndex]
+  if (!table) throw new Error(TABLE_NOT_FOUND)
+  return table
+}
+
+function mmToHwp(mm: number, label: string, min: number, max: number): number {
+  if (!Number.isFinite(mm)) throw new Error(`${label} must be a number of millimeters`)
+  if (mm < min || mm > max) throw new Error(`${label} must be between ${min} and ${max} mm`)
+  return Math.round(mm * HWP_PER_MM)
+}
+
+export async function editDocumentTable(
+  studio: StudioTextSource,
+  spec: HangulTableEditSpec,
+): Promise<{ table: number; action: HangulTableEditAction; detail: string }> {
+  const table = await requireTable(studio, spec.table)
+  const loc = { section: table.section, paragraph: table.paragraph, control: table.control }
+  const after = spec.after !== false
+  if (spec.action === 'insert_row') {
+    if (!Number.isInteger(spec.row) || spec.row! < 0 || spec.row! >= table.rows) {
+      throw new Error(TABLE_NOT_FOUND)
+    }
+    if (table.rows + 1 > TABLE_MAX_ROWS) throw new Error(`table rows must be at most ${TABLE_MAX_ROWS}`)
+    await requestStudio(studio, 'insertTableRow', { ...loc, row: spec.row, after })
+    return { table: spec.table, action: spec.action, detail: after ? `row after ${spec.row}` : `row before ${spec.row}` }
+  }
+  if (spec.action === 'insert_column') {
+    if (!Number.isInteger(spec.col) || spec.col! < 0 || spec.col! >= table.cols) {
+      throw new Error(TABLE_NOT_FOUND)
+    }
+    if (table.cols + 1 > TABLE_MAX_COLS) throw new Error(`table columns must be at most ${TABLE_MAX_COLS}`)
+    await requestStudio(studio, 'insertTableColumn', { ...loc, col: spec.col, after })
+    return { table: spec.table, action: spec.action, detail: after ? `column after ${spec.col}` : `column before ${spec.col}` }
+  }
+  if (spec.action === 'delete_row') {
+    if (!Number.isInteger(spec.row) || spec.row! < 0 || spec.row! >= table.rows) {
+      throw new Error(TABLE_NOT_FOUND)
+    }
+    if (table.rows <= 1) throw new Error('cannot delete the last table row')
+    await requestStudio(studio, 'deleteTableRow', { ...loc, row: spec.row })
+    return { table: spec.table, action: spec.action, detail: `row ${spec.row}` }
+  }
+  if (spec.action === 'delete_column') {
+    if (!Number.isInteger(spec.col) || spec.col! < 0 || spec.col! >= table.cols) {
+      throw new Error(TABLE_NOT_FOUND)
+    }
+    if (table.cols <= 1) throw new Error('cannot delete the last table column')
+    await requestStudio(studio, 'deleteTableColumn', { ...loc, col: spec.col })
+    return { table: spec.table, action: spec.action, detail: `column ${spec.col}` }
+  }
+  if (spec.action === 'merge') {
+    const startRow = spec.row
+    const startCol = spec.col
+    const endRow = spec.endRow
+    const endCol = spec.endCol
+    if (
+      !Number.isInteger(startRow) ||
+      !Number.isInteger(startCol) ||
+      !Number.isInteger(endRow) ||
+      !Number.isInteger(endCol)
+    ) {
+      throw new Error('merge needs row, col, endRow, and endCol')
+    }
+    const r1 = Math.min(startRow!, endRow!)
+    const r2 = Math.max(startRow!, endRow!)
+    const c1 = Math.min(startCol!, endCol!)
+    const c2 = Math.max(startCol!, endCol!)
+    if (r1 < 0 || c1 < 0 || r2 >= table.rows || c2 >= table.cols) throw new Error(TABLE_NOT_FOUND)
+    if (r1 === r2 && c1 === c2) throw new Error('merge needs more than one cell')
+    await requestStudio(studio, 'mergeTableCells', {
+      ...loc,
+      startRow: r1,
+      startCol: c1,
+      endRow: r2,
+      endCol: c2,
+    })
+    return { table: spec.table, action: spec.action, detail: `r${r1}c${c1}:r${r2}c${c2}` }
+  }
+  if (spec.action === 'split') {
+    if (!Number.isInteger(spec.row) || !Number.isInteger(spec.col)) {
+      throw new Error('split needs row and col')
+    }
+    if (spec.row! < 0 || spec.col! < 0 || spec.row! >= table.rows || spec.col! >= table.cols) {
+      throw new Error(TABLE_NOT_FOUND)
+    }
+    const rows = spec.splitRows ?? 2
+    const cols = spec.splitCols ?? 1
+    if (!Number.isInteger(rows) || !Number.isInteger(cols) || rows < 1 || cols < 1 || rows > 10 || cols > 10) {
+      throw new Error('split rows/cols must be integers from 1 to 10')
+    }
+    if (rows === 1 && cols === 1) throw new Error('split needs rows or cols greater than 1')
+    await requestStudio(studio, 'splitTableCellInto', {
+      ...loc,
+      row: spec.row,
+      col: spec.col,
+      rows,
+      cols,
+      equalHeight: true,
+      mergeFirst: false,
+    })
+    return { table: spec.table, action: spec.action, detail: `r${spec.row}c${spec.col} into ${rows}x${cols}` }
+  }
+  throw new Error(TABLE_EDIT_EMPTY)
+}
+
+function cellStylePayload(spec: HangulTableStyleSpec): Record<string, unknown> | null {
+  const props: Record<string, unknown> = {}
+  if (spec.fill != null) {
+    const color = parseColor(spec.fill)
+    props.fillType = 'solid'
+    props.fillColor = color
+  }
+  if (spec.valign != null) {
+    if (spec.valign !== 'top' && spec.valign !== 'center' && spec.valign !== 'bottom') {
+      throw new Error('valign must be top, center, or bottom')
+    }
+    props.verticalAlign = spec.valign === 'top' ? 'Top' : spec.valign === 'center' ? 'Center' : 'Bottom'
+  }
+  if (spec.border === false) {
+    const none = { type: 0, width: 0, color: '#000000' }
+    props.borderLeft = none
+    props.borderRight = none
+    props.borderTop = none
+    props.borderBottom = none
+  } else if (spec.border != null) {
+    const side = { type: 1, width: 8, color: parseColor(spec.border) }
+    props.borderLeft = side
+    props.borderRight = side
+    props.borderTop = side
+    props.borderBottom = side
+  }
+  return Object.keys(props).length > 0 ? props : null
+}
+
+export async function styleDocumentTable(
+  studio: StudioTextSource,
+  spec: HangulTableStyleSpec,
+): Promise<{ table: number; applied: string[] }> {
+  const table = await requireTable(studio, spec.table)
+  const loc = { section: table.section, paragraph: table.paragraph, control: table.control }
+  const applied: string[] = []
+  const cellProps = cellStylePayload(spec)
+  if (cellProps) {
+    if (spec.fill != null) applied.push(`fill=${parseColor(spec.fill)}`)
+    if (spec.valign != null) applied.push(`valign=${spec.valign}`)
+    if (spec.border === false) applied.push('border=none')
+    else if (spec.border != null) applied.push(`border=${parseColor(spec.border)}`)
+    const cells = table.cells.filter(
+      (cell) =>
+        (spec.row == null || cell.row === spec.row) && (spec.col == null || cell.col === spec.col),
+    )
+    if (cells.length === 0) throw new Error(TABLE_NOT_FOUND)
+    for (const cell of cells) {
+      await requestStudio(studio, 'setCellProperties', {
+        ...loc,
+        cellIndex: cell.index,
+        props: cellProps,
+      })
+    }
+  }
+  if (spec.width != null) {
+    const current = await requestStudio(studio, 'getTableProperties', loc)
+    const props =
+      current && typeof current === 'object' ? { ...(current as Record<string, unknown>) } : {}
+    props.tableWidth = mmToHwp(spec.width, 'width', TABLE_WIDTH_MIN_MM, TABLE_WIDTH_MAX_MM)
+    await requestStudio(studio, 'setTableProperties', { ...loc, props })
+    applied.push(`width=${spec.width}`)
+  }
+  if (applied.length === 0) throw new Error(TABLE_STYLE_EMPTY)
+  return { table: spec.table, applied }
+}
+
+export async function setDocumentPage(
+  studio: StudioTextSource,
+  spec: HangulPageSetupSpec,
+): Promise<{ applied: string[] }> {
+  const applied: string[] = []
+  const pageTouched =
+    spec.orientation != null ||
+    spec.paper != null ||
+    spec.marginTop != null ||
+    spec.marginBottom != null ||
+    spec.marginLeft != null ||
+    spec.marginRight != null
+  if (pageTouched) {
+    const current = await requestStudio(studio, 'getPageDef', { section: 0 })
+    const props =
+      current && typeof current === 'object' ? { ...(current as Record<string, unknown>) } : {}
+    if (spec.paper != null) {
+      const size = PAPER_SIZES[spec.paper]
+      if (!size) throw new Error('paper must be A4, A3, B4, B5, Letter, or Legal')
+      const landscape = spec.orientation === 'landscape' || (spec.orientation == null && props.landscape === true)
+      props.width = landscape ? size[1] : size[0]
+      props.height = landscape ? size[0] : size[1]
+      props.landscape = landscape
+      applied.push(`paper=${spec.paper}`)
+    } else if (spec.orientation != null) {
+      if (spec.orientation !== 'portrait' && spec.orientation !== 'landscape') {
+        throw new Error('orientation must be portrait or landscape')
+      }
+      const landscape = spec.orientation === 'landscape'
+      const width = Number(props.width) || PAPER_SIZES.A4[0]
+      const height = Number(props.height) || PAPER_SIZES.A4[1]
+      const already = props.landscape === true
+      if (already !== landscape) {
+        props.width = height
+        props.height = width
+      }
+      props.landscape = landscape
+      applied.push(`orientation=${spec.orientation}`)
+    }
+    if (spec.paper != null && spec.orientation != null) applied.push(`orientation=${spec.orientation}`)
+    for (const [key, label] of [
+      ['marginTop', 'marginTop'],
+      ['marginBottom', 'marginBottom'],
+      ['marginLeft', 'marginLeft'],
+      ['marginRight', 'marginRight'],
+    ] as const) {
+      const value = spec[key]
+      if (value == null) continue
+      props[key] = mmToHwp(value, label, 0, PAGE_MARGIN_MAX_MM)
+      applied.push(`${label}=${value}`)
+    }
+    await requestStudio(studio, 'setPageDef', { section: 0, props })
+  }
+  if (spec.columns != null || spec.columnSpacing != null) {
+    const current = await requestStudio(studio, 'getColumnDef', { section: 0 })
+    const prev = current && typeof current === 'object' ? (current as Record<string, unknown>) : {}
+    const count = spec.columns ?? (Number.isInteger(prev.columnCount) ? (prev.columnCount as number) : 1)
+    if (!Number.isInteger(count) || count < 1 || count > PAGE_COLUMNS_MAX) {
+      throw new Error(`columns must be an integer from 1 to ${PAGE_COLUMNS_MAX}`)
+    }
+    const spacing =
+      spec.columnSpacing != null
+        ? mmToHwp(spec.columnSpacing, 'columnSpacing', 0, PAGE_MARGIN_MAX_MM)
+        : Number(prev.spacing) || Math.round(5 * HWP_PER_MM)
+    await requestStudio(studio, 'setColumnDef', {
+      section: 0,
+      count,
+      columnType: Number(prev.columnType) || 0,
+      sameWidth: prev.sameWidth !== false,
+      spacing,
+    })
+    if (spec.columns != null) applied.push(`columns=${count}`)
+    if (spec.columnSpacing != null) applied.push(`columnSpacing=${spec.columnSpacing}`)
+  }
+  if (applied.length === 0) throw new Error(PAGE_SETUP_EMPTY)
+  return { applied }
+}
+
 function isLockedFormatError(message: string): boolean {
   return (
     message === PARAGRAPH_NOT_EDITABLE || /table|control|field|locked/i.test(message)
@@ -1131,5 +1447,8 @@ export function createStudioFacade(studio: StudioTextSource): HangulStudioFacade
             row: result.row,
           }))
         : applyParagraphFormat(studio, format, index, indexes),
+    editTable: (spec) => editDocumentTable(studio, spec),
+    styleTable: (spec) => styleDocumentTable(studio, spec),
+    setPage: (spec) => setDocumentPage(studio, spec),
   }
 }

@@ -7,7 +7,7 @@ export const en = {
   aiEditorNotReady: 'Hangul editor is still loading…',
   aiEmptyTitle: 'Ask about this Hangul document',
   aiEmptyBody:
-    'Summarize, translate, or rewrite a selection or paragraph. You can also write new paragraphs, insert tables, apply bold/color/font/indent/line-spacing, fill fields, edit table cells, or search the web.',
+    'Summarize, translate, or rewrite a selection or paragraph. You can also write new paragraphs, insert tables, add or delete rows, merge cells, set cell fill or paper orientation, apply bold/color/font/indent/line-spacing, fill fields, edit table cells, or search the web.',
   aiNewChat: 'New chat',
   aiSend: 'Send',
   aiStop: 'Stop',
@@ -45,4 +45,10 @@ export const en = {
   aiToolInsertTableDone: 'Inserted a table',
   aiToolApplyFormat: 'Apply format',
   aiToolApplyFormatDone: 'Applied formatting',
+  aiToolEditTable: 'Edit table structure',
+  aiToolEditTableDone: 'Edited the table structure',
+  aiToolStyleTable: 'Style table',
+  aiToolStyleTableDone: 'Styled the table',
+  aiToolSetPage: 'Set page',
+  aiToolSetPageDone: 'Updated the page',
 } satisfies Record<keyof typeof zh, string>

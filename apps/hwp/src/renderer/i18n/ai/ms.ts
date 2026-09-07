@@ -7,7 +7,7 @@ export const ms = {
   aiEditorNotReady: 'Editor Hangul masih dimuatkan…',
   aiEmptyTitle: 'Tanya tentang dokumen Hangul ini',
   aiEmptyBody:
-    'Ringkas, terjemah atau tulis semula pilihan atau perenggan. Anda juga boleh menulis perenggan baharu, sisip jadual, guna tebal/warna/fon/inden/jarak baris, mengisi medan, mengedit sel atau mencari di web.',
+    'Ringkas, terjemah atau tulis semula pilihan atau perenggan. Anda juga boleh menulis perenggan baharu, sisip jadual, menambah atau memadam baris, gabung sel, isi latar, tukar orientasi, guna tebal/warna/fon/inden/jarak baris, mengisi medan, mengedit sel atau mencari di web.',
   aiNewChat: 'Sembang baharu',
   aiSend: 'Hantar',
   aiStop: 'Berhenti',
@@ -45,4 +45,10 @@ export const ms = {
   aiToolInsertTableDone: 'Jadual disisipkan',
   aiToolApplyFormat: 'Guna format',
   aiToolApplyFormatDone: 'Format digunakan',
+  aiToolEditTable: 'Edit struktur jadual',
+  aiToolEditTableDone: 'Struktur jadual diedit',
+  aiToolStyleTable: 'Gaya jadual',
+  aiToolStyleTableDone: 'Gaya jadual digunakan',
+  aiToolSetPage: 'Tetapkan halaman',
+  aiToolSetPageDone: 'Halaman ditetapkan',
 } satisfies Record<keyof typeof zh, string>

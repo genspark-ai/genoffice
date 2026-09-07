@@ -7,7 +7,7 @@ export const pt = {
   aiEditorNotReady: 'O editor Hangul ainda está carregando…',
   aiEmptyTitle: 'Pergunte sobre este documento Hangul',
   aiEmptyBody:
-    'Resuma, traduza ou reescreva uma seleção ou parágrafo. Também pode escrever novos parágrafos, inserir tabelas, aplicar negrito/cor/fonte/recuo/espaçamento, preencher campos, editar células ou pesquisar na web.',
+    'Resuma, traduza ou reescreva uma seleção ou parágrafo. Também pode escrever novos parágrafos, inserir tabelas, adicionar ou apagar linhas, unir células, preencher células, alterar a orientação, aplicar negrito/cor/fonte/recuo/espaçamento, preencher campos, editar células ou pesquisar na web.',
   aiNewChat: 'Nova conversa',
   aiSend: 'Enviar',
   aiStop: 'Parar',
@@ -45,4 +45,10 @@ export const pt = {
   aiToolInsertTableDone: 'Tabela inserida',
   aiToolApplyFormat: 'Aplicar formatação',
   aiToolApplyFormatDone: 'Formatação aplicada',
+  aiToolEditTable: 'Editar estrutura da tabela',
+  aiToolEditTableDone: 'Estrutura da tabela editada',
+  aiToolStyleTable: 'Estilo da tabela',
+  aiToolStyleTableDone: 'Estilo da tabela aplicado',
+  aiToolSetPage: 'Configurar página',
+  aiToolSetPageDone: 'Página configurada',
 } satisfies Record<keyof typeof zh, string>

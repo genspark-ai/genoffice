@@ -21,6 +21,9 @@ import {
   insertDocumentTable,
   applyParagraphFormat,
   applyTableCellFormat,
+  editDocumentTable,
+  styleDocumentTable,
+  setDocumentPage,
   FORMAT_EMPTY_RANGE,
   TABLE_NOT_FOUND,
   spliceParagraphText,
@@ -1569,6 +1572,133 @@ describe('replaceCurrentParagraph', () => {
         { table: 1, row: 0 },
       ),
     ).rejects.toThrow(TABLE_NOT_FOUND)
+  })
+
+  it('inserts a table row after the given index', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const result = await editDocumentTable(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 2,
+                control: 0,
+                rows: 2,
+                cols: 2,
+                cells: [
+                  { index: 0, row: 0, col: 0, text: 'a' },
+                  { index: 1, row: 0, col: 1, text: 'b' },
+                ],
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { action: 'insert_row', table: 0, row: 0 },
+    )
+    expect(result).toEqual({ table: 0, action: 'insert_row', detail: 'row after 0' })
+    expect(calls.find((call) => call.method === 'insertTableRow')?.params).toEqual({
+      section: 0,
+      paragraph: 2,
+      control: 0,
+      row: 0,
+      after: true,
+    })
+  })
+
+  it('merges a header range and fills the first row', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    await editDocumentTable(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 1,
+                control: 0,
+                rows: 2,
+                cols: 3,
+                cells: [
+                  { index: 0, row: 0, col: 0, text: 'h' },
+                  { index: 1, row: 0, col: 1, text: '' },
+                  { index: 2, row: 0, col: 2, text: '' },
+                ],
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { action: 'merge', table: 0, row: 0, col: 0, endRow: 0, endCol: 2 },
+    )
+    expect(calls.find((call) => call.method === 'mergeTableCells')?.params).toMatchObject({
+      startRow: 0,
+      startCol: 0,
+      endRow: 0,
+      endCol: 2,
+    })
+    const styled = await styleDocumentTable(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 1,
+                control: 0,
+                rows: 2,
+                cols: 3,
+                cells: [
+                  { index: 0, row: 0, col: 0, text: 'h' },
+                  { index: 1, row: 0, col: 1, text: '' },
+                  { index: 2, row: 0, col: 2, text: '' },
+                ],
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { table: 0, row: 0, fill: 'EEE', valign: 'center' },
+    )
+    expect(styled.applied).toEqual(['fill=#eeeeee', 'valign=center'])
+    expect(calls.filter((call) => call.method === 'setCellProperties')).toHaveLength(3)
+    expect(calls.find((call) => call.method === 'setCellProperties')?.params).toMatchObject({
+      cellIndex: 0,
+      props: { fillType: 'solid', fillColor: '#eeeeee', verticalAlign: 'Center' },
+    })
+  })
+
+  it('sets landscape A4 and two columns', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const result = await setDocumentPage(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'getPageDef') return { width: 59528, height: 84188, landscape: false }
+          if (method === 'getColumnDef') return { columnCount: 1, columnType: 0, sameWidth: true, spacing: 0 }
+          return { ok: true }
+        },
+      }),
+      { paper: 'A4', orientation: 'landscape', columns: 2 },
+    )
+    expect(result.applied).toEqual(['paper=A4', 'orientation=landscape', 'columns=2'])
+    expect(calls.find((call) => call.method === 'setPageDef')?.params).toMatchObject({
+      section: 0,
+      props: { width: 84188, height: 59528, landscape: true },
+    })
+    expect(calls.find((call) => call.method === 'setColumnDef')?.params).toMatchObject({
+      section: 0,
+      count: 2,
+      sameWidth: true,
+    })
   })
 
   it('rejects list format on table cells', async () => {

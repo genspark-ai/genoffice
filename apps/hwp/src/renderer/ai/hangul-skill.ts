@@ -5,8 +5,14 @@ import {
   SELECTION_PREVIEW_CHARS,
   type HangulField,
   type HangulFormatSpec,
+  type HangulPageSetupSpec,
+  type HangulPaper,
   type HangulParagraphPreview,
   type HangulTable,
+  type HangulTableEditAction,
+  type HangulTableEditSpec,
+  type HangulTableStyleSpec,
+  type HangulVAlign,
 } from '../studio-text'
 
 const SYSTEM_PROMPT = [
@@ -25,6 +31,9 @@ const SYSTEM_PROMPT = [
   '- replace_paragraph changes one existing paragraph, once per turn (hashes change after each apply). Prefer replace_selection when the user has a selection and wants only that span changed.',
   '- Small in-place fixes stay on replace_selection / one replace_paragraph. Multi-paragraph additions go through insert_content. Omit afterIndex / index to use the caret.',
   '- Fields (누름틀): get_fields / set_field. Existing tables: get_tables / replace_cell (one leftover cell). New tables: insert_table with cells[][] already filled — never insert an empty table and then call replace_cell once per cell. Never fake a table with tabs, markdown pipes, or ASCII.',
+  '- Table structure (add/delete a row or column, merge or split cells): edit_table on an existing table from get_tables. Do not rebuild the table with insert_table just to change rows or merge a header.',
+  '- Cell chrome (fill, vertical align, border) and table width in mm: style_table. Text bold/size still uses apply_format with table + row.',
+  '- Page setup (portrait/landscape, A4/A3 paper, margins in mm, 1–4 columns): set_page. Do not tell the user to open 쪽 설정.',
   '- Formatting (bold/italic/underline/strikethrough, fontSize in points, color hex, font name, align, lineSpacing, indentLeft/Right/FirstLine in points, bullet/number lists): apply_format on existing paragraphs, or on table cells with table + row from get_tables (omit col to format the whole row — e.g. header / first row bold 13pt). Do not mix table/row with index/indexes. Skip locked body rows. After insert_content, format the title at the starting index from that tool result — not index 0 when that row is locked. Do not rewrite a paragraph just to change style. Do not tell the user to format a table row by hand. Do not tell the user formatting was applied unless apply_format succeeded.',
   '- Replacements are plain text: no C0 controls. Headers and footnotes are not editable.',
   '',
@@ -51,6 +60,8 @@ const SYSTEM_PROMPT = [
   '- HG-6 Rewriting a paragraph with replace_paragraph only to change bold/align/list/size.',
   '- HG-7 Inserting an empty table, then firing many replace_cell calls. Pass cells[][] on insert_table.',
   '- HG-8 Telling the user table-cell format is impossible, or formatting a body paragraph instead of apply_format with table + row.',
+  '- HG-9 Rebuilding a table with insert_table to add/delete a row or merge cells. Use edit_table.',
+  '- HG-10 Telling the user to set paper, margins, columns, or cell fill by hand. Use set_page / style_table.',
 ].join('\n')
 
 const TOOLS: AgentToolDef[] = [
@@ -239,6 +250,70 @@ const TOOLS: AgentToolDef[] = [
       },
     },
   },
+  {
+    name: 'edit_table',
+    description:
+      'Change an existing table structure. insert_row / insert_column / delete_row / delete_column / merge / split. table is from get_tables. after defaults true (below / right). merge needs row, col, endRow, endCol. split needs row, col and optional splitRows / splitCols (default 2x1). Do not insert a new table to change structure.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['insert_row', 'insert_column', 'delete_row', 'delete_column', 'merge', 'split'],
+        },
+        table: { type: 'number', description: '0-based table index from get_tables' },
+        row: { type: 'number', description: '0-based row' },
+        col: { type: 'number', description: '0-based column' },
+        after: {
+          type: 'boolean',
+          description: 'For insert_row / insert_column: true = below/right (default), false = above/left',
+        },
+        endRow: { type: 'number', description: 'Merge end row (inclusive)' },
+        endCol: { type: 'number', description: 'Merge end column (inclusive)' },
+        splitRows: { type: 'number', description: 'Split into this many rows (1-10). Default 2.' },
+        splitCols: { type: 'number', description: 'Split into this many columns (1-10). Default 1.' },
+      },
+      required: ['action', 'table'],
+    },
+  },
+  {
+    name: 'style_table',
+    description:
+      'Set table cell chrome or table width. fill is hex, valign is top/center/bottom, border is hex or false to clear, width is millimeters for the whole table. Omit row to style every cell; omit col to style the whole row. Not for bold/font size — that is apply_format.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        table: { type: 'number', description: '0-based table index from get_tables' },
+        row: { type: 'number', description: '0-based row. Omit to style every cell (or only set width).' },
+        col: { type: 'number', description: '0-based column. Omit to style the whole row.' },
+        fill: { type: 'string', description: 'Cell fill as 3- or 6-digit hex' },
+        valign: { type: 'string', enum: ['top', 'center', 'bottom'] },
+        border: {
+          description: 'Border color hex, or false to clear borders',
+        },
+        width: { type: 'number', description: 'Table width in millimeters (20-300)' },
+      },
+      required: ['table'],
+    },
+  },
+  {
+    name: 'set_page',
+    description:
+      'Set page paper, orientation, margins in millimeters, or column count (1-4). Omit unused fields. Uses the first section.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        orientation: { type: 'string', enum: ['portrait', 'landscape'] },
+        paper: { type: 'string', enum: ['A4', 'A3', 'B4', 'B5', 'Letter', 'Legal'] },
+        marginTop: { type: 'number', description: 'Top margin in mm (0-80)' },
+        marginBottom: { type: 'number', description: 'Bottom margin in mm (0-80)' },
+        marginLeft: { type: 'number', description: 'Left margin in mm (0-80)' },
+        marginRight: { type: 'number', description: 'Right margin in mm (0-80)' },
+        columns: { type: 'number', description: 'Number of columns (1-4)' },
+        columnSpacing: { type: 'number', description: 'Column spacing in mm (0-80)' },
+      },
+    },
+  },
 ]
 
 const MUTATING_TOOLS = [
@@ -249,6 +324,9 @@ const MUTATING_TOOLS = [
   'replace_cell',
   'insert_table',
   'apply_format',
+  'edit_table',
+  'style_table',
+  'set_page',
 ]
 
 function requireToolIndex(value: unknown, label: string): number {
@@ -334,6 +412,9 @@ export interface HangulSkillDeps {
     indexes?: number[],
     cell?: { table: number; row: number; col?: number },
   ): Promise<{ indexes: number[]; applied: string[]; table?: number; row?: number }>
+  editTable(spec: HangulTableEditSpec): Promise<{ table: number; action: HangulTableEditAction; detail: string }>
+  styleTable(spec: HangulTableStyleSpec): Promise<{ table: number; applied: string[] }>
+  setPage(spec: HangulPageSetupSpec): Promise<{ applied: string[] }>
 }
 
 function formatParagraphs(items: HangulParagraphPreview[]): string {
@@ -685,15 +766,112 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
           }
         }
       }
+      if (call.name === 'edit_table') {
+        const actions = new Set<HangulTableEditAction>([
+          'insert_row',
+          'insert_column',
+          'delete_row',
+          'delete_column',
+          'merge',
+          'split',
+        ])
+        try {
+          const action = String(call.input.action ?? '') as HangulTableEditAction
+          if (!actions.has(action)) throw new Error('action must be insert_row, insert_column, delete_row, delete_column, merge, or split')
+          const spec: HangulTableEditSpec = {
+            action,
+            table: requireToolIndex(call.input.table, 'table'),
+            row: optionalToolIndex(call.input.row, 'row'),
+            col: optionalToolIndex(call.input.col, 'col'),
+            after: typeof call.input.after === 'boolean' ? call.input.after : undefined,
+            endRow: optionalToolIndex(call.input.endRow, 'endRow'),
+            endCol: optionalToolIndex(call.input.endCol, 'endCol'),
+            splitRows: optionalToolIndex(call.input.splitRows, 'splitRows'),
+            splitCols: optionalToolIndex(call.input.splitCols, 'splitCols'),
+          }
+          const result = await deps.editTable(spec)
+          return {
+            output: `Edited table[${result.table}]: ${result.action} (${result.detail}). Indexes may have changed — get_tables before further table edits.`,
+            mutated: true,
+            summary: t('aiToolEditTableDone'),
+          }
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolEditTable'),
+          }
+        }
+      }
+      if (call.name === 'style_table') {
+        try {
+          const spec: HangulTableStyleSpec = {
+            table: requireToolIndex(call.input.table, 'table'),
+            row: optionalToolIndex(call.input.row, 'row'),
+            col: optionalToolIndex(call.input.col, 'col'),
+          }
+          if (typeof call.input.fill === 'string') spec.fill = call.input.fill
+          if (typeof call.input.valign === 'string') spec.valign = call.input.valign as HangulVAlign
+          if (call.input.border === false) spec.border = false
+          else if (typeof call.input.border === 'string') spec.border = call.input.border
+          if (call.input.width != null) spec.width = Number(call.input.width)
+          const result = await deps.styleTable(spec)
+          return {
+            output: `Styled table[${result.table}]: ${result.applied.join(', ')}.`,
+            mutated: true,
+            summary: t('aiToolStyleTableDone'),
+          }
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolStyleTable'),
+          }
+        }
+      }
+      if (call.name === 'set_page') {
+        try {
+          const spec: HangulPageSetupSpec = {}
+          if (typeof call.input.orientation === 'string') {
+            spec.orientation = call.input.orientation as HangulPageSetupSpec['orientation']
+          }
+          if (typeof call.input.paper === 'string') spec.paper = call.input.paper as HangulPaper
+          if (call.input.marginTop != null) spec.marginTop = Number(call.input.marginTop)
+          if (call.input.marginBottom != null) spec.marginBottom = Number(call.input.marginBottom)
+          if (call.input.marginLeft != null) spec.marginLeft = Number(call.input.marginLeft)
+          if (call.input.marginRight != null) spec.marginRight = Number(call.input.marginRight)
+          if (call.input.columns != null) spec.columns = Number(call.input.columns)
+          if (call.input.columnSpacing != null) spec.columnSpacing = Number(call.input.columnSpacing)
+          const result = await deps.setPage(spec)
+          return {
+            output: `Set page: ${result.applied.join(', ')}.`,
+            mutated: true,
+            summary: t('aiToolSetPageDone'),
+          }
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolSetPage'),
+          }
+        }
+      }
       return { output: `Unknown tool: ${call.name}`, isError: true, summary: call.name }
     },
     verifyResponse: (finalText, executed) => {
       const formatOk = executed.some((call) => call.name === 'apply_format' && call.ok)
+      const claimedTextFormat =
+        /굵게|기울임|밑줄|취소선|가운데|서식|fontSize|apply_format|\b\d+\s*pt\b/i.test(finalText)
+      const claimedTableStyle =
+        /(표|칸|셀|행|헤더).{0,10}배경|배경색|테두리|세로\s*정렬|표\s*너비|style_table|fillColor|cell fill/i.test(
+          finalText,
+        )
       const claimedFormat =
         /서식|굵게|기울임|밑줄|취소선|가운데|정렬했|지정했|formatted|fontSize|apply_format|\b\d+\s*pt\b/i.test(
           finalText,
         )
-      if (claimedFormat && !formatOk) {
+      // "지정했습니다" is also how the model reports cell fill. That is style_table, not apply_format.
+      if (claimedFormat && !formatOk && !(claimedTableStyle && !claimedTextFormat)) {
         const claimedTableCell =
           /표\s*(의\s*)?(첫|헤더|머리)|table\s*(header|first)\s*row|첫\s*행|셀.*(굵|서식|pt)|first row.*(bold|13)/i.test(
             finalText,
@@ -713,6 +891,21 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
         return (
           'You claimed to format text, but apply_format did not run. Call apply_format on the first written paragraph from insert_content (the starting index in that tool result), then describe only what actually changed.'
         )
+      }
+      const claimedTableEdit =
+        /행을\s*(추가|넣|지)|열을\s*(추가|넣|지)|칸을\s*(추가|지)|셀을\s*(합|나누)|insert_row|delete_row|merge/i.test(
+          finalText,
+        )
+      if (claimedTableEdit && !executed.some((call) => call.name === 'edit_table' && call.ok)) {
+        return 'You claimed to change table structure, but edit_table did not succeed. Call edit_table; do not rebuild the table with insert_table and do not tell the user to do it by hand.'
+      }
+      if (claimedTableStyle && !executed.some((call) => call.name === 'style_table' && call.ok)) {
+        return 'You claimed to change table fill/border/width, but style_table did not succeed. Call style_table. Bold/size still uses apply_format.'
+      }
+      const claimedPage =
+        /가로\s*용지|세로\s*용지|쪽\s*설정|여백을|2단|landscape|portrait|set_page/i.test(finalText)
+      if (claimedPage && !executed.some((call) => call.name === 'set_page' && call.ok)) {
+        return 'You claimed to change page setup, but set_page did not succeed. Call set_page. Do not tell the user to open 쪽 설정.'
       }
       const claimed = /바꿨|수정했|고쳤|넣었|삽입했|filled|replaced|rewrote|inserted|formatted|edited the (document|paragraph|selection|cell|field|table)/i.test(
         finalText,
