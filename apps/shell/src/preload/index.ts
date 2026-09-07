@@ -92,6 +92,9 @@ const homeApi: HomeApi = {
   async newPdf(opts) {
     await ipcRenderer.invoke(HOME_CHANNELS.newPdf, opts)
   },
+  async newHwp(opts) {
+    await ipcRenderer.invoke(HOME_CHANNELS.newHwp, opts)
+  },
   async removeRecent(paths) {
     await ipcRenderer.invoke(HOME_CHANNELS.removeRecent, paths)
   },

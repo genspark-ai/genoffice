@@ -58,7 +58,10 @@ export function normalizeRecentQuery(
 }
 
 /** sidebar filter keys that stand for a family of extensions, not one exact ext */
-const EXT_FAMILY: Record<string, readonly string[]> = { xlsx: ['xlsx', 'xlsm'] }
+const EXT_FAMILY: Record<string, readonly string[]> = {
+  xlsx: ['xlsx', 'xlsm'],
+  hwp: ['hwp', 'hwpx', 'hml'],
+}
 
 /** Page over the recents paths, preserving the source's newest-first order (unavailable paths stay, flagged missing). */
 export function pageRecentPaths(

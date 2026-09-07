@@ -13,7 +13,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-const APPS = ['docs', 'sheets', 'slides', 'pdf', 'markdown']
+const APPS = ['docs', 'sheets', 'slides', 'pdf', 'markdown', 'hwp']
 
 /** Newest mtime (ms) under dir, 0 when missing. */
 function newestMtime(dir) {

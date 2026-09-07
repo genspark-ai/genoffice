@@ -18,6 +18,11 @@ import {
   requestMarkdownClose,
 } from '../../../markdown/src/main/markdown-main'
 import {
+  createHwpView,
+  hwpIsDirty,
+  requestHwpClose,
+} from '../../../hwp/src/main/hwp-main'
+import {
   createPdfView,
   clearPdfDirty,
   pdfIsDirty,
@@ -250,6 +255,23 @@ export class TabManager {
     return id
   }
 
+  openHwpTab(openPath?: string): string {
+    const view = createHwpView(openPath)
+    const id = `t${this.nextId++}`
+    this.shellWindow.contentView.addChildView(view)
+    view.setVisible(false)
+    this.trackHtmlFullScreen(id, view)
+    this.tabs.push({
+      id,
+      kind: 'hwp',
+      view,
+      title: openPath ? basename(openPath) : this.untitled('hwp', 'AI Hangul'),
+      filePath: openPath,
+    })
+    this.activateTab(id)
+    return id
+  }
+
   activateTab(id: string): void {
     const target = this.tabs.find((t) => t.id === id)
     if (!target) return
@@ -334,6 +356,13 @@ export class TabManager {
       .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
   }
 
+  /** hangul tabs whose renderer reports unsaved edits (shell-close guard) */
+  dirtyHwpTabs(): Array<{ id: string; webContents: WebContents }> {
+    return this.tabs
+      .filter((t) => t.kind === 'hwp' && t.view && hwpIsDirty(t.view.webContents.id))
+      .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
+  }
+
   /** slides tabs whose main-process session has unsaved edits (shell-close guard) */
   dirtySlidesTabs(): Array<{ id: string; webContents: WebContents }> {
     return this.tabs
@@ -365,9 +394,11 @@ export class TabManager {
           ? requestPdfClose
           : tab.kind === 'markdown' && markdownIsDirty(tab.view.webContents.id)
             ? requestMarkdownClose
-            : tab.kind === 'slides' && slidesIsDirty(tab.view.webContents.id)
-              ? requestSlidesClose
-              : null)
+            : tab.kind === 'hwp' && hwpIsDirty(tab.view.webContents.id)
+              ? requestHwpClose
+              : tab.kind === 'slides' && slidesIsDirty(tab.view.webContents.id)
+                ? requestSlidesClose
+                : null)
     // docs dirty state lives in the renderer and needs an async query; skip the guard when clean (avoids a flash activation)
     if (!closeGuard && tab.kind === 'docs' && tab.view) {
       this.closingIds.add(id)
@@ -436,6 +467,10 @@ export class TabManager {
 
   findMarkdownTabByPath(path: string): string | undefined {
     return this.tabs.find((t) => t.kind === 'markdown' && t.filePath === path)?.id
+  }
+
+  findHwpTabByPath(path: string): string | undefined {
+    return this.tabs.find((t) => t.kind === 'hwp' && t.filePath === path)?.id
   }
 
   /** the active tab's markdown view, if the active tab is markdown (markdown menu target) */

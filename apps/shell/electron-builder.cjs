@@ -218,6 +218,7 @@ function assertModuleTreesPresent() {
     '../slides/out',
     '../pdf/out',
     '../markdown/out',
+    '../hwp/out',
   ]) {
     if (!existsSync(join(__dirname, rel))) {
       throw new Error(
@@ -267,6 +268,10 @@ const config = {
     {
       from: '../markdown/out',
       to: 'modules/markdown',
+    },
+    {
+      from: '../hwp/out',
+      to: 'modules/hwp',
     },
     // PDF text editing engines: the bundled main resolves these under
     // Resources/wasm when node_modules is absent (apps/pdf/src/main/wasm-path.ts)
@@ -376,6 +381,27 @@ const config = {
       role: 'Editor',
       icon: 'md',
       mimeType: 'text/markdown',
+    },
+    {
+      ext: 'hwp',
+      name: 'Hangul Document',
+      role: 'Editor',
+      icon: 'docx',
+      mimeType: 'application/x-hwp',
+    },
+    {
+      ext: 'hwpx',
+      name: 'Hangul HWPX Document',
+      role: 'Editor',
+      icon: 'docx',
+      mimeType: 'application/hwp+zip',
+    },
+    {
+      ext: 'hml',
+      name: 'Hangul HML Document',
+      role: 'Editor',
+      icon: 'docx',
+      mimeType: 'application/xml',
     },
   ],
   npmRebuild: false,

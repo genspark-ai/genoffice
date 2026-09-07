@@ -84,6 +84,8 @@ export interface HomeApi {
   newMarkdown(opts?: { projectId?: string }): Promise<void>
   /** create a blank single-page PDF in the default save folder and open it */
   newPdf(opts?: { projectId?: string }): Promise<void>
+  /** open a blank Hangul (HWP) editor tab */
+  newHwp(opts?: { projectId?: string }): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>
   /** reveal the file in Finder / Explorer */
@@ -278,6 +280,7 @@ export const HOME_CHANNELS = {
   newSlide: 'home:new-slide',
   newMarkdown: 'home:new-markdown',
   newPdf: 'home:new-pdf',
+  newHwp: 'home:new-hwp',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',

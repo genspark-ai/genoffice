@@ -54,7 +54,8 @@ const FILE_ICONS: Record<string, string> = {
 /* Formats the open-local card advertises. Too long for the card at any window
    width, so it ellipsizes and a hover ScreenTip carries the full list. Keep in
    sync with the main-process open-dialog filter (OPEN_DIALOG_EXTENSIONS). */
-const OPEN_LOCAL_EXTENSIONS = '.docx / .xlsx / .xlsm / .xls / .csv / .pptx / .pdf / .md'
+const OPEN_LOCAL_EXTENSIONS =
+  '.docx / .xlsx / .xlsm / .xls / .csv / .pptx / .pdf / .md / .hwp / .hwpx'
 
 function FileBadge({ ext, size }: { ext: string; size: number }) {
   const icon = FILE_ICONS[ext]
@@ -125,6 +126,7 @@ const FILTERS: { key: string; label: StringKey }[] = [
   { key: 'pptx', label: 'filterSlides' },
   { key: 'pdf', label: 'filterPdf' },
   { key: 'md', label: 'filterMd' },
+  { key: 'hwp', label: 'filterHwp' },
 ]
 
 /** Check glyph marking the selected sort option; invisible on the others so labels stay aligned */
@@ -1571,12 +1573,17 @@ export function Home() {
     void window.aiOffice.newPdf(selectedProjectId ? { projectId: selectedProjectId } : undefined)
   }
 
+  const handleNewHwp = () => {
+    void window.aiOffice.newHwp(selectedProjectId ? { projectId: selectedProjectId } : undefined)
+  }
+
   const NEW_ITEMS = [
     { ext: 'docx', title: t('newDoc'), sub: '.docx', action: handleNewDoc },
     { ext: 'xlsx', title: t('newSheet'), sub: '.xlsx', action: handleNewSheet },
     { ext: 'pptx', title: t('newSlide'), sub: '.pptx', action: handleNewSlide },
     { ext: 'md', title: t('newMarkdown'), sub: '.md', action: handleNewMarkdown },
     { ext: 'pdf', title: t('newPdf'), sub: '.pdf', action: handleNewPdf },
+    { ext: 'hwp', title: t('newHwp'), sub: '.hwp', action: handleNewHwp },
   ]
 
   function renderQuickCards() {

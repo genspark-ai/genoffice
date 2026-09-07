@@ -99,6 +99,25 @@ function MarkdownIcon() {
   )
 }
 
+function HangulIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 240 240" fill="none" aria-hidden="true">
+      <rect width="240" height="240" rx="48" fill="#0B6E4F" />
+      <text
+        x="120"
+        y="158"
+        textAnchor="middle"
+        fill="#fff"
+        fontSize="118"
+        fontWeight="700"
+        fontFamily="system-ui, -apple-system, 'Apple SD Gothic Neo', sans-serif"
+      >
+        한
+      </text>
+    </svg>
+  )
+}
+
 const KIND_ICON: Record<TabSummary['kind'], ReactElement> = {
   home: <HomeIcon />,
   docs: <DocIcon />,
@@ -106,6 +125,7 @@ const KIND_ICON: Record<TabSummary['kind'], ReactElement> = {
   slides: <SlideIcon />,
   pdf: <PdfIcon />,
   markdown: <MarkdownIcon />,
+  hwp: <HangulIcon />,
 }
 
 export function TabBar() {

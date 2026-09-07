@@ -100,6 +100,16 @@ vi.mock('../../slides/src/main/slides-main', () => ({
   slidesIsDirty: (...args: unknown[]) => slidesIsDirty(...(args as [])),
 }))
 
+const createHwpView = vi.fn(() => makeFakeView())
+const hwpIsDirty = vi.fn(() => false)
+const requestHwpClose = vi.fn(() => Promise.resolve(true))
+
+vi.mock('../../hwp/src/main/hwp-main', () => ({
+  createHwpView: (...args: unknown[]) => createHwpView(...(args as [])),
+  hwpIsDirty: (...args: unknown[]) => hwpIsDirty(...(args as [])),
+  requestHwpClose: (...args: unknown[]) => requestHwpClose(...(args as [])),
+}))
+
 import { TabManager } from '../src/main/tab-manager'
 
 const TAB_STRIP_HEIGHT = 40
@@ -183,19 +193,27 @@ describe('opening tabs', () => {
     manager.openSheetsTab('/tmp/budget.xlsx')
     manager.openSlidesTab('/tmp/deck.pptx')
     manager.openPdfTab('/tmp/scan.pdf')
+    manager.openHwpTab('/tmp/form.hwp')
     expect(manager.list().map((t) => t.title)).toEqual([
       'GenOffice',
       'report.docx',
       'budget.xlsx',
       'deck.pptx',
       'scan.pdf',
+      'form.hwp',
     ])
   })
 
   it('uses module default titles for pathless tabs', () => {
     manager.openSheetsTab()
     manager.openSlidesTab()
-    expect(manager.list().map((t) => t.title)).toEqual(['GenOffice', 'AI Sheets', 'AI Slides'])
+    manager.openHwpTab()
+    expect(manager.list().map((t) => t.title)).toEqual([
+      'GenOffice',
+      'AI Sheets',
+      'AI Slides',
+      'AI Hangul',
+    ])
   })
 
   it('assigns unique, monotonic tab ids', () => {

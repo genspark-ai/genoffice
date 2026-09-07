@@ -1,0 +1,74 @@
+/* Per-app accent. Chrome tokens come from @genoffice/ui/tokens.css. */
+:root {
+  --accent: #0b6e4f;
+  --accent-dark: #08563e;
+  --accent-soft: #e6f4ee;
+}
+
+[data-theme='dark'] {
+  --accent: #3dbe8c;
+  --accent-dark: #2a9d70;
+  --accent-soft: #16382c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --accent: #3dbe8c;
+    --accent-dark: #2a9d70;
+    --accent-soft: #16382c;
+  }
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--surface);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+}
+
+.hwp-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.hwp-page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  text-align: center;
+}
+
+.hwp-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.hwp-path {
+  margin: 0;
+  max-width: 40em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.hwp-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
