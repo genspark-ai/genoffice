@@ -389,6 +389,16 @@ registerHandle('project:timeline', (_event: unknown, args: unknown) => {
 })
 
 // ========== Files 功能 ==========
+const FILES_INDEX: Map<string, {
+  id: string
+  name: string
+  path: string
+  size: number
+  mimeType: string
+  createdAt: number
+  updatedAt: number
+}> = new Map()
+
 registerHandle('files:pick', () => ({
   canceled: false,
   filePaths: [],
@@ -404,14 +414,17 @@ registerHandle('files:add', async (_event: unknown, paths: unknown) => {
       const fileId = `${Date.now()}-${basename(originalPath)}`
       const destPath = join(FILES_DIR, fileId)
       writeFileSync(destPath, readFileSync(originalPath))
-      results.push({
+      const fileInfo = {
         id: fileId,
         name: basename(originalPath),
         path: destPath,
         size: stats.size,
         mimeType: MIME_TYPES[extname(originalPath)] || 'application/octet-stream',
         createdAt: Date.now(),
-      })
+        updatedAt: Date.now(),
+      }
+      FILES_INDEX.set(fileId, fileInfo)
+      results.push(fileInfo)
     }
   }
   return results
@@ -427,6 +440,104 @@ registerHandle('files:read-image', async (_event: unknown, path: unknown) => {
     }
   }
   return null
+})
+
+registerHandle('files:create', (_event: unknown, args: unknown) => {
+  const { name, content, type, projectId } = (args || {}) as {
+    name?: string
+    content?: string
+    type?: string
+    projectId?: string
+  }
+  
+  const fileId = `file-${Date.now()}`
+  const fileName = name || `新建文件${Date.now()}`
+  const filePath = join(FILES_DIR, fileId)
+  const fileContent = content || ''
+  
+  writeFileSync(filePath, fileContent, 'utf-8')
+  const stats = statSync(filePath)
+  
+  const fileInfo = {
+    id: fileId,
+    name: fileName,
+    path: filePath,
+    size: stats.size,
+    mimeType: type || MIME_TYPES[extname(fileName)] || 'application/octet-stream',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+  FILES_INDEX.set(fileId, fileInfo)
+  
+  return fileInfo
+})
+
+registerHandle('files:read', (_event: unknown, args: unknown) => {
+  const { id, path } = (args || {}) as { id?: string; path?: string }
+  
+  if (id && FILES_INDEX.has(id)) {
+    const fileInfo = FILES_INDEX.get(id)!
+    if (existsSync(fileInfo.path)) {
+      return {
+        ...fileInfo,
+        content: readFileSync(fileInfo.path, 'utf-8'),
+      }
+    }
+  }
+  
+  if (path && existsSync(path)) {
+    const bytes = readFileSync(path)
+    return {
+      id: `file-${Date.now()}`,
+      name: basename(path),
+      path,
+      size: bytes.length,
+      mimeType: MIME_TYPES[extname(path)] || 'application/octet-stream',
+      content: bytes.toString('base64'),
+      isBase64: true,
+    }
+  }
+  
+  return null
+})
+
+registerHandle('files:update', async (_event: unknown, args: unknown) => {
+  const { id, content, name } = (args || {}) as { id?: string; content?: string; name?: string }
+  
+  if (!id || !FILES_INDEX.has(id)) {
+    return { ok: false, error: 'File not found' }
+  }
+  
+  const fileInfo = FILES_INDEX.get(id)!
+  if (content !== undefined) {
+    writeFileSync(fileInfo.path, content, 'utf-8')
+  }
+  if (name) {
+    fileInfo.name = name
+  }
+  fileInfo.updatedAt = Date.now()
+  
+  return { ok: true, ...fileInfo }
+})
+
+registerHandle('files:delete', (_event: unknown, args: unknown) => {
+  const { id, path } = (args || {}) as { id?: string; path?: string }
+  
+  if (id && FILES_INDEX.has(id)) {
+    const fileInfo = FILES_INDEX.get(id)!
+    if (existsSync(fileInfo.path)) {
+      unlinkSync(fileInfo.path)
+    }
+    FILES_INDEX.delete(id)
+    return { ok: true, deleted: id }
+  }
+  
+  if (path && existsSync(path)) {
+    unlinkSync(path)
+    return { ok: true, deleted: path }
+  }
+  
+  return { ok: false, error: 'File not found' }
 })
 
 // ========== Docs 功能 ==========
@@ -1454,7 +1565,7 @@ registerHandle('comments:delete', (_event: unknown, args: unknown) => {
 
 // ========== 模板库功能 ==========
 registerHandle('templates:list', (_event: unknown, args: unknown) => {
-  const { type, category, search } = args as { type?: string; category?: string; search?: string }
+  const { type, category, search } = (args || {}) as { type?: string; category?: string; search?: string }
   
   let templates = [...TEMPLATES.values()]
   
