@@ -48,8 +48,8 @@ const SYSTEM_PROMPT = [
   '- HG-3 Treating the first locked section-control paragraph as "the document cannot be edited".',
   '- HG-4 Firing several replace_paragraph calls in the same turn.',
   '- HG-5 Drawing a table with tabs, markdown pipes, or ASCII lines instead of insert_table.',
-  '- HG-7 Inserting an empty table, then firing many replace_cell calls. Pass cells[][] on insert_table.',
   '- HG-6 Rewriting a paragraph with replace_paragraph only to change bold/align/list/size.',
+  '- HG-7 Inserting an empty table, then firing many replace_cell calls. Pass cells[][] on insert_table.',
 ].join('\n')
 
 const TOOLS: AgentToolDef[] = [

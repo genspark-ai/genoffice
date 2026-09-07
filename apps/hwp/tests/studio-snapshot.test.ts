@@ -75,6 +75,8 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('applyCharFormat(e,t,n,r,JSON.stringify(a))')
     expect(next).toContain('applyParaFormat(e,t,JSON.stringify(r))')
     expect(next).toContain('insertTextInCell(e,t,n,r,0,0,x)')
+    expect(next).toContain('o=Number(a.getCellParagraphLength(e,t,n,r,0))||0')
+    expect(next).not.toContain('try{o=a.getCellParagraphLength(e,t,n,r,0)}catch{o=0}')
     expect(next).not.toContain('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String')
     expect(next).toContain('selectionStart')
     expect(next).toContain('Gk(this.deps.wasm,e.target)')
@@ -168,6 +170,24 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('insertTextInCell(e,t,n,r,0,0,x)')
     expect(next).toContain('deleteTextInCell(e,t,n,r,0,0,o)')
     expect(next).not.toContain('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String')
+  })
+
+  it('does not swallow getCellParagraphLength failures in replaceCell', () => {
+    const stock = [
+      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
+      'return{selectedTextSha256:o}}async applyTextCommand(e){return e}',
+      'async getSelectionContext(){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.getSelectionContext()},async applyTextCommand(e){return e}',
+      'case`getSelectionContext`:return ak(i,`getSelectionContext params`),n.getSelectionContext();case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join(';')
+    const patched = exposePrepareTextCommand(stock)
+    const broken = patched.replace(
+      'let a=this.deps.wasm,o=Number(a.getCellParagraphLength(e,t,n,r,0))||0;',
+      'let a=this.deps.wasm,o=0;try{o=a.getCellParagraphLength(e,t,n,r,0)}catch{o=0}o=Number(o)||0;',
+    )
+    expect(broken).toContain('try{o=a.getCellParagraphLength(e,t,n,r,0)}catch{o=0}')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('o=Number(a.getCellParagraphLength(e,t,n,r,0))||0')
+    expect(next).not.toContain('try{o=a.getCellParagraphLength(e,t,n,r,0)}catch{o=0}')
   })
 
   it('closes a v4 prepareTextCommand that was missing its method brace', () => {

@@ -1012,8 +1012,11 @@ export async function applyParagraphFormat(
       formatted.push(targetIndex)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      if (!isLockedFormatError(message)) throw err
-      lockedReason = message
+      if (isLockedFormatError(message) || (indexes != null && message === FORMAT_EMPTY_RANGE)) {
+        lockedReason = message
+        continue
+      }
+      throw err
     }
   }
   if (formatted.length === 0) {

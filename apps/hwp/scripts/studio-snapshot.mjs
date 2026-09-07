@@ -112,7 +112,7 @@ function insertAgentMethod() {
 
 function replaceCellMethod() {
   // Deferred cell replace patches the page tree; a burst of fills traps WASM.
-  return `replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=0;try{o=a.getCellParagraphLength(e,t,n,r,0)}catch{o=0}o=Number(o)||0;if(o>0){let d=a.deleteTextInCell(e,t,n,r,0,0,o);if(typeof d==\`string\`)try{d=JSON.parse(d)}catch{}if(d&&d.ok===!1)throw Error(String(d.error||d.message||\`deleteTextInCell failed\`))}let x=String(i??\`\`);if(!x)return{ok:!0};let s=a.insertTextInCell(e,t,n,r,0,0,x);if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}if(s&&s.ok===!1)throw Error(String(s.error||s.message||\`insertTextInCell failed\`));return s}`
+  return `replaceCell(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm,o=Number(a.getCellParagraphLength(e,t,n,r,0))||0;if(o>0){let d=a.deleteTextInCell(e,t,n,r,0,0,o);if(typeof d==\`string\`)try{d=JSON.parse(d)}catch{}if(d&&d.ok===!1)throw Error(String(d.error||d.message||\`deleteTextInCell failed\`))}let x=String(i??\`\`);if(!x)return{ok:!0};let s=a.insertTextInCell(e,t,n,r,0,0,x);if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}if(s&&s.ok===!1)throw Error(String(s.error||s.message||\`insertTextInCell failed\`));return s}`
 }
 
 function tableAgentMethods() {
@@ -172,6 +172,16 @@ function repairDeferredCellWrite(js) {
   return js.replace(DEFERRED_REPLACE_CELL_RE, replaceCellMethod())
 }
 
+const SWALLOWED_CELL_LENGTH_RE =
+  /let a=this\.deps\.wasm,o=0;try\{o=a\.getCellParagraphLength\(e,t,n,r,0\)\}catch\{o=0\}o=Number\(o\)\|\|0;/
+
+function repairSwallowedCellLength(js) {
+  return js.replace(
+    SWALLOWED_CELL_LENGTH_RE,
+    'let a=this.deps.wasm,o=Number(a.getCellParagraphLength(e,t,n,r,0))||0;',
+  )
+}
+
 function repairTableInsertOffset(js) {
   return js.replace(
     /let o=0;try\{o=Number\(this\.deps\.wasm\.getParagraphLength\(e,t\)\)\|\|0\}catch\{o=0\}let a=this\.deps\.wasm\.createTable\(e,t,o,i,s\)/,
@@ -222,6 +232,8 @@ function prepareSurfaceComplete(js) {
     js.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') &&
     js.includes('applyParaFormat(e,t,JSON.stringify(r))') &&
     js.includes('insertTextInCell(e,t,n,r,0,0,x)') &&
+    js.includes('o=Number(a.getCellParagraphLength(e,t,n,r,0))||0') &&
+    !js.includes('try{o=a.getCellParagraphLength(e,t,n,r,0)}catch{o=0}') &&
     !js.includes('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String') &&
     js.includes('r.splitParagraph(e,') &&
     !js.includes('r.insertParagraph(e,t+a)') &&
@@ -356,12 +368,14 @@ function attachFontSurface(js) {
 }
 
 export function exposePrepareTextCommand(js) {
-  const closed = repairTableInsertOffset(
-    repairDeferredCellWrite(
-      repairFormatJsonStringify(
-        repairStrippedFilledHandlerComma(
-          repairIllegalNullishMix(
-            closePrepareTextCommand(repairInsertHandler(repairInsertWasmCall(js))),
+  const closed = repairSwallowedCellLength(
+    repairTableInsertOffset(
+      repairDeferredCellWrite(
+        repairFormatJsonStringify(
+          repairStrippedFilledHandlerComma(
+            repairIllegalNullishMix(
+              closePrepareTextCommand(repairInsertHandler(repairInsertWasmCall(js))),
+            ),
           ),
         ),
       ),
@@ -376,13 +390,15 @@ export function exposePrepareTextCommand(js) {
     closed.includes(PREPARE_TEXT_V3_MARK) ||
     closed.includes(PREPARE_TEXT_V2_MARK)
   ) {
-    const upgraded = repairTableInsertOffset(
-      repairDeferredCellWrite(
-        repairFormatJsonStringify(
-          repairStrippedFilledHandlerComma(
-            repairIllegalNullishMix(
-              attachFontSurface(
-                attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+    const upgraded = repairSwallowedCellLength(
+      repairTableInsertOffset(
+        repairDeferredCellWrite(
+          repairFormatJsonStringify(
+            repairStrippedFilledHandlerComma(
+              repairIllegalNullishMix(
+                attachFontSurface(
+                  attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+                ),
               ),
             ),
           ),
@@ -432,6 +448,7 @@ export function exposePrepareTextCommand(js) {
     !next.includes('Number(a?.paraIdx??t)') ||
     !next.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') ||
     !next.includes('insertTextInCell(e,t,n,r,0,0,x)') ||
+    next.includes('try{o=a.getCellParagraphLength(e,t,n,r,0)}catch{o=0}') ||
     next.includes('a&&a.paraIdx??t') ||
     next.includes('}async insertFilledParagraphs(e,t,n){if(await')
   ) {

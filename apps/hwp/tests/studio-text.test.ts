@@ -1341,6 +1341,39 @@ describe('replaceCurrentParagraph', () => {
     expect(calls).toContain('applyBodyParaFormat')
   })
 
+  it('skips empty paragraphs in a format batch and continues', async () => {
+    const formatted: number[] = []
+    const result = await applyParagraphFormat(
+      studio({
+        _request: async (method, params) => {
+          if (method === 'listBodyParagraphs') {
+            return [
+              {
+                editable: true,
+                reason: null,
+                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
+                text: '',
+              },
+              {
+                editable: true,
+                reason: null,
+                target: { kind: 'body_paragraph', section: 0, paragraph: 1, charOffset: 0, length: 2 },
+                text: '제목',
+              },
+            ]
+          }
+          if (method === 'applyBodyCharFormat') formatted.push(params?.paragraph as number)
+          return { ok: true }
+        },
+      }),
+      { bold: true },
+      undefined,
+      [0, 1],
+    )
+    expect(result.indexes).toEqual([1])
+    expect(formatted).toEqual([1])
+  })
+
   it('rejects character-only format on an empty paragraph', async () => {
     await expect(
       applyParagraphFormat(
