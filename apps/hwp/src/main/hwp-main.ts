@@ -58,10 +58,6 @@ export function hwpIsDirty(webContentsId: number): boolean {
   return dirtyByWc.has(webContentsId)
 }
 
-export function hwpFilePath(webContentsId: number): string | undefined {
-  return savePathByWc.get(webContentsId) ?? openPathByWc.get(webContentsId)
-}
-
 /** The file was renamed on disk — keep the queued/open path in sync. */
 export function hwpFileRenamed(contents: WebContents, oldPath: string, newPath: string): void {
   const wcId = contents.id

@@ -47,5 +47,4 @@ export interface HwpApi {
   onLanguageChanged(handler: (lang: Lang) => void): () => void
   getTheme(): Promise<UiTheme>
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
-  onChromePressed(handler: () => void): () => void
 }

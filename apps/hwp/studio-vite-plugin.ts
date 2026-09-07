@@ -23,6 +23,8 @@ export const STUDIO_DIR = resolve(__dirname, 'vendor/rhwp-studio')
 
 function studioFile(urlPath: string): string | null {
   const rel = urlPath.split('?')[0].slice(STUDIO_MOUNT.length)
+  const base = (rel === '' || rel === '/' ? 'index.html' : rel.replace(/^\//, '')).split('/').pop()
+  if (base === 'sw.js' || base === 'registerSW.js' || base === 'manifest.webmanifest') return null
   const wanted = resolve(STUDIO_DIR, rel === '' || rel === '/' ? 'index.html' : `.${rel}`)
   if (!wanted.startsWith(STUDIO_DIR)) return null
   if (existsSync(wanted) && statSync(wanted).isFile()) return wanted
@@ -57,7 +59,7 @@ export function rhwpStudioPlugin(): Plugin {
       server.middlewares.use(middleware)
     },
     closeBundle() {
-      if (!existsSync(STUDIO_DIR)) {
+      if (!existsSync(join(STUDIO_DIR, 'index.html'))) {
         throw new Error('rhwp-studio is not vendored — run npm run vendor:studio -w @genoffice/hwp')
       }
       const dest = resolve(__dirname, 'out/renderer/rhwp')

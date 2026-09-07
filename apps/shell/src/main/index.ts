@@ -32,6 +32,8 @@ import menuPdfIcon1x from './assets/menu-pdf.png?asset'
 import menuPdfIcon2x from './assets/menu-pdf@2x.png?asset'
 import menuMdIcon1x from './assets/menu-md.png?asset'
 import menuMdIcon2x from './assets/menu-md@2x.png?asset'
+import menuHwpIcon1x from './assets/menu-hwp.png?asset'
+import menuHwpIcon2x from './assets/menu-hwp@2x.png?asset'
 import menuHomeIcon1x from './assets/menu-home.png?asset'
 import menuHomeIcon2x from './assets/menu-home@2x.png?asset'
 import { createI18n, isLang, normalizeLang, setUiLang, type Lang } from '@genoffice/i18n'
@@ -175,6 +177,7 @@ import {
 import {
   configureHwpRuntime,
   hwpFileRenamed,
+  requestHwpClose,
   requestHwpSave,
   setHwpFileSavedHook,
 } from '../../../hwp/src/main/hwp-main'
@@ -2315,8 +2318,8 @@ function createShellWindow(): void {
     openDocumentPath(path)
   })
 
-  // Closing the whole window walks every dirty sheets/pdf/slides/docs tab through
-  // the same save/don't-save/cancel prompt; any cancel aborts the close.
+  // Closing the whole window walks every dirty sheets/pdf/markdown/hwp/slides/docs
+  // tab through the same save/don't-save/cancel prompt; any cancel aborts the close.
   // docs dirtiness lives renderer-side, so any live docs tab forces the async path
   // and gets queried there (clean tabs pass through without activation).
   let closeConfirmed = false
@@ -2325,12 +2328,14 @@ function createShellWindow(): void {
     const dirtySheets = manager.dirtySheetsTabs()
     const dirtyPdf = manager.dirtyPdfTabs()
     const dirtyMarkdown = manager.dirtyMarkdownTabs()
+    const dirtyHwp = manager.dirtyHwpTabs()
     const dirtySlides = manager.dirtySlidesTabs()
     const docsTabs = manager.docsTabs()
     if (
       dirtySheets.length === 0 &&
       dirtyPdf.length === 0 &&
       dirtyMarkdown.length === 0 &&
+      dirtyHwp.length === 0 &&
       dirtySlides.length === 0 &&
       docsTabs.length === 0
     )
@@ -2348,6 +2353,10 @@ function createShellWindow(): void {
       for (const tab of dirtyMarkdown) {
         manager.activateTab(tab.id)
         if (!(await requestMarkdownClose(tab.webContents, win))) return
+      }
+      for (const tab of dirtyHwp) {
+        manager.activateTab(tab.id)
+        if (!(await requestHwpClose(tab.webContents, win))) return
       }
       for (const tab of dirtySlides) {
         manager.activateTab(tab.id)
@@ -3072,6 +3081,7 @@ interface MenuIconSet {
   pptx: NativeImage
   pdf: NativeImage
   md: NativeImage
+  hwp: NativeImage
   home: NativeImage
 }
 let menuIconCache: MenuIconSet | null = null
@@ -3082,6 +3092,7 @@ function menuIcons(): MenuIconSet {
     pptx: loadMenuIcon(menuPptxIcon1x, menuPptxIcon2x),
     pdf: loadMenuIcon(menuPdfIcon1x, menuPdfIcon2x),
     md: loadMenuIcon(menuMdIcon1x, menuMdIcon2x),
+    hwp: loadMenuIcon(menuHwpIcon1x, menuHwpIcon2x),
     home: loadMenuIcon(menuHomeIcon1x, menuHomeIcon2x),
   }
   return menuIconCache
@@ -3094,7 +3105,7 @@ const TAB_MENU_ICON: Record<TabKind, keyof MenuIconSet> = {
   slides: 'pptx',
   pdf: 'pdf',
   markdown: 'md',
-  hwp: 'docx',
+  hwp: 'hwp',
 }
 
 // tab views see neither DOM events nor a focus change when the user clicks the

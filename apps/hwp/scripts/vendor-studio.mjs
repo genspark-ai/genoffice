@@ -2,17 +2,27 @@
 /**
  * Snapshot the published rhwp-studio (0.8.6 pages build) for offline embed.
  * Runtime never talks to github.io — this script is the only network step.
+ *
+ * `--ensure` skips the download when a complete snapshot is already present.
  */
-import { createWriteStream } from 'node:fs'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { createWriteStream, existsSync, readdirSync } from 'node:fs'
+import { mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
+import { dirname, extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
+import {
+  PWA_FILES,
+  REQUIRED_ASSET_EXTS,
+  REQUIRED_RELATIVE,
+  isPwaPath,
+  stripPwaHtml,
+} from './studio-snapshot.mjs'
 
 const ORIGIN = 'https://edwardkim.github.io'
 const PREFIX = '/rhwp/'
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'vendor', 'rhwp-studio')
+const ENSURE = process.argv.includes('--ensure')
 
 const TEXT_EXT = new Set([
   '.html',
@@ -24,6 +34,38 @@ const TEXT_EXT = new Set([
   '.txt',
   '.map',
 ])
+
+const BUNDLED_FONTS = [
+  'fonts/Cafe24Ssurround-v2.0.woff2',
+  'fonts/Cafe24Supermagic-Regular-v1.0.woff2',
+  'fonts/D2Coding-Regular.woff2',
+  'fonts/GowunBatang-Regular.woff2',
+  'fonts/GowunDodum-Regular.woff2',
+  'fonts/Happiness-Sans-Bold.woff2',
+  'fonts/Happiness-Sans-Regular.woff2',
+  'fonts/Happiness-Sans-Title.woff2',
+  'fonts/HappinessSansVF.woff2',
+  'fonts/LatinModernMath-Regular.woff2',
+  'fonts/NanumGothic-Regular.woff2',
+  'fonts/NanumGothicCoding-Regular.woff2',
+  'fonts/NanumMyeongjo-Regular.woff2',
+  'fonts/NotoSansKR-Bold.woff2',
+  'fonts/NotoSansKR-ExtraLight.woff2',
+  'fonts/NotoSansKR-Regular.woff2',
+  'fonts/NotoSerifKR-Bold.woff2',
+  'fonts/NotoSerifKR-Regular.woff2',
+  'fonts/Pretendard-Black.woff2',
+  'fonts/Pretendard-Bold.woff2',
+  'fonts/Pretendard-ExtraBold.woff2',
+  'fonts/Pretendard-ExtraLight.woff2',
+  'fonts/Pretendard-Light.woff2',
+  'fonts/Pretendard-Medium.woff2',
+  'fonts/Pretendard-Regular.woff2',
+  'fonts/Pretendard-SemiBold.woff2',
+  'fonts/Pretendard-Thin.woff2',
+  'fonts/SourceHanSerifK-OldHangul-subset.woff2',
+  'fonts/SpoqaHanSans-Regular.woff2',
+]
 
 function extOf(path) {
   const q = path.split('?')[0]
@@ -49,7 +91,7 @@ function discover(text) {
     path = path.replace(/["')\s>].*$/, '')
     const cut = path.search(/[#?]/)
     if (cut >= 0) path = path.slice(0, cut)
-    if (!path.startsWith(PREFIX)) continue
+    if (!path.startsWith(PREFIX) || isPwaPath(path)) continue
     found.add(path)
   }
   return found
@@ -62,70 +104,76 @@ async function download(urlPath) {
   await mkdir(dirname(dest), { recursive: true })
   if (isTextPath(urlPath)) {
     const text = await res.text()
-    await writeFile(dest, text)
-    return text
+    await writeFile(dest, dest.endsWith('index.html') ? stripPwaHtml(text) : text)
+    return dest.endsWith('index.html') ? stripPwaHtml(text) : text
   }
   await pipeline(Readable.fromWeb(res.body), createWriteStream(dest))
   return ''
 }
 
-async function main() {
+async function stripPwaFiles() {
+  for (const name of PWA_FILES) {
+    const path = join(OUT, name)
+    if (!existsSync(path)) continue
+    await unlink(path)
+  }
+  const index = join(OUT, 'index.html')
+  if (!existsSync(index)) return
+  const next = stripPwaHtml(await readFile(index, 'utf8'))
+  await writeFile(index, next)
+}
+
+function missingRequired() {
+  const missing = REQUIRED_RELATIVE.filter((rel) => !existsSync(join(OUT, rel)))
+  const assets = existsSync(join(OUT, 'assets')) ? readdirSync(join(OUT, 'assets')) : []
+  for (const ext of REQUIRED_ASSET_EXTS) {
+    if (!assets.some((name) => extname(name) === ext)) missing.push(`assets/*${ext}`)
+  }
+  return missing
+}
+
+function isComplete() {
+  if (missingRequired().length > 0) return false
+  if (PWA_FILES.some((name) => existsSync(join(OUT, name)))) return false
+  return true
+}
+
+async function vendor() {
   await rm(OUT, { recursive: true, force: true })
   await mkdir(OUT, { recursive: true })
-  const extras = [
-    'fonts/Cafe24Ssurround-v2.0.woff2',
-    'fonts/Cafe24Supermagic-Regular-v1.0.woff2',
-    'fonts/D2Coding-Regular.woff2',
-    'fonts/GowunBatang-Regular.woff2',
-    'fonts/GowunDodum-Regular.woff2',
-    'fonts/Happiness-Sans-Bold.woff2',
-    'fonts/Happiness-Sans-Regular.woff2',
-    'fonts/Happiness-Sans-Title.woff2',
-    'fonts/HappinessSansVF.woff2',
-    'fonts/LatinModernMath-Regular.woff2',
-    'fonts/NanumGothic-Regular.woff2',
-    'fonts/NanumGothicCoding-Regular.woff2',
-    'fonts/NanumMyeongjo-Regular.woff2',
-    'fonts/NotoSansKR-Bold.woff2',
-    'fonts/NotoSansKR-ExtraLight.woff2',
-    'fonts/NotoSansKR-Regular.woff2',
-    'fonts/NotoSerifKR-Bold.woff2',
-    'fonts/NotoSerifKR-Regular.woff2',
-    'fonts/Pretendard-Black.woff2',
-    'fonts/Pretendard-Bold.woff2',
-    'fonts/Pretendard-ExtraBold.woff2',
-    'fonts/Pretendard-ExtraLight.woff2',
-    'fonts/Pretendard-Light.woff2',
-    'fonts/Pretendard-Medium.woff2',
-    'fonts/Pretendard-Regular.woff2',
-    'fonts/Pretendard-SemiBold.woff2',
-    'fonts/Pretendard-Thin.woff2',
-    'fonts/SourceHanSerifK-OldHangul-subset.woff2',
-    'fonts/SpoqaHanSans-Regular.woff2',
-    'icons/icon-128.png',
-    'icons/icon-192.png',
-    'icons/icon-512.png',
-  ]
-  const queue = [
-    PREFIX,
-    `${PREFIX}index.html`,
-    `${PREFIX}manifest.webmanifest`,
-    ...extras.map((path) => `${PREFIX}${path}`),
-  ]
+  const queue = [PREFIX, `${PREFIX}index.html`, ...BUNDLED_FONTS.map((path) => `${PREFIX}${path}`)]
   const seen = new Set()
+  const failed = []
   while (queue.length) {
     const path = queue.pop()
-    if (!path || seen.has(path)) continue
+    if (!path || seen.has(path) || isPwaPath(path)) continue
     seen.add(path)
     try {
       const text = await download(path)
       process.stdout.write(`  ${path}\n`)
       if (text) for (const next of discover(text)) queue.push(next)
     } catch (err) {
-      process.stderr.write(`skip ${path}: ${err instanceof Error ? err.message : err}\n`)
+      failed.push(`${path}: ${err instanceof Error ? err.message : err}`)
     }
   }
+  await stripPwaFiles()
+  const missing = missingRequired()
+  if (missing.length || failed.length) {
+    const details = [...missing.map((rel) => `missing ${rel}`), ...failed]
+    throw new Error(`rhwp-studio vendor failed:\n${details.join('\n')}`)
+  }
   process.stdout.write(`vendored ${seen.size} files → ${OUT}\n`)
+}
+
+async function main() {
+  if (ENSURE) {
+    await stripPwaFiles()
+    if (isComplete()) {
+      process.stdout.write(`rhwp-studio snapshot ready → ${OUT}\n`)
+      return
+    }
+  }
+  await vendor()
 }
 
 await main()

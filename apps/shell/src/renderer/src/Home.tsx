@@ -6,6 +6,7 @@ import iconXlsx from './assets/file-xlsx.svg'
 import iconPptx from './assets/file-pptx.svg'
 import iconPdf from './assets/file-pdf.svg'
 import iconMd from './assets/file-md.svg'
+import iconHwp from './assets/file-hwp.svg'
 import type {
   AccountStatus,
   CloudProjectKind,
@@ -49,13 +50,16 @@ const FILE_ICONS: Record<string, string> = {
   pdf: iconPdf,
   md: iconMd,
   markdown: iconMd,
+  hwp: iconHwp,
+  hwpx: iconHwp,
+  hml: iconHwp,
 }
 
 /* Formats the open-local card advertises. Too long for the card at any window
    width, so it ellipsizes and a hover ScreenTip carries the full list. Keep in
    sync with the main-process open-dialog filter (OPEN_DIALOG_EXTENSIONS). */
 const OPEN_LOCAL_EXTENSIONS =
-  '.docx / .xlsx / .xlsm / .xls / .csv / .pptx / .pdf / .md / .hwp / .hwpx'
+  '.docx / .xlsx / .xlsm / .xls / .csv / .pptx / .pdf / .md / .hwp / .hwpx / .hml'
 
 function FileBadge({ ext, size }: { ext: string; size: number }) {
   const icon = FILE_ICONS[ext]

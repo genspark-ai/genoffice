@@ -58,21 +58,6 @@ body,
   color: var(--text);
 }
 
-.hwp-path {
-  margin: 0;
-  max-width: 40em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.hwp-hint {
-  margin: 8px 0 0;
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
 .hwp-error {
   margin: 8px 0 0;
   max-width: 40em;

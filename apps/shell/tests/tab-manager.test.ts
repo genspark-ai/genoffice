@@ -531,6 +531,13 @@ describe('dirty-tab queries (shell close guard)', () => {
     expect(manager.dirtySlidesTabs().map((t) => t.id)).toEqual([slidesId])
   })
 
+  it('lists dirty hangul tabs', () => {
+    const hwpId = manager.openHwpTab('/tmp/form.hwp')
+    expect(manager.dirtyHwpTabs()).toEqual([])
+    hwpIsDirty.mockImplementation(() => true)
+    expect(manager.dirtyHwpTabs().map((t) => t.id)).toEqual([hwpId])
+  })
+
   it('lists every live docs tab for the async dirtiness sweep', () => {
     manager.openDocsTab()
     manager.openSheetsTab()

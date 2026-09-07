@@ -38,11 +38,6 @@ const api: HwpApi = {
     ipcRenderer.on(HWP_CHANNELS.themeChanged, listener)
     return () => ipcRenderer.removeListener(HWP_CHANNELS.themeChanged, listener)
   },
-  onChromePressed: (handler) => {
-    const listener = () => handler()
-    ipcRenderer.on('app:chrome-pressed', listener)
-    return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
-  },
 }
 
 contextBridge.exposeInMainWorld('hwpApi', api)
