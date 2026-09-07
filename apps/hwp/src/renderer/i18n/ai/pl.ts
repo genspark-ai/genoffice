@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const pl = {
+  aiOpenAssistant: 'Otwórz asystenta AI',
+  aiCollapsePanel: 'Zwiń panel',
+  aiComposerPlaceholder: 'Zapytaj o ten dokument Hangul…',
+  aiEditorNotReady: 'Edytor Hangul nadal się wczytuje…',
+  aiEmptyTitle: 'Zapytaj o ten dokument Hangul',
+  aiEmptyBody: 'Streszczaj, tłumacz lub zadawaj pytania. Edycja nie jest jeszcze dostępna.',
+  aiNewChat: 'Nowy czat',
+  aiSend: 'Wyślij',
+  aiStop: 'Zatrzymaj',
+  aiHintIdle: 'Enter wysyła, Shift+Enter nowa linia',
+  aiHintBusy: 'Odpowiada…',
+  aiThinking: 'Myśli',
+  aiReplying: 'Odpowiada',
+  aiWorking: 'Pracuje',
+  aiStopped: 'Zatrzymano',
+  aiNoReply: '(brak odpowiedzi)',
+  aiTruncatedNote: '(Odpowiedź została ucięta przez limit długości i może być niepełna.)',
+  aiTurnLimit: 'Osiągnięto limit kroków — wyślij kolejną instrukcję, aby kontynuować.',
+  aiUndelivered: 'Nie wysłano',
+  aiRetry: 'Ponów',
+  aiGskLoginBtn: 'Zaloguj się do Genspark',
+  aiUnknownError: 'Żądanie AI nie powiodło się, spróbuj ponownie',
+  aiTimeoutError: 'Przekroczono czas odpowiedzi AI',
+  aiOverloadedError: 'Usługa AI jest obecnie przeciążona — spróbuj ponownie za chwilę',
+  aiNetworkError:
+    'Problem z siecią: nie można połączyć się z usługą AI. Sprawdź połączenie i spróbuj ponownie',
+  aiCreditsExhausted: 'Brak kredytów — doładuj na genspark.ai',
+} satisfies Record<keyof typeof zh, string>

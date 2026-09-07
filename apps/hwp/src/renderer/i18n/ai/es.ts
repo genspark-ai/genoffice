@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const es = {
+  aiOpenAssistant: 'Abrir asistente de IA',
+  aiCollapsePanel: 'Contraer panel',
+  aiComposerPlaceholder: 'Pregunta sobre este documento Hangul…',
+  aiEditorNotReady: 'El editor Hangul aún se está cargando…',
+  aiEmptyTitle: 'Pregunta sobre este documento Hangul',
+  aiEmptyBody: 'Resume, traduce o pregunta. La edición no está disponible en esta versión.',
+  aiNewChat: 'Nueva conversación',
+  aiSend: 'Enviar',
+  aiStop: 'Detener',
+  aiHintIdle: 'Enter para enviar, Mayús+Enter para nueva línea',
+  aiHintBusy: 'Respondiendo…',
+  aiThinking: 'Pensando',
+  aiReplying: 'Respondiendo',
+  aiWorking: 'Trabajando',
+  aiStopped: 'Detenido',
+  aiNoReply: '(sin respuesta)',
+  aiTruncatedNote: '(La respuesta se cortó por el límite de longitud y puede estar incompleta.)',
+  aiTurnLimit: 'Se alcanzó el límite de pasos — envía otra instrucción para continuar.',
+  aiUndelivered: 'No enviado',
+  aiRetry: 'Reintentar',
+  aiGskLoginBtn: 'Iniciar sesión en Genspark',
+  aiUnknownError: 'La solicitud de IA falló, reinténtalo',
+  aiTimeoutError: 'La respuesta de IA agotó el tiempo',
+  aiOverloadedError: 'El servicio de IA está ocupado ahora — inténtalo de nuevo en un momento',
+  aiNetworkError:
+    'Problema de red: no se pudo conectar con el servicio de IA. Comprueba tu conexión e inténtalo de nuevo',
+  aiCreditsExhausted: 'Sin créditos — recarga en genspark.ai',
+} satisfies Record<keyof typeof zh, string>

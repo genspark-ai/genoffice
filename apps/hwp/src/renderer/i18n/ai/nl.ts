@@ -1,0 +1,32 @@
+import type { zh } from './zh'
+
+export const nl = {
+  aiOpenAssistant: 'AI-assistent openen',
+  aiCollapsePanel: 'Paneel inklappen',
+  aiComposerPlaceholder: 'Vraag over dit Hangul-document…',
+  aiEditorNotReady: 'Hangul-editor wordt nog geladen…',
+  aiEmptyTitle: 'Vraag over dit Hangul-document',
+  aiEmptyBody:
+    'Samenvatten, vertalen of vragen stellen. Bewerken is in deze versie niet beschikbaar.',
+  aiNewChat: 'Nieuwe chat',
+  aiSend: 'Verzenden',
+  aiStop: 'Stoppen',
+  aiHintIdle: 'Enter om te verzenden, Shift+Enter nieuwe regel',
+  aiHintBusy: 'Antwoordt…',
+  aiThinking: 'Denkt na',
+  aiReplying: 'Antwoordt',
+  aiWorking: 'Bezig',
+  aiStopped: 'Gestopt',
+  aiNoReply: '(geen antwoord)',
+  aiTruncatedNote: '(Het antwoord is afgekapt door de lengtelimiet en is mogelijk onvolledig.)',
+  aiTurnLimit: 'Stappenlimiet per run bereikt — stuur nog een instructie om door te gaan.',
+  aiUndelivered: 'Niet verzonden',
+  aiRetry: 'Opnieuw proberen',
+  aiGskLoginBtn: 'Aanmelden bij Genspark',
+  aiUnknownError: 'AI-verzoek mislukt, probeer opnieuw',
+  aiTimeoutError: 'AI-antwoord time-out',
+  aiOverloadedError: 'De AI-service is momenteel overbelast — probeer het zo opnieuw',
+  aiNetworkError:
+    'Netwerkprobleem: kan de AI-service niet bereiken. Controleer je verbinding en probeer het opnieuw',
+  aiCreditsExhausted: 'Credits op — waardeer op via genspark.ai',
+} satisfies Record<keyof typeof zh, string>

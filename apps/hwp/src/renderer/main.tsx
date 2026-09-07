@@ -1,9 +1,15 @@
 import { createRoot } from 'react-dom/client'
 import { htmlLang, type Lang } from '@genoffice/i18n'
+import { installScreenTips } from '@genoffice/ui'
 import App from './App'
+import { LocaleProvider } from './i18n/locale'
 import type { UiTheme } from '../shared/ipc'
 import '@genoffice/ui/tokens.css'
+import '@genoffice/ui/screentip.css'
+import '@genoffice/ui/markdown.css'
 import './styles.css'
+
+installScreenTips()
 
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')
@@ -17,9 +23,10 @@ void (async () => {
   ])
   document.documentElement.lang = htmlLang(lang as Lang)
   applyTheme(theme)
-  window.hwpApi.onLanguageChanged((next) => {
-    document.documentElement.lang = htmlLang(next)
-  })
   window.hwpApi.onThemeChanged(applyTheme)
-  createRoot(document.getElementById('root')!).render(<App />)
+  createRoot(document.getElementById('root')!).render(
+    <LocaleProvider initial={lang}>
+      <App />
+    </LocaleProvider>,
+  )
 })()

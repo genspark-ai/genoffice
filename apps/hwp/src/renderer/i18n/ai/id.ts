@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const id = {
+  aiOpenAssistant: 'Buka asisten AI',
+  aiCollapsePanel: 'Ciutkan panel',
+  aiComposerPlaceholder: 'Tanyakan tentang dokumen Hangul ini…',
+  aiEditorNotReady: 'Editor Hangul masih dimuat…',
+  aiEmptyTitle: 'Tanyakan tentang dokumen Hangul ini',
+  aiEmptyBody: 'Ringkas, terjemahkan, atau bertanya. Penyuntingan belum tersedia di rilis ini.',
+  aiNewChat: 'Obrolan baru',
+  aiSend: 'Kirim',
+  aiStop: 'Berhenti',
+  aiHintIdle: 'Enter untuk kirim, Shift+Enter baris baru',
+  aiHintBusy: 'Membalas…',
+  aiThinking: 'Berpikir',
+  aiReplying: 'Membalas',
+  aiWorking: 'Bekerja',
+  aiStopped: 'Dihentikan',
+  aiNoReply: '(tidak ada balasan)',
+  aiTruncatedNote: '(Balasan terpotong karena batas panjang dan mungkin tidak lengkap.)',
+  aiTurnLimit: 'Batas langkah per eksekusi tercapai — kirim instruksi lagi untuk melanjutkan.',
+  aiUndelivered: 'Tidak terkirim',
+  aiRetry: 'Coba lagi',
+  aiGskLoginBtn: 'Masuk ke Genspark',
+  aiUnknownError: 'Permintaan AI gagal, coba lagi',
+  aiTimeoutError: 'Respons AI kehabisan waktu',
+  aiOverloadedError: 'Layanan AI sedang sibuk — silakan coba lagi sebentar lagi',
+  aiNetworkError:
+    'Masalah jaringan: tidak dapat terhubung ke layanan AI. Periksa koneksi Anda lalu coba lagi',
+  aiCreditsExhausted: 'Kredit habis — isi ulang di genspark.ai',
+} satisfies Record<keyof typeof zh, string>

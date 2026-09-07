@@ -18,6 +18,8 @@
     "@rhwp/editor": "0.8.6"
   },
   "devDependencies": {
+    "@genoffice/agent-core": "*",
+    "@genoffice/ai-provider": "*",
     "@genoffice/electron-utils": "*",
     "@genoffice/i18n": "*",
     "@genoffice/ui": "*",

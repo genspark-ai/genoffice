@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const fr = {
+  aiOpenAssistant: "Ouvrir l'assistant IA",
+  aiCollapsePanel: 'Réduire le panneau',
+  aiComposerPlaceholder: 'Posez une question sur ce document Hangul…',
+  aiEditorNotReady: 'L’éditeur Hangul charge encore…',
+  aiEmptyTitle: 'Interrogez ce document Hangul',
+  aiEmptyBody: 'Résumez, traduisez ou posez des questions. L’édition n’est pas encore disponible.',
+  aiNewChat: 'Nouvelle conversation',
+  aiSend: 'Envoyer',
+  aiStop: 'Arrêter',
+  aiHintIdle: 'Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne',
+  aiHintBusy: 'Réponse en cours…',
+  aiThinking: 'Réflexion',
+  aiReplying: 'Réponse en cours',
+  aiWorking: 'Traitement',
+  aiStopped: 'Arrêté',
+  aiNoReply: '(aucune réponse)',
+  aiTruncatedNote: '(La réponse a été coupée par la limite de longueur et peut être incomplète.)',
+  aiTurnLimit: 'Limite d’étapes atteinte — envoyez une autre instruction pour continuer.',
+  aiUndelivered: 'Non envoyé',
+  aiRetry: 'Réessayer',
+  aiGskLoginBtn: 'Se connecter à Genspark',
+  aiUnknownError: 'La requête IA a échoué, réessayez',
+  aiTimeoutError: 'Délai de réponse IA dépassé',
+  aiOverloadedError: "Le service d'IA est actuellement surchargé — réessayez dans un instant",
+  aiNetworkError:
+    'Problème réseau : impossible de joindre le service IA. Vérifiez votre connexion et réessayez',
+  aiCreditsExhausted: 'Crédits épuisés — rechargez sur genspark.ai',
+} satisfies Record<keyof typeof zh, string>

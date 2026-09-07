@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const hi = {
+  aiOpenAssistant: 'AI सहायक खोलें',
+  aiCollapsePanel: 'पैनल संक्षिप्त करें',
+  aiComposerPlaceholder: 'इस हैंगुल दस्तावेज़ के बारे में पूछें…',
+  aiEditorNotReady: 'हैंगुल संपादक अभी लोड हो रहा है…',
+  aiEmptyTitle: 'इस हैंगुल दस्तावेज़ के बारे में पूछें',
+  aiEmptyBody: 'सारांश दें, अनुवाद करें या प्रश्न पूछें। इस संस्करण में संपादन उपलब्ध नहीं है।',
+  aiNewChat: 'नई चैट',
+  aiSend: 'भेजें',
+  aiStop: 'रोकें',
+  aiHintIdle: 'भेजने के लिए Enter, नई पंक्ति के लिए Shift+Enter',
+  aiHintBusy: 'उत्तर दिया जा रहा है…',
+  aiThinking: 'सोच रहा है',
+  aiReplying: 'उत्तर दे रहा है',
+  aiWorking: 'कार्य कर रहा है',
+  aiStopped: 'रोका गया',
+  aiNoReply: '(कोई उत्तर नहीं)',
+  aiTruncatedNote: '(उत्तर लंबाई सीमा के कारण कट गया और अधूरा हो सकता है।)',
+  aiTurnLimit: 'प्रति रन चरण सीमा पूरी हुई — जारी रखने के लिए एक और निर्देश भेजें।',
+  aiUndelivered: 'भेजा नहीं गया',
+  aiRetry: 'पुनः प्रयास',
+  aiGskLoginBtn: 'Genspark में साइन इन करें',
+  aiUnknownError: 'AI अनुरोध विफल, पुनः प्रयास करें',
+  aiTimeoutError: 'AI प्रतिक्रिया समय समाप्त',
+  aiOverloadedError: 'AI सेवा अभी व्यस्त है — कृपया थोड़ी देर बाद फिर से प्रयास करें',
+  aiNetworkError:
+    'नेटवर्क समस्या: AI सेवा से कनेक्ट नहीं हो सका। कनेक्शन जांचें और फिर से प्रयास करें',
+  aiCreditsExhausted: 'क्रेडिट समाप्त — genspark.ai पर रिचार्ज करें',
+} satisfies Record<keyof typeof zh, string>

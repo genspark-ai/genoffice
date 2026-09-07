@@ -1,4 +1,10 @@
 import type { Lang } from '@genoffice/i18n'
+import type {
+  AiSettings,
+  AiStreamChunk,
+  AiStreamRequest,
+  GenSparkAccountStatus,
+} from '@genoffice/ai-provider'
 
 export const HWP_CHANNELS = {
   consumePending: 'hwp:consume-pending',
@@ -16,6 +22,16 @@ export const HWP_CHANNELS = {
   themeChanged: 'app:theme-changed',
 } as const
 
+/** AI channels are app-wide shared ipcMain handlers (shell registers them); pass-through only */
+export const AI_CHANNELS = {
+  getSettings: 'ai:get-settings',
+  stream: 'ai:stream',
+  streamChunk: 'ai:stream-chunk',
+  streamCancel: 'ai:stream-cancel',
+  gskStatus: 'ai:gsk-status',
+  gskLogin: 'ai:gsk-login',
+} as const
+
 export type SaveMode = 'save' | 'saveAs'
 
 export interface SaveHwpRequest {
@@ -26,9 +42,7 @@ export interface SaveHwpRequest {
 }
 
 export type SaveHwpResult =
-  | { ok: true; path: string }
-  | { ok: true; canceled: true }
-  | { ok: false; error: string }
+  { ok: true; path: string } | { ok: true; canceled: true } | { ok: false; error: string }
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
@@ -47,4 +61,10 @@ export interface HwpApi {
   onLanguageChanged(handler: (lang: Lang) => void): () => void
   getTheme(): Promise<UiTheme>
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  getAiSettings(): Promise<AiSettings>
+  aiStream(request: AiStreamRequest): Promise<void>
+  aiStreamCancel(requestId: string): Promise<void>
+  onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
+  aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
+  aiGskLogin(): Promise<void>
 }

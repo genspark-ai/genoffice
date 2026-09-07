@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const ar = {
+  aiOpenAssistant: 'فتح مساعد الذكاء الاصطناعي',
+  aiCollapsePanel: 'طي اللوحة',
+  aiComposerPlaceholder: 'اسأل عن مستند الهانغول هذا…',
+  aiEditorNotReady: 'محرر الهانغول ما زال قيد التحميل…',
+  aiEmptyTitle: 'اسأل عن مستند الهانغول هذا',
+  aiEmptyBody: 'لخّص أو ترجم أو اطرح أسئلة. التحرير غير متاح في هذا الإصدار.',
+  aiNewChat: 'محادثة جديدة',
+  aiSend: 'إرسال',
+  aiStop: 'إيقاف',
+  aiHintIdle: 'Enter للإرسال، Shift+Enter لسطر جديد',
+  aiHintBusy: 'يرد…',
+  aiThinking: 'يفكر',
+  aiReplying: 'يرد',
+  aiWorking: 'يعمل',
+  aiStopped: 'تم الإيقاف',
+  aiNoReply: '(لا يوجد رد)',
+  aiTruncatedNote: '(تم اقتطاع الرد بسبب حد الطول وقد يكون غير مكتمل.)',
+  aiTurnLimit: 'تم بلوغ حد الخطوات لكل تشغيل — أرسل تعليمات أخرى للمتابعة.',
+  aiUndelivered: 'لم يتم الإرسال',
+  aiRetry: 'إعادة المحاولة',
+  aiGskLoginBtn: 'تسجيل الدخول إلى Genspark',
+  aiUnknownError: 'فشل طلب الذكاء الاصطناعي، أعد المحاولة',
+  aiTimeoutError: 'انتهت مهلة استجابة الذكاء الاصطناعي',
+  aiOverloadedError: 'خدمة الذكاء الاصطناعي مشغولة حاليًا — يرجى المحاولة مرة أخرى بعد قليل',
+  aiNetworkError:
+    'مشكلة في الشبكة: تعذّر الوصول إلى خدمة الذكاء الاصطناعي. تحقق من الاتصال وحاول مجددًا',
+  aiCreditsExhausted: 'نفدت الأرصدة — أعد الشحن على genspark.ai',
+} satisfies Record<keyof typeof zh, string>

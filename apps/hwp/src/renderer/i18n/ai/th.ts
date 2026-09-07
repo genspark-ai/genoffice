@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const th = {
+  aiOpenAssistant: 'เปิดผู้ช่วย AI',
+  aiCollapsePanel: 'ยุบแผง',
+  aiComposerPlaceholder: 'ถามเกี่ยวกับเอกสารฮันกึลนี้…',
+  aiEditorNotReady: 'กำลังโหลดตัวแก้ไขฮันกึล…',
+  aiEmptyTitle: 'ถามเกี่ยวกับเอกสารฮันกึลนี้',
+  aiEmptyBody: 'สรุป แปล หรือถามคำถามได้ เวอร์ชันนี้ยังแก้ไขเอกสารไม่ได้',
+  aiNewChat: 'แชทใหม่',
+  aiSend: 'ส่ง',
+  aiStop: 'หยุด',
+  aiHintIdle: 'Enter เพื่อส่ง, Shift+Enter ขึ้นบรรทัดใหม่',
+  aiHintBusy: 'กำลังตอบ…',
+  aiThinking: 'กำลังคิด',
+  aiReplying: 'กำลังตอบ',
+  aiWorking: 'กำลังทำงาน',
+  aiStopped: 'หยุดแล้ว',
+  aiNoReply: '(ไม่มีการตอบกลับ)',
+  aiTruncatedNote: '(คำตอบถูกตัดเนื่องจากถึงขีดจำกัดความยาว เนื้อหาอาจไม่สมบูรณ์)',
+  aiTurnLimit: 'ถึงขีดจำกัดขั้นตอนต่อรอบแล้ว ส่งคำสั่งอีกครั้งเพื่อดำเนินการต่อ',
+  aiUndelivered: 'ส่งไม่สำเร็จ',
+  aiRetry: 'ลองใหม่',
+  aiGskLoginBtn: 'ลงชื่อเข้าใช้ Genspark',
+  aiUnknownError: 'คำขอ AI ล้มเหลว โปรดลองอีกครั้ง',
+  aiTimeoutError: 'การตอบกลับของ AI หมดเวลา',
+  aiOverloadedError: 'บริการ AI มีผู้ใช้งานจำนวนมากในขณะนี้ โปรดลองอีกครั้งในอีกสักครู่',
+  aiNetworkError:
+    'เครือข่ายมีปัญหา ไม่สามารถเชื่อมต่อบริการ AI ได้ โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
+  aiCreditsExhausted: 'เครดิตหมด — เติมได้ที่ genspark.ai',
+} satisfies Record<keyof typeof zh, string>

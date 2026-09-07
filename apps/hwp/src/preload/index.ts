@@ -1,7 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Lang } from '@genoffice/i18n'
+import type { AiStreamChunk } from '@genoffice/ai-provider'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
-import { HWP_CHANNELS } from '../shared/ipc'
+import { AI_CHANNELS, HWP_CHANNELS } from '../shared/ipc'
 import type { HwpApi, SaveMode, UiTheme } from '../shared/ipc'
 
 const api: HwpApi = {
@@ -38,6 +39,16 @@ const api: HwpApi = {
     ipcRenderer.on(HWP_CHANNELS.themeChanged, listener)
     return () => ipcRenderer.removeListener(HWP_CHANNELS.themeChanged, listener)
   },
+  getAiSettings: () => ipcRenderer.invoke(AI_CHANNELS.getSettings),
+  aiStream: (request) => ipcRenderer.invoke(AI_CHANNELS.stream, request),
+  aiStreamCancel: (requestId) => ipcRenderer.invoke(AI_CHANNELS.streamCancel, requestId),
+  onAiStream: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, chunk: AiStreamChunk) => handler(chunk)
+    ipcRenderer.on(AI_CHANNELS.streamChunk, listener)
+    return () => ipcRenderer.removeListener(AI_CHANNELS.streamChunk, listener)
+  },
+  aiGskStatus: (withEmail) => ipcRenderer.invoke(AI_CHANNELS.gskStatus, withEmail),
+  aiGskLogin: () => ipcRenderer.invoke(AI_CHANNELS.gskLogin),
 }
 
 contextBridge.exposeInMainWorld('hwpApi', api)

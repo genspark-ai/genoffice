@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const ja = {
+  aiOpenAssistant: 'AI アシスタントを開く',
+  aiCollapsePanel: 'パネルを折りたたむ',
+  aiComposerPlaceholder: 'このハングル文書について質問…',
+  aiEditorNotReady: 'エディターを読み込んでいます…',
+  aiEmptyTitle: 'このハングル文書について質問',
+  aiEmptyBody: '要約、翻訳、質問ができます。この版では文書を編集できません。',
+  aiNewChat: '新しいチャット',
+  aiSend: '送信',
+  aiStop: '停止',
+  aiHintIdle: 'Enter で送信、Shift+Enter で改行',
+  aiHintBusy: '返信中…',
+  aiThinking: '思考中',
+  aiReplying: '返信中',
+  aiWorking: '処理中',
+  aiStopped: '停止しました',
+  aiNoReply: '（返信なし）',
+  aiTruncatedNote: '（返信は長さ制限により途中で打ち切られ、不完全な可能性があります。）',
+  aiTurnLimit: '1 回の実行のステップ上限に達しました。続けるには指示をもう一度送ってください。',
+  aiUndelivered: '送信できませんでした',
+  aiRetry: '再試行',
+  aiGskLoginBtn: 'Genspark にサインイン',
+  aiUnknownError: 'AI リクエストに失敗しました。再試行してください',
+  aiTimeoutError: 'AI の応答がタイムアウトしました',
+  aiOverloadedError: 'AI サービスが混み合っています。しばらくしてからもう一度お試しください',
+  aiNetworkError:
+    'ネットワークに問題があり、AI サービスに接続できません。接続を確認して再試行してください',
+  aiCreditsExhausted: 'クレジット不足です。genspark.ai でチャージしてください',
+} satisfies Record<keyof typeof zh, string>

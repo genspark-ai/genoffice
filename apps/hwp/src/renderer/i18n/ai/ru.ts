@@ -1,0 +1,32 @@
+import type { zh } from './zh'
+
+export const ru = {
+  aiOpenAssistant: 'Открыть ИИ-ассистента',
+  aiCollapsePanel: 'Свернуть панель',
+  aiComposerPlaceholder: 'Спросите об этом документе Hangul…',
+  aiEditorNotReady: 'Редактор Hangul ещё загружается…',
+  aiEmptyTitle: 'Спросите об этом документе Hangul',
+  aiEmptyBody:
+    'Суммируйте, переводите или задавайте вопросы. Редактирование в этой версии недоступно.',
+  aiNewChat: 'Новый чат',
+  aiSend: 'Отправить',
+  aiStop: 'Стоп',
+  aiHintIdle: 'Enter — отправить, Shift+Enter — новая строка',
+  aiHintBusy: 'Отвечает…',
+  aiThinking: 'Думает',
+  aiReplying: 'Отвечает',
+  aiWorking: 'Работает',
+  aiStopped: 'Остановлено',
+  aiNoReply: '(нет ответа)',
+  aiTruncatedNote: '(Ответ был обрезан из-за ограничения длины и может быть неполным.)',
+  aiTurnLimit: 'Достигнут лимит шагов за один запуск — отправьте ещё одну инструкцию.',
+  aiUndelivered: 'Не отправлено',
+  aiRetry: 'Повторить',
+  aiGskLoginBtn: 'Войти в Genspark',
+  aiUnknownError: 'Сбой запроса ИИ, попробуйте ещё раз',
+  aiTimeoutError: 'Тайм-аут ответа ИИ',
+  aiOverloadedError: 'Сервис ИИ сейчас перегружен — повторите попытку чуть позже',
+  aiNetworkError:
+    'Проблема с сетью: не удалось подключиться к сервису ИИ. Проверьте подключение и повторите попытку',
+  aiCreditsExhausted: 'Кредиты закончились — пополните на genspark.ai',
+} satisfies Record<keyof typeof zh, string>

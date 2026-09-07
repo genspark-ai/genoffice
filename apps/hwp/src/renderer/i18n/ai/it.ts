@@ -1,0 +1,32 @@
+import type { zh } from './zh'
+
+export const it = {
+  aiOpenAssistant: 'Apri assistente IA',
+  aiCollapsePanel: 'Comprimi pannello',
+  aiComposerPlaceholder: 'Chiedi di questo documento Hangul…',
+  aiEditorNotReady: 'L’editor Hangul sta ancora caricando…',
+  aiEmptyTitle: 'Chiedi di questo documento Hangul',
+  aiEmptyBody: 'Riassumi, traduci o fai domande. La modifica non è disponibile in questa versione.',
+  aiNewChat: 'Nuova chat',
+  aiSend: 'Invia',
+  aiStop: 'Interrompi',
+  aiHintIdle: 'Invio per inviare, Maiusc+Invio per andare a capo',
+  aiHintBusy: 'Sta rispondendo…',
+  aiThinking: 'Sta pensando',
+  aiReplying: 'Sta rispondendo',
+  aiWorking: 'Sta lavorando',
+  aiStopped: 'Interrotto',
+  aiNoReply: '(nessuna risposta)',
+  aiTruncatedNote:
+    '(La risposta è stata interrotta dal limite di lunghezza e potrebbe essere incompleta.)',
+  aiTurnLimit: "Raggiunto il limite di passaggi per esecuzione — invia un'altra istruzione.",
+  aiUndelivered: 'Non inviato',
+  aiRetry: 'Riprova',
+  aiGskLoginBtn: 'Accedi a Genspark',
+  aiUnknownError: 'Richiesta IA non riuscita, riprova',
+  aiTimeoutError: 'Timeout della risposta IA',
+  aiOverloadedError: 'Il servizio IA è momentaneamente sovraccarico — riprova tra poco',
+  aiNetworkError:
+    'Problema di rete: impossibile raggiungere il servizio IA. Controlla la connessione e riprova',
+  aiCreditsExhausted: 'Crediti esauriti — ricarica su genspark.ai',
+} satisfies Record<keyof typeof zh, string>

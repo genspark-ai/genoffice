@@ -4,11 +4,10 @@ import { HML_UNAVAILABLE } from '../shared/formats'
 import type { SaveMode } from '../shared/ipc'
 import { asBytes } from '../shared/as-bytes'
 import { exportStudioPayload, hmlUnavailableMessage } from './export-payload'
+import { createStudioFacade, fileNameOf, type HangulStudioFacade } from './studio-text'
 
-function fileName(path: string | null): string {
-  if (!path) return 'untitled.hwp'
-  const parts = path.split(/[\\/]/)
-  return parts[parts.length - 1] ?? path
+function notifyStudioResize(host: HTMLElement): void {
+  host.querySelector('iframe')?.contentWindow?.dispatchEvent(new Event('resize'))
 }
 
 export function HwpStudio({
@@ -17,12 +16,14 @@ export function HwpStudio({
   onDirty,
   onError,
   onSaveError,
+  onReady,
 }: {
   path: string | null
   onPath: (path: string) => void
   onDirty: (dirty: boolean) => void
   onError: (message: string) => void
   onSaveError: (message: string | null) => void
+  onReady?: (facade: HangulStudioFacade | null) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const studioRef = useRef<Awaited<ReturnType<typeof createStudio>> | null>(null)
@@ -35,12 +36,16 @@ export function HwpStudio({
   onErrorRef.current = onError
   const onSaveErrorRef = useRef(onSaveError)
   onSaveErrorRef.current = onSaveError
+  const onReadyRef = useRef(onReady)
+  onReadyRef.current = onReady
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
     let cancelled = false
     let poll: ReturnType<typeof setInterval> | undefined
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined
+    let resizeObserver: ResizeObserver | undefined
     let inflight: Promise<boolean> | null = null
     const studioUrl = new URL('rhwp/?chrome=embed', window.location.href).href
 
@@ -63,7 +68,7 @@ export function HwpStudio({
         })
         if (result.ok && 'path' in result) {
           onPathRef.current(result.path)
-          await studio.notifySaved(fileName(result.path)).catch(() => undefined)
+          await studio.notifySaved(fileNameOf(result.path)).catch(() => undefined)
           markDirty(false)
           onSaveErrorRef.current(null)
           return true
@@ -99,6 +104,7 @@ export function HwpStudio({
     void (async () => {
       try {
         const studio = await createStudio(host, { studioUrl, renderer: 'canvas2d' })
+        await studio.plugins.load('hwpctrl').catch(() => undefined)
         if (cancelled) {
           studio.destroy()
           return
@@ -108,7 +114,7 @@ export function HwpStudio({
         if (cancelled) return
         if (openPath) {
           const bytes = asBytes(await window.hwpApi.readFile(openPath))
-          await studio.loadFile(bytes, fileName(openPath), {
+          await studio.loadFile(bytes, fileNameOf(openPath), {
             skipUnsavedGuard: true,
             suppressDialogs: true,
           })
@@ -121,6 +127,13 @@ export function HwpStudio({
           }
         }
         markDirty(false)
+        onReadyRef.current?.(createStudioFacade(studio))
+        notifyStudioResize(host)
+        resizeObserver = new ResizeObserver(() => {
+          clearTimeout(resizeTimer)
+          resizeTimer = setTimeout(() => notifyStudioResize(host), 200)
+        })
+        resizeObserver.observe(host)
         poll = setInterval(() => {
           void studio.getDocumentState().then(
             (state) => markDirty(state.dirty),
@@ -159,6 +172,9 @@ export function HwpStudio({
     return () => {
       cancelled = true
       if (poll) clearInterval(poll)
+      clearTimeout(resizeTimer)
+      resizeObserver?.disconnect()
+      onReadyRef.current?.(null)
       offSave()
       offClose()
       window.removeEventListener('keydown', onKeyDown, true)
@@ -168,5 +184,5 @@ export function HwpStudio({
     }
   }, [])
 
-  return <div ref={hostRef} className="hwp-studio" aria-label={fileName(path)} />
+  return <div ref={hostRef} className="hwp-studio" aria-label={fileNameOf(path)} />
 }

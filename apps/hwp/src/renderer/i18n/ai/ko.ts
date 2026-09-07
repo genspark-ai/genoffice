@@ -1,0 +1,31 @@
+import type { zh } from './zh'
+
+export const ko = {
+  aiOpenAssistant: 'AI 어시스턴트 열기',
+  aiCollapsePanel: '패널 접기',
+  aiComposerPlaceholder: '이 한글 문서에 대해 질문하세요…',
+  aiEditorNotReady: '한글 편집기를 불러오는 중…',
+  aiEmptyTitle: '이 한글 문서에 대해 질문하세요',
+  aiEmptyBody: '요약, 번역, 질문을 할 수 있습니다. 이번 버전에서는 문서를 수정할 수 없습니다.',
+  aiNewChat: '새 대화',
+  aiSend: '전송',
+  aiStop: '중지',
+  aiHintIdle: 'Enter 전송, Shift+Enter 줄바꿈',
+  aiHintBusy: '답변 중…',
+  aiThinking: '생각 중',
+  aiReplying: '답변 중',
+  aiWorking: '작업 중',
+  aiStopped: '중지됨',
+  aiNoReply: '(응답 없음)',
+  aiTruncatedNote: '(응답이 길이 제한으로 잘려 내용이 불완전할 수 있습니다.)',
+  aiTurnLimit: '실행당 단계 한도에 도달했습니다. 계속하려면 지시를 다시 보내세요.',
+  aiUndelivered: '전송되지 않았습니다',
+  aiRetry: '다시 시도',
+  aiGskLoginBtn: 'Genspark 로그인',
+  aiUnknownError: 'AI 요청이 실패했습니다. 다시 시도하세요',
+  aiTimeoutError: 'AI 응답 시간 초과',
+  aiOverloadedError: 'AI 서비스가 혼잡합니다. 잠시 후 다시 시도해 주세요',
+  aiNetworkError:
+    '네트워크에 문제가 있어 AI 서비스에 연결할 수 없습니다. 연결을 확인한 후 다시 시도해 주세요',
+  aiCreditsExhausted: '크레딧이 부족합니다. genspark.ai에서 충전하세요',
+} satisfies Record<keyof typeof zh, string>
