@@ -9,7 +9,7 @@ import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
 import { createPdfSkill } from './pdf-skill'
-import { createElectronTransport } from './transport'
+import { createAiTransport } from './transports'
 import { PDF_NAV_SCHEME, parsePdfNavHref } from './pdf-nav'
 import type { FileOpConfirm, PdfAiDeps, PdfAppDeps } from './tools'
 
@@ -378,7 +378,7 @@ export function AiPanel({
       fetchImage: (url) => apiRef.current.fetchImage(url),
     }
     loopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => settingsRef.current!),
+      transport: createAiTransport(() => settingsRef.current!),
       skill: createPdfSkill(deps),
       systemSuffix: () => aiLangDirective(langRef.current),
       events: {

@@ -33,7 +33,7 @@ import { DOCS_CONTINUE_INSTRUCTION } from './continuation'
 import { waitForFullContent } from '../phased-content'
 import { currentDocGeneration } from '../file-actions'
 import { createFilesSkill } from './files-skill'
-import { createElectronTransport } from './transport'
+import { createAiTransport, isWebMode } from './transports'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
@@ -726,7 +726,7 @@ export function AiPanel({
       ordered: findNumId(blocksRef.current, 'ordered') ?? numIdFallbackRef.current?.ordered ?? null,
     })
     loopRef.current = new AgentLoop<PmNode>({
-      transport: transportRef.current,
+      transport: createAiTransport(() => settingsRef.current),
       systemSuffix: aiLangDirective,
       skill: composeSkills('docs+files', '', [
         createDocsSkill(

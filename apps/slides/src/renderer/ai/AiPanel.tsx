@@ -27,7 +27,7 @@ import {
   type ResolveFailure,
 } from './edit-queue'
 import { createFilesSkill } from './files-skill'
-import { createElectronTransport } from './transport'
+import { createAiTransport } from './transports'
 import { renderSlidesToPngBase64 } from '../export-render'
 import {
   isQcEnabled,
@@ -1337,7 +1337,7 @@ export function AiPanel({
     }
     accessRef.current = access
     loopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => settingsRef.current),
+      transport: createAiTransport(() => settingsRef.current),
       systemSuffix: aiLangDirective,
       skill: composeSkills('slides+files', '', [
         createSlidesSkill(access),
@@ -1782,7 +1782,7 @@ export function AiPanel({
     const controller = new AbortController()
     qcAbortRef.current = controller
     const capped = pages.slice(0, QC_MAX_PAGES)
-    const transport = createElectronTransport(() => settingsRef.current)
+    const transport = createAiTransport(() => settingsRef.current)
     const header = tGlobal('aiQcStart', { count: capped.length })
     const lines: string[] = []
     const renderEntry = () => [header, ...lines].join('\n')

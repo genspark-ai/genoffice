@@ -138,7 +138,8 @@ import {
   type CrossHighlightHandle,
 } from './cross-highlight'
 import type { ApplyOutcome, ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
-import { createElectronTransport } from './ai/transport'
+import type { ApplyOutcome, ChangePlan } from '../domain/workbook.types'
+import { createAiTransport } from './ai/transports'
 import {
   MAX_READ_RANGE_CELLS,
   type ActiveSheetInfo,
@@ -1113,7 +1114,7 @@ export function App(): React.JSX.Element {
   const agentLoopRef = useRef<AgentLoop | null>(null)
   if (!agentLoopRef.current) {
     agentLoopRef.current = new AgentLoop({
-      transport: createElectronTransport(() => aiSettingsRef.current!),
+      transport: createAiTransport(() => aiSettingsRef.current!),
       systemSuffix: aiLangDirective,
       skill: composeSkills('sheets+files', '', [
         createWorkbookSkill(sheetsSkillDeps()),
