@@ -1,0 +1,30 @@
+# GenOffice Web Server Docker Compose
+version: '3.8'
+
+services:
+  genoffice-web:
+    build:
+      context: ../..
+      dockerfile: apps/web-server/Dockerfile
+    container_name: genoffice-web
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - NODE_ENV=production
+      # Optional: MiniMax AI API Key
+      # - MINIMAX_API_KEY=your-api-key
+    volumes:
+      - genoffice-data:/tmp/genoffice-data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  genoffice-data:
+    driver: local
