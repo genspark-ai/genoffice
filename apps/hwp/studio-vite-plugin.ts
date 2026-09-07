@@ -1,35 +1,18 @@
-import { cpSync, createReadStream, existsSync, statSync } from 'node:fs'
-import { extname, join, resolve } from 'node:path'
+import { cpSync, createReadStream, existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
-
-const MIME: Record<string, string> = {
-  '.css': 'text/css; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.ico': 'image/x-icon',
-  '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.ttf': 'font/ttf',
-  '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-}
+import { existingFile, isBlockedStudioAsset, mimeFor, safePathUnder } from './src/shared/static-serve'
 
 export const STUDIO_MOUNT = '/rhwp'
 export const STUDIO_DIR = resolve(__dirname, 'vendor/rhwp-studio')
 
 function studioFile(urlPath: string): string | null {
+  if (isBlockedStudioAsset(urlPath)) return null
   const rel = urlPath.split('?')[0].slice(STUDIO_MOUNT.length)
-  const base = (rel === '' || rel === '/' ? 'index.html' : rel.replace(/^\//, '')).split('/').pop()
-  if (base === 'sw.js' || base === 'registerSW.js' || base === 'manifest.webmanifest') return null
-  const wanted = resolve(STUDIO_DIR, rel === '' || rel === '/' ? 'index.html' : `.${rel}`)
-  if (!wanted.startsWith(STUDIO_DIR)) return null
-  if (existsSync(wanted) && statSync(wanted).isFile()) return wanted
-  const fallback = join(STUDIO_DIR, 'index.html')
-  return existsSync(fallback) ? fallback : null
+  const wanted = safePathUnder(STUDIO_DIR, rel === '' || rel === '/' ? '/index.html' : rel)
+  if (!wanted) return null
+  return existingFile(wanted) ?? existingFile(join(STUDIO_DIR, 'index.html'))
 }
 
 function middleware(req: IncomingMessage, res: ServerResponse, next: () => void): void {
@@ -44,7 +27,7 @@ function middleware(req: IncomingMessage, res: ServerResponse, next: () => void)
     res.end('rhwp-studio is not vendored — run npm run vendor:studio -w @genoffice/hwp')
     return
   }
-  res.setHeader('Content-Type', MIME[extname(file)] ?? 'application/octet-stream')
+  res.setHeader('Content-Type', mimeFor(file))
   createReadStream(file).pipe(res)
 }
 

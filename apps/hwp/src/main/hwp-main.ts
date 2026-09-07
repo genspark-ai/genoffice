@@ -14,6 +14,7 @@ import {
 import { getUiLang } from '@genoffice/i18n'
 import { HWP_CHANNELS } from '../shared/ipc'
 import type { SaveHwpRequest, SaveHwpResult, SaveMode } from '../shared/ipc'
+import { rawFileBytes } from '../shared/as-bytes'
 import { HWP_RE, bytesForSaveFormat, ensureHwpSavePath, saveFormatForPath } from '../shared/formats'
 import { atomicWriteFile } from './atomic-write'
 import { tm } from './dialogs'
@@ -35,8 +36,14 @@ export function configureHwpRuntime(paths: RuntimePaths): void {
 async function rendererOrigin(): Promise<string> {
   if (runtime.rendererUrl) return runtime.rendererUrl
   if (!runtime.rendererFile) throw new Error('hwp: renderer path not configured')
-  loopbackOrigin ??= startHwpLoopback(dirname(runtime.rendererFile))
+  loopbackOrigin ??= startHwpLoopback(dirname(runtime.rendererFile)).then((server) => server.origin)
   return loopbackOrigin
+}
+
+async function loadHwpRenderer(contents: WebContents): Promise<void> {
+  const url = await rendererOrigin()
+  if (contents.isDestroyed()) return
+  await contents.loadURL(url)
 }
 
 /** Open path per view, queued at tab creation; the renderer consumes it after mount. */
@@ -124,26 +131,14 @@ export function requestHwpSave(contents: WebContents, mode: SaveMode): Promise<b
 
 function asNodeBuffer(raw: unknown): Buffer | null {
   if (Buffer.isBuffer(raw)) return raw
-  if (raw instanceof Uint8Array) return Buffer.from(raw)
-  if (raw instanceof ArrayBuffer) return Buffer.from(raw)
-  if (ArrayBuffer.isView(raw)) {
-    const view = raw as ArrayBufferView
-    return Buffer.from(view.buffer, view.byteOffset, view.byteLength)
-  }
-  if (
-    raw &&
-    typeof raw === 'object' &&
-    (raw as { type?: string }).type === 'Buffer' &&
-    Array.isArray((raw as { data?: unknown }).data)
-  ) {
-    return Buffer.from((raw as { data: number[] }).data)
-  }
-  return null
+  const bytes = rawFileBytes(raw)
+  return bytes ? Buffer.from(bytes) : null
 }
 
 async function resolveSaveTarget(
   e: Electron.IpcMainInvokeEvent,
   mode: SaveMode,
+  canSaveHml: boolean,
 ): Promise<string | null | 'canceled'> {
   const current = savePathByWc.get(e.sender.id)
   if (mode === 'save' && current) return current
@@ -158,7 +153,7 @@ async function resolveSaveTarget(
     filters: [
       { name: tm('filterHwp'), extensions: ['hwp'] },
       { name: tm('filterHwpx'), extensions: ['hwpx'] },
-      { name: tm('filterHml'), extensions: ['hml'] },
+      ...(canSaveHml ? [{ name: tm('filterHml'), extensions: ['hml'] }] : []),
     ],
   })
   if (picked.canceled || !picked.filePath) return 'canceled'
@@ -198,7 +193,7 @@ function registerHwpIpc(): void {
       }
       const mode: SaveMode = request.mode === 'saveAs' ? 'saveAs' : 'save'
       try {
-        const target = await resolveSaveTarget(e, mode)
+        const target = await resolveSaveTarget(e, mode, Boolean(hml?.byteLength))
         if (target === 'canceled') return done({ ok: true, canceled: true })
         if (!target) return done({ ok: false, error: 'hwp: no save target' })
         const format = saveFormatForPath(target)
@@ -274,7 +269,9 @@ export function createHwpView(openPath?: string | null): WebContentsView {
     },
   })
   grantAndTrack(view.webContents, openPath)
-  void rendererOrigin().then((url) => view.webContents.loadURL(url))
+  void loadHwpRenderer(view.webContents).catch((err) => {
+    console.error('[hwp] failed to load renderer:', err)
+  })
   return view
 }
 
@@ -301,7 +298,7 @@ export function startHwpStandalone(): void {
     })
     const argPath = process.argv.slice(1).find((a) => HWP_RE.test(a) && existsSync(a))
     grantAndTrack(win.webContents, argPath)
-    await win.loadURL(await rendererOrigin())
+    await loadHwpRenderer(win.webContents)
   })
   app.on('window-all-closed', () => app.quit())
 }

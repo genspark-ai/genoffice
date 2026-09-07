@@ -1,5 +1,5 @@
 /** IPC may deliver a Node Buffer JSON, a view, or a raw ArrayBuffer. */
-export function asBytes(raw: unknown): Uint8Array {
+export function rawFileBytes(raw: unknown): Uint8Array | null {
   if (raw instanceof Uint8Array) return raw
   if (raw instanceof ArrayBuffer) return new Uint8Array(raw)
   if (ArrayBuffer.isView(raw)) {
@@ -14,5 +14,11 @@ export function asBytes(raw: unknown): Uint8Array {
   ) {
     return Uint8Array.from((raw as { data: number[] }).data)
   }
-  throw new Error('hwp: expected file bytes')
+  return null
+}
+
+export function asBytes(raw: unknown): Uint8Array {
+  const bytes = rawFileBytes(raw)
+  if (!bytes) throw new Error('hwp: expected file bytes')
+  return bytes
 }

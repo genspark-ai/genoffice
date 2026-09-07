@@ -1,49 +1,42 @@
-import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createReadStream } from 'node:fs'
 import { createServer } from 'node:http'
-import { extname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import { existingFile, isBlockedStudioAsset, mimeFor, safePathUnder } from '../shared/static-serve'
 
-const MIME: Record<string, string> = {
-  '.css': 'text/css; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.ico': 'image/x-icon',
-  '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.ttf': 'font/ttf',
-  '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
+export interface HwpLoopback {
+  origin: string
+  close(): Promise<void>
 }
 
 /**
  * rhwp-studio's embed SDK rejects file:/opaque origins. Packaged Hangul tabs
  * therefore load the renderer + vendored studio over loopback HTTP.
  */
-export function startHwpLoopback(root: string): Promise<string> {
+export function startHwpLoopback(root: string): Promise<HwpLoopback> {
   const base = resolve(root)
   const server = createServer((req, res) => {
-    const raw = decodeURIComponent((req.url ?? '/').split('?')[0])
-    const rel = raw === '/' ? '/index.html' : raw
-    const wanted = resolve(base, `.${rel}`)
-    if (!wanted.startsWith(base)) {
-      res.statusCode = 403
-      res.end()
-      return
-    }
-    const file =
-      existsSync(wanted) && statSync(wanted).isFile()
-        ? wanted
-        : rel.startsWith('/rhwp/')
-          ? join(base, 'rhwp', 'index.html')
-          : join(base, 'index.html')
-    if (!existsSync(file) || !statSync(file).isFile()) {
+    const urlPath = req.url ?? '/'
+    if (isBlockedStudioAsset(urlPath)) {
       res.statusCode = 404
       res.end()
       return
     }
-    res.setHeader('Content-Type', MIME[extname(file)] ?? 'application/octet-stream')
+    const wanted = safePathUnder(base, urlPath)
+    if (!wanted) {
+      res.statusCode = 403
+      res.end()
+      return
+    }
+    const fallback = urlPath.split('?')[0].startsWith('/rhwp/')
+      ? join(base, 'rhwp', 'index.html')
+      : join(base, 'index.html')
+    const file = existingFile(wanted) ?? existingFile(fallback)
+    if (!file) {
+      res.statusCode = 404
+      res.end()
+      return
+    }
+    res.setHeader('Content-Type', mimeFor(file))
     createReadStream(file).pipe(res)
   })
   return new Promise((resolveAddr, reject) => {
@@ -54,7 +47,13 @@ export function startHwpLoopback(root: string): Promise<string> {
         reject(new Error('hwp: loopback bind failed'))
         return
       }
-      resolveAddr(`http://127.0.0.1:${addr.port}/`)
+      resolveAddr({
+        origin: `http://127.0.0.1:${addr.port}/`,
+        close: () =>
+          new Promise((resolveClose, rejectClose) => {
+            server.close((err) => (err ? rejectClose(err) : resolveClose()))
+          }),
+      })
     })
   })
 }

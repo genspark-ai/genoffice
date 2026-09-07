@@ -65,6 +65,41 @@ body,
   color: var(--danger);
 }
 
+.hwp-save-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 16px;
+  background: var(--danger-bg);
+  border-bottom: 1px solid var(--danger-border);
+}
+
+.hwp-save-error-text {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.hwp-save-error-dismiss {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--danger);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hwp-save-error-dismiss:hover {
+  background: var(--hover);
+}
+
 .hwp-studio {
   flex: 1;
   min-height: 0;

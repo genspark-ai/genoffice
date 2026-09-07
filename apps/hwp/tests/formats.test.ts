@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   HWP_EXTENSIONS,
   HWP_RE,
+  HML_UNAVAILABLE,
   bytesForSaveFormat,
   ensureHwpSavePath,
   isHwpPath,
@@ -44,5 +45,10 @@ describe('save path helpers', () => {
     expect(bytesForSaveFormat('hwp', payload)).toBe(payload.hwp)
     expect(bytesForSaveFormat('hwpx', payload)).toBe(payload.hwpx)
     expect(bytesForSaveFormat('hml', payload)).toBe(payload.hml)
+  })
+
+  it('throws when HML bytes are missing', () => {
+    const payload = { hwp: new Uint8Array([1]), hwpx: new Uint8Array([2]) }
+    expect(() => bytesForSaveFormat('hml', payload)).toThrow(HML_UNAVAILABLE)
   })
 })

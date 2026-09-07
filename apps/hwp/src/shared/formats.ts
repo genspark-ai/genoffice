@@ -23,13 +23,15 @@ export function ensureHwpSavePath(path: string): string {
   return HWP_RE.test(path) ? path : `${path}.hwp`
 }
 
+export const HML_UNAVAILABLE = 'hwp: HML export unavailable'
+
 export function bytesForSaveFormat(
   format: HwpSaveFormat,
   payload: { hwp: Uint8Array; hwpx: Uint8Array; hml?: Uint8Array },
 ): Uint8Array {
   if (format === 'hwpx') return payload.hwpx
   if (format === 'hml') {
-    if (!payload.hml?.byteLength) throw new Error('hwp: HML export unavailable')
+    if (!payload.hml?.byteLength) throw new Error(HML_UNAVAILABLE)
     return payload.hml
   }
   return payload.hwp
