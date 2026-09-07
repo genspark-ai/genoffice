@@ -616,6 +616,140 @@ registerHandle('slides:delete-element', () => ({ ok: true }))
 registerHandle('slides:undo', () => ({ ok: true }))
 registerHandle('slides:redo', () => ({ ok: true }))
 registerHandle('slides:get-render-slides', () => [])
+registerHandle('slides:get-animations', () => [])
+registerHandle('slides:get-chart-data', () => ({}))
+registerHandle('slides:get-comments', () => [])
+registerHandle('slides:get-header-footer', () => ({ enabled: false }))
+registerHandle('slides:get-layouts', () => [])
+registerHandle('slides:get-link', () => null)
+registerHandle('slides:get-notes', () => '')
+registerHandle('slides:get-sections', () => [])
+registerHandle('slides:get-shape-keys', () => [])
+registerHandle('slides:get-slide-links', () => [])
+registerHandle('slides:get-slide-size', () => ({ width: 960, height: 540 }))
+registerHandle('slides:get-transition', () => ({ type: 'none', duration: 0 }))
+registerHandle('slides:apply-edit-script', () => ({ ok: true }))
+registerHandle('slides:apply-header-footer', () => ({ ok: true }))
+registerHandle('slides:apply-theme', () => ({ ok: true }))
+registerHandle('slides:apply-txn', () => ({ ok: true }))
+registerHandle('slides:batch-edit-transform', () => ({ ok: true }))
+registerHandle('slides:chart-color-schemes', () => [])
+registerHandle('slides:clipboard-external', () => ({}))
+registerHandle('slides:clipboard-probe', () => ({}))
+registerHandle('slides:copy-elements', () => ({ ok: true }))
+registerHandle('slides:copy-slide', () => ({ ok: true, slideId: `slide-${Date.now()}` }))
+registerHandle('slides:delete-comment', () => ({ ok: true }))
+registerHandle('slides:delete-slide', () => ({ ok: true }))
+registerHandle('slides:duplicate-elements', () => ({ ok: true }))
+registerHandle('slides:edit-background', () => ({ ok: true }))
+registerHandle('slides:edit-chart', () => ({ ok: true }))
+registerHandle('slides:edit-connector-endpoints', () => ({ ok: true }))
+registerHandle('slides:edit-fill', () => ({ ok: true }))
+registerHandle('slides:edit-image-fill', () => ({ ok: true }))
+registerHandle('slides:edit-picture-opacity', () => ({ ok: true }))
+registerHandle('slides:edit-picture-src-rect', () => ({ ok: true }))
+registerHandle('slides:edit-stroke', () => ({ ok: true }))
+registerHandle('slides:edit-table-cell', () => ({ ok: true }))
+registerHandle('slides:edit-table-style', () => ({ ok: true }))
+registerHandle('slides:edit-transform', () => ({ ok: true }))
+registerHandle('slides:find-replace', () => ({ ok: true, count: 0 }))
+registerHandle('slides:flip-elements', () => ({ ok: true }))
+registerHandle('slides:font-catalog', () => [])
+registerHandle('slides:font-missing', () => [])
+registerHandle('slides:font-download', () => ({ ok: true, message: 'Web 版本不支持字体下载' }))
+registerHandle('slides:font-install-local', () => ({ ok: true }))
+registerHandle('slides:insert-model3d', () => ({ ok: true }))
+
+// ========== AI 额外功能 ==========
+registerHandle('ai:log-run-failure', () => ({ ok: true }))
+registerHandle('slides:get-run-links', () => [])
+registerHandle('slides:group-elements', () => ({ ok: true, groupId: `group-${Date.now()}` }))
+registerHandle('slides:has-slide-clipboard', () => false)
+registerHandle('slides:history-batch-begin', () => ({ ok: true }))
+registerHandle('slides:history-batch-end', () => ({ ok: true }))
+registerHandle('slides:insert-image', () => ({ ok: true }))
+registerHandle('slides:is-dirty', () => false)
+registerHandle('slides:master-close', () => ({ ok: true }))
+registerHandle('slides:master-delete-element', () => ({ ok: true }))
+registerHandle('slides:master-edit-fill', () => ({ ok: true }))
+registerHandle('slides:master-edit-stroke', () => ({ ok: true }))
+registerHandle('slides:master-edit-text', () => ({ ok: true }))
+registerHandle('slides:master-edit-transform', () => ({ ok: true }))
+registerHandle('slides:master-enter', () => ({ ok: true }))
+registerHandle('slides:master-open', () => ({ ok: true }))
+registerHandle('slides:media-data', () => ({}))
+registerHandle('slides:move-section', () => ({ ok: true }))
+registerHandle('slides:move-slide', () => ({ ok: true }))
+registerHandle('slides:native-clipboard', () => ({}))
+registerHandle('slides:paste-elements', () => ({ ok: true }))
+registerHandle('slides:paste-slide', () => ({ ok: true }))
+registerHandle('slides:presenter-end', () => ({ ok: true }))
+registerHandle('slides:presenter-start', () => ({ ok: true }))
+registerHandle('slides:presenter-swap', () => ({ ok: true }))
+registerHandle('slides:remove-section', () => ({ ok: true }))
+registerHandle('slides:rename-section', () => ({ ok: true }))
+registerHandle('slides:reorder-element', () => ({ ok: true }))
+registerHandle('slides:replace-picture-bytes', () => ({ ok: true }))
+registerHandle('slides:set-advance-times', () => ({ ok: true }))
+registerHandle('slides:set-animations', () => ({ ok: true }))
+registerHandle('slides:set-element-font', () => ({ ok: true }))
+registerHandle('slides:set-element-paragraph-format', () => ({ ok: true }))
+registerHandle('slides:set-hidden', () => ({ ok: true }))
+registerHandle('slides:set-link', () => ({ ok: true }))
+registerHandle('slides:set-notes', () => ({ ok: true }))
+registerHandle('slides:set-sections', () => ({ ok: true }))
+registerHandle('slides:set-slide-layout', () => ({ ok: true }))
+registerHandle('slides:set-slide-size', () => ({ ok: true }))
+registerHandle('slides:set-table-cell-anchor', () => ({ ok: true }))
+registerHandle('slides:set-table-col-width', () => ({ ok: true }))
+registerHandle('slides:set-table-row-height', () => ({ ok: true }))
+registerHandle('slides:set-transition', () => ({ ok: true }))
+registerHandle('slides:show-fullscreen', () => ({ ok: true }))
+registerHandle('slides:table-merge', () => ({ ok: true }))
+registerHandle('slides:table-structure', () => ({}))
+registerHandle('slides:ungroup-element', () => ({ ok: true }))
+registerHandle('slides:add-comment', () => ({ ok: true, commentId: `comment-${Date.now()}` }))
+registerHandle('slides:add-ink', () => ({ ok: true }))
+registerHandle('slides:add-media-bytes', () => ({ ok: true }))
+registerHandle('slides:add-section', () => ({ ok: true, sectionId: `section-${Date.now()}` }))
+registerHandle('slides:add-slide-with-layout', () => ({ ok: true, slideId: `slide-${Date.now()}` }))
+registerHandle('slides:add-smartart', () => ({ ok: true }))
+registerHandle('slides:ai-snapshot-restore', () => ({ ok: true }))
+registerHandle('slides:audience-ready', () => ({ ok: true }))
+registerHandle('slides:cloud-gen-status', () => ({ status: 'idle' }))
+registerHandle('slides:files-add', async (_event: unknown, args: unknown) => {
+  const paths = (args as string[]) || []
+  return paths.map(p => ({ path: p, ok: true }))
+})
+registerHandle('slides:files-pick', () => ({
+  canceled: false,
+  filePaths: [],
+  message: '请使用 Web File API'
+}))
+registerHandle('slides:files-read-image', async (_event: unknown, path: unknown) => {
+  if (existsSync(path as string)) {
+    const bytes = readFileSync(path as string)
+    return { base64: bytes.toString('base64'), name: basename(path as string) }
+  }
+  return null
+})
+registerHandle('slides:pick-export-dir', () => ({ path: '/tmp/exports' }))
+registerHandle('slides:pick-export-pdf-path', () => ({ path: '/tmp/exports/presentation.pdf' }))
+registerHandle('slides:private-font-data', () => ({}))
+registerHandle('slides:private-font-faces', () => [])
+registerHandle('slides:repaste-slide', () => ({ ok: true }))
+
+// ========== Sheets 额外功能 ==========
+registerHandle('sheets:consume-new-blank', () => ({ ok: true }))
+
+// ========== Markdown 功能 ==========
+registerHandle('md-asset', async (_event: unknown, args: unknown) => {
+  const { path, type } = args as { path: string; type: string }
+  if (type === 'read' && existsSync(path)) {
+    return { content: readFileSync(path, 'utf-8') }
+  }
+  return null
+})
 
 // ========== PDF 功能 ==========
 registerHandle('pdf:open-path', async (_event: unknown, filePath: unknown) => {
@@ -627,6 +761,21 @@ registerHandle('pdf:open-path', async (_event: unknown, filePath: unknown) => {
 })
 
 // ========== Clipboard 功能 (Web API 模拟) ==========
+// 原生 IPC 通道 (copy/cut/paste)
+registerHandle('copy', (_event: unknown, text: unknown) => ({
+  ok: true,
+  message: '请使用浏览器原生 Ctrl+C / Cmd+C'
+}))
+registerHandle('cut', (_event: unknown, text: unknown) => ({
+  ok: true,
+  message: '请使用浏览器原生 Ctrl+X / Cmd+X'
+}))
+registerHandle('paste', () => ({
+  text: '',
+  message: '请使用浏览器原生 Ctrl+V / Cmd+V'
+}))
+
+// Electron IPC 通道别名
 registerHandle('clipboard:copy', (_event: unknown, text: unknown) => ({
   ok: true,
   message: '请使用浏览器原生 Ctrl+C / Cmd+C'
