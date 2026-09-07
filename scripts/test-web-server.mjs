@@ -326,6 +326,15 @@ const WEB_SERVER_IMPLEMENTED = [
   'slides:insert-model3d',
   // AI
   'ai:log-run-failure',
+  // AnyDoc
+  'anydoc:get-config',
+  'anydoc:set-config',
+  'anydoc:recognize',
+  'anydoc:convert',
+  'anydoc:extract-text',
+  'anydoc:extract-tables',
+  'anydoc:extract-images',
+  'anydoc:render-preview',
   // Web
   'web:write-temp-file',
   'web:read-file-bytes',

@@ -768,6 +768,31 @@ registerHandle('ai:sentiment', async (_event: unknown, text: unknown) => {
     emotions: { positive: 0.3, negative: 0.2, neutral: 0.5 },
   }
 })
+
+// ========== Agent Loop SSE 端点 ==========
+// 支持 @genoffice/agent-core HTTP Transport
+
+const ACTIVE_STREAMS = new Map<string, {
+  controller: ReadableStreamDefaultController
+  aborted: boolean
+}>()
+
+function generateAgentResponse(messages: unknown[]): string {
+  const lastMsg = messages[messages.length - 1] as { text?: string } | undefined
+  const userMessage = lastMsg?.text || 'Hello'
+  
+  const responses = [
+    `我收到了您的消息: "${userMessage}"。`,
+    `正在分析您的请求...`,
+    `根据我的理解，您需要帮助处理这个任务。`,
+    `我可以帮助您完成文档编辑、表格处理、幻灯片制作等工作。`,
+    `请问还有什么其他需要帮助的吗？`,
+  ]
+  
+  return responses.join(' ')
+}
+
+// 添加 SSE 流式端点到服务器
 registerHandle('slides:get-run-links', () => [])
 registerHandle('slides:group-elements', () => ({ ok: true, groupId: `group-${Date.now()}` }))
 registerHandle('slides:has-slide-clipboard', () => false)
@@ -1300,6 +1325,71 @@ const server = createServer(async (request, response) => {
     return
   }
   
+  // Agent Loop SSE 端点 - 支持 @genoffice/agent-core HTTP Transport
+  if (url.pathname === '/api/ai/stream' && request.method === 'POST') {
+    try {
+      const body = await readBody(request)
+      const { requestId, system, messages, tools } = JSON.parse(body || '{}')
+      
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Request-Id': requestId || '',
+      })
+      
+      // 模拟流式响应
+      const responseText = generateAgentResponse(messages || [])
+      const words = responseText.split(/([\s，。、！？]+)/)
+      let delay = 50
+      
+      const streamChunk = (type: string, data: Record<string, unknown>) => {
+        response.write(`data: ${JSON.stringify({ requestId, type, ...data })}\n\n`)
+      }
+      
+      // 发送 ping 保持连接
+      const pingInterval = setInterval(() => {
+        try { response.write(`data: ${JSON.stringify({ requestId, type: 'ping' })}\n\n`) } catch {}
+      }, 30000)
+      
+      // 逐字发送响应
+      let wordIndex = 0
+      const sendWord = () => {
+        if (wordIndex >= words.length) {
+          clearInterval(pingInterval)
+          response.write(`data: ${JSON.stringify({ requestId, type: 'done', stopReason: 'stop' })}\n\n`)
+          response.end()
+          return
+        }
+        
+        streamChunk('delta', { text: words[wordIndex] })
+        wordIndex++
+        
+        // 模拟工具调用（如果有工具）
+        if (wordIndex === Math.floor(words.length / 2) && tools && tools.length > 0) {
+          const toolCall = {
+            id: `tool-${Date.now()}`,
+            name: tools[0].name,
+            input: {},
+          }
+          streamChunk('tool-call', { toolCall })
+        }
+        
+        setTimeout(sendWord, delay)
+      }
+      
+      sendWord()
+      
+      request.on('close', () => {
+        clearInterval(pingInterval)
+      })
+    } catch (error) {
+      response.writeHead(500, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: String((error as Error)?.message) }))
+    }
+    return
+  }
+  
   // 静态文件服务
   const appName = url.searchParams.get('app') || 'docs'
   let filePath = resolve(STATIC_ROOT, appName, 'out', 'renderer', url.pathname === '/' ? 'index.html' : url.pathname)
@@ -1338,14 +1428,18 @@ server.listen(PORT, HOST, () => {
 ║   Apps: ${APPS.slice(0, 4).join(', ')}...                   ║
 ║                                                           ║
 ║   📊 Channels: ${String(handlers.size).padEnd(25)}   ║
-║   🔗 Features: AI, Collab, Files, Projects                ║
+║   🔗 Features: AI, Collab, Files, Projects, AnyDoc        ║
 ║                                                           ║
 ║   Endpoints:                                              ║
 ║   • GET  /health              Health check                 ║
 ║   • GET  /api/channels       List channels                ║
+║   • POST /api/ai/stream       Agent Loop SSE               ║
 ║   • GET  /api/collab/sessions Collaboration status        ║
 ║   • POST /api/ipc/:channel   IPC invoke                  ║
 ║   • GET  /api/ipc/events     SSE events                  ║
+║                                                           ║
+║   Agent Core Integration:                                 ║
+║   ✅ createHttpTransport()  - HTTP Transport for AgentLoop ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 `)
