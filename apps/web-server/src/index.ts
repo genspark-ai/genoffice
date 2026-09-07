@@ -27,6 +27,93 @@ const STATIC_ROOT = resolve(ROOT, 'apps')
 const DATA_DIR = process.env.DATA_DIR || '/tmp/genoffice-data'
 mkdirSync(DATA_DIR, { recursive: true })
 
+// ========== 编码/解码 (与 @genoffice/ipc-bridge 对齐) ==========
+const BYTES_TAG = '__ipcBytes'
+const TYPED_ARRAY_CTORS = {
+  i8: Int8Array,
+  u8: Uint8Array,
+  u8c: Uint8ClampedArray,
+  i16: Int16Array,
+  u16: Uint16Array,
+  i32: Int32Array,
+  u32: Uint32Array,
+  f32: Float32Array,
+  f64: Float64Array,
+  bi64: BigInt64Array,
+  bu64: BigUint64Array,
+} as const
+
+type TypedArrayTag = keyof typeof TYPED_ARRAY_CTORS
+
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64')
+  }
+  let binary = ''
+  const CHUNK = 0x8000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+  }
+  return btoa(binary)
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  if (typeof Buffer !== 'undefined') {
+    return new Uint8Array(Buffer.from(b64, 'base64'))
+  }
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+function isTypedArrayTag(tag: string): tag is TypedArrayTag {
+  return tag in TYPED_ARRAY_CTORS
+}
+
+export function encodeTransportValue(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value !== 'object') return value
+  if (depth > 64) throw new Error('IPC payload nesting exceeds the transport limit (64)')
+  if (ArrayBuffer.isView(value)) {
+    const view = value as ArrayBufferView
+    const bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+    if (value instanceof DataView) {
+      return { [BYTES_TAG]: 'dv', b64: bytesToBase64(bytes) }
+    }
+    const tag = (Object.keys(TYPED_ARRAY_CTORS) as TypedArrayTag[]).find(
+      (key) => view instanceof TYPED_ARRAY_CTORS[key],
+    )
+    if (!tag) throw new Error(`IPC payload carries an unsupported binary view: ${view.constructor?.name}`)
+    return { [BYTES_TAG]: tag, b64: bytesToBase64(bytes) }
+  }
+  if (value instanceof ArrayBuffer) {
+    return { [BYTES_TAG]: 'ab', b64: bytesToBase64(new Uint8Array(value)) }
+  }
+  if (Array.isArray(value)) return value.map((item) => encodeTransportValue(item, depth + 1))
+  const out: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(value)) out[key] = encodeTransportValue(item, depth + 1)
+  return out
+}
+
+export function decodeTransportValue(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value !== 'object') return value
+  if (depth > 64) throw new Error('IPC payload nesting exceeds the transport limit (64)')
+  if (Array.isArray(value)) return value.map((item) => decodeTransportValue(item, depth + 1))
+  const record = value as Record<string, unknown>
+  const tag = record[BYTES_TAG]
+  if (typeof tag === 'string' && typeof record.b64 === 'string') {
+    if (tag === 'ab') return base64ToBytes(record.b64).buffer
+    if (tag === 'dv') return new DataView(base64ToBytes(record.b64).buffer)
+    if (isTypedArrayTag(tag)) {
+      const Ctor = TYPED_ARRAY_CTORS[tag]
+      return new Ctor(base64ToBytes(record.b64).buffer as ArrayBuffer)
+    }
+  }
+  const out: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(record)) out[key] = decodeTransportValue(item, depth + 1)
+  return out
+}
+
 const PROJECTS_FILE = join(DATA_DIR, 'projects.json')
 const FILES_DIR = join(DATA_DIR, 'files')
 mkdirSync(FILES_DIR, { recursive: true })
@@ -1192,7 +1279,9 @@ const PENDING_FRAMES = new Map<string, string[]>()
 const SSE_HEARTBEAT_MS = 25000
 
 function pushSseEvent(session: string, channel: string, args: unknown[]): void {
-  const frame = `data: ${JSON.stringify({ channel, args })}\n\n`
+  // 编码参数 (支持 ArrayBuffer)
+  const encodedArgs = args.map(arg => encodeTransportValue(arg))
+  const frame = `data: ${JSON.stringify({ channel, args: encodedArgs })}\n\n`
   const connections = sessionConnections.get(session)
   if (connections) {
     for (const response of connections) {
@@ -1251,7 +1340,7 @@ const server = createServer(async (request, response) => {
     return
   }
   
-  // IPC 调用
+  // IPC 调用 (与 @genoffice/ipc-bridge 对齐)
   if (url.pathname.startsWith('/api/ipc/') && request.method === 'POST') {
     const channel = url.pathname.slice('/api/ipc/'.length)
     const session = request.headers['x-ipc-session'] as string | undefined
@@ -1259,6 +1348,9 @@ const server = createServer(async (request, response) => {
     try {
       const body = await readBody(request)
       const { args = [] } = JSON.parse(body || '{}')
+      
+      // 解码参数 (支持 ArrayBuffer)
+      const decodedArgs = (args as unknown[]).map(arg => decodeTransportValue(arg))
       
       const handler = handlers.get(channel)
       if (handler) {
@@ -1269,13 +1361,17 @@ const server = createServer(async (request, response) => {
             id: -1,
             isDestroyed: () => false,
             send: (ch: string, ...a: unknown[]) => {
-              if (session) pushSseEvent(session, ch, a)
+              // 编码发送的参数
+              const encodedArgs = a.map(arg => encodeTransportValue(arg))
+              if (session) pushSseEvent(session, ch, encodedArgs)
             }
           }
         }
         
-        const result = await handler(event, ...args)
-        sendJson(response, 200, { ok: true, result })
+        const result = await handler(event, ...decodedArgs)
+        // 编码结果 (支持 ArrayBuffer 返回)
+        const encodedResult = encodeTransportValue(result)
+        sendJson(response, 200, { ok: true, result: encodedResult })
       } else {
         sendJson(response, 404, { error: { message: `No handler for '${channel}'`, code: 'IPC_NO_HANDLER' } })
       }
