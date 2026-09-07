@@ -103,7 +103,7 @@ function charFormatMethod() {
 
 function formatAgentMethods() {
   // Dialog-free table + char/para format. Wasm bridge already wraps createTable / apply*.
-  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let o=0;try{o=Number(this.deps.wasm.getParagraphLength(e,t))||0}catch{o=0}let a=this.deps.wasm.createTable(e,t,o,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r));if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}`
+  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r));if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}`
 }
 
 function insertAgentMethod() {
@@ -173,10 +173,9 @@ function repairDeferredCellWrite(js) {
 }
 
 function repairTableInsertOffset(js) {
-  if (js.includes('createTable(e,t,o,i,s)')) return js
   return js.replace(
-    /let a=this\.deps\.wasm\.createTable\(e,t,0,i,s\)/,
-    'let o=0;try{o=Number(this.deps.wasm.getParagraphLength(e,t))||0}catch{o=0}let a=this.deps.wasm.createTable(e,t,o,i,s)',
+    /let o=0;try\{o=Number\(this\.deps\.wasm\.getParagraphLength\(e,t\)\)\|\|0\}catch\{o=0\}let a=this\.deps\.wasm\.createTable\(e,t,o,i,s\)/,
+    'let a=this.deps.wasm.createTable(e,t,0,i,s)',
   )
 }
 
@@ -223,7 +222,6 @@ function prepareSurfaceComplete(js) {
     js.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') &&
     js.includes('applyParaFormat(e,t,JSON.stringify(r))') &&
     js.includes('insertTextInCell(e,t,n,r,0,0,x)') &&
-    js.includes('createTable(e,t,o,i,s)') &&
     !js.includes('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String') &&
     js.includes('r.splitParagraph(e,') &&
     !js.includes('r.insertParagraph(e,t+a)') &&
@@ -434,7 +432,6 @@ export function exposePrepareTextCommand(js) {
     !next.includes('Number(a?.paraIdx??t)') ||
     !next.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') ||
     !next.includes('insertTextInCell(e,t,n,r,0,0,x)') ||
-    !next.includes('createTable(e,t,o,i,s)') ||
     next.includes('a&&a.paraIdx??t') ||
     next.includes('}async insertFilledParagraphs(e,t,n){if(await')
   ) {

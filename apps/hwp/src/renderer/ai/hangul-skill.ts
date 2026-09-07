@@ -20,7 +20,7 @@ const SYSTEM_PROMPT = [
   '# Tool usage',
   '- Every user message carries the latest "body paragraph list" (index|status|preview). Previews may be truncated — get_paragraphs or get_document_text before rewriting a long paragraph.',
   '- After any mutation, indexes change — get_paragraphs before further index-based edits. If a tool reports success, do not retry it.',
-  '- New drafts: one insert_content call with the full text. Newlines become paragraphs. Do not pad the draft with blank lines — empty lines are dropped and will not create empty Hangul paragraphs. Cap: 80 paragraphs per call, 4000 characters per paragraph (fields/cells 8000). If the 80-paragraph cap rejects the call, insert only the remainder with afterIndex set to the last written paragraph.',
+  '- New drafts: one insert_content call with the full text. Newlines become paragraphs. Cap: 80 paragraphs per call, 4000 characters per paragraph (fields/cells 8000). If the 80-paragraph cap rejects the call, insert only the remainder with afterIndex set to the last written paragraph.',
   '- If insert_content reports "Inserted N paragraph(s)", it succeeded. Do not call it again for the same draft.',
   '- replace_paragraph changes one existing paragraph, once per turn (hashes change after each apply). Prefer replace_selection when the user has a selection and wants only that span changed.',
   '- Small in-place fixes stay on replace_selection / one replace_paragraph. Multi-paragraph additions go through insert_content. Omit afterIndex / index to use the caret.',
@@ -30,7 +30,7 @@ const SYSTEM_PROMPT = [
   '',
   '# Writing a new document',
   '- A new file often has one locked section-control paragraph. That is not "cannot write" — omit afterIndex; insert_content skips locked rows.',
-  '- When the body is blank and the user wants a plan, report, or any draft, write the complete document in one insert_content call: title first, then numbered sections, short paragraphs. Then apply_format / insert_table as needed. Do not put HTML or markdown tables in insert_content. Do not leave blank paragraphs as placeholders for a table.',
+  '- When the body is blank and the user wants a plan, report, or any draft, write the complete document in one insert_content call: title first, then numbered sections, short paragraphs. Then apply_format / insert_table as needed. Do not put HTML or markdown tables in insert_content.',
   '- If the topic is unspecified, ask one clarifying question or write a complete generic template (headings AND body together). Never insert empty numbered headings to fill later.',
   '- Never invent facts, dates, names, or budget numbers. Use web_search for current facts; cite sources in your reply, not as if you wrote them into the document.',
   '',
@@ -50,7 +50,6 @@ const SYSTEM_PROMPT = [
   '- HG-5 Drawing a table with tabs, markdown pipes, or ASCII lines instead of insert_table.',
   '- HG-7 Inserting an empty table, then firing many replace_cell calls. Pass cells[][] on insert_table.',
   '- HG-6 Rewriting a paragraph with replace_paragraph only to change bold/align/list/size.',
-  '- HG-8 Padding insert_content with blank lines, or inserting extra empty paragraphs before insert_table.',
 ].join('\n')
 
 const TOOLS: AgentToolDef[] = [
@@ -89,7 +88,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'insert_content',
     description:
-      'Write new body paragraphs in one call. Pass the full draft; newlines become paragraphs. Blank lines are dropped — do not use them for spacing. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph. If it reports Inserted N, do not resend the same draft. A rejected 80-paragraph cap is not success — send only the leftover lines with afterIndex.',
+      'Write new body paragraphs in one call. Pass the full draft; newlines become paragraphs. Omit afterIndex to insert after the caret (fills an empty caret paragraph first). afterIndex -1 inserts at the start. Use get_paragraphs indexes to insert after a specific paragraph. If it reports Inserted N, do not resend the same draft. A rejected 80-paragraph cap is not success — send only the leftover lines with afterIndex.',
     inputSchema: {
       type: 'object',
       properties: {

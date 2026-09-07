@@ -390,8 +390,6 @@ describe('replaceCurrentParagraph', () => {
 
   it('splits insert text on newlines and rejects a trailing-only empty string', () => {
     expect(splitInsertParagraphs('안녕\n세상\n')).toEqual(['안녕', '세상'])
-    expect(splitInsertParagraphs('안녕\n\n\n세상\n')).toEqual(['안녕', '세상'])
-    expect(() => splitInsertParagraphs('\n\n')).toThrow(/must not be empty/)
     expect(() => splitInsertParagraphs('')).toThrow(/must not be empty/)
     expect(() => splitInsertParagraphs(`${'x'.repeat(8)}\n`.repeat(INSERT_CONTENT_MAX_PARAS + 1))).toThrow(
       /at most/,
@@ -935,60 +933,6 @@ describe('replaceCurrentParagraph', () => {
       cols: 2,
     })
     expect(calls.filter((call) => call.method === 'replaceCell')).toHaveLength(2)
-  })
-
-  it('reuses an empty paragraph after the heading instead of inserting another', async () => {
-    const calls: string[] = []
-    const result = await insertDocumentTable(
-      studio({
-        _request: async (method, params) => {
-          calls.push(method)
-          if (method === 'listBodyParagraphs') {
-            return [
-              {
-                editable: true,
-                reason: null,
-                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 4 },
-                text: '10. 자금',
-              },
-              {
-                editable: true,
-                reason: null,
-                target: { kind: 'body_paragraph', section: 0, paragraph: 1, charOffset: 0, length: 0 },
-                text: '',
-              },
-            ]
-          }
-          if (method === 'insertTable') {
-            expect(params).toEqual({ section: 0, index: 1, rows: 2, cols: 2 })
-            return { section: 0, paragraph: 1, control: 0, rows: 2, cols: 2 }
-          }
-          if (method === 'listTables') {
-            return [
-              {
-                section: 0,
-                paragraph: 1,
-                control: 0,
-                rows: 2,
-                cols: 2,
-                cells: [
-                  { index: 0, row: 0, col: 0, text: '' },
-                  { index: 1, row: 0, col: 1, text: '' },
-                ],
-              },
-            ]
-          }
-          if (method === 'replaceCell') return { ok: true }
-          throw new Error(`unexpected ${method}`)
-        },
-      }),
-      2,
-      2,
-      [['항목', '금액']],
-      0,
-    )
-    expect(result).toEqual({ table: 0, rows: 2, cols: 2, unfilled: [] })
-    expect(calls).not.toContain('insertBodyParagraphs')
   })
 
   it('throws when every provided cell write fails', async () => {

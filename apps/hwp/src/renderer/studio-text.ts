@@ -281,12 +281,10 @@ export function splitInsertParagraphs(text: string): string[] {
   if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
     throw new Error(INSERT_CONTENT_EMPTY)
   }
-  const kept = lines.map((line) => normalizeReplacement(line)).filter((line) => line.trim() !== '')
-  if (kept.length === 0) throw new Error(INSERT_CONTENT_EMPTY)
-  if (kept.length > INSERT_CONTENT_MAX_PARAS) {
+  if (lines.length > INSERT_CONTENT_MAX_PARAS) {
     throw new Error(`insert text must be at most ${INSERT_CONTENT_MAX_PARAS} paragraphs`)
   }
-  return kept
+  return lines.map((line) => normalizeReplacement(line))
 }
 
 export function normalizeReplacement(
@@ -736,27 +734,15 @@ export async function insertDocumentTable(
   const rowCount = requireTableSize(rows, 'rows', TABLE_MAX_ROWS)
   const colCount = requireTableSize(cols, 'cols', TABLE_MAX_COLS)
   const fill = asTableCells(cells)
-  const { items, fillIndex, section, insertAt } = await resolveInsertAnchor(studio, afterIndex)
-  let paragraph: number
-  if (fillIndex != null) {
-    paragraph = items[fillIndex]!.paragraph
-  } else {
-    const emptyDest = items.find(
-      (item) =>
-        item.section === section &&
-        item.paragraph === insertAt &&
-        item.editable &&
-        paragraphIsEmpty(item),
-    )
-    if (emptyDest) paragraph = emptyDest.paragraph
-    else {
-      await requestStudio(studio, 'insertBodyParagraphs', {
-        section,
-        index: insertAt,
-        count: 1,
-      })
-      paragraph = insertAt
-    }
+  const { fillIndex, section, insertAt } = await resolveInsertAnchor(studio, afterIndex)
+  let paragraph = fillIndex != null ? insertAt - 1 : insertAt
+  if (fillIndex == null) {
+    await requestStudio(studio, 'insertBodyParagraphs', {
+      section,
+      index: insertAt,
+      count: 1,
+    })
+    paragraph = insertAt
   }
   const inserted = asInsertedTableLoc(
     await requestStudio(studio, 'insertTable', {

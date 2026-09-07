@@ -75,7 +75,6 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('applyCharFormat(e,t,n,r,JSON.stringify(a))')
     expect(next).toContain('applyParaFormat(e,t,JSON.stringify(r))')
     expect(next).toContain('insertTextInCell(e,t,n,r,0,0,x)')
-    expect(next).toContain('createTable(e,t,o,i,s)')
     expect(next).not.toContain('replaceTextInCellDeferredPagination(e,t,n,r,0,0,o,String')
     expect(next).toContain('selectionStart')
     expect(next).toContain('Gk(this.deps.wasm,e.target)')
@@ -150,24 +149,6 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('applyCharFormat(e,t,n,r,JSON.stringify(a))')
     expect(next).toContain('applyParaFormat(e,t,JSON.stringify(r))')
     expect(next).not.toMatch(/applyCharFormat\(e,t,n,r,a\)/)
-  })
-
-  it('inserts a table at the end of the host paragraph instead of offset 0', () => {
-    const stock = [
-      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
-      'return{selectedTextSha256:o}}async applyTextCommand(e){return e}',
-      'async getSelectionContext(){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.getSelectionContext()},async applyTextCommand(e){return e}',
-      'case`getSelectionContext`:return ak(i,`getSelectionContext params`),n.getSelectionContext();case`applyTextCommand`:return n.applyTextCommand(e)',
-    ].join(';')
-    const patched = exposePrepareTextCommand(stock)
-    const broken = patched.replace(
-      'let o=0;try{o=Number(this.deps.wasm.getParagraphLength(e,t))||0}catch{o=0}let a=this.deps.wasm.createTable(e,t,o,i,s)',
-      'let a=this.deps.wasm.createTable(e,t,0,i,s)',
-    )
-    expect(broken).toContain('createTable(e,t,0,i,s)')
-    const next = exposePrepareTextCommand(broken)
-    expect(next).toContain('createTable(e,t,o,i,s)')
-    expect(next).toContain('getParagraphLength(e,t)')
   })
 
   it('rewrites deferred cell writes to insertTextInCell', () => {
