@@ -123,13 +123,13 @@ const COLLAB_SESSIONS = new Map<string, {
   docId: string
   users: Set<string>
   lastActivity: number
-}>()
+} >()
 
 // AI 流式响应存储
 const AI_STREAMS = new Map<string, {
   chunks: string[]
   abort: AbortController
-}>()
+} >()
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -862,7 +862,7 @@ registerHandle('ai:sentiment', async (_event: unknown, text: unknown) => {
 const ACTIVE_STREAMS = new Map<string, {
   controller: ReadableStreamDefaultController
   aborted: boolean
-}>()
+} >()
 
 function generateAgentResponse(messages: unknown[]): string {
   const lastMsg = messages[messages.length - 1] as { text?: string } | undefined
@@ -1168,36 +1168,45 @@ registerHandle('win:focus', (_event: unknown, id: unknown) => {
 // ========== 协作功能 (增强版) ==========
 
 // 文档版本历史存储
-const DOC_VERSIONS = new Map<string, {
+interface DocVersion {
+  id: string
+  content: string
+  timestamp: number
+  userId: string
+  message?: string
+}
+
+interface DocVersionHistory {
   docId: string
-  versions: Array<{
-    id: string
-    content: string
-    timestamp: number
-    userId: string
-    message?: string
-  }>
-}>()
+  versions: DocVersion[]
+}
+
+const DOC_VERSIONS = new Map<string, DocVersionHistory>()
 
 // 文档评论存储
-const DOC_COMMENTS = new Map<string, Array<{
+interface CommentReply {
+  id: string
+  userId: string
+  userName: string
+  content: string
+  timestamp: number
+}
+
+interface DocComment {
   id: string
   userId: string
   userName: string
   content: string
   timestamp: number
   resolved: boolean
-  replies: Array<{
-    id: string
-    userId: string
-    userName: string
-    content: string
-    timestamp: number
-  }>
-}>()
+  replies: CommentReply[]
+  selection?: { start: number; end: number; text: string }
+}
+
+const DOC_COMMENTS = new Map<string, DocComment[]>()
 
 // 模板存储
-const TEMPLATES = new Map<string, {
+interface DocTemplate {
   id: string
   name: string
   type: 'docs' | 'sheets' | 'slides'
@@ -1207,7 +1216,9 @@ const TEMPLATES = new Map<string, {
   tags: string[]
   createdAt: number
   updatedAt: number
-}>()
+}
+
+const TEMPLATES = new Map<string, DocTemplate>()
 
 // 初始化默认模板
 function initDefaultTemplates() {
@@ -1507,6 +1518,435 @@ registerHandle('templates:delete', (_event: unknown, args: unknown) => {
   if (!TEMPLATES.has(id)) return { ok: false, error: 'Template not found' }
   TEMPLATES.delete(id)
   return { ok: true }
+})
+
+// ========== 云存储集成 ==========
+// 模拟云存储 (实际需要集成 S3/MinIO/OSS 等)
+const CLOUD_FILES = new Map<string, {
+  id: string
+  name: string
+  size: number
+  type: string
+  url: string
+  createdAt: number
+  updatedAt: number
+  public: boolean
+} >()
+
+registerHandle('cloud:upload', async (_event: unknown, args: unknown) => {
+  const { name, bytes, mimeType, public: isPublic } = args as {
+    name: string
+    bytes: ArrayBuffer
+    mimeType: string
+    public?: boolean
+  }
+  
+  const id = `cloud-${Date.now()}-${name}`
+  const url = `/cloud/files/${id}`
+  
+  // 保存到本地作为模拟
+  const filePath = join(FILES_DIR, id)
+  writeFileSync(filePath, Buffer.from(bytes))
+  
+  CLOUD_FILES.set(id, {
+    id,
+    name,
+    size: bytes.byteLength,
+    type: mimeType,
+    url,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    public: isPublic || false,
+  })
+  
+  return { ok: true, id, url, name, size: bytes.byteLength }
+})
+
+registerHandle('cloud:list', (_event: unknown, args: unknown) => {
+  const { type, search } = args as { type?: string; search?: string }
+  
+  let files = [...CLOUD_FILES.values()]
+  
+  if (type) {
+    files = files.filter(f => f.type.startsWith(type))
+  }
+  
+  if (search) {
+    const searchLower = search.toLowerCase()
+    files = files.filter(f => f.name.toLowerCase().includes(searchLower))
+  }
+  
+  return files.map(f => ({
+    id: f.id,
+    name: f.name,
+    size: f.size,
+    type: f.type,
+    url: f.url,
+    createdAt: f.createdAt,
+    updatedAt: f.updatedAt,
+  }))
+})
+
+registerHandle('cloud:download', async (_event: unknown, args: unknown) => {
+  const { id } = args as { id: string }
+  const file = CLOUD_FILES.get(id)
+  if (!file) return null
+  
+  const filePath = join(FILES_DIR, id)
+  if (!existsSync(filePath)) return null
+  
+  const bytes = readFileSync(filePath)
+  return {
+    name: file.name,
+    type: file.type,
+    bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  }
+})
+
+registerHandle('cloud:delete', (_event: unknown, args: unknown) => {
+  const { id } = args as { id: string }
+  if (!CLOUD_FILES.has(id)) return { ok: false, error: 'File not found' }
+  
+  const filePath = join(FILES_DIR, id)
+  if (existsSync(filePath)) unlinkSync(filePath)
+  
+  CLOUD_FILES.delete(id)
+  return { ok: true }
+})
+
+registerHandle('cloud:get-url', (_event: unknown, args: unknown) => {
+  const { id, expires } = args as { id: string; expires?: number }
+  const file = CLOUD_FILES.get(id)
+  if (!file) return null
+  
+  // 生成带签名的 URL (模拟)
+  const expiry = expires || 3600
+  const signedUrl = `${file.url}?token=${Date.now()}&expires=${Date.now() + expiry * 1000}`
+  
+  return { url: signedUrl, expires: expiry }
+})
+
+// ========== 移动端适配 ==========
+registerHandle('mobile:get-settings', () => ({
+  touchEnabled: true,
+  viewportWidth: 375,
+  viewportHeight: 667,
+  pixelRatio: 2,
+  supportsTouch: true,
+  supportsPen: true,
+  deviceType: 'auto',
+  theme: 'light',
+  reducedMotion: false,
+  darkMode: false,
+}))
+
+registerHandle('mobile:detect', () => {
+  return {
+    isMobile: true,
+    isTablet: false,
+    isDesktop: false,
+    os: 'web',
+    browser: 'web',
+    screenWidth: 375,
+    screenHeight: 667,
+    orientation: 'portrait',
+  }
+})
+
+// ========== 离线模式 ==========
+const OFFLINE_QUEUE = new Map<string, {
+  id: string
+  action: string
+  payload: unknown
+  timestamp: number
+  synced: boolean
+} >()
+
+registerHandle('offline:queue', (_event: unknown, args: unknown) => {
+  const { action, payload } = args as { action: string; payload: unknown }
+  
+  const id = `offline-${Date.now()}`
+  OFFLINE_QUEUE.set(id, {
+    id,
+    action,
+    payload,
+    timestamp: Date.now(),
+    synced: false,
+  })
+  
+  return { ok: true, id, queued: OFFLINE_QUEUE.size }
+})
+
+registerHandle('offline:get-queue', () => {
+  return [...OFFLINE_QUEUE.values()].map(q => ({
+    id: q.id,
+    action: q.action,
+    timestamp: q.timestamp,
+    synced: q.synced,
+  }))
+})
+
+registerHandle('offline:sync', async (_event: unknown) => {
+  const pending = [...OFFLINE_QUEUE.values()].filter(q => !q.synced)
+  const synced: string[] = []
+  
+  for (const item of pending) {
+    // 模拟同步
+    item.synced = true
+    synced.push(item.id)
+  }
+  
+  return { ok: true, synced: synced.length, ids: synced }
+})
+
+registerHandle('offline:clear', (_event: unknown) => {
+  const count = OFFLINE_QUEUE.size
+  OFFLINE_QUEUE.clear()
+  return { ok: true, cleared: count }
+})
+
+// ========== 多模态理解 ==========
+registerHandle('multimodal:analyze-image', async (_event: unknown, args: unknown) => {
+  const { imageBytes, prompt } = args as { imageBytes: ArrayBuffer; prompt?: string }
+  
+  // 模拟图像分析
+  return {
+    description: '图片内容分析：这是一张包含文字和图表的图片。',
+    tags: ['图表', '文字', '数据'],
+    text: '图片中包含数据可视化内容',
+    confidence: 0.92,
+    objects: [
+      { label: '柱状图', confidence: 0.95, boundingBox: { x: 10, y: 10, width: 100, height: 100 } },
+      { label: '标题', confidence: 0.88, boundingBox: { x: 10, y: 5, width: 80, height: 20 } },
+    ],
+  }
+})
+
+registerHandle('multimodal:extract-table', async (_event: unknown, args: unknown) => {
+  const { imageBytes } = args as { imageBytes: ArrayBuffer }
+  
+  // 模拟表格提取
+  return {
+    rows: 5,
+    columns: 4,
+    headers: ['姓名', '年龄', '职位', '部门'],
+    data: [
+      ['张三', '28', '工程师', '研发部'],
+      ['李四', '32', '经理', '产品部'],
+    ],
+  }
+})
+
+// ========== 智能摘要生成 ==========
+registerHandle('ai:smart-summary', async (_event: unknown, args: unknown) => {
+  const { text, maxLength, type } = args as { text: string; maxLength?: number; type?: 'brief' | 'detailed' | 'bullets' }
+  
+  const length = maxLength || 200
+  const summaryType = type || 'brief'
+  
+  if (summaryType === 'brief') {
+    return {
+      summary: text.slice(0, length) + (text.length > length ? '...' : ''),
+      keyPoints: ['要点1', '要点2'],
+      wordCount: text.length,
+    }
+  } else if (summaryType === 'bullets') {
+    return {
+      bullets: [
+        '• 第一个要点',
+        '• 第二个要点',
+        '• 第三个要点',
+      ],
+      wordCount: text.length,
+    }
+  }
+  
+  return {
+    summary: text.slice(0, length) + (text.length > length ? '...' : ''),
+    keyPoints: ['要点1', '要点2', '要点3'],
+    wordCount: text.length,
+  }
+})
+
+// ========== 自动翻译 ==========
+registerHandle('ai:auto-translate', async (_event: unknown, args: unknown) => {
+  const { text, from, to } = args as { text: string; from?: string; to: string }
+  
+  const langMap: Record<string, string> = {
+    'zh': '中文', 'en': 'English', 'ja': '日本語', 'ko': '한국어',
+    'fr': 'Français', 'de': 'Deutsch', 'es': 'Español', 'ru': 'Русский',
+  }
+  
+  return {
+    original: text,
+    translated: `[${to}] ${text}`,
+    from: from || 'auto',
+    to,
+    fromLang: langMap[from || 'auto'] || '自动检测',
+    toLang: langMap[to] || to,
+    confidence: 0.95,
+  }
+})
+
+registerHandle('ai:detect-language', async (_event: unknown, text: unknown) => {
+  const str = text as string
+  // 简单的语言检测
+  const hasChinese = /[\u4e00-\u9fff]/.test(str)
+  const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff]/.test(str)
+  const hasKorean = /[\uac00-\ud7af]/.test(str)
+  
+  if (hasChinese) return { language: 'zh', confidence: 0.98 }
+  if (hasJapanese) return { language: 'ja', confidence: 0.90 }
+  if (hasKorean) return { language: 'ko', confidence: 0.90 }
+  
+  return { language: 'en', confidence: 0.85 }
+})
+
+// ========== 情感分析 ==========
+registerHandle('ai:sentiment', async (_event: unknown, args: unknown) => {
+  const { text } = args as { text: string }
+  
+  // 模拟情感分析
+  const positiveWords = ['好', '棒', '优', '赞', '满意', '喜欢', 'good', 'great', 'excellent', 'amazing']
+  const negativeWords = ['差', '坏', '糟', '不满', '讨厌', 'bad', 'poor', 'terrible', 'awful']
+  
+  const textLower = text.toLowerCase()
+  const positiveCount = positiveWords.filter(w => textLower.includes(w)).length
+  const negativeCount = negativeWords.filter(w => textLower.includes(w)).length
+  
+  let sentiment = 'neutral'
+  let score = 0.5
+  
+  if (positiveCount > negativeCount) {
+    sentiment = 'positive'
+    score = Math.min(0.9, 0.5 + positiveCount * 0.1)
+  } else if (negativeCount > positiveCount) {
+    sentiment = 'negative'
+    score = Math.max(0.1, 0.5 - negativeCount * 0.1)
+  }
+  
+  return {
+    sentiment,
+    score,
+    confidence: 0.85,
+    keywords: positiveCount > negativeCount ? ['positive'] : negativeCount > positiveCount ? ['negative'] : [],
+    emotions: {
+      joy: sentiment === 'positive' ? 0.6 : 0.1,
+      sadness: sentiment === 'negative' ? 0.5 : 0.1,
+      anger: sentiment === 'negative' ? 0.3 : 0.05,
+      fear: 0.05,
+      surprise: 0.1,
+    },
+  }
+})
+
+// ========== 图表生成 ==========
+registerHandle('chart:generate', async (_event: unknown, args: unknown) => {
+  const { type, data, options } = args as {
+    type: 'bar' | 'line' | 'pie' | 'scatter' | 'radar'
+    data: { labels?: string[]; datasets: Array<{ label: string; data: number[] }> }
+    options?: { title?: string; colors?: string[] }
+  }
+  
+  // 生成 SVG 图表
+  const colors = options?.colors || ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#9C27B0']
+  const width = 600
+  const height = 400
+  const padding = 50
+  
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`
+  
+  if (options?.title) {
+    svg += `<text x="${width / 2}" y="30" text-anchor="middle" font-size="18" font-weight="bold">${options.title}</text>`
+  }
+  
+  if (type === 'bar') {
+    const labels = data.labels || []
+    const barWidth = (width - padding * 2) / (labels.length || 1)
+    const maxVal = Math.max(...(data.datasets[0]?.data || [100]))
+    
+    data.datasets.forEach((dataset, di) => {
+      dataset.data.forEach((value, i) => {
+        const x = padding + i * barWidth + barWidth * 0.1
+        const barHeight = (value / maxVal) * (height - padding * 2)
+        const y = height - padding - barHeight
+        const color = colors[di % colors.length]
+        
+        svg += `<rect x="${x}" y="${y}" width="${barWidth * 0.8}" height="${barHeight}" fill="${color}" />`
+        svg += `<text x="${x + barWidth * 0.4}" y="${height - padding + 20}" text-anchor="middle">${labels[i] || ''}</text>`
+        svg += `<text x="${x + barWidth * 0.4}" y="${y - 5}" text-anchor="middle">${value}</text>`
+      })
+    })
+  } else if (type === 'pie') {
+    const total = (data.datasets[0]?.data || [1]).reduce((a, b) => a + b, 0)
+    let currentAngle = 0
+    
+    ;(data.datasets[0]?.data || []).forEach((value, i) => {
+      const angle = (value / total) * 360
+      const startAngle = currentAngle
+      const endAngle = currentAngle + angle
+      currentAngle = endAngle
+      
+      const cx = width / 2
+      const cy = height / 2
+      const r = Math.min(width, height) / 2 - padding
+      
+      const x1 = cx + r * Math.cos((startAngle - 90) * Math.PI / 180)
+      const y1 = cy + r * Math.sin((startAngle - 90) * Math.PI / 180)
+      const x2 = cx + r * Math.cos((endAngle - 90) * Math.PI / 180)
+      const y2 = cy + r * Math.sin((endAngle - 90) * Math.PI / 180)
+      
+      const largeArc = angle > 180 ? 1 : 0
+      const color = colors[i % colors.length]
+      
+      svg += `<path d="M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc},1 ${x2},${y2} Z" fill="${color}" />`
+      svg += `<text x="${cx + r * 0.6 * Math.cos((startAngle + angle / 2 - 90) * Math.PI / 180)}" y="${cy + r * 0.6 * Math.sin((startAngle + angle / 2 - 90) * Math.PI / 180)}" text-anchor="middle" fill="white">${((value / total) * 100).toFixed(1)}%</text>`
+    })
+  }
+  
+  svg += '</svg>'
+  
+  return {
+    svg,
+    type,
+    data,
+    dimensions: { width, height },
+  }
+})
+
+// ========== 数据可视化 ==========
+registerHandle('visualization:create-dashboard', async (_event: unknown, args: unknown) => {
+  const { widgets } = args as {
+    widgets: Array<{
+      id: string
+      type: 'chart' | 'table' | 'metric' | 'text'
+      data: unknown
+      position: { x: number; y: number; w: number; h: number }
+    }>
+  }
+  
+  return {
+    id: `dashboard-${Date.now()}`,
+    widgets: widgets.map(w => ({
+      id: w.id,
+      type: w.type,
+      position: w.position,
+    })),
+    createdAt: Date.now(),
+  }
+})
+
+registerHandle('visualization:get-chart-data', (_event: unknown, args: unknown) => {
+  const { docId, chartId } = args as { docId: string; chartId: string }
+  
+  // 模拟图表数据
+  return {
+    labels: ['一月', '二月', '三月', '四月', '五月'],
+    datasets: [
+      { label: '销售额', data: [120, 150, 180, 140, 200] },
+      { label: '成本', data: [80, 90, 100, 85, 110] },
+    ],
+  }
 })
 
 // ========== Web 文件处理 ==========
