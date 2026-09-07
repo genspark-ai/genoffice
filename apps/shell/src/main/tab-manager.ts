@@ -280,6 +280,7 @@ export class TabManager {
     this.activeId = id
     this.refreshActiveTargets()
     this.onChanged()
+    if (target.kind === 'hwp' && target.view) target.view.webContents.focus?.()
   }
 
   /** Re-point the process-global active-editor targets and the app menu at this
@@ -471,6 +472,14 @@ export class TabManager {
 
   findHwpTabByPath(path: string): string | undefined {
     return this.tabs.find((t) => t.kind === 'hwp' && t.filePath === path)?.id
+  }
+
+  /** the active tab's hangul view, if the active tab is hangul (hwp menu target) */
+  activeHwpTab(): { id: string; webContents: WebContents; filePath?: string } | undefined {
+    const tab = this.tabs.find((t) => t.id === this.activeId)
+    return tab?.kind === 'hwp' && tab.view
+      ? { id: tab.id, webContents: tab.view.webContents, filePath: tab.filePath }
+      : undefined
   }
 
   /** the active tab's markdown view, if the active tab is markdown (markdown menu target) */

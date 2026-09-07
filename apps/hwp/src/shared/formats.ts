@@ -8,3 +8,29 @@ export const HWP_RE = /\.(hwp|hwpx|hml)$/i
 export function isHwpPath(path: string): boolean {
   return HWP_RE.test(path)
 }
+
+export type HwpSaveFormat = 'hwp' | 'hwpx' | 'hml'
+
+/** New documents start as HWP; Save As may pick HWPX/HML. */
+export function saveFormatForPath(path: string): HwpSaveFormat {
+  if (/\.hwpx$/i.test(path)) return 'hwpx'
+  if (/\.hml$/i.test(path)) return 'hml'
+  return 'hwp'
+}
+
+/** Dialog paths without an extension become `.hwp`. */
+export function ensureHwpSavePath(path: string): string {
+  return HWP_RE.test(path) ? path : `${path}.hwp`
+}
+
+export function bytesForSaveFormat(
+  format: HwpSaveFormat,
+  payload: { hwp: Uint8Array; hwpx: Uint8Array; hml?: Uint8Array },
+): Uint8Array {
+  if (format === 'hwpx') return payload.hwpx
+  if (format === 'hml') {
+    if (!payload.hml?.byteLength) throw new Error('hwp: HML export unavailable')
+    return payload.hml
+  }
+  return payload.hwp
+}

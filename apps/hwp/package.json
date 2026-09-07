@@ -11,7 +11,11 @@
     "dev:renderer": "vite --config vite.renderer.config.ts",
     "build": "electron-vite build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "vendor:studio": "node scripts/vendor-studio.mjs"
+  },
+  "dependencies": {
+    "@rhwp/editor": "0.8.6"
   },
   "devDependencies": {
     "@genoffice/electron-utils": "*",

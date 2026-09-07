@@ -1,34 +1,38 @@
-import { useEffect, useState } from 'react'
-
-function fileName(path: string | null): string {
-  if (!path) return ''
-  const parts = path.split(/[\\/]/)
-  return parts[parts.length - 1] ?? path
-}
+import { useCallback, useEffect, useState } from 'react'
+import { HwpStudio } from './HwpStudio'
 
 export default function App() {
   const [path, setPath] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    void window.hwpApi.consumePending().then((next) => {
-      if (!cancelled) setPath(next)
-    })
-    const offRename = window.hwpApi.onFileRenamed((next) => setPath(next))
-    return () => {
-      cancelled = true
-      offRename()
-    }
+  const markDirty = useCallback((dirty: boolean) => {
+    window.hwpApi.setDirty(dirty)
   }, [])
 
-  const name = fileName(path)
+  useEffect(() => {
+    const offRename = window.hwpApi.onFileRenamed(setPath)
+    return offRename
+  }, [])
+
+  if (error) {
+    return (
+      <div className="hwp-shell">
+        <main className="hwp-page">
+          <h1 className="hwp-title">Hangul</h1>
+          <p className="hwp-error">{error}</p>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="hwp-shell">
-      <main className="hwp-page">
-        <h1 className="hwp-title">{name || 'Hangul'}</h1>
-        {path ? <p className="hwp-path">{path}</p> : null}
-        <p className="hwp-hint">Hangul document tab</p>
-      </main>
+      <HwpStudio
+        path={path}
+        onPath={setPath}
+        onDirty={markDirty}
+        onError={setError}
+      />
     </div>
   )
 }

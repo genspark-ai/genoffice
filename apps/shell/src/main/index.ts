@@ -172,7 +172,12 @@ import {
   setMarkdownDocxExportedHook,
   setMarkdownFileSavedHook,
 } from '../../../markdown/src/main/markdown-main'
-import { configureHwpRuntime, hwpFileRenamed } from '../../../hwp/src/main/hwp-main'
+import {
+  configureHwpRuntime,
+  hwpFileRenamed,
+  requestHwpSave,
+  setHwpFileSavedHook,
+} from '../../../hwp/src/main/hwp-main'
 import { HWP_RE } from '../../../hwp/src/shared/formats'
 import type {
   AccountLoginEvent,
@@ -2181,7 +2186,7 @@ function applyMenuFor(kind: TabKind): void {
       buildMarkdownMenu()
       break
     case 'hwp':
-      buildHomeMenu()
+      buildHwpMenu()
       break
     default:
       buildHomeMenu()
@@ -2290,6 +2295,11 @@ function createShellWindow(): void {
   })
   // markdown untitled first save / Save As lands on a new path
   setMarkdownFileSavedHook((wc, path) => {
+    manager.setTabFileFor(wc.id, path)
+    recordRecentFile(path)
+    applyPendingProject(path)
+  })
+  setHwpFileSavedHook((wc, path) => {
     manager.setTabFileFor(wc.id, path)
     recordRecentFile(path)
     applyPendingProject(path)
@@ -3218,6 +3228,60 @@ function buildHomeMenu(): void {
         },
         { type: 'separator' },
         { role: 'close', label: tm('menuClose') },
+      ],
+    },
+    editMenuTemplate(process.platform, appMenuLabels(currentLang())),
+    windowMenuTemplate(process.platform, appMenuLabels(currentLang())),
+    {
+      role: 'help',
+      label: tm('menuHelp'),
+      submenu: [{ label: tm('thirdPartyNotices'), click: () => void openThirdPartyNotices() }],
+    },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+function buildHwpMenu(): void {
+  const isMac = process.platform === 'darwin'
+  const template: MenuItemConstructorOptions[] = [
+    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    {
+      label: tm('menuFile'),
+      submenu: [
+        {
+          label: tm('menuOpen'),
+          accelerator: 'CmdOrCtrl+O',
+          click: () => void openFileViaDialog(),
+        },
+        { type: 'separator' },
+        {
+          label: tm('backToHome'),
+          accelerator: 'Shift+CmdOrCtrl+H',
+          click: () => tabManager?.openHomeTab(),
+        },
+        { type: 'separator' },
+        {
+          label: tm('menuSave'),
+          accelerator: 'CmdOrCtrl+S',
+          click: () => {
+            const tab = tabManager?.activeHwpTab()
+            if (tab) void requestHwpSave(tab.webContents, 'save')
+          },
+        },
+        {
+          label: tm('menuSaveAs'),
+          accelerator: 'CmdOrCtrl+Shift+S',
+          click: () => {
+            const tab = tabManager?.activeHwpTab()
+            if (tab) void requestHwpSave(tab.webContents, 'saveAs')
+          },
+        },
+        { type: 'separator' },
+        {
+          label: tm('menuClose'),
+          accelerator: 'CmdOrCtrl+W',
+          click: () => tabManager?.closeActiveTab(),
+        },
       ],
     },
     editMenuTemplate(process.platform, appMenuLabels(currentLang())),
