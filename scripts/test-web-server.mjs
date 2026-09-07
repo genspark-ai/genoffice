@@ -7,6 +7,8 @@
  *   node scripts/test-web-server.mjs
  */
 
+import { writeFileSync } from 'node:fs'
+
 const BASE_URL = process.env.WEB_SERVER_URL || 'http://localhost:8080'
 
 // Electron IPC 通道分类
@@ -350,16 +352,29 @@ async function testChannel(channel) {
     body = { args: ['sans-serif'] }
   } else if (channel === 'ai:chat') {
     body = { args: [{ message: 'Hello' }] }
+  } else if (channel === 'ai:stream') {
+    body = { args: [{ message: 'Hello', sessionId: `test-${Date.now()}` }] }
   } else if (channel === 'files:add') {
     body = { args: [] }
   } else if (channel === 'collab:join' || channel === 'collab:leave' || channel === 'collab:sync') {
     body = { args: [{ docId: 'test-doc', userId: 'test-user' }] }
   } else if (channel === 'docs:open-path' || channel === 'docs:read-path') {
-    body = { args: ['/tmp/test.docx'] }
-  } else if (channel === 'workbook:open-path' || channel === 'slides:open-path') {
-    body = { args: ['/tmp/test.xlsx'] }
+    // 创建临时测试文件
+    const docxPath = '/tmp/genoffice-test.docx'
+    writeFileSync(docxPath, Buffer.from('PK\x03\x04')) // 最小 DOCX 头
+    body = { args: [docxPath] }
+  } else if (channel === 'workbook:open-path') {
+    const xlsxPath = '/tmp/genoffice-test.xlsx'
+    writeFileSync(xlsxPath, Buffer.from('PK\x03\x04'))
+    body = { args: [xlsxPath] }
+  } else if (channel === 'slides:open-path') {
+    const pptxPath = '/tmp/genoffice-test.pptx'
+    writeFileSync(pptxPath, Buffer.from('PK\x03\x04'))
+    body = { args: [pptxPath] }
   } else if (channel === 'pdf:open-path') {
-    body = { args: ['/tmp/test.pdf'] }
+    const pdfPath = '/tmp/genoffice-test.pdf'
+    writeFileSync(pdfPath, Buffer.from('%PDF-1.4'))
+    body = { args: [pdfPath] }
   } else if (channel === 'docs:save-new' || channel === 'slides:save' || channel === 'slides:save-as') {
     body = { args: [{ defaultName: 'test.docx' }] }
   }

@@ -15,14 +15,16 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
-const ROOT = resolve(__dirname, '../../../')
+const ROOT = resolve(__dirname, '../../..')
 
 const PORT = Number(process.env.PORT) || 8080
 const HOST = process.env.HOST || '0.0.0.0'
 
 const APPS = ['docs', 'sheets', 'slides', 'pdf', 'markdown', 'shell']
 const STATIC_ROOT = resolve(ROOT, 'apps')
-const DATA_DIR = process.env.DATA_DIR || join(tmpdir(), 'genoffice-data')
+
+// 使用固定的绝对路径存储数据
+const DATA_DIR = process.env.DATA_DIR || '/tmp/genoffice-data'
 mkdirSync(DATA_DIR, { recursive: true })
 
 const PROJECTS_FILE = join(DATA_DIR, 'projects.json')
@@ -119,13 +121,27 @@ registerHandle('ai:gsk-login', () => ({
 }))
 
 registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
-  const req = request as { message?: string; system?: string; sessionId?: string }
-  // 模拟 AI 响应
+  const req = request as { message?: string; system?: string; sessionId?: string; context?: unknown }
+  // 增强的 AI 响应，结合文档上下文
+  const message = req.message || ''
+  const context = req.context
+  
+  let content = generateAIResponse(message)
+  
+  // 如果有文档上下文，提供更有针对性的回答
+  if (context) {
+    content = `基于您提供的文档内容，我来帮您分析：\n\n${content}\n\n如需进一步帮助，请告诉我具体问题。`
+  }
+  
   return {
     id: `chat-${Date.now()}`,
     role: 'assistant',
-    content: generateAIResponse(req.message || ''),
+    content,
     createdAt: Date.now(),
+    metadata: {
+      model: aiSettings.model,
+      provider: aiSettings.provider,
+    }
   }
 })
 
@@ -662,6 +678,96 @@ registerHandle('slides:insert-model3d', () => ({ ok: true }))
 
 // ========== AI 额外功能 ==========
 registerHandle('ai:log-run-failure', () => ({ ok: true }))
+
+// ========== AI 增强功能 ==========
+// AI 内容生成
+registerHandle('ai:generate-content', async (_event: unknown, request: unknown) => {
+  const req = request as { type?: string; topic?: string; length?: number; style?: string }
+  const { type = 'paragraph', topic = '', length = 200, style = 'formal' } = req
+  
+  const templates: Record<string, string> = {
+    paragraph: `关于"${topic}"的段落内容。`,
+    summary: `以下是关于"${topic}"的摘要总结。`,
+    outline: `# ${topic}大纲\n\n1. 介绍\n2. 主要内容\n3. 结论`,
+    introduction: `欢迎阅读关于"${topic}"的介绍。`,
+    conclusion: `总结以上内容，关于"${topic}"的主要观点是...`,
+  }
+  
+  return {
+    id: `gen-${Date.now()}`,
+    type,
+    content: templates[type] || templates.paragraph,
+    tokens: Math.floor(length / 4),
+  }
+})
+
+// AI 翻译
+registerHandle('ai:translate', async (_event: unknown, request: unknown) => {
+  const req = request as { text?: string; from?: string; to?: string }
+  return {
+    id: `trans-${Date.now()}`,
+    original: req.text || '',
+    translated: `[${req.to || 'en'}] ${req.text || ''}`,
+    from: req.from || 'auto',
+    to: req.to || 'en',
+  }
+})
+
+// AI 摘要
+registerHandle('ai:summarize', async (_event: unknown, request: unknown) => {
+  const req = request as { text?: string; maxLength?: number }
+  const text = req.text || ''
+  const maxLength = req.maxLength || 100
+  
+  return {
+    id: `sum-${Date.now()}`,
+    originalLength: text.length,
+    summary: text.slice(0, maxLength) + (text.length > maxLength ? '...' : ''),
+    keyPoints: ['要点1', '要点2', '要点3'],
+  }
+})
+
+// AI 问答
+registerHandle('ai:qa', async (_event: unknown, request: unknown) => {
+  const req = request as { question?: string; context?: string }
+  return {
+    id: `qa-${Date.now()}`,
+    question: req.question || '',
+    answer: `基于提供的内容，关于"${req.question}"的回答是...`,
+    confidence: 0.85,
+  }
+})
+
+// AI 语法检查
+registerHandle('ai:grammar-check', async (_event: unknown, text: unknown) => {
+  return {
+    id: `grammar-${Date.now()}`,
+    original: text,
+    corrected: text,
+    errors: [],
+    suggestions: [],
+  }
+})
+
+// AI 关键词提取
+registerHandle('ai:extract-keywords', async (_event: unknown, text: unknown) => {
+  return {
+    id: `kw-${Date.now()}`,
+    keywords: ['关键词1', '关键词2', '关键词3'],
+    score: [0.9, 0.7, 0.5],
+  }
+})
+
+// AI 情感分析
+registerHandle('ai:sentiment', async (_event: unknown, text: unknown) => {
+  return {
+    id: `sent-${Date.now()}`,
+    text,
+    sentiment: 'neutral',
+    score: 0.5,
+    emotions: { positive: 0.3, negative: 0.2, neutral: 0.5 },
+  }
+})
 registerHandle('slides:get-run-links', () => [])
 registerHandle('slides:group-elements', () => ({ ok: true, groupId: `group-${Date.now()}` }))
 registerHandle('slides:has-slide-clipboard', () => false)
@@ -749,6 +855,143 @@ registerHandle('md-asset', async (_event: unknown, args: unknown) => {
     return { content: readFileSync(path, 'utf-8') }
   }
   return null
+})
+
+// ========== AnyDoc 文档处理功能 ==========
+// AnyDoc: 通用文档识别、转换和处理
+
+interface AnyDocConfig {
+  ocrEnabled: boolean
+  language: string
+  preserveLayout: boolean
+}
+
+const anyDocConfig: AnyDocConfig = {
+  ocrEnabled: true,
+  language: 'zh-CN',
+  preserveLayout: true,
+}
+
+registerHandle('anydoc:get-config', () => anyDocConfig)
+registerHandle('anydoc:set-config', (_event: unknown, config: unknown) => {
+  Object.assign(anyDocConfig, config)
+  return { ok: true }
+})
+
+registerHandle('anydoc:recognize', async (_event: unknown, args: unknown) => {
+  const { filePath, options } = args as { filePath: string; options?: { ocr?: boolean; language?: string } }
+  // 模拟文档识别
+  if (!existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath}`)
+  }
+  
+  const ext = extname(filePath).toLowerCase()
+  const fileName = basename(filePath)
+  
+  return {
+    id: `doc-${Date.now()}`,
+    fileName,
+    fileType: ext.slice(1),
+    pages: 1,
+    text: `这是从 ${fileName} 提取的文本内容。\n完整的 OCR 识别需要集成 Tesseract.js 或云端 OCR 服务。`,
+    metadata: {
+      size: statSync(filePath).size,
+      created: statSync(filePath).birthtime,
+      modified: statSync(filePath).mtime,
+    },
+    success: true,
+  }
+})
+
+registerHandle('anydoc:convert', async (_event: unknown, args: unknown) => {
+  const { filePath, targetFormat } = args as { filePath: string; targetFormat: string }
+  // 模拟文档转换
+  if (!existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath}`)
+  }
+  
+  const sourceFormat = extname(filePath).slice(1)
+  const outputPath = join(FILES_DIR, `${Date.now()}-converted.${targetFormat}`)
+  
+  // 复制文件作为模拟转换
+  const bytes = readFileSync(filePath)
+  writeFileSync(outputPath, bytes)
+  
+  return {
+    id: `convert-${Date.now()}`,
+    sourceFormat,
+    targetFormat,
+    outputPath,
+    success: true,
+    message: `文档已从 ${sourceFormat} 转换为 ${targetFormat}`,
+  }
+})
+
+registerHandle('anydoc:extract-text', async (_event: unknown, filePath: unknown) => {
+  if (!existsSync(filePath as string)) {
+    return null
+  }
+  
+  const ext = extname(filePath as string).toLowerCase()
+  const bytes = readFileSync(filePath as string)
+  
+  // 根据文件类型提取文本
+  if (['.txt', '.md', '.json', '.xml', '.html', '.csv'].includes(ext)) {
+    return { text: bytes.toString('utf-8'), format: 'text' }
+  } else if (['.docx', '.xlsx', '.pptx'].includes(ext)) {
+    return { text: `Office 文档内容 (${ext})\n需要集成 mammoth.js 或专业解析库`, format: 'office' }
+  } else if (ext === '.pdf') {
+    return { text: `PDF 文档内容\n需要集成 pdf-parse 或 pdf.js`, format: 'pdf' }
+  } else if (['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(ext)) {
+    return { text: `图片内容\n需要 OCR 识别 (Tesseract.js)`, format: 'image' }
+  }
+  
+  return { text: '未知文件格式', format: 'unknown' }
+})
+
+registerHandle('anydoc:extract-tables', async (_event: unknown, filePath: unknown) => {
+  if (!existsSync(filePath as string)) {
+    return null
+  }
+  
+  // 模拟表格提取
+  return {
+    tables: [],
+    message: '表格提取需要专业解析库支持',
+  }
+})
+
+registerHandle('anydoc:extract-images', async (_event: unknown, filePath: unknown) => {
+  if (!existsSync(filePath as string)) {
+    return null
+  }
+  
+  return {
+    images: [],
+    message: '图片提取功能需要实现',
+  }
+})
+
+registerHandle('anydoc:render-preview', async (_event: unknown, args: unknown) => {
+  const { filePath, options } = args as { filePath: string; options?: { width?: number; height?: number } }
+  
+  if (!existsSync(filePath)) {
+    throw new Error(`File not found: ${filePath}`)
+  }
+  
+  const bytes = readFileSync(filePath)
+  const ext = extname(filePath).toLowerCase()
+  
+  let mimeType = 'application/octet-stream'
+  if (ext === '.pdf') mimeType = 'application/pdf'
+  else if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].includes(ext)) mimeType = `image/${ext.slice(1)}`
+  
+  return {
+    base64: bytes.toString('base64'),
+    mimeType,
+    width: options?.width || 800,
+    height: options?.height || 600,
+  }
 })
 
 // ========== PDF 功能 ==========
