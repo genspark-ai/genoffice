@@ -422,7 +422,21 @@ describe('createHangulSkill', () => {
       deps({
         editTable: async (spec) => {
           editSpec = spec
-          return { table: spec.table, action: spec.action, detail: 'row after 0' }
+          return {
+            table: spec.table,
+            action: spec.action,
+            detail: 'row after 0',
+            rows: 3,
+            cols: 2,
+            cells: [
+              { row: 0, col: 0 },
+              { row: 0, col: 1 },
+              { row: 1, col: 0 },
+              { row: 1, col: 1 },
+              { row: 2, col: 0 },
+              { row: 2, col: 1 },
+            ],
+          }
         },
         styleTable: async (spec) => {
           styleSpec = spec
@@ -441,6 +455,8 @@ describe('createHangulSkill', () => {
     })
     expect(edit.isError).toBeUndefined()
     expect(edit.output).toContain('insert_row')
+    expect(edit.output).toContain('Now 3x2')
+    expect(edit.output).toContain('r2c1')
     expect(editSpec).toMatchObject({ action: 'insert_row', table: 0, row: 0 })
     const style = await skill.executeTool({
       id: '21',

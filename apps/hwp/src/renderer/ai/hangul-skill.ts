@@ -10,6 +10,7 @@ import {
   type HangulParagraphPreview,
   type HangulTable,
   type HangulTableEditAction,
+  type HangulTableEditResult,
   type HangulTableEditSpec,
   type HangulTableStyleSpec,
   type HangulVAlign,
@@ -31,7 +32,7 @@ const SYSTEM_PROMPT = [
   '- replace_paragraph changes one existing paragraph, once per turn (hashes change after each apply). Prefer replace_selection when the user has a selection and wants only that span changed.',
   '- Small in-place fixes stay on replace_selection / one replace_paragraph. Multi-paragraph additions go through insert_content. Omit afterIndex / index to use the caret.',
   '- Fields (누름틀): get_fields / set_field. Existing tables: get_tables / replace_cell (one leftover cell). New tables: insert_table with cells[][] already filled — never insert an empty table and then call replace_cell once per cell. Never fake a table with tabs, markdown pipes, or ASCII.',
-  '- Table structure (add/delete a row or column, merge or split cells): edit_table on an existing table from get_tables. Do not rebuild the table with insert_table just to change rows or merge a header.',
+  '- Table structure (add/delete a row or column, merge or split cells): edit_table on an existing table from get_tables. The result lists current cells — use those indexes for style_table / apply_format / replace_cell. Do not rebuild the table with insert_table just to change rows or merge a header.',
   '- Cell chrome (fill, vertical align, border) and table width in mm: style_table. Text bold/size still uses apply_format with table + row.',
   '- Page setup (portrait/landscape, A4/A3 paper, margins in mm, 1–4 columns): set_page. Do not tell the user to open 쪽 설정.',
   '- Formatting (bold/italic/underline/strikethrough, fontSize in points, color hex, font name, align, lineSpacing, indentLeft/Right/FirstLine in points, bullet/number lists): apply_format on existing paragraphs, or on table cells with table + row from get_tables (omit col to format the whole row — e.g. header / first row bold 13pt). Do not mix table/row with index/indexes. Skip locked body rows. After insert_content, format the title at the starting index from that tool result — not index 0 when that row is locked. Do not rewrite a paragraph just to change style. Do not tell the user to format a table row by hand. Do not tell the user formatting was applied unless apply_format succeeded.',
@@ -253,7 +254,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'edit_table',
     description:
-      'Change an existing table structure. insert_row / insert_column / delete_row / delete_column / merge / split. table is from get_tables. after defaults true (below / right). merge needs row, col, endRow, endCol. split needs row, col and optional splitRows / splitCols (default 2x1). Do not insert a new table to change structure.',
+      'Change an existing table structure. insert_row / insert_column / delete_row / delete_column / merge / split. table is from get_tables. after defaults true (below / right). merge needs row, col, endRow, endCol. split needs row, col and optional splitRows / splitCols (default 2x1). The result lists current cells — use those indexes next. Do not insert a new table to change structure.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -412,7 +413,7 @@ export interface HangulSkillDeps {
     indexes?: number[],
     cell?: { table: number; row: number; col?: number },
   ): Promise<{ indexes: number[]; applied: string[]; table?: number; row?: number }>
-  editTable(spec: HangulTableEditSpec): Promise<{ table: number; action: HangulTableEditAction; detail: string }>
+  editTable(spec: HangulTableEditSpec): Promise<HangulTableEditResult>
   styleTable(spec: HangulTableStyleSpec): Promise<{ table: number; applied: string[] }>
   setPage(spec: HangulPageSetupSpec): Promise<{ applied: string[] }>
 }
@@ -433,6 +434,42 @@ function formatFields(fields: HangulField[]): string {
   return fields
     .map((field) => `${field.name}=${field.value || '(empty)'}${field.type ? ` (${field.type})` : ''}`)
     .join('\n')
+}
+
+function formatEditedTable(result: HangulTableEditResult): string {
+  const head = `Edited table[${result.table}]: ${result.action} (${result.detail}).`
+  if (result.rows == null || result.cols == null || result.cells == null) {
+    return `${head} Indexes may have changed — get_tables before further table edits.`
+  }
+  const cells = result.cells.map((cell) => `r${cell.row}c${cell.col}`).join(' ')
+  return `${head} Now ${result.rows}x${result.cols}: ${cells}. Use these indexes for style_table / apply_format / replace_cell.`
+}
+
+function hangulReplyClaims(text: string): {
+  textFormat: boolean
+  tableStyle: boolean
+  tableEdit: boolean
+  page: boolean
+  genericEdit: boolean
+} {
+  const tableStyle =
+    /(표|칸|셀|행|헤더).{0,10}배경|배경색|테두리|세로\s*정렬|표\s*너비|style_table|fillColor|cell fill/i.test(text)
+  const textFormatExplicit =
+    /굵게|기울임|밑줄|취소선|가운데|서식|fontSize|apply_format|\b\d+\s*pt\b/i.test(text)
+  const formatPointed = /지정했|정렬했|formatted/i.test(text)
+  return {
+    textFormat: textFormatExplicit || (formatPointed && !tableStyle),
+    tableStyle,
+    tableEdit:
+      /행을\s*(추가|넣|지)|열을\s*(추가|넣|지)|칸을\s*(추가|지)|셀을\s*(합|나누)|insert_row|delete_row|merge/i.test(
+        text,
+      ),
+    page: /가로\s*용지|세로\s*용지|쪽\s*설정|여백을|2단|landscape|portrait|set_page/i.test(text),
+    genericEdit:
+      /바꿨|수정했|고쳤|넣었|삽입했|filled|replaced|rewrote|inserted|formatted|edited the (document|paragraph|selection|cell|field|table)/i.test(
+        text,
+      ),
+  }
 }
 
 function formatTables(tables: HangulTable[]): string {
@@ -791,7 +828,7 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
           }
           const result = await deps.editTable(spec)
           return {
-            output: `Edited table[${result.table}]: ${result.action} (${result.detail}). Indexes may have changed — get_tables before further table edits.`,
+            output: formatEditedTable(result),
             mutated: true,
             summary: t('aiToolEditTableDone'),
           }
@@ -859,19 +896,9 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
       return { output: `Unknown tool: ${call.name}`, isError: true, summary: call.name }
     },
     verifyResponse: (finalText, executed) => {
+      const claims = hangulReplyClaims(finalText)
       const formatOk = executed.some((call) => call.name === 'apply_format' && call.ok)
-      const claimedTextFormat =
-        /굵게|기울임|밑줄|취소선|가운데|서식|fontSize|apply_format|\b\d+\s*pt\b/i.test(finalText)
-      const claimedTableStyle =
-        /(표|칸|셀|행|헤더).{0,10}배경|배경색|테두리|세로\s*정렬|표\s*너비|style_table|fillColor|cell fill/i.test(
-          finalText,
-        )
-      const claimedFormat =
-        /서식|굵게|기울임|밑줄|취소선|가운데|정렬했|지정했|formatted|fontSize|apply_format|\b\d+\s*pt\b/i.test(
-          finalText,
-        )
-      // "지정했습니다" is also how the model reports cell fill. That is style_table, not apply_format.
-      if (claimedFormat && !formatOk && !(claimedTableStyle && !claimedTextFormat)) {
+      if (claims.textFormat && !formatOk) {
         const claimedTableCell =
           /표\s*(의\s*)?(첫|헤더|머리)|table\s*(header|first)\s*row|첫\s*행|셀.*(굵|서식|pt)|first row.*(bold|13)/i.test(
             finalText,
@@ -892,25 +919,16 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
           'You claimed to format text, but apply_format did not run. Call apply_format on the first written paragraph from insert_content (the starting index in that tool result), then describe only what actually changed.'
         )
       }
-      const claimedTableEdit =
-        /행을\s*(추가|넣|지)|열을\s*(추가|넣|지)|칸을\s*(추가|지)|셀을\s*(합|나누)|insert_row|delete_row|merge/i.test(
-          finalText,
-        )
-      if (claimedTableEdit && !executed.some((call) => call.name === 'edit_table' && call.ok)) {
+      if (claims.tableEdit && !executed.some((call) => call.name === 'edit_table' && call.ok)) {
         return 'You claimed to change table structure, but edit_table did not succeed. Call edit_table; do not rebuild the table with insert_table and do not tell the user to do it by hand.'
       }
-      if (claimedTableStyle && !executed.some((call) => call.name === 'style_table' && call.ok)) {
+      if (claims.tableStyle && !executed.some((call) => call.name === 'style_table' && call.ok)) {
         return 'You claimed to change table fill/border/width, but style_table did not succeed. Call style_table. Bold/size still uses apply_format.'
       }
-      const claimedPage =
-        /가로\s*용지|세로\s*용지|쪽\s*설정|여백을|2단|landscape|portrait|set_page/i.test(finalText)
-      if (claimedPage && !executed.some((call) => call.name === 'set_page' && call.ok)) {
+      if (claims.page && !executed.some((call) => call.name === 'set_page' && call.ok)) {
         return 'You claimed to change page setup, but set_page did not succeed. Call set_page. Do not tell the user to open 쪽 설정.'
       }
-      const claimed = /바꿨|수정했|고쳤|넣었|삽입했|filled|replaced|rewrote|inserted|formatted|edited the (document|paragraph|selection|cell|field|table)/i.test(
-        finalText,
-      )
-      if (!claimed) return null
+      if (!claims.genericEdit) return null
       if (executed.some((call) => MUTATING_TOOLS.includes(call.name) && call.ok)) return null
       if (executed.some((call) => MUTATING_TOOLS.includes(call.name) && !call.ok)) {
         return (

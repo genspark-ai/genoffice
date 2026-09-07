@@ -1576,21 +1576,42 @@ describe('replaceCurrentParagraph', () => {
 
   it('inserts a table row after the given index', async () => {
     const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    let listed = 0
     const result = await editDocumentTable(
       studio({
         _request: async (method, params) => {
           calls.push({ method, params })
           if (method === 'listTables') {
+            listed += 1
+            if (listed === 1) {
+              return [
+                {
+                  section: 0,
+                  paragraph: 2,
+                  control: 0,
+                  rows: 2,
+                  cols: 2,
+                  cells: [
+                    { index: 0, row: 0, col: 0, text: 'a' },
+                    { index: 1, row: 0, col: 1, text: 'b' },
+                  ],
+                },
+              ]
+            }
             return [
               {
                 section: 0,
                 paragraph: 2,
                 control: 0,
-                rows: 2,
+                rows: 3,
                 cols: 2,
                 cells: [
                   { index: 0, row: 0, col: 0, text: 'a' },
                   { index: 1, row: 0, col: 1, text: 'b' },
+                  { index: 2, row: 1, col: 0, text: '' },
+                  { index: 3, row: 1, col: 1, text: '' },
+                  { index: 4, row: 2, col: 0, text: '' },
+                  { index: 5, row: 2, col: 1, text: '' },
                 ],
               },
             ]
@@ -1600,7 +1621,22 @@ describe('replaceCurrentParagraph', () => {
       }),
       { action: 'insert_row', table: 0, row: 0 },
     )
-    expect(result).toEqual({ table: 0, action: 'insert_row', detail: 'row after 0' })
+    expect(result).toMatchObject({
+      table: 0,
+      action: 'insert_row',
+      detail: 'row after 0',
+      rows: 3,
+      cols: 2,
+    })
+    expect(result.cells).toEqual([
+      { row: 0, col: 0 },
+      { row: 0, col: 1 },
+      { row: 1, col: 0 },
+      { row: 1, col: 1 },
+      { row: 2, col: 0 },
+      { row: 2, col: 1 },
+    ])
+    expect(calls.filter((call) => call.method === 'listTables')).toHaveLength(2)
     expect(calls.find((call) => call.method === 'insertTableRow')?.params).toEqual({
       section: 0,
       paragraph: 2,

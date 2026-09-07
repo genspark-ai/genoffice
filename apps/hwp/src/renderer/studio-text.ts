@@ -134,7 +134,7 @@ export interface HangulStudioFacade {
     indexes?: number[],
     cell?: HangulCellFormatTarget,
   ): Promise<{ indexes: number[]; applied: string[]; table?: number; row?: number }>
-  editTable(spec: HangulTableEditSpec): Promise<{ table: number; action: HangulTableEditAction; detail: string }>
+  editTable(spec: HangulTableEditSpec): Promise<HangulTableEditResult>
   styleTable(spec: HangulTableStyleSpec): Promise<{ table: number; applied: string[] }>
   setPage(spec: HangulPageSetupSpec): Promise<{ applied: string[] }>
 }
@@ -163,6 +163,15 @@ export interface HangulTableEditSpec {
   endCol?: number
   splitRows?: number
   splitCols?: number
+}
+
+export interface HangulTableEditResult {
+  table: number
+  action: HangulTableEditAction
+  detail: string
+  rows?: number
+  cols?: number
+  cells?: Array<{ row: number; col: number }>
 }
 
 export type HangulVAlign = 'top' | 'center' | 'bottom'
@@ -1168,6 +1177,27 @@ async function requireTable(studio: StudioTextSource, tableIndex: number): Promi
   return table
 }
 
+async function tableEditResult(
+  studio: StudioTextSource,
+  table: number,
+  action: HangulTableEditAction,
+  detail: string,
+): Promise<HangulTableEditResult> {
+  try {
+    const next = await requireTable(studio, table)
+    return {
+      table,
+      action,
+      detail,
+      rows: next.rows,
+      cols: next.cols,
+      cells: next.cells.map((cell) => ({ row: cell.row, col: cell.col })),
+    }
+  } catch {
+    return { table, action, detail }
+  }
+}
+
 function mmToHwp(mm: number, label: string, min: number, max: number): number {
   if (!Number.isFinite(mm)) throw new Error(`${label} must be a number of millimeters`)
   if (mm < min || mm > max) throw new Error(`${label} must be between ${min} and ${max} mm`)
@@ -1177,7 +1207,7 @@ function mmToHwp(mm: number, label: string, min: number, max: number): number {
 export async function editDocumentTable(
   studio: StudioTextSource,
   spec: HangulTableEditSpec,
-): Promise<{ table: number; action: HangulTableEditAction; detail: string }> {
+): Promise<HangulTableEditResult> {
   const table = await requireTable(studio, spec.table)
   const loc = { section: table.section, paragraph: table.paragraph, control: table.control }
   const after = spec.after !== false
@@ -1187,7 +1217,12 @@ export async function editDocumentTable(
     }
     if (table.rows + 1 > TABLE_MAX_ROWS) throw new Error(`table rows must be at most ${TABLE_MAX_ROWS}`)
     await requestStudio(studio, 'insertTableRow', { ...loc, row: spec.row, after })
-    return { table: spec.table, action: spec.action, detail: after ? `row after ${spec.row}` : `row before ${spec.row}` }
+    return tableEditResult(
+      studio,
+      spec.table,
+      spec.action,
+      after ? `row after ${spec.row}` : `row before ${spec.row}`,
+    )
   }
   if (spec.action === 'insert_column') {
     if (!Number.isInteger(spec.col) || spec.col! < 0 || spec.col! >= table.cols) {
@@ -1195,7 +1230,12 @@ export async function editDocumentTable(
     }
     if (table.cols + 1 > TABLE_MAX_COLS) throw new Error(`table columns must be at most ${TABLE_MAX_COLS}`)
     await requestStudio(studio, 'insertTableColumn', { ...loc, col: spec.col, after })
-    return { table: spec.table, action: spec.action, detail: after ? `column after ${spec.col}` : `column before ${spec.col}` }
+    return tableEditResult(
+      studio,
+      spec.table,
+      spec.action,
+      after ? `column after ${spec.col}` : `column before ${spec.col}`,
+    )
   }
   if (spec.action === 'delete_row') {
     if (!Number.isInteger(spec.row) || spec.row! < 0 || spec.row! >= table.rows) {
@@ -1203,7 +1243,7 @@ export async function editDocumentTable(
     }
     if (table.rows <= 1) throw new Error('cannot delete the last table row')
     await requestStudio(studio, 'deleteTableRow', { ...loc, row: spec.row })
-    return { table: spec.table, action: spec.action, detail: `row ${spec.row}` }
+    return tableEditResult(studio, spec.table, spec.action, `row ${spec.row}`)
   }
   if (spec.action === 'delete_column') {
     if (!Number.isInteger(spec.col) || spec.col! < 0 || spec.col! >= table.cols) {
@@ -1211,7 +1251,7 @@ export async function editDocumentTable(
     }
     if (table.cols <= 1) throw new Error('cannot delete the last table column')
     await requestStudio(studio, 'deleteTableColumn', { ...loc, col: spec.col })
-    return { table: spec.table, action: spec.action, detail: `column ${spec.col}` }
+    return tableEditResult(studio, spec.table, spec.action, `column ${spec.col}`)
   }
   if (spec.action === 'merge') {
     const startRow = spec.row
@@ -1239,7 +1279,7 @@ export async function editDocumentTable(
       endRow: r2,
       endCol: c2,
     })
-    return { table: spec.table, action: spec.action, detail: `r${r1}c${c1}:r${r2}c${c2}` }
+    return tableEditResult(studio, spec.table, spec.action, `r${r1}c${c1}:r${r2}c${c2}`)
   }
   if (spec.action === 'split') {
     if (!Number.isInteger(spec.row) || !Number.isInteger(spec.col)) {
@@ -1263,7 +1303,12 @@ export async function editDocumentTable(
       equalHeight: true,
       mergeFirst: false,
     })
-    return { table: spec.table, action: spec.action, detail: `r${spec.row}c${spec.col} into ${rows}x${cols}` }
+    return tableEditResult(
+      studio,
+      spec.table,
+      spec.action,
+      `r${spec.row}c${spec.col} into ${rows}x${cols}`,
+    )
   }
   throw new Error(TABLE_EDIT_EMPTY)
 }
