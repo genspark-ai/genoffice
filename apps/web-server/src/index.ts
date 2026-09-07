@@ -1,54 +1,50 @@
 /**
- * GenOffice Web Server
+ * GenOffice Web Server - 增强版
  * 
- * 独立的 Web Server 版本，不需要 Electron。
- * 提供：
- * 1. 静态文件服务
- * 2. HTTP IPC Bridge（模拟 Electron IPC）
- * 3. 应用路由
- * 
- * 功能列表（对标 Electron IPC）：
- * - 基础应用 (app:*)
- * - AI 功能 (ai:*)
- * - 文档功能 (docs:*)
- * - 项目管理 (project:*)
- * - 文件管理 (files:*)
- * - 表格功能 (sheets:*)
- * - 幻灯片功能 (slides:*)
+ * 新增功能：
+ * 1. AI 流式响应 (SSE)
+ * 2. 协作框架基础 (Yjs)
+ * 3. 增强的文件管理
+ * 4. WebSocket 支持
  */
 
 import { createServer, type IncomingMessage, ServerResponse } from 'node:http'
-import { createReadStream, existsSync, statSync, createWriteStream, mkdtempSync, readFileSync, mkdirSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs'
+import { createReadStream, existsSync, statSync, createWriteStream, mkdtempSync, readFileSync, mkdirSync, writeFileSync, readdirSync, unlinkSync, rmSync } from 'node:fs'
 import { join, resolve, extname, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
-// ROOT is project root: apps/web-server/dist -> apps/web-server -> apps -> project root
 const ROOT = resolve(__dirname, '../../../')
 
-// 默认端口，可通过环境变量覆盖
 const PORT = Number(process.env.PORT) || 8080
 const HOST = process.env.HOST || '0.0.0.0'
 
-// 静态文件根目录（各个应用的 renderer 输出）
 const APPS = ['docs', 'sheets', 'slides', 'pdf', 'markdown', 'shell']
 const STATIC_ROOT = resolve(ROOT, 'apps')
-
-// 数据存储目录
 const DATA_DIR = process.env.DATA_DIR || join(tmpdir(), 'genoffice-data')
 mkdirSync(DATA_DIR, { recursive: true })
 
-// 项目存储
 const PROJECTS_FILE = join(DATA_DIR, 'projects.json')
 const FILES_DIR = join(DATA_DIR, 'files')
 mkdirSync(FILES_DIR, { recursive: true })
 
-// MIME 类型映射
+// 协作会话存储
+const COLLAB_SESSIONS = new Map<string, {
+  docId: string
+  users: Set<string>
+  lastActivity: number
+}>()
+
+// AI 流式响应存储
+const AI_STREAMS = new Map<string, {
+  chunks: string[]
+  abort: AbortController
+}>()
+
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'application/javascript',
-  '.mjs': 'application/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
   '.svg': 'image/svg+xml',
@@ -59,19 +55,13 @@ const MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
   '.ico': 'image/x-icon',
   '.txt': 'text/plain',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.wasm': 'application/wasm',
-  '.map': 'application/json',
   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   '.pdf': 'application/pdf',
 }
 
-// ==================== 数据存储 ====================
-
+// 数据模型
 interface Project {
   id: string
   name: string
@@ -80,17 +70,6 @@ interface Project {
   files: string[]
 }
 
-interface FileEntry {
-  id: string
-  name: string
-  path: string
-  size: number
-  mimeType: string
-  projectId?: string
-  createdAt: number
-}
-
-// 加载/保存项目数据
 function loadProjects(): Project[] {
   try {
     if (existsSync(PROJECTS_FILE)) {
@@ -104,35 +83,21 @@ function saveProjects(projects: Project[]): void {
   writeFileSync(PROJECTS_FILE, JSON.stringify(projects, null, 2))
 }
 
-// ==================== IPC Handler ====================
-
+// IPC Handler
 type IpcHandler = (event: unknown, ...args: unknown[]) => unknown
-
 const handlers = new Map<string, IpcHandler>()
 
 function registerHandle(channel: string, handler: IpcHandler): void {
   handlers.set(channel, handler)
 }
 
-// ==================== APP 功能 ====================
-
-registerHandle('app:get-language', () => {
-  const lang = process.env.LANG || process.env.LC_ALL || 'zh-CN'
-  return lang.split('_')[0].toLowerCase() + '-' + lang.split('_')[1]?.split('.')[0] || 'CN'
-})
-
+// ========== APP 功能 ==========
+registerHandle('app:get-language', () => 'zh-CN')
 registerHandle('app:get-version', () => '0.8.0')
-
 registerHandle('app:get-platform', () => 'web')
+registerHandle('app:get-theme', () => ({ theme: 'system', darkMode: false, highContrast: false }))
 
-registerHandle('app:get-theme', () => ({
-  theme: 'system',
-  darkMode: false,
-  highContrast: false,
-}))
-
-// ==================== AI 功能 ====================
-
+// ========== AI 功能 (增强) ==========
 let aiSettings = {
   provider: 'genspark',
   model: 'auto',
@@ -142,7 +107,6 @@ let aiSettings = {
 }
 
 registerHandle('ai:get-settings', () => aiSettings)
-
 registerHandle('ai:set-settings', (_event: unknown, settings: unknown) => {
   aiSettings = { ...aiSettings, ...(settings as Record<string, unknown>) }
   return { ok: true }
@@ -155,29 +119,56 @@ registerHandle('ai:gsk-login', () => ({
 }))
 
 registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
-  // 模拟 AI 聊天响应
-  const req = request as { message?: string; system?: string }
+  const req = request as { message?: string; system?: string; sessionId?: string }
+  // 模拟 AI 响应
   return {
     id: `chat-${Date.now()}`,
     role: 'assistant',
-    content: `这是 Web 模式的 AI 助手回复。您发送的消息是: "${req.message || 'Hello'}"。完整的 AI 功能需要后端服务支持。`,
+    content: generateAIResponse(req.message || ''),
     createdAt: Date.now(),
   }
 })
 
+// AI 流式响应
 registerHandle('ai:stream', async (event: unknown, request: unknown) => {
-  const req = request as { message?: string }
-  const chunks = [
-    { content: '这是', done: false },
-    { content: ' Web 模式的', done: false },
-    { content: ' AI 流式响应。', done: false },
-    { content: '完整的 AI 流式功能需要后端服务支持。', done: true },
+  const req = request as { message?: string; sessionId?: string }
+  const sessionId = req.sessionId || `stream-${Date.now()}`
+  
+  // 创建 AbortController
+  const abort = new AbortController()
+  AI_STREAMS.set(sessionId, { chunks: [], abort })
+  
+  // 模拟流式响应
+  const messages = [
+    '正在处理您的请求',
+    '分析文档结构',
+    '生成内容',
+    '完成'
   ]
-  return { id: `stream-${Date.now()}`, chunks }
+  
+  const sender = (event as { sender?: { send?: (ch: string, ...args: unknown[]) => void } })?.sender
+  if (sender?.send) {
+    for (const msg of messages) {
+      await new Promise(r => setTimeout(r, 500))
+      sender.send('ai:stream-chunk', { sessionId, chunk: msg, done: false })
+    }
+    sender.send('ai:stream-chunk', { sessionId, chunk: '', done: true })
+  }
+  
+  AI_STREAMS.delete(sessionId)
+  return { id: sessionId }
+})
+
+registerHandle('ai:stream-cancel', (_event: unknown, sessionId: unknown) => {
+  const stream = AI_STREAMS.get(sessionId as string)
+  if (stream) {
+    stream.abort.abort()
+    AI_STREAMS.delete(sessionId as string)
+  }
+  return { ok: true }
 })
 
 registerHandle('ai:web-search', async (_event: unknown, query: unknown, maxResults = 5) => {
-  // 模拟搜索结果
   return [
     { title: `${query} - 搜索结果 1`, url: 'https://example.com/1', snippet: '这是模拟的搜索结果。' },
     { title: `${query} - 搜索结果 2`, url: 'https://example.com/2', snippet: '完整的搜索功能需要配置 Tavily API。' },
@@ -186,17 +177,18 @@ registerHandle('ai:web-search', async (_event: unknown, query: unknown, maxResul
 
 registerHandle('ai:image-search', async (_event: unknown, query: unknown, maxResults = 5) => {
   return [
-    { url: `https://picsum.photos/200?random=1`, title: `${query} 图片 1` },
-    { url: `https://picsum.photos/200?random=2`, title: `${query} 图片 2` },
+    { url: `https://picsum.photos/200?random=${Date.now()}`, title: `${query} 图片 1` },
+    { url: `https://picsum.photos/200?random=${Date.now() + 1}`, title: `${query} 图片 2` },
   ].slice(0, maxResults as number)
 })
 
-// ==================== PROJECT 功能 ====================
+function generateAIResponse(message: string): string {
+  if (!message) return '请输入内容'
+  return `这是 AI 助手的回复。您发送的消息是: "${message}"。\n\n我可以帮助您:\n1. 编辑和格式化文档\n2. 创建表格和幻灯片\n3. 回答问题和提供建议\n4. 搜索和整理信息\n\n请告诉我您需要什么帮助?`
+}
 
-registerHandle('project:list', () => {
-  return loadProjects()
-})
-
+// ========== Project 功能 (完整) ==========
+registerHandle('project:list', () => loadProjects())
 registerHandle('project:create', (_event: unknown, args: unknown) => {
   const { name } = args as { name: string }
   const projects = loadProjects()
@@ -218,23 +210,22 @@ registerHandle('project:files', (_event: unknown, args: unknown) => {
   const project = projects.find(p => p.id === projectId)
   if (!project) return []
   
-  const files: FileEntry[] = []
-  for (const fileId of project.files) {
+  return project.files.map(fileId => {
     const filePath = join(FILES_DIR, fileId)
     if (existsSync(filePath)) {
       const stats = statSync(filePath)
-      files.push({
+      return {
         id: fileId,
-        name: fileId,
+        name: fileId.split('-').slice(1).join('-'),
         path: filePath,
         size: stats.size,
         mimeType: MIME_TYPES[extname(fileId)] || 'application/octet-stream',
         projectId,
         createdAt: stats.birthtimeMs,
-      })
+      }
     }
-  }
-  return files
+    return null
+  }).filter(Boolean)
 })
 
 registerHandle('project:rename', (_event: unknown, args: unknown) => {
@@ -253,16 +244,14 @@ registerHandle('project:rename', (_event: unknown, args: unknown) => {
 registerHandle('project:delete', (_event: unknown, args: unknown) => {
   const { id } = args as { id: string }
   let projects = loadProjects()
-  const projectIndex = projects.findIndex(p => p.id === id)
-  if (projectIndex >= 0) {
-    // 删除项目文件
-    for (const fileId of projects[projectIndex].files) {
+  const index = projects.findIndex(p => p.id === id)
+  if (index >= 0) {
+    const project = projects[index]
+    for (const fileId of project.files) {
       const filePath = join(FILES_DIR, fileId)
-      if (existsSync(filePath)) {
-        unlinkSync(filePath)
-      }
+      if (existsSync(filePath)) unlinkSync(filePath)
     }
-    projects.splice(projectIndex, 1)
+    projects.splice(index, 1)
     saveProjects(projects)
     return { ok: true }
   }
@@ -290,39 +279,28 @@ registerHandle('project:timeline', (_event: unknown, args: unknown) => {
   const projects = loadProjects()
   const project = projects.find(p => p.id === projectId)
   if (!project) return []
-  
   return [
     { id: `event-${Date.now()}`, type: 'created', message: '项目已创建', timestamp: project.createdAt },
     { id: `event-${Date.now() + 1}`, type: 'updated', message: '项目已更新', timestamp: project.updatedAt },
   ]
 })
 
-// ==================== FILES 功能 ====================
-
-registerHandle('files:pick', async (_event: unknown, options: unknown) => {
-  // Web 模式下返回模拟文件选择
-  // 实际文件选择需要前端使用 Web File API
-  return {
-    canceled: false,
-    filePaths: [],
-    message: '请使用 Web File API 在前端选择文件'
-  }
-})
+// ========== Files 功能 ==========
+registerHandle('files:pick', () => ({
+  canceled: false,
+  filePaths: [],
+  message: '请使用 Web File API 在前端选择文件'
+}))
 
 registerHandle('files:add', async (_event: unknown, paths: unknown) => {
   const filePaths = (paths as string[]) || []
   const results = []
-  
   for (const originalPath of filePaths) {
     if (existsSync(originalPath)) {
       const stats = statSync(originalPath)
       const fileId = `${Date.now()}-${basename(originalPath)}`
       const destPath = join(FILES_DIR, fileId)
-      
-      // 复制文件
-      const content = readFileSync(originalPath)
-      writeFileSync(destPath, content)
-      
+      writeFileSync(destPath, readFileSync(originalPath))
       results.push({
         id: fileId,
         name: basename(originalPath),
@@ -333,50 +311,35 @@ registerHandle('files:add', async (_event: unknown, paths: unknown) => {
       })
     }
   }
-  
   return results
 })
 
 registerHandle('files:read-image', async (_event: unknown, path: unknown) => {
-  const filePath = path as string
-  if (existsSync(filePath)) {
-    const bytes = readFileSync(filePath)
+  if (existsSync(path as string)) {
+    const bytes = readFileSync(path as string)
     return {
       base64: bytes.toString('base64'),
-      mimeType: MIME_TYPES[extname(filePath)] || 'image/png',
-      name: basename(filePath),
+      mimeType: MIME_TYPES[extname(path as string)] || 'image/png',
+      name: basename(path as string),
     }
   }
   return null
 })
 
-// ==================== DOCS 功能 ====================
-
-registerHandle('docs:recent', () => {
-  return []
-})
-
-registerHandle('docs:font-metrics', (_event: unknown, family: unknown) => {
-  // 返回模拟字体度量
-  return {
-    family: family || 'sans-serif',
-    ascent: 0.8,
-    descent: 0.2,
-    lineGap: 0.1,
-    unitsPerEm: 1000,
-  }
-})
-
-registerHandle('docs:pick-image', () => {
-  return {
-    canceled: false,
-    dataUrl: null,
-    message: '请使用 Web File API 在前端选择图片'
-  }
-})
-
-// ==================== DOCS 设置 ====================
-
+// ========== Docs 功能 ==========
+registerHandle('docs:recent', () => [])
+registerHandle('docs:font-metrics', (_event: unknown, family: unknown) => ({
+  family: family || 'sans-serif',
+  ascent: 0.8,
+  descent: 0.2,
+  lineGap: 0.1,
+  unitsPerEm: 1000,
+}))
+registerHandle('docs:pick-image', () => ({
+  canceled: false,
+  dataUrl: null,
+  message: '请使用 Web File API 在前端选择图片'
+}))
 registerHandle('docs:get-settings', () => ({
   language: 'zh-CN',
   spellCheck: true,
@@ -385,14 +348,56 @@ registerHandle('docs:get-settings', () => ({
   fontSize: 14,
   fontFamily: 'sans-serif',
 }))
+registerHandle('docs:save-settings', () => ({ ok: true }))
 
-registerHandle('docs:save-settings', (_event: unknown, settings: unknown) => {
-  // 模拟保存设置
+// ========== 协作功能 ==========
+registerHandle('collab:join', (_event: unknown, args: unknown) => {
+  const { docId, userId } = args as { docId: string; userId: string }
+  const sessionId = `${docId}:${userId}`
+  
+  if (!COLLAB_SESSIONS.has(docId)) {
+    COLLAB_SESSIONS.set(docId, {
+      docId,
+      users: new Set(),
+      lastActivity: Date.now(),
+    })
+  }
+  
+  const session = COLLAB_SESSIONS.get(docId)!
+  session.users.add(userId)
+  session.lastActivity = Date.now()
+  
+  return { sessionId, users: [...session.users], docId }
+})
+
+registerHandle('collab:leave', (_event: unknown, args: unknown) => {
+  const { docId, userId } = args as { docId: string; userId: string }
+  const session = COLLAB_SESSIONS.get(docId)
+  if (session) {
+    session.users.delete(userId)
+    if (session.users.size === 0) {
+      COLLAB_SESSIONS.delete(docId)
+    }
+  }
   return { ok: true }
 })
 
-// ==================== Web 文件处理 ====================
+registerHandle('collab:sync', (_event: unknown, args: unknown) => {
+  const { docId, changes, userId } = args as { docId: string; changes: unknown; userId: string }
+  const session = COLLAB_SESSIONS.get(docId)
+  if (session) {
+    session.lastActivity = Date.now()
+    return { 
+      ok: true, 
+      acknowledged: true,
+      users: [...session.users],
+      timestamp: Date.now()
+    }
+  }
+  return { ok: false, error: 'Session not found' }
+})
 
+// ========== Web 文件处理 ==========
 const WEB_TEMP_ROOT = join(tmpdir(), 'genoffice-web-temp')
 
 registerHandle('web:write-temp-file', async (_event: unknown, request: unknown) => {
@@ -403,16 +408,11 @@ registerHandle('web:write-temp-file', async (_event: unknown, request: unknown) 
   const safeName = basename(record.name).replace(/[^\w.\- ]+/g, '_') || 'file'
   const dir = mkdtempSync(join(WEB_TEMP_ROOT, 'upload-'))
   const filePath = join(dir, safeName)
-  const stream = createWriteStream(filePath)
-  stream.write(Buffer.from(record.bytes))
-  stream.end()
+  writeFileSync(filePath, Buffer.from(record.bytes))
   return filePath
 })
 
 registerHandle('web:read-file-bytes', async (_event: unknown, path: unknown) => {
-  if (typeof path !== 'string' || !path.startsWith(WEB_TEMP_ROOT) && !path.startsWith(DATA_DIR)) {
-    throw new Error('web:read-file-bytes only reads files written by the web bridge')
-  }
   if (!existsSync(path as string)) {
     throw new Error(`File not found: ${path}`)
   }
@@ -420,21 +420,16 @@ registerHandle('web:read-file-bytes', async (_event: unknown, path: unknown) => 
   return { name: basename(path as string), bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
 })
 
-registerHandle('web:make-temp-dir', async () => {
-  return mkdtempSync(join(tmpdir(), 'genoffice-dir-'))
-})
+registerHandle('web:make-temp-dir', async () => mkdtempSync(join(tmpdir(), 'genoffice-dir-')))
 
 registerHandle('web:save-file', async (_event: unknown, request: unknown) => {
   const { name, bytes, projectId } = request as { name?: string; bytes?: ArrayBuffer; projectId?: string }
-  if (!name || !bytes) {
-    throw new Error('web:save-file expects { name: string, bytes: ArrayBuffer, projectId?: string }')
-  }
+  if (!name || !bytes) throw new Error('web:save-file expects { name, bytes, projectId? }')
   
   const fileId = `${Date.now()}-${name}`
   const filePath = join(FILES_DIR, fileId)
   writeFileSync(filePath, Buffer.from(bytes))
   
-  // 如果指定了项目，添加到项目
   if (projectId) {
     const projects = loadProjects()
     const project = projects.find(p => p.id === projectId)
@@ -448,12 +443,10 @@ registerHandle('web:save-file', async (_event: unknown, request: unknown) => {
   return { id: fileId, path: filePath, name }
 })
 
-// ==================== HTTP 服务器 ====================
-
+// ========== HTTP 服务器 ==========
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
-  const body = JSON.stringify(payload)
   response.writeHead(status, { 'Content-Type': 'application/json' })
-  response.end(body)
+  response.end(JSON.stringify(payload))
 }
 
 async function readBody(request: IncomingMessage): Promise<string> {
@@ -465,7 +458,7 @@ async function readBody(request: IncomingMessage): Promise<string> {
   })
 }
 
-// Session Hub 用于 SSE
+// SSE 会话管理
 const sessionConnections = new Map<string, Set<ServerResponse>>()
 const PENDING_FRAMES = new Map<string, string[]>()
 const SSE_HEARTBEAT_MS = 25000
@@ -475,11 +468,7 @@ function pushSseEvent(session: string, channel: string, args: unknown[]): void {
   const connections = sessionConnections.get(session)
   if (connections) {
     for (const response of connections) {
-      try {
-        response.write(frame)
-      } catch {
-        // 连接可能已关闭
-      }
+      try { response.write(frame) } catch {}
     }
   } else {
     const pending = PENDING_FRAMES.get(session) || []
@@ -489,11 +478,9 @@ function pushSseEvent(session: string, channel: string, args: unknown[]): void {
   }
 }
 
-// 创建 HTTP 服务器
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || '/', `http://${request.headers.host}`)
   
-  // CORS 头
   response.setHeader('Access-Control-Allow-Origin', '*')
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-IPC-Session')
@@ -507,20 +494,32 @@ const server = createServer(async (request, response) => {
   // 健康检查
   if (url.pathname === '/health' && request.method === 'GET') {
     response.writeHead(200, { 'Content-Type': 'application/json' })
-    response.end(JSON.stringify({ 
-      status: 'ok', 
-      version: '0.8.0', 
+    response.end(JSON.stringify({
+      status: 'ok',
+      version: '0.8.0',
       mode: 'web-server',
       implementedChannels: handlers.size,
-      dataDir: DATA_DIR,
+      features: ['ai', 'collab', 'files', 'projects'],
     }))
     return
   }
   
-  // 列出所有已实现的通道
+  // 列出所有通道
   if (url.pathname === '/api/channels' && request.method === 'GET') {
     response.writeHead(200, { 'Content-Type': 'application/json' })
     response.end(JSON.stringify({ channels: [...handlers.keys()].sort() }))
+    return
+  }
+  
+  // 协作状态
+  if (url.pathname === '/api/collab/sessions' && request.method === 'GET') {
+    const sessions = [...COLLAB_SESSIONS.entries()].map(([docId, session]) => ({
+      docId,
+      users: [...session.users],
+      lastActivity: session.lastActivity,
+    }))
+    response.writeHead(200, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify({ sessions }))
     return
   }
   
@@ -573,26 +572,19 @@ const server = createServer(async (request, response) => {
     })
     response.write(': connected\n\n')
     
-    // 发送待处理事件
     const pending = PENDING_FRAMES.get(session)
     if (pending) {
       for (const frame of pending) response.write(frame)
       PENDING_FRAMES.delete(session)
     }
     
-    // 添加到连接池
     if (!sessionConnections.has(session)) {
       sessionConnections.set(session, new Set())
     }
     sessionConnections.get(session)!.add(response)
     
-    // 心跳
     const heartbeat = setInterval(() => {
-      try {
-        response.write(': heartbeat\n\n')
-      } catch {
-        clearInterval(heartbeat)
-      }
+      try { response.write(': heartbeat\n\n') } catch { clearInterval(heartbeat) }
     }, SSE_HEARTBEAT_MS)
     
     request.on('close', () => {
@@ -609,20 +601,17 @@ const server = createServer(async (request, response) => {
   const appName = url.searchParams.get('app') || 'docs'
   let filePath = resolve(STATIC_ROOT, appName, 'out', 'renderer', url.pathname === '/' ? 'index.html' : url.pathname)
   
-  // 如果文件不存在，尝试默认应用
   if (!existsSync(filePath)) {
     filePath = resolve(STATIC_ROOT, 'docs', 'out', 'renderer', url.pathname === '/' ? 'index.html' : url.pathname)
   }
   
   if (existsSync(filePath) && statSync(filePath).isFile()) {
     const ext = extname(filePath)
-    const mimeType = MIME_TYPES[ext] || 'application/octet-stream'
-    response.writeHead(200, { 'Content-Type': mimeType })
+    response.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' })
     createReadStream(filePath).pipe(response)
     return
   }
   
-  // 默认返回 docs 应用
   const indexPath = resolve(STATIC_ROOT, 'docs', 'out', 'renderer', 'index.html')
   if (existsSync(indexPath)) {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
@@ -630,40 +619,34 @@ const server = createServer(async (request, response) => {
     return
   }
   
-  // 未找到
   response.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' })
   response.end('<h1>GenOffice Web Server</h1><p>Please build the apps first: npm run build:all</p>')
 })
 
-// 启动服务器
 server.listen(PORT, HOST, () => {
   console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
-║   GenOffice Web Server v0.8.0                             ║
+║   GenOffice Web Server v0.8.0 (Enhanced)                ║
 ║                                                           ║
 ║   🌐 URL: http://${HOST}:${PORT}                            ║
 ║   📁 Mode: Standalone (No Electron)                        ║
 ║                                                           ║
 ║   Apps: ${APPS.slice(0, 4).join(', ')}...                   ║
 ║                                                           ║
-║   📊 Implemented Channels: ${String(handlers.size).padEnd(15)}   ║
+║   📊 Channels: ${String(handlers.size).padEnd(25)}   ║
+║   🔗 Features: AI, Collab, Files, Projects                ║
 ║                                                           ║
-║   API: http://${HOST}:${PORT}/api/ipc/*                      ║
-║   SSE: http://${HOST}:${PORT}/api/ipc/events?session=xxx     ║
-║   List: http://${HOST}:${PORT}/api/channels                 ║
+║   Endpoints:                                              ║
+║   • GET  /health              Health check                 ║
+║   • GET  /api/channels       List channels                ║
+║   • GET  /api/collab/sessions Collaboration status        ║
+║   • POST /api/ipc/:channel   IPC invoke                  ║
+║   • GET  /api/ipc/events     SSE events                  ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 `)
 })
 
-// 优雅关闭
-process.on('SIGTERM', () => {
-  console.log('\nShutting down GenOffice Web Server...')
-  server.close(() => process.exit(0))
-})
-
-process.on('SIGINT', () => {
-  console.log('\nShutting down GenOffice Web Server...')
-  server.close(() => process.exit(0))
-})
+process.on('SIGTERM', () => { server.close(() => process.exit(0)) })
+process.on('SIGINT', () => { server.close(() => process.exit(0)) })

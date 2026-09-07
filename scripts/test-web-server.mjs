@@ -32,6 +32,13 @@ const ELECTRON_CHANNELS = {
     'ai:log-run-failure',
   ],
   
+  // 协作功能通道
+  collab: [
+    'collab:join',
+    'collab:leave',
+    'collab:sync',
+  ],
+  
   // 文档功能通道
   docs: [
     'docs:open',
@@ -131,6 +138,7 @@ const WEB_SERVER_IMPLEMENTED = [
   'ai:set-settings',
   'ai:gsk-login',
   'ai:stream',
+  'ai:stream-cancel',
   'ai:web-search',
   'ai:image-search',
   // Docs
@@ -151,6 +159,10 @@ const WEB_SERVER_IMPLEMENTED = [
   'files:pick',
   'files:add',
   'files:read-image',
+  // Collaboration
+  'collab:join',
+  'collab:leave',
+  'collab:sync',
   // Web
   'web:write-temp-file',
   'web:read-file-bytes',
@@ -179,6 +191,8 @@ async function testChannel(channel) {
     body = { args: [{ message: 'Hello' }] }
   } else if (channel === 'files:add') {
     body = { args: [] }
+  } else if (channel === 'collab:join' || channel === 'collab:leave' || channel === 'collab:sync') {
+    body = { args: [{ docId: 'test-doc', userId: 'test-user' }] }
   }
   
   try {
