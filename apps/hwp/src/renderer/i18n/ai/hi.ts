@@ -6,7 +6,8 @@ export const hi = {
   aiComposerPlaceholder: 'इस हैंगुल दस्तावेज़ के बारे में पूछें…',
   aiEditorNotReady: 'हैंगुल संपादक अभी लोड हो रहा है…',
   aiEmptyTitle: 'इस हैंगुल दस्तावेज़ के बारे में पूछें',
-  aiEmptyBody: 'सारांश दें, अनुवाद करें या प्रश्न पूछें। वेब पर भी खोज सकते हैं। इस संस्करण में संपादन उपलब्ध नहीं है।',
+  aiEmptyBody:
+    'सारांश दें, अनुवाद करें या चयन/अनुच्छेद लिखें। फ़ील्ड भर सकते हैं, कक्ष संपादित कर सकते हैं, या वेब पर खोज सकते हैं।',
   aiNewChat: 'नई चैट',
   aiSend: 'भेजें',
   aiStop: 'रोकें',
@@ -30,4 +31,12 @@ export const hi = {
   aiCreditsExhausted: 'क्रेडिट समाप्त — genspark.ai पर रिचार्ज करें',
   aiToolWebSearch: 'वेब खोज',
   aiToolWebSearchDone: '"{query}" खोजा · {count} परिणाम',
+  aiToolReplaceParagraph: 'अनुच्छेद बदलें',
+  aiToolReplaceParagraphDone: 'वर्तमान अनुच्छेद बदला गया',
+  aiToolReplaceSelection: 'चयन बदलें',
+  aiToolReplaceSelectionDone: 'चयन बदला गया',
+  aiToolSetField: 'फ़ील्ड भरें',
+  aiToolSetFieldDone: 'फ़ील्ड भरा गया',
+  aiToolReplaceCell: 'कक्ष बदलें',
+  aiToolReplaceCellDone: 'कक्ष बदला गया',
 } satisfies Record<keyof typeof zh, string>

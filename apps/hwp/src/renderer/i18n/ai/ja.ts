@@ -6,7 +6,8 @@ export const ja = {
   aiComposerPlaceholder: 'このハングル文書について質問…',
   aiEditorNotReady: 'エディターを読み込んでいます…',
   aiEmptyTitle: 'このハングル文書について質問',
-  aiEmptyBody: '要約、翻訳、質問ができ、ウェブで事実を調べられます。この版では文書を編集できません。',
+  aiEmptyBody:
+    '要約、翻訳、選択範囲や段落の書き換え、フィールド入力、表セルの編集、ウェブ検索ができます。',
   aiNewChat: '新しいチャット',
   aiSend: '送信',
   aiStop: '停止',
@@ -30,4 +31,12 @@ export const ja = {
   aiCreditsExhausted: 'クレジット不足です。genspark.ai でチャージしてください',
   aiToolWebSearch: 'ウェブ検索',
   aiToolWebSearchDone: '「{query}」を検索 · {count} 件',
+  aiToolReplaceParagraph: '段落を置換',
+  aiToolReplaceParagraphDone: '現在の段落を置換しました',
+  aiToolReplaceSelection: '選択範囲を置換',
+  aiToolReplaceSelectionDone: '選択範囲を置換しました',
+  aiToolSetField: 'フィールドを入力',
+  aiToolSetFieldDone: 'フィールドを入力しました',
+  aiToolReplaceCell: 'セルを置換',
+  aiToolReplaceCellDone: 'セルを置換しました',
 } satisfies Record<keyof typeof zh, string>

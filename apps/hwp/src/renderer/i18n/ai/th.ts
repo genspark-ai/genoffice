@@ -6,7 +6,8 @@ export const th = {
   aiComposerPlaceholder: 'ถามเกี่ยวกับเอกสารฮันกึลนี้…',
   aiEditorNotReady: 'กำลังโหลดตัวแก้ไขฮันกึล…',
   aiEmptyTitle: 'ถามเกี่ยวกับเอกสารฮันกึลนี้',
-  aiEmptyBody: 'สรุป แปล หรือถามคำถามได้ และค้นหาข้อเท็จจริงบนเว็บได้ เวอร์ชันนี้ยังแก้ไขเอกสารไม่ได้',
+  aiEmptyBody:
+    'สรุป แปล หรือเขียนส่วนที่เลือกหรือย่อหน้าใหม่ได้ รวมถึงกรอกฟิลด์ แก้เซลล์ตาราง และค้นหาบนเว็บ',
   aiNewChat: 'แชทใหม่',
   aiSend: 'ส่ง',
   aiStop: 'หยุด',
@@ -30,4 +31,12 @@ export const th = {
   aiCreditsExhausted: 'เครดิตหมด — เติมได้ที่ genspark.ai',
   aiToolWebSearch: 'ค้นหาเว็บ',
   aiToolWebSearchDone: 'ค้นหา "{query}" · {count} รายการ',
+  aiToolReplaceParagraph: 'แทนที่ย่อหน้า',
+  aiToolReplaceParagraphDone: 'แทนที่ย่อหน้าปัจจุบันแล้ว',
+  aiToolReplaceSelection: 'แทนที่ส่วนที่เลือก',
+  aiToolReplaceSelectionDone: 'แทนที่ส่วนที่เลือกแล้ว',
+  aiToolSetField: 'กรอกฟิลด์',
+  aiToolSetFieldDone: 'กรอกฟิลด์แล้ว',
+  aiToolReplaceCell: 'แทนที่เซลล์',
+  aiToolReplaceCellDone: 'แทนที่เซลล์แล้ว',
 } satisfies Record<keyof typeof zh, string>

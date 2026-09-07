@@ -7,7 +7,7 @@ export const pl = {
   aiEditorNotReady: 'Edytor Hangul nadal się wczytuje…',
   aiEmptyTitle: 'Zapytaj o ten dokument Hangul',
   aiEmptyBody:
-    'Streszczaj, tłumacz lub zadawaj pytania. Możesz też szukać w sieci. Edycja nie jest jeszcze dostępna.',
+    'Streszczaj, tłumacz lub przepisuj zaznaczenie albo akapit. Możesz też wypełniać pola, edytować komórki i szukać w sieci.',
   aiNewChat: 'Nowy czat',
   aiSend: 'Wyślij',
   aiStop: 'Zatrzymaj',
@@ -31,4 +31,12 @@ export const pl = {
   aiCreditsExhausted: 'Brak kredytów — doładuj na genspark.ai',
   aiToolWebSearch: 'Wyszukiwanie w sieci',
   aiToolWebSearchDone: 'Wyszukano „{query}" · {count} wyników',
+  aiToolReplaceParagraph: 'Zastąp akapit',
+  aiToolReplaceParagraphDone: 'Zastąpiono bieżący akapit',
+  aiToolReplaceSelection: 'Zastąp zaznaczenie',
+  aiToolReplaceSelectionDone: 'Zastąpiono zaznaczenie',
+  aiToolSetField: 'Wypełnij pole',
+  aiToolSetFieldDone: 'Wypełniono pole',
+  aiToolReplaceCell: 'Zastąp komórkę',
+  aiToolReplaceCellDone: 'Zastąpiono komórkę',
 } satisfies Record<keyof typeof zh, string>

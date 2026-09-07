@@ -7,7 +7,7 @@ export const nl = {
   aiEditorNotReady: 'Hangul-editor wordt nog geladen…',
   aiEmptyTitle: 'Vraag over dit Hangul-document',
   aiEmptyBody:
-    'Samenvatten, vertalen of vragen stellen. U kunt ook op het web zoeken. Bewerken is in deze versie niet beschikbaar.',
+    'Samenvatten, vertalen of een selectie of alinea herschrijven. U kunt ook velden invullen, cellen bewerken of op het web zoeken.',
   aiNewChat: 'Nieuwe chat',
   aiSend: 'Verzenden',
   aiStop: 'Stoppen',
@@ -31,4 +31,12 @@ export const nl = {
   aiCreditsExhausted: 'Credits op — waardeer op via genspark.ai',
   aiToolWebSearch: 'Zoeken op internet',
   aiToolWebSearchDone: 'Gezocht naar "{query}" · {count} resultaten',
+  aiToolReplaceParagraph: 'Alinea vervangen',
+  aiToolReplaceParagraphDone: 'Huidige alinea vervangen',
+  aiToolReplaceSelection: 'Selectie vervangen',
+  aiToolReplaceSelectionDone: 'Selectie vervangen',
+  aiToolSetField: 'Veld invullen',
+  aiToolSetFieldDone: 'Veld ingevuld',
+  aiToolReplaceCell: 'Cel vervangen',
+  aiToolReplaceCellDone: 'Cel vervangen',
 } satisfies Record<keyof typeof zh, string>

@@ -7,7 +7,7 @@ export const ms = {
   aiEditorNotReady: 'Editor Hangul masih dimuatkan…',
   aiEmptyTitle: 'Tanya tentang dokumen Hangul ini',
   aiEmptyBody:
-    'Ringkas, terjemah atau tanya. Anda juga boleh mencari di web. Penyuntingan belum tersedia dalam keluaran ini.',
+    'Ringkas, terjemah atau tulis semula pilihan atau perenggan. Anda juga boleh mengisi medan, mengedit sel atau mencari di web.',
   aiNewChat: 'Sembang baharu',
   aiSend: 'Hantar',
   aiStop: 'Berhenti',
@@ -31,4 +31,12 @@ export const ms = {
   aiCreditsExhausted: 'Kredit habis — tambah nilai di genspark.ai',
   aiToolWebSearch: 'Carian web',
   aiToolWebSearchDone: 'Cari "{query}" · {count} hasil',
+  aiToolReplaceParagraph: 'Ganti perenggan',
+  aiToolReplaceParagraphDone: 'Perenggan semasa diganti',
+  aiToolReplaceSelection: 'Ganti pilihan',
+  aiToolReplaceSelectionDone: 'Pilihan diganti',
+  aiToolSetField: 'Isi medan',
+  aiToolSetFieldDone: 'Medan diisi',
+  aiToolReplaceCell: 'Ganti sel',
+  aiToolReplaceCellDone: 'Sel diganti',
 } satisfies Record<keyof typeof zh, string>

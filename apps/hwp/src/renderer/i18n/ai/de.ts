@@ -7,7 +7,7 @@ export const de = {
   aiEditorNotReady: 'Hangul-Editor wird noch geladen…',
   aiEmptyTitle: 'Fragen Sie zu diesem Hangul-Dokument',
   aiEmptyBody:
-    'Zusammenfassen, übersetzen oder Fragen stellen. Sie können auch im Web suchen. Bearbeiten ist in dieser Version nicht möglich.',
+    'Zusammenfassen, übersetzen oder eine Auswahl bzw. einen Absatz umschreiben. Sie können auch Felder ausfüllen, Tabellenzellen bearbeiten oder im Web suchen.',
   aiNewChat: 'Neuer Chat',
   aiSend: 'Senden',
   aiStop: 'Stopp',
@@ -32,4 +32,12 @@ export const de = {
   aiCreditsExhausted: 'Guthaben aufgebraucht — bei genspark.ai aufladen',
   aiToolWebSearch: 'Websuche',
   aiToolWebSearchDone: '„{query}" gesucht · {count} Treffer',
+  aiToolReplaceParagraph: 'Absatz ersetzen',
+  aiToolReplaceParagraphDone: 'Aktuellen Absatz ersetzt',
+  aiToolReplaceSelection: 'Auswahl ersetzen',
+  aiToolReplaceSelectionDone: 'Auswahl ersetzt',
+  aiToolSetField: 'Feld ausfüllen',
+  aiToolSetFieldDone: 'Feld ausgefüllt',
+  aiToolReplaceCell: 'Zelle ersetzen',
+  aiToolReplaceCellDone: 'Zelle ersetzt',
 } satisfies Record<keyof typeof zh, string>

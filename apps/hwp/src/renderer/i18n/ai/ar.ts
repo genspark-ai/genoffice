@@ -6,7 +6,8 @@ export const ar = {
   aiComposerPlaceholder: 'اسأل عن مستند الهانغول هذا…',
   aiEditorNotReady: 'محرر الهانغول ما زال قيد التحميل…',
   aiEmptyTitle: 'اسأل عن مستند الهانغول هذا',
-  aiEmptyBody: 'لخّص أو ترجم أو اطرح أسئلة. يمكنك أيضاً البحث على الويب. التحرير غير متاح في هذا الإصدار.',
+  aiEmptyBody:
+    'لخّص أو ترجم أو أعد كتابة تحديد أو فقرة. يمكنك أيضاً تعبئة الحقول وتعديل الخلايا والبحث على الويب.',
   aiNewChat: 'محادثة جديدة',
   aiSend: 'إرسال',
   aiStop: 'إيقاف',
@@ -30,4 +31,12 @@ export const ar = {
   aiCreditsExhausted: 'نفدت الأرصدة — أعد الشحن على genspark.ai',
   aiToolWebSearch: 'بحث ويب',
   aiToolWebSearchDone: 'بحث عن "{query}" · {count} نتيجة',
+  aiToolReplaceParagraph: 'استبدال الفقرة',
+  aiToolReplaceParagraphDone: 'تم استبدال الفقرة الحالية',
+  aiToolReplaceSelection: 'استبدال التحديد',
+  aiToolReplaceSelectionDone: 'تم استبدال التحديد',
+  aiToolSetField: 'تعبئة الحقل',
+  aiToolSetFieldDone: 'تم تعبئة الحقل',
+  aiToolReplaceCell: 'استبدال الخلية',
+  aiToolReplaceCellDone: 'تم استبدال الخلية',
 } satisfies Record<keyof typeof zh, string>

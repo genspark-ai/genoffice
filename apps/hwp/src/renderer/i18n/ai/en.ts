@@ -7,7 +7,7 @@ export const en = {
   aiEditorNotReady: 'Hangul editor is still loading…',
   aiEmptyTitle: 'Ask about this Hangul document',
   aiEmptyBody:
-    'Summarize, translate, or ask questions. You can also search the web. Editing is not available in this first release.',
+    'Summarize, translate, or rewrite a selection or paragraph. You can also fill fields, edit table cells, or search the web.',
   aiNewChat: 'New chat',
   aiSend: 'Send',
   aiStop: 'Stop',
@@ -31,4 +31,12 @@ export const en = {
   aiCreditsExhausted: 'Out of credits — top up at genspark.ai',
   aiToolWebSearch: 'Web search',
   aiToolWebSearchDone: 'Searched "{query}" · {count} results',
+  aiToolReplaceParagraph: 'Replace paragraph',
+  aiToolReplaceParagraphDone: 'Replaced the current paragraph',
+  aiToolReplaceSelection: 'Replace selection',
+  aiToolReplaceSelectionDone: 'Replaced the selection',
+  aiToolSetField: 'Fill field',
+  aiToolSetFieldDone: 'Filled the field',
+  aiToolReplaceCell: 'Replace cell',
+  aiToolReplaceCellDone: 'Replaced the cell',
 } satisfies Record<keyof typeof zh, string>

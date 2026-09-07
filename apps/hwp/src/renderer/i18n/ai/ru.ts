@@ -7,7 +7,7 @@ export const ru = {
   aiEditorNotReady: 'Редактор Hangul ещё загружается…',
   aiEmptyTitle: 'Спросите об этом документе Hangul',
   aiEmptyBody:
-    'Суммируйте, переводите или задавайте вопросы. Можно также искать в интернете. Редактирование в этой версии недоступно.',
+    'Суммируйте, переводите или переписывайте выделение либо абзац. Можно также заполнять поля, править ячейки и искать в интернете.',
   aiNewChat: 'Новый чат',
   aiSend: 'Отправить',
   aiStop: 'Стоп',
@@ -31,4 +31,12 @@ export const ru = {
   aiCreditsExhausted: 'Кредиты закончились — пополните на genspark.ai',
   aiToolWebSearch: 'Веб-поиск',
   aiToolWebSearchDone: 'Поиск «{query}» · {count} результатов',
+  aiToolReplaceParagraph: 'Заменить абзац',
+  aiToolReplaceParagraphDone: 'Текущий абзац заменён',
+  aiToolReplaceSelection: 'Заменить выделение',
+  aiToolReplaceSelectionDone: 'Выделение заменено',
+  aiToolSetField: 'Заполнить поле',
+  aiToolSetFieldDone: 'Поле заполнено',
+  aiToolReplaceCell: 'Заменить ячейку',
+  aiToolReplaceCellDone: 'Ячейка заменена',
 } satisfies Record<keyof typeof zh, string>
