@@ -30,12 +30,4 @@ export const th = {
   aiCreditsExhausted: 'เครดิตหมด — เติมได้ที่ genspark.ai',
   aiToolWebSearch: 'ค้นหาเว็บ',
   aiToolWebSearchDone: 'ค้นหา "{query}" · {count} รายการ',
-  aiToolReplaceParagraph: 'แทนที่ย่อหน้า',
-  aiToolReplaceParagraphDone: 'แทนที่ย่อหน้าปัจจุบันแล้ว',
-  aiToolReplaceSelection: 'แทนที่ส่วนที่เลือก',
-  aiToolReplaceSelectionDone: 'แทนที่ส่วนที่เลือกแล้ว',
-  aiToolSetField: 'กรอกฟิลด์',
-  aiToolSetFieldDone: 'กรอกฟิลด์แล้ว',
-  aiToolReplaceCell: 'แทนที่เซลล์',
-  aiToolReplaceCellDone: 'แทนที่เซลล์แล้ว',
 } satisfies Record<keyof typeof zh, string>

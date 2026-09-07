@@ -29,12 +29,4 @@ export const he = {
   aiCreditsExhausted: 'נגמרו הקרדיטים — טענו ב-genspark.ai',
   aiToolWebSearch: 'חיפוש ברשת',
   aiToolWebSearchDone: 'חיפוש "{query}" · {count} תוצאות',
-  aiToolReplaceParagraph: 'החלפת פסקה',
-  aiToolReplaceParagraphDone: 'הפסקה הנוכחית הוחלפה',
-  aiToolReplaceSelection: 'החלפת בחירה',
-  aiToolReplaceSelectionDone: 'הבחירה הוחלפה',
-  aiToolSetField: 'מילוי שדה',
-  aiToolSetFieldDone: 'השדה מולא',
-  aiToolReplaceCell: 'החלפת תא',
-  aiToolReplaceCellDone: 'התא הוחלף',
 } satisfies Record<keyof typeof zh, string>

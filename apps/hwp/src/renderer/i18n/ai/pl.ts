@@ -31,12 +31,4 @@ export const pl = {
   aiCreditsExhausted: 'Brak kredytów — doładuj na genspark.ai',
   aiToolWebSearch: 'Wyszukiwanie w sieci',
   aiToolWebSearchDone: 'Wyszukano „{query}" · {count} wyników',
-  aiToolReplaceParagraph: 'Zastąp akapit',
-  aiToolReplaceParagraphDone: 'Zastąpiono bieżący akapit',
-  aiToolReplaceSelection: 'Zastąp zaznaczenie',
-  aiToolReplaceSelectionDone: 'Zastąpiono zaznaczenie',
-  aiToolSetField: 'Wypełnij pole',
-  aiToolSetFieldDone: 'Wypełniono pole',
-  aiToolReplaceCell: 'Zastąp komórkę',
-  aiToolReplaceCellDone: 'Zastąpiono komórkę',
 } satisfies Record<keyof typeof zh, string>

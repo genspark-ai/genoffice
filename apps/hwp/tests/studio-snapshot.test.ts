@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   hasEmbedNewDoc,
   isPwaPath,
-  exposePrepareTextCommand,
-  hasPrepareTextCommand,
   keepEmbedNewDoc,
   stripAbandonedStudioPatches,
   stripPwaHtml,
@@ -43,46 +41,6 @@ describe('studio snapshot helpers', () => {
   it('fails loudly when the embed command filter is no longer in the bundle', () => {
     expect(() => keepEmbedNewDoc('file:new-doc registerAll embed')).toThrow(
       'embed command filter changed',
-    )
-  })
-
-  it('exposes prepareTextCommand next to getSelectionContext', () => {
-    const stock = [
-      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
-      'return{selectedTextSha256:o}}async applyTextCommand(e){return e}',
-      'async getSelectionContext(){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.getSelectionContext()},async applyTextCommand(e){return e}',
-      'case`getSelectionContext`:return ak(i,`getSelectionContext params`),n.getSelectionContext();case`applyTextCommand`:return n.applyTextCommand(e)',
-    ].join(';')
-    const next = exposePrepareTextCommand(stock)
-    expect(hasPrepareTextCommand(next)).toBe(true)
-    expect(next).toContain('prepareTextCommand(){')
-    expect(next).toContain('case`prepareTextCommand`')
-    expect(next).toContain('case`listBodyParagraphs`')
-    expect(next).toContain('case`listTables`')
-    expect(next).toContain('case`setField`')
-    expect(next).toContain('selectionStart')
-    expect(next).toContain('Gk(this.deps.wasm,e.target)')
-    expect(exposePrepareTextCommand(next)).toBe(next)
-  })
-
-  it('upgrades a v2 prepare surface to include tables', () => {
-    const v2 = [
-      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
-      '/*genoffice-prepare-text-v2*/prepareTextCommand(){return 1},setField(e,t){this.syncGeneration();return this.deps.wasm.setFieldValueByName(String(e??``),String(t??``))}async applyTextCommand(e){return e}',
-      'async setField(e,t){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.setField(e,t)},async applyTextCommand(e){return e}',
-      'case`setField`:return n.setField(i.name,i.value);case`applyTextCommand`:return n.applyTextCommand(e)',
-    ].join(';')
-    const next = exposePrepareTextCommand(v2)
-    expect(next).toContain('/*genoffice-prepare-text-v3*/')
-    expect(next).toContain('listTables(){')
-    expect(next).toContain('case`listTables`')
-    expect(next).toContain('case`replaceCell`')
-    expect(exposePrepareTextCommand(next)).toBe(next)
-  })
-
-  it('fails loudly when the document-agent surface is no longer in the bundle', () => {
-    expect(() => exposePrepareTextCommand('getSelectionContext applyTextCommand')).toThrow(
-      'paragraph snapshot helper changed',
     )
   })
 

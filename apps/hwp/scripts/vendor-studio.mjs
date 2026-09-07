@@ -16,7 +16,6 @@ import {
   REQUIRED_ASSET_EXTS,
   REQUIRED_RELATIVE,
   isPwaPath,
-  exposePrepareTextCommand,
   keepEmbedNewDoc,
   stripAbandonedStudioPatches,
   stripPwaHtml,
@@ -140,11 +139,7 @@ function tryStudioPatch(fn, js, label) {
 }
 
 function patchStudioSource(js, label) {
-  return tryStudioPatch(
-    exposePrepareTextCommand,
-    tryStudioPatch(keepEmbedNewDoc, stripAbandonedStudioPatches(js), label),
-    label,
-  )
+  return tryStudioPatch(keepEmbedNewDoc, stripAbandonedStudioPatches(js), label)
 }
 
 async function patchStudioJs() {

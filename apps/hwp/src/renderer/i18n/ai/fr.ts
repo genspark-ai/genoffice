@@ -31,12 +31,4 @@ export const fr = {
   aiCreditsExhausted: 'Crédits épuisés — rechargez sur genspark.ai',
   aiToolWebSearch: 'Recherche Web',
   aiToolWebSearchDone: 'Recherche « {query} » · {count} résultats',
-  aiToolReplaceParagraph: 'Remplacer le paragraphe',
-  aiToolReplaceParagraphDone: 'Paragraphe actuel remplacé',
-  aiToolReplaceSelection: 'Remplacer la sélection',
-  aiToolReplaceSelectionDone: 'Sélection remplacée',
-  aiToolSetField: 'Remplir le champ',
-  aiToolSetFieldDone: 'Champ rempli',
-  aiToolReplaceCell: 'Remplacer la cellule',
-  aiToolReplaceCellDone: 'Cellule remplacée',
 } satisfies Record<keyof typeof zh, string>
