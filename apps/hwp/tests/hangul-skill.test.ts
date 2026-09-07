@@ -127,6 +127,28 @@ describe('createHangulSkill', () => {
     expect(result.output).toContain('[1]')
   })
 
+  it('rejects a null or blank cell index instead of writing cell 0', async () => {
+    let called = false
+    const skill = createHangulSkill(() =>
+      deps({
+        replaceCell: async () => {
+          called = true
+          return { before: '칸', after: 'x' }
+        },
+      }),
+    )
+    for (const input of [
+      { table: null, row: 0, col: 0, text: 'x' },
+      { table: 0, row: '', col: 0, text: 'x' },
+      { table: 0, row: 0, col: '  ', text: 'x' },
+    ]) {
+      const result = await skill.executeTool({ id: '8', name: 'replace_cell', input })
+      expect(result.isError).toBe(true)
+      expect(result.output).toMatch(/must be an integer/)
+    }
+    expect(called).toBe(false)
+  })
+
   it('surfaces replace_paragraph failures', async () => {
     const skill = createHangulSkill(() =>
       deps({

@@ -117,7 +117,12 @@ const TOOLS: AgentToolDef[] = [
 const MUTATING_TOOLS = ['replace_paragraph', 'replace_selection', 'set_field', 'replace_cell']
 
 function requireToolIndex(value: unknown, label: string): number {
-  if (typeof value === 'boolean') throw new Error(`${label} must be an integer`)
+  if (value == null || value === '' || typeof value === 'boolean') {
+    throw new Error(`${label} must be an integer`)
+  }
+  if (typeof value === 'string' && value.trim() === '') {
+    throw new Error(`${label} must be an integer`)
+  }
   const n = typeof value === 'number' ? value : Number(value)
   if (!Number.isInteger(n)) throw new Error(`${label} must be an integer`)
   return n

@@ -357,10 +357,7 @@ export async function replaceCurrentSelection(
     throw new Error(SELECTION_NOT_IN_PARAGRAPH)
   }
   const paragraph = prepared.text ?? ''
-  const selected =
-    prepared.selectionEnd <= paragraph.length
-      ? paragraph.slice(prepared.selectionStart, prepared.selectionEnd)
-      : Array.from(paragraph).slice(prepared.selectionStart, prepared.selectionEnd).join('')
+  const selected = paragraph.slice(prepared.selectionStart, prepared.selectionEnd)
   const next = spliceParagraphText(
     paragraph,
     prepared.selectionStart,
