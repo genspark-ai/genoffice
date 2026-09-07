@@ -116,7 +116,14 @@ export interface HangulStudioFacade {
     format: HangulFormatSpec,
     index?: number,
     indexes?: number[],
-  ): Promise<{ indexes: number[]; applied: string[] }>
+    cell?: HangulCellFormatTarget,
+  ): Promise<{ indexes: number[]; applied: string[]; table?: number; row?: number }>
+}
+
+export interface HangulCellFormatTarget {
+  table: number
+  row: number
+  col?: number
 }
 
 export interface StudioTextSource {
@@ -1035,6 +1042,61 @@ export async function applyParagraphFormat(
   return { indexes: formatted, applied }
 }
 
+export async function applyTableCellFormat(
+  studio: StudioTextSource,
+  format: HangulFormatSpec,
+  target: HangulCellFormatTarget,
+): Promise<{ table: number; row: number; cols: number[]; applied: string[] }> {
+  if (format.list != null) throw new Error('list is not supported in table cells')
+  const applied = formatAppliedLabels(format)
+  if (applied.length === 0) throw new Error(FORMAT_EMPTY)
+  const tables = await listDocumentTables(studio)
+  const table = tables[target.table]
+  if (!table) throw new Error(TABLE_NOT_FOUND)
+  if (!Number.isInteger(target.row) || target.row < 0 || target.row >= table.rows) {
+    throw new Error(TABLE_NOT_FOUND)
+  }
+  if (target.col != null && (!Number.isInteger(target.col) || target.col < 0 || target.col >= table.cols)) {
+    throw new Error(TABLE_NOT_FOUND)
+  }
+  const cells = table.cells.filter(
+    (cell) => cell.row === target.row && (target.col == null || cell.col === target.col),
+  )
+  if (cells.length === 0) throw new Error(TABLE_NOT_FOUND)
+  const char = charFormatPayload(format)
+  const para = paraFormatPayload(format)
+  const cols: number[] = []
+  for (const cell of cells) {
+    const first = cell.text.split('\n')[0] ?? ''
+    const end = first.length
+    if (char && end > 0) {
+      await requestStudio(studio, 'applyCellCharFormat', {
+        section: table.section,
+        paragraph: table.paragraph,
+        control: table.control,
+        cellIndex: cell.index,
+        cellPara: 0,
+        start: 0,
+        end,
+        format: char,
+      })
+    }
+    if (para) {
+      await requestStudio(studio, 'applyCellParaFormat', {
+        section: table.section,
+        paragraph: table.paragraph,
+        control: table.control,
+        cellIndex: cell.index,
+        cellPara: 0,
+        format: para,
+      })
+    }
+    if ((char && end > 0) || para) cols.push(cell.col)
+  }
+  if (cols.length === 0) throw new Error(FORMAT_EMPTY_RANGE)
+  return { table: target.table, row: target.row, cols, applied }
+}
+
 function isLockedFormatError(message: string): boolean {
   return (
     message === PARAGRAPH_NOT_EDITABLE || /table|control|field|locked/i.test(message)
@@ -1060,6 +1122,14 @@ export function createStudioFacade(studio: StudioTextSource): HangulStudioFacade
     replaceCell: (table, row, col, text) => replaceTableCell(studio, table, row, col, text),
     insertTable: (rows, cols, cells, afterIndex) =>
       insertDocumentTable(studio, rows, cols, cells, afterIndex),
-    applyFormat: (format, index, indexes) => applyParagraphFormat(studio, format, index, indexes),
+    applyFormat: (format, index, indexes, cell) =>
+      cell
+        ? applyTableCellFormat(studio, format, cell).then((result) => ({
+            indexes: result.cols,
+            applied: result.applied,
+            table: result.table,
+            row: result.row,
+          }))
+        : applyParagraphFormat(studio, format, index, indexes),
   }
 }

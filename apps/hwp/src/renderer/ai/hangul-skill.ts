@@ -25,7 +25,7 @@ const SYSTEM_PROMPT = [
   '- replace_paragraph changes one existing paragraph, once per turn (hashes change after each apply). Prefer replace_selection when the user has a selection and wants only that span changed.',
   '- Small in-place fixes stay on replace_selection / one replace_paragraph. Multi-paragraph additions go through insert_content. Omit afterIndex / index to use the caret.',
   '- Fields (누름틀): get_fields / set_field. Existing tables: get_tables / replace_cell (one leftover cell). New tables: insert_table with cells[][] already filled — never insert an empty table and then call replace_cell once per cell. Never fake a table with tabs, markdown pipes, or ASCII.',
-  '- Formatting (bold/italic/underline/strikethrough, fontSize in points, color hex, font name, align, lineSpacing, indentLeft/Right/FirstLine in points, bullet/number lists): apply_format on existing paragraphs. Skip locked rows. After insert_content, format the title at the starting index from that tool result — not index 0 when that row is locked. Do not rewrite a paragraph just to change style. Do not tell the user formatting was applied unless apply_format succeeded.',
+  '- Formatting (bold/italic/underline/strikethrough, fontSize in points, color hex, font name, align, lineSpacing, indentLeft/Right/FirstLine in points, bullet/number lists): apply_format on existing paragraphs, or on table cells with table + row from get_tables (omit col to format the whole row — e.g. header / first row bold 13pt). Do not mix table/row with index/indexes. Skip locked body rows. After insert_content, format the title at the starting index from that tool result — not index 0 when that row is locked. Do not rewrite a paragraph just to change style. Do not tell the user to format a table row by hand. Do not tell the user formatting was applied unless apply_format succeeded.',
   '- Replacements are plain text: no C0 controls. Headers and footnotes are not editable.',
   '',
   '# Writing a new document',
@@ -50,6 +50,7 @@ const SYSTEM_PROMPT = [
   '- HG-5 Drawing a table with tabs, markdown pipes, or ASCII lines instead of insert_table.',
   '- HG-6 Rewriting a paragraph with replace_paragraph only to change bold/align/list/size.',
   '- HG-7 Inserting an empty table, then firing many replace_cell calls. Pass cells[][] on insert_table.',
+  '- HG-8 Telling the user table-cell format is impossible, or formatting a body paragraph instead of apply_format with table + row.',
 ].join('\n')
 
 const TOOLS: AgentToolDef[] = [
@@ -180,7 +181,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'apply_format',
     description:
-      'Set character or paragraph formatting on existing body text. Omit index to format the caret paragraph (or the current selection span for character styles). Use indexes to format several paragraphs in one call. Do not rewrite text just to change style.',
+      'Set character or paragraph formatting on existing body text, or on table cells. Body: omit index to format the caret paragraph (or the current selection span for character styles); use indexes for several paragraphs. Table cells: pass table + row from get_tables (omit col to format the whole row). Do not mix table/row with index/indexes. Do not rewrite text just to change style.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -192,6 +193,18 @@ const TOOLS: AgentToolDef[] = [
           type: 'array',
           items: { type: 'number' },
           description: 'Format several paragraphs. At most 40. Overrides index.',
+        },
+        table: {
+          type: 'number',
+          description: '0-based table index from get_tables. With row, formats cells instead of a body paragraph.',
+        },
+        row: {
+          type: 'number',
+          description: '0-based table row. Required with table. Omit col to format every cell in the row.',
+        },
+        col: {
+          type: 'number',
+          description: '0-based table column. Omit to format the whole row.',
         },
         bold: { type: 'boolean' },
         italic: { type: 'boolean' },
@@ -319,7 +332,8 @@ export interface HangulSkillDeps {
     format: HangulFormatSpec,
     index?: number,
     indexes?: number[],
-  ): Promise<{ indexes: number[]; applied: string[] }>
+    cell?: { table: number; row: number; col?: number },
+  ): Promise<{ indexes: number[]; applied: string[]; table?: number; row?: number }>
 }
 
 function formatParagraphs(items: HangulParagraphPreview[]): string {
@@ -609,11 +623,23 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
       if (call.name === 'apply_format') {
         let index: number | undefined
         let indexes: number[] | undefined
+        let cell: { table: number; row: number; col?: number } | undefined
         try {
           index = optionalToolIndex(call.input.index)
           if (call.input.indexes != null) {
             if (!Array.isArray(call.input.indexes)) throw new Error('indexes must be an array')
             indexes = call.input.indexes.map((value, i) => requireToolIndex(value, `indexes[${i}]`))
+          }
+          const table = optionalToolIndex(call.input.table, 'table')
+          const row = optionalToolIndex(call.input.row, 'row')
+          const col = optionalToolIndex(call.input.col, 'col')
+          if (table != null || row != null || col != null) {
+            if (table == null) throw new Error('table must be an integer')
+            if (row == null) throw new Error('row must be an integer')
+            if (index != null || indexes != null) {
+              throw new Error('do not mix table/row with index/indexes')
+            }
+            cell = { table, row, col }
           }
         } catch (err) {
           return {
@@ -641,9 +667,13 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
           format.list = call.input.list as HangulFormatSpec['list']
         }
         try {
-          const result = await deps.applyFormat(format, index, indexes)
+          const result = await deps.applyFormat(format, index, indexes, cell)
+          const target =
+            result.table != null && result.row != null
+              ? `table[${result.table}] row ${result.row} cell(s) [${result.indexes.join(', ')}]`
+              : `paragraph(s) [${result.indexes.join(', ')}]`
           return {
-            output: `Applied ${result.applied.join(', ') || 'format'} to paragraph(s) [${result.indexes.join(', ')}].`,
+            output: `Applied ${result.applied.join(', ') || 'format'} to ${target}.`,
             mutated: true,
             summary: t('aiToolApplyFormatDone'),
           }
@@ -664,10 +694,20 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
           finalText,
         )
       if (claimedFormat && !formatOk) {
+        const claimedTableCell =
+          /표\s*(의\s*)?(첫|헤더|머리)|table\s*(header|first)\s*row|첫\s*행|셀.*(굵|서식|pt)|first row.*(bold|13)/i.test(
+            finalText,
+          )
         if (executed.some((call) => call.name === 'apply_format' && !call.ok)) {
+          return claimedTableCell
+            ? 'apply_format failed. For a table row or cell, call apply_format with table and row from get_tables (omit col for the whole row). Do not claim formatting succeeded.'
+            : 'apply_format failed. Call get_paragraphs and apply_format on the first editable paragraph — the title is not index 0 when that row is locked. ' +
+              'Do not claim formatting succeeded.'
+        }
+        if (claimedTableCell) {
           return (
-            'apply_format failed. Call get_paragraphs and apply_format on the first editable paragraph — the title is not index 0 when that row is locked. ' +
-            'Do not claim formatting succeeded.'
+            'You claimed to format a table row or cell, but apply_format did not run. Call apply_format with table and row from get_tables (omit col to format the whole row). ' +
+            'Do not format a body paragraph instead, and do not tell the user to do it by hand.'
           )
         }
         return (

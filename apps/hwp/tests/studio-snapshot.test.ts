@@ -64,6 +64,9 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('case`insertFilledParagraphs`')
     expect(next).toContain('case`insertTable`')
     expect(next).toContain('case`applyBodyCharFormat`')
+    expect(next).toContain('case`applyCellCharFormat`')
+    expect(next).toContain('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))')
+    expect(next).toContain('applyParaFormatInCell(e,t,n,r,i,JSON.stringify(p))')
     expect(next).toContain('/*genoffice-prepare-text-v7*/')
     expect(next).toContain('async insertFilledParagraphs(e,t,n){')
     expect(next).toContain('},async insertFilledParagraphs(e,t,n){if(await')
@@ -257,7 +260,27 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('findOrCreateFontId(String(a.fontName))')
     expect(next).toContain('case`insertTable`')
     expect(next).toContain('case`applyBodyParaFormat`')
+    expect(next).toContain('case`applyCellCharFormat`')
+    expect(next).toContain('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))')
     expect(next).not.toMatch(/,insertTable\(e,t,n,r\)\{/)
+    expect(next).not.toMatch(/,applyCellCharFormat\(e,t,n,r,i,a,o,s\)\{/)
+    expect(exposePrepareTextCommand(next)).toBe(next)
+  })
+
+  it('attaches cell format methods on a v7 surface that only has body format', () => {
+    const v7 = [
+      '/*genoffice-prepare-text-v7*/prepareTextCommand(){return{selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration();return []}',
+      'findOrCreateFontId(String(a.fontName))',
+      'applyCharFormat(e,t,n,r,JSON.stringify(a))',
+      'applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==`object`?Object.assign({},n):{};let i=this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r));if(typeof i==`string`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||`applyParaFormat failed`));return i}async applyTextCommand(e){return e}',
+      'async applyBodyParaFormat(e,t,n){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.applyBodyParaFormat(e,t,n)},async applyTextCommand(e){return e}',
+      'case`applyBodyParaFormat`:return n.applyBodyParaFormat(i.section,i.paragraph,i.format);case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join('')
+    const next = exposePrepareTextCommand(v7)
+    expect(next).toContain('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))')
+    expect(next).toContain('case`applyCellCharFormat`')
+    expect(next).toContain('case`applyCellParaFormat`')
+    expect(next).not.toMatch(/,applyCellCharFormat\(e,t,n,r,i,a,o,s\)\{/)
     expect(exposePrepareTextCommand(next)).toBe(next)
   })
 

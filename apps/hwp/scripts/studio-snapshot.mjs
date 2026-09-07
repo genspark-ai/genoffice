@@ -101,9 +101,13 @@ function charFormatMethod() {
   return `applyBodyCharFormat(e,t,n,r,i){this.syncGeneration();let a=i&&typeof i==\`object\`?Object.assign({},i):{};if(a.fontName){let o=this.deps.wasm.findOrCreateFontId(String(a.fontName));if(!(o>=0))throw Error(\`font not found\`);a.fontId=o;delete a.fontName}let s=this.deps.wasm.applyCharFormat(e,t,n,r,JSON.stringify(a));if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}if(s&&s.ok===!1)throw Error(String(s.error||s.message||\`applyCharFormat failed\`));return s}`
 }
 
+function cellFormatMethods() {
+  return `applyCellCharFormat(e,t,n,r,i,a,o,s){this.syncGeneration();let c=s&&typeof s==\`object\`?Object.assign({},s):{};if(c.fontName){let f=this.deps.wasm.findOrCreateFontId(String(c.fontName));if(!(f>=0))throw Error(\`font not found\`);c.fontId=f;delete c.fontName}let x=this.deps.wasm.applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c));if(typeof x==\`string\`)try{x=JSON.parse(x)}catch{}if(x&&x.ok===!1)throw Error(String(x.error||x.message||\`applyCharFormatInCell failed\`));return x}applyCellParaFormat(e,t,n,r,i,a){this.syncGeneration();let p=a&&typeof a==\`object\`?Object.assign({},a):{};let x=this.deps.wasm.applyParaFormatInCell(e,t,n,r,i,JSON.stringify(p));if(typeof x==\`string\`)try{x=JSON.parse(x)}catch{}if(x&&x.ok===!1)throw Error(String(x.error||x.message||\`applyParaFormatInCell failed\`));return x}`
+}
+
 function formatAgentMethods() {
   // Dialog-free table + char/para format. Wasm bridge already wraps createTable / apply*.
-  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r));if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}`
+  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,JSON.stringify(r));if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}${cellFormatMethods()}`
 }
 
 function insertAgentMethod() {
@@ -214,7 +218,7 @@ function insertHandler(ready, agent) {
 }
 
 function formatHandler(ready, agent) {
-  return `async insertTable(e,t,n,r){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertTable(e,t,n,r)},async applyBodyCharFormat(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyCharFormat(e,t,n,r,i)},async applyBodyParaFormat(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyParaFormat(e,t,n)}`
+  return `async insertTable(e,t,n,r){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertTable(e,t,n,r)},async applyBodyCharFormat(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyCharFormat(e,t,n,r,i)},async applyBodyParaFormat(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyParaFormat(e,t,n)},async applyCellCharFormat(e,t,n,r,i,a,o,s){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellCharFormat(e,t,n,r,i,a,o,s)},async applyCellParaFormat(e,t,n,r,i,a){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellParaFormat(e,t,n,r,i,a)}`
 }
 
 function prepareSurfaceComplete(js) {
@@ -226,7 +230,10 @@ function prepareSurfaceComplete(js) {
     js.includes('case`insertFilledParagraphs`') &&
     js.includes('case`insertTable`') &&
     js.includes('case`applyBodyCharFormat`') &&
+    js.includes('case`applyCellCharFormat`') &&
     js.includes('insertTable(e,t,n,r){') &&
+    js.includes('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))') &&
+    js.includes('applyParaFormatInCell(e,t,n,r,i,JSON.stringify(p))') &&
     js.includes('Number(a?.paraIdx??t)') &&
     !js.includes('a&&a.paraIdx??t') &&
     js.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') &&
@@ -256,7 +263,7 @@ function prepareAgentHandlers(ready, agent) {
 }
 
 function prepareAgentRoutes(guard, params, host) {
-  return `case\`getSelectionContext\`:return ${guard}(${params},\`getSelectionContext params\`),${host}.getSelectionContext();case\`prepareTextCommand\`:return ${host}.prepareTextCommand();case\`listBodyParagraphs\`:return ${host}.listBodyParagraphs();case\`listFields\`:return ${host}.listFields();case\`setField\`:return ${host}.setField(${params}.name,${params}.value);case\`listTables\`:return ${host}.listTables();case\`replaceCell\`:return ${host}.replaceCell(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.text);case\`insertBodyParagraphs\`:return ${host}.insertBodyParagraphs(${params}.section,${params}.index,${params}.count);case\`insertFilledParagraphs\`:return ${host}.insertFilledParagraphs(${params}.section,${params}.index,${params}.texts);case\`insertTable\`:return ${host}.insertTable(${params}.section,${params}.index,${params}.rows,${params}.cols);case\`applyBodyCharFormat\`:return ${host}.applyBodyCharFormat(${params}.section,${params}.paragraph,${params}.start,${params}.end,${params}.format);case\`applyBodyParaFormat\`:return ${host}.applyBodyParaFormat(${params}.section,${params}.paragraph,${params}.format);case\`applyTextCommand\`:`
+  return `case\`getSelectionContext\`:return ${guard}(${params},\`getSelectionContext params\`),${host}.getSelectionContext();case\`prepareTextCommand\`:return ${host}.prepareTextCommand();case\`listBodyParagraphs\`:return ${host}.listBodyParagraphs();case\`listFields\`:return ${host}.listFields();case\`setField\`:return ${host}.setField(${params}.name,${params}.value);case\`listTables\`:return ${host}.listTables();case\`replaceCell\`:return ${host}.replaceCell(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.text);case\`insertBodyParagraphs\`:return ${host}.insertBodyParagraphs(${params}.section,${params}.index,${params}.count);case\`insertFilledParagraphs\`:return ${host}.insertFilledParagraphs(${params}.section,${params}.index,${params}.texts);case\`insertTable\`:return ${host}.insertTable(${params}.section,${params}.index,${params}.rows,${params}.cols);case\`applyBodyCharFormat\`:return ${host}.applyBodyCharFormat(${params}.section,${params}.paragraph,${params}.start,${params}.end,${params}.format);case\`applyBodyParaFormat\`:return ${host}.applyBodyParaFormat(${params}.section,${params}.paragraph,${params}.format);case\`applyCellCharFormat\`:return ${host}.applyCellCharFormat(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.cellPara,${params}.start,${params}.end,${params}.format);case\`applyCellParaFormat\`:return ${host}.applyCellParaFormat(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.cellPara,${params}.format);case\`applyTextCommand\`:`
 }
 
 function stripClassMethodCommas(js) {
@@ -274,6 +281,8 @@ function stripClassMethodCommas(js) {
     .replace(/,insertTable\(e,t,n,r\)\{/g, 'insertTable(e,t,n,r){')
     .replace(/,applyBodyCharFormat\(e,t,n,r,i\)\{/g, 'applyBodyCharFormat(e,t,n,r,i){')
     .replace(/,applyBodyParaFormat\(e,t,n\)\{/g, 'applyBodyParaFormat(e,t,n){')
+    .replace(/,applyCellCharFormat\(e,t,n,r,i,a,o,s\)\{/g, 'applyCellCharFormat(e,t,n,r,i,a,o,s){')
+    .replace(/,applyCellParaFormat\(e,t,n,r,i,a\)\{/g, 'applyCellParaFormat(e,t,n,r,i,a){')
 }
 
 function attachTableSurface(js) {
@@ -353,7 +362,7 @@ function attachFormatSurface(js) {
   })
   next = next.replace(
     INSERT_FILLED_ROUTE_END_RE,
-    'case`insertFilledParagraphs`:return $1.insertFilledParagraphs($2.section,$2.index,$2.texts);case`insertTable`:return $1.insertTable($2.section,$2.index,$2.rows,$2.cols);case`applyBodyCharFormat`:return $1.applyBodyCharFormat($2.section,$2.paragraph,$2.start,$2.end,$2.format);case`applyBodyParaFormat`:return $1.applyBodyParaFormat($2.section,$2.paragraph,$2.format);case`applyTextCommand`:',
+    'case`insertFilledParagraphs`:return $1.insertFilledParagraphs($2.section,$2.index,$2.texts);case`insertTable`:return $1.insertTable($2.section,$2.index,$2.rows,$2.cols);case`applyBodyCharFormat`:return $1.applyBodyCharFormat($2.section,$2.paragraph,$2.start,$2.end,$2.format);case`applyBodyParaFormat`:return $1.applyBodyParaFormat($2.section,$2.paragraph,$2.format);case`applyCellCharFormat`:return $1.applyCellCharFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.start,$2.end,$2.format);case`applyCellParaFormat`:return $1.applyCellParaFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.format);case`applyTextCommand`:',
   )
   return next
 }
@@ -364,6 +373,33 @@ const CHAR_FORMAT_V6_RE =
 function attachFontSurface(js) {
   let next = stripClassMethodCommas(js.replace(PREPARE_TEXT_V6_MARK, PREPARE_TEXT_V7_MARK))
   next = next.replace(CHAR_FORMAT_V6_RE, charFormatMethod())
+  return next
+}
+
+const APPLY_PARA_HANDLER_END_RE =
+  /async applyBodyParaFormat\(e,t,n\)\{if\(await ([A-Za-z_$][\w$]*),!([A-Za-z_$][\w$]*)\)throw Error\(`Document agent is not initialized`\);return \2\.applyBodyParaFormat\(e,t,n\)\},async applyTextCommand\(/
+const APPLY_PARA_ROUTE_END_RE =
+  /case`applyBodyParaFormat`:return ([A-Za-z_$][\w$]*)\.applyBodyParaFormat\(([A-Za-z_$][\w$]*)\.section,\2\.paragraph,\2\.format\);case`applyTextCommand`:/
+
+function attachCellFormatSurface(js) {
+  if (
+    js.includes('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))') &&
+    js.includes('case`applyCellCharFormat`')
+  ) {
+    return js
+  }
+  let next = stripClassMethodCommas(js)
+  next = next.replace(
+    /applyParaFormat failed`\)\);return i\}async applyTextCommand/,
+    `applyParaFormat failed\`));return i}${cellFormatMethods()}async applyTextCommand`,
+  )
+  next = next.replace(APPLY_PARA_HANDLER_END_RE, (_, ready, agent) => {
+    return `async applyBodyParaFormat(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyParaFormat(e,t,n)},async applyCellCharFormat(e,t,n,r,i,a,o,s){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellCharFormat(e,t,n,r,i,a,o,s)},async applyCellParaFormat(e,t,n,r,i,a){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyCellParaFormat(e,t,n,r,i,a)},async applyTextCommand(`
+  })
+  next = next.replace(
+    APPLY_PARA_ROUTE_END_RE,
+    'case`applyBodyParaFormat`:return $1.applyBodyParaFormat($2.section,$2.paragraph,$2.format);case`applyCellCharFormat`:return $1.applyCellCharFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.start,$2.end,$2.format);case`applyCellParaFormat`:return $1.applyCellParaFormat($2.section,$2.paragraph,$2.control,$2.cellIndex,$2.cellPara,$2.format);case`applyTextCommand`:',
+  )
   return next
 }
 
@@ -396,8 +432,10 @@ export function exposePrepareTextCommand(js) {
           repairFormatJsonStringify(
             repairStrippedFilledHandlerComma(
               repairIllegalNullishMix(
-                attachFontSurface(
-                  attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+                attachCellFormatSurface(
+                  attachFontSurface(
+                    attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+                  ),
                 ),
               ),
             ),
@@ -413,6 +451,13 @@ export function exposePrepareTextCommand(js) {
       upgraded.includes('}async insertFilledParagraphs(e,t,n){if(await')
     ) {
       throw new Error('rhwp-studio prepareTextCommand surface changed — update exposePrepareTextCommand()')
+    }
+    if (
+      closed.includes('applyParaFormat(e,t,JSON.stringify(r))') &&
+      (!upgraded.includes('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))') ||
+        !upgraded.includes('case`applyCellCharFormat`'))
+    ) {
+      throw new Error('rhwp-studio cell format surface changed — update attachCellFormatSurface()')
     }
     return upgraded
   }
@@ -445,6 +490,8 @@ export function exposePrepareTextCommand(js) {
     !next.includes('case`insertBodyParagraphs`') ||
     !next.includes('case`insertFilledParagraphs`') ||
     !next.includes('case`insertTable`') ||
+    !next.includes('case`applyCellCharFormat`') ||
+    !next.includes('applyCharFormatInCell(e,t,n,r,i,a,o,JSON.stringify(c))') ||
     !next.includes('Number(a?.paraIdx??t)') ||
     !next.includes('applyCharFormat(e,t,n,r,JSON.stringify(a))') ||
     !next.includes('insertTextInCell(e,t,n,r,0,0,x)') ||

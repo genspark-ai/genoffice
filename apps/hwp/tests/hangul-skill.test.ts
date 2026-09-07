@@ -61,6 +61,8 @@ describe('createHangulSkill', () => {
     expect(skill.systemPrompt).toMatch(/starting index from that tool result/)
     expect(skill.systemPrompt).toMatch(/HG-5/)
     expect(skill.systemPrompt).toMatch(/HG-6[\s\S]*HG-7/)
+    expect(skill.systemPrompt).toMatch(/HG-8/)
+    expect(skill.systemPrompt).toMatch(/table \+ row/)
     expect(skill.systemPrompt).not.toMatch(/no editing tools/i)
     expect(skill.systemPrompt).not.toMatch(/You cannot create new body paragraphs/)
   })
@@ -290,6 +292,12 @@ describe('createHangulSkill', () => {
     expect(
       skill.verifyResponse?.('제목을 굵게 했습니다.', [{ name: 'apply_format', ok: false }]),
     ).toMatch(/apply_format failed/)
+    expect(
+      skill.verifyResponse?.('표 첫 행은 굵게 13pt로 지정했습니다.', []),
+    ).toMatch(/table and row/)
+    expect(
+      skill.verifyResponse?.('표 첫 행은 굵게 13pt로 지정했습니다.', [{ name: 'apply_format', ok: true }]),
+    ).toBeNull()
   })
 
   it('replaces a selection and a field', async () => {
@@ -363,6 +371,40 @@ describe('createHangulSkill', () => {
     expect(format.output).toContain('bold=true')
     expect(formatArgs?.[1]).toBe(0)
     expect(formatArgs?.[0]).toMatchObject({ bold: true, align: 'center', color: 'FF0000', lineSpacing: 1.5 })
+  })
+
+  it('applies format to a table row without a body paragraph index', async () => {
+    let formatArgs: unknown[] | null = null
+    const skill = createHangulSkill(() =>
+      deps({
+        applyFormat: async (format, index, indexes, cell) => {
+          formatArgs = [format, index, indexes, cell]
+          return { indexes: [0, 1], applied: ['bold=true', 'fontSize=13'], table: 0, row: 0 }
+        },
+      }),
+    )
+    const format = await skill.executeTool({
+      id: '12',
+      name: 'apply_format',
+      input: { table: 0, row: 0, bold: true, fontSize: 13 },
+    })
+    expect(format.isError).toBeUndefined()
+    expect(format.mutated).toBe(true)
+    expect(format.output).toContain('table[0] row 0')
+    expect(format.output).toContain('bold=true')
+    expect(formatArgs).toEqual([
+      { bold: true, fontSize: 13 },
+      undefined,
+      undefined,
+      { table: 0, row: 0, col: undefined },
+    ])
+    const mixed = await skill.executeTool({
+      id: '13',
+      name: 'apply_format',
+      input: { table: 0, row: 0, index: 1, bold: true },
+    })
+    expect(mixed.isError).toBe(true)
+    expect(mixed.output).toMatch(/do not mix table\/row/)
   })
 
   it('does not ask the model to spray replace_cell after many unfilled cells', async () => {

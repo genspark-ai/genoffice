@@ -20,7 +20,9 @@ import {
   replaceTableCell,
   insertDocumentTable,
   applyParagraphFormat,
+  applyTableCellFormat,
   FORMAT_EMPTY_RANGE,
+  TABLE_NOT_FOUND,
   spliceParagraphText,
   getPlainText,
   getSelectionText,
@@ -1396,6 +1398,191 @@ describe('replaceCurrentParagraph', () => {
         0,
       ),
     ).rejects.toThrow(FORMAT_EMPTY_RANGE)
+  })
+
+  it('applies char format to every cell in a table row', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const result = await applyTableCellFormat(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 2,
+                control: 0,
+                rows: 2,
+                cols: 2,
+                cells: [
+                  { index: 0, row: 0, col: 0, text: '메뉴' },
+                  { index: 1, row: 0, col: 1, text: '가격' },
+                  { index: 2, row: 1, col: 0, text: '아메리카노' },
+                  { index: 3, row: 1, col: 1, text: '4500' },
+                ],
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { bold: true, fontSize: 13 },
+      { table: 0, row: 0 },
+    )
+    expect(result).toEqual({
+      table: 0,
+      row: 0,
+      cols: [0, 1],
+      applied: ['bold=true', 'fontSize=13'],
+    })
+    const charCalls = calls.filter((call) => call.method === 'applyCellCharFormat')
+    expect(charCalls).toHaveLength(2)
+    expect(charCalls[0]?.params).toEqual({
+      section: 0,
+      paragraph: 2,
+      control: 0,
+      cellIndex: 0,
+      cellPara: 0,
+      start: 0,
+      end: 2,
+      format: { bold: true, fontSize: 1300 },
+    })
+    expect(charCalls[1]?.params).toMatchObject({ cellIndex: 1, end: 2 })
+    expect(calls.some((call) => call.method === 'applyBodyCharFormat')).toBe(false)
+  })
+
+  it('formats one table cell when col is set', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const result = await applyTableCellFormat(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 1,
+                control: 0,
+                rows: 1,
+                cols: 2,
+                cells: [
+                  { index: 0, row: 0, col: 0, text: 'A' },
+                  { index: 1, row: 0, col: 1, text: 'B' },
+                ],
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { align: 'center' },
+      { table: 0, row: 0, col: 1 },
+    )
+    expect(result.cols).toEqual([1])
+    expect(calls.filter((call) => call.method === 'applyCellParaFormat')).toHaveLength(1)
+    expect(calls.find((call) => call.method === 'applyCellParaFormat')?.params).toMatchObject({
+      cellIndex: 1,
+      format: { alignment: 'center' },
+    })
+  })
+
+  it('uses UTF-16 units for cell char ranges', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    await applyTableCellFormat(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 1,
+                control: 0,
+                rows: 1,
+                cols: 1,
+                cells: [{ index: 0, row: 0, col: 0, text: '😀메뉴' }],
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { bold: true },
+      { table: 0, row: 0 },
+    )
+    expect(calls.find((call) => call.method === 'applyCellCharFormat')?.params).toMatchObject({
+      start: 0,
+      end: 4,
+    })
+  })
+
+  it('rejects bold-only format on an empty table row', async () => {
+    await expect(
+      applyTableCellFormat(
+        studio({
+          _request: async (method) => {
+            if (method === 'listTables') {
+              return [
+                {
+                  section: 0,
+                  paragraph: 1,
+                  control: 0,
+                  rows: 1,
+                  cols: 2,
+                  cells: [
+                    { index: 0, row: 0, col: 0, text: '' },
+                    { index: 1, row: 0, col: 1, text: '' },
+                  ],
+                },
+              ]
+            }
+            return { ok: true }
+          },
+        }),
+        { bold: true },
+        { table: 0, row: 0 },
+      ),
+    ).rejects.toThrow(FORMAT_EMPTY_RANGE)
+  })
+
+  it('rejects a missing table index', async () => {
+    await expect(
+      applyTableCellFormat(
+        studio({
+          _request: async (method) => {
+            if (method === 'listTables') {
+              return [
+                {
+                  section: 0,
+                  paragraph: 1,
+                  control: 0,
+                  rows: 1,
+                  cols: 1,
+                  cells: [{ index: 0, row: 0, col: 0, text: '칸' }],
+                },
+              ]
+            }
+            return { ok: true }
+          },
+        }),
+        { bold: true },
+        { table: 1, row: 0 },
+      ),
+    ).rejects.toThrow(TABLE_NOT_FOUND)
+  })
+
+  it('rejects list format on table cells', async () => {
+    await expect(
+      applyTableCellFormat(
+        studio({
+          _request: async () => {
+            throw new Error('should not list tables')
+          },
+        }),
+        { list: 'bullet' },
+        { table: 0, row: 0 },
+      ),
+    ).rejects.toThrow('list is not supported in table cells')
   })
 
   it('does not treat a generic format error as mixed formatting', async () => {
