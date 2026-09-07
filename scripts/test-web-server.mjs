@@ -120,11 +120,42 @@ const ELECTRON_CHANNELS = {
 
 // Web Server 已实现的通道
 const WEB_SERVER_IMPLEMENTED = [
+  // App
   'app:get-language',
   'app:get-version',
   'app:get-platform',
+  'app:get-theme',
+  // AI
+  'ai:chat',
+  'ai:get-settings',
+  'ai:set-settings',
+  'ai:gsk-login',
+  'ai:stream',
+  'ai:web-search',
+  'ai:image-search',
+  // Docs
+  'docs:get-settings',
+  'docs:save-settings',
+  'docs:recent',
+  'docs:font-metrics',
+  'docs:pick-image',
+  // Project
   'project:list',
   'project:create',
+  'project:files',
+  'project:rename',
+  'project:delete',
+  'project:moveFile',
+  'project:timeline',
+  // Files
+  'files:pick',
+  'files:add',
+  'files:read-image',
+  // Web
+  'web:write-temp-file',
+  'web:read-file-bytes',
+  'web:make-temp-dir',
+  'web:save-file',
 ]
 
 // 测试结果收集
@@ -136,11 +167,25 @@ const results = {
 }
 
 async function testChannel(channel) {
+  // 根据通道类型构造参数
+  let body = { args: [] }
+  if (channel === 'project:create') {
+    body = { args: [{ name: 'Test Project' }] }
+  } else if (channel === 'project:files' || channel === 'project:rename' || channel === 'project:delete' || channel === 'project:timeline' || channel === 'project:moveFile') {
+    body = { args: [{ id: 'test-id' }] }
+  } else if (channel === 'docs:font-metrics') {
+    body = { args: ['sans-serif'] }
+  } else if (channel === 'ai:chat') {
+    body = { args: [{ message: 'Hello' }] }
+  } else if (channel === 'files:add') {
+    body = { args: [] }
+  }
+  
   try {
     const response = await fetch(`${BASE_URL}/api/ipc/${channel}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ args: [] }),
+      body: JSON.stringify(body),
     })
     
     if (response.ok) {
