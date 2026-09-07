@@ -66,7 +66,11 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('case`applyBodyCharFormat`')
     expect(next).toContain('/*genoffice-prepare-text-v7*/')
     expect(next).toContain('async insertFilledParagraphs(e,t,n){')
+    expect(next).toContain('},async insertFilledParagraphs(e,t,n){if(await')
+    expect(next).not.toContain('}async insertFilledParagraphs(e,t,n){if(await')
     expect(next).toContain('insertTable(e,t,n,r){')
+    expect(next).toContain('Number(a?.paraIdx??t)')
+    expect(next).not.toContain('a&&a.paraIdx??t')
     expect(next).toContain('findOrCreateFontId(String(a.fontName))')
     expect(next).toContain('selectionStart')
     expect(next).toContain('Gk(this.deps.wasm,e.target)')
@@ -82,6 +86,47 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration()')
     expect(next).not.toMatch(/selectionEnd:i\}\}listBodyParagraphs\(\)\{this\.syncGeneration\(\)/)
     expect(exposePrepareTextCommand(next)).toBe(next)
+    const methodsStart = next.indexOf('/*genoffice-prepare-text-v7*/')
+    const methodsEnd = next.indexOf('async applyTextCommand', methodsStart)
+    expect(() => new Function(`return class { ${next.slice(methodsStart, methodsEnd)} }`)).not.toThrow()
+  })
+
+  it('restores the insertFilled handler comma that blanks the studio', () => {
+    const stock = [
+      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
+      'return{selectedTextSha256:o}}async applyTextCommand(e){return e}',
+      'async getSelectionContext(){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.getSelectionContext()},async applyTextCommand(e){return e}',
+      'case`getSelectionContext`:return ak(i,`getSelectionContext params`),n.getSelectionContext();case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join(';')
+    const patched = exposePrepareTextCommand(stock)
+    const broken = patched.replace(
+      '},async insertFilledParagraphs(e,t,n){if(await',
+      '}async insertFilledParagraphs(e,t,n){if(await',
+    )
+    expect(broken).toContain('}async insertFilledParagraphs(e,t,n){if(await')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('},async insertFilledParagraphs(e,t,n){if(await')
+    expect(next).not.toContain('}async insertFilledParagraphs(e,t,n){if(await')
+  })
+
+  it('repairs insertTable coords that mixed && with ??', () => {
+    const stock = [
+      'try{Gk(this.deps.wasm,i),this.currentFormat(),a=!0}catch{a=!1}',
+      'return{selectedTextSha256:o}}async applyTextCommand(e){return e}',
+      'async getSelectionContext(){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.getSelectionContext()},async applyTextCommand(e){return e}',
+      'case`getSelectionContext`:return ak(i,`getSelectionContext params`),n.getSelectionContext();case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join(';')
+    const patched = exposePrepareTextCommand(stock)
+    const broken = patched
+      .replaceAll('Number(a?.paraIdx??t)', 'Number(a&&a.paraIdx??t)')
+      .replaceAll('Number(a?.controlIdx??0)', 'Number(a&&a.controlIdx??0)')
+    expect(broken).toContain('a&&a.paraIdx??t')
+    const next = exposePrepareTextCommand(broken)
+    expect(next).toContain('Number(a?.paraIdx??t)')
+    expect(next).not.toContain('a&&a.paraIdx??t')
+    const methodsStart = next.indexOf('/*genoffice-prepare-text-v7*/')
+    const methodsEnd = next.indexOf('async applyTextCommand', methodsStart)
+    expect(() => new Function(`return class { ${next.slice(methodsStart, methodsEnd)} }`)).not.toThrow()
   })
 
   it('closes a v4 prepareTextCommand that was missing its method brace', () => {

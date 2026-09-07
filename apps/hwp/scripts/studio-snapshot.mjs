@@ -103,7 +103,7 @@ function charFormatMethod() {
 
 function formatAgentMethods() {
   // Dialog-free table + char/para format. Wasm bridge already wraps createTable / apply*.
-  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a&&a.paraIdx??t),control:Number(a&&a.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,r);if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}`
+  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a?.paraIdx??t),control:Number(a?.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,r);if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}`
 }
 
 function insertAgentMethod() {
@@ -122,6 +122,28 @@ function closePrepareTextCommand(js) {
   return js.replace(
     UNCLOSED_PREPARE_RE,
     'selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration()',
+  )
+}
+
+/** `a&&a.x??y` is a SyntaxError — blanks the Hangul iframe and blocks AI send. */
+function repairIllegalNullishMix(js) {
+  return js
+    .replace(/Number\(a&&a\.paraIdx\?\?t\)/g, 'Number(a?.paraIdx??t)')
+    .replace(/Number\(a&&a\.controlIdx\?\?0\)/g, 'Number(a?.controlIdx??0)')
+}
+
+/**
+ * stripClassMethodCommas used to also eat the object-literal comma before the
+ * insertFilled handler (`}async insertFilled…{if(await`). That is
+ * `Unexpected token 'async'` — blank Hangul page, AI never becomes ready.
+ */
+const STRIPPED_FILLED_HANDLER_RE =
+  /\}async insertFilledParagraphs\(e,t,n\)\{if\(await /g
+
+function repairStrippedFilledHandlerComma(js) {
+  return js.replace(
+    STRIPPED_FILLED_HANDLER_RE,
+    '},async insertFilledParagraphs(e,t,n){if(await ',
   )
 }
 
@@ -163,9 +185,13 @@ function prepareSurfaceComplete(js) {
     js.includes('case`insertTable`') &&
     js.includes('case`applyBodyCharFormat`') &&
     js.includes('insertTable(e,t,n,r){') &&
+    js.includes('Number(a?.paraIdx??t)') &&
+    !js.includes('a&&a.paraIdx??t') &&
     js.includes('r.splitParagraph(e,') &&
     !js.includes('r.insertParagraph(e,t+a)') &&
     !js.includes('insertBodyParagraphs(e.section,e.index,e.count)') &&
+    js.includes('},async insertFilledParagraphs(e,t,n){if(await') &&
+    !js.includes('}async insertFilledParagraphs(e,t,n){if(await') &&
     !/,listBodyParagraphs\(\)\{this\.syncGeneration\(\)/.test(js) &&
     !/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/.test(js) &&
     !/,insertTable\(e,t,n,r\)\{/.test(js) &&
@@ -193,7 +219,10 @@ function stripClassMethodCommas(js) {
     .replace(/,listTables\(\)\{this\.syncGeneration\(\)/g, 'listTables(){this.syncGeneration()')
     .replace(/,replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\)/g, 'replaceCell(e,t,n,r,i){this.syncGeneration()')
     .replace(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/g, 'insertBodyParagraphs(e,t,n){this.syncGeneration()')
-    .replace(/,async insertFilledParagraphs\(e,t,n\)\{/g, 'async insertFilledParagraphs(e,t,n){')
+    .replace(
+      /,async insertFilledParagraphs\(e,t,n\)\{if\(!Array\.isArray/g,
+      'async insertFilledParagraphs(e,t,n){if(!Array.isArray',
+    )
     .replace(/,insertTable\(e,t,n,r\)\{/g, 'insertTable(e,t,n,r){')
     .replace(/,applyBodyCharFormat\(e,t,n,r,i\)\{/g, 'applyBodyCharFormat(e,t,n,r,i){')
     .replace(/,applyBodyParaFormat\(e,t,n\)\{/g, 'applyBodyParaFormat(e,t,n){')
@@ -288,7 +317,11 @@ function attachFontSurface(js) {
 }
 
 export function exposePrepareTextCommand(js) {
-  const closed = closePrepareTextCommand(repairInsertHandler(repairInsertWasmCall(js)))
+  const closed = repairStrippedFilledHandlerComma(
+    repairIllegalNullishMix(
+      closePrepareTextCommand(repairInsertHandler(repairInsertWasmCall(js))),
+    ),
+  )
   if (prepareSurfaceComplete(closed)) return closed
   if (
     closed.includes(PREPARE_TEXT_V7_MARK) ||
@@ -298,10 +331,19 @@ export function exposePrepareTextCommand(js) {
     closed.includes(PREPARE_TEXT_V3_MARK) ||
     closed.includes(PREPARE_TEXT_V2_MARK)
   ) {
-    const upgraded = attachFontSurface(
-      attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+    const upgraded = repairStrippedFilledHandlerComma(
+      repairIllegalNullishMix(
+        attachFontSurface(
+          attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+        ),
+      ),
     )
-    if (!upgraded.includes(PREPARE_TEXT_V7_MARK) || !upgraded.includes('findOrCreateFontId(String(a.fontName))')) {
+    if (
+      !upgraded.includes(PREPARE_TEXT_V7_MARK) ||
+      !upgraded.includes('findOrCreateFontId(String(a.fontName))') ||
+      upgraded.includes('a&&a.paraIdx??t') ||
+      upgraded.includes('}async insertFilledParagraphs(e,t,n){if(await')
+    ) {
       throw new Error('rhwp-studio prepareTextCommand surface changed — update exposePrepareTextCommand()')
     }
     return upgraded
@@ -334,7 +376,10 @@ export function exposePrepareTextCommand(js) {
     !next.includes('case`setField`') ||
     !next.includes('case`insertBodyParagraphs`') ||
     !next.includes('case`insertFilledParagraphs`') ||
-    !next.includes('case`insertTable`')
+    !next.includes('case`insertTable`') ||
+    !next.includes('Number(a?.paraIdx??t)') ||
+    next.includes('a&&a.paraIdx??t') ||
+    next.includes('}async insertFilledParagraphs(e,t,n){if(await')
   ) {
     throw new Error('rhwp-studio prepareTextCommand surface changed — update exposePrepareTextCommand()')
   }
