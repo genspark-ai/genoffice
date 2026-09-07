@@ -1,7 +1,13 @@
 import { createReadStream } from 'node:fs'
 import { createServer } from 'node:http'
 import { join, resolve } from 'node:path'
-import { existingFile, isBlockedStudioAsset, mimeFor, safePathUnder } from '../shared/static-serve'
+import {
+  cacheControlFor,
+  existingFile,
+  isBlockedStudioAsset,
+  mimeFor,
+  safePathUnder,
+} from '../shared/static-serve'
 
 export interface HwpLoopback {
   origin: string
@@ -37,6 +43,7 @@ export function startHwpLoopback(root: string): Promise<HwpLoopback> {
       return
     }
     res.setHeader('Content-Type', mimeFor(file))
+    res.setHeader('Cache-Control', cacheControlFor(file))
     createReadStream(file).pipe(res)
   })
   return new Promise((resolveAddr, reject) => {

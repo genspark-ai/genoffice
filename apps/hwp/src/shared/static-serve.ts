@@ -22,6 +22,10 @@ export function mimeFor(file: string): string {
   return STATIC_MIME[extname(file)] ?? 'application/octet-stream'
 }
 
+export function cacheControlFor(file: string): string {
+  return mimeFor(file).startsWith('text/html') ? 'no-cache' : 'public, max-age=31536000, immutable'
+}
+
 export function isBlockedStudioAsset(urlPath: string): boolean {
   const base = urlPath.split('?')[0].split('/').pop() ?? ''
   return BLOCKED_STUDIO.has(base)

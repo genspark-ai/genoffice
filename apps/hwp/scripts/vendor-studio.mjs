@@ -15,6 +15,7 @@ import {
   PWA_FILES,
   REQUIRED_ASSET_EXTS,
   REQUIRED_RELATIVE,
+  eagerPagePrefetch,
   isPwaPath,
   stripPwaHtml,
 } from './studio-snapshot.mjs'
@@ -103,9 +104,11 @@ async function download(urlPath) {
   const dest = destFor(urlPath)
   await mkdir(dirname(dest), { recursive: true })
   if (isTextPath(urlPath)) {
-    const text = await res.text()
-    await writeFile(dest, dest.endsWith('index.html') ? stripPwaHtml(text) : text)
-    return dest.endsWith('index.html') ? stripPwaHtml(text) : text
+    let text = await res.text()
+    if (dest.endsWith('index.html')) text = stripPwaHtml(text)
+    else if (dest.endsWith('.js')) text = tryEagerPrefetch(text, dest)
+    await writeFile(dest, text)
+    return text
   }
   await pipeline(Readable.fromWeb(res.body), createWriteStream(dest))
   return ''
@@ -121,6 +124,28 @@ async function stripPwaFiles() {
   if (!existsSync(index)) return
   const next = stripPwaHtml(await readFile(index, 'utf8'))
   await writeFile(index, next)
+}
+
+function tryEagerPrefetch(js, label) {
+  try {
+    return eagerPagePrefetch(js)
+  } catch (err) {
+    process.stderr.write(
+      `prefetch patch skipped (${label}): ${err instanceof Error ? err.message : err}\n`,
+    )
+    return js
+  }
+}
+
+async function patchStudioJs() {
+  const dir = join(OUT, 'assets')
+  if (!existsSync(dir)) return
+  for (const name of readdirSync(dir)) {
+    if (extname(name) !== '.js') continue
+    const path = join(dir, name)
+    const next = tryEagerPrefetch(await readFile(path, 'utf8'), name)
+    await writeFile(path, next)
+  }
 }
 
 function missingRequired() {
@@ -157,6 +182,7 @@ async function vendor() {
     }
   }
   await stripPwaFiles()
+  await patchStudioJs()
   const missing = missingRequired()
   if (missing.length || failed.length) {
     const details = [...missing.map((rel) => `missing ${rel}`), ...failed]
@@ -168,6 +194,7 @@ async function vendor() {
 async function main() {
   if (ENSURE) {
     await stripPwaFiles()
+    await patchStudioJs()
     if (isComplete()) {
       process.stdout.write(`rhwp-studio snapshot ready → ${OUT}\n`)
       return

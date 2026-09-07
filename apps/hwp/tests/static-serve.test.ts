@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  cacheControlFor,
   existingFile,
   isBlockedStudioAsset,
   mimeFor,
@@ -14,6 +15,8 @@ describe('static-serve', () => {
     expect(mimeFor('/x/app.js')).toBe('text/javascript; charset=utf-8')
     expect(mimeFor('/x/font.woff2')).toBe('font/woff2')
     expect(mimeFor('/x/unknown.bin')).toBe('application/octet-stream')
+    expect(cacheControlFor('/x/index.html')).toBe('no-cache')
+    expect(cacheControlFor('/x/app.js')).toBe('public, max-age=31536000, immutable')
   })
 
   it('blocks stock studio PWA files', () => {

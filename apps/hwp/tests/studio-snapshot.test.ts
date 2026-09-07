@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPwaPath, stripPwaHtml } from '../scripts/studio-snapshot.mjs'
+import { eagerPagePrefetch, hasEagerPrefetch, isPwaPath, stripPwaHtml } from '../scripts/studio-snapshot.mjs'
 
 describe('studio snapshot helpers', () => {
   it('strips the stock PWA registration from the published index', () => {
@@ -20,5 +20,21 @@ describe('studio snapshot helpers', () => {
     expect(isPwaPath('/rhwp/registerSW.js')).toBe(true)
     expect(isPwaPath('/rhwp/manifest.webmanifest')).toBe(true)
     expect(isPwaPath('/rhwp/assets/index.js')).toBe(false)
+  })
+
+  it('turns idle neighbor-page prefetch into an immediate paint', () => {
+    const stock =
+      'schedulePrefetchPages(e){if(typeof r.requestIdleCallback==`function`){this.deferredPrefetchTask={kind:`idle`,id:r.requestIdleCallback(n,{timeout:1e3})};return}this.deferredPrefetchTask={kind:`timeout`,id:window.setTimeout(n,250)}}'
+    const next = eagerPagePrefetch(stock)
+    expect(hasEagerPrefetch(next)).toBe(true)
+    expect(next).toContain('n()')
+    expect(next).not.toContain('requestIdleCallback(n,{timeout:1e3})')
+    expect(eagerPagePrefetch(next)).toBe(next)
+  })
+
+  it('fails loudly when the idle-prefetch snippet is no longer in the bundle', () => {
+    expect(() =>
+      eagerPagePrefetch('schedulePrefetchPages(e){requestIdleCallback(n)}'),
+    ).toThrow('prefetch idle deferral changed')
   })
 })

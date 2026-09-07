@@ -21,3 +21,28 @@ export function isPwaPath(urlPath) {
 export function stripPwaHtml(html) {
   return html.replace(PWA_HTML_RE, '')
 }
+
+/** Stock studio defers neighbor-page raster until idle (up to 1s). Marker written after patch. */
+export const EAGER_PREFETCH_MARK = '/*genoffice-eager-prefetch*/'
+
+const IDLE_PREFETCH_RE =
+  /if\(typeof r\.requestIdleCallback==`function`\)\{this\.deferredPrefetchTask=\{kind:`idle`,id:r\.requestIdleCallback\(n,\{timeout:1e3\}\)\};return\}this\.deferredPrefetchTask=\{kind:`timeout`,id:window\.setTimeout\(n,250\)\}/
+
+/**
+ * Paint the next page as soon as the current one is on screen.
+ * Neighbor first-paint is cheap enough; 0.8.x still idles the same prefetch, so we run it
+ * immediately instead of waiting for requestIdleCallback.
+ */
+export function eagerPagePrefetch(js) {
+  if (js.includes(EAGER_PREFETCH_MARK)) return js
+  if (!js.includes('schedulePrefetchPages') || !js.includes('requestIdleCallback')) return js
+  const next = js.replace(IDLE_PREFETCH_RE, `${EAGER_PREFETCH_MARK}n()`)
+  if (next === js) {
+    throw new Error('rhwp-studio prefetch idle deferral changed — update eagerPagePrefetch()')
+  }
+  return next
+}
+
+export function hasEagerPrefetch(js) {
+  return js.includes(EAGER_PREFETCH_MARK)
+}
