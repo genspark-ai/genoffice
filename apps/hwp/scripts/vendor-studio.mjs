@@ -15,9 +15,9 @@ import {
   PWA_FILES,
   REQUIRED_ASSET_EXTS,
   REQUIRED_RELATIVE,
-  eagerPagePrefetch,
   isPwaPath,
   keepEmbedNewDoc,
+  stripAbandonedStudioPatches,
   stripPwaHtml,
 } from './studio-snapshot.mjs'
 
@@ -139,7 +139,7 @@ function tryStudioPatch(fn, js, label) {
 }
 
 function patchStudioSource(js, label) {
-  return tryStudioPatch(keepEmbedNewDoc, tryStudioPatch(eagerPagePrefetch, js, label), label)
+  return tryStudioPatch(keepEmbedNewDoc, stripAbandonedStudioPatches(js), label)
 }
 
 async function patchStudioJs() {

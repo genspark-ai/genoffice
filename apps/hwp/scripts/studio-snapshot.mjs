@@ -22,31 +22,6 @@ export function stripPwaHtml(html) {
   return html.replace(PWA_HTML_RE, '')
 }
 
-/** Stock studio defers neighbor-page raster until idle (up to 1s). Marker written after patch. */
-export const EAGER_PREFETCH_MARK = '/*genoffice-eager-prefetch*/'
-
-const IDLE_PREFETCH_RE =
-  /if\(typeof r\.requestIdleCallback==`function`\)\{this\.deferredPrefetchTask=\{kind:`idle`,id:r\.requestIdleCallback\(n,\{timeout:1e3\}\)\};return\}this\.deferredPrefetchTask=\{kind:`timeout`,id:window\.setTimeout\(n,250\)\}/
-
-/**
- * Paint the next page as soon as the current one is on screen.
- * Neighbor first-paint is cheap enough; 0.8.x still idles the same prefetch, so we run it
- * immediately instead of waiting for requestIdleCallback.
- */
-export function eagerPagePrefetch(js) {
-  if (js.includes(EAGER_PREFETCH_MARK)) return js
-  if (!js.includes('schedulePrefetchPages') || !js.includes('requestIdleCallback')) return js
-  const next = js.replace(IDLE_PREFETCH_RE, `${EAGER_PREFETCH_MARK}n()`)
-  if (next === js) {
-    throw new Error('rhwp-studio prefetch idle deferral changed — update eagerPagePrefetch()')
-  }
-  return next
-}
-
-export function hasEagerPrefetch(js) {
-  return js.includes(EAGER_PREFETCH_MARK)
-}
-
 /**
  * Embed mode strips File new/open/save from the registry so the host owns those
  * actions — and also skips boot-time `createNewDocument()`. Untitled tabs then
@@ -72,4 +47,41 @@ export function keepEmbedNewDoc(js) {
 
 export function hasEmbedNewDoc(js) {
   return js.includes(EMBED_NEW_DOC_MARK)
+}
+
+/**
+ * Drop abandoned page-turn experiments from a local snapshot. Stock studio
+ * behavior is restored; only `file:new-doc` stays patched.
+ */
+export function stripAbandonedStudioPatches(js) {
+  let next = js
+  next = next.replace(
+    /\/\*genoffice-eager-prefetch\*\/n\(\)/g,
+    'if(typeof r.requestIdleCallback==`function`){this.deferredPrefetchTask={kind:`idle`,id:r.requestIdleCallback(n,{timeout:1e3})};return}this.deferredPrefetchTask={kind:`timeout`,id:window.setTimeout(n,250)}',
+  )
+  next = next.replace(
+    /\/\*genoffice-prefetch-overscan\*\/for\(let e of\[s-2,s-1,c\+1,c\+2\]\)/g,
+    'for(let e of[s-1,c+1])',
+  )
+  next = next.replace(
+    /\/\*genoffice-page-align\*\/n>0\?([A-Za-z_$][\w$]*)\(e,r,o,a\):([A-Za-z_$][\w$]*)\(e,r,o\)/g,
+    'n>0?Math.min($1(e,r,o,a),r+i):Math.max($2(e,r,o),r-i)',
+  )
+  next = next.replace(
+    /flushDeferredPaginationIfNeeded\(`before-navigation`,\/\*genoffice-nav-pagination\*\/!0\)/g,
+    'flushDeferredPaginationIfNeeded(`before-navigation`,!1)',
+  )
+  next = next.replace(
+    /e!==`document-agent-rendered`&&\/\*genoffice-sync-layout\*\/\(typeof e==`string`&&e\.includes\(`deferred-pagination-flush`\)\?this\.refreshPages\(\):this\.refreshPagesForMutation\(\)\)/g,
+    'e!==`document-agent-rendered`&&this.refreshPagesForMutation()',
+  )
+  next = next.replace(
+    /this\.recalcLayout\(\),\/\*genoffice-clamp-scroll\*\/\(\(\)=>\{let e=this\.viewportManager\.getViewportSize\(\),t=Math\.max\(0,this\.virtualScroll\.getTotalHeight\(\)-e\.height\);this\.viewportManager\.getScrollY\(\)>t&&this\.viewportManager\.setScrollTop\(t\)\}\)\(\),this\.cancelPendingTextEditRefresh\(\)/g,
+    'this.recalcLayout(),this.cancelPendingTextEditRefresh()',
+  )
+  next = next.replace(
+    /vp\.call\(this,e\.key===`PageUp`\?-1:1,e\.shiftKey\),\/\*genoffice-caret-after-page\*\/this\.updateCaret\(\);return\}/g,
+    'vp.call(this,e.key===`PageUp`?-1:1,e.shiftKey);return}',
+  )
+  return next
 }
