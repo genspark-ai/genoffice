@@ -23,11 +23,11 @@ const HOST = process.env.HOST || '0.0.0.0'
 const APPS = ['docs', 'sheets', 'slides', 'pdf', 'markdown', 'shell']
 const STATIC_ROOT = resolve(ROOT, 'apps')
 
-// 使用固定的绝对路径存储数据
+// 
 const DATA_DIR = process.env.DATA_DIR || '/tmp/genoffice-data'
 mkdirSync(DATA_DIR, { recursive: true })
 
-// ========== MiniMax AI 客户端 ==========
+// ========== MiniMax AI  ==========
 const MINIMAX_API_URL = 'https://api.minimax.chat/v1'
 
 interface MiniMaxMessage {
@@ -89,7 +89,7 @@ async function callMiniMax(
   }
 }
 
-// ========== 编码/解码 (与 @genoffice/ipc-bridge 对齐) ==========
+// ========== / ( @genoffice/ipc-bridge ) ==========
 const BYTES_TAG = '__ipcBytes'
 const TYPED_ARRAY_CTORS = {
   i8: Int8Array,
@@ -180,14 +180,14 @@ const PROJECTS_FILE = join(DATA_DIR, 'projects.json')
 const FILES_DIR = join(DATA_DIR, 'files')
 mkdirSync(FILES_DIR, { recursive: true })
 
-// 协作会话存储
+// 
 const COLLAB_SESSIONS = new Map<string, {
   docId: string
   users: Set<string>
   lastActivity: number
 } >()
 
-// AI 流式响应存储
+// AI 
 const AI_STREAMS = new Map<string, {
   chunks: string[]
   abort: AbortController
@@ -212,7 +212,7 @@ const MIME_TYPES: Record<string, string> = {
   '.pdf': 'application/pdf',
 }
 
-// 数据模型
+// 
 interface Project {
   id: string
   name: string
@@ -242,13 +242,13 @@ function registerHandle(channel: string, handler: IpcHandler): void {
   handlers.set(channel, handler)
 }
 
-// ========== APP 功能 ==========
+// ========== APP  ==========
 registerHandle('app:get-language', () => 'zh-CN')
 registerHandle('app:get-version', () => '0.8.0')
 registerHandle('app:get-platform', () => 'web')
 registerHandle('app:get-theme', () => ({ theme: 'system', darkMode: false, highContrast: false }))
 
-// ========== AI 功能 (增强) ==========
+// ========== AI  () ==========
 let aiSettings = {
   provider: 'genspark',
   model: 'auto',
@@ -274,12 +274,12 @@ registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
   const message = req.message || ''
   const context = req.context
   
-  // 检查是否配置了 MiniMax API key
+  //  MiniMax API key
   const minimaxKey = process.env.MINIMAX_API_KEY
   const systemPrompt = req.system || '你是一个专业的办公助手，帮助用户处理文档、表格和幻灯片。'
   
   try {
-    // 如果配置了 MiniMax API key，使用真实 API
+    //  MiniMax API key API
     if (minimaxKey) {
       const result = await callMiniMax(
         minimaxKey,
@@ -306,7 +306,7 @@ registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
     console.error('MiniMax API error, falling back to mock:', error)
   }
   
-  // 回退到模拟响应
+  // 
   let content = generateAIResponse(message)
   if (context) {
     content = `基于您提供的文档内容，我来帮您分析：\n\n${content}\n\n如需进一步帮助，请告诉我具体问题。`
@@ -324,16 +324,16 @@ registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
   }
 })
 
-// AI 流式响应
+// AI 
 registerHandle('ai:stream', async (event: unknown, request: unknown) => {
   const req = request as { message?: string; sessionId?: string }
   const sessionId = req.sessionId || `stream-${Date.now()}`
   
-  // 创建 AbortController
+  //  AbortController
   const abort = new AbortController()
   AI_STREAMS.set(sessionId, { chunks: [], abort })
   
-  // 模拟流式响应
+  // 
   const messages = [
     '正在处理您的请求',
     '分析文档结构',
@@ -365,15 +365,15 @@ registerHandle('ai:stream-cancel', (_event: unknown, sessionId: unknown) => {
 
 registerHandle('ai:web-search', async (_event: unknown, query: unknown, maxResults = 5) => {
   return [
-    { title: `${query} - 搜索结果 1`, url: 'https://example.com/1', snippet: '这是模拟的搜索结果。' },
-    { title: `${query} - 搜索结果 2`, url: 'https://example.com/2', snippet: '完整的搜索功能需要配置 Tavily API。' },
+    { title: `${query} -  1`, url: 'https://example.com/1', snippet: '' },
+    { title: `${query} -  2`, url: 'https://example.com/2', snippet: ' Tavily API' },
   ].slice(0, maxResults as number)
 })
 
 registerHandle('ai:image-search', async (_event: unknown, query: unknown, maxResults = 5) => {
   return [
-    { url: `https://picsum.photos/200?random=${Date.now()}`, title: `${query} 图片 1` },
-    { url: `https://picsum.photos/200?random=${Date.now() + 1}`, title: `${query} 图片 2` },
+    { url: `https://picsum.photos/200?random=${Date.now()}`, title: `${query}  1` },
+    { url: `https://picsum.photos/200?random=${Date.now() + 1}`, title: `${query}  2` },
   ].slice(0, maxResults as number)
 })
 
@@ -382,7 +382,7 @@ function generateAIResponse(message: string): string {
   return `这是 AI 助手的回复。您发送的消息是: "${message}"。\n\n我可以帮助您:\n1. 编辑和格式化文档\n2. 创建表格和幻灯片\n3. 回答问题和提供建议\n4. 搜索和整理信息\n\n请告诉我您需要什么帮助?`
 }
 
-// ========== Project 功能 (完整) ==========
+// ========== Project  () ==========
 registerHandle('project:list', () => loadProjects())
 registerHandle('project:create', (_event: unknown, args: unknown) => {
   const { name } = args as { name: string }
@@ -480,7 +480,7 @@ registerHandle('project:timeline', (_event: unknown, args: unknown) => {
   ]
 })
 
-// ========== Files 功能 ==========
+// ========== Files  ==========
 const FILES_INDEX: Map<string, {
   id: string
   name: string
@@ -632,8 +632,8 @@ registerHandle('files:delete', (_event: unknown, args: unknown) => {
   return { ok: false, error: 'File not found' }
 })
 
-// ========== Docs 功能 ==========
-// 文档存储
+// ========== Docs  ==========
+// 
 const DOCS_FILE = join(DATA_DIR, 'docs.json')
 const DOCS_RECENT_FILE = join(DATA_DIR, 'docs-recent.json')
 
@@ -761,7 +761,7 @@ registerHandle('docs:consume-ai-doc-content', () => ({ ok: true }))
 registerHandle('docs:write-recovery', () => ({ ok: true }))
 registerHandle('docs:password-intent-revision', () => 0)
 
-// ========== Sheets 功能 ==========
+// ========== Sheets  ==========
 const SHEETS_FILE = join(DATA_DIR, 'sheets.json')
 const SHEETS_RECENT_FILE = join(DATA_DIR, 'sheets-recent.json')
 
@@ -820,7 +820,7 @@ registerHandle('workbook:open-path', async (_event: unknown, filePath: unknown) 
   return { id, path: filePath, name, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
 })
 
-// ========== Slides 功能 ==========
+// ========== Slides  ==========
 const SLIDES_FILE = join(DATA_DIR, 'slides.json')
 const SLIDES_RECENT_FILE = join(DATA_DIR, 'slides-recent.json')
 
@@ -966,11 +966,11 @@ registerHandle('slides:font-download', () => ({ ok: true, message: 'Web 版本�
 registerHandle('slides:font-install-local', () => ({ ok: true }))
 registerHandle('slides:insert-model3d', () => ({ ok: true }))
 
-// ========== AI 额外功能 ==========
+// ========== AI  ==========
 registerHandle('ai:log-run-failure', () => ({ ok: true }))
 
-// ========== AI 增强功能 ==========
-// AI 内容生成
+// ========== AI  ==========
+// AI 
 registerHandle('ai:generate-content', async (_event: unknown, request: unknown) => {
   const req = request as { type?: string; topic?: string; length?: number; style?: string }
   const { type = 'paragraph', topic = '', length = 200, style = 'formal' } = req
@@ -991,7 +991,7 @@ registerHandle('ai:generate-content', async (_event: unknown, request: unknown) 
   }
 })
 
-// AI 翻译
+// AI 
 registerHandle('ai:translate', async (_event: unknown, request: unknown) => {
   const req = request as { text?: string; from?: string; to?: string }
   return {
@@ -1003,7 +1003,7 @@ registerHandle('ai:translate', async (_event: unknown, request: unknown) => {
   }
 })
 
-// AI 摘要
+// AI 
 registerHandle('ai:summarize', async (_event: unknown, request: unknown) => {
   const req = request as { text?: string; maxLength?: number }
   const text = req.text || ''
@@ -1017,7 +1017,7 @@ registerHandle('ai:summarize', async (_event: unknown, request: unknown) => {
   }
 })
 
-// AI 问答
+// AI 
 registerHandle('ai:qa', async (_event: unknown, request: unknown) => {
   const req = request as { question?: string; context?: string }
   return {
@@ -1028,7 +1028,7 @@ registerHandle('ai:qa', async (_event: unknown, request: unknown) => {
   }
 })
 
-// AI 语法检查
+// AI 
 registerHandle('ai:grammar-check', async (_event: unknown, text: unknown) => {
   return {
     id: `grammar-${Date.now()}`,
@@ -1039,7 +1039,7 @@ registerHandle('ai:grammar-check', async (_event: unknown, text: unknown) => {
   }
 })
 
-// AI 关键词提取
+// AI 
 registerHandle('ai:extract-keywords', async (_event: unknown, text: unknown) => {
   return {
     id: `kw-${Date.now()}`,
@@ -1048,7 +1048,7 @@ registerHandle('ai:extract-keywords', async (_event: unknown, text: unknown) => 
   }
 })
 
-// AI 情感分析
+// AI 
 registerHandle('ai:sentiment', async (_event: unknown, text: unknown) => {
   return {
     id: `sent-${Date.now()}`,
@@ -1059,8 +1059,8 @@ registerHandle('ai:sentiment', async (_event: unknown, text: unknown) => {
   }
 })
 
-// ========== Agent Loop SSE 端点 ==========
-// 支持 @genoffice/agent-core HTTP Transport
+// ========== Agent Loop SSE  ==========
+//  @genoffice/agent-core HTTP Transport
 
 const ACTIVE_STREAMS = new Map<string, {
   controller: ReadableStreamDefaultController
@@ -1082,7 +1082,7 @@ function generateAgentResponse(messages: unknown[]): string {
   return responses.join(' ')
 }
 
-// 添加 SSE 流式端点到服务器
+//  SSE 
 registerHandle('slides:get-run-links', () => [])
 registerHandle('slides:group-elements', () => ({ ok: true, groupId: `group-${Date.now()}` }))
 registerHandle('slides:has-slide-clipboard', () => false)
@@ -1160,10 +1160,10 @@ registerHandle('slides:private-font-data', () => ({}))
 registerHandle('slides:private-font-faces', () => [])
 registerHandle('slides:repaste-slide', () => ({ ok: true }))
 
-// ========== Sheets 额外功能 ==========
+// ========== Sheets  ==========
 registerHandle('sheets:consume-new-blank', () => ({ ok: true }))
 
-// ========== Markdown 功能 ==========
+// ========== Markdown  ==========
 registerHandle('md-asset', async (_event: unknown, args: unknown) => {
   const { path, type } = args as { path: string; type: string }
   if (type === 'read' && existsSync(path)) {
@@ -1172,8 +1172,8 @@ registerHandle('md-asset', async (_event: unknown, args: unknown) => {
   return null
 })
 
-// ========== AnyDoc 文档处理功能 ==========
-// AnyDoc: 通用文档识别、转换和处理
+// ========== AnyDoc  ==========
+// AnyDoc: 
 
 interface AnyDocConfig {
   ocrEnabled: boolean
@@ -1195,7 +1195,7 @@ registerHandle('anydoc:set-config', (_event: unknown, config: unknown) => {
 
 registerHandle('anydoc:recognize', async (_event: unknown, args: unknown) => {
   const { filePath, options } = args as { filePath: string; options?: { ocr?: boolean; language?: string } }
-  // 模拟文档识别
+  // 
   if (!existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`)
   }
@@ -1220,7 +1220,7 @@ registerHandle('anydoc:recognize', async (_event: unknown, args: unknown) => {
 
 registerHandle('anydoc:convert', async (_event: unknown, args: unknown) => {
   const { filePath, targetFormat } = args as { filePath: string; targetFormat: string }
-  // 模拟文档转换
+  // 
   if (!existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`)
   }
@@ -1228,7 +1228,7 @@ registerHandle('anydoc:convert', async (_event: unknown, args: unknown) => {
   const sourceFormat = extname(filePath).slice(1)
   const outputPath = join(FILES_DIR, `${Date.now()}-converted.${targetFormat}`)
   
-  // 复制文件作为模拟转换
+  // 
   const bytes = readFileSync(filePath)
   writeFileSync(outputPath, bytes)
   
@@ -1250,7 +1250,7 @@ registerHandle('anydoc:extract-text', async (_event: unknown, filePath: unknown)
   const ext = extname(filePath as string).toLowerCase()
   const bytes = readFileSync(filePath as string)
   
-  // 根据文件类型提取文本
+  // 
   if (['.txt', '.md', '.json', '.xml', '.html', '.csv'].includes(ext)) {
     return { text: bytes.toString('utf-8'), format: 'text' }
   } else if (['.docx', '.xlsx', '.pptx'].includes(ext)) {
@@ -1269,7 +1269,7 @@ registerHandle('anydoc:extract-tables', async (_event: unknown, filePath: unknow
     return null
   }
   
-  // 模拟表格提取
+  // 
   return {
     tables: [],
     message: '表格提取需要专业解析库支持',
@@ -1309,7 +1309,7 @@ registerHandle('anydoc:render-preview', async (_event: unknown, args: unknown) =
   }
 })
 
-// ========== PDF 功能 ==========
+// ========== PDF  ==========
 registerHandle('pdf:open-path', async (_event: unknown, filePath: unknown) => {
   if (!existsSync(filePath as string)) {
     throw new Error(`File not found: ${filePath}`)
@@ -1318,8 +1318,8 @@ registerHandle('pdf:open-path', async (_event: unknown, filePath: unknown) => {
   return { path: filePath, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
 })
 
-// ========== Clipboard 功能 (Web API 模拟) ==========
-// 原生 IPC 通道 (copy/cut/paste)
+// ========== Clipboard  (Web API ) ==========
+//  IPC  (copy/cut/paste)
 registerHandle('copy', (_event: unknown, text: unknown) => ({
   ok: true,
   message: '请使用浏览器原生 Ctrl+C / Cmd+C'
@@ -1333,7 +1333,7 @@ registerHandle('paste', () => ({
   message: '请使用浏览器原生 Ctrl+V / Cmd+V'
 }))
 
-// Electron IPC 通道别名
+// Electron IPC 
 registerHandle('clipboard:copy', (_event: unknown, text: unknown) => ({
   ok: true,
   message: '请使用浏览器原生 Ctrl+C / Cmd+C'
@@ -1347,7 +1347,7 @@ registerHandle('clipboard:paste', () => ({
   message: '请使用浏览器原生 Ctrl+V / Cmd+V'
 }))
 
-// ========== Win 功能 (Web Window 模拟) ==========
+// ========== Win  (Web Window ) ==========
 const WEB_WINDOWS: Map<string, { url: string; name: string }> = new Map()
 
 registerHandle('win:new', (_event: unknown, options: unknown) => {
@@ -1368,9 +1368,9 @@ registerHandle('win:focus', (_event: unknown, id: unknown) => {
   return { ok: false, error: 'Window not found' }
 })
 
-// ========== 协作功能 (增强版) ==========
+// ==========  () ==========
 
-// 文档版本历史存储
+// 
 interface DocVersion {
   id: string
   content: string
@@ -1386,7 +1386,7 @@ interface DocVersionHistory {
 
 const DOC_VERSIONS = new Map<string, DocVersionHistory>()
 
-// 文档评论存储
+// 
 interface CommentReply {
   id: string
   userId: string
@@ -1408,7 +1408,7 @@ interface DocComment {
 
 const DOC_COMMENTS = new Map<string, DocComment[]>()
 
-// 模板存储
+// 
 interface DocTemplate {
   id: string
   name: string
@@ -1423,7 +1423,7 @@ interface DocTemplate {
 
 const TEMPLATES = new Map<string, DocTemplate>()
 
-// 初始化默认模板
+// 
 function initDefaultTemplates() {
   const defaultTemplates = [
     {
@@ -1509,7 +1509,7 @@ registerHandle('collab:sync', (_event: unknown, args: unknown) => {
   return { ok: false, error: 'Session not found' }
 })
 
-// ========== 版本历史功能 ==========
+// ==========  ==========
 registerHandle('history:versions', (_event: unknown, args: unknown) => {
   const { docId } = args as { docId: string }
   const docVersions = DOC_VERSIONS.get(docId)
@@ -1540,7 +1540,7 @@ registerHandle('history:create-version', (_event: unknown, args: unknown) => {
     message,
   })
   
-  // 限制版本数量为 50
+  //  50
   if (docVersions.versions.length > 50) {
     docVersions.versions = docVersions.versions.slice(-50)
   }
@@ -1568,7 +1568,7 @@ registerHandle('history:restore-version', (_event: unknown, args: unknown) => {
   return { ok: true, content: version.content }
 })
 
-// ========== 评论与批注功能 ==========
+// ==========  ==========
 registerHandle('comments:list', (_event: unknown, args: unknown) => {
   const { docId } = args as { docId: string }
   return DOC_COMMENTS.get(docId) || []
@@ -1655,7 +1655,7 @@ registerHandle('comments:delete', (_event: unknown, args: unknown) => {
   return { ok: true }
 })
 
-// ========== 模板库功能 ==========
+// ==========  ==========
 registerHandle('templates:list', (_event: unknown, args: unknown) => {
   const { type, category, search } = (args || {}) as { type?: string; category?: string; search?: string }
   
@@ -1723,8 +1723,8 @@ registerHandle('templates:delete', (_event: unknown, args: unknown) => {
   return { ok: true }
 })
 
-// ========== 云存储集成 ==========
-// 模拟云存储 (实际需要集成 S3/MinIO/OSS 等)
+// ==========  ==========
+//  ( S3/MinIO/OSS )
 const CLOUD_FILES = new Map<string, {
   id: string
   name: string
@@ -1747,7 +1747,7 @@ registerHandle('cloud:upload', async (_event: unknown, args: unknown) => {
   const id = `cloud-${Date.now()}-${name}`
   const url = `/cloud/files/${id}`
   
-  // 保存到本地作为模拟
+  // 
   const filePath = join(FILES_DIR, id)
   writeFileSync(filePath, Buffer.from(bytes))
   
@@ -1822,14 +1822,14 @@ registerHandle('cloud:get-url', (_event: unknown, args: unknown) => {
   const file = CLOUD_FILES.get(id)
   if (!file) return null
   
-  // 生成带签名的 URL (模拟)
+  //  URL ()
   const expiry = expires || 3600
   const signedUrl = `${file.url}?token=${Date.now()}&expires=${Date.now() + expiry * 1000}`
   
   return { url: signedUrl, expires: expiry }
 })
 
-// ========== 移动端适配 ==========
+// ==========  ==========
 registerHandle('mobile:get-settings', () => ({
   touchEnabled: true,
   viewportWidth: 375,
@@ -1856,7 +1856,7 @@ registerHandle('mobile:detect', () => {
   }
 })
 
-// ========== 离线模式 ==========
+// ==========  ==========
 const OFFLINE_QUEUE = new Map<string, {
   id: string
   action: string
@@ -1894,7 +1894,7 @@ registerHandle('offline:sync', async (_event: unknown) => {
   const synced: string[] = []
   
   for (const item of pending) {
-    // 模拟同步
+    // 
     item.synced = true
     synced.push(item.id)
   }
@@ -1908,11 +1908,11 @@ registerHandle('offline:clear', (_event: unknown) => {
   return { ok: true, cleared: count }
 })
 
-// ========== 多模态理解 ==========
+// ==========  ==========
 registerHandle('multimodal:analyze-image', async (_event: unknown, args: unknown) => {
   const { imageBytes, prompt } = args as { imageBytes: ArrayBuffer; prompt?: string }
   
-  // 模拟图像分析
+  // 
   return {
     description: '图片内容分析：这是一张包含文字和图表的图片。',
     tags: ['图表', '文字', '数据'],
@@ -1928,7 +1928,7 @@ registerHandle('multimodal:analyze-image', async (_event: unknown, args: unknown
 registerHandle('multimodal:extract-table', async (_event: unknown, args: unknown) => {
   const { imageBytes } = args as { imageBytes: ArrayBuffer }
   
-  // 模拟表格提取
+  // 
   return {
     rows: 5,
     columns: 4,
@@ -1940,7 +1940,7 @@ registerHandle('multimodal:extract-table', async (_event: unknown, args: unknown
   }
 })
 
-// ========== 智能摘要生成 ==========
+// ==========  ==========
 registerHandle('ai:smart-summary', async (_event: unknown, args: unknown) => {
   const { text, maxLength, type } = args as { text: string; maxLength?: number; type?: 'brief' | 'detailed' | 'bullets' }
   
@@ -1971,7 +1971,7 @@ registerHandle('ai:smart-summary', async (_event: unknown, args: unknown) => {
   }
 })
 
-// ========== 自动翻译 ==========
+// ==========  ==========
 registerHandle('ai:auto-translate', async (_event: unknown, args: unknown) => {
   const { text, from, to } = args as { text: string; from?: string; to: string }
   
@@ -1993,7 +1993,7 @@ registerHandle('ai:auto-translate', async (_event: unknown, args: unknown) => {
 
 registerHandle('ai:detect-language', async (_event: unknown, text: unknown) => {
   const str = text as string
-  // 简单的语言检测
+  // 
   const hasChinese = /[\u4e00-\u9fff]/.test(str)
   const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff]/.test(str)
   const hasKorean = /[\uac00-\ud7af]/.test(str)
@@ -2005,11 +2005,11 @@ registerHandle('ai:detect-language', async (_event: unknown, text: unknown) => {
   return { language: 'en', confidence: 0.85 }
 })
 
-// ========== 情感分析 ==========
+// ==========  ==========
 registerHandle('ai:sentiment', async (_event: unknown, args: unknown) => {
   const { text } = args as { text: string }
   
-  // 模拟情感分析
+  // 
   const positiveWords = ['好', '棒', '优', '赞', '满意', '喜欢', 'good', 'great', 'excellent', 'amazing']
   const negativeWords = ['差', '坏', '糟', '不满', '讨厌', 'bad', 'poor', 'terrible', 'awful']
   
@@ -2043,7 +2043,7 @@ registerHandle('ai:sentiment', async (_event: unknown, args: unknown) => {
   }
 })
 
-// ========== 图表生成 ==========
+// ==========  ==========
 registerHandle('chart:generate', async (_event: unknown, args: unknown) => {
   const { type, data, options } = args as {
     type: 'bar' | 'line' | 'pie' | 'scatter' | 'radar'
@@ -2051,7 +2051,7 @@ registerHandle('chart:generate', async (_event: unknown, args: unknown) => {
     options?: { title?: string; colors?: string[] }
   }
   
-  // 生成 SVG 图表
+  //  SVG 
   const colors = options?.colors || ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#9C27B0']
   const width = 600
   const height = 400
@@ -2117,7 +2117,7 @@ registerHandle('chart:generate', async (_event: unknown, args: unknown) => {
   }
 })
 
-// ========== 数据可视化 ==========
+// ==========  ==========
 registerHandle('visualization:create-dashboard', async (_event: unknown, args: unknown) => {
   const { widgets } = args as {
     widgets: Array<{
@@ -2142,7 +2142,7 @@ registerHandle('visualization:create-dashboard', async (_event: unknown, args: u
 registerHandle('visualization:get-chart-data', (_event: unknown, args: unknown) => {
   const { docId, chartId } = args as { docId: string; chartId: string }
   
-  // 模拟图表数据
+  // 
   return {
     labels: ['一月', '二月', '三月', '四月', '五月'],
     datasets: [
@@ -2152,11 +2152,11 @@ registerHandle('visualization:get-chart-data', (_event: unknown, args: unknown) 
   }
 })
 
-// ========== 语音功能 ==========
+// ==========  ==========
 registerHandle('speech:recognize', async (_event: unknown, args: unknown) => {
   const { audioBytes, language } = args as { audioBytes: ArrayBuffer; language?: string }
   
-  // 模拟语音识别
+  // 
   return {
     text: '这是模拟的语音识别结果',
     confidence: 0.95,
@@ -2179,10 +2179,10 @@ registerHandle('speech:synthesize', async (_event: unknown, args: unknown) => {
     pitch?: number
   }
   
-  // 模拟语音合成 - 返回空白音频
+  //  - 
   return {
     audioBytes: new ArrayBuffer(0),
-    duration: Math.ceil(text.length * 0.3), // 估算时长
+    duration: Math.ceil(text.length * 0.3), // 
     format: 'mp3',
     voice: voice || 'zh-CN-female',
     speed: speed || 1.0,
@@ -2200,7 +2200,7 @@ registerHandle('speech:get-voices', () => {
   ]
 })
 
-// ========== 文件预览 ==========
+// ==========  ==========
 registerHandle('preview:get', async (_event: unknown, args: unknown) => {
   const { filePath, width, height, format } = args as {
     filePath: string
@@ -2216,7 +2216,7 @@ registerHandle('preview:get', async (_event: unknown, args: unknown) => {
   const ext = extname(filePath as string).toLowerCase()
   const bytes = readFileSync(filePath as string)
   
-  // 根据文件类型生成预览
+  // 
   if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'].includes(ext)) {
     return {
       type: 'image',
@@ -2246,7 +2246,7 @@ registerHandle('preview:get', async (_event: unknown, args: unknown) => {
   }
 })
 
-// ========== 高级搜索 ==========
+// ==========  ==========
 const SEARCH_INDEX = new Map<string, {
   id: string
   type: string
@@ -2606,7 +2606,7 @@ registerHandle('pdf-password:cancel', () => ({
   ok: true,
 }))
 
-// ========== Home 状态存储 ==========
+// ========== Home  ==========
 const DOCS_RECENT = new Map<string, {
   id: string
   path: string
@@ -2616,7 +2616,7 @@ const DOCS_RECENT = new Map<string, {
 
 const DOCS_STARRED = new Set<string>()
 
-// ========== 用户管理 ==========
+// ==========  ==========
 const USERS = new Map<string, {
   id: string
   name: string
@@ -2669,8 +2669,469 @@ registerHandle('users:delete', (_event: unknown, args: unknown) => {
   return { ok: true }
 })
 
-// ========== 权限管理 ==========
+// ==========  ==========
 const PERMISSIONS = new Map<string, Map<string, string[]>>() // docId -> userId -> permissions
+
+// ========== Tenant Management ==========
+const TENANTS = new Map<string, {
+  id: string
+  name: string
+  domain: string
+  plan: 'free' | 'pro' | 'enterprise'
+  settings: Record<string, unknown>
+  createdAt: number
+  status: 'active' | 'suspended' | 'trial'
+}>()
+
+registerHandle('tenant:list', () => {
+  return [...TENANTS.values()].map(t => ({
+    id: t.id,
+    name: t.name,
+    domain: t.domain,
+    plan: t.plan,
+    status: t.status,
+  }))
+})
+
+registerHandle('tenant:create', (_event: unknown, args: unknown) => {
+  const { name, domain, plan } = (args || {}) as {
+    name: string
+    domain: string
+    plan?: 'free' | 'pro' | 'enterprise'
+  }
+  const id = `tenant-${Date.now()}`
+  TENANTS.set(id, {
+    id,
+    name,
+    domain,
+    plan: plan || 'free',
+    settings: {},
+    createdAt: Date.now(),
+    status: 'trial',
+  })
+  return { ok: true, id }
+})
+
+registerHandle('tenant:get', (_event: unknown, args: unknown) => {
+  const { id } = (args || {}) as { id: string }
+  return TENANTS.get(id) || null
+})
+
+registerHandle('tenant:update', (_event: unknown, args: unknown) => {
+  const { id, name, plan, settings, status } = (args || {}) as {
+    id: string
+    name?: string
+    plan?: 'free' | 'pro' | 'enterprise'
+    settings?: Record<string, unknown>
+    status?: 'active' | 'suspended' | 'trial'
+  }
+  const tenant = TENANTS.get(id)
+  if (!tenant) return { ok: false, error: 'Tenant not found' }
+  if (name) tenant.name = name
+  if (plan) tenant.plan = plan
+  if (settings) tenant.settings = { ...tenant.settings, ...settings }
+  if (status) tenant.status = status
+  return { ok: true }
+})
+
+// ========== Email System ==========
+const MAILS = new Map<string, {
+  id: string
+  tenantId: string
+  from: { name: string; email: string }
+  to: Array<{ name: string; email: string }>
+  subject: string
+  body: string
+  attachments: Array<{ name: string; size: number }>
+  sentAt: number
+  status: 'sent' | 'failed' | 'pending'
+}>()
+
+registerHandle('mail:send', async (_event: unknown, args: unknown) => {
+  const { to, subject, body, cc, bcc, attachments } = (args || {}) as {
+    to: Array<{ name: string; email: string }>
+    subject: string
+    body: string
+    cc?: Array<{ name: string; email: string }>
+    bcc?: Array<{ name: string; email: string }>
+    attachments?: Array<{ name: string; size: number }>
+  }
+  const id = `mail-${Date.now()}`
+  MAILS.set(id, {
+    id,
+    tenantId: 'default',
+    from: { name: 'GenOffice', email: 'noreply@genoffice.ai' },
+    to: to || [],
+    subject,
+    body,
+    attachments: attachments || [],
+    sentAt: Date.now(),
+    status: 'pending',
+  })
+  // 
+  setTimeout(() => {
+    const mail = MAILS.get(id)
+    if (mail) mail.status = 'sent'
+  }, 1000)
+  return { ok: true, id }
+})
+
+registerHandle('mail:list', (_event: unknown, args: unknown) => {
+  const { folder, limit, offset } = (args || {}) as {
+    folder?: 'inbox' | 'sent' | 'draft' | 'trash'
+    limit?: number
+    offset?: number
+  }
+  const maxResults = limit || 20
+  const startOffset = offset || 0
+  return [...MAILS.values()]
+    .filter(m => folder ? m.status === folder : true)
+    .slice(startOffset, startOffset + maxResults)
+    .map(m => ({
+      id: m.id,
+      from: m.from,
+      to: m.to,
+      subject: m.subject,
+      sentAt: m.sentAt,
+      status: m.status,
+    }))
+})
+
+registerHandle('mail:get', (_event: unknown, args: unknown) => {
+  const { id } = (args || {}) as { id: string }
+  return MAILS.get(id) || null
+})
+
+// ========== Calendar System ==========
+const CALENDARS = new Map<string, {
+  id: string
+  tenantId: string
+  title: string
+  description: string
+  startTime: number
+  endTime: number
+  attendees: Array<{ name: string; email: string; status: 'pending' | 'accepted' | 'declined' }>
+  location?: string
+  reminders: number[]
+  recurrence?: string
+  status: 'confirmed' | 'cancelled' | 'tentative'
+}>()
+
+registerHandle('calendar:create-event', (_event: unknown, args: unknown) => {
+  const { title, description, startTime, endTime, attendees, location, reminders, recurrence } = (args || {}) as {
+    title: string
+    description?: string
+    startTime: number
+    endTime: number
+    attendees?: Array<{ name: string; email: string }>
+    location?: string
+    reminders?: number[]
+    recurrence?: string
+  }
+  const id = `event-${Date.now()}`
+  CALENDARS.set(id, {
+    id,
+    tenantId: 'default',
+    title,
+    description: description || '',
+    startTime,
+    endTime,
+    attendees: (attendees || []).map(a => ({ ...a, status: 'pending' as const })),
+    location,
+    reminders: reminders || [15, 60],
+    recurrence,
+    status: 'confirmed',
+  })
+  return { ok: true, id }
+})
+
+registerHandle('calendar:list-events', (_event: unknown, args: unknown) => {
+  const { startDate, endDate, limit, offset } = (args || {}) as {
+    startDate?: number
+    endDate?: number
+    limit?: number
+    offset?: number
+  }
+  const maxResults = limit || 50
+  const startOffset = offset || 0
+  let events = [...CALENDARS.values()]
+  if (startDate) events = events.filter(e => e.startTime >= startDate)
+  if (endDate) events = events.filter(e => e.endTime <= endDate)
+  return events
+    .sort((a, b) => a.startTime - b.startTime)
+    .slice(startOffset, startOffset + maxResults)
+})
+
+registerHandle('calendar:update-event', (_event: unknown, args: unknown) => {
+  const { id, title, description, startTime, endTime, attendees, location } = (args || {}) as {
+    id: string
+    title?: string
+    description?: string
+    startTime?: number
+    endTime?: number
+    attendees?: Array<{ name: string; email: string; status: string }>
+    location?: string
+  }
+  const event = CALENDARS.get(id)
+  if (!event) return { ok: false, error: 'Event not found' }
+  if (title) event.title = title
+  if (description !== undefined) event.description = description
+  if (startTime) event.startTime = startTime
+  if (endTime) event.endTime = endTime
+  if (attendees) event.attendees = attendees as typeof event.attendees
+  if (location !== undefined) event.location = location
+  return { ok: true }
+})
+
+registerHandle('calendar:delete-event', (_event: unknown, args: unknown) => {
+  const { id } = (args || {}) as { id: string }
+  if (!CALENDARS.has(id)) return { ok: false, error: 'Event not found' }
+  CALENDARS.delete(id)
+  return { ok: true }
+})
+
+// ========== Workflow Engine ==========
+const WORKFLOWS = new Map<string, {
+  id: string
+  tenantId: string
+  name: string
+  description: string
+  steps: Array<{
+    id: string
+    type: 'approval' | 'notification' | 'condition' | 'integration'
+    config: Record<string, unknown>
+    next?: string
+  }>
+  triggers: string[]
+  status: 'active' | 'paused' | 'archived'
+  createdAt: number
+}>()
+
+registerHandle('workflow:create', (_event: unknown, args: unknown) => {
+  const { name, description, steps, triggers } = (args || {}) as {
+    name: string
+    description?: string
+    steps: Array<{
+      id: string
+      type: string
+      config: Record<string, unknown>
+      next?: string
+    }>
+    triggers?: string[]
+  }
+  const id = `workflow-${Date.now()}`
+  const workflowSteps = (steps || []).map(s => ({
+    ...s,
+    type: s.type as 'approval' | 'notification' | 'condition' | 'integration'
+  }))
+  WORKFLOWS.set(id, {
+    id,
+    tenantId: 'default',
+    name,
+    description: description || '',
+    steps: workflowSteps,
+    triggers: triggers || ['manual'],
+    status: 'active',
+    createdAt: Date.now(),
+  })
+  return { ok: true, id }
+})
+
+registerHandle('workflow:list', (_event: unknown, args: unknown) => {
+  const { status, limit, offset } = (args || {}) as {
+    status?: 'active' | 'paused' | 'archived'
+    limit?: number
+    offset?: number
+  }
+  const maxResults = limit || 50
+  const startOffset = offset || 0
+  let workflows = [...WORKFLOWS.values()]
+  if (status) workflows = workflows.filter(w => w.status === status)
+  return workflows
+    .slice(startOffset, startOffset + maxResults)
+    .map(w => ({
+      id: w.id,
+      name: w.name,
+      description: w.description,
+      stepCount: w.steps.length,
+      triggers: w.triggers,
+      status: w.status,
+      createdAt: w.createdAt,
+    }))
+})
+
+registerHandle('workflow:get', (_event: unknown, args: unknown) => {
+  const { id } = (args || {}) as { id: string }
+  return WORKFLOWS.get(id) || null
+})
+
+registerHandle('workflow:update', (_event: unknown, args: unknown) => {
+  const { id, name, description, steps, status } = (args || {}) as {
+    id: string
+    name?: string
+    description?: string
+    steps?: Array<{
+      id: string
+      type: string
+      config: Record<string, unknown>
+      next?: string
+    }>
+    status?: 'active' | 'paused' | 'archived'
+  }
+  const workflow = WORKFLOWS.get(id)
+  if (!workflow) return { ok: false, error: 'Workflow not found' }
+  if (name) workflow.name = name
+  if (description !== undefined) workflow.description = description
+  if (steps) workflow.steps = steps.map(s => ({
+    ...s,
+    type: s.type as 'approval' | 'notification' | 'condition' | 'integration'
+  }))
+  if (status) workflow.status = status
+  return { ok: true }
+})
+
+registerHandle('workflow:delete', (_event: unknown, args: unknown) => {
+  const { id } = (args || {}) as { id: string }
+  if (!WORKFLOWS.has(id)) return { ok: false, error: 'Workflow not found' }
+  WORKFLOWS.delete(id)
+  return { ok: true }
+})
+
+registerHandle('workflow:run', async (_event: unknown, args: unknown) => {
+  const { id, data } = (args || {}) as { id: string; data?: Record<string, unknown> }
+  const workflow = WORKFLOWS.get(id)
+  if (!workflow) return { ok: false, error: 'Workflow not found' }
+  if (workflow.status !== 'active') return { ok: false, error: 'Workflow is not active' }
+  
+  // 
+  const executionId = `exec-${Date.now()}`
+  return {
+    ok: true,
+    executionId,
+    status: 'running',
+    startedAt: Date.now(),
+  }
+})
+
+// ========== SSO/OIDC Authentication ==========
+registerHandle('auth:sso-login', (_event: unknown, args: unknown) => {
+  const { provider, redirectUri } = (args || {}) as {
+    provider: string
+    redirectUri?: string
+  }
+  //  SSO 
+  return {
+    authUrl: `https://sso.genoffice.ai/authorize?provider=${provider}&redirect_uri=${redirectUri || ''}`,
+    state: `state-${Date.now()}`,
+  }
+})
+
+registerHandle('auth:sso-callback', async (_event: unknown, args: unknown) => {
+  const { code, state } = (args || {}) as { code: string; state: string }
+  //  token
+  return {
+    ok: true,
+    accessToken: `token-${Date.now()}`,
+    refreshToken: `refresh-${Date.now()}`,
+    expiresIn: 3600,
+    user: {
+      id: `user-${Date.now()}`,
+      email: 'user@example.com',
+      name: 'SSO User',
+    },
+  }
+})
+
+registerHandle('auth:logout', (_event: unknown) => ({
+  ok: true,
+  redirectUrl: '/',
+}))
+
+
+// ========== Audit Logs ==========
+const AUDIT_LOGS = new Map<string, {
+  id: string
+  tenantId: string
+  userId: string
+  action: string
+  resource: string
+  resourceId: string
+  details: Record<string, unknown>
+  ip: string
+  userAgent: string
+  timestamp: number
+  status: 'success' | 'failure'
+}>()
+
+registerHandle('audit:log', (_event: unknown, args: unknown) => {
+  const { action, resource, resourceId, details, status } = (args || {}) as {
+    action: string
+    resource: string
+    resourceId?: string
+    details?: Record<string, unknown>
+    status?: 'success' | 'failure'
+  }
+  const id = `audit-${Date.now()}`
+  AUDIT_LOGS.set(id, {
+    id,
+    tenantId: 'default',
+    userId: 'system',
+    action,
+    resource,
+    resourceId: resourceId || '',
+    details: details || {},
+    ip: '0.0.0.0',
+    userAgent: 'GenOffice/1.0',
+    timestamp: Date.now(),
+    status: status || 'success',
+  })
+  return { ok: true, id }
+})
+
+registerHandle('audit:query', (_event: unknown, args: unknown) => {
+  const { userId, action, resource, startDate, endDate, limit, offset } = (args || {}) as {
+    userId?: string
+    action?: string
+    resource?: string
+    startDate?: number
+    endDate?: number
+    limit?: number
+    offset?: number
+  }
+  const maxResults = limit || 100
+  const startOffset = offset || 0
+  let logs = [...AUDIT_LOGS.values()]
+  if (userId) logs = logs.filter(l => l.userId === userId)
+  if (action) logs = logs.filter(l => l.action.includes(action))
+  if (resource) logs = logs.filter(l => l.resource === resource)
+  if (startDate) logs = logs.filter(l => l.timestamp >= startDate)
+  if (endDate) logs = logs.filter(l => l.timestamp <= endDate)
+  return {
+    logs: logs
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(startOffset, startOffset + maxResults),
+    total: logs.length,
+  }
+})
+
+registerHandle('audit:export', (_event: unknown, args: unknown) => {
+  const { format, startDate, endDate } = (args || {}) as {
+    format: 'csv' | 'json' | 'xlsx'
+    startDate?: number
+    endDate?: number
+  }
+  let logs = [...AUDIT_LOGS.values()]
+  if (startDate) logs = logs.filter(l => l.timestamp >= startDate)
+  if (endDate) logs = logs.filter(l => l.timestamp <= endDate)
+  
+  const exportId = `export-${Date.now()}`
+  return {
+    exportId,
+    format,
+    recordCount: logs.length,
+    downloadUrl: `/audit/exports/${exportId}.${format}`,
+  }
+})
 
 registerHandle('permissions:get', (_event: unknown, args: unknown) => {
   const { docId } = args as { docId: string }
@@ -2716,7 +3177,7 @@ registerHandle('permissions:check', (_event: unknown, args: unknown) => {
   return { allowed: hasPermission, reason: hasPermission ? 'OK' : 'Permission denied' }
 })
 
-// ========== 通知系统 ==========
+// ==========  ==========
 const NOTIFICATIONS = new Map<string, Array<{
   id: string
   type: 'info' | 'success' | 'warning' | 'error'
@@ -2781,7 +3242,7 @@ registerHandle('notifications:clear', (_event: unknown, args: unknown) => {
   return { ok: true, cleared: count }
 })
 
-// ========== Doc AI Skill (文档 AI 能力) ==========
+// ========== Doc AI Skill ( AI ) ==========
 registerHandle('ai:doc-write-continue', async (_event: unknown, args: unknown) => {
   const { docId, content, cursor, length } = args as {
     docId: string
@@ -2790,7 +3251,7 @@ registerHandle('ai:doc-write-continue', async (_event: unknown, args: unknown) =
     length?: number
   }
   
-  // 模拟 AI 续写
+  //  AI 
   const targetLength = length || 200
   return {
     text: `根据上文续写的内容，关于"${content.slice(0, 50)}..."的详细展开说明...`,
@@ -2886,7 +3347,7 @@ registerHandle('ai:doc-format-apply', async (_event: unknown, args: unknown) => 
   }
 })
 
-// ========== Sheet AI Skill (表格 AI 能力) ==========
+// ========== Sheet AI Skill ( AI ) ==========
 registerHandle('ai:sheets-formula-suggest', async (_event: unknown, args: unknown) => {
   const { dataRange, intent, sampleData } = args as {
     dataRange: string
@@ -3060,7 +3521,7 @@ registerHandle('ai:sheets-data-fill', async (_event: unknown, args: unknown) => 
   }
 })
 
-// ========== Slide AI Skill (幻灯片 AI 能力) ==========
+// ========== Slide AI Skill ( AI ) ==========
 registerHandle('ai:slides-generate-outline', async (_event: unknown, args: unknown) => {
   const { topic, slideCount } = args as {
     topic: string
@@ -3204,7 +3665,7 @@ registerHandle('ai:slides-translate', async (_event: unknown, args: unknown) => 
   }
 })
 
-// ========== Web 文件处理 ==========
+// ========== Web  ==========
 const WEB_TEMP_ROOT = join(tmpdir(), 'genoffice-web-temp')
 
 registerHandle('web:write-temp-file', async (_event: unknown, request: unknown) => {
@@ -3250,7 +3711,7 @@ registerHandle('web:save-file', async (_event: unknown, request: unknown) => {
   return { id: fileId, path: filePath, name }
 })
 
-// ========== HTTP 服务器 ==========
+// ========== HTTP  ==========
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
   response.writeHead(status, { 'Content-Type': 'application/json' })
   response.end(JSON.stringify(payload))
@@ -3265,13 +3726,13 @@ async function readBody(request: IncomingMessage): Promise<string> {
   })
 }
 
-// SSE 会话管理
+// SSE 
 const sessionConnections = new Map<string, Set<ServerResponse>>()
 const PENDING_FRAMES = new Map<string, string[]>()
 const SSE_HEARTBEAT_MS = 25000
 
 function pushSseEvent(session: string, channel: string, args: unknown[]): void {
-  // 编码参数 (支持 ArrayBuffer)
+  //  ( ArrayBuffer)
   const encodedArgs = args.map(arg => encodeTransportValue(arg))
   const frame = `data: ${JSON.stringify({ channel, args: encodedArgs })}\n\n`
   const connections = sessionConnections.get(session)
@@ -3300,7 +3761,7 @@ const server = createServer(async (request, response) => {
     return
   }
   
-  // 健康检查
+  // 
   if (url.pathname === '/health' && request.method === 'GET') {
     response.writeHead(200, { 'Content-Type': 'application/json' })
     response.end(JSON.stringify({
@@ -3313,14 +3774,14 @@ const server = createServer(async (request, response) => {
     return
   }
   
-  // 列出所有通道
+  // 
   if (url.pathname === '/api/channels' && request.method === 'GET') {
     response.writeHead(200, { 'Content-Type': 'application/json' })
     response.end(JSON.stringify({ channels: [...handlers.keys()].sort() }))
     return
   }
   
-  // 协作状态
+  // 
   if (url.pathname === '/api/collab/sessions' && request.method === 'GET') {
     const sessions = [...COLLAB_SESSIONS.entries()].map(([docId, session]) => ({
       docId,
@@ -3332,7 +3793,7 @@ const server = createServer(async (request, response) => {
     return
   }
   
-  // IPC 调用 (与 @genoffice/ipc-bridge 对齐)
+  // IPC  ( @genoffice/ipc-bridge )
   if (url.pathname.startsWith('/api/ipc/') && request.method === 'POST') {
     const channel = url.pathname.slice('/api/ipc/'.length)
     const session = request.headers['x-ipc-session'] as string | undefined
@@ -3341,7 +3802,7 @@ const server = createServer(async (request, response) => {
       const body = await readBody(request)
       const { args = [] } = JSON.parse(body || '{}')
       
-      // 解码参数 (支持 ArrayBuffer)
+      //  ( ArrayBuffer)
       const decodedArgs = (args as unknown[]).map(arg => decodeTransportValue(arg))
       
       const handler = handlers.get(channel)
@@ -3353,7 +3814,7 @@ const server = createServer(async (request, response) => {
             id: -1,
             isDestroyed: () => false,
             send: (ch: string, ...a: unknown[]) => {
-              // 编码发送的参数
+              // 
               const encodedArgs = a.map(arg => encodeTransportValue(arg))
               if (session) pushSseEvent(session, ch, encodedArgs)
             }
@@ -3361,7 +3822,7 @@ const server = createServer(async (request, response) => {
         }
         
         const result = await handler(event, ...decodedArgs)
-        // 编码结果 (支持 ArrayBuffer 返回)
+        //  ( ArrayBuffer )
         const encodedResult = encodeTransportValue(result)
         sendJson(response, 200, { ok: true, result: encodedResult })
       } else {
@@ -3373,7 +3834,7 @@ const server = createServer(async (request, response) => {
     return
   }
   
-  // SSE 事件流
+  // SSE 
   if (url.pathname === '/api/ipc/events' && request.method === 'GET') {
     const session = url.searchParams.get('session')
     if (!session) {
@@ -3413,7 +3874,7 @@ const server = createServer(async (request, response) => {
     return
   }
   
-  // Agent Loop SSE 端点 - 支持 @genoffice/agent-core HTTP Transport
+  // Agent Loop SSE  -  @genoffice/agent-core HTTP Transport
   if (url.pathname === '/api/ai/stream' && request.method === 'POST') {
     try {
       const body = await readBody(request)
@@ -3426,7 +3887,7 @@ const server = createServer(async (request, response) => {
         'X-Request-Id': requestId || '',
       })
       
-      // 模拟流式响应
+      // 
       const responseText = generateAgentResponse(messages || [])
       const words = responseText.split(/([\s，。、！？]+)/)
       let delay = 50
@@ -3435,12 +3896,12 @@ const server = createServer(async (request, response) => {
         response.write(`data: ${JSON.stringify({ requestId, type, ...data })}\n\n`)
       }
       
-      // 发送 ping 保持连接
+      //  ping 
       const pingInterval = setInterval(() => {
         try { response.write(`data: ${JSON.stringify({ requestId, type: 'ping' })}\n\n`) } catch {}
       }, 30000)
       
-      // 逐字发送响应
+      // 
       let wordIndex = 0
       const sendWord = () => {
         if (wordIndex >= words.length) {
@@ -3453,7 +3914,7 @@ const server = createServer(async (request, response) => {
         streamChunk('delta', { text: words[wordIndex] })
         wordIndex++
         
-        // 模拟工具调用（如果有工具）
+        // 
         if (wordIndex === Math.floor(words.length / 2) && tools && tools.length > 0) {
           const toolCall = {
             id: `tool-${Date.now()}`,
@@ -3478,7 +3939,7 @@ const server = createServer(async (request, response) => {
     return
   }
   
-  // 静态文件服务
+  // 
   const appName = url.searchParams.get('app') || 'docs'
   let filePath = resolve(STATIC_ROOT, appName, 'out', 'renderer', url.pathname === '/' ? 'index.html' : url.pathname)
   
@@ -3510,7 +3971,7 @@ server.listen(PORT, HOST, () => {
 ║                                                           ║
 ║   GenOffice Web Server v0.8.0 (Enhanced)                ║
 ║                                                           ║
-║   🌐 URL: http://${HOST}:${PORT}                            ║
+    URL: http://${HOST}:${PORT}                            
 ║   📁 Mode: Standalone (No Electron)                        ║
 ║                                                           ║
 ║   Apps: ${APPS.slice(0, 4).join(', ')}...                   ║
