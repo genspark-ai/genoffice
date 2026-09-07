@@ -327,7 +327,33 @@ registerHandle('files:read-image', async (_event: unknown, path: unknown) => {
 })
 
 // ========== Docs 功能 ==========
-registerHandle('docs:recent', () => [])
+// 文档存储
+const DOCS_FILE = join(DATA_DIR, 'docs.json')
+const DOCS_RECENT_FILE = join(DATA_DIR, 'docs-recent.json')
+
+interface DocInfo {
+  id: string
+  path: string
+  name: string
+  openedAt: number
+  modified: boolean
+}
+
+function loadRecentDocs(): DocInfo[] {
+  try {
+    if (existsSync(DOCS_RECENT_FILE)) {
+      return JSON.parse(readFileSync(DOCS_RECENT_FILE, 'utf-8'))
+    }
+  } catch {}
+  return []
+}
+
+function saveRecentDocs(docs: DocInfo[]): void {
+  writeFileSync(DOCS_RECENT_FILE, JSON.stringify(docs.slice(0, 10), null, 2))
+}
+
+registerHandle('docs:recent', () => loadRecentDocs())
+
 registerHandle('docs:font-metrics', (_event: unknown, family: unknown) => ({
   family: family || 'sans-serif',
   ascent: 0.8,
@@ -335,11 +361,13 @@ registerHandle('docs:font-metrics', (_event: unknown, family: unknown) => ({
   lineGap: 0.1,
   unitsPerEm: 1000,
 }))
+
 registerHandle('docs:pick-image', () => ({
   canceled: false,
   dataUrl: null,
   message: '请使用 Web File API 在前端选择图片'
 }))
+
 registerHandle('docs:get-settings', () => ({
   language: 'zh-CN',
   spellCheck: true,
@@ -348,7 +376,290 @@ registerHandle('docs:get-settings', () => ({
   fontSize: 14,
   fontFamily: 'sans-serif',
 }))
+
 registerHandle('docs:save-settings', () => ({ ok: true }))
+
+registerHandle('docs:open', async (_event: unknown, options: unknown) => {
+  const opts = options as { docx?: ArrayBuffer; path?: string } | undefined
+  const id = `doc-${Date.now()}`
+  
+  if (opts?.docx) {
+    const name = `文档-${new Date().toLocaleDateString()}.docx`
+    const path = join(FILES_DIR, `${id}.docx`)
+    writeFileSync(path, Buffer.from(opts.docx))
+    
+    const recent = loadRecentDocs()
+    recent.unshift({ id, path, name, openedAt: Date.now(), modified: false })
+    saveRecentDocs(recent)
+    
+    return { id, path, name }
+  }
+  
+  return { id, path: '', name: '新文档.docx' }
+})
+
+registerHandle('docs:open-path', async (_event: unknown, filePath: unknown) => {
+  if (!existsSync(filePath as string)) {
+    throw new Error(`File not found: ${filePath}`)
+  }
+  
+  const bytes = readFileSync(filePath as string)
+  const name = basename(filePath as string)
+  const id = `doc-${Date.now()}`
+  
+  const recent = loadRecentDocs()
+  recent.unshift({ id, path: filePath as string, name, openedAt: Date.now(), modified: false })
+  saveRecentDocs(recent)
+  
+  return { id, path: filePath, name, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
+})
+
+registerHandle('docs:read-path', async (_event: unknown, filePath: unknown) => {
+  if (!existsSync(filePath as string)) {
+    return null
+  }
+  const bytes = readFileSync(filePath as string)
+  return { name: basename(filePath as string), bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
+})
+
+registerHandle('docs:save-new', async (_event: unknown, args: unknown) => {
+  const { defaultName, data, projectId } = args as { defaultName?: string; data?: ArrayBuffer; projectId?: string }
+  const name = defaultName || `文档-${new Date().toLocaleDateString()}.docx`
+  const id = `doc-${Date.now()}`
+  const path = join(FILES_DIR, `${id}.docx`)
+  
+  if (data) {
+    writeFileSync(path, Buffer.from(data))
+  }
+  
+  if (projectId) {
+    const projects = loadProjects()
+    const project = projects.find(p => p.id === projectId)
+    if (project && !project.files.includes(`${id}.docx`)) {
+      project.files.push(`${id}.docx`)
+      project.updatedAt = Date.now()
+      saveProjects(projects)
+    }
+  }
+  
+  return { id, path, name }
+})
+
+registerHandle('docs:print', () => {
+  return { ok: true, message: '请使用浏览器的打印功能 (Ctrl+P 或 Cmd+P)' }
+})
+
+registerHandle('docs:consume-new-blank', () => ({ ok: true }))
+registerHandle('docs:consume-pending-open', () => null)
+registerHandle('docs:consume-ai-doc-content', () => ({ ok: true }))
+registerHandle('docs:write-recovery', () => ({ ok: true }))
+registerHandle('docs:password-intent-revision', () => 0)
+
+// ========== Sheets 功能 ==========
+const SHEETS_FILE = join(DATA_DIR, 'sheets.json')
+const SHEETS_RECENT_FILE = join(DATA_DIR, 'sheets-recent.json')
+
+interface SheetInfo {
+  id: string
+  path: string
+  name: string
+  openedAt: number
+}
+
+function loadRecentSheets(): SheetInfo[] {
+  try {
+    if (existsSync(SHEETS_RECENT_FILE)) {
+      return JSON.parse(readFileSync(SHEETS_RECENT_FILE, 'utf-8'))
+    }
+  } catch {}
+  return []
+}
+
+function saveRecentSheets(sheets: SheetInfo[]): void {
+  writeFileSync(SHEETS_RECENT_FILE, JSON.stringify(sheets.slice(0, 10), null, 2))
+}
+
+registerHandle('sheets:new-blank', async (_event: unknown, options: unknown) => {
+  const opts = options as { xlsx?: ArrayBuffer; path?: string } | undefined
+  const id = `sheet-${Date.now()}`
+  const name = `表格-${new Date().toLocaleDateString()}.xlsx`
+  const path = join(FILES_DIR, `${id}.xlsx`)
+  
+  if (opts?.xlsx) {
+    writeFileSync(path, Buffer.from(opts.xlsx))
+  }
+  
+  const recent = loadRecentSheets()
+  recent.unshift({ id, path, name, openedAt: Date.now() })
+  saveRecentSheets(recent)
+  
+  return { id, path, name }
+})
+
+registerHandle('sheets:has-queued-workbook', () => false)
+
+registerHandle('workbook:open-path', async (_event: unknown, filePath: unknown) => {
+  if (!existsSync(filePath as string)) {
+    throw new Error(`File not found: ${filePath}`)
+  }
+  
+  const bytes = readFileSync(filePath as string)
+  const name = basename(filePath as string)
+  const id = `sheet-${Date.now()}`
+  
+  const recent = loadRecentSheets()
+  recent.unshift({ id, path: filePath as string, name, openedAt: Date.now() })
+  saveRecentSheets(recent)
+  
+  return { id, path: filePath, name, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
+})
+
+// ========== Slides 功能 ==========
+const SLIDES_FILE = join(DATA_DIR, 'slides.json')
+const SLIDES_RECENT_FILE = join(DATA_DIR, 'slides-recent.json')
+
+interface SlideInfo {
+  id: string
+  path: string
+  name: string
+  openedAt: number
+}
+
+function loadRecentSlides(): SlideInfo[] {
+  try {
+    if (existsSync(SLIDES_RECENT_FILE)) {
+      return JSON.parse(readFileSync(SLIDES_RECENT_FILE, 'utf-8'))
+    }
+  } catch {}
+  return []
+}
+
+function saveRecentSlides(slides: SlideInfo[]): void {
+  writeFileSync(SLIDES_RECENT_FILE, JSON.stringify(slides.slice(0, 10), null, 2))
+}
+
+registerHandle('slides:new-blank', async (_event: unknown, options: unknown) => {
+  const opts = options as { pptx?: ArrayBuffer; path?: string } | undefined
+  const id = `slide-${Date.now()}`
+  const name = `演示文稿-${new Date().toLocaleDateString()}.pptx`
+  const path = join(FILES_DIR, `${id}.pptx`)
+  
+  if (opts?.pptx) {
+    writeFileSync(path, Buffer.from(opts.pptx))
+  }
+  
+  const recent = loadRecentSlides()
+  recent.unshift({ id, path, name, openedAt: Date.now() })
+  saveRecentSlides(recent)
+  
+  return { id, path, name }
+})
+
+registerHandle('slides:recent', () => loadRecentSlides())
+
+registerHandle('slides:open', async (_event: unknown, options: unknown) => {
+  const opts = options as { pptx?: ArrayBuffer; path?: string } | undefined
+  const id = `slide-${Date.now()}`
+  const name = opts?.path ? basename(opts.path) : `演示文稿-${Date.now()}.pptx`
+  
+  return { id, path: opts?.path || '', name }
+})
+
+registerHandle('slides:open-path', async (_event: unknown, filePath: unknown) => {
+  if (!existsSync(filePath as string)) {
+    throw new Error(`File not found: ${filePath}`)
+  }
+  
+  const bytes = readFileSync(filePath as string)
+  const name = basename(filePath as string)
+  const id = `slide-${Date.now()}`
+  
+  const recent = loadRecentSlides()
+  recent.unshift({ id, path: filePath as string, name, openedAt: Date.now() })
+  saveRecentSlides(recent)
+  
+  return { id, path: filePath, name, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
+})
+
+registerHandle('slides:save', async (_event: unknown, args: unknown) => {
+  const { id, path, data } = args as { id: string; path: string; data?: ArrayBuffer }
+  if (data && path) {
+    writeFileSync(path, Buffer.from(data))
+  }
+  return { ok: true, path }
+})
+
+registerHandle('slides:save-as', async (_event: unknown, args: unknown) => {
+  const { defaultName, data } = args as { defaultName: string; data?: ArrayBuffer }
+  const id = `slide-${Date.now()}`
+  const name = defaultName || `演示文稿.pptx`
+  const path = join(FILES_DIR, `${id}.pptx`)
+  
+  if (data) {
+    writeFileSync(path, Buffer.from(data))
+  }
+  
+  return { id, path, name }
+})
+
+registerHandle('slides:export-pdf', () => ({ ok: true, message: '请使用浏览器的打印功能导出 PDF' }))
+registerHandle('slides:consume-pending-open', () => null)
+registerHandle('slides:add-blank-slide', () => ({ ok: true, slideId: `slide-${Date.now()}` }))
+registerHandle('slides:add-slide', () => ({ ok: true, slideId: `slide-${Date.now()}` }))
+registerHandle('slides:add-chart', () => ({ ok: true, chartId: `chart-${Date.now()}` }))
+registerHandle('slides:add-image-bytes', () => ({ ok: true, imageId: `image-${Date.now()}` }))
+registerHandle('slides:add-table', () => ({ ok: true, tableId: `table-${Date.now()}` }))
+registerHandle('slides:add-text', () => ({ ok: true, elementId: `text-${Date.now()}` }))
+registerHandle('slides:add-element', () => ({ ok: true, elementId: `element-${Date.now()}` }))
+registerHandle('slides:edit-text', () => ({ ok: true }))
+registerHandle('slides:delete-element', () => ({ ok: true }))
+registerHandle('slides:undo', () => ({ ok: true }))
+registerHandle('slides:redo', () => ({ ok: true }))
+registerHandle('slides:get-render-slides', () => [])
+
+// ========== PDF 功能 ==========
+registerHandle('pdf:open-path', async (_event: unknown, filePath: unknown) => {
+  if (!existsSync(filePath as string)) {
+    throw new Error(`File not found: ${filePath}`)
+  }
+  const bytes = readFileSync(filePath as string)
+  return { path: filePath, bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
+})
+
+// ========== Clipboard 功能 (Web API 模拟) ==========
+registerHandle('clipboard:copy', (_event: unknown, text: unknown) => ({
+  ok: true,
+  message: '请使用浏览器原生 Ctrl+C / Cmd+C'
+}))
+registerHandle('clipboard:cut', (_event: unknown, text: unknown) => ({
+  ok: true,
+  message: '请使用浏览器原生 Ctrl+X / Cmd+X'
+}))
+registerHandle('clipboard:paste', () => ({
+  text: '',
+  message: '请使用浏览器原生 Ctrl+V / Cmd+V'
+}))
+
+// ========== Win 功能 (Web Window 模拟) ==========
+const WEB_WINDOWS: Map<string, { url: string; name: string }> = new Map()
+
+registerHandle('win:new', (_event: unknown, options: unknown) => {
+  const opts = options as { url?: string; name?: string } | undefined
+  const id = `win-${Date.now()}`
+  WEB_WINDOWS.set(id, { url: opts?.url || '/', name: opts?.name || '新窗口' })
+  return { id, url: opts?.url || '/' }
+})
+
+registerHandle('win:list', () => {
+  return [...WEB_WINDOWS.entries()].map(([id, win]) => ({ id, ...win }))
+})
+
+registerHandle('win:focus', (_event: unknown, id: unknown) => {
+  if (WEB_WINDOWS.has(id as string)) {
+    return { ok: true, id }
+  }
+  return { ok: false, error: 'Window not found' }
+})
 
 // ========== 协作功能 ==========
 registerHandle('collab:join', (_event: unknown, args: unknown) => {

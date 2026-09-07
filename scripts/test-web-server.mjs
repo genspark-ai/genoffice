@@ -147,6 +147,43 @@ const WEB_SERVER_IMPLEMENTED = [
   'docs:recent',
   'docs:font-metrics',
   'docs:pick-image',
+  'docs:open',
+  'docs:open-path',
+  'docs:read-path',
+  'docs:save-new',
+  'docs:print',
+  'docs:consume-new-blank',
+  'docs:consume-pending-open',
+  'docs:consume-ai-doc-content',
+  'docs:write-recovery',
+  'docs:password-intent-revision',
+  // Sheets
+  'sheets:new-blank',
+  'sheets:has-queued-workbook',
+  'workbook:open-path',
+  // Slides
+  'slides:new-blank',
+  'slides:recent',
+  'slides:open',
+  'slides:open-path',
+  'slides:save',
+  'slides:save-as',
+  'slides:export-pdf',
+  'slides:consume-pending-open',
+  'slides:add-blank-slide',
+  'slides:add-slide',
+  'slides:add-chart',
+  'slides:add-image-bytes',
+  'slides:add-table',
+  'slides:add-text',
+  'slides:add-element',
+  'slides:edit-text',
+  'slides:delete-element',
+  'slides:undo',
+  'slides:redo',
+  'slides:get-render-slides',
+  // PDF
+  'pdf:open-path',
   // Project
   'project:list',
   'project:create',
@@ -163,6 +200,14 @@ const WEB_SERVER_IMPLEMENTED = [
   'collab:join',
   'collab:leave',
   'collab:sync',
+  // Clipboard
+  'clipboard:copy',
+  'clipboard:cut',
+  'clipboard:paste',
+  // Win
+  'win:new',
+  'win:list',
+  'win:focus',
   // Web
   'web:write-temp-file',
   'web:read-file-bytes',
@@ -193,6 +238,14 @@ async function testChannel(channel) {
     body = { args: [] }
   } else if (channel === 'collab:join' || channel === 'collab:leave' || channel === 'collab:sync') {
     body = { args: [{ docId: 'test-doc', userId: 'test-user' }] }
+  } else if (channel === 'docs:open-path' || channel === 'docs:read-path') {
+    body = { args: ['/tmp/test.docx'] }
+  } else if (channel === 'workbook:open-path' || channel === 'slides:open-path') {
+    body = { args: ['/tmp/test.xlsx'] }
+  } else if (channel === 'pdf:open-path') {
+    body = { args: ['/tmp/test.pdf'] }
+  } else if (channel === 'docs:save-new' || channel === 'slides:save' || channel === 'slides:save-as') {
+    body = { args: [{ defaultName: 'test.docx' }] }
   }
   
   try {
