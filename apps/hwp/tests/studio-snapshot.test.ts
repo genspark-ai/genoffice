@@ -62,12 +62,17 @@ describe('studio snapshot helpers', () => {
     expect(next).toContain('case`setField`')
     expect(next).toContain('case`insertBodyParagraphs`')
     expect(next).toContain('case`insertFilledParagraphs`')
-    expect(next).toContain('/*genoffice-prepare-text-v5*/')
+    expect(next).toContain('case`insertTable`')
+    expect(next).toContain('case`applyBodyCharFormat`')
+    expect(next).toContain('/*genoffice-prepare-text-v7*/')
     expect(next).toContain('async insertFilledParagraphs(e,t,n){')
+    expect(next).toContain('insertTable(e,t,n,r){')
+    expect(next).toContain('findOrCreateFontId(String(a.fontName))')
     expect(next).toContain('selectionStart')
     expect(next).toContain('Gk(this.deps.wasm,e.target)')
     expect(next).not.toMatch(/,listBodyParagraphs\(\)\{this\.syncGeneration\(\)/)
     expect(next).not.toMatch(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/)
+    expect(next).not.toMatch(/,insertTable\(e,t,n,r\)\{/)
     expect(next).toContain('listBodyParagraphs(){this.syncGeneration()')
     expect(next).toContain('let s=r.getParagraphCount(e);')
     expect(next).toContain('r.splitParagraph(e,')
@@ -100,12 +105,13 @@ describe('studio snapshot helpers', () => {
       'case`setField`:return n.setField(i.name,i.value);case`applyTextCommand`:return n.applyTextCommand(e)',
     ].join(';')
     const next = exposePrepareTextCommand(v2)
-    expect(next).toContain('/*genoffice-prepare-text-v5*/')
+    expect(next).toContain('/*genoffice-prepare-text-v7*/')
     expect(next).toContain('listTables(){')
     expect(next).toContain('case`listTables`')
     expect(next).toContain('case`replaceCell`')
     expect(next).toContain('case`insertBodyParagraphs`')
     expect(next).toContain('case`insertFilledParagraphs`')
+    expect(next).toContain('case`insertTable`')
     expect(exposePrepareTextCommand(next)).toBe(next)
   })
 
@@ -117,14 +123,44 @@ describe('studio snapshot helpers', () => {
       'case`replaceCell`:return n.replaceCell(i.section,i.paragraph,i.control,i.cellIndex,i.text);case`applyTextCommand`:return n.applyTextCommand(e)',
     ].join(';')
     const next = exposePrepareTextCommand(v3)
-    expect(next).toContain('/*genoffice-prepare-text-v5*/')
+    expect(next).toContain('/*genoffice-prepare-text-v7*/')
     expect(next).toContain('async insertFilledParagraphs(e,t,n){')
     expect(next).toContain('let s=r.getParagraphCount(e);')
     expect(next).toContain('r.splitParagraph(e,')
     expect(next).toContain('case`insertBodyParagraphs`')
+    expect(next).toContain('case`insertTable`')
     expect(next).not.toMatch(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/)
     expect(next).toContain('async insertBodyParagraphs(e,t,n){if(await')
     expect(next).not.toContain('insertBodyParagraphs(e.section,e.index,e.count)')
+    expect(exposePrepareTextCommand(next)).toBe(next)
+  })
+
+  it('upgrades a v5 fill surface to insertTable and format', () => {
+    const v5 = [
+      '/*genoffice-prepare-text-v5*/prepareTextCommand(){return{selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration();return []}',
+      'async insertFilledParagraphs(e,t,n){if(!Array.isArray(n)||n.length<1)throw Error(`insert texts must be a non-empty array`);return{section:e,index:t,count:n.length}}async applyTextCommand(e){return e}',
+      'async insertFilledParagraphs(e,t,n){if(await $,!sA)throw Error(`Document agent is not initialized`);return sA.insertFilledParagraphs(e,t,n)},async applyTextCommand(e){return e}',
+      'case`insertFilledParagraphs`:return n.insertFilledParagraphs(i.section,i.index,i.texts);case`applyTextCommand`:return n.applyTextCommand(e)',
+    ].join('')
+    const next = exposePrepareTextCommand(v5)
+    expect(next).toContain('/*genoffice-prepare-text-v7*/')
+    expect(next).toContain('insertTable(e,t,n,r){')
+    expect(next).toContain('applyBodyCharFormat(e,t,n,r,i){')
+    expect(next).toContain('findOrCreateFontId(String(a.fontName))')
+    expect(next).toContain('case`insertTable`')
+    expect(next).toContain('case`applyBodyParaFormat`')
+    expect(next).not.toMatch(/,insertTable\(e,t,n,r\)\{/)
+    expect(exposePrepareTextCommand(next)).toBe(next)
+  })
+
+  it('upgrades a v6 format surface to resolve font names', () => {
+    const v6 = [
+      '/*genoffice-prepare-text-v6*/prepareTextCommand(){return{selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration();return []}',
+      'applyBodyCharFormat(e,t,n,r,i){this.syncGeneration();let a=this.deps.wasm.applyCharFormat(e,t,n,r,i);if(typeof a==`string`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||`applyCharFormat failed`));return a}async applyTextCommand(e){return e}',
+    ].join('')
+    const next = exposePrepareTextCommand(v6)
+    expect(next).toContain('/*genoffice-prepare-text-v7*/')
+    expect(next).toContain('findOrCreateFontId(String(a.fontName))')
     expect(exposePrepareTextCommand(next)).toBe(next)
   })
 

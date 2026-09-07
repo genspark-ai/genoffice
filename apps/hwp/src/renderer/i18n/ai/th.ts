@@ -7,7 +7,7 @@ export const th = {
   aiEditorNotReady: 'กำลังโหลดตัวแก้ไขฮันกึล…',
   aiEmptyTitle: 'ถามเกี่ยวกับเอกสารฮันกึลนี้',
   aiEmptyBody:
-    'สรุป แปล หรือเขียนส่วนที่เลือกได้ รวมถึงเพิ่มย่อหน้าใหม่ กรอกฟิลด์ แก้เซลล์ตาราง และค้นหาบนเว็บ',
+    'สรุป แปล หรือเขียนส่วนที่เลือกได้ รวมถึงเพิ่มย่อหน้าใหม่ แทรกตาราง จัดรูปแบบตัวหนา/สี/ฟอนต์/เยื้อง/ระยะบรรทัด กรอกฟิลด์ แก้เซลล์ตาราง และค้นหาบนเว็บ',
   aiNewChat: 'แชทใหม่',
   aiSend: 'ส่ง',
   aiStop: 'หยุด',
@@ -41,4 +41,8 @@ export const th = {
   aiToolSetFieldDone: 'กรอกฟิลด์แล้ว',
   aiToolReplaceCell: 'แทนที่เซลล์',
   aiToolReplaceCellDone: 'แทนที่เซลล์แล้ว',
+  aiToolInsertTable: 'แทรกตาราง',
+  aiToolInsertTableDone: 'แทรกตารางแล้ว',
+  aiToolApplyFormat: 'จัดรูปแบบ',
+  aiToolApplyFormatDone: 'จัดรูปแบบแล้ว',
 } satisfies Record<keyof typeof zh, string>

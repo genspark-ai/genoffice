@@ -6,7 +6,7 @@ export const zhTW = {
   aiComposerPlaceholder: '問問這份韓文文件…',
   aiEditorNotReady: '編輯器尚未就緒…',
   aiEmptyTitle: '問問這份韓文文件',
-  aiEmptyBody: '可以摘要、翻譯、改寫選取範圍或段落，寫入新段落，填寫欄位、修改表格儲存格，也可以搜尋網路上的事實。',
+  aiEmptyBody: '可以摘要、翻譯、改寫選取範圍或段落，寫入新段落，插入表格，套用粗體／顏色／字型／縮排／行距等格式，填寫欄位、修改表格儲存格，也可以搜尋網路上的事實。',
   aiNewChat: '新對話',
   aiSend: '傳送',
   aiStop: '停止',
@@ -39,4 +39,8 @@ export const zhTW = {
   aiToolSetFieldDone: '已填寫欄位',
   aiToolReplaceCell: '取代儲存格',
   aiToolReplaceCellDone: '已取代儲存格',
+  aiToolInsertTable: '插入表格',
+  aiToolInsertTableDone: '已插入表格',
+  aiToolApplyFormat: '套用格式',
+  aiToolApplyFormatDone: '已套用格式',
 } satisfies Record<keyof typeof zh, string>

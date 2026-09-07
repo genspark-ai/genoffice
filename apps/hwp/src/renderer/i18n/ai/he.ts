@@ -6,7 +6,7 @@ export const he = {
   aiComposerPlaceholder: 'שאלו על מסמך ההאנגול הזה…',
   aiEditorNotReady: 'עורך ההאנגול עדיין נטען…',
   aiEmptyTitle: 'שאלו על מסמך ההאנגול הזה',
-  aiEmptyBody: 'סכמו, תרגמו או כתבו מחדש בחירה או פסקה. אפשר גם לכתוב פסקאות חדשות, למלא שדות, לערוך תאים או לחפש באינטרנט.',
+  aiEmptyBody: 'סכמו, תרגמו או כתבו מחדש בחירה או פסקה. אפשר גם לכתוב פסקאות חדשות, להוסיף טבלאות, להחיל מודגש/צבע/גופן/הזחה/ריווח שורות, למלא שדות, לערוך תאים או לחפש באינטרנט.',
   aiNewChat: 'שיחה חדשה',
   aiSend: 'שלח',
   aiStop: 'עצור',
@@ -39,4 +39,8 @@ export const he = {
   aiToolSetFieldDone: 'השדה מולא',
   aiToolReplaceCell: 'החלפת תא',
   aiToolReplaceCellDone: 'התא הוחלף',
+  aiToolInsertTable: 'הוספת טבלה',
+  aiToolInsertTableDone: 'הטבלה נוספה',
+  aiToolApplyFormat: 'החלת עיצוב',
+  aiToolApplyFormatDone: 'העיצוב הוחל',
 } satisfies Record<keyof typeof zh, string>

@@ -5,7 +5,7 @@ export const zh = {
   aiComposerPlaceholder: '问问这份韩文文档…',
   aiEditorNotReady: '编辑器尚未就绪…',
   aiEmptyTitle: '问问这份韩文文档',
-  aiEmptyBody: '可以总结、翻译、改写选区或段落，写入新段落，填写字段，修改表格单元格，也可以检索网上的事实。',
+  aiEmptyBody: '可以总结、翻译、改写选区或段落，写入新段落，插入表格，应用加粗/颜色/字体/缩进/行距等格式，填写字段，修改表格单元格，也可以检索网上的事实。',
   aiNewChat: '新对话',
   aiSend: '发送',
   aiStop: '停止',
@@ -38,4 +38,8 @@ export const zh = {
   aiToolSetFieldDone: '已填写字段',
   aiToolReplaceCell: '替换单元格',
   aiToolReplaceCellDone: '已替换单元格',
+  aiToolInsertTable: '插入表格',
+  aiToolInsertTableDone: '已插入表格',
+  aiToolApplyFormat: '应用格式',
+  aiToolApplyFormatDone: '已应用格式',
 }

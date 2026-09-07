@@ -4,6 +4,7 @@ import {
   clipPlainText,
   SELECTION_PREVIEW_CHARS,
   type HangulField,
+  type HangulFormatSpec,
   type HangulParagraphPreview,
   type HangulTable,
 } from '../studio-text'
@@ -23,13 +24,16 @@ const SYSTEM_PROMPT = [
   '- replace_paragraph changes one existing paragraph. Call it once per turn; hashes change after each apply, so parallel or batched replaces fail.',
   '- Prefer replace_selection when the user has a selection and wants only that span changed.',
   '- Small in-place fixes stay on replace_selection / one replace_paragraph. Full drafts and multi-paragraph additions go through insert_content.',
-  '- Fields (누름틀): get_fields / set_field. Tables: get_tables / replace_cell (first paragraph in the cell).',
+  '- Fields (누름틀): get_fields / set_field. Existing tables: get_tables / replace_cell (first paragraph in the cell).',
+  '- New tables: insert_table (rows/cols, optional cells[][]). Do not fake a table with tabs or " | " text. Fill leftover cells with replace_cell.',
+  '- Formatting (bold/italic/underline/strikethrough, fontSize in points, color hex, font name, align, lineSpacing, indentLeft/Right/FirstLine in points, bullet/number lists): apply_format on existing paragraphs. Do not rewrite a paragraph just to change style.',
   '- After any mutation, indexes change — get_paragraphs before further index-based edits. If a tool reports success, do not retry blindly.',
   '- Replacements are plain text: no C0 controls. Each body paragraph is capped at 4000 characters (fields/cells 8000). One insert_content may add at most 80 paragraphs. Headers and footnotes are not editable.',
   '',
   '# Writing a new document',
   '- A new Hangul file often has one locked section-control paragraph. That is not "cannot write" — omit afterIndex and insert_content will skip locked rows and write after them.',
   '- When the body looks blank and the user asks for a plan, report, or any draft, write the complete document in one insert_content call: title first, then numbered sections, short paragraphs.',
+  '- After that insert, use apply_format for the title (bold, larger fontSize, center) and insert_table for any tabular block. Do not put HTML or markdown tables in insert_content.',
   '- If the topic is unspecified, either ask one clarifying question first or write a complete generic template in that same call (headings AND body lines together). Never insert empty numbered headings to fill later.',
   '- Never invent facts, dates, names, or budget numbers. Use web_search for current facts; cite sources in your reply, not as if you wrote them into the document.',
   '',
@@ -46,6 +50,8 @@ const SYSTEM_PROMPT = [
   '- HG-2 Retrying insert_content after "Inserted N paragraph(s)" (duplicates the draft).',
   '- HG-3 Treating the first locked section-control paragraph as "the document cannot be edited".',
   '- HG-4 Firing several replace_paragraph calls in the same turn.',
+  '- HG-5 Drawing a table with tabs, markdown pipes, or ASCII lines instead of insert_table.',
+  '- HG-6 Rewriting a paragraph with replace_paragraph only to change bold/align/list/size.',
 ].join('\n')
 
 const TOOLS: AgentToolDef[] = [
@@ -150,6 +156,78 @@ const TOOLS: AgentToolDef[] = [
       required: ['table', 'row', 'col', 'text'],
     },
   },
+  {
+    name: 'insert_table',
+    description:
+      'Insert a new table. rows/cols are required. Optional cells is a row-major array of strings. Omit afterIndex to insert after the caret (uses an empty caret paragraph). afterIndex -1 inserts at the start. Fill leftover cells with replace_cell.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rows: { type: 'number', description: 'Number of rows (1-20)' },
+        cols: { type: 'number', description: 'Number of columns (1-10)' },
+        cells: {
+          type: 'array',
+          description: 'Optional row-major cell text. Missing or empty cells stay blank.',
+          items: { type: 'array', items: { type: 'string' } },
+        },
+        afterIndex: {
+          type: 'number',
+          description:
+            'Insert after this 0-based paragraph index from get_paragraphs. -1 = start of document. Omit to use the caret.',
+        },
+      },
+      required: ['rows', 'cols'],
+    },
+  },
+  {
+    name: 'apply_format',
+    description:
+      'Set character or paragraph formatting on existing body text. Omit index to format the caret paragraph (or the current selection span for character styles). Use indexes to format several paragraphs in one call. Do not rewrite text just to change style.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        index: {
+          type: 'number',
+          description: '0-based paragraph index from get_paragraphs. Omit to use the caret.',
+        },
+        indexes: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Format several paragraphs. At most 40. Overrides index.',
+        },
+        bold: { type: 'boolean' },
+        italic: { type: 'boolean' },
+        underline: { type: 'boolean' },
+        strikethrough: { type: 'boolean' },
+        fontSize: { type: 'number', description: 'Font size in points (8-72)' },
+        color: {
+          type: 'string',
+          description: 'Text color as 3- or 6-digit hex, with or without # (e.g. FF0000)',
+        },
+        font: { type: 'string', description: 'Font family name (e.g. 맑은 고딕, Pretendard)' },
+        lineSpacing: {
+          type: 'number',
+          description: 'Line spacing as a multiplier (1.5) or percent (150)',
+        },
+        indentLeft: { type: 'number', description: 'Left indent in points' },
+        indentRight: { type: 'number', description: 'Right indent in points' },
+        indentFirstLine: {
+          type: 'number',
+          description: 'First-line indent in points; negative = hanging indent',
+        },
+        align: {
+          type: 'string',
+          enum: ['left', 'center', 'right', 'justify'],
+          description: 'Paragraph alignment',
+        },
+        list: {
+          type: 'string',
+          enum: ['none', 'bullet', 'number'],
+          description: 'Bullet or numbered list, or none to clear',
+        },
+      },
+    },
+  },
 ]
 
 const MUTATING_TOOLS = [
@@ -158,6 +236,8 @@ const MUTATING_TOOLS = [
   'replace_selection',
   'set_field',
   'replace_cell',
+  'insert_table',
+  'apply_format',
 ]
 
 function requireToolIndex(value: unknown, label: string): number {
@@ -231,6 +311,17 @@ export interface HangulSkillDeps {
     col: number,
     text: string,
   ): Promise<{ before: string; after: string }>
+  insertTable(
+    rows: number,
+    cols: number,
+    cells?: string[][],
+    afterIndex?: number,
+  ): Promise<{ table: number; rows: number; cols: number; unfilled: string[] }>
+  applyFormat(
+    format: HangulFormatSpec,
+    index?: number,
+    indexes?: number[],
+  ): Promise<{ indexes: number[]; applied: string[] }>
 }
 
 function formatParagraphs(items: HangulParagraphPreview[]): string {
@@ -484,10 +575,97 @@ export function createHangulSkill(getDeps: () => HangulSkillDeps): AgentSkill {
           }
         }
       }
+      if (call.name === 'insert_table') {
+        let rows: number
+        let cols: number
+        let afterIndex: number | undefined
+        try {
+          rows = requireToolIndex(call.input.rows, 'rows')
+          cols = requireToolIndex(call.input.cols, 'cols')
+          afterIndex = optionalToolIndex(call.input.afterIndex, 'afterIndex')
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolInsertTable'),
+          }
+        }
+        try {
+          const result = await deps.insertTable(
+            rows,
+            cols,
+            Array.isArray(call.input.cells) ? (call.input.cells as string[][]) : undefined,
+            afterIndex,
+          )
+          const leftover = result.unfilled.length
+            ? ` Unfilled cells: ${result.unfilled.join(', ')}.`
+            : ''
+          return {
+            output: `Inserted table[${result.table}] ${result.rows}x${result.cols}.${leftover} Fill leftover cells with replace_cell. Do not insert another table unless the user asked for more than one.`,
+            mutated: true,
+            summary: t('aiToolInsertTableDone'),
+          }
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolInsertTable'),
+          }
+        }
+      }
+      if (call.name === 'apply_format') {
+        let index: number | undefined
+        let indexes: number[] | undefined
+        try {
+          index = optionalToolIndex(call.input.index)
+          if (call.input.indexes != null) {
+            if (!Array.isArray(call.input.indexes)) throw new Error('indexes must be an array')
+            indexes = call.input.indexes.map((value, i) => requireToolIndex(value, `indexes[${i}]`))
+          }
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolApplyFormat'),
+          }
+        }
+        const format: HangulFormatSpec = {}
+        if (typeof call.input.bold === 'boolean') format.bold = call.input.bold
+        if (typeof call.input.italic === 'boolean') format.italic = call.input.italic
+        if (typeof call.input.underline === 'boolean') format.underline = call.input.underline
+        if (typeof call.input.strikethrough === 'boolean') format.strikethrough = call.input.strikethrough
+        if (call.input.fontSize != null) format.fontSize = Number(call.input.fontSize)
+        if (typeof call.input.color === 'string') format.color = call.input.color
+        if (typeof call.input.font === 'string') format.font = call.input.font
+        if (call.input.lineSpacing != null) format.lineSpacing = Number(call.input.lineSpacing)
+        if (call.input.indentLeft != null) format.indentLeft = Number(call.input.indentLeft)
+        if (call.input.indentRight != null) format.indentRight = Number(call.input.indentRight)
+        if (call.input.indentFirstLine != null) format.indentFirstLine = Number(call.input.indentFirstLine)
+        if (typeof call.input.align === 'string') {
+          format.align = call.input.align as HangulFormatSpec['align']
+        }
+        if (typeof call.input.list === 'string') {
+          format.list = call.input.list as HangulFormatSpec['list']
+        }
+        try {
+          const result = await deps.applyFormat(format, index, indexes)
+          return {
+            output: `Applied ${result.applied.join(', ') || 'format'} to paragraph(s) [${result.indexes.join(', ')}].`,
+            mutated: true,
+            summary: t('aiToolApplyFormatDone'),
+          }
+        } catch (err) {
+          return {
+            output: err instanceof Error ? err.message : String(err),
+            isError: true,
+            summary: t('aiToolApplyFormat'),
+          }
+        }
+      }
       return { output: `Unknown tool: ${call.name}`, isError: true, summary: call.name }
     },
     verifyResponse: (finalText, executed) => {
-      const claimed = /바꿨|수정했|고쳤|넣었|삽입했|filled|replaced|rewrote|inserted|edited the (document|paragraph|selection|cell|field)/i.test(
+      const claimed = /바꿨|수정했|고쳤|넣었|삽입했|filled|replaced|rewrote|inserted|formatted|edited the (document|paragraph|selection|cell|field|table)/i.test(
         finalText,
       )
       if (!claimed) return null

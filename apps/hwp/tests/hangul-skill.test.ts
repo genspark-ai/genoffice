@@ -32,6 +32,11 @@ function deps(partial: Partial<HangulSkillDeps> = {}): HangulSkillDeps {
       },
     ],
     replaceCell: async (_table, _row, _col, text) => ({ before: '칸', after: text }),
+    insertTable: async (rows, cols) => ({ table: 0, rows, cols, unfilled: [] }),
+    applyFormat: async (_format, index, indexes) => ({
+      indexes: indexes ?? [index ?? 0],
+      applied: ['bold=true'],
+    }),
     ...partial,
   }
 }
@@ -50,6 +55,9 @@ describe('createHangulSkill', () => {
     expect(skill.systemPrompt).toMatch(/one insert_content/)
     expect(skill.systemPrompt).toMatch(/# Intent resolution/)
     expect(skill.systemPrompt).toMatch(/HG-2/)
+    expect(skill.systemPrompt).toMatch(/insert_table/)
+    expect(skill.systemPrompt).toMatch(/apply_format/)
+    expect(skill.systemPrompt).toMatch(/HG-5/)
     expect(skill.systemPrompt).not.toMatch(/no editing tools/i)
     expect(skill.systemPrompt).not.toMatch(/You cannot create new body paragraphs/)
   })
@@ -264,6 +272,12 @@ describe('createHangulSkill', () => {
     expect(
       skill.verifyResponse?.('문단을 바꿨습니다.', [{ name: 'replace_paragraph', ok: false }]),
     ).not.toMatch(/was not changed/i)
+    expect(
+      skill.verifyResponse?.('표를 넣었습니다.', [{ name: 'insert_table', ok: true }]),
+    ).toBeNull()
+    expect(
+      skill.verifyResponse?.('제목을 굵게 했습니다.', [{ name: 'apply_format', ok: true }]),
+    ).toBeNull()
   })
 
   it('replaces a selection and a field', async () => {
@@ -298,6 +312,63 @@ describe('createHangulSkill', () => {
     })
     expect(cell.mutated).toBe(true)
     expect(cell.output).toContain('새 칸')
+  })
+
+  it('inserts a table and applies format', async () => {
+    let tableArgs: unknown[] | null = null
+    let formatArgs: unknown[] | null = null
+    const skill = createHangulSkill(() =>
+      deps({
+        insertTable: async (rows, cols, cells, afterIndex) => {
+          tableArgs = [rows, cols, cells, afterIndex]
+          return { table: 1, rows, cols, unfilled: [] }
+        },
+        applyFormat: async (format, index, indexes) => {
+          formatArgs = [format, index, indexes]
+          return { indexes: indexes ?? [index ?? 0], applied: ['bold=true', 'align=center', 'color=FF0000'] }
+        },
+      }),
+    )
+    const table = await skill.executeTool({
+      id: '10',
+      name: 'insert_table',
+      input: { rows: 2, cols: 3, cells: [['a', 'b', 'c']], afterIndex: '' },
+    })
+    expect(table.isError).toBeUndefined()
+    expect(table.mutated).toBe(true)
+    expect(table.output).toContain('table[1]')
+    expect(table.output).toContain('2x3')
+    expect(tableArgs).toEqual([2, 3, [['a', 'b', 'c']], undefined])
+    const format = await skill.executeTool({
+      id: '11',
+      name: 'apply_format',
+      input: { index: '0', bold: true, align: 'center', color: 'FF0000', lineSpacing: 1.5 },
+    })
+    expect(format.isError).toBeUndefined()
+    expect(format.mutated).toBe(true)
+    expect(format.output).toContain('bold=true')
+    expect(formatArgs?.[1]).toBe(0)
+    expect(formatArgs?.[0]).toMatchObject({ bold: true, align: 'center', color: 'FF0000', lineSpacing: 1.5 })
+  })
+
+  it('rejects a blank table size instead of writing a 0x0 table', async () => {
+    let called = false
+    const skill = createHangulSkill(() =>
+      deps({
+        insertTable: async () => {
+          called = true
+          return { table: 0, rows: 1, cols: 1, unfilled: [] }
+        },
+      }),
+    )
+    const result = await skill.executeTool({
+      id: '10',
+      name: 'insert_table',
+      input: { rows: '', cols: 2 },
+    })
+    expect(result.isError).toBe(true)
+    expect(result.output).toMatch(/must be an integer/)
+    expect(called).toBe(false)
   })
 
   it('clips a long selection preview in context', () => {

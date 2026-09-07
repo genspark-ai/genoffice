@@ -7,7 +7,7 @@ export const de = {
   aiEditorNotReady: 'Hangul-Editor wird noch geladen…',
   aiEmptyTitle: 'Fragen Sie zu diesem Hangul-Dokument',
   aiEmptyBody:
-    'Zusammenfassen, übersetzen oder eine Auswahl bzw. einen Absatz umschreiben. Sie können auch neue Absätze schreiben, Felder ausfüllen, Tabellenzellen bearbeiten oder im Web suchen.',
+    'Zusammenfassen, übersetzen oder eine Auswahl bzw. einen Absatz umschreiben. Sie können auch neue Absätze schreiben, Tabellen einfügen, Fett/Farbe/Schrift/Einzug/Zeilenabstand anwenden, Felder ausfüllen, Tabellenzellen bearbeiten oder im Web suchen.',
   aiNewChat: 'Neuer Chat',
   aiSend: 'Senden',
   aiStop: 'Stopp',
@@ -42,4 +42,8 @@ export const de = {
   aiToolSetFieldDone: 'Feld ausgefüllt',
   aiToolReplaceCell: 'Zelle ersetzen',
   aiToolReplaceCellDone: 'Zelle ersetzt',
+  aiToolInsertTable: 'Tabelle einfügen',
+  aiToolInsertTableDone: 'Tabelle eingefügt',
+  aiToolApplyFormat: 'Formatierung anwenden',
+  aiToolApplyFormatDone: 'Formatierung angewendet',
 } satisfies Record<keyof typeof zh, string>

@@ -59,6 +59,8 @@ export const PREPARE_TEXT_V2_MARK = '/*genoffice-prepare-text-v2*/'
 export const PREPARE_TEXT_V3_MARK = '/*genoffice-prepare-text-v3*/'
 export const PREPARE_TEXT_V4_MARK = '/*genoffice-prepare-text-v4*/'
 export const PREPARE_TEXT_V5_MARK = '/*genoffice-prepare-text-v5*/'
+export const PREPARE_TEXT_V6_MARK = '/*genoffice-prepare-text-v6*/'
+export const PREPARE_TEXT_V7_MARK = '/*genoffice-prepare-text-v7*/'
 
 const PREPARE_SNAP_RE = /try\{([A-Za-z_$][\w$]*)\(this\.deps\.wasm,i\),this\.currentFormat\(\)/
 const PREPARE_CLASS_RE =
@@ -95,8 +97,17 @@ function insertFilledMethod() {
   return `async insertFilledParagraphs(e,t,n){if(!Array.isArray(n)||n.length<1)throw Error(\`insert texts must be a non-empty array\`);this.insertBodyParagraphs(e,t,n.length);let r=0,i=t,s=0;while(r<n.length){this.syncGeneration();let a=this.listBodyParagraphs(),o=null;for(let c=0;c<a.length;c+=1){let l=a[c];if(l&&l.editable&&l.target&&l.target.section===e&&l.target.paragraph>=i){o=l;break}}if(!o){s+=1;if(s>n.length+4)throw Error(\`paragraph is not editable\`);let u=a[a.length-1];this.insertBodyParagraphs(u&&u.target?u.target.section:e,u&&u.target?u.target.paragraph+1:t,n.length-r);continue}let d=this.getDocumentState();await this.applyTextCommand({schemaVersion:1,commandId:crypto.randomUUID(),expectedDocumentEpoch:d.documentEpoch,expectedChangeSeq:d.changeSeq,expectedDocumentSha256:d.documentSha256,target:o.target,expectedBeforeSha256:o.textSha256,expectedFormatSha256:o.formatSha256,expectedAdjacentContextSha256:o.adjacentContextSha256,replacement:String(n[r]??\`\`)});r+=1;i=o.target.paragraph+1;s=0}return{section:e,index:t,count:n.length}}`
 }
 
+function charFormatMethod() {
+  return `applyBodyCharFormat(e,t,n,r,i){this.syncGeneration();let a=i&&typeof i==\`object\`?Object.assign({},i):{};if(a.fontName){let o=this.deps.wasm.findOrCreateFontId(String(a.fontName));if(!(o>=0))throw Error(\`font not found\`);a.fontId=o;delete a.fontName}let s=this.deps.wasm.applyCharFormat(e,t,n,r,a);if(typeof s==\`string\`)try{s=JSON.parse(s)}catch{}if(s&&s.ok===!1)throw Error(String(s.error||s.message||\`applyCharFormat failed\`));return s}`
+}
+
+function formatAgentMethods() {
+  // Dialog-free table + char/para format. Wasm bridge already wraps createTable / apply*.
+  return `insertTable(e,t,n,r){this.syncGeneration();let i=Number(n),s=Number(r);if(!Number.isInteger(e)||!Number.isInteger(t)||!Number.isInteger(i)||!Number.isInteger(s)||i<1||s<1)throw Error(\`table size must be positive integers\`);if(i>20||s>10)throw Error(\`table is too large\`);let a=this.deps.wasm.createTable(e,t,0,i,s);if(typeof a==\`string\`)try{a=JSON.parse(a)}catch{}if(a&&a.ok===!1)throw Error(String(a.error||a.message||\`createTable failed\`));return{section:e,paragraph:Number(a&&a.paraIdx??t),control:Number(a&&a.controlIdx??0),rows:i,cols:s}}${charFormatMethod()}applyBodyParaFormat(e,t,n){this.syncGeneration();let r=n&&typeof n==\`object\`?Object.assign({},n):{};if(r.headType===\`Bullet\`){r.numberingId=this.deps.wasm.ensureDefaultBullet(r.bulletChar||\`●\`);r.paraLevel=0;delete r.bulletChar}else if(r.headType===\`Number\`){r.numberingId=this.deps.wasm.ensureDefaultNumbering();r.paraLevel=0}let i=this.deps.wasm.applyParaFormat(e,t,r);if(typeof i==\`string\`)try{i=JSON.parse(i)}catch{}if(i&&i.ok===!1)throw Error(String(i.error||i.message||\`applyParaFormat failed\`));return i}`
+}
+
 function insertAgentMethod() {
-  return `${insertBodyMethod()}${insertFilledMethod()}`
+  return `${insertBodyMethod()}${insertFilledMethod()}${formatAgentMethods()}`
 }
 
 function tableAgentMethods() {
@@ -135,26 +146,35 @@ function repairInsertHandler(js) {
 }
 
 function insertHandler(ready, agent) {
-  return `async insertBodyParagraphs(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertBodyParagraphs(e,t,n)},async insertFilledParagraphs(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertFilledParagraphs(e,t,n)}`
+  return `async insertBodyParagraphs(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertBodyParagraphs(e,t,n)},async insertFilledParagraphs(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertFilledParagraphs(e,t,n)},${formatHandler(ready, agent)}`
+}
+
+function formatHandler(ready, agent) {
+  return `async insertTable(e,t,n,r){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertTable(e,t,n,r)},async applyBodyCharFormat(e,t,n,r,i){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyCharFormat(e,t,n,r,i)},async applyBodyParaFormat(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.applyBodyParaFormat(e,t,n)}`
 }
 
 function prepareSurfaceComplete(js) {
   return (
-    js.includes(PREPARE_TEXT_V5_MARK) &&
+    js.includes(PREPARE_TEXT_V7_MARK) &&
+    js.includes('findOrCreateFontId(String(a.fontName))') &&
     js.includes(INSERT_SPLIT_NEEDLE) &&
     js.includes('async insertFilledParagraphs(e,t,n){') &&
     js.includes('case`insertFilledParagraphs`') &&
+    js.includes('case`insertTable`') &&
+    js.includes('case`applyBodyCharFormat`') &&
+    js.includes('insertTable(e,t,n,r){') &&
     js.includes('r.splitParagraph(e,') &&
     !js.includes('r.insertParagraph(e,t+a)') &&
     !js.includes('insertBodyParagraphs(e.section,e.index,e.count)') &&
     !/,listBodyParagraphs\(\)\{this\.syncGeneration\(\)/.test(js) &&
     !/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/.test(js) &&
+    !/,insertTable\(e,t,n,r\)\{/.test(js) &&
     !UNCLOSED_PREPARE_RE.test(js)
   )
 }
 
 function prepareAgentMethods(snap) {
-  return `${PREPARE_TEXT_V5_MARK}prepareTextCommand(){let e=this.getSelectionContext(),n=this.deps.input.getSelection(),r=null,i=null;if(e.target&&n&&n.start&&n.end&&n.start.sectionIndex===e.target.section&&n.start.paragraphIndex===e.target.paragraph&&n.end.sectionIndex===e.target.section&&n.end.paragraphIndex===e.target.paragraph&&n.end.charOffset>n.start.charOffset){r=n.start.charOffset,i=n.end.charOffset}if(!e.editable||!e.target)return{editable:!1,reason:\`not_editable\`,target:e.target,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null,selectionStart:r,selectionEnd:i};try{let t=${snap}(this.deps.wasm,e.target);return{editable:!0,reason:null,target:e.target,text:t.text,textSha256:t.textSha256,formatSha256:t.formatSha256,adjacentContextSha256:t.adjacentContextSha256,selectionStart:r,selectionEnd:i}}catch(a){return{editable:!1,reason:String(a&&a.message||a),target:e.target,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null,selectionStart:r,selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration();let e=this.deps.wasm,t=[];for(let n=0;n<e.getSectionCount();n+=1)for(let r=0;r<e.getParagraphCount(n);r+=1){let i=e.getParagraphLength(n,r),a={kind:\`body_paragraph\`,section:n,paragraph:r,charOffset:0,length:i};try{let o=${snap}(e,a);t.push({editable:!0,reason:null,target:a,text:o.text,textSha256:o.textSha256,formatSha256:o.formatSha256,adjacentContextSha256:o.adjacentContextSha256})}catch(s){t.push({editable:!1,reason:String(s&&s.message||s),target:a,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null})}}return t}listFields(){this.syncGeneration();let e=this.deps.wasm.getFieldList();if(typeof e==\`string\`)try{e=JSON.parse(e)}catch{e=[]}if(!Array.isArray(e))return[];return e.map(t=>{let n=t&&(t.name||t.fieldName||t.fieldId||t.id)||\`\`,r=\`\`;if(n)try{let i=this.deps.wasm.getFieldValueByName(n);r=typeof i==\`string\`?i:i==null?\`\`:String(i)}catch{}return{name:n,value:r,type:t&&t.fieldType||null}}).filter(t=>t.name)}setField(e,t){this.syncGeneration();return this.deps.wasm.setFieldValueByName(String(e??\`\`),String(t??\`\`))}${tableAgentMethods()}`
+  return `${PREPARE_TEXT_V7_MARK}prepareTextCommand(){let e=this.getSelectionContext(),n=this.deps.input.getSelection(),r=null,i=null;if(e.target&&n&&n.start&&n.end&&n.start.sectionIndex===e.target.section&&n.start.paragraphIndex===e.target.paragraph&&n.end.sectionIndex===e.target.section&&n.end.paragraphIndex===e.target.paragraph&&n.end.charOffset>n.start.charOffset){r=n.start.charOffset,i=n.end.charOffset}if(!e.editable||!e.target)return{editable:!1,reason:\`not_editable\`,target:e.target,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null,selectionStart:r,selectionEnd:i};try{let t=${snap}(this.deps.wasm,e.target);return{editable:!0,reason:null,target:e.target,text:t.text,textSha256:t.textSha256,formatSha256:t.formatSha256,adjacentContextSha256:t.adjacentContextSha256,selectionStart:r,selectionEnd:i}}catch(a){return{editable:!1,reason:String(a&&a.message||a),target:e.target,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null,selectionStart:r,selectionEnd:i}}}listBodyParagraphs(){this.syncGeneration();let e=this.deps.wasm,t=[];for(let n=0;n<e.getSectionCount();n+=1)for(let r=0;r<e.getParagraphCount(n);r+=1){let i=e.getParagraphLength(n,r),a={kind:\`body_paragraph\`,section:n,paragraph:r,charOffset:0,length:i};try{let o=${snap}(e,a);t.push({editable:!0,reason:null,target:a,text:o.text,textSha256:o.textSha256,formatSha256:o.formatSha256,adjacentContextSha256:o.adjacentContextSha256})}catch(s){t.push({editable:!1,reason:String(s&&s.message||s),target:a,text:null,textSha256:null,formatSha256:null,adjacentContextSha256:null})}}return t}listFields(){this.syncGeneration();let e=this.deps.wasm.getFieldList();if(typeof e==\`string\`)try{e=JSON.parse(e)}catch{e=[]}if(!Array.isArray(e))return[];return e.map(t=>{let n=t&&(t.name||t.fieldName||t.fieldId||t.id)||\`\`,r=\`\`;if(n)try{let i=this.deps.wasm.getFieldValueByName(n);r=typeof i==\`string\`?i:i==null?\`\`:String(i)}catch{}return{name:n,value:r,type:t&&t.fieldType||null}}).filter(t=>t.name)}setField(e,t){this.syncGeneration();return this.deps.wasm.setFieldValueByName(String(e??\`\`),String(t??\`\`))}${tableAgentMethods()}`
 }
 
 function prepareAgentHandlers(ready, agent) {
@@ -162,7 +182,7 @@ function prepareAgentHandlers(ready, agent) {
 }
 
 function prepareAgentRoutes(guard, params, host) {
-  return `case\`getSelectionContext\`:return ${guard}(${params},\`getSelectionContext params\`),${host}.getSelectionContext();case\`prepareTextCommand\`:return ${host}.prepareTextCommand();case\`listBodyParagraphs\`:return ${host}.listBodyParagraphs();case\`listFields\`:return ${host}.listFields();case\`setField\`:return ${host}.setField(${params}.name,${params}.value);case\`listTables\`:return ${host}.listTables();case\`replaceCell\`:return ${host}.replaceCell(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.text);case\`insertBodyParagraphs\`:return ${host}.insertBodyParagraphs(${params}.section,${params}.index,${params}.count);case\`insertFilledParagraphs\`:return ${host}.insertFilledParagraphs(${params}.section,${params}.index,${params}.texts);case\`applyTextCommand\`:`
+  return `case\`getSelectionContext\`:return ${guard}(${params},\`getSelectionContext params\`),${host}.getSelectionContext();case\`prepareTextCommand\`:return ${host}.prepareTextCommand();case\`listBodyParagraphs\`:return ${host}.listBodyParagraphs();case\`listFields\`:return ${host}.listFields();case\`setField\`:return ${host}.setField(${params}.name,${params}.value);case\`listTables\`:return ${host}.listTables();case\`replaceCell\`:return ${host}.replaceCell(${params}.section,${params}.paragraph,${params}.control,${params}.cellIndex,${params}.text);case\`insertBodyParagraphs\`:return ${host}.insertBodyParagraphs(${params}.section,${params}.index,${params}.count);case\`insertFilledParagraphs\`:return ${host}.insertFilledParagraphs(${params}.section,${params}.index,${params}.texts);case\`insertTable\`:return ${host}.insertTable(${params}.section,${params}.index,${params}.rows,${params}.cols);case\`applyBodyCharFormat\`:return ${host}.applyBodyCharFormat(${params}.section,${params}.paragraph,${params}.start,${params}.end,${params}.format);case\`applyBodyParaFormat\`:return ${host}.applyBodyParaFormat(${params}.section,${params}.paragraph,${params}.format);case\`applyTextCommand\`:`
 }
 
 function stripClassMethodCommas(js) {
@@ -174,6 +194,9 @@ function stripClassMethodCommas(js) {
     .replace(/,replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\)/g, 'replaceCell(e,t,n,r,i){this.syncGeneration()')
     .replace(/,insertBodyParagraphs\(e,t,n\)\{this\.syncGeneration\(\)/g, 'insertBodyParagraphs(e,t,n){this.syncGeneration()')
     .replace(/,async insertFilledParagraphs\(e,t,n\)\{/g, 'async insertFilledParagraphs(e,t,n){')
+    .replace(/,insertTable\(e,t,n,r\)\{/g, 'insertTable(e,t,n,r){')
+    .replace(/,applyBodyCharFormat\(e,t,n,r,i\)\{/g, 'applyBodyCharFormat(e,t,n,r,i){')
+    .replace(/,applyBodyParaFormat\(e,t,n\)\{/g, 'applyBodyParaFormat(e,t,n){')
 }
 
 function attachTableSurface(js) {
@@ -223,7 +246,7 @@ function attachFillSurface(js) {
   let next = stripClassMethodCommas(js.replace(PREPARE_TEXT_V4_MARK, PREPARE_TEXT_V5_MARK))
   next = next.replace(INSERT_BODY_CLASS_END_RE, `${insertBodyMethod()}${insertFilledMethod()}async applyTextCommand`)
   next = next.replace(INSERT_BODY_HANDLER_END_RE, (_, ready, agent) => {
-    return `${insertHandler(ready, agent)},async applyTextCommand(`
+    return `async insertBodyParagraphs(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertBodyParagraphs(e,t,n)},async insertFilledParagraphs(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertFilledParagraphs(e,t,n)},async applyTextCommand(`
   })
   next = next.replace(
     INSERT_BODY_ROUTE_END_RE,
@@ -232,17 +255,53 @@ function attachFillSurface(js) {
   return next
 }
 
+const INSERT_FILLED_CLASS_END_RE =
+  /async insertFilledParagraphs\(e,t,n\)\{[\s\S]*?return\{section:e,index:t,count:n\.length\}\}async applyTextCommand/
+const INSERT_FILLED_HANDLER_END_RE =
+  /async insertFilledParagraphs\(e,t,n\)\{if\(await ([A-Za-z_$][\w$]*),!([A-Za-z_$][\w$]*)\)throw Error\(`Document agent is not initialized`\);return \2\.insertFilledParagraphs\(e,t,n\)\},async applyTextCommand\(/
+const INSERT_FILLED_ROUTE_END_RE =
+  /case`insertFilledParagraphs`:return ([A-Za-z_$][\w$]*)\.insertFilledParagraphs\(([A-Za-z_$][\w$]*)\.section,\2\.index,\2\.texts\);case`applyTextCommand`:/
+
+function attachFormatSurface(js) {
+  let next = stripClassMethodCommas(js.replace(PREPARE_TEXT_V5_MARK, PREPARE_TEXT_V6_MARK))
+  next = next.replace(
+    INSERT_FILLED_CLASS_END_RE,
+    `${insertFilledMethod()}${formatAgentMethods()}async applyTextCommand`,
+  )
+  next = next.replace(INSERT_FILLED_HANDLER_END_RE, (_, ready, agent) => {
+    return `async insertFilledParagraphs(e,t,n){if(await ${ready},!${agent})throw Error(\`Document agent is not initialized\`);return ${agent}.insertFilledParagraphs(e,t,n)},${formatHandler(ready, agent)},async applyTextCommand(`
+  })
+  next = next.replace(
+    INSERT_FILLED_ROUTE_END_RE,
+    'case`insertFilledParagraphs`:return $1.insertFilledParagraphs($2.section,$2.index,$2.texts);case`insertTable`:return $1.insertTable($2.section,$2.index,$2.rows,$2.cols);case`applyBodyCharFormat`:return $1.applyBodyCharFormat($2.section,$2.paragraph,$2.start,$2.end,$2.format);case`applyBodyParaFormat`:return $1.applyBodyParaFormat($2.section,$2.paragraph,$2.format);case`applyTextCommand`:',
+  )
+  return next
+}
+
+const CHAR_FORMAT_V6_RE =
+  /applyBodyCharFormat\(e,t,n,r,i\)\{this\.syncGeneration\(\);let a=this\.deps\.wasm\.applyCharFormat\(e,t,n,r,i\);if\(typeof a==`string`\)try\{a=JSON\.parse\(a\)\}catch\{\}if\(a&&a\.ok===!1\)throw Error\(String\(a\.error\|\|a\.message\|\|`applyCharFormat failed`\)\);return a\}/
+
+function attachFontSurface(js) {
+  let next = stripClassMethodCommas(js.replace(PREPARE_TEXT_V6_MARK, PREPARE_TEXT_V7_MARK))
+  next = next.replace(CHAR_FORMAT_V6_RE, charFormatMethod())
+  return next
+}
+
 export function exposePrepareTextCommand(js) {
   const closed = closePrepareTextCommand(repairInsertHandler(repairInsertWasmCall(js)))
   if (prepareSurfaceComplete(closed)) return closed
   if (
+    closed.includes(PREPARE_TEXT_V7_MARK) ||
+    closed.includes(PREPARE_TEXT_V6_MARK) ||
     closed.includes(PREPARE_TEXT_V5_MARK) ||
     closed.includes(PREPARE_TEXT_V4_MARK) ||
     closed.includes(PREPARE_TEXT_V3_MARK) ||
     closed.includes(PREPARE_TEXT_V2_MARK)
   ) {
-    const upgraded = attachFillSurface(attachInsertSurface(attachTableSurface(closed)))
-    if (!upgraded.includes(PREPARE_TEXT_V5_MARK) || !upgraded.includes('case`insertFilledParagraphs`')) {
+    const upgraded = attachFontSurface(
+      attachFormatSurface(attachFillSurface(attachInsertSurface(attachTableSurface(closed)))),
+    )
+    if (!upgraded.includes(PREPARE_TEXT_V7_MARK) || !upgraded.includes('findOrCreateFontId(String(a.fontName))')) {
       throw new Error('rhwp-studio prepareTextCommand surface changed — update exposePrepareTextCommand()')
     }
     return upgraded
@@ -269,11 +328,13 @@ export function exposePrepareTextCommand(js) {
     next = next.replace(PREPARE_V1_ROUTE_RE, (_, guard, params, host) => prepareAgentRoutes(guard, params, host))
   }
   if (
-    !next.includes(PREPARE_TEXT_V5_MARK) ||
+    !next.includes(PREPARE_TEXT_V7_MARK) ||
+    !next.includes('findOrCreateFontId(String(a.fontName))') ||
     !next.includes('case`listTables`') ||
     !next.includes('case`setField`') ||
     !next.includes('case`insertBodyParagraphs`') ||
-    !next.includes('case`insertFilledParagraphs`')
+    !next.includes('case`insertFilledParagraphs`') ||
+    !next.includes('case`insertTable`')
   ) {
     throw new Error('rhwp-studio prepareTextCommand surface changed — update exposePrepareTextCommand()')
   }
@@ -282,6 +343,8 @@ export function exposePrepareTextCommand(js) {
 
 export function hasPrepareTextCommand(js) {
   return (
+    js.includes(PREPARE_TEXT_V7_MARK) ||
+    js.includes(PREPARE_TEXT_V6_MARK) ||
     js.includes(PREPARE_TEXT_V5_MARK) ||
     js.includes(PREPARE_TEXT_V4_MARK) ||
     js.includes(PREPARE_TEXT_V3_MARK) ||

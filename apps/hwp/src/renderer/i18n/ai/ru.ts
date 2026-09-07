@@ -7,7 +7,7 @@ export const ru = {
   aiEditorNotReady: 'Редактор Hangul ещё загружается…',
   aiEmptyTitle: 'Спросите об этом документе Hangul',
   aiEmptyBody:
-    'Суммируйте, переводите или переписывайте выделение либо абзац. Можно также писать новые абзацы, заполнять поля, править ячейки и искать в интернете.',
+    'Суммируйте, переводите или переписывайте выделение либо абзац. Можно также писать новые абзацы, вставлять таблицы, применять жирный/цвет/шрифт/отступ/интервал, заполнять поля, править ячейки и искать в интернете.',
   aiNewChat: 'Новый чат',
   aiSend: 'Отправить',
   aiStop: 'Стоп',
@@ -41,4 +41,8 @@ export const ru = {
   aiToolSetFieldDone: 'Поле заполнено',
   aiToolReplaceCell: 'Заменить ячейку',
   aiToolReplaceCellDone: 'Ячейка заменена',
+  aiToolInsertTable: 'Вставить таблицу',
+  aiToolInsertTableDone: 'Таблица вставлена',
+  aiToolApplyFormat: 'Применить формат',
+  aiToolApplyFormatDone: 'Формат применён',
 } satisfies Record<keyof typeof zh, string>

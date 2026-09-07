@@ -7,7 +7,7 @@ export const pl = {
   aiEditorNotReady: 'Edytor Hangul nadal się wczytuje…',
   aiEmptyTitle: 'Zapytaj o ten dokument Hangul',
   aiEmptyBody:
-    'Streszczaj, tłumacz lub przepisuj zaznaczenie albo akapit. Możesz też pisać nowe akapity, wypełniać pola, edytować komórki i szukać w sieci.',
+    'Streszczaj, tłumacz lub przepisuj zaznaczenie albo akapit. Możesz też pisać nowe akapity, wstawiać tabele, stosować pogrubienie/kolor/czcionkę/wcięcie/interlinia, wypełniać pola, edytować komórki i szukać w sieci.',
   aiNewChat: 'Nowy czat',
   aiSend: 'Wyślij',
   aiStop: 'Zatrzymaj',
@@ -41,4 +41,8 @@ export const pl = {
   aiToolSetFieldDone: 'Wypełniono pole',
   aiToolReplaceCell: 'Zastąp komórkę',
   aiToolReplaceCellDone: 'Zastąpiono komórkę',
+  aiToolInsertTable: 'Wstaw tabelę',
+  aiToolInsertTableDone: 'Wstawiono tabelę',
+  aiToolApplyFormat: 'Zastosuj formatowanie',
+  aiToolApplyFormatDone: 'Zastosowano formatowanie',
 } satisfies Record<keyof typeof zh, string>

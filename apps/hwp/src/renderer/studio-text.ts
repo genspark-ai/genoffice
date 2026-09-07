@@ -12,6 +12,18 @@ export const INSERT_CONTENT_EMPTY = 'insert text must not be empty'
 export const INSERT_CONTENT_MAX_PARAS = 80
 export const FIELD_NOT_FOUND = 'field not found'
 export const TABLE_NOT_FOUND = 'table cell not found'
+export const TABLE_SIZE_INVALID = 'table size must be positive integers'
+export const FORMAT_EMPTY = 'format must include at least one property'
+export const TABLE_MAX_ROWS = 20
+export const TABLE_MAX_COLS = 10
+export const FORMAT_MAX_PARAS = 40
+const FONT_SIZE_MIN_PT = 8
+const FONT_SIZE_MAX_PT = 72
+/** Hangul paragraph dialog: pt → stored indent/margin (same as studio LS()). */
+const PARA_PT_TO_UNIT = 200
+const INDENT_MAX_PT = 100
+const LINE_SPACING_MIN = 80
+const LINE_SPACING_MAX = 300
 /** v1 applyTextCommand replacement cap (Unicode code points). */
 export const PARAGRAPH_MAX_CODE_POINTS = 4000
 export const FIELD_MAX_CODE_POINTS = 8000
@@ -53,6 +65,25 @@ export interface HangulTable {
   cells: HangulTableCell[]
 }
 
+export type HangulAlign = 'left' | 'center' | 'right' | 'justify'
+export type HangulListStyle = 'none' | 'bullet' | 'number'
+
+export interface HangulFormatSpec {
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  strikethrough?: boolean
+  fontSize?: number
+  color?: string
+  font?: string
+  align?: HangulAlign
+  list?: HangulListStyle
+  lineSpacing?: number
+  indentLeft?: number
+  indentRight?: number
+  indentFirstLine?: number
+}
+
 export interface HangulStudioFacade {
   pageCount(): Promise<number>
   currentPage(): Promise<number | null>
@@ -73,6 +104,17 @@ export interface HangulStudioFacade {
     col: number,
     text: string,
   ): Promise<{ before: string; after: string }>
+  insertTable(
+    rows: number,
+    cols: number,
+    cells?: string[][],
+    afterIndex?: number,
+  ): Promise<{ table: number; rows: number; cols: number; unfilled: string[] }>
+  applyFormat(
+    format: HangulFormatSpec,
+    index?: number,
+    indexes?: number[],
+  ): Promise<{ indexes: number[]; applied: string[] }>
 }
 
 export interface StudioTextSource {
@@ -467,12 +509,16 @@ async function fillInsertedParagraphs(
   return writeFrom
 }
 
-export async function insertContent(
+async function resolveInsertAnchor(
   studio: StudioTextSource,
-  text: string,
   afterIndex?: number,
-): Promise<{ count: number; start: number }> {
-  const lines = splitInsertParagraphs(text)
+): Promise<{
+  items: HangulParagraphPreview[]
+  fillIndex: number | null
+  section: number
+  insertAt: number
+  writeFrom: number
+}> {
   const items = await listBodyParagraphs(studio)
   let fillIndex: number | null = null
   let section = items[0]?.section ?? 0
@@ -515,6 +561,17 @@ export async function insertContent(
     insertAt = items[afterIndex]!.paragraph + 1
     writeFrom = afterIndex + 1
   }
+
+  return { items, fillIndex, section, insertAt, writeFrom }
+}
+
+export async function insertContent(
+  studio: StudioTextSource,
+  text: string,
+  afterIndex?: number,
+): Promise<{ count: number; start: number }> {
+  const lines = splitInsertParagraphs(text)
+  const { fillIndex, section, insertAt, writeFrom } = await resolveInsertAnchor(studio, afterIndex)
 
   let remaining = lines
   let start = fillIndex ?? writeFrom
@@ -630,6 +687,316 @@ export async function replaceTableCell(
   return { before: cell.text, after }
 }
 
+function requireTableSize(value: unknown, label: string, max: number): number {
+  if (!Number.isInteger(value) || (value as number) < 1) throw new Error(TABLE_SIZE_INVALID)
+  if ((value as number) > max) throw new Error(`table ${label} must be at most ${max}`)
+  return value as number
+}
+
+function asTableCells(value: unknown): string[][] | undefined {
+  if (value == null) return undefined
+  if (!Array.isArray(value)) throw new Error('table cells must be an array of rows')
+  return value.map((row) => {
+    if (!Array.isArray(row)) throw new Error('table cells must be an array of rows')
+    return row.map((cell) => (cell == null ? '' : String(cell)))
+  })
+}
+
+function asInsertedTableLoc(
+  value: unknown,
+  fallbackSection: number,
+  fallbackParagraph: number,
+): { section: number; paragraph: number; control: number } {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  const section = Number.isInteger(raw.section) ? (raw.section as number) : fallbackSection
+  const paragraph = Number.isInteger(raw.paragraph)
+    ? (raw.paragraph as number)
+    : Number.isInteger(raw.paraIdx)
+      ? (raw.paraIdx as number)
+      : fallbackParagraph
+  const control = Number.isInteger(raw.control)
+    ? (raw.control as number)
+    : Number.isInteger(raw.controlIdx)
+      ? (raw.controlIdx as number)
+      : 0
+  return { section, paragraph, control }
+}
+
+export async function insertDocumentTable(
+  studio: StudioTextSource,
+  rows: number,
+  cols: number,
+  cells?: string[][],
+  afterIndex?: number,
+): Promise<{ table: number; rows: number; cols: number; unfilled: string[] }> {
+  const rowCount = requireTableSize(rows, 'rows', TABLE_MAX_ROWS)
+  const colCount = requireTableSize(cols, 'cols', TABLE_MAX_COLS)
+  const fill = asTableCells(cells)
+  const { fillIndex, section, insertAt } = await resolveInsertAnchor(studio, afterIndex)
+  let paragraph = fillIndex != null ? insertAt - 1 : insertAt
+  if (fillIndex == null) {
+    await requestStudio(studio, 'insertBodyParagraphs', {
+      section,
+      index: insertAt,
+      count: 1,
+    })
+    paragraph = insertAt
+  }
+  const inserted = asInsertedTableLoc(
+    await requestStudio(studio, 'insertTable', {
+      section,
+      index: paragraph,
+      rows: rowCount,
+      cols: colCount,
+    }),
+    section,
+    paragraph,
+  )
+  const tables = await listDocumentTables(studio)
+  const created = tables.find(
+    (table) =>
+      table.section === inserted.section &&
+      table.paragraph === inserted.paragraph &&
+      table.control === inserted.control,
+  )
+  if (!created) throw new Error(TABLE_NOT_FOUND)
+  const unfilled: string[] = []
+  if (fill) {
+    for (let row = 0; row < Math.min(fill.length, rowCount); row += 1) {
+      const line = fill[row] ?? []
+      for (let col = 0; col < Math.min(line.length, colCount); col += 1) {
+        const text = line[col] ?? ''
+        if (!text) continue
+        const cell = created.cells.find((item) => item.row === row && item.col === col)
+        if (!cell) {
+          unfilled.push(`r${row}c${col}`)
+          continue
+        }
+        try {
+          await requestStudio(studio, 'replaceCell', {
+            section: created.section,
+            paragraph: created.paragraph,
+            control: created.control,
+            cellIndex: cell.index,
+            text: normalizeReplacement(text, FIELD_MAX_CODE_POINTS),
+          })
+        } catch {
+          unfilled.push(`r${row}c${col}`)
+        }
+      }
+    }
+  }
+  return { table: created.index, rows: rowCount, cols: colCount, unfilled }
+}
+
+const ALIGN_VALUES = new Set<HangulAlign>(['left', 'center', 'right', 'justify'])
+const LIST_VALUES = new Set<HangulListStyle>(['none', 'bullet', 'number'])
+
+function parseColor(value: string): string {
+  const raw = value.trim()
+  const hex = raw.startsWith('#') ? raw.slice(1) : raw
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+    const [r, g, b] = hex
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase()
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) return `#${hex.toLowerCase()}`
+  throw new Error('color must be a 3- or 6-digit hex value')
+}
+
+function parsePointMeasure(value: unknown, label: string, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${label} must be a number of points`)
+  }
+  if (value < min || value > max) {
+    throw new Error(`${label} must be between ${min} and ${max}`)
+  }
+  return value
+}
+
+function parseLineSpacingPercent(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new Error('lineSpacing must be a multiplier (1.5) or a percent (150)')
+  }
+  const percent = value <= 5 ? Math.round(value * 100) : Math.round(value)
+  if (percent < LINE_SPACING_MIN || percent > LINE_SPACING_MAX) {
+    throw new Error(`lineSpacing must be between ${LINE_SPACING_MIN / 100} and ${LINE_SPACING_MAX / 100}`)
+  }
+  return percent
+}
+
+function charFormatPayload(format: HangulFormatSpec): Record<string, unknown> | null {
+  const payload: Record<string, unknown> = {}
+  if (typeof format.bold === 'boolean') payload.bold = format.bold
+  if (typeof format.italic === 'boolean') payload.italic = format.italic
+  if (typeof format.underline === 'boolean') payload.underline = format.underline
+  if (typeof format.strikethrough === 'boolean') payload.strikethrough = format.strikethrough
+  if (format.fontSize != null) {
+    const pt = parsePointMeasure(format.fontSize, 'fontSize', FONT_SIZE_MIN_PT, FONT_SIZE_MAX_PT)
+    payload.fontSize = Math.round(pt * 100)
+  }
+  if (format.color != null) {
+    if (typeof format.color !== 'string') throw new Error('color must be a 3- or 6-digit hex value')
+    payload.textColor = parseColor(format.color)
+  }
+  if (format.font != null) {
+    const name = format.font.trim()
+    if (!name) throw new Error('font must not be empty')
+    payload.fontName = name
+  }
+  return Object.keys(payload).length > 0 ? payload : null
+}
+
+function paraFormatPayload(format: HangulFormatSpec): Record<string, unknown> | null {
+  const payload: Record<string, unknown> = {}
+  if (format.align != null) {
+    if (!ALIGN_VALUES.has(format.align)) throw new Error('align must be left, center, right, or justify')
+    payload.alignment = format.align
+  }
+  if (format.list != null) {
+    if (!LIST_VALUES.has(format.list)) throw new Error('list must be none, bullet, or number')
+    if (format.list === 'none') payload.headType = 'None'
+    else if (format.list === 'bullet') payload.headType = 'Bullet'
+    else payload.headType = 'Number'
+  }
+  if (format.lineSpacing != null) {
+    payload.lineSpacing = parseLineSpacingPercent(format.lineSpacing)
+    payload.lineSpacingType = 'Percent'
+  }
+  if (format.indentLeft != null) {
+    payload.marginLeft = Math.round(
+      parsePointMeasure(format.indentLeft, 'indentLeft', 0, INDENT_MAX_PT) * PARA_PT_TO_UNIT,
+    )
+  }
+  if (format.indentRight != null) {
+    payload.marginRight = Math.round(
+      parsePointMeasure(format.indentRight, 'indentRight', 0, INDENT_MAX_PT) * PARA_PT_TO_UNIT,
+    )
+  }
+  if (format.indentFirstLine != null) {
+    const pt = parsePointMeasure(format.indentFirstLine, 'indentFirstLine', -INDENT_MAX_PT, INDENT_MAX_PT)
+    payload.indent = Math.round(pt * PARA_PT_TO_UNIT)
+  }
+  return Object.keys(payload).length > 0 ? payload : null
+}
+
+function formatAppliedLabels(format: HangulFormatSpec): string[] {
+  const applied: string[] = []
+  if (typeof format.bold === 'boolean') applied.push(`bold=${format.bold}`)
+  if (typeof format.italic === 'boolean') applied.push(`italic=${format.italic}`)
+  if (typeof format.underline === 'boolean') applied.push(`underline=${format.underline}`)
+  if (typeof format.strikethrough === 'boolean') applied.push(`strikethrough=${format.strikethrough}`)
+  if (format.fontSize != null) {
+    applied.push(
+      `fontSize=${parsePointMeasure(format.fontSize, 'fontSize', FONT_SIZE_MIN_PT, FONT_SIZE_MAX_PT)}`,
+    )
+  }
+  if (format.color) applied.push(`color=${parseColor(format.color)}`)
+  if (format.font) applied.push(`font=${format.font}`)
+  if (format.align) applied.push(`align=${format.align}`)
+  if (format.list) applied.push(`list=${format.list}`)
+  if (format.lineSpacing != null) applied.push(`lineSpacing=${parseLineSpacingPercent(format.lineSpacing) / 100}`)
+  if (format.indentLeft != null) {
+    applied.push(`indentLeft=${parsePointMeasure(format.indentLeft, 'indentLeft', 0, INDENT_MAX_PT)}`)
+  }
+  if (format.indentRight != null) {
+    applied.push(`indentRight=${parsePointMeasure(format.indentRight, 'indentRight', 0, INDENT_MAX_PT)}`)
+  }
+  if (format.indentFirstLine != null) {
+    applied.push(
+      `indentFirstLine=${parsePointMeasure(format.indentFirstLine, 'indentFirstLine', -INDENT_MAX_PT, INDENT_MAX_PT)}`,
+    )
+  }
+  return applied
+}
+
+function assertFormatable(prepared: PreparedParagraph): HangulParagraphTarget {
+  if (!prepared.target) throw new Error(prepared.reason || PARAGRAPH_NOT_EDITABLE)
+  if (prepared.editable) return prepared.target
+  const reason = prepared.reason ?? ''
+  if (/mix/i.test(reason) || /format/i.test(reason)) return prepared.target
+  throw new Error(reason || PARAGRAPH_NOT_EDITABLE)
+}
+
+async function applyFormatToParagraph(
+  studio: StudioTextSource,
+  prepared: PreparedParagraph,
+  format: HangulFormatSpec,
+  useSelection: boolean,
+): Promise<void> {
+  const target = assertFormatable(prepared)
+  const char = charFormatPayload(format)
+  const para = paraFormatPayload(format)
+  let start = 0
+  let end = target.length
+  if (
+    useSelection &&
+    prepared.selectionStart != null &&
+    prepared.selectionEnd != null &&
+    prepared.selectionEnd > prepared.selectionStart
+  ) {
+    start = prepared.selectionStart
+    end = prepared.selectionEnd
+  }
+  if (char) {
+    await requestStudio(studio, 'applyBodyCharFormat', {
+      section: target.section,
+      paragraph: target.paragraph,
+      start,
+      end: Math.max(end, start),
+      format: char,
+    })
+  }
+  if (para) {
+    await requestStudio(studio, 'applyBodyParaFormat', {
+      section: target.section,
+      paragraph: target.paragraph,
+      format: para,
+    })
+  }
+}
+
+export async function applyParagraphFormat(
+  studio: StudioTextSource,
+  format: HangulFormatSpec,
+  index?: number,
+  indexes?: number[],
+): Promise<{ indexes: number[]; applied: string[] }> {
+  const applied = formatAppliedLabels(format)
+  if (applied.length === 0) throw new Error(FORMAT_EMPTY)
+  const raw = await requestStudio(studio, 'listBodyParagraphs')
+  if (!Array.isArray(raw)) throw new Error(PARAGRAPH_PREPARE_UNAVAILABLE)
+  const items = raw.map((item) => asPrepared(item))
+  let targets: number[]
+  if (indexes != null) {
+    if (!Array.isArray(indexes) || indexes.length === 0) {
+      throw new Error('indexes must be a non-empty array of integers')
+    }
+    if (indexes.length > FORMAT_MAX_PARAS) {
+      throw new Error(`format at most ${FORMAT_MAX_PARAS} paragraphs at once`)
+    }
+    targets = indexes
+  } else if (index != null) {
+    targets = [index]
+  } else {
+    const current = await prepareCurrentParagraph(studio)
+    await applyFormatToParagraph(studio, current, format, true)
+    const caret = items.findIndex(
+      (item) =>
+        item.target?.section === current.target!.section &&
+        item.target?.paragraph === current.target!.paragraph,
+    )
+    return { indexes: [caret >= 0 ? caret : 0], applied }
+  }
+  for (const targetIndex of targets) {
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= items.length) {
+      throw new Error(PARAGRAPH_INDEX_OUT_OF_RANGE)
+    }
+    const prepared = items[targetIndex]!
+    await applyFormatToParagraph(studio, prepared, format, false)
+  }
+  return { indexes: targets, applied }
+}
+
 export function createStudioFacade(studio: StudioTextSource): HangulStudioFacade {
   return {
     pageCount: () => studio.pageCount(),
@@ -647,5 +1014,8 @@ export function createStudioFacade(studio: StudioTextSource): HangulStudioFacade
     setField: (name, value) => setDocumentField(studio, name, value),
     listTables: () => listDocumentTables(studio),
     replaceCell: (table, row, col, text) => replaceTableCell(studio, table, row, col, text),
+    insertTable: (rows, cols, cells, afterIndex) =>
+      insertDocumentTable(studio, rows, cols, cells, afterIndex),
+    applyFormat: (format, index, indexes) => applyParagraphFormat(studio, format, index, indexes),
   }
 }

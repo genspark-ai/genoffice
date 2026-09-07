@@ -7,7 +7,7 @@ export const hi = {
   aiEditorNotReady: 'हैंगुल संपादक अभी लोड हो रहा है…',
   aiEmptyTitle: 'इस हैंगुल दस्तावेज़ के बारे में पूछें',
   aiEmptyBody:
-    'सारांश दें, अनुवाद करें या चयन/अनुच्छेद लिखें। नए अनुच्छेद भी लिख सकते हैं, फ़ील्ड भर सकते हैं, कक्ष संपादित कर सकते हैं, या वेब पर खोज सकते हैं।',
+    'सारांश दें, अनुवाद करें या चयन/अनुच्छेद लिखें। नए अनुच्छेद भी लिख सकते हैं, तालिका डाल सकते हैं, मोटा/रंग/फ़ॉन्ट/इंडेंट/पंक्ति अंतर लागू कर सकते हैं, फ़ील्ड भर सकते हैं, कक्ष संपादित कर सकते हैं, या वेब पर खोज सकते हैं।',
   aiNewChat: 'नई चैट',
   aiSend: 'भेजें',
   aiStop: 'रोकें',
@@ -41,4 +41,8 @@ export const hi = {
   aiToolSetFieldDone: 'फ़ील्ड भरा गया',
   aiToolReplaceCell: 'कक्ष बदलें',
   aiToolReplaceCellDone: 'कक्ष बदला गया',
+  aiToolInsertTable: 'तालिका डालें',
+  aiToolInsertTableDone: 'तालिका डाली गई',
+  aiToolApplyFormat: 'स्वरूप लागू करें',
+  aiToolApplyFormatDone: 'स्वरूप लागू हुआ',
 } satisfies Record<keyof typeof zh, string>

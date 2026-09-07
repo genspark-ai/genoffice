@@ -7,7 +7,7 @@ export const fr = {
   aiEditorNotReady: 'L’éditeur Hangul charge encore…',
   aiEmptyTitle: 'Interrogez ce document Hangul',
   aiEmptyBody:
-    'Résumez, traduisez ou réécrivez une sélection ou un paragraphe. Vous pouvez aussi écrire de nouveaux paragraphes, remplir des champs, modifier des cellules ou chercher sur le web.',
+    'Résumez, traduisez ou réécrivez une sélection ou un paragraphe. Vous pouvez aussi écrire de nouveaux paragraphes, insérer des tableaux, appliquer gras/couleur/police/retrait/interligne, remplir des champs, modifier des cellules ou chercher sur le web.',
   aiNewChat: 'Nouvelle conversation',
   aiSend: 'Envoyer',
   aiStop: 'Arrêter',
@@ -41,4 +41,8 @@ export const fr = {
   aiToolSetFieldDone: 'Champ rempli',
   aiToolReplaceCell: 'Remplacer la cellule',
   aiToolReplaceCellDone: 'Cellule remplacée',
+  aiToolInsertTable: 'Insérer un tableau',
+  aiToolInsertTableDone: 'Tableau inséré',
+  aiToolApplyFormat: 'Appliquer la mise en forme',
+  aiToolApplyFormatDone: 'Mise en forme appliquée',
 } satisfies Record<keyof typeof zh, string>

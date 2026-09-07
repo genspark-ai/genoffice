@@ -7,7 +7,7 @@ export const ja = {
   aiEditorNotReady: 'エディターを読み込んでいます…',
   aiEmptyTitle: 'このハングル文書について質問',
   aiEmptyBody:
-    '要約、翻訳、選択範囲や段落の書き換え、新しい段落の追加、フィールド入力、表セルの編集、ウェブ検索ができます。',
+    '要約、翻訳、選択範囲や段落の書き換え、新しい段落の追加、表の挿入、太字・色・フォント・インデント・行間などの書式、フィールド入力、表セルの編集、ウェブ検索ができます。',
   aiNewChat: '新しいチャット',
   aiSend: '送信',
   aiStop: '停止',
@@ -41,4 +41,8 @@ export const ja = {
   aiToolSetFieldDone: 'フィールドを入力しました',
   aiToolReplaceCell: 'セルを置換',
   aiToolReplaceCellDone: 'セルを置換しました',
+  aiToolInsertTable: '表を挿入',
+  aiToolInsertTableDone: '表を挿入しました',
+  aiToolApplyFormat: '書式を適用',
+  aiToolApplyFormatDone: '書式を適用しました',
 } satisfies Record<keyof typeof zh, string>

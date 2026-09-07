@@ -7,7 +7,7 @@ export const id = {
   aiEditorNotReady: 'Editor Hangul masih dimuat…',
   aiEmptyTitle: 'Tanyakan tentang dokumen Hangul ini',
   aiEmptyBody:
-    'Ringkas, terjemahkan, atau tulis ulang seleksi maupun paragraf. Anda juga bisa menulis paragraf baru, mengisi field, mengedit sel, atau mencari di web.',
+    'Ringkas, terjemahkan, atau tulis ulang seleksi maupun paragraf. Anda juga bisa menulis paragraf baru, menyisipkan tabel, menerapkan tebal/warna/font/inden/spasi baris, mengisi field, mengedit sel, atau mencari di web.',
   aiNewChat: 'Obrolan baru',
   aiSend: 'Kirim',
   aiStop: 'Berhenti',
@@ -41,4 +41,8 @@ export const id = {
   aiToolSetFieldDone: 'Field diisi',
   aiToolReplaceCell: 'Ganti sel',
   aiToolReplaceCellDone: 'Sel diganti',
+  aiToolInsertTable: 'Sisipkan tabel',
+  aiToolInsertTableDone: 'Tabel disisipkan',
+  aiToolApplyFormat: 'Terapkan format',
+  aiToolApplyFormatDone: 'Format diterapkan',
 } satisfies Record<keyof typeof zh, string>

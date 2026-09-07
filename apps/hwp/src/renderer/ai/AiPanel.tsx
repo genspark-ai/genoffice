@@ -211,6 +211,16 @@ export function AiPanel({
         if (!studio) throw new Error('Hangul editor is not ready')
         return studio.replaceCell(table, row, col, text)
       },
+      insertTable: async (rows, cols, cells, afterIndex) => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.insertTable(rows, cols, cells, afterIndex)
+      },
+      applyFormat: async (format, index, indexes) => {
+        const studio = facadeRef.current
+        if (!studio) throw new Error('Hangul editor is not ready')
+        return studio.applyFormat(format, index, indexes)
+      },
     })
     loopRef.current = new AgentLoop({
       transport: createElectronTransport(() => settingsRef.current!),

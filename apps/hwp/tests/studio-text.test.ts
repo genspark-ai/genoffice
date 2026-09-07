@@ -18,6 +18,8 @@ import {
   setDocumentField,
   listDocumentTables,
   replaceTableCell,
+  insertDocumentTable,
+  applyParagraphFormat,
   spliceParagraphText,
   getPlainText,
   getSelectionText,
@@ -876,6 +878,382 @@ describe('replaceCurrentParagraph', () => {
     )
     expect(result).toEqual({ before: 'B', after: 'C' })
     await expect(listDocumentTables(studio({ _request: async () => [] }))).resolves.toEqual([])
+  })
+
+  it('inserts a table after the last paragraph and fills cells', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const result = await insertDocumentTable(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listBodyParagraphs') {
+            return [
+              {
+                editable: true,
+                reason: null,
+                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 2 },
+                text: '제목',
+              },
+            ]
+          }
+          if (method === 'insertBodyParagraphs') return { section: 0, index: 1, count: 1 }
+          if (method === 'insertTable') return { section: 0, paragraph: 1, control: 0, rows: 2, cols: 2 }
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 1,
+                control: 0,
+                rows: 2,
+                cols: 2,
+                cells: [
+                  { index: 0, row: 0, col: 0, text: '' },
+                  { index: 1, row: 0, col: 1, text: '' },
+                  { index: 2, row: 1, col: 0, text: '' },
+                  { index: 3, row: 1, col: 1, text: '' },
+                ],
+              },
+            ]
+          }
+          if (method === 'replaceCell') return { ok: true }
+          throw new Error(`unexpected ${method}`)
+        },
+      }),
+      2,
+      2,
+      [['이름', '역할']],
+    )
+    expect(result).toEqual({ table: 0, rows: 2, cols: 2, unfilled: [] })
+    expect(calls.some((call) => call.method === 'insertBodyParagraphs')).toBe(true)
+    expect(calls.find((call) => call.method === 'insertTable')?.params).toEqual({
+      section: 0,
+      index: 1,
+      rows: 2,
+      cols: 2,
+    })
+    expect(calls.filter((call) => call.method === 'replaceCell')).toHaveLength(2)
+  })
+
+  it('keeps a created table if filling a cell fails', async () => {
+    const result = await insertDocumentTable(
+      studio({
+        _request: async (method) => {
+          if (method === 'listBodyParagraphs') {
+            return [
+              {
+                editable: true,
+                reason: null,
+                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
+                text: '',
+              },
+            ]
+          }
+          if (method === 'insertTable') return { section: 0, paragraph: 0, control: 0, rows: 1, cols: 1 }
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 0,
+                control: 0,
+                rows: 1,
+                cols: 1,
+                cells: [{ index: 0, row: 0, col: 0, text: '' }],
+              },
+            ]
+          }
+          if (method === 'replaceCell') throw new Error('cell locked')
+          return {}
+        },
+      }),
+      1,
+      1,
+      [['값']],
+    )
+    expect(result).toEqual({ table: 0, rows: 1, cols: 1, unfilled: ['r0c0'] })
+  })
+
+  it('fills the inserted table when a later table already exists', async () => {
+    const cells: Array<Record<string, unknown>> = []
+    const result = await insertDocumentTable(
+      studio({
+        _request: async (method, params) => {
+          if (method === 'listBodyParagraphs') {
+            return [
+              {
+                editable: true,
+                reason: null,
+                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 2 },
+                text: '제목',
+              },
+            ]
+          }
+          if (method === 'insertBodyParagraphs') return { section: 0, index: 1, count: 1 }
+          if (method === 'insertTable') return { section: 0, paragraph: 1, control: 0, rows: 1, cols: 1 }
+          if (method === 'listTables') {
+            return [
+              {
+                section: 0,
+                paragraph: 1,
+                control: 0,
+                rows: 1,
+                cols: 1,
+                cells: [{ index: 0, row: 0, col: 0, text: '' }],
+              },
+              {
+                section: 0,
+                paragraph: 8,
+                control: 0,
+                rows: 2,
+                cols: 2,
+                cells: [{ index: 0, row: 0, col: 0, text: '끝 표' }],
+              },
+            ]
+          }
+          if (method === 'replaceCell') {
+            cells.push(params ?? {})
+            return { ok: true }
+          }
+          throw new Error(`unexpected ${method}`)
+        },
+      }),
+      1,
+      1,
+      [['새 칸']],
+    )
+    expect(result).toEqual({ table: 0, rows: 1, cols: 1, unfilled: [] })
+    expect(cells).toEqual([
+      { section: 0, paragraph: 1, control: 0, cellIndex: 0, text: '새 칸' },
+    ])
+  })
+
+  it('does not fall back to the last table when insertTable coords are missing', async () => {
+    let filled = false
+    await expect(
+      insertDocumentTable(
+        studio({
+          _request: async (method) => {
+            if (method === 'listBodyParagraphs') {
+              return [
+                {
+                  editable: true,
+                  reason: null,
+                  target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
+                  text: '',
+                },
+              ]
+            }
+            if (method === 'insertTable') return { section: 0, paragraph: 1, control: 0, rows: 1, cols: 1 }
+            if (method === 'listTables') {
+              return [
+                {
+                  section: 0,
+                  paragraph: 8,
+                  control: 0,
+                  rows: 1,
+                  cols: 1,
+                  cells: [{ index: 0, row: 0, col: 0, text: '끝 표' }],
+                },
+              ]
+            }
+            if (method === 'replaceCell') {
+              filled = true
+              return { ok: true }
+            }
+            return {}
+          },
+        }),
+        1,
+        1,
+        [['값']],
+      ),
+    ).rejects.toThrow('table cell not found')
+    expect(filled).toBe(false)
+  })
+
+  it('applies char and para format to a paragraph', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const result = await applyParagraphFormat(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listBodyParagraphs') {
+            return [
+              {
+                editable: true,
+                reason: null,
+                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 4 },
+                text: '제목',
+                selectionStart: null,
+                selectionEnd: null,
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { bold: true, fontSize: 16, align: 'center' },
+      0,
+    )
+    expect(result).toEqual({ indexes: [0], applied: ['bold=true', 'fontSize=16', 'align=center'] })
+    expect(calls.find((call) => call.method === 'applyBodyCharFormat')?.params).toEqual({
+      section: 0,
+      paragraph: 0,
+      start: 0,
+      end: 4,
+      format: { bold: true, fontSize: 1600 },
+    })
+    expect(calls.find((call) => call.method === 'applyBodyParaFormat')?.params).toEqual({
+      section: 0,
+      paragraph: 0,
+      format: { alignment: 'center' },
+    })
+  })
+
+  it('maps color, font, indent, and line spacing onto studio format payloads', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    await applyParagraphFormat(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listBodyParagraphs') {
+            return [
+              {
+                editable: true,
+                reason: null,
+                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 2 },
+                text: '제목',
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { color: 'F00', font: 'Pretendard', lineSpacing: 1.5, indentLeft: 10, indentFirstLine: 20 },
+      0,
+    )
+    expect(calls.find((call) => call.method === 'applyBodyCharFormat')?.params).toMatchObject({
+      format: { textColor: '#ff0000', fontName: 'Pretendard' },
+    })
+    expect(calls.find((call) => call.method === 'applyBodyParaFormat')?.params).toMatchObject({
+      format: { lineSpacing: 150, lineSpacingType: 'Percent', marginLeft: 2000, indent: 4000 },
+    })
+  })
+
+  it('formats only the caret selection when no paragraph index is given', async () => {
+    const calls: Array<{ method: string; params?: Record<string, unknown> }> = []
+    const result = await applyParagraphFormat(
+      studio({
+        _request: async (method, params) => {
+          calls.push({ method, params })
+          if (method === 'listBodyParagraphs') {
+            return [
+              {
+                editable: true,
+                reason: null,
+                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 6 },
+                text: '안녕세계',
+              },
+            ]
+          }
+          if (method === 'prepareTextCommand') {
+            return {
+              editable: true,
+              reason: null,
+              target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 6 },
+              text: '안녕세계',
+              selectionStart: 2,
+              selectionEnd: 6,
+            }
+          }
+          return { ok: true }
+        },
+      }),
+      { bold: true },
+    )
+    expect(result.indexes).toEqual([0])
+    expect(calls.find((call) => call.method === 'applyBodyCharFormat')?.params).toEqual({
+      section: 0,
+      paragraph: 0,
+      start: 2,
+      end: 6,
+      format: { bold: true },
+    })
+  })
+
+  it('rejects format on a locked table paragraph', async () => {
+    let called = false
+    await expect(
+      applyParagraphFormat(
+        studio({
+          _request: async (method) => {
+            if (method === 'listBodyParagraphs') {
+              return [
+                {
+                  editable: false,
+                  reason: 'table',
+                  target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 0 },
+                  text: '',
+                },
+              ]
+            }
+            called = true
+            return { ok: true }
+          },
+        }),
+        { bold: true },
+        0,
+      ),
+    ).rejects.toThrow('table')
+    expect(called).toBe(false)
+  })
+
+  it('allows format on a mixed-formatting paragraph', async () => {
+    const calls: string[] = []
+    await applyParagraphFormat(
+      studio({
+        _request: async (method) => {
+          calls.push(method)
+          if (method === 'listBodyParagraphs') {
+            return [
+              {
+                editable: false,
+                reason: 'mixed formatting',
+                target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 4 },
+                text: '제목',
+              },
+            ]
+          }
+          return { ok: true }
+        },
+      }),
+      { bold: true },
+      0,
+    )
+    expect(calls).toContain('applyBodyCharFormat')
+  })
+
+  it('rejects out-of-range font size instead of clamping', async () => {
+    await expect(
+      applyParagraphFormat(
+        studio({
+          _request: async (method) => {
+            if (method === 'listBodyParagraphs') {
+              return [
+                {
+                  editable: true,
+                  reason: null,
+                  target: { kind: 'body_paragraph', section: 0, paragraph: 0, charOffset: 0, length: 2 },
+                  text: '제목',
+                },
+              ]
+            }
+            return { ok: true }
+          },
+        }),
+        { fontSize: 80 },
+        0,
+      ),
+    ).rejects.toThrow(/between 8 and 72/)
   })
 
   it('splices UTF-16 ranges and rejects offsets past the string', () => {
