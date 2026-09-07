@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
     "start:prod": "HOST=0.0.0.0 PORT=8080 node dist/index.js",
     "pkg:linux": "pkg dist/index.js --targets node22-linux-x64 --output dist/genoffice-web-linux",
