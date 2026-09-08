@@ -58,7 +58,7 @@ jobs:
         run: |
           npm run notices
           npm run build:all
-          npm run dist:mac -w @genoffice/shell -- -c.extraMetadata.version="$VERSION"
+          (cd apps/shell && npx electron-builder --mac --publish never --config.extraMetadata.version="$VERSION")
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -110,10 +110,11 @@ jobs:
           Get-Item (Join-Path $dst "xlsx-sidecar.exe")
 
       - name: Package Windows (x64, unsigned)
+        shell: bash
         run: |
           npm run notices
           npm run build:all
-          npm run dist:win -w @genoffice/shell -- -c.extraMetadata.version="$env:VERSION"
+          (cd apps/shell && npx electron-builder --win --publish never --config.extraMetadata.version="$VERSION")
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
