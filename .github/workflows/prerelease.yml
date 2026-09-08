@@ -1,0 +1,173 @@
+name: Pre-release
+
+# Unsigned Mac + Windows installers for the Hangul preview. Official
+# genspark-ai/genoffice releases stay on their private signing pipeline.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Installer version (also the git tag, with a v prefix)
+        required: true
+        default: '0.9.0-hangul'
+      tag:
+        description: Git tag to create (leave empty to use v<version>)
+        required: false
+        default: ''
+
+concurrency:
+  group: prerelease-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch, 2026-07
+        with:
+          toolchain: stable
+
+      - name: Cache cargo (xlsx-sidecar)
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: apps/sheets/native/xlsx-engine
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package macOS (arm64, unsigned)
+        run: |
+          npm run notices
+          npm run build:all
+          npm run dist:mac -w @genoffice/shell -- -c.extraMetadata.version="$VERSION"
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mac
+          path: |
+            apps/shell/release/*.dmg
+            apps/shell/release/*.zip
+          if-no-files-found: error
+
+  win:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch, 2026-07
+        with:
+          toolchain: stable
+
+      - name: Cache cargo (xlsx-sidecar)
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: apps/sheets/native/xlsx-engine
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Stage Windows xlsx sidecar
+        shell: pwsh
+        run: |
+          npm run native:build -w @genoffice/sheets
+          $src = "apps/sheets/native/xlsx-engine/target/release/xlsx-sidecar.exe"
+          if (-not (Test-Path $src)) {
+            throw "xlsx-sidecar.exe missing at $src"
+          }
+          $dst = "apps/sheets/native/xlsx-engine/target/x86_64-pc-windows-gnu/release"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item $src (Join-Path $dst "xlsx-sidecar.exe")
+          Get-Item (Join-Path $dst "xlsx-sidecar.exe")
+
+      - name: Package Windows (x64, unsigned)
+        run: |
+          npm run notices
+          npm run build:all
+          npm run dist:win -w @genoffice/shell -- -c.extraMetadata.version="$env:VERSION"
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win
+          path: |
+            apps/shell/release/*.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [mac, win]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${TAG:-v${VERSION}}"
+          shopt -s nullglob
+          files=(dist/*.dmg dist/*.zip dist/*.exe)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no installer artifacts" >&2
+            ls -la dist >&2 || true
+            exit 1
+          fi
+          notes="$(cat <<EOF
+          Unsigned Hangul preview build from \`${{ github.sha }}\`.
+
+          **What is in this build**
+          - Hangul AI tools: \`insert_content\`, \`insert_table\`, \`replace_cell\`, \`apply_format\`, \`edit_table\`, \`style_table\`, \`set_page\`
+
+          **Installers**
+          - macOS Apple Silicon: \`.dmg\`
+          - Windows x64: \`.exe\`
+
+          These packages are **not signed or notarized**. On macOS, right-click the app and choose Open the first time. On Windows, SmartScreen may warn — choose More info → Run anyway.
+
+          Intel macOS and Windows ARM64 are not included.
+          EOF
+          )"
+          gh release create "$tag" "${files[@]}" \
+            --title "GenOffice ${VERSION} (Hangul preview)" \
+            --notes "$notes" \
+            --prerelease \
+            --target "${{ github.sha }}"
