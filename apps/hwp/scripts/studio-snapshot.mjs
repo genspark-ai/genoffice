@@ -178,7 +178,7 @@ function repairFormatJsonStringify(js) {
 }
 
 const DEFERRED_REPLACE_CELL_RE =
-  /replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\);let a=this\.deps\.wasm,o=a\.getCellParagraphLength\(e,t,n,r,0\),s=a\.replaceTextInCellDeferredPagination\(e,t,n,r,0,0,o,String\(i\?\?\`\`\)\);if\(typeof s==`string`\)try\{s=JSON\.parse\(s\)\}catch\{\}return s\}/
+  /replaceCell\(e,t,n,r,i\)\{this\.syncGeneration\(\);let a=this\.deps\.wasm,o=a\.getCellParagraphLength\(e,t,n,r,0\),s=a\.replaceTextInCellDeferredPagination\(e,t,n,r,0,0,o,String\(i\?\?``\)\);if\(typeof s==`string`\)try\{s=JSON\.parse\(s\)\}catch\{\}return s\}/
 
 function repairDeferredCellWrite(js) {
   return js.replace(DEFERRED_REPLACE_CELL_RE, replaceCellMethod())

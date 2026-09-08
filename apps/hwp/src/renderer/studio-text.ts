@@ -365,8 +365,11 @@ export function normalizeReplacement(
   text: string,
   max = PARAGRAPH_MAX_CODE_POINTS,
 ): string {
-  if (/[\u0000-\u001f\u007f]/u.test(text)) {
-    throw new Error('replacement must not contain control characters')
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0
+    if (code <= 0x1f || code === 0x7f) {
+      throw new Error('replacement must not contain control characters')
+    }
   }
   if (Array.from(text).length > max) {
     throw new Error(`replacement must be at most ${max} characters`)
@@ -597,9 +600,9 @@ async function resolveInsertAnchor(
 }> {
   const items = await listBodyParagraphs(studio)
   let fillIndex: number | null = null
-  let section = items[0]?.section ?? 0
-  let insertAt = items.length > 0 ? items[items.length - 1]!.paragraph + 1 : 0
-  let writeFrom = items.length
+  let section: number
+  let insertAt: number
+  let writeFrom: number
 
   if (afterIndex === -1) {
     if (items[0]?.editable && paragraphIsEmpty(items[0])) {
