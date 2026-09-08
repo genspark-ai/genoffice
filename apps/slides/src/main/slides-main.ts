@@ -26,6 +26,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { cleanupExpiredGeneratedPages } from './generated-page-temp'
+import { exportSlidesPdf } from './pdf-export'
 import { gskApiKey, gskSlideGenerate, setGskProxyUrl } from '@genoffice/ai-search'
 import {
   appMenuLabels,
@@ -4122,41 +4123,11 @@ export function registerSlidesIpc(): void {
   })
 
   ipcMain.handle('slides:export-pdf', async (_e, op: ExportPdfOp): Promise<ExportPdfResult> => {
-    // PDF page size: fixed 7.5in height, width by slide ratio (16:9 -> 13.333in, 4:3 -> 10in)
-    const heightIn = 7.5
-    const widthIn = Math.round((op.widthPx / op.heightPx) * heightIn * 1000) / 1000
-    const html = `<!doctype html><html><head><meta charset="utf-8"><style>
-@page { size: ${widthIn}in ${heightIn}in; margin: 0; }
-html, body { margin: 0; padding: 0; }
-.page { width: ${widthIn}in; height: ${heightIn}in; overflow: hidden; page-break-after: always; }
-.page:last-child { page-break-after: auto; }
-.page img { display: block; width: 100%; height: 100%; }
-</style></head><body>${op.pngsBase64
-      .map((b64) => `<div class="page"><img src="data:image/png;base64,${b64}"></div>`)
-      .join('')}</body></html>`
-    const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
-    try {
-      await win.loadURL('data:text/html;base64,' + Buffer.from(html, 'utf8').toString('base64'))
-      // Wait for fonts and all images to decode before printing, avoiding blank pages
-      await win.webContents.executeJavaScript(
-        'Promise.all([document.fonts.ready, ...Array.from(document.images).map((i) => i.decode().catch(() => {}))])',
-        true,
-      )
-      const pdf = await win.webContents.printToPDF({
-        landscape: false, // The page size is already landscape (width > height); passing landscape would rotate a second time
-        printBackground: true,
-        pageSize: { width: widthIn, height: heightIn },
-        margins: { top: 0, bottom: 0, left: 0, right: 0 },
-        preferCSSPageSize: false,
-      })
-      await writeFile(op.filePath, pdf)
-      openExportedPdf(op.filePath)
-      return { ok: true, path: op.filePath }
-    } catch (err) {
-      return { ok: false, error: String(err) }
-    } finally {
-      win.destroy()
-    }
+    return exportSlidesPdf({
+      ...op,
+      createWindow: () => new BrowserWindow({ show: false, webPreferences: { sandbox: true } }),
+      openExportedPdf,
+    })
   })
 
   ipcMain.handle(
