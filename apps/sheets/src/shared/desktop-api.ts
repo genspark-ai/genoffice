@@ -2371,7 +2371,7 @@ export type WorkbookConditionalRule = z.infer<typeof conditionalRuleSchema>
 // ---- AI settings + chat/stream: canonical types live in @genoffice/ai-provider,
 // shared with apps/docs. Validated here like every other renderer→main request in
 // this file; the validated shape is cast to AiSettings at the main-process call
-// site, which always has exactly the 5 known provider keys once merged through
+// site, which has every known provider key once merged through
 // resolveAiSettings/defaultAiSettings. ----
 
 const aiProviderConfigSchema = z
@@ -2379,6 +2379,7 @@ const aiProviderConfigSchema = z
     apiKey: z.string(),
     model: z.string(),
     baseUrl: z.string().optional(),
+    cliPath: z.string().optional(),
   })
   .strict()
 
@@ -2461,6 +2462,7 @@ export const aiChatRequestSchema = z
 export const aiStreamRequestSchema = z
   .object({
     requestId: z.string().min(1),
+    sessionId: z.string().uuid().optional(),
     settings: aiSettingsInputSchema,
     system: z.string(),
     messages: z.array(agentMessageSchema).max(MAX_AI_MESSAGES),

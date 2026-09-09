@@ -73,6 +73,7 @@ import {
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
+import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import { csvToXlsxBuffer, decodeCsvBuffer, sheetCsvToXlsxBuffer } from '../gateway/csv-import'
 import {
   ensureGenofficeLogin,
@@ -3026,6 +3027,7 @@ export function registerSheetsIpc(): void {
 let aiIpcRegistered = false
 
 export function registerSheetsAiIpc(): void {
+  app.once('before-quit', shutdownCodexAppServers)
   if (aiIpcRegistered) return
   aiIpcRegistered = true
 
@@ -3072,13 +3074,13 @@ export function registerSheetsAiIpc(): void {
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
-    if (!config?.apiKey) {
+    if (!config || (provider !== 'codex' && !config.apiKey)) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
       }
     }
-    if (!config.model) return { ok: false, error: tm('errNoModel') }
+    if (provider !== 'codex' && !config.model) return { ok: false, error: tm('errNoModel') }
     try {
       const result = await chatForProvider(provider, config, request.system, request.user)
       // the one-shot path reports HTTP failures as ok:false with the raw body —
@@ -3108,7 +3110,7 @@ export function registerSheetsAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send(IPC_CHANNELS.aiStreamChunk, chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (provider !== 'codex' && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
@@ -3116,7 +3118,7 @@ export function registerSheetsAiIpc(): void {
       })
       return
     }
-    if (!config.model) {
+    if (provider !== 'codex' && !config.model) {
       send({ requestId, type: 'error', error: tm('errNoModel') })
       return
     }
@@ -3133,6 +3135,7 @@ export function registerSheetsAiIpc(): void {
     try {
       let stopReason: string | undefined
       await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+        ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onReasoningDelta: (text) => send({ requestId, type: 'reasoning', text }),

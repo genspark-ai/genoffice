@@ -58,7 +58,7 @@ export type {
   AiStreamRequest,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
-export { AI_PROVIDERS } from '@genoffice/ai-provider'
+export { AI_PROVIDERS } from '@genoffice/ai-provider/browser'
 
 // ---- agent protocol: canonical types live in @genoffice/agent-core ----
 

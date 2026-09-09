@@ -212,8 +212,24 @@ describe('provider registry', () => {
 
   it('only genspark authenticates through the gsk login', () => {
     for (const [id, adapter] of Object.entries(AI_PROVIDER_ADAPTERS)) {
-      expect(adapter.capabilities.auth).toBe(id === 'genspark' ? 'gsk-login' : 'api-key')
+      expect(adapter.capabilities.auth).toBe(
+        id === 'genspark' ? 'gsk-login' : id === 'codex' ? 'codex-chatgpt' : 'api-key',
+      )
     }
+  })
+
+  it('routes Codex to the auto-discovered local process bridge', () => {
+    expect(
+      AI_PROVIDER_ADAPTERS.codex.resolveEndpoint({
+        apiKey: '',
+        model: 'gpt-5.6-terra',
+        cliPath: 'C:\\Tools\\codex.exe',
+      }),
+    ).toEqual({ protocol: 'codex-app-server', baseUrl: '' })
+    expect(AI_PROVIDER_ADAPTERS.codex.resolveEndpoint(config('gpt-5.6-terra'))).toEqual({
+      protocol: 'codex-app-server',
+      baseUrl: '',
+    })
   })
 
   it('throws a typed error for ids outside the registry', () => {

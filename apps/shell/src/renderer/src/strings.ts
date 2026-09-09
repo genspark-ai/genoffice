@@ -151,6 +151,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: '留空使用官方端点。',
     setAiGensparkHint: '使用 Genspark 账号登录，无需 API key。',
+    setAiCodexPath: 'Codex 可执行文件',
+    setAiCodexPathHint: '仅自定义安装时填写；留空会自动检测。',
+    setAiCodexAutoPlaceholder: '留空自动检测（推荐）',
+    setAiCodexHint:
+      '自动查找并使用当前 Codex CLI，更新后无需重新选择；也可填写自定义路径。无需 API Key。',
     setAiByokNote: '对话使用你自己的 key；网页搜索、生图等云工具仍需登录 Genspark。',
     setAiSave: '保存',
     setAiSaved: '已保存',
@@ -349,6 +354,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Leave empty for the official endpoint.',
     setAiGensparkHint: 'Uses your Genspark sign-in; no API key needed.',
+    setAiCodexPath: 'Codex executable',
+    setAiCodexPathHint: 'Only set this for a custom install; leave blank to auto-detect.',
+    setAiCodexAutoPlaceholder: 'Auto-detect (recommended)',
+    setAiCodexHint:
+      'Automatically finds the current signed-in Codex CLI after updates; a custom path is optional. No API key is needed.',
     setAiByokNote:
       'Chats use your own key; cloud tools (web search, image generation) still require the Genspark sign-in.',
     setAiSave: 'Save',
@@ -563,6 +573,10 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: '空欄で公式エンドポイントを使用します。',
     setAiGensparkHint: 'Genspark アカウントでサインインするため、API キーは不要です。',
+    setAiCodexPath: 'Codex 実行ファイル',
+    setAiCodexPathHint: 'カスタムインストール時のみ指定します。空欄なら自動検出します。',
+    setAiCodexAutoPlaceholder: '自動検出（推奨）',
+    setAiCodexHint: 'ローカルでサインイン済みの Codex CLI を使用します。API キーは不要です。',
     setAiByokNote:
       'チャットは自分のキーを使用します。ウェブ検索や画像生成などのクラウドツールには Genspark へのサインインが必要です。',
     setAiSave: '保存',
@@ -774,6 +788,10 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: '비워 두면 공식 엔드포인트를 사용합니다.',
     setAiGensparkHint: 'Genspark 로그인으로 사용하며 API 키가 필요 없습니다.',
+    setAiCodexPath: 'Codex 실행 파일',
+    setAiCodexPathHint: '사용자 지정 설치에만 입력하세요. 비워 두면 자동 감지합니다.',
+    setAiCodexAutoPlaceholder: '자동 감지(권장)',
+    setAiCodexHint: '로컬에서 로그인된 Codex CLI를 사용하므로 API 키가 필요 없습니다.',
     setAiByokNote:
       '대화는 자신의 키를 사용합니다. 웹 검색·이미지 생성 등 클라우드 도구는 여전히 Genspark 로그인이 필요합니다.',
     setAiSave: '저장',
@@ -990,6 +1008,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Laisser vide pour le point de terminaison officiel.',
     setAiGensparkHint: 'Utilise votre connexion Genspark ; aucune clé API requise.',
+    setAiCodexPath: 'Exécutable Codex',
+    setAiCodexPathHint:
+      'À renseigner uniquement pour une installation personnalisée ; sinon, détection automatique.',
+    setAiCodexAutoPlaceholder: 'Détection auto (recommandé)',
+    setAiCodexHint: 'Utilise le CLI Codex connecté localement ; aucune clé API requise.',
     setAiByokNote:
       "Les conversations utilisent votre propre clé ; les outils cloud (recherche web, génération d'images) nécessitent toujours la connexion Genspark.",
     setAiSave: 'Enregistrer',
@@ -1208,6 +1231,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Leer lassen für den offiziellen Endpunkt.',
     setAiGensparkHint: 'Nutzt Ihre Genspark-Anmeldung; kein API-Schlüssel nötig.',
+    setAiCodexPath: 'Codex-Programmdatei',
+    setAiCodexPathHint:
+      'Nur bei einer benutzerdefinierten Installation angeben; leer lassen für automatische Erkennung.',
+    setAiCodexAutoPlaceholder: 'Automatisch erkennen (empfohlen)',
+    setAiCodexHint: 'Verwendet die lokal angemeldete Codex CLI; kein API-Schlüssel nötig.',
     setAiByokNote:
       'Chats verwenden Ihren eigenen Schlüssel; Cloud-Tools (Websuche, Bilderzeugung) erfordern weiterhin die Genspark-Anmeldung.',
     setAiSave: 'Speichern',
@@ -1425,6 +1453,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Deja vacío para usar el endpoint oficial.',
     setAiGensparkHint: 'Usa tu inicio de sesión de Genspark; no se necesita clave de API.',
+    setAiCodexPath: 'Ejecutable de Codex',
+    setAiCodexPathHint:
+      'Indícalo solo para una instalación personalizada; déjalo vacío para detectarlo automáticamente.',
+    setAiCodexAutoPlaceholder: 'Detección automática (recomendado)',
+    setAiCodexHint: 'Usa la CLI de Codex con sesión local; no se necesita clave de API.',
     setAiByokNote:
       'Los chats usan tu propia clave; las herramientas en la nube (búsqueda web, generación de imágenes) siguen requiriendo el inicio de sesión de Genspark.',
     setAiSave: 'Guardar',
@@ -1636,6 +1669,10 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'เว้นว่างเพื่อใช้ปลายทางอย่างเป็นทางการ',
     setAiGensparkHint: 'ใช้การลงชื่อเข้าใช้ Genspark ไม่ต้องใช้คีย์ API',
+    setAiCodexPath: 'ไฟล์ปฏิบัติการ Codex',
+    setAiCodexPathHint: 'กรอกเฉพาะเมื่อติดตั้งแบบกำหนดเอง เว้นว่างไว้เพื่อค้นหาอัตโนมัติ',
+    setAiCodexAutoPlaceholder: 'ค้นหาอัตโนมัติ (แนะนำ)',
+    setAiCodexHint: 'ใช้ Codex CLI ที่เข้าสู่ระบบไว้ในเครื่อง โดยไม่ต้องใช้คีย์ API',
     setAiByokNote:
       'แชทใช้คีย์ของคุณเอง เครื่องมือคลาวด์ (ค้นเว็บ สร้างภาพ) ยังต้องลงชื่อเข้าใช้ Genspark',
     setAiSave: 'บันทึก',
@@ -1848,6 +1885,10 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Kosongkan untuk endpoint resmi.',
     setAiGensparkHint: 'Menggunakan login Genspark; tanpa kunci API.',
+    setAiCodexPath: 'Berkas eksekusi Codex',
+    setAiCodexPathHint: 'Isi hanya untuk instalasi khusus; kosongkan agar terdeteksi otomatis.',
+    setAiCodexAutoPlaceholder: 'Deteksi otomatis (disarankan)',
+    setAiCodexHint: 'Menggunakan Codex CLI yang sudah login secara lokal; tanpa kunci API.',
     setAiByokNote:
       'Obrolan memakai kunci Anda sendiri; alat cloud (pencarian web, pembuatan gambar) tetap memerlukan login Genspark.',
     setAiSave: 'Simpan',
@@ -2061,6 +2102,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Оставьте пустым для официальной конечной точки.',
     setAiGensparkHint: 'Использует вход в Genspark; ключ API не нужен.',
+    setAiCodexPath: 'Исполняемый файл Codex',
+    setAiCodexPathHint:
+      'Указывайте только для нестандартной установки; оставьте пустым для автоопределения.',
+    setAiCodexAutoPlaceholder: 'Автоопределение (рекомендуется)',
+    setAiCodexHint: 'Использует локально авторизованный Codex CLI; ключ API не нужен.',
     setAiByokNote:
       'Чаты используют ваш собственный ключ; облачные инструменты (веб-поиск, генерация изображений) по-прежнему требуют входа в Genspark.',
     setAiSave: 'Сохранить',
@@ -2272,6 +2318,10 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'اتركه فارغًا لاستخدام نقطة النهاية الرسمية.',
     setAiGensparkHint: 'يستخدم تسجيل الدخول إلى Genspark؛ لا حاجة لمفتاح API.',
+    setAiCodexPath: 'ملف Codex التنفيذي',
+    setAiCodexPathHint: 'حدده فقط للتثبيت المخصص؛ اتركه فارغًا للاكتشاف التلقائي.',
+    setAiCodexAutoPlaceholder: 'اكتشاف تلقائي (موصى به)',
+    setAiCodexHint: 'يستخدم Codex CLI المسجل محليًا؛ لا حاجة إلى مفتاح API.',
     setAiByokNote:
       'تستخدم المحادثات مفتاحك الخاص؛ أدوات السحابة (بحث الويب وتوليد الصور) ما زالت تتطلب تسجيل الدخول إلى Genspark.',
     setAiSave: 'حفظ',
@@ -2477,6 +2527,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Deixe vazio para o endpoint oficial.',
     setAiGensparkHint: 'Usa seu login Genspark; nenhuma chave de API necessária.',
+    setAiCodexPath: 'Executável do Codex',
+    setAiCodexPathHint:
+      'Preencha apenas para uma instalação personalizada; deixe em branco para detectar automaticamente.',
+    setAiCodexAutoPlaceholder: 'Detectar automaticamente (recomendado)',
+    setAiCodexHint: 'Usa o Codex CLI conectado localmente; nenhuma chave de API é necessária.',
     setAiByokNote:
       'Os chats usam sua própria chave; as ferramentas na nuvem (busca na web, geração de imagens) ainda exigem o login Genspark.',
     setAiSave: 'Salvar',
@@ -2681,6 +2736,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: "Lascia vuoto per l'endpoint ufficiale.",
     setAiGensparkHint: 'Usa il tuo accesso Genspark; nessuna chiave API richiesta.',
+    setAiCodexPath: 'Eseguibile Codex',
+    setAiCodexPathHint:
+      'Compila solo per un’installazione personalizzata; lascia vuoto per il rilevamento automatico.',
+    setAiCodexAutoPlaceholder: 'Rilevamento automatico (consigliato)',
+    setAiCodexHint: 'Usa Codex CLI con accesso locale; non è richiesta alcuna chiave API.',
     setAiByokNote:
       "Le chat usano la tua chiave; gli strumenti cloud (ricerca web, generazione immagini) richiedono comunque l'accesso Genspark.",
     setAiSave: 'Salva',
@@ -2884,6 +2944,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Pozostaw puste, aby użyć oficjalnego punktu końcowego.',
     setAiGensparkHint: 'Korzysta z logowania Genspark; klucz API nie jest potrzebny.',
+    setAiCodexPath: 'Plik wykonywalny Codex',
+    setAiCodexPathHint:
+      'Ustaw tylko dla instalacji niestandardowej; pozostaw puste, aby wykryć automatycznie.',
+    setAiCodexAutoPlaceholder: 'Wykryj automatycznie (zalecane)',
+    setAiCodexHint: 'Używa lokalnie zalogowanego Codex CLI; klucz API nie jest potrzebny.',
     setAiByokNote:
       'Czaty używają Twojego klucza; narzędzia w chmurze (wyszukiwanie, generowanie obrazów) nadal wymagają logowania Genspark.',
     setAiSave: 'Zapisz',
@@ -3088,6 +3153,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Leeg laten voor het officiële eindpunt.',
     setAiGensparkHint: 'Gebruikt je Genspark-login; geen API-sleutel nodig.',
+    setAiCodexPath: 'Codex-uitvoerbaar bestand',
+    setAiCodexPathHint:
+      'Alleen invullen voor een aangepaste installatie; laat leeg voor automatische detectie.',
+    setAiCodexAutoPlaceholder: 'Automatisch detecteren (aanbevolen)',
+    setAiCodexHint: 'Gebruikt de lokaal aangemelde Codex CLI; geen API-sleutel nodig.',
     setAiByokNote:
       'Chats gebruiken je eigen sleutel; cloudtools (webzoeken, beeldgeneratie) vereisen nog steeds de Genspark-login.',
     setAiSave: 'Opslaan',
@@ -3291,6 +3361,12 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'Biarkan kosong untuk endpoint rasmi.',
     setAiGensparkHint: 'Menggunakan log masuk Genspark; tiada kunci API diperlukan.',
+    setAiCodexPath: 'Fail boleh laku Codex',
+    setAiCodexPathHint:
+      'Isi hanya untuk pemasangan tersuai; biarkan kosong untuk pengesanan automatik.',
+    setAiCodexAutoPlaceholder: 'Kesan automatik (disyorkan)',
+    setAiCodexHint:
+      'Menggunakan Codex CLI yang telah log masuk secara setempat; tiada kunci API diperlukan.',
     setAiByokNote:
       'Sembang menggunakan kunci anda sendiri; alat awan (carian web, penjanaan imej) masih memerlukan log masuk Genspark.',
     setAiSave: 'Simpan',
@@ -3491,6 +3567,10 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'השאר ריק לנקודת הקצה הרשמית.',
     setAiGensparkHint: 'משתמש בכניסת Genspark שלך; אין צורך במפתח API.',
+    setAiCodexPath: 'קובץ ההפעלה של Codex',
+    setAiCodexPathHint: 'יש למלא רק בהתקנה מותאמת; השאר ריק לזיהוי אוטומטי.',
+    setAiCodexAutoPlaceholder: 'זיהוי אוטומטי (מומלץ)',
+    setAiCodexHint: 'משתמש ב-Codex CLI המחובר מקומית; אין צורך במפתח API.',
     setAiByokNote:
       'שיחות משתמשות במפתח שלך; כלי ענן (חיפוש ברשת, יצירת תמונות) עדיין דורשים כניסת Genspark.',
     setAiSave: 'שמירה',
@@ -3693,6 +3773,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: 'आधिकारिक एंडपॉइंट के लिए खाली छोड़ें।',
     setAiGensparkHint: 'आपके Genspark साइन-इन का उपयोग करता है; API कुंजी की आवश्यकता नहीं।',
+    setAiCodexPath: 'Codex निष्पादन फ़ाइल',
+    setAiCodexPathHint: 'केवल कस्टम इंस्टॉलेशन के लिए भरें; स्वतः पहचान के लिए खाली छोड़ें।',
+    setAiCodexAutoPlaceholder: 'स्वतः पहचान (अनुशंसित)',
+    setAiCodexHint:
+      'स्थानीय रूप से साइन-इन किए गए Codex CLI का उपयोग करता है; API कुंजी की आवश्यकता नहीं।',
     setAiByokNote:
       'चैट आपकी अपनी कुंजी का उपयोग करती हैं; क्लाउड टूल (वेब खोज, छवि निर्माण) के लिए अभी भी Genspark साइन-इन आवश्यक है।',
     setAiSave: 'सहेजें',
@@ -3891,6 +3976,11 @@ export const strings = {
     setAiBaseUrl: 'Base URL',
     setAiBaseUrlHint: '留空使用官方端點。',
     setAiGensparkHint: '使用 Genspark 帳號登入，無需 API key。',
+    setAiCodexPath: 'Codex 可執行檔',
+    setAiCodexPathHint: '僅自訂安裝時填寫；留空會自動偵測。',
+    setAiCodexAutoPlaceholder: '留空自動偵測（建議）',
+    setAiCodexHint:
+      '自動尋找目前的 Codex CLI，更新後無需重新選擇；也可填寫自訂路徑。無需 API Key。',
     setAiByokNote: '對話使用你自己的 key；網頁搜尋、生圖等雲端工具仍需登入 Genspark。',
     setAiSave: '儲存',
     setAiSaved: '已儲存',

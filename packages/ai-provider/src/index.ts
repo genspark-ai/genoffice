@@ -1,6 +1,7 @@
 export type {
   AiChatRequest,
   AiChatResponse,
+  CodexModelCatalog,
   AiProviderConfig,
   AiProviderId,
   AiProviderMeta,

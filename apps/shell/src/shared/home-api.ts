@@ -1,4 +1,9 @@
-import type { AiChatResponse, AiProviderMeta, AiSettings } from '@genoffice/ai-provider'
+import type {
+  AiChatResponse,
+  AiProviderMeta,
+  AiSettings,
+  CodexModelCatalog,
+} from '@genoffice/ai-provider'
 import type { UpdateChannel } from './update-api'
 
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
@@ -159,6 +164,8 @@ export interface HomeApi {
   setAiSettings(settings: AiSettings): Promise<void>
   /** provider catalog with each fixed endpoint's default base URL (empty for genspark/custom) */
   getAiProviders(): AiCatalogEntry[]
+  /** live Codex model catalog discovered through the current or overridden app-server */
+  getCodexModels(cliPath?: string): Promise<CodexModelCatalog>
   /** one-shot round trip against the given (possibly unsaved) settings — the settings-UI connection test */
   testAiSettings(settings: AiSettings): Promise<AiChatResponse>
 }

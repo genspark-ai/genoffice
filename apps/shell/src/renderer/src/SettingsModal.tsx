@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Dropdown } from '@genoffice/ui'
 import {
@@ -6,7 +6,7 @@ import {
   MAX_MAX_OUTPUT_TOKENS,
   MIN_MAX_OUTPUT_TOKENS,
   clampMaxOutputTokens,
-} from '@genoffice/ai-provider'
+} from '@genoffice/ai-provider/browser'
 import type { AiSettings } from '@genoffice/ai-provider'
 import { useI18n } from './locale'
 import type { StringKey, TFunc } from './locale'
@@ -153,7 +153,9 @@ function Field({
 
 /** AI model pane: provider / model / key / base URL, saved to userData/ai-settings.json */
 function AiModelPane({ t }: { t: TFunc }) {
-  const [catalog] = useState<AiCatalogEntry[]>(() => window.aiOffice.getAiProviders?.() ?? [])
+  const [catalog, setCatalog] = useState<AiCatalogEntry[]>(
+    () => window.aiOffice.getAiProviders?.() ?? [],
+  )
   const [settings, setSettings] = useState<AiSettings | null>(null)
   const [dirty, setDirty] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -161,6 +163,21 @@ function AiModelPane({ t }: { t: TFunc }) {
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
   /** free-typed value of the output-cap field; committed (and clamped) on blur */
   const [maxTokensDraft, setMaxTokensDraft] = useState<string | null>(null)
+
+  const refreshCodexModels = useCallback(async (cliPath = '', selectedModel = '') => {
+    if (!window.aiOffice.getCodexModels) return
+    const live = await window.aiOffice.getCodexModels(cliPath)
+    setCatalog((current) =>
+      current.map((entry) => {
+        if (entry.id !== 'codex') return entry
+        const models =
+          selectedModel && !live.models.includes(selectedModel)
+            ? [selectedModel, ...live.models]
+            : live.models
+        return { ...entry, models, defaultModel: live.defaultModel }
+      }),
+    )
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -175,11 +192,15 @@ function AiModelPane({ t }: { t: TFunc }) {
         s = { ...s, gskToolsEnabled: true }
       }
       setSettings(s)
+      const codex = s.providers.codex
+      if (codex) {
+        void refreshCodexModels(codex.cliPath ?? '', codex.model).catch(() => undefined)
+      }
     })
     return () => {
       alive = false
     }
-  }, [])
+  }, [refreshCodexModels])
 
   if (!settings) return null
   const provider = settings.provider
@@ -187,8 +208,11 @@ function AiModelPane({ t }: { t: TFunc }) {
   const config = settings.providers[provider] ?? {
     apiKey: '',
     model: meta?.defaultModel ?? '',
+    baseUrl: undefined,
+    cliPath: undefined,
   }
   const isGenspark = provider === 'genspark'
+  const isCodex = provider === 'codex'
 
   const touch = () => {
     setDirty(true)
@@ -236,7 +260,12 @@ function AiModelPane({ t }: { t: TFunc }) {
     setTestResult(null)
     window.aiOffice
       .testAiSettings?.(settings)
-      .then((r) => setTestResult(r ?? { ok: false }))
+      .then((r) => {
+        setTestResult(r ?? { ok: false })
+        if (r?.ok && isCodex) {
+          void refreshCodexModels(config.cliPath ?? '', config.model).catch(() => undefined)
+        }
+      })
       .catch((error) =>
         setTestResult({ ok: false, error: error instanceof Error ? error.message : String(error) }),
       )
@@ -268,7 +297,7 @@ function AiModelPane({ t }: { t: TFunc }) {
         />
       </div>
       <div className="set-field-desc set-ai-note">
-        {isGenspark ? t('setAiGensparkHint') : t('setAiByokNote')}
+        {isGenspark ? t('setAiGensparkHint') : isCodex ? t('setAiCodexHint') : t('setAiByokNote')}
       </div>
       <div className="set-field">
         <div className="set-field-text">
@@ -294,7 +323,32 @@ function AiModelPane({ t }: { t: TFunc }) {
           />
         )}
       </div>
-      {!isGenspark && (
+      {isCodex ? (
+        <div className="set-field">
+          <div className="set-field-text">
+            <div className="set-field-stack">
+              <label className="set-field-label" htmlFor="set-ai-cli-path">
+                {t('setAiCodexPath')}
+              </label>
+              <div className="set-field-desc">{t('setAiCodexPathHint')}</div>
+            </div>
+          </div>
+          <input
+            id="set-ai-cli-path"
+            className="set-input"
+            type="text"
+            value={config.cliPath ?? ''}
+            placeholder={t('setAiCodexAutoPlaceholder')}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => updateConfig({ cliPath: e.target.value.trim() })}
+            onBlur={(e) => {
+              const cliPath = e.target.value.trim()
+              void refreshCodexModels(cliPath, config.model).catch(() => undefined)
+            }}
+          />
+        </div>
+      ) : !isGenspark ? (
         <>
           <div className="set-field">
             <div className="set-field-text">
@@ -338,7 +392,7 @@ function AiModelPane({ t }: { t: TFunc }) {
             />
           </div>
         </>
-      )}
+      ) : null}
       <div className="set-field">
         <div className="set-field-text">
           <div className="set-field-stack">

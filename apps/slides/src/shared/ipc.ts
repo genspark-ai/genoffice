@@ -28,7 +28,7 @@ export type {
   AiStreamRequest,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
-export { AI_PROVIDERS } from '@genoffice/ai-provider'
+export { AI_PROVIDERS } from '@genoffice/ai-provider/browser'
 export type { AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 
 export type UiTheme = 'light' | 'dark' | 'system'

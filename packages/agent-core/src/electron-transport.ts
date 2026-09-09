@@ -28,6 +28,9 @@ export interface IpcStreamChunk {
 /** The request forwarded to the main process to start one streaming turn. */
 export interface IpcStreamStart<S> {
   requestId: string
+  /** Stable for the lifetime of one renderer-side transport. Providers with
+   * native conversations can reuse it across the tool loop and follow-ups. */
+  sessionId: string
   settings: S
   system: string
   messages: AgentMessage[]
@@ -69,6 +72,7 @@ export interface IpcTransportOptions<S> {
  */
 export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTransport {
   const timeoutText = () => options.timeoutErrorText?.() ?? options.unknownErrorText()
+  const sessionId = crypto.randomUUID()
   return {
     stream(request: AgentStreamRequest, cb) {
       const requestId = crypto.randomUUID()
@@ -129,6 +133,7 @@ export function createIpcTransport<S>(options: IpcTransportOptions<S>): AgentTra
         Promise.resolve(
           options.start({
             requestId,
+            sessionId,
             settings: options.getSettings(),
             system: request.system,
             messages: request.messages,

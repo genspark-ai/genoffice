@@ -2,6 +2,7 @@ import type { AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent
 
 export type AiProviderId =
   | 'genspark'
+  | 'codex'
   | 'anthropic'
   | 'gemini'
   | 'deepseek'
@@ -29,6 +30,14 @@ export interface AiProviderConfig {
   model: string
   /** required for custom; for other direct providers it overrides the default endpoint (regional mirrors) */
   baseUrl?: string | undefined
+  /** optional Codex CLI override; empty means auto-detect the current authenticated install */
+  cliPath?: string | undefined
+}
+
+/** Live picker data returned by Codex app-server's model/list method. */
+export interface CodexModelCatalog {
+  models: string[]
+  defaultModel: string
 }
 
 export interface AiProviderMeta {
@@ -38,6 +47,7 @@ export interface AiProviderMeta {
   defaultModel: string
   keyPlaceholder: string
   needsBaseUrl?: boolean
+  needsCliPath?: boolean
 }
 
 export interface AiSettings {
@@ -82,6 +92,8 @@ export interface AiChatResponse {
 
 export interface AiStreamRequest {
   requestId: string
+  /** Stable renderer transport id used to retain native provider sessions. */
+  sessionId?: string
   settings: AiSettings
   system: string
   messages: AgentMessage[]

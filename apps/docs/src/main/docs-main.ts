@@ -69,6 +69,7 @@ import {
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
+import { listCodexModels, shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import {
   ensureGenofficeLogin,
   gskApiKey,
@@ -2624,6 +2625,7 @@ const activeAiStreams = new Map<string, AbortController>()
  * sheets' standalone AI handlers use the same channel names.
  */
 export function registerAiIpc(): void {
+  app.once('before-quit', shutdownCodexAppServers)
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
     // pre-lock legacy file: genspark selected with cloud tools opted out. The
@@ -2660,6 +2662,10 @@ export function registerAiIpc(): void {
     writeJson(SETTINGS_PATH(), settings)
   })
 
+  ipcMain.handle('ai:codex-models', async (_event, cliPath: unknown) => {
+    return listCodexModels(typeof cliPath === 'string' ? cliPath : undefined)
+  })
+
   ipcMain.handle('ai:stream', async (event, request: AiStreamRequest) => {
     const { requestId, settings, system, messages } = request
     const tools = request.tools ?? []
@@ -2673,7 +2679,7 @@ export function registerAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (provider !== 'codex' && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
@@ -2681,7 +2687,7 @@ export function registerAiIpc(): void {
       })
       return
     }
-    if (!config.model) {
+    if (provider !== 'codex' && !config.model) {
       send({ requestId, type: 'error', error: tm('errNoModel') })
       return
     }
@@ -2698,6 +2704,7 @@ export function registerAiIpc(): void {
     try {
       let stopReason: string | undefined
       await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+        ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onReasoningDelta: (text) => send({ requestId, type: 'reasoning', text }),
@@ -2820,13 +2827,13 @@ export function registerAiIpc(): void {
     if (provider === 'genspark' && config && !config.apiKey) {
       config = { ...config, apiKey: gskApiKey() }
     }
-    if (!config?.apiKey) {
+    if (!config || (provider !== 'codex' && !config.apiKey)) {
       return {
         ok: false,
         error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
       }
     }
-    if (!config.model) return { ok: false, error: tm('errNoModel') }
+    if (provider !== 'codex' && !config.model) return { ok: false, error: tm('errNoModel') }
     try {
       const result = await chatForProvider(provider, config, system, user)
       // the one-shot path reports HTTP failures as ok:false with the raw body —

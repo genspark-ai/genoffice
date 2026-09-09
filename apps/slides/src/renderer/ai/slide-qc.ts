@@ -10,7 +10,11 @@ import {
   type AgentSkill,
   type AgentTransport,
 } from '@genoffice/agent-core'
-import { getProviderAdapter, modelLacksVision, type AiSettings } from '@genoffice/ai-provider'
+import {
+  getProviderAdapter,
+  modelLacksVision,
+  type AiSettings,
+} from '@genoffice/ai-provider/browser'
 import { auditSlideLayout } from './layout-audit'
 import { createSlidesSkill, formatSlideDump, type DeckAccess } from './slides-skill'
 

@@ -22,6 +22,8 @@ describe('defaultAiSettings', () => {
       expect(settings.providers[meta.id].model).toBe(meta.defaultModel)
     }
     expect(settings.providers.custom.baseUrl).toBe('')
+    expect(settings.providers.codex.cliPath).toBe('')
+    expect(settings.providers.codex.model).toBe('')
     expect(settings.providers.anthropic.baseUrl).toBeUndefined()
   })
 
@@ -263,6 +265,21 @@ describe('activeProvider', () => {
     settings.providers.custom.baseUrl = 'http://localhost:11434/v1'
     settings.providers.custom.model = 'llama3'
     expect(activeProvider(settings)).toBe('custom')
+  })
+
+  it('auto-discovers Codex without an API key and preserves an optional override', () => {
+    const settings = defaultAiSettings()
+    settings.provider = 'codex'
+    expect(activeProvider(settings)).toBe('codex')
+    settings.providers.codex.cliPath = ' C:\\Tools\\codex.exe '
+    expect(activeProvider(settings)).toBe('codex')
+
+    const resolved = resolveAiSettings(
+      { providers: { codex: settings.providers.codex } as never },
+      defaultAiSettings(),
+    )
+    expect(resolved.providers.codex.cliPath).toBe('C:\\Tools\\codex.exe')
+    expect(resolved.providers.codex.apiKey).toBe('')
   })
 
   it('falls back to genspark for unknown ids from a hand-edited settings file', () => {

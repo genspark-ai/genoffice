@@ -35,6 +35,7 @@ import {
   type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
+import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
 import { fetchRemoteImage } from '@genoffice/electron-utils'
 import {
   webSearch,
@@ -107,6 +108,7 @@ function appendRunFailure(entry: AiRunFailure): void {
 }
 
 export function registerAiIpc(): void {
+  app.once('before-quit', shutdownCodexAppServers)
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
   setRescueFetch((url, init) => net.fetch(url, init))
   setAiUserAgent(`GenOffice/${app.getVersion()}`)
@@ -155,7 +157,7 @@ export function registerAiIpc(): void {
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config?.apiKey) {
+    if (!config || (provider !== 'codex' && !config.apiKey)) {
       send({
         requestId,
         type: 'error',
@@ -163,7 +165,7 @@ export function registerAiIpc(): void {
       })
       return
     }
-    if (!config.model) {
+    if (provider !== 'codex' && !config.model) {
       send({ requestId, type: 'error', error: tm('errNoModel') })
       return
     }
@@ -180,6 +182,7 @@ export function registerAiIpc(): void {
     try {
       let stopReason: string | undefined
       await streamForProvider(provider, config, system, messages, tools, maxTokens, {
+        ...(request.sessionId ? { sessionId: request.sessionId } : {}),
         signal: controller.signal,
         onDelta: (text) => send({ requestId, type: 'delta', text }),
         onReasoningDelta: (text) => send({ requestId, type: 'reasoning', text }),

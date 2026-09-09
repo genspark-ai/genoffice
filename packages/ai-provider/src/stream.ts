@@ -3,8 +3,9 @@ import { withOutputCapFallback } from './output-cap'
 import { streamAnthropic } from './protocols/anthropic'
 import { streamGemini } from './protocols/gemini'
 import { streamOpenAiCompatible } from './protocols/openai-compatible'
+import { streamCodexAppServer } from './codex-app-server'
 import type { StreamCallbacks } from './protocols/shared'
-import { getProviderAdapter } from './registry'
+import { getProviderAdapter, type AiProtocol } from './registry'
 import type { AiProviderConfig, AiProviderId } from './types'
 
 export { streamAnthropic } from './protocols/anthropic'
@@ -25,8 +26,12 @@ export async function streamForProvider(
 ): Promise<void> {
   const endpoint = getProviderAdapter(provider).resolveEndpoint(config)
   const { baseUrl } = endpoint
+  if (endpoint.protocol === 'codex-app-server') {
+    return streamCodexAppServer(config, system, messages, tools, maxTokens, cb)
+  }
+  const protocol: Exclude<AiProtocol, 'codex-app-server'> = endpoint.protocol
   return withOutputCapFallback(baseUrl, config.model, maxTokens, (cap) => {
-    switch (endpoint.protocol) {
+    switch (protocol) {
       case 'anthropic':
         return streamAnthropic(config, system, messages, tools, cap, cb, baseUrl)
       case 'gemini':

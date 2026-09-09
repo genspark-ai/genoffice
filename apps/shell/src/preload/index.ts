@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import { AI_PROVIDERS, getProviderAdapter } from '@genoffice/ai-provider'
-import type { AiSettings } from '@genoffice/ai-provider'
+import { AI_PROVIDERS, getProviderAdapter } from '@genoffice/ai-provider/browser'
+import type { AiSettings, CodexModelCatalog } from '@genoffice/ai-provider/browser'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import type {
   AccountLoginEvent,
@@ -252,7 +252,7 @@ const homeApi: HomeApi = {
     return AI_PROVIDERS.map((meta) => {
       let defaultBaseUrl = ''
       // genspark routes by model and custom has no default — both stay ''
-      if (meta.id !== 'genspark' && !meta.needsBaseUrl) {
+      if (meta.id !== 'genspark' && !meta.needsBaseUrl && !meta.needsCliPath) {
         defaultBaseUrl = getProviderAdapter(meta.id).resolveEndpoint({
           apiKey: '',
           model: meta.defaultModel,
@@ -260,6 +260,9 @@ const homeApi: HomeApi = {
       }
       return { ...meta, defaultBaseUrl }
     })
+  },
+  async getCodexModels(cliPath) {
+    return (await ipcRenderer.invoke('ai:codex-models', cliPath)) as CodexModelCatalog
   },
   async testAiSettings(settings) {
     const result: unknown = await ipcRenderer.invoke('ai:chat', {
