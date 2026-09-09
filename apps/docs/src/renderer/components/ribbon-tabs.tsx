@@ -243,6 +243,8 @@ export function insertTableAt(editor: Editor, rows: number, cols: number): void 
   const table = {
     rows: Array.from({ length: rows }, () => Array.from({ length: cols }, () => ({ paras: [''] }))),
     colWidthsPct: Array.from({ length: cols }, () => 100 / cols),
+    widthPct: 100,
+    autoFit: 'window' as const,
     borders: { top: line, bottom: line, left: line, right: line, insideH: line, insideV: line },
   }
   // inside a cell a top-level docTable insert would split the outer table
