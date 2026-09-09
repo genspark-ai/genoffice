@@ -48,6 +48,14 @@ export interface ChatMessage {
   tools?: ToolActivity[]
   /** Attachment metadata of a user message */
   attachments?: ChatAttachment[]
+  /** Document selection a user message targeted */
+  scope?: ChatScope
+}
+
+/** What a user message was scoped to: a caption plus an excerpt of the selected content */
+export interface ChatScope {
+  label: string
+  text?: string
 }
 
 // ────────────────────────────────────────────────────────────

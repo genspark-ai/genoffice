@@ -381,6 +381,21 @@
   background: var(--surface);
 }
 
+.set-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.set-num-input {
+  width: 64px;
+  min-width: 0;
+  text-align: right;
+}
+
 .set-input:focus {
   outline: none;
   border-color: var(--accent, var(--text-primary));
@@ -446,4 +461,11 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.set-pane-subtitle {
+  margin: 28px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
 }

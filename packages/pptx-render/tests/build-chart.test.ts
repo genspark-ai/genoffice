@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import type { ChartModel } from '@genoffice/pptx-engine'
 import { buildChartNode } from '../src/build-chart'
 import { HeuristicMetrics } from '../src/metrics'
-import { makeViewport } from '../src/coords'
+import { makeViewport, ptToPx } from '../src/coords'
 
 const vp = makeViewport({ cx: 12192000, cy: 6858000 }, 1280)
 const metrics = new HeuristicMetrics()
@@ -211,6 +211,50 @@ describe('buildChartNode', () => {
     // 25/75 split
     const [h1, h2] = node.bars.map((b) => b.h).sort((a, b) => a - b)
     expect(h2! / h1!).toBeCloseTo(3, 1)
+  })
+
+  it('outline-only pie points carry noFill + per-point stroke; legend swatch takes the outline color', () => {
+    const pie: ChartModel = {
+      kind: 'pie',
+      categories: ['x', 'y', 'z'],
+      series: [
+        {
+          values: [1, 1, 2],
+          pointNoFill: [true, undefined, true],
+          pointLines: [{ color: '#AA0000', widthPt: 1.5 }, { color: null }, undefined],
+        },
+      ],
+      legendPos: 'r',
+    }
+    const node = buildChartNode('r_pie2', 'el', pie, box, vp, metrics)!
+    const [w0, w1, w2] = node.wedges!
+    expect(w0).toMatchObject({
+      noFill: true,
+      stroke: '#AA0000',
+      strokeWidthPx: ptToPx(1.5, vp.scale),
+    })
+    expect(w1!.noFill).toBeUndefined()
+    expect(w1!.strokeWidthPx).toBe(0)
+    expect(w1!.stroke).toBeUndefined()
+    expect(w2).toMatchObject({ noFill: true })
+    expect(w2!.stroke).toBeUndefined()
+    expect(node.swatches[0]!.color).toBe('#AA0000')
+
+    // Pseudo-3D: top faces follow the same semantics, outline-only points grow no rim
+    const node3d = buildChartNode('r_pie3', 'el', { ...pie, pseudo3D: true }, box, vp, metrics)!
+    expect(node3d.wedges).toHaveLength(0)
+    // rims are pushed first, then one top face per point
+    const faces = node3d.paths!.slice(-3)
+    expect(faces[0]).toMatchObject({
+      fill: 'transparent',
+      stroke: '#AA0000',
+      strokeWidthPx: ptToPx(1.5, vp.scale),
+    })
+    expect(faces[1]!.fill).not.toBe('transparent')
+    expect(faces[1]!.stroke).toBeUndefined()
+    expect(faces[2]).toMatchObject({ fill: 'transparent', stroke: '#ffffff' })
+    // rims exist only for the filled point
+    expect(node3d.paths!.length - faces.length).toBeGreaterThan(0)
   })
 
   it('builds pie wedges summing to 360° with per-point colors', () => {

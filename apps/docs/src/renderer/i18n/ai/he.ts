@@ -123,6 +123,7 @@ export const he = {
   aiSumCreateDocument: 'יצירת מסמך חדש',
   aiSumCreatedDocument: '{name} נוצר',
   aiSumReplaceContent: 'החלפת תוכן',
+  aiSumReplaceSelection: 'החלפת הטקסט שנבחר',
   aiSumReplacedBlocks: 'הוחלפו בלוקים {start}-{end}',
   aiSumInsertChart: 'הוספת תרשים',
   aiSumInsertedChart: 'הוסף תרשים "{title}"',

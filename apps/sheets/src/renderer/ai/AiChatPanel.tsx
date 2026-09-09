@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { AiComposer, AiTypingIndicator } from '@genoffice/ui'
+import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
 import { GensparkMark } from '../ribbon-icons'
 import type { ChangePlan } from '../../domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
@@ -105,7 +105,7 @@ function truncateCardName(name: string): string {
 
 /** Name the scope the way the user thinks of it: by column header when the
  *  selection covers whole columns, by range only when it cannot be named. */
-function scopeLabel(range: string, columns: readonly string[] | null, t: TFunc): string {
+export function scopeLabel(range: string, columns: readonly string[] | null, t: TFunc): string {
   if (columns?.length === 1) return t('aiScopeColumn', { name: columns[0] ?? '' })
   if (columns && columns.length > 1) {
     return t('aiScopeColumns', { names: columns.join(', '), count: columns.length })
@@ -204,6 +204,8 @@ export interface AiChatMessage {
   readonly autoApplied?: { readonly opCount: number; readonly undoSteps: number } | undefined
   /** attachments consumed from the composer by this user message (read-only echo chips) */
   readonly attachments?: readonly AttachmentMeta[] | undefined
+  /** the range this user message targeted, frozen at send */
+  readonly scope?: AiScopeQuoteData | undefined
 }
 
 export function AiChatPanel({
@@ -542,6 +544,7 @@ export function AiChatPanel({
           <>
             {historicChat.map((entry, i) => (
               <div key={`h${i}`} className={`ai-msg ai-msg-${entry.role} ai-msg-historic`}>
+                {entry.role === 'user' && entry.scope && <AiScopeQuote scope={entry.scope} />}
                 {entry.role === 'user' && entry.attachments && entry.attachments.length > 0 && (
                   <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
                 )}
@@ -573,6 +576,7 @@ export function AiChatPanel({
           >
             {entry.role === 'user' ? (
               <>
+                {entry.scope && <AiScopeQuote scope={entry.scope} />}
                 {entry.attachments && entry.attachments.length > 0 && (
                   <SentAttachments atts={entry.attachments} previews={attachmentPreviews} />
                 )}

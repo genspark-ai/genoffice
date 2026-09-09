@@ -432,7 +432,12 @@ export function analyzePage(extracted: ExtractedPage): IrPage {
   // a fill covering ~the whole page is the page wash, not content — record it
   // for the document background and keep it out of the shape pool so it never
   // reads as cell shading / highlight / vector art
-  const bg = extractPageBackground(shapes.fills, extracted.widthPt, extracted.heightPt)
+  const bg = extractPageBackground(
+    shapes.fills,
+    extracted.widthPt,
+    extracted.heightPt,
+    extracted.contentBox,
+  )
   if (bg !== undefined && !isNearWhite(bg)) base.bgColor = bg
 
   // full-bleed tile group (P22 B): a text-free page painted edge-to-edge by a
@@ -460,6 +465,7 @@ export function analyzePage(extracted: ExtractedPage): IrPage {
     extracted.chars.map((c) => c.box),
     extracted.widthPt,
     extracted.heightPt,
+    extracted.contentBox,
   )
   if (panels.length > 0) {
     base.bgPanels = panels.map((p) => solidPanelImage(p.box, p.color, p.alpha, p.z))
@@ -616,6 +622,7 @@ export function analyzePage(extracted: ExtractedPage): IrPage {
       pixelWidth: img.pixelWidth,
       pixelHeight: img.pixelHeight,
       ...(img.z !== undefined ? { z: img.z } : {}),
+      ...(img.synthetic ? { synthetic: true as const } : {}),
     }))
   const { floats, inline } = classifyFloatImages(
     suppressTextShadowImages(imageBlocks, remainingUnits),

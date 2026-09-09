@@ -14,7 +14,11 @@ export {
   type AppMenuLabels,
 } from './app-menu'
 export { GITHUB_REPO_URL } from './github-menu'
-export { showOpenDialogWithMemory, showSaveDialogWithMemory } from './dialog-memory'
+export {
+  saveAsSuggestion,
+  showOpenDialogWithMemory,
+  showSaveDialogWithMemory,
+} from './dialog-memory'
 export {
   DEFAULT_SAVE_DIR_KEY,
   configuredDefaultSaveDir,
@@ -40,6 +44,7 @@ export {
   type FetchWithSsrfGuardOptions,
 } from './safe-remote-url'
 export { fetchRemoteImage, remoteImageHeaders } from './remote-image'
+export { GENERATED_IMAGE_DIR, readGeneratedImage, storeGeneratedImage } from './generated-images'
 export {
   buildPrintableHtml,
   printHtmlToPdf,

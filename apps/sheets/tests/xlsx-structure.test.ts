@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { applyCellEditsToXlsx, assertOnlyTouchedEntriesChanged } from '../src/gateway/xlsx-gateway'
 import {
   applyStructuralOps,
+  shiftCellArea,
   shiftCrossSheetFormulas,
   shiftDefinedNames,
   shiftDrawingAnchors,
@@ -413,6 +414,27 @@ const TABLE_XML =
   '</table>'
 
 describe('shiftTablePart', () => {
+  it('shiftCellArea lands where the saved table ref lands', () => {
+    const ops = [
+      { kind: 'insert-rows', index: 2, count: 3 },
+      { kind: 'remove-rows', index: 5, count: 2 },
+      { kind: 'insert-cols', index: 2, count: 1 },
+      { kind: 'remove-cols', index: 3, count: 2 },
+    ] as const
+    expect(shiftTablePart(TABLE_XML, ops)).toMatch(/<table [^>]*ref="B2:C6"/)
+    expect(shiftCellArea({ startRow: 1, endRow: 4, startColumn: 1, endColumn: 3 }, ops)).toEqual({
+      startRow: 1,
+      endRow: 5,
+      startColumn: 1,
+      endColumn: 2,
+    })
+    expect(
+      shiftCellArea({ startRow: 1, endRow: 4, startColumn: 1, endColumn: 3 }, [
+        { kind: 'remove-rows', index: 0, count: 10 },
+      ]),
+    ).toBeNull()
+  })
+
   it('inserting rows inside the table grows ref and autoFilter', () => {
     const xml = shiftTablePart(TABLE_XML, [{ kind: 'insert-rows', index: 2, count: 2 }])
     expect(xml).toContain('ref="B2:D7" totalsRowShown="0"')

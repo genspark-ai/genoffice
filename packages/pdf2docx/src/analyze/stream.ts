@@ -151,11 +151,17 @@ function findCandidates(
   for (const row of rows) {
     const prev = run[run.length - 1]
     const rowH = row.box.y1 - row.box.y0
-    // a strong run is unmistakably tabular — its typical row splits into many
-    // units. Only such runs earn the relaxed continuation rules; a run seeded
-    // by 2-3-unit prose fragments must never glue itself into a table below
-    // (health.pdf: title rows + absorbed prose poisoned the whole candidate)
-    const runStrong = run.length > 0 && median(run.map((r) => r.units.length)) >= SPARSE_MIN_UNITS
+    // a strong run is unmistakably tabular — its typical ANCHOR row splits
+    // into many units. Only such runs earn the relaxed continuation rules; a
+    // run seeded by 2-3-unit prose fragments must never glue itself into a
+    // table below (health.pdf: title rows + absorbed prose poisoned the whole
+    // candidate). Judged over the anchor rows only: absorbed 1-unit label
+    // continuations must not dilute the median, or a statement whose every
+    // transaction wraps its description over several lines (bank statements'
+    // reference-number stacks) collapses the run after two absorptions.
+    const anchorRows = run.filter((r) => r.units.length >= STREAM_MIN_COLS)
+    const runStrong =
+      anchorRows.length > 0 && median(anchorRows.map((r) => r.units.length)) >= SPARSE_MIN_UNITS
     let gapOk = false
     if (prev !== undefined) {
       const gap = prev.box.y0 - row.box.y1

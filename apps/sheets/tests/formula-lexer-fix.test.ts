@@ -1,7 +1,12 @@
 import { LexerTreeBuilder, sequenceNodeType } from '@univerjs/engine-formula'
 import { describe, expect, it } from 'vitest'
 
-import { fixSequenceNodes, wrapLexer, type SequenceEntry } from '../src/renderer/formula-lexer-fix'
+import {
+  fixSequenceNodes,
+  guardLiteralNewlines,
+  wrapLexer,
+  type SequenceEntry,
+} from '../src/renderer/formula-lexer-fix'
 
 const lexer = new LexerTreeBuilder()
 
@@ -107,5 +112,89 @@ describe('fixSequenceNodes', () => {
     const before = JSON.stringify(raw)
     fixSequenceNodes('="a"""&B1', raw)
     expect(JSON.stringify(raw)).toBe(before)
+  })
+})
+
+function stringTokens(nodes: SequenceEntry[] | undefined | null): string[] {
+  return (nodes ?? []).flatMap((node) =>
+    typeof node !== 'string' && node.nodeType === sequenceNodeType.STRING ? [node.token] : [],
+  )
+}
+
+function treeLeaves(node: unknown): string[] {
+  const tree = node as { getChildren(): unknown[] }
+  return tree
+    .getChildren()
+    .flatMap((child) => (typeof child === 'string' ? [child] : treeLeaves(child)))
+}
+
+// Univer caches lexer output per formula text at module scope, so the stock
+// and wrapped checks below must never share a formula string.
+describe('newlines inside string literals', () => {
+  const CASES = [
+    ['LF', '="a\nb"&B1', '"a\nb"'],
+    ['CRLF', '="a\r\nb"&B1', '"a\r\nb"'],
+    ['LF after an escaped quote', '="x""\ny"&B1', '"x""\ny"'],
+  ] as const
+
+  it.each(CASES)('%s: the stock lexer flattens the literal to spaces', (_name, formula) => {
+    const local = new LexerTreeBuilder()
+    const stock = formula.replace('B1', 'Z1')
+    expect(stringTokens(local.sequenceNodesBuilder(stock) as SequenceEntry[])[0]).toMatch(
+      /^"[^\r\n]*"$/,
+    )
+    expect(treeLeaves(local.treeBuilder(stock)).join('')).not.toMatch(/[\r\n]/)
+  })
+
+  it.each(CASES)('%s: the wrapped lexer keeps the literal verbatim', (_name, formula, literal) => {
+    const local = new LexerTreeBuilder()
+    const wrap = wrapLexer(local)
+    const nodes = local.sequenceNodesBuilder(formula) as SequenceEntry[]
+    expect(stringTokens(nodes)).toEqual([literal])
+    const body = formula.slice(1)
+    for (const node of nodes) {
+      if (typeof node === 'string') continue
+      expect(body.slice(node.startIndex, node.endIndex + 1)).toBe(node.token)
+    }
+    expect(normalizeLikeCommit(formula)).toBe(formula)
+    wrap.dispose()
+  })
+
+  it.each(CASES)('%s: the evaluation tree carries the break', (_name, formula, literal) => {
+    const local = new LexerTreeBuilder()
+    const wrap = wrapLexer(local)
+    // The tree stores an escaped "" as a single quote.
+    expect(treeLeaves(local.treeBuilder(formula))).toContain(literal.replace(/""/g, '"'))
+    wrap.dispose()
+  })
+
+  it('autofill offset rewrites keep the break', () => {
+    const local = new LexerTreeBuilder()
+    expect(local.moveFormulaRefOffset('="a\nb"&Y1', 0, 1)).toBe('="a b"&Y2') // Univer today
+    const wrap = wrapLexer(local)
+    expect(local.moveFormulaRefOffset('="a\nb"&B1', 0, 1)).toBe('="a\nb"&B2')
+    wrap.dispose()
+    expect(local.moveFormulaRefOffset('="a\nb"&X1', 0, 1)).toBe('="a b"&X2')
+  })
+
+  it('still flattens a newline between tokens to whitespace', () => {
+    const local = new LexerTreeBuilder()
+    const wrap = wrapLexer(local)
+    const formula = '=A1&\n"b"\r\n'
+    const nodes = local.sequenceNodesBuilder(formula) as SequenceEntry[]
+    expect(nodes.map((node) => (typeof node === 'string' ? node : node.token)).join('')).toBe(
+      'A1& "b" ',
+    )
+    expect(stringTokens(nodes).map((token) => token.trim())).toEqual(['"b"'])
+    expect(treeLeaves(local.treeBuilder(formula)).map((leaf) => leaf.trim())).toContain('"b"')
+    expect(local.moveFormulaRefOffset('=A1&\n"b"', 0, 1)).toBe('=A2& "b"')
+    wrap.dispose()
+  })
+
+  it('guards only the literal breaks and leaves quoted sheet names and table refs alone', () => {
+    expect(guardLiteralNewlines('="a\nb"&\nB1')).toBe('="a\uFDD1b"&\nB1')
+    expect(guardLiteralNewlines('=Table1[["\n"]]&"\r"')).toBe('=Table1[["\n"]]&"\uFDD0"')
+    expect(guardLiteralNewlines("='it\n''s'!A1")).toBe("='it\n''s'!A1")
+    expect(guardLiteralNewlines('="\uFDD1\n"')).toBe('="\uFDD1\n"')
   })
 })

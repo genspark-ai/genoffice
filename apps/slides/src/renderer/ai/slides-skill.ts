@@ -11,6 +11,7 @@ import { OP_GROUPS, opGuide, opGuideCatalog, opSignatureIndex } from '../../shar
 import { auditSlideLayout, formatAudit } from './layout-audit'
 import { runLayoutScript, type LayoutScriptElement } from './layout-script'
 import { t } from '../i18n/locale'
+import systemPrompt from './prompts/system.md?raw'
 
 /**
  * Slides capability as an AgentSkill: deck outline context + three tools (read structure /
@@ -109,8 +110,10 @@ export interface DeckAccess {
   searchImages?(query: string, maxResults: number): Promise<string[]>
   /** Whether cloud single-page generation is available (kill switch + gsk login state) */
   isCloudPageGenEnabled?(): Promise<boolean>
-  /** live predicate: gsk login && the Genspark-cloud-tools toggle; false hides generate_image / analyze_media */
-  gskTools?(): boolean
+  /** live predicate (gsk login && cloud-tools toggle, or a BYOK media key); false hides generate_image */
+  imageGenAvailable?(): boolean
+  /** same for analyze_media */
+  mediaAnalysisAvailable?(): boolean
   /**
    * Cloud single-page generation (gsk slide_generate), used by generate_deck's self-driven
    * pipeline: given the unified style + this page's brief/layout/images, the cloud service
@@ -230,81 +233,6 @@ export interface ClarifyQuestion {
   multi?: boolean
 }
 
-const AGENT_SYSTEM_PROMPT = `You are the AI assistant inside GenOffice Slides (a slide editor), helping users improve and generate presentations.
-
-## Most important tool-selection principles (judge the scenario before acting)
-- **Creating a whole new deck (from scratch)** → first gather material (web_search) and images (image_search), then call **generate_deck**. With many pages, prefer **passing topic + approx_pages + context (the real material you found)** and let the system plan internally + generate page by page + display page by page (**you don't hand-write dozens of pages, and no pages get missed / arguments truncated**). For few pages where you already know each page, you may pass core_hook+style+pages directly.
-- **Adding 1 page or a few pages to an existing deck** → generate_deck(pages: briefs for just the new pages, insert_mode:"append"). Write each page's brief in detail (real content/data per region + layout); first look at the existing pages (the deck outline in your context, read_slide for details) and pass a style description matching them so new pages stay consistent. **Even a single new page goes through this generation pipeline; don't fall back to insert ops and build a crude page**.
-- **Redoing / redesigning an existing page** (user says "redo this page / redesign it / try another layout / make it prettier") → **regenerate_slide**: first read_slide to get the page's original copy, then pass a detailed brief (copy the text/data to keep into the brief verbatim, state what to change and the target layout); the page is regenerated in place (other pages untouched). Don't dismantle and rebuild the whole page element by element with ops.
-- **Deleting a page** → apply_ops with a deleteSlide op (one op per page; a deck keeps at least one page).
-- **Modifying / fine-tuning existing elements** (position/size/alignment/distribution/relative nudges/text/style/fill/stroke, one or many elements) → always prefer **execute_slide_script** and do it in one script (see "Editing existing elements" below; read-write combined, no read_slide first). Don't blind-fire single-element ops one call at a time. Add or delete elements with apply_ops (addElement/addTable/addChart/addSmartArt, deleteElement); redo a whole page with regenerate_slide.
-- **Elements inside a group**: direct children of a top-level group (marked "in group <id>" / els groupId) are edited exactly like normal elements — same script primitives (and apply_ops with group:"<group id>"), absolute coordinates. Only elements nested in a sub-group are read-only: apply_ops ungroupElement on the outer group first (ids on the page change afterwards; read_slide for the fresh list). To delete a single group member, ungroup first too.
-- **Key constraint**: after a page is generated, do **not** use ops to "polish/redo" a generated page — the output is the final good-looking result. Only when the user asks for a specific change should you edit the corresponding element; if they ask to redo the whole page, use regenerate_slide.
-- **When the user attached files (see the "attachment list" in each turn's context)**: first read all text attachments with read_attachment (paginate long files); image attachments were already sent as images with the message, just look at them. Only **then** plan/generate the deck — content should come from the attachments first. When calling generate_deck, put the key content you read into the context argument; no need to web_search information the attachments already cover. **This is enforced: generate_deck refuses to run while any text attachment is still unread.**
-
-General editing surface (apply_ops + load_guide):
-- Every edit the app can make is a canonical op; apply_ops runs a list of them as one atomic transaction and its description lists every op with a one-line signature. The few remaining dedicated tools (edit_table_style, edit_chart, insert_web_image, replace_image, add_slide) exist only because their payload is not expressible as an op; text, fonts, paragraph format, fill, stroke, transform, delete, z-order, grouping, crop, opacity, effects, links, new elements/tables/charts/diagrams, table cells and structure, page background, notes, page delete/move, transitions, sections and theme all go through apply_ops.
-- Before a batch that uses an op you have not used in this conversation (effects, z-order, grouping, table merges, transitions, sections, theme, header/footer), call load_guide with the group name to get the field table and a runnable example, then apply_ops. Prefer apply_ops over many single-element tool calls whenever more than two elements or more than one page change.
-
-Rules:
-- Every user message comes with a deck outline (per-page list of text elements with element ids and text previews). Previews are truncated; read the full text with read_slide before rewriting.
-- Change text with apply_ops setText: it replaces the element's entire text, so you must pass the complete post-edit paragraph list, not just the changed part. Restyle without changing words with setFont (runs) and setParagraphFormat (alignment, bullets, spacing).
-- Page numbers are shown to the user starting at 1; the slideIndex tool argument is 0-based.
-- **The user's "page N" always means the current order in this turn's latest <deck outline> (row N is page N)**. The user may add/remove/move/swap pages at any time; page order from history or earlier turns may be stale — locate pages only by this turn's latest outline, never by generation order, content semantics, or old conversation.
-- Canvas coordinate system: pixels, origin top-left, width 1280, height in the outline's first line (720 for 16:9). All element positions/sizes use it.
-- Font size unit is pt: large titles 36–44, subtitles 20–26, body 14–18. Colors are #RRGGBB.
-- Element colors are readable: the outline shows each page's main fills; read_slide and script els expose per-element fill/textColor/strokeColor (hex, read-only — change them with setFill/setStyle/setStroke in a script, or apply_ops setFill/setStroke). Picture/chart colors are not readable; don't guess them.
-- For editing existing elements (position/size/text/style/fill/stroke) prefer execute_slide_script; a single-property change on one element is one apply_ops op. Multi-property/multi-element/relative nudges/align-distribute always use a script.
-
-Editing existing elements (user says "move it a bit / align / restyle / fix the layout / it looks messy" etc.):
-**Core: write execute_slide_script directly, don't read_slide first.** At run time the script automatically receives every element's real geometry and text on the page (els, with x/y/w/h/text and read-only fill/textColor/strokeColor); reading and writing happen at execution site — you don't need coordinates in advance, compute from els inside the script (same idea as Google Slides' execute_apps_script).
-Example mappings: "move the title left a bit"→moveBy(titleId, -30, 0); "shift this text right"→moveBy(id, 40, 0); "left-align the subtitle with the title"→const t = els.find(e => e.id === titleId); setBox(subtitleId, { x: t.x }); "make the title blue and bold"→setStyle(id, { color: '#1a73e8', bold: true }); "tidy up this page"→compute equal spacing/columns in the script and batch setBox.
-1. (Optional) Plan the target layout (e.g. three-column cards / top-bottom split), tell the user in a sentence or two;
-2. **Immediately** call execute_slide_script: write JS that finds elements in els by id/text (e.text), computes algorithmically from els' real coordinates (use formulas for spacing/alignment, no hard-coded magic numbers), and writes back with setBox/moveBy/resizeBy/setText/setStyle/setFill/setStroke. One script adjusts the whole page;
-3. Check the <layout-audit> in the tool result: **if there is overlap/out-of-bounds/overflow, immediately write another execute_slide_script in the same turn to fix it** (don't stop to ask the user, don't declare done); at most 2 fix rounds; only an audit ✅ pass counts as done.
-els already contains each element's geometry and full text; editing existing elements generally doesn't need read_slide.
-Forbidden: running read_slide "just to get coordinates" and then stopping, blind-firing dozens of per-element setTransform ops, or telling the user "done" while the audit reports problems.
-- Batch changes (e.g. "make all titles blue", "unify the font"): the deck outline in your context is the global view (read_slide for full text); then send ONE apply_ops with one op per element, page by page, don't miss any.
-- Omit fontFamily by default (inherits the theme, keeps the deck consistent — recommended); only specify it when the user names a font.
-- Keep slide copy concise: punchy titles, bulleted body. Don't rewrite bullets into long sentences unless asked.
-
-Generating a whole deck / adding pages (HTML pipeline first):
-
-[Plan before generating a whole deck — you are a professional deck planner; plan first, then write HTML (this decides the output quality)]
-
-Step 0 Questionnaire (mandatory when creating a whole new deck): first call ask_clarification to show a questionnaire card with 2–4 key trade-off questions for this topic (audience, usage scenario, tone/style, content focus), each with genuinely different options. **The user's choices directly determine the deck's Core Hook and style**; do the planning below only after getting the answers. (Ask only for a whole new deck; adding a few pages or editing needs no questionnaire. The card shows automatically — don't repeat the questions in your reply text.)
-
-Step A Research: when the topic involves facts/attractions/data, run web_search 1–2 times first for real content. **Use real data and facts in the design; no "XX%" or placeholder names**.
-Step B Image strategy: with generate_deck you **don't need image_search in advance** — the system auto-searches internally per page from the planned image_queries keywords and fills real URLs back (each keyword searched once, deduped across pages). **Travel/product/people/brand decks get images by default without the user asking; never fake images with CSS placeholders — slots needing images must be filled with real ones**. Only when redoing a page via regenerate_slide or adding images to existing pages via insert_web_image do you image_search yourself first (English keywords describing a concrete scene like "summer palace kunming lake", not generic words like "park").
-Step C Unified style: first define one design system for the whole deck — primary/secondary colors, title and body font-size scale, content margins, card/corner style (e.g. "teal primary + cream background + sans-serif fresh look"). **Every page's HTML strictly follows the same system; style must be consistent across pages**.
-Step D Generate (call generate_deck): with many pages pass topic + approx_pages + context (feed in the real material from Step A) and let the system plan internally; with few pages you may pass core_hook+style+pages directly (image_queries takes English image-search keywords; **the system auto-searches internally and fills real URLs back**, no image_search needed in advance). The system writes HTML page by page and lands pages as they generate; you don't hand-write HTML.
-Step E Vary layouts per page (avoid sameness): 3 parallel points→three-column cards; a key number→big-number hero; comparison→two columns; sequence→timeline; image+text→left-text-right-image / full-image with text overlay. **Content pages of one deck must not all use the same layout**.
-
-- **generate_deck is the first choice for a whole new deck**: with many pages pass topic+approx_pages+context; the system plans internally (auto-batching over the threshold), **auto-searches images**, writes HTML page by page, and **lands pages onto the canvas as they generate (the user sees them one by one)**. **Neither "only page 1 got generated" nor "arguments were truncated" can happen — the page count is guaranteed by the system loop**.
-- **When adding just 1 page or a few pages (common case)**: also use generate_deck with **pages (briefs for only the new pages) + insert_mode:"append"** (appended at the end, existing pages untouched). **New pages also go through the generation pipeline for polish — don't fall back to native tools for a crude page just because it's one page**. Before adding, read_slide to see the existing pages' style (primary color/layout) and pass a matching style description; write each brief with the real content per region.
-- Briefs should be concrete: what text/data/numbers go in each region, which image goes where, and the layout name — the page designer follows your brief; vague briefs produce generic pages.
-- After generation, if the user wants a tweak, edit the corresponding element with a script or apply_ops; don't redo whole pages unprompted "to look better". Use regenerate_slide only when the user explicitly asks to redo a page.
-
-Adding content to existing pages (refining, not generating from scratch):
-- add_slide clones a layout into a new page (layout-preserving blank page); apply_ops addElement adds a text box (kind:"textbox") or a shape/color block/accent bar (kind = any OOXML preset geometry: rect/roundRect/ellipse/star5…), with paragraphs/fill/stroke inline.
-- For data display use apply_ops addChart (native bar/line/pie charts; dataSource required); for structured comparisons addTable, then setTableCell per cell in a second call (the table id comes back in the first result); tableStructure adds/removes rows/columns; for flows/cycles/hierarchies/lists addSmartArt.
-- Insert ops take EMU frames: read_slide reports the page's px→EMU factor; load_guide("insert") has the field tables and examples.
-- apply_ops setBackground sets a page background (solid or two-stop gradient; one op per page, so "all pages" is one op per slide in a single batch); on dark backgrounds remember to lighten the text with setFont.
-- apply_ops setNotes writes the page's speaker notes (shown in presenter view and saved into the .pptx); it does not touch canvas content. Use it when the user asks to add/update/clear notes for a page.
-- Refine page by page, element by element; 2–4 elements per page is enough — fewer beats crowded.
-- Keep replies short, say what you did; don't recite tool results back to the user. Describe elements by their role or visible text ("the title", "the dark backdrop", "the revenue chart"), never by their e_*/s_* ids — ids are for tool arguments only. Layout-audit findings are your own checklist: fix what your edit caused; pre-existing issues you did not touch are not worth mentioning unless the user asked about layout.
-
-Search and images:
-- Use web_search when you need current information/data/fact-checking; search before writing anything uncertain, don't fabricate. When generating a whole deck, a round of searching for real material first is recommended.
-- **Figure provenance is enforced at the tool layer**: apply_ops addChart / edit_chart (with series) and data-dense generate_deck / regenerate_slide briefs refuse to run without a dataSource declaration; 'search' is only accepted after an actual web_search in this conversation. Fabricating precise numbers (¥21.8-style precision) and delivering them as fact is the worst failure mode — when no real data is available, use dataSource:'sample' and tell the user explicitly that the figures are illustrative.
-- image_search for images (English keywords) → get imageUrl. **Two usages**: 1) when redoing a page via regenerate_slide, pass the imageUrl in image_urls; 2) when adding an image to an existing page, use insert_web_image to insert at a position. (generate_deck searches images internally; no advance search needed for a whole new deck.)
-- Travel, product, people, and brand decks get images by default without the user asking; mind whitespace between images and text, no overlap.
-- Editing an EXISTING picture: apply_ops setPictureSrcRect (non-destructive crop, fractions 0..1) and setPictureOpacity, or the replace_image tool (in-place swap keeping frame/z-order/border). For "remove this image's background / upscale / edit this image": run generate_image with referenceImageUrls pointing at a source URL you have (an image_search result or one the user provided — embedded picture bytes are not addressable by URL), then replace_image with the returned URL. Never delete+reinsert a picture to change its content — that loses z-order and effects.
-
-Style templates:
-- When the user says "use last time's style"/"use some template": first call list_style_templates() to see what exists, then pass the style_template name to generate_deck (the system skips Step 0 and uses the template's style).
-- When the user says "save this style"/"save as template": call save_style_template(name) to save the current deck's style.`
-
 const TOOLS: AgentToolDef[] = [
   {
     name: 'read_slide',
@@ -390,7 +318,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'generate_image',
     description:
-      'AI image generation/editing (Genspark). Text-to-image, or pass referenceImageUrls for image editing; returns an image URL. NEW imagery: insert with insert_web_image. Editing an EXISTING slide picture (background removal/upscaling/etc.): swap it in place with replace_image — do not insert a duplicate. Use for custom illustrations/icons/backgrounds, style-consistent imagery; for real photos/screenshots still use image_search.',
+      'AI image generation/editing. Text-to-image, or pass referenceImageUrls for image editing; returns an image URL. NEW imagery: insert with insert_web_image. Editing an EXISTING slide picture (background removal/upscaling/etc.): swap it in place with replace_image — do not insert a duplicate. Use for custom illustrations/icons/backgrounds, style-consistent imagery; for real photos/screenshots still use image_search.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -402,7 +330,7 @@ const TOOLS: AgentToolDef[] = [
         model: {
           type: 'string',
           description:
-            'Optional, defaults to the general model. Specify only for special purposes: fal-bria-rmbg=background removal, fal-ai/recraft-clarity-upscale=upscale, flux-pro/outpaint=outpaint, fal-ai/image-editing/text-removal=remove text watermark',
+            'Optional, defaults to the configured model. Genspark only — specify for special purposes: fal-bria-rmbg=background removal, fal-ai/recraft-clarity-upscale=upscale, flux-pro/outpaint=outpaint, fal-ai/image-editing/text-removal=remove text watermark',
         },
         referenceImageUrls: {
           type: 'array',
@@ -420,7 +348,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'analyze_media',
     description:
-      'Analyze media content (Genspark): understand images/audio/video. Pass media URLs (or local file paths) and analysis requirements; returns analysis text. Video supports extracting key points, structure, and time ranges — good for turning user material into usable deck content.',
+      'Analyze media content: understand images/audio/video (video and audio need Genspark or Gemini as the media provider). Pass media URLs (or local file paths) and analysis requirements; returns analysis text. Video supports extracting key points, structure, and time ranges — good for turning user material into usable deck content.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -686,55 +614,6 @@ const TOOLS: AgentToolDef[] = [
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
   {
-    name: 'add_slide',
-    description:
-      "Create a new page by cloning the layout (including background) of page sourceIndex, inserted right after it (new page number = sourceIndex+1; pages after it shift back); clearText=true (default) clears text to get a layout-preserving blank page. When building page by page, use the CURRENT LAST page as sourceIndex so new pages append at the end. The return value gives the new page's slideIndex; subsequent content fills MUST use that returned page number.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        sourceIndex: {
-          type: 'integer',
-          description: 'Page to use as the layout template (0-based)',
-        },
-        clearText: {
-          type: 'boolean',
-          description: "Default true; false keeps the template page's text",
-        },
-      },
-      required: ['sourceIndex'],
-    },
-  },
-  {
-    name: 'edit_table_style',
-    description:
-      'Modify table styling: apply a preset (styleName) or individually change header row/banding/shading/borders. styleName options: none/lightGrid/zebraBlue/zebraGray/headerDarkBlue/headerOrange/noBorder/fullBorder.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        slideIndex: { type: 'integer' },
-        sourceId: { type: 'string', description: 'Table element id' },
-        styleName: {
-          type: 'string',
-          description: 'Preset style name (see description), highest priority',
-        },
-        firstRow: { type: 'boolean', description: 'Enable header row (first-row emphasis)' },
-        bandRow: { type: 'boolean', description: 'Enable banded rows' },
-        shadingColor: {
-          type: 'string',
-          description: 'Shading color #RRGGBB, "none" clears shading',
-        },
-        borderColor: { type: 'string', description: 'Border color #RRGGBB' },
-        borderWidthPt: { type: 'number', description: 'Border width (pt)' },
-        borderPreset: {
-          type: 'string',
-          enum: ['all', 'none'],
-          description: '"all" = full borders, "none" = clear borders',
-        },
-      },
-      required: ['slideIndex', 'sourceId'],
-    },
-  },
-  {
     name: 'edit_chart',
     description:
       'Modify a chart (including charts from imported files; first edit converts it to editable automatically): change type/data/colors/chart elements. kind options: bar/barStacked/line/area/pie/doughnut. colorScheme: default/colorful/colorful2/mono-accent1..6 (theme-derived); legacy keys blue/warm/cool/mono still work.',
@@ -794,7 +673,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'apply_ops',
     description:
-      '[Canonical edit surface] Apply a list of canonical edit ops as ONE transaction — atomic by default: any failure rolls everything back, nothing is half-applied. Set dry_run:true to validate the plan without touching the deck (rehearse risky batches). This is THE tool for every edit without a dedicated tool (fill, stroke, transform, delete, z-order, grouping, crop, opacity, effects, links, table cells and structure, page background, speaker notes, page delete/move/duplicate, transitions, sections, theme) and for multi-page or many-element batches; a single op is a perfectly fine batch. For one-page layout math prefer execute_slide_script.\n' +
+      '[Canonical edit surface] Apply a list of canonical edit ops as ONE transaction — atomic by default: any failure rolls everything back, nothing is half-applied. Set dry_run:true to validate the plan without touching the deck (rehearse risky batches). This is THE tool for every edit without a dedicated tool (fill, stroke, transform, delete, z-order, grouping, crop, opacity, effects, links, table cells, structure and styling, page background, speaker notes, page delete/move/duplicate, transitions, sections, theme) and for multi-page or many-element batches; a single op is a perfectly fine batch. For one-page layout math prefer execute_slide_script.\n' +
       'Addressing: every op takes target:{slide, el?} — slide = 0-based index or durable "s_<n>"; el = an element id from the outline/read_slide (e_* ids are durable). Group children: put the child id in target.el and add group:"<group id>".\n' +
       'Units are document-space EMU. read_slide reports px and its exact "1 px = N EMU" factor — convert with that N (9525 only on a standard 16:9 deck; other page sizes differ). Font sizes are pt.\n' +
       'Full op reference (the same executor every editing surface uses), one signature per op; ? marks optional fields:\n' +
@@ -1130,11 +1009,19 @@ export function formatSlideDump(slide: RenderSlide): string {
   return `Canvas ${slide.widthPx}×${slide.heightPx}px (1 px = ${pxToEmu} EMU)\n${parts.join('\n---\n') || '(no elements on this page)'}${colorNote}`
 }
 
-/** tools only usable through the Genspark cloud (gated by login + the cloud-tools toggle) */
-const GSK_ONLY_TOOLS = new Set(['generate_image', 'analyze_media'])
+/** tools that need a media provider: Genspark login + cloud tools, or a BYOK media key in Settings */
+function hiddenMediaTools(access: DeckAccess): Set<string> {
+  const hidden = new Set<string>()
+  if (access.imageGenAvailable?.() === false) hidden.add('generate_image')
+  if (access.mediaAnalysisAvailable?.() === false) hidden.add('analyze_media')
+  return hidden
+}
 
-const GSK_TOOLS_OFF_NOTE =
-  '\n\nNote: generate_image and analyze_media are currently unavailable (Genspark cloud tools are off or the user is signed out). Do not call or promise them; for imagery use image_search + insert_web_image instead.'
+function mediaToolsOffNote(hidden: Set<string>): string {
+  if (hidden.size === 0) return ''
+  const plural = hidden.size > 1
+  return `\n\nNote: ${[...hidden].join(' and ')} ${plural ? 'are' : 'is'} currently unavailable (no image/media provider: signed out of Genspark or cloud tools off, and no media API key in Settings). Do not call or promise ${plural ? 'them' : 'it'}; for imagery use image_search + insert_web_image instead.`
+}
 
 export function createSlidesSkill(access: DeckAccess): AgentSkill {
   // The HTML pipeline was already used in this conversation → later calls without an explicit mode default to append.
@@ -1144,15 +1031,12 @@ export function createSlidesSkill(access: DeckAccess): AgentSkill {
     id: 'slides',
     // live like tools: the off-note overrides the prose that still mentions the hidden tools
     get systemPrompt() {
-      return access.gskTools?.() === false
-        ? AGENT_SYSTEM_PROMPT + GSK_TOOLS_OFF_NOTE
-        : AGENT_SYSTEM_PROMPT
+      return systemPrompt + mediaToolsOffNote(hiddenMediaTools(access))
     },
-    // live view: gskTools is re-read before every model request
+    // live view: the predicates are re-read before every model request
     get tools() {
-      return access.gskTools?.() === false
-        ? TOOLS.filter((t) => !GSK_ONLY_TOOLS.has(t.name))
-        : TOOLS
+      const hidden = hiddenMediaTools(access)
+      return hidden.size ? TOOLS.filter((t) => !hidden.has(t.name)) : TOOLS
     },
     buildContext: () => {
       const outline = `<deck outline>\n${buildDeckOutline(access.getSlides(), access.getCurrent(), access.getSelectedIds())}\n</deck outline>`
@@ -1326,6 +1210,8 @@ const OP_LABEL_KEYS: Record<string, string> = {
   setTableCell: 'aiOpEditTable',
   tableStructure: 'aiOpTableStructure',
   tableMerge: 'aiOpTableStructure',
+  setTableStyle: 'aiOpTableStyle',
+  duplicateSlide: 'aiOpNewSlide',
   addElement: 'aiOpNewShape',
   addChart: 'aiOpInsertChart',
   addSmartArt: 'aiOpInsertSmartart',
@@ -1623,7 +1509,8 @@ async function executeTool(
       if (!slides[idx])
         return fail(t('aiFailInsertImage'), `slideIndex out of range (0-${slides.length - 1})`)
       const url = String(call.input.url ?? '')
-      if (!/^https?:\/\//.test(url)) return fail(t('aiFailInsertImage'), 'Invalid url')
+      // file:// = a BYOK-generated image in the local store (the main process only resolves its own files)
+      if (!/^(https?|file):\/\//.test(url)) return fail(t('aiFailInsertImage'), 'Invalid url')
       const r = await window.slidesApi.insertImageUrl({
         slideIndex: idx,
         url,
@@ -1664,7 +1551,7 @@ async function executeTool(
         )
 
       const url = String(call.input.url ?? '')
-      if (!/^https?:\/\//.test(url)) return fail(t(failKey), 'Invalid url')
+      if (!/^(https?|file):\/\//.test(url)) return fail(t(failKey), 'Invalid url')
       const updated = await window.slidesApi.replacePictureUrl({
         slideIndex: idx,
         sourceId,
@@ -2446,52 +2333,6 @@ async function executeTool(
         output: okMsg + failMsg + degradedMsg + imageFailNote(deckImageFails) + progressTail,
         mutated: true,
         summary: t('aiSumDeckGenerated', { done: landedPages, total }),
-      }
-    }
-
-    case 'add_slide': {
-      const src = Number(call.input.sourceIndex)
-      if (!slides[src])
-        return fail(t('aiFailNewSlide'), `sourceIndex out of range (0-${slides.length - 1})`)
-      const r = await window.slidesApi.addSlide({
-        sourceIndex: src,
-        clearText: call.input.clearText !== false,
-        fitWidthPx: access.fitWidthPx,
-      })
-      if (!r) return fail(t('aiFailNewSlide'), 'Creation failed')
-      access.applyDeck(r.slides, r.index)
-      return {
-        output: `Created page ${r.index + 1} (${r.slides.length} pages total). ✅ Use slideIndex=${r.index} when filling content into this new page (not 1, unless it happens to be 1). To add another page after it, use sourceIndex=${r.slides.length - 1} (current last page) so it appends at the end.`,
-        mutated: true,
-        summary: t('aiSumNewSlide', { n: r.index + 1 }),
-      }
-    }
-
-    case 'edit_table_style': {
-      const idx = Number(call.input.slideIndex)
-      const sourceId = String(call.input.sourceId ?? '')
-      if (!slides[idx])
-        return fail(t('aiFailTableStyle'), `slideIndex out of range (0-${slides.length - 1})`)
-      const op: import('../../shared/ipc').EditTableStyleOp = { slideIndex: idx, sourceId }
-      if (call.input.styleName != null) op.styleName = String(call.input.styleName)
-      if (call.input.firstRow != null) op.firstRow = Boolean(call.input.firstRow)
-      if (call.input.bandRow != null) op.bandRow = Boolean(call.input.bandRow)
-      if (call.input.shadingColor != null) op.shadingColor = String(call.input.shadingColor)
-      if (call.input.borderColor != null) op.borderColor = String(call.input.borderColor)
-      if (call.input.borderWidthPt != null) op.borderWidthPt = Number(call.input.borderWidthPt)
-      if (call.input.borderPreset != null)
-        op.borderPreset = String(call.input.borderPreset) as 'all' | 'none'
-      const updated = await window.slidesApi.editTableStyle(op)
-      if (!updated)
-        return fail(
-          t('aiFailTableStyle'),
-          `Operation failed (table ${sourceId} does not exist or is not of type table)`,
-        )
-      access.applySlide(idx, updated.slide)
-      return {
-        output: `Updated the style of table ${sourceId} on page ${idx + 1}.`,
-        mutated: true,
-        summary: t('aiSumTableStyle', { n: idx + 1 }),
       }
     }
 

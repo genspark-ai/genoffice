@@ -46,6 +46,7 @@ describe('normalizeLang', () => {
     expect(normalizeLang('pt-PT')).toBe('pt')
     expect(normalizeLang('it-IT')).toBe('it')
     expect(normalizeLang('pl-PL')).toBe('pl')
+    expect(normalizeLang('cs-CZ')).toBe('cs')
     expect(normalizeLang('nl-NL')).toBe('nl')
     expect(normalizeLang('ms-MY')).toBe('ms')
     expect(normalizeLang('he-IL')).toBe('he')
@@ -78,6 +79,7 @@ describe('isLang', () => {
     expect(isLang('pt')).toBe(true)
     expect(isLang('it')).toBe(true)
     expect(isLang('pl')).toBe(true)
+    expect(isLang('cs')).toBe(true)
     expect(isLang('nl')).toBe(true)
     expect(isLang('ms')).toBe(true)
     expect(isLang('he')).toBe(true)
@@ -173,6 +175,7 @@ describe('createI18n', () => {
     pt: { hello: 'Olá {name}', plain: 'Arquivos' },
     it: { hello: 'Ciao {name}', plain: 'File' },
     pl: { hello: 'Cześć {name}', plain: 'Pliki' },
+    cs: { hello: 'Ahoj {name}', plain: 'Soubory' },
     nl: { hello: 'Hallo {name}', plain: 'Bestanden' },
     ms: { hello: 'Helo {name}', plain: 'Fail' },
     he: { hello: 'שלום {name}', plain: 'קבצים' },
@@ -191,6 +194,7 @@ describe('createI18n', () => {
     expect(t('ar', 'plain')).toBe('الملفات')
     expect(t('pt', 'hello', { name: 'mundo' })).toBe('Olá mundo')
     expect(t('he', 'plain')).toBe('קבצים')
+    expect(t('cs', 'plain')).toBe('Soubory')
     expect(t('zh-TW', 'plain')).toBe('檔案')
   })
 })

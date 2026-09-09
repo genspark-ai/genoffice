@@ -231,6 +231,8 @@ export interface ImageBlock {
    * wallpaper drawn first stays under card panels drawn later.
    */
   z?: number
+  /** rasterized pattern fill (P35) — authored as a path, not a placed picture */
+  synthetic?: true
   /**
    * this panel is a card plate (P20): index into IrPage.cards. The flow
    * rebuild skips its behindDoc pin (the anchored text box paints the plate);

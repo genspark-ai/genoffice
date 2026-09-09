@@ -56,6 +56,12 @@ pub(crate) fn index_worksheet(
     let mut x14_databars: HashMap<String, X14DataBar> = HashMap::new();
     let mut x14_cfvo_kinds: HashMap<String, Vec<String>> = HashMap::new();
     let mut auto_filter: Option<MergedRange> = None;
+    let mut auto_filter_columns: Vec<FilterColumnCriteria> = Vec::new();
+    // Only the first sheet-level <autoFilter> is the live filter; later ones
+    // (customSheetViews copies) must not overwrite or extend it.
+    let mut auto_filter_captured = false;
+    let mut in_auto_filter = false;
+    let mut filter_column: Option<FilterColumnCriteria> = None;
     let mut sheet_protection: Option<SheetProtectionInfo> = None;
     let mut row_breaks: Vec<usize> = Vec::new();
     let mut col_breaks: Vec<usize> = Vec::new();
@@ -342,12 +348,99 @@ pub(crate) fn index_worksheet(
                     }
                 }
             }
-            Event::Start(element) | Event::Empty(element)
-                if element.local_name().as_ref() == b"autoFilter" =>
+            Event::Start(element)
+                if element.local_name().as_ref() == b"autoFilter"
+                    && !in_custom_sheet_views
+                    && !auto_filter_captured =>
             {
-                if auto_filter.is_none() {
-                    auto_filter = attribute_value(&reader, &element, b"ref")?
-                        .and_then(|reference| parse_area_reference(&reference));
+                auto_filter_captured = true;
+                auto_filter = attribute_value(&reader, &element, b"ref")?
+                    .and_then(|reference| parse_area_reference(&reference));
+                in_auto_filter = true;
+            }
+            Event::Empty(element)
+                if element.local_name().as_ref() == b"autoFilter"
+                    && !in_custom_sheet_views
+                    && !auto_filter_captured =>
+            {
+                auto_filter_captured = true;
+                auto_filter = attribute_value(&reader, &element, b"ref")?
+                    .and_then(|reference| parse_area_reference(&reference));
+            }
+            Event::End(element)
+                if element.local_name().as_ref() == b"autoFilter" && in_auto_filter =>
+            {
+                in_auto_filter = false;
+                filter_column = None;
+            }
+            Event::Start(element) | Event::Empty(element)
+                if in_auto_filter && element.local_name().as_ref() == b"filterColumn" =>
+            {
+                filter_column = attribute_value(&reader, &element, b"colId")?
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .map(|col_id| FilterColumnCriteria {
+                        col_id,
+                        values: None,
+                        blank: false,
+                        customs: None,
+                    });
+            }
+            Event::End(element)
+                if in_auto_filter && element.local_name().as_ref() == b"filterColumn" =>
+            {
+                if let Some(column) = filter_column.take() {
+                    // Color/icon/dynamic/top10-only columns stay criteria-less.
+                    if column.values.is_some() || column.blank || column.customs.is_some() {
+                        auto_filter_columns.push(column);
+                    }
+                }
+            }
+            Event::Start(element) | Event::Empty(element)
+                if in_auto_filter && element.local_name().as_ref() == b"filters" =>
+            {
+                if let Some(column) = filter_column.as_mut() {
+                    column.blank = attribute_value(&reader, &element, b"blank")?
+                        .is_some_and(|value| value == "1" || value == "true");
+                    column.values.get_or_insert_with(Vec::new);
+                }
+            }
+            Event::Start(element) | Event::Empty(element)
+                if in_auto_filter && element.local_name().as_ref() == b"filter" =>
+            {
+                if let Some(values) = filter_column
+                    .as_mut()
+                    .and_then(|column| column.values.as_mut())
+                {
+                    if let Some(value) = attribute_value(&reader, &element, b"val")? {
+                        values.push(value);
+                    }
+                }
+            }
+            Event::Start(element) | Event::Empty(element)
+                if in_auto_filter && element.local_name().as_ref() == b"customFilters" =>
+            {
+                if let Some(column) = filter_column.as_mut() {
+                    column.customs = Some(CustomFilterCriteria {
+                        and: attribute_value(&reader, &element, b"and")?
+                            .is_some_and(|value| value == "1" || value == "true"),
+                        filters: Vec::new(),
+                    });
+                }
+            }
+            Event::Start(element) | Event::Empty(element)
+                if in_auto_filter && element.local_name().as_ref() == b"customFilter" =>
+            {
+                if let Some(customs) = filter_column
+                    .as_mut()
+                    .and_then(|column| column.customs.as_mut())
+                {
+                    if let Some(val) = attribute_value(&reader, &element, b"val")? {
+                        customs.filters.push(CustomFilterItem {
+                            val,
+                            operator: attribute_value(&reader, &element, b"operator")?
+                                .filter(|operator| operator != "equal"),
+                        });
+                    }
                 }
             }
             Event::Start(element) | Event::Empty(element)
@@ -808,6 +901,50 @@ pub(crate) fn index_worksheet(
     }
     index.conditional_rules = conditional_rules;
     index.auto_filter = auto_filter;
+    // Same wire caps as the save side's schema (1,000 columns, 10,000 values
+    // of ≤32,767 units, 1-2 custom criteria) — an out-of-spec file loses the
+    // offending entries, not the whole sheet.
+    auto_filter_columns.truncate(1_000);
+    for column in &mut auto_filter_columns {
+        if let Some(values) = column.values.as_mut() {
+            values.truncate(10_000);
+            for value in values {
+                truncate_utf16_units(value, 32_767);
+            }
+        }
+        if let Some(customs) = column.customs.as_mut() {
+            customs.filters.truncate(2);
+        }
+        // The wire schema (main-process validation) accepts only the OOXML
+        // comparison enum; a foreign writer's token would fail the whole
+        // range read, so drop the unrepresentable comparison block instead.
+        let has_unknown_operator = column.customs.as_ref().is_some_and(|customs| {
+            customs.filters.iter().any(|item| {
+                item.operator.as_deref().is_some_and(|operator| {
+                    !matches!(
+                        operator,
+                        "equal"
+                            | "notEqual"
+                            | "greaterThan"
+                            | "greaterThanOrEqual"
+                            | "lessThan"
+                            | "lessThanOrEqual"
+                    )
+                })
+            })
+        });
+        if has_unknown_operator
+            || column
+                .customs
+                .as_ref()
+                .is_some_and(|customs| customs.filters.is_empty())
+        {
+            column.customs = None;
+        }
+    }
+    auto_filter_columns
+        .retain(|column| column.values.is_some() || column.blank || column.customs.is_some());
+    index.auto_filter_columns = auto_filter_columns;
     index.sheet_protection = sheet_protection;
     // Wire caps (schema and preload reject larger sets; the save side caps
     // at the same sizes) — a pathological file loses tail entries, not the
@@ -1157,11 +1294,11 @@ impl CellBuilder {
             Some("inlineStr") => {
                 let mut inline_runs = self.inline_runs;
                 for run in &mut inline_runs {
-                    normalize_line_endings(&mut run.text);
+                    normalize_cell_text(&mut run.text);
                 }
                 rich = qualify_runs(inline_runs);
                 let mut inline_text = self.inline_text;
-                normalize_line_endings(&mut inline_text);
+                normalize_cell_text(&mut inline_text);
                 Some(CellValue::String(inline_text))
             }
             // An error cell hosting an in-cell picture record renders as the
@@ -1169,7 +1306,7 @@ impl CellBuilder {
             Some("e") if rich_image_cells.contains(&(self.row, self.column)) => None,
             Some("str") | Some("e") => {
                 let mut raw_value = self.raw_value;
-                normalize_line_endings(&mut raw_value);
+                normalize_cell_text(&mut raw_value);
                 Some(CellValue::String(raw_value))
             }
             Some("b") => Some(CellValue::Boolean(self.raw_value == "1")),
@@ -1182,7 +1319,7 @@ impl CellBuilder {
                 Ok(number) => Some(CellValue::Number(number)),
                 Err(_) => {
                     let mut raw_value = self.raw_value;
-                    normalize_line_endings(&mut raw_value);
+                    normalize_cell_text(&mut raw_value);
                     Some(CellValue::String(raw_value))
                 }
             },

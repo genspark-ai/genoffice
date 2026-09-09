@@ -1,3 +1,5 @@
+import { defaultAiMediaSettings, resolveAiMediaSettings } from './media'
+import { defaultAiSearchSettings, resolveAiSearchSettings } from './search-settings'
 import type { AiProviderId, AiProviderMeta, AiSettings, LegacyAiSettings } from './types'
 
 /**
@@ -247,7 +249,13 @@ export function defaultAiSettings(
       cliPath: meta.needsCliPath ? '' : undefined,
     }
   }
-  return { provider: 'genspark', providers, gskToolsEnabled: true }
+  return {
+    provider: 'genspark',
+    providers,
+    gskToolsEnabled: true,
+    media: defaultAiMediaSettings(),
+    search: defaultAiSearchSettings(),
+  }
 }
 
 /** false only on an explicit opt-out; absent (pre-toggle settings files) means on */
@@ -383,6 +391,8 @@ export function resolveAiSettings(
     // the retired-id remap instead of being sent to the API verbatim.
     providers: migrateRetiredModels(trimConfigs({ ...defaults.providers, ...stored.providers })),
     gskToolsEnabled: stored.gskToolsEnabled ?? defaults.gskToolsEnabled ?? true,
+    media: resolveAiMediaSettings(stored.media ?? defaults.media),
+    search: resolveAiSearchSettings(stored.search ?? defaults.search),
     // clamped on read: a hand-edited settings file with an absurd cap must not be
     // forwarded to the endpoint verbatim
     ...(stored.maxOutputTokens !== undefined || defaults.maxOutputTokens !== undefined

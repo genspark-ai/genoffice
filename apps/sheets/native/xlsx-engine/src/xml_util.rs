@@ -1,6 +1,8 @@
 //! Zip and quick-xml helpers shared by every part reader: tolerant entry
 //! lookup, attribute access and text decoding.
 
+use std::borrow::Cow;
+
 use super::*;
 
 /// Entry lookup tolerant of non-conformant producers: '\' separators,
@@ -84,6 +86,56 @@ pub(crate) fn general_ref_text(
 pub(crate) fn normalize_line_endings(text: &mut String) {
     if text.contains('\r') {
         *text = text.replace("\r\n", "\n").replace('\r', "\n");
+    }
+}
+
+/// ECMA-376 §22.4.2.4: characters illegal in XML are stored as `_xHHHH_`
+/// (`_x000D_` = CR); a literal `_x` is itself escaped as `_x005F_x…`, which
+/// a single left-to-right pass resolves naturally.
+pub(crate) fn decode_xlsx_escapes(text: &str) -> Cow<'_, str> {
+    if !text.contains("_x") {
+        return Cow::Borrowed(text);
+    }
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    let mut index = 0;
+    while index + 7 <= bytes.len() {
+        let escaped = bytes[index] == b'_'
+            && bytes[index + 1] == b'x'
+            && bytes[index + 6] == b'_'
+            && bytes[index + 2..index + 6]
+                .iter()
+                .all(u8::is_ascii_hexdigit);
+        let decoded = escaped
+            .then(|| u32::from_str_radix(&text[index + 2..index + 6], 16).ok())
+            .flatten()
+            .and_then(char::from_u32);
+        match decoded {
+            Some(character) => {
+                out.push_str(&text[last..index]);
+                out.push(character);
+                index += 7;
+                last = index;
+            }
+            None => index += 1,
+        }
+    }
+    if last == 0 {
+        return Cow::Borrowed(text);
+    }
+    out.push_str(&text[last..]);
+    Cow::Owned(out)
+}
+
+/// Cell text as Excel sees it. Raw CRLF is XML-level noise and must collapse
+/// before the escaped CR appears, otherwise `_x000D_\r\n` (Excel's encoding
+/// of CR LF) would turn into two line breaks.
+pub(crate) fn normalize_cell_text(text: &mut String) {
+    normalize_line_endings(text);
+    if let Cow::Owned(decoded) = decode_xlsx_escapes(text) {
+        *text = decoded;
+        normalize_line_endings(text);
     }
 }
 

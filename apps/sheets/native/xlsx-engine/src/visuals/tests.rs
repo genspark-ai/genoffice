@@ -675,6 +675,61 @@ fn rotated_shape_reports_true_frame_extent() {
     assert_eq!(visual.frame_height, Some(419_100.0));
 }
 
+fn text_box_visual(body_pr: &str) -> VisualObject {
+    let xml = format!(
+        r#"<xdr:wsDr {XDR}><xdr:sp>
+              <xdr:nvSpPr><xdr:cNvPr id="2" name="t"/></xdr:nvSpPr>
+              <xdr:spPr><a:prstGeom prst="rect"/></xdr:spPr>
+              <xdr:txBody>{body_pr}<a:p><a:r><a:t>Hi</a:t></a:r></a:p></xdr:txBody>
+              </xdr:sp></xdr:wsDr>"#
+    );
+    let document = Document::parse(&xml).unwrap();
+    let shape = document
+        .descendants()
+        .find(|node| node.has_tag_name("sp"))
+        .unwrap();
+    let anchor = DrawingAnchor {
+        from_row: 0,
+        from_column: 0,
+        from_row_offset: 0,
+        from_column_offset: 0,
+        to_row: 1,
+        to_column: 1,
+        to_row_offset: 0,
+        to_column_offset: 0,
+        explicit_to: true,
+    };
+    shape_visual(
+        shape,
+        anchor,
+        "visual-1".into(),
+        "sheet1",
+        None,
+        &ColorContext::default(),
+        "xl/drawings/drawing1.xml",
+        &HashMap::new(),
+        Some(0),
+    )
+}
+
+#[test]
+fn text_box_reads_body_overflow_modes() {
+    for value in ["overflow", "clip", "ellipsis"] {
+        let visual = text_box_visual(&format!(
+            r#"<a:bodyPr vertOverflow="{value}" horzOverflow="{value}" anchor="t"/>"#
+        ));
+        assert_eq!(visual.text_vert_overflow.as_deref(), Some(value));
+        assert_eq!(visual.text_horz_overflow.as_deref(), Some(value));
+        assert_eq!(visual.text_anchor.as_deref(), Some("t"));
+    }
+    let absent = text_box_visual(r#"<a:bodyPr rtlCol="0"/>"#);
+    assert_eq!(absent.text_vert_overflow, None);
+    assert_eq!(absent.text_horz_overflow, None);
+    let json = serde_json::to_value(text_box_visual(r#"<a:bodyPr vertOverflow="clip"/>"#)).unwrap();
+    assert_eq!(json["textVertOverflow"], "clip");
+    assert!(json.get("textHorzOverflow").is_none());
+}
+
 #[test]
 fn maps_legend_positions_and_defaults() {
     for (val, expected) in [
@@ -765,6 +820,52 @@ fn series_labels_override_an_all_zero_plot_element() {
             <c:showPercent val=\"1\"/></c:dLbls></c:ser><c:dLbls><c:showVal val=\"1\"/>\
             </c:dLbls></c:pieChart></c:plotArea>";
     assert_eq!(metadata(plot_wins).data_labels.as_deref(), Some("value"));
+}
+
+/// A stacked column whose first series carries per-point dLbl
+/// entries (showVal + manualLayout offsets) while the plot element shows
+/// none; the second series inherits the plot's "none".
+#[test]
+fn reads_per_point_labels_and_series_label_mode() {
+    let chart = metadata(
+        r#"<c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="stacked"/>
+<c:ser><c:idx val="0"/><c:order val="0"/><c:dLbls>
+<c:dLbl><c:idx val="0"/><c:layout><c:manualLayout><c:x val="-3.5074946635165727E-3"/><c:y val="-0.31619290890264545"/></c:manualLayout></c:layout><c:dLblPos val="ctr"/><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/></c:dLbl>
+<c:dLbl><c:idx val="1"/><c:layout><c:manualLayout><c:x val="5.1730278597851252E-3"/><c:y val="-0.25438597272216551"/></c:manualLayout></c:layout><c:dLblPos val="ctr"/><c:showVal val="1"/></c:dLbl>
+<c:dLbl><c:idx val="2"/><c:delete val="1"/></c:dLbl>
+<c:dLbl><c:idx val="3"/><c:layout><c:manualLayout><c:x val="0.01"/><c:y val="-0.1"/></c:manualLayout></c:layout></c:dLbl>
+<c:dLblPos val="ctr"/><c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/></c:dLbls>
+<c:val><c:numRef><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>286.08</c:v></c:pt><c:pt idx="1"><c:v>243</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>
+<c:ser><c:idx val="1"/><c:order val="1"/><c:val><c:numRef><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>1663.9</c:v></c:pt><c:pt idx="1"><c:v>1507</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>
+<c:dLbls><c:showLegendKey val="0"/><c:showVal val="0"/><c:showCatName val="0"/></c:dLbls>
+</c:barChart></c:plotArea>"#,
+    );
+    assert_eq!(chart.data_labels.as_deref(), Some("value"));
+    assert_eq!(chart.series[0].data_labels.as_deref(), Some("value"));
+    assert_eq!(chart.series[1].data_labels.as_deref(), Some("none"));
+    assert!(chart.series[1].point_labels.is_none());
+    let labels = chart.series[0].point_labels.as_ref().unwrap();
+    assert_eq!(labels.len(), 4);
+    assert_eq!((labels[0].index, labels[0].show_val), (0, Some(true)));
+    assert!((labels[0].offset_x.unwrap() + 0.0035074946635165727).abs() < 1e-12);
+    assert!((labels[0].offset_y.unwrap() + 0.31619290890264545).abs() < 1e-12);
+    assert_eq!((labels[1].index, labels[1].show_val), (1, Some(true)));
+    assert!((labels[1].offset_y.unwrap() + 0.25438597272216551).abs() < 1e-12);
+    // A deleted point label hides the value; no layout means no offsets.
+    assert_eq!((labels[2].index, labels[2].show_val), (2, Some(false)));
+    assert_eq!((labels[2].offset_x, labels[2].offset_y), (None, None));
+    // A layout-only dLbl leaves showVal absent so the series mode applies.
+    assert_eq!((labels[3].index, labels[3].show_val), (3, None));
+    assert_eq!(
+        (labels[3].offset_x, labels[3].offset_y),
+        (Some(0.01), Some(-0.1))
+    );
+    // No dLbls anywhere: the series carries no mode of its own.
+    let bare = metadata(
+        "<c:plotArea><c:barChart><c:ser><c:idx val=\"0\"/></c:ser></c:barChart></c:plotArea>",
+    );
+    assert_eq!(bare.series[0].data_labels, None);
+    assert!(bare.series[0].point_labels.is_none());
 }
 
 #[test]
@@ -1350,7 +1451,7 @@ fn outline_solid_fill_is_not_the_shape_fill() {
 
 #[test]
 fn sys_clr_solid_fill_resolves() {
-    // prod_041: sysClr window/windowText must beat the style fillRef.
+    // sysClr window/windowText must beat the style fillRef.
     let sppr = r#"<xdr:spPr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
             <a:solidFill><a:sysClr val="window" lastClr="FFFFFF"/></a:solidFill>
             <a:ln><a:solidFill><a:sysClr val="windowText"/></a:solidFill></a:ln>
@@ -1402,7 +1503,7 @@ fn empty_or_degenerate_src_rect_is_no_crop() {
 
 #[test]
 fn blip_fill_shape_never_falls_back_to_style_fill_ref() {
-    // prod_039: a watermark blipFill shape must not paint the fillRef
+    // A watermark blipFill shape must not paint the fillRef
     // accent as a solid box; the blip alpha rides along as opacity.
     let xml = format!(
         r#"<xdr:wsDr {XDR} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:sp>
@@ -1581,4 +1682,30 @@ fn combo_series_carry_their_plot_group() {
         plots,
         vec![Some("lineChart".into()), Some("barChart".into())]
     );
+}
+
+/// `<c:delete val="1"/>` keeps the axis for scaling but Excel draws neither
+/// its line nor its labels; a bare `<c:delete/>` is CT_Boolean true.
+#[test]
+fn deleted_axes_report_hidden() {
+    let axes = |delete: &str| {
+        format!(
+            r#"<c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="stacked"/>
+            <c:ser><c:idx val="0"/><c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>286</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser>
+            <c:axId val="1"/><c:axId val="2"/></c:barChart>
+        <c:catAx><c:axId val="1"/><c:delete val="0"/><c:axPos val="b"/><c:crossAx val="2"/></c:catAx>
+        <c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/><c:min val="0"/></c:scaling>{delete}<c:axPos val="l"/><c:majorGridlines/><c:crossAx val="1"/></c:valAx>
+        </c:plotArea>"#
+        )
+    };
+    let deleted = metadata(&axes(r#"<c:delete val="1"/>"#));
+    let y_axis = deleted.y_axis.as_ref().unwrap();
+    assert!(y_axis.hidden);
+    assert!(y_axis.major_gridlines);
+    assert_eq!(y_axis.min, Some(0.0));
+    assert!(!deleted.x_axis.as_ref().unwrap().hidden);
+    let json = serde_json::to_value(&deleted).unwrap();
+    assert_eq!(json["yAxis"]["hidden"], true);
+    assert!(metadata(&axes("<c:delete/>")).y_axis.unwrap().hidden);
+    assert!(!metadata(&axes("")).y_axis.unwrap().hidden);
 }

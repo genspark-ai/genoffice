@@ -13,7 +13,7 @@ export interface ContextMenuLabels {
 
 const EN: ContextMenuLabels = { cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select All' }
 
-// One shared table instead of 4 keys × 19 languages duplicated into every
+// One shared table instead of 4 keys × 20 languages duplicated into every
 // app's main-process dictionary; strings match the docs Edit menu.
 const LABELS: Record<string, ContextMenuLabels> = {
   zh: { cut: '剪切', copy: '复制', paste: '粘贴', selectAll: '全选' },
@@ -30,6 +30,7 @@ const LABELS: Record<string, ContextMenuLabels> = {
   pt: { cut: 'Recortar', copy: 'Copiar', paste: 'Colar', selectAll: 'Selecionar Tudo' },
   it: { cut: 'Taglia', copy: 'Copia', paste: 'Incolla', selectAll: 'Seleziona tutto' },
   pl: { cut: 'Wytnij', copy: 'Kopiuj', paste: 'Wklej', selectAll: 'Zaznacz wszystko' },
+  cs: { cut: 'Vyjmout', copy: 'Kopírovat', paste: 'Vložit', selectAll: 'Vybrat vše' },
   nl: { cut: 'Knippen', copy: 'Kopiëren', paste: 'Plakken', selectAll: 'Alles selecteren' },
   ms: { cut: 'Potong', copy: 'Salin', paste: 'Tampal', selectAll: 'Pilih Semua' },
   he: { cut: 'גזור', copy: 'העתק', paste: 'הדבק', selectAll: 'בחר הכול' },

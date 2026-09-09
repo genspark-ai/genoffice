@@ -457,7 +457,7 @@ export function applyPrintAreas(
     }
   }
   // An emptied definedNames section is dropped entirely rather than written empty.
-  return xml.replace(/<definedNames>\s*<\/definedNames>/, '')
+  return xml.replace(/<definedNames>\s*<\/definedNames>|<definedNames\s*\/>/, '')
 }
 
 function setSheetScopedName(
@@ -471,22 +471,35 @@ function setSheetScopedName(
     `<definedName[^>]*name="${escapedName}"[^>]*localSheetId="${sheetIndex}"[^>]*>[\\s\\S]*?</definedName>` +
       `|<definedName[^>]*localSheetId="${sheetIndex}"[^>]*name="${escapedName}"[^>]*>[\\s\\S]*?</definedName>`,
   )
-  let xml = workbookXml.replace(namePattern, '')
+  const xml = workbookXml.replace(namePattern, '')
   if (reference === null) return xml
   const element =
     `<definedName name="${name}" localSheetId="${sheetIndex}">` +
     `${escapeXml(reference)}</definedName>`
+  // Google Sheets exports an empty self-closing `<definedNames/>`.
+  const empty = /<definedNames\b[^>]*\/>/.exec(xml)
+  if (empty) {
+    return (
+      xml.slice(0, empty.index) +
+      `<definedNames>${element}</definedNames>` +
+      xml.slice(empty.index + empty[0].length)
+    )
+  }
   const section = /<definedNames\b[^>]*>/.exec(xml)
   if (section) {
     const at = section.index + section[0].length
-    xml = xml.slice(0, at) + element + xml.slice(at)
-  } else {
-    const sheetsEnd = /<\/sheets>/.exec(xml)
-    if (!sheetsEnd) throw new PageSetupError('workbook.xml has no sheets section.')
-    const at = sheetsEnd.index + sheetsEnd[0].length
-    xml = `${xml.slice(0, at)}<definedNames>${element}</definedNames>${xml.slice(at)}`
+    return xml.slice(0, at) + element + xml.slice(at)
   }
-  return xml
+  // Schema order: definedNames follows sheets (and functionGroups/externalReferences).
+  const anchor =
+    /<externalReferences\b[^>]*>[\s\S]*?<\/externalReferences>|<externalReferences\b[^>]*\/>/.exec(
+      xml,
+    ) ??
+    /<functionGroups\b[^>]*>[\s\S]*?<\/functionGroups>|<functionGroups\b[^>]*\/>/.exec(xml) ??
+    /<\/sheets>|<sheets\b[^>]*\/>/.exec(xml)
+  if (!anchor) throw new PageSetupError('workbook.xml has no sheets section.')
+  const at = anchor.index + anchor[0].length
+  return `${xml.slice(0, at)}<definedNames>${element}</definedNames>${xml.slice(at)}`
 }
 
 /// "1:3" → "$1:$3" (title rows repeated at the top of each page).

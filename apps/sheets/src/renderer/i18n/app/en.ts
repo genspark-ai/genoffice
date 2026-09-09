@@ -304,6 +304,8 @@ export const en = {
     'This workbook is too large to load fully into memory; filtering is unavailable for this file.',
   appDialogCancel: 'Cancel',
   appPivotSheetNoMove: 'This sheet contains a PivotTable — moving ranges is not supported yet.',
+  appMergeOverTable:
+    'The selection overlaps an Excel table — merging cells inside a table is not supported yet.',
   appTableFilterNoEdit:
     "This sheet's filter belongs to an Excel table — editing it cannot be saved yet.",
   appAutofillStreaming: 'Autofill into an area that is still streaming in is not allowed yet.',
@@ -544,6 +546,8 @@ export const en = {
     'Defined-name changes cannot be saved together with row/column or sheet-structure changes — save them separately.',
   appSaveErrChangedOnDisk:
     'The file was changed on disk by another program — save aborted; reopen the file and try again.',
+  appSaveErrTargetLocked:
+    'The file could not be replaced — it looks locked by another program (open in Excel, or being scanned/synced). Close it there and save again.',
   appSaveErrStylesheetLimited:
     "This workbook's stylesheet is missing basic structure, so style changes cannot be saved.",
   appSaveErrPackageGuard:

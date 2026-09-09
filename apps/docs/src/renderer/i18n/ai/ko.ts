@@ -126,6 +126,7 @@ export const ko = {
   aiSumCreateDocument: '새 문서 만들기',
   aiSumCreatedDocument: '{name} 생성됨',
   aiSumReplaceContent: '내용 바꾸기',
+  aiSumReplaceSelection: '선택한 텍스트 바꾸기',
   aiSumReplacedBlocks: '블록 {start}-{end} 바꿈',
   aiSumInsertChart: '차트 삽입',
   aiSumInsertedChart: '차트 "{title}" 삽입',

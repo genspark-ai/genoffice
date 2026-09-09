@@ -1,3 +1,4 @@
+import type { AiPanelPrefs } from '@genoffice/ui'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type {
@@ -16,6 +17,7 @@ import type {
   RecoveryPromptPayload,
   ScreenCaptureResult,
   ScreenSourcesResult,
+  AutoSaveDefault,
   UiTheme,
   WorkbookCellStyle,
   WorkbookConditionalRule,
@@ -67,6 +69,18 @@ const desktopApi: DesktopApi = {
     const listener = (_event: Electron.IpcRendererEvent, theme: UiTheme) => handler(theme)
     ipcRenderer.on('app:theme-changed', listener)
     return () => ipcRenderer.removeListener('app:theme-changed', listener)
+  },
+  getAutoSaveDefault: () => ipcRenderer.invoke('app:get-auto-save-default'),
+  onAutoSaveDefaultChanged(handler) {
+    const listener = (_event: Electron.IpcRendererEvent, value: AutoSaveDefault) => handler(value)
+    ipcRenderer.on('app:auto-save-default-changed', listener)
+    return () => ipcRenderer.removeListener('app:auto-save-default-changed', listener)
+  },
+  getAiPanelPrefs: () => ipcRenderer.invoke('app:get-ai-panel-prefs'),
+  onAiPanelPrefsChanged: (handler) => {
+    const listener = (_event: Electron.IpcRendererEvent, prefs: AiPanelPrefs) => handler(prefs)
+    ipcRenderer.on('app:ai-panel-prefs-changed', listener)
+    return () => ipcRenderer.removeListener('app:ai-panel-prefs-changed', listener)
   },
   onChromePressed(handler) {
     const listener = () => handler()
@@ -1247,10 +1261,13 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
   if (
     !Array.isArray(input.dataValidations) ||
     input.dataValidations.length > 20_000 ||
-    (input.autoFilter !== null && !isRecord(input.autoFilter))
+    (input.autoFilter !== null && !isRecord(input.autoFilter)) ||
+    !Array.isArray(input.autoFilterColumns) ||
+    input.autoFilterColumns.length > 1_000
   ) {
     throw new Error('Invalid workbook range response.')
   }
+  const autoFilterColumns = input.autoFilterColumns.map(parseAutoFilterColumn)
   const dataValidations = input.dataValidations.map((rule) => {
     if (
       !isRecord(rule) ||
@@ -1328,6 +1345,7 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     hyperlinks,
     conditionalRules,
     autoFilter: input.autoFilter === null ? null : parseCellArea(input.autoFilter),
+    autoFilterColumns,
     dataValidations,
     sheetProtection,
     rowBreaks: parseBreaks(input.rowBreaks, 'row breaks'),
@@ -1504,6 +1522,74 @@ function parseCellArea(input: unknown): WorkbookConditionalRule['ranges'][number
     startColumn: input.startColumn,
     endRow: input.endRow,
     endColumn: input.endColumn,
+  }
+}
+
+const CUSTOM_FILTER_OPERATORS = new Set([
+  'equal',
+  'notEqual',
+  'greaterThan',
+  'greaterThanOrEqual',
+  'lessThan',
+  'lessThanOrEqual',
+])
+
+function parseAutoFilterColumn(input: unknown): WorkbookRangeResult['autoFilterColumns'][number] {
+  if (
+    !isRecord(input) ||
+    !isNonnegativeInteger(input.colId) ||
+    input.colId > 16_383 ||
+    (input.values !== undefined &&
+      (!Array.isArray(input.values) ||
+        input.values.length > 10_000 ||
+        input.values.some((value) => typeof value !== 'string' || value.length > 32_767))) ||
+    (input.blank !== undefined && typeof input.blank !== 'boolean')
+  ) {
+    throw new Error('Invalid workbook filter column.')
+  }
+  type ParsedCustoms = NonNullable<WorkbookRangeResult['autoFilterColumns'][number]['customs']>
+  let customs: ParsedCustoms | undefined
+  if (input.customs !== undefined) {
+    const raw = input.customs
+    if (
+      !isRecord(raw) ||
+      (raw.and !== undefined && typeof raw.and !== 'boolean') ||
+      !Array.isArray(raw.filters) ||
+      raw.filters.length < 1 ||
+      raw.filters.length > 2
+    ) {
+      throw new Error('Invalid workbook filter column.')
+    }
+    const filters: ParsedCustoms['filters'] = []
+    for (const custom of raw.filters) {
+      if (!isRecord(custom) || typeof custom.val !== 'string' || custom.val.length > 32_767) {
+        throw new Error('Invalid workbook filter column.')
+      }
+      if (custom.operator !== undefined && typeof custom.operator !== 'string') {
+        throw new Error('Invalid workbook filter column.')
+      }
+      // A comparison token outside the OOXML enum (foreign writer) cannot be
+      // represented or re-saved; drop the whole comparison block.
+      if (custom.operator !== undefined && !CUSTOM_FILTER_OPERATORS.has(custom.operator)) {
+        filters.length = 0
+        break
+      }
+      filters.push({
+        val: custom.val,
+        ...(custom.operator === undefined
+          ? {}
+          : { operator: custom.operator as ParsedCustoms['filters'][number]['operator'] }),
+      })
+    }
+    if (filters.length > 0) {
+      customs = { ...(raw.and === true ? { and: true } : {}), filters }
+    }
+  }
+  return {
+    colId: input.colId,
+    ...(input.values === undefined ? {} : { values: input.values as string[] }),
+    ...(input.blank === true ? { blank: true } : {}),
+    ...(customs === undefined ? {} : { customs }),
   }
 }
 
@@ -2755,7 +2841,7 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
     !isRecord(input) ||
     typeof input.id !== 'string' ||
     typeof input.sheetId !== 'string' ||
-    !['chart', 'image', 'shape', 'ole'].includes(String(input.kind)) ||
+    !['chart', 'image', 'shape', 'ole', 'slicer'].includes(String(input.kind)) ||
     !isRecord(input.anchor)
   ) {
     throw new Error('Invalid workbook visual response.')
@@ -2790,6 +2876,8 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
     (input.flipV !== undefined && typeof input.flipV !== 'boolean') ||
     !isOptionalString(input.textColor) ||
     !isOptionalString(input.textAnchor) ||
+    !isOptionalString(input.textVertOverflow) ||
+    !isOptionalString(input.textHorzOverflow) ||
     !isOptionalString(input.text) ||
     !isOptionalString(input.progId) ||
     (input.rotation !== undefined &&
@@ -2813,7 +2901,7 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
   return {
     id: input.id,
     sheetId: input.sheetId,
-    kind: input.kind as 'chart' | 'image' | 'shape' | 'ole',
+    kind: input.kind as 'chart' | 'image' | 'shape' | 'ole' | 'slicer',
     anchor,
     ...(chart === undefined ? {} : { chart }),
     ...(typeof input.chartPath === 'string' ? { chartPath: input.chartPath } : {}),
@@ -2836,6 +2924,8 @@ function parseVisualObject(input: unknown): WorkbookVisualObject {
     ...(input.flipV === undefined ? {} : { flipV: input.flipV }),
     ...(input.textColor === undefined ? {} : { textColor: input.textColor }),
     ...(input.textAnchor === undefined ? {} : { textAnchor: input.textAnchor }),
+    ...(input.textVertOverflow === undefined ? {} : { textVertOverflow: input.textVertOverflow }),
+    ...(input.textHorzOverflow === undefined ? {} : { textHorzOverflow: input.textHorzOverflow }),
     ...(paragraphs === undefined ? {} : { paragraphs }),
     ...(input.text === undefined ? {} : { text: input.text }),
     ...(input.progId === undefined ? {} : { progId: input.progId }),
@@ -3050,11 +3140,13 @@ function parseChart(input: unknown): NonNullable<WorkbookVisualObject['chart']> 
       !isOptionalFiniteNumber(entry.lineWidth) ||
       (entry.smooth !== undefined && typeof entry.smooth !== 'boolean') ||
       !isOptionalString(entry.marker) ||
-      !isOptionalString(entry.plot)
+      !isOptionalString(entry.plot) ||
+      !isOptionalEnum(entry.dataLabels, CHART_DATA_LABELS)
     ) {
       throw new Error('Invalid workbook chart series.')
     }
     const pointColors = parseChartPointColors(entry.pointColors)
+    const pointLabels = parseChartPointLabels(entry.pointLabels)
     const pointExplosions = parseChartPointExplosions(entry.pointExplosions)
     const categoryGroups = parseChartCategoryGroups(entry.categoryGroups)
     return {
@@ -3078,6 +3170,8 @@ function parseChart(input: unknown): NonNullable<WorkbookVisualObject['chart']> 
       ...(entry.marker === undefined ? {} : { marker: entry.marker }),
       ...(entry.plot === undefined ? {} : { plot: entry.plot }),
       ...(categoryGroups === undefined ? {} : { categoryGroups }),
+      ...(entry.dataLabels === undefined ? {} : { dataLabels: entry.dataLabels }),
+      ...(pointLabels === undefined ? {} : { pointLabels }),
     }
   })
   return {
@@ -3209,6 +3303,30 @@ function parseChartPointColors(
       throw new Error('Invalid workbook chart point colors.')
     }
     return { index: entry.index, color: entry.color }
+  })
+}
+
+function parseChartPointLabels(
+  input: unknown,
+): Array<{ index: number; showVal?: boolean; offsetX?: number; offsetY?: number }> | undefined {
+  if (input === undefined) return undefined
+  if (!Array.isArray(input)) throw new Error('Invalid workbook chart point labels.')
+  return input.map((entry) => {
+    if (
+      !isRecord(entry) ||
+      !isNonnegativeInteger(entry.index) ||
+      (entry.showVal !== undefined && typeof entry.showVal !== 'boolean') ||
+      !isOptionalFiniteNumber(entry.offsetX) ||
+      !isOptionalFiniteNumber(entry.offsetY)
+    ) {
+      throw new Error('Invalid workbook chart point labels.')
+    }
+    return {
+      index: entry.index,
+      ...(entry.showVal === undefined ? {} : { showVal: entry.showVal }),
+      ...(entry.offsetX === undefined ? {} : { offsetX: entry.offsetX }),
+      ...(entry.offsetY === undefined ? {} : { offsetY: entry.offsetY }),
+    }
   })
 }
 

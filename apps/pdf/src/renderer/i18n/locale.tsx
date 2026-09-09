@@ -24,6 +24,7 @@ const AI_LANG_DIRECTIVES: Record<Lang, string> = {
   pt: '\n\nResponda no mesmo idioma da mensagem do usuário; se não for possível determiná-lo, responda em português.',
   it: "\n\nRispondi nella stessa lingua del messaggio dell'utente; se non può essere determinata, rispondi in italiano.",
   pl: '\n\nOdpowiadaj w tym samym języku, co wiadomość użytkownika; jeśli nie da się go ustalić, odpowiadaj po polsku.',
+  cs: '\n\nOdpovídej ve stejném jazyce jako zpráva uživatele; pokud ho nelze určit, odpovídej česky.',
   nl: '\n\nAntwoord in dezelfde taal als het bericht van de gebruiker; als die niet te bepalen is, antwoord dan in het Nederlands.',
   ms: '\n\nBalas dalam bahasa yang sama dengan mesej pengguna; jika tidak dapat ditentukan, balas dalam bahasa Melayu.',
   he: '\n\nהשב באותה שפה של הודעת המשתמש; אם לא ניתן לקבוע אותה, השב בעברית.',

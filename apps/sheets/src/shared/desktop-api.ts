@@ -20,6 +20,7 @@ import type {
   AiStreamRequest,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
+import type { AiPanelPrefs } from '@genoffice/ui'
 
 const MAX_RANGE_CELLS = 100_000
 const cellScalarSchema = z.union([z.string(), z.number().finite(), z.boolean(), z.null()])
@@ -402,7 +403,9 @@ const visualObjectSchema = z
     sheetId: z.string().min(1),
     /// `ole`: a worksheet <oleObject> embed, read-only — rendered from its
     /// cached preview picture (mediaPath) or as an icon+caption placeholder.
-    kind: z.enum(['chart', 'image', 'shape', 'ole']),
+    /// `slicer`: a slicer/timeline graphicFrame, read-only — drawn as a
+    /// bordered frame with the caption (`text`) in place of the real control.
+    kind: z.enum(['chart', 'image', 'shape', 'ole', 'slicer']),
     anchor: drawingAnchorSchema,
     chart: z
       .object({
@@ -461,6 +464,26 @@ const visualObjectSchema = z
               marker: z.string().optional(),
               /// Parent plot group (barChart, lineChart, ...) of the series.
               plot: z.string().optional(),
+              /// Label mode the series resolves to: its own `c:dLbls`, else
+              /// the plot element's.
+              dataLabels: z
+                .enum(['none', 'value', 'percent', 'category-percent', 'category-value-percent'])
+                .optional(),
+              /// Per-point `c:dLbl`: value shown, plus the manualLayout
+              /// offset from the default anchor (fractions of the chart).
+              pointLabels: z
+                .array(
+                  z
+                    .object({
+                      index: z.number().int().nonnegative(),
+                      /// Absent: the series label mode applies to this point.
+                      showVal: z.boolean().optional(),
+                      offsetX: z.number().finite().optional(),
+                      offsetY: z.number().finite().optional(),
+                    })
+                    .strict(),
+                )
+                .optional(),
               /// First outer multiLvlStrCache level; start/end index the
               /// compacted `categories` (end exclusive).
               categoryGroups: z
@@ -609,6 +632,9 @@ const visualObjectSchema = z
     textColor: z.string().optional(),
     /// a:bodyPr anchor — t | ctr | b.
     textAnchor: z.string().optional(),
+    /// a:bodyPr vertOverflow / horzOverflow — overflow (default) | clip | ellipsis.
+    textVertOverflow: z.string().optional(),
+    textHorzOverflow: z.string().optional(),
     /// txBody paragraphs with per-run styling; `text` stays the flat join.
     paragraphs: z
       .array(
@@ -773,6 +799,51 @@ const workbookCellRecordSchema = z
   })
   .strict()
 
+/// OOXML customFilter comparison operators; absent means "equal". Wildcard
+/// matching (contains / begins with) is encoded in the value string itself.
+const customFilterOperatorSchema = z.enum([
+  'equal',
+  'notEqual',
+  'greaterThan',
+  'greaterThanOrEqual',
+  'lessThan',
+  'lessThanOrEqual',
+])
+
+/// One filter column's criteria — shared by the save snapshot
+/// (WorkbookFilterState) and the open-time restore (WorkbookRangeResult).
+const filterColumnStateSchema = z
+  .object({
+    /// 0-based offset from the filter range's first column, per OOXML.
+    colId: z.number().int().nonnegative().max(16_383),
+    /// Filter values are cell texts, so they share the cell's 32,767 cap.
+    values: z.array(z.string().max(32_767)).max(10_000).optional(),
+    blank: z.boolean().optional(),
+    customs: z
+      .object({
+        and: z.boolean().optional(),
+        filters: z
+          .array(
+            z
+              .object({
+                val: z.union([z.string().max(32_767), z.number().finite()]),
+                operator: customFilterOperatorSchema.optional(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(2),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (column) =>
+      column.values !== undefined || column.blank !== undefined || column.customs !== undefined,
+    { message: 'A filter column needs values, a blank flag, or custom criteria.' },
+  )
+
 export const workbookRangeResultSchema = z
   .object({
     cells: z.array(workbookCellRecordSchema).max(MAX_RANGE_CELLS),
@@ -807,6 +878,9 @@ export const workbookRangeResultSchema = z
       .max(MAX_RANGE_CELLS),
     conditionalRules: z.array(conditionalRuleSchema).max(MAX_RANGE_CELLS),
     autoFilter: cellAreaSchema.nullable(),
+    /// The autoFilter's live per-column criteria; sheet-wide, complete-only,
+    /// empty when the filter has none (or the sheet has no filter).
+    autoFilterColumns: z.array(filterColumnStateSchema).max(1_000),
     dataValidations: z
       .array(
         z
@@ -1453,49 +1527,6 @@ export const workbookVisualEditSchema = z
   .refine((edit) => edit.remove === true || edit.anchor !== undefined, {
     message: 'A visual edit needs a removal or a new anchor.',
   })
-
-/// OOXML customFilter comparison operators; absent means "equal". Wildcard
-/// matching (contains / begins with) is encoded in the value string itself.
-const customFilterOperatorSchema = z.enum([
-  'equal',
-  'notEqual',
-  'greaterThan',
-  'greaterThanOrEqual',
-  'lessThan',
-  'lessThanOrEqual',
-])
-
-const filterColumnStateSchema = z
-  .object({
-    /// 0-based offset from the filter range's first column, per OOXML.
-    colId: z.number().int().nonnegative().max(16_383),
-    /// Filter values are cell texts, so they share the cell's 32,767 cap.
-    values: z.array(z.string().max(32_767)).max(10_000).optional(),
-    blank: z.boolean().optional(),
-    customs: z
-      .object({
-        and: z.boolean().optional(),
-        filters: z
-          .array(
-            z
-              .object({
-                val: z.union([z.string().max(32_767), z.number().finite()]),
-                operator: customFilterOperatorSchema.optional(),
-              })
-              .strict(),
-          )
-          .min(1)
-          .max(2),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict()
-  .refine(
-    (column) =>
-      column.values !== undefined || column.blank !== undefined || column.customs !== undefined,
-    { message: 'A filter column needs values, a blank flag, or custom criteria.' },
-  )
 
 /// Declarative per-sheet filter snapshot taken at save time. `filter: null`
 /// removes the sheet's autoFilter; `visibilityRange` rows not listed in
@@ -2383,11 +2414,38 @@ const aiProviderConfigSchema = z
   })
   .strict()
 
+const aiMediaProviderConfigSchema = z
+  .object({
+    apiKey: z.string(),
+    baseUrl: z.string().optional(),
+    imageModel: z.string(),
+    analysisModel: z.string(),
+  })
+  .strict()
+
 export const aiSettingsInputSchema = z
   .object({
     provider: z.string().min(1),
     providers: z.record(z.string(), aiProviderConfigSchema),
     gskToolsEnabled: z.boolean().optional(),
+    media: z
+      .object({
+        imageProvider: z.string().min(1).optional(),
+        analysisProvider: z.string().min(1).optional(),
+        videoAnalysisProvider: z.string().min(1).optional(),
+        // pre-catalog single choice, still accepted on read
+        provider: z.string().min(1).optional(),
+        providers: z.record(z.string(), aiMediaProviderConfigSchema),
+      })
+      .strict()
+      .optional(),
+    search: z
+      .object({
+        provider: z.string().min(1),
+        providers: z.record(z.string(), z.object({ apiKey: z.string() }).strict()),
+      })
+      .strict()
+      .optional(),
     // bounds are enforced by clampMaxOutputTokens on read; the schema only
     // rejects nonsense (this object is .strict(), so an omitted key here would
     // make the whole settings save fail)
@@ -2571,7 +2629,7 @@ export type WorkbookExportCsvResult = z.infer<typeof workbookExportCsvResultSche
 /// creation flow (#960).
 export const workbookCreateDocumentRequestSchema = z
   .object({
-    type: z.enum(['xlsx', 'csv', 'docx', 'pdf', 'md']),
+    type: z.enum(['xlsx', 'csv', 'docx', 'pdf', 'md', 'html']),
     title: z.string().min(1).max(MAX_CREATE_DOCUMENT_TITLE_CHARS),
     content: z.string().min(1).max(MAX_CSV_EXPORT_CHARS),
     /// xlsx only: the worksheet name inside the created workbook (the source
@@ -2651,6 +2709,12 @@ export interface AttachmentImageResult {
 
 export type UiTheme = 'light' | 'dark' | 'system'
 
+/** shell-wide AutoSave default; updatedAt is 0 until the user has ever set it */
+export interface AutoSaveDefault {
+  on: boolean
+  updatedAt: number
+}
+
 /** Autosave-recovery prompt raised by main during workbook open (strings pre-localized). */
 export interface RecoveryPromptPayload {
   title: string
@@ -2676,6 +2740,12 @@ export interface DesktopApi {
   getTheme(): Promise<UiTheme>
   /** theme switched from the shell home page */
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
+  /** shell-wide AutoSave default (see useAutoSavePref) */
+  getAutoSaveDefault(): Promise<AutoSaveDefault>
+  onAutoSaveDefaultChanged(handler: (value: AutoSaveDefault) => void): () => void
+  /** AI panel text size + chat-input spellcheck (Settings → General in the shell) */
+  getAiPanelPrefs(): Promise<AiPanelPrefs>
+  onAiPanelPrefsChanged(handler: (prefs: AiPanelPrefs) => void): () => void
   /**
    * the user pressed the shell chrome (tab strip) or started dragging the
    * window — no DOM event or blur reaches this view, so the shell relays the

@@ -242,6 +242,21 @@ const tUpd = createI18n({
       'Automatyczna aktualizacja nie powiodła się. Pobierz najnowszą wersję ze strony pobierania i zainstaluj ją ręcznie.',
     updOpenDownload: 'Otwórz stronę pobierania',
   },
+  cs: {
+    updTitle: 'Aktualizace softwaru',
+    updHeadline: 'Je k dispozici nová verze',
+    updDesc:
+      'Tato aktualizace obsahuje vylepšení výkonu a opravy chyb. Doporučujeme aktualizovat hned.',
+    updDownload: 'Aktualizovat nyní',
+    updLater: 'Připomenout později',
+    updInstall: 'Restartovat a nainstalovat',
+    updDownloading: 'Stahování aktualizace…',
+    updFailed: 'Stažení aktualizace se nezdařilo. Zkontrolujte síť a zkuste to znovu.',
+    updRetry: 'Zkusit znovu',
+    updManual:
+      'Automatická aktualizace se nezdařila. Stáhněte si nejnovější verzi ze stránky pro stažení a nainstalujte ji ručně.',
+    updOpenDownload: 'Otevřít stránku pro stažení',
+  },
   nl: {
     updTitle: 'Software-update',
     updHeadline: 'Er is een nieuwe versie beschikbaar',

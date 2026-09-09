@@ -55,6 +55,7 @@ function makeState(defaultRowHeight: number | null = null) {
     file: { styles: [], sheets: [{ id: 'sheet-1', defaultRowHeight }] },
     appliedRowKeys: new Map<string, Set<string>>(),
     hiddenFileRows: new Map<string, Set<number>>(),
+    restoredFilterSpans: new Map<string, { startRow: number; endRow: number }>(),
     outline: new Map(),
   }
 }

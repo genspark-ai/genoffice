@@ -51,6 +51,8 @@ const TOOL_FIELD_MAX_CHARS = 16_000
  * JSONL line and be replayed into the model context when the file reopens.
  */
 const TEXT_MAX_CHARS = 32_000
+/** Max stored characters of a scope excerpt */
+const SCOPE_TEXT_MAX_CHARS = 400
 const TEXT_TRUNCATED_MARK = '\n\n[truncated]'
 
 function nowIso(): string {
@@ -323,6 +325,14 @@ export class ProjectStore {
         }))
       }
       if (msg.attachments !== undefined) record.attachments = msg.attachments
+      if (msg.scope !== undefined) {
+        record.scope = {
+          label: msg.scope.label,
+          ...(msg.scope.text !== undefined
+            ? { text: msg.scope.text.slice(0, SCOPE_TEXT_MAX_CHARS) }
+            : {}),
+        }
+      }
 
       const key = this.seqKey(projectId, chatId)
       if (msg.role !== 'assistant' && !existsSync(this.chatPath(projectId, chatId))) {

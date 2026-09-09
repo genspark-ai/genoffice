@@ -121,6 +121,7 @@ export const zhTW = {
   aiSumCreateDocument: '建立新文件',
   aiSumCreatedDocument: '已建立 {name}',
   aiSumReplaceContent: '取代內容',
+  aiSumReplaceSelection: '取代選取文字',
   aiSumReplacedBlocks: '取代區塊 {start}-{end}',
   aiSumInsertChart: '插入圖表',
   aiSumInsertedChart: '插入圖表「{title}」',

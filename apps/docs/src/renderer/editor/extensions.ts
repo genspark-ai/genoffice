@@ -98,7 +98,7 @@ import { CaretMarksMemory, FORMAT_MARKS, firstTextMarksIn, serializeMarks } from
 import { insertPageBreak } from './page-break'
 import { ColumnLayoutExtension } from './column-layout'
 import { TableHandle } from './table-handle'
-import { TrackChangesExtension } from './revisions'
+import { TRACK_IGNORE, TrackChangesExtension } from './revisions'
 import { inlineToRuns, runsToInline, textboxParaSignature, type PmNode as PmJson } from './convert'
 import { constrainTableWidthAtCell } from './table-sizing'
 
@@ -2817,6 +2817,9 @@ export function deleteSelectedWholeTable(
   return false
 }
 
+/** transaction meta: document load/stream paths that must not get a trailing paragraph appended mid-stream */
+export const TABLE_TRAILING_SKIP = 'tableTrailingSkip'
+
 export const NativeTableSupport = Extension.create({
   name: 'nativeTableSupport',
   extendNodeSchema(extension) {
@@ -2871,6 +2874,23 @@ export const NativeTableSupport = Extension.create({
       }),
       columnResizing({ View: null, cellMinWidth: 40, lastColumnResizable: true }),
       tableEditing({ allowTableNodeSelection: true }),
+      // Word never ends a body with a table: without a paragraph below it the
+      // caret can never leave the table (public issue #266)
+      new Plugin({
+        appendTransaction(transactions, oldState, newState) {
+          if (!transactions.some((tr) => tr.docChanged)) return null
+          // undo/redo restore what the user had; appending would also wipe the redo stack
+          if (transactions.some((tr) => tr.getMeta(TABLE_TRAILING_SKIP) || tr.getMeta('history$')))
+            return null
+          if (newState.doc.lastChild?.type.name !== 'docTable') return null
+          // only when this edit made the table last: imported bodies that already
+          // end with a table stay byte-identical on unrelated edits
+          if (oldState.doc.lastChild?.type.name === 'docTable') return null
+          return newState.tr
+            .insert(newState.doc.content.size, newState.schema.nodes.docParagraph.create())
+            .setMeta(TRACK_IGNORE, true)
+        },
+      }),
     ]
   },
 })

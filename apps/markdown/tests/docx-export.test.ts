@@ -117,6 +117,34 @@ describe('docx export', () => {
     expect(code?.runs?.[0]?.text).toContain('const b = 2')
   })
 
+  it('mermaid blocks export as the rendered image when a renderer is given', async () => {
+    const editor = createEditor('```mermaid\nflowchart LR\n    A --> B\n```')
+    const png = { base64: 'iVBORw0KGgo=', mime: 'image/png' as const, widthPx: 200, heightPx: 100 }
+    const sources: string[] = []
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages, async (src) => {
+      sources.push(src)
+      return png
+    })
+    expect(sources).toEqual(['flowchart LR\n    A --> B'])
+    expect(mapping.blocks[0]).toEqual({ kind: 'image', image: png })
+  })
+
+  it('mermaid blocks fall back to their source when rendering fails or is absent', async () => {
+    const md = '```mermaid\nflowchart LR\n    A --> B\n```'
+    const failing = await mapDocToSaveBlocks(createEditor(md).getJSON(), noImages, () =>
+      Promise.reject(new Error('no canvas')),
+    )
+    const none = await mapDocToSaveBlocks(createEditor(md).getJSON(), noImages)
+    for (const mapping of [failing, none]) {
+      const block = mapping.blocks[0]!
+      expect(block.kind).toBe('generated')
+      if (block.kind === 'generated') {
+        expect(block.block.runs?.[0]?.text).toBe('flowchart LR\n    A --> B')
+        expect(block.block.runs?.[0]?.font).toBe('Consolas')
+      }
+    }
+  })
+
   it('links survive as hyperlink runs', async () => {
     const parsed = await exportAndParse('Visit [Genspark](https://genspark.ai) now.')
     const para = parsed.blocks.find((b) => b.type === 'paragraph')

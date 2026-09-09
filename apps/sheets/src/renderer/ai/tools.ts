@@ -172,10 +172,10 @@ export interface TraceDependentsOutcome {
 }
 
 /** every file type create_document can produce */
-export type CreateDocumentFileType = 'xlsx' | 'csv' | 'docx' | 'pdf' | 'md'
+export type CreateDocumentFileType = 'xlsx' | 'csv' | 'docx' | 'pdf' | 'md' | 'html'
 
 /** create_document request handed to the App: xlsx/csv name a worksheet to
- * export; docx/pdf/md carry AI-authored content (routed to the docs flow).
+ * export; docx/pdf/md/html carry AI-authored content (routed to the docs flow).
  * Members keep singleton discriminants so the type narrows properly. */
 export type CreateDocumentToolRequest =
   | { type: 'xlsx'; sheetId?: string | undefined; title?: string | undefined }
@@ -183,6 +183,7 @@ export type CreateDocumentToolRequest =
   | { type: 'docx'; title: string; content: string }
   | { type: 'pdf'; title: string; content: string }
   | { type: 'md'; title: string; content: string }
+  | { type: 'html'; title: string; content: string }
 
 export type CreateDocumentToolOutcome =
   | {
@@ -525,14 +526,14 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
       'Create a NEW standalone file in the default save folder and open it in a new tab; the current workbook is not modified. ' +
       "Types 'xlsx' (default) and 'csv' export ONE worksheet of THIS workbook: pass sheetId (defaults to the active sheet); the file gets the sheet's current displayed values (formula results; formulas and formatting are not carried over) and content must be omitted. " +
       'To split a workbook into separate files, call once per sheet. To export data that is not in a sheet yet, write it into a new sheet first (add_sheet + set_range), then export that sheet. ' +
-      "Types 'docx' and 'pdf' take simple HTML in content (<h1>-<h6>, <p>, <ul>/<ol>/<li>, <table>, <pre>, <blockquote>; inline <strong>/<em>/<u>/<s>); type 'md' takes Markdown source — use these when the user wants a report/summary as its own document. " +
+      "Types 'docx' and 'pdf' take simple HTML in content (<h1>-<h6>, <p>, <ul>/<ol>/<li>, <table>, <pre>, <blockquote>; inline <strong>/<em>/<u>/<s>); type 'md' takes Markdown source; type 'html' takes a complete standalone HTML page (opens in the HTML editor) — use these when the user wants a report/summary as its own document. " +
       'title becomes the file name; xlsx/csv default it to the worksheet name.',
     inputSchema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['xlsx', 'csv', 'docx', 'pdf', 'md'],
+          enum: ['xlsx', 'csv', 'docx', 'pdf', 'md', 'html'],
           description: "target file type (default 'xlsx')",
         },
         sheetId: {
@@ -1385,9 +1386,10 @@ export function executeWorkbookTool(
         typeRaw !== 'csv' &&
         typeRaw !== 'docx' &&
         typeRaw !== 'pdf' &&
-        typeRaw !== 'md'
+        typeRaw !== 'md' &&
+        typeRaw !== 'html'
       ) {
-        return fail(summary, 'type must be one of xlsx/csv/docx/pdf/md')
+        return fail(summary, 'type must be one of xlsx/csv/docx/pdf/md/html')
       }
       const title = typeof call.input.title === 'string' ? call.input.title.trim() : ''
       if (typeRaw === 'xlsx' || typeRaw === 'csv') {

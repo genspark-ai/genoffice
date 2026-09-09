@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { CommentInfo } from '@genoffice/docx-engine'
 import { useI18n } from '../i18n/locale'
-import { IconComment, IconTrash } from './icons'
+import { IconComment, IconPencil, IconTrash } from './icons'
 
 function formatDate(iso?: string): string {
   if (!iso) return ''
@@ -52,6 +52,7 @@ export const CommentsPanel = memo(function CommentsPanel({
   composing,
   onSubmitNew,
   onReply,
+  onEdit,
   onResolve,
   onCancelNew,
   onDelete,
@@ -65,6 +66,8 @@ export const CommentsPanel = memo(function CommentsPanel({
   onSubmitNew: (text: string) => void
   /** Reply to a comment (anchor shares the parent comment's range) */
   onReply: (parentId: string, text: string) => void
+  /** Replace a comment's or reply's text in place; author, date and anchor stay */
+  onEdit: (id: string, text: string) => void
   /** Resolve/reopen the whole thread */
   onResolve: (id: string, done: boolean) => void
   onCancelNew: () => void
@@ -77,6 +80,8 @@ export const CommentsPanel = memo(function CommentsPanel({
   const draftRef = useRef<HTMLTextAreaElement>(null)
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [replyDraft, setReplyDraft] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
   // Word: resolved comments are collapsed/hidden by default
   const [showResolved, setShowResolved] = useState(false)
 
@@ -94,6 +99,38 @@ export const CommentsPanel = memo(function CommentsPanel({
     setReplyTo(null)
   }
 
+  const startEdit = (c: CommentInfo) => {
+    // the pencil toggles: a second click cancels instead of resetting the draft
+    if (editingId === c.id) {
+      setEditingId(null)
+      return
+    }
+    setEditingId(c.id)
+    setEditDraft(c.text)
+    setReplyTo(null)
+  }
+
+  const submitEdit = () => {
+    const text = editDraft.trim()
+    if (!text || !editingId) return
+    onEdit(editingId, text)
+    setEditingId(null)
+  }
+
+  /** an open edit belongs to this thread (parent or reply) — commit it before the thread collapses away */
+  const flushEditIn = (threadId: string) => {
+    if (!editingId) return
+    if (editingId !== threadId && !repliesOf(threadId).some((r) => r.id === editingId)) return
+    const text = editDraft.trim()
+    if (text) onEdit(editingId, text)
+    setEditingId(null)
+  }
+
+  /** the edited comment is going away — drop the draft with it */
+  const cancelEditIn = (ids: string[]) => {
+    if (editingId && ids.includes(editingId)) setEditingId(null)
+  }
+
   useEffect(() => {
     if (composing) draftRef.current?.focus()
   }, [composing])
@@ -108,51 +145,111 @@ export const CommentsPanel = memo(function CommentsPanel({
   const renderThread = (c: CommentInfo) => {
     const anchor = anchorTexts.get(c.id) ?? ''
     const replies = repliesOf(c.id)
-    return (
-      <div key={c.id} className={`comment-thread ${c.done ? 'resolved' : ''}`}>
-        <button
-          className={`comment-card ${activeId === c.id ? 'active' : ''}`}
-          onClick={() => {
-            setActiveId(c.id)
-            jumpTo(c.id)
+    const head = (
+      <div className="comment-card-head">
+        <span className="comment-avatar">{(c.initials || c.author || '?').slice(0, 2)}</span>
+        <span className="comment-author">{c.author || t('appUnknownAuthor')}</span>
+        <span className="comment-date">{formatDate(c.date)}</span>
+        {c.done && <span className="comment-resolved-badge">{t('appResolved')}</span>}
+        <span
+          className="comment-card-edit"
+          data-tip={t('appEditComment')}
+          role="button"
+          aria-label={t('appEditComment')}
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation()
+            startEdit(c)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.stopPropagation()
+              startEdit(c)
+            }
           }}
         >
-          <div className="comment-card-head">
-            <span className="comment-avatar">{(c.initials || c.author || '?').slice(0, 2)}</span>
-            <span className="comment-author">{c.author || t('appUnknownAuthor')}</span>
-            <span className="comment-date">{formatDate(c.date)}</span>
-            {c.done && <span className="comment-resolved-badge">{t('appResolved')}</span>}
-            <span
-              className="comment-card-del"
-              data-tip={
-                replies.length > 0 ? t('appDeleteCommentWithReplies') : t('appDeleteComment')
-              }
-              role="button"
-              aria-label={t('appDeleteComment')}
-              tabIndex={0}
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete(c.id)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.stopPropagation()
-                  onDelete(c.id)
-                }
-              }}
-            >
-              <IconTrash size={13} />
-            </span>
+          <IconPencil size={13} />
+        </span>
+        <span
+          className="comment-card-del"
+          data-tip={replies.length > 0 ? t('appDeleteCommentWithReplies') : t('appDeleteComment')}
+          role="button"
+          aria-label={t('appDeleteComment')}
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation()
+            cancelEditIn([c.id, ...replies.map((r) => r.id)])
+            onDelete(c.id)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.stopPropagation()
+              cancelEditIn([c.id, ...replies.map((r) => r.id)])
+              onDelete(c.id)
+            }
+          }}
+        >
+          <IconTrash size={13} />
+        </span>
+      </div>
+    )
+    return (
+      <div key={c.id} className={`comment-thread ${c.done ? 'resolved' : ''}`}>
+        {editingId === c.id ? (
+          // editing swaps the clickable card for a plain one: a textarea cannot live inside a button
+          <div className={`comment-card ${activeId === c.id ? 'active' : ''}`}>
+            {head}
+            {anchor && <div className="comment-anchor">“{anchor.slice(0, 60)}”</div>}
+            <div className="comment-reply-compose">
+              <textarea
+                autoFocus
+                value={editDraft}
+                onChange={(e) => setEditDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitEdit()
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+              />
+              <div className="comment-compose-actions">
+                <button onClick={() => setEditingId(null)}>{t('appCancel')}</button>
+                <button className="primary" disabled={!editDraft.trim()} onClick={submitEdit}>
+                  {t('appSave')}
+                </button>
+              </div>
+            </div>
           </div>
-          {anchor && <div className="comment-anchor">“{anchor.slice(0, 60)}”</div>}
-          <div className="comment-text">{c.text}</div>
-        </button>
+        ) : (
+          <button
+            className={`comment-card ${activeId === c.id ? 'active' : ''}`}
+            onClick={() => {
+              setActiveId(c.id)
+              jumpTo(c.id)
+            }}
+          >
+            {head}
+            {anchor && <div className="comment-anchor">“{anchor.slice(0, 60)}”</div>}
+            <div className="comment-text">{c.text}</div>
+          </button>
+        )}
         {replies.map((r) => (
           <div key={r.id} className="comment-reply">
             <div className="comment-card-head">
               <span className="comment-avatar">{(r.initials || r.author || '?').slice(0, 2)}</span>
               <span className="comment-author">{r.author || t('appUnknownAuthor')}</span>
               <span className="comment-date">{formatDate(r.date)}</span>
+              <span
+                className="comment-card-edit"
+                data-tip={t('appEditComment')}
+                aria-label={t('appEditComment')}
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  startEdit(r)
+                }}
+              >
+                <IconPencil size={12} />
+              </span>
               <span
                 className="comment-card-del"
                 data-tip={t('appDeleteReply')}
@@ -161,13 +258,34 @@ export const CommentsPanel = memo(function CommentsPanel({
                 tabIndex={0}
                 onClick={(e) => {
                   e.stopPropagation()
+                  cancelEditIn([r.id])
                   onDelete(r.id)
                 }}
               >
                 <IconTrash size={12} />
               </span>
             </div>
-            <div className="comment-text">{r.text}</div>
+            {editingId === r.id ? (
+              <div className="comment-reply-compose">
+                <textarea
+                  autoFocus
+                  value={editDraft}
+                  onChange={(e) => setEditDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitEdit()
+                    if (e.key === 'Escape') setEditingId(null)
+                  }}
+                />
+                <div className="comment-compose-actions">
+                  <button onClick={() => setEditingId(null)}>{t('appCancel')}</button>
+                  <button className="primary" disabled={!editDraft.trim()} onClick={submitEdit}>
+                    {t('appSave')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="comment-text">{r.text}</div>
+            )}
           </div>
         ))}
         <div className="comment-thread-actions">
@@ -193,7 +311,13 @@ export const CommentsPanel = memo(function CommentsPanel({
           ) : (
             <>
               <button onClick={() => setReplyTo(c.id)}>{t('appReply')}</button>
-              <button onClick={() => onResolve(c.id, !c.done)}>
+              <button
+                onClick={() => {
+                  // resolving collapses the thread and would unmount an open composer: commit first
+                  flushEditIn(c.id)
+                  onResolve(c.id, !c.done)
+                }}
+              >
                 {c.done ? t('appReopen') : t('appResolve')}
               </button>
             </>

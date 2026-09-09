@@ -312,6 +312,8 @@ export const ms = {
     'Buku kerja ini terlalu besar untuk dimuatkan sepenuhnya ke ingatan; penapisan tidak tersedia untuk fail ini.',
   appDialogCancel: 'Batal',
   appPivotSheetNoMove: 'Helaian ini mengandungi Jadual Pangsi — pengalihan julat belum disokong.',
+  appMergeOverTable:
+    'Pilihan bertindih dengan jadual Excel — mencantumkan sel di dalam jadual belum disokong.',
   appTableFilterNoEdit:
     'Penapis helaian ini milik jadual Excel — pengeditannya belum boleh disimpan.',
   appAutofillStreaming: 'AutoIsi ke kawasan yang masih distrim belum dibenarkan.',
@@ -560,6 +562,8 @@ export const ms = {
     'Perubahan nama tertakrif tidak boleh disimpan bersama perubahan baris/lajur atau struktur helaian — simpan dalam dua langkah.',
   appSaveErrChangedOnDisk:
     'Fail telah diubah pada cakera oleh program lain — penyimpanan dihentikan; buka semula fail dan cuba lagi.',
+  appSaveErrTargetLocked:
+    'Fail tidak dapat diganti — nampaknya dikunci oleh program lain (dibuka dalam Excel, atau sedang diimbas/disegerak). Tutup di sana dan simpan semula.',
   appSaveErrStylesheetLimited:
     'Helaian gaya buku kerja ini kekurangan struktur asas; perubahan gaya tidak boleh disimpan.',
   appSaveErrPackageGuard:

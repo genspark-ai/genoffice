@@ -110,7 +110,9 @@ function authoredInkBoxes(extracted: ExtractedPage): Rect[] {
   for (const c of extracted.chars) {
     if (!c.isGenerated && !c.invisible && c.text.trim() !== '') boxes.push(c.box)
   }
-  for (const img of extracted.images) boxes.push(img.box)
+  // rasterized pattern fills (P35) are neutral: authored as a path, emitted
+  // as an image — counting them page-wide would hide dropped foreground art
+  for (const img of extracted.images) if (!img.synthetic) boxes.push(img.box)
   for (const p of extracted.paths) {
     if (!p.filled || (p.fillAlpha ?? 255) < 128 || isNearWhiteHex(p.fillColor)) continue
     for (const sub of p.subpaths) {
@@ -136,7 +138,10 @@ function authoredInkBoxes(extracted: ExtractedPage): Rect[] {
 function emittedInkBoxes(page: IrPage): Rect[] {
   if (page.render) return [{ x0: 0, y0: 0, x1: page.widthPt, y1: page.heightPt }]
   const boxes: Rect[] = []
-  for (const b of page.blocks) boxes.push(b.box)
+  for (const b of page.blocks) {
+    if (b.kind === 'image' && b.synthetic) continue
+    boxes.push(b.box)
+  }
   for (const panel of page.bgPanels ?? []) boxes.push(panel.box)
   return boxes
 }
@@ -201,6 +206,10 @@ export function stitchCrossPageParagraphs(pages: IrPage[]): void {
     const cur = pages[i]!
     if (prev.scanned || prev.degraded || prev.canvas) continue
     if (cur.scanned || cur.degraded || cur.canvas) continue
+    // page-pinned art (background render / panels) anchors on the page's first
+    // paragraph: stitched, that anchor flows onto the PREVIOUS page and the
+    // art lands there (a dark page turns white) — such boundaries stay hard
+    if (prev.bgRender || cur.bgRender || prev.bgPanels?.length || cur.bgPanels?.length) continue
     // multi-column pages paginate per column — boundary evidence is ambiguous
     if ((prev.sections?.length ?? 0) > 1 || (cur.sections?.length ?? 0) > 1) continue
     if (prev.sections?.some((s) => s.columns.length > 1)) continue

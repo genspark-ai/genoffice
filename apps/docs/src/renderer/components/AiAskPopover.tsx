@@ -15,6 +15,7 @@ import { NodeSelection } from '@tiptap/pm/state'
 import { CellSelection } from '@tiptap/pm/tables'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { AI_QUEUE_ANCHOR_CLICK, queueAnchorRange } from '../editor/ai-queue-anchors'
+import { setInactiveSelectionShown } from '../editor/inactive-selection'
 import {
   EDIT_INSTRUCTION_MAX,
   EDIT_QUEUE_MAX,
@@ -201,7 +202,8 @@ export function AiAskPopover({
   const close = useCallback(() => {
     setOpen(null)
     setText('')
-  }, [])
+    setInactiveSelectionShown(editor, false)
+  }, [editor])
 
   /** outside click keeps whatever was typed: a new note lands in the queue, an edit is saved */
   const commitOrClose = useCallback(() => {
@@ -224,11 +226,13 @@ export function AiAskPopover({
     return () => document.removeEventListener('pointerdown', onPointerDown, true)
   }, [open, commitOrClose])
 
+  // the input takes the DOM selection with it: keep the targeted range visible while the popover is open
   const openFromSelection = () => {
     setText('')
     setKind(selectionKind(editor))
     setOpen({ mode: 'new' })
     setTrigger(null)
+    setInactiveSelectionShown(editor, true)
   }
 
   const canSubmit = text.trim().length > 0

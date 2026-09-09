@@ -1230,6 +1230,40 @@ describe('computeSectionedSlicesF2 — line-level pagination', () => {
     expect(slices[1].start).toBe(120) // heading pushed together with the body
   })
 
+  it('keepNext heading whose anchor row cannot share any page still moves whole', () => {
+    // the chain + anchor demand exceeds a fresh page (a table head row taller
+    // than the page), so the keepNext constraint is dropped; the heading must
+    // then place like any block instead of being cut by the page bottom
+    const before = block(0, 180)
+    const heading = lineBlock(180, [30], { keepNext: true, keepLines: true })
+    const table = block(210, 400, {
+      tableRows: [
+        { height: 250, contentBottom: 0 },
+        { height: 150, contentBottom: 0 },
+      ],
+    })
+    const slices = computeSectionedSlicesF2([before, heading, table], geoms1, 610)
+    expect(slices[1].start).toBe(180)
+  })
+
+  it('keepNext heading demands the footnote separator its table anchor will open', () => {
+    // heading (30) + head row (20) + its notes (30) fit the 200px page by 10px,
+    // but the row's notes also open the 16px separator strip; the heading must
+    // move with the table instead of staying orphaned at the page bottom
+    const before = block(0, 110)
+    const heading = lineBlock(110, [30], { keepNext: true, keepLines: true })
+    const table = block(140, 130, {
+      footnoteExtraPx: 30,
+      tableRows: [
+        { height: 20, contentBottom: 0, notesPx: 30 },
+        { height: 80, contentBottom: 0 },
+      ],
+    })
+    const slices = computeSectionedSlicesF2([before, heading, table], geoms1, 270)
+    expect(slices.length).toBe(2)
+    expect(slices[1].start).toBe(110)
+  })
+
   it('keepLines without keepNext stays at the page bottom (no chain push)', () => {
     const before = block(0, 120)
     const kl = lineBlock(120, [60], { keepLines: true })

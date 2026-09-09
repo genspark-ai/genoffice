@@ -1,6 +1,7 @@
 import type { RenderNode } from '@genoffice/pptx-render'
 import { describe, expect, it } from 'vitest'
 import {
+  autoContextTabForElement,
   contextElementTypeForNode,
   contextTabForElement,
 } from '../src/renderer/components/context-tabs'
@@ -30,6 +31,16 @@ describe('slides contextual ribbon tabs', () => {
     expect(contextElementTypeForNode(textShape)).toBe('textShape')
     expect(contextElementTypeForNode(emptyTextShape)).toBe('shape')
     expect(contextElementTypeForNode(textGroup)).toBe('textShape')
+  })
+
+  it('auto-switches for dedicated object tools but only reveals the shape tab', () => {
+    expect(autoContextTabForElement('picture')).toBe('pictureFormat')
+    expect(autoContextTabForElement('mixed')).toBe('pictureFormat')
+    expect(autoContextTabForElement('table')).toBe('tableDesign')
+    expect(autoContextTabForElement('chart')).toBe('chartDesign')
+    expect(autoContextTabForElement('shape')).toBeNull()
+    expect(autoContextTabForElement('textShape')).toBeNull()
+    expect(autoContextTabForElement(null)).toBeNull()
   })
 
   it('does not expose a contextual tab without a supported selection', () => {

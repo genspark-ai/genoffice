@@ -3,6 +3,7 @@
 /// requests; browser-like headers plus a Referer on genspark hosts and a couple
 /// of retries turn most of those transient failures into successful inserts.
 
+import { readGeneratedImage } from './generated-images'
 import { fetchWithSsrfGuard, type FetchWithSsrfGuardOptions } from './safe-remote-url'
 
 const RETRY_DELAYS_MS: readonly number[] = [500, 1500]
@@ -39,6 +40,15 @@ export async function fetchRemoteImage(
   } = {},
 ): Promise<Response | null> {
   const { retryDelaysMs = RETRY_DELAYS_MS, ...guardOptions } = options
+  // BYOK-generated images live in the local store; only its own files resolve
+  if (rawUrl.startsWith('file:')) {
+    const local = readGeneratedImage(rawUrl)
+    if (!local) return null
+    return new Response(new Uint8Array(local.bytes), {
+      status: 200,
+      headers: { 'content-type': local.mime, 'content-length': String(local.bytes.byteLength) },
+    })
+  }
   const headers = remoteImageHeaders(rawUrl)
   for (let attempt = 0; ; attempt++) {
     let resp: Response | null = null

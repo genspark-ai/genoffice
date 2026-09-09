@@ -119,6 +119,7 @@ export const zh = {
   aiSumCreateDocument: '新建文档',
   aiSumCreatedDocument: '已创建 {name}',
   aiSumReplaceContent: '替换内容',
+  aiSumReplaceSelection: '替换选中文字',
   aiSumReplacedBlocks: '替换块 {start}-{end}',
   aiSumInsertChart: '插入图表',
   aiSumInsertedChart: '插入图表「{title}」',

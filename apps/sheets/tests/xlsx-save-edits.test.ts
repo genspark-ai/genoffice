@@ -1,3 +1,4 @@
+import { CellValueType } from '@univerjs/core'
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
@@ -8,6 +9,7 @@ import {
   type CellEdit,
 } from '../src/gateway/xlsx-gateway'
 import { blankXlsxBuffer } from '../src/gateway/csv-import'
+import { createEditJournal, recordSetRangeValues, toSaveEdits } from '../src/renderer/edit-journal'
 import { buildEditFixture } from './fixture-builder'
 
 describe('toA1Address', () => {
@@ -96,6 +98,16 @@ describe('applyCellEditsToXlsx', () => {
     ])
     expect(worksheet).toContain('<c r="A10" t="b"><v>1</v></c>')
     expect(worksheet).toContain('<c r="B10"><v>3.5</v></c>')
+  })
+
+  it('saves a journaled copy of a TRUE cell as t="b", not the number 1', async () => {
+    // The copy_range write reaches the journal as Univer's {v: 1, t: BOOLEAN}.
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-1', { 0: { 1: { v: 1, t: CellValueType.BOOLEAN } } })
+    const [saved] = toSaveEdits(journal)
+    if (!saved) throw new Error('no journal entry')
+    const worksheet = await editedWorksheet([edit(saved.row, saved.column, { value: saved.value })])
+    expect(worksheet).toContain('<c r="B1" t="b"><v>1</v></c>')
   })
 
   it('fails closed when the sheet does not exist', async () => {

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { closeSync, openSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
-import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises'
+import { copyFile, mkdir, mkdtemp, rename, rm, stat, unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 
 import { z } from 'zod'
 
@@ -361,7 +361,101 @@ export function assertManifestPreserved(
   }
 }
 
-async function promoteFileAtomically(temporaryPath: string, path: string): Promise<void> {
+/** Transient Windows codes: antivirus/indexer/cloud sync briefly locks a path. */
+const RETRYABLE_RENAME_CODES = new Set(['EPERM', 'EACCES', 'EBUSY'])
+const RENAME_RETRIES = 4
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/**
+ * Same-directory temp + rename keeps the save atomic. Windows refuses the
+ * rename with EPERM/EACCES/EBUSY while antivirus, search indexing, or cloud
+ * sync briefly holds either path (alpha: "EPERM: operation not permitted,
+ * rename .tmp.xlsx → …") — retry with backoff, then fall back to copying the
+ * finished bytes over the target in place; the temp file survives until the
+ * copy lands. The in-place copy truncates the target before writing, so the
+ * target is backed up first and restored if the copy dies halfway (the caller
+ * deletes the temp on failure). A persistent lock (the workbook is open in
+ * Excel) still fails: surface an actionable message instead of the raw errno,
+ * keyed by a stable substring for the renderer's save-error localization table.
+ */
+export async function promoteFileAtomically(temporaryPath: string, path: string): Promise<void> {
   await syncFileBestEffort(temporaryPath)
-  await rename(temporaryPath, path)
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(temporaryPath, path)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? ''
+      if (!RETRYABLE_RENAME_CODES.has(code)) throw error
+      if (attempt >= RENAME_RETRIES) break
+      await sleep(50 * 2 ** attempt)
+    }
+  }
+  await copyOverLockedTarget(temporaryPath, path)
+  await unlink(temporaryPath).catch(() => {})
+}
+
+const lockedTargetError = (path: string, cause: unknown) =>
+  new Error(`The save target is locked by another program: ${path}`, { cause })
+
+async function copyOverLockedTarget(temporaryPath: string, path: string): Promise<void> {
+  const before = await stat(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return null
+    throw error
+  })
+  const backup = before ? join(tmpdir(), recoveredName(path, randomUUID())) : null
+  if (backup) {
+    try {
+      await copyFile(path, backup)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? ''
+      throw RETRYABLE_RENAME_CODES.has(code) ? lockedTargetError(path, error) : error
+    }
+  }
+  try {
+    await copyFile(temporaryPath, path)
+  } catch (error) {
+    if (backup && before) {
+      const after = await stat(path).catch(() => null)
+      const untouched = after?.size === before.size && after?.mtimeMs === before.mtimeMs
+      const restored =
+        untouched ||
+        (await copyFile(backup, path).then(
+          () => true,
+          () => false,
+        ))
+      if (!restored) {
+        // deliberately not matched by the renderer's localization table so
+        // the surviving path reaches the user verbatim
+        const survivor = await preserveBackup(backup, path)
+        throw new Error(
+          `The save target ${path} could not be restored after a failed save; the previous workbook contents were preserved at: ${survivor}`,
+          { cause: error },
+        )
+      }
+      await unlink(backup).catch(() => {})
+    }
+    const code = (error as NodeJS.ErrnoException).code ?? ''
+    throw RETRYABLE_RENAME_CODES.has(code) ? lockedTargetError(path, error) : error
+  }
+  if (backup) await unlink(backup).catch(() => {})
+}
+
+/** Openable as a workbook wherever it ends up: keeps the name and extension. */
+const recoveredName = (path: string, tag: string) => {
+  const ext = extname(path)
+  return `${basename(path, ext)}.recovered-${tag}${ext}`
+}
+
+/** Move the backup next to the workbook (temp dirs get swept); keep it where it is if that fails too. */
+async function preserveBackup(backup: string, path: string): Promise<string> {
+  const recovered = join(dirname(path), recoveredName(path, String(Date.now())))
+  try {
+    await copyFile(backup, recovered)
+  } catch {
+    return backup
+  }
+  await unlink(backup).catch(() => {})
+  return recovered
 }

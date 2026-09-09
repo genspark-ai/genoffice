@@ -326,6 +326,8 @@ export const ja = {
   appDialogCancel: 'キャンセル',
   appPivotSheetNoMove:
     'このシートにはピボットテーブルが含まれています — 範囲の移動には未対応です。',
+  appMergeOverTable:
+    '選択範囲が Excel テーブルと重なっています — テーブル内のセル結合は現時点では対応していません。',
   appTableFilterNoEdit:
     'このシートのフィルターは Excel テーブルに属しています — 編集内容は現時点では保存できません。',
   appAutofillStreaming: 'ストリーミング読み込み中の範囲へのオートフィルはまだ許可されていません。',
@@ -591,6 +593,8 @@ export const ja = {
     '定義された名前の変更は行/列やシート構造の変更と一緒に保存できません — 2 回に分けて保存してください。',
   appSaveErrChangedOnDisk:
     'ファイルがディスク上で別のプログラムに変更されました — 保存を中止しました。開き直してからやり直してください。',
+  appSaveErrTargetLocked:
+    'ファイルを置き換えられませんでした。別のプログラム（Excel で開いている、同期・ウイルススキャン中など）にロックされているようです。閉じてから再度保存してください。',
   appSaveErrStylesheetLimited:
     'このブックのスタイルシートには基本構造が欠けているため、スタイルの変更を保存できません。',
   appSaveErrPackageGuard:

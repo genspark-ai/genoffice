@@ -103,6 +103,13 @@ export const strings = {
     ...editorStrings.pl,
     ...aiStrings.pl,
   },
+  cs: {
+    ...appStrings.cs,
+    ...ribbonStrings.cs,
+    ...tableStrings.cs,
+    ...editorStrings.cs,
+    ...aiStrings.cs,
+  },
   nl: {
     ...appStrings.nl,
     ...ribbonStrings.nl,

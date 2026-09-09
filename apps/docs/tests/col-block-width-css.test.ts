@@ -13,15 +13,14 @@ import { describe, expect, it } from 'vitest'
 const css = readFileSync(join(__dirname, '../src/renderer/styles.css'), 'utf8')
 
 describe('doc-col-block width on floating wrappers', () => {
-  it.each(['.doc-col-block.doc-protected-floating', '.doc-col-block.doc-img-float'])(
-    '%s honors the section-width decoration',
-    (sel) => {
-      const m = css.match(
-        new RegExp(`\\.doc-page ${sel.replace(/[.]/g, '\\$&')}[^{]*\\{([^}]*)\\}`),
-      )
-      expect(m, `rule for ${sel}`).toBeTruthy()
-      expect(m![1]).toContain('width: var(--col-w, 100%)')
-      expect(m![1]).toContain('max-width: var(--col-w, 100%)')
-    },
-  )
+  it.each([
+    '.doc-col-block.doc-protected-floating',
+    '.doc-col-block.doc-img-float',
+    '.doc-col-block.doc-protected-wrapside',
+  ])('%s honors the section-width decoration', (sel) => {
+    const m = css.match(new RegExp(`\\.doc-page ${sel.replace(/[.]/g, '\\$&')}[^{]*\\{([^}]*)\\}`))
+    expect(m, `rule for ${sel}`).toBeTruthy()
+    expect(m![1]).toContain('width: var(--col-w, 100%)')
+    expect(m![1]).toContain('max-width: var(--col-w, 100%)')
+  })
 })

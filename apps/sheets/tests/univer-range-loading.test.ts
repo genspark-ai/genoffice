@@ -160,7 +160,7 @@ describe('loadWorkbookSkeleton', () => {
     })
   })
 
-  it('maps an unfrozen axis to the -1 sentinel on open (issue #196)', () => {
+  it('maps an unfrozen axis to the -1 sentinel on open', () => {
     const openWithFreeze = (freeze: { frozenRows: number; frozenColumns: number } | null) => {
       const created: Array<{ sheets: Record<string, { freeze?: unknown }> }> = []
       const runtime = {
@@ -198,8 +198,6 @@ describe('loadWorkbookSkeleton', () => {
       return created[0]?.sheets['sheet-1'] as { freeze?: unknown }
     }
 
-    // Rows-only and columns-only freezes keep -1 on the unfrozen axis, matching
-    // the in-app freeze commands; a literal 0 start misaligns the viewport.
     expect(openWithFreeze({ frozenRows: 1, frozenColumns: 0 }).freeze).toEqual({
       xSplit: 0,
       ySplit: 1,

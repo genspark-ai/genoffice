@@ -581,6 +581,11 @@ impl WorkbookSession {
         } else {
             None
         };
+        let auto_filter_columns = if indexing_complete {
+            index.auto_filter_columns.clone()
+        } else {
+            Vec::new()
+        };
         let data_validations = if indexing_complete {
             index.data_validations.clone()
         } else {
@@ -650,6 +655,7 @@ impl WorkbookSession {
             hyperlinks,
             conditional_rules,
             auto_filter,
+            auto_filter_columns,
             data_validations,
             sheet_protection,
             row_breaks,
@@ -723,6 +729,7 @@ struct SheetIndex {
     hyperlinks: Vec<HyperlinkRecord>,
     conditional_rules: Vec<ConditionalRule>,
     auto_filter: Option<MergedRange>,
+    auto_filter_columns: Vec<FilterColumnCriteria>,
     data_validations: Vec<DataValidationRule>,
     sheet_protection: Option<SheetProtectionInfo>,
     row_breaks: Vec<usize>,

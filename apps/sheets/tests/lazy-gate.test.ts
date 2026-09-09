@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { lazyGateError, proposeOperations, type PlanContext } from '../src/renderer/plan-operations'
+import {
+  lazyGateError,
+  lazyGateFailure,
+  proposeOperations,
+  type PlanContext,
+} from '../src/renderer/plan-operations'
 import type { LazyWorkbookState } from '../src/renderer/univer-state'
 import type { WorkbookOperation } from '../src/domain/workbook-dsl'
 
@@ -39,6 +44,21 @@ function lazyState(overrides: Record<string, unknown> = {}): LazyWorkbookState {
   } as unknown as LazyWorkbookState
 }
 
+/// sh1 carries a file table over A1:D6 (0-based rows 0-5, columns 0-3).
+function tableState(): LazyWorkbookState {
+  const state = lazyState()
+  ;(state.file.sheets[0] as { tables?: unknown[] }).tables = [
+    {
+      name: 'Form_Responses',
+      range: { startRow: 0, endRow: 5, startColumn: 0, endColumn: 3 },
+      headerRowCount: 1,
+      showRowStripes: true,
+      showColumnStripes: false,
+    },
+  ]
+  return state
+}
+
 describe('lazyGateError', () => {
   it.each(['insert_rows', 'delete_rows'] as const)(
     'blocks %s on a pivot sheet and names it',
@@ -58,6 +78,68 @@ describe('lazyGateError', () => {
       range: 'D8:E9',
     })
     expect(error).toContain('PivotTable')
+  })
+
+  it('blocks merges that overlap a table and names it for the ribbon', () => {
+    const state = tableState()
+    const gate = lazyGateFailure(state, { op: 'merge_cells', sheetId: 'sh1', range: 'B2:C3' })
+    expect(gate?.reason).toContain('table "Form_Responses"')
+    expect(gate?.messageKey).toBe('appMergeOverTable')
+    // touching the table's last row/column still counts as inside
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'D6:E7' })).toContain(
+      'Form_Responses',
+    )
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'F8:G9' })).toBeNull()
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'A7:D8' })).toBeNull()
+    expect(lazyGateError(state, { op: 'unmerge_cells', sheetId: 'sh1', range: 'B2:C3' })).toBeNull()
+  })
+
+  it('checks file tables at their post-structural-edit coordinates', () => {
+    const state = tableState()
+    state.editJournal.structuralOps.set('sh1', [{ kind: 'insert-rows', index: 0, count: 2 }])
+    // the table now sits on A3:D8: its old top rows are plain cells
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'A1:D2' })).toBeNull()
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'B7:C8' })).toContain(
+      'Form_Responses',
+    )
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'A9:D9' })).toBeNull()
+  })
+
+  it('keeps rows inserted inside a table in the gate after the original lines are deleted', () => {
+    const state = tableState()
+    // insert 2 rows inside the table (rows 2-3), then delete the original rows
+    // 2-5 that now sit at 4-7: the table survives on A1:D4 with the inserted rows
+    state.editJournal.structuralOps.set('sh1', [
+      { kind: 'insert-rows', index: 2, count: 2 },
+      { kind: 'remove-rows', index: 4, count: 4 },
+    ])
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'B3:C4' })).toContain(
+      'Form_Responses',
+    )
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'A5:D5' })).toBeNull()
+  })
+
+  it('blocks merges over a table added this session', () => {
+    const state = lazyState({
+      editJournal: {
+        cells: new Map(),
+        structuralOps: new Map(),
+        sheets: { added: new Set(), removed: new Set() },
+        visualAdds: [],
+        tableAdds: [
+          {
+            sheetId: 'sh1',
+            name: 'Added1',
+            area: { startRow: 0, endRow: 3, startColumn: 0, endColumn: 1 },
+            columnNames: ['a', 'b'],
+          },
+        ],
+      },
+    })
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'A1:B1' })).toContain(
+      'Added1',
+    )
+    expect(lazyGateError(state, { op: 'merge_cells', sheetId: 'sh1', range: 'C1:D1' })).toBeNull()
   })
 
   it('blocks filter ops until the workbook is fully loaded', () => {
@@ -252,6 +334,19 @@ describe('proposeOperations: gate rejection (lazy workbook)', () => {
     const outcome = propose(lazyState(), { op: 'merge_cells', sheetId: 'sh2', range: 'D8:E9' })
     expect(outcome.ok).toBe(false)
     if (!outcome.ok) expect(outcome.error).toContain('PivotTable')
+  })
+
+  it('rejects the whole merge-and-center batch when the merge overlaps a table', () => {
+    const outcome = proposeOperations(
+      lazyContext(tableState()),
+      [
+        { op: 'merge_cells', sheetId: 'sh1', range: 'B2:C3' },
+        { op: 'format_range', sheetId: 'sh1', range: 'B2', format: { horizontalAlign: 'center' } },
+      ],
+      'test',
+    )
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('Form_Responses')
   })
 
   it('rejects filter ops while the workbook is still loading', () => {

@@ -332,6 +332,8 @@ export const de = {
   appDialogCancel: 'Abbrechen',
   appPivotSheetNoMove:
     'Dieses Blatt enthält eine PivotTable — das Verschieben von Bereichen wird noch nicht unterstützt.',
+  appMergeOverTable:
+    'Die Auswahl überschneidet sich mit einer Excel-Tabelle — das Verbinden von Zellen in einer Tabelle wird noch nicht unterstützt.',
   appTableFilterNoEdit:
     'Der Filter dieses Blatts gehört zu einer Excel-Tabelle — seine Bearbeitung kann noch nicht gespeichert werden.',
   appAutofillStreaming:
@@ -603,6 +605,8 @@ export const de = {
     'Änderungen an definierten Namen können nicht zusammen mit Zeilen-/Spalten- oder Blattstrukturänderungen gespeichert werden — speichern Sie in zwei Schritten.',
   appSaveErrChangedOnDisk:
     'Die Datei wurde auf dem Datenträger von einem anderen Programm geändert — Speichern abgebrochen; öffnen Sie die Datei erneut und versuchen Sie es noch einmal.',
+  appSaveErrTargetLocked:
+    'Die Datei konnte nicht ersetzt werden — sie scheint von einem anderen Programm gesperrt zu sein (in Excel geöffnet oder wird gescannt/synchronisiert). Schließen Sie sie dort und speichern Sie erneut.',
   appSaveErrStylesheetLimited:
     'Dem Stylesheet dieser Arbeitsmappe fehlt die Grundstruktur; Stiländerungen können nicht gespeichert werden.',
   appSaveErrPackageGuard:

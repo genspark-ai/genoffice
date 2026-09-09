@@ -57,6 +57,7 @@ export function ColorDropdown({
   auto,
   disabled,
   portal,
+  split,
   onPick,
 }: {
   /// aria-label of the trigger
@@ -71,6 +72,9 @@ export function ColorDropdown({
   readonly disabled?: boolean
   /// render the panel in a body portal (for transformed/clipping hosts)
   readonly portal?: boolean
+  /// Excel split button: the glyph applies the current color, a separate
+  /// caret opens the palette (ribbon color tools)
+  readonly split?: boolean
   readonly onPick: (hex: string | null) => void
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
@@ -96,20 +100,48 @@ export function ColorDropdown({
     }
   }, [open])
   return (
-    <div ref={wrapRef} className="menu-select">
+    <div ref={wrapRef} className={`menu-select${split ? ' color-split' : ''}`}>
       <button
         type="button"
         className={display ? 'color-tool' : 'color-well'}
         data-tip={tip}
         aria-label={label}
-        aria-haspopup="dialog"
-        aria-expanded={open}
+        aria-haspopup={split ? undefined : 'dialog'}
+        aria-expanded={split ? undefined : open}
         disabled={disabled}
         style={display ? undefined : { background: value }}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (split ? onPick(value) : setOpen((v) => !v))}
       >
         {display}
       </button>
+      {split && (
+        <button
+          type="button"
+          className={`color-tool-caret${open ? ' is-active' : ''}`}
+          aria-label={`${label} options`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          disabled={disabled}
+          onClick={() => setOpen((v) => !v)}
+        >
+          <svg
+            className="chev"
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M5.5 9.25 12 15.75l6.5-6.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
       {open &&
         (() => {
           const picker = (

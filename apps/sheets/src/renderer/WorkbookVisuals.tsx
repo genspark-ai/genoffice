@@ -22,6 +22,7 @@ import { oleCaption, oleFrameStyle, oleRenderKind } from './ole-visual'
 import { VisualDeleteButton } from './VisualDeleteButton'
 import { shouldShowVisualDeleteButton } from './visual-delete-button'
 import type { WorkbookChartEdit, WorkbookFile, WorkbookVisualObject } from '../shared/desktop-api'
+import { shapeRunFontSize, shapeTextOverflowClass, shapeTextScaleStyle } from './shape-text-scale'
 
 type UniverRuntime = ReturnType<typeof createUniver>
 type ActiveWorkbook = NonNullable<ReturnType<UniverRuntime['univerAPI']['getActiveWorkbook']>>
@@ -482,6 +483,9 @@ function WorkbookVisual({
   }
   if (visual.kind === 'ole') {
     return <OleVisual file={file} visual={visual} />
+  }
+  if (visual.kind === 'slicer') {
+    return <SlicerVisual visual={visual} />
   }
   return <ShapeVisual file={file} visual={visual} frame={frame} />
 }
@@ -1099,6 +1103,7 @@ function EditableShapeVisual({
       {textEditing && (
         <div
           className="shape-text-editor"
+          style={shapeTextScaleStyle(frame?.width)}
           contentEditable
           suppressContentEditableWarning
           role="textbox"
@@ -1280,6 +1285,7 @@ function ShapeVisual({
       .join('\n') === (visual.text ?? '')
       ? visual.paragraphs
       : undefined
+  const overflowClass = shapeTextOverflowClass(visual.textVertOverflow, visual.textHorzOverflow)
   const transforms: string[] = []
   if (visual.rotation) transforms.push(`rotate(${visual.rotation}deg)`)
   if (!isStraightLine && (visual.flipH || visual.flipV)) {
@@ -1367,7 +1373,7 @@ function ShapeVisual({
       </svg>
       {paragraphs ? (
         <span
-          className={`shape-text shape-text-rich shape-anchor-${visual.textAnchor ?? 'ctr'}`}
+          className={`shape-text shape-text-rich shape-anchor-${visual.textAnchor ?? 'ctr'}${overflowClass}`}
           style={visual.textColor ? { color: visual.textColor } : undefined}
         >
           {paragraphs.map((paragraph, index) => (
@@ -1395,7 +1401,7 @@ function ShapeVisual({
                         ...(run.bold ? { fontWeight: 700 } : {}),
                         ...(run.italic ? { fontStyle: 'italic' } : {}),
                         ...(run.underline ? { textDecoration: 'underline' } : {}),
-                        ...(run.size ? { fontSize: `${run.size}pt` } : {}),
+                        ...(run.size ? { fontSize: shapeRunFontSize(run.size) } : {}),
                       }}
                     >
                       {run.text}
@@ -1407,7 +1413,7 @@ function ShapeVisual({
       ) : (
         visual.text && (
           <span
-            className="shape-text"
+            className={`shape-text${overflowClass}`}
             style={visual.textColor ? { color: visual.textColor } : undefined}
           >
             {visual.text}
@@ -1427,7 +1433,10 @@ function ShapeVisual({
           }
         : { width: '100cqh', height: '100cqw' }
     return (
-      <div className="xlsx-shape-drawn xlsx-shape-rotated">
+      <div
+        className="xlsx-shape-drawn xlsx-shape-rotated"
+        style={shapeTextScaleStyle(frame?.width)}
+      >
         <div
           className="xlsx-shape-rotated-inner"
           style={{ ...size, transform: ['translate(-50%, -50%)', ...transforms].join(' ') }}
@@ -1440,7 +1449,10 @@ function ShapeVisual({
   return (
     <div
       className="xlsx-shape-drawn"
-      style={transforms.length ? { transform: transforms.join(' ') } : undefined}
+      style={{
+        ...shapeTextScaleStyle(frame?.width),
+        ...(transforms.length ? { transform: transforms.join(' ') } : {}),
+      }}
     >
       {content}
     </div>
@@ -1593,8 +1605,20 @@ function OleVisual({
   )
 }
 
+/// Slicer controls are not rendered; the frame and caption header keep
+/// Excel's footprint so the surrounding layout reads the same.
+function SlicerVisual({ visual }: { readonly visual: WorkbookVisualObject }): React.JSX.Element {
+  const caption = visual.text ?? visual.name ?? ''
+  return (
+    <div className="xlsx-slicer-placeholder" role="img" aria-label={caption} title={caption}>
+      <div className="xlsx-slicer-caption">{caption}</div>
+    </div>
+  )
+}
+
 type ChartMetadata = NonNullable<WorkbookVisualObject['chart']>
 type ChartSeries = ChartMetadata['series'][number]
+type PointLabel = NonNullable<ChartSeries['pointLabels']>[number]
 
 const CHART_TYPE_OPTIONS = [
   { value: 'column', labelKey: 'appChartColumn' },
@@ -1844,7 +1868,9 @@ function ChartVisual({
     max: valueAxisSide?.max ?? chart.valueAxis?.max,
     majorUnit: valueAxisSide?.majorUnit,
     numFmt: valueAxisSide?.numFmt,
+    hidden: valueAxisSide?.hidden === true,
   }
+  const categoryAxisHidden = (isHorizontalBar ? chart.yAxis : chart.xAxis)?.hidden === true
   return (
     <figure
       className="xlsx-chart"
@@ -1952,6 +1978,7 @@ function ChartVisual({
             gridlines={chart.gridlines}
             valueAxis={valueScaleInput}
             categoryFormat={categoryFormat}
+            categoryHidden={categoryAxisHidden}
             onElement={selectElement}
             selectedEl={selectedEl}
           />
@@ -1964,6 +1991,7 @@ function ChartVisual({
             gridlines={chart.gridlines}
             valueAxis={valueScaleInput}
             categoryFormat={categoryFormat}
+            categoryHidden={categoryAxisHidden}
             lineMarkers={chart.lineMarkers}
             dispBlanksAs={chart.dispBlanksAs}
             onElement={selectElement}
@@ -1987,6 +2015,7 @@ function ChartVisual({
             gapWidthPct={chart.gapWidthPct}
             categoryFormat={categoryFormat}
             categoryReversed={(isHorizontalBar ? chart.yAxis : chart.xAxis)?.reversed === true}
+            categoryHidden={categoryAxisHidden}
             lineMarkers={chart.lineMarkers}
             dispBlanksAs={chart.dispBlanksAs}
             onElement={selectElement}
@@ -2413,7 +2442,7 @@ function SeriesLegend({
   )
 }
 
-function BarChart({
+export function BarChart({
   seriesList,
   seriesIndices,
   categorySeries,
@@ -2430,6 +2459,7 @@ function BarChart({
   gapWidthPct,
   categoryFormat,
   categoryReversed,
+  categoryHidden = false,
   lineMarkers,
   dispBlanksAs,
   onElement,
@@ -2448,6 +2478,7 @@ function BarChart({
   /// c:catAx orientation maxMin — categories read top-down (bar) /
   /// right-to-left (column) instead of Excel's minMax default.
   readonly categoryReversed?: boolean | undefined
+  readonly categoryHidden?: boolean | undefined
   readonly axisTitles?: ChartAxisTitles
   readonly dataLabels?: ChartDataLabels
   readonly dataLabelPosition?: ChartLabelPosition
@@ -2530,10 +2561,31 @@ function BarChart({
         onElement({ kind: 'value-axis' })
       }
     : undefined
+  // Excel resolves labels per series (own dLbls, else the plot's), and a
+  // per-point showVal/delete overrides both; a layout-only dLbl inherits.
+  // Single-series charts with no dLbls at all keep the auto labels.
+  const autoLabels =
+    !isStacked && dataLabels === undefined && visibleCount <= 12 && seriesList.length === 1
+  const pointLabel = (series: ChartSeries, index: number): PointLabel | undefined =>
+    series.pointLabels?.find((label) => label.index === index)
+  const showsLabel = (series: ChartSeries, index: number): boolean =>
+    pointLabel(series, index)?.showVal ??
+    (autoLabels || (series.dataLabels ?? dataLabels) === 'value')
+  // manualLayout x/y are fractions of the chart space (the 600x320 viewBox).
+  const labelOffset = (series: ChartSeries, index: number): { dx: number; dy: number } => {
+    const label = pointLabel(series, index)
+    return { dx: (label?.offsetX ?? 0) * 600, dy: (label?.offsetY ?? 0) * 320 }
+  }
+  // Stacked segments start where the previous series' segments end.
+  const stackBase = (seriesIndex: number, index: number): number =>
+    seriesList.slice(0, seriesIndex).reduce((sum, _, before) => sum + segment(before, index), 0)
 
   if (isHorizontal) {
     const rowHeight = 270 / visibleCount
-    const rowGroups = visibleCategoryGroups(primary.categoryGroups, visibleCount)
+    const rowGroups = visibleCategoryGroups(
+      categoryHidden ? undefined : primary.categoryGroups,
+      visibleCount,
+    )
     // The outer tier owns the x ≤ 99 column; tick labels (end-anchored at
     // 148) shrink so the two never share pixels.
     const categoryBudget = rowGroups.length > 0 ? 8 : 14
@@ -2554,33 +2606,33 @@ function BarChart({
     const plotX = (value: number): number =>
       158 + Math.max(0, Math.min(1, (value - bounds.min) / (bounds.max - bounds.min || 1))) * 390
     const labelFor = (
-      value: number,
+      series: ChartSeries,
+      seriesIndex: number,
+      index: number,
       y: number,
-      numberFormat?: string,
     ): React.JSX.Element | null => {
-      const width = norm(value) * 390
-      const inside = dataLabelPosition === 'center' || dataLabelPosition === 'inside-end'
-      const x =
-        dataLabelPosition === 'center'
-          ? 158 + width / 2
-          : dataLabelPosition === 'inside-end'
-            ? 154 + width
-            : 164 + width
+      const value = series.values[index] ?? 0
+      const { dx, dy } = labelOffset(series, index)
+      // Stacked segments center their label (Excel's default); the white
+      // fill only helps while the label still sits on its own bar.
+      const centered = isStacked || dataLabelPosition === 'center'
+      const inside = centered || dataLabelPosition === 'inside-end'
+      const width = isStacked ? segment(seriesIndex, index) * 390 : norm(value) * 390
+      const start = 158 + (isStacked ? stackBase(seriesIndex, index) * 390 : 0)
+      const x = centered
+        ? start + width / 2
+        : dataLabelPosition === 'inside-end'
+          ? start - 4 + width
+          : start + 6 + width
       return (
         <text
-          x={x}
-          y={y}
-          textAnchor={
-            dataLabelPosition === 'center'
-              ? 'middle'
-              : dataLabelPosition === 'inside-end'
-                ? 'end'
-                : 'start'
-          }
+          x={x + dx}
+          y={y + dy}
+          textAnchor={centered ? 'middle' : dataLabelPosition === 'inside-end' ? 'end' : 'start'}
           className="axis-label"
-          {...(inside ? { fill: '#fff' } : {})}
+          {...(inside && !isStacked && dx === 0 && dy === 0 ? { fill: '#fff' } : {})}
         >
-          {formatLabelValue(value, dataLabelFormat, numberFormat)}
+          {formatLabelValue(value, dataLabelFormat, series.numberFormat)}
         </text>
       )
     }
@@ -2599,23 +2651,27 @@ function BarChart({
               />
             )}
             {/* Excel draws the bar-chart value axis along the bottom. */}
-            <text x={plotX(tick)} y="298" textAnchor="middle" className="axis-label">
-              {formatAxisValue(tick, axisNumberFormat)}
-            </text>
+            {valueAxis?.hidden !== true && (
+              <text x={plotX(tick)} y="298" textAnchor="middle" className="axis-label">
+                {formatAxisValue(tick, axisNumberFormat)}
+              </text>
+            )}
           </g>
         ))}
         {Array.from({ length: visibleCount }, (_, index) => {
           let cursor = 0
           return (
             <g key={`${categories[index] ?? index}-${index}`}>
-              <text
-                x="148"
-                y={26 + rowHeight * rowSlot(index)}
-                textAnchor="end"
-                onClick={selectCategoryAxis}
-              >
-                {truncateLabel(categories[index] ?? String(index + 1), categoryBudget)}
-              </text>
+              {!categoryHidden && (
+                <text
+                  x="148"
+                  y={26 + rowHeight * rowSlot(index)}
+                  textAnchor="end"
+                  onClick={selectCategoryAxis}
+                >
+                  {truncateLabel(categories[index] ?? String(index + 1), categoryBudget)}
+                </text>
+              )}
               {seriesList.map((series, seriesIndex) => {
                 const share = isStacked
                   ? segment(seriesIndex, index)
@@ -2635,17 +2691,22 @@ function BarChart({
                   />
                 )
               })}
-              {dataLabels === 'value' &&
-                !isStacked &&
-                seriesList.map((series, seriesIndex) => (
-                  <Fragment key={`lbl-${seriesIndex}`}>
-                    {labelFor(
-                      series.values[index] ?? 0,
-                      groupTop(index) + barHeight * seriesSlot(seriesIndex) + barHeight / 2 + 3,
-                      series.numberFormat,
-                    )}
-                  </Fragment>
-                ))}
+              {seriesList.map(
+                (series, seriesIndex) =>
+                  showsLabel(series, index) && (
+                    <Fragment key={`lbl-${seriesIndex}`}>
+                      {labelFor(
+                        series,
+                        seriesIndex,
+                        index,
+                        groupTop(index) +
+                          (isStacked ? 0 : barHeight * seriesSlot(seriesIndex)) +
+                          barHeight / 2 +
+                          3,
+                      )}
+                    </Fragment>
+                  ),
+              )}
             </g>
           )
         })}
@@ -2729,11 +2790,10 @@ function BarChart({
       symbol,
     }
   })
-  const showValueLabels =
-    !isStacked &&
-    (dataLabels === 'value' ||
-      (dataLabels === undefined && visibleCount <= 12 && seriesList.length === 1))
-  const columnGroups = visibleCategoryGroups(primary.categoryGroups, visibleCount)
+  const columnGroups = visibleCategoryGroups(
+    categoryHidden ? undefined : primary.categoryGroups,
+    visibleCount,
+  )
   // The group band occupies y 284-314; a bottom axis title moves below it
   // on an extended canvas instead of overprinting.
   const shiftBottomTitle = columnGroups.length > 0 && Boolean(axisTitles?.category)
@@ -2745,6 +2805,7 @@ function BarChart({
         ticks={isPercent ? undefined : bounds.ticks}
         numberFormat={axisNumberFormat}
         showGridlines={gridlines !== false}
+        hideLabels={valueAxis?.hidden === true}
         onSelect={selectValueAxis}
       />
       {Array.from({ length: visibleCount }, (_, index) => {
@@ -2771,42 +2832,52 @@ function BarChart({
                 />
               )
             })}
-            {showValueLabels &&
-              seriesList.map((series, seriesIndex) => {
-                const share = norm(series.values[index] ?? bounds.min)
-                const inside = dataLabelPosition === 'center' || dataLabelPosition === 'inside-end'
-                const y =
-                  dataLabelPosition === 'center'
-                    ? 283 - share * 120
-                    : dataLabelPosition === 'inside-end'
-                      ? 292 - share * 240
-                      : 272 - share * 240
-                const x = groupLeft(index) + barWidth * seriesSlot(seriesIndex) + barWidth / 2
-                return (
-                  <text
-                    key={`lbl-${seriesIndex}`}
-                    x={x}
-                    y={y}
-                    textAnchor="middle"
-                    className="axis-label"
-                    {...(inside ? { fill: '#fff' } : {})}
-                  >
-                    {formatLabelValue(
-                      series.values[index] ?? 0,
-                      dataLabelFormat,
-                      series.numberFormat,
-                    )}
-                  </text>
-                )
-              })}
-            <CategoryTick
-              x={62 + columnWidth * catSlot(index) + columnWidth / 2}
-              label={categories[index] ?? String(index + 1)}
-              slotWidth={columnWidth}
-              stride={tickStride}
-              index={index}
-              onClick={selectCategoryAxis}
-            />
+            {seriesList.map((series, seriesIndex) => {
+              if (!showsLabel(series, index)) return null
+              const { dx, dy } = labelOffset(series, index)
+              const inside =
+                isStacked || dataLabelPosition === 'center' || dataLabelPosition === 'inside-end'
+              const share = isStacked
+                ? segment(seriesIndex, index)
+                : norm(series.values[index] ?? bounds.min)
+              const y = isStacked
+                ? 283 - (stackBase(seriesIndex, index) + share / 2) * 240
+                : dataLabelPosition === 'center'
+                  ? 283 - share * 120
+                  : dataLabelPosition === 'inside-end'
+                    ? 292 - share * 240
+                    : 272 - share * 240
+              const x =
+                groupLeft(index) +
+                (isStacked ? 0 : barWidth * seriesSlot(seriesIndex)) +
+                barWidth / 2
+              return (
+                <text
+                  key={`lbl-${seriesIndex}`}
+                  x={x + dx}
+                  y={y + dy}
+                  textAnchor="middle"
+                  className="axis-label"
+                  {...(inside && !isStacked && dx === 0 && dy === 0 ? { fill: '#fff' } : {})}
+                >
+                  {formatLabelValue(
+                    series.values[index] ?? 0,
+                    dataLabelFormat,
+                    series.numberFormat,
+                  )}
+                </text>
+              )
+            })}
+            {!categoryHidden && (
+              <CategoryTick
+                x={62 + columnWidth * catSlot(index) + columnWidth / 2}
+                label={categories[index] ?? String(index + 1)}
+                slotWidth={columnWidth}
+                stride={tickStride}
+                index={index}
+                onClick={selectCategoryAxis}
+              />
+            )}
           </g>
         )
       })}
@@ -3283,6 +3354,7 @@ function VerticalAxis({
   ticks,
   numberFormat,
   showGridlines = true,
+  hideLabels = false,
   onSelect,
 }: {
   readonly minimum?: number
@@ -3290,6 +3362,8 @@ function VerticalAxis({
   readonly ticks?: readonly number[] | undefined
   readonly numberFormat: string | undefined
   readonly showGridlines?: boolean
+  /// c:delete on the axis: gridlines survive, the scale labels do not.
+  readonly hideLabels?: boolean
   readonly onSelect?: ((event: React.MouseEvent) => void) | undefined
 }): React.JSX.Element {
   const span = maximum - minimum || 1
@@ -3306,9 +3380,11 @@ function VerticalAxis({
             {(showGridlines || index === 0) && (
               <line x1="58" y1={y} x2="580" y2={y} stroke="#e3e3e3" strokeWidth="1" />
             )}
-            <text x="54" y={y + 4} textAnchor="end" className="axis-label">
-              {formatAxisValue(tick, numberFormat)}
-            </text>
+            {!hideLabels && (
+              <text x="54" y={y + 4} textAnchor="end" className="axis-label">
+                {formatAxisValue(tick, numberFormat)}
+              </text>
+            )}
           </g>
         )
       })}
@@ -3322,6 +3398,7 @@ type ChartValueAxis =
       max?: number | undefined
       majorUnit?: number | undefined
       numFmt?: string | undefined
+      hidden?: boolean | undefined
     }
   | undefined
 
@@ -3333,7 +3410,7 @@ function axisBounds(
   return valueAxisScale(dataMax, valueAxis)
 }
 
-function LineChart({
+export function LineChart({
   seriesList,
   axisTitles,
   dataLabels,
@@ -3341,6 +3418,7 @@ function LineChart({
   gridlines,
   valueAxis,
   categoryFormat,
+  categoryHidden = false,
   lineMarkers,
   dispBlanksAs,
   onElement,
@@ -3353,6 +3431,7 @@ function LineChart({
   readonly gridlines?: boolean | undefined
   readonly valueAxis?: ChartValueAxis
   readonly categoryFormat?: string | undefined
+  readonly categoryHidden?: boolean | undefined
   readonly lineMarkers?: boolean | undefined
   readonly dispBlanksAs?: ChartMetadata['dispBlanksAs']
 } & ChartElementProps): React.JSX.Element {
@@ -3400,7 +3479,10 @@ function LineChart({
     !isStacked &&
     (dispBlanksAs === 'gap' || dispBlanksAs === 'span') &&
     (series.blanks?.includes(index) ?? false)
-  const categoryGroups = visibleCategoryGroups(primary.categoryGroups, primary.values.length)
+  const categoryGroups = visibleCategoryGroups(
+    categoryHidden ? undefined : primary.categoryGroups,
+    primary.values.length,
+  )
   // The group band occupies y 284-314; a bottom axis title moves below it
   // on an extended canvas instead of overprinting.
   const shiftBottomTitle = categoryGroups.length > 0 && Boolean(axisTitles?.category)
@@ -3412,6 +3494,7 @@ function LineChart({
         ticks={isPercent ? undefined : bounds.ticks}
         numberFormat={isPercent ? '0%' : (valueAxis?.numFmt ?? primary.numberFormat)}
         showGridlines={gridlines !== false}
+        hideLabels={valueAxis?.hidden === true}
         onSelect={
           onElement
             ? (event) => {
@@ -3494,24 +3577,25 @@ function LineChart({
           />
         ) : null,
       )}
-      {primary.values.map((_, index) => (
-        <CategoryTick
-          key={index}
-          x={60 + (index / count) * 500}
-          label={categories[index] ?? String(index + 1)}
-          slotWidth={500 / Math.max(1, count)}
-          stride={categoryTickStride(categories, primary.values.length, 500 / Math.max(1, count))}
-          index={index}
-          onClick={
-            onElement
-              ? (event) => {
-                  event.stopPropagation()
-                  onElement({ kind: 'category-axis' })
-                }
-              : undefined
-          }
-        />
-      ))}
+      {!categoryHidden &&
+        primary.values.map((_, index) => (
+          <CategoryTick
+            key={index}
+            x={60 + (index / count) * 500}
+            label={categories[index] ?? String(index + 1)}
+            slotWidth={500 / Math.max(1, count)}
+            stride={categoryTickStride(categories, primary.values.length, 500 / Math.max(1, count))}
+            index={index}
+            onClick={
+              onElement
+                ? (event) => {
+                    event.stopPropagation()
+                    onElement({ kind: 'category-axis' })
+                  }
+                : undefined
+            }
+          />
+        ))}
       {dataLabels === 'value' &&
         displayValues(0).map((displayed, index) =>
           isSkippedBlank(primary, index) ? null : (
@@ -3564,6 +3648,7 @@ function AreaChart({
   gridlines,
   valueAxis,
   categoryFormat,
+  categoryHidden = false,
   onElement,
   selectedEl,
 }: {
@@ -3574,6 +3659,7 @@ function AreaChart({
   readonly gridlines?: boolean | undefined
   readonly valueAxis?: ChartValueAxis
   readonly categoryFormat?: string | undefined
+  readonly categoryHidden?: boolean | undefined
 } & ChartElementProps): React.JSX.Element {
   const primary = seriesList[0]
   if (!primary) return <></>
@@ -3622,6 +3708,7 @@ function AreaChart({
         ticks={isPercent ? undefined : bounds.ticks}
         numberFormat={isPercent ? '0%' : (valueAxis?.numFmt ?? primary.numberFormat)}
         showGridlines={gridlines !== false}
+        hideLabels={valueAxis?.hidden === true}
         onSelect={
           onElement
             ? (event) => {
@@ -3682,16 +3769,17 @@ function AreaChart({
           </g>
         )
       })}
-      {primary.values.map((_, index) => (
-        <CategoryTick
-          key={index}
-          x={60 + (index / count) * 500}
-          label={categories[index] ?? String(index + 1)}
-          slotWidth={500 / Math.max(1, count)}
-          stride={categoryTickStride(categories, primary.values.length, 500 / Math.max(1, count))}
-          index={index}
-        />
-      ))}
+      {!categoryHidden &&
+        primary.values.map((_, index) => (
+          <CategoryTick
+            key={index}
+            x={60 + (index / count) * 500}
+            label={categories[index] ?? String(index + 1)}
+            slotWidth={500 / Math.max(1, count)}
+            stride={categoryTickStride(categories, primary.values.length, 500 / Math.max(1, count))}
+            index={index}
+          />
+        ))}
       {dataLabels === 'value' &&
         primary.values.map((value, index) => (
           <text
@@ -3843,6 +3931,7 @@ function ScatterChart({
         majorUnit?: number | undefined
         numFmt?: string | undefined
         majorGridlines: boolean
+        hidden?: boolean | undefined
       }
     | undefined
   readonly scatterStyle?: string | undefined
@@ -3882,6 +3971,7 @@ function ScatterChart({
         ticks={boundsY.ticks}
         numberFormat={valueAxis?.numFmt ?? seriesList[0]?.numberFormat}
         showGridlines={gridlines !== false}
+        hideLabels={valueAxis?.hidden === true}
         onSelect={
           onElement
             ? (event) => {
@@ -3903,22 +3993,24 @@ function ScatterChart({
               strokeWidth="1"
             />
           )}
-          <text
-            x={plotX(tick)}
-            y="296"
-            textAnchor="middle"
-            className="axis-label"
-            onClick={
-              onElement
-                ? (event) => {
-                    event.stopPropagation()
-                    onElement({ kind: 'category-axis' })
-                  }
-                : undefined
-            }
-          >
-            {formatScatterTick(tick, xFormat)}
-          </text>
+          {xAxis?.hidden !== true && (
+            <text
+              x={plotX(tick)}
+              y="296"
+              textAnchor="middle"
+              className="axis-label"
+              onClick={
+                onElement
+                  ? (event) => {
+                      event.stopPropagation()
+                      onElement({ kind: 'category-axis' })
+                    }
+                  : undefined
+              }
+            >
+              {formatScatterTick(tick, xFormat)}
+            </text>
+          )}
         </g>
       ))}
       {points.map(({ series, xValues, blankSet }, seriesIndex) => (

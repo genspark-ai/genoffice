@@ -95,6 +95,91 @@ async function buildRecalcFixture(): Promise<Buffer> {
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
+// Excel keeps the cached values of external-workbook references when the
+// source is unreachable; IronCalc cannot even parse them. Content types and
+// rels carry the externalLink part exactly as Excel writes it.
+async function buildExternalLinkFixture(): Promise<Buffer> {
+  const zip = new JSZip()
+  zip.file(
+    '[Content_Types].xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+      '<Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>' +
+      '</Types>',
+  )
+  zip.file(
+    '_rels/.rels',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+      '</Relationships>',
+  )
+  zip.file(
+    'xl/workbook.xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>' +
+      '<externalReferences><externalReference r:id="rId3"/></externalReferences>' +
+      '</workbook>',
+  )
+  zip.file(
+    'xl/_rels/workbook.xml.rels',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+      '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>' +
+      '</Relationships>',
+  )
+  zip.file(
+    'xl/styles.xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>' +
+      '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+      '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+      '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>' +
+      '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+      '</styleSheet>',
+  )
+  zip.file(
+    'xl/externalLinks/externalLink1.xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<externalBook r:id="rId1"><sheetNames><sheetName val="Sheet1"/></sheetNames>' +
+      '<sheetDataSet><sheetData sheetId="0"><row r="1"><cell r="A1"><v>42</v></cell></row></sheetData></sheetDataSet>' +
+      '</externalBook></externalLink>',
+  )
+  zip.file(
+    'xl/externalLinks/_rels/externalLink1.xml.rels',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="file:///C:/data/source.xlsx" TargetMode="External"/>' +
+      '</Relationships>',
+  )
+  zip.file(
+    'xl/worksheets/sheet1.xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<dimension ref="A1:C2"/>' +
+      '<sheetViews><sheetView workbookViewId="0"/></sheetViews>' +
+      '<sheetFormatPr defaultRowHeight="15"/>' +
+      '<sheetData>' +
+      '<row r="1"><c r="A1"><f>[1]Sheet1!A1*2</f><v>84</v></c><c r="B1"><f>A1+1</f><v>85</v></c>' +
+      '<c r="C1" t="str"><f>\'[1]Sheet1\'!A1&amp;" units"</f><v>42 units</v></c></row>' +
+      '<row r="2"><c r="A2"><v>5</v></c><c r="B2"><f>SUM(A1:A2)</f><v>89</v></c></row>' +
+      '</sheetData>' +
+      '</worksheet>',
+  )
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
+}
+
 const cleanups: string[] = []
 
 afterAll(async () => {
@@ -168,6 +253,39 @@ describe('sidecar IronCalc recalculation channel', () => {
       const third = recalcResultSchema.parse(await client.recalcCells({ path, edits: [], reads }))
       expect(third.cached).toBe(false)
       expect(third.cells.find((cell) => cell.row === 2)?.formatted).toBe('30')
+    } finally {
+      client.stop()
+    }
+  })
+
+  it('pins external-workbook references to their cached values (issue 235)', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-recalc-test-'))
+    cleanups.push(directory)
+    const path = join(directory, 'external.xlsx')
+    await writeFile(path, await buildExternalLinkFixture())
+    const client = new XlsxSidecarClient(sidecarBinaryPath())
+    try {
+      const result = recalcResultSchema.parse(
+        await client.recalcCells({
+          path,
+          edits: [{ sheet: 'Data', row: 1, column: 0, input: '10' }],
+          reads: [
+            {
+              sheet: 'Data',
+              range: { startRow: 0, endRow: 1, startColumn: 0, endColumn: 2 },
+            },
+          ],
+        }),
+      )
+      const at = (row: number, column: number) =>
+        result.cells.find((cell) => cell.row === row && cell.column === column)
+      expect(result.cells.some((cell) => cell.formatted === '#ERROR!')).toBe(false)
+      // the linked cells come back as plain cached values, not formulas
+      expect(at(0, 0)).toMatchObject({ formatted: '84', isFormula: false })
+      expect(at(0, 2)).toMatchObject({ formatted: '42 units', isFormula: false })
+      // dependents compute against those values instead of cascading
+      expect(at(0, 1)).toMatchObject({ formatted: '85', isFormula: true })
+      expect(at(1, 1)).toMatchObject({ formatted: '94', isFormula: true })
     } finally {
       client.stop()
     }

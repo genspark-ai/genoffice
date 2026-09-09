@@ -586,6 +586,13 @@ pub(crate) fn parse_chart_series(
         .parent()
         .and_then(flat_plot_name)
         .map(ToOwned::to_owned);
+    let series_labels = direct_child(series, "dLbls");
+    let data_labels = series_labels
+        .or_else(|| series.parent().and_then(|plot| direct_child(plot, "dLbls")))
+        .map(|labels| data_labels_mode(labels).to_owned());
+    let point_labels = series_labels
+        .map(point_labels)
+        .filter(|labels| !labels.is_empty());
     ChartSeries {
         name,
         name_ref,
@@ -607,7 +614,46 @@ pub(crate) fn parse_chart_series(
         marker,
         category_groups: category_node.and_then(category_groups),
         plot,
+        data_labels,
+        point_labels,
     }
+}
+
+/// `c:dLbl` entries of a dLbls node. manualLayout x/y default to
+/// `factor` mode: an offset from the default label anchor.
+pub(crate) fn point_labels(labels: Node<'_, '_>) -> Vec<PointLabel> {
+    labels
+        .children()
+        .filter(|node| node.has_tag_name("dLbl"))
+        .filter_map(|label| {
+            let index = direct_child(label, "idx")?.attribute("val")?.parse().ok()?;
+            let flag = |name: &str| {
+                direct_child(label, name)
+                    .and_then(|node| node.attribute("val"))
+                    .map(|value| value == "1" || value == "true")
+            };
+            let show_val = if flag("delete") == Some(true) {
+                Some(false)
+            } else {
+                flag("showVal")
+            };
+            let layout =
+                direct_child(label, "layout").and_then(|node| direct_child(node, "manualLayout"));
+            let offset = |name: &str| {
+                layout
+                    .and_then(|node| direct_child(node, name))
+                    .and_then(|node| node.attribute("val"))
+                    .and_then(|value| value.parse::<f64>().ok())
+                    .filter(|value| value.is_finite())
+            };
+            Some(PointLabel {
+                index,
+                show_val,
+                offset_x: offset("x"),
+                offset_y: offset("y"),
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn cache_format_code(node: Node<'_, '_>) -> Option<String> {

@@ -275,6 +275,7 @@ export const zh = {
   appFullLoadTooLarge: '此工作簿过大，无法完整载入内存，筛选在此文件上暂不可用。',
   appDialogCancel: '取消',
   appPivotSheetNoMove: '该工作表含数据透视表——暂不支持移动区域。',
+  appMergeOverTable: '所选区域位于 Excel 表格内——暂不支持合并表格中的单元格。',
   appTableFilterNoEdit: '该工作表的筛选属于 Excel 表格——编辑后暂时无法保存。',
   appAutofillStreaming: '暂不允许向仍在流式加载的区域自动填充。',
   appDvNeedsIndexed: '编辑数据验证需要该工作表先完成索引——稍后再试。',
@@ -497,6 +498,8 @@ export const zh = {
   appSaveErrTableWithRowCol: '新建的表格不能和所在工作表的行列改动一起保存——请先保存表格。',
   appSaveErrNamesWithStructural: '定义名称的改动不能和行列/工作表结构改动一起保存——请分两次保存。',
   appSaveErrChangedOnDisk: '文件在磁盘上被其他程序改动了——保存已中止，请重新打开后再试。',
+  appSaveErrTargetLocked:
+    '文件无法替换——看起来被其他程序占用（如在 Excel 中打开，或正被同步/杀毒扫描）。请关闭占用后重新保存。',
   appSaveErrStylesheetLimited: '这个工作簿的样式表缺少基础结构，样式改动无法保存。',
   appSaveErrPackageGuard: '保存会改变工作簿的包结构——已中止以保护文件。',
   appSaveErrChartUnsupported: '这个图表类型不支持该编辑，保存已中止——请撤销该图表改动。',

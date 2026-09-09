@@ -51,17 +51,9 @@ async function setFirstLine(editor: Editor, indentFirstLine: number | null) {
     editor,
     {
       id: 't',
-      name: 'apply_commands',
+      name: 'apply_ops',
       input: {
-        commands: [
-          {
-            updateParagraphStyle: {
-              target: { blockIndexes: [0, 1] },
-              style: { indentFirstLine },
-              fields: ['indentFirstLine'],
-            },
-          },
-        ],
+        ops: [{ op: 'setParagraphFormat', target: { blockIndexes: [0, 1] }, indentFirstLine }],
       },
     },
     NUM_IDS,
@@ -118,17 +110,9 @@ describe('character-unit indents: saving an indent edit', () => {
       editor,
       {
         id: 't',
-        name: 'apply_commands',
+        name: 'apply_ops',
         input: {
-          commands: [
-            {
-              updateParagraphStyle: {
-                target: { blockIndexes: [1] },
-                style: { align: 'center' },
-                fields: ['align'],
-              },
-            },
-          ],
+          ops: [{ op: 'setParagraphFormat', target: { blockIndexes: [1] }, align: 'center' }],
         },
       },
       NUM_IDS,

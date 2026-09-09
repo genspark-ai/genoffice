@@ -493,7 +493,7 @@ export interface ChartRenderNode extends RenderNodeBase {
   /** Legend swatches */
   swatches: Array<{ x: number; y: number; w: number; h: number; color: string }>
   /** Freeform filled paths (SVG data), painter's order — pseudo-3D pie rims / bar extrusion faces */
-  paths?: Array<{ d: string; fill: string; stroke?: string; dy?: number }>
+  paths?: Array<{ d: string; fill: string; stroke?: string; strokeWidthPx?: number; dy?: number }>
   /** Pie/doughnut wedges (angles: 12 o'clock = -90°, clockwise, Konva Arc semantics) */
   wedges?: Array<{
     cx: number
@@ -503,6 +503,11 @@ export interface ChartRenderNode extends RenderNodeBase {
     startDeg: number
     sweepDeg: number
     color: string
+    /** Outline-only wedge (c:dPt noFill); color then only feeds the legend swatch */
+    noFill?: boolean
+    /** Per-point outline; undefined = default hairline white separator */
+    stroke?: string
+    strokeWidthPx?: number
   }>
 }
 

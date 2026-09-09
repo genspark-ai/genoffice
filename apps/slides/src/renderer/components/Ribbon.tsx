@@ -88,6 +88,11 @@ import {
   IconShapes,
   IconShapeStyle,
   IconFillColor,
+  IconObjFlipH,
+  IconObjFlipV,
+  IconReplacePicture,
+  IconRotateLeft,
+  IconRotateRight,
 } from './icons'
 // brand-supplied Review AI icon art (44px = 22px @2x), color baked in
 import iconSpelling from '../assets/icon-spelling.png'
@@ -118,7 +123,7 @@ import type { FormatCmd } from './ribbon-shared'
 import { RibbonHomeTab } from './RibbonHomeTab'
 import { RibbonInsertTab } from './RibbonInsertTab'
 import { ShapeGalleryContent } from './ShapeGalleryPopover'
-import { contextTabForElement, type ContextTab } from './context-tabs'
+import { autoContextTabForElement, contextTabForElement, type ContextTab } from './context-tabs'
 
 const IS_MAC = navigator.platform.toLowerCase().includes('mac')
 /** shell tab mode: the tab strip above owns traffic lights / caption buttons */
@@ -1097,7 +1102,6 @@ export function Ribbon({
   aiOpen,
   onToggleAi,
   onAiPreset,
-  onAskSelection,
   onInsert,
   onPickShape,
   onInsertImage,
@@ -1219,6 +1223,8 @@ export function Ribbon({
   cropActive,
   onPictureOpacity,
   onPictureCutout,
+  onPictureReplace,
+  onPictureRotate,
   onEditTableStyle,
   tableStyleFlags,
   tableActiveCell,
@@ -1229,9 +1235,8 @@ export function Ribbon({
   canDistribute,
 }: Props) {
   const { t } = useI18n()
-  // Shapes get their own format tab; text-bearing shapes do not auto-activate it
-  // (users are usually after Home's text controls when selecting them).
   const contextTab = contextTabForElement(contextElementType ?? null)
+  const autoContextTab = autoContextTabForElement(contextElementType ?? null)
 
   const [tab, setTab] = useState<MainTab | ContextTab>('home')
   const [fileOpen, setFileOpen] = useState(false)
@@ -1440,18 +1445,21 @@ export function Ribbon({
     return () => ro.disconnect()
   }, [tab, collapsedGroups])
 
-  // Contextual tab auto-switch: selecting an object jumps to its format tab
-  // (shapes included, text-bearing or not); deselecting falls back to Home.
+  // Contextual tab auto-switch: pictures/tables/charts jump to their format
+  // tab; shapes only reveal Shape Format (PowerPoint parity, so Home stays put for
+  // text formatting). Leaving a tab that is no longer offered falls back to Home.
   const prevContextTab = useRef<ContextTab | null>(null)
   useEffect(() => {
     const previousContextTab = prevContextTab.current
-    if (contextTab && contextTab !== previousContextTab) {
-      setTab(contextTab)
-    } else if (!contextTab && previousContextTab) {
-      setTab((cur) => (cur === previousContextTab ? 'home' : cur))
+    if (contextTab !== previousContextTab) {
+      if (autoContextTab) {
+        setTab(autoContextTab)
+      } else if (previousContextTab) {
+        setTab((cur) => (cur === previousContextTab ? 'home' : cur))
+      }
     }
     prevContextTab.current = contextTab
-  }, [contextTab])
+  }, [contextTab, autoContextTab])
 
   /** Insert tab dropdown big button (click toggles, content stopPropagation) */
   const dropBig = (
@@ -1598,7 +1606,6 @@ export function Ribbon({
     onAddSlide,
     onAddSlideWithLayout,
     onAiPreset,
-    onAskSelection,
     onAlign,
     onDirection,
     onArrange,
@@ -3046,6 +3053,17 @@ export function Ribbon({
                 </span>
                 <span>{t('ribbonRemoveBg')}</span>
               </button>
+              <button
+                className="rb-big"
+                data-tip={t('ribbonReplacePicture')}
+                disabled={!onPictureReplace || contextElementType !== 'picture'}
+                onClick={onPictureReplace}
+              >
+                <span className="rb-big-icon">
+                  <IconReplacePicture size={BIG} />
+                </span>
+                <span>{t('ribbonReplacePicture')}</span>
+              </button>
               <div className="rb-drop-wrap">
                 <button
                   className={`rb-big ${transparencyOpen ? 'active' : ''}`}
@@ -3165,6 +3183,45 @@ export function Ribbon({
                 </span>
                 <span>{t('ribbonCrop')}</span>
               </button>
+            </Group>
+            <div className="ribbon-sep" />
+            <Group label={t('ribbonGroupArrange')}>
+              <div className="rb-col">
+                {(
+                  [
+                    [90, 'ribbonRotateRight', IconRotateRight],
+                    [-90, 'ribbonRotateLeft', IconRotateLeft],
+                  ] as const
+                ).map(([delta, key, Icon]) => (
+                  <button
+                    key={key}
+                    className="rb-small"
+                    disabled={!onPictureRotate || contextElementType !== 'picture'}
+                    onClick={() => onPictureRotate?.(delta)}
+                  >
+                    <Icon size={18} />
+                    <span>{t(key)}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="rb-col">
+                {(
+                  [
+                    ['h', 'ribbonFlipH', IconObjFlipH],
+                    ['v', 'ribbonFlipV', IconObjFlipV],
+                  ] as const
+                ).map(([axis, key, Icon]) => (
+                  <button
+                    key={key}
+                    className="rb-small"
+                    disabled={!onFlip || contextElementType !== 'picture'}
+                    onClick={() => onFlip?.(axis)}
+                  >
+                    <Icon size={18} />
+                    <span>{t(key)}</span>
+                  </button>
+                ))}
+              </div>
             </Group>
           </>
         ) : tab === 'shapeFormat' ? (

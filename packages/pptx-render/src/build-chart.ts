@@ -1253,13 +1253,36 @@ function buildPieNode(
   const sliceColor = (i: number) =>
     ser.pointColors?.[i] ??
     (model.varyColors === false ? (ser.color ?? palette[0]!) : palette[i % palette.length]!)
+  // Outline-only wedge (dPt noFill): the legend swatch takes the outline color
+  const swatchColor = (i: number) =>
+    ser.pointNoFill?.[i] ? (ser.pointLines?.[i]?.color ?? sliceColor(i)) : sliceColor(i)
+  const wedgeStroke = (i: number): { stroke?: string; strokeWidthPx?: number } => {
+    const ln = ser.pointLines?.[i]
+    if (!ln) return {}
+    if (ln.color === null) return { strokeWidthPx: 0 }
+    return {
+      stroke: ln.color,
+      ...(ln.widthPt != null ? { strokeWidthPx: ptToPx(ln.widthPt, vp.scale) } : {}),
+    }
+  }
+  // Pseudo-3D top faces: same fill/outline semantics as 2D wedges, resolved to path props
+  const faceProps = (i: number): { fill: string; stroke?: string; strokeWidthPx?: number } => {
+    const st = wedgeStroke(i)
+    const fill = ser.pointNoFill?.[i] ? 'transparent' : sliceColor(i)
+    if (st.strokeWidthPx === 0) return { fill }
+    return {
+      fill,
+      stroke: st.stroke ?? '#ffffff',
+      ...(st.strokeWidthPx != null ? { strokeWidthPx: st.strokeWidthPx } : {}),
+    }
+  }
   const pad = Math.max(6, Math.min(box.w, box.h) * 0.03)
 
   // Legend space (without a legend, the whole box goes to the pie)
   const legendPos = model.legendPos
   const legendItems = model.categories.map((cat, i) => ({
     label: cat,
-    color: sliceColor(i),
+    color: swatchColor(i),
   }))
   const legendRowH = labelSizePx * 1.5
   let plotW = box.w - pad * 2
@@ -1349,6 +1372,11 @@ function buildPieNode(
       if (v <= 0) return
       const sweep = (v / total) * 360
       const { dx, dy } = explOffset(a, sweep, i)
+      // Outline-only points have no rim (nothing to extrude)
+      if (ser.pointNoFill?.[i]) {
+        a += sweep
+        return
+      }
       // normalize wedge interval into [-180, 180) then clamp to the front range [0, 180]
       for (const off of [-360, 0, 360]) {
         const b1 = Math.max(a + off, 0)
@@ -1383,16 +1411,14 @@ function buildPieNode(
           d:
             `M ${p1.x} ${p1.y} A ${rx} ${ry} 0 1 1 ${pm.x} ${pm.y} ` +
             `A ${rx} ${ry} 0 1 1 ${p1.x} ${p1.y} Z`,
-          fill: sliceColor(i),
-          stroke: '#ffffff',
+          ...faceProps(i),
         })
       } else {
         const p2 = ptAt(angle + sweep, dx, dy)
         const large = sweep > 180 ? 1 : 0
         node.paths!.push({
           d: `M ${cx + dx} ${cy + dy} L ${p1.x} ${p1.y} A ${rx} ${ry} 0 ${large} 1 ${p2.x} ${p2.y} Z`,
-          fill: sliceColor(i),
-          stroke: '#ffffff',
+          ...faceProps(i),
         })
       }
     } else {
@@ -1404,6 +1430,8 @@ function buildPieNode(
         startDeg: angle,
         sweepDeg: sweep,
         color: sliceColor(i),
+        ...(ser.pointNoFill?.[i] ? { noFill: true } : {}),
+        ...wedgeStroke(i),
       })
     }
     if (model.series[0]?.dataLabels ?? model.dataLabels) {

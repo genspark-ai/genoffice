@@ -1,10 +1,10 @@
 # Table ops
 
-> Edit an existing table element: cell text, merges, row/column structure, row heights, column widths, cell anchors.
+> Edit an existing table element: cell text, merges, row/column structure, row heights, column widths, cell anchors, style presets and borders.
 
 All ops take `target:{slide, el}` where `el` is the table's id (type `table` in
-the outline). `row` and `col` are 0-based. Table styling (`setTableStyle`) and
-chart edits (`setChart`) live in dedicated tools.
+the outline). `row` and `col` are 0-based. Chart edits (`setChart`) live in the
+`edit_chart` tool.
 
 ### setTableCell
 
@@ -119,12 +119,45 @@ Sets one column's width in EMU.
 { "op": "setTableColWidth", "target": { "slide": 0, "el": "e_TABLE" }, "col": 0, "wEmu": 2743200 }
 ```
 
-### setTableStyle (not-ai-callable)
+### setTableStyle
 
-`{edit:TableStyleEdit} — use the edit_table_style tool instead`
+`{styleName} | {firstRow?,bandRow?,shadingColor?,borderColor?,borderWidthPt?,borderPreset?}`
 
-Header row, banding, shading and border presets. The `edit_table_style` tool
-exposes this with a validated schema.
+Restyles the whole table: either apply one preset by name, or change
+individual header/banding flags, cell shading and border lines. A preset wins
+over the other fields and, like PowerPoint's style gallery, clears direct cell
+fills and borders so the style shows through.
+
+| Field         | Type                  | Notes                                                                                                     |
+| ------------- | --------------------- | --------------------------------------------------------------------------------------------------------- |
+| styleName     | string                | `none`, `lightGrid`, `zebraBlue`, `zebraGray`, `headerDarkBlue`, `headerOrange`, `noBorder`, `fullBorder` |
+| firstRow      | boolean               | Header-row emphasis                                                                                       |
+| bandRow       | boolean               | Banded rows                                                                                               |
+| shadingColor  | `#RRGGBB` or `"none"` | Cell fill for every cell                                                                                  |
+| borderColor   | `#RRGGBB`             | Border line color                                                                                         |
+| borderWidthPt | number (pt)           | Border line width; > 0                                                                                    |
+| borderPreset  | `"all"` or `"none"`   | Draw all border lines, or clear them                                                                      |
+
+```json
+{ "op": "setTableStyle", "target": { "slide": 0, "el": "e_TABLE" }, "styleName": "zebraBlue" }
+```
+
+```json
+{
+  "op": "setTableStyle",
+  "target": { "slide": 0, "el": "e_TABLE" },
+  "firstRow": true,
+  "borderPreset": "all",
+  "borderColor": "#BFBFBF",
+  "borderWidthPt": 1
+}
+```
+
+Common mistakes
+
+- Passing a color name (`"blue"`): colors are `#RRGGBB`.
+- Mixing `styleName` with the other fields: the preset is applied and the rest is ignored.
+- Restyling one cell's text: that is `setTableCell` with styled runs, not this op.
 
 ### setChart (not-ai-callable)
 

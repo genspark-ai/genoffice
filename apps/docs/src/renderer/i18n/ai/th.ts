@@ -126,6 +126,7 @@ export const th = {
   aiSumCreateDocument: 'สร้างเอกสารใหม่',
   aiSumCreatedDocument: 'สร้าง {name} แล้ว',
   aiSumReplaceContent: 'แทนที่เนื้อหา',
+  aiSumReplaceSelection: 'แทนที่ข้อความที่เลือก',
   aiSumReplacedBlocks: 'แทนที่บล็อก {start}-{end}',
   aiSumInsertChart: 'แทรกแผนภูมิ',
   aiSumInsertedChart: 'แทรกแผนภูมิ "{title}"',

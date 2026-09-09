@@ -78,8 +78,10 @@ export const nl = {
   appPgNumHintBlank: 'Laat "Beginnen bij" leeg om door te gaan vanaf de vorige sectie',
   appPgNumAppliesTo: '; geldt voor sectie {n}',
   appExportingPdf: 'PDF exporteren…',
+  appExportingHtml: 'HTML exporteren…',
   appExportPdf: 'PDF exporteren',
   appExportPdfFailed: 'PDF-export mislukt: {error}',
+  appExportHtmlFailed: 'HTML-export mislukt: {error}',
   appPrintGroupFailed: 'afdrukken van paginagroep mislukt',
   appPrintTitle: 'Afdrukken',
   appPrintProgress: 'Afdrukken voorbereiden…',
@@ -95,15 +97,18 @@ export const nl = {
   appPrintPrevPage: 'Vorige pagina',
   appPrintNextPage: 'Volgende pagina',
   appExportedPdf: 'PDF geëxporteerd: {path}',
+  appExportedHtml: 'HTML geëxporteerd: {path}',
   appExportedPdfMixed:
     'PDF geëxporteerd: {path} (gemengde papierformaten, {n} groepen per pagina samengevoegd)',
   appExportPdfCanceled: 'PDF-export geannuleerd',
+  appExportHtmlCanceled: 'HTML-export geannuleerd',
   appMixedExportOpening:
     'Gemengde papierformaten: pagineringsvoorbeeld wordt geopend om per pagina samengevoegd te exporteren…',
   appSelectTextToComment: 'Selecteer eerst de tekst waarop je een opmerking wilt plaatsen',
   appCommentSelectionLost:
     'De selectie is niet meer geldig; selecteer de tekst voor de opmerking opnieuw',
   appCommentAdded: 'Opmerking toegevoegd; wordt bij het opslaan naar het document geschreven',
+  appCommentEdited: 'Opmerking bijgewerkt; wordt bij het opslaan naar het document geschreven',
   appCommentAnchorGone:
     'Het anker van de oorspronkelijke opmerking bestaat niet meer; reageren is niet mogelijk',
   appCommentReplied: 'Antwoord toegevoegd; wordt bij het opslaan naar het document geschreven',
@@ -115,6 +120,7 @@ export const nl = {
   appUnknownAuthor: '(Onbekende auteur)',
   appResolved: 'Opgelost',
   appResolvedComments: 'Opgeloste opmerkingen ({n})',
+  appEditComment: 'Opmerking bewerken',
   appDeleteComment: 'Opmerking verwijderen',
   appDeleteCommentWithReplies: 'Opmerking verwijderen (inclusief antwoorden)',
   appDeleteReply: 'Antwoord verwijderen',

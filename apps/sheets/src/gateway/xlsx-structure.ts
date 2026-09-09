@@ -62,7 +62,7 @@ export function isShiftingOp(op: StructuralOp): boolean {
   return 'index' in op || 'range' in op
 }
 
-interface CellArea {
+export interface CellArea {
   readonly startRow: number
   readonly endRow: number
   readonly startColumn: number
@@ -1365,14 +1365,36 @@ function moveRefRange(ref: string, shift: Shift, axis: Axis): string | null {
   }
   const end = parseA1(parts[1] ?? '')
   if (!end) return ref
+  const moved = moveArea(
+    { startRow: start.row, endRow: end.row, startColumn: start.column, endColumn: end.column },
+    shift,
+    axis,
+  )
+  if (moved === null) return null
+  return `${columnToLetters(moved.startColumn)}${moved.startRow + 1}:${columnToLetters(moved.endColumn)}${moved.endRow + 1}`
+}
+
+function moveArea(area: CellArea, shift: Shift, axis: Axis): CellArea | null {
   const moved =
     axis === 'row'
-      ? moveRange(start.row, end.row, shift)
-      : moveRange(start.column, end.column, shift)
+      ? moveRange(area.startRow, area.endRow, shift)
+      : moveRange(area.startColumn, area.endColumn, shift)
   if (moved === null) return null
   return axis === 'row'
-    ? `${columnToLetters(start.column)}${moved.start + 1}:${columnToLetters(end.column)}${moved.end + 1}`
-    : `${columnToLetters(moved.start)}${start.row + 1}:${columnToLetters(moved.end)}${end.row + 1}`
+    ? { ...area, startRow: moved.start, endRow: moved.end }
+    : { ...area, startColumn: moved.start, endColumn: moved.end }
+}
+
+/// Where a file range lands after the journaled ops, by the rule shiftTablePart
+/// applies to a table's ref at save (interior inserts grow it, deletes shrink
+/// it); null when it is deleted outright.
+export function shiftCellArea(area: CellArea, ops: readonly StructuralOp[]): CellArea | null {
+  let current: CellArea | null = area
+  for (const op of rowColumnOps(ops)) {
+    if (current === null) return null
+    current = moveArea(current, toShift(op), axisOf(op))
+  }
+  return current
 }
 
 // A1-style token, optionally sheet-qualified: cell, cell range, whole-column

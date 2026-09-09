@@ -512,6 +512,9 @@ export const ko = {
   ribbonGroupSize: '크기',
   ribbonCrop: '자르기',
   ribbonCropTip: '그림 자르기(핸들을 끌고 Enter 키로 확인)',
+  ribbonReplacePicture: '그림 바꾸기',
+  ribbonRotateLeft: '왼쪽으로 90° 회전',
+  ribbonRotateRight: '오른쪽으로 90° 회전',
   // Insert dialogs
   ribbonDlgHyperlink: '하이퍼링크',
   ribbonDlgWebAddress: '웹 주소',

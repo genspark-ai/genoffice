@@ -128,6 +128,7 @@ export const hi = {
   aiSumCreateDocument: 'नया दस्तावेज़ बनाएँ',
   aiSumCreatedDocument: '{name} बनाया गया',
   aiSumReplaceContent: 'सामग्री बदलें',
+  aiSumReplaceSelection: 'चयनित पाठ बदलें',
   aiSumReplacedBlocks: 'ब्लॉक {start}-{end} बदले गए',
   aiSumInsertChart: 'चार्ट सम्मिलित करें',
   aiSumInsertedChart: 'चार्ट "{title}" सम्मिलित किया गया',

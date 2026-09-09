@@ -786,6 +786,9 @@ export function computeSectionedSlicesF2(
         else if (anchorBlock.tableRows?.length) {
           const head = anchorBlock.tableRows[0]
           anchorNeedH = head.height + (head.notesPx ?? 0)
+          // the head row's notes open the page's footnote area: the table will
+          // charge that separator strip, so the chain must demand it too
+          if (head.notesPx && !pageNoteSepPx) anchorNeedH += FOOTNOTE_SEPARATOR_H
         } else if (anchorBlock.oversizeLineH !== undefined) {
           // an oversized anchor clips to whatever remains below the chain, so it
           // demands the rest of a fresh column: the chain pushes and the pair
@@ -809,6 +812,10 @@ export function computeSectionedSlicesF2(
         // Only abandon the constraint when chain + anchor demand can't fit even an
         // empty page (no solution; avoids infinite loops).
         if (!fits(chainPlusAnchorH) && !colEmpty() && chainPlusAnchorH <= freshColH()) {
+          advance(block.top, curSection)
+        } else if (!fits(chainH) && !colEmpty()) {
+          // no page can hold chain + anchor demand: the constraint is dropped,
+          // but the chain blocks still place whole (a heading must not be cut)
           advance(block.top, curSection)
         }
         // place chain head through chain tail (the keepNext blocks)

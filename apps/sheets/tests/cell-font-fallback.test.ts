@@ -52,6 +52,13 @@ describe('withSansSerifFallback', () => {
       `12px "Times New Roman", serif, ${EMOJI}`,
     )
     expect(withSansSerifFallback('12px "PT Serif"')).toBe(`12px "PT Serif", serif, ${EMOJI}`)
+    // Office-for-Mac DFont faces that Excel renders as a serif
+    expect(withSansSerifFallback('12pt "Baskerville Old Face"')).toBe(
+      `12pt "Baskerville Old Face", serif, ${EMOJI}`,
+    )
+    expect(withSansSerifFallback('12pt "Gill Sans MT"')).toBe(
+      `12pt "Gill Sans MT", sans-serif, ${EMOJI}`,
+    )
   })
 
   it('keeps sans-serif for sans families whose names contain "serif"', () => {
@@ -63,7 +70,7 @@ describe('withSansSerifFallback', () => {
   // Excel substitutes its sans default for names it cannot resolve — even
   // myeongjo/mincho-keyworded ones. Hancom composite chains and the single
   // names Univer's per-glyph fallback re-probes must both come out sans
-  // (prod_059 Excel reference).
+  // (Excel reference).
   it('keeps sans-serif for unrecognized names, keyworded or composite', () => {
     expect(withSansSerifFallback('12px 휴먼명조')).toBe(`12px 휴먼명조, sans-serif, ${EMOJI}`)
     expect(withSansSerifFallback('bold 20pt 휴먼명조, 한컴돋움')).toBe(
@@ -183,8 +190,28 @@ describe('CELL_FONT_ALIASES', () => {
       expect(alias?.regular, family).toContain('AppleGothic')
       expect(alias?.sizeAdjust, family).toBeUndefined()
       expect(alias?.latin?.sizeAdjust, family).toBe('104%')
-      expect(alias?.latin?.boldSizeAdjust, family).toBe('109.4%')
+      // malgunbd.ttf digits 0.5796em over Helvetica Neue Bold 0.556em.
+      expect(pct(alias?.latin?.boldSizeAdjust), family).toBeCloseTo(104.2, 1)
       expect(alias?.skipIfLocal, family).toContain('Malgun Gothic')
+    }
+  })
+
+  it('keeps bold Malgun hangul in the family at Excel width', () => {
+    // AppleGothic has no bold face; Apple SD Gothic Neo Bold sets hangul at
+    // 0.865em where Malgun Gothic Bold sets 1.0em.
+    for (const family of ['Malgun Gothic', '맑은 고딕']) {
+      const alias = CELL_FONT_ALIASES.find((a) => a.family === family)
+      expect(alias?.bold?.[0], family).toBe('Apple SD Gothic Neo Bold')
+      expect(alias?.bold, family).not.toContain('Malgun Gothic Bold')
+      expect(pct(alias?.boldSizeAdjust), family).toBeCloseTo(100 / 0.865, 0)
+    }
+  })
+
+  it('pairs every Latin bold sub-face with a base bold face', () => {
+    // Chromium selects a family's weight-700 faces before unicode-range, so
+    // a Latin-only bold face sends bold non-Latin text to the system fallback.
+    for (const alias of CELL_FONT_ALIASES) {
+      if (alias.latin?.bold) expect(alias.bold?.length, alias.family).toBeGreaterThan(0)
     }
   })
 
@@ -193,7 +220,7 @@ describe('CELL_FONT_ALIASES', () => {
     return Number.parseFloat(value!)
   }
 
-  it('width-corrects the Thai Office faces per script (prod_066)', () => {
+  it('width-corrects the Thai Office faces per script', () => {
     // Cordia New draws digits at 0.3645em and Thai at ~0.30em; Thonburi is
     // 0.666em / ~0.44em, so both scripts need their own size-adjust and the
     // Latin sub-face must leave the Thai block (inside U+0-2CFF) alone.
@@ -342,6 +369,20 @@ describe('CELL_FONT_ALIASES', () => {
         family,
       ).toBe(true)
     }
+  })
+
+  it('maps the Office-for-Mac DFonts onto the stock macOS designs', () => {
+    const baskerville = CELL_FONT_ALIASES.find((a) => a.family === 'Baskerville Old Face')
+    expect(baskerville?.regular[0]).toBe('Baskerville Old Face')
+    expect(baskerville?.regular).toContain('Baskerville')
+    expect(baskerville?.sizeAdjust).toBeUndefined()
+    // No genuine bold exists: never hand bold cells to a Times face where the
+    // regular resolves to the real font (Windows) — synthetic bold must win.
+    expect(baskerville?.bold?.some((f) => /Times/.test(f))).toBe(false)
+    const gill = CELL_FONT_ALIASES.find((a) => a.family === 'Gill Sans MT')
+    expect(gill?.regular[0]).toBe('Gill Sans MT')
+    expect(gill?.regular).toContain('Gill Sans')
+    expect(gill?.bold?.[0]).toBe('Gill Sans MT Bold')
   })
 
   it('keeps serif intent for mincho/song/ming/batang names', () => {

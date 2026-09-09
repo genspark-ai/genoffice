@@ -520,6 +520,9 @@ export const ja = {
   ribbonGroupSize: 'サイズ',
   ribbonCrop: 'トリミング',
   ribbonCropTip: '画像をトリミング（ハンドルをドラッグ、Enter で確定）',
+  ribbonReplacePicture: '図の変更',
+  ribbonRotateLeft: '左へ 90° 回転',
+  ribbonRotateRight: '右へ 90° 回転',
   // Insert dialogs
   ribbonDlgHyperlink: 'ハイパーリンク',
   ribbonDlgWebAddress: 'Web アドレス',

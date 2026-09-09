@@ -50,9 +50,84 @@ export interface AiProviderMeta {
   needsCliPath?: boolean
 }
 
+/** Image generation / media analysis backends (separate from the chat provider) */
+export type AiMediaProviderId =
+  'genspark' | 'openai' | 'gemini' | 'doubao' | 'glm' | 'xai' | 'qwen' | 'minimax' | 'custom'
+
+/** wire shape of the image endpoint */
+export type AiImageProtocol = 'openai-images' | 'gemini' | 'dashscope' | 'minimax'
+/** wire shape of the understanding endpoint */
+export type AiAnalysisProtocol = 'openai-chat' | 'gemini'
+
+export interface AiMediaProviderConfig {
+  apiKey: string
+  /** required for custom; for the others it overrides the official endpoint (regional mirrors) */
+  baseUrl?: string | undefined
+  /** image generation model (empty = the provider default) */
+  imageModel: string
+  /** image/video understanding model (empty = the provider default) */
+  analysisModel: string
+}
+
+export interface AiMediaProviderMeta {
+  id: AiMediaProviderId
+  label: string
+  /** one-line English blurb shown on the provider card */
+  description: string
+  keyPlaceholder: string
+  needsBaseUrl?: boolean
+  /** '' for genspark (gsk login) and custom (user-supplied) */
+  defaultBaseUrl: string
+  /** absent = the provider does not generate images */
+  imageProtocol?: AiImageProtocol
+  imageModels: string[]
+  defaultImageModel: string
+  /** absent = the provider does not analyze media */
+  analysisProtocol?: AiAnalysisProtocol
+  analysisModels: string[]
+  defaultAnalysisModel: string
+  /** the analysis model accepts video input (Gemini natively; OpenAI-compatible vendors via a video_url part) */
+  videoAnalysis: boolean
+}
+
+export interface AiMediaSettings {
+  /** provider behind generate_image */
+  imageProvider: AiMediaProviderId
+  /** provider behind analyze_media for images */
+  analysisProvider: AiMediaProviderId
+  /** provider behind analyze_media when the input has video/audio (only video-capable vendors qualify) */
+  videoAnalysisProvider: AiMediaProviderId
+  providers: Record<AiMediaProviderId, AiMediaProviderConfig>
+  /** pre-catalog shape (one provider for both); migrated by resolveAiMediaSettings */
+  provider?: AiMediaProviderId | undefined
+}
+
+/** web/image search backends: Genspark (gsk) or a user key for Serper / Tavily */
+export type AiSearchProviderId = 'genspark' | 'serper' | 'tavily'
+
+export interface AiSearchProviderMeta {
+  id: AiSearchProviderId
+  label: string
+  keyPlaceholder: string
+  /** the backend also serves image search (otherwise image search falls back to free sources) */
+  imageSearch: boolean
+}
+
+export interface AiSearchSettings {
+  provider: AiSearchProviderId
+  providers: Record<Exclude<AiSearchProviderId, 'genspark'>, { apiKey: string }>
+}
+
 export interface AiSettings {
   provider: AiProviderId
   providers: Record<AiProviderId, AiProviderConfig>
+  /**
+   * Provider for generate_image / analyze_media. Absent (pre-media settings
+   * files) means Genspark, i.e. the gsk login + gskToolsEnabled gate.
+   */
+  media?: AiMediaSettings | undefined
+  /** web/image search backend; absent means Genspark (gsk when signed in, then the free chain) */
+  search?: AiSearchSettings | undefined
   /**
    * Genspark cloud tools (web/image search via gsk, image generation, media
    * analysis). Default true; false makes tools skip the gsk backend entirely

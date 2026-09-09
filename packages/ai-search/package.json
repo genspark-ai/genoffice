@@ -14,11 +14,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@genoffice/ai-provider": "*",
+    "@genoffice/electron-utils": "*",
     "@genspark/cli": "^1.4.2"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.11"
   }
 }

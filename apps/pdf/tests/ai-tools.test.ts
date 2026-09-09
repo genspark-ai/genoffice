@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { Op } from '../src/renderer/edit-ops'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { AGENT_TOOLS, executePdfTool, type PdfAiDeps } from '../src/renderer/ai/tools'
 import type { SearchIndex } from '../src/renderer/search'
@@ -78,7 +79,7 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     pendingSummary: () => '',
     annotationSummary: () => '',
     annotationsOn: vi.fn(async () => ({ threads: [], markups: [] })),
-    addNote: vi.fn(() => 'Pn1'),
+    addNote: vi.fn(() => ({ key: 'Pn1' })),
     findNoteRoot: vi.fn(async () => null),
     replyToThread: vi.fn(),
     editNote: vi.fn(),
@@ -90,18 +91,18 @@ function makeDeps(over: Partial<PdfAiDeps> = {}): PdfAiDeps {
     gotoPage: vi.fn(() => true),
     addMarkup: vi.fn(),
     formEdits: () => new Map<string, FormValueInput>(),
-    applyFormEdit: vi.fn(),
-    rotatePages: vi.fn(),
-    deletePage: vi.fn(() => true),
+    applyOps: vi.fn((ops: Op[]) => ({
+      ops,
+      records: ops.map((op) => ({ op })),
+      failures: [],
+      touched: new Set<never>(),
+    })),
     metadata: () => ({ title: 'Report', author: 'Ann', subject: '', keywords: '' }),
-    setMetadata: vi.fn(),
     pageOrder: () => [0, 1],
-    movePage: vi.fn(),
-    reversePages: vi.fn(),
     editText: vi.fn(async () => null),
     moveTextBlock: vi.fn(async (_idx, _block, d: [number, number]) => ({ moveBy: d })),
     addFormMark: vi.fn(),
-    insertText: vi.fn(() => 'i1'),
+    insertText: vi.fn(() => ({ id: 'i1' })),
     textInserts: () => [],
     updateTextInsert: vi.fn(),
     moveTextInsert: vi.fn(),
@@ -919,7 +920,7 @@ describe('insert_text', () => {
   })
 
   it('reports the same top-left that list_inserted_text derives for a narrow centered block', async () => {
-    const deps = makeDeps({ insertText: vi.fn(() => 'dabc') })
+    const deps = makeDeps({ insertText: vi.fn(() => ({ id: 'dabc' })) })
     const inserted = await executePdfTool(
       deps,
       call('insert_text', { page: 1, text: 'aa', x: 100, y: 50, max_width: 200, align: 'center' }),
@@ -937,7 +938,7 @@ describe('insert_text', () => {
   })
 
   it('reports the pending id of the new block', async () => {
-    const deps = makeDeps({ insertText: vi.fn(() => 'dabc') })
+    const deps = makeDeps({ insertText: vi.fn(() => ({ id: 'dabc' })) })
     const result = await executePdfTool(
       deps,
       call('insert_text', { page: 1, text: 'Hi', x: 10, y: 10 }),
@@ -1053,106 +1054,278 @@ describe('form tools', () => {
     expect(result.output).toContain('current value: true')
   })
 
-  it('fills a text field and jumps to its page', async () => {
+  it('apply_ops fills the form kind from the catalog and validates options', async () => {
     const deps = withForm()
-    const result = await executePdfTool(
+    const ok = await executePdfTool(
       deps,
-      call('fill_form_field', { name: 'name', value: 'Alice' }),
+      call('apply_ops', {
+        ops: [
+          { op: 'setFormValue', value: { name: 'name', value: 'Alice' } },
+          { op: 'setFormValue', value: { name: 'agree', checked: true } },
+          { op: 'setFormValue', value: { name: 'color', value: 'blue' } },
+        ],
+      }),
     )
-    expect(result.mutated).toBe(true)
-    expect(deps.applyFormEdit).toHaveBeenCalledWith({ name: 'name', kind: 'text', value: 'Alice' })
+    expect(ok.mutated).toBe(true)
+    expect(vi.mocked(deps.applyOps).mock.calls[0]![0]).toEqual([
+      { op: 'setFormValue', value: { name: 'name', kind: 'text', value: 'Alice' } },
+      { op: 'setFormValue', value: { name: 'agree', kind: 'checkbox', checked: true } },
+      { op: 'setFormValue', value: { name: 'color', kind: 'radio', value: 'blue' } },
+    ])
     expect(deps.gotoPage).toHaveBeenCalledWith(1)
-  })
-
-  it('requires checked for checkboxes and validates choice options', async () => {
-    const noChecked = await executePdfTool(withForm(), call('fill_form_field', { name: 'agree' }))
+    const noChecked = await executePdfTool(
+      withForm(),
+      call('apply_ops', { ops: [{ op: 'setFormValue', value: { name: 'agree' } }] }),
+    )
     expect(noChecked.isError).toBe(true)
-
+    expect(noChecked.output).toContain('checked')
+    const unknown = await executePdfTool(
+      withForm(),
+      call('apply_ops', { ops: [{ op: 'setFormValue', value: { name: 'nope', value: 'x' } }] }),
+    )
+    expect(unknown.isError).toBe(true)
+    expect(unknown.output).toContain('No field named')
     const badOption = await executePdfTool(
       withForm(),
-      call('fill_form_field', { name: 'size', value: 'XXL' }),
+      call('apply_ops', { ops: [{ op: 'setFormValue', value: { name: 'size', value: 'XXL' } }] }),
     )
     expect(badOption.isError).toBe(true)
     expect(badOption.output).toContain('not among the options')
-
-    const deps = withForm()
-    const ok = await executePdfTool(deps, call('fill_form_field', { name: 'color', value: 'blue' }))
-    expect(ok.mutated).toBe(true)
-    expect(deps.applyFormEdit).toHaveBeenCalledWith({ name: 'color', kind: 'radio', value: 'blue' })
-  })
-
-  it('rejects unknown field names', async () => {
-    const result = await executePdfTool(
-      withForm(),
-      call('fill_form_field', { name: 'nope', value: 'x' }),
-    )
-    expect(result.isError).toBe(true)
-    expect(result.output).toContain('No field named')
   })
 })
 
-describe('rotate_page / delete_page', () => {
-  it('maps direction to a signed 90-degree delta', async () => {
-    const deps = makeDeps()
-    await executePdfTool(deps, call('rotate_page', { page: 1, direction: 'left' }))
-    expect(deps.rotatePages).toHaveBeenCalledWith([0], -90)
-    await executePdfTool(deps, call('rotate_page', { page: 2, direction: 'right' }))
-    expect(deps.rotatePages).toHaveBeenCalledWith([1], 90)
-  })
-
-  it('rotates a page by 180 and rejects an unknown direction', async () => {
-    const deps = makeDeps()
-    const half = await executePdfTool(deps, call('rotate_page', { page: 2, direction: '180' }))
-    expect(half.mutated).toBe(true)
-    expect(half.output).toContain('180°')
-    expect(deps.rotatePages).toHaveBeenCalledWith([1], 180)
-    const bad = await executePdfTool(deps, call('rotate_page', { page: 1, direction: 'up' }))
-    expect(bad.isError).toBe(true)
-    expect(deps.rotatePages).toHaveBeenCalledTimes(1)
-  })
-
-  it('rotates every visible page in one call when all is true', async () => {
-    const deps = makeDeps({ pageCount: () => 3, pageOrder: () => [2, 0] })
+describe('apply_ops', () => {
+  it('apply_ops rewrites page numbers, pads deleted pages into the order, and applies once', async () => {
+    const deps = makeDeps({
+      pageCount: () => 3,
+      pageOrder: () => [2, 0],
+      isDeleted: (i) => i === 1,
+    })
     const result = await executePdfTool(
       deps,
-      call('rotate_page', { direction: 'right', all: true }),
+      call('apply_ops', {
+        ops: [
+          { op: 'rotatePages', pages: [1, 3], dir: 90 },
+          { op: 'setPageOrder', order: [3, 1] },
+          { op: 'setMetadata', metadata: { title: 'T' } },
+          { op: 'deletePage', page: 3 },
+        ],
+      }),
     )
+    expect(result.isError).toBeUndefined()
     expect(result.mutated).toBe(true)
-    expect(result.output).toContain('all 2 pages')
-    expect(deps.rotatePages).toHaveBeenCalledTimes(1)
-    expect(deps.rotatePages).toHaveBeenCalledWith([2, 0], 90)
+    expect(result.output).toContain('Applied 4 op(s)')
+    expect(deps.applyOps).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(deps.applyOps).mock.calls[0]![0]).toEqual([
+      { op: 'rotatePages', pages: [0, 2], dir: 90 },
+      { op: 'setPageOrder', order: [2, 0, 1] },
+      { op: 'setMetadata', metadata: { title: 'T', author: 'Ann', subject: '', keywords: '' } },
+      { op: 'deletePage', pageIndex: 2 },
+    ])
     expect(deps.gotoPage).not.toHaveBeenCalled()
+    expect(vi.mocked(deps.applyOps).mock.calls[0]![1]).toBeUndefined()
+  })
+
+  it('apply_ops rejects the whole batch before applying: deleted page, hidden op, unknown op', async () => {
+    const deleted = makeDeps({ isDeleted: (i) => i === 1 })
+    const r1 = await executePdfTool(
+      deleted,
+      call('apply_ops', {
+        ops: [
+          { op: 'setMetadata', metadata: {} },
+          { op: 'deletePage', page: 2 },
+        ],
+      }),
+    )
+    expect(r1.isError).toBe(true)
+    expect(r1.output).toContain('ops[1]')
+    expect(r1.output).toContain('deleted')
+    expect(deleted.applyOps).not.toHaveBeenCalled()
+
+    const hidden = await executePdfTool(
+      makeDeps(),
+      call('apply_ops', { ops: [{ op: 'addMarkup', markup: {} }] }),
+    )
+    expect(hidden.isError).toBe(true)
+    expect(hidden.output).toContain('not available through apply_ops')
+
+    const unknown = await executePdfTool(makeDeps(), call('apply_ops', { ops: [{ op: 'nope' }] }))
+    expect(unknown.isError).toBe(true)
+    expect(unknown.output).toContain('Available ops')
+    expect(unknown.output).toContain('rotatePages')
+
+    const bad = await executePdfTool(
+      makeDeps(),
+      call('apply_ops', { ops: [{ op: 'setPageOrder', order: [1, 1] }] }),
+    )
+    expect(bad.isError).toBe(true)
+    expect(bad.output).toContain('every current page number exactly once')
+  })
+
+  it('apply_ops strips P/T id prefixes and routes saved records to their tools', async () => {
+    const deps = makeDeps()
+    const ok = await executePdfTool(
+      deps,
+      call('apply_ops', {
+        ops: [
+          { op: 'removeMarkup', id: 'Pd1' },
+          { op: 'removeTextInsert', id: 'Tabc' },
+          { op: 'setNoteContents', id: 'Pd2', contents: ' hi ' },
+        ],
+      }),
+    )
+    expect(ok.mutated).toBe(true)
+    expect(vi.mocked(deps.applyOps).mock.calls[0]![0]).toEqual([
+      { op: 'removeMarkup', id: 'd1' },
+      { op: 'removeTextInsert', id: 'abc' },
+      { op: 'setNoteContents', id: 'd2', contents: 'hi' },
+    ])
+    const saved = await executePdfTool(
+      makeDeps(),
+      call('apply_ops', { ops: [{ op: 'setNoteContents', id: 'S12', contents: 'x' }] }),
+    )
+    expect(saved.isError).toBe(true)
+    expect(saved.output).toContain('edit_note')
+    for (const contents of [undefined, null, '  ', 7]) {
+      const blank = makeDeps()
+      const r = await executePdfTool(
+        blank,
+        call('apply_ops', { ops: [{ op: 'setNoteContents', id: 'Pd2', contents }] }),
+      )
+      expect(r.isError).toBe(true)
+      expect(r.output).toContain('non-empty string')
+      expect(blank.applyOps).not.toHaveBeenCalled()
+    }
+  })
+
+  it('apply_ops dry run plans without mutating and relays executor failures', async () => {
+    const deps = makeDeps()
+    const dry = await executePdfTool(
+      deps,
+      call('apply_ops', { ops: [{ op: 'rotatePages', pages: [1], dir: 90 }], dry_run: true }),
+    )
+    expect(dry.isError).toBeUndefined()
+    expect(dry.mutated).toBeUndefined()
+    expect(dry.output).toContain('NOT modified')
+    expect(vi.mocked(deps.applyOps).mock.calls[0]![1]).toEqual({ dryRun: true })
+
+    const failing = makeDeps({
+      applyOps: () => ({
+        ops: [],
+        records: [],
+        failures: [{ index: 0, op: { op: 'rotatePages' }, error: '"dir" must be 90, -90 or 180' }],
+        touched: new Set<never>(),
+      }),
+    })
+    const r = await executePdfTool(
+      failing,
+      call('apply_ops', { ops: [{ op: 'rotatePages', pages: [1], dir: 45 }] }),
+    )
+    expect(r.isError).toBe(true)
+    expect(r.output).toContain('ops[0]')
+    expect(r.output).toContain('"dir" must be')
+
     const ro = await executePdfTool(
       makeDeps({ readOnly: () => true }),
-      call('rotate_page', { direction: 'left', all: true }),
+      call('apply_ops', { ops: [{ op: 'deletePage', page: 1 }] }),
     )
     expect(ro.isError).toBe(true)
   })
 
-  it('deletes a page and reports failure when the last page must remain', async () => {
-    const deps = makeDeps()
-    const ok = await executePdfTool(deps, call('delete_page', { page: 2 }))
-    expect(ok.mutated).toBe(true)
-    expect(deps.deletePage).toHaveBeenCalledWith(1)
-
-    const blocked = await executePdfTool(
-      makeDeps({ deletePage: () => false }),
-      call('delete_page', { page: 1 }),
+  it('apply_ops setPageOrder reports the new order and scrolls to the moved page', async () => {
+    const deps = makeDeps({ pageCount: () => 3, pageOrder: () => [0, 1, 2] })
+    const r = await executePdfTool(
+      deps,
+      call('apply_ops', { ops: [{ op: 'setPageOrder', order: [3, 1, 2] }] }),
     )
-    expect(blocked.isError).toBe(true)
+    expect(r.mutated).toBe(true)
+    expect(vi.mocked(deps.applyOps).mock.calls[0]![0]).toEqual([
+      { op: 'setPageOrder', order: [2, 0, 1] },
+    ])
+    expect(r.output).toContain('Current order')
+    expect(deps.gotoPage).toHaveBeenCalledWith(3)
   })
 
-  it('blocks mutations on read-only documents', async () => {
-    const deps = makeDeps({ readOnly: () => true })
-    for (const c of [
-      call('rotate_page', { page: 1, direction: 'left' }),
-      call('delete_page', { page: 1 }),
-    ]) {
-      const result = await executePdfTool(deps, c)
-      expect(result.isError).toBe(true)
-      expect(deps.rotatePages).not.toHaveBeenCalled()
-      expect(deps.deletePage).not.toHaveBeenCalled()
-    }
+  it('apply_ops checks later ops against what earlier ones changed: delete then reorder, chained metadata', async () => {
+    const deps = makeDeps({ pageCount: () => 3, pageOrder: () => [0, 1, 2] })
+    const r = await executePdfTool(
+      deps,
+      call('apply_ops', {
+        ops: [
+          { op: 'deletePage', page: 2 },
+          { op: 'setPageOrder', order: [3, 1] },
+          { op: 'setMetadata', metadata: { title: 'A' } },
+          { op: 'setMetadata', metadata: { subject: 'B' } },
+        ],
+      }),
+    )
+    expect(r.isError).toBeUndefined()
+    expect(vi.mocked(deps.applyOps).mock.calls[0]![0]).toEqual([
+      { op: 'deletePage', pageIndex: 1 },
+      { op: 'setPageOrder', order: [2, 0, 1] },
+      { op: 'setMetadata', metadata: { title: 'A', author: 'Ann', subject: '', keywords: '' } },
+      { op: 'setMetadata', metadata: { title: 'A', author: 'Ann', subject: 'B', keywords: '' } },
+    ])
+    const stale = await executePdfTool(
+      makeDeps({ pageCount: () => 3, pageOrder: () => [0, 1, 2] }),
+      call('apply_ops', {
+        ops: [
+          { op: 'deletePage', page: 2 },
+          { op: 'setPageOrder', order: [3, 2, 1] },
+        ],
+      }),
+    )
+    expect(stale.isError).toBe(true)
+    expect(stale.output).toContain('[1, 3]')
+  })
+
+  it('apply_ops scrolls to the page a reorder actually moved, in either direction', async () => {
+    const later = makeDeps({ pageCount: () => 4, pageOrder: () => [0, 1, 2, 3] })
+    await executePdfTool(
+      later,
+      call('apply_ops', { ops: [{ op: 'setPageOrder', order: [2, 3, 1, 4] }] }),
+    )
+    expect(later.gotoPage).toHaveBeenCalledWith(1)
+    const earlier = makeDeps({ pageCount: () => 4, pageOrder: () => [0, 1, 2, 3] })
+    await executePdfTool(
+      earlier,
+      call('apply_ops', { ops: [{ op: 'setPageOrder', order: [1, 4, 2, 3] }] }),
+    )
+    expect(earlier.gotoPage).toHaveBeenCalledWith(4)
+  })
+
+  it('apply_ops setMetadata merges over the current properties and "" clears a field', async () => {
+    const deps = makeDeps()
+    const r = await executePdfTool(
+      deps,
+      call('apply_ops', {
+        ops: [{ op: 'setMetadata', metadata: { subject: ' Q3 ', author: '' } }],
+      }),
+    )
+    expect(r.mutated).toBe(true)
+    expect(vi.mocked(deps.applyOps).mock.calls[0]![0]).toEqual([
+      { op: 'setMetadata', metadata: { title: 'Report', author: '', subject: 'Q3', keywords: '' } },
+    ])
+    expect(r.output).toContain('Document properties')
+  })
+
+  it('apply_ops scrolls to a single rotated page and rotates all listed pages at once', async () => {
+    const deps = makeDeps()
+    const one = await executePdfTool(
+      deps,
+      call('apply_ops', { ops: [{ op: 'rotatePages', pages: [2], dir: -90 }] }),
+    )
+    expect(one.mutated).toBe(true)
+    expect(deps.gotoPage).toHaveBeenCalledWith(2)
+    const all = makeDeps({ pageCount: () => 3, pageOrder: () => [2, 0], isDeleted: (i) => i === 1 })
+    await executePdfTool(
+      all,
+      call('apply_ops', { ops: [{ op: 'rotatePages', pages: [1, 3], dir: 180 }] }),
+    )
+    expect(vi.mocked(all.applyOps).mock.calls[0]![0]).toEqual([
+      { op: 'rotatePages', pages: [0, 2], dir: 180 },
+    ])
+    expect(all.gotoPage).not.toHaveBeenCalled()
   })
 })
 
@@ -1269,10 +1442,10 @@ describe('insert_image', () => {
     expect(deps.insertImage).toHaveBeenCalledWith(0, 'PNGB64', [0, 467, 300, 692], 'aboveText')
   })
 
-  it('rejects non-http urls and reports download failures', async () => {
+  it('rejects unknown url schemes and reports download failures', async () => {
     const bad = await executePdfTool(
       makeDeps(),
-      call('insert_image', { page: 1, url: 'file:///etc/passwd' }),
+      call('insert_image', { page: 1, url: 'data:image/png;base64,AAAA' }),
     )
     expect(bad.isError).toBe(true)
 
@@ -1283,6 +1456,24 @@ describe('insert_image', () => {
     )
     expect(failed.isError).toBe(true)
     expect(deps.insertImage).not.toHaveBeenCalled()
+  })
+
+  it('passes file:// urls through to the main-process fetch, which resolves only the generated-image store', async () => {
+    const stray = makeDeps({ fetchImage: async () => null })
+    const refused = await executePdfTool(
+      stray,
+      call('insert_image', { page: 1, url: 'file:///etc/passwd' }),
+    )
+    expect(refused.isError).toBe(true)
+    expect(stray.insertImage).not.toHaveBeenCalled()
+
+    const deps = makeDeps()
+    const ok = await executePdfTool(
+      deps,
+      call('insert_image', { page: 1, url: 'file:///tmp/genoffice-ai-images/1234.png' }),
+    )
+    expect(ok.mutated).toBe(true)
+    expect(deps.fetchImage).toHaveBeenCalledWith('file:///tmp/genoffice-ai-images/1234.png')
   })
 
   it('rejects anchor text that is not on the page', async () => {
@@ -1510,15 +1701,20 @@ describe('image pixel bakes (flip / opacity / crop / remove background)', () => 
     )
   })
 
-  it('a rotate_page earlier in the same turn is honored by a later flip', async () => {
+  it('an apply_ops rotation earlier in the same turn is honored by a later flip', async () => {
     let rot = 0
     const deps = makeDeps({
       pageGeom: () => ({ pw: 600, ph: 800, rot }),
-      rotatePages: vi.fn((_pages: number[], dir: number) => {
-        rot = (rot + dir + 360) % 360
+      applyOps: vi.fn((ops: Op[]) => {
+        for (const op of ops)
+          if (op.op === 'rotatePages') rot = (rot + (op.dir as number) + 360) % 360
+        return { ops, records: ops.map((op) => ({ op })), failures: [], touched: new Set<never>() }
       }),
     })
-    await executePdfTool(deps, call('rotate_page', { page: 1, direction: 'right' }))
+    await executePdfTool(
+      deps,
+      call('apply_ops', { ops: [{ op: 'rotatePages', pages: [1], dir: 90 }] }),
+    )
     await executePdfTool(deps, call('flip_image', { page: 1, image_number: 1, axis: 'horizontal' }))
     expect(deps.bakeImage).toHaveBeenCalledWith(
       expect.objectContaining({ pageIndex: 0 }),
@@ -2161,59 +2357,6 @@ describe('create_document', () => {
   })
 })
 
-describe('move_page / reverse_pages', () => {
-  it('move_page translates the original page number to its visible position', async () => {
-    let order = [2, 0, 1]
-    const deps = makeDeps({
-      pageCount: () => 3,
-      pageOrder: () => order,
-      movePage: vi.fn((origIdx: number, to: number) => {
-        const next = order.filter((i) => i !== origIdx)
-        next.splice(to, 0, origIdx)
-        order = next
-      }),
-    })
-    const result = await executePdfTool(deps, call('move_page', { page: 1, to: 1 }))
-    expect(result.isError).toBeUndefined()
-    expect(result.mutated).toBe(true)
-    expect(deps.movePage).toHaveBeenCalledWith(0, 0)
-    expect(result.output).toContain('Current order (original page numbers): 1, 3, 2')
-  })
-
-  it('move_page is a no-op for the current position and rejects bad targets', async () => {
-    const deps = makeDeps()
-    const same = await executePdfTool(deps, call('move_page', { page: 2, to: 2 }))
-    expect(same.isError).toBeUndefined()
-    expect(same.mutated).toBeUndefined()
-    const out = await executePdfTool(deps, call('move_page', { page: 2, to: 3 }))
-    expect(out.isError).toBe(true)
-    expect(deps.movePage).not.toHaveBeenCalled()
-    const ro = await executePdfTool(
-      makeDeps({ readOnly: () => true }),
-      call('move_page', { page: 2, to: 1 }),
-    )
-    expect(ro.isError).toBe(true)
-  })
-
-  it('reverse_pages flips the order and refuses single-page documents', async () => {
-    let order = [0, 1]
-    const deps = makeDeps({
-      pageOrder: () => order,
-      reversePages: vi.fn(() => {
-        order = [...order].reverse()
-      }),
-    })
-    const result = await executePdfTool(deps, call('reverse_pages', {}))
-    expect(result.mutated).toBe(true)
-    expect(result.output).toContain('2, 1')
-    const single = await executePdfTool(
-      makeDeps({ pageCount: () => 1, pageOrder: () => [0] }),
-      call('reverse_pages', {}),
-    )
-    expect(single.isError).toBe(true)
-  })
-})
-
 describe('set_watermark / set_header_footer', () => {
   const HF = {
     headerLeft: 'ACME',
@@ -2274,41 +2417,6 @@ describe('set_watermark / set_header_footer', () => {
     expect(clear.setStamps).toHaveBeenCalledWith(null)
     const nothing = await executePdfTool(makeDeps(), call('set_header_footer', {}))
     expect(nothing.isError).toBe(true)
-  })
-})
-
-describe('set_metadata', () => {
-  it('merges the given fields over the current properties', async () => {
-    const deps = makeDeps()
-    const result = await executePdfTool(deps, call('set_metadata', { subject: 'Q3 numbers' }))
-    expect(result.mutated).toBe(true)
-    expect(deps.setMetadata).toHaveBeenCalledWith({
-      title: 'Report',
-      author: 'Ann',
-      subject: 'Q3 numbers',
-      keywords: '',
-    })
-    expect(result.output).toContain('title: "Report"')
-    expect(result.output).toContain('subject: "Q3 numbers"')
-    expect(result.output).toContain('on save')
-  })
-
-  it('clears a field with "" and reports the current values on a no-op', async () => {
-    const deps = makeDeps()
-    const cleared = await executePdfTool(deps, call('set_metadata', { author: '' }))
-    expect(deps.setMetadata).toHaveBeenCalledWith(expect.objectContaining({ author: '' }))
-    expect(cleared.output).toContain('author: (empty)')
-    const noop = await executePdfTool(deps, call('set_metadata', { title: 'Report' }))
-    expect(noop.mutated).toBeUndefined()
-    expect(noop.isError).toBeUndefined()
-    expect(noop.output).toContain('unchanged')
-    expect(noop.output).toContain('author: "Ann"')
-    expect(deps.setMetadata).toHaveBeenCalledTimes(1)
-    const ro = await executePdfTool(
-      makeDeps({ readOnly: () => true }),
-      call('set_metadata', { title: 'New' }),
-    )
-    expect(ro.isError).toBe(true)
   })
 })
 

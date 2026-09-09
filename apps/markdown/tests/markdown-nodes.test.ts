@@ -77,6 +77,14 @@ describe('markdown round-trip for GFM nodes', () => {
     expect(stable).toBe(true)
   })
 
+  it('mermaid blocks stay plain fenced code in the file', () => {
+    const md = '```mermaid\nflowchart LR\n    A --> B\n```'
+    const { out, stable } = roundTrip(editor, md)
+    expect(out).toContain('```mermaid\nflowchart LR\n    A --> B\n```')
+    expect(stable).toBe(true)
+    expect(editor.markdown!.parse(md).content?.[0]?.attrs?.language).toBe('mermaid')
+  })
+
   it('nested lists serialize with 4-space indents (strict-CommonMark safe)', () => {
     // 2-space indents would be below the ordered item's content column ("1. "
     // = 3 chars), so GitHub would flatten the sub-list when re-parsing the file

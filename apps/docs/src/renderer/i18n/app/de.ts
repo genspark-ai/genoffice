@@ -78,8 +78,10 @@ export const de = {
   appPgNumHintBlank: '„Beginnen bei“ leer lassen, um vom vorherigen Abschnitt fortzusetzen',
   appPgNumAppliesTo: '; gilt für Abschnitt {n}',
   appExportingPdf: 'PDF wird exportiert…',
+  appExportingHtml: 'HTML wird exportiert…',
   appExportPdf: 'PDF exportieren',
   appExportPdfFailed: 'PDF-Export fehlgeschlagen: {error}',
+  appExportHtmlFailed: 'HTML-Export fehlgeschlagen: {error}',
   appPrintGroupFailed: 'Drucken der Seitengruppe fehlgeschlagen',
   appPrintTitle: 'Drucken',
   appPrintProgress: 'Druck wird vorbereitet…',
@@ -95,15 +97,18 @@ export const de = {
   appPrintPrevPage: 'Vorherige Seite',
   appPrintNextPage: 'Nächste Seite',
   appExportedPdf: 'PDF exportiert: {path}',
+  appExportedHtml: 'HTML exportiert: {path}',
   appExportedPdfMixed:
     'PDF exportiert: {path} (gemischte Papierformate, {n} Gruppen seitenweise zusammengeführt)',
   appExportPdfCanceled: 'PDF-Export abgebrochen',
+  appExportHtmlCanceled: 'HTML-Export abgebrochen',
   appMixedExportOpening:
     'Gemischte Papierformate: Seitenvorschau wird geöffnet, um die Seiten zusammengeführt zu exportieren…',
   appSelectTextToComment: 'Wählen Sie zuerst den zu kommentierenden Text aus',
   appCommentSelectionLost:
     'Die Auswahl ist nicht mehr gültig; wählen Sie den zu kommentierenden Text erneut aus',
   appCommentAdded: 'Kommentar hinzugefügt; wird beim Speichern in das Dokument geschrieben',
+  appCommentEdited: 'Kommentar aktualisiert; wird beim Speichern in das Dokument geschrieben',
   appCommentAnchorGone:
     'Der Anker des ursprünglichen Kommentars existiert nicht mehr; Antworten nicht möglich',
   appCommentReplied: 'Antwort hinzugefügt; wird beim Speichern in das Dokument geschrieben',
@@ -115,6 +120,7 @@ export const de = {
   appUnknownAuthor: '(Unbekannter Autor)',
   appResolved: 'Gelöst',
   appResolvedComments: 'Gelöste Kommentare ({n})',
+  appEditComment: 'Kommentar bearbeiten',
   appDeleteComment: 'Kommentar löschen',
   appDeleteCommentWithReplies: 'Kommentar löschen (mit Antworten)',
   appDeleteReply: 'Antwort löschen',

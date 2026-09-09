@@ -8,6 +8,7 @@ import {
   formatGeneral,
   generalCharBudget,
   hostLocalePattern,
+  isCalendarDatePattern,
   mergedSpanWidth,
   yenLiteralDisplay,
 } from '../src/renderer/numfmt-fix'
@@ -315,5 +316,35 @@ describe('hostLocalePattern — [$sym-LCID] keeps host separators', () => {
   it('keeps the legacy yen tag working for the 0x5C swap', () => {
     expect(fixFormattedValue('[$\\-411]#,##0', 1234, '\\1,234')).toBeNull()
     expect(yenLiteralDisplay('[$\\-411]#,##0', '\\1,234', undefined)).toBe('¥1,234')
+  })
+
+  it('drops an empty [$] token: Excel prints nothing for it', () => {
+    expect(hostLocalePattern('[$]hh:mm;@')).toBe('hh:mm;@')
+    expect(hostLocalePattern('[$]#,##0.00')).toBe('#,##0.00')
+    // numfmt rejects `[$]` and Univer shows its ###### error text.
+    expect(fixFormattedValue('[$]hh:mm;@', 0.2083333333333333, '######')).toBe('05:00')
+    expect(fixFormattedValue('[$]hh:mm;@', 0.25, '0.25')).toBe('06:00')
+    expect(fixFormattedValue('[$]hh:mm;@', 0, '0')).toBe('00:00')
+    expect(fixFormattedValue('[$]hh:mm;@', 'late', 'late')).toBeNull()
+    expect(isCalendarDatePattern('[$]hh:mm;@')).toBe(false)
+    expect(isCalendarDatePattern('[$]dd/mm/yyyy')).toBe(true)
+  })
+
+  it('normalises [$] before the half-way rounding and exponential repairs', () => {
+    expect(fixFormattedValue('[$]0.00', 1.005, '######')).toBe('1.01')
+    expect(fixFormattedValue('[$]0.00', 1.005, '######')).toBe(
+      fixFormattedValue('0.00', 1.005, '1.00'),
+    )
+    expect(fixFormattedValue('[$]0.0000000000', 1.8744045912597986e-8, '######')).toBe(
+      '0.0000000187',
+    )
+    expect(fixFormattedValue('[$]0.00E+00', 1234.5, '######')).toBe('1.23E+03')
+  })
+
+  it('leaves locale-only and symbol-only tags to numfmt', () => {
+    expect(hostLocalePattern('[$-409]hh:mm;@')).toBe('[$-409]hh:mm;@')
+    expect(fixFormattedValue('[$-409]hh:mm;@', 0.25, '06:00')).toBeNull()
+    expect(hostLocalePattern('[$€]#,##0.00')).toBe('[$€]#,##0.00')
+    expect(fixFormattedValue('[$€]#,##0.00', 0.25, '€0.25')).toBeNull()
   })
 })

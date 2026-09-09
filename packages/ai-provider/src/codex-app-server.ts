@@ -18,7 +18,7 @@ interface CodexAppServerTurn {
   }>
 }
 
-interface RpcMessage {
+export interface RpcMessage {
   id?: unknown
   method?: unknown
   params?: unknown
@@ -42,6 +42,10 @@ interface NativeSession {
   threadId: string
   signature: string
   messageFingerprints: string[]
+  /** Created with the thread and kept alive as long as it: the thread's cwd and
+   * permission profile are bound to this path, and later localImage files land
+   * here. Removed only when the session is dropped. */
+  tempDir: string
 }
 
 interface ModelEntry {
@@ -136,14 +140,37 @@ async function newestManagedCodex(root: string, platform: NodeJS.Platform): Prom
   return pool[0]?.path ?? null
 }
 
+/**
+ * Finder/Dock-launched Electron inherits a minimal PATH, so the directories
+ * npm, Homebrew and version managers install into are probed explicitly.
+ */
+async function commonUnixBinDirs(env: NodeJS.ProcessEnv): Promise<string[]> {
+  const home = env.HOME ?? ''
+  const dirs = ['/opt/homebrew/bin', '/usr/local/bin']
+  if (home) {
+    dirs.push(
+      join(home, '.local', 'bin'),
+      join(home, '.npm-global', 'bin'),
+      join(home, '.volta', 'bin'),
+      join(home, '.bun', 'bin'),
+      join(home, '.yarn', 'bin'),
+    )
+    const nvmRoot = join(home, '.nvm', 'versions', 'node')
+    const versions = await readdir(nvmRoot).catch(() => [] as string[])
+    for (const version of versions.sort().reverse()) dirs.push(join(nvmRoot, version, 'bin'))
+  }
+  return dirs
+}
+
 async function codexOnPath(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
 ): Promise<string | null> {
   const pathValue = env.PATH ?? env.Path ?? env.path ?? ''
-  if (!pathValue) return null
   const names = platform === 'win32' ? ['codex.exe'] : ['codex']
-  for (const directory of pathValue.split(platform === 'win32' ? ';' : delimiter)) {
+  const directories = pathValue ? pathValue.split(platform === 'win32' ? ';' : delimiter) : []
+  if (platform !== 'win32') directories.push(...(await commonUnixBinDirs(env)))
+  for (const directory of directories) {
     const cleanDirectory = cleanCliPath(directory)
     if (!cleanDirectory) continue
     for (const name of names) {
@@ -228,7 +255,7 @@ function codexChildEnv(cliPath: string): NodeJS.ProcessEnv {
   if (process.platform === 'win32' && !env.HOME && env.USERPROFILE) env.HOME = env.USERPROFILE
   if (isAbsolute(cliPath)) {
     const key = Object.keys(env).find((name) => name.toLowerCase() === 'path') ?? 'PATH'
-    env[key] = `${dirname(cliPath)};${env[key] ?? ''}`
+    env[key] = `${dirname(cliPath)}${delimiter}${env[key] ?? ''}`
   }
   return env
 }
@@ -318,12 +345,26 @@ class CodexAppServerClient {
     while (this.sessions.size > MAX_NATIVE_SESSIONS) {
       const oldest = this.sessions.keys().next().value as string | undefined
       if (!oldest) break
+      const evicted = this.sessions.get(oldest)
       this.sessions.delete(oldest)
+      if (evicted) this.disposeSession(evicted, true)
     }
   }
 
   deleteSession(id: string): void {
+    const session = this.sessions.get(id)
+    if (!session) return
     this.sessions.delete(id)
+    this.disposeSession(session, true)
+  }
+
+  /** Drop a session's temp dir and, when the process is still alive, its native
+   * thread. `signal` is false during shutdown, where the child is already gone. */
+  private disposeSession(session: NativeSession, signal: boolean): void {
+    void rm(session.tempDir, { recursive: true, force: true }).catch(() => undefined)
+    if (signal && !this.closed) {
+      void this.requestWire('thread/delete', { threadId: session.threadId }).catch(() => undefined)
+    }
   }
 
   stop(): void {
@@ -409,6 +450,7 @@ class CodexAppServerClient {
       pending.reject(error)
     }
     this.pending.clear()
+    for (const session of this.sessions.values()) this.disposeSession(session, false)
     this.sessions.clear()
     this.notificationListeners.clear()
     this.onClose()
@@ -633,11 +675,14 @@ function objectValue(value: unknown): Record<string, unknown> | undefined {
 }
 
 function threadIdFrom(result: unknown): string {
+  const id = optionalThreadId(result)
+  if (!id) throw new Error('Codex app-server did not return a thread id')
+  return id
+}
+
+function optionalThreadId(result: unknown): string | undefined {
   const thread = objectValue(objectValue(result)?.thread)
-  if (typeof thread?.id !== 'string' || !thread.id) {
-    throw new Error('Codex app-server did not return a thread id')
-  }
-  return thread.id
+  return typeof thread?.id === 'string' && thread.id ? thread.id : undefined
 }
 
 function finalMessageFromTurn(params: unknown): string {
@@ -650,25 +695,80 @@ function finalMessageFromTurn(params: unknown): string {
   return ''
 }
 
+const CODEX_PERMISSION_PROFILE = 'genoffice'
+
+/**
+ * Codex keeps its own shell tool even when told not to use it, and the plain
+ * read-only sandbox still lets that tool read the whole disk. A permission
+ * profile confines reads to platform paths plus our temp dir. An explicit
+ * `sandbox` would disable the profile, so it is only used in the fallback.
+ */
+export function codexThreadStartParams(
+  config: AiProviderConfig,
+  tempDir: string,
+  mode: 'profile' | 'read-only',
+): Record<string, unknown> {
+  const base = {
+    ...(config.model.trim() ? { model: config.model.trim() } : {}),
+    cwd: tempDir,
+    approvalPolicy: 'never',
+    serviceName: 'genoffice',
+    baseInstructions: CODEX_BASE_INSTRUCTIONS,
+    ephemeral: true,
+  }
+  if (mode === 'read-only') return { ...base, sandbox: 'read-only' }
+  return {
+    ...base,
+    config: {
+      default_permissions: CODEX_PERMISSION_PROFILE,
+      permissions: {
+        [CODEX_PERMISSION_PROFILE]: { filesystem: { ':minimal': 'read', [tempDir]: 'read' } },
+      },
+    },
+  }
+}
+
+export function activePermissionProfileId(result: unknown): string | undefined {
+  const active = objectValue(objectValue(result)?.activePermissionProfile)
+  return typeof active?.id === 'string' ? active.id : undefined
+}
+
 async function startNativeThread(
   client: CodexAppServerClient,
   config: AiProviderConfig,
   tempDir: string,
 ): Promise<string> {
-  const result = await client.request('thread/start', {
-    ...(config.model.trim() ? { model: config.model.trim() } : {}),
-    cwd: tempDir,
-    approvalPolicy: 'never',
-    sandbox: 'read-only',
-    serviceName: 'genoffice',
-    baseInstructions: CODEX_BASE_INSTRUCTIONS,
-    ephemeral: true,
-  })
-  return threadIdFrom(result)
+  let profileResult: unknown
+  try {
+    profileResult = await client.request(
+      'thread/start',
+      codexThreadStartParams(config, tempDir, 'profile'),
+    )
+    if (activePermissionProfileId(profileResult) === CODEX_PERMISSION_PROFILE) {
+      return threadIdFrom(profileResult)
+    }
+  } catch {
+    // Older Codex builds reject the profile keys; fall through to the sandbox.
+    profileResult = undefined
+  }
+  // A user config.toml sandbox_mode or an older Codex ignored the profile. Discard
+  // that thread before falling back so it does not linger under looser permissions.
+  const abandoned = optionalThreadId(profileResult)
+  if (abandoned) {
+    await client.request('thread/delete', { threadId: abandoned }).catch(() => undefined)
+  }
+  return threadIdFrom(
+    await client.request('thread/start', codexThreadStartParams(config, tempDir, 'read-only')),
+  )
 }
 
-async function waitForTurn(
-  client: CodexAppServerClient,
+export interface CodexTurnTransport {
+  request(method: string, params: unknown): Promise<unknown>
+  onNotification(listener: (message: RpcMessage) => void): () => void
+}
+
+export async function waitForTurn(
+  client: CodexTurnTransport,
   threadId: string,
   start: () => Promise<unknown>,
   signal: AbortSignal,
@@ -720,6 +820,9 @@ async function waitForTurn(
           finish()
         }
       } else if (message.method === 'error') {
+        // willRetry: a dropped model stream Codex reconnects on its own ("Reconnecting... 2/5");
+        // the turn is still live and ends with turn/completed.
+        if (params.willRetry === true) return
         const error = objectValue(params.error) ?? params
         finish(new Error(typeof error?.message === 'string' ? error.message : 'Codex turn failed'))
       }
@@ -742,52 +845,57 @@ async function runCodexAppServer(
   maxTokens: number,
   cb: StreamCallbacks,
 ): Promise<void> {
-  const tempDir = await mkdtemp(join(tmpdir(), CODEX_TEMP_PREFIX))
   const nativeSessionId = cb.sessionId ?? `one-shot-${randomUUID()}`
-  try {
-    await withClient(config.cliPath, async (client) => {
-      const signature = sessionSignature(system, tools, config.model.trim())
-      let session = client.getSession(nativeSessionId)
-      let nextMessages = incrementalMessages(session, signature, messages)
-      if (!session || nextMessages === null) {
-        session = {
-          threadId: await startNativeThread(client, config, tempDir),
-          signature,
-          messageFingerprints: [],
-        }
-        client.setSession(nativeSessionId, session)
-        nextMessages = messages
-      }
-      const imagePaths = await materializeImages(nextMessages, tempDir)
-      const prompt = buildCodexAppServerPrompt(system, nextMessages, tools, maxTokens)
+  // One-shot chats and the connection test have no reusable transport id, so
+  // their thread and temp dir are dropped as soon as the turn ends.
+  const ephemeral = cb.sessionId === undefined
+  await withClient(config.cliPath, async (client) => {
+    const signature = sessionSignature(system, tools, config.model.trim())
+    let session = client.getSession(nativeSessionId)
+    let nextMessages = incrementalMessages(session, signature, messages)
+    if (!session || nextMessages === null) {
+      if (session) client.deleteSession(nativeSessionId)
+      const tempDir = await mkdtemp(join(tmpdir(), CODEX_TEMP_PREFIX))
+      let threadId: string
       try {
-        const raw = await waitForTurn(
-          client,
-          session.threadId,
-          () =>
-            client.request('turn/start', {
-              threadId: session.threadId,
-              input: [
-                { type: 'text', text: prompt, text_elements: [] },
-                ...imagePaths.map((path) => ({ type: 'localImage', path })),
-              ],
-              outputSchema: codexAppServerOutputSchema(tools),
-            }),
-          cb.signal,
-          cb,
-        )
-        const turn = parseCodexAppServerTurn(raw, tools)
-        session.messageFingerprints = messages.map(fingerprint)
-        if (turn.text) cb.onDelta(turn.text)
-        for (const call of turn.toolCalls) cb.onToolCall(call)
+        threadId = await startNativeThread(client, config, tempDir)
       } catch (error) {
-        client.deleteSession(nativeSessionId)
+        await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)
         throw error
       }
-    })
-  } finally {
-    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined)
-  }
+      session = { threadId, signature, messageFingerprints: [], tempDir }
+      client.setSession(nativeSessionId, session)
+      nextMessages = messages
+    }
+    try {
+      const imagePaths = await materializeImages(nextMessages, session.tempDir)
+      const prompt = buildCodexAppServerPrompt(system, nextMessages, tools, maxTokens)
+      const raw = await waitForTurn(
+        client,
+        session.threadId,
+        () =>
+          client.request('turn/start', {
+            threadId: session.threadId,
+            input: [
+              { type: 'text', text: prompt, text_elements: [] },
+              ...imagePaths.map((path) => ({ type: 'localImage', path })),
+            ],
+            outputSchema: codexAppServerOutputSchema(tools),
+          }),
+        cb.signal,
+        cb,
+      )
+      const turn = parseCodexAppServerTurn(raw, tools)
+      session.messageFingerprints = messages.map(fingerprint)
+      if (turn.text) cb.onDelta(turn.text)
+      for (const call of turn.toolCalls) cb.onToolCall(call)
+    } catch (error) {
+      client.deleteSession(nativeSessionId)
+      throw error
+    } finally {
+      if (ephemeral) client.deleteSession(nativeSessionId)
+    }
+  })
 }
 
 export async function streamCodexAppServer(
@@ -818,9 +926,10 @@ export async function chatCodexAppServer(
   signal: AbortSignal,
 ): Promise<AiChatResponse> {
   let content = ''
+  // No sessionId: a one-shot chat/connection test is not reused, so it runs as
+  // an ephemeral turn whose thread and temp dir are dropped when it ends.
   await runCodexAppServer(config, system, [{ role: 'user', text: user }], [], 1024, {
     signal,
-    sessionId: `chat-${randomUUID()}`,
     onDelta: (text) => {
       content += text
     },

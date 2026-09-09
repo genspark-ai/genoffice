@@ -13,6 +13,7 @@ import { ar } from './panes/ar'
 import { pt } from './panes/pt'
 import { it } from './panes/it'
 import { pl } from './panes/pl'
+import { cs } from './panes/cs'
 import { nl } from './panes/nl'
 import { ms } from './panes/ms'
 import { he } from './panes/he'
@@ -35,6 +36,7 @@ export const paneStrings = defineStrings({
   pt,
   it,
   pl,
+  cs,
   nl,
   ms,
   he,

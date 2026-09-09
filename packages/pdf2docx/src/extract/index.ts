@@ -5,7 +5,7 @@
  */
 import { detectVectorRegions } from '../analyze/vector'
 import type { Rect } from '../geometry'
-import { intersectArea, overlapRatio, rectArea } from '../geometry'
+import { coversBox, intersectArea, overlapRatio, printContentBox, rectArea } from '../geometry'
 import type { PdfChar, PageRender, RawPath, RawSubpath } from '../ir'
 import { scriptOf } from '../script'
 import type { PdfiumModule } from './pdfium'
@@ -44,6 +44,8 @@ export interface ExtractedImage {
   pixelHeight: number
   /** source paint order (top-level page-object index, P16 A) */
   z?: number
+  /** rasterized pattern fill (P35), not a picture the author placed */
+  synthetic?: true
 }
 
 export interface ExtractedPage {
@@ -80,6 +82,12 @@ export interface ExtractedPage {
    * as a full-page behindDoc float. Absent on plain (white / flat-fill) pages.
    */
   bgRender?: PageRender
+  /**
+   * print content box (P35): all ink sits inside uniform page margins
+   * (browser/driver prints). Background rules measure page-covering fills
+   * against it — a body wash never reaches the paper edge on such pages.
+   */
+  contentBox?: Rect
   /**
    * non-page-covering gradient shadings rasterized transparent (P19): slide
    * title bars / accent strips. Consumed ONLY by the canvas rebuild path —
@@ -1304,6 +1312,7 @@ function detectBackgroundStack(
   page: number,
   widthPt: number,
   heightPt: number,
+  contentBox: Rect | null,
 ): {
   count: number
   rasterIndices: number[]
@@ -1312,6 +1321,7 @@ function detectBackgroundStack(
   suspectOnly: boolean
 } {
   const total = m._FPDFPage_CountObjects(page)
+  const pageBox: Rect = { x0: 0, y0: 0, x1: widthPt, y1: heightPt }
   const rasterIndices: number[] = []
   const formTextHandles = new Set<number>()
   let count = 0
@@ -1339,14 +1349,19 @@ function detectBackgroundStack(
         inPrefix = false
         continue
       }
-      const x0 = m.HEAPF32[f4 >> 2]!
-      const y0 = m.HEAPF32[(f4 >> 2) + 1]!
-      const x1 = m.HEAPF32[(f4 >> 2) + 2]!
-      const y1 = m.HEAPF32[(f4 >> 2) + 3]!
-      const coveredW = Math.min(x1, widthPt) - Math.max(x0, 0)
-      const coveredH = Math.min(y1, heightPt) - Math.max(y0, 0)
+      const bounds: Rect = {
+        x0: m.HEAPF32[f4 >> 2]!,
+        y0: m.HEAPF32[(f4 >> 2) + 1]!,
+        x1: m.HEAPF32[(f4 >> 2) + 2]!,
+        y1: m.HEAPF32[(f4 >> 2) + 3]!,
+      }
       const cover = inPrefix ? BG_LAYER_DIM_COVER : BG_EXT_DIM_COVER
-      if (coveredW < widthPt * cover || coveredH < heightPt * cover) {
+      // a fill covering the print content box occludes everything on such a
+      // page just like a full-bleed wash does (the margins carry no ink)
+      if (
+        !coversBox(bounds, pageBox, cover) &&
+        !(contentBox !== null && coversBox(bounds, contentBox, cover))
+      ) {
         inPrefix = false
         continue
       }
@@ -1381,6 +1396,234 @@ function detectBackgroundStack(
     }
   })
   return { count, rasterIndices, formTextHandles, suspectOnly: sureCount === 0 }
+}
+
+/**
+ * Print content box (P35): the bottom-most opaque fill whose bounds frame the
+ * page's ink inside uniform margins. Alpha-0 page-covering rects (Skia
+ * bounding artifacts) lay no ink and neither widen the ink nor qualify.
+ */
+function pageContentBox(
+  m: PdfiumModule,
+  page: number,
+  widthPt: number,
+  heightPt: number,
+): Rect | null {
+  const total = m._FPDFPage_CountObjects(page)
+  const boxes: Rect[] = []
+  const fills: Rect[] = []
+  withAlloc(m, 4 * 4, (f4) => {
+    for (let i = 0; i < total; i++) {
+      const obj = m._FPDFPage_GetObject(page, i)
+      if (!obj) continue
+      const type = m._FPDFPageObj_GetType(obj)
+      const isPath = type === FPDF_PAGEOBJ_PATH
+      if (isPath && !pathPaintsInk(m, obj, f4)) continue
+      if (!m._FPDFPageObj_GetBounds(obj, f4, f4 + 4, f4 + 8, f4 + 12)) continue
+      const box: Rect = {
+        x0: m.HEAPF32[f4 >> 2]!,
+        y0: m.HEAPF32[(f4 >> 2) + 1]!,
+        x1: m.HEAPF32[(f4 >> 2) + 2]!,
+        y1: m.HEAPF32[(f4 >> 2) + 3]!,
+      }
+      if (box.x1 <= box.x0 || box.y1 <= box.y0) continue
+      boxes.push(box)
+      if (isPath && pathIsOpaqueFill(m, obj, f4)) fills.push(box)
+    }
+  })
+  // the wash is drawn early: the first (bottom-z) opaque fill that frames the ink wins
+  for (const f of fills) {
+    const box = printContentBox(f, boxes, widthPt, heightPt)
+    if (box) return box
+  }
+  return null
+}
+
+// ── pattern-filled paths (P35) ──
+// CSS gradients print as PATHS filled with a shading/tiling PATTERN. PDFium's
+// color API cannot voice a pattern: CPDF_ColorState::SetPattern reports a
+// shading pattern as white and a colored tiling pattern as 0xBFBFBF, so the
+// gradient cover/card reached the fill pool as a plain white/grey rectangle
+// and was dropped (or shaded flat grey). Paths reporting exactly those
+// fallback colors are probed with a tiny render of the object alone; the ones
+// whose pixels disagree with the reported color rasterize transparent into
+// the image stream and leave the path stream.
+
+/** PDFium's pattern fallback colors (channel value, all three equal) */
+const PATTERN_FALLBACK_CHANNELS = new Set([0xff, 0xbf])
+/** smaller fills are bullets/rules — never gradients worth a bitmap */
+const PATTERN_MIN_AREA_PT2 = 400
+/** thinner strips are text-line highlights/underlines — a flow-breaking image buys nothing */
+const PATTERN_MIN_DIM_PT = 12
+/** probe render longest side (px) — enough to tell a gradient from a flat fill */
+const PATTERN_PROBE_PX = 24
+/** a probe pixel this far from the reported color (any channel) is not that color */
+const PATTERN_COLOR_TOL = 24
+/** probe pixels below this alpha are unpainted */
+const PATTERN_PROBE_MIN_ALPHA = 8
+/** the object must actually paint this share of its own bounds to be judged */
+const PATTERN_PROBE_MIN_COVER = 0.05
+/** per page, largest candidates first */
+const PATTERN_MAX_PROBES = 48
+const PATTERN_RENDER_SCALE = 1.5
+const PATTERN_RENDER_MAX_PX = 4_000_000
+
+/** render one top-level object alone, transparent, cropped to `region` at `scale` */
+function renderObjectAloneRgba(
+  m: PdfiumModule,
+  doc: number,
+  pageIndex: number,
+  index: number,
+  region: Rect,
+  scale: number,
+): { rgba: Uint8Array; width: number; height: number } | null {
+  const page = m._FPDF_LoadPage(doc, pageIndex)
+  if (!page) return null
+  try {
+    const total = m._FPDFPage_CountObjects(page)
+    for (let i = total - 1; i >= 0; i--) {
+      if (i === index) continue
+      const obj = m._FPDFPage_GetObject(page, i)
+      if (obj && m._FPDFPage_RemoveObject(page, obj)) m._FPDFPageObj_Destroy(obj)
+    }
+    const pageWidthPt = m._FPDF_GetPageWidthF(page)
+    const pageHeightPt = m._FPDF_GetPageHeightF(page)
+    const width = Math.max(1, Math.round((region.x1 - region.x0) * scale))
+    const height = Math.max(1, Math.round((region.y1 - region.y0) * scale))
+    const bitmap = m._FPDFBitmap_Create(width, height, 1)
+    if (!bitmap) return null
+    try {
+      m._FPDFBitmap_FillRect(bitmap, 0, 0, width, height, 0x00000000)
+      m._FPDF_RenderPageBitmap(
+        bitmap,
+        page,
+        Math.round(-region.x0 * scale),
+        Math.round(-(pageHeightPt - region.y1) * scale),
+        Math.round(pageWidthPt * scale),
+        Math.round(pageHeightPt * scale),
+        0,
+        0,
+      )
+      return bitmapToRgba(m, bitmap)
+    } finally {
+      m._FPDFBitmap_Destroy(bitmap)
+    }
+  } finally {
+    m._FPDF_ClosePage(page)
+  }
+}
+
+/**
+ * Probe verdict: 'flat' = the object really is the reported color (a plain
+ * white card — stays a path); 'pattern' = its pixels disagree (gradient /
+ * tile art — rasterize); 'invisible' = it paints next to nothing (a fully
+ * soft-masked layer — drop, it must not survive as a grey rectangle).
+ */
+function probeVerdict(px: { rgba: Uint8Array }, channel: number): 'flat' | 'pattern' | 'invisible' {
+  let covered = 0
+  let sampled = 0
+  let off = false
+  for (let i = 0; i < px.rgba.length; i += 4) {
+    sampled++
+    // any paint counts: a translucent white plate (alpha 0.15) is a real flat
+    // fill, only a fully masked-out layer is invisible
+    if (px.rgba[i + 3]! < PATTERN_PROBE_MIN_ALPHA) continue
+    covered++
+    if (
+      Math.abs(px.rgba[i]! - channel) > PATTERN_COLOR_TOL ||
+      Math.abs(px.rgba[i + 1]! - channel) > PATTERN_COLOR_TOL ||
+      Math.abs(px.rgba[i + 2]! - channel) > PATTERN_COLOR_TOL
+    ) {
+      off = true
+    }
+  }
+  if (sampled === 0 || covered / sampled < PATTERN_PROBE_MIN_COVER) return 'invisible'
+  return off ? 'pattern' : 'flat'
+}
+
+/**
+ * Pattern-filled paths → transparent bitmaps in the image stream (P35).
+ * Returns the images plus the top-level indices readPaths must skip.
+ */
+function readPatternFills(
+  m: PdfiumModule,
+  doc: number,
+  pageIndex: number,
+  page: number,
+  widthPt: number,
+  heightPt: number,
+  skipBelowIndex: number,
+): { images: ExtractedImage[]; consumed: Set<number> } {
+  const images: ExtractedImage[] = []
+  const consumed = new Set<number>()
+  const total = m._FPDFPage_CountObjects(page)
+  const candidates: { index: number; box: Rect; channel: number }[] = []
+  withAlloc(m, 4 * 4, (u4) => {
+    for (let i = skipBelowIndex; i < total; i++) {
+      const obj = m._FPDFPage_GetObject(page, i)
+      if (!obj || m._FPDFPageObj_GetType(obj) !== FPDF_PAGEOBJ_PATH) continue
+      if (!m._FPDFPath_GetDrawMode(obj, u4, u4 + 4) || (m.HEAPU32[u4 >> 2]! | 0) === 0) continue
+      if (!m._FPDFPageObj_GetFillColor(obj, u4, u4 + 4, u4 + 8, u4 + 12)) continue
+      const r = m.HEAPU32[u4 >> 2]!
+      const g = m.HEAPU32[(u4 >> 2) + 1]!
+      const b = m.HEAPU32[(u4 >> 2) + 2]!
+      const a = m.HEAPU32[(u4 >> 2) + 3]!
+      if (r !== g || g !== b || !PATTERN_FALLBACK_CHANNELS.has(r) || a <= IMAGE_MIN_ALPHA) continue
+      if (!m._FPDFPageObj_GetBounds(obj, u4, u4 + 4, u4 + 8, u4 + 12)) continue
+      const box: Rect = {
+        x0: Math.max(0, m.HEAPF32[u4 >> 2]!),
+        y0: Math.max(0, m.HEAPF32[(u4 >> 2) + 1]!),
+        x1: Math.min(widthPt, m.HEAPF32[(u4 >> 2) + 2]!),
+        y1: Math.min(heightPt, m.HEAPF32[(u4 >> 2) + 3]!),
+      }
+      const w = box.x1 - box.x0
+      const h = box.y1 - box.y0
+      if (w < PATTERN_MIN_DIM_PT || h < PATTERN_MIN_DIM_PT || w * h < PATTERN_MIN_AREA_PT2) continue
+      candidates.push({ index: i, box, channel: r })
+    }
+  })
+  if (candidates.length === 0) return { images, consumed }
+  candidates.sort((p, q) => rectArea(q.box) - rectArea(p.box))
+  for (const c of candidates.slice(0, PATTERN_MAX_PROBES)) {
+    const w = c.box.x1 - c.box.x0
+    const h = c.box.y1 - c.box.y0
+    const probe = renderObjectAloneRgba(
+      m,
+      doc,
+      pageIndex,
+      c.index,
+      c.box,
+      PATTERN_PROBE_PX / Math.max(w, h),
+    )
+    if (!probe) continue
+    const verdict = probeVerdict(probe, c.channel)
+    if (process.env['PDF2DOCX_DEBUG_PATTERN'] !== undefined) {
+      console.error(
+        `[pattern] page ${pageIndex + 1} obj ${c.index} box ${JSON.stringify(c.box)} ch ${c.channel} → ${verdict}`,
+      )
+    }
+    if (verdict === 'invisible') {
+      consumed.add(c.index)
+      continue
+    }
+    // 0xBFBFBF is only ever the colored-tiling placeholder — a flat probe
+    // means a uniform tile, still not grey
+    if (verdict === 'flat' && c.channel !== 0xbf) continue
+    const scale = Math.min(PATTERN_RENDER_SCALE, Math.sqrt(PATTERN_RENDER_MAX_PX / (w * h)))
+    const px = renderObjectAloneRgba(m, doc, pageIndex, c.index, c.box, scale)
+    if (!px) continue
+    consumed.add(c.index)
+    images.push({
+      box: c.box,
+      data: encodeRgbaPng(px.rgba, px.width, px.height),
+      mime: 'image/png',
+      pixelWidth: px.width,
+      pixelHeight: px.height,
+      z: c.index,
+      synthetic: true,
+    })
+  }
+  return { images, consumed }
 }
 
 /** handles of text objects buried under the background stack (P16 B) */
@@ -2092,7 +2335,8 @@ export function extractPage(
     // shadings / wallpaper images) becomes one behindDoc bitmap. Text-less
     // pages stay out — the scanned/degraded fallback serves them better, and
     // excluding a scan's own image here would break scanned detection.
-    const bgStack = detectBackgroundStack(m, doc, page, widthPt, heightPt)
+    const contentBox = pageContentBox(m, page, widthPt, heightPt)
+    const bgStack = detectBackgroundStack(m, doc, page, widthPt, heightPt, contentBox)
     const hasRealText =
       chars.filter((c) => !c.isGenerated && !isWhitespaceCode(c.code)).length > SCANNED_MAX_CHARS
     // P29 B: a graphics-dominant scan's tile stack must NOT bake — the bake
@@ -2139,8 +2383,25 @@ export function extractPage(
         OCR_SCAN_IMAGE_COVER
     const ocrSkip = ocrTextRecovered ? coversPage : undefined
     let images = readImages(m, doc, page, bgActive ? bgStack.count : 0, ocrSkip)
+    const patternFills = readPatternFills(
+      m,
+      doc,
+      pageIndex,
+      page,
+      widthPt,
+      heightPt,
+      bgActive ? bgStack.count : 0,
+    )
+    if (patternFills.images.length > 0) {
+      images = [...images, ...patternFills.images].sort((p, q) => (p.z ?? 0) - (q.z ?? 0))
+    }
+    // the consumed pattern paths stay in `paths` through vector-region
+    // detection (a gradient blob is part of the illustration it sits in) and
+    // leave the stream afterwards — the region bitmap or the pattern image
+    // carries them
     let paths = readPaths(m, page, bgActive ? bgStack.count : 0)
     if (shifted) {
+      if (contentBox) shiftRect(contentBox, dx, dy)
       for (const img of images) shiftRect(img.box, dx, dy)
       for (const p of paths) {
         if (p.clipBox) shiftRect(p.clipBox, dx, dy)
@@ -2156,6 +2417,7 @@ export function extractPage(
     if (rotation === 1 || rotation === 2 || rotation === 3) {
       const t = rotateToDisplay(rotation, widthPt, heightPt)
       for (const img of images) t.rect(img.box)
+      if (contentBox) t.rect(contentBox)
       for (const p of paths) {
         if (p.clipBox) t.rect(p.clipBox)
         for (const sub of p.subpaths) {
@@ -2217,7 +2479,13 @@ export function extractPage(
     }
 
     // quality verdicts judge the page as authored (before vector-art rewriting)
-    const quality = assessQuality(chars, images, pageRect, rotation)
+    // rasterized pattern fills are vector art, never a scan's page image
+    const quality = assessQuality(
+      chars,
+      images.filter((img) => !img.synthetic),
+      pageRect,
+      rotation,
+    )
     if (ocrImageDominant) quality.scanned = true
     let rotatedDropped = 0
     let quarterTurned = false
@@ -2249,6 +2517,7 @@ export function extractPage(
           c.angle = normalizeAngle(c.angle + t.angleDelta)
         }
         for (const img of images) t.rect(img.box)
+        if (contentBox) t.rect(contentBox)
         for (const p of paths) {
           if (p.clipBox) t.rect(p.clipBox)
           for (const sub of p.subpaths) {
@@ -2332,6 +2601,12 @@ export function extractPage(
       }
     }
 
+    if (patternFills.consumed.size > 0) {
+      outPaths = outPaths.filter(
+        (p) => p.fromForm || p.z === undefined || !patternFills.consumed.has(p.z),
+      )
+    }
+
     // P27 guard input: extraction kept NONE of the page's visible body text
     // and nothing visible (bake/region render) carries it either — the
     // pipeline degrades such a page instead of shipping it silently empty
@@ -2376,6 +2651,7 @@ export function extractPage(
       ...(rotatedDropped > 0 ? { rotatedDropped } : {}),
       ...(options.cellData ? { cellData: true } : {}),
       ...(bgRender !== undefined ? { bgRender } : {}),
+      ...(contentBox !== null ? { contentBox } : {}),
       ...(decorImages.length > 0 ? { decorImages } : {}),
     }
   } finally {

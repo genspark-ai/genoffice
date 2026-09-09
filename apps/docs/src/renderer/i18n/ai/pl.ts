@@ -129,6 +129,7 @@ export const pl = {
   aiSumCreateDocument: 'Utwórz nowy dokument',
   aiSumCreatedDocument: 'Utworzono {name}',
   aiSumReplaceContent: 'Zamień treść',
+  aiSumReplaceSelection: 'Zamień zaznaczony tekst',
   aiSumReplacedBlocks: 'Zamieniono bloki {start}-{end}',
   aiSumInsertChart: 'Wstaw wykres',
   aiSumInsertedChart: 'Wstawiono wykres „{title}”',

@@ -175,14 +175,21 @@ const CARLITO_BOLD_SRC = [
 /// Malgun Gothic prints hangul at 1.0em — exactly AppleGothic — but digits at
 /// 0.6em vs AppleGothic's 0.68em, so number tails clipped while hangul was
 /// perfect. Latin/digit runs go to width-corrected Helvetica Neue instead.
+/// AppleGothic has no bold face, and Chromium picks a family's weight-700
+/// faces before consulting unicode-range, so without a base bold face bold
+/// hangul left the alias for the system fallback (Apple SD Gothic Neo Bold,
+/// 0.865em). Pin that face and scale it to Malgun's 1.0em; bold digits are
+/// 0.5796em (malgunbd.ttf hmtx) over Helvetica Neue Bold's 0.556em.
 const MALGUN_ALIAS: Omit<CellFontAlias, 'family'> = {
   regular: ['Malgun Gothic', 'AppleGothic'],
+  bold: ['Apple SD Gothic Neo Bold', 'AppleSDGothicNeo-Bold'],
+  boldSizeAdjust: '115.6%',
   skipIfLocal: ['Malgun Gothic', 'MalgunGothic'],
   latin: {
     regular: ['Helvetica Neue'],
     sizeAdjust: '104%',
     bold: ['Helvetica Neue Bold'],
-    boldSizeAdjust: '109.4%',
+    boldSizeAdjust: '104.2%',
   },
 }
 const KR_SERIF = ['Batang', 'AppleMyungjo', 'Nanum Myeongjo']
@@ -414,12 +421,25 @@ export const CELL_FONT_ALIASES: readonly CellFontAlias[] = [
   },
   { family: 'Palatino Linotype', regular: ['Palatino Linotype', 'Palatino', 'Book Antiqua'] },
   { family: 'Book Antiqua', regular: ['Book Antiqua', 'Palatino'] },
+  // Office-for-Mac DFonts Chromium cannot see: the stock macOS design stands
+  // in. Baskerville Old Face has no genuine bold anywhere, so its bold chain
+  // stays macOS-only and the Windows path keeps synthetic bold.
+  {
+    family: 'Baskerville Old Face',
+    regular: ['Baskerville Old Face', 'BaskOldFace', 'Baskerville', 'Times New Roman'],
+    bold: ['Baskerville Bold', 'Baskerville-Bold'],
+  },
   {
     family: 'Times New Roman',
     regular: ['Times New Roman', 'Times', 'Georgia'],
     bold: TIMES_BOLD,
   },
   { family: 'PT Serif', regular: ['PT Serif', 'Times New Roman', 'Georgia'] },
+  {
+    family: 'Gill Sans MT',
+    regular: ['Gill Sans MT', 'GillSansMT', 'Gill Sans', 'GillSans'],
+    bold: ['Gill Sans MT Bold', 'GillSansMT-Bold', 'Gill Sans Bold', 'GillSans-Bold'],
+  },
   // Width-corrected substitutes for fonts absent on macOS. Excel sized the
   // author's columns for the original font; a substitute with different
   // advances clips tail characters or wraps an extra line. size-adjust values

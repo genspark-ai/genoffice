@@ -227,6 +227,14 @@ async function anthropicTurn(
       throw new Error(sseErrorText(event.error, 'Claude stream error'))
     }
   }
+  // Buffered tool arguments can take minutes; a gateway dropping the connection
+  // meanwhile is a billed in-progress turn, not the replayable empty stream below.
+  if (pendingTools.size > 0 && !stopReason) {
+    const received = [...pendingTools.values()].reduce((n, p) => n + p.json.length, 0)
+    throw new Error(
+      `Claude stream closed while sending tool arguments (${received} chars received); the connection was dropped`,
+    )
+  }
   const lastTool = completedTools.at(-1)
   if (stopReason === 'max_tokens' && lastTool) lastTool.truncated = true
   for (const call of completedTools) cb.onToolCall(call)

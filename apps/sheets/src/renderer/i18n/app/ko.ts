@@ -314,6 +314,7 @@ export const ko = {
     '이 통합 문서는 너무 커서 메모리에 전부 로드할 수 없습니다. 이 파일에서는 필터를 사용할 수 없습니다.',
   appDialogCancel: '취소',
   appPivotSheetNoMove: '이 시트에는 피벗 테이블이 있어 아직 범위 이동을 지원하지 않습니다.',
+  appMergeOverTable: '선택 영역이 Excel 표와 겹칩니다 — 표 안의 셀 병합은 아직 지원되지 않습니다.',
   appTableFilterNoEdit:
     '이 시트의 필터는 Excel 표에 속해 있어 편집 후에도 당분간 저장할 수 없습니다.',
   appAutofillStreaming: '아직 스트리밍 로드 중인 영역으로는 자동 채우기를 할 수 없습니다.',
@@ -568,6 +569,8 @@ export const ko = {
     '정의된 이름 변경은 행/열 또는 시트 구조 변경과 함께 저장할 수 없습니다 — 두 번에 나누어 저장하십시오.',
   appSaveErrChangedOnDisk:
     '다른 프로그램이 디스크의 파일을 변경했습니다 — 저장을 중단했으니 파일을 다시 연 후 시도하십시오.',
+  appSaveErrTargetLocked:
+    '파일을 교체할 수 없습니다. 다른 프로그램(Excel에서 열림, 동기화/백신 검사 중 등)이 잠근 것 같습니다. 닫은 후 다시 저장하세요.',
   appSaveErrStylesheetLimited:
     '이 통합 문서의 스타일시트에 기본 구조가 없어 스타일 변경을 저장할 수 없습니다.',
   appSaveErrPackageGuard:

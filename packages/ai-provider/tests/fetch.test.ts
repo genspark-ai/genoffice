@@ -71,6 +71,43 @@ describe('aiFetch', () => {
     await expect(aiFetch('https://x/', {})).rejects.toThrow('primary down')
   })
 
+  it('retries a 403 HTML block page over the rescue fetch', async () => {
+    const blocked = () =>
+      new Response('<!doctype html><title>Just a moment...</title>', {
+        status: 403,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(blocked()))
+    const ok = new Response('{}', { headers: { 'content-type': 'application/json' } })
+    const rescue = vi.fn().mockResolvedValue(ok)
+    setRescueFetch(rescue)
+    expect(await aiFetch('https://www.genspark.ai/api/x', { method: 'POST', body: '{}' })).toBe(ok)
+    expect(rescue).toHaveBeenCalledOnce()
+
+    // still blocked on the rescue path: the primary answer stands
+    const primary = blocked()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(primary))
+    setRescueFetch(vi.fn().mockResolvedValue(blocked()))
+    expect(await aiFetch('https://www.genspark.ai/api/x', { body: '{}' })).toBe(primary)
+  })
+
+  it('does not treat an API 403 or a stream body as a block page', async () => {
+    const denied = new Response('{"error":"forbidden"}', {
+      status: 403,
+      headers: { 'content-type': 'application/json' },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(denied))
+    const rescue = vi.fn()
+    setRescueFetch(rescue)
+    expect(await aiFetch('https://x/', { body: '{}' })).toBe(denied)
+    expect(rescue).not.toHaveBeenCalled()
+
+    const html = new Response('<html>', { status: 403, headers: { 'content-type': 'text/html' } })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(html))
+    expect(await aiFetch('https://x/', { body: new ReadableStream() })).toBe(html)
+    expect(rescue).not.toHaveBeenCalled()
+  })
+
   it('does not retry an aborted request', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('aborted')))
     const rescue = vi.fn()

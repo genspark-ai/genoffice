@@ -24,6 +24,8 @@ Removes the page. A deck must keep at least one slide.
 
 Inserts a copy right after the page. `clearText:true` empties the text boxes
 so the copy serves as a layout-preserving blank.
+The copy lands at the source index + 1; the result echoes only the source
+target, so address the new page by that index when you fill it.
 
 ```json
 { "op": "duplicateSlide", "target": { "slide": 0 } }

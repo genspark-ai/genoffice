@@ -74,6 +74,13 @@ export function formatGeneral(value: number, budget: number): string {
 }
 
 const CURRENCY_LCID_TAG = /\[\$([^\]-]+)-[^\]]*\]/g
+const EMPTY_CURRENCY_TAG = /\[\$\]/g
+
+/// Excel accepts `[$]` (no symbol, no locale) as a token that prints
+/// nothing; numfmt rejects the pattern and returns its `######` error text.
+function dropEmptyCurrency(pattern: string): string {
+  return pattern.replace(EMPTY_CURRENCY_TAG, '')
+}
 
 /**
  * `[$sym-LCID]` picks the currency symbol only; Excel keeps the thousands
@@ -84,10 +91,11 @@ const CURRENCY_LCID_TAG = /\[\$([^\]-]+)-[^\]]*\]/g
  * month/day names there.
  */
 export function hostLocalePattern(pattern: string): string {
-  const stripped = pattern.replace(CURRENCY_LCID_TAG, '[$$$1]')
-  if (stripped === pattern) return pattern
-  const type = patternType(pattern)
-  if (type === 'date' || type === 'datetime' || type === 'time') return pattern
+  const base = dropEmptyCurrency(pattern)
+  const stripped = base.replace(CURRENCY_LCID_TAG, '[$$$1]')
+  if (stripped === base) return base
+  const type = patternType(base)
+  if (type === 'date' || type === 'datetime' || type === 'time') return base
   return stripped
 }
 
@@ -340,7 +348,7 @@ export function isCalendarDatePattern(pattern: string): boolean {
   let isDate = datePatternCache.get(pattern)
   if (isDate === undefined) {
     try {
-      const type = (numfmt.getFormatInfo(pattern) as { type?: string }).type
+      const type = (numfmt.getFormatInfo(dropEmptyCurrency(pattern)) as { type?: string }).type
       isDate = type === 'date' || type === 'datetime'
     } catch {
       isDate = false
@@ -356,7 +364,8 @@ function patternType(pattern: string): string {
   let type = patternTypeCache.get(pattern)
   if (type === undefined) {
     try {
-      type = (numfmt.getFormatInfo(pattern) as { type?: string }).type ?? 'unknown'
+      type =
+        (numfmt.getFormatInfo(dropEmptyCurrency(pattern)) as { type?: string }).type ?? 'unknown'
     } catch {
       type = 'unknown'
     }
@@ -466,6 +475,12 @@ export const EXCEL_DIGIT_PER_PT: Record<string, number> = {
   'MS PMincho': 8 / 11,
   'ＭＳ 明朝': 8 / 11,
   'MS Mincho': 8 / 11,
+  // Meiryo digits are 0.621em (Verdana design) → 9.1px at 11pt; the ja prod
+  // ref grid (B:H) fits MDW 9, while the CJK-name fallback's 8
+  // narrows every column 11%. Meiryo UI keeps the same Latin advances.
+  メイリオ: 9 / 11,
+  Meiryo: 9 / 11,
+  'Meiryo UI': 9 / 11,
   // GB/Big5 legacy faces share the em/2 digit advance.
   宋体: 8 / 11,
   SimSun: 8 / 11,
@@ -578,10 +593,11 @@ export function excelWidthScale(
  * Returns the corrected display text, or null to leave the cell alone.
  */
 export function fixFormattedValue(
-  pattern: string,
+  rawPattern: string,
   raw: string | number,
   displayed: string | number | boolean | undefined,
 ): string | null {
+  const pattern = dropEmptyCurrency(rawPattern)
   if (typeof raw === 'string') {
     // Excel applies number formats to numbers only, but Univer's NUMFMT
     // coerces numeric-looking text (checkCellValueType lets isRealNum win
@@ -617,8 +633,8 @@ export function fixFormattedValue(
   ) {
     return text
   }
-  // Univer formatted with the LCID's separators; ours follow the host locale.
-  if (hostLocalePattern(pattern) !== pattern && text !== String(displayed ?? '')) return text
+  // Univer formatted with the LCID's separators (or rejected `[$]`); ours follow the host locale.
+  if (hostLocalePattern(rawPattern) !== rawPattern && text !== String(displayed ?? '')) return text
   return null
 }
 

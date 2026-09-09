@@ -211,7 +211,9 @@ export function readSheetFeatures(ctx: WorkbookReadContext, sheetIdInput?: strin
             ? 'image'
             : visual.kind === 'ole'
               ? `embedded object ${visual.progId ?? ''}`
-              : `shape ${visual.shapeType ?? ''}`
+              : visual.kind === 'slicer'
+                ? 'slicer'
+                : `shape ${visual.shapeType ?? ''}`
         lines.push(
           `- ${label} @ ` +
             `${columnLabel(visual.anchor.fromColumn)}${visual.anchor.fromRow + 1}` +

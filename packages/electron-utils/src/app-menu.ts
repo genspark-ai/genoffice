@@ -43,7 +43,7 @@ const EN: Labels = {
 }
 
 // Shared table, same rationale as context-menu.ts: one copy instead of
-// 15 keys × 19 languages per app dictionary.
+// 15 keys × 20 languages per app dictionary.
 const LABELS: Record<string, Labels> = {
   zh: {
     window: '窗口',
@@ -266,6 +266,23 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Powiększ',
     zoomOut: 'Pomniejsz',
     fullscreen: 'Pełny ekran',
+  },
+  cs: {
+    window: 'Okno',
+    minimize: 'Minimalizovat',
+    closeWindow: 'Zavřít okno',
+    edit: 'Úpravy',
+    undo: 'Zpět',
+    redo: 'Znovu',
+    delete: 'Odstranit',
+    view: 'Zobrazení',
+    reload: 'Znovu načíst',
+    forceReload: 'Vynutit znovunačtení',
+    toggleDevTools: 'Nástroje pro vývojáře',
+    actualSize: 'Skutečná velikost',
+    zoomIn: 'Přiblížit',
+    zoomOut: 'Oddálit',
+    fullscreen: 'Celá obrazovka',
   },
   nl: {
     window: 'Venster',

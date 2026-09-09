@@ -128,6 +128,7 @@ export const ms = {
   aiSumCreateDocument: 'Cipta dokumen baharu',
   aiSumCreatedDocument: '{name} dicipta',
   aiSumReplaceContent: 'Ganti kandungan',
+  aiSumReplaceSelection: 'Ganti teks yang dipilih',
   aiSumReplacedBlocks: 'Blok {start}-{end} diganti',
   aiSumInsertChart: 'Sisipkan carta',
   aiSumInsertedChart: 'Carta "{title}" disisipkan',

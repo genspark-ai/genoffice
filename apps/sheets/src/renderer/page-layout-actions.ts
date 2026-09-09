@@ -6,6 +6,8 @@
  * page-layout view), everything lands in the saved file.
  */
 import { isMetafileMime, metafileToDataUrl } from '@genoffice/docx-engine/metafile'
+import type { WorkbookOperation } from '../domain/workbook-dsl'
+import type { ApplyOutcome } from '../domain/workbook.types'
 
 import { columnLabel } from '../domain/cell-address'
 import {
@@ -49,7 +51,25 @@ export interface PageLayoutContext {
   setPendingEdits: (count: number) => void
   /// Re-renders the Page Break Preview overlay when page geometry changed.
   refreshPageBreakPreview?: () => void
+  /// Page-setup edits run as set_page_setup ops through the shared executor.
+  runOps: (
+    ops: readonly WorkbookOperation[],
+    successMessage?: string | null,
+  ) => Promise<ApplyOutcome>
 }
+
+const PAGE_SETUP_OP_FIELDS = new Set([
+  'orientation',
+  'paperSize',
+  'scale',
+  'fitToWidth',
+  'fitToHeight',
+  'fitToPage',
+  'margins',
+  'printGridlines',
+  'printHeadings',
+  'printArea',
+])
 
 export function handlePageLayoutCommand(ctx: PageLayoutContext, rest: string): void {
   const runtime = ctx.univerRef.current
@@ -62,11 +82,35 @@ export function handlePageLayoutCommand(ctx: PageLayoutContext, rest: string): v
   const worksheet = runtime.univerAPI.getActiveWorkbook()?.getActiveSheet()
   const sheetId = worksheet?.getSheetId()
   if (!sheetId || isSheetRemoved(state.editJournal, sheetId)) return
-  const record = (patch: PageSetupJournalState, note: string): void => {
+  const recordDirect = (patch: PageSetupJournalState, note: string): void => {
     recordPageSetup(state.editJournal, sheetId, patch)
     ctx.setPendingEdits(journalSize(state.editJournal))
     ctx.setMessage(t('appPageSetupRecorded', { note }))
     ctx.refreshPageBreakPreview?.()
+  }
+  // Fields set_page_setup carries (fitToPage is derived by the executor);
+  // breaks and print titles have no op yet and journal directly.
+  const record = (patch: PageSetupJournalState, note: string): void => {
+    if (!Object.keys(patch).every((key) => PAGE_SETUP_OP_FIELDS.has(key))) {
+      recordDirect(patch, note)
+      return
+    }
+    const op: WorkbookOperation = {
+      op: 'set_page_setup',
+      sheetId,
+      ...(patch.orientation !== undefined ? { orientation: patch.orientation } : {}),
+      ...(patch.paperSize !== undefined ? { paperSize: patch.paperSize } : {}),
+      ...(patch.scale !== undefined ? { scale: patch.scale } : {}),
+      ...(patch.fitToWidth !== undefined ? { fitToWidth: patch.fitToWidth } : {}),
+      ...(patch.fitToHeight !== undefined ? { fitToHeight: patch.fitToHeight } : {}),
+      ...(patch.margins !== undefined ? { margins: patch.margins } : {}),
+      ...(patch.printGridlines !== undefined ? { printGridlines: patch.printGridlines } : {}),
+      ...(patch.printHeadings !== undefined ? { printHeadings: patch.printHeadings } : {}),
+      ...(patch.printArea !== undefined ? { printArea: patch.printArea } : {}),
+    }
+    void ctx
+      .runOps([op], t('appPageSetupRecorded', { note }))
+      .then((outcome) => outcome.ok && ctx.refreshPageBreakPreview?.())
   }
   const separator = rest.indexOf(':')
   const key = separator === -1 ? rest : rest.slice(0, separator)

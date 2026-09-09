@@ -13,9 +13,10 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import type { Editor } from '@tiptap/core'
 import { DOMParser as PmDOMParser, type Mark as PmMark } from '@tiptap/pm/model'
 import { NodeSelection } from '@tiptap/pm/state'
-import { Dropdown } from '@genoffice/ui'
+import { Dropdown, useAutoSavePref } from '@genoffice/ui'
+import { wordRangeAtCaret } from './editor/comments'
 import { markdownPasteHtml } from './editor/markdown-paste'
-import { pasteTextSlice } from './editor/paste-text'
+import { pasteTextSlice, singleCellPasteText } from './editor/paste-text'
 import {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
@@ -219,6 +220,7 @@ import {
 import {
   applyAiDocContent as applyAiDocContentImpl,
   exportPdf as exportPdfImpl,
+  exportHtml as exportHtmlImpl,
   loadFile as loadFileImpl,
   newFile as newFileImpl,
   printDoc as printDocImpl,
@@ -241,6 +243,7 @@ import {
   compareWithFile as compareWithFileImpl,
   deleteComment as deleteCommentImpl,
   deleteNote as deleteNoteImpl,
+  editComment as editCommentImpl,
   handleRevision as handleRevisionImpl,
   removeInks as removeInksImpl,
   replyToComment as replyToCommentImpl,
@@ -780,7 +783,7 @@ export function App() {
     otherName: string
     entries: CompareEntry[]
   } | null>(null)
-  const [autoSave, setAutoSave] = useState(() => localStorage.getItem('aidocs.autoSave') === '1')
+  const [autoSave, setAutoSave] = useAutoSavePref('aidocs.autoSave', window.desktop)
   // tab closed but this renderer kept alive (shell freeze workaround): go inert
   const [tornDown, setTornDown] = useState(false)
   const [aiPreset, setAiPreset] = useState<{
@@ -853,6 +856,18 @@ export function App() {
         const data = event.clipboardData
         if (!data) return false
         const html = data.getData('text/html')
+        // a lone unformatted spreadsheet cell is a text paste (the r146 unwrap
+        // turns it into text) and takes the insertion point's formatting like
+        // typing (r172) — the HTML lanes below keep no marks for it and would
+        // land it in the theme font (r176: Sheets cell → Docs pasted as Aptos)
+        if (html) {
+          const cellText = singleCellPasteText(html)
+          if (cellText !== null) {
+            const slice = pasteTextSlice(cellText, view.state.selection.$from, view)
+            view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView())
+            return true
+          }
+        }
         // web-copied images (r139): "Copy image" in a browser puts a bitmap +
         // an <img src="http..."> HTML fragment + often the URL as text/plain
         // on the clipboard. Detect image-only HTML so the bitmap wins over
@@ -1009,10 +1024,8 @@ export function App() {
     localStorage.setItem('aidocs.showAi', showAi ? '1' : '0')
   }, [showAi])
 
-  useEffect(() => {
-    localStorage.setItem('aidocs.autoSave', autoSave ? '1' : '0')
-  }, [autoSave])
-
+  const spellcheckWasOn = useRef(spellcheck)
+  const respellKickBusy = useRef(false)
   useEffect(() => {
     localStorage.setItem(SPELLCHECK_KEY, spellcheck ? '1' : '0')
     // setOptions (not a direct DOM write): ProseMirror re-applies editorProps
@@ -1026,51 +1039,160 @@ export function App() {
         },
       },
     })
+    // Blink only respells an editable as a consequence of real (trusted)
+    // typing of a word-committing character inside it. The r168 retest ruled
+    // everything else out pixel by pixel: attribute flips, focus cycles (the
+    // first attempt at this fix), script or execCommand edits, fresh DOM
+    // nodes, session spellchecker kicks, synthetic clicks and arrow keys —
+    // even a typed zero-width space — existing typos stay unmarked. So on the
+    // re-enable transition, have the main process type one trusted space at
+    // the caret and remove it again by script (a trusted Backspace would work
+    // too, but its deletion re-suppresses the caret paragraph's markers).
+    // ProseMirror must not see any of it: its DOM observer is paused (no
+    // transaction, no history entry, no dirty flag) and a capture-phase key
+    // shield keeps its keymap and other key handlers out of the round trip —
+    // the same shield also tells us when the keystroke has actually landed.
+    if (spellcheck && !spellcheckWasOn.current) {
+      requestAnimationFrame(() => {
+        const view = editor.view
+        const dom = view.dom
+        if (!dom.isConnected || view.composing || respellKickBusy.current) return
+        respellKickBusy.current = true
+        const sub = getActiveSubEditor()
+        const prev = document.activeElement as HTMLElement | null
+        view.focus() // puts the DOM caret where the state says it is
+        const sel = window.getSelection()
+        // typing over a range would replace it — kick from a caret instead;
+        // view.focus() below restores the real selection from PM state after
+        if (sel && !sel.isCollapsed) sel.collapseToEnd()
+        // the kick inserts exactly one space at the caret; snapshot the caret
+        // text node so the scrub can restore it byte-identically
+        const caretNode = sel?.anchorNode
+        const caretText = caretNode instanceof Text ? caretNode : null
+        const caretData = caretText?.data ?? null
+        let sawKick = false
+        const shield = (e: KeyboardEvent) => {
+          if (e.key === ' ') sawKick = true
+          e.stopPropagation()
+        }
+        document.addEventListener('keydown', shield, true)
+        document.addEventListener('keypress', shield, true)
+        const observer = (
+          view as unknown as { domObserver: { stop: () => void; start: () => void } }
+        ).domObserver
+        observer.stop()
+        const scrub = () => {
+          // caret in a text node: remove exactly the one inserted character.
+          // deleteData keeps the node's other spell markers alive — a whole
+          // `data` reassignment would wipe the paragraph's fresh squiggles.
+          if (caretText && caretData !== null && caretText.data !== caretData) {
+            const now = caretText.data
+            if (now.length === caretData.length + 1) {
+              let i = 0
+              while (i < caretData.length && now[i] === caretData[i]) i++
+              caretText.deleteData(i, 1)
+            }
+            if (caretText.data !== caretData) caretText.data = caretData
+            return
+          }
+          // the space landed elsewhere: Blink canonicalizes the insertion point
+          // (end of a link, mark boundary, empty paragraph) into a sibling or
+          // fresh text node — the caret it left sits right after the space
+          if (!sawKick) return
+          const after = window.getSelection()
+          const node = after?.anchorNode
+          if (!(node instanceof Text) || !after || after.anchorOffset === 0) return
+          if (node === caretText) return
+          const ch = node.data[after.anchorOffset - 1]
+          if (ch === ' ' || ch === '\u00a0') node.deleteData(after.anchorOffset - 1, 1)
+        }
+        void window.desktop
+          .respellKick()
+          .catch(() => undefined)
+          .then(async () => {
+            // the IPC can resolve before the input pipeline delivers the
+            // keystroke — wait for the shield to see it (or give up quietly:
+            // a kick that never landed left nothing to scrub)
+            const deadline = Date.now() + 800
+            while (!sawKick && Date.now() < deadline) {
+              await new Promise((r) => setTimeout(r, 30))
+            }
+            scrub()
+            observer.start()
+            document.removeEventListener('keydown', shield, true)
+            document.removeEventListener('keypress', shield, true)
+            respellKickBusy.current = false
+            view.focus() // resync the DOM selection from PM state
+            // ribbon toggle during textbox editing: keep the routing and hand
+            // the keyboard back where it was — typing must not replace the box
+            if (!sub) return
+            setActiveSubEditor(sub)
+            if (prev && prev !== dom) prev.focus({ preventScroll: true })
+          })
+      })
+    }
+    spellcheckWasOn.current = spellcheck
   }, [editor, spellcheck])
 
   // Pinch-to-zoom: Chromium delivers trackpad pinch as a wheel event
   // with ctrlKey set. Also support ⌘+scroll. Must be non-passive to preventDefault.
-  // The cursor-anchored zoom center is stashed for the zoom effect below so a
-  // Ctrl+wheel zoom keeps the content under the cursor in place (issue #238).
-  const zoomCenterRef = useRef<{ x: number; y: number } | null>(null)
+  // The viewport point under the cursor is stashed for the zoom layout effect
+  // below so the content there stays put (public #238); set only when the zoom
+  // actually changes, else a clamped tick would leave a stale anchor behind.
+  const zoomAnchorRef = useRef<{ vx: number; vy: number } | null>(null)
   useEffect(() => {
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
       if (!(e.target as HTMLElement | null)?.closest?.('.editor-scroll')) return
       e.preventDefault()
-      const container = scrollContainerRef.current
-      if (container) {
-        const rect = container.getBoundingClientRect()
-        zoomCenterRef.current = {
-          x: e.clientX - rect.left + container.scrollLeft,
-          y: e.clientY - rect.top + container.scrollTop,
-        }
-      }
-      setZoom((z) => Math.min(200, Math.max(50, z - e.deltaY * 0.6)))
+      const rect = scrollContainerRef.current?.getBoundingClientRect()
+      const anchor = rect ? { vx: e.clientX - rect.left, vy: e.clientY - rect.top } : null
+      setZoom((z) => {
+        const next = Math.min(200, Math.max(50, z - e.deltaY * 0.6))
+        if (next !== z) zoomAnchorRef.current = anchor
+        return next
+      })
     }
     window.addEventListener('wheel', onWheel, { passive: false })
     return () => window.removeEventListener('wheel', onWheel)
   }, [])
 
-  // Preserve scroll position when zoom changes (issue #238): rescale the
-  // scroll offsets around the zoom anchor (cursor for wheel zoom, viewport
-  // center for slider/menu/ribbon zoom) so the visible page stays in view.
+  // Keep the document point under the anchor (cursor for wheel zoom, viewport
+  // center otherwise) fixed across a zoom change. Runs after the zoomed layout
+  // is committed, so the page box is read post-zoom and the pre-zoom box is
+  // derived from it: CSS zoom scales the box linearly, the top edge is a fixed
+  // scroller padding, and `.doc-zoom` is margin-auto centered until it overflows.
+  // The pre-zoom scroll offsets come from the last scroll event: a zoom-out can
+  // shrink the overflow and clamp them before this effect gets to read them.
+  const scrollPosRef = useRef({ left: 0, top: 0 })
   const prevZoomRef = useRef(zoom)
-  useEffect(() => {
-    const container = scrollContainerRef.current
-    if (!container) return
+  useLayoutEffect(() => {
     const prevZoom = prevZoomRef.current
-    if (prevZoom === zoom) return
     prevZoomRef.current = zoom
+    const anchor = zoomAnchorRef.current
+    zoomAnchorRef.current = null
+    const container = scrollContainerRef.current
+    const page = container?.querySelector<HTMLElement>('.doc-zoom')
+    if (!container || !page || prevZoom === zoom) return
 
     const ratio = zoom / prevZoom
-    const anchor = zoomCenterRef.current
-    const centerX = anchor ? anchor.x : container.scrollLeft + container.clientWidth / 2
-    const centerY = anchor ? anchor.y : container.scrollTop + container.clientHeight / 2
-    zoomCenterRef.current = null
+    const vx = anchor ? anchor.vx : container.clientWidth / 2
+    const vy = anchor ? anchor.vy : container.clientHeight / 2
+    const cs = getComputedStyle(container)
+    const padLeft = parseFloat(cs.paddingLeft) || 0
+    const innerWidth = container.clientWidth - padLeft - (parseFloat(cs.paddingRight) || 0)
+    const containerRect = container.getBoundingClientRect()
+    const pageRect = page.getBoundingClientRect()
+    const pageLeft = pageRect.left - containerRect.left + container.scrollLeft
+    const pageTop = pageRect.top - containerRect.top + container.scrollTop
+    const prevPageLeft = padLeft + Math.max(0, (innerWidth - pageRect.width / ratio) / 2)
+    const prev = scrollPosRef.current
 
-    container.scrollLeft = centerX * ratio - container.clientWidth / 2
-    container.scrollTop = centerY * ratio - container.clientHeight / 2
+    const docX = Math.max(0, prev.left + vx - prevPageLeft)
+    const docY = Math.max(0, prev.top + vy - pageTop)
+    container.scrollLeft = pageLeft + docX * ratio - vx
+    container.scrollTop = pageTop + docY * ratio - vy
+    scrollPosRef.current = { left: container.scrollLeft, top: container.scrollTop }
   }, [zoom])
 
   // ---- protection enforcement (Review > Protect Document) ----
@@ -1726,6 +1848,10 @@ export function App() {
     (outPath?: string) => exportPdfImpl(fileCtxRef.current, outPath),
     [],
   )
+  const exportHtml = useCallback(
+    (outPath?: string) => exportHtmlImpl(fileCtxRef.current, outPath),
+    [],
+  )
   const printDoc = useCallback(() => printDocImpl(fileCtxRef.current), [])
 
   // for real-device verification: trigger export directly via CDP (same as __pageDebug)
@@ -1850,6 +1976,10 @@ export function App() {
   )
   const replyToComment = useCallback(
     (parentId: string, text: string) => replyToCommentImpl(reviewCtxRef.current, parentId, text),
+    [],
+  )
+  const editComment = useCallback(
+    (id: string, text: string) => editCommentImpl(reviewCtxRef.current, id, text),
     [],
   )
   const resolveComment = useCallback(
@@ -3690,10 +3820,7 @@ export function App() {
       ) {
         e.preventDefault()
         const attrs = { lineSpacing: SPACING_KEYS[e.code], lineRule: null, lineRawTwips: null }
-        const sub = getActiveSubEditor()
-        // textbox schema has only docParagraph — setParaAttrs' heading/list updates would throw
-        if (sub) sub.chain().focus().updateAttributes('docParagraph', attrs).run()
-        else setParaAttrs(editor, attrs)
+        setParaAttrs(getActiveSubEditor() ?? editor, attrs)
       }
       // Paragraph styles ⌥⌘0 Normal / ⌥⌘1..3 headings (Ctrl+Shift+N is taken by New Window)
       const STYLE_KEYS: Record<string, 'p' | 'h1' | 'h2' | 'h3'> = {
@@ -3976,6 +4103,9 @@ export function App() {
         case 'export-pdf':
           void exportPdf()
           break
+        case 'export-html':
+          void exportHtml()
+          break
         case 'print':
           if (doc) void printDoc()
           break
@@ -3989,6 +4119,7 @@ export function App() {
     openRecent,
     save,
     exportPdf,
+    exportHtml,
     printDoc,
     zoomFit,
     openStats,
@@ -4100,8 +4231,9 @@ export function App() {
       save: () => save(false),
       getStatus: () => status,
       exportPdfTo: (path: string) => exportPdf(path),
+      exportHtmlTo: (path: string) => exportHtml(path),
     }
-  }, [editor, openRecent, save, status, exportPdf])
+  }, [editor, openRecent, save, status, exportPdf, exportHtml])
 
   // shallow-stable snapshot of every editor read the ribbon displays: caret moves
   // that change none of it keep the reference, so the memoized Ribbon skips
@@ -4543,7 +4675,7 @@ export function App() {
         showNav={showNav}
         commentCount={comments.length}
         openCommentCount={comments.filter((c) => !c.parentId && c.done !== true).length}
-        canComment={!editor.state.selection.empty}
+        canComment={!editor.state.selection.empty || wordRangeAtCaret(editor) !== null}
         trackChanges={trackChanges}
         spellcheck={spellcheck}
         revisionDisplay={revisionDisplay}
@@ -4618,7 +4750,16 @@ export function App() {
               />
             )}
             <div className="editor-area">
-              <main className="editor-scroll" ref={scrollContainerRef}>
+              <main
+                className="editor-scroll"
+                ref={scrollContainerRef}
+                onScroll={(e) => {
+                  scrollPosRef.current = {
+                    left: e.currentTarget.scrollLeft,
+                    top: e.currentTarget.scrollTop,
+                  }
+                }}
+              >
                 {doc ? (
                   <div
                     className={docZoomClass}
@@ -4632,19 +4773,7 @@ export function App() {
                         editor={editor}
                         onTabStopsChange={(stops) => {
                           if (!editor) return
-                          editor
-                            .chain()
-                            .focus()
-                            .updateAttributes('docParagraph', {
-                              tabStops: stops ? JSON.stringify(stops) : null,
-                            })
-                            .updateAttributes('docHeading', {
-                              tabStops: stops ? JSON.stringify(stops) : null,
-                            })
-                            .updateAttributes('docListItem', {
-                              tabStops: stops ? JSON.stringify(stops) : null,
-                            })
-                            .run()
+                          setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
                         }}
                       />
                     )}
@@ -4816,6 +4945,7 @@ export function App() {
                 composing={commentComposing}
                 onSubmitNew={submitNewComment}
                 onReply={replyToComment}
+                onEdit={editComment}
                 onResolve={resolveComment}
                 onCancelNew={cancelNewComment}
                 onDelete={deleteComment}

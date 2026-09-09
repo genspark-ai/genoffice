@@ -137,6 +137,7 @@ describe('csvToXlsxBuffer', () => {
   it('rejects an empty file and escapes XML metacharacters', async () => {
     await expect(csvToXlsxBuffer('')).rejects.toThrow('no data rows')
     expect(buildWorksheetXml([['<b>&"']])).toContain('&lt;b&gt;&amp;&quot;')
+    expect(buildWorksheetXml([['a\rb_x000D_']])).toContain('>a_x000D_b_x005F_x000D_<')
   })
 })
 

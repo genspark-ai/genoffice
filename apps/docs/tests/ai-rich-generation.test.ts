@@ -227,8 +227,8 @@ describe('insertToc command', () => {
       editor,
       {
         id: 't2',
-        name: 'apply_commands',
-        input: { commands: [{ insertToc: { afterBlockIndex: -1 } }] },
+        name: 'apply_ops',
+        input: { ops: [{ op: 'insertToc', afterBlockIndex: -1 }] },
       },
       NUM_IDS,
     )
@@ -282,8 +282,8 @@ describe('insertToc command', () => {
       editor,
       {
         id: 't2',
-        name: 'apply_commands',
-        input: { commands: [{ insertToc: { afterBlockIndex: -1 } }] },
+        name: 'apply_ops',
+        input: { ops: [{ op: 'insertToc', afterBlockIndex: -1 }] },
       },
       NUM_IDS,
     )

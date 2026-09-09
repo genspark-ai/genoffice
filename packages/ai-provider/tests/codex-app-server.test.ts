@@ -4,12 +4,42 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { AgentToolDef } from '@genoffice/agent-core'
 import {
+  activePermissionProfileId,
   buildCodexAppServerPrompt,
   codexAppServerLaunchArgs,
   codexAppServerOutputSchema,
+  codexThreadStartParams,
   parseCodexAppServerTurn,
   resolveCodexCliPath,
+  waitForTurn,
+  type CodexTurnTransport,
+  type RpcMessage,
 } from '../src/codex-app-server'
+
+function fakeTransport(script: RpcMessage[]): CodexTurnTransport {
+  let listener: ((message: RpcMessage) => void) | undefined
+  return {
+    request: async (method) => {
+      if (method === 'turn/start') {
+        queueMicrotask(() => script.forEach((message) => listener?.(message)))
+        return { turn: { id: 't1' } }
+      }
+      return {}
+    },
+    onNotification: (next) => {
+      listener = next
+      return () => {
+        listener = undefined
+      }
+    },
+  }
+}
+
+const noopCallbacks = {
+  signal: new AbortController().signal,
+  onDelta: () => undefined,
+  onToolCall: () => undefined,
+}
 
 const tools: AgentToolDef[] = [
   {
@@ -70,6 +100,28 @@ describe('Codex app-server bridge', () => {
 
   it('starts the official stdio app-server instead of assuming an HTTP endpoint', () => {
     expect(codexAppServerLaunchArgs()).toEqual(['app-server', '--listen', 'stdio://'])
+  })
+
+  it('confines Codex tool reads to the temp dir through a permission profile', () => {
+    const config = { apiKey: '', model: 'gpt-5.6-terra' }
+    const params = codexThreadStartParams(config, '/tmp/genoffice-codex-x', 'profile')
+    expect(params).not.toHaveProperty('sandbox')
+    expect(params.approvalPolicy).toBe('never')
+    expect(params.config).toEqual({
+      default_permissions: 'genoffice',
+      permissions: {
+        genoffice: {
+          filesystem: { ':minimal': 'read', '/tmp/genoffice-codex-x': 'read' },
+        },
+      },
+    })
+    expect(codexThreadStartParams(config, '/tmp/genoffice-codex-x', 'read-only')).toMatchObject({
+      sandbox: 'read-only',
+    })
+    expect(activePermissionProfileId({ activePermissionProfile: { id: 'genoffice' } })).toBe(
+      'genoffice',
+    )
+    expect(activePermissionProfileId({ activePermissionProfile: null })).toBeUndefined()
   })
 
   it('builds a strict one-turn output schema with only known tool names', () => {
@@ -134,5 +186,54 @@ describe('Codex app-server bridge', () => {
     expect(() =>
       parseCodexAppServerTurn(JSON.stringify({ text: '', toolCalls: [] }), tools),
     ).toThrow('no content')
+  })
+
+  it('keeps waiting through transient stream errors Codex retries itself', async () => {
+    const transport = fakeTransport([
+      {
+        method: 'error',
+        params: {
+          threadId: 'th',
+          turnId: 't1',
+          willRetry: true,
+          error: { message: 'Reconnecting... 2/5' },
+        },
+      },
+      {
+        method: 'item/completed',
+        params: { threadId: 'th', turnId: 't1', item: { type: 'agentMessage', text: 'done' } },
+      },
+      {
+        method: 'turn/completed',
+        params: { threadId: 'th', turnId: 't1', turn: { id: 't1', status: 'completed' } },
+      },
+    ])
+    await expect(
+      waitForTurn(
+        transport,
+        'th',
+        () => transport.request('turn/start', {}),
+        noopCallbacks.signal,
+        noopCallbacks,
+      ),
+    ).resolves.toBe('done')
+  })
+
+  it('fails the turn on a non-retried error notification', async () => {
+    const transport = fakeTransport([
+      {
+        method: 'error',
+        params: { threadId: 'th', turnId: 't1', willRetry: false, error: { message: 'boom' } },
+      },
+    ])
+    await expect(
+      waitForTurn(
+        transport,
+        'th',
+        () => transport.request('turn/start', {}),
+        noopCallbacks.signal,
+        noopCallbacks,
+      ),
+    ).rejects.toThrow('boom')
   })
 })

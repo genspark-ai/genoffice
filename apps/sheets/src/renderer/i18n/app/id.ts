@@ -311,6 +311,8 @@ export const id = {
     'Buku kerja ini terlalu besar untuk dimuat sepenuhnya ke memori; filter tidak tersedia untuk file ini.',
   appDialogCancel: 'Batal',
   appPivotSheetNoMove: 'Lembar ini berisi PivotTable — memindahkan rentang belum didukung.',
+  appMergeOverTable:
+    'Pilihan tumpang tindih dengan tabel Excel — menggabungkan sel di dalam tabel belum didukung.',
   appTableFilterNoEdit: 'Filter lembar ini milik tabel Excel — pengeditannya belum dapat disimpan.',
   appAutofillStreaming: 'IsiOtomatis ke area yang masih dimuat secara streaming belum diizinkan.',
   appDvNeedsIndexed:
@@ -559,6 +561,8 @@ export const id = {
     'Perubahan nama yang ditentukan tidak dapat disimpan bersama perubahan baris/kolom atau struktur sheet — simpan dalam dua tahap.',
   appSaveErrChangedOnDisk:
     'File diubah di disk oleh program lain — penyimpanan dibatalkan; buka kembali file lalu coba lagi.',
+  appSaveErrTargetLocked:
+    'File tidak dapat diganti — tampaknya terkunci oleh program lain (terbuka di Excel, atau sedang dipindai/disinkronkan). Tutup di sana lalu simpan lagi.',
   appSaveErrStylesheetLimited:
     'Stylesheet buku kerja ini tidak memiliki struktur dasar, jadi perubahan gaya tidak dapat disimpan.',
   appSaveErrPackageGuard:

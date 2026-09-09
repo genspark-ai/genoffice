@@ -1,9 +1,9 @@
 import type { Editor } from '@tiptap/core'
-import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { ChartDisplay, CommentInfo, NewChart } from '@genoffice/docx-engine'
 import type { AgentToolCall, AgentToolDef, CreateDocumentType } from '../../shared/ipc'
 import { t } from '../i18n/locale'
-import { executeCommands, type Command, type CommandEnvelope } from './commands'
+import { executeOps, opNames } from './ops'
 import {
   blockRangePositions,
   buildCommentsContext,
@@ -13,7 +13,9 @@ import {
   isBlankDocument,
   isTrackedDeleted,
   parseHtmlFragment,
+  parseInlineFragment,
   replaceBlockRange,
+  replaceInlineRange,
   serializeRangeToHtml,
   type AiHfState,
   type AiTrack,
@@ -87,19 +89,41 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     },
   },
   {
-    name: 'apply_commands',
+    name: 'replace_selection',
     description:
-      'Execute formatting/structure/batch commands (batchUpdate style, see the command guide in the system prompt): text style (whole-block or matched-text-only), paragraph format, heading level, find & replace, delete/move blocks, list conversion, image properties, TOC insertion.',
+      "Replace exactly the user's selected text (the <sel>…</sel> span in the context) with new inline content, leaving the rest of the block untouched. For rewording/translating/correcting a selected phrase or sentence inside a paragraph. The new text inherits the selection's formatting unless the fragment styles it. Requires a range selection inside one paragraph/heading/list item; for whole blocks or several blocks use replace_blocks.",
     inputSchema: {
       type: 'object',
       properties: {
-        commands: {
-          type: 'array',
-          description: 'array of commands executed in order; each command is a single-key object',
-          items: { type: 'object' },
+        html: {
+          type: 'string',
+          description:
+            'replacement inline content: plain text or restricted inline HTML (strong em u s a br formula)',
         },
       },
-      required: ['commands'],
+      required: ['html'],
+    },
+  },
+  {
+    name: 'apply_ops',
+    description:
+      `Run a list of formatting/structure ops as one atomic transaction (see the apply_ops guide in the system prompt): ${opNames().join(', ')}. ` +
+      'Each op is a flat { op, target?, ...fields } object; fields are patches (present = set, null = clear, absent = untouched). Any invalid op rejects the whole batch with its usage line.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ops: {
+          type: 'array',
+          description:
+            'ops executed in order, e.g. [{"op":"setFont","target":{"nodeType":"docHeading"},"color":"#FF0000"}]',
+          items: { type: 'object' },
+        },
+        dryRun: {
+          type: 'boolean',
+          description: 'validate and return the plan without changing the document',
+        },
+      },
+      required: ['ops'],
     },
   },
   {
@@ -181,7 +205,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'generate_image',
     description:
-      'Generate an illustration with AI from a text prompt and insert it into the document (at the cursor / end of document). For illustration/diagram-style art that image_search cannot find, or when the user asks to generate/draw a picture. Requires Genspark login with cloud tools enabled.',
+      'Generate an illustration with AI from a text prompt and insert it into the document (at the cursor / end of document). For illustration/diagram-style art that image_search cannot find, or when the user asks to generate/draw a picture.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -298,19 +322,20 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'create_document',
     description:
       'Create a NEW standalone file in the default save folder and open it in a new tab; the current document is not modified. Use when the user asks to put content into a new/separate document instead of this one. ' +
-      "type 'docx' (default) and 'pdf' take the same restricted HTML as insert_content in content; type 'md' takes Markdown source. Images and charts are not supported in the new file's initial content.",
+      "type 'docx' (default) and 'pdf' take the same restricted HTML as insert_content in content; type 'md' takes Markdown source; type 'html' takes a complete standalone HTML page (opens in the HTML editor). Images and charts are not supported in the new file's initial content.",
     inputSchema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['docx', 'pdf', 'md'],
+          enum: ['docx', 'pdf', 'md', 'html'],
           description: "target file type (default 'docx')",
         },
         title: { type: 'string', description: 'document title, used as the file name' },
         content: {
           type: 'string',
-          description: 'full document content: restricted HTML for docx/pdf, Markdown for md',
+          description:
+            'full document content: restricted HTML for docx/pdf, Markdown for md, a complete HTML page for html',
         },
       },
       required: ['title', 'content'],
@@ -371,6 +396,9 @@ const fail = (summary: string, output: string): ToolExecution => ({
   summary,
 })
 
+const clipText = (text: string, max: number): string =>
+  text.length > max ? `${text.slice(0, max)}…` : text
+
 /**
  * A model that saw gateway-flattened tool results can regurgitate them as the
  * html argument (raw {"index":…} block dumps, literal </tool_response> tags);
@@ -399,6 +427,31 @@ function toolEchoError(html: string): string | null {
   }
 }
 
+/** <sel> only marks the user's selection in the context; a model echoing it would write the marker into the document */
+function contextMarkerError(html: string): string | null {
+  return /<\/?sel\s*>/i.test(html)
+    ? 'html contains <sel>: that marker only delimits the selection in the context and is not document content; retry without it'
+    : null
+}
+
+/** the range selection tools act on: the frozen scope when valid, else the live selection; null for a caret */
+function selectionRange(
+  editor: Editor,
+  scope?: SelectionScope | null,
+): { from: number; to: number } | null {
+  if (scope) {
+    if (!scope.isRange) return null
+    if (scope.from !== undefined && scope.to !== undefined && scope.from < scope.to)
+      return { from: scope.from, to: scope.to }
+  }
+  const { from, to, empty } = editor.state.selection
+  return empty ? null : { from, to }
+}
+
+/** formatting the fragment expresses itself (tags), so it must not also be inherited from the old text */
+const FRAGMENT_MARK_TYPES = new Set(['bold', 'italic', 'underline', 'strike', 'link'])
+const REVISION_MARK_TYPES = new Set(['ins', 'del'])
+
 /** Doc as last seen by the AI pipeline (context build / read / own write); a differing doc means the user edited in between. */
 const docBaseline = new WeakMap<Editor, ProseMirrorNode>()
 
@@ -420,7 +473,8 @@ function editedExternally(editor: Editor): boolean {
 const INDEX_WRITE_SUMMARIES: Record<string, () => string> = {
   insert_content: () => t('aiSumInsertContent'),
   replace_blocks: () => t('aiSumReplaceContent'),
-  apply_commands: () => t('aiSumApplyCommands'),
+  replace_selection: () => t('aiSumReplaceSelection'),
+  apply_ops: () => t('aiSumApplyCommands'),
   insert_chart: () => t('aiSumInsertChart'),
   edit_chart: () => t('aiSumEditChart'),
 }
@@ -543,8 +597,8 @@ async function executeAsyncTool(
     }
     case 'create_document': {
       const typeRaw = call.input.type === undefined ? 'docx' : String(call.input.type)
-      if (typeRaw !== 'docx' && typeRaw !== 'pdf' && typeRaw !== 'md')
-        return fail(t('aiSumCreateDocument'), 'type must be one of docx/pdf/md')
+      if (typeRaw !== 'docx' && typeRaw !== 'pdf' && typeRaw !== 'md' && typeRaw !== 'html')
+        return fail(t('aiSumCreateDocument'), 'type must be one of docx/pdf/md/html')
       const type: CreateDocumentType = typeRaw
       const title = String(call.input.title ?? '').trim()
       if (!title) return fail(t('aiSumCreateDocument'), 'title must not be empty')
@@ -553,6 +607,8 @@ async function executeAsyncTool(
       if (type !== 'md') {
         const echo = toolEchoError(content)
         if (echo) return fail(t('aiSumCreateDocument'), echo)
+      }
+      if (type === 'docx' || type === 'pdf') {
         // the new docx tab fills itself after this tool already returned, so
         // unparseable HTML must be rejected here, where the model can retry
         try {
@@ -743,7 +799,7 @@ function executeSyncTool(
 
     case 'insert_content': {
       const html = String(call.input.html ?? '')
-      const echo = toolEchoError(html)
+      const echo = toolEchoError(html) ?? contextMarkerError(html)
       if (echo) return fail(t('aiSumInsertContent'), echo)
       let nodes: ReturnType<typeof parseHtmlFragment>
       try {
@@ -781,7 +837,7 @@ function executeSyncTool(
       const range = validRange(editor, call.input.startBlockIndex, call.input.endBlockIndex)
       if (!range) return fail(t('aiSumReplaceContent'), rangeError(editor))
       const html = String(call.input.html ?? '')
-      const echo = toolEchoError(html)
+      const echo = toolEchoError(html) ?? contextMarkerError(html)
       if (echo) return fail(t('aiSumReplaceContent'), echo)
       let nodes: ReturnType<typeof parseHtmlFragment>
       try {
@@ -796,6 +852,60 @@ function executeSyncTool(
         output: `Replaced blocks ${range.start}-${range.end} with ${nodes.length} block(s); the new blocks kept the replaced blocks' formatting. Block indexes have changed; use get_document_context if needed.`,
         mutated: true,
         summary: t('aiSumReplacedBlocks', { start: range.start, end: range.end }),
+      }
+    }
+
+    case 'replace_selection': {
+      const html = String(call.input.html ?? '')
+      const echo = toolEchoError(html) ?? contextMarkerError(html)
+      if (echo) return fail(t('aiSumReplaceSelection'), echo)
+      const range = selectionRange(editor, scope)
+      if (!range) {
+        return fail(
+          t('aiSumReplaceSelection'),
+          'nothing is selected: replace_selection needs a range selection (the <sel>…</sel> span in the context); to rewrite whole blocks use replace_blocks',
+        )
+      }
+      const doc = editor.state.doc
+      const $from = doc.resolve(range.from)
+      const $to = doc.resolve(range.to)
+      if ($from.depth !== 1 || !$from.sameParent($to) || !$from.parent.isTextblock) {
+        return fail(
+          t('aiSumReplaceSelection'),
+          'the selection spans several blocks or sits in protected content (table, image, field); replace_selection only edits text inside one paragraph/heading/list item — use replace_blocks for that range',
+        )
+      }
+      let inline: ReturnType<typeof parseInlineFragment>
+      try {
+        inline = parseInlineFragment(html)
+      } catch (e) {
+        return fail(t('aiSumReplaceSelection'), e instanceof Error ? e.message : String(e))
+      }
+      if (inline.length === 0) {
+        return fail(t('aiSumReplaceSelection'), 'html did not parse into any text')
+      }
+      const schema = editor.schema
+      const fragmentStyled = inline.some((n) => (n.marks ?? []).length > 0)
+      const anchor = $from.parent.childAfter($from.parentOffset).node
+      const inherited = (anchor?.marks ?? []).filter(
+        (m) =>
+          !REVISION_MARK_TYPES.has(m.type.name) &&
+          !(fragmentStyled && FRAGMENT_MARK_TYPES.has(m.type.name)),
+      )
+      const nodes = inline.map((n) => {
+        if (n.type !== 'text') return schema.nodeFromJSON(n)
+        let marks: readonly Mark[] = inherited
+        for (const m of n.marks ?? []) marks = schema.markFromJSON(m).addToSet(marks)
+        return schema.text(n.text ?? '', marks)
+      })
+      const blockIndex = $from.index(0)
+      const oldText = doc.textBetween(range.from, range.to, ' ', ' ')
+      replaceInlineRange(editor, range.from, range.to, nodes, track)
+      const newText = nodes.map((n) => n.textContent).join('')
+      return {
+        output: `Replaced the selected text in block ${blockIndex}: "${clipText(oldText, 200)}" → "${clipText(newText, 200)}". The rest of the block is unchanged; the new text is now selected.`,
+        mutated: true,
+        summary: t('aiSumReplaceSelection'),
       }
     }
 
@@ -1040,15 +1150,22 @@ function executeSyncTool(
       }
     }
 
-    case 'apply_commands': {
-      const commands = call.input.commands
-      if (!Array.isArray(commands) || commands.length === 0) {
-        return fail(t('aiSumApplyCommands'), 'commands must be a non-empty array')
+    case 'apply_ops': {
+      const dryRun = call.input.dryRun === true
+      const outcome = executeOps(editor, call.input.ops, {
+        numIds,
+        track,
+        selection: scope,
+        dryRun,
+      })
+      if (!outcome.ok) return fail(t('aiSumApplyCommands'), outcome.error ?? 'op execution failed')
+      if (dryRun) {
+        return {
+          output: `Dry run: ${outcome.plan?.length ?? 0} op(s) valid, nothing applied.\n${(outcome.plan ?? []).join('\n')}`,
+          mutated: false,
+          summary: t('aiSumApplyCommands'),
+        }
       }
-      const envelope: CommandEnvelope = { commands: commands as Command[] }
-      const outcome = executeCommands(editor, envelope, { numIds, track, selection: scope })
-      if (!outcome.ok)
-        return fail(t('aiSumApplyCommands'), outcome.error ?? 'command execution failed')
       const changed = outcome.results.reduce((sum, r) => sum + r.changed, 0)
       const skippedDeleted = outcome.results.reduce((sum, r) => sum + (r.skippedDeleted ?? 0), 0)
       // explicit model-facing note so it stops retrying deletions of already-deleted text

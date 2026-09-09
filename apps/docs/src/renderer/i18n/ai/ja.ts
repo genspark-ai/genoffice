@@ -128,6 +128,7 @@ export const ja = {
   aiSumCreateDocument: '新規ドキュメントを作成',
   aiSumCreatedDocument: '{name} を作成しました',
   aiSumReplaceContent: 'コンテンツを置換',
+  aiSumReplaceSelection: '選択したテキストを置換',
   aiSumReplacedBlocks: 'ブロック {start}-{end} を置換',
   aiSumInsertChart: 'グラフを挿入',
   aiSumInsertedChart: 'グラフ「{title}」を挿入',

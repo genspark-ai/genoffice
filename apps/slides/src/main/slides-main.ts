@@ -36,6 +36,7 @@ import {
   installContextMenu,
   installNavigationGuard,
   safeExternalUrl,
+  saveAsSuggestion,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
   toggleDevToolsItem,
@@ -71,8 +72,6 @@ import {
   materializeSlide,
   listMasterParts,
   parseMasterPart,
-  TABLE_STYLE_PRESETS,
-  type TableStyleEdit,
   EMU_PER_PT,
   slideDurableId,
   getSlideComments,
@@ -229,6 +228,7 @@ import {
 } from './session-state'
 import { registerAiIpc, registerSlidesOnlyAiIpc } from './ai-ipc'
 import { listPrivateFontFaces, getPrivateFontData, registerEmbeddedFonts } from './fonts'
+import { listMetafileFonts } from './metafile-fonts'
 import {
   downloadFontFamily,
   initFontStore,
@@ -702,6 +702,21 @@ function adoptEmbeddedFonts(opened: OpenedPptx): void {
     if (registerEmbeddedFonts(listEmbeddedFonts(opened.archive))) resetFontMetrics()
   } catch {
     // Embedded fonts are best-effort: a malformed fntdata must never block opening
+  }
+  // Metafile pictures draw text through canvas fonts: resolving their facenames here puts the
+  // Office-private faces (Yu Gothic UI, MS PGothic…) on the renderer's private-font list before
+  // the EMF/WMF previews rasterize.
+  try {
+    const metrics = getFontMetrics()
+    for (const f of listMetafileFonts(opened.archive))
+      metrics.displayFamily?.({
+        fontFamily: f.family,
+        fontSizePx: 100,
+        bold: f.bold,
+        italic: f.italic,
+      })
+  } catch {
+    // best-effort as well
   }
 }
 
@@ -2211,6 +2226,25 @@ export function registerSlidesIpc(): void {
     return rebuildSlide(session, op.slideIndex)
   })
 
+  // Replace picture: the renderer swaps the bytes in place through replacePictureBytes
+  ipcMain.handle('slides:pick-picture-file', async () => {
+    const r = await showOpenDialogWithMemory(dialog, dialogParent(), {
+      title: tm('dlgReplacePicture'),
+      properties: ['openFile' as const],
+      filters: [
+        {
+          name: tm('filterImages'),
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tif', 'tiff'],
+        },
+      ],
+    })
+    if (r.canceled || !r.filePaths[0]) return null
+    const filePath = r.filePaths[0]
+    return {
+      base64: (await readFile(filePath)).toString('base64'),
+      ext: filePath.split('.').pop()!.toLowerCase(),
+    }
+  })
   ipcMain.handle('slides:insert-image', async (e, slideIndex: number, fitWidthPx: number) => {
     const session = sessions.get(e.sender.id)
     if (!session) return null
@@ -2852,56 +2886,9 @@ export function registerSlidesIpc(): void {
     // A reparse regenerates element ids: look up the new id by element index; the renderer uses it to keep the selection
     const elIdx = slide.elements.findIndex((el) => matchesElementRef(el, op.sourceId))
     pushHistory(session)
-    // Parse op -> TableStyleEdit
-    let edit: TableStyleEdit
-    if (op.styleName && TABLE_STYLE_PRESETS[op.styleName]) {
-      const preset = TABLE_STYLE_PRESETS[op.styleName]!
-      // Fixed-color presets inject their style definition via the op's stylePart
-      // (built-in GUIDs track theme colors, so colors would drift)
-      // Applying a style-gallery preset in PowerPoint clears cells' direct fills/borders; otherwise direct formatting hides the style
-      edit = {
-        tblPrXml: preset.tblPrXml,
-        clearDirectFormatting: true,
-        // Grid-style presets use direct borders (the style mechanism only has inner lines and cannot draw the outer frame)
-        ...(preset.border
-          ? {
-              borderPreset: 'all' as const,
-              borderColor: preset.border.color,
-              borderWidthEmu: preset.border.widthEmu,
-            }
-          : {}),
-      }
-    } else {
-      const borderColor = op.borderColor ?? undefined
-      const borderWidthEmu =
-        op.borderWidthPt != null ? Math.round(op.borderWidthPt * EMU_PER_PT) : undefined
-      edit = {
-        ...(op.firstRow !== undefined ? { firstRow: op.firstRow } : {}),
-        ...(op.bandRow !== undefined ? { bandRow: op.bandRow } : {}),
-        ...(op.rtl !== undefined ? { rtl: op.rtl } : {}),
-        ...(op.shadingColor !== undefined ? { shadingColor: op.shadingColor } : {}),
-        ...(op.borderPreset !== undefined ? { borderPreset: op.borderPreset } : {}),
-        ...(borderColor !== undefined ? { borderColor } : {}),
-        ...(borderWidthEmu !== undefined ? { borderWidthEmu } : {}),
-        ...(op.cells ? { cells: op.cells } : {}),
-      }
-    }
+    const { slideIndex, sourceId, ...style } = op
     const r = journaledTxn(session, 'edit', {
-      ops: [
-        {
-          op: 'setTableStyle',
-          target: { slide: op.slideIndex, el: op.sourceId },
-          edit,
-          ...(op.styleName && TABLE_STYLE_PRESETS[op.styleName]?.styleId
-            ? {
-                stylePart: {
-                  styleId: TABLE_STYLE_PRESETS[op.styleName]!.styleId!,
-                  styleDefXml: TABLE_STYLE_PRESETS[op.styleName]!.styleDefXml!,
-                },
-              }
-            : {}),
-        },
-      ],
+      ops: [{ op: 'setTableStyle', target: { slide: slideIndex, el: sourceId }, ...style }],
     })
     if (!r.applied) {
       session.undoStack.pop()
@@ -4055,7 +4042,7 @@ export function registerSlidesIpc(): void {
     if (!session) return { ok: false, error: 'no file open' }
     const parent = dialogParent()
     const options = {
-      defaultPath: defaultName,
+      defaultPath: saveAsSuggestion(session.path, defaultName),
       filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
     }
     const r = await showSaveDialogWithMemory(dialog, parent, options, getDraftsDir())
@@ -4294,6 +4281,7 @@ export function registerProjectIpc(): void {
           output?: string
         }>
         attachments?: Array<{ name: string; path?: string; ext?: string; sizeBytes?: number }>
+        scope?: { label: string; text?: string }
       },
     ) => {
       const msg: Parameters<ProjectStore['appendChatMessage']>[2] = {
@@ -4302,6 +4290,8 @@ export function registerProjectIpc(): void {
       }
       if (args.tools) msg.tools = args.tools
       if (args.attachments) msg.attachments = args.attachments
+      if (args.scope) msg.scope = args.scope
+
       getSlidesProjectStore().appendChatMessage(args.projectId, args.chatId, msg)
     },
   )

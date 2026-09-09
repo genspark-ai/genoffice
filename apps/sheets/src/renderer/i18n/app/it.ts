@@ -335,6 +335,8 @@ export const it = {
   appDialogCancel: 'Annulla',
   appPivotSheetNoMove:
     'Questo foglio contiene una tabella pivot — lo spostamento di intervalli non è ancora supportato.',
+  appMergeOverTable:
+    'La selezione si sovrappone a una tabella di Excel — l’unione di celle in una tabella non è ancora supportata.',
   appTableFilterNoEdit:
     'Il filtro di questo foglio appartiene a una tabella di Excel — la modifica non può ancora essere salvata.',
   appAutofillStreaming:
@@ -592,6 +594,8 @@ export const it = {
     'Le modifiche ai nomi definiti non possono essere salvate insieme a modifiche di righe/colonne o della struttura dei fogli — salva in due passaggi.',
   appSaveErrChangedOnDisk:
     'Il file è stato modificato su disco da un altro programma — salvataggio interrotto; riapri il file e riprova.',
+  appSaveErrTargetLocked:
+    'Impossibile sostituire il file: sembra bloccato da un altro programma (aperto in Excel o in scansione/sincronizzazione). Chiudilo e salva di nuovo.',
   appSaveErrStylesheetLimited:
     'Il foglio di stile di questa cartella di lavoro manca della struttura di base; le modifiche di stile non possono essere salvate.',
   appSaveErrPackageGuard:

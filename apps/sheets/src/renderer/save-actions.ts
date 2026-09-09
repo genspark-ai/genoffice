@@ -180,7 +180,8 @@ export async function handleSave(
     isSheetRemoved(state.editJournal, sheetId)
       ? []
       : [...cells].flatMap(([key, cell]) => {
-          if (cell.v === undefined) return []
+          // #ERROR! is IronCalc's own failure, never a value Excel would cache.
+          if (cell.v === undefined || cell.v === '#ERROR!') return []
           if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return []
           const [row, column] = key.split(':').map(Number)
           if (row === undefined || column === undefined) return []
@@ -518,6 +519,7 @@ const SAVE_ERROR_PATTERNS = [
   // arrives from the main process already localized (and advises Save As,
   // which stays usable), so it must pass through untouched.
   ['The workbook changed on disk while saving', 'appSaveErrChangedOnDisk'],
+  ['The save target is locked by another program', 'appSaveErrTargetLocked'],
   ['style edits cannot be saved', 'appSaveErrStylesheetLimited'],
   ['Saving would change the workbook package structure', 'appSaveErrPackageGuard'],
   ['charts support', 'appSaveErrChartUnsupported'],

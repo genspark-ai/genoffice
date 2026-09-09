@@ -18,6 +18,9 @@ export default tseslint.config(
       'scripts/drivers/**',
       'apps/*/build/**',
       'packages/*/src/vendor/**',
+      // Browser-side extractor fragments are function-body slices (top-level
+      // return), not modules; they are injected as raw text.
+      'packages/html2docx/src/browser/**',
     ],
   },
   js.configs.recommended,
@@ -45,6 +48,14 @@ export default tseslint.config(
     files: ['**/*.{ts,tsx}'],
     rules: {
       'no-undef': 'off',
+    },
+  },
+  {
+    // html2docx's generation layer is ported JS under @ts-nocheck until it is
+    // typed file by file (packages/html2docx/README.md).
+    files: ['packages/html2docx/src/generate.ts', 'packages/html2docx/src/generate/**/*.ts'],
+    rules: {
+      '@typescript-eslint/ban-ts-comment': 'off',
     },
   },
   {

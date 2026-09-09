@@ -130,6 +130,7 @@ export const fr = {
   aiSumCreateDocument: 'Créer un nouveau document',
   aiSumCreatedDocument: '{name} créé',
   aiSumReplaceContent: 'Remplacer le contenu',
+  aiSumReplaceSelection: 'Remplacer le texte sélectionné',
   aiSumReplacedBlocks: 'Blocs {start}-{end} remplacés',
   aiSumInsertChart: 'Insérer un graphique',
   aiSumInsertedChart: 'Graphique « {title} » inséré',

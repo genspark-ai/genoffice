@@ -6,6 +6,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   addElement,
+  addTable,
   createBlankPptx,
   getSlideAnimations,
   extractMergeSlideSource,
@@ -13,6 +14,7 @@ import {
   parseMasterPart,
   patchSlideXml,
   savePptx,
+  TABLE_STYLE_PRESETS,
   type OpenedPptx,
   type SlideElement,
   type TextElement,
@@ -1219,5 +1221,68 @@ describe('insert-time options (genpptx parity ops)', () => {
     const el = els().find((e) => e.id === r.records![0]!.created![0]) as SlideElement
     expect(el.anchor.originalXml).toContain('<a:gd name="adj" fmla="val 25000"/>')
     expect(el.anchor.originalXml).toContain('<a:normAutofit/>')
+  })
+})
+
+describe('setTableStyle resolves model-facing fields', () => {
+  const tableId = () => {
+    expect(
+      addTable(opened, 0, {
+        rows: 2,
+        cols: 2,
+        offset: { x: 0, y: 1000000, cx: 1828800, cy: 914400 },
+      }),
+    ).toBeTruthy()
+    return els().find((e) => e.type === 'table')!.id
+  }
+  const slideXml = () => patchSlideXml(opened.deck.slides[0]!)
+
+  it('a preset name pins its style part and references it from tblPr', () => {
+    const el = tableId()
+    const r = runTxn(opened, {
+      ops: [{ op: 'setTableStyle', target: { slide: 0, el }, styleName: 'zebraBlue' }],
+    })
+    expect(r.applied).toBe(true)
+    const styleId = TABLE_STYLE_PRESETS.zebraBlue!.styleId!
+    expect(slideXml()).toContain(styleId)
+    expect(opened.archive.readText('ppt/tableStyles.xml')).toContain(styleId)
+  })
+
+  it('flags and borders convert pt to EMU', () => {
+    const el = tableId()
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'setTableStyle',
+          target: { slide: 0, el },
+          firstRow: true,
+          borderPreset: 'all',
+          borderColor: '#FF0000',
+          borderWidthPt: 2,
+        },
+      ],
+    })
+    expect(r.applied).toBe(true)
+    const xml = slideXml()
+    expect(xml).toContain('firstRow="1"')
+    expect(xml).toContain('FF0000')
+    expect(xml).toContain('w="25400"')
+  })
+
+  it('guides an unknown preset, an empty edit and a color name', () => {
+    const el = tableId()
+    const unknown = runTxn(opened, {
+      ops: [{ op: 'setTableStyle', target: { slide: 0, el }, styleName: 'rainbow' }],
+    })
+    expect(unknown.applied).toBe(false)
+    expect(unknown.failures![0]!.error).toContain('Presets: none, lightGrid, zebraBlue')
+    const empty = runTxn(opened, { ops: [{ op: 'setTableStyle', target: { slide: 0, el } }] })
+    expect(empty.applied).toBe(false)
+    expect(empty.failures![0]!.error).toContain('"styleName"')
+    const named = runTxn(opened, {
+      ops: [{ op: 'setTableStyle', target: { slide: 0, el }, shadingColor: 'blue' }],
+    })
+    expect(named.applied).toBe(false)
+    expect(named.failures![0]!.error).toContain('#RRGGBB')
   })
 })

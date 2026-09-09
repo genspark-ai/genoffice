@@ -559,3 +559,97 @@ export async function buildLateBlankingWashPdf(): Promise<Uint8Array> {
   page.drawText('Real title above the late wash', { x: 72, y: 700, size: 18, font })
   return doc.save()
 }
+
+/**
+ * Chromium-print gradient card (P35): a PATH filled with an axial SHADING
+ * PATTERN under white display text — PDFium's color API reports the fill as
+ * plain white. A genuinely white card sits below it and must stay a path.
+ */
+export async function buildGradientCardPdf(): Promise<Uint8Array> {
+  const { PDFDocument, PDFName, PDFNumber, PDFOperator, PDFOperatorNames, StandardFonts, rgb } =
+    await import('pdf-lib')
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const shading = doc.context.obj({
+    ShadingType: 2,
+    ColorSpace: 'DeviceRGB',
+    Coords: [100, 0, 400, 0],
+    Extend: [true, true],
+    Function: doc.context.obj({
+      FunctionType: 2,
+      Domain: [0, 1],
+      C0: [0.1, 0.2, 0.6],
+      C1: [0.55, 0.1, 0.7],
+      N: 1,
+    }),
+  })
+  const pattern = doc.context.register(
+    doc.context.obj({ Type: 'Pattern', PatternType: 2, Shading: shading }),
+  )
+  page.node
+    .normalizedEntries()
+    .Resources.set(PDFName.of('Pattern'), doc.context.obj({ P1: pattern }))
+  page.pushOperators(
+    PDFOperator.of(PDFOperatorNames.NonStrokingColorspace, [PDFName.of('Pattern')]),
+    PDFOperator.of(PDFOperatorNames.NonStrokingColorN, [PDFName.of('P1')]),
+    PDFOperator.of(
+      PDFOperatorNames.AppendRectangle,
+      [100, 400, 300, 200].map((v) => PDFNumber.of(v)),
+    ),
+    PDFOperator.of(PDFOperatorNames.FillNonZero),
+  )
+  page.drawRectangle({ x: 100, y: 150, width: 300, height: 100, color: rgb(1, 1, 1) })
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  page.drawText('Gradient cover title', {
+    x: 120,
+    y: 500,
+    size: 20,
+    font: bold,
+    color: rgb(1, 1, 1),
+  })
+  const body = [
+    'Body text below the card keeps this a text page,',
+    'so the background machinery treats it as a document.',
+  ]
+  body.forEach((t, i) => page.drawText(t, { x: 72, y: 110 - i * 14, size: 12, font }))
+  return doc.save()
+}
+
+/**
+ * Browser print with uniform 43pt margins (P35): the body wash is a dark fill
+ * covering the CONTENT box, never the paper edge; light text and a light card
+ * sit on it. `unequal` widens the right margin so the box is not centered.
+ */
+export async function buildPrintMarginWashPdf(unequal = false): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([595, 842])
+  const width = unequal ? 430 : 509
+  page.drawRectangle({ x: 43, y: 43, width, height: 756, color: rgb(0.04, 0.04, 0.04) })
+  page.drawRectangle({ x: 80, y: 420, width: 300, height: 120, color: rgb(0.94, 0.9, 0.82) })
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  page.drawText('Light heading on a dark printed page', {
+    x: 70,
+    y: 720,
+    size: 16,
+    font,
+    color: rgb(1, 1, 1),
+  })
+  const lines = [
+    'Paragraph text that flows across the dark body wash of the page,',
+    'long enough for the extractor to treat this as a real text page.',
+    'A parchment card below carries dark text of its own.',
+  ]
+  lines.forEach((t, i) =>
+    page.drawText(t, { x: 70, y: 680 - i * 14, size: 11, font, color: rgb(0.9, 0.9, 0.9) }),
+  )
+  page.drawText('Card text stays dark on the light card.', {
+    x: 95,
+    y: 480,
+    size: 11,
+    font,
+    color: rgb(0.1, 0.1, 0.1),
+  })
+  return doc.save()
+}

@@ -24,9 +24,11 @@ import {
   type IReplaceAllResult,
 } from '@univerjs/find-replace'
 import { IUniverInstanceService } from '@univerjs/core'
+import { FormulaDataModel } from '@univerjs/preset-sheets-core'
 import { Subject, type Subscription } from 'rxjs'
 import { FILE_READ_BATCH_CELLS, MAX_SCAN_CELLS } from './ai/workbook-search'
 import { t } from './i18n/locale'
+import { installSparseFind, type SpillLookup } from './sparse-find'
 import { netAxisDelta } from './view-transform'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
 import { ensureLazyRangeLoaded, readSheetRangeMapped } from './univer-sync'
@@ -228,8 +230,19 @@ interface InnerFindModel extends FindModel {
  * extended model. On dispose the adopted providers go back into the service.
  */
 export function installLazyFindBridge(deps: LazyFindBridgeDeps): { dispose(): void } {
-  const service = deps.runtime.univer.__getInjector().get(IFindReplaceService)
+  const injector = deps.runtime.univer.__getInjector()
+  const service = injector.get(IFindReplaceService)
   const providers = service.getProviders()
+  const spills: SpillLookup = (unitId, sheetId) => {
+    try {
+      const bySheet = injector.get(FormulaDataModel).getArrayFormulaRange()?.[unitId]?.[sheetId]
+      return Object.values(bySheet ?? {}).flatMap((row) =>
+        Object.values(row ?? {}).filter((range): range is IRange => Boolean(range)),
+      )
+    } catch {
+      return []
+    }
+  }
   const adopted = new Set<IFindReplaceProvider>()
   let generation = 0
   // Registering only APPENDS to the service's live provider set, and
@@ -243,6 +256,7 @@ export function installLazyFindBridge(deps: LazyFindBridgeDeps): { dispose(): vo
       if (provider === wrapper) continue
       providers.delete(provider)
       adopted.add(provider)
+      installSparseFind(provider, spills)
     }
   }
   const wrapper: IFindReplaceProvider = {

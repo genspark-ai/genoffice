@@ -5,6 +5,8 @@ import type { SuggestionProps } from '@tiptap/suggestion'
 import type { StringKey } from '../i18n/locale'
 import { t } from '../i18n/locale'
 import { openMathCreate } from './mathEdit'
+import { MERMAID_TEMPLATE } from './mermaid'
+import { uiOp, type MdOp } from './ops'
 
 export interface SlashItem {
   id: string
@@ -28,31 +30,16 @@ export interface SlashController {
   onClose(): void
 }
 
-function chain(editor: Editor, range: Range) {
-  return editor.chain().focus().deleteRange(range)
-}
-
-/**
- * Block-type conversions (heading/code block/…) are illegal inside a list
- * item — setHeading would silently fail after the range was already
- * deleted. Lift the current item out of its list(s) first (Notion behavior).
- */
-export function liftFromList(editor: Editor): void {
-  for (let guard = 0; guard < 10; guard++) {
-    const itemName = editor.isActive('taskItem')
-      ? 'taskItem'
-      : editor.isActive('listItem')
-        ? 'listItem'
-        : null
-    if (!itemName) return
-    if (!editor.chain().focus().liftListItem(itemName).run()) return
+/** drop the typed "/query", then run the op on the caret's block */
+function slashOp(op: MdOp) {
+  return (editor: Editor, range: Range): void => {
+    editor.chain().focus().deleteRange(range).run()
+    uiOp(editor, op)
   }
 }
 
-function blockChain(editor: Editor, range: Range) {
+function clear(editor: Editor, range: Range): void {
   editor.chain().focus().deleteRange(range).run()
-  liftFromList(editor)
-  return editor.chain().focus()
 }
 
 export function buildSlashItems(extra?: { insertImage?: () => void }): SlashItem[] {
@@ -61,77 +48,82 @@ export function buildSlashItems(extra?: { insertImage?: () => void }): SlashItem
       id: 'paragraph',
       labelKey: 'styleParagraph',
       keywords: ['text', 'p'],
-      run: (e, r) => void blockChain(e, r).setParagraph().run(),
+      run: slashOp({ op: 'setBlockType', target: 'selection', type: 'paragraph' }),
     },
     {
       id: 'h1',
       labelKey: 'styleH1',
       keywords: ['heading', '#'],
-      run: (e, r) => void blockChain(e, r).setHeading({ level: 1 }).run(),
+      run: slashOp({ op: 'setBlockType', target: 'selection', type: 'heading', level: 1 }),
     },
     {
       id: 'h2',
       labelKey: 'styleH2',
       keywords: ['heading', '##'],
-      run: (e, r) => void blockChain(e, r).setHeading({ level: 2 }).run(),
+      run: slashOp({ op: 'setBlockType', target: 'selection', type: 'heading', level: 2 }),
     },
     {
       id: 'h3',
       labelKey: 'styleH3',
       keywords: ['heading', '###'],
-      run: (e, r) => void blockChain(e, r).setHeading({ level: 3 }).run(),
+      run: slashOp({ op: 'setBlockType', target: 'selection', type: 'heading', level: 3 }),
     },
     {
       id: 'bullet',
       labelKey: 'bulletList',
       keywords: ['list', 'ul', '-'],
-      run: (e, r) => void chain(e, r).toggleBulletList().run(),
+      run: slashOp({ op: 'toggleList', target: 'selection', list: 'bullet' }),
     },
     {
       id: 'ordered',
       labelKey: 'orderedList',
       keywords: ['list', 'ol', '1.'],
-      run: (e, r) => void chain(e, r).toggleOrderedList().run(),
+      run: slashOp({ op: 'toggleList', target: 'selection', list: 'ordered' }),
     },
     {
       id: 'task',
       labelKey: 'taskList',
       keywords: ['todo', 'checkbox', '[]'],
-      run: (e, r) => void chain(e, r).toggleTaskList().run(),
+      run: slashOp({ op: 'toggleList', target: 'selection', list: 'task' }),
     },
     {
       id: 'quote',
       labelKey: 'styleQuote',
       keywords: ['blockquote', '>'],
-      run: (e, r) => void blockChain(e, r).toggleBlockquote().run(),
+      run: slashOp({ op: 'setBlockType', target: 'selection', type: 'blockquote' }),
     },
     {
       id: 'code',
       labelKey: 'styleCodeBlock',
       keywords: ['codeblock', '```'],
-      run: (e, r) => void blockChain(e, r).toggleCodeBlock().run(),
+      run: slashOp({ op: 'setBlockType', target: 'selection', type: 'codeBlock' }),
     },
     {
       id: 'table',
       labelKey: 'insertTable',
       keywords: ['grid'],
-      run: (e, r) =>
-        void blockChain(e, r).insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(),
+      run: slashOp({ op: 'insertTable', after: 'selection' }),
     },
     {
       id: 'hr',
       labelKey: 'insertHr',
       keywords: ['divider', 'rule', '---'],
-      run: (e, r) => void blockChain(e, r).setHorizontalRule().run(),
+      run: slashOp({ op: 'insertHorizontalRule', after: 'selection' }),
     },
     {
       id: 'math',
       labelKey: 'insertMath',
       keywords: ['formula', 'equation', 'latex', 'katex', '$$'],
       run: (e, r) => {
-        blockChain(e, r).run()
+        clear(e, r)
         openMathCreate(e)
       },
+    },
+    {
+      id: 'diagram',
+      labelKey: 'insertDiagram',
+      keywords: ['mermaid', 'chart', 'flowchart', 'graph'],
+      run: slashOp({ op: 'insertContent', after: 'selection', markdown: MERMAID_TEMPLATE }),
     },
   ]
   if (extra?.insertImage) {
@@ -140,7 +132,7 @@ export function buildSlashItems(extra?: { insertImage?: () => void }): SlashItem
       labelKey: 'insertImage',
       keywords: ['picture', 'img', 'photo'],
       run: (e, r) => {
-        chain(e, r).run()
+        clear(e, r)
         extra.insertImage!()
       },
     })

@@ -30,6 +30,8 @@ pre code { background: none; padding: 0; font-size: 0.85em; line-height: 1.6; }
 hr { border: none; border-top: 2px solid #e4e7eb; margin: 1.6em 0; }
 a { color: #0a69da; }
 img { max-width: 100%; height: auto; }
+.md-mermaid-preview { margin: 0.8em 0; text-align: center; break-inside: avoid; }
+.md-mermaid-preview svg { max-width: 100%; height: auto; }
 .tableWrapper { margin: 0.8em 0; }
 table { border-collapse: collapse; width: 100%; margin: 0; break-inside: avoid; }
 th, td { border: 1px solid #d0d5db; padding: 6px 10px; vertical-align: top; text-align: start; }
@@ -59,7 +61,9 @@ export function buildPrintHtml(editorRoot: HTMLElement, title: string): string {
     el.removeAttribute('contenteditable')
 
   // editor-only code block chrome (language picker + copy button) must not print
-  for (const bar of clone.querySelectorAll('.md-codeblock-bar')) bar.remove()
+  for (const bar of clone.querySelectorAll('.md-codeblock-bar, .md-mermaid-error')) bar.remove()
+  // a rendered mermaid block prints as its diagram; an unrendered one keeps its source
+  for (const block of clone.querySelectorAll('[data-mermaid="rendered"] pre')) block.remove()
 
   const escapedTitle = title.replace(/&/g, '&amp;').replace(/</g, '&lt;')
   // <base> lets the inlined KaTeX CSS resolve its relative font URLs from the

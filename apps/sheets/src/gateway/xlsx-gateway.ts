@@ -18,6 +18,7 @@ import type {
   WorkbookVisualEdit,
 } from '../shared/desktop-api'
 import { withFutureFunctionMarkers } from './future-functions'
+import { decodeXlsxEscapes, encodeXlsxEscapes } from './xlsx-escapes'
 import { applyChartEdit } from './xlsx-chart'
 import { applyVisualEdits } from './xlsx-drawing-edit'
 import {
@@ -1872,7 +1873,7 @@ function readHeaderCellText(
   if (type === 'e') return { kind: 'opaque' }
   if (type === 'inlineStr') {
     const text = [...body.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
-      .map((textMatch) => decodeXmlText(textMatch[1] ?? ''))
+      .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
       .join('')
     return text === '' ? { kind: 'blank' } : { kind: 'text', text, plain: true }
   }
@@ -1883,7 +1884,7 @@ function readHeaderCellText(
     return text === '' ? { kind: 'blank' } : { kind: 'text', text, plain: true }
   }
   if (type === 'b') return { kind: 'text', text: rawValue === '1' ? 'TRUE' : 'FALSE', plain: false }
-  const text = decodeXmlText(rawValue)
+  const text = type === 'str' ? decodeCellText(rawValue) : decodeXmlText(rawValue)
   if (text === '') return { kind: 'blank' }
   return { kind: 'text', text, plain: type === 'str' }
 }
@@ -1893,7 +1894,7 @@ function readHeaderCellText(
 function writeHeaderCellText(worksheetXml: string, address: string, text: string): string {
   const pattern = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*?)(?:/>|>[\\s\\S]*?</c>)`)
   const match = pattern.exec(worksheetXml)
-  const body = `<is><t xml:space="preserve">${escapeXmlText(text)}</t></is>`
+  const body = `<is><t xml:space="preserve">${escapeCellText(text)}</t></is>`
   if (match) {
     const style = readXmlAttribute(`${match[1] ?? ''} ${match[2] ?? ''}`, 's')
     const cell = `<c r="${address}"${style === undefined ? '' : ` s="${style}"`} t="inlineStr">${body}</c>`
@@ -2038,7 +2039,7 @@ function patchFormulaCachedValue(
     valueXml = `<v>${value ? 1 : 0}</v>`
   } else if (value !== null && value !== undefined && value !== '') {
     typeAttr = ' t="str"'
-    valueXml = `<v>${escapeXmlText(String(value))}</v>`
+    valueXml = `<v>${escapeCellText(String(value))}</v>`
   }
   // Keep <f> (and any other children apart from the cached value) verbatim.
   const kept = body.replace(/<v\b[^>]*\/>|<v\b[^>]*>[\s\S]*?<\/v>/g, '')
@@ -2641,12 +2642,12 @@ function serializeStyledCell(
       const runs = rich
         .map(
           (run) =>
-            `<r>${serializeRunProperties(run)}<t xml:space="preserve">${escapeXmlText(run.text)}</t></r>`,
+            `<r>${serializeRunProperties(run)}<t xml:space="preserve">${escapeCellText(run.text)}</t></r>`,
         )
         .join('')
       return `<c r="${address}"${style} t="inlineStr"><is>${runs}</is></c>`
     }
-    return `<c r="${address}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeXmlText(cell.value)}</t></is></c>`
+    return `<c r="${address}"${style} t="inlineStr"><is><t xml:space="preserve">${escapeCellText(cell.value)}</t></is></c>`
   }
   if (typeof cell.value === 'boolean') {
     return `<c r="${address}"${style} t="b"><v>${cell.value ? 1 : 0}</v></c>`
@@ -2710,7 +2711,7 @@ function serializeCell(address: string, cell: CellState): string {
   }
   if (cell.value === null) return ''
   if (typeof cell.value === 'string') {
-    return `<c r="${address}" t="inlineStr"><is><t xml:space="preserve">${escapeXmlText(cell.value)}</t></is></c>`
+    return `<c r="${address}" t="inlineStr"><is><t xml:space="preserve">${escapeCellText(cell.value)}</t></is></c>`
   }
   if (typeof cell.value === 'boolean') {
     return `<c r="${address}" t="b"><v>${cell.value ? 1 : 0}</v></c>`
@@ -2730,7 +2731,7 @@ function parseCell(worksheetXml: string, address: string): CellState {
   if (type === 's') throw new Error(`Shared-string cell ${address} is not writable in this PoC.`)
   if (type === 'inlineStr') {
     const text = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/.exec(body)?.[1] ?? ''
-    return { value: decodeXmlText(text) }
+    return { value: decodeCellText(text) }
   }
   const rawValue = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/.exec(body)?.[1]
   if (rawValue === undefined) return { value: null }
@@ -2761,7 +2762,7 @@ function parseWorksheetCells(
     const type = readXmlAttribute(attributes, 't')
     if (type === 'inlineStr') {
       const text = [...body.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
-        .map((textMatch) => decodeXmlText(textMatch[1] ?? ''))
+        .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
         .join('')
       cells[address] = { value: text }
       continue
@@ -2775,7 +2776,7 @@ function parseWorksheetCells(
     } else if (type === 'b') {
       cells[address] = { value: rawValue === '1' }
     } else if (type === 'str') {
-      cells[address] = { value: decodeXmlText(rawValue) }
+      cells[address] = { value: decodeCellText(rawValue) }
     } else {
       const numericValue = Number(rawValue)
       cells[address] = {
@@ -2791,7 +2792,7 @@ async function readSharedStrings(source: EntrySource): Promise<readonly string[]
   const xml = await source.readText('xl/sharedStrings.xml')
   return [...xml.matchAll(/<si(?:\s[^>]*)?>([\s\S]*?)<\/si>/g)].map((itemMatch) =>
     [...(itemMatch[1] ?? '').matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)]
-      .map((textMatch) => decodeXmlText(textMatch[1] ?? ''))
+      .map((textMatch) => decodeCellText(textMatch[1] ?? ''))
       .join(''),
   )
 }
@@ -2802,6 +2803,17 @@ function cellsEqual(left: CellState, right: CellState): boolean {
 
 function escapeXmlText(input: string): string {
   return input.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+function escapeCellText(input: string): string {
+  return escapeXmlText(encodeXlsxEscapes(input))
+}
+
+/// Mirrors the sidecar: raw CRLF folds first so `_x000D_` + LF (Excel's CR LF)
+/// ends up as one line break.
+function decodeCellText(input: string): string {
+  const text = decodeXmlText(input).replace(/\r\n?/g, '\n')
+  return decodeXlsxEscapes(text).replace(/\r\n?/g, '\n')
 }
 
 const XML_NAMED_ENTITIES: Record<string, string> = {

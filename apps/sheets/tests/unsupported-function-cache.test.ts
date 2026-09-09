@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { canonicalFunctionName, extractFunctionNames } from '../src/renderer/formula-functions'
 import { installSupportedFunctionProbe } from '../src/renderer/function-registry-probe'
 import {
+  engineResultKeepsCache,
   formulaKeepsCache,
   hasUsableCachedValue,
   setSupportedFunctionProbe,
@@ -192,5 +193,26 @@ describe('hasUsableCachedValue', () => {
     expect(hasUsableCachedValue(undefined)).toBe(false)
     expect(hasUsableCachedValue('#NAME?')).toBe(false)
     expect(hasUsableCachedValue('#N/A')).toBe(false)
+  })
+
+  it("rejects IronCalc's #ERROR! left behind by an earlier save", () => {
+    expect(hasUsableCachedValue('#ERROR!')).toBe(false)
+  })
+})
+
+describe('engineResultKeepsCache', () => {
+  it('keeps the cache for engine failures rather than Excel error values', () => {
+    expect(engineResultKeepsCache('#NAME?', 'FOO(A1)')).toBe(true)
+    // external-workbook references never parse; the cascade must stop here
+    expect(engineResultKeepsCache('#ERROR!', '[1]Sheet1!A1*2')).toBe(true)
+    expect(engineResultKeepsCache('#ERROR!', undefined)).toBe(true)
+    expect(engineResultKeepsCache('#DIV/0!', 'A1/0')).toBe(false)
+    expect(engineResultKeepsCache('#N/A', 'VLOOKUP(A1,B:C,2,0)')).toBe(false)
+  })
+
+  it('keeps the cache for locale-minted results', () => {
+    expect(engineResultKeepsCache('$1.00', 'DOLLAR(A1)')).toBe(true)
+    expect(engineResultKeepsCache('42', 'SUM(A1:A3)')).toBe(false)
+    expect(engineResultKeepsCache('42', undefined)).toBe(false)
   })
 })

@@ -2191,10 +2191,13 @@ textarea:focus {
   font-size: 9px;
 }
 
+/* Size container: the text below sizes in cq units so it follows the
+   sheet zoom with the float box (--shape-px = one zoomed px). */
 .xlsx-shape-drawn {
   position: relative;
   width: 100%;
   height: 100%;
+  container-type: size;
 }
 
 .xlsx-shape-drawn svg {
@@ -2206,10 +2209,6 @@ textarea:focus {
 /* Rotated shape: the anchor box stores rotated bounds; the inner box
    restores the true frame (sized in cq units by the component), centered
    on the anchor center before the rotate. */
-.xlsx-shape-rotated {
-  container-type: size;
-}
-
 .xlsx-shape-rotated-inner {
   position: absolute;
   left: 50%;
@@ -2221,9 +2220,9 @@ textarea:focus {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 6px;
+  padding: calc(var(--shape-px, 1px) * 6);
   text-align: center;
-  font-size: 12px;
+  font-size: calc(var(--shape-px, 1px) * 12);
   color: var(--sheets-chart-ink);
   overflow: hidden;
 }
@@ -2236,7 +2235,7 @@ textarea:focus {
   justify-content: center;
   align-items: stretch;
   text-align: initial;
-  padding: 4px 8px;
+  padding: calc(var(--shape-px, 1px) * 4) calc(var(--shape-px, 1px) * 8);
 }
 
 .xlsx-shape-drawn .shape-anchor-t {
@@ -2245,6 +2244,12 @@ textarea:focus {
 
 .xlsx-shape-drawn .shape-anchor-b {
   justify-content: flex-end;
+}
+
+/* bodyPr clip: Excel cuts the text at the inset edge, not the frame edge. */
+.xlsx-shape-drawn .shape-text-clip {
+  overflow: clip;
+  overflow-clip-margin: content-box;
 }
 
 .shape-paragraph {
@@ -2382,14 +2387,18 @@ textarea:focus {
   pointer-events: none;
 }
 
+.shape-editable:has(> .shape-text-editor) {
+  container-type: size;
+}
+
 .shape-text-editor {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 6px;
+  padding: calc(var(--shape-px, 1px) * 6);
   text-align: center;
-  font-size: 12px;
+  font-size: calc(var(--shape-px, 1px) * 12);
   color: var(--sheets-chart-ink);
   outline: 2px solid var(--sheets-select-frame);
   outline-offset: -2px;
@@ -2438,6 +2447,19 @@ textarea:focus {
 
 .univer-z-10:has(.data-validation-input-message) > .univer-overflow-hidden {
   overflow: visible !important;
+}
+
+/* Cell alert popup: the title row is fixed at 20px, so a wrapped title
+   ("Number stored as text") overlaps the message. */
+.univer-w-\[156px\].univer-shadow > .univer-h-5 {
+  height: auto;
+  min-height: 1.25rem;
+  align-items: flex-start;
+}
+
+.univer-w-\[156px\].univer-shadow > .univer-h-5 > svg {
+  flex: none;
+  margin-top: 2px;
 }
 
 .data-validation-dropdown-button:hover {
@@ -2944,6 +2966,28 @@ textarea:focus {
 
 .xlsx-ole-caption {
   max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xlsx-slicer-placeholder {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--sheets-shape-border);
+  background: var(--sheets-shape-bg);
+  color: var(--sheets-shape-ink);
+  font:
+    700 11px 'Segoe UI',
+    sans-serif;
+  user-select: none;
+}
+
+.xlsx-slicer-caption {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--sheets-shape-border);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -5463,4 +5507,57 @@ textarea:focus {
 .fn-filter-row .gs-dd {
   flex-shrink: 0;
   min-width: 120px;
+}
+
+/* Excel split color tools: the glyph applies the current color, the slim
+   caret opens the palette. The pair reads as one control — shared hover
+   tint, individually highlighted halves (docs-ribbon parity). */
+.inline-tools .menu-select.color-split {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.inline-tools .color-split .color-tool {
+  min-width: 24px;
+  border-radius: var(--radius-small) 0 0 var(--radius-small);
+}
+
+.inline-tools .color-tool-caret {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  width: 13px;
+  height: 30px;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+}
+
+.inline-tools .color-tool-caret .chev {
+  margin-left: 0;
+}
+
+.inline-tools .color-split:hover .color-tool:not(:disabled),
+.inline-tools .color-split:hover .color-tool-caret:not(:disabled) {
+  background: var(--ribbon-hover);
+}
+
+.inline-tools .color-tool-caret:hover:not(:disabled),
+.inline-tools .color-tool-caret.is-active {
+  background: var(--ribbon-active, var(--ribbon-hover));
+}
+
+/* Border dropdown entries: glyph + label, Excel-style; the drop sits inside
+   .inline-tools, so the span sheds the 28×30 toggle box and its hover */
+.menu-select-drop .menu-option-icon {
+  display: inline-grid;
+  place-items: center;
+  min-width: 0;
+  height: auto;
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+
+.menu-select-drop .menu-option-icon:hover {
+  background: transparent;
 }

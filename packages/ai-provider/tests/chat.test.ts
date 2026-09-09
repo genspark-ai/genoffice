@@ -42,7 +42,7 @@ describe('chatForProvider', () => {
     const result = await chatForProvider('anthropic', { apiKey: 'k', model: 'm' }, 'sys', 'hi')
     expect(result.ok).toBe(false)
     expect(result.error).toMatch(/Claude HTTP 403/)
-    expect(result.error).toMatch(/web page instead of an API response/)
+    expect(result.error).toMatch(/web page.*instead of an API response/)
     expect(result.error).not.toContain('<!doctype')
   })
 
@@ -178,7 +178,7 @@ describe('chatForProvider', () => {
     const result = await chatForProvider('anthropic', { apiKey: 'k', model: 'm' }, 'sys', 'hi')
     expect(result.ok).toBe(false)
     expect(result.error).toMatch(/non-JSON response/)
-    expect(result.error).toMatch(/web page instead of an API response/)
+    expect(result.error).toMatch(/web page.*instead of an API response/)
   })
 
   it('openai: a 200 with an empty body is an error, not a thrown SyntaxError', async () => {

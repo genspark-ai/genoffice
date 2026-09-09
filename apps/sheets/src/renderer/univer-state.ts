@@ -71,6 +71,10 @@ export interface LazyWorkbookState {
   /// autoFilter (saveable) or a table part (whose filter lives in the table
   /// XML — editing it is blocked).
   readonly filterOrigins: Map<string, { origin: 'worksheet' | 'table'; range: IRange }>
+  /// Data-row span of a filter whose file criteria were restored at install:
+  /// the filter model owns row visibility there, so streamed hidden="1" rows
+  /// feed its filtered-out cache instead of becoming manual row hides.
+  readonly restoredFilterSpans: Map<string, { startRow: number; endRow: number }>
   /// Sheets whose view shows formulas instead of values
   /// (sheetView/@showFormulas): seeded from the file, flipped by the
   /// Formulas-tab toggle, applied

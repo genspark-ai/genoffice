@@ -2,7 +2,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { showOpenDialogWithMemory, showSaveDialogWithMemory } from '../src/index'
+import { saveAsSuggestion, showOpenDialogWithMemory, showSaveDialogWithMemory } from '../src/index'
 
 import type { Dialog } from 'electron'
 
@@ -113,5 +113,35 @@ describe('showSaveDialogWithMemory', () => {
     const dialog = fakeDialog()
     await showSaveDialogWithMemory(dialog, undefined, { defaultPath: '/docs/tab.pdf' }, '/default')
     expect(dialog.showSaveDialog).toHaveBeenCalledWith({ defaultPath: '/docs/tab.pdf' })
+  })
+})
+
+describe('saveAsSuggestion', () => {
+  it('suggests the source document folder with the new name (Word parity)', () => {
+    expect(saveAsSuggestion(join('/work', 'report.docx'), 'report.docx')).toBe(
+      join('/work', 'report.docx'),
+    )
+    expect(saveAsSuggestion(join('/work', 'report.docx'), 'copy.docx')).toBe(
+      join('/work', 'copy.docx'),
+    )
+  })
+
+  it('falls back to the bare name for a document that was never on disk', () => {
+    expect(saveAsSuggestion(null, 'Untitled.docx')).toBe('Untitled.docx')
+    expect(saveAsSuggestion(undefined, 'Untitled.docx')).toBe('Untitled.docx')
+    expect(saveAsSuggestion('', 'Untitled.pptx')).toBe('Untitled.pptx')
+  })
+
+  it('beats the remembered directory when threaded through the save dialog', async () => {
+    const dialog = fakeDialog({ showSaveDialog: pickedSave(join('/elsewhere', 'x.docx')) })
+    // a pick in /elsewhere seeds the remembered directory…
+    await showSaveDialogWithMemory(dialog, undefined, { defaultPath: 'x.docx' })
+    // …but Save As of a document living in /work still opens in /work
+    await showSaveDialogWithMemory(dialog, undefined, {
+      defaultPath: saveAsSuggestion(join('/work', 'report.docx'), 'report.docx'),
+    })
+    expect(dialog.showSaveDialog).toHaveBeenLastCalledWith({
+      defaultPath: join('/work', 'report.docx'),
+    })
   })
 })

@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import { NodeSelection, TextSelection, type Selection } from '@tiptap/pm/state'
 import { queueAnchorRange } from '../editor/aiQueueAnchors'
-import { blockIndexRange } from './tools'
+import { blockIndexRange } from '../editor/ops'
 
 /**
  * Selection-scoped AI edit queue (docs parity): the user annotates passages

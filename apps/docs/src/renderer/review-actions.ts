@@ -13,6 +13,7 @@ import {
   addReplyToCommentRange,
   nextCommentId,
   removeCommentFromDoc,
+  wordRangeAtCaret,
 } from './editor/comments'
 import { blockTexts, compareParagraphs, type CompareEntry } from './editor/compare'
 import { pendingCommentPluginKey } from './editor/extensions'
@@ -122,11 +123,18 @@ export function cancelNewComment(ctx: ReviewContext): void {
 
 /** New comment: open the pane with the composer; the mark is applied on submit */
 export function startNewComment(ctx: ReviewContext): void {
-  if (!ctx.editor || ctx.editor.state.selection.empty) {
-    ctx.setStatus(t('appSelectTextToComment'))
-    return
+  const editor = ctx.editor
+  if (!editor) return
+  if (editor.state.selection.empty) {
+    // Word anchors on the word under a collapsed caret rather than refusing
+    const word = wordRangeAtCaret(editor)
+    if (!word) {
+      ctx.setStatus(t('appSelectTextToComment'))
+      return
+    }
+    editor.commands.setTextSelection(word)
   }
-  const { from, to } = ctx.editor.state.selection
+  const { from, to } = editor.state.selection
   setPendingCommentRange(ctx, { from, to })
   ctx.setShowComments(true)
   ctx.setCommentComposing(true)
@@ -168,6 +176,14 @@ export function replyToComment(
   ctx.dirtyRef.current = true
   ctx.setStatus(t('appCommentReplied'))
   return true
+}
+
+/** Word: comment text edits in place; the author, date and anchor stay */
+export function editComment(ctx: ReviewContext, id: string, text: string): void {
+  ctx.setComments((prev) => prev.map((c) => (c.id === id ? { ...c, text } : c)))
+  ctx.setCommentsDirty(true)
+  ctx.dirtyRef.current = true
+  ctx.setStatus(t('appCommentEdited'))
 }
 
 /** Resolve/reopen: the whole thread (parent + replies) gets done set together */

@@ -127,6 +127,7 @@ export const en = {
   aiSumCreateDocument: 'Create new document',
   aiSumCreatedDocument: 'Created {name}',
   aiSumReplaceContent: 'Replace content',
+  aiSumReplaceSelection: 'Replace selected text',
   aiSumReplacedBlocks: 'Replaced blocks {start}-{end}',
   aiSumInsertChart: 'Insert chart',
   aiSumInsertedChart: 'Inserted chart "{title}"',

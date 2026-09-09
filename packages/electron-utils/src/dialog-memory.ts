@@ -58,6 +58,20 @@ export async function showOpenDialogWithMemory(
   return result
 }
 
+/**
+ * Save As suggestion for a document that was opened from `sourcePath`: the
+ * same folder with the suggested name (Word parity — Save As starts where the
+ * document lives, not in the last-used or default folder). Falls back to the
+ * bare name, which `withRememberedDirectory` then anchors, when the document
+ * has never been on disk.
+ */
+export function saveAsSuggestion(
+  sourcePath: string | null | undefined,
+  defaultName: string,
+): string {
+  return sourcePath ? join(dirname(sourcePath), defaultName) : defaultName
+}
+
 export async function showSaveDialogWithMemory(
   dialog: Dialog,
   parent: BrowserWindow | null | undefined,

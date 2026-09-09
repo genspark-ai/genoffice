@@ -33,6 +33,7 @@ const LANGS = [
   'pt',
   'it',
   'pl',
+  'cs',
   'nl',
   'ms',
   'he',
@@ -50,7 +51,7 @@ beforeEach(() => {
 })
 
 describe('appMenuLabels', () => {
-  it('covers all 19 languages with every key non-empty', () => {
+  it('covers all 20 languages with every key non-empty', () => {
     const keys = Object.keys(en) as (keyof AppMenuLabels)[]
     for (const lang of LANGS) {
       const labels = appMenuLabels(lang)

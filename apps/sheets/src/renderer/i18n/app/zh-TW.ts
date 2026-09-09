@@ -274,6 +274,7 @@ export const zhTW = {
   appFullLoadTooLarge: '此活頁簿過大，無法完整載入記憶體，篩選在此檔案上暫不可用。',
   appDialogCancel: '取消',
   appPivotSheetNoMove: '該工作表含樞紐分析表——暫不支援移動範圍。',
+  appMergeOverTable: '所選範圍位於 Excel 表格內——暫不支援合併表格中的儲存格。',
   appTableFilterNoEdit: '該工作表的篩選屬於 Excel 表格——編輯後暫時無法儲存。',
   appAutofillStreaming: '暫不允許向仍在串流載入的範圍自動填入。',
   appDvNeedsIndexed: '編輯資料驗證需要該工作表先完成索引——請稍後再試。',
@@ -489,6 +490,8 @@ export const zhTW = {
   appSaveErrNamesWithStructural:
     '已定義名稱的變更不能和列/欄或工作表結構變更一起儲存——請分兩次儲存。',
   appSaveErrChangedOnDisk: '檔案在磁碟上被其他程式變更了——儲存已中止，請重新開啟後再試。',
+  appSaveErrTargetLocked:
+    '檔案無法取代——看起來被其他程式佔用（如在 Excel 中開啟，或正被同步/防毒掃描）。請關閉佔用後重新儲存。',
   appSaveErrStylesheetLimited: '這個活頁簿的樣式表缺少基礎結構，樣式變更無法儲存。',
   appSaveErrPackageGuard: '儲存會改變活頁簿的封裝結構——已中止以保護檔案。',
   appSaveErrChartUnsupported: '這個圖表類型不支援該編輯，儲存已中止——請復原該圖表變更。',

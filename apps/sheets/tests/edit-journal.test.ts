@@ -1,3 +1,4 @@
+import { CellValueType } from '@univerjs/core'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -267,6 +268,26 @@ describe('bulk constant-fill journal', () => {
 
     removeBulkConstantFill(journal, fill)
     expect(toSaveBulkConstantFills(journal)).toEqual([])
+  })
+})
+
+describe('recordSetRangeValues cell types', () => {
+  it('journals a BOOLEAN-typed 0/1 as a boolean so the save keeps t="b"', () => {
+    // copy_range of a TRUE cell (file `<c t="b"><v>1</v>`) reaches the
+    // mutation as Univer's normalized {v: 1, t: BOOLEAN}; journaling the
+    // bare 1 saved a number where the source had TRUE.
+    const journal = createEditJournal()
+    recordSetRangeValues(journal, 'sheet-2', {
+      0: { 1: { v: 1, t: CellValueType.BOOLEAN }, 2: { v: 0, t: CellValueType.BOOLEAN } },
+      1: { 1: { v: 1 }, 2: { v: '1', t: CellValueType.STRING } },
+    })
+    const at = (row: number, column: number) =>
+      journalCellContentAt(journal, 'sheet-2', row, column)
+    expect(at(0, 1)).toEqual({ found: true, value: true, formula: null })
+    expect(at(0, 2)).toEqual({ found: true, value: false, formula: null })
+    expect(at(1, 1)).toEqual({ found: true, value: 1, formula: null })
+    expect(at(1, 2)).toEqual({ found: true, value: '1', formula: null })
+    expect(toSaveEdits(journal).map((entry) => entry.value)).toEqual([true, false, 1, '1'])
   })
 })
 

@@ -51,6 +51,38 @@ const mkPage = (index: number, blocks: TextBlock[]): IrPage =>
 const fullTail = () => mkBlock([mkLine(50, 550, 760), mkLine(50, 550, 100), mkLine(50, 548, 80)])
 
 describe('stitchCrossPageParagraphs (P32)', () => {
+  it('keeps the boundary hard when either page pins art to the page (P35)', () => {
+    const panel = {
+      kind: 'image' as const,
+      box: { x0: 0, y0: 0, x1: 200, y1: H },
+      data: new Uint8Array(0),
+      mime: 'image/png' as const,
+      pixelWidth: 2,
+      pixelHeight: 2,
+    }
+    for (const decorate of [
+      (prev: IrPage) => (prev.bgPanels = [panel]),
+      (_prev: IrPage, cur: IrPage) => (cur.bgPanels = [panel]),
+      (_prev: IrPage, cur: IrPage) =>
+        (cur.bgRender = {
+          data: new Uint8Array(0),
+          mime: 'image/png',
+          pixelWidth: 2,
+          pixelHeight: 2,
+        }),
+    ]) {
+      const prev = mkPage(0, [fullTail()])
+      const cur = mkPage(1, [
+        mkBlock([mkLine(50, 400, 760, 'cont')]),
+        mkBlock([mkLine(50, 300, 700)]),
+      ])
+      decorate(prev, cur)
+      stitchCrossPageParagraphs([prev, cur])
+      expect(cur.flowsFromPrev).toBeUndefined()
+      expect(cur.blocks).toHaveLength(2)
+    }
+  })
+
   it('stitches a mid-paragraph boundary and marks the page', () => {
     const prev = mkPage(0, [fullTail()])
     const cur = mkPage(1, [

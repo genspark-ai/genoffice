@@ -149,3 +149,66 @@ export function coverageRatio(boxes: readonly Rect[], widthPt: number, heightPt:
   for (const cell of grid) covered += cell
   return covered / (n * n)
 }
+
+/** a print content box must sit at least this far inside every page edge (pt) */
+const CONTENT_BOX_MIN_MARGIN_PT = 8
+/** … opposite margins agree within this (printers center the content box) */
+const CONTENT_BOX_MARGIN_TOL_PT = 4
+/** … and no margin eats more than this share of its page dimension */
+const CONTENT_BOX_MAX_MARGIN_RATIO = 0.2
+/** share of the page's ink objects that must sit inside the candidate box */
+const CONTENT_BOX_MIN_INK_SHARE = 0.97
+const CONTENT_BOX_INK_TOL_PT = 2
+
+/**
+ * Print content box (P35): browsers/print drivers lay the page out inside
+ * uniform margins, so the ink sits in a box centered on the page (Chromium's
+ * default A4 print: 0.6in margins). A fill whose bounds ARE that box is the
+ * page wash even though it never reaches the paper edge. `candidate` is such
+ * a fill's bounds; it qualifies when its margins are matching and modest and
+ * essentially every ink box on the page lies inside it (a drop shadow or a
+ * bleed decoration outside is tolerated).
+ */
+export function printContentBox(
+  candidate: Rect,
+  inkBoxes: readonly Rect[],
+  widthPt: number,
+  heightPt: number,
+): Rect | null {
+  if (inkBoxes.length === 0 || widthPt <= 0 || heightPt <= 0) return null
+  const box = {
+    x0: Math.max(0, candidate.x0),
+    y0: Math.max(0, candidate.y0),
+    x1: Math.min(widthPt, candidate.x1),
+    y1: Math.min(heightPt, candidate.y1),
+  }
+  if (box.x1 <= box.x0 || box.y1 <= box.y0) return null
+  const left = box.x0
+  const right = widthPt - box.x1
+  const bottom = box.y0
+  const top = heightPt - box.y1
+  if ([left, right, top, bottom].some((mg) => mg < CONTENT_BOX_MIN_MARGIN_PT)) return null
+  if (Math.max(left, right) > widthPt * CONTENT_BOX_MAX_MARGIN_RATIO) return null
+  if (Math.max(top, bottom) > heightPt * CONTENT_BOX_MAX_MARGIN_RATIO) return null
+  if (Math.abs(left - right) > CONTENT_BOX_MARGIN_TOL_PT) return null
+  if (Math.abs(top - bottom) > CONTENT_BOX_MARGIN_TOL_PT) return null
+  let inside = 0
+  for (const r of inkBoxes) {
+    if (
+      r.x0 >= box.x0 - CONTENT_BOX_INK_TOL_PT &&
+      r.x1 <= box.x1 + CONTENT_BOX_INK_TOL_PT &&
+      r.y0 >= box.y0 - CONTENT_BOX_INK_TOL_PT &&
+      r.y1 <= box.y1 + CONTENT_BOX_INK_TOL_PT
+    ) {
+      inside++
+    }
+  }
+  return inside / inkBoxes.length >= CONTENT_BOX_MIN_INK_SHARE ? box : null
+}
+
+/** `inner` spans at least `ratio` of `outer` in both dimensions (clipped to `outer`) */
+export function coversBox(inner: Rect, outer: Rect, ratio: number): boolean {
+  const w = Math.min(inner.x1, outer.x1) - Math.max(inner.x0, outer.x0)
+  const h = Math.min(inner.y1, outer.y1) - Math.max(inner.y0, outer.y0)
+  return w >= (outer.x1 - outer.x0) * ratio && h >= (outer.y1 - outer.y0) * ratio
+}

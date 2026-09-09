@@ -13,6 +13,7 @@ import { ar } from './ribbon/ar'
 import { pt } from './ribbon/pt'
 import { it } from './ribbon/it'
 import { pl } from './ribbon/pl'
+import { cs } from './ribbon/cs'
 import { nl } from './ribbon/nl'
 import { ms } from './ribbon/ms'
 import { he } from './ribbon/he'
@@ -35,6 +36,7 @@ export const ribbonStrings = defineStrings({
   pt,
   it,
   pl,
+  cs,
   nl,
   ms,
   he,

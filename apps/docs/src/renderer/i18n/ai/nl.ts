@@ -130,6 +130,7 @@ export const nl = {
   aiSumCreateDocument: 'Nieuw document maken',
   aiSumCreatedDocument: '{name} aangemaakt',
   aiSumReplaceContent: 'Inhoud vervangen',
+  aiSumReplaceSelection: 'Geselecteerde tekst vervangen',
   aiSumReplacedBlocks: 'Blokken {start}-{end} vervangen',
   aiSumInsertChart: 'Grafiek invoegen',
   aiSumInsertedChart: 'Grafiek "{title}" ingevoegd',

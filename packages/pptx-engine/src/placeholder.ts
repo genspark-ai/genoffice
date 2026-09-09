@@ -17,7 +17,7 @@
  */
 import { XMLParser } from 'fast-xml-parser'
 import type { Transform, TextAlign } from './types'
-import { type Theme, resolveFontRef } from './theme'
+import { type EaScript, type Theme, eaScriptOfLang, resolveFontRef } from './theme'
 import { resolveColorNode } from './color'
 import { asXmlNode, xmlArray, type XmlNode } from './xml-utils'
 
@@ -41,6 +41,8 @@ export interface LevelTextStyle {
   latinFont?: string
   eaFont?: string
   csFont?: string
+  /** East Asian script of the level's defRPr lang/altLang (steers empty-ea theme refs on runs without a lang of their own) */
+  eaScript?: EaScript
   align?: TextAlign
   /** Bullet default (master bodyStyle levels commonly use buChar '•') */
   bullet?: {
@@ -320,11 +322,13 @@ export function parseDefRPrStyle(
       dirDeg: num('@_dir') / 60000,
     }
   }
-  const latin = resolveFontRef(typefaceAttr(defRPr['a:latin']), theme)
+  const eaScript = eaScriptOfLang(defRPr['@_altLang']) ?? eaScriptOfLang(defRPr['@_lang'])
+  if (eaScript) out.eaScript = eaScript
+  const latin = resolveFontRef(typefaceAttr(defRPr['a:latin']), theme, eaScript)
   if (latin) out.latinFont = latin
-  const ea = resolveFontRef(typefaceAttr(defRPr['a:ea']), theme)
+  const ea = resolveFontRef(typefaceAttr(defRPr['a:ea']), theme, eaScript)
   if (ea) out.eaFont = ea
-  const cs = resolveFontRef(typefaceAttr(defRPr['a:cs']), theme)
+  const cs = resolveFontRef(typefaceAttr(defRPr['a:cs']), theme, eaScript)
   if (cs) out.csFont = cs
   return Object.keys(out).length ? out : undefined
 }
@@ -536,6 +540,7 @@ export function mergeTextStyleChain(
     if (out.latinFont == null && lvl.latinFont != null) out.latinFont = lvl.latinFont
     if (out.eaFont == null && lvl.eaFont != null) out.eaFont = lvl.eaFont
     if (out.csFont == null && lvl.csFont != null) out.csFont = lvl.csFont
+    if (out.eaScript == null && lvl.eaScript != null) out.eaScript = lvl.eaScript
     if (out.align == null && lvl.align != null) out.align = lvl.align
     if (out.bullet == null && lvl.bullet != null) out.bullet = lvl.bullet
     if (out.marL == null && lvl.marL != null) out.marL = lvl.marL

@@ -125,3 +125,27 @@ export async function applyCutout(ctx: ActionCtx, pngDataUrl: string): Promise<v
   ctx.setDirty(true)
   ctx.setStatus(t('appStatusCutoutDone'))
 }
+
+/** Replace the selected picture's image with a file from disk; frame, z-order and effects survive */
+export async function replacePicture(ctx: ActionCtx): Promise<void> {
+  if (!ctx.slide || ctx.selectedIds.length !== 1) return
+  const targetId = ctx.selectedIds[0]!
+  const node = ctx.slide.nodes.find((n) => n.sourceId === targetId)
+  if (!node || node.type !== 'picture') return
+  const picked = await window.slidesApi.pickPictureFile()
+  if (!picked) return
+  const updated = await window.slidesApi.replacePictureBytes({
+    slideIndex: ctx.current,
+    sourceId: targetId,
+    base64: picked.base64,
+    ext: picked.ext,
+  })
+  if (!updated) return
+  if ('error' in updated) {
+    ctx.setStatus(t('appStatusImageUnsupported', { ext: updated.ext }))
+    return
+  }
+  ctx.applySlide(ctx.current, updated)
+  ctx.setSelectedIds([targetId])
+  ctx.setDirty(true)
+}

@@ -285,6 +285,35 @@ describe('applyPrintAreas', () => {
     )
   })
 
+  it('fills a self-closing <definedNames/> (Google Sheets export) instead of appending after it', () => {
+    const exported =
+      '<workbook><workbookPr/><sheets>' +
+      '<sheet state="visible" name="Form Responses 1" sheetId="1" r:id="rId5"/>' +
+      '</sheets><definedNames/><calcPr fullCalcOnLoad="1"/></workbook>'
+    const xml = applyPrintAreas(exported, [{ sheetName: 'Form Responses 1', printArea: 'A1:B2' }])
+    expect(xml.match(/<definedNames\b/g)).toHaveLength(1)
+    expect(xml).not.toContain('<definedNames/>')
+    expect(xml).toContain(
+      '</sheets><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">' +
+        "'Form Responses 1'!$A$1:$B$2</definedName></definedNames><calcPr",
+    )
+    const cleared = applyPrintAreas(xml, [{ sheetName: 'Form Responses 1', printArea: null }])
+    expect(cleared).toBe(exported.replace('<definedNames/>', ''))
+  })
+
+  it('creates the container after externalReferences and before calcPr when absent', () => {
+    const workbook =
+      '<workbook><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>' +
+      '<externalReferences><externalReference r:id="rId2"/></externalReferences>' +
+      '<calcPr/></workbook>'
+    const xml = applyPrintAreas(workbook, [{ sheetName: 'Sheet1', printArea: 'A1:B2' }])
+    expect(xml.match(/<definedNames\b/g)).toHaveLength(1)
+    expect(xml).toContain(
+      '</externalReferences><definedNames><definedName name="_xlnm.Print_Area" localSheetId="0">' +
+        "'Sheet1'!$A$1:$B$2</definedName></definedNames><calcPr/>",
+    )
+  })
+
   it('uses the workbook.xml sheet position for localSheetId and escapes names', () => {
     const xml = applyPrintAreas(WORKBOOK, [{ sheetName: 'P&L', printArea: 'B2:D4' }])
     expect(xml).toContain('localSheetId="1">\'P&amp;L\'!$B$2:$D$4')

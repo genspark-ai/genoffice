@@ -483,6 +483,19 @@ describe('appendChatMessage opening buffer', () => {
     expect(msgs[1].tools?.[0].summary).toBe('read page 1')
   })
 
+  it('scope survives the round trip; its excerpt is capped at 400 chars', () => {
+    store.appendChatMessage('default', 'scope-chat', {
+      role: 'user',
+      text: 'polish this',
+      scope: { label: 'Selected: 158 words', text: 'y'.repeat(1_000) },
+    })
+    store.appendChatMessage('default', 'scope-chat', { role: 'assistant', text: 'done' })
+    const msgs = store.loadChat('default', 'scope-chat')
+    expect(msgs[0].scope?.label).toBe('Selected: 158 words')
+    expect(msgs[0].scope?.text).toHaveLength(400)
+    expect(msgs[1].scope).toBeUndefined()
+  })
+
   it('user messages appended to a chat with an existing file are written directly, not buffered', () => {
     store.appendChatMessage('default', 'has-file', { role: 'user', text: 'q1' })
     store.appendChatMessage('default', 'has-file', { role: 'assistant', text: 'a1' })

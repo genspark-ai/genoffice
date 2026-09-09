@@ -18,24 +18,130 @@ import { gskImageSearch, gskWebSearch, hasGskAuth } from './gsk'
 export type { ImageSearchResult, WebSearchResult } from './shared'
 export * from './gsk'
 export * from './genoffice-auth'
+export * from './media-tools'
+export * from './search-tools'
 
 const SERPER_KEY = () => process.env.SERPER_API_KEY ?? ''
 const TAVILY_KEY = () => process.env.TAVILY_API_KEY ?? ''
+
+/**
+ * Backend selection for one search. Keys default to the SERPER_API_KEY /
+ * TAVILY_API_KEY env vars; settings-driven callers (search-tools.ts) pass the
+ * user's key and turn gsk off so the chosen backend runs first.
+ */
+export interface SearchOptions {
+  /** false = skip the Genspark backend (cloud tools off, or a BYOK search provider is active) */
+  useGsk?: boolean
+  serperKey?: string
+  tavilyKey?: string
+  /** which keyed backend to try first (default serper) */
+  prefer?: 'serper' | 'tavily'
+}
+
+function normalizeOptions(opts: boolean | SearchOptions | undefined): Required<SearchOptions> {
+  const o = typeof opts === 'boolean' ? { useGsk: opts } : (opts ?? {})
+  return {
+    useGsk: o.useGsk ?? true,
+    serperKey: o.serperKey ?? SERPER_KEY(),
+    tavilyKey: o.tavilyKey ?? TAVILY_KEY(),
+    prefer: o.prefer ?? 'serper',
+  }
+}
+
+type WebSearchResponse = {
+  results: WebSearchResult[]
+  answer?: string
+  method: string
+  error?: string
+}
+
+/** Serper Google web search; null when the key is empty, the call fails, or nothing comes back */
+async function serperWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  if (!key) return null
+  try {
+    const resp = await fetchWithTimeout('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: query, num: maxResults, gl: 'us', hl: 'en' }),
+    })
+    if (!resp.ok) return null
+    const data = asRecord(await resp.json())
+    const organic: unknown[] = Array.isArray(data.organic) ? data.organic : []
+    const results: WebSearchResult[] = organic.slice(0, maxResults).map((item) => {
+      const o = asRecord(item)
+      return {
+        title: String(o.title ?? ''),
+        url: String(o.link ?? ''),
+        snippet: String(o.snippet ?? ''),
+      }
+    })
+    const answerBox = asRecord(data.answerBox)
+    const answerRaw =
+      answerBox.answer || answerBox.snippet || asRecord(data.knowledgeGraph).description
+    const answer = typeof answerRaw === 'string' && answerRaw ? answerRaw : undefined
+    if (!results.length) return null
+    return answer !== undefined
+      ? { results, answer, method: 'serper' }
+      : { results, method: 'serper' }
+  } catch {
+    return null
+  }
+}
+
+async function tavilyWebSearch(
+  key: string,
+  query: string,
+  maxResults: number,
+): Promise<WebSearchResponse | null> {
+  if (!key) return null
+  try {
+    const resp = await fetchWithTimeout('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: key,
+        query,
+        max_results: maxResults,
+        include_answer: true,
+      }),
+    })
+    if (!resp.ok) return null
+    const data = asRecord(await resp.json())
+    const raw: unknown[] = Array.isArray(data.results) ? data.results : []
+    const results: WebSearchResult[] = raw.slice(0, maxResults).map((item) => {
+      const o = asRecord(item)
+      return {
+        title: String(o.title ?? ''),
+        url: String(o.url ?? ''),
+        snippet: String(o.content ?? ''),
+      }
+    })
+    const answerRaw = data.answer
+    const answer = typeof answerRaw === 'string' && answerRaw ? answerRaw : undefined
+    if (!results.length) return null
+    return answer !== undefined
+      ? { results, answer, method: 'tavily' }
+      : { results, method: 'tavily' }
+  } catch {
+    return null
+  }
+}
 
 // ── Web search ──────────────────────────────────────────────────────
 
 export async function webSearch(
   query: string,
   maxResults = 6,
-  useGsk = true,
-): Promise<{
-  results: WebSearchResult[]
-  answer?: string
-  method: string
-  error?: string
-}> {
-  // useGsk=false: the user turned Genspark cloud tools off — skip straight to the free backends
-  if (useGsk && hasGskAuth()) {
+  options: boolean | SearchOptions = true,
+): Promise<WebSearchResponse> {
+  const o = normalizeOptions(options)
+  // useGsk=false: the user turned Genspark cloud tools off or picked their own
+  // search key — skip straight to the keyed/free backends
+  if (o.useGsk && hasGskAuth()) {
     try {
       const r = await gskWebSearch(query, maxResults)
       if (r.results.length) return { ...r, method: 'gsk' }
@@ -43,74 +149,19 @@ export async function webSearch(
       /* fall back to Serper/Tavily/DuckDuckGo */
     }
   }
-  const key = SERPER_KEY()
-  if (key) {
-    try {
-      const resp = await fetchWithTimeout('https://google.serper.dev/search', {
-        method: 'POST',
-        headers: { 'X-API-KEY': key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ q: query, num: maxResults, gl: 'us', hl: 'en' }),
-      })
-      if (resp.ok) {
-        const data = asRecord(await resp.json())
-        const organic: unknown[] = Array.isArray(data.organic) ? data.organic : []
-        const results: WebSearchResult[] = organic.slice(0, maxResults).map((item) => {
-          const o = asRecord(item)
-          return {
-            title: String(o.title ?? ''),
-            url: String(o.link ?? ''),
-            snippet: String(o.snippet ?? ''),
-          }
-        })
-        const answerBox = asRecord(data.answerBox)
-        const answerRaw =
-          answerBox.answer || answerBox.snippet || asRecord(data.knowledgeGraph).description
-        const answer = typeof answerRaw === 'string' && answerRaw ? answerRaw : undefined
-        if (results.length) {
-          return answer !== undefined
-            ? { results, answer, method: 'serper' }
-            : { results, method: 'serper' }
-        }
-      }
-    } catch {
-      /* fall back to Tavily/DuckDuckGo */
-    }
-  }
-  const tavilyKey = TAVILY_KEY()
-  if (tavilyKey) {
-    try {
-      const resp = await fetchWithTimeout('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: tavilyKey,
-          query,
-          max_results: maxResults,
-          include_answer: true,
-        }),
-      })
-      if (resp.ok) {
-        const data = asRecord(await resp.json())
-        const raw: unknown[] = Array.isArray(data.results) ? data.results : []
-        const results: WebSearchResult[] = raw.slice(0, maxResults).map((item) => {
-          const o = asRecord(item)
-          return {
-            title: String(o.title ?? ''),
-            url: String(o.url ?? ''),
-            snippet: String(o.content ?? ''),
-          }
-        })
-        const answerRaw = data.answer
-        const answer = typeof answerRaw === 'string' && answerRaw ? answerRaw : undefined
-        if (results.length) {
-          return answer !== undefined
-            ? { results, answer, method: 'tavily' }
-            : { results, method: 'tavily' }
-        }
-      }
-    } catch {
-      /* fall back to DuckDuckGo */
-    }
+  const keyed =
+    o.prefer === 'tavily'
+      ? [
+          () => tavilyWebSearch(o.tavilyKey, query, maxResults),
+          () => serperWebSearch(o.serperKey, query, maxResults),
+        ]
+      : [
+          () => serperWebSearch(o.serperKey, query, maxResults),
+          () => tavilyWebSearch(o.tavilyKey, query, maxResults),
+        ]
+  for (const attempt of keyed) {
+    const r = await attempt()
+    if (r) return r
   }
   try {
     return { results: await duckWebSearch(query, maxResults), method: 'duckduckgo' }
@@ -125,13 +176,14 @@ export async function webSearch(
 export async function imageSearch(
   query: string,
   maxResults = 8,
-  useGsk = true,
+  options: boolean | SearchOptions = true,
 ): Promise<{
   images: ImageSearchResult[]
   method: string
   error?: string
 }> {
-  if (useGsk && hasGskAuth()) {
+  const o = normalizeOptions(options)
+  if (o.useGsk && hasGskAuth()) {
     try {
       const images = await gskImageSearch(query, maxResults)
       if (images.length) return { images, method: 'gsk' }
@@ -139,7 +191,8 @@ export async function imageSearch(
       /* fall back to Serper/DuckDuckGo */
     }
   }
-  const key = SERPER_KEY()
+  // Tavily has no image endpoint; Serper is the only keyed image backend
+  const key = o.serperKey
   if (key) {
     try {
       const resp = await fetchWithTimeout('https://google.serper.dev/images', {

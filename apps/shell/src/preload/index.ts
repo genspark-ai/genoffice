@@ -1,8 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import { AI_PROVIDERS, getProviderAdapter } from '@genoffice/ai-provider/browser'
+import {
+  AI_MEDIA_PROVIDERS,
+  AI_PROVIDERS,
+  AI_SEARCH_PROVIDERS,
+  getProviderAdapter,
+} from '@genoffice/ai-provider/browser'
 import type { AiSettings, CodexModelCatalog } from '@genoffice/ai-provider/browser'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
+import { normalizeAiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
 import type {
   AccountLoginEvent,
   AccountStatus,
@@ -35,6 +41,7 @@ const UI_LANGUAGES: readonly UiLanguage[] = [
   'pt',
   'it',
   'pl',
+  'cs',
   'nl',
   'ms',
   'he',
@@ -88,6 +95,9 @@ const homeApi: HomeApi = {
   },
   async newMarkdown(opts) {
     await ipcRenderer.invoke(HOME_CHANNELS.newMarkdown, opts)
+  },
+  async newHtml(opts) {
+    await ipcRenderer.invoke(HOME_CHANNELS.newHtml, opts)
   },
   async newPdf(opts) {
     await ipcRenderer.invoke(HOME_CHANNELS.newPdf, opts)
@@ -174,6 +184,18 @@ const homeApi: HomeApi = {
       throw new Error('Invalid theme.')
     await ipcRenderer.invoke(HOME_CHANNELS.setTheme, theme)
   },
+  async getAutoSaveDefault() {
+    const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getAutoSaveDefault)
+    const r = result as { on?: unknown; updatedAt?: unknown } | null
+    return {
+      on: r?.on === true,
+      updatedAt: typeof r?.updatedAt === 'number' ? r.updatedAt : 0,
+    }
+  },
+  async setAutoSaveDefault(on) {
+    if (typeof on !== 'boolean') throw new Error('Invalid AutoSave default.')
+    await ipcRenderer.invoke(HOME_CHANNELS.setAutoSaveDefault, on)
+  },
   async getAnalyticsEnabled() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getAnalyticsEnabled)
     return result !== false
@@ -182,6 +204,12 @@ const homeApi: HomeApi = {
     if (typeof enabled !== 'boolean') throw new Error('Invalid analytics consent.')
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.setAnalyticsEnabled, enabled)
     return result === true
+  },
+  async getAiPanelPrefs() {
+    return normalizeAiPanelPrefs(await ipcRenderer.invoke(HOME_CHANNELS.getAiPanelPrefs))
+  },
+  async setAiPanelPrefs(patch) {
+    return normalizeAiPanelPrefs(await ipcRenderer.invoke(HOME_CHANNELS.setAiPanelPrefs, patch))
   },
   async getDefaultSaveDir() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getDefaultSaveDir)
@@ -271,6 +299,30 @@ const homeApi: HomeApi = {
       user: 'ping',
     })
     const raw = (result ?? {}) as { ok?: unknown; error?: unknown }
+    return raw.ok === true
+      ? { ok: true }
+      : { ok: false, error: typeof raw.error === 'string' ? raw.error : 'Connection failed' }
+  },
+  getAiMediaProviders() {
+    return AI_MEDIA_PROVIDERS
+  },
+  getAiSearchProviders() {
+    return AI_SEARCH_PROVIDERS
+  },
+  async testAiSearchSettings(input) {
+    const raw = ((await ipcRenderer.invoke('ai:search-test', input)) ?? {}) as {
+      ok?: unknown
+      error?: unknown
+    }
+    return raw.ok === true
+      ? { ok: true }
+      : { ok: false, error: typeof raw.error === 'string' ? raw.error : 'Connection failed' }
+  },
+  async testAiMediaSettings(input) {
+    const raw = ((await ipcRenderer.invoke('ai:media-test', input)) ?? {}) as {
+      ok?: unknown
+      error?: unknown
+    }
     return raw.ok === true
       ? { ok: true }
       : { ok: false, error: typeof raw.error === 'string' ? raw.error : 'Connection failed' }

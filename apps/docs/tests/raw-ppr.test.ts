@@ -63,17 +63,9 @@ describe('rawPPr passthrough', () => {
       editor,
       {
         id: 't',
-        name: 'apply_commands',
+        name: 'apply_ops',
         input: {
-          commands: [
-            {
-              updateParagraphStyle: {
-                target: { blockIndexes: [0] },
-                style: { align: 'center' },
-                fields: ['align'],
-              },
-            },
-          ],
+          ops: [{ op: 'setParagraphFormat', target: { blockIndexes: [0] }, align: 'center' }],
         },
       },
       NUM_IDS,

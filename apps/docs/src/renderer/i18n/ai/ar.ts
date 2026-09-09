@@ -126,6 +126,7 @@ export const ar = {
   aiSumCreateDocument: 'إنشاء مستند جديد',
   aiSumCreatedDocument: 'تم إنشاء {name}',
   aiSumReplaceContent: 'استبدال المحتوى',
+  aiSumReplaceSelection: 'استبدال النص المحدد',
   aiSumReplacedBlocks: 'تم استبدال الكتل {start}-{end}',
   aiSumInsertChart: 'إدراج مخطط',
   aiSumInsertedChart: 'تم إدراج المخطط «{title}»',

@@ -130,6 +130,14 @@ const tUpd = createI18n({
     updInstall: 'Uruchom ponownie i zainstaluj',
     updLater: 'Przypomnij później',
   },
+  cs: {
+    updTitle: 'Aktualizace softwaru',
+    updHeadline: 'Je k dispozici nová verze',
+    updDesc:
+      'Tato aktualizace obsahuje vylepšení výkonu a opravy chyb. Doporučujeme aktualizovat nyní.',
+    updInstall: 'Restartovat a nainstalovat',
+    updLater: 'Připomenout později',
+  },
   nl: {
     updTitle: 'Software-update',
     updHeadline: 'Er is een nieuwe versie beschikbaar',

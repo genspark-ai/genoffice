@@ -13,6 +13,7 @@ import { ar } from './app/ar'
 import { pt } from './app/pt'
 import { it } from './app/it'
 import { pl } from './app/pl'
+import { cs } from './app/cs'
 import { nl } from './app/nl'
 import { ms } from './app/ms'
 import { he } from './app/he'
@@ -35,6 +36,7 @@ export const appStrings = defineStrings({
   pt,
   it,
   pl,
+  cs,
   nl,
   ms,
   he,

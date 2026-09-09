@@ -172,6 +172,8 @@ import {
   seedDraftColors,
 } from './text-edit-preview'
 import type { LocalTextEdit, LocalTextInsert, TextDraft } from './text-edit-preview'
+import { planEditOps, reduceBucket } from './edit-ops'
+import type { Bucket, Op, OpContext, PlanResult } from './edit-ops'
 import { rectsNear } from './edit-state'
 import type {
   StampConfig,
@@ -336,6 +338,8 @@ export default function App() {
   const [nightMode, setNightMode] = useState(false)
   const [outline, setOutline] = useState<OutlineNode[] | null>(null)
   const [markups, setMarkups] = useState<LocalMarkup[]>([])
+  const markupsRef = useRef(markups)
+  markupsRef.current = markups
   /** Pending deletions of markup annotations already saved in the file */
   const [annotDeletes, setAnnotDeletes] = useState<LocalAnnotDelete[]>([])
   const annotDeletesRef = useRef(annotDeletes)
@@ -588,7 +592,7 @@ export default function App() {
     setLineHover(next)
   }
   const [imageEdits, setImageEdits] = useState<LocalImageEdit[]>([])
-  /** Latest imageEdits for async callbacks (same rationale as pushUndoRef) */
+  /** Latest imageEdits for async callbacks (same rationale as applyEditOpsRef) */
   const imageEditsRef = useRef(imageEdits)
   imageEditsRef.current = imageEdits
   /** Mutate state and the ref together so an edit queued by one AI tool call is visible
@@ -707,8 +711,10 @@ export default function App() {
   const [activeFormWidgetId, setActiveFormWidgetId] = useState<string | null>(null)
   const formControlRefs = useRef<Map<string, HTMLElement>>(new Map())
   const [formEdits, setFormEdits] = useState<Map<string, FormValueInput>>(new Map())
+  const formEditsRef = useRef(formEdits)
+  formEditsRef.current = formEdits
   const [rotations, setRotations] = useState<Map<number, number>>(new Map())
-  /** Latest rotations for same-turn AI geometry (rotate_page then an image bake) */
+  /** Latest rotations for same-turn AI geometry (an apply_ops rotation then an image bake) */
   const rotationsRef = useRef(rotations)
   rotationsRef.current = rotations
   const [deleted, setDeleted] = useState<Set<number>>(new Set())
@@ -831,12 +837,6 @@ export default function App() {
   deletedRef.current = deleted
   const visListOf = (ord: number[] | null) =>
     (ord ?? sizes.map((_, i) => i)).filter((i) => !deletedRef.current.has(i))
-  /** order must cover all original pages: deleted ones trail so they don't affect the result */
-  const commitOrder = (vis: number[]) => {
-    const next = [...vis, ...sizes.map((_, i) => i).filter((i) => !vis.includes(i))]
-    orderRef.current = next
-    setOrder(next)
-  }
 
   const rows = useMemo(() => spreadRows(visList, spread), [visList, spread])
 
@@ -1577,7 +1577,7 @@ export default function App() {
   // Ref-mirrored fields read the mirrors so a pushUndo later in an AI turn captures
   // the tools that ran before it, not the state this render closed over
   const snapshot = (): EditSnapshot => ({
-    markups,
+    markups: markupsRef.current,
     annotDeletes: annotDeletesRef.current,
     noteEdits: noteEditsRef.current,
     drawings: drawingsRef.current,
@@ -1585,7 +1585,7 @@ export default function App() {
     textInserts: textInsertsRef.current,
     imageEdits: imageEditsRef.current,
     stampCfg: stampRef.current,
-    formEdits,
+    formEdits: formEditsRef.current,
     rotations: rotationsRef.current,
     deleted: deletedRef.current,
     order: orderRef.current,
@@ -1600,12 +1600,120 @@ export default function App() {
     setRedoStack([])
   }
 
-  /** Latest pushUndo for async callbacks: the AI edit path pushes undo after an awaited
-      validation, and the closure it started with may snapshot stale state by then */
-  const pushUndoRef = useRef(pushUndo)
-  pushUndoRef.current = pushUndo
+  const newId = () => `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
+  const editOpContext = (): OpContext => ({
+    readOnly,
+    pageCount: sizes.length,
+    deleted: deletedRef.current,
+    claimedImages: new Set(
+      imageEditsRef.current.flatMap((e) =>
+        e.input.kind === 'insertImage'
+          ? []
+          : [`${e.input.pageIndex}:${imageRectKey(e.input.oldRect)}`],
+      ),
+    ),
+  })
+
+  /**
+   * The one write path into the pending-edit buckets (edit-ops/registry.ts): the
+   * whole batch is validated first, then each touched bucket reduces from its ref
+   * mirror, so a later op in the same AI turn sees what an earlier one queued. The
+   * same reducers run over a whole snapshot in tests. One batch = one undo step
+   * (coalesceKey folds repeats). Post-save reload, undo/redo restore and async
+   * display metadata (validated bounds, ghost PNGs) are the only direct writes left.
+   */
+  const applyEditOps = (ops: Op[], opts?: { coalesceKey?: string }): PlanResult => {
+    const plan = planEditOps(ops, editOpContext(), newId)
+    if (plan.failures.length > 0 || plan.ops.length === 0) return plan
+    pushUndo(opts?.coalesceKey)
+    const base = snapshot()
+    const { ops: planned, touched } = plan
+    const reduce = <K extends Bucket>(bucket: K, prev: EditSnapshot[K]) =>
+      reduceBucket(bucket, prev, planned, base)
+    if (touched.has('markups')) {
+      markupsRef.current = reduce('markups', markupsRef.current)
+      setMarkups(markupsRef.current)
+    }
+    if (touched.has('annotDeletes')) {
+      annotDeletesRef.current = reduce('annotDeletes', annotDeletesRef.current)
+      setAnnotDeletes(annotDeletesRef.current)
+    }
+    if (touched.has('noteEdits')) {
+      noteEditsRef.current = reduce('noteEdits', noteEditsRef.current)
+      setNoteEdits(noteEditsRef.current)
+    }
+    if (touched.has('drawings')) {
+      drawingsRef.current = reduce('drawings', drawingsRef.current)
+      setDrawings(drawingsRef.current)
+    }
+    if (touched.has('textEdits')) applyTextEdits((p) => reduce('textEdits', p))
+    if (touched.has('textInserts')) commitTextInserts(reduce('textInserts', textInsertsRef.current))
+    if (touched.has('imageEdits')) updateImageEdits((p) => reduce('imageEdits', p))
+    if (touched.has('stampCfg')) {
+      stampRef.current = reduce('stampCfg', stampRef.current)
+      setStampCfg(stampRef.current)
+    }
+    if (touched.has('formEdits')) {
+      formEditsRef.current = reduce('formEdits', formEditsRef.current)
+      setFormEdits(formEditsRef.current)
+    }
+    if (touched.has('rotations')) {
+      rotationsRef.current = reduce('rotations', rotationsRef.current)
+      setRotations(rotationsRef.current)
+    }
+    if (touched.has('deleted')) {
+      deletedRef.current = reduce('deleted', deletedRef.current)
+      setDeleted(deletedRef.current)
+    }
+    if (touched.has('order')) {
+      orderRef.current = reduce('order', orderRef.current)
+      setOrder(orderRef.current)
+    }
+    if (touched.has('metadata')) {
+      metadataRef.current = reduce('metadata', metadataRef.current)
+      setMetadata(metadataRef.current)
+    }
+    return plan
+  }
+  /** Latest entry for async callbacks (bakes, validated AI edits): the closure they
+      started with would snapshot stale state for undo by the time they land */
+  const applyEditOpsRef = useRef(applyEditOps)
+  applyEditOpsRef.current = applyEditOps
+
+  /** Ops turning the current text-edit list into `next`: the list-building paths keep
+      their merge logic and only the write goes through the op layer */
+  const textEditListOps = (prev: LocalTextEdit[], next: LocalTextEdit[]): Op[] => {
+    const keep = new Set(next.map((e) => e.id))
+    const before = new Map(prev.map((e) => [e.id, e]))
+    return [
+      ...prev.filter((e) => !keep.has(e.id)).map((e): Op => ({ op: 'removeTextEdit', id: e.id })),
+      ...next
+        .filter((e) => before.get(e.id) !== e)
+        .map((e): Op => ({
+          op: 'putTextEdit',
+          id: e.id,
+          input: e.input,
+          cover: e.cover,
+          moveBy: e.moveBy,
+          baseInk: e.baseInk,
+          baseFont: e.baseFont,
+        })),
+    ]
+  }
+
+  /** order must cover all original pages: deleted ones trail so they don't affect the result */
+  const commitOrder = (vis: number[]) =>
+    applyEditOps([
+      {
+        op: 'setPageOrder',
+        order: [...vis, ...sizes.map((_, i) => i).filter((i) => !vis.includes(i))],
+      },
+    ])
 
   const applySnapshot = (s: EditSnapshot) => {
+    markupsRef.current = s.markups
+    formEditsRef.current = s.formEdits
     annotDeletesRef.current = s.annotDeletes
     noteEditsRef.current = s.noteEdits
     drawingsRef.current = s.drawings
@@ -1955,34 +2063,36 @@ export default function App() {
     )
     if (matches.every(([, , m]) => m !== null)) {
       // Every page of the selection is already marked → the click removes
-      pushUndo()
-      const pendingIds = new Set(
-        matches.flatMap(([, , m]) => (m && 'pending' in m ? [m.pending.id] : [])),
+      applyEditOps(
+        matches.flatMap(([, , m]): Op[] =>
+          m && 'pending' in m
+            ? [{ op: 'removeMarkup', id: m.pending.id }]
+            : m && 'saved' in m
+              ? [{ op: 'deleteSavedAnnot', annot: m.saved }]
+              : [],
+        ),
       )
-      const savedHits = matches.flatMap(([, , m]) => (m && 'saved' in m ? [m.saved] : []))
-      if (pendingIds.size > 0) setMarkups((prev) => prev.filter((m) => !pendingIds.has(m.id)))
-      if (savedHits.length > 0)
-        setAnnotDeletes((prev) => [...prev, ...savedHits.map((annot) => ({ id: newId(), annot }))])
       return
     }
     // Pages already carrying the markup are skipped, not duplicated (Word semantics:
     // applying to a partially-marked selection marks the rest)
-    const added: LocalMarkup[] = matches.flatMap(([origIdx, quads, m]) =>
-      m
-        ? []
-        : [
-            {
-              id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-              pageIndex: origIdx,
-              type,
-              color: type === 'highlight' ? highlightColor : MARKUP_COLORS[type],
-              quads,
-            },
-          ],
+    applyEditOps(
+      matches.flatMap(([origIdx, quads, m]): Op[] =>
+        m
+          ? []
+          : [
+              {
+                op: 'addMarkup',
+                markup: {
+                  pageIndex: origIdx,
+                  type,
+                  color: type === 'highlight' ? highlightColor : MARKUP_COLORS[type],
+                  quads,
+                },
+              },
+            ],
+      ),
     )
-    if (added.length === 0) return
-    pushUndo()
-    setMarkups((prev) => [...prev, ...added])
   }
 
   /** Ask-AI entry on the markup bar: capture the selection box as the popover
@@ -2114,61 +2224,13 @@ export default function App() {
 
   /** Shift a drawing by a PDF-space delta (drag-to-move on the page) */
   const moveDrawing = (id: string, dx: number, dy: number) => {
-    pushUndo()
     setSelected(null)
-    setDrawings((prev) =>
-      prev.map((d) => {
-        if (d.id !== id) return d
-        const input = d.input
-        switch (input.kind) {
-          case 'ink':
-            return {
-              ...d,
-              input: {
-                ...input,
-                paths: input.paths.map((p) => p.map((v, i) => (i % 2 === 0 ? v + dx : v + dy))),
-              },
-            }
-          case 'rect':
-          case 'ellipse':
-          case 'image':
-            return {
-              ...d,
-              input: {
-                ...input,
-                rect: [
-                  input.rect[0] + dx,
-                  input.rect[1] + dy,
-                  input.rect[2] + dx,
-                  input.rect[3] + dy,
-                ] as [number, number, number, number],
-              },
-            }
-          case 'line':
-          case 'arrow':
-            return {
-              ...d,
-              input: {
-                ...input,
-                from: [input.from[0] + dx, input.from[1] + dy] as [number, number],
-                to: [input.to[0] + dx, input.to[1] + dy] as [number, number],
-              },
-            }
-          default:
-            return d
-        }
-      }),
-    )
+    applyEditOps([{ op: 'moveDrawing', id, dx, dy }])
   }
 
   /** Replace an image drawing's rect (corner-handle resize) */
   const resizeDrawing = (id: string, rect: [number, number, number, number]) => {
-    pushUndo()
-    setDrawings((prev) =>
-      prev.map((d) =>
-        d.id === id && d.input.kind === 'image' ? { ...d, input: { ...d.input, rect } } : d,
-      ),
-    )
+    applyEditOps([{ op: 'setDrawingRect', id, rect }])
   }
 
   // ── Text editing (content-stream replacement, applied by the main process at save) ──
@@ -2939,8 +3001,7 @@ export default function App() {
     }
     setTextDraft(null)
     if (!merged) return textEdits
-    pushUndo()
-    applyTextEdits(() => merged)
+    applyEditOps(textEditListOps(textEdits, merged))
     // New edits append; re-opened ones keep their id
     const committed = d.editId ? merged.find((e) => e.id === d.editId) : merged[merged.length - 1]
     if (committed) validateTextEdit(committed)
@@ -2956,8 +3017,7 @@ export default function App() {
     const merged = mergeTextDraft(textEdits, { ...d, value: '' })
     // A deletion ('' skips the block reflow) can never overflow
     if (!merged || merged === 'overflow') return
-    pushUndo()
-    applyTextEdits(() => merged)
+    applyEditOps(textEditListOps(textEdits, merged))
     const committed = d.editId ? merged.find((e) => e.id === d.editId) : merged[merged.length - 1]
     if (committed) validateTextEdit(committed)
   }
@@ -3047,9 +3107,12 @@ export default function App() {
       return null
     }
     if (!plan) return null
-    pushUndoRef.current()
-    applyTextEdits((prev) =>
-      patchPendingEdits(prev, plan.te, plan.remove, plan.kind === 'move' ? 'upsert' : 'replace'),
+    const prev = textEditsRef.current
+    applyEditOps(
+      textEditListOps(
+        prev,
+        patchPendingEdits(prev, plan.te, plan.remove, plan.kind === 'move' ? 'upsert' : 'replace'),
+      ),
     )
     if (plan.kind !== 'shift') validateTextEdit(plan.te)
     return plan.te
@@ -3058,47 +3121,32 @@ export default function App() {
   const deleteSelected = () => {
     const sel = selected
     if (!sel) return
-    pushUndo()
-    if (sel.kind === 'markup') setMarkups((prev) => prev.filter((m) => m.id !== sel.id))
-    else if (sel.kind === 'savedMarkup')
-      setAnnotDeletes((prev) => [...prev, { id: newId(), annot: sel.annot }])
-    else if (sel.kind === 'drawing') setDrawings((prev) => prev.filter((d) => d.id !== sel.id))
-    else if (sel.kind === 'textEdit') applyTextEdits((prev) => prev.filter((e) => e.id !== sel.id))
-    else if (sel.kind === 'textInsert')
-      commitTextInserts(textInsertsRef.current.filter((insert) => insert.id !== sel.id))
-    else if (sel.kind === 'imageEdit')
-      setImageEdits((prev) =>
-        prev.flatMap((edit) => {
-          if (edit.id !== sel.id) return [edit]
-          if (
-            edit.staticFill &&
-            (edit.input.kind === 'transformImage' || edit.input.kind === 'replaceImage')
-          ) {
-            return [
-              {
-                ...edit,
-                input: {
-                  kind: 'deleteImage' as const,
-                  pageIndex: edit.input.pageIndex,
-                  oldRect: edit.input.oldRect,
-                },
-              },
-            ]
-          }
-          return []
-        }),
-      )
-    else if (sel.kind === 'pageImage')
-      // Deleting an untouched existing image = a pending delete op
-      setImageEdits((prev) => [
-        ...prev,
-        {
-          id: newId(),
-          input: { kind: 'deleteImage', pageIndex: sel.ref.pageIndex, oldRect: sel.ref.rect },
-          staticFill: savedStaticFillForRef(sel.ref),
-        },
-      ])
-    else setStampCfg(null)
+    const op: Op =
+      sel.kind === 'markup'
+        ? { op: 'removeMarkup', id: sel.id }
+        : sel.kind === 'savedMarkup'
+          ? { op: 'deleteSavedAnnot', annot: sel.annot }
+          : sel.kind === 'drawing'
+            ? { op: 'removeDrawing', id: sel.id }
+            : sel.kind === 'textEdit'
+              ? { op: 'removeTextEdit', id: sel.id }
+              : sel.kind === 'textInsert'
+                ? { op: 'removeTextInsert', id: sel.id }
+                : sel.kind === 'imageEdit'
+                  ? { op: 'removeImageEdit', id: sel.id }
+                  : sel.kind === 'pageImage'
+                    ? {
+                        // Deleting an untouched existing image = a pending delete op
+                        op: 'addImageEdit',
+                        input: {
+                          kind: 'deleteImage',
+                          pageIndex: sel.ref.pageIndex,
+                          oldRect: sel.ref.rect,
+                        },
+                        staticFill: savedStaticFillForRef(sel.ref),
+                      }
+                    : { op: 'setStamps', cfg: null }
+    applyEditOps([op])
     setSelected(null)
     // Transient "deleted · undo" toast so the removal is visible and reversible in place
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
@@ -3431,33 +3479,9 @@ export default function App() {
 
   // ── Page operations ──
 
-  const rotatePages = (origIdxs: number[], dir: RotateDelta) => {
-    if (readOnly || origIdxs.length === 0) return
-    pushUndo()
-    const pages = new Set(origIdxs)
-    const next = new Map(rotationsRef.current)
-    for (const origIdx of pages) {
-      const nv = ((next.get(origIdx) ?? 0) + dir + 360) % 360
-      if (nv === 0) next.delete(origIdx)
-      else next.set(origIdx, nv)
-    }
-    rotationsRef.current = next
-    setRotations(next)
-    if (dir === 180) return
-    // Image stamps are always drawn upright (both in the overlay and in the saved
-    // appearance), so a 90° page turn swaps their displayed width/height. Swap the
-    // user-space rect around its center to keep the bitmap's aspect ratio intact.
-    setDrawings((prev) =>
-      prev.map((d) => {
-        if (d.input.kind !== 'image' || !pages.has(d.input.pageIndex)) return d
-        const [x1, y1, x2, y2] = d.input.rect
-        const cx = (x1 + x2) / 2
-        const cy = (y1 + y2) / 2
-        const hw = (x2 - x1) / 2
-        const hh = (y2 - y1) / 2
-        return { ...d, input: { ...d.input, rect: [cx - hh, cy - hw, cx + hh, cy + hw] } }
-      }),
-    )
+  const rotatePages = (origIdxs: number[], dir: RotateDelta): string | null => {
+    if (readOnly || origIdxs.length === 0) return null
+    return applyEditOps([{ op: 'rotatePages', pages: origIdxs, dir }]).failures[0]?.error ?? null
   }
 
   const rotatePage = (origIdx: number, dir: 90 | -90) => rotatePages([origIdx], dir)
@@ -3467,27 +3491,18 @@ export default function App() {
   /** Reverse the visible page order; deleted pages stay at the tail like movePage */
   const reversePages = () => {
     if (pageCount <= 1 || readOnly) return
-    pushUndo()
     commitOrder([...visList].reverse())
   }
 
   const deletePage = (origIdx: number) => {
     if (pageCount <= 1 || readOnly) return
-    pushUndo()
-    const next = new Set(deletedRef.current).add(origIdx)
-    deletedRef.current = next
-    setDeleted(next)
-    setMarkups((prev) => prev.filter((m) => m.pageIndex !== origIdx))
-    setDrawings((prev) => prev.filter((d) => d.input.pageIndex !== origIdx))
+    applyEditOps([{ op: 'deletePage', pageIndex: origIdx }])
   }
 
   // ── Drawing annotations ──
 
-  const newId = () => `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-
   const commitDrawing = (origIdx: number, input: DrawingInput) => {
-    pushUndo()
-    setDrawings((prev) => [...prev, { id: newId(), input: { ...input, pageIndex: origIdx } }])
+    applyEditOps([{ op: 'addDrawing', drawing: { ...input, pageIndex: origIdx } }])
   }
 
   /** Render stamps in current page order; page numbers depend on visList, so both preview and save compute fresh */
@@ -3509,8 +3524,7 @@ export default function App() {
   const applyStamps = (wm: WatermarkConfig | null, hf: HeaderFooterConfig | null) => {
     setStampDlg(false)
     if (!wm && !hf) return
-    pushUndo()
-    setStampCfg({ wm, hf })
+    applyEditOps([{ op: 'setStamps', cfg: { wm, hf } }])
   }
 
   /** Stamp preview for visible pages (only pages in rendered rows, so large docs don't render every canvas) */
@@ -3530,7 +3544,6 @@ export default function App() {
   /** Thumbnail drag-and-drop reorder: move the page at position from to position to */
   const movePage = (from: number, to: number) => {
     if (from === to || readOnly) return
-    pushUndo()
     const next = [...visList]
     const [moved] = next.splice(from, 1)
     next.splice(to, 0, moved!)
@@ -3550,7 +3563,7 @@ export default function App() {
     const targetH = sig.height * k
     const left = Math.min(Math.max(vx - targetW / 2, 0), Math.max(disp.width - targetW, 0))
     const top = Math.min(Math.max(vy - targetH / 2, 0), Math.max(disp.height - targetH, 0))
-    pushUndo()
+    let drawing: DrawingInput
     if (sig.kind === 'image') {
       const [ax, ay] = viewToPdf(geom, left, top)
       const [bx, by] = viewToPdf(geom, left + targetW, top + targetH)
@@ -3560,10 +3573,7 @@ export default function App() {
         Math.max(ax, bx),
         Math.max(ay, by),
       ]
-      setDrawings((prev) => [
-        ...prev,
-        { id: newId(), input: { kind: 'image', pageIndex: origIdx, image: sig.image, rect } },
-      ])
+      drawing = { kind: 'image', pageIndex: origIdx, image: sig.image, rect }
     } else {
       const paths = sig.paths.map((p) => {
         const out: number[] = []
@@ -3572,25 +3582,18 @@ export default function App() {
         }
         return out
       })
-      setDrawings((prev) => [
-        ...prev,
-        {
-          id: newId(),
-          input: { kind: 'ink', pageIndex: origIdx, color: drawColor, width: 1.6, paths },
-        },
-      ])
+      drawing = { kind: 'ink', pageIndex: origIdx, color: drawColor, width: 1.6, paths }
     }
+    applyEditOps([{ op: 'addDrawing', drawing }])
     setPendingSign(null)
   }
 
   /** Fit a visual signature into an AcroForm /Sig widget. */
   const placeSignatureInField = (sig: SignatureData, target: FormWidget) => {
-    pushUndo()
-    setDrawings((prev) => [
-      ...prev,
+    applyEditOps([
       {
-        id: newId(),
-        input: signatureDrawingForField(sig, target, drawColor),
+        op: 'addDrawing',
+        drawing: signatureDrawingForField(sig, target, drawColor),
         formWidgetId: target.id,
       },
     ])
@@ -3652,15 +3655,11 @@ export default function App() {
   })
 
   const patchTextInsert = (id: string, patch: Partial<TextInsertInput>) =>
-    commitTextInserts(
-      textInsertsRef.current.map((insert) =>
-        insert.id === id ? { ...insert, input: { ...insert.input, ...patch } } : insert,
-      ),
-    )
+    applyEditOpsRef.current([{ op: 'patchTextInsert', id, input: patch }])
 
   /** Re-entry guard: the dialog stays open (and its OK stays clickable) while the
       canDrawText round-trip runs — a second click must not run the confirm again
-      (double pushUndo / duplicate insert) */
+      (double undo step / duplicate insert) */
   const textInsertConfirmBusy = useRef(false)
 
   const confirmTextInsert = async () => {
@@ -3686,7 +3685,6 @@ export default function App() {
       )
       setStaticTextDialog(false)
       if (textInsertEditId) {
-        pushUndo()
         patchTextInsert(textInsertEditId, config)
         setTextInsertEditId(null)
         return
@@ -3718,28 +3716,10 @@ export default function App() {
       if (target.kind === 'saved') {
         replaceExisting(target.ref, image.image, updated)
       } else {
-        pushUndo()
         setSelected(null)
-        setImageEdits((prev) =>
-          prev.map((edit) => {
-            if (edit.id !== target.editId || edit.input.kind === 'deleteImage') return edit
-            const input =
-              edit.input.kind === 'insertImage'
-                ? { ...edit.input, image: image.image }
-                : edit.input.kind === 'replaceImage'
-                  ? { ...edit.input, image: image.image }
-                  : {
-                      kind: 'replaceImage' as const,
-                      pageIndex: edit.input.pageIndex,
-                      oldRect: edit.input.oldRect,
-                      rect: edit.input.rect,
-                      image: image.image,
-                      layer: edit.input.layer,
-                      quarterTurns: edit.input.quarterTurns,
-                    }
-            return { ...edit, input, staticFill: { ...updated, rect: input.rect } }
-          }),
-        )
+        applyEditOps([
+          { op: 'setStaticFillImage', id: target.editId, image: image.image, staticFill: updated },
+        ])
       }
       return
     }
@@ -3750,11 +3730,9 @@ export default function App() {
     const pending = pendingTextInsert
     if (!pending) return
     const geom = pageGeom(origIdx)
-    pushUndo()
-    setTextInserts((prev) => [
-      ...prev,
+    applyEditOps([
       {
-        id: newId(),
+        op: 'addTextInsert',
         input: {
           ...pending,
           pageIndex: origIdx,
@@ -3844,10 +3822,9 @@ export default function App() {
             : {}),
         }
       : undefined
-    pushUndoRef.current()
-    setImageEdits((prev) => [
-      ...prev,
+    applyEditOpsRef.current([
       {
+        op: 'addImageEdit',
         id,
         input: {
           kind: 'insertImage',
@@ -3864,13 +3841,8 @@ export default function App() {
 
   /** Committed move/resize of a pending image op */
   const updateImageEditRect = (id: string, rect: [number, number, number, number]) => {
-    pushUndo()
     setSelected(null)
-    setImageEdits((prev) =>
-      prev.map((e) =>
-        e.id === id && e.input.kind !== 'deleteImage' ? { ...e, input: { ...e.input, rect } } : e,
-      ),
-    )
+    applyEditOps([{ op: 'setImageEditRect', id, rect }])
   }
 
   /** Prefetched pixels of untouched existing images (keyed pageIndex:rectKey); fetched on
@@ -3947,27 +3919,28 @@ export default function App() {
     layer?: ImageLayer,
     quarterTurns?: number,
   ) => {
-    pushUndo()
     setSelected(null)
     const id = newId()
     const cached = existingPngs.get(`${ref.pageIndex}:${imageRectKey(ref.rect)}`) ?? null
     const savedStaticFill = savedStaticFillForRef(ref)
-    const edit: LocalImageEdit = {
-      id,
-      input: {
-        kind: 'transformImage',
-        pageIndex: ref.pageIndex,
-        oldRect: ref.rect,
-        rect,
-        ...(layer ? { layer } : {}),
-        ...(quarterTurns ? { quarterTurns } : {}),
+    const plan = applyEditOps([
+      {
+        op: 'addImageEdit',
+        id,
+        input: {
+          kind: 'transformImage',
+          pageIndex: ref.pageIndex,
+          oldRect: ref.rect,
+          rect,
+          ...(layer ? { layer } : {}),
+          ...(quarterTurns ? { quarterTurns } : {}),
+        },
+        png: cached,
+        origAbove: ref.aboveText,
+        staticFill: savedStaticFill ? { ...savedStaticFill, rect } : undefined,
       },
-      png: cached,
-      origAbove: ref.aboveText,
-      staticFill: savedStaticFill ? { ...savedStaticFill, rect } : undefined,
-    }
-    updateImageEdits((prev) => [...prev, edit])
-    if (cached) return
+    ])
+    if (cached || plan.failures.length > 0) return
     void window.pdfApi
       .pageImagePng({ path: filePath, pageIndex: ref.pageIndex, rect: ref.rect })
       .then((png) => {
@@ -4028,63 +4001,54 @@ export default function App() {
       const { image } = edit.input
       void rotatePngTurns(image, turn).then((rotated) => {
         if (!rotated) return
-        // The canvas turn is async: snapshot via the ref (the closed-over pushUndo
-        // would capture click-time state) and rotate the element's CURRENT rect —
+        // The canvas turn is async: apply via the ref (the closed-over entry would
+        // snapshot click-time state for undo) and rotate the element's CURRENT rect —
         // a concurrent move/resize must not be overwritten. The bytes guard drops
         // a rotation that lost a race (edit removed, or another turn landed first)
-        // BEFORE pushing undo, so ⌘Z never records a no-op step.
+        // BEFORE applying, so ⌘Z never records a no-op step.
         const target = imageEditsRef.current.find((e) => e.id === sel.id)
         if (!target || target.input.kind !== 'insertImage' || target.input.image !== image) return
-        pushUndoRef.current()
-        setImageEdits((prev) =>
-          prev.map((e) =>
-            e.id === sel.id && e.input.kind === 'insertImage' && e.input.image === image
-              ? {
-                  ...e,
-                  // rotating the bytes invalidates a recorded pre-transparency base
-                  opacityBase: undefined,
-                  input: { ...e.input, image: rotated, rect: rotatedRect(e.input.rect) },
-                }
-              : e,
-          ),
-        )
+        applyEditOpsRef.current([
+          {
+            op: 'patchImageEdit',
+            id: sel.id,
+            input: { image: rotated, rect: rotatedRect(target.input.rect) },
+            // rotating the bytes invalidates a recorded pre-transparency base
+            opacityBase: null,
+          },
+        ])
       })
       return
     }
-    pushUndo()
-    setImageEdits((prev) =>
-      prev.map((e) =>
-        e.id === sel.id && (e.input.kind === 'transformImage' || e.input.kind === 'replaceImage')
-          ? {
-              ...e,
-              input: {
-                ...e.input,
-                quarterTurns: ((e.input.quarterTurns ?? 0) + turn) % 4,
-                rect: rotatedRect(e.input.rect),
-              },
-            }
-          : e,
-      ),
-    )
+    applyEditOps([
+      {
+        op: 'patchImageEdit',
+        id: sel.id,
+        input: {
+          quarterTurns: ((edit.input.quarterTurns ?? 0) + turn) % 4,
+          rect: rotatedRect(edit.input.rect),
+        },
+      },
+    ])
   }
 
   /** Queue an in-place pixel swap of an existing image (footprint/z-order kept) */
   const replaceExisting = (ref: PageImageRef, png: string, staticFill?: StaticFormFillRecord) => {
-    pushUndo()
     setSelected(null)
-    const edit: LocalImageEdit = {
-      id: newId(),
-      input: {
-        kind: 'replaceImage',
-        pageIndex: ref.pageIndex,
-        oldRect: ref.rect,
-        rect: ref.rect,
-        image: png,
+    applyEditOps([
+      {
+        op: 'addImageEdit',
+        input: {
+          kind: 'replaceImage',
+          pageIndex: ref.pageIndex,
+          oldRect: ref.rect,
+          rect: ref.rect,
+          image: png,
+        },
+        origAbove: ref.aboveText,
+        staticFill,
       },
-      origAbove: ref.aboveText,
-      staticFill,
-    }
-    updateImageEdits((prev) => [...prev, edit])
+    ])
   }
 
   // ── Baked pixel edits (flip / transparency / crop / cutout / replace) ──
@@ -4202,55 +4166,34 @@ export default function App() {
     if (target.kind === 'existing') {
       const ref = target.ref
       if (isImageClaimedNow(ref)) return false
-      pushUndoRef.current()
-      const edit: LocalImageEdit = {
-        id: newId(),
-        input: {
-          kind: 'replaceImage',
-          pageIndex: ref.pageIndex,
-          oldRect: ref.rect,
-          rect: crop ? cropRect(ref.rect, crop) : ref.rect,
-          image: png,
+      const plan = applyEditOpsRef.current([
+        {
+          op: 'addImageEdit',
+          input: {
+            kind: 'replaceImage',
+            pageIndex: ref.pageIndex,
+            oldRect: ref.rect,
+            rect: crop ? cropRect(ref.rect, crop) : ref.rect,
+            image: png,
+          },
+          origAbove: ref.aboveText,
+          opacityBase,
         },
-        origAbove: ref.aboveText,
-        opacityBase,
-      }
-      updateImageEdits((prev) => [...prev, edit])
-      return true
+      ])
+      return plan.failures.length === 0
     }
     const cur = imageEditsRef.current.find((x) => x.id === target.id)
     if (!cur || cur.input !== target.before || cur.input.kind === 'deleteImage') return false
-    pushUndoRef.current()
-    updateImageEdits((prev) =>
-      prev.map((e) => {
-        if (e.id !== target.id || e.input.kind !== cur.input.kind) return e
-        if (e.input.kind === 'insertImage') {
-          return {
-            ...e,
-            opacityBase,
-            input: {
-              ...e.input,
-              image: png,
-              rect: crop ? cropRectDisplay(e.input.pageIndex, e.input.rect, crop) : e.input.rect,
-            },
-          }
-        }
-        if (e.input.kind !== 'transformImage' && e.input.kind !== 'replaceImage') return e
-        return {
-          ...e,
-          opacityBase,
-          input: {
-            kind: 'replaceImage',
-            pageIndex: e.input.pageIndex,
-            oldRect: e.input.oldRect,
-            rect: crop ? cropRect(e.input.rect, crop) : e.input.rect,
-            image: png,
-            ...(e.input.layer ? { layer: e.input.layer } : {}),
-          },
-        }
-      }),
-    )
-    return true
+    // Inserted images crop in display space (they follow the page rotation), existing ones in user space
+    const rect = !crop
+      ? cur.input.rect
+      : cur.input.kind === 'insertImage'
+        ? cropRectDisplay(cur.input.pageIndex, cur.input.rect, crop)
+        : cropRect(cur.input.rect, crop)
+    const plan = applyEditOpsRef.current([
+      { op: 'bakeImageEdit', id: target.id, image: png, rect, opacityBase },
+    ])
+    return plan.failures.length === 0
   }
 
   /** AI-tool entry to the same bakes as the floating bar, for an existing page image */
@@ -4325,16 +4268,9 @@ export default function App() {
         ) {
           return
         }
-        pushUndoRef.current()
-        setImageEdits((prev) =>
-          prev.map((e) =>
-            e.id === target.id &&
-            e.input === target.before &&
-            (e.input.kind === 'insertImage' || e.input.kind === 'replaceImage')
-              ? { ...e, opacityBase: prior, input: { ...e.input, image: out } }
-              : e,
-          ),
-        )
+        applyEditOpsRef.current([
+          { op: 'patchImageEdit', id: target.id, input: { image: out }, opacityBase: prior },
+        ])
         return
       }
       const src = await bakeSourcePng(target)
@@ -4388,14 +4324,7 @@ export default function App() {
     if (sel.kind === 'pageImage') {
       transformExisting(sel.ref, sel.ref.rect, next)
     } else if (sel.kind === 'imageEdit') {
-      pushUndo()
-      setImageEdits((prev) =>
-        prev.map((e) =>
-          e.id === sel.id && e.input.kind !== 'deleteImage'
-            ? { ...e, input: { ...e.input, layer: next } }
-            : e,
-        ),
-      )
+      applyEditOps([{ op: 'patchImageEdit', id: sel.id, input: { layer: next } }])
     }
     setSelected(null)
   }
@@ -4561,13 +4490,12 @@ export default function App() {
     const target = noteDraft
     setNoteDraft(null)
     if (!target || !text) return
-    pushUndo()
     const id = newId()
-    setDrawings((prev) => [
-      ...prev,
+    applyEditOps([
       {
+        op: 'addDrawing',
         id,
-        input: {
+        drawing: {
           kind: 'note',
           pageIndex: target.origIdx,
           color: drawColor,
@@ -4575,7 +4503,6 @@ export default function App() {
           contents: text,
           author: noteAuthor || undefined,
           createdMs: Date.now(),
-          localId: id,
         },
       },
     ])
@@ -4628,103 +4555,57 @@ export default function App() {
         : [],
     )
 
-  const applyNoteEdit = (next: { drawings: LocalDrawing[]; noteEdits: LocalNoteEdit[] }) => {
-    drawingsRef.current = next.drawings
-    noteEditsRef.current = next.noteEdits
-    setDrawings(next.drawings)
-    setNoteEdits(next.noteEdits)
-  }
-
-  const appendDrawing = (d: LocalDrawing) => {
-    drawingsRef.current = [...drawingsRef.current, d]
-    setDrawings((prev) => [...prev, d])
-  }
-
-  const queueAnnotDeletes = (annots: (SavedMarkupAnnot | SavedNoteAnnot)[]) => {
-    const added = annots.map((annot) => ({ id: newId(), annot }))
-    annotDeletesRef.current = [...annotDeletesRef.current, ...added]
-    setAnnotDeletes((prev) => [...prev, ...added])
-  }
-
   /** Append a reply to a thread's root (flat, WPS-style threads: /IRT → root) */
   const replyToNote = (origIdx: number, root: NoteThreadItem, text: string, author?: string) => {
-    pushUndo()
-    const id = newId()
-    appendDrawing({
-      id,
-      input: {
-        kind: 'note',
-        pageIndex: origIdx,
-        color: root.color ?? drawColor,
-        at: root.at,
-        contents: text,
-        author: author ?? (noteAuthor || undefined),
-        createdMs: Date.now(),
-        localId: id,
-        ...(root.saved
-          ? {
-              replyToSaved: {
-                objNum: root.saved.objNum,
-                rect: root.saved.rect,
-                contents: root.saved.contents,
-              },
-            }
-          : root.pendingId !== null
-            ? { replyToLocalId: root.pendingId }
-            : {}),
+    applyEditOpsRef.current([
+      {
+        op: 'addDrawing',
+        drawing: {
+          kind: 'note',
+          pageIndex: origIdx,
+          color: root.color ?? drawColor,
+          at: root.at,
+          contents: text,
+          author: author ?? (noteAuthor || undefined),
+          createdMs: Date.now(),
+          ...(root.saved
+            ? {
+                replyToSaved: {
+                  objNum: root.saved.objNum,
+                  rect: root.saved.rect,
+                  contents: root.saved.contents,
+                },
+              }
+            : root.pendingId !== null
+              ? { replyToLocalId: root.pendingId }
+              : {}),
+        },
       },
-    })
+    ])
   }
 
-  /** Next drawings/noteEdits after rewriting one comment's text: pending notes mutate
-      the drawing in place; saved notes queue an in-place /Contents edit (keyed by
-      note, later edits replace it). Null when nothing changes. */
-  const appliedNoteEdit = (
-    item: NoteThreadItem,
-    trimmed: string,
-  ): { drawings: LocalDrawing[]; noteEdits: LocalNoteEdit[] } | null => {
+  /** Ops rewriting one comment's text: pending notes mutate the drawing in place;
+      saved notes queue an in-place /Contents edit (keyed by note, later edits replace
+      it). Null when nothing changes. */
+  const noteEditOps = (item: NoteThreadItem, trimmed: string): Op[] | null => {
     if (!trimmed || trimmed === item.contents) return null
-    const drawings = drawingsRef.current
-    const noteEdits = noteEditsRef.current
-    if (item.pendingId !== null) {
-      const id = item.pendingId
-      return {
-        drawings: drawings.map((d) =>
-          d.id === id && d.input.kind === 'note'
-            ? { ...d, input: { ...d.input, contents: trimmed } }
-            : d,
-        ),
-        noteEdits,
-      }
-    }
+    if (item.pendingId !== null)
+      return [{ op: 'setNoteContents', id: item.pendingId, contents: trimmed }]
     if (item.saved) {
-      const annot = item.saved
-      // Drop the entry only when the file provably holds this exact text. A save in
-      // flight for this note is unconfirmed — keep the entry: if the write lands, the
-      // post-save subtraction drops entries matching it; if it fails, the entry still
-      // targets the unchanged on-disk text.
-      const unconfirmed = inFlightNoteWritesRef.current.has(annot.objNum)
-      return {
-        drawings,
-        noteEdits: [
-          ...noteEdits.filter(
-            (e) => e.annot.objNum !== annot.objNum || e.annot.pageIndex !== annot.pageIndex,
-          ),
-          ...(trimmed === annot.contents && !unconfirmed
-            ? []
-            : [{ id: newId(), annot, contents: trimmed }]),
-        ],
-      }
+      // Restoring the on-disk text drops the entry only when the file provably holds
+      // it. A save in flight for this note is unconfirmed — force keeps the entry: if
+      // the write lands, the post-save subtraction drops entries matching it; if it
+      // fails, the entry still targets the unchanged on-disk text.
+      const force = inFlightNoteWritesRef.current.has(item.saved.objNum)
+      return [{ op: 'editSavedNote', annot: item.saved, contents: trimmed, force }]
     }
     return null
   }
 
   /** Confirm the comment-edit box (OK button / Cmd+Enter) */
   const editNoteItem = (item: NoteThreadItem, text: string) => {
-    const next = appliedNoteEdit(item, text.trim())
-    if (!next) return
-    pushUndo()
-    applyNoteEdit(next)
+    const ops = noteEditOps(item, text.trim())
+    if (ops) applyEditOpsRef.current(ops)
   }
 
   /** Fold an open comment-edit box into pending state (cf. commitTextDraft: a save can
@@ -4740,29 +4621,20 @@ export default function App() {
       .flatMap((root) => flattenThread(root))
       .map(({ item: it }) => it)
       .find((it) => it.key === draft.itemKey)
-    const next = item ? appliedNoteEdit(item, draft.text.trim()) : null
-    if (!next) return unchanged
-    pushUndo()
-    applyNoteEdit(next)
-    return next
+    const ops = item ? noteEditOps(item, draft.text.trim()) : null
+    if (!ops) return unchanged
+    const plan = applyEditOps(ops)
+    if (plan.failures.length > 0) return unchanged
+    return { drawings: drawingsRef.current, noteEdits: noteEditsRef.current }
   }
 
   /** Delete a comment and everything under it (saved → pending annotDeletes; pending → dropped) */
   const deleteNoteItem = (item: NoteThreadItem) => {
-    pushUndo()
     const { saved, pendingIds } = threadSubtree(item)
-    if (saved.length > 0) {
-      queueAnnotDeletes(saved)
-      // A pending content edit of a deleted note has nothing to apply to anymore
-      const gone = new Set(saved.map((a) => a.objNum))
-      noteEditsRef.current = noteEditsRef.current.filter((e) => !gone.has(e.annot.objNum))
-      setNoteEdits(noteEditsRef.current)
-    }
-    if (pendingIds.length > 0) {
-      const drop = new Set(pendingIds)
-      drawingsRef.current = drawingsRef.current.filter((d) => !drop.has(d.id))
-      setDrawings(drawingsRef.current)
-    }
+    applyEditOps([
+      ...saved.map((annot): Op => ({ op: 'deleteSavedAnnot', annot })),
+      ...pendingIds.map((id): Op => ({ op: 'removeDrawing', id })),
+    ])
     if (activeNote && item.key === activeNote.rootKey) setActiveNote(null)
     // "deleted · undo" toast — a mistaken trash tap stays reversible before autosave
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
@@ -5128,44 +5000,46 @@ export default function App() {
         (a) => savedNums.has(a.objNum) && !pendingDeleted.has(a.objNum),
       )
       if (pendingIds.size === 0 && saved.length === 0) return
-      pushUndoRef.current()
-      if (pendingIds.size > 0)
-        setMarkups((prev) => prev.filter((m) => !(m.pageIndex === origIdx && pendingIds.has(m.id))))
-      if (saved.length > 0) queueAnnotDeletes(saved)
+      applyEditOpsRef.current([
+        ...markupsRef.current
+          .filter((m) => m.pageIndex === origIdx && pendingIds.has(m.id))
+          .map((m): Op => ({ op: 'removeMarkup', id: m.id })),
+        ...saved.map((annot): Op => ({ op: 'deleteSavedAnnot', annot })),
+      ])
     },
     deleteNoteThread: (_origIdx, root) => deleteNoteItem(root),
     addNote: (origIdx, at, contents, color) => {
-      pushUndoRef.current()
       const id = newId()
-      appendDrawing({
-        id,
-        input: {
-          kind: 'note',
-          pageIndex: origIdx,
-          color: color ?? drawColor,
-          at,
-          contents,
-          author: 'AI Assistant',
-          createdMs: Date.now(),
-          localId: id,
+      const plan = applyEditOpsRef.current([
+        {
+          op: 'addDrawing',
+          id,
+          drawing: {
+            kind: 'note',
+            pageIndex: origIdx,
+            color: color ?? drawColor,
+            at,
+            contents,
+            author: 'AI Assistant',
+            createdMs: Date.now(),
+          },
         },
-      })
+      ])
+      if (plan.failures.length > 0) return { error: plan.failures[0]!.error }
       setActiveNote({ origIdx, rootKey: pendingNoteKey(id) })
-      return pendingNoteKey(id)
+      return { key: pendingNoteKey(id) }
     },
     findNoteRoot: async (origIdx, rootKey) =>
       (await noteThreadsFor(origIdx)).find((r) => r.key === rootKey) ?? null,
     replyToThread: (origIdx, root, contents) =>
       replyToNote(origIdx, root, contents, 'AI Assistant'),
     editNote: (_origIdx, item, contents) => {
-      const next = appliedNoteEdit(item, contents)
-      if (!next) return
-      pushUndoRef.current()
-      applyNoteEdit(next)
+      const ops = noteEditOps(item, contents)
+      if (ops) applyEditOpsRef.current(ops)
     },
     outline: () => outline,
     searchIndex: getSearchIndex,
-    isDeleted: (i) => deleted.has(i),
+    isDeleted: (i) => deletedRef.current.has(i),
     gotoPage: (p) => {
       if (orderRef.current !== order) {
         if (!visListOf(orderRef.current).includes(p - 1)) return false
@@ -5178,17 +5052,17 @@ export default function App() {
       return true
     },
     addMarkup: (type, origIdx, rects, color) => {
-      pushUndo()
       const quads = rects.map((r) => [r[0], r[3], r[2], r[3], r[0], r[1], r[2], r[1]])
-      setMarkups((prev) => [
-        ...prev,
+      applyEditOpsRef.current([
         {
-          id: `m${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-          pageIndex: origIdx,
-          type,
-          // default follows the manual path: the ribbon color for highlights
-          color: color ?? (type === 'highlight' ? highlightColor : MARKUP_COLORS[type]),
-          quads,
+          op: 'addMarkup',
+          markup: {
+            pageIndex: origIdx,
+            type,
+            // default follows the manual path: the ribbon color for highlights
+            color: color ?? (type === 'highlight' ? highlightColor : MARKUP_COLORS[type]),
+            quads,
+          },
         },
       ])
     },
@@ -5206,11 +5080,11 @@ export default function App() {
           /* best-effort: the save path skips-and-reports unmatched edits anyway */
         }
       }
-      pushUndoRef.current()
       const te: LocalTextEdit = { id: newId(), input, cover, moveBy }
       const gone = new Set(replaces.map((e) => e.id))
-      applyTextEdits((prev) => patchPendingEdits(prev, te, gone))
-      return null
+      const prev = textEditsRef.current
+      const plan = applyEditOpsRef.current(textEditListOps(prev, patchPendingEdits(prev, te, gone)))
+      return plan.failures[0]?.error ?? null
     },
     moveTextBlock: async (origIdx, block, d) => {
       const plan = planBlockMove(origIdx, block, d, textEditsRef.current)
@@ -5241,30 +5115,30 @@ export default function App() {
       if (plan.kind !== 'move' && !textEditsRef.current.some((e) => e.id === te.id)) {
         return { reason: 'the pending edits changed while the move was validated; retry' }
       }
-      pushUndoRef.current()
-      applyTextEdits((prev) =>
-        patchPendingEdits(prev, te, plan.remove, plan.kind === 'move' ? 'upsert' : 'replace'),
+      const prev = textEditsRef.current
+      const result = applyEditOpsRef.current(
+        textEditListOps(
+          prev,
+          patchPendingEdits(prev, te, plan.remove, plan.kind === 'move' ? 'upsert' : 'replace'),
+        ),
       )
+      if (result.failures.length > 0) return { reason: result.failures[0]!.error }
       return { moveBy: te.moveBy ?? d }
     },
     insertText: (input) => {
-      pushUndoRef.current()
       const id = newId()
-      commitTextInserts([...textInsertsRef.current, { id, input }])
-      return id
+      const plan = applyEditOpsRef.current([{ op: 'addTextInsert', id, input }])
+      return plan.failures.length > 0 ? { error: plan.failures[0]!.error } : { id }
     },
     textInserts: () => textInsertsRef.current,
     updateTextInsert: (id, edit) => {
-      pushUndoRef.current()
-      patchTextInsert(id, edit)
+      applyEditOpsRef.current([{ op: 'patchTextInsert', id, input: edit }])
     },
     moveTextInsert: (id, origin) => {
-      pushUndoRef.current()
-      patchTextInsert(id, { origin })
+      applyEditOpsRef.current([{ op: 'patchTextInsert', id, input: { origin } }])
     },
     deleteTextInsert: (id) => {
-      pushUndoRef.current()
-      commitTextInserts(textInsertsRef.current.filter((insert) => insert.id !== id))
+      applyEditOpsRef.current([{ op: 'removeTextInsert', id }])
       setSelected((sel) => (sel?.kind === 'textInsert' && sel.id === id ? null : sel))
     },
     addFormMark: (origIdx, kind, rect) => {
@@ -5273,67 +5147,39 @@ export default function App() {
     },
     editFonts: () => editFonts,
     formEdits: () => formEdits,
-    applyFormEdit: (v) => {
-      pushUndo()
-      setFormEdits((prev) => new Map(prev).set(v.name, v))
-    },
-    rotatePages,
-    deletePage: (origIdx) => {
-      if (pageCount <= 1 || readOnly) return false
-      deletePage(origIdx)
-      return true
-    },
+    applyOps: (ops, opts) =>
+      opts?.dryRun ? planEditOps(ops, editOpContext(), newId) : applyEditOpsRef.current(ops),
     metadata: () => metadataRef.current ?? docInfo,
-    setMetadata: (meta) => {
-      pushUndoRef.current()
-      metadataRef.current = meta
-      setMetadata(meta)
-    },
     pageOrder: () => visListOf(orderRef.current),
-    movePage: (origIdx, to) => {
-      const vis = visListOf(orderRef.current)
-      const from = vis.indexOf(origIdx)
-      if (from < 0 || from === to || readOnly) return
-      pushUndoRef.current()
-      vis.splice(from, 1)
-      vis.splice(to, 0, origIdx)
-      commitOrder(vis)
-      scrollAfterReorderRef.current = origIdx
-    },
-    reversePages: () => {
-      if (readOnly) return
-      pushUndoRef.current()
-      commitOrder(visListOf(orderRef.current).reverse())
-    },
     pageGeom: (origIdx) => (sizes[origIdx] ? pageGeom(origIdx) : null),
     listImages: () => (filePath ? window.pdfApi.listPageImages(filePath) : Promise.resolve([])),
     isImageClaimed: isImageClaimedNow,
     insertImage: (origIdx, png, rect, layer) => {
-      pushUndoRef.current()
-      const edit: LocalImageEdit = {
-        id: newId(),
-        input: {
-          kind: 'insertImage',
-          pageIndex: origIdx,
-          image: png,
-          rect,
-          layer,
-          rotate: ((pageGeom(origIdx).rot % 360) + 360) % 360,
+      applyEditOpsRef.current([
+        {
+          op: 'addImageEdit',
+          input: {
+            kind: 'insertImage',
+            pageIndex: origIdx,
+            image: png,
+            rect,
+            layer,
+            rotate: ((pageGeom(origIdx).rot % 360) + 360) % 360,
+          },
         },
-      }
-      updateImageEdits((prev) => [...prev, edit])
+      ])
     },
     transformImage: (ref, rect, layer, quarterTurns) =>
       transformExisting(ref, rect, layer, quarterTurns),
     replaceImage: (ref, png) => replaceExisting(ref, png),
     bakeImage: bakeExisting,
     deleteImage: (ref) => {
-      pushUndoRef.current()
-      const edit: LocalImageEdit = {
-        id: newId(),
-        input: { kind: 'deleteImage', pageIndex: ref.pageIndex, oldRect: ref.rect },
-      }
-      updateImageEdits((prev) => [...prev, edit])
+      applyEditOpsRef.current([
+        {
+          op: 'addImageEdit',
+          input: { kind: 'deleteImage', pageIndex: ref.pageIndex, oldRect: ref.rect },
+        },
+      ])
     },
     searchImages: (query, maxResults) => window.pdfApi.imageSearch(query, maxResults),
     generateImage: (op) => window.pdfApi.generateImage(op),
@@ -5354,9 +5200,7 @@ export default function App() {
     },
     stamps: () => stampRef.current,
     setStamps: (cfg) => {
-      pushUndoRef.current()
-      stampRef.current = cfg
-      setStampCfg(cfg)
+      applyEditOpsRef.current([{ op: 'setStamps', cfg }])
     },
     createDocument: (request) => window.pdfApi.createDocument(request),
     insertBlankPage: insertBlankPageAt,
@@ -5539,6 +5383,10 @@ export default function App() {
         deleteSelected()
         return
       }
+      // Shift+navigation extends the text layer's native selection (Excel/
+      // Word parity: Shift+→ grows the selection by a character). Swallowing
+      // it here turned the keys into page flips and froze the selection.
+      if (e.shiftKey && !window.getSelection()?.isCollapsed) return
       const el = scrollRef.current
       if (!el) return
       const inThumbs = !!thumbsRef.current?.contains(document.activeElement)
@@ -7163,23 +7011,18 @@ export default function App() {
                                         blockDragReleaseAt.current = Date.now()
                                         const [ax, ay] = viewToPdf(geom, 0, 0)
                                         const [bx, by] = viewToPdf(geom, dxPx / scale, dyPx / scale)
-                                        pushUndo()
-                                        setTextInserts((prev) =>
-                                          prev.map((it) =>
-                                            it.id === insert.id
-                                              ? {
-                                                  ...it,
-                                                  input: {
-                                                    ...it.input,
-                                                    origin: [
-                                                      it.input.origin[0] + (bx - ax),
-                                                      it.input.origin[1] + (by - ay),
-                                                    ],
-                                                  },
-                                                }
-                                              : it,
-                                          ),
-                                        )
+                                        applyEditOps([
+                                          {
+                                            op: 'patchTextInsert',
+                                            id: insert.id,
+                                            input: {
+                                              origin: [
+                                                insert.input.origin[0] + (bx - ax),
+                                                insert.input.origin[1] + (by - ay),
+                                              ],
+                                            },
+                                          },
+                                        ])
                                         setSelected(null)
                                       }}
                                       onPointerCancel={() => setInsertDrag(null)}
@@ -7901,10 +7744,11 @@ export default function App() {
                                   setRibbonTab('fillForm')
                                 }}
                                 onSignature={(widget) => openSignatureDialog(widget)}
-                                onEdit={(v2) => {
-                                  pushUndo(`form:${v2.name}`)
-                                  setFormEdits((prev) => new Map(prev).set(v2.name, v2))
-                                }}
+                                onEdit={(v2) =>
+                                  applyEditOps([{ op: 'setFormValue', value: v2 }], {
+                                    coalesceKey: `form:${v2.name}`,
+                                  })
+                                }
                               />
                             </>
                           )}
@@ -8328,8 +8172,7 @@ export default function App() {
                 onCancel={() => setPropsDlg(false)}
                 onApply={(meta) => {
                   setPropsDlg(false)
-                  pushUndo()
-                  setMetadata(meta)
+                  applyEditOps([{ op: 'setMetadata', metadata: meta }])
                 }}
               />
             )}

@@ -181,6 +181,27 @@ describe('handleSave formula cache overlay', () => {
     expect(savedB3).toContain('<f>2+2</f>')
     expect(savedB3).not.toContain('<v>')
   })
+
+  it("never writes IronCalc's #ERROR! into a cached <v> (issue 235)", async () => {
+    const { ctx, journal, overlay } = ctxWith({ dirty: false })
+    recordSetRangeValues(journal, 'sheet-1', { 5: { 5: { v: 1 } } })
+    overlay.set(
+      'sheet-1',
+      new Map([
+        ['0:0', { v: '#ERROR!' }],
+        ['0:1', { v: '#N/A' }],
+        ['0:2', { v: 7 }],
+      ]),
+    )
+    await handleSave(ctx, 'save')
+    const payload = saveWorkbookEdits.mock.calls[0]![0] as {
+      formulaValues: { row: number; column: number; value: unknown }[]
+    }
+    expect(payload.formulaValues).toEqual([
+      { sheetId: 'sheet-1', row: 0, column: 1, value: '#N/A' },
+      { sheetId: 'sheet-1', row: 0, column: 2, value: 7 },
+    ])
+  })
 })
 
 describe('handleSave restored-recovery write-back', () => {

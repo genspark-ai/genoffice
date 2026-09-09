@@ -116,6 +116,7 @@ describe('mapRangeResultToScreen', () => {
       hyperlinks: [{ row: 2, column: 0, target: 'https://example.com' }],
       conditionalRules: [],
       autoFilter: null,
+      autoFilterColumns: [],
       dataValidations: [],
       sheetProtection: null,
       rowBreaks: [],

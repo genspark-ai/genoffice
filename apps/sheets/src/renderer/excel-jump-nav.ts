@@ -29,6 +29,7 @@ import type { ICellData, ICommand, IRange, Worksheet } from '@univerjs/core'
 import { IShortcutService, KeyCode, MetaKeys } from '@univerjs/ui'
 import type { IShortcutItem } from '@univerjs/ui'
 import {
+  ScrollToCellOperation,
   SelectionMoveType,
   SetSelectionsOperation,
   SheetsSelectionsService,
@@ -358,6 +359,36 @@ function checkIfShrink(
   }
 }
 
+/**
+ * The cell to reveal after Ctrl+Shift+Arrow: the range corner AWAY from the
+ * anchor on the moving axis (covers expand and shrink in one rule — after a
+ * shrink the moving edge sits opposite the direction key), the anchor's own
+ * row/column on the other axis so the viewport never scrolls sideways for a
+ * vertical extension (and vice versa).
+ */
+function getExpandFocusCell(
+  destRange: IRange,
+  primary: { startRow: number; startColumn: number } | null | undefined,
+  direction: Direction,
+): { row: number; column: number } {
+  const vertical = direction === Direction.UP || direction === Direction.DOWN
+  const anchorRow = primary?.startRow ?? destRange.startRow
+  const anchorColumn = primary?.startColumn ?? destRange.startColumn
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
+  return {
+    row: vertical
+      ? anchorRow === destRange.startRow
+        ? destRange.endRow
+        : destRange.startRow
+      : clamp(anchorRow, destRange.startRow, destRange.endRow),
+    column: vertical
+      ? clamp(anchorColumn, destRange.startColumn, destRange.endColumn)
+      : anchorColumn === destRange.startColumn
+        ? destRange.endColumn
+        : destRange.startColumn,
+  }
+}
+
 export function registerExcelJumpNav(runtime: UniverRuntime): void {
   const injector = runtime.univer.__getInjector()
   const commandService = injector.get(ICommandService)
@@ -426,13 +457,36 @@ export function registerExcelJumpNav(runtime: UniverRuntime): void {
           )
       if (selection.range.rangeType !== undefined) destRange.rangeType = selection.range.rangeType
       if (Rectangle.equals(destRange, startRange)) return false
-      return accessor.get(ICommandService).syncExecuteCommand(SetSelectionsOperation.id, {
+      const commandService = accessor.get(ICommandService)
+      const applied = commandService.syncExecuteCommand(SetSelectionsOperation.id, {
         unitId,
         subUnitId,
         type: SelectionMoveType.MOVE_END,
         selections: [{ range: destRange, primary }],
         reveal: true,
       })
+      // `reveal` scrolls to `primary` — the anchor, which never moves while
+      // extending — so upstream pairs its ExpandSelectionCommand with a scroll
+      // controller listener that follows the moving edge. That listener keys
+      // on upstream's command id and never fires for this override, leaving
+      // the viewport behind the growing selection (alpha feedback, v0.8.x,
+      // Ctrl+Shift+Down extended B2:B65 with no scroll). Reveal the moving
+      // edge ourselves; the scroll no-ops when it is already visible.
+      if (applied) {
+        const { row, column } = getExpandFocusCell(destRange, primary, direction)
+        commandService.syncExecuteCommand(ScrollToCellOperation.id, {
+          unitId,
+          subUnitId,
+          range: {
+            startRow: row,
+            endRow: row,
+            startColumn: column,
+            endColumn: column,
+            rangeType: RANGE_TYPE.NORMAL,
+          },
+        })
+      }
+      return applied
     },
   }
 
@@ -472,6 +526,7 @@ export function registerExcelJumpNav(runtime: UniverRuntime): void {
 export const _internals = {
   excelCellHasValue,
   findNextGapRange,
+  getExpandFocusCell,
   MOVE_JUMP_COMMAND_ID,
   EXPAND_JUMP_COMMAND_ID,
 }

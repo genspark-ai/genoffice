@@ -229,6 +229,19 @@ describe('selectionQuadsByPage', () => {
     ])
   })
 
+  it('bridges word-sized gaps even when fragments arrive out of visual order', () => {
+    const { scrollEl } = setupPage()
+    mockSelection(scrollEl, [
+      domRect(60, 16, 80, 30),
+      domRect(10, 20, 30, 32),
+      domRect(35, 16, 55, 30),
+    ])
+
+    expect(selectionQuadsByPage(scrollEl, [geom(0)], 1)!.get(0)).toEqual([
+      [10, 184, 80, 184, 10, 168, 80, 168],
+    ])
+  })
+
   it('normalizes each visual line independently in a multiline selection', () => {
     const { scrollEl } = setupPage()
     mockSelection(scrollEl, [

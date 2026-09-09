@@ -32,6 +32,9 @@
   --icon-muted: #b9bfc7;
   --danger: #d13438;
   --danger-bg: #fdf3f3;
+  --search-hit-bg: #ffe28a;
+  --search-hit-active-bg: #ff9632;
+  --search-hit-active-ink: #fff;
   --danger-border: #f0c8c9;
   --success: #107c41;
   --success-bg: #eaf7ef;
@@ -103,6 +106,9 @@
   --icon-muted: #666;
   --danger: #d13438;
   --danger-bg: #3a2020;
+  --search-hit-bg: #745a1e;
+  --search-hit-active-bg: #d4781f;
+  --search-hit-active-ink: #1e1e1e;
   --danger-border: #5a3030;
   --success: #52c082;
   --success-bg: #20342a;
@@ -158,6 +164,9 @@
     --icon-muted: #666;
     --danger: #d13438;
     --danger-bg: #3a2020;
+    --search-hit-bg: #745a1e;
+    --search-hit-active-bg: #d4781f;
+    --search-hit-active-ink: #1e1e1e;
     --danger-border: #5a3030;
     --success: #52c082;
     --success-bg: #20342a;

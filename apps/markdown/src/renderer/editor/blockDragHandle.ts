@@ -4,6 +4,7 @@ import { NodeSelection, Plugin, PluginKey, TextSelection } from '@tiptap/pm/stat
 import type { EditorView } from '@tiptap/pm/view'
 import { installPopoverDismiss } from '@genoffice/ui'
 import { t } from '../i18n/locale'
+import { moveSelectedBlocks, uiOp } from './ops'
 
 /**
  * Notion-style block gutter: a `+` (insert below, opens the slash menu) and a
@@ -172,10 +173,17 @@ function dragHandlePlugin(editor: Editor): Plugin {
         run: () => void
       }> = [
         { labelKey: 'blockAddBelow', run: () => onPlusClick() },
-        { labelKey: 'blockDuplicate', run: () => void editor.commands.duplicateBlock() },
-        { labelKey: 'blockMoveUp', run: () => void editor.commands.moveBlockUp() },
-        { labelKey: 'blockMoveDown', run: () => void editor.commands.moveBlockDown() },
-        { labelKey: 'blockDelete', danger: true, run: () => void editor.commands.deleteBlock() },
+        {
+          labelKey: 'blockDuplicate',
+          run: () => void uiOp(editor, { op: 'duplicateBlocks', target: 'selection' }),
+        },
+        { labelKey: 'blockMoveUp', run: () => void moveSelectedBlocks(editor, -1) },
+        { labelKey: 'blockMoveDown', run: () => void moveSelectedBlocks(editor, 1) },
+        {
+          labelKey: 'blockDelete',
+          danger: true,
+          run: () => void uiOp(editor, { op: 'deleteBlocks', target: 'selection' }),
+        },
       ]
 
       const openMenu = () => {

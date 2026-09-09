@@ -58,9 +58,10 @@ export function ChartBody({
           outerRadius={wd.outerR}
           angle={wd.sweepDeg}
           rotation={wd.startDeg}
-          fill={wd.color}
-          stroke="#ffffff"
-          strokeWidth={1}
+          fill={wd.noFill ? undefined : wd.color}
+          {...(wd.strokeWidthPx === 0
+            ? {}
+            : { stroke: wd.stroke ?? '#ffffff', strokeWidth: wd.strokeWidthPx ?? 1 })}
         />
       ))}
       {chart.gridLines.map((g, i) => (
@@ -86,7 +87,7 @@ export function ChartBody({
           data={p.d}
           y={p.dy ?? 0}
           fill={p.fill}
-          {...(p.stroke ? { stroke: p.stroke, strokeWidth: 1 } : {})}
+          {...(p.stroke ? { stroke: p.stroke, strokeWidth: p.strokeWidthPx ?? 1 } : {})}
         />
       ))}
       {chart.bars.map((b, i) => (

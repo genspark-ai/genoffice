@@ -1,7 +1,11 @@
 import { LocaleType } from '@univerjs/core'
 import { describe, expect, it } from 'vitest'
 
-import { FORCE_STRING_POPUP_LOCALE, univerLocaleFor } from '../src/renderer/univer-locales'
+import {
+  insertRowsBelowLocale,
+  numberAsTextAlertLocale,
+  univerLocaleFor,
+} from '../src/renderer/univer-locales'
 
 describe('univerLocaleFor', () => {
   it('maps every app language Univer has packs for', () => {
@@ -24,9 +28,77 @@ describe('univerLocaleFor', () => {
     }
     expect(pack.default['sheets-data-validation']?.list?.name).toBe('值必须是列表中的值')
   })
+})
 
-  it('labels the force-string popup as a warning, not an error (#236)', () => {
-    expect(FORCE_STRING_POPUP_LOCALE.error).toBe('Warning')
-    expect(FORCE_STRING_POPUP_LOCALE.forceStringInfo).toContain('stored as text')
+describe('numberAsTextAlertLocale', () => {
+  it('replaces the "Error" titles and keeps the rest of the namespaces', async () => {
+    const core = (await import('@univerjs/preset-sheets-core/locales/en-US')).default as Record<
+      string,
+      Record<string, unknown>
+    >
+    const coreUi = core['sheets-ui'] as { info: Record<string, string> }
+    const patched = numberAsTextAlertLocale(core)
+    const numfmt = patched['sheets-numfmt-ui'] as { info: Record<string, string> }
+    const ui = patched['sheets-ui'] as { info: Record<string, string> }
+    expect(numfmt.info.error).toBe('Number stored as text')
+    expect(ui.info.error).toBe('Number stored as text')
+    expect(numfmt.info.forceStringInfo).toMatch(/stored as text/)
+    expect(ui.info.forceStringInfo).toBe(numfmt.info.forceStringInfo)
+    expect(Object.keys(numfmt).length).toBe(Object.keys(core['sheets-numfmt-ui'] ?? {}).length)
+    expect(Object.keys(ui).length).toBe(Object.keys(coreUi).length)
+    for (const key of Object.keys(coreUi.info)) {
+      expect(ui.info).toHaveProperty(key)
+    }
+  })
+
+  it('localizes the title from the numfmt pack', async () => {
+    const core = (await import('@univerjs/preset-sheets-core/locales/zh-CN')).default as Record<
+      string,
+      Record<string, unknown>
+    >
+    const patched = numberAsTextAlertLocale(core)
+    const coreNumfmt = core['sheets-numfmt-ui'] as { info: Record<string, string> }
+    const title = (patched['sheets-numfmt-ui'] as { info: Record<string, string> }).info.error
+    expect(title).not.toBe(coreNumfmt.info.error)
+    expect(title).toBe(coreNumfmt.info.forceStringInfo)
+    expect((patched['sheets-ui'] as { info: Record<string, string> }).info.error).toBe(title)
+  })
+})
+
+describe('insertRowsBelowLocale', () => {
+  it('rewords the English insert-rows-after entry to "rows below"', async () => {
+    const core = (await import('@univerjs/preset-sheets-core/locales/en-US')).default as Record<
+      string,
+      Record<string, unknown>
+    >
+    const patched = insertRowsBelowLocale(core)
+    const rightClick = (patched['sheets-ui'] as { rightClick: Record<string, string> }).rightClick
+    const coreRightClick = (core['sheets-ui'] as { rightClick: Record<string, string> }).rightClick
+    expect(rightClick.insertRowsAfterSuffix).toBe('rows below')
+    expect(rightClick.insertRowsAboveSuffix).toBe(coreRightClick.insertRowsAboveSuffix)
+    expect(Object.keys(rightClick).length).toBe(Object.keys(coreRightClick).length)
+  })
+
+  it('composes with the number-as-text patch (both survive the shallow merge)', async () => {
+    const core = (await import('@univerjs/preset-sheets-core/locales/en-US')).default as Record<
+      string,
+      Record<string, unknown>
+    >
+    const patched = insertRowsBelowLocale(numberAsTextAlertLocale(core))
+    const ui = patched['sheets-ui'] as {
+      info: Record<string, string>
+      rightClick: Record<string, string>
+    }
+    expect(ui.info.error).toBe('Number stored as text')
+    expect(ui.rightClick.insertRowsAfterSuffix).toBe('rows below')
+  })
+
+  it('leaves translated packs untouched', async () => {
+    const core = (await import('@univerjs/preset-sheets-core/locales/zh-CN')).default as Record<
+      string,
+      Record<string, unknown>
+    >
+    const patched = insertRowsBelowLocale(core)
+    expect(patched['sheets-ui']).toBe(core['sheets-ui'])
   })
 })

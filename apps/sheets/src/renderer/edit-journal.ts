@@ -1,3 +1,5 @@
+import { CellValueType } from '@univerjs/core'
+
 import type {
   WorkbookCellEdit,
   WorkbookBulkConstantFill,
@@ -18,6 +20,7 @@ import { splitSheetRef } from '../domain/chart-visual'
 import { CHART_CATEGORY_WIRE_MAX, CHART_TEXT_WIRE_MAX } from '../shared/desktop-api'
 import { ADDABLE_SHAPE_TYPES } from '../shared/shape-types'
 import { INDENT_STEP_PX } from './selection-format'
+import type { SharedFormulaResolver } from './shared-formula-journal'
 
 /// Tracks the user's cell edits on a streamed external workbook. Streaming
 /// evicts and re-installs viewport cells, so the journal is both the save
@@ -1550,11 +1553,15 @@ export function journalCellContentAt(
 }
 
 /// Ingests a `sheet.mutation.set-range-values` payload. Returns the entries
-/// that were recorded.
+/// that were recorded. `resolveSharedFormula` materializes shared-formula
+/// followers (`si` with no `f` — tiled paste / fill) into a concrete formula
+/// string; without it such cells journal as plain values and the follow-up
+/// recalc mutation can wipe them entirely.
 export function recordSetRangeValues(
   journal: EditJournal,
   sheetId: string,
   cellValue: unknown,
+  resolveSharedFormula?: SharedFormulaResolver,
 ): JournalEntry[] {
   if (typeof cellValue !== 'object' || cellValue === null) return []
   const recorded: JournalEntry[] = []
@@ -1565,7 +1572,16 @@ export function recordSetRangeValues(
     for (const [columnKey, cell] of Object.entries(rowValue as Record<string, unknown>)) {
       const column = Number(columnKey)
       if (!Number.isInteger(column) || column < 0) continue
-      const entry = mergeIntoJournal(journal, sheetId, row, column, cell)
+      let ingest = cell
+      if (resolveSharedFormula && typeof cell === 'object' && cell !== null) {
+        const data = cell as { f?: unknown; si?: unknown }
+        const hasFormula = typeof data.f === 'string' && data.f.length > 0
+        if (!hasFormula && typeof data.si === 'string' && data.si.length > 0) {
+          const materialized = resolveSharedFormula(row, column, data.si)
+          if (materialized) ingest = { ...cell, f: materialized }
+        }
+      }
+      const entry = mergeIntoJournal(journal, sheetId, row, column, ingest)
       if (entry) recorded.push(entry)
     }
   }
@@ -1710,7 +1726,7 @@ function mergeCellIntoEntry(
     // only an explicit `f: null` (editor overwrite) clears a journaled
     // formula — otherwise the value is just the formula's cached result.
     const isCalculationResult = previous?.formula !== undefined && !('f' in data)
-    const raw = data.v
+    const raw = plainCellValue(data.v, data.t)
     if (isCalculationResult) {
       // keep the journaled formula; the file stores <f> and Excel recalcs
     } else if (raw === null || raw === undefined) {
@@ -1741,6 +1757,16 @@ function mergeCellIntoEntry(
     ...(rich === undefined ? {} : { rich }),
     ...(styleReset ? { styleReset: true } : {}),
   }
+}
+
+/// Univer keeps booleans as `{v: 0|1, t: BOOLEAN}` (set-range-values
+/// normalizes a bare `true` the same way); the file model needs a real
+/// boolean or the save writes a number where Excel had TRUE/FALSE.
+export function plainCellValue(v: unknown, t: unknown): unknown {
+  if (t !== CellValueType.BOOLEAN) return v
+  if (typeof v === 'number') return v !== 0
+  if (typeof v === 'string') return v === '1' || v.toUpperCase() === 'TRUE'
+  return v
 }
 
 /// CSS <family-name>s can't start with a digit unless quoted or escaped, and

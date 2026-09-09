@@ -218,6 +218,7 @@ function assertModuleTreesPresent() {
     '../slides/out',
     '../pdf/out',
     '../markdown/out',
+    '../html/out',
   ]) {
     if (!existsSync(join(__dirname, rel))) {
       throw new Error(
@@ -267,6 +268,10 @@ const config = {
     {
       from: '../markdown/out',
       to: 'modules/markdown',
+    },
+    {
+      from: '../html/out',
+      to: 'modules/html',
     },
     // PDF text editing engines: the bundled main resolves these under
     // Resources/wasm when node_modules is absent (apps/pdf/src/main/wasm-path.ts)
@@ -376,6 +381,20 @@ const config = {
       role: 'Editor',
       icon: 'md',
       mimeType: 'text/markdown',
+    },
+    {
+      ext: 'html',
+      name: 'HTML Document',
+      role: 'Editor',
+      icon: 'html',
+      mimeType: 'text/html',
+    },
+    {
+      ext: 'htm',
+      name: 'HTML Document',
+      role: 'Editor',
+      icon: 'html',
+      mimeType: 'text/html',
     },
   ],
   npmRebuild: false,

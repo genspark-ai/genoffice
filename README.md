@@ -12,9 +12,9 @@ GenOffice is a free, open-source alternative to Microsoft Office for macOS,
 Windows, and Linux, built around AI editing as a first-class workflow rather
 than a bolted-on chat box. It opens and saves the real Microsoft Office
 formats — Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`) — and edits
-PDF and Markdown too: a word processor, spreadsheet, presentation editor,
-PDF editor, and Markdown editor as six Electron apps sharing one engine
-layer.
+PDF, Markdown, and HTML too: a word processor, spreadsheet, presentation
+editor, PDF editor, Markdown editor, and a design-first AI HTML page builder
+as seven Electron apps sharing one engine layer.
 
 [![Meet GenOffice — the world's first full-featured open-source AI Office (video)](https://img.youtube.com/vi/B2pLdMX95v4/maxresdefault.jpg)](https://www.youtube.com/watch?v=B2pLdMX95v4)
 
@@ -30,8 +30,11 @@ layer.
 - **Excel-compatible spreadsheets** — in-house engine with a Rust `.xlsx` sidecar, own charts, pivot tables, slicers.
 - **PowerPoint-compatible presentations** — in-house `.pptx` engine with masters, layouts, smart guides, non-destructive crop.
 - **Markdown to Word, fully local** — the same OOXML engine, no Pandoc, no cloud.
+- **HTML to Word, fully local** — Export as Word renders the page in the built-in Chromium, reduces it to a document intent tree (headings, paragraphs, lists, tables, cards, KPI rows, form fields, page backgrounds) and writes native, editable OOXML; only visuals with no Word counterpart (charts, icons, decorated boxes) become pictures. No print-to-PDF detour, no cloud.
+- **AI-designed HTML pages** — generate landing pages, reports, and posters as single self-contained HTML files, design-first; a _Write content_ mode for plain articles.
 - **AI that edits documents** — block-level edits with snapshots and diffs, document-aware agents.
 - **Bring your own key (BYOK)** — run the AI on your own API key: Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, OpenCode Zen/Go, or any OpenAI-compatible endpoint — or sign in with Genspark and skip keys entirely.
+- **BYOK for search and media too** — web search on your own Serper or Tavily key; image generation, image analysis, and video analysis each on the provider you choose (OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, or any OpenAI-compatible images endpoint), configured per capability in _AI Media & Search_.
 - **Agent tools built in** — web/image search, image generation, media analysis.
 - **Light / dark / system themes.**
 - **macOS, Windows, Linux.**
@@ -43,7 +46,7 @@ layer.
 | ------------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | **macOS** — Apple Silicon (arm64)    | macOS 11+                                             | [Latest `.dmg` (arm64)](https://github.com/genspark-ai/genoffice/releases/latest)         |
 | **macOS** — Intel (x64)              | macOS 11+                                             | [Latest `.dmg` (x64)](https://github.com/genspark-ai/genoffice/releases/latest)           |
-| **Windows** (x64)                    | Windows 10+                                           | [Latest `.exe` installer](https://github.com/genspark-ai/genoffice/releases/latest)       |
+| **Windows** (x64, most PCs)          | Windows 10+, Intel/AMD                                | [Latest `-x64.exe` installer](https://github.com/genspark-ai/genoffice/releases/latest)   |
 | **Windows** on Arm (ARM64)           | Windows 11 on Arm (Snapdragon X and similar)          | [Latest `-arm64.exe` installer](https://github.com/genspark-ai/genoffice/releases/latest) |
 | **Linux** — Debian / Ubuntu          | x86_64, glibc 2.34+ (Ubuntu 22.04 or newer)           | [Latest `.deb`](https://github.com/genspark-ai/genoffice/releases/latest)                 |
 | **Linux** — Fedora / RHEL / openSUSE | x86_64, glibc 2.34+ (Fedora 35+, RHEL 9+, Leap 15.6+) | [Latest `.rpm`](https://github.com/genspark-ai/genoffice/releases/latest)                 |
@@ -79,14 +82,15 @@ chmod +x GenOffice-<version>.AppImage
 
 ## Apps
 
-| App             | Product                | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/docs`     | **GenOffice Docs**     | `.docx` word processor. Byte-preserving round trip: only dirty paragraphs are regenerated (paragraph patch), everything else in the original file is kept byte-for-byte, so opening and saving never breaks layout in Word. Paginated view whose line metrics reproduce the original document's layout, tracked changes, comments, styles, equations, ink.                                                                                                                                                                                                                                                                                                                                                                               |
-| `apps/sheets`   | **GenOffice Sheets**   | `.xlsx` spreadsheet. UI built on the open-source [Univer](https://github.com/dream-num/univer) core (Apache-2.0) with a large layer of in-house extensions; `.xlsx` import/export runs through an in-house Rust sidecar (calamine + IronCalc), charts are rendered in-house (Konva), plus pivot tables, slicers, conditional formatting, and formula tracing.                                                                                                                                                                                                                                                                                                                                                                            |
-| `apps/slides`   | **GenOffice Slides**   | `.pptx` presentations. In-house `.pptx` parse/render/edit engine with masters, charts, cropping, ink, and text shaping (HarfBuzz metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `apps/pdf`      | **GenOffice PDF**      | `.pdf` viewer/editor on [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0) + [pdf-lib](https://github.com/Hopding/pdf-lib) (MIT): annotations, forms, outlines, stamps, signatures, page operations, and printing support. True text editing — paragraph selection with in-block reflow, alignment restoration, original-font preservation — and content-stream image insert/edit, all rewriting page content streams through [PDFium](https://pdfium.googlesource.com/pdfium/) wasm (BSD-3-Clause) with subset-embedded fonts — no cover-up annotations. Converts PDFs into editable Word, PowerPoint, and Excel files fully locally (`packages/pdf2docx`), with OCR support for scanned pages (system OCR on macOS and Windows). |
-| `apps/markdown` | **GenOffice Markdown** | `.md` / `.markdown` editor: Tiptap block editor over plain Markdown files — headings, lists, tables, images, code blocks — saved back as plain Markdown, hosted in shell tabs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `apps/shell`    | **GenOffice**          | The suite shell: home screen, tabbed hosting of the five editors, light/dark/system theme, auto-update.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| App             | Product                | What it is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| --------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/docs`     | **GenOffice Docs**     | `.docx` word processor. Byte-preserving round trip: only dirty paragraphs are regenerated (paragraph patch), everything else in the original file is kept byte-for-byte, so opening and saving never breaks layout in Word. Paginated view whose line metrics reproduce the original document's layout, tracked changes, comments, styles, equations, ink.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `apps/sheets`   | **GenOffice Sheets**   | `.xlsx` spreadsheet. UI built on the open-source [Univer](https://github.com/dream-num/univer) core (Apache-2.0) with a large layer of in-house extensions; `.xlsx` import/export runs through an in-house Rust sidecar (calamine + IronCalc), charts are rendered in-house (Konva), plus pivot tables, slicers, conditional formatting, and formula tracing.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `apps/slides`   | **GenOffice Slides**   | `.pptx` presentations. In-house `.pptx` parse/render/edit engine with masters, charts, cropping, ink, and text shaping (HarfBuzz metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `apps/pdf`      | **GenOffice PDF**      | `.pdf` viewer/editor on [pdf.js](https://github.com/mozilla/pdf.js) (Apache-2.0) + [pdf-lib](https://github.com/Hopding/pdf-lib) (MIT): annotations, forms, outlines, stamps, signatures, page operations, and printing support. True text editing — paragraph selection with in-block reflow, alignment restoration, original-font preservation — and content-stream image insert/edit, all rewriting page content streams through [PDFium](https://pdfium.googlesource.com/pdfium/) wasm (BSD-3-Clause) with subset-embedded fonts — no cover-up annotations. Converts PDFs into editable Word, PowerPoint, and Excel files fully locally (`packages/pdf2docx`), with OCR support for scanned pages (system OCR on macOS and Windows).                                                                                  |
+| `apps/html`     | **GenOffice HTML**     | Single-file `.html` page builder, design-first. A blank page starts from two intents: _Design a page_ (the AI proposes a design brief — hook, palette, typography, section layouts — with alternative style directions to pick from, then writes the page against `--brief-*` design tokens) or _Write content_ (an article, announcement, or guide written straight into a clean page). Live sandboxed preview with an inspector: click to select an element, double-click to edit text, a floating toolbar and style panel for typography, box, color, and image edits, and element-scoped Ask AI; CodeMirror source view kept in sync; desktop / tablet / phone widths; Present in the tab, fullscreen, or a new tab; export to PDF, and to Word as a native editable `.docx` built on-device by `packages/html2docx`. |
+| `apps/markdown` | **GenOffice Markdown** | `.md` / `.markdown` editor: Tiptap block editor over plain Markdown files — headings, lists, tables, images, code blocks — saved back as plain Markdown, hosted in shell tabs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `apps/shell`    | **GenOffice**          | The suite shell: home screen, tabbed hosting of the six editors, light/dark/system theme, auto-update.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Every app embeds the same AI panel: block-granular AI editing with version
 snapshots and diffs in docs, a tool-calling agent over workbook/slide/PDF
@@ -107,7 +111,11 @@ GPT, and Gemini families). Or bring your own key (BYOK) in the AI settings:
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
 Mistral, OpenRouter, and OpenCode Zen/Go are built in, plus a custom provider
 slot for any OpenAI-compatible endpoint (base URL + key), local servers
-included. A
+included. Image generation and image/video analysis have their own provider
+catalog (AI Media & Search settings): OpenAI, Gemini, Doubao/Seedream, GLM
+CogView, Grok Imagine, Qwen-Image, MiniMax or any OpenAI-compatible images
+endpoint, each with its own key and assignable per capability; web search can
+likewise run on your own Serper or Tavily key. A
 Genspark account also unlocks the Genspark ("gsk") tool endpoints the agents
 build on — web and image search, image generation and editing,
 image/audio/video analysis, and audio transcription — all reachable through
@@ -124,6 +132,10 @@ All pure TypeScript, no Electron dependency, unit-tested (except the UI kit):
 - `packages/pdf2docx` — local PDF → DOCX conversion: PDFium character-level
   extraction, pure-geometry layout analysis, rebuild through `docx-engine`;
   the same analysis drives the PDF app's PowerPoint and Excel exports.
+- `packages/html2docx` — local HTML → DOCX conversion: the page is rendered in
+  the app's own Chromium, reduced in-browser to a document intent tree, and
+  written as native OOXML with the `docx` library; only visuals with no Word
+  counterpart are screenshotted. Drives the HTML app's Export as Word.
 - `packages/file-parse` — text extraction for AI attachments (office formats,
   text formats).
 - `packages/agent-core` — the AI agent loop and skill composition shared by
@@ -142,7 +154,7 @@ npm install
 npm run fixtures     # generate test .docx fixtures
 npm test             # engine + app unit tests (docs/sheets/slides need no display)
 npm run typecheck    # tsc --noEmit across every workspace
-npm run dev          # all five editors + shell against Vite dev servers
+npm run dev          # all six editors + shell against Vite dev servers
 npm run dev:docs     # a single app (same pattern works per workspace)
 npm run dist:mac     # package macOS dmg (regenerates third-party notices)
 npm run dist:win     # package Windows nsis installer
@@ -203,6 +215,28 @@ key (BYOK) for Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao,
 MiniMax, Grok, Mistral, OpenRouter, and OpenCode Zen/Go, plus any
 OpenAI-compatible endpoint — including local model servers.
 
+**Can I bring my own keys for search, image generation, and media analysis?**
+Yes. Settings → AI Media & Search takes separate keys per capability: web
+search on Serper or Tavily, and image generation, image analysis, and video
+analysis each on OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax, or
+any OpenAI-compatible images endpoint. Anything left on Genspark keeps using
+your Genspark sign-in.
+
+**Can GenOffice design web pages?**
+Yes. GenOffice HTML is a design-first page builder: describe a landing page,
+report, or poster, pick a style direction from the proposed design brief, and
+the AI lays out a single self-contained `.html` file you then refine visually
+— select an element to restyle it or ask AI about it. Pages present
+fullscreen and export to PDF and Word.
+
+**Can GenOffice convert HTML to Word?**
+Yes — Export as Word in the HTML app produces a native, editable `.docx`
+entirely on-device. The page is rendered in the built-in Chromium and reduced
+to real Word structures: headings, paragraphs, lists, tables, cards, KPI rows,
+form fields, and page backgrounds; only visuals with no Word counterpart
+(charts, icons, decorated boxes) are embedded as pictures. Nothing is printed
+to PDF first and nothing is uploaded.
+
 **Does GenOffice collect any data?**
 Official packaged builds send limited usage analytics by default, and you can
 disable reporting at any time under Settings → General. Analytics never sends
@@ -230,6 +264,7 @@ GenOffice would not be possible without these open-source projects:
   document assembly.
 - [Tiptap](https://tiptap.dev/) / [ProseMirror](https://prosemirror.net/) —
   the block editors in Docs and Markdown.
+- [CodeMirror](https://codemirror.net/) (MIT) — the source editor in HTML.
 - [Konva](https://konvajs.org/) — canvas rendering for Slides and Sheets
   charts.
 - [HarfBuzz](https://github.com/harfbuzz/harfbuzz) (wasm) — text-shaping

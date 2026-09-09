@@ -80,11 +80,20 @@ describe('replace_image', () => {
     })
   })
 
-  it('rejects non-http urls', async () => {
+  it('rejects unknown url schemes', async () => {
     const r = await createSlidesSkill(mkAccess()).executeTool!(
-      call('replace_image', { url: 'file:///etc/passwd' }),
+      call('replace_image', { url: 'data:image/png;base64,AAAA' }),
     )
     expect(r.isError).toBe(true)
     expect(api().replacePictureUrl).not.toHaveBeenCalled()
+  })
+
+  it('forwards file:// urls — the main process resolves only the generated-image store', async () => {
+    await createSlidesSkill(mkAccess()).executeTool!(
+      call('replace_image', { url: 'file:///tmp/genoffice-ai-images/1234.png' }),
+    )
+    expect(api().replacePictureUrl).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'file:///tmp/genoffice-ai-images/1234.png' }),
+    )
   })
 })

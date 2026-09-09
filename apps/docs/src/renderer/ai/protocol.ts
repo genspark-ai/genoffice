@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { TextSelection } from '@tiptap/pm/state'
 import {
   TABLE_HEADER_FILL,
   type Block,
@@ -12,6 +13,10 @@ import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
 import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-formatting'
 import { collectRevisions, TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { countWords } from '../word-count'
+import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
+import { opSignatures } from './ops'
+
+export { blockRangePositions, isTrackedDeleted, liveText }
 
 /**
  * Agent protocol: the model runs a multi-turn tool-use loop — it reads the document skeleton
@@ -29,59 +34,53 @@ const PREVIEW_MAX_CHARS = 60
 const PREVIEW_TIGHT_CHARS = 20
 
 /**
- * Guide for the apply_commands tool: format,
- * structure and batch operations travel as a batchUpdate-style JSON envelope
- * executed deterministically by commands.ts.
+ * Guide for the apply_ops tool: format, structure and batch operations travel
+ * as a flat op list executed atomically by ops.ts. The signature lines come
+ * from the op registry, so the guide cannot drift from the implementation.
  */
-export const COMMANDS_GUIDE = [
-  "The command format mimics documents.batchUpdate of the Google Docs API: each command is a single-key object; the fields array has the same semantics as Google's FieldMask — only the listed fields are updated, everything not listed is left untouched. Differences from Google: target uses semantic addressing (node type / text containment / block index), colors are 6-digit hex (no #), lengths are in twips, font sizes are in half-points.",
+export const OPS_GUIDE = [
+  'apply_ops runs a list of ops as ONE atomic transaction: every op is validated first and any invalid op rejects the whole batch (the error quotes the op\'s usage line). Each op is a flat object { op, target?, ...fields }. Fields are patches: a present field is set, null clears it, an absent field is left untouched — never repeat properties the user did not ask to change. Colors are "#RRGGBB", font sizes are points, lengths are twips (1 pt = 20 twips). Pass dryRun: true to validate and see the plan without changing the document.',
   '',
-  'The commands input is an array of commands executed in order. Command schema (TypeScript):',
+  'Target (all conditions are ANDed; provide at least one):',
   '```',
-  'interface Target {  // all conditions are ANDed; provide at least one',
+  'interface Target {',
   "  nodeType?: 'docHeading' | 'docParagraph' | 'docListItem' | 'image'  // image = image block",
   "  headingLevel?: number        // only together with nodeType: 'docHeading'",
   '  containsText?: string        // block plain text contains this substring',
   '  matchCase?: boolean          // defaults to true',
   '  blockIndexes?: number[]      // indexes from the "document block list"',
-  "  scope?: 'selection' | 'document'  // selection = only blocks covered by the current selection",
+  "  scope?: 'selection' | 'document'  // selection = only blocks covered by the current selection; when part of a block is selected, setFont / setMatchedFont / findReplace act only on the selected characters (paragraph-level ops still apply to the whole block)",
   '}',
-  "{ updateTextStyle: { target, style: { color?, highlight?, sizeHalfPoints?, font?, bold?, italic?, underline?, strike?, baselineOffset?: 'SUPERSCRIPT'|'SUBSCRIPT'|'NONE', link?: {url}|null }, fields: string[] } }  // value null = clear that property; font applies only to its own script's slot (an East Asian font keeps the run's Latin font and vice versa)",
-  "{ updateParagraphStyle: { target, style: { align?: 'left'|'center'|'right'|'justify', lineSpacing?, indentLeft?, indentRight?, indentFirstLine?, spaceBefore?, spaceAfter?, pageBreakBefore?, shadingFill?, borders?: subset of 'tblr'|null }, fields: string[] } }  // indentFirstLine positive = first-line indent, negative = hanging; a two-character indent for CJK text ≈ font size in pt × 40 twips",
-  '{ setHeadingLevel: { target, level: 0-6 } }  // 0 = demote to body paragraph',
-  "{ replaceAllText: { containsText, replaceText, matchCase?, target? } }  // target narrows the scanned blocks (blockIndexes / scope:'selection' / nodeType); omitted = whole document. The replacement keeps the matched text's formatting — the right tool for small in-place fixes (a few words inside a sentence)",
-  '{ updateMatchedTextStyle: { containsText, matchCase?, target?, style, fields } }  // character-level styling: applies the run style (same style/fields as updateTextStyle) only to the matched text itself, not the whole block',
-  '{ deleteBlocks: { target } }',
-  '{ moveBlocks: { blockIndexes: number[], afterBlockIndex: number } }  // -1 = start of document',
-  '{ createParagraphBullets: { target, bulletPreset? } }  // paragraphs to list; BULLET_* prefix = unordered, NUMBERED_* = ordered (default unordered); heading blocks are not converted',
-  '{ deleteParagraphBullets: { target } }  // list items back to body paragraphs',
-  "{ updateImageProperties: { target, properties: { widthPx?, heightPx?, align?: 'left'|'center'|'right' }, fields } }  // image blocks only; giving one dimension scales proportionally",
-  '{ insertToc: { afterBlockIndex } }  // insert a TOC field after that block index (-1 = start of document); entries come from current headings, Word computes page numbers on open; fails if the document has no headings',
+  '```',
+  'Ops:',
+  '```',
+  ...opSignatures(),
   '```',
   '',
   'Common recipes:',
-  '- "Make all headings red" → commands: [{"updateTextStyle":{"target":{"nodeType":"docHeading"},"style":{"color":"FF0000"},"fields":["color"]}}]',
-  '- "1.5 line spacing for the whole document" → one updateParagraphStyle each for docParagraph / docHeading / docListItem, style {"lineSpacing":1.5}, fields ["lineSpacing"]',
-  '- "Demote the \'Risk Notice\' level-2 heading to level 3" → commands: [{"setHeadingLevel":{"target":{"nodeType":"docHeading","headingLevel":2,"containsText":"Risk Notice"},"level":3}}]',
-  '- "Delete blocks 3 to 5" → commands: [{"deleteBlocks":{"target":{"blockIndexes":[3,4,5]}}}]',
-  '- "Turn blocks 2 to 4 into a numbered list" → commands: [{"createParagraphBullets":{"target":{"blockIndexes":[2,3,4]},"bulletPreset":"NUMBERED_DECIMAL_ALPHA_ROMAN"}}]',
-  '- "Center all images" → commands: [{"updateImageProperties":{"target":{"nodeType":"image"},"properties":{"align":"center"},"fields":["align"]}}]',
-  '- "In block 5, change 8% to 9%" → commands: [{"replaceAllText":{"containsText":"8%","replaceText":"9%","target":{"blockIndexes":[5]}}}]',
-  '- "Bold every TODO:" → commands: [{"updateMatchedTextStyle":{"containsText":"TODO:","style":{"bold":true},"fields":["bold"]}}]',
-  '- "Two-character first-line indent for the whole document" (11 pt font) → one updateParagraphStyle for docParagraph, style {"indentFirstLine":440}, fields ["indentFirstLine"]',
-  '- "Insert a table of contents at the beginning" → commands: [{"insertToc":{"afterBlockIndex":-1}}]; if the user wants the TOC on its own page, also apply updateParagraphStyle to the first body block after the TOC with style {"pageBreakBefore":true}, fields ["pageBreakBefore"]',
-  '- Cover page recipe: use insert_content to insert one paragraph each for title/subtitle/date at the start of the document, then updateTextStyle to enlarge the title font (e.g. {"sizeHalfPoints":72}, fields ["sizeHalfPoints"]), updateParagraphStyle to center everything and give the title {"spaceBefore":4800}, and finally set {"pageBreakBefore":true} on the first body block after the cover',
+  '- "Make all headings red" → ops: [{"op":"setFont","target":{"nodeType":"docHeading"},"color":"#FF0000"}]',
+  '- "1.5 line spacing for the whole document" → one setParagraphFormat each for docParagraph / docHeading / docListItem with "lineSpacing":1.5',
+  '- "Demote the \'Risk Notice\' level-2 heading to level 3" → ops: [{"op":"setHeadingLevel","target":{"nodeType":"docHeading","headingLevel":2,"containsText":"Risk Notice"},"level":3}]',
+  '- "Delete blocks 3 to 5" → ops: [{"op":"deleteBlocks","target":{"blockIndexes":[3,4,5]}}]',
+  '- "Turn blocks 2 to 4 into a numbered list" → ops: [{"op":"setList","target":{"blockIndexes":[2,3,4]},"kind":"number"}]',
+  '- "Center all images" → ops: [{"op":"setImageProperties","target":{"nodeType":"image"},"align":"center"}]',
+  '- "In block 5, change 8% to 9%" → ops: [{"op":"findReplace","find":"8%","replace":"9%","target":{"blockIndexes":[5]}}]',
+  '- "Bold every TODO:" → ops: [{"op":"setMatchedFont","text":"TODO:","bold":true}]',
+  '- "Make the selected words 14 pt blue" (partial selection) → ops: [{"op":"setFont","target":{"scope":"selection"},"fontSize":14,"color":"#1A73E8"}]',
+  '- "Two-character first-line indent for the whole document" (11 pt font) → one setParagraphFormat for docParagraph with "indentFirstLine":440',
+  '- "Insert a table of contents at the beginning" → ops: [{"op":"insertToc","afterBlockIndex":-1}]; if the user wants the TOC on its own page, also setParagraphFormat the first body block after the TOC with "pageBreakBefore":true',
+  '- Cover page recipe: use insert_content to insert one paragraph each for title/subtitle/date at the start of the document, then setFont to enlarge the title (e.g. "fontSize":36), setParagraphFormat to center everything and give the title "spaceBefore":4800, and finally set "pageBreakBefore":true on the first body block after the cover',
   '',
   'Discipline:',
-  '- Read the "document block list" before issuing commands; anything like "paragraph N / a certain section" must be addressed with block indexes from the list — never guess;',
-  '- Put only the properties the user explicitly asked for into fields;',
-  '- Protected blocks such as images cannot be modified with style commands (they are skipped); to change table content, use read_blocks to get the <table> and rewrite it wholesale with replace_blocks (the table keeps its column widths, borders, shading and cell formatting; cells whose text you leave unchanged keep their content untouched).',
+  '- Read the "document block list" before issuing ops; anything like "paragraph N / a certain section" must be addressed with block indexes from the list — never guess;',
+  '- Only give the fields the user explicitly asked to change;',
+  '- Protected blocks such as images cannot be modified with style ops (they are skipped); to change table content, use read_blocks to get the <table> and rewrite it wholesale with replace_blocks (the table keeps its column widths, borders, shading and cell formatting; cells whose text you leave unchanged keep their content untouched).',
   '',
   'Known error cases (must avoid):',
-  'BC-1 Putting properties the user did not ask for into fields, wiping existing formatting by mistake;',
+  'BC-1 Giving fields the user did not ask for, wiping existing formatting by mistake;',
   'BC-2 A "whole document" formatting operation only changed docParagraph and missed docHeading/docListItem;',
-  'BC-3 Addressing by word/character position (no such addressing exists); use block indexes or text containment instead;',
-  'BC-4 Using replaceAllText sentence by sentence for rewrites such as translation/abbreviation; use the replace_blocks tool instead;',
+  'BC-3 Addressing by word/character position (no such addressing exists); use block indexes, text containment or the selection instead;',
+  'BC-4 Using findReplace sentence by sentence for rewrites such as translation/abbreviation; use replace_blocks (or replace_selection for a selected span) instead;',
 ].join('\n')
 
 const HTML_RULES = [
@@ -91,6 +90,7 @@ const HTML_RULES = [
   '- Use <pre> for code samples (monospace font + shading, line breaks preserved); use <blockquote> for quotations (indent + left bar)',
   '- Use <formula>LaTeX</formula> for math (produces native Word equations): as a top-level block it becomes its own centered paragraph; placed inside <p>/<li>/<h*> text it is an inline formula flowing with the text, e.g. <p>From <formula>E = mc^2</formula> we know…</p>; supports the common subset of \\frac \\sqrt super/subscripts \\sum \\int \\lim matrix environments Greek letters etc., the align environment is not supported; invalid LaTeX fails the whole call — fix and retry',
   '- Do not include <html>/<body>, markdown code fences, or explanatory text',
+  "- <sel>…</sel> appears only in the context to mark the user's selection; it is not a tag you may write",
   '- Organize long content into sections with h2/h3 (unless the user only wants a single paragraph)',
   '- Keep the same language as the original document / user instruction, unless translation is requested',
 ].join('\n')
@@ -112,9 +112,10 @@ export const AGENT_SYSTEM_PROMPT = [
   '- Every user message carries the latest "document block list" (index|type|content preview; previews may be truncated); after modifications, call get_document_context if you need the latest state;',
   '- When a list preview is truncated, read the full content with read_blocks before rewriting; never rewrite based on a truncated preview;',
   '- Content changes: use insert_content for new content, and replace_blocks to rewrite/replace existing blocks (pass a block index range and the new HTML); replaced blocks pass their paragraph and text formatting (font, size, color, indent, spacing, alignment) on to the new blocks automatically, and a rewritten table keeps its widths, borders, shading and cell formatting, so a rewrite never needs follow-up formatting commands;',
-  '- Formatting, structure, and batch operations (color/font size/line spacing/alignment/indent/heading level/find & replace/delete/move/list conversion) go through apply_commands — do not rewrite whole blocks with replace_blocks;',
-  '- Small in-place text fixes (changing a few words inside a sentence) go through apply_commands replaceAllText with a target — do not rewrite the whole block; styling every occurrence of a phrase (e.g. bold each "TODO") uses updateMatchedTextStyle;',
+  '- Formatting, structure, and batch operations (color/font size/line spacing/alignment/indent/heading level/find & replace/delete/move/list conversion) go through apply_ops — do not rewrite whole blocks with replace_blocks;',
+  '- Small in-place text fixes (changing a few words inside a sentence) go through apply_ops findReplace with a target — do not rewrite the whole block; styling every occurrence of a phrase (e.g. bold each "TODO") uses setMatchedFont;',
   '- When the user has text selected, the message includes the selection block indexes and content; rewrite-style requests apply to the selection by default;',
+  '- When only part of a block is selected, the selected span is delimited by <sel>…</sel> and repeated as "Selected text": "this"/"the selected text" means exactly that span. Restyle it with apply_ops and target {"scope":"selection"} (run-level ops then touch only the selected characters); rewrite it with replace_selection. Never restyle or rewrite the whole block for a partial selection;',
   '- Web search: use web_search when you need up-to-date information/data/fact checking; search before writing about uncertain facts — do not fabricate;',
   '- Illustrations: when the user wants pictures, first image_search (English keywords work better) → pick a suitable result → insert_image with its imageUrl; when the user asks to generate/draw a picture, or search cannot match the needed illustration, use generate_image with a detailed English prompt;',
   '- Tracked deletions (struck-through revision text) are not part of the current content and are hidden from the block list/read_blocks/stats; when a [tracked deletion] tag or a skipped-deletion notice appears, that text is already deleted — never try to delete or rewrite it again (the user accepts/rejects revisions in the Review tab);',
@@ -130,7 +131,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '',
   '# Template filling',
   '- When the user asks to fill in a template/form, first scan the document for placeholders: [bracketed labels], {{curly names}}, runs of underscores (____), and protected content-control blocks whose label reads as a field.',
-  "- List every placeholder found (with block indexes). Fill the ones the user's message answers via replaceAllText with a target so the surrounding formatting survives; for the rest, ask for the missing values in one consolidated question — never invent facts to fill a field.",
+  "- List every placeholder found (with block indexes). Fill the ones the user's message answers via findReplace with a target so the surrounding formatting survives; for the rest, ask for the missing values in one consolidated question — never invent facts to fill a field.",
   "- Dates follow the user's locale; never change text outside the placeholders.",
   '',
   '# Headers & footers',
@@ -150,8 +151,8 @@ export const AGENT_SYSTEM_PROMPT = [
   '# HTML fragment rules',
   HTML_RULES,
   '',
-  '# apply_commands command guide',
-  COMMANDS_GUIDE,
+  '# apply_ops guide',
+  OPS_GUIDE,
 ].join('\n')
 
 export { countWords }
@@ -164,6 +165,9 @@ export interface SelectionScope {
   endIndex: number
   /** true when the user has an actual range selected (not just a caret) */
   isRange: boolean
+  /** exact ProseMirror positions; run-level commands narrow to them when the range is partial */
+  from?: number
+  to?: number
 }
 
 export function getSelectionScope(editor: Editor): SelectionScope {
@@ -188,61 +192,31 @@ export function getSelectionScope(editor: Editor): SelectionScope {
     startIndex = doc.childCount - 1
     endIndex = doc.childCount - 1
   }
-  return { startIndex, endIndex, isRange: !empty }
-}
-
-/** ProseMirror positions of a top-level child index range */
-export function blockRangePositions(
-  editor: Editor,
-  startIndex: number,
-  endIndex: number,
-): { from: number; to: number } {
-  const doc = editor.state.doc
-  let from = 0
-  let to = 0
-  let index = 0
-  doc.forEach((node, offset) => {
-    if (index === startIndex) from = offset
-    if (index === endIndex) to = offset + node.nodeSize
-    index++
-  })
-  return { from, to }
-}
-
-// ---- tracked deletions (pending revisions are not current content) ----
-
-const hasDelMark = (node: ProseMirrorNode) => node.marks.some((m) => m.type.name === 'del')
-
-/** block text as it reads once pending tracked deletions are applied (textContent minus del runs) */
-export function liveText(node: ProseMirrorNode): string {
-  if ((node.attrs?.blockRevision as { kind?: string } | null)?.kind === 'del') return ''
-  let out = ''
-  const walk = (child: ProseMirrorNode): void => {
-    if (hasDelMark(child)) return
-    if (child.isText) out += child.text ?? ''
-    else if (child.isLeaf) out += child.type.spec.leafText?.(child) ?? ''
-    else child.forEach(walk)
-  }
-  node.forEach(walk)
-  return out
+  return { startIndex, endIndex, isRange: !empty, from, to }
 }
 
 /**
- * The whole block is a pending deletion revision (struck through in the editor).
- * Checked structurally, not by text length: atom leaves (inline formulas, ruby)
- * carry no textContent, so a live formula must still count as live content.
+ * The character-precise part of a range selection, clamped to its block range;
+ * null when the selection covers the blocks whole (or carries no positions).
  */
-export function isTrackedDeleted(node: ProseMirrorNode): boolean {
-  if ((node.attrs?.blockRevision as { kind?: string } | null)?.kind === 'del') return true
-  let hasContent = false
-  let hasLive = false
-  node.descendants((child) => {
-    if (child.isText || (child.isInline && child.isLeaf)) {
-      hasContent = true
-      if (!hasDelMark(child)) hasLive = true
-    }
-  })
-  return hasContent && !hasLive
+export function partialSelection(
+  editor: Editor,
+  scope: SelectionScope,
+): { from: number; to: number } | null {
+  if (!scope.isRange || scope.from === undefined || scope.to === undefined) return null
+  const doc = editor.state.doc
+  if (scope.startIndex < 0 || scope.endIndex >= doc.childCount) return null
+  const { from, to } = blockRangePositions(editor, scope.startIndex, scope.endIndex)
+  const first = doc.child(scope.startIndex)
+  const last = doc.child(scope.endIndex)
+  // character precision exists only for top-level text blocks; a range that
+  // starts or ends inside a table / protected block keeps whole-block semantics
+  if (!first.isTextblock || !last.isTextblock) return null
+  if (scope.from <= from + 1 && scope.to >= to - 1) return null
+  return {
+    from: Math.min(Math.max(scope.from, from), to),
+    to: Math.min(Math.max(scope.to, from), to),
+  }
 }
 
 // ---- blocks -> restricted HTML ----
@@ -251,39 +225,82 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function inlineToHtml(content: PmNode[] | undefined): string {
+function wrapInlineText(raw: string, marks: PmMark[]): string {
+  let text = escapeHtml(raw)
+  const has = (type: string) => marks.some((m: PmMark) => m.type === type)
+  if (has('bold')) text = `<strong>${text}</strong>`
+  if (has('italic')) text = `<em>${text}</em>`
+  if (has('underline')) text = `<u>${text}</u>`
+  if (has('strike')) text = `<s>${text}</s>`
+  const link = marks.find((m: PmMark) => m.type === 'link')
+  if (link?.attrs?.href) text = `<a href="${escapeHtml(String(link.attrs.href))}">${text}</a>`
+  return text
+}
+
+function inlineAtomToHtml(node: PmNode): string {
+  if (node.type === 'hardBreak') return '<br>'
+  if (node.type === 'docInlineMath') {
+    // editor-created formulas round-trip as LaTeX; parsed-from-docx ones
+    // degrade to the flat token strip (structure lost if the model rewrites)
+    const source = String(node.attrs?.latex ?? '') || String(node.attrs?.text ?? '')
+    return source ? `<formula>${escapeHtml(source)}</formula>` : ''
+  }
+  if (node.type === 'docRuby') return escapeHtml(String(node.attrs?.base ?? ''))
+  return ''
+}
+
+/** Character offsets (relative to the block's content start) of the user's selection inside this block */
+export interface InlineSelection {
+  from: number
+  to: number
+}
+
+/**
+ * Inline content as restricted HTML. With `sel`, the selected span is
+ * delimited by <sel>…</sel> (text nodes split at the boundaries). Every inline
+ * node other than text is an atom, so it occupies exactly one position.
+ */
+function inlineToHtml(content: PmNode[] | undefined, sel?: InlineSelection): string {
   if (!content) return ''
   let html = ''
-  for (const node of content) {
-    // del-marked runs are pending deletions, not current content
-    if ((node.marks ?? []).some((m: PmMark) => m.type === 'del')) continue
-    if (node.type === 'hardBreak') {
-      html += '<br>'
-      continue
+  let pos = 0
+  let open = false
+  let pending = sel && sel.from < sel.to ? sel : null
+  const boundary = (at: number) => {
+    if (!pending) return
+    if (!open && at >= pending.from && at < pending.to) {
+      html += '<sel>'
+      open = true
     }
-    if (node.type === 'docInlineMath') {
-      // editor-created formulas round-trip as LaTeX; parsed-from-docx ones
-      // degrade to the flat token strip (structure lost if the model rewrites)
-      const source = String(node.attrs?.latex ?? '') || String(node.attrs?.text ?? '')
-      if (source) html += `<formula>${escapeHtml(source)}</formula>`
-      continue
+    if (open && at >= pending.to) {
+      html += '</sel>'
+      open = false
+      pending = null
     }
-    if (node.type === 'docRuby') {
-      html += escapeHtml(String(node.attrs?.base ?? ''))
-      continue
-    }
-    if (node.type !== 'text' || !node.text) continue
-    let text = escapeHtml(node.text)
-    const marks = node.marks ?? []
-    const has = (type: string) => marks.some((m: PmMark) => m.type === type)
-    if (has('bold')) text = `<strong>${text}</strong>`
-    if (has('italic')) text = `<em>${text}</em>`
-    if (has('underline')) text = `<u>${text}</u>`
-    if (has('strike')) text = `<s>${text}</s>`
-    const link = marks.find((m: PmMark) => m.type === 'link')
-    if (link?.attrs?.href) text = `<a href="${escapeHtml(String(link.attrs.href))}">${text}</a>`
-    html += text
   }
+  for (const node of content) {
+    // del-marked runs are pending deletions, not current content (but they still occupy positions)
+    const deleted = (node.marks ?? []).some((m: PmMark) => m.type === 'del')
+    if (node.type === 'text') {
+      const text = node.text ?? ''
+      const marks = node.marks ?? []
+      const end = pos + text.length
+      const cuts = [pos]
+      if (pending) for (const c of [pending.from, pending.to]) if (c > pos && c < end) cuts.push(c)
+      cuts.push(end)
+      for (let i = 0; i < cuts.length - 1; i++) {
+        boundary(cuts[i])
+        if (!deleted) html += wrapInlineText(text.slice(cuts[i] - pos, cuts[i + 1] - pos), marks)
+      }
+      pos = end
+      continue
+    }
+    boundary(pos)
+    if (!deleted) html += inlineAtomToHtml(node)
+    pos += 1
+  }
+  boundary(pos)
+  if (open) html += '</sel>'
   return html
 }
 
@@ -294,6 +311,31 @@ function inlineToPlainText(content: PmNode[] | undefined): string {
     .filter((n) => !(n.marks ?? []).some((m: PmMark) => m.type === 'del'))
     .map((n) => (n.type === 'hardBreak' ? '\n' : n.type === 'text' ? (n.text ?? '') : ''))
     .join('')
+}
+
+/** <pre> body: escaped plain text, the selected span delimited by <sel>…</sel> like the rich blocks */
+function codeToHtml(content: PmNode[] | undefined, sel?: InlineSelection): string {
+  if (!content) return ''
+  const plain = inlineToPlainText(content)
+  if (!sel || sel.from >= sel.to) return escapeHtml(plain)
+  // deleted runs are dropped from the text but still occupy positions: map positions to text offsets
+  let pos = 0
+  let offset = 0
+  let start = -1
+  let end = -1
+  for (const n of content) {
+    const size = n.type === 'text' ? (n.text ?? '').length : 1
+    const kept = !(n.marks ?? []).some((m: PmMark) => m.type === 'del')
+    const width = kept ? (n.type === 'text' ? size : n.type === 'hardBreak' ? 1 : 0) : 0
+    if (start < 0 && sel.from < pos + size)
+      start = offset + (kept ? Math.max(sel.from - pos, 0) : 0)
+    if (end < 0 && sel.to <= pos + size) end = offset + (kept ? Math.max(sel.to - pos, 0) : 0)
+    pos += size
+    offset += width
+  }
+  if (start < 0) start = plain.length
+  if (end < 0) end = plain.length
+  return `${escapeHtml(plain.slice(0, start))}<sel>${escapeHtml(plain.slice(start, end))}</sel>${escapeHtml(plain.slice(end))}`
 }
 
 /** paragraph carries the <pre> preset (see CODE_BLOCK_PRESET) */
@@ -325,9 +367,15 @@ function tableToHtml(table: TableModel): string {
 
 /**
  * Serialize top-level nodes [startIndex, endIndex] into restricted HTML.
- * Consecutive list items of the same kind are grouped into ul/ol.
+ * Consecutive list items of the same kind are grouped into ul/ol. With `sel`
+ * (absolute positions), the selected characters are delimited by <sel>…</sel>.
  */
-export function serializeRangeToHtml(editor: Editor, startIndex: number, endIndex: number): string {
+export function serializeRangeToHtml(
+  editor: Editor,
+  startIndex: number,
+  endIndex: number,
+  sel?: { from: number; to: number } | null,
+): string {
   const json = editor.getJSON() as PmNode
   const children = (json.content ?? []).slice(startIndex, endIndex + 1)
   const parts: string[] = []
@@ -338,6 +386,14 @@ export function serializeRangeToHtml(editor: Editor, startIndex: number, endInde
     const tag = listBuffer.kind === 'ordered' ? 'ol' : 'ul'
     parts.push(`<${tag}>${listBuffer.items.join('')}</${tag}>`)
     listBuffer = null
+  }
+  const inlineSel = (i: number): InlineSelection | undefined => {
+    if (!sel) return undefined
+    const pmNode = editor.state.doc.child(startIndex + i)
+    const start = blockRangePositions(editor, startIndex + i, startIndex + i).from + 1
+    const from = Math.max(sel.from, start) - start
+    const to = Math.min(sel.to, start + pmNode.content.size) - start
+    return from < to ? { from, to } : undefined
   }
 
   for (let i = 0; i < children.length; i++) {
@@ -350,22 +406,22 @@ export function serializeRangeToHtml(editor: Editor, startIndex: number, endInde
     if (node.type === 'docHeading') {
       flushList()
       const level = Math.min(Math.max(Number(node.attrs?.level) || 1, 1), 6)
-      parts.push(`<h${level}>${inlineToHtml(node.content)}</h${level}>`)
+      parts.push(`<h${level}>${inlineToHtml(node.content, inlineSel(i))}</h${level}>`)
     } else if (node.type === 'docListItem') {
       const kind = (node.attrs?.kind as string) ?? 'bullet'
       if (!listBuffer || listBuffer.kind !== kind) {
         flushList()
         listBuffer = { kind, items: [] }
       }
-      listBuffer.items.push(`<li>${inlineToHtml(node.content)}</li>`)
+      listBuffer.items.push(`<li>${inlineToHtml(node.content, inlineSel(i))}</li>`)
     } else if (node.type === 'docParagraph') {
       flushList()
       if (isCodeParagraph(node)) {
-        parts.push(`<pre>${escapeHtml(inlineToPlainText(node.content))}</pre>`)
+        parts.push(`<pre>${codeToHtml(node.content, inlineSel(i))}</pre>`)
       } else if (isQuoteParagraph(node)) {
-        parts.push(`<blockquote>${inlineToHtml(node.content)}</blockquote>`)
+        parts.push(`<blockquote>${inlineToHtml(node.content, inlineSel(i))}</blockquote>`)
       } else {
-        parts.push(`<p>${inlineToHtml(node.content)}</p>`)
+        parts.push(`<p>${inlineToHtml(node.content, inlineSel(i))}</p>`)
       }
     } else if (node.type === 'docTable') {
       flushList()
@@ -520,10 +576,13 @@ export function buildDocumentContext(
   }
 
   scope ??= getSelectionScope(editor)
+  const partialNote = partialSelection(editor, scope)
+    ? ' (part of the text only — see the <sel> markers in the selected content)'
+    : ''
   const selLine = scope.isRange
     ? scope.startIndex === scope.endIndex
-      ? `Current selection: block ${scope.startIndex}`
-      : `Current selection: blocks ${scope.startIndex}-${scope.endIndex}`
+      ? `Current selection: block ${scope.startIndex}${partialNote}`
+      : `Current selection: blocks ${scope.startIndex}-${scope.endIndex}${partialNote}`
     : `No selection; cursor is in block ${scope.startIndex}`
 
   // authoritative stats for answer mode (previews above may be clipped)
@@ -701,18 +760,33 @@ export function buildDocContext(
 ): string {
   const isEmptyDoc = isBlankDocument(editor)
   scope ??= getSelectionScope(editor)
+  const partial = partialSelection(editor, scope)
   const selectionHtml = scope.isRange
-    ? clip(serializeRangeToHtml(editor, scope.startIndex, scope.endIndex), SELECTION_MAX_CHARS)
+    ? clip(
+        serializeRangeToHtml(editor, scope.startIndex, scope.endIndex, partial),
+        SELECTION_MAX_CHARS,
+      )
     : ''
+  const selectedText = partial
+    ? editor.state.doc.textBetween(partial.from, partial.to, '\n', ' ')
+    : ''
+  const selectionLines = partial
+    ? [
+        `Content selected by the user (blocks ${scope.startIndex}-${scope.endIndex}; ONLY the span inside <sel>…</sel> is selected, the rest of these blocks is shown for context):`,
+        selectionHtml,
+        `Selected text (${selectedText.length} characters): "${clip(selectedText, 1000)}"`,
+      ]
+    : [
+        `Content selected by the user (blocks ${scope.startIndex}-${scope.endIndex}):`,
+        selectionHtml,
+      ]
   return [
     isEmptyDoc
       ? 'The document is currently blank.'
       : `Document block list:\n${buildDocumentContext(editor, scope, hf)}`,
     // a blank body can still carry headers/footers (template setup): keep them visible
     isEmptyDoc && hf ? hfContextLines(hf).join('\n') : '',
-    selectionHtml
-      ? `Content selected by the user (blocks ${scope.startIndex}-${scope.endIndex}):\n${selectionHtml}`
-      : '',
+    selectionHtml ? selectionLines.join('\n') : '',
     comments && comments.length > 0 ? buildCommentsContext(editor, comments) : '',
   ]
     .filter(Boolean)
@@ -1010,6 +1084,30 @@ export function parseHtmlFragment(raw: string, numIds: NumIds): PmNode[] {
   return out
 }
 
+const BLOCK_TAG = /<\/?(h[1-6]|p|div|ul|ol|li|table|thead|tbody|tr|th|td|pre|blockquote)\b/gi
+
+/**
+ * Parse the replacement for a selected span: plain text or inline HTML, or a
+ * single <p>…</p>. Any other block structure is refused — the selection lives
+ * inside one text block, so a multi-block answer belongs to replace_blocks.
+ */
+export function parseInlineFragment(raw: string): PmNode[] {
+  let text = raw.trim()
+  const fence = /```(?:html)?\s*([\s\S]*?)```/.exec(text)
+  if (fence) text = fence[1].trim()
+  const single = /^<p(?:\s[^>]*)?>([\s\S]*)<\/p>$/i.exec(text)
+  if (single) text = single[1]
+  if (BLOCK_TAG.test(text)) {
+    BLOCK_TAG.lastIndex = 0
+    throw new Error(
+      'replace_selection takes inline content for the selected span only; block tags (p/h*/ul/table…) mean a rewrite of whole blocks — use replace_blocks',
+    )
+  }
+  const parsed = new DOMParser().parseFromString(`<p>${text}</p>`, 'text/html')
+  const p = parsed.body.firstElementChild
+  return p ? parseInline(p, []) : []
+}
+
 // ---- applying parsed fragments ----
 
 /** record the AI's content change as tracked revisions under this author */
@@ -1182,6 +1280,39 @@ export function replaceBlockRange(
   }
   editor.view.dispatch(editor.state.tr.replaceWith(from, to, pmNodes))
   return true
+}
+
+/**
+ * Replace an inline range inside one text block with the given inline nodes
+ * (the replace_selection tool). The new text becomes the selection so a
+ * follow-up scope:'selection' command targets it. With `track`, the old text
+ * stays struck through (del) and the new text follows with ins marks.
+ */
+export function replaceInlineRange(
+  editor: Editor,
+  from: number,
+  to: number,
+  nodes: ProseMirrorNode[],
+  track?: AiTrack,
+): void {
+  const tr = editor.state.tr
+  const blockPos = tr.doc.resolve(from).before(1)
+  const inserted = nodes.reduce((size, n) => size + n.nodeSize, 0)
+  if (track) {
+    const date = revisionDate()
+    const { ins, del } = editor.schema.marks
+    tr.insert(to, nodes)
+    if (inserted > 0) tr.addMark(to, to + inserted, ins.create({ author: track.author, date }))
+    tr.addMark(from, to, del.create({ author: track.author, date }))
+    tr.setSelection(TextSelection.create(tr.doc, to, to + inserted))
+    tr.setMeta(TRACK_IGNORE, true)
+  } else {
+    tr.replaceWith(from, to, nodes)
+    tr.setSelection(TextSelection.create(tr.doc, from, from + inserted))
+    const block = tr.doc.nodeAt(blockPos)
+    if (block) tr.setNodeMarkup(blockPos, undefined, { ...block.attrs, aiChanged: true })
+  }
+  editor.view.dispatch(tr)
 }
 
 /** insert the parsed nodes after the given top-level block index */

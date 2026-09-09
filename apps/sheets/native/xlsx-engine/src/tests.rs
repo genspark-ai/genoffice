@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use super::*;
 
 #[test]
@@ -13,6 +15,85 @@ fn normalizes_crlf_and_stray_cr_to_lf() {
     let mut untouched = "plain\ntext".to_owned();
     normalize_line_endings(&mut untouched);
     assert_eq!(untouched, "plain\ntext");
+}
+
+#[test]
+fn decodes_xlsx_character_escapes() {
+    assert_eq!(decode_xlsx_escapes("a_x000D_b"), "a\rb");
+    assert_eq!(decode_xlsx_escapes("a_x0009_b"), "a\tb");
+    assert_eq!(decode_xlsx_escapes("a_x001b_b"), "a\u{1b}b");
+    assert_eq!(decode_xlsx_escapes("_x005F_x000D_"), "_x000D_");
+    assert_eq!(
+        decode_xlsx_escapes("_xZZZZ_ _x00D_ _x000D"),
+        "_xZZZZ_ _x00D_ _x000D"
+    );
+    assert_eq!(decode_xlsx_escapes("_x000D__x000A_"), "\r\n");
+    assert!(matches!(
+        decode_xlsx_escapes("plain _x text"),
+        Cow::Borrowed(_)
+    ));
+}
+
+/// Excel writes CR LF as `_x000D_` + raw LF; the pair must collapse into a
+/// single line break, not two.
+#[test]
+fn escaped_cr_before_raw_line_break_is_one_break() {
+    let mut text = "LINE ONE _x000D_\r\nLINE TWO _x000D_\nLINE THREE".to_owned();
+    normalize_cell_text(&mut text);
+    assert_eq!(text, "LINE ONE \nLINE TWO \nLINE THREE");
+}
+
+#[test]
+fn shared_and_inline_strings_decode_escapes() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/sharedStrings.xml",
+            "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><si><t>E151 _x000D_\r\nLINE TWO</t></si><si><r><t>a_x0009_</t></r><r><rPr><b/></rPr><t>_x005F_x0009_</t></r></si></sst>",
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="inlineStr"><is><t>x_x000D_y</t></is></c><c r="D1"><f>"_x000D_"</f><v>_x000D_</v></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let range = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 3,
+    };
+    let result = sessions
+        .read_range(&metadata.session_id, "sheet-1", &range)
+        .unwrap();
+    let text = |column: usize| {
+        let cell = result
+            .cells
+            .iter()
+            .find(|cell| cell.column == column)
+            .unwrap();
+        match &cell.value {
+            Some(CellValue::String(text)) => text.clone(),
+            other => panic!("unexpected {other:?}"),
+        }
+    };
+    assert_eq!(text(0), "E151 \nLINE TWO");
+    assert_eq!(text(1), "a\t_x0009_");
+    assert_eq!(text(2), "x\ny");
+    let rich = result.cells.iter().find(|cell| cell.column == 1).unwrap();
+    let runs = rich.rich.as_ref().unwrap();
+    assert_eq!(runs[0].text, "a\t");
+    assert_eq!(runs[1].text, "_x0009_");
+    let formula_cell = result.cells.iter().find(|cell| cell.column == 3).unwrap();
+    assert_eq!(formula_cell.formula.as_deref(), Some("=\"_x000D_\""));
 }
 
 #[test]
@@ -637,6 +718,34 @@ fn stale_small_dimension_is_remeasured() {
     let metadata = sessions.open(&path).unwrap();
     assert_eq!(metadata.sheets[0].row_count, 40);
     assert_eq!(metadata.sheets[0].column_count, 6);
+}
+
+/// A <dimension> reaching the last column (A1:XFD32, written by Yozo Office)
+/// declares the whole sheet width; trusting it would give the grid 16384
+/// columns and make every whole-sheet scan (Find) walk half a million cells.
+#[test]
+fn full_width_dimension_is_remeasured() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<dimension ref="A1:XFD32"/>
+<sheetData><row r="1"><c r="A1"><v>1</v></c><c r="K1"><v>2</v></c></row><row r="3"><c r="C3"><v>3</v></c></row></sheetData>
+</worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    assert_eq!(metadata.sheets[0].row_count, 32);
+    assert_eq!(metadata.sheets[0].column_count, 11);
 }
 
 /// Non-conformant packages (tdf131575, written by old .NET tooling) use
@@ -1507,6 +1616,71 @@ fn ole_object_without_anchor_borrows_the_drawing_fallback() {
     );
     // Read-only: no drawing edit locator.
     assert!(ole.drawing_path.is_none() && ole.drawing_index.is_none());
+}
+
+/// A slicer graphicFrame ships as mc:AlternateContent with a text-box
+/// fallback ("This shape represents a slicer..."). Excel renders the slicer,
+/// so the fallback text must never surface; a read-only placeholder carrying
+/// the slicer part's caption takes the frame's footprint.
+#[test]
+fn slicer_alternate_content_becomes_a_captioned_placeholder_not_the_fallback_text() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData/><drawing r:id="rId2"/></worksheet>"#,
+        ),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/><Relationship Id="rId3" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="../slicers/slicer1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/slicers/slicer1.xml",
+            r#"<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><slicer name="Week" cache="Slicer_Week" caption="Week of year" rowHeight="260350"/></slicers>"#,
+        ),
+        (
+            "xl/drawings/drawing1.xml",
+            r#"<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>2</xdr:col><xdr:colOff>65314</xdr:colOff><xdr:row>8</xdr:row><xdr:rowOff>162196</xdr:rowOff></xdr:from><xdr:to><xdr:col>2</xdr:col><xdr:colOff>1397091</xdr:colOff><xdr:row>13</xdr:row><xdr:rowOff>176107</xdr:rowOff></xdr:to><mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"><mc:Choice Requires="a14"><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="3" name="Week"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/drawing/2010/slicer"><sle:slicer xmlns:sle="http://schemas.microsoft.com/office/drawing/2010/slicer" name="Week"/></a:graphicData></a:graphic></xdr:graphicFrame></mc:Choice><mc:Fallback xmlns=""><xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="0" name=""/><xdr:cNvSpPr><a:spLocks noTextEdit="1"/></xdr:cNvSpPr></xdr:nvSpPr><xdr:spPr><a:xfrm><a:off x="598714" y="1795054"/><a:ext cx="1317172" cy="1263832"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:prstClr val="white"/></a:solidFill><a:ln w="1"><a:solidFill><a:prstClr val="green"/></a:solidFill></a:ln></xdr:spPr><xdr:txBody><a:bodyPr vertOverflow="clip" horzOverflow="clip"/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1100"/><a:t>This shape represents a slicer. Slicers are supported in Excel 2010 or later.</a:t></a:r></a:p></xdr:txBody></xdr:sp></mc:Fallback></mc:AlternateContent><xdr:clientData/></xdr:twoCellAnchor><xdr:twoCellAnchor><xdr:from><xdr:col>5</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>7</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="4" name="Note"/><xdr:cNvSpPr/></xdr:nvSpPr><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr><xdr:txBody><a:bodyPr/><a:p><a:r><a:t>Real shape</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    assert_eq!(metadata.visuals.len(), 2);
+    let slicer = &metadata.visuals[0];
+    assert_eq!(slicer.kind, "slicer");
+    assert_eq!(slicer.name.as_deref(), Some("Week"));
+    assert_eq!(slicer.text.as_deref(), Some("Week of year"));
+    assert!(slicer.paragraphs.is_none());
+    assert_eq!(
+        (
+            slicer.anchor.from_row,
+            slicer.anchor.from_column,
+            slicer.anchor.to_row,
+            slicer.anchor.to_column
+        ),
+        (8, 2, 13, 2)
+    );
+    // Read-only, like OLE: no drawing edit locator.
+    assert!(slicer.drawing_path.is_none() && slicer.drawing_index.is_none());
+    // The neighbouring real shape is untouched and keeps its locator.
+    let shape = &metadata.visuals[1];
+    assert_eq!(shape.kind, "shape");
+    assert_eq!(shape.text.as_deref(), Some("Real shape"));
+    assert_eq!(shape.drawing_index, Some(1));
+    assert!(metadata.visuals.iter().all(|visual| {
+        !visual
+            .text
+            .as_deref()
+            .unwrap_or("")
+            .contains("This shape represents")
+    }));
 }
 
 /// The OLE visual takes its fallback shape's place in the drawing so a
@@ -3173,5 +3347,78 @@ fn serializes_sparklines_in_expected_shape() {
             "color": "#376092",
             "cells": [{ "cell": "D2", "sourceRef": "Sheet1!A2:C2" }]
         })
+    );
+}
+
+/// The autoFilter's filterColumn criteria round-trip through the range
+/// result: checked values (with XML escapes and the blank flag), comparison
+/// criteria, and colId offsets. Color-filter columns and customSheetViews
+/// copies of the autoFilter are ignored.
+#[test]
+fn reads_auto_filter_column_criteria() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>h</t></is></c></row><row r="2" hidden="1"><c r="A2"><v>1</v></c></row></sheetData><autoFilter ref="A1:C9"><filterColumn colId="0"><filters blank="1"><filter val="Tello &amp; Co"/><filter val="Café"/></filters></filterColumn><filterColumn colId="1"><customFilters and="1"><customFilter operator="greaterThan" val="5"/><customFilter operator="lessThanOrEqual" val="20"/></customFilters></filterColumn><filterColumn colId="2"><colorFilter dxfId="0"/></filterColumn></autoFilter><customSheetViews><customSheetView guid="{1}"><autoFilter ref="A1:A2"><filterColumn colId="0"><filters><filter val="stale"/></filters></filterColumn></autoFilter></customSheetView></customSheetViews></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let sheet_id = metadata.sheets[0].id.clone();
+    let range = CellRange {
+        start_row: 0,
+        end_row: 1,
+        start_column: 0,
+        end_column: 0,
+    };
+    let result = loop {
+        let result = sessions
+            .read_range(&metadata.session_id, &sheet_id, &range)
+            .unwrap();
+        if result.indexing_complete {
+            break result;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    };
+    let area = result.auto_filter.expect("autoFilter range");
+    assert_eq!(
+        (
+            area.start_row,
+            area.start_column,
+            area.end_row,
+            area.end_column
+        ),
+        (0, 0, 8, 2)
+    );
+    assert_eq!(result.auto_filter_columns.len(), 2);
+    let first = &result.auto_filter_columns[0];
+    assert_eq!(first.col_id, 0);
+    assert!(first.blank);
+    assert_eq!(
+        first.values.as_deref(),
+        Some(&["Tello & Co".to_owned(), "Café".to_owned()][..])
+    );
+    assert!(first.customs.is_none());
+    let second = &result.auto_filter_columns[1];
+    assert_eq!(second.col_id, 1);
+    assert!(second.values.is_none());
+    assert!(!second.blank);
+    let customs = second.customs.as_ref().expect("custom criteria");
+    assert!(customs.and);
+    assert_eq!(customs.filters.len(), 2);
+    assert_eq!(customs.filters[0].val, "5");
+    assert_eq!(customs.filters[0].operator.as_deref(), Some("greaterThan"));
+    assert_eq!(customs.filters[1].val, "20");
+    assert_eq!(
+        customs.filters[1].operator.as_deref(),
+        Some("lessThanOrEqual")
     );
 }

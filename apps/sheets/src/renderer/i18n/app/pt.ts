@@ -333,6 +333,8 @@ export const pt = {
   appDialogCancel: 'Cancelar',
   appPivotSheetNoMove:
     'Esta planilha contém uma Tabela Dinâmica — mover intervalos ainda não é suportado.',
+  appMergeOverTable:
+    'A seleção sobrepõe uma tabela do Excel — mesclar células dentro de uma tabela ainda não é suportado.',
   appTableFilterNoEdit:
     'O filtro desta planilha pertence a uma tabela do Excel — a edição ainda não pode ser salva.',
   appAutofillStreaming:
@@ -597,6 +599,8 @@ export const pt = {
     'Alterações de nomes definidos não podem ser salvas junto com alterações de linhas/colunas ou de estrutura de planilhas — salve em duas etapas.',
   appSaveErrChangedOnDisk:
     'O arquivo foi alterado no disco por outro programa — salvamento cancelado; reabra o arquivo e tente novamente.',
+  appSaveErrTargetLocked:
+    'Não foi possível substituir o arquivo — parece bloqueado por outro programa (aberto no Excel ou em verificação/sincronização). Feche-o lá e salve novamente.',
   appSaveErrStylesheetLimited:
     'A folha de estilos desta pasta de trabalho não tem a estrutura básica; as alterações de estilo não podem ser salvas.',
   appSaveErrPackageGuard:

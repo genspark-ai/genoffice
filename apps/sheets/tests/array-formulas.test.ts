@@ -15,6 +15,25 @@ describe('collectArrayFollowers', () => {
     expect([...followers]).toEqual(['1:0'])
   })
 
+  it('keeps the followers of a master the engine will not evaluate', () => {
+    const followers = new Set<string>()
+    collectArrayFollowers(
+      followers,
+      [
+        {
+          row: 1,
+          column: 0,
+          value: 46237,
+          formula: '=IFERROR(__xludf.DUMMYFUNCTION("VSTACK(A6:K113)"),46237)',
+          arrayRef: 'A2:L433',
+        },
+        { row: 2, column: 0, value: 'kept' },
+      ],
+      [],
+    )
+    expect(followers.size).toBe(0)
+  })
+
   it('leaves single-cell array formulas alone', () => {
     const followers = new Set<string>()
     collectArrayFollowers(
@@ -42,7 +61,7 @@ describe('collectArrayFollowers', () => {
     const followers = new Set<string>()
     collectArrayFollowers(
       followers,
-      [{ row: 3, column: 0, value: 7, formula: '=X', arrayRef: 'A2:A3' }],
+      [{ row: 3, column: 0, value: 7, formula: '=TRANSPOSE(B1:C1)', arrayRef: 'A2:A3' }],
       [{ kind: 'insert-rows', index: 0, count: 2 }],
     )
     expect([...followers]).toEqual(['4:0'])
@@ -73,7 +92,7 @@ describe('collectArrayFollowers', () => {
     // envelope would blank all of 1-4; only screen row 4 is a real follower.
     collectArrayFollowers(
       followers,
-      [{ row: 0, column: 0, value: 7, formula: '=X', arrayRef: 'A1:A2' }],
+      [{ row: 0, column: 0, value: 7, formula: '=TRANSPOSE(B1:C1)', arrayRef: 'A1:A2' }],
       [{ kind: 'move-rows', index: 2, count: 3, before: 1 }],
     )
     expect([...followers]).toEqual(['4:0'])

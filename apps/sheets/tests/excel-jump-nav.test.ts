@@ -128,3 +128,42 @@ describe('findNextGapRange (UP/LEFT/RIGHT)', () => {
     expect(range.startColumn).toBe(3)
   })
 })
+
+describe('getExpandFocusCell', () => {
+  const { getExpandFocusCell } = _internals
+  const anchor = { startRow: 1, startColumn: 1 } // B2
+
+  it('expanding DOWN from the anchor reveals the bottom edge, same column', () => {
+    const dest = { startRow: 1, endRow: 64, startColumn: 1, endColumn: 1 }
+    expect(getExpandFocusCell(dest, anchor, Direction.DOWN)).toEqual({ row: 64, column: 1 })
+  })
+
+  it('shrinking with UP (anchor still on top) tracks the moving bottom edge', () => {
+    const dest = { startRow: 1, endRow: 29, startColumn: 1, endColumn: 1 }
+    expect(getExpandFocusCell(dest, anchor, Direction.UP)).toEqual({ row: 29, column: 1 })
+  })
+
+  it('anchor at the bottom: extending UP reveals the top edge', () => {
+    const bottomAnchor = { startRow: 64, startColumn: 1 }
+    const dest = { startRow: 1, endRow: 64, startColumn: 1, endColumn: 1 }
+    expect(getExpandFocusCell(dest, bottomAnchor, Direction.UP)).toEqual({ row: 1, column: 1 })
+  })
+
+  it('horizontal extension reveals the moving column edge, same row', () => {
+    const dest = { startRow: 1, endRow: 1, startColumn: 1, endColumn: 12 }
+    expect(getExpandFocusCell(dest, anchor, Direction.RIGHT)).toEqual({ row: 1, column: 12 })
+  })
+
+  it('vertical extension of a multi-column selection keeps the anchor column', () => {
+    const dest = { startRow: 1, endRow: 40, startColumn: 1, endColumn: 4 }
+    expect(getExpandFocusCell(dest, { startRow: 1, startColumn: 2 }, Direction.DOWN)).toEqual({
+      row: 40,
+      column: 2,
+    })
+  })
+
+  it('falls back to the direction edge when there is no primary', () => {
+    const dest = { startRow: 1, endRow: 40, startColumn: 1, endColumn: 1 }
+    expect(getExpandFocusCell(dest, null, Direction.DOWN)).toEqual({ row: 40, column: 1 })
+  })
+})

@@ -79,6 +79,13 @@ describe('containsUnresolvedNames', () => {
     // A bracketed number inside a string literal is not a workbook index.
     expect(containsUnresolvedNames('CONCAT("[1]",A1)')).toBe(false)
   })
+
+  it('flags path-qualified external-workbook references (issue 235)', () => {
+    expect(containsUnresolvedNames("'C:\\data\\[source.xlsx]Sheet1'!A1*2")).toBe(true)
+    expect(containsUnresolvedNames('[source.xlsm]Sheet1!A1')).toBe(true)
+    expect(containsUnresolvedNames("SUM('[Budget 2024.xlsx]Q1'!A1:A9)")).toBe(true)
+    expect(containsUnresolvedNames('INDEX(A1:A9,MATCH("[x.xlsx]",B1:B9,0))')).toBe(false)
+  })
 })
 
 describe('formulaKeepsCache', () => {

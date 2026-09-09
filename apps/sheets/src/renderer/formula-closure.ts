@@ -107,15 +107,18 @@ export function parseFormulaReferences(formula: string): FormulaReference[] {
   return references
 }
 
+const EXTERNAL_WORKBOOK_PATTERN = /\[(?:\d+|[^[\]]*\.xl\w*)\]/i
+
 /// True when the formula uses an identifier that is not a function call —
 /// a defined name or an external reference the closure cannot resolve.
 export function containsUnresolvedNames(formula: string): boolean {
   const segments = formula.split('"')
   for (let index = 0; index < segments.length; index += 2) {
-    // [n]Sheet!ref / '[n]Sheet name'!ref is an external-workbook reference:
-    // the reference pattern would swallow it as an ordinary sheet reference,
-    // but the closure can never resolve another workbook.
-    if (/\[\d+\]/.test(segments[index] ?? '')) return true
+    // [n]Sheet!ref / '[n]Sheet name'!ref / 'C:\dir\[Book.xlsx]Sheet'!ref is
+    // an external-workbook reference: the reference pattern would swallow it
+    // as an ordinary sheet reference, but the closure can never resolve
+    // another workbook.
+    if (EXTERNAL_WORKBOOK_PATTERN.test(segments[index] ?? '')) return true
     // Strip references (and their qualifiers) so ref letters don't register.
     const stripped = (segments[index] ?? '').replace(
       FORMULA_REFERENCE_PATTERN,

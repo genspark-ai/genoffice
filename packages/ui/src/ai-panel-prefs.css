@@ -1,0 +1,7 @@
+/* AI panel text size (Settings → General). The chat log and composer are
+   scaled as a block so the per-app px type scale keeps its proportions;
+   the factor comes from applyAiPanelPrefs() via --ai-font-zoom. */
+html[data-ai-font-size] .ai-chat,
+html[data-ai-font-size] .ai-composer {
+  zoom: var(--ai-font-zoom, 1);
+}

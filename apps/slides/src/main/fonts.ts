@@ -743,7 +743,8 @@ class FontRegistry {
     return undefined
   }
 
-  /** Document-embedded face for the requested family: exact style, else degrade to regular. */
+  /** Document-embedded face for the requested family: exact style, degrade to regular, else
+   *  whatever style is embedded (PowerPoint draws a bold-only embed for plain runs too). */
   private tryEmbedded(
     origKey: string,
     style: RunStyle,
@@ -751,7 +752,7 @@ class FontRegistry {
     const perStyle = embeddedFaces.get(origKey)
     if (!perStyle) return undefined
     const want = `${style.bold ? 1 : 0}${style.italic ? 1 : 0}`
-    for (const k of [...new Set([want, `${want[0]}0`, `0${want[1]}`, '00'])]) {
+    for (const k of [...new Set([want, `${want[0]}0`, `0${want[1]}`, '00', ...perStyle.keys()])]) {
       const path = perStyle.get(k)
       if (!path) continue
       const hit = this.loadBest(path, origKey, style, origKey, weightTargetOf(style.fontFamily))
@@ -819,15 +820,29 @@ class FontRegistry {
     // measure/draw a different weight than PowerPoint)
     const wReq = /w([0-9])$/.exec(origKey)?.[1]
     if (wReq) suffixes.unshift(`w${wReq}`)
-    const tryFamily = (family: string) => {
+    // strict: only a face whose own weight/slant matches the request. The alias pass first
+    // looks for a real bold/italic face across every alias (Yu Gothic UI Bold lives in
+    // YuGothB.ttc, not in the first alias YuGothM.ttc) before any alias may degrade to regular.
+    const faceMatches = (font: OpentypeFontLike): boolean => {
+      const w = (font as { tables?: { os2?: { usWeightClass?: number } } }).tables?.os2
+        ?.usWeightClass
+      const ang = (font as { tables?: { post?: { italicAngle?: number } } }).tables?.post
+        ?.italicAngle
+      const isBold = typeof w === 'number' ? w >= 600 : false
+      const isItalic = typeof ang === 'number' ? Math.abs(ang) > 0.01 : false
+      return isBold === style.bold && isItalic === style.italic
+    }
+    const tryFamily = (family: string, strict = false) => {
       const base = norm(family)
       // Try style-variant files first, then fall back to regular (approximate widths still far better than heuristics)
       for (const suf of [...suffixes, '', 'regular']) {
         const path = this.index.get(base + norm(suf))
         if (!path) continue
         const hit = this.loadBest(path, base, style, origKey, reqWeight)
-        if (hit) return { ...hit, family: hit.family || family }
+        if (hit && (!strict || faceMatches(hit.font)))
+          return { ...hit, family: hit.family || family }
       }
+      if (strict) return undefined
       const cloudPaths = this.cloud.get(base)
       if (cloudPaths) {
         const hit = this.loadBestCloud(cloudPaths, base, style, origKey, reqWeight)
@@ -841,10 +856,11 @@ class FontRegistry {
     // font whenever the family is not installed), loses only to a real system hit above
     const embedded = this.tryEmbedded(origKey, style)
     if (embedded) return embedded
-    for (const family of candidates.slice(1, substituteStart)) {
-      const hit = tryFamily(family)
-      if (hit) return hit
-    }
+    for (const strict of style.bold || style.italic ? [true, false] : [false])
+      for (const family of candidates.slice(1, substituteStart)) {
+        const hit = tryFamily(family, strict)
+        if (hit) return hit
+      }
     // Before falling to substitutes: a sub-family request lives inside the base family's
     // cloud dir (Poppins Light -> CloudFonts/Poppins). Requires a face whose family name
     // matches the request exactly, so a shorter dir can never hijack a different family

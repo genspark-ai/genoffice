@@ -9,7 +9,14 @@ import { XMLParser } from 'fast-xml-parser'
 import { layoutHierTree, parseHierConstraints } from './dgm-hier'
 import { scanSlide, type SpElement } from './scan'
 import { tableRowGridCols } from './table-grid'
-import { type Theme, resolveFontRef, resolveSchemeColor, themeWithOverride } from './theme'
+import {
+  type EaScript,
+  type Theme,
+  eaScriptOfLang,
+  resolveFontRef,
+  resolveSchemeColor,
+  themeWithOverride,
+} from './theme'
 import { resolveColorNode as resolveColorNodeShared } from './color'
 import {
   resolvePlaceholderPresetGeom,
@@ -3438,10 +3445,25 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   // Text highlight <a:highlight> (PowerPoint draws it as a background behind the run)
   const highlightNode = rPr['a:highlight']
   const highlight = highlightNode ? resolveColorNode(highlightNode, ctx) : undefined
+  const langScript = eaScriptOfLang
+  const runLangScript = langScript(rPr['@_altLang']) ?? langScript(rPr['@_lang'])
+  // An ea theme ref on a theme with an empty <a:ea/>: the run's East Asian language (altLang
+  // first), else the text's own kana/hangul, else the placeholder level's lang, else — for
+  // bare ideographs — the theme's single Han script, picks the fontScheme per-script entry
+  const eaScript: EaScript | undefined =
+    runLangScript ??
+    (/[\u3040-\u30ff\u31f0-\u31ff]/.test(text)
+      ? 'ja'
+      : /[\uac00-\ud7af\u1100-\u11ff]/.test(text)
+        ? 'ko'
+        : undefined) ??
+    dflt?.eaScript ??
+    (/[\u3400-\u9fff\uf900-\ufaff]/.test(text) ? 'han' : undefined)
   // Font: run explicit (incl. +mj/+mn theme refs) → inherited default → theme font
-  const latin = resolveFontRef(rPr['a:latin']?.['@_typeface'], ctx.theme) ?? dflt?.latinFont
-  const ea = resolveFontRef(rPr['a:ea']?.['@_typeface'], ctx.theme) ?? dflt?.eaFont
-  const cs = resolveFontRef(rPr['a:cs']?.['@_typeface'], ctx.theme) ?? dflt?.csFont
+  const latin =
+    resolveFontRef(rPr['a:latin']?.['@_typeface'], ctx.theme, eaScript) ?? dflt?.latinFont
+  const ea = resolveFontRef(rPr['a:ea']?.['@_typeface'], ctx.theme, eaScript) ?? dflt?.eaFont
+  const cs = resolveFontRef(rPr['a:cs']?.['@_typeface'], ctx.theme, eaScript) ?? dflt?.csFont
   const sym = resolveFontRef(rPr['a:sym']?.['@_typeface'], ctx.theme)
   // Symbol-slot characters (Wingdings dots/checkmarks stored as U+F0xx PUA) draw with a:sym,
   // not the latin font; applied when the run is entirely PUA (the common single-glyph case)
@@ -3456,15 +3478,6 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     134: 'sc', // GB2312
     136: 'tc', // CHINESEBIG5
   }
-  const langScript = (tag: unknown): 'ja' | 'ko' | 'sc' | 'tc' | undefined => {
-    const t = String(tag ?? '').toLowerCase()
-    if (t.startsWith('ja')) return 'ja'
-    if (t.startsWith('ko')) return 'ko'
-    if (/^zh(-(tw|hk|mo|hant))/.test(t)) return 'tc'
-    if (t.startsWith('zh')) return 'sc'
-    return undefined
-  }
-  const runLangScript = langScript(rPr['@_altLang']) ?? langScript(rPr['@_lang'])
   const charsetOf = (bucket: string): ('ja' | 'ko' | 'sc' | 'tc') | undefined => {
     if (runLangScript) return runLangScript
     if (rPr[bucket]?.['@_typeface'] == null) return undefined

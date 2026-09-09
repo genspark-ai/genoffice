@@ -76,8 +76,10 @@ export const pl = {
   appPgNumHintBlank: 'Pozostaw „Rozpocznij od” puste, aby kontynuować od poprzedniej sekcji',
   appPgNumAppliesTo: '; dotyczy sekcji {n}',
   appExportingPdf: 'Eksportowanie PDF…',
+  appExportingHtml: 'Eksportowanie HTML…',
   appExportPdf: 'Eksportuj PDF',
   appExportPdfFailed: 'Eksport PDF nie powiódł się: {error}',
+  appExportHtmlFailed: 'Eksport HTML nie powiódł się: {error}',
   appPrintGroupFailed: 'nie udało się wydrukować grupy stron',
   appPrintTitle: 'Drukuj',
   appPrintProgress: 'Przygotowywanie do drukowania…',
@@ -93,15 +95,18 @@ export const pl = {
   appPrintPrevPage: 'Poprzednia strona',
   appPrintNextPage: 'Następna strona',
   appExportedPdf: 'Wyeksportowano PDF: {path}',
+  appExportedHtml: 'Wyeksportowano HTML: {path}',
   appExportedPdfMixed:
     'Wyeksportowano PDF: {path} (mieszane rozmiary papieru, {n} grup scalono według stron)',
   appExportPdfCanceled: 'Anulowano eksport PDF',
+  appExportHtmlCanceled: 'Anulowano eksport HTML',
   appMixedExportOpening:
     'Mieszane rozmiary papieru: otwieranie podglądu podziału na strony w celu eksportu ze scaleniem według stron…',
   appSelectTextToComment: 'Najpierw zaznacz tekst do skomentowania',
   appCommentSelectionLost:
     'Zaznaczenie jest już nieaktualne; zaznacz ponownie tekst do skomentowania',
   appCommentAdded: 'Dodano komentarz; zostanie zapisany w dokumencie przy zapisie',
+  appCommentEdited: 'Zaktualizowano komentarz; zostanie zapisany w dokumencie przy zapisie',
   appCommentAnchorGone:
     'Zakotwiczenie pierwotnego komentarza już nie istnieje; nie można odpowiedzieć',
   appCommentReplied: 'Dodano odpowiedź; zostanie zapisana w dokumencie przy zapisie',
@@ -113,6 +118,7 @@ export const pl = {
   appUnknownAuthor: '(Nieznany autor)',
   appResolved: 'Rozwiązano',
   appResolvedComments: 'Rozwiązane komentarze ({n})',
+  appEditComment: 'Edytuj komentarz',
   appDeleteComment: 'Usuń komentarz',
   appDeleteCommentWithReplies: 'Usuń komentarz (wraz z odpowiedziami)',
   appDeleteReply: 'Usuń odpowiedź',

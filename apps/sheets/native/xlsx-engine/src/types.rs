@@ -444,6 +444,9 @@ pub struct RangeResult {
     pub conditional_rules: Vec<ConditionalRule>,
     /// Also sheet-wide, complete-only.
     pub auto_filter: Option<MergedRange>,
+    /// The autoFilter's live per-column criteria (filterColumn children);
+    /// sheet-wide, complete-only, empty when the filter has no criteria.
+    pub auto_filter_columns: Vec<FilterColumnCriteria>,
     pub data_validations: Vec<DataValidationRule>,
     pub sheet_protection: Option<SheetProtectionInfo>,
     /// Manual page breaks (0-based index of the row/column after the break);
@@ -457,6 +460,40 @@ pub struct RangeResult {
     pub page_setup: Option<PagePrintInfo>,
     pub indexed_through_row: Option<usize>,
     pub indexing_complete: bool,
+}
+
+/// One `<filterColumn>` of a worksheet autoFilter: checked values
+/// (`<filters>`), the blank flag, or comparison criteria
+/// (`<customFilters>`). Color/icon/dynamic/top10 criteria have no renderer
+/// mapping and their column is omitted.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilterColumnCriteria {
+    /// 0-based offset from the filter range's first column, per OOXML.
+    pub col_id: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub values: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub blank: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub customs: Option<CustomFilterCriteria>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomFilterCriteria {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub and: bool,
+    pub filters: Vec<CustomFilterItem>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomFilterItem {
+    pub val: String,
+    /// OOXML comparison token; absent means "equal".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operator: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]

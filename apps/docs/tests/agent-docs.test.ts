@@ -132,7 +132,7 @@ describe('word-count stats (answer-style requests)', () => {
 })
 
 describe('changing heading colors (formatting-command requests)', () => {
-  it('after the model calls apply_commands, all headings turn red with the aiChanged highlight', async () => {
+  it('after the model calls apply_ops, all headings turn red with the aiChanged highlight', async () => {
     const editor = createEditor(fixture())
     let final = ''
     const loop = makeLoop(
@@ -141,17 +141,9 @@ describe('changing heading colors (formatting-command requests)', () => {
         (cb) => {
           cb.onToolCall({
             id: 't1',
-            name: 'apply_commands',
+            name: 'apply_ops',
             input: {
-              commands: [
-                {
-                  updateTextStyle: {
-                    target: { nodeType: 'docHeading' },
-                    style: { color: 'FF0000' },
-                    fields: ['color'],
-                  },
-                },
-              ],
+              ops: [{ op: 'setFont', target: { nodeType: 'docHeading' }, color: 'FF0000' }],
             },
           })
           cb.onDone()
@@ -195,8 +187,8 @@ describe('changing heading colors (formatting-command requests)', () => {
         (cb) => {
           cb.onToolCall({
             id: 't1',
-            name: 'apply_commands',
-            input: { commands: [{ updateTextStyle: { style: {}, fields: [] } }] },
+            name: 'apply_ops',
+            input: { ops: [{ op: 'setFont' }] },
           })
           cb.onDone()
         },
@@ -359,8 +351,8 @@ describe('external-edit guard (document freshness baseline)', () => {
       editor,
       {
         id: 'w',
-        name: 'apply_commands',
-        input: { commands: [{ deleteBlocks: { target: { blockIndexes: [3] } } }] },
+        name: 'apply_ops',
+        input: { ops: [{ op: 'deleteBlocks', target: { blockIndexes: [3] } }] },
       },
       NUM_IDS,
     )
@@ -578,15 +570,13 @@ describe('selection scope freezing', () => {
     editor.commands.setTextSelection(block3Pos + 2)
     const exec = await skill.executeTool({
       id: 't',
-      name: 'apply_commands',
+      name: 'apply_ops',
       input: {
-        commands: [
+        ops: [
           {
-            updateParagraphStyle: {
-              target: { nodeType: 'docParagraph', scope: 'selection' },
-              style: { align: 'right' },
-              fields: ['align'],
-            },
+            op: 'setParagraphFormat',
+            target: { nodeType: 'docParagraph', scope: 'selection' },
+            align: 'right',
           },
         ],
       },
@@ -616,15 +606,13 @@ describe('selection scope freezing', () => {
     expect(insert.isError).toBeFalsy()
     const exec = await skill.executeTool({
       id: 't',
-      name: 'apply_commands',
+      name: 'apply_ops',
       input: {
-        commands: [
+        ops: [
           {
-            updateParagraphStyle: {
-              target: { nodeType: 'docParagraph', scope: 'selection' },
-              style: { align: 'right' },
-              fields: ['align'],
-            },
+            op: 'setParagraphFormat',
+            target: { nodeType: 'docParagraph', scope: 'selection' },
+            align: 'right',
           },
         ],
       },
@@ -633,5 +621,270 @@ describe('selection scope freezing', () => {
     // the originally selected paragraph now sits at index 2 and must be the one styled
     expect(editor.state.doc.child(2).textContent).toBe('GenSpark is an AI office suite.')
     expect(editor.state.doc.child(2).attrs.align).toBe('right')
+  })
+})
+
+describe('partial selection: context markers and replace_selection', () => {
+  // block 1 'GenSpark is an AI office suite.' starts at pos 20, content at 21; 'AI office' = offsets 15..24
+  const SEL = { from: 36, to: 45 }
+
+  it('the context marks the selected span with <sel> and repeats it as "Selected text"', () => {
+    const editor = createEditor(fixture())
+    editor.commands.setTextSelection(SEL)
+    const context = buildDocContext(editor)
+    expect(context).toContain('<p>GenSpark is an <sel>AI office</sel> suite.</p>')
+    expect(context).toContain('Selected text (9 characters): "AI office"')
+    expect(context).toContain('Current selection: block 1 (part of the text only')
+  })
+
+  it('a selection covering whole blocks carries no markers', () => {
+    const editor = createEditor(fixture())
+    editor.commands.setTextSelection({
+      from: 21,
+      to: 21 + 'GenSpark is an AI office suite.'.length,
+    })
+    const context = buildDocContext(editor)
+    expect(context).toContain('<p>GenSpark is an AI office suite.</p>')
+    expect(context).not.toContain('<sel>')
+    expect(context).not.toContain('Selected text (')
+  })
+
+  it('markers split a styled run and span across blocks per block', () => {
+    const editor = createEditor([
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: null },
+        content: [
+          text('Revenue grew '),
+          { type: 'text', text: '8% year', marks: [{ type: 'bold' }] },
+        ],
+      },
+      para('Costs fell.'),
+    ])
+    // select from 'grew' (offset 8 of block 0) through 'Costs' (offsets 0..5 of block 1)
+    const block0Size = editor.state.doc.child(0).nodeSize
+    editor.commands.setTextSelection({ from: 1 + 8, to: block0Size + 1 + 5 })
+    const context = buildDocContext(editor)
+    expect(context).toContain('<p>Revenue <sel>grew <strong>8% year</strong></sel></p>')
+    expect(context).toContain('<p><sel>Costs</sel> fell.</p>')
+    expect(context).toContain('Selected text (18 characters): "grew 8% year\nCosts"')
+  })
+
+  it('replace_selection replaces exactly the frozen span, even after the live selection moved', async () => {
+    const editor = createEditor(fixture())
+    const skill = createDocsSkill(
+      () => editor,
+      () => NUM_IDS,
+    )
+    editor.commands.setTextSelection(SEL)
+    skill.buildContext!()
+    editor.commands.setTextSelection(editor.state.doc.content.size - 3)
+    const exec = await skill.executeTool({
+      id: 'r',
+      name: 'replace_selection',
+      input: { html: 'AI-native productivity' },
+    })
+    expect(exec.isError).toBeFalsy()
+    expect(exec.mutated).toBe(true)
+    expect(editor.state.doc.child(1).textContent).toBe(
+      'GenSpark is an AI-native productivity suite.',
+    )
+    expect(editor.state.doc.child(1).attrs.aiChanged).toBe(true)
+    expect(editor.state.doc.child(3).textContent).toBe('This document is for reference only.')
+    // the new text is selected so a follow-up scope:'selection' command targets it
+    expect(editor.state.selection.from).toBe(SEL.from)
+    expect(editor.state.selection.to).toBe(SEL.from + 'AI-native productivity'.length)
+  })
+
+  it('replace_selection inherits the formatting of the replaced text unless the fragment styles it', async () => {
+    const styled = () => [
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: null },
+        content: [
+          text('Revenue grew '),
+          {
+            type: 'text',
+            text: '8%',
+            marks: [{ type: 'bold' }, { type: 'docTextStyle', attrs: { color: 'FF0000' } }],
+          },
+          text(' year over year.'),
+        ],
+      },
+    ]
+    const plain = createEditor(styled())
+    plain.commands.setTextSelection({ from: 14, to: 16 })
+    await executeTool(plain, { id: 'a', name: 'replace_selection', input: { html: '9%' } }, NUM_IDS)
+    const p1 = plain.state.doc.child(0)
+    expect(p1.textContent).toBe('Revenue grew 9% year over year.')
+    expect(p1.child(1).text).toBe('9%')
+    expect(
+      p1
+        .child(1)
+        .marks.map((m) => m.type.name)
+        .sort(),
+    ).toEqual(['bold', 'docTextStyle'])
+    expect(p1.child(1).marks.find((m) => m.type.name === 'docTextStyle')?.attrs).toMatchObject({
+      color: 'FF0000',
+    })
+
+    const fragment = createEditor(styled())
+    fragment.commands.setTextSelection({ from: 14, to: 16 })
+    await executeTool(
+      fragment,
+      { id: 'b', name: 'replace_selection', input: { html: '<em>9%</em>' } },
+      NUM_IDS,
+    )
+    const p2 = fragment.state.doc.child(0)
+    // the fragment's own formatting replaces the inherited bold; run-level style (color) is kept
+    expect(
+      p2
+        .child(1)
+        .marks.map((m) => m.type.name)
+        .sort(),
+    ).toEqual(['docTextStyle', 'italic'])
+  })
+
+  it('replace_selection in tracking mode keeps the old text struck through and inserts the new text as ins', async () => {
+    const editor = createEditor(fixture())
+    editor.commands.setTextSelection(SEL)
+    const exec = await executeTool(
+      editor,
+      { id: 't', name: 'replace_selection', input: { html: 'AI-native' } },
+      NUM_IDS,
+      { author: 'AI Assistant' },
+    )
+    expect(exec.isError).toBeFalsy()
+    const runs: Array<[string, string[]]> = []
+    editor.state.doc.child(1).forEach((child) => {
+      runs.push([child.text ?? '', child.marks.map((m) => m.type.name).sort()])
+    })
+    expect(runs).toEqual([
+      ['GenSpark is an ', []],
+      ['AI office', ['del']],
+      ['AI-native', ['ins']],
+      [' suite.', []],
+    ])
+    expect(editor.state.doc.child(1).attrs.aiChanged).toBe(false)
+  })
+
+  it('replace_selection refuses a caret, a multi-block range, block HTML and the <sel> marker', async () => {
+    const editor = createEditor(fixture())
+    editor.commands.setTextSelection(30)
+    const caret = await executeTool(
+      editor,
+      { id: '1', name: 'replace_selection', input: { html: 'x' } },
+      NUM_IDS,
+    )
+    expect(caret.isError).toBe(true)
+    expect(caret.output).toContain('needs a range selection')
+
+    editor.commands.setTextSelection({ from: 36, to: editor.state.doc.content.size - 3 })
+    const multi = await executeTool(
+      editor,
+      { id: '2', name: 'replace_selection', input: { html: 'x' } },
+      NUM_IDS,
+    )
+    expect(multi.isError).toBe(true)
+    expect(multi.output).toContain('replace_blocks')
+
+    editor.commands.setTextSelection(SEL)
+    const block = await executeTool(
+      editor,
+      { id: '3', name: 'replace_selection', input: { html: '<p>a</p><p>b</p>' } },
+      NUM_IDS,
+    )
+    expect(block.isError).toBe(true)
+    expect(block.output).toContain('replace_blocks')
+
+    const marker = await executeTool(
+      editor,
+      { id: '4', name: 'replace_selection', input: { html: '<sel>AI</sel>' } },
+      NUM_IDS,
+    )
+    expect(marker.isError).toBe(true)
+    expect(marker.output).toContain('<sel>')
+
+    const echoed = await executeTool(
+      editor,
+      { id: '5', name: 'insert_content', input: { html: '<p>see <sel>this</sel></p>' } },
+      NUM_IDS,
+    )
+    expect(echoed.isError).toBe(true)
+    expect(editor.state.doc.child(1).textContent).toBe('GenSpark is an AI office suite.')
+  })
+
+  it('a single <p> wrapper and plain text are both accepted as inline replacements', async () => {
+    const editor = createEditor(fixture())
+    editor.commands.setTextSelection(SEL)
+    const exec = await executeTool(
+      editor,
+      {
+        id: 'p',
+        name: 'replace_selection',
+        input: { html: '<p>an <strong>AI</strong> office</p>' },
+      },
+      NUM_IDS,
+    )
+    expect(exec.isError).toBeFalsy()
+    const block = editor.state.doc.child(1)
+    expect(block.textContent).toBe('GenSpark is an an AI office suite.')
+    // the unstyled lead-in merges with the preceding run; the bold slice stays its own node
+    expect(block.child(1).text).toBe('AI')
+    expect(block.child(1).marks.some((m) => m.type.name === 'bold')).toBe(true)
+  })
+})
+
+describe('partial selection: table cells and code blocks', () => {
+  it('a range inside a table cell keeps whole-block semantics (no markers, no partial note)', async () => {
+    const editor = createEditor([
+      heading('Chapter 1 Overview', 1),
+      {
+        type: 'docTable',
+        attrs: { docxIndex: null },
+        content: [
+          {
+            type: 'docTableRow',
+            content: [
+              {
+                type: 'docTableCell',
+                content: [
+                  { type: 'docParagraph', attrs: { docxIndex: null }, content: [text('City GDP')] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ])
+    // cell paragraph content starts at 20 (table) + 1 (row) + 1 (cell) + 1 (paragraph) + 1
+    editor.commands.setTextSelection({ from: 25, to: 28 })
+    expect(editor.state.doc.textBetween(25, 28)).toBe('ity')
+    const context = buildDocContext(editor)
+    expect(context).toContain('Current selection: block 1\n')
+    expect(context).not.toContain('<sel>')
+    expect(context).not.toContain('Selected text (')
+    const exec = await executeTool(
+      editor,
+      { id: 'c', name: 'replace_selection', input: { html: 'x' } },
+      NUM_IDS,
+    )
+    expect(exec.isError).toBe(true)
+    expect(exec.output).toContain('replace_blocks')
+  })
+
+  it('a code block marks the selected span inside its <pre>', () => {
+    const editor = createEditor([
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: null, shadingFill: 'F2F2F2', borders: 'tblr' },
+        content: [text('const a = 1;'), { type: 'hardBreak' }, text('const b = <2>;')],
+      },
+    ])
+    // 'b = <2>' = offsets 19..26 (the hard break occupies one position)
+    editor.commands.setTextSelection({ from: 1 + 19, to: 1 + 26 })
+    const context = buildDocContext(editor)
+    expect(context).toContain('<pre>const a = 1;\nconst <sel>b = &lt;2&gt;</sel>;</pre>')
+    expect(context).toContain('Selected text (7 characters): "b = <2>"')
   })
 })

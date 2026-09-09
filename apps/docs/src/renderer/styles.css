@@ -2235,12 +2235,14 @@ th.cell-rev-del {
   width: var(--col-w, auto);
 }
 
-/* floating-anchor wrappers force width:100%, which beats the section-width
-   decoration above: their stray in-flow line then wraps at the full canvas
-   width on the canvas but at the section width in preview clones, drifting
-   every boundary below (prod100r4/049 split a line across two pages) */
+/* floating-anchor wrappers and side-wrap carriers force width:100%, which
+   beats the section-width decoration above: their stray in-flow lines then
+   wrap at the full canvas width on the canvas but at the section width in
+   preview clones, drifting every boundary below (one corpus file split a line
+   across two pages, another sliced a heading) */
 .doc-page .doc-col-block.doc-protected-floating,
-.doc-page .doc-col-block.doc-img-float {
+.doc-page .doc-col-block.doc-img-float,
+.doc-page .doc-col-block.doc-protected-wrapside {
   width: var(--col-w, 100%);
   max-width: var(--col-w, 100%);
 }
@@ -2893,7 +2895,8 @@ th.cell-rev-del {
   color: var(--docs-on-accent);
 }
 
-.comment-card-del {
+.comment-card-del,
+.comment-card-edit {
   margin-left: auto;
   border: none;
   background: none;
@@ -2907,9 +2910,19 @@ th.cell-rev-del {
   border-radius: 4px;
 }
 
+/* the pencil sits directly before the trash; only the first icon pushes to the right edge */
+.comment-card-edit + .comment-card-del {
+  margin-left: 0;
+}
+
 .comment-card-del:hover {
   background: var(--hover);
   color: var(--danger);
+}
+
+.comment-card-edit:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 /* comments: in-text highlight + right-side pane */
@@ -8885,7 +8898,7 @@ body.docs-crop-active
   /* header/footer measuring probe (hf-dom.ts): a body-level .doc-page box.
      Chromium print fragmentation counts it as content after the last visible
      sheet, materializing that sheet's forced break-after into a trailing blank
-     page in every grouped mixed-paper export (prod100r4/68 p6). */
+     page in every grouped mixed-paper export. */
   #hf-strip-probe {
     display: none !important;
   }

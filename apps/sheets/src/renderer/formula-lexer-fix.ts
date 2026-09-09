@@ -13,6 +13,14 @@
  * builds the slot→character map the lexer should have produced, and returns
  * cloned nodes with corrected indices and tokens. Formulas whose nodes
  * already reassemble to the source text pass through untouched.
+ *
+ * Newline fix. _nodeMaker flattens every CR/LF in the formula to a space so
+ * line breaks between tokens act as whitespace — but that also rewrites
+ * `="a"&CHAR(10)`-style literals typed with a real line break (Excel keeps
+ * them; JP form templates build whole paragraphs this way), so the engine
+ * evaluates and autofill/F4 rewrite the text with the break gone. The wrap
+ * swaps CR/LF inside "..." for private guard characters before the lexer
+ * sees the text and puts them back in every token it produced.
  */
 import { LexerTreeBuilder, type sequenceNodeType } from '@univerjs/engine-formula'
 
@@ -27,9 +35,64 @@ export interface SequenceNodeLike {
 
 export type SequenceEntry = SequenceNodeLike | string
 
-/// Mirror of _nodeMaker's input preprocessing.
+/// Unicode noncharacters: never legitimate formula text, so a formula that
+/// already contains one is left to the stock lexer rather than corrupted.
+const CR_GUARD = '\uFDD0'
+const LF_GUARD = '\uFDD1'
+const GUARD_PATTERN = /[\uFDD0\uFDD1]/g
+
+/// CR/LF inside "..." literals become guard characters; everything else is
+/// untouched so _nodeMaker still flattens the between-token breaks.
+export function guardLiteralNewlines(formula: string): string {
+  if (!/[\r\n]/.test(formula) || GUARD_PATTERN.test(formula)) return formula
+  let out = ''
+  let inDouble = false
+  let inSingle = false
+  let bracketDepth = 0
+  for (let at = 0; at < formula.length; at += 1) {
+    const char = formula[at]
+    if (inDouble) {
+      if (char === '\r') out += CR_GUARD
+      else if (char === '\n') out += LF_GUARD
+      else {
+        out += char
+        if (char === '"') {
+          if (formula[at + 1] === '"') {
+            out += '"'
+            at += 1
+          } else inDouble = false
+        }
+      }
+      continue
+    }
+    out += char
+    if (inSingle) {
+      if (char === "'") {
+        if (formula[at + 1] === "'") {
+          out += "'"
+          at += 1
+        } else inSingle = false
+      }
+    } else if (char === '"' && bracketDepth === 0) {
+      inDouble = true
+    } else if (char === "'") {
+      inSingle = true
+    } else if (char === '[') {
+      bracketDepth += 1
+    } else if (char === ']' && bracketDepth > 0) {
+      bracketDepth -= 1
+    }
+  }
+  return out
+}
+
+function restoreGuards(text: string): string {
+  return text.replace(GUARD_PATTERN, (guard) => (guard === CR_GUARD ? '\r' : '\n'))
+}
+
+/// Mirror of the guarded _nodeMaker's input preprocessing.
 function formulaBody(formula: string): string {
-  const flattened = formula.replace(/\r\n$|\r|\n/g, ' ')
+  const flattened = restoreGuards(guardLiteralNewlines(formula).replace(/\r\n$|\r|\n/g, ' '))
   return flattened.startsWith('=') ? flattened.slice(1) : flattened
 }
 
@@ -92,15 +155,77 @@ export function fixSequenceNodes(
   return changed ? fixed : nodes
 }
 
+interface LexerNodeLike {
+  getToken(): string
+  setToken(token: string): void
+  getChildren(): (LexerNodeLike | string)[]
+  setChildren(children: (LexerNodeLike | string)[]): void
+  getParent(): LexerNodeLike | null | undefined
+}
+
+interface SequenceArrayEntry {
+  segment: string
+  currentString: string
+}
+
+type NodeMaker = (
+  formula: string,
+  sequenceArray?: SequenceArrayEntry[],
+  matchCurrentNodeIndex?: number,
+) => unknown
+
+interface LexerInternals {
+  _nodeMaker: NodeMaker
+  _currentLexerNode: LexerNodeLike
+}
+
+function restoreTree(node: LexerNodeLike): void {
+  node.setToken(restoreGuards(node.getToken()))
+  node.setChildren(
+    node.getChildren().map((child) => {
+      if (typeof child === 'string') return restoreGuards(child)
+      restoreTree(child)
+      return child
+    }),
+  )
+}
+
+function wrapNodeMaker(lexer: LexerInternals): () => void {
+  const original = lexer._nodeMaker
+  lexer._nodeMaker = function (this: LexerInternals, formula, sequenceArray, matchIndex) {
+    const guarded = guardLiteralNewlines(formula)
+    if (guarded === formula) return original.call(this, formula, sequenceArray, matchIndex)
+    const firstNew = sequenceArray?.length ?? 0
+    const result = original.call(this, guarded, sequenceArray, matchIndex)
+    let top = this._currentLexerNode
+    while (top?.getParent()) top = top.getParent() as LexerNodeLike
+    if (top) restoreTree(top)
+    for (const entry of sequenceArray?.slice(firstNew) ?? []) {
+      entry.segment = restoreGuards(entry.segment)
+      entry.currentString = restoreGuards(entry.currentString)
+    }
+    // matchCurrentNodeIndex mode returns [node, char] for the cursor position.
+    if (Array.isArray(result) && typeof result[1] === 'string') {
+      return [result[0], restoreGuards(result[1])]
+    }
+    return result
+  }
+  return () => {
+    lexer._nodeMaker = original
+  }
+}
+
 export function wrapLexer(lexer: LexerTreeBuilder): { dispose(): void } {
   const original = lexer.sequenceNodesBuilder.bind(lexer) as (
     formula: string,
   ) => SequenceEntry[] | undefined | null
   const wrapped = (formula: string) => fixSequenceNodes(formula, original(formula))
   ;(lexer as { sequenceNodesBuilder: typeof wrapped }).sequenceNodesBuilder = wrapped
+  const unwrapNodeMaker = wrapNodeMaker(lexer as unknown as LexerInternals)
   return {
     dispose() {
       delete (lexer as { sequenceNodesBuilder?: typeof wrapped }).sequenceNodesBuilder
+      unwrapNodeMaker()
     },
   }
 }

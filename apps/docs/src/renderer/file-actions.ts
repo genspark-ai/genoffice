@@ -52,6 +52,7 @@ import {
 import { docStyleCss } from './doc-style-css'
 import type { CompareEntry } from './editor/compare'
 import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from './editor/convert'
+import { TABLE_TRAILING_SKIP } from './editor/extensions'
 import { TRACK_IGNORE } from './editor/revisions'
 import {
   cancelPhasedContent,
@@ -78,6 +79,7 @@ import { defaultEastAsiaFontFor } from './font-list'
 import { hasPrintableHeaderFooter } from './pagination'
 import { clearPrintZoom, setPrintZoom } from './print-zoom'
 import { showToast } from './components/toast-bus'
+import { buildStandaloneHtml } from './html-export'
 
 /** An export waiting for the pagination preview to mount; resolve settles the caller's exportPdf promise. */
 export type PendingPdfExport = { outPath?: string; resolve: (ok: boolean) => void }
@@ -278,6 +280,7 @@ export function appendStreamedNodes(editor: Editor, nodes: PmNode[]): void {
   tr.setMeta('addToHistory', false)
   // forced Track Changes must not record the streamed tail as insertions
   tr.setMeta(TRACK_IGNORE, true)
+  tr.setMeta(TABLE_TRAILING_SKIP, true)
   editor.view.dispatch(tr)
   carryDocSeen(editor, before)
 }
@@ -289,6 +292,7 @@ function phasedHostFor(ctx: FileActionContext): PhasedContentHost {
       ctx.editor
         ?.chain()
         .setMeta(TRACK_IGNORE, true)
+        .setMeta(TABLE_TRAILING_SKIP, true)
         .setContent(doc as never)
         .run(),
     appendNodes: (nodes) => {
@@ -1247,4 +1251,30 @@ export async function exportPdf(ctx: FileActionContext, outPath?: string): Promi
     clearPrintZoom()
     printJobActive = false
   }
+}
+
+/** Resolves true only when an HTML file was written to disk. */
+export async function exportHtml(ctx: FileActionContext, outPath?: string): Promise<boolean> {
+  const { doc, editor } = ctx
+  if (!doc || !editor) return false
+  await waitForFullContent()
+  ctx.setStatus(t('appExportingHtml'))
+  const root = editor.view.dom as HTMLElement
+  const textWidthPx = Number.parseFloat(
+    getComputedStyle(root).getPropertyValue('--section-content-w'),
+  )
+  const html = buildStandaloneHtml(root, {
+    title: doc.fileName.replace(/\.docx$/i, ''),
+    lang: getLang(),
+    textWidthPx: Number.isFinite(textWidthPx) ? textWidthPx : root.clientWidth,
+  })
+  const result = await window.desktop.exportHtml(doc.fileName, html, outPath)
+  ctx.setStatus(
+    result.ok
+      ? t('appExportedHtml', { path: result.path ?? '' })
+      : result.error
+        ? t('appExportHtmlFailed', { error: result.error })
+        : t('appExportHtmlCanceled'),
+  )
+  return result.ok
 }

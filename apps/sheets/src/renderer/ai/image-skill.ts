@@ -3,7 +3,7 @@ import { t } from '../i18n/locale'
 
 /**
  * Image acquisition AgentSkill: image_search (shared main-process channel, same
- * source as docs/slides) and generate_image (sheets-owned Genspark channel).
+ * source as docs/slides) and generate_image (sheets-owned channel).
  * Both return a URL; placement happens through the normal propose_operations
  * add_image path, which downloads the URL in the main process on apply.
  */
@@ -20,11 +20,11 @@ const IMAGES_SYSTEM_PROMPT_NO_GEN = `## Images
 ${PLACEMENT_PROMPT}`
 
 /**
- * `gskTools` is a live predicate (login state && the Genspark-cloud-tools
- * toggle); the loop re-reads tools and systemPrompt before every request,
- * so generate_image appears and disappears without rebuilding the loop.
+ * `imageGen` is a live predicate (Genspark login + cloud-tools toggle, or a
+ * BYOK media key); the loop re-reads tools and systemPrompt before every
+ * request, so generate_image appears and disappears without rebuilding the loop.
  */
-export function createImageSkill(gskTools: () => boolean = () => true): AgentSkill {
+export function createImageSkill(imageGen: () => boolean = () => true): AgentSkill {
   const allTools = [
     {
       name: 'image_search',
@@ -43,7 +43,7 @@ export function createImageSkill(gskTools: () => boolean = () => true): AgentSki
     {
       name: 'generate_image',
       description:
-        'Generate an image with AI from a text prompt (Genspark account required). Returns a URL to insert ' +
+        'Generate an image with AI from a text prompt. Returns a URL to insert ' +
         'with propose_operations add_image. Use for illustrations/decorative art; prefer image_search for real-world subjects.',
       inputSchema: {
         type: 'object',
@@ -64,10 +64,10 @@ export function createImageSkill(gskTools: () => boolean = () => true): AgentSki
   return {
     id: 'images',
     get systemPrompt() {
-      return gskTools() ? IMAGES_SYSTEM_PROMPT : IMAGES_SYSTEM_PROMPT_NO_GEN
+      return imageGen() ? IMAGES_SYSTEM_PROMPT : IMAGES_SYSTEM_PROMPT_NO_GEN
     },
     get tools() {
-      return gskTools() ? allTools : allTools.filter((t) => t.name !== 'generate_image')
+      return imageGen() ? allTools : allTools.filter((t) => t.name !== 'generate_image')
     },
     executeTool: async (call) => {
       if (call.name === 'image_search') {

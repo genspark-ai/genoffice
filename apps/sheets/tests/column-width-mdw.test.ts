@@ -35,23 +35,23 @@ function workbook(overrides: {
 }
 
 describe('workbook MDW', () => {
-  it('defaults to Calibri 11 (7px) and keeps the historical conversion', () => {
+  it('defaults to Calibri 11 (7px) and lays out in whole points', () => {
     expect(getWorkbookMdw()).toBe(7)
-    expect(characterWidthToPixels(10.6640625)).toBe(80)
+    expect(characterWidthToPixels(10.6640625)).toBeCloseTo((56 * 4) / 3, 9)
   })
 
   it('widens columns for a Verdana-10 workbook (MDW 8)', () => {
-    // DateFormatTests.xlsx col C: width 34.832 chars. Excel renders 283.7px
-    // (width x 8 + 5); the hardcoded 7 yielded 249px and wrapped a line early.
+    // DateFormatTests.xlsx col C: width 34.832 chars prints 209pt (278.7px)
+    // at MDW 6pt; the hardcoded 7 yielded 244px and wrapped a line early.
     setWorkbookMdw(8)
-    expect(characterWidthToPixels(34.83203125)).toBe(284)
+    expect(characterWidthToPixels(34.83203125)).toBeCloseTo((209 * 4) / 3, 9)
   })
 
   it('keeps the General digit budget on the same MDW', () => {
-    // A Verdana-10 column imported as 40 chars must still budget 40 digits,
-    // not (40*8)/7.
+    // A Verdana-10 column imported as 40 chars is 240pt = 320px; the 5px
+    // inset leaves 39 digits on the same MDW, not (320-5)/7 = 45.
     setWorkbookMdw(8)
-    expect(generalCharBudget(characterWidthToPixels(40))).toBe(40)
+    expect(generalCharBudget(characterWidthToPixels(40))).toBe(39)
   })
 
   it('keeps both conversion directions on the same MDW', () => {
@@ -67,16 +67,16 @@ describe('workbook MDW', () => {
     expect(getWorkbookMdw()).toBe(7)
   })
 
-  it('derives the built-in default width from baseColWidth (prod_039)', () => {
+  it('derives the built-in default width from baseColWidth', () => {
     // MDW 7 reproduces the classic 8.7109375 chars Excel writes into files;
-    // MDW 8 gives 8.625 chars = 74px, matching live Excel's 8.0-char default
-    // column — narrow enough that 10-digit General numbers go scientific.
+    // MDW 8 gives 8.625 chars = 52pt (69.3px), matching live Excel's 8.0-char
+    // default column — narrow enough that 10-digit General numbers go scientific.
     setWorkbookMdw(7)
     expect(paddedBaseColumnWidth(null)).toBe(8.7109375)
     setWorkbookMdw(8)
     expect(paddedBaseColumnWidth(null)).toBe(8.625)
-    expect(characterWidthToPixels(paddedBaseColumnWidth(null))).toBe(74)
-    expect(generalCharBudget(74)).toBe(8)
+    expect(characterWidthToPixels(paddedBaseColumnWidth(null))).toBeCloseTo((52 * 4) / 3, 9)
+    expect(generalCharBudget((52 * 4) / 3)).toBe(8)
     expect(paddedBaseColumnWidth(10)).toBe(10.625)
   })
 })
@@ -121,14 +121,22 @@ describe('measureNormalFontMdw', () => {
     expect(measureNormalFontMdw(file)).toBe(8)
   })
 
-  it('keeps Malgun Gothic workbooks on MDW 7', () => {
+  it('lays Malgun Gothic 11 workbooks out at the Mac Excel MDW 8', () => {
+    // Reference grid (scale 64): 14/11.25/17.125 ch print as 112/89/137 px,
+    // floor((w+16/256)*8) exactly; the Windows GDI 7 is 12% short.
     const file = workbook({
       fontFamily: 'Calibri',
       fontSize: 11,
       fontScheme: 'minor',
       normalFontName: '맑은 고딕',
     })
-    expect(measureNormalFontMdw(file)).toBe(7)
+    expect(measureNormalFontMdw(file)).toBe(8)
+    expect(measureNormalFontMdw(workbook({ fontFamily: 'Malgun Gothic', fontSize: 11 }))).toBe(8)
+  })
+
+  it('keeps other Malgun Gothic sizes on the GDI table', () => {
+    const file = workbook({ fontFamily: 'Malgun Gothic', fontSize: 10 })
+    expect(measureNormalFontMdw(file)).toBe(6)
   })
 
   it('keeps the Cordia New hash calibration out of the MDW derivation', () => {
@@ -138,13 +146,32 @@ describe('measureNormalFontMdw', () => {
     expect(measureNormalFontMdw(file)).toBe(7)
   })
 
-  it('keeps the other Thai and Meiryo hash calibrations out of the MDW derivation too', () => {
+  it('keeps the other Thai and Yu Gothic hash calibrations out of the MDW derivation too', () => {
     // These families get width-corrected aliases, so the live canvas digit
     // is the right MDW source by construction; the em-exact hash table must
     // not leak into the grid-derived MDW path (7 in the DOM-less env).
-    for (const fontFamily of ['TH SarabunPSK', 'Angsana New', 'Meiryo', 'Yu Gothic UI']) {
+    for (const fontFamily of ['TH SarabunPSK', 'Angsana New', 'Yu Gothic UI']) {
       expect(measureNormalFontMdw(workbook({ fontFamily, fontSize: 11 })), fontFamily).toBe(7)
     }
+  })
+
+  it('lays Meiryo workbooks out at MDW 9 under every spelling', () => {
+    // Normal font <name val="メイリオ"/> 11pt; Excel's B:H grid
+    // fits MDW 9 (0.621em digits → 9.1px), the CJK-name fallback gave 8.
+    for (const normalFontName of ['メイリオ', 'Meiryo', 'Meiryo UI']) {
+      const file = workbook({
+        fontFamily: 'Calibri',
+        fontSize: 11,
+        fontScheme: 'minor',
+        normalFontName,
+      })
+      expect(resolveNormalMdwFamily(file), normalFontName).toBe(normalFontName)
+      expect(measureNormalFontMdw(file), normalFontName).toBe(9)
+    }
+    expect(measureNormalFontMdw(workbook({ fontFamily: 'メイリオ', fontSize: 11 }))).toBe(9)
+    expect(measureNormalFontMdw(workbook({ fontFamily: 'Meiryo', fontSize: 9 }))).toBe(7)
+    expect(measureNormalFontMdw(workbook({ fontFamily: 'Meiryo', fontSize: 10 }))).toBe(8)
+    expect(measureNormalFontMdw(workbook({ fontFamily: 'Meiryo', fontSize: 12 }))).toBe(10)
   })
 
   it('scales table entries by the Normal font size', () => {
@@ -164,8 +191,8 @@ describe('measureNormalFontMdw', () => {
   })
 
   it('lays Calibri 11 out at the Mac Excel MDW 8, not the GDI 7', () => {
-    // Live probes + ref print geometry: prod_054 50.86ch → 305pt and
-    // prod_027 32.44ch → 195pt both fit floor((w+16/256)*8); MDW 7 wraps
+    // Live probes + ref print geometry: 50.86ch → 305pt and 32.44ch → 195pt
+    // both fit floor((w+16/256)*8); MDW 7 wraps
     // wide wrap columns a line early and re-fits their rows too tall.
     expect(measureNormalFontMdw(workbook({ fontFamily: 'Calibri', fontSize: 11 }))).toBe(8)
   })

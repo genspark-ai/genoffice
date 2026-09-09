@@ -458,6 +458,15 @@ export function IconShapes(props: IconProps) {
   )
 }
 
+export function IconSearch(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="6.9" cy="6.9" r="4.2" />
+      <path d="M 10 10 13.4 13.4" />
+    </Svg>
+  )
+}
+
 export function IconLink(props: IconProps) {
   return (
     <Svg {...props}>
@@ -1610,6 +1619,15 @@ export function IconWordArt(props: IconProps) {
       {/* stylized A with gradient effect hint */}
       <path d="M8 3 3.5 13h2.3l1-2.5h2.4l1 2.5h2.3L8 3Z" />
       <path d="M5.6 9.2h4.8" />
+    </Svg>
+  )
+}
+
+export function IconPencil(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M10.9 2.9a1.1 1.1 0 0 1 1.56 0l.64.64a1.1 1.1 0 0 1 0 1.56L6.2 12l-3.1.9.9-3.1 6.9-6.9Z" />
+      <path d="M9.6 4.2l2.2 2.2" />
     </Svg>
   )
 }

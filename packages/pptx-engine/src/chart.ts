@@ -59,6 +59,10 @@ export interface ChartSeries {
   marker?: boolean
   /** Explicit per-point colors <c:dPt> (common for pies; render layer palette otherwise) */
   pointColors?: Array<string | undefined>
+  /** Pie: <c:dPt><c:spPr><a:noFill/> — the wedge is outline-only */
+  pointNoFill?: Array<boolean | undefined>
+  /** Pie: per-point outline <c:dPt><c:spPr><a:ln> (color null = explicit no line) */
+  pointLines?: Array<{ color: string | null; widthPt?: number } | undefined>
   /** Pie: slice offset from center as percent of diameter (series-level c:explosion → all slices) */
   explosionPct?: number
   /** Pie: per-point explosion overrides (c:dPt/c:explosion) */
@@ -424,16 +428,32 @@ export function parseChartXml(
       const dPts: any[] = ser['c:dPt'] ?? []
       if (dPts.length) {
         const pointColors: Array<string | undefined> = []
+        const pointNoFill: Array<boolean | undefined> = []
+        const pointLines: Array<{ color: string | null; widthPt?: number } | undefined> = []
         const pointExpl: Array<number | undefined> = []
         for (const dPt of dPts) {
           const idx = parseInt(dPt['c:idx']?.['@_val'], 10)
           if (Number.isNaN(idx)) continue
-          const c = resolveColorNode(dPt['c:spPr']?.['a:solidFill'], theme)
+          const dSp = dPt['c:spPr']
+          const c = resolveColorNode(dSp?.['a:solidFill'], theme)
           if (c != null) pointColors[idx] = c
+          if (dSp && 'a:noFill' in dSp) pointNoFill[idx] = true
+          const dLn = dSp?.['a:ln']
+          if (dLn && typeof dLn === 'object') {
+            const lnColor = 'a:noFill' in dLn ? null : resolveColorNode(dLn['a:solidFill'], theme)
+            const lnW = parseInt(dLn['@_w'], 10)
+            if (lnColor !== undefined)
+              pointLines[idx] = {
+                color: lnColor,
+                ...(Number.isFinite(lnW) && lnW > 0 ? { widthPt: lnW / 12700 } : {}),
+              }
+          }
           const pe = parseInt(dPt['c:explosion']?.['@_val'], 10)
           if (Number.isFinite(pe)) pointExpl[idx] = pe
         }
         if (pointColors.length) s.pointColors = pointColors
+        if (pointNoFill.length) s.pointNoFill = pointNoFill
+        if (pointLines.length) s.pointLines = pointLines
         if (pointExpl.length) s.pointExplosionPct = pointExpl
       }
       series.push(s)

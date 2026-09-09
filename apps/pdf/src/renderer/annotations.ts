@@ -155,7 +155,8 @@ function normalizeSelectionRects(rects: readonly ViewRect[]): ViewRect[] {
 
   return lineBands.flatMap((line) => {
     const clusters: ViewRect[][] = []
-    for (const rect of line.rects) {
+    // Text-layer spans arrive in content-stream order, not visual order
+    for (const rect of [...line.rects].sort((a, b) => a.left - b.left)) {
       const previous = clusters.at(-1)
       if (!previous) {
         clusters.push([rect])

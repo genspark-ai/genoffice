@@ -108,6 +108,22 @@ describe('parseChartXml', () => {
     expect(m.series[0]!.pointColors?.[2]).toBe('#0000AA')
   })
 
+  it('parses outline-only pie points: c:dPt noFill + per-point a:ln', () => {
+    const PIE = `<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea>
+<c:pieChart><c:varyColors val="1"/><c:ser><c:idx val="0"/>
+  <c:dPt><c:idx val="0"/><c:spPr><a:noFill/><a:ln w="19050"><a:solidFill><a:srgbClr val="AA0000"/></a:solidFill></a:ln></c:spPr></c:dPt>
+  <c:dPt><c:idx val="1"/><c:spPr><a:solidFill><a:srgbClr val="0000AA"/></a:solidFill><a:ln><a:noFill/></a:ln></c:spPr></c:dPt>
+  <c:val><c:numRef><c:f>y</c:f><c:numCache><c:ptCount val="3"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt><c:pt idx="2"><c:v>3</c:v></c:pt></c:numCache></c:numRef></c:val>
+</c:ser></c:pieChart></c:plotArea></c:chart></c:chartSpace>`
+    const s = parseChartXml(PIE)!.series[0]!
+    expect(s.pointNoFill).toEqual([true])
+    expect(s.pointLines?.[0]).toEqual({ color: '#AA0000', widthPt: 1.5 })
+    expect(s.pointColors?.[1]).toBe('#0000AA')
+    expect(s.pointLines?.[1]).toEqual({ color: null })
+    expect(s.pointNoFill?.[1]).toBeUndefined()
+    expect(s.pointLines?.[2]).toBeUndefined()
+  })
+
   it('parses pie explosion: series-level c:explosion and per-point c:dPt overrides', () => {
     const PIE = `<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:plotArea>
 <c:pie3DChart><c:ser><c:idx val="0"/>

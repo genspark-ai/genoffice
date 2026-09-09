@@ -33,6 +33,8 @@ import { STATIC_FORM_MARK_SIZE } from '../static-form-fill'
 import { PAPER_SIZES, parsePageRanges } from '../view-config'
 import { DEFAULT_CUTOUT_TOLERANCE, cropRect } from '../image-bake'
 import type { CropFractions, ImageBakeOp } from '../image-bake'
+import type { Op, PlanResult } from '../edit-ops'
+import { OP_DOCS, callableOpNames, opSignatureIndex, opVocabulary } from '../../shared/op-docs'
 
 /** Text cap per read_pages fed back to the model (the payload is resent in full each turn, so volume must be limited) */
 const READ_CHUNK_CHARS = 24_000
@@ -81,12 +83,13 @@ export interface PdfAiDeps {
   annotationSummary(): string
   /** Queue a pending sticky note authored by the AI; returns its thread key.
       color (rgb 0-1) omitted → the user's current draw color */
+  /** Thread key of the new note; null with the reason when the edit was rejected */
   addNote(
     origIdx: number,
     at: [number, number],
     contents: string,
     color?: [number, number, number],
-  ): string
+  ): { key: string } | { error: string }
   /** Thread root by key ('S<objNum>' saved / 'P<id>' pending); null when not found */
   findNoteRoot(origIdx: number, rootKey: string): Promise<NoteThreadItem | null>
   /** Queue a pending AI-authored reply to a thread root */
@@ -115,7 +118,8 @@ export interface PdfAiDeps {
     rect: [number, number, number, number],
   ): void
   /** Queue a new text block; returns its pending id */
-  insertText(input: TextInsertInput): string
+  /** Record id of the new insert; null with the reason when the edit was rejected */
+  insertText(input: TextInsertInput): { id: string } | { error: string }
   /** Pending (unsaved) inserted text blocks */
   textInserts(): LocalTextInsert[]
   /** Merge edit over the pending block's input (same record the re-edit dialog commits) */
@@ -126,20 +130,14 @@ export interface PdfAiDeps {
   /** Edit-font ids available on this machine (EDIT_FONTS subset) */
   editFonts(): string[]
   formEdits(): ReadonlyMap<string, FormValueInput>
-  applyFormEdit(v: FormValueInput): void
   /** Rotate the given pages (original indices) in one undo step */
-  rotatePages(origIdxs: number[], dir: RotateDelta): void
-  deletePage(origIdx: number): boolean
+  /** Canonical edit batch (edit-ops registry): one undo step, atomic; dryRun only plans */
+  applyOps(ops: Op[], opts?: { dryRun?: boolean }): PlanResult
   /** Effective document properties: pending unsaved edits over the file's values */
+  /** Pending properties when set this session, else the file's */
   metadata(): MetadataInput
-  /** Replace the pending document properties (applied on save) */
-  setMetadata(meta: MetadataInput): void
-  /** Current visible page order as original page indices (unsaved reorder applied, deleted pages excluded) */
+  /** Current visible order as original page indices */
   pageOrder(): number[]
-  /** Move a page (original index) to visible position to (0-based) */
-  movePage(origIdx: number, to: number): void
-  reversePages(): void
-  /** Page geometry (unrotated size + total display rotation); null while the document is loading */
   pageGeom(origIdx: number): PageGeom | null
   /** Content-stream images currently in the saved file (pending unsaved inserts not included) */
   listImages(): Promise<PageImageRef[]>
@@ -167,8 +165,8 @@ export interface PdfAiDeps {
   /** Queue a pending delete of an existing image */
   deleteImage(ref: PageImageRef): void
   searchImages(query: string, maxResults: number): Promise<ImageSearchResponse>
-  /** live predicate: gsk login && the Genspark-cloud-tools toggle; false hides generate_image */
-  gskTools?(): boolean
+  /** live predicate (gsk login && cloud-tools toggle, or a BYOK media key); false hides generate_image */
+  imageGenAvailable?(): boolean
   generateImage(op: { prompt: string; aspectRatio?: string }): Promise<{
     url?: string
     error?: string
@@ -548,7 +546,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'add_form_mark',
     description:
-      'Place a check mark or cross on a page (drawn as new content; takes effect on save). Use it to tick check boxes printed on non-interactive forms — interactive check boxes are set with fill_form_field instead. Position exactly like insert_text: anchor_text (verbatim fragment, e.g. the label next to the box) plus placement, with the mark centered against that side of the anchor, or x/y as the TOP-LEFT corner of the mark in points from the page top-left as displayed.',
+      'Place a check mark or cross on a page (drawn as new content; takes effect on save). Use it to tick check boxes printed on non-interactive forms — interactive check boxes are set with apply_ops setFormValue instead. Position exactly like insert_text: anchor_text (verbatim fragment, e.g. the label next to the box) plus placement, with the mark centered against that side of the anchor, or x/y as the TOP-LEFT corner of the mark in points from the page top-left as displayed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -916,85 +914,33 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
-    name: 'fill_form_field',
+    name: 'apply_ops',
     description:
-      'Fill in one form field. For text/choice/radio fields pass value (radio: the exportValue; choice: an option exportValue); for checkboxes pass checked.',
+      "Apply a list of canonical pending edits as ONE transaction and ONE undo step — atomic: any invalid op rejects the whole batch and nothing is applied. This is THE tool for rotating, deleting and reordering pages, filling form fields (call list_form_fields first) and setting document properties, and for removing a pending highlight or inserted text block or rewriting a pending note; a single op is a perfectly fine batch. Everything stays unsaved until the user saves. Page numbers are the document's 1-based numbers like every other tool (to rotate every page, list them all); ids are the P… / T… ids the read tools report.\n" +
+      'Set dry_run:true to validate the batch without changing anything. A failing op returns its exact signature; an unknown op name returns the full vocabulary.\n' +
+      'Op reference (? marks optional fields):\n' +
+      opSignatureIndex(),
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Field name (from list_form_fields)' },
-        value: { type: 'string', description: 'Value for text/choice/radio fields' },
-        checked: { type: 'boolean', description: 'Checked state for checkboxes' },
-      },
-      required: ['name'],
-    },
-  },
-  {
-    name: 'rotate_page',
-    description:
-      'Rotate one page, or every page with all=true, by a quarter or half turn (takes effect on save).',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        page: { type: 'integer', description: 'Page number (1-based); ignored when all is true' },
-        direction: {
-          type: 'string',
-          enum: ['left', 'right', '180'],
-          description: 'left = 90° counterclockwise, right = 90° clockwise, 180 = half turn',
+        ops: {
+          type: 'array',
+          items: { type: 'object' },
+          description:
+            'The op list, applied in order as one transaction (at most 50); each item is {op:"<name>", …fields}',
         },
-        all: { type: 'boolean', description: 'Rotate all pages instead of one (default false)' },
-      },
-      required: ['direction'],
-    },
-  },
-  {
-    name: 'set_metadata',
-    description:
-      'Set document properties (takes effect on save). Omitted fields keep their current value; pass "" to clear one. Call with no fields to read the current values.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-        author: { type: 'string' },
-        subject: { type: 'string' },
-        keywords: { type: 'string', description: 'Comma-separated keywords' },
-      },
-    },
-  },
-  {
-    name: 'delete_page',
-    description: 'Delete the given page (takes effect on save; the user can undo before saving).',
-    inputSchema: {
-      type: 'object',
-      properties: { page: { type: 'integer', description: 'Page number (1-based)' } },
-      required: ['page'],
-    },
-  },
-  {
-    name: 'move_page',
-    description:
-      "Move a page to another position in the page order (takes effect on save). page is the document's original page number (as in the [Page N] markers, unchanged by earlier moves); to is the 1-based target position in the current visible order. Example: move_page(page 5, to 1) makes page 5 the first page.",
-    inputSchema: {
-      type: 'object',
-      properties: {
-        page: {
-          type: 'integer',
-          description: 'Original page number of the page to move (1-based)',
+        dry_run: {
+          type: 'boolean',
+          description: 'Validate the batch only; the document is untouched',
         },
-        to: { type: 'integer', description: 'Target position in the current order (1-based)' },
       },
-      required: ['page', 'to'],
+      required: ['ops'],
     },
-  },
-  {
-    name: 'reverse_pages',
-    description: 'Reverse the order of all pages (takes effect on save).',
-    inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'insert_blank_page',
     description:
-      'Insert a blank page (same size as its neighbor) after the given page; after_page 0 inserts it as the first page. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer delete_page/move_page/rotate_page when they suffice.',
+      'Insert a blank page (same size as its neighbor) after the given page; after_page 0 inserts it as the first page. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer apply_ops (deletePage / setPageOrder / rotatePages) when it suffices.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1010,7 +956,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'set_page_size',
     description:
-      'Resize every page of the document to a paper size (content scaled to fit, portrait). Pass either preset or both width and height in points. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer delete_page/move_page/rotate_page when they suffice.',
+      'Resize every page of the document to a paper size (content scaled to fit, portrait). Pass either preset or both width and height in points. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer apply_ops (deletePage / setPageOrder / rotatePages) when it suffices.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1027,7 +973,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'crop_pages',
     description:
-      'Crop pages to a sub-rectangle of the displayed page. left/top/right/bottom are fractions 0-1 of the page width/height describing the rectangle that is KEPT (left=0, top=0, right=1, bottom=1 is the whole page and is rejected); e.g. left 0.1, right 0.9 trims 10% off each side. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer delete_page/move_page/rotate_page when they suffice.',
+      'Crop pages to a sub-rectangle of the displayed page. left/top/right/bottom are fractions 0-1 of the page width/height describing the rectangle that is KEPT (left=0, top=0, right=1, bottom=1 is the whole page and is rejected); e.g. left 0.1, right 0.9 trims 10% off each side. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer apply_ops (deletePage / setPageOrder / rotatePages) when it suffices.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1110,7 +1056,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'replace_pages',
     description:
-      'Replace the given pages with all pages of another PDF. A native file picker opens for the user to choose that PDF. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer delete_page/move_page/rotate_page when they suffice.',
+      'Replace the given pages with all pages of another PDF. A native file picker opens for the user to choose that PDF. IRREVERSIBLE FILE OPERATION: the user is asked to confirm in a card first; on confirm every unsaved edit is saved and the file on disk is rewritten, which cannot be undone. Afterwards the document reloads and page numbers change; re-read (search_text/read_pages) before any further edit. Prefer apply_ops (deletePage / setPageOrder / rotatePages) when it suffices.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1193,13 +1139,13 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'create_document',
     description:
       'Create a NEW standalone file in the default save folder and open it in a new tab; the current PDF is not modified. Use when the user asks to put content (a summary, an extraction, an analysis result) into a new/separate document. ' +
-      "type 'pdf' (default) and 'docx' take simple HTML in content (<h1>-<h6>, <p>, <ul>/<ol>/<li>, <table>, <pre>, <blockquote>; inline <strong>/<em>/<u>/<s>); type 'md' takes Markdown source. Images are not supported in the new file's content.",
+      "type 'pdf' (default) and 'docx' take simple HTML in content (<h1>-<h6>, <p>, <ul>/<ol>/<li>, <table>, <pre>, <blockquote>; inline <strong>/<em>/<u>/<s>); type 'md' takes Markdown source; type 'html' takes a complete standalone HTML page (opens in the HTML editor). Images are not supported in the new file's content.",
     inputSchema: {
       type: 'object',
       properties: {
         type: {
           type: 'string',
-          enum: ['pdf', 'docx', 'md'],
+          enum: ['pdf', 'docx', 'md', 'html'],
           description: "target file type (default 'pdf')",
         },
         title: { type: 'string', description: 'document title, used as the file name' },
@@ -1459,10 +1405,11 @@ async function addNoteTool(
     return err('Position the note with anchor_text or x/y', summary)
   }
   if (signal?.aborted) return err('stopped by the user; nothing was changed', summary)
-  const key = deps.addNote(r.origIdx, at, text, color)
+  const added = deps.addNote(r.origIdx, at, text, color)
+  if ('error' in added) return err(added.error, summary)
   deps.gotoPage(r.origIdx + 1)
   return {
-    output: `Added note ${key} on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S).`,
+    output: `Added note ${added.key} on page ${r.origIdx + 1} (unsaved; the user saves with ⌘S).`,
     mutated: true,
     summary,
   }
@@ -1659,57 +1606,10 @@ const hexColorParam = (input: Record<string, unknown>): string | undefined | nul
   return hex ? `#${hex[1]!.toLowerCase()}` : null
 }
 
-const ROTATE_DELTAS: Record<string, RotateDelta> = { left: -90, right: 90, '180': 180 }
-
-function rotatePageTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
-  const all = input.all === true
-  const summary = all ? t('aiToolRotateAll') : t('aiToolRotate', { page: Number(input.page) })
-  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
-  const dir = ROTATE_DELTAS[String(input.direction)]
-  if (dir === undefined) return err('direction must be left, right, or 180', summary)
-  if (all) {
-    const pages = deps.pageOrder()
-    deps.rotatePages(pages, dir)
-    return {
-      output: `Rotated all ${pages.length} pages by ${dir}° (unsaved)`,
-      mutated: true,
-      summary,
-    }
-  }
-  const r = resolvePage(deps, input.page)
-  if ('bad' in r) return err(r.bad, summary)
-  deps.rotatePages([r.origIdx], dir)
-  deps.gotoPage(r.origIdx + 1)
-  return { output: `Rotated page ${r.origIdx + 1} by ${dir}° (unsaved)`, mutated: true, summary }
-}
-
 const METADATA_FIELDS = ['title', 'author', 'subject', 'keywords'] as const
 
 function describeMetadata(meta: MetadataInput): string {
   return METADATA_FIELDS.map((k) => `${k}: ${meta[k] ? `"${meta[k]}"` : '(empty)'}`).join(', ')
-}
-
-function setMetadataTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
-  const summary = t('aiToolSetMetadata')
-  const current = deps.metadata()
-  const next: MetadataInput = { ...current }
-  let changed = false
-  for (const k of METADATA_FIELDS) {
-    if (input[k] === undefined || input[k] === null) continue
-    const v = String(input[k]).trim()
-    if (v === (current[k] ?? '')) continue
-    next[k] = v
-    changed = true
-  }
-  if (!changed)
-    return { output: `Document properties unchanged: ${describeMetadata(current)}`, summary }
-  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
-  deps.setMetadata(next)
-  return {
-    output: `Document properties updated (unsaved; written on save): ${describeMetadata(next)}`,
-    mutated: true,
-    summary,
-  }
 }
 
 function setWatermarkTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
@@ -1780,29 +1680,6 @@ function describeOrder(order: number[]): string {
   const nums = order.map((i) => i + 1)
   const shown = nums.length > 40 ? `${nums.slice(0, 40).join(', ')}, …` : nums.join(', ')
   return `Current order (original page numbers): ${shown}`
-}
-
-function movePageTool(deps: PdfAiDeps, input: Record<string, unknown>): ToolExecution {
-  const summary = t('aiToolMovePage', { page: Number(input.page) })
-  if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
-  const r = resolvePage(deps, input.page)
-  if ('bad' in r) return err(r.bad, summary)
-  const order = deps.pageOrder()
-  const to = Number(input.to)
-  if (!Number.isInteger(to) || to < 1 || to > order.length) {
-    return err(`to must be a position between 1 and ${order.length}`, summary)
-  }
-  const from = order.indexOf(r.origIdx)
-  if (from < 0) return err(`Page ${r.origIdx + 1} is not in the page order`, summary)
-  if (from === to - 1) {
-    return { output: `Page ${r.origIdx + 1} is already at position ${to}.`, summary }
-  }
-  deps.movePage(r.origIdx, to - 1)
-  return {
-    output: `Moved page ${r.origIdx + 1} to position ${to} (unsaved). ${describeOrder(deps.pageOrder())}`,
-    mutated: true,
-    summary,
-  }
 }
 
 const DECLINED_OUTPUT = 'The user declined the operation; nothing was changed.'
@@ -2557,7 +2434,9 @@ async function insertTextTool(
     align: align === 'left' ? undefined : align,
     rotate: ((geom.rot % 360) + 360) % 360,
   }
-  const id = deps.insertText(record)
+  const inserted = deps.insertText(record)
+  if ('error' in inserted) return err(inserted.error, summary)
+  const { id } = inserted
   deps.gotoPage(r.origIdx + 1)
   // report the position list_inserted_text/move_inserted_text will use, not the wrap box
   const [px, py] = insertDispTopLeft(geom, { id, input: record })
@@ -2907,7 +2786,8 @@ async function insertImageTool(
   const r = resolvePage(deps, input.page)
   if ('bad' in r) return err(r.bad, summary)
   const url = String(input.url ?? '')
-  if (!/^https?:\/\//.test(url))
+  // file:// = a BYOK-generated image in the local store (the main process only resolves its own files)
+  if (!/^(https?|file):\/\//.test(url))
     return err('invalid url; pass an imageUrl from image_search or generate_image', summary)
   const geom = deps.pageGeom(r.origIdx)
   if (!geom) return err('Document not ready', summary)
@@ -3316,37 +3196,274 @@ async function listFormFields(deps: PdfAiDeps): Promise<ToolExecution> {
   }
 }
 
-async function fillFormField(
+const MAX_APPLY_OPS = 50
+const APPLY_OPS_VOCAB = new Set(callableOpNames())
+
+/** A P…/T… id from the read tools → the record id; saved (S…) records have dedicated tools */
+const pendingId = (
+  raw: unknown,
+  prefix: 'P' | 'T',
+  savedTool: string,
+): string | { bad: string } => {
+  const id = typeof raw === 'string' ? raw.trim() : ''
+  if (!id) return { bad: `"id" must be a ${prefix}… id` }
+  if (id.startsWith('S')) return { bad: `${id} is saved in the file; use ${savedTool} for it` }
+  return id.startsWith(prefix) ? id.slice(1) : id
+}
+
+/**
+ * apply_ops → executor ops: page numbers become original indices (rejecting deleted
+ * and out-of-range pages here, with the tool's wording), prefixed ids lose their
+ * prefix, form values get their kind from the field catalog.
+ */
+async function applyOpsTool(
   deps: PdfAiDeps,
   input: Record<string, unknown>,
 ): Promise<ToolExecution> {
-  const name = String(input.name ?? '')
-  const summary = t('aiToolFill', { name })
+  const raw = Array.isArray(input.ops) ? (input.ops as unknown[]) : null
+  const dryRun = input.dry_run === true
+  const summary = t(dryRun ? 'aiToolApplyOpsDryRun' : 'aiToolApplyOps', {
+    count: raw?.length ?? 0,
+  })
+  if (!raw || raw.length === 0) return err('ops must be a non-empty array', summary)
+  if (raw.length > MAX_APPLY_OPS)
+    return err(`At most ${MAX_APPLY_OPS} ops per call (got ${raw.length})`, summary)
   if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
-  const doc = deps.doc()
-  if (!doc || !name) return err('Document not ready or name is empty', summary)
-  const fields = await collectFields(doc)
-  const field = fields.get(name)
-  if (!field)
-    return err(`No field named "${name}"; use list_form_fields to see the fields`, summary)
-  let edit: FormValueInput
-  if (field.kind === 'checkbox') {
-    if (typeof input.checked !== 'boolean')
-      return err('Checkbox requires the checked parameter', summary)
-    edit = { name, kind: 'checkbox', checked: input.checked }
-  } else {
-    const value = String(input.value ?? '')
-    if (field.kind !== 'text' && value && !field.options.includes(value)) {
-      return err(
-        `Value "${value}" is not among the options: [${field.options.join(', ')}]`,
-        summary,
-      )
+
+  let fields: Awaited<ReturnType<typeof collectFields>> | null = null
+  const problems: string[] = []
+  const ops: Op[] = []
+  /** 1-based page to scroll to afterwards: the one page an op addressed */
+  let focusPage: number | null = null
+  const current = deps.pageOrder()
+  // Working state the later ops of the batch are checked against
+  let order = [...current]
+  let meta: MetadataInput = { ...deps.metadata() }
+  for (const [i, item] of raw.entries()) {
+    const bad = (msg: string) => problems.push(`- ops[${i}]: ${msg}`)
+    if (!item || typeof item !== 'object' || typeof (item as Op).op !== 'string') {
+      bad('each op must be an object with a string "op"')
+      continue
     }
-    edit = { name, kind: field.kind as 'text' | 'radio' | 'choice', value }
+    const o = { ...(item as Op) }
+    if (!APPLY_OPS_VOCAB.has(o.op)) {
+      const doc = OP_DOCS[o.op]
+      bad(
+        doc
+          ? `"${o.op}" is not available through apply_ops: ${doc.sig.split(' — ')[1] ?? 'use the dedicated tool'}`
+          : `Unknown op "${o.op}". Available ops:\n${opVocabulary()}`,
+      )
+      continue
+    }
+    switch (o.op) {
+      case 'removeMarkup': {
+        const id = pendingId(o.id, 'P', 'delete_markup')
+        if (typeof id !== 'string') {
+          bad(id.bad)
+          continue
+        }
+        ops.push({ op: o.op, id })
+        break
+      }
+      case 'setNoteContents': {
+        const id = pendingId(o.id, 'P', 'edit_note')
+        if (typeof id !== 'string') {
+          bad(id.bad)
+          continue
+        }
+        const contents = typeof o.contents === 'string' ? o.contents.trim() : ''
+        if (!contents) {
+          bad('"contents" must be a non-empty string (delete_note removes a note)')
+          continue
+        }
+        ops.push({ op: o.op, id, contents })
+        break
+      }
+      case 'removeTextInsert': {
+        const id = pendingId(o.id, 'T', 'edit_text')
+        if (typeof id !== 'string') {
+          bad(id.bad)
+          continue
+        }
+        ops.push({ op: o.op, id })
+        break
+      }
+      case 'setFormValue': {
+        const v = (o.value ?? {}) as Record<string, unknown>
+        const name = String(v.name ?? '')
+        const doc = deps.doc()
+        if (!doc || !name) {
+          bad('value.name must be a field name from list_form_fields')
+          continue
+        }
+        fields ??= await collectFields(doc)
+        const field = fields.get(name)
+        if (!field) {
+          bad(`No field named "${name}"; use list_form_fields to see the fields`)
+          continue
+        }
+        focusPage ??= field.page
+        if (field.kind === 'checkbox') {
+          if (typeof v.checked !== 'boolean') {
+            bad(`"${name}" is a checkbox; pass value.checked`)
+            continue
+          }
+          ops.push({ op: o.op, value: { name, kind: 'checkbox', checked: v.checked } })
+          break
+        }
+        const value = String(v.value ?? '')
+        if (field.kind !== 'text' && value && !field.options.includes(value)) {
+          bad(
+            `Value "${value}" is not among the options of "${name}": [${field.options.join(', ')}]`,
+          )
+          continue
+        }
+        ops.push({
+          op: o.op,
+          value: { name, kind: field.kind as 'text' | 'radio' | 'choice', value },
+        })
+        break
+      }
+      case 'rotatePages': {
+        const pages = Array.isArray(o.pages) ? o.pages : []
+        if (pages.length === 0) {
+          bad('"pages" must list at least one page number')
+          continue
+        }
+        const resolved = pages.map((p) => resolvePage(deps, p))
+        const first = resolved.find((r) => 'bad' in r)
+        if (first && 'bad' in first) {
+          bad(first.bad)
+          continue
+        }
+        const idxs = resolved.map((r) => (r as { origIdx: number }).origIdx)
+        if (idxs.length === 1) focusPage ??= idxs[0]! + 1
+        ops.push({ op: o.op, pages: idxs, dir: o.dir })
+        break
+      }
+      case 'deletePage': {
+        const r = resolvePage(deps, o.page ?? o.pageIndex)
+        if ('bad' in r) {
+          bad(r.bad)
+          continue
+        }
+        order = order.filter((idx) => idx !== r.origIdx)
+        ops.push({ op: o.op, pageIndex: r.origIdx })
+        break
+      }
+      case 'setPageOrder': {
+        if (o.order === null) {
+          order = Array.from({ length: deps.pageCount() }, (_, idx) => idx).filter((idx) =>
+            order.includes(idx),
+          )
+          ops.push({ op: o.op, order: null })
+          break
+        }
+        const pages = Array.isArray(o.order) ? o.order.map(Number) : []
+        const want = new Set(order.map((idx) => idx + 1))
+        const seen = new Set<number>()
+        const invalid = pages.find((p) => !want.has(p) || seen.has(p) || !seen.add(p))
+        if (invalid !== undefined || pages.length !== order.length) {
+          bad(`"order" must list every current page number exactly once: [${[...want].join(', ')}]`)
+          continue
+        }
+        const vis = pages.map((p) => p - 1)
+        const rest = Array.from({ length: deps.pageCount() }, (_, idx) => idx).filter(
+          (idx) => !vis.includes(idx),
+        )
+        const moved = movedPage(order, vis)
+        if (moved !== undefined) focusPage ??= moved + 1
+        order = vis
+        ops.push({ op: o.op, order: [...vis, ...rest] })
+        break
+      }
+      case 'setMetadata': {
+        if (o.metadata === null) {
+          // Omitted fields keep the file's values from here on
+          meta = {}
+          ops.push({ op: o.op, metadata: null })
+          break
+        }
+        const given = (o.metadata ?? {}) as Record<string, unknown>
+        // Omitted fields keep their value, "" clears one — the properties dialog's contract
+        for (const k of METADATA_FIELDS) {
+          if (given[k] === undefined || given[k] === null) continue
+          meta[k] = String(given[k]).trim()
+        }
+        ops.push({ op: o.op, metadata: { ...meta } })
+        break
+      }
+      default:
+        ops.push(o)
+    }
   }
-  deps.applyFormEdit(edit)
-  deps.gotoPage(field.page)
-  return { output: `Filled ${name} (unsaved; the user saves with ⌘S)`, mutated: true, summary }
+  if (problems.length > 0)
+    return err(`Nothing was applied (atomic):\n${problems.join('\n')}`, summary)
+
+  const plan = deps.applyOps(ops, dryRun ? { dryRun: true } : undefined)
+  if (plan.failures.length > 0) {
+    const lines = plan.failures.map((f) => `- ops[${f.index}]: ${f.error}`).join('\n')
+    return err(`Nothing was applied (atomic):\n${lines}`, summary)
+  }
+  const names = plan.ops.map((op) => op.op).join(', ')
+  if (dryRun) {
+    return {
+      output: `Dry run — the document was NOT modified. All ${plan.ops.length} op(s) are valid: ${names}. Resend without dry_run to apply.`,
+      summary,
+    }
+  }
+  if (focusPage !== null) deps.gotoPage(focusPage)
+  const details: string[] = []
+  if (plan.ops.some((op) => op.op === 'setPageOrder' || op.op === 'deletePage'))
+    details.push(describeOrder(deps.pageOrder()))
+  if (plan.ops.some((op) => op.op === 'setMetadata'))
+    details.push(`Document properties (written on save): ${describeMetadata(deps.metadata())}`)
+  return {
+    output:
+      `Applied ${plan.ops.length} op(s) as one undo step: ${names} (unsaved; the user saves with ⌘S, undoes with ⌘Z).` +
+      (details.length > 0 ? ` ${details.join(' ')}` : ''),
+    mutated: true,
+    summary: plan.ops.length === 1 ? singleOpSummary(plan.ops[0]!, current) : summary,
+  }
+}
+
+/** The page a reorder moved: the one displaced furthest (its neighbours slide by one) */
+function movedPage(before: number[], after: number[]): number | undefined {
+  let best: number | undefined
+  let bestShift = 0
+  after.forEach((idx, pos) => {
+    const shift = Math.abs(before.indexOf(idx) - pos)
+    if (shift > bestShift) {
+      best = idx
+      bestShift = shift
+    }
+  })
+  return best
+}
+
+/** Activity-chip label for a one-op batch: what the dedicated tool used to show */
+function singleOpSummary(op: Op, before: number[]): string {
+  switch (op.op) {
+    case 'rotatePages': {
+      const pages = op.pages as number[]
+      return pages.length === 1 ? t('aiToolRotate', { page: pages[0]! + 1 }) : t('aiToolRotateAll')
+    }
+    case 'deletePage':
+      return t('aiToolDelete', { page: (op.pageIndex as number) + 1 })
+    case 'setPageOrder': {
+      const vis = ((op.order as number[] | null) ?? []).slice(0, before.length)
+      const reversed =
+        vis.length === before.length && vis.every((idx, i) => before[before.length - 1 - i] === idx)
+      if (reversed) return t('aiToolReversePages')
+      return t('aiToolMovePage', { page: (movedPage(before, vis) ?? vis[0] ?? 0) + 1 })
+    }
+    case 'setMetadata':
+      return t('aiToolSetMetadata')
+    case 'setFormValue':
+      return t('aiToolFill', { name: (op.value as FormValueInput).name })
+    default:
+      return t('aiToolApplyOps', { count: 1 })
+  }
 }
 
 export async function executePdfTool(
@@ -3422,37 +3539,8 @@ export async function executePdfTool(
       return bakeImageTool(call.name, deps, input, signal)
     case 'list_form_fields':
       return listFormFields(deps)
-    case 'fill_form_field':
-      return fillFormField(deps, input)
-    case 'rotate_page':
-      return rotatePageTool(deps, input)
-    case 'set_metadata':
-      return setMetadataTool(deps, input)
-    case 'delete_page': {
-      const summary = t('aiToolDelete', { page: Number(input.page) })
-      if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
-      const r = resolvePage(deps, input.page)
-      if ('bad' in r) return err(r.bad, summary)
-      if (!deps.deletePage(r.origIdx)) return err('At least one page must remain', summary)
-      return {
-        output: `Deleted page ${r.origIdx + 1} (unsaved; can be undone)`,
-        mutated: true,
-        summary,
-      }
-    }
-    case 'move_page':
-      return movePageTool(deps, input)
-    case 'reverse_pages': {
-      const summary = t('aiToolReversePages')
-      if (deps.readOnly()) return err(READONLY_OUTPUT, summary)
-      if (deps.pageOrder().length < 2) return err('The document has a single page', summary)
-      deps.reversePages()
-      return {
-        output: `Reversed the page order (unsaved). ${describeOrder(deps.pageOrder())}`,
-        mutated: true,
-        summary,
-      }
-    }
+    case 'apply_ops':
+      return applyOpsTool(deps, input)
     case 'insert_blank_page':
       return insertBlankPageTool(deps, input, signal)
     case 'set_page_size':
@@ -3491,8 +3579,8 @@ export async function executePdfTool(
     case 'create_document': {
       const typeRaw = input.type === undefined ? 'pdf' : String(input.type)
       const summary = t('aiToolCreateDocument')
-      if (typeRaw !== 'pdf' && typeRaw !== 'docx' && typeRaw !== 'md')
-        return err('type must be one of pdf/docx/md', summary)
+      if (typeRaw !== 'pdf' && typeRaw !== 'docx' && typeRaw !== 'md' && typeRaw !== 'html')
+        return err('type must be one of pdf/docx/md/html', summary)
       const type: CreateDocumentType = typeRaw
       const title = String(input.title ?? '').trim()
       if (!title) return err('title must not be empty', summary)

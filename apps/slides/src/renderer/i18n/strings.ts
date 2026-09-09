@@ -18,6 +18,7 @@ export const strings = {
   pt: { ...appStrings.pt, ...ribbonStrings.pt, ...paneStrings.pt, ...aiStrings.pt },
   it: { ...appStrings.it, ...ribbonStrings.it, ...paneStrings.it, ...aiStrings.it },
   pl: { ...appStrings.pl, ...ribbonStrings.pl, ...paneStrings.pl, ...aiStrings.pl },
+  cs: { ...appStrings.cs, ...ribbonStrings.cs, ...paneStrings.cs, ...aiStrings.cs },
   nl: { ...appStrings.nl, ...ribbonStrings.nl, ...paneStrings.nl, ...aiStrings.nl },
   ms: { ...appStrings.ms, ...ribbonStrings.ms, ...paneStrings.ms, ...aiStrings.ms },
   he: { ...appStrings.he, ...ribbonStrings.he, ...paneStrings.he, ...aiStrings.he },

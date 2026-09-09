@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import type { Editor, JSONContent } from '@tiptap/core'
+import { TextSelection } from '@tiptap/pm/state'
 import {
   SHAPE_GALLERY_GROUPS,
   useDismissablePopover,
@@ -16,6 +17,7 @@ import {
   type TextboxDisplay,
 } from '@genoffice/docx-engine'
 import type { DocsTabInfo } from '../../shared/ipc'
+import { runUiOps } from '../ai/ops'
 import { tableModelToPmNode } from '../editor/convert'
 import { insertPageBreak } from '../editor/page-break'
 import { isStraightLineKind } from '../editor/shape-svg'
@@ -80,7 +82,11 @@ export type SetDropdown = (updater: (prev: string | null) => string | null) => v
 export const toggleDropdown = (setDropdown: SetDropdown, key: string) =>
   setDropdown((prev) => (prev === key ? null : key))
 
-/** apply paragraph-level attrs to every block type in the selection */
+/**
+ * Apply paragraph-level attrs to every paragraph in the selection (the
+ * setParagraphAttrs op: headings, list items and table-cell paragraphs alike;
+ * `align` also lands on selected images as their w:jc).
+ */
 export function setParaAttrs(
   editor: Editor,
   attrs: Record<string, unknown>,
@@ -89,40 +95,11 @@ export function setParaAttrs(
   /// to another paragraph (alpha ledger r131 / bugbot).
   range?: { from: number; to: number },
 ): void {
-  // an explicit spacing value turns Word's "Auto" spacing off (dialog semantics);
-  // a stale auto flag would keep rendering 14pt over the user's value
-  if ('spaceBefore' in attrs && !('spaceBeforeAuto' in attrs)) attrs.spaceBeforeAuto = false
-  if ('spaceAfter' in attrs && !('spaceAfterAuto' in attrs)) attrs.spaceAfterAuto = false
-  if (range) {
-    const paraTypes = new Set(['docParagraph', 'docHeading', 'docListItem'])
-    editor
-      .chain()
-      .command(({ tr, dispatch }) => {
-        const from = Math.min(range.from, tr.doc.content.size)
-        const to = Math.min(range.to, tr.doc.content.size)
-        let changed = false
-        tr.doc.nodesBetween(from, to, (node, pos) => {
-          if (!paraTypes.has(node.type.name)) return true
-          if (dispatch) tr.setNodeMarkup(pos, undefined, { ...node.attrs, ...attrs })
-          changed = true
-          return false
-        })
-        return changed
-      })
-      .run()
-    return
-  }
-  let chain = editor
-    .chain()
-    .focus()
-    .updateAttributes('docParagraph', attrs)
-    .updateAttributes('docHeading', attrs)
-    .updateAttributes('docListItem', attrs)
-  // alignment also applies to selected images (w:jc on the image paragraph)
-  if ('align' in attrs) {
-    chain = chain.updateAttributes('docProtected', { imageAlign: attrs.align ?? null })
-  }
-  chain.run()
+  const size = editor.state.doc.content.size
+  const target = range
+    ? { range: { from: Math.min(range.from, size), to: Math.min(range.to, size) } }
+    : { scope: 'selection' as const }
+  runUiOps(editor, [{ op: 'setParagraphAttrs', target, attrs }], { focus: !range })
 }
 
 /** direct paragraph formatting dropped by Word's Ctrl+Q (the style's own values then show through) */
@@ -254,12 +231,29 @@ export function insertTableAt(editor: Editor, rows: number, cols: number): void 
       editor
         .chain()
         .focus()
-        .insertContentAt($from.end(depth), { type: 'docNestedTable', attrs: { model: table } })
+        .insertContentAt($from.end(depth), [
+          { type: 'docNestedTable', attrs: { model: table } },
+          { type: 'docParagraph' },
+        ])
         .run()
       return
     }
   }
-  editor.chain().focus().insertContent(tableModelToPmNode(table)).run()
+  const node = tableModelToPmNode(table)
+  // Word: an empty paragraph stays below the new table (insertContent would
+  // swallow it); the caret lands in the first cell either way
+  const block = $from.depth > 0 ? $from.node(1) : null
+  const at = block?.isTextblock && block.content.size === 0 ? $from.before(1) : null
+  const chain = editor.chain().focus()
+  if (at == null) chain.insertContent(node).run()
+  else
+    chain
+      .insertContentAt(at, node)
+      .command(({ tr }) => {
+        tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1)))
+        return true
+      })
+      .run()
 }
 
 /** Insert an inline image from a dataURL at the cursor (shared by paste/dialog; size scaled to content width) */
@@ -610,8 +604,12 @@ export interface InsertTabProps extends TabProps {
   onTitlePg: (v: boolean) => void
   evenOddHf: boolean
   onEvenOddHf: (v: boolean) => void
-  commentCount: number
-  onShowComments: () => void
+  /** a selection (or a caret in a word) to anchor a new comment on, as in the Review tab */
+  canComment: boolean
+  onNewComment: () => void
+  /** the Review-tab gate pair: commenting survives the comments-only restriction */
+  isProtected: boolean
+  commentsAllowed: boolean
 }
 
 /** target languages of Word's Translate dropdown that the AI backend can serve;

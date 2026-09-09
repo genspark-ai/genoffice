@@ -33,6 +33,8 @@ interface HoldState {
   vetoed: boolean
   inProgress: boolean
   timer: ReturnType<typeof setTimeout> | null
+  fullRecalc: boolean
+  schedule: (() => void) | null
 }
 
 const states = new WeakMap<UniverRuntime, HoldState>()
@@ -55,12 +57,32 @@ export function noteFormulaStreamChunk(): void {
   current.lastChunkAt = Date.now()
 }
 
+/**
+ * Streamed installs can still split into cycles (a slow sidecar read outlasts
+ * the hold), and an interrupted cycle publishes partial results: a dependent
+ * evaluated while its precedent still read an unloaded sheet keeps that stale
+ * value (SUMIFS keyed on a cross-sheet lookup stuck at 0). Recalculate
+ * everything once the workbook is complete, like Excel's recalc on open.
+ */
+export function requestFullRecalcAfterStream(): void {
+  if (!current) return
+  current.fullRecalc = true
+  current.schedule?.()
+}
+
 export function installFormulaStreamHold(runtime: UniverRuntime): void {
   if (states.has(runtime)) {
     current = states.get(runtime) ?? null
     return
   }
-  const state: HoldState = { lastChunkAt: 0, vetoed: false, inProgress: false, timer: null }
+  const state: HoldState = {
+    lastChunkAt: 0,
+    vetoed: false,
+    inProgress: false,
+    timer: null,
+    fullRecalc: false,
+    schedule: null,
+  }
   states.set(runtime, state)
   current = state
   const injector = runtime.univer.__getInjector()
@@ -81,10 +103,12 @@ export function installFormulaStreamHold(runtime: UniverRuntime): void {
     // "in progress" bookkeeping stale; clear it before the merged cycle.
     controller._executionInProgressParams = null
     controller._restartCalculation = false
-    if (!hasDirtyData(controller._executingDirtyData)) return
+    const fullRecalc = state.fullRecalc
+    state.fullRecalc = false
+    if (!fullRecalc && !hasDirtyData(controller._executingDirtyData)) return
     void commandService.executeCommand(
       START_MUTATION,
-      { ...controller._executingDirtyData },
+      { ...controller._executingDirtyData, ...(fullRecalc ? { forceCalculation: true } : {}) },
       {
         onlyLocal: true,
       },
@@ -94,6 +118,7 @@ export function installFormulaStreamHold(runtime: UniverRuntime): void {
     if (state.timer) clearTimeout(state.timer)
     state.timer = setTimeout(flush, FORMULA_STREAM_HOLD_MS + 20)
   }
+  state.schedule = schedule
 
   commandService.beforeCommandExecuted((command) => {
     if (command.id !== START_MUTATION || !holding()) return

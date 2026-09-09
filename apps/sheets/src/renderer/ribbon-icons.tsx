@@ -37,6 +37,129 @@ export function CaretIcon(): ReactElement {
   )
 }
 
+/// Border-menu glyphs (16-canvas, docs-ribbon conventions): a faint dashed
+/// frame marks the cell block, solid strokes mark the edges the entry sets.
+function BorderSvg({ children }: { children: ReactNode }): ReactElement {
+  return (
+    <svg
+      className="border-icon"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  )
+}
+
+function BorderDashedFrame(): ReactElement {
+  return (
+    <rect
+      x="3.02"
+      y="3.02"
+      width="9.96"
+      height="9.96"
+      rx="0.42"
+      strokeWidth="1"
+      strokeDasharray="1.5 1.7"
+      opacity="0.55"
+    />
+  )
+}
+
+export function BorderAllIcon(): ReactElement {
+  return (
+    <BorderSvg>
+      <rect x="3.02" y="3.02" width="9.96" height="9.96" rx="0.42" />
+      <path d="M 3.02 8 h 9.96 M 8 3.02 v 9.96" />
+    </BorderSvg>
+  )
+}
+
+export function BorderOuterIcon(): ReactElement {
+  return (
+    <BorderSvg>
+      <rect x="3.02" y="3.02" width="9.96" height="9.96" rx="0.42" />
+      <path
+        d="M 3.02 8 h 9.96 M 8 3.02 v 9.96"
+        strokeWidth="1"
+        strokeDasharray="1.5 1.7"
+        opacity="0.55"
+      />
+    </BorderSvg>
+  )
+}
+
+export function BorderThickOuterIcon(): ReactElement {
+  return (
+    <BorderSvg>
+      <rect x="3.22" y="3.22" width="9.56" height="9.56" rx="0.42" strokeWidth="2.1" />
+      <path
+        d="M 3.02 8 h 9.96 M 8 3.02 v 9.96"
+        strokeWidth="1"
+        strokeDasharray="1.5 1.7"
+        opacity="0.55"
+      />
+    </BorderSvg>
+  )
+}
+
+export function BorderTopIcon(): ReactElement {
+  return (
+    <BorderSvg>
+      <BorderDashedFrame />
+      <path d="M 3.02 3.02 h 9.96" />
+    </BorderSvg>
+  )
+}
+
+export function BorderBottomIcon(): ReactElement {
+  return (
+    <BorderSvg>
+      <BorderDashedFrame />
+      <path d="M 3.02 12.98 h 9.96" />
+    </BorderSvg>
+  )
+}
+
+export function BorderLeftIcon(): ReactElement {
+  return (
+    <BorderSvg>
+      <BorderDashedFrame />
+      <path d="M 3.02 3.02 v 9.96" />
+    </BorderSvg>
+  )
+}
+
+export function BorderRightIcon(): ReactElement {
+  return (
+    <BorderSvg>
+      <BorderDashedFrame />
+      <path d="M 12.98 3.02 v 9.96" />
+    </BorderSvg>
+  )
+}
+
+export function BorderNoneIcon(): ReactElement {
+  return (
+    <BorderSvg>
+      <BorderDashedFrame />
+      <path
+        d="M 3.02 8 h 9.96 M 8 3.02 v 9.96"
+        strokeWidth="1"
+        strokeDasharray="1.5 1.7"
+        opacity="0.55"
+      />
+    </BorderSvg>
+  )
+}
+
 /// Quick-access save button — standard floppy glyph shared across all apps.
 export function SaveIcon(): ReactElement {
   return (

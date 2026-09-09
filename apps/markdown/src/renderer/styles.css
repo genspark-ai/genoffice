@@ -37,6 +37,8 @@
   --md-toast-error-bg: rgb(196 49 75 / 95%);
   --md-toast-ink: #ffffff;
   --md-toast-ok: #34c759;
+  /* diagrams are document content: white paper behind them in both themes */
+  --md-diagram-bg: #ffffff;
 }
 
 [data-theme='dark'] {
@@ -72,6 +74,7 @@
   --md-toast-error-bg: rgb(196 49 75 / 95%);
   --md-toast-ink: #ffffff;
   --md-toast-ok: #34c759;
+  --md-diagram-bg: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -108,6 +111,7 @@
     --md-toast-error-bg: rgb(196 49 75 / 95%);
     --md-toast-ink: #ffffff;
     --md-toast-ok: #34c759;
+    --md-diagram-bg: #ffffff;
   }
 }
 
@@ -1977,6 +1981,7 @@ html.genoffice-popover-open .ribbon-tabs {
 }
 
 .app-content {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -2055,6 +2060,49 @@ html.genoffice-popover-open .ribbon-tabs {
 
 .md-codeblock-copy:hover {
   background: var(--hover);
+}
+
+/* ---- mermaid diagrams (```mermaid code blocks) ---- */
+
+/* the source stays in the DOM (ProseMirror needs its contentDOM) but is
+   visually collapsed while the caret is outside the block */
+.md-mermaid-collapsed pre {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  opacity: 0;
+}
+
+.md-mermaid-preview {
+  margin: 0.8em 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--md-diagram-bg);
+  text-align: center;
+  cursor: text;
+}
+
+.md-mermaid:not(.md-mermaid-collapsed) .md-mermaid-preview {
+  margin-top: 8px;
+}
+
+.md-mermaid-preview svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.md-mermaid-error {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--md-error-border);
+  border-radius: 6px;
+  background: var(--md-error-bg);
+  color: var(--md-error);
+  font-size: 12.5px;
+  white-space: pre-wrap;
 }
 
 /* ---- floating table menu ---- */
@@ -2371,6 +2419,14 @@ div.tiptap-mathematics-render {
   background: var(--md-ai-anchor-bg);
   border-bottom: 2px dashed var(--md-ai-anchor-line);
   cursor: pointer;
+}
+
+/* state selection kept visible while the Ask-AI input owns the DOM selection;
+   translucent so it overlays run highlights (document canvas, not themed chrome) */
+.md-inactive-selection {
+  --md-inactive-selection-bg: rgb(0 0 0 / 18%);
+
+  background-color: var(--md-inactive-selection-bg);
 }
 
 /* ---- floating Ask-AI entry that follows the text selection ---- */

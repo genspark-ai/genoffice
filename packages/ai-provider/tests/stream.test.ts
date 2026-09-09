@@ -413,7 +413,7 @@ describe('streamForProvider: anthropic', () => {
     const { cb } = collector()
     await expect(
       streamForProvider('anthropic', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, cb),
-    ).rejects.toThrow(/Claude HTTP 403: .*web page instead of an API response/)
+    ).rejects.toThrow(/Claude HTTP 403: .*web page.*instead of an API response/)
   })
 })
 
@@ -1077,5 +1077,72 @@ describe('streamForProvider: interleaved-thinking reasoning', () => {
     const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string)
     const assistant = body.messages.find((m: { role: string }) => m.role === 'assistant')
     expect('reasoning_content' in assistant).toBe(false)
+  })
+})
+
+describe('streamForProvider: a connection dropped mid tool arguments is not an empty stream', () => {
+  // Tool arguments are buffered upstream; the Genspark gateway closes the SSE
+  // after ~125s of that silence. The turn was billed and in progress, so it
+  // must not match the "(empty stream)" contract that agent-core replays.
+  it('anthropic: open tool_use block with no stop_reason rejects as a dropped connection', async () => {
+    const body = sseStream([
+      'data: {"type":"message_start","message":{}}',
+      'data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t1","name":"write_html"}}',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":""}}',
+      'data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"html\\":\\"<!doc"}}',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { cb, toolCalls } = collector()
+    const run = streamForProvider(
+      'anthropic',
+      { apiKey: 'k', model: 'claude-sonnet-5' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    await expect(run).rejects.toThrow(/connection was dropped/)
+    await expect(run).rejects.not.toThrow(/empty stream/)
+    expect(toolCalls).toEqual([])
+  })
+
+  it('openai-compatible: half-received tool arguments with no finish reject as a dropped connection', async () => {
+    const body = sseStream([
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"write_html","arguments":"{\\"html\\":"}}]}}]}',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"<!doctype"}}]}}]}',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { cb, toolCalls } = collector()
+    const run = streamForProvider(
+      'openai',
+      { apiKey: 'k', model: 'gpt-4.1-mini' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    await expect(run).rejects.toThrow(/connection was dropped/)
+    await expect(run).rejects.not.toThrow(/empty stream/)
+    expect(toolCalls).toEqual([])
+  })
+
+  it('openai-compatible: complete arguments without a finish reason still flush as a tool call', async () => {
+    const body = sseStream([
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"ping","arguments":"{\\"a\\":1}"}}]}}]}',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { cb, toolCalls } = collector()
+    await streamForProvider(
+      'openai',
+      { apiKey: 'k', model: 'gpt-4.1-mini' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    expect(toolCalls.map((c) => [c.name, c.input])).toEqual([['ping', { a: 1 }]])
   })
 })

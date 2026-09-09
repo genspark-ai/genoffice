@@ -63,7 +63,13 @@ export function ensurePdfium(): Promise<PdfiumModule> {
     const raw = readFileSync(pdfiumWasmPath())
     // exact slice: Buffer.buffer may be a shared pool larger than the file
     const wasmBinary = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)
-    const wrapped = (await init({ wasmBinary })) as { pdfium?: unknown }
+    // thisProgram: emscripten's synthetic environ writes process.argv[1] via
+    // ASCII-asserting stringToAscii; a document path with CJK characters handed
+    // to the packaged app by a Windows file association aborts init (same fix
+    // as apps/pdf/src/main/text-edit.ts loadPdfium)
+    const wrapped = (await init({ wasmBinary, thisProgram: 'genoffice-pdf' })) as {
+      pdfium?: unknown
+    }
     const m = (wrapped.pdfium ?? wrapped) as PdfiumModule & { _PDFiumExt_Init(): void }
     m._PDFiumExt_Init()
     return m

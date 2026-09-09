@@ -147,6 +147,13 @@ export function classifyFloatImages(
   const bodyRight = units.length > 0 ? Math.max(...units.map((u) => u.box.x1)) : 0
 
   for (const img of images) {
+    // a rasterized pattern fill (P35) is a drawn shape, never inline content:
+    // flowed, a title-only gradient card would add its full height to the text
+    if (img.synthetic) {
+      img.float = { wrap: 'behind', xOffsetPt: Math.max(0, img.box.x0 - bodyLeft) }
+      floats.push(img)
+      continue
+    }
     const over = units.filter((u) => overlapRatio(u.box, img.box) >= 0.8)
     const beside = units.filter(
       (u) =>

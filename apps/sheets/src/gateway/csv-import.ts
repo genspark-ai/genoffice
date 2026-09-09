@@ -4,6 +4,8 @@
 
 import JSZip from 'jszip'
 
+import { encodeXlsxEscapes } from './xlsx-escapes'
+
 const DELIMITERS = [',', ';', '\t'] as const
 
 // Excel writes CSV in the system's legacy charset, not UTF-8 (GBK on Chinese
@@ -184,7 +186,7 @@ export function buildWorksheetXml(rows: readonly (readonly string[])[]): string 
       cells.push(
         isNumericCell(value)
           ? `<c r="${reference}"><v>${value}</v></c>`
-          : `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`,
+          : `<c r="${reference}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(encodeXlsxEscapes(value))}</t></is></c>`,
       )
     })
     if (cells.length > 0) lines.push(`<row r="${rowIndex + 1}">${cells.join('')}</row>`)

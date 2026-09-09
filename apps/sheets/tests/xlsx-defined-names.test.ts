@@ -35,6 +35,22 @@ describe('applyDefinedNamesState', () => {
     )
   })
 
+  it('fills a self-closing <definedNames/> rather than appending after it', () => {
+    const exported =
+      '<workbook><sheets><sheet name="D" sheetId="1" r:id="rId1"/></sheets>' +
+      '<definedNames/><calcPr/></workbook>'
+    const xml = applyDefinedNamesState(exported, {
+      names: [{ name: 'N', formula: 'D!$A$1' }],
+      preserveNames: [],
+    })
+    expect(xml.match(/<definedNames\b/g)).toHaveLength(1)
+    expect(xml).toBe(
+      '<workbook><sheets><sheet name="D" sheetId="1" r:id="rId1"/></sheets>' +
+        '<definedNames><definedName name="N">D!$A$1</definedName></definedNames>' +
+        '<calcPr/></workbook>',
+    )
+  })
+
   it('creates the section after sheets when absent, stripping a leading =', () => {
     const bare = '<workbook><sheets><sheet name="D"/></sheets><calcPr/></workbook>'
     expect(

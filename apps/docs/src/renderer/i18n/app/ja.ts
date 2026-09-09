@@ -82,8 +82,10 @@ export const ja = {
   appPgNumAppliesTo: '。セクション {n} に適用',
   // Export PDF
   appExportingPdf: 'PDF をエクスポートしています…',
+  appExportingHtml: 'HTML をエクスポートしています…',
   appExportPdf: 'PDF のエクスポート',
   appExportPdfFailed: 'PDF のエクスポートに失敗しました: {error}',
+  appExportHtmlFailed: 'HTML のエクスポートに失敗しました: {error}',
   appPrintGroupFailed: 'ページ グループの印刷に失敗しました',
   appPrintTitle: '印刷',
   appPrintProgress: '印刷を準備しています…',
@@ -99,9 +101,11 @@ export const ja = {
   appPrintPrevPage: '前のページ',
   appPrintNextPage: '次のページ',
   appExportedPdf: 'PDF をエクスポートしました: {path}',
+  appExportedHtml: 'HTML をエクスポートしました: {path}',
   appExportedPdfMixed:
     'PDF をエクスポートしました: {path}(用紙サイズ混在、{n} グループをページ順に結合)',
   appExportPdfCanceled: 'PDF のエクスポートをキャンセルしました',
+  appExportHtmlCanceled: 'HTML のエクスポートをキャンセルしました',
   appMixedExportOpening:
     '用紙サイズが混在する文書:ページ プレビューを開き、ページごとに結合してエクスポートしています…',
   // Comments
@@ -109,6 +113,7 @@ export const ja = {
   appCommentSelectionLost:
     '選択範囲が無効になりました。コメントを付けるテキストをもう一度選択してください',
   appCommentAdded: 'コメントを追加しました。保存時に文書へ書き込まれます',
+  appCommentEdited: 'コメントを更新しました。保存時に文書へ書き込まれます',
   appCommentAnchorGone: '元のコメントのアンカーが存在しないため、返信できません',
   appCommentReplied: 'コメントに返信しました。保存時に文書へ書き込まれます',
   appCommentResolvedMsg: 'コメントを解決済みにしました',
@@ -119,6 +124,7 @@ export const ja = {
   appUnknownAuthor: '(作成者不明)',
   appResolved: '解決済み',
   appResolvedComments: '解決済みのコメント ({n})',
+  appEditComment: 'コメントの編集',
   appDeleteComment: 'コメントの削除',
   appDeleteCommentWithReplies: 'コメントの削除(返信を含む)',
   appDeleteReply: '返信の削除',

@@ -499,6 +499,9 @@ export const zh = {
   ribbonGroupSize: '大小',
   ribbonCrop: '裁剪',
   ribbonCropTip: '裁剪图片（拖动手柄，Enter 确认）',
+  ribbonReplacePicture: '替换图片',
+  ribbonRotateLeft: '向左旋转 90°',
+  ribbonRotateRight: '向右旋转 90°',
   // Insert dialogs
   ribbonDlgHyperlink: '超链接',
   ribbonDlgWebAddress: '网页地址',
