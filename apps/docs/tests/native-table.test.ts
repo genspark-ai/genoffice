@@ -63,6 +63,43 @@ async function openTable(): Promise<{
   return { editor, parsed, source }
 }
 
+function openEmptyTable(): Editor {
+  return new Editor({
+    element: document.createElement('div'),
+    extensions: editorExtensions,
+    content: {
+      type: 'doc',
+      content: [
+        {
+          type: 'docTable',
+          content: [
+            {
+              type: 'docTableRow',
+              content: [{ type: 'docTableCell', content: [{ type: 'docParagraph' }] }],
+            },
+          ],
+        },
+      ],
+    } as never,
+  })
+}
+
+function selectFirstCellStart(editor: Editor): void {
+  const firstCell = cellPositions(editor)[0]
+  editor.view.dispatch(
+    editor.state.tr.setSelection(TextSelection.create(editor.state.doc, firstCell + 2)),
+  )
+}
+
+function tableHasLeafContent(editor: Editor): boolean {
+  let hasLeaf = false
+  editor.state.doc.firstChild?.descendants((node) => {
+    if (node.isLeaf) hasLeaf = true
+    return !hasLeaf
+  })
+  return hasLeaf
+}
+
 function selectLastCellTextEnd(editor: Editor): void {
   let lastCellTextEnd = 0
   editor.state.doc.descendants((node, pos) => {
@@ -91,6 +128,63 @@ function clickBelowTrailingTable(editor: Editor): void {
 }
 
 describe('native editable tables', () => {
+  it('deletes a completely empty table with Backspace and Delete', () => {
+    for (const key of ['Backspace', 'Delete']) {
+      const editor = openEmptyTable()
+      selectFirstCellStart(editor)
+
+      expect(tableHasLeafContent(editor)).toBe(false)
+      pressKey(editor, key)
+
+      expect(editor.state.doc.firstChild?.type.name).not.toBe('docTable')
+      editor.destroy()
+    }
+  })
+
+  it('keeps a non-empty table when the current cell is empty', async () => {
+    const { editor } = await openTable()
+    const firstCell = cellPositions(editor)[0]
+    const transaction = editor.state.tr.delete(firstCell + 2, firstCell + 3)
+    editor.view.dispatch(
+      transaction.setSelection(TextSelection.create(transaction.doc, firstCell + 2)),
+    )
+
+    pressKey(editor, 'Backspace')
+
+    expect(editor.state.doc.firstChild?.type.name).toBe('docTable')
+    expect(editor.state.doc.textContent).toContain('B')
+    editor.destroy()
+  })
+
+  it('keeps a table with a non-text leaf even when its text is empty', () => {
+    const editor = openEmptyTable()
+    selectFirstCellStart(editor)
+    editor.view.dispatch(
+      editor.state.tr.replaceSelectionWith(editor.schema.nodes.hardBreak.create()),
+    )
+
+    expect(editor.state.doc.textContent).toBe('')
+    expect(tableHasLeafContent(editor)).toBe(true)
+    pressKey(editor, 'Backspace')
+
+    expect(editor.state.doc.firstChild?.type.name).toBe('docTable')
+    editor.destroy()
+  })
+
+  it('restores an empty table when undoing its deletion', () => {
+    const editor = openEmptyTable()
+    selectFirstCellStart(editor)
+
+    pressKey(editor, 'Backspace')
+    expect(editor.state.doc.firstChild?.type.name).not.toBe('docTable')
+
+    expect(editor.commands.undo()).toBe(true)
+
+    expect(editor.state.doc.firstChild?.type.name).toBe('docTable')
+    expect(tableHasLeafContent(editor)).toBe(false)
+    editor.destroy()
+  })
+
   it('allows typing after an imported trailing table', async () => {
     const { editor } = await openTable()
     selectLastCellTextEnd(editor)

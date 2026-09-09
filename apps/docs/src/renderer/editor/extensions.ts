@@ -2797,12 +2797,32 @@ export const DocNestedTable = Node.create({
   },
 })
 
-/** Delete only an explicitly selected whole table; leave cursors and partial cell selections alone. */
+function emptyTopLevelTableAtCursor(state: EditorState): { from: number; to: number } | null {
+  const { selection } = state
+  if (!(selection instanceof TextSelection) || !selection.empty) return null
+  const table = selection.$from.node(1)
+  if (table.type.name !== 'docTable') return null
+  let hasLeaf = false
+  table.descendants((node) => {
+    if (node.isLeaf) hasLeaf = true
+    return !hasLeaf
+  })
+  if (hasLeaf) return null
+  const from = selection.$from.before(1)
+  return { from, to: from + table.nodeSize }
+}
+
+/** Delete a selected table, or a completely empty table under a text cursor. */
 export function deleteSelectedWholeTable(
   state: EditorState,
   dispatch?: (transaction: Transaction) => void,
 ): boolean {
   const { selection } = state
+  const emptyTable = emptyTopLevelTableAtCursor(state)
+  if (emptyTable) {
+    dispatch?.(state.tr.delete(emptyTable.from, emptyTable.to).scrollIntoView())
+    return true
+  }
   if (selection instanceof NodeSelection) {
     if (selection.node.type.spec.tableRole !== 'table') return false
     dispatch?.(state.tr.delete(selection.from, selection.to).scrollIntoView())
