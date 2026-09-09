@@ -94,6 +94,83 @@ export function quadSetsMatch(a: number[][], b: number[][], tol = 2): boolean {
   return true
 }
 
+interface ViewRect {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+interface SelectionLine {
+  crossStart: number
+  crossEnd: number
+  minCrossSize: number
+  rects: ViewRect[]
+}
+
+const crossBounds = (r: ViewRect): [number, number] => [r.top, r.bottom]
+
+const mainBounds = (r: ViewRect): [number, number] => [r.left, r.right]
+
+const rectBounds = (rects: readonly ViewRect[]): ViewRect => ({
+  left: Math.min(...rects.map((r) => r.left)),
+  right: Math.max(...rects.map((r) => r.right)),
+  top: Math.min(...rects.map((r) => r.top)),
+  bottom: Math.max(...rects.map((r) => r.bottom)),
+})
+
+/** Pick the one common line band that overlaps most; ties stay independent. */
+function matchingLine(lines: readonly SelectionLine[], rect: ViewRect): SelectionLine | null {
+  const [start, end] = crossBounds(rect)
+  const crossSize = end - start
+  let match: SelectionLine | null = null
+  let bestOverlap = -1
+  let tied = false
+  for (const line of lines) {
+    const overlap = Math.min(end, line.crossEnd) - Math.max(start, line.crossStart)
+    if (overlap * 2 < Math.min(crossSize, line.minCrossSize)) continue
+    if (overlap > bestOverlap) {
+      match = line
+      bestOverlap = overlap
+      tied = false
+    } else if (overlap === bestOverlap) tied = true
+  }
+  return tied ? null : match
+}
+
+/** Unify each nearby fragment cluster on a visual line, without crossing wide gaps. */
+function normalizeSelectionRects(rects: readonly ViewRect[]): ViewRect[] {
+  const lineBands: SelectionLine[] = []
+  for (const rect of rects) {
+    const [crossStart, crossEnd] = crossBounds(rect)
+    const crossSize = crossEnd - crossStart
+    const line = matchingLine(lineBands, rect)
+    if (line) {
+      line.crossStart = Math.max(line.crossStart, crossStart)
+      line.crossEnd = Math.min(line.crossEnd, crossEnd)
+      line.minCrossSize = Math.min(line.minCrossSize, crossSize)
+      line.rects.push(rect)
+    } else lineBands.push({ crossStart, crossEnd, minCrossSize: crossSize, rects: [rect] })
+  }
+
+  return lineBands.flatMap((line) => {
+    const clusters: ViewRect[][] = []
+    for (const rect of line.rects) {
+      const previous = clusters.at(-1)
+      if (!previous) {
+        clusters.push([rect])
+        continue
+      }
+      const [previousStart, previousEnd] = mainBounds(rectBounds(previous))
+      const [start, end] = mainBounds(rect)
+      const gap = Math.max(start - previousEnd, previousStart - end, 0)
+      if (gap <= line.minCrossSize / 2) previous.push(rect)
+      else clusters.push([rect])
+    }
+    return clusters.map(rectBounds)
+  })
+}
+
 /**
  * Current selection → PDF-coordinate quads grouped by visible page (y up; each quad
  * [x1,yMax,x2,yMax,x1,yMin,x2,yMin]). Returns null when the selection is empty.
@@ -127,7 +204,7 @@ export function selectionQuadsByPage(
       ),
   )
 
-  const byPage = new Map<number, number[][]>()
+  const rectsByPage = new Map<number, ViewRect[]>()
   const seen = new Set<string>()
   for (const r of rects) {
     const cx = (r.left + r.right) / 2
@@ -136,19 +213,28 @@ export function selectionQuadsByPage(
       (p) => cx >= p.left && cx <= p.right && cy >= p.top && cy <= p.bottom,
     )
     if (idx < 0 || !geoms[idx]) continue
-    const p = pageRects[idx]!
-    const g = geoms[idx]!
-    const [ax, ay] = viewToPdf(g, (r.left - p.left) / scale, (r.top - p.top) / scale)
-    const [bx, by] = viewToPdf(g, (r.right - p.left) / scale, (r.bottom - p.top) / scale)
-    const [x1, x2] = [Math.min(ax, bx), Math.max(ax, bx)]
-    const [yMin, yMax] = [Math.min(ay, by), Math.max(ay, by)]
-    const key = `${idx}:${Math.round(x1)}:${Math.round(x2)}:${Math.round(yMin)}:${Math.round(yMax)}`
+    const key = `${idx}:${Math.round(r.left)}:${Math.round(r.right)}:${Math.round(r.top)}:${Math.round(r.bottom)}`
     if (seen.has(key)) continue
     seen.add(key)
-    const quad = [x1, yMax, x2, yMax, x1, yMin, x2, yMin]
-    const list = byPage.get(idx)
-    if (list) list.push(quad)
-    else byPage.set(idx, [quad])
+    const list = rectsByPage.get(idx)
+    if (list) list.push(r)
+    else rectsByPage.set(idx, [r])
+  }
+
+  const byPage = new Map<number, number[][]>()
+  for (const [idx, pageSelectionRects] of rectsByPage) {
+    const p = pageRects[idx]!
+    const g = geoms[idx]!
+    const rects =
+      normRot(g.rot) % 180 === 0 ? normalizeSelectionRects(pageSelectionRects) : pageSelectionRects
+    const quads = rects.map((r) => {
+      const [ax, ay] = viewToPdf(g, (r.left - p.left) / scale, (r.top - p.top) / scale)
+      const [bx, by] = viewToPdf(g, (r.right - p.left) / scale, (r.bottom - p.top) / scale)
+      const [x1, x2] = [Math.min(ax, bx), Math.max(ax, bx)]
+      const [yMin, yMax] = [Math.min(ay, by), Math.max(ay, by)]
+      return [x1, yMax, x2, yMax, x1, yMin, x2, yMin]
+    })
+    if (quads.length > 0) byPage.set(idx, quads)
   }
   return byPage.size > 0 ? byPage : null
 }
