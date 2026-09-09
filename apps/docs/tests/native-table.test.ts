@@ -8,11 +8,12 @@ import {
   splitCell,
 } from '@tiptap/pm/tables'
 import { DOMSerializer } from '@tiptap/pm/model'
+import { GapCursor } from '@tiptap/pm/gapcursor'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildDocx } from '../../../packages/docx-engine/tests/helpers/build-docx'
 import {
   blocksToPmDoc,
@@ -64,6 +65,42 @@ async function openTable(): Promise<{
 }
 
 describe('native editable tables', () => {
+  it('allows typing after an imported trailing table', async () => {
+    const { editor } = await openTable()
+    let lastCellTextEnd = 0
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText && node.text === 'D') lastCellTextEnd = pos + node.nodeSize
+    })
+    editor.view.dispatch(
+      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, lastCellTextEnd)),
+    )
+    vi.spyOn(editor.view, 'endOfTextblock').mockImplementation((dir) => dir === 'down')
+    vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ left: 0, right: 0, top: 0, bottom: 0 })
+
+    const pressKey = (key: string) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      editor.view.someProp('handleKeyDown', (handler) => handler(editor.view, event))
+    }
+
+    pressKey('ArrowDown')
+
+    expect(editor.state.selection).toBeInstanceOf(GapCursor)
+    expect(editor.state.selection.from).toBe(editor.state.doc.content.size)
+
+    pressKey('Enter')
+
+    expect(editor.state.doc.lastChild?.type.name).toBe('docParagraph')
+    expect(editor.state.doc.lastChild?.content.size).toBe(0)
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(editor.state.selection.$from.parent.type.name).toBe('docParagraph')
+
+    editor.commands.insertContent('below')
+
+    expect(editor.state.doc.lastChild?.type.name).toBe('docParagraph')
+    expect(editor.state.doc.lastChild?.textContent).toBe('below')
+    editor.destroy()
+  })
+
   it('redistributes requested column widths within the section content box', () => {
     expect(fitColumnWidths([200, 200, 200], new Map([[0, 500]]), 600)).toEqual([500, 50, 50])
     const many = fitColumnWidths(new Array(20).fill(100), new Map([[0, 1000]]), 600)

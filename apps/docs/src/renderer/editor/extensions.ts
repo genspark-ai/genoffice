@@ -1,6 +1,6 @@
 import { Editor, Extension, Node } from '@tiptap/core'
 import type { ChainedCommands, RawCommands } from '@tiptap/core'
-import { UndoRedo } from '@tiptap/extensions'
+import { Gapcursor, UndoRedo } from '@tiptap/extensions'
 import { DOMSerializer } from '@tiptap/pm/model'
 import type { DOMOutputSpec, Node as PmNode } from '@tiptap/pm/model'
 import {
@@ -5507,6 +5507,7 @@ export const editorExtensions = [
   InactiveSelectionExtension,
   AiQueueAnchorsExtension,
   PageGapNavExtension,
+  Gapcursor,
   ImageCopyExtension,
   EnterReplacesSelection,
   AutoLinkOnDelimiter,
