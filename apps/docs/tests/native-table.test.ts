@@ -8,7 +8,6 @@ import {
   splitCell,
 } from '@tiptap/pm/tables'
 import { DOMSerializer } from '@tiptap/pm/model'
-import { GapCursor } from '@tiptap/pm/gapcursor'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import { parseDocx, saveDocx } from '@genoffice/docx-engine'
 import { readFileSync } from 'node:fs'
@@ -64,30 +63,41 @@ async function openTable(): Promise<{
   return { editor, parsed, source }
 }
 
+function selectLastCellTextEnd(editor: Editor): void {
+  let lastCellTextEnd = 0
+  editor.state.doc.descendants((node, pos) => {
+    if (node.isText && node.text === 'D') lastCellTextEnd = pos + node.nodeSize
+  })
+  editor.view.dispatch(
+    editor.state.tr.setSelection(TextSelection.create(editor.state.doc, lastCellTextEnd)),
+  )
+}
+
+function pressKey(editor: Editor, key: string): void {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+  editor.view.someProp('handleKeyDown', (handler) => handler(editor.view, event))
+}
+
+function clickBelowTrailingTable(editor: Editor): void {
+  const event = new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'target', { value: editor.view.dom })
+  vi.spyOn(editor.view, 'posAtCoords').mockReturnValue({
+    pos: editor.state.doc.content.size,
+    inside: -1,
+  })
+  editor.view.someProp('handleClick', (handler) =>
+    handler(editor.view, editor.state.doc.content.size, event),
+  )
+}
+
 describe('native editable tables', () => {
   it('allows typing after an imported trailing table', async () => {
     const { editor } = await openTable()
-    let lastCellTextEnd = 0
-    editor.state.doc.descendants((node, pos) => {
-      if (node.isText && node.text === 'D') lastCellTextEnd = pos + node.nodeSize
-    })
-    editor.view.dispatch(
-      editor.state.tr.setSelection(TextSelection.create(editor.state.doc, lastCellTextEnd)),
-    )
+    selectLastCellTextEnd(editor)
     vi.spyOn(editor.view, 'endOfTextblock').mockImplementation((dir) => dir === 'down')
     vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ left: 0, right: 0, top: 0, bottom: 0 })
 
-    const pressKey = (key: string) => {
-      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
-      editor.view.someProp('handleKeyDown', (handler) => handler(editor.view, event))
-    }
-
-    pressKey('ArrowDown')
-
-    expect(editor.state.selection).toBeInstanceOf(GapCursor)
-    expect(editor.state.selection.from).toBe(editor.state.doc.content.size)
-
-    pressKey('Enter')
+    pressKey(editor, 'ArrowDown')
 
     expect(editor.state.doc.lastChild?.type.name).toBe('docParagraph')
     expect(editor.state.doc.lastChild?.content.size).toBe(0)
@@ -98,6 +108,53 @@ describe('native editable tables', () => {
 
     expect(editor.state.doc.lastChild?.type.name).toBe('docParagraph')
     expect(editor.state.doc.lastChild?.textContent).toBe('below')
+    editor.destroy()
+  })
+
+  it('clicking below an imported trailing table places a text cursor in a new paragraph', async () => {
+    const { editor } = await openTable()
+
+    clickBelowTrailingTable(editor)
+
+    expect(editor.state.doc.lastChild?.type.name).toBe('docParagraph')
+    expect(editor.state.doc.lastChild?.content.size).toBe(0)
+    expect(editor.state.selection).toBeInstanceOf(TextSelection)
+    expect(editor.state.selection.$from.parent.type.name).toBe('docParagraph')
+
+    editor.commands.insertContent('below-click')
+
+    expect(editor.state.doc.lastChild?.textContent).toBe('below-click')
+    editor.destroy()
+  })
+
+  it('does not add a second paragraph when clicking below a trailing table with one already', async () => {
+    const { editor } = await openTable()
+    const pos = editor.state.doc.content.size
+    const paragraph = editor.schema.nodes.docParagraph.create()
+    const transaction = editor.state.tr.insert(pos, paragraph)
+    editor.view.dispatch(transaction.setSelection(TextSelection.create(transaction.doc, pos + 1)))
+    const childCount = editor.state.doc.childCount
+
+    clickBelowTrailingTable(editor)
+
+    expect(editor.state.doc.childCount).toBe(childCount)
+    expect(editor.state.doc.lastChild?.type.name).toBe('docParagraph')
+    editor.destroy()
+  })
+
+  it('undoing a trailing-table exit does not recreate its paragraph', async () => {
+    const { editor } = await openTable()
+    selectLastCellTextEnd(editor)
+    vi.spyOn(editor.view, 'endOfTextblock').mockImplementation((dir) => dir === 'down')
+    vi.spyOn(editor.view, 'coordsAtPos').mockReturnValue({ left: 0, right: 0, top: 0, bottom: 0 })
+
+    pressKey(editor, 'ArrowDown')
+    expect(editor.state.doc.lastChild?.type.name).toBe('docParagraph')
+
+    expect(editor.commands.undo()).toBe(true)
+
+    expect(editor.state.doc.lastChild?.type.name).toBe('docTable')
+    expect(editor.state.doc.childCount).toBe(1)
     editor.destroy()
   })
 

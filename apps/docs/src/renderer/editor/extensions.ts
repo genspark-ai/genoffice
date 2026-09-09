@@ -158,6 +158,7 @@ import { AutoDirectionExtension } from './direction'
 import { InactiveSelectionExtension } from './inactive-selection'
 import { AiQueueAnchorsExtension } from './ai-queue-anchors'
 import { PageGapNavExtension } from './page-gap-nav'
+import { TrailingTableExitExtension } from './trailing-table-exit'
 import { moveBlocks } from './move-block'
 import {
   foldQuarterTurnMargins,
@@ -5507,6 +5508,7 @@ export const editorExtensions = [
   InactiveSelectionExtension,
   AiQueueAnchorsExtension,
   PageGapNavExtension,
+  TrailingTableExitExtension,
   Gapcursor,
   ImageCopyExtension,
   EnterReplacesSelection,
