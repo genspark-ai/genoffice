@@ -27,8 +27,12 @@ html.genoffice-popover-open .tab-bar {
 
 /* room for the macOS traffic lights (titleBarStyle: hiddenInset) */
 .tab-bar-drag-spacer {
-  width: 78px;
+  width: 0;
   flex-shrink: 0;
+}
+
+body.vib .tab-bar-drag-spacer {
+  width: 78px;
 }
 
 /* scrollable middle section; empty space stays part of the window drag region.
