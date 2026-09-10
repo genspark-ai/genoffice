@@ -48,6 +48,7 @@ import {
 import { BLANK_SLIDE_XML } from './blank'
 import { escapeXmlAttr } from './xml-utils'
 import { elementSpid } from './animation'
+import { stripEmbeddedFonts } from './embedded-fonts'
 import { ensureCreationId, matchesElementRef } from './identity'
 import { listMasterParts, parseMasterPart } from './master-edit'
 import type {
@@ -727,6 +728,14 @@ function slideIsDirty(s: Slide): boolean {
 
 function buildZip(opened: OpenedPptx): JSZip {
   const { deck, archive } = opened
+  // Embedded-font subsets can't be re-generated after a text edit (MicroType
+  // Express needs a licensed compressor), and WPS honors a stale subset
+  // strictly: glyphs it doesn't cover render as invisible text while the in-app
+  // system-font fallback shows them fine. Once any content edit lands, strip
+  // the embedding so every viewer falls back to system fonts.
+  if (deck.slides.some((s) => s.structureDirty || s.elements.some((e) => e.dirty))) {
+    stripEmbeddedFonts(archive)
+  }
   const dirtyByPath = new Map<string, Slide>()
   for (const s of deck.slides) {
     if (slideIsDirty(s)) dirtyByPath.set(s.path, s)
@@ -1706,6 +1715,9 @@ function registerNewSlide(opened: OpenedPptx, sourceIndex: number, newPath: stri
 
   const slide = parseSlideFromArchive(archive, newPath)
   if (!slide) return null
+  // A new slide can carry text the embedded-font subsets don't cover (they go
+  // stale the moment text changes); structureDirty lets the save strip them.
+  slide.structureDirty = true
   deck.slides.splice(sourceIndex + 1, 0, slide)
   return slide
 }

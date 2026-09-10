@@ -43,6 +43,51 @@ export function eotToSfnt(bytes: Uint8Array): Uint8Array | null {
   return sfnt
 }
 
+/**
+ * Remove the package's embedded fonts: <p:embeddedFontLst> and the
+ * embedTrueTypeFonts/saveSubsetFonts attributes in presentation.xml, the font
+ * relationships in its rels, the ppt/fonts/*.fntdata parts, and the
+ * [Content_Types] fntdata declaration.
+ *
+ * Why: the embedded subsets cannot be re-generated after a text edit (MicroType
+ * Express compression needs a licensed compressor), and WPS honors a stale
+ * subset strictly — glyphs it doesn't cover render as invisible text while the
+ * in-app system-font fallback shows them fine. Stripping makes every viewer
+ * fall back to system fonts. Idempotent; returns whether anything was stripped.
+ */
+export function stripEmbeddedFonts(archive: PackageArchive): boolean {
+  const presPath = 'ppt/presentation.xml'
+  const pres = archive.readText(presPath)
+  if (!pres || !pres.includes('embeddedFont')) return false
+
+  const nextPres = pres
+    .replace(/<p:embeddedFontLst>[\s\S]*?<\/p:embeddedFontLst>/, '')
+    .replace(/ embedTrueTypeFonts="[^"]*"/, '')
+    .replace(/ saveSubsetFonts="[^"]*"/, '')
+  archive.entries.set(presPath, Buffer.from(nextPres, 'utf8'))
+
+  const relsPath = 'ppt/_rels/presentation.xml.rels'
+  const rels = archive.readText(relsPath)
+  if (rels) {
+    const nextRels = rels.replace(/<Relationship\b[^>]*\bType="[^"]*\/font"[^>]*\/>/g, '')
+    if (nextRels !== rels) archive.entries.set(relsPath, Buffer.from(nextRels, 'utf8'))
+  }
+
+  const ctPath = '[Content_Types].xml'
+  const ct = archive.readText(ctPath)
+  if (ct) {
+    const nextCt = ct
+      .replace(/<Default\b[^>]*\bExtension="fntdata"[^>]*\/>/g, '')
+      .replace(/<Override\b[^>]*\bPartName="\/ppt\/fonts\/[^"]*"[^>]*\/>/g, '')
+    if (nextCt !== ct) archive.entries.set(ctPath, Buffer.from(nextCt, 'utf8'))
+  }
+
+  for (const path of [...archive.entries.keys()]) {
+    if (/^ppt\/fonts\/[^/]+\.fntdata$/.test(path)) archive.entries.delete(path)
+  }
+  return true
+}
+
 /** Usable (uncompressed) embedded faces of a package; empty when none are declared. */
 export function listEmbeddedFonts(archive: PackageArchive): EmbeddedFontFace[] {
   const presXml = archive.readText('ppt/presentation.xml')
