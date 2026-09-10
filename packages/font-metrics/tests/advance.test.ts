@@ -43,7 +43,7 @@ describe('advanceWidths', () => {
 
   it('marks unmapped codepoints as NaN instead of guessing', () => {
     if (!hasHelvetica) return
-    const w = advanceWidths('Helvetica', '￿x', 12)!
+    const w = advanceWidths('Helvetica', '\u{10FFF0}x', 12)!
     expect(Number.isNaN(w[0]!)).toBe(true)
     expect(w[1]!).toBeGreaterThan(0)
   })
@@ -69,7 +69,7 @@ describe('evictOldestEntry', () => {
     expect([...cache.keys()]).toEqual(['b', 'c'])
   })
 
-  it('evicts repeatedly until under max', () => {
+  it('evicts repeatedly until one slot is free', () => {
     const cache = new Map([
       ['a', 1],
       ['b', 2],
@@ -77,6 +77,6 @@ describe('evictOldestEntry', () => {
       ['d', 4],
     ])
     evictOldestEntry(cache, 2)
-    expect([...cache.keys()]).toEqual(['c', 'd'])
+    expect([...cache.keys()]).toEqual(['d'])
   })
 })
