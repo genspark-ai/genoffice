@@ -5,7 +5,8 @@
 //
 // Functional CJK string literals are fine (i18n resources, test fixture
 // text, zh-UI matchers), as are the AI prompt guides (runtime resources that
-// legitimately show CJK examples).
+// legitimately show CJK examples), translated READMEs under an i18n directory,
+// and the language-switcher line that names those translations.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -22,7 +23,8 @@ const root = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf
 const violations = []
 for (const file of git.stdout.trim().split('\n')) {
   const isCode = /\.(ts|tsx|mjs|cjs|js)$/.test(file)
-  const isDoc = /\.(md|html?)$/.test(file) && !file.includes('/ai/prompts/')
+  const isDoc =
+    /\.(md|html?)$/.test(file) && !file.includes('/ai/prompts/') && !file.includes('/i18n/')
   if (!isCode && !isDoc) continue
   const lines = readFileSync(join(root, file), 'utf8').split('\n')
   lines.forEach((line, index) => {
@@ -31,7 +33,7 @@ for (const file of git.stdout.trim().split('\n')) {
       : (line.match(/(?:^|[^:'"])\/\/(.*)$/) ??
           line.match(/^\s*\*(.*)$/) ??
           line.match(/\/\*(.*)$/))?.[1]
-    if (text !== undefined && HAN.test(text)) {
+    if (text !== undefined && HAN.test(text) && !line.includes('lang-switcher')) {
       violations.push(`  ${file}:${index + 1}: ${line.trim()}`)
     }
   })
