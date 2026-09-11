@@ -13,7 +13,8 @@ import {
 } from '@genoffice/electron-utils'
 import { getUiLang } from '@genoffice/i18n'
 import { HWP_CHANNELS } from '../shared/ipc'
-import type { SaveHwpRequest, SaveHwpResult, SaveMode } from '../shared/ipc'
+import type { PrintMode, SaveHwpRequest, SaveHwpResult, SaveMode } from '../shared/ipc'
+import { isHwpPrintSurfaceUrl } from '../shared/print-surface'
 import { rawFileBytes } from '../shared/as-bytes'
 import { HWP_RE, bytesForSaveFormat, ensureHwpSavePath, saveFormatForPath } from '../shared/formats'
 import { atomicWriteFile } from './atomic-write'
@@ -127,6 +128,11 @@ export function requestHwpSave(contents: WebContents, mode: SaveMode): Promise<b
     })
     contents.send(HWP_CHANNELS.saveRequest, mode)
   })
+}
+
+/** Shell File → Print / Export as PDF: studio `file:print` / `file:print-to-pdf`. */
+export function sendHwpPrintRequest(contents: WebContents, mode: PrintMode): void {
+  if (!contents.isDestroyed()) contents.send(HWP_CHANNELS.printRequest, mode)
 }
 
 function asNodeBuffer(raw: unknown): Buffer | null {
@@ -243,6 +249,21 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
     savePathByWc.set(wcId, openPath)
   }
   wc.setWindowOpenHandler(({ url }) => {
+    if (isHwpPrintSurfaceUrl(wc.getURL(), url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 920,
+          height: 1100,
+          autoHideMenuBar: true,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+          },
+        },
+      }
+    }
     const target = safeExternalUrl(url, { allowedProtocols: ['http:', 'https:', 'mailto:'] })
     if (target) void shell.openExternal(target)
     return { action: 'deny' }

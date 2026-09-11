@@ -6,7 +6,7 @@
  * `--ensure` skips the download when a complete snapshot is already present.
  */
 import { createWriteStream, existsSync, readdirSync } from 'node:fs'
-import { mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -24,7 +24,9 @@ import {
 
 const ORIGIN = 'https://edwardkim.github.io'
 const PREFIX = '/rhwp/'
-const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'vendor', 'rhwp-studio')
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
+const OUT = join(SCRIPT_DIR, '..', 'vendor', 'rhwp-studio')
+const PRINT_SURFACE = join(SCRIPT_DIR, 'print-surface.html')
 const ENSURE = process.argv.includes('--ensure')
 
 const TEXT_EXT = new Set([
@@ -173,6 +175,12 @@ function isComplete() {
   return true
 }
 
+/** Studio print/PDF load this sibling; pages snapshot does not link it. */
+async function ensurePrintHtml() {
+  await mkdir(OUT, { recursive: true })
+  await copyFile(PRINT_SURFACE, join(OUT, 'print.html'))
+}
+
 async function vendor() {
   await rm(OUT, { recursive: true, force: true })
   await mkdir(OUT, { recursive: true })
@@ -193,6 +201,7 @@ async function vendor() {
   }
   await stripPwaFiles()
   await patchStudioJs()
+  await ensurePrintHtml()
   const missing = missingRequired()
   if (missing.length || failed.length) {
     const details = [...missing.map((rel) => `missing ${rel}`), ...failed]
@@ -205,6 +214,7 @@ async function main() {
   if (ENSURE) {
     await stripPwaFiles()
     await patchStudioJs()
+    await ensurePrintHtml()
     if (isComplete()) {
       process.stdout.write(`rhwp-studio snapshot ready → ${OUT}\n`)
       return

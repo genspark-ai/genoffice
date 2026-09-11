@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { createStudio } from '@rhwp/editor'
 import { HML_UNAVAILABLE } from '../shared/formats'
-import type { SaveMode } from '../shared/ipc'
+import type { PrintMode, SaveMode } from '../shared/ipc'
 import { asBytes } from '../shared/as-bytes'
 import { exportStudioPayload, hmlUnavailableMessage } from './export-payload'
 import { createStudioFacade, fileNameOf, type HangulStudioFacade } from './studio-text'
@@ -90,6 +90,23 @@ export function HwpStudio({
       }
     }
 
+    const runPrint = async (mode: PrintMode): Promise<void> => {
+      const studio = studioRef.current
+      if (!studio) return
+      const command = mode === 'pdf' ? 'file:print-to-pdf' : 'file:print'
+      try {
+        const result = await studio.commands.execute(command, {}, { allowDialog: true })
+        if (!result.ok) {
+          onSaveErrorRef.current(result.message ?? result.reason)
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        // execute RPC is 10s; print/PDF wait on SVG render and native dialogs.
+        if (message.startsWith('Request timeout:')) return
+        onSaveErrorRef.current(message)
+      }
+    }
+
     const doSave = async (mode: SaveMode): Promise<boolean> => {
       if (inflight) {
         const ok = await inflight
@@ -151,6 +168,7 @@ export function HwpStudio({
     const offSave = window.hwpApi.onSaveRequest(
       (mode) => void doSave(mode).then((ok) => window.hwpApi.sendSaveRequestAck(ok)),
     )
+    const offPrint = window.hwpApi.onPrintRequest((mode) => void runPrint(mode))
     const offClose = window.hwpApi.onCloseSaveRequest(() => {
       void (async () => {
         if (inflight) await inflight
@@ -176,6 +194,7 @@ export function HwpStudio({
       resizeObserver?.disconnect()
       onReadyRef.current?.(null)
       offSave()
+      offPrint()
       offClose()
       window.removeEventListener('keydown', onKeyDown, true)
       studioRef.current?.destroy()

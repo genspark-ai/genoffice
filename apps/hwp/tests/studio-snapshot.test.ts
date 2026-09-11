@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   hasEmbedNewDoc,
@@ -5,6 +8,8 @@ import {
   exposePrepareTextCommand,
   hasPrepareTextCommand,
   keepEmbedNewDoc,
+  hasEmbedPrint,
+  REQUIRED_RELATIVE,
   stripAbandonedStudioPatches,
   stripPwaHtml,
 } from '../scripts/studio-snapshot.mjs'
@@ -30,13 +35,34 @@ describe('studio snapshot helpers', () => {
     expect(isPwaPath('/rhwp/assets/index.js')).toBe(false)
   })
 
-  it('keeps file:new-doc registered in embed so the host can create untitled docs', () => {
+  it('requires the studio print surface in the snapshot', () => {
+    expect(REQUIRED_RELATIVE).toContain('print.html')
+    const html = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', 'print-surface.html'),
+      'utf8',
+    )
+    expect(html).toContain('id="print-loading-message"')
+  })
+
+  it('keeps file:new-doc and print registered in embed so the host can create and print', () => {
     const stock =
       'bA.registerAll(yA===`embed`?Ev.filter(e=>!sD.includes(e.id)):Ev),file:new-doc'
     const next = keepEmbedNewDoc(stock)
     expect(hasEmbedNewDoc(next)).toBe(true)
+    expect(hasEmbedPrint(next)).toBe(true)
     expect(next).toContain('e.id===`file:new-doc`')
+    expect(next).toContain('e.id===`file:print`')
+    expect(next).toContain('e.id===`file:print-to-pdf`')
     expect(next).toContain('!sD.includes(e.id)')
+    expect(keepEmbedNewDoc(next)).toBe(next)
+  })
+
+  it('upgrades a new-doc-only embed patch to keep print commands', () => {
+    const old =
+      'bA.registerAll(yA===`embed`?Ev.filter(e=>/*genoffice-embed-new-doc*/e.id===`file:new-doc`||!sD.includes(e.id)):Ev),file:new-doc'
+    const next = keepEmbedNewDoc(old)
+    expect(hasEmbedPrint(next)).toBe(true)
+    expect(next).toContain('e.id===`file:print-to-pdf`')
     expect(keepEmbedNewDoc(next)).toBe(next)
   })
 

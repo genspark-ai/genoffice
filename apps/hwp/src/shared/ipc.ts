@@ -12,6 +12,7 @@ export const HWP_CHANNELS = {
   save: 'hwp:save',
   saveRequest: 'hwp:save-request',
   saveRequestAck: 'hwp:save-request-ack',
+  printRequest: 'hwp:print-request',
   dirtyChanged: 'hwp:dirty-changed',
   closeSaveRequest: 'hwp:close-save-request',
   closeSaveResult: 'hwp:close-save-result',
@@ -43,6 +44,8 @@ export interface WebSearchResult {
 
 export type SaveMode = 'save' | 'saveAs'
 
+export type PrintMode = 'print' | 'pdf'
+
 export interface SaveHwpRequest {
   mode: SaveMode
   hwp: Uint8Array
@@ -62,6 +65,7 @@ export interface HwpApi {
   save(request: SaveHwpRequest): Promise<SaveHwpResult>
   setDirty(dirty: boolean): void
   onSaveRequest(handler: (mode: SaveMode) => void): () => void
+  onPrintRequest(handler: (mode: PrintMode) => void): () => void
   onCloseSaveRequest(handler: () => void): () => void
   sendCloseSaveResult(ok: boolean): void
   sendSaveRequestAck(ok: boolean): void

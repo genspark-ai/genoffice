@@ -179,6 +179,7 @@ import {
   hwpFileRenamed,
   requestHwpClose,
   requestHwpSave,
+  sendHwpPrintRequest,
   setHwpFileSavedHook,
 } from '../../../hwp/src/main/hwp-main'
 import { HWP_RE } from '../../../hwp/src/shared/formats'
@@ -3285,6 +3286,22 @@ function buildHwpMenu(): void {
           click: () => {
             const tab = tabManager?.activeHwpTab()
             if (tab) void requestHwpSave(tab.webContents, 'saveAs')
+          },
+        },
+        { type: 'separator' },
+        {
+          label: tm('menuExportPdf'),
+          click: () => {
+            const tab = tabManager?.activeHwpTab()
+            if (tab) sendHwpPrintRequest(tab.webContents, 'pdf')
+          },
+        },
+        {
+          label: tm('menuPrint'),
+          accelerator: 'CmdOrCtrl+P',
+          click: () => {
+            const tab = tabManager?.activeHwpTab()
+            if (tab) sendHwpPrintRequest(tab.webContents, 'print')
           },
         },
         { type: 'separator' },

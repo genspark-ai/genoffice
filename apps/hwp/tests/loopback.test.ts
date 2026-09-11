@@ -1,5 +1,5 @@
 import { request } from 'node:http'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -41,6 +41,22 @@ describe('startHwpLoopback', () => {
     try {
       const res = await fetch(origin)
       expect(res.status).toBe(404)
+    } finally {
+      await close()
+    }
+  })
+
+  it('serves the studio print surface next to the embed', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'hwp-loopback-print-'))
+    await writeFile(join(dir, 'index.html'), '<html>host</html>')
+    await mkdir(join(dir, 'rhwp'))
+    await writeFile(join(dir, 'rhwp', 'print.html'), '<html>print</html>')
+    const { origin, close } = await startHwpLoopback(dir)
+    try {
+      const res = await fetch(new URL('rhwp/print.html', origin))
+      expect(res.ok).toBe(true)
+      expect(res.headers.get('content-type')).toContain('text/html')
+      expect(await res.text()).toBe('<html>print</html>')
     } finally {
       await close()
     }

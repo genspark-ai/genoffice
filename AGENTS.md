@@ -69,8 +69,14 @@ tab.
   edits, cell fill, and page setup. New AI strings go in
   `apps/hwp/src/renderer/i18n/ai/zh.ts` and every sibling shard.
 
-## Print / PDF (later)
+## Print / PDF
 
-rhwp-studio already has `file:print` / `file:print-to-pdf`. They need a sibling
-`print.html` (not in our snapshot) and a shell File menu hook. Not a new PDF
-engine. Not current work.
+Use studio `file:print` / `file:print-to-pdf`. Not a new PDF engine.
+
+- Snapshot must include sibling `print.html` (`scripts/print-surface.html` →
+  `vendor/rhwp-studio/print.html`). Pages does not link it; `--ensure` copies it.
+- Embed strips those commands. `keepEmbedNewDoc()` keeps `file:new-doc` plus
+  print/PDF registered. Studio File menu items stay hidden.
+- Host File menu → IPC → `studio.commands.execute`. Print preview `window.open`s
+  same-origin `/rhwp/print.html`; Hangul `setWindowOpenHandler` must allow that
+  URL and deny everything else.

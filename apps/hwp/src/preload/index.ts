@@ -4,7 +4,7 @@ import type { AiStreamChunk } from '@genoffice/ai-provider'
 import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
 import { AI_CHANNELS, HWP_CHANNELS } from '../shared/ipc'
-import type { HwpApi, SaveMode, UiTheme } from '../shared/ipc'
+import type { HwpApi, PrintMode, SaveMode, UiTheme } from '../shared/ipc'
 
 const api: HwpApi = {
   consumePending: () => ipcRenderer.invoke(HWP_CHANNELS.consumePending),
@@ -15,6 +15,11 @@ const api: HwpApi = {
     const listener = (_e: Electron.IpcRendererEvent, mode: SaveMode) => handler(mode)
     ipcRenderer.on(HWP_CHANNELS.saveRequest, listener)
     return () => ipcRenderer.removeListener(HWP_CHANNELS.saveRequest, listener)
+  },
+  onPrintRequest: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, mode: PrintMode) => handler(mode)
+    ipcRenderer.on(HWP_CHANNELS.printRequest, listener)
+    return () => ipcRenderer.removeListener(HWP_CHANNELS.printRequest, listener)
   },
   onCloseSaveRequest: (handler) => {
     const listener = () => handler()

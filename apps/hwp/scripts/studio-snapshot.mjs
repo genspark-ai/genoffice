@@ -4,6 +4,7 @@ export const PWA_FILES = ['sw.js', 'registerSW.js', 'manifest.webmanifest']
 
 export const REQUIRED_RELATIVE = [
   'index.html',
+  'print.html',
   'fonts/NotoSansKR-Regular.woff2',
   'fonts/Pretendard-Regular.woff2',
 ]
@@ -23,21 +24,39 @@ export function stripPwaHtml(html) {
 }
 
 /**
- * Embed mode strips File new/open/save from the registry so the host owns those
- * actions — and also skips boot-time `createNewDocument()`. Untitled tabs then
- * have no pages. Keep only `file:new-doc` registered; OA() still hides the menu.
+ * Embed mode strips File new/open/save/print from the registry so the host owns
+ * those actions — and also skips boot-time `createNewDocument()`. Untitled tabs
+ * then have no pages. Keep `file:new-doc` plus print/PDF; pruneEmbedChrome()
+ * still hides the studio File menu items.
  */
 export const EMBED_NEW_DOC_MARK = '/*genoffice-embed-new-doc*/'
+export const EMBED_PRINT_MARK = '/*genoffice-embed-print*/'
 
 const EMBED_NEW_DOC_RE =
   /bA\.registerAll\(yA===`embed`\?Ev\.filter\(e=>!sD\.includes\(e\.id\)\):Ev\)/
 
+const EMBED_KEEP_IDS =
+  'e.id===`file:new-doc`||e.id===`file:print`||e.id===`file:print-to-pdf`||!sD.includes(e.id)'
+
+const EMBED_NEW_DOC_ONLY_RE =
+  /\/\*genoffice-embed-new-doc\*\/e\.id===`file:new-doc`\|\|!sD\.includes\(e\.id\)/
+
 export function keepEmbedNewDoc(js) {
-  if (js.includes(EMBED_NEW_DOC_MARK)) return js
+  if (js.includes(EMBED_PRINT_MARK)) return js
+  if (js.includes(EMBED_NEW_DOC_MARK)) {
+    const upgraded = js.replace(
+      EMBED_NEW_DOC_ONLY_RE,
+      `${EMBED_NEW_DOC_MARK}${EMBED_PRINT_MARK}${EMBED_KEEP_IDS}`,
+    )
+    if (upgraded === js) {
+      throw new Error('rhwp-studio embed command filter changed — update keepEmbedNewDoc()')
+    }
+    return upgraded
+  }
   if (!js.includes('file:new-doc') || !js.includes('registerAll')) return js
   const next = js.replace(
     EMBED_NEW_DOC_RE,
-    `bA.registerAll(yA===\`embed\`?Ev.filter(e=>${EMBED_NEW_DOC_MARK}e.id===\`file:new-doc\`||!sD.includes(e.id)):Ev)`,
+    `bA.registerAll(yA===\`embed\`?Ev.filter(e=>${EMBED_NEW_DOC_MARK}${EMBED_PRINT_MARK}${EMBED_KEEP_IDS}):Ev)`,
   )
   if (next === js) {
     throw new Error('rhwp-studio embed command filter changed — update keepEmbedNewDoc()')
@@ -47,6 +66,10 @@ export function keepEmbedNewDoc(js) {
 
 export function hasEmbedNewDoc(js) {
   return js.includes(EMBED_NEW_DOC_MARK)
+}
+
+export function hasEmbedPrint(js) {
+  return js.includes(EMBED_PRINT_MARK)
 }
 
 /**
@@ -585,7 +608,7 @@ export function hasPrepareTextCommand(js) {
 
 /**
  * Drop abandoned page-turn experiments from a local snapshot. Stock studio
- * behavior is restored; only `file:new-doc` stays patched.
+ * behavior is restored; only `file:new-doc` / print stay patched.
  */
 export function stripAbandonedStudioPatches(js) {
   let next = js
