@@ -12,3 +12,14 @@ export function isHwpPrintSurfaceUrl(openerUrl: string, targetUrl: string): bool
     return false
   }
 }
+
+/** Absolute print.html URL, or null when the popup is already on that page. */
+export function printSurfaceLoadUrl(
+  openerUrl: string,
+  requestedUrl: string,
+  currentUrl: string,
+): string | null {
+  if (!isHwpPrintSurfaceUrl(openerUrl, requestedUrl)) return null
+  if (isHwpPrintSurfaceUrl(openerUrl, currentUrl)) return null
+  return new URL(requestedUrl, openerUrl).href
+}

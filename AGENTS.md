@@ -79,4 +79,6 @@ Use studio `file:print` / `file:print-to-pdf`. Not a new PDF engine.
   print/PDF registered. Studio File menu items stay hidden.
 - Host File menu → IPC → `studio.commands.execute`. Print preview `window.open`s
   same-origin `/rhwp/print.html`; Hangul `setWindowOpenHandler` must allow that
-  URL and deny everything else.
+  URL and deny everything else. If the popup stays on `about:blank`, load
+  `print.html` with `loadURL` — the suite `will-navigate` guard blocks the
+  default popup navigation.

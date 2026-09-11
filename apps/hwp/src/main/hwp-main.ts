@@ -14,7 +14,7 @@ import {
 import { getUiLang } from '@genoffice/i18n'
 import { HWP_CHANNELS } from '../shared/ipc'
 import type { PrintMode, SaveHwpRequest, SaveHwpResult, SaveMode } from '../shared/ipc'
-import { isHwpPrintSurfaceUrl } from '../shared/print-surface'
+import { isHwpPrintSurfaceUrl, printSurfaceLoadUrl } from '../shared/print-surface'
 import { rawFileBytes } from '../shared/as-bytes'
 import { HWP_RE, bytesForSaveFormat, ensureHwpSavePath, saveFormatForPath } from '../shared/formats'
 import { atomicWriteFile } from './atomic-write'
@@ -256,17 +256,27 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
           width: 920,
           height: 1100,
           autoHideMenuBar: true,
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            sandbox: true,
-          },
         },
       }
     }
     const target = safeExternalUrl(url, { allowedProtocols: ['http:', 'https:', 'mailto:'] })
     if (target) void shell.openExternal(target)
     return { action: 'deny' }
+  })
+  wc.on('did-create-window', (win, { url }) => {
+    const opener = wc.getURL()
+    if (!isHwpPrintSurfaceUrl(opener, url)) return
+    const contents = win.webContents
+    // Suite guard blocks about:blank → print.html. Drop it, then only allow
+    // this surface (or a same-URL reload). loadURL does not emit will-navigate.
+    contents.removeAllListeners('will-navigate')
+    contents.on('will-navigate', (event) => {
+      if (event.url !== contents.getURL() && !isHwpPrintSurfaceUrl(opener, event.url)) {
+        event.preventDefault()
+      }
+    })
+    const loadUrl = printSurfaceLoadUrl(opener, url, contents.getURL())
+    if (loadUrl) void contents.loadURL(loadUrl)
   })
   wc.once('destroyed', () => {
     openPathByWc.delete(wcId)

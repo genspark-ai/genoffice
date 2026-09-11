@@ -22,7 +22,7 @@ AI 도구: `insert_content`, `insert_table`, `replace_cell`, `apply_format`(`tab
 ## 호스트 / 셸
 
 - [ ] 페이지 넘김 — canvas2d에서 다음 페이지가 끊김. 예전 패치는 `eb3c4f8`에서 되돌림. 다시 넣지 말 것
-- [x] 인쇄 / PDF — 스튜디오 `file:print` / `file:print-to-pdf`. `print.html`을 스냅샷에 넣고 셸 File 메뉴에서 호출. 새 PDF 엔진 없음
+- [x] 인쇄 / PDF — 스튜디오 `file:print` / `file:print-to-pdf`. `print.html`을 스냅샷에 넣고 셸 File 메뉴에서 호출. 미리보기 창이 `about:blank`면 `loadURL`. 새 PDF 엔진 없음
 
 ## 하지 않음
 
