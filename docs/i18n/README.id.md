@@ -49,7 +49,7 @@ perubahan, dan menunjukkan dengan tepat bagian mana yang diubah.
 - **Kunci API Anda sendiri, atau tanpa kunci sama sekali.** Masuk dengan
   Genspark dan lewati urusan kunci API, atau gunakan kunci Anda sendiri untuk
   Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-  Mistral, OpenRouter, atau endpoint apa pun yang kompatibel dengan OpenAI,
+  Mistral, OpenRouter, Requesty, atau endpoint apa pun yang kompatibel dengan OpenAI,
   termasuk server lokal.
 
 **Unduh di sini:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon dan Intel) ·
@@ -187,7 +187,7 @@ agen mendapatkan akses pencarian web dan gambar, generasi gambar, serta
 analisis gambar/audio/video.
 
 **Atau bawa kunci Anda sendiri.** Settings → AI menampilkan Claude, OpenAI,
-Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter,
+Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty,
 dan OpenCode Zen/Go, plus slot khusus untuk endpoint apa pun yang kompatibel
 dengan OpenAI (base URL + kunci), termasuk server model lokal. Pencarian dan
 media memiliki penyedia tersendiri per kemampuan di bawah **AI Media &
@@ -353,7 +353,7 @@ gambar halaman.
 
 Ya. Selain masuk lewat Genspark tanpa kunci API, GenOffice mendukung
 penggunaan kunci Anda sendiri untuk Claude, OpenAI, Gemini, DeepSeek, Kimi,
-GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, dan OpenCode Zen/Go,
+GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, dan OpenCode Zen/Go,
 plus endpoint apa pun yang kompatibel dengan OpenAI — termasuk server model
 lokal. Pencarian, generasi gambar, dan analisis gambar/video menggunakan
 kunci tersendiri di Settings → AI Media & Search.

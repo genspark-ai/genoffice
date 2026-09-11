@@ -228,6 +228,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     capabilities: { auth: 'api-key', vision: true },
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://openrouter.ai/api/v1'),
   },
+  requesty: {
+    meta: metaOf('requesty'),
+    capabilities: { auth: 'api-key', vision: true },
+    // a stored base URL selects a regional router (https://router.eu.requesty.ai/v1 for the EU)
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://router.requesty.ai/v1'),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },

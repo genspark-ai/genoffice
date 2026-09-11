@@ -47,7 +47,7 @@ provede požadovanou úpravu a přesně vám ukáže, čeho se dotkl.
   jen volání AI, a to k poskytovateli, kterého si sami vyberete.
 - **Vaše klíče, nebo žádné.** Přihlaste se přes Genspark a klíče nepotřebujete,
   nebo použijte vlastní klíč pro Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM,
-  Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter nebo jakýkoli OpenAI
+  Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty nebo jakýkoli OpenAI
   kompatibilní endpoint, včetně lokálních serverů.
 
 **Stáhnout:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon a Intel) ·
@@ -184,7 +184,7 @@ webové a obrázkové vyhledávání, generování obrázků a analýzu
 obrázků/zvuku/videa.
 
 **Nebo použijte vlastní klíč.** Nastavení → AI nabízí Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty
 a OpenCode Zen/Go, plus vlastní slot pro jakýkoli OpenAI kompatibilní
 endpoint (base URL + klíč), včetně lokálních serverů s modely. Vyhledávání
 a média mají vlastní poskytovatele pro každou schopnost pod **AI Media
@@ -344,7 +344,7 @@ OCR, takže se převedou na editovatelný text, ne na obrázek stránky.
 
 Ano. Kromě bezklíčového přihlášení Genspark GenOffice podporuje vlastní klíč
 pro Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, OpenRouter a OpenCode Zen/Go, plus jakýkoli OpenAI kompatibilní
+Mistral, OpenRouter, Requesty a OpenCode Zen/Go, plus jakýkoli OpenAI kompatibilní
 endpoint — včetně lokálních serverů s modely. Vyhledávání, generování obrázků
 a analýza obrázků/videa mají vlastní klíče pod Nastavení → AI Media & Search.
 

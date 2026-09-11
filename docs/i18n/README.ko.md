@@ -47,7 +47,7 @@ GenOffice는 macOS, Windows, Linux에서 사용할 수 있는 무료 오픈소�
   AI 호출만 사용자가 선택한 공급자로 전송됩니다.
 - **API 키가 있어도, 없어도 됩니다.** Genspark로 로그인하면 키 없이 바로
   사용할 수 있고, 원한다면 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM,
-  Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter는 물론 OpenAI
+  Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty는 물론 OpenAI
   호환 엔드포인트(로컬 서버 포함)까지 직접 가져올 수 있습니다.
 
 **다운로드:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon 및 Intel) ·
@@ -183,7 +183,7 @@ Genspark 프록시(Claude, GPT, Gemini 계열)를 거치고, 에이전트는 웹
 있습니다.
 
 **직접 키를 가져올 수도 있습니다.** 설정 → AI에는 Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter,
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty,
 OpenCode Zen/Go가 있으며, 로컬 모델 서버를 포함한 모든 OpenAI 호환
 엔드포인트(기본 URL + 키)를 위한 사용자 지정 슬롯도 제공됩니다. 검색과
 미디어는 **AI 미디어 및 검색**에서 기능별로 별도 공급자를 설정할 수
@@ -345,7 +345,7 @@ GenOffice는 활발히 개발되고 있으며, 여러분의 피드백이 그 방
 
 네. 키가 필요 없는 Genspark 로그인 외에도, GenOffice는 Claude, OpenAI,
 Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-OpenRouter, OpenCode Zen/Go를 위한 직접 키 사용을 지원하며, 로컬 모델
+OpenRouter, Requesty, OpenCode Zen/Go를 위한 직접 키 사용을 지원하며, 로컬 모델
 서버를 포함한 모든 OpenAI 호환 엔드포인트도 사용할 수 있습니다. 검색,
 이미지 생성, 이미지/비디오 분석은 설정 → AI 미디어 및 검색에서 별도의
 키를 설정합니다.

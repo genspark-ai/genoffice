@@ -46,7 +46,7 @@ Windows ו-Linux. היא פותחת ושומרת קבצי `.docx`,‏ `.xlsx` ו
   שבחרתם.
 - **המפתחות שלכם, או בלי מפתחות בכלל.** התחברו עם Genspark ודלגו על הצורך
   במפתח, או הביאו מפתח משלכם עבור Claude,‏ OpenAI,‏ Gemini,‏ DeepSeek,‏
-  Kimi,‏ GLM,‏ Qwen,‏ Doubao,‏ MiniMax,‏ Grok,‏ Mistral,‏ OpenRouter, או כל
+  Kimi,‏ GLM,‏ Qwen,‏ Doubao,‏ MiniMax,‏ Grok,‏ Mistral,‏ OpenRouter,‏ Requesty, או כל
   endpoint תואם-OpenAI, כולל שרתים מקומיים.
 
 **להורדה:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) ‏(Apple Silicon ו-Intel) ·
@@ -181,7 +181,7 @@ brief) — משפט פתיחה, פלטת צבעים, טיפוגרפיה וכיו
 
 **או הביאו מפתח משלכם.** בתפריט Settings → AI מופיעים Claude,‏ OpenAI,‏
 Gemini,‏ DeepSeek,‏ Kimi,‏ GLM,‏ Qwen,‏ Doubao,‏ MiniMax,‏ Grok,‏ Mistral,‏
-OpenRouter ו-OpenCode Zen/Go, ובנוסף שדה מותאם אישית לכל endpoint
+OpenRouter,‏ Requesty ו-OpenCode Zen/Go, ובנוסף שדה מותאם אישית לכל endpoint
 תואם-OpenAI (כתובת בסיס + מפתח), כולל שרתי מודלים מקומיים. לחיפוש ולמדיה יש
 ספקים נפרדים לפי יכולת תחת **AI Media & Search**: Serper או Tavily לחיפוש
 ברשת, ו-OpenAI,‏ Gemini,‏ Doubao/Seedream,‏ GLM,‏ Grok,‏ Qwen,‏ MiniMax או
@@ -339,7 +339,7 @@ GenOffice נמצאת בפיתוח פעיל, והמשוב שלכם מעצב או�
 
 כן. מעבר להתחברות ל-Genspark שאינה דורשת מפתח, GenOffice מאפשרת להביא מפתח
 משלכם עבור Claude,‏ OpenAI,‏ Gemini,‏ DeepSeek,‏ Kimi,‏ GLM,‏ Qwen,‏ Doubao,‏
-MiniMax,‏ Grok,‏ Mistral,‏ OpenRouter ו-OpenCode Zen/Go, וכן כל endpoint
+MiniMax,‏ Grok,‏ Mistral,‏ OpenRouter,‏ Requesty ו-OpenCode Zen/Go, וכן כל endpoint
 תואם-OpenAI — כולל שרתי מודלים מקומיים. חיפוש, יצירת תמונות וניתוח
 תמונה/וידאו דורשים מפתחות נפרדים תחת Settings → AI Media & Search.
 

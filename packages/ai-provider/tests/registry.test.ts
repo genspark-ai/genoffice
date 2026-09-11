@@ -99,6 +99,7 @@ describe('provider registry', () => {
       ['xai', 'grok-4.6', 'https://api.x.ai/v1'],
       ['mistral', 'mistral-large-latest', 'https://api.mistral.ai/v1'],
       ['openrouter', 'openrouter/auto', 'https://openrouter.ai/api/v1'],
+      ['requesty', 'claude-sonnet-5', 'https://router.requesty.ai/v1'],
     ]
     for (const [id, model, baseUrl] of cases) {
       expect(AI_PROVIDER_ADAPTERS[id].resolveEndpoint(config(model))).toEqual({
@@ -271,6 +272,28 @@ describe('fixed-sampling models on indirect routes', () => {
       protocol: 'openai-compatible',
       baseUrl: 'https://mirror/v1',
       omitTemperature: true,
+    })
+  })
+
+  it('omits temperature for fixed-sampling managed policies via Requesty', () => {
+    const resolve = (model: string, baseUrl?: string) =>
+      AI_PROVIDER_ADAPTERS.requesty.resolveEndpoint(config(model, baseUrl))
+    for (const model of ['kimi-k3', 'gpt-5.6-sol', 'gemini-3.7-flash', 'openai/gpt-5.4']) {
+      expect(resolve(model)).toEqual({
+        protocol: 'openai-compatible',
+        baseUrl: 'https://router.requesty.ai/v1',
+        omitTemperature: true,
+      })
+    }
+    // the full-catalog vendor-prefixed ids work as-is on the same endpoint
+    expect(resolve('openai/gpt-4o-mini')).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://router.requesty.ai/v1',
+    })
+    // a stored base URL picks the EU router
+    expect(resolve('claude-sonnet-5', 'https://router.eu.requesty.ai/v1')).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://router.eu.requesty.ai/v1',
     })
   })
 })

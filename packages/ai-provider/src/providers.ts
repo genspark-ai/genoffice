@@ -174,6 +174,26 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-or-...',
   },
   {
+    id: 'requesty',
+    label: 'Requesty',
+    // Managed policy ids exactly as GET router.requesty.ai/v1/models/managed
+    // lists them (2026-09-11): short stable names Requesty routes across
+    // providers, used as-is in the model field. The full vendor-prefixed
+    // catalog (GET /v1/models, e.g. openai/gpt-4o-mini) works too when typed
+    // in. Ids ending "@eu" route through EU providers only.
+    models: [
+      'claude-sonnet-5',
+      'claude-opus-4-8',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gemini-3.7-flash',
+      'deepseek-v4-pro',
+      'kimi-k3',
+    ],
+    defaultModel: 'claude-sonnet-5',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET

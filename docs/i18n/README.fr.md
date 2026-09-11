@@ -50,7 +50,7 @@ modification, et vous montre exactement ce qu'il a touché.
   fournisseur de votre choix.
 - **Vos clés ou aucune.** Connectez-vous avec Genspark pour vous dispenser de
   clé, ou utilisez votre propre clé pour Claude, OpenAI, Gemini, DeepSeek,
-  Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, ou tout point
+  Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, ou tout point
   de terminaison compatible OpenAI, y compris les serveurs locaux.
 
 **À télécharger :** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon et Intel) ·
@@ -192,7 +192,7 @@ les agents ont accès à la recherche web et d'images, à la génération
 d'images, et à l'analyse d'images, d'audio et de vidéo.
 
 **Ou utilisez votre propre clé.** Paramètres → IA propose Claude, OpenAI,
-Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter
+Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty
 et OpenCode Zen/Go, ainsi qu'un emplacement personnalisé pour tout point de
 terminaison compatible OpenAI (URL de base + clé), y compris les serveurs de
 modèles locaux. La recherche et les médias disposent de leurs propres
@@ -363,7 +363,7 @@ en texte modifiable plutôt qu'en image de page.
 
 Oui. Outre la connexion Genspark sans clé, GenOffice prend en charge
 l'utilisation de votre propre clé pour Claude, OpenAI, Gemini, DeepSeek,
-Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter et OpenCode
+Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty et OpenCode
 Zen/Go, ainsi que tout point de terminaison compatible OpenAI — y compris les
 serveurs de modèles locaux. La recherche, la génération d'images et
 l'analyse d'images/vidéos utilisent leurs propres clés sous Paramètres → IA

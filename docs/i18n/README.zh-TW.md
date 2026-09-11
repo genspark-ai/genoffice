@@ -44,7 +44,7 @@ Windows 與 Linux。它能開啟並儲存原生的 `.docx`、`.xlsx` 與 `.pptx`
   在本機執行。只有 AI 呼叫會離開這台裝置，且僅送往你選擇的服務商。
 - **用你自己的金鑰，或完全不用。** 用 Genspark 登入即可省去金鑰設定，
   或自行帶入 Claude、OpenAI、Gemini、DeepSeek、Kimi、GLM、Qwen、
-  Doubao、MiniMax、Grok、Mistral、OpenRouter，或任何相容 OpenAI 介面
+  Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty，或任何相容 OpenAI 介面
   的服務端點，也支援本機伺服器。
 
 **立即取得：** [macOS](https://github.com/genspark-ai/genoffice/releases/latest)（Apple Silicon 與 Intel）·
@@ -205,7 +205,7 @@ GenOffice 會規劃敘事脈絡、研究相關數據，並把每一頁直接生�
 圖片生成，以及圖片／音訊／影片分析。
 
 **或自帶金鑰。**「設定 → AI」列出了 Claude、OpenAI、Gemini、DeepSeek、
-Kimi、GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter 與
+Kimi、GLM、Qwen、Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty 與
 OpenCode Zen/Go，另外還有一個自訂欄位可填入任何相容 OpenAI 的服務端點
 （base URL + 金鑰），也包括本機模型伺服器。搜尋與媒體功能則各自在
 **AI 媒體與搜尋**下設定獨立的服務商：網頁搜尋可選 Serper 或 Tavily，
@@ -360,7 +360,7 @@ Office 中依然能正常使用。
 
 可以。除了免金鑰的 Genspark 登入之外，GenOffice 也支援自帶金鑰，
 涵蓋 Claude、OpenAI、Gemini、DeepSeek、Kimi、GLM、Qwen、Doubao、
-MiniMax、Grok、Mistral、OpenRouter 與 OpenCode Zen/Go，以及任何相容
+MiniMax、Grok、Mistral、OpenRouter、Requesty 與 OpenCode Zen/Go，以及任何相容
 OpenAI 的服務端點——包括本機模型伺服器。搜尋、圖片生成與圖片／影片
 分析則在「設定 → AI 媒體與搜尋」下使用各自獨立的金鑰。
 

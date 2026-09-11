@@ -47,7 +47,7 @@ GenOffice بديل مجاني ومفتوح المصدر لـ Microsoft Office ع
   الاصطناعي، وتُرسَل فقط إلى مزوّد الخدمة الذي تختاره.
 - **مفاتيحك أو بلا مفاتيح.** سجّل الدخول بواسطة Genspark لتجنّب إدارة المفاتيح،
   أو استخدم مفتاحك الخاص مع Claude أو OpenAI أو Gemini أو DeepSeek أو Kimi أو
-  GLM أو Qwen أو Doubao أو MiniMax أو Grok أو Mistral أو OpenRouter، أو أي
+  GLM أو Qwen أو Doubao أو MiniMax أو Grok أو Mistral أو OpenRouter أو Requesty، أو أي
   نقطة نهاية متوافقة مع OpenAI، بما في ذلك الخوادم المحلية.
 
 **الحصول عليه:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon و Intel) ·
@@ -184,7 +184,7 @@ macOS، والذكاء الاصطناعي فيها ناتج عن التوجيه 
 
 **أو استخدم مفتاحك الخاص.** تسرد صفحة Settings → AI مزوِّدين مثل Claude
 وOpenAI وGemini وDeepSeek وKimi وGLM وQwen وDoubao وMiniMax وGrok وMistral
-وOpenRouter وOpenCode Zen/Go، إضافة إلى خانة مخصَّصة لأي نقطة نهاية متوافقة مع
+وOpenRouter وRequesty وOpenCode Zen/Go، إضافة إلى خانة مخصَّصة لأي نقطة نهاية متوافقة مع
 OpenAI (عنوان أساسي + مفتاح)، بما في ذلك خوادم النماذج المحلية. ولكل من
 البحث والوسائط مزوِّدوه الخاصون بحسب القدرة تحت **AI Media & Search**: Serper
 أو Tavily للبحث عبر الويب، وOpenAI أو Gemini أو Doubao/Seedream أو GLM أو
@@ -343,7 +343,7 @@ macOS و Windows، فتُحوَّل إلى نص قابل للتحرير بدلً
 
 نعم. إلى جانب تسجيل الدخول بواسطة Genspark الذي لا يتطلب أي مفتاح، يدعم
 GenOffice استخدام مفتاحك الخاص مع Claude وOpenAI وGemini وDeepSeek وKimi
-وGLM وQwen وDoubao وMiniMax وGrok وMistral وOpenRouter وOpenCode Zen/Go،
+وGLM وQwen وDoubao وMiniMax وGrok وMistral وOpenRouter وRequesty وOpenCode Zen/Go،
 إضافة إلى أي نقطة نهاية متوافقة مع OpenAI — بما في ذلك خوادم النماذج المحلية.
 ولكل من البحث وتوليد الصور وتحليل الصور والفيديو مفاتيحه الخاصة تحت
 Settings → AI Media & Search.

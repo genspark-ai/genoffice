@@ -49,7 +49,7 @@ AI-агента рядом с каждым документом — не чат-
   выбранному вами провайдеру.
 - **Свои ключи или никаких.** Войдите через Genspark и обойдитесь без ключей
   вообще, либо используйте собственный ключ для Claude, OpenAI, Gemini,
-  DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter или
+  DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty или
   любого совместимого с OpenAI эндпоинта, включая локальные серверы.
 
 **Скачать:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon и Intel) ·
@@ -189,7 +189,7 @@ AI-агента рядом с каждым документом — не чат-
 
 **Либо используйте собственный ключ.** В разделе Settings → AI перечислены
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, OpenRouter и OpenCode Zen/Go, а также отдельный слот для любого
+Mistral, OpenRouter, Requesty и OpenCode Zen/Go, а также отдельный слот для любого
 совместимого с OpenAI эндпоинта (базовый URL + ключ), включая локальные
 серверы моделей. Поиск и работа с медиа настраиваются через отдельных
 провайдеров по каждой возможности в разделе **AI Media & Search**: Serper
@@ -356,7 +356,7 @@ Windows их читает системный OCR, поэтому они конв
 
 Да. Помимо входа через Genspark без ключей, GenOffice поддерживает
 собственный ключ для Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen,
-Doubao, MiniMax, Grok, Mistral, OpenRouter и OpenCode Zen/Go, а также любой
+Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty и OpenCode Zen/Go, а также любой
 совместимый с OpenAI эндпоинт — включая локальные серверы моделей. Поиск,
 генерация изображений и анализ изображений/видео используют собственные
 ключи в разделе Settings → AI Media & Search.

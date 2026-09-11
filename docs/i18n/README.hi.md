@@ -33,7 +33,7 @@ GenOffice, macOS, Windows और Linux के लिए Microsoft Office का 
 - **असली फ़ॉर्मैट, बाइट-प्रिज़र्विंग।** सिर्फ़ वही हिस्सा दोबारा लिखा जाता है जिसे आप एडिट करते हैं। फ़ाइल का बाकी हिस्सा बाइट-दर-बाइट वैसा ही रहता है, इसलिए डॉक्यूमेंट Word, Excel और PowerPoint में पहले जैसे ही काम करते रहते हैं।
 - **AI जिसे आप रिव्यू कर सकते हैं।** एडिट्स ट्रैक्ड चेंजेस और डिफ़ के रूप में आते हैं, जिन्हें एक क्लिक में रोलबैक किया जा सकता है। स्प्रेडशीट में पेस्ट किए गए नंबर नहीं, बल्कि लाइव फ़ॉर्मूला मिलते हैं। डेक और पेज कैनवस पर जनरेट होते हैं और पूरी तरह एडिटेबल बने रहते हैं।
 - **डिज़ाइन से ही लोकल।** फ़ाइलें आपकी मशीन पर ही खुलती, एडिट होती, सेव होती और कन्वर्ट होती हैं। PDF → Word / Excel / PowerPoint, Markdown → Word और HTML → Word — यह सभी कन्वर्शन ऑन-डिवाइस होते हैं। मशीन से बाहर सिर्फ़ AI कॉल्स जाती हैं, और वह भी आपके चुने हुए प्रोवाइडर तक।
-- **आपकी कीज़ या कोई कीज़ नहीं।** Genspark से साइन इन करें और कीज़ की झंझट से बचें, या Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter या किसी भी OpenAI-compatible endpoint के लिए अपनी खुद की key लाएँ — लोकल सर्वर भी शामिल हैं।
+- **आपकी कीज़ या कोई कीज़ नहीं।** Genspark से साइन इन करें और कीज़ की झंझट से बचें, या Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty या किसी भी OpenAI-compatible endpoint के लिए अपनी खुद की key लाएँ — लोकल सर्वर भी शामिल हैं।
 
 **पाएँ:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon और Intel) ·
 [Windows](https://github.com/genspark-ai/genoffice/releases/latest) (x64 और Arm) ·
@@ -161,7 +161,7 @@ GenOffice, macOS, Windows और Linux के लिए Microsoft Office का 
 
 **Genspark से साइन इन करें** और कुछ भी कॉन्फ़िगर करने की ज़रूरत नहीं: मॉडल कॉल्स Genspark प्रॉक्सी (Claude, GPT और Gemini फ़ैमिली) के ज़रिए रूट होती हैं, और एजेंट्स को वेब व इमेज सर्च, इमेज जनरेशन, और इमेज/ऑडियो/वीडियो एनालिसिस मिलता है।
 
-**या अपनी खुद की key लाएँ।** Settings → AI में Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter और OpenCode Zen/Go लिस्ट किए गए हैं, साथ ही किसी भी OpenAI-compatible endpoint (base URL + key) के लिए एक कस्टम स्लॉट है, जिसमें लोकल मॉडल सर्वर भी शामिल हैं। सर्च और मीडिया के अपने अलग, हर-कैपेबिलिटी प्रोवाइडर **AI Media & Search** के तहत हैं: वेब सर्च के लिए Serper या Tavily, और इमेज जनरेशन व इमेज/वीडियो एनालिसिस के लिए OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax या कोई भी OpenAI-compatible images endpoint।
+**या अपनी खुद की key लाएँ।** Settings → AI में Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty और OpenCode Zen/Go लिस्ट किए गए हैं, साथ ही किसी भी OpenAI-compatible endpoint (base URL + key) के लिए एक कस्टम स्लॉट है, जिसमें लोकल मॉडल सर्वर भी शामिल हैं। सर्च और मीडिया के अपने अलग, हर-कैपेबिलिटी प्रोवाइडर **AI Media & Search** के तहत हैं: वेब सर्च के लिए Serper या Tavily, और इमेज जनरेशन व इमेज/वीडियो एनालिसिस के लिए OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax या कोई भी OpenAI-compatible images endpoint।
 
 पूरा सूट लाइट, डार्क और सिस्टम थीम के साथ आता है। थीम सिर्फ़ स्क्रीन पर दिखने वाली चीज़ बदलती है: एक्सपोर्ट, प्रिंट और सेव की गई फ़ाइलें हमेशा डॉक्यूमेंट के अपने असली रंग बरकरार रखती हैं।
 
@@ -307,7 +307,7 @@ GenOffice पर सक्रिय रूप से काम चल रहा 
 
 हाँ। बिना-key वाले Genspark साइन-इन के अलावा, GenOffice Claude, OpenAI,
 Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-OpenRouter और OpenCode Zen/Go के लिए अपनी खुद की key लाने को सपोर्ट करता
+OpenRouter, Requesty और OpenCode Zen/Go के लिए अपनी खुद की key लाने को सपोर्ट करता
 है, साथ ही किसी भी OpenAI-compatible endpoint को — जिसमें लोकल मॉडल सर्वर
 भी शामिल हैं। सर्च, इमेज जनरेशन और इमेज/वीडियो एनालिसिस के लिए
 Settings → AI Media & Search के तहत अलग keys चाहिए।

@@ -47,7 +47,7 @@ lê o arquivo, faz a alteração e mostra exatamente o que foi tocado.
   máquina, para o provedor que você escolher.
 - **Suas chaves, ou nenhuma.** Faça login com o Genspark e pule as chaves, ou
   use sua própria chave para Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM,
-  Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, ou qualquer endpoint
+  Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, ou qualquer endpoint
   compatível com OpenAI, incluindo servidores locais.
 
 **Baixe:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon e Intel) ·
@@ -187,7 +187,7 @@ agentes ganham busca na web e de imagens, geração de imagens e análise de
 imagem/áudio/vídeo.
 
 **Ou traga sua própria chave.** Configurações → IA lista Claude, OpenAI,
-Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter
+Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty
 e OpenCode Zen/Go, além de um slot personalizado para qualquer endpoint
 compatível com OpenAI (URL base + chave), incluindo servidores de modelo
 locais. Busca e mídia têm seus próprios provedores por capacidade em **IA de
@@ -352,7 +352,7 @@ imagem da página.
 
 Sim. Além do login sem chave pelo Genspark, o GenOffice permite trazer sua
 própria chave para Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen,
-Doubao, MiniMax, Grok, Mistral, OpenRouter e OpenCode Zen/Go, além de
+Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty e OpenCode Zen/Go, além de
 qualquer endpoint compatível com OpenAI — incluindo servidores de modelo
 locais. Busca, geração de imagens e análise de imagem/vídeo usam suas
 próprias chaves em Configurações → IA de Mídia e Busca.

@@ -54,6 +54,15 @@ describe('provider model catalog', () => {
       }
     }
   })
+
+  it('seeds Requesty with managed policy ids (short names, no vendor prefix)', () => {
+    const requesty = AI_PROVIDERS.find((provider) => provider.id === 'requesty')!
+    expect(requesty.models).toContain(requesty.defaultModel)
+    expect(requesty.needsBaseUrl).toBeUndefined()
+    for (const model of requesty.models) {
+      expect(model).not.toContain('/')
+    }
+  })
 })
 
 describe('resolveAiSettings', () => {

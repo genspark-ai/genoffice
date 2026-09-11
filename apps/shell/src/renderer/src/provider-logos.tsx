@@ -8,7 +8,7 @@ import type { AiProviderId } from '@genoffice/ai-provider'
 // generic icon for the "custom" endpoint.
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
-// (OpenAI, Kimi, Grok, OpenRouter, OpenCode, Genspark, Custom) use
+// (OpenAI, Kimi, Grok, OpenRouter, Requesty, OpenCode, Genspark, Custom) use
 // currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
@@ -215,6 +215,19 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
   openrouter: (
     <svg viewBox="0 0 24 24" fill="currentColor" fillRule="evenodd" aria-hidden="true">
       <path d="M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.175zM8.479 7.26a5.087 5.087 0 100 10.176 5.087 5.087 0 000-10.175z" />
+    </svg>
+  ),
+  // plain "R" wordmark in a rounded square (no official vector mark in the icon set)
+  requesty: (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="20" height="20" rx="5" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M8.5 17.5v-11h4.25a3.25 3.25 0 010 6.5H8.5m4 0 3.5 4.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   ),
   'opencode-zen': opencodeLogo,

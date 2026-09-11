@@ -48,7 +48,7 @@ i pokazuje precyzyjnie, czego dotknął.
   wybierzesz.
 - **Twoje klucze albo żadne.** Zaloguj się przez Genspark i pomiń klucze, albo
   użyj własnego klucza dla Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen,
-  Doubao, MiniMax, Grok, Mistral, OpenRouter lub dowolnego endpointu
+  Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty lub dowolnego endpointu
   zgodnego z OpenAI, w tym lokalnych serwerów.
 
 **Pobierz:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon i Intel) ·
@@ -188,7 +188,7 @@ analizę obrazu, audio i wideo.
 
 **Albo użyj własnego klucza.** Ustawienia → AI zawierają Claude, OpenAI,
 Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-OpenRouter oraz OpenCode Zen/Go, a także dowolny slot dla endpointu zgodnego
+OpenRouter, Requesty oraz OpenCode Zen/Go, a także dowolny slot dla endpointu zgodnego
 z OpenAI (adres bazowy + klucz), w tym lokalnych serwerów modeli.
 Wyszukiwanie i media mają własnych dostawców przypisanych do konkretnej
 funkcji w sekcji **AI Media & Search**: Serper lub Tavily do wyszukiwania w
@@ -355,7 +355,7 @@ tekstu, a nie obrazu strony.
 
 Tak. Oprócz bezkluczowego logowania przez Genspark, GenOffice wspiera
 użycie własnego klucza dla Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM,
-Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter i OpenCode Zen/Go, a także
+Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty i OpenCode Zen/Go, a także
 dowolnego endpointu zgodnego z OpenAI — w tym lokalnych serwerów modeli.
 Wyszukiwanie, generowanie obrazów oraz analiza obrazu i wideo mają własne
 klucze w Ustawienia → AI Media & Search.
