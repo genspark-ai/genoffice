@@ -50,7 +50,7 @@ kepada anda dengan tepat apa yang disentuhnya.
 - **Kunci anda sendiri atau tiada langsung.** Log masuk dengan Genspark dan
   anda tidak perlu sebarang kunci, atau bawa kunci anda sendiri untuk Claude,
   OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-  OpenRouter, Requesty, atau mana-mana titik akhir yang serasi dengan OpenAI, termasuk
+  OpenRouter, API Route, Requesty, atau mana-mana titik akhir yang serasi dengan OpenAI, termasuk
   pelayan setempat.
 
 **Dapatkan:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon dan Intel) ·
@@ -188,7 +188,7 @@ Gemini) dan agen mendapat carian web serta imej, penjanaan imej, dan analisis
 imej/audio/video.
 
 **Atau bawa kunci anda sendiri.** Settings → AI menyenaraikan Claude, OpenAI,
-Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty
+Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty
 dan OpenCode Zen/Go, ditambah slot tersuai untuk mana-mana titik akhir yang
 serasi dengan OpenAI (URL asas + kunci), termasuk pelayan model setempat.
 Carian dan media mempunyai pembekal tersendiri mengikut keupayaan di bawah
@@ -352,7 +352,7 @@ halaman.
 
 Ya. Selain log masuk Genspark tanpa kunci, GenOffice menyokong bawa kunci
 anda sendiri untuk Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao,
-MiniMax, Grok, Mistral, OpenRouter, Requesty dan OpenCode Zen/Go, ditambah mana-mana
+MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty dan OpenCode Zen/Go, ditambah mana-mana
 titik akhir serasi OpenAI — termasuk pelayan model setempat. Carian,
 penjanaan imej dan analisis imej/video memerlukan kunci tersendiri di bawah
 Settings → AI Media & Search.

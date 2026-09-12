@@ -48,7 +48,7 @@ aangepast.
   verlaten de machine, naar de provider die jij kiest.
 - **Jouw eigen keys, of geen enkele.** Log in met Genspark en je hoeft niets te
   regelen, of gebruik je eigen key voor Claude, OpenAI, Gemini, DeepSeek,
-  Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, of elk
+  Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty, of elk
   OpenAI-compatibel endpoint, inclusief lokale servers.
 
 **Haal het hier:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon en Intel) ·
@@ -186,7 +186,7 @@ krijgen toegang tot web- en beeldzoeken, beeldgeneratie en analyse van beeld,
 audio en video.
 
 **Of gebruik je eigen key.** Onder Settings → AI vind je Claude, OpenAI,
-Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty
+Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty
 en OpenCode Zen/Go, plus een aangepast slot voor elk OpenAI-compatibel
 endpoint (base URL + key), inclusief lokale modelservers. Zoeken en media
 hebben elk hun eigen providers per capability onder **AI Media & Search**:
@@ -351,7 +351,7 @@ pagina-afbeelding.
 
 Ja. Naast de keyless Genspark-login ondersteunt GenOffice je eigen key voor
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, OpenRouter, Requesty en OpenCode Zen/Go, plus elk OpenAI-compatibel endpoint —
+Mistral, OpenRouter, API Route, Requesty en OpenCode Zen/Go, plus elk OpenAI-compatibel endpoint —
 inclusief lokale modelservers. Search, beeldgeneratie en analyse van beeld en
 video gebruiken hun eigen keys onder Settings → AI Media & Search.
 

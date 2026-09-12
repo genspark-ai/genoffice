@@ -99,6 +99,7 @@ describe('provider registry', () => {
       ['xai', 'grok-4.6', 'https://api.x.ai/v1'],
       ['mistral', 'mistral-large-latest', 'https://api.mistral.ai/v1'],
       ['openrouter', 'openrouter/auto', 'https://openrouter.ai/api/v1'],
+      ['api-route', 'claude-sonnet-4-6', 'https://global.api-route.com/v1'],
       ['requesty', 'claude-sonnet-5', 'https://router.requesty.ai/v1'],
     ]
     for (const [id, model, baseUrl] of cases) {

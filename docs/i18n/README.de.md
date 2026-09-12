@@ -50,7 +50,7 @@ er verändert hat.
 - **Deine Schlüssel oder keine.** Melde dich mit Genspark an und du brauchst
   keine Schlüssel, oder bring deinen eigenen Schlüssel für Claude, OpenAI,
   Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
-  OpenRouter, Requesty oder jeden OpenAI-kompatiblen Endpunkt mit – auch lokale Server
+  OpenRouter, API Route, Requesty oder jeden OpenAI-kompatiblen Endpunkt mit – auch lokale Server
   werden unterstützt.
 
 **Los geht's:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon und Intel) ·
@@ -191,7 +191,7 @@ sowie Bild-/Audio-/Videoanalyse.
 
 **Oder bring deinen eigenen Schlüssel mit.** Unter Einstellungen → KI stehen
 Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok,
-Mistral, OpenRouter, Requesty und OpenCode Zen/Go zur Wahl, plus ein freier Slot für
+Mistral, OpenRouter, API Route, Requesty und OpenCode Zen/Go zur Wahl, plus ein freier Slot für
 jeden OpenAI-kompatiblen Endpunkt (Basis-URL + Schlüssel), einschließlich
 lokaler Modell-Server. Suche und Medien haben eigene Anbieter je Fähigkeit
 unter KI-Medien & Suche: Serper oder Tavily für die Websuche und OpenAI,
@@ -357,7 +357,7 @@ Seitenbild konvertiert werden.
 
 Ja. Neben der schlüssellosen Genspark-Anmeldung unterstützt GenOffice das
 Mitbringen eigener Schlüssel für Claude, OpenAI, Gemini, DeepSeek, Kimi,
-GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty und OpenCode Zen/Go,
+GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty und OpenCode Zen/Go,
 plus jeden OpenAI-kompatiblen Endpunkt – einschließlich lokaler
 Modell-Server. Suche, Bildgenerierung und Bild-/Videoanalyse benötigen
 eigene Schlüssel unter Einstellungen → KI-Medien & Suche.

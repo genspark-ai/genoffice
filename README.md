@@ -45,7 +45,7 @@ file, makes the change, and shows you exactly what it touched.
   on-device. Only the AI calls leave the machine, to the provider you choose.
 - **Your keys or none.** Sign in with Genspark and skip keys, or bring your own
   key for Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax,
-  Grok, Mistral, OpenRouter, Requesty, or any OpenAI-compatible endpoint, local
+  Grok, Mistral, OpenRouter, API Route, Requesty, or any OpenAI-compatible endpoint, local
   servers included.
 
 **Get it:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon and Intel) ·
@@ -179,7 +179,7 @@ through the Genspark proxy (Claude, GPT and Gemini families) and the agents get
 web and image search, image generation, and image/audio/video analysis.
 
 **Or bring your own key.** Settings → AI lists Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty
 and OpenCode Zen/Go, plus a custom slot for any OpenAI-compatible endpoint (base
 URL + key), including local model servers. Search and media have their own
 per-capability providers under **AI Media & Search**: Serper or Tavily for web
@@ -336,7 +336,7 @@ convert to editable text rather than a page image.
 
 Yes. Besides the keyless Genspark sign-in, GenOffice supports bring your own
 key for Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax,
-Grok, Mistral, OpenRouter, Requesty and OpenCode Zen/Go, plus any OpenAI-compatible
+Grok, Mistral, OpenRouter, API Route, Requesty and OpenCode Zen/Go, plus any OpenAI-compatible
 endpoint — including local model servers. Search, image generation and
 image/video analysis take their own keys under Settings → AI Media & Search.
 
