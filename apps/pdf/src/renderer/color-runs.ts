@@ -46,14 +46,16 @@ export function decodeStyle(key: string): CharStyle {
   if (!key) return {}
   const [color = '', font = '', size = '', bold = '', italic = ''] = key.split('|')
   const out: CharStyle = {}
-  if (color) out.color = color
+  if (/^#[0-9a-f]{6}$/i.test(color)) out.color = color
   if (font) out.font = font
   if (size) {
     const n = Number(size)
     if (Number.isFinite(n) && n > 0) out.size = n
   }
-  if (bold) out.bold = bold === '1'
-  if (italic) out.italic = italic === '1'
+  if (bold === '1') out.bold = true
+  else if (bold === '0') out.bold = false
+  if (italic === '1') out.italic = true
+  else if (italic === '0') out.italic = false
   return out
 }
 

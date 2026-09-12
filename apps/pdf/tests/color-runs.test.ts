@@ -147,10 +147,23 @@ describe('style keys', () => {
   })
 
   it('ignores non-numeric, non-finite, and non-positive sizes', () => {
-    expect(decodeStyle('x|y|oops||')).toEqual({ color: 'x', font: 'y' })
-    expect(decodeStyle('x|y|Infinity||')).toEqual({ color: 'x', font: 'y' })
-    expect(decodeStyle('x|y|0||')).toEqual({ color: 'x', font: 'y' })
-    expect(decodeStyle('x|y|-3||')).toEqual({ color: 'x', font: 'y' })
-    expect(decodeStyle('x|y|12.5||')).toEqual({ color: 'x', font: 'y', size: 12.5 })
+    expect(decodeStyle('x|y|oops||')).toEqual({ font: 'y' })
+    expect(decodeStyle('x|y|Infinity||')).toEqual({ font: 'y' })
+    expect(decodeStyle('x|y|0||')).toEqual({ font: 'y' })
+    expect(decodeStyle('x|y|-3||')).toEqual({ font: 'y' })
+    expect(decodeStyle('x|y|12.5||')).toEqual({ font: 'y', size: 12.5 })
+  })
+
+  it('ignores non-hex colors and non-0/1 toggles', () => {
+    expect(decodeStyle('#d32f2f|arial|12|1|0')).toEqual({
+      color: '#d32f2f',
+      font: 'arial',
+      size: 12,
+      bold: true,
+      italic: false,
+    })
+    expect(decodeStyle('red|arial|12||')).toEqual({ font: 'arial', size: 12 })
+    expect(decodeStyle('x|a|b|2|x')).toEqual({ font: 'a' })
+    expect(decodeStyle('#d32f2f|a|b|||extra|more')).toEqual({ color: '#d32f2f', font: 'a' })
   })
 })
