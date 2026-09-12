@@ -106,6 +106,17 @@ describe('parseCsv', () => {
     expect(parseCsv('a,"; ""; ""; ""; """,d')).toEqual([['a', '; "; "; "; "', 'd']])
   })
 
+  it('ignores delimiters inside multiline quoted fields when sniffing', () => {
+    // The quoted field spans lines: without carried quote state the three
+    // inner ; would outvote the two true commas and the columns mis-split.
+    const text = 'a,b\n"x\ny;z;w;v",q\n'
+    expect(sniffDelimiter(text)).toBe(',')
+    expect(parseCsv(text, ',')).toEqual([
+      ['a', 'b'],
+      ['x\ny;z;w;v', 'q'],
+    ])
+  })
+
   it('drops the trailing empty row from a final newline', () => {
     expect(parseCsv('a,b\n1,2\n')).toEqual([
       ['a', 'b'],

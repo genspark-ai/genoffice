@@ -82,8 +82,10 @@ export function sniffDelimiter(text: string): string {
     .split(/\r?\n/)
     .slice(0, 20)
   const counts = new Map<string, number>(DELIMITERS.map((d) => [d, 0]))
+  // Quote state carries across lines: a quoted field may span line breaks,
+  // and delimiters inside it must never be counted.
+  let quoted = false
   for (const line of sample) {
-    let quoted = false
     for (let index = 0; index < line.length; index += 1) {
       const character = line[index]
       if (character === undefined) continue
