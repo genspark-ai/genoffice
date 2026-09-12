@@ -158,9 +158,11 @@ export function parseCsv(input: string, delimiter = sniffDelimiter(input)): stri
 }
 
 /// Plain decimal numbers only; leading zeros ("007") stay text so codes and
-/// phone numbers survive the import.
+/// phone numbers survive the import. Integers past Excel's 15-digit precision
+/// stay text too, so long IDs are not corrupted on open.
 export function isNumericCell(value: string): boolean {
   if (!/^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$/.test(value)) return false
+  if (!/[.eE]/.test(value) && value.replace(/^-/, '').length > 15) return false
   return Number.isFinite(Number(value))
 }
 

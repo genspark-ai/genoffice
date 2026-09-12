@@ -126,6 +126,16 @@ describe('isNumericCell', () => {
       expect(isNumericCell(value), value).toBe(false)
     }
   })
+
+  it('keeps integers past Excel precision as text so long IDs survive', () => {
+    expect(isNumericCell('123456789012345')).toBe(true)
+    expect(isNumericCell('1234567890123456')).toBe(false)
+    expect(isNumericCell('12345678901234567890')).toBe(false)
+    expect(buildWorksheetXml([['12345678901234567890']])).toContain('t="inlineStr"')
+    for (const value of ['0.3333333333333333', '1.4142135623730951', '0.30000000000000004', '3.14159265358979']) {
+      expect(isNumericCell(value), value).toBe(true)
+    }
+  })
 })
 
 describe('csvToXlsxBuffer', () => {
