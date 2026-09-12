@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { groupIntoBlocks } from '../src/analyze/blocks'
 import { analyzeChars } from '../src/analyze/chars'
 import { clusterCombiningMarks, groupIntoLines } from '../src/analyze/lines'
-import { detectTocBlocks, detectTocRows } from '../src/analyze/toc'
+import { detectTocBlocks, detectTocRows, hasDotLeaderRun } from '../src/analyze/toc'
 import { splitIntoUnits } from '../src/analyze/units'
 import type { PdfChar } from '../src/ir'
 import { mkChar, mkText } from './helpers/chars'
@@ -37,6 +37,18 @@ describe('detectTocBlocks (dot leaders)', () => {
       analyzeChars(mkText('Just a sentence with no leader.', 72).chars),
     )
     expect(detectTocBlocks(blocks)).toBe(blocks)
+  })
+})
+
+describe('hasDotLeaderRun', () => {
+  it('accepts arabic and roman page numbers after the leader', () => {
+    expect(hasDotLeaderRun(dotLeaderChars('Intro', '28', 700))).toBe(true)
+    expect(hasDotLeaderRun(dotLeaderChars('Intro', 'iv', 700))).toBe(true)
+    expect(hasDotLeaderRun(dotLeaderChars('Intro', 'XII', 700))).toBe(true)
+  })
+
+  it('rejects dotted fill-in lines with no page number', () => {
+    expect(hasDotLeaderRun(mkText('Name: ......', 72).chars)).toBe(false)
   })
 })
 

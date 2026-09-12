@@ -47,17 +47,36 @@ export const LEADER_PAGE_MIN_SHARE = 0.3
 export function hasDotLeaderRun(chars: readonly PdfChar[]): boolean {
   let run = 0
   let armed = false
-  for (const c of chars) {
+  let i = 0
+  while (i < chars.length) {
+    const c = chars[i]!
     if (c.text === '.' || c.text === '·') {
       run++
       if (run >= LEADER_RUN_MIN_DOTS) armed = true
+      i++
     } else if (c.text === ' ' || c.code === 0x20) {
-      continue
+      i++
     } else if (armed && c.text >= '0' && c.text <= '9') {
       return true
+    } else if (armed && /[ivxlcdm]/i.test(c.text)) {
+      // Possible roman page number (front-matter entries like "Intro .... iv"):
+      // gather the whole trailing token and accept it only when it runs to the
+      // end of the line, mirroring the anchored TOC_LINE_RE.
+      let j = i
+      while (j < chars.length && /[0-9a-zA-Z]/.test(chars[j]!.text)) j++
+      const token = chars
+        .slice(i, j)
+        .map((d) => d.text)
+        .join('')
+      const restBlank = chars.slice(j).every((d) => d.text === ' ' || d.code === 0x20)
+      if (restBlank && /^(?:[0-9]+|[ivxlcdm]+)$/i.test(token)) return true
+      run = 0
+      armed = false
+      i = j
     } else {
       run = 0
       armed = false
+      i++
     }
   }
   return false
