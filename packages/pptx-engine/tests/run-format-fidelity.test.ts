@@ -410,3 +410,28 @@ describe('text highlight <a:highlight>', () => {
     expect(out).toContain('<a:highlight><a:srgbClr val="FF0000"/></a:highlight>')
   })
 })
+
+describe('recolor replaces non-srgb fills instead of duplicating solidFill', () => {
+  const recolor = (runXml: string) => {
+    const { slide, el } = parseEl(runXml)
+    expect(setElementFont(slide, el.id, { color: '#112233' })).toBe(true)
+    return patchTextElementXml(el, el.anchor.originalXml)
+  }
+
+  it('preset-color run keeps a single solidFill', () => {
+    const out = recolor(
+      '<a:r><a:rPr><a:solidFill><a:prstClr val="red"/></a:solidFill></a:rPr><a:t>x</a:t></a:r>',
+    )
+    expect(out.match(/<a:solidFill>/g)).toHaveLength(1)
+    expect(out).toContain('<a:srgbClr val="112233"/>')
+    expect(out).not.toContain('prstClr')
+  })
+
+  it('system-color run keeps a single solidFill', () => {
+    const out = recolor(
+      '<a:r><a:rPr><a:solidFill><a:sysClr val="windowText"/></a:solidFill></a:rPr><a:t>x</a:t></a:r>',
+    )
+    expect(out.match(/<a:solidFill>/g)).toHaveLength(1)
+    expect(out).toContain('<a:srgbClr val="112233"/>')
+  })
+})

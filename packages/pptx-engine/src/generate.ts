@@ -586,6 +586,15 @@ function patchRunColor(runXml: string, color: string): string {
       `<a:solidFill><a:srgbClr val="${hex}"/></a:solidFill>`,
     )
   }
+  // Any other solidFill flavor (prstClr/sysClr/hslClr): replace the whole
+  // block so a second solidFill is never injected (duplicate solidFill
+  // children fail strict validation and trigger PowerPoint repair).
+  if (/<a:solidFill>[\s\S]*?<\/a:solidFill>/.test(runXml)) {
+    return runXml.replace(
+      /<a:solidFill>[\s\S]*?<\/a:solidFill>/,
+      `<a:solidFill><a:srgbClr val="${hex}"/></a:solidFill>`,
+    )
+  }
   // No solidFill: expand a self-closing rPr to a pair first, then inject at the start
   const fill = `<a:solidFill><a:srgbClr val="${hex}"/></a:solidFill>`
   if (/<a:rPr\b[^>]*\/>/.test(runXml)) {
