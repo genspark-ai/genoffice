@@ -174,6 +174,21 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-or-...',
   },
   {
+    id: 'api-route',
+    label: 'API Route',
+    // Public model ids listed at api-route.com/pricing (2026-09-12).
+    models: [
+      'gpt-5.6-sol',
+      'claude-sonnet-4-6',
+      'gemini-3.1-pro',
+      'deepseek-v4-pro',
+      'grok-4.5',
+      'qwen/qwen3.5-plus-20260420',
+    ],
+    defaultModel: 'claude-sonnet-4-6',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'requesty',
     label: 'Requesty',
     // Managed policy ids exactly as GET router.requesty.ai/v1/models/managed

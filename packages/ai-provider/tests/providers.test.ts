@@ -55,6 +55,12 @@ describe('provider model catalog', () => {
     }
   })
 
+  it('seeds API Route with its public model ids', () => {
+    const apiRoute = AI_PROVIDERS.find((provider) => provider.id === 'api-route')!
+    expect(apiRoute.models).toContain(apiRoute.defaultModel)
+    expect(apiRoute.needsBaseUrl).toBeUndefined()
+  })
+
   it('seeds Requesty with managed policy ids (short names, no vendor prefix)', () => {
     const requesty = AI_PROVIDERS.find((provider) => provider.id === 'requesty')!
     expect(requesty.models).toContain(requesty.defaultModel)

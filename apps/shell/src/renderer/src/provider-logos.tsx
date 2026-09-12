@@ -217,6 +217,30 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       <path d="M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.175zM8.479 7.26a5.087 5.087 0 100 10.176 5.087 5.087 0 000-10.175z" />
     </svg>
   ),
+  'api-route': (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect
+        x="1.5"
+        y="1.5"
+        width="21"
+        height="21"
+        rx="5"
+        fill="white"
+        stroke="#D77852"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M6.5 12h3l3-4h3M9.5 12l3 4h3"
+        stroke="#30261F"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="5" cy="12" r="2" fill="#D77852" />
+      <circle cx="17.5" cy="8" r="1.8" fill="white" stroke="#30261F" strokeWidth="1.5" />
+      <circle cx="17.5" cy="16" r="1.8" fill="white" stroke="#30261F" strokeWidth="1.5" />
+    </svg>
+  ),
   // plain "R" wordmark in a rounded square (no official vector mark in the icon set)
   requesty: (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
