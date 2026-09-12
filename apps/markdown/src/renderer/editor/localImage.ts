@@ -11,6 +11,18 @@ export function setImageBaseDir(dir: string | null): void {
 }
 
 /**
+ * Directory of a file path for resolving relative image sources. A file at
+ * the filesystem root ("/note.md") resolves to "/" so its sibling images
+ * keep working; paths without a separator have no directory to take.
+ */
+export function dirOf(path: string): string {
+  const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  if (i > 0) return path.slice(0, i)
+  if (i === 0) return path.slice(0, 1)
+  return path
+}
+
+/**
  * Map an authored image src to a displayable URL. Markdown keeps the authored
  * value (usually a path relative to the .md file); the editor DOM loads it via
  * the main process's md-asset:// handler — a plain file:// subresource would be

@@ -18,7 +18,7 @@ import { tiptapFindTarget } from './editor/findTarget'
 import { collectOutline, type OutlineItem } from './editor/outline'
 import { buildSlashItems } from './editor/slashCommand'
 import type { SlashController, SlashMenuState } from './editor/slashCommand'
-import { setImageBaseDir } from './editor/localImage'
+import { dirOf, setImageBaseDir } from './editor/localImage'
 import { Ribbon } from './components/Ribbon'
 import { OutlinePane } from './components/OutlinePane'
 import { SlashMenu, type SlashMenuHandle } from './components/SlashMenu'
@@ -49,11 +49,6 @@ const EMPTY_ENVELOPE: DocEnvelope = {
   eol: '\n',
   trailingNewline: true,
   bom: false,
-}
-
-function dirOf(path: string): string {
-  const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-  return i > 0 ? path.slice(0, i) : path
 }
 
 function bytesToBase64(bytes: Uint8Array): string {

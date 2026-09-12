@@ -20,9 +20,10 @@ export const COPYRIGHT_HOSTS = ['gettyimages', 'istockphoto', 'shutterstock', 'c
 
 export function safeHost(url: unknown): string {
   try {
-    return new URL(String(url)).hostname
+    const host = new URL(String(url)).hostname
+    return host ? host : 'unknown'
   } catch {
-    return ''
+    return 'unknown'
   }
 }
 
