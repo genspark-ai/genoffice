@@ -344,6 +344,9 @@ export function ptabDisplayStops(pNode: XNode): import('./types').TabStop[] {
 export const SIMPLE_INLINE_FIELD_RE =
   /^\s*(DATE|TIME|CREATEDATE|SAVEDATE|NUMPAGES|FILENAME|AUTHOR|PAGE)\b/
 
+/** Zotero Word fields. Their cached result is the visible citation/bibliography text. */
+export const ZOTERO_INLINE_FIELD_RE = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)(?:ITEM|BIBL|TEMP)\b/i
+
 /** HYPERLINK "url" (optional \o "tip"): the only field form folded into an editable link run;
  * any other switch (\l bookmark, \t frame...) keeps the protected-passthrough path */
 export function convertibleHyperlink(instr: string): { href: string; tooltip?: string } | null {
@@ -378,6 +381,7 @@ export function onlyXeFields(xml: string): boolean {
     return (
       /^\s*XE[\s"]/.test(text) ||
       /^\s*REF\s/.test(text) ||
+      ZOTERO_INLINE_FIELD_RE.test(text) ||
       SIMPLE_INLINE_FIELD_RE.test(text) ||
       convertibleHyperlink(text) !== null
     )

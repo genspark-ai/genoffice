@@ -2392,6 +2392,22 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
       `<w:r><w:instrText xml:space="preserve"> ${escapeXmlText(run.instrField)} </w:instrText></w:r>` +
       '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
     const endXml = '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+    if (run.zoteroFieldPart && run.zoteroFieldPart !== 'single') {
+      const cachedXml = generateRunXml(
+        {
+          ...run,
+          instrField: undefined,
+          zoteroFieldId: undefined,
+          zoteroFieldPart: undefined,
+        },
+        insideLink,
+      )
+      if (run.zoteroFieldPart === 'begin') {
+        return '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' + instrXml + cachedXml
+      }
+      if (run.zoteroFieldPart === 'end') return cachedXml + endXml
+      return cachedXml
+    }
     if (run.fldBeginXml) {
       // Adjacent identical checkboxes merge into one text node in the editor
       // (equal marks), so each ☐/☒ glyph in the run is one field sharing the

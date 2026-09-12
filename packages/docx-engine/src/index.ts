@@ -100,6 +100,7 @@ export {
   stripInkRuns,
 } from './ink'
 export { bibliographyLine, citationText, parseSourcesXml } from './sources'
+export { parseZoteroDocumentDataXml, patchZoteroDocumentDataXml } from './zotero-doc-props'
 export { readThemeColors, readThemeFonts } from './theme'
 export { hashProtectionPassword, verifyProtectionPassword } from './protection'
 export { decodeSymbolChar, decodeSymbolText, isSymbolFont, toSymbolPua } from './symbol-fonts'

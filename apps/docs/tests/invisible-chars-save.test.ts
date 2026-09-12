@@ -54,15 +54,21 @@ describe('invisible characters survive saving', () => {
 
   it('keeps the NBSP when the field result is edited in place', async () => {
     const { parsed, editor, host } = await openDoc(FIELD_PARA)
-    const text = host.querySelector<HTMLElement>('.doc-field-text')!
-    expect(text.textContent).toBe(FIELD_TEXT)
-    text.textContent = FIELD_TEXT + '!'
-    text.dispatchEvent(new Event('input', { bubbles: true }))
+    const field = host.querySelector<HTMLElement>('.zotero-ref-field')!
+    expect(field.textContent).toBe(FIELD_TEXT)
+    const marks = editor.state.doc.nodeAt(1)?.marks ?? []
+    editor.view.dispatch(
+      editor.state.tr.replaceWith(
+        1,
+        FIELD_TEXT.length + 1,
+        editor.state.schema.text(`${FIELD_TEXT}!`, marks),
+      ),
+    )
     window.dispatchEvent(new Event('ai-docs-commit-tables'))
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     expect(plan.changedCount).toBe(1)
     const xml = await documentXml(await saveDocx(parsed, plan.saveBlocks))
-    expect(xml).toContain(`<w:t>${FIELD_TEXT}!</w:t>`)
+    expect(xml).toContain(`${FIELD_TEXT}!`)
     expect(xml).toContain('ZOTERO_ITEM')
     editor.destroy()
     host.remove()

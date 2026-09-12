@@ -10,6 +10,7 @@ import type {
   MenuCommand,
   AutoSaveDefault,
   UiTheme,
+  ZoteroRendererRequest,
 } from '../shared/ipc'
 import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
@@ -47,6 +48,13 @@ const api: DesktopApi = {
     ipcRenderer.on('app:chrome-pressed', listener)
     return () => ipcRenderer.removeListener('app:chrome-pressed', listener)
   },
+  zoteroCommand: (command) => ipcRenderer.invoke('zotero:command', command),
+  onZoteroRequest: (handler) => {
+    const listener = (_event: IpcRendererEvent, request: ZoteroRendererRequest) => handler(request)
+    ipcRenderer.on('zotero:request', listener)
+    return () => ipcRenderer.removeListener('zotero:request', listener)
+  },
+  respondToZotero: (response) => ipcRenderer.send('zotero:response', response),
   openDocx: () => ipcRenderer.invoke('docs:open'),
   openDocxPath: (path: string) => ipcRenderer.invoke('docs:open-path', path),
   openDocxDecrypt: (path: string, password: string) =>

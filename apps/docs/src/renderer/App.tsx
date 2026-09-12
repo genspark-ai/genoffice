@@ -40,6 +40,7 @@ import {
 } from '@genoffice/docx-engine'
 import type { AiDocContent, AiSettings, OpenDocxResult } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
+import { ZoteroDocumentController } from './zotero/controller'
 import { AiPanel, AI_REVISION_AUTHOR } from './ai/AiPanel'
 import type { AiCommentsAccess, AiHeaderFooterAccess } from './ai/tools'
 import { applyHfText, hfEditText } from './editor/hf-text'
@@ -745,6 +746,13 @@ export function App() {
   const [notesDirty, setNotesDirty] = useState(false)
   const [sources, setSources] = useState<SourceInfo[]>([])
   const [sourcesDirty, setSourcesDirty] = useState(false)
+  const [zoteroDocumentData, setZoteroDocumentDataState] = useState('')
+  const [zoteroDocumentDataDirty, setZoteroDocumentDataDirty] = useState(false)
+  const zoteroDocumentDataRef = useRef('')
+  const setZoteroDocumentData = useCallback((value: string) => {
+    zoteroDocumentDataRef.current = value
+    setZoteroDocumentDataState(value)
+  }, [])
   const [themeFonts, setThemeFonts] = useState<ThemeFonts | null>(null)
   const [themeFontsDirty, setThemeFontsDirty] = useState(false)
   const [themeColors, setThemeColors] = useState<ThemeColors | null>(null)
@@ -838,6 +846,7 @@ export function App() {
   const saveIncompleteRef = useRef(false)
 
   const editorRef = useRef<Editor | null>(null)
+  const zoteroControllerRef = useRef<ZoteroDocumentController | null>(null)
   const editor = useEditor({
     extensions: editorExtensions,
     content: { type: 'doc', content: [{ type: 'docParagraph' }] },
@@ -1410,6 +1419,10 @@ export function App() {
     sourcesDirty,
     setSources,
     setSourcesDirty,
+    zoteroDocumentData,
+    zoteroDocumentDataDirty,
+    setZoteroDocumentData,
+    setZoteroDocumentDataDirty,
     themeFonts,
     themeFontsDirty,
     themeColors,
@@ -1776,7 +1789,37 @@ export function App() {
   // editorRef: lets the handlePaste closure (the useEditor config exists before the instance) reach the instance
   useEffect(() => {
     editorRef.current = editor
+    zoteroControllerRef.current = null
   }, [editor])
+
+  useEffect(
+    () =>
+      window.desktop.onZoteroRequest(async (request) => {
+        try {
+          const activeEditor = editorRef.current
+          if (!activeEditor) throw new Error('No active GenOffice document')
+          const controller =
+            zoteroControllerRef.current ??
+            new ZoteroDocumentController(activeEditor, {
+              get: () => zoteroDocumentDataRef.current,
+              set: (value) => {
+                setZoteroDocumentData(value)
+                setZoteroDocumentDataDirty(true)
+              },
+            })
+          zoteroControllerRef.current = controller
+          const result = await controller.handle(request)
+          window.desktop.respondToZotero({ requestId: request.requestId, ok: true, result })
+        } catch (error) {
+          window.desktop.respondToZotero({
+            requestId: request.requestId,
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }),
+    [setZoteroDocumentData],
+  )
 
   /** Pasted list items lacking a numId (schema default null; saving would lose list semantics):
    *  reuse the numId of an existing same-kind instance, otherwise fall back to creating a definition */

@@ -108,6 +108,10 @@ export interface Run {
   refInstr?: string
   /** Generic inline field (DATE/TIME/NUMPAGES/FILENAME etc.): full instruction text; run text is the cached result */
   instrField?: string
+  /** Logical Zotero field shared by all cached-result runs, including runs in adjacent paragraphs. */
+  zoteroFieldId?: number
+  /** Position of this run inside a Zotero field that may span several paragraphs. */
+  zoteroFieldPart?: 'single' | 'begin' | 'inside' | 'end'
   /** Original field-begin run XML (w:fldChar + w:ffData), written back verbatim so form-field
    * definitions survive; when set, the run text is a synthesized glyph (☐/☒), not a cached result */
   fldBeginXml?: string
@@ -1841,6 +1845,8 @@ export interface ThemeColors {
 
 export interface ParsedDoc {
   blocks: Block[]
+  /** Zotero document preferences stored in Word custom properties */
+  zoteroDocumentData: string
   /** comments from word/comments.xml, in file order */
   comments: CommentInfo[]
   /** footnotes from word/footnotes.xml (separators excluded), file order */

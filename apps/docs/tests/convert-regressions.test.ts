@@ -39,6 +39,32 @@ describe('inlineToRuns hard break after atomic runs', () => {
   })
 })
 
+describe('Zotero field conversion', () => {
+  it('preserves one field id and its cross-paragraph boundaries', () => {
+    const instruction = 'ADDIN ZOTERO_BIBL {} CSL_BIBLIOGRAPHY'
+    const parts = ['begin', 'inside', 'end'] as const
+    const inline = parts.map(
+      (part, index) =>
+        runsToInline([
+          {
+            text: `Reference ${index + 1}`,
+            instrField: instruction,
+            zoteroFieldId: 17,
+            zoteroFieldPart: part,
+          },
+        ])[0],
+    )
+
+    const marks = inline.map((node) => node.marks?.find((mark) => mark.type === 'instrField'))
+    expect(marks.map((mark) => mark?.attrs?.fieldId)).toEqual([17, 17, 17])
+    expect(marks.map((mark) => mark?.attrs?.fieldPart)).toEqual(parts)
+
+    const runs = inline.map((node) => inlineToRuns([node])[0])
+    expect(runs.map((run) => run.zoteroFieldId)).toEqual([17, 17, 17])
+    expect(runs.map((run) => run.zoteroFieldPart)).toEqual(parts)
+  })
+})
+
 describe('runsToInline image runs', () => {
   it('keeps sibling w:t text on a run that also carries a drawing', () => {
     const runs = [
