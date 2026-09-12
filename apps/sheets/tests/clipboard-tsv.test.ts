@@ -9,6 +9,12 @@ describe('clipboard TSV serialization', () => {
     expect(clipboardField({ v: 0, t: CellValueType.BOOLEAN })).toBe('FALSE')
   })
 
+  it('serializes empty booleans as empty, not FALSE or TRUE', () => {
+    expect(clipboardField({ v: null, t: CellValueType.BOOLEAN })).toBe('')
+    expect(clipboardField({ v: undefined, t: CellValueType.BOOLEAN })).toBe('')
+    expect(clipboardField({ v: '', t: CellValueType.BOOLEAN })).toBe('')
+  })
+
   it('prefers the formatted display text', () => {
     expect(clipboardField({ v: 44614, displayV: '2/22/2022' })).toBe('2/22/2022')
   })
