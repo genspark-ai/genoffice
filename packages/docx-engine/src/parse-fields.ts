@@ -105,7 +105,7 @@ export function fieldDisplayOf(
           (m) => m[1],
         ).join('')
         font = leadingRunFont(rPr, text) ?? ''
-        bold = /<w:b(?:\s*\/>|\s(?![^>]*w:val="(?:0|false)")[^>]*\/>)/.test(rPr)
+        bold = /<w:b(?:\s*\/>|\s(?![^>]*w:val="(?:0|false|none|off)")[^>]*\/>)/i.test(rPr)
       }
     }
     return {

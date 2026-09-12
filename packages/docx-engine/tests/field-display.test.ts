@@ -95,6 +95,27 @@ describe('field paragraph display model', () => {
     expect(del.blocks[0].fieldDisplay).toMatchObject({ deleted: true, fontFamily: 'SimSun' })
   })
 
+  it('TOC bold respects off/none/case variants (onOff parity)', async () => {
+    const offEntry = (b: string) =>
+      '<w:p><w:pPr><w:pStyle w:val="TOC2"/><w:tabs><w:tab w:val="right" w:pos="8786"/></w:tabs>' +
+      '<w:rPr><w:sz w:val="24"/></w:rPr></w:pPr>' +
+      '<w:hyperlink w:anchor="_Toc1">' +
+      `<w:r><w:rPr>${b}</w:rPr><w:t>Title</w:t></w:r>` +
+      '<w:r><w:tab/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> PAGEREF _Toc1 \\h </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>6</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '</w:hyperlink></w:p>'
+    for (const v of ['off', 'none', 'False', 'OFF', '0']) {
+      const doc = await parseDocx(await buildDocx({ bodyXml: offEntry(`<w:b w:val="${v}"/>`) }))
+      expect(doc.blocks[0].fieldDisplay?.bold).toBeUndefined()
+    }
+    const on = await parseDocx(await buildDocx({ bodyXml: offEntry('<w:b w:val="true"/>') }))
+    expect(on.blocks[0].fieldDisplay?.bold).toBe(true)
+  })
+
   it('field-end + page break paragraph shows as a pageBreak marker', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: FIELD_END_PAGEBREAK_PARAGRAPH }))
     expect(doc.blocks[0].fieldDisplay).toEqual({ kind: 'pageBreak' })
