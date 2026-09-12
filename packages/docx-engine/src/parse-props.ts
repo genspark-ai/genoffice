@@ -322,6 +322,7 @@ export function ptabDisplayStops(pNode: XNode): import('./types').TabStop[] {
           leader === 'dot' ||
           leader === 'hyphen' ||
           leader === 'underscore' ||
+          leader === 'heavy' ||
           leader === 'middleDot'
         ) {
           stop.leader = leader

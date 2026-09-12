@@ -111,4 +111,18 @@ describe('w:ptab absolute position tabs', () => {
     })
     expect(xml).not.toContain('<w:tabs>')
   })
+
+  it('ptab heavy leader survives like w:tab', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:r><w:t>A</w:t></w:r>' +
+          '<w:r><w:ptab w:relativeTo="margin" w:alignment="right" w:leader="heavy"/></w:r>' +
+          '<w:r><w:t xml:space="preserve"> </w:t></w:r></w:p>',
+      }),
+    )
+    expect(doc.blocks[0].format?.tabStops).toEqual([
+      { pos: 100, val: 'right', leader: 'heavy', rel: 'margin' },
+    ])
+  })
 })
