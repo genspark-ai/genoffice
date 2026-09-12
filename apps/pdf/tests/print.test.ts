@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import { printPdf } from '../src/renderer/print'
+import { printPdf, printScaleForAreas } from '../src/renderer/print'
 
 function fakeDoc(numPages: number, render = vi.fn(() => ({ promise: Promise.resolve() }))) {
   const getPage = vi.fn(async () => ({
@@ -101,5 +101,67 @@ describe('printPdf', () => {
     await expect(printPdf(doc)).rejects.toThrow('decode failed')
     expect(document.querySelector('.pdf-print-root')).toBeNull()
     expect(window.print).not.toHaveBeenCalled()
+  })
+})
+
+/** US-Letter page area at scale 1 (PDF points²) */
+const LETTER_AREA = 612 * 792
+
+describe('printScaleForAreas', () => {
+  it('uses the 200 DPI target while the document fits the pixel budget', () => {
+    expect(printScaleForAreas([LETTER_AREA])).toBeCloseTo(200 / 72, 10)
+    // ~40 letter pages at 200 DPI ≈ the 150 MP budget
+    expect(printScaleForAreas(new Array(40).fill(LETTER_AREA))).toBeCloseTo(200 / 72, 10)
+  })
+
+  it('falls back to the target for empty or degenerate input', () => {
+    expect(printScaleForAreas([])).toBeCloseTo(200 / 72, 10)
+    expect(printScaleForAreas([0])).toBeCloseTo(200 / 72, 10)
+  })
+
+  it('scales down proportionally over budget, never below the 150 DPI baseline', () => {
+    const mid = printScaleForAreas(new Array(60).fill(LETTER_AREA))
+    expect(mid).toBeLessThan(200 / 72)
+    expect(mid).toBeGreaterThan(150 / 72)
+    expect(printScaleForAreas(new Array(500).fill(LETTER_AREA))).toBeCloseTo(150 / 72, 10)
+  })
+})
+
+describe('printPdf render scale', () => {
+  function scalesDoc(numPages: number) {
+    const scales: number[] = []
+    const getViewport = vi.fn(({ scale }: { scale: number }) => {
+      scales.push(scale)
+      return { width: 612 * scale, height: 792 * scale }
+    })
+    const render = vi.fn(() => ({ promise: Promise.resolve() }))
+    const getPage = vi.fn(async () => ({ getViewport, render }))
+    const doc = { numPages, getPage } as unknown as PDFDocumentProxy
+    return { doc, scales, getPage, render }
+  }
+
+  it('renders small documents at 200 DPI (all pages measured before the render pass)', async () => {
+    const { doc, scales, getPage } = scalesDoc(2)
+    await printPdf(doc)
+    expect(getPage).toHaveBeenCalledTimes(2)
+    expect(scales).toEqual([1, 1, 200 / 72, 200 / 72])
+  })
+
+  it('floors huge documents at the 150 DPI baseline', async () => {
+    const { doc, scales } = scalesDoc(200)
+    await printPdf(doc)
+    expect(scales.filter((s) => s !== 1)).toHaveLength(200)
+    for (const s of scales) {
+      expect(s === 1 || s === 150 / 72).toBe(true)
+    }
+  })
+
+  it('budgets a page subset on its own: two pages out of a huge document print at 200 DPI', async () => {
+    const { doc, scales, getPage } = scalesDoc(200)
+    await printPdf(doc, [7, 3])
+    expect(getPage).toHaveBeenCalledTimes(2)
+    expect(getPage).toHaveBeenNthCalledWith(1, 3)
+    expect(getPage).toHaveBeenNthCalledWith(2, 7)
+    expect(scales).toEqual([1, 1, 200 / 72, 200 / 72])
   })
 })
