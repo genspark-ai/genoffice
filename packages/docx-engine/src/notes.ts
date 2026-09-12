@@ -1,3 +1,4 @@
+import { decodeEntities } from './parse-xml-text'
 import { patchParagraphTexts } from './text-patch'
 import type { NoteInfo, NoteRun } from './types'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
@@ -200,13 +201,7 @@ function notePlainText(xml: string): string {
   const re = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) texts.push(m[1])
-  return texts
-    .join('')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&')
+  return decodeEntities(texts.join(''))
 }
 
 /** default separator entries required by Word when the part is created fresh */

@@ -65,6 +65,11 @@ describe('patchParagraphTexts', () => {
     expect(out).toContain('<w:rPr><w:i/></w:rPr>')
     expect(out).toContain('斜体脚注改')
   })
+
+  it('leaves entity-encoded text byte-identical when nothing changed', () => {
+    const entry = '<w:comment w:id="1"><w:p><w:r><w:t>A &#8212; B</w:t></w:r></w:p></w:comment>'
+    expect(patchParagraphTexts(entry, 'A — B')).toBe(entry)
+  })
 })
 
 describe('rich-text comment/footnote edits use the surgical patch', () => {

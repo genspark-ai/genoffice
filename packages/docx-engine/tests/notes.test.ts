@@ -368,4 +368,17 @@ describe('rich-text footnote display runs', () => {
       { text: ' tail', color: '1F4E79', sizeHalfPoints: 16 },
     ])
   })
+
+  it('decodes numeric char refs in note display text like the body path does', async () => {
+    const footnotesXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:footnote w:id="1"><w:p><w:r><w:footnoteRef/></w:r>' +
+      '<w:r><w:t>A &#8212; B</w:t></w:r></w:p></w:footnote>' +
+      '</w:footnotes>'
+    const { parseNotesXml } = await import('../src/notes')
+    const notes = parseNotesXml(footnotesXml, 'footnote')
+    expect(notes).toHaveLength(1)
+    expect(notes[0]!.text).toBe('A — B')
+  })
 })
