@@ -154,7 +154,9 @@ export function sectionColGeom(s: SectionInfo): {
 
 /** RTL section (sectPr w:bidi): columns fill right-to-left (visual order only; engine indices stay logical) */
 export function sectionBidi(s: SectionInfo): boolean {
-  return /<w:bidi(?:\s*\/>|\s+w:val="(?:1|true|on)")/.test(s.sectPrXml ?? '')
+  const xml = s.sectPrXml ?? ''
+  if (/<w:bidi\b[^>]*w:val="(?:0|false|off)"/i.test(xml)) return false
+  return /<w:bidi(?:\s*\/>|\s*>[\s\S]*?<\/w:bidi\s*>|\s+w:val="(?:1|true|on)"[^>]*\/?>)/i.test(xml)
 }
 
 /**
