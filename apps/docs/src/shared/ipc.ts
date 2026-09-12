@@ -189,6 +189,31 @@ export interface AiDocContent {
   html: string
 }
 
+export type ZoteroCommand =
+  'addEditCitation' | 'addEditBibliography' | 'refresh' | 'setDocPrefs' | 'removeCodes'
+
+export type ZoteroCommandErrorCode =
+  'connection-refused' | 'unsupported-command' | 'operation-failed'
+
+export interface ZoteroCommandResult {
+  ok: boolean
+  errorCode?: ZoteroCommandErrorCode
+  error?: string
+}
+
+export interface ZoteroRendererRequest {
+  requestId: string
+  command: string
+  args: unknown[]
+}
+
+export interface ZoteroRendererResponse {
+  requestId: string
+  ok: boolean
+  result?: unknown
+  error?: string
+}
+
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
@@ -211,6 +236,10 @@ export interface DesktopApi {
   /** press on the shell chrome (tab strip is a sibling WebContentsView whose
    *  clicks produce no DOM event here) — dismiss open popovers */
   onChromePressed(handler: () => void): () => void
+  /** invoke Zotero's word-processor integration and service its document callbacks */
+  zoteroCommand(command: ZoteroCommand): Promise<ZoteroCommandResult>
+  onZoteroRequest(handler: (request: ZoteroRendererRequest) => void): () => void
+  respondToZotero(response: ZoteroRendererResponse): void
   openDocx(): Promise<OpenDocxResult>
   openDocxPath(path: string): Promise<OpenDocxResult>
   /** decrypt-and-open a password-protected docx (path from a needsPassword result) */

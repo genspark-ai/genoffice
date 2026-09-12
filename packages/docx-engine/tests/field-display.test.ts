@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { generateParagraphXml, generateTocFieldXml, parseDocx } from '../src/index'
-import type { GenerateContext } from '../src/index'
+import { generateParagraphXml, generateTocFieldXml, parseDocx, saveDocx } from '../src/index'
+import type { GenerateContext, GeneratedBlock } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 // TOC entry paragraph as Word writes it: TOC field begin + hyperlink entry
@@ -42,6 +42,28 @@ const PAGE_FIELD_PARAGRAPH =
   '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
   '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
   '<w:r><w:t>- 8 -</w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+
+const ZOTERO_CITATION_INSTR =
+  'ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"citation-1","citationItems":[{"id":1}]}'
+const ZOTERO_CITATION_PARAGRAPH =
+  '<w:p><w:r><w:t>Evidence </w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  `<w:r><w:instrText xml:space="preserve"> ${ZOTERO_CITATION_INSTR} </w:instrText></w:r>` +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r><w:t>(Smith, 2024)</w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+  '<w:r><w:t>.</w:t></w:r></w:p>'
+
+const ZOTERO_BIBLIOGRAPHY_INSTR =
+  'ADDIN ZOTERO_BIBL {"uncited":[],"omitted":[],"custom":[]} CSL_BIBLIOGRAPHY'
+const ZOTERO_BIBLIOGRAPHY_PARAGRAPHS =
+  '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  `<w:r><w:instrText xml:space="preserve"> ${ZOTERO_BIBLIOGRAPHY_INSTR} </w:instrText></w:r>` +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r><w:rPr><w:i/></w:rPr><w:t>Alpha, A. (2024). First study.</w:t></w:r></w:p>' +
+  '<w:p><w:r><w:t>Beta, B. (2023). Second study.</w:t></w:r></w:p>' +
+  '<w:p><w:r><w:t>Gamma, G. (2022). Third study.</w:t></w:r>' +
   '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
 
 describe('field paragraph display model', () => {
@@ -104,6 +126,101 @@ describe('field paragraph display model', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: PAGE_FIELD_PARAGRAPH }))
     expect(doc.blocks[0].type).toBe('paragraph')
     expect(doc.blocks[0].runs?.[0]).toMatchObject({ text: '- 8 -', instrField: 'PAGE' })
+  })
+
+  it('Zotero citation fields remain editable and round-trip as Word ADDIN fields', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: ZOTERO_CITATION_PARAGRAPH }))
+    expect(doc.blocks[0].type).toBe('paragraph')
+    expect(doc.blocks[0].runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: '(Smith, 2024)', instrField: ZOTERO_CITATION_INSTR }),
+      ]),
+    )
+
+    const block = doc.blocks[0]
+    const saved = await saveDocx(doc, [{ kind: 'generated', block: block as GeneratedBlock }])
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks[0].runs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: '(Smith, 2024)', instrField: ZOTERO_CITATION_INSTR }),
+      ]),
+    )
+  })
+
+  it('keeps styled runs inside one single-paragraph Zotero field', async () => {
+    const xml = ZOTERO_CITATION_PARAGRAPH.replace(
+      '<w:r><w:t>(Smith, 2024)</w:t></w:r>',
+      '<w:r><w:t xml:space="preserve">(Smith, </w:t></w:r>' +
+        '<w:r><w:rPr><w:i/></w:rPr><w:t>2024)</w:t></w:r>',
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const fieldRuns = doc.blocks[0].runs?.filter((run) => run.instrField) ?? []
+    expect(fieldRuns.map((run) => run.zoteroFieldPart)).toEqual(['begin', 'end'])
+    expect(fieldRuns[1].italic).toBe(true)
+
+    const saved = await saveDocx(doc, [
+      { kind: 'generated', block: doc.blocks[0] as GeneratedBlock },
+    ])
+    const reparsed = await parseDocx(saved)
+    const reparsedRuns = reparsed.blocks[0].runs?.filter((run) => run.instrField) ?? []
+    expect(reparsedRuns.map((run) => run.text).join('')).toBe('(Smith, 2024)')
+    expect(new Set(reparsedRuns.map((run) => run.zoteroFieldId)).size).toBe(1)
+  })
+
+  it('keeps a Zotero bibliography spanning multiple paragraphs as one editable field', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: ZOTERO_BIBLIOGRAPHY_PARAGRAPHS }))
+    const blocks = doc.blocks.filter((block) => !block.hidden)
+
+    expect(blocks).toHaveLength(3)
+    expect(blocks.map((block) => block.type)).toEqual(['paragraph', 'paragraph', 'paragraph'])
+    expect(blocks.map((block) => block.runs?.map((run) => run.text).join(''))).toEqual([
+      'Alpha, A. (2024). First study.',
+      'Beta, B. (2023). Second study.',
+      'Gamma, G. (2022). Third study.',
+    ])
+    const fieldRuns = blocks.flatMap((block) => block.runs ?? [])
+    expect(new Set(fieldRuns.map((run) => run.zoteroFieldId)).size).toBe(1)
+    expect(fieldRuns.map((run) => run.zoteroFieldPart)).toEqual(['begin', 'inside', 'end'])
+    expect(fieldRuns.every((run) => run.instrField === ZOTERO_BIBLIOGRAPHY_INSTR)).toBe(true)
+    expect(fieldRuns[0].italic).toBe(true)
+
+    const generated = blocks.map((block) => ({
+      kind: 'generated' as const,
+      block: {
+        type: 'paragraph' as const,
+        styleId: block.styleId,
+        format: block.format,
+        rawPPr: block.rawPPr,
+        runs: block.runs ?? [],
+      },
+    }))
+    const saved = await saveDocx(doc, generated)
+    const reparsed = await parseDocx(saved)
+    const reparsedBlocks = reparsed.blocks.filter((block) => !block.hidden)
+    expect(reparsedBlocks.map((block) => block.runs?.map((run) => run.text).join(''))).toEqual([
+      'Alpha, A. (2024). First study.',
+      'Beta, B. (2023). Second study.',
+      'Gamma, G. (2022). Third study.',
+    ])
+    const reparsedRuns = reparsedBlocks.flatMap((block) => block.runs ?? [])
+    expect(new Set(reparsedRuns.map((run) => run.zoteroFieldId)).size).toBe(1)
+    expect(reparsedRuns.map((run) => run.zoteroFieldPart)).toEqual(['begin', 'inside', 'end'])
+  })
+
+  it('does not merge an inline citation with a cross-paragraph bibliography', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: ZOTERO_CITATION_PARAGRAPH + ZOTERO_BIBLIOGRAPHY_PARAGRAPHS }),
+    )
+    const blocks = doc.blocks.filter((block) => !block.hidden)
+    const citationId = blocks[0].runs?.find((run) => run.instrField)?.zoteroFieldId
+    const bibliographyIds = blocks
+      .slice(1)
+      .flatMap((block) => block.runs ?? [])
+      .map((run) => run.zoteroFieldId)
+
+    expect(citationId).toBeDefined()
+    expect(new Set(bibliographyIds).size).toBe(1)
+    expect(bibliographyIds[0]).not.toBe(citationId)
   })
 
   it('a resultless INCLUDEPICTURE text field keeps spaces and run metrics (public issue #118)', async () => {
@@ -520,7 +637,7 @@ describe('mixed-size text fields (manual drop cap)', () => {
   })
 })
 
-describe('citation text fields (ADDIN ZOTERO_ITEM in a justified body paragraph)', () => {
+describe('editable citation fields (ADDIN ZOTERO_ITEM in a justified body paragraph)', () => {
   const CITATION_PARAGRAPH =
     '<w:p><w:pPr><w:jc w:val="both"/></w:pPr>' +
     '<w:r><w:t xml:space="preserve">Published in </w:t></w:r>' +
@@ -536,25 +653,30 @@ describe('citation text fields (ADDIN ZOTERO_ITEM in a justified body paragraph)
   it('keeps the result runs formatted and the paragraph justified', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: CITATION_PARAGRAPH }))
     const block = doc.blocks[0]
-    expect(block.type).toBe('passthrough')
-    const field = block.fieldDisplay!
-    expect(field.kind).toBe('text')
-    expect(field.align).toBe('justify')
-    expect(field.left).toBe('Published in European Radiology, this study (21).')
-    expect(field.runs).toEqual([
-      { text: 'Published in ' },
-      { text: 'European Radiology', italic: true },
-      { text: ', this study ' },
-      { text: '(21)', italic: true },
-      { text: '.' },
+    expect(block.type).toBe('paragraph')
+    expect(block.format?.align).toBe('justify')
+    expect(block.runs).toEqual([
+      expect.objectContaining({ text: 'Published in ' }),
+      expect.objectContaining({ text: 'European Radiology', italic: true }),
+      expect.objectContaining({ text: ', this study ' }),
+      expect.objectContaining({
+        text: '(21)',
+        italic: true,
+        instrField: 'ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"x"}',
+      }),
+      expect.objectContaining({ text: '. ' }),
     ])
   })
 
-  it('falls back to the plain string when tabs keep the runs from reproducing it', async () => {
+  it('keeps tabs inside the editable field result', async () => {
     const xml = CITATION_PARAGRAPH.replace('<w:t>(21)</w:t>', '<w:tab/><w:t>(21)</w:t>')
     const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
-    const field = doc.blocks[0].fieldDisplay!
-    expect(field.runs).toBeUndefined()
-    expect(field.left).toBe('Published in European Radiology, this study (21).')
+    const fieldRun = doc.blocks[0].runs?.find((run) => run.instrField)
+    expect(fieldRun).toMatchObject({
+      text: '\t(21)',
+      italic: true,
+      instrField: 'ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"x"}',
+      zoteroFieldPart: 'single',
+    })
   })
 })

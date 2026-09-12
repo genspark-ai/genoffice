@@ -1266,6 +1266,8 @@ function markLeadRule(nodes: PmNode[]): void {
   if (nodes.slice(1).some((n) => !isRuleNode(n))) first.attrs = { ...first.attrs, leadRule: true }
 }
 
+let nextZoteroFieldId = 1
+
 function runMarks(run: Run): PmMark[] {
   const marks: PmMark[] = []
   if (run.bold) marks.push({ type: 'bold' })
@@ -1278,11 +1280,27 @@ function runMarks(run: Run): PmMark[] {
       attrs: { href: run.link.href, rId: run.link.rId ?? null, tooltip: run.link.tooltip ?? null },
     })
   if (run.refField !== undefined) marks.push({ type: 'refField', attrs: { name: run.refField } })
-  if (run.instrField !== undefined)
+  if (run.instrField !== undefined) {
+    const isZotero = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)/i.test(run.instrField)
+    let fieldId: number | null = null
+    if (isZotero) {
+      if (Number.isSafeInteger(run.zoteroFieldId) && Number(run.zoteroFieldId) > 0) {
+        fieldId = Number(run.zoteroFieldId)
+        nextZoteroFieldId = Math.max(nextZoteroFieldId, fieldId + 1)
+      } else {
+        fieldId = nextZoteroFieldId++
+      }
+    }
     marks.push({
       type: 'instrField',
-      attrs: { instr: run.instrField, beginXml: run.fldBeginXml ?? null },
+      attrs: {
+        instr: run.instrField,
+        beginXml: run.fldBeginXml ?? null,
+        fieldId,
+        fieldPart: run.zoteroFieldPart ?? null,
+      },
     })
+  }
   if (run.commentIds?.length)
     marks.push({ type: 'comment', attrs: { ids: run.commentIds.join(' ') } })
   if (run.ins) {
@@ -2607,6 +2625,19 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
     } else if (mark.type === 'instrField') {
       run.instrField = String(mark.attrs?.instr ?? '')
       if (mark.attrs?.beginXml) run.fldBeginXml = String(mark.attrs.beginXml)
+      if (/^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)/i.test(run.instrField)) {
+        const fieldId = Number(mark.attrs?.fieldId)
+        if (Number.isSafeInteger(fieldId) && fieldId > 0) run.zoteroFieldId = fieldId
+        const fieldPart = mark.attrs?.fieldPart
+        if (
+          fieldPart === 'single' ||
+          fieldPart === 'begin' ||
+          fieldPart === 'inside' ||
+          fieldPart === 'end'
+        ) {
+          run.zoteroFieldPart = fieldPart
+        }
+      }
     } else if (mark.type === 'comment') {
       const ids = String(mark.attrs?.ids ?? '')
         .split(' ')

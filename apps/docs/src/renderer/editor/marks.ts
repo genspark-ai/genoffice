@@ -338,18 +338,28 @@ export const InstrFieldMark = Mark.create({
   inclusive: false,
   addAttributes() {
     // beginXml: preserved w:fldChar begin run (form-field ffData) for verbatim write-back
-    return { instr: { default: '' }, beginXml: { default: null } }
+    // fieldId/fieldPart are runtime-only and keep cross-paragraph Zotero fields addressable.
+    return {
+      instr: { default: '' },
+      beginXml: { default: null },
+      fieldId: { default: null, rendered: false },
+      fieldPart: { default: null, rendered: false },
+    }
   },
   parseHTML() {
     return [{ tag: 'span[data-instr-field]' }]
   },
   renderHTML({ mark }) {
+    const instruction = String(mark.attrs.instr)
+    const zoteroClass = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)/i.test(instruction)
+      ? ' zotero-ref-field'
+      : ''
     return [
       'span',
       {
-        'data-instr-field': String(mark.attrs.instr),
-        class: 'doc-ref-field',
-        title: t('editorFieldHint', { instr: String(mark.attrs.instr) }),
+        'data-instr-field': instruction,
+        class: `doc-ref-field${zoteroClass}`,
+        title: t('editorFieldHint', { instr: instruction }),
       },
       0,
     ]

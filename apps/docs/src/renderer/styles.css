@@ -5772,6 +5772,10 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   border-radius: 2px;
 }
 
+.zotero-ref-field {
+  white-space: pre-wrap;
+}
+
 .doc-ref-field:hover {
   background: var(--docs-paper-field-bg);
 }

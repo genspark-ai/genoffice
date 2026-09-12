@@ -23,6 +23,7 @@ export interface DocDirtyState {
   inksDirty: boolean
   notesDirty: boolean
   sourcesDirty: boolean
+  zoteroDocumentDataDirty: boolean
   themeFontsDirty: boolean
   themeColorsDirty: boolean
   commentsDirty: boolean
@@ -52,6 +53,7 @@ export function isDocDirty(s: DocDirtyState): boolean {
     s.inksDirty ||
     s.notesDirty ||
     s.sourcesDirty ||
+    s.zoteroDocumentDataDirty ||
     s.themeFontsDirty ||
     s.themeColorsDirty ||
     s.commentsDirty ||

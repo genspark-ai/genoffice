@@ -120,6 +120,7 @@ import {
 } from './docx-encryption'
 import { isExternallyModified, type DiskFileState } from './external-change'
 import { initDocsAutoUpdater } from './updater'
+import { registerZoteroIpc, teardownZoteroIpc } from './zotero-ipc'
 
 /**
  * Docs main-process logic as an embeddable module: no top-level side effects.
@@ -2446,6 +2447,7 @@ async function diskChangedExternally(wcId: number, filePath: string): Promise<bo
  * workaround), so the orphan must lose write access and stop its timers — otherwise
  * its 30s recovery loop resurrects content the user already discarded. */
 export function teardownDocsRenderer(contents: WebContents): void {
+  teardownZoteroIpc(contents)
   tornDownWcIds.add(contents.id)
   // Sweep recovery copies for this renderer's documents: every non-crash close
   // either saved (docs:save already cleared it) or explicitly discarded, so a
@@ -3195,6 +3197,7 @@ export function registerProjectIpc(): void {
 
 /** document/attachment/window IPC (everything except the AI proxy above) */
 export function registerDocsIpc(): void {
+  registerZoteroIpc()
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
   setRescueFetch((url, init) => net.fetch(url, init))
   setAiUserAgent(`GenOffice/${app.getVersion()}`)
