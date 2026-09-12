@@ -187,7 +187,7 @@ export function shiftFormulaRefs(
   const segments = formula.split(/("(?:[^"]|"")*")/)
   const rewritten = segments.map((segment, index) => {
     if (index % 2 === 1) return segment
-    return segment.replace(
+    let out = segment.replace(
       REF_RE,
       (match, quoted, bare, aAbsC, aCol, aAbsR, aRow, bAbsC, bCol, bAbsR, bRow) => {
         const prefixSheet = (quoted ?? bare) as string | undefined
@@ -235,6 +235,41 @@ export function shiftFormulaRefs(
         return next
       },
     )
+    // Whole-column spans (B:B): REF_RE needs a row component, so they need
+    // their own pass with the same structural semantics ($ does not pin,
+    // deleted endpoints become #REF!, partial overlap shrinks).
+    if (spec.axis === 'column') {
+      out = out.replace(COLUMN_SPAN_RE, (match, quoted, bare, aAbs, aCol, bAbs, bCol) => {
+        const prefixSheet = (quoted ?? bare) as string | undefined
+        const applies =
+          prefixSheet === undefined ? formulaSheetMatchesOp : prefixSheet === opSheetName
+        if (!applies) return match
+        const prefix =
+          prefixSheet === undefined ? '' : `${quoted !== undefined ? `'${quoted}'` : bare}!`
+        const part = (abs: string, letters: string): RefPart => ({
+          colAbs: abs,
+          col: columnIndex(letters),
+          rowAbs: '',
+          row: 0,
+        })
+        const formatCol = (p: RefPart): string => `${p.colAbs}${columnLabel(p.col)}`
+        let shiftedFirst = shiftRefPart(part(aAbs as string, aCol as string), spec)
+        let shiftedSecond = shiftRefPart(part(bAbs as string, bCol as string), spec)
+        if (!shiftedFirst && !shiftedSecond) {
+          changed = true
+          hasRefError = true
+          return `${prefix}#REF!`
+        }
+        if (!shiftedFirst)
+          shiftedFirst = clampRefPart(part(aAbs as string, aCol as string), spec, 'start')
+        if (!shiftedSecond)
+          shiftedSecond = clampRefPart(part(bAbs as string, bCol as string), spec, 'end')
+        const next = `${prefix}${formatCol(shiftedFirst)}:${formatCol(shiftedSecond)}`
+        if (next !== match) changed = true
+        return next
+      })
+    }
+    return out
   })
 
   return { formula: rewritten.join(''), changed, hasRefError }

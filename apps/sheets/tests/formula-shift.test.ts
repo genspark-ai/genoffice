@@ -3,14 +3,30 @@ import { describe, expect, it } from 'vitest'
 import { shiftFormulaRefs } from '../src/domain/formula-shift'
 import type { StructuralOperation } from '../src/domain/workbook-dsl'
 
-const insertRows = (row: number, count = 1): StructuralOperation =>
-  ({ op: 'insert_rows', sheetId: 's1', row, count })
-const deleteRows = (row: number, count = 1): StructuralOperation =>
-  ({ op: 'delete_rows', sheetId: 's1', row, count })
-const insertCols = (column: string, count = 1): StructuralOperation =>
-  ({ op: 'insert_cols', sheetId: 's1', column, count })
-const deleteCols = (column: string, count = 1): StructuralOperation =>
-  ({ op: 'delete_cols', sheetId: 's1', column, count })
+const insertRows = (row: number, count = 1): StructuralOperation => ({
+  op: 'insert_rows',
+  sheetId: 's1',
+  row,
+  count,
+})
+const deleteRows = (row: number, count = 1): StructuralOperation => ({
+  op: 'delete_rows',
+  sheetId: 's1',
+  row,
+  count,
+})
+const insertCols = (column: string, count = 1): StructuralOperation => ({
+  op: 'insert_cols',
+  sheetId: 's1',
+  column,
+  count,
+})
+const deleteCols = (column: string, count = 1): StructuralOperation => ({
+  op: 'delete_cols',
+  sheetId: 's1',
+  column,
+  count,
+})
 
 function shift(formula: string, op: StructuralOperation, sameSheet = true, opSheetName = 'Sheet1') {
   return shiftFormulaRefs(formula, op, sameSheet, opSheetName)
@@ -64,6 +80,19 @@ describe('shiftFormulaRefs: column shifts', () => {
     expect(shift('=D1', deleteCols('B')).formula).toBe('=C1')
     expect(shift('=B1', deleteCols('B')).hasRefError).toBe(true)
   })
+
+  it('shifts whole-column spans like ordinary ranges', () => {
+    expect(shift('=SUM(B:B)', insertCols('A')).formula).toBe('=SUM(C:C)')
+    // structural edits ignore $ anchors, like ordinary refs do
+    expect(shift('=SUM($B:B)', insertCols('A')).formula).toBe('=SUM($C:C)')
+    expect(shift('=SUM(B:B)', deleteCols('A')).formula).toBe('=SUM(A:A)')
+  })
+
+  it('errors and shrinks whole-column spans on deletes like ranges do', () => {
+    expect(shift('=SUM(B:B)', deleteCols('B')).formula).toBe('=SUM(#REF!)')
+    expect(shift('=SUM(B:B)', deleteCols('B')).hasRefError).toBe(true)
+    expect(shift('=SUM(A:C)', deleteCols('B')).formula).toBe('=SUM(A:B)')
+  })
 })
 
 describe('shiftFormulaRefs: what must NOT be rewritten', () => {
@@ -83,8 +112,9 @@ describe('shiftFormulaRefs: what must NOT be rewritten', () => {
 
 describe('shiftFormulaRefs: sheet prefixes', () => {
   it('rewrites prefixed refs that target the op sheet', () => {
-    expect(shift("=Sheet1!B5+'Sheet1'!C5", insertRows(3), false).formula)
-      .toBe("=Sheet1!B6+'Sheet1'!C6")
+    expect(shift("=Sheet1!B5+'Sheet1'!C5", insertRows(3), false).formula).toBe(
+      "=Sheet1!B6+'Sheet1'!C6",
+    )
   })
 
   it('leaves prefixed refs to other sheets alone', () => {
