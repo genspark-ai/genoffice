@@ -76,6 +76,23 @@ describe('buildPrintDocumentHtml', () => {
     expect(html).toContain('a &lt; b<br>next')
   })
 
+  it('escapes image sources for attribute context in every layout', () => {
+    const full = buildPrintDocumentHtml({
+      srcs: ['x" onerror="alert(1)'],
+      ratio: 16 / 9,
+      layout: 'full',
+    })
+    expect(full).toContain('src="x&quot; onerror=&quot;alert(1)"')
+    expect(full).not.toContain('src="x" onerror=')
+    const handout = buildPrintDocumentHtml({
+      srcs: ["c'd", 'e&f<g>'],
+      ratio: 16 / 9,
+      layout: 'handout2',
+    })
+    expect(handout).toContain('src="c&#39;d"')
+    expect(handout).toContain('src="e&amp;f&lt;g&gt;"')
+  })
+
   it('preview mode adds page badges with the total page count', () => {
     const html = buildPrintDocumentHtml({
       srcs: srcs(5),

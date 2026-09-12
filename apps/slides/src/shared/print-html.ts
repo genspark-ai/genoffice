@@ -63,16 +63,21 @@ export function buildPrintDocumentHtml(o: PrintDocOptions): string {
     layout === 'handout2' ? 2 : layout === 'handout3' ? 3 : layout === 'handout6' ? 6 : 1
   const esc = (x: string) =>
     x.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!)
+  const escAttr = (x: string) =>
+    x.replace(
+      /[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+    )
 
   let body: string
   if (isFull) {
-    body = o.srcs.map((src) => `<div class="page"><img src="${src}"></div>`).join('')
+    body = o.srcs.map((src) => `<div class="page"><img src="${escAttr(src)}"></div>`).join('')
   } else if (layout === 'notes') {
     // Notes page: slide on top + notes text below
     body = o.srcs
       .map(
         (src, i) =>
-          `<div class="page notes"><img src="${src}">` +
+          `<div class="page notes"><img src="${escAttr(src)}">` +
           `<div class="note">${esc(o.notes?.[i] ?? '').replace(/\n/g, '<br>')}</div></div>`,
       )
       .join('')
@@ -84,7 +89,7 @@ export function buildPrintDocumentHtml(o: PrintDocOptions): string {
         .slice(i, i + perPage)
         .map(
           (src) =>
-            `<div class="cell"><img src="${src}">` +
+            `<div class="cell"><img src="${escAttr(src)}">` +
             (perPage === 3 ? '<div class="rules"></div>' : '') +
             '</div>',
         )
