@@ -48,6 +48,18 @@ describe('protected visible-text patching', () => {
     expect(patched).not.toContain('Latar Belakang')
   })
 
+  it('pins xml:space preserve when the patched text gains edge spaces', async () => {
+    const entry =
+      '<w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr>' +
+      '<w:r><w:t>Title</w:t></w:r><w:r><w:tab/></w:r>' +
+      '<w:r><w:t>7</w:t></w:r></w:p>'
+    const patched = patchFieldParagraphXml(entry, { left: ' Title ', right: '7' })
+    // without preserve, wtText drops the edge spaces on re-parse and Word loses them too
+    expect(patched).toContain('<w:t xml:space="preserve"> Title </w:t>')
+    const parsed = await parseDocx(await buildDocx({ bodyXml: patched }))
+    expect(parsed.blocks[0].fieldDisplay?.kind).toBe('tocLine')
+  })
+
   it('edits OMML tokens while preserving the formula tree', async () => {
     const patched = patchMathTokens(FORMULA, ['x & 1', 'y'])
     expect(patched).toContain('<m:f><m:num>')

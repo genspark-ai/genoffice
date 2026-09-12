@@ -298,7 +298,13 @@ function replaceTextNodes(
 ): string {
   let out = xml
   for (const { node, text } of [...replacements].sort((a, b) => b.node.start - a.node.start)) {
-    const replacement = node.open + escapeXmlText(text) + node.close
+    // wtText drops edge whitespace without xml:space="preserve": pin it when
+    // the replacement introduces a leading/trailing space or tab.
+    const open =
+      /xml:space\s*=/.test(node.open) || !/(^[\t ]|[\t ]$)/.test(text)
+        ? node.open
+        : node.open.replace(/<w:t(?=\s|>)/, '<w:t xml:space="preserve"')
+    const replacement = open + escapeXmlText(text) + node.close
     out = out.slice(0, node.start) + replacement + out.slice(node.end)
   }
   return out
