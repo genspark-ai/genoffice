@@ -47,7 +47,7 @@ applica la modifica e ti mostra esattamente cosa ha toccato.
   le chiamate AI lasciano la macchina, verso il provider che scegli.
 - **Le tue chiavi, o nessuna.** Accedi con Genspark e non dovrai configurare
   nulla, oppure usa la tua chiave per Claude, OpenAI, Gemini, DeepSeek, Kimi,
-  GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty o qualsiasi endpoint
+  GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty o qualsiasi endpoint
   compatibile con OpenAI, inclusi i server locali.
 
 **Scaricalo:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon e Intel) ·
@@ -186,7 +186,7 @@ e gli agenti hanno accesso a ricerca web e per immagini, generazione di
 immagini e analisi di immagini/audio/video.
 
 **Oppure usa la tua chiave.** In Settings → AI trovi Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty e
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty e
 OpenCode Zen/Go, più uno slot personalizzato per qualsiasi endpoint
 compatibile con OpenAI (base URL + chiave), inclusi i server con modelli
 locali. Ricerca e media hanno i propri provider per singola funzionalità
@@ -355,7 +355,7 @@ invece che in un'immagine di pagina.
 
 Sì. Oltre all'accesso Genspark senza chiavi, GenOffice supporta l'uso della
 tua chiave per Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao,
-MiniMax, Grok, Mistral, OpenRouter, Requesty e OpenCode Zen/Go, più qualsiasi endpoint
+MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty e OpenCode Zen/Go, più qualsiasi endpoint
 compatibile con OpenAI — inclusi i server con modelli locali. Ricerca,
 generazione di immagini e analisi di immagini/video richiedono le proprie
 chiavi in Settings → AI Media & Search.

@@ -47,7 +47,7 @@ hace el cambio y te muestra exactamente qué tocó.
   tu equipo, hacia el proveedor que elijas.
 - **Tus claves o ninguna.** Inicia sesión con Genspark y olvídate de las
   claves, o usa tu propia clave para Claude, OpenAI, Gemini, DeepSeek, Kimi,
-  GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, o cualquier endpoint
+  GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty, o cualquier endpoint
   compatible con OpenAI, servidores locales incluidos.
 
 **Consíguelo:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon e Intel) ·
@@ -188,7 +188,7 @@ Gemini) y los agentes obtienen búsqueda web y de imágenes, generación de
 imágenes, y análisis de imagen/audio/video.
 
 **O usa tu propia clave.** Settings → AI incluye Claude, OpenAI, Gemini,
-DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty y
+DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty y
 OpenCode Zen/Go, además de una ranura personalizada para cualquier endpoint
 compatible con OpenAI (URL base + clave), incluidos servidores de modelos
 locales. La búsqueda y los medios tienen sus propios proveedores por
@@ -356,7 +356,7 @@ en lugar de una imagen de página.
 
 Sí. Además del inicio de sesión sin clave con Genspark, GenOffice admite tu
 propia clave para Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao,
-MiniMax, Grok, Mistral, OpenRouter, Requesty y OpenCode Zen/Go, además de cualquier
+MiniMax, Grok, Mistral, OpenRouter, API Route, Requesty y OpenCode Zen/Go, además de cualquier
 endpoint compatible con OpenAI, incluidos servidores de modelos locales. La
 búsqueda, la generación de imágenes y el análisis de imagen/video usan sus
 propias claves en Settings → AI Media & Search.
