@@ -33,12 +33,19 @@ import {
   type PageWriteResult,
   type PageWriteSpec,
 } from './page-writer'
+import {
+  buildBriefWriterRequest,
+  streamBrief,
+  type BriefPlanSpec,
+  type BriefPlanResult,
+} from './brief-writer'
 import type { BriefDecision, ClarifyQuestion, HtmlDocAccess } from './tools'
 import type { Brief } from '../document/brief'
 import { isDocEmpty } from '../document/blank'
 import { ClarifyCard } from '../components/ClarifyCard'
 import { BriefCard } from '../components/BriefCard'
 import { createSearchSkill } from './search-skill'
+import { pastedBase64Image } from './base64-paste'
 import { createElectronTransport } from './transport'
 import { DOC_NAV_SCHEME, parseDocNavHref } from './doc-nav'
 import { EditQueueCard } from './EditQueueCard'
@@ -393,6 +400,15 @@ export function AiPanel({
     }
     if (paths.length > 0) mergeAttachments(await window.htmlApi.addAttachmentPaths(paths))
   }
+  /** a pasted base64 image (data: URL or a bare base64 dump) becomes a real attachment, not chat text */
+  const onPasteText = (text: string): boolean => {
+    const img = pastedBase64Image(text)
+    if (!img) return false
+    void window.htmlApi
+      .addPastedImage(img.bytes.buffer as ArrayBuffer, img.ext)
+      .then(mergeAttachments)
+    return true
+  }
   const removeAttachment = (path: string) =>
     setAttachments((prev) => prev.filter((a) => a.path !== path))
   /** image attachments ride along as multimodal input (≤5MB each, capped per message) */
@@ -413,6 +429,34 @@ export function AiPanel({
     }
     showAttachNotice(failures)
     return images
+  }
+  /** apply_ops `attachment://` references: land in the document's assets/ like a manually placed picture, or inline when that is not possible */
+  const resolveAttachmentSrc = async (
+    ref: string,
+  ): Promise<{ ok: true; src: string } | { ok: false; error: string }> => {
+    const name = ref.trim()
+    const atts = availableAttachments()
+    const att =
+      atts.find((a) => a.name === name) ??
+      atts.find((a) => a.name.toLowerCase() === name.toLowerCase())
+    if (!att) {
+      const names = atts.map((a) => a.name).join(', ') || '(none)'
+      return { ok: false, error: `no attachment named "${name}"; attached files: ${names}` }
+    }
+    if (!ATTACHMENT_IMAGE_EXTS.has(att.ext)) {
+      return {
+        ok: false,
+        error: `${att.name} is not an image attachment (png/jpg/gif/webp); ask the user to attach the image file itself`,
+      }
+    }
+    const img = await window.htmlApi.readAttachmentImage(att.path)
+    if (!img.ok || !img.base64 || !img.mime) {
+      return { ok: false, error: img.error ?? `could not read ${att.name}` }
+    }
+    // saveImage keeps webp out (assets must stay DOCX-exportable) and returns null for an unsaved document
+    const ext = att.ext === 'jpeg' ? 'jpg' : att.ext
+    const rel = ext === 'webp' ? null : await window.htmlApi.saveImage({ base64: img.base64, ext })
+    return { ok: true, src: rel ?? `data:${img.mime};base64,${img.base64}` }
   }
   // preferred = the user's chosen width (the only value persisted); panelWidth =
   // what fits the current window. Deriving the display width from the preference
@@ -571,6 +615,29 @@ export function AiPanel({
   const runPageWriterRef = useRef(runPageWriter)
   runPageWriterRef.current = runPageWriter
 
+  /** Brief drafting: one tool-less request over the conversation transcript; an empty reply is retried once. */
+  const runBriefWriter = async (
+    spec: BriefPlanSpec,
+    signal?: AbortSignal,
+  ): Promise<BriefPlanResult> => {
+    const { system, user } = buildBriefWriterRequest(
+      spec,
+      loopRef.current?.messages ?? [],
+      aiLangDirective(langRef.current),
+    )
+    patchLast((last) => ({
+      tools: last.tools?.map((tl) =>
+        tl.running ? { ...tl, summary: tGlobal('aiDraftingBrief') } : tl,
+      ),
+    }))
+    const attempt = () => streamBrief({ transport: transportRef.current!, system, user, signal })
+    let result = await attempt()
+    if (!result.ok && !signal?.aborted) result = await attempt()
+    return result
+  }
+  const runBriefWriterRef = useRef(runBriefWriter)
+  runBriefWriterRef.current = runBriefWriter
+
   const loopRef = useRef<AgentLoop<DocSnapshot> | null>(null)
   if (!loopRef.current) {
     loopRef.current = new AgentLoop<DocSnapshot>({
@@ -597,7 +664,10 @@ export function AiPanel({
               setActiveBrief(brief)
             }),
           writePage: (spec, signal) => runPageWriterRef.current(spec, signal),
+          planBrief: (spec, signal) => runBriefWriterRef.current(spec, signal),
           getInstruction: () => runInstructionRef.current,
+          resolveAttachmentSrc: (ref) => resolveAttachmentSrc(ref),
+          listAttachmentNames: () => availableAttachments().map((a) => a.name),
         }),
         createSearchSkill(),
         createFilesSkill(availableAttachments),
@@ -1437,6 +1507,7 @@ export function AiPanel({
           onSend={() => send(prompt)}
           onStop={stop}
           onPasteFiles={(files) => void onPasteFiles(files)}
+          onPasteText={onPasteText}
           footerStart={
             <button
               type="button"

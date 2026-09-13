@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { parseRange } from '../src/domain/cell-address'
+import { parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { aggregateWorkbookRange } from '../src/renderer/ai/aggregate-range'
 import type { WorkbookReadContext } from '../src/renderer/ai/workbook-readers'
 

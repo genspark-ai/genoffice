@@ -10,7 +10,10 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
-const dir = join(dirname(fileURLToPath(import.meta.url)), '../src/shared/prompts/ops')
+const dir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../packages/pptx-ops/src/prompts/ops',
+)
 const files = readdirSync(dir).filter((f) => f.endsWith('.md'))
 
 // CJK punctuation, Hiragana/Katakana, CJK unified ideographs, full-width forms

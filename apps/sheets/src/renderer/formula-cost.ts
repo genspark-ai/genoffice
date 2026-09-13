@@ -6,8 +6,11 @@
 /// |range|×|criteria| ≈ 7.8e9 comparisons and freezes the app for minutes.
 /// Such formulas are rejected at propose/edit time instead.
 
-import { offsetFormulaRefs } from '../domain/formula-shift'
-import { FORMULA_REFERENCE_PATTERN, qualifierMatches } from '../gateway/xlsx-structure'
+import { offsetFormulaRefs } from '@genoffice/xlsx-gateway/domain/formula-shift'
+import {
+  FORMULA_REFERENCE_PATTERN,
+  qualifierMatches,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-structure'
 
 export interface FormulaCostSheet {
   readonly name: string

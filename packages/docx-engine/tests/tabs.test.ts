@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseDocx, saveDocx, type TabStop } from '../src/index'
+import { mergePPrFormat, parseDocx, saveDocx, type TabStop } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 // ---- fixture XML fragments ----
@@ -124,5 +124,86 @@ describe('w:ptab absolute position tabs', () => {
     expect(doc.blocks[0].format?.tabStops).toEqual([
       { pos: 100, val: 'right', leader: 'heavy', rel: 'margin' },
     ])
+  })
+})
+
+describe('tab stops from the paragraph style chain', () => {
+  const STYLES =
+    '<w:style w:type="paragraph" w:styleId="Base"><w:name w:val="Base"/><w:basedOn w:val="Normal"/>' +
+    '<w:pPr><w:tabs><w:tab w:val="left" w:pos="709"/><w:tab w:val="center" w:pos="5752"/></w:tabs></w:pPr></w:style>' +
+    '<w:style w:type="paragraph" w:styleId="Row" w:customStyle="1"><w:name w:val="Row"/><w:basedOn w:val="Base"/>' +
+    '<w:pPr><w:tabs><w:tab w:val="clear" w:pos="709"/><w:tab w:val="right" w:pos="8976"/>' +
+    '<w:tab w:val="right" w:pos="10536"/></w:tabs></w:pPr></w:style>'
+  const ROW_P =
+    '<w:p><w:pPr><w:pStyle w:val="Row"/></w:pPr>' +
+    '<w:r><w:t xml:space="preserve">\tBank\t1,510.90\t2,513.46</w:t></w:r></w:p>'
+
+  it('inherits style stops through basedOn; a clear in the child drops the parent stop', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: ROW_P, extraStylesXml: STYLES }))
+    expect(doc.blocks[0].format?.tabStops).toEqual([
+      { pos: 5752, val: 'center', inherited: true },
+      { pos: 8976, val: 'right', inherited: true },
+      { pos: 10536, val: 'right', inherited: true },
+    ])
+  })
+
+  it('direct stops win per position and a direct clear removes an inherited stop', async () => {
+    const p =
+      '<w:p><w:pPr><w:pStyle w:val="Row"/><w:tabs><w:tab w:val="clear" w:pos="5752"/>' +
+      '<w:tab w:val="left" w:pos="8976" w:leader="dot"/></w:tabs></w:pPr>' +
+      '<w:r><w:t xml:space="preserve">a\tb</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: p, extraStylesXml: STYLES }))
+    expect(doc.blocks[0].format?.tabStops).toEqual([
+      { pos: 5752, val: 'clear' },
+      { pos: 8976, val: 'left', leader: 'dot' },
+      { pos: 10536, val: 'right', inherited: true },
+    ])
+  })
+
+  it('inherited stops are display-only: an edited paragraph writes no w:tabs of its own', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: ROW_P, extraStylesXml: STYLES }))
+    const block = doc.blocks[0]
+    const saved = await saveDocx(doc, [
+      {
+        kind: 'generated',
+        block: {
+          type: 'paragraph',
+          styleId: block.styleId,
+          format: block.format,
+          rawPPr: block.rawPPr,
+          runs: [{ text: '\tEdited\t1\t2' }],
+        },
+      },
+    ])
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.internal.documentXml).not.toContain('<w:tabs>')
+    expect(reparsed.blocks[0].format?.tabStops).toEqual(doc.blocks[0].format?.tabStops)
+  })
+
+  it('a direct clear at the inherited position survives save and reopen (ruler delete)', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: ROW_P, extraStylesXml: STYLES }))
+    const block = doc.blocks[0]
+    // what the ruler writes after the user drags the inherited 5752 stop off the ruler
+    const tabStops: TabStop[] = [
+      { pos: 5752, val: 'clear' },
+      { pos: 8976, val: 'right' },
+      { pos: 10536, val: 'right' },
+    ]
+    const format = { ...block.format, tabStops }
+    const saved = await saveDocx(doc, [
+      {
+        kind: 'generated',
+        block: {
+          type: 'paragraph',
+          styleId: block.styleId,
+          format,
+          rawPPr: mergePPrFormat(block.rawPPr!, format, block.format),
+          runs: [{ text: '\tEdited\t1\t2' }],
+        },
+      },
+    ])
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.internal.documentXml).toContain('<w:tab w:val="clear" w:pos="5752"/>')
+    expect(reparsed.blocks[0].format?.tabStops).toEqual(tabStops)
   })
 })

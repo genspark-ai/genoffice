@@ -141,11 +141,14 @@ describe('auto ink on dark shading', () => {
     const light = '--docs-paper-ink:#fff;color:var(--docs-paper-ink)'
     const reset = '--docs-paper-ink:#000;color:var(--docs-paper-ink)'
     const head = 'table[data-tbl-style="DarkHead"] tr:first-child'
-    expect(css).toContain(`${head} td, .doc-page ${head} th { background:#1f1f1f;font-weight:600 }`)
+    // header-row formatting also reaches the leading w:tblHeader rows
+    const lead =
+      'table[data-tbl-style="DarkHead"] tr[data-repeat-header="1"]:not(tr:not([data-repeat-header="1"]) ~ tr)'
+    const headCells = (cell: string): string =>
+      `${head} ${cell}, .doc-page ${head} ${cell.replace('td', 'th')}, .doc-page ${lead} ${cell}, .doc-page ${lead} ${cell.replace('td', 'th')}`
+    expect(css).toContain(`${headCells('td')} { background:#1f1f1f;font-weight:600 }`)
     // cells with their own fill (data-ink) are left to that attribute: the nearest fill wins
-    expect(css).toContain(
-      `${head} td:not([data-ink]), .doc-page ${head} th:not([data-ink]) { ${light} }`,
-    )
+    expect(css).toContain(`${headCells('td:not([data-ink])')} { ${light} }`)
     expect(css).toContain(`.page-dark .doc-page ${head} td:not([data-ink])`)
     expect(css).toContain(`--docs-paper-ink:${DARK_PAPER_HEX}`)
     expect(css).toContain(`background:#d9d9d9 }`)
@@ -157,9 +160,7 @@ describe('auto ink on dark shading', () => {
       `.doc-page :is([data-ink='light'] table, table[data-ink='light'])[data-tbl-style="DarkHead"] tr:nth-child(even) td:not([data-ink]) { ${reset} }`,
     )
     // light data-ink fills inside the style's dark cells (only those) take the paper ink back
-    expect(css).toContain(
-      `${head} td:not([data-ink]) [data-ink='dark'], .doc-page ${head} th:not([data-ink]) [data-ink='dark'] { ${reset} }`,
-    )
+    expect(css).toContain(`${headCells("td:not([data-ink]) [data-ink='dark']")} { ${reset} }`)
     expect(css).not.toContain(`table[data-tbl-style="DarkHead"] [data-ink='dark'] {`)
     expect(css).toContain(`--docs-paper-ink:#ffffff`)
     expect(css).toContain(`background:#1f1f1f;color:#ff0000 }`)

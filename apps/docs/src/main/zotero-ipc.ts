@@ -13,10 +13,11 @@ let registered = false
 function requestRenderer(contents: WebContents, request: ZoteroWireRequest): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const requestId = randomUUID()
+    // a displayAlert waits on a modal the user may leave open for a while
     const timer = setTimeout(() => {
       pending.delete(requestId)
       reject(new Error(`Timed out handling ${request.command}`))
-    }, 120_000)
+    }, 600_000)
     pending.set(requestId, {
       webContentsId: contents.id,
       resolve: (value) => {

@@ -30,7 +30,7 @@ import type {
   SlideComment,
   TransitionKind,
 } from '../shared/ipc'
-import { SlideCanvas, selectionChromeColor } from './SlideCanvas'
+import { SlideCanvas, selectionChromeColor, type SlideCanvasHandle } from './SlideCanvas'
 import { tableCellOverlayBox } from './table-hit'
 import { ZOOM_PREVIEW_EVENT } from './zoom-preview'
 import { createWheelPager } from './wheel-page-flip'
@@ -46,6 +46,7 @@ import {
 } from './TextEditOverlay'
 import { CropOverlay } from './CropOverlay'
 import { createImageLoader } from './image-loader'
+import { runHeadlessPdfExport } from './headless-export'
 import { syncPrivateFonts } from './doc-fonts'
 import { toPickerHex } from './color-input'
 import { InkOverlay } from './InkOverlay'
@@ -100,6 +101,7 @@ import type {
   CtxMenuState,
   CutoutTargetState,
   EditingCellState,
+  EditCaret,
   EditingState,
   HfDialogState,
   LinkDialogState,
@@ -213,11 +215,16 @@ function collectFontRuns(
 }
 
 /** Per-paragraph bullet chars of one laid-out text body for the ribbon bullet gallery: '' for a
- * paragraph with no bullet, '#num' for numbered (matches no preset tile). Lines group into
+ * paragraph with no bullet, '#img' for a picture bullet, '#num:<scheme>' for numbered. Lines group into
  * paragraphs on paraStart so wrap continuations don't count. */
 function collectBodyBulletChars(
   text:
-    | { lines: Array<{ runs: Array<{ text: string; isBullet?: boolean }>; paraStart?: boolean }> }
+    | {
+        lines: Array<{
+          runs: Array<{ text: string; isBullet?: boolean; image?: string; numType?: string }>
+          paraStart?: boolean
+        }>
+      }
     | undefined,
   out: Set<string>,
 ) {
@@ -233,7 +240,15 @@ function collectBodyBulletChars(
       .slice(i, j)
       .flatMap((l) => l.runs)
       .find((r) => r.isBullet)
-    out.add(bullet ? (/^\d/.test(bullet.text) ? '#num' : bullet.text.trim()) : '')
+    out.add(
+      bullet
+        ? bullet.image
+          ? '#img'
+          : bullet.numType
+            ? `#num:${bullet.numType}`
+            : bullet.text.trim()
+        : '',
+    )
     i = j
   }
 }
@@ -912,7 +927,37 @@ export function App() {
 
   const saveAs = useCallback(() => fileActions.saveAs(() => ctxRef.current), [])
   const exportImages = useCallback(() => fileActions.exportImages(ctxRef.current), [])
-  const exportPdf = useCallback(() => fileActions.exportPdf(ctxRef.current), [])
+  const exportPdf = useCallback(() => void fileActions.exportPdf(ctxRef.current), [])
+
+  // Headless export mode (--headless-export): this renderer lives in a hidden
+  // window whose only job is to run the File menu's PDF export against a path
+  // the CLI chose, then report back so the main process can quit.
+  const headlessExportStartedRef = useRef(false)
+  useEffect(() => {
+    if (headlessExportStartedRef.current) return
+    headlessExportStartedRef.current = true
+    void (async () => {
+      const outPath = await window.slidesApi.consumeHeadlessExport()
+      if (!outPath) return
+      const report = await runHeadlessPdfExport(
+        outPath,
+        () => {
+          // A failed open falls back to an untitled blank deck (path ''), and
+          // exporting that would hand the CLI a blank PDF and call it success.
+          const deck = ctxRef.current
+          const fromFile = typeof deck?.path === 'string' && deck.path !== ''
+          return {
+            slideCount: fromFile ? deck.slides.length : 0,
+            // no loader yet = the deck's image effect has not run; -1 keeps waiting
+            pendingImages: imageLoaderRef.current?.pending() ?? -1,
+            failed: deck?.path === '',
+          }
+        },
+        (target) => fileActions.exportPdf(ctxRef.current, target),
+      )
+      window.slidesApi.headlessExportDone(report)
+    })()
+  }, [])
 
   const [printDlgOpen, setPrintDlgOpen] = useState(false)
 
@@ -2116,14 +2161,25 @@ export function App() {
     const addFillUrl = (fill: RenderFill | undefined) => {
       if (fill && fill.kind === 'image' && fill.dataUrl) urls.add(fill.dataUrl)
     }
+    const addBulletUrls = (
+      text: { lines: Array<{ runs: Array<{ image?: string }> }> } | undefined,
+    ) => {
+      for (const l of text?.lines ?? []) for (const r of l.runs) if (r.image) urls.add(r.image)
+    }
     const walk = (nodes: readonly RenderNode[]) => {
       for (const n of nodes) {
         if (n.type === 'picture' && n.dataUrl) urls.add(n.dataUrl)
-        if ((n.type === 'shape' || n.type === 'text') && n.fill) addFillUrl(n.fill)
+        if (n.type === 'shape' || n.type === 'text') {
+          if (n.fill) addFillUrl(n.fill)
+          addBulletUrls(n.text)
+        }
         if (n.type === 'chart') addFillUrl((n as { bgFill?: RenderFill }).bgFill)
         if (n.type === 'group' && Array.isArray(n.children)) walk(n.children)
         if (n.type === 'table' && Array.isArray(n.cells)) {
-          for (const c of n.cells) if (c.fill) addFillUrl(c.fill)
+          for (const c of n.cells) {
+            if (c.fill) addFillUrl(c.fill)
+            addBulletUrls(c.text)
+          }
         }
       }
     }
@@ -2152,6 +2208,7 @@ export function App() {
     [],
   )
 
+  const canvasRef = useRef<SlideCanvasHandle>(null)
   const editNode = useMemo(() => {
     if (!editing || !slide) return null
     // In-group-editing children: compose the group offset into an absolute box (the canvas only allows text editing when the group is unrotated/unflipped/unscaled)
@@ -2169,11 +2226,12 @@ export function App() {
   }, [editing, slide])
 
   const startEdit = useCallback(
-    (sourceId: string, caret?: { x: number; y: number }) => {
+    (sourceId: string, caret?: EditCaret) => {
+      if (brushMode) return // the click already applied the format brush
       const isChild = enteredGroupNode?.children.some((c) => c.sourceId === sourceId)
       setEditing({ sourceId, caret, ...(isChild ? { groupId: enteredGroupNode!.sourceId } : {}) })
     },
-    [enteredGroupNode],
+    [enteredGroupNode, brushMode],
   )
 
   // Audio/video playback overlay: triggered by double-clicking a media element, closed on page switch/Escape
@@ -3617,6 +3675,7 @@ export function App() {
                             }}
                           >
                             <SlideCanvas
+                              ref={canvasRef}
                               slide={slide}
                               selectedIds={selectedIds}
                               onSelect={handleCanvasSelect}
@@ -3736,6 +3795,11 @@ export function App() {
                                 onFollowLink={followRunLink}
                                 frameColor={selectionChromeColor(slide, images)}
                                 zoom={zoom}
+                                onFrameDrag={(ev) => {
+                                  // Drop the overlay now; the text commit above lands via setSlides on its own
+                                  setEditing(null)
+                                  canvasRef.current?.startNodeDrag(editing.sourceId, ev)
+                                }}
                               />
                             )}
                             {editingCell && cellEditNode && (

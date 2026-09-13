@@ -54,3 +54,6 @@ Local modifications to `index.mjs` (2026-08, GenOffice):
 - Font strings carry a `sans-serif` generic fallback after the (quoted) facename; an
   unknown facename otherwise fell to the browser default serif, so CJK Office text in
   EMF previews (Meiryo UI, MS PGothic) drew in Mincho/Song
+- EMR_EXTTEXTOUTW horizontal alignment tests the TA_CENTER/TA_RIGHT bit pair as a
+  value (upstream tested `& 2` after `& 6`, so TA_CENTER (6) fell through to
+  right-aligned and an OLE icon's centered caption lost its leading characters)

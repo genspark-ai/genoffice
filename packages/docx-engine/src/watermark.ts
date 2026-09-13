@@ -1,3 +1,12 @@
+import {
+  vmlColorHex,
+  vmlFloatAnchor,
+  vmlFraction,
+  vmlRotationDeg,
+  vmlStyleDimPx,
+  vmlStyleProp,
+} from './parse-vml'
+import type { HfImage } from './types'
 import { escapeXmlAttr } from './xml-utils'
 
 /**
@@ -24,6 +33,54 @@ export function readWatermarkText(headerXml: string): string | null {
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&')
   return text || null
+}
+
+/**
+ * Display geometry of a WordArt watermark pict: box size, rotation, anchor,
+ * fill color/opacity and the textpath font. Word stretches the glyph ink to
+ * the box (fitshape), so the declared font-size is irrelevant here.
+ */
+export function readWatermarkShape(pictXml: string): HfImage | null {
+  const text = readWatermarkText(pictXml)
+  if (!text) return null
+  const body = pictXml.replace(/<v:shapetype\b[\s\S]*?<\/v:shapetype>/g, '')
+  const shapeTag = /<v:shape\b[^>]*>/.exec(body)?.[0]
+  if (!shapeTag) return null
+  const attr = (tag: string, key: string): string | undefined =>
+    new RegExp(`\\s${key}="([^"]*)"`).exec(tag)?.[1]
+  const style = attr(shapeTag, 'style') ?? ''
+  const widthPx = vmlStyleDimPx(style, 'width')
+  const heightPx = vmlStyleDimPx(style, 'height')
+  if (!widthPx || !heightPx) return null
+  const fillTag = /<v:fill\b[^>]*>/.exec(body)?.[0]
+  const tpTag = /<v:textpath\b[^>]*\bstring="[^>]*>/.exec(body)?.[0] ?? ''
+  const tpStyle = (attr(tpTag, 'style') ?? '').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+  const family = vmlStyleProp(tpStyle, 'font-family')?.replace(/^"|"$/g, '')
+  const img: HfImage = {
+    dataUrl: '',
+    widthPx,
+    heightPx,
+    floating: true,
+    wordArt: {
+      text,
+      colorHex:
+        attr(shapeTag, 'filled') === 'f'
+          ? 'FFFFFF'
+          : (vmlColorHex(attr(shapeTag, 'fillcolor')) ?? '000000'),
+      opacity: Math.max(
+        0,
+        Math.min(1, (fillTag ? vmlFraction(attr(fillTag, 'opacity')) : undefined) ?? 1),
+      ),
+      ...(family ? { fontFamily: family } : {}),
+      ...(/font-weight:\s*bold/.test(tpStyle) ? { bold: true } : {}),
+      ...(/font-style:\s*italic/.test(tpStyle) ? { italic: true } : {}),
+    },
+  }
+  if (/z-index:\s*-/.test(style)) img.behind = true
+  const rot = vmlRotationDeg(style)
+  if (rot != null) img.rotationDeg = rot
+  vmlFloatAnchor(style, img)
+  return img
 }
 
 /**

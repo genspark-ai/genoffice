@@ -1,7 +1,11 @@
+import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { generateParagraphXml, generateTocFieldXml, parseDocx, saveDocx } from '../src/index'
-import type { GenerateContext, GeneratedBlock } from '../src/index'
+import type { Block, GenerateContext, GeneratedBlock } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
+
+const documentXmlOf = async (bytes: Uint8Array): Promise<string> =>
+  (await JSZip.loadAsync(bytes)).file('word/document.xml')!.async('string')
 
 // TOC entry paragraph as Word writes it: TOC field begin + hyperlink entry
 // with a dot-leader tab and a nested PAGEREF field for the page number.
@@ -77,6 +81,7 @@ describe('field paragraph display model', () => {
       right: '2',
       level: 1,
       anchor: '_Toc1',
+      leader: 'dot',
     })
   })
 
@@ -92,6 +97,33 @@ describe('field paragraph display model', () => {
         right: '12',
       })
     }
+  })
+
+  it('a TOC entry carries the leader of its page-number tab (direct stop, else the style)', async () => {
+    const entry = (pPrTail: string, style = 'TOC1') =>
+      `<w:p><w:pPr><w:pStyle w:val="${style}"/>${pPrTail}</w:pPr>` +
+      '<w:r><w:t>Title</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>3</w:t></w:r></w:p>'
+    const styles =
+      '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/>' +
+      '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9350"/></w:tabs></w:pPr></w:style>' +
+      '<w:style w:type="paragraph" w:styleId="TOC2"><w:name w:val="toc 2"/></w:style>'
+    const doc = await parseDocx(
+      await buildDocx({
+        extraStylesXml: styles,
+        bodyXml:
+          entry('<w:tabs><w:tab w:val="right" w:leader="hyphen" w:pos="9350"/></w:tabs>') +
+          entry('<w:tabs><w:tab w:val="right" w:pos="9350"/></w:tabs>') +
+          entry('<w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs>') +
+          entry('', 'TOC2') +
+          entry(
+            '<w:tabs><w:tab w:val="left" w:pos="720"/><w:tab w:val="right" w:leader="underscore" w:pos="9350"/></w:tabs>',
+          ),
+      }),
+    )
+    const leaders = doc.blocks.slice(0, 5).map((b) => b.fieldDisplay?.leader)
+    // direct stop wins; a direct right stop without w:leader is a bare tab;
+    // no direct right stop falls back to the style; nothing known stays undefined
+    expect(leaders).toEqual(['hyphen', 'none', 'dot', undefined, 'underscore'])
   })
 
   it('a TOC entry carries the leading result run face and weight (Word draws the entry with its runs)', async () => {
@@ -242,6 +274,29 @@ describe('field paragraph display model', () => {
     expect(reparsedRuns.map((run) => run.zoteroFieldPart)).toEqual(['begin', 'inside', 'end'])
   })
 
+  it('closes a bibliography field whose end paragraph was deleted instead of writing an open field', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: ZOTERO_BIBLIOGRAPHY_PARAGRAPHS }))
+    const blocks = doc.blocks.filter((block) => !block.hidden)
+    // the first two paragraphs are untouched originals; the paragraph carrying the field end is gone
+    const saved = await saveDocx(
+      doc,
+      blocks
+        .slice(0, 2)
+        .map((block) => ({ kind: 'original' as const, docxIndex: block.docxIndex! })),
+    )
+    const xml = await documentXmlOf(saved)
+    expect(xml.match(/w:fldCharType="begin"/g)).toHaveLength(1)
+    expect(xml.match(/w:fldCharType="end"/g)).toHaveLength(1)
+    const reparsed = await parseDocx(saved)
+    const reparsedBlocks = reparsed.blocks.filter((block) => !block.hidden)
+    expect(reparsedBlocks.map((block) => block.runs?.map((run) => run.text).join(''))).toEqual([
+      'Alpha, A. (2024). First study.',
+      'Beta, B. (2023). Second study.',
+    ])
+    expect(reparsedBlocks[0].runs?.map((run) => run.zoteroFieldPart)).toEqual(['single'])
+    expect(reparsedBlocks[1].runs?.every((run) => run.instrField === undefined)).toBe(true)
+  })
+
   it('does not merge an inline citation with a cross-paragraph bibliography', async () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: ZOTERO_CITATION_PARAGRAPH + ZOTERO_BIBLIOGRAPHY_PARAGRAPHS }),
@@ -355,6 +410,62 @@ describe('field paragraph display model', () => {
       right: '11',
       level: 1,
     })
+  })
+})
+
+// IF field whose instruction text runs across three paragraphs: Word hides
+// the first two paragraph marks and shows one line "Left {It’s not "
+const SPLIT_CODE_PARAGRAPHS =
+  '<w:p><w:r><w:t xml:space="preserve">Left </w:t></w:r><w:r><w:t>{</w:t></w:r>' +
+  '<w:r><w:t xml:space="preserve">It’s </w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+  '<w:r><w:instrText xml:space="preserve">IF DATE \\@ "M-d" &lt;&gt; "1-4" "not " </w:instrText></w:r></w:p>' +
+  '<w:p><w:r><w:instrText xml:space="preserve">second code paragraph </w:instrText></w:r></w:p>' +
+  '<w:p><w:pPr><w:jc w:val="center"/></w:pPr>' +
+  '<w:r><w:instrText xml:space="preserve">\\* MERGEFORMAT </w:instrText></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+  '<w:r><w:rPr><w:b/></w:rPr><w:t>not</w:t></w:r>' +
+  '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+  '<w:r><w:t xml:space="preserve"> </w:t></w:r></w:p>' +
+  '<w:p><w:r><w:t>After</w:t></w:r></w:p>'
+
+describe('field code spanning paragraphs', () => {
+  const shownMarkers = (blocks: Block[]) =>
+    blocks.filter((b) => !b.hidden).map((b) => b.invisibleMarker ?? false)
+
+  it('paragraph marks inside field code are hidden; the last mark shows the joined result', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: SPLIT_CODE_PARAGRAPHS }))
+    expect(shownMarkers(doc.blocks)).toEqual([true, true, false, false])
+    const tail = doc.blocks[2]
+    expect(tail.type).toBe('passthrough')
+    expect(tail.fieldDisplay?.kind).toBe('text')
+    expect(tail.fieldDisplay?.left).toBe('Left {It’s not')
+    expect(tail.fieldDisplay?.align).toBe('center')
+    expect(tail.fieldDisplay?.runs?.map((r) => [r.text, r.bold ?? false])).toEqual([
+      ['Left {It’s ', false],
+      ['not', true],
+    ])
+    expect(doc.blocks[3].type).toBe('paragraph')
+    // the blocks still save byte-identically
+    for (const b of doc.blocks.slice(0, 3)) expect(b.originalXml).toMatch(/^<w:p>/)
+  })
+
+  it('a field code left open at the end of the body folds nothing', async () => {
+    const xml =
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> DATE </w:instrText></w:r></w:p>' +
+      '<w:p><w:r><w:t>Plain</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(shownMarkers(doc.blocks)).toEqual([false, false])
+    expect(doc.blocks[1].type).toBe('paragraph')
+  })
+
+  it('paragraph marks inside a field result (TOC entries) stay visible', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: TOC_ENTRY_PARAGRAPH + FIELD_END_PAGEBREAK_PARAGRAPH }),
+    )
+    expect(shownMarkers(doc.blocks)).toEqual([false, false])
+    expect(doc.blocks[0].fieldDisplay?.kind).toBe('tocLine')
   })
 })
 
@@ -713,5 +824,49 @@ describe('editable citation fields (ADDIN ZOTERO_ITEM in a justified body paragr
       instrField: 'ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"x"}',
       zoteroFieldPart: 'single',
     })
+  })
+})
+
+// Content-control checkbox as Word writes it: the state lives in w14:checkbox,
+// the run in sdtContent repeats the glyph the state selects.
+const sdtCheckboxParagraph = (checked: '0' | '1', glyph: string) =>
+  '<w:p><w:r><w:t xml:space="preserve">agree </w:t></w:r><w:sdt><w:sdtPr><w:id w:val="42"/>' +
+  `<w14:checkbox><w14:checked w14:val="${checked}"/>` +
+  '<w14:checkedState w14:val="2612" w14:font="MS Gothic"/>' +
+  '<w14:uncheckedState w14:val="2610" w14:font="MS Gothic"/></w14:checkbox></w:sdtPr>' +
+  '<w:sdtContent><w:r><w:rPr><w:rFonts w:ascii="MS Gothic" w:hAnsi="MS Gothic"/></w:rPr>' +
+  `<w:t>${glyph}</w:t></w:r></w:sdtContent></w:sdt></w:p>`
+
+describe('w14:checkbox content controls', () => {
+  const ctx: GenerateContext = { headingStyleIds: new Map(), allocateHyperlinkRel: () => 'rId1' }
+
+  it('folds into one glyph run that keeps the control properties', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: sdtCheckboxParagraph('1', '\u2612') }))
+    expect(doc.blocks[0].runs?.map((r) => r.text)).toEqual(['agree ', '\u2612'])
+    expect(doc.blocks[0].runs?.[1]).toMatchObject({ font: 'MS Gothic' })
+    expect(doc.blocks[0].runs?.[1].sdtCheckboxXml).toContain('<w14:checkbox>')
+  })
+
+  it('draws the glyph from the state, not from the text the file carried', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: sdtCheckboxParagraph('0', '\u2612') }))
+    expect(doc.blocks[0].runs?.[1].text).toBe('\u2610')
+  })
+
+  it('writes the control back around the glyph with w14:checked following an in-editor toggle', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: sdtCheckboxParagraph('0', '\u2610') }))
+    const runs = doc.blocks[0].runs!.map((r) => (r.sdtCheckboxXml ? { ...r, text: '\u2612' } : r))
+    const xml = generateParagraphXml({ type: 'paragraph', runs }, ctx)
+    expect(xml).toMatch(
+      /<w:sdt><w:sdtPr>.*<w14:checked w14:val="1"\/>.*<\/w:sdtPr><w:sdtContent><w:r>.*\u2612.*<\/w:sdtContent><\/w:sdt>/,
+    )
+    expect(xml).not.toContain('w14:val="0"')
+  })
+
+  it('drops the control when the glyph was typed over', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: sdtCheckboxParagraph('1', '\u2612') }))
+    const runs = doc.blocks[0].runs!.map((r) => (r.sdtCheckboxXml ? { ...r, text: 'yes' } : r))
+    const xml = generateParagraphXml({ type: 'paragraph', runs }, ctx)
+    expect(xml).not.toContain('<w:sdt>')
+    expect(xml).toContain('yes')
   })
 })

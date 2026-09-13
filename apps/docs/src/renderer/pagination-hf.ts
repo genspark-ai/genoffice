@@ -61,6 +61,19 @@ export function hasPrintableHeaderFooter(input: {
   })
 }
 
+/** Header/footer variant a page renders: the titlePg first page of its section
+ *  takes 'first', an even page under evenAndOddHeaders takes 'even' */
+export function hfVariantOf(
+  titlePg: boolean | undefined,
+  firstOfSection: boolean,
+  evenOddHf: boolean,
+  pageNo: number,
+): 'first' | 'even' | 'default' {
+  if (titlePg && firstOfSection) return 'first'
+  if (evenOddHf && pageNo % 2 === 0) return 'even'
+  return 'default'
+}
+
 /** Displayed page number per page: restart at the section's pgNumType w:start, otherwise continue;
  *  evenPage/oddPage section breaks skip a number to fix parity (when not restarting) */
 export function pageNumbers(slices: PageSlice[], sections: SectionInfo[]): number[] {

@@ -17,7 +17,7 @@ test.describe('html editor', () => {
       await expect(editorTab).toHaveCount(1)
       await expect(editorTab).toHaveClass(/active/)
 
-      const editorPage = await waitForPageWithUrl(app, 'html/out')
+      const editorPage = await waitForPageWithUrl(app, '://html/')
       await expect(editorPage.locator('.ribbon-body')).toBeVisible()
       await expect(editorPage.locator('.preview-frame')).toBeVisible()
       // blank document: the AI panel offers the design / write intent cards and swaps its starters
@@ -58,7 +58,7 @@ test.describe('html editor', () => {
       await expect(editorTab).toHaveCount(1)
       await expect(editorTab).toContainText('page.html')
 
-      const editorPage = await waitForPageWithUrl(app, 'html/out')
+      const editorPage = await waitForPageWithUrl(app, '://html/')
       await expect(editorPage.locator('.ribbon-body')).toBeVisible()
       // preview is the default view; the source pane is shown on demand
       await expect(editorPage.locator('.pane-source')).toBeHidden()
@@ -117,7 +117,7 @@ test.describe('html editor', () => {
     })
     const { app } = launched
     try {
-      const editorPage = await waitForPageWithUrl(app, 'html/out')
+      const editorPage = await waitForPageWithUrl(app, '://html/')
       const frame = editorPage.frameLocator('.preview-frame')
       await expect(frame.locator('h1')).toHaveCSS('color', 'rgb(0, 0, 200)')
       await expect
@@ -172,7 +172,7 @@ test.describe('html editor', () => {
     })
     const { app } = launched
     try {
-      const editorPage = await waitForPageWithUrl(app, 'html/out')
+      const editorPage = await waitForPageWithUrl(app, '://html/')
       await expect(editorPage.locator('.ribbon-body')).toBeVisible()
       await editorPage.locator('.rb-view', { hasText: /Source/ }).click()
       await editorPage.locator('.source-editor .cm-content').click()
@@ -196,7 +196,7 @@ test.describe('html editor', () => {
     })
     const { app } = launched
     try {
-      const editorPage = await waitForPageWithUrl(app, 'html/out')
+      const editorPage = await waitForPageWithUrl(app, '://html/')
       await expect(editorPage.locator('.ribbon-body')).toBeVisible()
       const toggle = editorPage.locator('.ribbon .ai-entry').first()
       // the panel state is remembered; normalize to closed first
@@ -283,7 +283,7 @@ test.describe('html editor', () => {
     })
     const { app } = launched
     try {
-      const editorPage = await waitForPageWithUrl(app, 'html/out')
+      const editorPage = await waitForPageWithUrl(app, '://html/')
       await expect(editorPage.locator('.ribbon-body')).toBeVisible()
       const frame = editorPage.frameLocator('.preview-frame')
       // the breadcrumb is a source-side affordance: it only renders in the split and source views
@@ -455,7 +455,7 @@ test.describe('html editor', () => {
     })
     const { app } = launched
     try {
-      const editorPage = await waitForPageWithUrl(app, 'html/out')
+      const editorPage = await waitForPageWithUrl(app, '://html/')
       await expect(editorPage.locator('.ribbon-body')).toBeVisible()
       const frame = editorPage.frameLocator('.preview-frame')
       const undoBtn = editorPage.locator('.ribbon').getByRole('button', { name: /^Undo$/ })
@@ -509,7 +509,7 @@ test.describe('html editor', () => {
     })
     const { app } = launched
     try {
-      const editorPage = await waitForPageWithUrl(app, 'html/out')
+      const editorPage = await waitForPageWithUrl(app, '://html/')
       await expect(editorPage.frameLocator('.preview-frame').locator('h1')).toHaveText('Alpha')
       // preview-only by default: opening find switches to split so the hits are on screen
       await expect(editorPage.locator('.pane-source')).toBeHidden()

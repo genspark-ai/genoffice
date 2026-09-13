@@ -72,6 +72,8 @@ export const ru = {
   aiToolClarifySkipped: 'Опрос пропущен',
   aiToolPlan: 'Бриф подтверждён ({n} разделов)',
   aiToolPlanRejected: 'Бриф не подтверждён',
+  aiToolPlanFailed: 'Не удалось составить бриф',
+  aiDraftingBrief: 'Составляем бриф…',
   aiToolWritePage: 'Страница создана',
   aiToolWritePageFailed: 'Не удалось создать страницу',
   aiToolWritePagePartial: 'Страница создана частично',

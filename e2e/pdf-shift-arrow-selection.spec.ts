@@ -46,7 +46,7 @@ test('Shift+ArrowRight extends the text selection instead of flipping the page',
     openFile: pdfPath,
   })
   try {
-    const editorPage = await waitForPageWithUrl(launched.app, 'pdf/out')
+    const editorPage = await waitForPageWithUrl(launched.app, '://pdf/')
     await expect(editorPage.locator('.textLayer span').first()).toBeVisible({ timeout: 30_000 })
 
     // select up to "...000003", like a finished mouse drag that stopped short

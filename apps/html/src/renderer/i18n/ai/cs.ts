@@ -72,6 +72,8 @@ export const cs = {
   aiToolClarifySkipped: 'Dotazník přeskočen',
   aiToolPlan: 'Zadání potvrzeno ({n} sekcí)',
   aiToolPlanRejected: 'Zadání nebylo potvrzeno',
+  aiToolPlanFailed: 'Zadání se nepodařilo připravit',
+  aiDraftingBrief: 'Připravuje se zadání…',
   aiToolWritePage: 'Stránka vygenerována',
   aiToolWritePageFailed: 'Generování stránky se nezdařilo',
   aiToolWritePagePartial: 'Stránka vygenerována částečně',

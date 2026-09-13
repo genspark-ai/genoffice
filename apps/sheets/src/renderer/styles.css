@@ -197,6 +197,7 @@
   src:
     local('Aptos'), local('Calibri'), local('Carlito'),
     url('@genoffice/ui/fonts/Carlito-Regular.ttf'), local('Helvetica Neue'), local('Arial');
+  font-display: block;
 }
 
 @font-face {
@@ -205,6 +206,7 @@
   src:
     local('Aptos Bold'), local('Calibri Bold'), local('Carlito Bold'),
     url('@genoffice/ui/fonts/Carlito-Bold.ttf'), local('Helvetica Neue Bold'), local('Arial Bold');
+  font-display: block;
 }
 
 @font-face {
@@ -214,6 +216,7 @@
     local('Aptos Italic'), local('Calibri Italic'), local('Carlito Italic'),
     url('@genoffice/ui/fonts/Carlito-Italic.ttf'), local('Helvetica Neue Italic'),
     local('Arial Italic');
+  font-display: block;
 }
 
 @font-face {
@@ -224,6 +227,7 @@
     local('Aptos Bold Italic'), local('Calibri Bold Italic'), local('Carlito Bold Italic'),
     url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf'), local('Helvetica Neue Bold Italic'),
     local('Arial Bold Italic');
+  font-display: block;
 }
 
 /* 'Aptos Narrow' lives in CELL_FONT_ALIASES (cell-font-fallback.ts): a CSS
@@ -233,18 +237,21 @@
 @font-face {
   font-family: Carlito;
   src: local('Carlito'), url('@genoffice/ui/fonts/Carlito-Regular.ttf');
+  font-display: block;
 }
 
 @font-face {
   font-family: Carlito;
   font-weight: bold;
   src: local('Carlito Bold'), url('@genoffice/ui/fonts/Carlito-Bold.ttf');
+  font-display: block;
 }
 
 @font-face {
   font-family: Carlito;
   font-style: italic;
   src: local('Carlito Italic'), url('@genoffice/ui/fonts/Carlito-Italic.ttf');
+  font-display: block;
 }
 
 @font-face {
@@ -252,6 +259,7 @@
   font-weight: bold;
   font-style: italic;
   src: local('Carlito Bold Italic'), url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
+  font-display: block;
 }
 
 @font-face {
@@ -259,6 +267,7 @@
   src:
     local('Calibri'), local('Carlito'), url('@genoffice/ui/fonts/Carlito-Regular.ttf'),
     local('Helvetica Neue'), local('Arial');
+  font-display: block;
 }
 
 @font-face {
@@ -267,6 +276,7 @@
   src:
     local('Calibri Bold'), local('Carlito Bold'), url('@genoffice/ui/fonts/Carlito-Bold.ttf'),
     local('Helvetica Neue Bold'), local('Arial Bold');
+  font-display: block;
 }
 
 @font-face {
@@ -275,6 +285,7 @@
   src:
     local('Calibri Italic'), local('Carlito Italic'), url('@genoffice/ui/fonts/Carlito-Italic.ttf'),
     local('Helvetica Neue Italic'), local('Arial Italic');
+  font-display: block;
 }
 
 @font-face {
@@ -285,6 +296,7 @@
     local('Calibri Bold Italic'), local('Carlito Bold Italic'),
     url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf'), local('Helvetica Neue Bold Italic'),
     local('Arial Bold Italic');
+  font-display: block;
 }
 
 /* Hangul-named cell-font aliases ('맑은 고딕', '돋움') live in
@@ -2016,6 +2028,11 @@ textarea:focus {
   box-sizing: border-box;
 }
 
+/* Print snapshot handle: no box of its own, so the float lays out as before. */
+.xlsx-print-visual {
+  display: contents;
+}
+
 .xlsx-chart {
   display: flex;
   flex-direction: column;
@@ -2181,14 +2198,23 @@ textarea:focus {
   flex: 1 1 auto;
 }
 
+/* SVG text sizes in viewBox units; --chart-pt (set per chart from the
+   rendered frame) is one point, so labels stay at Excel's point size on
+   any frame aspect. The *-pt / *-color properties carry the file's txPr;
+   --chart-ink is the figure's readable ink over a dark chart area. */
 .chart-svg text {
-  fill: var(--sheets-chart-label);
-  font-size: 10px;
+  fill: var(--chart-cat-color, var(--chart-ink, var(--sheets-chart-label)));
+  font-size: calc(var(--chart-cat-pt, 9) * var(--chart-pt, 1px));
 }
 
 .chart-svg .axis-label {
-  fill: var(--sheets-chart-label-dim);
-  font-size: 9px;
+  fill: var(--chart-val-color, var(--chart-ink, var(--sheets-chart-label-dim)));
+  font-size: calc(var(--chart-val-pt, 9) * var(--chart-pt, 1px));
+}
+
+.chart-svg .data-label {
+  fill: var(--chart-dlbl-color, var(--chart-ink, var(--sheets-chart-label-dim)));
+  font-size: calc(var(--chart-dlbl-pt, 9) * var(--chart-pt, 1px));
 }
 
 /* Size container: the text below sizes in cq units so it follows the
@@ -2256,6 +2282,12 @@ textarea:focus {
   display: block;
   white-space: pre-wrap;
   line-height: 1.3;
+}
+
+.shape-bullet {
+  display: inline-block;
+  white-space: pre;
+  text-indent: 0;
 }
 
 .shape-editable {
@@ -2605,7 +2637,7 @@ textarea:focus {
 
 .pie-svg .pie-label-outside {
   font-size: 10px;
-  fill: var(--sheets-pie-label-out);
+  fill: var(--chart-ink, var(--sheets-pie-label-out));
 }
 
 /* In-cell sparkline minicharts */
@@ -2880,9 +2912,9 @@ textarea:focus {
   padding: 0 12px;
 }
 
-.axis-title {
-  font-size: 11px;
-  fill: var(--sheets-chart-label);
+.chart-svg .axis-title {
+  font-size: calc(var(--chart-title-pt, 10) * var(--chart-pt, 1px));
+  fill: var(--chart-title-color, var(--chart-ink, var(--sheets-chart-label)));
 }
 
 .chart-legend {
@@ -3527,6 +3559,12 @@ textarea:focus {
 
 .fn-row:hover {
   background: var(--surface-hover);
+}
+
+.fn-syntax {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .fn-row.active {

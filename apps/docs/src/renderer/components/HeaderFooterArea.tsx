@@ -17,13 +17,17 @@ import {
   hfLeadIndentCss,
   hfRowStyle,
   hfSegLeftCss,
-  hfTabSegments,
+  hfTabLeadNeedsStrut,
+  hfTabLines,
+  hfTabOverflowPx,
   hfBoxAnchorEl,
   hfTextBoxClass,
   hfTextBoxStyle,
   hfUsesLegacyHash,
   paraBorderCss,
+  paraBorderPadding,
   type HfStripGeom,
+  type HfTabLayout,
   hfParaLineHeightCss,
   hfStackedSpacingPx,
 } from '../editor/hf-dom'
@@ -31,6 +35,7 @@ import { applyHfText, hfEditText, hfParasOf, PAGE_TOKEN } from '../editor/hf-tex
 import { dkStyleProps } from '../editor/dark-page'
 import { INLINE_RULE_CLASS, inlineRuleStyle } from '../editor/inline-rule'
 import { textColorValue } from '../editor/text-color'
+import { textOutlineCssValue } from '../editor/text-outline'
 import { cssRunFontFamily, fontKerningCss, runLetterSpacingCss } from '../line-metrics'
 
 export interface HfValue {
@@ -58,6 +63,7 @@ function runStyle(run: Run): React.CSSProperties {
   const kerning = fontKerningCss(run)
   if (kerning) style.fontKerning = kerning
   if (run.font || run.fontAscii) style.fontFamily = cssRunFontFamily(run.fontAscii, run.font)
+  if (run.textOutline) style.WebkitTextStroke = textOutlineCssValue(run.textOutline)
   if (run.caps === 'all') style.textTransform = 'uppercase'
   else if (run.caps === 'small') style.fontVariantCaps = 'small-caps'
   else if (run.caps === 'none') {
@@ -81,10 +87,11 @@ function paraStyle(para: HfParagraph): React.CSSProperties {
   }
   // frame placement wins over the paragraph's own jc (mirrors makeGapHfEl)
   if (para.frameXAlign) style.textAlign = para.frameXAlign
-  if (para.shadingFill) {
-    style.backgroundColor = `#${para.shadingFill}`
-    Object.assign(style, dkStyleProps({ background: `#${para.shadingFill}` }))
-  }
+  const shdBg = para.shadingDisplay ?? para.shadingFill
+  if (shdBg) {
+    style.backgroundColor = `#${shdBg}`
+    Object.assign(style, dkStyleProps({ background: `#${shdBg}` }))
+  } else if (para.shadingClear) style.backgroundColor = 'transparent'
   if (para.borders) {
     const line = (side: 't' | 'b' | 'l' | 'r') => paraBorderCss(para.borderLines?.[side])
     const borders: Partial<Record<'t' | 'b' | 'l' | 'r', string>> = {}
@@ -93,7 +100,7 @@ function paraStyle(para: HfParagraph): React.CSSProperties {
     if (para.borders.includes('l')) style.borderLeft = borders.l = line('l')
     if (para.borders.includes('r')) style.borderRight = borders.r = line('r')
     Object.assign(style, dkStyleProps({ borders }))
-    style.padding = '1px 4px'
+    Object.assign(style, paraBorderPadding(para.borders, para.borderLines))
   }
   return style
 }
@@ -180,14 +187,18 @@ export function HeaderFooterArea({
   // preview/export strips lay out like the canvas gaps and the push-down probe
   const strutPt = hfDeclaredStrutPt(paras)
   const hasBoxes = boxGeom != null && paras.some((p) => p.box)
+  const tabOver = Math.max(
+    0,
+    ...paras.map((p) => (p.cells ? 0 : hfTabOverflowPx(hfTabLines(p, display) ?? [], boxGeom))),
+  )
   return (
     <div
       className={`page-hf page-hf-${kind}${editing ? ' page-hf-editing' : ''}${hasBoxes ? ' page-hf-has-boxes' : ''}`}
-      style={
-        strutPt != null
-          ? { fontSize: `min(${strutPt}pt, var(--hf-default-fs, 10.5pt))`, ...style }
-          : style
-      }
+      style={{
+        ...(strutPt != null ? { fontSize: `min(${strutPt}pt, var(--hf-default-fs, 10.5pt))` } : {}),
+        ...(tabOver > 0 ? { ['--hf-tab-over' as string]: `${tabOver.toFixed(1)}px` } : {}),
+        ...style,
+      }}
       data-tip={
         readOnly
           ? undefined
@@ -365,8 +376,8 @@ function HfContent({
       </div>
     ) : (
       (() => {
-        const tabbed = hfTabSegments(para, display)
-        if (!tabbed) {
+        const tabLines = hfTabLines(para, display)
+        if (!tabLines) {
           return (
             <div
               key={i}
@@ -382,20 +393,18 @@ function HfContent({
             </div>
           )
         }
-        const leadIndent = hfLeadIndentCss(tabbed)
-        return (
-          <div
-            key={i}
-            className={`page-hf-para page-hf-tabbed${para.frameXAlign ? ' page-hf-frame' : ''}`}
-            style={{
-              ...paraStyle(para),
-              ...margins(i),
-              ...(tabbed.minHeightPt ? { minHeight: `${tabbed.minHeightPt}pt` } : {}),
-              // tab layout happens in left-aligned space; w:jc becomes an explicit shift
-              textAlign: 'left',
-              ...(leadIndent ? { textIndent: leadIndent } : {}),
-            }}
-          >
+        // tab layout happens in left-aligned space; w:jc becomes an explicit shift
+        const lineStyle = (tabbed: HfTabLayout): React.CSSProperties => {
+          const leadIndent = hfLeadIndentCss(tabbed)
+          return {
+            ...(tabbed.minHeightPt ? { minHeight: `${tabbed.minHeightPt}pt` } : {}),
+            textAlign: 'left',
+            ...(leadIndent ? { textIndent: leadIndent } : {}),
+          }
+        }
+        const lineContent = (tabbed: HfTabLayout) => (
+          <>
+            {hfTabLeadNeedsStrut(tabbed) ? '\u200b' : null}
             {tabbed.lead.map((run, j) => (
               <span key={j} style={runStyle(run)}>
                 {display(run.text)}
@@ -413,6 +422,33 @@ function HfContent({
                   </span>
                 ))}
               </span>
+            ))}
+          </>
+        )
+        const frame = para.frameXAlign ? ' page-hf-frame' : ''
+        if (tabLines.length === 1) {
+          return (
+            <div
+              key={i}
+              className={`page-hf-para page-hf-tabbed${frame}`}
+              style={{ ...paraStyle(para), ...margins(i), ...lineStyle(tabLines[0]) }}
+            >
+              {lineContent(tabLines[0])}
+            </div>
+          )
+        }
+        // a w:br paragraph stacks one positioned line per break inside the
+        // paragraph block (which keeps the spacing and borders)
+        return (
+          <div
+            key={i}
+            className={`page-hf-para${frame}`}
+            style={{ ...paraStyle(para), ...margins(i) }}
+          >
+            {tabLines.map((tabbed, m) => (
+              <div key={m} className="page-hf-tabbed" style={lineStyle(tabbed)}>
+                {lineContent(tabbed)}
+              </div>
             ))}
           </div>
         )

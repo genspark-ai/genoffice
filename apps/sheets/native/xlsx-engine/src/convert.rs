@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-use calamine::{open_workbook_auto, Data, Reader};
+use calamine::{Data, Reader, open_workbook_auto};
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -63,13 +63,19 @@ pub fn convert_to_xlsx(source: &Path, target: &Path) -> Result<ConvertResult, Si
     add("[Content_Types].xml", &content_types_xml(names.len()))?;
     add("_rels/.rels", ROOT_RELS)?;
     add("xl/workbook.xml", &workbook_xml(&names))?;
-    add("xl/_rels/workbook.xml.rels", &workbook_rels_xml(names.len()))?;
+    add(
+        "xl/_rels/workbook.xml.rels",
+        &workbook_rels_xml(names.len()),
+    )?;
     add("xl/styles.xml", STYLES_XML)?;
     for (index, xml) in sheet_xmls.iter().enumerate() {
         add(&format!("xl/worksheets/sheet{}.xml", index + 1), xml)?;
     }
     writer.finish()?.sync_all()?;
-    Ok(ConvertResult { sheets: names.len(), cells })
+    Ok(ConvertResult {
+        sheets: names.len(),
+        cells,
+    })
 }
 
 fn worksheet_xml(
@@ -89,7 +95,9 @@ fn worksheet_xml(
         }
     }
     for (position, formula) in formulas {
-        let covered = range.get_value((position.0, position.1)).is_some_and(|v| *v != Data::Empty);
+        let covered = range
+            .get_value((position.0, position.1))
+            .is_some_and(|v| *v != Data::Empty);
         if !covered {
             cells += 1;
             rows.entry(position.0).or_default().push((
@@ -209,12 +217,14 @@ fn workbook_xml(names: &[String]) -> String {
     let sheets: String = names
         .iter()
         .enumerate()
-        .map(|(index, name)| format!(
-            r#"<sheet name="{}" sheetId="{}" r:id="rId{}"/>"#,
-            escape_xml(name),
-            index + 1,
-            index + 1,
-        ))
+        .map(|(index, name)| {
+            format!(
+                r#"<sheet name="{}" sheetId="{}" r:id="rId{}"/>"#,
+                escape_xml(name),
+                index + 1,
+                index + 1,
+            )
+        })
         .collect();
     format!(
         r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -269,7 +279,9 @@ mod tests {
         assert!(result.cells >= 4);
 
         let sheet = read_entry(&target, "xl/worksheets/sheet1.xml");
-        assert!(sheet.contains(r#"<c r="A1" t="inlineStr"><is><t xml:space="preserve">Name &amp; Co</t></is></c>"#));
+        assert!(sheet.contains(
+            r#"<c r="A1" t="inlineStr"><is><t xml:space="preserve">Name &amp; Co</t></is></c>"#
+        ));
         assert!(sheet.contains(r#"<c r="B1"><v>42</v></c>"#));
         assert!(sheet.contains(r#"<c r="B2"><f>B1*2</f>"#));
         let workbook = read_entry(&target, "xl/workbook.xml");

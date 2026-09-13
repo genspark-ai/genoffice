@@ -1,26 +1,80 @@
 // Legacy VML (v:shape / v:group) geometry and color readers.
 import { attrsOf, findChild, type XNode } from './xml-utils'
 import { EMU_PER_PX } from './parse-xml-text'
-import type { Run, TextboxDisplay } from './types'
+import type { HfImage, Run, TextboxDisplay } from './types'
 
-/** VML style="width:189.9pt;height:626pt" dimension → CSS px */
-function vmlStyleDimPx(style: string, key: 'width' | 'height'): number | undefined {
-  const m = new RegExp(`(?:^|;)\\s*${key}:([0-9.]+)(pt|px|in|mm|cm)?`).exec(style)
+/** VML length ("46pt", "16in", "2cm", "12px"; unitless = pt) → CSS px */
+export function vmlLengthPx(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const m = /^\s*(-?[\d.]+)(pt|px|in|mm|cm)?\s*$/.exec(value)
   if (!m) return undefined
   const v = parseFloat(m[1]!)
-  if (!Number.isFinite(v) || v <= 0) return undefined
-  const unit = m[2] ?? 'pt'
-  const px =
-    unit === 'px'
-      ? v
-      : unit === 'in'
-        ? v * 96
-        : unit === 'mm'
-          ? (v / 25.4) * 96
-          : unit === 'cm'
-            ? (v / 2.54) * 96
-            : (v * 96) / 72
-  return Math.round(px)
+  if (!Number.isFinite(v)) return undefined
+  switch (m[2] ?? 'pt') {
+    case 'px':
+      return v
+    case 'in':
+      return v * 96
+    case 'mm':
+      return (v / 25.4) * 96
+    case 'cm':
+      return (v / 2.54) * 96
+    default:
+      return (v * 96) / 72
+  }
+}
+
+/** one declaration of a VML style attribute ("rotation:315;width:4in" → "4in") */
+export function vmlStyleProp(style: string, key: string): string | undefined {
+  return new RegExp(`(?:^|;)\\s*${key}:([^;]+)`).exec(style)?.[1]?.trim()
+}
+
+/** VML style="width:189.9pt;height:626pt" dimension → CSS px */
+export function vmlStyleDimPx(style: string, key: 'width' | 'height'): number | undefined {
+  const px = vmlLengthPx(vmlStyleProp(style, key))
+  return px != null && px > 0 ? Math.round(px) : undefined
+}
+
+/** VML rotation ("315", "-45", "41366637fd" = 1/65536 degree units) → degrees clockwise in (0, 360) */
+export function vmlRotationDeg(style: string): number | undefined {
+  const m = /^(-?[\d.]+)(fd)?$/.exec(vmlStyleProp(style, 'rotation') ?? '')
+  if (!m) return undefined
+  let deg = parseFloat(m[1]!)
+  if (m[2]) deg /= 65536
+  if (!Number.isFinite(deg)) return undefined
+  deg = Math.round((((deg % 360) + 360) % 360) * 100) / 100
+  return deg > 0 ? deg : undefined
+}
+
+/**
+ * position:absolute placement of a VML shape → header/footer float anchor
+ * fields. mso-position-*-relative "text"/"column" is the paragraph box (the
+ * margin box in a header); a keyword alignment wins over the margin offsets.
+ */
+export function vmlFloatAnchor(
+  style: string,
+  out: Pick<HfImage, 'posH' | 'posV' | 'posXPx' | 'posYPx' | 'posHRel' | 'posVRel'>,
+): void {
+  const relH = vmlStyleProp(style, 'mso-position-horizontal-relative')
+  const relV = vmlStyleProp(style, 'mso-position-vertical-relative')
+  out.posHRel = relH === 'page' ? 'page' : 'margin'
+  out.posVRel =
+    relV === 'page' ? 'page' : relV === 'text' || relV === 'line' ? 'paragraph' : 'margin'
+  const posH = vmlStyleProp(style, 'mso-position-horizontal')
+  const posV = vmlStyleProp(style, 'mso-position-vertical')
+  if (posH === 'left' || posH === 'center' || posH === 'right') out.posH = posH
+  else out.posXPx = Math.round(vmlLengthPx(vmlStyleProp(style, 'margin-left')) ?? 0)
+  if (posV === 'top' || posV === 'center' || posV === 'bottom') out.posV = posV
+  else out.posYPx = Math.round(vmlLengthPx(vmlStyleProp(style, 'margin-top')) ?? 0)
+}
+
+/** VML fixed-point or fraction ("32768f" = 0.5, ".5", "1") → number */
+export function vmlFraction(value: string | undefined): number | undefined {
+  const m = /^\s*(-?[\d.]+)(f)?\s*$/.exec(value ?? '')
+  if (!m) return undefined
+  const v = parseFloat(m[1]!)
+  if (!Number.isFinite(v)) return undefined
+  return m[2] ? v / 65536 : v
 }
 
 /** HTML color names VML attributes use ("silver", "blue"…) */
@@ -283,4 +337,191 @@ export function vmlWordArtBox(shape: XNode): TextboxDisplay | null {
   if (/font-style:\s*italic/.test(tpStyle)) run.italic = true
   box.paras.push({ runs: [run], align: 'center' })
   return box
+}
+
+/** the shape element of a VML pict, its shapetype templates stripped */
+function vmlPictShape(pict: string): RegExpExecArray | null {
+  const body = pict.replace(/<v:shapetype\b[\s\S]*?<\/v:shapetype>/g, '')
+  return /<v:(oval|rect|roundrect|shape)\b([^>]*?)(\/?)>([\s\S]*?<\/v:\1>)?/.exec(body)
+}
+
+/** v:shapetype templates of an XML part, by id (shapes point at them with type="#id") */
+export function vmlShapeTypeTable(xml: string): Map<string, Record<string, string>> {
+  const out = new Map<string, Record<string, string>>()
+  for (const m of xml.matchAll(/<v:shapetype\b([^>]*)>/g)) {
+    const a = parseTagAttrs(m[1]!)
+    if (a['id']) out.set(a['id'], a)
+  }
+  return out
+}
+
+/** default geometry of the well-known o:spt ids a shape may carry without its shapetype */
+const VML_SPT_PATHS: Record<string, string> = {
+  '1': 'm,l,21600r21600,l21600,xe',
+  '4': 'm10800,l,10800,10800,21600,21600,10800xe',
+  '5': 'm10800,l,21600r21600,xe',
+  '6': 'm,l,21600r21600,xe',
+  '110': 'm10800,l,10800,10800,21600,21600,10800xe',
+  '202': 'm,l,21600r21600,l21600,xe',
+}
+
+function parseTagAttrs(tag: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const m of tag.matchAll(/([\w:.-]+)="([^"]*)"/g)) out[m[1]!] = m[2]!
+  return out
+}
+
+/**
+ * Textless VML shape (v:oval / v:rect / v:roundrect / straight-path v:shape)
+ * with a solid or linear-gradient fill and stroke → SVG data URL at the
+ * shape's declared size. Attributes and geometry the shape omits come from
+ * the v:shapetype it points at (in the pict or in `shapeTypes`). Bails (null)
+ * on groups, pictures, text and curved paths so partial art never renders.
+ */
+export function vmlShapeSvg(
+  pict: string,
+  shapeTypes?: Pick<ReadonlyMap<string, Record<string, string>>, 'get'>,
+): { dataUrl: string; widthPx: number; heightPx: number; style: string } | null {
+  if (/<v:(group|imagedata|textpath|textbox)\b|<w:txbxContent/.test(pict)) return null
+  const m = vmlPictShape(pict)
+  if (!m) return null
+  const [, rawKind, attrText] = m
+  const own = parseTagAttrs(attrText!)
+  const typeId = /^#(.+)$/.exec(own['type'] ?? '')?.[1]
+  const typeAttrs =
+    (typeId && (vmlShapeTypeTable(pict).get(typeId) ?? shapeTypes?.get(typeId))) || {}
+  const a: Record<string, string> = { ...typeAttrs, ...own }
+  const style = own['style'] ?? ''
+  if (/visibility:\s*hidden/.test(style)) return null
+  const w = vmlStyleDimPx(style, 'width')
+  const h = vmlStyleDimPx(style, 'height')
+  if (!w || !h) return null
+  const children = m[4] ?? ''
+  const fillNode = parseTagAttrs(/<v:fill\b([^>]*)>/.exec(children)?.[1] ?? '')
+  const strokeNode = parseTagAttrs(/<v:stroke\b([^>]*)>/.exec(children)?.[1] ?? '')
+  const off = (v: string | undefined) => v === 'f' || v === 'false' || v === '0'
+  const filled = !off(a['filled']) && !off(fillNode['on'])
+  const color1 = vmlColorHex(a['fillcolor']) ?? 'FFFFFF'
+  const color2 = vmlColorHex(fillNode['color2'])
+  const fillType = fillNode['type']
+  if (fillType && fillType !== 'solid' && fillType !== 'gradient') return null
+  const gradient = filled && fillType === 'gradient' && color2 ? vmlGradient(fillNode) : null
+  let defs = ''
+  let fill = 'none'
+  if (filled && gradient) {
+    const stops = gradient.stops
+      .map(([o, c]) => `<stop offset="${o}" stop-color="#${c === 1 ? color1 : color2}"/>`)
+      .join('')
+    defs = `<defs><linearGradient id="g" x1="${gradient.x1}" y1="${gradient.y1}" x2="${gradient.x2}" y2="${gradient.y2}">${stops}</linearGradient></defs>`
+    fill = 'url(#g)'
+  } else if (filled) fill = `#${color1}`
+  const opacity = vmlFraction(fillNode['opacity'])
+  const stroked = !off(a['stroked']) && !off(strokeNode['on'])
+  const sw = stroked ? (vmlLengthPx(a['strokeweight']) ?? 1) : 0
+  const paint =
+    ` fill="${fill}"` +
+    (opacity != null && opacity < 1 ? ` fill-opacity="${opacity}"` : '') +
+    (stroked ? ` stroke="#${vmlColorHex(a['strokecolor']) ?? '000000'}" stroke-width="${sw}"` : '')
+  // o:spt 2 / 3 shapes drawn as v:shape keep their preset geometry (the
+  // shapetype's own path is a curve the path converter cannot take)
+  const spt = own['path'] ? undefined : a['o:spt']
+  const kind =
+    rawKind === 'shape' && spt === '3'
+      ? 'oval'
+      : rawKind === 'shape' && spt === '2'
+        ? 'roundrect'
+        : rawKind
+  // the stroke is centered on the geometry edge: inset it so the img box keeps all of it
+  const ix = sw / 2
+  const iw = Math.max(0, w - sw)
+  const ih = Math.max(0, h - sw)
+  let body: string
+  if (kind === 'oval') {
+    body = `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${iw / 2}" ry="${ih / 2}"${paint}/>`
+  } else if (kind === 'rect' || kind === 'roundrect') {
+    // arcsize: corner radius as a fraction of half the shorter side (default 0.2)
+    const arc = kind === 'roundrect' ? (vmlFraction(a['arcsize']) ?? 0.2) : 0
+    const r = Math.round(arc * (Math.min(iw, ih) / 2) * 100) / 100
+    body = `<rect x="${ix}" y="${ix}" width="${iw}" height="${ih}"${r > 0 ? ` rx="${r}"` : ''}${paint}/>`
+  } else {
+    const path = a['path'] ?? VML_SPT_PATHS[a['o:spt'] ?? '']
+    const cs = /^\s*(-?\d+)[,\s]+(-?\d+)/.exec(a['coordsize'] ?? '21600,21600')
+    const d =
+      path && cs ? vmlPathToNormD(path, parseInt(cs[1]!, 10), parseInt(cs[2]!, 10)) : undefined
+    if (!d) return null
+    let axis = 0
+    const placed = d
+      .split(' ')
+      .map((tok) => {
+        const n = Number(tok)
+        if (!Number.isFinite(n)) {
+          axis = 0
+          return tok
+        }
+        const v = axis++ % 2 === 0 ? ix + n * iw : ix + n * ih
+        return String(Math.round(v * 100) / 100)
+      })
+      .join(' ')
+    body = `<path d="${placed}"${paint}/>`
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">${defs}${body}</svg>`
+  return {
+    dataUrl: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+    widthPx: w,
+    heightPx: h,
+    style,
+  }
+}
+
+/**
+ * v:fill type="gradient" → SVG linearGradient line (bounding-box fractions)
+ * and stops (1 = fillcolor, 2 = color2). VML angles count counterclockwise
+ * from the bottom edge, so angle 0 runs top→bottom with color2 at the top
+ * and fillcolor at the bottom. A focus of ±50% is axial (color2 or fillcolor
+ * in the middle) and, like LibreOffice's import, anything in 25%..75% is
+ * approximated the same way; beyond that a linear fill with swapped ends.
+ */
+function vmlGradient(fillNode: Record<string, string>): {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  stops: Array<[number, 1 | 2]>
+} {
+  const angle = parseFloat(fillNode['angle'] ?? '0') || 0
+  const focus = vmlFraction(fillNode['focus']?.replace('%', '')) ?? 0
+  const f = Math.abs(focus) > 1 ? focus / 100 : focus
+  const rad = ((90 - angle) * Math.PI) / 180
+  const dx = Math.cos(rad) / 2
+  const dy = Math.sin(rad) / 2
+  const r = (v: number) => Math.round(v * 1000) / 1000
+  const line = { x1: r(0.5 - dx), y1: r(0.5 - dy), x2: r(0.5 + dx), y2: r(0.5 + dy) }
+  const axial = Math.abs(f) >= 0.25 && Math.abs(f) <= 0.75
+  if (axial) {
+    const stops: Array<[number, 1 | 2]> =
+      f > 0
+        ? [
+            [0, 1],
+            [0.5, 2],
+            [1, 1],
+          ]
+        : [
+            [0, 2],
+            [0.5, 1],
+            [1, 2],
+          ]
+    return { ...line, stops }
+  }
+  let swap = angle < 0
+  if (Math.abs(f) > 0.5) swap = !swap
+  const stops: Array<[number, 1 | 2]> = swap
+    ? [
+        [0, 1],
+        [1, 2],
+      ]
+    : [
+        [0, 2],
+        [1, 1],
+      ]
+  return { ...line, stops }
 }

@@ -20,7 +20,10 @@ import {
   parseDefaultTextStyle,
   type TextStyleLevels,
 } from './placeholder'
+import { isPresetShapeType } from './preset-shape-types'
+import { nextSlideId } from './slide-ids'
 import {
+  alternateContentBranches,
   generateParagraphXml,
   patchElementFill,
   patchElementPPr,
@@ -38,6 +41,8 @@ import {
   readSlideHiddenXml,
   readSlideTransitionXml,
   removeSlideBackgroundXml,
+  topLevelChildren,
+  type FillPatch,
   type GradientFillPatch,
   type SlideTransitionKind,
   type StrokePatch,
@@ -53,7 +58,7 @@ import {
 import { BLANK_SLIDE_XML } from './blank'
 import { escapeXmlAttr } from './xml-utils'
 import { elementSpid } from './animation'
-import { stripEmbeddedFonts } from './embedded-fonts'
+import { stripStaleEmbeddedFonts } from './embedded-fonts'
 import { ensureCreationId, matchesElementRef } from './identity'
 import { listMasterParts, parseMasterPart } from './master-edit'
 import type {
@@ -337,15 +342,15 @@ function parseSlideFromArchive(archive: PackageArchive, slidePath: string): Slid
     }
   }
   if (layoutXml) {
-    ctx.layoutPlaceholders = parsePlaceholderMap(layoutXml, ctx.theme)
-    ctx.layoutBg = layoutXml
     if (chain.layoutPath) ctx.layoutMediaRels = partMediaRels(archive, chain.layoutPath)
+    ctx.layoutPlaceholders = parsePlaceholderMap(layoutXml, ctx.theme, ctx.layoutMediaRels)
+    ctx.layoutBg = layoutXml
   }
   if (masterXml) {
-    ctx.masterPlaceholders = parsePlaceholderMap(masterXml, ctx.theme)
-    ctx.masterTextStyles = parseMasterTextStyles(masterXml, ctx.theme)
-    ctx.masterBg = masterXml
     if (chain.masterPath) ctx.masterMediaRels = partMediaRels(archive, chain.masterPath)
+    ctx.masterPlaceholders = parsePlaceholderMap(masterXml, ctx.theme, ctx.masterMediaRels)
+    ctx.masterTextStyles = parseMasterTextStyles(masterXml, ctx.theme, ctx.masterMediaRels)
+    ctx.masterBg = masterXml
   }
   // presentation.xml <p:defaultTextStyle>: base text defaults for non-placeholder shapes
   const presXml = archive.readText('ppt/presentation.xml')
@@ -737,14 +742,7 @@ function slideIsDirty(s: Slide): boolean {
 
 function buildZip(opened: OpenedPptx): JSZip {
   const { deck, archive } = opened
-  // Embedded-font subsets can't be re-generated after a text edit (MicroType
-  // Express needs a licensed compressor), and WPS honors a stale subset
-  // strictly: glyphs it doesn't cover render as invisible text while the in-app
-  // system-font fallback shows them fine. Once any content edit lands, strip
-  // the embedding so every viewer falls back to system fonts.
-  if (deck.slides.some((s) => s.structureDirty || s.elements.some((e) => e.dirty))) {
-    stripEmbeddedFonts(archive)
-  }
+  stripStaleEmbeddedFonts(deck, archive)
   const dirtyByPath = new Map<string, Slide>()
   for (const s of deck.slides) {
     if (slideIsDirty(s)) dirtyByPath.set(s.path, s)
@@ -777,6 +775,37 @@ export function patchSlideXml(slide: Slide): string {
   return parts.join('')
 }
 
+/**
+ * Apply a byte patch to an element's own XML. An element anchored to a whole
+ * <mc:AlternateContent> block was modelled from one branch, so the patch lands
+ * inside that branch only; spPr-level patches (`mirror`) also go to sibling
+ * branches of the same tag so PowerPoint, which renders the Choice, shows the
+ * same box/fill/stroke as our Fallback-based renderer. Text patches never
+ * mirror: a Choice body may be math or another vocabulary.
+ */
+function patchAnchorXml(
+  el: SlideElement,
+  xml: string,
+  patch: (xml: string) => string,
+  mirror = false,
+): string {
+  const branches = alternateContentBranches(xml)
+  if (!branches) return patch(xml)
+  const fromFallback = el.type === 'text' || el.type === 'shape' || el.type === 'picture'
+  const own =
+    (fromFallback
+      ? branches.find((b) => b.fallback)
+      : branches.find((b) => !b.fallback && b.tag === 'p:graphicFrame')) ?? branches[0]!
+  let out = ''
+  let cursor = 0
+  for (const b of branches) {
+    if (b !== own && !(mirror && b.tag === own.tag)) continue
+    out += xml.slice(cursor, b.start) + patch(xml.slice(b.start, b.end))
+    cursor = b.end
+  }
+  return out + xml.slice(cursor)
+}
+
 /** One element's current XML slice (dirty elements patch-regenerated, clean elements original bytes). */
 export function patchedElementXml(el: SlideElement): string {
   // Progressive identity hardening: an element whose bytes are being rewritten
@@ -795,37 +824,43 @@ export function patchedElementXml(el: SlideElement): string {
   }
   let xml = el.anchor.originalXml
   if (el.dirty && (el.type === 'text' || el.type === 'shape')) {
-    xml = patchTextElementXml(el as TextElement, xml)
+    xml = patchAnchorXml(el, xml, (x) => patchTextElementXml(el as TextElement, x))
   }
   // Surgical paragraph-property patch (run bytes untouched); paragraph count mismatch (rare) falls back to a full rebuild
   if (el.dirtyPPr && (el.type === 'text' || el.type === 'shape') && (el as TextElement).text) {
     const t = el as TextElement
-    xml = patchElementPPr(t, xml, el.dirtyPPr) ?? rebuildTxBody(t, xml)
+    const dirty = el.dirtyPPr
+    xml = patchAnchorXml(el, xml, (x) => patchElementPPr(t, x, dirty) ?? rebuildTxBody(t, x))
   }
   // graphicFrame (table/chart/passthrough) uses the p:xfrm patch, everything else a:xfrm
   if (el.dirtyTransform) {
-    xml = patchElementXfrm(el, xml)
+    xml = patchAnchorXml(el, xml, (x) => patchElementXfrm(el, x), true)
   }
   if (el.dirtyFill && (el.type === 'text' || el.type === 'shape')) {
     const fill = (el as TextElement).fill
-    if (fill?.type === 'solid') xml = patchElementFill(xml, fill.color)
-    else if (fill?.type === 'none') xml = patchElementFill(xml, 'none')
-    else if (fill?.type === 'gradient') {
-      xml = patchElementFill(xml, {
-        stops: fill.stops,
-        ...(fill.angle != null ? { angle: fill.angle } : {}),
-        ...(fill.path ? { path: fill.path } : {}),
-        ...(fill.path && fill.fillTo ? { fillTo: fill.fillTo } : {}),
-      })
-    }
+    const patch: FillPatch | null =
+      fill?.type === 'solid'
+        ? fill.color
+        : fill?.type === 'none'
+          ? 'none'
+          : fill?.type === 'gradient'
+            ? {
+                stops: fill.stops,
+                ...(fill.angle != null ? { angle: fill.angle } : {}),
+                ...(fill.path ? { path: fill.path } : {}),
+                ...(fill.path && fill.fillTo ? { fillTo: fill.fillTo } : {}),
+              }
+            : null
+    if (patch !== null) xml = patchAnchorXml(el, xml, (x) => patchElementFill(x, patch), true)
   }
   if (el.dirtyStroke && (el.type === 'text' || el.type === 'shape' || el.type === 'picture')) {
     const stroke = (el as TextElement).stroke
-    xml = patchElementStroke(xml, stroke ? modelStrokeToPatch(stroke) : null)
+    const patch = stroke ? modelStrokeToPatch(stroke) : null
+    xml = patchAnchorXml(el, xml, (x) => patchElementStroke(x, patch), true)
   }
   if (el.dirtySrcRect && el.type === 'picture') {
     const pic = el as import('./types').PictureElement
-    xml = patchPictureSrcRect(xml, pic.srcRect ?? null)
+    xml = patchAnchorXml(el, xml, (x) => patchPictureSrcRect(x, pic.srcRect ?? null), true)
   }
   return xml
 }
@@ -908,7 +943,10 @@ function imageRelFor(archive: PackageArchive, slide: Slide, mediaPath: string): 
   const relXml = `<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${target}"/>`
   archive.entries.set(
     relsPath,
-    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+    Buffer.from(
+      rels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
   )
   return rid
 }
@@ -987,17 +1025,22 @@ function slideInheritanceCtx(archive: PackageArchive, slidePath: string) {
     }
   }
   const presXml = archive.readText('ppt/presentation.xml')
+  const masterMediaRels = chain.masterPath ? partMediaRels(archive, chain.masterPath) : undefined
   return {
     layoutPath: chain.layoutPath,
     masterPath: chain.masterPath,
     layoutXml,
     masterXml,
     theme,
-    masterPlaceholders: masterXml ? parsePlaceholderMap(masterXml, theme) : undefined,
-    masterTextStyles: masterXml ? parseMasterTextStyles(masterXml, theme) : undefined,
+    masterPlaceholders: masterXml
+      ? parsePlaceholderMap(masterXml, theme, masterMediaRels)
+      : undefined,
+    masterTextStyles: masterXml
+      ? parseMasterTextStyles(masterXml, theme, masterMediaRels)
+      : undefined,
     defaultTextStyle: presXml ? parseDefaultTextStyle(presXml, theme) : undefined,
     layoutMediaRels: chain.layoutPath ? partMediaRels(archive, chain.layoutPath) : undefined,
-    masterMediaRels: chain.masterPath ? partMediaRels(archive, chain.masterPath) : undefined,
+    masterMediaRels,
     themeMediaRels: chain.themePath ? partMediaRels(archive, chain.themePath) : undefined,
   }
 }
@@ -1030,7 +1073,7 @@ export function editPictureSrcRect(
  * fill, outline, and text. Byte surgery baked directly into originalXml.
  */
 export function setShapePresetGeometry(slide: Slide, elementId: string, prst: string): boolean {
-  if (!/^[A-Za-z0-9]+$/.test(prst)) return false
+  if (!isPresetShapeType(prst)) return false
   const el = slide.elements.find((e) => e.id === elementId)
   if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
   const xml = swapGeometryXml(patchedElementXml(el), prst)
@@ -1306,10 +1349,17 @@ export function setElementEffects(slide: Slide, elementId: string, patch: Effect
 
   // Existing children (whole-element matches), keyed by local name
   const children = new Map<string, string>()
-  const lstM = /<a:effectLst\b[^>]*\/>|<a:effectLst\b[^>]*>([\s\S]*?)<\/a:effectLst>/.exec(spPr)
-  if (lstM?.[1]) {
+  // spPr's OWN children: a:ln / a:blip may carry an effectLst/extLst of their own
+  const spPrInnerStart = spPr.indexOf('>') + 1
+  const spPrInnerEnd = spPr.lastIndexOf('</p:spPr>')
+  const direct = topLevelChildren(spPr, spPrInnerStart, spPrInnerEnd)
+  const lst = direct.find((c) => c.name === 'a:effectLst')
+  const lstInner = lst
+    ? /^<a:effectLst\b[^>]*>([\s\S]*)<\/a:effectLst>$/.exec(spPr.slice(lst.start, lst.end))?.[1]
+    : undefined
+  if (lstInner) {
     const childRe = /<a:(\w+)\b(?:[^>]*?\/>|[^>]*>[\s\S]*?<\/a:\1>)/g
-    for (let m = childRe.exec(lstM[1]); m; m = childRe.exec(lstM[1])) children.set(m[1]!, m[0])
+    for (let m = childRe.exec(lstInner); m; m = childRe.exec(lstInner)) children.set(m[1]!, m[0])
   }
 
   if (patch.shadow !== undefined) {
@@ -1378,12 +1428,14 @@ export function setElementEffects(slide: Slide, elementId: string, patch: Effect
     .map(([, frag]) => frag)
     .join('')
   const rebuilt = inner ? `<a:effectLst>${inner}</a:effectLst>` : ''
-  if (lstM) {
-    spPr = spPr.slice(0, lstM.index) + rebuilt + spPr.slice(lstM.index + lstM[0].length)
+  if (lst) {
+    spPr = spPr.slice(0, lst.start) + rebuilt + spPr.slice(lst.end)
   } else if (rebuilt) {
     // schema order: effectLst sits after ln, before scene3d/sp3d/extLst
-    const anchorM = /<a:(?:scene3d|sp3d|extLst)\b/.exec(spPr)
-    const at = anchorM ? anchorM.index : spPr.lastIndexOf('</p:spPr>')
+    const anchor = direct.find(
+      (c) => c.name === 'a:scene3d' || c.name === 'a:sp3d' || c.name === 'a:extLst',
+    )
+    const at = anchor ? anchor.start : spPrInnerEnd
     spPr = spPr.slice(0, at) + rebuilt + spPr.slice(at)
   }
   xml = xml.slice(0, spPrM.index) + spPr + xml.slice(spPrM.index + spPrM[0].length)
@@ -1488,7 +1540,12 @@ export function setElementFill(
     if (!patchGroupChildXml(grp, child, (xml) => patchElementFill(xml, fill))) return false
     ;(child as TextElement).fill = model
   } else if (el) {
-    el.anchor.originalXml = patchElementFill(patchedElementXml(el), fill)
+    el.anchor.originalXml = patchAnchorXml(
+      el,
+      patchedElementXml(el),
+      (x) => patchElementFill(x, fill),
+      true,
+    )
     ;(el as TextElement).fill = model
     el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
     el.dirtyPPr = undefined
@@ -1564,7 +1621,12 @@ export function setElementImageFill(
     if (!patchGroupChildXml(grp, child, (xml) => patchElementFill(xml, { rawFillXml }))) return null
     ;(child as TextElement).fill = model
   } else if (el) {
-    const xml = patchElementFill(patchedElementXml(el), { rawFillXml })
+    const xml = patchAnchorXml(
+      el,
+      patchedElementXml(el),
+      (x) => patchElementFill(x, { rawFillXml }),
+      true,
+    )
     el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
     el.dirtyPPr = undefined
     el.anchor.originalXml = xml
@@ -1691,7 +1753,13 @@ function registerNewSlide(opened: OpenedPptx, sourceIndex: number, newPath: stri
   const ct = archive.readText(ctPath)
   if (ct) {
     const override = `<Override PartName="/${newPath}" ContentType="${SLIDE_CONTENT_TYPE}"/>`
-    archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', `${override}</Types>`), 'utf8'))
+    archive.entries.set(
+      ctPath,
+      Buffer.from(
+        ct.replace('</Types>', () => `${override}</Types>`),
+        'utf8',
+      ),
+    )
   }
 
   const presRelsPath = 'ppt/_rels/presentation.xml.rels'
@@ -1705,14 +1773,13 @@ function registerNewSlide(opened: OpenedPptx, sourceIndex: number, newPath: stri
   const relXml = `<Relationship Id="${newRid}" Type="${SLIDE_REL_TYPE}" Target="${newPath.slice('ppt/'.length)}"/>`
   archive.entries.set(
     presRelsPath,
-    Buffer.from(presRels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+    Buffer.from(
+      presRels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
   )
 
-  let maxSldId = 255
-  for (const m of pres.matchAll(/<p:sldId\s[^>]*\bid="(\d+)"/g)) {
-    maxSldId = Math.max(maxSldId, Number(m[1]))
-  }
-  const newSldId = `<p:sldId id="${maxSldId + 1}" r:id="${newRid}"/>`
+  const newSldId = `<p:sldId id="${nextSlideId(pres)}" r:id="${newRid}"/>`
   // Insert after the source slide's sldId; append to the end of the list when not found
   const srcRid = [...archive.readRels(presPath).values()].find(
     (r) => resolveTarget(presPath, r.target) === src.path,
@@ -1721,15 +1788,12 @@ function registerNewSlide(opened: OpenedPptx, sourceIndex: number, newPath: stri
     ? new RegExp(`<p:sldId\\s[^>]*r:id="${srcRid}"[^>]*/>`).exec(pres)?.[0]
     : undefined
   const nextPres = srcTag
-    ? pres.replace(srcTag, `${srcTag}${newSldId}`)
-    : pres.replace('</p:sldIdLst>', `${newSldId}</p:sldIdLst>`)
+    ? pres.replace(srcTag, () => `${srcTag}${newSldId}`)
+    : pres.replace('</p:sldIdLst>', () => `${newSldId}</p:sldIdLst>`)
   archive.entries.set(presPath, Buffer.from(nextPres, 'utf8'))
 
   const slide = parseSlideFromArchive(archive, newPath)
   if (!slide) return null
-  // A new slide can carry text the embedded-font subsets don't cover (they go
-  // stale the moment text changes); structureDirty lets the save strip them.
-  slide.structureDirty = true
   deck.slides.splice(sourceIndex + 1, 0, slide)
   return slide
 }
@@ -1906,9 +1970,15 @@ const MIME_BY_EXT: Record<string, string> = {
 export async function mergeSlideFromPptx(
   target: OpenedPptx,
   sourceBytes: Uint8Array,
+  opts: MergeSlideOptions = {},
 ): Promise<Slide | null> {
   const source = await extractMergeSlideSource(sourceBytes)
-  return source ? mergeSlideFromSource(target, source) : null
+  return source ? mergeSlideFromSource(target, source, opts) : null
+}
+
+export interface MergeSlideOptions {
+  /** Target slide whose layout the merged slide takes (default: the last slide) */
+  layoutFrom?: Slide
 }
 
 /**
@@ -1957,13 +2027,17 @@ export async function extractMergeSlideSource(
 }
 
 /** Sync half of the merge: land an extracted source into the target deck (appended at the end). */
-export function mergeSlideFromSource(target: OpenedPptx, source: MergeSlideSource): Slide | null {
+export function mergeSlideFromSource(
+  target: OpenedPptx,
+  source: MergeSlideSource,
+  opts: MergeSlideOptions = {},
+): Slide | null {
   const { deck, archive } = target
   let slideXml = source.slideXml
   const mediaByPath = new Map(source.media.map((m) => [m.path, m.bytes]))
 
-  // Relative Target of any existing target slide's slideLayout (the appended slide reuses the same layout)
-  const anchorSlide = deck.slides[deck.slides.length - 1]
+  // Relative Target of an existing target slide's slideLayout (the appended slide reuses the same layout)
+  const anchorSlide = opts.layoutFrom ?? deck.slides[deck.slides.length - 1]
   const layoutTarget = anchorSlide
     ? [...archive.readRels(anchorSlide.path).values()].find((r) => r.type.endsWith('/slideLayout'))
         ?.target
@@ -3003,10 +3077,18 @@ export function replaceAllInDeck(
 // ── Paragraph formatting (bullet/line spacing/paragraph spacing/alignment) ──
 
 export interface ParagraphFormatPatch {
-  /** 'char' round bullet / 'number' numbering / 'none' explicitly none */
-  bullet?: 'char' | 'number' | 'none'
+  /** 'char' round bullet / 'number' numbering / 'blip' picture / 'none' explicitly none */
+  bullet?: 'char' | 'number' | 'blip' | 'none'
+  /** buAutoNum scheme (ST_TextAutonumberScheme) with bullet: 'number'; alone it re-schemes numbered paragraphs */
+  numType?: string
+  /** First number of the sequence; alone it only touches numbered paragraphs */
+  startAt?: number
+  /** Picture bullet already landed in the package (media path + slide rId), with bullet: 'blip' */
+  bulletBlip?: { mediaRef: string; blipEmbedId: string }
   /** Custom bullet character (with bullet: 'char'; defaults to '•') */
   bulletChar?: string
+  /** <a:buFont> for the character (PowerPoint's gallery pairs Wingdings/Courier codes with their font) */
+  bulletFont?: string
   /** Bullet hanging indent (EMU); alone it adjusts existing bullets' indent */
   bulletHangEmu?: number
   /** Bullet size (% of text size, 100 = same); alone it only touches bulleted paragraphs */
@@ -3025,8 +3107,8 @@ export interface ParagraphFormatPatch {
   indentDelta?: 1 | -1
 }
 
-/** PowerPoint default bullet hanging indent (0.25in = 228600 EMU) */
-const BULLET_HANG_EMU = 228600
+/** Hanging indent PowerPoint writes when bulleting a plain text box (0.3125in) */
+const BULLET_HANG_EMU = 285750
 
 /**
  * Apply a paragraph-format patch to model paragraphs in place. Exported for
@@ -3054,17 +3136,36 @@ export function applyParagraphFormat(
         mark('indent')
         dirty.indents = true
       } else {
-        // Keep the existing bullet's color/size/font when only the kind or glyph changes
+        // Keep the existing bullet's color/size when only the kind or glyph changes; the
+        // font follows the glyph (a Wingdings code picked from the gallery brings its font,
+        // a plain character drops a stale symbol font)
         const prev = p.bullet && p.bullet.type !== 'none' ? p.bullet : undefined
         const kept = {
           ...(prev?.color ? { color: prev.color } : {}),
+          ...(prev?.colorNodeXml ? { colorNodeXml: prev.colorNodeXml } : {}),
           ...(prev?.sizePct != null ? { sizePct: prev.sizePct } : {}),
-          ...(prev?.font ? { font: prev.font } : {}),
+          ...(prev?.sizePt != null ? { sizePt: prev.sizePt } : {}),
         }
-        p.bullet =
-          patch.bullet === 'number'
-            ? { type: 'number', numType: 'arabicPeriod', ...kept }
-            : { type: 'char', char: patch.bulletChar ?? '•', ...kept }
+        const font = patch.bulletChar ? patch.bulletFont : (patch.bulletFont ?? prev?.font)
+        if (patch.bullet === 'number') {
+          const prevNum = prev?.type === 'number' ? prev : undefined
+          const startAt = patch.startAt ?? prevNum?.startAt
+          p.bullet = {
+            type: 'number',
+            numType: patch.numType ?? prevNum?.numType ?? 'arabicPeriod',
+            ...(startAt != null ? { startAt } : {}),
+            ...kept,
+          }
+        } else if (patch.bullet === 'blip' && patch.bulletBlip) {
+          p.bullet = { type: 'blip', ...patch.bulletBlip, ...kept }
+        } else {
+          p.bullet = {
+            type: 'char',
+            char: patch.bulletChar ?? '•',
+            ...kept,
+            ...(font ? { font } : {}),
+          }
+        }
         // Add the default hanging indent when absent (stepped by level);
         // an explicit bulletHangEmu always re-applies
         const hang = patch.bulletHangEmu ?? BULLET_HANG_EMU
@@ -3089,10 +3190,22 @@ export function applyParagraphFormat(
         dirty.indents = true
       }
     }
+    if (!patch.bullet && (patch.numType != null || patch.startAt != null)) {
+      // Standalone scheme / start number: only touches numbered paragraphs
+      if (p.bullet?.type === 'number') {
+        if (patch.numType != null) p.bullet.numType = patch.numType
+        if (patch.startAt != null) p.bullet.startAt = patch.startAt
+        mark('bullet')
+        dirty.bullet = true
+      }
+    }
     if (patch.bulletSizePct != null || patch.bulletColor) {
       // Standalone size/color adjustment: only touches paragraphs that render a bullet
       if (p.bullet && p.bullet.type !== 'none') {
-        if (patch.bulletSizePct != null) p.bullet.sizePct = patch.bulletSizePct
+        if (patch.bulletSizePct != null) {
+          p.bullet.sizePct = patch.bulletSizePct
+          delete p.bullet.sizePt
+        }
         if (patch.bulletColor) {
           p.bullet.color = patch.bulletColor
           // a user color replaces the captured theme node, else generate re-emits the old schemeClr
@@ -4088,16 +4201,22 @@ export interface GroupChildSlice {
 /** Direct child slices of the group XML (document order; a nested group's inner elements are not double-counted). */
 export function groupChildSlices(grpXml: string): GroupChildSlice[] {
   // The content region starts after the group's own </p:grpSpPr> (preceded by the group's nv/grpSpPr)
-  const prEnd = grpXml.indexOf('</p:grpSpPr>')
-  let pos = prEnd >= 0 ? prEnd + '</p:grpSpPr>'.length : 0
-  const openRe = /<p:(sp|pic|grpSp|graphicFrame|cxnSp)(?=[\s/>])/g
+  const prM = /<p:grpSpPr\b[^>]*\/>|<\/p:grpSpPr>/.exec(grpXml)
+  let pos = prM ? prM.index + prM[0].length : 0
+  const openRe = /<(p:(?:sp|pic|grpSp|graphicFrame|cxnSp)|mc:AlternateContent)(?=[\s/>])/g
   const slices: GroupChildSlice[] = []
   for (;;) {
     openRe.lastIndex = pos
     const m = openRe.exec(grpXml)
     if (!m) break
-    const end = elementEnd(grpXml, m.index, `p:${m[1]}`)
+    const end = elementEnd(grpXml, m.index, m[1]!)
     if (end < 0) break
+    // a markup-compatibility block is one child modelled from one branch; never edit its
+    // branches as if they were two shapes
+    if (m[1] === 'mc:AlternateContent') {
+      pos = end
+      continue
+    }
     const xml = grpXml.slice(m.index, end)
     const nvId = /<p:cNvPr\b[^>]*\bid="([^"]+)"/.exec(xml)?.[1]
     slices.push({ start: m.index, end, xml, ...(nvId != null ? { nvId } : {}) })

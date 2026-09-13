@@ -1,6 +1,14 @@
 export const strings = {
   zh: {
     aiToolReadFm: '读取文档属性',
+    aiToolWriteDoc: '撰写文档',
+    aiToolWriteDocFailed: '文档撰写失败',
+    aiToolWriteDocPartial: '文档只撰写了一部分',
+    aiWritingDocument: '正在撰写文档 · {blocks} 块',
+    aiPartialTitle: '内容只生成了一部分',
+    aiPartialBody: '已收到 {blocks} 个内容块，生成中断了。采用这部分，还是放弃？',
+    aiPartialAdopt: '采用',
+    aiPartialDiscard: '放弃',
     aiToolSetFm: '更新文档属性',
     aiScopeSelection: '已选中 {words} 字',
     aiScopeSelectionTip: '改写类指令默认只作用于选中内容;点击预览',
@@ -183,6 +191,15 @@ export const strings = {
   },
   en: {
     aiToolReadFm: 'Read document properties',
+    aiToolWriteDoc: 'Wrote the content',
+    aiToolWriteDocFailed: 'Writing failed',
+    aiToolWriteDocPartial: 'Wrote part of the content',
+    aiWritingDocument: 'Writing the document · {blocks} blocks',
+    aiPartialTitle: 'Only part of the content was written',
+    aiPartialBody:
+      '{blocks} blocks arrived before the writing stopped. Keep this part or discard it?',
+    aiPartialAdopt: 'Keep',
+    aiPartialDiscard: 'Discard',
     aiToolSetFm: 'Update document properties',
     aiScopeSelection: 'Selected: {words} words',
     aiScopeSelectionTip:
@@ -370,6 +387,15 @@ export const strings = {
   },
   ja: {
     aiToolReadFm: 'ドキュメントのプロパティを読み取り',
+    aiToolWriteDoc: '本文を作成しました',
+    aiToolWriteDocFailed: '本文の作成に失敗しました',
+    aiToolWriteDocPartial: '本文の一部を作成しました',
+    aiWritingDocument: '文書を作成中 · {blocks} ブロック',
+    aiPartialTitle: '本文の一部しか作成されませんでした',
+    aiPartialBody:
+      '{blocks} ブロックを受信した時点で作成が中断しました。この部分を採用しますか、破棄しますか？',
+    aiPartialAdopt: '採用',
+    aiPartialDiscard: '破棄',
     aiToolSetFm: 'ドキュメントのプロパティを更新',
     aiScopeSelection: '選択中: {words} 文字',
     aiScopeSelectionTip: '書き換え系の指示は既定で選択範囲にのみ適用されます。クリックでプレビュー',
@@ -555,6 +581,15 @@ export const strings = {
   },
   ko: {
     aiToolReadFm: '문서 속성 읽기',
+    aiToolWriteDoc: '본문을 작성했습니다',
+    aiToolWriteDocFailed: '본문 작성 실패',
+    aiToolWriteDocPartial: '본문 일부를 작성했습니다',
+    aiWritingDocument: '문서 작성 중 · {blocks}개 블록',
+    aiPartialTitle: '본문이 일부만 작성되었습니다',
+    aiPartialBody:
+      '{blocks}개 블록을 받은 뒤 작성이 중단되었습니다. 이 부분을 사용할까요, 버릴까요?',
+    aiPartialAdopt: '사용',
+    aiPartialDiscard: '버리기',
     aiToolSetFm: '문서 속성 업데이트',
     aiScopeSelection: '선택됨: {words}자',
     aiScopeSelectionTip:
@@ -741,6 +776,15 @@ export const strings = {
   },
   fr: {
     aiToolReadFm: 'Lecture des propriétés du document',
+    aiToolWriteDoc: 'Contenu rédigé',
+    aiToolWriteDocFailed: 'Échec de la rédaction',
+    aiToolWriteDocPartial: 'Contenu partiellement rédigé',
+    aiWritingDocument: 'Rédaction du document · {blocks} blocs',
+    aiPartialTitle: "Le contenu n'a été rédigé qu'en partie",
+    aiPartialBody:
+      "{blocks} blocs sont arrivés avant l'arrêt de la rédaction. Conserver cette partie ou l'abandonner ?",
+    aiPartialAdopt: 'Conserver',
+    aiPartialDiscard: 'Abandonner',
     aiToolSetFm: 'Mise à jour des propriétés du document',
     aiScopeSelection: 'Sélection : {words} mots',
     aiScopeSelectionTip:
@@ -932,6 +976,15 @@ export const strings = {
   },
   de: {
     aiToolReadFm: 'Dokumenteigenschaften lesen',
+    aiToolWriteDoc: 'Inhalt geschrieben',
+    aiToolWriteDocFailed: 'Schreiben fehlgeschlagen',
+    aiToolWriteDocPartial: 'Inhalt teilweise geschrieben',
+    aiWritingDocument: 'Dokument wird geschrieben · {blocks} Blöcke',
+    aiPartialTitle: 'Der Inhalt wurde nur teilweise geschrieben',
+    aiPartialBody:
+      '{blocks} Blöcke sind angekommen, bevor das Schreiben abbrach. Diesen Teil behalten oder verwerfen?',
+    aiPartialAdopt: 'Behalten',
+    aiPartialDiscard: 'Verwerfen',
     aiToolSetFm: 'Dokumenteigenschaften aktualisieren',
     aiScopeSelection: 'Ausgewählt: {words} Wörter',
     aiScopeSelectionTip:
@@ -1122,6 +1175,15 @@ export const strings = {
   },
   es: {
     aiToolReadFm: 'Leer propiedades del documento',
+    aiToolWriteDoc: 'Contenido redactado',
+    aiToolWriteDocFailed: 'Falló la redacción',
+    aiToolWriteDocPartial: 'Contenido redactado parcialmente',
+    aiWritingDocument: 'Redactando el documento · {blocks} bloques',
+    aiPartialTitle: 'Solo se redactó parte del contenido',
+    aiPartialBody:
+      'Llegaron {blocks} bloques antes de que la redacción se detuviera. ¿Conservar esta parte o descartarla?',
+    aiPartialAdopt: 'Conservar',
+    aiPartialDiscard: 'Descartar',
     aiToolSetFm: 'Actualizar propiedades del documento',
     aiScopeSelection: 'Seleccionado: {words} palabras',
     aiScopeSelectionTip:
@@ -1313,6 +1375,14 @@ export const strings = {
   },
   th: {
     aiToolReadFm: 'อ่านคุณสมบัติเอกสาร',
+    aiToolWriteDoc: 'เขียนเนื้อหาแล้ว',
+    aiToolWriteDocFailed: 'เขียนเนื้อหาไม่สำเร็จ',
+    aiToolWriteDocPartial: 'เขียนเนื้อหาได้บางส่วน',
+    aiWritingDocument: 'กำลังเขียนเอกสาร · {blocks} บล็อก',
+    aiPartialTitle: 'เขียนเนื้อหาได้เพียงบางส่วน',
+    aiPartialBody: 'ได้รับ {blocks} บล็อกก่อนที่การเขียนจะหยุดลง ต้องการเก็บส่วนนี้ไว้หรือทิ้ง?',
+    aiPartialAdopt: 'เก็บไว้',
+    aiPartialDiscard: 'ทิ้ง',
     aiToolSetFm: 'อัปเดตคุณสมบัติเอกสาร',
     aiScopeSelection: 'เลือกแล้ว {words} คำ',
     aiScopeSelectionTip: 'คำสั่งเขียนใหม่จะมีผลกับส่วนที่เลือกโดยค่าเริ่มต้น คลิกเพื่อดูตัวอย่าง',
@@ -1497,6 +1567,15 @@ export const strings = {
   },
   id: {
     aiToolReadFm: 'Baca properti dokumen',
+    aiToolWriteDoc: 'Konten ditulis',
+    aiToolWriteDocFailed: 'Penulisan gagal',
+    aiToolWriteDocPartial: 'Sebagian konten ditulis',
+    aiWritingDocument: 'Menulis dokumen · {blocks} blok',
+    aiPartialTitle: 'Hanya sebagian konten yang ditulis',
+    aiPartialBody:
+      '{blocks} blok diterima sebelum penulisan terhenti. Simpan bagian ini atau buang?',
+    aiPartialAdopt: 'Simpan',
+    aiPartialDiscard: 'Buang',
     aiToolSetFm: 'Perbarui properti dokumen',
     aiScopeSelection: 'Terpilih: {words} kata',
     aiScopeSelectionTip:
@@ -1683,6 +1762,15 @@ export const strings = {
   },
   ru: {
     aiToolReadFm: 'Чтение свойств документа',
+    aiToolWriteDoc: 'Текст написан',
+    aiToolWriteDocFailed: 'Не удалось написать текст',
+    aiToolWriteDocPartial: 'Текст написан частично',
+    aiWritingDocument: 'Пишу документ · {blocks} блоков',
+    aiPartialTitle: 'Текст написан лишь частично',
+    aiPartialBody:
+      'Получено {blocks} блоков, после чего написание прервалось. Оставить эту часть или отменить?',
+    aiPartialAdopt: 'Оставить',
+    aiPartialDiscard: 'Отменить',
     aiToolSetFm: 'Обновление свойств документа',
     aiScopeSelection: 'Выделено: {words} слов',
     aiScopeSelectionTip:
@@ -1870,6 +1958,14 @@ export const strings = {
   },
   ar: {
     aiToolReadFm: 'قراءة خصائص المستند',
+    aiToolWriteDoc: 'تمت كتابة المحتوى',
+    aiToolWriteDocFailed: 'فشلت الكتابة',
+    aiToolWriteDocPartial: 'تمت كتابة جزء من المحتوى',
+    aiWritingDocument: 'جارٍ كتابة المستند · {blocks} كتلة',
+    aiPartialTitle: 'لم تتم كتابة سوى جزء من المحتوى',
+    aiPartialBody: 'وصلت {blocks} كتلة قبل توقف الكتابة. هل تريد الاحتفاظ بهذا الجزء أو تجاهله؟',
+    aiPartialAdopt: 'احتفاظ',
+    aiPartialDiscard: 'تجاهل',
     aiToolSetFm: 'تحديث خصائص المستند',
     aiScopeSelection: 'المحدد: {words} كلمة',
     aiScopeSelectionTip: 'تعليمات إعادة الصياغة تُطبق افتراضيًا على التحديد فقط؛ انقر للمعاينة',
@@ -2054,6 +2150,15 @@ export const strings = {
   },
   pt: {
     aiToolReadFm: 'Ler propriedades do documento',
+    aiToolWriteDoc: 'Conteúdo escrito',
+    aiToolWriteDocFailed: 'Falha ao escrever',
+    aiToolWriteDocPartial: 'Conteúdo escrito parcialmente',
+    aiWritingDocument: 'Escrevendo o documento · {blocks} blocos',
+    aiPartialTitle: 'Apenas parte do conteúdo foi escrita',
+    aiPartialBody:
+      '{blocks} blocos chegaram antes de a escrita parar. Manter esta parte ou descartar?',
+    aiPartialAdopt: 'Manter',
+    aiPartialDiscard: 'Descartar',
     aiToolSetFm: 'Atualizar propriedades do documento',
     aiScopeSelection: 'Selecionado: {words} palavras',
     aiScopeSelectionTip:
@@ -2243,6 +2348,15 @@ export const strings = {
   },
   it: {
     aiToolReadFm: 'Lettura delle proprietà del documento',
+    aiToolWriteDoc: 'Contenuto scritto',
+    aiToolWriteDocFailed: 'Scrittura non riuscita',
+    aiToolWriteDocPartial: 'Contenuto scritto in parte',
+    aiWritingDocument: 'Scrittura del documento · {blocks} blocchi',
+    aiPartialTitle: 'È stata scritta solo una parte del contenuto',
+    aiPartialBody:
+      'Sono arrivati {blocks} blocchi prima che la scrittura si interrompesse. Conservare questa parte o scartarla?',
+    aiPartialAdopt: 'Conserva',
+    aiPartialDiscard: 'Scarta',
     aiToolSetFm: 'Aggiornamento delle proprietà del documento',
     aiScopeSelection: 'Selezionato: {words} parole',
     aiScopeSelectionTip:
@@ -2432,6 +2546,15 @@ export const strings = {
   },
   pl: {
     aiToolReadFm: 'Odczyt właściwości dokumentu',
+    aiToolWriteDoc: 'Napisano treść',
+    aiToolWriteDocFailed: 'Pisanie nie powiodło się',
+    aiToolWriteDocPartial: 'Napisano część treści',
+    aiWritingDocument: 'Pisanie dokumentu · {blocks} bloków',
+    aiPartialTitle: 'Napisano tylko część treści',
+    aiPartialBody:
+      'Dotarło {blocks} bloków, zanim pisanie zostało przerwane. Zachować tę część czy odrzucić?',
+    aiPartialAdopt: 'Zachowaj',
+    aiPartialDiscard: 'Odrzuć',
     aiToolSetFm: 'Aktualizacja właściwości dokumentu',
     aiScopeSelection: 'Zaznaczono: {words} słów',
     aiScopeSelectionTip:
@@ -2619,6 +2742,15 @@ export const strings = {
   },
   cs: {
     aiToolReadFm: 'Číst vlastnosti dokumentu',
+    aiToolWriteDoc: 'Obsah napsán',
+    aiToolWriteDocFailed: 'Psaní se nezdařilo',
+    aiToolWriteDocPartial: 'Obsah napsán částečně',
+    aiWritingDocument: 'Píšu dokument · {blocks} bloků',
+    aiPartialTitle: 'Napsala se jen část obsahu',
+    aiPartialBody:
+      'Dorazilo {blocks} bloků, než se psaní přerušilo. Ponechat tuto část, nebo zahodit?',
+    aiPartialAdopt: 'Ponechat',
+    aiPartialDiscard: 'Zahodit',
     aiToolSetFm: 'Aktualizovat vlastnosti dokumentu',
     aiScopeSelection: 'Vybráno: {words} slov',
     aiScopeSelectionTip:
@@ -2805,6 +2937,15 @@ export const strings = {
   },
   nl: {
     aiToolReadFm: 'Documenteigenschappen lezen',
+    aiToolWriteDoc: 'Inhoud geschreven',
+    aiToolWriteDocFailed: 'Schrijven mislukt',
+    aiToolWriteDocPartial: 'Inhoud gedeeltelijk geschreven',
+    aiWritingDocument: 'Document wordt geschreven · {blocks} blokken',
+    aiPartialTitle: 'Slechts een deel van de inhoud is geschreven',
+    aiPartialBody:
+      '{blocks} blokken kwamen aan voordat het schrijven stopte. Dit deel behouden of weggooien?',
+    aiPartialAdopt: 'Behouden',
+    aiPartialDiscard: 'Weggooien',
     aiToolSetFm: 'Documenteigenschappen bijwerken',
     aiScopeSelection: 'Geselecteerd: {words} woorden',
     aiScopeSelectionTip:
@@ -2993,6 +3134,15 @@ export const strings = {
   },
   ms: {
     aiToolReadFm: 'Baca sifat dokumen',
+    aiToolWriteDoc: 'Kandungan ditulis',
+    aiToolWriteDocFailed: 'Penulisan gagal',
+    aiToolWriteDocPartial: 'Sebahagian kandungan ditulis',
+    aiWritingDocument: 'Menulis dokumen · {blocks} blok',
+    aiPartialTitle: 'Hanya sebahagian kandungan ditulis',
+    aiPartialBody:
+      '{blocks} blok diterima sebelum penulisan terhenti. Simpan bahagian ini atau buang?',
+    aiPartialAdopt: 'Simpan',
+    aiPartialDiscard: 'Buang',
     aiToolSetFm: 'Kemas kini sifat dokumen',
     aiScopeSelection: 'Dipilih: {words} patah perkataan',
     aiScopeSelectionTip:
@@ -3179,6 +3329,14 @@ export const strings = {
   },
   he: {
     aiToolReadFm: 'קריאת מאפייני המסמך',
+    aiToolWriteDoc: 'התוכן נכתב',
+    aiToolWriteDocFailed: 'הכתיבה נכשלה',
+    aiToolWriteDocPartial: 'נכתב חלק מהתוכן',
+    aiWritingDocument: 'כותב את המסמך · {blocks} בלוקים',
+    aiPartialTitle: 'נכתב רק חלק מהתוכן',
+    aiPartialBody: 'התקבלו {blocks} בלוקים לפני שהכתיבה נעצרה. לשמור את החלק הזה או להשליך?',
+    aiPartialAdopt: 'לשמור',
+    aiPartialDiscard: 'להשליך',
     aiToolSetFm: 'עדכון מאפייני המסמך',
     aiScopeSelection: 'נבחרו: {words} מילים',
     aiScopeSelectionTip: 'הוראות שכתוב חלות כברירת מחדל על הבחירה בלבד; לחץ לתצוגה מקדימה',
@@ -3362,6 +3520,14 @@ export const strings = {
   },
   hi: {
     aiToolReadFm: 'दस्तावेज़ गुण पढ़ें',
+    aiToolWriteDoc: 'सामग्री लिख दी',
+    aiToolWriteDocFailed: 'लिखने में विफल',
+    aiToolWriteDocPartial: 'सामग्री का कुछ हिस्सा लिखा',
+    aiWritingDocument: 'दस्तावेज़ लिखा जा रहा है · {blocks} ब्लॉक',
+    aiPartialTitle: 'सामग्री का केवल एक हिस्सा लिखा गया',
+    aiPartialBody: 'लिखना रुकने से पहले {blocks} ब्लॉक मिले। इस हिस्से को रखें या छोड़ दें?',
+    aiPartialAdopt: 'रखें',
+    aiPartialDiscard: 'छोड़ें',
     aiToolSetFm: 'दस्तावेज़ गुण अपडेट करें',
     aiScopeSelection: 'चयनित: {words} शब्द',
     aiScopeSelectionTip:
@@ -3549,6 +3715,14 @@ export const strings = {
   },
   'zh-TW': {
     aiToolReadFm: '讀取文件屬性',
+    aiToolWriteDoc: '撰寫文件',
+    aiToolWriteDocFailed: '文件撰寫失敗',
+    aiToolWriteDocPartial: '文件只撰寫了一部分',
+    aiWritingDocument: '正在撰寫文件 · {blocks} 塊',
+    aiPartialTitle: '內容只產生了一部分',
+    aiPartialBody: '已收到 {blocks} 個內容區塊，產生中斷了。採用這部分，還是放棄？',
+    aiPartialAdopt: '採用',
+    aiPartialDiscard: '放棄',
     aiToolSetFm: '更新文件屬性',
     aiScopeSelection: '已選中 {words} 字',
     aiScopeSelectionTip: '改寫類指令預設只作用於選中內容;點擊預覽',

@@ -484,3 +484,28 @@ describe('additional transition effects', () => {
     expect(readSlideTransitionXml(body)).toBe('zoom')
   })
 })
+
+describe('addPicture media sharing', () => {
+  it('identical bytes reuse one media part, different bytes get their own', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide0 = opened.deck.slides[0]!
+    const slide1 = opened.deck.slides[1]!
+    const before = [...opened.archive.entries.keys()].filter((p) =>
+      p.startsWith('ppt/media/'),
+    ).length
+    const a = addPicture(opened, slide0, { bytes: PNG_1PX, ext: 'png', offset: { ...OFF } })!
+    const b = addPicture(opened, slide1, { bytes: PNG_1PX, ext: 'png', offset: { ...OFF } })!
+    const c = addPicture(opened, slide1, { bytes: PNG_BLUE, ext: 'png', offset: { ...OFF } })!
+    expect(b.mediaRef).toBe(a.mediaRef)
+    expect(c.mediaRef).not.toBe(a.mediaRef)
+    const after = [...opened.archive.entries.keys()].filter((p) =>
+      p.startsWith('ppt/media/'),
+    ).length
+    expect(after).toBe(before + 2)
+    const reopened = await openPptx(await savePptx(opened))
+    const el1 = reopened.deck.slides[1]!.elements.filter(
+      (e) => e.type === 'picture',
+    ) as PictureElement[]
+    expect(el1.map((e) => e.mediaRef)).toContain(a.mediaRef)
+  })
+})

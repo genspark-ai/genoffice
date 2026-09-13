@@ -403,4 +403,12 @@ export const ru = {
   dlgFnDescNpv: 'Возвращает чистую приведённую стоимость потока платежей при заданной ставке.',
   dlgFnDescIrr: 'Возвращает внутреннюю норму доходности потока платежей.',
   dlgFnCatFinancial: 'Финансовые',
+  dlgFnCatDatabase: 'База данных',
+  dlgFnCatInformation: 'Информационные',
+  dlgFnCatEngineering: 'Инженерные',
+  dlgFnCatCube: 'Куб',
+  dlgFnCatCompatibility: 'Совместимость',
+  dlgFnCatWeb: 'Интернет',
+  dlgFnCatArray: 'Массив',
+  dlgFnCatOther: 'Другие',
 } satisfies Record<keyof typeof zh, string>

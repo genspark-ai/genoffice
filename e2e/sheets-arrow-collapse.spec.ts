@@ -59,7 +59,7 @@ test.describe('sheets: arrow collapses a multi-cell selection to the active cell
       await expect(page.locator('.quick-card').nth(1)).toContainText('AI Sheets')
       await page.locator('.quick-card').nth(1).click()
 
-      const sheets = await waitForPageWithUrl(app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(app, '://sheets/')
       // the replayed move must not surface as an uncaught command error
       const commandErrors: string[] = []
       sheets.on('pageerror', (err) => {

@@ -437,3 +437,146 @@ describe('cycleMatrix family (cycle4)', () => {
     expect(JSON.stringify(cards[1])).toContain('ED7D31')
   })
 })
+
+describe('process4 arrow bands (no drawing part)', () => {
+  const BANDS = `<?xml version="1.0"?><dgm:dataModel xmlns:dgm="d" xmlns:a="a">
+<dgm:ptLst>
+<dgm:pt modelId="doc" type="doc"/>
+<dgm:pt modelId="n1"><dgm:t><a:bodyPr/><a:p><a:r><a:t>DRIVERS</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n1a"><dgm:t><a:bodyPr/><a:p><a:r><a:rPr sz="1400"/><a:t>Title 5</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n1b"><dgm:t><a:bodyPr/><a:p><a:r><a:rPr sz="1400"/><a:t>Order 202</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n2"><dgm:t><a:bodyPr/><a:p><a:r><a:t>SERVICES</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n2a"><dgm:t><a:bodyPr/><a:p><a:r><a:rPr sz="1400"/><a:t>Hiring</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n3"><dgm:t><a:bodyPr/><a:p><a:r><a:t>OUTCOME</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n3a"><dgm:t><a:bodyPr/><a:p><a:r><a:rPr sz="1400"/><a:t>Workforce</a:t></a:r></a:p></dgm:t></dgm:pt>
+</dgm:ptLst>
+<dgm:cxnLst>
+<dgm:cxn modelId="c1" srcId="doc" destId="n1" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c2" srcId="doc" destId="n2" srcOrd="1" destOrd="0"/>
+<dgm:cxn modelId="c3" srcId="doc" destId="n3" srcOrd="2" destOrd="0"/>
+<dgm:cxn modelId="c4" srcId="n1" destId="n1a" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c5" srcId="n1" destId="n1b" srcOrd="1" destOrd="0"/>
+<dgm:cxn modelId="c6" srcId="n2" destId="n2a" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c7" srcId="n3" destId="n3a" srcOrd="0" destOrd="0"/>
+</dgm:cxnLst></dgm:dataModel>`
+  const COLORS = `<?xml version="1.0"?><dgm:colorsDef xmlns:dgm="d" xmlns:a="a">
+<dgm:styleLbl name="node1"><dgm:fillClrLst meth="cycle"><a:srgbClr val="085091"/><a:srgbClr val="6893D9"/></dgm:fillClrLst></dgm:styleLbl>
+<dgm:styleLbl name="fgAccFollowNode1"><dgm:fillClrLst meth="repeat"><a:srgbClr val="ABBDE1"/></dgm:fillClrLst></dgm:styleLbl>
+</dgm:colorsDef>`
+  const W = 8610600
+  const H = 4800600
+  const shapes = layoutDiagramFallback(BANDS, {}, W, H, 'process4', COLORS)
+  const prst = (s: any) => s.presetGeometry
+  const fillOf = (s: any) =>
+    JSON.stringify(s)
+      .match(/"color":"(#?[0-9A-F]{6})"/i)?.[1]
+      ?.replace('#', '')
+
+  it('stacks two downArrowCallout bands over a closing rect, all full width, filling the frame', () => {
+    const callouts = shapes.filter((s) => prst(s) === 'downArrowCallout')
+    expect(callouts).toHaveLength(2)
+    const unit = H / (1 + 1.538 * 2 - 0.015 * 2)
+    callouts.forEach((c) => {
+      expect(c.transform.offset.cx).toBe(W)
+      expect(c.transform.offset.cy / unit).toBeCloseTo(1.538, 2)
+    })
+    const rect = shapes.find(
+      (s) => prst(s) === 'rect' && s.transform.offset.cx === W && fillOf(s) === '085091',
+    )!
+    expect(rect).toBeTruthy()
+    expect(rect.transform.offset.cy).toBeCloseTo(unit, -2)
+    expect(rect.transform.offset.y + rect.transform.offset.cy).toBeCloseTo(H, -2)
+    // Bands read top-down in data order: DRIVERS callout above SERVICES callout above OUTCOME
+    expect(callouts[0]!.transform.offset.y).toBeLessThan(callouts[1]!.transform.offset.y)
+    expect(callouts[1]!.transform.offset.y).toBeLessThan(rect.transform.offset.y)
+  })
+
+  it('paints callouts with node1 slot 1 and the closing rect with slot 0', () => {
+    const callouts = shapes.filter((s) => prst(s) === 'downArrowCallout')
+    callouts.forEach((c) => expect(fillOf(c)).toBe('6893D9'))
+  })
+
+  it('lays child cells side by side inside the band body with the fgAccFollowNode1 fill', () => {
+    const cells = shapes.filter((s) => fillOf(s) === 'ABBDE1')
+    expect(cells).toHaveLength(4)
+    const [a, b] = cells
+    expect(a!.transform.offset.y).toBe(b!.transform.offset.y)
+    expect(a!.transform.offset.cx).toBeCloseTo(W / 2, -2)
+    expect(b!.transform.offset.x).toBeCloseTo(W / 2, -2)
+    // Cells sit below the header (0.351 of the callout) and above the arrow (0.65)
+    const band = shapes.find((s) => prst(s) === 'downArrowCallout')!
+    expect(a!.transform.offset.y / band.transform.offset.cy).toBeCloseTo(0.351, 2)
+    expect((a!.transform.offset.y + a!.transform.offset.cy) / band.transform.offset.cy).toBeCloseTo(
+      0.65,
+      2,
+    )
+  })
+
+  it('honours the authored 14pt child run size and keeps header text white on a text-only box', () => {
+    const json = JSON.stringify(shapes)
+    expect(json).toContain('"Title 5"')
+    const cell = shapes.find((s) => JSON.stringify(s).includes('"Title 5"'))!
+    expect(JSON.stringify(cell)).toMatch(/"fontSize":14\b/)
+    const head = shapes.find((s) => JSON.stringify(s).includes('"DRIVERS"'))!
+    expect(JSON.stringify(head)).toContain('FFFFFF')
+    expect(head.transform.offset.y).toBe(0)
+  })
+
+  it('a childless band keeps its header centered in the callout box part', () => {
+    const solo = BANDS.replace(/<dgm:cxn modelId="c[4-7]"[^>]*\/>\n/g, '')
+    const copy = layoutDiagramFallback(solo, {}, W, H, 'process4', COLORS)
+    expect(copy.filter((s) => prst(s) === 'downArrowCallout')).toHaveLength(2)
+    expect(copy.filter((s) => fillOf(s) === 'ABBDE1')).toHaveLength(0)
+    const head = copy.find((s) => JSON.stringify(s).includes('"DRIVERS"'))!
+    const band = copy.find((s) => prst(s) === 'downArrowCallout')!
+    expect(head.transform.offset.cy / band.transform.offset.cy).toBeCloseTo(0.65, 2)
+  })
+})
+
+describe('recorded presStyleLbl colors (orgChart, colorful5)', () => {
+  const DATA = `<?xml version="1.0"?><dgm:dataModel xmlns:dgm="d" xmlns:a="a">
+<dgm:ptLst>
+<dgm:pt modelId="doc" type="doc"/>
+<dgm:pt modelId="n1"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Fruit</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n2"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Berries</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="n3"><dgm:t><a:bodyPr/><a:p><a:r><a:t>Strawberry</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="p1" type="pres"><dgm:prSet presAssocID="n1" presName="lvl1a" presStyleLbl="node0" presStyleIdx="0" presStyleCnt="1"/></dgm:pt>
+<dgm:pt modelId="p2" type="pres"><dgm:prSet presAssocID="n2" presName="lvl2a" presStyleLbl="node2" presStyleIdx="0" presStyleCnt="1"/></dgm:pt>
+<dgm:pt modelId="p3" type="pres"><dgm:prSet presAssocID="n3" presName="lvl3a" presStyleLbl="node3" presStyleIdx="0" presStyleCnt="1"/></dgm:pt>
+</dgm:ptLst>
+<dgm:cxnLst>
+<dgm:cxn modelId="c1" srcId="doc" destId="n1" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c2" srcId="n1" destId="n2" srcOrd="0" destOrd="0"/>
+<dgm:cxn modelId="c3" srcId="n2" destId="n3" srcOrd="0" destOrd="0"/>
+</dgm:cxnLst></dgm:dataModel>`
+  const COLORS = `<?xml version="1.0"?><dgm:colorsDef xmlns:dgm="d" xmlns:a="a">
+<dgm:styleLbl name="node0"><dgm:fillClrLst meth="repeat"><a:srgbClr val="8064A2"/></dgm:fillClrLst></dgm:styleLbl>
+<dgm:styleLbl name="node1"><dgm:fillClrLst meth="cycle"><a:srgbClr val="4BACC6"/><a:srgbClr val="F79646"/></dgm:fillClrLst></dgm:styleLbl>
+<dgm:styleLbl name="node2"><dgm:fillClrLst meth="repeat"><a:srgbClr val="F79646"/></dgm:fillClrLst></dgm:styleLbl>
+<dgm:styleLbl name="node3"><dgm:fillClrLst meth="repeat"><a:srgbClr val="4F81BD"/></dgm:fillClrLst></dgm:styleLbl>
+</dgm:colorsDef>`
+
+  it('colors each level from its own styleLbl instead of cycling node1', () => {
+    const shapes = layoutDiagramFallback(DATA, {}, 9144000, 6858000, 'orgChart1', COLORS)
+    const fill = (t: string) =>
+      JSON.stringify(shapes.find((s) => JSON.stringify(s).includes(`"${t}"`))).match(
+        /"color":"#?([0-9A-F]{6})"/i,
+      )?.[1]
+    expect(fill('Fruit')).toBe('8064A2')
+    expect(fill('Berries')).toBe('F79646')
+    expect(fill('Strawberry')).toBe('4F81BD')
+  })
+
+  it('shade/tint modifiers on scheme colors are applied, not dropped', () => {
+    const MOD = `<?xml version="1.0"?><dgm:colorsDef xmlns:dgm="d" xmlns:a="a">
+<dgm:styleLbl name="node1"><dgm:fillClrLst meth="cycle"><a:srgbClr val="0F6FC6"><a:shade val="50000"/></a:srgbClr><a:srgbClr val="0F6FC6"><a:tint val="55000"/></a:srgbClr></dgm:fillClrLst></dgm:styleLbl>
+</dgm:colorsDef>`
+    const flat = DATA.replace(/<dgm:pt modelId="p\d" type="pres">.*?<\/dgm:pt>\n/g, '')
+    const shapes = layoutDiagramFallback(flat, {}, 9144000, 6858000, 'process4', MOD)
+    const fills = new Set(
+      shapes.map((s) => JSON.stringify(s).match(/"color":"#?([0-9A-F]{6})"/i)?.[1]).filter(Boolean),
+    )
+    expect(fills.has('0F6FC6')).toBe(false)
+    expect(fills.size).toBeGreaterThanOrEqual(2)
+  })
+})

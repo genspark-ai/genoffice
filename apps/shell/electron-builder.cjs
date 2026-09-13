@@ -219,6 +219,8 @@ function assertModuleTreesPresent() {
     '../pdf/out',
     '../markdown/out',
     '../html/out',
+    '../../packages/cli/dist/genoffice.cjs',
+    '../../packages/cli/dist/node_modules/jsdom',
   ]) {
     if (!existsSync(join(__dirname, rel))) {
       throw new Error(
@@ -297,6 +299,38 @@ const config = {
     {
       from: '../../node_modules/@genspark/cli',
       to: 'gsk/node_modules/@genspark/cli',
+    },
+    // genoffice command line: runs on the app binary with ELECTRON_RUN_AS_NODE (as
+    // the gsk CLI above already does), so the RunAsNode fuse must stay enabled.
+    // Layout (Resources/cli next to wasm/, native/, ocr/) is what
+    // packages/cli/src/resources.ts expects.
+    {
+      from: '../../packages/cli/dist/genoffice.cjs',
+      to: 'cli/genoffice.cjs',
+    },
+    {
+      from: '../../packages/cli/bin/genoffice',
+      to: 'cli/genoffice',
+    },
+    {
+      from: '../../packages/cli/bin/genoffice.cmd',
+      to: 'cli/genoffice.cmd',
+    },
+    // the CLI's version (Settings → Integrations shows it) and the agent skill
+    // the same pane installs into Claude Code / Codex / …; bytes identical to the repo file
+    {
+      from: '../../packages/cli/package.json',
+      to: 'cli/package.json',
+    },
+    {
+      from: '../../skills/genoffice/SKILL.md',
+      to: 'cli/skills/genoffice/SKILL.md',
+    },
+    // runtime deps the genoffice bundle leaves external (jsdom for the Word/Markdown
+    // paths); collected by packages/cli/collect-deps.mjs during its build
+    {
+      from: '../../packages/cli/dist/node_modules',
+      to: 'cli/node_modules',
     },
     {
       from: '../../node_modules/@genspark/cli/node_modules/commander',
@@ -500,6 +534,9 @@ const config = {
   deb: {
     artifactName: 'genoffice_${version}_${arch}.deb',
     packageName: 'genoffice',
+    // expose the genoffice command line shipped inside the app
+    afterInstall: 'build/linux-after-install.sh',
+    afterRemove: 'build/linux-after-remove.sh',
   },
   // Same "@genoffice/shell" naming problem as deb: spell the artifact name
   // out (${arch} expands to the rpm arch string, x86_64) and pin the rpm
@@ -516,6 +553,8 @@ const config = {
     artifactName: 'genoffice-${version}.${arch}.rpm',
     packageName: 'genoffice',
     publish: null,
+    afterInstall: 'build/linux-after-install.sh',
+    afterRemove: 'build/linux-after-remove.sh',
   },
   nsis: {
     oneClick: false,

@@ -66,6 +66,8 @@ export const zhTW = {
   aiToolClarifySkipped: '已跳過問卷',
   aiToolPlan: '簡報已確認（{n} 個區塊）',
   aiToolPlanRejected: '簡報未確認',
+  aiToolPlanFailed: '簡報起草失敗',
+  aiDraftingBrief: '正在起草簡報…',
   aiToolWritePage: '已產生頁面',
   aiToolWritePageFailed: '頁面產生失敗',
   aiToolWritePagePartial: '頁面只產生了一部分',

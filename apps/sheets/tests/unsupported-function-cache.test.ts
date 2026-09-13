@@ -6,6 +6,7 @@ import {
   engineResultKeepsCache,
   formulaKeepsCache,
   hasUsableCachedValue,
+  recalcResultKeepsCache,
   setSupportedFunctionProbe,
 } from '../src/renderer/univer-sync'
 import type { UniverRuntime } from '../src/renderer/univer-state'
@@ -214,5 +215,31 @@ describe('engineResultKeepsCache', () => {
     expect(engineResultKeepsCache('$1.00', 'DOLLAR(A1)')).toBe(true)
     expect(engineResultKeepsCache('42', 'SUM(A1:A3)')).toBe(false)
     expect(engineResultKeepsCache('42', undefined)).toBe(false)
+  })
+})
+
+describe('recalcResultKeepsCache', () => {
+  const aggregate = 'IFERROR(INDEX(A:R,AGGREGATE(15,6,ROW(B2:B40)/(B2:B40=$A$3),1),2),"")'
+
+  it('keeps a usable cache over a blank or error result before any edit', () => {
+    expect(recalcResultKeepsCache('', aggregate, 700, false)).toBe(true)
+    expect(recalcResultKeepsCache('#DIV/0!', 'D5/B5', 3.43, false)).toBe(true)
+    expect(recalcResultKeepsCache('#N/A', 'VLOOKUP(A1,B:C,2,0)', 'found', false)).toBe(true)
+    expect(recalcResultKeepsCache('#DIV/0!', 'D5/B5', '', false)).toBe(true)
+  })
+
+  it('overlays when the cache has nothing better', () => {
+    expect(recalcResultKeepsCache('', aggregate, undefined, false)).toBe(false)
+    expect(recalcResultKeepsCache('', aggregate, null, false)).toBe(false)
+    expect(recalcResultKeepsCache('#DIV/0!', 'D5/B5', '#N/A', false)).toBe(false)
+    expect(recalcResultKeepsCache('42', 'SUM(A1:A3)', 7, false)).toBe(false)
+  })
+
+  it('lets edited workbooks show blank and error results', () => {
+    expect(recalcResultKeepsCache('', aggregate, 700, true)).toBe(false)
+    expect(recalcResultKeepsCache('#DIV/0!', 'D5/B5', 3.43, true)).toBe(false)
+    // Engine failures still keep the cache regardless of edits.
+    expect(recalcResultKeepsCache('#NAME?', 'FOO(A1)', 1, true)).toBe(true)
+    expect(recalcResultKeepsCache('#ERROR!', undefined, 1, true)).toBe(true)
   })
 })

@@ -4,7 +4,7 @@
  * |f - target| ≤ 0.001). Each guess is a journaled setValue followed by a
  * recalc wait, so the whole run undoes like typing and works in manual mode.
  */
-import { parseAddress } from '../domain/cell-address'
+import { parseAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { calculateNow, isManualCalculation } from './calc-options'
 import { t } from './i18n/locale'
 import type { UniverRuntime } from './univer-state'

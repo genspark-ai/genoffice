@@ -533,6 +533,12 @@ export const ko = {
   appPdfCanceled: 'PDF 내보내기를 취소했습니다.',
   appPdfExported: '{path}을(를) 내보냈습니다.',
   appPdfExportFailed: 'PDF를 내보낼 수 없습니다.',
+  appPrintPreparing: '인쇄를 준비하는 중…',
+  appPrintSent: '프린터로 전송했습니다.',
+  appPrintCanceled: '인쇄가 취소되었습니다.',
+  appPrintFailed: '인쇄할 수 없습니다.',
+  appPrintNeedsFullLoad:
+    '인쇄하려면 워크북이 완전히 로드되어야 합니다. 로드가 끝날 때까지 기다려 주세요.',
   appCsvExportNeedsFullLoad:
     'CSV 내보내기에는 통합 문서 전체 로드가 필요합니다 — 로드가 완료될 때까지 기다리십시오.',
   appCsvExportTooLarge: '시트가 너무 커서 CSV로 내보낼 수 없습니다.',
@@ -1334,6 +1340,8 @@ export const ko = {
   appFormatMenu: '서식',
   appRowHeight: '행 높이',
   appColWidth: '열 너비',
+  appAutoFitRowHeight: '행 높이 자동 맞춤',
+  appAutoFitColWidth: '열 너비 자동 맞춤',
   appRowHeightLabel: '행 높이(포인트)',
   appColWidthLabel: '열 너비(문자)',
   appDeleteRow: '행 삭제',

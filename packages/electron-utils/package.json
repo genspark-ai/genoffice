@@ -7,7 +7,13 @@
   "description": "Shared helpers for the Electron main processes (no Electron dependency, pure TS)",
   "exports": {
     ".": "./src/index.ts",
-    "./drop-open": "./src/drop-open.ts"
+    "./drop-open": "./src/drop-open.ts",
+    "./generated-images": "./src/generated-images.ts",
+    "./headless-export": "./src/headless-export.ts",
+    "./remote-image": "./src/remote-image.ts",
+    "./renderer-protocol": "./src/renderer-protocol.ts",
+    "./renderer-scheme": "./src/renderer-scheme.ts",
+    "./safe-remote-url": "./src/safe-remote-url.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

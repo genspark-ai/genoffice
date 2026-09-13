@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { numberFormatCategories } from '../src/renderer/number-format'
-import { getSystemShortDate, setSystemShortDate } from '../src/shared/short-date'
+import { getSystemShortDate, setSystemShortDate } from '@genoffice/xlsx-gateway/shared/short-date'
 import {
   DATE_PATTERNS,
   datePatterns,

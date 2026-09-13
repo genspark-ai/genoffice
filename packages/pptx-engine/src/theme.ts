@@ -77,8 +77,18 @@ function readColorNode(node: unknown): string | undefined {
   const srgb = asXmlNode(n['a:srgbClr'])
   if (n['a:srgbClr']) return '#' + String(srgb['@_val']).toUpperCase()
   const sys = asXmlNode(n['a:sysClr'])
-  if (n['a:sysClr']) return '#' + String(sys['@_lastClr'] ?? '000000').toUpperCase()
+  if (n['a:sysClr']) return sysColorHex(sys['@_val'], sys['@_lastClr'])
   return undefined
+}
+
+/**
+ * PowerPoint paints `window`/`windowText` as the live system colors (white/black on every
+ * modern desktop) and ignores a stale `lastClr`; other system colors keep the cached value.
+ */
+export function sysColorHex(val: unknown, lastClr: unknown): string {
+  if (val === 'window') return '#FFFFFF'
+  if (val === 'windowText') return '#000000'
+  return '#' + String(lastClr ?? '000000').toUpperCase()
 }
 
 /** Font typeface attribute of e.g. fontScheme['a:majorFont']['a:latin'] (undefined when absent). */

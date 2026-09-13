@@ -22,3 +22,6 @@ apps/slides/src/renderer/ai/prompts/*.md
 
 # In-page extractor fragments: concatenated into one function body, kept verbatim.
 packages/html2docx/src/browser/
+
+# ISO/IEC 29500 schemas: keep byte-identical to the published files (one marked amendment).
+tools/ooxml-validate/schemas/

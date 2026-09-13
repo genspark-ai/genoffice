@@ -15,7 +15,7 @@ import {
   type OpenedPptx,
   type TableElement,
 } from '@genoffice/pptx-engine'
-import { runTxn } from '../src/main/ops'
+import { runTxn } from '@genoffice/pptx-ops'
 
 let opened: OpenedPptx
 let tableId: string

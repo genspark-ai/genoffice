@@ -13,7 +13,7 @@
  * labelled from the header row rather than by coordinates.
  */
 
-import { columnLabel, type RangeBounds } from '../../domain/cell-address'
+import { columnLabel, type RangeBounds } from '@genoffice/xlsx-gateway/domain/cell-address'
 import type { FrozenSelection } from './tools'
 
 export interface ScopeChip {
@@ -45,10 +45,17 @@ export function resolveScopeChip(
   }
 }
 
-/** Last row/column index holding data; both -1 on a sheet with no data. */
+/** Last row/column index holding data; Univer reports 0 for both on a sheet
+ *  with no data at all. */
 export interface DataExtent {
   readonly lastRow: number
   readonly lastColumn: number
+}
+
+/** Grid size of the sheet; a selection that reaches its edge is a header click. */
+export interface SheetSize {
+  readonly rowCount: number
+  readonly columnCount: number
 }
 
 /** Longest header text kept before an ellipsis, so one verbose header cannot
@@ -62,21 +69,25 @@ const MAX_NAMED_COLUMNS = 3
  * million rows, and neither the user nor the model should be told that is what
  * was selected.
  *
- * Each axis is capped on its own, and only when the selection starts inside the
- * data on that axis. Capping the axes together would abandon both whenever one
- * inverts — a header click on a column past the data would keep its million
- * rows. Leaving an axis alone when the selection starts past the data keeps a
- * deliberately empty block (a spot the user picked to build something in) at
- * the size they marked out.
+ * Only an axis the selection runs to the sheet's edge is capped, and only when
+ * it starts inside the data on that axis. A block dragged out by hand never
+ * reaches the edge and keeps the size the user marked out, however empty it is;
+ * capping by extent alone shrank a drag from A1 on a fresh workbook to A1. Each
+ * axis is judged on its own, so a header click on a column past the data still
+ * loses its million rows.
  */
-export function clampBoundsToExtent(bounds: RangeBounds, extent: DataExtent): RangeBounds {
-  const cap = (start: number, end: number, last: number): number =>
-    start <= last ? Math.min(end, last) : end
+export function clampBoundsToExtent(
+  bounds: RangeBounds,
+  extent: DataExtent,
+  size: SheetSize,
+): RangeBounds {
+  const cap = (start: number, end: number, last: number, axisEnd: number): number =>
+    end >= axisEnd - 1 && start <= last ? Math.min(end, last) : end
   return {
     startRow: bounds.startRow,
     startColumn: bounds.startColumn,
-    endRow: cap(bounds.startRow, bounds.endRow, extent.lastRow),
-    endColumn: cap(bounds.startColumn, bounds.endColumn, extent.lastColumn),
+    endRow: cap(bounds.startRow, bounds.endRow, extent.lastRow, size.rowCount),
+    endColumn: cap(bounds.startColumn, bounds.endColumn, extent.lastColumn, size.columnCount),
   }
 }
 

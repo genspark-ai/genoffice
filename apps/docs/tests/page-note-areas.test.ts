@@ -165,6 +165,23 @@ describe('endnotesAnchorY — flow-end anchor for the endnote area', () => {
   })
 })
 
+describe('note areas: engine numbering', () => {
+  it('markers follow the supplied numbers (body order / numStart) instead of list position', () => {
+    const { container, unmount } = render(
+      createElement(PageFootnotes, {
+        notes: [note('a', 'first'), note('b', 'second')],
+        skipIds: new Set<string>(),
+        numberOf: (n) => (n.id === 'a' ? 6 : 5),
+        onEdit: () => {},
+        onDelete: () => {},
+      }),
+    )
+    const sups = Array.from(container.querySelectorAll('.page-note sup'), (s) => s.textContent)
+    expect(sups).toEqual(['6', '5'])
+    unmount()
+  })
+})
+
 describe('note-area CSS contract (document data, not chrome)', () => {
   const css = readFileSync(join(__dirname, '../src/renderer/styles.css'), 'utf8')
   const ruleOf = (selector: string): string => {

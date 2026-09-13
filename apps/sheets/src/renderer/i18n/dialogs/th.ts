@@ -396,4 +396,12 @@ export const th = {
   dlgFnDescNpv: 'คืนค่ามูลค่าปัจจุบันสุทธิของกระแสเงินสดตามอัตราคิดลด',
   dlgFnDescIrr: 'คืนค่าอัตราผลตอบแทนภายในของกระแสเงินสด',
   dlgFnCatFinancial: 'การเงิน',
+  dlgFnCatDatabase: 'ฐานข้อมูล',
+  dlgFnCatInformation: 'ข้อมูล',
+  dlgFnCatEngineering: 'วิศวกรรม',
+  dlgFnCatCube: 'คิวบ์',
+  dlgFnCatCompatibility: 'ความเข้ากันได้',
+  dlgFnCatWeb: 'เว็บ',
+  dlgFnCatArray: 'อาร์เรย์',
+  dlgFnCatOther: 'อื่นๆ',
 } satisfies Record<keyof typeof zh, string>

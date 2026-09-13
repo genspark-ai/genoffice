@@ -25,6 +25,20 @@ const KILL_RULE =
   '.page-wrap, .doc-page, .pv-page { text-autospace:no-autospace; --doc-autospace-pad:0 }'
 
 describe('docAutospaceOff', () => {
+  it('suppresses when docDefaults w:lang w:val is an East Asian language (Word probe 2026-09-11)', () => {
+    // a Yu Gothic docDefaults with w:lang w:val="ja-JP": Word lays "\u7b2c3\u90e8" with no gap;
+    // en-US in the same package restores the ~1/4em gap
+    const doc = parsedDoc({ docDefaults: { eastAsiaFont: 'Yu Gothic', lang: 'ja-JP' } })
+    expect(docAutospaceOff(doc)).toBe(true)
+    expect(docStyleCss(doc)).toContain(KILL_RULE)
+    expect(
+      docAutospaceOff(parsedDoc({ docDefaults: { eastAsiaFont: 'Yu Gothic', lang: 'en-US' } })),
+    ).toBe(false)
+    expect(
+      docAutospaceOff(parsedDoc({ docDefaults: { eastAsiaFont: 'Yu Gothic', lang: 'jam' } })),
+    ).toBe(false)
+  })
+
   it('suppresses when docDefaults declares an unavailable EA face', () => {
     const doc = parsedDoc({ docDefaults: { eastAsiaFont: 'Noto Sans CJK KR' } })
     expect(docAutospaceOff(doc)).toBe(true)

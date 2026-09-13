@@ -3,6 +3,7 @@
  */
 import React, {
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -33,6 +34,8 @@ import type {
 } from '@genoffice/pptx-render'
 import { boxPivotProps, fillToKonva, isEditableText } from './konva-adapter'
 import { tableCellAtPoint, tableLocalPointFromStage } from './table-hit'
+import { isPromptPlaceholder, textHitAtPoint } from './text-hit-area'
+import type { EditCaret } from './action-context'
 import {
   computeSnap,
   computeSpacingSnap,
@@ -201,6 +204,11 @@ function getRotaterIcon(): HTMLCanvasElement {
   return c
 }
 
+const setStageCursor = (e: Konva.KonvaEventObject<Event>, cursor: string) => {
+  const st = e.target.getStage()
+  if (st) st.container().style.cursor = cursor
+}
+
 /** Hover cursor for the rotate anchor: the same clockwise-arrow glyph as the
  * handle, black with a white halo so it stays readable on any background
  * (replaces Konva's default crosshair). The canvas is scaled with a CSS
@@ -252,12 +260,18 @@ function findNodeDeep(nodes: RenderNode[], id: string): RenderNode | undefined {
   return undefined
 }
 
+export interface SlideCanvasHandle {
+  /** Start dragging a node from a press that landed outside the stage (the text-edit overlay's frame). */
+  startNodeDrag: (sourceId: string, ev: MouseEvent) => void
+}
+
 interface Props {
+  ref?: React.Ref<SlideCanvasHandle>
   slide: RenderSlide
   selectedIds: string[]
   onSelect: (sourceId: string | null, additive?: boolean) => void
   /** caret = viewport coordinates of the double-click (editor places the caret/selects the word there; defaults to caret at end) */
-  onEditText: (sourceId: string, caret?: { x: number; y: number }) => void
+  onEditText: (sourceId: string, caret?: EditCaret) => void
   /** preview=true: live preview commit during drag (not added to undo history, see EditTransformOp.preview);
    * groupId: geometry commit for a child while editing inside a group (box is in group-local coordinates) */
   onTransform: (
@@ -531,10 +545,23 @@ export function SlideCanvas({
   onDrawCommit,
   onDrawCancel,
   onAdjust,
+  ref,
 }: Props) {
   const trRef = useRef<Konva.Transformer>(null)
   const layerRef = useRef<Konva.Layer>(null)
   const stageRef = useRef<Konva.Stage>(null)
+
+  useImperativeHandle(ref, () => ({
+    startNodeDrag(sourceId, ev) {
+      const stage = stageRef.current
+      const n = stage?.findOne<Konva.Node>(`#node_${sourceId}`)
+      if (!stage || !n?.draggable()) return
+      // Same path as a real press on the node: Konva's own mousedown listener arms the drag and
+      // the window mousemove handler starts it once the pointer travels dragDistance
+      stage.setPointersPositions(ev)
+      n.fire('mousedown', { evt: ev, type: 'mousedown', target: n, currentTarget: n }, false)
+    },
+  }))
 
   const nodeCount = useMemo(() => countNodes(slide.nodes), [slide])
   const dense = nodeCount >= DENSE_SLIDE_NODE_COUNT
@@ -602,7 +629,8 @@ export function SlideCanvas({
   const sizeMatchKeyRef = useRef('')
   // A marquee drag just ended on this gesture: swallow the trailing click so it doesn't select the node under the cursor
   const suppressClickRef = useRef(false)
-  // Full-page background-like nodes: click-selectable but not draggable; marquee drags may start on them
+  // Full-page background-like nodes: a drag on one that is not yet selected rubber-bands
+  // instead of moving it; once selected it drags like any other node (PowerPoint)
   const backgroundIds = useMemo(
     () => new Set(slide.nodes.filter((n) => n.background).map((n) => n.sourceId)),
     [slide],
@@ -776,7 +804,8 @@ export function SlideCanvas({
           e.target === e.target.getStage() ||
           (typeof e.target.name === 'function' && e.target.name() === 'slide-bg')
         const hitId = isBlank ? null : nodeIdFromTarget(e.target)
-        const onBackground = hitId != null && backgroundIds.has(hitId)
+        const onBackground =
+          hitId != null && backgroundIds.has(hitId) && !selectedIds.includes(hitId)
         if (!isBlank && !onBackground) return
         if (isBlank) onSelect(null)
         // Mouse-down on blank area -> start rubber-band selection (on release, elements fully inside the rectangle are selected)
@@ -1369,10 +1398,6 @@ function ConnectorEndpointHandles({
     }
     return best
   }
-  const setCursor = (e: Konva.KonvaEventObject<MouseEvent>, cursor: string) => {
-    const st = e.target.getStage()
-    if (st) st.container().style.cursor = cursor
-  }
   const handle = (which: 'start' | 'end', p: { x: number; y: number }) => (
     <Circle
       key={which}
@@ -1384,8 +1409,8 @@ function ConnectorEndpointHandles({
       strokeWidth={1.5 * hairline}
       hitStrokeWidth={12 / z}
       draggable
-      onMouseEnter={(e) => setCursor(e, 'crosshair')}
-      onMouseLeave={(e) => setCursor(e, 'default')}
+      onMouseEnter={(e) => setStageCursor(e, 'crosshair')}
+      onMouseLeave={(e) => setStageCursor(e, 'default')}
       onDragMove={(e) => {
         const t = e.target
         const snap = nearestAnchor(t.x(), t.y())
@@ -1451,7 +1476,7 @@ function bgFill(slide: RenderSlide, images: Map<string, HTMLImageElement>) {
 interface NodeProps {
   node: RenderNode
   onSelect: (id: string | null, additive?: boolean) => void
-  onEditText: (id: string, caret?: { x: number; y: number }) => void
+  onEditText: (id: string, caret?: EditCaret) => void
   onTransform: Props['onTransform']
   onEditTableCell: Props['onEditTableCell']
   onPlayMedia?: Props['onPlayMedia']
@@ -1595,8 +1620,10 @@ function NodeView({
   if (node.decoration) return <StaticNode node={node} images={images} />
 
   // Chips are select-only; tables/charts support p:xfrm patch persistence, so they can be dragged/resized.
-  // Full-page backgrounds stay in place: a drag on them rubber-bands (Stage-level marquee) instead of moving them.
-  const draggable = node.type !== 'placeholder-chip' && !node.background
+  // An unselected full-page background rubber-bands on drag (Stage-level marquee); selecting it first
+  // makes it movable, so a full-bleed picture can still be repositioned like in PowerPoint.
+  const selected = !!selectedIds?.includes(node.sourceId)
+  const draggable = node.type !== 'placeholder-chip' && (!node.background || selected)
   // Rotation/flip pivot on the box center (boxPivotProps): the Konva position IS the box
   // center, so model x/y = position − half size — including mid-gesture, since the offset
   // point stays the drawn box's center under any scale.
@@ -1609,16 +1636,29 @@ function NodeView({
     // default 3px threshold is too sensitive, and once it becomes a drag, onDragMove snapping amplifies it into a visible 6px+ jump that commits to the model.
     // The threshold's semantics are "6 screen px": Konva compares in canvas coordinates, so divide by the canvas CSS zoom.
     dragDistance: 6 / Math.max(zoom, 0.1),
+    // Over the text of an editable shape the pointer is an I-beam (a click there places the caret);
+    // anywhere else on a movable node it is the move cursor, like PowerPoint/WPS
+    onMouseMove: (e: Konva.KonvaEventObject<MouseEvent>) =>
+      setStageCursor(e, !draggable ? '' : editable && clickOnText() ? 'text' : 'move'),
+    onMouseLeave: (e: Konva.KonvaEventObject<MouseEvent>) => setStageCursor(e, ''),
     onClick: (e: Konva.KonvaEventObject<MouseEvent>) => {
       if (suppressClickRef?.current) {
         suppressClickRef.current = false
         return
       }
-      onSelect(node.sourceId, e.evt.shiftKey || e.evt.metaKey)
+      const additive = e.evt.shiftKey || e.evt.metaKey
+      onSelect(node.sourceId, additive)
+      // Single left click on the text itself starts editing with the caret at the click
+      // (PowerPoint/WPS); the frame around the text only selects, so it stays the drag grip.
+      // Konva fires click for every button: a right click must keep the shape context menu
+      if (e.evt.button === 0 && !additive && editable && clickOnText())
+        onEditText(node.sourceId, { x: e.evt.clientX, y: e.evt.clientY })
     },
     onTap: () => onSelect(node.sourceId),
-    onDragStart: () => {
+    onDragStart: (e: Konva.KonvaEventObject<DragEvent>) => {
       dragPosRef.current = null
+      // Konva stops routing mousemove to shapes while dragging: pin the move cursor here
+      setStageCursor(e, 'move')
       if (!(onDuplicateTo && !multiDrag && !insideGroupId)) return
       const onKey = (ev: KeyboardEvent) => setAltDrag(ev.altKey)
       window.addEventListener('keydown', onKey)
@@ -1801,6 +1841,7 @@ function NodeView({
               livePreview={false}
               zoom={zoom}
               multiDrag={(selectedIds?.length ?? 0) > 1 && !!selectedIds?.includes(c.sourceId)}
+              selectedIds={selectedIds}
               insideGroupId={node.sourceId}
               allowChildTextEdit={plain}
               suppressClickRef={suppressClickRef}
@@ -1814,6 +1855,15 @@ function NodeView({
   }
 
   const editable = isEditableText(node) && (!insideGroupId || allowChildTextEdit)
+  const clickOnText = (): boolean => {
+    const g = groupRef.current
+    const pos = g?.getStage()?.getPointerPosition()
+    if (!g || !pos) return false
+    const local = g.getAbsoluteTransform().copy().invert().point(pos)
+    // NodeBody counter-flips the text, so mirror the point back into text coordinates
+    const p = { x: box.flipH ? box.w - local.x : local.x, y: box.flipV ? box.h - local.y : local.y }
+    return textHitAtPoint(node as ShapeRenderNode, box, p, 4 / Math.max(zoom, 0.1))
+  }
   // Double-click a group = enter in-group editing and select the child hit by the double-click (pointer converted to group-local coordinates, bounding-box hit)
   const onGroupDblClick = (e: Konva.KonvaEventObject<Event>) => {
     if (!onEnterGroup) return
@@ -1851,10 +1901,9 @@ function NodeView({
     if (hidePhPrompts) return null
     if (node.type !== 'shape' && node.type !== 'text') return null
     const sh = node as ShapeRenderNode
-    const kind = sh.placeholder
-    if (!kind || !['title', 'ctrTitle', 'subTitle', 'body'].includes(kind)) return null
-    if (sh.text?.lines.some((l) => l.runs.some((r) => !r.isBullet && r.text.trim()))) return null
+    if (!isPromptPlaceholder(sh)) return null
     if (editingText && editingText.sourceId === node.sourceId) return null
+    const kind = sh.placeholder
     return t(
       kind === 'subTitle'
         ? 'appPhPromptSubtitle'
@@ -1875,7 +1924,7 @@ function NodeView({
         {...(editable
           ? {
               onDblClick: (e: Konva.KonvaEventObject<MouseEvent>) =>
-                onEditText(node.sourceId, { x: e.evt.clientX, y: e.evt.clientY }),
+                onEditText(node.sourceId, { x: e.evt.clientX, y: e.evt.clientY, select: 'word' }),
               onDblTap: () => onEditText(node.sourceId),
             }
           : node.type === 'group' && !insideGroupId && onEnterGroup
@@ -1889,6 +1938,17 @@ function NodeView({
                   }
                 : {})}
       >
+        {/* The selection frame is grabbable a few screen px around the box: half of the hairline border
+            lies outside the shape, so a pointer on it would otherwise miss and fall back to the arrow */}
+        {selected && draggable && !isConnectorNode(node) && (
+          <Rect
+            width={box.w}
+            height={box.h}
+            stroke="transparent"
+            strokeWidth={0}
+            hitStrokeWidth={8 / Math.max(zoom, 0.1)}
+          />
+        )}
         {/* group children don't take hits (listening=false); add a transparent hit area so the whole group can be selected/dragged */}
         {node.type === 'group' && <Rect width={box.w} height={box.h} fill="transparent" />}
         <NodeBody

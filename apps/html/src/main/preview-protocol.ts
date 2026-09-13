@@ -1,13 +1,15 @@
+import { RENDERER_SCHEME_PRIVILEGE } from '@genoffice/electron-utils'
 import { protocol } from 'electron'
 import { ASSET_SCHEME, PREVIEW_SCHEME, buildPreviewDocument } from './preview-document'
 
 export { assetBaseHref, previewUrlFor } from './preview-document'
 
-/** Must run before app ready. Both schemes are secure: a secure preview
- * document loading stylesheets and scripts from a non-secure scheme would be
- * blocked as mixed content. */
-export function registerHtmlSchemes(): void {
+/** Must run before app ready, and only once per process, so the renderer scheme
+ * rides along. Both html schemes are secure: a secure preview document loading
+ * stylesheets and scripts from a non-secure scheme would be blocked as mixed content. */
+export function registerPrivilegedSchemes(): void {
   protocol.registerSchemesAsPrivileged([
+    RENDERER_SCHEME_PRIVILEGE,
     {
       scheme: PREVIEW_SCHEME,
       privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },

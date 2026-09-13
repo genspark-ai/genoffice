@@ -1,8 +1,11 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
-import { applyCellEditsToXlsx, readBasicWorkbook } from '../src/gateway/xlsx-gateway'
-import { decodeXlsxEscapes, encodeXlsxEscapes } from '../src/gateway/xlsx-escapes'
+import {
+  applyCellEditsToXlsx,
+  readBasicWorkbook,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
+import { decodeXlsxEscapes, encodeXlsxEscapes } from '@genoffice/xlsx-gateway/gateway/xlsx-escapes'
 
 describe('_xHHHH_ cell text escapes (ECMA-376 22.4.2.4)', () => {
   it('decodes CR, TAB and the _x005F_ literal marker; leaves non-matches alone', () => {

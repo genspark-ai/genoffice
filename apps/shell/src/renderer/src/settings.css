@@ -110,6 +110,15 @@
   color: var(--text-primary);
 }
 
+.set-nav-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
 .set-pane {
   flex: 1;
   min-width: 0;
@@ -468,4 +477,209 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+}
+
+/* ── Integrations pane ── */
+
+.set-intg-hero {
+  margin: 8px 0 4px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+
+.set-intg-hero-title {
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.set-intg-hero-steps {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: intg-step;
+}
+
+.set-intg-hero-steps li {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-primary);
+  counter-increment: intg-step;
+}
+
+.set-intg-hero-steps li::before,
+.set-intg-step-no {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-btn-primary);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-btn-primary-text);
+}
+
+.set-intg-hero-steps li::before {
+  content: counter(intg-step);
+}
+
+.set-intg-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-intg-version {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.set-intg-lead {
+  padding: 4px 0 8px;
+}
+
+.set-intg-warn {
+  padding: 0 0 8px;
+  color: var(--danger);
+}
+
+.set-intg-row {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.set-intg-row .set-field {
+  border-bottom: none;
+}
+
+.set-intg-row[data-state='installed'] .set-intg-state {
+  color: var(--success);
+}
+
+.set-intg-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-intg-details {
+  margin-top: 10px;
+}
+
+.set-intg-details > summary {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.set-intg-details > summary:hover {
+  color: var(--text);
+}
+
+.set-intg-cli {
+  margin-top: 24px;
+}
+
+.set-intg-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.set-intg-option:last-of-type {
+  border-bottom: none;
+}
+
+.set-intg-option .set-field-stack {
+  flex: 1;
+}
+
+.set-intg-option-letter {
+  flex-shrink: 0;
+  width: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.set-intg-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+
+.set-intg-code code {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+  user-select: text;
+  word-break: break-all;
+}
+
+.set-intg-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.set-intg-example {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px 8px 12px;
+  border-radius: 8px;
+  background: var(--surface-subtle);
+}
+
+.set-intg-example-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  user-select: text;
+}
+
+/* the path about to be written, shown before any write happens */
+.set-intg-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+
+.set-intg-confirm .set-field-desc {
+  word-break: break-all;
+}
+
+.set-intg-notice {
+  padding: 0 0 10px;
+}
+
+.set-intg-path {
+  text-align: left;
 }

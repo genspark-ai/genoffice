@@ -25,6 +25,20 @@ export function gensparkAttributionHeaders(baseUrl?: string): Record<string, str
     : {}
 }
 
+/**
+ * OpenCode Zen / Go route and cache per conversation and answer 400
+ * MissingSessionID without this header (genoffice#331). The renderer's
+ * transport id is stable for a chat; a one-shot call is its own conversation.
+ */
+export function opencodeSessionHeaders(
+  baseUrl: string | undefined,
+  sessionId?: string,
+): Record<string, string> {
+  return baseUrl?.startsWith('https://opencode.ai/')
+    ? { 'x-opencode-session': sessionId || crypto.randomUUID() }
+    : {}
+}
+
 export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'genspark',

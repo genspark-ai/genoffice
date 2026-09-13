@@ -23,6 +23,7 @@
 
 <p align="center" dir="rtl">
   <a href="#download"><b>التنزيل</b></a> ·
+  <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="https://genoffice.ai/"><b>الموقع الإلكتروني</b></a> ·
   <a href="https://genoffice.ai/join"><b>المجتمع</b></a> ·
   <a href="../../PRIVACY.md"><b>الخصوصية</b></a>
@@ -49,6 +50,10 @@ GenOffice بديل مجاني ومفتوح المصدر لـ Microsoft Office ع
   أو استخدم مفتاحك الخاص مع Claude أو OpenAI أو Gemini أو DeepSeek أو Kimi أو
   GLM أو Qwen أو Doubao أو MiniMax أو Grok أو Mistral أو OpenRouter أو Requesty، أو أي
   نقطة نهاية متوافقة مع OpenAI، بما في ذلك الخوادم المحلية.
+- **قابل للبرمجة وجاهز للوكلاء.** يأتي التطبيق مع سطر أوامر `genoffice` ومهارة
+  لكل من Claude Code وCodex وCursor وGemini CLI وGitHub Copilot وOpenCode
+  وWindsurf، ليتمكّن وكيل البرمجة من إنشاء ملفات Office حقيقية وتحويلها
+  وقراءتها وتحريرها على جهازك دون فتح أي نافذة.
 
 **الحصول عليه:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon و Intel) ·
 [Windows](https://github.com/genspark-ai/genoffice/releases/latest) (x64 و Arm) ·
@@ -57,9 +62,9 @@ GenOffice بديل مجاني ومفتوح المصدر لـ Microsoft Office ع
 
 ## العرض التوضيحي
 
-ست تطبيقات، ولوحة ذكاء اصطناعي واحدة. كل لقطة شاشة هي من التطبيق الفعلي على
-macOS، والذكاء الاصطناعي فيها ناتج عن التوجيه (prompt) الذي يمكنك قراءته في
-اللوحة.
+ست تطبيقات، ولوحة ذكاء اصطناعي واحدة، وسطر أوامر لوكيل البرمجة الخاص بك. كل
+لقطة شاشة هي من التطبيق الفعلي على macOS، والذكاء الاصطناعي فيها ناتج عن
+التوجيه (prompt) الذي يمكنك قراءته في اللوحة.
 
 ### 1 · Docs — افتح وحرّر ملفات `.docx` بمساعدة ذكاء اصطناعي يمكنك مراجعته
 
@@ -158,6 +163,26 @@ macOS، والذكاء الاصطناعي فيها ناتج عن التوجيه 
 </tr>
 </table>
 
+### 7 · CLI — وكيل البرمجة الخاص بك يقود GenOffice، على جهازك
+
+يأتي GenOffice مع سطر أوامر `genoffice` ومهارة وكيل. ثبّت المهارة، وسيتمكّن
+Claude Code أو Codex أو Cursor أو Gemini CLI أو GitHub Copilot أو OpenCode أو
+Windsurf من إنشاء ملفات Office حقيقية وتحويلها وقراءتها وتحريرها عبر المحرّكات
+نفسها التي تستخدمها التطبيقات، دون فتح أي نافذة.
+
+<img src="../assets/readme/cli-deck-in-app.webp" alt="GenOffice Slides يعرض عرضًا تقديميًا من ثماني شرائح عن المجموعة الشمسية بناه وكيل برمجة عبر سطر أوامر genoffice: شريحة الغلاف على لوحة الرسم، وثماني مصغّرات على اليسار، ولوحة الذكاء الاصطناعي مفتوحة" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/cli-slides-grid.webp" alt="الشرائح الثماني المُصيَّرة لعرض المجموعة الشمسية جنبًا إلى جنب: الغلاف، والجدول الزمني للاستكشاف، وأربعة أرقام رئيسية، ورسم بياني بالأعمدة لأقطار الكواكب، والعوالم الصخرية مقابل العمالقة، ورقم الشمس البارز 99.8%، وشبكة العمالقة الأربعة، والخلاصات"></td>
+<td width="50%"><img src="../assets/readme/cli-integrations.webp" alt="إعدادات GenOffice، صفحة Integrations: مهارة genoffice مثبَّتة في Claude Code، مع أزرار Install بجوار Codex وCursor"></td>
+</tr>
+<tr>
+<td dir="rtl"><b>توجيه واحد إلى وكيلك</b> — "أنشئ عرضًا تقديميًا من ثماني شرائح عن المجموعة الشمسية." يقرأ الوكيل المهارة، ويكتب ورقة أنماط ومخططًا ومواصفة صفحة واحدة لكل شريحة، ويولّد الصورتين بواسطة <code>genoffice image</code>، ويترك <code>genoffice slides check</code> يرفض أي عنصر يتجاوز الحدود أو يتداخل قبل أن يجمّع <code>genoffice create</code> ملف <code>.pptx</code> ويُعيد <code>slides render</code> صورة PNG لكل شريحة لمعاينتها.</td>
+<td dir="rtl"><b>ثبّت مرة واحدة، من الإعدادات → التكاملات</b> — يسرد GenOffice وكلاء البرمجة الذين يجدهم على هذا الجهاز ويكتب المهارة في كل وكيل تختاره. أو نزّل المهارة كملف zip، أو شغّل <code>npx skills add genspark-ai/genoffice</code>. الأوامر وسير العمل الكامل في <a href="#command-line-and-agent-skill">سطر الأوامر ومهارة الوكيل</a>.</td>
+</tr>
+</table>
+
 ## لماذا GenOffice
 
 - **مفتوح المصدر**، برخصة Apache-2.0، ويُطوَّر علنًا على GitHub.
@@ -174,6 +199,8 @@ macOS، والذكاء الاصطناعي فيها ناتج عن التوجيه 
 - **PDF يُعالَج كما ينبغي.** حرِّر النص داخل الصفحة مباشرة، وحوِّل PDF إلى Word
   أو Excel أو PowerPoint على جهازك، مع OCR للنظام لملفات المسح الممسوحة.
 - **Markdown و HTML أيضًا**، بنفس لوحة الذكاء الاصطناعي وتصدير محلي إلى Word.
+- **قابل للبرمجة.** سطر أوامر `genoffice` ومهارة وكيل يضعان كل محرّك في خدمة
+  Claude Code وCodex وCursor وغيرها من وكلاء البرمجة، مع بقاء كل شيء على الجهاز.
 - **مجاني**، للأفراد والفرق على حد سواء.
 
 ## خلفيات الذكاء الاصطناعي
@@ -194,6 +221,72 @@ Grok أو Qwen أو MiniMax أو أي نقطة نهاية للصور متواف�
 تأتي الحزمة كاملةً بثلاثة مظاهر: فاتح وداكن ومظهر النظام. تغيّر المظاهر فقط ما
 يظهر على الشاشة: تحتفظ ملفات التصدير والطباعة والحفظ دائمًا بألوان المستند
 نفسه.
+
+<a id="command-line-and-agent-skill"></a>
+
+## سطر الأوامر ومهارة الوكيل
+
+كل ما تستطيع التطبيقات فعله بملف، يستطيع سطر أوامر `genoffice` فعله من
+الطرفية: فحص ملفات Word وExcel وPowerPoint وPDF وMarkdown وHTML وتحويلها
+وإنشاؤها وقراءتها وتحريرها على المحرّكات نفسها، دون واجهة رسومية. يُثبَّت مع
+GenOffice، ولا يحتاج إلى بيئة تشغيل خاصة به، ولا يرسل أي مستند إلى أي مكان.
+وبالاقتران مع **مهارة الوكيل** المرفقة، يحوّل وكيل البرمجة إلى عامل مستندات
+يُنتج ملفات Office حقيقية بدلًا من تقريبات بصيغة Markdown.
+
+**يعمل مع:** Claude Code وCodex وCursor وGemini CLI وGitHub Copilot وOpenCode
+وWindsurf مباشرة دون أي إعداد، ومع أي وكيل آخر يقرأ المهارات.
+
+### تثبيت المهارة
+
+| الطريقة                                | ما يحدث                                                                                                                                            |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **الإعدادات → التكاملات** في التطبيق   | يسرد الوكلاء الموجودين على هذا الجهاز؛ وبنقرة واحدة يكتب المهارة في كل وكيل تختاره. ويظهر زر **Update** عندما يصدر إصدار من GenOffice بمهارة أحدث. |
+| **التنزيل كملف zip** من الصفحة نفسها   | التنسيق الذي يقبله claude.ai وتطبيقات Claude لسطح المكتب والمساعدون الآخرون كمهارة مرفوعة.                                                         |
+| `npx skills add genspark-ai/genoffice` | يثبّت من هذا المستودع في أي وكيل متوافق مع المهارات.                                                                                               |
+
+ثم ابدأ محادثة جديدة واطلب مستندًا. تعلّم المهارة الوكيل متى يلجأ إلى
+`genoffice`، وكيف يقرأ الملف قبل تحريره، وكيف يتحقّق من عمله بنفسه.
+
+### بداية سريعة من الطرفية
+
+```bash
+genoffice --version
+genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx, …
+genoffice create --type docx --from notes.md --out notes.docx
+genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
+genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
+genoffice open sales.xlsx                          # hand the result to the editor
+```
+
+يطبع كل أمر ملخّصًا من سطر واحد، أو كائن JSON واحدًا مع `--json`. التعديلات
+ذرّية: العملية المرفوضة تترك الملف كما هو وتعود برسالة خطأ إرشادية. يسرد
+`genoffice help` مجموعة الأوامر الحالية؛ والمرجع الكامل في
+[packages/cli/README.md](../../packages/cli/README.md).
+
+### ما الذي يشغّله الوكيل فعليًا
+
+عرض المجموعة الشمسية في العرض التوضيحي أعلاه استغرق توجيهًا واحدًا في Claude Code.
+وخلف الكواليس، اتّبع الوكيل سير العمل المرحلي للمهارة، وتحقّق سطر الأوامر من
+كل مرحلة قبل أن تبدأ التالية:
+
+```bash
+genoffice capabilities --json                        # which cloud tools GenOffice has configured
+genoffice guide slides design                        # the deck workflow and layout library
+genoffice image "the eight planets in a row …" --aspect 16:9 --out deck/assets/cover.jpg
+genoffice slides check deck/outline.json --json      # 8 pages, no findings
+genoffice slides check deck/pages/01.json --json     # builds one slide, audits overflow and overlap
+…                                                    # one page file per slide, fixed until each check is clean
+genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck/solar-system.pptx --json
+genoffice slides render deck/solar-system.pptx --out deck/shots --json
+genoffice slides audit deck/solar-system.pptx --json    # 8 slides, no layout issues
+genoffice slides replace deck/solar-system.pptx --slide 4 --spec deck/pages/05.json --json
+genoffice open deck/solar-system.pptx
+```
+
+لا يحدث أي استدعاء لنموذج داخل `genoffice`: الوكيل هو من يفكّر، وسطر الأوامر
+هو من يبني ويتحقّق، وتُفتح النتيجة في GenOffice أو PowerPoint كملف `.pptx` عادي.
 
 <a id="download"></a>
 
@@ -358,6 +451,18 @@ Settings → AI Media & Search.
 إلى عناصر Word حقيقية: عناوين، وفقرات، وقوائم، وجداول، وبطاقات، وصفوف مؤشرات
 أداء، وحقول نماذج، وخلفيات صفحات؛ ولا تُضمَّن كصور إلا العناصر البصرية التي لا
 نظير لها في Word (كالرسوم البيانية والأيقونات والصناديق المزخرفة).
+
+</details>
+
+<details>
+<summary><b>هل يمكنني تشغيل GenOffice من Claude Code أو Codex أو Cursor أو من سكربت؟</b></summary>
+
+نعم. يثبّت GenOffice سطر أوامر `genoffice` يشغّل المحرّكات نفسها دون واجهة
+رسومية: افحص المستندات وحوّلها وأنشئها واقرأها وحرّرها من الطرفية أو من
+سكربت، مع مخرجات `--json` للبرامج. وتعلّم مهارة الوكيل المرفقة Claude Code
+وCodex وCursor وGemini CLI وGitHub Copilot وOpenCode وWindsurf استخدامه؛ ثبّتها
+من **الإعدادات → التكاملات**. راجع
+[سطر الأوامر ومهارة الوكيل](#command-line-and-agent-skill).
 
 </details>
 

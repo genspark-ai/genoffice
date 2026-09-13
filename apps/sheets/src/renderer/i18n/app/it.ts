@@ -558,6 +558,12 @@ export const it = {
   appPdfCanceled: 'Esportazione PDF annullata.',
   appPdfExported: '{path} esportato.',
   appPdfExportFailed: 'Impossibile esportare il PDF.',
+  appPrintPreparing: 'Preparazione della stampa…',
+  appPrintSent: 'Inviato alla stampante.',
+  appPrintCanceled: 'Stampa annullata.',
+  appPrintFailed: 'Impossibile stampare.',
+  appPrintNeedsFullLoad:
+    'La stampa richiede il caricamento completo della cartella di lavoro: attendere il termine del caricamento.',
   appCsvExportNeedsFullLoad:
     "L'esportazione in CSV richiede la cartella di lavoro completamente caricata — attendi la fine del caricamento.",
   appCsvExportTooLarge: 'Il foglio è troppo grande per essere esportato come CSV.',
@@ -1351,6 +1357,8 @@ export const it = {
   appFormatMenu: 'Formato',
   appRowHeight: 'Altezza riga',
   appColWidth: 'Larghezza colonna',
+  appAutoFitRowHeight: 'Adatta altezza righe',
+  appAutoFitColWidth: 'Adatta larghezza colonne',
   appRowHeightLabel: 'Altezza riga (punti)',
   appColWidthLabel: 'Larghezza colonna (caratteri)',
   appDeleteRow: 'Elimina riga',

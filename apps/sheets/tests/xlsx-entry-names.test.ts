@@ -4,7 +4,11 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
-import { applyCellEditsToXlsx, inventoryXlsx, readBasicWorkbook } from '../src/gateway/xlsx-gateway'
+import {
+  applyCellEditsToXlsx,
+  inventoryXlsx,
+  readBasicWorkbook,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 
 const PARTS: Record<string, string> = {
   '[Content_Types].xml':

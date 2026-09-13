@@ -934,6 +934,25 @@ describe('vertical text (bodyPr vert) column layout', () => {
   const layoutV = (b: TextBody, w = 200, h = 300) =>
     layoutText({ body: b, boxWidthPx: w, boxHeightPx: h, metrics: m, vp })
 
+  it('numbered paragraphs keep their scheme on the bullet glyph run (ribbon highlight / toggle)', () => {
+    const layout = layoutV(
+      body({
+        vert: 'eaVert',
+        paragraphs: [
+          {
+            runs: [{ text: '\u7e26', fontSize: 18 }],
+            bullet: { type: 'number', numType: 'romanUcPeriod' },
+            marL: 342900,
+            indent: -342900,
+          },
+        ],
+      }),
+    )
+    const b = layout.lines[0]!.runs.find((r) => r.isBullet)!
+    expect(b.text).toBe('I.')
+    expect(b.numType).toBe('romanUcPeriod')
+  })
+
   it('eaVert: two CJK paragraphs → two columns, right-to-left, chars flow downward within a column, all inside the box', () => {
     const layout = layoutV(
       body({
@@ -1248,9 +1267,11 @@ describe('buAutoNum startAt', () => {
     indent: -457200,
   })
 
-  it('starts the sequence at startAt and continues from there', () => {
+  it('starts the sequence at startAt; a following paragraph without startAt restarts at 1 (PowerPoint probe)', () => {
     const layout = layoutText({
-      body: body({ paragraphs: [para('first', 3), para('second')] as any }),
+      body: body({
+        paragraphs: [para('first', 3), para('second', 3), para('third')] as any,
+      }),
       boxWidthPx: 800,
       boxHeightPx: 200,
       metrics: m,
@@ -1260,7 +1281,11 @@ describe('buAutoNum startAt', () => {
       .map((l) => l.runs.find((r: any) => r.isBullet))
       .filter(Boolean)
       .map((r: any) => r.text)
-    expect(bullets).toEqual(['3.', '4.'])
+    expect(bullets).toEqual(['3.', '4.', '1.'])
+    const runs = layout.lines
+      .map((l) => l.runs.find((r: any) => r.isBullet))
+      .filter(Boolean) as any[]
+    expect(runs.map((r) => r.startAt)).toEqual([3, 3, undefined])
   })
 
   it('defaults to 1 without startAt', () => {
@@ -1643,7 +1668,7 @@ describe('Symbol-font bullets', () => {
     }).lines[0]!.runs.find((r) => r.isBullet)!
 
   it('maps <a:buFont Symbol> PUA/byte bullet codes through the Symbol table (U+F0B7 → •)', () => {
-    // prod deck: every level-1 bullet drew as a tofu box because the PUA code stayed raw
+    // a real deck: every level-1 bullet drew as a tofu box because the PUA code stayed raw
     const pua = bulletOf([
       {
         runs: [{ text: 'item', fontSize: 14 }],
@@ -1818,5 +1843,129 @@ describe('latinOnly substitution hint', () => {
         (s) => s.fontFamily === 'Malgun Gothic' && !s.latinOnly && s.substScript === 'ko',
       ),
     ).toBe(true)
+  })
+})
+
+describe('bullet parity (PowerPoint)', () => {
+  const m = new HeuristicMetrics()
+  const lay = (paragraphs: Paragraph[], media?: (ref: string) => string | undefined) =>
+    layoutText({
+      body: body({ paragraphs: paragraphs as Paragraph[] }),
+      boxWidthPx: 800,
+      boxHeightPx: 600,
+      metrics: m,
+      vp,
+      media,
+    })
+  const bulletsOf = (l: ReturnType<typeof lay>) =>
+    l.lines.filter((ln) => ln.paraStart).map((ln) => ln.runs.find((r) => r.isBullet))
+  const num = (text: string, level = 0, numType = 'arabicPeriod'): Paragraph =>
+    ({
+      runs: [{ text, fontSize: 18 }],
+      ...(level ? { level } : {}),
+      marL: 342900 * (level + 1),
+      indent: -342900,
+      bullet: { type: 'number', numType },
+    }) as Paragraph
+
+  it('nested numbering keeps one counter per level; the outer list continues after a sublist', () => {
+    const l = lay([
+      num('one'),
+      num('two'),
+      num('a', 1, 'alphaLcPeriod'),
+      num('b', 1, 'alphaLcPeriod'),
+      num('i', 2, 'romanLcPeriod'),
+      num('c', 1, 'alphaLcPeriod'),
+      num('three'),
+      num('a again', 1, 'alphaLcPeriod'),
+    ])
+    expect(bulletsOf(l).map((b) => b!.text)).toEqual([
+      '1.',
+      '2.',
+      'a.',
+      'b.',
+      'i.',
+      'c.',
+      '3.',
+      'a.',
+    ])
+  })
+
+  it('an unnumbered text paragraph restarts its level; empty paragraphs change nothing', () => {
+    const l = lay([
+      num('one'),
+      { runs: [{ text: '', fontSize: 18 }], bullet: { type: 'number' } } as Paragraph,
+      num('two'),
+      { runs: [{ text: 'plain', fontSize: 18 }], bullet: { type: 'none' } } as Paragraph,
+      num('one again'),
+    ])
+    expect(bulletsOf(l).map((b) => b?.text)).toEqual(['1.', undefined, '2.', undefined, '1.'])
+  })
+
+  it('a scheme change or a differing startAt (1 when absent) restarts the level', () => {
+    const withStart = (text: string, startAt: number): Paragraph =>
+      ({ ...num(text), bullet: { type: 'number', numType: 'arabicPeriod', startAt } }) as Paragraph
+    const l = lay([
+      num('one'),
+      num('two'),
+      num('A', 0, 'alphaUcPeriod'),
+      num('B', 0, 'alphaUcPeriod'),
+      withStart('seven', 7),
+      withStart('eight', 7),
+      num('one again'),
+      withStart('seven again', 7),
+    ])
+    expect(bulletsOf(l).map((b) => b!.text)).toEqual([
+      '1.',
+      '2.',
+      'A.',
+      'B.',
+      '7.',
+      '8.',
+      '1.',
+      '7.',
+    ])
+  })
+
+  it('buSzPts sizes the glyph in absolute points, buSzPct relative to the first run', () => {
+    const l = lay([
+      {
+        runs: [{ text: 'x', fontSize: 18 }],
+        marL: 342900,
+        indent: -342900,
+        bullet: { type: 'char', char: '•', sizePt: 36 },
+      } as Paragraph,
+      {
+        runs: [{ text: 'x', fontSize: 18 }],
+        marL: 342900,
+        indent: -342900,
+        bullet: { type: 'char', char: '•', sizePct: 50 },
+      } as Paragraph,
+    ])
+    const [a, b] = bulletsOf(l)
+    expect(a!.fontSizePx).toBeCloseTo(48, 3) // 36pt at scale 1 (96/72)
+    expect(b!.fontSizePx).toBeCloseTo(12, 3)
+  })
+
+  it('picture bullet: image run on the baseline, cap-height tall; missing media falls back to the dot', () => {
+    const para = {
+      runs: [{ text: 'x', fontSize: 18 }],
+      marL: 342900,
+      indent: -342900,
+      bullet: { type: 'blip', mediaRef: 'ppt/media/image1.png', blipEmbedId: 'rId6' },
+    } as Paragraph
+    const withMedia = lay([para], (ref) =>
+      ref === 'ppt/media/image1.png' ? 'data:image/png;base64,AA' : undefined,
+    )
+    const b = bulletsOf(withMedia)[0]!
+    expect(b.image).toBe('data:image/png;base64,AA')
+    expect(b.text).toBe('')
+    expect(b.ascentPx).toBeCloseTo(24 * 0.75, 3) // 18pt text at scale 1, 1:1 image
+    expect(b.widthPx).toBeCloseTo(b.ascentPx!, 3)
+    const textRun = withMedia.lines[0]!.runs.find((r) => !r.isBullet)!
+    expect(textRun.x).toBeGreaterThanOrEqual(b.x + b.widthPx)
+    const noMedia = bulletsOf(lay([para]))[0]!
+    expect(noMedia.image).toBeUndefined()
+    expect(noMedia.text).toBe('•')
   })
 })

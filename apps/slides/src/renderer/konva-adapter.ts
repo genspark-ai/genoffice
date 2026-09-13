@@ -305,6 +305,33 @@ export function pathGradientCanvas(
   return cv
 }
 
+/**
+ * circle path gradient: the center is the fillToRect focus in shape fractions; the 100% ring
+ * sits on the farthest corner of the tile rect (shape bounds grown by negative tileRect
+ * insets), where PowerPoint lands the pos-1 color. Google Slides' corner radials
+ * (fillToRect r=b=100% + tileRect l=t=-100%) thus run focus corner -> opposite corner.
+ */
+export function radialCircleGeometry(
+  w: number,
+  h: number,
+  center?: { x: number; y: number },
+  tileRect?: { l: number; t: number; r: number; b: number },
+): { cx: number; cy: number; r: number } {
+  const cx = (center?.x ?? 0.5) * w
+  const cy = (center?.y ?? 0.5) * h
+  const x0 = Math.min(0, (tileRect?.l ?? 0) * w)
+  const y0 = Math.min(0, (tileRect?.t ?? 0) * h)
+  const x1 = Math.max(w, w - (tileRect?.r ?? 0) * w)
+  const y1 = Math.max(h, h - (tileRect?.b ?? 0) * h)
+  const r = Math.max(
+    Math.hypot(cx - x0, cy - y0),
+    Math.hypot(x1 - cx, cy - y0),
+    Math.hypot(cx - x0, y1 - cy),
+    Math.hypot(x1 - cx, y1 - cy),
+  )
+  return { cx, cy, r }
+}
+
 export function fillToKonva(
   fill: RenderFill,
   w: number,
@@ -340,21 +367,12 @@ export function fillToKonva(
               fillPatternRepeat: 'no-repeat',
             }
         }
-        // circle: native radial. Center follows fillToRect; the 100% ring sits on
-        // the farthest corner (pos-1 color lands exactly in that corner, like PowerPoint).
-        const cx = (fill.center?.x ?? 0.5) * w
-        const cy = (fill.center?.y ?? 0.5) * h
-        const far = Math.max(
-          Math.hypot(cx, cy),
-          Math.hypot(w - cx, cy),
-          Math.hypot(cx, h - cy),
-          Math.hypot(w - cx, h - cy),
-        )
+        const { cx, cy, r } = radialCircleGeometry(w, h, fill.center, fill.tileRect)
         return {
           fillRadialGradientStartPoint: { x: cx, y: cy },
           fillRadialGradientEndPoint: { x: cx, y: cy },
           fillRadialGradientStartRadius: 0,
-          fillRadialGradientEndRadius: far * 1.0,
+          fillRadialGradientEndRadius: r,
           fillRadialGradientColorStops: linearRampStops(fill.stops),
         }
       }
@@ -374,15 +392,9 @@ export function fillToKonva(
       const img = fill.dataUrl ? images?.get(fill.dataUrl) : undefined
       if (img) {
         // Konva accepts any CanvasImageSource at runtime; its typings only admit HTMLImageElement
-        const src = processedImage(
-          img,
-          fill.dataUrl ?? '',
-          fill.clrChange,
-          fill.duotone,
-          fill.lum,
-        ) as HTMLImageElement
+        const src = processedImage(img, fill.dataUrl ?? '', fill) as HTMLImageElement
         // recolored variants must not share cache slots with the raw image
-        const srcKey = processedImageKey(fill.dataUrl ?? '', fill.clrChange, fill.duotone, fill.lum)
+        const srcKey = processedImageKey(fill.dataUrl ?? '', fill)
         if (fill.mode === 'tile') {
           // PowerPoint tiles at the image's 144dpi natural size x sx/sy, anchored per algn
           // plus tx/ty offsets. Pre-composited into a shape-sized canvas: Konva pattern
@@ -742,14 +754,21 @@ const anchoredTileCache = new Map<string, HTMLCanvasElement>()
 /**
  * Compose an a:tile grid into a canvas covering the shape: tiles at the image's 144dpi
  * natural size x sx/sy (the caller bakes the dpi into t.scaleX/Y), anchored per algn
- * (tl..br) with tx/ty offsets, repeating over the whole shape box.
+ * (tl..br) with tx/ty offsets inside t.frame (default: the shape box), repeating over the shape.
  */
 function anchoredTileCanvas(
   src: HTMLImageElement | HTMLCanvasElement,
   cacheKey: string,
   w: number,
   h: number,
-  t: { scaleX: number; scaleY: number; txPx: number; tyPx: number; algn: string },
+  t: {
+    scaleX: number
+    scaleY: number
+    txPx: number
+    tyPx: number
+    algn: string
+    frame?: { x: number; y: number; w: number; h: number }
+  },
 ): HTMLCanvasElement | HTMLImageElement {
   // A not-yet-decoded image has 0x0 dimensions: skip (and never cache) so the
   // image-load redraw composes the real tile grid
@@ -757,7 +776,8 @@ function anchoredTileCanvas(
   // The caller draws the canvas 1:1 with no pattern transform (Skia pixelRatio bug),
   // so it must cover the shape exactly; bail out on extreme sizes instead of capping
   if (w * h > 4096 * 4096) return src
-  const key = `${cacheKey}|tile|${src.width}x${src.height}|${Math.ceil(w)}x${Math.ceil(h)}|${t.scaleX.toFixed(4)}|${t.scaleY.toFixed(4)}|${Math.round(t.txPx)}|${Math.round(t.tyPx)}|${t.algn}`
+  const frame = t.frame ?? { x: 0, y: 0, w, h }
+  const key = `${cacheKey}|tile|${src.width}x${src.height}|${Math.ceil(w)}x${Math.ceil(h)}|${t.scaleX.toFixed(4)}|${t.scaleY.toFixed(4)}|${Math.round(t.txPx)}|${Math.round(t.tyPx)}|${t.algn}|${Math.round(frame.x)},${Math.round(frame.y)},${Math.round(frame.w)}x${Math.round(frame.h)}`
   let c = anchoredTileCache.get(key)
   if (!c) {
     const tw = Math.max(src.width * t.scaleX, 1)
@@ -784,8 +804,8 @@ function anchoredTileCanvas(
       b: 1,
       br: 1,
     }
-    const ax = (xFrac[t.algn] ?? 0) * (w - tw) + t.txPx
-    const ay = (yFrac[t.algn] ?? 0) * (h - th) + t.tyPx
+    const ax = frame.x + (xFrac[t.algn] ?? 0) * (frame.w - tw) + t.txPx
+    const ay = frame.y + (yFrac[t.algn] ?? 0) * (frame.h - th) + t.tyPx
     c = document.createElement('canvas')
     c.width = Math.max(1, Math.ceil(w))
     c.height = Math.max(1, Math.ceil(h))
@@ -869,38 +889,91 @@ function averageColor(img: HTMLImageElement | HTMLCanvasElement, cacheKey: strin
 }
 
 const duotoneCache = new Map<string, HTMLCanvasElement>()
+const biLevelCache = new Map<string, HTMLCanvasElement>()
 const lumCache = new Map<string, HTMLCanvasElement>()
 
 type ClrChange = { from: string; to: string }
 type Lum = { bright: number; contrast: number }
 
-export function processedImageKey(
-  dataUrl: string,
-  clrChange?: ClrChange,
-  duotone?: [string, string],
-  lum?: Lum,
-): string {
+/** Blip pixel effects a picture or image fill may carry (all optional). */
+export type BlipEffects = {
+  clrChange?: ClrChange
+  biLevel?: number
+  duotone?: [string, string]
+  lum?: Lum
+}
+
+export function hasBlipEffects(fx: BlipEffects): boolean {
+  return !!(fx.clrChange || fx.biLevel != null || fx.duotone || fx.lum)
+}
+
+export function processedImageKey(dataUrl: string, fx: BlipEffects): string {
   let key = dataUrl
-  if (clrChange) key += `|cc:${clrChange.from}>${clrChange.to}`
-  if (duotone) key += `|${duotone[0]}|${duotone[1]}`
-  if (lum) key += `|lum:${lum.bright},${lum.contrast}`
+  if (fx.clrChange) key += `|cc:${fx.clrChange.from}>${fx.clrChange.to}`
+  if (fx.biLevel != null) key += `|bl:${fx.biLevel}`
+  if (fx.duotone) key += `|${fx.duotone[0]}|${fx.duotone[1]}`
+  if (fx.lum) key += `|lum:${fx.lum.bright},${fx.lum.contrast}`
   return key
 }
 
-/** Apply blip pixel effects in PowerPoint's order: clrChange, then duotone, then lum. */
+/** Apply blip pixel effects in PowerPoint's order: clrChange, biLevel, duotone, then lum. */
 export function processedImage(
   img: HTMLImageElement,
   dataUrl: string,
-  clrChange?: ClrChange,
-  duotone?: [string, string],
-  lum?: Lum,
+  fx: BlipEffects,
 ): CanvasImageSource {
+  const { clrChange, biLevel, duotone, lum } = fx
   let src: HTMLImageElement | HTMLCanvasElement = img
   if (clrChange) src = clrChangeImage(src, `${dataUrl}|cc`, clrChange.from, clrChange.to)
+  if (biLevel != null) src = biLevelImage(src, processedImageKey(dataUrl, { clrChange }), biLevel)
   if (duotone)
-    src = duotoneImage(src, processedImageKey(dataUrl, clrChange), duotone[0], duotone[1])
-  if (lum) src = lumImage(src, processedImageKey(dataUrl, clrChange, duotone), lum)
+    src = duotoneImage(
+      src,
+      processedImageKey(dataUrl, { clrChange, biLevel }),
+      duotone[0],
+      duotone[1],
+    )
+  if (lum) src = lumImage(src, processedImageKey(dataUrl, { clrChange, biLevel, duotone }), lum)
   return src
+}
+
+/** biLevel pixel mapping: luminance >= thresh (0-1) -> white, else black; alpha kept. */
+export function biLevelPixels(px: Uint8ClampedArray, thresh: number): void {
+  const cut = thresh * 255
+  for (let i = 0; i < px.length; i += 4) {
+    const lum = 0.299 * px[i]! + 0.587 * px[i + 1]! + 0.114 * px[i + 2]!
+    const v = lum >= cut ? 255 : 0
+    px[i] = v
+    px[i + 1] = v
+    px[i + 2] = v
+  }
+}
+
+/** <a:biLevel>: black-and-white threshold recolor. */
+export function biLevelImage(
+  img: HTMLImageElement | HTMLCanvasElement,
+  cacheKey: string,
+  thresh: number,
+): HTMLCanvasElement {
+  const key = `${cacheKey}|bl:${thresh}`
+  let c = biLevelCache.get(key)
+  if (!c) {
+    c = document.createElement('canvas')
+    c.width = img.width || 1
+    c.height = img.height || 1
+    const ctx = c.getContext('2d')!
+    ctx.drawImage(img, 0, 0)
+    try {
+      const data = ctx.getImageData(0, 0, c.width, c.height)
+      biLevelPixels(data.data, thresh)
+      ctx.putImageData(data, 0, 0)
+    } catch {
+      /* tainted canvas: keep the original pixels */
+    }
+    if (biLevelCache.size > 100) biLevelCache.clear()
+    biLevelCache.set(key, c)
+  }
+  return c
 }
 
 /**
@@ -1034,6 +1107,166 @@ export function duotoneImage(
     duotoneCache.set(key, c)
   }
   return c
+}
+
+type PictureClip = NonNullable<PictureRenderNode['clip']>
+type PathCtx = Pick<CanvasRenderingContext2D, 'moveTo' | 'lineTo' | 'arcTo' | 'closePath'>
+
+/** Trace a picture-style clip; freeform paths come back as a Path2D instead. */
+export function tracePictureClip(
+  ctx: PathCtx,
+  clip: PictureClip,
+  w: number,
+  h: number,
+): Path2D | undefined {
+  if (clip.pathData) return new Path2D(clip.pathData)
+  if (clip.polygonPoints) {
+    const pts = clip.polygonPoints
+    ctx.moveTo(pts[0]!, pts[1]!)
+    for (let i = 2; i + 1 < pts.length; i += 2) ctx.lineTo(pts[i]!, pts[i + 1]!)
+    ctx.closePath()
+    return
+  }
+  const r = Math.min(clip.cornerRadiusPx ?? 0, w / 2, h / 2)
+  ctx.moveTo(r, 0)
+  ctx.arcTo(w, 0, w, h, r)
+  ctx.arcTo(w, h, 0, h, r)
+  ctx.arcTo(0, h, 0, 0, r)
+  ctx.arcTo(0, 0, w, 0, r)
+  ctx.closePath()
+  return
+}
+
+const alphaCache = new Map<string, boolean>()
+
+/** Whether the image has any non-opaque pixel (sampled on a 64px downscale; tainted reads as opaque). */
+export function imageHasAlpha(
+  img: HTMLImageElement | HTMLCanvasElement,
+  cacheKey: string,
+): boolean {
+  let v = alphaCache.get(cacheKey)
+  if (v === undefined) {
+    v = false
+    const c = document.createElement('canvas')
+    c.width = Math.max(1, Math.min(img.width, 64))
+    c.height = Math.max(1, Math.min(img.height, 64))
+    const ctx = c.getContext('2d')
+    if (ctx) {
+      ctx.drawImage(img, 0, 0, c.width, c.height)
+      try {
+        const px = ctx.getImageData(0, 0, c.width, c.height).data
+        for (let i = 3; i < px.length; i += 4) {
+          if (px[i]! < 250) {
+            v = true
+            break
+          }
+        }
+      } catch {
+        /* tainted canvas */
+      }
+    }
+    if (alphaCache.size > 200) alphaCache.clear()
+    alphaCache.set(cacheKey, v)
+  }
+  return v
+}
+
+const clippedImageCache = new Map<string, HTMLCanvasElement>()
+
+/**
+ * The picture drawn through its geometry clip on a box-sized canvas. A transparent
+ * picture casts its shadow from these pixels (PowerPoint shadows the alpha silhouette,
+ * not the frame), so no opaque backing shape is needed.
+ */
+export function clippedImageCanvas(
+  img: HTMLImageElement | HTMLCanvasElement,
+  cacheKey: string,
+  w: number,
+  h: number,
+  clip: PictureClip,
+  crop: ReturnType<typeof cropToKonva>,
+): HTMLCanvasElement {
+  const key = `${cacheKey}|clipped:${w}x${h}|${clip.pathData ?? clip.polygonPoints?.join(',') ?? clip.cornerRadiusPx ?? 0}|${JSON.stringify(crop)}`
+  let c = clippedImageCache.get(key)
+  if (!c) {
+    c = document.createElement('canvas')
+    c.width = Math.max(1, Math.ceil(w))
+    c.height = Math.max(1, Math.ceil(h))
+    const ctx = c.getContext('2d')!
+    ctx.beginPath()
+    const p = tracePictureClip(ctx, clip, w, h)
+    if (p) ctx.clip(p)
+    else ctx.clip()
+    const dx = crop.x ?? 0
+    const dy = crop.y ?? 0
+    const dw = crop.width ?? w
+    const dh = crop.height ?? h
+    if (crop.crop)
+      ctx.drawImage(
+        img,
+        crop.crop.x,
+        crop.crop.y,
+        crop.crop.width,
+        crop.crop.height,
+        dx,
+        dy,
+        dw,
+        dh,
+      )
+    else ctx.drawImage(img, dx, dy, dw, dh)
+    if (clippedImageCache.size > 100) clippedImageCache.clear()
+    clippedImageCache.set(key, c)
+  }
+  return c
+}
+
+const imageShadowCache = new WeakMap<
+  HTMLCanvasElement,
+  Map<string, { canvas: HTMLCanvasElement; pad: number }>
+>()
+
+/**
+ * Only the shadow a canvas would cast: the source drawn with canvas shadow params,
+ * then erased out of the result so the real picture paints exactly once on top.
+ * Keyed by the source canvas itself (clippedImageCanvas already dedupes by image,
+ * size, clip and crop), so two clips of one picture never share a silhouette.
+ * The canvas is padded by `pad` on every side (draw it at -pad,-pad).
+ */
+export function imageShadowCanvas(
+  src: HTMLCanvasElement,
+  shadow: ReturnType<typeof shadowToKonva>,
+): { canvas: HTMLCanvasElement; pad: number } {
+  const blur = shadow.shadowBlur ?? 0
+  const ox = shadow.shadowOffsetX ?? 0
+  const oy = shadow.shadowOffsetY ?? 0
+  const key = `${shadow.shadowColor},${blur},${ox},${oy}`
+  let perSrc = imageShadowCache.get(src)
+  if (!perSrc) {
+    perSrc = new Map()
+    imageShadowCache.set(src, perSrc)
+  }
+  let hit = perSrc.get(key)
+  if (!hit) {
+    const dpr = Math.min(globalThis.devicePixelRatio || 1, 2)
+    const pad = Math.ceil(blur * 2 + Math.abs(ox) + Math.abs(oy)) + 2
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.ceil((src.width + 2 * pad) * dpr))
+    canvas.height = Math.max(1, Math.ceil((src.height + 2 * pad) * dpr))
+    const ctx = canvas.getContext('2d')!
+    ctx.scale(dpr, dpr)
+    // canvas shadow params live in device space (transforms don't apply to them)
+    ctx.shadowColor = shadow.shadowColor ?? 'rgba(0,0,0,0)'
+    ctx.shadowBlur = blur * dpr
+    ctx.shadowOffsetX = ox * dpr
+    ctx.shadowOffsetY = oy * dpr
+    ctx.drawImage(src, pad, pad)
+    ctx.shadowColor = 'rgba(0,0,0,0)'
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.drawImage(src, pad, pad)
+    hit = { canvas, pad }
+    perSrc.set(key, hit)
+  }
+  return hit
 }
 
 /** Solid-fill shape with <a:softEdge>: the (rounded) rect pre-rendered with feathered edges. */
@@ -1210,6 +1443,10 @@ export interface GlyphDraw {
   scaleY?: number
   offsetX?: number
   offsetY?: number
+  /** Picture bullet: image data URL drawn in an x/y/imageW/imageH box instead of text */
+  image?: string
+  imageW?: number
+  imageH?: number
 }
 
 // Same-script fallback chains for Japanese/Korean/Traditional Chinese (win/mac family names back each other up); shared by FONT_STACK and the unknown-font fallback
@@ -1496,6 +1733,14 @@ export function glyphToDraw(run: GlyphRun): GlyphDraw {
         })()
       : {}),
     ...(run.reflection ? { reflection: true } : {}),
+    ...(run.image
+      ? {
+          image: run.image,
+          imageW: run.widthPx,
+          imageH: run.ascentPx ?? run.fontSizePx * 0.8,
+          y: run.baselineY - (run.ascentPx ?? run.fontSizePx * 0.8),
+        }
+      : {}),
   }
 }
 

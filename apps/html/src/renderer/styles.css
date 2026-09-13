@@ -302,6 +302,15 @@ html.genoffice-popover-open .ribbon-tabs {
   flex: 1;
 }
 
+/* muted verb leading a button row ("Insert  Heading Paragraph Image …"): the ribbon has no tabs to say it */
+.rb-group-lead {
+  flex-shrink: 0;
+  padding: 0 6px 0 4px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .rb-big {
   display: flex;
   flex-direction: column;
@@ -3279,6 +3288,26 @@ html.genoffice-popover-open .ribbon-tabs {
   min-width: 0;
 }
 
+.hx-panel-lock {
+  align-self: flex-end;
+  flex: 0 0 auto;
+  height: 28px;
+  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.hx-panel-lock.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .hx-panel label {
   display: flex;
   flex-direction: column;
@@ -3361,7 +3390,8 @@ html.genoffice-popover-open .ribbon-tabs {
   anchor-name: --rb-menu-anchor;
   anchor-scope: --rb-menu-anchor;
 }
-.rb-menu {
+.rb-menu,
+.table-picker {
   position: fixed;
   position-anchor: --rb-menu-anchor;
   top: calc(anchor(bottom) + 4px);
@@ -3369,12 +3399,64 @@ html.genoffice-popover-open .ribbon-tabs {
   position-try-fallbacks: flip-inline;
   position-visibility: anchors-visible;
   z-index: 62;
-  min-width: 140px;
-  padding: 4px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow-menu);
+}
+.rb-menu {
+  min-width: 140px;
+  padding: 4px;
+}
+
+/* Insert: split button (main action + narrow caret), one pill on hover like the docs / slides ribbons */
+.rb-split .rb-split-main {
+  border-radius: 3px 0 0 3px;
+}
+.rb-split .rb-split-caret {
+  min-width: 16px;
+  width: 16px;
+  height: 30px;
+  padding: 0;
+  border-radius: 0 3px 3px 0;
+  color: var(--text-dim);
+}
+.rb-split:hover > .rb-btn:not(:disabled) {
+  background: var(--hover);
+}
+.rb-split > .rb-btn:hover:not(:disabled),
+.rb-split > .rb-split-caret.active {
+  background: var(--active-bg);
+}
+
+/* Insert: table size picker (hover grid) */
+.table-picker {
+  padding: 8px;
+}
+.table-picker-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  white-space: nowrap;
+}
+.table-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 18px);
+  gap: 3px;
+}
+.table-cell {
+  width: 18px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.table-cell.hot {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 .rb-menu button {
   display: flex;
@@ -3394,6 +3476,35 @@ html.genoffice-popover-open .ribbon-tabs {
 }
 .rb-menu button:hover {
   background: var(--hover);
+}
+.rb-url-form {
+  display: flex;
+  gap: 6px;
+  min-width: 320px;
+  padding: 8px;
+}
+.rb-url-form input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.rb-menu .rb-url-submit {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  background: var(--accent);
+  color: var(--hx-on-accent);
+}
+.rb-menu .rb-url-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .rb-menu button svg {
   flex-shrink: 0;

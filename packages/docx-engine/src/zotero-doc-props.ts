@@ -11,10 +11,14 @@ const ZOTERO_PREF_NAME = /^ZOTERO_PREF(?:_(\d+))?$/
 const PROPERTY_RE =
   /<(?:[A-Za-z_][\w.-]*:)?property\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?property\s*>/g
 
+function codePointText(match: string, code: number): string {
+  return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match
+}
+
 function decodeXmlText(value: string): string {
   return value
-    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_match, decimal) => String.fromCodePoint(parseInt(decimal, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (match, hex) => codePointText(match, parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (match, decimal) => codePointText(match, parseInt(decimal, 10)))
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -72,8 +76,12 @@ export function patchZoteroDocumentDataXml(xml: string | null, data: string): st
     return name && ZOTERO_PREF_NAME.test(name) ? '' : property
   })
   const chunks: string[] = []
-  for (let offset = 0; offset < data.length; offset += 255)
-    chunks.push(data.slice(offset, offset + 255))
+  for (let offset = 0; offset < data.length;) {
+    let end = Math.min(offset + 255, data.length)
+    if (end < data.length && /[\ud800-\udbff]/.test(data[end - 1]!)) end--
+    chunks.push(data.slice(offset, end))
+    offset = end
+  }
   const properties = chunks
     .map((value, index) => {
       const name = `ZOTERO_PREF_${index + 1}`
@@ -83,5 +91,16 @@ export function patchZoteroDocumentDataXml(xml: string | null, data: string): st
       )
     })
     .join('')
-  return withoutOld.replace(/<\/(?:[A-Za-z_][\w.-]*:)?Properties\s*>/, `${properties}$&`)
+  const selfClosing = /<((?:[A-Za-z_][\w.-]*:)?Properties)\b([^>]*?)\/>/
+  const empty = selfClosing.exec(withoutOld)
+  if (empty) {
+    return withoutOld.replace(
+      selfClosing,
+      () => `<${empty[1]}${empty[2]}>${properties}</${empty[1]}>`,
+    )
+  }
+  return withoutOld.replace(
+    /<\/(?:[A-Za-z_][\w.-]*:)?Properties\s*>/,
+    (close) => `${properties}${close}`,
+  )
 }

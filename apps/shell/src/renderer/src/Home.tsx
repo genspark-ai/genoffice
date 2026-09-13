@@ -16,16 +16,19 @@ import type {
   ProjectSummaryEntry,
   RecentEntry,
 } from '../../shared/home-api'
+import type { IntegrationsApi } from '../../shared/integrations-api'
 import { useDismissablePopover } from '@genoffice/ui'
 import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
 import { SettingsModal } from './SettingsModal'
+import { skillUpdateDue } from './IntegrationsPane'
 
 declare global {
   interface Window {
     aiOffice: HomeApi
     aiOfficeProject?: ProjectHomeApi
+    aiOfficeIntegrations?: IntegrationsApi
   }
 }
 
@@ -479,6 +482,7 @@ function AccountEntry({
   const [urlCopied, setUrlCopied] = useState(false)
   const loginDeadline = useRef(0)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [skillUpdate, setSkillUpdate] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   // bumped on logout so an in-flight status refresh (which can still
   // report logged-in) is discarded instead of resurrecting the UI
@@ -494,6 +498,19 @@ function AccountEntry({
       alive = false
     }
   }, [])
+
+  // the skill state is a few file reads; re-probe after the modal closes so an
+  // update done inside it clears the dot
+  useEffect(() => {
+    if (settingsOpen) return
+    let alive = true
+    void window.aiOfficeIntegrations?.status().then((st) => {
+      if (alive) setSkillUpdate(skillUpdateDue(st))
+    })
+    return () => {
+      alive = false
+    }
+  }, [settingsOpen])
 
   // login progress pushed from main (gsk login CLI output)
   useEffect(() => {
@@ -614,6 +631,8 @@ function AccountEntry({
             startLogin()
           }}
           onLogout={doLogout}
+          skillUpdateDue={skillUpdate}
+          onSkillUpdateDue={setSkillUpdate}
         />
       )}
       {!settingsOpen && waiting && authUrl && (
@@ -701,6 +720,9 @@ function AccountEntry({
             </svg>
           ) : (
             initial
+          )}
+          {skillUpdate && (
+            <span className="account-badge" role="img" aria-label={t('intgUpdateDue')} />
           )}
         </span>
         <span className="account-text">

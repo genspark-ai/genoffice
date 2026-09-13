@@ -178,7 +178,7 @@ export function ensureTableStyleXml(
   if (xml.includes(styleId)) return xml
   const sc = /<a:tblStyleLst([^>]*)\/>/.exec(xml)
   if (sc) return xml.replace(sc[0], `<a:tblStyleLst${sc[1]}>${styleDefXml}</a:tblStyleLst>`)
-  return xml.replace('</a:tblStyleLst>', `${styleDefXml}</a:tblStyleLst>`)
+  return xml.replace('</a:tblStyleLst>', () => `${styleDefXml}</a:tblStyleLst>`)
 }
 
 /**
@@ -334,13 +334,15 @@ function applyTcPrEdit(inner: string, edit: TableStyleEdit): string {
 function patchAllTcPr(xml: string, edit: TableStyleEdit): string {
   const out: string[] = []
   let cursor = 0
-  const re = /<a:tcPr([^>]*)>(.*?)<\/a:tcPr>|<a:tcPr([^>]*)\/>/gs
+  // self-closing first: [^>]* in the paired form would also accept the '/' of <a:tcPr/> and run
+  // on to some later cell's </a:tcPr>, swallowing the cells in between
+  const re = /<a:tcPr([^>]*)\/>|<a:tcPr([^>]*)>(.*?)<\/a:tcPr>/gs
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     out.push(xml.slice(cursor, m.index))
     // Existing children (non-self-closing form)
-    const inner = applyTcPrEdit(m[2] ?? '', edit)
-    const attrs = m[1] ?? m[3] ?? ''
+    const inner = applyTcPrEdit(m[3] ?? '', edit)
+    const attrs = m[1] ?? m[2] ?? ''
     out.push(`<a:tcPr${attrs}>${inner}</a:tcPr>`)
     cursor = m.index + m[0].length
   }

@@ -28,6 +28,16 @@ describe('appendFloatSpillBlock', () => {
     expect(blocks).toHaveLength(1)
   })
 
+  it('wrapNone/front/behind boxes never open a page (Word clips them at the anchor page)', () => {
+    const blocks: BlockBox[] = [{ top: 0, height: 100 }]
+    const floats: FloatBox[] = [
+      { el, ...base, top: 950, height: 400, noSpill: true },
+      { el, ...base, top: 0, height: 50 },
+    ]
+    expect(appendFloatSpillBlock(blocks, 100, floats)).toBeNull()
+    expect(blocks).toHaveLength(1)
+  })
+
   it('materializes trailing pages for overflowing floats', () => {
     const blocks: BlockBox[] = [{ top: 0, height: 100 }]
     const floats: FloatBox[] = [{ el, ...base, top: 1500, height: 400 }]

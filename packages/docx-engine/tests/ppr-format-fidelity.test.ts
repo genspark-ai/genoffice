@@ -17,7 +17,10 @@ const RAW =
 // what extractParaFormat yields for RAW
 const MODEL: ParaFormat = {
   borders: 'tb',
-  borderLines: { t: { color: 'FF0000', szPt: 1.5 }, b: { color: 'FF0000', szPt: 1.5 } },
+  borderLines: {
+    t: { color: 'FF0000', szPt: 1.5, spacePt: 1 },
+    b: { color: 'FF0000', szPt: 1.5, spacePt: 1 },
+  },
   shadingFill: 'EEEEEE',
   spaceBefore: 240,
   spaceAfter: 120,
@@ -96,6 +99,22 @@ describe('mergePPrFormat keeps unedited groups byte-identical', () => {
       borderLines: { b: { color: '4472C4', szPt: 2.25 } },
     })
     expect(out).toContain('<w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/>')
+  })
+
+  it('a declared w:space rebuilds per side and an unchanged one keeps the raw bytes', async () => {
+    const raw =
+      '<w:pPr><w:pBdr><w:bottom w:val="single" w:sz="8" w:space="4" w:color="4F81BD"/></w:pBdr></w:pPr>'
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: `<w:p>${raw}<w:r><w:t>x</w:t></w:r></w:p>` }),
+    )
+    const format = doc.blocks[0].format!
+    expect(format.borderLines).toEqual({ b: { color: '4F81BD', szPt: 1, spacePt: 4 } })
+    expect(mergePPrFormat(raw, format)).toBe(raw)
+    const out = mergePPrFormat(raw, {
+      ...format,
+      borderLines: { b: { color: '4F81BD', szPt: 1, spacePt: 6 } },
+    })
+    expect(out).toContain('<w:bottom w:val="single" w:sz="8" w:space="6" w:color="4F81BD"/>')
   })
 
   it('changing indent rebuilds w:ind and drops the char-unit variants', () => {

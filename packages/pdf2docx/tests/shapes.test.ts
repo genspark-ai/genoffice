@@ -143,7 +143,9 @@ describe('normalizeShapes', () => {
       path([rect(72, 660, 200, 700)], { filled: true, fillColor: 'FFCC00' }),
     ])
     expect(shapes.strokes).toHaveLength(0)
-    expect(shapes.fills).toEqual([{ box: { x0: 72, y0: 660, x1: 200, y1: 700 }, color: 'FFCC00' }])
+    expect(shapes.fills).toMatchObject([
+      { box: { x0: 72, y0: 660, x1: 200, y1: 700 }, color: 'FFCC00' },
+    ])
   })
 
   it('emits four border strokes for a stroked (outlined) rectangle', () => {
@@ -801,5 +803,85 @@ describe('rounded-rect salvage under a clip (P34 semantics)', () => {
     for (const v of shapes.strokes.filter((s) => s.orientation === 'v')) {
       expect(v.box.y1).toBeCloseTo(300) // surviving sides clamp to the window
     }
+  })
+})
+
+describe('curved fill geometry (pdf2pptx native shapes)', () => {
+  /** rounded rect x0..x1 × y0..y1 with corner radius r, LINETO edges, bezier corners */
+  const roundedRect = (x0: number, y0: number, x1: number, y1: number, r: number): RawSubpath => {
+    const pts: Array<[number, number, boolean]> = [
+      [x0 + r, y0, false],
+      [x1 - r, y0, true], // bottom edge
+      [x1 - r / 2, y0, false],
+      [x1, y0 + r / 2, false],
+      [x1, y0 + r, false],
+      [x1, y1 - r, true], // right edge
+      [x1, y1 - r / 2, false],
+      [x1 - r / 2, y1, false],
+      [x1 - r, y1, false],
+      [x0 + r, y1, true], // top edge
+      [x0 + r / 2, y1, false],
+      [x0, y1 - r / 2, false],
+      [x0, y1 - r, false],
+      [x0, y0 + r, true], // left edge
+      [x0, y0 + r / 2, false],
+      [x0 + r / 2, y0, false],
+      [x0 + r, y0, false],
+    ]
+    return {
+      points: pts.map(([x, y]) => ({ x, y })),
+      closed: true,
+      hasCurves: true,
+      lineTo: pts.map(([, , l]) => l),
+    }
+  }
+  /** circle of radius r: four bezier quadrants, no straight run */
+  const circle = (cx: number, cy: number, r: number): RawSubpath => {
+    const k = 0.5523 * r
+    const pts: Array<[number, number]> = [
+      [cx + r, cy],
+      [cx + r, cy + k],
+      [cx + k, cy + r],
+      [cx, cy + r],
+      [cx - k, cy + r],
+      [cx - r, cy + k],
+      [cx - r, cy],
+      [cx - r, cy - k],
+      [cx - k, cy - r],
+      [cx, cy - r],
+      [cx + k, cy - r],
+      [cx + r, cy - k],
+      [cx + r, cy],
+    ]
+    return {
+      points: pts.map(([x, y]) => ({ x, y })),
+      closed: true,
+      hasCurves: true,
+      lineTo: pts.map(() => false),
+    }
+  }
+
+  it('a rounded card reads as roundRect with its corner radius', () => {
+    const shapes = normalizeShapes([
+      path([roundedRect(100, 100, 400, 200, 12)], { filled: true, fillColor: '3366cc' }),
+    ])
+    expect(shapes.curvedFills).toHaveLength(1)
+    const fill = shapes.curvedFills![0]!
+    expect(fill.geometry).toBe('roundRect')
+    expect(fill.cornerRadiusPt).toBeCloseTo(12, 5)
+    expect(fill.box).toEqual({ x0: 100, y0: 100, x1: 400, y1: 200 })
+  })
+
+  it('a pill (straight long edges, semicircle caps) reads as a fully rounded roundRect', () => {
+    const shapes = normalizeShapes([path([roundedRect(100, 100, 300, 140, 20)], { filled: true })])
+    expect(shapes.curvedFills![0]!.geometry).toBe('roundRect')
+    expect(shapes.curvedFills![0]!.cornerRadiusPt).toBeCloseTo(20, 5)
+  })
+
+  it('a bullet disc reads as an ellipse', () => {
+    const shapes = normalizeShapes([path([circle(50, 50, 6)], { filled: true })])
+    expect(shapes.curvedFills).toHaveLength(1)
+    expect(shapes.curvedFills![0]!.geometry).toBe('ellipse')
+    expect(shapes.curvedFills![0]!.cornerRadiusPt).toBeUndefined()
   })
 })

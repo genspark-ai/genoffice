@@ -8,6 +8,10 @@ import {
   type FindPanelStrings,
   type FindTarget,
 } from '@genoffice/ui'
+import {
+  pollUntilReady,
+  runHeadlessRendererExport,
+} from '@genoffice/electron-utils/headless-export'
 import { useI18n } from './i18n/locale'
 import { parseDocText, serializeDocText, type Envelope } from './document/envelope'
 import { SourceEditor, type CursorInfo, type SourceEditorHandle } from './source/SourceEditor'
@@ -34,6 +38,14 @@ import {
 } from './components/Ribbon'
 import { CropDialog, CutoutDialog, type ImageDialogLabels } from '@genoffice/ui'
 import { FloatToolbar } from './components/FloatToolbar'
+import {
+  insertOp,
+  insertPresetHtml,
+  type InsertOptions,
+  TEXT_INSERT_KINDS,
+  type InsertKind,
+} from './document/insert-presets'
+import { moveTarget } from './document/move-target'
 import { StylePanel } from './components/StylePanel'
 import { floatPosition, parseDeclarations } from './document/float-position'
 import {
@@ -46,7 +58,7 @@ import {
 import { compileOps, type HtmlOp, type OpError } from './document/ops'
 import { injectBrief, parseBrief, type Brief } from './document/brief'
 import { applyPatches } from './document/patch'
-import { deriveAutoFileName, deriveNameFromPrompt } from './document/auto-name'
+import { deriveAutoFileName, deriveNameFromPrompt, derivePageTitleName } from './document/auto-name'
 import type { ExportFormat, SaveMode } from '../shared/ipc'
 
 type LoadStatus = 'loading' | 'ready' | 'error'
@@ -128,12 +140,19 @@ export default function App() {
   const [selectedState, setSelectedState] = useState<NodeState>('static')
   const [textSel, setTextSel] = useState<TextSel | null>(null)
   const wrapSelectionRef = useRef<(tag: string) => void>(() => {})
+  const moveSelectedRef = useRef<(dir: -1 | 1) => void>(() => {})
   // selected element as the preview sees it: drives the floating toolbar and the style panel
   const [selRect, setSelRect] = useState<ElementRect | null>(null)
   const [selComputed, setSelComputed] = useState<ComputedSnapshot | null>(null)
-  const [selText, setSelText] = useState<{ run: string | null; index: number }>({
+  const [selText, setSelText] = useState<{
+    run: string | null
+    index: number
+    /** the element edits inline (single run or rich phrasing content) */
+    editable: boolean
+  }>({
     run: null,
     index: -1,
+    editable: false,
   })
   const [pendingCount, setPendingCount] = useState(0)
   const [barSize, setBarSize] = useState({ w: 440, h: 32 })
@@ -147,6 +166,23 @@ export default function App() {
   )
   const [panelDismissedSid, setPanelDismissedSid] = useState<number | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  /** a resize / reorder drag is in progress inside the frame: the floating chrome would only get in the way */
+  const [dragging, setDragging] = useState(false)
+  /** freshly inserted text element: opens for typing once the reloaded frame reports ready */
+  const editAfterLoadRef = useRef<number | null>(null)
+  const insertedSidRef = useRef<number | null>(null)
+  const previewStyleRef = useRef<(styles: Record<string, string | null>) => void>(() => {})
+  // a release over the host chrome (or a window switch) never reaches the frame's listeners
+  useEffect(() => {
+    if (!dragging) return
+    const end = () => previewRef.current?.post({ type: 'gx:endDrag' })
+    window.addEventListener('mouseup', end, true)
+    window.addEventListener('blur', end)
+    return () => {
+      window.removeEventListener('mouseup', end, true)
+      window.removeEventListener('blur', end)
+    }
+  }, [dragging])
   const [pictureDialog, setPictureDialog] = useState<{
     kind: 'crop' | 'cutout'
     sid: number
@@ -165,6 +201,11 @@ export default function App() {
   const pushedTextRef = useRef<string | null>(null)
   /** parse-map version of the copy currently served to the preview; messages from older copies are ignored */
   const pushedVersionRef = useRef(-1)
+  /** versions whose sids the running frame still describes: the loaded copy plus every in-place commit since
+   * (style / text edits the frame already showed; they leave the element structure, and so the sids, alone) */
+  const frameVersionsRef = useRef<Set<number>>(new Set())
+  /** window scroll of the running frame, restored after an edit reloads it */
+  const frameScrollRef = useRef<number | null>(null)
   /** bumped on every text change; AI staleness checks compare against lastManualVersionRef */
   const versionRef = useRef(0)
   const lastManualVersionRef = useRef(0)
@@ -222,6 +263,8 @@ export default function App() {
         window.htmlApi.updatePreview(instrumentForPreview(doc.text, map0, inspectorSource))
         pushedTextRef.current = doc.text
         pushedVersionRef.current = map0.version
+        frameVersionsRef.current = new Set([map0.version])
+        frameScrollRef.current = null
         setPath(pending)
         setText(doc.text)
         setSavedText(doc.text)
@@ -243,14 +286,23 @@ export default function App() {
     window.htmlApi.setDirty(dirty || pendingCount > 0)
   }, [dirty, pendingCount, status])
 
+  /**
+   * Serve the current source to html-preview://. `reload` = false for a commit the frame already
+   * displays (a style poke or an inline text edit it made itself): the buffer is refreshed so the
+   * next real reload and exports see it, but the running frame stays, without the flash and the
+   * scroll jump of a reload, and keeps talking under its own (older) version.
+   */
   const pushPreview = useCallback(
-    (nextText: string) => {
+    (nextText: string, reload = true) => {
       if (pushedTextRef.current === nextText) return
       const map = getMap()
       window.htmlApi.updatePreview(instrumentForPreview(nextText, map, inspectorSource))
       pushedTextRef.current = nextText
       pushedVersionRef.current = map.version
-      setPreviewNonce((n) => n + 1)
+      if (reload) {
+        frameVersionsRef.current = new Set([map.version])
+        setPreviewNonce((n) => n + 1)
+      } else frameVersionsRef.current.add(map.version)
     },
     [getMap],
   )
@@ -371,6 +423,8 @@ export default function App() {
           ? injectBrief(html, briefRef.current)
           : html
       editorRef.current?.replaceDoc(pinned, highlight)
+      // a new page, not an edit of the one on screen: it opens at the top
+      frameScrollRef.current = null
       commitText(pinned, false)
     },
     [commitText],
@@ -386,7 +440,14 @@ export default function App() {
 
   /** apply a toolbar/inspector batch; the selection follows the edited element (or clears when it is gone) */
   const runManual = useCallback(
-    (ops: HtmlOp[], follow: 'reselect' | 'clear' | 'keep' = 'reselect') => {
+    (
+      ops: HtmlOp[],
+      follow: 'reselect' | 'clear' | 'keep' | 'inserted' = 'reselect',
+      opts: {
+        /** the frame already shows exactly this result (its own inline edit / live style): no reload */
+        inPlace?: boolean
+      } = {},
+    ) => {
       // live style pokes and open panel drafts are written first, while their sid still names the element they were made on
       flushPending()
       const before = selectedSidRef.current
@@ -395,11 +456,12 @@ export default function App() {
         setNotice(r.errors[0]?.message ?? 'edit rejected')
         return false
       }
+      if (opts.inPlace) pushPreview(textRef.current, false)
       if (follow === 'clear') {
         selectSidRef.current?.(null, {})
         return true
       }
-      if (follow === 'reselect' && before !== null) {
+      if (follow === 'inserted' || (follow === 'reselect' && before !== null)) {
         const map = getMap()
         // sids are matched by path, so after a move / rename / replace the old sid may now name the
         // sibling that took the old position; re-derive the target from the largest applied range
@@ -421,11 +483,17 @@ export default function App() {
           return [a, b] as [number, number]
         })()
         const covering = trimmed ? elementCovering(map, trimmed[0], trimmed[1]) : null
+        if (follow === 'inserted') {
+          const target = covering && !STRUCTURAL.has(covering.tag) ? covering.sid : null
+          insertedSidRef.current = target
+          selectSidRef.current?.(target, { reveal: true })
+          return true
+        }
         if (relocates && trimmed) {
           selectSidRef.current?.(covering && !STRUCTURAL.has(covering.tag) ? covering.sid : null, {
             reveal: true,
           })
-        } else if (!map.bySid.has(before)) {
+        } else if (before !== null && !map.bySid.has(before)) {
           selectSidRef.current?.(covering && !STRUCTURAL.has(covering.tag) ? covering.sid : null, {
             reveal: true,
           })
@@ -433,7 +501,7 @@ export default function App() {
       }
       return true
     },
-    [applyOps, getMap, flushPending],
+    [applyOps, getMap, flushPending, pushPreview],
   )
 
   // ── selection model: one current element shared by the preview, the source pane, the toolbar and the AI ──
@@ -458,7 +526,7 @@ export default function App() {
       // geometry, styles and text run all belong to the previous element; the frame re-reports them via gx:rect
       setSelRect(null)
       setSelComputed(null)
-      setSelText({ run: null, index: -1 })
+      setSelText({ run: null, index: -1, editable: false })
       if (opts.toPreview !== false) previewRef.current?.post({ type: 'gx:select', sid })
       if (sid !== null && opts.reveal) {
         const e = getMap().bySid.get(sid)
@@ -489,13 +557,19 @@ export default function App() {
   const onInspectorMessage = useCallback(
     (msg: FromInspector) => {
       // a click that lands while the frame is reloading carries sids from the previous copy
-      if (msg.version !== pushedVersionRef.current) return
+      if (!frameVersionsRef.current.has(msg.version)) return
       switch (msg.type) {
         case 'gx:ready': {
           previewRef.current?.post({ type: 'gx:theme', dark: isDarkTheme() })
           previewRef.current?.post({ type: 'gx:setMode', mode: frameMode(canvasModeRef.current) })
+          // an edit reloaded the page under the reader: put it back where it was before selecting
+          if (frameScrollRef.current !== null)
+            previewRef.current?.post({ type: 'gx:scrollTo', y: frameScrollRef.current })
           const sid = selectedSidRef.current
           if (sid !== null) previewRef.current?.post({ type: 'gx:select', sid })
+          if (editAfterLoadRef.current !== null && editAfterLoadRef.current === sid)
+            previewRef.current?.post({ type: 'gx:beginTextEdit', sid })
+          editAfterLoadRef.current = null
           postMarks()
           return
         }
@@ -546,7 +620,11 @@ export default function App() {
           selectSid(e.sid, { reveal: true, toPreview: false, state: dirty ? 'dirty' : 'static' })
           setSelRect(msg.element.rect)
           setSelComputed(msg.element.computed)
-          setSelText({ run: msg.element.textRun, index: msg.element.textRunIndex })
+          setSelText({
+            run: msg.element.textRun,
+            index: msg.element.textRunIndex,
+            editable: msg.element.inlineEditable,
+          })
           return
         }
         case 'gx:hover':
@@ -555,7 +633,7 @@ export default function App() {
           if (msg.sid !== selectedSidRef.current) return
           setSelRect(msg.rect)
           setSelComputed(msg.computed)
-          setSelText({ run: msg.textRun, index: msg.textRunIndex })
+          setSelText({ run: msg.textRun, index: msg.textRunIndex, editable: msg.inlineEditable })
           return
         case 'gx:textSelect':
           setTextSel({
@@ -566,9 +644,17 @@ export default function App() {
           })
           return
         case 'gx:textEditCommit':
-          runManual([
-            { op: 'set_text_node', sid: msg.sid, index: msg.textNodeIndex, text: msg.newText },
-          ])
+          runManual(
+            [{ op: 'set_text_node', sid: msg.sid, index: msg.textNodeIndex, text: msg.newText }],
+            'reselect',
+            { inPlace: true },
+          )
+          return
+        case 'gx:scroll':
+          frameScrollRef.current = msg.y
+          return
+        case 'gx:htmlEditCommit':
+          runManual([{ op: 'set_inner_html', sid: msg.sid, html: msg.html }])
           return
         case 'gx:textEditCancel':
           return
@@ -598,7 +684,9 @@ export default function App() {
           const map = getMap()
           const e = map.bySid.get(sid)
           if (!e) return
-          if (msg.command === 'delete') runManual([{ op: 'remove', sid }], 'clear')
+          if (msg.command === 'moveUp' || msg.command === 'moveDown')
+            moveSelectedRef.current(msg.command === 'moveUp' ? -1 : 1)
+          else if (msg.command === 'delete') runManual([{ op: 'remove', sid }], 'clear')
           else if (msg.command === 'escape') selectSid(null)
           else if (msg.command === 'askAi') setAskMode({ kind: 'new' })
           else if (msg.command === 'bold') wrapSelectionRef.current('strong')
@@ -621,6 +709,16 @@ export default function App() {
         case 'gx:navigateBlocked':
           window.open(msg.href)
           setNotice(t('openExternal'))
+          return
+        case 'gx:resize':
+          if (msg.sid === selectedSidRef.current) previewStyleRef.current(msg.styles)
+          return
+        case 'gx:moveTo':
+          if (msg.sid === selectedSidRef.current)
+            runManual([{ op: 'move', sid: msg.sid, position: msg.position, ref_sid: msg.ref_sid }])
+          return
+        case 'gx:drag':
+          setDragging(msg.active)
           return
         default:
           return
@@ -649,20 +747,11 @@ export default function App() {
     runManual([{ op: 'insert_html', sid: selectedEntry.sid, position: 'after', html: `\n${html}` }])
   }
   const moveSelected = (dir: -1 | 1) => {
-    if (!selectedEntry || selectedEntry.parentSid === null) return
-    const siblings = childrenOf(getMap(), selectedEntry.parentSid)
-    const i = siblings.findIndex((s) => s.sid === selectedEntry.sid)
-    const ref = siblings[i + dir]
-    if (!ref) return
-    runManual([
-      {
-        op: 'move',
-        sid: selectedEntry.sid,
-        position: dir < 0 ? 'before' : 'after',
-        ref_sid: ref.sid,
-      },
-    ])
+    if (!selectedEntry) return
+    const target = moveTarget(getMap(), selectedEntry.sid, dir)
+    if (target) runManual([{ op: 'move', sid: selectedEntry.sid, ...target }])
   }
+  moveSelectedRef.current = moveSelected
   const wrapSelection = (tag: string, attrs?: Record<string, string>) => {
     if (!textSel) return
     if (runManual([{ op: 'wrap_text', ...textSel, index: textSel.textNodeIndex, tag, attrs }]))
@@ -688,6 +777,50 @@ export default function App() {
     const rel = await window.htmlApi.pickImage()
     if (rel && selectedSidRef.current === sid)
       runManual([{ op: 'set_attr', sid, name: 'src', value: rel }])
+  }
+  /** ribbon Insert menu: a starter element after the selection (or at the end of the body), then straight into editing */
+  const insertElement = async (kind: InsertKind, opts: InsertOptions = {}) => {
+    let imageSrc: string | undefined
+    if (kind === 'image' && opts.url) {
+      imageSrc = opts.url
+    } else if (kind === 'image') {
+      if (!pathRef.current) {
+        setNotice(t('imageNeedsSave'))
+        return
+      }
+      const rel = await window.htmlApi.pickImage()
+      if (!rel) return
+      imageSrc = rel
+    }
+    flushPending()
+    const map = getMap()
+    const selected =
+      selectedSidRef.current !== null ? map.bySid.get(selectedSidRef.current) : undefined
+    const html = insertPresetHtml(
+      kind,
+      {
+        heading: t('insertPlaceholderHeading'),
+        paragraph: t('insertPlaceholderParagraph'),
+        listItem: t('insertPlaceholderListItem'),
+        button: t('insertPlaceholderButton'),
+        sectionTitle: t('insertPlaceholderHeading'),
+        sectionBody: t('insertPlaceholderParagraph'),
+        imageAlt: '',
+        tableHeaders: Array.from({ length: Math.max(1, opts.cols ?? 3) }, (_, i) =>
+          t('insertPlaceholderTableHeader', { n: i + 1 }),
+        ),
+        tableCell: t('insertPlaceholderTableCell'),
+      },
+      { imageSrc, tableBodyRows: Math.max(1, (opts.rows ?? 3) - 1) },
+    )
+    const op = insertOp(map, selected, html)
+    if (!op) {
+      setNotice(t('insertNoBody'))
+      return
+    }
+    insertedSidRef.current = null
+    if (runManual([op], 'inserted') && TEXT_INSERT_KINDS.has(kind))
+      editAfterLoadRef.current = insertedSidRef.current
   }
   /** crop / remove background edit the pixels: read the picture, open the dialog, write a new asset */
   const openPictureDialog = async (kind: 'crop' | 'cutout') => {
@@ -823,7 +956,8 @@ export default function App() {
     if (sid === null || Object.keys(styles).length === 0) return
     flushingStylesRef.current = true
     try {
-      runManual([{ op: 'set_style', sid, styles }])
+      // every poke went to the frame as gx:previewStyle: it already shows the committed state
+      runManual([{ op: 'set_style', sid, styles }], 'reselect', { inPlace: true })
     } finally {
       flushingStylesRef.current = false
     }
@@ -839,6 +973,8 @@ export default function App() {
     if (styleTimerRef.current !== null) window.clearTimeout(styleTimerRef.current)
     styleTimerRef.current = window.setTimeout(flushStyles, STYLE_COMMIT_MS)
   }
+
+  previewStyleRef.current = previewStyle
 
   /** drop uncommitted previews: reload the frame from the last pushed source */
   const revertStyles = () => {
@@ -998,8 +1134,9 @@ export default function App() {
   }, [canvasMode, closeFind])
 
   const exportingRef = useRef(false)
-  const runExport = useCallback(async (format: ExportFormat) => {
-    if (statusRef.current !== 'ready' || exportingRef.current) return
+  /** `outPath` (headless export only) skips the save dialog; resolves true when a file was written. */
+  const runExport = useCallback(async (format: ExportFormat, outPath?: string) => {
+    if (statusRef.current !== 'ready' || exportingRef.current) return false
     exportingRef.current = true
     try {
       flushPending()
@@ -1008,19 +1145,47 @@ export default function App() {
         pathRef.current?.replace(/^.*[/\\]/, '').replace(/\.html?$/i, '') ||
         deriveAutoFileName(html) ||
         ''
+      const request = { html, suggestedName, ...(outPath ? { outPath } : {}) }
       const result =
         format === 'pdf'
-          ? await window.htmlApi.exportPdf({ html, suggestedName })
-          : await window.htmlApi.exportDocx({ html, suggestedName })
+          ? await window.htmlApi.exportPdf(request)
+          : format === 'html'
+            ? await window.htmlApi.exportHtml(request)
+            : await window.htmlApi.exportDocx(request)
       if (!result.ok) {
         console.error('[html] export failed:', result.error)
         setNotice(t('exportFailed'))
+        return false
       }
+      return !('canceled' in result)
     } finally {
       exportingRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t is not referentially stable
   }, [])
+
+  // Headless export mode (--headless-export): this renderer lives in a hidden
+  // window whose only job is to run the File menu's PDF or Word export against
+  // a path the CLI chose, then report back so the main process can quit.
+  const headlessExportStartedRef = useRef(false)
+  useEffect(() => {
+    if (headlessExportStartedRef.current) return
+    headlessExportStartedRef.current = true
+    void (async () => {
+      const target = await window.htmlApi.consumeHeadlessExport()
+      if (!target) return
+      const report = await runHeadlessRendererExport(
+        target.outPath,
+        () =>
+          pollUntilReady(() => {
+            if (statusRef.current === 'error') throw new Error('the input document did not open')
+            return statusRef.current === 'ready'
+          }, 'no document opened'),
+        (outPath) => runExport(target.format === 'docx' ? 'docx' : 'pdf', outPath),
+      )
+      window.htmlApi.headlessExportDone(report)
+    })()
+  }, [runExport])
 
   useEffect(() => {
     const offSave = window.htmlApi.onSaveRequest((mode) => {
@@ -1154,9 +1319,12 @@ export default function App() {
       window.htmlApi.setProvisionalTitle(name)
     },
     onRunDone: (mutated) => {
-      // AI wrote into a never-saved document: save it silently under the name of the request that started it
+      // AI wrote into a never-saved document: save it silently under the page's own title,
+      // falling back to the name of the request that started it
       if (!mutated || pathRef.current) return
-      const name = provisionalNameRef.current || deriveAutoFileName(textRef.current)
+      const text = textRef.current
+      const name =
+        derivePageTitleName(text) || provisionalNameRef.current || deriveAutoFileName(text)
       if (name) void doSave('save', name)
     },
     clearHighlights: () => editorRef.current?.clearHighlights(),
@@ -1239,6 +1407,8 @@ export default function App() {
         onView={setView}
         aiOpen={aiOpen}
         onToggleAi={() => setAiOpen((v) => !v)}
+        canInsert={canvasMode === 'edit'}
+        onInsert={(kind, opts) => void insertElement(kind, opts)}
         onAiPreset={(text) => {
           flushPending()
           setAiOpen(true)
@@ -1320,36 +1490,46 @@ export default function App() {
                     {t('presentExit')}
                   </button>
                 )}
-                {canvasMode === 'edit' && hasElement && selectedEntry && selRect && selComputed && (
-                  <FloatToolbar
-                    barRef={barRef}
-                    {...floatPosition(selRect, floatLayout())}
-                    computed={selComputed}
-                    pending={pendingStylesRef.current}
-                    canEditText={selText.run !== null}
-                    onStyle={previewStyle}
-                    onEditText={() =>
-                      previewRef.current?.post({ type: 'gx:beginTextEdit', sid: selectedEntry.sid })
-                    }
-                    onReplaceImage={replaceImage}
-                    onCropImage={() => void openPictureDialog('crop')}
-                    onCutoutImage={() => void openPictureDialog('cutout')}
-                    canAskAi={askTarget !== null}
-                    onAskAi={askAi}
-                    tag={selectedEntry.tag}
-                    onMove={moveSelected}
-                    onDuplicate={duplicateSelected}
-                    onDelete={() => runManual([{ op: 'remove', sid: selectedEntry.sid }], 'clear')}
-                    panelOpen={panelShown}
-                    onTogglePanel={() => {
-                      if (panelShown) setPanelOpen(false)
-                      else {
-                        setPanelDismissedSid(null)
-                        setPanelOpen(true)
+                {canvasMode === 'edit' &&
+                  !dragging &&
+                  hasElement &&
+                  selectedEntry &&
+                  selRect &&
+                  selComputed && (
+                    <FloatToolbar
+                      barRef={barRef}
+                      {...floatPosition(selRect, floatLayout())}
+                      computed={selComputed}
+                      pending={pendingStylesRef.current}
+                      canEditText={selText.editable}
+                      onStyle={previewStyle}
+                      onEditText={() =>
+                        previewRef.current?.post({
+                          type: 'gx:beginTextEdit',
+                          sid: selectedEntry.sid,
+                        })
                       }
-                    }}
-                  />
-                )}
+                      onReplaceImage={replaceImage}
+                      onCropImage={() => void openPictureDialog('crop')}
+                      onCutoutImage={() => void openPictureDialog('cutout')}
+                      canAskAi={askTarget !== null}
+                      onAskAi={askAi}
+                      tag={selectedEntry.tag}
+                      onMove={moveSelected}
+                      onDuplicate={duplicateSelected}
+                      onDelete={() =>
+                        runManual([{ op: 'remove', sid: selectedEntry.sid }], 'clear')
+                      }
+                      panelOpen={panelShown}
+                      onTogglePanel={() => {
+                        if (panelShown) setPanelOpen(false)
+                        else {
+                          setPanelDismissedSid(null)
+                          setPanelOpen(true)
+                        }
+                      }}
+                    />
+                  )}
                 {canvasMode === 'edit' &&
                   hasElement &&
                   selectedEntry &&

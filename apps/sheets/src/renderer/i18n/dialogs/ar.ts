@@ -397,4 +397,12 @@ export const ar = {
   dlgFnDescNpv: 'يُرجع القيمة الحالية الصافية لتدفق نقدي عند معدل خصم.',
   dlgFnDescIrr: 'يُرجع معدل العائد الداخلي لسلسلة تدفقات نقدية.',
   dlgFnCatFinancial: 'مالية',
+  dlgFnCatDatabase: 'قاعدة بيانات',
+  dlgFnCatInformation: 'معلومات',
+  dlgFnCatEngineering: 'هندسية',
+  dlgFnCatCube: 'مكعب',
+  dlgFnCatCompatibility: 'التوافق',
+  dlgFnCatWeb: 'ويب',
+  dlgFnCatArray: 'صفيف',
+  dlgFnCatOther: 'أخرى',
 } satisfies Record<keyof typeof zh, string>

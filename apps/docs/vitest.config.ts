@@ -11,6 +11,10 @@ export default defineConfig({
     alias: {
       '@genoffice/docx-engine': local('../../packages/docx-engine/src/index.ts'),
       '@genoffice/font-metrics': local('../../packages/font-metrics/src/index.ts'),
+      // subpath before the bare name: string aliases are prefix replacements
+      '@genoffice/electron-utils/headless-export': local(
+        '../../packages/electron-utils/src/headless-export.ts',
+      ),
       '@genoffice/electron-utils': local('../../packages/electron-utils/src/index.ts'),
       '@genoffice/ai-provider/browser': local('../../packages/ai-provider/src/browser.ts'),
       '@genoffice/ai-provider': local('../../packages/ai-provider/src/index.ts'),

@@ -6,7 +6,8 @@
  * and force CENTER + OVERFLOW so the render patch can widen the box.
  */
 import { HorizontalAlign, WrapStrategy, type ICellData, type IStyleData } from '@univerjs/core'
-import { describe, expect, it } from 'vitest'
+import { FontCache } from '@univerjs/engine-render'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import { CENTER_ACROSS_END_KEY } from '../src/renderer/center-continuous'
 import { patchWorksheetRangeInner } from '../src/renderer/univer-sync'
@@ -25,7 +26,12 @@ const centerContinuous: WorkbookCellStyle = {
 
 const plain: WorkbookCellStyle = { ...centerContinuous, horizontalAlignment: undefined }
 
-function patchedMatrix(cells: WorkbookRangeResult['cells']): ICellData[][] {
+const COLUMN_WIDTH = 20
+
+function patchedMatrix(
+  cells: WorkbookRangeResult['cells'],
+  styles: readonly WorkbookCellStyle[] = [centerContinuous, plain],
+): ICellData[][] {
   let captured: ICellData[][] = []
   const worksheet = {
     getRange: () => ({
@@ -33,13 +39,14 @@ function patchedMatrix(cells: WorkbookRangeResult['cells']): ICellData[][] {
         captured = matrix
       },
     }),
+    getSheet: () => ({ getMergedCell: () => null, getColumnWidth: () => COLUMN_WIDTH }),
   }
   patchWorksheetRangeInner(
     worksheet as never,
     undefined,
     { startRow: 0, endRow: 1, startColumn: 0, endColumn: 5 },
     cells,
-    [centerContinuous, plain],
+    styles,
     [],
     [],
     null,
@@ -86,5 +93,56 @@ describe('centerContinuous run marking', () => {
       { row: 0, column: 2, value: null, formula: 'A1&""', styleIndex: 0 },
     ])
     expect(matrix[0]?.[0]?.custom).toEqual({ [CENTER_ACROSS_END_KEY]: 1 })
+  })
+})
+
+describe('shrinkToFit on a centerContinuous anchor', () => {
+  const shrinkAnchor: WorkbookCellStyle = {
+    ...centerContinuous,
+    wrapText: false,
+    shrinkToFit: true,
+    fontSize: 9,
+  }
+
+  beforeAll(() => {
+    // Every glyph is half an em wide: 'ABCDEF' at 9pt (12px) measures 36px.
+    const ctx = {
+      font: '',
+      textBaseline: 'alphabetic',
+      measureText(text: string) {
+        const match = /([\d.]+)pt/.exec(this.font)
+        const px = match ? (Number(match[1]) * 96) / 72 : 0
+        return {
+          width: text.length * px * 0.5,
+          fontBoundingBoxAscent: px * 0.75,
+          fontBoundingBoxDescent: px * 0.25,
+        }
+      },
+    }
+    ;(FontCache as unknown as { _context: unknown })._context = ctx
+  })
+
+  it('measures the shrink budget across the run, not the anchor column', () => {
+    // Run A:D = 80px (75px budget) holds the 36px label at 9pt.
+    const matrix = patchedMatrix(
+      [
+        { row: 0, column: 0, value: 'ABCDEF', styleIndex: 0 },
+        { row: 0, column: 1, value: null, styleIndex: 0 },
+        { row: 0, column: 2, value: null, styleIndex: 0 },
+        { row: 0, column: 3, value: null, styleIndex: 0 },
+      ],
+      [shrinkAnchor],
+    )
+    expect((matrix[0]?.[0]?.s as IStyleData).fs).toBe(9)
+    expect(matrix[0]?.[0]?.custom).toEqual({ [CENTER_ACROSS_END_KEY]: 3 })
+  })
+
+  it('still shrinks a single-cell run against its own column', () => {
+    // 20px column (15px budget): 9pt * 15 / 36 -> 3pt.
+    const matrix = patchedMatrix(
+      [{ row: 0, column: 0, value: 'ABCDEF', styleIndex: 0 }],
+      [shrinkAnchor],
+    )
+    expect((matrix[0]?.[0]?.s as IStyleData).fs).toBe(3)
   })
 })

@@ -44,7 +44,7 @@ test.describe('sheets: ribbon batch-1 features', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
       const status = sheets.locator('.workbook-status')
 
@@ -52,7 +52,7 @@ test.describe('sheets: ribbon batch-1 features', () => {
       const origin = await gridOrigin(sheets)
       await sheets.mouse.move(origin.x + 43, origin.y + 12)
       await sheets.mouse.down()
-      await sheets.mouse.move(origin.x + 87 + 43, origin.y + 24 * 2 + 12, { steps: 8 })
+      await sheets.mouse.move(origin.x + 87 + 43, origin.y + 20 * 2 + 10, { steps: 8 })
       await sheets.mouse.up()
       await sheets.getByRole('button', { name: 'Formulas' }).click()
       await sheets.locator('span.styles-row', { hasText: 'Create from Selection' }).click()
@@ -91,7 +91,7 @@ test.describe('sheets: ribbon batch-1 features', () => {
       await expect(status).toContainText('Headings hidden.')
       await sheets.screenshot({ path: screenshotPath('sheets-headings-hidden') })
       await launched.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {
@@ -108,7 +108,7 @@ test.describe('sheets: ribbon batch-1 features', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(second.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(second.app, '://sheets/')
       await waitForWorkbook(sheets)
       await sheets.getByRole('button', { name: 'View', exact: true }).click()
       const headingsBox = sheets
@@ -134,13 +134,13 @@ test.describe('sheets: ribbon batch-2 features', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
       const status = sheets.locator('.workbook-status')
       const origin = await gridOrigin(sheets)
       const cell = (column: number, row: number): { x: number; y: number } => ({
         x: origin.x + 74 * column + 37,
-        y: origin.y + 24 * row + 12,
+        y: origin.y + 20 * row + 10,
       })
 
       // ── seed: D1 = 1/0 (error), D2 = D3*2 (goal-seek target) ──
@@ -214,13 +214,13 @@ test.describe('sheets: ribbon batch-3 features', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
       const status = sheets.locator('.workbook-status')
       const origin = await gridOrigin(sheets)
 
       // ── Page Layout > Breaks: insert a break at B3 ──
-      await sheets.mouse.click(origin.x + 87 + 43, origin.y + 24 * 2 + 12)
+      await sheets.mouse.click(origin.x + 87 + 43, origin.y + 20 * 2 + 10)
       await sheets.getByRole('button', { name: 'Page Layout' }).click()
       await sheets.locator('.ribbon-tool', { hasText: 'Breaks' }).click()
       await sheets.getByRole('option', { name: 'Insert Page Break' }).click()
@@ -264,7 +264,7 @@ test.describe('sheets: ribbon batch-3 features', () => {
 
       // ── save, then verify every feature landed in the package ──
       await launched.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {

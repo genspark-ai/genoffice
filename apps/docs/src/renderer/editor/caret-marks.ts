@@ -45,6 +45,74 @@ export const firstTextMarksIn = (doc: PmNode, from: number, to: number): readonl
   return marks
 }
 
+/** Paragraph FORMATTING that must survive replacing whole paragraphs — the
+ *  paragraph counterpart of FORMAT_MARKS. A selection that consumes whole
+ *  blocks makes ProseMirror fill the hole with a DEFAULT paragraph, so
+ *  style-derived fonts, alignment, indents and the paragraph-mark font all
+ *  silently reset to the theme (r176 follow-up). Identity and annotation
+ *  attrs (docxIndex, bookmarks, comments, revisions, sdtShell...) must never
+ *  be cloned onto the fresh paragraph; pageBreakBefore stays off for the
+ *  r157 reason (a newline must not clone a page break). */
+export const PARA_FORMAT_ATTRS = [
+  'styleId',
+  'align',
+  'lineSpacing',
+  'lineRule',
+  'lineRawTwips',
+  'snapToGrid',
+  'indentLeft',
+  'indentRight',
+  'indentFirstLine',
+  'spaceBefore',
+  'spaceAfter',
+  'spaceBeforeAuto',
+  'spaceAfterAuto',
+  'contextualSpacing',
+  'bidi',
+  'autoSpace',
+  'wordWrap',
+  'overflowPunct',
+  'eaLang',
+  'shadingFill',
+  'shadingDisplay',
+  'borders',
+  'borderLines',
+  'borderReset',
+  'tabStops',
+  'emptyRunSize',
+  'emptyRunFont',
+] as const
+
+/** format attrs of the first textblock in [from, to] — the paragraph
+ *  counterpart of firstTextMarksIn (Word's start-of-range rule) */
+export const firstParaFormatIn = (
+  doc: PmNode,
+  from: number,
+  to: number,
+): Record<string, unknown> | null => {
+  let found: Record<string, unknown> | null = null
+  doc.nodesBetween(from, to, (node) => {
+    if (found) return false
+    if (node.isTextblock) {
+      const picked: Record<string, unknown> = {}
+      for (const key of PARA_FORMAT_ATTRS) if (key in node.attrs) picked[key] = node.attrs[key]
+      found = picked
+      return false
+    }
+    return true
+  })
+  return found
+}
+
+/** true when every format attr still sits at its type default — i.e. the
+ *  block is the fresh filler paragraph a whole-block replace leaves behind,
+ *  not a survivor that kept real formatting (which must not be stomped) */
+export const paraFormatIsDefault = (node: PmNode): boolean =>
+  PARA_FORMAT_ATTRS.every((key) => {
+    const spec = node.type.spec.attrs?.[key]
+    return !spec || node.attrs[key] === spec.default
+  })
+
 export const CaretMarksMemory = Extension.create({
   name: 'caretMarksMemory',
   addProseMirrorPlugins() {
@@ -78,21 +146,37 @@ export const CaretMarksMemory = Extension.create({
             // A deletion just emptied this block (Delete/Backspace/Cut over a
             // selection): Word keeps the formatting of the START of the
             // removed text on the pilcrow, so typing or pasting here must not
-            // fall back to the theme font (alpha ledger r172; the typing-over
-            // and Enter-over paths carry marks already — plain deletion did not)
+            // fall back to the theme font (r172; the typing-over and
+            // Enter-over paths carry marks already — plain deletion did not)
             if (!transactions.some((tr) => tr.docChanged) || oldState.selection.empty) return null
             const { from, to } = oldState.selection
             const kept = (firstTextMarksIn(oldState.doc, from, to) ?? []).filter((mark) =>
               FORMAT_MARKS.has(mark.type.name),
             )
-            if (kept.length === 0) return null
-            return newState.tr
+            // A selection that consumed whole paragraphs left a DEFAULT filler
+            // block: its paragraph formatting (style, paragraph-mark font,
+            // alignment...) must come back from the removed range's first
+            // paragraph, or style-derived fonts reset to the theme (r176)
+            const paraFormat = paraFormatIsDefault(block)
+              ? firstParaFormatIn(oldState.doc, from, to)
+              : null
+            const restoresPara =
+              paraFormat !== null &&
+              PARA_FORMAT_ATTRS.some(
+                (key) => key in block.attrs && paraFormat[key] !== block.attrs[key],
+              )
+            if (kept.length === 0 && !restoresPara) return null
+            const tr = newState.tr
               .setNodeMarkup(blockPos, undefined, {
                 ...block.attrs,
+                ...(restoresPara ? paraFormat : null),
                 caretMarks: serializeMarks(kept),
               })
-              .setStoredMarks(kept)
               .setMeta('addToHistory', false)
+            // an explicit empty stored-marks list means "user cleared" — only
+            // set marks that actually carry something
+            if (kept.length > 0) tr.setStoredMarks(kept)
+            return tr
           }
           try {
             const parsed = JSON.parse(stamped) as { type: string; attrs: Record<string, unknown> }[]

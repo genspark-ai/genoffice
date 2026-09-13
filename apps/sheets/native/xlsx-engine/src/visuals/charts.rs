@@ -42,13 +42,110 @@ pub(crate) fn read_chart(
     archive: &mut ZipArchive<File>,
     chart_path: &str,
     colors: &ColorContext,
+    formats: &mut SourceFormats,
 ) -> Result<ChartMetadata, SidecarError> {
     let xml = read_xml(archive, chart_path)?;
     let document = parse_document(&xml, chart_path)?;
-    Ok(chart_metadata(&document, colors))
+    Ok(chart_metadata(&document, colors, &mut |reference| {
+        formats.first_cell_format(archive, reference)
+    }))
 }
 
-pub(crate) fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> ChartMetadata {
+/// Number format of the first cell behind a `c:f` reference (None when the
+/// cells are General/text or the reference cannot be resolved).
+pub(crate) type SourceFormatLookup<'a> = dyn FnMut(&str) -> Option<String> + 'a;
+
+/// Format candidates behind a `sourceLinked="1"` numFmt, taken from the
+/// first series the way Excel does: its source cells, then its numCache.
+#[derive(Default)]
+pub(crate) struct LinkedFormats {
+    value_source: Option<String>,
+    value_cache: Option<String>,
+    category_source: Option<String>,
+    category_cache: Option<String>,
+}
+
+impl LinkedFormats {
+    fn from_first_series(
+        series: Option<Node<'_, '_>>,
+        lookup: &mut SourceFormatLookup<'_>,
+    ) -> Self {
+        let Some(series) = series else {
+            return Self::default();
+        };
+        let value_node = direct_child(series, "val").or_else(|| direct_child(series, "yVal"));
+        let category_node = direct_child(series, "cat").or_else(|| direct_child(series, "xVal"));
+        Self {
+            value_source: value_node
+                .and_then(formula_ref)
+                .and_then(|reference| lookup(&reference)),
+            value_cache: value_node.and_then(cache_format_code),
+            category_source: category_node
+                .filter(is_numeric_ref)
+                .and_then(formula_ref)
+                .and_then(|reference| lookup(&reference)),
+            category_cache: category_node.and_then(cache_format_code),
+        }
+    }
+
+    /// The attribute's formatCode unless it is source-linked, in which case
+    /// the source cells win, then the cache, then the (stale) literal.
+    fn resolve(&self, num_fmt: Option<Node<'_, '_>>, category: bool) -> Option<String> {
+        let node = num_fmt?;
+        let literal = node.attribute("formatCode").map(ToOwned::to_owned);
+        if !matches!(node.attribute("sourceLinked"), Some("1") | Some("true")) {
+            return literal;
+        }
+        let (source, cache) = if category {
+            (&self.category_source, &self.category_cache)
+        } else {
+            (&self.value_source, &self.value_cache)
+        };
+        source.clone().or_else(|| cache.clone()).or(literal)
+    }
+}
+
+/// The series a plot axis scales: the first c:ser of the plot group that
+/// lists the axis's c:axId (a combo's secondary axis has its own group).
+fn axis_series<'a>(document: &'a Document<'a>, axis: Node<'a, 'a>) -> Option<Node<'a, 'a>> {
+    let id = direct_child(axis, "axId")?.attribute("val")?;
+    document
+        .descendants()
+        .filter(|node| flat_plot_name(*node).is_some())
+        .find(|plot| {
+            plot.children()
+                .any(|child| child.has_tag_name("axId") && child.attribute("val") == Some(id))
+        })
+        .and_then(|plot| plot.children().find(|child| child.has_tag_name("ser")))
+}
+
+/// strRef categories are text: their cells' number format does not apply.
+fn is_numeric_ref(node: &Node<'_, '_>) -> bool {
+    node.descendants().any(|child| child.has_tag_name("numRef"))
+}
+
+/// Font shorthand of a node's c:txPr//a:defRPr: size, bold, solid fill.
+pub(crate) fn text_style(parent: Node<'_, '_>, colors: &ColorContext) -> Option<ChartTitleStyle> {
+    let def = direct_child(parent, "txPr")?
+        .descendants()
+        .find(|child| child.has_tag_name("defRPr"))?;
+    Some(ChartTitleStyle {
+        size: def
+            .attribute("sz")
+            .and_then(|value| value.parse::<f64>().ok())
+            .map(|value| value / 100.0),
+        bold: def
+            .attribute("b")
+            .map(|value| value == "1" || value == "true"),
+        color: drawing_fill_color(def, colors),
+    })
+}
+
+pub(crate) fn chart_metadata(
+    document: &Document<'_>,
+    colors: &ColorContext,
+    lookup: &mut SourceFormatLookup<'_>,
+) -> ChartMetadata {
     let chart_types = CHART_TYPE_NAMES
         .iter()
         .filter(|name| {
@@ -96,10 +193,11 @@ pub(crate) fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> 
         .collect::<Vec<_>>();
     let sole_series_named = matches!(&series_nodes[..],
         [only] if direct_child(*only, "tx").and_then(first_cached_value).is_some());
+    let linked = LinkedFormats::from_first_series(series_nodes.first().copied(), lookup);
     let mut series = series_nodes
         .iter()
         .enumerate()
-        .map(|(index, node)| parse_chart_series(*node, index, colors))
+        .map(|(index, node)| parse_chart_series(*node, index, colors, lookup))
         .collect::<Vec<_>>();
     trim_blank_tail(&mut series);
     // Excel's title rules: explicit text wins; a deleted auto title (or no
@@ -114,23 +212,21 @@ pub(crate) fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> 
             _ => "Chart Title".into(),
         },
     };
-    let (x_axis, y_axis, secondary_y_axis) = axis_infos(document);
-    let title_style = title_node
-        .and_then(|node| direct_child(node, "txPr"))
-        .and_then(|txpr| {
-            txpr.descendants()
-                .find(|child| child.has_tag_name("defRPr"))
-        })
-        .map(|def| ChartTitleStyle {
-            size: def
-                .attribute("sz")
-                .and_then(|value| value.parse::<f64>().ok())
-                .map(|value| value / 100.0),
-            bold: def
-                .attribute("b")
-                .map(|value| value == "1" || value == "true"),
-            color: drawing_fill_color(def, colors),
-        });
+    let (x_axis, y_axis, secondary_y_axis) = axis_infos(
+        document,
+        colors,
+        &linked,
+        series_nodes.first().copied(),
+        lookup,
+    );
+    let area_fill = |node: Option<Node<'_, '_>>| {
+        node.and_then(|node| direct_child(node, "spPr"))
+            .and_then(|sppr| area_fill_color(sppr, colors))
+    };
+    let chart_area_fill = area_fill(Some(document.root_element()));
+    let plot_area_fill = area_fill(chart_node.and_then(|chart| direct_child(chart, "plotArea")));
+    let title_style = title_node.and_then(|node| text_style(node, colors));
+    let data_label_style = data_labels_node(document).and_then(|node| text_style(node, colors));
     ChartMetadata {
         chart_types,
         bar_direction,
@@ -138,12 +234,12 @@ pub(crate) fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> 
         legend: legend_position(document),
         data_labels: data_labels(document),
         data_label_position: data_label_position(document),
-        data_label_format: data_label_format(document),
+        data_label_format: data_label_format(document, &linked),
         axis_titles: axis_titles(document),
         grouping: plot_grouping(document),
         gridlines: value_axis(document).map(|axis| direct_child(axis, "majorGridlines").is_some()),
         value_axis: value_axis_bounds(document),
-        category_axis_format: category_axis_format(document),
+        category_axis_format: category_axis_format(document, &linked),
         gap_width_pct: plot_val_attribute(document, "barChart", "gapWidth"),
         hole_size_pct: plot_val_attribute(document, "doughnutChart", "holeSize"),
         x_axis,
@@ -167,6 +263,9 @@ pub(crate) fn chart_metadata(document: &Document<'_>, colors: &ColorContext) -> 
             .filter(|value| matches!(*value, "gap" | "zero" | "span"))
             .map(ToOwned::to_owned),
         title_style,
+        chart_area_fill,
+        plot_area_fill,
+        data_label_style,
         series,
     }
 }
@@ -228,9 +327,18 @@ pub(crate) fn trim_blank_tail(series_list: &mut [ChartSeries]) {
 
 /// All plot axes keyed by side: axPos b/t → X, l/r → Y. Falls back to the
 /// element kind (catAx → X, valAx → Y) when axPos is missing.
-pub(crate) fn axis_infos(
-    document: &Document<'_>,
+pub(crate) fn axis_infos<'a>(
+    document: &'a Document<'a>,
+    colors: &ColorContext,
+    linked: &LinkedFormats,
+    first_series: Option<Node<'a, 'a>>,
+    lookup: &mut SourceFormatLookup<'_>,
 ) -> (Option<AxisInfo>, Option<AxisInfo>, Option<AxisInfo>) {
+    // Scatter plots have two valAx: the bottom one scales xVal, so it
+    // takes the category-side source format.
+    let has_category_axis = document
+        .descendants()
+        .any(|node| node.has_tag_name("catAx") || node.has_tag_name("dateAx"));
     let mut x_axis = None;
     let mut left_axes: Vec<AxisInfo> = Vec::new();
     // (info, is value axis) — only value axes qualify as the secondary scale.
@@ -240,6 +348,18 @@ pub(crate) fn axis_infos(
             .iter()
             .any(|name| node.has_tag_name(*name))
     }) {
+        let position = direct_child(axis, "axPos").and_then(|node| node.attribute("val"));
+        let is_x = match position {
+            Some("b") | Some("t") => true,
+            Some("l") | Some("r") => false,
+            _ => axis.has_tag_name("catAx") || axis.has_tag_name("dateAx"),
+        };
+        // An axis scaled by another group's series (combo secondary axis)
+        // links to that series' cells, not the first series'.
+        let own_formats = axis_series(document, axis)
+            .filter(|series| Some(*series) != first_series)
+            .map(|series| LinkedFormats::from_first_series(Some(series), lookup));
+        let formats = own_formats.as_ref().unwrap_or(linked);
         let scaling = direct_child(axis, "scaling");
         let bound = |name: &str| {
             scaling
@@ -247,6 +367,30 @@ pub(crate) fn axis_infos(
                 .and_then(|node| node.attribute("val"))
                 .and_then(|value| value.parse::<f64>().ok())
         };
+        let font_size = |node: Node<'_, '_>| {
+            node.descendants()
+                .filter(|child| child.has_tag_name("defRPr") || child.has_tag_name("rPr"))
+                .find_map(|child| child.attribute("sz"))
+                .and_then(|value| value.parse::<f64>().ok())
+                .map(|value| value / 100.0)
+        };
+        let label_props = direct_child(axis, "txPr").and_then(|txpr| {
+            txpr.descendants()
+                .find(|child| child.has_tag_name("defRPr"))
+        });
+        let display_units = direct_child(axis, "dispUnits");
+        let display_unit = display_units.and_then(|units| {
+            direct_child(units, "builtInUnit")
+                .and_then(|node| node.attribute("val"))
+                .and_then(builtin_display_unit)
+                .map(|(divisor, _)| divisor)
+                .or_else(|| {
+                    direct_child(units, "custUnit")
+                        .and_then(|node| node.attribute("val"))
+                        .and_then(|value| value.parse::<f64>().ok())
+                        .filter(|value| *value > 0.0)
+                })
+        });
         let info = AxisInfo {
             // Rich text, else the cell-linked strCache <c:v>; a truly empty
             // <c:title> is Excel's auto axis title — the "Axis Title"
@@ -276,10 +420,16 @@ pub(crate) fn axis_infos(
             major_unit: direct_child(axis, "majorUnit")
                 .and_then(|node| node.attribute("val"))
                 .and_then(|value| value.parse::<f64>().ok()),
-            num_fmt: direct_child(axis, "numFmt")
-                .and_then(|node| node.attribute("formatCode"))
-                .filter(|code| !code.is_empty() && *code != "General")
-                .map(ToOwned::to_owned),
+            // Source side by axis kind, not position: a horizontal bar's
+            // category axis sits on the left and its value axis below.
+            num_fmt: formats
+                .resolve(
+                    direct_child(axis, "numFmt"),
+                    axis.has_tag_name("catAx")
+                        || axis.has_tag_name("dateAx")
+                        || (is_x && !has_category_axis),
+                )
+                .filter(|code| !code.is_empty() && code != "General"),
             major_gridlines: direct_child(axis, "majorGridlines").is_some(),
             // CT_Boolean: a bare <c:delete/> means true.
             hidden: direct_child(axis, "delete")
@@ -288,12 +438,39 @@ pub(crate) fn axis_infos(
                 .and_then(|node| direct_child(node, "orientation"))
                 .and_then(|node| node.attribute("val"))
                 == Some("maxMin"),
-        };
-        let position = direct_child(axis, "axPos").and_then(|node| node.attribute("val"));
-        let is_x = match position {
-            Some("b") | Some("t") => true,
-            Some("l") | Some("r") => false,
-            _ => axis.has_tag_name("catAx") || axis.has_tag_name("dateAx"),
+            position: position
+                .filter(|side| matches!(*side, "l" | "r" | "t" | "b"))
+                .map(ToOwned::to_owned),
+            label_size: direct_child(axis, "txPr").and_then(font_size),
+            label_color: label_props.and_then(|props| drawing_fill_color(props, colors)),
+            title_size: direct_child(axis, "title").and_then(font_size),
+            title_color: direct_child(axis, "title").and_then(|title| {
+                title
+                    .descendants()
+                    .filter(|child| child.has_tag_name("defRPr") || child.has_tag_name("rPr"))
+                    .find_map(|props| drawing_fill_color(props, colors))
+            }),
+            display_unit,
+            // Excel only draws the unit label when c:dispUnitsLbl is present;
+            // rich text wins, else the built-in unit's English name.
+            display_unit_label: display_units
+                .filter(|_| display_unit.is_some())
+                .and_then(|units| direct_child(units, "dispUnitsLbl"))
+                .map(|label| {
+                    let rich = label
+                        .descendants()
+                        .filter(|child| child.has_tag_name("t"))
+                        .filter_map(|child| child.text())
+                        .collect::<String>();
+                    if !rich.is_empty() {
+                        return rich;
+                    }
+                    direct_child(display_units.unwrap_or(label), "builtInUnit")
+                        .and_then(|node| node.attribute("val"))
+                        .and_then(builtin_display_unit)
+                        .map_or_else(String::new, |(_, name)| name.to_owned())
+                })
+                .filter(|text| !text.is_empty()),
         };
         if is_x {
             if x_axis.is_none() {
@@ -318,6 +495,22 @@ pub(crate) fn axis_infos(
     (x_axis, y_axis, secondary_y_axis)
 }
 
+/// c:builtInUnit divisor and the label Excel shows for it.
+pub(crate) fn builtin_display_unit(value: &str) -> Option<(f64, &'static str)> {
+    Some(match value {
+        "hundreds" => (1e2, "Hundreds"),
+        "thousands" => (1e3, "Thousands"),
+        "tenThousands" => (1e4, "x 10000"),
+        "hundredThousands" => (1e5, "x 100000"),
+        "millions" => (1e6, "Millions"),
+        "tenMillions" => (1e7, "x 10000000"),
+        "hundredMillions" => (1e8, "x 100000000"),
+        "billions" => (1e9, "Billions"),
+        "trillions" => (1e12, "Trillions"),
+        _ => return None,
+    })
+}
+
 /// Scatter plots carry two valAx (X on the bottom, Y on the left); the left
 /// one is the value axis the metadata (gridlines/bounds) should describe.
 pub(crate) fn value_axis<'a>(document: &'a Document<'a>) -> Option<Node<'a, 'a>> {
@@ -333,13 +526,14 @@ pub(crate) fn value_axis<'a>(document: &'a Document<'a>) -> Option<Node<'a, 'a>>
         .copied()
 }
 
-pub(crate) fn category_axis_format(document: &Document<'_>) -> Option<String> {
+pub(crate) fn category_axis_format(
+    document: &Document<'_>,
+    linked: &LinkedFormats,
+) -> Option<String> {
     let axis = document
         .descendants()
         .find(|node| node.has_tag_name("catAx") || node.has_tag_name("dateAx"))?;
-    direct_child(axis, "numFmt")?
-        .attribute("formatCode")
-        .map(ToOwned::to_owned)
+    linked.resolve(direct_child(axis, "numFmt"), true)
 }
 
 pub(crate) fn value_axis_bounds(document: &Document<'_>) -> Option<ValueAxisBounds> {
@@ -436,10 +630,8 @@ pub(crate) fn data_label_position(document: &Document<'_>) -> Option<String> {
     }
 }
 
-pub(crate) fn data_label_format(document: &Document<'_>) -> Option<String> {
-    direct_child(data_labels_node(document)?, "numFmt")?
-        .attribute("formatCode")
-        .map(ToOwned::to_owned)
+pub(crate) fn data_label_format(document: &Document<'_>, linked: &LinkedFormats) -> Option<String> {
+    linked.resolve(direct_child(data_labels_node(document)?, "numFmt"), false)
 }
 
 pub(crate) fn axis_titles(document: &Document<'_>) -> Option<AxisTitles> {
@@ -484,6 +676,7 @@ pub(crate) fn parse_chart_series(
     series: Node<'_, '_>,
     index: usize,
     colors: &ColorContext,
+    lookup: &mut SourceFormatLookup<'_>,
 ) -> ChartSeries {
     // Unnamed series get Excel's global Series1..N numbering. A cell-linked
     // name without a strCache keeps its reference for renderer-side lookup.
@@ -512,8 +705,17 @@ pub(crate) fn parse_chart_series(
                 .collect()
         })
         .unwrap_or_default();
-    let category_format = category_node.and_then(cache_format_code);
+    let categories_ref = category_node.and_then(formula_ref);
+    // No numCache formatCode (Numbers, openpyxl): the source cells' format is
+    // what Excel would show on linked labels and axes.
+    let category_format = category_node.and_then(cache_format_code).or_else(|| {
+        category_node
+            .filter(is_numeric_ref)
+            .and(categories_ref.as_deref())
+            .and_then(|reference| lookup(reference))
+    });
     let value_node = direct_child(series, "val").or_else(|| direct_child(series, "yVal"));
+    let values_ref = value_node.and_then(formula_ref);
     let value_points = value_node.map(cached_points).unwrap_or_default();
     let mut values = Vec::with_capacity(value_points.len());
     let mut blanks = Vec::new();
@@ -532,14 +734,16 @@ pub(crate) fn parse_chart_series(
             }
         }
     }
-    let number_format = value_node.and_then(cache_format_code);
+    let number_format = value_node.and_then(cache_format_code).or_else(|| {
+        values_ref
+            .as_deref()
+            .and_then(|reference| lookup(reference))
+    });
     let trendline = series
         .descendants()
         .find(|node| node.has_tag_name("trendlineType"))
         .and_then(|node| node.attribute("val"))
         .map(ToOwned::to_owned);
-    let values_ref = value_node.and_then(formula_ref);
-    let categories_ref = category_node.and_then(formula_ref);
     let explosion_pct = direct_child(series, "explosion")
         .and_then(|node| node.attribute("val"))
         .and_then(|value| value.parse::<u32>().ok());
@@ -565,9 +769,15 @@ pub(crate) fn parse_chart_series(
         .collect::<Vec<_>>();
     let line = direct_child(series, "spPr")
         .and_then(|sppr| sppr.children().find(|node| node.has_tag_name("ln")));
+    // 3-D line/area series are filled ribbons whose outline is noFill by
+    // design; folded onto the flat pipeline they must still stroke with
+    // their fill color, so the noFill outline is not an empty line here.
+    let filled_ribbon = series
+        .parent()
+        .is_some_and(|plot| plot.has_tag_name("line3DChart") || plot.has_tag_name("area3DChart"));
     let line_color = line.and_then(|ln| {
         if ln.children().any(|node| node.has_tag_name("noFill")) {
-            return Some("none".into());
+            return (!filled_ribbon).then(|| "none".into());
         }
         drawing_fill_color(ln, colors)
     });

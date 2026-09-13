@@ -46,6 +46,7 @@ import { applyCase, type CaseMode } from '../editor/case-transform'
 import { setParagraphDirection, setSelectionAlign } from '../editor/direction'
 import { setInactiveSelectionShown } from '../editor/inactive-selection'
 import { stepParagraphIndent } from '../editor/indent'
+import { beginForeignPaste, defaultPasteMode, stashPastePayload } from '../editor/paste-options'
 import { formatNumber } from '../editor/numbering'
 import type { InkTool } from '../editor/ink'
 import type { RibbonFormatState } from './ribbon-format-state'
@@ -199,6 +200,8 @@ interface RibbonProps {
   /** References → footnotes / endnotes / citations */
   onInsertNote: (kind: 'footnote' | 'endnote') => void
   sources: SourceInfo[]
+  /** footnotes/endnotes hold Zotero citation fields the bridge cannot see yet */
+  zoteroNoteFields?: boolean
   onAddSource: (source: SourceInfo) => void
   /** TOC page-number backfill: docHeadings in document order → real page numbers (null when not computable) */
   headingPages?: () => number[] | null
@@ -654,6 +657,7 @@ function RibbonInner({
   onInkClearAll,
   onInsertNote,
   sources,
+  zoteroNoteFields,
   onAddSource,
   headingPages,
   zoom,
@@ -1835,6 +1839,12 @@ function RibbonInner({
           if (item.types.includes('text/html')) {
             const html = await (await item.getType('text/html')).text()
             if (html) {
+              // arm the foreign-paste handshake exactly like a Ctrl+V — the
+              // synthetic pasteHTML never fires the DOM paste handler, so
+              // ribbon pastes skipped the paste mode and the r181 fill
+              if (beginForeignPaste(html)) {
+                stashPastePayload({ html, text, mode: defaultPasteMode() })
+              }
               ed.view.pasteHTML(html, pasteEvent(html, text))
               ed.commands.focus()
               return
@@ -2483,7 +2493,7 @@ function RibbonInner({
               <div className="ribbon-group-label">{t('ribbonGroupShading')}</div>
             </div>
             <div className="ribbon-sep" />
-            <div className="table-tool-group">
+            <div className="table-tool-group table-tool-borders">
               <div className="table-tool-grid table-tool-grid-four">
                 <button data-tip={t('ribbonAllBordersTip')} onClick={() => applyCellBorders('all')}>
                   <IconBorderAll />
@@ -3814,6 +3824,7 @@ function RibbonInner({
             setDropdown={setDropdown}
             onInsertNote={onInsertNote}
             sources={sources}
+            zoteroNoteFields={zoteroNoteFields}
             onAddSource={onAddSource}
             headingPages={headingPages}
           />

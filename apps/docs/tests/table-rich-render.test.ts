@@ -243,6 +243,40 @@ describe('renderTableSpec paragraph line box', () => {
     expect(style).toContain(SINGLE_LH)
   })
 
+  it('space-only runs never size the strut; a space-only cell paragraph takes the mark', () => {
+    const [mixed, spaceOnly, marked] = paraStyles({
+      rows: [
+        [
+          cell(
+            ['a  '],
+            [
+              {
+                runs: [
+                  { text: 'a', sizeHalfPoints: 14 },
+                  { text: '  ', sizeHalfPoints: 40 },
+                ],
+              },
+              { runs: [{ text: ' ', sizeHalfPoints: 8 }] },
+              { runs: [{ text: ' ', sizeHalfPoints: 8 }], emptyRunSizeHalfPoints: 8 },
+            ],
+          ),
+        ],
+      ],
+    })
+    expect(mixed).toContain('--doc-strut:7pt')
+    expect(spaceOnly).not.toContain('--doc-strut')
+    expect(spaceOnly).not.toContain('font-size')
+    expect(marked).not.toContain('--doc-strut')
+    expect(marked).toContain('font-size:4pt')
+  })
+
+  it('a tab-only paragraph is content, not a space-only spacer', () => {
+    const [tabOnly] = paraStyles({
+      rows: [[cell(['\t'], [{ runs: [{ text: '\t', sizeHalfPoints: 8 }] }])]],
+    })
+    expect(tabOnly).toContain('--doc-strut:4pt')
+  })
+
   it('keeps the inherited strut when any run omits its size', () => {
     const [style] = paraStyles({
       rows: [[cell(['ab'], [{ runs: [{ text: 'a', sizeHalfPoints: 14 }, { text: 'b' }] }])]],

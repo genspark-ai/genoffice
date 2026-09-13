@@ -27,7 +27,7 @@ test.describe('sheets: manual visual inserts are undoable', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       await sheets.getByRole('button', { name: 'Insert', exact: true }).click()
@@ -72,7 +72,7 @@ test.describe('sheets: freeze journal follows undo', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       await sheets.getByRole('button', { name: 'View', exact: true }).click()
@@ -96,7 +96,7 @@ test.describe('sheets: freeze journal follows undo', () => {
       await sheets.keyboard.press('Enter')
 
       await launched.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {
@@ -124,7 +124,7 @@ test.describe('sheets: Data → From Text/CSV', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       await sheets.getByRole('button', { name: 'Data', exact: true }).click()
@@ -134,7 +134,7 @@ test.describe('sheets: Data → From Text/CSV', () => {
 
       await expect(sheets.locator('.workbook-status')).toContainText('A1', { timeout: 15_000 })
       await launched.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {
@@ -160,7 +160,7 @@ test.describe('sheets: comment navigation', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       await sheets.getByRole('button', { name: 'Review', exact: true }).click()

@@ -296,3 +296,45 @@ describe('duplicated border containers merge per side, later wins', () => {
     expect(borders?.top).toEqual({ style: 'nil' })
   })
 })
+
+describe('w:tblpPr alignment keywords', () => {
+  const wrap = (tblpPr: string) =>
+    `<w:tbl><w:tblPr>${tblpPr}</w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>` +
+    '<w:tr><w:tc><w:p><w:r><w:t>x</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+
+  it('records tblpXSpec/tblpYSpec and anchors a keyword Y to the margin when vertAnchor is omitted', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap(
+          '<w:tblpPr w:horzAnchor="margin" w:tblpXSpec="center" w:tblpYSpec="bottom"/>',
+        ),
+      }),
+    )
+    expect(doc.blocks[0].table!.floatPos).toMatchObject({
+      horzAnchor: 'margin',
+      vertAnchor: 'margin',
+      xSpec: 'center',
+      ySpec: 'bottom',
+    })
+    const numeric = await parseDocx(
+      await buildDocx({ bodyXml: wrap('<w:tblpPr w:horzAnchor="margin" w:tblpY="200"/>') }),
+    )
+    expect(numeric.blocks[0].table!.floatPos?.vertAnchor).toBeUndefined()
+    expect(numeric.blocks[0].table!.floatPos?.ySpec).toBeUndefined()
+  })
+
+  it('keeps an explicit page anchor with a top keyword', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: wrap('<w:tblpPr w:vertAnchor="page" w:horzAnchor="page" w:tblpYSpec="top"/>'),
+      }),
+    )
+    expect(doc.blocks[0].table!.floatPos).toMatchObject({
+      xTwips: 0,
+      yTwips: 0,
+      horzAnchor: 'page',
+      vertAnchor: 'page',
+      ySpec: 'top',
+    })
+  })
+})

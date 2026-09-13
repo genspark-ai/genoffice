@@ -1,3 +1,4 @@
+import { sdtCheckboxGlyphs, sdtCheckboxIsChecked, syncSdtCheckbox } from './checkbox-control'
 import type {
   CharIndents,
   GeneratedBlock,
@@ -1146,7 +1147,11 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
       const declared = format.borderLines?.[ch]
       const sz = declared?.szPt ? Math.max(1, Math.round(declared.szPt * 8)) : defaultSz
       const color = declared?.color ? escapeXmlAttr(declared.color) : defaultColor
-      return `<w:${side} w:val="single" w:sz="${sz}" w:space="${space}" w:color="${color}"/>`
+      const sp =
+        declared?.spacePt !== undefined
+          ? Math.min(31, Math.max(0, Math.round(declared.spacePt)))
+          : space
+      return `<w:${side} w:val="single" w:sz="${sz}" w:space="${sp}" w:color="${color}"/>`
     }
     const sides: string[] = []
     // schema order inside pBdr: top, left, bottom, right
@@ -1185,8 +1190,8 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
     if (format.bidi && (jc === 'left' || jc === 'right')) jc = jc === 'left' ? 'right' : 'left'
     out.push({ name: 'w:jc', xml: `<w:jc w:val="${jc}"/>` })
   }
-  // rel stops are display-only w:ptab mirrors: never written into w:tabs
-  const realStops = (format.tabStops ?? []).filter((ts) => !ts.rel)
+  // rel stops (w:ptab mirrors) and style-inherited stops are display-only: never written into w:tabs
+  const realStops = (format.tabStops ?? []).filter((ts) => !ts.rel && !ts.inherited)
   if (realStops.length > 0) {
     const tabXml = realStops
       .map((ts) => {
@@ -1196,6 +1201,9 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
       })
       .join('')
     out.push({ name: 'w:tabs', xml: `<w:tabs>${tabXml}</w:tabs>` })
+  }
+  if (format.textDirection) {
+    out.push({ name: 'w:textDirection', xml: `<w:textDirection w:val="${format.textDirection}"/>` })
   }
   if (format.frame) {
     out.push({ name: 'w:framePr', xml: framePrXml(format.frame) })
@@ -1219,13 +1227,18 @@ function framePrXml(frame: ParaFrame): string {
   if (frame.hTwips !== undefined) {
     attrs.push(`w:h="${Math.round(frame.hTwips)}"`, `w:hRule="${frame.hRule ?? 'atLeast'}"`)
   }
+  if (frame.vSpaceTwips) attrs.push(`w:vSpace="${Math.round(frame.vSpaceTwips)}"`)
+  if (frame.hSpaceTwips) attrs.push(`w:hSpace="${Math.round(frame.hSpaceTwips)}"`)
   attrs.push(
     `w:wrap="${frame.wrap ?? 'none'}"`,
     `w:vAnchor="${frame.vAnchor ?? 'page'}"`,
     `w:hAnchor="${frame.hAnchor ?? 'page'}"`,
     `w:x="${Math.round(frame.xTwips)}"`,
-    `w:y="${Math.round(frame.yTwips)}"`,
   )
+  if (frame.xAlign) attrs.push(`w:xAlign="${frame.xAlign}"`)
+  attrs.push(`w:y="${Math.round(frame.yTwips)}"`)
+  if (frame.yAlign) attrs.push(`w:yAlign="${frame.yAlign}"`)
+  if (frame.anchorLock) attrs.push('w:anchorLock="1"')
   return `<w:framePr ${attrs.join(' ')}/>`
 }
 
@@ -1349,7 +1362,10 @@ function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
       const line: NonNullable<ParaFormat['borderLines']>[typeof ch] = {}
       if (color && color !== 'auto') line.color = color
       if (Number.isFinite(sz) && sz > 0) line.szPt = sz / 8
-      if (line.color !== undefined || line.szPt !== undefined) rawLines[ch] = line
+      const space = parseInt(rawAttr(el.xml, 'w:space') ?? '', 10)
+      if (Number.isFinite(space) && space > 0) line.spacePt = space
+      if (line.color !== undefined || line.szPt !== undefined || line.spacePt !== undefined)
+        rawLines[ch] = line
     }
   }
   const norm = (s: string | undefined) => (s ? [...new Set(s)].sort().join('') : '')
@@ -1359,14 +1375,15 @@ function rawPBdrUnchanged(raw: string | undefined, f: ParaFormat): boolean {
       (['t', 'b', 'l', 'r'] as const).map((ch) => [
         lines?.[ch]?.color ?? null,
         lines?.[ch]?.szPt ?? null,
+        lines?.[ch]?.spacePt ?? null,
       ]),
     )
   return normLines(rawLines) === normLines(f.borderLines)
 }
 
 function rawTabsUnchanged(raw: string | undefined, allStops: TabStop[]): boolean {
-  // display-only w:ptab mirrors are not part of w:tabs
-  const stops = allStops.filter((s) => !s.rel)
+  // display-only w:ptab mirrors and style-inherited stops are not part of w:tabs
+  const stops = allStops.filter((s) => !s.rel && !s.inherited)
   const rawStops: TabStop[] = []
   if (raw) {
     const inner = raw.replace(/^<w:tabs[^>]*>/, '').replace(/<\/w:tabs>$/, '')
@@ -1535,6 +1552,7 @@ export function mergePPrFormat(
   const managedTags = new Set(FORMAT_MANAGED_TAGS)
   if (format?.tabStops !== undefined) managedTags.add('w:tabs')
   if (format?.dropCap !== undefined || format?.frame !== undefined) managedTags.add('w:framePr')
+  if (format?.textDirection !== undefined) managedTags.add('w:textDirection')
   // only when the model carries a size: otherwise the paragraph-mark rPr stays unmanaged
   if (format?.emptyRunSizeHalfPoints !== undefined) managedTags.add('w:rPr')
   const rawChildren = splitXmlChildren(inner)
@@ -2362,6 +2380,27 @@ function runsXml(runs: Run[], allocate: ((href: string) => string) | null): stri
  * One run's OOXML, including atomic constructs the plain-text run cannot
  * express: footnote/endnote reference markers and trailing XE index fields.
  */
+/** Runs whose text mixes box glyphs with typed characters: each glyph becomes
+ *  its own field / control, the characters between them plain runs. */
+function splitGlyphRuns(
+  run: Run,
+  isGlyph: (ch: string) => boolean,
+  glyphXml: (ch: string) => string,
+  plainXml: (text: string) => string,
+): string {
+  let out = ''
+  let plain = ''
+  for (const ch of run.text) {
+    if (isGlyph(ch)) {
+      if (plain) out += plainXml(plain)
+      plain = ''
+      out += glyphXml(ch)
+    } else plain += ch
+  }
+  if (plain) out += plainXml(plain)
+  return out
+}
+
 function runFragmentXml(run: Run, insideLink: boolean): string {
   // atomic inline formula: the stored <m:oMath> fragment is already valid
   // paragraph content (patch.ts adds the xmlns:m declaration when missing)
@@ -2372,6 +2411,12 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
   if (run.image) {
     const text = run.text === '' ? '' : generateRunXml({ ...run, image: undefined }, insideLink)
     return `${text}<w:r>${run.rawRPr ?? ''}${run.image.xml}</w:r>`
+  }
+  if (run.sym) {
+    return (
+      `<w:r>${runRPrXml(run, insideLink)}<w:sym w:font="${escapeXmlAttr(run.sym.font)}"` +
+      ` w:char="${escapeXmlAttr(run.sym.char)}"/></w:r>`
+    )
   }
   if (run.noteRef) {
     const tag = run.noteRef.kind === 'footnote' ? 'w:footnoteReference' : 'w:endnoteReference'
@@ -2391,6 +2436,22 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
       '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
       generateRunXml({ ...run, refField: undefined }, insideLink) +
       '<w:r><w:fldChar w:fldCharType="end"/></w:r>'
+    )
+  }
+  if (run.sdtCheckboxXml) {
+    // Each box glyph in the run is one control sharing the same w:sdtPr, with
+    // w14:checked set from the glyph; other characters are plain text beside it.
+    // No glyph left means the user typed over the box, and the control goes.
+    const glyphs = sdtCheckboxGlyphs(run.sdtCheckboxXml)
+    const inner = (text: string) =>
+      generateRunXml({ ...run, text, sdtCheckboxXml: undefined }, insideLink)
+    return splitGlyphRuns(
+      run,
+      (ch) => ch === glyphs.checked || ch === glyphs.unchecked,
+      (ch) =>
+        `<w:sdt>${syncSdtCheckbox(run.sdtCheckboxXml!, sdtCheckboxIsChecked(run.sdtCheckboxXml!, ch))}` +
+        `<w:sdtContent>${inner(ch)}</w:sdtContent></w:sdt>`,
+      inner,
     )
   }
   if (run.instrField !== undefined) {
@@ -2432,26 +2493,18 @@ function runFragmentXml(run: Run, insideLink: boolean): string {
           begin = begin.replace(/<w:checkBox((?:\s[^>]*)?)\/>/, `<w:checkBox$1>${val}</w:checkBox>`)
         return begin + instrXml + endXml
       }
-      let out = ''
-      let plain = ''
-      const flush = () => {
-        if (!plain) return
-        out += generateRunXml(
-          { ...run, text: plain, instrField: undefined, fldBeginXml: undefined },
-          insideLink,
-        )
-        plain = ''
-      }
-      for (const ch of run.text) {
-        if (ch === '☐' || ch === '☒') {
-          flush()
-          out += syncedField(ch === '☒')
-        } else plain += ch
-      }
-      flush()
       // no glyph left = the user typed over / deleted the checkbox; Word also
       // removes the form field then, so only the replacement text survives
-      return out
+      return splitGlyphRuns(
+        run,
+        (ch) => ch === '☐' || ch === '☒',
+        (ch) => syncedField(ch === '☒'),
+        (plain) =>
+          generateRunXml(
+            { ...run, text: plain, instrField: undefined, fldBeginXml: undefined },
+            insideLink,
+          ),
+      )
     }
     return (
       '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
@@ -2695,8 +2748,7 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
       case 'rStyle': {
         const raw = rawAttr(rawOf('w:rStyle'), 'w:val')
         if (run.styleId) return raw === run.styleId
-        // the parse side never stores Hyperlink in styleId; a run that already sat in
-        // the document's hyperlink (rId) stays unstyled if it was unstyled
+        // a run that already sat in the document's hyperlink (rId) stays unstyled if it was unstyled
         return raw === undefined ? !insideLink || !!run.link?.rId : raw === 'Hyperlink'
       }
       case 'rFonts': {
@@ -3239,16 +3291,16 @@ export function buildWordArtParagraphXml(opts: {
   return `<w:p><w:r>${alternateContent}</w:r></w:p>`
 }
 
-function generateRunXml(run: Run, insideLink: boolean): string {
+function runRPrXml(run: Run, insideLink: boolean): string {
   // OOXML requires rPr children in schema order:
   // rStyle < rFonts < b < i < strike < color < sz < highlight < u < vertAlign
-  let rPr: string
-  if (run.rawRPr !== undefined) {
-    rPr = mergeRPrModel(run.rawRPr, run, insideLink)
-  } else {
-    const props = modelRPrChildren(run, insideLink).map((c) => c.xml)
-    rPr = props.length > 0 ? `<w:rPr>${props.join('')}</w:rPr>` : ''
-  }
+  if (run.rawRPr !== undefined) return mergeRPrModel(run.rawRPr, run, insideLink)
+  const props = modelRPrChildren(run, insideLink).map((c) => c.xml)
+  return props.length > 0 ? `<w:rPr>${props.join('')}</w:rPr>` : ''
+}
+
+function generateRunXml(run: Run, insideLink: boolean): string {
+  const rPr = runRPrXml(run, insideLink)
 
   // Translate embedded control characters back to OOXML elements.
   // Deleted runs carry their text in w:delText instead of w:t.

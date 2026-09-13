@@ -62,6 +62,37 @@ describe('table styles (tblStyle display)', () => {
     expect(rows[1][0].fill).toBeUndefined()
   })
 
+  it('groups band rows by tblStyleRowBandSize after the header row', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: styledTable('<w:tblStyleRowBandSize w:val="2"/><w:tblLook w:val="0420"/>'),
+        extraStylesXml: GRID_STYLE,
+      }),
+    )
+    const rows = doc.blocks[0].table!.rows
+    expect(rows[0][0].fill).toBe('4472C4')
+    expect(rows[1][0].fill).toBe('D9E2F3')
+    expect(rows[2][0].fill).toBe('D9E2F3')
+    expect(rows[3][0].fill).toBeUndefined()
+  })
+
+  it('takes the band size from the table style when the instance omits it', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: styledTable('<w:tblLook w:val="0420"/>'),
+        extraStylesXml: GRID_STYLE.replace(
+          '<w:name w:val="Grid Table Blue"/>',
+          '<w:name w:val="Grid Table Blue"/><w:tblPr><w:tblStyleRowBandSize w:val="2"/></w:tblPr>',
+        ),
+      }),
+    )
+    expect(doc.styles.get('GridBlue')!.tableDisplay!.rowBandSize).toBe(2)
+    const rows = doc.blocks[0].table!.rows
+    expect(rows[1][0].fill).toBe('D9E2F3')
+    expect(rows[2][0].fill).toBe('D9E2F3')
+    expect(rows[3][0].fill).toBeUndefined()
+  })
+
   it('explicit cell shading beats the style', async () => {
     const doc = await parseDocx(
       await buildDocx({

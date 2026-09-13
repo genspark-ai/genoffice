@@ -72,6 +72,8 @@ export const ms = {
   aiToolClarifySkipped: 'Soal selidik dilangkau',
   aiToolPlan: 'Ringkasan disahkan ({n} bahagian)',
   aiToolPlanRejected: 'Ringkasan tidak disahkan',
+  aiToolPlanFailed: 'Brif tidak dapat disediakan',
+  aiDraftingBrief: 'Menyediakan brif…',
   aiToolWritePage: 'Halaman dijana',
   aiToolWritePageFailed: 'Penjanaan halaman gagal',
   aiToolWritePagePartial: 'Sebahagian halaman dijana',

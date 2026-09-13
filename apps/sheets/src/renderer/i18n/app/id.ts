@@ -525,6 +525,12 @@ export const id = {
   appPdfCanceled: 'Ekspor PDF dibatalkan.',
   appPdfExported: '{path} diekspor.',
   appPdfExportFailed: 'Tidak dapat mengekspor PDF.',
+  appPrintPreparing: 'Menyiapkan pencetakan…',
+  appPrintSent: 'Dikirim ke printer.',
+  appPrintCanceled: 'Pencetakan dibatalkan.',
+  appPrintFailed: 'Tidak dapat mencetak.',
+  appPrintNeedsFullLoad:
+    'Pencetakan memerlukan buku kerja termuat sepenuhnya — tunggu hingga pemuatan selesai.',
   appCsvExportNeedsFullLoad:
     'Ekspor CSV memerlukan buku kerja termuat penuh — tunggu pemuatan selesai.',
   appCsvExportTooLarge: 'Lembar terlalu besar untuk diekspor sebagai CSV.',
@@ -1312,6 +1318,8 @@ export const id = {
   appFormatMenu: 'Format',
   appRowHeight: 'Tinggi baris',
   appColWidth: 'Lebar kolom',
+  appAutoFitRowHeight: 'Sesuaikan Tinggi Baris Otomatis',
+  appAutoFitColWidth: 'Sesuaikan Lebar Kolom Otomatis',
   appRowHeightLabel: 'Tinggi baris (poin)',
   appColWidthLabel: 'Lebar kolom (karakter)',
   appDeleteRow: 'Hapus baris',

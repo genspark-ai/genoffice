@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import type { IFunctionInfo } from '@univerjs/engine-formula'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
@@ -39,8 +40,8 @@ import { type SelectionFormat } from './selection-format'
 import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
 import { isGridKeyTarget, shouldInterceptClearSelection } from './clear-selection-keyboard'
 
-import type { ChartSeriesVisualState } from '../domain/chart-visual'
-import type { ChangePlan } from '../domain/workbook.types'
+import type { ChartSeriesVisualState } from '@genoffice/xlsx-gateway/domain/chart-visual'
+import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { AttachmentMeta } from '../shared/desktop-api'
 import { AiChatPanel, type AiChatMessage } from './ai/AiChatPanel'
 import { AiSelectionAsk } from './ai/AiSelectionAsk'
@@ -274,6 +275,8 @@ interface ExcelShellProps {
   readonly onGoToReference: (ref: string) => string | null
   readonly onListDefinedNames: () => readonly { name: string; ref: string }[]
   readonly onApplyFormula: (formula: string) => string | null
+  /// Function descriptions from the running formula engine (Insert Function).
+  readonly onListFunctions: () => readonly IFunctionInfo[]
   readonly onCreateSubtotal: (config: SubtotalConfig) => string | null
   readonly onCreateConsolidate: (config: ConsolidateConfig) => string | null
   /// Prefill for the Consolidate reference input (current multi-cell selection).
@@ -344,6 +347,7 @@ export function ExcelShell({
   onGoToReference,
   onListDefinedNames,
   onApplyFormula,
+  onListFunctions,
   onCreateSubtotal,
   onCreateConsolidate,
   onGetConsolidateDefault,
@@ -398,6 +402,10 @@ export function ExcelShell({
   const [pivotEditSeed, setPivotEditSeed] = useState<PivotEditSeed | null>(null)
   /** null = closed; string = open on that catalog category ('All' for the plain button) */
   const [insertFunctionCat, setInsertFunctionCat] = useState<string | null>(null)
+  const liveFunctions = useMemo(
+    () => (insertFunctionCat === null ? [] : onListFunctions()),
+    [insertFunctionCat],
+  )
   const [showSubtotalDialog, setShowSubtotalDialog] = useState(false)
   const [showGoalSeek, setShowGoalSeek] = useState(false)
   const [showConsolidateDialog, setShowConsolidateDialog] = useState(false)
@@ -826,6 +834,7 @@ export function ExcelShell({
       {insertFunctionCat !== null && (
         <InsertFunctionDialog
           targetLabel={onGetActiveCell()}
+          functions={liveFunctions}
           onApply={onApplyFormula}
           initialCategory={insertFunctionCat}
           onClose={() => setInsertFunctionCat(null)}
@@ -2007,13 +2016,7 @@ function Ribbon({
             <MenuSelect
               cover
               label="AutoSum"
-              options={[
-                { value: 'SUM', label: t('appFnSum') },
-                { value: 'AVERAGE', label: t('appFnAverage') },
-                { value: 'COUNT', label: t('appFnCountNumbers') },
-                { value: 'MAX', label: t('appFnMax') },
-                { value: 'MIN', label: t('appFnMin') },
-              ]}
+              options={autoSumOptions(t)}
               onPick={(value) => onCommand(`autofn:${value}`)}
             />
           </div>
@@ -3042,7 +3045,9 @@ function Ribbon({
               }
               options={[
                 { value: 'row-height-open', label: `${t('appRowHeight')}…` },
+                { value: 'autofit-row-height', label: t('appAutoFitRowHeight') },
                 { value: 'col-width-open', label: `${t('appColWidth')}…` },
+                { value: 'autofit-col-width', label: t('appAutoFitColWidth') },
               ]}
               onPick={(value) => onCommand(value)}
             />
@@ -3052,6 +3057,37 @@ function Ribbon({
       <RibbonGroup label={t('appGroupEditing')}>
         <div className="ribbon-rows">
           <div className="inline-tools">
+            <MenuSelect
+              className="select-like compact"
+              label="AutoSum"
+              data-tip={t('appAutoSumTitle')}
+              display={
+                <>
+                  <ToolSymbol symbol="Σ" /> {t('appAutoSum')}
+                </>
+              }
+              options={autoSumOptions(t)}
+              onPick={(value) => onCommand(`autofn:${value}`)}
+            />
+            <MenuSelect
+              className="select-like compact"
+              label="Sort & Filter"
+              data-tip={t('appGroupSortFilter')}
+              display={
+                <>
+                  <ToolSymbol symbol="⇅" /> {t('appGroupSortFilter')}
+                </>
+              }
+              options={[
+                { value: 'sort:asc', label: t('appSortAToZ') },
+                { value: 'sort:desc', label: t('appSortZToA') },
+                { value: 'sort-custom-open', label: t('appCustomSort') },
+                { value: 'filter-toggle', label: t('appFilter') },
+                { value: 'filter-clear', label: t('appClearFilterTitle') },
+                { value: 'filter-reapply', label: t('appReapplyTitle') },
+              ]}
+              onPick={(value) => onCommand(value)}
+            />
             <MenuSelect
               className="select-like compact"
               label="Fill"
@@ -3111,6 +3147,16 @@ function Ribbon({
       </RibbonGroup>
     </div>
   )
+}
+
+function autoSumOptions(t: (key: StringKey) => string): { value: string; label: string }[] {
+  return [
+    { value: 'SUM', label: t('appFnSum') },
+    { value: 'AVERAGE', label: t('appFnAverage') },
+    { value: 'COUNT', label: t('appFnCountNumbers') },
+    { value: 'MAX', label: t('appFnMax') },
+    { value: 'MIN', label: t('appFnMin') },
+  ]
 }
 
 /// Escape-to-close for the ribbon dropdowns; outside-press / blur / shell

@@ -351,6 +351,50 @@ describe('buildRenderSlide (end-to-end on real fixture)', () => {
     expect(node.cells[1].w).toBeCloseTo(node.box.w / 2, 1)
   })
 
+  it('table cell tiled picture fills anchor to the whole table box, not the cell', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const tileFill = {
+      type: 'image',
+      mediaRef: 'ppt/media/photo.png',
+      mode: 'tile',
+      tile: { tx: 0, ty: 0, sx: 1, sy: 1, algn: 'tl' },
+    }
+    const el: any = {
+      id: 'tbl_1',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 1905000, cy: 952500 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      colWidths: [952500, 952500],
+      rowHeights: [476250, 476250],
+      rows: [
+        [{ fill: tileFill }, { fill: tileFill }],
+        [{ fill: tileFill }, { fill: tileFill }],
+      ],
+    }
+    const rs = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    })
+    const node = rs.nodes[0] as any
+    expect(node.type).toBe('table')
+    const tableW = node.gridX[node.gridX.length - 1]
+    const tableH = node.gridY[node.gridY.length - 1]
+    for (const cell of node.cells) {
+      expect(cell.fill.kind).toBe('image')
+      // The frame is the table box expressed in cell-local px: origin shifts back by the
+      // cell offset, so the bottom-right cell shows the bottom-right quarter of the picture
+      expect(cell.fill.tile.frame).toEqual({ x: -cell.x, y: -cell.y, w: tableW, h: tableH })
+    }
+    const last = node.cells[3]
+    expect(last.fill.tile.frame.x).toBeCloseTo(-tableW / 2, 1)
+    expect(last.fill.tile.frame.y).toBeCloseTo(-tableH / 2, 1)
+  })
+
   it('table renders at its grid width when the frame ext is a stale placeholder', async () => {
     const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
     const slide = deck.slides[0]!
@@ -358,7 +402,7 @@ describe('buildRenderSlide (end-to-end on real fixture)', () => {
       id: 'tbl_1',
       type: 'table',
       anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
-      // ext cx=3000000 is stale: the grid below sums to 6593050 EMU (real prod deck shape)
+      // ext cx=3000000 is stale: the grid below sums to 6593050 EMU (shape from a real deck)
       transform: {
         offset: { x: 0, y: 0, cx: 3000000, cy: 3000000 },
         rot: 0,

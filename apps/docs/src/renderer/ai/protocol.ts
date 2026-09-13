@@ -83,7 +83,7 @@ export const OPS_GUIDE = [
   'BC-4 Using findReplace sentence by sentence for rewrites such as translation/abbreviation; use replace_blocks (or replace_selection for a selected span) instead;',
 ].join('\n')
 
-const HTML_RULES = [
+export const HTML_RULES = [
   'The html tool input is a restricted HTML fragment. Rules:',
   '- Only these tags are allowed: h1 h2 h3 h4 h5 h6 p ul ol li strong em u s a br table thead tbody tr th td pre code blockquote',
   '- Tables: use <th> for the first (header) row; cells contain plain text only (<br> may split lines); nested tables / merged cells are not supported; once inserted the table is protected as a whole, only cell text remains editable',
@@ -112,6 +112,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '- Every user message carries the latest "document block list" (index|type|content preview; previews may be truncated); after modifications, call get_document_context if you need the latest state;',
   '- When a list preview is truncated, read the full content with read_blocks before rewriting; never rewrite based on a truncated preview;',
   '- Content changes: use insert_content for new content, and replace_blocks to rewrite/replace existing blocks (pass a block index range and the new HTML); replaced blocks pass their paragraph and text formatting (font, size, color, indent, spacing, alignment) on to the new blocks automatically, and a rewritten table keeps its widths, borders, shading and cell formatting, so a rewrite never needs follow-up formatting commands;',
+  '- Long new content (drafting a whole document, a chapter, a full report/article/translation — anything beyond a few paragraphs) goes through write_document: you pass the plan and the reference material, and the system writer streams the text into the document while the user watches; never paste long content into insert_content. When the document is blank and the user asks for content, use write_document;',
   '- Formatting, structure, and batch operations (color/font size/line spacing/alignment/indent/heading level/find & replace/delete/move/list conversion) go through apply_ops — do not rewrite whole blocks with replace_blocks;',
   '- Small in-place text fixes (changing a few words inside a sentence) go through apply_ops findReplace with a target — do not rewrite the whole block; styling every occurrence of a phrase (e.g. bold each "TODO") uses setMatchedFont;',
   '- When the user has text selected, the message includes the selection block indexes and content; rewrite-style requests apply to the selection by default;',

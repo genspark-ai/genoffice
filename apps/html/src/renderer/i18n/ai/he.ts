@@ -70,6 +70,8 @@ export const he = {
   aiToolClarifySkipped: 'השאלון הושמט',
   aiToolPlan: 'התקציר אושר ({n} מקטעים)',
   aiToolPlanRejected: 'התקציר לא אושר',
+  aiToolPlanFailed: 'לא ניתן היה לנסח את התקציר',
+  aiDraftingBrief: 'מנסח את התקציר…',
   aiToolWritePage: 'העמוד נוצר',
   aiToolWritePageFailed: 'יצירת העמוד נכשלה',
   aiToolWritePagePartial: 'נוצר חלק מהעמוד',

@@ -119,3 +119,36 @@ describe('p:pic blip lum brightness/contrast (prod_048 washed-out photo box)', (
     expect(none.fill.lum).toBeUndefined()
   })
 })
+
+describe('a:biLevel (black/white threshold picture recolor)', () => {
+  it('parses thresh in 1/1000 % on a pic blip', () => {
+    const xml = slideWith(pic('<a:biLevel thresh="25000"/>'))
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: xml, ctx: {} })
+    const el = slide.elements[0] as any
+    expect(el.biLevel).toBeCloseTo(0.25, 5)
+    expect(el.duotone).toBeUndefined()
+  })
+
+  it('a bare <a:biLevel/> defaults to 50%', () => {
+    const xml = slideWith(pic('<a:biLevel/>'))
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: xml, ctx: {} })
+    expect((slide.elements[0] as any).biLevel).toBeCloseTo(0.5, 5)
+  })
+
+  it('parses biLevel on a shape blipFill too', () => {
+    const xml = slideWith(
+      '<p:sp><p:nvSpPr><p:cNvPr id="3" name="Rect"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>' +
+        '<p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100" cy="100"/></a:xfrm><a:prstGeom prst="rect"/>' +
+        '<a:blipFill><a:blip r:embed="rId2"><a:biLevel thresh="75000"/></a:blip><a:stretch><a:fillRect/></a:stretch></a:blipFill>' +
+        '</p:spPr></p:sp>',
+    )
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: xml,
+      ctx: { mediaRels: new Map([['rId2', 'ppt/media/image1.png']]) } as any,
+    })
+    const el = slide.elements[0] as any
+    expect(el.fill?.type).toBe('image')
+    expect(el.fill.biLevel).toBeCloseTo(0.75, 5)
+  })
+})

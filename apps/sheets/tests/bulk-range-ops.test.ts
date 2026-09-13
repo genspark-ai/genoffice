@@ -5,8 +5,8 @@ import {
   MAX_EXPANDED_CELL_OPS,
   replaceOccurrences,
   type WorkbookCommandBatch,
-} from '../src/domain/workbook-dsl'
-import { InMemoryWorkbookAdapter } from '../src/domain/in-memory-workbook'
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
 import { buildLazyChangePlan } from '../src/renderer/lazy-plan'
 
 const readCell = (): { value: null } => ({ value: null })

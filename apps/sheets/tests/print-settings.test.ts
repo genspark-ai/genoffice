@@ -429,7 +429,52 @@ describe('buildSheetPrintPayload', () => {
       'S1',
     )
     expect(payload.html.match(/<table>/g)).toHaveLength(2)
-    expect(payload.html).toContain('table + table { break-before: page; }')
+    expect(payload.html).toContain('.area + .area { break-before: page; }')
+  })
+
+  it('places floating visuals at their anchor and widens the used range to cover them', () => {
+    const visual = {
+      id: 'v1',
+      fromRow: 1,
+      fromColumn: 1,
+      toRow: 6,
+      toColumn: 4,
+      offsetXPx: 10,
+      offsetYPx: 4,
+      widthPx: 400,
+      heightPx: 200,
+      html: '<div class="xlsx-print-visual">chart</div>',
+    }
+    const outside = { ...visual, id: 'v2', fromRow: 40, fromColumn: 30, toRow: 41, toColumn: 31 }
+    const payload = buildSheetPrintPayload(
+      fakeWorksheet(),
+      payloadSetup({ printAreas: ['A1:B3'] }),
+      'Book.pdf',
+      'S1',
+      new Map(),
+      { visuals: [visual, outside], css: '.xlsx-chart { color: black; }' },
+    )
+    // column B starts after one 100px (75pt) column; row 2 after one printed 11pt text row (15.75pt)
+    expect(payload.html).toContain(
+      '<div class="pv" style="left:82.5pt;top:18.75pt;width:300pt;height:150pt"><div style="width:400px;height:200px"><div class="xlsx-print-visual">chart</div></div></div>',
+    )
+    expect(payload.html.match(/class="pv"/g)).toHaveLength(1)
+    expect(payload.html).toContain('<style>.xlsx-chart { color: black; }</style>')
+
+    const widened = buildSheetPrintPayload(
+      fakeWorksheet(),
+      payloadSetup({}),
+      'Book.pdf',
+      'S1',
+      new Map(),
+      {
+        visuals: [visual],
+        css: '',
+      },
+    )
+    // A:B of data, but the chart reaches column E (index 4)
+    expect(widened.html.match(/<col /g)).toHaveLength(5)
+    expect(widened.html).not.toContain('<style></style>')
   })
 
   it('carries the page geometry and header/footer templates', () => {

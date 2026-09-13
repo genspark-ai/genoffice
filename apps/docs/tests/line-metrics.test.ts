@@ -119,6 +119,21 @@ describe('HeuristicMetrics', () => {
 
 // ─── computeLineHeight ─────────────────────────────────────────────────────
 
+describe('lineHeightFactor', () => {
+  it('Comic Sans MS uses its own hhea total (Word renders the macOS face)', () => {
+    expect(lineHeightFactor('Comic Sans MS')).toBe(1.3936)
+    expect(lineHeightFactor('comic sans ms bold')).toBe(1.3936)
+  })
+  it('symbol faces take the metrics of the copies Word ships, not the unknown fallback', () => {
+    expect(lineHeightFactor('Symbol')).toBe(1.2251)
+    expect(lineHeightFactor('Wingdings')).toBe(1.1099)
+    expect(lineHeightFactor('Wingdings 2')).toBe(1.0542)
+    expect(lineHeightFactor('Wingdings 3')).toBe(1.1387)
+    expect(lineHeightFactor('Webdings')).toBe(1.0)
+    expect(lineHeightFactor('Segoe UI Symbol')).toBe(1.15)
+  })
+})
+
 describe('computeLineHeight', () => {
   const naturalH = 20 // px, assume the font's natural line height is 20px
 
@@ -194,8 +209,9 @@ describe('computeLineHeight', () => {
   it('docGrid lines mode: exact keeps its value; atLeast floors at the snapped single', () => {
     const docGrid = { type: 'lines' as const, linePitch: 312 }
     expect(computeLineHeight(20, 'exact', 260, docGrid)).toBeCloseTo(260 * (96 / 1440), 2)
-    // atLeast 0 degrades to single spacing on the grid
-    expect(computeLineHeight(20, 'atLeast', 0, docGrid)).toBeCloseTo(20.8, 2)
+    // atLeast 0 is natural height off the grid (Word probe 2026-09-11: Meiryo UI
+    // 10pt on a 350-twip grid lays 16.56pt, not the 17.5pt cell)
+    expect(computeLineHeight(20, 'atLeast', 0, docGrid)).toBeCloseTo(20, 2)
     // face value above the snapped single stays un-snapped (probe atleast500-sz21: 25pt)
     expect(computeLineHeight(20, 'atLeast', 480, docGrid)).toBeCloseTo(480 * (96 / 1440), 2)
     // snapped single floor applies when the font outgrows the cell (probe atleast500-sz28)
@@ -544,6 +560,10 @@ describe('cssLineHeight', () => {
     )
   })
 
+  it('atLeast line="0" → natural height, never the grid single', () => {
+    expect(cssLineHeight('atLeast', 0, undefined)).toBe('calc(var(--doc-line-factor,1.2) * 1em)')
+  })
+
   it('no line spacing settings at all → null (inherit)', () => {
     expect(cssLineHeight(undefined, undefined, undefined)).toBeNull()
   })
@@ -617,9 +637,8 @@ describe('cssFontFamily', () => {
   })
 
   it('monospace families map to a mono chain (Menlo first on macOS)', () => {
-    expect(cssFontFamily('Consolas')).toBe(
-      "'Consolas','Menlo','Courier New','Liberation Mono','Noto Sans CJK SC',monospace",
-    )
+    // Consolas is Office-only: the size-adjusted alias stands in behind a real local copy
+    expect(cssFontFamily('Consolas')).toBe("'Consolas','Consolas GO','Noto Sans CJK SC',monospace")
     expect(cssFontFamily('Courier New')).toBe(
       "'Courier New','Menlo','Liberation Mono','Noto Sans CJK SC',monospace",
     )
@@ -866,6 +885,26 @@ describe('document fontTable substitution hints', () => {
     expect(cjkDeclaredLineFactor('다솜글꼴')).toBe(1.3029)
   })
 
+  it('missing Noto Sans KR with a sans PANOSE takes the Malgun class (Word probe 2026-09-11)', () => {
+    setDocFontTable([{ name: 'Noto Sans KR', panose: '020B0200000000000000' }])
+    const css = cssFontFamily('Noto Sans KR')
+    expect(css).toContain("'GenOffice Sans KR'")
+    expect(css).not.toContain("'GenOffice Batang'")
+    expect(css).not.toContain("'KR Theme Latin GO'")
+    expect(css.endsWith('sans-serif')).toBe(true)
+    expect(lineHeightFactor('Noto Sans KR')).toBe(1.7371)
+    expect(cjkDeclaredLineFactor('Noto Sans KR')).toBe(1.7371)
+    expect(krLineFactor('Noto Sans KR')).toBe(1.7371)
+  })
+
+  it('Noto Sans KR without a fontTable sans hint stays Batang-ward (Word probe 2026-08-13)', () => {
+    setDocFontTable([{ name: 'Noto Sans KR', panose: '00000000000000000000' }])
+    expect(cssFontFamily('Noto Sans KR')).toContain("'GenOffice Batang'")
+    expect(lineHeightFactor('Noto Sans KR')).toBe(1.3029)
+    setDocFontTable(null)
+    expect(cjkDeclaredLineFactor('Noto Sans KR')).toBe(1.3029)
+  })
+
   it('Noto Sans CJK KR keeps its probed Batang-class behavior despite an altName', () => {
     setDocFontTable([
       { name: 'Noto Sans CJK KR', altName: 'Cambria', panose: '00000000000000000000' },
@@ -894,6 +933,23 @@ describe('document fontTable substitution hints', () => {
     expect(cssFontFamily('InstalledCloudFont')).toBe(
       "'InstalledCloudFont','Noto Sans CJK GO','GenOffice PUA Blank',sans-serif",
     )
+  })
+})
+
+describe('Segoe UI (M365 cloud face)', () => {
+  it('text cuts take the cloud hhea factor and the size-adjusted Helvetica alias', () => {
+    for (const name of ['Segoe UI', 'Segoe UI Semibold', 'Segoe UI Light']) {
+      expect(lineHeightFactor(name)).toBe(1.3301)
+      expect(cssFontFamily(name)).toBe(
+        `'${name}','Segoe UI GO','Noto Sans CJK GO','GenOffice PUA Blank',sans-serif`,
+      )
+    }
+  })
+  it('symbol/emoji/script cuts keep the old branch', () => {
+    for (const name of ['Segoe UI Emoji', 'Segoe UI Symbol', 'Segoe Print', 'Segoe Script']) {
+      expect(lineHeightFactor(name)).toBe(1.15)
+      expect(cssFontFamily(name)).not.toContain("'Segoe UI GO'")
+    }
   })
 })
 
@@ -1079,7 +1135,7 @@ describe('Korean line metrics', () => {
 
   it('mono ascii face keeps its mono faces, CJK falls through to the eastAsia font', () => {
     expect(cssDualFontFamily('Consolas', 'SimSun')).toBe(
-      "'Consolas','Menlo','Courier New','Liberation Mono','SimSun','GenOffice Songti SC','STSong','Noto Serif CJK SC',serif",
+      "'Consolas','Consolas GO','SimSun','GenOffice Songti SC','STSong','Noto Serif CJK SC',serif",
     )
   })
 
@@ -1256,7 +1312,6 @@ describe('cssFontFamily Arabic', () => {
     )
     expect(cssFontFamily('Traditional Arabic')).not.toContain("'Naskh Digits GO'")
     expect(cssFontFamily('Noto Naskh Arabic')).not.toContain("'Naskh Digits GO'")
-    expect(cssFontFamily('Noto Kufi Arabic')).not.toContain("'Naskh Digits GO'")
   })
 
   it('Traditional/Simplified Arabic map to the size-adjusted alias (no Times head)', () => {
@@ -1264,20 +1319,40 @@ describe('cssFontFamily Arabic', () => {
       "'Traditional Arabic','Noto Naskh Arabic TA','Geeza Pro','Al Bayan',serif",
     )
     expect(cssFontFamily('Traditional Arabic')).not.toContain("'Times New Roman'")
-    expect(cssFontFamily('Simplified Arabic')).toContain("'Noto Naskh Arabic TA'")
-    // other missing naskh-class names take the TNR calibration, not TA
-    expect(cssFontFamily('Amiri')).not.toContain("'Noto Naskh Arabic TA'")
-    expect(cssFontFamily('Arabic Typesetting')).not.toContain("'Noto Naskh Arabic TA'")
+    // Simplified Arabic is a different cut (0.924 vs 0.800 of the Noto subset,
+    // shaped over the cloud files 2026-09-11) and gets its own alias
+    expect(cssFontFamily('Simplified Arabic')).toBe(
+      "'Simplified Arabic','Noto Naskh Arabic SA','Geeza Pro','Al Bayan',serif",
+    )
+    // other missing naskh-class names take the TNR calibration, not TA/SA
+    expect(cssFontFamily('Amiri')).not.toMatch(/Noto Naskh Arabic (TA|SA)/)
+    expect(cssFontFamily('Arabic Typesetting')).not.toMatch(/Noto Naskh Arabic (TA|SA)/)
     // M365 cloud fonts Word downloads and renders with real metrics (probe 2026-08-22)
     expect(lineHeightFactor('Simplified Arabic')).toBe(1.66)
     expect(lineHeightFactor('Traditional Arabic')).toBe(1.5)
   })
 
-  it('kufi/sans-class names get the Sans Arabic chain (no Times head)', () => {
-    expect(cssFontFamily('Noto Sans Arabic')).toBe("'Noto Sans Arabic W','Geeza Pro',sans-serif")
+  it('missing kufi/sans-class names substitute to Times like every missing Arabic name', () => {
+    // Word probe 2026-09-11: a report whose list items declare Noto Kufi Arabic
+    // rendered them in TimesNewRomanPSMT, same as its Noto Naskh body
     expect(cssFontFamily('Noto Kufi Arabic')).toBe(
-      "'Noto Kufi Arabic','Noto Sans Arabic','Geeza Pro',sans-serif",
+      "'Noto Kufi Arabic','Times New Roman','Liberation Serif','Naskh Digits GO','Noto Naskh Arabic TNR','Geeza Pro','Al Bayan',serif",
     )
+    expect(cssFontFamily('Noto Sans Arabic')).toBe(
+      "'Noto Naskh Arabic W','Geeza Pro','Al Bayan',serif",
+    )
+  })
+
+  it('an installed kufi/sans face keeps the Sans Arabic chain (no Times head)', () => {
+    // a name no earlier case probed (availability is memoized per name)
+    stubCanvas(['Noto Sans Arabic UI'])
+    try {
+      expect(cssFontFamily('Noto Sans Arabic UI')).toBe(
+        "'Noto Sans Arabic UI','Noto Sans Arabic','Geeza Pro',sans-serif",
+      )
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 
   it('unknown Arabic names (by script in the name) default to the naskh chain', () => {

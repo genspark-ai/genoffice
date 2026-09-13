@@ -33,6 +33,25 @@ describe('2.2 fill/stroke resolution', () => {
     }
   })
 
+  it('circle path: corner fillToRect focus and tileRect reach the render fill', () => {
+    const f: Fill = {
+      type: 'gradient',
+      stops: [
+        { pos: 0, color: '#5DE0E6' },
+        { pos: 1, color: '#004AAD' },
+      ],
+      path: 'circle',
+      fillTo: { l: 0, t: 0, r: 1, b: 1 },
+      tileRect: { l: -1, t: -1, r: 0, b: 0 },
+    }
+    const r = resolveFill(f, vp)
+    expect(r.kind).toBe('gradient')
+    if (r.kind === 'gradient') {
+      expect(r.center).toEqual({ x: 0, y: 0 })
+      expect(r.tileRect).toEqual({ l: -1, t: -1, r: 0, b: 0 })
+    }
+  })
+
   it('tile scale maps image pixels at 144dpi (PowerPoint measured), x sx/sy', () => {
     const f: Fill = {
       type: 'image',
@@ -47,6 +66,21 @@ describe('2.2 fill/stroke resolution', () => {
       expect(r.tile?.scaleX).toBeCloseTo((96 / 144) * 0.5)
       expect(r.tile?.scaleY).toBeCloseTo(96 / 144)
     }
+  })
+
+  it('tile frame (table box for a cell) is carried on the tile so the grid anchors to it', () => {
+    const f: Fill = {
+      type: 'image',
+      mediaRef: 'ppt/media/t.png',
+      mode: 'tile',
+      tile: { tx: 0, ty: 0, sx: 1, sy: 1, algn: 'tl' },
+    }
+    const frame = { x: -120, y: -40, w: 600, h: 300 }
+    const r = resolveFill(f, vp, undefined, frame)
+    expect(r.kind).toBe('image')
+    if (r.kind === 'image') expect(r.tile?.frame).toEqual(frame)
+    const plain = resolveFill(f, vp)
+    if (plain.kind === 'image') expect(plain.tile?.frame).toBeUndefined()
   })
 
   it('image fill resolves dataUrl via media resolver', () => {

@@ -3,8 +3,8 @@
  * vocabularies, Univer mutation/command names the edit journal listens to,
  * and the Home → Cell Styles presets. Extracted from App.tsx verbatim.
  */
-import type { CellFormatPatch } from '../domain/workbook-dsl'
-import type { WorkbookSnapshot } from '../domain/workbook.types'
+import type { CellFormatPatch } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import type { WorkbookSnapshot } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import type { ChartEditData } from './WorkbookVisuals'
 
 export const CHART_TYPE_COMMANDS = ['column', 'bar', 'line', 'area', 'pie', 'doughnut'] as const

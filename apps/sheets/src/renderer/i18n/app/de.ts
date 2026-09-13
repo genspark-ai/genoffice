@@ -567,6 +567,12 @@ export const de = {
   appPdfCanceled: 'PDF-Export abgebrochen.',
   appPdfExported: '{path} exportiert.',
   appPdfExportFailed: 'PDF kann nicht exportiert werden.',
+  appPrintPreparing: 'Druck wird vorbereitet…',
+  appPrintSent: 'An den Drucker gesendet.',
+  appPrintCanceled: 'Drucken abgebrochen.',
+  appPrintFailed: 'Drucken nicht möglich.',
+  appPrintNeedsFullLoad:
+    'Zum Drucken muss die Arbeitsmappe vollständig geladen sein – bitte warten Sie, bis der Ladevorgang abgeschlossen ist.',
   appCsvExportNeedsFullLoad:
     'Der CSV-Export erfordert die vollständig geladene Arbeitsmappe — warten Sie, bis das Laden abgeschlossen ist.',
   appCsvExportTooLarge: 'Das Blatt ist zu groß für den CSV-Export.',
@@ -1362,6 +1368,8 @@ export const de = {
   appFormatMenu: 'Format',
   appRowHeight: 'Zeilenhöhe',
   appColWidth: 'Spaltenbreite',
+  appAutoFitRowHeight: 'Zeilenhöhe automatisch anpassen',
+  appAutoFitColWidth: 'Spaltenbreite automatisch anpassen',
   appRowHeightLabel: 'Zeilenhöhe (Punkt)',
   appColWidthLabel: 'Spaltenbreite (Zeichen)',
   appDeleteRow: 'Zeile löschen',

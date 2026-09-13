@@ -17,6 +17,7 @@
  */
 import {
   CellValueType,
+  type ICellData,
   InterceptorEffectEnum,
   isDefaultFormat,
   numfmt,
@@ -60,7 +61,9 @@ export function formatGeneral(value: number, budget: number): string {
   if (base.length <= budget) return base
   const abs = Math.abs(value)
   const intLen = (abs < 1 ? 1 : Math.floor(Math.log10(abs)) + 1) + (value < 0 ? 1 : 0)
-  for (let dec = Math.min(budget - intLen - 1, 10); dec >= 0; dec -= 1) {
+  // Start at 0 when the integer part fills the budget exactly: 712288 in a
+  // 6-char column is shown, not 7E+05.
+  for (let dec = Math.max(0, Math.min(budget - intLen - 1, 10)); dec >= 0; dec -= 1) {
     let t = value.toFixed(dec)
     if (t.includes('.')) t = t.replace(/0+$/, '').replace(/\.$/, '')
     if (Number(t) === 0 && value !== 0) break
@@ -105,6 +108,18 @@ function safeFormat(pattern: string, value: number | string): string | null {
   } catch {
     return null
   }
+}
+
+/// Marker on `cell.custom` for a numeric cell whose shrinkToFit was baked
+/// into the font size at load: the #### rule stands down (Excel shrinks the
+/// formatted number instead of hashing it).
+export const SHRINK_TO_FIT_KEY = 'shrinkToFit'
+
+/// The text a numeric cell will display, for width measurement at load
+/// time (before the NUMFMT interceptor has run).
+export function formatForMeasure(pattern: string | undefined, value: number): string {
+  if (pattern === undefined || isDefaultFormat(pattern)) return String(value)
+  return safeFormat(pattern, value) ?? String(value)
 }
 
 const formatInfoCache = new Map<string, { type: string; maxDecimals: number; scale: number }>()
@@ -673,6 +688,14 @@ export function yenLiteralDisplay(
   return displayed.replaceAll('\\', '¥')
 }
 
+/// Display text of a value Excel never clips or overflows (booleans and
+/// error literals); null for numbers and text.
+export function nonTextDisplayLabel(cell: Pick<ICellData, 'v' | 't'>): string | null {
+  if (cell.t === CellValueType.BOOLEAN) return cell.v === 0 || cell.v === false ? 'FALSE' : 'TRUE'
+  if (typeof cell.v === 'string' && ERROR_TYPE_SET.has(cell.v as ErrorType)) return cell.v
+  return null
+}
+
 export function installNumberFormatFix(
   runtime: UniverRuntime,
   isDate1904?: () => boolean,
@@ -708,10 +731,12 @@ export function installNumberFormatFix(
     effect: InterceptorEffectEnum.Value,
     handler: (cell, location, next) => {
       if (!cell || cell.p != null) return next(cell)
-      if (cell.t === CellValueType.BOOLEAN) {
-        // Excel hashes a too-wide TRUE/FALSE like any non-text value — a
-        // logical never clips (ref prints ### for Arial FALSE in a 32px
-        // column). Univer stores the label as 0/1.
+      const nonTextLabel = nonTextDisplayLabel(cell)
+      if (nonTextLabel !== null) {
+        // Excel hashes a too-wide TRUE/FALSE or #REF! like any non-text
+        // value — a logical never clips (ref prints ### for Arial FALSE in a
+        // 32px column) and an error never spills into its neighbours.
+        // Univer stores the logical label as 0/1 and errors as text.
         const style = location.workbook.getStyles().getStyleByCell(cell)
         if (
           style?.tb !== WrapStrategy.WRAP &&
@@ -722,7 +747,7 @@ export function installNumberFormatFix(
           const fontString = getFontStyleString(style ?? undefined).fontString
           const measure = (text: string) => FontCache.getMeasureText(text, fontString).width
           const hashes = overflowHashes(
-            cell.v === 0 || cell.v === false ? 'FALSE' : 'TRUE',
+            nonTextLabel,
             location.worksheet.getColumnWidth(location.col),
             measure,
             excelWidthScale(style?.ff ?? undefined, style?.fs ?? 11, () => measure('0')),
@@ -790,6 +815,7 @@ export function installNumberFormatFix(
         const type = patternType(patternUsed)
         if (type === 'text' || type === 'unknown') return outCell
         if (style?.tb === WrapStrategy.WRAP || style?.tr?.a || style?.tr?.v) return outCell
+        if (location.rawData?.custom?.[SHRINK_TO_FIT_KEY] === true) return outCell
         const fontString = getFontStyleString(style ?? undefined).fontString
         const measure = (text: string) => FontCache.getMeasureText(text, fontString).width
         const width =

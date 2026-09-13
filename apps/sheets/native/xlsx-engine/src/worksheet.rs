@@ -33,6 +33,8 @@ pub(crate) fn index_worksheet(
     let mut in_formula = false;
     let mut in_value = false;
     let mut in_text = false;
+    let mut text_preserve = false;
+    let mut text_node = String::new();
     let mut in_phonetic = false;
     // Shared-formula groups: the master's text expands into every follower (#165).
     let mut shared_formulas = shared_formulas::SharedFormulas::default();
@@ -174,6 +176,8 @@ pub(crate) fn index_worksheet(
             }
             Event::Start(element) if element.local_name().as_ref() == b"t" => {
                 in_text = !in_phonetic;
+                text_preserve = preserves_space(&reader, &element)?;
+                text_node.clear();
             }
             Event::Start(element)
                 if element.local_name().as_ref() == b"r" && cell_builder.is_some() =>
@@ -215,10 +219,7 @@ pub(crate) fn index_worksheet(
                     } else if in_value {
                         builder.raw_value.push_str(&decoded);
                     } else if in_text {
-                        builder.inline_text.push_str(&decoded);
-                        if let Some(run) = &mut builder.current_run {
-                            run.text.push_str(&decoded);
-                        }
+                        text_node.push_str(&decoded);
                     }
                 } else if let Some(section) = header_footer_section {
                     section
@@ -251,10 +252,7 @@ pub(crate) fn index_worksheet(
                     } else if in_value {
                         builder.raw_value.push_str(&decoded);
                     } else if in_text {
-                        builder.inline_text.push_str(&decoded);
-                        if let Some(run) = &mut builder.current_run {
-                            run.text.push_str(&decoded);
-                        }
+                        text_node.push_str(&decoded);
                     }
                 } else if let Some(section) = header_footer_section {
                     section
@@ -291,7 +289,18 @@ pub(crate) fn index_worksheet(
                 }
             }
             Event::End(element) if element.local_name().as_ref() == b"v" => in_value = false,
-            Event::End(element) if element.local_name().as_ref() == b"t" => in_text = false,
+            Event::End(element) if element.local_name().as_ref() == b"t" => {
+                if in_text {
+                    let text = text_node_content(std::mem::take(&mut text_node), text_preserve);
+                    if let Some(builder) = &mut cell_builder {
+                        builder.inline_text.push_str(&text);
+                        if let Some(run) = &mut builder.current_run {
+                            run.text.push_str(&text);
+                        }
+                    }
+                }
+                in_text = false;
+            }
             Event::End(element) if element.local_name().as_ref() == b"c" => {
                 if let Some(builder) = cell_builder.take() {
                     latest_row = latest_row.max(builder.row);

@@ -10,11 +10,15 @@
     "paths": {
       "@genoffice/docx-engine": ["../../packages/docx-engine/src/index.ts"],
       "@genoffice/font-metrics": ["../../packages/font-metrics/src/index.ts"],
+      "@genoffice/electron-utils/headless-export": [
+        "../../packages/electron-utils/src/headless-export.ts"
+      ],
       "@genoffice/electron-utils": ["../../packages/electron-utils/src/index.ts"],
       "@genoffice/ai-provider": ["../../packages/ai-provider/src/index.ts"],
       "@genoffice/i18n": ["../../packages/i18n/src/index.ts"],
       "@genoffice/ui": ["../../packages/ui/src/index.ts"],
-      "@genoffice/pptx-engine": ["../../packages/pptx-engine/src/index.ts"]
+      "@genoffice/pptx-engine": ["../../packages/pptx-engine/src/index.ts"],
+      "@genoffice/cli/install": ["../../packages/cli/src/install.ts"]
     }
   },
   "include": [

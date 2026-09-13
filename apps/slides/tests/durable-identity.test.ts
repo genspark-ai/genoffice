@@ -14,7 +14,7 @@ import {
   type OpenedPptx,
   type TextElement,
 } from '@genoffice/pptx-engine'
-import { runTxn, elementDurableId, slideDurableId } from '../src/main/ops'
+import { runTxn, elementDurableId, slideDurableId } from '@genoffice/pptx-ops'
 import { elementCNvPrId, groupChildDurableId, patchSlideXml } from '@genoffice/pptx-engine'
 
 let opened: OpenedPptx

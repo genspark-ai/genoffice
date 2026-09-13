@@ -30,7 +30,7 @@ async function gridOrigin(page: Page): Promise<{ x: number; y: number }> {
 
 /** center of a cell: ~46px row header, ~24px column header, ~74px × ~23px cells */
 function cellPoint(origin: { x: number; y: number }, row: number, column: number) {
-  return { x: origin.x + 46 + column * 74 + 37, y: origin.y + 24 + row * 23 + 11 }
+  return { x: origin.x + 46 + column * 74 + 37, y: origin.y + 20 + row * 20 + 10 }
 }
 
 test.describe('sheets: Insert → Recommended Charts and Icons', () => {
@@ -45,7 +45,7 @@ test.describe('sheets: Insert → Recommended Charts and Icons', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
       const origin = await gridOrigin(sheets)
 
@@ -101,7 +101,7 @@ test.describe('sheets: Insert → Recommended Charts and Icons', () => {
       await sheets.screenshot({ path: screenshotPath('gallery-inserted') })
 
       await launched.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {

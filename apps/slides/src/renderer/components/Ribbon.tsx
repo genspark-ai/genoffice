@@ -1286,7 +1286,7 @@ export function Ribbon({
   const [fontDraft, setFontDraft] = useState<string | null>(null)
   const [tableOpen, setTableOpen] = useState(false)
   const [tableHover, setTableHover] = useState({ r: 0, c: 0 })
-  const [tableCustom, setTableCustom] = useState({ r: 8, c: 5 })
+  const [tableDialogOpen, setTableDialogOpen] = useState(false)
   const [layoutOpen, setLayoutOpen] = useState(false)
   // responsive-collapse state (see the collapse effect below)
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([])
@@ -1684,7 +1684,7 @@ export function Ribbon({
     setSizeOpen,
     setSlideShowFromStart,
     setSlideShowOpen,
-    setTableCustom,
+    setTableDialogOpen,
     setTableHover,
     setTableOpen,
     sizeDraft,
@@ -1692,7 +1692,7 @@ export function Ribbon({
     slideShowFromStart,
     slideShowOpen,
     t,
-    tableCustom,
+    tableDialogOpen,
     tableHover,
     tableOpen,
   }

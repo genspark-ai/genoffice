@@ -5,8 +5,8 @@
  * structural ops translated, session cell edits overlaid from the journal —
  * so the search never has to stream the whole workbook into Univer.
  */
-import { formatAddress, type RangeBounds } from '../../domain/cell-address'
-import type { CellScalar } from '../../domain/workbook.types'
+import { formatAddress, type RangeBounds } from '@genoffice/xlsx-gateway/domain/cell-address'
+import type { CellScalar } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { ensureLazyRangeLoaded, readSheetRangeMapped } from '../univer-sync'
 import type { LazyWorkbookState } from '../univer-state'
 import { netAxisDelta } from '../view-transform'

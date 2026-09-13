@@ -28,12 +28,17 @@ import { textBlockParagraph } from './text'
 const EMU_PER_PT = 12700
 
 /**
- * Wrap headroom on text-box width (P19 frame lesson): substituted fonts
- * render a hair wider, and one wrapped line breaks the measured rhythm. The
- * pad extends AWAY from the anchored edge so visible ink never drifts.
+ * Headroom on text-box width: the box never wraps (source lines are hard
+ * breaks), but centred and right-aligned lines position themselves inside
+ * it, so a substituted font that runs a hair wider must still fit. The pad
+ * extends AWAY from the anchored edge so visible ink never drifts.
  */
 const WRAP_PAD_RATIO = 0.04
 const WRAP_PAD_MIN_PT = 4
+
+/** roundRect adj: 100000 = radius equals the short side; 50000 caps at a full pill */
+const ROUND_RECT_ADJ_FULL = 100000
+const ROUND_RECT_ADJ_MAX = 50000
 
 /** default fallback slide size (pt): 4:3 letter-ish, only for empty PDFs */
 const FALLBACK_W_PT = 720
@@ -96,7 +101,7 @@ function addTextBlock(slide: Slide, block: TextBlock, m: PageMapper): void {
       kind: 'textbox',
       offset,
       paragraphs: [textBlockParagraph(block, m.scale)],
-      bodyPr: { wrap: 'square', anchor: 't', insetsEmu: { l: 0, t: 0, r: 0, b: 0 } },
+      bodyPr: { wrap: 'none', anchor: 't', insetsEmu: { l: 0, t: 0, r: 0, b: 0 } },
     })
   }
   if (block.border) addDecorBorder(slide, block, m)
@@ -155,12 +160,14 @@ function emitPage(
   // drops (dark-text card plates like deck-food's red banner live ONLY here —
   // the light-text backdrop pass never lifts them into bgPanels)
   const isBehind = (b: ImageBlock): boolean => b.float?.wrap === 'behind'
-  type Underlay = { z: number; ord: number; paint: () => void }
+  // z = top-level object index; seq = path order for fills that share a form's z
+  type Underlay = { z: number; seq: number; ord: number; paint: () => void }
   const underlays: Underlay[] = []
   let ord = 0
   for (const panel of page.bgPanels ?? []) {
     underlays.push({
       z: panel.z ?? 0,
+      seq: 0,
       ord: ord++,
       paint: () => addImageAt(opened, slideAt(), panel, m.rect(panel.box)),
     })
@@ -168,6 +175,7 @@ function emitPage(
   for (const decor of page.decorImages ?? []) {
     underlays.push({
       z: decor.z ?? 0,
+      seq: 0,
       ord: ord++,
       paint: () => addImageAt(opened, slideAt(), decor, m.rect(decor.box)),
     })
@@ -175,6 +183,7 @@ function emitPage(
   for (const img of page.blocks.filter((b): b is ImageBlock => b.kind === 'image' && isBehind(b))) {
     underlays.push({
       z: img.z ?? 0,
+      seq: 0,
       ord: ord++,
       paint: () => addImageAt(opened, slideAt(), img, m.rect(img.box)),
     })
@@ -188,6 +197,7 @@ function emitPage(
       fill.alpha !== undefined ? Math.round(fill.alpha).toString(16).padStart(2, '0') : ''
     underlays.push({
       z: fill.z ?? 0,
+      seq: fill.seq ?? 0,
       ord: ord++,
       paint: () =>
         addElement(slideAt(), {
@@ -197,7 +207,37 @@ function emitPage(
         }),
     })
   }
-  underlays.sort((a, b) => a.z - b.z || a.ord - b.ord)
+  // rounded cards, pills and bullet discs the flow path only knows as
+  // light-text backdrop candidates: native preset shapes here
+  for (const fill of page.shapes?.curvedFills ?? []) {
+    const alphaHex =
+      fill.alpha !== undefined ? Math.round(fill.alpha).toString(16).padStart(2, '0') : ''
+    const geometry = fill.geometry ?? 'roundRect'
+    const shortPt = Math.max(1, Math.min(rectWidth(fill.box), rectHeight(fill.box)))
+    const adj =
+      geometry === 'roundRect' && fill.cornerRadiusPt !== undefined
+        ? {
+            adjustments: {
+              adj: Math.round(
+                Math.min(ROUND_RECT_ADJ_MAX, (fill.cornerRadiusPt / shortPt) * ROUND_RECT_ADJ_FULL),
+              ),
+            },
+          }
+        : {}
+    underlays.push({
+      z: fill.z ?? 0,
+      seq: fill.seq ?? 0,
+      ord: ord++,
+      paint: () =>
+        addElement(slideAt(), {
+          kind: geometry,
+          offset: m.rect(fill.box),
+          fillColor: `#${fill.color}${alphaHex}`,
+          ...adj,
+        }),
+    })
+  }
+  underlays.sort((a, b) => a.z - b.z || a.seq - b.seq || a.ord - b.ord)
   for (const u of underlays) u.paint()
 
   for (const block of page.blocks) {

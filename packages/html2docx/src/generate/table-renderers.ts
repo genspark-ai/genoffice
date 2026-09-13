@@ -97,8 +97,10 @@ function renderTable(generator, node, depth) {
     )
   }
   if (node.pageColumns) return renderPageColumns(generator, node, depth)
-  const tableDxa = generator.avail
   const totalPx = (node.colWidths || []).reduce((a, b) => a + b, 0) || 1
+  const tableDxa = context.naturalTableWidth
+    ? Math.min(generator.avail, context.pxToTwips(totalPx))
+    : generator.avail
   const colDxa = (node.colWidths || []).map((w) => Math.round((w / totalPx) * tableDxa))
   // Column-width floor from measured one-line cell content: a proportionally
   // shrunk column otherwise wraps "Wave 1" pills letter-by-letter into a fake

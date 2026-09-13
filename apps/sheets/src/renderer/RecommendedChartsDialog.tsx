@@ -1,4 +1,7 @@
-import type { ChartRecommendations, RecommendedKind } from '../domain/chart-recommend'
+import type {
+  ChartRecommendations,
+  RecommendedKind,
+} from '@genoffice/xlsx-gateway/domain/chart-recommend'
 import { useI18n, type StringKey } from './i18n/locale'
 
 /// Excel's Insert → Recommended Charts: ranked suggestions with a mini

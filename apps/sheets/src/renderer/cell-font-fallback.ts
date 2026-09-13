@@ -11,11 +11,14 @@
  * names always fall to sans, matching Excel's substitution.
  */
 
+import carlitoBoldUrl from '@genoffice/ui/fonts/Carlito-Bold.ttf?url'
+import carlitoRegularUrl from '@genoffice/ui/fonts/Carlito-Regular.ttf?url'
+
 const GENERIC_FAMILY =
   /(?:^|[\s,])(?:serif|sans-serif|monospace|cursive|fantasy|system-ui|math|ui-serif|ui-sans-serif|ui-monospace|ui-rounded)$/i
 
 const SERIF_INTENT =
-  /mincho|明朝|simsun|songti|宋体|宋體|mingliu|明體|細明|batang|바탕|myeongjo|명조|roman|georgia|garamond|cambria|constantia|palatino|antiqua|didot|bodoni|baskerville|caslon|goudy|bookman|(?<!sans[-\s])serif/i
+  /mincho|明朝|simsun|songti|宋体|宋體|mingliu|明體|細明|kozmin|batang|바탕|myeongjo|명조|roman|playfair|merriweather|\blora\b|georgia|garamond|cambria|constantia|palatino|antiqua|didot|bodoni|baskerville|caslon|goudy|bookman|(?<!sans[-\s])serif/i
 
 /// Generic families never cover emoji code points on the canvas — without an
 /// explicit color-emoji face at the end of every chain, U+274C & friends draw
@@ -164,14 +167,8 @@ const KAI = ['KaiTi', 'Kaiti SC', 'STKaitiSC-Regular', 'STKaiti']
 const MING_TC = ['PMingLiU', 'Songti TC', 'Apple LiSung']
 const KR_SANS = ['Malgun Gothic', 'Apple SD Gothic Neo', 'AppleGothic']
 /// Carlito is bundled, not installed — local() alone can never resolve it.
-const CARLITO_SRC = [
-  'Carlito',
-  `url(${new URL('./fonts/Carlito-Regular.ttf', import.meta.url).href})`,
-]
-const CARLITO_BOLD_SRC = [
-  'Carlito Bold',
-  `url(${new URL('./fonts/Carlito-Bold.ttf', import.meta.url).href})`,
-]
+const CARLITO_SRC = ['Carlito', `url(${carlitoRegularUrl})`]
+const CARLITO_BOLD_SRC = ['Carlito Bold', `url(${carlitoBoldUrl})`]
 /// Malgun Gothic prints hangul at 1.0em — exactly AppleGothic — but digits at
 /// 0.6em vs AppleGothic's 0.68em, so number tails clipped while hangul was
 /// perfect. Latin/digit runs go to width-corrected Helvetica Neue instead.
@@ -180,10 +177,12 @@ const CARLITO_BOLD_SRC = [
 /// hangul left the alias for the system fallback (Apple SD Gothic Neo Bold,
 /// 0.865em). Pin that face and scale it to Malgun's 1.0em; bold digits are
 /// 0.5796em (malgunbd.ttf hmtx) over Helvetica Neue Bold's 0.556em.
+const KR_SANS_BOLD = ['Apple SD Gothic Neo Bold', 'AppleSDGothicNeo-Bold']
+const KR_SANS_BOLD_ADJUST = '115.6%'
 const MALGUN_ALIAS: Omit<CellFontAlias, 'family'> = {
   regular: ['Malgun Gothic', 'AppleGothic'],
-  bold: ['Apple SD Gothic Neo Bold', 'AppleSDGothicNeo-Bold'],
-  boldSizeAdjust: '115.6%',
+  bold: KR_SANS_BOLD,
+  boldSizeAdjust: KR_SANS_BOLD_ADJUST,
   skipIfLocal: ['Malgun Gothic', 'MalgunGothic'],
   latin: {
     regular: ['Helvetica Neue'],
@@ -263,6 +262,64 @@ function jpGothic(
 
 function jpMincho(family: string, genuine: readonly string[]): CellFontAlias {
   return { family, regular: [...genuine, ...JP_SERIF], bold: [...JP_SERIF_BOLD] }
+}
+
+// BIZ UD (Morisawa universal-design faces bundled with Windows 10+; macOS
+// offers BIZ UDGothic / UDMincho as downloadable assets). Chromium on macOS
+// never matches the localized spellings, so the English family is listed
+// first and the plain JP chain closes the gap where the asset is absent.
+const BIZ_UD_GOTHIC = ['BIZ UDGothic', 'BIZUDGothic-Regular']
+const BIZ_UD_GOTHIC_BOLD = ['BIZ UDGothic Bold', 'BIZUDGothic-Bold']
+const BIZ_UD_MINCHO = ['BIZ UDMincho', 'BIZUDMincho-Regular']
+
+// Office-for-Mac HG faces (Ricoh; app-private DFonts Chromium cannot see).
+// The heavy-by-name families (UB / E) are authored without <b/>, so the
+// regular slot itself comes from a heavy Hiragino weight; W0-W9 ship with
+// macOS, the W6 tail covers older hosts.
+const HIRAGINO_W7 = ['Hiragino Sans W7', 'HiraginoSans-W7', ...JP_SANS_BOLD]
+const HIRAGINO_W8 = ['Hiragino Sans W8', 'HiraginoSans-W8', ...JP_SANS_BOLD]
+const HIRAGINO_W9 = ['Hiragino Sans W9', 'HiraginoSans-W9']
+const HIRAGINO_MARU = ['Hiragino Maru Gothic ProN', 'HiraMaruProN-W4']
+
+function hgHeavy(
+  family: string,
+  genuine: string,
+  regular: readonly string[],
+  bold?: readonly string[],
+): CellFontAlias {
+  return bold
+    ? { family, regular: [genuine, ...regular], bold }
+    : { family, regular: [genuine, ...regular] }
+}
+
+// Fixed-pitch twins of the Windows Korean faces (GulimChe / DotumChe /
+// BatangChe): hangul is 1.0em like AppleGothic, every Latin glyph is
+// half-width (0.5em, gulim.ttc / batang.ttc hmtx), so the Latin sub-face
+// reuses the MS Gothic digit pinning and Times New Roman's exact 0.5em
+// digits stand in for the serif twin.
+function krFixedPitch(family: string, genuine: string, serif = false): CellFontAlias {
+  const base = {
+    family,
+    skipIfLocal: [genuine],
+    whenGenuine: { regular: [genuine] },
+  }
+  if (serif) return { ...base, regular: KR_SERIF, latin: { regular: ['Times New Roman'] } }
+  return {
+    ...base,
+    regular: ['AppleGothic', 'Apple SD Gothic Neo'],
+    bold: KR_SANS_BOLD,
+    boldSizeAdjust: KR_SANS_BOLD_ADJUST,
+    latin: MS_GOTHIC_MONO_LATIN,
+  }
+}
+
+/// Adobe Kozuka Mincho PostScript names as written by PDF-derived workbooks.
+function kozukaMincho(base: string): CellFontAlias[] {
+  return [
+    jpMincho(`${base}-Regular`, [`${base}-Regular`]),
+    jpMincho(`${base}-Medium`, [`${base}-Medium`]),
+    { family: `${base}-Bold`, regular: [`${base}-Bold`, ...JP_SERIF_BOLD] },
+  ]
 }
 
 // Thai Office faces (Cordia New / Angsana New / TH Sarabun; the UPC spellings
@@ -367,6 +424,57 @@ export const CELL_FONT_ALIASES: readonly CellFontAlias[] = [
   jpMincho('MS PMincho', ['MS PMincho']),
   { family: '游明朝', regular: [...YU_MINCHO, ...JP_SERIF], bold: YU_MINCHO_ALL_BOLD },
   { family: 'Yu Mincho', regular: [...YU_MINCHO, ...JP_SERIF], bold: YU_MINCHO_ALL_BOLD },
+  ...kozukaMincho('KozMinPro'),
+  ...kozukaMincho('KozMinPr6N'),
+  // BIZ UD Gothic / UDP Gothic / UD Mincho / UDP Mincho (localized spellings)
+  {
+    family: 'BIZ UD\u30b4\u30b7\u30c3\u30af',
+    regular: [...BIZ_UD_GOTHIC, ...JP_SANS],
+    bold: [...BIZ_UD_GOTHIC_BOLD, ...JP_SANS_BOLD],
+  },
+  {
+    family: 'BIZ UDP\u30b4\u30b7\u30c3\u30af',
+    regular: ['BIZ UDPGothic', 'BIZUDPGothic-Regular', ...BIZ_UD_GOTHIC, ...JP_SANS],
+    bold: ['BIZ UDPGothic Bold', 'BIZUDPGothic-Bold', ...BIZ_UD_GOTHIC_BOLD, ...JP_SANS_BOLD],
+  },
+  { family: 'BIZ UD\u660e\u671d', regular: [...BIZ_UD_MINCHO, ...JP_SERIF], bold: JP_SERIF_BOLD },
+  {
+    family: 'BIZ UDP\u660e\u671d',
+    regular: ['BIZ UDPMincho', 'BIZUDPMincho-Regular', ...BIZ_UD_MINCHO, ...JP_SERIF],
+    bold: JP_SERIF_BOLD,
+  },
+  // HG Soei Kaku Gothic UB (HGP / HGS / HG spellings)
+  hgHeavy(
+    'HGP\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB',
+    'HGPSoeiKakugothicUB',
+    HIRAGINO_W8,
+    HIRAGINO_W9,
+  ),
+  hgHeavy(
+    'HGS\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB',
+    'HGSSoeiKakugothicUB',
+    HIRAGINO_W8,
+    HIRAGINO_W9,
+  ),
+  hgHeavy(
+    'HG\u5275\u82f1\u89d2\uff7a\uff9e\uff7c\uff6f\uff78UB',
+    'HGSoeiKakugothicUB',
+    HIRAGINO_W8,
+    HIRAGINO_W9,
+  ),
+  // HG Gothic E
+  hgHeavy('HGP\uff7a\uff9e\uff7c\uff6f\uff78E', 'HGPGothicE', HIRAGINO_W7, HIRAGINO_W9),
+  hgHeavy('HGS\uff7a\uff9e\uff7c\uff6f\uff78E', 'HGSGothicE', HIRAGINO_W7, HIRAGINO_W9),
+  hgHeavy('HG\uff7a\uff9e\uff7c\uff6f\uff78E', 'HGGothicE', HIRAGINO_W7, HIRAGINO_W9),
+  // HG Mincho E (serif intent; Hiragino Mincho has no weight above W6)
+  hgHeavy('HGP\u660e\u671dE', 'HGPMinchoE', JP_SERIF_BOLD),
+  hgHeavy('HGS\u660e\u671dE', 'HGSMinchoE', JP_SERIF_BOLD),
+  hgHeavy('HG\u660e\u671dE', 'HGMinchoE', JP_SERIF_BOLD),
+  // HG Maru Gothic M-PRO (rounded, medium weight)
+  {
+    family: 'HG\u4e38\uff7a\uff9e\uff7c\uff6f\uff78M-PRO',
+    regular: ['HGMaruGothicMPRO', ...HIRAGINO_MARU, ...JP_SANS],
+  },
   // Simplified CJK
   { family: '宋体', regular: SONG, bold: SONG_BOLD },
   { family: 'SimSun', regular: SONG, bold: SONG_BOLD },
@@ -407,6 +515,14 @@ export const CELL_FONT_ALIASES: readonly CellFontAlias[] = [
   { family: '바탕', regular: KR_SERIF },
   { family: 'Gungsuh', regular: ['Gungsuh', 'AppleMyungjo'] },
   { family: '궁서', regular: ['Gungsuh', 'AppleMyungjo'] },
+  krFixedPitch('GulimChe', 'GulimChe'),
+  krFixedPitch('\uad74\ub9bc\uccb4', 'GulimChe'),
+  krFixedPitch('DotumChe', 'DotumChe'),
+  krFixedPitch('\ub3cb\uc6c0\uccb4', 'DotumChe'),
+  krFixedPitch('BatangChe', 'BatangChe', true),
+  krFixedPitch('\ubc14\ud0d5\uccb4', 'BatangChe', true),
+  { family: 'GungsuhChe', regular: ['GungsuhChe', 'Gungsuh', 'AppleMyungjo'] },
+  { family: '\uad81\uc11c\uccb4', regular: ['GungsuhChe', 'Gungsuh', 'AppleMyungjo'] },
   // Office Latin serif faces absent on macOS (serif intent)
   {
     family: 'Cambria',
@@ -435,6 +551,33 @@ export const CELL_FONT_ALIASES: readonly CellFontAlias[] = [
     bold: TIMES_BOLD,
   },
   { family: 'PT Serif', regular: ['PT Serif', 'Times New Roman', 'Georgia'] },
+  // Google serif faces Office fetches as cloud fonts (Excel draws the real
+  // serif; nothing local on macOS): a stock serif of the same class stands in.
+  {
+    family: 'Playfair Display',
+    regular: ['Playfair Display', 'Didot', 'Georgia'],
+    bold: ['Playfair Display Bold', 'Didot Bold', 'Didot-Bold', 'Georgia Bold'],
+  },
+  {
+    family: 'EB Garamond',
+    regular: ['EB Garamond', 'Garamond', 'Times New Roman'],
+    bold: ['EB Garamond Bold', 'Garamond Bold', ...TIMES_BOLD],
+  },
+  {
+    family: 'Merriweather',
+    regular: ['Merriweather', 'Georgia', 'Times New Roman'],
+    bold: ['Merriweather Bold', 'Georgia Bold', ...TIMES_BOLD],
+  },
+  {
+    family: 'Lora',
+    regular: ['Lora', 'Georgia', 'Times New Roman'],
+    bold: ['Lora Bold', 'Georgia Bold', ...TIMES_BOLD],
+  },
+  {
+    family: 'Libre Baskerville',
+    regular: ['Libre Baskerville', 'Baskerville', 'Times New Roman'],
+    bold: ['Libre Baskerville Bold', 'Baskerville Bold', 'Baskerville-Bold', ...TIMES_BOLD],
+  },
   {
     family: 'Gill Sans MT',
     regular: ['Gill Sans MT', 'GillSansMT', 'Gill Sans', 'GillSans'],
@@ -554,7 +697,7 @@ function addFace(
   loads: Promise<unknown>[],
 ): void {
   try {
-    const face = new FontFace(family, faceSrc(src), descriptors)
+    const face = new FontFace(family, faceSrc(src), { display: 'block', ...descriptors })
     document.fonts.add(face)
     loads.push(face.load().catch(() => {}))
   } catch {

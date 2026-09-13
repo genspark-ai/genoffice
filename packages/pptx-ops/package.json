@@ -1,0 +1,23 @@
+{
+  "name": "@genoffice/pptx-ops",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "pptx op layer: validated, journaled edit operations over an OpenedPptx (registry + executor + op docs), Electron-free so the app, tests and the genoffice CLI share one implementation",
+  "exports": {
+    ".": "./src/index.ts",
+    "./op-docs": "./src/op-docs.ts",
+    "./font-size": "./src/font-size.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@genoffice/pptx-engine": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  }
+}

@@ -23,6 +23,7 @@ Word-, Excel-, PowerPoint- und PDF-Dateien, bearbeitet von dir und deiner KI, ge
 
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
+  <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="https://genoffice.ai/"><b>Website</b></a> ·
   <a href="https://genoffice.ai/join"><b>Community</b></a> ·
   <a href="../../PRIVACY.md"><b>Datenschutz</b></a>
@@ -52,6 +53,11 @@ er verändert hat.
   Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
   OpenRouter, Requesty oder jeden OpenAI-kompatiblen Endpunkt mit – auch lokale Server
   werden unterstützt.
+- **Skriptbar und bereit für Agenten.** Die App bringt eine
+  `genoffice`-Befehlszeile und einen Skill für Claude Code, Codex, Cursor,
+  Gemini CLI, GitHub Copilot, OpenCode und Windsurf mit, sodass ein
+  Coding-Agent echte Office-Dateien auf deinem Rechner erstellen,
+  konvertieren, lesen und bearbeiten kann, ohne ein Fenster zu öffnen.
 
 **Los geht's:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon und Intel) ·
 [Windows](https://github.com/genspark-ai/genoffice/releases/latest) (x64 und Arm) ·
@@ -60,9 +66,9 @@ Details und Voraussetzungen unter [Download](#download).
 
 ## Demo
 
-Sechs Apps, ein KI-Panel. Jeder Screenshot zeigt die echte App auf macOS,
-wobei die KI durch den Prompt gesteuert wird, den du im Panel nachlesen
-kannst.
+Sechs Apps, ein KI-Panel und eine Befehlszeile für deinen Coding-Agenten.
+Jeder Screenshot zeigt die echte App auf macOS, wobei die KI durch den
+Prompt gesteuert wird, den du im Panel nachlesen kannst.
 
 ### 1 · Docs – `.docx` öffnen und bearbeiten mit einer KI, die du überprüfen kannst
 
@@ -161,6 +167,27 @@ nach diesen Vorgaben.
 </tr>
 </table>
 
+### 7 · CLI – dein Coding-Agent steuert GenOffice, auf deinem Rechner
+
+GenOffice bringt eine `genoffice`-Befehlszeile und einen Agent-Skill mit.
+Installiere den Skill, und Claude Code, Codex, Cursor, Gemini CLI, GitHub
+Copilot, OpenCode oder Windsurf können echte Office-Dateien über dieselben
+Engines wie die Apps erstellen, konvertieren, lesen und bearbeiten, ohne ein
+Fenster zu öffnen.
+
+<img src="../assets/readme/cli-deck-in-app.webp" alt="GenOffice Slides zeigt eine Sonnensystem-Präsentation mit acht Folien, die ein Coding-Agent über die genoffice-Befehlszeile erstellt hat: die Titelfolie auf der Arbeitsfläche, acht Miniaturansichten links und das geöffnete KI-Panel" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/cli-slides-grid.webp" alt="Die acht gerenderten Folien der Sonnensystem-Präsentation nebeneinander: Titel, Zeitleiste der Erforschung, vier Kennzahlen, Balkendiagramm der Planetendurchmesser, Gesteinsplaneten gegen Riesen, die 99,8 % der Sonne als Hero-Zahl, das Raster der vier Riesen und die Kernaussagen"></td>
+<td width="50%"><img src="../assets/readme/cli-integrations.webp" alt="GenOffice-Einstellungen, Seite Integrationen: der genoffice-Skill ist in Claude Code installiert, mit Installieren-Schaltflächen neben Codex und Cursor"></td>
+</tr>
+<tr>
+<td><b>Ein Prompt an deinen Agenten</b> — „Erstelle eine Präsentation mit acht Folien über das Sonnensystem.“ Der Agent liest den Skill, schreibt ein Stylesheet, eine Gliederung und eine Seitenspezifikation pro Folie, generiert die beiden Fotos mit <code>genoffice image</code> und lässt <code>genoffice slides check</code> alles zurückweisen, was überläuft oder sich überlappt, bevor <code>genoffice create</code> die <code>.pptx</code> zusammensetzt und <code>slides render</code> pro Folie ein PNG zum Anschauen zurückgibt.</td>
+<td><b>Einmal installieren, unter Einstellungen → Integrationen</b> — GenOffice listet die Coding-Agenten auf, die es auf diesem Rechner findet, und schreibt den Skill in jeden, den du auswählst. Oder lade den Skill als Zip herunter oder führe <code>npx skills add genspark-ai/genoffice</code> aus. Befehle und der vollständige Workflow stehen unter <a href="#command-line-and-agent-skill">Befehlszeile und Agent-Skill</a>.</td>
+</tr>
+</table>
+
 ## Warum GenOffice
 
 - **Open Source**, Apache-2.0, offen entwickelt auf GitHub.
@@ -180,6 +207,9 @@ nach diesen Vorgaben.
   in Word, Excel oder PowerPoint konvertieren, mit System-OCR für Scans.
 - **Auch Markdown und HTML**, mit demselben KI-Panel und lokalem Export nach
   Word.
+- **Skriptbar.** Eine `genoffice`-Befehlszeile und ein Agent-Skill stellen
+  jede Engine in den Dienst von Claude Code, Codex, Cursor und anderen
+  Coding-Agenten – weiterhin auf dem Gerät.
 - **Kostenlos**, für Einzelpersonen wie für Teams.
 
 ## KI-Backends
@@ -202,6 +232,79 @@ Die gesamte Suite bringt ein helles, ein dunkles und einen
 Systemdesign-Modus mit. Designs ändern nur, was auf dem Bildschirm zu sehen
 ist: Exporte, Ausdrucke und gespeicherte Dateien behalten immer die eigenen
 Farben des Dokuments.
+
+<a id="command-line-and-agent-skill"></a>
+
+## Befehlszeile und Agent-Skill
+
+Alles, was die Apps mit einer Datei tun können, kann die
+`genoffice`-Befehlszeile aus einem Terminal heraus: Word, Excel, PowerPoint,
+PDF, Markdown und HTML inspizieren, konvertieren, erstellen, lesen und
+bearbeiten – auf denselben Engines, ohne Fenster. Sie wird mit GenOffice
+installiert, braucht keine eigene Laufzeitumgebung und schickt nie ein
+Dokument irgendwohin. Zusammen mit dem mitgelieferten **Agent-Skill** macht
+sie aus einem Coding-Agenten einen Dokumentenarbeiter, der echte
+Office-Dateien statt Markdown-Näherungen liefert.
+
+**Funktioniert mit:** Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot,
+OpenCode und Windsurf von Haus aus sowie mit jedem anderen Agenten, der
+Skills liest.
+
+### Skill installieren
+
+| Wie                                           | Was passiert                                                                                                                                                                                                             |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Einstellungen → Integrationen** in der App  | Listet die auf diesem Rechner gefundenen Agenten auf; ein Klick schreibt den Skill in jeden, den du auswählst. Eine **Aktualisieren**-Schaltfläche erscheint, wenn eine GenOffice-Version einen neueren Skill mitbringt. |
+| **Als Zip herunterladen** auf derselben Seite | Das Layout, das claude.ai, die Claude-Desktop-Apps und andere Assistenten als hochgeladenen Skill akzeptieren.                                                                                                           |
+| `npx skills add genspark-ai/genoffice`        | Installiert aus diesem Repository in jeden Skills-kompatiblen Agenten.                                                                                                                                                   |
+
+Starte dann einen neuen Chat und bitte um ein Dokument. Der Skill bringt dem
+Agenten bei, wann er zu `genoffice` greifen soll, wie er eine Datei vor dem
+Bearbeiten liest und wie er seine eigene Arbeit prüft.
+
+### Schnellstart im Terminal
+
+```bash
+genoffice --version
+genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx, …
+genoffice create --type docx --from notes.md --out notes.docx
+genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
+genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
+genoffice open sales.xlsx                          # hand the result to the editor
+```
+
+Jeder Befehl gibt eine einzeilige Zusammenfassung aus, oder mit `--json` ein
+einzelnes JSON-Objekt. Bearbeitungen sind atomar: Eine zurückgewiesene
+Operation lässt die Datei unangetastet und kommt mit einer erklärenden
+Fehlermeldung zurück. `genoffice help` listet die aktuellen Befehle auf; die
+vollständige Referenz steht in
+[packages/cli/README.md](../../packages/cli/README.md).
+
+### Was der Agent tatsächlich ausführt
+
+Die Sonnensystem-Präsentation in der Demo oben brauchte einen einzigen Prompt
+in Claude Code. Dahinter folgte der Agent dem gestuften Workflow des Skills,
+und die CLI prüfte jede Stufe, bevor die nächste begann:
+
+```bash
+genoffice capabilities --json                        # which cloud tools GenOffice has configured
+genoffice guide slides design                        # the deck workflow and layout library
+genoffice image "the eight planets in a row …" --aspect 16:9 --out deck/assets/cover.jpg
+genoffice slides check deck/outline.json --json      # 8 pages, no findings
+genoffice slides check deck/pages/01.json --json     # builds one slide, audits overflow and overlap
+…                                                    # one page file per slide, fixed until each check is clean
+genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck/solar-system.pptx --json
+genoffice slides render deck/solar-system.pptx --out deck/shots --json
+genoffice slides audit deck/solar-system.pptx --json    # 8 slides, no layout issues
+genoffice slides replace deck/solar-system.pptx --slide 4 --spec deck/pages/05.json --json
+genoffice open deck/solar-system.pptx
+```
+
+Innerhalb von `genoffice` findet kein Modellaufruf statt: Der Agent denkt,
+die CLI baut und prüft, und das Ergebnis öffnet sich in GenOffice oder
+PowerPoint als gewöhnliche `.pptx`.
 
 <a id="download"></a>
 
@@ -373,6 +476,19 @@ gerendert und auf echte Word-Strukturen reduziert: Überschriften, Absätze,
 Listen, Tabellen, Karten, KPI-Zeilen, Formularfelder und Seitenhintergründe;
 nur visuelle Elemente ohne Word-Entsprechung (Diagramme, Icons, dekorierte
 Boxen) werden als Bilder eingebettet.
+
+</details>
+
+<details>
+<summary><b>Kann ich GenOffice aus Claude Code, Codex, Cursor oder einem Skript steuern?</b></summary>
+
+Ja. GenOffice installiert eine `genoffice`-Befehlszeile, die dieselben
+Engines ohne Fenster ausführt: Dokumente aus einem Terminal oder einem Skript
+inspizieren, konvertieren, erstellen, lesen und bearbeiten, mit
+`--json`-Ausgabe für Programme. Der mitgelieferte Agent-Skill bringt Claude
+Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode und Windsurf bei,
+sie zu nutzen; installiere ihn unter **Einstellungen → Integrationen**. Siehe
+[Befehlszeile und Agent-Skill](#command-line-and-agent-skill).
 
 </details>
 

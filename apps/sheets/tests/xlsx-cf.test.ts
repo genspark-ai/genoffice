@@ -5,7 +5,7 @@ import {
   buildDxfXml,
   cfRuleUnsaveableReason,
   iconSetSaveable,
-} from '../src/gateway/xlsx-cf'
+} from '@genoffice/xlsx-gateway/gateway/xlsx-cf'
 
 const SHEET =
   '<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>' +

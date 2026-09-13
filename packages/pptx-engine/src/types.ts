@@ -57,6 +57,8 @@ export type Fill =
       path?: 'circle' | 'rect' | 'shape'
       /** <a:fillToRect> insets as fractions (may exceed 0..1); defines the gradient focus */
       fillTo?: { l: number; t: number; r: number; b: number }
+      /** <a:tileRect> insets as fractions; negative values grow the gradient tile past the shape */
+      tileRect?: { l: number; t: number; r: number; b: number }
     }
   | {
       type: 'image'
@@ -72,6 +74,8 @@ export type Fill =
       clrChange?: { from: string; to: string }
       /** <a:blip><a:lum>: legacy brightness/contrast picture adjustment (-1..1 each) */
       lum?: { bright: number; contrast: number }
+      /** <a:blip><a:biLevel thresh>: luminance >= thresh (0-1) renders white, below black */
+      biLevel?: number
       /** <a:tile>: offsets (EMU), scale fractions and anchor alignment of the tile grid */
       tile?: { tx: number; ty: number; sx: number; sy: number; algn: string }
     }
@@ -291,8 +295,12 @@ export interface Paragraph {
   spaceBeforePct?: number
   spaceAfterPct?: number
   bullet?: {
-    type: 'none' | 'char' | 'number'
+    type: 'none' | 'char' | 'number' | 'blip'
     char?: string
+    /** <a:buBlip> picture bullet: media zip path (resolved through the part's rels) */
+    mediaRef?: string
+    /** <a:buBlip><a:blip r:embed>: kept so a rebuild re-emits the same relationship */
+    blipEmbedId?: string
     color?: ResolvedColor
     /** Raw <a:buClr> child captured verbatim (schemeClr/prstClr/srgbClr+mods) so a rebuild
      *  keeps the theme link instead of baking the computed srgbClr. */
@@ -301,6 +309,8 @@ export interface Paragraph {
     font?: string
     /** <a:buSzPct> (%, 100 = same size as text) */
     sizePct?: number
+    /** <a:buSzPts> absolute glyph size (pt); wins over sizePct */
+    sizePt?: number
     /** <a:buAutoNum type> (arabicPeriod/romanLcParen…) */
     numType?: string
     /** <a:buAutoNum startAt>: first number of the sequence (default 1) */
@@ -550,6 +560,8 @@ export interface PictureElement extends ElementBase {
   clrChange?: { from: string; to: string }
   /** <a:blip><a:lum> brightness/contrast on the picture blip (-1..1 each) */
   lum?: { bright: number; contrast: number }
+  /** <a:blip><a:biLevel> threshold (0-1) on the picture blip */
+  biLevel?: number
   stroke?: Stroke
   shadow?: ShadowEffect
   glow?: GlowEffect

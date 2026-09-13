@@ -28,11 +28,11 @@ async function gridOrigin(page: Page): Promise<{ x: number; y: number }> {
 }
 
 function cellPoint(origin: { x: number; y: number }, row: number, column: number) {
-  return { x: origin.x + 46 + column * 86 + 43, y: origin.y + 24 + row * 23 + 11 }
+  return { x: origin.x + 46 + column * 86 + 43, y: origin.y + 20 + row * 20 + 10 }
 }
 
 function rowHeaderPoint(origin: { x: number; y: number }, row: number) {
-  return { x: origin.x + 23, y: origin.y + 24 + row * 23 + 11 }
+  return { x: origin.x + 23, y: origin.y + 20 + row * 20 + 10 }
 }
 
 test.describe('sheets: whole-row move', () => {
@@ -47,7 +47,7 @@ test.describe('sheets: whole-row move', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
       const origin = await gridOrigin(sheets)
 
@@ -65,14 +65,14 @@ test.describe('sheets: whole-row move', () => {
         await sheets.mouse.move(header2.x, header2.y)
         await sheets.mouse.down()
         const target = rowHeaderPoint(origin, 3)
-        await sheets.mouse.move(header2.x, header2.y + 12, { steps: 4 })
+        await sheets.mouse.move(header2.x, header2.y + 8, { steps: 4 })
         await sheets.mouse.move(target.x, target.y + 8, { steps: 12 })
         await sheets.mouse.up()
         await sheets.waitForTimeout(800)
       }
       const savedOrder = async (expected: readonly string[]) => {
         await launched.app.evaluate(({ webContents }) => {
-          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
           wc?.send('menu:action', 'save')
         })
         await expect(() => {

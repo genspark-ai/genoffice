@@ -54,8 +54,10 @@ const SPACE_SHRINK_MAX = 0.25
 const SHRINK_VS_STRETCH = 0.5
 /** total overshoot (px) so Chromium's breaker definitely pulls the word */
 const SHRINK_EPS = 0.5
-/** measurement noise floor (px): smaller imbalances are not real shrink state */
-const NOISE = 0.25
+/** imbalance floor (px): Blink breaks lines in 1/64px LayoutUnits, so any
+ *  overflow of one unit or more is a real wrap (a Cyrillic Times line that
+ *  Word fits by twip rounding overflows Chromium by ~1/64px) */
+const NOISE = 1 / 128
 
 export function decideLineShrinks(lines: ShrinkLine[]): Array<ShrinkDecision | null> {
   return lines.map((line) => {
@@ -147,9 +149,17 @@ function spaceAdvancePx(cs: CSSStyleDeclaration): number {
   return spaceCtx.measureText(' ').width + (parseFloat(cs.letterSpacing) || 0)
 }
 
-/** same rendered line = the boxes overlap vertically by more than a hairline */
-function sameLine(a: WordBox, b: WordBox): boolean {
-  return a.top < b.bottom - 1 && a.bottom > b.top + 1
+/** same rendered line = the boxes share more than half the shorter box's height.
+ *  Glyph boxes (ascent+descent) are taller than tight line-heights (w:line < 240
+ *  auto, or a 1.0 face factor under Blink's Mac ascent bump), so consecutive
+ *  lines overlap by a few px and a hairline test would chain the whole
+ *  paragraph into one line */
+export function sameLine(
+  a: { top: number; bottom: number },
+  b: { top: number; bottom: number },
+): boolean {
+  const overlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+  return overlap > Math.min(a.bottom - a.top, b.bottom - b.top) / 2
 }
 
 class JustifyShrinkView {

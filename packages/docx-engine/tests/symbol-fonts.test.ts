@@ -28,8 +28,26 @@ describe('symbol font decoding helpers', () => {
 
   it('decodes whole strings only when every glyph maps', () => {
     expect(decodeSymbolText('Symbol', 'abg')).toBe('αβγ')
-    expect(decodeSymbolText('Wingdings', 'l e')).toBeNull()
+    expect(decodeSymbolText('Wingdings', 'l\u2013')).toBeNull()
     expect(decodeSymbolText('Calibri', 'abc')).toBeNull()
+  })
+
+  it('text runs keep pictograph glyphs in their font, take monochrome stand-ins', () => {
+    expect(decodeSymbolText('Wingdings', 'C', { textGlyphsOnly: true })).toBeNull()
+    expect(decodeSymbolText('Wingdings', '6', { textGlyphsOnly: true })).toBeNull()
+    expect(decodeSymbolText('Wingdings', 'C')).toBe('\u{1F44D}')
+    expect(decodeSymbolText('Wingdings', 'l\u00fc\u00f0', { textGlyphsOnly: true })).toBe('●✓→')
+    expect(decodeSymbolText('Symbol', 'a \u00b7', { textGlyphsOnly: true })).toBe('α •')
+    // ASCII approximations keep the font; ASCII that the font itself draws as ASCII decodes
+    expect(decodeSymbolText('Webdings', '>', { textGlyphsOnly: true })).toBeNull()
+    expect(decodeSymbolText('Wingdings', 'j', { textGlyphsOnly: true })).toBeNull()
+    expect(decodeSymbolText('Webdings', '\uF03E', { textGlyphsOnly: true })).toBeNull()
+    expect(decodeSymbolText('Symbol', '1+2=3', { textGlyphsOnly: true })).toBe('1+2=3')
+  })
+
+  it('the space glyph of every symbol font is a space', () => {
+    expect(decodeSymbolChar('Symbol', 0xf020)).toBe(' ')
+    expect(decodeSymbolChar('Webdings', 0x20)).toBe(' ')
   })
 
   it('maps the Wingdings 2 circle/square bullet series', () => {
@@ -51,8 +69,7 @@ describe('symbol font decoding helpers', () => {
     expect(decodeSymbolChar('Wingdings', 0xf0fc)).toBe('✓')
     expect(decodeSymbolChar('Wingdings', 0xf0fd)).toBe('☒')
     expect(decodeSymbolChar('Wingdings', 0xf0fe)).toBe('☑')
-    // the one-o'clock glyph has no plain-text stand-in
-    expect(decodeSymbolChar('Wingdings', 0xf0b7)).toBeNull()
+    expect(decodeSymbolChar('Wingdings', 0xf0b7)).toBe('\u{1F550}')
   })
 
   it('maps the Wingdings 2 check marks and their boxed forms', () => {
@@ -68,6 +85,63 @@ describe('symbol font decoding helpers', () => {
     expect(decodeSymbolChar('Wingdings 3', 0xf070)).toBe('▲')
     expect(decodeSymbolChar('Webdings', 0xf06e)).toBe('●')
     expect(decodeSymbolChar('Webdings', 0xf067)).toBe('■')
+  })
+
+  it('covers the whole glyph range of every symbol font, raw byte or U+F0xx alike', () => {
+    const defined: Record<string, number[]> = {
+      Symbol: [0x7f, 0xa0 - 1, 0xff],
+      Wingdings: [0x7f, 0xff],
+      'Wingdings 2': [0x7f, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff],
+      'Wingdings 3': [
+        0x7f, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe,
+        0xff,
+      ],
+      Webdings: [0x7f],
+    }
+    for (const [font, holes] of Object.entries(defined)) {
+      for (let code = 0x21; code <= 0xff; code++) {
+        const isHole = holes.includes(code) || (font === 'Symbol' && code >= 0x80 && code < 0xa0)
+        const glyph = decodeSymbolChar(font, code)
+        expect(glyph !== null, `${font} 0x${code.toString(16)}`).toBe(!isHole)
+        expect(decodeSymbolChar(font, 0xf000 + code)).toBe(glyph)
+      }
+    }
+  })
+
+  it('maps the Symbol font: Greek, operators, arrows, card suits and the serif marks', () => {
+    expect(decodeSymbolText('Symbol', 'abgdW')).toBe('αβγδΩ')
+    expect(decodeSymbolChar('Symbol', 0x2d)).toBe('−')
+    expect(decodeSymbolChar('Symbol', 0xf0ae)).toBe('→')
+    expect(decodeSymbolChar('Symbol', 0xf0a8)).toBe('♦')
+    expect(decodeSymbolChar('Symbol', 0xf0d3)).toBe('©')
+    expect(decodeSymbolChar('Symbol', 0xf0e5)).toBe('∑')
+    expect(decodeSymbolChar('Symbol', 0xf0f2)).toBe('∫')
+  })
+
+  it('maps the Wingdings pictographs, circled digits and arrows', () => {
+    expect(decodeSymbolChar('Wingdings', 0x21)).toBe('✏')
+    expect(decodeSymbolChar('Wingdings', 0x22)).toBe('✂')
+    expect(decodeSymbolChar('Wingdings', 0x28)).toBe('☎')
+    expect(decodeSymbolChar('Wingdings', 0x6f)).toBe('❑')
+    expect(decodeSymbolChar('Wingdings', 0x8c)).toBe('❶')
+    expect(decodeSymbolChar('Wingdings', 0x81)).toBe('①')
+    expect(decodeSymbolChar('Wingdings', 0xab)).toBe('★')
+    expect(decodeSymbolChar('Wingdings', 0xe8)).toBe('➡')
+    expect(decodeSymbolChar('Wingdings', 0xfe)).toBe('☑')
+    expect(decodeSymbolChar('Wingdings 3', 0x21)).toBe('←')
+    expect(decodeSymbolChar('Wingdings 3', 0xf0a9)).toBe('⬅')
+    expect(decodeSymbolChar('Webdings', 0x61)).toBe('✔')
+  })
+
+  it('never resolves to another private-use code point', () => {
+    for (const font of ['Symbol', 'Wingdings', 'Wingdings 2', 'Wingdings 3', 'Webdings']) {
+      for (let code = 0x21; code <= 0xff; code++) {
+        const glyph = decodeSymbolChar(font, code)
+        if (glyph === null) continue
+        const cp = glyph.codePointAt(0) as number
+        expect(cp >= 0xe000 && cp <= 0xf8ff, `${font} 0x${code.toString(16)}`).toBe(false)
+      }
+    }
   })
 
   it('normalizes raw glyph bytes to their U+F0xx form', () => {
@@ -100,10 +174,10 @@ describe('symbol runs in document.xml', () => {
 
   it('keeps unknown w:sym glyphs as private-use characters', async () => {
     const bytes = await buildDocx({
-      bodyXml: '<w:p><w:r><w:sym w:font="Wingdings 2" w:char="F045"/></w:r></w:p>',
+      bodyXml: '<w:p><w:r><w:sym w:font="Wingdings 2" w:char="F0FF"/></w:r></w:p>',
     })
     const doc = await parseDocx(bytes)
-    expect(doc.blocks[0].runs!.map((r) => r.text).join('')).toBe('\uF045')
+    expect(doc.blocks[0].runs!.map((r) => r.text).join('')).toBe('\uF0FF')
   })
 
   it('decodes text runs carrying a symbol font and drops the font', async () => {
@@ -119,15 +193,53 @@ describe('symbol runs in document.xml', () => {
     expect(run.rawRPr ?? '').not.toContain('w:rFonts')
   })
 
-  it('leaves undecodable symbol-font runs untouched', async () => {
+  it('decodes a whole Symbol-font text run to Greek', async () => {
     const bytes = await buildDocx({
       bodyXml:
-        '<w:p><w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr><w:t>le</w:t></w:r></w:p>',
+        '<w:p><w:r><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr><w:t>a + b = g</w:t></w:r></w:p>',
     })
     const doc = await parseDocx(bytes)
     const run = doc.blocks[0].runs![0]
-    expect(run.text).toBe('le')
+    expect(run.text).toBe('α + β = γ')
+    expect(run.font).toBeUndefined()
+  })
+
+  it('decodes by the Latin slot when an eastAsia twin names a text face', async () => {
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:p><w:r><w:rPr><w:rFonts w:ascii="Symbol" w:eastAsia="Times New Roman" w:hAnsi="Symbol" w:cs="Times New Roman"/></w:rPr><w:t>&#xF021;&#xF022;</w:t></w:r>' +
+        '<w:r><w:rPr><w:rFonts w:eastAsia="Times New Roman" w:hAnsi="Symbol"/></w:rPr><w:t>&#xF024;</w:t></w:r>' +
+        '<w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:eastAsia="Times New Roman" w:hAnsi="Wingdings"/></w:rPr><w:t>&#xF043;</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    const runs = doc.blocks[0].runs!
+    expect(runs.map((r) => r.text)).toEqual(['!\u2200', '\u2203', '\uF043'])
+    expect(runs[0].font).toBeUndefined()
+    expect(runs[0].fontAscii).toBeUndefined()
+    expect(runs[1].font).toBeUndefined()
+    expect(runs[2].fontAscii).toBe('Wingdings')
+  })
+
+  it('leaves undecodable symbol-font runs untouched', async () => {
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:p><w:r><w:rPr><w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings"/></w:rPr><w:t>l\u2013</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    const run = doc.blocks[0].runs![0]
+    expect(run.text).toBe('l\u2013')
     expect(run.font).toBe('Wingdings')
+  })
+
+  it('keeps a pictograph text run in its symbol font', async () => {
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:p><w:r><w:rPr><w:rFonts w:ascii="Webdings" w:hAnsi="Webdings"/></w:rPr><w:t>b</w:t></w:r></w:p>',
+    })
+    const doc = await parseDocx(bytes)
+    const run = doc.blocks[0].runs![0]
+    expect(run.text).toBe('b')
+    expect(run.font).toBe('Webdings')
   })
 
   it('decodes numeric character references in w:t', async () => {

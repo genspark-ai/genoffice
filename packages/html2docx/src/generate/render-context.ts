@@ -5,7 +5,7 @@ const DEFAULT_PAGE_WIDTH_PX = 794
 const DEFAULT_PAGE_HEIGHT_PX = 1123
 const MARGIN_DXA = 1134
 
-function createRenderContext(docSettings: any = {}) {
+function createRenderContext(docSettings: any = {}, options: any = {}) {
   const marginsPx = docSettings.marginsPx || {}
   const pageWidthDxa = Math.max(
     1440,
@@ -48,6 +48,7 @@ function createRenderContext(docSettings: any = {}) {
     pxToHalfPoints: (px) => Math.round(px * 1.5 * fontScale),
     pxToTwips,
     pxToBorderEighths: (px) => Math.max(4, Math.round(px * 6 * measurementScale)),
+    naturalTableWidth: Boolean(options.naturalTableWidth),
   }
 }
 

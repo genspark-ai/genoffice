@@ -8,13 +8,18 @@ import { join } from 'node:path'
 
 import { BrowserWindow, dialog } from 'electron'
 
-import { showSaveDialogWithMemory } from '@genoffice/electron-utils'
+import { isHeadlessMode, showSaveDialogWithMemory } from '@genoffice/electron-utils'
 
 import { evenPageRanges, stitchPlan, type PageVariant } from './pdf-page-variants'
+import { printOptionsFor } from './print-options'
 
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type { PDFDocument } from 'pdf-lib'
-import type { WorkbookExportPdfRequest, WorkbookExportPdfResult } from '../shared/desktop-api'
+import type {
+  WorkbookExportPdfRequest,
+  WorkbookExportPdfResult,
+  WorkbookPrintResult,
+} from '../shared/desktop-api'
 
 export async function exportPdf(
   event: IpcMainInvokeEvent,
@@ -25,7 +30,11 @@ export async function exportPdf(
     defaultPath: request.fileName,
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   }
-  const selection = await showSaveDialogWithMemory(dialog, parent, dialogOptions)
+  // Headless export has no dialog to authorize a path; the CLI already chose one.
+  const selection =
+    isHeadlessMode() && request.outPath
+      ? { canceled: false as const, filePath: request.outPath }
+      : await showSaveDialogWithMemory(dialog, parent, dialogOptions)
   if (selection.canceled || !selection.filePath) return { canceled: true }
 
   const workDir = await mkdtemp(join(tmpdir(), 'ai-excel-pdf-'))
@@ -40,6 +49,51 @@ export async function exportPdf(
     const pdf = await renderPdf(window.webContents, request)
     await writeFile(selection.filePath, pdf)
     return { canceled: false, path: selection.filePath }
+  } finally {
+    window.destroy()
+    await rm(workDir, { recursive: true, force: true })
+  }
+}
+
+/// Print: the same laid-out HTML in a hidden window, handed to the system
+/// print dialog with the sheet's page setup preselected. Header / footer
+/// templates are a printToPDF feature; the dialog's own header option stands
+/// in for them.
+export async function printWorkbook(
+  event: IpcMainInvokeEvent,
+  request: WorkbookExportPdfRequest,
+): Promise<WorkbookPrintResult> {
+  const owner = BrowserWindow.fromWebContents(event.sender)
+  const workDir = await mkdtemp(join(tmpdir(), 'ai-excel-print-'))
+  const htmlPath = join(workDir, 'print.html')
+  const window = new BrowserWindow({
+    show: false,
+    ...(owner && !owner.isDestroyed() ? { parent: owner } : {}),
+    // Chromium attaches the native Windows print dialog to the printed window;
+    // a hidden owner hides the dialog too, so Windows gets a real one
+    ...(process.platform === 'win32'
+      ? { width: 900, height: 700, autoHideMenuBar: true, closable: false, skipTaskbar: true }
+      : {}),
+    webPreferences: { sandbox: true, javascript: false },
+  })
+  try {
+    await writeFile(htmlPath, request.html, 'utf8')
+    await window.loadFile(htmlPath)
+    if (process.platform === 'win32') {
+      window.show()
+      window.focus()
+    }
+    const outcome = await new Promise<{ success: boolean; failureReason: string }>((resolve) => {
+      window.webContents.print(printOptionsFor(request), (success, failureReason) =>
+        resolve({ success, failureReason }),
+      )
+    })
+    if (outcome.success) return { ok: true }
+    return outcome.failureReason === 'Print job canceled'
+      ? { ok: false }
+      : { ok: false, error: outcome.failureReason }
+  } catch (error: unknown) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
   } finally {
     window.destroy()
     await rm(workDir, { recursive: true, force: true })

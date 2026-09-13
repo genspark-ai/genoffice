@@ -510,6 +510,12 @@ export const en = {
   appPdfCanceled: 'PDF export canceled.',
   appPdfExported: 'Exported {path}.',
   appPdfExportFailed: 'Unable to export the PDF.',
+  appPrintPreparing: 'Preparing to print…',
+  appPrintSent: 'Sent to the printer.',
+  appPrintCanceled: 'Printing canceled.',
+  appPrintFailed: 'Unable to print.',
+  appPrintNeedsFullLoad:
+    'Printing needs the whole workbook loaded — please wait for loading to finish.',
   appCsvExportNeedsFullLoad:
     'CSV export needs the fully loaded workbook — wait for loading to finish.',
   appCsvExportTooLarge: 'The sheet is too large to export as CSV.',
@@ -1292,6 +1298,8 @@ export const en = {
   appFormatMenu: 'Format',
   appRowHeight: 'Row Height',
   appColWidth: 'Column Width',
+  appAutoFitRowHeight: 'AutoFit Row Height',
+  appAutoFitColWidth: 'AutoFit Column Width',
   appRowHeightLabel: 'Row height (points)',
   appColWidthLabel: 'Column width (characters)',
   appDeleteRow: 'Delete row',

@@ -315,4 +315,34 @@ describe('P27 T5: /Rotate page normalization', () => {
     expect(first.box.x0).toBeGreaterThanOrEqual(0)
     expect(first.box.x1).toBeLessThanOrEqual(792)
   })
+
+  it('turns image pixels into display space along with their boxes (/Rotate 90)', async () => {
+    // a 2×1 raw RGB image (left red, right blue) drawn 200 wide × 100 tall in
+    // user space; /Rotate 90 displays it 100 wide × 200 tall with red on top
+    const objects = [
+      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+      '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+      '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Rotate 90 ' +
+        '/Resources << /Font << /F1 4 0 R >> /XObject << /Im1 6 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+      '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    ]
+    const image =
+      '6 0 obj\n<< /Type /XObject /Subtype /Image /Width 2 /Height 1 ' +
+      '/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 6 >>\nstream\n\xff\x00\x00\x00\x00\xff\nendstream\nendobj\n'
+    let content = 'BT /F1 12 Tf\n'
+    BODY_LINES.forEach((line, i) => {
+      content += `0 1 -1 0 ${400 + i * 20} 100 Tm (${line}) Tj\n`
+    })
+    content += 'ET\nq 200 0 0 100 100 500 cm /Im1 Do Q\n'
+    const pdf = rawPdf([...objects, contentObj(5, content), image])
+    const pdfium = await loadPdfium()
+    const page = withPdfDocument(pdfium, pdf, (doc: number) => extractPage(pdfium, doc, 0))
+    expect(page.images).toHaveLength(1)
+    const img = page.images[0]!
+    // display-space box: taller than wide
+    expect(img.box.x1 - img.box.x0).toBeCloseTo(100, 0)
+    expect(img.box.y1 - img.box.y0).toBeCloseTo(200, 0)
+    // and the bitmap turned with it
+    expect(img.pixelHeight).toBeGreaterThan(img.pixelWidth)
+  })
 })

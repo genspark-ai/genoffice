@@ -1,9 +1,11 @@
 /**
  * TextBlock → pptx paragraph mapping (P25). One IR text block becomes ONE
- * text box with ONE paragraph: lines re-join with the docx rebuild's exact
- * semantics (hyphen joins, hard breaks as <a:br/>, no space between CJK
- * lines), and the measured line pitch rides as exact line spacing so the
- * box's vertical rhythm matches the source page.
+ * text box with ONE paragraph whose source lines are kept as hard breaks
+ * (<a:br/>) inside a non-wrapping box: the slide's substituted fonts run
+ * wider or narrower than the PDF's, and letting the box re-wrap at its
+ * measured width spilled every second line onto the next (Canva/Gamma decks
+ * doubled their bullet lists). The measured line pitch rides as exact line
+ * spacing so the box's vertical rhythm matches the source page.
  */
 import { rectHeight } from '../geometry'
 import type { Span, TextBlock } from '../ir'
@@ -12,6 +14,16 @@ import type { Paragraph, TextRun } from '../../../pptx-engine/src/types'
 
 /** end-of-line hyphenation hyphens (plain, soft, unicode hyphen) */
 const TRAILING_HYPHEN = /[-­‐]$/
+
+export interface TextBlockOptions {
+  /**
+   * true (slide text boxes, wrap="none"): every source line is a hard break.
+   * false (table cells, which wrap at the cell width): lines re-join with
+   * the docx rebuild's semantics — hyphen joins, hard breaks only where the
+   * source had them, no space between CJK lines.
+   */
+  hardBreaks?: boolean
+}
 
 function runFromSpan(span: Span, scale: number): TextRun | null {
   // invisible source text (PDF Tr 3/7): pptx has no w:vanish equivalent, and
@@ -49,8 +61,9 @@ function pushRun(runs: TextRun[], run: TextRun): void {
   else runs.push(run)
 }
 
-/** flatten a block's lines into merged runs ('\n' in text = intra-box break) */
-export function blockRuns(block: TextBlock, scale = 1): TextRun[] {
+/** flatten a block's lines into merged runs ('\n' in text = <a:br/>) */
+export function blockRuns(block: TextBlock, scale = 1, opts: TextBlockOptions = {}): TextRun[] {
+  const hardBreaks = opts.hardBreaks ?? true
   const runs: TextRun[] = []
   for (const [i, line] of block.lines.entries()) {
     if (i > 0) {
@@ -58,8 +71,7 @@ export function blockRuns(block: TextBlock, scale = 1): TextRun[] {
       const last = runs[runs.length - 1]
       const lastSpan = prevLine.spans[prevLine.spans.length - 1]
       const nextSpan = line.spans[0]
-      if (line.hardBreakBefore) {
-        // intentional intra-block break: generateRunXml renders '\n' as <a:br/>
+      if (hardBreaks || line.hardBreakBefore) {
         if (last) last.text += '\n'
         else runs.push({ text: '\n' })
       } else if (prevLine.endsWithHyphen && last) {
@@ -87,8 +99,12 @@ export function blockRuns(block: TextBlock, scale = 1): TextRun[] {
  * The block's single paragraph. `scale` maps a differently-sized page onto
  * the deck's slide size (font sizes and pitch scale with the geometry).
  */
-export function textBlockParagraph(block: TextBlock, scale = 1): Paragraph {
-  const runs = blockRuns(block, scale)
+export function textBlockParagraph(
+  block: TextBlock,
+  scale = 1,
+  opts: TextBlockOptions = {},
+): Paragraph {
+  const runs = blockRuns(block, scale, opts)
   // literal list markers (P20 canvas lesson): a pptx auto-bullet would indent
   // and renumber; the marker is already measured into the box, so it rides as
   // plain text

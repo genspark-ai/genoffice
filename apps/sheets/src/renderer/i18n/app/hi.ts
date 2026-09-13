@@ -524,6 +524,12 @@ export const hi = {
   appPdfCanceled: 'PDF निर्यात रद्द किया गया।',
   appPdfExported: '{path} निर्यात किया गया।',
   appPdfExportFailed: 'PDF निर्यात नहीं किया जा सका।',
+  appPrintPreparing: 'प्रिंट की तैयारी हो रही है…',
+  appPrintSent: 'प्रिंटर को भेज दिया गया।',
+  appPrintCanceled: 'प्रिंट रद्द किया गया।',
+  appPrintFailed: 'प्रिंट नहीं किया जा सका।',
+  appPrintNeedsFullLoad:
+    'प्रिंट करने के लिए कार्यपुस्तिका पूरी लोड होनी चाहिए — लोडिंग पूरी होने तक प्रतीक्षा करें।',
   appCsvExportNeedsFullLoad:
     'CSV निर्यात के लिए पूरी तरह लोड की गई कार्यपुस्तिका चाहिए — लोडिंग पूरी होने तक प्रतीक्षा करें।',
   appCsvExportTooLarge: 'शीट बहुत बड़ी है, CSV के रूप में निर्यात नहीं की जा सकती।',
@@ -1309,6 +1315,8 @@ export const hi = {
   appFormatMenu: 'प्रारूप',
   appRowHeight: 'पंक्ति ऊंचाई',
   appColWidth: 'स्तंभ चौड़ाई',
+  appAutoFitRowHeight: 'पंक्ति ऊँचाई स्वतः फ़िट करें',
+  appAutoFitColWidth: 'स्तंभ चौड़ाई स्वतः फ़िट करें',
   appRowHeightLabel: 'पंक्ति ऊंचाई (पॉइंट)',
   appColWidthLabel: 'स्तंभ चौड़ाई (वर्ण)',
   appDeleteRow: 'पंक्ति हटाएँ',

@@ -3,7 +3,7 @@
  * Extracted from parse.ts into a shared module: used by both parse (run/fill colors) and
  * placeholder (lstStyle defRPr default colors) to avoid a circular dependency.
  */
-import { type Theme, resolveSchemeColor } from './theme'
+import { type Theme, resolveSchemeColor, sysColorHex } from './theme'
 import { asXmlNode, type XmlNode } from './xml-utils'
 
 /**
@@ -27,7 +27,7 @@ export function resolveColorNode(
     base = resolveSchemeColor(String(mods['@_val']), theme, phClr)
   } else if (n['a:sysClr']) {
     mods = asXmlNode(n['a:sysClr'])
-    base = '#' + String(mods['@_lastClr'] ?? '000000').toUpperCase()
+    base = sysColorHex(mods['@_val'], mods['@_lastClr'])
   } else if (n['a:prstClr']) {
     mods = asXmlNode(n['a:prstClr'])
     base = PRESET_COLORS[String(mods['@_val'])]

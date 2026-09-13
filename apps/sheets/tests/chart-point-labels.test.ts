@@ -25,7 +25,7 @@ const balance = {
   dataLabels: 'none' as const,
 }
 const labels = (markup: string): Array<{ x: number; y: number; text: string }> =>
-  [...markup.matchAll(/<text x="([-\d.]+)" y="([-\d.]+)"[^>]*class="axis-label"[^>]*>([^<]*)</g)]
+  [...markup.matchAll(/<text x="([-\d.]+)" y="([-\d.]+)"[^>]*class="data-label"[^>]*>([^<]*)</g)]
     .map((match) => ({ x: Number(match[1]), y: Number(match[2]), text: match[3] ?? '' }))
     .filter((label) => label.text.includes('.'))
 

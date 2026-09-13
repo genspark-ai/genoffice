@@ -1,8 +1,11 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
-import type { EntrySource } from '../src/gateway/xlsx-gateway'
-import { createBufferEntrySource, planCellEditsToXlsx } from '../src/gateway/xlsx-gateway'
+import type { EntrySource } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
+import {
+  createBufferEntrySource,
+  planCellEditsToXlsx,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 
 const workbook = `<?xml version="1.0" encoding="UTF-8"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">

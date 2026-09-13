@@ -23,6 +23,7 @@ Fail Word, Excel, PowerPoint dan PDF, disunting oleh anda dan AI anda, disimpan 
 
 <p align="center">
   <a href="#download"><b>Muat Turun</b></a> ·
+  <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="https://genoffice.ai/"><b>Laman Web</b></a> ·
   <a href="https://genoffice.ai/join"><b>Komuniti</b></a> ·
   <a href="../../PRIVACY.md"><b>Privasi</b></a>
@@ -52,6 +53,11 @@ kepada anda dengan tepat apa yang disentuhnya.
   OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral,
   OpenRouter, Requesty, atau mana-mana titik akhir yang serasi dengan OpenAI, termasuk
   pelayan setempat.
+- **Boleh dijalankan melalui skrip dan sedia untuk agen.** Aplikasi ini
+  disertakan dengan baris arahan `genoffice` dan skill untuk Claude Code,
+  Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode dan Windsurf, jadi agen
+  pengekodan boleh mencipta, menukar, membaca dan menyunting fail Office
+  sebenar pada mesin anda tanpa membuka sebarang tetingkap.
 
 **Dapatkan:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon dan Intel) ·
 [Windows](https://github.com/genspark-ai/genoffice/releases/latest) (x64 dan Arm) ·
@@ -60,8 +66,9 @@ butiran dan keperluan dalam [Muat Turun](#download).
 
 ## Demo
 
-Enam aplikasi, satu panel AI. Setiap tangkapan skrin ialah aplikasi sebenar
-pada macOS, dengan AI dipandu oleh gesaan yang boleh anda baca dalam panel.
+Enam aplikasi, satu panel AI, dan satu baris arahan untuk agen pengekodan anda.
+Setiap tangkapan skrin ialah aplikasi sebenar pada macOS, dengan AI dipandu
+oleh gesaan yang boleh anda baca dalam panel.
 
 ### 1 · Docs — buka dan sunting `.docx` dengan AI yang boleh anda semak
 
@@ -159,6 +166,27 @@ gaya — sebelum membina satu fail `.html` mandiri berdasarkan token-token itu.
 </tr>
 </table>
 
+### 7 · CLI — agen pengekodan anda memandu GenOffice, pada mesin anda
+
+GenOffice disertakan dengan baris arahan `genoffice` dan skill agen. Pasang
+skill itu dan Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode
+atau Windsurf boleh mencipta, menukar, membaca dan menyunting fail Office
+sebenar melalui enjin yang sama seperti aplikasi, tanpa membuka sebarang
+tetingkap.
+
+<img src="../assets/readme/cli-deck-in-app.webp" alt="GenOffice Slides memaparkan deck Sistem Suria lapan slaid yang dibina oleh agen pengekodan melalui baris arahan genoffice: slaid muka depan pada kanvas, lapan lakaran kecil di kiri dan panel AI terbuka" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/cli-slides-grid.webp" alt="Lapan slaid deck Sistem Suria yang telah dipaparkan bersebelahan: muka depan, garis masa penerokaan, empat angka utama, carta bar diameter planet, dunia berbatu lawan gergasi, angka utama 99.8% milik Matahari, grid empat gergasi dan rumusan"></td>
+<td width="50%"><img src="../assets/readme/cli-integrations.webp" alt="GenOffice Settings, halaman Integrations: skill genoffice dipasang ke dalam Claude Code, dengan butang Install di sebelah Codex dan Cursor"></td>
+</tr>
+<tr>
+<td><b>Satu gesaan kepada agen anda</b> — "Build an eight-slide deck about the Solar System." Agen membaca skill, menulis helaian gaya, rangka dan satu spesifikasi halaman bagi setiap slaid, menjana dua foto dengan <code>genoffice image</code>, dan membiarkan <code>genoffice slides check</code> menolak apa-apa yang melimpah atau bertindih sebelum <code>genoffice create</code> memasang <code>.pptx</code> dan <code>slides render</code> memulangkan satu PNG bagi setiap slaid untuk dilihat.</td>
+<td><b>Pasang sekali, daripada Tetapan → Integrasi</b> — GenOffice menyenaraikan agen pengekodan yang ditemuinya pada komputer ini dan menulis skill ke dalam setiap satu yang anda pilih. Atau muat turun skill sebagai zip, atau jalankan <code>npx skills add genspark-ai/genoffice</code>. Arahan dan aliran kerja penuh ada dalam <a href="#command-line-and-agent-skill">Baris arahan dan skill agen</a>.</td>
+</tr>
+</table>
+
 ## Mengapa GenOffice
 
 - **Sumber terbuka**, Apache-2.0, dibangunkan secara terbuka di GitHub.
@@ -178,6 +206,9 @@ gaya — sebelum membina satu fail `.html` mandiri berdasarkan token-token itu.
   sistem untuk hasil imbasan.
 - **Markdown dan HTML juga**, dengan panel AI yang sama dan eksport setempat
   ke Word.
+- **Boleh dijalankan melalui skrip.** Baris arahan `genoffice` dan skill agen
+  meletakkan setiap enjin di bawah khidmat Claude Code, Codex, Cursor dan agen
+  pengekodan lain, masih di peranti sendiri.
 - **Percuma**, untuk individu dan pasukan.
 
 ## Bahagian belakang AI
@@ -199,6 +230,78 @@ imej serasi OpenAI untuk penjanaan imej dan analisis imej/video.
 Keseluruhan rangkaian ini disertakan dengan tema terang, gelap dan sistem.
 Tema hanya mengubah apa yang dipaparkan pada skrin: eksport, cetakan dan fail
 yang disimpan sentiasa mengekalkan warna sebenar dokumen itu.
+
+<a id="command-line-and-agent-skill"></a>
+
+## Baris arahan dan skill agen
+
+Segala yang boleh dilakukan aplikasi pada sesuatu fail boleh dilakukan oleh
+baris arahan `genoffice` dari terminal: memeriksa, menukar, mencipta, membaca
+dan menyunting Word, Excel, PowerPoint, PDF, Markdown dan HTML pada enjin yang
+sama, tanpa antara muka (headless). Ia dipasang bersama GenOffice, tidak
+memerlukan runtime sendiri, dan tidak pernah menghantar dokumen ke mana-mana.
+Digandingkan dengan **skill agen** yang disertakan, ia menjadikan agen
+pengekodan sebagai pekerja dokumen yang menghasilkan fail Office sebenar dan
+bukan anggaran dalam Markdown.
+
+**Berfungsi dengan:** Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot,
+OpenCode dan Windsurf terus tanpa tetapan tambahan, serta mana-mana agen lain
+yang membaca skill.
+
+### Memasang skill
+
+| Cara                                              | Apa yang berlaku                                                                                                                                                                                      |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tetapan → Integrasi** dalam aplikasi            | Menyenaraikan agen yang ditemui pada komputer ini; satu klik menulis skill ke dalam setiap satu yang anda pilih. Butang **Update** muncul apabila keluaran GenOffice membawa skill yang lebih baharu. |
+| **Muat turun sebagai zip** pada halaman yang sama | Susun atur yang diterima oleh claude.ai, aplikasi desktop Claude dan pembantu lain sebagai skill yang dimuat naik.                                                                                    |
+| `npx skills add genspark-ai/genoffice`            | Memasang daripada repositori ini ke dalam mana-mana agen yang serasi dengan skill.                                                                                                                    |
+
+Kemudian mulakan sembang baharu dan minta sesuatu dokumen. Skill itu mengajar
+agen bila perlu menggunakan `genoffice`, cara membaca fail sebelum
+menyuntingnya, dan cara menyemak hasil kerjanya sendiri.
+
+### Mula pantas dari terminal
+
+```bash
+genoffice --version
+genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx, …
+genoffice create --type docx --from notes.md --out notes.docx
+genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
+genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
+genoffice open sales.xlsx                          # hand the result to the editor
+```
+
+Setiap arahan mencetak ringkasan satu baris, atau satu objek JSON dengan
+`--json`. Suntingan bersifat atomik: op yang ditolak membiarkan fail tidak
+tersentuh dan memulangkan ralat berpandu. `genoffice help` menyenaraikan set
+arahan semasa; rujukan penuh ada dalam
+[packages/cli/README.md](../../packages/cli/README.md).
+
+### Apa yang sebenarnya dijalankan oleh agen
+
+Deck Sistem Suria dalam demo di atas hanya memerlukan satu gesaan dalam Claude
+Code. Di sebaliknya, agen mengikuti aliran kerja berperingkat skill itu dan
+CLI menyemak setiap peringkat sebelum peringkat seterusnya bermula:
+
+```bash
+genoffice capabilities --json                        # which cloud tools GenOffice has configured
+genoffice guide slides design                        # the deck workflow and layout library
+genoffice image "the eight planets in a row …" --aspect 16:9 --out deck/assets/cover.jpg
+genoffice slides check deck/outline.json --json      # 8 pages, no findings
+genoffice slides check deck/pages/01.json --json     # builds one slide, audits overflow and overlap
+…                                                    # one page file per slide, fixed until each check is clean
+genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck/solar-system.pptx --json
+genoffice slides render deck/solar-system.pptx --out deck/shots --json
+genoffice slides audit deck/solar-system.pptx --json    # 8 slides, no layout issues
+genoffice slides replace deck/solar-system.pptx --slide 4 --spec deck/pages/05.json --json
+genoffice open deck/solar-system.pptx
+```
+
+Tiada panggilan model berlaku di dalam `genoffice`: agen yang berfikir, CLI
+yang membina dan menyemak, dan hasilnya dibuka dalam GenOffice atau PowerPoint
+sebagai `.pptx` biasa.
 
 <a id="download"></a>
 
@@ -368,6 +471,19 @@ Chromium terbina dalam dan dikurangkan kepada struktur Word sebenar: tajuk,
 perenggan, senarai, jadual, kad, baris KPI, medan borang dan latar belakang
 halaman; hanya visual yang tidak mempunyai persamaan dalam Word (carta, ikon,
 kotak berhias) dibenamkan sebagai gambar.
+
+</details>
+
+<details>
+<summary><b>Bolehkah saya memandu GenOffice daripada Claude Code, Codex, Cursor atau skrip?</b></summary>
+
+Ya. GenOffice memasang baris arahan `genoffice` yang menjalankan enjin yang
+sama tanpa antara muka: memeriksa, menukar, mencipta, membaca dan menyunting
+dokumen dari terminal atau skrip, dengan output `--json` untuk program. Skill
+agen yang disertakan mengajar Claude Code, Codex, Cursor, Gemini CLI, GitHub
+Copilot, OpenCode dan Windsurf menggunakannya; pasang daripada
+**Tetapan → Integrasi**. Lihat
+[Baris arahan dan skill agen](#command-line-and-agent-skill).
 
 </details>
 

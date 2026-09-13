@@ -6,8 +6,11 @@ import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import type { ArchiveEntry } from '../src/gateway/xlsx-package-io'
-import { assertManifestPreserved, saveWorkbookViaSidecar } from '../src/gateway/xlsx-package-io'
+import type { ArchiveEntry } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
+import {
+  assertManifestPreserved,
+  saveWorkbookViaSidecar,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
 import { XlsxSidecarClient } from '../src/main/xlsx-sidecar-client'
 import { buildEditFixture } from './fixture-builder'
 

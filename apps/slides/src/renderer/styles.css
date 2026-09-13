@@ -9,48 +9,56 @@
   src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
   font-weight: normal;
   font-style: normal;
+  font-display: block;
 }
 @font-face {
   font-family: 'Carlito';
   src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
   font-weight: bold;
   font-style: normal;
+  font-display: block;
 }
 @font-face {
   font-family: 'Carlito';
   src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
   font-weight: normal;
   font-style: italic;
+  font-display: block;
 }
 @font-face {
   font-family: 'Carlito';
   src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
   font-weight: bold;
   font-style: italic;
+  font-display: block;
 }
 @font-face {
   font-family: 'Carlito GO';
   src: url('@genoffice/ui/fonts/Carlito-Regular.ttf');
   font-weight: normal;
   font-style: normal;
+  font-display: block;
 }
 @font-face {
   font-family: 'Carlito GO';
   src: url('@genoffice/ui/fonts/Carlito-Bold.ttf');
   font-weight: bold;
   font-style: normal;
+  font-display: block;
 }
 @font-face {
   font-family: 'Carlito GO';
   src: url('@genoffice/ui/fonts/Carlito-Italic.ttf');
   font-weight: normal;
   font-style: italic;
+  font-display: block;
 }
 @font-face {
   font-family: 'Carlito GO';
   src: url('@genoffice/ui/fonts/Carlito-BoldItalic.ttf');
   font-weight: bold;
   font-style: italic;
+  font-display: block;
 }
 
 /* Per-app accent (powerpoint-orange family) + slides-only tokens.
@@ -4646,56 +4654,38 @@ body.vib .slide-list {
   font-size: 12px;
   color: var(--text-dim);
   margin-bottom: 6px;
+  text-align: center;
   white-space: nowrap;
 }
 
 .rb-table-grid {
   display: grid;
-  grid-template-columns: repeat(10, 16px);
+  grid-template-columns: repeat(10, 18px);
   gap: 3px;
 }
 
+/* "Insert Table…" entry under the hover grid (opens the rows/cols dialog) */
 .rb-table-custom {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  display: block;
+  width: 100%;
   margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-strong);
-}
-
-.rb-table-custom input {
-  width: 46px;
-  padding: 2px 4px;
+  padding: 5px 6px;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 4px 4px;
+  background: none;
+  color: var(--text);
   font-size: 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
-  background: var(--surface);
-  color: inherit;
-}
-
-.rb-table-custom span {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.rb-table-custom-ok {
-  margin-left: auto;
-  padding: 2px 10px;
-  font-size: 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: 3px;
-  background: var(--surface);
+  text-align: left;
   cursor: pointer;
 }
 
-.rb-table-custom-ok:hover {
-  background: var(--active-bg);
-  border-color: var(--accent);
+.rb-table-custom:hover {
+  background: var(--hover);
 }
 
 .rb-table-cell {
-  width: 16px;
+  width: 18px;
   height: 16px;
   border: 1px solid var(--border-strong);
   border-radius: 2px;
@@ -4809,6 +4799,59 @@ body.vib .slide-list {
 
 .rb-bullet-hang-input:hover:not(:disabled) {
   background: var(--surface);
+}
+
+/* Extra symbols + custom character + picture bullet */
+.rb-bullet-custom {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  max-width: 236px;
+}
+
+.rb-bullet-sym {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.rb-bullet-sym:hover:not(:disabled),
+.rb-bullet-sym.on,
+.rb-bullet-hang.on {
+  background: var(--active-bg);
+  border-color: var(--accent);
+}
+
+.rb-bullet-sym:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rb-bullet-sym-input,
+.rb-bullet-start-input {
+  width: 72px;
+  cursor: text;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+
+.rb-bullet-sym-input {
+  width: 108px;
+}
+
+/* Numbering tiles: "1." / "II." / "iii." samples are wider than a bullet glyph */
+.rb-bullet-tile-num {
+  width: auto;
+  min-width: 10px;
+  font-size: 8px;
+  white-space: nowrap;
 }
 
 /* Bullet color row: swatches + "More colors" on its own line */
@@ -7151,6 +7194,16 @@ body.show-curtain::after {
   margin-bottom: 12px;
 }
 
+.dlg-two-col {
+  display: flex;
+  gap: 12px;
+}
+
+.dlg-two-col > label {
+  flex: 1;
+  min-width: 0;
+}
+
 /* Override .modal label / .modal input full-row styles: checkbox/radio rows lay out inline */
 .modal label.dlg-radio,
 .modal label.dlg-check {
@@ -8883,4 +8936,38 @@ body.show-curtain::after {
   flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+/* Editing overlay bullets: the canvas hides the edited node's text, so each paragraph div
+ * draws its bullet as a ::before filling the hanging indent (set by TextEditOverlay) */
+.slide-text-editor > div[data-bullet-text]::before {
+  content: attr(data-bullet-text);
+  display: inline-block;
+  /* hangs into the left margin like the canvas bullet; the width past the hang pushes the text */
+  margin-left: calc(-1 * var(--bullet-hang));
+  width: var(--bullet-w);
+  /* zero line box: a glyph larger than the text keeps the baseline without growing the line */
+  line-height: 0;
+  font-family: var(--bullet-font, inherit);
+  font-size: var(--bullet-size, inherit);
+  font-weight: var(--bullet-weight, normal);
+  color: var(--bullet-color, inherit);
+  white-space: pre;
+  user-select: none;
+  pointer-events: none;
+}
+.slide-text-editor > div[data-bullet-img] {
+  position: relative;
+}
+/* Picture bullet: the ::before (an invisible glyph) reserves the hanging indent, the ::after paints the image */
+.slide-text-editor > div[data-bullet-img]::after {
+  content: '';
+  position: absolute;
+  left: var(--bullet-x);
+  top: var(--bullet-y);
+  width: var(--bullet-img-w);
+  height: var(--bullet-h);
+  background: var(--bullet-img) center / contain no-repeat;
+  user-select: none;
+  pointer-events: none;
 }

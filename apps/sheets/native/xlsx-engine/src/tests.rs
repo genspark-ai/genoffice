@@ -97,6 +97,62 @@ fn shared_and_inline_strings_decode_escapes() {
 }
 
 #[test]
+fn text_nodes_without_preserve_drop_edge_whitespace() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/sharedStrings.xml",
+            "<sst xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><si><t> </t></si><si><t xml:space=\"preserve\"> a </t></si><si><r><t>\n  Bold </t></r><r><rPr><b/></rPr><t xml:space=\"preserve\"> tail </t></r></si><si><t>&#160;</t></si></sst>",
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c><c r="C1" t="s"><v>2</v></c><c r="D1" t="inlineStr"><is><t> </t></is></c><c r="E1" t="inlineStr"><is><t xml:space="preserve"> </t></is></c><c r="F1" t="inlineStr"><is><t>	x&amp;y	</t></is></c><c r="G1" t="s"><v>3</v></c></row></sheetData></worksheet>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let range = CellRange {
+        start_row: 0,
+        end_row: 0,
+        start_column: 0,
+        end_column: 6,
+    };
+    let result = sessions
+        .read_range(&metadata.session_id, "sheet-1", &range)
+        .unwrap();
+    let text = |column: usize| {
+        let cell = result
+            .cells
+            .iter()
+            .find(|cell| cell.column == column)
+            .unwrap();
+        match &cell.value {
+            Some(CellValue::String(text)) => text.clone(),
+            other => panic!("unexpected {other:?}"),
+        }
+    };
+    assert_eq!(text(0), "");
+    assert_eq!(text(1), " a ");
+    assert_eq!(text(2), "Bold tail ");
+    assert_eq!(text(3), "");
+    assert_eq!(text(4), " ");
+    assert_eq!(text(5), "x&y");
+    // A non-breaking space is not XML whitespace.
+    assert_eq!(text(6), "\u{a0}");
+    let rich = result.cells.iter().find(|cell| cell.column == 2).unwrap();
+    let runs = rich.rich.as_ref().unwrap();
+    assert_eq!(runs[0].text, "Bold");
+    assert_eq!(runs[1].text, " tail ");
+}
+
+#[test]
 fn strips_future_function_markers_outside_strings() {
     assert_eq!(
         strip_future_function_markers("_xlfn.MINIFS(C7:C10,C7:C10,\">0\")"),
@@ -2419,7 +2475,7 @@ fn parses_chart_semantics_and_textbox_paragraphs() {
 <xdr:twoCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>5</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>10</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
 <xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="1" name="Chart 1"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="1" cy="1"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor>
 <xdr:twoCellAnchor><xdr:from><xdr:col>6</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>9</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
-<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="2" name="TextBox 1"/><xdr:cNvSpPr txBox="1"/></xdr:nvSpPr><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></xdr:spPr><xdr:txBody><a:bodyPr anchor="t"/><a:p><a:pPr algn="r"/><a:r><a:rPr lang="en" sz="1100" b="1"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:rPr><a:t>Hi</a:t></a:r></a:p><a:p><a:r><a:t>Second</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor>
+<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="2" name="TextBox 1"/><xdr:cNvSpPr txBox="1"/></xdr:nvSpPr><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="808080"/></a:solidFill></a:ln></xdr:spPr><xdr:txBody><a:bodyPr anchor="t"/><a:p><a:pPr algn="r"/><a:r><a:rPr lang="en" sz="1100" b="1"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:rPr><a:t>Hi</a:t></a:r></a:p><a:p><a:r><a:t>Second</a:t></a:r></a:p><a:p><a:pPr marL="228600" indent="-228600"><a:buAutoNum type="arabicParenR" startAt="3"/></a:pPr><a:r><a:rPr cap="all"/><a:t>Third</a:t></a:r></a:p><a:p><a:pPr marL="127000"><a:buChar char="-"/></a:pPr><a:r><a:rPr cap="none"/><a:t>Fourth</a:t></a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor>
 </xdr:wsDr>"#,
         ),
         (
@@ -2462,13 +2518,35 @@ fn parses_chart_semantics_and_textbox_paragraphs() {
         .expect("shape visual");
     assert_eq!(shape.line_color.as_deref(), Some("#808080"));
     assert_eq!(shape.text_anchor.as_deref(), Some("t"));
-    assert_eq!(shape.text.as_deref(), Some("Hi\nSecond"));
+    assert_eq!(shape.text.as_deref(), Some("Hi\nSecond\nThird\nFourth"));
     let paragraphs = shape.paragraphs.as_ref().expect("paragraphs");
-    assert_eq!(paragraphs.len(), 2);
+    assert_eq!(paragraphs.len(), 4);
     assert_eq!(paragraphs[0].align.as_deref(), Some("r"));
     assert_eq!(paragraphs[0].runs[0].text, "Hi");
     assert!(paragraphs[0].runs[0].bold);
     assert_eq!(paragraphs[0].runs[0].color.as_deref(), Some("#FF0000"));
+    assert_eq!(paragraphs[0].runs[0].caps, None);
+    assert_eq!(paragraphs[1].margin_left, None);
+    assert_eq!(paragraphs[1].bullet_scheme, None);
+    assert_eq!(paragraphs[2].margin_left, Some(18.0));
+    assert_eq!(paragraphs[2].indent, Some(-18.0));
+    assert_eq!(paragraphs[2].bullet_scheme.as_deref(), Some("arabicParenR"));
+    assert_eq!(paragraphs[2].bullet_start_at, Some(3));
+    assert_eq!(paragraphs[2].bullet_char, None);
+    assert_eq!(paragraphs[2].runs[0].caps.as_deref(), Some("all"));
+    // The stored text keeps its casing; uppercase is a display transform.
+    assert_eq!(paragraphs[2].runs[0].text, "Third");
+    assert_eq!(paragraphs[3].margin_left, Some(10.0));
+    assert_eq!(paragraphs[3].indent, None);
+    assert_eq!(paragraphs[3].bullet_char.as_deref(), Some("-"));
+    assert_eq!(paragraphs[3].bullet_scheme, None);
+    assert_eq!(paragraphs[3].runs[0].caps, None);
+    let json = serde_json::to_value(&paragraphs[2]).unwrap();
+    assert_eq!(json["marginLeft"], 18.0);
+    assert_eq!(json["bulletScheme"], "arabicParenR");
+    assert_eq!(json["bulletStartAt"], 3);
+    assert_eq!(json["runs"][0]["caps"], "all");
+    assert!(json.get("bulletChar").is_none());
 }
 
 /// `defaultColWidth="0"` (Excel's all-hidden-sheet form) is
@@ -3421,4 +3499,64 @@ fn reads_auto_filter_column_criteria() {
         customs.filters[1].operator.as_deref(),
         Some("lessThanOrEqual")
     );
+}
+
+/// `c:numFmt sourceLinked="1"` follows the referenced cells' number format
+/// (Excel ignores the attribute's own formatCode), and the dLbls txPr font
+/// reaches the wire.
+#[test]
+fn source_linked_chart_formats_follow_the_cells() {
+    let (_dir, path) = open_fixture(&[
+        (
+            "xl/workbook.xml",
+            r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data Sheet" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/styles.xml",
+            r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;$&quot;#,##0.0"/></numFmts><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/><xf numFmtId="49" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/></cellXfs></styleSheet>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1" s="2" t="inlineStr"><is><t>North</t></is></c><c r="B1" s="1"><v>12.5</v></c></row><row r="2"><c r="A2" s="2" t="inlineStr"><is><t>South</t></is></c><c r="B2" s="1"><v>7</v></c></row></sheetData><drawing r:id="rId2"/></worksheet>"#,
+        ),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/drawings/drawing1.xml",
+            r#"<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:twoCellAnchor><xdr:from><xdr:col>3</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>8</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>10</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="1" name="Chart 1"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="1" cy="1"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart r:id="rId1"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>"#,
+        ),
+        (
+            "xl/drawings/_rels/drawing1.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/charts/chart1.xml",
+            r#"<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:autoTitleDeleted val="1"/><c:plotArea><c:barChart><c:barDir val="col"/><c:grouping val="clustered"/><c:ser><c:idx val="0"/><c:order val="0"/><c:cat><c:strRef><c:f>'Data Sheet'!$A$1:$A$2</c:f><c:strCache><c:pt idx="0"><c:v>North</c:v></c:pt><c:pt idx="1"><c:v>South</c:v></c:pt></c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>'Data Sheet'!$B$1:$B$2</c:f><c:numCache><c:pt idx="0"><c:v>12.5</c:v></c:pt><c:pt idx="1"><c:v>7</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:dLbls><c:numFmt formatCode="[$$-409]#,##0" sourceLinked="1"/><c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr b="1" sz="1200"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr><c:showVal val="1"/></c:dLbls><c:axId val="1"/><c:axId val="2"/></c:barChart><c:catAx><c:axId val="1"/><c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="1"/><c:crossAx val="2"/></c:catAx><c:valAx><c:axId val="2"/><c:axPos val="l"/><c:numFmt formatCode="General" sourceLinked="1"/><c:crossAx val="1"/></c:valAx></c:plotArea></c:chart></c:chartSpace>"#,
+        ),
+    ]);
+    let mut sessions = WorkbookSessions::new();
+    let metadata = sessions.open(&path).unwrap();
+    let chart = metadata
+        .visuals
+        .iter()
+        .find(|visual| visual.kind == "chart")
+        .and_then(|visual| visual.chart.as_ref())
+        .expect("chart visual");
+    let cells = Some("\"$\"#,##0.0");
+    assert_eq!(chart.y_axis.as_ref().unwrap().num_fmt.as_deref(), cells);
+    assert_eq!(chart.data_label_format.as_deref(), cells);
+    assert_eq!(chart.series[0].number_format.as_deref(), cells);
+    // Text categories: the strRef keeps the axis literal.
+    assert_eq!(chart.category_axis_format.as_deref(), Some("General"));
+    assert_eq!(chart.series[0].category_format, None);
+    let style = chart.data_label_style.as_ref().expect("label style");
+    assert_eq!(style.color.as_deref(), Some("#FFFFFF"));
+    assert_eq!(style.size, Some(12.0));
+    assert_eq!(style.bold, Some(true));
 }

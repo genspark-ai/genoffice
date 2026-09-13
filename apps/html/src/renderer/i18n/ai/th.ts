@@ -72,6 +72,8 @@ export const th = {
   aiToolClarifySkipped: 'ข้ามแบบสอบถาม',
   aiToolPlan: 'ยืนยันบรีฟแล้ว ({n} ส่วน)',
   aiToolPlanRejected: 'ยังไม่ยืนยันบรีฟ',
+  aiToolPlanFailed: 'ร่างบรีฟไม่สำเร็จ',
+  aiDraftingBrief: 'กำลังร่างบรีฟ…',
   aiToolWritePage: 'สร้างหน้าแล้ว',
   aiToolWritePageFailed: 'สร้างหน้าไม่สำเร็จ',
   aiToolWritePagePartial: 'สร้างหน้าได้บางส่วน',

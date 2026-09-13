@@ -456,6 +456,12 @@ export interface NewPictureOptions {
  * Returns the new relationship id and media path (shared by picture insertion /
  * shape picture fill).
  */
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) return false
+  for (let i = 0; i < a.byteLength; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 export function addImageMediaAndRel(
   opened: OpenedPptx,
   slide: Slide,
@@ -467,21 +473,36 @@ export function addImageMediaAndRel(
   const mime = IMAGE_MIME[ext]
   if (!mime) return null
 
-  // 1) media part: number = current max + 1
+  // 1) media part: identical bytes already in the package (a logo on every
+  // slide, a converter re-embedding one scan twice) share the part; otherwise
+  // number = current max + 1
   let maxNum = 0
-  for (const path of archive.entries.keys()) {
+  let mediaPath: string | undefined
+  for (const [path, existing] of archive.entries) {
     const m = /^ppt\/media\/image(\d+)\./.exec(path)
-    if (m) maxNum = Math.max(maxNum, Number(m[1]))
+    if (!m) continue
+    maxNum = Math.max(maxNum, Number(m[1]))
+    if (mediaPath === undefined && path.endsWith(`.${ext}`) && sameBytes(existing, bytes)) {
+      mediaPath = path
+    }
   }
-  const mediaPath = `ppt/media/image${maxNum + 1}.${ext}`
-  archive.entries.set(mediaPath, bytes)
+  if (mediaPath === undefined) {
+    mediaPath = `ppt/media/image${maxNum + 1}.${ext}`
+    archive.entries.set(mediaPath, bytes)
+  }
 
   // 2) [Content_Types] Default (added the first time this extension appears)
   const ctPath = '[Content_Types].xml'
   const ct = archive.readText(ctPath)
   if (ct && !new RegExp(`<Default Extension="${ext}"`).test(ct)) {
     const dflt = `<Default Extension="${ext}" ContentType="${mime}"/>`
-    archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', `${dflt}</Types>`), 'utf8'))
+    archive.entries.set(
+      ctPath,
+      Buffer.from(
+        ct.replace('</Types>', () => `${dflt}</Types>`),
+        'utf8',
+      ),
+    )
   }
 
   // 3) slide rels: new rId (the rels file may not exist)
@@ -492,10 +513,13 @@ export function addImageMediaAndRel(
   let maxRid = 0
   for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
   const rid = `rId${maxRid + 1}`
-  const relXml = `<Relationship Id="${rid}" Type="${IMAGE_REL_TYPE}" Target="../media/image${maxNum + 1}.${ext}"/>`
+  const relXml = `<Relationship Id="${rid}" Type="${IMAGE_REL_TYPE}" Target="../media/${mediaPath.slice('ppt/media/'.length)}"/>`
   archive.entries.set(
     relsPath,
-    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+    Buffer.from(
+      rels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
   )
   return { rid, mediaPath }
 }

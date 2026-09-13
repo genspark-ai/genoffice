@@ -5,7 +5,7 @@
 
 import { BorderStyleTypes } from '@univerjs/core'
 import { htmlLang, type Lang } from '@genoffice/i18n'
-import { columnIndex, columnLabel } from '../domain/cell-address'
+import { columnIndex, columnLabel } from '@genoffice/xlsx-gateway/domain/cell-address'
 
 import type { WorkbookExportPdfRequest } from '../shared/desktop-api'
 import type { HeaderFooterParts } from './edit-journal'
@@ -16,6 +16,7 @@ import {
   type PrintAreaHeights,
 } from './print-scale'
 import type { EffectivePageSetup, HeaderFooterPair, PrintMargins } from './print-settings'
+import type { PrintVisual, PrintVisualSnapshot } from './print-visuals'
 import { getLang, t } from './i18n/locale'
 
 export class PrintError extends Error {}
@@ -153,9 +154,12 @@ export function buildSheetPrintPayload(
   fileName: string,
   sheetName: string,
   pictures: HeaderFooterPictures = new Map(),
+  visuals: PrintVisualSnapshot = { visuals: [], css: '' },
 ): WorkbookExportPdfRequest {
   const areas =
-    setup.printAreas.length > 0 ? setup.printAreas.map(parseArea) : [usedArea(worksheet)]
+    setup.printAreas.length > 0
+      ? setup.printAreas.map(parseArea)
+      : [usedArea(worksheet, visuals.visuals)]
   const titles = setup.printTitles ? parseTitleRows(setup.printTitles) : null
   const headings = setup.printHeadings
   const gridlines = setup.printGridlines
@@ -188,6 +192,17 @@ export function buildSheetPrintPayload(
       maxContentWidthPt,
       rowHeaderPt + columnWidthsPt.reduce((total, width) => total + width, 0),
     )
+
+    // Left edge of each area column and top of each printed row, for the
+    // floating visuals anchored in this area.
+    const columnLeftPt: number[] = []
+    let leftPt = rowHeaderPt
+    for (const width of columnWidthsPt) {
+      columnLeftPt.push(leftPt)
+      leftPt += width
+    }
+    const rowTopPt = new Map<number, number>()
+    let topPt = headings ? HEADING_ROW_HEIGHT_PT : 0
 
     // Printed height of the row just laid out by bodyRow (saved height, or
     // taller when a cell's text line does not fit it).
@@ -240,6 +255,8 @@ export function buildSheetPrintPayload(
       for (let row = titles.start; row <= titles.end; row += 1) {
         headParts.push(bodyRow(row))
         repeatedHeightPt += printedRowHeightPt
+        rowTopPt.set(row, topPt)
+        topPt += printedRowHeightPt
       }
     }
 
@@ -250,14 +267,25 @@ export function buildSheetPrintPayload(
       if (titles && row >= titles.start && row <= titles.end) continue
       bodyParts.push(bodyRow(row))
       rowHeightsPt.push(printedRowHeightPt)
+      rowTopPt.set(row, topPt)
+      topPt += printedRowHeightPt
     }
     areaHeights.push({ repeatedHeightPt, rowHeightsPt })
+
+    const overlays = visuals.visuals
+      .filter(
+        (visual) =>
+          visual.fromColumn >= area.startColumn &&
+          visual.fromColumn <= area.endColumn &&
+          rowTopPt.has(visual.fromRow),
+      )
+      .map((visual) => visualOverlayHtml(visual, area.startColumn, columnLeftPt, rowTopPt))
 
     const colgroup = `<colgroup>${headings ? `<col style="width:${rowHeaderPt}pt">` : ''}${columnWidthsPt
       .map((width) => `<col style="width:${round(width)}pt">`)
       .join('')}</colgroup>`
     tables.push(
-      `<table>${colgroup}<thead>${headParts.join('')}</thead><tbody>${bodyParts.join('')}</tbody></table>`,
+      `<div class="area"><table>${colgroup}<thead>${headParts.join('')}</thead><tbody>${bodyParts.join('')}</tbody></table>${overlays.join('')}</div>`,
     )
   }
 
@@ -266,12 +294,15 @@ export function buildSheetPrintPayload(
 * { box-sizing: border-box; }
 body { margin: 0; font-family: Calibri, 'Helvetica Neue', Arial, ${printCjkFonts(getLang())}, sans-serif; }
 table { border-collapse: collapse; table-layout: fixed; }
-table + table { break-before: page; }
+.area { position: relative; }
+.area + .area { break-before: page; }
+.pv { position: absolute; overflow: hidden; break-inside: avoid; }
+.xlsx-print-visual { display: block; width: 100%; height: 100%; }
 thead { display: table-header-group; }
 td, th { overflow: hidden; padding: 1pt 3pt; font-size: 11pt; vertical-align: bottom; }
 th.hd { background: #f1f1f1; border: 0.5pt solid #b7b7b7; color: #444;
   font-size: 8.5pt; font-weight: 400; text-align: center; vertical-align: middle; }
-</style></head><body>` +
+</style>${visuals.css ? `<style>${visuals.css}</style>` : ''}</head><body>` +
     tables.join('') +
     `</body></html>`
 
@@ -513,13 +544,30 @@ function paperHeightInches(name: string): number {
   return heights[name] ?? 11.69
 }
 
-function usedArea(worksheet: PrintWorksheet) {
+/// Excel's default print range covers the cells and the drawings over them.
+function usedArea(worksheet: PrintWorksheet, visuals: readonly PrintVisual[]) {
   return {
     startRow: 0,
     startColumn: 0,
-    endRow: Math.max(worksheet.getLastRow(), 0),
-    endColumn: Math.max(worksheet.getLastColumn(), 0),
+    endRow: Math.max(worksheet.getLastRow(), 0, ...visuals.map((visual) => visual.toRow)),
+    endColumn: Math.max(worksheet.getLastColumn(), 0, ...visuals.map((visual) => visual.toColumn)),
   }
+}
+
+/// The snapshot at its anchor. Columns are laid out at px × 0.75 pt, which
+/// is one CSS px per sheet px, so the clone keeps its px box inside a box of
+/// the same size stated in pt.
+function visualOverlayHtml(
+  visual: PrintVisual,
+  startColumn: number,
+  columnLeftPt: readonly number[],
+  rowTopPt: ReadonlyMap<number, number>,
+): string {
+  const left = (columnLeftPt[visual.fromColumn - startColumn] ?? 0) + visual.offsetXPx * 0.75
+  const top = (rowTopPt.get(visual.fromRow) ?? 0) + visual.offsetYPx * 0.75
+  const style = `left:${round(left)}pt;top:${round(top)}pt;width:${round(visual.widthPx * 0.75)}pt;height:${round(visual.heightPx * 0.75)}pt`
+  const inner = `width:${round(visual.widthPx)}px;height:${round(visual.heightPx)}px`
+  return `<div class="pv" style="${style}"><div style="${inner}">${visual.html}</div></div>`
 }
 
 function parseArea(area: string) {

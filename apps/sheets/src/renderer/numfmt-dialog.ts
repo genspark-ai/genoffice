@@ -1,6 +1,6 @@
 import { numfmt } from '@univerjs/core'
 
-import { getSystemShortDate } from '../shared/short-date'
+import { getSystemShortDate } from '@genoffice/xlsx-gateway/shared/short-date'
 
 /// Model behind the Format Cells → Number tab: category + sub-options ⇄
 /// OOXML pattern. The ribbon's category dropdown (number-format.ts) derives

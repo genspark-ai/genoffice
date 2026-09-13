@@ -2,6 +2,8 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
+import { splitFloatStyle } from '../pagination-lines'
+import type { ColumnSplitShape, VerticalBlockSpec } from '../pagination-types'
 
 const key = new PluginKey<DecorationSet>('columnLayout')
 
@@ -56,6 +58,8 @@ export interface ColumnBlockSpec {
   /** owning section's side margins (--doc-margin-left/right overrides) */
   marginLeftPx?: number
   marginRightPx?: number
+  /** owning section's top margin (--doc-margin-top override) in docs whose sections disagree on it */
+  marginTopPx?: number
   /** owning section's typed docGrid pitch (pt) in mixed-grid docs; 0 = untyped
    *  section (opts out like snapToGrid=0 via doc-grid-nosnap) */
   gridPitchPt?: number
@@ -65,20 +69,51 @@ export interface ColumnBlockSpec {
   /** translate; dy < 0 pulls content up over vacated column space */
   dx: number
   dy: number
+  /** left edge of the block's page on the shared paper (--page-cx); not undone by page-relative anchors */
+  pageDx?: number
+  /** vertical-text section block (doc-vert-block): writing-mode box, see verticalTextSpecs */
+  vertical?: VerticalBlockSpec
+  /** paragraph straddling two columns of different widths: a leading float
+   *  (doc-col-split-float) rewraps the head or the tail at the narrower width */
+  split?: ColumnSplitShape
+}
+
+const SPLIT_CLASS = 'doc-col-split-float'
+
+function splitFloatEl(style: string): HTMLElement {
+  const span = document.createElement('span')
+  span.className = SPLIT_CLASS
+  span.contentEditable = 'false'
+  span.setAttribute('aria-hidden', 'true')
+  span.style.cssText = style
+  return span
 }
 
 const PATCH_PROPS = [
   '--col-w',
   '--col-dx',
   '--col-dy',
+  '--page-cx',
   '--doc-content-w',
   '--doc-margin-left',
   '--doc-margin-right',
+  '--doc-margin-top',
   '--doc-grid-pitch',
   '--doc-char-space',
+  '--vert-mb',
 ]
 
-const PATCH_CLASSES = ['doc-col-block', 'doc-grid-block', 'doc-grid-nosnap', 'doc-charspace-block']
+const PATCH_CLASSES = [
+  'doc-col-block',
+  'doc-grid-block',
+  'doc-grid-nosnap',
+  'doc-charspace-block',
+  'doc-vert-block',
+  'doc-vert-first',
+  'doc-vert-tbRl',
+  'doc-vert-tbRlV',
+  'doc-vert-btLr',
+]
 
 /** pitch/charSpace-only specs get an inert marker class: .doc-col-block's
  *  width/transform rules must not touch blocks that only carry their section's
@@ -88,14 +123,21 @@ const PATCH_CLASSES = ['doc-col-block', 'doc-grid-block', 'doc-grid-nosnap', 'do
  *  snapToGrid=0 class. */
 function specClass(spec: ColumnBlockSpec): string {
   const varsOnly =
-    (spec.gridPitchPt !== undefined || spec.charSpacePt !== undefined) &&
+    (spec.gridPitchPt !== undefined ||
+      spec.charSpacePt !== undefined ||
+      spec.marginTopPx !== undefined) &&
     spec.widthPx === undefined &&
     spec.contentWPx === undefined &&
     spec.dx === 0 &&
-    spec.dy === 0
+    spec.dy === 0 &&
+    !spec.pageDx
   let cls = varsOnly ? 'doc-grid-block' : 'doc-col-block'
   if (spec.gridPitchPt === 0) cls += ' doc-grid-nosnap'
   if (spec.charSpacePt !== undefined) cls += ' doc-charspace-block'
+  if (spec.vertical) {
+    cls += ` doc-vert-block doc-vert-${spec.vertical.mode}`
+    if (spec.vertical.firstOnPage) cls += ' doc-vert-first'
+  }
   return cls
 }
 
@@ -103,16 +145,30 @@ function specClass(spec: ColumnBlockSpec): string {
 export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): void {
   const decos: Decoration[] = []
   const styleOf = new Map<HTMLElement, { style: string; cls: string }>()
+  const splitOf = new Map<HTMLElement, string>()
   for (const spec of specs) {
+    if (spec.split)
+      splitOf.set(
+        spec.el,
+        splitFloatStyle(
+          spec.split.floatPx,
+          spec.split.heightPx,
+          spec.split.insetPx,
+          spec.split.rtl,
+        ),
+      )
     const style =
       (spec.widthPx !== undefined ? `--col-w:${round2(spec.widthPx)}px;` : '') +
       (spec.contentWPx !== undefined
         ? `--doc-content-w:${round2(spec.contentWPx)}px;--doc-margin-left:${round2(spec.marginLeftPx ?? 0)}px;--doc-margin-right:${round2(spec.marginRightPx ?? 0)}px;`
         : '') +
+      (spec.marginTopPx !== undefined ? `--doc-margin-top:${round2(spec.marginTopPx)}px;` : '') +
       (spec.gridPitchPt !== undefined
         ? `--doc-grid-pitch:${spec.gridPitchPt > 0 ? `${round2(spec.gridPitchPt)}pt` : '0.0001px'};`
         : '') +
       (spec.charSpacePt !== undefined ? `--doc-char-space:${round4(spec.charSpacePt)}pt;` : '') +
+      (spec.pageDx ? `--page-cx:${round2(spec.pageDx)}px;` : '') +
+      (spec.vertical ? `--vert-mb:${round2(spec.vertical.marginBottomPx)}px;` : '') +
       `--col-dx:${round2(spec.dx)}px;--col-dy:${round2(spec.dy)}px`
     const cls = specClass(spec)
     styleOf.set(spec.el, { style, cls })
@@ -126,6 +182,15 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
       continue
     }
     decos.push(Decoration.node(from, to, { class: cls, style }, { key: `col-${cls}-${style}` }))
+    const split = splitOf.get(spec.el)
+    if (split)
+      decos.push(
+        Decoration.widget(from + 1, () => splitFloatEl(split), {
+          side: -1,
+          key: `col-split-${split}`,
+          ignoreSelection: true,
+        }),
+      )
   }
   const next = DecorationSet.create(view.state.doc, decos)
   const prev = key.getState(view.state)
@@ -144,6 +209,20 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
       el.removeAttribute('data-col-patch')
       el.classList.remove(...PATCH_CLASSES)
       for (const p of PATCH_PROPS) el.style.removeProperty(p)
+    }
+    // split floats the widget decoration could not place (atomic node views)
+    for (const el of Array.from(
+      view.dom.querySelectorAll<HTMLElement>(`[data-col-split-patch] > .${SPLIT_CLASS}`),
+    ) as HTMLElement[]) {
+      const host = el.parentElement as HTMLElement
+      if (splitOf.get(host) === el.style.cssText) continue
+      el.remove()
+      host.removeAttribute('data-col-split-patch')
+    }
+    for (const [el, style] of splitOf) {
+      if (el.querySelector(`:scope > .${SPLIT_CLASS}`)) continue
+      el.setAttribute('data-col-split-patch', '1')
+      el.insertBefore(splitFloatEl(style), el.firstChild)
     }
     for (const [el, { style, cls }] of styleOf) {
       const classes = cls.split(' ')

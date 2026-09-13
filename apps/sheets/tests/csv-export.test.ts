@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { parseCsv } from '../src/gateway/csv-import'
+import { parseCsv } from '@genoffice/xlsx-gateway/gateway/csv-import'
 import {
   csvField,
   csvFromDisplayRows,

@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core'
 import { GapCursor } from '@tiptap/pm/gapcursor'
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state'
+import { TRACK_IGNORE } from './revisions'
 
 const key = new PluginKey('trailingTableExit')
 
@@ -28,7 +29,9 @@ export const TrailingTableExitExtension = Extension.create({
           if (!paragraph) return null
           const pos = newState.doc.content.size
           const transaction = newState.tr.insert(pos, paragraph)
+          // leaving the table is navigation, not authoring: no revision mark
           return transaction
+            .setMeta(TRACK_IGNORE, true)
             .setSelection(TextSelection.create(transaction.doc, pos + 1))
             .scrollIntoView()
         },

@@ -101,6 +101,13 @@ const MAX_ALL_ERROR_TURNS = 8
  * retrying here keeps one gateway hiccup from killing a long multi-tool run.
  */
 const EMPTY_STREAM_RETRY_DELAYS_MS = [1_000, 3_000]
+/**
+ * A stream that closed while a tool's arguments were still streaming (buffered
+ * server-side, cut by a gateway idle timeout) never delivered a tool call, so
+ * history is untouched and one replay is safe; it is billed, hence one attempt.
+ */
+const TOOL_ARGS_DROP_MARK = 'while sending tool arguments'
+const TOOL_ARGS_DROP_RETRIES = 1
 
 const TURN_LIMIT_NOTE =
   '[System] The tool-call turn limit for this request has been reached; no more tools may be called this turn. ' +
@@ -559,17 +566,22 @@ export class AgentLoop<TSnapshot = unknown> {
         onError: (error) => {
           if (generation !== this.generation || settled) return
           settled = true
-          const delay = EMPTY_STREAM_RETRY_DELAYS_MS[retriesUsed]
-          // The no-partial-output guard keeps the retry idempotent (an empty
-          // stream never emits deltas, but a mislabeled error must not replay
-          // a turn whose text/tool calls the UI already saw)
-          if (
-            delay !== undefined &&
+          // The no-partial-output guard keeps the empty-stream retry idempotent (an
+          // empty stream never emits deltas, but a mislabeled error must not replay
+          // a turn whose text/tool calls the UI already saw). A dropped tool-argument
+          // stream may have shown text first; that text is simply re-rendered.
+          const emptyDelay = EMPTY_STREAM_RETRY_DELAYS_MS[retriesUsed]
+          const retryEmpty =
+            emptyDelay !== undefined &&
             error.includes('(empty stream)') &&
-            !this.cancelled &&
             !this.turnText &&
             this.toolCalls.length === 0
-          ) {
+          const retryDrop =
+            retriesUsed < TOOL_ARGS_DROP_RETRIES &&
+            error.includes(TOOL_ARGS_DROP_MARK) &&
+            this.toolCalls.length === 0
+          const delay = retryEmpty ? emptyDelay : EMPTY_STREAM_RETRY_DELAYS_MS[0]
+          if ((retryEmpty || retryDrop) && !this.cancelled) {
             setTimeout(() => {
               if (generation !== this.generation) return
               // Stopped during the backoff window: finalize like a normal cancel

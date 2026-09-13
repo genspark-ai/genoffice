@@ -72,6 +72,8 @@ export const ko = {
   aiToolClarifySkipped: '설문 건너뜀',
   aiToolPlan: '브리프 확정({n}개 섹션)',
   aiToolPlanRejected: '브리프 미확정',
+  aiToolPlanFailed: '브리프를 작성하지 못했습니다',
+  aiDraftingBrief: '브리프 작성 중…',
   aiToolWritePage: '페이지를 생성했습니다',
   aiToolWritePageFailed: '페이지 생성 실패',
   aiToolWritePagePartial: '페이지 일부를 생성했습니다',

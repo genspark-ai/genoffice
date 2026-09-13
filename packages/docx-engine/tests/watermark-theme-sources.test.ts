@@ -249,17 +249,17 @@ describe('w:themeColor resolution', () => {
     expect(doc.blocks[0].runs?.[0].color).toBe('4472C4')
   })
 
-  it('applies themeTint / themeShade (sRGB approximation)', async () => {
+  it('applies themeTint / themeShade (HSL lightness, as Word)', async () => {
     const doc = await parseDocx(
       await themedDocx(
         '<w:p><w:r><w:rPr><w:color w:val="8EAADB" w:themeColor="accent1" w:themeTint="99"/></w:rPr><w:t>浅</w:t></w:r>' +
           '<w:r><w:rPr><w:color w:val="2F5496" w:themeColor="accent1" w:themeShade="BF"/></w:rPr><w:t>深</w:t></w:r></w:p>',
       ),
     )
-    // tint 0x99: c*0.6 + 255*0.4 -> 8FAADC (Word writes 8EAADB; rounding differs by at most 1)
+    // tint 0x99: L*0.6 + 0.4 -> 8FAADC (Word writes 8EAADB; rounding differs by at most 1)
     expect(doc.blocks[0].runs?.[0].color).toBe('8FAADC')
-    // shade 0xBF: c*0.75 -> 335593 (Word writes 2F5496 — linear-space difference; visually close enough)
-    expect(doc.blocks[0].runs?.[1].color).toBe('335593')
+    // shade 0xBF: L*0.75 -> 2F5496, Word's cached value exactly
+    expect(doc.blocks[0].runs?.[1].color).toBe('2F5496')
   })
 
   it('resolves against the built-in Office palette when the doc has no theme part', async () => {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatAddress, parseAddress, parseRange } from '../src/domain/cell-address'
+import {
+  formatAddress,
+  parseAddress,
+  parseRange,
+} from '@genoffice/xlsx-gateway/domain/cell-address'
 
 describe('parseAddress', () => {
   it('parses plain and $-anchored A1 notation alike', () => {

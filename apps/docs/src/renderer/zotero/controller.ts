@@ -1,6 +1,6 @@
 import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
-import { Fragment, type Mark, type Node as PmNode } from '@tiptap/pm/model'
+import { Fragment, Slice, type Mark, type Node as PmNode } from '@tiptap/pm/model'
 import type { ZoteroRendererRequest } from '../../shared/ipc'
 import { parseZoteroRtf, zoteroRtfToText, type ZoteroRtfParagraph, type ZoteroRtfRun } from './rtf'
 
@@ -97,13 +97,13 @@ export class ZoteroDocumentController {
       case 'Document_cleanup':
       case 'Document_complete':
         return null
-      case 'Document_insertText':
-        this.editor
-          .chain()
-          .focus()
-          .insertContent(zoteroRtfToText(String(args[1] ?? '')))
-          .run()
+      case 'Document_insertText': {
+        // plain text: insertContent would parse Zotero's output as HTML
+        const { state, view } = this.editor
+        view.dispatch(state.tr.insertText(zoteroRtfToText(String(args[1] ?? ''))).scrollIntoView())
+        this.editor.commands.focus()
         return null
+      }
       case 'Document_convertPlaceholdersToFields':
         return [[], [], [], []]
       case 'Document_exportDocument':
@@ -139,7 +139,87 @@ export class ZoteroDocumentController {
     }
   }
 
+  /** Runs that lost their id (clipboard round trips keep the instruction but not the
+   *  runtime attrs) get one written back onto the mark, so the id handed to Zotero in
+   *  Document_getFields still resolves in the Field_* calls that follow. Adjacent runs
+   *  with the same instruction form one field again. */
+  private assignMissingFieldIds(): void {
+    const { state } = this.editor
+    const type = state.schema.marks.instrField
+    if (!type) return
+    interface LostRun {
+      from: number
+      to: number
+      mark: Mark
+      blockIndex: number
+      blockStart: number
+      blockEnd: number
+    }
+    const lost: LostRun[] = []
+    let maxId = 0
+    state.doc.forEach((block, blockOffset, blockIndex) => {
+      block.descendants((node, relativePos) => {
+        if (!node.isText) return
+        const mark = node.marks.find(
+          (candidate) =>
+            candidate.type === type && ZOTERO_INSTR_RE.test(String(candidate.attrs.instr ?? '')),
+        )
+        if (!mark) return
+        const id = Number(mark.attrs.fieldId)
+        if (Number.isSafeInteger(id) && id > 0) maxId = Math.max(maxId, id)
+        else {
+          const from = blockOffset + 1 + relativePos
+          lost.push({
+            from,
+            to: from + node.nodeSize,
+            mark,
+            blockIndex,
+            blockStart: blockOffset + 1,
+            blockEnd: blockOffset + block.nodeSize - 1,
+          })
+        }
+      })
+    })
+    if (lost.length === 0) return
+    this.nextFieldId = Math.max(this.nextFieldId, maxId + 1)
+    // only runs that touch (or end one paragraph and open the next) rejoin: two
+    // copies of a citation with text between them stay two fields
+    const touches = (prev: LostRun, next: LostRun) =>
+      prev.blockIndex === next.blockIndex
+        ? prev.to === next.from
+        : next.blockIndex === prev.blockIndex + 1 &&
+          prev.to === prev.blockEnd &&
+          next.from === next.blockStart
+    const groups: LostRun[][] = []
+    for (const entry of lost) {
+      const group = groups[groups.length - 1]
+      const prev = group?.[group.length - 1]
+      if (prev && prev.mark.attrs.instr === entry.mark.attrs.instr && touches(prev, entry)) {
+        group.push(entry)
+      } else groups.push([entry])
+    }
+    let transaction = state.tr
+    for (const group of groups) {
+      const fieldId = this.nextFieldId++
+      group.forEach((entry, index) => {
+        const fieldPart =
+          group.length === 1
+            ? 'single'
+            : index === 0
+              ? 'begin'
+              : index === group.length - 1
+                ? 'end'
+                : 'inside'
+        transaction = transaction
+          .removeMark(entry.from, entry.to, type)
+          .addMark(entry.from, entry.to, type.create({ ...entry.mark.attrs, fieldId, fieldPart }))
+      })
+    }
+    this.editor.view.dispatch(transaction)
+  }
+
   private fields(): ZoteroFieldRange[] {
+    this.assignMissingFieldIds()
     const ranges = new Map<number, ZoteroFieldRange>()
     this.editor.state.doc.forEach((block, blockOffset) => {
       block.descendants((node, relativePos) => {
@@ -210,13 +290,9 @@ export class ZoteroDocumentController {
 
   private fieldAtSelection(): ZoteroFieldRange | null {
     const { from, to } = this.editor.state.selection
-    return (
-      this.fields().find(
-        (field) =>
-          field.segments.some((segment) => from >= segment.from && to <= segment.to) ||
-          (field.blocks.length > 1 && from >= field.blockFrom && to <= field.blockTo),
-      ) ?? null
-    )
+    // the inline span from the first to the last field run: text typed inside a
+    // bibliography counts, text sharing its first or last paragraph does not
+    return this.fields().find((field) => from >= field.from && to <= field.to) ?? null
   }
 
   private requireField(value: unknown): ZoteroFieldRange {
@@ -234,10 +310,11 @@ export class ZoteroDocumentController {
     if (noteType !== 0) {
       throw new Error('Zotero footnote and endnote citations are not supported yet')
     }
+    // fields() may dispatch (missing ids get assigned), so read the state after it
+    this.fields()
     const { state, view } = this.editor
     const type = state.schema.marks.instrField
     if (!type) throw new Error('This document cannot store Zotero fields')
-    this.fields()
     const id = this.nextFieldId++
     const mark = type.create({
       instr: 'ADDIN ZOTERO_TEMP',
@@ -300,11 +377,13 @@ export class ZoteroDocumentController {
         }
         return template.node.type.create(attrs, Fragment.fromArray(contentFor(paragraph)))
       })
-      transaction = transaction.replaceWith(
-        field.blockFrom,
-        field.blockTo,
-        Fragment.fromArray(nodes),
-      )
+      const fillsBlocks = field.from === field.blockFrom + 1 && field.to === field.blockTo - 1
+      // a field sharing its first or last paragraph with other text (a "References"
+      // heading line, a citation with a paragraph break in its RTF) keeps that text:
+      // the open slice joins the new first/last paragraph into the existing ones
+      transaction = fillsBlocks
+        ? transaction.replaceWith(field.blockFrom, field.blockTo, Fragment.fromArray(nodes))
+        : transaction.replace(field.from, field.to, new Slice(Fragment.fromArray(nodes), 1, 1))
     }
     this.editor.view.dispatch(transaction)
   }
@@ -365,8 +444,9 @@ export class ZoteroDocumentController {
 
   private deleteField(value: unknown): void {
     const field = this.requireField(value)
-    const from = field.blocks.length > 1 ? field.blockFrom : field.from
-    const to = field.blocks.length > 1 ? field.blockTo : field.to
+    const fillsBlocks = field.from === field.blockFrom + 1 && field.to === field.blockTo - 1
+    const from = field.blocks.length > 1 && fillsBlocks ? field.blockFrom : field.from
+    const to = field.blocks.length > 1 && fillsBlocks ? field.blockTo : field.to
     this.editor.view.dispatch(this.editor.state.tr.delete(from, to))
   }
 
@@ -379,8 +459,10 @@ export class ZoteroDocumentController {
     this.editor.view.dispatch(transaction)
   }
 
+  /** Zotero button sets: 0 OK, 1 OK/Cancel, 2 Yes/No, 3 Yes/No/Cancel; the reply is the
+   *  button index counted from Cancel/No = 0, so Yes is 2 in the three-button set */
   private displayAlert(message: string, buttons: number): number {
-    if (buttons > 0) return window.confirm(message) ? 1 : 0
+    if (buttons > 0) return window.confirm(message) ? (buttons === 3 ? 2 : 1) : 0
     window.alert(message)
     return 0
   }

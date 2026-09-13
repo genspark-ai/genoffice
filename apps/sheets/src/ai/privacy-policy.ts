@@ -1,4 +1,4 @@
-import type { CellScalar } from '../domain/workbook.types'
+import type { CellScalar } from '@genoffice/xlsx-gateway/domain/workbook.types'
 
 export type UploadPolicy = 'allow' | 'redact' | 'statistics-only' | 'deny'
 
@@ -18,7 +18,9 @@ export interface SafeContextColumn {
   }
 }
 
-export function applyPrivacyPolicy(columns: readonly ContextColumn[]): readonly SafeContextColumn[] {
+export function applyPrivacyPolicy(
+  columns: readonly ContextColumn[],
+): readonly SafeContextColumn[] {
   const safeColumns: SafeContextColumn[] = []
   for (const column of columns) {
     if (column.policy === 'deny') continue

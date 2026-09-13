@@ -346,7 +346,13 @@ export function addChart(
   const ct = archive.readText(ctPath)
   if (ct && !ct.includes(`PartName="/${chartPath}"`)) {
     const override = `<Override PartName="/${chartPath}" ContentType="${CHART_CONTENT_TYPE}"/>`
-    archive.entries.set(ctPath, Buffer.from(ct.replace('</Types>', `${override}</Types>`), 'utf8'))
+    archive.entries.set(
+      ctPath,
+      Buffer.from(
+        ct.replace('</Types>', () => `${override}</Types>`),
+        'utf8',
+      ),
+    )
   }
 
   // 3) slide rels
@@ -360,7 +366,10 @@ export function addChart(
   const relXml = `<Relationship Id="${rid}" Type="${CHART_REL_TYPE}" Target="../charts/chart${maxNum + 1}.xml"/>`
   archive.entries.set(
     relsPath,
-    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+    Buffer.from(
+      rels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
   )
 
   // 4) graphicFrame fragment + append reparse

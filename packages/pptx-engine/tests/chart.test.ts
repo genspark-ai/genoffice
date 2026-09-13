@@ -934,3 +934,71 @@ describe('colorScheme on line-family kinds (Bugbot: fill-only spPr keeps theme l
     }
   })
 })
+
+describe('legacy <c:style> dark row + literal data + automatic markers', () => {
+  const SER = (idx: number, extra = '') =>
+    `<c:ser><c:idx val="${idx}"/><c:tx><c:v>S${idx}</c:v></c:tx>${extra}
+  <c:cat><c:strLit><c:ptCount val="2"/><c:pt idx="0"><c:v>Day 1</c:v></c:pt><c:pt idx="1"><c:v>Day 2</c:v></c:pt></c:strLit></c:cat>
+  <c:val><c:numLit><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numLit></c:val></c:ser>`
+  const wrap = (style: string, sers: string, plotMarker = '<c:marker val="1"/>', tail = '') =>
+    `<c:chartSpace xmlns:c="c" xmlns:a="a">${style}<c:chart><c:plotArea>
+<c:lineChart><c:grouping val="standard"/>${sers}${plotMarker}</c:lineChart>
+</c:plotArea><c:legend><c:legendPos val="r"/></c:legend></c:chart>${tail}</c:chartSpace>`
+
+  it('style 42: black chart area, #404040 plot area, white default text', () => {
+    const m = parseChartXml(wrap('<c:style val="42"/>', SER(0)))!
+    expect(m.bgFill).toEqual({ type: 'solid', color: '#000000' })
+    expect(m.plotFill).toEqual({ type: 'solid', color: '#404040' })
+    expect(m.defaultTextColor).toBe('#FFFFFF')
+  })
+
+  it('style 42 defers to an explicit chartSpace noFill and txPr color', () => {
+    const tail =
+      '<c:spPr><a:noFill/></c:spPr><c:txPr><a:bodyPr/><a:p><a:pPr><a:defRPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>'
+    const m = parseChartXml(wrap('<c:style val="42"/>', SER(0), '<c:marker val="1"/>', tail))!
+    expect(m.bgFill).toBeUndefined()
+    expect(m.defaultTextColor).toBe('#FF0000')
+  })
+
+  it('styles outside 41-48 keep the transparent chart area and no default text color', () => {
+    for (const st of ['<c:style val="2"/>', '<c:style val="34"/>', '']) {
+      const m = parseChartXml(wrap(st, SER(0)))!
+      expect(m.bgFill).toBeUndefined()
+      expect(m.plotFill).toBeUndefined()
+      expect(m.defaultTextColor).toBeUndefined()
+    }
+  })
+
+  it('chartSpace txPr color is read without a legacy style', () => {
+    const tail =
+      '<c:txPr><a:bodyPr/><a:p><a:pPr><a:defRPr sz="1200"><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>'
+    const m = parseChartXml(wrap('', SER(0), '<c:marker val="1"/>', tail))!
+    expect(m.defaultTextColor).toBe('#112233')
+    expect(m.defaultTextPt).toBe(12)
+  })
+
+  it('literal series names (c:tx/c:v) and categories (c:strLit) parse', () => {
+    const m = parseChartXml(wrap('', SER(0) + SER(1)))!
+    expect(m.series.map((s) => s.name)).toEqual(['S0', 'S1'])
+    expect(m.categories).toEqual(['Day 1', 'Day 2'])
+    expect(m.legendPos).toBe('r')
+  })
+
+  it('plot-level <c:marker val="1"/> gives markers to series without an explicit symbol', () => {
+    const sers =
+      SER(0) +
+      SER(
+        1,
+        '<c:marker><c:spPr><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></c:spPr></c:marker>',
+      ) +
+      SER(2, '<c:marker><c:symbol val="none"/></c:marker>') +
+      SER(3, '<c:marker><c:symbol val="square"/></c:marker>')
+    const m = parseChartXml(wrap('', sers))!
+    expect(m.series.map((s) => s.marker)).toEqual([true, true, false, true])
+  })
+
+  it('no plot-level marker (or val=0): series without a symbol draw no markers', () => {
+    expect(parseChartXml(wrap('', SER(0), ''))!.series[0]!.marker).toBe(false)
+    expect(parseChartXml(wrap('', SER(0), '<c:marker val="0"/>'))!.series[0]!.marker).toBe(false)
+  })
+})

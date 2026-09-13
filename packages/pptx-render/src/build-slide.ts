@@ -443,6 +443,7 @@ function buildShape(
       boxHeightPx: box.h,
       metrics,
       vp,
+      media,
     })
   }
   return node
@@ -573,6 +574,7 @@ function buildPicture(
     ...(el.duotone ? { duotone: el.duotone } : {}),
     ...(el.lum ? { lum: el.lum } : {}),
     ...(el.clrChange ? { clrChange: el.clrChange } : {}),
+    ...(el.biLevel != null ? { biLevel: el.biLevel } : {}),
   }
   const stroke = resolveStroke(el.stroke, vp)
   if (stroke) node.stroke = stroke
@@ -682,6 +684,7 @@ function buildTable(
         boxHeightPx: rowPx[r] ?? 0,
         metrics,
         vp,
+        media,
         trimEdgeSpacing: true,
       })
       // PowerPoint sizes auto rows by the glyph extent (last baseline + descent), not
@@ -720,7 +723,9 @@ function buildTable(
         col: tcIdx,
         ...(gridSpan > 1 ? { gridSpan } : {}),
         ...(rowSpan > 1 ? { rowSpan } : {}),
-        fill: resolveFill(cell.fill, vp, media),
+        // PowerPoint anchors a cell's tiled picture to the table box, not the cell: each
+        // cell shows the part of the picture under it (photo-mosaic layout)
+        fill: resolveFill(cell.fill, vp, media, { x: -x, y: -y, w: totalW, h: totalH }),
       }
       const borders: NonNullable<TableCellRender['borders']> = {}
       for (const k of ['l', 'r', 't', 'b'] as const) {
@@ -736,6 +741,7 @@ function buildTable(
           boxHeightPx: h,
           metrics,
           vp,
+          media,
           trimEdgeSpacing: true,
         })
       }

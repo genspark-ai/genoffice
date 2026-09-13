@@ -6,6 +6,7 @@
  * get-transition…) works naturally, and it sees the in-memory document
  * (including unsaved changes) without re-reading from disk.
  */
+import { rendererUrl } from '@genoffice/electron-utils'
 import { BrowserWindow, ipcMain, screen } from 'electron'
 import type { WebContents } from 'electron'
 import type { AudienceNavAction, ShowInkEvent, ShowSyncState } from '../shared/ipc'
@@ -96,12 +97,7 @@ export function registerPresenterIpc(): void {
       const s = presenterShows.get(e.sender.id)
       if (s?.audienceWin === win) s.audienceWin = null
     })
-    if (runtime.rendererDevUrl) {
-      const sep = runtime.rendererDevUrl.includes('?') ? '&' : '?'
-      void win.loadURL(`${runtime.rendererDevUrl}${sep}mode=audience`)
-    } else if (runtime.rendererFilePath) {
-      void win.loadFile(runtime.rendererFilePath, { query: { mode: 'audience' } })
-    }
+    void win.loadURL(rendererUrl(runtime.rendererDevUrl, 'slides', { mode: 'audience' }))
     return { audience: true }
   })
 

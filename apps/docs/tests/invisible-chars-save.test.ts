@@ -68,7 +68,7 @@ describe('invisible characters survive saving', () => {
     const plan = pmDocToSavePlan(editor.getJSON() as PmNode, parsed.blocks)
     expect(plan.changedCount).toBe(1)
     const xml = await documentXml(await saveDocx(parsed, plan.saveBlocks))
-    expect(xml).toContain(`${FIELD_TEXT}!`)
+    expect(xml).toMatch(new RegExp(`<w:t(?: xml:space="preserve")?>${FIELD_TEXT}!</w:t>`))
     expect(xml).toContain('ZOTERO_ITEM')
     editor.destroy()
     host.remove()

@@ -556,6 +556,12 @@ export const nl = {
   appPdfCanceled: 'PDF-export geannuleerd.',
   appPdfExported: '{path} geëxporteerd.',
   appPdfExportFailed: 'Kan de PDF niet exporteren.',
+  appPrintPreparing: 'Afdrukken voorbereiden…',
+  appPrintSent: 'Naar de printer verzonden.',
+  appPrintCanceled: 'Afdrukken geannuleerd.',
+  appPrintFailed: 'Kan niet afdrukken.',
+  appPrintNeedsFullLoad:
+    'Afdrukken vereist dat de werkmap volledig is geladen. Wacht tot het laden is voltooid.',
   appCsvExportNeedsFullLoad:
     'CSV-export vereist een volledig geladen werkmap — wacht tot het laden is voltooid.',
   appCsvExportTooLarge: 'Het blad is te groot om als CSV te exporteren.',
@@ -1347,6 +1353,8 @@ export const nl = {
   appFormatMenu: 'Opmaak',
   appRowHeight: 'Rijhoogte',
   appColWidth: 'Kolombreedte',
+  appAutoFitRowHeight: 'Rijhoogte automatisch aanpassen',
+  appAutoFitColWidth: 'Kolombreedte automatisch aanpassen',
   appRowHeightLabel: 'Rijhoogte (punten)',
   appColWidthLabel: 'Kolombreedte (tekens)',
   appDeleteRow: 'Rij verwijderen',

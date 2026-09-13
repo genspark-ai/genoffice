@@ -139,6 +139,28 @@ pub(crate) fn normalize_cell_text(text: &mut String) {
     }
 }
 
+/// Text of one `<t>` node as Excel reads it: without `xml:space="preserve"`
+/// leading/trailing XML whitespace is dropped, so `<t> </t>` is an empty
+/// string (a CF rule comparing it with a blank cell matches).
+pub(crate) fn text_node_content(text: String, preserve: bool) -> String {
+    if preserve {
+        return text;
+    }
+    let trimmed = text.trim_matches([' ', '\t', '\r', '\n']);
+    if trimmed.len() == text.len() {
+        text
+    } else {
+        trimmed.to_owned()
+    }
+}
+
+pub(crate) fn preserves_space<R: std::io::BufRead>(
+    reader: &Reader<R>,
+    element: &BytesStart<'_>,
+) -> Result<bool, SidecarError> {
+    Ok(attribute_value(reader, element, b"space")?.as_deref() == Some("preserve"))
+}
+
 pub(crate) fn decode_text(text: &quick_xml::events::BytesText<'_>) -> Result<String, SidecarError> {
     let decoded = text
         .decode()

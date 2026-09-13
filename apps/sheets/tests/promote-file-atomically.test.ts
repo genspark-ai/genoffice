@@ -19,7 +19,7 @@ import {
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { promoteFileAtomically } from '../src/gateway/xlsx-package-io'
+import { promoteFileAtomically } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()

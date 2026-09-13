@@ -728,6 +728,65 @@ describe('AgentLoop', () => {
     }
   })
 
+  it('replays a turn once when the stream dropped while sending tool arguments', async () => {
+    vi.useFakeTimers()
+    try {
+      const dropped = (cb: AgentStreamCallbacks) => {
+        cb.onDelta('Let me plan this.')
+        cb.onError(
+          'Claude stream closed while sending tool arguments (1532 chars received); the connection was dropped',
+        )
+      }
+      const transport = scriptedTransport([
+        dropped,
+        (cb) => {
+          cb.onDelta('recovered answer')
+          cb.onDone()
+        },
+      ])
+      const onError = vi.fn()
+      const onDone = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onError, onDone } })
+      loop.run('question')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(transport.requests).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(transport.requests).toHaveLength(2)
+      expect(transport.requests[1].messageCount).toBe(transport.requests[0].messageCount)
+      expect(onError).not.toHaveBeenCalled()
+      expect(onDone).toHaveBeenCalledWith({
+        text: 'recovered answer',
+        cancelled: false,
+        turnLimit: false,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a second tool-argument drop fails the run instead of replaying again', async () => {
+    vi.useFakeTimers()
+    try {
+      const dropped = (cb: AgentStreamCallbacks) =>
+        cb.onError(
+          'The model stream closed while sending tool arguments (10 chars received); the connection was dropped',
+        )
+      const transport = scriptedTransport([dropped, dropped, dropped])
+      const onError = vi.fn()
+      const loop = new AgentLoop({ transport, skill: makeSkill(), events: { onError } })
+      loop.run('question')
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(transport.requests).toHaveLength(2)
+      expect(onError).toHaveBeenCalledTimes(1)
+      expect(loop.messages).toHaveLength(0)
+      expect(loop.busy).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not retry an empty-stream error arriving after partial output', async () => {
     const transport = scriptedTransport([
       (cb) => {

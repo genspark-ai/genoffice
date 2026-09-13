@@ -11,8 +11,21 @@ pub(crate) fn parse_text_paragraphs(
     body.children()
         .filter(|node| node.has_tag_name("p"))
         .map(|paragraph| {
-            let align = direct_child(paragraph, "pPr")
+            let properties = direct_child(paragraph, "pPr");
+            let align = properties
                 .and_then(|node| node.attribute("algn"))
+                .map(ToOwned::to_owned);
+            let emu_points = |name: &str| {
+                properties
+                    .and_then(|node| node.attribute(name))
+                    .and_then(|value| value.parse::<f64>().ok())
+                    .map(|value| value / 12700.0)
+            };
+            let auto_num = properties.and_then(|node| direct_child(node, "buAutoNum"));
+            let bullet_char = properties
+                .and_then(|node| direct_child(node, "buChar"))
+                .and_then(|node| node.attribute("char"))
+                .filter(|value| !value.is_empty())
                 .map(ToOwned::to_owned);
             let mut runs = Vec::new();
             for child in paragraph.children() {
@@ -24,6 +37,7 @@ pub(crate) fn parse_text_paragraphs(
                         italic: false,
                         underline: false,
                         size: None,
+                        caps: None,
                     });
                     continue;
                 }
@@ -52,9 +66,28 @@ pub(crate) fn parse_text_paragraphs(
                         .and_then(|rpr| rpr.attribute("sz"))
                         .and_then(|value| value.parse::<f64>().ok())
                         .map(|value| value / 100.0),
+                    caps: properties
+                        .and_then(|rpr| rpr.attribute("cap"))
+                        .filter(|value| *value == "all" || *value == "small")
+                        .map(ToOwned::to_owned),
                 });
             }
-            ShapeParagraph { align, runs }
+            ShapeParagraph {
+                align,
+                margin_left: emu_points("marL"),
+                indent: emu_points("indent"),
+                bullet_scheme: auto_num
+                    .map(|node| node.attribute("type").unwrap_or("arabicPeriod").to_owned()),
+                bullet_start_at: auto_num
+                    .and_then(|node| node.attribute("startAt"))
+                    .and_then(|value| value.parse::<u32>().ok()),
+                bullet_char: if auto_num.is_some() {
+                    None
+                } else {
+                    bullet_char
+                },
+                runs,
+            }
         })
         .collect()
 }
@@ -67,6 +100,7 @@ pub(crate) fn read_drawing(
     colors: &ColorContext,
     ole_shape_ids: &HashSet<u32>,
     slicer_captions: &HashMap<String, String>,
+    formats: &mut SourceFormats,
 ) -> Result<Vec<VisualObject>, SidecarError> {
     let xml = read_xml(archive, drawing_path)?;
     let document = parse_document(&xml, drawing_path)?;
@@ -142,7 +176,7 @@ pub(crate) fn read_drawing(
                 sheet_id: sheet_id.to_owned(),
                 kind: "chart".into(),
                 anchor,
-                chart: Some(read_chart(archive, &chart_path, colors)?),
+                chart: Some(read_chart(archive, &chart_path, colors, formats)?),
                 chart_path: Some(chart_path.clone()),
                 media_path: None,
                 media_type: None,
@@ -319,7 +353,7 @@ pub(crate) fn read_drawing(
     for visual in &mut visuals {
         if visual.kind == "chart" && visual.chart.is_none() {
             if let Some(chart_path) = visual.chart_path.clone() {
-                visual.chart = Some(read_chart(archive, &chart_path, colors)?);
+                visual.chart = Some(read_chart(archive, &chart_path, colors, formats)?);
             }
         }
     }

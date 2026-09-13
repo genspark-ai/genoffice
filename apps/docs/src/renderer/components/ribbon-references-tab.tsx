@@ -340,6 +340,8 @@ interface ReferencesTabProps extends TabProps {
   blocks: Block[]
   onInsertNote: (kind: 'footnote' | 'endnote') => void
   sources: SourceInfo[]
+  /** footnotes/endnotes hold Zotero citation fields the bridge cannot see yet */
+  zoteroNoteFields?: boolean
   onAddSource: (source: SourceInfo) => void
   /** TOC page-number backfill: docHeadings in document order → real page numbers */
   headingPages?: () => number[] | null
@@ -353,6 +355,7 @@ export function ReferencesTab({
   setDropdown,
   onInsertNote,
   sources,
+  zoteroNoteFields,
   onAddSource,
   headingPages,
 }: ReferencesTabProps) {
@@ -363,8 +366,14 @@ export function ReferencesTab({
 
   const runZotero = async (command: ZoteroCommand) => {
     if (zoteroBusy) return
-    setZoteroBusy(command)
     setDropdown(() => null)
+    // every command lets Zotero rebuild the bibliography from the fields it can see;
+    // note citations are not among them yet, so their works would silently drop out
+    if (zoteroNoteFields) {
+      window.alert(t('zoteroNoteFieldsUnsupported'))
+      return
+    }
+    setZoteroBusy(command)
     try {
       const result = await window.desktop.zoteroCommand(command)
       if (!result.ok) {

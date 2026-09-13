@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAutoSavePref } from '@genoffice/ui'
+import {
+  pollUntilReady,
+  runHeadlessRendererExport,
+} from '@genoffice/electron-utils/headless-export'
 import { EditorContent, useEditor } from '@tiptap/react'
 import { FindPanel, type FindFocusRequest, type FindPanelStrings } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
@@ -307,9 +311,10 @@ export default function App() {
     }
   }, [])
 
-  const runExport = useCallback(async (format: ExportFormat) => {
+  /** `outPath` (headless export only) skips the save dialog; resolves true when a file was written. */
+  const runExport = useCallback(async (format: ExportFormat, outPath?: string) => {
     const current = editorRef.current
-    if (!current || statusRef.current !== 'ready') return
+    if (!current || statusRef.current !== 'ready') return false
     const suggestedName =
       (filePathRef.current
         ? filePathRef.current.replace(/^.*[/\\]/, '').replace(/\.(md|markdown)$/i, '')
@@ -317,9 +322,13 @@ export default function App() {
     try {
       if (format === 'pdf') {
         const html = buildPrintHtml(current.view.dom, suggestedName)
-        const result = await window.markdownApi.exportPdf({ html, suggestedName })
+        const result = await window.markdownApi.exportPdf({
+          html,
+          suggestedName,
+          ...(outPath ? { outPath } : {}),
+        })
         if (!result.ok) console.error('[markdown] pdf export failed:', result.error)
-        return
+        return result.ok && !('canceled' in result)
       }
       const loadImage = async (src: string) => {
         const data = await window.markdownApi.readImage(src)
@@ -344,10 +353,35 @@ export default function App() {
         mode: format === 'docs' ? 'openInDocs' : 'dialog',
       })
       if (!result.ok) console.error('[markdown] docx export failed:', result.error)
+      return result.ok && !('canceled' in result)
     } catch (err) {
       console.error('[markdown] export failed:', err)
+      return false
     }
   }, [])
+
+  // Headless export mode (--headless-export): this renderer lives in a hidden
+  // window whose only job is to run the File menu's PDF export against a path
+  // the CLI chose, then report back so the main process can quit.
+  const headlessExportStartedRef = useRef(false)
+  useEffect(() => {
+    if (headlessExportStartedRef.current) return
+    headlessExportStartedRef.current = true
+    void (async () => {
+      const outPath = await window.markdownApi.consumeHeadlessExport()
+      if (!outPath) return
+      const report = await runHeadlessRendererExport(
+        outPath,
+        () =>
+          pollUntilReady(() => {
+            if (statusRef.current === 'error') throw new Error('the input document did not open')
+            return statusRef.current === 'ready'
+          }, 'no document opened'),
+        (target) => runExport('pdf', target),
+      )
+      window.markdownApi.headlessExportDone(report)
+    })()
+  }, [runExport])
 
   /**
    * Print through the same self-contained HTML the PDF export uses, loaded into a

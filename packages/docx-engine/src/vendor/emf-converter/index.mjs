@@ -1580,13 +1580,8 @@ function handleExtTextOutW(rCtx, offset, dataOff, recSize) {
         ctx.fillStyle = state.textColor;
         const vAlign = state.textAlign & 24;
         const alignBaseline = vAlign === 24 ? "alphabetic" : vAlign === 8 ? "bottom" : "top";
-        let alignHoriz = "left";
-        if (state.textAlign & 6) {
-          alignHoriz = "center";
-        }
-        if (state.textAlign & 2) {
-          alignHoriz = "right";
-        }
+        const hAlign = state.textAlign & 6;
+        const alignHoriz = hAlign === 6 ? "center" : hAlign === 2 ? "right" : "left";
         ctx.textBaseline = alignBaseline;
         ctx.textAlign = alignHoriz;
         if (state.bkMode === 2) {

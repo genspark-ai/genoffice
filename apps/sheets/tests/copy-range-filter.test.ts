@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { InMemoryWorkbookAdapter } from '../src/domain/in-memory-workbook'
+import { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
 import {
   expandToPrimitiveOps,
   filteredCopySourceRows,
   matchableCellText,
   workbookOperationSchema,
   type WorkbookOperation,
-} from '../src/domain/workbook-dsl'
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 import { proposeOperations, type PlanContext } from '../src/renderer/plan-operations'
 
 /// copy_range filterColumn/filterValues: row extraction for splitting data

@@ -7,7 +7,7 @@ import {
   type PlanContext,
 } from '../src/renderer/plan-operations'
 import type { LazyWorkbookState } from '../src/renderer/univer-state'
-import type { WorkbookOperation } from '../src/domain/workbook-dsl'
+import type { WorkbookOperation } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 
 /// The BeforeCommandExecute gates in App.tsx cancel these facade commands
 /// silently; lazyGateError mirrors them so propose/apply fail loud instead.

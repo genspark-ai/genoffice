@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { planPrompt } from '../src/ai/deterministic-planner'
-import { workbookCommandBatchSchema } from '../src/domain/workbook-dsl'
-import type { CellState } from '../src/domain/workbook.types'
+import { workbookCommandBatchSchema } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import type { CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { buildLazyChangePlan, planStillMatches } from '../src/renderer/lazy-plan'
 
 const CELLS: Record<string, CellState> = {

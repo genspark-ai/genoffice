@@ -13,12 +13,20 @@ import {
 } from '@univerjs/core'
 import { IRenderManagerService, SHEET_VIEWPORT_KEY } from '@univerjs/engine-render'
 import { SheetSkeletonManagerService } from '@univerjs/preset-sheets-core'
-import { columnLabel, formatAddress } from '../domain/cell-address'
-import type { WorkbookOperation } from '../domain/workbook-dsl'
-import type { ApplyOutcome } from '../domain/workbook.types'
+import { columnLabel, formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
+import type { WorkbookOperation } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import type { ApplyOutcome } from '@genoffice/xlsx-gateway/domain/workbook.types'
+import { SET_ROW_IS_AUTO_HEIGHT_COMMAND } from './autofit-multi-row'
+import { fullColumnSpans, fullRowSpans } from './autofit-selection'
 import { nextSheetName } from './op-executor'
-import { transposeChartSeries, type ChartSeriesVisualState } from '../domain/chart-visual'
-import { applyFlashFillTemplate, inferFlashFillTemplate } from '../domain/flash-fill'
+import {
+  transposeChartSeries,
+  type ChartSeriesVisualState,
+} from '@genoffice/xlsx-gateway/domain/chart-visual'
+import {
+  applyFlashFillTemplate,
+  inferFlashFillTemplate,
+} from '@genoffice/xlsx-gateway/domain/flash-fill'
 import type {
   WorkbookChartEdit,
   WorkbookStyleEdit,
@@ -131,7 +139,7 @@ export interface RibbonCommandContext {
   dataToolsContext: () => DataToolsContext
   pivotContext: () => PivotActionContext
   handlePageLayoutCommand: (rest: string) => void
-  handleExportPdf: () => Promise<void>
+  handleExportPdf: () => Promise<boolean>
 }
 
 /// Resolves interned style references and merges row/col/sheet styles —
@@ -450,6 +458,25 @@ export function handleRibbonCommand(ctx: RibbonCommandContext, command: string):
     case 'filter-toggle':
       void runtime.univerAPI.executeCommand('sheet.command.smart-toggle-filter')
       return
+    case 'autofit-row-height':
+    case 'autofit-col-width': {
+      if (!worksheet) return
+      const selections = (worksheet.getSelection()?.getActiveRangeList() ?? []).map((range) =>
+        range.getRange(),
+      )
+      if (selections.length === 0) return
+      const ranges =
+        command === 'autofit-row-height'
+          ? fullRowSpans(selections, worksheet.getMaxColumns())
+          : fullColumnSpans(selections, worksheet.getMaxRows())
+      void runtime.univerAPI.executeCommand(
+        command === 'autofit-row-height'
+          ? SET_ROW_IS_AUTO_HEIGHT_COMMAND
+          : 'sheet.command.set-col-auto-width',
+        { ranges },
+      )
+      return
+    }
     case 'refresh-all': {
       const error = handleRefreshAllPivots(ctx.pivotContext())
       if (error) ctx.setMessage(error)

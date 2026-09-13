@@ -562,6 +562,12 @@ export const es = {
   appPdfCanceled: 'Exportación a PDF cancelada.',
   appPdfExported: 'Se exportó {path}.',
   appPdfExportFailed: 'No se puede exportar el PDF.',
+  appPrintPreparing: 'Preparando la impresión…',
+  appPrintSent: 'Enviado a la impresora.',
+  appPrintCanceled: 'Impresión cancelada.',
+  appPrintFailed: 'No se puede imprimir.',
+  appPrintNeedsFullLoad:
+    'Para imprimir, el libro debe estar completamente cargado; espere a que termine la carga.',
   appCsvExportNeedsFullLoad:
     'La exportación a CSV requiere el libro completamente cargado — espere a que termine la carga.',
   appCsvExportTooLarge: 'La hoja es demasiado grande para exportarla como CSV.',
@@ -1353,6 +1359,8 @@ export const es = {
   appFormatMenu: 'Formato',
   appRowHeight: 'Alto de fila',
   appColWidth: 'Ancho de columna',
+  appAutoFitRowHeight: 'Autoajustar alto de fila',
+  appAutoFitColWidth: 'Autoajustar ancho de columna',
   appRowHeightLabel: 'Alto de fila (puntos)',
   appColWidthLabel: 'Ancho de columna (caracteres)',
   appDeleteRow: 'Eliminar fila',

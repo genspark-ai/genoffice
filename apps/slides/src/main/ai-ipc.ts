@@ -48,7 +48,7 @@ import {
 } from '@genoffice/ai-search'
 import { addPicture, editPictureSrcRect, replacePictureBytes } from '@genoffice/pptx-engine'
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
-import { coverCropFractions } from '../shared/cover-crop'
+import { coverCropFractions } from '@genoffice/pipelines/slides'
 import type { AiRunFailure } from '../shared/ipc'
 import { EMU_PER_PX_96 } from '@genoffice/pptx-render'
 import { tm } from './i18n-main'

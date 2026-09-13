@@ -34,7 +34,7 @@ describe('character styles (w:rStyle)', () => {
     expect(doc.styles.get('Hyperlink')!.display).toMatchObject({ underline: true, color: '0563C1' })
   })
 
-  it('captures w:rStyle on runs, except the implied Hyperlink style', async () => {
+  it('captures w:rStyle on runs, the Hyperlink style included', async () => {
     const bytes = await buildDocx({
       bodyXml:
         '<w:p><w:r><w:rPr><w:rStyle w:val="Emphasis"/></w:rPr><w:t>styled</w:t></w:r>' +
@@ -49,7 +49,7 @@ describe('character styles (w:rStyle)', () => {
     expect(runs[0].styleId).toBe('Emphasis')
     expect(runs[1].styleId).toBeUndefined()
     expect(runs[2].link?.href).toBe('https://example.com/')
-    expect(runs[2].styleId).toBeUndefined()
+    expect(runs[2].styleId).toBe('Hyperlink')
   })
 
   it('does not merge adjacent runs with different character styles', async () => {

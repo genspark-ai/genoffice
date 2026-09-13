@@ -176,7 +176,7 @@ describe('docStyleCss dark twins', () => {
       `tr:nth-child(even) td${island} { background:${darkPageColor('d9d9d9')} }`,
     )
     expect(dark).toContain(
-      `tr:first-child th${island} { background:${darkPageColor('4472c4')};color:${DARK_PAPER_HEX} }`,
+      `tr[data-repeat-header="1"]:not(tr:not([data-repeat-header="1"]) ~ tr) th${island} { background:${darkPageColor('4472c4')};color:${DARK_PAPER_HEX} }`,
     )
     // a filled box would inherit the remapped document default from .doc-page:
     // the island re-sets the authored one

@@ -12,6 +12,18 @@ export function isRenderableTabStop(stop: TabStop): boolean {
   return stop.val !== 'clear'
 }
 
+/** A ruler edit makes the whole set direct (Word writes style-inherited stops
+    out too). An inherited stop the user removed or moved needs a `clear` at its
+    old position, or the style chain puts it back on reopen. Exported for tests. */
+export function directTabStops(original: TabStop[], edited: TabStop[]): TabStop[] {
+  const clears = original
+    .filter((s) => s.inherited && !edited.some((e) => e.pos === s.pos))
+    .map((s): TabStop => ({ pos: s.pos, val: 'clear' }))
+  return [...edited.map(({ inherited: _inherited, ...s }) => s), ...clears].sort(
+    (a, b) => a.pos - b.pos,
+  )
+}
+
 /** Horizontal ruler above the page: inch numbers, gray margin zones, tab stops. */
 export function Ruler({
   section,
@@ -73,8 +85,10 @@ export function Ruler({
   }
 
   const { stops, relStops } = currentTabStops()
-  const withRel = (edited: TabStop[]): TabStop[] | null =>
-    edited.length > 0 || relStops.length > 0 ? [...edited, ...relStops] : null
+  const withRel = (edited: TabStop[]): TabStop[] | null => {
+    const direct = directTabStops(stops, edited)
+    return direct.length > 0 || relStops.length > 0 ? [...direct, ...relStops] : null
+  }
 
   // Drag state
   const dragRef = useRef<{ stopIndex: number; startX: number; origPos: number } | null>(null)
@@ -136,9 +150,9 @@ export function Ruler({
     document.addEventListener('mouseup', onMouseUp)
   }
 
-  // Default tab stop markers (light gray) when no custom stops defined
+  // Default tab stop markers (light gray) when no custom stops mark a position
   const defaultStops: number[] = []
-  if (stops.length === 0) {
+  if (!stops.some(isRenderableTabStop)) {
     const contentWidth = section.pageWidth - section.marginLeft - section.marginRight
     for (let pos = DEFAULT_TAB_TWIPS; pos < contentWidth; pos += DEFAULT_TAB_TWIPS) {
       defaultStops.push(section.marginLeft + pos)

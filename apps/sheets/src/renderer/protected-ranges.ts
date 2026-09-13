@@ -4,7 +4,7 @@
 /// dialog and the save read them without further translation (the save's
 /// protectedRanges rewrite runs after structural replay).
 
-import { columnLabel, parseRange } from '../domain/cell-address'
+import { columnLabel, parseRange } from '@genoffice/xlsx-gateway/domain/cell-address'
 import type { StructuralJournalOp } from './edit-journal'
 import { fileRangeToScreenRange, fileToScreen } from './view-transform'
 

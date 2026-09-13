@@ -3,6 +3,9 @@ import { PAGE_MARK, TOTAL_PAGES_MARK, type HeaderFooter } from '@genoffice/docx-
 import {
   hfHasPageField,
   hfSegLeftCss,
+  hfStripGeom,
+  hfTabLines,
+  hfTabOverflowPx,
   hfTabSegments,
   hfWithoutPageMarks,
   makeGapHfEl,
@@ -109,6 +112,130 @@ describe('page-number substitution (PAGE_MARK)', () => {
       'page-hf-tabseg page-hf-tabseg-center',
       'page-hf-tabseg page-hf-tabseg-right',
     ])
+  })
+
+  it('a tab line with nothing before its first tab keeps an in-flow strut', () => {
+    // footer "\t\tPAGE(NUMPAGES)": only positioned segments would leave the
+    // line box empty (zero height once the preview drops the chrome min-height)
+    // and the strip's overflow would clip the page number away
+    const value: HeaderFooter = {
+      text: '()',
+      pageNumber: true,
+      paras: [
+        {
+          runs: [
+            { text: '\t\t' },
+            { text: PAGE_MARK },
+            { text: '(' },
+            { text: TOTAL_PAGES_MARK },
+            { text: ')' },
+          ],
+          ptabAligns: ['center', 'right'],
+        },
+      ],
+    }
+    const el = makeGapHfEl({ kind: 'footer', value, pageNo: 2, pageTotal: 3 })
+    const para = el.querySelector<HTMLElement>('.page-hf-para')!
+    expect(para.childNodes[0].nodeType).toBe(Node.TEXT_NODE)
+    expect(para.childNodes[0].textContent).toBe('\u200b')
+    const segs = [...para.querySelectorAll<HTMLElement>('.page-hf-tabseg')]
+    expect(segs.map((s) => s.textContent)).toEqual(['', '2(3)'])
+    expect(segs[1].style.left).toBe('100%')
+    // a lead with visible text needs no strut
+    const withLead = makeGapHfEl({
+      kind: 'footer',
+      value: { text: 'L', pageNumber: false, paras: [{ runs: [{ text: 'L\tR' }] }] },
+      pageNo: 1,
+      pageTotal: 1,
+    })
+    expect(withLead.querySelector('.page-hf-para')!.childNodes[0].nodeName).toBe('SPAN')
+  })
+
+  it('w:br inside a tabbed paragraph starts a new tab line', () => {
+    // header "Title\tApproved:<br>Edition: 2\tPublished: 2012": each line lays
+    // its tab out from the column edge again; ptab order continues across lines
+    const value: HeaderFooter = {
+      text: 'Title Approved: Edition: 2 Published: 2012',
+      pageNumber: false,
+      paras: [
+        {
+          runs: [{ text: 'Title\tApproved: \nEdition: 2\tPublished: 2012' }],
+          tabStops: [{ pos: 9000, val: 'right' }],
+          spaceAfter: 0,
+        },
+      ],
+    }
+    const w = (chars: number) => chars * 10.5 * 0.5 * (4 / 3)
+    const el = makeGapHfEl({ kind: 'header', value, pageNo: 1, pageTotal: 1 })
+    const para = el.querySelector<HTMLElement>('.page-hf-para')!
+    expect(para.classList.contains('page-hf-tabbed')).toBe(false)
+    const lines = [...para.querySelectorAll<HTMLElement>(':scope > .page-hf-tabbed')]
+    expect(lines.map((l) => l.textContent)).toEqual([
+      'TitleApproved: ',
+      'Edition: 2Published: 2012',
+    ])
+    for (const line of lines) {
+      const seg = line.querySelector<HTMLElement>('.page-hf-tabseg')!
+      // right stop at 9000 twips: both segments end on the same stop
+      expect(parseFloat(seg.style.left) + w(seg.textContent!.length)).toBeCloseTo(9000 / 15, 0)
+    }
+    const ptab = hfTabLines({
+      runs: [{ text: 'A\tB\nC\tD' }],
+      ptabAligns: ['center', 'right'],
+    })!
+    expect(ptab.map((l) => l.segments[0].anchor)).toEqual(['center', 'right'])
+    expect(hfTabLines({ runs: [{ text: 'A\nC\tD' }] })![0]).toEqual({
+      lead: [{ text: 'A' }],
+      segments: [],
+    })
+  })
+
+  it('a stop past the right margin widens the strip clip box into the margin (Word keeps the stop)', () => {
+    // A4 column 9070 twips, Footer style right stop at 9360: "Page 3 of 3" ends
+    // 290 twips into the right margin instead of being cut at the column edge
+    const geom = hfStripGeom({
+      pageWidth: 11906,
+      pageHeight: 16838,
+      marginLeft: 1418,
+      marginRight: 1418,
+      marginTop: 1418,
+      marginBottom: 1134,
+    } as Parameters<typeof hfStripGeom>[0])
+    const para = {
+      runs: [{ text: '\t\tPage 3 of 3' }],
+      tabStops: [
+        { pos: 4680, val: 'center' as const },
+        { pos: 9360, val: 'right' as const },
+      ],
+    }
+    const lines = hfTabLines(para)!
+    const seg = lines[0].segments[0]
+    expect(seg.endPx).toBeCloseTo(9360 / 15, 1)
+    expect(hfTabOverflowPx(lines, geom)).toBeCloseTo((9360 - 9070) / 15, 1)
+    expect(hfTabOverflowPx(lines, undefined)).toBe(0)
+    const el = makeGapHfEl({
+      kind: 'footer',
+      value: { text: 'Page 3 of 3', pageNumber: false, paras: [para] },
+      pageNo: 3,
+      pageTotal: 3,
+      geom,
+    })
+    expect(el.style.getPropertyValue('--hf-tab-over')).toBe('19.3px')
+    // stops inside the column leave the strip alone
+    const inside = makeGapHfEl({
+      kind: 'footer',
+      value: {
+        text: 'x',
+        pageNumber: false,
+        paras: [
+          { runs: [{ text: '\tPage 3 of 3' }], tabStops: [{ pos: 9000, val: 'right' as const }] },
+        ],
+      },
+      pageNo: 3,
+      pageTotal: 3,
+      geom,
+    })
+    expect(inside.style.getPropertyValue('--hf-tab-over')).toBe('')
   })
 
   it('tab advances to the next stop past the current position, not by tab index', () => {

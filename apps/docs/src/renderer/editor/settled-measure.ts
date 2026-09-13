@@ -4,7 +4,7 @@ import type { EditorView } from '@tiptap/pm/view'
 /** CSS floats: the only layout where a paragraph's vertical position changes its line breaks */
 const FLOAT_SELECTOR =
   '[class*="-wrap-square-"], [class*="-wrap-tight-"], [class*="-wrap-through-"], ' +
-  '[class*="doc-table-float-"], .doc-cell-boxes'
+  '[class*="doc-table-float-"]:not(.doc-table-float-flow), .doc-cell-boxes'
 
 interface Entry<T> {
   node: ProseMirrorNode

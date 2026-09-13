@@ -381,3 +381,137 @@ describe('layout-table cell images (header logo in a w:tbl cell)', () => {
     expect(await saveDocx(doc, blocks)).toEqual(bytes)
   })
 })
+
+describe('header/footer VML shapes and watermarks', () => {
+  const VML_NS =
+    ' xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"' +
+    ' xmlns:w10="urn:schemas-microsoft-com:office:word"'
+  const hdr = (body: string, extraNs = ''): string =>
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+    ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+    VML_NS +
+    extraNs +
+    `>${body}</w:hdr>`
+
+  it('text watermark keeps its box, rotation, color, opacity, font and margin-centered anchor', async () => {
+    const headerXml = hdr(
+      '<w:p><w:r><w:pict>' +
+        '<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" path="m@7,l@8,m@5,21600l@6,21600e">' +
+        '<v:textpath on="t" fitshape="t"/></v:shapetype>' +
+        '<v:shape id="PowerPlusWaterMarkObject1" type="#_x0000_t136" style="position:absolute;margin-left:0;' +
+        'margin-top:0;width:4in;height:2in;rotation:315;z-index:-251658752;mso-position-horizontal:center;' +
+        'mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin"' +
+        ' fillcolor="red" stroked="f"><v:fill opacity=".5"/>' +
+        '<v:textpath style="font-family:&quot;SimSun-ExtB&quot;;font-size:2in" string="SECRET"/>' +
+        '</v:shape></w:pict></w:r></w:p>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.watermarkText).toBe('SECRET')
+    expect(doc.headerImages).toHaveLength(1)
+    const wm = doc.headerImages![0]
+    expect(wm.dataUrl).toBe('')
+    expect(wm.floating).toBe(true)
+    expect(wm.behind).toBe(true)
+    expect(wm.widthPx).toBe(384)
+    expect(wm.heightPx).toBe(192)
+    expect(wm.rotationDeg).toBe(315)
+    expect(wm.posH).toBe('center')
+    expect(wm.posV).toBe('center')
+    expect(wm.posHRel).toBe('margin')
+    expect(wm.posVRel).toBe('margin')
+    expect(wm.wordArt).toEqual({
+      text: 'SECRET',
+      colorHex: 'FF0000',
+      opacity: 0.5,
+      fontFamily: 'SimSun-ExtB',
+    })
+  })
+
+  it('horizontal watermark has no rotation; silver fill and 1pt declared font do not shrink the box', async () => {
+    const headerXml = hdr(
+      '<w:p><w:r><w:pict><v:shape id="PowerPlusWaterMarkObject2" type="#_x0000_t136"' +
+        ' style="position:absolute;margin-left:0;margin-top:0;width:468pt;height:280.8pt;z-index:-251658752;' +
+        'mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;' +
+        'mso-position-vertical-relative:margin" fillcolor="silver" stroked="f"><v:fill opacity=".5"/>' +
+        '<v:textpath style="font-family:&quot;Calibri&quot;;font-size:1pt" string="DRAFT"/>' +
+        '</v:shape></w:pict></w:r></w:p>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    const wm = doc.headerImages![0]
+    expect(wm.rotationDeg).toBeUndefined()
+    expect(wm.widthPx).toBe(624)
+    expect(wm.heightPx).toBe(374)
+    expect(wm.wordArt?.colorHex).toBe('C0C0C0')
+    expect(wm.wordArt?.fontFamily).toBe('Calibri')
+  })
+
+  it('picture watermark reads inch-sized boxes and the gain/blacklevel washout levels', async () => {
+    const headerXml = hdr(
+      '<w:p><w:r><w:pict><v:shape id="WordPictureWatermark1" type="#_x0000_t75"' +
+        ' style="position:absolute;margin-left:0;margin-top:0;width:16in;height:12in;z-index:-251658240;' +
+        'mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;' +
+        'mso-position-vertical-relative:margin"><v:imagedata r:id="rId1" o:title="Flowers" gain="19661f" blacklevel="22938f"/>' +
+        '</v:shape></w:pict></w:r></w:p>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    const img = doc.headerImages![0]
+    expect(img.widthPx).toBe(1536)
+    expect(img.heightPx).toBe(1152)
+    expect(img.posHRel).toBe('margin')
+    expect(img.washout?.gain).toBeCloseTo(0.3, 3)
+    expect(img.washout?.blackLevel).toBeCloseTo(0.35, 3)
+  })
+
+  it('AlternateContent: a wps preset shape the Choice cannot draw falls back to its VML twin as an SVG float', async () => {
+    const headerXml = hdr(
+      '<w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing>' +
+        '<wp:anchor behindDoc="0"><wp:positionH relativeFrom="column"><wp:posOffset>584200</wp:posOffset></wp:positionH>' +
+        '<wp:positionV relativeFrom="paragraph"><wp:posOffset>127000</wp:posOffset></wp:positionV>' +
+        '<wp:extent cx="584200" cy="374650"/><wp:wrapNone/>' +
+        '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+        '<wps:wsp><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="584200" cy="374650"/></a:xfrm>' +
+        '<a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom></wps:spPr>' +
+        '<wps:style><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef></wps:style></wps:wsp>' +
+        '</a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>' +
+        '<mc:Fallback><w:pict><v:oval id="Oval 1" style="position:absolute;margin-left:46pt;margin-top:10pt;' +
+        'width:46pt;height:29.5pt;z-index:251659264;mso-position-horizontal:absolute;' +
+        'mso-position-horizontal-relative:text;mso-position-vertical:absolute;mso-position-vertical-relative:text"' +
+        ' fillcolor="#4f81bd [3204]" strokecolor="#243f60 [1604]" strokeweight="2pt"/></w:pict></mc:Fallback>' +
+        '</mc:AlternateContent></w:r></w:p>',
+      ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"' +
+        ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"' +
+        ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
+        ' xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages).toHaveLength(1)
+    const oval = doc.headerImages![0]
+    expect(oval.floating).toBe(true)
+    expect(oval.behind).toBeUndefined()
+    expect(oval.widthPx).toBe(61)
+    expect(oval.heightPx).toBe(39)
+    expect(oval.posXPx).toBe(61)
+    expect(oval.posYPx).toBe(13)
+    expect(oval.posHRel).toBe('margin')
+    expect(oval.posVRel).toBe('paragraph')
+    const svg = decodeURIComponent(oval.dataUrl.replace('data:image/svg+xml,', ''))
+    expect(svg).toContain('<ellipse')
+    expect(svg).toContain('fill="#4f81bd"')
+    expect(svg).toContain('stroke="#243f60"')
+    expect(svg).toContain('stroke-width="2.6666666666666665"')
+  })
+
+  it('VML groups, gradients and text-bearing shapes stay undrawn rather than partially drawn', async () => {
+    const headerXml = hdr(
+      '<w:p><w:r><w:pict><v:group style="position:absolute;width:35pt;height:23pt;rotation:90" coordsize="1566,590">' +
+        '<v:oval style="position:absolute;left:0;top:0;width:682;height:590" fillcolor="#4f81bd">' +
+        '<v:fill color2="#243f60" type="gradient"/></v:oval></v:group></w:pict></w:r></w:p>' +
+        '<w:p><w:r><w:pict><v:rect style="position:absolute;width:40pt;height:485pt" filled="f" stroked="f">' +
+        '<v:textbox><w:txbxContent><w:p><w:r><w:t>October</w:t></w:r></w:p></w:txbxContent></v:textbox>' +
+        '</v:rect></w:pict></w:r></w:p>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
+    expect(doc.headerImages ?? []).toHaveLength(0)
+  })
+})

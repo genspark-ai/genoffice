@@ -399,4 +399,12 @@ export const hi = {
   dlgFnDescNpv: 'किसी छूट दर पर नकदी प्रवाह का शुद्ध वर्तमान मूल्य देता है।',
   dlgFnDescIrr: 'नकदी प्रवाहों की श्रृंखला की आंतरिक प्रतिफल दर देता है।',
   dlgFnCatFinancial: 'वित्तीय',
+  dlgFnCatDatabase: 'डेटाबेस',
+  dlgFnCatInformation: 'जानकारी',
+  dlgFnCatEngineering: 'इंजीनियरिंग',
+  dlgFnCatCube: 'क्यूब',
+  dlgFnCatCompatibility: 'संगतता',
+  dlgFnCatWeb: 'वेब',
+  dlgFnCatArray: 'सरणी',
+  dlgFnCatOther: 'अन्य',
 } satisfies Record<keyof typeof zh, string>

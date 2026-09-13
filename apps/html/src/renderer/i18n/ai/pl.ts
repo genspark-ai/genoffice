@@ -72,6 +72,8 @@ export const pl = {
   aiToolClarifySkipped: 'Ankieta pominięta',
   aiToolPlan: 'Brief zatwierdzony ({n} sekcji)',
   aiToolPlanRejected: 'Brief niezatwierdzony',
+  aiToolPlanFailed: 'Nie udało się przygotować briefu',
+  aiDraftingBrief: 'Przygotowywanie briefu…',
   aiToolWritePage: 'Wygenerowano stronę',
   aiToolWritePageFailed: 'Nie udało się wygenerować strony',
   aiToolWritePagePartial: 'Wygenerowano część strony',

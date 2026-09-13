@@ -23,9 +23,16 @@ type Set<T> = React.Dispatch<React.SetStateAction<T>>
 
 // ── State payload types shared between App useState declarations and the ctx ──
 
+/** Viewport point the caret lands on when editing starts; select: 'word' picks the word there (double-click). */
+export interface EditCaret {
+  x: number
+  y: number
+  select?: 'word'
+}
+
 export interface EditingState {
   sourceId: string
-  caret?: { x: number; y: number }
+  caret?: EditCaret
   groupId?: string
   replaceWith?: string
 }

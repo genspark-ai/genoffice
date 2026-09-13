@@ -81,8 +81,8 @@ describe('paragraph shading and borders', () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
     expect(doc.blocks[0].format?.borders).toBe('tb')
     expect(doc.blocks[0].format?.borderLines).toEqual({
-      t: { szPt: 0.5 },
-      b: { color: '0B5394', szPt: 1.5 },
+      t: { szPt: 0.5, spacePt: 1 },
+      b: { color: '0B5394', szPt: 1.5, spacePt: 1 },
     })
   })
 

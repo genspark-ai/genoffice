@@ -24,6 +24,10 @@ import type { RenderTextLayout, TextLine, GlyphRun } from './render-tree'
 import bidiFactory from 'bidi-js'
 import { graphemes, isWideChar, type FontMetricsProvider, type RunStyle } from './metrics'
 import { emuToPx, ptToPx, type Viewport } from './coords'
+import type { MediaResolver } from './fill'
+import { formatAutoNum } from './auto-num'
+
+export { formatAutoNum }
 
 const DEFAULT_FONT = 'Arial'
 const DEFAULT_SIZE_PT = 18
@@ -439,79 +443,110 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
   return tokens
 }
 
-function toRoman(n: number): string {
-  const table: Array<[number, string]> = [
-    [1000, 'm'],
-    [900, 'cm'],
-    [500, 'd'],
-    [400, 'cd'],
-    [100, 'c'],
-    [90, 'xc'],
-    [50, 'l'],
-    [40, 'xl'],
-    [10, 'x'],
-    [9, 'ix'],
-    [5, 'v'],
-    [4, 'iv'],
-    [1, 'i'],
-  ]
-  let out = ''
-  for (const [v, s] of table)
-    while (n >= v) {
-      out += s
-      n -= v
-    }
-  return out
-}
+/**
+ * buAutoNum sequencing (PowerPoint): consecutive numbered paragraphs at one level continue;
+ * a deeper sublist neither resets nor advances the outer count, a paragraph at an outer
+ * level resets the levels below it, and a text paragraph without numbering restarts its
+ * level, as does a change of scheme or a startAt (1 when absent) that differs from the running
+ * sequence's — PowerPoint numbers "startAt=7" then a plain buAutoNum as 7., 1. Empty paragraphs
+ * show no number and change nothing.
+ */
+class AutoNumCounter {
+  private counts: number[] = []
+  private schemes: string[] = []
+  private starts: number[] = []
 
-function toAlpha(n: number): string {
-  let out = ''
-  while (n > 0) {
-    n--
-    out = String.fromCharCode(97 + (n % 26)) + out
-    n = Math.floor(n / 26)
+  /** Number of a numbered text paragraph; undefined for anything else (state still advances). */
+  next(p: Paragraph, hasText: boolean): number | undefined {
+    if (!hasText) return undefined
+    const lvl = p.level ?? 0
+    const b = p.bullet
+    const from = b?.type === 'number' ? lvl + 1 : lvl
+    for (let l = from; l < this.counts.length; l++) this.counts[l] = 0
+    if (b?.type !== 'number') return undefined
+    const scheme = b.numType ?? 'arabicPeriod'
+    const start = b.startAt ?? 1
+    const running = this.counts[lvl] && this.schemes[lvl] === scheme && start === this.starts[lvl]
+    const n = running ? this.counts[lvl]! + 1 : start
+    if (!running) this.starts[lvl] = start
+    this.counts[lvl] = n
+    this.schemes[lvl] = scheme
+    return n
   }
-  return out
 }
 
-const CJK_DIGITS = '〇一二三四五六七八九'
-function toCjkNum(n: number): string {
-  if (n <= 10) return n === 10 ? '十' : CJK_DIGITS[n]!
-  if (n < 20) return '十' + CJK_DIGITS[n % 10]!
-  if (n < 100) return CJK_DIGITS[Math.floor(n / 10)]! + '十' + (n % 10 ? CJK_DIGITS[n % 10]! : '')
-  return String(n)
+/** Bullet glyph style: buSzPts is absolute (autofit-scaled like text), buSzPct scales the first run. */
+function bulletRunStyle(
+  base: RunStyle,
+  b: Paragraph['bullet'],
+  scale: number,
+  fontScale: number,
+): RunStyle {
+  if (b?.sizePt != null) {
+    const pt = fontScale !== 1 ? Math.max(1, Math.round(b.sizePt * fontScale)) : b.sizePt
+    return { ...base, fontSizePx: ptToPx(pt, scale) }
+  }
+  if (b?.sizePct != null) return { ...base, fontSizePx: base.fontSizePx * (b.sizePct / 100) }
+  return base
 }
+
+const isBulletKind = (t: string | undefined): boolean =>
+  t === 'char' || t === 'number' || t === 'blip'
 
 /**
- * <a:buAutoNum type> → numbered-bullet glyph (ST_TextAutonumberScheme). Circled numbers
- * only exist up to ⑳/⓴; PowerPoint falls back to plain arabic beyond that.
+ * Width/height ratio of a picture bullet from the image header (PNG/GIF/JPEG); 1 when the
+ * format is not recognized. PowerPoint scales the picture to the text height and keeps its
+ * aspect, so the reserved advance depends on it.
  */
-function formatAutoNum(n: number, numType: string | undefined): string {
-  const t = numType ?? 'arabicPeriod'
-  if (t.startsWith('circleNum')) {
-    if (t === 'circleNumWdBlackPlain')
-      return n <= 10
-        ? String.fromCodePoint(0x2775 + n) // ❶–❿
-        : n <= 20
-          ? String.fromCodePoint(0x24eb + (n - 11)) // ⓫–⓴
-          : String(n)
-    // circleNumWdWhitePlain included: Wingdings white circled digits are single-ring, i.e. ①–⑳
-    return n <= 20 ? String.fromCodePoint(0x245f + n) : String(n) // ①–⑳
+const imageAspectCache = new Map<string, number>()
+function imageAspect(dataUrl: string): number {
+  const cached = imageAspectCache.get(dataUrl)
+  if (cached != null) return cached
+  let ratio = 1
+  const comma = dataUrl.indexOf(',')
+  if (comma > 0 && /;base64$/i.test(dataUrl.slice(0, comma))) {
+    try {
+      const bytes = base64Head(dataUrl.slice(comma + 1), 64 * 1024)
+      const be32 = (o: number) =>
+        ((bytes[o]! << 24) | (bytes[o + 1]! << 16) | (bytes[o + 2]! << 8) | bytes[o + 3]!) >>> 0
+      if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes.length >= 24) {
+        ratio = be32(16) / be32(20)
+      } else if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes.length >= 10) {
+        ratio = (bytes[6]! | (bytes[7]! << 8)) / (bytes[8]! | (bytes[9]! << 8))
+      } else if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+        for (let o = 2; o + 9 < bytes.length;) {
+          if (bytes[o] !== 0xff) break
+          const marker = bytes[o + 1]!
+          const len = (bytes[o + 2]! << 8) | bytes[o + 3]!
+          const sof = marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)
+          if (sof) {
+            const h = (bytes[o + 5]! << 8) | bytes[o + 6]!
+            const w = (bytes[o + 7]! << 8) | bytes[o + 8]!
+            ratio = w / h
+            break
+          }
+          o += 2 + len
+        }
+      }
+    } catch {
+      ratio = 1
+    }
   }
-  let body: string
-  if (t.startsWith('alphaLc')) body = toAlpha(n)
-  else if (t.startsWith('alphaUc')) body = toAlpha(n).toUpperCase()
-  else if (t.startsWith('romanLc')) body = toRoman(n)
-  else if (t.startsWith('romanUc')) body = toRoman(n).toUpperCase()
-  else if (t.startsWith('arabicDb'))
-    body = [...String(n)].map((d) => String.fromCodePoint(0xff10 + Number(d))).join('') // fullwidth １２３
-  else if (t.startsWith('ea1Chs') || t.startsWith('ea1Cht')) body = toCjkNum(n)
-  else body = String(n)
-  if (t.endsWith('ParenBoth')) return `(${body})`
-  if (t.endsWith('ParenR')) return `${body})`
-  if (t.endsWith('Period')) return `${body}.`
-  if (t.endsWith('Plain')) return body
-  return `${body}.`
+  if (!Number.isFinite(ratio) || ratio <= 0) ratio = 1
+  imageAspectCache.set(dataUrl, ratio)
+  return ratio
+}
+
+function base64Head(b64: string, maxBytes: number): Uint8Array {
+  const chunk = b64.slice(0, Math.ceil((maxBytes * 4) / 3))
+  const aligned = chunk.slice(0, chunk.length - (chunk.length % 4))
+  if (typeof atob === 'function') {
+    const bin = atob(aligned)
+    const out = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+    return out
+  }
+  return new Uint8Array(Buffer.from(aligned, 'base64'))
 }
 
 /**
@@ -920,6 +955,8 @@ export interface TextLayoutInput {
   /** Re-run the autofit ladder below a stored fontScale (edit flows only): plain rendering
       honors the cache as-is like PowerPoint on open. */
   refitAutofit?: boolean
+  /** Picture bullets (<a:buBlip>) resolve their image through this, like picture fills */
+  media?: MediaResolver
 }
 
 /**
@@ -998,7 +1035,17 @@ export function layoutText(input: TextLayoutInput): RenderTextLayout {
     numCol > 1 ? Math.max((availWidth - (numCol - 1) * colGapPx) / numCol, 1) : availWidth
 
   const build = (fontScale: number, lnSpcRed: number) =>
-    layoutAll(body, colWidth, wrap, metrics, vp.scale, fontScale, lnSpcRed, input.trimEdgeSpacing)
+    layoutAll(
+      body,
+      colWidth,
+      wrap,
+      metrics,
+      vp.scale,
+      fontScale,
+      lnSpcRed,
+      input.trimEdgeSpacing,
+      input.media,
+    )
 
   // PowerPoint's stored shrink ratio takes priority (files with shrunk text render
   // as-is; we don't scale back up per our own metrics). Only if content still
@@ -1237,7 +1284,7 @@ function layoutTextVertical(
     gapAfter: number
   }
   const cols: Col[] = []
-  let autoNum = 0
+  const autoNum = new AutoNumCounter()
 
   for (const p of body.paragraphs) {
     const paraCols: Col[] = []
@@ -1267,7 +1314,13 @@ function layoutTextVertical(
       agg = { ascent: 0, descent: 0, size: 0 }
     }
 
-    const pushCell = (tok: Token, g: string, isBullet = false) => {
+    const pushCell = (
+      tok: Token,
+      g: string,
+      isBullet = false,
+      numType?: string,
+      startAt?: number,
+    ) => {
       const m = metrics.metrics(tok.style)
       // Vertical advance = the char style's line box height (CJK ≈ 1em; upright Latin also approximated by the line box)
       const adv = m.ascent + m.descent + tok.ls
@@ -1298,6 +1351,8 @@ function layoutTextVertical(
         widthPx: metrics.measure(g, tok.style),
         ...(tok.blPct ? { baselinePct: tok.blPct } : {}),
         ...(isBullet ? { isBullet: true } : { srcRunIdx: tok.srcRun }),
+        ...(numType ? { numType } : {}),
+        ...(numType && startAt != null ? { startAt } : {}),
         ...(!isBullet && tok.link ? { link: tok.link } : {}),
         ascentPx: m.ascent,
       })
@@ -1345,19 +1400,16 @@ function layoutTextVertical(
 
     const hasText = p.runs.some((r) => r.text.trim())
     const bulletType = p.bullet?.type
-    const hasBullet = hasText && (bulletType === 'char' || bulletType === 'number')
-    if (bulletType === 'number' && hasText)
-      autoNum = autoNum === 0 ? (p.bullet?.startAt ?? 1) : autoNum + 1
-    else if (bulletType !== 'number') autoNum = 0
+    const hasBullet = hasText && isBulletKind(bulletType)
+    const num = autoNum.next(p, hasText)
     if (hasBullet && p.runs[0]) {
       const base = runStyle(p.runs[0], scale, fontScale)
-      // <a:buSzPct>: bullet glyph size as a percentage of the first run's size
-      let st =
-        p.bullet?.sizePct != null
-          ? { ...base, fontSizePx: base.fontSizePx * (p.bullet.sizePct / 100) }
-          : base
+      let st = bulletRunStyle(base, p.bullet, scale, fontScale)
+      // Picture bullets have no vertical-text form: a dot stands in
       let glyph =
-        bulletType === 'char' ? (p.bullet?.char ?? '•') : formatAutoNum(autoNum, p.bullet?.numType)
+        bulletType === 'number'
+          ? formatAutoNum(num ?? 1, p.bullet?.numType)
+          : (p.bullet?.char ?? '•')
       const sym = bulletType === 'char' ? symbolBulletText(p.bullet?.font, glyph) : undefined
       if (sym) {
         glyph = sym
@@ -1376,6 +1428,8 @@ function layoutTextVertical(
         },
         glyph,
         true,
+        bulletType === 'number' ? (p.bullet?.numType ?? 'arabicPeriod') : undefined,
+        bulletType === 'number' ? p.bullet?.startAt : undefined,
       )
     }
 
@@ -1478,13 +1532,14 @@ function layoutAll(
   fontScale: number,
   lnSpcRed: number,
   trimEdgeSpacing?: boolean,
+  media?: MediaResolver,
 ): { lines: TextLine[]; contentHeight: number; inkBottom?: number } {
   const outLines: TextLine[] = []
   // Glyph-extent bottom (last baseline + descent): PowerPoint sizes auto table rows by ink,
   // not by line-box sum (18pt probe: lnSpc 115% single-line row = 0.7333x box + descent)
   let inkBottom = 0
   let y = 0
-  let autoNum = 0 // buAutoNum sequential numbering (reset on a non-numbered paragraph)
+  const autoNum = new AutoNumCounter()
   for (const [pIdx, p] of body.paragraphs.entries()) {
     // Indent and bullets (body lines start at marL; the bullet
     // draws at marL+indent, negative indent = hanging indent; without a bullet the
@@ -1494,12 +1549,19 @@ function layoutAll(
     const indentPx = emuToPx(p.indent ?? 0, scale)
     const hasText = p.runs.some((r) => r.text.trim())
     const bulletType = p.bullet?.type
-    const hasBullet = hasText && (bulletType === 'char' || bulletType === 'number')
-    if (bulletType === 'number' && hasText)
-      autoNum = autoNum === 0 ? (p.bullet?.startAt ?? 1) : autoNum + 1
-    else if (bulletType !== 'number') autoNum = 0
+    const hasBullet = hasText && isBulletKind(bulletType)
+    const num = autoNum.next(p, hasText)
+    // Picture bullet without a resolvable image (media not loaded) falls back to the dot
+    const bulletImage =
+      hasBullet && bulletType === 'blip' && p.bullet?.mediaRef
+        ? media?.(p.bullet.mediaRef)
+        : undefined
     let bulletText =
-      bulletType === 'char' ? (p.bullet?.char ?? '•') : formatAutoNum(autoNum, p.bullet?.numType)
+      bulletType === 'number'
+        ? formatAutoNum(num ?? 1, p.bullet?.numType)
+        : bulletImage
+          ? ''
+          : (p.bullet?.char ?? '•')
     const symText = bulletType === 'char' ? symbolBulletText(p.bullet?.font, bulletText) : undefined
     if (symText) bulletText = symText
 
@@ -1518,15 +1580,16 @@ function layoutAll(
     // ends, even when the glyph is wider than the hanging indent (-indent).
     let bulletSt: RunStyle | undefined
     let bulletW = 0
+    let bulletImgH = 0
     if (hasBullet) {
-      const base = runStyle(p.runs[0]!, scale, fontScale)
-      // <a:buSzPct>: bullet glyph size as a percentage of the first run's size
-      bulletSt =
-        p.bullet?.sizePct != null
-          ? { ...base, fontSizePx: base.fontSizePx * (p.bullet.sizePct / 100) }
-          : base
+      bulletSt = bulletRunStyle(runStyle(p.runs[0]!, scale, fontScale), p.bullet, scale, fontScale)
       if (symText) bulletSt = { ...bulletSt, fontFamily: p.bullet!.font! }
-      bulletW = metrics.measure(bulletText, bulletSt)
+      // Picture bullets stand on the baseline about cap-height tall (PowerPoint sizes them to
+      // the text, real decks fit them inside a hanging indent smaller than the em), keeping their aspect
+      if (bulletImage) {
+        bulletImgH = bulletSt.fontSizePx * 0.75
+        bulletW = bulletImgH * imageAspect(bulletImage)
+      } else bulletW = metrics.measure(bulletText, bulletSt)
     }
     const bulletX = Math.max(marLPx + indentPx, 0)
     // Glyph wider than the hanging indent: the first line's text start shifts right by
@@ -1670,7 +1733,12 @@ function layoutAll(
           underline: false,
           widthPx: bulletW,
           isBullet: true,
-          ascentPx: metrics.metrics(st).ascent,
+          ...(bulletType === 'number' ? { numType: p.bullet?.numType ?? 'arabicPeriod' } : {}),
+          ...(bulletType === 'number' && p.bullet?.startAt != null
+            ? { startAt: p.bullet.startAt }
+            : {}),
+          ...(bulletImage ? { image: bulletImage } : {}),
+          ascentPx: bulletImage ? bulletImgH : metrics.metrics(st).ascent,
         })
       }
       outLines.push({

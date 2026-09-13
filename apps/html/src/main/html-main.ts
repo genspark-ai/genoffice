@@ -29,16 +29,21 @@ import {
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
+  isHeadlessMode,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
+  type HeadlessExportFormat,
+  type HeadlessExportTarget,
+  installRendererProtocol,
+  rendererUrl,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool } from '@genoffice/ai-search'
 import { parseFileToText } from '@genoffice/file-parse'
 import { convertHtmlToDocx } from '../../../../packages/html2docx/src'
 import { atomicWriteFile } from './atomic-write'
-import { ElectronBrowserDriver } from './html2docx-driver'
+import { ElectronBrowserDriver } from '../../../../packages/html2docx/src/drivers/electron'
 import {
   copyImageIntoOwnedAssets,
   discardPendingOwnedAssets,
@@ -59,10 +64,11 @@ import {
   extensionlessAssetMime,
 } from './asset-mime'
 import { buildPreviewDocument } from './preview-document'
+import { inlineImagesForSingleFile, singleFileExportBaseName } from './single-file-html'
 import {
   assetBaseHref,
   previewUrlFor,
-  registerHtmlSchemes,
+  registerPrivilegedSchemes,
   registerPreviewProtocol,
 } from './preview-protocol'
 import { ATTACHMENT_IMAGE_EXTS, HTML_CHANNELS } from '../shared/ipc'
@@ -72,6 +78,7 @@ import type {
   AttachmentMeta,
   AttachmentReadResult,
   ExportDocxRequest,
+  ExportHtmlRequest,
   ExportFormat,
   ExportPdfRequest,
   ExportResult,
@@ -768,12 +775,14 @@ export function configureHtmlRuntime(paths: RuntimePaths): void {
   runtime = paths
 }
 
-export { registerHtmlSchemes }
+export { registerPrivilegedSchemes }
 
 /** After a successful Html → PDF export: open the file in a PDF tab (shell)
  * or reveal it in the folder (standalone). Tab-opening failure must not
  * report the export itself as failed — the file is already persisted. */
 function openExportedPdf(path: string): void {
+  // Headless export must stay silent: no tab, no Finder window.
+  if (isHeadlessMode()) return
   try {
     if (runtime.openGeneratedPath?.(path)) return
   } catch (err) {
@@ -826,6 +835,7 @@ export function setHtmlDocxExportPrepareHook(hook: (path: string) => Promise<boo
 }
 
 function openExportedDocx(path: string): void {
+  if (isHeadlessMode()) return
   try {
     if (docxExportedHook) {
       docxExportedHook(path)
@@ -1117,6 +1127,25 @@ function registerHtmlIpc(): void {
   })
 
   ipcMain.handle(HTML_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
+
+  // ---- headless export mode (--headless-export) ----
+
+  ipcMain.handle(HTML_CHANNELS.consumeHeadlessExport, (e): HeadlessExportTarget | null => {
+    const target = headlessExportTargets.get(e.sender.id) ?? null
+    headlessExportTargets.delete(e.sender.id)
+    return target
+  })
+
+  ipcMain.on(HTML_CHANNELS.headlessExportDone, (e, result: unknown) => {
+    const settle = headlessExportWaiters.get(e.sender.id)
+    if (!settle) return
+    headlessExportWaiters.delete(e.sender.id)
+    const state = result as { ok?: unknown; error?: unknown } | null
+    settle({
+      ok: state?.ok === true,
+      ...(typeof state?.error === 'string' ? { error: state.error } : {}),
+    })
+  })
 
   ipcMain.on(HTML_CHANNELS.previewUpdate, (e, text: unknown) => {
     if (typeof text === 'string') previewTextByWc.set(e.sender.id, text)
@@ -1444,15 +1473,19 @@ function registerHtmlIpc(): void {
       }
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-      const picked = await showSaveDialogWithMemory(
-        dialog,
-        win,
-        {
-          defaultPath: `${exportFileName(request.suggestedName)}.docx`,
-          filters: [{ name: 'Word', extensions: ['docx'] }],
-        },
-        configuredDefaultSaveDir(app),
-      )
+      // Headless export has no dialog to authorize a path; the CLI already chose one.
+      const picked =
+        isHeadlessMode() && typeof request.outPath === 'string' && request.outPath
+          ? { canceled: false, filePath: request.outPath }
+          : await showSaveDialogWithMemory(
+              dialog,
+              win,
+              {
+                defaultPath: `${exportFileName(request.suggestedName)}.docx`,
+                filters: [{ name: 'Word', extensions: ['docx'] }],
+              },
+              configuredDefaultSaveDir(app),
+            )
       if (picked.canceled || !picked.filePath) return { ok: true, canceled: true }
       if (docxExportPrepareHook && !(await docxExportPrepareHook(picked.filePath))) {
         return { ok: true, canceled: true }
@@ -1488,15 +1521,19 @@ function registerHtmlIpc(): void {
       }
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-      const picked = await showSaveDialogWithMemory(
-        dialog,
-        win,
-        {
-          defaultPath: `${exportFileName(request.suggestedName)}.pdf`,
-          filters: [{ name: 'PDF', extensions: ['pdf'] }],
-        },
-        configuredDefaultSaveDir(app),
-      )
+      // Headless export has no dialog to authorize a path; the CLI already chose one.
+      const picked =
+        isHeadlessMode() && typeof request.outPath === 'string' && request.outPath
+          ? { canceled: false, filePath: request.outPath }
+          : await showSaveDialogWithMemory(
+              dialog,
+              win,
+              {
+                defaultPath: `${exportFileName(request.suggestedName)}.pdf`,
+                filters: [{ name: 'PDF', extensions: ['pdf'] }],
+              },
+              configuredDefaultSaveDir(app),
+            )
       if (picked.canceled || !picked.filePath) return { ok: true, canceled: true }
       const workDir = await mkdtemp(join(tmpdir(), 'genoffice-html-pdf-'))
       try {
@@ -1508,6 +1545,44 @@ function registerHtmlIpc(): void {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       } finally {
         await rm(workDir, { recursive: true, force: true }).catch(() => {})
+      }
+    },
+  )
+
+  ipcMain.handle(
+    HTML_CHANNELS.exportHtml,
+    async (e, request: ExportHtmlRequest): Promise<ExportResult> => {
+      if (typeof request?.html !== 'string') {
+        return { ok: false, error: 'html: bad export request' }
+      }
+      const win =
+        BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
+      // Headless export has no dialog to authorize a path; the CLI already chose one.
+      const picked =
+        isHeadlessMode() && typeof request.outPath === 'string' && request.outPath
+          ? { canceled: false, filePath: request.outPath }
+          : await showSaveDialogWithMemory(
+              dialog,
+              win,
+              {
+                defaultPath: `${singleFileExportBaseName(exportFileName(request.suggestedName))}.html`,
+                filters: [{ name: 'HTML', extensions: ['html'] }],
+              },
+              configuredDefaultSaveDir(app),
+            )
+      if (picked.canceled || !picked.filePath) return { ok: true, canceled: true }
+      const docPath = savePathByWc.get(e.sender.id) ?? null
+      // inlining the document into itself would silently rewrite the working file
+      if (docPath && resolve(picked.filePath) === resolve(docPath)) {
+        return { ok: false, error: 'single-file export cannot overwrite the open document' }
+      }
+      try {
+        const { html } = await inlineImagesForSingleFile(request.html, docPath)
+        await writeFile(picked.filePath, html, 'utf8')
+        if (!isHeadlessMode()) shell.showItemInFolder(picked.filePath)
+        return { ok: true, path: picked.filePath }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     },
   )
@@ -1579,11 +1654,7 @@ function bindPresentView(wc: WebContents, ownerWcId: number, title: string): voi
   installExternalLinkOpener(wc)
   wc.once('destroyed', () => presentOwnerByWc.delete(wcId))
   const query = { present: String(ownerWcId), title }
-  if (runtime.rendererUrl) {
-    const url = new URL(runtime.rendererUrl)
-    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v)
-    void wc.loadURL(url.toString())
-  } else if (runtime.rendererFile) void wc.loadFile(runtime.rendererFile, { query })
+  void wc.loadURL(rendererUrl(runtime.rendererUrl, 'html', query))
 }
 
 export function createHtmlPresentView(owner: WebContents, title: string): WebContentsView {
@@ -1600,6 +1671,65 @@ export function createHtmlPresentView(owner: WebContents, title: string): WebCon
   return view
 }
 
+/** hidden export windows: webContents id -> what the renderer must write */
+const headlessExportTargets = new Map<number, HeadlessExportTarget>()
+/** settled by the renderer's headless-export-done message (or by it dying) */
+const headlessExportWaiters = new Map<number, (result: HeadlessHtmlReport) => void>()
+
+interface HeadlessHtmlReport {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Render `input` to `outPath` (PDF or Word) with no visible window: a hidden
+ * html renderer opens the file through the normal pending-open queue and runs
+ * the File menu's own export, which already renders in a second hidden window.
+ */
+export async function exportHtmlHeadless(
+  input: string,
+  outPath: string,
+  format: HeadlessExportFormat = 'pdf',
+  timeoutMs = 180_000,
+): Promise<void> {
+  registerHtmlIpc()
+  const win = new BrowserWindow({
+    show: false,
+    width: 1200,
+    height: 850,
+    webPreferences: {
+      preload: runtime.preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  })
+  const wcId = win.webContents.id
+  grantAndTrack(win.webContents, input)
+  headlessExportTargets.set(wcId, { outPath, format })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const report = await new Promise<HeadlessHtmlReport>((resolve) => {
+      headlessExportWaiters.set(wcId, resolve)
+      win.webContents.on('render-process-gone', (_event, details) =>
+        resolve({ ok: false, error: `html renderer stopped (${details.reason})` }),
+      )
+      timer = setTimeout(
+        () => resolve({ ok: false, error: `html export timed out after ${timeoutMs}ms` }),
+        timeoutMs,
+      )
+      void win.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'html'))
+    })
+    if (!report.ok) throw new Error(report.error ?? 'html export failed')
+  } finally {
+    if (timer) clearTimeout(timer)
+    headlessExportWaiters.delete(wcId)
+    headlessExportTargets.delete(wcId)
+    if (!win.isDestroyed()) win.destroy()
+  }
+}
+
 export function createHtmlView(openPath?: string | null): WebContentsView {
   registerHtmlIpc()
   const view = new WebContentsView({
@@ -1611,14 +1741,13 @@ export function createHtmlView(openPath?: string | null): WebContentsView {
     },
   })
   grantAndTrack(view.webContents, openPath)
-  if (runtime.rendererUrl) void view.webContents.loadURL(runtime.rendererUrl)
-  else if (runtime.rendererFile) void view.webContents.loadFile(runtime.rendererFile)
+  void view.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'html'))
   return view
 }
 
 /** Standalone window mode: `npm run dev -w @genoffice/html`, md path passed via argv */
 export function startHtmlStandalone(): void {
-  registerHtmlSchemes()
+  registerPrivilegedSchemes()
   installNavigationGuard(app)
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   configureHtmlRuntime({
@@ -1627,6 +1756,7 @@ export function startHtmlStandalone(): void {
     rendererFile: join(__dirname, '../renderer/index.html'),
   })
   void app.whenReady().then(() => {
+    installRendererProtocol({ html: join(__dirname, '../renderer') })
     registerHtmlIpc()
     const win = new BrowserWindow({
       width: 1200,
@@ -1640,8 +1770,7 @@ export function startHtmlStandalone(): void {
     })
     const argPath = process.argv.slice(1).find((a) => /\.html?$/i.test(a) && existsSync(a))
     grantAndTrack(win.webContents, argPath)
-    if (runtime.rendererUrl) void win.loadURL(runtime.rendererUrl)
-    else if (runtime.rendererFile) void win.loadFile(runtime.rendererFile)
+    void win.loadURL(rendererUrl(runtime.rendererUrl, 'html'))
   })
   app.on('window-all-closed', () => app.quit())
 }

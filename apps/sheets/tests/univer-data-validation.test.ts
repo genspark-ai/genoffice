@@ -8,7 +8,8 @@ import {
   openActiveDataValidationDropdown,
   shouldShowDataValidationDropdown,
 } from '../src/renderer/data-validation-dropdown'
-import { toUniverDvRule } from '../src/renderer/univer-sync'
+import { stripInvalidDataMarker } from '../src/renderer/data-validation-marker'
+import { resolveDvListSource, toUniverDvRule } from '../src/renderer/univer-sync'
 
 const listRule = {
   ranges: [{ startRow: 1, startColumn: 4, endRow: 100, endColumn: 4 }],
@@ -58,6 +59,54 @@ describe('toUniverDvRule', () => {
         'file-dv-sheet-1-0',
       ),
     ).toMatchObject({ formula1: '1', formula2: '10' })
+  })
+
+  it('trims the items of a literal list like Excel', () => {
+    expect(
+      toUniverDvRule({ ...listRule, formulas: ['"Yes, No"'] }, 'file-dv-sheet-1-0'),
+    ).toMatchObject({ formula1: 'Yes,No' })
+  })
+
+  it('rewrites a defined name aliasing a table column to its data rows', () => {
+    const table = {
+      range: { startRow: 0, endRow: 47, startColumn: 3, endColumn: 6 },
+      headerRowCount: 1,
+      name: 'tblStaff',
+      columns: ['ID', 'NAME', 'BADGE', 'ROLE'],
+    }
+    const book = (tables: object[]) =>
+      ({
+        definedNames: [{ name: 'staffList', formula: 'tblStaff[NAME]' }],
+        sheets: [{ name: 'Payroll', tables }],
+      }) as never
+    const file = book([table])
+    expect(
+      toUniverDvRule({ ...listRule, formulas: ['staffList'] }, 'file-dv-sheet-1-0', file),
+    ).toMatchObject({ formula1: "='Payroll'!$E$2:$E$48" })
+    expect(resolveDvListSource('tblStaff[[NAME]]', file)).toBe("'Payroll'!$E$2:$E$48")
+    // Excel's Table[Column] excludes the totals band.
+    expect(resolveDvListSource('tblStaff[NAME]', book([{ ...table, totalsRowCount: 1 }]))).toBe(
+      "'Payroll'!$E$2:$E$47",
+    )
+    expect(resolveDvListSource('tblStaff[BADGE]', undefined)).toBe('tblStaff[BADGE]')
+    expect(resolveDvListSource('otherName', file)).toBe('otherName')
+    expect(resolveDvListSource('$AK$3:$AK$5', file)).toBe('$AK$3:$AK$5')
+  })
+})
+
+describe('stripInvalidDataMarker', () => {
+  it('removes only the data-validation invalid mark', () => {
+    const cell = {
+      v: 'No',
+      markers: { tr: { color: '#fe4b4b', size: 6 }, tl: { color: '#00ff00', size: 6 } },
+    }
+    expect(stripInvalidDataMarker(cell)).toEqual({
+      v: 'No',
+      markers: { tl: { color: '#00ff00', size: 6 } },
+    })
+    const note = { v: 1, markers: { tr: { color: '#ff0000', size: 6 } } }
+    expect(stripInvalidDataMarker(note)).toBe(note)
+    expect(stripInvalidDataMarker(null)).toBeNull()
   })
 })
 

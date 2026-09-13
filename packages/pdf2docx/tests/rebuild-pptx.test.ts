@@ -87,17 +87,81 @@ describe('rebuildPptx', () => {
     const paras = texts[0].text.paragraphs
     expect(paras.length).toBe(1)
     const joined = paras[0].runs.map((r: any) => r.text).join('')
-    expect(joined).toBe('Title line one and line two')
-    // same style spans merge into a single run
-    expect(paras[0].runs.length).toBe(1)
-    expect(paras[0].runs[0].fontSize).toBe(18)
-    expect(paras[0].runs[0].color).toBe('#112233')
+    // source lines stay hard breaks; the box never re-wraps them
+    expect(joined).toBe('Title line one\nand line two')
+    expect(texts[0].text.wrap).toBe(false)
+    // same style spans merge into a single run per line (the parser reads
+    // the <a:br/> back as its own '\n' run)
+    const textRuns = paras[0].runs.filter((r: any) => r.text !== '\n')
+    expect(textRuns.length).toBe(2)
+    expect(textRuns[0].fontSize).toBe(18)
+    expect(textRuns[0].color).toBe('#112233')
     // measured position: x = 72pt, y = pageH - y1 = 405-391 = 14pt
     const off = texts[0].transform.offset
     expect(off.x).toBe(72 * EMU_PER_PT)
     expect(off.y).toBe(14 * EMU_PER_PT)
     // exact line pitch = blockH/2 = 18pt
     expect(paras[0].lineExact).toBeCloseTo(18, 5)
+  })
+
+  it('curved fills become native preset shapes behind the text', async () => {
+    const p = page({
+      blocks: [
+        textBlock([line('Bullet', { x0: 80, y0: 300, x1: 150, y1: 312 })], {
+          x0: 80,
+          y0: 300,
+          x1: 150,
+          y1: 312,
+        }),
+      ],
+      shapes: {
+        strokes: [],
+        fills: [],
+        ignoredPaths: 0,
+        curvedFills: [
+          { box: { x0: 60, y0: 302, x1: 68, y1: 310 }, color: '000000', geometry: 'ellipse' },
+          {
+            box: { x0: 40, y0: 100, x1: 400, y1: 200 },
+            color: '3366cc',
+            geometry: 'roundRect',
+            cornerRadiusPt: 25,
+          },
+        ],
+      },
+    })
+    const opened = await openPptx(await rebuildPptx([p]))
+    const shapes = opened.deck.slides[0]!.elements.filter((e) => e.type === 'shape') as any[]
+    expect(shapes.map((s) => s.presetGeometry).sort()).toEqual(['ellipse', 'roundRect'])
+    const card = shapes.find((s) => s.presetGeometry === 'roundRect')
+    // radius 25pt on a 100pt short side → adj 25000
+    expect(card.adjust.adj).toBe(25000)
+    // shapes paint before (under) the text box
+    const order = opened.deck.slides[0]!.elements.map((e) => e.type)
+    expect(order.lastIndexOf('shape')).toBeLessThan(order.indexOf('text'))
+  })
+
+  it('fills sharing a form z keep their source paint order across the two pools', async () => {
+    const p = page({
+      shapes: {
+        strokes: [],
+        // the rect was drawn AFTER the rounded card inside one form (same z)
+        fills: [{ box: { x0: 50, y0: 50, x1: 150, y1: 150 }, color: 'ff0000', z: 3, seq: 8 }],
+        ignoredPaths: 0,
+        curvedFills: [
+          {
+            box: { x0: 40, y0: 40, x1: 300, y1: 200 },
+            color: '0000ff',
+            z: 3,
+            seq: 5,
+            geometry: 'roundRect',
+            cornerRadiusPt: 10,
+          },
+        ],
+      },
+    })
+    const opened = await openPptx(await rebuildPptx([p]))
+    const shapes = opened.deck.slides[0]!.elements.filter((e) => e.type === 'shape') as any[]
+    expect(shapes.map((s) => s.presetGeometry)).toEqual(['roundRect', 'rect'])
   })
 
   it('two text blocks stay two textboxes (granularity)', async () => {

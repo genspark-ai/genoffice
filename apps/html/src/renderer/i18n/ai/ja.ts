@@ -72,6 +72,8 @@ export const ja = {
   aiToolClarifySkipped: 'アンケートをスキップ',
   aiToolPlan: 'ブリーフ確定（{n} セクション）',
   aiToolPlanRejected: 'ブリーフ未確定',
+  aiToolPlanFailed: 'ブリーフを作成できませんでした',
+  aiDraftingBrief: 'ブリーフを作成中…',
   aiToolWritePage: 'ページを生成しました',
   aiToolWritePageFailed: 'ページの生成に失敗しました',
   aiToolWritePagePartial: 'ページの一部を生成しました',

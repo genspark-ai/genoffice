@@ -19,6 +19,12 @@ const WARNING_PENALTY = 0.06
 /** cap of the warning penalty */
 const WARNING_PENALTY_MAX = 0.3
 
+/** the spacing chain clamps overlapping blocks for the paragraph FLOW; an
+ * absolutely positioned output keeps the overlap exactly as authored */
+const FLOW_ONLY_WARNING_RE = /^overlapping blocks/
+
+export const isFlowOnlyWarning = (warning: string): boolean => FLOW_ONLY_WARNING_RE.test(warning)
+
 export interface ConfidenceSignals {
   /** share of U+FFFD / private-use code points among the page's text chars */
   badUnicodeRatio: number

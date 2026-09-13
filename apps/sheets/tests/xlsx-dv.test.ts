@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyDvRules, DvEditError } from '../src/gateway/xlsx-dv'
+import { applyDvRules, DvEditError } from '@genoffice/xlsx-gateway/gateway/xlsx-dv'
 
 const SHEET =
   '<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>' +

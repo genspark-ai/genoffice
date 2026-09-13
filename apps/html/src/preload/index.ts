@@ -9,6 +9,9 @@ import type { AutoSaveDefault, ExportFormat, HtmlApi, SaveMode, UiTheme } from '
 
 const api: HtmlApi = {
   consumePending: () => ipcRenderer.invoke(HTML_CHANNELS.consumePending),
+  consumeHeadlessExport: () => ipcRenderer.invoke(HTML_CHANNELS.consumeHeadlessExport),
+  headlessExportDone: (result: { ok: boolean; error?: string }) =>
+    ipcRenderer.send(HTML_CHANNELS.headlessExportDone, result),
   readFile: (path) => ipcRenderer.invoke(HTML_CHANNELS.readFile, path),
   updatePreview: (text) => ipcRenderer.send(HTML_CHANNELS.previewUpdate, text),
   getPreviewInfo: () => ipcRenderer.invoke(HTML_CHANNELS.previewInfo),
@@ -56,6 +59,7 @@ const api: HtmlApi = {
   },
   exportDocx: (request) => ipcRenderer.invoke(HTML_CHANNELS.exportDocx, request),
   exportPdf: (request) => ipcRenderer.invoke(HTML_CHANNELS.exportPdf, request),
+  exportHtml: (request) => ipcRenderer.invoke(HTML_CHANNELS.exportHtml, request),
   getLanguage: () => ipcRenderer.invoke(HTML_CHANNELS.getLanguage),
   onLanguageChanged: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, lang: Lang) => handler(lang)

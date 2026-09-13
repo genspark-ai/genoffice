@@ -74,6 +74,7 @@ export const IPC_CHANNELS = {
   closeSaveRequest: 'workbook:close-save-request',
   closeSaveResult: 'workbook:close-save-result',
   exportPdf: 'workbook:export-pdf',
+  printWorkbook: 'workbook:print',
   exportCsv: 'workbook:export-csv',
   csvSaveConfirm: 'workbook:csv-save-confirm',
   /** AI create_document: new standalone file in the default folder (no dialog) */

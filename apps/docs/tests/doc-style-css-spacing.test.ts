@@ -99,6 +99,11 @@ describe('docStyleCss spacing', () => {
       parsedWith('Body', { lineRule: 'auto', lineRawTwips: 480, spaceAfterTwips: 100 }),
     )
     expect(auto).not.toContain('--doc-line-fixed')
+    // line="0" atLeast is a natural-height fixed line: its spans must not
+    // re-snap to the grid either (Word probe 2026-09-11)
+    const zero = docStyleCss(parsedWith('Loose', { lineRule: 'atLeast', lineRawTwips: 0 }))
+    expect(zero).toMatch(/\[data-style="Loose"\] \{[^}]*--doc-line-fixed:1/)
+    expect(zero).toContain('[data-style="Loose"]:not(.doc-lh-fixed) span { line-height:inherit }')
   })
 
   it('lets a direct ctxSp off (.ctx-sp-off) escape the style-level suppression', () => {

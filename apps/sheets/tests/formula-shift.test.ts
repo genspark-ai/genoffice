@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { shiftFormulaRefs } from '../src/domain/formula-shift'
-import type { StructuralOperation } from '../src/domain/workbook-dsl'
+import { shiftFormulaRefs } from '@genoffice/xlsx-gateway/domain/formula-shift'
+import type { StructuralOperation } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 
 const insertRows = (row: number, count = 1): StructuralOperation => ({
   op: 'insert_rows',
@@ -148,6 +148,7 @@ describe('shiftFormulaRefs: sheet prefixes', () => {
   it("handles quoted sheet names with apostrophes ('' escaping)", () => {
     expect(shift("='Bob''s'!B5", insertRows(3), false, "Bob's").formula).toBe("='Bob''s'!B6")
     expect(shift("='Bob''s'!B:B", insertCols('A'), false, "Bob's").formula).toBe("='Bob''s'!C:C")
+    expect(shift("='Bob''s'!2:4", insertRows(2), false, "Bob's").formula).toBe("='Bob''s'!3:5")
     // wrong sheet must not rewrite
     expect(shift("='Bob''s'!B5", insertRows(3), false, 'Other').formula).toBe("='Bob''s'!B5")
   })

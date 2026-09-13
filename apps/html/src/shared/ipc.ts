@@ -1,4 +1,5 @@
 import type { AiPanelPrefs } from '@genoffice/ui'
+import type { HeadlessExportTarget } from '@genoffice/electron-utils/headless-export'
 import type { Lang } from '@genoffice/i18n'
 import type {
   AiSettings,
@@ -29,6 +30,9 @@ export const HTML_CHANNELS = {
   exportRequest: 'html:export-request',
   exportDocx: 'html:export-docx',
   exportPdf: 'html:export-pdf',
+  exportHtml: 'html:export-html',
+  consumeHeadlessExport: 'html:consume-headless-export',
+  headlessExportDone: 'html:headless-export-done',
   printRequest: 'html:print-request',
   aiGenerateImage: 'html:ai-generate-image',
   filesPick: 'html:files-pick',
@@ -142,7 +146,7 @@ export interface ImageSearchResult {
   error?: string
 }
 
-export type ExportFormat = 'pdf' | 'docx'
+export type ExportFormat = 'pdf' | 'docx' | 'html'
 
 /** Word export: html2docx renders the document in a hidden window and writes native OOXML; the result opens in Docs */
 export interface ExportDocxRequest {
@@ -150,12 +154,25 @@ export interface ExportDocxRequest {
   html: string
   /** file name (no extension) suggested in the dialog */
   suggestedName: string
+  /** headless export mode only: write here instead of opening the save dialog */
+  outPath?: string
 }
 
 export interface ExportPdfRequest {
   /** self-contained print HTML */
   html: string
   suggestedName: string
+  /** headless export mode only: write here instead of opening the save dialog */
+  outPath?: string
+}
+
+/** Single-file HTML export: local image references inlined as data URLs; opens without the assets/ folder */
+export interface ExportHtmlRequest {
+  /** the document text */
+  html: string
+  suggestedName: string
+  /** headless export mode only: write here instead of opening the save dialog */
+  outPath?: string
 }
 
 export type ExportResult =
@@ -170,6 +187,10 @@ export interface ImageData {
 export interface HtmlApi {
   /** Take the md path pending for this view (queued at tab creation); null = new untitled document */
   consumePending(): Promise<string | null>
+  /** Headless export mode: the path and format this hidden renderer must export, null in normal use */
+  consumeHeadlessExport(): Promise<HeadlessExportTarget | null>
+  /** Headless export mode: report the export outcome so the main process can quit */
+  headlessExportDone(result: { ok: boolean; error?: string }): void
   /** Read the file as UTF-8 text. Only paths granted to this view are allowed */
   readFile(path: string): Promise<string>
   /** Push the current buffer so html-preview:// serves it to the preview iframe */
@@ -233,6 +254,7 @@ export interface HtmlApi {
   onPrintRequest(handler: () => void): () => void
   exportDocx(request: ExportDocxRequest): Promise<ExportResult>
   exportPdf(request: ExportPdfRequest): Promise<ExportResult>
+  exportHtml(request: ExportHtmlRequest): Promise<ExportResult>
   getLanguage(): Promise<Lang>
   onLanguageChanged(handler: (lang: Lang) => void): () => void
   getTheme(): Promise<UiTheme>

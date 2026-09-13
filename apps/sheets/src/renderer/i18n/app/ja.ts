@@ -557,6 +557,12 @@ export const ja = {
   appPdfCanceled: 'PDF エクスポートをキャンセルしました。',
   appPdfExported: '{path} をエクスポートしました。',
   appPdfExportFailed: 'PDF をエクスポートできません。',
+  appPrintPreparing: '印刷を準備しています…',
+  appPrintSent: 'プリンターに送信しました。',
+  appPrintCanceled: '印刷をキャンセルしました。',
+  appPrintFailed: '印刷できません。',
+  appPrintNeedsFullLoad:
+    '印刷にはワークブックの完全な読み込みが必要です。読み込み完了までお待ちください。',
   appCsvExportNeedsFullLoad:
     'CSV エクスポートにはブックの完全読み込みが必要です — 読み込みの完了をお待ちください。',
   appCsvExportTooLarge: 'シートが大きすぎるため、CSV をエクスポートできません。',
@@ -1361,6 +1367,8 @@ export const ja = {
   appFormatMenu: '書式',
   appRowHeight: '行の高さ',
   appColWidth: '列の幅',
+  appAutoFitRowHeight: '行の高さの自動調整',
+  appAutoFitColWidth: '列の幅の自動調整',
   appRowHeightLabel: '行の高さ（ポイント）',
   appColWidthLabel: '列の幅（文字数）',
   appDeleteRow: '行の削除',

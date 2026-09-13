@@ -30,7 +30,7 @@ test('re-enabling spellcheck respells existing text without user input', async (
   const { app, page } = launched
   try {
     await page.locator('.quick-card').first().click()
-    const editor = await waitForPageWithUrl(app, 'docs/out')
+    const editor = await waitForPageWithUrl(app, '://docs/')
     await editor.locator('.doc-page').waitFor()
     await wait(1500)
 
@@ -71,5 +71,54 @@ test('re-enabling spellcheck respells existing text without user input', async (
     expect(textAfter).not.toContain('  ')
   } finally {
     await closeAndSaveVideo(launched, 'spellcheck-reenable')
+  }
+})
+
+test('toggling spellcheck never scrolls the view to the caret', async () => {
+  test.setTimeout(120_000)
+  const launched = await launchShell({ onboardingSeen: true, videoDir: 'spellcheck-noscroll' })
+  const { app } = launched
+  try {
+    await launched.page.locator('.quick-card').first().click()
+    const editor = await waitForPageWithUrl(app, '://docs/')
+    await editor.locator('.doc-page').waitFor()
+    await wait(1500)
+
+    // two pages of short lines, caret ends up on the last page
+    await editor.locator('.doc-page').click()
+    for (let i = 0; i < 58; i++) {
+      await editor.keyboard.type(`ligne ${i}`, { delay: 0 })
+      await editor.keyboard.press('Enter')
+    }
+    await wait(1000)
+    const pages = await editor.locator('.page-gap-inline, .page-gap').count()
+    expect(pages).toBeGreaterThan(0) // the caret really sits pages below the top
+
+    // look at the top of the document while the caret stays at the end
+    const scrollTo = (y: number) =>
+      editor.evaluate((top) => {
+        const s = document.querySelector('.editor-scroll')
+        if (s) s.scrollTop = top
+        return s?.scrollTop ?? -1
+      }, y)
+    await scrollTo(0)
+    await wait(300)
+
+    const spelling = editor.getByRole('button', { name: 'Spelling' })
+    await editor.getByRole('button', { name: 'Review' }).click()
+    await spelling.waitFor()
+    const before = await editor.evaluate(
+      () => document.querySelector('.editor-scroll')?.scrollTop ?? -1,
+    )
+    await spelling.click() // off
+    await wait(800)
+    await spelling.click() // on again → respell kick types at the (off-screen) caret
+    await wait(2500)
+    const after = await editor.evaluate(
+      () => document.querySelector('.editor-scroll')?.scrollTop ?? -1,
+    )
+    expect(Math.abs(after - before)).toBeLessThanOrEqual(2) // no jump to the caret's page
+  } finally {
+    await closeAndSaveVideo(launched, 'spellcheck-noscroll')
   }
 })

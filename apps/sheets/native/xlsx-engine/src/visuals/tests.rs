@@ -51,10 +51,94 @@ fn pivot_row_kinds_tabular_and_single_field_are_data() {
 }
 
 fn metadata_with(body: &str, colors: &ColorContext) -> ChartMetadata {
+    metadata_linked(body, colors, &mut |_| None)
+}
+
+fn metadata_linked(
+    body: &str,
+    colors: &ColorContext,
+    lookup: &mut SourceFormatLookup<'_>,
+) -> ChartMetadata {
     let xml = format!(
         r#"<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart>{body}</c:chart></c:chartSpace>"#
     );
-    chart_metadata(&Document::parse(&xml).unwrap(), colors)
+    chart_metadata(&Document::parse(&xml).unwrap(), colors, lookup)
+}
+
+/// A combo chart's secondary value axis links to the cells of the series
+/// plotted against it, not to the first series of the chart.
+#[test]
+fn combo_secondary_axis_links_to_its_own_series_cells() {
+    let body = r#"<c:plotArea><c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/><c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f><c:numCache><c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:axId val="1"/><c:axId val="2"/></c:barChart><c:lineChart><c:ser><c:idx val="1"/><c:val><c:numRef><c:f>Data!$C$2:$C$4</c:f><c:numCache><c:pt idx="0"><c:v>0.5</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:axId val="3"/><c:axId val="4"/></c:lineChart><c:catAx><c:axId val="1"/><c:axPos val="b"/></c:catAx><c:valAx><c:axId val="2"/><c:axPos val="l"/><c:numFmt formatCode="General" sourceLinked="1"/></c:valAx><c:catAx><c:axId val="3"/><c:axPos val="b"/><c:delete val="1"/></c:catAx><c:valAx><c:axId val="4"/><c:axPos val="r"/><c:numFmt formatCode="General" sourceLinked="1"/></c:valAx></c:plotArea>"#;
+    let chart = metadata_linked(body, &ColorContext::default(), &mut |reference| {
+        Some(
+            if reference.starts_with("Data!$C") {
+                "0%"
+            } else {
+                "#,##0"
+            }
+            .into(),
+        )
+    });
+    assert_eq!(chart.y_axis.unwrap().num_fmt.as_deref(), Some("#,##0"));
+    assert_eq!(
+        chart.secondary_y_axis.unwrap().num_fmt.as_deref(),
+        Some("0%")
+    );
+}
+
+/// Horizontal bars put the value axis at the bottom: source formats follow
+/// the axis kind, not its side.
+#[test]
+fn horizontal_bar_value_axis_takes_the_value_cells_format() {
+    let body = r#"<c:plotArea><c:barChart><c:barDir val="bar"/><c:ser><c:idx val="0"/><c:cat><c:numRef><c:f>Data!$A$2:$A$4</c:f><c:numCache><c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:cat><c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f><c:numCache><c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:barChart><c:catAx><c:axPos val="l"/><c:numFmt formatCode="General" sourceLinked="1"/></c:catAx><c:valAx><c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="1"/></c:valAx></c:plotArea>"#;
+    let chart = metadata_linked(body, &ColorContext::default(), &mut |reference| {
+        Some(
+            if reference.starts_with("Data!$A") {
+                "0.0%"
+            } else {
+                "#,##0"
+            }
+            .into(),
+        )
+    });
+    // Positional slots: the bottom (x) axis is the value axis here.
+    assert_eq!(chart.x_axis.unwrap().num_fmt.as_deref(), Some("#,##0"));
+    assert_eq!(chart.y_axis.unwrap().num_fmt.as_deref(), Some("0.0%"));
+    assert_eq!(chart.category_axis_format.as_deref(), Some("0.0%"));
+}
+
+/// sourceLinked="1": cells, then the numCache formatCode, then the literal;
+/// sourceLinked="0" keeps the literal even when the cells differ.
+#[test]
+fn source_linked_num_fmt_prefers_cells_then_cache_then_literal() {
+    let body = |cache: &str, linked: &str| {
+        format!(
+            r#"<c:plotArea><c:barChart><c:ser><c:idx val="0"/><c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f><c:numCache>{cache}<c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser><c:dLbls><c:numFmt formatCode="0.0" sourceLinked="{linked}"/><c:showVal val="1"/></c:dLbls></c:barChart><c:valAx><c:axPos val="l"/><c:numFmt formatCode="0.0" sourceLinked="{linked}"/></c:valAx></c:plotArea>"#
+        )
+    };
+    let colors = ColorContext::default();
+    let cells = metadata_linked(&body("", "1"), &colors, &mut |reference| {
+        assert_eq!(reference, "Data!$B$2:$B$4");
+        Some("#,##0".into())
+    });
+    assert_eq!(cells.y_axis.unwrap().num_fmt.as_deref(), Some("#,##0"));
+    assert_eq!(cells.data_label_format.as_deref(), Some("#,##0"));
+    assert_eq!(cells.series[0].number_format.as_deref(), Some("#,##0"));
+    let cached = metadata_linked(
+        &body("<c:formatCode>0%</c:formatCode>", "1"),
+        &colors,
+        &mut |_| None,
+    );
+    assert_eq!(cached.y_axis.unwrap().num_fmt.as_deref(), Some("0%"));
+    assert_eq!(cached.data_label_format.as_deref(), Some("0%"));
+    let literal = metadata_linked(&body("", "1"), &colors, &mut |_| None);
+    assert_eq!(literal.y_axis.unwrap().num_fmt.as_deref(), Some("0.0"));
+    let unlinked = metadata_linked(&body("", "0"), &colors, &mut |_| Some("#,##0".into()));
+    assert_eq!(unlinked.y_axis.unwrap().num_fmt.as_deref(), Some("0.0"));
+    assert_eq!(unlinked.data_label_format.as_deref(), Some("0.0"));
+    // The cache still fills the series format the cells would otherwise give.
+    assert_eq!(unlinked.series[0].number_format.as_deref(), Some("#,##0"));
 }
 
 fn metadata(body: &str) -> ChartMetadata {
@@ -229,6 +313,27 @@ fn gradient_fill_blends_outermost_stops() {
     assert_eq!(fill.color.as_deref(), Some("#A1B8E1"));
     assert_eq!(fill.theme, None);
     assert_eq!(fill.tint, None);
+}
+
+#[test]
+fn dxf_gradient_fill_becomes_the_blended_highlight_color() {
+    let colors = ColorContext {
+        theme: vec![(0xFF, 0xFF, 0xFF)],
+        ..ColorContext::default()
+    };
+    let xml = r#"<dxf><font><b/></font><fill><gradientFill degree="90"><stop position="0"><color theme="0"/></stop><stop position="1"><color rgb="FFFF0000"/></stop></gradientFill></fill></dxf>"#;
+    let document = Document::parse(xml).unwrap();
+    let style = parse_dxf(document.root_element(), &colors);
+    assert!(style.bold);
+    assert_eq!(style.fill_color.as_deref(), Some("#FF7F7F"));
+}
+
+#[test]
+fn dxf_pattern_fill_still_prefers_bg_color() {
+    let xml = r#"<dxf><fill><patternFill><bgColor rgb="FF00FF00"/></patternFill></fill></dxf>"#;
+    let document = Document::parse(xml).unwrap();
+    let style = parse_dxf(document.root_element(), &ColorContext::default());
+    assert_eq!(style.fill_color.as_deref(), Some("#00FF00"));
 }
 
 #[test]
@@ -1708,4 +1813,184 @@ fn deleted_axes_report_hidden() {
     assert_eq!(json["yAxis"]["hidden"], true);
     assert!(metadata(&axes("<c:delete/>")).y_axis.unwrap().hidden);
     assert!(!metadata(&axes("")).y_axis.unwrap().hidden);
+}
+
+/// A horizontal bar with maxMin categories puts its value axis on top
+/// (`c:valAx/c:axPos val="t"`); the side is reported so the renderer can
+/// lay the scale there.
+#[test]
+fn axes_report_their_axpos_side() {
+    let plot = r#"<c:plotArea><c:barChart><c:barDir val="bar"/><c:ser><c:idx val="0"/></c:ser>
+        <c:axId val="1"/><c:axId val="2"/></c:barChart>
+        <c:catAx><c:axId val="1"/><c:scaling><c:orientation val="maxMin"/></c:scaling><c:axPos val="l"/><c:crossAx val="2"/></c:catAx>
+        <c:valAx><c:axId val="2"/><c:axPos val="t"/><c:crossAx val="1"/></c:valAx>
+        </c:plotArea>"#;
+    let chart = metadata(plot);
+    assert_eq!(
+        chart.x_axis.as_ref().unwrap().position.as_deref(),
+        Some("t")
+    );
+    assert_eq!(
+        chart.y_axis.as_ref().unwrap().position.as_deref(),
+        Some("l")
+    );
+    let json = serde_json::to_value(&chart).unwrap();
+    assert_eq!(json["xAxis"]["position"], "t");
+    let unsided = metadata("<c:plotArea><c:barChart/><c:catAx/><c:valAx/></c:plotArea>");
+    assert_eq!(unsided.x_axis.unwrap().position, None);
+}
+
+/// 3-D line ribbons carry `a:ln/a:noFill` because they are filled, not
+/// stroked; folded to a flat line they keep their fill as the stroke while
+/// a flat line's explicit noFill outline still means "no line".
+#[test]
+fn folded_3d_line_series_ignore_nofill_outline() {
+    let series = |plot: &str| {
+        format!(
+            r#"<c:plotArea><c:{plot}><c:ser><c:idx val="0"/><c:spPr><a:solidFill><a:srgbClr val="4F81BD"/></a:solidFill><a:ln><a:noFill/></a:ln></c:spPr>
+            <c:val><c:numRef><c:numCache><c:pt idx="0"><c:v>1</c:v></c:pt></c:numCache></c:numRef></c:val></c:ser></c:{plot}></c:plotArea>"#
+        )
+    };
+    let folded = metadata(&series("line3DChart"));
+    assert_eq!(folded.chart_types, vec!["lineChart"]);
+    assert_eq!(folded.series[0].line_color, None);
+    assert_eq!(folded.series[0].color.as_deref(), Some("#4F81BD"));
+    assert_eq!(metadata(&series("area3DChart")).series[0].line_color, None);
+    assert_eq!(
+        metadata(&series("lineChart")).series[0]
+            .line_color
+            .as_deref(),
+        Some("none")
+    );
+}
+
+const CHART_NS: &str = r#"xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main""#;
+
+#[test]
+fn drawing_gradient_fill_blends_its_outermost_stops() {
+    let colors = ColorContext {
+        theme: vec![
+            (0xFF, 0xFF, 0xFF),
+            (0x00, 0x00, 0x00),
+            (0, 0, 0),
+            (0, 0, 0),
+            (0x4F, 0x81, 0xBD),
+        ],
+        ..ColorContext::default()
+    };
+    // Excel's shaded bar preset: 51% shade at the start, 93%/94% at the end.
+    let xml = r#"<c:spPr xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:gradFill><a:gsLst><a:gs pos="80000"><a:schemeClr val="accent1"><a:shade val="93000"/></a:schemeClr></a:gs><a:gs pos="0"><a:schemeClr val="accent1"><a:shade val="51000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="accent1"><a:shade val="94000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="16200000" scaled="0"/></a:gradFill><a:ln><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln></c:spPr>"#;
+    let document = Document::parse(xml).unwrap();
+    // #28425F (pos 0) blended with #4A79B1 (pos 100000); the outline red is ignored.
+    assert_eq!(
+        drawing_fill_color(document.root_element(), &colors).as_deref(),
+        Some("#395D89")
+    );
+}
+
+#[test]
+fn chart_space_and_plot_area_fills_reach_the_metadata() {
+    let colors = ColorContext {
+        theme: vec![(0xFF, 0xFF, 0xFF), (0x00, 0x00, 0x00)],
+        ..ColorContext::default()
+    };
+    let xml = format!(
+        r#"<c:chartSpace {CHART_NS}><c:chart><c:plotArea><c:barChart><c:barDir val="col"/></c:barChart><c:valAx><c:axPos val="l"/></c:valAx><c:spPr><a:noFill/><a:ln><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:ln></c:spPr></c:plotArea></c:chart><c:spPr><a:gradFill><a:gsLst><a:gs pos="0"><a:schemeClr val="dk1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="dk1"><a:lumMod val="85000"/><a:lumOff val="15000"/></a:schemeClr></a:gs></a:gsLst><a:path path="circle"/></a:gradFill><a:ln><a:noFill/></a:ln></c:spPr></c:chartSpace>"#
+    );
+    let chart = chart_metadata(&Document::parse(&xml).unwrap(), &colors, &mut |_| None);
+    // #595959 blended with #262626; the plot area's noFill stays transparent
+    // even though its outline carries a color.
+    assert_eq!(chart.chart_area_fill.as_deref(), Some("#3F3F3F"));
+    assert_eq!(chart.plot_area_fill, None);
+
+    let patterned = format!(
+        r#"<c:chartSpace {CHART_NS}><c:chart><c:plotArea><c:barChart/><c:spPr><a:pattFill prst="ltDnDiag"><a:fgClr><a:srgbClr val="000000"/></a:fgClr><a:bgClr><a:schemeClr val="lt1"/></a:bgClr></a:pattFill></c:spPr></c:plotArea></c:chart><c:spPr><a:solidFill><a:schemeClr val="bg1"/></a:solidFill></c:spPr></c:chartSpace>"#
+    );
+    let chart = chart_metadata(&Document::parse(&patterned).unwrap(), &colors, &mut |_| {
+        None
+    });
+    assert_eq!(chart.chart_area_fill.as_deref(), Some("#FFFFFF"));
+    assert_eq!(chart.plot_area_fill.as_deref(), Some("#7F7F7F"));
+
+    // Excel's dark chart style: tx1 at 81% alpha over the white sheet.
+    let translucent = format!(
+        r#"<c:chartSpace {CHART_NS}><c:chart><c:plotArea/></c:chart><c:spPr><a:solidFill><a:schemeClr val="tx1"><a:alpha val="81000"/></a:schemeClr></a:solidFill></c:spPr></c:chartSpace>"#
+    );
+    let chart = chart_metadata(
+        &Document::parse(&translucent).unwrap(),
+        &colors,
+        &mut |_| None,
+    );
+    assert_eq!(chart.chart_area_fill.as_deref(), Some("#303030"));
+
+    let plain =
+        format!(r#"<c:chartSpace {CHART_NS}><c:chart><c:plotArea/></c:chart></c:chartSpace>"#);
+    let chart = chart_metadata(&Document::parse(&plain).unwrap(), &colors, &mut |_| None);
+    let json = serde_json::to_value(&chart).unwrap();
+    assert!(json.get("chartAreaFill").is_none());
+    assert!(json.get("plotAreaFill").is_none());
+}
+
+#[test]
+fn srgb_fills_apply_their_child_modifiers() {
+    let colors = ColorContext::default();
+    // A custom translucent chart area: srgbClr with a:alpha composites over
+    // the white sheet like the schemeClr path; lumMod darkens likewise.
+    let xml = format!(
+        r#"<c:chartSpace {CHART_NS}><c:chart><c:plotArea><c:spPr><a:solidFill><a:srgbClr val="2080C0"><a:lumMod val="50000"/></a:srgbClr></a:solidFill></c:spPr></c:plotArea></c:chart><c:spPr><a:solidFill><a:srgbClr val="000000"><a:alpha val="50000"/></a:srgbClr></a:solidFill></c:spPr></c:chartSpace>"#
+    );
+    let chart = chart_metadata(&Document::parse(&xml).unwrap(), &colors, &mut |_| None);
+    assert_eq!(chart.chart_area_fill.as_deref(), Some("#808080"));
+    assert_eq!(chart.plot_area_fill.as_deref(), Some("#104060"));
+
+    let opaque = format!(
+        r#"<c:chartSpace {CHART_NS}><c:chart><c:plotArea/></c:chart><c:spPr><a:solidFill><a:srgbClr val="ff8800"/></a:solidFill></c:spPr></c:chartSpace>"#
+    );
+    let chart = chart_metadata(&Document::parse(&opaque).unwrap(), &colors, &mut |_| None);
+    assert_eq!(chart.chart_area_fill.as_deref(), Some("#FF8800"));
+}
+
+#[test]
+fn axis_text_sizes_colors_and_display_units_are_read() {
+    let colors = ColorContext {
+        theme: vec![(0xFF, 0xFF, 0xFF), (0x00, 0x00, 0x00)],
+        ..ColorContext::default()
+    };
+    let body = r#"<c:plotArea><c:barChart><c:barDir val="col"/></c:barChart>
+        <c:catAx><c:axPos val="b"/><c:txPr><a:bodyPr/><a:p><a:pPr><a:defRPr sz="900"/></a:pPr></a:p></c:txPr></c:catAx>
+        <c:valAx><c:axPos val="l"/>
+          <c:title><c:tx><c:rich><a:bodyPr/><a:p><a:pPr><a:defRPr sz="1000"><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:defRPr></a:pPr><a:r><a:rPr lang="en-US" sz="1000"/><a:t>Value</a:t></a:r></a:p></c:rich></c:tx></c:title>
+          <c:dispUnits><c:builtInUnit val="millions"/><c:dispUnitsLbl><c:txPr><a:bodyPr rot="-5400000"/><a:p><a:pPr><a:defRPr sz="1000"/></a:pPr></a:p></c:txPr></c:dispUnitsLbl></c:dispUnits>
+          <c:txPr><a:bodyPr/><a:p><a:pPr><a:defRPr sz="1100"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="75000"/></a:schemeClr></a:solidFill></a:defRPr></a:pPr></a:p></c:txPr>
+        </c:valAx></c:plotArea>"#;
+    let chart = metadata_with(body, &colors);
+    let x = chart.x_axis.unwrap();
+    assert_eq!(x.label_size, Some(9.0));
+    assert_eq!(x.title_size, None);
+    assert_eq!(x.display_unit, None);
+    let y = chart.y_axis.unwrap();
+    assert_eq!(y.label_size, Some(11.0));
+    assert_eq!(y.label_color.as_deref(), Some("#BFBFBF"));
+    assert_eq!(y.title_size, Some(10.0));
+    assert_eq!(y.title_color.as_deref(), Some("#FFFFFF"));
+    assert_eq!(x.title_color, None);
+    assert_eq!(y.display_unit, Some(1e6));
+    assert_eq!(y.display_unit_label.as_deref(), Some("Millions"));
+
+    // A divisor without c:dispUnitsLbl scales the ticks but draws no label;
+    // custUnit carries its own divisor; rich label text wins over the name.
+    let custom = r#"<c:plotArea><c:barChart/><c:valAx><c:axPos val="l"/><c:dispUnits><c:custUnit val="2500"/></c:dispUnits></c:valAx></c:plotArea>"#;
+    let y = metadata(custom).y_axis.unwrap();
+    assert_eq!(y.display_unit, Some(2500.0));
+    assert_eq!(y.display_unit_label, None);
+    let rich = r#"<c:plotArea><c:barChart/><c:valAx><c:axPos val="l"/><c:dispUnits><c:builtInUnit val="thousands"/><c:dispUnitsLbl><c:tx><c:rich><a:p><a:r><a:t>kEUR</a:t></a:r></a:p></c:rich></c:tx></c:dispUnitsLbl></c:dispUnits></c:valAx></c:plotArea>"#;
+    let y = metadata(rich).y_axis.unwrap();
+    assert_eq!(y.display_unit, Some(1e3));
+    assert_eq!(y.display_unit_label.as_deref(), Some("kEUR"));
+    let json = serde_json::to_value(&metadata(
+        "<c:plotArea><c:barChart/><c:valAx><c:axPos val=\"l\"/></c:valAx></c:plotArea>",
+    ))
+    .unwrap();
+    assert!(json["yAxis"].get("labelSize").is_none());
+    assert!(json["yAxis"].get("displayUnit").is_none());
 }

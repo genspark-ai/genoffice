@@ -27,7 +27,7 @@ test('slides chrome darkens while the slide canvas stays paper-white', async () 
   try {
     const shellPage = await findShellPage(launched.app)
     await shellPage.locator('.quick-card', { hasText: 'AI Slides' }).click()
-    const editorPage = await waitForPageWithUrl(launched.app, 'slides/out')
+    const editorPage = await waitForPageWithUrl(launched.app, '://slides/')
     await editorPage.waitForSelector('.stage-wrap canvas', { timeout: 20_000 })
 
     await shellPage.evaluate(() =>

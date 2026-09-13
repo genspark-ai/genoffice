@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyChartEdit, ChartEditError } from '../src/gateway/xlsx-chart'
+import { applyChartEdit, ChartEditError } from '@genoffice/xlsx-gateway/gateway/xlsx-chart'
 
 const BAR_CHART =
   '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">' +

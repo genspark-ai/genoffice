@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseSlide } from '../src/parse'
 import { patchedElementXml, setElementParagraphFormat } from '../src/index'
+import { parseMasterTextStyles } from '../src/placeholder'
 import type { TextElement } from '../src/types'
 
 const slideWith = (sp: string) =>
@@ -32,9 +33,59 @@ describe('setElementParagraphFormat', () => {
     expect(setElementParagraphFormat(slide, el.id, { bullet: 'char' })).toBe(true)
     const out = patchedElementXml(el)
     expect(out.match(/<a:buChar char="•"\/>/g)!.length).toBe(2)
-    expect(out).toContain('marL="228600"')
-    expect(out).toContain('indent="-228600"')
+    expect(out).toContain('marL="285750"')
+    expect(out).toContain('indent="-285750"')
     expect(out).toContain(RUN) // original run bytes fully preserved
+  })
+
+  it('gallery preset: buFont written before buChar; a plain character drops the symbol font', () => {
+    const { slide, el } = parseOne('<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p>')
+    setElementParagraphFormat(slide, el.id, {
+      bullet: 'char',
+      bulletChar: '§',
+      bulletFont: 'Wingdings',
+    })
+    expect(patchedElementXml(el)).toContain('<a:buFont typeface="Wingdings"/><a:buChar char="§"/>')
+    setElementParagraphFormat(slide, el.id, { bullet: 'char', bulletChar: '•' })
+    const out = patchedElementXml(el)
+    expect(out).not.toContain('buFont')
+    expect(out).toContain('<a:buChar char="•"/>')
+  })
+
+  it('picture bullet keeps its blip relationship through a size change', () => {
+    const { slide, el } = parseOne(
+      '<a:bodyPr/><a:p><a:pPr marL="342900" indent="-342900"><a:buBlip><a:blip r:embed="rId6"/></a:buBlip></a:pPr><a:r><a:t>x</a:t></a:r></a:p>',
+    )
+    setElementParagraphFormat(slide, el.id, { bulletSizePct: 150 })
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buSzPct val="150000"/><a:buBlip><a:blip r:embed="rId6"/></a:buBlip>')
+    expect(out.match(/<a:buBlip>/g)!.length).toBe(1) // the original element is lifted, not duplicated
+  })
+
+  it('picture bullet inherited from the master: a size change writes no glyph, the picture keeps inheriting', () => {
+    const master =
+      '<?xml version="1.0"?><p:sldMaster xmlns:p="p" xmlns:a="a" xmlns:r="r"><p:cSld><p:spTree><p:nvGrpSpPr/><p:grpSpPr/></p:spTree></p:cSld>' +
+      '<p:txStyles><p:bodyStyle><a:lvl1pPr marL="342900" indent="-342900"><a:buBlip><a:blip r:embed="rId9"/></a:buBlip></a:lvl1pPr></p:bodyStyle></p:txStyles></p:sldMaster>'
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(
+        '<p:sp><p:nvSpPr><p:cNvPr id="3" name="Body"/><p:nvSpPr/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>' +
+          '<p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p></p:txBody></p:sp>',
+      ),
+      ctx: {
+        masterTextStyles: parseMasterTextStyles(
+          master,
+          undefined,
+          new Map([['rId9', 'ppt/media/m.png']]),
+        ),
+      },
+    })
+    const el = slide.elements[0] as TextElement
+    expect(el.text!.paragraphs[0]!.bullet).toEqual({ type: 'blip', mediaRef: 'ppt/media/m.png' })
+    setElementParagraphFormat(slide, el.id, { bulletSizePct: 150 })
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buSzPct val="150000"/>')
+    expect(out).not.toMatch(/buBlip|buChar|rId9/)
   })
 
   it('custom bullet character written as buChar', () => {
@@ -125,6 +176,42 @@ describe('setElementParagraphFormat', () => {
     expect(patchedElementXml(el)).toContain('<a:buAutoNum type="arabicPeriod"/>')
   })
 
+  it('numbering scheme and start number written on buAutoNum; a scheme change alone re-schemes numbered paragraphs only', () => {
+    const { slide, el } = parseOne(
+      '<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p><a:p><a:r><a:t>y</a:t></a:r></a:p>',
+    )
+    setElementParagraphFormat(
+      slide,
+      el.id,
+      { bullet: 'number', numType: 'romanUcPeriod', startAt: 4 },
+      [0],
+    )
+    setElementParagraphFormat(slide, el.id, { bullet: 'char' }, [1])
+    expect(patchedElementXml(el)).toContain('<a:buAutoNum type="romanUcPeriod" startAt="4"/>')
+    setElementParagraphFormat(slide, el.id, { numType: 'alphaLcParenR' })
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buAutoNum type="alphaLcParenR" startAt="4"/>')
+    expect(out.match(/<a:buChar char="•"\/>/g)!.length).toBe(1)
+    // Re-applying plain numbering keeps the scheme and start
+    setElementParagraphFormat(slide, el.id, { bullet: 'number' }, [0])
+    expect(patchedElementXml(el)).toContain('<a:buAutoNum type="alphaLcParenR" startAt="4"/>')
+  })
+
+  it('picture bullet: a landed media rel is written as buBlip with the hanging indent', () => {
+    const { slide, el } = parseOne('<a:bodyPr/><a:p><a:r><a:t>x</a:t></a:r></a:p>')
+    setElementParagraphFormat(slide, el.id, {
+      bullet: 'blip',
+      bulletBlip: { mediaRef: 'ppt/media/image7.png', blipEmbedId: 'rId9' },
+    })
+    const out = patchedElementXml(el)
+    expect(out).toContain('<a:buBlip><a:blip r:embed="rId9"/></a:buBlip>')
+    expect(out).toContain('indent="-285750"')
+    expect(el.text!.paragraphs[0]!.bullet).toMatchObject({
+      type: 'blip',
+      mediaRef: 'ppt/media/image7.png',
+    })
+  })
+
   it('remove bullet: buNone + indent reset to zero; existing explicit buChar replaced', () => {
     const { slide, el } = parseOne(
       '<a:bodyPr/><a:p><a:pPr marL="342900" indent="-342900"><a:buChar char="v"/></a:pPr><a:r><a:t>x</a:t></a:r></a:p>',
@@ -204,11 +291,11 @@ describe('multi-level indentation indentDelta', () => {
     setElementParagraphFormat(slide, el.id, { indentDelta: 1 })
     const out = patchedElementXml(el)
     expect(out).toContain('lvl="1"')
-    expect(out).toContain('marL="457200"') // 228600 * (1+1)
+    expect(out).toContain('marL="571500"') // 285750 * (1+1)
     setElementParagraphFormat(slide, el.id, { indentDelta: -1 })
     const out2 = patchedElementXml(el)
     expect(out2).not.toContain('lvl=')
-    expect(out2).toContain('marL="228600"')
+    expect(out2).toContain('marL="285750"')
   })
 
   it('level clamped between 0 and 8', () => {

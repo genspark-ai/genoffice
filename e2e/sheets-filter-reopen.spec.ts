@@ -36,7 +36,7 @@ test.describe('sheets: filter criteria survive save and reopen', () => {
       await expect(page.locator('.quick-card').nth(1)).toContainText('AI Sheets')
       await page.locator('.quick-card').nth(1).click()
 
-      const sheets = await waitForPageWithUrl(app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(app, '://sheets/')
       await sheets.waitForFunction(() => document.body.textContent?.includes('Sheet1'), null, {
         timeout: 30_000,
       })
@@ -74,7 +74,7 @@ test.describe('sheets: filter criteria survive save and reopen', () => {
       await sheets.waitForTimeout(800)
 
       await app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
 
@@ -101,7 +101,7 @@ test.describe('sheets: filter criteria survive save and reopen', () => {
     })
     try {
       const { app } = relaunched
-      const sheets = await waitForPageWithUrl(app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(app, '://sheets/')
       await sheets.waitForFunction(() => document.body.textContent?.includes('Sheet1'), null, {
         timeout: 30_000,
       })

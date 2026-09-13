@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pinnedFloatPage, type PageSlice } from '../src/renderer/pagination'
-import { pinnedCloneCss } from '../src/renderer/components/PaginationPreview'
+import { hoistSlotOf, pinnedCloneCss } from '../src/renderer/components/PaginationPreview'
 
 const slice = (start: number, end: number): PageSlice => ({ start, end, section: 0 })
 
@@ -81,5 +81,26 @@ describe('pinnedCloneCss', () => {
     // the escaped boxes hide on the foreign page's clone; the flow strut stays
     expect(hidden(p0, '.doc-textbox')).toEqual([false, true])
     expect(hidden(p0, '.doc-anchor-strut')).toEqual([false, false])
+  })
+})
+
+describe('hoistSlotOf', () => {
+  const box = (style: string) => {
+    const el = document.createElement('span')
+    el.setAttribute('style', style)
+    return { el }
+  }
+
+  it('classifies the inline horizontal slot of a floating box', () => {
+    expect(hoistSlotOf(box('position:absolute;left:12.5px;top:3px'))).toBe('left')
+    expect(hoistSlotOf(box('position:absolute;left:-4px;top:0px'))).toBe('left')
+    // a centred cover logo (left:50% + translateX(-50%)) used to be skipped and
+    // spilled past the page window, repainting on the next page's top
+    expect(
+      hoistSlotOf(box('position: absolute; left: 50%; top: 5.8px; transform: translateX(-50%);')),
+    ).toBe('center')
+    expect(hoistSlotOf(box('position:absolute;right:0;top:2px'))).toBe('right')
+    expect(hoistSlotOf(box('position:absolute;right:0px;top:2px'))).toBe('right')
+    expect(hoistSlotOf(box('position:absolute;right:20px;top:2px'))).toBeNull()
   })
 })

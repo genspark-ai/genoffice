@@ -1,5 +1,5 @@
 /**
- * Canonical op layer (main/ops): registry validation with guided errors,
+ * Canonical op layer (@genoffice/pptx-ops): registry validation with guided errors,
  * transaction executor semantics (atomic rollback / per_op / dry-run) — all
  * against a real in-memory deck (createBlankPptx + engine mutations), no mocks.
  */
@@ -19,8 +19,13 @@ import {
   type SlideElement,
   type TextElement,
 } from '@genoffice/pptx-engine'
-import { runTxn, opNames, elementDurableId, slideDurableId } from '../src/main/ops'
-import { mapScriptOps } from '../src/main/ops/script-map'
+import {
+  runTxn,
+  opNames,
+  elementDurableId,
+  slideDurableId,
+  mapScriptOps,
+} from '@genoffice/pptx-ops'
 
 let opened: OpenedPptx
 let titleId: string

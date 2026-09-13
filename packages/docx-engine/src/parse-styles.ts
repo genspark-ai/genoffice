@@ -21,15 +21,19 @@ import {
   mergeCharIndents,
   mergedBorderLinesOf,
   paraBorderSidesOf,
+  rowBandSizeOf,
   shdDisplayFill,
   tabStopsOf,
   themeLangEaSlotFont,
   themedRFonts,
 } from './parse-props'
+import { w14TextOutlineOf } from './parse-drawing-geometry'
 import type {
   DocDefaults,
+  Run,
   StyleDisplay,
   StyleInfo,
+  TableCondFormat,
   TableStyleDisplay,
   ThemeColors,
   ThemeFonts,
@@ -44,6 +48,28 @@ const BUILT_IN_PARA_DEFAULTS: Pick<
   'spaceAfterTwips' | 'lineRawTwips' | 'lineRule' | 'lineSpacing'
 > = { spaceAfterTwips: 160, lineRawTwips: 276, lineRule: 'auto', lineSpacing: 1.15 }
 
+/** Word probe 2026-09-12 (Word 365): a package with no styles part at all lays its
+ *  text out in Word's built-in Normal — Aptos 12pt on top of the spacing above. */
+const BUILT_IN_DOC_DEFAULTS: DocDefaults = {
+  asciiFont: 'Aptos',
+  sizeHalfPoints: 24,
+  ...BUILT_IN_PARA_DEFAULTS,
+}
+
+/** w:numPr as declared on one style (either child may be absent) */
+type OwnNumPr = { numId?: string; ilvl?: number }
+
+/** Word inherits numId and ilvl through basedOn as separate properties: a heading
+ *  style may declare only w:ilvl and take the numId from its parent. */
+function mergeNumPr(own: OwnNumPr, parent: StyleInfo['numPr']): StyleInfo['numPr'] {
+  if (own.numId === undefined && parent === 'none') return 'none'
+  const inherited = parent === 'none' ? undefined : parent
+  const numId = own.numId ?? inherited?.numId
+  if (numId === '0') return 'none'
+  if (!numId) return undefined
+  return { numId, ilvl: own.ilvl ?? inherited?.ilvl ?? 0 }
+}
+
 export async function parseStyles(
   zip: JSZip,
   theme?: ThemeColors | null,
@@ -51,16 +77,16 @@ export async function parseStyles(
 ): Promise<{ styles: Map<string, StyleInfo>; docDefaults?: DocDefaults }> {
   const styles = new Map<string, StyleInfo>()
   const file = zip.file('word/styles.xml')
-  if (!file) return { styles }
+  if (!file) return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS } }
   let parsed: XNode[]
   try {
     parsed = xmlParser.parse(await file.async('string')) as XNode[]
   } catch (err) {
     console.warn('styles.xml unparseable, styles degraded to empty:', err)
-    return { styles }
+    return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS } }
   }
   const root = parsed.find((n) => nameOf(n) === 'w:styles')
-  if (!root) return { styles }
+  if (!root) return { styles, docDefaults: { ...BUILT_IN_DOC_DEFAULTS } }
 
   let docDefaults: DocDefaults | undefined
   const defaultsNode = findChild(root, 'w:docDefaults')
@@ -143,6 +169,7 @@ export async function parseStyles(
   }
 
   const basedOnIds = new Map<string, string>()
+  const ownNumPrs = new Map<string, OwnNumPr>()
   const linkedIds = new Map<string, string>()
   // styles with an explicit w:outlineLvl 9 (body text, e.g. TOCHeading basedOn Heading1)
   const outlineOffIds = new Set<string>()
@@ -182,12 +209,12 @@ export async function parseStyles(
       const styleNumPr = findChild(findChild(styleNode, 'w:pPr') ?? {}, 'w:numPr')
       if (styleNumPr) {
         const numId = attrsOf(findChild(styleNumPr, 'w:numId') ?? {})['w:val']
-        if (numId === '0') {
-          numPr = 'none'
-        } else if (numId) {
-          const ilvl = parseInt(attrsOf(findChild(styleNumPr, 'w:ilvl') ?? {})['w:val'] ?? '0', 10)
-          numPr = { numId, ilvl: ilvl || 0 }
-        }
+        const ilvlRaw = attrsOf(findChild(styleNumPr, 'w:ilvl') ?? {})['w:val']
+        const own: OwnNumPr = {}
+        if (numId !== undefined) own.numId = numId
+        if (ilvlRaw !== undefined) own.ilvl = parseInt(ilvlRaw, 10) || 0
+        ownNumPrs.set(styleId, own)
+        numPr = mergeNumPr(own, undefined)
       }
     }
     styles.set(styleId, {
@@ -198,7 +225,8 @@ export async function parseStyles(
       semiHidden: onFlag('w:semiHidden'),
       qFormat: onFlag('w:qFormat'),
       display: type === 'table' ? undefined : styleDisplayOf(styleNode, theme, themeFonts),
-      tableDisplay: type === 'table' ? tableStyleDisplayOf(styleNode, theme) : undefined,
+      tableDisplay:
+        type === 'table' ? tableStyleDisplayOf(styleNode, theme, themeFonts) : undefined,
       numPr,
       isDefault: attrs['w:default'] === '1' || attrs['w:default'] === 'true' ? true : undefined,
     })
@@ -248,6 +276,16 @@ export async function parseStyles(
       if (parent.display.borderSides && own?.borderSides) {
         info.display.borderSides = { ...parent.display.borderSides, ...own.borderSides }
       }
+      // w:tabs merge per position: a child stop (or w:val="clear") replaces the
+      // parent's stop at that position, the rest of the parent's stops stay
+      if (parent.display.tabStops && own?.tabStops) {
+        const merged = [
+          ...parent.display.tabStops.filter((p) => !own.tabStops!.some((o) => o.pos === p.pos)),
+          ...own.tabStops.filter((o) => o.val !== 'clear'),
+        ].sort((a, b) => a.pos - b.pos)
+        if (merged.length > 0) info.display.tabStops = merged
+        else delete info.display.tabStops
+      }
       if (Object.keys(info.display).length === 0) info.display = undefined
     }
     if (parent?.tableDisplay) {
@@ -261,7 +299,9 @@ export async function parseStyles(
     ) {
       info.headingLevel = parent.headingLevel
     }
-    if (info.type === 'paragraph' && !info.numPr && parent?.numPr) info.numPr = parent.numPr
+    if (info.type === 'paragraph' && (ownNumPrs.has(styleId) || parent?.numPr)) {
+      info.numPr = mergeNumPr(ownNumPrs.get(styleId) ?? {}, parent?.numPr)
+    }
     return info
   }
   for (const styleId of styles.keys()) resolve(styleId, new Set())
@@ -285,6 +325,9 @@ export async function parseStyles(
     'fontAscii',
     'csFont',
     'caps',
+    'bdr',
+    'shading',
+    'textOutline',
   ] as const
   for (const [fromId, toId] of linkedIds) {
     const a = styles.get(fromId)
@@ -328,6 +371,7 @@ function mergeTableDisplay(
 function tableStyleDisplayOf(
   styleNode: XNode,
   theme?: ThemeColors | null,
+  themeFonts?: ThemeFonts | null,
 ): TableStyleDisplay | undefined {
   const display: TableStyleDisplay = {}
   const shdFill = (node: XNode | undefined): string | undefined => {
@@ -359,13 +403,26 @@ function tableStyleDisplayOf(
     const fill = shdFill(tcPr)
     if (type === 'firstRow' || type === 'firstCol' || type === 'lastCol' || type === 'lastRow') {
       const rPr = findChild(cond, 'w:rPr')
-      const fmt: NonNullable<TableStyleDisplay['firstRow']> = {}
+      const fmt: TableCondFormat = {}
       if (fill) fmt.fill = fill
       if (rPr && boolProp(rPr, 'w:b')) fmt.bold = true
+      if (rPr && boolProp(rPr, 'w:i')) fmt.italic = true
       const color = colorFrom(rPr, theme)
       if (color) fmt.color = color
       const sz = szHalfOf(rPr)
       if (sz) fmt.sizeHalfPoints = sz
+      if (rPr) {
+        const capsOn = onOffOf(rPr, 'w:caps')
+        const smallCapsOn = onOffOf(rPr, 'w:smallCaps')
+        if (capsOn) fmt.caps = 'all'
+        else if (smallCapsOn) fmt.caps = 'small'
+        else if (capsOn === false || smallCapsOn === false) fmt.caps = 'none'
+        const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
+        const fontAscii = rf.ascii ?? rf.hAnsi
+        if (fontAscii) fmt.fontAscii = fontAscii
+        const spc = parseInt(attrsOf(findChild(rPr, 'w:spacing') ?? {})['w:val'] ?? '', 10)
+        if (!Number.isNaN(spc)) fmt.charSpacingTwips = spc
+      }
       if (Object.keys(fmt).length > 0) display[type] = fmt
     } else if (type === 'band1Horz' && fill) {
       display.band1Fill = fill
@@ -374,6 +431,8 @@ function tableStyleDisplayOf(
     }
   }
   const styleTblPr = findChild(styleNode, 'w:tblPr')
+  const bandSize = rowBandSizeOf(styleTblPr)
+  if (bandSize) display.rowBandSize = bandSize
   const borders = mergedBorderLinesOf(styleTblPr, 'w:tblBorders', true)
   if (borders) display.borders = borders
   const cellMar = cellMarginsOf(findChild(styleTblPr ?? {}, 'w:tblCellMar'))
@@ -417,6 +476,18 @@ export function styleRunFormat(
     : { bold: display.bold, italic: display.italic, sizeHalfPoints: display.sizeHalfPoints }
 }
 
+/** w:bdr -> Run.bdr; undefined for none/nil */
+export function runBorderOf(bdrNode: XNode): Run['bdr'] {
+  const bdr = attrsOf(bdrNode)
+  if (!bdr['w:val'] || bdr['w:val'] === 'none' || bdr['w:val'] === 'nil') return undefined
+  return {
+    val: bdr['w:val'],
+    sz: parseInt(bdr['w:sz'] ?? '', 10) || 4,
+    ...(bdr['w:color'] && bdr['w:color'] !== 'auto' ? { color: stripHash(bdr['w:color']) } : {}),
+    ...(parseInt(bdr['w:space'] ?? '', 10) > 0 ? { space: parseInt(bdr['w:space'], 10) } : {}),
+  }
+}
+
 /** display-only formatting the style contributes on screen (Word renders these from styles.xml) */
 function styleDisplayOf(
   styleNode: XNode,
@@ -448,6 +519,9 @@ function styleDisplayOf(
     if (u) display.underline = u !== 'none'
     const strike = onOffOf(rPr, 'w:strike')
     if (strike !== undefined) display.strike = strike
+    const bdrNode = findChild(rPr, 'w:bdr')
+    const bdr = bdrNode ? runBorderOf(bdrNode) : undefined
+    if (bdr) display.bdr = bdr
     const rf = themedRFonts(attrsOf(findChild(rPr, 'w:rFonts') ?? {}), themeFonts)
     const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
     const fontAscii = rf.ascii ?? rf.hAnsi
@@ -466,6 +540,10 @@ function styleDisplayOf(
     if (capsOn) display.caps = 'all'
     else if (smallCapsOn) display.caps = 'small'
     else if (capsOn === false || smallCapsOn === false) display.caps = 'none'
+    const shading = shdDisplayFill(findChild(rPr, 'w:shd'), theme)
+    if (shading) display.shading = shading
+    const outline = w14TextOutlineOf(rPr, theme)
+    if (outline) display.textOutline = outline
     // w:specVanish marks a style separator, not hidden text
     const vanish = onOffOf(rPr, 'w:vanish')
     if (vanish !== undefined && onOffOf(rPr, 'w:specVanish') !== true) display.vanish = vanish
@@ -498,8 +576,16 @@ function styleDisplayOf(
     if (boolProp(pPr, 'w:keepNext')) display.keepNext = true
     if (boolProp(pPr, 'w:keepLines')) display.keepLines = true
     {
+      const sln = onOffOf(pPr, 'w:suppressLineNumbers')
+      if (sln !== undefined) display.suppressLineNumbers = sln
+    }
+    {
       const pbb = onOffOf(pPr, 'w:pageBreakBefore')
       if (pbb !== undefined) display.pageBreakBefore = pbb
+    }
+    {
+      const wc = onOffOf(pPr, 'w:widowControl')
+      if (wc !== undefined) display.widowControl = wc
     }
     {
       const sah = onOffOf(pPr, 'w:suppressAutoHyphens')
@@ -518,9 +604,14 @@ function styleDisplayOf(
     if (overflowPunct !== undefined) display.overflowPunct = overflowPunct
     const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
     if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') display.align = jc
-    else if (jc === 'both' || jc === 'distribute') display.align = 'justify'
-    const shdDisp = shdDisplayFill(findChild(pPr, 'w:shd'))
+    else if (jc === 'both') display.align = 'justify'
+    else if (jc === 'distribute') display.align = 'distribute'
+    const bidi = onOffOf(pPr, 'w:bidi')
+    if (bidi !== undefined) display.bidi = bidi
+    const shd = findChild(pPr, 'w:shd')
+    const shdDisp = shdDisplayFill(shd, theme)
     if (shdDisp) display.shadingFill = shdDisp
+    else if (shd) display.shadingFill = 'auto'
     const borderSides = paraBorderSidesOf(pPr, theme)
     if (borderSides) display.borderSides = borderSides
     const stops = tabStopsOf(pPr)

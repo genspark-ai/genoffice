@@ -72,6 +72,8 @@ export const nl = {
   aiToolClarifySkipped: 'Vragenlijst overgeslagen',
   aiToolPlan: 'Brief bevestigd ({n} secties)',
   aiToolPlanRejected: 'Brief niet bevestigd',
+  aiToolPlanFailed: 'Briefing kon niet worden opgesteld',
+  aiDraftingBrief: 'Briefing wordt opgesteld…',
   aiToolWritePage: 'Pagina gegenereerd',
   aiToolWritePageFailed: 'Pagina genereren mislukt',
   aiToolWritePagePartial: 'Pagina gedeeltelijk gegenereerd',

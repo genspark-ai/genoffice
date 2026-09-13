@@ -1,6 +1,6 @@
 import { decodeEntities } from './parse-xml-text'
 import { patchParagraphTexts } from './text-patch'
-import type { NoteInfo, NoteRun } from './types'
+import type { NoteInfo, NoteRun, TextOutline } from './types'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
 
 /**
@@ -83,7 +83,8 @@ export function parseNotesXml(xml: string, kind: NoteKind): NoteInfo[] {
           r.color ||
           r.sizeHalfPoints ||
           r.caps ||
-          r.fontAscii,
+          r.fontAscii ||
+          r.textOutline,
       ),
     )
     const styleId = /<w:pStyle w:val="([^"]+)"/.exec(entryXml)?.[1]
@@ -96,6 +97,7 @@ export function parseNotesXml(xml: string, kind: NoteKind): NoteInfo[] {
       text,
       ...(hasFormat ? { richParas } : {}),
       ...(styleId ? { styleId } : {}),
+      ...(/ADDIN\s+(?:ZOTERO_|CSL_)/.test(entryXml) ? { zoteroField: true as const } : {}),
       ...(spacing ? { spacing } : {}),
       ...(noRefMark ? { noRefMark: true as const } : {}),
     }
@@ -158,6 +160,8 @@ function noteRichParas(entryXml: string): NoteRun[][] {
       if (fontAscii) run.fontAscii = fontAscii
       if (flag(rPr, 'caps')) run.caps = 'all'
       else if (flag(rPr, 'smallCaps')) run.caps = 'small'
+      const outline = noteTextOutline(rPr)
+      if (outline) run.textOutline = outline
       runs.push(run)
     }
     out.push(runs)
@@ -169,6 +173,22 @@ function noteRichParas(entryXml: string): NoteRun[][] {
     if (out[0][0].text === '') out[0].shift()
   }
   return out
+}
+
+/** w14:textOutline with a solid srgb fill (theme colours need the full parser) */
+function noteTextOutline(rPr: string): TextOutline | undefined {
+  const m = /<w14:textOutline\b([^>]*)>([\s\S]*?)<\/w14:textOutline>/.exec(rPr)
+  if (!m) return undefined
+  const widthEmu = parseInt(/\bw14:w="(\d+)"/.exec(m[1])?.[1] ?? '', 10)
+  const solid = /<w14:solidFill>([\s\S]*?)<\/w14:solidFill>/.exec(m[2])?.[1]
+  const color = solid && /<w14:srgbClr w14:val="([0-9A-Fa-f]{6})"/.exec(solid)?.[1]
+  if (!(widthEmu > 0) || !color) return undefined
+  const alphaRaw = parseInt(/<w14:alpha w14:val="(\d+)"/.exec(solid)?.[1] ?? '', 10)
+  return {
+    color: color.toUpperCase(),
+    widthPt: Math.round((widthEmu / 12700) * 100) / 100,
+    ...(alphaRaw >= 0 && alphaRaw < 100000 ? { alpha: alphaRaw / 100000 } : {}),
+  }
 }
 
 /** typeless (real) note entries with their exact XML slice + plain text */

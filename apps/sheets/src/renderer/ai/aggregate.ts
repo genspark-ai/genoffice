@@ -3,7 +3,7 @@
 /// reads, never from read_range loops (token cost) or COUNTIF-style array
 /// formulas (quadratic main-thread evaluation — the app-freeze incident).
 
-import type { CellScalar } from '../../domain/workbook.types'
+import type { CellScalar } from '@genoffice/xlsx-gateway/domain/workbook.types'
 
 /// Distinct tracking stops (and the result says so) past this many unique
 /// values; counts and numeric stats stay exact.

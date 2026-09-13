@@ -198,12 +198,27 @@ function mmlOf(node: XNode): string {
       return `<${tag}>${mmlSlot(node, 'm:e')}${mo(chr, ' stretchy="true"')}</${tag}>`
     }
     case 'm:m': {
+      const jc = attrsOf(
+        findChild(
+          findChild(
+            findChild(findChild(findChild(node, 'm:mPr') ?? {}, 'm:mcs') ?? {}, 'm:mc') ?? {},
+            'm:mcPr',
+          ) ?? {},
+          'm:mcJc',
+        ) ?? {},
+      )['m:val']
+      // MathML Core has no columnalign: the UA centers mtd content, so the
+      // alignment (and the inset on that side) is CSS on each cell
+      const cellAttrs =
+        jc === 'left' || jc === 'right' ? ` style="text-align:${jc};padding-${jc}:0"` : ''
       const rows = childrenOf(node)
         .filter((c) => nameOf(c) === 'm:mr')
         .map((row) => {
           const cells = childrenOf(row)
             .filter((c) => nameOf(c) === 'm:e')
-            .map((cell) => `<mtd><mrow>${mmlChildren(contentChildren(cell))}</mrow></mtd>`)
+            .map(
+              (cell) => `<mtd${cellAttrs}><mrow>${mmlChildren(contentChildren(cell))}</mrow></mtd>`,
+            )
             .join('')
           return `<mtr>${cells}</mtr>`
         })
@@ -217,8 +232,15 @@ function mmlOf(node: XNode): string {
         .join('')
       return `<mtable>${rows}</mtable>`
     }
+    case 'm:borderBox': {
+      // MathML Core has no menclose; the frame is CSS on the row
+      const sides = (['Top', 'Right', 'Bot', 'Left'] as const)
+        .filter((side) => !propOn(node, 'm:borderBoxPr', `m:hide${side}`))
+        .map((side) => `border-${side === 'Bot' ? 'bottom' : side.toLowerCase()}:0.06em solid`)
+      const style = sides.length ? ` style="${sides.join(';')};padding:0.15em"` : ''
+      return `<mrow${style}>${mmlChildren(contentChildren(findChild(node, 'm:e') ?? {}))}</mrow>`
+    }
     case 'm:box':
-    case 'm:borderBox':
     case 'm:phant':
       return mmlSlot(node, 'm:e')
     case 'm:t':
@@ -245,7 +267,11 @@ const OPERATOR_CHARS = new Set('+-−=<>±∓×÷·⋅∙*/!%&|,;:()[]{}′″�
 
 /** classify a text run into mn / mi / mo / mtext tokens */
 function runTextToMml(text: string, plain: boolean): string {
-  if (plain) return text === '' ? '' : `<mi>${escapeXmlText(text)}</mi>`
+  // a lone plain letter would otherwise take the italic single-char mi default
+  if (plain)
+    return text === ''
+      ? ''
+      : `<mi${[...text].length === 1 ? ' mathvariant="normal"' : ''}>${escapeXmlText(text)}</mi>`
   let out = ''
   let i = 0
   const chars = [...text]
@@ -262,8 +288,10 @@ function runTextToMml(text: string, plain: boolean): string {
       i++
     } else if (OPERATOR_CHARS.has(ch)) {
       // parens inside a plain run are literal characters; only m:d wraps
-      // (explicit delimiters) may stretch
-      out += '()[]{}|'.includes(ch) ? mo(ch, ' stretchy="false"') : mo(ch)
+      // (explicit delimiters) may stretch; Word draws a math hyphen-minus as
+      // a real minus sign
+      const glyph = ch === '-' ? '\u2212' : ch
+      out += '()[]{}|'.includes(ch) ? mo(ch, ' stretchy="false"') : mo(glyph)
       i++
     } else {
       out += `<mtext>${escapeXmlText(ch)}</mtext>`

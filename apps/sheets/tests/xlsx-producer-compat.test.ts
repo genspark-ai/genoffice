@@ -4,8 +4,11 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
-import { applyCellEditsToXlsx, readBasicWorkbook } from '../src/gateway/xlsx-gateway'
-import { parseSheetElements } from '../src/gateway/xlsx-sheets'
+import {
+  applyCellEditsToXlsx,
+  readBasicWorkbook,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
+import { parseSheetElements } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 
 const CONTENT_TYPES =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +

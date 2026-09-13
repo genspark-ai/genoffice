@@ -23,6 +23,7 @@ Word, Excel, PowerPoint और PDF फ़ाइलें, आपके और �
 
 <p align="center">
   <a href="#download"><b>डाउनलोड</b></a> ·
+  <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="https://genoffice.ai/"><b>वेबसाइट</b></a> ·
   <a href="https://genoffice.ai/join"><b>कम्युनिटी</b></a> ·
   <a href="../../PRIVACY.md"><b>गोपनीयता</b></a>
@@ -34,6 +35,7 @@ GenOffice, macOS, Windows और Linux के लिए Microsoft Office का 
 - **AI जिसे आप रिव्यू कर सकते हैं।** एडिट्स ट्रैक्ड चेंजेस और डिफ़ के रूप में आते हैं, जिन्हें एक क्लिक में रोलबैक किया जा सकता है। स्प्रेडशीट में पेस्ट किए गए नंबर नहीं, बल्कि लाइव फ़ॉर्मूला मिलते हैं। डेक और पेज कैनवस पर जनरेट होते हैं और पूरी तरह एडिटेबल बने रहते हैं।
 - **डिज़ाइन से ही लोकल।** फ़ाइलें आपकी मशीन पर ही खुलती, एडिट होती, सेव होती और कन्वर्ट होती हैं। PDF → Word / Excel / PowerPoint, Markdown → Word और HTML → Word — यह सभी कन्वर्शन ऑन-डिवाइस होते हैं। मशीन से बाहर सिर्फ़ AI कॉल्स जाती हैं, और वह भी आपके चुने हुए प्रोवाइडर तक।
 - **आपकी कीज़ या कोई कीज़ नहीं।** Genspark से साइन इन करें और कीज़ की झंझट से बचें, या Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty या किसी भी OpenAI-compatible endpoint के लिए अपनी खुद की key लाएँ — लोकल सर्वर भी शामिल हैं।
+- **स्क्रिप्ट करने योग्य और एजेंट के लिए तैयार।** ऐप के साथ एक `genoffice` कमांड लाइन और Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode और Windsurf के लिए एक skill आती है, ताकि कोई कोडिंग एजेंट बिना कोई विंडो खोले आपकी मशीन पर असली Office फ़ाइलें बना, कन्वर्ट, पढ़ और एडिट कर सके।
 
 **पाएँ:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon और Intel) ·
 [Windows](https://github.com/genspark-ai/genoffice/releases/latest) (x64 और Arm) ·
@@ -42,7 +44,7 @@ GenOffice, macOS, Windows और Linux के लिए Microsoft Office का 
 
 ## डेमो
 
-छह ऐप्स, एक AI पैनल। हर स्क्रीनशॉट macOS पर चल रहे असली ऐप का है, और AI उस प्रॉम्प्ट से चलाया गया है जिसे आप पैनल में पढ़ सकते हैं।
+छह ऐप्स, एक AI पैनल, और आपके कोडिंग एजेंट के लिए एक कमांड लाइन। हर स्क्रीनशॉट macOS पर चल रहे असली ऐप का है, और AI उस प्रॉम्प्ट से चलाया गया है जिसे आप पैनल में पढ़ सकते हैं।
 
 ### 1 · Docs — ऐसे AI के साथ `.docx` खोलें और एडिट करें जिसे आप रिव्यू कर सकते हैं
 
@@ -138,6 +140,23 @@ GenOffice, macOS, Windows और Linux के लिए Microsoft Office का 
 </tr>
 </table>
 
+### 7 · CLI — आपका कोडिंग एजेंट GenOffice चलाता है, आपकी मशीन पर
+
+GenOffice के साथ एक `genoffice` कमांड लाइन और एक एजेंट skill आती है। skill इंस्टॉल करें, और Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode या Windsurf उन्हीं इंजनों के ज़रिए, जिन पर ऐप्स चलते हैं, बिना कोई विंडो खोले असली Office फ़ाइलें बना, कन्वर्ट, पढ़ और एडिट कर सकते हैं।
+
+<img src="../assets/readme/cli-deck-in-app.webp" alt="GenOffice Slides में सोलर सिस्टम पर आठ स्लाइड का एक डेक दिखाया गया है, जिसे एक कोडिंग एजेंट ने genoffice कमांड लाइन के ज़रिए बनाया: कैनवस पर कवर स्लाइड, बाईं ओर आठ थंबनेल और AI पैनल खुला हुआ" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/cli-slides-grid.webp" alt="सोलर सिस्टम डेक की आठ रेंडर की गई स्लाइड्स एक साथ: कवर, एक्सप्लोरेशन टाइमलाइन, चार मुख्य आँकड़े, ग्रहों के व्यास का बार चार्ट, चट्टानी ग्रह बनाम विशाल ग्रह, सूर्य का 99.8% हीरो नंबर, चार विशाल ग्रहों का ग्रिड और मुख्य निष्कर्ष"></td>
+<td width="50%"><img src="../assets/readme/cli-integrations.webp" alt="GenOffice Settings का Integrations पेज: genoffice skill Claude Code में इंस्टॉल है, और Codex व Cursor के बगल में Install बटन हैं"></td>
+</tr>
+<tr>
+<td><b>अपने एजेंट को एक प्रॉम्प्ट</b> — "सोलर सिस्टम पर आठ स्लाइड का डेक बनाएँ।" एजेंट skill पढ़ता है, एक स्टाइल शीट, एक आउटलाइन और हर स्लाइड के लिए एक पेज स्पेक लिखता है, <code>genoffice image</code> से दो फ़ोटो जनरेट करता है, और <code>genoffice slides check</code> को ओवरफ़्लो या ओवरलैप करने वाली हर चीज़ रिजेक्ट करने देता है; इसके बाद <code>genoffice create</code> <code>.pptx</code> असेंबल करता है और <code>slides render</code> देखने के लिए हर स्लाइड का एक PNG वापस देता है।</td>
+<td><b>एक बार इंस्टॉल करें, सेटिंग्स → इंटीग्रेशन से</b> — GenOffice इस कंप्यूटर पर मिले कोडिंग एजेंट्स की सूची दिखाता है और आपके चुने हुए हर एजेंट में skill लिख देता है। या skill को zip के रूप में डाउनलोड करें, या <code>npx skills add genspark-ai/genoffice</code> चलाएँ। कमांड और पूरा वर्कफ़्लो <a href="#command-line-and-agent-skill">कमांड लाइन और एजेंट skill</a> में हैं।</td>
+</tr>
+</table>
+
 ## GenOffice क्यों
 
 - **ओपन सोर्स**, Apache-2.0, GitHub पर खुले तौर पर बनाया गया।
@@ -155,6 +174,9 @@ GenOffice, macOS, Windows और Linux के लिए Microsoft Office का 
   ऑन-डिवाइस Word, Excel या PowerPoint में कन्वर्ट करें, स्कैन के लिए सिस्टम OCR के
   साथ।
 - **Markdown और HTML भी**, उसी AI पैनल और Word में लोकल एक्सपोर्ट के साथ।
+- **स्क्रिप्ट करने योग्य।** एक `genoffice` कमांड लाइन और एक एजेंट skill हर इंजन को
+  Claude Code, Codex, Cursor और दूसरे कोडिंग एजेंट्स की सेवा में लगा देती है, वह
+  भी ऑन-डिवाइस।
 - **फ़्री**, व्यक्तियों और टीमों दोनों के लिए।
 
 ## AI बैकएंड
@@ -164,6 +186,76 @@ GenOffice, macOS, Windows और Linux के लिए Microsoft Office का 
 **या अपनी खुद की key लाएँ।** Settings → AI में Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty और OpenCode Zen/Go लिस्ट किए गए हैं, साथ ही किसी भी OpenAI-compatible endpoint (base URL + key) के लिए एक कस्टम स्लॉट है, जिसमें लोकल मॉडल सर्वर भी शामिल हैं। सर्च और मीडिया के अपने अलग, हर-कैपेबिलिटी प्रोवाइडर **AI Media & Search** के तहत हैं: वेब सर्च के लिए Serper या Tavily, और इमेज जनरेशन व इमेज/वीडियो एनालिसिस के लिए OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax या कोई भी OpenAI-compatible images endpoint।
 
 पूरा सूट लाइट, डार्क और सिस्टम थीम के साथ आता है। थीम सिर्फ़ स्क्रीन पर दिखने वाली चीज़ बदलती है: एक्सपोर्ट, प्रिंट और सेव की गई फ़ाइलें हमेशा डॉक्यूमेंट के अपने असली रंग बरकरार रखती हैं।
+
+<a id="command-line-and-agent-skill"></a>
+
+## कमांड लाइन और एजेंट skill
+
+ऐप्स किसी फ़ाइल के साथ जो कुछ कर सकते हैं, वह सब `genoffice` कमांड लाइन टर्मिनल से
+कर सकती है: Word, Excel, PowerPoint, PDF, Markdown और HTML को उन्हीं इंजनों पर,
+हेडलेस, इंस्पेक्ट, कन्वर्ट, क्रिएट, रीड और एडिट करना। यह GenOffice के साथ इंस्टॉल
+होती है, इसे अपना कोई अलग रनटाइम नहीं चाहिए, और यह कोई डॉक्यूमेंट कहीं नहीं भेजती।
+बंडल की गई **एजेंट skill** के साथ मिलकर यह किसी कोडिंग एजेंट को एक ऐसे डॉक्यूमेंट
+वर्कर में बदल देती है जो Markdown के अनुमानित रूपांतरणों के बजाय असली Office
+फ़ाइलें बनाता है।
+
+**इनके साथ काम करती है:** Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot,
+OpenCode और Windsurf के साथ बिना किसी अतिरिक्त सेटअप के, और skills पढ़ने वाले किसी
+भी अन्य एजेंट के साथ।
+
+### skill इंस्टॉल करें
+
+| कैसे                                   | क्या होता है                                                                                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ऐप में **सेटिंग्स → इंटीग्रेशन**       | इस कंप्यूटर पर मिले एजेंट्स की सूची दिखाता है; एक क्लिक में आपके चुने हुए हर एजेंट में skill लिख देता है। जब किसी GenOffice रिलीज़ में नई skill आती है, तो एक **Update** बटन दिखाई देता है। |
+| उसी पेज पर **zip के रूप में डाउनलोड**  | वह लेआउट जिसे claude.ai, Claude डेस्कटॉप ऐप्स और दूसरे असिस्टेंट अपलोड की गई skill के रूप में स्वीकार करते हैं।                                                                             |
+| `npx skills add genspark-ai/genoffice` | इस रिपॉज़िटरी से किसी भी skills-compatible एजेंट में इंस्टॉल करता है।                                                                                                                       |
+
+फिर एक नई चैट शुरू करें और कोई डॉक्यूमेंट माँगें। skill एजेंट को सिखाती है कि
+`genoffice` का सहारा कब लेना है, एडिट करने से पहले फ़ाइल कैसे पढ़नी है, और अपना
+काम खुद कैसे जाँचना है।
+
+### टर्मिनल से क्विकस्टार्ट
+
+```bash
+genoffice --version
+genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx, …
+genoffice create --type docx --from notes.md --out notes.docx
+genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
+genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
+genoffice open sales.xlsx                          # hand the result to the editor
+```
+
+हर कमांड एक लाइन का सारांश प्रिंट करती है, या `--json` के साथ एक सिंगल JSON
+ऑब्जेक्ट। एडिट्स एटॉमिक हैं: रिजेक्ट किया गया op फ़ाइल को अछूता छोड़ देता है और
+एक गाइडेड एरर के साथ वापस आता है। `genoffice help` मौजूदा कमांड सरफ़ेस की सूची
+देता है; पूरा रेफ़रेंस [packages/cli/README.md](../../packages/cli/README.md) में है।
+
+### एजेंट असल में क्या चलाता है
+
+ऊपर दिए गए डेमो का सोलर सिस्टम डेक Claude Code में एक ही प्रॉम्प्ट में बना।
+पर्दे के पीछे, एजेंट ने skill के चरणबद्ध वर्कफ़्लो का पालन किया और CLI ने अगला
+चरण शुरू होने से पहले हर चरण की जाँच की:
+
+```bash
+genoffice capabilities --json                        # which cloud tools GenOffice has configured
+genoffice guide slides design                        # the deck workflow and layout library
+genoffice image "the eight planets in a row …" --aspect 16:9 --out deck/assets/cover.jpg
+genoffice slides check deck/outline.json --json      # 8 pages, no findings
+genoffice slides check deck/pages/01.json --json     # builds one slide, audits overflow and overlap
+…                                                    # one page file per slide, fixed until each check is clean
+genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck/solar-system.pptx --json
+genoffice slides render deck/solar-system.pptx --out deck/shots --json
+genoffice slides audit deck/solar-system.pptx --json    # 8 slides, no layout issues
+genoffice slides replace deck/solar-system.pptx --slide 4 --spec deck/pages/05.json --json
+genoffice open deck/solar-system.pptx
+```
+
+`genoffice` के भीतर कोई मॉडल कॉल नहीं होती: सोचने का काम एजेंट करता है, बनाने
+और जाँचने का काम CLI करती है, और नतीजा GenOffice या PowerPoint में एक सामान्य
+`.pptx` के रूप में खुलता है।
 
 <a id="download"></a>
 
@@ -323,6 +415,18 @@ Word स्ट्रक्चर में बदला जाता है: ह
 रो, फ़ॉर्म फ़ील्ड और पेज बैकग्राउंड; सिर्फ़ वही विज़ुअल जिनका Word में कोई
 समकक्ष नहीं है (चार्ट, आइकन, डेकोरेटेड बॉक्स), उन्हें इमेज के रूप में एम्बेड
 किया जाता है।
+
+</details>
+
+<details>
+<summary><b>क्या मैं Claude Code, Codex, Cursor या किसी स्क्रिप्ट से GenOffice चला सकता हूँ?</b></summary>
+
+हाँ। GenOffice एक `genoffice` कमांड लाइन इंस्टॉल करता है जो उन्हीं इंजनों को
+हेडलेस चलाती है: टर्मिनल या स्क्रिप्ट से डॉक्यूमेंट इंस्पेक्ट, कन्वर्ट, क्रिएट,
+रीड और एडिट करें, प्रोग्राम्स के लिए `--json` आउटपुट के साथ। बंडल की गई एजेंट
+skill Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode और
+Windsurf को इसका इस्तेमाल सिखाती है; इसे **सेटिंग्स → इंटीग्रेशन** से इंस्टॉल
+करें। देखें [कमांड लाइन और एजेंट skill](#command-line-and-agent-skill)।
 
 </details>
 

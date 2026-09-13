@@ -134,8 +134,12 @@ export function onElementTextColor(ctx: ActionCtx, hex: string): void {
 }
 
 export interface ParagraphFormatPatch {
-  bullet?: 'char' | 'number' | 'none'
+  bullet?: 'char' | 'number' | 'blip' | 'none'
   bulletChar?: string
+  bulletFont?: string
+  numType?: string
+  startAt?: number
+  bulletImage?: { base64: string; ext: string }
   bulletHangEmu?: number
   bulletSizePct?: number
   bulletColor?: string
@@ -150,6 +154,10 @@ export interface ParagraphFormatPatch {
 const SELECTION_PATCH_KEYS = new Set([
   'bullet',
   'bulletChar',
+  'bulletFont',
+  'numType',
+  'startAt',
+  'bulletImage',
   'lineSpacingPct',
   'spaceBeforePt',
   'spaceAfterPt',
@@ -172,11 +180,13 @@ export function onParagraphFormat(ctx: ActionCtx, patch: ParagraphFormatPatch): 
     if (applySelectionParagraphFormat(patch)) return
   }
   if (!ctx.selectedIds.length) return
-  // Picking an explicit char always applies (no toggle-off)
+  // Picking an explicit glyph / scheme / picture always applies (no toggle-off)
   if (
     patch.bullet &&
     patch.bullet !== 'none' &&
     !patch.bulletChar &&
+    !patch.numType &&
+    !patch.bulletImage &&
     ctx.selectedIds.length === 1
   ) {
     const node = ctx.findNodeCtx(ctx.selectedIds[0]!)?.node
@@ -185,7 +195,13 @@ export function onParagraphFormat(ctx: ActionCtx, patch: ParagraphFormatPatch): 
         ? (node as ShapeRenderNode).text
         : undefined
     const bulletRun = text?.lines.flatMap((l) => l.runs).find((r) => r.isBullet)
-    const cur = bulletRun ? (/^\d/.test(bulletRun.text) ? 'number' : 'char') : null
+    const cur = bulletRun
+      ? bulletRun.numType
+        ? 'number'
+        : bulletRun.image
+          ? 'blip'
+          : 'char'
+      : null
     if (cur === patch.bullet) patch = { ...patch, bullet: 'none' }
   }
   const groupId = ctx.groupIdOf(ctx.selectedIds[0]!)

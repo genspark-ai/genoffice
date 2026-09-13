@@ -19,9 +19,13 @@ import {
   contextMenuLabels,
   installContextMenu,
   installNavigationGuard,
+  isHeadlessMode,
   safeExternalUrl,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
+  installRendererProtocol,
+  registerRendererScheme,
+  rendererUrl,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool } from '@genoffice/ai-search'
@@ -325,6 +329,8 @@ export function configureMarkdownRuntime(paths: RuntimePaths): void {
  * or reveal it in the folder (standalone). Tab-opening failure must not
  * report the export itself as failed — the file is already persisted. */
 function openExportedPdf(path: string): void {
+  // Headless export must stay silent: no tab, no Finder window.
+  if (isHeadlessMode()) return
   try {
     if (runtime.openGeneratedPath?.(path)) return
   } catch (err) {
@@ -558,6 +564,25 @@ function registerMarkdownIpc(): void {
 
   ipcMain.handle(MARKDOWN_CHANNELS.consumePending, (e) => openPathByWc.get(e.sender.id) ?? null)
 
+  // ---- headless export mode (--headless-export) ----
+
+  ipcMain.handle(MARKDOWN_CHANNELS.consumeHeadlessExport, (e): string | null => {
+    const target = headlessExportTargets.get(e.sender.id) ?? null
+    headlessExportTargets.delete(e.sender.id)
+    return target
+  })
+
+  ipcMain.on(MARKDOWN_CHANNELS.headlessExportDone, (e, result: unknown) => {
+    const settle = headlessExportWaiters.get(e.sender.id)
+    if (!settle) return
+    headlessExportWaiters.delete(e.sender.id)
+    const state = result as { ok?: unknown; error?: unknown } | null
+    settle({
+      ok: state?.ok === true,
+      ...(typeof state?.error === 'string' ? { error: state.error } : {}),
+    })
+  })
+
   ipcMain.handle(MARKDOWN_CHANNELS.readFile, async (e, path: unknown) => {
     if (typeof path !== 'string' || !allowedByWc.get(e.sender.id)?.has(path)) {
       throw new Error('markdown: path not granted to this view')
@@ -778,15 +803,19 @@ function registerMarkdownIpc(): void {
           .trim() || tm('untitledFile')
       const win =
         BrowserWindow.fromWebContents(e.sender) ?? BrowserWindow.getFocusedWindow() ?? undefined
-      const picked = await showSaveDialogWithMemory(
-        dialog,
-        win,
-        {
-          defaultPath: `${safeName}.pdf`,
-          filters: [{ name: 'PDF', extensions: ['pdf'] }],
-        },
-        configuredDefaultSaveDir(app),
-      )
+      // Headless export has no dialog to authorize a path; the CLI already chose one.
+      const picked =
+        isHeadlessMode() && typeof request.outPath === 'string' && request.outPath
+          ? { canceled: false, filePath: request.outPath }
+          : await showSaveDialogWithMemory(
+              dialog,
+              win,
+              {
+                defaultPath: `${safeName}.pdf`,
+                filters: [{ name: 'PDF', extensions: ['pdf'] }],
+              },
+              configuredDefaultSaveDir(app),
+            )
       if (picked.canceled || !picked.filePath) return { ok: true, canceled: true }
       // sheets-style: render the print HTML in a hidden scripting-disabled window
       const workDir = await mkdtemp(join(tmpdir(), 'genoffice-md-pdf-'))
@@ -863,6 +892,64 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
   })
 }
 
+/** hidden export windows: webContents id -> the PDF path the renderer must write */
+const headlessExportTargets = new Map<number, string>()
+/** settled by the renderer's headless-export-done message (or by it dying) */
+const headlessExportWaiters = new Map<number, (result: HeadlessMarkdownReport) => void>()
+
+interface HeadlessMarkdownReport {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Render `input` to `outPath` with no visible window: a hidden markdown
+ * renderer opens the file through the normal pending-open queue and runs the
+ * File menu's own PDF export, which already prints in a second hidden window.
+ */
+export async function exportMarkdownPdfHeadless(
+  input: string,
+  outPath: string,
+  timeoutMs = 180_000,
+): Promise<void> {
+  registerMarkdownIpc()
+  const win = new BrowserWindow({
+    show: false,
+    width: 1200,
+    height: 850,
+    webPreferences: {
+      preload: runtime.preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  })
+  const wcId = win.webContents.id
+  grantAndTrack(win.webContents, input)
+  headlessExportTargets.set(wcId, outPath)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const report = await new Promise<HeadlessMarkdownReport>((resolve) => {
+      headlessExportWaiters.set(wcId, resolve)
+      win.webContents.on('render-process-gone', (_event, details) =>
+        resolve({ ok: false, error: `markdown renderer stopped (${details.reason})` }),
+      )
+      timer = setTimeout(
+        () => resolve({ ok: false, error: `markdown export timed out after ${timeoutMs}ms` }),
+        timeoutMs,
+      )
+      void win.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'markdown'))
+    })
+    if (!report.ok) throw new Error(report.error ?? 'markdown export failed')
+  } finally {
+    if (timer) clearTimeout(timer)
+    headlessExportWaiters.delete(wcId)
+    headlessExportTargets.delete(wcId)
+    if (!win.isDestroyed()) win.destroy()
+  }
+}
+
 export function createMarkdownView(openPath?: string | null): WebContentsView {
   registerMarkdownIpc()
   const view = new WebContentsView({
@@ -874,13 +961,13 @@ export function createMarkdownView(openPath?: string | null): WebContentsView {
     },
   })
   grantAndTrack(view.webContents, openPath)
-  if (runtime.rendererUrl) void view.webContents.loadURL(runtime.rendererUrl)
-  else if (runtime.rendererFile) void view.webContents.loadFile(runtime.rendererFile)
+  void view.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'markdown'))
   return view
 }
 
 /** Standalone window mode: `npm run dev -w @genoffice/markdown`, md path passed via argv */
 export function startMarkdownStandalone(): void {
+  registerRendererScheme()
   installNavigationGuard(app)
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   configureMarkdownRuntime({
@@ -889,6 +976,7 @@ export function startMarkdownStandalone(): void {
     rendererFile: join(__dirname, '../renderer/index.html'),
   })
   void app.whenReady().then(() => {
+    installRendererProtocol({ markdown: join(__dirname, '../renderer') })
     registerMarkdownIpc()
     const win = new BrowserWindow({
       width: 1200,
@@ -902,8 +990,7 @@ export function startMarkdownStandalone(): void {
     })
     const argPath = process.argv.slice(1).find((a) => /\.(md|markdown)$/i.test(a) && existsSync(a))
     grantAndTrack(win.webContents, argPath)
-    if (runtime.rendererUrl) void win.loadURL(runtime.rendererUrl)
-    else if (runtime.rendererFile) void win.loadFile(runtime.rendererFile)
+    void win.loadURL(rendererUrl(runtime.rendererUrl, 'markdown'))
   })
   app.on('window-all-closed', () => app.quit())
 }

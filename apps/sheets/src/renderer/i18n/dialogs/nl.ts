@@ -400,4 +400,12 @@ export const nl = {
   dlgFnDescNpv: 'Geeft de netto huidige waarde van een kasstroom bij een discontovoet.',
   dlgFnDescIrr: 'Geeft het interne rendement van een reeks kasstromen.',
   dlgFnCatFinancial: 'Financieel',
+  dlgFnCatDatabase: 'Database',
+  dlgFnCatInformation: 'Informatie',
+  dlgFnCatEngineering: 'Technisch',
+  dlgFnCatCube: 'Kubus',
+  dlgFnCatCompatibility: 'Compatibiliteit',
+  dlgFnCatWeb: 'Web',
+  dlgFnCatArray: 'Matrix',
+  dlgFnCatOther: 'Overig',
 } satisfies Record<keyof typeof zh, string>

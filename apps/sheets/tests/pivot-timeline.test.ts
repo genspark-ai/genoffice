@@ -5,7 +5,7 @@ import {
   monthKeyParts,
   timelineDomainOf,
   timelineSelection,
-} from '../src/domain/pivot-timeline'
+} from '@genoffice/xlsx-gateway/domain/pivot-timeline'
 
 const item = (x: number | null, hidden = false) => ({ x, hidden })
 

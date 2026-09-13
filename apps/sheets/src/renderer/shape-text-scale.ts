@@ -13,9 +13,11 @@ export function shapeTextScaleStyle(frameWidth: number | undefined): CSSProperti
   return { '--shape-px': shapeZoomedPx(frameWidth) } as CSSProperties
 }
 
-export function shapeRunFontSize(sizePt: number): string {
-  return `calc(var(--shape-px, 1px) * ${Number((sizePt * PT_TO_PX).toFixed(3))})`
+export function shapePtLength(pt: number): string {
+  return `calc(var(--shape-px, 1px) * ${Number((pt * PT_TO_PX).toFixed(3))})`
 }
+
+export const shapeRunFontSize = shapePtLength
 
 /// bodyPr vertOverflow / horzOverflow: `clip` cuts the text at the frame
 /// minus insets; `ellipsis` has no CSS twin in a fixed frame, so it clips

@@ -6,7 +6,7 @@ import {
   pixelsToCharacterWidth,
   setWorkbookMdw,
 } from '../src/renderer/app-constants'
-import { generalCharBudget } from '../src/renderer/numfmt-fix'
+import { formatGeneral, generalCharBudget } from '../src/renderer/numfmt-fix'
 import {
   characterWidthToPixels,
   measureNormalFontMdw,
@@ -249,5 +249,33 @@ describe('toUniverStyle wrap resolution', () => {
     // A resolved non-wrap cell xf must override a WRAP column style at
     // compose time (sample 60384: col style wraps, A1 explicitly does not).
     expect(toUniverStyle({ ...base, wrapText: false } as never).tb).toBe(WrapStrategy.OVERFLOW)
+  })
+})
+
+describe('General fit on the padding-free column geometry', () => {
+  // orderOfCNumFmtElements.xlsx (Arial Cyr 10 -> MDW 8): Excel prints the
+  // full integers in the 7.57- and 8-char columns, whose integer part fills
+  // the digit budget exactly.
+  it('shows an integer that exactly fills the digit budget', () => {
+    setWorkbookMdw(8)
+    expect(characterWidthToPixels(7.5703125)).toBe(60)
+    const colE = generalCharBudget(60)
+    expect(colE).toBe(6)
+    expect(formatGeneral(712287.63684882503, colE)).toBe('712288')
+    expect(formatGeneral(981434.3, colE)).toBe('981434')
+    const colD = generalCharBudget(characterWidthToPixels(8))
+    expect(colD).toBe(7)
+    expect(formatGeneral(1241938.0463407882, colD)).toBe('1241938')
+    expect(formatGeneral(156646.72774544521, colD)).toBe('156647')
+  })
+
+  it('still goes scientific when the integer part is wider than the column', () => {
+    setWorkbookMdw(8)
+    const colE = generalCharBudget(characterWidthToPixels(7.5703125))
+    expect(formatGeneral(1241938.0463407882, colE)).toBe('1E+06')
+    expect(formatGeneral(-712288, colE)).toBe('-7E+05')
+    const narrow = generalCharBudget(characterWidthToPixels(5))
+    expect(narrow).toBe(4)
+    expect(formatGeneral(712288, narrow)).toBe('7E+05')
   })
 })

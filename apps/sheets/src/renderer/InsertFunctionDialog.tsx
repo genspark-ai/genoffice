@@ -1,21 +1,29 @@
+import type { IFunctionInfo } from '@univerjs/engine-formula'
 import { useMemo, useState } from 'react'
 
 import { Dropdown } from '@genoffice/ui'
 
+import {
+  buildFunctionCatalog,
+  FUNCTION_CATEGORIES,
+  type FunctionCategory,
+  type FunctionSpec,
+} from './function-catalog'
 import { useI18n, type StringKey } from './i18n/locale'
 
-/// Excel's Insert Function, minimal: browse/search the catalog, read the
-/// syntax, finish the formula in the dialog, apply to the active cell.
+/// Excel's Insert Function: browse/search the engine's function catalog,
+/// read the syntax, finish the formula in the dialog, apply to the active cell.
 
-interface FunctionSpec {
+interface FallbackSpec {
   readonly name: string
-  /// Stable English id; displayed through CATEGORY_LABELS.
-  readonly category: string
+  readonly category: FunctionCategory
   readonly syntax: string
   readonly descKey: StringKey
 }
 
-const FUNCTION_CATALOG: readonly FunctionSpec[] = [
+/// Functions the engine may implement without describing (the app's own
+/// executors); only names missing from the live registry are used.
+const FALLBACK_CATALOG: readonly FallbackSpec[] = [
   { name: 'SUM', category: 'Math', syntax: 'SUM(number1, [number2], …)', descKey: 'dlgFnDescSum' },
   {
     name: 'SUMIF',
@@ -284,27 +292,36 @@ const FUNCTION_CATALOG: readonly FunctionSpec[] = [
   { name: 'IRR', category: 'Financial', syntax: 'IRR(values, [guess])', descKey: 'dlgFnDescIrr' },
 ]
 
-const CATEGORIES = ['All', ...new Set(FUNCTION_CATALOG.map((spec) => spec.category))]
-
-const CATEGORY_LABELS: Record<string, StringKey> = {
+const CATEGORY_LABELS: Record<'All' | FunctionCategory, StringKey> = {
   All: 'dlgFnCatAll',
+  Financial: 'dlgFnCatFinancial',
+  'Date & Time': 'dlgFnCatDateTime',
   Math: 'dlgFnCatMath',
   Statistical: 'dlgFnCatStatistical',
-  Logical: 'dlgFnCatLogical',
   Lookup: 'dlgFnCatLookup',
+  Database: 'dlgFnCatDatabase',
   Text: 'dlgFnCatText',
-  'Date & Time': 'dlgFnCatDateTime',
-  Financial: 'dlgFnCatFinancial',
+  Logical: 'dlgFnCatLogical',
+  Information: 'dlgFnCatInformation',
+  Engineering: 'dlgFnCatEngineering',
+  Cube: 'dlgFnCatCube',
+  Compatibility: 'dlgFnCatCompatibility',
+  Web: 'dlgFnCatWeb',
+  Array: 'dlgFnCatArray',
+  Other: 'dlgFnCatOther',
 }
 
 export function InsertFunctionDialog({
   targetLabel,
+  functions,
   onApply,
   onClose,
   initialCategory,
 }: {
   /// A1 label of the destination cell, for the dialog header.
   readonly targetLabel: string
+  /// Descriptions from the running formula engine (already localized).
+  readonly functions: readonly IFunctionInfo[]
   /// Returns an error message, or null on success.
   readonly onApply: (formula: string) => string | null
   readonly onClose: () => void
@@ -312,9 +329,24 @@ export function InsertFunctionDialog({
   readonly initialCategory?: string
 }): React.JSX.Element {
   const { t, lang } = useI18n()
+  const catalog = useMemo(
+    () =>
+      buildFunctionCatalog(
+        functions,
+        FALLBACK_CATALOG.map((spec) => {
+          const description = t(spec.descKey)
+          return { ...spec, abstract: description, description }
+        }),
+      ),
+    [functions, lang],
+  )
+  const categories = useMemo(() => {
+    const present = new Set(catalog.map((spec) => spec.category))
+    return ['All', ...FUNCTION_CATEGORIES.filter((name) => present.has(name))]
+  }, [catalog])
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState(
-    initialCategory && CATEGORIES.includes(initialCategory) ? initialCategory : 'All',
+    initialCategory && categories.includes(initialCategory) ? initialCategory : 'All',
   )
   const [picked, setPicked] = useState<FunctionSpec | null>(null)
   const [formula, setFormula] = useState('')
@@ -322,14 +354,14 @@ export function InsertFunctionDialog({
 
   const matches = useMemo(() => {
     const needle = query.trim().toUpperCase()
-    return FUNCTION_CATALOG.filter(
+    return catalog.filter(
       (spec) =>
         (category === 'All' || spec.category === category) &&
         (needle === '' ||
           spec.name.includes(needle) ||
-          t(spec.descKey).toUpperCase().includes(needle)),
+          spec.abstract.toUpperCase().includes(needle)),
     )
-  }, [query, category, lang])
+  }, [catalog, query, category])
 
   const pick = (spec: FunctionSpec): void => {
     setPicked(spec)
@@ -355,9 +387,9 @@ export function InsertFunctionDialog({
           />
           <Dropdown
             value={category}
-            options={CATEGORIES.map((name) => ({
+            options={categories.map((name) => ({
               value: name,
-              label: CATEGORY_LABELS[name] ? t(CATEGORY_LABELS[name]) : name,
+              label: t(CATEGORY_LABELS[name as 'All' | FunctionCategory]),
             }))}
             onPick={setCategory}
           />
@@ -372,7 +404,7 @@ export function InsertFunctionDialog({
               onClick={() => pick(spec)}
             >
               <strong>{spec.name}</strong>
-              <span>{t(spec.descKey)}</span>
+              <span>{spec.abstract}</span>
             </button>
           ))}
           {matches.length === 0 && <p className="dialog-note">{t('dlgFnNoMatch')}</p>}
@@ -380,6 +412,7 @@ export function InsertFunctionDialog({
         {picked && (
           <p className="dialog-note fn-syntax">
             <code>{picked.syntax}</code>
+            {picked.description !== picked.abstract && <span>{picked.description}</span>}
           </p>
         )}
         <label className="fn-formula">

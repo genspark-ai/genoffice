@@ -8,19 +8,29 @@ import {
 import { useI18n } from '../i18n/locale'
 import type { StringKey } from '../i18n/locale'
 import { GensparkMark } from '../ai/AiPanel'
+import type { InsertKind, InsertOptions } from '../document/insert-presets'
 import {
+  IconBullets,
+  IconButton,
   IconChevronDown,
   IconCode,
+  IconDivider,
   IconExpand,
   IconGlobe,
+  IconHeading,
   IconPlay,
   IconPalette,
+  IconPicture,
+  IconPilcrow,
+  IconPlus,
   IconPreview,
   IconRedo,
   IconSave,
   IconSearch,
+  IconSection,
   IconSplitView,
   IconSummarize,
+  IconTable,
   IconUndo,
   IconWand,
 } from './icons'
@@ -64,6 +74,9 @@ interface Props {
   onView: (view: ViewMode) => void
   aiOpen: boolean
   onToggleAi: () => void
+  canInsert: boolean
+  /** images come from a picked file by default; `url` places a remote image instead; tables take the picker's rows × cols */
+  onInsert: (kind: InsertKind, opts?: InsertOptions) => void
   /** page-wide AI actions: send this instruction to the assistant right away */
   onAiPreset: (text: string) => void
   canvasMode: CanvasMode
@@ -83,6 +96,33 @@ const PRESENT_ITEMS: Array<{
   { kind: 'fullscreen', label: 'presentFullscreen', Icon: IconPlay },
   { kind: 'newTab', label: 'presentNewTab', Icon: IconGlobe },
 ]
+
+const INSERT_LABEL: Record<InsertKind, StringKey> = {
+  heading: 'insertHeading',
+  paragraph: 'insertParagraph',
+  list: 'insertList',
+  button: 'insertButton',
+  image: 'insertImage',
+  table: 'insertTable',
+  section: 'insertSection',
+  divider: 'insertDivider',
+}
+
+type InsertIcon = (p: { size?: number }) => React.JSX.Element
+
+/** the everyday kinds sit on the ribbon; the rest live under "More" */
+const MORE_KINDS: Array<{ kind: InsertKind; Icon: InsertIcon }> = [
+  { kind: 'list', Icon: IconBullets },
+  { kind: 'button', Icon: IconButton },
+  { kind: 'section', Icon: IconSection },
+  { kind: 'divider', Icon: IconDivider },
+]
+
+/** which insert popover is open: the image-URL form, the table size grid or the "More" menu */
+type InsertPopover = 'imageUrl' | 'table' | 'more'
+
+const TABLE_PICKER_ROWS = 8
+const TABLE_PICKER_COLS = 10
 
 const ICON = 20
 
@@ -116,7 +156,44 @@ export function Ribbon(p: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [presentOpen])
 
+  const [insertPop, setInsertPop] = useState<InsertPopover | null>(null)
+  const [imageUrl, setImageUrl] = useState('')
+  /** hovered table size in the picker grid; 0 × 0 = nothing hovered */
+  const [grid, setGrid] = useState({ r: 0, c: 0 })
+  const imageRef = useRef<HTMLDivElement>(null)
+  const tableRef = useRef<HTMLDivElement>(null)
+  const moreRef = useRef<HTMLDivElement>(null)
+  const closeInsert = () => {
+    setInsertPop(null)
+    setImageUrl('')
+    setGrid({ r: 0, c: 0 })
+  }
+  const toggleInsert = (pop: InsertPopover) =>
+    insertPop === pop ? closeInsert() : setInsertPop(pop)
+  useDismissablePopover(insertPop !== null, closeInsert, {
+    inside: () => [imageRef.current, tableRef.current, moreRef.current],
+  })
+  useEffect(() => {
+    if (insertPop === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeInsert()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [insertPop])
+  const submitImageUrl = () => {
+    const url = imageUrl.trim()
+    if (!url) return
+    closeInsert()
+    p.onInsert('image', { url })
+  }
+  const insert = (kind: InsertKind, opts?: InsertOptions) => {
+    closeInsert()
+    p.onInsert(kind, opts)
+  }
+
   const off = p.disabled
+  const insertOff = off || !p.canInsert
 
   return (
     <div className={`ribbon ${collapse.rootClass}`} ref={collapse.rootRef}>
@@ -261,6 +338,162 @@ export function Ribbon(p: Props) {
               </span>
               <span>{t('aiSummarizeBtn')}</span>
             </button>
+          </div>
+        </div>
+
+        <div className="rb-sep" />
+
+        <div className="ribbon-group">
+          <div className="ribbon-group-items">
+            {/* the ribbon has no Insert tab: the row itself says what these buttons do */}
+            <span className="rb-group-lead" aria-hidden="true">
+              {t('ribbonGroupInsert')}
+            </span>
+            <button
+              type="button"
+              className="rb-btn rb-view"
+              data-tip={t('insertHeading')}
+              disabled={insertOff}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => insert('heading')}
+            >
+              <IconHeading size={ICON} />
+              <span>{t('insertHeading')}</span>
+            </button>
+            <button
+              type="button"
+              className="rb-btn rb-view"
+              data-tip={t('insertParagraph')}
+              disabled={insertOff}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => insert('paragraph')}
+            >
+              <IconPilcrow size={ICON} />
+              <span>{t('insertParagraph')}</span>
+            </button>
+            <div className="rb-menu-wrap rb-split" ref={imageRef}>
+              <button
+                type="button"
+                className="rb-btn rb-view rb-split-main"
+                data-tip={t('insertImage')}
+                disabled={insertOff}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => insert('image')}
+              >
+                <IconPicture size={ICON} />
+                <span>{t('insertImage')}</span>
+              </button>
+              <button
+                type="button"
+                className={`rb-btn rb-split-caret${insertPop === 'imageUrl' ? ' active' : ''}`}
+                data-tip={t('insertImageUrl')}
+                aria-label={t('insertImageUrl')}
+                aria-haspopup="dialog"
+                aria-expanded={insertPop === 'imageUrl'}
+                disabled={insertOff}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => toggleInsert('imageUrl')}
+              >
+                <IconChevronDown size={14} />
+              </button>
+              {insertPop === 'imageUrl' && (
+                <form
+                  className="rb-menu rb-url-form"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    submitImageUrl()
+                  }}
+                >
+                  <input
+                    type="url"
+                    autoFocus
+                    placeholder="https://"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                  />
+                  <button type="submit" className="rb-url-submit" disabled={!imageUrl.trim()}>
+                    {t('insertConfirm')}
+                  </button>
+                </form>
+              )}
+            </div>
+            <div className="rb-menu-wrap" ref={tableRef}>
+              <button
+                type="button"
+                className={`rb-btn rb-view${insertPop === 'table' ? ' active' : ''}`}
+                data-tip={t('insertTable')}
+                aria-haspopup="dialog"
+                aria-expanded={insertPop === 'table'}
+                disabled={insertOff}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => toggleInsert('table')}
+              >
+                <IconTable size={ICON} />
+                <span>{t('insertTable')}</span>
+                <IconChevronDown size={14} />
+              </button>
+              {insertPop === 'table' && (
+                <div
+                  className="table-picker"
+                  role="dialog"
+                  aria-label={t('insertTablePickSize')}
+                  onMouseLeave={() => setGrid({ r: 0, c: 0 })}
+                >
+                  <div className="table-picker-title">
+                    {grid.r > 0
+                      ? t('insertTableSize', { r: grid.r, c: grid.c })
+                      : t('insertTablePickSize')}
+                  </div>
+                  <div className="table-picker-grid">
+                    {Array.from({ length: TABLE_PICKER_ROWS }, (_, ri) =>
+                      Array.from({ length: TABLE_PICKER_COLS }, (_, ci) => (
+                        <button
+                          key={`${ri}-${ci}`}
+                          type="button"
+                          className={`table-cell${ri < grid.r && ci < grid.c ? ' hot' : ''}`}
+                          aria-label={t('insertTableSize', { r: ri + 1, c: ci + 1 })}
+                          onMouseEnter={() => setGrid({ r: ri + 1, c: ci + 1 })}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => insert('table', { rows: ri + 1, cols: ci + 1 })}
+                        />
+                      )),
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="rb-menu-wrap" ref={moreRef}>
+              <button
+                type="button"
+                className={`rb-btn rb-view${insertPop === 'more' ? ' active' : ''}`}
+                data-tip={t('insertMore')}
+                aria-haspopup="menu"
+                aria-expanded={insertPop === 'more'}
+                disabled={insertOff}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => toggleInsert('more')}
+              >
+                <IconPlus size={ICON} />
+                <span>{t('insertMore')}</span>
+                <IconChevronDown size={14} />
+              </button>
+              {insertPop === 'more' && (
+                <div className="rb-menu" role="menu">
+                  {MORE_KINDS.map(({ kind, Icon }) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="menuitem"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => insert(kind)}
+                    >
+                      <Icon size={16} />
+                      {t(INSERT_LABEL[kind])}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

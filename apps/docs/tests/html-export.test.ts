@@ -45,6 +45,16 @@ describe('buildStandaloneHtml', () => {
     expect(out).toMatch(/^<!DOCTYPE html>/)
   })
 
+  it('exports tab leaders as a border, not the on-screen glyph run', () => {
+    const root = mount(
+      '<p class="doc-p has-tab-stops">Intro<span class="doc-tab doc-tab-leader-dot" ' +
+        'style="tab-size:400px">\t</span>5</p>',
+    )
+    const out = buildStandaloneHtml(root, { title: 'T' })
+    expect(out).toMatch(/<span style="[^"]*border-bottom:1px dotted currentColor[^"]*">\t<\/span>5/)
+    expect(out).not.toMatch(/\.{3}/)
+  })
+
   it('escapes text and restores lifted screen-only classes', () => {
     const wrap = document.createElement('div')
     wrap.className = 'workspace page-dark'

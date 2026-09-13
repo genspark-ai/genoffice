@@ -16,7 +16,7 @@
  */
 import { XMLParser } from 'fast-xml-parser'
 import { type Theme } from './theme'
-import { resolveColorNode, scaleLuminance } from './color'
+import { applyColorMods, resolveColorNode, scaleLuminance } from './color'
 import type { Fill } from './types'
 
 const chartParser = new XMLParser({
@@ -232,6 +232,8 @@ export interface ChartModel {
   }>
   /** chartSpace-level <c:txPr> default text size (pt); chart text without its own txPr uses this */
   defaultTextPt?: number
+  /** chartSpace-level <c:txPr> default text color, or the legacy <c:style> row default (41-48 → lt1) */
+  defaultTextColor?: string
   /** 3D chart type (pie3D/bar3D/…): render layer draws a pseudo-3D look on the 2D pipeline */
   pseudo3D?: boolean
   /** c:view3D rotX (degrees) — controls the pie tilt / bar extrusion feel */
@@ -353,6 +355,8 @@ export function parseChartXml(
   ) => {
     const sersRaw = plotNode['c:ser']
     const sers: any[] = Array.isArray(sersRaw) ? sersRaw : sersRaw ? [sersRaw] : []
+    const plotMarkerNode = plotNode['c:marker']
+    const plotMarker = plotMarkerNode != null && plotMarkerNode?.['@_val'] !== '0'
     for (const ser of sers) {
       // Scatter: y values in c:yVal, x values in c:xVal; other types use c:val
       const s: ChartSeries = {
@@ -417,8 +421,14 @@ export function parseChartXml(
       s.dataLabels = serDl && typeof serDl === 'object' ? dlOn(serDl) : dlOn(plotNode['c:dLbls'])
       const markerSym = ser['c:marker']?.['c:symbol']?.['@_val']
       if (plotKind === 'line')
-        // Stock OHLC series show markers by default (PowerPoint draws marker-only lines)
-        s.marker = fromStock ? markerSym !== 'none' : markerSym != null && markerSym !== 'none'
+        // Stock OHLC series show markers by default (PowerPoint draws marker-only lines);
+        // otherwise a series without an explicit c:symbol takes the automatic marker when the
+        // plot-level <c:marker val="1"/> is on (PowerPoint's "Line" preset writes symbol=none)
+        s.marker = fromStock
+          ? markerSym !== 'none'
+          : markerSym != null
+            ? markerSym !== 'none'
+            : plotMarker
       // scatter/radar: default marker decided by style; only set for explicit symbol (none → false)
       else if ((plotKind === 'scatter' || plotKind === 'radar') && markerSym != null)
         s.marker = markerSym !== 'none'
@@ -697,10 +707,29 @@ export function parseChartXml(
       })
     }
   }
-  // chartSpace-level default text size (hundredths of a pt)
+  // chartSpace-level default text size (hundredths of a pt) and color
   const txP = doc['c:chartSpace']?.['c:txPr']?.['a:p']
-  const defSz = parseInt((Array.isArray(txP) ? txP[0] : txP)?.['a:pPr']?.['a:defRPr']?.['@_sz'], 10)
+  const txDefRPr = (Array.isArray(txP) ? txP[0] : txP)?.['a:pPr']?.['a:defRPr']
+  const defSz = parseInt(txDefRPr?.['@_sz'], 10)
   if (Number.isFinite(defSz) && defSz > 0) model.defaultTextPt = defSz / 100
+  const defColor = resolveColorNode(txDefRPr?.['a:solidFill'], theme)
+  if (defColor) model.defaultTextColor = defColor
+  // Office 2007 style table, bottom row (41-48): black chart area with white text
+  // unless the part spells out its own chartSpace fill / text color
+  if (styleVal >= 41 && styleVal <= 48) {
+    const csSpPr = doc['c:chartSpace']?.['c:spPr']
+    const explicitFill =
+      csSpPr &&
+      ['a:noFill', 'a:solidFill', 'a:gradFill', 'a:blipFill', 'a:pattFill'].some((k) => k in csSpPr)
+    const dk1 = theme?.colors?.dk1 ?? '#000000'
+    if (!explicitFill) model.bgFill = { type: 'solid', color: dk1 }
+    // Plot area: dk1 lumMod 75% lumOff 25% (PowerPoint-measured #3F3F3F on a black chart area)
+    if (!paFill && !paSpPr?.['a:noFill']) {
+      const mods = { 'a:lumMod': { '@_val': '75000' }, 'a:lumOff': { '@_val': '25000' } }
+      model.plotFill = { type: 'solid', color: applyColorMods(dk1, mods) }
+    }
+    if (!model.defaultTextColor) model.defaultTextColor = theme?.colors?.lt1 ?? '#FFFFFF'
+  }
 
   // Title text: rich text, or the cached cell-linked string (c:tx/c:strRef)
   const chartTitle =
@@ -852,8 +881,10 @@ function readNumPoints(node: any): Array<number | null> {
 
 /** String cache (strRef/strCache or the innermost lvl of multiLvlStrRef) → string[]. */
 function readStrPoints(node: any): string[] {
-  const strCache = node?.['c:strRef']?.['c:strCache']
+  const strCache = node?.['c:strRef']?.['c:strCache'] ?? node?.['c:strLit']
   if (strCache) return readPoints(strCache).map((v) => v ?? '')
+  const lit = node?.['c:v']
+  if (lit != null) return [typeof lit === 'string' ? lit : String(lit['#text'] ?? lit)]
   const multi = node?.['c:multiLvlStrRef']?.['c:multiLvlStrCache']
   if (multi) {
     const lvls: any[] = Array.isArray(multi['c:lvl'])

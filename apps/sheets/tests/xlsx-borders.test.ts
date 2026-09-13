@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 
-import { StylesheetEditor } from '../src/gateway/xlsx-styles'
+import { StylesheetEditor } from '@genoffice/xlsx-gateway/gateway/xlsx-styles'
 import { XlsxSidecarClient } from '../src/main/xlsx-sidecar-client'
 import { workbookRangeResultSchema } from '../src/shared/desktop-api'
 import { fromNeutralStyle, toNeutralStyle } from '../src/renderer/edit-journal'

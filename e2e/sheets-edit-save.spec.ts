@@ -56,7 +56,7 @@ test.describe('sheets: edit and save an external workbook', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(first.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(first.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       const a1 = await cellA1(sheets)
@@ -74,7 +74,7 @@ test.describe('sheets: edit and save an external workbook', () => {
 
       // File > Save, routed to the sheets view the same way the app menu does it
       await first.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {
@@ -93,7 +93,7 @@ test.describe('sheets: edit and save an external workbook', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(second.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(second.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       const a1 = await cellA1(sheets)

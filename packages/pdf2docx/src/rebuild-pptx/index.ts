@@ -30,7 +30,10 @@ export async function convertPdfToPptx(
   pdf: Uint8Array,
   opts: ConvertOptions,
 ): Promise<ConvertPptxResult> {
-  const { irPages, warnings, pageResults } = extractIrDocument(pdf, opts)
+  const { irPages, warnings, pageResults } = extractIrDocument(pdf, {
+    ...opts,
+    absoluteLayout: true,
+  })
   // uninstalled embedded families map to metric-compatible stand-ins (P21)
   applyOutputFontSubstitutions(irPages, [])
   const pptx = await rebuildPptx(irPages)

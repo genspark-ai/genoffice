@@ -73,6 +73,8 @@ export const de = {
   aiToolClarifySkipped: 'Fragebogen übersprungen',
   aiToolPlan: 'Brief bestätigt ({n} Abschnitte)',
   aiToolPlanRejected: 'Brief nicht bestätigt',
+  aiToolPlanFailed: 'Briefing konnte nicht erstellt werden',
+  aiDraftingBrief: 'Briefing wird entworfen…',
   aiToolWritePage: 'Seite erstellt',
   aiToolWritePageFailed: 'Seitenerstellung fehlgeschlagen',
   aiToolWritePagePartial: 'Seite teilweise erstellt',

@@ -7,6 +7,7 @@ import {
   readSections,
   readSectionSettings,
   saveDocx,
+  sectionSettingsFromXml,
   type SaveBlock,
 } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
@@ -58,6 +59,43 @@ describe('readSections enumerates all sections', () => {
     expect(sections[1].settings.pageWidth).toBe(11906)
     expect(sections[1].settings.marginTop).toBe(1440)
     expect(sections[1].firstBlockIndex).toBe(sections[0].lastBlockIndex + 1)
+  })
+
+  it('negative pgMar top/bottom: absolute value, marked fixed, sign restored on save; gutter widens the left margin', () => {
+    const sectPr =
+      '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="-1530" w:right="1710" w:bottom="-1710" w:left="4003" w:header="720" w:footer="720" w:gutter="245"/></w:sectPr>'
+    const settings = sectionSettingsFromXml(sectPr)
+    expect(settings).toMatchObject({
+      marginTop: 1530,
+      marginBottom: 1710,
+      marginTopFixed: true,
+      marginBottomFixed: true,
+      marginLeft: 4003 + 245,
+      gutter: 245,
+      headerDist: 720,
+      footerDist: 720,
+    })
+    expect(applySectionSettings(sectPr, settings)).toContain(
+      '<w:pgMar w:top="-1530" w:right="1710" w:bottom="-1710" w:left="4003"',
+    )
+    const plain = sectionSettingsFromXml(
+      sectPr.replace('-1530', '1530').replace('-1710', '1710').replace('w:gutter="245"', ''),
+    )
+    expect(plain.marginTopFixed).toBeUndefined()
+    expect(plain.marginBottomFixed).toBeUndefined()
+    expect(plain.gutter).toBeUndefined()
+    expect(plain.marginLeft).toBe(4003)
+    const atTop = sectionSettingsFromXml(sectPr, { gutterAtTop: true })
+    expect(atTop).toMatchObject({ marginTop: 1530 + 245, marginLeft: 4003, gutterAtTop: true })
+    expect(applySectionSettings(sectPr, atTop)).toContain(
+      '<w:pgMar w:top="-1530" w:right="1710" w:bottom="-1710" w:left="4003"',
+    )
+    // a user margin smaller than the folded gutter writes 0, never a negative value
+    expect(applySectionSettings(sectPr, { ...settings, marginLeft: 100 })).toContain('w:left="0"')
+    expect(applySectionSettings(sectPr, { ...atTop, marginTop: 100 })).toContain('w:top="0"')
+    expect(applySectionSettings(sectPr, { ...settings, marginTopFixed: false })).toContain(
+      'w:top="1530"',
+    )
   })
 
   it('a section-break paragraph with visible text stays an editable paragraph (tdf#159032)', async () => {
@@ -586,6 +624,26 @@ describe('pgBorders details', () => {
     expect(s.pageBorderProps?.color).toBeUndefined()
   })
 
+  it('art borders keep w:sz as the pattern height in points and read zOrder', async () => {
+    const { sectionSettingsFromXml } = await import('../src/section')
+    const s = sectionSettingsFromXml(
+      '<w:sectPr><w:pgBorders w:offsetFrom="page" w:zOrder="back">' +
+        '<w:top w:val="gems" w:sz="16" w:space="24" w:color="auto"/>' +
+        '<w:left w:val="single" w:sz="16" w:space="24" w:color="auto"/>' +
+        '</w:pgBorders></w:sectPr>',
+    )
+    expect(s.pageBorderProps).toEqual({
+      offsetFrom: 'page',
+      zOrder: 'back',
+      spacePt: 24,
+      widthPt: 16,
+      sides: {
+        top: { val: 'gems', widthPt: 16, spacePt: 24, art: true },
+        left: { val: 'single', widthPt: 2, spacePt: 24 },
+      },
+    })
+  })
+
   it('none-only sides leave pageBorderProps unset', async () => {
     const { sectionSettingsFromXml } = await import('../src/section')
     const s = sectionSettingsFromXml(
@@ -593,5 +651,78 @@ describe('pgBorders details', () => {
     )
     expect(s.pageBorder).toBe(false)
     expect(s.pageBorderProps).toBeUndefined()
+  })
+})
+
+describe('sectPr w:lnNumType', () => {
+  it('reads countBy/start/distance/restart; omitted restart is per page like Word', async () => {
+    const { sectionSettingsFromXml } = await import('../src/section')
+    const ln = (attrs: string) =>
+      sectionSettingsFromXml(`<w:sectPr><w:lnNumType ${attrs}/></w:sectPr>`).lineNumbers
+    expect(ln('w:countBy="1" w:restart="continuous"')).toEqual({
+      countBy: 1,
+      start: 1,
+      restart: 'continuous',
+    })
+    expect(ln('w:countBy="5" w:start="10" w:distance="720" w:restart="newSection"')).toEqual({
+      countBy: 5,
+      start: 11,
+      distance: 720,
+      restart: 'newSection',
+    })
+    expect(ln('w:countBy="1"')).toEqual({ countBy: 1, start: 1, restart: 'newPage' })
+    expect(ln('w:restart="bogus"')).toEqual({ countBy: 1, start: 1, restart: 'newPage' })
+  })
+
+  it('w:start counts skipped lines: the first visible number is start + 1', async () => {
+    const { lineNumberingOf } = await import('../src/section')
+    expect(lineNumberingOf('<w:lnNumType w:start="0"/>')?.start).toBe(1)
+    expect(lineNumberingOf('<w:lnNumType w:start="4"/>')?.start).toBe(5)
+    expect(lineNumberingOf('<w:lnNumType w:start="-3"/>')?.start).toBe(1)
+  })
+
+  it('is absent without the element and survives a settings round trip', async () => {
+    const { sectionSettingsFromXml, applySectionSettings } = await import('../src/section')
+    expect(
+      sectionSettingsFromXml('<w:sectPr><w:cols w:space="425"/></w:sectPr>').lineNumbers,
+    ).toBeUndefined()
+    const xml =
+      '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="851" w:footer="992" w:gutter="0"/>' +
+      '<w:lnNumType w:countBy="1" w:restart="continuous"/><w:cols w:space="425"/></w:sectPr>'
+    const s = sectionSettingsFromXml(xml)
+    const out = applySectionSettings(xml, { ...s, marginLeft: 1000 })
+    expect(out).toContain('<w:lnNumType w:countBy="1" w:restart="continuous"/>')
+  })
+
+  it('paragraph w:suppressLineNumbers is parsed tri-state', async () => {
+    const { parseDocx } = await import('../src/index')
+    const bytes = await buildDocx({
+      bodyXml:
+        '<w:p><w:pPr><w:suppressLineNumbers/></w:pPr><w:r><w:t>a</w:t></w:r></w:p>' +
+        '<w:p><w:pPr><w:suppressLineNumbers w:val="0"/></w:pPr><w:r><w:t>b</w:t></w:r></w:p>' +
+        P('c'),
+    })
+    const doc = await parseDocx(bytes)
+    expect(doc.blocks.slice(0, 3).map((b) => b.format?.suppressLineNumbers)).toEqual([
+      true,
+      false,
+      undefined,
+    ])
+  })
+
+  it('style w:suppressLineNumbers is tri-state so a child style can re-enable numbering', async () => {
+    const { parseDocx } = await import('../src/index')
+    const bytes = await buildDocx({
+      bodyXml: P('a'),
+      extraStylesXml:
+        '<w:style w:type="paragraph" w:styleId="Quiet"><w:name w:val="Quiet"/><w:basedOn w:val="Normal"/>' +
+        '<w:pPr><w:suppressLineNumbers/></w:pPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="Loud"><w:name w:val="Loud"/><w:basedOn w:val="Quiet"/>' +
+        '<w:pPr><w:suppressLineNumbers w:val="0"/></w:pPr></w:style>' +
+        '<w:style w:type="paragraph" w:styleId="Inherit"><w:name w:val="Inherit"/><w:basedOn w:val="Quiet"/></w:style>',
+    })
+    const doc = await parseDocx(bytes)
+    const flag = (id: string) => doc.styles.get(id)?.display?.suppressLineNumbers
+    expect([flag('Quiet'), flag('Loud'), flag('Inherit')]).toEqual([true, false, true])
   })
 })

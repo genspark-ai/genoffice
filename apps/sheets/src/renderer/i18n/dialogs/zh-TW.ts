@@ -387,4 +387,12 @@ export const zhTW = {
   dlgFnDescNpv: '按貼現率計算現金流的淨現值。',
   dlgFnDescIrr: '計算一系列現金流的內部報酬率。',
   dlgFnCatFinancial: '財務',
+  dlgFnCatDatabase: '資料庫',
+  dlgFnCatInformation: '資訊',
+  dlgFnCatEngineering: '工程',
+  dlgFnCatCube: 'Cube',
+  dlgFnCatCompatibility: '相容性',
+  dlgFnCatWeb: 'Web',
+  dlgFnCatArray: '陣列',
+  dlgFnCatOther: '其他',
 } satisfies Record<keyof typeof zh, string>

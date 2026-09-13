@@ -4,20 +4,20 @@ import {
   copyTargetBounds,
   workbookOperationSchema,
   type WorkbookOperation,
-} from '../../domain/workbook-dsl'
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
 import {
   columnLabel,
   parseRange,
   rangeCellCount,
   formatAddress,
   type RangeBounds,
-} from '../../domain/cell-address'
+} from '@genoffice/xlsx-gateway/domain/cell-address'
 import type {
   ApplyOutcome,
   CellFormatState,
   CellScalar,
   ChangePlan,
-} from '../../domain/workbook.types'
+} from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { t } from '../i18n/locale'
 import { formatRangeAggregate, type RangeAggregate } from './aggregate'
 import { guideCatalogSummary, loadGuides } from './guides'

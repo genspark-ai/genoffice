@@ -360,6 +360,18 @@ function fontSets(): string[] {
   return calls.filter((c) => c.method === 'set:font').map((c) => c.args[0] as string)
 }
 
+describe('EMR_EXTTEXTOUTW alignment (ole-caption.emf)', () => {
+  it('centers a TA_CENTER caption instead of right-aligning it', async () => {
+    reset()
+    await convertEmfToDataUrl(loadFixture('ole-caption.emf'), { dpiScale: 2 })
+    const canvas = canvases[0]
+    const text = calls.find((c) => c.method === 'fillText')
+    expect(text?.args[0]).toBe('simple.txt')
+    expect(text?.args[1]).toBeCloseTo(canvas.width / 2, 0)
+    expect(canvas.getContext('2d')?.textAlign).toBe('center')
+  })
+})
+
 describe('EMR_EXTCREATEFONTINDIRECTW facename', () => {
   it('reads the LOGFONTW FaceName at +32, past the precision/quality bytes', async () => {
     reset()

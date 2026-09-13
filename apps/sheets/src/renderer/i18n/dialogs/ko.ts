@@ -395,4 +395,12 @@ export const ko = {
   dlgFnDescNpv: '할인율을 적용한 현금 흐름의 순현재가치를 반환합니다.',
   dlgFnDescIrr: '일련의 현금 흐름에 대한 내부 수익률을 반환합니다.',
   dlgFnCatFinancial: '재무',
+  dlgFnCatDatabase: '데이터베이스',
+  dlgFnCatInformation: '정보',
+  dlgFnCatEngineering: '공학',
+  dlgFnCatCube: '큐브',
+  dlgFnCatCompatibility: '호환성',
+  dlgFnCatWeb: '웹',
+  dlgFnCatArray: '배열',
+  dlgFnCatOther: '기타',
 } satisfies Record<keyof typeof zh, string>

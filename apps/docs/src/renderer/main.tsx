@@ -14,8 +14,12 @@ import '@genoffice/ui/ai-scope-quote.css'
 import './styles.css'
 import './fonts/fonts.css'
 import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
+import { setAltChunkHtmlConverter } from '@genoffice/docx-engine'
 
 installScreenTips()
+if (window.desktop?.convertAltChunkHtml) {
+  setAltChunkHtmlConverter((html) => window.desktop.convertAltChunkHtml(html))
+}
 
 function applyTheme(theme: UiTheme): void {
   if (theme === 'system') document.documentElement.removeAttribute('data-theme')

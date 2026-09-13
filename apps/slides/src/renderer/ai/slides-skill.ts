@@ -7,8 +7,8 @@ import type {
   ShapeRenderNode,
 } from '@genoffice/pptx-render'
 import type { AgentToolCall, AgentToolDef } from '../../shared/ipc'
-import { OP_GROUPS, opGuide, opGuideCatalog, opSignatureIndex } from '../../shared/op-docs'
-import { auditSlideLayout, formatAudit } from './layout-audit'
+import { OP_GROUPS, opGuide, opGuideCatalog, opSignatureIndex } from '@genoffice/pptx-ops/op-docs'
+import { auditSlideLayout, formatAudit } from '@genoffice/pipelines/slides/layout-audit'
 import { runLayoutScript, type LayoutScriptElement } from './layout-script'
 import { t } from '../i18n/locale'
 import systemPrompt from './prompts/system.md?raw'

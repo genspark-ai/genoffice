@@ -10,12 +10,16 @@ export {
   IconAlignCenter,
   IconAlignLeft,
   IconAlignRight,
+  IconBullets,
   IconCopy,
   IconCrop,
   IconFlipH,
   IconFlipV,
   IconLink,
+  IconLock,
   IconPalette,
+  IconPicture,
+  IconPilcrow,
   IconRedo,
   IconRemoveBg,
   IconReplacePicture,
@@ -24,6 +28,7 @@ export {
   IconSave,
   IconSearch,
   IconSparkle,
+  IconTable,
   IconTrash,
   IconUndo,
   IconWand,
@@ -53,6 +58,52 @@ function Svg({ size = 20, children }: IconProps & { children: ReactNode }) {
     >
       {children}
     </svg>
+  )
+}
+
+export function IconPlus(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M8 3v10M3 8h10" />
+    </Svg>
+  )
+}
+
+/** insert: heading (an H letterform) */
+export function IconHeading(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 3v10M12 3v10M4 8h8" />
+    </Svg>
+  )
+}
+
+/** insert: button (a pill with its label line) */
+export function IconButton(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2" y="5" width="12" height="6" rx="3" />
+      <path d="M5.5 8h5" />
+    </Svg>
+  )
+}
+
+/** insert: section (a block with a heading bar and body text) */
+export function IconSection(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.5" y="2.5" width="11" height="11" rx="1" />
+      <path d="M2.5 6h11M5 9h6" />
+    </Svg>
+  )
+}
+
+/** insert: divider (a rule between two text lines) */
+export function IconDivider(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2.5 8h11M5 4.5h6M5 11.5h6" />
+    </Svg>
   )
 }
 

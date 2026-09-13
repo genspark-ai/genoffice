@@ -359,7 +359,7 @@ function ensureContentTypes(
       if (!targetPath) continue
       const override = `<Override PartName="/${targetPath}" ContentType="${contentType}"/>`
       if (!ct.includes(`PartName="/${targetPath}"`))
-        ct = ct.replace('</Types>', `${override}</Types>`)
+        ct = ct.replace('</Types>', () => `${override}</Types>`)
     } else if (!new RegExp(`<Default[^>]*Extension="${key}"`, 'i').test(ct)) {
       ct = ct.replace(
         '</Types>',

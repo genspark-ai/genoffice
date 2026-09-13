@@ -5,6 +5,12 @@ import type { AgentToolCall, AgentToolDef, CreateDocumentType } from '../../shar
 import { t } from '../i18n/locale'
 import { executeOps, opNames } from './ops'
 import {
+  DraftLanding,
+  type AiDocWriter,
+  type DocWriteResult,
+  type WritePosition,
+} from './doc-writer'
+import {
   blockRangePositions,
   buildCommentsContext,
   buildDocumentContext,
@@ -72,6 +78,37 @@ export const AGENT_TOOLS: AgentToolDef[] = [
         },
       },
       required: ['html'],
+    },
+  },
+  {
+    name: 'write_document',
+    description:
+      '[For long new content: a whole document, a chapter, a full report, article or translation] Hands the writing to the system writer, which streams restricted HTML straight into the document while the user watches; you never write the text yourself. Give a concrete plan (title, section outline with the key points of each, tone, target length) and put every fact, figure, name and quote the text must use into context — the writer sees only the plan and context, not the conversation. Omit afterBlockIndex on a blank document; on a document with content, pass afterBlockIndex to insert after that block, or replaceDocument=true when the user asked to rewrite everything. Short additions (a paragraph or two) use insert_content instead.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        plan: {
+          type: 'string',
+          description: 'title, section outline with key points per section, tone, target length',
+        },
+        title: { type: 'string', description: 'document/chapter title, when there is one' },
+        context: {
+          type: 'string',
+          description:
+            'reference material: facts, figures, quotes, sources gathered from the conversation, attachments and web_search',
+        },
+        afterBlockIndex: {
+          type: 'integer',
+          description:
+            'insert after this block index (-1 = document start); omitted = whole document',
+        },
+        replaceDocument: {
+          type: 'boolean',
+          description:
+            'true replaces all existing content (only when the user asked for a rewrite)',
+        },
+      },
+      required: ['plan'],
     },
   },
   {
@@ -472,6 +509,7 @@ function editedExternally(editor: Editor): boolean {
 /** tools addressing the document by block index: refused after an external edit until the model re-reads */
 const INDEX_WRITE_SUMMARIES: Record<string, () => string> = {
   insert_content: () => t('aiSumInsertContent'),
+  write_document: () => t('aiSumWriteDocument'),
   replace_blocks: () => t('aiSumReplaceContent'),
   replace_selection: () => t('aiSumReplaceSelection'),
   apply_ops: () => t('aiSumApplyCommands'),
@@ -717,6 +755,7 @@ export function executeTool(
   frozen?: FrozenSelection | null,
   comments?: AiCommentsAccess,
   hf?: AiHeaderFooterAccess,
+  writer?: AiDocWriter,
 ): ToolExecution | Promise<ToolExecution> {
   const scope = frozen && frozen.doc === editor.state.doc ? frozen.scope : null
   const staleSummary = INDEX_WRITE_SUMMARIES[call.name]
@@ -739,7 +778,96 @@ export function executeTool(
   ) {
     return executeAsyncTool(editor, call, signal)
   }
+  if (call.name === 'write_document')
+    return writeDocument(editor, call, numIds, track, signal, writer)
   return settle(executeSyncTool(editor, call, numIds, track, scope, comments, hf))
+}
+
+async function writeDocument(
+  editor: Editor,
+  call: AgentToolCall,
+  numIds: NumIds,
+  track: AiTrack | undefined,
+  signal: AbortSignal | undefined,
+  writer: AiDocWriter | undefined,
+): Promise<ToolExecution> {
+  const summary = t('aiSumWriteDocument')
+  const plan = String(call.input.plan ?? '').trim()
+  if (!plan) return fail(summary, 'plan must not be empty')
+  if (!writer) return fail(summary, 'document writing is not available here')
+  const count = editor.state.doc.childCount
+  const afterRaw = call.input.afterBlockIndex
+  let position: WritePosition
+  if (afterRaw !== undefined && afterRaw !== null) {
+    if (!Number.isInteger(afterRaw) || Number(afterRaw) < -1 || Number(afterRaw) >= count)
+      return fail(summary, rangeError(editor))
+    position = { kind: 'after', index: Number(afterRaw) }
+  } else if (isBlankDocument(editor) || call.input.replaceDocument === true) {
+    position = { kind: 'whole' }
+  } else {
+    return fail(
+      summary,
+      'the document is not blank: pass afterBlockIndex to insert the new content after a block, or replaceDocument=true when the user asked to rewrite the whole document',
+    )
+  }
+  const str = (v: unknown) => (v === undefined || v === null ? undefined : String(v))
+  const draft = new DraftLanding(editor, numIds, position)
+  let result: DocWriteResult
+  let rendered: string | null
+  try {
+    result = await writer.write(
+      {
+        plan,
+        title: str(call.input.title),
+        context: str(call.input.context),
+        instruction: '',
+      },
+      (html) => draft.update(html),
+      signal,
+    )
+  } finally {
+    rendered = draft.finish()
+  }
+  if (editor.isDestroyed) return fail(summary, 'the document was closed')
+  if (!result.ok || !result.html) {
+    return fail(
+      t('aiSumWriteDocumentFailed'),
+      `The writer produced nothing (${result.error ?? 'no output'}); the document is unchanged. Tell the user briefly and offer to try again.`,
+    )
+  }
+  let nodes: ReturnType<typeof parseHtmlFragment>
+  try {
+    nodes = parseHtmlFragment(result.html, numIds)
+  } catch (e) {
+    // a kept partial can end mid-formula: land what the user saw rendered instead
+    if (!result.truncated || !rendered)
+      return fail(t('aiSumWriteDocumentFailed'), e instanceof Error ? e.message : String(e))
+    nodes = parseHtmlFragment(rendered, numIds)
+  }
+  if (nodes.length === 0)
+    return fail(
+      t('aiSumWriteDocumentFailed'),
+      'the writer output did not parse into any content blocks',
+    )
+  // a blank document or an explicit rewrite replaces everything; text the user typed
+  // into a formerly blank document while the draft streamed is kept, the content goes into the draft's slot
+  if (
+    position.kind === 'whole' &&
+    (isBlankDocument(editor) || call.input.replaceDocument === true)
+  ) {
+    replaceBlockRange(editor, 0, editor.state.doc.childCount - 1, nodes, track)
+  } else {
+    insertBlocksAfter(editor, draft.indexBefore(), nodes, track)
+  }
+  markDocSeen(editor)
+  const note = result.truncated
+    ? ' The stream ended early, so the content is INCOMPLETE (the user chose to keep it): the tail is missing. Say so and offer to finish the missing sections with write_document (afterBlockIndex at the end) or insert_content.'
+    : ''
+  return {
+    output: `Content written by the system (${nodes.length} block(s), ${result.html.length} chars). Block indexes have changed; use get_document_context if needed.${note}\nReply with one or two sentences describing what was written; do not paste the content.`,
+    mutated: true,
+    summary: result.truncated ? t('aiSumWriteDocumentPartial') : summary,
+  }
 }
 
 function executeSyncTool(

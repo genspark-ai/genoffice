@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { formatAddress } from '../domain/cell-address'
+import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { useI18n } from './i18n/locale'
 
 /// One watched cell, addressed by stable ids so sheet renames survive.

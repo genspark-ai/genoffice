@@ -17,6 +17,27 @@ import type {
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 
+import type {
+  EditRun,
+  EditParagraph,
+  ScriptBoxOp,
+  ScriptStylePatch,
+  ScriptEditOp,
+  ApplyEditScriptOp,
+  LinkTargetOp,
+} from '@genoffice/pptx-ops'
+
+// edit payload types moved to the op package; re-exported so IPC consumers keep one import site
+export type {
+  EditRun,
+  EditParagraph,
+  ScriptBoxOp,
+  ScriptStylePatch,
+  ScriptEditOp,
+  ApplyEditScriptOp,
+  LinkTargetOp,
+}
+
 export type { SlideComment, SectionInfo } from '@genoffice/pptx-engine'
 
 // Canonical definitions of AI-related types live in @genoffice/ai-provider / @genoffice/agent-core (shared with docs)
@@ -128,79 +149,6 @@ export interface DesktopFilesApi {
   getPathForFile(file: File): string
 }
 
-/** One rich-text run (sent by the editor, with independent formatting). */
-export interface EditRun {
-  text: string
-  bold?: boolean
-  italic?: boolean
-  underline?: boolean
-  fontSize?: number
-  fontFamily?: string
-  color?: string
-  /** Strikethrough (DOM-authoritative boolean, like bold/italic/underline) */
-  strike?: boolean
-  /** Super/subscript baseline % (positive = superscript; 0 = none, used to disable explicitly) */
-  baseline?: number
-  /** Text outline (for WordArt), width in EMU */
-  outline?: { color: string; widthEmu: number }
-  /** Dynamic field (slidenum / datetime1…); text is the cached value */
-  field?: string
-  /** Source model run index (index into the original paragraph's runs); the main process uses it to backtrack unedited format fields */
-  srcRun?: number
-  /** Run hyperlink. undefined = keep the original run's link (programmatic paths that can't
-   * express links); null = explicitly none (the editor DOM is authoritative, link removed) */
-  link?: LinkTargetOp | null
-}
-
-/** One paragraph (with alignment). */
-export interface EditParagraph {
-  runs: EditRun[]
-  align?: 'left' | 'center' | 'right' | 'justify'
-  /** Indent level 0..8 (returned after editor Tab/⇧Tab adjustment; defaults to the original paragraph's) */
-  level?: number
-  /** Source model paragraph index; the main process uses it to inherit bullet/line spacing etc. (both halves of a split share a source) */
-  srcPara?: number
-  /** Per-paragraph format explicitly changed during this edit session (absent = keep the original) */
-  bullet?: 'char' | 'number' | 'none'
-  bulletChar?: string
-  lineSpacingPct?: number
-  spaceBeforePt?: number
-  spaceAfterPt?: number
-  /** Paragraph base direction toggled during this edit session (false = explicit LTR) */
-  rtl?: boolean
-}
-
-/** One geometry primitive collected by the edit-script sandbox (px, viewport space). */
-export interface ScriptBoxOp {
-  id: string
-  x: number
-  y: number
-  w: number
-  h: number
-  rotation: number
-  /** Group child: converted to child-space EMU by the main-process shim */
-  groupId?: string
-}
-
-/** setStyle's style-override fields (pass only what changes; align is paragraph-level, the rest override per run). */
-export interface ScriptStylePatch {
-  fontSize?: number
-  color?: string
-  bold?: boolean
-  italic?: boolean
-  underline?: boolean
-  fontFamily?: string
-  align?: 'left' | 'center' | 'right'
-}
-
-/** One non-geometry primitive collected by the edit-script sandbox, in script call order. */
-export type ScriptEditOp = (
-  | { kind: 'text'; paragraphs: EditParagraph[] }
-  | { kind: 'style'; style: ScriptStylePatch }
-  | { kind: 'fill'; fill: string }
-  | { kind: 'stroke'; stroke: { color: string; widthPt: number } | null }
-) & { id: string; groupId?: string }
-
 /** A raw op transaction from the AI batch surface (ops are validated by the registry; coordinates are document-space EMU). */
 export interface ApplyTxnOp {
   ops: unknown[]
@@ -238,13 +186,6 @@ export interface AiRunFailure {
   error?: string
   tools?: string[]
   durationMs?: number
-}
-
-export interface ApplyEditScriptOp {
-  slideIndex: number
-  fitWidthPx: number
-  boxes: ScriptBoxOp[]
-  edits: ScriptEditOp[]
 }
 
 /**
@@ -287,10 +228,18 @@ export interface SetElementFontOp {
 export interface SetElementParagraphFormatOp {
   slideIndex: number
   sourceIds: string[]
-  /** 'char' bullet dot / 'number' numbered / 'none' explicitly none */
-  bullet?: 'char' | 'number' | 'none'
+  /** 'char' bullet dot / 'number' numbered / 'blip' picture / 'none' explicitly none */
+  bullet?: 'char' | 'number' | 'blip' | 'none'
   /** Custom bullet character (with bullet: 'char'; defaults to '•') */
   bulletChar?: string
+  /** <a:buFont> paired with the character (gallery presets carry Wingdings/Courier codes) */
+  bulletFont?: string
+  /** buAutoNum scheme (ST_TextAutonumberScheme) with bullet: 'number'; alone it re-schemes numbered paragraphs */
+  numType?: string
+  /** First number of the sequence; alone it only touches numbered paragraphs */
+  startAt?: number
+  /** Picture bullet source (with bullet: 'blip'); landed as a media part + slide rel */
+  bulletImage?: { base64: string; ext: string }
   /** Bullet hanging indent (EMU); alone it adjusts existing bullets' indent */
   bulletHangEmu?: number
   /** Bullet size (% of text size, 100 = same); alone it only touches bulleted paragraphs */
@@ -989,9 +938,6 @@ export interface AddMediaBytesOp {
   name?: string
 }
 
-/** Element hyperlink target. */
-export type LinkTargetOp = { kind: 'url'; url: string } | { kind: 'slide'; slideIndex: number }
-
 export interface SetLinkOp {
   slideIndex: number
   sourceId: string
@@ -1220,6 +1166,10 @@ export interface SlidesApi {
   /** The user font store changed (download/local install): re-sync private FontFaces */
   onFontsChanged: (handler: () => void) => () => void
   consumePendingOpen: (fitWidthPx: number) => Promise<OpenResult | null>
+  /** Headless export mode: the PDF path this hidden renderer must export to, null in normal use */
+  consumeHeadlessExport: () => Promise<string | null>
+  /** Headless export mode: report the export outcome so the main process can quit */
+  headlessExportDone: (result: { ok: boolean; error?: string }) => void
   /** New blank presentation (single blank 16:9 page, untitled) */
   newBlank: (fitWidthPx: number) => Promise<OpenResult>
   /** Land generated pages: each pageMarkers entry is a marker (cloudpptx:<path>) redeemable for a one-slide pptx.

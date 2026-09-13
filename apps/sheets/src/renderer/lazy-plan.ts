@@ -12,8 +12,8 @@ import {
   sortOpLabel,
   structuralOpLabel,
   type WorkbookCommandBatch,
-} from '../domain/workbook-dsl'
-import type { CellState, ChangePlan } from '../domain/workbook.types'
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import type { CellState, ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 
 /// Builds an AI change preview against a live (imported) workbook: "before"
 /// states come from the current on-screen cells, and the same reader is used

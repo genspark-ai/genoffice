@@ -24,6 +24,14 @@ import type { PictureElement, TextElement } from '../src/types'
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
 
+// 1x1 blue PNG (distinct bytes from PNG_1PX)
+const PNG_BLUE = Uint8Array.from(
+  Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYPgPAAEDAQAIicLsAAAAAElFTkSuQmCC',
+    'base64',
+  ),
+)
+
 const OFF = { x: 914400, y: 914400, cx: 1828800, cy: 914400 }
 
 // 1x1 red PNG
@@ -56,11 +64,11 @@ describe('addPicture', () => {
     expect(pic.transform.offset).toEqual(OFF)
   })
 
-  it('second picture gets image2 and a distinct rId', async () => {
+  it('a second, different picture gets image2 and a distinct rId', async () => {
     const opened = await openPptx(await createBlankPptx())
     const slide = opened.deck.slides[0]!
     addPicture(opened, slide, { bytes: PNG_1PX, ext: 'png', offset: { ...OFF } })
-    const b = addPicture(opened, slide, { bytes: PNG_1PX, ext: 'png', offset: { ...OFF } })
+    const b = addPicture(opened, slide, { bytes: PNG_BLUE, ext: 'png', offset: { ...OFF } })
     expect(b!.mediaRef).toBe('ppt/media/image2.png')
     const reopened = await openPptx(await savePptx(opened))
     const pics = reopened.deck.slides[0]!.elements.filter((e) => e.type === 'picture')

@@ -50,8 +50,9 @@ import {
   type PendingNumbering,
 } from './doc-state'
 import { docStyleCss } from './doc-style-css'
+import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
-import { blocksToPmDoc, pmDocToSavePlan, type PmNode } from './editor/convert'
+import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan, type PmNode } from './editor/convert'
 import { TABLE_TRAILING_SKIP } from './editor/extensions'
 import { TRACK_IGNORE } from './editor/revisions'
 import {
@@ -251,6 +252,7 @@ function resetEditorHistory(editor: Editor): void {
 
 /** doc-level layout inputs living outside CSS: default tab grid + hyphenation lang */
 function applyDocLayoutSettings(editor: Editor, parsed: ParsedDocFull): void {
+  setNoteNumFmts({ footnote: parsed.footnoteProps, endnote: parsed.endnoteProps })
   editor.storage.tabStops.defaultTabStopTwips = parsed.defaultTabStopTwips ?? null
   // Word 2013+ justified lines pull words up by shrinking spaces; legacy
   // compatibility modes (and new blank docs) never do
@@ -338,7 +340,10 @@ export async function loadFile(
     ctx.editor.storage.listNumbering.docDefaults = parsed.docDefaults
     ctx.editor.storage.listNumbering.defs = parsed.numbering
     applyDocLayoutSettings(ctx.editor, parsed)
-    setContentPhased(phasedHostFor(ctx), blocksToPmDoc(parsed.blocks, readSections(parsed)))
+    setContentPhased(
+      phasedHostFor(ctx),
+      blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)),
+    )
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({
@@ -420,11 +425,7 @@ export async function loadFile(
     // until an explicit/automatic save lands it on the original path.
     ctx.dirtyRef.current = openedFileStartsDirty(result)
     const missing = checkMissingFonts(collectDocFonts(parsed))
-    const verticalText = readSections(parsed).some((s) => s.settings.textDirection)
-    if (verticalText) {
-      // visible degradation: vertical writing is not rendered yet, never silently
-      ctx.setStatus(t('appVerticalTextNotice'))
-    } else if (missing.length > 0) {
+    if (missing.length > 0) {
       const names = missing
         .slice(0, 3)
         .map((m) => (m.substitute ? `${m.name} → ${m.substitute}` : m.name))
@@ -461,7 +462,9 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     applyDocLayoutSettings(ctx.editor, parsed)
     // a tail still streaming for the previous document must never land in this one
     cancelPhasedContent()
-    ctx.editor.commands.setContent(blocksToPmDoc(parsed.blocks, readSections(parsed)) as never)
+    ctx.editor.commands.setContent(
+      blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)) as never,
+    )
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: null, fileName: t('appUntitledDocx'), hash: '', isBlank: true })
@@ -926,7 +929,7 @@ async function saveOnce(
     editor.storage.listNumbering.docDefaults = reparsed.docDefaults
     editor.storage.listNumbering.defs = reparsed.numbering
     applyDocLayoutSettings(editor, reparsed)
-    const rebasedPm = blocksToPmDoc(reparsed.blocks, readSections(reparsed))
+    const rebasedPm = blocksToPmDoc(reparsed.blocks, readSections(reparsed), pmDocOptions(reparsed))
     let unchanged = false
     try {
       unchanged = editor.state.doc.eq(editor.schema.nodeFromJSON(rebasedPm))

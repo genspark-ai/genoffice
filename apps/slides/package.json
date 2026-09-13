@@ -24,6 +24,7 @@
     "@genoffice/file-parse": "*",
     "@genoffice/i18n": "*",
     "@genoffice/pptx-engine": "*",
+    "@genoffice/pptx-ops": "*",
     "@genoffice/pptx-render": "*",
     "@genoffice/project-store": "*",
     "@genoffice/ui": "*",

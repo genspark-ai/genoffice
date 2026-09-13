@@ -48,6 +48,18 @@ export function deriveNameFromPrompt(prompt: string): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
 }
 
+const MIN_TITLE_NAME = 2
+const MAX_TITLE_NAME = 60
+
+/** The document <title> as a file name; empty when missing, a placeholder, or too long to be a name.
+ *  Only the head region is searched so an inline <svg><title> in the body cannot stand in for it;
+ *  </head> is optional in HTML, so the region ends at whichever of </head>, <body or <svg comes first. */
+export function derivePageTitleName(html: string): string {
+  const end = /<\/head\s*>|<body[\s>]|<svg[\s>]/i.exec(html)
+  const title = textOf(end ? html.slice(0, end.index) : html, 'title')
+  return title.length >= MIN_TITLE_NAME && title.length <= MAX_TITLE_NAME ? title : ''
+}
+
 /** File name for an AI-generated untitled document: <title>, else the first <h1>, else the first words of the body */
 export function deriveAutoFileName(html: string): string {
   const title = textOf(html, 'title') || textOf(html, 'h1')

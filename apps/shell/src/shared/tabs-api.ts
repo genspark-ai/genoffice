@@ -25,6 +25,12 @@ export interface TabsApi {
    * as showMenu.
    */
   showNewMenu(x: number, y: number): Promise<void>
+  /**
+   * pop up the application menu (File / Edit / View …) at (x, y). Windows and
+   * Linux hide the native menu bar under the tab strip; macOS keeps the
+   * system menu bar and never shows the button.
+   */
+  showAppMenu(x: number, y: number): Promise<void>
   /** move a tab to a new index in the strip; Home stays pinned at index 0 */
   reorder(id: string, toIndex: number): Promise<void>
   /** subscribe to tab list changes (open/close/activate/title updates); returns unsubscribe */
@@ -47,6 +53,7 @@ export const TABS_CHANNELS = {
   close: 'tabs:close',
   showMenu: 'tabs:show-menu',
   showNewMenu: 'tabs:show-new-menu',
+  showAppMenu: 'tabs:show-app-menu',
   reorder: 'tabs:reorder',
   changed: 'tabs:changed',
   chromePressed: 'tabs:chrome-pressed',

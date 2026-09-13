@@ -55,7 +55,7 @@ test.describe('sheets: macro-enabled workbook (.xlsm)', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(first.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(first.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       const a1 = await cellA1(sheets)
@@ -67,7 +67,7 @@ test.describe('sheets: macro-enabled workbook (.xlsm)', () => {
       await sheets.screenshot({ path: screenshotPath('sheets-xlsm-edited') })
 
       await first.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {
@@ -92,7 +92,7 @@ test.describe('sheets: macro-enabled workbook (.xlsm)', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(second.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(second.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       const a1 = await cellA1(sheets)

@@ -62,7 +62,7 @@ test.describe('sheets: export the active sheet as CSV', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       // Stub the native dialogs: pick the target path, answer "Continue as
@@ -76,7 +76,7 @@ test.describe('sheets: export the active sheet as CSV', () => {
       // keep re-sending the menu action until the file lands.
       await expect(async () => {
         await launched.app.evaluate(({ webContents }) => {
-          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
           wc?.send('menu:action', 'export-csv')
         })
         expect(existsSync(target)).toBe(true)
@@ -105,13 +105,13 @@ test.describe('sheets: export the active sheet as CSV', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets, 'Data')
       await stubDialogs(launched.app, target)
 
       await expect(async () => {
         await launched.app.evaluate(({ webContents }) => {
-          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
           wc?.send('menu:action', 'export-csv')
         })
         expect(existsSync(target)).toBe(true)
@@ -128,7 +128,7 @@ test.describe('sheets: export the active sheet as CSV', () => {
 
       // the export announces itself with a toast, not just the status bar
       await launched.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'export-csv')
       })
       await sheets.waitForSelector('.app-toast', { timeout: 10_000 })
@@ -150,13 +150,13 @@ test.describe('sheets: export the active sheet as CSV', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets, 'Data')
       await stubDialogs(launched.app, target)
 
       await expect(async () => {
         await launched.app.evaluate(({ webContents }) => {
-          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
           wc?.send('menu:action', 'save-as')
         })
         expect(existsSync(target)).toBe(true)

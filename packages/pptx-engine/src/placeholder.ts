@@ -40,19 +40,27 @@ export interface LevelTextStyle {
   shadow?: import('./types').ShadowEffect
   latinFont?: string
   eaFont?: string
+  /** The level's unresolved ea theme ref (+mj-ea / +mn-ea): a run re-resolves it with its own
+   *  script, since an empty theme <a:ea/> picks the per-script font only once the script is known */
+  eaFontRef?: string
   csFont?: string
   /** East Asian script of the level's defRPr lang/altLang (steers empty-ea theme refs on runs without a lang of their own) */
   eaScript?: EaScript
   align?: TextAlign
   /** Bullet default (master bodyStyle levels commonly use buChar '•') */
   bullet?: {
-    type: 'none' | 'char' | 'number'
+    type: 'none' | 'char' | 'number' | 'blip'
     char?: string
+    /** <a:buBlip> picture bullet: media zip path + blip rId (see Paragraph.bullet) */
+    mediaRef?: string
+    blipEmbedId?: string
     /** <a:buFont> typeface (symbol fonts like Wingdings) */
     font?: string
     color?: string
     /** <a:buSzPct> (%, 100 = same size as text) */
     sizePct?: number
+    /** <a:buSzPts> absolute glyph size (pt) */
+    sizePt?: number
     /** <a:buAutoNum type> (arabicPeriod/romanLcParen…) */
     numType?: string
     /** <a:buAutoNum startAt> */
@@ -143,7 +151,12 @@ function parseXfrmNode(xfrmRaw: unknown): Transform | null {
  * layout/master's full XML. Collects shapes that carry <p:ph> and at least one of
  * <a:xfrm> or <a:lstStyle>.
  */
-export function parsePlaceholderMap(layoutOrMasterXml: string, theme?: Theme): PlaceholderMap {
+export function parsePlaceholderMap(
+  layoutOrMasterXml: string,
+  theme?: Theme,
+  mediaRels?: Map<string, string>,
+): PlaceholderMap {
+  const src: LstStyleSource = { mediaRels, foreignPart: true }
   const entries: PlaceholderGeom[] = []
   let doc: XmlNode
   try {
@@ -164,7 +177,7 @@ export function parsePlaceholderMap(layoutOrMasterXml: string, theme?: Theme): P
     const idx = ph['@_idx'] != null ? String(ph['@_idx']) : ''
     const spPr = asXmlNode(sp['p:spPr'])
     const transform = parseXfrmNode(spPr['a:xfrm'])
-    const textStyle = parseLstStyleLevels(asXmlNode(sp['p:txBody'])['a:lstStyle'], theme)
+    const textStyle = parseLstStyleLevels(asXmlNode(sp['p:txBody'])['a:lstStyle'], theme, src)
     const bodyPrNode = asXmlNode(asXmlNode(sp['p:txBody'])['a:bodyPr'])
     const anchor = ANCHOR_MAP[String(bodyPrNode['@_anchor'] ?? '')]
     const anchorCtrRaw = bodyPrNode['@_anchorCtr']
@@ -241,7 +254,18 @@ function typefaceAttr(node: unknown): string | undefined {
 }
 
 /** <a:lvlNpPr> (including defRPr) → LevelTextStyle. */
-function parseLvlPPr(pPrRaw: unknown, theme?: Theme): LevelTextStyle | undefined {
+/** Where a list style lives: only the slide part's own rIds may be written back into slide XML. */
+export interface LstStyleSource {
+  mediaRels?: Map<string, string>
+  /** Layout/master part: picture bullets resolve their image but keep no rId */
+  foreignPart?: boolean
+}
+
+function parseLvlPPr(
+  pPrRaw: unknown,
+  theme?: Theme,
+  src?: LstStyleSource,
+): LevelTextStyle | undefined {
   if (!pPrRaw || typeof pPrRaw !== 'object') return undefined
   const pPr = asXmlNode(pPrRaw)
   const out: LevelTextStyle = {}
@@ -268,6 +292,14 @@ function parseLvlPPr(pPrRaw: unknown, theme?: Theme): LevelTextStyle | undefined
     if (an['@_type'] != null) out.bullet.numType = String(an['@_type'])
     const startAt = parseInt(String(an['@_startAt']), 10)
     if (Number.isFinite(startAt) && startAt > 1) out.bullet.startAt = startAt
+  } else if (pPr['a:buBlip'] !== undefined) {
+    out.bullet = { type: 'blip' }
+    const embed = asXmlNode(asXmlNode(pPr['a:buBlip'])['a:blip'])['@_r:embed']
+    if (embed != null) {
+      if (!src?.foreignPart) out.bullet.blipEmbedId = String(embed)
+      const ref = src?.mediaRels?.get(String(embed))
+      if (ref) out.bullet.mediaRef = ref
+    }
   }
   if (out.bullet && out.bullet.type !== 'none') {
     const buFont = typefaceAttr(pPr['a:buFont'])
@@ -276,6 +308,8 @@ function parseLvlPPr(pPrRaw: unknown, theme?: Theme): LevelTextStyle | undefined
     if (buColor) out.bullet.color = buColor
     const buSz = asXmlNode(pPr['a:buSzPct'])['@_val']
     if (buSz != null) out.bullet.sizePct = (parseInt(String(buSz), 10) || 0) / 1000
+    const buSzPts = asXmlNode(pPr['a:buSzPts'])['@_val']
+    if (buSzPts != null) out.bullet.sizePt = (parseInt(String(buSzPts), 10) || 0) / 100
   }
   if (pPr['@_marL'] != null) {
     const v = parseInt(String(pPr['@_marL']), 10)
@@ -326,19 +360,25 @@ export function parseDefRPrStyle(
   if (eaScript) out.eaScript = eaScript
   const latin = resolveFontRef(typefaceAttr(defRPr['a:latin']), theme, eaScript)
   if (latin) out.latinFont = latin
-  const ea = resolveFontRef(typefaceAttr(defRPr['a:ea']), theme, eaScript)
+  const eaAttr = typefaceAttr(defRPr['a:ea'])
+  const ea = resolveFontRef(eaAttr, theme, eaScript)
   if (ea) out.eaFont = ea
+  if (eaAttr?.startsWith('+')) out.eaFontRef = eaAttr
   const cs = resolveFontRef(typefaceAttr(defRPr['a:cs']), theme, eaScript)
   if (cs) out.csFont = cs
   return Object.keys(out).length ? out : undefined
 }
 
 /** <a:lstStyle> (or one txStyles family) → 9-level style table. */
-export function parseLstStyleLevels(lst: unknown, theme?: Theme): TextStyleLevels | undefined {
+export function parseLstStyleLevels(
+  lst: unknown,
+  theme?: Theme,
+  src?: LstStyleSource,
+): TextStyleLevels | undefined {
   if (!lst || typeof lst !== 'object') return undefined
   const l = asXmlNode(lst)
   const levels: Array<LevelTextStyle | undefined> = []
-  for (let i = 1; i <= 9; i++) levels[i - 1] = parseLvlPPr(l[`a:lvl${i}pPr`], theme)
+  for (let i = 1; i <= 9; i++) levels[i - 1] = parseLvlPPr(l[`a:lvl${i}pPr`], theme, src)
   return levels.some(Boolean) ? { levels } : undefined
 }
 
@@ -357,7 +397,12 @@ export function parseDefaultTextStyle(
 }
 
 /** master <p:txStyles> → default styles for the title/body/other families. */
-export function parseMasterTextStyles(masterXml: string, theme?: Theme): MasterTextStyles {
+export function parseMasterTextStyles(
+  masterXml: string,
+  theme?: Theme,
+  mediaRels?: Map<string, string>,
+): MasterTextStyles {
+  const src: LstStyleSource = { mediaRels, foreignPart: true }
   let doc: XmlNode
   try {
     doc = asXmlNode(phParser.parse(masterXml))
@@ -368,14 +413,14 @@ export function parseMasterTextStyles(masterXml: string, theme?: Theme): MasterT
   if (!txRaw) return {}
   const tx = asXmlNode(txRaw)
   return {
-    ...(parseLstStyleLevels(tx['p:titleStyle'], theme)
-      ? { title: parseLstStyleLevels(tx['p:titleStyle'], theme)! }
+    ...(parseLstStyleLevels(tx['p:titleStyle'], theme, src)
+      ? { title: parseLstStyleLevels(tx['p:titleStyle'], theme, src)! }
       : {}),
-    ...(parseLstStyleLevels(tx['p:bodyStyle'], theme)
-      ? { body: parseLstStyleLevels(tx['p:bodyStyle'], theme)! }
+    ...(parseLstStyleLevels(tx['p:bodyStyle'], theme, src)
+      ? { body: parseLstStyleLevels(tx['p:bodyStyle'], theme, src)! }
       : {}),
-    ...(parseLstStyleLevels(tx['p:otherStyle'], theme)
-      ? { other: parseLstStyleLevels(tx['p:otherStyle'], theme)! }
+    ...(parseLstStyleLevels(tx['p:otherStyle'], theme, src)
+      ? { other: parseLstStyleLevels(tx['p:otherStyle'], theme, src)! }
       : {}),
   }
 }
@@ -538,7 +583,10 @@ export function mergeTextStyleChain(
     if (out.color == null && lvl.color != null) out.color = lvl.color
     if (out.shadow == null && lvl.shadow != null) out.shadow = lvl.shadow
     if (out.latinFont == null && lvl.latinFont != null) out.latinFont = lvl.latinFont
-    if (out.eaFont == null && lvl.eaFont != null) out.eaFont = lvl.eaFont
+    if (out.eaFont == null && lvl.eaFont != null) {
+      out.eaFont = lvl.eaFont
+      if (lvl.eaFontRef != null) out.eaFontRef = lvl.eaFontRef
+    }
     if (out.csFont == null && lvl.csFont != null) out.csFont = lvl.csFont
     if (out.eaScript == null && lvl.eaScript != null) out.eaScript = lvl.eaScript
     if (out.align == null && lvl.align != null) out.align = lvl.align

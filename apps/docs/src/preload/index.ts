@@ -57,6 +57,7 @@ const api: DesktopApi = {
   respondToZotero: (response) => ipcRenderer.send('zotero:response', response),
   openDocx: () => ipcRenderer.invoke('docs:open'),
   openDocxPath: (path: string) => ipcRenderer.invoke('docs:open-path', path),
+  convertAltChunkHtml: (html: string) => ipcRenderer.invoke('docs:altchunk-html-to-docx', html),
   openDocxDecrypt: (path: string, password: string) =>
     ipcRenderer.invoke('docs:open-decrypt', path, password),
   setDocPassword: (filePath: string | null, password: string | null) =>
@@ -72,6 +73,9 @@ const api: DesktopApi = {
   consumePendingOpenDocx: () => ipcRenderer.invoke('docs:consume-pending-open'),
   consumeNewBlankDoc: () => ipcRenderer.invoke('docs:consume-new-blank'),
   consumeAiDocContent: () => ipcRenderer.invoke('docs:consume-ai-doc-content'),
+  consumeHeadlessExport: () => ipcRenderer.invoke('docs:consume-headless-export'),
+  headlessExportDone: (result: { ok: boolean; error?: string }) =>
+    ipcRenderer.send('docs:headless-export-done', result),
   createDocument: (request) => ipcRenderer.invoke('docs:create-document', request),
   onOpenDocx: (handler) => {
     const listener = (_event: IpcRendererEvent, result: Parameters<typeof handler>[0]) =>

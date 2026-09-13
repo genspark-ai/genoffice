@@ -526,6 +526,12 @@ export const ms = {
   appPdfCanceled: 'Eksport PDF dibatalkan.',
   appPdfExported: '{path} dieksport.',
   appPdfExportFailed: 'Tidak dapat mengeksport PDF.',
+  appPrintPreparing: 'Menyediakan cetakan…',
+  appPrintSent: 'Dihantar ke pencetak.',
+  appPrintCanceled: 'Cetakan dibatalkan.',
+  appPrintFailed: 'Tidak dapat mencetak.',
+  appPrintNeedsFullLoad:
+    'Cetakan memerlukan buku kerja dimuatkan sepenuhnya — tunggu sehingga pemuatan selesai.',
   appCsvExportNeedsFullLoad:
     'Eksport CSV memerlukan buku kerja dimuatkan sepenuhnya — tunggu pemuatan selesai.',
   appCsvExportTooLarge: 'Helaian terlalu besar untuk dieksport sebagai CSV.',
@@ -1313,6 +1319,8 @@ export const ms = {
   appFormatMenu: 'Format',
   appRowHeight: 'Tinggi baris',
   appColWidth: 'Lebar lajur',
+  appAutoFitRowHeight: 'Autosuai Ketinggian Baris',
+  appAutoFitColWidth: 'Autosuai Kelebaran Lajur',
   appRowHeightLabel: 'Tinggi baris (mata)',
   appColWidthLabel: 'Lebar lajur (aksara)',
   appDeleteRow: 'Padam baris',

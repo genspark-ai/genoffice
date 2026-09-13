@@ -44,7 +44,7 @@ export interface LazyCellMatch extends IFindMatch {
   /// Pre-replacement scalar for out-of-window hits (ScanCell.value): lets the
   /// replace path write numbers/booleans back with their type instead of the
   /// stringified display text. Absent for formula hits and inner-model hits.
-  rawValue?: string | number | boolean | null
+  rawValue?: string | number | boolean | null | undefined
 }
 
 export interface LazyCellTexts {
@@ -388,7 +388,7 @@ export class LazyExtendedFindModel extends FindModel {
       // cursor here would walk it — and the reveal subscriber's scroll —
       // through the extras on every streamed patch: with two matches the
       // viewport ping-pongs between them for as long as the stream keeps
-      // mutating (alpha r167). Stay on the current extra if it still exists.
+      // mutating. Stay on the current extra if it still exists.
       const current = this.lastFocusedExtra.range
       const stay = this.currentExtras().find(
         (extra) =>

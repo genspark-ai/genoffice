@@ -401,4 +401,12 @@ export const en = {
   dlgFnDescNpv: 'Returns the net present value of a cash flow at a discount rate.',
   dlgFnDescIrr: 'Returns the internal rate of return for a series of cash flows.',
   dlgFnCatFinancial: 'Financial',
+  dlgFnCatDatabase: 'Database',
+  dlgFnCatInformation: 'Information',
+  dlgFnCatEngineering: 'Engineering',
+  dlgFnCatCube: 'Cube',
+  dlgFnCatCompatibility: 'Compatibility',
+  dlgFnCatWeb: 'Web',
+  dlgFnCatArray: 'Array',
+  dlgFnCatOther: 'Other',
 } satisfies Record<keyof typeof zh, string>

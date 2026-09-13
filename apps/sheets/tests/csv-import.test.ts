@@ -11,7 +11,7 @@ import {
   parseCsv,
   resolveImportDelimiter,
   sniffDelimiter,
-} from '../src/gateway/csv-import'
+} from '@genoffice/xlsx-gateway/gateway/csv-import'
 
 describe('decodeCsvBuffer', () => {
   const rows = '城市,人口\n东京,37\n'
@@ -141,6 +141,13 @@ describe('resolveImportDelimiter', () => {
   it('keeps genuine semicolon tables split', () => {
     expect(resolveImportDelimiter('a;b;c\n1;2;3')).toBe(';')
     expect(resolveImportDelimiter('a;b\nc')).toBe(';')
+  })
+
+  it('keeps a comma-free table split when a title row precedes uniform body rows', () => {
+    expect(resolveImportDelimiter('Sales 2026\na;b;c\n1;2;3\n4;5;6')).toBe(';')
+    expect(resolveImportDelimiter('Report\n\na\tb\n1\t2\n3\t4\n')).toBe('\t')
+    // one wide row among prose lines is not a table
+    expect(resolveImportDelimiter('Notes\nhello; world\nfoo bar\nbaz qux\nx; y')).toBe(',')
   })
 
   it('keeps the sniffed delimiter when comma is equally ragged', () => {

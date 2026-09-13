@@ -186,8 +186,26 @@ const KO_FONT_RE =
  * 1.7371, Meiryo 1.9429, YaHei 1.7143, Yu 1.44) instead of the macOS
  * substitutes LO measured. Unprobed names keep their LO values until probed.
  */
+/** Word's own symbol faces (Office DFonts symbol.ttf 5.00i, Wingdings 5.03,
+ *  Webdings 5.00), hhea = win totals over 2048: Symbol 2059+450, Wingdings
+ *  1841+432, Wingdings 2 1727+432, Wingdings 3 1900+432, Webdings 1638+410.
+ *  Word row pitch 16.33px @10pt on a regression sample = the
+ *  Symbol run (the macOS Symbol.ttf, 1436+612, is not what Word lays out with) */
+const SYMBOL_FACE_FACTORS: Record<string, number> = {
+  symbol: 1.2251,
+  wingdings: 1.1099,
+  'wingdings 2': 1.0542,
+  'wingdings 3': 1.1387,
+  webdings: 1.0,
+}
+
+/** Segoe UI text family (not the Emoji/Symbol/Historic/Print/Script cuts) */
+const SEGOE_UI_TEXT_RE = /^segoe ui( (light|semilight|semibold|black|variable))?$/
+
 export function lineHeightFactor(fontFamily: string): number {
   const f = fontFamily.toLowerCase()
+  const symbolFace = SYMBOL_FACE_FACTORS[f.trim()]
+  if (symbolFace !== undefined) return symbolFace
   // Aptos (M365 cloud face): Word probe 2026-08-22 measured 1.22, same as Calibri
   if (f.includes('aptos')) return 1.22
   // PMingLiU/MingLiU (Word probe: Office ships the real face at 1.3029)
@@ -205,7 +223,9 @@ export function lineHeightFactor(fontFamily: string): number {
   // the KO_FONT_RE value below
   if (/nanum ?myeongjo|나눔 ?명조/.test(f)) return 1.5
   // Korean faces (Word probe 2026-08-13: Malgun 1.7371, Batang class 1.3029)
-  if (KO_FONT_RE.test(f)) return /malgun|맑은/.test(f) ? 1.7371 : 1.3029
+  if (KO_FONT_RE.test(f)) {
+    return /malgun|맑은/.test(f) || krSansVariantSubstituted(fontFamily) ? 1.7371 : 1.3029
+  }
   // Japanese faces: MS (P)Mincho/Gothic substitute into the Hiragino class
   // (1.7); Meiryo 1.775. Yu Mincho/Gothic: Word probe 2026-08-13 measured
   // exactly 1.44 at 10.5/12pt with Office's own yumin.ttf (the old 2.2667 was
@@ -316,6 +336,10 @@ export function lineHeightFactor(fontFamily: string): number {
   if (f.includes('century') && !f.includes('gothic')) return 1.206
   // Book Antiqua ships with Office (probe 2026-08-23; the old 1.1 was LO-era)
   if (f.includes('book antiqua')) return 1.21
+  // Segoe UI text cuts are M365 cloud fonts Word downloads and renders real:
+  // hhea 2210/514/0 over 2048, Word PDF pitch 15.96pt @12pt (probe 2026-09-11);
+  // the symbol/emoji and script cuts keep the old value
+  if (SEGOE_UI_TEXT_RE.test(f)) return 1.3301
   if (f.includes('segoe')) return 1.15
   if (/nyala|ebrima|abyssinica|ethiopic/.test(f)) return 1.0514
   // Tamil faces: Word renders missing Noto Sans Tamil / Latha with Latha
@@ -325,6 +349,9 @@ export function lineHeightFactor(fontFamily: string): number {
   // fonts — keep their own metrics (probe 2026-08-23, prod-corpus sweep)
   if (f.includes('lato')) return 1.2
   if (f.includes('trebuchet')) return 1.1615
+  // macOS Supplemental + Office face, hhea 2257/597/0 over 2048; Word pitch
+  // 15.75pt @11pt on a regression sample (incl. 0.5pt row border)
+  if (f.includes('comic sans')) return 1.3936
   if (f === 'inter' || f.startsWith('inter ')) return 1.21
   if (f.includes('ubuntu')) return 1.15
   if (f.includes('avenir')) return 1.369
@@ -485,6 +512,10 @@ export function computeLineHeight(
     return lineRawTwips * TWIPS_TO_PX
   }
   if (lineRule === 'atLeast' && lineRawTwips !== undefined) {
+    // line="0" atLeast is the one non-exact form that never snaps: natural
+    // height (Word probe 2026-09-11: Meiryo UI 10pt on a 350-twip grid lays
+    // 16.56pt, not the 17.5pt cell; atLeast 200/330 still floor at the cell)
+    if (lineRawTwips === 0) return naturalLineH
     // at least: the floor value at face value, but never below the snapped
     // single height (snapped == natural when there is no grid)
     return Math.max(lineRawTwips * TWIPS_TO_PX, snapped)
@@ -527,6 +558,7 @@ export const BUNDLED_FONTS = new Set([
   'Carlito GO',
   'Aptos GO',
   'Aptos Display GO',
+  'Century Gothic GO',
   'Caladea',
   'Liberation Serif',
   'Liberation Sans',
@@ -649,6 +681,18 @@ export function krNameLineFactor(font: string): number | null {
   return missing && panoseSerifHint(font) === 'sans' ? 1.7371 : 1.3029
 }
 
+/**
+ * Missing Noto/Source Han KR variant whose fontTable PANOSE says sans: Word
+ * substitutes Malgun Gothic wholesale (probe 2026-09-11: Noto Sans KR with
+ * PANOSE 020B.. lays hangul and Latin in MalgunGothic at 1.7371), while the
+ * same name without a fontTable hint stays Batang-ward (probe 2026-08-13).
+ */
+export function krSansVariantSubstituted(font: string): boolean {
+  const head = font.split(',')[0].replace(/['"]/g, '').normalize('NFKC').trim()
+  if (!/^(?:noto|source han) (?:sans|serif)(?: cjk)? ?(?:kr|k)\b/i.test(head)) return false
+  return (isBundledFont(head) || !isFontAvailable(head)) && panoseSerifHint(head) === 'sans'
+}
+
 /** missing BIZ UD face: Word substitutes Yu Gothic (sans, 1.44) whatever the name says */
 export function bizUdSubstituted(font: string): boolean {
   const head = font.split(',')[0].replace(/['"]/g, '').trim()
@@ -694,6 +738,16 @@ export function cssFontFamily(font: string, followAltName = true): string {
     return `${chain(font, 'Palatino Linotype', 'Palatino', 'Book Antiqua', BOX, CJK_SERIF)},serif`
   if (f === 'arial' || f.startsWith('arial '))
     return `${chain(font, 'Liberation Sans', CJK_SANS)},sans-serif`
+  // Segoe UI is an M365 cloud font Word renders real; where it is missing the
+  // size-adjusted Helvetica alias (fonts.css) carries its narrower advances
+  if (SEGOE_UI_TEXT_RE.test(f))
+    return `${chain(font, 'Segoe UI GO', 'Noto Sans CJK GO', 'GenOffice PUA Blank')},sans-serif`
+  // Consolas is Office-only: the size-adjusted Menlo alias (fonts.css) carries its advances
+  if (f.includes('consolas')) return `${chain(font, 'Consolas GO', CJK_SANS)},monospace`
+  // Century Gothic is Office-only too: the per-case size-adjusted Liberation
+  // Sans alias (fonts.css) carries its wide lowercase / narrow capitals
+  if (f.includes('century gothic'))
+    return `${chain(font, 'Century Gothic GO', CJK_SANS)},sans-serif`
   if (MONO_FONT_RE.test(f))
     return `${chain(font, 'Menlo', 'Courier New', 'Liberation Mono', CJK_SANS)},monospace`
   // Nunito Sans is an Office cloud font Word renders real; the size-adjusted
@@ -765,11 +819,17 @@ export function cssFontFamily(font: string, followAltName = true): string {
       nfkc,
     )
   ) {
-    const sans = /kufi|sans|dubai|segoe/i.test(nfkc)
-    // Traditional/Simplified Arabic are compact naskh faces; the size-adjusted
-    // alias (fonts.css) keeps advances near Word's, other Arabic names keep the
-    // unscaled subset
-    const compact = /\b(traditional|simplified) arabic\b/i.test(nfkc)
+    // an installed kufi/sans face renders as such; a missing one substitutes to
+    // Times New Roman in Word like every other missing Arabic name (probe
+    // 2026-09-11: Noto Kufi Arabic list items came back as TimesNewRomanPSMT).
+    // The bundled Noto Sans Arabic subset answers the canvas probe but is not
+    // an installed face.
+    const sans =
+      /kufi|sans|dubai|segoe/i.test(nfkc) && !isBundledFont(font) && isFontAvailable(font)
+    // Traditional/Simplified Arabic are compact naskh faces Word renders real
+    // (M365 cloud fonts); the per-face size-adjusted aliases (fonts.css) carry
+    // their advances, other Arabic names keep the unscaled subset
+    const compact = /\b(traditional|simplified) arabic\b/i.exec(nfkc)?.[1].toLowerCase()
     // declared Noto Arabic names would resolve to the bundled unscaled subsets
     // (~13% wider than Word); the literal head must go so the 'W' alias wins
     const scaled = /^noto (naskh|sans) arabic$/i.test(nfkc.trim())
@@ -791,7 +851,9 @@ export function cssFontFamily(font: string, followAltName = true): string {
             ? ['Naskh Digits GO', 'Noto Naskh Arabic TNR']
             : [
                 compact
-                  ? 'Noto Naskh Arabic TA'
+                  ? compact === 'traditional'
+                    ? 'Noto Naskh Arabic TA'
+                    : 'Noto Naskh Arabic SA'
                   : scaled
                     ? 'Noto Naskh Arabic W'
                     : 'Noto Naskh Arabic',
@@ -812,8 +874,10 @@ export function cssFontFamily(font: string, followAltName = true): string {
     nfkc,
   )
   if (cjkVariant) {
-    const serif = /serif/i.test(cjkVariant[1]) || missingLocally()
     const region = cjkVariant[2].toLowerCase()
+    const isKr = region === 'kr' || region === 'k'
+    const sansSub = isKr && krSansVariantSubstituted(font)
+    const serif = /serif/i.test(cjkVariant[1]) || (missingLocally() && !sansSub)
     const chainFor =
       region === 'jp'
         ? serif
@@ -836,8 +900,7 @@ export function cssFontFamily(font: string, followAltName = true): string {
     // hangul stays Batang (M3 probe sample 13); the alias claims printable
     // ASCII only, everything else falls through per glyph. Installed names and
     // Malgun/Batang declares keep the Latin-normalized subsets untouched.
-    const isKr = region === 'kr' || region === 'k'
-    const krLatin = isKr && missingLocally() ? ['KR Theme Latin GO'] : []
+    const krLatin = isKr && missingLocally() && !sansSub ? ['KR Theme Latin GO'] : []
     // Word substitutes a missing face per script, whatever region the name
     // claims: hangul lands on Batang (1em, Word probe 2026-09-06). The
     // SC/TC/JP chains carry no hangul, so without this tail Chromium falls to
@@ -1296,6 +1359,9 @@ export function cssGridSpacingPt(pt: number): string {
  */
 export const WORD_AUTO_SPACING_PT = 14
 
+/** space-only run text: never sizes a line, the paragraph mark does (Word probe 2026-09-11) */
+export const SPACE_ONLY_RE = /^[ \u00a0\u3000]+$/
+
 export function cssLineHeight(
   lineRule: 'auto' | 'atLeast' | 'exact' | undefined,
   lineRawTwips: number | undefined,
@@ -1305,8 +1371,8 @@ export function cssLineHeight(
   if (lineRule === 'exact' && lineRawTwips) return `${(lineRawTwips / 20).toFixed(1)}pt`
   if (lineRule === 'atLeast' && lineRawTwips != null) {
     // atLeast: face value, but never below the grid-snapped single height
-    // (Word probe 2026-08-22); line="0" atLeast degrades to single spacing
-    if (lineRawTwips === 0) return `var(--doc-line-grid, calc(${FACTOR} * 1em))`
+    // (Word probe 2026-08-22); line="0" atLeast is natural height off the grid
+    if (lineRawTwips === 0) return `calc(${FACTOR} * 1em)`
     return `max(${(lineRawTwips / 20).toFixed(1)}pt, var(--doc-line-grid, calc(${FACTOR} * 1em)))`
   }
   const m = lineSpacing ?? (lineRule === 'auto' && lineRawTwips ? lineRawTwips / 240 : undefined)
@@ -1932,6 +1998,14 @@ export const FOOTNOTE_SEPARATOR_H = 16
  * Header/footer part height estimate (px): per-paragraph line-box model. Capacity
  * input for body push-down (body top = max(marginTop, headerDist + header height)).
  */
+interface HfLineSpacingLike {
+  lineRule?: 'auto' | 'atLeast' | 'exact'
+  lineRawTwips?: number
+  lineSpacing?: number
+  spaceBefore?: number
+  spaceAfter?: number
+}
+
 interface HfRunLike {
   text: string
   font?: string
@@ -1958,7 +2032,7 @@ export function estimateHfHeight(
         paras?: Array<{
           runs: HfRunLike[]
           /** layout-table row: per-cell paragraph stacks (row height = tallest cell) */
-          cells?: Array<{ paras: HfRunLike[][] }>
+          cells?: Array<{ paras: HfRunLike[][]; paraProps?: Array<HfLineSpacingLike | undefined> }>
           /** declared w:trHeight (twips): floors the row, or fixes it under hRule exact */
           row?: { heightTwips?: number; heightRule?: 'atLeast' | 'exact' }
           /** floating-textbox content: drawn at the anchor, no strip flow height */
@@ -2012,7 +2086,7 @@ export function estimateHfHeight(
     : part.text.trim()
       ? part.text.split('\n').map((t) => ({ runs: [{ text: t }] }))
       : []
-  const lineH = (runs: HfRunLike[], rich?: HfPara) =>
+  const lineH = (runs: HfRunLike[], rich?: HfLineSpacingLike) =>
     computeLineMetrics({
       runs: runs.map((r) => ({
         text: r.text,
@@ -2047,9 +2121,9 @@ export function estimateHfHeight(
       height += Math.max(
         declared,
         ...p.cells.map((c) =>
-          (c.paras.length > 0 ? c.paras : [[]]).reduce((s, runs) => {
+          (c.paras.length > 0 ? c.paras : [[]]).reduce((s, runs, k) => {
             const imgH = Math.max(0, ...runs.map((r) => r.image?.heightPx ?? 0))
-            return s + Math.max(lineH(runs), imgH)
+            return s + Math.max(lineH(runs, c.paraProps?.[k]), imgH)
           }, 0),
         ),
       )

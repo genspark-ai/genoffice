@@ -23,3 +23,11 @@ https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
 Copyright © 1991-2026 Unicode, Inc. This data is distributed under Unicode
 License v3. The complete copyright and permission notice is reproduced in
 LICENSE-UNICODE.txt.
+
+Office Open XML schemas
+
+tools/ooxml-validate/schemas contains the ISO/IEC 29500-4:2016 (ECMA-376
+Part 4, Transitional) XML Schema files for PresentationML and DrawingML, as
+distributed in the python-docx repository (ref/xsd), with one marked local
+amendment (see tools/ooxml-validate/README.md). They are used only by tests
+and development tooling and are not shipped in the application.

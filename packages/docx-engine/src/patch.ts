@@ -58,6 +58,7 @@ import type {
 } from './types'
 import { PAGE_MARK, TOTAL_PAGES_MARK } from './types'
 import { patchParagraphTexts } from './text-patch'
+import { balanceFieldChars } from './field-balance'
 import { WATERMARK_NS, watermarkParagraphXml } from './watermark'
 import { escapeXmlAttr, escapeXmlText } from './xml-utils'
 import {
@@ -1044,7 +1045,9 @@ export async function saveDocx(
   }
 
   let newDocumentXml =
-    documentXml.slice(0, bodyInnerStart) + parts.join('') + documentXml.slice(bodyInnerEnd)
+    documentXml.slice(0, bodyInnerStart) +
+    balanceFieldChars(parts.join('')) +
+    documentXml.slice(bodyInnerEnd)
 
   // every ref-less body sectPr picks up the new header/footer references
   // (the trailing sectPr already received them above and is skipped by the

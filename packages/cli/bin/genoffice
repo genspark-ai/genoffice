@@ -1,0 +1,36 @@
+#!/bin/sh
+# genoffice launcher. Inside a packaged GenOffice it runs the bundled CLI on the
+# app's own Node runtime (ELECTRON_RUN_AS_NODE); in a dev checkout it falls
+# back to the system node and the local build output. Usually reached through
+# a symlink on the PATH, so the real location is resolved first.
+self="$0"
+while [ -L "$self" ]; do
+  target=$(readlink "$self")
+  case "$target" in
+    /*) self="$target" ;;
+    *) self="$(dirname "$self")/$target" ;;
+  esac
+done
+here=$(cd "$(dirname "$self")" && pwd)
+
+if [ -n "$GENOFFICE_NODE" ]; then
+  exec "$GENOFFICE_NODE" "$here/genoffice.cjs" "$@"
+fi
+
+case "$here" in
+  */Contents/Resources/cli) app="$here/../../MacOS/GenOffice" ;;
+  */resources/cli)
+    # Linux install, or the Windows install reached from Git Bash / MSYS
+    if [ -x "$here/../../GenOffice.exe" ]; then app="$here/../../GenOffice.exe"; else app="$here/../../genoffice"; fi
+    ;;
+  *) app="" ;;
+esac
+
+if [ -n "$app" ] && [ -x "$app" ]; then
+  ELECTRON_RUN_AS_NODE=1 exec "$app" "$here/genoffice.cjs" "$@"
+fi
+
+if [ -f "$here/genoffice.cjs" ]; then
+  exec node "$here/genoffice.cjs" "$@"
+fi
+exec node "$here/../dist/genoffice.cjs" "$@"

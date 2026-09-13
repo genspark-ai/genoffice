@@ -8,8 +8,20 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { copyFile, mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   BrowserWindow,
   Menu,
@@ -30,6 +42,7 @@ import {
   fetchRemoteImage,
   installContextMenu,
   installNavigationGuard,
+  isHeadlessMode,
   printHtmlToPdf,
   safeExternalUrl,
   saveAsSuggestion,
@@ -37,6 +50,11 @@ import {
   showSaveDialogWithMemory,
   toggleDevToolsItem,
   windowMenuTemplate,
+  type HeadlessExportFormat,
+  type HeadlessExportTarget,
+  installRendererProtocol,
+  registerRendererScheme,
+  rendererUrl,
 } from '@genoffice/electron-utils'
 import { configureMetricsCache, familyVerticalMetrics } from '@genoffice/font-metrics'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
@@ -49,6 +67,8 @@ import type {
   WebContents,
 } from 'electron'
 import { parseFileToText } from '@genoffice/file-parse'
+import { convertHtmlToDocx } from '../../../../packages/html2docx/src'
+import { ElectronBrowserDriver } from '../../../../packages/html2docx/src/drivers/electron'
 import {
   AiCreditsError,
   AiTimeoutError,
@@ -3195,6 +3215,10 @@ export function registerProjectIpc(): void {
   })
 }
 
+/** A4 at 96dpi, as the HTML app exports */
+const ALT_CHUNK_VIEWPORT = { width: 794, height: 1123, deviceScaleFactor: 2 }
+const ALT_CHUNK_HTML_MAX_CHARS = 64 * 1024 * 1024
+
 /** document/attachment/window IPC (everything except the AI proxy above) */
 export function registerDocsIpc(): void {
   registerZoteroIpc()
@@ -3222,6 +3246,32 @@ export function registerDocsIpc(): void {
   })
 
   ipcMain.handle('docs:open-path', (event, filePath: string) => loadDocx(filePath, event.sender.id))
+
+  // w:altChunk HTML: the same html2docx chain as the HTML app's export, in a
+  // hidden window; the renderer parses the result and shows its blocks
+  ipcMain.handle('docs:altchunk-html-to-docx', async (_event, html: unknown) => {
+    if (typeof html !== 'string' || !html.trim() || html.length > ALT_CHUNK_HTML_MAX_CHARS) {
+      return null
+    }
+    const workDir = await mkdtemp(join(tmpdir(), 'genoffice-altchunk-'))
+    let driver: ElectronBrowserDriver | null = null
+    try {
+      const htmlPath = join(workDir, 'chunk.html')
+      // the BOM outranks a stale <meta charset> left in the decoded markup
+      await writeFile(htmlPath, `\ufeff${html}`, 'utf8')
+      driver = await ElectronBrowserDriver.create(ALT_CHUNK_VIEWPORT)
+      const { docx } = await convertHtmlToDocx({ url: pathToFileURL(htmlPath).href }, driver, {
+        naturalTableWidth: true,
+      })
+      return docx
+    } catch (err) {
+      console.warn('[docs] altChunk conversion failed:', err)
+      return null
+    } finally {
+      await driver?.close()
+      await rm(workDir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
 
   // Review > Protect > Encrypt with Password: set/clear the open password.
   // Takes effect on the next save (docs:save / save-as / save-new all consult the store).
@@ -3311,6 +3361,25 @@ export function registerDocsIpc(): void {
     const content = pendingAiDocContents.get(event.sender.id) ?? null
     pendingAiDocContents.delete(event.sender.id)
     return content
+  })
+
+  // ---- headless export mode (--headless-export) ----
+
+  ipcMain.handle('docs:consume-headless-export', (event): HeadlessExportTarget | null => {
+    const target = headlessExportTargets.get(event.sender.id) ?? null
+    headlessExportTargets.delete(event.sender.id)
+    return target
+  })
+
+  ipcMain.on('docs:headless-export-done', (event, result: unknown) => {
+    const settle = headlessExportWaiters.get(event.sender.id)
+    if (!settle) return
+    headlessExportWaiters.delete(event.sender.id)
+    const state = result as { ok?: unknown; error?: unknown } | null
+    settle({
+      ok: state?.ok === true,
+      ...(typeof state?.error === 'string' ? { error: state.error } : {}),
+    })
   })
 
   ipcMain.handle(
@@ -3854,6 +3923,9 @@ export function setDocsShellHooks(hooks: DocsShellHooks | null): void {
  * (shell) or reveal it in the folder (standalone). Tab-opening failure must
  * not report the write itself as failed — the file is already persisted. */
 function openGeneratedFile(path: string): void {
+  // Headless export has no tab strip and no user: revealing the file in Finder
+  // would be the only visible effect of a run that must stay silent.
+  if (isHeadlessMode()) return
   try {
     if (shellHooks?.openGeneratedPath?.(path)) return
   } catch (err) {
@@ -4191,6 +4263,73 @@ export function buildDocsMenu(): void {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+// ---- headless export ----
+
+/** hidden export windows: webContents id -> what the renderer must write */
+const headlessExportTargets = new Map<number, HeadlessExportTarget>()
+/** settled by 'docs:headless-export-done' (or by the renderer dying) */
+const headlessExportWaiters = new Map<number, (result: HeadlessExportReport) => void>()
+
+interface HeadlessExportReport {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Render `input` to `outPath` (as PDF or standalone HTML) with no visible window.
+ *
+ * The window is wired exactly like createDocsWindow's (same preload, sandbox
+ * and `backgroundThrottling: false`) and the document rides the normal
+ * pending-open queue, so the renderer runs its usual load -> paginate ->
+ * export pipeline; only the save dialog is skipped, by pre-authorizing
+ * `outPath` the way a dialog would. Rejects with the renderer's reason when
+ * the export fails or the deadline passes.
+ */
+export async function exportDocsHeadless(
+  input: string,
+  outPath: string,
+  format: HeadlessExportFormat = 'pdf',
+  timeoutMs = 300_000,
+): Promise<void> {
+  const win = new BrowserWindow({
+    show: false,
+    width: 1360,
+    height: 900,
+    webPreferences: {
+      preload: runtime.preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  })
+  const wcId = win.webContents.id
+  pendingWindowOpens.set(wcId, input)
+  headlessExportTargets.set(wcId, { outPath, format })
+  allowPdfWrite(wcId, outPath)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const report = await new Promise<HeadlessExportReport>((resolve) => {
+      headlessExportWaiters.set(wcId, resolve)
+      win.webContents.on('render-process-gone', (_event, details) =>
+        resolve({ ok: false, error: `docs renderer stopped (${details.reason})` }),
+      )
+      timer = setTimeout(
+        () => resolve({ ok: false, error: `docs export timed out after ${timeoutMs}ms` }),
+        timeoutMs,
+      )
+      void win.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'docs'))
+    })
+    if (!report.ok) throw new Error(report.error ?? 'docs export failed')
+  } finally {
+    if (timer) clearTimeout(timer)
+    headlessExportWaiters.delete(wcId)
+    headlessExportTargets.delete(wcId)
+    pendingWindowOpens.delete(wcId)
+    if (!win.isDestroyed()) win.destroy()
+  }
+}
+
 // ---- window ----
 
 export function createDocsWindow(openPath?: string): BrowserWindow {
@@ -4234,11 +4373,7 @@ export function createDocsWindow(openPath?: string): BrowserWindow {
     return { action: 'deny' }
   })
 
-  if (runtime.rendererUrl) {
-    void win.loadURL(runtime.rendererUrl)
-  } else {
-    void win.loadFile(runtime.rendererFile)
-  }
+  void win.loadURL(rendererUrl(runtime.rendererUrl, 'docs'))
   // close guard for standalone-window mode (tab mode goes through the same flow via the shell's tab-manager/window-close path)
   let closeConfirmed = false
   win.on('close', (event) => {
@@ -4457,14 +4592,7 @@ export function createDocsView(openPath?: string): WebContentsView {
 
   // mode=tab: the shell's tab strip owns the traffic lights / caption buttons,
   // so the ribbon must not reserve space for them
-  if (runtime.rendererUrl) {
-    // append via URL so a dev URL that already carries query params stays valid
-    const devUrl = new URL(runtime.rendererUrl)
-    devUrl.searchParams.set('mode', 'tab')
-    void view.webContents.loadURL(devUrl.toString())
-  } else {
-    void view.webContents.loadFile(runtime.rendererFile, { query: { mode: 'tab' } })
-  }
+  void view.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'docs', { mode: 'tab' }))
   // view.webContents becomes undefined after destroy, so grab the id beforehand
   const wcId = view.webContents.id
   view.webContents.once('destroyed', () => {
@@ -4486,6 +4614,7 @@ export function hasDocsWindow(): boolean {
 // ---- standalone lifecycle (apps/docs running on its own) ----
 
 export function startDocsStandalone(): void {
+  registerRendererScheme()
   installNavigationGuard(app)
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   // dev runs must not share the packaged app's userData (recent files, AI settings)
@@ -4518,6 +4647,7 @@ export function startDocsStandalone(): void {
   registerDocsIpc()
 
   app.whenReady().then(() => {
+    installRendererProtocol({ docs: join(__dirname, '../renderer') })
     setUiLang(normalizeLang(process.env.GENOFFICE_LANG ?? app.getLocale()))
     // packaged builds get the Dock icon from icon.icns; dev shows Electron's default
     if (isDev && process.platform === 'darwin') {

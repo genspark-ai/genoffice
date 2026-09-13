@@ -2,14 +2,20 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   applyRowProperties,
+  coverWrapRows,
+  coverageGaps,
+  groupRowRuns,
   measureWrapAutoFitRows,
   numericWrapOverride,
   resetStaleWrapAutoHeights,
   takeContaminatedRows,
   trackPreIndexMeasuredRows,
+  wrapAutoFitCells,
   wrapAutoFitRows,
   wrapMeasureGate,
+  wrapRowsOutsideCoverage,
 } from '../src/renderer/univer-sync'
+import type { WrapMeasureCoverage } from '../src/renderer/univer-state'
 import { journalSuppression, loadAutoHeightSuppression } from '../src/renderer/univer-state'
 
 function makeWorksheet() {
@@ -307,10 +313,138 @@ describe('wrapAutoFitRows', () => {
   })
 })
 
+describe('wrap measure coverage (wide-sheet header row shape)', () => {
+  const styles = [{ wrapText: true }, { wrapText: false }] as never as Parameters<
+    typeof wrapAutoFitCells
+  >[1]
+
+  it('wrapAutoFitCells lists every qualifying wrap column of a row', () => {
+    const cells = wrapAutoFitCells(
+      [
+        { row: 5, column: 16, value: 'gender', styleIndex: 0 },
+        { row: 5, column: 17, value: 'age', styleIndex: 0 },
+        { row: 5, column: 18, value: '42', styleIndex: 1 },
+        { row: 7, column: 0, value: 'NO', styleIndex: 1 },
+      ] as never,
+      styles,
+      [],
+      [],
+      false,
+      null,
+      { startRow: 0, endRow: 99, startColumn: 0, endColumn: 33 },
+    )
+    expect([...cells]).toEqual([[5, [16, 17]]])
+  })
+
+  it('re-measures only when a window brings wrap cells in unseen columns', () => {
+    const coverage = new Map<number, WrapMeasureCoverage>()
+    // First window (A..AH) measures rows 5 and 12.
+    const first = new Map([
+      [5, [16, 17]],
+      [12, [3]],
+    ])
+    expect(wrapRowsOutsideCoverage(coverage, first)).toEqual([5, 12])
+    coverWrapRows(coverage, [5, 12], 0, 33)
+    // The same window re-patched by indexing growth: nothing to do.
+    expect(wrapRowsOutsideCoverage(coverage, first)).toEqual([])
+    // A horizontal scroll (Z..BN) brings row 5's later labels; row 12 has a
+    // wrap cell only in an already-seen column.
+    const later = new Map([
+      [5, [30, 79]],
+      [12, [30]],
+      [40, [50]],
+    ])
+    expect(wrapRowsOutsideCoverage(coverage, later)).toEqual([5, 40])
+    coverWrapRows(coverage, [5, 40], 25, 65)
+    expect(coverageGaps(coverage.get(5), 0, 99)).toEqual([[66, 99]])
+    expect(coverageGaps(coverage.get(12), 0, 99)).toEqual([[34, 99]])
+    coverWrapRows(coverage, [5], 0, 99)
+    expect(coverageGaps(coverage.get(5), 0, 99)).toEqual([])
+  })
+
+  it('coverageGaps handles unsorted, overlapping and out-of-range intervals', () => {
+    expect(coverageGaps(undefined, 0, 9)).toEqual([[0, 9]])
+    expect(
+      coverageGaps(
+        [
+          [40, 60],
+          [0, 10],
+          [5, 20],
+        ],
+        0,
+        99,
+      ),
+    ).toEqual([
+      [21, 39],
+      [61, 99],
+    ])
+    expect(coverageGaps([[0, 200]], 0, 99)).toEqual([])
+  })
+
+  it('groupRowRuns bridges small gaps into one read', () => {
+    expect(groupRowRuns([5, 6, 7, 20, 100, 101], 40)).toEqual([
+      [5, 20],
+      [100, 101],
+    ])
+    expect(groupRowRuns([5, 200], 40)).toEqual([
+      [5, 5],
+      [200, 200],
+    ])
+  })
+})
+
 describe('measureWrapAutoFitRows', () => {
   beforeEach(() => {
     wrapMeasureGate.ready = true
     wrapMeasureGate.pending.length = 0
+    wrapMeasureGate.runtime = null
+  })
+
+  function shrinkingWorksheet(heights: Record<number, number>, measured: number) {
+    const mutations: unknown[] = []
+    const worksheet = {
+      getSheetId: () => 'sheet-1',
+      setRowAutoHeight: (start: number, count: number) => {
+        for (let row = start; row < start + count; row += 1) heights[row] = measured
+      },
+      getSheet: () => ({ getUnitId: () => 'unit-1', getSnapshot: () => ({ rowData: rowData() }) }),
+    }
+    const rowData = () =>
+      Object.fromEntries(Object.entries(heights).map(([row, ah]) => [row, { ah }]))
+    wrapMeasureGate.runtime = {
+      univerAPI: {
+        syncExecuteCommand: (id: string, params: unknown) => {
+          mutations.push([id, params])
+          return true
+        },
+      },
+    } as never
+    return { worksheet, mutations }
+  }
+
+  it('keeps the taller height an earlier window measured (later window evicted it)', () => {
+    const heights: Record<number, number> = { 5: 102, 6: 20 }
+    const { worksheet, mutations } = shrinkingWorksheet(heights, 51)
+    measureWrapAutoFitRows(worksheet as never, [5, 6])
+    expect(mutations).toEqual([
+      [
+        'sheet.mutation.set-worksheet-row-auto-height',
+        {
+          unitId: 'unit-1',
+          subUnitId: 'sheet-1',
+          rowsAutoHeightInfo: [{ row: 5, autoHeight: 102 }],
+        },
+      ],
+    ])
+    expect(journalSuppression.active).toBe(false)
+  })
+
+  it('lets a correcting measure shrink a row when keepTaller is off', () => {
+    const heights: Record<number, number> = { 5: 102 }
+    const { worksheet, mutations } = shrinkingWorksheet(heights, 51)
+    measureWrapAutoFitRows(worksheet as never, [5], false)
+    expect(mutations).toEqual([])
+    expect(heights[5]).toBe(51)
   })
 
   it('queues measures until the auto-height interceptor exists (Rendered)', () => {
@@ -392,7 +526,7 @@ describe('merged wrap cells and stale auto heights (prod_100 shape)', () => {
     } as never
     // Queued pre-Rendered measure must lose the reset rows or the lifecycle
     // flush re-poisons them (bugbot).
-    wrapMeasureGate.pending.push({ worksheet, rows: [0, 1, 3] })
+    wrapMeasureGate.pending.push({ worksheet, rows: [0, 1, 3], keepTaller: true })
     resetStaleWrapAutoHeights(
       runtime,
       'file-x',
@@ -430,8 +564,26 @@ describe('merged wrap cells and stale auto heights (prod_100 shape)', () => {
     // Row 0 still qualifies (kept, untracked); row 1 qualified only without
     // merges (contaminated); row 4's cells are outside this window (stays
     // tracked); row 9 was never measured pre-index (ignored).
-    expect(takeContaminatedRows('k:s', [0, 1, 9], [0, 9])).toEqual([1])
-    expect(takeContaminatedRows('k:s', [0, 1, 9], [0, 9])).toEqual([])
-    expect(takeContaminatedRows('k:s', [4], [])).toEqual([4])
+    expect(takeContaminatedRows('k:s', [0, 1, 9], [0, 9]).reset).toEqual([1])
+    expect(takeContaminatedRows('k:s', [0, 1, 9], [0, 9]).reset).toEqual([])
+    expect(takeContaminatedRows('k:s', [4], []).reset).toEqual([4])
+  })
+
+  it('re-measures pre-index rows that still qualify beside a merge (merged title beside wrap labels)', () => {
+    // Row 7: A/B are single-line wrap labels, C:D a merged three-line title.
+    // Measured before the merge arrived, the merged text drove the row to
+    // three lines; the row still qualifies through A/B, so it is not reset
+    // but must be measured again with the merge known. Row 2 qualifies with
+    // no merge in its row: its early measure was already right.
+    trackPreIndexMeasuredRows('k:m', [2, 7, 8])
+    const merges = [{ startRow: 7, startColumn: 2, endRow: 7, endColumn: 3 }]
+    expect(takeContaminatedRows('k:m', [2, 7, 8], [2, 7], merges)).toEqual({
+      reset: [8],
+      remeasure: [7],
+    })
+    expect(takeContaminatedRows('k:m', [2, 7, 8], [2, 7], merges)).toEqual({
+      reset: [],
+      remeasure: [],
+    })
   })
 })

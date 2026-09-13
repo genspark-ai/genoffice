@@ -163,9 +163,113 @@ interface MeasuredTab {
   /** run carries the underline mark: browsers do not draw text-decoration
    *  across a tab advance, so the gap gets a border-bottom line instead */
   underlined?: boolean
-  /** no room left on the line: render at a hair's width (font-size 0 lifts
-   *  Chromium's one-space minimum tab advance) */
+  /** no room left on the line: render at half a space (the smallest advance
+   *  Chromium honours without skipping to the next stop) */
   collapsed?: boolean
+  /** right/center/decimal tab whose short segment fits at the stop:
+   *  white-space:pre glues the tab to the word after it so a rounding
+   *  overflow cannot strand the segment on the next line */
+  glue?: boolean
+  /** first-line tab inside the hanging area: rendered as a box of this width
+   *  (layout px) because no tab-size can express its advance (see measureParagraph) */
+  fixed?: number
+}
+
+export interface TabTargetInput {
+  /** tab position in tab-origin space (layout px) */
+  x: number
+  minAdv: number
+  segWidth: number
+  /** this tab's segment plus everything after it up to a hard break */
+  restWidth: number
+  paraW: number
+  stops: Array<{ x: number; val: TabStop['val']; leader?: string }>
+  /** default tab grid (layout px); 0 = zero-width default tabs */
+  gridPx: number
+  /** left indent (tab-origin px) of a paragraph whose first line starts before
+   *  it (w:hanging); only passed for tabs on that first line */
+  hangingX?: number
+}
+
+export interface TabTarget {
+  target: number
+  val: TabStop['val']
+  leader?: string
+  collapsed: boolean
+  glue: boolean
+}
+
+/**
+ * Where a tab at `x` lands: the next custom stop, else the default grid.
+ * On the first line of a hanging indent Word treats the left indent as an
+ * implicit stop: a tab before it lands there unless a custom stop sits in
+ * between, and custom stops beyond it are not considered for that tab.
+ * Right/decimal/center stops place the segment's end/middle at the stop.
+ * A stop that would push the segment past the paragraph width pins it flush
+ * to the right edge (Word never wraps such TOC-style lines; Chromium would).
+ * In-column left stops advance to the stop and let a segment too wide for
+ * the trailing space wrap naturally — but a left stop past the right edge
+ * pins too (TOC page numbers), and so does a short segment that still fits
+ * flush right of the tab: wrapping it makes non-last lines justify-stretch,
+ * whose inflated measurements feed back into ever-larger targets
+ * (three-column signature rows). Pinning reserves room for everything after
+ * this tab (restWidth), so a run of trailing tabs packs against the edge
+ * instead of spilling over. The 1px slack keeps the 0.5px cssSize round-up
+ * from re-triggering wrap.
+ *
+ * Chromium breaks a line after a tab like after a space, so a right-ish tab
+ * whose short segment fits at the stop is glued to it (white-space:pre on the
+ * tab span: the boundary from a pre tab to the following text is not a break
+ * opportunity) and the segment cannot be stranded on the next line by a
+ * rounding overflow. A segment that no longer fits before its stop is not
+ * glued: Word collapses the tab to zero width and lets the text flow on from
+ * the tab's position, wrapping only at the margin — it never pulls the word
+ * before the tab down to keep the segment at the stop. Tabs whose remaining
+ * line content exceeds half the column keep Chromium's own wrapping.
+ */
+export function resolveTabTarget(input: TabTargetInput): TabTarget {
+  const { x, minAdv, segWidth, restWidth, paraW, gridPx, hangingX } = input
+  // Word takes any custom stop strictly ahead, however close: a stop nearer
+  // than the minimum advance collapses below instead of being skipped
+  let next = input.stops.find((s) => s.x > x + 0.5)
+  const inHang = hangingX !== undefined && x < hangingX
+  if (inHang && !(next && next.x <= hangingX)) next = { x: hangingX, val: 'left' }
+  let target: number
+  let val: TabStop['val'] = 'left'
+  let leader: string | undefined
+  if (next) {
+    target = next.x
+    val = next.val
+    leader = next.leader
+  } else if (gridPx > 0) {
+    target = (Math.floor((x + minAdv) / gridPx) + 1) * gridPx
+  } else {
+    // defaultTabStop 0: Word advances the caret imperceptibly (tdf#168607)
+    target = x + minAdv
+  }
+  // decimal is approximated as right (no '.'-splitting)
+  if (val === 'right' || val === 'decimal') target -= segWidth
+  else if (val === 'center') target -= segWidth / 2
+  // no flush-right pin inside the hanging area: Word wraps the first-line
+  // text on to the left indent rather than stranding the label
+  if (
+    target + segWidth > paraW - 1 &&
+    (val !== 'left' || target > paraW - 1 || (!inHang && paraW - segWidth - 1 > x))
+  )
+    target = paraW - 1 - restWidth
+  let collapsed = false
+  if (target < x + minAdv) {
+    // no room before the edge: Word collapses the tab to zero width. Chromium
+    // skips a tab whose distance to its stop is under half the paragraph
+    // font's space width to the *next* stop (a whole tab-size, pushing the
+    // segment onto the next line), so the smallest safe advance is half a
+    // space plus slack (minAdv = space + 1); font-size 0 does not lift it
+    collapsed = true
+    target = x + minAdv / 2 + 0.5
+  }
+  const glue =
+    !collapsed && val !== 'left' && val !== 'bar' && segWidth > 0 && restWidth <= paraW / 2
+  return { target, val, leader, collapsed, glue }
 }
 
 /**
@@ -219,6 +323,16 @@ function spaceWidthPx(cs: CSSStyleDeclaration): number {
   const w = spaceMeasureCtx.measureText(' ').width + (parseFloat(cs.letterSpacing) || 0)
   // 20% headroom: run-level fonts/sizes inside the paragraph may shape wider
   return Math.max(1, w * 1.2)
+}
+
+function tabGlyphLeft(view: EditorView, pos: number): number | null {
+  const { node, offset } = view.domAtPos(pos, 1)
+  if (node.nodeType !== Node.TEXT_NODE || node.nodeValue?.[offset] !== '\t') return null
+  const range = document.createRange()
+  range.setStart(node, offset)
+  range.setEnd(node, offset + 1)
+  const rect = range.getClientRects()[0]
+  return rect ? rect.left : null
 }
 
 const MEASURE_RETRY_MAX = 10
@@ -373,11 +487,14 @@ class TabLayoutView {
     for (const t of tabs) {
       const leader = t.leader && t.leader !== 'none' ? ` doc-tab-leader-${t.leader}` : ''
       const underline = t.underlined ? ' doc-tab-underline' : ''
-      const collapse = t.collapsed ? ' doc-tab-collapse' : ''
+      const fixed = t.fixed !== undefined
+      const collapse = t.collapsed && !fixed ? ' doc-tab-collapse' : ''
+      const glue = t.glue && !fixed ? ' doc-tab-glue' : ''
+      const box = fixed ? ' doc-tab-fixed' : ''
       decos.push(
         Decoration.inline(t.pos, t.pos + 1, {
-          class: `doc-tab${leader}${underline}${collapse}`,
-          style: `tab-size:${t.cssSize}px`,
+          class: `doc-tab${leader}${underline}${collapse}${glue}${box}`,
+          style: fixed ? `width:${t.fixed}px` : `tab-size:${t.cssSize}px`,
         }),
       )
     }
@@ -536,6 +653,10 @@ class TabLayoutView {
       let coords: { left: number; top: number; bottom: number }
       try {
         coords = view.coordsAtPos(tabPos, 1)
+        // coordsAtPos measures whitespace with an empty-range caret rect, which
+        // drifts inside line-height:0 runs (doc-ws-run); the glyph's own rect is exact
+        const glyphLeft = tabGlyphLeft(view, tabPos)
+        if (glyphLeft !== null) coords = { ...coords, left: glyphLeft }
       } catch {
         continue
       }
@@ -545,59 +666,28 @@ class TabLayoutView {
       const x = sameLine ? prevEnd : measuredX
       prevLine = { top: coords.top, bottom: coords.bottom }
 
-      const next = stopsPx.find((s) => s.x > x + minAdv)
-      let target: number
-      let val: TabStop['val'] = 'left'
-      let leader: string | undefined
-      if (next) {
-        target = next.x
-        val = next.val
-        leader = next.leader
-      } else {
-        const gridTwips = this.storage.defaultTabStopTwips ?? DEFAULT_TAB_TWIPS
-        if (gridTwips > 0) {
-          const grid = gridTwips / TWIPS_PER_PX
-          target = (Math.floor((x + minAdv) / grid) + 1) * grid
-        } else {
-          // defaultTabStop 0: Word advances the caret imperceptibly (tdf#168607)
-          target = x + minAdv
-        }
-      }
-
       const segWidth = segWidths[i]
-      // right/decimal/center align the segment at the stop; decimal is
-      // approximated as right (no '.'-splitting)
-      if (val === 'right' || val === 'decimal') target -= segWidth
-      else if (val === 'center') target -= segWidth / 2
-      // A right/center/decimal stop that would push the segment past the
-      // paragraph width pins it flush to the right edge (Word never wraps such
-      // TOC-style lines; Chromium would). In-column left stops advance to the
-      // stop and let a segment too wide for the trailing space wrap naturally —
-      // but a left stop past the right edge pins too (TOC page numbers), and so
-      // does a short segment that still fits flush right of the tab: wrapping
-      // it makes non-last lines justify-stretch, whose inflated measurements
-      // feed back into ever-larger targets (three-column signature rows).
-      // Pinning reserves room for everything after this tab (restWidths), so a
-      // run of trailing tabs packs against the edge instead of spilling over.
-      // The 1px slack keeps the 0.5px cssSize round-up from re-triggering wrap.
-      if (
-        target + segWidth > paraW - 1 &&
-        (val !== 'left' || target > paraW - 1 || paraW - segWidth - 1 > x)
-      )
-        target = paraW - 1 - restWidths[i]
-      let collapsed = false
-      if (target < x + minAdv) {
-        // no room before the edge: a normal tab would still advance a space
-        // width (Chromium's minimum), overflowing the line — collapse it to a
-        // hair's width instead (font-size 0 lifts the minimum)
-        collapsed = true
-        target = x + 0.6
-      }
+      const gridTwips = this.storage.defaultTabStopTwips ?? DEFAULT_TAB_TWIPS
+      // first-line tab inside the hanging area (negative text-indent)
+      const inHang = textIndent < 0 && x < contentEdge
+      const { target, leader, collapsed, glue } = resolveTabTarget({
+        x,
+        minAdv,
+        segWidth,
+        restWidth: restWidths[i],
+        paraW,
+        stops: stopsPx,
+        gridPx: gridTwips > 0 ? gridTwips / TWIPS_PER_PX : 0,
+        hangingX: inHang ? contentEdge : undefined,
+      })
       // convert the Word-space target to a CSS tab-size: the next multiple of
       // it past the tab's position must be the target itself, so it needs to
       // stay greater than the tab's content-edge-relative x (by the minimum
-      // rendered advance, or Chromium skips to the following multiple)
-      const cssSize = Math.max(target - contentEdge, x - contentEdge + 0.6, 0.5)
+      // rendered advance, or Chromium skips to the following multiple).
+      // Chromium counts 0 (the content edge) as a multiple too, so a tab left
+      // of the edge can neither cross it nor reach an arbitrary point before
+      // it; such tabs become a box of the exact advance instead
+      const cssSize = inHang ? 0 : Math.max(target - contentEdge, x - contentEdge + 0.6, 0.5)
       prevEnd = target + segWidth
       // 0.5px rounding damps measure→decorate→re-measure oscillation
       out.push({
@@ -606,6 +696,8 @@ class TabLayoutView {
         leader,
         underlined: tabUnderlined.get(tabPos),
         collapsed,
+        glue,
+        fixed: inHang ? Math.round((target - x) * 2) / 2 : undefined,
       })
     }
     return out

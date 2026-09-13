@@ -231,7 +231,7 @@ export function ensureBuiltinLayout(
     maxId = Math.max(maxId, Number(m[1]))
   const idTag = `<p:sldLayoutId id="${maxId + 1}" r:id="${rid}"/>`
   const nextMaster = masterXml.includes('</p:sldLayoutIdLst>')
-    ? masterXml.replace('</p:sldLayoutIdLst>', `${idTag}</p:sldLayoutIdLst>`)
+    ? masterXml.replace('</p:sldLayoutIdLst>', () => `${idTag}</p:sldLayoutIdLst>`)
     : masterXml.replace(/(<p:clrMap\b[^>]*\/>)/, `$1<p:sldLayoutIdLst>${idTag}</p:sldLayoutIdLst>`)
   archive.entries.set(masterPath, Buffer.from(nextMaster, 'utf8'))
   return layoutPath

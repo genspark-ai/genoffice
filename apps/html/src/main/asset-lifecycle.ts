@@ -842,6 +842,16 @@ export function extractHtmlImageSources(markdown: string): string[] {
   return scanImageSources(markdown).ranges.map((range) => range.source)
 }
 
+/**
+ * The <img src> references of an HTML document, read with no Markdown
+ * semantics: an indented line is pretty-printed markup, not a code block, and
+ * `![alt](src)` is literal text. The Markdown-aware scan above skips every
+ * indented <img>, which is nearly all of them in formatted HTML.
+ */
+export function extractDocumentImageSources(html: string): string[] {
+  return htmlImageSourceRanges(html, []).ranges.map((range) => range.source)
+}
+
 function encodeHtmlAttributeReplacement(value: string, quote: '"' | "'" | null): string {
   let encoded = ''
   for (const character of value) {
@@ -861,7 +871,23 @@ export function rewriteHtmlImageSources(
   rewrites: ReadonlyMap<string, string>,
 ): string {
   if (rewrites.size === 0) return markdown
-  const ranges = scanImageSources(markdown).ranges
+  return rewriteImageRanges(markdown, scanImageSources(markdown).ranges, rewrites)
+}
+
+/** `rewriteHtmlImageSources` for an HTML document: see `extractDocumentImageSources`. */
+export function rewriteDocumentImageSources(
+  html: string,
+  rewrites: ReadonlyMap<string, string>,
+): string {
+  if (rewrites.size === 0) return html
+  return rewriteImageRanges(html, htmlImageSourceRanges(html, []).ranges, rewrites)
+}
+
+function rewriteImageRanges(
+  markdown: string,
+  ranges: readonly DestinationRange[],
+  rewrites: ReadonlyMap<string, string>,
+): string {
   let cursor = 0
   let output = ''
   for (const range of ranges) {

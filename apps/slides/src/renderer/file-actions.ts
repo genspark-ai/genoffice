@@ -158,15 +158,21 @@ export async function exportImages(ctx: ActionCtx): Promise<void> {
   }
 }
 
-/** Export as PDF: each page (skipping hidden ones) rendered offscreen to 2x PNG; main process printToPDF in a hidden window */
-export async function exportPdf(ctx: ActionCtx): Promise<void> {
+/**
+ * Export as PDF: each page (skipping hidden ones) rendered offscreen to 2x PNG;
+ * main process printToPDF in a hidden window.
+ *
+ * `outPath` skips the save dialog — the headless CLI entry already knows where
+ * the file goes. Resolves true only when a PDF was written.
+ */
+export async function exportPdf(ctx: ActionCtx, outPath?: string): Promise<boolean> {
   const visible = ctx.slides.filter((s) => !s.hidden)
   if (visible.length === 0) {
     ctx.setStatus(t('appExportNoSlides'))
-    return
+    return false
   }
-  const target = await window.slidesApi.pickExportPdfPath(`${exportBaseName(ctx)}.pdf`)
-  if (!target) return
+  const target = outPath ?? (await window.slidesApi.pickExportPdfPath(`${exportBaseName(ctx)}.pdf`))
+  if (!target) return false
   ctx.setStatus(t('appExportPdfProgress'))
   try {
     const pngs = await renderSlidesToPngBase64(visible, ctx.images)
@@ -181,7 +187,9 @@ export async function exportPdf(ctx: ActionCtx): Promise<void> {
         ? t('appExportPdfDone', { path: r.path ?? '' })
         : t('appExportPdfFailed', { error: r.error ?? t('appUnknownError') }),
     )
+    return r.ok
   } catch (err) {
     ctx.setStatus(t('appExportPdfFailed', { error: String(err) }))
+    return false
   }
 }

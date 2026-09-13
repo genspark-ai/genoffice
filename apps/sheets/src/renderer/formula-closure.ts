@@ -3,7 +3,10 @@
 /// referenced precedents) so a large, formula-light workbook can recalculate
 /// live without a full preload.
 
-import { FORMULA_REFERENCE_PATTERN, qualifierMatches } from '../gateway/xlsx-structure'
+import {
+  FORMULA_REFERENCE_PATTERN,
+  qualifierMatches,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-structure'
 import { swapPosition, toSwapSpans } from './edit-journal'
 
 export interface ClosureSheetInput {

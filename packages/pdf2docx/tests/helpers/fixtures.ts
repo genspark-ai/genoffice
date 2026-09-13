@@ -653,3 +653,30 @@ export async function buildPrintMarginWashPdf(unequal = false): Promise<Uint8Arr
   })
   return doc.save()
 }
+
+/**
+ * Landscape slide: a title, two body lines and one big decorative disc off to
+ * the side (a curved path the IR ignores, too saturated for a panel) covering
+ * over a third of the page — the graphics-loss guard's shape of page.
+ */
+export async function buildSlideDecorPdf(): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([720, 405])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  page.drawEllipse({ x: 560, y: 130, xScale: 150, yScale: 150, color: rgb(0.3, 0.5, 0.9) })
+  page.drawText('Quarterly Highlights', { x: 60, y: 320, size: 32, font })
+  page.drawText('Revenue grew across every region this quarter.', { x: 60, y: 260, size: 16, font })
+  page.drawText('Customer retention reached a new record high.', { x: 60, y: 236, size: 16, font })
+  return doc.save()
+}
+
+/** a page of WinAnsi text: mojibake tests feed it gibberish or real Portuguese */
+export async function buildLatin1TextPdf(lines: readonly string[]): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts } = await import('pdf-lib')
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([612, 792])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  lines.forEach((text, i) => page.drawText(text, { x: 72, y: 700 - i * 18, size: 12, font }))
+  return doc.save()
+}

@@ -72,6 +72,8 @@ export const hi = {
   aiToolClarifySkipped: 'प्रश्नावली छोड़ी गई',
   aiToolPlan: 'ब्रीफ़ की पुष्टि ({n} अनुभाग)',
   aiToolPlanRejected: 'ब्रीफ़ की पुष्टि नहीं',
+  aiToolPlanFailed: 'ब्रीफ़ तैयार नहीं हो सका',
+  aiDraftingBrief: 'ब्रीफ़ तैयार हो रहा है…',
   aiToolWritePage: 'पेज बना दिया',
   aiToolWritePageFailed: 'पेज बनाने में विफल',
   aiToolWritePagePartial: 'पेज का कुछ हिस्सा बना',

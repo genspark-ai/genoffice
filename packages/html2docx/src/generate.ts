@@ -19,9 +19,9 @@ import {
 import { createRenderContext } from './generate/render-context'
 import { Generator } from './generate/renderer'
 
-async function generateDocx(ir, images) {
+async function generateDocx(ir, images, options = {}) {
   const parts = partitionIr(ir)
-  const context = createRenderContext(parts.docSettings)
+  const context = createRenderContext(parts.docSettings, options)
   const generator = new Generator(images, context)
   addPageBackgroundFloat(generator, parts.pageBgNode)
   const rendered = renderSection(generator, parts)

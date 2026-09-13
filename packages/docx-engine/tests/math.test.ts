@@ -24,6 +24,12 @@ describe('ommlToMathML', () => {
     expect(mathml).toContain('<mi>b</mi>')
   })
 
+  it('renders a hyphen-minus operator as a minus sign', () => {
+    const mathml = ommlToMathML('<m:oMath><m:r><m:t>n-k</m:t></m:r></m:oMath>')
+    expect(mathml).toContain('<mo>\u2212</mo>')
+    expect(mathml).not.toContain('<mo>-</mo>')
+  })
+
   it('converts scripts, radicals and delimiters', () => {
     const omml =
       '<m:oMath>' +

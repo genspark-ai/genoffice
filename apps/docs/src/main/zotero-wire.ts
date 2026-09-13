@@ -60,10 +60,17 @@ export class ZoteroWireClient {
   private socket: Socket | null = null
   private active = false
 
+  constructor(
+    private readonly host = ZOTERO_INTEGRATION_HOST,
+    private readonly port = ZOTERO_INTEGRATION_PORT,
+  ) {}
+
   get isActive(): boolean {
     return this.active
   }
 
+  /** Resolves when Zotero has finished the command (it closes the connection after
+   *  Document_complete), so callers can keep the document busy for the whole run. */
   async run(
     command: string,
     handleRequest: (request: ZoteroWireRequest) => Promise<unknown>,
@@ -72,12 +79,10 @@ export class ZoteroWireClient {
     this.active = true
     const decoder = new ZoteroFrameDecoder()
 
+    let socket: Socket
     try {
-      const socket = await new Promise<Socket>((resolve, reject) => {
-        const candidate = createConnection({
-          host: ZOTERO_INTEGRATION_HOST,
-          port: ZOTERO_INTEGRATION_PORT,
-        })
+      socket = await new Promise<Socket>((resolve, reject) => {
+        const candidate = createConnection({ host: this.host, port: this.port })
         const onError = (error: Error) => reject(error)
         candidate.once('error', onError)
         candidate.once('connect', () => {
@@ -85,7 +90,14 @@ export class ZoteroWireClient {
           resolve(candidate)
         })
       })
-      this.socket = socket
+    } catch (error) {
+      this.active = false
+      this.socket = null
+      throw error
+    }
+    this.socket = socket
+    return new Promise<void>((resolve, reject) => {
+      let failure: Error | null = null
       socket.on('data', (chunk) => {
         let frames: ZoteroWireFrame[]
         try {
@@ -96,19 +108,17 @@ export class ZoteroWireClient {
         }
         for (const frame of frames) void this.respondToFrame(socket, frame, handleRequest)
       })
+      socket.once('error', (error) => {
+        failure = error
+      })
       socket.once('close', () => {
         if (this.socket === socket) this.socket = null
         this.active = false
-      })
-      socket.once('error', () => {
-        // Post-connect errors terminate the socket; request failures are returned as ERR frames.
+        if (failure) reject(failure)
+        else resolve()
       })
       socket.write(encodeZoteroFrame(0, JSON.stringify({ command, templateVersion: 1 })))
-    } catch (error) {
-      this.active = false
-      this.socket = null
-      throw error
-    }
+    })
   }
 
   close(): void {

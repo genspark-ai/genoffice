@@ -2,7 +2,7 @@
 // anchor metadata and page-position resolution, group transforms.
 import { attrsOf, childrenOf, findChild, nameOf, type XNode } from './xml-utils'
 import { EMU_PER_PX } from './parse-xml-text'
-import type { SectionSettings, TextboxDisplay, ThemeColors } from './types'
+import type { SectionSettings, TextGlow, TextOutline, TextboxDisplay, ThemeColors } from './types'
 
 /**
  * Display-only extraction of anchored textboxes: DrawingML (wps:wsp, converter
@@ -514,6 +514,49 @@ export function w14TextFillHex(rPr: XNode, theme?: ThemeColors | null): string |
     .filter((rgb): rgb is number[] => rgb !== null)
   if (stops.length === 0) return undefined
   return rgbHex([0, 1, 2].map((i) => stops.reduce((sum, rgb) => sum + rgb[i], 0) / stops.length))
+}
+
+/** w14:textOutline stroke (solid fills only; gradient/noFill outlines are not drawn) */
+export function w14TextOutlineOf(rPr: XNode, theme?: ThemeColors | null): TextOutline | undefined {
+  const outline = findChild(rPr, 'w14:textOutline')
+  if (!outline) return undefined
+  const solid = findChild(outline, 'w14:solidFill')
+  if (!solid) return undefined
+  const rgb = w14ColorRgb(solid, theme)
+  if (!rgb) return undefined
+  const widthEmu = parseInt(attrsOf(outline)['w14:w'] ?? '', 10)
+  if (!(widthEmu > 0)) return undefined
+  const colorNode = findChild(solid, 'w14:srgbClr') ?? findChild(solid, 'w14:schemeClr')
+  const alphaRaw = parseInt(
+    attrsOf(findChild(colorNode ?? {}, 'w14:alpha') ?? {})['w14:val'] ?? '',
+    10,
+  )
+  const alpha = alphaRaw >= 0 && alphaRaw < 100000 ? alphaRaw / 100000 : undefined
+  return {
+    color: rgbHex(rgb),
+    widthPt: Math.round((widthEmu / 12700) * 100) / 100,
+    ...(alpha !== undefined ? { alpha } : {}),
+  }
+}
+
+/** w14:glow halo (radius in EMU, color with optional alpha) */
+export function w14GlowOf(rPr: XNode, theme?: ThemeColors | null): TextGlow | undefined {
+  const glow = findChild(rPr, 'w14:glow')
+  if (!glow) return undefined
+  const rgb = w14ColorRgb(glow, theme)
+  const radEmu = parseInt(attrsOf(glow)['w14:rad'] ?? '', 10)
+  if (!rgb || !(radEmu > 0)) return undefined
+  const colorNode = findChild(glow, 'w14:srgbClr') ?? findChild(glow, 'w14:schemeClr')
+  const alphaRaw = parseInt(
+    attrsOf(findChild(colorNode ?? {}, 'w14:alpha') ?? {})['w14:val'] ?? '',
+    10,
+  )
+  const alpha = alphaRaw >= 0 && alphaRaw < 100000 ? alphaRaw / 100000 : undefined
+  return {
+    color: rgbHex(rgb),
+    radiusPt: Math.round((radEmu / 12700) * 100) / 100,
+    ...(alpha !== undefined ? { alpha } : {}),
+  }
 }
 
 export interface ExtractTextboxOpts {

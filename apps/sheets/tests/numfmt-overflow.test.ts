@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   excelWidthScale,
+  formatForMeasure,
   hasGdiDigitCalibration,
   hashFill,
   overflowHashes,
@@ -158,5 +159,13 @@ describe('hashFill', () => {
 
   it('returns null when the hash glyph cannot be measured', () => {
     expect(hashFill(85, () => 0)).toBeNull()
+  })
+})
+
+describe('formatForMeasure', () => {
+  it('formats through the pattern and keeps General as the raw digits', () => {
+    expect(formatForMeasure('#,##0,\\ ', 105303159)).toBe('105,303\u00a0')
+    expect(formatForMeasure('General', 105303159)).toBe('105303159')
+    expect(formatForMeasure(undefined, 12.5)).toBe('12.5')
   })
 })

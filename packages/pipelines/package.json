@@ -1,0 +1,27 @@
+{
+  "name": "@genoffice/pipelines",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Electron-free generation stages and agent guides shared by the apps' AI pipelines and the genoffice CLI (slides today; docs and html to follow)",
+  "exports": {
+    ".": "./src/index.ts",
+    "./slides": "./src/slides/index.ts",
+    "./slides/layout-audit": "./src/slides/layout-audit.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@genoffice/pptx-engine": "*",
+    "@genoffice/pptx-render": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

@@ -22,6 +22,9 @@ import {
   printHtmlToPdf,
   safeExternalUrl,
   showOpenDialogWithMemory,
+  installRendererProtocol,
+  registerRendererScheme,
+  rendererUrl,
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool } from '@genoffice/ai-search'
@@ -1449,13 +1452,13 @@ export function createPdfView(openPath?: string | null): WebContentsView {
     },
   })
   grantAndTrack(view.webContents, openPath)
-  if (runtime.rendererUrl) void view.webContents.loadURL(runtime.rendererUrl)
-  else if (runtime.rendererFile) void view.webContents.loadFile(runtime.rendererFile)
+  void view.webContents.loadURL(rendererUrl(runtime.rendererUrl, 'pdf'))
   return view
 }
 
 /** Standalone window mode: `npm run dev -w @genoffice/pdf`, pdf path passed via argv */
 export function startPdfStandalone(): void {
+  registerRendererScheme()
   installNavigationGuard(app)
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   configurePdfRuntime({
@@ -1465,6 +1468,7 @@ export function startPdfStandalone(): void {
     createDocument: createStandaloneDocument,
   })
   void app.whenReady().then(() => {
+    installRendererProtocol({ pdf: join(__dirname, '../renderer') })
     registerPdfIpc()
     const win = new BrowserWindow({
       width: 1200,
@@ -1478,8 +1482,7 @@ export function startPdfStandalone(): void {
     })
     const argPath = process.argv.slice(1).find((a) => /\.pdf$/i.test(a) && existsSync(a))
     grantAndTrack(win.webContents, argPath)
-    if (runtime.rendererUrl) void win.loadURL(runtime.rendererUrl)
-    else if (runtime.rendererFile) void win.loadFile(runtime.rendererFile)
+    void win.loadURL(rendererUrl(runtime.rendererUrl, 'pdf'))
   })
   app.on('window-all-closed', () => app.quit())
 }

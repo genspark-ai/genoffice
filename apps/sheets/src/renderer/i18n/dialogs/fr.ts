@@ -405,4 +405,12 @@ export const fr = {
   dlgFnDescNpv: 'Renvoie la valeur actuelle nette de flux de trésorerie à un taux d’escompte.',
   dlgFnDescIrr: 'Renvoie le taux de rentabilité interne d’une série de flux.',
   dlgFnCatFinancial: 'Finances',
+  dlgFnCatDatabase: 'Base de données',
+  dlgFnCatInformation: 'Information',
+  dlgFnCatEngineering: 'Ingénierie',
+  dlgFnCatCube: 'Cube',
+  dlgFnCatCompatibility: 'Compatibilité',
+  dlgFnCatWeb: 'Web',
+  dlgFnCatArray: 'Matrice',
+  dlgFnCatOther: 'Autres',
 } satisfies Record<keyof typeof zh, string>

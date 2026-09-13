@@ -16,13 +16,26 @@ describe('docStyleCss paragraph borders', () => {
       parsedWith('HDR', { borderSides: { b: { color: '1F4E79', szPt: 6 }, t: {} } }),
     )
     expect(css).toContain(
-      '[data-style="HDR"] { border-top:1px solid #444;border-bottom:8px solid #1F4E79;padding:1px 4px }',
+      '[data-style="HDR"] { border-top:1px solid #444;border-bottom:8px solid #1F4E79;padding-top:0;padding-bottom:0 }',
     )
+  })
+
+  it('pads only the drawn sides, by w:space, as longhands (a direct side on another edge layers per side)', () => {
+    const css = docStyleCss(
+      parsedWith('Title', { borderSides: { b: { color: '4F81BD', szPt: 1, spacePt: 4 } } }),
+    )
+    expect(css).toContain(
+      '[data-style="Title"] { border-bottom:1px solid #4F81BD;padding-bottom:4pt }',
+    )
+    const boxed = docStyleCss(
+      parsedWith('Box', { borderSides: { t: { spacePt: 1 }, l: { spacePt: 4 }, b: {}, r: {} } }),
+    )
+    expect(boxed).toContain('padding-top:1pt;padding-right:4px;padding-bottom:0;padding-left:4px }')
   })
 
   it('emits nothing for a side reset to none', () => {
     const css = docStyleCss(parsedWith('Off', { borderSides: { b: null } }))
     expect(css).not.toContain('border-')
-    expect(css).not.toContain('padding:1px 4px')
+    expect(css).not.toContain('padding:')
   })
 })

@@ -14,9 +14,9 @@ import {
   parseRange,
   rangeCellCount,
   type RangeBounds,
-} from '../domain/cell-address'
-import { CHART_EDIT_TYPES, chartDataFromValues } from '../domain/chart-visual'
-import type { InMemoryWorkbookAdapter } from '../domain/in-memory-workbook'
+} from '@genoffice/xlsx-gateway/domain/cell-address'
+import { CHART_EDIT_TYPES, chartDataFromValues } from '@genoffice/xlsx-gateway/domain/chart-visual'
+import type { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
 import {
   convertToValuesBatchError,
   copyTargetBounds,
@@ -27,15 +27,15 @@ import {
   workbookCommandBatchSchema,
   type PrimitiveOperation,
   type WorkbookOperation,
-} from '../domain/workbook-dsl'
-import type { ApplyOutcome, ChangePlan } from '../domain/workbook.types'
-import { offsetFormulaRefs } from '../domain/formula-shift'
+} from '@genoffice/xlsx-gateway/domain/workbook-dsl'
+import type { ApplyOutcome, ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
+import { offsetFormulaRefs } from '@genoffice/xlsx-gateway/domain/formula-shift'
 import {
   qualifierMatches,
   shiftCellArea,
   shiftFormulaText,
   StructuralShiftError,
-} from '../gateway/xlsx-structure'
+} from '@genoffice/xlsx-gateway/gateway/xlsx-structure'
 import { MAX_PATCH_ENTRY_BYTES } from '../shared/desktop-api'
 import { isSheetRemoved } from './edit-journal'
 import { cellKey, parseFormulaReferences } from './formula-closure'

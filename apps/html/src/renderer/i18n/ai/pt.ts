@@ -73,6 +73,8 @@ export const pt = {
   aiToolClarifySkipped: 'Questionário ignorado',
   aiToolPlan: 'Briefing confirmado ({n} seções)',
   aiToolPlanRejected: 'Briefing não confirmado',
+  aiToolPlanFailed: 'Não foi possível redigir o briefing',
+  aiDraftingBrief: 'Redigindo o briefing…',
   aiToolWritePage: 'Página gerada',
   aiToolWritePageFailed: 'Falha ao gerar a página',
   aiToolWritePagePartial: 'Página gerada parcialmente',

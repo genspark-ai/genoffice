@@ -3,6 +3,7 @@ import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { SettledParagraphCache } from './settled-measure'
+import { sameLine } from './justify-shrink'
 
 /**
  * Word's CJK line breaking (settings characterSpacingControl =
@@ -263,10 +264,6 @@ function charAdvancePx(cs: CSSStyleDeclaration, ch: string): number {
     advanceCache.set(key, w)
   }
   return w
-}
-
-function sameLine(a: { top: number; bottom: number }, b: { top: number; bottom: number }): boolean {
-  return a.top < b.bottom - 1 && a.bottom > b.top + 1
 }
 
 class CjkPunctShrinkView {

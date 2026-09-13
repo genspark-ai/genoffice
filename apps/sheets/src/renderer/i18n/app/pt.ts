@@ -562,6 +562,12 @@ export const pt = {
   appPdfCanceled: 'Exportação de PDF cancelada.',
   appPdfExported: '{path} exportado.',
   appPdfExportFailed: 'Não foi possível exportar o PDF.',
+  appPrintPreparing: 'Preparando a impressão…',
+  appPrintSent: 'Enviado para a impressora.',
+  appPrintCanceled: 'Impressão cancelada.',
+  appPrintFailed: 'Não foi possível imprimir.',
+  appPrintNeedsFullLoad:
+    'A impressão requer que a pasta de trabalho esteja totalmente carregada; aguarde o fim do carregamento.',
   appCsvExportNeedsFullLoad:
     'A exportação de CSV requer a pasta de trabalho totalmente carregada — aguarde o carregamento terminar.',
   appCsvExportTooLarge: 'A planilha é grande demais para exportar como CSV.',
@@ -1352,6 +1358,8 @@ export const pt = {
   appFormatMenu: 'Formatar',
   appRowHeight: 'Altura da linha',
   appColWidth: 'Largura da coluna',
+  appAutoFitRowHeight: 'Ajustar altura da linha automaticamente',
+  appAutoFitColWidth: 'Ajustar largura da coluna automaticamente',
   appRowHeightLabel: 'Altura da linha (pontos)',
   appColWidthLabel: 'Largura da coluna (caracteres)',
   appDeleteRow: 'Excluir linha',

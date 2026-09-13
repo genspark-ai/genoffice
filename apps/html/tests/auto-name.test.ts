@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { deriveAutoFileName, deriveNameFromPrompt } from '../src/renderer/document/auto-name'
+import {
+  deriveAutoFileName,
+  deriveNameFromPrompt,
+  derivePageTitleName,
+} from '../src/renderer/document/auto-name'
 
 describe('deriveAutoFileName', () => {
   it('prefers the document title', () => {
@@ -31,6 +35,40 @@ describe('deriveAutoFileName', () => {
 
   it('returns empty for an empty document', () => {
     expect(deriveAutoFileName('')).toBe('')
+  })
+})
+
+describe('derivePageTitleName', () => {
+  it('returns the decoded title text', () => {
+    expect(derivePageTitleName('<head><title> Riverside &amp; Books </title></head>')).toBe(
+      'Riverside & Books',
+    )
+  })
+
+  it('rejects a missing, placeholder or overlong title', () => {
+    expect(derivePageTitleName('<body><h1>Hero</h1></body>')).toBe('')
+    expect(derivePageTitleName('<head><title></title></head>')).toBe('')
+    expect(derivePageTitleName('<head><title>A</title></head>')).toBe('')
+    expect(derivePageTitleName(`<head><title>${'x'.repeat(61)}</title></head>`)).toBe('')
+  })
+
+  it('ignores svg titles outside <head>', () => {
+    expect(derivePageTitleName('<head></head><body><svg><title>Logo</title></svg></body>')).toBe('')
+    expect(
+      derivePageTitleName(
+        '<head><title>Studio</title></head><body><svg><title>Logo</title></svg></body>',
+      ),
+    ).toBe('Studio')
+  })
+
+  it('accepts a document that omits the optional </head>', () => {
+    expect(
+      derivePageTitleName(
+        '<html><head><title>Studio</title><body><svg><title>Logo</title></svg></body></html>',
+      ),
+    ).toBe('Studio')
+    expect(derivePageTitleName('<title>Studio</title><p>hi</p>')).toBe('Studio')
+    expect(derivePageTitleName('<svg><title>Logo</title></svg>')).toBe('')
   })
 })
 

@@ -70,7 +70,7 @@ test.describe('theme visual adoption', () => {
     })
     try {
       const shellPage = await findShellPage(launched.app)
-      const editorPage = await waitForPageWithUrl(launched.app, 'html/out')
+      const editorPage = await waitForPageWithUrl(launched.app, '://html/')
       // preview is the default view; the source pane is what this test measures
       await editorPage.locator('.rb-view', { hasText: /Source/ }).click()
       await expect(editorPage.locator('.source-editor .cm-content')).toBeVisible()
@@ -102,7 +102,7 @@ test.describe('theme visual adoption', () => {
     })
     try {
       const shellPage = await findShellPage(launched.app)
-      const editorPage = await waitForPageWithUrl(launched.app, 'markdown/out')
+      const editorPage = await waitForPageWithUrl(launched.app, '://markdown/')
       await expect(editorPage.locator('.doc-editor')).toBeVisible()
 
       const lightBg = await bodyBg(editorPage)
@@ -126,7 +126,7 @@ test.describe('theme visual adoption', () => {
     try {
       const shellPage = await findShellPage(launched.app)
       await shellPage.locator('.quick-card', { hasText: 'AI Docs' }).click()
-      const editorPage = await waitForPageWithUrl(launched.app, 'docs/out')
+      const editorPage = await waitForPageWithUrl(launched.app, '://docs/')
       const page = editorPage.locator('.doc-page').first()
       await expect(page).toBeVisible()
       const pageBg = () => page.evaluate((el) => getComputedStyle(el).backgroundColor)
@@ -177,7 +177,7 @@ test.describe('theme visual adoption', () => {
     try {
       const shellPage = await findShellPage(launched.app)
       await shellPage.locator('.quick-card', { hasText: 'AI Sheets' }).click()
-      const editorPage = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const editorPage = await waitForPageWithUrl(launched.app, '://sheets/')
       await editorPage.waitForSelector('canvas', { timeout: 20_000 })
 
       // Univer flags its dark repaint with a class on <html> (ThemeService.darkMode$)
@@ -217,7 +217,7 @@ test.describe('theme visual adoption', () => {
     })
     try {
       const shellPage = await findShellPage(launched.app)
-      const editorPage = await waitForPageWithUrl(launched.app, 'pdf/out')
+      const editorPage = await waitForPageWithUrl(launched.app, '://pdf/')
       await expect(editorPage.locator('.pdf-page').first()).toBeVisible()
 
       await setTheme(shellPage, 'dark')

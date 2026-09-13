@@ -1001,3 +1001,32 @@ describe('axis calibration', () => {
     expect(b!.points[1]!).toBeLessThan(a!.points[1]!)
   })
 })
+
+describe('chartSpace default text color + legacy line width', () => {
+  it('defaultTextColor drives tick labels, legend text, the title and outside data labels', () => {
+    const model: ChartModel = {
+      ...lineModel,
+      title: 'T',
+      valAxis: { gridColor: '#E6E6E6' },
+      defaultTextColor: '#FFFFFF',
+      dataLabels: true,
+    }
+    const node = buildChartNode('r_1', 'el1', model, box, vp, metrics)!
+    expect(node.labels.length).toBeGreaterThan(0)
+    expect(node.labels.every((l) => l.color === '#FFFFFF')).toBe(true)
+  })
+
+  it('no style part: line stroke defaults to 2.25pt; with a style part 1.5pt', () => {
+    const legacy = buildChartNode('r_1', 'el1', lineModel, box, vp, metrics)!
+    expect(legacy.polylines[0]!.widthPx).toBeCloseTo(ptToPx(2.25, vp.scale), 3)
+    const modern = buildChartNode(
+      'r_1',
+      'el1',
+      { ...lineModel, hasStylePart: true },
+      box,
+      vp,
+      metrics,
+    )!
+    expect(modern.polylines[0]!.widthPx).toBeCloseTo(ptToPx(1.5, vp.scale), 3)
+  })
+})

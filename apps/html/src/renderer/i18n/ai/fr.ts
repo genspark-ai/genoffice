@@ -73,6 +73,8 @@ export const fr = {
   aiToolClarifySkipped: 'Questionnaire ignoré',
   aiToolPlan: 'Brief confirmé ({n} sections)',
   aiToolPlanRejected: 'Brief non confirmé',
+  aiToolPlanFailed: 'Le brief n’a pas pu être rédigé',
+  aiDraftingBrief: 'Rédaction du brief…',
   aiToolWritePage: 'Page générée',
   aiToolWritePageFailed: 'Échec de la génération de la page',
   aiToolWritePagePartial: 'Page partiellement générée',

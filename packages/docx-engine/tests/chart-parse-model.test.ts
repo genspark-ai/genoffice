@@ -223,3 +223,106 @@ describe('parseChartexPartXml leniency', () => {
     expect(display.series[0]).toEqual({ name: 'Series1', values: [100, -40, 60] })
   })
 })
+
+describe('parseChartPartXml presentation features', () => {
+  const lineSer = (i: number, values: number[], extra = '') =>
+    `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>${strCache('tx', [`S${i + 1}`])}${extra}` +
+    `${strCache('cat', ['A', 'B', 'C'])}${numCache('val', values)}</c:ser>`
+  const axes =
+    '<c:catAx><c:axId val="1"/><c:axPos val="b"/><c:crossAx val="2"/></c:catAx>' +
+    '<c:valAx><c:axId val="2"/><c:axPos val="l"/><c:title/><c:crossAx val="1"/></c:valAx>'
+
+  it('reads radar charts with their style and honors symbol="none" over the marker style', () => {
+    const radar = (style: string, marker = '') =>
+      chartSpace(
+        `<c:radarChart><c:radarStyle val="${style}"/>${lineSer(0, [1, 2, 3], marker)}</c:radarChart>`,
+      )
+    const filled = parseChartPartXml(radar('filled'), 'p')!
+    expect(filled.kind).toBe('radar')
+    expect(filled.radarStyle).toBe('filled')
+    expect(filled.markers).toBeUndefined()
+    expect(parseChartPartXml(radar('marker'), 'p')!.markers).toBe(true)
+    const off = '<c:marker><c:symbol val="none"/></c:marker>'
+    expect(parseChartPartXml(radar('marker', off), 'p')!.markers).toBeUndefined()
+    expect(parseChartPartXml(radar('standard'), 'p')!.radarStyle).toBe('standard')
+  })
+
+  it('keeps stacked grouping on line charts', () => {
+    const xml = chartSpace(
+      `<c:lineChart><c:grouping val="stacked"/>${lineSer(0, [1, 2, 3])}${lineSer(1, [1, 1, 1])}` +
+        `<c:marker val="1"/></c:lineChart>`,
+    )
+    const display = parseChartPartXml(xml, 'p')!
+    expect(display.grouping).toBe('stacked')
+    expect(display.markers).toBe(true)
+  })
+
+  it('reads pie explosion and percent data labels', () => {
+    const ser =
+      `<c:ser><c:idx val="0"/><c:order val="0"/>${strCache('tx', ['S1'])}` +
+      `<c:explosion val="25"/><c:dLbls><c:showPercent val="1"/></c:dLbls>` +
+      `${strCache('cat', ['A', 'B'])}${numCache('val', [3, 1])}</c:ser>`
+    const display = parseChartPartXml(chartSpace(`<c:pieChart>${ser}</c:pieChart>`), 'p')!
+    expect(display.explosionPct).toBe(25)
+    expect(display.dataLabels).toEqual({ pct: true })
+  })
+
+  it('flags parts without c:legend and resolves the chart-area border', () => {
+    const line = (post = '', spPr = '') =>
+      chartSpace(`<c:lineChart>${lineSer(0, [1, 2, 3])}</c:lineChart>`, '', post + spPr)
+    const bare = parseChartPartXml(line(), 'p')!
+    expect(bare.noLegend).toBe(true)
+    expect(bare.legendPos).toBeUndefined()
+    // Word's automatic border shows on parts without c:chartSpace/c:spPr
+    expect(bare.frameLine).toBe('868686')
+    const withLegend = parseChartPartXml(line('<c:legend><c:legendPos val="t"/></c:legend>'), 'p')!
+    expect(withLegend.legendPos).toBe('t')
+    expect(withLegend.noLegend).toBeUndefined()
+    const noBorder =
+      '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" ' +
+      'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+      `<c:chart><c:plotArea><c:lineChart>${lineSer(0, [1, 2, 3])}</c:lineChart></c:plotArea></c:chart>` +
+      '<c:spPr><a:ln><a:noFill/></a:ln></c:spPr></c:chartSpace>'
+    expect(parseChartPartXml(noBorder, 'p')!.frameLine).toBeUndefined()
+    const gray = noBorder.replace(
+      '<a:ln><a:noFill/></a:ln>',
+      '<a:ln><a:solidFill><a:srgbClr val="D9D9D9"/></a:solidFill></a:ln>',
+    )
+    expect(parseChartPartXml(gray, 'p')!.frameLine).toBe('D9D9D9')
+  })
+
+  it('classifies axes by position with placeholder titles and automatic lines', () => {
+    const xml = chartSpace(`<c:lineChart>${lineSer(0, [1, 2, 3])}</c:lineChart>${axes}`)
+    const display = parseChartPartXml(xml, 'p', THEME)!
+    expect(display.xAxis).toEqual({ line: '404040' })
+    // an empty c:title shows Word's placeholder text
+    expect(display.yAxis).toEqual({ title: 'Axis Title', line: '404040' })
+    const titled = xml.replace(
+      '<c:title/>',
+      '<c:title><c:tx><c:rich><a:p><a:r><a:t>Units</a:t></a:r></a:p></c:rich></c:tx></c:title>',
+    )
+    expect(parseChartPartXml(titled, 'p')!.yAxis!.title).toBe('Units')
+    const hidden = xml.replace(
+      '<c:axPos val="b"/>',
+      '<c:axPos val="b"/><c:delete val="1"/><c:spPr><a:ln><a:noFill/></a:ln></c:spPr>',
+    )
+    expect(parseChartPartXml(hidden, 'p')!.xAxis).toEqual({ deleted: true })
+  })
+
+  it('reads the data table flags', () => {
+    const xml = chartSpace(
+      `<c:barChart><c:barDir val="col"/>${lineSer(0, [1, 2, 3])}</c:barChart>${axes}` +
+        '<c:dTable><c:showHorzBorder val="1"/><c:showVertBorder val="1"/><c:showOutline val="1"/><c:showKeys val="1"/></c:dTable>',
+    )
+    expect(parseChartPartXml(xml, 'p')!.dataTable).toEqual({
+      keys: true,
+      horz: true,
+      vert: true,
+      outline: true,
+      line: '404040',
+    })
+    expect(
+      parseChartPartXml(xml.replace(/<c:dTable>.*<\/c:dTable>/, ''), 'p')!.dataTable,
+    ).toBeUndefined()
+  })
+})

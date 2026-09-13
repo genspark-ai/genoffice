@@ -22,13 +22,55 @@ directly on this repository as usual.
 
 ## Repository layout
 
-- `apps/*` — the six Electron apps (docs, sheets, slides, pdf, markdown, shell).
+- `apps/*` — the seven Electron apps (docs, sheets, slides, pdf, markdown, html, shell).
   Each app is an npm workspace with its own `src/main` (Electron main
   process), `src/renderer` (React UI), and `tests/`.
 - `packages/*` — pure TypeScript engine and shared packages (no Electron
   dependency, unit-tested): docx/pptx engines, AI agent core, providers,
   i18n, UI kit.
 - `apps/sheets/native/xlsx-engine` — Rust xlsx engine (runs as a sidecar process) for xlsx import/export.
+
+## Engine packages
+
+All pure TypeScript, no Electron dependency, unit-tested (except the UI kit):
+
+- `packages/docx-engine` — docx parsing → block tree (with `docxIndex`
+  anchors and passthrough), OOXML fragment generation, byte-level paragraph
+  patching.
+- `packages/pptx-engine` / `packages/pptx-render` — pptx model and rendering.
+- `packages/pdf2docx` — local PDF → DOCX conversion: PDFium character-level
+  extraction, pure-geometry layout analysis, rebuild through `docx-engine`;
+  the same analysis drives the PDF app's PowerPoint and Excel exports.
+- `packages/html2docx` — local HTML → DOCX conversion: the page is rendered in
+  the app's own Chromium, reduced in-browser to a document intent tree, and
+  written as native OOXML with the `docx` library; only visuals with no Word
+  counterpart are screenshotted. Drives the HTML app's Export as Word.
+- `packages/file-parse` — text extraction for AI attachments (office formats,
+  text formats).
+- `packages/agent-core` — the AI agent loop and skill composition shared by
+  every app.
+- `packages/ai-provider` — provider abstraction and streaming for the model
+  backends.
+- `packages/ai-search` — Genspark auth + web/image search tools.
+- `packages/i18n`, `packages/ui`, `packages/project-store`,
+  `packages/electron-utils` — shared i18n core, React UI kit, recent-files
+  store, and Electron main-process helpers.
+
+### Architecture notes (docx round trip)
+
+```
+open docx ─► archive original by hash (never touched)
+          ─► docx-engine parses word/document.xml top-level elements (w:p / w:tbl / …)
+          ─► Block tree, each block anchored by docxIndex + original XML slice
+          ─► Tiptap streaming editor (manual + AI editing, dirty tracking)
+save      ─► dirty blocks → OOXML fragments (referencing existing styles only)
+          ─► splice into original document.xml (untouched blocks keep original bytes)
+          ─► repack zip; all other entries copied byte-for-byte
+```
+
+The same philosophy holds in sheets and slides: the original file is the
+source of truth, edits are applied as narrow patches, and everything the
+editor didn't touch survives the round trip untouched.
 
 ## Getting started
 
@@ -70,7 +112,7 @@ formatting diff.
 ## Building installers
 
 Run these from the repository root — they regenerate the third-party
-notices and build all six apps before packaging:
+notices and build all seven apps before packaging:
 
 ```bash
 npm run dist:mac   # dmg + zip

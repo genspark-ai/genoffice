@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { saveWorkbookViaSidecar } from '../src/gateway/xlsx-package-io'
+import { saveWorkbookViaSidecar } from '@genoffice/xlsx-gateway/gateway/xlsx-package-io'
 import { XlsxSidecarClient } from '../src/main/xlsx-sidecar-client'
 import { workbookFileSchema } from '../src/shared/desktop-api'
 

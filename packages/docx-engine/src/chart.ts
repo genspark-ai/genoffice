@@ -1,5 +1,5 @@
 import JSZip from 'jszip'
-import type { ChartDisplay, ChartSeries, NewChart, ThemeColors } from './types'
+import type { ChartAxis, ChartDisplay, ChartSeries, NewChart, ThemeColors } from './types'
 import {
   attrsOf,
   childrenOf,
@@ -24,7 +24,11 @@ const CHART_KINDS: Record<string, ChartDisplay['kind']> = {
   'c:area3DChart': 'area',
   'c:scatterChart': 'scatter',
   'c:bubbleChart': 'bubble',
+  'c:radarChart': 'radar',
 }
+
+/** Word's chart-area border when c:chartSpace carries no c:spPr, as rendered by Word */
+const DEFAULT_FRAME_LINE = '868686'
 
 /**
  * Read the display model of a chart part (word/charts/chartN.xml). Only the
@@ -51,17 +55,32 @@ export function parseChartPartXml(
   const horizontal = kind === 'bar' && attrsOf(findChild(plot, 'c:barDir') ?? {})['val'] === 'bar'
   const groupingVal = attrsOf(findChild(plot, 'c:grouping') ?? {})['val']
   const grouping =
-    (kind === 'bar' || kind === 'area') &&
+    (kind === 'bar' || kind === 'area' || kind === 'line') &&
     (groupingVal === 'stacked' || groupingVal === 'percentStacked')
       ? groupingVal
       : undefined
   const scatterStyle = attrsOf(findChild(plot, 'c:scatterStyle') ?? {})['val']
+  const radarStyleVal = attrsOf(findChild(plot, 'c:radarStyle') ?? {})['val']
+  const radarStyle =
+    kind === 'radar'
+      ? radarStyleVal === 'filled' || radarStyleVal === 'marker'
+        ? radarStyleVal
+        : 'standard'
+      : undefined
+  // every series switching its symbol off overrides the plot-level marker flag
+  const symbolsOff = findChildren(plot, 'c:ser').every(
+    (ser) =>
+      attrsOf(findChild(findChild(ser, 'c:marker') ?? {}, 'c:symbol') ?? {})['val'] === 'none',
+  )
   const markers =
     kind === 'line'
-      ? attrsOf(findChild(plot, 'c:marker') ?? {})['val'] === '1'
+      ? attrsOf(findChild(plot, 'c:marker') ?? {})['val'] === '1' && !symbolsOff
       : kind === 'scatter'
-        ? scatterStyle === undefined || scatterStyle.toLowerCase().includes('marker')
-        : false
+        ? (scatterStyle === undefined || scatterStyle.toLowerCase().includes('marker')) &&
+          !symbolsOff
+        : kind === 'radar'
+          ? radarStyle === 'marker' && !symbolsOff
+          : false
   const scatterLines = kind === 'scatter' && /line|smooth/i.test(scatterStyle ?? '')
   const holeVal = attrsOf(findChild(plot, 'c:holeSize') ?? {})['val']
   const holePct =
@@ -71,6 +90,23 @@ export function parseChartPartXml(
         : 50
       : 0
   const legendPos = legendPosOf(chart)
+  const dataLabels = dataLabelsOf(plot)
+  const frameLine = lineHex(findChild(space, 'c:spPr'), theme, DEFAULT_FRAME_LINE)
+  const axes = axesOf(plotArea, theme)
+  const dTable = findChild(plotArea, 'c:dTable')
+  const tableLine = dTable
+    ? lineHex(findChild(dTable, 'c:spPr'), theme, autoLineHex(theme))
+    : undefined
+  const dataTable = dTable
+    ? {
+        keys: boolFlag(dTable, 'c:showKeys'),
+        horz: boolFlag(dTable, 'c:showHorzBorder'),
+        vert: boolFlag(dTable, 'c:showVertBorder'),
+        outline: boolFlag(dTable, 'c:showOutline'),
+        ...(tableLine ? { line: tableLine } : {}),
+      }
+    : undefined
+  let explosionPct: number | undefined
 
   let categories: string[] = []
   const series: ChartSeries[] = []
@@ -100,6 +136,10 @@ export function parseChartPartXml(
     if (color) entry.color = color
     const pointColors = dataPointColors(ser, theme)
     if (pointColors) entry.pointColors = pointColors
+    if (kind === 'pie' && series.length === 0) {
+      const expl = parseInt(attrsOf(findChild(ser, 'c:explosion') ?? {})['val'] ?? '', 10)
+      if (expl > 0) explosionPct = expl
+    }
     if (kind === 'scatter' || kind === 'bubble') {
       const xVal = findChild(ser, 'c:xVal')
       const xValues = xVal ? cacheNumbers(xVal) : []
@@ -123,13 +163,100 @@ export function parseChartPartXml(
     ...(horizontal ? { horizontal } : {}),
     ...(grouping ? { grouping } : {}),
     ...(markers ? { markers } : {}),
+    ...(radarStyle ? { radarStyle } : {}),
     ...(holePct > 0 ? { holePct } : {}),
-    ...(legendPos ? { legendPos } : {}),
+    ...(explosionPct ? { explosionPct } : {}),
+    ...(dataLabels ? { dataLabels } : {}),
+    ...(legendPos ? { legendPos } : { noLegend: true }),
+    ...(frameLine ? { frameLine } : {}),
+    ...axes,
+    ...(dataTable ? { dataTable } : {}),
     ...(title !== undefined ? { title } : {}),
     categories,
     series,
     ...(palette ? { palette } : {}),
   }
+}
+
+/** CT_Boolean child: absent = false, a val-less element or val="1"/"true" = true */
+function boolFlag(parent: XNode, tag: string): boolean {
+  const node = findChild(parent, tag)
+  if (!node) return false
+  const val = attrsOf(node)['val']
+  return val === undefined || val === '1' || val === 'true'
+}
+
+/** c:dLbls show* flags; the first series' own dLbls beats the plot-level block */
+function dataLabelsOf(plot: XNode): ChartDisplay['dataLabels'] {
+  const ser = findChild(plot, 'c:ser')
+  const dLbls = (ser ? findChild(ser, 'c:dLbls') : undefined) ?? findChild(plot, 'c:dLbls')
+  if (!dLbls || boolFlag(dLbls, 'c:delete')) return undefined
+  const out: NonNullable<ChartDisplay['dataLabels']> = {}
+  if (boolFlag(dLbls, 'c:showVal')) out.val = true
+  if (boolFlag(dLbls, 'c:showPercent')) out.pct = true
+  if (boolFlag(dLbls, 'c:showCatName')) out.cat = true
+  return out.val || out.pct || out.cat ? out : undefined
+}
+
+/**
+ * Bottom/left axes by c:axPos (horizontal bars put the category axis on the
+ * left, scatter has two value axes). Office's automatic axis line is tx1 at
+ * 75% tint; a:noFill hides it.
+ */
+function axesOf(
+  plotArea: XNode,
+  theme?: ThemeColors | null,
+): Pick<ChartDisplay, 'xAxis' | 'yAxis'> {
+  const out: Pick<ChartDisplay, 'xAxis' | 'yAxis'> = {}
+  const autoLine = autoLineHex(theme)
+  for (const ax of childrenOf(plotArea)) {
+    const name = nameOf(ax)
+    if (name !== 'c:catAx' && name !== 'c:valAx' && name !== 'c:dateAx' && name !== 'c:serAx')
+      continue
+    const pos = attrsOf(findChild(ax, 'c:axPos') ?? {})['val']
+    const slot =
+      pos === 'b' || pos === 't' ? 'xAxis' : pos === 'l' || pos === 'r' ? 'yAxis' : undefined
+    if (!slot || out[slot]) continue
+    const axis: ChartAxis = {}
+    const title = findChild(ax, 'c:title')
+    if (title) axis.title = richText(title) || 'Axis Title'
+    const line = lineHex(findChild(ax, 'c:spPr'), theme, autoLine)
+    if (line) axis.line = line
+    if (boolFlag(ax, 'c:delete')) axis.deleted = true
+    out[slot] = axis
+  }
+  return out
+}
+
+/** Office's automatic axis / data-table line: tx1 at 75% tint */
+function autoLineHex(theme?: ThemeColors | null): string {
+  return tintHex(theme?.dk1 && /^[0-9A-Fa-f]{6}$/.test(theme.dk1) ? theme.dk1 : '000000', 0.75)
+}
+
+/** a:t / cached c:v texts under a title-like element, concatenated */
+function richText(node: XNode): string {
+  const texts: string[] = []
+  const walk = (n: XNode, tag: string) => {
+    for (const child of childrenOf(n)) {
+      if (nameOf(child) === tag) texts.push(textOf(child))
+      else walk(child, tag)
+    }
+  }
+  walk(node, 'a:t')
+  if (texts.length === 0) walk(node, 'c:v')
+  return texts.join('')
+}
+
+/** a:ln color of an spPr: a:noFill → undefined, solid → resolved, absent → the Office automatic color */
+function lineHex(
+  spPr: XNode | undefined,
+  theme: ThemeColors | null | undefined,
+  auto: string,
+): string | undefined {
+  const ln = spPr ? findChild(spPr, 'a:ln') : undefined
+  if (!ln) return auto
+  if (findChild(ln, 'a:noFill')) return undefined
+  return solidFillHex(ln, theme) ?? auto
 }
 
 const LEGEND_POSITIONS = new Set(['b', 'l', 'r', 't', 'tr'])
@@ -503,25 +630,8 @@ function seriesName(ser: XNode): string | undefined {
 function chartTitle(chart: XNode): string | undefined {
   const title = findChild(chart, 'c:title')
   if (!title) return undefined
-  const texts: string[] = []
-  const walk = (node: XNode) => {
-    for (const child of childrenOf(node)) {
-      if (nameOf(child) === 'a:t') texts.push(textOf(child))
-      else walk(child)
-    }
-  }
-  walk(title)
-  let joined = texts.join('')
-  if (joined) return joined
   // strRef titles carry the cached text in c:strCache c:v, not a:t
-  const walkV = (node: XNode) => {
-    for (const child of childrenOf(node)) {
-      if (nameOf(child) === 'c:v') texts.push(textOf(child))
-      else walkV(child)
-    }
-  }
-  walkV(title)
-  joined = texts.join('')
+  const joined = richText(title)
   if (joined) return joined
   // text-less c:title = auto title; Word renders the "Chart Title" placeholder
   // unless the auto title was explicitly deleted (CT_Boolean: a val-less
@@ -606,6 +716,7 @@ export function buildChartPartXml(chart: NewChart, externalDataRId?: string): st
     'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
     'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
     `<c:chart>${title}<c:plotArea><c:layout/>${plot}</c:plotArea>` +
+    '<c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>' +
     '<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>' +
     (externalDataRId
       ? `<c:externalData r:id="${externalDataRId}"><c:autoUpdate val="0"/></c:externalData>`

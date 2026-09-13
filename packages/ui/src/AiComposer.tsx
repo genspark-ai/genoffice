@@ -32,6 +32,7 @@ export function AiComposer({
   onSend,
   onStop,
   onPasteFiles,
+  onPasteText,
 }: {
   readonly value: string
   readonly busy: boolean
@@ -60,6 +61,8 @@ export function AiComposer({
   readonly onStop: () => void
   /** clipboard files pasted into the textarea (screenshots, copied files); text paste stays native */
   readonly onPasteFiles?: ((files: File[]) => void) | undefined
+  /** first look at pasted text; return true to consume it (e.g. a base64 image turned into an attachment) */
+  readonly onPasteText?: ((text: string) => boolean) | undefined
 }): React.JSX.Element {
   const innerRef = useRef<HTMLTextAreaElement | null>(null)
   const ref = textareaRef ?? innerRef
@@ -101,11 +104,15 @@ export function AiComposer({
           }
         }}
         onPaste={(e) => {
-          if (!onPasteFiles) return
           const files = Array.from(e.clipboardData.files)
-          if (files.length === 0) return
-          e.preventDefault()
-          onPasteFiles(files)
+          if (files.length > 0) {
+            if (!onPasteFiles) return
+            e.preventDefault()
+            onPasteFiles(files)
+            return
+          }
+          const text = e.clipboardData.getData('text/plain')
+          if (text && onPasteText?.(text)) e.preventDefault()
         }}
       />
       <div className="ai-input-footer">

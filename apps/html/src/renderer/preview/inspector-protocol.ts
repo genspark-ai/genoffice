@@ -12,8 +12,12 @@ export type ToInspector =
   | { type: 'gx:theme'; dark: boolean }
   /** poke inline styles for a live preview; the host commits them to the source as one set_style op */
   | { type: 'gx:previewStyle'; sid: number; styles: Record<string, string | null> }
+  /** the mouse button went up over the host chrome: a reorder drag in the frame ends without a drop */
+  | { type: 'gx:endDrag' }
   /** numbered pins on elements with queued AI edits (replaces the previous set) */
   | { type: 'gx:mark'; marks: Array<{ sid: number; label: string }> }
+  /** restore the window scroll of the copy an edit just replaced */
+  | { type: 'gx:scrollTo'; y: number }
 
 /** effective styles of the selected element (px numbers without unit, colours as #rrggbb, '' when transparent) */
 export interface ComputedSnapshot {
@@ -59,6 +63,8 @@ export interface ElementFingerprint {
   textRun: string | null
   /** index of that run among the element's direct text nodes (set_text_node's index), -1 without a run */
   textRunIndex: number
+  /** the element's text edits in place (single run, or text mixed with phrasing children) */
+  inlineEditable: boolean
 }
 
 /** every message carries the parse-map version the frame was instrumented with */
@@ -66,6 +72,8 @@ export type FromInspector = { version: number } & FromInspectorBody
 
 export type FromInspectorBody =
   | { type: 'gx:ready'; title: string; docHeight: number }
+  /** the window scrolled (coalesced per frame); the host hands it back after a reload */
+  | { type: 'gx:scroll'; y: number }
   | { type: 'gx:hover'; sid: number | null }
   | {
       type: 'gx:rect'
@@ -74,6 +82,7 @@ export type FromInspectorBody =
       computed: ComputedSnapshot
       textRun: string | null
       textRunIndex: number
+      inlineEditable: boolean
     }
   | { type: 'gx:select'; element: ElementFingerprint | null; dynamic: boolean }
   | {
@@ -86,6 +95,8 @@ export type FromInspectorBody =
       text: string
     }
   | { type: 'gx:textEditCommit'; sid: number; textNodeIndex: number; newText: string }
+  /** rich inline edit (text mixed with <strong> / <a> / <br> children): the whole inner HTML, data-sid stripped */
+  | { type: 'gx:htmlEditCommit'; sid: number; html: string }
   | { type: 'gx:textEditCancel' }
   | {
       type: 'gx:keyCommand'
@@ -104,11 +115,19 @@ export type FromInspectorBody =
         | 'zoomIn'
         | 'zoomOut'
         | 'zoomReset'
+        | 'moveUp'
+        | 'moveDown'
     }
   /** ctrl/meta + wheel inside the frame (trackpad pinch); the host owns the zoom level */
   | { type: 'gx:zoom'; delta: number }
   | { type: 'gx:navigateBlocked'; href: string }
   | { type: 'gx:markClick'; sid: number }
+  /** a resize handle or a sideways image slide was released: the frame already shows these inline styles */
+  | { type: 'gx:resize'; sid: number; styles: Record<string, string> }
+  /** the selected element was dropped next to another one */
+  | { type: 'gx:moveTo'; sid: number; position: 'before' | 'after'; ref_sid: number }
+  /** a resize or reorder drag started / ended (the host hides its chrome meanwhile) */
+  | { type: 'gx:drag'; active: boolean }
 
 export function isFromInspector(data: unknown): data is FromInspector {
   return (

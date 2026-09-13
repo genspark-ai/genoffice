@@ -38,7 +38,7 @@ test.describe('sheets: a CSV keeps its identity through Save', () => {
       openFile: csvSource,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       const a1 = await cellA1(sheets)
@@ -58,7 +58,7 @@ test.describe('sheets: a CSV keeps its identity through Save', () => {
       // Save may be refused politely until the preload finishes — retry.
       await expect(async () => {
         await launched.app.evaluate(({ webContents }) => {
-          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+          const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
           wc?.send('menu:action', 'save')
         })
         const bytes = await readFile(csvSource)

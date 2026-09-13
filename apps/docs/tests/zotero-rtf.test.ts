@@ -9,7 +9,7 @@ describe('Zotero RTF conversion', () => {
   it('decodes Unicode, escaped punctuation, tabs, and paragraph breaks', () => {
     const rtf =
       "{\\rtf1\\ansi\\uc1{\\fonttbl{\\f0 Arial;}}Smith \\'96 Jones\\tab 2024\\par \\u20013?\\u25991?}"
-    expect(zoteroRtfToText(rtf)).toBe('Smith – Jones\t2024\n中文')
+    expect(zoteroRtfToText(rtf)).toBe('Smith \u2013 Jones\t2024\n\u4e2d\u6587')
   })
 
   it('splits bibliography entries joined with Zotero RTF line continuations', () => {

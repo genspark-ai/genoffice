@@ -20,7 +20,7 @@
  * icon set's even percent split) — never to a stop Univer cannot compute,
  * which would leave the rule unpainted.
  */
-import { parseAddress, type RangeBounds } from '../domain/cell-address'
+import { parseAddress, type RangeBounds } from '@genoffice/xlsx-gateway/domain/cell-address'
 
 export interface ScaleCfvo {
   kind: string

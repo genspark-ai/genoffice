@@ -401,4 +401,12 @@ export const cs = {
   dlgFnDescNpv: 'Vrátí čistou současnou hodnotu peněžních toků při dané diskontní sazbě.',
   dlgFnDescIrr: 'Vrátí vnitřní výnosové procento pro sérii peněžních toků.',
   dlgFnCatFinancial: 'Finanční',
+  dlgFnCatDatabase: 'Databáze',
+  dlgFnCatInformation: 'Informace',
+  dlgFnCatEngineering: 'Inženýrské',
+  dlgFnCatCube: 'Krychle',
+  dlgFnCatCompatibility: 'Kompatibilita',
+  dlgFnCatWeb: 'Web',
+  dlgFnCatArray: 'Matice',
+  dlgFnCatOther: 'Ostatní',
 } satisfies Record<keyof typeof zh, string>

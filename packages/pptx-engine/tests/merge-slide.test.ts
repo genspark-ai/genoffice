@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import PptxGenJS from 'pptxgenjs'
-import { openPptx, savePptx, mergeSlideFromPptx } from '../src/index'
+import { openPptx, savePptx, mergeSlideFromPptx, setSlideLayout } from '../src/index'
 
 // 1x1 red-dot PNG (base64)
 const RED_DOT =
@@ -91,5 +91,49 @@ describe('mergeSlideFromPptx', () => {
     const pres = reopened.archive.readText('ppt/presentation.xml') ?? ''
     const sldIds = [...pres.matchAll(/<p:sldId\b/g)].length
     expect(sldIds).toBe(2)
+  })
+})
+
+describe('mergeSlideFromPptx layout anchor', () => {
+  const LAYOUT_TYPE =
+    'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout'
+
+  /** pptxgenjs ships one layout; clone it so the deck has two to tell apart */
+  async function twoLayoutDeck(): Promise<Uint8Array> {
+    const JSZip = (await import('jszip')).default
+    const zip = await JSZip.loadAsync(await onePagePptx('FIRST'))
+    const layout = await zip.file('ppt/slideLayouts/slideLayout1.xml')!.async('string')
+    const rels = await zip.file('ppt/slideLayouts/_rels/slideLayout1.xml.rels')!.async('string')
+    zip.file('ppt/slideLayouts/slideLayout2.xml', layout)
+    zip.file('ppt/slideLayouts/_rels/slideLayout2.xml.rels', rels)
+    const types = await zip.file('[Content_Types].xml')!.async('string')
+    zip.file(
+      '[Content_Types].xml',
+      types.replace(
+        '</Types>',
+        '<Override PartName="/ppt/slideLayouts/slideLayout2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/></Types>',
+      ),
+    )
+    return new Uint8Array(await zip.generateAsync({ type: 'uint8array' }))
+  }
+
+  const layoutOf = (opened: Awaited<ReturnType<typeof openPptx>>, slide: { path: string }) =>
+    [...opened.archive.readRels(slide.path).values()].find((r) => r.type === LAYOUT_TYPE)?.target
+
+  it('takes the layout of the slide it is given instead of the last slide', async () => {
+    const base = await openPptx(await twoLayoutDeck())
+    const second = await mergeSlideFromPptx(base, await onePagePptx('LAST'))
+    expect(second).not.toBeNull()
+    expect(setSlideLayout(base, 1, 'ppt/slideLayouts/slideLayout2.xml')).not.toBeNull()
+    expect(layoutOf(base, base.deck.slides[0])).toBe('../slideLayouts/slideLayout1.xml')
+    expect(layoutOf(base, base.deck.slides[1])).toBe('../slideLayouts/slideLayout2.xml')
+
+    const byDefault = await mergeSlideFromPptx(base, await onePagePptx('DEFAULT'))
+    expect(layoutOf(base, byDefault!)).toBe('../slideLayouts/slideLayout2.xml')
+
+    const anchored = await mergeSlideFromPptx(base, await onePagePptx('ANCHORED'), {
+      layoutFrom: base.deck.slides[0],
+    })
+    expect(layoutOf(base, anchored!)).toBe('../slideLayouts/slideLayout1.xml')
   })
 })

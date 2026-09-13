@@ -61,6 +61,10 @@ export function createImageLoader(apply: ApplyImages, batchSize = 16, delayMs = 
   }
 
   return {
+    /** urls still decoding — 0 means every image the deck asked for has settled */
+    pending(): number {
+      return loading.size
+    },
     load(urls: Iterable<string>) {
       for (const u of urls) {
         if (loaded.has(u) || loading.has(u)) continue

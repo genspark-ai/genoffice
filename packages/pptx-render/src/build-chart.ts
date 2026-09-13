@@ -58,7 +58,12 @@ function chartTextPt(model: ChartModel): number {
 // Modern charts carry a chartStyle part whose label defaults are gray; legacy charts
 // (python-pptx, Office 2007-era) have none and PowerPoint renders their labels black
 function chartLabelDefault(model: ChartModel): string {
-  return model.hasStylePart ? '#666666' : '#000000'
+  return model.defaultTextColor ?? (model.hasStylePart ? '#666666' : '#000000')
+}
+
+/** Line/scatter stroke without an explicit width: legacy no-style-part charts draw 2.25pt (Office 2007 default). */
+function defaultLineWidthPx(model: ChartModel, scale: number): number {
+  return Math.max(1.5, ptToPx(model.hasStylePart ? 1.5 : 2.25, scale))
 }
 
 function shade(color: string, f: number): string {
@@ -171,7 +176,8 @@ export function buildChartNode(
       x: Math.max((box.w - measureTitle(line)) / 2, 4),
       y: titleSizePx * 0.3 + i * titleSizePx * 1.4,
       fontSizePx: titleSizePx,
-      color: model.titleColor ?? (model.hasStylePart ? '#333333' : '#000000'),
+      color:
+        model.titleColor ?? model.defaultTextColor ?? (model.hasStylePart ? '#333333' : '#000000'),
       bold: titleBold,
       ...(model.titleItalic ? { italic: true } : {}),
     })
@@ -932,7 +938,7 @@ function buildChartNodeInner(
       x: cx - measure(text, dlSize) / 2,
       y,
       fontSizePx: dlSize,
-      color: inside ? '#FFFFFF' : dlBold ? '#000000' : '#404040',
+      color: inside ? '#FFFFFF' : (model.defaultTextColor ?? (dlBold ? '#000000' : '#404040')),
       ...(dlBold ? { bold: true } : {}),
     })
   }
@@ -1001,7 +1007,7 @@ function buildChartNodeInner(
     })
   }
   {
-    const lineW = Math.max(1.5, ptToPx(1.5, vp.scale))
+    const lineW = defaultLineWidthPx(model, vp.scale)
     const markerR = Math.max(2, ptToPx(3, vp.scale))
     // Stacked areas accumulate per category; percentStacked normalizes to column totals
     const areaCum: number[] = new Array(n).fill(0)
@@ -2494,7 +2500,7 @@ function buildScatterNode(
   const hasLine = st.startsWith('line') || st.startsWith('smooth')
   const smooth = st.startsWith('smooth')
   const defaultMarker = st !== 'line' && st !== 'smooth' && st !== 'none'
-  const lineW = Math.max(1.5, ptToPx(1.5, vp.scale))
+  const lineW = defaultLineWidthPx(model, vp.scale)
   const markerR = Math.max(2, ptToPx(3, vp.scale))
   // Bubble: largest bubble diameter = 25% of the smaller plot side × bubbleScale%; radius ∝ √size
   const maxBubbleSize = Math.max(
@@ -2538,7 +2544,7 @@ function buildScatterNode(
           x: x + r + 4,
           y: y - labelSizePx * 0.55,
           fontSizePx: labelSizePx * 0.9,
-          color: '#404040',
+          color: model.defaultTextColor ?? '#404040',
         })
       }
       if (ser.dataLabels ?? model.dataLabels) {
@@ -2548,7 +2554,7 @@ function buildScatterNode(
           x: x - measure(text, labelSizePx * 0.9) / 2,
           y: y - labelSizePx * 1.3,
           fontSizePx: labelSizePx * 0.9,
-          color: '#404040',
+          color: model.defaultTextColor ?? '#404040',
         })
       }
     })

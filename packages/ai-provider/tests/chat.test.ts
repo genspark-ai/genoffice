@@ -161,6 +161,23 @@ describe('chatForProvider', () => {
     ).toBeUndefined()
   })
 
+  it('opencode: a one-shot call gets its own x-opencode-session', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await chatForProvider('opencode-go', { apiKey: 'k', model: 'kimi-k2.7-code' }, 'sys', 'hi')
+    await chatForProvider('opencode-go', { apiKey: 'k', model: 'kimi-k2.7-code' }, 'sys', 'hi')
+    const first = (fetchMock.mock.calls[0]![1].headers as Record<string, string>)[
+      'x-opencode-session'
+    ]
+    const second = (fetchMock.mock.calls[1]![1].headers as Record<string, string>)[
+      'x-opencode-session'
+    ]
+    expect(first).toMatch(/^[0-9a-f-]{36}$/)
+    expect(second).not.toBe(first)
+  })
+
   it('treats an empty response body as an error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ choices: [{ message: {} }] })))
     const result = await chatForProvider(

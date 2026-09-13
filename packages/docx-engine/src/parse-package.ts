@@ -222,37 +222,71 @@ function parseNumberingLevel(lvlNode: XNode): NumberingLevel {
   if (customFormat) level.customFormat = customFormat
   const suff = attrsOf(findChild(lvlNode, 'w:suff') ?? {})['w:val']
   if (suff === 'space' || suff === 'nothing' || suff === 'tab') level.suff = suff
+  const isLgl = findChild(lvlNode, 'w:isLgl')
+  if (isLgl && !['0', 'false', 'off'].includes(attrsOf(isLgl)['w:val'] ?? '')) level.isLgl = true
+  const lvlJc = attrsOf(findChild(lvlNode, 'w:lvlJc') ?? {})['w:val']
+  if (lvlJc === 'right' || lvlJc === 'end') level.lvlJc = 'right'
+  else if (lvlJc === 'center') level.lvlJc = 'center'
   const lvlPPr = findChild(lvlNode, 'w:pPr')
   const ind = lvlPPr ? findChild(lvlPPr, 'w:ind') : undefined
   if (ind) {
     const attrs = attrsOf(ind)
+    // an explicit 0 is a real value: left="0" firstLine="0" puts the marker at the
+    // margin with no hanging area (Word then tabs to the next default stop)
     const left = parseInt(attrs['w:left'] ?? attrs['w:start'] ?? '', 10)
-    if (left > 0) level.indentLeft = left
+    if (left >= 0) level.indentLeft = left
     const hanging = parseInt(attrs['w:hanging'] ?? '', 10)
     if (hanging > 0) level.hanging = hanging
     const firstLine = parseInt(attrs['w:firstLine'] ?? '', 10)
-    if (!level.hanging && firstLine > 0) level.firstLine = firstLine
+    if (!level.hanging && firstLine >= 0) level.firstLine = firstLine
   }
   const lvlRPr = findChild(lvlNode, 'w:rPr')
   const sz = lvlRPr ? parseInt(attrsOf(findChild(lvlRPr, 'w:sz') ?? {})['w:val'] ?? '', 10) : NaN
   if (sz > 0) level.szHalfPoints = sz
+  const color = lvlRPr ? attrsOf(findChild(lvlRPr, 'w:color') ?? {})['w:val'] : undefined
+  if (color && /^[0-9a-f]{6}$/i.test(color)) level.color = color.toUpperCase()
   const fonts = lvlRPr ? attrsOf(findChild(lvlRPr, 'w:rFonts') ?? {}) : {}
   const font = fonts['w:ascii'] ?? fonts['w:hAnsi'] ?? fonts['w:eastAsia']
   if (font) level.font = font
+  const picId = parseInt(attrsOf(findChild(lvlNode, 'w:lvlPicBulletId') ?? {})['w:val'] ?? '', 10)
+  if (Number.isFinite(picId)) level.picBulletId = picId
   return level
 }
 
+/** image relationship id inside a w:numPicBullet (VML v:imagedata or DrawingML a:blip) */
+function picBulletRId(node: XNode): string | undefined {
+  for (const child of childrenOf(node)) {
+    if ('#text' in child) continue
+    const name = nameOf(child)
+    if (name === 'v:imagedata') return attrsOf(child)['r:id']
+    if (name === 'a:blip') return attrsOf(child)['r:embed']
+    const nested = picBulletRId(child)
+    if (nested) return nested
+  }
+  return undefined
+}
+
 /** word/numbering.xml -> per-numId level definitions + the bullet/ordered classification */
-export async function parseNumbering(
-  zip: JSZip,
-): Promise<{ formats: Map<string, 'bullet' | 'ordered'>; defs: Map<string, NumberingDef> }> {
+export async function parseNumbering(zip: JSZip): Promise<{
+  formats: Map<string, 'bullet' | 'ordered'>
+  defs: Map<string, NumberingDef>
+  /** w:numPicBulletId -> image relationship id (relative to word/_rels/numbering.xml.rels) */
+  picBullets: Map<number, string>
+}> {
   const formats = new Map<string, 'bullet' | 'ordered'>()
   const defs = new Map<string, NumberingDef>()
+  const picBullets = new Map<number, string>()
   const file = zip.file('word/numbering.xml')
-  if (!file) return { formats, defs }
+  if (!file) return { formats, defs, picBullets }
   const parsed = xmlParser.parse(await file.async('string')) as XNode[]
   const root = parsed.find((n) => nameOf(n) === 'w:numbering')
-  if (!root) return { formats, defs }
+  if (!root) return { formats, defs, picBullets }
+
+  for (const pic of findChildren(root, 'w:numPicBullet')) {
+    const id = parseInt(attrsOf(pic)['w:numPicBulletId'] ?? '', 10)
+    const rId = picBulletRId(pic)
+    if (Number.isFinite(id) && rId) picBullets.set(id, rId)
+  }
 
   const absLevels = new Map<string, Record<number, NumberingLevel>>()
   const numStyleLinks = new Map<string, string>()
@@ -307,5 +341,5 @@ export async function parseNumbering(
     defs.set(numId, { numId, abstractNumId: absId, levels, startOverrides })
     formats.set(numId, levels[0]?.numFmt === 'bullet' ? 'bullet' : 'ordered')
   }
-  return { formats, defs }
+  return { formats, defs, picBullets }
 }

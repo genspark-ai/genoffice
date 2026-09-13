@@ -171,7 +171,9 @@ pub fn read_styles(
 }
 
 /// Differential (dxf) styles referenced by conditional-formatting rules.
-/// Solid dxf fills carry the color in bgColor, unlike cell fills.
+/// Solid dxf fills carry the color in bgColor, unlike cell fills; a dxf
+/// gradientFill gets the same flat blend as a gradient cell fill because the
+/// highlight style has one background color.
 pub(crate) fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
     let font = dxf
         .children()
@@ -182,9 +184,12 @@ pub(crate) fn parse_dxf(dxf: Node<'_, '_>, colors: &ColorContext) -> CellStyle {
         .children()
         .find(|node| node.has_tag_name("fill"))
         .and_then(|fill| {
-            let pattern = fill
+            let Some(pattern) = fill
                 .children()
-                .find(|node| node.has_tag_name("patternFill"))?;
+                .find(|node| node.has_tag_name("patternFill"))
+            else {
+                return parse_gradient_fill(fill, colors).color;
+            };
             pattern
                 .children()
                 .find(|node| node.has_tag_name("bgColor"))

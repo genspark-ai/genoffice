@@ -5,7 +5,7 @@ import {
   applySheetProtection,
   applyWorkbookProtection,
   SheetProtectionError,
-} from '../src/gateway/xlsx-protection'
+} from '@genoffice/xlsx-gateway/gateway/xlsx-protection'
 
 const BARE = '<worksheet><sheetData/><autoFilter ref="A1:C4"/></worksheet>'
 

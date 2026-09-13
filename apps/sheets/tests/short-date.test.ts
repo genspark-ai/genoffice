@@ -6,7 +6,7 @@ import {
   setSystemShortDate,
   shortDateNumFmtId,
   shortDatePatternForSystemLocale,
-} from '../src/shared/short-date'
+} from '@genoffice/xlsx-gateway/shared/short-date'
 
 describe('shortDatePatternForSystemLocale', () => {
   it.each([

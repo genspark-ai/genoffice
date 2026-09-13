@@ -27,12 +27,26 @@ html.genoffice-popover-open .tab-bar {
 
 /* room for the macOS traffic lights (titleBarStyle: hiddenInset) */
 .tab-bar-drag-spacer {
-  width: 0;
+  width: 78px;
   flex-shrink: 0;
 }
 
-body.vib .tab-bar-drag-spacer {
-  width: 78px;
+/* desktops that put the window controls on the leading edge (some Linux
+   layouts) report them as titlebar-area-x; keep the menu button clear */
+body.overlay-title-bar .tab-bar-drag-spacer {
+  width: max(8px, env(titlebar-area-x, 0px));
+}
+
+/* Windows/Linux caption buttons are drawn over the strip's right end
+   (titleBarOverlay); the Window Controls Overlay env vars give their width,
+   and resolve to 0 where the overlay is absent */
+.tab-bar-caption-spacer {
+  flex-shrink: 0;
+  width: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+.tab-app-menu-btn {
+  margin-right: 2px;
 }
 
 /* scrollable middle section; empty space stays part of the window drag region.
@@ -259,7 +273,8 @@ body.vib .tab-bar-drag-spacer {
 }
 
 .tab-new-btn,
-.tab-overflow-btn {
+.tab-overflow-btn,
+.tab-app-menu-btn {
   -webkit-app-region: no-drag;
   position: relative;
   flex-shrink: 0;
@@ -277,7 +292,8 @@ body.vib .tab-bar-drag-spacer {
 }
 
 .tab-new-btn:hover,
-.tab-overflow-btn:hover {
+.tab-overflow-btn:hover,
+.tab-app-menu-btn:hover {
   background: rgba(0, 0, 0, 0.08);
 }
 
@@ -307,7 +323,8 @@ body.vib .tab-bar-drag-spacer {
 }
 
 [data-theme='dark'] .tab-new-btn:hover,
-[data-theme='dark'] .tab-overflow-btn:hover {
+[data-theme='dark'] .tab-overflow-btn:hover,
+[data-theme='dark'] .tab-app-menu-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
@@ -329,7 +346,8 @@ body.vib .tab-bar-drag-spacer {
     background: rgba(255, 255, 255, 0.12);
   }
   :root:not([data-theme='light']):not([data-theme='dark']) .tab-new-btn:hover,
-  :root:not([data-theme='light']):not([data-theme='dark']) .tab-overflow-btn:hover {
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-overflow-btn:hover,
+  :root:not([data-theme='light']):not([data-theme='dark']) .tab-app-menu-btn:hover {
     background: rgba(255, 255, 255, 0.1);
   }
 }

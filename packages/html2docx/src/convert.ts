@@ -17,6 +17,9 @@ export interface ConvertOptions {
   traceSelector?: string
   /** Debug: receives the extracted IR and trace probes before generation. */
   onIr?: (ir: any[], trace: unknown[]) => void
+  /** Keep tables at their rendered width instead of filling the content
+   *  width (how Word lays out imported HTML chunks). */
+  naturalTableWidth?: boolean
 }
 
 export interface ConvertResult {
@@ -487,7 +490,9 @@ export async function convertHtmlToDocx(
   throwIfAborted(signal)
   log('[html2docx] generating docx')
   progress('generate', 0)
-  const docx = new Uint8Array(await generateDocx(ir, images))
+  const docx = new Uint8Array(
+    await generateDocx(ir, images, { naturalTableWidth: options.naturalTableWidth }),
+  )
   log(`[html2docx] generated ${docx.length} bytes`)
   progress('generate', 100)
   return {

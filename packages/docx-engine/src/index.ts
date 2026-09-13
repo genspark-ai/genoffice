@@ -1,7 +1,10 @@
 export * from './types'
 export { deobfuscateOdttf, isSfnt, parseFontTable, readEmbeddedFonts } from './font-table'
 export { decodeEntities } from './parse-xml-text'
-export { parseDocx, styleRunFormat, type ParseExtras } from './parse'
+export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
+export { parseDocx, styleRunFormat, type ParseExtras, type ParseOptions } from './parse'
+export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
+export { tocLevelOf } from './parse-fields'
 export {
   saveDocx,
   findChartWorkbookPath,
@@ -89,6 +92,7 @@ export {
   readSections,
   readSectionSettings,
   sectionSettingsFromXml,
+  notePropsFromXml,
 } from './section'
 export { nextNoteId, parseNotesXml, type NoteKind } from './notes'
 export { readWatermarkText } from './watermark'
@@ -103,7 +107,14 @@ export { bibliographyLine, citationText, parseSourcesXml } from './sources'
 export { parseZoteroDocumentDataXml, patchZoteroDocumentDataXml } from './zotero-doc-props'
 export { readThemeColors, readThemeFonts } from './theme'
 export { hashProtectionPassword, verifyProtectionPassword } from './protection'
-export { decodeSymbolChar, decodeSymbolText, isSymbolFont, toSymbolPua } from './symbol-fonts'
+export {
+  decodeSymbolChar,
+  decodeSymbolText,
+  isSymbolFont,
+  symbolGlyph,
+  symbolPuaChar,
+  toSymbolPua,
+} from './symbol-fonts'
 export {
   bulletMarkerScale,
   computeListMarkerInfos,

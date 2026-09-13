@@ -103,6 +103,18 @@ describe.runIf(mac)(
       expect(m.measure('Hello', style('Arial'))).toBeGreaterThan(100)
     })
 
+    it('geometric bullets a face lacks draw and measure in Arial (PowerPoint symbol fallback)', () => {
+      // Arial Rounded MT Bold ships with macOS and has • but no ● / ■
+      const rounded = style('Arial Rounded MT Bold')
+      expect(m.displayFamily!(rounded, 'a')).toMatch(/Arial Rounded/)
+      expect(m.displayFamily!(rounded, '•')).toMatch(/Arial Rounded/)
+      expect(m.displayFamily!(rounded, '●')).toBe('Arial')
+      expect(m.displayFamily!(rounded, '■')).toBe('Arial')
+      expect(m.measure('●', rounded)).toBeCloseTo(m.measure('●', style('Arial')), 5)
+      // Text that mixes letters in keeps the OS fallback like before
+      expect(m.displayFamily!(rounded, '●a')).toMatch(/Arial Rounded/)
+    })
+
     it.runIf(office)('Meiryo UI picks the UI face out of meiryo.ttc, not plain Meiryo', () => {
       expect(m.displayFamily!(style('Meiryo UI'))).toBe('Meiryo UI')
       expect(m.displayFamily!(style('Meiryo UI', { bold: true }))).toBe('Meiryo UI')

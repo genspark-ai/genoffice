@@ -210,3 +210,38 @@ describe('tracked lines with inflated glyph boxes (P30 C)', () => {
     expect(texts(groupIntoWords(chars))).toEqual(['Wimm'])
   })
 })
+
+describe('fabricated spaces against the line’s real word gaps', () => {
+  /** "THE ARCHITECTURAL" as a tracked eyebrow label: 12pt caps on a 15.5pt pitch
+   * (0.29 em of air inside each advance), PDFium fabricating a space at every
+   * letter, real space glyphs (13pt gap) between the words */
+  function trackedLabel(): ReturnType<typeof mkChar>[] {
+    const chars: ReturnType<typeof mkChar>[] = []
+    let x = 100
+    const put = (word: string) => {
+      for (const [i, ch] of [...word].entries()) {
+        if (i > 0) chars.push(mkChar(' ', x - 3.5, { width: 0, isGenerated: true }))
+        chars.push(mkChar(ch, x, { fontSize: 12, width: 12 }))
+        x += 15.5
+      }
+    }
+    put('THE')
+    chars.push(mkChar(' ', x, { fontSize: 12, width: 13 }))
+    x += 13 + 12
+    put('ARCHITECTURAL')
+    return chars
+  }
+
+  it('drops fabricated spaces narrower than half the real word gap', () => {
+    expect(texts(groupIntoWords(trackedLabel()))).toEqual(['THE', 'ARCHITECTURAL'])
+  })
+
+  it('a CJK↔Latin real space sets no floor: "data security" keeps its word gap', () => {
+    const zh = mkText('\u6570\u636e\u5b89\u5168', 72, { fontSize: 10, width: 10 })
+    const latin = mkText('data security', 72 + 4 * 10 + 10, { fontSize: 10 })
+    // the only real space glyph sits between the CJK term and its Latin gloss
+    const gap = mkChar(' ', 72 + 4 * 10, { fontSize: 10, width: 10 })
+    const words = groupIntoWords([...zh.chars, gap, ...latin.chars])
+    expect(texts(words)).toEqual(expect.arrayContaining(['data', 'security']))
+  })
+})

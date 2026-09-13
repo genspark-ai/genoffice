@@ -226,4 +226,193 @@ describe('ZoteroDocumentController', () => {
         ?.marks?.some((mark) => mark.type === 'italic'),
     ).toBe(true)
   })
+
+  it('answers Zotero alerts with the button index Zotero expects', async () => {
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions,
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    })
+    const controller = new ZoteroDocumentController(editor, { get: () => '', set: () => {} })
+    const call = (command: string, args: unknown[]) =>
+      controller.handle({ requestId: 'test', command, args })
+    const confirm = window.confirm
+    try {
+      window.confirm = () => true
+      expect(await call('Document_displayAlert', [1, 'Replace?', 2, 3])).toBe(2)
+      expect(await call('Document_displayAlert', [1, 'Continue?', 2, 1])).toBe(1)
+      window.confirm = () => false
+      expect(await call('Document_displayAlert', [1, 'Replace?', 2, 3])).toBe(0)
+    } finally {
+      window.confirm = confirm
+    }
+  })
+
+  it('inserts Zotero text literally instead of parsing it as HTML', async () => {
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions,
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    })
+    const controller = new ZoteroDocumentController(editor, { get: () => '', set: () => {} })
+    await controller.handle({
+      requestId: 'test',
+      command: 'Document_insertText',
+      args: [1, '{\\rtf1 x <b>bold</b> & y}'],
+    })
+    expect(editor.getText()).toBe('x <b>bold</b> & y')
+  })
+
+  it('keeps the text around a field whose new result spans paragraphs', async () => {
+    const mark = {
+      type: 'instrField',
+      attrs: { instr: 'ADDIN ZOTERO_BIBL {} CSL_BIBLIOGRAPHY', fieldId: 7, fieldPart: 'single' },
+    }
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: 'References: ' },
+              { type: 'text', text: '(pending)', marks: [mark] },
+              { type: 'text', text: ' trailing.' },
+            ],
+          },
+        ],
+      },
+    })
+    const controller = new ZoteroDocumentController(editor, { get: () => '', set: () => {} })
+    await controller.handle({
+      requestId: 'test',
+      command: 'Field_setText',
+      args: [1, 7, '{\\rtf1 Alpha\\par Beta}', true],
+    })
+    expect(editor.state.doc.content.content.map((block) => block.textContent)).toEqual([
+      'References: Alpha',
+      'Beta trailing.',
+    ])
+    const blocks = (editor.getJSON().content ?? []) as TestJsonNode[]
+    const parts = blocks.flatMap((block) =>
+      (block.content ?? [])
+        .map((node) => node.marks?.find((m) => m.type === 'instrField')?.attrs?.fieldPart)
+        .filter(Boolean),
+    )
+    expect(parts).toEqual(['begin', 'end'])
+    expect(
+      await controller.handle({ requestId: 'test', command: 'Field_getText', args: [1, 7] }),
+    ).toBe('Alpha\nBeta')
+  })
+
+  it('writes ids back onto pasted fields so later Field_ calls resolve', async () => {
+    const instr = 'ADDIN ZOTERO_BIBL {} CSL_BIBLIOGRAPHY'
+    const lost = { type: 'instrField', attrs: { instr } }
+    const other = { type: 'instrField', attrs: { instr: 'ADDIN ZOTERO_ITEM CSL_CITATION {}' } }
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions,
+      content: {
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'Alpha', marks: [lost] }] },
+          { type: 'paragraph', content: [{ type: 'text', text: 'Beta', marks: [lost] }] },
+          { type: 'paragraph', content: [{ type: 'text', text: '(Doe)', marks: [other] }] },
+        ],
+      },
+    })
+    const controller = new ZoteroDocumentController(editor, { get: () => '', set: () => {} })
+    const call = (command: string, args: unknown[]) =>
+      controller.handle({ requestId: 'test', command, args })
+    const [ids] = (await call('Document_getFields', [1, 'ReferenceMark'])) as [number[]]
+    expect(ids).toHaveLength(2)
+    expect(await call('Document_getFields', [1, 'ReferenceMark'])).toEqual(
+      expect.arrayContaining([ids]),
+    )
+    expect(await call('Field_getText', [1, ids[0]])).toBe('Alpha\nBeta')
+    expect(await call('Field_getText', [1, ids[1]])).toBe('(Doe)')
+    const blocks = (editor.getJSON().content ?? []) as TestJsonNode[]
+    expect(blocks.map((block) => block.content?.[0]?.marks?.[0]?.attrs?.fieldPart)).toEqual([
+      'begin',
+      'end',
+      'single',
+    ])
+  })
+
+  it('deletes a field spanning paragraphs without the text around it', async () => {
+    const attrs = { instr: 'ADDIN ZOTERO_BIBL {} CSL_BIBLIOGRAPHY', fieldId: 9 }
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: 'References: ' },
+              {
+                type: 'text',
+                text: 'Alpha',
+                marks: [{ type: 'instrField', attrs: { ...attrs, fieldPart: 'begin' } }],
+              },
+            ],
+          },
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: 'Beta',
+                marks: [{ type: 'instrField', attrs: { ...attrs, fieldPart: 'end' } }],
+              },
+              { type: 'text', text: ' trailing.' },
+            ],
+          },
+        ],
+      },
+    })
+    const controller = new ZoteroDocumentController(editor, { get: () => '', set: () => {} })
+    const call = (command: string, args: unknown[]) =>
+      controller.handle({ requestId: 'test', command, args })
+    editor.commands.setTextSelection(3)
+    expect(await call('Document_cursorInField', [1])).toBeNull()
+    editor.commands.setTextSelection(15)
+    expect(await call('Document_cursorInField', [1])).toEqual([9, expect.any(String), 0])
+    await call('Field_delete', [1, 9])
+    expect(editor.state.doc.content.content.map((block) => block.textContent)).toEqual([
+      'References:  trailing.',
+    ])
+  })
+
+  it('keeps two pasted copies of a citation apart when text sits between them', async () => {
+    const lost = { type: 'instrField', attrs: { instr: 'ADDIN ZOTERO_ITEM CSL_CITATION {}' } }
+    editor = new Editor({
+      element: document.createElement('div'),
+      extensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              { type: 'text', text: '(Doe)', marks: [lost] },
+              { type: 'text', text: ' and again ' },
+              { type: 'text', text: '(Doe)', marks: [lost] },
+            ],
+          },
+        ],
+      },
+    })
+    const controller = new ZoteroDocumentController(editor, { get: () => '', set: () => {} })
+    const [ids] = (await controller.handle({
+      requestId: 'test',
+      command: 'Document_getFields',
+      args: [1, 'ReferenceMark'],
+    })) as [number[]]
+    expect(ids).toHaveLength(2)
+    expect(editor.getText()).toBe('(Doe) and again (Doe)')
+  })
 })

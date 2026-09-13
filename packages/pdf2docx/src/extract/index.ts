@@ -120,6 +120,35 @@ export interface ExtractOptions {
 const BAD_UNICODE_RATIO = 0.15
 /** minimum sample size before the bad-unicode ratio is trusted */
 const BAD_UNICODE_MIN_CHARS = 10
+// ── mojibake gate ──
+// A ToUnicode map that is present but WRONG yields real code points, so the
+// U+FFFD/PUA ratio above never fires: a Type3 font with a bogus map voices
+// CJK as "¯?vxwn~·Ï¯¿²xvå", UTF-8 CJK read as Latin-1 as "å¤§æ–‡æœ¬". Both
+// pile up Latin-1 symbols (¯ ¿ ² » ¾, U+00A0–00BF) next to accented letters
+// (U+00C0–00FF) in shares no real language reaches: measured 0.10–0.35 and
+// 0.15–0.37 on the broken pages, ≤0.05 symbols on every legitimate page
+// (Korean dot-leader TOCs score 0.87 symbols but 0 accents).
+/** minimum sample before the mojibake shares mean anything */
+const MOJIBAKE_MIN_CHARS = 40
+/** share of U+00A0–00BF symbol code points */
+const MOJIBAKE_SYMBOL_SHARE = 0.08
+/** share of U+00C0–00FF accented letters */
+const MOJIBAKE_ACCENT_SHARE = 0.15
+
+/** text whose decoded code points cannot be a real language (see above) */
+export function looksLikeMojibake(codes: readonly number[]): boolean {
+  if (codes.length < MOJIBAKE_MIN_CHARS) return false
+  let symbols = 0
+  let accents = 0
+  for (const code of codes) {
+    if (code >= 0xa0 && code <= 0xbf) symbols++
+    else if (code >= 0xc0 && code <= 0xff) accents++
+  }
+  return (
+    symbols / codes.length >= MOJIBAKE_SYMBOL_SHARE &&
+    accents / codes.length >= MOJIBAKE_ACCENT_SHARE
+  )
+}
 /** |angle| above this (radians, ~15°) counts a char as rotated/vertical */
 const ANGLED_CHAR_RAD = 0.26
 /** share of rotated chars that triggers the vertical-text fallback */
@@ -506,6 +535,9 @@ function readImages(
   /** pre-extraction drop test — skipping here saves the decode itself (P28):
    * a searchable scan's page-covering tiles would only be filtered out again */
   skipBox?: (box: Rect) => boolean,
+  /** page /Rotate in quarter turns: GetRenderedBitmap ignores it, so the pixels
+   * turn here to land upright in the display-space box (P27) */
+  rotation = 0,
 ): ExtractedImage[] {
   const images: ExtractedImage[] = []
   const count = m._FPDFPage_CountObjects(page)
@@ -612,7 +644,7 @@ function readImages(
           bottom: (cropBox.y0 - box.y0) / (box.y1 - box.y0),
         }
       : null
-    const image = extractImagePayload(m, doc, page, obj, box, crop, alpha)
+    const image = extractImagePayload(m, doc, page, obj, box, crop, alpha, rotation)
     if (image) images.push({ ...image, ...(cropBox ? { box: cropBox } : {}), z })
   }
   try {
@@ -775,6 +807,7 @@ function extractImagePayload(
   box: Rect,
   crop: CropWindow | null = null,
   gsAlpha = 255,
+  rotation = 0,
 ): ExtractedImage | null {
   const [naturalW, naturalH] = withAlloc(m, 8, (p) => {
     return m._FPDFImageObj_GetImagePixelSize(obj, p, p + 4)
@@ -793,7 +826,7 @@ function extractImagePayload(
   // not raw JPEG, and transparent JPEGs must carry their mask via PNG; a
   // cropped or constant-alpha-washed image needs pixel surgery — P34.)
   const filters = imageFilters(m, obj)
-  const needsSurgery = crop !== null || gsAlpha < IMAGE_OPAQUE_ALPHA
+  const needsSurgery = crop !== null || gsAlpha < IMAGE_OPAQUE_ALPHA || rotation !== 0
   if (!transparent && !needsSurgery && filters.length === 1 && filters[0] === 'DCTDecode') {
     const raw = tryRawJpeg(m, obj, box, naturalW, naturalH)
     if (raw) return raw
@@ -802,10 +835,13 @@ function extractImagePayload(
   if (!px) return null
   // PNG-payload image rendered well below its natural resolution → re-render
   // scaled up so the PNG keeps the source detail (the raw passthrough above
-  // already carries full resolution for eligible JPEGs)
-  if (naturalW > px.width * RERENDER_MIN_GAIN && naturalH > 0) {
+  // already carries full resolution for eligible JPEGs). Either axis counts:
+  // a scan drawn with a quarter-turn matrix maps its tall side onto the
+  // device width, and judging the width alone halved its resolution.
+  const gain = Math.max(naturalW / Math.max(1, px.width), naturalH / Math.max(1, px.height))
+  if (gain > RERENDER_MIN_GAIN) {
     const scale = Math.min(
-      naturalW / Math.max(1, px.width),
+      gain,
       RERENDER_MAX_PX / Math.max(1, px.width),
       RERENDER_MAX_PX / Math.max(1, px.height),
     )
@@ -821,6 +857,7 @@ function extractImagePayload(
     const rgba = px.rgba
     for (let i = 3; i < rgba.length; i += 4) rgba[i] = (rgba[i]! * gsAlpha + 127) >> 8
   }
+  if (rotation !== 0) px = rotateRgbaQuarter(px, rotation)
   return {
     box,
     data: encodeRgbaPng(px.rgba, px.width, px.height),
@@ -956,6 +993,32 @@ interface CropWindow {
   top: number
   right: number
   bottom: number
+}
+
+/** rotate a bitmap by `turns` clockwise quarter turns (PDF /Rotate semantics) */
+export function rotateRgbaQuarter(
+  px: { rgba: Uint8Array; width: number; height: number },
+  turns: number,
+): { rgba: Uint8Array; width: number; height: number } {
+  const t = ((turns % 4) + 4) % 4
+  if (t === 0) return px
+  const { width: w, height: h, rgba } = px
+  const ow = t === 2 ? w : h
+  const oh = t === 2 ? h : w
+  const out = new Uint8Array(rgba.length)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ox = t === 1 ? h - 1 - y : t === 2 ? w - 1 - x : y
+      const oy = t === 1 ? x : t === 2 ? h - 1 - y : w - 1 - x
+      const si = (y * w + x) * 4
+      const di = (oy * ow + ox) * 4
+      out[di] = rgba[si]!
+      out[di + 1] = rgba[si + 1]!
+      out[di + 2] = rgba[si + 2]!
+      out[di + 3] = rgba[si + 3]!
+    }
+  }
+  return { rgba: out, width: ow, height: oh }
 }
 
 /** crop an RGBA render to a fractional window (row 0 = page-space top) */
@@ -1925,6 +1988,76 @@ export function renderPageByIndexPng(
   }
 }
 
+type FormProfile = 'empty' | 'text' | 'paint' | 'mixed'
+
+/** what a form XObject draws: only text (strippable whole), only paint, or a mix */
+function formTextProfile(m: PdfiumModule, form: number, depth = 0): FormProfile {
+  if (
+    depth > 3 ||
+    typeof m._FPDFFormObj_CountObjects !== 'function' ||
+    typeof m._FPDFFormObj_GetObject !== 'function'
+  ) {
+    return 'mixed'
+  }
+  let text = false
+  let paint = false
+  const children = m._FPDFFormObj_CountObjects(form)
+  for (let i = 0; i < children; i++) {
+    const child = m._FPDFFormObj_GetObject(form, i)
+    if (!child) continue
+    const type = m._FPDFPageObj_GetType(child)
+    if (type === FPDF_PAGEOBJ_TEXT) text = true
+    else if (type === FPDF_PAGEOBJ_FORM) {
+      const sub = formTextProfile(m, child, depth + 1)
+      if (sub === 'mixed') return 'mixed'
+      if (sub === 'text') text = true
+      else if (sub === 'paint') paint = true
+    } else if (type === FPDF_PAGEOBJ_PATH) {
+      // clip-only paths draw nothing (text clipped to its box is still text-only)
+      if (withAlloc(m, 16, (scratch) => pathPaintsInk(m, child, scratch))) paint = true
+    } else paint = true
+    if (text && paint) return 'mixed'
+  }
+  if (text) return 'text'
+  return paint ? 'paint' : 'empty'
+}
+
+/**
+ * Render a second instance of the page with every text object removed: the
+ * absolute-layout graphics-lost remedy paints this under the editable text
+ * boxes instead of collapsing the page to one bitmap. Text-only form XObjects
+ * go with the text; a form mixing text with paint cannot be split through the
+ * public API — such pages return null and the caller keeps the whole-page
+ * bitmap rather than doubling the text.
+ */
+export function renderPageWithoutTextPng(
+  m: PdfiumModule,
+  doc: number,
+  pageIndex: number,
+  scale: number,
+): PageRender | null {
+  const page = m._FPDF_LoadPage(doc, pageIndex)
+  if (!page) return null
+  try {
+    const total = m._FPDFPage_CountObjects(page)
+    for (let i = total - 1; i >= 0; i--) {
+      const obj = m._FPDFPage_GetObject(page, i)
+      if (!obj) continue
+      const type = m._FPDFPageObj_GetType(obj)
+      let strip = type === FPDF_PAGEOBJ_TEXT
+      if (type === FPDF_PAGEOBJ_FORM) {
+        const profile = formTextProfile(m, obj)
+        if (profile === 'mixed') return null
+        strip = profile === 'text'
+      }
+      if (strip && m._FPDFPage_RemoveObject(page, obj)) m._FPDFPageObj_Destroy(obj)
+    }
+    return renderPagePng(m, page, scale)
+  } finally {
+    m._FPDF_ClosePage(page)
+  }
+}
+
 function probeStructTree(m: PdfiumModule, page: number): boolean {
   const tree = m._FPDF_StructTree_GetForPage(page)
   if (!tree) return false
@@ -1960,7 +2093,7 @@ function assessQuality(
   void rotation
 
   if (textChars.length >= BAD_UNICODE_MIN_CHARS) {
-    if (badUnicodeRatio > BAD_UNICODE_RATIO) {
+    if (badUnicodeRatio > BAD_UNICODE_RATIO || looksLikeMojibake(textChars.map((c) => c.code))) {
       return { degraded: true, reason: 'bad-tounicode', scanned: false, badUnicodeRatio }
     }
     const angled = textChars.filter((c) => Math.abs(c.angle) > ANGLED_CHAR_RAD).length
@@ -2382,7 +2515,7 @@ export function extractPage(
       intersectArea(box, { x0: 0, y0: 0, x1: widthPt, y1: heightPt }) / pageAreaRaw >=
         OCR_SCAN_IMAGE_COVER
     const ocrSkip = ocrTextRecovered ? coversPage : undefined
-    let images = readImages(m, doc, page, bgActive ? bgStack.count : 0, ocrSkip)
+    let images = readImages(m, doc, page, bgActive ? bgStack.count : 0, ocrSkip, rotation)
     const patternFills = readPatternFills(
       m,
       doc,

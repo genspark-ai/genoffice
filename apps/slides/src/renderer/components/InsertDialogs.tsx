@@ -252,3 +252,63 @@ export function EquationDialog({ onInsert, onClose }: EquationDialogProps) {
     </div>
   )
 }
+
+// ── Insert table (explicit size beyond the 8×10 hover grid) ──────────────
+
+const MAX_TABLE_SIDE = 50
+
+export function TableInsertDialog({
+  onInsert,
+  onClose,
+}: {
+  onInsert: (rows: number, cols: number) => void
+  onClose: () => void
+}) {
+  const { t } = useI18n()
+  const [cols, setCols] = useState(5)
+  const [rows, setRows] = useState(2)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const insert = () => onInsert(rows, cols)
+
+  const countInput = (label: string, value: number, set: (v: number) => void, focus = false) => (
+    <label>
+      {label}
+      <input
+        type="number"
+        min={1}
+        max={MAX_TABLE_SIDE}
+        value={value}
+        autoFocus={focus}
+        onChange={(e) => {
+          const v = Math.round(Number(e.target.value))
+          set(Number.isFinite(v) ? Math.min(MAX_TABLE_SIDE, Math.max(1, v)) : 1)
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && insert()}
+      />
+    </label>
+  )
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>{t('ribbonTableInsertDialog')}</h2>
+        <div className="dlg-two-col">
+          {countInput(t('ribbonTableColsLabel'), cols, setCols, true)}
+          {countInput(t('ribbonTableRowsLabel'), rows, setRows)}
+        </div>
+        <div className="modal-actions">
+          <button onClick={onClose}>{t('ribbonCancel')}</button>
+          <button className="primary" onClick={insert}>
+            {t('ribbonOk')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

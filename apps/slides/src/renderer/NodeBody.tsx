@@ -23,13 +23,18 @@ import type {
 import {
   featheredImage,
   featheredShapeCanvas,
+  clippedImageCanvas,
   fillToKonva,
+  hasBlipEffects,
+  imageHasAlpha,
+  imageShadowCanvas,
   processedImage,
   processedImageKey,
   flatColorImage,
   isDegenerateImage,
   strokeToKonva,
   shadowToKonva,
+  tracePictureClip,
   isOverlayShadow,
   shapeShadowOverlay,
   type ShadowGeom,
@@ -130,17 +135,11 @@ export const NodeBody = React.memo(function NodeBody({
   if (node.type === 'picture') {
     const pic = node as PictureRenderNode
     const rawImg = pic.dataUrl ? images.get(pic.dataUrl) : undefined
-    // clrChange/duotone recolor the pixels; the derived key keeps processed variants out of raw cache slots
-    const srcKey = processedImageKey(pic.dataUrl ?? '', pic.clrChange, pic.duotone, pic.lum)
+    // recolor effects change the pixels; the derived key keeps processed variants out of raw cache slots
+    const srcKey = processedImageKey(pic.dataUrl ?? '', pic)
     const procImg =
-      rawImg && (pic.clrChange || pic.duotone || pic.lum)
-        ? (processedImage(
-            rawImg,
-            pic.dataUrl ?? '',
-            pic.clrChange,
-            pic.duotone,
-            pic.lum,
-          ) as HTMLImageElement)
+      rawImg && hasBlipEffects(pic)
+        ? (processedImage(rawImg, pic.dataUrl ?? '', pic) as HTMLImageElement)
         : rawImg
     // ≤2×2 pictures stretch to one flat color in PowerPoint (crop is meaningless there)
     const tiny = !!procImg && isDegenerateImage(procImg)
@@ -199,6 +198,15 @@ export const NodeBody = React.memo(function NodeBody({
       // shadow/glow is cast by an opaque backing shape (the image exactly covers it, so no color shows through)
       const shadowProps = shadowToKonva(pic.shadow, pic.glow)
       const strokeProps = strokeToKonva(pic.stroke)
+      // A transparent picture casts its shadow from its own silhouette; an opaque
+      // backing there would paint the whole frame white
+      const alphaShadow =
+        'shadowColor' in shadowProps && imageHasAlpha(img, srcKey)
+          ? imageShadowCanvas(
+              clippedImageCanvas(img, srcKey, box.w, box.h, clip, cropProps),
+              shadowProps,
+            )
+          : undefined
       const outline = (extra: Record<string, unknown>) =>
         clip.pathData ? (
           <Path data={clip.pathData} {...extra} />
@@ -224,24 +232,24 @@ export const NodeBody = React.memo(function NodeBody({
       return (
         <>
           {picShadowOv?.under ? picShadowImg : null}
-          {'shadowColor' in shadowProps && backing({ fill: '#ffffff', ...shadowProps })}
+          {'shadowColor' in shadowProps &&
+            (alphaShadow ? (
+              <KImage
+                image={alphaShadow.canvas}
+                x={-alphaShadow.pad}
+                y={-alphaShadow.pad}
+                width={box.w + 2 * alphaShadow.pad}
+                height={box.h + 2 * alphaShadow.pad}
+                {...(pic.opacity != null ? { opacity: pic.opacity } : {})}
+                listening={false}
+              />
+            ) : (
+              backing({ fill: '#ffffff', ...shadowProps })
+            ))}
           <Group
             clipFunc={(ctx) => {
-              if (clip.pathData) return [new Path2D(clip.pathData)] as [Path2D]
-              if (clip.polygonPoints) {
-                const pts = clip.polygonPoints
-                ctx.moveTo(pts[0]!, pts[1]!)
-                for (let i = 2; i + 1 < pts.length; i += 2) ctx.lineTo(pts[i]!, pts[i + 1]!)
-                ctx.closePath()
-                return
-              }
-              const r = Math.min(clip.cornerRadiusPx ?? 0, box.w / 2, box.h / 2)
-              ctx.moveTo(r, 0)
-              ctx.arcTo(box.w, 0, box.w, box.h, r)
-              ctx.arcTo(box.w, box.h, 0, box.h, r)
-              ctx.arcTo(0, box.h, 0, 0, r)
-              ctx.arcTo(0, 0, box.w, 0, r)
-              ctx.closePath()
+              const p = tracePictureClip(ctx, clip, box.w, box.h)
+              return p ? ([p] as [Path2D]) : undefined
             }}
           >
             {/* spPr fill: PowerPoint always paints it behind the image, even a translucent one */}
@@ -765,49 +773,66 @@ export const NodeBody = React.memo(function NodeBody({
               />
             )),
           )}
-        {glyphs.map((g, i) => (
-          <Text
-            key={i}
-            x={(shape.text?.insets.l ?? 0) + g.x}
-            y={(shape.text?.insets.t ?? 0) + g.y}
-            text={g.text}
-            fontSize={g.fontSize}
-            fontFamily={g.fontFamily}
-            fontStyle={g.fontStyle}
-            textDecoration={g.textDecoration}
-            rotation={g.rotation ?? 0}
-            scaleX={g.scaleX ?? 1}
-            scaleY={g.scaleY ?? 1}
-            offsetX={g.offsetX ?? 0}
-            offsetY={g.offsetY ?? 0}
-            letterSpacing={g.letterSpacing ?? 0}
-            fill={
-              shape.text?.extrusion
-                ? normalizeColor(shadeHex(shape.text.extrusion.color, 0.35))
-                : g.fill
-            }
-            direction={g.direction ?? 'inherit'}
-            {...(g.fillPriority && !shape.text?.extrusion
-              ? {
-                  fillPriority: g.fillPriority,
-                  fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
-                  fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
-                  fillLinearGradientColorStops: g.fillLinearGradientColorStops,
-                }
-              : {})}
-            {...(g.stroke
-              ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
-              : {})}
-            {...(g.shadowEnabled
-              ? {
-                  shadowColor: g.shadowColor,
-                  shadowBlur: g.shadowBlur,
-                  shadowOffsetX: g.shadowOffsetX,
-                  shadowOffsetY: g.shadowOffsetY,
-                }
-              : {})}
-          />
-        ))}
+        {glyphs.map((g, i) => {
+          if (g.image) {
+            const img = images.get(g.image)
+            if (!img) return null
+            return (
+              <KImage
+                key={i}
+                image={img}
+                x={(shape.text?.insets.l ?? 0) + g.x}
+                y={(shape.text?.insets.t ?? 0) + g.y}
+                width={g.imageW ?? g.fontSize}
+                height={g.imageH ?? g.fontSize}
+                listening={false}
+              />
+            )
+          }
+          return (
+            <Text
+              key={i}
+              x={(shape.text?.insets.l ?? 0) + g.x}
+              y={(shape.text?.insets.t ?? 0) + g.y}
+              text={g.text}
+              fontSize={g.fontSize}
+              fontFamily={g.fontFamily}
+              fontStyle={g.fontStyle}
+              textDecoration={g.textDecoration}
+              rotation={g.rotation ?? 0}
+              scaleX={g.scaleX ?? 1}
+              scaleY={g.scaleY ?? 1}
+              offsetX={g.offsetX ?? 0}
+              offsetY={g.offsetY ?? 0}
+              letterSpacing={g.letterSpacing ?? 0}
+              fill={
+                shape.text?.extrusion
+                  ? normalizeColor(shadeHex(shape.text.extrusion.color, 0.35))
+                  : g.fill
+              }
+              direction={g.direction ?? 'inherit'}
+              {...(g.fillPriority && !shape.text?.extrusion
+                ? {
+                    fillPriority: g.fillPriority,
+                    fillLinearGradientStartPoint: g.fillLinearGradientStartPoint,
+                    fillLinearGradientEndPoint: g.fillLinearGradientEndPoint,
+                    fillLinearGradientColorStops: g.fillLinearGradientColorStops,
+                  }
+                : {})}
+              {...(g.stroke
+                ? { stroke: g.stroke, strokeWidth: g.strokeWidth, fillAfterStrokeEnabled: true }
+                : {})}
+              {...(g.shadowEnabled
+                ? {
+                    shadowColor: g.shadowColor,
+                    shadowBlur: g.shadowBlur,
+                    shadowOffsetX: g.shadowOffsetX,
+                    shadowOffsetY: g.shadowOffsetY,
+                  }
+                : {})}
+            />
+          )
+        })}
         {/* Reflections: faded mirror below each run (PowerPoint fades it out; approximated flat) */}
         {glyphs.map(
           (g, i) =>

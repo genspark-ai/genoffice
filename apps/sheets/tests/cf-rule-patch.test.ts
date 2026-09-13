@@ -195,6 +195,50 @@ describe('buildConditionalRule', () => {
     expect((without as { stopIfTrue?: boolean }).stopIfTrue).toBe(false)
   })
 
+  it('installs cellIs equal with a quoted text operand as a formula rule', () => {
+    // Univer's native text rule is a strict ===; the formula `=` folds case
+    // like Excel, so "A" highlights a cell holding "a".
+    const built = buildConditionalRule(
+      worksheet,
+      [dxf({ fillColor: '#FF7F7F', bold: true })],
+      cfRule({
+        ruleType: 'cellIs',
+        operator: 'equal',
+        dxfIndex: 0,
+        formulas: ['"A"'],
+        ranges: [{ startRow: 2, startColumn: 3, endRow: 7, endColumn: 5 }],
+      }),
+    )
+    expect(built?.rule).toMatchObject({ subType: 'formula', value: '=D3="A"' })
+    expect((built?.rule as BuiltHighlightRule).style).toMatchObject({
+      bg: { rgb: 'rgb(255,127,127)' },
+      bl: 1,
+    })
+  })
+
+  it('escapes wildcard characters in the cellIs text operand', () => {
+    const built = buildConditionalRule(
+      worksheet,
+      [],
+      cfRule({ ruleType: 'cellIs', operator: 'equal', formulas: ['"N/A*?"'] }),
+    )
+    expect(built?.rule).toMatchObject({ subType: 'formula', value: '=A1="N/A~*~?"' })
+  })
+
+  it('keeps the native text equality for over-budget cellIs ranges', () => {
+    const built = buildConditionalRule(
+      worksheet,
+      [],
+      cfRule({
+        ruleType: 'cellIs',
+        operator: 'equal',
+        formulas: ['"A"'],
+        ranges: [{ startRow: 0, startColumn: 0, endRow: 99_999, endColumn: 4 }],
+      }),
+    )
+    expect(built?.rule).toMatchObject({ subType: 'text', operator: 'equal', value: 'A' })
+  })
+
   it('carries a dxf border onto the built cellIs rule style', () => {
     const built = buildConditionalRule(
       worksheet,

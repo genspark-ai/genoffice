@@ -7,7 +7,7 @@
  */
 import type { IRange } from '@univerjs/core'
 import { ERROR_VALUE_RE, FILE_READ_BATCH_CELLS, MAX_SCAN_CELLS } from './ai/workbook-search'
-import { formatAddress } from '../domain/cell-address'
+import { formatAddress } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { t } from './i18n/locale'
 import { netAxisDelta } from './view-transform'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'

@@ -45,7 +45,10 @@ function appendRel(
   const relXml = `<Relationship Id="${rid}" Type="${type}" Target="${escapeXmlAttr(target)}"${mode}/>`
   archive.entries.set(
     relsPath,
-    Buffer.from(rels.replace('</Relationships>', `${relXml}</Relationships>`), 'utf8'),
+    Buffer.from(
+      rels.replace('</Relationships>', () => `${relXml}</Relationships>`),
+      'utf8',
+    ),
   )
   return rid
 }

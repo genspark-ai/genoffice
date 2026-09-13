@@ -23,6 +23,7 @@ Soubory Word, Excel, PowerPoint a PDF, upravované vámi a vaší AI, ukládané
 
 <p align="center">
   <a href="#download"><b>Stažení</b></a> ·
+  <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="https://genoffice.ai/"><b>Web</b></a> ·
   <a href="https://genoffice.ai/join"><b>Komunita</b></a> ·
   <a href="../../PRIVACY.md"><b>Soukromí</b></a>
@@ -49,6 +50,11 @@ provede požadovanou úpravu a přesně vám ukáže, čeho se dotkl.
   nebo použijte vlastní klíč pro Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM,
   Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty nebo jakýkoli OpenAI
   kompatibilní endpoint, včetně lokálních serverů.
+- **Skriptovatelný a připravený pro agenty.** Aplikace obsahuje příkazový
+  řádek `genoffice` a skill pro Claude Code, Codex, Cursor, Gemini CLI,
+  GitHub Copilot, OpenCode a Windsurf, takže kódovací agent může na vašem
+  počítači vytvářet, převádět, číst a upravovat skutečné soubory Office, aniž
+  by otevřel jediné okno.
 
 **Stáhnout:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) (Apple Silicon a Intel) ·
 [Windows](https://github.com/genspark-ai/genoffice/releases/latest) (x64 a Arm) ·
@@ -57,8 +63,9 @@ podrobnosti a požadavky najdete v sekci [Stažení](#download).
 
 ## Ukázka
 
-Šest aplikací, jeden AI panel. Každý snímek obrazovky je ze skutečné
-aplikace na macOS, s AI ovládanou promptem, který si můžete přečíst v panelu.
+Šest aplikací, jeden AI panel a příkazový řádek pro vašeho kódovacího agenta.
+Každý snímek obrazovky je ze skutečné aplikace na macOS, s AI ovládanou
+promptem, který si můžete přečíst v panelu.
 
 ### 1 · Docs — otevírejte a upravujte `.docx` s AI, kterou lze zkontrolovat
 
@@ -156,6 +163,26 @@ podle těchto tokenů vytvoří jeden samostatný soubor `.html`.
 </tr>
 </table>
 
+### 7 · CLI — váš kódovací agent řídí GenOffice, na vašem počítači
+
+GenOffice obsahuje příkazový řádek `genoffice` a agentní skill. Nainstalujte
+skill a Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode nebo
+Windsurf mohou vytvářet, převádět, číst a upravovat skutečné soubory Office
+přes stejné enginy jako aplikace, aniž by otevřely jediné okno.
+
+<img src="../assets/readme/cli-deck-in-app.webp" alt="GenOffice Slides zobrazuje osmisnímkovou prezentaci o sluneční soustavě, kterou kódovací agent vytvořil přes příkazový řádek genoffice: titulní snímek na ploše, osm miniatur vlevo a otevřený AI panel" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/cli-slides-grid.webp" alt="Osm vykreslených snímků prezentace o sluneční soustavě vedle sebe: titul, časová osa průzkumu, čtyři klíčová čísla, sloupcový graf průměrů planet, kamenné světy versus obři, 99,8 % Slunce jako hlavní číslo, mřížka čtyř obrů a závěry"></td>
+<td width="50%"><img src="../assets/readme/cli-integrations.webp" alt="Nastavení GenOffice, stránka Integrace: skill genoffice nainstalovaný do Claude Code, s tlačítky Instalovat u položek Codex a Cursor"></td>
+</tr>
+<tr>
+<td><b>Jeden prompt vašemu agentovi</b> — „Vytvoř osmisnímkovou prezentaci o sluneční soustavě.“ Agent si přečte skill, napíše stylový list, osnovu a jednu specifikaci stránky na snímek, vygeneruje obě fotografie pomocí <code>genoffice image</code> a nechá <code>genoffice slides check</code> odmítnout vše, co přetéká nebo se překrývá, než <code>genoffice create</code> sestaví soubor <code>.pptx</code> a <code>slides render</code> vrátí ke kontrole jeden PNG na snímek.</td>
+<td><b>Nainstalujte jednou, v Nastavení → Integrace</b> — GenOffice vypíše kódovací agenty, které na tomto počítači najde, a zapíše skill do každého, který vyberete. Nebo si skill stáhněte jako zip, případně spusťte <code>npx skills add genspark-ai/genoffice</code>. Příkazy a celý pracovní postup najdete v sekci <a href="#command-line-and-agent-skill">Příkazový řádek a agentní skill</a>.</td>
+</tr>
+</table>
+
 ## Proč GenOffice
 
 - **Open source**, Apache-2.0, vyvíjený otevřeně na GitHubu.
@@ -174,6 +201,9 @@ podle těchto tokenů vytvoří jeden samostatný soubor `.html`.
 - **PDF udělané správně.** Upravujte text přímo na stránce a převádějte PDF
   do Word, Excel nebo PowerPoint na zařízení, se systémovým OCR pro skeny.
 - **Také Markdown a HTML**, se stejným panelem AI a místním exportem do Word.
+- **Skriptovatelný.** Příkazový řádek `genoffice` a agentní skill dávají
+  každý engine do služeb agentů Claude Code, Codex, Cursor a dalších, stále
+  na zařízení.
 - **Zdarma**, pro jednotlivce i týmy.
 
 ## AI backendy
@@ -195,6 +225,76 @@ endpoint pro obrázky, generování obrázků a analýzu obrázků/videa.
 Celý balík nabízí světlý, tmavý a systémový vzhled. Vzhledy mění pouze to,
 co je vidět na obrazovce: exporty, tisky a uložené soubory si vždy zachovávají
 vlastní barvy dokumentu.
+
+<a id="command-line-and-agent-skill"></a>
+
+## Příkazový řádek a agentní skill
+
+Vše, co aplikace umí se souborem, umí příkazový řádek `genoffice`
+z terminálu: prohlížet, převádět, vytvářet, číst a upravovat Word, Excel,
+PowerPoint, PDF, Markdown a HTML na stejných enginech, bez grafického
+rozhraní. Instaluje se spolu s GenOffice, nepotřebuje vlastní runtime
+a nikdy žádný dokument nikam neodesílá. Ve spojení s přibaleným **agentním
+skillem** promění kódovacího agenta v dokumentového pracovníka, který
+vytváří skutečné soubory Office místo přibližných napodobenin v Markdownu.
+
+**Funguje s:** Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot,
+OpenCode a Windsurf hned po instalaci a s jakýmkoli dalším agentem, který
+čte skilly.
+
+### Instalace skillu
+
+| Jak                                    | Co se stane                                                                                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Nastavení → Integrace** v aplikaci   | Vypíše agenty nalezené na tomto počítači; jedním kliknutím zapíše skill do každého, který vyberete. Když nové vydání GenOffice přinese novější skill, objeví se tlačítko **Aktualizovat**. |
+| **Stáhnout jako zip** na téže stránce  | Rozložení, které claude.ai, desktopové aplikace Claude a další asistenti přijímají jako nahraný skill.                                                                                     |
+| `npx skills add genspark-ai/genoffice` | Nainstaluje z tohoto repozitáře do jakéhokoli agenta podporujícího skilly.                                                                                                                 |
+
+Pak začněte nový chat a požádejte o dokument. Skill agenta naučí, kdy sáhnout
+po `genoffice`, jak si soubor přečíst před úpravou a jak zkontrolovat vlastní
+práci.
+
+### Rychlý start z terminálu
+
+```bash
+genoffice --version
+genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx, …
+genoffice create --type docx --from notes.md --out notes.docx
+genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
+genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
+genoffice open sales.xlsx                          # hand the result to the editor
+```
+
+Každý příkaz vypíše jednořádkové shrnutí, nebo s `--json` jediný objekt JSON.
+Úpravy jsou atomické: odmítnutá operace nechá soubor nedotčený a vrátí se
+s návodnou chybovou hláškou. `genoffice help` vypíše aktuální sadu příkazů;
+úplná reference je v [packages/cli/README.md](../../packages/cli/README.md).
+
+### Co agent ve skutečnosti spouští
+
+Prezentace o sluneční soustavě v ukázce výše vznikla z jediného promptu
+v Claude Code. Agent za ní postupoval podle fázovaného pracovního postupu ze
+skillu a CLI zkontrolovalo každou fázi, než začala další:
+
+```bash
+genoffice capabilities --json                        # which cloud tools GenOffice has configured
+genoffice guide slides design                        # the deck workflow and layout library
+genoffice image "the eight planets in a row …" --aspect 16:9 --out deck/assets/cover.jpg
+genoffice slides check deck/outline.json --json      # 8 pages, no findings
+genoffice slides check deck/pages/01.json --json     # builds one slide, audits overflow and overlap
+…                                                    # one page file per slide, fixed until each check is clean
+genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck/solar-system.pptx --json
+genoffice slides render deck/solar-system.pptx --out deck/shots --json
+genoffice slides audit deck/solar-system.pptx --json    # 8 slides, no layout issues
+genoffice slides replace deck/solar-system.pptx --slide 4 --spec deck/pages/05.json --json
+genoffice open deck/solar-system.pptx
+```
+
+Uvnitř `genoffice` neprobíhá žádné volání modelu: agent přemýšlí, CLI staví
+a kontroluje a výsledek se otevře v GenOffice nebo PowerPointu jako obyčejný
+soubor `.pptx`.
 
 <a id="download"></a>
 
@@ -359,6 +459,19 @@ a zredukuje na skutečné struktury Wordu: nadpisy, odstavce, seznamy, tabulky,
 karty, řádky KPI, pole formulářů a pozadí stránky; pouze vizuály bez
 odpovídajícího prvku ve Wordu (grafy, ikony, ozdobné rámečky) se vloží jako
 obrázky.
+
+</details>
+
+<details>
+<summary><b>Můžu GenOffice ovládat z nástrojů Claude Code, Codex, Cursor nebo ze skriptu?</b></summary>
+
+Ano. GenOffice nainstaluje příkazový řádek `genoffice`, který spouští stejné
+enginy bez grafického rozhraní: prohlížejte, převádějte, vytvářejte, čtěte
+a upravujte dokumenty z terminálu nebo ze skriptu, s výstupem `--json` pro
+programy. Přibalený agentní skill naučí Claude Code, Codex, Cursor, Gemini
+CLI, GitHub Copilot, OpenCode a Windsurf, jak ho používat; nainstalujte ho
+v **Nastavení → Integrace**. Viz
+[Příkazový řádek a agentní skill](#command-line-and-agent-skill).
 
 </details>
 

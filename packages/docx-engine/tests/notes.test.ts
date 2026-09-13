@@ -9,6 +9,7 @@ import {
   type SaveBlock,
 } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
+import { parseNotesXml } from '../src/notes'
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
 
@@ -46,6 +47,29 @@ const originalOrder = (doc: Awaited<ReturnType<typeof parseDocx>>): SaveBlock[] 
   doc.blocks
     .filter((b) => !b.hidden && b.docxIndex !== null)
     .map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
+
+describe('Zotero fields inside notes', () => {
+  it('flags notes whose body carries a Zotero citation field', () => {
+    const zoteroNote =
+      '<w:footnote w:id="3"><w:p><w:r><w:footnoteRef/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> ADDIN ZOTERO_ITEM CSL_CITATION {} </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>(Doe 2020)</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:footnote>'
+    const cslNote = zoteroNote
+      .replace('w:id="3"', 'w:id="4"')
+      .replace('ADDIN ZOTERO_ITEM CSL_CITATION', 'ADDIN CSL_CITATION')
+    const notes = parseNotesXml(
+      FOOTNOTES_XML.replace('</w:footnotes>', zoteroNote + cslNote + '</w:footnotes>'),
+      'footnote',
+    )
+    expect(notes.map((note) => [note.id, note.zoteroField ?? false])).toEqual([
+      ['2', false],
+      ['3', true],
+      ['4', true],
+    ])
+  })
+})
 
 describe('footnotes / endnotes', () => {
   it('parses word/footnotes.xml and keeps the reference paragraph editable', async () => {

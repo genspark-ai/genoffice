@@ -72,6 +72,8 @@ export const ar = {
   aiToolClarifySkipped: 'تم تخطي الاستبيان',
   aiToolPlan: 'تم تأكيد الملخص ({n} أقسام)',
   aiToolPlanRejected: 'لم يتم تأكيد الملخص',
+  aiToolPlanFailed: 'تعذّر إعداد الملخص',
+  aiDraftingBrief: 'جارٍ صياغة الملخص…',
   aiToolWritePage: 'تم إنشاء الصفحة',
   aiToolWritePageFailed: 'فشل إنشاء الصفحة',
   aiToolWritePagePartial: 'تم إنشاء جزء من الصفحة',

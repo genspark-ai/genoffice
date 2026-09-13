@@ -72,6 +72,8 @@ export const id = {
   aiToolClarifySkipped: 'Kuesioner dilewati',
   aiToolPlan: 'Brief dikonfirmasi ({n} bagian)',
   aiToolPlanRejected: 'Brief belum dikonfirmasi',
+  aiToolPlanFailed: 'Brief tidak dapat disusun',
+  aiDraftingBrief: 'Menyusun brief…',
   aiToolWritePage: 'Halaman dibuat',
   aiToolWritePageFailed: 'Pembuatan halaman gagal',
   aiToolWritePagePartial: 'Sebagian halaman dibuat',

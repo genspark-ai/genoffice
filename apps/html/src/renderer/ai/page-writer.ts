@@ -1,4 +1,4 @@
-import type { AgentTransport } from '@genoffice/agent-core'
+import { streamText, type AgentTransport } from '@genoffice/agent-core'
 import type { Brief } from '../document/brief'
 
 /**
@@ -41,6 +41,7 @@ const DESIGN_SYSTEM = [
   '- Backgrounds follow the mood: dark, saturated or textured pages are legitimate when the tone calls for them. Text must contrast with its background.',
   '- One root element per section carrying data-section="<type>", built in that section\'s layout variant (hero_split, hero_typographic, hero_image_overlay, feature_grid, stats_row, big_number, two_column, comparison_table, timeline, steps, quote_band, gallery, faq, cta_band, prose). Adjacent sections must not repeat the same pattern. Cards are surfaces (--brief-surface, --brief-radius, --brief-shadow), not bordered boxes.',
   '- Real data only: charts as inline <svg> with width/height, tables as real <table>. Never invent facts or numbers beyond the brief and the reference material; attribute sources when they are given.',
+  '- Never crop away part of a user-supplied image (logo, screenshot, product shot, chart): size its container to the image (height auto, aspect-ratio) or use object-fit: contain. Reserve object-fit: cover and fixed-height overflow-hidden frames for decorative photos where losing the edges is acceptable.',
   '- Fields the user edited on the brief are kept exactly.',
   '',
   '## Word-export friendly HTML (only when the brief has docx_friendly=true)',
@@ -109,57 +110,20 @@ export type StreamPageOutcome =
   | { status: 'empty'; error: string }
 
 /** One tool-less streaming request; resolves with what arrived, never throws. */
-export function streamPage(opts: StreamPageOptions): Promise<StreamPageOutcome> {
-  return new Promise((resolve) => {
-    let raw = ''
-    let stopReason: string | undefined
-    let settled = false
-    const finish = (outcome: StreamPageOutcome) => {
-      if (settled) return
-      settled = true
-      opts.signal?.removeEventListener('abort', onAbort)
-      resolve(outcome)
-    }
-    const partialOrEmpty = (
-      reason: 'error' | 'stopped' | 'max_tokens',
-      error?: string,
-    ): StreamPageOutcome => {
-      const { html } = extractPageHtml(raw)
-      return html.trim()
-        ? { status: 'partial', html, reason, error }
-        : { status: 'empty', error: error ?? reason }
-    }
-    const handle = opts.transport.stream(
-      { system: opts.system, messages: [{ role: 'user', text: opts.user }], tools: [] },
-      {
-        onDelta: (text) => {
-          if (settled) return
-          raw += text
-          if (raw.length > PAGE_MAX_CHARS) {
-            handle.cancel()
-            finish(partialOrEmpty('max_tokens', `output exceeded ${PAGE_MAX_CHARS} chars`))
-            return
-          }
-          opts.onProgress?.(extractPageHtml(raw).html)
-        },
-        onToolCall: () => undefined,
-        onStopReason: (reason) => {
-          stopReason = reason
-        },
-        onDone: () => {
-          if (settled) return
-          const { html, complete } = extractPageHtml(raw)
-          if (complete) finish({ status: 'complete', html })
-          else finish(partialOrEmpty(stopReason === 'max_tokens' ? 'max_tokens' : 'error'))
-        },
-        onError: (error) => finish(partialOrEmpty('error', error)),
-      },
-    )
-    const onAbort = () => {
-      handle.cancel()
-      finish(partialOrEmpty('stopped'))
-    }
-    if (opts.signal?.aborted) onAbort()
-    else opts.signal?.addEventListener('abort', onAbort, { once: true })
+export async function streamPage(opts: StreamPageOptions): Promise<StreamPageOutcome> {
+  const outcome = await streamText({
+    transport: opts.transport,
+    system: opts.system,
+    user: opts.user,
+    signal: opts.signal,
+    maxChars: PAGE_MAX_CHARS,
+    extract: (raw) => {
+      const { html, complete } = extractPageHtml(raw)
+      return { text: html, complete }
+    },
+    onProgress: opts.onProgress,
   })
+  if (outcome.status === 'empty') return outcome
+  const { text, ...rest } = outcome
+  return { ...rest, html: text }
 }

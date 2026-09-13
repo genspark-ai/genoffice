@@ -1,4 +1,8 @@
-import { monthKeyParts, type MonthKey, type TimelineMember } from '../domain/pivot-timeline'
+import {
+  monthKeyParts,
+  type MonthKey,
+  type TimelineMember,
+} from '@genoffice/xlsx-gateway/domain/pivot-timeline'
 import { useI18n } from './i18n/locale'
 
 /// Timeline: a month-granularity date-range filter bound to one pivot date

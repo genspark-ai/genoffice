@@ -23,6 +23,7 @@ Word、Excel、PowerPoint 與 PDF 檔案，由你與你的 AI 共同編輯，並
 
 <p align="center">
   <a href="#download"><b>下載</b></a> ·
+  <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="https://genoffice.ai/"><b>官網</b></a> ·
   <a href="https://genoffice.ai/join"><b>社群</b></a> ·
   <a href="../../PRIVACY.md"><b>隱私權</b></a>
@@ -46,6 +47,10 @@ Windows 與 Linux。它能開啟並儲存原生的 `.docx`、`.xlsx` 與 `.pptx`
   或自行帶入 Claude、OpenAI、Gemini、DeepSeek、Kimi、GLM、Qwen、
   Doubao、MiniMax、Grok、Mistral、OpenRouter、Requesty，或任何相容 OpenAI 介面
   的服務端點，也支援本機伺服器。
+- **可寫成腳本，也隨時能交給代理。** 應用程式內建 `genoffice` 命令列，
+  並附上一份給 Claude Code、Codex、Cursor、Gemini CLI、GitHub Copilot、
+  OpenCode 與 Windsurf 使用的 agent skill，讓程式開發代理不必開啟任何
+  視窗，就能在你的裝置上建立、轉換、讀取與編輯真正的 Office 檔案。
 
 **立即取得：** [macOS](https://github.com/genspark-ai/genoffice/releases/latest)（Apple Silicon 與 Intel）·
 [Windows](https://github.com/genspark-ai/genoffice/releases/latest)（x64 與 Arm）·
@@ -54,8 +59,9 @@ Windows 與 Linux。它能開啟並儲存原生的 `.docx`、`.xlsx` 與 `.pptx`
 
 ## Demo
 
-六款應用程式，一個 AI 面板。每張截圖都是在 macOS 上實際操作的真實畫面，
-AI 的動作皆由面板中可見的提示詞驅動。
+六款應用程式，一個 AI 面板，再加上一套給程式開發代理使用的命令列。
+每張截圖都是在 macOS 上實際操作的真實畫面，AI 的動作皆由面板中可見的
+提示詞驅動。
 
 ### 1 · Docs — 開啟並編輯 `.docx`，每一步 AI 編輯都能檢視
 
@@ -182,6 +188,34 @@ GenOffice 會規劃敘事脈絡、研究相關數據，並把每一頁直接生�
 </tr>
 </table>
 
+### 7 · CLI — 讓你的程式開發代理在本機驅動 GenOffice
+
+GenOffice 內建 `genoffice` 命令列與一份 agent skill。安裝這份 skill 之後，
+Claude Code、Codex、Cursor、Gemini CLI、GitHub Copilot、OpenCode 或 Windsurf
+就能透過與應用程式相同的引擎，建立、轉換、讀取與編輯真正的 Office 檔案，
+完全不必開啟視窗。
+
+<img src="../assets/readme/cli-deck-in-app.webp" alt="GenOffice Slides 顯示一份由程式開發代理透過 genoffice 命令列建立的八頁太陽系簡報：畫布上是封面投影片，左側有八張縮圖，AI 面板處於開啟狀態" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/cli-slides-grid.webp" alt="太陽系簡報渲染出的八張投影片並排呈現：封面、探索時間線、四個關鍵數字、行星直徑長條圖、岩質行星與巨行星的對比、太陽佔 99.8% 的主視覺數字、四大巨行星的格狀排列與重點整理"></td>
+<td width="50%"><img src="../assets/readme/cli-integrations.webp" alt="GenOffice 設定的「整合」頁面：genoffice skill 已安裝到 Claude Code，Codex 與 Cursor 旁邊顯示著「安裝」按鈕"></td>
+</tr>
+<tr>
+<td><b>對代理下一句提示詞</b>——「做一份關於太陽系的八頁簡報。」代理讀取 skill，
+寫出一份樣式表、一份大綱與每張投影片各一份的頁面規格，用
+<code>genoffice image</code> 生成兩張照片，再讓 <code>genoffice slides check</code>
+擋下所有溢出或重疊的內容，最後由 <code>genoffice create</code> 組裝出
+<code>.pptx</code>，並以 <code>slides render</code> 交回每張投影片各一張 PNG
+供你檢視。</td>
+<td><b>在設定 → 整合中一次安裝</b>——GenOffice 會列出在這台電腦上找到的
+程式開發代理，並把 skill 寫入你勾選的每一個。也可以把 skill 下載成 zip
+壓縮檔，或執行 <code>npx skills add genspark-ai/genoffice</code>。命令與完整
+工作流程請見<a href="#command-line-and-agent-skill">命令列與 agent skill</a>。</td>
+</tr>
+</table>
+
 ## 為什麼選 GenOffice
 
 - **開源**，採用 Apache-2.0 授權，在 GitHub 上公開開發。
@@ -196,6 +230,8 @@ GenOffice 會規劃敘事脈絡、研究相關數據，並把每一頁直接生�
 - **認真做好 PDF。** 直接在頁面內編輯文字，並在本機將 PDF 轉換為 Word、Excel 或
   PowerPoint，掃描檔案支援系統 OCR。
 - **同樣支援 Markdown 與 HTML**，共用同一套 AI 面板，並可在本機匯出為 Word。
+- **可寫成腳本。** `genoffice` 命令列與 agent skill 讓每一個引擎都能供 Claude Code、
+  Codex、Cursor 及其他程式開發代理使用，而且依然在本機執行。
 - **免費**，個人與團隊皆可使用。
 
 ## AI 後端
@@ -214,6 +250,72 @@ Grok、Qwen、MiniMax，或任何相容 OpenAI 的圖片服務端點。
 
 整套軟體支援亮色、深色與跟隨系統三種主題。主題只會改變畫面顯示：
 匯出、列印與儲存的檔案永遠保留文件本身的原始色彩。
+
+<a id="command-line-and-agent-skill"></a>
+
+## 命令列與 agent skill
+
+應用程式能對檔案做的每一件事，`genoffice` 命令列都能在終端機裡完成：
+檢視、轉換、建立、讀取與編輯 Word、Excel、PowerPoint、PDF、Markdown 與
+HTML，用的是同一套引擎，且無需介面。它隨 GenOffice 一起安裝，不需要
+自己的執行環境，也絕不會把文件送到任何地方。搭配內建的 **agent skill**，
+它能把程式開發代理變成一位文件工作者，產出真正的 Office 檔案，而不是
+用 Markdown 勉強充數。
+
+**支援：** Claude Code、Codex、Cursor、Gemini CLI、GitHub Copilot、OpenCode
+與 Windsurf 開箱即用，以及任何其他能讀取 skill 的代理。
+
+### 安裝 skill
+
+| 方式                                   | 效果                                                                                                                          |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 應用程式內的 **設定 → 整合**           | 列出在這台電腦上找到的代理；按一下就把 skill 寫入你選擇的每一個。當 GenOffice 新版本附帶更新的 skill 時，會出現**更新**按鈕。 |
+| 同一頁面上的 **下載為 zip**            | claude.ai、Claude 桌面版應用程式與其他助理可作為上傳 skill 接受的目錄結構。                                                   |
+| `npx skills add genspark-ai/genoffice` | 從本儲存庫安裝到任何相容 skills 的代理。                                                                                      |
+
+接著開一個新的對話，請它幫你做一份文件。這份 skill 會教代理何時該使用
+`genoffice`、編輯前如何先讀取檔案，以及如何檢查自己的成果。
+
+### 從終端機快速上手
+
+```bash
+genoffice --version
+genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx, …
+genoffice create --type docx --from notes.md --out notes.docx
+genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
+genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
+genoffice open sales.xlsx                          # hand the result to the editor
+```
+
+每個命令都會印出一行摘要，加上 `--json` 則輸出單一 JSON 物件。編輯是
+原子性的：被拒絕的操作不會動到檔案，並會回傳附有指引的錯誤訊息。
+`genoffice help` 列出目前的命令集合；完整參考請見
+[packages/cli/README.md](../../packages/cli/README.md)。
+
+### 代理實際執行了什麼
+
+上方 Demo 中的太陽系簡報，在 Claude Code 裡只用了一句提示詞。在它背後，
+代理依照 skill 的分階段工作流程逐步進行，而 CLI 會在每個階段開始下一步
+之前先做檢查：
+
+```bash
+genoffice capabilities --json                        # which cloud tools GenOffice has configured
+genoffice guide slides design                        # the deck workflow and layout library
+genoffice image "the eight planets in a row …" --aspect 16:9 --out deck/assets/cover.jpg
+genoffice slides check deck/outline.json --json      # 8 pages, no findings
+genoffice slides check deck/pages/01.json --json     # builds one slide, audits overflow and overlap
+…                                                    # one page file per slide, fixed until each check is clean
+genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck/solar-system.pptx --json
+genoffice slides render deck/solar-system.pptx --out deck/shots --json
+genoffice slides audit deck/solar-system.pptx --json    # 8 slides, no layout issues
+genoffice slides replace deck/solar-system.pptx --slide 4 --spec deck/pages/05.json --json
+genoffice open deck/solar-system.pptx
+```
+
+`genoffice` 內部不會發出任何模型呼叫：思考由代理負責，建置與檢查由 CLI
+負責，成品則以一份普通的 `.pptx` 在 GenOffice 或 PowerPoint 中開啟。
 
 <a id="download"></a>
 
@@ -374,6 +476,17 @@ OpenAI 的服務端點——包括本機模型伺服器。搜尋、圖片生成�
 Word 結構：標題、段落、清單、表格、卡片、KPI 列、表單欄位與頁面
 背景；只有沒有對應 Word 結構的視覺元素（圖表、圖示、裝飾方塊）
 才會以圖片形式嵌入。
+
+</details>
+
+<details>
+<summary><b>我可以從 Claude Code、Codex、Cursor 或指令碼驅動 GenOffice 嗎？</b></summary>
+
+可以。GenOffice 會安裝一個 `genoffice` 命令列，以無介面的方式執行同一套
+引擎：在終端機或指令碼中檢視、轉換、建立、讀取與編輯文件，並提供
+`--json` 輸出供程式使用。內建的 agent skill 會教 Claude Code、Codex、Cursor、
+Gemini CLI、GitHub Copilot、OpenCode 與 Windsurf 使用它；請在 **設定 → 整合**
+中安裝。詳見[命令列與 agent skill](#command-line-and-agent-skill)。
 
 </details>
 

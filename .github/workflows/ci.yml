@@ -82,6 +82,17 @@ jobs:
           fi
           npm run check:theme-colors
 
+      # skills/*/SKILL.md ship to users' agent directories; a body change
+      # without a metadata.version bump would never be offered as an update.
+      - name: Check skill versions
+        env:
+          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
+          fi
+          npm run check:skill-version
+
       # Added lines only: Han text outside locale tables, review-tool tags,
       # feedback-ledger ids, sample-corpus ids, internal PR numbers, personal
       # paths/e-mails, credentials, NUL bytes (tools/check-public-hygiene.mjs).
@@ -117,6 +128,11 @@ jobs:
       # committed fixtures have drifted apart.
       - name: Check committed fixtures match the generator
         run: git diff --exit-code -- fixtures/generated
+
+      # pptx-engine's OOXML schema gate validates saved decks with xmllint
+      # (tools/ooxml-validate); the runner image is not guaranteed to have it.
+      - name: Install xmllint
+        run: sudo apt-get install -y --no-install-recommends libxml2-utils
 
       - name: Test
         run: npm test

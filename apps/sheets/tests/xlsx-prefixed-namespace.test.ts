@@ -8,12 +8,12 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
-import { applyCellEditsToXlsx } from '../src/gateway/xlsx-gateway'
+import { applyCellEditsToXlsx } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import {
   ensureRelationshipNamespace,
   normalizeOoxmlPartPrefix,
-} from '../src/gateway/xlsx-namespace'
-import { maxRelationshipId, parseSheetElements } from '../src/gateway/xlsx-sheets'
+} from '@genoffice/xlsx-gateway/gateway/xlsx-namespace'
+import { maxRelationshipId, parseSheetElements } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 
 const MAIN_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'

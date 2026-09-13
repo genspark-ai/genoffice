@@ -13,6 +13,7 @@
  */
 
 import type { EditParagraph } from '../../shared/ipc'
+import { FONT_SIZE_PT_MIN, FONT_SIZE_PT_MAX } from '@genoffice/pptx-ops/font-size'
 import { interpretLayoutScript } from './layout-script-interpreter'
 
 export interface LayoutScriptElement {
@@ -244,7 +245,11 @@ export function runLayoutScript(
     const style: SlideStylePatch = {}
     if (p.fontSize !== undefined) {
       const n = reqNum(`setStyle("${key}")`, 'fontSize', p.fontSize)
-      if (n <= 0) throw new Error(`setStyle("${key}"): fontSize must be > 0`)
+      if (n < FONT_SIZE_PT_MIN || n > FONT_SIZE_PT_MAX) {
+        throw new Error(
+          `setStyle("${key}"): fontSize must be ${FONT_SIZE_PT_MIN}..${FONT_SIZE_PT_MAX} (points)`,
+        )
+      }
       style.fontSize = n
     }
     if (p.color !== undefined) {

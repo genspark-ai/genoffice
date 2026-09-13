@@ -3,29 +3,83 @@
 
 use super::*;
 
-/// DrawingML solid fill: srgbClr, or schemeClr resolved via the theme palette.
+/// DrawingML fill color of a shape/run property node: a solidFill, else the
+/// flat approximation of a gradFill. Colors inside an a:ln belong to the
+/// outline, not the fill.
 pub(crate) fn drawing_fill_color(node: Node<'_, '_>, colors: &ColorContext) -> Option<String> {
-    // An a:ln below `node` carries the outline color, not the fill.
     let outside_outline = |child: &Node<'_, '_>| {
         !child
             .ancestors()
             .take_while(|ancestor| *ancestor != node)
             .any(|ancestor| ancestor.has_tag_name("ln"))
     };
-    let fill = node
+    if let Some(solid) = node
         .descendants()
         .find(|child| child.has_tag_name("solidFill") && outside_outline(child))
-        .or_else(|| {
-            // Gradient fills approximate to their first stop color.
-            node.descendants()
-                .find(|child| child.has_tag_name("gradFill") && outside_outline(child))
-                .and_then(|grad| grad.descendants().find(|child| child.has_tag_name("gs")))
-        })?;
+    {
+        return drawing_color(solid, colors);
+    }
+    let gradient = node
+        .descendants()
+        .find(|child| child.has_tag_name("gradFill") && outside_outline(child))?;
+    drawing_gradient_color(gradient, colors)
+}
+
+/// One flat color for a DrawingML gradient: the mid-blend of the outermost
+/// stops, the same approximation cell gradientFills get (Excel's print of a
+/// shaded bar reads as the blend, not the dark first stop).
+pub(crate) fn drawing_gradient_color(
+    gradient: Node<'_, '_>,
+    colors: &ColorContext,
+) -> Option<String> {
+    let mut stops = gradient
+        .descendants()
+        .filter(|child| child.has_tag_name("gs"))
+        .filter_map(|stop| {
+            let position = stop.attribute("pos")?.parse::<f64>().ok()?;
+            Some((position, drawing_color(stop, colors)?))
+        })
+        .collect::<Vec<_>>();
+    stops.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let (Some((_, first)), Some((_, last))) = (stops.first(), stops.last()) else {
+        return None;
+    };
+    mix_hex(first, last)
+}
+
+/// Fill node whose spPr children decide the paint: an explicit noFill is
+/// transparent, a pattFill reads as the blend of its two colors, otherwise
+/// the solid/gradient rule applies.
+pub(crate) fn area_fill_color(sppr: Node<'_, '_>, colors: &ColorContext) -> Option<String> {
+    if sppr.children().any(|child| child.has_tag_name("noFill")) {
+        return None;
+    }
+    if let Some(pattern) = sppr.children().find(|child| child.has_tag_name("pattFill")) {
+        let color = |name: &str| {
+            pattern
+                .children()
+                .find(|child| child.has_tag_name(name))
+                .and_then(|child| drawing_color(child, colors))
+        };
+        return match (color("fgClr"), color("bgClr")) {
+            (Some(fg), Some(bg)) => mix_hex(&fg, &bg),
+            (fg, bg) => fg.or(bg),
+        };
+    }
+    drawing_fill_color(sppr, colors)
+}
+
+/// The srgbClr / sysClr / schemeClr below `fill`, with its modifiers applied.
+pub(crate) fn drawing_color(fill: Node<'_, '_>, colors: &ColorContext) -> Option<String> {
     if let Some(srgb) = fill
         .descendants()
         .find(|child| child.has_tag_name("srgbClr"))
     {
-        return srgb.attribute("val").map(|value| format!("#{value}"));
+        let value = srgb.attribute("val")?;
+        return Some(match parse_hex_rgb(value) {
+            Some(base) => apply_color_modifiers(srgb, base),
+            None => format!("#{value}"),
+        });
     }
     if let Some(sys) = fill
         .descendants()
@@ -112,6 +166,13 @@ pub(crate) fn apply_modifier_values(base: (u8, u8, u8), modifiers: &[(String, f6
             "lumOff" => {
                 for channel in &mut channels {
                     *channel += 255.0 * value;
+                }
+            }
+            // Flat colors cannot carry opacity: composite over the white
+            // sheet, which is what a translucent chart area reads as.
+            "alpha" => {
+                for channel in &mut channels {
+                    *channel = *channel * value + 255.0 * (1.0 - value);
                 }
             }
             "tint" => {

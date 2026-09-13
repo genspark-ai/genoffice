@@ -1,7 +1,10 @@
 import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 
-import { applyCellEditsToXlsx, assertOnlyTouchedEntriesChanged } from '../src/gateway/xlsx-gateway'
+import {
+  applyCellEditsToXlsx,
+  assertOnlyTouchedEntriesChanged,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
 import {
   applyStructuralOps,
   shiftCellArea,
@@ -14,7 +17,7 @@ import {
   shiftVmlObjectAnchors,
   StructuralShiftError,
   type TableColumnInsertion,
-} from '../src/gateway/xlsx-structure'
+} from '@genoffice/xlsx-gateway/gateway/xlsx-structure'
 import { buildStructureFixture } from './fixture-builder'
 
 const SHEET = 'Data'

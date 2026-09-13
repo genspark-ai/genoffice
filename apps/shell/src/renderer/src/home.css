@@ -202,6 +202,7 @@ body.vib .home {
 }
 
 .account-avatar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -222,6 +223,17 @@ body.vib .home {
 
 .account-avatar.waiting {
   color: var(--accent);
+}
+
+.account-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--chrome-bg);
+  background: var(--danger);
 }
 
 .account-spinner {

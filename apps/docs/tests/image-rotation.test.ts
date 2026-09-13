@@ -86,6 +86,8 @@ describe('rotated pictures', () => {
     expect(img.style.marginBottom).toBe('50px')
     expect(img.style.marginLeft).toBe('-50px')
     expect(img.style.marginRight).toBe('-50px')
+    // the column clamp must meet the turned bounding box, not the extent
+    expect(img.style.maxWidth).toBe('none')
     editor.destroy()
   })
 
@@ -191,6 +193,7 @@ describe('rotated pictures', () => {
     )!
     expect(img.style.transform).toBe('rotate(90deg)')
     expect(img.style.margin).toBe('50px -50px')
+    expect(img.style.maxWidth).toBe('none')
     editor.destroy()
   })
 })

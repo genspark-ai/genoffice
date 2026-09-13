@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { addElement, createBlankPptx, openPptx } from '@genoffice/pptx-engine'
-import { runTxn } from '../src/main/ops'
+import { runTxn } from '@genoffice/pptx-ops'
 
 describe('setEffects op end-to-end probe', () => {
   it('applies an outer shadow through the op registry', async () => {

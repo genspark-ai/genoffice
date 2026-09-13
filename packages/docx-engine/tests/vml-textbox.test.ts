@@ -55,7 +55,7 @@ describe('VML textbox display extraction', () => {
     expect(bare?.borderColor).toBeUndefined()
   })
 
-  it('renders tables inside the textbox as one line per row, recursing into sdt-wrapped nested tables', async () => {
+  it('renders tables inside the textbox as cell rows, nested sdt-wrapped tables flattened into their host cell', async () => {
     const nested =
       '<w:sdt><w:sdtPr><w:alias w:val="analyst"/></w:sdtPr><w:sdtContent>' +
       '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Alice</w:t></w:r></w:p>' +
@@ -69,11 +69,11 @@ describe('VML textbox display extraction', () => {
       '</w:tbl>'
     const doc = await parseDocx(await buildDocx({ bodyXml: vmlTextboxParagraph(tbl) }))
     const box = doc.blocks[0].textboxes?.[0]
-    const lines = box?.paras.map((p) => p.runs.map((r) => r.text).join('')) ?? []
-    expect(lines[0]).toBe('Rating\u2002\u2002Buy')
-    // nested table row becomes its own line; multiple cell paragraphs joined with a space
-    expect(lines).toContain('Alice alice@example.com')
-    // flattened rows don't map 1:1 to w:p children — the box must not be editable,
+    const rows = box?.paras.map((p) =>
+      p.cells!.map((c) => c.paras.map((rs) => rs.map((r) => r.text).join(''))),
+    )
+    expect(rows).toEqual([[['Rating'], ['Buy']], [['Alice', 'alice@example.com']]])
+    // rows don't map 1:1 to w:p children — the box must not be editable,
     // or a sub-editor commit through patchTxbxContent would drop the table
     expect(box?.readOnly).toBe(true)
   })
@@ -144,14 +144,14 @@ describe('VML textbox display extraction', () => {
     expect(block.textboxes?.[0].paras[0].runs.map((r) => r.text).join('')).toContain('2022-04-29')
   })
 
-  it('still protects paragraphs whose own runs carry field codes', async () => {
+  it('a body paragraph whose own runs carry a field is not a Text box', async () => {
     const doc = await parseDocx(
       await buildDocx({
         bodyXml: '<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>',
       }),
     )
-    expect(doc.blocks[0].type).toBe('passthrough')
-    expect(doc.blocks[0].label).not.toBe('Text box')
+    expect(doc.blocks[0].type).toBe('paragraph')
+    expect(doc.blocks[0].runs).toEqual([{ text: '1', instrField: 'PAGE' }])
   })
 })
 
@@ -194,5 +194,138 @@ describe('sdt-wrapped tables and rows', () => {
     expect(table?.rows).toHaveLength(2)
     expect(table?.rows[0].map((c) => c.paras[0])).toEqual(['Wrapped', 'Cell2'])
     expect(table?.rows[1].map((c) => c.paras[0])).toEqual(['Plain', 'Row'])
+  })
+})
+
+describe('VML textbox frame and Word placement keywords', () => {
+  const shapeType = (attrs = '') =>
+    `<v:shapetype ${V_NS} id="_x0000_t202" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe" ${attrs}>` +
+    '<v:stroke joinstyle="miter"/></v:shapetype>'
+  const para = (style: string, shapeAttrs = '', type = shapeType()) =>
+    `<w:p><w:r><w:pict>${type}<v:shape ${V_NS} id="s1" type="#_x0000_t202" style="${style}" ${shapeAttrs}>` +
+    '<v:textbox><w:txbxContent><w:p><w:r><w:t>Boxed</w:t></w:r></w:p></w:txbxContent></v:textbox>' +
+    '</v:shape></w:pict></w:r></w:p>'
+  const boxOf = async (bodyXml: string) =>
+    (await parseDocx(await buildDocx({ bodyXml }))).blocks[0].textboxes?.[0]
+
+  it('draws the default black frame of a top-level textbox shape', async () => {
+    const box = await boxOf(
+      para('position:absolute;margin-left:1.5pt;margin-top:-3pt;width:161.25pt;height:89.25pt'),
+    )
+    expect(box?.borderColor).toBe('000000')
+    expect(box?.borderWidthPx).toBeUndefined()
+    expect(box?.floating).toBe(true)
+    expect(box?.offsetXEmu).toBe(19050)
+    expect(box?.offsetYEmu).toBe(-38100)
+  })
+
+  it('inherits stroked="f" and stroke colors from the shapetype, honors strokeweight', async () => {
+    const off = await boxOf(para('width:100pt;height:50pt', '', shapeType('stroked="f"')))
+    expect(off?.borderColor).toBeUndefined()
+    const typed = await boxOf(
+      para('width:100pt;height:50pt', 'strokeweight="1.5pt"', shapeType('strokecolor="#ff0000"')),
+    )
+    expect(typed?.borderColor).toBe('ff0000')
+    expect(typed?.borderWidthPx).toBe(2)
+    const child =
+      `<w:p><w:r><w:pict><v:shape ${V_NS} id="s1" style="width:100pt;height:50pt">` +
+      '<v:stroke on="f"/><v:textbox><w:txbxContent><w:p><w:r><w:t>x</w:t></w:r></w:p>' +
+      '</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>'
+    expect((await boxOf(child))?.borderColor).toBeUndefined()
+  })
+
+  it('resolves mso-position-horizontal:center against the column', async () => {
+    // A4 with 1in margins: 9026 twips of column, box 186.35pt = 3727 twips
+    const box = await boxOf(
+      para(
+        'position:absolute;margin-left:0;margin-top:0;width:186.35pt;height:110.6pt;mso-position-horizontal:center',
+      ),
+    )
+    const colEmu = 9026 * 635
+    const wEmu = (box?.widthPx ?? 0) * 9525
+    expect(box?.offsetXEmu).toBe(Math.round((colEmu - wEmu) / 2))
+    const right = await boxOf(
+      para(
+        'position:absolute;margin-left:0;margin-top:0;width:100pt;height:50pt;mso-position-horizontal:right;mso-position-horizontal-relative:page',
+      ),
+    )
+    // page-relative right edge, measured from the column origin
+    expect(right?.offsetXEmu).toBe(Math.round((11906 - 1440) * 635 - (right?.widthPx ?? 0) * 9525))
+  })
+
+  it('page-relative numeric offsets pin the box to the page like DrawingML posOffset', async () => {
+    const box = await boxOf(
+      para(
+        'position:absolute;margin-left:36pt;margin-top:72pt;width:100pt;height:50pt;mso-position-horizontal-relative:page;mso-position-vertical-relative:page',
+      ),
+    )
+    expect(box?.offsetXEmu).toBe(36 * 12700 - 1440 * 635)
+    expect(box?.offsetYEmu).toBe(72 * 12700 - 1440 * 635)
+    expect(box?.pageRelV).toBe(true)
+    expect(box?.pageRelVFrom).toBe('page')
+    // Word spells a numeric position out as mso-position-*:absolute
+    const spelled = await boxOf(
+      para(
+        'position:absolute;margin-left:36pt;margin-top:72pt;width:100pt;height:50pt;mso-position-horizontal:absolute;mso-position-horizontal-relative:page;mso-position-vertical:absolute;mso-position-vertical-relative:margin',
+      ),
+    )
+    expect(spelled?.offsetXEmu).toBe(36 * 12700 - 1440 * 635)
+    expect(spelled?.offsetYEmu).toBe(72 * 12700)
+    expect(spelled?.pageRelV).toBe(true)
+    expect(spelled?.pageRelVFrom).toBe('margin')
+  })
+})
+
+describe('VML textbox autofit', () => {
+  it('mso-fit-shape-to-text drops the stale declared height', async () => {
+    const xml =
+      `<w:p><w:r><w:pict><v:shape ${V_NS} id="s1" type="#_x0000_t202" style="position:absolute;margin-left:0;margin-top:0;width:186.35pt;height:110.6pt">` +
+      '<v:textbox style="mso-fit-shape-to-text:t"><w:txbxContent><w:p><w:r><w:t>Fit</w:t></w:r></w:p></w:txbxContent></v:textbox>' +
+      '</v:shape></w:pict></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    const box = doc.blocks[0].textboxes?.[0]
+    expect(box?.widthPx).toBe(248)
+    expect(box?.heightPx).toBeUndefined()
+    expect(box?.minHeightPx).toBeUndefined()
+  })
+
+  it('textbox table cells keep tblGrid spans and per-cell tcBorders', async () => {
+    const cell = (w: number, extra: string, text: string) =>
+      `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${extra}</w:tcPr>` +
+      `<w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`
+    const line = (side: string) =>
+      `<w:${side} w:val="single" w:sz="4" w:space="0" w:color="00000A"/>`
+    const tbl =
+      '<w:tbl><w:tblPr><w:tblW w:w="6565" w:type="dxa"/>' +
+      `<w:tblBorders>${line('top')}${line('left')}</w:tblBorders></w:tblPr>` +
+      '<w:tblGrid><w:gridCol w:w="2455"/><w:gridCol w:w="1897"/><w:gridCol w:w="2213"/></w:tblGrid>' +
+      '<w:tr>' +
+      cell(2455, `<w:tcBorders>${line('top')}${line('left')}</w:tcBorders>`, 'A') +
+      cell(
+        4110,
+        `<w:gridSpan w:val="2"/><w:tcBorders>${line('top')}${line('right')}</w:tcBorders>`,
+        'B',
+      ) +
+      '</w:tr><w:tr>' +
+      cell(2455, `<w:tcBorders>${line('left')}</w:tcBorders>`, 'C') +
+      cell(1897, '', 'D') +
+      cell(2213, `<w:tcBorders>${line('right')}</w:tcBorders>`, 'E') +
+      '</w:tr></w:tbl>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: vmlTextboxParagraph(tbl) }))
+    const box = doc.blocks[0].textboxes?.[0]
+    expect(box?.readOnly).toBe(true)
+    const rows = box!.paras.map((p) => p.cells!)
+    expect(rows.map((r) => r.map((c) => c.widthTwips))).toEqual([
+      [2455, 4110],
+      [2455, 1897, 2213],
+    ])
+    expect(rows[0][0].borders?.top?.style).toBe('single')
+    expect(rows[0][0].borders?.left?.style).toBe('single')
+    expect(rows[0][1].borders?.top?.style).toBe('single')
+    expect(rows[0][1].borders?.right?.style).toBe('single')
+    expect(rows[1][0].borders?.left?.style).toBe('single')
+    expect(rows[1][1].borders).toBeUndefined()
+    expect(rows[1][2].borders?.right?.style).toBe('single')
+    expect(box!.paras.every((p) => p.runs.length === 0)).toBe(true)
   })
 })

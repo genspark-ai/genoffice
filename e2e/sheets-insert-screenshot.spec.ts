@@ -27,7 +27,7 @@ test.describe('sheets: Insert → Screenshot', () => {
       openFile: workbook,
     })
     try {
-      const sheets = await waitForPageWithUrl(launched.app, 'sheets/out')
+      const sheets = await waitForPageWithUrl(launched.app, '://sheets/')
       await waitForWorkbook(sheets)
 
       // Always stub the OS capturer in the main process: real capture is
@@ -65,7 +65,7 @@ test.describe('sheets: Insert → Screenshot', () => {
       await sheets.screenshot({ path: screenshotPath('screenshot-inserted') })
 
       await launched.app.evaluate(({ webContents }) => {
-        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('sheets/out'))
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('://sheets/'))
         wc?.send('menu:action', 'save')
       })
       await expect(() => {

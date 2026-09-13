@@ -19,13 +19,13 @@ describe('style-level paragraph borders (w:style/w:pPr/w:pBdr)', () => {
       }),
     )
     expect(doc.styles.get('Rule')!.display?.borderSides).toEqual({
-      b: { color: '1F4E79', szPt: 6 },
+      b: { color: '1F4E79', szPt: 6, spacePt: 4 },
     })
     // explicit none on the child cancels the inherited bottom (kept as null, not dropped)
     expect(doc.styles.get('RuleOff')!.display?.borderSides).toEqual({ b: null })
     // a child adding a top keeps the parent's bottom; the theme reference wins over the literal
     const boxed = doc.styles.get('RuleBoxed')!.display?.borderSides
-    expect(boxed?.b).toEqual({ color: '1F4E79', szPt: 6 })
+    expect(boxed?.b).toEqual({ color: '1F4E79', szPt: 6, spacePt: 4 })
     expect(boxed?.t?.szPt).toBe(1)
     expect(boxed?.t?.color).toMatch(/^[0-9A-F]{6}$/i)
     expect(boxed?.t?.color).toBe(doc.themeColors?.accent1)
@@ -45,7 +45,7 @@ describe('style-level paragraph borders (w:style/w:pPr/w:pBdr)', () => {
     expect(styled.format?.borderReset).toBeUndefined()
     // direct borders keep the literal color so the raw/model save comparison still matches
     expect(direct.format?.borders).toBe('t')
-    expect(direct.format?.borderLines).toEqual({ t: { color: 'FF0000', szPt: 0.5 } })
+    expect(direct.format?.borderLines).toEqual({ t: { color: 'FF0000', szPt: 0.5, spacePt: 1 } })
   })
 
   it('records direct none/nil sides as a reset that cancels the style side', async () => {

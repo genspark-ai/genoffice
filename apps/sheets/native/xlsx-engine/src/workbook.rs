@@ -410,11 +410,7 @@ pub(crate) const SHEET_MAX_COLUMNS: usize = 16_384;
 /// A declared extent reaching the sheet's last row/column means "whole
 /// sheet", not a used range; only the measured cells count then.
 fn declared_extent(declared: usize, sheet_max: usize) -> usize {
-    if declared >= sheet_max {
-        0
-    } else {
-        declared
-    }
+    if declared >= sheet_max { 0 } else { declared }
 }
 
 fn spans_full_axis(rows: usize, columns: usize) -> bool {
@@ -445,6 +441,8 @@ pub(crate) fn read_shared_strings(
     let mut runs: Vec<RichRun> = Vec::new();
     let mut current_run: Option<RichRun> = None;
     let mut in_text = false;
+    let mut text_preserve = false;
+    let mut text_node = String::new();
     let mut in_phonetic = false;
     loop {
         match reader.read_event_into(&mut buffer)? {
@@ -467,35 +465,32 @@ pub(crate) fn read_shared_strings(
             Event::Start(element) | Event::Empty(element) if current_run.is_some() => {
                 if element.local_name().as_ref() == b"t" {
                     in_text = true;
+                    text_preserve = preserves_space(&reader, &element)?;
+                    text_node.clear();
                 } else if let Some(run) = current_run.as_mut() {
                     apply_run_property(run, &reader, &element, colors)?;
                 }
             }
             Event::Start(element) if element.local_name().as_ref() == b"t" => {
                 in_text = !in_phonetic;
+                text_preserve = preserves_space(&reader, &element)?;
+                text_node.clear();
             }
-            Event::Text(text) if in_text => {
-                let decoded = decode_text(&text)?;
-                current.push_str(&decoded);
-                if let Some(run) = &mut current_run {
-                    run.text.push_str(&decoded);
-                }
-            }
-            Event::CData(text) if in_text => {
-                let decoded = decode_cdata(&text)?;
-                current.push_str(&decoded);
-                if let Some(run) = &mut current_run {
-                    run.text.push_str(&decoded);
-                }
-            }
+            Event::Text(text) if in_text => text_node.push_str(&decode_text(&text)?),
+            Event::CData(text) if in_text => text_node.push_str(&decode_cdata(&text)?),
             Event::GeneralRef(reference) if in_text => {
-                let decoded = general_ref_text(&reference)?;
-                current.push_str(&decoded);
-                if let Some(run) = &mut current_run {
-                    run.text.push_str(&decoded);
-                }
+                text_node.push_str(&general_ref_text(&reference)?);
             }
-            Event::End(element) if element.local_name().as_ref() == b"t" => in_text = false,
+            Event::End(element) if element.local_name().as_ref() == b"t" => {
+                if in_text {
+                    let text = text_node_content(std::mem::take(&mut text_node), text_preserve);
+                    current.push_str(&text);
+                    if let Some(run) = &mut current_run {
+                        run.text.push_str(&text);
+                    }
+                }
+                in_text = false;
+            }
             Event::End(element) if element.local_name().as_ref() == b"r" => {
                 if let Some(run) = current_run.take() {
                     runs.push(run);

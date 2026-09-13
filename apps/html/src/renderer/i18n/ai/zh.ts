@@ -65,6 +65,8 @@ export const zh = {
   aiToolClarifySkipped: '跳过了问卷',
   aiToolPlan: '简报已确认（{n} 个区块）',
   aiToolPlanRejected: '简报未确认',
+  aiToolPlanFailed: '简报起草失败',
+  aiDraftingBrief: '正在起草简报…',
   aiToolWritePage: '生成页面',
   aiToolWritePageFailed: '页面生成失败',
   aiToolWritePagePartial: '页面生成了一部分',

@@ -1,13 +1,15 @@
 // Section geometry: page box, margins, columns, doc-grid pitch and the
 // per-block column / width / vertical-alignment specs derived from sections.
-import type { SectionInfo, SectionSettings } from '@genoffice/docx-engine'
+import type { SectionInfo, SectionSettings, TextFlowDirection } from '@genoffice/docx-engine'
 
+import { columnLineSplits } from './pagination-slices'
 import type {
   BlockBox,
   ColumnBlockPlacement,
   PageSlice,
   SectionGeom,
   SectionHfHeights,
+  ColumnSplitShape,
 } from './pagination-types'
 
 const twipsToPx = (twips: number) => (twips / 1440) * 96
@@ -29,8 +31,21 @@ export function sectionPageBox(set: SectionSettings): {
   }
 }
 
-/** Body top = max(marginTop, headerDist + header height) */
+/** Shared canvas paper: the widest section's page (px); narrower pages are centered on it. */
+export function paperWidthPx(sections: SectionInfo[], fallback?: SectionSettings): number {
+  const widths = sections.map((s) => twipsToPx(s.settings.pageWidth))
+  if (fallback) widths.push(twipsToPx(fallback.pageWidth))
+  return widths.length > 0 ? Math.max(...widths) : 0
+}
+
+/** Left edge of a section's page on the shared paper (px); Word centers pages of differing widths. */
+export function pageLeftPx(set: SectionSettings, paperW: number): number {
+  return Math.max(0, (paperW - twipsToPx(set.pageWidth)) / 2)
+}
+
+/** Body top = max(marginTop, headerDist + header height); a fixed (negative pgMar) margin ignores the header */
 export function effectiveTopPx(set: SectionSettings, headerPx: number): number {
+  if (set.marginTopFixed) return twipsToPx(set.marginTop)
   const dist = twipsToPx(set.headerDist ?? 720)
   return Math.max(twipsToPx(set.marginTop), headerPx > 0 ? dist + headerPx : 0)
 }
@@ -52,6 +67,7 @@ export function canvasContentTopPx(
 
 /** Body bottom margin = max(marginBottom, footerDist + footer height) */
 export function effectiveBottomPx(set: SectionSettings, footerPx: number): number {
+  if (set.marginBottomFixed) return twipsToPx(set.marginBottom)
   const dist = twipsToPx(set.footerDist ?? 720)
   return Math.max(twipsToPx(set.marginBottom), footerPx > 0 ? dist + footerPx : 0)
 }
@@ -164,8 +180,13 @@ export function sectionBidi(s: SectionInfo): boolean {
  * column width plus a per-column constant translate mapping its stacked
  * single-flow position into the column slot. dy = region top − the column
  * start's offset from the page start (negative for later columns/regions:
- * they pull up over the vacated stacked space). Blocks are placed whole by
- * their top; floated/eless blocks are skipped.
+ * they pull up over the vacated stacked space). Blocks are placed by their
+ * top. A paragraph cut at a line boundary between columns of different widths
+ * (w:equalWidth="0") takes the wider width plus a split shape that rewraps
+ * the head or the tail at the narrower one (columnLineSplits); any other
+ * block whose lines run on into narrower columns takes the narrowest of them
+ * (a narrow-wrapped head beats a tail clipped by its column).
+ * Floated/eless blocks are skipped.
  */
 export function columnLayoutSpecs(
   blocks: BlockBox[],
@@ -174,10 +195,53 @@ export function columnLayoutSpecs(
 ): ColumnBlockPlacement[] {
   const specs: ColumnBlockPlacement[] = []
   if (blocks.length === 0) return specs
-  let bi = 0
+  const splitOf = new Map<number, ColumnSplitShape & { widthPx: number }>()
+  const colWidthsOf = (si: number) => {
+    const sec = sections[Math.max(0, Math.min(si, sections.length - 1))]
+    if (!sec) return undefined
+    const geom = sectionColGeom(sec)
+    return geom.cols > 1 ? geom.widths : undefined
+  }
+  for (const sp of columnLineSplits(blocks, slices, colWidthsOf)) {
+    const b = blocks[sp.bi]
+    if (!b.el) continue
+    const cs = getComputedStyle(b.el)
+    const padTop = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0)
+    const headNarrow = sp.headWidthPx < sp.tailWidthPx
+    // no table (the probe failed): the current text bottom bounds the float and
+    // the edge sits a hair past the midpoint cut, inside the cut line's box
+    const tailBottom = sp.tailBottom ?? b.height - (b.spaceAfterPx ?? 0) - (b.footnoteExtraPx ?? 0)
+    const edge = sp.shapeY ?? (headNarrow ? sp.cutY - 1 : sp.cutY + 1)
+    const rtl = cs.direction === 'rtl'
+    splitOf.set(sp.bi, {
+      widthPx: Math.max(sp.headWidthPx, sp.tailWidthPx),
+      floatPx: Math.abs(sp.headWidthPx - sp.tailWidthPx),
+      heightPx: Math.max((headNarrow ? edge : tailBottom) - padTop, 0),
+      insetPx: headNarrow ? 0 : Math.max(edge - padTop, 0),
+      ...(rtl ? { rtl } : {}),
+    })
+  }
+  type Col = {
+    start: number
+    end: number
+    section: number
+    widthPx: number | undefined
+    dx: number
+    dy: number
+    natural: boolean
+  }
+  const cols: Col[] = []
   for (const slice of slices) {
     if (!slice.regions) {
-      while (bi < blocks.length && blocks[bi].top < slice.end - 0.5) bi++
+      cols.push({
+        start: slice.start,
+        end: slice.end,
+        section: -1,
+        widthPx: undefined,
+        dx: 0,
+        dy: 0,
+        natural: true,
+      })
       continue
     }
     for (const region of slice.regions) {
@@ -199,27 +263,140 @@ export function columnLayoutSpecs(
         const dx = geom.cols > 1 ? (rtl ? totalW - (xs[c] ?? 0) - w : (xs[c] ?? 0)) : 0
         const dy = region.top - (col.start - slice.start)
         const widthPx = geom.cols > 1 ? w : undefined
-        if (widthPx === undefined && Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) {
+        cols.push({
+          start: col.start,
+          end: col.end,
+          section: region.section,
+          widthPx,
+          dx,
+          dy,
           // untouched single-column region at its natural place: no decorations
-          while (bi < blocks.length && blocks[bi].top < col.end - 0.5) bi++
-          continue
-        }
-        while (bi < blocks.length && blocks[bi].top < col.end - 0.5) {
-          const b = blocks[bi]
-          bi++
-          if (!b.el || b.floated) continue
-          if (b.top < col.start - 0.5) continue
-          specs.push({
-            el: b.el,
-            ...(widthPx !== undefined ? { widthPx: blockColumnWidth(b.el, widthPx) } : {}),
-            dx,
-            dy,
-          })
-        }
+          natural: widthPx === undefined && Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01,
+        })
       }
     }
   }
+  let bi = 0
+  cols.forEach((col, k) => {
+    while (bi < blocks.length && blocks[bi].top < col.end - 0.5) {
+      const b = blocks[bi]
+      const split = splitOf.get(bi)
+      bi++
+      if (col.natural || !b.el || b.floated) continue
+      if (b.top < col.start - 0.5) continue
+      let widthPx = col.widthPx
+      if (split && widthPx !== undefined) {
+        const { widthPx: w, ...shape } = split
+        specs.push({
+          el: b.el,
+          widthPx: blockColumnWidth(b.el, w),
+          dx: col.dx,
+          dy: col.dy,
+          split: shape,
+        })
+        continue
+      }
+      if (widthPx !== undefined) {
+        const bottom = b.top + b.height - (b.footnoteExtraPx ?? 0) - (b.spaceAfterPx ?? 0)
+        for (let j = k + 1; j < cols.length && cols[j].start < bottom - 0.5; j++) {
+          const next = cols[j]
+          if (next.section !== col.section || next.widthPx === undefined) break
+          widthPx = Math.min(widthPx, next.widthPx)
+        }
+      }
+      specs.push({
+        el: b.el,
+        ...(widthPx !== undefined ? { widthPx: blockColumnWidth(b.el, widthPx) } : {}),
+        dx: col.dx,
+        dy: col.dy,
+      })
+    }
+  })
   return specs
+}
+
+export interface WidthPassState {
+  sig: string
+  runs: number
+  /** widths applied by the last two passes, by block */
+  last: Map<HTMLElement, number>
+  prev: Map<HTMLElement, number>
+  /** blocks caught ping-ponging between columns: pinned to the narrower width */
+  forced: Map<HTMLElement, number>
+}
+
+export const newWidthPassState = (): WidthPassState => ({
+  sig: '',
+  runs: 0,
+  last: new Map(),
+  prev: new Map(),
+  forced: new Map(),
+})
+
+/** a document edit: the pins and the cycle history belong to the old flow */
+export function resetWidthPassHistory(state: WidthPassState): void {
+  state.runs = 0
+  state.last = new Map()
+  state.prev = new Map()
+  state.forced.clear()
+}
+
+/**
+ * Follow-up pass gate for wrap widths that depend on where a block lands
+ * (w:equalWidth="0" columns): a block's width is that of the column its
+ * measured height puts it in, so a pass whose widths differ from the previous
+ * pass's changed the line breaks and asks for one more measurement. A block
+ * straddling the column boundary may have no fixed point (wide in the first
+ * column it is short enough to start in the second, narrow there it is tall
+ * enough to start in the first — Word rewraps it mid-paragraph, which one DOM
+ * width cannot); once the widths repeat the pass before last, such blocks
+ * are pinned to their narrower width, which wraps complete inside either
+ * column instead of being clipped by the narrow one. Pins apply to `specs`
+ * in place and hold until the caller resets the history (a document edit).
+ * Bounded to maxRuns consecutive re-passes.
+ */
+export function widthPassGate(
+  state: WidthPassState,
+  specs: ColumnBlockPlacement[],
+  maxRuns = 6,
+): boolean {
+  const pin = () => {
+    for (const s of specs) {
+      const f = state.forced.get(s.el)
+      if (f !== undefined && !s.split && s.widthPx !== undefined && s.widthPx > f) s.widthPx = f
+    }
+  }
+  const snapshot = () => new Map(specs.map((s) => [s.el, Math.round(s.widthPx ?? -1)]))
+  const sigOf = (m: Map<HTMLElement, number>) => [...m.values()].join(',')
+  // a split's float geometry changes line breaks like a width does
+  const splitSig = () =>
+    specs.some((s) => s.split)
+      ? `|${specs.map((s) => (s.split ? `${Math.round(s.split.heightPx)}/${Math.round(s.split.insetPx)}` : '')).join(',')}`
+      : ''
+  pin()
+  let cur = snapshot()
+  let sig = sigOf(cur)
+  if (`${sig}${splitSig()}` === state.sig) {
+    state.runs = 0
+    return false
+  }
+  if (cur.size === state.prev.size && sig === sigOf(state.prev)) {
+    for (const [el, w] of cur) {
+      const before = state.last.get(el)
+      if (before !== undefined && before > 0 && w > 0 && before !== w) {
+        state.forced.set(el, Math.min(w, before))
+      }
+    }
+    pin()
+    cur = snapshot()
+    sig = sigOf(cur)
+  }
+  state.prev = state.last
+  state.last = cur
+  state.sig = `${sig}${splitSig()}`
+  if (state.runs >= maxRuns) return false
+  state.runs++
+  return true
 }
 
 const isTableBlock = (el: HTMLElement) =>
@@ -230,7 +407,12 @@ const isTableBlock = (el: HTMLElement) =>
  *  sized to the full column overflows its window by its indent and the
  *  preview clips the last glyphs of every line */
 function blockColumnWidth(el: HTMLElement, colW: number): number {
-  if (isTableBlock(el) || el.style.width) return colW
+  return Math.max(0, colW - blockInlineExtraPx(el))
+}
+
+/** horizontal margins/padding/borders the block loses from its column width (0 for tables and fixed-width blocks) */
+export function blockInlineExtraPx(el: HTMLElement): number {
+  if (isTableBlock(el) || el.style.width) return 0
   const cs = getComputedStyle(el)
   let extra = (parseFloat(cs.marginLeft) || 0) + (parseFloat(cs.marginRight) || 0)
   if (cs.boxSizing !== 'border-box') {
@@ -240,7 +422,7 @@ function blockColumnWidth(el: HTMLElement, colW: number): number {
       (parseFloat(cs.borderLeftWidth) || 0) +
       (parseFloat(cs.borderRightWidth) || 0)
   }
-  return Math.max(0, colW - extra)
+  return extra
 }
 
 /**
@@ -255,11 +437,14 @@ function blockColumnWidth(el: HTMLElement, colW: number): number {
  * sections'): preview clones render into per-section wrap widths, so any
  * container-relative block would reflow there. Tables keep their inline min()
  * width and get the section geometry via --doc-content-w / --doc-margin-* instead.
+ * Pages narrower than the shared paper (the widest section) are centered on it
+ * like Word: their blocks carry that page offset as pageDx.
  */
 export function sectionWidthSpecs(
   blocks: BlockBox[],
   sections: SectionInfo[],
   geoms: SectionGeom[],
+  paperW = paperWidthPx(sections),
 ): ColumnBlockPlacement[] {
   const canvasW = geoms[0]?.contentWidth
   // the canvas pads by sections[0] (App.tsx's canvasSection): placement offsets
@@ -272,7 +457,7 @@ export function sectionWidthSpecs(
     const widthDiffers =
       g.contentWidth !== undefined && Math.abs(g.contentWidth - (canvasW ?? 0)) > 0.5
     const insetDiffers = Math.abs(twipsToPx(set.marginLeft) - canvasInsetLeftPx) > 0.5
-    return widthDiffers || insetDiffers
+    return widthDiffers || insetDiffers || pageLeftPx(set, paperW) > 0.5
   }
   if (canvasW === undefined || !geoms.some((_, i) => differsAt(i))) return []
   const specs: ColumnBlockPlacement[] = []
@@ -288,6 +473,7 @@ export function sectionWidthSpecs(
       // own section's left margin; dx composes with column/vAlign translates
       dx: (set ? twipsToPx(set.marginLeft) : 0) - canvasInsetLeftPx,
       dy: 0,
+      pageDx: set ? pageLeftPx(set, paperW) : 0,
       contentWPx: w,
       marginLeftPx: set ? twipsToPx(set.marginLeft) : 0,
       marginRightPx: set ? twipsToPx(set.marginRight) : 0,
@@ -299,6 +485,29 @@ export function sectionWidthSpecs(
       spec.widthPx = w - (parseFloat(cs.marginLeft) || 0) - (parseFloat(cs.marginRight) || 0)
     }
     specs.push(spec)
+  }
+  return specs
+}
+
+/**
+ * Per-block top margin for documents whose sections disagree on w:pgMar top:
+ * page-relative anchor offsets subtract their own section's top margin
+ * (--doc-margin-top) to land in content coordinates, and the single .doc-page
+ * injection only knows the canvas section's. Uniform docs get no specs.
+ */
+export function sectionTopMarginSpecs(
+  blocks: BlockBox[],
+  sections: SectionInfo[],
+): ColumnBlockPlacement[] {
+  const tops = sections.map((s) => (s.settings ? twipsToPx(s.settings.marginTop) : undefined))
+  const known = tops.filter((t): t is number => t !== undefined)
+  if (known.length === 0 || known.every((t) => Math.abs(t - known[0]) < 0.5)) return []
+  const specs: ColumnBlockPlacement[] = []
+  for (const b of blocks) {
+    if (!b.el) continue
+    const si = Math.max(0, Math.min(b.section ?? 0, tops.length - 1))
+    const t = tops[si]
+    if (t !== undefined) specs.push({ el: b.el, dx: 0, dy: 0, marginTopPx: t })
   }
   return specs
 }
@@ -379,7 +588,8 @@ export function vAlignShiftSpecs(
   for (const slice of slices) {
     const va = sections[slice.section]?.settings.vAlign
     if (va !== 'center' && va !== 'bottom') continue
-    if (slice.regions) continue
+    // vertical-text pages: contentHeight is the sideways fill, not free vertical space
+    if (slice.regions || geoms[slice.section]?.vertical) continue
     const colH = geoms[slice.section]?.contentHeight ?? 0
     const free = colH - (slice.end - slice.start)
     if (free < 1) continue
@@ -397,6 +607,79 @@ export function vAlignShiftSpecs(
       page.push({ el: b.el, dx: 0, dy })
     }
     if (whole) specs.push(...page)
+  }
+  return specs
+}
+
+/** sectPr w:textDirection modes the renderer lays out sideways (lrTbV and unknown values stay horizontal) */
+export function sectionVertical(set: SectionSettings | undefined): TextFlowDirection | undefined {
+  const d = set?.textDirection
+  return d === 'tbRl' || d === 'tbRlV' || d === 'btLr' ? d : undefined
+}
+
+/**
+ * Where a block of a vertical-text page paints: `off` is its flow offset from
+ * the page start (negative for a paragraph continued from the previous page),
+ * `extentPx` its block-axis size. tbRl/tbRlV fill from the right edge, btLr from
+ * the left; the translate lifts the block's flow position back to the page top.
+ */
+export function verticalBlockShift(
+  mode: TextFlowDirection,
+  fillWidthPx: number,
+  off: number,
+  extentPx: number,
+): { dx: number; dy: number } {
+  return { dx: mode === 'btLr' ? off : fillWidthPx - off - extentPx, dy: 0 - off }
+}
+
+/**
+ * Per-block placement for pages of vertical-text sections. Blocks are measured
+ * horizontally at the line length (contentWidth) and paginated against the
+ * sideways fill extent (contentHeight); on display each becomes a writing-mode
+ * box as tall as the line length, translated to its sideways slot. The box's
+ * flow footprint is trimmed back to the measured one via margin-bottom so the
+ * page gap math stays that of a horizontal page (the last block also absorbs
+ * the flow beyond the physical body height).
+ */
+export function verticalTextSpecs(
+  blocks: BlockBox[],
+  slices: PageSlice[],
+  sections: SectionInfo[],
+  geoms: SectionGeom[],
+): ColumnBlockPlacement[] {
+  const specs: ColumnBlockPlacement[] = []
+  if (!sections.some((s) => sectionVertical(s.settings))) return specs
+  let bi = 0
+  for (const slice of slices) {
+    const si = Math.max(0, Math.min(slice.section, sections.length - 1))
+    const mode = sectionVertical(sections[si]?.settings)
+    const g = geoms[Math.min(si, geoms.length - 1)]
+    const lineLen = g?.contentWidth
+    if (!mode || !g || slice.regions || lineLen === undefined) {
+      while (bi < blocks.length && blocks[bi].top < slice.end - 0.5) bi++
+      continue
+    }
+    const page: BlockBox[] = []
+    while (bi < blocks.length && blocks[bi].top < slice.end - 0.5) {
+      const b = blocks[bi++]
+      if (b.el && !b.floated && b.top >= slice.start - 0.5) page.push(b)
+    }
+    const used = slice.end - slice.start
+    page.forEach((b, i) => {
+      const off = b.top - slice.start
+      const next = page[i + 1]
+      const marginBottomPx = next
+        ? next.top - b.top - lineLen
+        : Math.min(used, lineLen) - off - lineLen
+      specs.push({
+        el: b.el!,
+        // extras captured during measurement: with the writing-mode decoration
+        // applied, the physical margins no longer hold the indents
+        widthPx: Math.max(0, lineLen - (b.inlineExtraPx ?? blockInlineExtraPx(b.el!))),
+        ...verticalBlockShift(mode, g.contentHeight, off, b.height),
+        vertical: { mode, marginBottomPx, firstOnPage: i === 0 },
+      })
+    })
   }
   return specs
 }
@@ -435,20 +718,26 @@ export function sectionGeoms(
     }
     const set = s.settings
     const hf = hfHeights?.[i]
+    const vertical = sectionVertical(set)
     const firstContentHeight =
-      hf?.firstHeaderPx !== undefined || hf?.firstFooterPx !== undefined
+      !vertical && (hf?.firstHeaderPx !== undefined || hf?.firstFooterPx !== undefined)
         ? twipsToPx(set.pageHeight) -
           effectiveTopPx(set, hf.firstHeaderPx ?? 0) -
           effectiveBottomPx(set, hf.firstFooterPx ?? 0)
         : undefined
+    const bodyH =
+      twipsToPx(set.pageHeight) -
+      effectiveTopPx(set, hf?.headerPx ?? 0) -
+      effectiveBottomPx(set, hf?.footerPx ?? 0)
+    const bodyW = twipsToPx(set.pageWidth - set.marginLeft - set.marginRight)
     return {
-      contentHeight:
-        twipsToPx(set.pageHeight) -
-        effectiveTopPx(set, hf?.headerPx ?? 0) -
-        effectiveBottomPx(set, hf?.footerPx ?? 0),
+      // vertical text fills the page sideways: lines are bodyH long and stack across bodyW
+      contentHeight: vertical ? bodyW : bodyH,
       ...(firstContentHeight !== undefined ? { firstContentHeight } : {}),
-      contentWidth: twipsToPx(set.pageWidth - set.marginLeft - set.marginRight),
+      contentWidth: vertical ? bodyH : bodyW,
+      ...(vertical ? { vertical } : {}),
       topPx: effectiveTopPx(set, hf?.headerPx ?? 0),
+      pageHeightPx: twipsToPx(set.pageHeight),
       forceBreak,
       startType: s.startType,
       // colWidths only for explicit-width columns: the narrower-column gate is

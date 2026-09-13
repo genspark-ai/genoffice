@@ -401,4 +401,12 @@ export const id = {
   dlgFnDescNpv: 'Mengembalikan nilai sekarang bersih arus kas pada tingkat diskonto.',
   dlgFnDescIrr: 'Mengembalikan tingkat pengembalian internal serangkaian arus kas.',
   dlgFnCatFinancial: 'Keuangan',
+  dlgFnCatDatabase: 'Basis data',
+  dlgFnCatInformation: 'Informasi',
+  dlgFnCatEngineering: 'Teknik',
+  dlgFnCatCube: 'Kubus',
+  dlgFnCatCompatibility: 'Kompatibilitas',
+  dlgFnCatWeb: 'Web',
+  dlgFnCatArray: 'Array',
+  dlgFnCatOther: 'Lainnya',
 } satisfies Record<keyof typeof zh, string>

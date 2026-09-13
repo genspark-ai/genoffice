@@ -23,6 +23,7 @@
 
 <p align="center" dir="rtl">
   <a href="#download"><b>הורדה</b></a> ·
+  <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
   <a href="https://genoffice.ai/"><b>אתר</b></a> ·
   <a href="https://genoffice.ai/join"><b>קהילה</b></a> ·
   <a href="../../PRIVACY.md"><b>פרטיות</b></a>
@@ -48,6 +49,10 @@ Windows ו-Linux. היא פותחת ושומרת קבצי `.docx`,‏ `.xlsx` ו
   במפתח, או הביאו מפתח משלכם עבור Claude,‏ OpenAI,‏ Gemini,‏ DeepSeek,‏
   Kimi,‏ GLM,‏ Qwen,‏ Doubao,‏ MiniMax,‏ Grok,‏ Mistral,‏ OpenRouter,‏ Requesty, או כל
   endpoint תואם-OpenAI, כולל שרתים מקומיים.
+- **ניתן לסקריפטים ומוכן לסוכנים.** האפליקציה מגיעה עם שורת פקודה `genoffice`
+  ועם skill עבור Claude Code,‏ Codex,‏ Cursor,‏ Gemini CLI,‏ GitHub Copilot,‏
+  OpenCode ו-Windsurf, כך שסוכן קוד יכול ליצור, להמיר, לקרוא ולערוך קבצי
+  Office אמיתיים על המחשב שלכם בלי לפתוח חלון.
 
 **להורדה:** [macOS](https://github.com/genspark-ai/genoffice/releases/latest) ‏(Apple Silicon ו-Intel) ·
 [Windows](https://github.com/genspark-ai/genoffice/releases/latest) ‏(x64 ו-Arm) ·
@@ -56,8 +61,8 @@ Windows ו-Linux. היא פותחת ושומרת קבצי `.docx`,‏ `.xlsx` ו
 
 ## הדגמה
 
-שש אפליקציות, פאנל AI אחד. כל צילום מסך הוא מהאפליקציה האמיתית ב-macOS, עם
-ה-AI מופעל מהפרומפט שאפשר לקרוא בפאנל.
+שש אפליקציות, פאנל AI אחד, ושורת פקודה לסוכן הקוד שלכם. כל צילום מסך הוא
+מהאפליקציה האמיתית ב-macOS, עם ה-AI מופעל מהפרומפט שאפשר לקרוא בפאנל.
 
 ### 1 · Docs — פתחו וערכו `.docx` עם AI שאפשר לבדוק
 
@@ -155,6 +160,26 @@ brief) — משפט פתיחה, פלטת צבעים, טיפוגרפיה וכיו
 </tr>
 </table>
 
+### 7 · CLI — סוכן הקוד שלכם מפעיל את GenOffice, על המחשב שלכם
+
+GenOffice מגיעה עם שורת פקודה `genoffice` ועם skill לסוכנים. התקינו את
+ה-skill, ו-Claude Code,‏ Codex,‏ Cursor,‏ Gemini CLI,‏ GitHub Copilot,‏ OpenCode
+או Windsurf יוכלו ליצור, להמיר, לקרוא ולערוך קבצי Office אמיתיים דרך אותם
+מנועים שמפעילים את האפליקציות, בלי לפתוח חלון.
+
+<img src="../assets/readme/cli-deck-in-app.webp" alt="GenOffice Slides מציג מצגת בת שמונה שקופיות על מערכת השמש שסוכן קוד בנה דרך שורת הפקודה genoffice: שקופית השער על הקנבס, שמונה תמונות ממוזערות בצד שמאל ופאנל ה-AI פתוח" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/cli-slides-grid.webp" alt="שמונה השקופיות המרונדרות של מצגת מערכת השמש זו לצד זו: שער, ציר זמן של החקר, ארבעה מספרים מרכזיים, תרשים עמודות של קוטרי כוכבי הלכת, עולמות סלעיים מול ענקים, המספר הבולט 99.8% של השמש, רשת ארבעת הענקים ומסקנות"></td>
+<td width="50%"><img src="../assets/readme/cli-integrations.webp" alt="הגדרות GenOffice, עמוד Integrations: ה-skill של genoffice מותקן ב-Claude Code, עם כפתורי Install ליד Codex ו-Cursor"></td>
+</tr>
+<tr>
+<td dir="rtl"><b>פרומפט אחד לסוכן שלכם</b> — ״בנו מצגת בת שמונה שקופיות על מערכת השמש.״ הסוכן קורא את ה-skill, כותב גיליון סטייל, מתווה ומפרט עמוד אחד לכל שקופית, מייצר את שתי התמונות עם <code>genoffice image</code>, ונותן ל-<code>genoffice slides check</code> לדחות כל דבר שגולש או חופף לפני ש-<code>genoffice create</code> מרכיב את ה-<code>.pptx</code> ו-<code>slides render</code> מחזיר PNG לכל שקופית להתרשמות.</td>
+<td dir="rtl"><b>התקינו פעם אחת, מתוך הגדרות → שילובים</b> — GenOffice מציגה את סוכני הקוד שהיא מוצאת על המחשב הזה וכותבת את ה-skill לכל אחד שתבחרו. או הורידו את ה-skill כ-zip, או הריצו <code>npx skills add genspark-ai/genoffice</code>. הפקודות ותהליך העבודה המלא נמצאים ב<a href="#command-line-and-agent-skill">שורת הפקודה וה-skill לסוכנים</a>.</td>
+</tr>
+</table>
+
 ## למה GenOffice
 
 - **קוד פתוח**, ברישיון Apache-2.0, מפותח בפומבי ב-GitHub.
@@ -171,6 +196,8 @@ brief) — משפט פתיחה, פלטת צבעים, טיפוגרפיה וכיו
 - **PDF שמטופל כמו שצריך.** ערכו טקסט ישירות בתוך העמוד, והמירו PDF ל-Word,
   Excel או PowerPoint במכשיר עצמו, עם OCR מובנה למסמכים סרוקים.
 - **גם Markdown ו-HTML**, עם אותו פאנל AI וייצוא מקומי ל-Word.
+- **ניתן לסקריפטים.** שורת פקודה `genoffice` ו-skill לסוכנים מעמידים כל מנוע
+  לרשות Claude Code,‏ Codex,‏ Cursor וסוכני קוד אחרים, עדיין על המכשיר.
 - **חינם**, גם ליחידים וגם לצוותים.
 
 ## ספקי ה-AI
@@ -190,6 +217,73 @@ OpenRouter,‏ Requesty ו-OpenCode Zen/Go, ובנוסף שדה מותאם אי�
 כל החבילה מגיעה עם ערכות עיצוב בהיר, כהה ומצב מערכת. ערכות העיצוב משנות רק
 את מה שמוצג על המסך: קבצים מיוצאים, מודפסים ונשמרים תמיד שומרים על הצבעים
 המקוריים של המסמך.
+
+<a id="command-line-and-agent-skill"></a>
+
+## שורת הפקודה וה-skill לסוכנים
+
+כל מה שהאפליקציות יכולות לעשות לקובץ, שורת הפקודה `genoffice` יכולה לעשות
+מהטרמינל: לבדוק, להמיר, ליצור, לקרוא ולערוך Word,‏ Excel,‏ PowerPoint,‏ PDF,‏
+Markdown ו-HTML על אותם מנועים, ללא ממשק גרפי. היא מותקנת יחד עם GenOffice,
+לא דורשת סביבת הרצה משלה, ולעולם לא שולחת מסמך לשום מקום. יחד עם **ה-skill
+לסוכנים** המצורף, היא הופכת סוכן קוד לעובד מסמכים שמייצר קבצי Office אמיתיים
+במקום קירובים ב-Markdown.
+
+**עובד עם:** Claude Code,‏ Codex,‏ Cursor,‏ Gemini CLI,‏ GitHub Copilot,‏
+OpenCode ו-Windsurf ישר מהקופסה, ועם כל סוכן אחר שקורא skills.
+
+### התקנת ה-skill
+
+| איך                                    | מה קורה                                                                                                                                             |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **הגדרות → שילובים** באפליקציה         | מציג את הסוכנים שנמצאו על המחשב הזה; לחיצה אחת כותבת את ה-skill לכל אחד שתבחרו. כפתור **Update** מופיע כשגרסת GenOffice חדשה מגיעה עם skill מעודכן. |
+| **הורדה כ-zip** באותו העמוד            | המבנה ש-claude.ai, אפליקציות Claude לדסקטופ ועוזרים אחרים מקבלים כ-skill שהועלה.                                                                    |
+| `npx skills add genspark-ai/genoffice` | מתקין מהמאגר הזה לכל סוכן שתומך ב-skills.                                                                                                           |
+
+לאחר מכן פתחו צ'אט חדש ובקשו מסמך. ה-skill מלמד את הסוכן מתי לפנות
+ל-`genoffice`, איך לקרוא קובץ לפני שעורכים אותו, ואיך לבדוק את העבודה של
+עצמו.
+
+### התחלה מהירה מהטרמינל
+
+```bash
+genoffice --version
+genoffice info report.docx --json                  # headings and blocks; or sheets, slides, pages
+genoffice convert report.md --to pdf               # md/html/docx/xlsx/pptx → pdf, pdf → docx/xlsx/pptx, …
+genoffice create --type docx --from notes.md --out notes.docx
+genoffice create --type xlsx --from table.json --out sales.xlsx   # "=SUM(B2:B9)" cells stay live formulas
+genoffice docs read report.docx --range 0-9 --json # then `docs apply --ops edits.json` edits in place
+genoffice render report.docx --out shots/          # one PNG per page, to look at what you made
+genoffice open sales.xlsx                          # hand the result to the editor
+```
+
+כל פקודה מדפיסה סיכום בשורה אחת, או אובייקט JSON יחיד עם `--json`. השינויים
+אטומיים: פעולה שנדחתה משאירה את הקובץ ללא שינוי וחוזרת עם שגיאה מנחה.
+`genoffice help` מציג את מערך הפקודות הנוכחי; התיעוד המלא נמצא
+ב-[packages/cli/README.md](../../packages/cli/README.md).
+
+### מה הסוכן מריץ בפועל
+
+מצגת מערכת השמש בהדגמה למעלה נוצרה מפרומפט אחד ב-Claude Code. מאחורי
+הקלעים, הסוכן עקב אחרי תהליך העבודה המדורג של ה-skill, וה-CLI בדק כל שלב
+לפני שהשלב הבא התחיל:
+
+```bash
+genoffice capabilities --json                        # which cloud tools GenOffice has configured
+genoffice guide slides design                        # the deck workflow and layout library
+genoffice image "the eight planets in a row …" --aspect 16:9 --out deck/assets/cover.jpg
+genoffice slides check deck/outline.json --json      # 8 pages, no findings
+genoffice slides check deck/pages/01.json --json     # builds one slide, audits overflow and overlap
+…                                                    # one page file per slide, fixed until each check is clean
+genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck/solar-system.pptx --json
+genoffice slides render deck/solar-system.pptx --out deck/shots --json
+genoffice slides audit deck/solar-system.pptx --json    # 8 slides, no layout issues
+genoffice slides replace deck/solar-system.pptx --slide 4 --spec deck/pages/05.json --json
+genoffice open deck/solar-system.pptx
+```
+
+שום קריאה למודל לא מתבצעת בתוך `genoffice`: הסוכן חושב, ה-CLI בונה ובודק,
+והתוצאה נפתחת ב-GenOffice או ב-PowerPoint כקובץ `.pptx` רגיל.
 
 <a id="download"></a>
 
@@ -353,6 +447,18 @@ MiniMax,‏ Grok,‏ Mistral,‏ OpenRouter,‏ Requesty ו-OpenCode Zen/Go, ו�
 ומצטמצם למבני Word אמיתיים: כותרות, פסקאות, רשימות, טבלאות, כרטיסים, שורות
 KPI, שדות טופס ורקעי עמוד; רק אלמנטים ויזואליים שאין להם מקביל ב-Word
 (תרשימים, אייקונים, תיבות מעוצבות) מוטבעים כתמונות.
+
+</details>
+
+<details>
+<summary><b>האם אפשר להפעיל את GenOffice מתוך Claude Code,‏ Codex,‏ Cursor או מסקריפט?</b></summary>
+
+כן. GenOffice מתקינה שורת פקודה `genoffice` שמריצה את אותם מנועים ללא ממשק
+גרפי: בדיקה, המרה, יצירה, קריאה ועריכה של מסמכים מהטרמינל או מסקריפט, עם
+פלט `--json` לתוכנות. ה-skill המצורף לסוכנים מלמד את Claude Code,‏ Codex,‏
+Cursor,‏ Gemini CLI,‏ GitHub Copilot,‏ OpenCode ו-Windsurf להשתמש בה; התקינו
+אותו מתוך **הגדרות → שילובים**. ראו
+[שורת הפקודה וה-skill לסוכנים](#command-line-and-agent-skill).
 
 </details>
 

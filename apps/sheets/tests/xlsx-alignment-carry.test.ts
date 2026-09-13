@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { StylesheetEditor } from '../src/gateway/xlsx-styles'
+import { StylesheetEditor } from '@genoffice/xlsx-gateway/gateway/xlsx-styles'
 
 /** An RTL cell as Excel writes it: right-aligned, explicit reading order, shrink to fit. */
 const STYLES = `<?xml version="1.0" encoding="UTF-8"?>

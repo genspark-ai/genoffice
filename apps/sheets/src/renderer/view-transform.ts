@@ -4,7 +4,7 @@
 /// translate screen → file, streamed results translate file → screen; rows
 /// and columns inserted this session have no file backing (`null`).
 
-import type { StructuralOp } from '../gateway/xlsx-structure'
+import type { StructuralOp } from '@genoffice/xlsx-gateway/gateway/xlsx-structure'
 import type { WorkbookRangeResult } from '../shared/desktop-api'
 
 export type Axis = 'row' | 'column'

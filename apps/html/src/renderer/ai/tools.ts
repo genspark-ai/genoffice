@@ -12,12 +12,15 @@ import {
   type BriefStyle,
 } from '../document/brief'
 import type { PageWriteResult, PageWriteSpec } from './page-writer'
+import type { BriefPlanResult, BriefPlanSpec } from './brief-writer'
 
 export const CONTEXT_MAX_CHARS = 8000
 export const OUTLINE_MAX_LINES = 80
 export const READ_PAGE_CHARS = 12000
 export const SELECTION_MAX_CHARS = 4000
 const PREVIEW_CHARS = 60
+/** head + start of body handed to the brief writer for restyle / extract */
+const PAGE_HEAD_CHARS = 8000
 
 /** What the skill needs from the app; every getter reads live state. */
 export interface HtmlDocAccess {
@@ -37,12 +40,20 @@ export interface HtmlDocAccess {
   replaceAll(html: string, label: string): void
   /** questionnaire card; resolves with the user's answers or cancelled when skipped */
   askClarification?(questions: ClarifyQuestion[]): Promise<{ answers: string; cancelled?: boolean }>
+  /** brief drafting as its own streamed request (see brief-writer.ts); resolves with the raw JSON object */
+  planBrief?(spec: BriefPlanSpec, signal?: AbortSignal): Promise<BriefPlanResult>
   /** brief card; resolves with the confirmed (possibly edited) brief, a request for another one, or cancelled */
   confirmBrief?(brief: Brief): Promise<BriefDecision>
   /** whole-page generation as its own streamed request (see page-writer.ts); the app previews the draft and asks about partial pages */
   writePage?(spec: PageWriteSpec, signal?: AbortSignal): Promise<PageWriteResult>
   /** the instruction of the current run, handed to the page writer (which never sees the conversation) */
   getInstruction?(): string
+  /** turn an `attachment://<file name>` reference into a usable src (assets/ path or data URL) */
+  resolveAttachmentSrc?(
+    ref: string,
+  ): Promise<{ ok: true; src: string } | { ok: false; error: string }>
+  /** names of the attachments the model can reference; lets refs to names with spaces or parentheses match whole */
+  listAttachmentNames?(): string[]
 }
 
 export type PlanMode = 'new' | 'redesign' | 'restyle' | 'extract'
@@ -93,6 +104,13 @@ function coerceStyle(raw: unknown): BriefStyle | null {
   }
 }
 
+/** the writer may emit the reference material as an object or list; the page writer reads text */
+function contextText(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined
+  if (typeof v === 'string') return v
+  return JSON.stringify(v, null, 1)
+}
+
 const MAX_ALTERNATIVES = 2
 
 /** a missing/unknown mode is read from the document: empty → new page, otherwise only pin the brief */
@@ -136,55 +154,6 @@ function coerceBrief(input: Record<string, unknown>): Brief | string {
     version: 1,
   }
 }
-
-const STYLE_SCHEMA = {
-  type: 'object',
-  required: ['tone'],
-  properties: {
-    name: { type: 'string', description: 'short direction name, 2–4 words' },
-    tone: {
-      type: 'string',
-      description: 'e.g. executive / editorial / playful / technical / luxurious / brutalist',
-    },
-    palette: {
-      type: 'object',
-      properties: {
-        primary: { type: 'string', description: 'hex' },
-        accent: { type: 'string', description: 'hex; one accent system for the whole page' },
-        bg: { type: 'string', description: 'hex page background; dark or saturated is legitimate' },
-        surface: { type: 'string', description: 'hex card / panel background' },
-        text: { type: 'string', description: 'hex; must contrast with bg' },
-      },
-    },
-    typography: {
-      type: 'object',
-      properties: {
-        heading: { type: 'string', description: 'font-family stack' },
-        body: { type: 'string', description: 'font-family stack' },
-        scale: { type: 'string', description: 'compact | regular | airy' },
-      },
-    },
-    tokens: {
-      type: 'object',
-      properties: {
-        radius: { type: 'string', description: 'CSS length, e.g. 0 / 6px / 16px' },
-        spacing: { type: 'string', description: 'base unit, e.g. 8px' },
-        shadow: { type: 'string', description: 'CSS box-shadow or none' },
-      },
-    },
-    layout: {
-      type: 'string',
-      description:
-        'e.g. centered 1100px sections / full-bleed hero + 12-col grid / single column 760px',
-    },
-    density: { type: 'string', enum: ['compact', 'regular', 'airy'] },
-    docx_friendly: {
-      type: 'boolean',
-      description:
-        'default false; true only for reports meant for Word export or when the user asks — then no absolute positioning, gradients or transforms carrying meaning',
-    },
-  },
-} as const
 
 /** Skip structural/no-content elements in the outline; the model can still address them via read_source */
 const OUTLINE_SKIP = new Set([
@@ -305,7 +274,8 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       '`replace_element {sid, html}` swap the whole element; `set_inner_html {sid, html}`; `set_text {sid, text}` (text is escaped for you); ' +
       '`insert_html {sid, position: before|after|prepend|append, html}`; `remove {sid}`; `move {sid, position: before|after, ref_sid}`; ' +
       '`set_attr {sid, name, value|null}`; `set_style {sid, styles: {prop: value|null}}` merges inline style. ' +
-      'Prefer sid-addressed ops for single elements and str_replace for scattered text or CSS/JS edits. Keep unrelated markup, indentation and attribute order untouched.',
+      'Prefer sid-addressed ops for single elements and str_replace for scattered text or CSS/JS edits. Keep unrelated markup, indentation and attribute order untouched. ' +
+      'To place an attached image, write `attachment://<file name>` (the exact name from the attachment list) wherever a src/url value goes — set_attr value, an <img src> inside html, or a CSS url(); the app substitutes the real file itself. Never type base64 or data: URLs into ops, and never ask the user to paste base64.',
     inputSchema: {
       type: 'object',
       required: ['ops'],
@@ -380,10 +350,10 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'plan_page',
     description:
-      '[Always before generating a new page or a full redesign, and when the user asks to restyle or "extract the brief" of an existing page] Propose the brief: the Core Hook (one sentence with tension, ideally a number or contrast), the recommended style direction plus 1–2 named alternatives that differ meaningfully (e.g. editorial serif on paper vs. bold dark tech vs. soft pastel grid), the section list and meta. The user sees the directions as style tiles, picks one, edits fields, and confirms or asks for another brief. With mode "new" or "redesign" the confirmed brief is written into a page by the system right away (you do not write HTML yourself); put every fact, figure and quote the page must use into `context`. Do not repeat the brief in your reply.',
+      '[Always before generating a new page or a full redesign, and when the user asks to restyle or "extract the brief" of an existing page] The system drafts the brief from this conversation (it reads the questionnaire answers, web_search findings, attachments and the page) and shows it to the user as style tiles with editable fields; pass only the mode and short notes. With mode "new" or "redesign" the confirmed brief is written into a page by the system right away (you do not write HTML yourself). Do not describe the brief in your reply.',
     inputSchema: {
       type: 'object',
-      required: ['core_hook', 'style', 'sections', 'mode'],
+      required: ['mode'],
       properties: {
         mode: {
           type: 'string',
@@ -391,51 +361,10 @@ export const AGENT_TOOLS: AgentToolDef[] = [
           description:
             'new = empty document, the page is generated after confirmation; redesign = the user asked to rebuild the whole page, generated after confirmation; restyle = keep the structure, you update --brief-* variables with apply_ops afterwards; extract = only pin the inferred brief',
         },
-        context: {
+        notes: {
           type: 'string',
           description:
-            'Reference material for the page writer: facts, figures, quotes, product details and sources gathered from the conversation, attachments and web_search. The writer never sees the conversation, only this.',
-        },
-        core_hook: { type: 'string' },
-        style: { ...STYLE_SCHEMA, description: 'the recommended direction' },
-        alternatives: {
-          type: 'array',
-          maxItems: MAX_ALTERNATIVES,
-          items: STYLE_SCHEMA,
-          description:
-            '1–2 other directions with a different mood, palette and type pairing; the user picks one on the card',
-        },
-        sections: {
-          type: 'array',
-          minItems: 1,
-          items: {
-            type: 'object',
-            required: ['title', 'brief'],
-            properties: {
-              title: { type: 'string' },
-              type: {
-                type: 'string',
-                description:
-                  'hero | summary | content | data | comparison | timeline | cta | footer',
-              },
-              brief: { type: 'string', description: 'what goes in, with real facts and numbers' },
-              layout: {
-                type: 'string',
-                description:
-                  'hero_split | hero_typographic | hero_image_overlay | feature_grid | stats_row | big_number | two_column | comparison_table | timeline | steps | quote_band | gallery | faq | cta_band | prose; vary across sections',
-              },
-              image_queries: { type: 'array', items: { type: 'string' } },
-            },
-          },
-        },
-        meta: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            language: { type: 'string' },
-            audience: { type: 'string' },
-            length: { type: 'string', description: 'e.g. one page / 3–5 screens / long-form' },
-          },
+            'At most three sentences the brief must honor: the choices the user made, a redo note, a direction hint. No facts or copy here; the writer reads the conversation.',
         },
       },
     },
@@ -464,6 +393,155 @@ export const AGENT_TOOLS: AgentToolDef[] = [
 
 const STALE_MESSAGE =
   'The document changed since you last looked at it (the user edited it). Call get_outline or read_source again and re-plan before editing.'
+
+const ATTACHMENT_SCHEME = 'attachment://'
+/** fallback token shape when no known attachment name follows the scheme */
+const ATTACHMENT_REF_RE = /^[^\s"'<>()]+/
+/** a known name only matches when the reference ends right after it */
+const ATTACHMENT_REF_END_RE = /^(?:$|[\s"'<>),;])/
+
+function safeDecode(name: string): string {
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
+  }
+}
+
+interface AttachmentRef {
+  start: number
+  end: number
+  /** attachment name to resolve (decoded) */
+  name: string
+}
+
+/**
+ * Every `attachment://…` occurrence in a string. The token is the longest known
+ * attachment name (raw or URL-encoded, case-insensitive) that follows the
+ * scheme, so names with spaces or parentheses match whole; otherwise it runs to
+ * the next delimiter.
+ */
+function findAttachmentRefs(value: string, names: readonly string[]): AttachmentRef[] {
+  const refs: AttachmentRef[] = []
+  let at = value.indexOf(ATTACHMENT_SCHEME)
+  while (at >= 0) {
+    const from = at + ATTACHMENT_SCHEME.length
+    const rest = value.slice(from)
+    const restLower = rest.toLowerCase()
+    let best: { token: string; name: string } | null = null
+    for (const name of names) {
+      for (const form of [name, encodeURI(name), encodeURIComponent(name)]) {
+        if (
+          restLower.startsWith(form.toLowerCase()) &&
+          ATTACHMENT_REF_END_RE.test(rest.slice(form.length)) &&
+          (!best || form.length > best.token.length)
+        )
+          best = { token: rest.slice(0, form.length), name }
+      }
+    }
+    if (!best) {
+      const token = ATTACHMENT_REF_RE.exec(rest)?.[0] ?? ''
+      best = { token, name: safeDecode(token) }
+    }
+    const end = from + best.token.length
+    if (best.token) refs.push({ start: at, end, name: best.name })
+    at = value.indexOf(ATTACHMENT_SCHEME, Math.max(end, from))
+  }
+  return refs
+}
+
+function hasAttachmentRef(op: HtmlOp): boolean {
+  const fields = op as unknown as Record<string, unknown>
+  const inString = (v: unknown) => typeof v === 'string' && v.includes(ATTACHMENT_SCHEME)
+  return (
+    inString(fields.html) ||
+    inString(fields.new) ||
+    inString(fields.value) ||
+    (op.op === 'set_style' && Object.values(op.styles).some(inString))
+  )
+}
+
+/**
+ * An ellipsis inside a data: URL token can only come from re-typing a
+ * truncated preview of the document — the src is already corrupt and would
+ * render as a broken image. Rejecting the batch up front turns a silent
+ * broken image into an instructive error.
+ */
+const TRUNCATED_DATA_URL_RE = /data:[^\s"'<>]*(?:…|\.\.\.)/
+export function findTruncatedDataUrl(ops: HtmlOp[]): number {
+  const bad = (v: unknown) => typeof v === 'string' && TRUNCATED_DATA_URL_RE.test(v)
+  return ops.findIndex((op) => {
+    const fields = op as unknown as Record<string, unknown>
+    return (
+      bad(fields.html) ||
+      bad(fields.new) ||
+      bad(fields.old) ||
+      bad(fields.value) ||
+      (op.op === 'set_style' && Object.values(op.styles).some(bad))
+    )
+  })
+}
+
+/**
+ * Replace `attachment://` references in op payload strings with real srcs so
+ * the model never streams file bytes through tool arguments (a gateway drops
+ * long tool-argument streams — the r182 base64-logo failure). `old` is left
+ * untouched: it must match the document, which holds the expanded src.
+ */
+export async function expandAttachmentRefs(
+  ops: HtmlOp[],
+  resolve: NonNullable<HtmlDocAccess['resolveAttachmentSrc']>,
+  names: readonly string[] = [],
+): Promise<{ ops: HtmlOp[]; errors: string[] }> {
+  const srcByName = new Map<string, string>()
+  const errors: string[] = []
+  const collect = (value: unknown): void => {
+    if (typeof value !== 'string') return
+    for (const ref of findAttachmentRefs(value, names)) srcByName.set(ref.name, '')
+  }
+  for (const op of ops) {
+    const fields = op as unknown as Record<string, unknown>
+    collect(fields.html)
+    collect(fields.new)
+    collect(fields.value)
+    if (op.op === 'set_style') for (const v of Object.values(op.styles)) collect(v)
+  }
+  for (const name of srcByName.keys()) {
+    const r = await resolve(name)
+    if (r.ok) srcByName.set(name, r.src)
+    else errors.push(`${ATTACHMENT_SCHEME}${name}: ${r.error}`)
+  }
+  if (errors.length > 0) return { ops, errors }
+  if (srcByName.size === 0) return { ops, errors }
+  const expand = (value: unknown): unknown => {
+    if (typeof value !== 'string') return value
+    let out = ''
+    let cursor = 0
+    for (const ref of findAttachmentRefs(value, names)) {
+      out +=
+        value.slice(cursor, ref.start) +
+        (srcByName.get(ref.name) ?? value.slice(ref.start, ref.end))
+      cursor = ref.end
+    }
+    return out + value.slice(cursor)
+  }
+  const expanded = ops.map((op) => {
+    const fields = op as unknown as Record<string, unknown>
+    const next: Record<string, unknown> = {
+      ...fields,
+      ...('html' in fields ? { html: expand(fields.html) } : {}),
+      ...('new' in fields ? { new: expand(fields.new) } : {}),
+      ...('value' in fields ? { value: expand(fields.value) } : {}),
+    }
+    if (op.op === 'set_style') {
+      next.styles = Object.fromEntries(
+        Object.entries(op.styles).map(([k, v]) => [k, expand(v) as string | null]),
+      )
+    }
+    return next as unknown as HtmlOp
+  })
+  return { ops: expanded, errors }
+}
 
 export function createHtmlSkillCore(access: HtmlDocAccess): {
   buildContext(): string
@@ -623,41 +701,73 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
               summary: t('aiToolApplyOpsFailed'),
             }
           }
-          if (stale())
-            return { output: STALE_MESSAGE, isError: true, summary: t('aiToolApplyOpsFailed') }
-          const label =
-            typeof call.input.summary === 'string' && call.input.summary
-              ? call.input.summary
-              : `apply_ops (${ops.length})`
-          const result = access.applyOps(ops as HtmlOp[], label)
-          if (!result.ok) {
-            const lines = result.errors.map(
-              (e) =>
-                `Op ${e.index + 1}/${ops.length} FAILED (${e.kind.toUpperCase()}): ${e.message}`,
-            )
+          const staleResult = (): ToolExecution => ({
+            output: STALE_MESSAGE,
+            isError: true,
+            summary: t('aiToolApplyOpsFailed'),
+          })
+          if (stale()) return staleResult()
+          const truncatedAt = findTruncatedDataUrl(ops as HtmlOp[])
+          if (truncatedAt >= 0) {
             return {
-              output: `0 of ${ops.length} ops applied.\n${lines.join('\n')}`,
+              output: `0 of ${ops.length} ops applied — op ${truncatedAt + 1} contains a truncated data: URL (an ellipsis inside the src). Never re-type a data: src: change how the image is displayed with set_style / set_attr on its sid and leave the src untouched, or re-reference the file as attachment://<file name> and the app substitutes it.`,
               isError: true,
               summary: t('aiToolApplyOpsFailed'),
             }
           }
-          markSeen()
-          const after = access.getText()
-          const where = result.ranges.slice(0, 12).map(([a, b]) => {
-            const l1 = lineOf(after, a)
-            const l2 = lineOf(after, Math.max(a, b - 1))
-            return l1 === l2 ? `L${l1}` : `L${l1}-L${l2}`
-          })
-          const health = access.getMap().errorCount - map.errorCount
-          const warn =
-            health > 5
-              ? `\nWARNING: the edit introduced ${health} new HTML parse recoveries (unbalanced tags?). Check the preview.`
-              : ''
-          return {
-            output: `Applied ${ops.length} op(s) at ${where.join(', ')}. Document is now version ${access.getVersion()}.${warn}`,
-            mutated: true,
-            summary: t('aiToolApplyOps', { n: ops.length }),
+          const label =
+            typeof call.input.summary === 'string' && call.input.summary
+              ? call.input.summary
+              : `apply_ops (${ops.length})`
+          const finish = (finalOps: HtmlOp[]): ToolExecution => {
+            const result = access.applyOps(finalOps, label)
+            if (!result.ok) {
+              const lines = result.errors.map(
+                (e) =>
+                  `Op ${e.index + 1}/${ops.length} FAILED (${e.kind.toUpperCase()}): ${e.message}`,
+              )
+              return {
+                output: `0 of ${ops.length} ops applied.\n${lines.join('\n')}`,
+                isError: true,
+                summary: t('aiToolApplyOpsFailed'),
+              }
+            }
+            markSeen()
+            const after = access.getText()
+            const where = result.ranges.slice(0, 12).map(([a, b]) => {
+              const l1 = lineOf(after, a)
+              const l2 = lineOf(after, Math.max(a, b - 1))
+              return l1 === l2 ? `L${l1}` : `L${l1}-L${l2}`
+            })
+            const health = access.getMap().errorCount - map.errorCount
+            const warn =
+              health > 5
+                ? `\nWARNING: the edit introduced ${health} new HTML parse recoveries (unbalanced tags?). Check the preview.`
+                : ''
+            return {
+              output: `Applied ${ops.length} op(s) at ${where.join(', ')}. Document is now version ${access.getVersion()}.${warn}`,
+              mutated: true,
+              summary: t('aiToolApplyOps', { n: ops.length }),
+            }
           }
+          if (access.resolveAttachmentSrc && ops.some((op) => hasAttachmentRef(op))) {
+            return expandAttachmentRefs(
+              ops as HtmlOp[],
+              access.resolveAttachmentSrc,
+              access.listAttachmentNames?.() ?? [],
+            ).then((expanded) => {
+              if (expanded.errors.length > 0)
+                return {
+                  output: `0 of ${ops.length} ops applied — unresolved attachment reference(s):\n${expanded.errors.join('\n')}`,
+                  isError: true,
+                  summary: t('aiToolApplyOpsFailed'),
+                }
+              // the user may have typed while the image was read and saved over IPC
+              if (stale()) return staleResult()
+              return finish(expanded.ops)
+            })
+          }
+          return finish(ops as HtmlOp[])
         }
         case 'ask_clarification': {
           if (!access.askClarification)
@@ -700,19 +810,37 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
           )
         }
         case 'plan_page': {
-          if (!access.confirmBrief)
+          const { planBrief, confirmBrief } = access
+          if (!planBrief || !confirmBrief)
             return {
               output:
                 'brief cards are not available here; describe the brief in your reply instead',
               isError: true,
               summary: t('aiToolPlan'),
             }
-          const brief = coerceBrief(call.input)
-          if (typeof brief === 'string')
-            return { output: brief, isError: true, summary: t('aiToolPlanRejected') }
           const mode = planMode(call.input.mode, text)
-          const context = str(call.input.context)
-          return access.confirmBrief(brief).then(async (decision) => {
+          const spec: BriefPlanSpec = {
+            mode,
+            notes: str(call.input.notes),
+            page:
+              mode === 'restyle' || mode === 'extract' ? text.slice(0, PAGE_HEAD_CHARS) : undefined,
+          }
+          return planBrief(spec, currentSignal).then(async (drafted) => {
+            if (!drafted.ok)
+              return {
+                output: `The brief writer produced nothing (${drafted.error}). Tell the user briefly and offer to try again.`,
+                isError: true,
+                summary: t('aiToolPlanFailed'),
+              }
+            const brief = coerceBrief(drafted.raw)
+            if (typeof brief === 'string')
+              return {
+                output: `The brief writer returned an unusable brief (${brief}). Call plan_page again, with notes on what it must contain.`,
+                isError: true,
+                summary: t('aiToolPlanFailed'),
+              }
+            const context = contextText(drafted.raw.context)
+            const decision = await confirmBrief(brief)
             if (decision.kind === 'cancelled')
               return {
                 output:
@@ -721,7 +849,7 @@ export function createHtmlSkillCore(access: HtmlDocAccess): {
               }
             if (decision.kind === 'redo')
               return {
-                output: `The user asked for a different brief${decision.note ? `: ${decision.note}` : ''}. Call plan_page again with a revised proposal.`,
+                output: `The user asked for a different brief${decision.note ? `: ${decision.note}` : ''}. Proposed so far:\n${briefSummary(brief)}\nCall plan_page again with notes on what must change.`,
                 summary: t('aiToolPlanRejected'),
               }
             const edited = decision.brief.user_edited?.length

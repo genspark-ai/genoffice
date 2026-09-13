@@ -7,6 +7,7 @@ import {
   type AiTrack,
   type NumIds,
 } from './protocol'
+import type { AiDocWriter } from './doc-writer'
 import {
   AGENT_TOOLS,
   executeTool,
@@ -32,6 +33,8 @@ export function createDocsSkill(
   getHf?: () => AiHeaderFooterAccess | undefined,
   /** live predicate (gsk login && cloud-tools toggle, or a BYOK media key); false hides generate_image */
   imageGenAvailable?: () => boolean,
+  /** streaming long-form writer behind write_document (panel-owned: progress chip, partial keep/discard) */
+  getWriter?: () => AiDocWriter | undefined,
 ): AgentSkill {
   // Selection frozen per run: tools act on the range the prompt described,
   // not on wherever the user's live selection has wandered mid-run. The doc
@@ -66,6 +69,7 @@ export function createDocsSkill(
         frozen,
         getComments?.(),
         getHf?.(),
+        getWriter?.(),
       ),
   }
 }

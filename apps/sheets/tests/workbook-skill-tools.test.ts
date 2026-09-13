@@ -8,7 +8,7 @@ import {
   type ToolExecution,
 } from '../src/renderer/ai/tools'
 import { getActiveSheetInfo } from '../src/renderer/ai/workbook-readers'
-import type { ChangePlan } from '../src/domain/workbook.types'
+import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 
 function call(name: string, input: Record<string, unknown>) {
   return { id: 'call-1', name, input }

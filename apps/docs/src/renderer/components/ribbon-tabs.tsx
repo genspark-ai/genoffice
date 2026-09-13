@@ -297,15 +297,18 @@ export async function insertImageFromDataUrl(
     // next keystroke REPLACES the picture (alpha ledger r152). Ensure a
     // paragraph follows the image and put a text caret there — also what
     // Word does after inserting a picture.
+    // A mid-paragraph insert already leaves the caret in the split-off rest
+    // of the paragraph; only a doc-level landing needs the paragraph check.
     {
       const { doc, selection, schema } = editor.state
-      const after = Math.min(selection.to, doc.content.size)
-      const nextIsTextblock = doc.resolve(after).nodeAfter?.isTextblock === true
-      const chain = editor.chain()
-      if (!nextIsTextblock && schema.nodes.docParagraph) {
-        chain.insertContentAt(after, { type: 'docParagraph' })
+      const $after = doc.resolve(Math.min(selection.to, doc.content.size))
+      if (!$after.parent.isTextblock) {
+        const chain = editor.chain()
+        if ($after.nodeAfter?.isTextblock !== true && schema.nodes.docParagraph) {
+          chain.insertContentAt($after.pos, { type: 'docParagraph' })
+        }
+        chain.setTextSelection($after.pos + 1).run()
       }
-      chain.setTextSelection(after + 1).run()
     }
     return true
   } catch {

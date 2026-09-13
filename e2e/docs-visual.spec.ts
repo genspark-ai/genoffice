@@ -67,7 +67,7 @@ test.describe('docs visual regression', () => {
         openFile: resolve(FIXTURES_DIR, doc.file),
       })
       try {
-        const editorPage = await waitForPageWithUrl(launched.app, 'docs/out')
+        const editorPage = await waitForPageWithUrl(launched.app, '://docs/')
         // Keep the default width (narrower clamps zoom below 100% via
         // width-fit), but grow the height until a whole A4 page fits in the
         // viewport: capturing beyond the viewport drops the page border and

@@ -47,6 +47,8 @@ describe('resolveScopeChip', () => {
 
 /** A sheet with a header row and 416 rows of data in columns A..D. */
 const EXTENT = { lastRow: 416, lastColumn: 3 }
+/** Grid Univer hands a sheet loaded from an .xlsx file. */
+const SIZE = { rowCount: 1048576, columnCount: 16384 }
 /** What clicking the column-B header hands us: the sheet's full height. */
 const WHOLE_COLUMN_B = { startRow: 0, startColumn: 1, endRow: 1048575, endColumn: 1 }
 
@@ -55,7 +57,7 @@ const headerAt = (column: number): string => HEADERS[column] ?? ''
 
 describe('clampBoundsToExtent', () => {
   it('caps a whole-column click at the last row holding data', () => {
-    expect(clampBoundsToExtent(WHOLE_COLUMN_B, EXTENT)).toEqual({
+    expect(clampBoundsToExtent(WHOLE_COLUMN_B, EXTENT, SIZE)).toEqual({
       startRow: 0,
       startColumn: 1,
       endRow: 416,
@@ -65,12 +67,12 @@ describe('clampBoundsToExtent', () => {
 
   it('leaves a block inside the data untouched', () => {
     const bounds = { startRow: 4, startColumn: 0, endRow: 9, endColumn: 2 }
-    expect(clampBoundsToExtent(bounds, EXTENT)).toEqual(bounds)
+    expect(clampBoundsToExtent(bounds, EXTENT, SIZE)).toEqual(bounds)
   })
 
   it('caps a whole-row click at the last column holding data', () => {
     const bounds = { startRow: 4, startColumn: 0, endRow: 4, endColumn: 16383 }
-    expect(clampBoundsToExtent(bounds, EXTENT)).toEqual({
+    expect(clampBoundsToExtent(bounds, EXTENT, SIZE)).toEqual({
       startRow: 4,
       startColumn: 0,
       endRow: 4,
@@ -81,19 +83,36 @@ describe('clampBoundsToExtent', () => {
   it('still caps the height of a whole-column click on a column past the data', () => {
     // the column axis cannot be capped here, which must not cost us the row one
     expect(
-      clampBoundsToExtent({ ...WHOLE_COLUMN_B, startColumn: 5, endColumn: 5 }, EXTENT),
+      clampBoundsToExtent({ ...WHOLE_COLUMN_B, startColumn: 5, endColumn: 5 }, EXTENT, SIZE),
     ).toEqual({ startRow: 0, startColumn: 5, endRow: 416, endColumn: 5 })
   })
 
   it('passes through a block the user marked out entirely past the data', () => {
     // an empty spot picked on purpose stays the size it was drawn
     const bounds = { startRow: 900, startColumn: 8, endRow: 905, endColumn: 9 }
-    expect(clampBoundsToExtent(bounds, EXTENT)).toEqual(bounds)
+    expect(clampBoundsToExtent(bounds, EXTENT, SIZE)).toEqual(bounds)
   })
 
-  it('passes through on a sheet with no data at all', () => {
-    const bounds = { startRow: 0, startColumn: 0, endRow: 10, endColumn: 2 }
-    expect(clampBoundsToExtent(bounds, { lastRow: -1, lastColumn: -1 })).toEqual(bounds)
+  it('keeps a drag that runs past the data but not to the edge of the sheet', () => {
+    const bounds = { startRow: 0, startColumn: 0, endRow: 499, endColumn: 0 }
+    expect(clampBoundsToExtent(bounds, EXTENT, SIZE)).toEqual(bounds)
+  })
+
+  it('keeps a drag from A1 on a fresh workbook, where Univer reports the extent as A1', () => {
+    // genoffice#294: the chip read "A1" for an A1:G18 drag on a just-opened empty sheet
+    const bounds = { startRow: 0, startColumn: 0, endRow: 17, endColumn: 6 }
+    const empty = { lastRow: 0, lastColumn: 0 }
+    const size = { rowCount: 1000, columnCount: 20 }
+    expect(clampBoundsToExtent(bounds, empty, size)).toEqual(bounds)
+  })
+
+  it('still caps a header click on a fresh workbook', () => {
+    const bounds = { startRow: 0, startColumn: 0, endRow: 999, endColumn: 0 }
+    const size = { rowCount: 1000, columnCount: 20 }
+    expect(clampBoundsToExtent(bounds, { lastRow: 0, lastColumn: 0 }, size)).toEqual({
+      ...bounds,
+      endRow: 0,
+    })
   })
 })
 
@@ -108,7 +127,7 @@ describe('boundsToA1', () => {
 })
 
 describe('columnScopeHeaders', () => {
-  const clamped = (bounds: typeof WHOLE_COLUMN_B) => clampBoundsToExtent(bounds, EXTENT)
+  const clamped = (bounds: typeof WHOLE_COLUMN_B) => clampBoundsToExtent(bounds, EXTENT, SIZE)
 
   it('names a whole-column click by its header', () => {
     expect(columnScopeHeaders(clamped(WHOLE_COLUMN_B), EXTENT, headerAt)).toEqual(['Amount'])

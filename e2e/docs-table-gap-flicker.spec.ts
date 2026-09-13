@@ -24,7 +24,7 @@ test.describe('docs table page-gap stability', () => {
     try {
       await expect(page.locator('.quick-card').first()).toContainText('AI Docs')
       await page.locator('.quick-card').first().click()
-      const editorPage = await waitForPageWithUrl(app, 'docs/out')
+      const editorPage = await waitForPageWithUrl(app, '://docs/')
       await editorPage.waitForFunction(
         () => Boolean((window as unknown as AidocsWindow).__aidocs?.editor),
         undefined,

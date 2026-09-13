@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
-import { AgentLoop, composeSkills, type AgentImage } from '@genoffice/agent-core'
+import { AgentLoop, composeSkills, streamText, type AgentImage } from '@genoffice/agent-core'
 import { imageGenerationAvailable } from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
@@ -11,6 +11,14 @@ import { countWords, findNumId, type NumIds } from './protocol'
 import { DOC_NAV_SCHEME, navigateToBlock, parseDocNavHref } from './doc-nav'
 import { markDocSeen, type AiCommentsAccess, type AiHeaderFooterAccess } from './tools'
 import { createDocsSkill } from './docs-skill'
+import {
+  buildDocWriterRequest,
+  countFragmentBlocks,
+  DOC_MAX_CHARS,
+  extractFragment,
+  type DocWriteResult,
+  type DocWriteSpec,
+} from './doc-writer'
 import { EditQueueCard } from './EditQueueCard'
 import {
   buildQueueInstruction,
@@ -57,6 +65,9 @@ interface ToolActivity {
 
 /** Max characters of tool output in the UI expansion panel */
 const TOOL_OUTPUT_MAX_CHARS = 2000
+
+/** progress chip refresh while a write streams */
+const CHIP_UPDATE_MS = 400
 
 /** Cap on tool args/output persisted in the transcript (the store layer has another 16k truncation fallback) */
 const PERSIST_TOOL_FIELD_MAX = 16_000
@@ -325,6 +336,11 @@ export function AiPanel({
   /** a send waiting on a phased open's tail; Stop / New chat abort it before it runs */
   const pendingSendRef = useRef<{ aborted: boolean } | null>(null)
   const [chat, setChat] = useState<ChatEntry[]>([])
+  /** a streamed write stopped early: the draft stays in the document until the user keeps or discards it */
+  const [activePartial, setActivePartial] = useState<{ blocks: number } | null>(null)
+  const partialResolverRef = useRef<((keep: boolean) => void) | null>(null)
+  /** bumped by New chat / unmount: a writer resuming after its abort must not open the keep card */
+  const writerEpochRef = useRef(0)
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
   const [trackChanges, setTrackChanges] = useState(
@@ -415,6 +431,15 @@ export function AiPanel({
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+  // a pending keep/discard must not outlive the panel: settle it as discard
+  useEffect(
+    () => () => {
+      writerEpochRef.current++
+      partialResolverRef.current?.(false)
+      partialResolverRef.current = null
+    },
+    [],
+  )
   // bumped on selection/doc changes so the scope hint & quick actions stay fresh
   const [, setScopeTick] = useState(0)
   /** the scope chip's expandable preview of the selected text */
@@ -617,6 +642,83 @@ export function AiPanel({
     })
   }
 
+  const transportRef = useRef<ReturnType<typeof createElectronTransport> | null>(null)
+  if (!transportRef.current)
+    transportRef.current = createElectronTransport(() => settingsRef.current)
+
+  /**
+   * Long-form writing: one tool-less request whose reply is the fragment, streamed
+   * into the document as a draft by the tool. A stream that stops early leaves the
+   * user a keep-or-discard choice; a stream that produced nothing is retried once.
+   */
+  const runDocWriter = async (
+    spec: DocWriteSpec,
+    onProgress: (html: string) => void,
+    signal?: AbortSignal,
+  ): Promise<DocWriteResult> => {
+    const { system, user } = buildDocWriterRequest(spec, aiLangDirective())
+    const epoch = writerEpochRef.current
+    let closed = false
+    let chipTimer: ReturnType<typeof setTimeout> | null = null
+    let latest = ''
+    const updateChip = () => {
+      chipTimer = null
+      if (closed) return
+      const blocks = countFragmentBlocks(latest)
+      patchLastAssistant((last) => ({
+        tools: last.tools?.map((tl) =>
+          tl.running ? { ...tl, summary: tModule('aiWritingDocument', { blocks }) } : tl,
+        ),
+      }))
+    }
+    const attempt = () =>
+      streamText({
+        transport: transportRef.current!,
+        system,
+        user,
+        signal,
+        maxChars: DOC_MAX_CHARS,
+        extract: (raw) => ({ text: extractFragment(raw) }),
+        onProgress: (html) => {
+          if (closed) return
+          latest = html
+          onProgress(html)
+          if (chipTimer === null) chipTimer = setTimeout(updateChip, CHIP_UPDATE_MS)
+        },
+      })
+    let outcome = await attempt()
+    if (outcome.status === 'empty' && !signal?.aborted) outcome = await attempt()
+    closed = true
+    if (chipTimer !== null) clearTimeout(chipTimer)
+    if (outcome.status === 'complete') return { ok: true, html: outcome.text }
+    if (outcome.status === 'empty') return { ok: false, error: outcome.error }
+    if (epoch !== writerEpochRef.current) return { ok: false, error: 'the chat was reset' }
+    // the draft stays in the document while the user decides
+    const keep = await new Promise<boolean>((resolve) => {
+      partialResolverRef.current = resolve
+      setActivePartial({ blocks: countFragmentBlocks(outcome.text) })
+    })
+    return keep
+      ? { ok: true, html: outcome.text, truncated: true }
+      : {
+          ok: false,
+          error: `${outcome.reason}${outcome.error ? `: ${outcome.error}` : ''}; the user discarded the partial content`,
+        }
+  }
+  const runDocWriterRef = useRef(runDocWriter)
+  runDocWriterRef.current = runDocWriter
+
+  const decidePartial = (keep: boolean): void => {
+    partialResolverRef.current?.(keep)
+    partialResolverRef.current = null
+    setActivePartial(null)
+  }
+  /** New chat / unmount: discard an open keep card and keep a still-settling writer from opening one */
+  const abandonWriter = (): void => {
+    writerEpochRef.current++
+    decidePartial(false)
+  }
+
   const loopRef = useRef<AgentLoop<PmNode> | null>(null)
   if (!loopRef.current) {
     const numIds = (): NumIds => ({
@@ -624,7 +726,7 @@ export function AiPanel({
       ordered: findNumId(blocksRef.current, 'ordered') ?? numIdFallbackRef.current?.ordered ?? null,
     })
     loopRef.current = new AgentLoop<PmNode>({
-      transport: createElectronTransport(() => settingsRef.current),
+      transport: transportRef.current,
       systemSuffix: aiLangDirective,
       skill: composeSkills('docs+files', '', [
         createDocsSkill(
@@ -634,6 +736,9 @@ export function AiPanel({
           () => commentsAccessRef.current,
           () => hfAccessRef.current,
           () => imageGenerationAvailable(settingsRef.current, gskLoggedInRef.current),
+          () => ({
+            write: (spec, onProgress, signal) => runDocWriterRef.current(spec, onProgress, signal),
+          }),
         ),
         createFilesSkill(availableAttachments),
       ]),
@@ -979,6 +1084,7 @@ export function AiPanel({
       pendingSendRef.current.aborted = true
       pendingSendRef.current = null
     }
+    abandonWriter()
     loopRef.current?.reset()
     setBusy(false)
     setChat([])
@@ -1358,6 +1464,28 @@ export function AiPanel({
 
       <div className="ai-composer">
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
+        {activePartial && (
+          <div className="ai-queue ai-partial-card" role="group" aria-label={t('aiPartialTitle')}>
+            <div className="ai-queue-head">
+              <span className="ai-queue-title">{t('aiPartialTitle')}</span>
+            </div>
+            <div className="ai-queue-hint">
+              {t('aiPartialBody', { blocks: activePartial.blocks })}
+            </div>
+            <div className="ai-queue-foot">
+              <button
+                type="button"
+                className="ai-queue-discard"
+                onClick={() => decidePartial(false)}
+              >
+                {t('aiPartialDiscard')}
+              </button>
+              <button type="button" className="ai-queue-send" onClick={() => decidePartial(true)}>
+                {t('aiPartialAdopt')}
+              </button>
+            </div>
+          </div>
+        )}
         <EditQueueCard
           items={editQueue}
           editor={editor}

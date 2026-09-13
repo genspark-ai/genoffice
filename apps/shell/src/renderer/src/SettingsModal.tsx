@@ -27,6 +27,7 @@ import { useI18n } from './locale'
 import type { StringKey, TFunc } from './locale'
 import type { AccountStatus, AiCatalogEntry, UiTheme } from '../../shared/home-api'
 import { ProviderLogo } from './provider-logos'
+import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
 import './settings.css'
 
 // ── Settings modal (opened from the account menu) ─────────
@@ -137,13 +138,14 @@ function CustomFontSizeInput({
   )
 }
 
-type SectionId = 'account' | 'aiModel' | 'aiMedia' | 'general' | 'about'
+type SectionId = 'account' | 'aiModel' | 'aiMedia' | 'general' | 'integrations' | 'about'
 
 const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'account', labelKey: 'setSecAccount' },
   { id: 'aiModel', labelKey: 'setSecAiModel' },
   { id: 'aiMedia', labelKey: 'setSecAiMedia' },
   { id: 'general', labelKey: 'setSecGeneral' },
+  { id: 'integrations', labelKey: 'setSecIntegrations' },
   { id: 'about', labelKey: 'setSecAbout' },
 ]
 
@@ -190,6 +192,19 @@ function SectionIcon({ id }: { id: SectionId }) {
           stroke="currentColor"
           strokeWidth="1.3"
           strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+  if (id === 'integrations') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M5.5 2v3M10.5 2v3M4 5h8v2.5a4 4 0 0 1-8 0V5ZM8 11.5V14"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </svg>
     )
@@ -974,6 +989,9 @@ export interface SettingsModalProps {
   /** closes the modal and launches the Genspark login flow (progress shows on the account entry) */
   onLogin: () => void
   onLogout: () => void
+  /** an installed skill is older than the bundled one: dot on the Integrations entry */
+  skillUpdateDue?: boolean
+  onSkillUpdateDue?: (due: boolean) => void
 }
 
 export function SettingsModal({
@@ -987,6 +1005,8 @@ export function SettingsModal({
   onClose,
   onLogin,
   onLogout,
+  skillUpdateDue: updateDue = false,
+  onSkillUpdateDue,
 }: SettingsModalProps) {
   const { lang, setLang, t } = useI18n()
   const [section, setSection] = useState<SectionId>('account')
@@ -1092,6 +1112,9 @@ export function SettingsModal({
               >
                 <SectionIcon id={s.id} />
                 {t(s.labelKey)}
+                {s.id === 'integrations' && updateDue && (
+                  <span className="set-nav-dot" role="img" aria-label={t('intgUpdateDue')} />
+                )}
               </button>
             ))}
           </nav>
@@ -1277,6 +1300,9 @@ export function SettingsModal({
                   />
                 </div>
               </>
+            )}
+            {section === 'integrations' && (
+              <IntegrationsPane t={t} onStatus={(st) => onSkillUpdateDue?.(skillUpdateDue(st))} />
             )}
             {section === 'about' && (
               <>
