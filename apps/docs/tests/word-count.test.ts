@@ -38,4 +38,25 @@ describe('word count CJK rule', () => {
     expect(countWords('Привет мир')).toBe(2)
     expect(countWords('Hello Привет')).toBe(2)
   })
+
+  it('counts Thai, Lao, Tibetan, Myanmar, Georgian, Khmer, Armenian, Devanagari as words', () => {
+    expect(nonAsianWordCount('สวัสดี ครับ')).toBe(2)
+    expect(nonAsianWordCount('ສະບາຍດີ')).toBe(1)
+    expect(nonAsianWordCount('བཀྲ་ཤིས་བདེ་ལེགས་')).toBe(1)
+    expect(nonAsianWordCount('မင်္ဂလာပါ')).toBe(1)
+    expect(nonAsianWordCount('გამარჯობა მსოფლიო')).toBe(2)
+    expect(nonAsianWordCount('សួស្តី ពិភពលោក')).toBe(2)
+    expect(nonAsianWordCount('Բարեւ աշխարհ')).toBe(2)
+    expect(nonAsianWordCount('नमस्ते दुनिया')).toBe(2)
+    expect(countWords('Hello สวัสดี')).toBe(2)
+  })
+
+  it('covers the full surrogate pair range for CJK Extensions B-H without counting emoji', () => {
+    const extB = String.fromCodePoint(0x20000)
+    const extH = String.fromCodePoint(0x3134a)
+    expect(asianCharCount(extB)).toBe(1)
+    expect(asianCharCount(extH)).toBe(1)
+    expect(asianCharCount('😀')).toBe(0)
+    expect(asianCharCount('👨‍👩‍👧‍👦')).toBe(0)
+  })
 })

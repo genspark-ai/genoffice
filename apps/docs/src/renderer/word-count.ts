@@ -9,14 +9,20 @@
 
 // Han (incl. radicals/compat/ext-B+), kana, hangul, bopomofo, CJK symbols
 // and punctuation (U+3001 up: the ideographic space stays whitespace),
-// fullwidth forms
+// fullwidth forms. The surrogate pair covers CJK Extensions B-H
+// (U+20000 and up); the high range stays at/above D840 so emoji
+// (D83C-D83E high surrogates) are never counted as Asian chars.
 const ASIAN_RE =
-  /[ᄀ-ᇿ⺀-⿟、-〿぀-ヿ㄀-ㄯ㄰-㆏㇀-ㇿ㐀-䶿一-鿿가-힯豈-﫿！-｠￠-￦]|[\uD840-\uD87F][\uDC00-\uDFFF]/g
+  /[ᄀ-ᇿ⺀-⿟、-〿぀-ヿ㄀-ㄯ㄰-㆏㇀-ㇿ㐀-䶿一-鿿가-힯豈-﫿！-｠￠-￦]|[\uD840-\uDBFF][\uDC00-\uDFFF]/g
 
 // Latin Extended Additional (Vietnamese, …) plus the space-delimited
-// non-Latin scripts Word counts as words: Greek, Cyrillic, Hebrew, Arabic.
+// non-Latin scripts Word counts as words: Greek, Cyrillic, Hebrew, Arabic,
+// Armenian, Devanagari, Thai, Lao, Tibetan, Myanmar, Georgian, Khmer.
 // Deliberately excludes the ASIAN_RE ranges above (counted char-by-char).
-const NON_ASIAN_WORD_RE = /[A-Za-z0-9À-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿḀ-ỿ]+(?:['-][A-Za-z0-9À-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿḀ-ỿ]+)*/g
+/* eslint-disable no-misleading-character-class -- Thai/Lao etc ranges contain combining marks but are intentional word characters */
+const NON_ASIAN_WORD_RE =
+  /[A-Za-z0-9À-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿḀ-ỿ\u0E00-\u0EFF\u1000-\u109F\u10A0-\u10FF\u1780-\u17FF\u0530-\u058F\u0900-\u097F\u0F00-\u0FFF]+(?:['-][A-Za-z0-9À-ɏͰ-ϿЀ-ӿ֐-׿؀-ۿḀ-ỿ\u0E00-\u0EFF\u1000-\u109F\u10A0-\u10FF\u1780-\u17FF\u0530-\u058F\u0900-\u097F\u0F00-\u0FFF]+)*/g
+/* eslint-enable no-misleading-character-class */
 
 export function asianCharCount(text: string): number {
   return (text.match(ASIAN_RE) ?? []).length
