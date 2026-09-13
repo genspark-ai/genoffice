@@ -123,9 +123,11 @@ export async function parseProtection(zip: JSZip): Promise<DocProtection | null>
   const xml = await file.async('string')
   const tag = /<w:documentProtection\b[^>]*?(?:\/>|>)/.exec(xml)?.[0]
   if (!tag) return null
-  const edit = /w:edit="([^"]+)"/.exec(tag)?.[1]
+  const editMatch = /w:edit=(?:"([^"]+)"|'([^']+)')/.exec(tag)
+  const edit = editMatch?.[1] ?? editMatch?.[2]
   if (!edit || edit === 'none') return null
-  const enforcement = /w:enforcement="([^"]+)"/.exec(tag)?.[1]
+  const enforcementMatch = /w:enforcement=(?:"([^"]+)"|'([^']+)')/.exec(tag)
+  const enforcement = enforcementMatch?.[1] ?? enforcementMatch?.[2]
   const hash = /w:hash="([^"]+)"/.exec(tag)?.[1]
   const salt = /w:salt="([^"]+)"/.exec(tag)?.[1]
   const spin = /w:cryptSpinCount="(\d+)"/.exec(tag)?.[1]

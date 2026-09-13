@@ -376,4 +376,13 @@ describe('protection tag forms', () => {
     const zip = await settingsZip('<w:writeProtection w:recommended="1"></w:writeProtection>')
     expect(await parseWriteProtection(zip)).toMatchObject({ recommended: true })
   })
+
+  it('reads single-quoted protection attributes (some producers emit them)', async () => {
+    const zip = await settingsZip("<w:documentProtection w:edit='readOnly' w:enforcement='1'/>")
+    expect(await parseProtection(zip)).toMatchObject({ edit: 'readOnly', enforced: true })
+    const mixed = await settingsZip(
+      '<w:documentProtection w:edit="comments" w:enforcement=\'on\'/>',
+    )
+    expect(await parseProtection(mixed)).toMatchObject({ edit: 'comments', enforced: true })
+  })
 })
