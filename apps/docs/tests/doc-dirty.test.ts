@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { isDocDirty, type DocDirtyState } from '../src/renderer/doc-dirty'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  isDocDirty,
+  resetCrossDocEditState,
+  type CrossDocEditStateSink,
+  type DocDirtyState,
+} from '../src/renderer/doc-dirty'
 import { openedFileStartsDirty } from '../src/renderer/doc-state'
 
 function cleanState(): DocDirtyState {
@@ -76,5 +81,57 @@ describe('isDocDirty', () => {
     ['trailingStartType', { trailingStartType: 'nextPage' }],
   ] as const)('is true when only %s changed', (_name, patch) => {
     expect(isDocDirty({ ...cleanState(), ...patch })).toBe(true)
+  })
+})
+
+describe('resetCrossDocEditState', () => {
+  function mockSink(): CrossDocEditStateSink & Record<string, ReturnType<typeof vi.fn>> {
+    return {
+      setSectionsDirty: vi.fn(),
+      setTrailingStartType: vi.fn(),
+      setSectionHfEdits: vi.fn(),
+      setPgNumEdit: vi.fn(),
+      setPgNumDirtySections: vi.fn(),
+      setPendingNumbering: vi.fn(),
+      setStyleUpserts: vi.fn(),
+    }
+  }
+
+  it('clears every section/numbering/style edit state a swap must not inherit', () => {
+    const sink = mockSink()
+    resetCrossDocEditState(sink)
+    expect(sink.setSectionsDirty).toHaveBeenCalledWith([])
+    expect(sink.setTrailingStartType).toHaveBeenCalledWith(null)
+    expect(sink.setSectionHfEdits).toHaveBeenCalledWith({})
+    expect(sink.setPgNumEdit).toHaveBeenCalledWith(null)
+    expect(sink.setPgNumDirtySections).toHaveBeenCalledWith([])
+    expect(sink.setPendingNumbering).toHaveBeenCalledWith({ newDefs: [], restartNums: [] })
+    expect(sink.setStyleUpserts).toHaveBeenCalledWith({})
+  })
+
+  it('leaves a state carrying those edits clean afterwards', () => {
+    // the cross-document leak: doc A set all of these, doc B opens pristine
+    const leaked: DocDirtyState = {
+      ...cleanState(),
+      sectionsDirty: [0],
+      trailingStartType: 'nextPage',
+      sectionHfEdits: { '0:header': {} },
+      pgNumEdit: { fmt: 'decimal' },
+      pgNumDirtySections: [1],
+      styleUpserts: { Heading1: {} },
+    }
+    expect(isDocDirty(leaked)).toBe(true)
+    const cleared: DocDirtyState = {
+      ...leaked,
+      sectionsDirty: [],
+      trailingStartType: null,
+      sectionHfEdits: {},
+      pgNumEdit: null,
+      pgNumDirtySections: [],
+      styleUpserts: {},
+    }
+    // numberingDirty is the live flag; pendingNumbering itself is not polled,
+    // but buildDocBytes applies its indices — hence the reset
+    expect(isDocDirty({ ...cleared, numberingDirty: false })).toBe(false)
   })
 })

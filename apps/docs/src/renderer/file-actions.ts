@@ -70,7 +70,7 @@ import {
 import { t, getLang } from './i18n/locale'
 import { isBlankDocument, parseHtmlFragment, replaceBlockRange } from './ai/protocol'
 import { carryDocSeen } from './ai/tools'
-import { isDocDirty } from './doc-dirty'
+import { isDocDirty, resetCrossDocEditState } from './doc-dirty'
 import { createSaveSerializer } from './save-until-persisted'
 import { checkMissingFonts, collectDocFonts } from './font-check'
 import { setDocFontTable } from './line-metrics'
@@ -378,6 +378,7 @@ export async function loadFile(
     ctx.setFooterDirty(false)
     ctx.setHfVariants(hfVariantsFromParsed(parsed))
     ctx.setHfVariantsDirty([])
+    resetCrossDocEditState(ctx)
     ctx.setTitlePg(parsed.titlePg ?? false)
     ctx.setTitlePgDirty(false)
     ctx.setEvenOddHf(parsed.evenAndOddHeaders ?? false)
@@ -473,6 +474,9 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     ctx.setHeaderDirty(false)
     ctx.setFooter(null)
     ctx.setFooterDirty(false)
+    ctx.setHfVariants(hfVariantsFromParsed(parsed))
+    ctx.setHfVariantsDirty([])
+    resetCrossDocEditState(ctx)
     ctx.setShowComments(false)
     ctx.setComments([])
     ctx.setCommentsDirty(false)
@@ -948,8 +952,6 @@ async function saveOnce(
     ctx.setSection(readSectionSettings(reparsed))
     ctx.setSections(readSections(reparsed))
     ctx.setSectionDirty(false)
-    ctx.setSectionsDirty([])
-    ctx.setTrailingStartType(null)
     ctx.setPageColor(readPageColor(reparsed))
     ctx.setPageColorDirty(false)
     ctx.setHeader(
@@ -973,11 +975,7 @@ async function saveOnce(
     )
     ctx.setFooterDirty(false)
     ctx.setHfVariants(hfVariantsFromParsed(reparsed))
-    ctx.setSectionHfEdits({})
-    ctx.setPgNumEdit(null)
-    ctx.setPgNumDirtySections([])
-    ctx.setPendingNumbering({ newDefs: [], restartNums: [] })
-    ctx.setStyleUpserts({})
+    resetCrossDocEditState(ctx)
     ctx.setHfVariantsDirty([])
     ctx.setTitlePg(reparsed.titlePg ?? false)
     ctx.setTitlePgDirty(false)
