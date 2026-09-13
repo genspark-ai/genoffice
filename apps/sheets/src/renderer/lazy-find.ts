@@ -205,7 +205,7 @@ function makeCellMatch(
     // built-in model); plain cells behave exactly like in-memory ones.
     replaceable: isFormula ? findByFormula : cell.value !== null && cell.value !== undefined,
     matchedText: (findByFormula && isFormula ? cell.formula : scalarToText(cell.value)) ?? null,
-    rawValue: isFormula ? undefined : cell.value,
+    ...(isFormula ? {} : { rawValue: cell.value }),
     range: {
       subUnitId: sheetId,
       range: {
