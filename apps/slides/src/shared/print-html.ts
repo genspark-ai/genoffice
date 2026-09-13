@@ -26,12 +26,12 @@ export interface PrintDocOptions {
 /** "1,3,5-8" → 0-based slide indices (1-based input over the whole deck); null = invalid */
 export function parsePrintRange(text: string, max: number): number[] | null {
   const out = new Set<number>()
-  const tokenRe = /\d+\s*[-–]\s*\d+|\d+/g
+  const tokenRe = /\d+\s*[-–—~～〜]\s*\d+|\d+/g
   const parts = text.match(tokenRe) ?? []
   if (parts.length === 0) return null
   if (text.replace(tokenRe, '').replace(/[,，、;；\s]/g, '') !== '') return null
   for (const part of parts) {
-    const m = /^(\d+)\s*[-–]\s*(\d+)$|^(\d+)$/.exec(part)
+    const m = /^(\d+)\s*[-–—~～〜]\s*(\d+)$|^(\d+)$/.exec(part)
     if (!m) return null
     const a = Number(m[1] ?? m[3])
     const b = Number(m[2] ?? m[3])

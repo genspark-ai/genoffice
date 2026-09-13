@@ -19,6 +19,14 @@ describe('parsePrintRange', () => {
     expect(parsePrintRange('1 – 3, 5', 5)).toEqual([0, 1, 2, 4])
   })
 
+  it('accepts em-dash, tilde, fullwidth tilde and wave dash (IME variants)', () => {
+    expect(parsePrintRange('1—3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1~3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1～3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1〜3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1 — 3, 5～6', 6)).toEqual([0, 1, 2, 4, 5])
+  })
+
   it('rejects empty, malformed, reversed, and out-of-bounds input', () => {
     expect(parsePrintRange('', 5)).toBeNull()
     expect(parsePrintRange('a-b', 5)).toBeNull()

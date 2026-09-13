@@ -27,6 +27,19 @@ describe('parsePrintRange', () => {
     expect(parsePrintRange('1 - 3', 5)).toEqual([0, 1, 2])
     expect(parsePrintRange('1 – 3, 5', 5)).toEqual([0, 1, 2, 4])
   })
+
+  it('accepts em-dash, tilde, fullwidth tilde and wave dash (IME variants)', () => {
+    expect(parsePrintRange('1—3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1~3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1～3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1〜3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1 — 3, 5～6', 6)).toEqual([0, 1, 2, 4, 5])
+  })
+
+  it('accepts spaces around dashes', () => {
+    expect(parsePrintRange('1 - 3', 5)).toEqual([0, 1, 2])
+    expect(parsePrintRange('1 – 3, 5', 5)).toEqual([0, 1, 2, 4])
+  })
 })
 
 describe('printPageCount', () => {
