@@ -23,8 +23,7 @@
   "dependencies": {
     "@genoffice/ipc-bridge": "*",
     "@genoffice/ai-provider": "*",
-    "@genoffice/agent-core": "*",
-    "@genoffice/translation-core": "*"
+    "@genoffice/agent-core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -99,7 +99,6 @@ import type { CharStyle } from './color-runs'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
-  HomeButton,
   RibbonCollapseButton,
   useDismissablePopover,
   useRibbonCollapse,
@@ -5863,7 +5862,6 @@ export default function App() {
               {t('ribbonTabFillForm')}
             </button>
           )}
-          <HomeButton />
           <span className="ribbon-tabs-spacer" />
           {readOnly && <span className="tb-readonly">{t('roEncrypted')}</span>}
           {/* The file on disk is only touched by an explicit save until then. */}

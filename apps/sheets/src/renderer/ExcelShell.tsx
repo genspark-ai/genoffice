@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
-  HomeButton,
   RibbonCollapseButton,
   SHAPE_GALLERY_GROUPS,
   ShapePreview,
@@ -592,7 +591,6 @@ export function ExcelShell({
               {t(TAB_LABEL[tab])}
             </button>
           ))}
-          <HomeButton />
           <span className="ribbon-tabs-spacer" />
           <span className="workbook-status" role="status" aria-live="polite">
             {statusMessage}
