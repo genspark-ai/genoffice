@@ -70,15 +70,12 @@ function createElectronAiTransport(getSettings: () => AiSettings): AgentTranspor
   // 使用 Electron 的 IPC 通道
   return createIpcTransport<AiSettings>({
     onStream: (listener) => {
-      // @ts-expect-error - window.desktop 在 Electron 中可用
       return window.desktop?.onAiStream(listener) || (() => {})
     },
     start: (request) => {
-      // @ts-expect-error - window.desktop 在 Electron 中可用
       return window.desktop?.aiStream(request)
     },
     cancel: (requestId) => {
-      // @ts-expect-error - window.desktop 在 Electron 中可用
       window.desktop?.aiStreamCancel(requestId)
     },
     getSettings,

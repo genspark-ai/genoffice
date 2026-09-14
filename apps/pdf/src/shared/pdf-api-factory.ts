@@ -68,11 +68,24 @@ export function createPdfApi(t: IpcTransport, overrides: PdfApiOverrides = {}): 
     getTheme: () => t.invoke(PDF_CHANNELS.getTheme),
     onThemeChanged: (handler) =>
       t.on(PDF_CHANNELS.themeChanged, (theme) => handler(theme as UiTheme)),
+    getAiPanelPrefs: () => t.invoke('app:get-ai-panel-prefs'),
+    onAiPanelPrefsChanged: (handler) =>
+      t.on('app:ai-panel-prefs-changed', (prefs) =>
+        handler(prefs as Parameters<typeof handler>[0]),
+      ),
     onChromePressed: (handler) => t.on('app:chrome-pressed', () => handler()),
     getAiSettings: () => t.invoke(AI_CHANNELS.getSettings),
     gskStatus: () => t.invoke(AI_CHANNELS.gskStatus),
     aiStream: (request) => t.invoke(AI_CHANNELS.stream, request),
     aiStreamCancel: (requestId) => t.invoke(AI_CHANNELS.streamCancel, requestId),
+    aiTranslate: (request) =>
+      t.invoke(AI_CHANNELS.translate, {
+        instruction: request.instruction,
+        sourceLang: request.sourceLang,
+        targetLang: request.targetLang,
+        preserveFormat: request.preserveFormat,
+        range: request.range,
+      }),
     onAiStream: (handler) =>
       t.on(AI_CHANNELS.streamChunk, (chunk) => handler(chunk as AiStreamChunk)),
   }

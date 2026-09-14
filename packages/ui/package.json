@@ -18,7 +18,9 @@
     "./ai-panel-prefs.css": "./src/ai-panel-prefs.css",
     "./ai-scope-quote.css": "./src/ai-scope-quote.css",
     "./image-dialogs.css": "./src/image-dialogs.css",
-    "./fonts/*": "./src/fonts/*"
+    "./fonts/*": "./src/fonts/*",
+    "./ai-runtime.css": "./src/ai-runtime.css",
+    "./auto-save-pref": "./src/auto-save-pref.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -34,6 +36,7 @@
   },
   "dependencies": {
     "@genoffice/i18n": "*",
-    "@genoffice/pptx-render": "*"
+    "@genoffice/pptx-render": "*",
+    "@genoffice/chat-runtime": "*"
   }
 }

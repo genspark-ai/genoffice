@@ -47,6 +47,8 @@ import type { HeadlessExportTarget } from '@genoffice/electron-utils/headless-ex
 import type { FaceVerticalMetrics } from '@genoffice/font-metrics'
 import type { AiPanelPrefs } from '@genoffice/ui'
 
+export type { AiPanelPrefs }
+
 export type { FaceVerticalMetrics }
 
 export type {
@@ -345,6 +347,25 @@ export interface DesktopApi {
   /** start a streaming AI call; deltas arrive via onAiStream with the same requestId */
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
+  /**
+   * One-shot translate via the active LLM. Used by the inline launcher;
+   * the web build returns the same shape (real provider call, not a stub).
+   */
+  aiTranslate(request: {
+    instruction: string
+    sourceLang?: string
+    targetLang: string
+    preserveFormat?: boolean
+    range?: { from?: number; to?: number; scope?: string } | null
+  }): Promise<{
+    ok: boolean
+    translated?: string
+    planId?: string
+    error?: string
+    sourceLang?: string
+    targetLang?: string
+    preserveFormat?: boolean
+  }>
   /** Genspark account status (gsk login state); withEmail also returns the email (needs a network request, slower) */
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
   /** Open the browser to log in to Genspark (fire-and-forget; aiGskStatus flips to logged-in when done) */

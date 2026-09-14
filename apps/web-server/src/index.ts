@@ -78,6 +78,20 @@ function sendJson(response: ServerResponse, status: number, payload: unknown): v
   response.end(JSON.stringify(payload))
 }
 
+function sendIpcError(response: ServerResponse, error: unknown, structuredAware: boolean = true): void {
+  const errObj: { message: string; code?: string; channel?: string; reason?: string } = {
+    message: (error as Error)?.message ? String((error as Error).message) : String(error),
+  }
+  if (structuredAware) {
+    const anyErr = error as { code?: unknown; channel?: unknown; reason?: unknown }
+    if (typeof anyErr?.code === 'string') errObj.code = anyErr.code
+    if (typeof anyErr?.channel === 'string') errObj.channel = anyErr.channel
+    if (typeof anyErr?.reason === 'string') errObj.reason = anyErr.reason
+  }
+  const status = errObj.code === 'WEB_UNSUPPORTED' ? 501 : 500
+  sendJson(response, status, { error: errObj })
+}
+
 async function readBody(request: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -194,7 +208,7 @@ const server = createServer(async (request, response) => {
         })
       }
     } catch (error) {
-      sendJson(response, 500, { error: { message: String((error as Error)?.message) } })
+      sendIpcError(response, error)
     }
     return
   }
@@ -299,7 +313,7 @@ const server = createServer(async (request, response) => {
         send,
       })
     } catch (error) {
-      sendJson(response, 500, { error: { message: String((error as Error)?.message) } })
+      sendIpcError(response, error)
       sessionAbort?.abort()
     } finally {
       try { response.end() } catch {}
@@ -322,7 +336,7 @@ const server = createServer(async (request, response) => {
       }
       sendJson(response, 200, { ok: true, aborted: !!session })
     } catch (error) {
-      sendJson(response, 500, { error: { message: String((error as Error)?.message) } })
+      sendIpcError(response, error)
     }
     return
   }

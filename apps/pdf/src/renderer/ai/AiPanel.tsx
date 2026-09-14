@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactElement } from 'react'
 import { AgentLoop } from '@genoffice/agent-core'
 import { imageGenerationAvailable, type AiSettings } from '@genoffice/ai-provider/browser'
-import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
+import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData, AiRunHeader, AiToolTimeline, AiErrorRecovery, AiInlineLauncher, type AiInlineAction, type AiInlineLauncherStrings } from '@genoffice/ui'
+import type { ChatRunStatus, ChatToolCallRecord } from '@genoffice/chat-runtime/types'
 import { aiLangDirective, t as tGlobal, useI18n } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import sendEnterOn from '../assets/send-enter-on.png'
@@ -64,6 +65,26 @@ interface ChatEntry {
 /** longest selection excerpt echoed on a user bubble */
 const SCOPE_TEXT_MAX = 200
 
+const PDF_INLINE_LAUNCHER_STRINGS: AiInlineLauncherStrings = {
+  title: 'Ask AI about selection',
+  polish: 'Polish',
+  expand: 'Expand',
+  shorten: 'Shorten',
+  summarize: 'Summarize',
+  translate: 'Translate',
+}
+
+function pdfSelectionRect(): { left: number; top: number; right: number; bottom: number } | null {
+  if (typeof window === 'undefined') return null
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const range = sel.getRangeAt(0)
+  if (range.collapsed) return null
+  const rect = range.getBoundingClientRect()
+  if (rect.width === 0 && rect.height === 0) return null
+  return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }
+}
+
 type Phase = 'thinking' | 'replying' | 'working'
 
 interface PendingConfirm {
@@ -95,6 +116,30 @@ export function AiPanel({
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState<Phase>('thinking')
+  // Shared-component state mirror (M4). Additive layer; inline tool chips keep rendering.
+  const [sharedToolTimeline, setSharedToolTimeline] = useState<ChatToolCallRecord[]>([])
+  const [sharedRunStatus, setSharedRunStatus] = useState<ChatRunStatus>('idle')
+  /** Last error from a finished run; consumed by <AiErrorRecovery>. */
+  const [lastError, setLastError] = useState<string | null>(null)
+  /** Ref for the composer's textarea so <AiErrorRecovery>'s "Edit prompt" can focus it. */
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  const sharedToolSeqRef = useRef(0)
+  function emitSharedToolStart(name: string, input: unknown) {
+    sharedToolSeqRef.current += 1
+    const rec: ChatToolCallRecord = {
+      id: `pdf-${sharedToolSeqRef.current}`,
+      name,
+      input: (input ?? {}) as Record<string, unknown>,
+      status: 'running',
+      startedAt: Date.now(),
+    }
+    setSharedToolTimeline(prev => [...prev, rec])
+    return rec.id
+  }
+  function resetSharedTimeline() {
+    sharedToolSeqRef.current = 0
+    setSharedToolTimeline([])
+  }
   /** the scope chip's expandable preview of the selected text */
   const [scopePreviewOpen, setScopePreviewOpen] = useState(false)
   const chatRef = useRef<HTMLDivElement>(null)
@@ -181,6 +226,8 @@ export function AiPanel({
     segTextRef.current = ''
     runTextsRef.current = []
     runToolsRef.current = []
+    resetSharedTimeline()
+    setSharedRunStatus('running')
     if (texts.length > 0 || tools.length > 0) {
       persistMessage('assistant', texts.join('\n\n'), tools)
     }
@@ -384,17 +431,35 @@ export function AiPanel({
       events: {
         onText: (text) => {
           setPhase('replying')
+          setSharedRunStatus('streaming')
           segTextRef.current = text
           patchLast({ text })
         },
         onToolExecuted: ({ call, execution }) => {
           setPhase('working')
+          setSharedRunStatus('running')
           if (execution.mutated) runMutatedRef.current = true
           runToolsRef.current.push({
             name: call.name,
             summary: execution.summary,
             isError: execution.isError,
             output: execution.output?.slice(0, 2000),
+          })
+          emitSharedToolStart(call.name, call.input)
+          // Mark the freshly-started record as executed immediately (PDF skill doesn't expose onToolStart)
+          setSharedToolTimeline(prev => {
+            const next = prev.slice()
+            const last = next[next.length - 1]
+            if (last && last.status === 'running' && last.name === call.name) {
+              next[next.length - 1] = {
+                ...last,
+                status: execution.isError ? 'error' : 'executed',
+                output: execution.output?.slice(0, 500),
+                finishedAt: Date.now(),
+                isError: !!execution.isError,
+              }
+            }
+            return next
           })
           patchLast((last) => ({
             tools: [
@@ -437,6 +502,7 @@ export function AiPanel({
             streaming: false,
             text: final || (last.tools?.length ? last.text : tGlobal('aiNoReply')),
           }))
+          setSharedRunStatus(cancelled ? 'cancelled' : 'done')
           setBusy(false)
           if (runMutatedRef.current) {
             runMutatedRef.current = false
@@ -444,6 +510,8 @@ export function AiPanel({
           }
         },
         onError: (error) => {
+          setSharedRunStatus('error')
+          setLastError(error)
           setChat((prev) => {
             const next = [...prev]
             // the loop rolled this run's user message out of the model context — surface that
@@ -620,8 +688,8 @@ export function AiPanel({
       />
       <header className="ai-panel-header">
         <span className="ai-panel-title">
-          <GensparkMark size={22} />
-          Genspark
+          <ProviderMark provider={settingsRef.current?.provider} size={22} />
+          {{minimax:'MiniMax',codex:'Codex',anthropic:'Claude',genspark:'Genspark'}[(settingsRef.current?.provider ?? 'minimax') as 'minimax'|'codex'|'anthropic'|'genspark'] || 'AI Assistant'}
         </span>
         <div className="ai-panel-header-actions">
           {chat.length > 0 && (
@@ -651,10 +719,62 @@ export function AiPanel({
       </header>
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
+        {/* Shared ChatRuntime components (M4). Additive layer; inline tool chips keep rendering. */}
+        <AiRunHeader status={sharedRunStatus} model={settingsRef.current?.provider} />
+        <AiToolTimeline tools={sharedToolTimeline} />
+        {sharedRunStatus === 'error' && lastError && (
+          <AiErrorRecovery
+            error={lastError}
+            onEdit={() => inputRef.current?.focus()}
+            onDismiss={() => { setLastError(null); setSharedRunStatus('idle') }}
+          />
+        )}
         {chat.length === 0 && (
           <div className="ai-chat-empty">
             <div className="ai-chat-empty-title">{t('aiEmptyTitle')}</div>
             <div className="ai-chat-empty-body">{t('aiEmptyBody')}</div>
+            <AiInlineLauncher
+              getAnchorRect={pdfSelectionRect}
+              strings={PDF_INLINE_LAUNCHER_STRINGS}
+              onPick={async (action: AiInlineAction) => {
+                const instruction = hasScopeSelection && scopeSel?.text ? scopeSel.text : ''
+                if (action === 'translate') {
+                  if (!instruction) {
+                    send(t('aiChipTranslate'))
+                    return
+                  }
+                  const r = await window.pdfApi?.aiTranslate?.({
+                    instruction,
+                    targetLang: 'zh-CN',
+                    preserveFormat: true,
+                  })
+                  if (!r?.ok) {
+                    send(t('aiChipTranslate'))
+                    return
+                  }
+                  setPrompt(r.translated ?? '')
+                  inputRef.current?.focus()
+                  return
+                }
+                const prompt =
+                  action === 'polish'
+                    ? hasScopeSelection
+                      ? 'Polish the selected text while preserving the original wording and structure.'
+                      : 'Polish this document while preserving the original wording and structure.'
+                    : action === 'expand'
+                      ? hasScopeSelection
+                        ? 'Expand the selected text with more detail and supporting points.'
+                        : 'Expand this document with more detail and supporting points.'
+                      : action === 'shorten'
+                        ? hasScopeSelection
+                          ? 'Shorten the selected text while preserving the core meaning.'
+                          : 'Shorten this document while preserving the core meaning.'
+                        : hasScopeSelection
+                          ? 'Summarize the selected text in two or three sentences.'
+                          : 'Summarize this document in two or three sentences.'
+                send(prompt)
+              }}
+            />
             <div className="ai-quick-actions">
               <button
                 className="ai-quick-btn"
@@ -676,7 +796,24 @@ export function AiPanel({
               </button>
               <button
                 className="ai-quick-btn"
-                onClick={() => send(t('aiChipTranslate'))}
+                onClick={async () => {
+                  const instruction = hasScopeSelection && scopeSel?.text ? scopeSel.text : ''
+                  if (!instruction) {
+                    send(t('aiChipTranslate'))
+                    return
+                  }
+                  const r = await window.pdfApi?.aiTranslate?.({
+                    instruction,
+                    targetLang: 'zh-CN',
+                    preserveFormat: true,
+                  })
+                  if (!r?.ok) {
+                    send(t('aiChipTranslate'))
+                    return
+                  }
+                  setPrompt(r.translated ?? '')
+                  inputRef.current?.focus()
+                }}
               >
                 {t('aiChipTranslate')}
               </button>
@@ -753,6 +890,7 @@ export function AiPanel({
 
       <div className="ai-composer">
         <AiComposer
+          textareaRef={inputRef}
           value={prompt}
           busy={busy}
           header={
@@ -1022,4 +1160,81 @@ export function GensparkMark({ size = 18 }: { size?: number }): React.JSX.Elemen
       />
     </svg>
   )
+}
+
+
+/** MiniMax brand mark — neutral generative sparkle. */
+export function MiniMaxMark({ size = 22 }: { size?: number }): React.JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M12 2.5l2.6 6.4 6.4 2.6-6.4 2.6L12 20.5l-2.6-6.4L3 11.5l6.4-2.6L12 2.5z"
+        fill="currentColor"
+      />
+      <circle cx="19" cy="5" r="1.6" fill="currentColor" opacity="0.7" />
+      <circle cx="5" cy="19" r="1.4" fill="currentColor" opacity="0.55" />
+    </svg>
+  )
+}
+
+/** Codex CLI brand mark — compact square with a stylised `>_` glyph. */
+export function CodexMark({ size = 22 }: { size?: number }): React.JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" fill="currentColor" />
+      <path
+        d="M7.5 9.5l-2 2.5 2 2.5M16.5 9.5l2 2.5-2 2.5M13 8l-2 8"
+        stroke="#fff"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  )
+}
+
+/** Claude brand mark — Anthropic asterisk-style icon. */
+export function ClaudeMark({ size = 22 }: { size?: number }): React.JSX.Element {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M12 2c1.6 4.6 2.4 5.4 7 7-4.6 1.6-5.4 2.4-7 7-1.6-4.6-2.4-5.4-7-7 4.6-1.6 5.4-2.4 7-7z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+/** Resolves the right brand icon for the active AI provider. Falls back to
+ * MiniMaxMark so the header always matches a real provider instead of
+ * silently lying about the integration. */
+export function ProviderMark({ provider, size = 22 }: { provider?: string; size?: number }): React.JSX.Element {
+  const p = (provider ?? '').toLowerCase()
+  if (p === 'minimax') return <MiniMaxMark size={size} />
+  if (p === 'codex') return <CodexMark size={size} />
+  if (p === 'anthropic') return <ClaudeMark size={size} />
+  if (p === 'genspark') return <GensparkMark size={size} />
+  return <MiniMaxMark size={size} />
 }

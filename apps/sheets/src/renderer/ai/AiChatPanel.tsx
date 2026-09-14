@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
-import { GensparkMark } from '../ribbon-icons'
+import { AiRunHeader, AiToolTimeline, AiChangeSummary, AiErrorRecovery } from '@genoffice/ui'
+import { toChatChangePlan, defaultXlsxPreviewRenderer } from './xlsx-change-plan'
+import type { ChatToolCallRecord } from '@genoffice/chat-runtime/types'
+import { GensparkMark, ProviderMark } from '../ribbon-icons'
 import type { ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { ATTACHMENT_IMAGE_EXTS, type AttachmentMeta } from '../../shared/desktop-api'
 import { useI18n, type TFunc } from '../i18n/locale'
@@ -282,6 +285,16 @@ export function AiChatPanel({
   readonly onCollapse: () => void
 }): React.JSX.Element {
   const { t, lang } = useI18n()
+  const [provider, setProvider] = useState<string>(() => 'minimax')
+  useEffect(() => {
+    let alive = true
+    void window.desktopApi?.getAiSettings?.().then((s) => {
+      if (alive && s && typeof s === 'object' && 'provider' in s) {
+        setProvider((s as { provider?: string }).provider ?? 'minimax')
+      }
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
   // Panel chrome follows the UI language; message text follows its own content (dir=auto below)
   const isRtl = lang === 'ar' || lang === 'he'
   const chatRef = useRef<HTMLDivElement | null>(null)
@@ -444,13 +457,21 @@ export function AiChatPanel({
           data-tip={t('aiOpenAssistant')}
           aria-label={t('aiOpenAssistant')}
         >
-          <GensparkMark size={22} />
+          <ProviderMark provider={provider} size={22} />
         </button>
       </aside>
     )
   }
 
+  const [lastError, setLastError] = React.useState<string | null>(null)
   const canSend = prompt.trim().length > 0 && !aiBusy
+
+  // Last error visible in the transcript; surfaced via <AiErrorRecovery>.
+  // Re-derived whenever chat changes (cheap: scan the trailing entries).
+  React.useEffect(() => {
+    const last = [...chat].reverse().find((e) => e.isError)
+    setLastError(last && typeof last.text === 'string' ? last.text : null)
+  }, [chat])
 
   /** [B12](sheetnav://B12) links in answers jump the grid to the cited range */
   const citationNav = { scheme: SHEET_NAV_SCHEME, onNavigate: onCitation }
@@ -513,8 +534,8 @@ export function AiChatPanel({
       />
       <header className="ai-panel-header">
         <span className="ai-panel-title">
-          <GensparkMark size={22} />
-          Genspark
+          <ProviderMark provider={provider} size={22} />
+          {{minimax:'MiniMax',codex:'Codex',anthropic:'Claude',genspark:'Genspark'}[provider as 'minimax'|'codex'|'anthropic'|'genspark'] || 'AI Assistant'}
         </span>
         <div className="ai-panel-header-actions">
           {(chat.length > 0 || historicChat.length > 0) && (
@@ -539,6 +560,36 @@ export function AiChatPanel({
       </header>
 
       <div className="ai-chat" ref={chatRef} onScroll={onChatScroll}>
+        {/* Shared ChatRuntime components (M4). Additive: existing inline UI stays. */}
+        <AiRunHeader status={lastError ? 'error' : aiBusy ? 'running' : 'idle'} model={provider} />
+        {lastError && !aiBusy && (
+          <AiErrorRecovery
+            error={lastError}
+            onEdit={() => inputRef.current?.focus()}
+            onDismiss={() => setLastError(null)}
+          />
+        )}
+        {(() => {
+          const lastAssistant = [...chat].reverse().find(e => e.role === 'assistant')
+          if (!lastAssistant || lastAssistant.tools.length === 0) return null
+          const records: ChatToolCallRecord[] = lastAssistant.tools.map((t, idx) => ({
+            id: `xlsx-${idx}`,
+            name: t.name ?? t.summary,
+            input: {},
+            status: t.running ? 'running' : t.isError ? 'error' : 'executed',
+            output: t.output,
+            isError: t.isError,
+            startedAt: 0,
+            finishedAt: t.running ? undefined : 0,
+          }))
+          return <AiToolTimeline tools={records} />
+        })()}
+        {preview && (
+          <AiChangeSummary
+            plan={toChatChangePlan(preview)}
+            previewRenderer={defaultXlsxPreviewRenderer}
+          />
+        )}
         {/* Past conversation (read-only transcript), shown continuously with the current turn */}
         {historicChat.length > 0 && (
           <>

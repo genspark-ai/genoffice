@@ -1,0 +1,35 @@
+{
+  "name": "@genoffice/chat-runtime",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Unified Chat model (Session / Run / ChangePlan) wrapping the shared @genoffice/agent-core AgentLoop. Replaces per-app duplication of busy/phase/runToolsRef/streaming/snapshot state.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./react": "./src/react.ts",
+    "./errors": "./src/errors.ts",
+    "./types": "./src/types.ts",
+    "./change-plan": "./src/change-plan.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@genoffice/agent-core": "*"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "react": "^18.3.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

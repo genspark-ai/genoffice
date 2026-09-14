@@ -85,7 +85,7 @@ import { AnimationPane } from './components/AnimationPane'
 import { AnimPreviewOverlay } from './components/AnimatedSlide'
 import { EquationDialog, HeaderFooterDialog, LinkDialog } from './components/InsertDialogs'
 import { CutoutDialog } from './components/CutoutDialog'
-import { useAutoSavePref, type AiScopeQuoteData, type WordArtPreset } from '@genoffice/ui'
+import { useAutoSavePref, AiInlineLauncher, type AiInlineAction, type AiInlineLauncherStrings, type AiScopeQuoteData, type WordArtPreset } from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
 import { ToastHost } from './components/toast'
@@ -303,6 +303,15 @@ function collectRtls(node: RenderNode, out: Set<boolean>) {
   if (node.type === 'shape' || node.type === 'text') collectBodyRtls(node.text, out)
   else if (node.type === 'table') for (const cell of node.cells) collectBodyRtls(cell.text, out)
   else if (node.type === 'group') for (const child of node.children) collectRtls(child, out)
+}
+
+const SLIDES_INLINE_LAUNCHER_STRINGS: AiInlineLauncherStrings = {
+  title: 'Ask AI about selection',
+  polish: 'Polish',
+  expand: 'Expand',
+  shorten: 'Shorten',
+  summarize: 'Summarize',
+  translate: 'Translate',
 }
 
 export function App() {
@@ -4195,7 +4204,33 @@ export function App() {
         !cutoutTarget &&
         inkTool === 'select' &&
         selectedIds.length > 0 && (
-          <AiAskTrigger getAnchorRect={getAskTriggerRect} onOpen={openAskPopover} />
+          <>
+            <AiAskTrigger getAnchorRect={getAskTriggerRect} onOpen={openAskPopover} />
+            <AiInlineLauncher
+              getAnchorRect={getAskTriggerRect}
+              strings={SLIDES_INLINE_LAUNCHER_STRINGS}
+              onPick={(action) => {
+                if (action === 'translate') {
+                  void window.slidesApi?.aiTranslate?.({
+                    instruction: askTargets.map((target) => target.id).join(', '),
+                    targetLang: 'zh-CN',
+                    preserveFormat: true,
+                  })
+                  return
+                }
+                const prompt =
+                  action === 'polish'
+                    ? 'Polish the selected text while preserving the original tone and structure.'
+                    : action === 'expand'
+                      ? 'Expand the selected text with more detail and supporting points.'
+                      : action === 'shorten'
+                        ? 'Shorten the selected text while preserving the core meaning.'
+                        : 'Summarize the selected text in two or three sentences.'
+                askClosedAtRef.current = 0
+                commitAsk(prompt)
+              }}
+            />
+          </>
         )}
 
       {askState && askTargets.length > 0 && (
@@ -4203,6 +4238,19 @@ export function App() {
           targets={askTargets}
           getAnchorRect={getAskAnchorRect}
           queueFull={editQueue.length >= EDIT_QUEUE_MAX}
+          onTranslate={async (instruction) => {
+            try {
+              const r = await window.slidesApi?.aiTranslate?.({
+                instruction,
+                targetLang: 'zh-CN',
+                preserveFormat: true,
+              })
+              if (!r?.ok) return null
+              return r.translated ?? null
+            } catch {
+              return null
+            }
+          }}
           onSubmit={(instruction) => {
             askClosedAtRef.current = Date.now()
             commitAsk(instruction)

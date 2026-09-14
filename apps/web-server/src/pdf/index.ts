@@ -51,12 +51,9 @@ export function registerPdfHandlers(): void {
   }))
   registerHandle('pdf:can-draw-text', (_e: unknown, _args: unknown) => ({ canDraw: true }))
   registerHandle('pdf:list-page-images', (_e: unknown, _p: unknown) => ({ images: [] }))
-  registerHandle('pdf:list-static-form-fills', (_e: unknown, _p: unknown) => ({ fills: [] }))
+  registerHandle('pdf:list-static-form-fills', (_e: unknown, _p: unknown) => [])
   registerHandle('pdf:page-image-png', (_e: unknown, _req: unknown) => null)
-  registerHandle('pdf:ocr-page', (_e: unknown, _png: unknown) => ({
-    ok: false,
-    reason: 'web-no-backend',
-  }))
+  registerHandle('pdf:ocr-page', () => null)
   registerHandle('pdf:page-preview-png', (_e: unknown, _req: unknown) => null)
   registerHandle('pdf:extract-pages', (_e: unknown, _req: unknown) => ({ ok: false }))
   registerHandle('pdf:insert-pdf', (_e: unknown, _req: unknown) => ({ ok: false }))

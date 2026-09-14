@@ -1112,7 +1112,7 @@ export type MenuCommand =
   | 'copy'
   | 'paste'
 
-export interface SlidesApi {
+export interface SlidesApi extends DesktopFilesApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage: () => Promise<
     'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'
@@ -1525,6 +1525,24 @@ export interface SlidesApi {
   setAiSettings: (settings: AiSettings) => Promise<void>
   aiStream: (request: AiStreamRequest) => Promise<void>
   aiStreamCancel: (requestId: string) => Promise<void>
+  /**
+   * One-shot translate via the active LLM (same shape as docs/web).
+   */
+  aiTranslate: (request: {
+    instruction: string
+    sourceLang?: string
+    targetLang: string
+    preserveFormat?: boolean
+    range?: { from?: number; to?: number; scope?: string } | null
+  }) => Promise<{
+    ok: boolean
+    translated?: string
+    planId?: string
+    error?: string
+    sourceLang?: string
+    targetLang?: string
+    preserveFormat?: boolean
+  }>
   /** Genspark account status (gsk login state); with withEmail also fetches the email (needs a network request, slower) */
   aiGskStatus: (withEmail?: boolean) => Promise<GenSparkAccountStatus>
   /** Open the browser to log into Genspark (fire-and-forget; aiGskStatus turns logged-in once done) */
@@ -1650,6 +1668,6 @@ export interface SlidesApi {
 declare global {
   interface Window {
     slidesApi: SlidesApi
-    desktop: DesktopFilesApi
+    desktop: SlidesApi
   }
 }

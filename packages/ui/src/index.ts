@@ -92,3 +92,60 @@ export {
   type AutoSaveDefault,
   type AutoSaveDefaultApi,
 } from './auto-save-pref'
+
+// M3 — shared AI runtime primitives (replaces per-app inline copies of
+// run headers, tool timelines, change-plan summaries, error recovery,
+// attachment strips, and provider badges).
+export {
+  AiRunHeader,
+  type AiRunHeaderProps,
+} from './AiRunHeader'
+export {
+  AiProviderBadge,
+  type AiProviderBadgeProps,
+} from './AiProviderBadge'
+export {
+  AiAttachmentStrip,
+  type AiAttachmentStripProps,
+} from './AiAttachmentStrip'
+export {
+  AiToolTimeline,
+  type AiToolTimelineProps,
+} from './AiToolTimeline'
+export {
+  AiChangeSummary,
+  type AiChangeSummaryProps,
+} from './AiChangeSummary'
+export {
+  AiErrorRecovery,
+  type AiErrorRecoveryProps,
+} from './AiErrorRecovery'
+
+// Inline AI primitives (selection-anchored launcher, translate dialog, change marker)
+export {
+  AiInlineLauncher,
+  type AiInlineLauncherProps,
+  type AiInlineLauncherStrings,
+  type AiInlineLauncherAnchorRect,
+  type AiInlineAction,
+} from './AiInlineLauncher'
+export {
+  TranslateDialog,
+  type TranslateDialogProps,
+  type TranslateDialogStrings,
+  type TranslateLanguageOption,
+} from './TranslateDialog'
+export { ChangeMarker, type ChangeMarkerProps } from './ChangeMarker'
+
+// Extended icon set used by the runtime primitives.
+export {
+  IconAttachment,
+  IconCheck,
+  IconClose,
+  IconEdit,
+  IconRetry,
+  IconSparkle,
+  IconStopFilled,
+  IconTool,
+  IconWarning,
+} from './icons'

@@ -38,8 +38,9 @@ import {
   settingsSupportVision,
 } from './slide-qc'
 import { useI18n, t as tGlobal, aiLangDirective, type TFunc } from '../i18n/locale'
-import { AiScopeQuote, Markdown, useAiPanelPrefs, type AiScopeQuoteData } from '@genoffice/ui'
-import { GensparkMark } from '../components/icons'
+import { AiScopeQuote, Markdown, useAiPanelPrefs, type AiScopeQuoteData, AiRunHeader, AiToolTimeline, AiErrorRecovery } from '@genoffice/ui'
+import type { ChatRunStatus, ChatToolCallRecord } from '@genoffice/chat-runtime/types'
+import { GensparkMark, ProviderMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
@@ -407,6 +408,28 @@ export function AiPanel({
   // must honor it like the shared AiComposer does.
   const { spellcheck } = useAiPanelPrefs()
   const [busy, setBusy] = useState(false)
+  // Shared-component state mirror (M4). Additive layer; existing inline tool chips keep rendering.
+  const [sharedToolTimeline, setSharedToolTimeline] = useState<ChatToolCallRecord[]>([])
+  const [sharedRunStatus, setSharedRunStatus] = useState<ChatRunStatus>('idle')
+  /** Last error from a finished run; consumed by <AiErrorRecovery>. */
+  const [lastError, setLastError] = useState<string | null>(null)
+  const sharedToolSeqRef = useRef(0)
+  function emitSharedToolStart(name: string, input: unknown) {
+    sharedToolSeqRef.current += 1
+    const rec: ChatToolCallRecord = {
+      id: `slides-${sharedToolSeqRef.current}`,
+      name,
+      input: (input ?? {}) as Record<string, unknown>,
+      status: 'running',
+      startedAt: Date.now(),
+    }
+    setSharedToolTimeline(prev => [...prev, rec])
+    return rec.id
+  }
+  function resetSharedTimeline() {
+    sharedToolSeqRef.current = 0
+    setSharedToolTimeline([])
+  }
   const [chat, setChat] = useState<ChatEntry[]>([])
   /** Past conversation restored from JSONL (read-only transcript, not fed to the model) */
   const [historicChat, setHistoricChat] = useState<ChatEntry[]>([])
@@ -1346,6 +1369,7 @@ export function AiPanel({
       events: {
         onText: (text) => {
           streamedTextRef.current = text
+          setSharedRunStatus('streaming')
           patchLastAssistant({ text })
         },
         onToolStart: (call) => {
@@ -1356,6 +1380,7 @@ export function AiPanel({
             running: true,
           }
           patchLastAssistant((last) => ({ tools: [...(last.tools ?? []), activity] }))
+          emitSharedToolStart(call.name, call.input)
         },
         onToolExecuted: ({ call, execution }) => {
           const activity: ToolActivity = {
@@ -1383,6 +1408,27 @@ export function AiPanel({
             const tools = [...(last.tools ?? [])]
             if (tools.at(-1)?.running) tools.pop()
             return { tools: [...tools, activity] }
+          })
+          // Shared timeline mirror: mark the matching running record as executed
+          setSharedToolTimeline(prev => {
+            const next = prev.slice()
+            const idx = next.length - 1
+            while (idx >= 0 && (next[idx].name !== call.name || next[idx].status !== 'running')) {
+              break
+            }
+            for (let i = next.length - 1; i >= 0; i--) {
+              if (next[i].status === 'running' && next[i].name === call.name) {
+                next[i] = {
+                  ...next[i],
+                  status: execution.isError ? 'error' : 'executed',
+                  output: execution.output?.slice(0, 500),
+                  finishedAt: Date.now(),
+                  isError: !!execution.isError,
+                }
+                return next
+              }
+            }
+            return next
           })
         },
         onTurnEnd: () => {
@@ -1420,6 +1466,7 @@ export function AiPanel({
           })
           void finishHistoryBatch().finally(() => {
             setBusy(false)
+            setSharedRunStatus(cancelled ? 'cancelled' : 'done')
             // Post-generation layout QC: only after a completed run that landed generated pages
             if (cancelled) qcPagesRef.current = []
             else if (qcPagesRef.current.length > 0) void runQcPassRef.current()
@@ -1438,6 +1485,8 @@ export function AiPanel({
           if (cancelled && streamedTextRef.current) logRunFailure('stopped')
         },
         onError: (error) => {
+          setSharedRunStatus('error')
+          setLastError(error)
           logRunFailure('error', error)
           qcPagesRef.current = []
           setChat((prev) => {
@@ -1613,6 +1662,8 @@ export function AiPanel({
     lastDisplayTextRef.current = displayText
     lastTurnToolsRef.current = []
     runToolsRef.current = []
+    resetSharedTimeline()
+    setSharedRunStatus('running')
     streamedTextRef.current = ''
     runSnapshotIdRef.current = null
     stickToBottomRef.current = true
@@ -2018,7 +2069,7 @@ export function AiPanel({
         aria-label={t('appAiRailExpand')}
         onClick={onExpand}
       >
-        <GensparkMark size={22} />
+        <ProviderMark provider={settingsRef.current.provider} size={22} />
       </button>
     )
   }
@@ -2050,7 +2101,7 @@ export function AiPanel({
       />
       <div className="ai-panel-header">
         <span className="ai-panel-title">
-          <GensparkMark size={22} />
+          <ProviderMark provider={settingsRef.current.provider} size={22} />
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
@@ -2078,6 +2129,16 @@ export function AiPanel({
       </div>
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
+        {/* Shared ChatRuntime components (M4). Additive layer; inline tool chips keep rendering. */}
+        <AiRunHeader status={sharedRunStatus} model={settingsRef.current.provider} />
+        <AiToolTimeline tools={sharedToolTimeline} />
+        {sharedRunStatus === 'error' && lastError && (
+          <AiErrorRecovery
+            error={lastError}
+            onEdit={() => inputRef.current?.focus()}
+            onDismiss={() => { setLastError(null); setSharedRunStatus('idle') }}
+          />
+        )}
         {/* Past conversation (read-only transcript, not fed to the model), displayed continuously with the current turn */}
         {historicChat.length > 0 && (
           <>

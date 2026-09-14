@@ -86,6 +86,7 @@ export const IPC_CHANNELS = {
   aiChat: 'ai:chat',
   aiStream: 'ai:stream',
   aiStreamCancel: 'ai:stream-cancel',
+  aiTranslate: 'ai:translate',
   aiStreamChunk: 'ai:stream-chunk',
   aiGskStatus: 'ai:gsk-status',
   aiGskLogin: 'ai:gsk-login',

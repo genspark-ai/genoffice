@@ -19,13 +19,13 @@ export interface WebTransportOptions {
   /** Web Server base URL */
   baseUrl: string
   /** API key for authentication (optional) */
-  apiKey?: string
+  apiKey?: string | undefined
   /** Request timeout in ms */
-  timeout?: number
+  timeout?: number | undefined
   /** SSE reconnect attempts */
-  reconnectAttempts?: number
+  reconnectAttempts?: number | undefined
   /** SSE reconnect delay in ms */
-  reconnectDelay?: number
+  reconnectDelay?: number | undefined
 }
 
 const DEFAULT_TIMEOUT = 120_000
@@ -208,7 +208,7 @@ interface WebStreamChunk {
  */
 export class WebIpcClient {
   private baseUrl: string
-  private apiKey?: string
+  private apiKey?: string | undefined
 
   constructor(baseUrl: string, apiKey?: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '')
@@ -286,7 +286,7 @@ export function createWebIpcClient(baseUrl?: string): WebIpcClient {
 export interface WebAiSettings {
   provider: string
   model: string
-  apiKey?: string
+  apiKey?: string | undefined
 }
 
 /**

@@ -46,6 +46,12 @@ interface Props {
   onSendNow?: (text: string) => void
   /** Disables "Add to queue" only; sending now never touches the queue */
   queueFull?: boolean
+  /**
+   * Optional one-shot translate trigger: receives the chip text and returns
+   * the translated string. When omitted the chip falls back to filling the
+   * input (legacy behaviour).
+   */
+  onTranslate?: (instruction: string) => Promise<string | null>
 }
 
 const WIDTH = 340
@@ -157,6 +163,7 @@ export function AiAskPopover({
   onCancel,
   onSendNow,
   queueFull,
+  onTranslate,
 }: Props): React.JSX.Element | null {
   const { t } = useI18n()
   const [text, setText] = useState(initialText ?? '')
@@ -294,7 +301,16 @@ export function AiAskPopover({
             key={key}
             className="ai-ask-chip"
             // Filling rather than submitting: the shorthand almost always wants a qualifier
-            onClick={() => {
+            onClick={async () => {
+              if (key === 'aiChipTranslate' && onTranslate) {
+                const source = initialText || text
+                const out = await onTranslate(source)
+                if (out !== null) {
+                  setText(out)
+                  inputRef.current?.focus()
+                }
+                return
+              }
               setText(t(key))
               inputRef.current?.focus()
             }}

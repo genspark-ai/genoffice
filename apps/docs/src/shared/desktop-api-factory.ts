@@ -8,9 +8,11 @@
 /// transport differs, which is what makes both versions behave the same.
 import type {
   AiChatRequest,
+  AiPanelPrefs,
   AiSettings,
   AiStreamChunk,
   AiStreamRequest,
+  AutoSaveDefault,
   DesktopApi,
   MenuCommand,
   UiTheme,
@@ -81,6 +83,16 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
       t.on('app:language-changed', (lang) => handler(lang as Parameters<typeof handler>[0])),
     getTheme: () => t.invoke('app:get-theme'),
     onThemeChanged: (handler) => t.on('app:theme-changed', (theme) => handler(theme as UiTheme)),
+    getAutoSaveDefault: () => t.invoke('app:get-auto-save-default'),
+    onAutoSaveDefaultChanged: (handler) =>
+      t.on('app:auto-save-default-changed', (value) =>
+        handler(value as Parameters<typeof handler>[0]),
+      ),
+    getAiPanelPrefs: () => t.invoke('app:get-ai-panel-prefs'),
+    onAiPanelPrefsChanged: (handler) =>
+      t.on('app:ai-panel-prefs-changed', (prefs) =>
+        handler(prefs as Parameters<typeof handler>[0]),
+      ),
     onChromePressed: (handler) => t.on('app:chrome-pressed', () => handler()),
     openDocx: overrides.openDocx ?? (() => t.invoke('docs:open')),
     openDocxPath: (path: string) => t.invoke('docs:open-path', path),
@@ -110,6 +122,7 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
     writeRecoveryCopy: (path: string, data: ArrayBuffer) =>
       t.invoke('docs:write-recovery', path, data),
     onTeardown: (handler) => t.on('docs:teardown', () => handler()),
+    respellKick: () => t.invoke('docs:respell-kick'),
     saveDocxAs:
       overrides.saveDocxAs ??
       ((defaultName: string, data: ArrayBuffer, sourcePath?: string | null) =>
@@ -139,6 +152,20 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
     aiChat: (request: AiChatRequest) => t.invoke('ai:chat', request),
     aiStream: (request: AiStreamRequest) => t.invoke('ai:stream', request),
     aiStreamCancel: (requestId: string) => t.invoke('ai:stream-cancel', requestId),
+    aiTranslate: (request: {
+      instruction: string
+      sourceLang?: string
+      targetLang: string
+      preserveFormat?: boolean
+      range?: { from?: number; to?: number; scope?: string } | null
+    }) =>
+      t.invoke('ai:translate', {
+        instruction: request.instruction,
+        sourceLang: request.sourceLang,
+        targetLang: request.targetLang,
+        preserveFormat: request.preserveFormat,
+        range: request.range,
+      }),
     aiGskStatus: (withEmail?: boolean) => t.invoke('ai:gsk-status', withEmail),
     aiGskLogin: () => t.invoke('ai:gsk-login'),
     webSearch: (query: string, maxResults?: number) => t.invoke('ai:web-search', query, maxResults),

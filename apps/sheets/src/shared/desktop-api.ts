@@ -30,6 +30,8 @@ import type {
   AiStreamRequest,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
+
+export type { AiSettings }
 import type { AiPanelPrefs } from '@genoffice/ui'
 
 // edit schemas shared with the xlsx gateway package; re-exported so IPC consumers keep one import site
@@ -2624,6 +2626,25 @@ export interface DesktopApi {
   /// start a streaming AI call; deltas arrive via onAiStream with the same requestId
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
+  /**
+   * One-shot translate via the active LLM. Same shape as docs/web:
+   * returns the translated text + plan id (no chat history).
+   */
+  aiTranslate(request: {
+    instruction: string
+    sourceLang?: string
+    targetLang: string
+    preserveFormat?: boolean
+    range?: { from?: number; to?: number; scope?: string } | null
+  }): Promise<{
+    ok: boolean
+    translated?: string
+    planId?: string
+    error?: string
+    sourceLang?: string
+    targetLang?: string
+    preserveFormat?: boolean
+  }>
   /// Genspark account status (gsk login state); withEmail also returns the email
   /// (needs a network request, slower)
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>

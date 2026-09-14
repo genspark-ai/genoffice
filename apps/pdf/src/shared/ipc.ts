@@ -2,6 +2,8 @@ import type { AiPanelPrefs } from '@genoffice/ui'
 import type { Lang } from '@genoffice/i18n'
 import type { AiSettings, AiStreamChunk, AiStreamRequest } from '@genoffice/ai-provider'
 
+export type { AiSettings }
+
 export const PDF_CHANNELS = {
   consumePending: 'pdf:consume-pending',
   readFile: 'pdf:read-file',
@@ -652,6 +654,7 @@ export const AI_CHANNELS = {
   stream: 'ai:stream',
   streamChunk: 'ai:stream-chunk',
   streamCancel: 'ai:stream-cancel',
+  translate: 'ai:translate',
   imageSearch: 'ai:image-search',
   fetchImage: 'ai:fetch-image',
 } as const
@@ -770,5 +773,23 @@ export interface PdfApi {
   gskStatus(): Promise<{ loggedIn: boolean }>
   aiStream(request: AiStreamRequest): Promise<void>
   aiStreamCancel(requestId: string): Promise<void>
+  /**
+   * One-shot translate via the active LLM (same shape as docs/web).
+   */
+  aiTranslate(request: {
+    instruction: string
+    sourceLang?: string
+    targetLang: string
+    preserveFormat?: boolean
+    range?: { from?: number; to?: number; scope?: string } | null
+  }): Promise<{
+    ok: boolean
+    translated?: string
+    planId?: string
+    error?: string
+    sourceLang?: string
+    targetLang?: string
+    preserveFormat?: boolean
+  }>
   onAiStream(handler: (chunk: AiStreamChunk) => void): () => void
 }

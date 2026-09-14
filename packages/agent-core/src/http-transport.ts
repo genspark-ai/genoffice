@@ -18,7 +18,21 @@ export interface HttpStreamChunk {
   text?: string
   toolCall?: AgentToolCall
   error?: string
-  errorCode?: 'timeout' | 'credits' | 'network' | 'overloaded'
+  /** Server-side AIErrorCode (or the legacy subset). */
+  errorCode?:
+    | 'timeout'
+    | 'credits'
+    | 'network'
+    | 'overloaded'
+    | 'WEB_UNSUPPORTED'
+    | 'NOT_CONFIGURED'
+    | 'NO_MODEL'
+    | 'TOOL_FAILED'
+    | 'PROVIDER'
+    | 'INTERNAL'
+    | 'CANCELLED'
+  /** Structured error envelope (channel, reason, …) used when errorCode is present. */
+  errorDetails?: { channel?: string; reason?: string; [key: string]: unknown }
   stopReason?: string
 }
 
@@ -26,13 +40,13 @@ export interface HttpTransportOptions {
   /** Base URL for AI API */
   baseUrl: string
   /** Custom fetch function (for testing) */
-  fetch?: typeof fetch
+  fetch?: typeof fetch | undefined
   /** Request timeout in ms */
-  timeout?: number
+  timeout?: number | undefined
   /** API key for authentication */
-  apiKey?: string
+  apiKey?: string | undefined
   /** Default headers */
-  headers?: Record<string, string>
+  headers?: Record<string, string> | undefined
 }
 
 const DEFAULT_TIMEOUT = 120_000 // 2 minutes
@@ -87,7 +101,7 @@ export function createHttpTransport(options: HttpTransportOptions): AgentTranspo
 
           if (!response.ok) {
             const errorText = await response.text()
-            callbacks.onError(`HTTP ${response.status}: ${errorText}`)
+            callbacks.onError(buildHttpErrorMessage(response.status, errorText))
             callbacks.onDone()
             return
           }
@@ -162,7 +176,7 @@ export function createHttpTransport(options: HttpTransportOptions): AgentTranspo
             if (chunk.stopReason) callbacks.onStopReason?.(chunk.stopReason)
             break
           case 'error':
-            callbacks.onError(chunk.error || 'Unknown error')
+            callbacks.onError(buildSseErrorMessage(chunk))
             break
           case 'ping':
             // Keepalive, no action needed
@@ -184,15 +198,49 @@ export function createHttpTransport(options: HttpTransportOptions): AgentTranspo
 }
 
 /**
+ * Wrap the raw HTTP error body into an `onError` message that the
+ * runtime's `classifyError()` can recognise. Structured envelopes
+ * (`{ error: { code: 'WEB_UNSUPPORTED', channel, reason } }`) are passed
+ * through as JSON so the renderer surfaces the right retry affordance.
+ */
+function buildHttpErrorMessage(status: number, body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: { code?: string; channel?: string; reason?: string; message?: string } }
+    if (parsed?.error?.code === 'WEB_UNSUPPORTED') {
+      // Return the envelope directly; classifyError() recognises the object shape.
+      return JSON.stringify(parsed.error)
+    }
+  } catch {
+    // not JSON
+  }
+  return `HTTP ${status}: ${body}`
+}
+
+/**
+ * Same idea for SSE error chunks: prefer the structured code so the
+ * renderer can branch on it; fall back to the raw text.
+ */
+function buildSseErrorMessage(chunk: HttpStreamChunk): string {
+  if (chunk.errorCode) {
+    return JSON.stringify({
+      code: chunk.errorCode,
+      ...(chunk.errorDetails ?? {}),
+      message: chunk.error,
+    })
+  }
+  return chunk.error || 'Unknown error'
+}
+
+/**
  * 简单的 HTTP 请求（非流式）
  */
 export async function httpRequest<T>(
   url: string,
   options: {
-    method?: string
-    body?: unknown
-    headers?: Record<string, string>
-    fetch?: typeof fetch
+    method?: string | undefined
+    body?: unknown | undefined
+    headers?: Record<string, string> | undefined
+    fetch?: typeof fetch | undefined
   } = {},
 ): Promise<T> {
   const { method = 'GET', body, headers = {}, fetch: customFetch } = options
@@ -204,7 +252,7 @@ export async function httpRequest<T>(
       'Content-Type': 'application/json',
       ...headers,
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? JSON.stringify(body) : null,
   })
 
   if (!response.ok) {

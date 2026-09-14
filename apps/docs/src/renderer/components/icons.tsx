@@ -1761,3 +1761,81 @@ export function GensparkMark({ size = 30 }: { size?: number }) {
     </svg>
   )
 }
+
+/** MiniMax brand mark — neutral generative sparkle (the same icon the agent
+ * already uses for its own badge; used here so the AI panel header matches
+ * the actual active provider instead of always showing Genspark). */
+export function MiniMaxMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M12 2.5l2.6 6.4 6.4 2.6-6.4 2.6L12 20.5l-2.6-6.4L3 11.5l6.4-2.6L12 2.5z"
+        fill="currentColor"
+      />
+      <circle cx="19" cy="5" r="1.6" fill="currentColor" opacity="0.7" />
+      <circle cx="5" cy="19" r="1.4" fill="currentColor" opacity="0.55" />
+    </svg>
+  )
+}
+
+/** Codex CLI brand mark — a compact square with a stylised `>_` glyph. */
+export function CodexMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" fill="currentColor" />
+      <path
+        d="M7.5 9.5l-2 2.5 2 2.5M16.5 9.5l2 2.5-2 2.5M13 8l-2 8"
+        stroke="#fff"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      />
+    </svg>
+  )
+}
+
+/** Claude brand mark — the Anthropic asterisk-style icon. */
+export function ClaudeMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M12 2c1.6 4.6 2.4 5.4 7 7-4.6 1.6-5.4 2.4-7 7-1.6-4.6-2.4-5.4-7-7 4.6-1.6 5.4-2.4 7-7z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+/** Resolves the right brand icon for the active AI provider. Falls back to
+ * MiniMaxMark so the header always matches a real provider instead of
+ * silently lying about the integration. */
+export function ProviderMark({ provider, size = 22 }: { provider?: string; size?: number }) {
+  const p = (provider ?? '').toLowerCase()
+  if (p === 'minimax') return <MiniMaxMark size={size} />
+  if (p === 'codex') return <CodexMark size={size} />
+  if (p === 'anthropic') return <ClaudeMark size={size} />
+  if (p === 'genspark') return <GensparkMark size={size} />
+  return <MiniMaxMark size={size} />
+}

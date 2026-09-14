@@ -137,11 +137,41 @@ export function createSlidesApi(t: IpcTransport, overrides: SlidesApiOverrides =
       ),
     getTheme: () => t.invoke('app:get-theme'),
     onThemeChanged: (handler) => t.on('app:theme-changed', (theme) => handler(theme as UiTheme)),
+    getAutoSaveDefault: () => t.invoke('app:get-auto-save-default'),
+    onAutoSaveDefaultChanged: (handler) =>
+      t.on('app:auto-save-default-changed', (value) =>
+        handler(value as Parameters<typeof handler>[0]),
+      ),
+    getAiPanelPrefs: () => t.invoke('app:get-ai-panel-prefs'),
+    onAiPanelPrefsChanged: (handler) =>
+      t.on('app:ai-panel-prefs-changed', (prefs) =>
+        handler(prefs as Parameters<typeof handler>[0]),
+      ),
     onChromePressed: (handler) => t.on('app:chrome-pressed', () => handler()),
     setShowFullScreen:
       overrides.setShowFullScreen ?? ((on) => t.invoke('slides:show-fullscreen', on)),
     privateFontFaces: () => t.invoke('slides:private-font-faces'),
     privateFontData: (id) => t.invoke('slides:private-font-data', id),
+    pickAttachments: overrides.pickAttachments ?? (() => t.invoke('slides:files-pick')),
+    addAttachmentPaths: (paths: string[]) => t.invoke('slides:files-add', paths),
+    addPastedImage: (data: ArrayBuffer, ext: string) =>
+      t.invoke('slides:files-add-pasted-image', data, ext),
+    readAttachment: (path: string, offset: number, maxChars: number) =>
+      t.invoke('slides:files-read', path, offset, maxChars),
+    readAttachmentImage: (path: string) => t.invoke('slides:files-read-image', path),
+    getPathForFile: (file: File) =>
+      overrides.getPathForFile?.(file) ??
+      (() => {
+        throw new Error('WEB_UNSUPPORTED: resolving dropped files needs the desktop file picker')
+      })(),
+    pickPictureFile: async () => {
+      // No native picker in web build; UI offers a file-input fallback.
+      throw new Error('pickPictureFile is not available in the web build')
+    },
+    consumeHeadlessExport: async () => null,
+    headlessExportDone: (_result) => {
+      // No headless export host in the web build (CLI uses Electron).
+    },
     fontCatalog: () => t.invoke('slides:font-catalog'),
     fontDownload: (family) => t.invoke('slides:font-download', family),
     fontInstallLocal: overrides.fontInstallLocal ?? (() => t.invoke('slides:font-install-local')),
@@ -350,6 +380,14 @@ export function createSlidesApi(t: IpcTransport, overrides: SlidesApiOverrides =
     setAiSettings: (settings: AiSettings) => t.invoke('ai:set-settings', settings),
     aiStream: (request: AiStreamRequest) => t.invoke('ai:stream', request),
     aiStreamCancel: (requestId: string) => t.invoke('ai:stream-cancel', requestId),
+    aiTranslate: (request) =>
+      t.invoke('ai:translate', {
+        instruction: request.instruction,
+        sourceLang: request.sourceLang,
+        targetLang: request.targetLang,
+        preserveFormat: request.preserveFormat,
+        range: request.range,
+      }),
     aiGskStatus: (withEmail?: boolean) => t.invoke('ai:gsk-status', withEmail),
     aiGskLogin: () => t.invoke('ai:gsk-login'),
     aiLogRunFailure: (entry: AiRunFailure) => t.invoke('ai:log-run-failure', entry),

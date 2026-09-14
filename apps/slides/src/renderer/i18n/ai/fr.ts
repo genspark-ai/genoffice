@@ -18,7 +18,7 @@ export const fr = {
   aiQcStopped: 'Vérification de la mise en page arrêtée',
   aiQcCapped: '{count} page(s) restante(s) non vérifiée(s) (limite par exécution)',
   aiGskLoginBtn: 'Se connecter à Genspark',
-  aiPanelTitle: 'Genspark',
+  aiPanelTitle: 'AI Assistant',
   aiOpenAssistant: "Ouvrir l'assistant IA",
   aiFactCheckBtn: 'Vérification IA',
   aiFactCheckPrompt:
@@ -225,4 +225,8 @@ export const fr = {
   aiSumSaveTemplate: 'Modèle de style « {name} » enregistré',
   aiSumTemplatesEmpty: 'Modèles de style (vide)',
   aiSumListTemplates: '{count} modèles de style listés',
+  aiUnknownError: 'Erreur inconnue',
+  aiTimeoutError: 'Erreur inconnue',
+  aiOverloadedError: 'Erreur inconnue',
+  aiNetworkError: 'Problème réseau : impossible de joindre le service IA. Vérifiez votre connexion et réessayez',
 } satisfies Record<keyof typeof zh, string>

@@ -18,7 +18,7 @@ export const zhTW = {
   aiQcStopped: '版式檢查已停止',
   aiQcCapped: '其餘 {count} 頁未檢查(單次上限)',
   aiGskLoginBtn: '登入 Genspark',
-  aiPanelTitle: 'Genspark',
+  aiPanelTitle: 'AI 助手',
   aiOpenAssistant: '開啟 AI 助手',
   aiFactCheckBtn: 'AI 事實核查',
   aiFactCheckPrompt: '核查這份簡報的內容:檢查數據、日期、名稱和論斷是否屬實,指出並糾正錯誤',
@@ -216,4 +216,8 @@ export const zhTW = {
   aiSumSaveTemplate: '儲存風格範本"{name}"',
   aiSumTemplatesEmpty: '風格範本清單（空）',
   aiSumListTemplates: '列出 {count} 個風格範本',
+  aiUnknownError: '未知錯誤',
+  aiTimeoutError: 'AI 請求逾時：網路長時間無回應，已停止。請檢查網路後重試',
+  aiOverloadedError: 'AI 服務目前繁忙，請稍後重試',
+  aiNetworkError: '網路有問題，無法連接 AI 服務。請檢查網路後重試',
 } satisfies Record<keyof typeof zh, string>

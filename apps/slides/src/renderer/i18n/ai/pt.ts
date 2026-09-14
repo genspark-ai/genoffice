@@ -18,7 +18,7 @@ export const pt = {
   aiQcStopped: 'Verificação de layout interrompida',
   aiQcCapped: 'Mais {count} página(s) não verificada(s) (limite por execução)',
   aiGskLoginBtn: 'Entrar no Genspark',
-  aiPanelTitle: 'Genspark',
+  aiPanelTitle: 'AI Assistant',
   aiOpenAssistant: 'Abrir assistente de IA',
   aiFactCheckBtn: 'Checagem IA',
   aiFactCheckPrompt:
@@ -224,4 +224,8 @@ export const pt = {
   aiSumSaveTemplate: 'Modelo de estilo "{name}" salvo',
   aiSumTemplatesEmpty: 'Modelos de estilo (vazio)',
   aiSumListTemplates: '{count} modelos de estilo listados',
+  aiUnknownError: 'Erro desconhecido',
+  aiTimeoutError: 'A solicitação de IA expirou: sem resposta da rede, a execução foi interrompida. Verifique sua conexão e tente novamente',
+  aiOverloadedError: 'O serviço de IA está sobrecarregado no momento — tente novamente em instantes',
+  aiNetworkError: 'Problema de rede: não foi possível conectar ao serviço de IA. Verifique sua conexão e tente novamente',
 } satisfies Record<keyof typeof zh, string>

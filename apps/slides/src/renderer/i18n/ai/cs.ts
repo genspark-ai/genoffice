@@ -19,7 +19,7 @@ export const cs = {
   aiQcStopped: 'Kontrola rozložení zastavena',
   aiQcCapped: 'Dalších {count} stránek nebylo zkontrolováno (limit na jedno spuštění)',
   aiGskLoginBtn: 'Přihlásit se ke Genspark',
-  aiPanelTitle: 'Genspark',
+  aiPanelTitle: 'AI asistent',
   aiOpenAssistant: 'Otevřít asistenta AI',
   aiFactCheckBtn: 'Ověření faktů AI',
   aiFactCheckPrompt:
@@ -65,6 +65,7 @@ export const cs = {
   aiChipShorten: 'Zkrátit',
   aiChipExpand: 'Rozšířit',
   aiChipVerify: 'Ověřit fakta',
+  aiChipTranslate: 'Přeložit',
   aiChipReplaceImage: 'Nahradit obrázek',
   aiChipRemoveBg: 'Odstranit pozadí',
   aiChipRecolor: 'Změnit barvy',
@@ -223,4 +224,8 @@ export const cs = {
   aiSumSaveTemplate: 'Uložena šablona stylu „{name}“',
   aiSumTemplatesEmpty: 'Šablony stylu (prázdné)',
   aiSumListTemplates: 'Vypsáno šablon stylu: {count}',
+  aiUnknownError: 'Neznámá chyba',
+  aiTimeoutError: 'Požadavek na AI vypršel: ze sítě nepřišla žádná odpověď, běh byl zastaven. Zkontrolujte připojení a zkuste to znovu',
+  aiOverloadedError: 'Služba AI je momentálně zaneprázdněná — zkuste to prosím za chvíli znovu',
+  aiNetworkError: 'Problém se sítí: službu AI se nepodařilo kontaktovat. Zkontrolujte připojení a zkuste to znovu',
 } satisfies Record<keyof typeof zh, string>

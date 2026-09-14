@@ -6,6 +6,7 @@
     "types": ["node"],
     // Pin resolution to this repo's workspace sources (avoids stale types when node_modules links point elsewhere)
     "baseUrl": ".",
+    "ignoreDeprecations": "6.0",
     "paths": {
       "@genoffice/pptx-engine": ["../../packages/pptx-engine/src/index.ts"],
       "@genoffice/pptx-engine/table-grid": ["../../packages/pptx-engine/src/table-grid.ts"],

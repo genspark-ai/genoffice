@@ -93,6 +93,7 @@
     "harfbuzzjs": "^1.4.0",
     "pngjs": "^7.0.0",
     "utif2": "^4.1.0",
-    "@genoffice/ipc-bridge": "*"
+    "@genoffice/ipc-bridge": "*",
+    "@genoffice/chat-runtime": "*"
   }
 }

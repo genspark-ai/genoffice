@@ -138,7 +138,6 @@ import {
   type CrossHighlightHandle,
 } from './cross-highlight'
 import type { ApplyOutcome, ChangePlan } from '@genoffice/xlsx-gateway/domain/workbook.types'
-import type { ApplyOutcome, ChangePlan } from '../domain/workbook.types'
 import { createAiTransport } from './ai/transports'
 import {
   MAX_READ_RANGE_CELLS,
@@ -4231,6 +4230,19 @@ export function App(): React.JSX.Element {
         aiScopeLocked={aiScopeChip.locked}
         aiSelectionAskAnchor={aiSelectionAskAnchor}
         onAiSelectionAskDismiss={() => setAiSelectionAskAnchor(null)}
+        onAiSelectionAskTranslate={async (instruction) => {
+          try {
+            const r = await window.desktopApi?.aiTranslate?.({
+              instruction,
+              targetLang: 'zh-CN',
+              preserveFormat: true,
+            })
+            if (!r?.ok) return null
+            return r.translated ?? null
+          } catch {
+            return null
+          }
+        }}
         onAiScopeDismiss={() => {
           setAiScopeDismissed(true)
           setAiSelectionAskAnchor(null)

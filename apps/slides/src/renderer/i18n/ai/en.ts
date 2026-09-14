@@ -18,7 +18,7 @@ export const en = {
   aiQcStopped: 'Layout check stopped',
   aiQcCapped: '{count} more page(s) not checked (per-run cap)',
   aiGskLoginBtn: 'Sign in to Genspark',
-  aiPanelTitle: 'Genspark',
+  aiPanelTitle: 'AI Assistant',
   aiOpenAssistant: 'Open AI assistant',
   aiFactCheckBtn: 'AI Fact Check',
   aiFactCheckPrompt:
@@ -223,4 +223,8 @@ export const en = {
   aiSumSaveTemplate: 'Saved style template "{name}"',
   aiSumTemplatesEmpty: 'Style templates (empty)',
   aiSumListTemplates: 'Listed {count} style templates',
+  aiUnknownError: 'Unknown error',
+  aiTimeoutError: 'AI request timed out: no response from the network, so the run was stopped. Check your connection and try again',
+  aiOverloadedError: 'The AI service is busy right now — please try again in a moment',
+  aiNetworkError: 'Network problem: could not reach the AI service. Check your connection and try again',
 } satisfies Record<keyof typeof zh, string>

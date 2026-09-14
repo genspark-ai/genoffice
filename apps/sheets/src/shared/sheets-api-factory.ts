@@ -12,6 +12,7 @@ import type {
   AiStreamChunk,
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
+import type { AutoSaveDefault } from '@genoffice/ui/auto-save-pref'
 import type { ProjectApi } from '@genoffice/project-store'
 import type { IpcTransport } from '@genoffice/ipc-bridge/client'
 import type {
@@ -86,6 +87,20 @@ export function createSheetsApi(t: IpcTransport, overrides: SheetsApiOverrides =
     getTheme: () => t.invoke('app:get-theme'),
     onThemeChanged(handler) {
       return t.on('app:theme-changed', (theme) => handler(theme as UiTheme))
+    },
+    getAutoSaveDefault(): Promise<AutoSaveDefault> {
+      return t.invoke('app:get-auto-save-default') as Promise<AutoSaveDefault>
+    },
+    onAutoSaveDefaultChanged(handler) {
+      return t.on('app:auto-save-default-changed', (value) =>
+        handler(value as AutoSaveDefault),
+      )
+    },
+    getAiPanelPrefs() {
+      return t.invoke('app:get-ai-panel-prefs')
+    },
+    onAiPanelPrefsChanged(handler) {
+      return t.on('app:ai-panel-prefs-changed', (prefs) => handler(prefs as Parameters<typeof handler>[0]))
     },
     onChromePressed(handler) {
       return t.on('app:chrome-pressed', () => handler())
@@ -373,6 +388,18 @@ export function createSheetsApi(t: IpcTransport, overrides: SheetsApiOverrides =
       }
       return result as { ok: boolean; path?: string; error?: string }
     },
+    async printWorkbook(request) {
+      // printWorkbook reuses workbook:print to open the OS print dialog.
+      const result: unknown = await t.invoke(IPC_CHANNELS.printWorkbook, request)
+      if (!isRecord(result) || typeof result.ok !== 'boolean') {
+        throw new Error('Invalid print response.')
+      }
+      return result as { ok: boolean; error?: string }
+    },
+    consumeHeadlessExport: async () => null,
+    headlessExportDone: (_result) => {
+      // No headless export host in the web build (CLI uses Electron).
+    },
     async closeWorkbook(sessionId) {
       if (!isUuid(sessionId)) throw new Error('Invalid workbook session.')
       await t.invoke(IPC_CHANNELS.closeWorkbook, sessionId)
@@ -456,6 +483,21 @@ export function createSheetsApi(t: IpcTransport, overrides: SheetsApiOverrides =
     async aiStreamCancel(requestId) {
       if (!requestId) throw new Error('Invalid AI stream request id.')
       await t.invoke(IPC_CHANNELS.aiStreamCancel, requestId)
+    },
+    async aiTranslate(request) {
+      const result: unknown = await t.invoke(IPC_CHANNELS.aiTranslate, request)
+      if (!isRecord(result) || typeof result.ok !== 'boolean') {
+        throw new Error('Invalid AI translate response.')
+      }
+      return result as {
+        ok: boolean
+        translated?: string
+        planId?: string
+        error?: string
+        sourceLang?: string
+        targetLang?: string
+        preserveFormat?: boolean
+      }
     },
     async aiGskStatus(withEmail) {
       const result: unknown = await t.invoke(IPC_CHANNELS.aiGskStatus, withEmail)
@@ -1313,6 +1355,9 @@ function parseRangeResult(input: unknown): WorkbookRangeResult {
     hyperlinks,
     conditionalRules,
     autoFilter: input.autoFilter === null ? null : parseCellArea(input.autoFilter),
+    autoFilterColumns: Array.isArray(input.autoFilterColumns)
+      ? (input.autoFilterColumns as WorkbookRangeResult['autoFilterColumns'])
+      : [],
     dataValidations,
     sheetProtection,
     rowBreaks: parseBreaks(input.rowBreaks, 'row breaks'),

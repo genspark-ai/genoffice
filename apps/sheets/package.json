@@ -56,7 +56,8 @@
     "react-dom": "^19.2.4",
     "rxjs": "^7.8.2",
     "zod": "^4.3.6",
-    "@genoffice/ipc-bridge": "*"
+    "@genoffice/ipc-bridge": "*",
+    "@genoffice/chat-runtime": "*"
   },
   "devDependencies": {
     "@genoffice/project-store": "*",

@@ -202,6 +202,8 @@ interface ExcelShellProps {
   /// Drag endpoint and viewport bounds used to place the localized trigger.
   readonly aiSelectionAskAnchor: SelectionAskAnchor | null
   readonly onAiSelectionAskDismiss: () => void
+  /** Optional one-shot translate trigger forwarded to the chip row. */
+  readonly onAiSelectionAskTranslate?: (instruction: string) => Promise<string | null>
   readonly onAiScopeDismiss: () => void
   /// Citation link in an AI answer: jumps the grid to the cited cell/range.
   readonly onAiCitation: (href: string) => void
@@ -362,6 +364,7 @@ export function ExcelShell({
   aiScopeLocked,
   aiSelectionAskAnchor,
   onAiSelectionAskDismiss,
+  onAiSelectionAskTranslate,
   onAiScopeDismiss,
   onAiCitation,
   onCommand,
@@ -706,6 +709,7 @@ export function ExcelShell({
               anchor={aiSelectionAskAnchor}
               range={aiScopeRange}
               onDismiss={onAiSelectionAskDismiss}
+              {...(onAiSelectionAskTranslate ? { onTranslate: onAiSelectionAskTranslate } : {})}
               onSend={(instruction) => {
                 setIsCopilotOpen(true)
                 onSend(instruction)

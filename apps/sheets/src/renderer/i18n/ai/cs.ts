@@ -7,6 +7,9 @@ export const cs = {
     'Popište tabulku, data nebo graf, které potřebujete — AI je vytvoří přímo na místě.',
   aiGskLoginBtn: 'Přihlásit se ke Genspark',
   aiUndelivered: 'Neodesláno',
+  aiTranslateBtn: 'Překlad AI',
+  aiTranslatePrompt:
+    'Přeložte obsah tohoto listu do jazyka uživatelského rozhraní a zachovejte formátování (písmo, velikost, barvu, zarovnání, typy sloupců atd.). Pokud existuje výběr, přeložte pouze vybrané buňky; jinak přeložte celý list.',
   aiRetry: 'Zkusit znovu',
   aiOpenAssistant: 'Otevřít asistenta AI',
   aiAskBtn: 'Zeptat se AI',

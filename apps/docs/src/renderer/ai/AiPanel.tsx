@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, streamText, type AgentImage } from '@genoffice/agent-core'
@@ -38,7 +38,12 @@ import { createAiTransport, isWebMode } from './transports'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
-import { GensparkMark } from '../components/icons'
+import { AiRunHeader, AiToolTimeline, AiErrorRecovery, AiInlineLauncher, TranslateDialog, ChangeMarker, type AiInlineLauncherAnchorRect, type TranslateLanguageOption, type TranslateDialogStrings, type AiInlineLauncherStrings } from '@genoffice/ui'
+import { classifyError } from '@genoffice/chat-runtime/errors'
+import { useChatRuntime } from '@genoffice/chat-runtime/react'
+import type { ChatRunStatus, ChatToolCallRecord } from '@genoffice/chat-runtime/types'
+import type { AgentSkill } from '@genoffice/agent-core'
+import { GensparkMark, ProviderMark } from '../components/icons'
 import sendEnterOn from '../assets/send-enter-on.png'
 import sendEnterOff from '../assets/send-enter-off.png'
 import sendStop from '../assets/send-stop.png'
@@ -334,6 +339,35 @@ export function AiPanel({
   const [busy, setBusy] = useState(false)
   /** Wall-clock start of the current run, drives the elapsed badge */
   const runStartedAtRef = useRef(0)
+  // Shared-component state mirror: ChatRuntime-fed timeline / run header.
+  // Kept additive so the existing inline tool cards keep rendering untouched;
+  // the shared components read from this state without touching AgentLoop.
+  const [sharedToolTimeline, setSharedToolTimeline] = useState<ChatToolCallRecord[]>([])
+  const [sharedRunStatus, setSharedRunStatus] = useState<ChatRunStatus>('idle')
+  /** Last error from a finished run; consumed by <AiErrorRecovery>. */
+  const [lastError, setLastError] = useState<string | null>(null)
+  const sharedToolSeqRef = useRef(0)
+  function emitSharedToolStart(name: string, input: unknown) {
+    sharedToolSeqRef.current += 1
+    const rec: ChatToolCallRecord = {
+      id: `tool-${sharedToolSeqRef.current}`,
+      name,
+      input: (input ?? {}) as Record<string, unknown>,
+      status: 'running',
+      startedAt: Date.now(),
+    }
+    setSharedToolTimeline(prev => [...prev, rec])
+    return rec.id
+  }
+  function emitSharedToolExecuted(id: string, output: string, isError: boolean) {
+    setSharedToolTimeline(prev => prev.map(t =>
+      t.id === id ? { ...t, status: isError ? 'error' : 'executed', output, finishedAt: Date.now(), isError } : t,
+    ))
+  }
+  function resetSharedTimeline() {
+    sharedToolSeqRef.current = 0
+    setSharedToolTimeline([])
+  }
   /** a send waiting on a phased open's tail; Stop / New chat abort it before it runs */
   const pendingSendRef = useRef<{ aborted: boolean } | null>(null)
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -442,7 +476,7 @@ export function AiPanel({
     [],
   )
   // bumped on selection/doc changes so the scope hint & quick actions stay fresh
-  const [, setScopeTick] = useState(0)
+  const [scopeTick, setScopeTick] = useState(0)
   /** the scope chip's expandable preview of the selected text */
   const [scopePreviewOpen, setScopePreviewOpen] = useState(false)
   const logRef = useRef<HTMLDivElement>(null)
@@ -745,7 +779,10 @@ export function AiPanel({
       ]),
       captureSnapshot: () => editorRef.current.getJSON() as PmNode,
       events: {
-        onText: (text) => patchLastAssistant({ text }),
+        onText: (text) => {
+          patchLastAssistant({ text })
+          setSharedRunStatus('streaming')
+        },
         onToolStart: (call) => {
           // Live "running" chip: replaced in place by onToolExecuted
           patchLastAssistant((last) => ({
@@ -754,6 +791,7 @@ export function AiPanel({
               { name: call.name, summary: call.name.replace(/[_-]+/g, ' '), running: true },
             ],
           }))
+          emitSharedToolStart(call.name, call.input)
         },
         onToolExecuted: ({ call, execution, snapshotBefore }) => {
           // The run's first pre-edit state wins so one roll-back undoes the whole run
@@ -771,6 +809,22 @@ export function AiPanel({
             output: execution.output
               ? execution.output.slice(0, PERSIST_TOOL_FIELD_MAX)
               : undefined,
+          })
+          // Mirror to shared timeline (find the running record by tool name + recency).
+          setSharedToolTimeline(prev => {
+            const idx = [...prev].reverse().findIndex(t => t.status === 'running' && t.name === call.name)
+            if (idx < 0) return prev
+            const realIdx = prev.length - 1 - idx
+            const target = prev[realIdx]
+            const next = prev.slice()
+            next[realIdx] = {
+              ...target,
+              status: execution.isError ? 'error' : 'executed',
+              output: execution.output ? String(execution.output).slice(0, 500) : target.output,
+              finishedAt: Date.now(),
+              isError: !!execution.isError,
+            }
+            return next
           })
           patchLastAssistant((last) => {
             // Swap out the running placeholder pushed by onToolStart (parse-fail calls have none)
@@ -800,6 +854,7 @@ export function AiPanel({
           const baseText = turnLimit
             ? [text, tModule('aiTurnLimit')].filter(Boolean).join('\n\n')
             : text || (cancelled ? tModule('aiStopped') : '')
+          setSharedRunStatus(cancelled ? 'cancelled' : 'done')
           const finalText = truncated
             ? [baseText, tModule('aiTruncatedNote')].filter(Boolean).join('\n\n')
             : baseText
@@ -822,6 +877,8 @@ export function AiPanel({
           }
         },
         onError: (error) => {
+          setSharedRunStatus('error')
+          setLastError(error)
           setChat((prev) => {
             const next = [...prev]
             const last = next.at(-1)
@@ -888,6 +945,194 @@ export function AiPanel({
     ? ''
     : editor.state.doc.textBetween(liveSelection.from, liveSelection.to, '\n', ' ').trim()
   const hasScopeSelection = selectionText.length > 0
+
+  // ─── M2 — inline launcher (selection-anchored quick chips) ───
+  const [inlineOpen, setInlineOpen] = useState(false)
+  const [translateOpen, setTranslateOpen] = useState(false)
+  const [translatedText, setTranslatedText] = useState<string | null>(null)
+  const [translateBusy, setTranslateBusy] = useState(false)
+  const [translateError, setTranslateError] = useState<string | null>(null)
+  const [targetLang, setTargetLang] = useState<string>(() => {
+    // UI language → BCP-47 (best effort)
+    const map: Record<string, string> = {
+      'zh': 'zh-CN', 'zh-TW': 'zh-TW', 'en': 'en-US', 'ja': 'ja-JP',
+      'ko': 'ko-KR', 'fr': 'fr-FR', 'de': 'de-DE', 'es': 'es-ES',
+      'it': 'it-IT', 'pt': 'pt-PT', 'ru': 'ru-RU', 'ar': 'ar-SA',
+      'hi': 'hi-IN', 'th': 'th-TH', 'id': 'id-ID', 'ms': 'ms-MY',
+      'nl': 'nl-NL', 'pl': 'pl-PL', 'cs': 'cs-CZ', 'he': 'he-IL',
+    }
+    return map[lang] ?? 'en-US'
+  })
+  const [sourceLang, setSourceLang] = useState<string>('auto')
+  const [preserveFormat, setPreserveFormat] = useState<boolean>(true)
+  const [lastChangePlan, setLastChangePlan] = useState<import('@genoffice/chat-runtime/types').ChatChangePlan | null>(null)
+
+  const getSelectionAnchorRect = useCallback((): AiInlineLauncherAnchorRect | null => {
+    const ed = editor
+    if (!ed || ed.state.selection.empty) return null
+    const view = ed.view
+    const from = view.coordsAtPos(ed.state.selection.from)
+    const to = view.coordsAtPos(ed.state.selection.to)
+    return {
+      left: Math.min(from.left, to.left),
+      top: Math.min(from.top, to.top),
+      right: Math.max(from.right, to.right),
+      bottom: Math.max(from.bottom, to.bottom),
+      viewTop: 0,
+      viewBottom: window.innerHeight,
+    }
+  }, [editor])
+
+  const inlineLauncherStrings: AiInlineLauncherStrings = useMemo(() => ({
+    title: t('aiInlineLauncherTitle'),
+    polish: t('aiInlineLauncherPolish'),
+    expand: t('aiInlineLauncherExpand'),
+    shorten: t('aiInlineLauncherShorten'),
+    summarize: t('aiInlineLauncherSummarize'),
+    translate: t('aiInlineLauncherTranslate'),
+  }), [t])
+
+  const TRANSLATE_LANGS: TranslateLanguageOption[] = useMemo(() => [
+    { value: 'zh-CN', label: '简体中文' },
+    { value: 'zh-TW', label: '繁體中文' },
+    { value: 'en-US', label: 'English' },
+    { value: 'ja-JP', label: '日本語' },
+    { value: 'ko-KR', label: '한국어' },
+    { value: 'fr-FR', label: 'Français' },
+    { value: 'de-DE', label: 'Deutsch' },
+    { value: 'es-ES', label: 'Español' },
+    { value: 'it-IT', label: 'Italiano' },
+    { value: 'pt-PT', label: 'Português' },
+    { value: 'ru-RU', label: 'Русский' },
+    { value: 'ar-SA', label: 'العربية' },
+    { value: 'hi-IN', label: 'हिन्दी' },
+    { value: 'th-TH', label: 'ไทย' },
+  ], [])
+
+  const translateDialogStrings: TranslateDialogStrings = useMemo(() => ({
+    title: t('aiTranslateDialogTitle'),
+    targetLang: t('aiTranslateTargetLang'),
+    sourceLang: t('aiTranslateSourceLang'),
+    preserveFormat: t('aiTranslatePreserveFormat'),
+    swapLanguages: t('aiTranslateSwapLanguages'),
+    start: t('aiTranslateStart'),
+    original: t('aiTranslateOriginal'),
+    translated: t('aiTranslateTranslated'),
+    previewTitle: t('aiTranslatePreviewTitle'),
+    previewLoading: t('aiTranslatePreviewLoading'),
+    cancel: 'Cancel',
+    unsupported: t('aiTranslateUnsupported'),
+  }), [t])
+
+  const handleInlinePick = useCallback((action: 'polish' | 'expand' | 'shorten' | 'summarize' | 'translate') => {
+    if (action === 'translate') {
+      setTranslatedText(null)
+      setTranslateError(null)
+      setTranslateOpen(true)
+      return
+    }
+    // For other actions, pre-fill the composer with the relevant prompt (existing behavior).
+    const map: Record<string, string> = {
+      polish: 'aiPolishSelectionPrompt',
+      expand: 'aiExpandPrompt',
+      shorten: 'aiShortenPrompt',
+      summarize: 'aiSummarizeSelectionPrompt',
+    }
+    const key = map[action]
+    const prompt = key ? t(key as Parameters<typeof t>[0]) : ''
+    if (prompt) setInput(prompt)
+    inputRef.current?.focus()
+  }, [t, setInput])
+
+  const runTranslate = useCallback(async (): Promise<string | null> => {
+    if (!selectionText) return null
+    setTranslateBusy(true)
+    setTranslateError(null)
+    try {
+      const res = await window.desktop.aiTranslate({
+        instruction: selectionText,
+        sourceLang,
+        targetLang,
+        preserveFormat,
+        range: { from: liveSelection.from, to: liveSelection.to },
+      })
+      const r = res as { ok?: boolean; translated?: string; error?: string }
+      if (!r?.ok) {
+        const err = r?.error ?? 'Translation failed'
+        setTranslateError(err)
+        // throw so the dialog's catch branch surfaces the real provider error
+        throw new Error(err)
+      }
+      setTranslatedText(r.translated ?? '')
+      return r.translated ?? ''
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e)
+      setTranslateError(err)
+      // re-throw so TranslateDialog catches and shows the real provider error
+      throw e
+    } finally {
+      setTranslateBusy(false)
+    }
+  }, [selectionText, sourceLang, targetLang, preserveFormat, liveSelection])
+
+  const applyTranslate = useCallback((plan: import('@genoffice/chat-runtime/types').ChatChangePlan) => {
+    const op = plan.ops[0]
+    if (op?.kind !== 'translate') return
+    const item = op.ops[0]
+    if (!item) return
+    const ed = editor
+    if (!ed) return
+    // The plan stamps the range captured at translate-time (see TranslateDialog);
+    // we deliberately don't read `liveSelection` here — by the time the user
+    // hits Apply the selection may have wandered to a different paragraph.
+    const planRange = item.range
+    const docSize = ed.state.doc.content.size
+    const from = Math.max(1, Math.min(planRange?.from ?? 1, docSize))
+    const to = Math.max(from, Math.min(planRange?.to ?? from, docSize))
+    if (from === to) return
+    const targetText = item.targetText
+    // Tiptap's `insertContentAt` for a range preserves the mark / node attrs of
+    // the first character of the range — that's the "auto-inherit formatting"
+    // guarantee documented in `tools.ts:117`. No restyling needed.
+    ed.chain()
+      .focus()
+      .insertContentAt({ from, to }, targetText)
+      // Place the caret right after the translated text so the user can keep typing.
+      .setTextSelection(from + targetText.length)
+      .run()
+    setLastChangePlan(plan)
+    setTranslateOpen(false)
+    setInlineOpen(false)
+  }, [editor])
+
+  const undoChange = useCallback((p: import('@genoffice/chat-runtime/types').ChatChangePlan) => {
+    const op = p.ops[0]
+    if (op?.kind !== 'translate') return
+    const item = op.ops[0]
+    if (!item) return
+    const ed = editor
+    if (!ed) return
+    // True restore: rewrite the translated range back to the original source text.
+    // The plan-stamped range points at the post-translate span (since apply
+    // kept it untouched in the op). Fall back to live selection if missing.
+    const planRange = item.range
+    const docSize = ed.state.doc.content.size
+    let from = planRange?.from ?? 1
+    let to = planRange?.to ?? from
+    if (planRange) {
+      // after apply, the range still points at the same byte offset — the
+      // translated text occupies exactly the same span, so to=from+targetLen.
+      to = Math.max(from, Math.min(from + item.targetText.length, docSize))
+    }
+    if (from === to) return
+    ed.chain()
+      .focus()
+      .insertContentAt({ from, to }, item.sourceText)
+      .setTextSelection(from + item.sourceText.length)
+      .run()
+    setLastChangePlan(null)
+  }, [editor])
+
 
   /** the × on the scope chip: collapse the selection so the run targets the whole document */
   const clearScopeSelection = () => {
@@ -1003,6 +1248,8 @@ export function AiPanel({
     runToolsRef.current = []
     runSnapshotRef.current = null
     stickToBottomRef.current = true
+    resetSharedTimeline()
+    setSharedRunStatus('running')
     setChat((prev) => [
       ...prev,
       {
@@ -1224,7 +1471,7 @@ export function AiPanel({
         aria-label={t('appExpandAiPanel')}
         onClick={onExpand}
       >
-        <GensparkMark size={22} />
+        <ProviderMark provider={settingsRef.current.provider} size={22} />
       </button>
     )
   }
@@ -1256,7 +1503,7 @@ export function AiPanel({
       />
       <div className="ai-panel-header">
         <span className="ai-panel-title">
-          <GensparkMark size={22} />
+          <ProviderMark provider={settingsRef.current.provider} size={22} />
           {t('aiPanelTitle')}
         </span>
         <div className="ai-panel-header-actions">
@@ -1284,6 +1531,20 @@ export function AiPanel({
       </div>
 
       <div ref={logRef} className="ai-chat" onScroll={onLogScroll}>
+        {/* Shared ChatRuntime components (M4). Additive: existing inline UI stays. */}
+        <AiRunHeader
+          status={sharedRunStatus}
+          model={settingsRef.current.provider}
+          onStop={undefined}
+        />
+        <AiToolTimeline tools={sharedToolTimeline} />
+        {sharedRunStatus === 'error' && lastError && (
+          <AiErrorRecovery
+            error={lastError}
+            onEdit={() => inputRef.current?.focus()}
+            onDismiss={() => { setLastError(null); setSharedRunStatus('idle') }}
+          />
+        )}
         {/* past conversation (read-only transcript, not fed to the model), shown continuously with the current turn */}
         {historicChat.length > 0 && (
           <>
@@ -1461,6 +1722,48 @@ export function AiPanel({
             </div>
           )
         })}
+      <AiInlineLauncher
+        getAnchorRect={getSelectionAnchorRect}
+        strings={inlineLauncherStrings}
+        onPick={handleInlinePick}
+        revision={scopeTick}
+      />
+
+      <TranslateDialog
+        open={translateOpen}
+        sourceText={selectionText}
+        sourceRange={hasScopeSelection ? { from: liveSelection.from, to: liveSelection.to } : null}
+        defaultSourceLang={sourceLang === 'auto' ? undefined : sourceLang}
+        defaultTargetLang={targetLang}
+        languages={TRANSLATE_LANGS}
+        strings={translateDialogStrings}
+        onTranslate={async () => {
+          const result = await runTranslate()
+          if (result === null) {
+            throw new Error(translateError ?? 'Translation failed')
+          }
+          return result
+        }}
+        onApply={applyTranslate}
+        onCancel={() => setTranslateOpen(false)}
+        app="docs"
+      />
+
+      {lastChangePlan && (
+        <div style={{ position: 'sticky', top: 0, padding: '8px 16px', zIndex: 5 }}>
+          <ChangeMarker
+            plan={lastChangePlan}
+            strings={{
+              original: t('aiTranslateOriginal'),
+              translated: t('aiTranslateTranslated'),
+              undo: t('aiTranslateUndo'),
+              undoFailed: t('aiTranslateUndoFailed'),
+            }}
+            onUndo={undoChange}
+          />
+        </div>
+      )}
+
       </div>
 
       <div className="ai-composer">

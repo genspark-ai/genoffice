@@ -40,6 +40,7 @@
   },
   "author": "GenOffice",
   "dependencies": {
-    "@genoffice/ipc-bridge": "*"
+    "@genoffice/ipc-bridge": "*",
+    "@genoffice/chat-runtime": "*"
   }
 }

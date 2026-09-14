@@ -9,9 +9,5 @@ export function registerAppInfoHandlers(): void {
   registerHandle('app:get-language', () => 'zh')
   registerHandle('app:get-version', () => '0.8.0')
   registerHandle('app:get-platform', () => 'web')
-  registerHandle('app:get-theme', () => ({
-    theme: 'system',
-    darkMode: false,
-    highContrast: false,
-  }))
+  registerHandle('app:get-theme', () => 'light')
 }
