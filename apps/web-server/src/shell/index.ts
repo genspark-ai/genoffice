@@ -10,6 +10,7 @@ import { registerCloudHandlers } from './cloud.js'
 import { registerMobileHandlers, registerMultimodalHandlers } from './devices.js'
 import { registerFilesHandlers } from './files.js'
 import { registerHomeHandlers } from './home.js'
+import { registerModuleHandlers } from './modules.js'
 import { registerNotificationHandlers } from './notifications.js'
 import { registerOfflineHandlers } from './offline.js'
 import { registerSearchHandlers } from './search.js'
@@ -20,6 +21,7 @@ import { registerWindowHandlers } from './windows.js'
 export function registerShellHandlers(): void {
   registerAppInfoHandlers()
   registerHomeHandlers()
+  registerModuleHandlers()
   registerTabsHandlers()
   registerUpdateHandlers()
   registerWindowHandlers()

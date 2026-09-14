@@ -22,6 +22,7 @@ export {
   saveRecentDocs,
   DOCS_RECENT,
   DOCS_STARRED,
+  initRecentState,
   SHEETS_RECENT_FILE,
   loadRecentSheets,
   saveRecentSheets,

@@ -104,6 +104,8 @@ export interface HomeApi {
   newHtml(opts?: { projectId?: string }): Promise<void>
   /** create a blank single-page PDF in the default save folder and open it */
   newPdf(opts?: { projectId?: string }): Promise<void>
+  /** create a blank HTML file in the default save folder and open it */
+  newHtml(opts?: { projectId?: string }): Promise<void>
   /** drop entries from the recent list (does not touch the files) */
   removeRecent(paths: string[]): Promise<void>
   /** reveal the file in Finder / Explorer */
@@ -170,6 +172,14 @@ export interface HomeApi {
   openGitHubRepo(): Promise<void>
   /** current stargazer count of the public repo (null while offline / rate-limited) */
   githubStars(): Promise<number | null>
+  /** ordered list of quick-create modules (with enabled flag) — drives the home row */
+  listModules(): Promise<ModuleEntry[]>
+  /** toggle a single module's enabled flag; the order is preserved */
+  setModuleEnabled(id: ModuleKind, enabled: boolean): Promise<ModuleEntry[]>
+  /** persist a new module order; ids missing from `order` are appended in their existing relative order */
+  reorderModules(order: ModuleKind[]): Promise<ModuleEntry[]>
+  /** reset all modules to the factory order and enabled=true */
+  resetModules(): Promise<ModuleEntry[]>
   /** whether the one-time "star us" prompt should show now (show:true also counts as shown);
    * docOpens personalizes the card copy ("you've opened N documents") */
   starPromptShouldShow(): Promise<StarPromptShow>
@@ -224,6 +234,22 @@ export interface StarPromptShow {
 }
 
 export type CloudProjectKind = 'docs' | 'sheets' | 'slides'
+
+/** Identifier for one of the quick-create modules shown on the home page. */
+export type ModuleKind = 'docx' | 'xlsx' | 'pptx' | 'md' | 'pdf'
+
+/** One module entry shown in the home-page quick-start row and the module manager. */
+export interface ModuleEntry {
+  id: ModuleKind
+  /** i18n key whose value carries the visible label (matches Home.tsx strings). */
+  labelKey: string
+  /** File extension used by the file-icon map (no leading dot). */
+  ext: string
+  /** Subpath under the web origin where the module renders (e.g. '/docs/'). */
+  path: string
+  /** When false the module is hidden from the quick-start row. */
+  enabled: boolean
+}
 
 /** a Genspark web project shown in the home cloud section */
 export interface CloudProjectEntry {
@@ -323,6 +349,7 @@ export const HOME_CHANNELS = {
   newMarkdown: 'home:new-markdown',
   newHtml: 'home:new-html',
   newPdf: 'home:new-pdf',
+  newHtml: 'home:new-html',
   removeRecent: 'home:remove-recent',
   revealPath: 'home:reveal-path',
   renameFile: 'home:rename-file',
@@ -360,6 +387,10 @@ export const HOME_CHANNELS = {
   cloudProjects: 'home:cloud-projects',
   cloudProjectsCached: 'home:cloud-projects-cached',
   openCloudProject: 'home:open-cloud-project',
+  listModules: 'home:list-modules',
+  setModuleEnabled: 'home:set-module-enabled',
+  reorderModules: 'home:reorder-modules',
+  resetModules: 'home:reset-modules',
 } as const
 
 export const PROJECT_CHANNELS = {

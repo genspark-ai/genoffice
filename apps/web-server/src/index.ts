@@ -31,6 +31,7 @@ import {
   PORT,
   STATIC_ROOT,
   decodeTransportValue,
+  initRecentState,
   encodeTransportValue,
   getHandler,
   handlerCount,
@@ -43,6 +44,7 @@ import { registerSheetsHandlers } from './sheets/index.js'
 import { registerSlidesHandlers } from './slides/index.js'
 import { registerPdfHandlers } from './pdf/index.js'
 import { registerMarkdownHandlers } from './markdown/index.js'
+import { registerHtmlHandlers } from './html/index.js'
 import { registerShellHandlers } from './shell/index.js'
 import { registerCollabHandlers } from './collab/index.js'
 import { registerEnterpriseHandlers } from './enterprise/index.js'
@@ -50,6 +52,7 @@ import { registerAnydocHandlers } from './anydoc/index.js'
 import { registerWebHandlers } from './web/index.js'
 
 // ----- capability wiring ----------------------------------------------------
+initRecentState()
 registerAiHandlers()
 registerProjectHandlers()
 registerDocsHandlers()
@@ -57,6 +60,7 @@ registerSheetsHandlers()
 registerSlidesHandlers()
 registerPdfHandlers()
 registerMarkdownHandlers()
+registerHtmlHandlers()
 registerShellHandlers()
 registerCollabHandlers()
 registerEnterpriseHandlers()
@@ -86,12 +90,14 @@ const PENDING_FRAMES = new Map<string, string[]>()
 const SSE_HEARTBEAT_MS = 25000
 
 function pushSseEvent(session: string, channel: string, args: unknown[]): void {
-  const encodedArgs = args.map(arg => encodeTransportValue(arg))
+  const encodedArgs = args.map((arg) => encodeTransportValue(arg))
   const frame = `data: ${JSON.stringify({ channel, args: encodedArgs })}\n\n`
   const connections = sessionConnections.get(session)
   if (connections) {
     for (const response of connections) {
-      try { response.write(frame) } catch {}
+      try {
+        response.write(frame)
+      } catch {}
     }
   } else {
     const pending = PENDING_FRAMES.get(session) || []
@@ -142,13 +148,22 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname.startsWith('/api/ipc/') && request.method === 'POST') {
-    const channel = url.pathname.slice('/api/ipc/'.length)
+    const encodedChannel = url.pathname.slice('/api/ipc/'.length)
+    let channel: string
+    try {
+      channel = decodeURIComponent(encodedChannel)
+    } catch {
+      sendJson(response, 400, {
+        error: { message: 'Invalid IPC channel encoding', code: 'IPC_INVALID_CHANNEL' },
+      })
+      return
+    }
     const session = request.headers['x-ipc-session'] as string | undefined
 
     try {
       const body = await readBody(request)
       const { args = [] } = JSON.parse(body || '{}')
-      const decodedArgs = (args as unknown[]).map(arg => decodeTransportValue(arg))
+      const decodedArgs = (args as unknown[]).map((arg) => decodeTransportValue(arg))
 
       const handler = getHandler(channel)
       if (handler) {
@@ -159,7 +174,7 @@ const server = createServer(async (request, response) => {
             id: -1,
             isDestroyed: () => false,
             send: (ch: string, ...a: unknown[]) => {
-              const encodedArgs = a.map(arg => encodeTransportValue(arg))
+              const encodedArgs = a.map((arg) => encodeTransportValue(arg))
               if (session) pushSseEvent(session, ch, encodedArgs)
             },
           },
@@ -189,7 +204,7 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
     })
     response.write(': connected\n\n')
 
@@ -205,7 +220,11 @@ const server = createServer(async (request, response) => {
     sessionConnections.get(session)!.add(response)
 
     const heartbeat = setInterval(() => {
-      try { response.write(': heartbeat\n\n') } catch { clearInterval(heartbeat) }
+      try {
+        response.write(': heartbeat\n\n')
+      } catch {
+        clearInterval(heartbeat)
+      }
     }, SSE_HEARTBEAT_MS)
 
     request.on('close', () => {
@@ -221,32 +240,36 @@ const server = createServer(async (request, response) => {
   if (url.pathname === '/api/ai/stream' && request.method === 'POST') {
     try {
       const body = await readBody(request)
-      const { requestId, system, messages, tools } = JSON.parse(body || '{}')
+      const { requestId, messages, tools } = JSON.parse(body || '{}')
 
       response.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        Connection: 'keep-alive',
         'X-Request-Id': requestId || '',
       })
 
       const responseText = generateAgentResponse(messages || [])
       const words = responseText.split(/([\s，。、！？]+)/)
-      let delay = 50
+      const delay = 50
 
       const streamChunk = (type: string, data: Record<string, unknown>) => {
         response.write(`data: ${JSON.stringify({ requestId, type, ...data })}\n\n`)
       }
 
       const pingInterval = setInterval(() => {
-        try { response.write(`data: ${JSON.stringify({ requestId, type: 'ping' })}\n\n`) } catch {}
+        try {
+          response.write(`data: ${JSON.stringify({ requestId, type: 'ping' })}\n\n`)
+        } catch {}
       }, 30000)
 
       let wordIndex = 0
       const sendWord = () => {
         if (wordIndex >= words.length) {
           clearInterval(pingInterval)
-          response.write(`data: ${JSON.stringify({ requestId, type: 'done', stopReason: 'stop' })}\n\n`)
+          response.write(
+            `data: ${JSON.stringify({ requestId, type: 'done', stopReason: 'stop' })}\n\n`,
+          )
           response.end()
           return
         }
@@ -278,11 +301,31 @@ const server = createServer(async (request, response) => {
   }
 
   // ----- static / SPA fallback ---------------------------------------------
-  const appName = url.searchParams.get('app') || 'docs'
-  let filePath = resolve(STATIC_ROOT, appName, 'out', 'renderer', url.pathname === '/' ? 'index.html' : url.pathname)
+  const pathMatch = url.pathname.match(
+    /^\/(docs|sheets|slides|pdf|markdown|html|shell)(?:\/(.*))?$/,
+  )
+  const isManagementRoute =
+    url.pathname === '/' || url.pathname === '/manage' || url.pathname === '/management'
+  const appName = isManagementRoute
+    ? 'shell'
+    : url.searchParams.get('app') || pathMatch?.[1] || 'shell'
+  const relativePath = pathMatch
+    ? pathMatch[2] || 'index.html'
+    : url.pathname.replace(/^\/+/, '') || 'index.html'
+  let filePath = resolve(STATIC_ROOT, appName, 'out', 'renderer', relativePath)
 
   if (!existsSync(filePath)) {
-    filePath = resolve(STATIC_ROOT, 'docs', 'out', 'renderer', url.pathname === '/' ? 'index.html' : url.pathname)
+    filePath = resolve(STATIC_ROOT, 'docs', 'out', 'renderer', relativePath)
+  }
+
+  if (!existsSync(filePath) && relativePath.startsWith('assets/')) {
+    for (const candidateApp of APPS) {
+      const candidatePath = resolve(STATIC_ROOT, candidateApp, 'out', 'renderer', relativePath)
+      if (existsSync(candidatePath)) {
+        filePath = candidatePath
+        break
+      }
+    }
   }
 
   if (existsSync(filePath) && statSync(filePath).isFile()) {
@@ -292,7 +335,7 @@ const server = createServer(async (request, response) => {
     return
   }
 
-  const indexPath = resolve(STATIC_ROOT, 'docs', 'out', 'renderer', 'index.html')
+  const indexPath = resolve(STATIC_ROOT, appName, 'out', 'renderer', 'index.html')
   if (existsSync(indexPath)) {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     createReadStream(indexPath).pipe(response)
@@ -332,5 +375,9 @@ server.listen(PORT, HOST, () => {
 `)
 })
 
-process.on('SIGTERM', () => { server.close(() => process.exit(0)) })
-process.on('SIGINT', () => { server.close(() => process.exit(0)) })
+process.on('SIGTERM', () => {
+  server.close(() => process.exit(0))
+})
+process.on('SIGINT', () => {
+  server.close(() => process.exit(0))
+})

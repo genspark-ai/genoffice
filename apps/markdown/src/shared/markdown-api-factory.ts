@@ -14,6 +14,7 @@ import { AI_CHANNELS, MARKDOWN_CHANNELS } from './ipc'
 import type { ExportFormat, MarkdownApi, SaveMode, UiTheme } from './ipc'
 
 export interface MarkdownApiOverrides {
+  consumePending?: () => Promise<string | null>
   /** Web-native image picker (browser file input + saveImage). */
   pickImage?: () => Promise<string | null>
   /** Web-native DOCX export (browser download of the serialized bytes). */
@@ -37,7 +38,7 @@ export function createMarkdownApi(
   overrides: MarkdownApiOverrides = {},
 ): MarkdownApi {
   const api: MarkdownApi = {
-    consumePending: () => t.invoke(MARKDOWN_CHANNELS.consumePending),
+    consumePending: overrides.consumePending ?? (() => t.invoke(MARKDOWN_CHANNELS.consumePending)),
     readFile: (path) => t.invoke(MARKDOWN_CHANNELS.readFile, path),
     save: (request) => t.invoke(MARKDOWN_CHANNELS.save, request),
     setDirty: (dirty) => t.send(MARKDOWN_CHANNELS.dirtyChanged, dirty),
@@ -54,7 +55,8 @@ export function createMarkdownApi(
     onExportRequest: (handler) =>
       t.on(MARKDOWN_CHANNELS.exportRequest, (format) => handler(format as ExportFormat)),
     onPrintRequest: (handler) => t.on(MARKDOWN_CHANNELS.printRequest, () => handler()),
-    exportDocx: overrides.exportDocx ?? ((request) => t.invoke(MARKDOWN_CHANNELS.exportDocx, request)),
+    exportDocx:
+      overrides.exportDocx ?? ((request) => t.invoke(MARKDOWN_CHANNELS.exportDocx, request)),
     exportPdf: overrides.exportPdf ?? ((request) => t.invoke(MARKDOWN_CHANNELS.exportPdf, request)),
     getLanguage: () => t.invoke(MARKDOWN_CHANNELS.getLanguage),
     onLanguageChanged: (handler) =>

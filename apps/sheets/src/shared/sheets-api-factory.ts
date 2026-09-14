@@ -72,557 +72,552 @@ export interface SheetsApiOverrides {
   captureScreenSource?: () => Promise<ScreenCaptureResult | null>
   /** Web-native dropped-file path resolution. */
   getPathForFile?: (file: File) => string
+  hasQueuedWorkbook?: () => Promise<boolean>
 }
 
 export function createSheetsApi(t: IpcTransport, overrides: SheetsApiOverrides = {}): DesktopApi {
   return {
-  getLanguage: () => t.invoke('app:get-language'),
-  onLanguageChanged(handler) {
-    return t.on('app:language-changed', (lang) =>
-      handler(lang as 'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'),
-    )
-  },
-  getTheme: () => t.invoke('app:get-theme'),
-  onThemeChanged(handler) {
-    return t.on('app:theme-changed', (theme) => handler(theme as UiTheme))
-  },
-  onChromePressed(handler) {
-    return t.on('app:chrome-pressed', () => handler())
-  },
-  async selectWorkbook() {
-    if (overrides.selectWorkbook) return await overrides.selectWorkbook()
-    const result: unknown = await t.invoke(IPC_CHANNELS.selectWorkbook)
-    return result === null ? null : parseWorkbookFile(result)
-  },
-  async selectWorkbooksForMerge() {
-    if (overrides.selectWorkbooksForMerge) return await overrides.selectWorkbooksForMerge()
-    const result: unknown = await t.invoke(IPC_CHANNELS.selectWorkbooksForMerge)
-    if (result === null) return null
-    if (!Array.isArray(result)) throw new Error('Invalid merge selection result.')
-    return result.map((file) => parseWorkbookFile(file))
-  },
-  async openWorkbooksForMerge(paths) {
-    if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string')) {
-      throw new Error('Invalid merge paths.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.openWorkbooksForMerge, paths)
-    if (result === null) return null
-    if (!Array.isArray(result)) throw new Error('Invalid merge open result.')
-    return result.map((file) => parseWorkbookFile(file))
-  },
-  async readWorkbookRange(request) {
-    const validatedRequest = parseRangeRequest(request)
-    const result: unknown = await t.invoke(
-      IPC_CHANNELS.readWorkbookRange,
-      validatedRequest,
-    )
-    return parseRangeResult(result)
-  },
-  async readWorkbookFormulas(request) {
-    const validatedRequest = parseFormulaCellsRequest(request)
-    const result: unknown = await t.invoke(
-      IPC_CHANNELS.readWorkbookFormulas,
-      validatedRequest,
-    )
-    return parseFormulaCellsResult(result)
-  },
-  async recalcWorkbook(request) {
-    const validatedRequest = parseRecalcRequest(request)
-    const result: unknown = await t.invoke(IPC_CHANNELS.recalcWorkbook, validatedRequest)
-    return parseRecalcResult(result)
-  },
-  async readWorkbookMedia(request) {
-    const validatedRequest = parseMediaRequest(request)
-    const result: unknown = await t.invoke(
-      IPC_CHANNELS.readWorkbookMedia,
-      validatedRequest,
-    )
-    return parseMediaResult(result)
-  },
-  async readLocalImage(request) {
-    if (
-      !isRecord(request) ||
-      typeof request.path !== 'string' ||
-      request.path.length === 0 ||
-      request.path.length > 1024
-    ) {
-      throw new Error('Invalid local image request.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.readLocalImage, request)
-    if (
-      !isRecord(result) ||
-      typeof result.mediaType !== 'string' ||
-      !['image/png', 'image/jpeg', 'image/gif'].includes(result.mediaType) ||
-      typeof result.base64 !== 'string' ||
-      result.base64.length === 0
-    ) {
-      throw new Error('Invalid local image response.')
-    }
-    return result as { mediaType: 'image/png' | 'image/jpeg' | 'image/gif'; base64: string }
-  },
-  async captureScreenSources() {
-    if (overrides.captureScreenSources) return await overrides.captureScreenSources()
-    const result: unknown = await t.invoke(IPC_CHANNELS.captureScreenSources)
-    if (
-      !isRecord(result) ||
-      (result.status !== 'ok' && result.status !== 'denied') ||
-      !Array.isArray(result.sources)
-    ) {
-      throw new Error('Invalid screen sources response.')
-    }
-    return result as ScreenSourcesResult
-  },
-  async captureScreenSource(request) {
-    if (overrides.captureScreenSource) return await overrides.captureScreenSource()
-    if (!isRecord(request) || typeof request.id !== 'string' || request.id.length === 0) {
-      throw new Error('Invalid screen capture request.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.captureScreenSource, {
-      id: request.id,
-    })
-    if (result === null) return null
-    if (
-      !isRecord(result) ||
-      result.mediaType !== 'image/png' ||
-      typeof result.base64 !== 'string' ||
-      result.base64.length === 0 ||
-      typeof result.width !== 'number' ||
-      typeof result.height !== 'number'
-    ) {
-      throw new Error('Invalid screen capture response.')
-    }
-    return result as ScreenCaptureResult
-  },
-  async readPivotDefinition(request) {
-    const validatedRequest = parsePivotRequest(request)
-    const result: unknown = await t.invoke(
-      IPC_CHANNELS.readPivotDefinition,
-      validatedRequest,
-    )
-    return parsePivotDefinitionResult(result)
-  },
-  async saveWorkbookEdits(request) {
-    const validatedRequest = parseSaveRequest(request)
-    const result: unknown = await t.invoke(IPC_CHANNELS.saveWorkbook, validatedRequest)
-    return parseSaveResult(result)
-  },
-  async beginSaveEditsTransfer(request) {
-    if (!isRecord(request)) throw new Error('Invalid save transfer request.')
-    if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
-    if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
-    if (
-      typeof request.total !== 'number' ||
-      !Number.isInteger(request.total) ||
-      request.total <= 0 ||
-      request.total > MAX_SAVE_EDITS_TOTAL
-    ) {
-      throw new Error(
-        `Invalid save transfer size. (${String(request.total)} exceeds the ${MAX_SAVE_EDITS_TOTAL} limit)`,
+    getLanguage: () => t.invoke('app:get-language'),
+    onLanguageChanged(handler) {
+      return t.on('app:language-changed', (lang) =>
+        handler(lang as 'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'),
       )
-    }
-    await t.invoke(IPC_CHANNELS.saveEditsBegin, {
-      sessionId: request.sessionId,
-      transferId: request.transferId,
-      total: request.total,
-    })
-  },
-  async sendSaveEditsChunk(request) {
-    if (!isRecord(request)) throw new Error('Invalid save transfer chunk.')
-    if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
-    if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
-    if (typeof request.seq !== 'number' || !Number.isInteger(request.seq) || request.seq < 0)
-      throw new Error('Invalid save transfer chunk index.')
-    // The edits stay a JSON string end to end here: the main process parses
-    // and validates each chunk against the cell-edit schema before storing.
-    if (
-      typeof request.editsJson !== 'string' ||
-      request.editsJson.length < 2 ||
-      request.editsJson.length > SAVE_EDITS_CHUNK_JSON_MAX
-    ) {
-      throw new Error('Invalid save transfer chunk edits.')
-    }
-    await t.invoke(IPC_CHANNELS.saveEditsChunk, {
-      sessionId: request.sessionId,
-      transferId: request.transferId,
-      seq: request.seq,
-      editsJson: request.editsJson,
-    })
-  },
-  async abortSaveEditsTransfer(request) {
-    if (!isRecord(request)) throw new Error('Invalid save transfer request.')
-    if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
-    if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
-    await t.invoke(IPC_CHANNELS.saveEditsAbort, {
-      sessionId: request.sessionId,
-      transferId: request.transferId,
-    })
-  },
-  async writeWorkbookRecovery(request) {
-    const validatedRequest = parseSaveRequest(request)
-    const result: unknown = await t.invoke(
-      IPC_CHANNELS.writeWorkbookRecovery,
-      validatedRequest,
-    )
-    return { ok: (result as { ok?: unknown } | null)?.ok === true }
-  },
-  async autoRenameWorkbook(sessionId, baseName) {
-    if (!isUuid(sessionId)) throw new Error('Invalid workbook session.')
-    if (typeof baseName !== 'string' || baseName.length === 0 || baseName.length > 100) {
-      throw new Error('Invalid workbook name.')
-    }
-    const result: unknown = await t.invoke(
-      IPC_CHANNELS.autoRenameWorkbook,
-      sessionId,
-      baseName,
-    )
-    if (!isRecord(result) || typeof result.renamed !== 'boolean') {
-      throw new Error('Invalid auto-rename response.')
-    }
-    return result as { renamed: boolean; name?: string }
-  },
-  async exportPdf(request) {
-    if (
-      !isRecord(request) ||
-      typeof request.fileName !== 'string' ||
-      request.fileName.length === 0 ||
-      request.fileName.length > 255 ||
-      typeof request.html !== 'string' ||
-      request.html.length === 0 ||
-      request.html.length > 20_000_000 ||
-      typeof request.landscape !== 'boolean' ||
-      !isPdfPageSize(request.pageSize) ||
-      !isRecord(request.margins) ||
-      !['top', 'bottom', 'left', 'right'].every((edge) => {
-        const value = (request.margins as Record<string, unknown>)[edge]
-        return typeof value === 'number' && value >= 0 && value <= 3
-      }) ||
-      typeof request.scale !== 'number' ||
-      request.scale < 0.1 ||
-      request.scale > 2 ||
-      (request.headerTemplate !== undefined &&
-        !isBoundedString(request.headerTemplate, MAX_PDF_TEMPLATE_CHARS)) ||
-      (request.footerTemplate !== undefined &&
-        !isBoundedString(request.footerTemplate, MAX_PDF_TEMPLATE_CHARS)) ||
-      (request.firstPage !== undefined && !isPdfPageVariant(request.firstPage)) ||
-      (request.evenPages !== undefined && !isPdfPageVariant(request.evenPages))
-    ) {
-      throw new Error('Invalid PDF export request.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.exportPdf, request)
-    if (
-      !isRecord(result) ||
-      typeof result.canceled !== 'boolean' ||
-      (result.canceled === false && typeof result.path !== 'string')
-    ) {
-      throw new Error('Invalid PDF export response.')
-    }
-    return result as { canceled: true } | { canceled: false; path: string }
-  },
-  async exportCsv(request) {
-    if (
-      !isRecord(request) ||
-      typeof request.fileName !== 'string' ||
-      request.fileName.length === 0 ||
-      request.fileName.length > 255 ||
-      typeof request.content !== 'string' ||
-      request.content.length > MAX_CSV_EXPORT_CHARS ||
-      typeof request.hasFormulas !== 'boolean' ||
-      (request.activeSheetName !== undefined &&
-        (typeof request.activeSheetName !== 'string' || request.activeSheetName.length > 255)) ||
-      (request.targetPath !== undefined &&
-        (typeof request.targetPath !== 'string' || request.targetPath.length === 0))
-    ) {
-      throw new Error('Invalid CSV export request.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.exportCsv, request)
-    if (
-      !isRecord(result) ||
-      typeof result.canceled !== 'boolean' ||
-      (result.canceled === false && typeof result.path !== 'string') ||
-      (result.canceled === true &&
-        result.saveAsXlsxInstead !== undefined &&
-        typeof result.saveAsXlsxInstead !== 'boolean')
-    ) {
-      throw new Error('Invalid CSV export response.')
-    }
-    return result as
-      { canceled: true; saveAsXlsxInstead?: boolean } | { canceled: false; path: string }
-  },
-  async confirmCsvSave() {
-    if (overrides.confirmCsvSave) return await overrides.confirmCsvSave()
-    const result: unknown = await t.invoke(IPC_CHANNELS.csvSaveConfirm)
-    if (result !== 'csv' && result !== 'xlsx' && result !== 'cancel') {
-      throw new Error('Invalid CSV save confirmation response.')
-    }
-    return result
-  },
-  async createDocument(request) {
-    if (
-      !isRecord(request) ||
-      (request.type !== 'xlsx' &&
-        request.type !== 'csv' &&
-        request.type !== 'docx' &&
-        request.type !== 'pdf' &&
-        request.type !== 'md') ||
-      typeof request.title !== 'string' ||
-      request.title.length === 0 ||
-      request.title.length > MAX_CREATE_DOCUMENT_TITLE_CHARS ||
-      typeof request.content !== 'string' ||
-      request.content.length === 0 ||
-      request.content.length >
-        (request.type === 'xlsx' || request.type === 'csv'
-          ? MAX_CSV_EXPORT_CHARS
-          : MAX_CREATE_DOCUMENT_CONTENT_CHARS) ||
-      (request.sheetName !== undefined &&
-        (typeof request.sheetName !== 'string' ||
-          request.sheetName.length === 0 ||
-          request.sheetName.length > 31))
-    ) {
-      throw new Error('Invalid create-document request.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.createDocument, request)
-    if (
-      !isRecord(result) ||
-      typeof result.ok !== 'boolean' ||
-      (result.path !== undefined && typeof result.path !== 'string') ||
-      (result.error !== undefined && typeof result.error !== 'string')
-    ) {
-      throw new Error('Invalid create-document response.')
-    }
-    return result as { ok: boolean; path?: string; error?: string }
-  },
-  async closeWorkbook(sessionId) {
-    if (!isUuid(sessionId)) throw new Error('Invalid workbook session.')
-    await t.invoke(IPC_CHANNELS.closeWorkbook, sessionId)
-  },
-  async openExternal(url) {
-    if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
-      throw new Error('Only http(s) links can be opened.')
-    }
-    await t.invoke(IPC_CHANNELS.openExternal, url)
-  },
-  onMenuAction(callback) {
-    const listener = (action: unknown): void => {
+    },
+    getTheme: () => t.invoke('app:get-theme'),
+    onThemeChanged(handler) {
+      return t.on('app:theme-changed', (theme) => handler(theme as UiTheme))
+    },
+    onChromePressed(handler) {
+      return t.on('app:chrome-pressed', () => handler())
+    },
+    async selectWorkbook() {
+      if (overrides.selectWorkbook) return await overrides.selectWorkbook()
+      const result: unknown = await t.invoke(IPC_CHANNELS.selectWorkbook)
+      return result === null ? null : parseWorkbookFile(result)
+    },
+    async selectWorkbooksForMerge() {
+      if (overrides.selectWorkbooksForMerge) return await overrides.selectWorkbooksForMerge()
+      const result: unknown = await t.invoke(IPC_CHANNELS.selectWorkbooksForMerge)
+      if (result === null) return null
+      if (!Array.isArray(result)) throw new Error('Invalid merge selection result.')
+      return result.map((file) => parseWorkbookFile(file))
+    },
+    async openWorkbooksForMerge(paths) {
+      if (!Array.isArray(paths) || paths.some((p) => typeof p !== 'string')) {
+        throw new Error('Invalid merge paths.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.openWorkbooksForMerge, paths)
+      if (result === null) return null
+      if (!Array.isArray(result)) throw new Error('Invalid merge open result.')
+      return result.map((file) => parseWorkbookFile(file))
+    },
+    async readWorkbookRange(request) {
+      const validatedRequest = parseRangeRequest(request)
+      const result: unknown = await t.invoke(IPC_CHANNELS.readWorkbookRange, validatedRequest)
+      return parseRangeResult(result)
+    },
+    async readWorkbookFormulas(request) {
+      const validatedRequest = parseFormulaCellsRequest(request)
+      const result: unknown = await t.invoke(IPC_CHANNELS.readWorkbookFormulas, validatedRequest)
+      return parseFormulaCellsResult(result)
+    },
+    async recalcWorkbook(request) {
+      const validatedRequest = parseRecalcRequest(request)
+      const result: unknown = await t.invoke(IPC_CHANNELS.recalcWorkbook, validatedRequest)
+      return parseRecalcResult(result)
+    },
+    async readWorkbookMedia(request) {
+      const validatedRequest = parseMediaRequest(request)
+      const result: unknown = await t.invoke(IPC_CHANNELS.readWorkbookMedia, validatedRequest)
+      return parseMediaResult(result)
+    },
+    async readLocalImage(request) {
       if (
-        action === 'open' ||
-        action === 'save' ||
-        action === 'save-as' ||
-        action === 'export-pdf' ||
-        action === 'export-csv' ||
-        action === 'undo' ||
-        action === 'redo'
+        !isRecord(request) ||
+        typeof request.path !== 'string' ||
+        request.path.length === 0 ||
+        request.path.length > 1024
+      ) {
+        throw new Error('Invalid local image request.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.readLocalImage, request)
+      if (
+        !isRecord(result) ||
+        typeof result.mediaType !== 'string' ||
+        !['image/png', 'image/jpeg', 'image/gif'].includes(result.mediaType) ||
+        typeof result.base64 !== 'string' ||
+        result.base64.length === 0
+      ) {
+        throw new Error('Invalid local image response.')
+      }
+      return result as { mediaType: 'image/png' | 'image/jpeg' | 'image/gif'; base64: string }
+    },
+    async captureScreenSources() {
+      if (overrides.captureScreenSources) return await overrides.captureScreenSources()
+      const result: unknown = await t.invoke(IPC_CHANNELS.captureScreenSources)
+      if (
+        !isRecord(result) ||
+        (result.status !== 'ok' && result.status !== 'denied') ||
+        !Array.isArray(result.sources)
+      ) {
+        throw new Error('Invalid screen sources response.')
+      }
+      return result as ScreenSourcesResult
+    },
+    async captureScreenSource(request) {
+      if (overrides.captureScreenSource) return await overrides.captureScreenSource()
+      if (!isRecord(request) || typeof request.id !== 'string' || request.id.length === 0) {
+        throw new Error('Invalid screen capture request.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.captureScreenSource, {
+        id: request.id,
+      })
+      if (result === null) return null
+      if (
+        !isRecord(result) ||
+        result.mediaType !== 'image/png' ||
+        typeof result.base64 !== 'string' ||
+        result.base64.length === 0 ||
+        typeof result.width !== 'number' ||
+        typeof result.height !== 'number'
+      ) {
+        throw new Error('Invalid screen capture response.')
+      }
+      return result as ScreenCaptureResult
+    },
+    async readPivotDefinition(request) {
+      const validatedRequest = parsePivotRequest(request)
+      const result: unknown = await t.invoke(IPC_CHANNELS.readPivotDefinition, validatedRequest)
+      return parsePivotDefinitionResult(result)
+    },
+    async saveWorkbookEdits(request) {
+      const validatedRequest = parseSaveRequest(request)
+      const result: unknown = await t.invoke(IPC_CHANNELS.saveWorkbook, validatedRequest)
+      return parseSaveResult(result)
+    },
+    async beginSaveEditsTransfer(request) {
+      if (!isRecord(request)) throw new Error('Invalid save transfer request.')
+      if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
+      if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
+      if (
+        typeof request.total !== 'number' ||
+        !Number.isInteger(request.total) ||
+        request.total <= 0 ||
+        request.total > MAX_SAVE_EDITS_TOTAL
+      ) {
+        throw new Error(
+          `Invalid save transfer size. (${String(request.total)} exceeds the ${MAX_SAVE_EDITS_TOTAL} limit)`,
+        )
+      }
+      await t.invoke(IPC_CHANNELS.saveEditsBegin, {
+        sessionId: request.sessionId,
+        transferId: request.transferId,
+        total: request.total,
+      })
+    },
+    async sendSaveEditsChunk(request) {
+      if (!isRecord(request)) throw new Error('Invalid save transfer chunk.')
+      if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
+      if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
+      if (typeof request.seq !== 'number' || !Number.isInteger(request.seq) || request.seq < 0)
+        throw new Error('Invalid save transfer chunk index.')
+      // The edits stay a JSON string end to end here: the main process parses
+      // and validates each chunk against the cell-edit schema before storing.
+      if (
+        typeof request.editsJson !== 'string' ||
+        request.editsJson.length < 2 ||
+        request.editsJson.length > SAVE_EDITS_CHUNK_JSON_MAX
+      ) {
+        throw new Error('Invalid save transfer chunk edits.')
+      }
+      await t.invoke(IPC_CHANNELS.saveEditsChunk, {
+        sessionId: request.sessionId,
+        transferId: request.transferId,
+        seq: request.seq,
+        editsJson: request.editsJson,
+      })
+    },
+    async abortSaveEditsTransfer(request) {
+      if (!isRecord(request)) throw new Error('Invalid save transfer request.')
+      if (!isUuid(request.sessionId)) throw new Error('Invalid save transfer session.')
+      if (!isUuid(request.transferId)) throw new Error('Invalid save transfer id.')
+      await t.invoke(IPC_CHANNELS.saveEditsAbort, {
+        sessionId: request.sessionId,
+        transferId: request.transferId,
+      })
+    },
+    async writeWorkbookRecovery(request) {
+      const validatedRequest = parseSaveRequest(request)
+      const result: unknown = await t.invoke(IPC_CHANNELS.writeWorkbookRecovery, validatedRequest)
+      return { ok: (result as { ok?: unknown } | null)?.ok === true }
+    },
+    async autoRenameWorkbook(sessionId, baseName) {
+      if (!isUuid(sessionId)) throw new Error('Invalid workbook session.')
+      if (typeof baseName !== 'string' || baseName.length === 0 || baseName.length > 100) {
+        throw new Error('Invalid workbook name.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.autoRenameWorkbook, sessionId, baseName)
+      if (!isRecord(result) || typeof result.renamed !== 'boolean') {
+        throw new Error('Invalid auto-rename response.')
+      }
+      return result as { renamed: boolean; name?: string }
+    },
+    async exportPdf(request) {
+      if (
+        !isRecord(request) ||
+        typeof request.fileName !== 'string' ||
+        request.fileName.length === 0 ||
+        request.fileName.length > 255 ||
+        typeof request.html !== 'string' ||
+        request.html.length === 0 ||
+        request.html.length > 20_000_000 ||
+        typeof request.landscape !== 'boolean' ||
+        !isPdfPageSize(request.pageSize) ||
+        !isRecord(request.margins) ||
+        !['top', 'bottom', 'left', 'right'].every((edge) => {
+          const value = (request.margins as Record<string, unknown>)[edge]
+          return typeof value === 'number' && value >= 0 && value <= 3
+        }) ||
+        typeof request.scale !== 'number' ||
+        request.scale < 0.1 ||
+        request.scale > 2 ||
+        (request.headerTemplate !== undefined &&
+          !isBoundedString(request.headerTemplate, MAX_PDF_TEMPLATE_CHARS)) ||
+        (request.footerTemplate !== undefined &&
+          !isBoundedString(request.footerTemplate, MAX_PDF_TEMPLATE_CHARS)) ||
+        (request.firstPage !== undefined && !isPdfPageVariant(request.firstPage)) ||
+        (request.evenPages !== undefined && !isPdfPageVariant(request.evenPages))
+      ) {
+        throw new Error('Invalid PDF export request.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.exportPdf, request)
+      if (
+        !isRecord(result) ||
+        typeof result.canceled !== 'boolean' ||
+        (result.canceled === false && typeof result.path !== 'string')
+      ) {
+        throw new Error('Invalid PDF export response.')
+      }
+      return result as { canceled: true } | { canceled: false; path: string }
+    },
+    async exportCsv(request) {
+      if (
+        !isRecord(request) ||
+        typeof request.fileName !== 'string' ||
+        request.fileName.length === 0 ||
+        request.fileName.length > 255 ||
+        typeof request.content !== 'string' ||
+        request.content.length > MAX_CSV_EXPORT_CHARS ||
+        typeof request.hasFormulas !== 'boolean' ||
+        (request.activeSheetName !== undefined &&
+          (typeof request.activeSheetName !== 'string' || request.activeSheetName.length > 255)) ||
+        (request.targetPath !== undefined &&
+          (typeof request.targetPath !== 'string' || request.targetPath.length === 0))
+      ) {
+        throw new Error('Invalid CSV export request.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.exportCsv, request)
+      if (
+        !isRecord(result) ||
+        typeof result.canceled !== 'boolean' ||
+        (result.canceled === false && typeof result.path !== 'string') ||
+        (result.canceled === true &&
+          result.saveAsXlsxInstead !== undefined &&
+          typeof result.saveAsXlsxInstead !== 'boolean')
+      ) {
+        throw new Error('Invalid CSV export response.')
+      }
+      return result as
+        { canceled: true; saveAsXlsxInstead?: boolean } | { canceled: false; path: string }
+    },
+    async confirmCsvSave() {
+      if (overrides.confirmCsvSave) return await overrides.confirmCsvSave()
+      const result: unknown = await t.invoke(IPC_CHANNELS.csvSaveConfirm)
+      if (result !== 'csv' && result !== 'xlsx' && result !== 'cancel') {
+        throw new Error('Invalid CSV save confirmation response.')
+      }
+      return result
+    },
+    async createDocument(request) {
+      if (
+        !isRecord(request) ||
+        (request.type !== 'xlsx' &&
+          request.type !== 'csv' &&
+          request.type !== 'docx' &&
+          request.type !== 'pdf' &&
+          request.type !== 'md') ||
+        typeof request.title !== 'string' ||
+        request.title.length === 0 ||
+        request.title.length > MAX_CREATE_DOCUMENT_TITLE_CHARS ||
+        typeof request.content !== 'string' ||
+        request.content.length === 0 ||
+        request.content.length >
+          (request.type === 'xlsx' || request.type === 'csv'
+            ? MAX_CSV_EXPORT_CHARS
+            : MAX_CREATE_DOCUMENT_CONTENT_CHARS) ||
+        (request.sheetName !== undefined &&
+          (typeof request.sheetName !== 'string' ||
+            request.sheetName.length === 0 ||
+            request.sheetName.length > 31))
+      ) {
+        throw new Error('Invalid create-document request.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.createDocument, request)
+      if (
+        !isRecord(result) ||
+        typeof result.ok !== 'boolean' ||
+        (result.path !== undefined && typeof result.path !== 'string') ||
+        (result.error !== undefined && typeof result.error !== 'string')
+      ) {
+        throw new Error('Invalid create-document response.')
+      }
+      return result as { ok: boolean; path?: string; error?: string }
+    },
+    async closeWorkbook(sessionId) {
+      if (!isUuid(sessionId)) throw new Error('Invalid workbook session.')
+      await t.invoke(IPC_CHANNELS.closeWorkbook, sessionId)
+    },
+    async openExternal(url) {
+      if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+        throw new Error('Only http(s) links can be opened.')
+      }
+      await t.invoke(IPC_CHANNELS.openExternal, url)
+    },
+    onMenuAction(callback) {
+      const listener = (action: unknown): void => {
+        if (
+          action === 'open' ||
+          action === 'save' ||
+          action === 'save-as' ||
+          action === 'export-pdf' ||
+          action === 'export-csv' ||
+          action === 'undo' ||
+          action === 'redo'
+        )
+          callback(action)
+      }
+      return t.on(IPC_CHANNELS.menuAction, listener)
+    },
+    onWorkbookRenamed(callback) {
+      const listener = (newName: unknown): void => {
+        if (typeof newName === 'string' && newName) callback(newName)
+      }
+      return t.on(IPC_CHANNELS.workbookRenamed, listener)
+    },
+    notifyPendingEdits(count) {
+      if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return
+      t.send(IPC_CHANNELS.pendingEditsChanged, Math.floor(count))
+    },
+    onCloseSaveRequest(callback) {
+      const listener = () => callback()
+      return t.on(IPC_CHANNELS.closeSaveRequest, listener)
+    },
+    reportCloseSaveResult(ok) {
+      t.send(IPC_CHANNELS.closeSaveResult, ok === true)
+    },
+    onRecoveryPrompt(callback) {
+      const listener = (payload: unknown): void => {
+        if (
+          isRecord(payload) &&
+          typeof payload.title === 'string' &&
+          typeof payload.body === 'string' &&
+          typeof payload.restoreLabel === 'string' &&
+          typeof payload.discardLabel === 'string' &&
+          typeof payload.fileName === 'string' &&
+          typeof payload.savedAtMs === 'number' &&
+          Number.isFinite(payload.savedAtMs)
+        ) {
+          callback(payload as unknown as RecoveryPromptPayload)
+        }
+      }
+      return t.on(IPC_CHANNELS.recoveryPrompt, listener)
+    },
+    replyRecoveryPrompt(restore) {
+      t.send(IPC_CHANNELS.recoveryPromptReply, restore === true)
+    },
+    async getAiSettings() {
+      const result: unknown = await t.invoke(IPC_CHANNELS.aiGetSettings)
+      if (!isRecord(result)) throw new Error('Invalid AI settings response.')
+      return result as unknown as AiSettings
+    },
+    async setAiSettings(settings) {
+      await t.invoke(IPC_CHANNELS.aiSetSettings, settings)
+    },
+    async aiChat(request) {
+      const result: unknown = await t.invoke(IPC_CHANNELS.aiChat, request)
+      if (!isRecord(result) || typeof result.ok !== 'boolean') {
+        throw new Error('Invalid AI chat response.')
+      }
+      return result as unknown as AiChatResponse
+    },
+    async aiStream(request) {
+      await t.invoke(IPC_CHANNELS.aiStream, request)
+    },
+    async aiStreamCancel(requestId) {
+      if (!requestId) throw new Error('Invalid AI stream request id.')
+      await t.invoke(IPC_CHANNELS.aiStreamCancel, requestId)
+    },
+    async aiGskStatus(withEmail) {
+      const result: unknown = await t.invoke(IPC_CHANNELS.aiGskStatus, withEmail)
+      if (!isRecord(result) || typeof result.loggedIn !== 'boolean') {
+        throw new Error('Invalid Genspark account status response.')
+      }
+      return result as unknown as GenSparkAccountStatus
+    },
+    async aiGskLogin() {
+      await t.invoke(IPC_CHANNELS.aiGskLogin)
+    },
+    async webSearch(query, maxResults) {
+      if (typeof query !== 'string' || !query.trim() || query.length > 512) {
+        throw new Error('Invalid search query.')
+      }
+      const result: unknown = await t.invoke('ai:web-search', query, maxResults)
+      if (
+        !isRecord(result) ||
+        !Array.isArray(result.results) ||
+        typeof result.method !== 'string'
+      ) {
+        throw new Error('Invalid web search response.')
+      }
+      return result as unknown as WebSearchResult
+    },
+    async imageSearch(query, maxResults) {
+      if (typeof query !== 'string' || !query.trim() || query.length > 512) {
+        throw new Error('Invalid search query.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.aiImageSearch, query, maxResults)
+      if (!isRecord(result) || !Array.isArray(result.images) || typeof result.method !== 'string') {
+        throw new Error('Invalid image search response.')
+      }
+      return result as unknown as ImageSearchResponse
+    },
+    async generateImage(op) {
+      if (!isRecord(op) || typeof op.prompt !== 'string' || !op.prompt.trim()) {
+        throw new Error('Invalid image generation request.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.aiGenerateImage, op)
+      if (!isRecord(result)) throw new Error('Invalid image generation response.')
+      return result as unknown as GenerateImageResult
+    },
+    async fetchImage(url) {
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url) || url.length > 2048) {
+        throw new Error('Invalid image URL.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.aiFetchImage, url)
+      if (result === null) return null
+      if (
+        !isRecord(result) ||
+        typeof result.base64 !== 'string' ||
+        typeof result.mime !== 'string'
+      ) {
+        throw new Error('Invalid image download response.')
+      }
+      return result as { base64: string; mime: string }
+    },
+    onAiStream(callback) {
+      const listener = (chunk: unknown): void => {
+        if (
+          isRecord(chunk) &&
+          typeof chunk.requestId === 'string' &&
+          typeof chunk.type === 'string'
+        ) {
+          callback(chunk as unknown as AiStreamChunk)
+        }
+      }
+      return t.on(IPC_CHANNELS.aiStreamChunk, listener)
+    },
+    async consumeNewBlankWorkbook() {
+      const result: unknown = await t.invoke('sheets:consume-new-blank')
+      return result === true
+    },
+    async hasQueuedWorkbook() {
+      if (overrides.hasQueuedWorkbook) return await overrides.hasQueuedWorkbook()
+      const result: unknown = await t.invoke('sheets:has-queued-workbook')
+      return result === true
+    },
+    async pickAttachments() {
+      if (overrides.pickAttachments) return await overrides.pickAttachments()
+      const result: unknown = await t.invoke(IPC_CHANNELS.filesPick)
+      return result === null ? null : parseAttachmentAddResult(result)
+    },
+    async addAttachmentPaths(paths) {
+      if (
+        !Array.isArray(paths) ||
+        paths.length === 0 ||
+        paths.length > 50 ||
+        paths.some((p) => typeof p !== 'string' || p.length === 0 || p.length > 1024)
+      ) {
+        throw new Error('Invalid attachment paths.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.filesAdd, paths)
+      return parseAttachmentAddResult(result)
+    },
+    async addPastedImage(data, ext) {
+      if (
+        !(data instanceof ArrayBuffer) ||
+        data.byteLength === 0 ||
+        data.byteLength > 64 * 1024 * 1024
+      ) {
+        throw new Error('Invalid pasted image data.')
+      }
+      if (typeof ext !== 'string' || ext.length === 0 || ext.length > 8) {
+        throw new Error('Invalid pasted image extension.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.filesAddPastedImage, data, ext)
+      return parseAttachmentAddResult(result)
+    },
+    async readAttachment(path, offset, maxChars) {
+      if (typeof path !== 'string' || path.length === 0 || path.length > 1024) {
+        throw new Error('Invalid attachment path.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.filesRead, path, offset, maxChars)
+      if (
+        !isRecord(result) ||
+        typeof result.ok !== 'boolean' ||
+        !isOptionalString(result.error) ||
+        !isOptionalString(result.name) ||
+        !isOptionalString(result.text) ||
+        (result.totalChars !== undefined && !isNonnegativeInteger(result.totalChars)) ||
+        (result.offset !== undefined && !isNonnegativeInteger(result.offset))
+      ) {
+        throw new Error('Invalid attachment read response.')
+      }
+      const read: AttachmentReadResult = { ok: result.ok }
+      if (result.error !== undefined) read.error = result.error
+      if (result.name !== undefined) read.name = result.name
+      if (result.text !== undefined) read.text = result.text
+      if (result.totalChars !== undefined) read.totalChars = result.totalChars
+      if (result.offset !== undefined) read.offset = result.offset
+      return read
+    },
+    async readAttachmentImage(path) {
+      if (typeof path !== 'string' || path.length === 0 || path.length > 1024) {
+        throw new Error('Invalid attachment path.')
+      }
+      const result: unknown = await t.invoke(IPC_CHANNELS.filesReadImage, path)
+      if (
+        !isRecord(result) ||
+        typeof result.ok !== 'boolean' ||
+        !isOptionalString(result.base64) ||
+        !isOptionalString(result.mime) ||
+        !isOptionalString(result.error)
+      ) {
+        throw new Error('Invalid attachment image response.')
+      }
+      const image: AttachmentImageResult = { ok: result.ok }
+      if (result.base64 !== undefined) image.base64 = result.base64
+      if (result.mime !== undefined) image.mime = result.mime
+      if (result.error !== undefined) image.error = result.error
+      return image
+    },
+    getPathForFile(file) {
+      return (
+        overrides.getPathForFile?.(file) ??
+        (() => {
+          throw new Error('WEB_UNSUPPORTED: resolving dropped files needs the desktop file picker')
+        })()
       )
-        callback(action)
-    }
-    return t.on(IPC_CHANNELS.menuAction, listener)
-  },
-  onWorkbookRenamed(callback) {
-    const listener = (newName: unknown): void => {
-      if (typeof newName === 'string' && newName) callback(newName)
-    }
-    return t.on(IPC_CHANNELS.workbookRenamed, listener)
-  },
-  notifyPendingEdits(count) {
-    if (typeof count !== 'number' || !Number.isFinite(count) || count < 0) return
-    t.send(IPC_CHANNELS.pendingEditsChanged, Math.floor(count))
-  },
-  onCloseSaveRequest(callback) {
-    const listener = () => callback()
-    return t.on(IPC_CHANNELS.closeSaveRequest, listener)
-  },
-  reportCloseSaveResult(ok) {
-    t.send(IPC_CHANNELS.closeSaveResult, ok === true)
-  },
-  onRecoveryPrompt(callback) {
-    const listener = (payload: unknown): void => {
-      if (
-        isRecord(payload) &&
-        typeof payload.title === 'string' &&
-        typeof payload.body === 'string' &&
-        typeof payload.restoreLabel === 'string' &&
-        typeof payload.discardLabel === 'string' &&
-        typeof payload.fileName === 'string' &&
-        typeof payload.savedAtMs === 'number' &&
-        Number.isFinite(payload.savedAtMs)
-      ) {
-        callback(payload as unknown as RecoveryPromptPayload)
-      }
-    }
-    return t.on(IPC_CHANNELS.recoveryPrompt, listener)
-  },
-  replyRecoveryPrompt(restore) {
-    t.send(IPC_CHANNELS.recoveryPromptReply, restore === true)
-  },
-  async getAiSettings() {
-    const result: unknown = await t.invoke(IPC_CHANNELS.aiGetSettings)
-    if (!isRecord(result)) throw new Error('Invalid AI settings response.')
-    return result as unknown as AiSettings
-  },
-  async setAiSettings(settings) {
-    await t.invoke(IPC_CHANNELS.aiSetSettings, settings)
-  },
-  async aiChat(request) {
-    const result: unknown = await t.invoke(IPC_CHANNELS.aiChat, request)
-    if (!isRecord(result) || typeof result.ok !== 'boolean') {
-      throw new Error('Invalid AI chat response.')
-    }
-    return result as unknown as AiChatResponse
-  },
-  async aiStream(request) {
-    await t.invoke(IPC_CHANNELS.aiStream, request)
-  },
-  async aiStreamCancel(requestId) {
-    if (!requestId) throw new Error('Invalid AI stream request id.')
-    await t.invoke(IPC_CHANNELS.aiStreamCancel, requestId)
-  },
-  async aiGskStatus(withEmail) {
-    const result: unknown = await t.invoke(IPC_CHANNELS.aiGskStatus, withEmail)
-    if (!isRecord(result) || typeof result.loggedIn !== 'boolean') {
-      throw new Error('Invalid Genspark account status response.')
-    }
-    return result as unknown as GenSparkAccountStatus
-  },
-  async aiGskLogin() {
-    await t.invoke(IPC_CHANNELS.aiGskLogin)
-  },
-  async webSearch(query, maxResults) {
-    if (typeof query !== 'string' || !query.trim() || query.length > 512) {
-      throw new Error('Invalid search query.')
-    }
-    const result: unknown = await t.invoke('ai:web-search', query, maxResults)
-    if (!isRecord(result) || !Array.isArray(result.results) || typeof result.method !== 'string') {
-      throw new Error('Invalid web search response.')
-    }
-    return result as unknown as WebSearchResult
-  },
-  async imageSearch(query, maxResults) {
-    if (typeof query !== 'string' || !query.trim() || query.length > 512) {
-      throw new Error('Invalid search query.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.aiImageSearch, query, maxResults)
-    if (!isRecord(result) || !Array.isArray(result.images) || typeof result.method !== 'string') {
-      throw new Error('Invalid image search response.')
-    }
-    return result as unknown as ImageSearchResponse
-  },
-  async generateImage(op) {
-    if (!isRecord(op) || typeof op.prompt !== 'string' || !op.prompt.trim()) {
-      throw new Error('Invalid image generation request.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.aiGenerateImage, op)
-    if (!isRecord(result)) throw new Error('Invalid image generation response.')
-    return result as unknown as GenerateImageResult
-  },
-  async fetchImage(url) {
-    if (typeof url !== 'string' || !/^https?:\/\//i.test(url) || url.length > 2048) {
-      throw new Error('Invalid image URL.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.aiFetchImage, url)
-    if (result === null) return null
-    if (!isRecord(result) || typeof result.base64 !== 'string' || typeof result.mime !== 'string') {
-      throw new Error('Invalid image download response.')
-    }
-    return result as { base64: string; mime: string }
-  },
-  onAiStream(callback) {
-    const listener = (chunk: unknown): void => {
-      if (
-        isRecord(chunk) &&
-        typeof chunk.requestId === 'string' &&
-        typeof chunk.type === 'string'
-      ) {
-        callback(chunk as unknown as AiStreamChunk)
-      }
-    }
-    return t.on(IPC_CHANNELS.aiStreamChunk, listener)
-  },
-  async consumeNewBlankWorkbook() {
-    const result: unknown = await t.invoke('sheets:consume-new-blank')
-    return result === true
-  },
-  async hasQueuedWorkbook() {
-    const result: unknown = await t.invoke('sheets:has-queued-workbook')
-    return result === true
-  },
-  async pickAttachments() {
-    if (overrides.pickAttachments) return await overrides.pickAttachments()
-    const result: unknown = await t.invoke(IPC_CHANNELS.filesPick)
-    return result === null ? null : parseAttachmentAddResult(result)
-  },
-  async addAttachmentPaths(paths) {
-    if (
-      !Array.isArray(paths) ||
-      paths.length === 0 ||
-      paths.length > 50 ||
-      paths.some((p) => typeof p !== 'string' || p.length === 0 || p.length > 1024)
-    ) {
-      throw new Error('Invalid attachment paths.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.filesAdd, paths)
-    return parseAttachmentAddResult(result)
-  },
-  async addPastedImage(data, ext) {
-    if (
-      !(data instanceof ArrayBuffer) ||
-      data.byteLength === 0 ||
-      data.byteLength > 64 * 1024 * 1024
-    ) {
-      throw new Error('Invalid pasted image data.')
-    }
-    if (typeof ext !== 'string' || ext.length === 0 || ext.length > 8) {
-      throw new Error('Invalid pasted image extension.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.filesAddPastedImage, data, ext)
-    return parseAttachmentAddResult(result)
-  },
-  async readAttachment(path, offset, maxChars) {
-    if (typeof path !== 'string' || path.length === 0 || path.length > 1024) {
-      throw new Error('Invalid attachment path.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.filesRead, path, offset, maxChars)
-    if (
-      !isRecord(result) ||
-      typeof result.ok !== 'boolean' ||
-      !isOptionalString(result.error) ||
-      !isOptionalString(result.name) ||
-      !isOptionalString(result.text) ||
-      (result.totalChars !== undefined && !isNonnegativeInteger(result.totalChars)) ||
-      (result.offset !== undefined && !isNonnegativeInteger(result.offset))
-    ) {
-      throw new Error('Invalid attachment read response.')
-    }
-    const read: AttachmentReadResult = { ok: result.ok }
-    if (result.error !== undefined) read.error = result.error
-    if (result.name !== undefined) read.name = result.name
-    if (result.text !== undefined) read.text = result.text
-    if (result.totalChars !== undefined) read.totalChars = result.totalChars
-    if (result.offset !== undefined) read.offset = result.offset
-    return read
-  },
-  async readAttachmentImage(path) {
-    if (typeof path !== 'string' || path.length === 0 || path.length > 1024) {
-      throw new Error('Invalid attachment path.')
-    }
-    const result: unknown = await t.invoke(IPC_CHANNELS.filesReadImage, path)
-    if (
-      !isRecord(result) ||
-      typeof result.ok !== 'boolean' ||
-      !isOptionalString(result.base64) ||
-      !isOptionalString(result.mime) ||
-      !isOptionalString(result.error)
-    ) {
-      throw new Error('Invalid attachment image response.')
-    }
-    const image: AttachmentImageResult = { ok: result.ok }
-    if (result.base64 !== undefined) image.base64 = result.base64
-    if (result.mime !== undefined) image.mime = result.mime
-    if (result.error !== undefined) image.error = result.error
-    return image
-  },
-  getPathForFile(file) {
-    return overrides.getPathForFile?.(file) ??
-      (() => { throw new Error("WEB_UNSUPPORTED: resolving dropped files needs the desktop file picker") })()
-  },
+    },
   }
 }
 function parseAttachmentAddResult(input: unknown): AttachmentAddResult {
@@ -3288,19 +3283,18 @@ function isOptionalEnum<T extends string>(
   return input === undefined || (values as readonly unknown[]).includes(input)
 }
 
-
 export function createSheetsProjectApi(t: IpcTransport): ProjectApi {
   return {
-  resolveChat: (args) => t.invoke('project:resolveChat', args),
-  appendChat: (args) => t.invoke('project:appendChat', args),
-  loadChat: (args) => t.invoke('project:loadChat', args),
-  rebindChat: (args) => t.invoke('project:rebindChat', args),
-  // P1 extensions
-  listProjects: () => t.invoke('project:list'),
-  createProject: (args) => t.invoke('project:create', args),
-  renameProject: (args) => t.invoke('project:rename', args),
-  deleteProject: (args) => t.invoke('project:delete', args),
-  moveFile: (args) => t.invoke('project:moveFile', args),
-  getTimeline: (args) => t.invoke('project:timeline', args),
+    resolveChat: (args) => t.invoke('project:resolveChat', args),
+    appendChat: (args) => t.invoke('project:appendChat', args),
+    loadChat: (args) => t.invoke('project:loadChat', args),
+    rebindChat: (args) => t.invoke('project:rebindChat', args),
+    // P1 extensions
+    listProjects: () => t.invoke('project:list'),
+    createProject: (args) => t.invoke('project:create', args),
+    renameProject: (args) => t.invoke('project:rename', args),
+    deleteProject: (args) => t.invoke('project:delete', args),
+    moveFile: (args) => t.invoke('project:moveFile', args),
+    getTimeline: (args) => t.invoke('project:timeline', args),
   }
 }

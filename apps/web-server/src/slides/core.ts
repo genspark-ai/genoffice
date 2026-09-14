@@ -5,12 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import {
-  FILES_DIR,
-  loadRecentSlides,
-  registerHandle,
-  saveRecentSlides,
-} from '../common/index.js'
+import { FILES_DIR, loadRecentSlides, registerHandle, saveRecentSlides } from '../common/index.js'
 
 export function registerSlidesCoreHandlers(): void {
   registerHandle('slides:new-blank', async (_event: unknown, options: unknown) => {
@@ -27,7 +22,20 @@ export function registerSlidesCoreHandlers(): void {
     recent.unshift({ id, path, name, openedAt: Date.now() })
     saveRecentSlides(recent)
 
-    return { id, path, name }
+    return {
+      path: '',
+      slides: [
+        {
+          widthPx: 1280,
+          heightPx: 720,
+          scale: 1,
+          background: { kind: 'solid', color: '#FFFFFF' },
+          nodes: [],
+        },
+      ],
+      size: { cx: 12192000, cy: 6858000 },
+      defaultFont: 'Aptos',
+    }
   })
 
   registerHandle('slides:recent', () => loadRecentSlides())
@@ -61,26 +69,30 @@ export function registerSlidesCoreHandlers(): void {
     }
   })
 
-  registerHandle('slides:save', async (_event: unknown, args: unknown) => {
-    const { id, path, data } = args as { id: string; path: string; data?: ArrayBuffer }
-    if (data && path) {
-      writeFileSync(path, Buffer.from(data))
-    }
-    return { ok: true, path }
-  })
+  registerHandle(
+    'slides:save',
+    async (_event: unknown, id?: unknown, path?: unknown, data?: unknown) => {
+      if (data && typeof path === 'string') {
+        writeFileSync(path, Buffer.from(data as ArrayBuffer))
+      }
+      return { ok: true, path: typeof path === 'string' ? path : undefined }
+    },
+  )
 
-  registerHandle('slides:save-as', async (_event: unknown, args: unknown) => {
-    const { defaultName, data } = args as { defaultName: string; data?: ArrayBuffer }
-    const id = `slide-${Date.now()}`
-    const name = defaultName || `演示文稿.pptx`
-    const path = join(FILES_DIR, `${id}.pptx`)
+  registerHandle(
+    'slides:save-as',
+    async (_event: unknown, defaultName?: unknown, data?: unknown) => {
+      const id = `slide-${Date.now()}`
+      const name = (typeof defaultName === 'string' && defaultName) || `演示文稿.pptx`
+      const path = join(FILES_DIR, `${id}.pptx`)
 
-    if (data) {
-      writeFileSync(path, Buffer.from(data))
-    }
+      if (data) {
+        writeFileSync(path, Buffer.from(data as ArrayBuffer))
+      }
 
-    return { id, path, name }
-  })
+      return { id, path, name }
+    },
+  )
 
   registerHandle('slides:export-pdf', () => ({
     ok: true,
@@ -88,6 +100,7 @@ export function registerSlidesCoreHandlers(): void {
   }))
 
   registerHandle('slides:consume-pending-open', () => null)
+  registerHandle('slides:autosave-pref', () => undefined)
 
   registerHandle('slides:font-download', () => ({
     ok: true,

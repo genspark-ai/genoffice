@@ -24,8 +24,15 @@ if (!isElectronRuntime()) {
   const files = createWebFileBridge(transport)
   const bridgedWindow = window as unknown as Record<string, unknown>
   bridgedWindow.desktop = createDesktopApi(transport, {
+    consumePendingOpenDocx: async () => {
+      const path = new URLSearchParams(window.location.search).get('open')
+      if (!path) return null
+      return await transport.invoke('docs:open-path', path)
+    },
     openDocx: async () => {
-      const picked = await pickFileBytes('.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+      const picked = await pickFileBytes(
+        '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      )
       if (!picked) return null
       const { name, bytes } = picked[0]
       const path = await files.writeTempFile(name, bytes)

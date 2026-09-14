@@ -19,7 +19,7 @@ if (!isElectronRuntime()) {
     consumePending: async () => {
       if (hashOpen) {
         const granted: unknown = await transport.invoke('pdf:open-path', hashOpen)
-        return typeof granted === 'string' && granted ? granted : null
+        return granted ? hashOpen : null
       }
       return null
     },

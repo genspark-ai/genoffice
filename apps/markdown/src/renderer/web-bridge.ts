@@ -15,6 +15,7 @@ if (!isElectronRuntime()) {
   const transport = createHttpIpcTransport()
   const bridgedWindow = window as unknown as Record<string, unknown>
   bridgedWindow.markdownApi = createMarkdownApi(transport, {
+    consumePending: async () => new URLSearchParams(window.location.search).get('open'),
     pickImage: async () => {
       const picked = await pickFileBytes('image/png,image/jpeg,image/gif')
       if (!picked) return null

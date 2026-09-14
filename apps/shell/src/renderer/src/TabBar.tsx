@@ -185,7 +185,17 @@ export function TabBar() {
 
   useEffect(() => {
     void window.aiOfficeTabs.list().then(setTabs)
-    return window.aiOfficeTabs.onChanged(setTabs)
+    const unsubIpc = window.aiOfficeTabs.onChanged(setTabs)
+    // web version: tabs open as new browser windows via window.open; web-bridge
+    // broadcasts changes through a window CustomEvent for instant updates
+    const onWebTabs = () => {
+      void window.aiOfficeTabs.list().then(setTabs)
+    }
+    window.addEventListener('genoffice:web-tabs-changed', onWebTabs)
+    return () => {
+      unsubIpc()
+      window.removeEventListener('genoffice:web-tabs-changed', onWebTabs)
+    }
   }, [])
 
   // document tabs are sibling WebContentsViews: they see neither this press

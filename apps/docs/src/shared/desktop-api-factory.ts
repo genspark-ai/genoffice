@@ -19,6 +19,8 @@ import type { ProjectApi } from '@genoffice/project-store'
 import type { IpcTransport } from '@genoffice/ipc-bridge/client'
 
 export interface DesktopApiOverrides {
+  /** Web-native pending open (browser URL → open-path). */
+  consumePendingOpenDocx?: () => Promise<unknown>
   /**
    * The preload supplies `webUtils.getPathForFile` (Electron-only). The web
    * bridge has no OS file access, so it omits the override and dropped-file
@@ -94,7 +96,8 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
     },
     discardDocPasswordIntents: (throughRevision: number) =>
       t.invoke('docs:discard-password-intents', throughRevision),
-    consumePendingOpenDocx: () => t.invoke('docs:consume-pending-open'),
+    consumePendingOpenDocx:
+      overrides.consumePendingOpenDocx ?? (() => t.invoke('docs:consume-pending-open')),
     consumeNewBlankDoc: () => t.invoke('docs:consume-new-blank'),
     consumeAiDocContent: () => t.invoke('docs:consume-ai-doc-content'),
     createDocument: (request) => t.invoke('docs:create-document', request),
@@ -107,26 +110,28 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
     writeRecoveryCopy: (path: string, data: ArrayBuffer) =>
       t.invoke('docs:write-recovery', path, data),
     onTeardown: (handler) => t.on('docs:teardown', () => handler()),
-    saveDocxAs: overrides.saveDocxAs ??
+    saveDocxAs:
+      overrides.saveDocxAs ??
       ((defaultName: string, data: ArrayBuffer, sourcePath?: string | null) =>
         t.invoke('docs:save-as', defaultName, data, sourcePath ?? null)),
-    saveDocxNew: overrides.saveDocxNew ??
+    saveDocxNew:
+      overrides.saveDocxNew ??
       ((defaultName: string, data: ArrayBuffer) => t.invoke('docs:save-new', defaultName, data)),
     getRecentFiles: () => t.invoke('docs:recent'),
     pickImage: overrides.pickImage ?? (() => t.invoke('docs:pick-image')),
-    fontMetrics: overrides.fontMetrics ?? ((family: string) => t.invoke('docs:font-metrics', family)),
+    fontMetrics:
+      overrides.fontMetrics ?? ((family: string) => t.invoke('docs:font-metrics', family)),
     print: overrides.print ?? (() => t.invoke('docs:print')),
-    exportPdf: overrides.exportPdf ??
-      ((
-        defaultName: string,
-        pageWidthTwips: number,
-        pageHeightTwips: number,
-        outPath?: string,
-      ) => t.invoke('docs:export-pdf', defaultName, pageWidthTwips, pageHeightTwips, outPath)),
-    printPdfBuffer: overrides.printPdfBuffer ??
+    exportPdf:
+      overrides.exportPdf ??
+      ((defaultName: string, pageWidthTwips: number, pageHeightTwips: number, outPath?: string) =>
+        t.invoke('docs:export-pdf', defaultName, pageWidthTwips, pageHeightTwips, outPath)),
+    printPdfBuffer:
+      overrides.printPdfBuffer ??
       ((pageWidthTwips: number, pageHeightTwips: number) =>
         t.invoke('docs:print-pdf-buffer', pageWidthTwips, pageHeightTwips)),
-    saveMergedPdf: overrides.saveMergedPdf ??
+    saveMergedPdf:
+      overrides.saveMergedPdf ??
       ((defaultName: string, base64Parts: string[], outPath?: string) =>
         t.invoke('docs:save-merged-pdf', defaultName, base64Parts, outPath)),
     getAiSettings: () => t.invoke('ai:get-settings'),
@@ -146,7 +151,8 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
     addAttachmentPaths: (paths: string[]) => t.invoke('files:add', paths),
     addPastedImage: (data: ArrayBuffer, ext: string) =>
       t.invoke('files:add-pasted-image', data, ext),
-    copyImageToClipboard: overrides.copyImageToClipboard ??
+    copyImageToClipboard:
+      overrides.copyImageToClipboard ??
       ((dataUrl: string, metaJson?: string) =>
         t.invoke('docs:copy-image-to-clipboard', dataUrl, metaJson)),
     readAttachment: (path: string, offset: number, maxChars: number) =>
@@ -161,7 +167,8 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
       }
       return resolve(file)
     },
-    openNewTab: overrides.openNewTab ?? ((openPath?: string | null) => t.invoke('win:new', openPath ?? null)),
+    openNewTab:
+      overrides.openNewTab ?? ((openPath?: string | null) => t.invoke('win:new', openPath ?? null)),
     listDocsTabs: overrides.listDocsTabs ?? (() => t.invoke('win:list')),
     focusDocsTab: overrides.focusDocsTab ?? ((id: string) => t.invoke('win:focus', id)),
     onAiStream: (handler: (chunk: AiStreamChunk) => void) =>

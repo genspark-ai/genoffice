@@ -775,11 +775,12 @@ export function App() {
   }, [hasDoc, fitZoom, rawFit, viewMode])
 
   const applyOpen = useCallback(
-    (result: { path: string; slides: RenderSlide[]; defaultFont?: string } | null) => {
+    (result: { path?: string; slides?: RenderSlide[]; defaultFont?: string } | null) => {
       if (!result) return
-      setSlides(result.slides)
+      const openedSlides = Array.isArray(result.slides) ? result.slides : []
+      setSlides(openedSlides)
       setDefaultFont(result.defaultFont ?? null)
-      setPath(result.path)
+      setPath(result.path ?? null)
       setCurrent(0)
       setSelectedIds([])
       setEditing(null)
@@ -794,7 +795,7 @@ export function App() {
         result.path
           ? t('appStatusOpened', {
               name: result.path.split('/').pop()!,
-              count: result.slides.length,
+              count: openedSlides.length,
             })
           : t('appStatusNewBlank'),
       )
@@ -878,8 +879,9 @@ export function App() {
   useEffect(
     () =>
       window.slidesApi.onDeckChanged?.(({ slides: all }) => {
-        setSlides(all)
-        setCurrent((c) => Math.min(c, Math.max(0, all.length - 1)))
+        const nextSlides = Array.isArray(all) ? all : []
+        setSlides(nextSlides)
+        setCurrent((c) => Math.min(c, Math.max(0, nextSlides.length - 1)))
         // The broadcast also fires for undo back to a clean state — ask the
         // session instead of assuming the change dirtied it
         void window.slidesApi.isDirty?.().then((d) => setDirty(!!d))
@@ -975,9 +977,9 @@ export function App() {
 
   /** Apply the full slides set after undo/redo: page count may change (undoing a new page), clamp current */
   const applyHistoryResult = useCallback((r: RenderSlide[] | null) => {
-    if (!r) return
-    setSlides(r)
-    setCurrent((c) => Math.min(c, r.length - 1))
+    const nextSlides = Array.isArray(r) ? r : []
+    setSlides(nextSlides)
+    setCurrent((c) => Math.min(c, nextSlides.length - 1))
     setSelectedIds([])
     setEditing(null)
     setPasteFloater(null) // The paste the floater refers to may have just been undone

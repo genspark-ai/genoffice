@@ -12,6 +12,8 @@ import type {
   CloudProjectKind,
   CloudProjectsSnapshot,
   HomeApi,
+  ModuleEntry,
+  ModuleKind,
   ProjectHomeApi,
   ProjectSummaryEntry,
   RecentEntry,
@@ -124,15 +126,23 @@ function hasProjectApi(): boolean {
   return typeof window.aiOfficeProject !== 'undefined'
 }
 
-const FILTERS: { key: string; label: StringKey }[] = [
-  { key: 'all', label: 'filterAll' },
-  { key: 'docx', label: 'filterDocs' },
-  { key: 'xlsx', label: 'filterSheets' },
-  { key: 'pptx', label: 'filterSlides' },
-  { key: 'pdf', label: 'filterPdf' },
-  { key: 'md', label: 'filterMd' },
-  { key: 'html', label: 'filterHtml' },
-]
+const FILTER_LABELS: Record<string, StringKey> = {
+  docx: 'filterDocs',
+  xlsx: 'filterSheets',
+  pptx: 'filterSlides',
+  pdf: 'filterPdf',
+  md: 'filterMd',
+  html: 'filterHtml',
+}
+
+function buildFilters(moduleIds: string[]): { key: string; label: StringKey }[] {
+  const filters: { key: string; label: StringKey }[] = [{ key: 'all', label: 'filterAll' }]
+  for (const id of moduleIds) {
+    const label = FILTER_LABELS[id]
+    if (label) filters.push({ key: id, label })
+  }
+  return filters
+}
 
 /** Check glyph marking the selected sort option; invisible on the others so labels stay aligned */
 function SortCheck({ visible }: { visible: boolean }): ReactElement {
@@ -1601,14 +1611,52 @@ export function Home() {
     void window.aiOffice.newPdf(selectedProjectId ? { projectId: selectedProjectId } : undefined)
   }
 
-  const NEW_ITEMS = [
-    { ext: 'docx', title: t('newDoc'), sub: '.docx', action: handleNewDoc },
-    { ext: 'xlsx', title: t('newSheet'), sub: '.xlsx', action: handleNewSheet },
-    { ext: 'pptx', title: t('newSlide'), sub: '.pptx', action: handleNewSlide },
-    { ext: 'md', title: t('newMarkdown'), sub: '.md', action: handleNewMarkdown },
-    { ext: 'html', title: t('newHtml'), sub: '.html', action: handleNewHtml },
-    { ext: 'pdf', title: t('newPdf'), sub: '.pdf', action: handleNewPdf },
-  ]
+  const [moduleOrder, setModuleOrder] = useState<
+    { id: ModuleKind; ext: string; title: string; sub: string; action: () => void }[]
+  >([])
+
+  useEffect(() => {
+    let alive = true
+    const apply = (mods: unknown) => {
+      if (!alive || !Array.isArray(mods)) return
+      const actions: Record<string, () => void> = {
+        docx: handleNewDoc,
+        xlsx: handleNewSheet,
+        pptx: handleNewSlide,
+        md: handleNewMarkdown,
+        pdf: handleNewPdf,
+        html: handleNewHtml,
+      }
+      const titles: Record<string, string> = {
+        docx: t('newDoc'),
+        xlsx: t('newSheet'),
+        pptx: t('newSlide'),
+        md: t('newMarkdown'),
+        pdf: t('newPdf'),
+        html: t('newHtml'),
+      }
+      setModuleOrder(
+        (mods as ModuleEntry[])
+          .filter((module) => module.enabled)
+          .map((module) => ({
+            id: module.id,
+            ext: module.ext,
+            title: titles[module.id] ?? module.ext,
+            sub: `.${module.ext}`,
+            action: actions[module.id] ?? (() => {}),
+          })),
+      )
+    }
+    void window.aiOffice.listModules?.().then(apply)
+    const onChanged = (event: Event) => apply((event as CustomEvent).detail)
+    window.addEventListener('genoffice:modules-changed', onChanged)
+    return () => {
+      alive = false
+      window.removeEventListener('genoffice:modules-changed', onChanged)
+    }
+  }, [])
+
+  const NEW_ITEMS = moduleOrder
 
   function renderQuickCards() {
     return (
@@ -2050,7 +2098,7 @@ export function Home() {
               </div>
             ) : (
               <div className="filter-pills" role="tablist" aria-label={t('filterAria')}>
-                {FILTERS.map((f) => (
+                {buildFilters(moduleOrder.map((m) => m.id)).map((f) => (
                   <button
                     key={f.key}
                     className={`filter-pill${filter === f.key ? ' active' : ''}`}

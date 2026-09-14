@@ -27,12 +27,19 @@ if (!isElectronRuntime()) {
   const files = createWebFileBridge(transport)
   const bridgedWindow = window as unknown as Record<string, unknown>
   bridgedWindow.slidesApi = createSlidesApi(transport, {
+    consumePendingOpen: async (fitWidthPx) => {
+      const path = new URLSearchParams(window.location.search).get('open')
+      if (!path) return null
+      return await transport.invoke('slides:open-path', path, fitWidthPx)
+    },
     setShowFullScreen: async () => {
       await webFullscreen()
       return null
     },
     openPptx: async (fitWidthPx) => {
-      const picked = await pickFileBytes('.pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation')
+      const picked = await pickFileBytes(
+        '.pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      )
       if (!picked) return null
       const { name, bytes } = picked[0]
       const path = await files.writeTempFile(name, bytes)
@@ -164,8 +171,9 @@ if (!isElectronRuntime()) {
 }
 
 async function deckSizePx(): Promise<{ cx: number; cy: number } | null> {
-  const size = await (window as unknown as { slidesApi?: { getSlideSize?: () => Promise<unknown> } })
-    .slidesApi?.getSlideSize?.()
+  const size = await (
+    window as unknown as { slidesApi?: { getSlideSize?: () => Promise<unknown> } }
+  ).slidesApi?.getSlideSize?.()
   if (size && typeof size === 'object') {
     const record = size as { cx?: unknown; cy?: unknown }
     if (typeof record.cx === 'number' && typeof record.cy === 'number') {

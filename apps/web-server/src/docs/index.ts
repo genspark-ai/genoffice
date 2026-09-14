@@ -16,6 +16,15 @@ import {
 } from '../common/index.js'
 
 export function registerDocsHandlers(): void {
+  registerHandle('docs:view-menu-state', () => ({ ok: true }))
+
+  registerHandle('docs:discard-password-intents', (_event: unknown, throughRevision: unknown) => ({
+    ok:
+      typeof throughRevision === 'number' &&
+      Number.isSafeInteger(throughRevision) &&
+      throughRevision >= 0,
+  }))
+
   registerHandle('docs:recent', () => loadRecentDocs())
 
   registerHandle('docs:font-metrics', (_event: unknown, family: unknown) => ({
@@ -94,28 +103,32 @@ export function registerDocsHandlers(): void {
     }
   })
 
-  registerHandle('docs:save-new', async (_event: unknown, args: unknown) => {
-    const { defaultName, data, projectId } = args as { defaultName?: string; data?: ArrayBuffer; projectId?: string }
-    const name = defaultName || `文档-${new Date().toLocaleDateString()}.docx`
-    const id = `doc-${Date.now()}`
-    const path = join(FILES_DIR, `${id}.docx`)
+  registerHandle(
+    'docs:save-new',
+    async (_event: unknown, defaultName?: unknown, data?: unknown, projectId?: unknown) => {
+      const name =
+        (typeof defaultName === 'string' && defaultName) ||
+        `文档-${new Date().toLocaleDateString()}.docx`
+      const id = `doc-${Date.now()}`
+      const path = join(FILES_DIR, `${id}.docx`)
 
-    if (data) {
-      writeFileSync(path, Buffer.from(data))
-    }
-
-    if (projectId) {
-      const projects = loadProjects()
-      const project = projects.find(p => p.id === projectId)
-      if (project && !project.files.includes(`${id}.docx`)) {
-        project.files.push(`${id}.docx`)
-        project.updatedAt = Date.now()
-        saveProjects(projects)
+      if (data) {
+        writeFileSync(path, Buffer.from(data as ArrayBuffer))
       }
-    }
 
-    return { id, path, name }
-  })
+      if (typeof projectId === 'string' && projectId) {
+        const projects = loadProjects()
+        const project = projects.find((p) => p.id === projectId)
+        if (project && !project.files.includes(`${id}.docx`)) {
+          project.files.push(`${id}.docx`)
+          project.updatedAt = Date.now()
+          saveProjects(projects)
+        }
+      }
+
+      return { id, path, name }
+    },
+  )
 
   registerHandle('docs:print', () => ({
     ok: true,

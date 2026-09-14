@@ -683,3 +683,31 @@
 .set-intg-path {
   text-align: left;
 }
+
+.set-module-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+
+.set-module-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: grab;
+}
+
+.set-module-row:last-child { border-bottom: 0; }
+.set-module-row:hover { background: var(--bg-hover, rgb(0 0 0 / 3%)); }
+.set-module-row:active { cursor: grabbing; }
+.set-module-handle { color: var(--text-tertiary, #98a2b3); display: inline-flex; flex-shrink: 0; }
+.set-module-label { flex: 1; font-size: 13px; font-weight: 500; color: var(--text); }
+.set-module-ext { margin-right: 6px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-secondary); }
+[data-theme='dark'] .set-module-row:hover { background: rgb(255 255 255 / 4%); }

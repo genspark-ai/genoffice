@@ -8,12 +8,12 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
-export const ROOT = resolve(__dirname, '../../..')
+export const ROOT = resolve(__dirname, '../../../..')
 
-export const PORT = Number(process.env.PORT) || 8080
+export const PORT = Number(process.env.PORT) || 18081
 export const HOST = process.env.HOST || '0.0.0.0'
 
-export const APPS = ['docs', 'sheets', 'slides', 'pdf', 'markdown', 'shell']
+export const APPS = ['docs', 'sheets', 'slides', 'pdf', 'markdown', 'html', 'shell']
 export const STATIC_ROOT = resolve(ROOT, 'apps')
 
 export const WEB_TEMP_ROOT = resolve(process.env.TMPDIR || '/tmp', 'genoffice-web-temp')

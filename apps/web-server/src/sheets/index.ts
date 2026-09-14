@@ -4,12 +4,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import {
-  FILES_DIR,
-  loadRecentSheets,
-  registerHandle,
-  saveRecentSheets,
-} from '../common/index.js'
+import { FILES_DIR, loadRecentSheets, registerHandle, saveRecentSheets } from '../common/index.js'
 
 export function registerSheetsHandlers(): void {
   registerHandle('sheets:new-blank', async (_event: unknown, options: unknown) => {
@@ -53,4 +48,5 @@ export function registerSheetsHandlers(): void {
   })
 
   registerHandle('sheets:consume-new-blank', () => ({ ok: true }))
+  registerHandle('workbook:pending-edits', () => ({ ok: true }))
 }

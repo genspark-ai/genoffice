@@ -17,7 +17,10 @@ if (!isElectronRuntime()) {
   const files = createWebFileBridge(transport)
   const bridgedWindow = window as unknown as Record<string, unknown>
   bridgedWindow.desktopApi = createSheetsApi(transport, {
+    hasQueuedWorkbook: async () => new URLSearchParams(window.location.search).has('open'),
     selectWorkbook: async () => {
+      const pending = new URLSearchParams(window.location.search).get('open')
+      if (pending) return await transport.invoke('workbook:open-path', pending)
       const picked = await pickFileBytes('.xlsx,.xlsm,.xls,.csv')
       if (!picked) return null
       const file = picked[0]
@@ -46,7 +49,10 @@ if (!isElectronRuntime()) {
       return await transport.invoke('sheets:files-add', paths)
     },
     captureScreenSources: async () => {
-      return { status: 'ok', sources: [{ id: 'display', name: 'Screen', kind: 'screen', thumbnail: '' }] }
+      return {
+        status: 'ok',
+        sources: [{ id: 'display', name: 'Screen', kind: 'screen', thumbnail: '' }],
+      }
     },
     captureScreenSource: async () => {
       return await captureDisplayFrame()
@@ -81,7 +87,12 @@ async function captureDisplayFrame(): Promise<{
     }
     context.drawImage(video, 0, 0, width, height)
     stream.getTracks().forEach((track) => track.stop())
-    return { mediaType: 'image/png', base64: canvas.toDataURL('image/png').split(',')[1] ?? '', width, height }
+    return {
+      mediaType: 'image/png',
+      base64: canvas.toDataURL('image/png').split(',')[1] ?? '',
+      width,
+      height,
+    }
   } catch {
     return null
   }

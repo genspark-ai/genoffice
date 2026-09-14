@@ -6,7 +6,7 @@
  * Maps, so behaviour matches the legacy single-file implementation exactly.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const DATA_DIR = process.env.DATA_DIR || '/tmp/genoffice-data'
@@ -29,10 +29,27 @@ export interface Project {
 export function loadProjects(): Project[] {
   try {
     if (existsSync(PROJECTS_FILE)) {
-      return JSON.parse(readFileSync(PROJECTS_FILE, 'utf-8'))
+      const data = JSON.parse(readFileSync(PROJECTS_FILE, 'utf-8'))
+      if (Array.isArray(data) && data.length > 0) return data
     }
   } catch {}
-  return []
+  /* ── Seed a single "Default Project" so the sidebar has something to
+   * render on a fresh install. Mirrors the Electron build's first-run
+   * experience where users always see at least one project to file into. */
+  const now = Date.now()
+  const seed: Project[] = [
+    {
+      id: 'proj-default',
+      name: '默认项目',
+      createdAt: now,
+      updatedAt: now,
+      files: [],
+    },
+  ]
+  try {
+    writeFileSync(PROJECTS_FILE, JSON.stringify(seed, null, 2))
+  } catch {}
+  return seed
 }
 
 export function saveProjects(projects: Project[]): void {
@@ -79,6 +96,77 @@ export function saveRecentDocs(docs: DocInfo[]): void {
 export const DOCS_RECENT: Map<string, DocInfo> = new Map()
 export const DOCS_STARRED: Set<string> = new Set()
 
+/** Populate the in-memory recent/starred caches from the on-disk JSON so
+ * the home page reflects what was recorded by previous sessions. Idempotent —
+ * safe to call from the boot path. */
+export function initRecentState(): void {
+  try {
+    for (const d of loadRecentDocs()) {
+      DOCS_RECENT.set(d.path, d)
+    }
+  } catch {}
+  try {
+    for (const p of loadRecentSheets()) {
+      // SheetInfo has a slightly different shape; we keep path-only entries
+      // for the unified recent list
+      DOCS_RECENT.set(p.path, {
+        id: p.id,
+        path: p.path,
+        name: p.name,
+        openedAt: p.openedAt,
+        modified: false,
+      })
+    }
+  } catch {}
+  try {
+    for (const p of loadRecentSlides()) {
+      DOCS_RECENT.set(p.path, {
+        id: p.id,
+        path: p.path,
+        name: p.name,
+        openedAt: p.openedAt,
+        modified: false,
+      })
+    }
+  } catch {}
+  /* ── Sweep disk for pdf/md/html artifacts ─────────────────────────────
+   * The other modules persist their own recents JSON; html/pdf/md currently
+   * don't, so a fresh boot would leave the home page's PDF/Markdown/HTML
+   * filters empty. We walk BOTH FILES_DIR (where save-as targets land) and
+   * DATA_DIR itself (where home:new-pdf and home:new-html write their
+   * auto-named files). Each match seeds an entry with an mtime-derived
+   * openedAt so it sorts naturally alongside docs/sheets/slides. */
+  const sweepDirs = [FILES_DIR, DATA_DIR]
+  const seen = new Set<string>()
+  const now = Date.now()
+  for (const dir of sweepDirs) {
+    try {
+      if (!existsSync(dir)) continue
+      for (const entry of readdirSync(dir)) {
+        const lower = entry.toLowerCase()
+        if (
+          lower.endsWith('.pdf') ||
+          lower.endsWith('.md') ||
+          lower.endsWith('.html') ||
+          lower.endsWith('.htm')
+        ) {
+          const full = join(dir, entry)
+          if (seen.has(full) || DOCS_RECENT.has(full)) continue
+          seen.add(full)
+          const st = statSync(full)
+          DOCS_RECENT.set(full, {
+            id: entry.replace(/\.[^.]+$/, ''),
+            path: full,
+            name: entry,
+            openedAt: st.mtimeMs || now,
+            modified: false,
+          })
+        }
+      }
+    } catch {}
+  }
+}
+
 export interface SheetInfo {
   id: string
   path: string
@@ -124,34 +212,63 @@ export function saveRecentSlides(slides: SlideInfo[]): void {
 }
 
 // ----- AI streaming state ---------------------------------------------------
-export const AI_STREAMS: Map<string, {
-  chunks: string[]
-  abort: AbortController
-}> = new Map()
+export const AI_STREAMS: Map<
+  string,
+  {
+    chunks: string[]
+    abort: AbortController
+  }
+> = new Map()
 
-export const ACTIVE_STREAMS: Map<string, {
-  controller: ReadableStreamDefaultController
-  aborted: boolean
-}> = new Map()
+export const ACTIVE_STREAMS: Map<
+  string,
+  {
+    controller: ReadableStreamDefaultController
+    aborted: boolean
+  }
+> = new Map()
 
 // ----- Collab state ---------------------------------------------------------
-export const COLLAB_SESSIONS: Map<string, {
-  docId: string
-  users: Set<string>
-  lastActivity: number
-  locks: Map<string, { userId: string; timestamp: number }>
-  cursors: Map<string, { position: { x: number; y: number; offset: number }; selection?: { start: number; end: number }; timestamp: number }>
-  changes: Array<{ id: string; docId: string; userId: string; change: unknown; timestamp: number; version: number }>
-}> = new Map()
+export const COLLAB_SESSIONS: Map<
+  string,
+  {
+    docId: string
+    users: Set<string>
+    lastActivity: number
+    locks: Map<string, { userId: string; timestamp: number }>
+    cursors: Map<
+      string,
+      {
+        position: { x: number; y: number; offset: number }
+        selection?: { start: number; end: number }
+        timestamp: number
+      }
+    >
+    changes: Array<{
+      id: string
+      docId: string
+      userId: string
+      change: unknown
+      timestamp: number
+      version: number
+    }>
+  }
+> = new Map()
 
-export const PRESENCE: Map<string, Map<string, {
-  userId: string
-  userName: string
-  status: 'active' | 'idle' | 'away'
-  lastSeen: number
-  cursor?: { x: number; y: number; selection?: { start: number; end: number } }
-  color: string
-}>> = new Map()
+export const PRESENCE: Map<
+  string,
+  Map<
+    string,
+    {
+      userId: string
+      userName: string
+      status: 'active' | 'idle' | 'away'
+      lastSeen: number
+      cursor?: { x: number; y: number; selection?: { start: number; end: number } }
+      color: string
+    }
+  >
+> = new Map()
 
 export const DOC_PERMISSIONS: Map<string, Map<string, string>> = new Map()
 
@@ -244,33 +361,42 @@ export function initDefaultTemplates(): void {
 }
 
 // ----- Enterprise / shell state --------------------------------------------
-export const CLOUD_FILES: Map<string, {
-  id: string
-  name: string
-  size: number
-  type: string
-  url: string
-  createdAt: number
-  updatedAt: number
-  public: boolean
-}> = new Map()
+export const CLOUD_FILES: Map<
+  string,
+  {
+    id: string
+    name: string
+    size: number
+    type: string
+    url: string
+    createdAt: number
+    updatedAt: number
+    public: boolean
+  }
+> = new Map()
 
-export const OFFLINE_QUEUE: Map<string, {
-  id: string
-  action: string
-  payload: unknown
-  timestamp: number
-  synced: boolean
-}> = new Map()
+export const OFFLINE_QUEUE: Map<
+  string,
+  {
+    id: string
+    action: string
+    payload: unknown
+    timestamp: number
+    synced: boolean
+  }
+> = new Map()
 
-export const SEARCH_INDEX: Map<string, {
-  id: string
-  type: string
-  title: string
-  content: string
-  tags: string[]
-  createdAt: number
-}> = new Map()
+export const SEARCH_INDEX: Map<
+  string,
+  {
+    id: string
+    type: string
+    title: string
+    content: string
+    tags: string[]
+    createdAt: number
+  }
+> = new Map()
 
 export interface UserRecord {
   id: string

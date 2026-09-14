@@ -32,7 +32,12 @@ export function registerAiCoreHandlers(): void {
   }))
 
   registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
-    const req = request as { message?: string; system?: string; sessionId?: string; context?: unknown }
+    const req = request as {
+      message?: string
+      system?: string
+      sessionId?: string
+      context?: unknown
+    }
     const message = req.message || ''
     const context = req.context
 
@@ -47,7 +52,7 @@ export function registerAiCoreHandlers(): void {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: message },
           ],
-          aiSettings.model || 'MiniMax-M3'
+          aiSettings.model || 'MiniMax-M3',
         )
 
         return {
@@ -90,17 +95,13 @@ export function registerAiCoreHandlers(): void {
     const abort = new AbortController()
     AI_STREAMS.set(sessionId, { chunks: [], abort })
 
-    const messages = [
-      '正在处理您的请求',
-      '分析文档结构',
-      '生成内容',
-      '完成',
-    ]
+    const messages = ['正在处理您的请求', '分析文档结构', '生成内容', '完成']
 
-    const sender = (event as { sender?: { send?: (ch: string, ...args: unknown[]) => void } })?.sender
+    const sender = (event as { sender?: { send?: (ch: string, ...args: unknown[]) => void } })
+      ?.sender
     if (sender?.send) {
       for (const msg of messages) {
-        await new Promise(r => setTimeout(r, 500))
+        await new Promise((r) => setTimeout(r, 500))
         sender.send('ai:stream-chunk', { sessionId, chunk: msg, done: false })
       }
       sender.send('ai:stream-chunk', { sessionId, chunk: '', done: true })
@@ -135,9 +136,13 @@ export function registerAiCoreHandlers(): void {
 
   registerHandle('ai:log-run-failure', () => ({ ok: true }))
 
+  registerHandle('ai:gsk-status', (_event: unknown, withEmail?: unknown) =>
+    withEmail ? { loggedIn: true, email: 'web-user@genoffice.ai' } : { loggedIn: true },
+  )
+
   registerHandle('ai:generate-content', async (_event: unknown, request: unknown) => {
     const req = request as { type?: string; topic?: string; length?: number; style?: string }
-    const { type = 'paragraph', topic = '', length = 200, style = 'formal' } = req
+    const { type = 'paragraph', topic = '', length = 200 } = req
 
     const templates: Record<string, string> = {
       paragraph: `关于"${topic}"的段落内容。`,
@@ -199,7 +204,7 @@ export function registerAiCoreHandlers(): void {
     }
   })
 
-  registerHandle('ai:extract-keywords', async (_event: unknown, text: unknown) => {
+  registerHandle('ai:extract-keywords', async (_event: unknown, _text: unknown) => {
     return {
       id: `kw-${Date.now()}`,
       keywords: ['关键词1', '关键词2', '关键词3'],
@@ -208,7 +213,11 @@ export function registerAiCoreHandlers(): void {
   })
 
   registerHandle('ai:smart-summary', async (_event: unknown, args: unknown) => {
-    const { text, maxLength, type } = args as { text: string; maxLength?: number; type?: 'brief' | 'detailed' | 'bullets' }
+    const { text, maxLength, type } = args as {
+      text: string
+      maxLength?: number
+      type?: 'brief' | 'detailed' | 'bullets'
+    }
 
     const length = maxLength || 200
     const summaryType = type || 'brief'
@@ -221,11 +230,7 @@ export function registerAiCoreHandlers(): void {
       }
     } else if (summaryType === 'bullets') {
       return {
-        bullets: [
-          '• 第一个要点',
-          '• 第二个要点',
-          '• 第三个要点',
-        ],
+        bullets: ['• 第一个要点', '• 第二个要点', '• 第三个要点'],
         wordCount: text.length,
       }
     }
@@ -241,8 +246,14 @@ export function registerAiCoreHandlers(): void {
     const { text, from, to } = args as { text: string; from?: string; to: string }
 
     const langMap: Record<string, string> = {
-      'zh': '中文', 'en': 'English', 'ja': '日本語', 'ko': '한국어',
-      'fr': 'Français', 'de': 'Deutsch', 'es': 'Español', 'ru': 'Русский',
+      zh: '中文',
+      en: 'English',
+      ja: '日本語',
+      ko: '한국어',
+      fr: 'Français',
+      de: 'Deutsch',
+      es: 'Español',
+      ru: 'Русский',
     }
 
     return {
@@ -263,8 +274,8 @@ export function registerAiCoreHandlers(): void {
     const hasKorean = /[\uac00-\ud7af]/.test(str)
 
     if (hasChinese) return { language: 'zh', confidence: 0.98 }
-    if (hasJapanese) return { language: 'ja', confidence: 0.90 }
-    if (hasKorean) return { language: 'ko', confidence: 0.90 }
+    if (hasJapanese) return { language: 'ja', confidence: 0.9 }
+    if (hasKorean) return { language: 'ko', confidence: 0.9 }
 
     return { language: 'en', confidence: 0.85 }
   })
@@ -274,12 +285,23 @@ export function registerAiCoreHandlers(): void {
   registerHandle('ai:sentiment', async (_event: unknown, args: unknown) => {
     const { text } = args as { text: string }
 
-    const positiveWords = ['好', '棒', '优', '赞', '满意', '喜欢', 'good', 'great', 'excellent', 'amazing']
+    const positiveWords = [
+      '好',
+      '棒',
+      '优',
+      '赞',
+      '满意',
+      '喜欢',
+      'good',
+      'great',
+      'excellent',
+      'amazing',
+    ]
     const negativeWords = ['差', '坏', '糟', '不满', '讨厌', 'bad', 'poor', 'terrible', 'awful']
 
     const textLower = text.toLowerCase()
-    const positiveCount = positiveWords.filter(w => textLower.includes(w)).length
-    const negativeCount = negativeWords.filter(w => textLower.includes(w)).length
+    const positiveCount = positiveWords.filter((w) => textLower.includes(w)).length
+    const negativeCount = negativeWords.filter((w) => textLower.includes(w)).length
 
     let sentiment = 'neutral'
     let score = 0.5
@@ -296,7 +318,12 @@ export function registerAiCoreHandlers(): void {
       sentiment,
       score,
       confidence: 0.85,
-      keywords: positiveCount > negativeCount ? ['positive'] : negativeCount > positiveCount ? ['negative'] : [],
+      keywords:
+        positiveCount > negativeCount
+          ? ['positive']
+          : negativeCount > positiveCount
+            ? ['negative']
+            : [],
       emotions: {
         joy: sentiment === 'positive' ? 0.6 : 0.1,
         sadness: sentiment === 'negative' ? 0.5 : 0.1,
