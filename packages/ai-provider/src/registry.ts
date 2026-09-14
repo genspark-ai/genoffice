@@ -236,6 +236,12 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // a stored base URL selects a regional router (https://router.eu.requesty.ai/v1 for the EU)
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://router.requesty.ai/v1'),
   },
+  opper: {
+    meta: metaOf('opper'),
+    capabilities: { auth: 'api-key', vision: true },
+    // one chat-completions endpoint for every pool and vendor route; the model id picks it
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.opper.ai/v3/compat'),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },

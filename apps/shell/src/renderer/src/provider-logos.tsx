@@ -8,7 +8,7 @@ import type { AiProviderId } from '@genoffice/ai-provider'
 // generic icon for the "custom" endpoint.
 // Brand-colored logos keep their official colors in both themes (brand
 // assets, not chrome — see CLAUDE.md theming rules); monochrome marks
-// (OpenAI, Kimi, Grok, OpenRouter, Requesty, OpenCode, Genspark, Custom) use
+// (OpenAI, Kimi, Grok, OpenRouter, Requesty, Opper, OpenCode, Genspark, Custom) use
 // currentColor so they stay legible in dark mode.
 //
 // Gradient-filled marks (Gemini, Qwen, MiniMax) are components so useId can
@@ -228,6 +228,13 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  ),
+  // Opper's mark (opper.ai) is 216 units wide in a 315-unit frame, so the
+  // viewBox is shifted to keep it centred in the square logo slot.
+  opper: (
+    <svg viewBox="-49.5 0 315 315" fill="currentColor" fillRule="evenodd" aria-hidden="true">
+      <path d="M159.78 315C71.53 315 0 244.49 0 157.5C0 -18.9499 159.78 0.650075 159.78 0.650075C159.78 87.2201 88.36 157.4 0.2 157.5C149.8 157.64 159.78 315 159.78 315ZM160.52 217.98C160.52 217.98 156.94 161.65 105.04 157.52C120.6 157.34 160.52 151.54 160.52 96.5601C160.52 151.54 200.44 157.34 216 157.52C164.1 161.63 160.52 217.98 160.52 217.98Z" />
     </svg>
   ),
   'opencode-zen': opencodeLogo,

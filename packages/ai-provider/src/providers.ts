@@ -208,6 +208,27 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'opper',
+    label: 'Opper',
+    // Pool ids exactly as GET api.opper.ai/v3/models lists them (2026-09-14):
+    // a bare name is an Opper pool, and Opper picks the serving provider and
+    // region per request. The vendor-prefixed catalog (anthropic/claude-sonnet-4-6,
+    // azure/gpt-5, …) pins one provider and works as-is when typed in.
+    // Full list at opper.ai/models.
+    models: [
+      'claude-sonnet-4-6',
+      'claude-opus-5',
+      'gpt-5.5',
+      'gpt-5.4-mini',
+      'gemini-3.8-flash',
+      'deepseek-v4-pro',
+      'kimi-k3',
+      'mistral-large-2512',
+    ],
+    defaultModel: 'claude-sonnet-4-6',
+    keyPlaceholder: 'API Key',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET
