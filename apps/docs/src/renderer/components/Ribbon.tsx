@@ -36,6 +36,7 @@ import type {
 import {
   ColorPicker,
   Dropdown,
+  HomeButton,
   RibbonCollapseButton,
   isSymbolFontFamily,
   useDismissablePopover,
@@ -2029,6 +2030,7 @@ function RibbonInner({
               {t(TAB_LABEL_KEYS[shapeTab])}
             </button>
           ))}
+        <HomeButton />
         <span className="ribbon-tabs-spacer" />
         {trailingActions}
       </div>

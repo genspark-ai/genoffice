@@ -13,6 +13,7 @@ import '@genoffice/ui/color-picker.css'
 import '@genoffice/ui/ribbon-collapse.css'
 import '@genoffice/ui/ai-panel-prefs.css'
 import '@genoffice/ui/ai-scope-quote.css'
+import '@genoffice/ui/home-button.css'
 import '@genoffice/ui/image-dialogs.css'
 import './styles.css'
 

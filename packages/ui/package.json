@@ -20,6 +20,7 @@
     "./image-dialogs.css": "./src/image-dialogs.css",
     "./fonts/*": "./src/fonts/*",
     "./ai-runtime.css": "./src/ai-runtime.css",
+    "./home-button.css": "./src/home-button.css",
     "./auto-save-pref": "./src/auto-save-pref.ts"
   },
   "scripts": {

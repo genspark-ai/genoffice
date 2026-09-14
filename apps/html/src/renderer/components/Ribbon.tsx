@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  HomeButton,
   RibbonCollapseButton,
   RibbonExpandButton,
   useDismissablePopover,
@@ -251,6 +252,7 @@ export function Ribbon(p: Props) {
             onChange={(e) => p.onToggleAutoSave(e.target.checked)}
           />
         </label>
+        <HomeButton />
         <RibbonExpandButton state={collapse} label={t('ribbonExpand')} />
       </div>
 

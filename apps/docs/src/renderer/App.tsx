@@ -64,6 +64,8 @@ import {
 } from '@genoffice/docx-engine'
 import type { AiDocContent, AiSettings, OpenDocxResult } from '../shared/ipc'
 import { AI_PROVIDERS } from '../shared/ipc'
+import type { DataflareEmbedCommand, DataflareOfficeContext } from '../shared/embed-bridge'
+import { isEmbeddedInHost, postToEmbedParent } from '../shared/embed-bridge'
 import { ZoteroDocumentController } from './zotero/controller'
 import { AiPanel, AI_REVISION_AUTHOR } from './ai/AiPanel'
 import type { AiCommentsAccess, AiHeaderFooterAccess } from './ai/tools'
@@ -589,6 +591,8 @@ export function App() {
   const [_recent, setRecent] = useState<string[]>([])
   const [settings, setSettings] = useState<AiSettings>(DEFAULT_SETTINGS)
   const [showAi, setShowAi] = useState(() => localStorage.getItem('aidocs.showAi') !== '0')
+  const [hostContext, setHostContext] = useState<DataflareOfficeContext | null>(null)
+  const [hostReadonly, setHostReadonly] = useState(false)
   const [spellcheck, setSpellcheck] = useState(spellcheckEnabled)
   /** Increments on every open/new document: AiPanel remounts by key to reset the conversation and history (save path changes don't bump it, so the session continues) */
   const [aiPanelKey, setAiPanelKey] = useState(0)
@@ -1414,6 +1418,7 @@ export function App() {
   const writeLocked = !!writeProtection?.hash && !modifyUnlocked
   /** body is read-only (readOnly/forms/comments restriction or write lock) */
   const isProtected =
+    hostReadonly ||
     writeLocked ||
     editRestriction === 'readOnly' ||
     editRestriction === 'forms' ||
@@ -1441,6 +1446,87 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [editor, readMode, isProtected, docLoading])
+
+  useEffect(() => {
+    if (!isEmbeddedInHost()) return
+    const onHostCommand = (event: Event) => {
+      const command = (event as CustomEvent<DataflareEmbedCommand>).detail
+      if (command.type === 'init') {
+        setHostContext(command.context)
+        setHostReadonly(Boolean(command.context.readonly))
+        if (command.context.theme && command.context.theme !== 'system') {
+          document.documentElement.dataset.theme = command.context.theme
+        } else {
+          document.documentElement.removeAttribute('data-theme')
+        }
+        postToEmbedParent({
+          type: 'ready',
+          capabilities: ['document-context', 'ai-translation', 'ai-assistant', 'host-commands'],
+        })
+        return
+      }
+      if (command.type === 'set-readonly') {
+        setHostReadonly(command.readonly)
+        return
+      }
+      if (command.type === 'focus-ai') {
+        setShowAi(true)
+        if (command.prompt?.trim()) {
+          setAiPreset({ text: command.prompt.trim(), nonce: Date.now(), autoRun: true })
+        }
+        return
+      }
+      if (command.type === 'translate') {
+        const targetLanguage = command.targetLanguage.trim()
+        if (!targetLanguage) return
+        const sourceLanguage = command.sourceLanguage?.trim() || 'auto'
+        const scope = command.scope === 'selection' ? 'selected passage' : 'the entire document'
+        const preserveFormatting = command.preserveFormatting !== false
+        const selectionText = editor && !editor.state.selection.empty
+          ? editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, '\n')
+          : ''
+        const selectionHint = command.scope === 'selection' && selectionText.trim()
+          ? `\nSelected passage:\n${selectionText.trim()}`
+          : ''
+        setShowAi(true)
+        setAiPreset({
+          text: [
+            `Translate ${scope} into ${targetLanguage}.`,
+            `Source language: ${sourceLanguage}.`,
+            preserveFormatting
+              ? 'Preserve the document structure, formatting, numbers, links, names, and placeholders.'
+              : 'Return the translation without adding commentary.',
+            'Show a preview first and apply the translation as one reviewable change.',
+            selectionHint,
+          ].join('\n'),
+          nonce: Date.now(),
+          autoRun: true,
+        })
+        postToEmbedParent({ type: 'ai-progress', status: 'started', progress: 0 })
+        return
+      }
+      if (command.type === 'save') {
+        void saveImpl(fileCtxRef.current, false, false).then((ok) => {
+          postToEmbedParent({
+            type: ok ? 'document-saved' : 'error',
+            ...(ok
+              ? { documentId: hostContext?.documentId, revision: String(Date.now()) }
+              : { code: 'save-failed', message: '文档保存失败' }),
+          })
+        })
+      }
+    }
+    window.addEventListener('dataflare:office-command', onHostCommand)
+    return () => window.removeEventListener('dataflare:office-command', onHostCommand)
+  }, [editor, hostContext?.documentId])
+
+  useEffect(() => {
+    if (!isEmbeddedInHost() || !editor) return
+    const notifyDirty = () =>
+      postToEmbedParent({ type: 'document-dirty', documentId: hostContext?.documentId })
+    editor.on('update', notifyDirty)
+    return () => editor.off('update', notifyDirty)
+  }, [editor, hostContext?.documentId])
 
   // Track Changes: the recorder plugin reads its toggle from extension storage
   useEffect(() => {

@@ -18,6 +18,11 @@ import {
   webPrint,
 } from '@genoffice/ipc-bridge/web-native'
 import { createDesktopApi, createProjectApi } from '../shared/desktop-api-factory'
+import {
+  installDataflareEmbedBridge,
+  postToEmbedParent,
+  type DataflareEmbedCommand,
+} from '../shared/embed-bridge'
 
 if (!isElectronRuntime()) {
   const transport = createHttpIpcTransport()
@@ -92,6 +97,15 @@ if (!isElectronRuntime()) {
     },
   })
   bridgedWindow.projectApi = createProjectApi(transport)
+
+  const bridge = {
+    postEvent: postToEmbedParent,
+    isEmbedded: window.parent !== window,
+  }
+  bridgedWindow.dataflareOfficeBridge = bridge
+  installDataflareEmbedBridge((command: DataflareEmbedCommand) => {
+    window.dispatchEvent(new CustomEvent('dataflare:office-command', { detail: command }))
+  })
 }
 
 const IMAGE_MIME: Record<string, string> = {

@@ -4,6 +4,7 @@ import type { Editor } from '@tiptap/core'
 import { useEditorState } from '@tiptap/react'
 import {
   Dropdown,
+  HomeButton,
   RibbonCollapseButton,
   RibbonExpandButton,
   useDismissablePopover,
@@ -305,6 +306,7 @@ export function Ribbon({
             onChange={(e) => onToggleAutoSave(e.target.checked)}
           />
         </label>
+        <HomeButton />
         <RibbonExpandButton state={collapse} label={t('ribbonExpand')} />
       </div>
 

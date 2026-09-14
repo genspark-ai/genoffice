@@ -17,6 +17,7 @@ import {
   useDismissablePopover,
   useRibbonCollapse,
   Dropdown,
+  HomeButton,
   RibbonCollapseButton,
   THEME_COLORS,
   THEME_COLOR_SHADES,
@@ -1856,6 +1857,7 @@ export function Ribbon({
             {t(TAB_LABEL[contextTab])}
           </button>
         )}
+        <HomeButton />
         <span className="ribbon-tabs-spacer" />
       </div>
 
