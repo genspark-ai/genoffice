@@ -1,27 +1,211 @@
 /**
- * Core AI handlers — settings, login stub, chat/stream, web/image search,
- * sentiment, smart-summary, translation, language detection, generate.
+ * Core AI handlers — settings, login, chat, stream.
  *
- * Each handler is registered at module load via the shared registry. The
- * function bodies are intentionally left as the original placeholders so
- * Phase 1.2 / 1.3 can swap them for real provider-backed logic without
- * touching the wiring.
+ * Mirrors the Electron main-process surface so the same renderer code
+ * (AgentLoop + createElectronTransport) works against the standalone
+ * web-server without code changes. The streaming path now calls
+ * `streamForProvider` from `@genoffice/ai-provider` — the same unified
+ * entrypoint the Electron docs/sheets/slides apps use — so the web build
+ * talks to real providers (MiniMax via OpenAI-compatible, Anthropic,
+ * Gemini, etc.) instead of returning canned text.
+ *
+ * Settings live on disk in DATA_DIR/ai-settings.json so they survive
+ * restarts and operator-driven `WEB_STATIC_ROOT` deploys.
  */
-import { AI_STREAMS, registerHandle } from '../common/index.js'
-import { callMiniMax, generateAIResponse } from './minimax.js'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-let aiSettings = {
-  provider: 'genspark',
-  model: 'auto',
-  temperature: 0.7,
-  maxTokens: 4096,
-  streaming: true,
+import {
+  AI_STREAMS,
+  DATA_DIR,
+  registerHandle,
+} from '../common/index.js'
+import {
+  AiCreditsError,
+  AiTimeoutError,
+  type AiChatRequest,
+  type AiChatResponse,
+  type AiProviderConfig,
+  type AiProviderId,
+  type AiSettings,
+  type AiStreamChunk,
+  chatForProvider,
+  defaultAiSettings,
+  isAiNetworkError,
+  isAiOverloadedError,
+  maxOutputTokensOf,
+  streamForProvider,
+} from '@genoffice/ai-provider'
+
+// ----- settings persistence --------------------------------------------------
+
+const AI_SETTINGS_FILE = join(DATA_DIR, 'ai-settings.json')
+
+function loadSettings(): AiSettings {
+  try {
+    if (existsSync(AI_SETTINGS_FILE)) {
+      const raw = readFileSync(AI_SETTINGS_FILE, 'utf8')
+      const parsed = JSON.parse(raw) as AiSettings
+      // re-merge on top of defaults so newly added providers appear without a wipe
+      const def = defaultAiSettings()
+      return {
+        ...def,
+        ...parsed,
+        providers: { ...def.providers, ...(parsed.providers || {}) },
+      }
+    }
+  } catch (err) {
+    console.warn('[ai] failed to load ai-settings.json, falling back to defaults:', err)
+  }
+  // Seed from environment so the obvious deploy (set MINIMAX_API_KEY + start)
+  // Just Works without anyone clicking through the settings UI.
+  const env: Partial<Record<AiProviderId, string>> = {}
+  if (process.env.MINIMAX_API_KEY) env.minimax = process.env.MINIMAX_API_KEY
+  if (process.env.OPENAI_API_KEY) env.openai = process.env.OPENAI_API_KEY
+  if (process.env.ANTHROPIC_API_KEY) env.anthropic = process.env.ANTHROPIC_API_KEY
+  if (process.env.GEMINI_API_KEY) env.gemini = process.env.GEMINI_API_KEY
+  if (process.env.DEEPSEEK_API_KEY) env.deepseek = process.env.DEEPSEEK_API_KEY
+  if (process.env.KIMI_API_KEY) env.kimi = process.env.KIMI_API_KEY
+  if (process.env.QWEN_API_KEY) env.qwen = process.env.QWEN_API_KEY
+  if (process.env.DOUBAO_API_KEY) env.doubao = process.env.DOUBAO_API_KEY
+  if (process.env.XAI_API_KEY) env.xai = process.env.XAI_API_KEY
+  if (process.env.MISTRAL_API_KEY) env.mistral = process.env.MISTRAL_API_KEY
+  if (process.env.OPENROUTER_API_KEY) env.openrouter = process.env.OPENROUTER_API_KEY
+  const def = defaultAiSettings(env)
+  // also pre-select a provider that actually has a key, so the very first
+  // /api/ai/stream call hits the real LLM out of the box
+  for (const k of Object.keys(env) as AiProviderId[]) {
+    if (def.providers[k]?.apiKey) {
+      def.provider = k
+      break
+    }
+  }
+  return def
 }
+
+function saveSettings(settings: AiSettings): void {
+  try {
+    mkdirSync(DATA_DIR, { recursive: true })
+    writeFileSync(AI_SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf8')
+  } catch (err) {
+    console.warn('[ai] failed to persist ai-settings.json:', err)
+  }
+}
+
+export let aiSettings: AiSettings = loadSettings()
+
+// ----- shared streaming core -------------------------------------------------
+
+export interface StreamSession {
+  /** AbortController wired to the in-flight streamForProvider call */
+  abort: AbortController
+  /** how many chunks have been emitted (debug/observability) */
+  chunks: number
+}
+
+export const AI_STREAM_SESSIONS = new Map<string, StreamSession>()
+
+/**
+ * Build the StreamCallbacks shape streamForProvider expects and forward
+ * each event as an AiStreamChunk to the sender (IPC `event.sender.send`
+ * in the IPC path; an HTTP SSE writer in the /api/ai/stream path).
+ */
+export interface AiStreamSink {
+  send(chunk: AiStreamChunk): void
+  onAbort?(controller: AbortController): void
+}
+
+export async function runProviderStream(
+  settings: AiSettings,
+  system: string,
+  messages: Parameters<typeof streamForProvider>[3],
+  tools: Parameters<typeof streamForProvider>[4],
+  maxTokens: number | undefined,
+  sink: AiStreamSink,
+): Promise<void> {
+  const provider = settings.provider
+  const config = settings.providers?.[provider]
+  if (!config) {
+    sink.send({
+      requestId: '',
+      type: 'error',
+      error: `AI provider "${provider}" not configured`,
+    })
+    return
+  }
+  if (provider !== 'genspark' && provider !== 'codex' && !config.apiKey) {
+    sink.send({
+      requestId: '',
+      type: 'error',
+      error: `No API key configured for provider "${provider}". Open Settings → AI to add one.`,
+    })
+    return
+  }
+  if (provider !== 'codex' && !config.model) {
+    sink.send({ requestId: '', type: 'error', error: `No model selected for "${provider}".` })
+    return
+  }
+
+  const controller = new AbortController()
+  sink.onAbort?.(controller)
+
+  let stopReason: string | undefined
+  try {
+    await streamForProvider(
+      provider,
+      config as AiProviderConfig,
+      system,
+      messages,
+      tools,
+      maxTokens ?? maxOutputTokensOf(settings),
+      {
+        signal: controller.signal,
+        onDelta: (text) => sink.send({ requestId: '', type: 'delta', text }),
+        onReasoningDelta: (text) => sink.send({ requestId: '', type: 'reasoning', text }),
+        onToolCall: (toolCall) => sink.send({ requestId: '', type: 'tool-call', toolCall }),
+        onStopReason: (reason) => {
+          stopReason = reason
+        },
+        onActivity: () => {
+          // wire-level keepalive so the renderer watchdog can tell a live turn
+          sink.send({ requestId: '', type: 'ping' })
+        },
+      },
+    )
+    sink.send({ requestId: '', type: 'done', ...(stopReason ? { stopReason } : {}) })
+  } catch (err) {
+    if (controller.signal.aborted) {
+      sink.send({ requestId: '', type: 'done' })
+      return
+    }
+    sink.send({
+      requestId: '',
+      type: 'error',
+      error: err instanceof Error ? err.message : String(err),
+      ...(err instanceof AiTimeoutError
+        ? { errorCode: 'timeout' as const }
+        : err instanceof AiCreditsError
+          ? { errorCode: 'credits' as const }
+          : isAiNetworkError(err)
+            ? { errorCode: 'network' as const }
+            : isAiOverloadedError(err)
+              ? { errorCode: 'overloaded' as const }
+              : {}),
+    })
+  }
+}
+
+// ----- IPC handlers ----------------------------------------------------------
 
 export function registerAiCoreHandlers(): void {
   registerHandle('ai:get-settings', () => aiSettings)
   registerHandle('ai:set-settings', (_event: unknown, settings: unknown) => {
-    aiSettings = { ...aiSettings, ...(settings as Record<string, unknown>) }
+    const next = settings as AiSettings
+    if (!next || typeof next !== 'object') {
+      throw new Error('ai:set-settings expected an AiSettings object')
+    }
+    aiSettings = { ...aiSettings, ...next, providers: { ...aiSettings.providers, ...(next.providers || {}) } }
+    saveSettings(aiSettings)
     return { ok: true }
   })
 
@@ -31,306 +215,138 @@ export function registerAiCoreHandlers(): void {
     credits: 1000,
   }))
 
-  registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
-    const req = request as {
-      message?: string
-      system?: string
-      sessionId?: string
-      context?: unknown
-    }
-    const message = req.message || ''
-    const context = req.context
-
-    const minimaxKey = process.env.MINIMAX_API_KEY
-    const systemPrompt = req.system || '你是一个专业的办公助手，帮助用户处理文档、表格和幻灯片。'
-
-    try {
-      if (minimaxKey) {
-        const result = await callMiniMax(
-          minimaxKey,
-          [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: message },
-          ],
-          aiSettings.model || 'MiniMax-M3',
-        )
-
-        return {
-          id: result.id,
-          role: 'assistant',
-          content: result.content,
-          createdAt: Date.now(),
-          metadata: {
-            model: aiSettings.model || 'MiniMax-M3',
-            provider: 'minimax',
-            usage: result.usage,
-          },
-        }
-      }
-    } catch (error) {
-      console.error('MiniMax API error, falling back to mock:', error)
-    }
-
-    let content = generateAIResponse(message)
-    if (context) {
-      content = `基于您提供的文档内容，我来帮您分析：\n\n${content}\n\n如需进一步帮助，请告诉我具体问题。`
-    }
-
-    return {
-      id: `chat-${Date.now()}`,
-      role: 'assistant',
-      content,
-      createdAt: Date.now(),
-      metadata: {
-        model: aiSettings.model || 'mock',
-        provider: minimaxKey ? 'minimax' : 'mock',
-      },
-    }
-  })
-
-  registerHandle('ai:stream', async (event: unknown, request: unknown) => {
-    const req = request as { message?: string; sessionId?: string }
-    const sessionId = req.sessionId || `stream-${Date.now()}`
-
-    const abort = new AbortController()
-    AI_STREAMS.set(sessionId, { chunks: [], abort })
-
-    const messages = ['正在处理您的请求', '分析文档结构', '生成内容', '完成']
-
-    const sender = (event as { sender?: { send?: (ch: string, ...args: unknown[]) => void } })
-      ?.sender
-    if (sender?.send) {
-      for (const msg of messages) {
-        await new Promise((r) => setTimeout(r, 500))
-        sender.send('ai:stream-chunk', { sessionId, chunk: msg, done: false })
-      }
-      sender.send('ai:stream-chunk', { sessionId, chunk: '', done: true })
-    }
-
-    AI_STREAMS.delete(sessionId)
-    return { id: sessionId }
-  })
-
-  registerHandle('ai:stream-cancel', (_event: unknown, sessionId: unknown) => {
-    const stream = AI_STREAMS.get(sessionId as string)
-    if (stream) {
-      stream.abort.abort()
-      AI_STREAMS.delete(sessionId as string)
-    }
-    return { ok: true }
-  })
-
-  registerHandle('ai:web-search', async (_event: unknown, query: unknown, maxResults = 5) => {
-    return [
-      { title: `${query} - 结果 1`, url: 'https://example.com/1', snippet: '' },
-      { title: `${query} - 结果 2`, url: 'https://example.com/2', snippet: '需要配置 Tavily API' },
-    ].slice(0, maxResults as number)
-  })
-
-  registerHandle('ai:image-search', async (_event: unknown, query: unknown, maxResults = 5) => {
-    return [
-      { url: `https://picsum.photos/200?random=${Date.now()}`, title: `${query} 图片 1` },
-      { url: `https://picsum.photos/200?random=${Date.now() + 1}`, title: `${query} 图片 2` },
-    ].slice(0, maxResults as number)
+  registerHandle('ai:gsk-status', (_event: unknown, withEmail?: unknown) => {
+    if (withEmail === false) return { loggedIn: false }
+    return { loggedIn: true, email: 'web-user@genoffice.ai' }
   })
 
   registerHandle('ai:log-run-failure', () => ({ ok: true }))
 
-  registerHandle('ai:gsk-status', (_event: unknown, withEmail?: unknown) =>
-    withEmail ? { loggedIn: true, email: 'web-user@genoffice.ai' } : { loggedIn: true },
-  )
+  registerHandle('ai:codex-models', () => ({ models: [], defaultModel: '' }))
 
-  registerHandle('ai:generate-content', async (_event: unknown, request: unknown) => {
-    const req = request as { type?: string; topic?: string; length?: number; style?: string }
-    const { type = 'paragraph', topic = '', length = 200 } = req
-
-    const templates: Record<string, string> = {
-      paragraph: `关于"${topic}"的段落内容。`,
-      summary: `以下是关于"${topic}"的摘要总结。`,
-      outline: `# ${topic}大纲\n\n1. 介绍\n2. 主要内容\n3. 结论`,
-      introduction: `欢迎阅读关于"${topic}"的介绍。`,
-      conclusion: `总结以上内容，关于"${topic}"的主要观点是...`,
+  /**
+   * ai:chat — non-streaming one-shot call. Mirrors the Electron
+   * docs-main.ts:2987 handler so the shell's quick-prompt path works
+   * identically against the web build. The renderer ships `{settings, system,
+   * user}`; we resolve the active provider, gate on API key + model, and
+   * route through `chatForProvider` from `@genoffice/ai-provider` (same
+   * call the Electron side uses — no duplicate logic).
+   */
+  registerHandle('ai:chat', async (_event: unknown, request: unknown) => {
+    const req = request as AiChatRequest | undefined
+    if (!req || typeof req.user !== 'string') {
+      throw new Error('ai:chat expected { settings, system, user }')
     }
-
-    return {
-      id: `gen-${Date.now()}`,
-      type,
-      content: templates[type] || templates.paragraph,
-      tokens: Math.floor(length / 4),
+    const incoming = req.settings || aiSettings
+    const provider = incoming.provider
+    const config = incoming.providers?.[provider]
+    if (!config) {
+      return { ok: false, error: `AI provider "${provider}" not configured` } satisfies AiChatResponse
     }
-  })
-
-  registerHandle('ai:translate', async (_event: unknown, request: unknown) => {
-    const req = request as { text?: string; from?: string; to?: string }
-    return {
-      id: `trans-${Date.now()}`,
-      original: req.text || '',
-      translated: `[${req.to || 'en'}] ${req.text || ''}`,
-      from: req.from || 'auto',
-      to: req.to || 'en',
-    }
-  })
-
-  registerHandle('ai:summarize', async (_event: unknown, request: unknown) => {
-    const req = request as { text?: string; maxLength?: number }
-    const text = req.text || ''
-    const maxLength = req.maxLength || 100
-
-    return {
-      id: `sum-${Date.now()}`,
-      originalLength: text.length,
-      summary: text.slice(0, maxLength) + (text.length > maxLength ? '...' : ''),
-      keyPoints: ['要点1', '要点2', '要点3'],
-    }
-  })
-
-  registerHandle('ai:qa', async (_event: unknown, request: unknown) => {
-    const req = request as { question?: string; context?: string }
-    return {
-      id: `qa-${Date.now()}`,
-      question: req.question || '',
-      answer: `基于提供的内容，关于"${req.question}"的回答是...`,
-      confidence: 0.85,
-    }
-  })
-
-  registerHandle('ai:grammar-check', async (_event: unknown, text: unknown) => {
-    return {
-      id: `grammar-${Date.now()}`,
-      original: text,
-      corrected: text,
-      errors: [],
-      suggestions: [],
-    }
-  })
-
-  registerHandle('ai:extract-keywords', async (_event: unknown, _text: unknown) => {
-    return {
-      id: `kw-${Date.now()}`,
-      keywords: ['关键词1', '关键词2', '关键词3'],
-      score: [0.9, 0.7, 0.5],
-    }
-  })
-
-  registerHandle('ai:smart-summary', async (_event: unknown, args: unknown) => {
-    const { text, maxLength, type } = args as {
-      text: string
-      maxLength?: number
-      type?: 'brief' | 'detailed' | 'bullets'
-    }
-
-    const length = maxLength || 200
-    const summaryType = type || 'brief'
-
-    if (summaryType === 'brief') {
+    if (provider !== 'codex' && !config.apiKey) {
       return {
-        summary: text.slice(0, length) + (text.length > length ? '...' : ''),
-        keyPoints: ['要点1', '要点2'],
-        wordCount: text.length,
+        ok: false,
+        error: provider === 'genspark'
+          ? 'Genspark account is not signed in. Sign in to use Genspark credits.'
+          : `No API key configured for provider "${provider}". Open Settings → AI to add one.`,
+      } satisfies AiChatResponse
+    }
+    if (provider !== 'codex' && !config.model) {
+      return { ok: false, error: `No model selected for "${provider}".` } satisfies AiChatResponse
+    }
+    try {
+      const result = await chatForProvider(
+        provider,
+        config as AiProviderConfig,
+        req.system || '',
+        req.user,
+      )
+      if (!result.ok && isAiOverloadedError(result.error)) {
+        return { ok: false, error: 'The AI service is busy right now. Please retry shortly.' } satisfies AiChatResponse
       }
-    } else if (summaryType === 'bullets') {
-      return {
-        bullets: ['• 第一个要点', '• 第二个要点', '• 第三个要点'],
-        wordCount: text.length,
+      return result as AiChatResponse
+    } catch (err) {
+      if (isAiOverloadedError(err)) {
+        return { ok: false, error: 'The AI service is busy right now. Please retry shortly.' } satisfies AiChatResponse
       }
-    }
-
-    return {
-      summary: text.slice(0, length) + (text.length > length ? '...' : ''),
-      keyPoints: ['要点1', '要点2', '要点3'],
-      wordCount: text.length,
+      return { ok: false, error: err instanceof Error ? err.message : String(err) } satisfies AiChatResponse
     }
   })
 
-  registerHandle('ai:auto-translate', async (_event: unknown, args: unknown) => {
-    const { text, from, to } = args as { text: string; from?: string; to: string }
-
-    const langMap: Record<string, string> = {
-      zh: '中文',
-      en: 'English',
-      ja: '日本語',
-      ko: '한국어',
-      fr: 'Français',
-      de: 'Deutsch',
-      es: 'Español',
-      ru: 'Русский',
-    }
-
+  registerHandle('ai:web-search', async (_event: unknown, query: unknown) => {
+    // Free web search has no API key configured in the default web build.
+    // Surface that explicitly so the UI can render "search unavailable" rather
+    // than silently returning empty results.
     return {
-      original: text,
-      translated: `[${to}] ${text}`,
-      from: from || 'auto',
-      to,
-      fromLang: langMap[from || 'auto'] || '自动检测',
-      toLang: langMap[to] || to,
-      confidence: 0.95,
+      query: String(query ?? ''),
+      results: [],
+      error: 'web search requires a search-provider API key (Tavily/Serper). Configure in Settings → Search.',
     }
   })
 
-  registerHandle('ai:detect-language', async (_event: unknown, text: unknown) => {
-    const str = text as string
-    const hasChinese = /[\u4e00-\u9fff]/.test(str)
-    const hasJapanese = /[\u3040-\u309f\u30a0-\u30ff]/.test(str)
-    const hasKorean = /[\uac00-\ud7af]/.test(str)
-
-    if (hasChinese) return { language: 'zh', confidence: 0.98 }
-    if (hasJapanese) return { language: 'ja', confidence: 0.9 }
-    if (hasKorean) return { language: 'ko', confidence: 0.9 }
-
-    return { language: 'en', confidence: 0.85 }
+  registerHandle('ai:image-search', async (_event: unknown, query: unknown) => {
+    return {
+      query: String(query ?? ''),
+      results: [],
+      error: 'image search requires a media-provider key. Configure in Settings → Media.',
+    }
   })
 
-  // The original index.ts registered two `ai:sentiment` handlers. The second
-  // (more capable) one wins via `Map.set`; we keep that semantic.
-  registerHandle('ai:sentiment', async (_event: unknown, args: unknown) => {
-    const { text } = args as { text: string }
+  /**
+   * ai:stream IPC entry — used by the docs/sheets/slides renderers through
+   * their web-bridge transport. The request shape matches what Electron's
+   * docs-main.ts handler accepts: requestId, settings, system, messages,
+   * tools. We use the request's settings (renderer-side override) when
+   * present, falling back to the server's persisted settings.
+   */
+  registerHandle('ai:stream', async (event: unknown, request: unknown) => {
+    const req = request as {
+      requestId?: string
+      sessionId?: string
+      settings?: AiSettings
+      system?: string
+      messages?: Parameters<typeof streamForProvider>[3]
+      tools?: Parameters<typeof streamForProvider>[4]
+      maxTokens?: number
+    }
+    const requestId = req.requestId || `s-${Date.now()}`
+    const settings = req.settings || aiSettings
+    const system = req.system || ''
+    const messages = req.messages || []
+    const tools = req.tools || []
+    const sender = (event as { sender?: { send?: (ch: string, ...args: unknown[]) => void } })?.sender
 
-    const positiveWords = [
-      '好',
-      '棒',
-      '优',
-      '赞',
-      '满意',
-      '喜欢',
-      'good',
-      'great',
-      'excellent',
-      'amazing',
-    ]
-    const negativeWords = ['差', '坏', '糟', '不满', '讨厌', 'bad', 'poor', 'terrible', 'awful']
-
-    const textLower = text.toLowerCase()
-    const positiveCount = positiveWords.filter((w) => textLower.includes(w)).length
-    const negativeCount = negativeWords.filter((w) => textLower.includes(w)).length
-
-    let sentiment = 'neutral'
-    let score = 0.5
-
-    if (positiveCount > negativeCount) {
-      sentiment = 'positive'
-      score = Math.min(0.9, 0.5 + positiveCount * 0.1)
-    } else if (negativeCount > positiveCount) {
-      sentiment = 'negative'
-      score = Math.max(0.1, 0.5 - negativeCount * 0.1)
+    if (!sender?.send) {
+      throw new Error('ai:stream requires an IPC sender (web bridge should provide one)')
     }
 
-    return {
-      sentiment,
-      score,
-      confidence: 0.85,
-      keywords:
-        positiveCount > negativeCount
-          ? ['positive']
-          : negativeCount > positiveCount
-            ? ['negative']
-            : [],
-      emotions: {
-        joy: sentiment === 'positive' ? 0.6 : 0.1,
-        sadness: sentiment === 'negative' ? 0.5 : 0.1,
-        anger: sentiment === 'negative' ? 0.3 : 0.05,
-        fear: 0.05,
-        surprise: 0.1,
-      },
+    const session = { abort: new AbortController(), chunks: 0 }
+    AI_STREAMS.set(requestId, session as unknown as { chunks: string[]; abort: AbortController })
+    AI_STREAM_SESSIONS.set(requestId, session)
+
+    try {
+      await runProviderStream(settings, system, messages, tools, req.maxTokens, {
+        onAbort: (c) => {
+          session.abort = c
+        },
+        send: (chunk) => {
+          session.chunks++
+          sender.send('ai:stream-chunk', { ...chunk, requestId })
+        },
+      })
+    } finally {
+      AI_STREAMS.delete(requestId)
+      AI_STREAM_SESSIONS.delete(requestId)
     }
+    return { id: requestId }
+  })
+
+  registerHandle('ai:stream-cancel', (_event: unknown, requestId: unknown) => {
+    const session = AI_STREAM_SESSIONS.get(String(requestId))
+    if (session) {
+      session.abort.abort()
+      AI_STREAM_SESSIONS.delete(String(requestId))
+    }
+    return { ok: true }
   })
 }

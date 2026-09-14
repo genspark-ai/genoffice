@@ -20,6 +20,7 @@ import {
   type DocWriteSpec,
 } from './doc-writer'
 import { EditQueueCard } from './EditQueueCard'
+import { createElectronTransport } from './transport'
 import {
   buildQueueInstruction,
   buildQueueSummary,

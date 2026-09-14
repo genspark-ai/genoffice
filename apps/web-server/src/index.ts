@@ -37,7 +37,12 @@ import {
   handlerCount,
   listChannels,
 } from './common/index.js'
-import { registerAiHandlers, generateAgentResponse } from './ai/index.js'
+import {
+  registerAiHandlers,
+  AI_STREAM_SESSIONS,
+  runProviderStream,
+} from './ai/index.js'
+import type { AiSettings, AiStreamChunk } from '@genoffice/ai-provider'
 import { registerProjectHandlers } from './projects/index.js'
 import { registerDocsHandlers } from './docs/index.js'
 import { registerSheetsHandlers } from './sheets/index.js'
@@ -238,62 +243,84 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === '/api/ai/stream' && request.method === 'POST') {
+    let sessionAbort: AbortController | undefined
+    let requestId: string | undefined
     try {
       const body = await readBody(request)
-      const { requestId, messages, tools } = JSON.parse(body || '{}')
+      const req = JSON.parse(body || '{}') as {
+        requestId?: string
+        sessionId?: string
+        settings?: AiSettings
+        system?: string
+        messages?: Parameters<typeof runProviderStream>[2]
+        tools?: Parameters<typeof runProviderStream>[3]
+        maxTokens?: number
+      }
+      requestId = req.requestId || `sse-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      // Import inside the handler to grab the live settings the AI module
+      // has just persisted (avoids a duplicate cached copy).
+      const { aiSettings } = await import('./ai/index.js').then((m) => m) as {
+        aiSettings: AiSettings
+      }
+      void aiSettings // (kept to surface the live reference if needed)
+      // The renderer can include its own settings override; otherwise use
+      // the server's persisted ones.
+      const settings: AiSettings = req.settings || (await import('./ai/chat.js' as string).catch(() => null))?.aiSettings
+        || (await import('./ai/index.js') as { aiSettings?: AiSettings }).aiSettings
+        || (req.settings as AiSettings)
 
       response.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
-        'X-Request-Id': requestId || '',
+        'X-Request-Id': requestId,
       })
 
-      const responseText = generateAgentResponse(messages || [])
-      const words = responseText.split(/([\s，。、！？]+)/)
-      const delay = 50
-
-      const streamChunk = (type: string, data: Record<string, unknown>) => {
-        response.write(`data: ${JSON.stringify({ requestId, type, ...data })}\n\n`)
-      }
-
-      const pingInterval = setInterval(() => {
+      const send = (chunk: AiStreamChunk) => {
         try {
-          response.write(`data: ${JSON.stringify({ requestId, type: 'ping' })}\n\n`)
+          response.write(`data: ${JSON.stringify({ ...chunk, requestId })}\n\n`)
         } catch {}
-      }, 30000)
-
-      let wordIndex = 0
-      const sendWord = () => {
-        if (wordIndex >= words.length) {
-          clearInterval(pingInterval)
-          response.write(
-            `data: ${JSON.stringify({ requestId, type: 'done', stopReason: 'stop' })}\n\n`,
-          )
-          response.end()
-          return
-        }
-
-        streamChunk('delta', { text: words[wordIndex] })
-        wordIndex++
-
-        if (wordIndex === Math.floor(words.length / 2) && tools && tools.length > 0) {
-          const toolCall = {
-            id: `tool-${Date.now()}`,
-            name: tools[0].name,
-            input: {},
-          }
-          streamChunk('tool-call', { toolCall })
-        }
-
-        setTimeout(sendWord, delay)
       }
 
-      sendWord()
+      // Track the session so /api/ai/stream/cancel can abort it.
+      sessionAbort = new AbortController()
+      AI_STREAM_SESSIONS.set(requestId, { abort: sessionAbort, chunks: 0 })
 
+      // If the client disconnects, stop the upstream call too.
       request.on('close', () => {
-        clearInterval(pingInterval)
+        sessionAbort?.abort()
+        AI_STREAM_SESSIONS.delete(requestId)
       })
+
+      await runProviderStream(settings, req.system || '', req.messages || [], req.tools || [], req.maxTokens, {
+        onAbort: (c) => {
+          sessionAbort = c
+        },
+        send,
+      })
+    } catch (error) {
+      sendJson(response, 500, { error: { message: String((error as Error)?.message) } })
+      sessionAbort?.abort()
+    } finally {
+      try { response.end() } catch {}
+    }
+    return
+  }
+
+  if (url.pathname === '/api/ai/stream/cancel' && request.method === 'POST') {
+    try {
+      const body = await readBody(request)
+      const { requestId } = JSON.parse(body || '{}') as { requestId?: string }
+      if (!requestId) {
+        sendJson(response, 400, { error: { message: 'requestId required' } })
+        return
+      }
+      const session = AI_STREAM_SESSIONS.get(requestId)
+      if (session) {
+        session.abort.abort()
+        AI_STREAM_SESSIONS.delete(requestId)
+      }
+      sendJson(response, 200, { ok: true, aborted: !!session })
     } catch (error) {
       sendJson(response, 500, { error: { message: String((error as Error)?.message) } })
     }
@@ -343,8 +370,27 @@ const server = createServer(async (request, response) => {
   }
 
   response.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' })
-  response.end('<h1>GenOffice Web Server</h1><p>Please build the apps first: npm run build:all</p>')
+  response.end(
+    `<!doctype html><meta charset="utf-8"><title>GenOffice Web Server</title>` +
+    `<style>body{font-family:system-ui;max-width:640px;margin:48px auto;padding:0 24px;color:#222;line-height:1.55}` +
+    `code{background:#f4f4f4;padding:2px 6px;border-radius:3px;font-size:0.92em}</style>` +
+    `<h1>GenOffice Web Server</h1>` +
+    `<p>The renderer apps were not found at <code>${STATIC_ROOT}</code>.</p>` +
+    `<p>Either run <code>npm run build:all</code> at the repo root and keep it on the same disk layout, ` +
+    `or set <code>WEB_STATIC_ROOT=/path/to/apps</code> to point at an apps directory you mounted.</p>`,
+  )
 })
+
+// Detect whether the renderer apps are available at STATIC_ROOT. When the
+// binary is shipped standalone (pkg) the operator is expected to set
+// WEB_STATIC_ROOT; in dev the apps live next to the source. We surface
+// this in the boot log so misconfiguration is obvious instead of silent.
+const shellIndex = resolve(STATIC_ROOT, 'shell', 'out', 'renderer', 'index.html')
+const staticReady = existsSync(shellIndex)
+const staticHint = staticReady
+  ? `║   📁 Static root: ${STATIC_ROOT}                    ║\n`
+  : `║   ⚠️  No renderer apps at ${STATIC_ROOT}          ║\n` +
+    `║      Set WEB_STATIC_ROOT=/path/to/apps or run npm run build:all  ║\n`
 
 server.listen(PORT, HOST, () => {
   console.log(`
@@ -356,7 +402,7 @@ server.listen(PORT, HOST, () => {
 ║   📁 Mode: Standalone (No Electron)                        ║
 ║                                                           ║
 ║   Apps: ${APPS.slice(0, 4).join(', ')}...
-║                                                           ║
+${staticHint}║                                                           ║
 ║   📊 Channels: ${String(handlerCount()).padEnd(25)}   ║
 ║   🔗 Features: AI, Collab, Files, Projects, AnyDoc        ║
 ║                                                           ║

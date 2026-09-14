@@ -21,7 +21,9 @@
     "bundle": "ncc build dist/index.js -o dist/bundle -m --license licenses.txt"
   },
   "dependencies": {
-    "@genoffice/ipc-bridge": "*"
+    "@genoffice/ipc-bridge": "*",
+    "@genoffice/ai-provider": "*",
+    "@genoffice/agent-core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

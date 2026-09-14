@@ -191,6 +191,29 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
       }),
     onCloseSaveRequest: (handler: () => void) => t.on('docs:close-save-request', () => handler()),
     reportCloseSaveResult: (ok: boolean) => t.send('docs:close-save-result', ok === true),
+    // The following methods are desktop-only features that have no web equivalent
+    // yet. Expose them as no-ops so the docs renderer can mount without crashing
+    // on missing members; the renderer's effect handlers run unconditionally.
+    onZoteroRequest: (_handler) => () => {
+      // Zotero is an external reference manager integration. In the web
+      // build there's no Zotero plugin host, so we accept no subscriptions
+      // and return an unsubscribe no-op.
+    },
+    respondToZotero: (_response) => {
+      // No Zotero host to reply to in the web build.
+    },
+    zoteroCommand: async () => ({ ok: false, error: 'zotero is desktop-only' }),
+    exportHtml: async () => {
+      // HTML export would render the document; web mode uses print-to-PDF
+      // for export instead. Surface an explicit unsupported result so the
+      // renderer's error handler can show a real reason.
+      return { ok: false, error: 'HTML export is not yet implemented in the web build' }
+    },
+    convertAltChunkHtml: async () => null,
+    consumeHeadlessExport: async () => null,
+    headlessExportDone: (_result) => {
+      // No headless export host in the web build (CLI uses Electron).
+    },
   }
   return api
 }

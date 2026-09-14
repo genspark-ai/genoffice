@@ -94,6 +94,13 @@ export interface AgentStreamRequest {
   system: string
   messages: AgentMessage[]
   tools: AgentToolDef[]
+  /** Optional settings passed by transport layers that don't have their own
+   * settings store (HTTP/web transports forward the renderer's settings
+   * alongside the request; the IPC transport reads them inside the main
+   * process). */
+  settings?: unknown
+  /** Optional per-turn output cap forwarded by transport layers. */
+  maxTokens?: number
 }
 
 export interface AgentStreamCallbacks {

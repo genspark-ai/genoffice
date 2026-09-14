@@ -835,7 +835,14 @@ export async function applyAiDocContent(
     // the document is born with this content: undo must not reach back to empty
     resetEditorHistory(editor)
   }
-  await save(ctx, false, true, `${content.title}.docx`)
+  // `content.title` may be missing when an upstream producer drops the
+  // field; fall back to the auto-derived name from the first heading, and
+  // finally a generic '未命名' so we never produce `undefined.docx`.
+  const safeTitle =
+    (typeof content.title === 'string' && content.title.trim()) ||
+    deriveAutoFileName(editor) ||
+    '未命名'
+  await save(ctx, false, true, `${safeTitle}.docx`)
 }
 
 async function saveOnce(

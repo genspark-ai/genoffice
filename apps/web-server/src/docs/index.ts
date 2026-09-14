@@ -135,9 +135,9 @@ export function registerDocsHandlers(): void {
     message: '请使用浏览器的打印功能 (Ctrl+P 或 Cmd+P)',
   }))
 
-  registerHandle('docs:consume-new-blank', () => ({ ok: true }))
+  registerHandle('docs:consume-new-blank', () => false)
   registerHandle('docs:consume-pending-open', () => null)
-  registerHandle('docs:consume-ai-doc-content', () => ({ ok: true }))
+  registerHandle('docs:consume-ai-doc-content', () => null)
   registerHandle('docs:write-recovery', () => ({ ok: true }))
   registerHandle('docs:password-intent-revision', () => 0)
 }

@@ -215,7 +215,7 @@ export function saveRecentSlides(slides: SlideInfo[]): void {
 export const AI_STREAMS: Map<
   string,
   {
-    chunks: string[]
+    chunks: unknown[]
     abort: AbortController
   }
 > = new Map()
