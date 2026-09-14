@@ -36,6 +36,7 @@ import {
   maxOutputTokensOf,
   streamForProvider,
 } from '@genoffice/ai-provider'
+import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
 
 // ----- settings persistence --------------------------------------------------
 
@@ -289,6 +290,34 @@ export function registerAiCoreHandlers(): void {
       query: String(query ?? ''),
       results: [],
       error: 'image search requires a media-provider key. Configure in Settings → Media.',
+    }
+  })
+
+  registerHandle('ai:fetch-image', async (_event: unknown, url: unknown) => {
+    if (typeof url !== 'string' || url.length > 4096) return null
+    try {
+      const response = await fetchRemoteImage(url)
+      if (!response?.ok || !response.body) return null
+      const declared = Number(response.headers.get('content-length') ?? 0)
+      if (declared > 20 * 1024 * 1024) return null
+      const reader = response.body.getReader()
+      const chunks: Buffer[] = []
+      let total = 0
+      for (;;) {
+        const part = await reader.read()
+        if (part.done) break
+        total += part.value.byteLength
+        if (total > 20 * 1024 * 1024) {
+          await reader.cancel()
+          return null
+        }
+        chunks.push(Buffer.from(part.value))
+      }
+      const contentType = response.headers.get('content-type') ?? ''
+      const mime = contentType.includes('png') ? 'image/png' : contentType.includes('gif') ? 'image/gif' : 'image/jpeg'
+      return { base64: Buffer.concat(chunks).toString('base64'), mime }
+    } catch {
+      return null
     }
   })
 

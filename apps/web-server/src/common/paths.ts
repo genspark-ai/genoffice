@@ -14,6 +14,7 @@
  * deployments where the apps are mounted at an arbitrary location.
  */
 import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 function resolveMetaDir(): string {
@@ -47,7 +48,12 @@ const here = resolveMetaDir()
 // exists next to the binary, prefer that layout.
 const candidateRepo = resolve(here, '..', '..', '..', '..')
 const candidateFromExec = resolve(here, '..', '..', '..')
-const ROOT = candidateRepo // keep the historical dev path
+const cwdRoot = resolve(process.cwd())
+const ROOT = existsSync(resolve(cwdRoot, 'apps'))
+  ? cwdRoot
+  : existsSync(resolve(candidateRepo, 'apps'))
+    ? candidateRepo
+    : candidateFromExec
 // STATIC_ROOT: env override → apps dir beside ROOT (dev) → apps dir
 // beside the binary (packaged) → fall back to ROOT/apps.
 const envStatic = process.env.WEB_STATIC_ROOT
