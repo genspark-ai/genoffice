@@ -186,12 +186,17 @@ describe("createSkillMarket — install / uninstall", () => {
 		await expect(market.install("nope")).rejects.toThrow(/Unknown skill "nope"/);
 	});
 
-	it("install() throws when the skill is already installed", async () => {
+	it("install() is idempotent: re-installing overwrites SKILL.md and refreshes installedAt", async () => {
 		const market = createSkillMarket({ catalog: CATALOG, skillsDir, fileSystem: fs });
-		await market.install("docs-translator");
-		await expect(market.install("docs-translator")).rejects.toThrow(
-			/already installed/,
-		);
+		const first = await market.install("docs-translator");
+		// tiny delay so installedAt timestamps differ
+		await new Promise((r) => setTimeout(r, 5));
+		const second = await market.install("docs-translator");
+		// resolves with the same record shape; installedAt is refreshed
+		expect(second.name).toBe(first.name);
+		expect(second.installedAt).toBeGreaterThan(first.installedAt);
+		// still only one entry in the index
+		expect(await market.installedNames()).toEqual(["docs-translator"]);
 	});
 
 	it("uninstall() removes both the directory contents and the index entry", async () => {

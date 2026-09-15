@@ -123,12 +123,6 @@ export function createSkillMarket(opts: SkillMarketOptions): SkillMarket {
 		);
 	}
 
-	async function ensureNotInstalled(name: string, records: readonly InstallRecord[]): Promise<void> {
-		if (records.some((record) => record.name === name)) {
-			throw new Error(`Skill "${name}" is already installed in ${skillsDir}`);
-		}
-	}
-
 	async function upsertRecord(
 		name: string,
 		existing: readonly InstallRecord[],
@@ -167,8 +161,10 @@ export function createSkillMarket(opts: SkillMarketOptions): SkillMarket {
 			if (!entry) {
 				throw new Error(`Unknown skill "${name}". Run market.list() to see what's available.`);
 			}
+			// idempotent install — re-installing overwrites the SKILL.md and
+			// refreshes installedAt so the caller can treat it as a fresh
+			// install or an in-place upgrade.
 			const existing = await readIndex();
-			await ensureNotInstalled(name, existing);
 			const targetDir = path.join(skillsDir, name);
 			await fs.mkdir(targetDir, { recursive: true });
 			await fs.writeFile(path.join(targetDir, "SKILL.md"), entry.body, "utf8");

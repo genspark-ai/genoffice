@@ -25,6 +25,7 @@ import {
   createSkillMarket,
   type SkillMarketEntry,
 } from '@genoffice/agent-skills'
+import { loadSkillsFromDir } from '@earendil-works/pi-coding-agent'
 import { DATA_DIR, registerHandle } from '../common/index'
 
 /**
@@ -1085,10 +1086,11 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
 }
 
 /**
- * Convert a marketplace entry into the SKILL.md body that pi's loader reads.
- * Frontmatter is intentionally minimal — pi reads `name` from the directory
- * and `description` from the file body, so the body just embeds the full
- * metadata so a downstream agent can reason about tools + scopes.
+ * Convert a marketplace entry into a pi-compliant SKILL.md. pi's loader is
+ * strict: the frontmatter `name` must match `^[a-z0-9-]+$` (the directory
+ * name we install to), and a `description` field is mandatory in the
+ * frontmatter — not in the body. We sanitize the human-readable `name`
+ * into a slug and put the original in `display_name`.
  */
 function renderSkillBody(entry: {
   id: string
@@ -1104,10 +1106,15 @@ function renderSkillBody(entry: {
   const tools = entry.tools.length ? entry.tools.join(', ') : '(none)'
   const scopes = entry.scopes.length ? entry.scopes.join(', ') : '(none)'
   const tags = (entry.tags ?? []).join(', ')
+  // pi's name constraint: lowercase letters, digits, hyphens only. The
+  // directory the file lives in is `entry.id` (always already a valid slug),
+  // so we use that as the canonical name.
+  const slug = entry.id.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 64)
   return [
     `---`,
-    `name: ${entry.name}`,
-    `id: ${entry.id}`,
+    `name: ${slug}`,
+    `display_name: ${entry.name}`,
+    `description: ${entry.description.replace(/[\r\n]+/g, ' ').slice(0, 1024)}`,
     `version: ${entry.version}`,
     `author: ${entry.author}`,
     `category: ${entry.category}`,
@@ -1120,11 +1127,11 @@ function renderSkillBody(entry: {
     ``,
     `## Tools`,
     ``,
-    tools,
+    `\`${tools}\``,
     ``,
     `## Required permissions`,
     ``,
-    scopes,
+    `\`${scopes}\``,
     ``,
   ]
     .filter((line) => line !== '')
@@ -1132,26 +1139,28 @@ function renderSkillBody(entry: {
 }
 
 /**
- * Marketplace → SkillMarketEntry adapter. Only uploaded (community) entries
- * make sense as pi skills — curated ones are bundled with the binary and
- * loaded at boot.
+ * Marketplace → SkillMarketEntry adapter. Includes BOTH curated and
+ * community-uploaded entries so installing a marketplace skill always
+ * produces a SKILL.md that pi's loader can pick up on next reload.
+ * (Previously this only saw uploaded entries, which silently skipped
+ * every curated skill — see W34 fix.)
  */
 function skillMarketCatalog(): SkillMarketEntry[] {
-  return loadUploaded().map((u) => ({
-    name: u.entry.id,
-    description: u.entry.description,
-    ...(u.entry.version ? { version: u.entry.version } : {}),
-    tags: ['uploaded', u.entry.category, ...(u.entry.tags ?? [])],
+  return allMarketplaceSkills().map((e) => ({
+    name: e.id,
+    description: e.description,
+    ...(e.version ? { version: e.version } : {}),
+    tags: e.tags ?? [],
     body: renderSkillBody({
-      id: u.entry.id,
-      name: u.entry.name,
-      description: u.entry.description,
-      version: u.entry.version,
-      author: u.entry.author || 'Anonymous',
-      tools: u.entry.tools,
-      scopes: u.entry.scopes,
-      category: u.entry.category,
-      tags: u.entry.tags,
+      id: e.id,
+      name: e.name,
+      description: e.description,
+      version: e.version,
+      author: e.author || 'Anonymous',
+      tools: e.tools,
+      scopes: e.scopes,
+      category: e.category,
+      tags: e.tags,
     }),
   }))
 }
@@ -1200,22 +1209,24 @@ export function registerSkillHandlers(): void {
 
   registerHandle('home:uninstall-skill', async (_event: unknown, args: unknown) => {
     const { id } = (args || {}) as { id: SkillKind }
-    const skill = loadSkills().find((s) => s.id === id)
-    if (!skill) return { ok: false, error: `Skill "${id}" not found` }
-    if (skill.builtIn) return { ok: false, error: `Cannot uninstall built-in skill "${id}"` }
-    const skills = loadSkills().filter((s) => s.id !== id)
-    saveSkills(skills)
-    // also remove from pi's skillsDir so the agent loop won't see it on next reload
-    if (!skill.builtIn) {
-      try {
-        await getSkillMarket().uninstall(id)
-      } catch (err) {
-        // the disk delete is best-effort — skills.json has already been updated
-        // and the failure is already logged; surface it but don't block the uninstall
-        console.warn(`[skills] pi uninstall failed for ${id}:`, err)
-      }
+    const all = loadSkills()
+    const skill = all.find((s) => s.id === id)
+    // Built-in skills can never be uninstalled.
+    if (skill?.builtIn) {
+      return { ok: false, error: `Cannot uninstall built-in skill "${id}"` }
     }
-    return { ok: true, skills }
+    // For non-builtin skills (or skills missing from the in-memory cache),
+    // always remove the SKILL.md from pi's skillsDir. The skill may have
+    // been installed by a previous server version that didn't update
+    // skills.json, so we can't trust the cache alone.
+    const remaining = skill ? all.filter((s) => s.id !== id) : all
+    saveSkills(remaining)
+    try {
+      await getSkillMarket().uninstall(id)
+    } catch (err) {
+      console.warn(`[skills] pi uninstall failed for ${id}:`, err)
+    }
+    return { ok: true, skills: remaining }
   })
 
   registerHandle('home:reset-skills', () => {
@@ -1301,18 +1312,19 @@ export function registerSkillHandlers(): void {
     // entries this is what makes the agent actually see the new tool on
     // the next reload; for curated entries the loader already has them
     // bundled so we skip the disk write (which would fail: not in catalog).
-    const isCommunityUpload = loadUploaded().some((u) => u.entry.id === id)
-    if (isCommunityUpload) {
-      try {
-        await getSkillMarket().install(id)
-      } catch (err) {
-        // surface the disk error but keep the UI state — re-trying without
-        // the marketplace entry may resolve transient fs issues
-        console.warn(`[skills] pi install failed for ${id}:`, err)
-      }
+    // ALL marketplace installs (curated + community) write a SKILL.md that
+    // pi's loader can pick up on next reload. Curated entries are NOT
+    // pre-bundled as pi skills — they're just catalog metadata — so writing
+    // the SKILL.md is what actually makes the new tool visible to the agent.
+    try {
+      await getSkillMarket().install(id)
+    } catch (err) {
+      // surface the disk error but keep the UI state — re-trying without
+      // the marketplace entry may resolve transient fs issues
+      console.warn(`[skills] pi install failed for ${id}:`, err)
     }
     bumpMarketplaceDownloads('skill', id)
-    return { ok: true, installed: installedEntry, skills: next, piInstalled: isCommunityUpload }
+    return { ok: true, installed: installedEntry, skills: next, piInstalled: true }
   })
 
   registerHandle('home:install-plugin', (_event: unknown, args: unknown) => {
@@ -1623,7 +1635,21 @@ export function registerSkillHandlers(): void {
   registerHandle('home:list-pi-skills', async () => {
     const market = getSkillMarket()
     const records = await market.installedRecords()
-    return { skillsDir: PI_SKILLS_DIR, records }
+    const parsed = loadSkillsFromDir({ dir: PI_SKILLS_DIR, source: 'marketplace' })
+    return {
+      skillsDir: PI_SKILLS_DIR,
+      records,
+      piSkills: parsed.skills.map((s) => ({
+        name: s.name,
+        description: s.description,
+        filePath: s.filePath,
+      })),
+      diagnostics: parsed.diagnostics.map((d) => ({
+        type: d.type,
+        message: d.message,
+        path: d.path,
+      })),
+    }
   })
 
   // ── 复合接口: 一次返回 skills + plugins ──
