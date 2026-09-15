@@ -4257,7 +4257,7 @@ export function App(): React.JSX.Element {
         onApplyProtectedRanges={applyProtectedRanges}
         onGetDefinedNames={definedNameRows}
         onDefinedNameAction={handleDefinedNameAction}
-        onGetPivotFields={() => pivotFieldOptionsImpl(pivotContext())}
+        onGetPivotFields={(sourceRange) => pivotFieldOptionsImpl(pivotContext(), sourceRange)}
         onGetSourceRange={() => getSourceRangeImpl(pivotContext())}
         onCreatePivot={(config) => handleCreatePivotImpl(pivotContext(), config)}
         onGetPivotEditSeed={() => pivotEditInitialImpl(pivotContext())}

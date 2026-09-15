@@ -89,7 +89,8 @@ export function inferContinuousRegion(
       }
     }
   }
-  // Need at least header plus one data row
-  if (endRow <= startRow) return null
+  // A capped scan has not found the boundary; never return a truncated source.
+  // Need at least header plus one data row.
+  if (grew || endRow <= startRow) return null
   return { startRow, startColumn, endRow, endColumn }
 }

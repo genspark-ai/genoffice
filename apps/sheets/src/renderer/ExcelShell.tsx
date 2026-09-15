@@ -255,8 +255,8 @@ interface ExcelShellProps {
     activeSheetId: string | null
   }
   readonly onDefinedNameAction: (action: DefinedNameAction) => string | null
-  /// Field choices for the Pivot dialog, read from the selection's header row.
-  readonly onGetPivotFields: () => PivotField[]
+  /// Subtotals use the selection; pivots pass their resolved source range.
+  readonly onGetPivotFields: (sourceRange?: string) => PivotField[]
   readonly onGetSourceRange: () => string
   readonly onCreatePivot: (config: OoXmlPivotConfig) => string | null
   /// A3 editing of an existing pivot: when it returns null, App has already shown
@@ -806,14 +806,18 @@ export function ExcelShell({
             />
           )
         })()}
-      {showPivotDialog && (
-        <PivotDialog
-          fields={onGetPivotFields()}
-          sourceRange={onGetSourceRange()}
-          onCreate={onCreatePivot}
-          onClose={() => setShowPivotDialog(false)}
-        />
-      )}
+      {showPivotDialog &&
+        (() => {
+          const sourceRange = onGetSourceRange()
+          return (
+            <PivotDialog
+              fields={onGetPivotFields(sourceRange)}
+              sourceRange={sourceRange}
+              onCreate={onCreatePivot}
+              onClose={() => setShowPivotDialog(false)}
+            />
+          )
+        })()}
       {pivotEditSeed && (
         <PivotDialog
           mode="edit"

@@ -20,6 +20,7 @@ import { t } from './i18n/locale'
 import type { OoXmlPivotConfig, PivotEditSeed, PivotField } from './PivotDialog'
 import type { SlicerMember, SlicerUiState } from './SlicerPanel'
 import type { TimelineUiState } from './TimelinePanel'
+import { resolvePivotSource } from './pivot-source'
 import type { LazyWorkbookState, UniverRuntime } from './univer-state'
 import {
   applyAiPivotAdd,
@@ -201,10 +202,20 @@ export function refreshPivotTables(ctx: PivotActionContext, sheetId: string): nu
   return refreshed
 }
 
-export function pivotFieldOptions(ctx: PivotActionContext): { label: string; colIndex: number }[] {
-  const range = ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveRange()
+export function pivotFieldOptions(
+  ctx: PivotActionContext,
+  sourceRange?: string,
+): { label: string; colIndex: number }[] {
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  const range = sourceRange
+    ? workbook?.getActiveSheet()?.getRange(sourceRange)
+    : workbook?.getActiveRange()
   if (!range || range.getHeight() < 2) return []
-  const headerRow = range.getValues()[0] ?? []
+  const headerRow =
+    workbook
+      ?.getActiveSheet()
+      ?.getRange(range.getRow(), range.getColumn(), 1, range.getWidth())
+      .getValues()[0] ?? []
   const start = range.getColumn()
   return headerRow.slice(0, 26).map((header, offset) => ({
     label:
@@ -227,7 +238,7 @@ export function handleCreatePivot(
   const state = ctx.lazyWorkbookRef.current
   if (!state) return t('appOpenXlsxFirst')
   const sheetId = worksheet.getSheetId()
-  const parts = pivotConfigToOpParts(config, pivotFieldOptions(ctx))
+  const parts = pivotConfigToOpParts(config, pivotFieldOptions(ctx, config.sourceRange))
   if (typeof parts === 'string') return parts
   try {
     applyAiPivotAdd(runtime, state, {
@@ -379,10 +390,22 @@ export function handleEditPivotApply(
 }
 
 export function getSourceRange(ctx: PivotActionContext): string {
-  const range = ctx.univerRef.current?.univerAPI.getActiveWorkbook()?.getActiveRange()
-  if (!range) return ''
-  const start = `${columnLabel(range.getColumn())}${range.getRow() + 1}`
-  const end = `${columnLabel(range.getColumn() + range.getWidth() - 1)}${range.getRow() + range.getHeight() - 1 + 1}`
+  const workbook = ctx.univerRef.current?.univerAPI.getActiveWorkbook()
+  const worksheet = workbook?.getActiveSheet()
+  const range = workbook?.getActiveRange()
+  if (!range || !worksheet) return ''
+  const source = resolvePivotSource(
+    worksheet,
+    {
+      startRow: range.getRow(),
+      startColumn: range.getColumn(),
+      endRow: range.getRow() + range.getHeight() - 1,
+      endColumn: range.getColumn() + range.getWidth() - 1,
+    },
+    ctx.lazyWorkbookRef.current,
+  )
+  const start = `${columnLabel(source.startColumn)}${source.startRow + 1}`
+  const end = `${columnLabel(source.endColumn)}${source.endRow + 1}`
   return `${start}:${end}`
 }
 
