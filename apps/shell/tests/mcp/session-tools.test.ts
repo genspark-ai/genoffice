@@ -63,22 +63,22 @@ describe('createSessionTools', () => {
   it('begins a session and saves it to the active family driver, then ends it', async () => {
     const host = createSessionHost()
     const saved: Array<{ wcId: number; path: string; overwrite: boolean }> = []
-    const docx: FamilyDriver = {
-      ...driver('docx', 11),
+    const pptx: FamilyDriver = {
+      ...driver('pptx', 11),
       save: async (wcId, path, overwrite) => {
         saved.push({ wcId, path, overwrite })
         return { ok: true, path }
       },
     }
-    const [create, save] = createSessionTools([docx], host)
+    const [create, save] = createSessionTools([pptx], host)
 
-    const created = (await create!.handler({ family: 'docx' })) as { sessionId: number }
+    const created = (await create!.handler({ family: 'pptx' })) as { sessionId: number }
     expect(created.sessionId).toBe(11)
-    expect(host.current()?.family).toBe('docx')
+    expect(host.current()?.family).toBe('pptx')
 
-    const result = await save!.handler({ path: '/tmp/out.docx', overwrite: true })
-    expect(result).toEqual({ ok: true, path: '/tmp/out.docx' })
-    expect(saved).toEqual([{ wcId: 11, path: '/tmp/out.docx', overwrite: true }])
+    const result = await save!.handler({ path: '/tmp/out.pptx', overwrite: true })
+    expect(result).toEqual({ ok: true, path: '/tmp/out.pptx' })
+    expect(saved).toEqual([{ wcId: 11, path: '/tmp/out.pptx', overwrite: true }])
     expect(host.current()).toBeNull()
   })
 
