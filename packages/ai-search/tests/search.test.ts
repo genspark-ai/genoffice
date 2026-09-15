@@ -169,13 +169,25 @@ describe('imageSearch (Serper)', () => {
               imageUrl: 'https://gettyimages.com/x.jpg',
               link: 'https://gettyimages.com',
             },
+            {
+              title: 'review',
+              imageUrl: 'https://cdn.example.com/shutterstock-review.png',
+              link: 'https://example.com/review',
+            },
+            {
+              title: 'subdomain',
+              imageUrl: 'https://media.shutterstock.com/y.jpg',
+              link: 'https://media.shutterstock.com',
+            },
           ],
         },
       }
     })
     const r = await imageSearch('cats', 8)
     expect(r.method).toBe('serper')
-    expect(r.images).toHaveLength(1) // getty is filtered out
+    // getty host + shutterstock subdomain filtered out; a mere path
+    // mention of a stock host on an unrelated domain is kept
+    expect(r.images.map((i) => i.title)).toEqual(['good', 'review'])
     expect(r.images[0]).toMatchObject({
       imageUrl: 'https://cdn.example.com/a.jpg',
       width: 800,

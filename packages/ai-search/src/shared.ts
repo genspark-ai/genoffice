@@ -18,6 +18,18 @@ export interface ImageSearchResult {
 // Known stock-photo hosts skipped during image search (matches the upstream filter list)
 export const COPYRIGHT_HOSTS = ['gettyimages', 'istockphoto', 'shutterstock', 'corbis']
 
+/**
+ * True when an image URL lives on a stock-photo host. Scoped to the hostname
+ * (not a full-URL substring): a blog image whose *path* merely mentions a
+ * stock site ("…/shutterstock-review.png") is kept, while host matching keeps
+ * the previous behavior (gettyimages.com and its subdomains stay blocked).
+ */
+export function isCopyrightHost(imageUrl: string): boolean {
+  const host = safeHost(imageUrl).toLowerCase()
+  if (!host) return false
+  return COPYRIGHT_HOSTS.some((d) => host.includes(d))
+}
+
 export function safeHost(url: unknown): string {
   try {
     return new URL(String(url)).hostname
