@@ -3,7 +3,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { DATA_DIR, registerHandle } from '../common/index.js'
+import { DATA_DIR, registerHandle } from '../common/index'
 
 const MARKDOWN_ASSET_DIR = join(DATA_DIR, 'markdown-assets')
 const IMAGE_MIME: Record<string, string> = {

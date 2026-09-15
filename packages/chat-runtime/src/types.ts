@@ -149,7 +149,7 @@ export interface ChatRun {
   /** Most recent change plan emitted by a tool, if any. */
   lastChangePlan?: ChatChangePlan | undefined
   /** Normalised error, if the run failed. */
-  error?: import('./errors.js').AIError | undefined
+  error?: import('./errors').AIError | undefined
   /** True when the run ended because the user cancelled. */
   cancelled?: boolean | undefined
 }

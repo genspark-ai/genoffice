@@ -2,7 +2,7 @@
  * Offline queue — store/sync/clear actions taken while disconnected.
  * In-memory only; cleared on process restart.
  */
-import { OFFLINE_QUEUE, registerHandle } from '../common/index.js'
+import { OFFLINE_QUEUE, registerHandle } from '../common/index'
 
 export function registerOfflineHandlers(): void {
   registerHandle('offline:queue', (_event: unknown, args: unknown) => {

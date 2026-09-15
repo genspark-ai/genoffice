@@ -3,7 +3,7 @@
  * main process (convert-office, password get/submit/cancel).
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 export function registerPdfHandlers(): void {
   registerHandle('pdf:consume-pending', () => null)

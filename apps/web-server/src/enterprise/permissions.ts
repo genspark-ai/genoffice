@@ -4,7 +4,7 @@
  * `DOC_PERMISSIONS` Map of single strings); the enterprise set uses a
  * `string[]` per (doc, user) pair via `PERMISSIONS`.
  */
-import { PERMISSIONS, registerHandle } from '../common/index.js'
+import { PERMISSIONS, registerHandle } from '../common/index'
 
 export function registerEnterprisePermissionHandlers(): void {
   registerHandle('permissions:get', (_event: unknown, args: unknown) => {

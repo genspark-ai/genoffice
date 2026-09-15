@@ -13,8 +13,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { DATA_DIR, registerHandle } from '../common/index.js'
-import { CorruptError, InvalidArgumentError, NotFoundError } from './errors.js'
+import { DATA_DIR, registerHandle } from '../common/index'
+import { CorruptError, InvalidArgumentError, NotFoundError } from './errors'
 
 export interface SlideStyleTemplate {
   id: string

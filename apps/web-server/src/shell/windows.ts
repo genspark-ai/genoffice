@@ -2,7 +2,7 @@
  * Web-window channels — open/list/focus. State is in-memory; web windows
  * are URL pointers, not BrowserWindow handles.
  */
-import { WEB_WINDOWS, registerHandle } from '../common/index.js'
+import { WEB_WINDOWS, registerHandle } from '../common/index'
 
 export function registerWindowHandlers(): void {
   registerHandle('win:new', (_event: unknown, options: unknown) => {

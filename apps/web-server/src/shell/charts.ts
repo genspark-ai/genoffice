@@ -1,9 +1,9 @@
 /**
- * Chart generation + visualization dashboard. Generates SVG strings for
- * bar/pie charts (placeholder visualisations); dashboard endpoints return
- * skeleton structures.
+ * Chart generation + visualization dashboard. `chart:generate` renders real
+ * SVG from the caller's data; `visualization:create-dashboard` echoes the
+ * caller's widget layout. Both are pure transforms with no server state.
  */
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 export function registerChartHandlers(): void {
   registerHandle('chart:generate', async (_event: unknown, args: unknown) => {
@@ -98,12 +98,4 @@ export function registerChartHandlers(): void {
       createdAt: Date.now(),
     }
   })
-
-  registerHandle('visualization:get-chart-data', (_event: unknown, _args: unknown) => ({
-    labels: ['一月', '二月', '三月', '四月', '五月'],
-    datasets: [
-      { label: '销售额', data: [120, 150, 180, 140, 200] },
-      { label: '成本', data: [80, 90, 100, 85, 110] },
-    ],
-  }))
 }

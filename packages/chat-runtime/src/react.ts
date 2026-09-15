@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 
-import { ChatRuntime } from './runtime.js'
+import { ChatRuntime } from './runtime'
 import type {
   ChatChangePlan,
   ChatEvent,
@@ -17,7 +17,7 @@ import type {
   ChatRun,
   ChatSendOptions,
   ChatSession,
-} from './types.js'
+} from './types'
 
 export interface UseChatRuntimeResult {
   runtime: ChatRuntime
@@ -28,14 +28,14 @@ export interface UseChatRuntimeResult {
   /** Live phase for UI badges ('idle' | 'running' | 'streaming' | 'done' | 'error' | 'cancelled'). */
   phase: ChatRun['status']
   /** Last error encountered (normalised AIError or null). */
-  lastError: import('./errors.js').AIError | null
+  lastError: import('./errors').AIError | null
   /** Most recent change plan emitted (still pending apply). */
   lastChangePlan: ChatChangePlan | null
   send(opts: ChatSendOptions): Promise<ChatRun>
   cancel(): void
   applyChangePlan(plan: ChatChangePlan): void
   rejectChangePlan(plan: ChatChangePlan): void
-  snapshot(): import('./types.js').ChatSnapshot | null
+  snapshot(): import('./types').ChatSnapshot | null
 }
 
 export function useChatRuntime(options: ChatRuntimeOptions): UseChatRuntimeResult {
@@ -47,7 +47,7 @@ export function useChatRuntime(options: ChatRuntimeOptions): UseChatRuntimeResul
   const [, force] = useState(0)
   const [currentRun, setCurrentRun] = useState<ChatRun | null>(null)
   const [lastChangePlan, setLastChangePlan] = useState<ChatChangePlan | null>(null)
-  const [lastError, setLastError] = useState<import('./errors.js').AIError | null>(null)
+  const [lastError, setLastError] = useState<import('./errors').AIError | null>(null)
   const [session, setSession] = useState<ChatSession>(() => runtime.getSession())
 
   useEffect(() => {

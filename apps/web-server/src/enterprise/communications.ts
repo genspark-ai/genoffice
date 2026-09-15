@@ -3,7 +3,7 @@
  * `common/state.ts`; these handlers just translate wire payloads to/from
  * the shared maps.
  */
-import { CALENDARS, MAILS, registerHandle } from '../common/index.js'
+import { CALENDARS, MAILS, registerHandle } from '../common/index'
 
 export function registerMailHandlers(): void {
   registerHandle('mail:send', async (_event: unknown, args: unknown) => {

@@ -10,10 +10,10 @@
  * details here.
  */
 
-import { classifyError } from './errors.js'
-import { loadOrCreateSession, appendMessage } from './session.js'
-import { startRun } from './run.js'
-import type { RunBridge } from './run.js'
+import { classifyError } from './errors'
+import { loadOrCreateSession, appendMessage } from './session'
+import { startRun } from './run'
+import type { RunBridge } from './run'
 import type {
   ChatCapability,
   ChatChangePlan,
@@ -27,7 +27,7 @@ import type {
   ChatSession,
   ChatSnapshot,
   ChatToolCallRecord,
-} from './types.js'
+} from './types'
 
 const userMessageCounter = { n: 0 }
 const toolCounter = { n: 0 }

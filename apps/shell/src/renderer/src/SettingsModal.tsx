@@ -16,7 +16,10 @@ import {
   clampMaxOutputTokens,
 } from '@genoffice/ai-provider/browser'
 import type {
+  MarketplaceCategory,
+  MarketplaceCategoryInfo,
   MarketplaceEntry,
+  MarketplaceUploadPayload,
   PluginEntry,
   PluginKind,
   SkillEntry,
@@ -1072,29 +1075,83 @@ export interface SettingsModalProps {
  *  backed by @genoffice/agent-skills (11 built-in extensions: 8 skills + 3 plugins).
  *  Each entry can be enabled/disabled, hot-reloaded, or installed from marketplace.
  */
+type MpCategory = MarketplaceCategory
+type MpEntry = MarketplaceEntry
+
+/** 'a, b , c' → ['a','b','c'] — shared by the publish form */
+const splitList = (v: string): string[] =>
+  v.split(',').map((s) => s.trim()).filter(Boolean)
+
 function SkillsPluginsPane({ t }: { t: TFunc }) {
   const [skills, setSkills] = useState<SkillEntry[]>([])
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
-  const [marketplaceSkills, setMarketplaceSkills] = useState<MarketplaceEntry[]>([])
-  const [marketplacePlugins, setMarketplacePlugins] = useState<MarketplaceEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [installInput, setInstallInput] = useState('')
-  const [installMsg, setInstallMsg] = useState<string | null>(null)
+  // Marketplace v2 — search / filter / sort
+  const [mpSkills, setMpSkills] = useState<MpEntry[]>([])
+  const [mpPlugins, setMpPlugins] = useState<MpEntry[]>([])
+  const [mpCategories, setMpCategories] = useState<MarketplaceCategoryInfo[]>([])
+  const [mpTotal, setMpTotal] = useState(0)
+  const [mpQ, setMpQ] = useState('')
+  const [mpCategory, setMpCategory] = useState<MpCategory | ''>('')
+  const [mpType, setMpType] = useState<'all' | 'skill' | 'plugin'>('all')
+  const [mpSort, setMpSort] = useState<'popular' | 'rating' | 'newest' | 'name'>('popular')
+  const [mpInstalled, setMpInstalled] = useState<'all' | boolean>('all')
+  const [minRating, setMinRating] = useState(0)
   const [marketMsg, setMarketMsg] = useState<string | null>(null)
+  const [detailEntry, setDetailEntry] = useState<MpEntry | null>(null)
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploadKind, setUploadKind] = useState<'skill' | 'plugin'>('skill')
+  const [uploadUploads, setUploadUploads] = useState<{ file: string; id?: string; name?: string; kind?: string; uploadedAt?: string }[]>([])
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null)
+  const [uploadForm, setUploadForm] = useState({
+    id: '',
+    name: '',
+    description: '',
+    version: '1.0.0',
+    tools: '',
+    scopes: '',
+    category: 'productivity' as MpCategory,
+    tags: '',
+    author: '',
+    icon: '',
+  })
+  const [uploadMsg, setUploadMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [uploading, setUploading] = useState(false)
 
   const refresh = useCallback(async () => {
-    const [s, p, ms, mp] = await Promise.all([
+    const [s, p, mp, cats] = await Promise.all([
       window.aiOffice.listSkills?.() ?? Promise.resolve([]),
       window.aiOffice.listPlugins?.() ?? Promise.resolve([]),
-      window.aiOffice.listMarketplaceSkills?.() ?? Promise.resolve([]),
-      window.aiOffice.listMarketplacePlugins?.() ?? Promise.resolve([]),
+      window.aiOffice.marketplaceSearch?.({
+        q: mpQ,
+        category: mpCategory || undefined,
+        type: mpType === 'all' ? undefined : mpType,
+        minRating: minRating || undefined,
+        installed: mpInstalled,
+        sort: mpSort,
+      }) ?? Promise.resolve({ skills: [], plugins: [], total: 0 }),
+      window.aiOffice.marketplaceCategories?.() ?? Promise.resolve({ categories: [] }),
     ])
     setSkills(s)
     setPlugins(p)
-    setMarketplaceSkills(ms as MarketplaceEntry[])
-    setMarketplacePlugins(mp as MarketplaceEntry[])
+    setMpSkills((mp as { skills?: MpEntry[] }).skills ?? [])
+    setMpPlugins((mp as { plugins?: MpEntry[] }).plugins ?? [])
+    setMpTotal((mp as { total?: number }).total ?? 0)
+    setMpCategories((cats as { categories?: MarketplaceCategoryInfo[] }).categories ?? [])
     setLoading(false)
-  }, [])
+  }, [mpQ, mpCategory, mpType, mpSort, mpInstalled, minRating])
+
+  useEffect(() => {
+    const t = setTimeout(() => { void refresh() }, 120)
+    return () => clearTimeout(t)
+  }, [refresh])
+
+  useEffect(() => {
+    if (!showUpload) return
+    void window.aiOffice.marketplaceListUploads?.().then((r) => {
+      setUploadUploads((r as { uploads?: typeof uploadUploads }).uploads ?? [])
+    })
+  }, [showUpload])
 
   useEffect(() => {
     void refresh()
@@ -1130,20 +1187,6 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
   const resetPlugins = async () => {
     const next = await window.aiOffice.resetPlugins?.()
     if (Array.isArray(next)) setPlugins(next)
-  }
-
-  const install = async () => {
-    const name = installInput.trim()
-    if (!name) return
-    setInstallMsg(null)
-    const res = await window.aiOffice.installSkill?.(name)
-    if (res?.ok) {
-      setInstallMsg(`✓ Installed "${name}" — click reload to activate`)
-      setInstallInput('')
-      await refresh()
-    } else {
-      setInstallMsg(`✗ ${res?.error || 'Install failed'}`)
-    }
   }
 
   const installMarketSkill = async (id: string) => {
@@ -1188,6 +1231,129 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
     } else {
       setMarketMsg(`✗ ${res?.error || 'Uninstall failed'}`)
     }
+  }
+
+  const openDetail = async (entry: MpEntry, kind: 'skill' | 'plugin') => {
+    setDetailEntry(entry)
+    const res = await window.aiOffice.marketplaceDetail?.(entry.id, kind)
+    if (res?.ok && res.entry) setDetailEntry(res.entry)
+  }
+
+  const submitUpload = async () => {
+    setUploadMsg(null)
+    setUploading(true)
+    try {
+      const payload: MarketplaceUploadPayload = {
+        id: uploadForm.id.trim(),
+        name: uploadForm.name.trim(),
+        description: uploadForm.description.trim(),
+        version: uploadForm.version.trim(),
+        tools: splitList(uploadForm.tools),
+        scopes: splitList(uploadForm.scopes),
+        category: uploadForm.category,
+        tags: splitList(uploadForm.tags),
+        author: uploadForm.author.trim() || undefined,
+        icon: uploadForm.icon.trim() || undefined,
+      }
+      const res = await window.aiOffice.marketplaceUpload?.(uploadKind, payload)
+      if (res?.ok) {
+        setUploadMsg({ kind: 'ok', text: res.message ?? '✓' })
+        setUploadForm({
+          id: '',
+          name: '',
+          description: '',
+          version: '1.0.0',
+          tools: '',
+          scopes: '',
+          category: 'productivity',
+          tags: '',
+          author: '',
+          icon: '',
+        })
+        const listed = await window.aiOffice.marketplaceListUploads?.()
+        setUploadUploads((listed as { uploads?: typeof uploadUploads })?.uploads ?? [])
+        // a publish changes the catalog: re-run the search so the new entry
+        // shows up in the grid without the user having to touch a filter
+        await refresh()
+      } else {
+        setUploadMsg({ kind: 'err', text: res?.error ?? 'Upload failed' })
+      }
+    } catch (err) {
+      setUploadMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  /** marketplace grid card — icon, rating, tags, install/uninstall + detail */
+  const renderMpCard = (m: MpEntry, kind: 'skill' | 'plugin') => {
+    const catKey = ('mpCat' + m.category[0].toUpperCase() + m.category.slice(1)) as StringKey
+    return (
+      <article
+        key={`${kind}:${m.id}`}
+        className="set-mp-card"
+        data-mp-id={m.id}
+        data-mp-kind={kind}
+        data-installed={m.installed ? '1' : '0'}
+      >
+        <header className="set-mp-card-head">
+          <span className="set-mp-card-icon">{m.icon || m.name[0]}</span>
+          <div className="set-mp-card-title">
+            <span className="set-mp-card-name">{m.name}</span>
+            <span className="set-mp-card-sub">v{m.version} · {m.author}</span>
+          </div>
+          {m.featured && <span className="set-mp-featured">{t('mpFeatured')}</span>}
+        </header>
+
+        <p className="set-mp-card-desc">{m.description}</p>
+
+        <div className="set-mp-card-tags">
+          <span className="set-mp-tag set-mp-tag-cat">{t(catKey)}</span>
+          {m.tags.slice(0, 3).map((tag) => (
+            <span key={tag} className="set-mp-tag">{tag}</span>
+          ))}
+        </div>
+
+        <footer className="set-mp-card-foot">
+          <span className="set-mp-card-rating" title={t('mpRating')}>★ {m.rating.toFixed(1)}</span>
+          <span className="set-mp-card-downloads">↓ {m.downloads.toLocaleString()}</span>
+          <span className="set-mp-spacer" />
+          <button
+            type="button"
+            className="set-btn-mini"
+            onClick={() => void openDetail(m, kind)}
+            title={t('mpDetails')}
+          >
+            {t('mpDetails')}
+          </button>
+          {m.installed ? (
+            <button
+              type="button"
+              className="set-btn-mini set-btn-uninstall"
+              onClick={() =>
+                void (kind === 'skill'
+                  ? uninstallMarketSkill(m.id as SkillKind)
+                  : uninstallMarketPlugin(m.id))
+              }
+              title={t('uninstallBtn')}
+            >
+              − {t('uninstallBtn')}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="set-btn-mini set-btn-install"
+              onClick={() =>
+                void (kind === 'skill' ? installMarketSkill(m.id) : installMarketPlugin(m.id))
+              }
+              title={t('install')}
+            >
+              + {t('install')}
+            </button>
+          )}
+        </footer>
+      </article>
+    )
   }
 
   const renderSkillRow = (s: SkillEntry) => (
@@ -1299,131 +1465,371 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
         <ul className="set-skill-list" role="list">{plugins.map(renderPluginRow)}</ul>
       </div>
 
-      <div className="set-skill-section">
+      <div className="set-skill-section set-mp" data-marketplace="v2">
         <div className="set-skill-section-head">
           <h4>{t('marketplace')}</h4>
-          <span className="set-skill-count">{marketplaceSkills.length + marketplacePlugins.length}</span>
-        </div>
-        <div className="set-field-desc" style={{ marginBottom: 8 }}>{t('marketplaceDesc')}</div>
-        <div className="set-skill-install-row">
-          <input
-            type="text"
-            className="set-input"
-            placeholder={t('marketplacePlaceholder')}
-            value={installInput}
-            onChange={(e) => setInstallInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void install() }}
-          />
-          <button type="button" className="set-btn" onClick={() => void install()}>
-            {t('install')}
+          <span className="set-skill-count">{mpTotal}</span>
+          <span className="set-mp-spacer" />
+          <button
+            type="button"
+            className="set-btn set-btn-primary set-mp-publish"
+            onClick={() => { setShowUpload((v) => !v); setUploadMsg(null) }}
+          >
+            {showUpload ? t('mpClose') : t('mpUpload')}
           </button>
         </div>
-        {installMsg && <div className="set-install-msg">{installMsg}</div>}
 
-        <div className="set-marketplace-sub">
-          <h5>{t('marketplace')} (skills) · {marketplaceSkills.length}</h5>
-          <ul className="set-skill-list" role="list">
-            {marketplaceSkills.map((m) => (
-              <li key={m.id} className="set-skill-row" data-market-skill-id={m.id}>
-                <div className="set-skill-head">
-                  <span className="set-skill-name">{m.name}</span>
-                  <span
-                    className={`set-skill-badge ${m.installed ? 'set-skill-badge-enabled' : 'set-skill-badge-disabled'}`}
-                    data-installed={m.installed ? '1' : '0'}
-                  >
-                    {m.installed ? t('installedBadge') : t('availableBadge')}
-                  </span>
-                  {m.installed ? (
-                    <button
-                      type="button"
-                      className="set-btn-mini"
-                      onClick={() => void uninstallMarketSkill(m.id as SkillKind)}
-                      title={t('uninstallBtn')}
-                    >
-                      −
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="set-btn-mini"
-                      onClick={() => void installMarketSkill(m.id)}
-                      title={t('install')}
-                    >
-                      +
-                    </button>
-                  )}
+        {/* ── Search bar ─────────────────────────────────────────── */}
+        <div className="set-mp-searchrow">
+          <span className="set-mp-searchicon" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 14 14">
+              <circle cx="6" cy="6" r="4.4" stroke="currentColor" strokeWidth="1.5" fill="none" />
+              <path d="M9.4 9.4l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </span>
+          <input
+            type="text"
+            className="set-input set-mp-search"
+            placeholder={t('mpSearchPlaceholder')}
+            value={mpQ}
+            onChange={(e) => setMpQ(e.target.value)}
+            aria-label={t('mpSearchPlaceholder')}
+          />
+          {(mpQ || mpCategory || (mpInstalled !== 'all') || minRating > 0) && (
+            <button
+              type="button"
+              className="set-btn-mini set-mp-reset"
+              onClick={() => {
+                setMpQ('')
+                setMpCategory('')
+                setMpInstalled('all')
+                setMinRating(0)
+              }}
+            >
+              {t('mpResetFilters')}
+            </button>
+          )}
+        </div>
+
+        {/* ── Category chips ─────────────────────────────────────── */}
+        <div className="set-mp-chips" role="tablist" aria-label={t('mpCategory')}>
+          <button
+            type="button"
+            className={`set-mp-chip ${mpCategory === '' ? 'set-mp-chip-active' : ''}`}
+            onClick={() => setMpCategory('')}
+          >
+            {t('mpAll')}
+          </button>
+          {mpCategories.map((c) => {
+            const key = ('mpCat' + c.id[0].toUpperCase() + c.id.slice(1)) as StringKey
+            return (
+              <button
+                key={c.id}
+                type="button"
+                className={`set-mp-chip ${mpCategory === c.id ? 'set-mp-chip-active' : ''}`}
+                onClick={() => setMpCategory(mpCategory === c.id ? '' : c.id)}
+              >
+                {t(key)}
+                <span className="set-mp-chip-count">{c.count}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* ── Filter row: type / installed / rating / sort ────────── */}
+        <div className="set-mp-filters">
+          <div className="set-mp-seg" role="group">
+            {([['all', t('mpAll')], ['skill', t('mpTypeSkill')], ['plugin', t('mpTypePlugin')]] as const).map(
+              ([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`set-mp-segbtn ${mpType === v ? 'set-mp-segbtn-active' : ''}`}
+                  onClick={() => setMpType(v)}
+                >
+                  {label}
+                </button>
+              ),
+            )}
+          </div>
+
+          <div className="set-mp-seg" role="group">
+            {(
+              [
+                ['all', t('mpAll')],
+                [true, t('mpOnlyInstalled')],
+                [false, t('mpOnlyAvailable')],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={String(v)}
+                type="button"
+                className={`set-mp-segbtn ${mpInstalled === v ? 'set-mp-segbtn-active' : ''}`}
+                onClick={() => setMpInstalled(v)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="set-mp-seg set-mp-stars" role="group" aria-label={t('mpRating')}>
+            {[0, 3, 4, 4.5].map((r) => (
+              <button
+                key={r}
+                type="button"
+                className={`set-mp-segbtn ${minRating === r ? 'set-mp-segbtn-active' : ''}`}
+                onClick={() => setMinRating(r)}
+              >
+                {r === 0 ? t('mpAll') : `★ ${r}+`}
+              </button>
+            ))}
+          </div>
+
+          <select
+            className="set-mp-sort"
+            value={mpSort}
+            onChange={(e) => setMpSort(e.target.value as typeof mpSort)}
+            aria-label={t('mpSortPopular')}
+          >
+            <option value="popular">{t('mpSortPopular')}</option>
+            <option value="rating">{t('mpSortRating')}</option>
+            <option value="newest">{t('mpSortNewest')}</option>
+            <option value="name">{t('mpSortName')}</option>
+          </select>
+        </div>
+
+        {/* ── publish form ───────────────────────────────────────── */}
+        {showUpload && (
+          <div className="set-mp-upload" data-upload-form="1">
+            <h5>{t('mpUploadTitle')}</h5>
+            <div className="set-mp-upload-grid">
+              <label className="set-mp-field">
+                <span>{t('mpUploadKind')}</span>
+                <select
+                  value={uploadKind}
+                  onChange={(e) => setUploadKind(e.target.value as 'skill' | 'plugin')}
+                >
+                  <option value="skill">{t('mpTypeSkill')}</option>
+                  <option value="plugin">{t('mpTypePlugin')}</option>
+                </select>
+              </label>
+              <label className="set-mp-field">
+                <span>{t('mpUploadId')}</span>
+                <input
+                  value={uploadForm.id}
+                  placeholder="my-extension"
+                  onChange={(e) => setUploadForm({ ...uploadForm, id: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field">
+                <span>{t('mpUploadName')}</span>
+                <input
+                  value={uploadForm.name}
+                  placeholder="My Extension"
+                  onChange={(e) => setUploadForm({ ...uploadForm, name: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field">
+                <span>{t('mpUploadVersion')}</span>
+                <input
+                  value={uploadForm.version}
+                  placeholder="1.0.0"
+                  onChange={(e) => setUploadForm({ ...uploadForm, version: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field">
+                <span>{t('mpUploadAuthor')}</span>
+                <input
+                  value={uploadForm.author}
+                  placeholder="Community"
+                  onChange={(e) => setUploadForm({ ...uploadForm, author: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field">
+                <span>{t('mpUploadCategory')}</span>
+                <select
+                  value={uploadForm.category}
+                  onChange={(e) =>
+                    setUploadForm({ ...uploadForm, category: e.target.value as MpCategory })
+                  }
+                >
+                  {mpCategories.map((c) => {
+                    const key = ('mpCat' + c.id[0].toUpperCase() + c.id.slice(1)) as StringKey
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {t(key)}
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+              <label className="set-mp-field">
+                <span>{t('mpUploadIcon')}</span>
+                <input
+                  value={uploadForm.icon}
+                  maxLength={2}
+                  placeholder="🚀"
+                  onChange={(e) => setUploadForm({ ...uploadForm, icon: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field set-mp-field-wide">
+                <span>{t('mpUploadDesc')}</span>
+                <input
+                  value={uploadForm.description}
+                  placeholder={t('mpUploadDesc')}
+                  onChange={(e) => setUploadForm({ ...uploadForm, description: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field set-mp-field-wide">
+                <span>{t('mpUploadTools')}</span>
+                <input
+                  value={uploadForm.tools}
+                  placeholder="tool_a, tool_b"
+                  onChange={(e) => setUploadForm({ ...uploadForm, tools: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field set-mp-field-wide">
+                <span>{t('mpUploadScopes')}</span>
+                <input
+                  value={uploadForm.scopes}
+                  placeholder="files:read, network:out"
+                  onChange={(e) => setUploadForm({ ...uploadForm, scopes: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field set-mp-field-wide">
+                <span>{t('mpUploadTags')}</span>
+                <input
+                  value={uploadForm.tags}
+                  placeholder="tag1, tag2"
+                  onChange={(e) => setUploadForm({ ...uploadForm, tags: e.target.value })}
+                />
+              </label>
+            </div>
+            <div className="set-mp-upload-actions">
+              <button
+                type="button"
+                className="set-btn set-btn-primary"
+                disabled={uploading}
+                onClick={() => void submitUpload()}
+              >
+                {uploading ? '…' : t('mpUploadSubmit')}
+              </button>
+              <button
+                type="button"
+                className="set-btn"
+                onClick={() => { setShowUpload(false); setUploadMsg(null) }}
+              >
+                {t('mpUploadCancel')}
+              </button>
+            </div>
+            {uploadMsg && (
+              <div className="set-install-msg" data-upload-msg={uploadMsg.kind}>
+                {uploadMsg.kind === 'ok' ? `✓ ${uploadMsg.text}` : `✗ ${uploadMsg.text}`}
+              </div>
+            )}
+
+            <div className="set-mp-upload-history">
+              <h6>{t('mpUploadHistory')} · {uploadUploads.length}</h6>
+              {uploadUploads.length === 0 ? (
+                <div className="set-field-desc">{t('mpUploadEmpty')}</div>
+              ) : (
+                <ul className="set-skill-list" role="list">
+                  {uploadUploads.map((u) => (
+                    <li key={u.file} className="set-mp-upload-item">
+                      <code>{u.file}</code>
+                      <span>{u.name ?? u.id ?? ''}</span>
+                      <span className="set-mp-upload-kind">{u.kind ?? ''}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
+
+        {marketMsg && <div className="set-install-msg" data-market-msg="1">{marketMsg}</div>}
+
+        {/* ── Results grid ───────────────────────────────────────── */}
+        <div className="set-mp-layout">
+          <div className="set-mp-results">
+            {mpSkills.length + mpPlugins.length === 0 ? (
+              <div className="set-mp-empty">{t('mpNoResults')}</div>
+            ) : (
+              <div className="set-mp-grid" data-mp-grid="1">
+                {mpSkills.map((m) => renderMpCard(m, 'skill'))}
+                {mpPlugins.map((m) => renderMpCard(m, 'plugin'))}
+              </div>
+            )}
+          </div>
+
+          {detailEntry && (
+            <aside className="set-mp-detail" data-mp-detail={detailEntry.id}>
+              <div className="set-mp-detail-head">
+                <span className="set-mp-card-icon">{detailEntry.icon ?? detailEntry.name[0]}</span>
+                <div>
+                  <div className="set-mp-detail-name">{detailEntry.name}</div>
+                  <div className="set-mp-detail-meta">
+                    v{detailEntry.version} · {detailEntry.author}
+                  </div>
                 </div>
-                <div className="set-skill-desc">{m.description}</div>
-                <div className="set-skill-meta">
-                  <span>v{m.version}</span>
-                  <span>· {m.author}</span>
-                  <span>· {m.tools.length} {t('tools')}</span>
-                  <span>· {m.package}/{m.source.split('/').pop()}</span>
-                </div>
+                <button
+                  type="button"
+                  className="set-btn-mini"
+                  onClick={() => setDetailEntry(null)}
+                  aria-label={t('mpClose')}
+                >
+                  ×
+                </button>
+              </div>
+              <p className="set-mp-detail-desc">
+                {detailEntry.longDescription || detailEntry.description}
+              </p>
+              <div className="set-mp-detail-stats">
+                <span className="set-mp-card-rating">★ {detailEntry.rating.toFixed(1)}</span>
+                <span>
+                  {detailEntry.downloads.toLocaleString()} {t('mpDownloads')}
+                </span>
+              </div>
+              <div className="set-mp-detail-block">
+                <h6>{t('tools')} · {detailEntry.tools.length}</h6>
                 <div className="set-skill-scopes">
-                  {m.scopes.map((sc) => (
+                  {detailEntry.tools.map((tool) => (
+                    <span key={tool} className="set-scope-tag">{tool}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="set-mp-detail-block">
+                <h6>{t('mpScopes')}</h6>
+                <div className="set-skill-scopes">
+                  {detailEntry.scopes.map((sc) => (
                     <span key={sc} className="set-scope-tag">{sc}</span>
                   ))}
                 </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="set-marketplace-sub">
-          <h5>{t('marketplacePlugins')} · {marketplacePlugins.length}</h5>
-          <ul className="set-skill-list" role="list">
-            {marketplacePlugins.map((m) => (
-              <li key={m.id} className="set-skill-row" data-market-plugin-id={m.id}>
-                <div className="set-skill-head">
-                  <span className="set-skill-name">{m.name}</span>
-                  <span
-                    className={`set-skill-badge ${m.installed ? 'set-skill-badge-enabled' : 'set-skill-badge-disabled'}`}
-                    data-installed={m.installed ? '1' : '0'}
-                  >
-                    {m.installed ? t('installedBadge') : t('availableBadge')}
-                  </span>
-                  {m.installed ? (
-                    <button
-                      type="button"
-                      className="set-btn-mini"
-                      onClick={() => void uninstallMarketPlugin(m.id)}
-                      title={t('uninstallBtn')}
-                    >
-                      −
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="set-btn-mini"
-                      onClick={() => void installMarketPlugin(m.id)}
-                      title={t('install')}
-                    >
-                      +
-                    </button>
-                  )}
-                </div>
-                <div className="set-skill-desc">{m.description}</div>
-                <div className="set-skill-meta">
-                  <span>v{m.version}</span>
-                  <span>· {m.author}</span>
-                  <span>· {m.tools.length} {t('tools')}</span>
-                  <span>· {m.package}/{m.source.split('/').pop()}</span>
-                </div>
-                {m.requirements && m.requirements.length > 0 && (
+              </div>
+              {detailEntry.requirements && detailEntry.requirements.length > 0 && (
+                <div className="set-mp-detail-block">
+                  <h6>{t('requirements')}</h6>
                   <div className="set-skill-scopes">
-                    <span className="set-req-tag">{t('requirements')}: </span>
-                    {m.requirements.map((r) => (
+                    {detailEntry.requirements.map((r) => (
                       <span key={r} className="set-scope-tag set-scope-tag-req">{r}</span>
                     ))}
                   </div>
-                )}
-              </li>
-            ))}
-          </ul>
+                </div>
+              )}
+              <div className="set-mp-detail-block">
+                <h6>{t('mpCategory')}</h6>
+                <div className="set-mp-card-tags">
+                  {detailEntry.tags.map((tag) => (
+                    <span key={tag} className="set-mp-tag">{tag}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="set-mp-detail-meta">
+                <code>{detailEntry.package}</code>
+              </div>
+            </aside>
+          )}
         </div>
-
-        {marketMsg && <div className="set-install-msg" data-market-msg="1">{marketMsg}</div>}
       </div>
     </>
   )

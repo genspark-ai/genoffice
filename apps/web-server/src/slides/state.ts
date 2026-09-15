@@ -3,7 +3,7 @@
  * get-chart-data, get-comments, get-header-footer, get-layouts, etc.
  * Most of these return empty arrays / null placeholders.
  */
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 export function registerSlidesStateHandlers(): void {
   registerHandle('slides:get-render-slides', () => [])

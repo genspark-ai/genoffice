@@ -22,10 +22,11 @@
     "bundle": "npm run bundle:esbuild"
   },
   "dependencies": {
-    "@genoffice/ipc-bridge": "*",
+    "@genoffice/agent-core": "*",
     "@genoffice/ai-provider": "*",
-    "@genoffice/translation-core": "*",
-    "@genoffice/agent-core": "*"
+    "@genoffice/file-parse": "*",
+    "@genoffice/ipc-bridge": "*",
+    "@genoffice/translation-core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

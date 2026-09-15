@@ -141,7 +141,8 @@ export async function pdfToText(bytes: Uint8Array): Promise<string> {
   // which the fake worker prefers) — otherwise pdfjs looks up pdf.worker.mjs by path at
   // runtime, the file isn't next to the bundled chunk, and it fails with "Setting up fake
   // worker failed". A literal specifier lets the bundler include it in the output.
-  // @ts-expect-error the worker build artifact has no type declarations; imported only for its top-level side effect (registering globalThis.pdfjsWorker)
+  // imported only for its top-level side effect (registering globalThis.pdfjsWorker);
+  // see pdfjs-worker.d.ts for the module declaration
   await import('pdfjs-dist/legacy/build/pdf.worker.mjs')
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const fontUrl = standardFontDataUrl()

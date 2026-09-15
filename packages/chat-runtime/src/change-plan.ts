@@ -7,7 +7,7 @@
  * components can render any plan without per-app branching.
  */
 
-import type { ChatChangePlan, ChatChangePlanOp } from './types.js'
+import type { ChatChangePlan, ChatChangePlanOp } from './types'
 
 let counter = 0
 function nextId(prefix: string): string {

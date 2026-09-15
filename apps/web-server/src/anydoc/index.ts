@@ -1,12 +1,20 @@
 /**
- * AnyDoc channels — generic document recognition, format conversion and
- * content extraction. Real OCR/PDF parsing lands via `packages/file-parse`
- * and `packages/pdf2docx`; for now these endpoints return placeholder
- * payloads that match the legacy single-file implementation.
+ * AnyDoc channels — document recognition, format conversion and content
+ * extraction. Text extraction is delegated to `@genoffice/file-parse`, the
+ * same real parser stack the editors use (docx/pptx/xlsx/pdf/doc/ppt + plain
+ * text), so recognised text is the document's actual content rather than a
+ * placeholder string.
+ *
+ * Honest gaps in the standalone web build:
+ * - images have no OCR engine wired, so `anydoc:recognize` reports
+ *   `ocrUnavailable` for them instead of inventing transcript text;
+ * - `anydoc:extract-tables` / `anydoc:extract-images` need a structure-aware
+ *   parser (pdf2docx's IR) and report `unsupported` until one is wired.
  */
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { FILES_DIR, registerHandle } from '../common/index.js'
+import { parseFileToText } from '@genoffice/file-parse'
+import { FILES_DIR, registerHandle } from '../common/index'
 
 interface AnyDocConfig {
   ocrEnabled: boolean
@@ -36,19 +44,29 @@ export function registerAnydocHandlers(): void {
 
     const ext = extname(filePath).toLowerCase()
     const fileName = basename(filePath)
+    const parsed = await parseFileToText(filePath)
+    const stats = statSync(filePath)
 
+    // an image has no text layer; without an OCR engine the honest answer is
+    // "recognised nothing", not fabricated transcript text
+    const isImage = parsed.kind === 'image'
     return {
       id: `doc-${Date.now()}`,
       fileName,
       fileType: ext.slice(1),
       pages: 1,
-      text: `这是从 ${fileName} 提取的文本内容。\n完整的 OCR 识别需要集成 Tesseract.js 或云端 OCR 服务。`,
+      text: parsed.text ?? '',
+      ocrUnavailable: isImage,
+      ...(isImage
+        ? { message: '图片识别需要 OCR 引擎(Tesseract.js 或云端 OCR),当前 web 构建未接入。' }
+        : {}),
+      ...(parsed.ok ? {} : { error: parsed.error ?? 'parse failed' }),
       metadata: {
-        size: statSync(filePath).size,
-        created: statSync(filePath).birthtime,
-        modified: statSync(filePath).mtime,
+        size: stats.size,
+        created: stats.birthtime,
+        modified: stats.mtime,
       },
-      success: true,
+      success: parsed.ok,
     }
   })
 
@@ -80,19 +98,26 @@ export function registerAnydocHandlers(): void {
     }
 
     const ext = extname(filePath as string).toLowerCase()
-    const bytes = readFileSync(filePath as string)
 
-    if (['.txt', '.md', '.json', '.xml', '.html', '.csv'].includes(ext)) {
-      return { text: bytes.toString('utf-8'), format: 'text' }
-    } else if (['.docx', '.xlsx', '.pptx'].includes(ext)) {
-      return { text: `Office 文档内容 (${ext})\n需要集成 mammoth.js 或专业解析库`, format: 'office' }
-    } else if (ext === '.pdf') {
-      return { text: `PDF 文档内容\n需要集成 pdf-parse 或 pdf.js`, format: 'pdf' }
-    } else if (['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(ext)) {
-      return { text: `图片内容\n需要 OCR 识别 (Tesseract.js)`, format: 'image' }
+    if (['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(ext)) {
+      return {
+        text: '',
+        format: 'image',
+        ocrUnavailable: true,
+        message: '图片需要 OCR 引擎,当前 web 构建未接入。',
+      }
     }
 
-    return { text: '未知文件格式', format: 'unknown' }
+    const parsed = await parseFileToText(filePath as string)
+    if (!parsed.ok) {
+      return { text: '', format: 'error', error: parsed.error ?? 'parse failed' }
+    }
+    const format = ['.docx', '.doc', '.xlsx', '.xlsm', '.pptx', '.ppt'].includes(ext)
+      ? 'office'
+      : ext === '.pdf'
+        ? 'pdf'
+        : 'text'
+    return { text: parsed.text ?? '', format }
   })
 
   registerHandle('anydoc:extract-tables', async (_event: unknown, filePath: unknown) => {
@@ -102,7 +127,8 @@ export function registerAnydocHandlers(): void {
 
     return {
       tables: [],
-      message: '表格提取需要专业解析库支持',
+      unsupported: true,
+      error: 'Structure-aware table extraction needs the pdf2docx IR pipeline; not wired in this build.',
     }
   })
 
@@ -113,7 +139,8 @@ export function registerAnydocHandlers(): void {
 
     return {
       images: [],
-      message: '图片提取功能需要实现',
+      unsupported: true,
+      error: 'Embedded-image extraction is not wired in this build.',
     }
   })
 

@@ -10,7 +10,7 @@ import type {
   ProjectSummary,
   TimelineEntry,
   ToolActivity,
-} from './types.js'
+} from './types'
 
 export type {
   ChatAttachment,

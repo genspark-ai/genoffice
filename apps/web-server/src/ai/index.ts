@@ -5,23 +5,23 @@
  * registration helpers and the streaming core (settings + provider
  * streaming) used by both the IPC layer and the SSE endpoint.
  */
-export { callMiniMax, generateAIResponse } from './minimax.js'
-export type { MiniMaxMessage } from './minimax.js'
+export { callMiniMax } from './minimax'
+export type { MiniMaxMessage } from './minimax'
 
 import {
   registerAiCoreHandlers,
   runProviderStream,
   AI_STREAM_SESSIONS,
-} from './chat.js'
+} from './chat'
 import type { AiSettings } from '@genoffice/ai-provider'
-import { registerDocAiSkillHandlers } from './doc-skill.js'
-import { registerSheetAiSkillHandlers } from './sheet-skill.js'
-import { registerSlideAiSkillHandlers } from './slide-skill.js'
-import { registerAiMediaSkillHandlers } from './media-skill.js'
+import { registerDocAiSkillHandlers } from './doc-skill'
+import { registerSheetAiSkillHandlers } from './sheet-skill'
+import { registerSlideAiSkillHandlers } from './slide-skill'
+import { registerAiMediaSkillHandlers } from './media-skill'
 
 // Live settings reference for the SSE handler — it pulls the latest
 // persisted AiSettings from the chat module without going through IPC.
-import * as chatModule from './chat.js'
+import * as chatModule from './chat'
 export const aiSettings: AiSettings = (chatModule as { aiSettings: AiSettings }).aiSettings
 
 export { runProviderStream, AI_STREAM_SESSIONS }

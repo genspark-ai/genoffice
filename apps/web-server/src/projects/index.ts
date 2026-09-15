@@ -11,7 +11,7 @@ import {
   loadProjects,
   registerHandle,
   saveProjects,
-} from '../common/index.js'
+} from '../common/index'
 
 type ChatMessage = {
   role: 'user' | 'assistant'

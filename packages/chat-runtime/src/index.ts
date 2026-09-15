@@ -6,17 +6,17 @@
  * `AIError` classifier that the four renderer panels share.
  */
 
-export * from './types.js'
-export * from './errors.js'
-export { createSession, loadOrCreateSession, appendMessage, replaceMessages } from './session.js'
+export * from './types'
+export * from './errors'
+export { createSession, loadOrCreateSession, appendMessage, replaceMessages } from './session'
 // `JsonlChatPersistence` is intentionally NOT re-exported here:
 // `persistence.ts` uses `node:fs`/`node:path` and breaks browser bundles.
 // Import directly from `@genoffice/chat-runtime/persistence` (Node-only)
 // or use `MemoryChatPersistence` for in-memory tests.
-export { MemoryChatPersistence } from './persistence.js'
-export type { JsonlPersistenceOptions } from './persistence.js'
-export { normalizeChangePlan, summarizeChangePlan } from './change-plan.js'
-export type { NormalizeChangePlanInput } from './change-plan.js'
-export { ChatRuntime } from './runtime.js'
-export { startRun } from './run.js'
-export type { RunHandle, RunBridge, StartRunOptions } from './run.js'
+export { MemoryChatPersistence } from './persistence'
+export type { JsonlPersistenceOptions } from './persistence'
+export { normalizeChangePlan, summarizeChangePlan } from './change-plan'
+export type { NormalizeChangePlanInput } from './change-plan'
+export { ChatRuntime } from './runtime'
+export { startRun } from './run'
+export type { RunHandle, RunBridge, StartRunOptions } from './run'

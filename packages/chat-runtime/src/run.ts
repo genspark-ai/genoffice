@@ -17,13 +17,13 @@ import {
   type ToolExecution,
 } from '@genoffice/agent-core'
 
-import { classifyError } from './errors.js'
+import { classifyError } from './errors'
 import type {
   ChatRun,
   ChatRunStatus,
   ChatToolCallRecord,
   ChatChangePlan,
-} from './types.js'
+} from './types'
 
 export interface RunHandle {
   run: ChatRun

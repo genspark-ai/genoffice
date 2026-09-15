@@ -12,7 +12,7 @@
  *  - app:set-ai-panel-prefs
  *  - app:ai-panel-prefs-changed (push event)
  */
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 type AutoSaveDefault = { on: boolean; updatedAt: number }
 type AiFontSize = 'default' | 'large' | 'xlarge' | 'custom'

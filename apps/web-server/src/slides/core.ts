@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { FILES_DIR, loadRecentSlides, registerHandle, saveRecentSlides } from '../common/index.js'
+import { FILES_DIR, loadRecentSlides, registerHandle, saveRecentSlides } from '../common/index'
 
 export function registerSlidesCoreHandlers(): void {
   registerHandle('slides:new-blank', async (_event: unknown, options: unknown) => {

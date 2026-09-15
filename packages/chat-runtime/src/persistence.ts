@@ -16,7 +16,7 @@
  * `JsonlChatPersistence` methods so the browser bundle (which never
  * instantiates this class) tree-shakes them out.
  */
-import type { ChatSession, ChatMessage, ChatPersistence } from './types.js'
+import type { ChatSession, ChatMessage, ChatPersistence } from './types'
 
 export interface JsonlPersistenceOptions {
   /** Directory under which `<sessionId>.jsonl` lives. Created on first write. */

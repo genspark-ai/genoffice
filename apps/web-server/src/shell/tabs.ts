@@ -2,7 +2,7 @@
  * Tabs and update channels — tab list/activate/close/reorder/show-menu plus
  * the `update:*` parity set that mirrors `apps/shell/src/main/index.ts`.
  */
-import { registerHandle, TABS } from '../common/index.js'
+import { registerHandle, TABS } from '../common/index'
 
 export function registerTabsHandlers(): void {
   registerHandle('tabs:list', () => [...TABS.values()])

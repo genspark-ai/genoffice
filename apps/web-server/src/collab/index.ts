@@ -9,13 +9,13 @@ import {
   registerCursorHandlers,
   registerLockHandlers,
   registerPermissionHandlers,
-} from './locks.js'
+} from './locks'
 import {
   registerCommentHandlers,
   registerHistoryHandlers,
   registerTemplateHandlers,
-} from './history-comments-templates.js'
-import { registerCollabSessionHandlers } from './sessions.js'
+} from './history-comments-templates'
+import { registerCollabSessionHandlers } from './sessions'
 
 export function registerCollabHandlers(): void {
   registerCollabSessionHandlers()

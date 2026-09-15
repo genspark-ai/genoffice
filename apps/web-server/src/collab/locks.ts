@@ -2,7 +2,7 @@
  * Document-level locking, cursor sync, change tracking and conflict
  * detection/resolution. All state lives on the `COLLAB_SESSIONS` map.
  */
-import { COLLAB_SESSIONS, DOC_PERMISSIONS, registerHandle } from '../common/index.js'
+import { COLLAB_SESSIONS, DOC_PERMISSIONS, registerHandle } from '../common/index'
 
 export function registerLockHandlers(): void {
   registerHandle('collab:lock-acquire', (_event: unknown, args: unknown) => {

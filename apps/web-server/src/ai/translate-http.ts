@@ -38,7 +38,7 @@ import {
   translateBatchStream,
 } from '@genoffice/translation-core'
 
-import { aiSettings as defaultSettings } from './chat.js'
+import { aiSettings as defaultSettings } from './chat'
 
 interface TranslateUnitRequest {
   unitId?: string

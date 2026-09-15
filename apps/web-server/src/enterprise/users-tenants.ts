@@ -3,7 +3,7 @@
  * `USERS` and `TENANTS` live in `common/state.ts` so other modules (auth,
  * audit) can read them.
  */
-import { registerHandle, TENANTS, USERS } from '../common/index.js'
+import { registerHandle, TENANTS, USERS } from '../common/index'
 
 export function registerUserHandlers(): void {
   registerHandle('users:list', (_event: unknown) => {

@@ -3,7 +3,7 @@
  * calls. Phase 1.x keeps this simple; Phase 4 (LUM-551 plan) will move
  * to SQLite / FTS if needed.
  */
-import { registerHandle, SEARCH_INDEX } from '../common/index.js'
+import { registerHandle, SEARCH_INDEX } from '../common/index'
 
 export function registerSearchHandlers(): void {
   registerHandle('search:index', (_event: unknown, args: unknown) => {

@@ -6,7 +6,7 @@
  * session and adds runs on top.
  */
 
-import type { ChatApp, ChatSession, ChatMessage, ChatPersistence, ChatCapability } from './types.js'
+import type { ChatApp, ChatSession, ChatMessage, ChatPersistence, ChatCapability } from './types'
 
 export interface CreateSessionInput {
   id: string

@@ -195,6 +195,21 @@ export interface HomeApi {
     installedSkills: SkillEntry[]
     installedPlugins: PluginEntry[]
   }>
+  /** W32 — full marketplace v2 surface */
+  marketplaceCategories(): Promise<{ categories: MarketplaceCategoryInfo[] }>
+  marketplaceSearch(filters: MarketplaceSearchFilters): Promise<MarketplaceSearchResult>
+  marketplaceDetail(id: string, type: 'skill' | 'plugin'): Promise<{
+    ok: boolean
+    error?: string
+    type?: 'skill' | 'plugin'
+    entry?: MarketplaceEntry
+    installed?: SkillEntry | PluginEntry | null
+  }>
+  marketplaceUpload(
+    kind: 'skill' | 'plugin',
+    payload: MarketplaceUploadPayload,
+  ): Promise<{ ok: boolean; error?: string; kind?: 'skill' | 'plugin'; entry?: MarketplaceEntry; message?: string }>
+  marketplaceListUploads(): Promise<{ uploads: MarketplaceUploadEntry[]; error?: string }>
   /** install a skill from the marketplace by id */
   installSkill(name: string): Promise<{ ok: boolean; error?: string; installed?: SkillEntry; skills?: SkillEntry[]; alreadyInstalled?: boolean }>
   /** uninstall a marketplace-installed skill (built-in skills cannot be uninstalled) */
@@ -334,10 +349,21 @@ export interface SkillEntry {
 }
 
 /** an entry in the marketplace catalog — not yet installed in the local environment */
+export type MarketplaceCategory =
+  | 'productivity'
+  | 'data'
+  | 'dev'
+  | 'media'
+  | 'translation'
+  | 'collaboration'
+  | 'finance'
+  | 'design'
+
 export interface MarketplaceEntry {
   id: string
   name: string
   description: string
+  longDescription?: string
   author: string
   version: string
   package: string
@@ -345,8 +371,64 @@ export interface MarketplaceEntry {
   tools: string[]
   scopes: string[]
   requirements?: string[]
+  category: MarketplaceCategory
+  tags: string[]
+  /** 0-5 stars, one decimal */
+  rating: number
+  /** Total download count */
+  downloads: number
+  /** Featured in the top of the marketplace */
+  featured?: boolean
+  icon?: string
+  homepage?: string
   /** true when this marketplace entry is already installed locally */
   installed: boolean
+}
+
+export interface MarketplaceCategoryInfo {
+  id: MarketplaceCategory
+  label: string
+  count: number
+}
+
+export interface MarketplaceSearchFilters {
+  q?: string
+  category?: MarketplaceCategory
+  type?: 'skill' | 'plugin'
+  minRating?: number
+  installed?: boolean | 'all'
+  sort?: 'popular' | 'rating' | 'newest' | 'name'
+}
+
+export interface MarketplaceSearchResult {
+  skills: MarketplaceEntry[]
+  plugins: MarketplaceEntry[]
+  total: number
+  filters?: MarketplaceSearchFilters
+}
+
+export interface MarketplaceUploadPayload {
+  id: string
+  name: string
+  description: string
+  version: string
+  tools: string[]
+  scopes: string[]
+  category: MarketplaceCategory
+  tags?: string[]
+  author?: string
+  requirements?: string[]
+  icon?: string
+  homepage?: string
+}
+
+export interface MarketplaceUploadEntry {
+  file: string
+  kind?: 'skill' | 'plugin'
+  id?: string
+  name?: string
+  uploadedAt?: string
+  error?: string
 }
 
 export interface PluginEntry {
@@ -520,6 +602,11 @@ export const HOME_CHANNELS = {
   listMarketplaceSkills: 'home:list-marketplace-skills',
   listMarketplacePlugins: 'home:list-marketplace-plugins',
   getMarketplaceAndInstalled: 'home:get-marketplace-and-installed',
+  marketplaceCategories: 'home:marketplace-categories',
+  marketplaceSearch: 'home:marketplace-search',
+  marketplaceDetail: 'home:marketplace-detail',
+  marketplaceUpload: 'home:marketplace-upload',
+  marketplaceListUploads: 'home:marketplace-list-uploads',
 } as const
 
 export const PROJECT_CHANNELS = {

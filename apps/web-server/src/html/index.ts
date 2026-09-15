@@ -4,7 +4,7 @@
  * module handlers (docs/sheets/slides/markdown/pdf).
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 export function registerHtmlHandlers(): void {
   registerHandle('html:consume-pending', () => null)

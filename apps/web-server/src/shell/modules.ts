@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DATA_DIR, registerHandle } from '../common/index.js'
+import { DATA_DIR, registerHandle } from '../common/index'
 
 export type ModuleKind = 'docx' | 'xlsx' | 'pptx' | 'md' | 'pdf' | 'html'
 

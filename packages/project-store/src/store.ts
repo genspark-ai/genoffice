@@ -36,7 +36,7 @@ import type {
   ProjectInfo,
   ProjectSummary,
   TimelineEntry,
-} from './types.js'
+} from './types'
 
 // ────────────────────────────────────────────────────────────
 // Internal helpers

@@ -11,12 +11,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getHandler, handlerCount } from '../../common/index.js'
-import { registerDocAiSkillHandlers } from '../doc-skill.js'
-import { registerSheetAiSkillHandlers } from '../sheet-skill.js'
-import { registerSlideAiSkillHandlers } from '../slide-skill.js'
-import { registerAiMediaSkillHandlers } from '../media-skill.js'
-import { WebUnsupportedError } from '../errors.js'
+import { getHandler, handlerCount } from '../../common/index'
+import { registerDocAiSkillHandlers } from '../doc-skill'
+import { registerSheetAiSkillHandlers } from '../sheet-skill'
+import { registerSlideAiSkillHandlers } from '../slide-skill'
+import { registerAiMediaSkillHandlers } from '../media-skill'
+import { WebUnsupportedError } from '../errors'
 
 const WEB_DOC_CHANNELS = [
   'ai:doc-write-continue',

@@ -54,7 +54,7 @@ function toRecentEntry(d: {
 }
 
 import { basename, dirname, extname, join } from 'node:path'
-import { DATA_DIR, DOCS_RECENT, DOCS_STARRED, registerHandle } from '../common/index.js'
+import { DATA_DIR, DOCS_RECENT, DOCS_STARRED, registerHandle } from '../common/index'
 
 export function registerHomeHandlers(): void {
   registerHandle('home:get-app-version', () => '1.0.0')
@@ -284,7 +284,26 @@ export function registerHomeHandlers(): void {
 
   registerHandle('home:account-logout', () => ({ ok: true }))
 
-  registerHandle('home:github-stars', () => ({ stars: 128 }))
+  /* Real GitHub star count for the About pane. Returns null (not a
+   * placeholder number) when the API is unreachable, so the UI stays honest. */
+  let cachedGithubStars: number | null = null
+  registerHandle('home:github-stars', async () => {
+    if (cachedGithubStars !== null) return cachedGithubStars
+    try {
+      const response = await fetch('https://api.github.com/repos/genspark-ai/genoffice', {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(5000),
+      })
+      if (!response.ok) return null
+      const body: unknown = await response.json()
+      const count = (body as { stargazers_count?: unknown }).stargazers_count
+      if (typeof count !== 'number' || !Number.isFinite(count)) return null
+      cachedGithubStars = count
+      return count
+    } catch {
+      return null
+    }
+  })
 
   registerHandle('home:get-analytics-enabled', () => true)
   registerHandle('home:set-analytics-enabled', (_event: unknown, enabled: unknown) => ({
@@ -334,56 +353,18 @@ export function registerHomeHandlers(): void {
     return { ok: true, action }
   })
 
-  /* ── Cloud projects stub ───────────────────────────────────────────────
-   * The Electron build talks to the real Genspark API (gskListPastProjects);
-   * the web build has no equivalent backend, so we hand the renderer a small
-   * curated sample list so the UI's section has something to render. Each entry
-   * matches CloudProjectEntry in apps/shell/src/shared/home-api.ts. */
-  const SAMPLE_CLOUD_PROJECTS = [
-    {
-      projectId: 'demo-1',
-      title: '产品发布 Q4 规划',
-      kind: 'docs' as const,
-      ctimeMs: Date.now() - 2 * 24 * 60 * 60 * 1000,
-      projectUrl: 'https://www.genspark.ai/agents?id=demo-1',
-    },
-    {
-      projectId: 'demo-2',
-      title: '销售数据周报',
-      kind: 'sheets' as const,
-      ctimeMs: Date.now() - 5 * 24 * 60 * 60 * 1000,
-      projectUrl: 'https://www.genspark.ai/agents?id=demo-2',
-    },
-    {
-      projectId: 'demo-3',
-      title: '客户提案 · Acme Corp',
-      kind: 'slides' as const,
-      ctimeMs: Date.now() - 7 * 24 * 60 * 60 * 1000,
-      projectUrl: 'https://www.genspark.ai/agents?id=demo-3',
-    },
-    {
-      projectId: 'demo-4',
-      title: '技术调研报告',
-      kind: 'docs' as const,
-      ctimeMs: Date.now() - 14 * 24 * 60 * 60 * 1000,
-      projectUrl: 'https://www.genspark.ai/agents?id=demo-4',
-    },
-    {
-      projectId: 'demo-5',
-      title: '营销活动看板',
-      kind: 'sheets' as const,
-      ctimeMs: Date.now() - 21 * 24 * 60 * 60 * 1000,
-      projectUrl: 'https://www.genspark.ai/agents?id=demo-5',
-    },
-  ]
-  const buildCloudSnapshot = (cached: boolean) => ({
-    available: true,
-    projects: SAMPLE_CLOUD_PROJECTS,
-    syncedAt: Date.now(),
-    ...(cached ? { cached: true } : {}),
+  /* ── Cloud projects ────────────────────────────────────────────────────
+   * The Electron build syncs the signed-in user's Genspark projects through
+   * the bundled `gsk` CLI. The standalone web server has no account session,
+   * so it reports `available: false` — the home pane then renders its
+   * sign-in / empty state instead of fabricated project rows. */
+  const buildCloudSnapshot = () => ({
+    available: false,
+    projects: [],
+    syncedAt: 0,
   })
-  registerHandle('home:cloud-projects', () => buildCloudSnapshot(false))
-  registerHandle('home:cloud-projects-cached', () => buildCloudSnapshot(true))
+  registerHandle('home:cloud-projects', () => buildCloudSnapshot())
+  registerHandle('home:cloud-projects-cached', () => buildCloudSnapshot())
 
   registerHandle('home:open-cloud-project', (_event: unknown, projectUrl: unknown) => {
     return { ok: true, url: projectUrl }

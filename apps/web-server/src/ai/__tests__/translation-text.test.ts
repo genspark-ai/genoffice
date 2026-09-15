@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { buildTranslationPrompt, extractTranslationText } from '../chat.js'
+import { buildTranslationPrompt, extractTranslationText } from '../chat'
 
 test('extractTranslationText removes a closed MiniMax think block', () => {
   assert.equal(

@@ -16,7 +16,7 @@ import {
   registerHandle,
   saveProjects,
   saveRecentDocs,
-} from '../common/index.js'
+} from '../common/index'
 
 const MAX_PASTED_IMAGE_BYTES = 20 * 1024 * 1024
 const closeState = {

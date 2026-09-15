@@ -23,7 +23,7 @@ import {
   handleTranslateBatchHttp,
   handleTranslateStreamCancelHttp,
   handleTranslateStreamHttp,
-} from '../translate-http.js'
+} from '../translate-http'
 
 function makeServer(): Promise<{ server: Server; port: number; close: () => void }> {
   return new Promise((resolve) => {

@@ -1,7 +1,7 @@
 /**
  * Collab supporting channels — version history, comments, templates.
  */
-import { DOC_COMMENTS, DOC_VERSIONS, registerHandle, TEMPLATES, initDefaultTemplates } from '../common/index.js'
+import { DOC_COMMENTS, DOC_VERSIONS, registerHandle, TEMPLATES, initDefaultTemplates } from '../common/index'
 
 export function registerHistoryHandlers(): void {
   registerHandle('history:versions', (_event: unknown, args: unknown) => {

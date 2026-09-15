@@ -2,7 +2,7 @@
  * Workflow engine — create/list/get/update/delete/run. Placeholder
  * implementations; the real engine will land in Phase 3 (LUM-551).
  */
-import { registerHandle, WORKFLOWS } from '../common/index.js'
+import { registerHandle, WORKFLOWS } from '../common/index'
 
 export function registerWorkflowHandlers(): void {
   registerHandle('workflow:create', (_event: unknown, args: unknown) => {

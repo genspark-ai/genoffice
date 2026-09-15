@@ -39,30 +39,30 @@ import {
   getHandler,
   handlerCount,
   listChannels,
-} from './common/index.js'
+} from './common/index'
 import {
   registerAiHandlers,
   AI_STREAM_SESSIONS,
   runProviderStream,
-} from './ai/index.js'
+} from './ai/index'
 import {
   handleTranslateBatchHttp,
   handleTranslateStreamHttp,
   handleTranslateStreamCancelHttp,
-} from './ai/translate-http.js'
+} from './ai/translate-http'
 import type { AiSettings, AiStreamChunk } from '@genoffice/ai-provider'
-import { registerProjectHandlers } from './projects/index.js'
-import { registerDocsHandlers } from './docs/index.js'
-import { registerSheetsHandlers } from './sheets/index.js'
-import { registerSlidesHandlers } from './slides/index.js'
-import { registerPdfHandlers } from './pdf/index.js'
-import { registerMarkdownHandlers } from './markdown/index.js'
-import { registerHtmlHandlers } from './html/index.js'
-import { registerShellHandlers } from './shell/index.js'
-import { registerCollabHandlers } from './collab/index.js'
-import { registerEnterpriseHandlers } from './enterprise/index.js'
-import { registerAnydocHandlers } from './anydoc/index.js'
-import { registerWebHandlers } from './web/index.js'
+import { registerProjectHandlers } from './projects/index'
+import { registerDocsHandlers } from './docs/index'
+import { registerSheetsHandlers } from './sheets/index'
+import { registerSlidesHandlers } from './slides/index'
+import { registerPdfHandlers } from './pdf/index'
+import { registerMarkdownHandlers } from './markdown/index'
+import { registerHtmlHandlers } from './html/index'
+import { registerShellHandlers } from './shell/index'
+import { registerCollabHandlers } from './collab/index'
+import { registerEnterpriseHandlers } from './enterprise/index'
+import { registerAnydocHandlers } from './anydoc/index'
+import { registerWebHandlers } from './web/index'
 
 // ----- capability wiring ----------------------------------------------------
 initRecentState()
@@ -299,43 +299,44 @@ const server = createServer(async (request, response) => {
         tools?: Parameters<typeof runProviderStream>[3]
         maxTokens?: number
       }
-      requestId = req.requestId || `sse-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      const streamId = req.requestId || `sse-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      requestId = streamId
       // Import inside the handler to grab the live settings the AI module
       // has just persisted (avoids a duplicate cached copy).
-      const { aiSettings } = await import('./ai/index.js').then((m) => m) as {
+      const { aiSettings: aiSettingsFallback } = (await import('./ai/index')) as {
         aiSettings: AiSettings
       }
-      void aiSettings // (kept to surface the live reference if needed)
       // The renderer can include its own settings override; otherwise use
       // the server's persisted ones.
-      const settings: AiSettings = req.settings || (await import('./ai/chat.js' as string).catch(() => null))?.aiSettings
-        || (await import('./ai/index.js') as { aiSettings?: AiSettings }).aiSettings
-        || (req.settings as AiSettings)
+      const chatMod = (await import('./ai/chat' as string).catch(() => null)) as
+        | { aiSettings?: AiSettings }
+        | null
+      const settings: AiSettings = (req.settings as AiSettings | undefined) ?? chatMod?.aiSettings ?? aiSettingsFallback
 
       response.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
-        'X-Request-Id': requestId,
+        'X-Request-Id': streamId,
       })
 
       const send = (chunk: AiStreamChunk) => {
         try {
-          response.write(`data: ${JSON.stringify({ ...chunk, requestId })}\n\n`)
+          response.write(`data: ${JSON.stringify({ ...chunk, requestId: streamId })}\n\n`)
         } catch {}
       }
 
       // Track the session so /api/ai/stream/cancel can abort it.
       sessionAbort = new AbortController()
-      AI_STREAM_SESSIONS.set(requestId, { abort: sessionAbort, chunks: 0 })
+      AI_STREAM_SESSIONS.set(streamId, { abort: sessionAbort, chunks: 0 })
 
       // If the client disconnects, stop the upstream call too.
       request.on('close', () => {
         sessionAbort?.abort()
-        AI_STREAM_SESSIONS.delete(requestId)
+        AI_STREAM_SESSIONS.delete(streamId)
       })
 
-      await runProviderStream(settings, req.system || '', req.messages || [], req.tools || [], req.maxTokens, {
+      await runProviderStream(settings, req.system || '', req.messages || [], req.tools || [], req.maxTokens ?? undefined, {
         onAbort: (c) => {
           sessionAbort = c
         },

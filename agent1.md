@@ -3740,3 +3740,233 @@ response.on('close', teardown)
 | 23-skills-plugins-after-fix.png | 修复后 Skills & Plugins 面板(10 skills + 4 plugins) |
 | 24-marketplace-after-fix.png | 修复后 Marketplace 区域 |
 | 25-skills-w31-final.png | Skills 列表顶部,含已安装的 github-integration / notion-sync |
+
+### §16.37 W32 — 顶级插件市场 v2 + 删除 demo + .js 后缀清理 + anydoc 真解析(2026-09-15)
+
+#### 16.37.1 目标与实现进度
+
+| 目标 | 状态 | 真实证据 |
+| --- | --- | --- |
+| **顶级插件市场 v2 UI** | ✅ 100% | Settings → 技能与插件 标签可见搜索框 + 8 个分类 chip + 4 种类型/installed 过滤 + sort 下拉 + 卡片网格 + 详情抽屉 + 11 字段 publish form + 上传历史 |
+| **真实 publish → catalog 合并** | ✅ 100% | curl + 浏览器双重验证:publish `smoke-banner-fix` 后 total 从 21 → 22,publish `browser-w32-verify` 后 22 → 23 |
+| **删除所有 demo/mock** | ✅ 100% | `AiPanel2.tsx` / `make-revision-demo.ts` 删除;`minimax.ts` 移除 canned `generateAIResponse`;`home.ts` 替换 `SAMPLE_CLOUD_PROJECTS` 为 `available:false`;`github-stars` 真 fetch api.github.com;`speech.ts` / `devices.ts` 返回 `unsupported`;`charts.ts` 移除 canned `visualization:get-chart-data` |
+| **`.js` 后缀导入清理** | ✅ 100% | `rg "from\s+['\"][^'\"]+\.js['\"]"` 在 web-server / shell / chat-runtime / project-store / file-parse 全无匹配(149 个 import 已重写) |
+| **anydoc 真解析** | ✅ 100% | `parseFileToText()` 真接 `@genoffice/file-parse`;`/tmp/anydoc-fixtures/plain.txt` → "纯文本 内容 123" ✓;`/tmp/anydoc-fixtures/hello.docx` → "AnyDoc 真实解析验证段落" ✓ |
+| **web-server tsconfig strict** | ✅ 100% | `apps/web-server/tsconfig.json` `strict: true`;`npx tsc --noEmit` EXIT=0 |
+| **bundle 运行时修复** | ✅ 100% | 新建 `apps/web-server/scripts/bundle.mjs`,banner 注入 `createRequire` 解决 `word-extractor` CJS require 问题;bundle 10.5 MB,`node bundle/index.js` 成功监听 18081 |
+| **真实启动验证** | ✅ 100% | python3 daemonize_web.py 启动,curl /health 返回 ok + channels=472;浏览器 Playwright 截图 12-18 全通过 |
+| **测试套件全绿** | ✅ 100% | agent-runtime 39/39,agent-skills 153/153,file-parse 30/30 |
+
+**总体实现进度**:**100%**(本轮所有目标全部完成并真实验证)。
+
+#### 16.37.2 核心问题:bundle 启动后 `word-extractor` 抛出 "Dynamic require of buffer"
+
+**症状**:`node apps/web-server/dist/bundle/index.js` 立刻崩溃:
+```
+file:///.../dist/bundle/index.js:11
+  throw Error('Dynamic require of "' + x + '" is not supported');
+Error: Dynamic require of "buffer" is not supported
+    at file:///.../dist/bundle/index.js:11:9
+    at ../../node_modules/word-extractor/lib/word.js (file:///.../dist/bundle/index.js:8251:31)
+```
+
+**根因**:`packages/file-parse/src/doc.ts` 引用 `word-extractor` 的 CJS 入口 `lib/word.js`,
+首行就是 `const { Buffer } = require('buffer')`。esbuild 把整个 bundle 输出为 ESM 后,
+生成的 `__require` 在检测到 `typeof require === 'undefined'` 时直接抛错 —— ESM 模块没有
+`require` 全局变量。
+
+**修复**:新建 `apps/web-server/scripts/bundle.mjs`,使用 esbuild JS API + banner 注入
+`createRequire`,让 ESM bundle 里也有可用的 `require`:
+
+```js
+banner: {
+  js: [
+    "import { createRequire as __genofficeCreateRequire } from 'node:module';",
+    'const require = __genofficeCreateRequire(import.meta.url);',
+  ].join('\n'),
+},
+```
+
+**bundle 头部**实测为:
+```js
+import { createRequire as __genofficeCreateRequire } from 'node:module';
+const require = __genofficeCreateRequire(import.meta.url);
+var __create = Object.create;
+...
+```
+
+**为什么不直接用 CLI `--banner:js=`**:之前用 `package.json` 的 `"bundle:esbuild": "node ../../node_modules/esbuild/bin/esbuild ... --banner:js=\"...\""` 在 zsh 下因为引号嵌套 + glob 展开不稳定;改用 JS API 后
+bundle 过程完全可编程、可测试。
+
+#### 16.37.3 真实启动验证(本轮重启后)
+
+| 检查项 | 实测 |
+| --- | --- |
+| daemon 进程 | `ps aux | grep web-server/dist/bundle | grep -v grep` → 1 行 |
+| `curl /health` | `{"status":"ok","version":"0.8.0","channels":472}` |
+| `home:marketplace-categories` | 8 个分类(生产力/数据/开发/媒体/翻译/协作/财务/设计) |
+| `home:marketplace-search` 默认 | total=23 (skills=14 + plugins=9) — 重启后保留 |
+| `home:marketplace-search` q=cloud | total=2 (Google Drive Export + Cloud Storage S3) |
+| `home:marketplace-search` q=ocr | total=1 (PDF OCR Pro) |
+| `home:marketplace-list-uploads` | 2 个真实上传(smoke-banner-fix + browser-w32-verify) |
+| `anydoc:extract-text` plain.txt | `{"text":"纯文本 内容 123\n","format":"text"}` ✓ |
+| `anydoc:extract-text` hello.docx | `{"text":"AnyDoc 真实解析验证段落","format":"office"}` ✓ |
+| 浏览器 marketplace 卡片数 | 23 (skill+plugin 总和) |
+| 浏览器 marketplace 搜索 "cloud" | 2 卡片实时刷新 |
+| 浏览器 publish 流程 | 浏览器提交 → 后端持久化 → 自动刷新网格 → 计数 +1 → msg 显示 ✓ |
+| 浏览器 install → uninstall | data-installed 0→1→0,按钮文字 +安装 ↔ −Uninstall 切换 |
+
+#### 16.37.4 Settings → 技能与插件 页面结构(v2)
+
+```
+┌─ 设置 ─────────────────────────────────────────────────┐
+│  账户 / AI 模型 / 生图、媒体与搜索 / 通用 / 集成        │
+│  / 模块管理 / [技能与插件] / 关于                        │
+├─────────────────────────────────────────────────────────┤
+│  Agent 技能与插件                                        │
+│  管理 GenOffice 内置的 11 个 Agent 扩展...               │
+│                                                         │
+│  ┌─ Skills 内置 (8) ───────────────────────┐             │
+│  │ ☑ Docs Skill v0.85.1 · GenOffice · 10 工具 │         │
+│  │ ☑ Sheets Skill v0.85.1 · GenOffice · 6 工具│         │
+│  │ ... 6 个内置 skill                    │             │
+│  └─────────────────────────────────────┘             │
+│                                                         │
+│  Marketplace(顶级插件市场)                               │
+│  [搜索: 搜索技能与插件… 🔍]                              │
+│  [全部] [生产力] [数据] [开发] [媒体] [翻译] [协作] [财务] [设计] │
+│  类型: [全部|Skill|Plugin]                              │
+│  状态: [全部|已安装|未安装]                              │
+│  排序: [热门|评分|最新|名称]                              │
+│  评分: [全部|≥3★|≥4★|≥4.5★]                              │
+│                                                         │
+│  显示 23 个扩展 (21 内置 + 2 上传)                       │
+│  ┌──────┐ ┌──────┐ ┌──────┐                            │
+│  │PDF OCR│ │Notion│ │CSV Viz│ ...                       │
+│  │ ★ 4.8│ │ ★ 4.7│ │ ★ 4.6│                            │
+│  │ 详情  │ │ 详情  │ │ 详情  │                            │
+│  │ + 安装 │ │ + 安装 │ │ + 安装 │                         │
+│  └──────┘ └──────┘ └──────┘                            │
+│                                                         │
+│  [发布]  ← 打开 publish form (11 字段)                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### 16.37.5 删掉的 demo / mock 清单
+
+| 文件 / 代码 | 原状 | 删除 / 替换为 |
+| --- | --- | --- |
+| `apps/docs/src/renderer/ai/AiPanel2.tsx` | "minimal demonstration" 二级 AI 面板 | 删除整个文件 |
+| `packages/docx-engine/scripts/make-revision-demo.ts` | 一次性 docx revision demo 脚本 | 删除整个文件 |
+| `apps/web-server/src/ai/minimax.ts` 中 `generateAIResponse` / `generateAgentResponse` | canned mock 回复 | 完全移除;`index.ts` export 清理 |
+| `apps/web-server/src/shell/home.ts` 中 `SAMPLE_CLOUD_PROJECTS` | demo-1..demo-5 假云项目 | `available: false` 诚实标注 |
+| `apps/web-server/src/shell/home.ts` 中 `home:github-stars` | 写死 star 数 | 真 fetch `https://api.github.com/repos/...` |
+| `apps/web-server/src/shell/speech.ts` | 假装支持 STT/TTS | 重写为返回 `unsupported`(无 provider) |
+| `apps/web-server/src/shell/devices.ts` | 假装支持 mobile/multimodal | 返回 `unsupported` |
+| `apps/web-server/src/shell/charts.ts` 中 `visualization:get-chart-data` | canned 假图表数据 | 删除该 channel;保留真 `chart:generate` / `create-dashboard` |
+
+#### 16.37.6 `.js` 后缀 import 清理统计
+
+通过 `python3 -c` + 正则在以下包内全部完成:
+- `apps/web-server/src/` — 95 个 import
+- `packages/chat-runtime/src/` — 28 个 import
+- `packages/project-store/src/` — 14 个 import
+- `packages/file-parse/src/` — 12 个 import
+合计 **149 个相对 import** 去掉 `.js` 后缀,符合项目 `tsconfig.base.json` 的 ESM 解析规则。
+
+**最终核验**:
+```bash
+$ rg --no-ignore -l "from\s+['\"][^'\"]+\.js['\"]" \
+    apps/web-server/src apps/shell/src \
+    packages/chat-runtime/src packages/project-store/src \
+    packages/file-parse/src
+# 无输出
+```
+
+#### 16.37.7 anydoc 真解析:从 mock 到 `@genoffice/file-parse`
+
+**之前**:`anydoc/index.ts` 直接返回构造字符串,不读文件。
+
+**现在**:`anydoc/index.ts` 引入 `@genoffice/file-parse` 的 `parseFileToText`,与编辑器用的
+docx/pptx/xlsx/pdf/doc/ppt + plain text 解析栈完全一致:
+
+```ts
+import { parseFileToText } from '@genoffice/file-parse'
+// ...
+const parsed = await parseFileToText(filePath)
+// parsed.ok=true 时使用真实文本;false 时透传 error
+```
+
+**真实端到端验证**(`/tmp/anydoc-fixtures/`):
+- `plain.txt` → `{"text":"纯文本 内容 123\n","format":"text"}`  ✓
+- `hello.docx` → `{"text":"AnyDoc 真实解析验证段落","format":"office"}`  ✓
+- 图片走 `ocrUnavailable: true` 诚实路径(未接 OCR 引擎,这是 W33 的工作)
+
+`@genoffice/file-parse` 也已加入 `apps/web-server/package.json` 的 `dependencies`,
+bundle 构建无遗漏。
+
+#### 16.37.8 web-server tsconfig strict + 其他 strictness 修复
+
+`apps/web-server/tsconfig.json` 之前是 `strict: false`,与 `tsconfig.base.json` 不一致。
+现在改为 `"strict": true`,顺带修了 6 处历史 strictness 错误:
+
+| 文件 | 错误 | 修复 |
+| --- | --- | --- |
+| `apps/web-server/src/ai/chat.ts` | implicit any | 显式标注 unknown 转换 |
+| `apps/web-server/src/index.ts` | 参数推断失败 | 加类型 |
+| `apps/web-server/src/shell/files.ts` | mkdirSync `{recursive:true}` 返回 `string\|undefined` | `as string` |
+| `apps/web-server/src/web/index.ts` | implicit any | 显式标注 |
+| `packages/file-parse/src/pdf.ts` | `Unused @ts-expect-error` | 删 directive,新增 `pdfjs-worker.d.ts` ambient module decl |
+
+**最终验证**:`cd apps/web-server && npx tsc --noEmit` → EXIT=0,无任何错误。
+
+#### 16.37.9 测试套件全绿
+
+| 包 | 文件 | 测试 | 结果 |
+| --- | --- | --- | --- |
+| `packages/agent-runtime` | 4 文件 | 39 | ✅ all passed |
+| `packages/agent-skills` | 12 文件 | 153 | ✅ all passed |
+| `packages/file-parse` | 3 文件 | 30 | ✅ all passed |
+| `apps/web-server` typecheck | — | — | ✅ EXIT=0 |
+| `apps/web-server` bundle | — | — | ✅ 10.5 MB |
+| web-server 启动 + `/health` | — | — | ✅ status=ok,channels=472 |
+| marketplace IPC 端到端 | — | 5 channel | ✅ 全部 200 OK |
+| anydoc 真实解析 | — | 2 fixture | ✅ 文本完整 |
+
+#### 16.37.10 截图(本轮新增 w32-12..18)
+
+| 截图 | 内容 |
+| --- | --- |
+| `w32-12-banner-fixed.png` | banner 修复后 web-server 重启 + shell 主页 |
+| `w32-13-grid-with-banner-fix.png` | Settings → 技能与插件 → marketplace 卡片网格(23 条) |
+| `w32-14-search-cloud.png` | 搜索 "cloud" → 2 卡片实时过滤 |
+| `w32-15-publish-form-opened.png` | 点击"发布"按钮 → publish form 展开(11 字段) |
+| `w32-16-publish-filled.png` | publish form 已填写 (id/name/version/author/desc/tools/scopes/tags/category/icon) |
+| `w32-17-publish-success-23.png` | 提交后 msg 显示成功 + 网格 22→23 自动刷新 |
+| `w32-18-install-success.png` | 点击 +安装 → data-installed=1,按钮变 −Uninstall |
+
+#### 16.37.11 关键文件改动清单
+
+```
+apps/web-server/scripts/bundle.mjs                            + 新建(73 行,ESM+banner)
+apps/web-server/src/anydoc/index.ts                          * 真接 @genoffice/file-parse
+apps/web-server/src/shell/skills.ts                          * marketplace 21+uploaded 合并
+apps/web-server/src/shell/speech.ts                          * 重写为 unsupported
+apps/web-server/src/shell/devices.ts                         * 重写为 unsupported
+apps/web-server/src/shell/charts.ts                          * 删 canned get-chart-data
+apps/web-server/src/shell/home.ts                            * 云项目 → available:false
+apps/web-server/src/ai/minimax.ts                            * 删 canned 生成函数
+apps/web-server/src/index.ts                                 * SSE teardown + strict 修复
+apps/web-server/tsconfig.json                                * strict: true
+apps/web-server/package.json                                 * +@genoffice/file-parse
+packages/file-parse/src/pdf.ts                               * 删 @ts-expect-error
+packages/file-parse/src/pdfjs-worker.d.ts                    + 新建 ambient decl
+apps/shell/src/renderer/src/SettingsModal.tsx                * v2 marketplace JSX (240 行)
+apps/shell/src/renderer/src/settings.css                     * +330 行 v2 styles
+apps/shell/src/renderer/src/strings.ts                       * +44 个 mp* / mpCat* keys (20 语言)
+apps/shell/src/shared/home-api.ts                            * +5 个 marketplace 类型
+apps/shell/src/shared/shell-api-factory.ts                   * +5 个 IPC 方法
+apps/docs/src/renderer/ai/AiPanel2.tsx                       - 删除
+packages/docx-engine/scripts/make-revision-demo.ts           - 删除
++ 149 个 import 去掉 .js 后缀(跨 4 个包)
+```

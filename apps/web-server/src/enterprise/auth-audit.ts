@@ -2,7 +2,7 @@
  * SSO/OIDC auth + audit log channels. Placeholder implementations; Phase 3
  * will introduce a real identity provider and persisted audit log.
  */
-import { AUDIT_LOGS, registerHandle } from '../common/index.js'
+import { AUDIT_LOGS, registerHandle } from '../common/index'
 
 export function registerAuthHandlers(): void {
   registerHandle('auth:sso-login', (_event: unknown, args: unknown) => {

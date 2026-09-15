@@ -4,7 +4,7 @@
  * remain placeholders returning `{ ok: true }` shapes; Phase 1.2/1.3 will
  * wire them to real engines.
  */
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 export function registerSlidesElementHandlers(): void {
   // ----- slide-level mutations ---------------------------------------------

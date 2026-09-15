@@ -4,7 +4,8 @@
  */
 import { existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
-import { FILES_INDEX, FILES_DIR, MIME_TYPES, registerHandle } from '../common/index.js'
+import { FILES_INDEX, FILES_DIR, MIME_TYPES, registerHandle } from '../common/index'
+import type { FileInfo } from '../common/index'
 
 export function registerFilesHandlers(): void {
   registerHandle('files:pick', () => ({
@@ -15,14 +16,14 @@ export function registerFilesHandlers(): void {
 
   registerHandle('files:add', async (_event: unknown, paths: unknown) => {
     const filePaths = (paths as string[]) || []
-    const results = []
+    const results: FileInfo[] = []
     for (const originalPath of filePaths) {
       if (existsSync(originalPath)) {
         const stats = statSync(originalPath)
         const fileId = `${Date.now()}-${basename(originalPath)}`
         const destPath = FILES_DIR + '/' + fileId
         writeFileSync(destPath, readFileSync(originalPath))
-        const fileInfo = {
+        const fileInfo: FileInfo = {
           id: fileId,
           name: basename(originalPath),
           path: destPath,

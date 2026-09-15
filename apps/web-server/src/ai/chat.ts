@@ -15,7 +15,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { AI_STREAMS, DATA_DIR, registerHandle } from '../common/index.js'
+import { AI_STREAMS, DATA_DIR, registerHandle } from '../common/index'
 import {
   AiCreditsError,
   AiTimeoutError,
@@ -423,9 +423,9 @@ export function registerAiCoreHandlers(): void {
         translatedText: u.translatedText ?? '',
       }))
     return sharedMemory.saveMany({
-      scene: req.scene,
-      sourceLang: req.sourceLang,
-      targetLang: req.targetLang,
+      scene: req.scene ?? 'office',
+      sourceLang: req.sourceLang ?? 'auto',
+      targetLang: req.targetLang ?? 'auto',
       units,
     })
   })
@@ -522,7 +522,7 @@ export function registerAiCoreHandlers(): void {
         },
         send: (chunk) => {
           session.chunks++
-          sender.send('ai:stream-chunk', { ...chunk, requestId })
+          sender!.send?.('ai:stream-chunk', { ...chunk, requestId })
         },
       })
     } finally {

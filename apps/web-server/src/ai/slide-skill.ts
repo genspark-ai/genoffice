@@ -7,8 +7,8 @@
  * which talks to the same model via the slides app's AI panel. The
  * web-server is the IPC + storage layer; it does not fabricate AI output.
  */
-import { registerHandle } from '../common/index.js'
-import { WebUnsupportedError } from './errors.js'
+import { registerHandle } from '../common/index'
+import { WebUnsupportedError } from './errors'
 
 const WEB_SLIDE_CHANNELS = [
   'ai:slides-generate-outline',

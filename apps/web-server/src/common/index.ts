@@ -4,11 +4,11 @@
  * Each capability directory imports the bits it needs from here so the
  * split stays a pure refactor (no behaviour change, no handler lost).
  */
-export { BYTES_TAG, encodeTransportValue, decodeTransportValue } from './codec.js'
-export type { TypedArrayTag } from './codec.js'
+export { BYTES_TAG, encodeTransportValue, decodeTransportValue } from './codec'
+export type { TypedArrayTag } from './codec'
 
-export { registerHandle, getHandler, listChannels, handlerCount } from './registry.js'
-export type { IpcHandler } from './registry.js'
+export { registerHandle, getHandler, listChannels, handlerCount } from './registry'
+export type { IpcHandler } from './registry'
 
 export {
   DATA_DIR,
@@ -51,7 +51,7 @@ export {
   NOTIFICATIONS,
   WEB_WINDOWS,
   TABS,
-} from './state.js'
+} from './state'
 export type {
   Project,
   FileInfo,
@@ -71,7 +71,7 @@ export type {
   AuditRecord,
   NotificationRecord,
   TabRecord,
-} from './state.js'
+} from './state'
 
-export { MIME_TYPES } from './mime.js'
-export { ROOT, PORT, HOST, APPS, STATIC_ROOT, WEB_TEMP_ROOT } from './paths.js'
+export { MIME_TYPES } from './mime'
+export { ROOT, PORT, HOST, APPS, STATIC_ROOT, WEB_TEMP_ROOT } from './paths'

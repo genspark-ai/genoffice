@@ -4,7 +4,7 @@
  */
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { FILES_DIR, loadRecentSheets, registerHandle, saveRecentSheets } from '../common/index.js'
+import { FILES_DIR, loadRecentSheets, registerHandle, saveRecentSheets } from '../common/index'
 
 export function registerSheetsHandlers(): void {
   registerHandle('sheets:new-blank', async (_event: unknown, options: unknown) => {

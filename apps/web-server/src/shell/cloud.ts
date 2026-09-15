@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { CLOUD_FILES, FILES_DIR, registerHandle } from '../common/index.js'
+import { CLOUD_FILES, FILES_DIR, registerHandle } from '../common/index'
 
 export function registerCloudHandlers(): void {
   registerHandle('cloud:upload', async (_event: unknown, args: unknown) => {

@@ -3,7 +3,7 @@
  * mirror `apps/shell/src/main/index.ts` semantics for the standalone web
  * server build.
  */
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 export function registerAppInfoHandlers(): void {
   registerHandle('app:get-language', () => 'zh')

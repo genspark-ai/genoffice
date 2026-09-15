@@ -4,11 +4,11 @@
  * (mutations), `state` (queries), `master` (master-view), and `files`
  * (file pickers).
  */
-import { registerSlidesCoreHandlers } from './core.js'
-import { registerSlidesElementHandlers } from './elements.js'
-import { registerSlidesFileHandlers } from './files.js'
-import { registerSlidesMasterHandlers } from './master.js'
-import { registerSlidesStateHandlers } from './state.js'
+import { registerSlidesCoreHandlers } from './core'
+import { registerSlidesElementHandlers } from './elements'
+import { registerSlidesFileHandlers } from './files'
+import { registerSlidesMasterHandlers } from './master'
+import { registerSlidesStateHandlers } from './state'
 
 export function registerSlidesHandlers(): void {
   registerSlidesCoreHandlers()

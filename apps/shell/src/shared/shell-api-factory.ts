@@ -24,7 +24,11 @@ import type {
   AutoSaveDefault,
   CloudProjectsSnapshot,
   HomeApi,
+  MarketplaceCategory,
+  MarketplaceCategoryInfo,
   MarketplaceEntry,
+  MarketplaceUploadEntry,
+  MarketplaceUploadPayload,
   ModuleEntry,
   ModuleKind,
   PluginEntry,
@@ -269,6 +273,53 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
         installedSkills: SkillEntry[]
         installedPlugins: PluginEntry[]
       }
+    },
+    async marketplaceCategories() {
+      const r = (await t.invoke(HOME_CHANNELS.marketplaceCategories)) as { categories?: MarketplaceCategoryInfo[] }
+      return { categories: Array.isArray(r?.categories) ? r!.categories : [] }
+    },
+    async marketplaceSearch(filters: {
+      q?: string
+      category?: MarketplaceCategory
+      type?: 'skill' | 'plugin'
+      minRating?: number
+      installed?: boolean | 'all'
+      sort?: 'popular' | 'rating' | 'newest' | 'name'
+    }) {
+      const r = (await t.invoke(HOME_CHANNELS.marketplaceSearch, filters)) as {
+        skills?: MarketplaceEntry[]
+        plugins?: MarketplaceEntry[]
+        total?: number
+        filters?: typeof filters
+      }
+      return {
+        skills: Array.isArray(r?.skills) ? r!.skills : [],
+        plugins: Array.isArray(r?.plugins) ? r!.plugins : [],
+        total: typeof r?.total === 'number' ? r!.total : 0,
+        filters: r?.filters,
+      }
+    },
+    async marketplaceDetail(id: string, type: 'skill' | 'plugin') {
+      return (await t.invoke(HOME_CHANNELS.marketplaceDetail, { id, type })) as {
+        ok: boolean
+        error?: string
+        type?: 'skill' | 'plugin'
+        entry?: MarketplaceEntry
+        installed?: SkillEntry | PluginEntry | null
+      }
+    },
+    async marketplaceUpload(kind: 'skill' | 'plugin', payload: MarketplaceUploadPayload) {
+      return (await t.invoke(HOME_CHANNELS.marketplaceUpload, { kind, payload })) as {
+        ok: boolean
+        error?: string
+        kind?: 'skill' | 'plugin'
+        entry?: MarketplaceEntry
+        message?: string
+      }
+    },
+    async marketplaceListUploads() {
+      const r = (await t.invoke(HOME_CHANNELS.marketplaceListUploads)) as { uploads?: MarketplaceUploadEntry[]; error?: string }
+      return { uploads: Array.isArray(r?.uploads) ? r!.uploads : [], error: r?.error }
     },
     async resetSkills(): Promise<SkillEntry[]> {
       const result = (await t.invoke(HOME_CHANNELS.resetSkills)) as { skills?: SkillEntry[] }

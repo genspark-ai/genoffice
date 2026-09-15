@@ -3,7 +3,7 @@
  * transform on master shapes. Placeholders matching the legacy single-file
  * implementation.
  */
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 export function registerSlidesMasterHandlers(): void {
   registerHandle('slides:master-open', () => ({ ok: true }))

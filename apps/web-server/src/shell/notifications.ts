@@ -2,7 +2,7 @@
  * Notifications channels — send/list/mark-read/clear. In-memory per-user
  * queue, no real push delivery in the web build.
  */
-import { NOTIFICATIONS, registerHandle } from '../common/index.js'
+import { NOTIFICATIONS, registerHandle } from '../common/index'
 
 export function registerNotificationHandlers(): void {
   registerHandle('notifications:send', (_event: unknown, args: unknown) => {

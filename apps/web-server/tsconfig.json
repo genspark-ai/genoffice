@@ -7,7 +7,7 @@
     "types": ["node"],
     "outDir": "dist",
     "rootDir": "src",
-    "strict": false,
+    "strict": true,
     "noImplicitAny": false,
     "esModuleInterop": true,
     "skipLibCheck": true,

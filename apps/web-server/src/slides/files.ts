@@ -4,7 +4,7 @@
  */
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import { FILES_DIR, registerHandle } from '../common/index.js'
+import { FILES_DIR, registerHandle } from '../common/index'
 
 const IMAGE_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }
 

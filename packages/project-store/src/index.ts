@@ -1,4 +1,4 @@
-export { ProjectStore } from './store.js'
+export { ProjectStore } from './store'
 export type {
   ChatMessage,
   ChatMeta,
@@ -9,7 +9,7 @@ export type {
   ProjectSummary,
   TimelineEntry,
   ToolActivity,
-} from './types.js'
+} from './types'
 export type {
   AppendChatArgs,
   LoadChatArgs,
@@ -17,4 +17,4 @@ export type {
   RebindChatArgs,
   ResolveChatArgs,
   ResolveChatResult,
-} from './ipc.js'
+} from './ipc'

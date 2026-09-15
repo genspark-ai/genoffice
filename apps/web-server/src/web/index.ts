@@ -13,7 +13,7 @@ import {
   registerHandle,
   saveProjects,
   WEB_TEMP_ROOT,
-} from '../common/index.js'
+} from '../common/index'
 
 export function registerWebHandlers(): void {
   registerHandle('web:write-temp-file', async (_event: unknown, request: unknown) => {
@@ -21,8 +21,11 @@ export function registerWebHandlers(): void {
     if (!record || typeof record.name !== 'string' || !(record.bytes instanceof ArrayBuffer)) {
       throw new Error('web:write-temp-file expects { name: string, bytes: ArrayBuffer }')
     }
-    const safeName = basename(record.name).replace(/[^\w.\- ]+/g, '_') || 'file'
-    const dir = mkdirSync(join(WEB_TEMP_ROOT, `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`), { recursive: true })
+    const safeName = (basename(record.name) || 'file').replace(/[^\w.\- ]+/g, '_') || 'file'
+    const dir = mkdirSync(
+      join(WEB_TEMP_ROOT, `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+      { recursive: true },
+    ) as string
     const filePath = join(dir, safeName)
     writeFileSync(filePath, Buffer.from(record.bytes))
     return filePath

@@ -3,7 +3,7 @@
  * (`COLLAB_SESSIONS`) and presence map (`PRESENCE`) live in
  * `common/state.ts`; this module just wires the channels.
  */
-import { COLLAB_SESSIONS, PRESENCE, registerHandle } from '../common/index.js'
+import { COLLAB_SESSIONS, PRESENCE, registerHandle } from '../common/index'
 
 export function registerCollabSessionHandlers(): void {
   registerHandle('collab:join', (_event: unknown, args: unknown) => {

@@ -3,7 +3,7 @@
  * `clipboard:*` namespaced set. All return the "use the browser's native
  * clipboard" placeholder.
  */
-import { registerHandle } from '../common/index.js'
+import { registerHandle } from '../common/index'
 
 export function registerClipboardHandlers(): void {
   registerHandle('copy', (_event: unknown, _text: unknown) => ({
