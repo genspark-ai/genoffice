@@ -169,6 +169,15 @@ describe('compileOps', () => {
     )
     expect(next2).toContain(`title='&amp;lt;'`)
   })
+  it('set_style escapes apostrophes in single-quoted style attributes', () => {
+    const doc = `<html><body><div style='color: red'>hi</div></body></html>`
+    const sid = sidOf(doc, 'div')
+    const { next } = run(
+      [{ op: 'set_style', sid, styles: { 'font-family': "a'b", color: 'a&b' } }],
+      doc,
+    )
+    expect(next).toContain(`style='color: a&amp;b; font-family: a&#39;b'`)
+  })
   it('move relocates an element and rejects moving into itself', () => {
     const one = sidOf(DOC, 'li', 0)
     const three = sidOf(DOC, 'li', 2)

@@ -400,7 +400,13 @@ export function compileOps(text: string, map: ParseMap, ops: readonly HtmlOp[]):
             patches.push({
               from: e.startTag[0] + found.valueFrom,
               to: e.startTag[0] + found.valueTo,
-              text: escapeAttr(serialized),
+              // Mirror set_attr above: a single-quoted style attribute
+              // must escape apostrophes, not double quotes, or the value
+              // breaks out of the attribute.
+              text:
+                found.quote === '"'
+                  ? escapeAttr(serialized)
+                  : serialized.replace(/&/g, '&amp;').replace(/'/g, '&#39;'),
               index,
             })
         } else if (serialized) {
