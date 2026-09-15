@@ -96,6 +96,7 @@ describe('media settings', () => {
     expect(activeMediaProvider(openaiSettings(), 'image')).toBe('openai')
     expect(activeMediaProvider(openaiSettings(), 'analysis')).toBe('openai')
     expect(activeMediaProvider(openaiSettings(''), 'image')).toBe('genspark')
+    expect(activeMediaProvider(openaiSettings('   '), 'image')).toBe('genspark')
     const custom = defaultAiMediaSettings()
     custom.imageProvider = 'custom'
     expect(activeMediaProvider(withMedia(custom), 'image')).toBe('genspark')

@@ -48,6 +48,14 @@ describe('search settings', () => {
         },
       }),
     ).toBe('serper')
+    expect(
+      activeSearchProvider({
+        search: {
+          provider: 'serper',
+          providers: { serper: { apiKey: '   ' }, tavily: { apiKey: '' } },
+        },
+      }),
+    ).toBe('genspark')
     expect(activeSearchProvider({ search: { provider: 'bing', providers: {} } as never })).toBe(
       'genspark',
     )

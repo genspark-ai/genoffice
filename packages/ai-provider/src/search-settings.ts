@@ -38,5 +38,7 @@ export function activeSearchProvider(settings: Pick<AiSettings, 'search'>): AiSe
   const search = settings.search
   if (!search || search.provider === 'genspark') return 'genspark'
   if (!AI_SEARCH_PROVIDERS.some((m) => m.id === search.provider)) return 'genspark'
-  return search.providers?.[search.provider]?.apiKey ? search.provider : 'genspark'
+  // Trim-aware: a whitespace-only key from in-memory settings falls back
+  // instead of sending `Bearer    ` to the search backend.
+  return search.providers?.[search.provider]?.apiKey?.trim() ? search.provider : 'genspark'
 }

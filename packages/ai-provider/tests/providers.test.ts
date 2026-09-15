@@ -291,6 +291,24 @@ describe('activeProvider', () => {
     expect(resolved.providers.codex.apiKey).toBe('')
   })
 
+  it('treats whitespace-only keys, URLs, and models as unconfigured', () => {
+    const settings = defaultAiSettings()
+    settings.provider = 'kimi'
+    settings.providers.kimi.apiKey = '   '
+    expect(activeProvider(settings)).toBe('genspark')
+    settings.providers.kimi.apiKey = 'sk-user'
+    settings.providers.kimi.model = '  '
+    expect(activeProvider(settings)).toBe('genspark')
+    settings.providers.kimi.model = 'kimi-k2'
+    expect(activeProvider(settings)).toBe('kimi')
+
+    const custom = defaultAiSettings()
+    custom.provider = 'custom'
+    custom.providers.custom.baseUrl = '   '
+    custom.providers.custom.model = 'my-model'
+    expect(activeProvider(custom)).toBe('genspark')
+  })
+
   it('falls back to genspark for unknown ids from a hand-edited settings file', () => {
     const settings = defaultAiSettings()
     settings.provider = 'nonsense' as AiProviderId

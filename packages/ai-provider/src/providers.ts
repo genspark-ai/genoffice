@@ -312,14 +312,16 @@ export function activeProvider(settings: AiSettings): AiProviderId {
   const config = settings.providers?.[provider]
   if (!meta || !config) return 'genspark'
   if (meta.needsCliPath) return provider
-  if (!config.model) return 'genspark'
+  // Trim-aware: in-memory settings bypass the trimConfigs applied to
+  // persisted files, and a whitespace-only key/URL/model is a 401, not a config.
+  if (!config.model?.trim()) return 'genspark'
   if (meta.needsBaseUrl) {
     // Custom OpenAI-compatible endpoints (Ollama, LM Studio, vLLM) accept
     // anonymous requests: base URL + model suffice, the key stays optional.
-    if (!config.baseUrl) return 'genspark'
+    if (!config.baseUrl?.trim()) return 'genspark'
     return provider
   }
-  if (!config.apiKey) return 'genspark'
+  if (!config.apiKey?.trim()) return 'genspark'
   return provider
 }
 
