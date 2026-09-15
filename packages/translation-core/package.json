@@ -14,7 +14,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@genoffice/ai-provider": "*"
+    "@genoffice/ai-provider": "*",
+    "@earendil-works/pi-ai": "^0.85.1"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

@@ -1,0 +1,41 @@
+{
+  "name": "@genoffice/agent-runtime",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin wrapper around @earendil-works/pi-coding-agent SDK for GenOffice Office apps",
+  "exports": {
+    ".": "./src/index.ts",
+    "./ui-adapter": "./src/ui-adapter.ts",
+    "./session": "./src/session.ts",
+    "./provider": "./src/provider.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.85.1",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-session-backend-sqlite-node": "^0.85.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.0",
+    "jsdom": "^28.0.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

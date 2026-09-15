@@ -13,6 +13,9 @@
  *        - POST /api/ipc/:channel       — JSON-over-HTTP IPC invoke
  *        - GET  /api/ipc/events         — SSE event stream per session
  *        - POST /api/ai/stream          — Agent-Loop SSE stream
+ *        - POST /api/ai/translate       — Synchronous batch translate (JSON)
+ *        - POST /api/ai/translate/stream — SSE translate stream (start/unit/quality/complete/error)
+ *        - POST /api/ai/translate/stream/cancel — abort an in-flight stream
  *      and falls back to the static docs renderer when no API route hits.
  *
  * The capability code lives in capability-specific sub-directories
@@ -42,6 +45,11 @@ import {
   AI_STREAM_SESSIONS,
   runProviderStream,
 } from './ai/index.js'
+import {
+  handleTranslateBatchHttp,
+  handleTranslateStreamHttp,
+  handleTranslateStreamCancelHttp,
+} from './ai/translate-http.js'
 import type { AiSettings, AiStreamChunk } from '@genoffice/ai-provider'
 import { registerProjectHandlers } from './projects/index.js'
 import { registerDocsHandlers } from './docs/index.js'
@@ -344,6 +352,21 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       sendIpcError(response, error)
     }
+    return
+  }
+
+  if (url.pathname === '/api/ai/translate' && request.method === 'POST') {
+    void handleTranslateBatchHttp(request, response)
+    return
+  }
+
+  if (url.pathname === '/api/ai/translate/stream' && request.method === 'POST') {
+    void handleTranslateStreamHttp(request, response)
+    return
+  }
+
+  if (url.pathname === '/api/ai/translate/stream/cancel' && request.method === 'POST') {
+    void handleTranslateStreamCancelHttp(request, response)
     return
   }
 

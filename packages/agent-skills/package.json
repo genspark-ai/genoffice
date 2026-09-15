@@ -1,0 +1,29 @@
+{
+  "name": "@genoffice/agent-skills",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "GenOffice docx/sheets/slides/skill extensions on top of @earendil-works/pi-coding-agent",
+  "exports": {
+    ".": "./src/index.ts",
+    "./extensions/docs-skill": "./src/extensions/docs-skill.ts",
+    "./extensions/sheets-skill": "./src/extensions/sheets-skill.ts",
+    "./extensions/slides-skill": "./src/extensions/slides-skill.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@earendil-works/pi-agent-core": "^0.85.1",
+    "@genoffice/agent-runtime": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

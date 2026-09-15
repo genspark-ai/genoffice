@@ -105,7 +105,7 @@ if (!isElectronRuntime()) {
       }
       const scope = request.range?.scope === 'document' ? 'document' : 'selection'
       const unitId = `${scope}-${Date.now().toString(36)}`
-      const response = await requestDataflare('/crmapi/ai/translation/v1/translate', {
+      const response = await requestDataflare('/office-engine/api/ai/translate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -153,7 +153,7 @@ if (!isElectronRuntime()) {
         return await transport.invoke('ai:translate-batch', request)
       }
       const batchId = `document-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-      const response = await requestDataflare('/crmapi/ai/translation/v1/translate', {
+      const response = await requestDataflare('/office-engine/api/ai/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -230,7 +230,7 @@ if (!isElectronRuntime()) {
             requestId: batchId,
             sessionId: getDataflareEmbedSessionId() || '',
             method: 'POST',
-            path: '/crmapi/ai/translation/v1/translate/stream',
+            path: '/office-engine/api/ai/translate/stream',
             jsonBody: JSON.stringify({
               requestId: batchId,
               idempotencyKey: batchId,

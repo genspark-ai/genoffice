@@ -45,7 +45,13 @@
     "react-dom": "^19.2.4",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-agent-core": "^0.85.1",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@earendil-works/pi-telemetry": "^0.85.1",
+    "@earendil-works/pi-protocol": "^0.85.1",
+    "@earendil-works/pi-client": "^0.85.1"
   },
   "author": "GenOffice",
   "build": {
@@ -91,6 +97,7 @@
     }
   },
   "dependencies": {
+    "@genoffice/agent-runtime": "*",
     "@genoffice/electron-utils": "*",
     "@genoffice/translation-core": "*",
     "@genoffice/font-metrics": "*",

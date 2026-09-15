@@ -1,0 +1,26 @@
+{
+  "name": "@genoffice/agent-telemetry",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin wrapper around @earendil-works/pi-telemetry + span exporters (local JSONL, console, in-memory, OTel interface)",
+  "exports": {
+    ".": "./src/index.ts",
+    "./exporter": "./src/exporter.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.85.1",
+    "@earendil-works/pi-telemetry": "^0.85.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}
