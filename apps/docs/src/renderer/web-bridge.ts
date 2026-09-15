@@ -19,6 +19,7 @@ import {
 } from '@genoffice/ipc-bridge/web-native'
 import { createDesktopApi, createProjectApi } from '../shared/desktop-api-factory'
 import type { DesktopApi } from '../shared/ipc'
+import { parseDataflareTranslateResponse } from '../shared/dataflare-translate-response'
 import {
   installDataflareEmbedBridge,
   getDataflareEmbedSessionId,
@@ -132,19 +133,17 @@ if (!isElectronRuntime()) {
           }],
         }),
       })
-      const body = (await response.json()) as {
-        code?: number
-        msg?: string
-        data?: { requestId?: string; units?: Array<{ translatedText?: string; errorMessage?: string }> }
-      }
-      const unit = body.data?.units?.[0]
-      if (!response.ok || body.code !== 0 || !unit?.translatedText) {
-        return { ok: false, error: unit?.errorMessage || body.msg || 'Dataflare translation failed' }
+      // 响应由 GenOffice web-server 返回（{ ok, units, quality }），旧 Dataflare
+      // 信封（{ code, data }）也一并兼容，避免再次出现 translatedText 解析失败。
+      const parsed = parseDataflareTranslateResponse(await response.json().catch(() => null))
+      const unit = parsed.units[0]
+      if (!response.ok || !unit?.translatedText) {
+        return { ok: false, error: unit?.errorMessage || parsed.error || 'Dataflare translation failed' }
       }
       return {
         ok: true,
         translated: unit.translatedText,
-        planId: body.data?.requestId || unitId,
+        planId: parsed.requestId || unitId,
         sourceLang: request.sourceLang,
         targetLang: request.targetLang,
         preserveFormat: request.preserveFormat !== false,
@@ -179,25 +178,10 @@ if (!isElectronRuntime()) {
           })),
         }),
       })
-      const body = await response.json().catch(() => null) as {
-        code?: number
-        msg?: string
-        data?: {
-          units?: Array<{
-            unitId?: string
-            sourceText?: string
-            translatedText?: string
-            status?: string
-            matchedTerms?: string[]
-            warnings?: string[]
-            errorMessage?: string
-          }>
-          quality?: { overallScore?: number; warnings?: string[] }
-        }
-      } | null
-      const units = (body?.data?.units || []).map((unit) => ({
-        unitId: unit.unitId || '',
-        sourceText: unit.sourceText || '',
+      const parsed = parseDataflareTranslateResponse(await response.json().catch(() => null))
+      const units = parsed.units.map((unit) => ({
+        unitId: unit.unitId,
+        sourceText: unit.sourceText,
         translatedText: unit.translatedText,
         status: unit.status,
         matchedTerms: unit.matchedTerms,
@@ -206,10 +190,10 @@ if (!isElectronRuntime()) {
         range: request.units.find((input) => input.unitId === unit.unitId)?.range || null,
       }))
       return {
-        ok: response.ok && body?.code === 0 && units.length === request.units.length,
+        ok: response.ok && parsed.ok && units.length === request.units.length,
         units,
-        quality: body?.data?.quality,
-        error: body?.msg || (!response.ok ? `Dataflare translation failed (${response.status})` : undefined),
+        quality: parsed.quality,
+        error: parsed.error || (!response.ok ? `Dataflare translation failed (${response.status})` : undefined),
       }
     },
     aiTranslateBatchStream: async (request: Parameters<NonNullable<import('../shared/desktop-api-factory').DesktopApiOverrides['aiTranslateBatch']>>[0]) => {
