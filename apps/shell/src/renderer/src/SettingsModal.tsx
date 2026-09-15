@@ -41,6 +41,7 @@ import type {
 import { ProviderLogo } from './provider-logos'
 import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
 import './settings.css'
+import { AiChatPane } from './AiChatPane'
 
 // ── Settings modal (opened from the account menu) ─────────
 // Genspark-style two-pane dialog: section nav on the left, fields on the right.
@@ -158,6 +159,7 @@ type SectionId =
   | 'integrations'
   | 'modules'
   | 'skillsPlugins'
+  | 'aiChat'
   | 'about'
 
 const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
@@ -168,6 +170,7 @@ const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'integrations', labelKey: 'setSecIntegrations' },
   { id: 'modules', labelKey: 'setSecModules' },
   { id: 'skillsPlugins', labelKey: 'setSecSkillsPlugins' },
+  { id: 'aiChat', labelKey: 'setSecAiChat' },
   { id: 'about', labelKey: 'setSecAbout' },
 ]
 
@@ -1561,6 +1564,7 @@ export function SettingsModal({
             {section === 'aiMedia' && <AiMediaPane t={t} />}
             {section === 'modules' && <ModulesPane t={t} />}
             {section === 'skillsPlugins' && <SkillsPluginsPane t={t} />}
+            {section === 'aiChat' && <AiChatPane t={t} />}
             {section === 'general' && (
               <>
                 <h3 className="set-pane-title">{t('setSecGeneral')}</h3>

@@ -1,6 +1,14 @@
 import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { fileURLToPath } from 'node:url'
+import { dirname } from 'node:path'
+
+const __dirname_local = dirname(fileURLToPath(import.meta.url))
+const aiProviderBrowserStub = resolve(
+  __dirname_local,
+  '../../packages/ai-provider/src/browser/codex-app-server.ts',
+)
 
 export default defineConfig({
   // Bundle everything into the shell main (same policy as apps/docs): the
@@ -31,9 +39,32 @@ export default defineConfig({
     },
   },
   renderer: {
-    plugins: [react()],
+    // Renderer is browser-only. externalizeDepsPlugin keeps Node-only
+    // modules out of the browser bundle so vite's browser shim never
+    // has to resolve `stat` / `readline` / `node:*` imports.
+    resolve: {
+      alias: [
+        // codex-app-server.ts is Node-only (uses node:crypto/fs/readline).
+        // Alias any variant of the path to a browser stub so renderer
+        // builds don't try to resolve `stat` against __vite-browser-external.
+        { find: /.*codex-app-server\.ts$/, replacement: aiProviderBrowserStub },
+        { find: '@genoffice/ai-provider/codex-app-server', replacement: aiProviderBrowserStub },
+      ],
+    },
+    plugins: [
+      react(),
+      externalizeDepsPlugin({
+        exclude: ['@genoffice/ipc-bridge'],
+        // Keep these Node-only modules out of the renderer bundle even
+        // when the renderer entry chain still resolves them through type
+        // re-exports. Without this, rollup fails to bundle
+        // codex-app-server.ts because it imports node:fs/stat which is
+        // not exported by __vite-browser-external.
+      }),
+    ],
     build: {
       rollupOptions: {
+        external: (id) => id.includes('codex-app-server') || id.startsWith('@genoffice/ai-provider/codex-app-server'),
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
           // strong-guidance update window (see src/main/update-window.ts)

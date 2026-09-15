@@ -1,7 +1,9 @@
 import { chatAnthropic } from './protocols/anthropic'
 import { chatGemini } from './protocols/gemini'
 import { chatOpenAiCompatible } from './protocols/openai-compatible'
-import { chatCodexAppServer } from './codex-app-server'
+// Same rationale as stream.ts — import the browser stub so vite/rollup never
+// pulls in the Node-only './codex-app-server' module in renderer bundles.
+import { chatCodexAppServer } from './codex-app-server.browser'
 import { getProviderAdapter, type ResolvedEndpoint } from './registry'
 import type { AiChatResponse, AiProviderConfig, AiProviderId } from './types'
 import { AI_CHAT_RESPONSE_TIMEOUT_MS, createStreamWatchdog } from './watchdog'

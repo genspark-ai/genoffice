@@ -3,7 +3,11 @@ import { withOutputCapFallback } from './output-cap'
 import { streamAnthropic } from './protocols/anthropic'
 import { streamGemini } from './protocols/gemini'
 import { streamOpenAiCompatible } from './protocols/openai-compatible'
-import { streamCodexAppServer } from './codex-app-server'
+// Note: import the renderer-safe stub './codex-app-server.browser' instead of
+// the Node-only './codex-app-server' (which uses node:crypto/fs/readline). The
+// main process wires the real implementation via dynamic import at runtime
+// (see apps/*/src/main/*-main.ts). Renderer bundles stay browser-safe.
+import { streamCodexAppServer } from './codex-app-server.browser'
 import type { StreamCallbacks } from './protocols/shared'
 import { getProviderAdapter, type AiProtocol } from './registry'
 import type { AiProviderConfig, AiProviderId } from './types'
