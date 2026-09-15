@@ -66,6 +66,12 @@ describe('detectTocBlocks (dot leaders)', () => {
     const blocks = groupIntoBlocks(analyzeChars(mkText('Name: ____', 72, { y: 700 }).chars))
     expect(detectTocBlocks(blocks)).toBe(blocks)
   })
+
+  it('still rejects 5-digit trailing numbers (years, zips) on leader lines', () => {
+    const chars = [...dotLeaderChars('Appendix', '20240', 700)]
+    const blocks = groupIntoBlocks(analyzeChars(chars))
+    expect(detectTocBlocks(blocks)).toBe(blocks)
+  })
 })
 
 describe('hasDotLeaderRun', () => {
@@ -86,6 +92,11 @@ describe('hasDotLeaderRun', () => {
 
   it('rejects dotted fill-in lines with no page number', () => {
     expect(hasDotLeaderRun(mkText('Name: ......', 72).chars)).toBe(false)
+  })
+
+  it('rejects mid-line digits and overlong numbers after the leader', () => {
+    expect(hasDotLeaderRun(mkText('Intro .... 12 apples', 72).chars)).toBe(false)
+    expect(hasDotLeaderRun(dotLeaderChars('Report', '20240', 700))).toBe(false)
   })
 })
 

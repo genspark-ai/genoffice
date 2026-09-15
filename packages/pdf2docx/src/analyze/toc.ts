@@ -16,8 +16,10 @@ import { firstStrongDir } from './rtl'
 import type { LineUnit } from './units'
 import { clusterUnitRows } from './units'
 
-/** title ... leader dots/underscores/dashes ... page number */
-const TOC_LINE_RE = /^(.*?[^\s._\-–—])\s*([.·_\-–—]\s*){4,}\s*([0-9]+|[ivxlcdm]+)\s*$/i
+/** title ... leader dots/underscores/dashes ... page number (arabic ≤4 digits
+    like the leaderless PAGENUM_UNIT_RE below, so years/zip codes stay out;
+    roman ≤6 chars) */
+const TOC_LINE_RE = /^(.*?[^\s._\-–—])\s*([.·_\-–—]\s*){4,}\s*([0-9]{1,4}|[ivxlcdm]{1,6})\s*$/i
 /** each this many points of extra indent nests the entry one level deeper */
 const LEVEL_INDENT_PT = 14
 const MAX_TOC_LEVEL = 9
@@ -53,14 +55,31 @@ export function hasDotLeaderRun(chars: readonly PdfChar[]): boolean {
   let i = 0
   while (i < chars.length) {
     const c = chars[i]!
-    if (c.text === '.' || c.text === '·' || c.text === '_' || c.text === '-' || c.text === '–' || c.text === '—') {
+    if (
+      c.text === '.' ||
+      c.text === '·' ||
+      c.text === '_' ||
+      c.text === '-' ||
+      c.text === '–' ||
+      c.text === '—'
+    ) {
       run++
       if (run >= LEADER_RUN_MIN_DOTS) armed = true
       i++
     } else if (c.text === ' ' || c.code === 0x20) {
       i++
     } else if (armed && c.text >= '0' && c.text <= '9') {
-      return true
+      // Possible arabic page number ("Intro .... 28"): gather the digits and
+      // accept them only when they run to the end of the line, mirroring the
+      // anchored TOC_LINE_RE — a mid-line year ("Intro .... 12 apples") must
+      // not read as an index entry. Capped at 4 digits like PAGENUM_UNIT_RE.
+      let j = i
+      while (j < chars.length && chars[j]!.text >= '0' && chars[j]!.text <= '9') j++
+      const restBlank = chars.slice(j).every((d) => d.text === ' ' || d.code === 0x20)
+      if (restBlank && j - i >= 1 && j - i <= 4) return true
+      run = 0
+      armed = false
+      i = j
     } else if (armed && /[ivxlcdm]/i.test(c.text)) {
       // Possible roman page number (front-matter entries like "Intro .... iv"):
       // gather the whole trailing token and accept it only when it runs to the
@@ -72,7 +91,7 @@ export function hasDotLeaderRun(chars: readonly PdfChar[]): boolean {
         .map((d) => d.text)
         .join('')
       const restBlank = chars.slice(j).every((d) => d.text === ' ' || d.code === 0x20)
-      if (restBlank && /^(?:[0-9]+|[ivxlcdm]+)$/i.test(token)) return true
+      if (restBlank && /^(?:[0-9]{1,4}|[ivxlcdm]{1,6})$/i.test(token)) return true
       run = 0
       armed = false
       i = j
