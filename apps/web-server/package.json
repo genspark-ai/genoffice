@@ -19,7 +19,9 @@
     "pkg:win": "pkg dist/bundle/index.js --targets node22-win-x64 --output dist/genoffice-web-win.exe",
     "pkg:mac": "pkg dist/bundle/index.js --targets node22-macos-x64 --output dist/genoffice-web-mac",
     "pkg:all": "pkg dist/bundle/index.js --targets node22-linux-x64,node22-win-x64,node22-macos-x64 --output dist/genoffice-web",
-    "bundle": "npm run bundle:esbuild"
+    "bundle": "npm run bundle:esbuild",
+    "test": "vitest run --reporter=dot",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@genoffice/agent-core": "*",
@@ -35,7 +37,8 @@
     "esbuild": "0.25.12",
     "pkg": "^5.8.1",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.0"
   },
   "pkg": {
     "scripts": [

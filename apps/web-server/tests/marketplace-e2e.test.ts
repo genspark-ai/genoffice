@@ -171,3 +171,77 @@ describe('marketplace E2E flow', () => {
     expect(afterUninstall.result.piSkills.some((s) => s.name === id)).toBe(false)
   }, 60_000)
 })
+
+import { describe, it, expect } from 'vitest'
+
+describe('marketplace search sort regression (W35+)', () => {
+  // These tests pin the documented sort semantics. The previous implementation
+  // sorted 'newest' by entry.name — a real bug that meant newly uploaded
+  // extensions could never appear at the top of the newest tab. The fix
+  // exposes uploadedAt on every entry and sorts by it descending, with
+  // download count as tiebreaker.
+  it("'newest' sort orders by uploadedAt descending, not by name", async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    const result = searchMarketplace({ sort: 'newest' })
+    // skills and plugins are sorted as independent lists — verify each one.
+    for (const list of [result.skills, result.plugins]) {
+      expect(list.length).toBeGreaterThan(0)
+      for (let i = 1; i < list.length; i++) {
+        const prev = Date.parse(list[i - 1].uploadedAt ?? '') || 0
+        const cur = Date.parse(list[i].uploadedAt ?? '') || 0
+        expect(prev).toBeGreaterThanOrEqual(cur)
+      }
+    }
+  })
+
+  it("'popular' sort orders by downloads descending", async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    const result = searchMarketplace({ sort: 'popular' })
+    for (const list of [result.skills, result.plugins]) {
+      for (let i = 1; i < list.length; i++) {
+        expect(list[i - 1].downloads).toBeGreaterThanOrEqual(list[i].downloads)
+      }
+    }
+  })
+
+  it("'rating' sort orders by rating descending with downloads tiebreaker", async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    const result = searchMarketplace({ sort: 'rating' })
+    for (const list of [result.skills, result.plugins]) {
+      for (let i = 1; i < list.length; i++) {
+        const prev = list[i - 1]
+        const cur = list[i]
+        if (prev.rating === cur.rating) {
+          expect(prev.downloads).toBeGreaterThanOrEqual(cur.downloads)
+        } else {
+          expect(prev.rating).toBeGreaterThanOrEqual(cur.rating)
+        }
+      }
+    }
+  })
+
+  it("'name' sort orders by display name ascending", async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    const result = searchMarketplace({ sort: 'name' })
+    for (const list of [result.skills, result.plugins]) {
+      for (let i = 1; i < list.length; i++) {
+        expect(list[i - 1].name.localeCompare(list[i].name)).toBeLessThanOrEqual(0)
+      }
+    }
+  })
+
+  it('every uploaded entry exposes uploadedAt as a valid ISO timestamp', async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    const result = searchMarketplace({})
+    const all = [...result.skills, ...result.plugins]
+    // When uploadedAt is present (community uploads) it must parse as a
+    // valid ISO timestamp. Curated entries are allowed to omit it; the
+    // 'newest' sort treats those as epoch 0 and sinks them to the bottom.
+    for (const e of all) {
+      if (typeof e.uploadedAt === 'string') {
+        const t = Date.parse(e.uploadedAt)
+        expect(Number.isFinite(t)).toBe(true)
+      }
+    }
+  })
+})

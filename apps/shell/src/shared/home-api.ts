@@ -423,6 +423,9 @@ export interface MarketplaceUploadPayload {
   id: string
   name: string
   description: string
+  /** Optional rich description shown in the detail drawer (plain text up to
+   *  ~1024 chars). Falls back to `description` in the UI when absent. */
+  longDescription?: string
   version: string
   tools: string[]
   scopes: string[]

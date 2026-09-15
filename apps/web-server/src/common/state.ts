@@ -9,7 +9,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-export const DATA_DIR = process.env.DATA_DIR || '/tmp/genoffice-data'
+export const DATA_DIR =
+  process.env.DATA_DIR || process.env.GENOFFICE_DATA_DIR || '/tmp/genoffice-data'
 mkdirSync(DATA_DIR, { recursive: true })
 
 export const FILES_DIR = join(DATA_DIR, 'files')

@@ -477,6 +477,10 @@ export interface MarketplaceSkillEntry {
   /** Optional upstream icon (single emoji) */
   icon?: string
   homepage?: string
+  /** ISO 8601 timestamp of when this entry was first published. Set for
+   *  community uploads (read from disk); curated entries may leave it
+   *  undefined, in which case the 'newest' sort treats them as epoch 0. */
+  uploadedAt?: string
 }
 
 export interface MarketplacePluginEntry {
@@ -498,6 +502,7 @@ export interface MarketplacePluginEntry {
   featured?: boolean
   icon?: string
   homepage?: string
+  uploadedAt?: string
 }
 
 const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
@@ -994,15 +999,23 @@ function invalidateUploads(): void {
 
 /** curated skills + everything published at runtime (published ids win) */
 function allMarketplaceSkills(): MarketplaceSkillEntry[] {
-  const uploaded = loadUploaded().filter((u) => u.kind === 'skill').map((u) => u.entry)
-  const publishedIds = new Set(uploaded.map((u) => u.id))
-  return [...MARKETPLACE_SKILLS.filter((s) => !publishedIds.has(s.id)), ...uploaded] as MarketplaceSkillEntry[]
+  const uploaded = loadUploaded().filter((u) => u.kind === 'skill')
+  const uploadedEntries = uploaded.map((u) => ({ ...u.entry, uploadedAt: u.uploadedAt }))
+  const publishedIds = new Set(uploadedEntries.map((u) => u.id))
+  return [
+    ...MARKETPLACE_SKILLS.filter((s) => !publishedIds.has(s.id)),
+    ...uploadedEntries,
+  ] as MarketplaceSkillEntry[]
 }
 
 function allMarketplacePlugins(): MarketplacePluginEntry[] {
-  const uploaded = loadUploaded().filter((u) => u.kind === 'plugin').map((u) => u.entry)
-  const publishedIds = new Set(uploaded.map((u) => u.id))
-  return [...MARKETPLACE_PLUGINS.filter((p) => !publishedIds.has(p.id)), ...uploaded] as MarketplacePluginEntry[]
+  const uploaded = loadUploaded().filter((u) => u.kind === 'plugin')
+  const uploadedEntries = uploaded.map((u) => ({ ...u.entry, uploadedAt: u.uploadedAt }))
+  const publishedIds = new Set(uploadedEntries.map((u) => u.id))
+  return [
+    ...MARKETPLACE_PLUGINS.filter((p) => !publishedIds.has(p.id)),
+    ...uploadedEntries,
+  ] as MarketplacePluginEntry[]
 }
 
 function listMarketplaceSkills(): MarketplaceSkillEntry[] {
@@ -1085,14 +1098,23 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
     return true
   }
 
-  function sortBy<T extends { rating: number; downloads: number; name: string }>(arr: T[]): T[] {
+  function sortBy<T extends { rating: number; downloads: number; name: string; uploadedAt?: string }>(arr: T[]): T[] {
     const sorted = [...arr]
     switch (sort) {
       case 'rating':
         sorted.sort((a, b) => b.rating - a.rating || b.downloads - a.downloads)
         break
       case 'newest':
-        sorted.sort((a, b) => b.name.localeCompare(a.name))
+        // Sort by uploadedAt descending. Curated entries without an explicit
+        // uploadedAt fall back to a stable epoch so they sink to the bottom
+        // (community uploads always beat them). Ties on the same timestamp
+        // break by download count.
+        sorted.sort((a, b) => {
+          const ta = Date.parse(a.uploadedAt ?? '') || 0
+          const tb = Date.parse(b.uploadedAt ?? '') || 0
+          if (tb !== ta) return tb - ta
+          return b.downloads - a.downloads
+        })
         break
       case 'name':
         sorted.sort((a, b) => a.name.localeCompare(b.name))
@@ -1507,6 +1529,14 @@ export function registerSkillHandlers(): void {
     if (!validCategories.includes(category)) {
       return { ok: false, error: `category must be one of ${validCategories.join(', ')}` }
     }
+    const longDescription = typeof r.longDescription === 'string' ? r.longDescription.trim() : ''
+    if (longDescription.length > 1024) {
+      return { ok: false, error: 'longDescription must be ≤ 1024 chars' }
+    }
+    const homepage = typeof r.homepage === 'string' ? r.homepage.trim() : ''
+    if (homepage.length > 0 && !/^https?:\/\//i.test(homepage)) {
+      return { ok: false, error: 'homepage must start with http:// or https://' }
+    }
     const force = r.force === true
     const alreadyUploaded = !!findUploaded(expectedKind, id)
     if (force) {
@@ -1526,6 +1556,7 @@ export function registerSkillHandlers(): void {
           id,
           name,
           description,
+          ...(longDescription ? { longDescription } : {}),
           author,
           version,
           package: pkg,
@@ -1537,6 +1568,7 @@ export function registerSkillHandlers(): void {
           rating: typeof r.rating === 'number' ? Math.max(0, Math.min(5, r.rating)) : 0,
           downloads: 0,
           icon: typeof r.icon === 'string' ? r.icon.slice(0, 4) : '?',
+          ...(homepage ? { homepage } : {}),
         },
       }
     }

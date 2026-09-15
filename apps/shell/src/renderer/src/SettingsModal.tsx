@@ -1098,7 +1098,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
   const [mpInstalled, setMpInstalled] = useState<'all' | boolean>('all')
   const [minRating, setMinRating] = useState(0)
   const [marketMsg, setMarketMsg] = useState<string | null>(null)
-  const [detailEntry, setDetailEntry] = useState<MpEntry | null>(null)
+  const [detailEntry, setDetailEntry] = useState<{ entry: MpEntry; kind: 'skill' | 'plugin' } | null>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [uploadKind, setUploadKind] = useState<'skill' | 'plugin'>('skill')
   const [uploadUploads, setUploadUploads] = useState<{ file: string; id?: string; name?: string; kind?: string; uploadedAt?: string }[]>([])
@@ -1107,6 +1107,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
     id: '',
     name: '',
     description: '',
+    longDescription: '',
     version: '1.0.0',
     tools: '',
     scopes: '',
@@ -1114,6 +1115,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
     tags: '',
     author: '',
     icon: '',
+    homepage: '',
   })
   const [uploadMsg, setUploadMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -1237,9 +1239,13 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
   }
 
   const openDetail = async (entry: MpEntry, kind: 'skill' | 'plugin') => {
-    setDetailEntry(entry)
+    // Open optimistically with the entry from the grid, then hydrate from
+    // marketplace-detail (the canonical source). We track `kind` alongside
+    // the entry so submitRating / uninstall calls don't have to re-derive
+    // it from a fragile heuristic (e.g. checking tool prefixes).
+    setDetailEntry({ entry, kind })
     const res = await window.aiOffice.marketplaceDetail?.(entry.id, kind)
-    if (res?.ok && res.entry) setDetailEntry(res.entry)
+    if (res?.ok && res.entry) setDetailEntry({ entry: res.entry, kind: (res.type as 'skill' | 'plugin') || kind })
   }
 
   const submitUpload = async () => {
@@ -1250,6 +1256,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
         id: uploadForm.id.trim(),
         name: uploadForm.name.trim(),
         description: uploadForm.description.trim(),
+        longDescription: uploadForm.longDescription.trim() || undefined,
         version: uploadForm.version.trim(),
         tools: splitList(uploadForm.tools),
         scopes: splitList(uploadForm.scopes),
@@ -1257,6 +1264,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
         tags: splitList(uploadForm.tags),
         author: uploadForm.author.trim() || undefined,
         icon: uploadForm.icon.trim() || undefined,
+        homepage: uploadForm.homepage.trim() || undefined,
       }
       // Detect a likely overwrite by probing the marketplace before submit.
       // If the catalog already contains an entry with this id, confirm with
@@ -1285,6 +1293,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
           id: '',
           name: '',
           description: '',
+          longDescription: '',
           version: '1.0.0',
           tools: '',
           scopes: '',
@@ -1292,6 +1301,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
           tags: '',
           author: '',
           icon: '',
+          homepage: '',
         })
         const listed = await window.aiOffice.marketplaceListUploads?.()
         setUploadUploads((listed as { uploads?: typeof uploadUploads })?.uploads ?? [])
@@ -1313,27 +1323,21 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
     setRateMsg(null)
     setRateBusy(true)
     try {
-      const kind = detailEntry.tools?.length > 0 && /[Pp]lugin/.test(detailEntry.author) ? 'plugin' : 'skill'
-      // The kind comes from the original marketplace entry type; the server
-      // doesn't expose `kind` on MarketplaceEntry, so we ask the server via
-      // a heuristic fallback: if id exists in plugins.json, treat as plugin.
-      const isInstalledPlugin = window.aiOffice.listPlugins !== undefined
-      const probeKind: 'skill' | 'plugin' = detailEntry.tools?.some((t) => /^(skill|plugin)_/.test(t))
-        ? 'skill'
-        : 'plugin'
-      const finalKind = probeKind === 'plugin' ? 'plugin' : 'skill'
-      const res = await window.aiOffice.marketplaceRate?.(detailEntry.id, finalKind, rateDraft)
+      // detailEntry carries the authoritative `kind` captured when the
+      // drawer opened — no more brittle heuristic over tool prefixes or
+      // author names. Server's marketplaceRate only tracks user uploads, so
+      // a curated skill will report ok=false with a clear error and the UI
+      // surfaces it.
+      const finalKind = detailEntry.kind
+      const res = await window.aiOffice.marketplaceRate?.(detailEntry.entry.id, finalKind, rateDraft)
       if (res?.ok) {
         setRateMsg({
           kind: 'ok',
           text: `${t('mpRateThanks')} 平均 ${res.averageRating?.toFixed(2)} (${res.ratingCount} 次评分)`,
         })
-        // refresh the marketplace catalog so the detail drawer + grid reflect
-        // the new average immediately
         await refresh()
-        // also re-open detail with the updated entry
-        const refreshed = await window.aiOffice.marketplaceDetail?.(detailEntry.id, finalKind)
-        if (refreshed?.ok && refreshed.entry) setDetailEntry(refreshed.entry)
+        const refreshed = await window.aiOffice.marketplaceDetail?.(detailEntry.entry.id, finalKind)
+        if (refreshed?.ok && refreshed.entry) setDetailEntry({ entry: refreshed.entry, kind: finalKind })
       } else {
         setRateMsg({ kind: 'err', text: res?.error ?? 'Rating failed' })
       }
@@ -1763,6 +1767,24 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
                   onChange={(e) => setUploadForm({ ...uploadForm, tags: e.target.value })}
                 />
               </label>
+              <label className="set-mp-field set-mp-field-wide">
+                <span>{t('mpUploadLongDesc')}</span>
+                <textarea
+                  value={uploadForm.longDescription}
+                  placeholder={t('mpUploadLongDescHint')}
+                  maxLength={1024}
+                  rows={3}
+                  onChange={(e) => setUploadForm({ ...uploadForm, longDescription: e.target.value })}
+                />
+              </label>
+              <label className="set-mp-field set-mp-field-wide">
+                <span>{t('mpUploadHomepage')}</span>
+                <input
+                  value={uploadForm.homepage}
+                  placeholder="https://github.com/you/your-extension"
+                  onChange={(e) => setUploadForm({ ...uploadForm, homepage: e.target.value })}
+                />
+              </label>
             </div>
             <div className="set-mp-upload-actions">
               <button
@@ -1822,13 +1844,13 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
           </div>
 
           {detailEntry && (
-            <aside className="set-mp-detail" data-mp-detail={detailEntry.id}>
+            <aside className="set-mp-detail" data-mp-detail={detailEntry.entry.id}>
               <div className="set-mp-detail-head">
-                <span className="set-mp-card-icon">{detailEntry.icon ?? detailEntry.name[0]}</span>
+                <span className="set-mp-card-icon">{detailEntry.entry.icon ?? detailEntry.entry.name[0]}</span>
                 <div>
-                  <div className="set-mp-detail-name">{detailEntry.name}</div>
+                  <div className="set-mp-detail-name">{detailEntry.entry.name}</div>
                   <div className="set-mp-detail-meta">
-                    v{detailEntry.version} · {detailEntry.author}
+                    v{detailEntry.entry.version} · {detailEntry.entry.author}
                   </div>
                 </div>
                 <button
@@ -1841,18 +1863,18 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
                 </button>
               </div>
               <p className="set-mp-detail-desc">
-                {detailEntry.longDescription || detailEntry.description}
+                {detailEntry.entry.longDescription || detailEntry.entry.description}
               </p>
               <div className="set-mp-detail-stats">
-                <span className="set-mp-card-rating">★ {detailEntry.rating.toFixed(1)}</span>
+                <span className="set-mp-card-rating">★ {detailEntry.entry.rating.toFixed(1)}</span>
                 <span>
-                  {detailEntry.downloads.toLocaleString()} {t('mpDownloads')}
+                  {detailEntry.entry.downloads.toLocaleString()} {t('mpDownloads')}
                 </span>
               </div>
               <div className="set-mp-detail-block">
-                <h6>{t('tools')} · {detailEntry.tools.length}</h6>
+                <h6>{t('tools')} · {detailEntry.entry.tools.length}</h6>
                 <div className="set-skill-scopes">
-                  {detailEntry.tools.map((tool) => (
+                  {detailEntry.entry.tools.map((tool) => (
                     <span key={tool} className="set-scope-tag">{tool}</span>
                   ))}
                 </div>
@@ -1860,16 +1882,16 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
               <div className="set-mp-detail-block">
                 <h6>{t('mpScopes')}</h6>
                 <div className="set-skill-scopes">
-                  {detailEntry.scopes.map((sc) => (
+                  {detailEntry.entry.scopes.map((sc) => (
                     <span key={sc} className="set-scope-tag">{sc}</span>
                   ))}
                 </div>
               </div>
-              {detailEntry.requirements && detailEntry.requirements.length > 0 && (
+              {detailEntry.kind === 'plugin' && (detailEntry.entry as { requirements?: string[] }).requirements && (detailEntry.entry as { requirements?: string[] }).requirements!.length > 0 && (
                 <div className="set-mp-detail-block">
                   <h6>{t('requirements')}</h6>
                   <div className="set-skill-scopes">
-                    {detailEntry.requirements.map((r) => (
+                    {(detailEntry.entry as { requirements?: string[] }).requirements!.map((r) => (
                       <span key={r} className="set-scope-tag set-scope-tag-req">{r}</span>
                     ))}
                   </div>
@@ -1878,13 +1900,18 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
               <div className="set-mp-detail-block">
                 <h6>{t('mpCategory')}</h6>
                 <div className="set-mp-card-tags">
-                  {detailEntry.tags.map((tag) => (
+                  {detailEntry.entry.tags.map((tag) => (
                     <span key={tag} className="set-mp-tag">{tag}</span>
                   ))}
                 </div>
               </div>
               <div className="set-mp-detail-meta">
-                <code>{detailEntry.package}</code>
+                <code>{detailEntry.entry.package}</code>
+                {detailEntry.entry.homepage && (
+                  <a href={detailEntry.entry.homepage} target="_blank" rel="noopener noreferrer">
+                    {detailEntry.entry.homepage}
+                  </a>
+                )}
               </div>
               {/* Rate widget — only show for community uploads (rating counts > 0
                   or the entry has 0 ratings but is a non-builtin upload) */}
