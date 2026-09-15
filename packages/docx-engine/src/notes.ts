@@ -205,8 +205,8 @@ function noteEntriesOf(
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     const attrs = m[1] ?? ''
-    if (/w:type="/.test(attrs)) continue // separator / continuation entries
-    const id = /w:id="([^"]+)"/.exec(attrs)?.[1]
+    if (/w:type=(?:"[^"]*"|'[^']*')/.test(attrs)) continue // separator / continuation entries
+    const id = /w:id=(?:"([^"]+)"|'([^']+)')/.exec(attrs)?.slice(1, 3).find(Boolean)
     if (!id) continue
     const paras: string[] = []
     const pRe = /<w:p[\s>][\s\S]*?<\/w:p>|<w:p\/>/g
@@ -313,7 +313,10 @@ export function buildNotesXml(
   let structural = ''
   const originals = new Map<string, { text: string; xml: string }>()
   if (originalXml) {
-    const re = new RegExp(`<${entry}\\s[^>]*w:type="[^"]*"[^>]*>[\\s\\S]*?</${entry}>`, 'g')
+    const re = new RegExp(
+      `<${entry}\\s[^>]*w:type=(?:"[^"]*"|'[^']*')[^>]*>[\\s\\S]*?</${entry}>`,
+      'g',
+    )
     structural = (originalXml.match(re) ?? []).join('')
     for (const e of noteEntriesOf(originalXml, kind)) originals.set(e.id, e)
   }

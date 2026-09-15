@@ -48,6 +48,19 @@ const originalOrder = (doc: Awaited<ReturnType<typeof parseDocx>>): SaveBlock[] 
     .filter((b) => !b.hidden && b.docxIndex !== null)
     .map((b) => ({ kind: 'original', docxIndex: b.docxIndex! }))
 
+describe('single-quoted note attributes', () => {
+  it('skips single-quoted separators and reads single-quoted ids', () => {
+    const xml =
+      XML_DECL +
+      '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      "<w:footnote w:type='separator' w:id='-1'><w:p><w:r><w:separator/></w:r></w:p></w:footnote>" +
+      "<w:footnote w:id='2'><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t>detail</w:t></w:r></w:p></w:footnote>" +
+      '</w:footnotes>'
+    const notes = parseNotesXml(xml, 'footnote')
+    expect(notes.map((n) => [n.id, n.text])).toEqual([['2', 'detail']])
+  })
+})
+
 describe('Zotero fields inside notes', () => {
   it('flags notes whose body carries a Zotero citation field', () => {
     const zoteroNote =
@@ -350,7 +363,8 @@ describe('rich-text footnote display runs', () => {
     ])
   })
 
-  it('flags notes without a self-reference mark run (Word renders those entries numberless)', async () => {    const endnotesXml =
+  it('flags notes without a self-reference mark run (Word renders those entries numberless)', async () => {
+    const endnotesXml =
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
       '<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
       '<w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote>' +
