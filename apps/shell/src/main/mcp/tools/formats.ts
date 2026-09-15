@@ -137,17 +137,29 @@ export function withSaveExtension(family: SessionFamily, filePath: string): stri
   throw new Error(`a ${familyLabel(family)} session must be saved as ${wanted} (got ".${ext}")`)
 }
 
-/** compact capability report for get_app_info: editor truth + exposed MCP subset */
-export function capabilityReport(): Array<{
+/**
+ * Compact capability report for get_app_info: editor truth plus the MCP subset.
+ *
+ * The static `mcp` block is what this server *can* expose; the runtime options
+ * narrow it to what is actually registered right now, so the report never
+ * advertises a tool the client cannot call (`generating: false` hides the
+ * headless `create_*` tools, which are opt-in).
+ */
+export function capabilityReport(options: { generating?: boolean } = {}): Array<{
   family: EditorFamily
   label: string
   editor: { open: readonly string[]; save: readonly string[]; export: readonly string[] }
   mcp?: McpFormats
 }> {
-  return FORMAT_FAMILIES.map((f) => ({
-    family: f.family,
-    label: f.label,
-    editor: { open: f.editorOpen, save: f.editorSave, export: f.editorExport },
-    ...(f.mcp ? { mcp: f.mcp } : {}),
-  }))
+  const generating = options.generating !== false
+  return FORMAT_FAMILIES.map((f) => {
+    const mcp = f.mcp ? { ...f.mcp } : undefined
+    if (mcp && !generating) delete mcp.generate
+    return {
+      family: f.family,
+      label: f.label,
+      editor: { open: f.editorOpen, save: f.editorSave, export: f.editorExport },
+      ...(mcp && Object.keys(mcp).length > 0 ? { mcp } : {}),
+    }
+  })
 }

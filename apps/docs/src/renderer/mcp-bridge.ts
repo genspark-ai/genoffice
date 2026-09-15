@@ -2,7 +2,6 @@ import type { Editor } from '@tiptap/react'
 import { BLANK_BULLET_NUM_ID, BLANK_ORDERED_NUM_ID } from '@genoffice/docx-engine'
 import type { McpCommandMessage, McpEditorCommand } from '../shared/ipc'
 import { executeTool, markDocSeen } from './ai/tools'
-import { executeOps } from './ai/ops'
 import { findNumId, type NumIds } from './ai/protocol'
 import { save, type FileActionContext } from './file-actions'
 
@@ -15,8 +14,8 @@ import { save, type FileActionContext } from './file-actions'
  * back on `docs:mcp-result`. Command execution is serialized so a burst cannot
  * interleave two edits into one document.
  *
- * The executors are the built-in agent's own (`executeTool` / `executeOps`), so
- * external edits inherit the same parsing, atomicity and formatting rules.
+ * The executors are the built-in agent's own (`executeTool`), so external edits
+ * inherit the same parsing, atomicity, formatting rules and stale-index guard.
  */
 
 export interface McpBridgeDeps {
@@ -103,13 +102,22 @@ async function runCommand(
 
     case 'apply_ops': {
       const input = (payload ?? {}) as ApplyOpsInput
-      const outcome = executeOps(editor, input.ops, {
-        source: 'ai',
-        dryRun: input.dryRun === true,
-      })
-      if (!outcome.ok) throw new Error(outcome.error ?? 'the ops batch was rejected')
+      // Route through executeTool rather than executeOps: the wrapper is what
+      // refuses a block-indexed batch after the user edited the document (the
+      // stale-index guard) and supplies numbering ids, so an external batch
+      // behaves exactly like the built-in agent's.
+      const outcome = await executeTool(
+        editor,
+        {
+          id: 'mcp',
+          name: 'apply_ops',
+          input: { ops: input.ops, ...(input.dryRun === true ? { dryRun: true } : {}) },
+        },
+        numIdsFor(ctx),
+      )
+      if (outcome.isError) throw new Error(outcome.output)
       if (input.dryRun !== true) clearAiChangedFlags(editor)
-      return { summary: outcome.summary, results: outcome.results, plan: outcome.plan }
+      return { summary: outcome.summary, output: outcome.output, mutated: outcome.mutated }
     }
 
     case 'read_document': {
@@ -127,11 +135,15 @@ async function runCommand(
       if (typeof input.path !== 'string' || !input.path) {
         throw new Error('save_document requires an absolute "path"')
       }
+      const failures: string[] = []
       const ok = await save(ctx, false, true, undefined, {
         path: input.path,
         overwrite: input.overwrite === true,
+        onError: (message) => failures.push(message),
       })
-      if (!ok) throw new Error('the document could not be saved')
+      // the genuine reason matters here: "already exists, pass overwrite:true"
+      // is actionable, while a generic failure sends the agent guessing
+      if (!ok) throw new Error(failures[0] ?? 'the document could not be saved')
       return { ok: true, path: input.path }
     }
 

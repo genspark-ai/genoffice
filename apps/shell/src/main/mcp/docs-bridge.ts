@@ -21,6 +21,8 @@ const READY_TIMEOUT_MS = 20_000
 const COMMAND_TIMEOUT_MS = 120_000
 
 interface PendingCommand {
+  /** the tab this command was sent to; only that tab may answer it */
+  wcId: number
   resolve: (result: unknown) => void
   reject: (error: Error) => void
   timer: NodeJS.Timeout
@@ -31,6 +33,16 @@ const readyWaiters = new Map<number, Array<() => void>>()
 const pending = new Map<string, PendingCommand>()
 let requestSeq = 0
 let installed = false
+
+/** drop every command still waiting on this tab, so a closed tab fails fast */
+function abortPendingFor(wcId: number): void {
+  for (const [requestId, entry] of pending) {
+    if (entry.wcId !== wcId) continue
+    pending.delete(requestId)
+    clearTimeout(entry.timer)
+    entry.reject(new Error('the target document was closed while the command was running'))
+  }
+}
 
 function markReady(wcId: number): void {
   readyIds.add(wcId)
@@ -76,6 +88,7 @@ export function installDocsBridge(): void {
     event.sender.once('destroyed', () => {
       readyIds.delete(wcId)
       readyWaiters.delete(wcId)
+      abortPendingFor(wcId)
     })
   })
   ipcMain.on('docs:mcp-result', (event, result: unknown) => {
@@ -88,6 +101,9 @@ export function installDocsBridge(): void {
     if (!payload || typeof payload.requestId !== 'string') return
     const entry = pending.get(payload.requestId)
     if (!entry) return
+    // requestIds are guessable, so any docs tab could otherwise answer another
+    // tab's command: the reply is only valid from the tab the command targeted
+    if (entry.wcId !== event.sender.id) return
     pending.delete(payload.requestId)
     clearTimeout(entry.timer)
     if (payload.ok === true) entry.resolve(payload.result)
@@ -116,7 +132,7 @@ export function createDocsControl(deps: DocsBridgeDeps): DocsControl {
         pending.delete(requestId)
         reject(new Error(`the document command timed out after ${COMMAND_TIMEOUT_MS}ms`))
       }, COMMAND_TIMEOUT_MS)
-      pending.set(requestId, { resolve, reject, timer })
+      pending.set(requestId, { wcId, resolve, reject, timer })
     })
     wc.send('docs:mcp-command', { requestId, command, payload })
     return result

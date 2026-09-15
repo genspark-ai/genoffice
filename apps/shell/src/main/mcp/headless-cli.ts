@@ -69,9 +69,12 @@ async function runCreate(
 /**
  * Read a .docx's visible text through `docs read`. Returns one paragraph per
  * line, matching the tool's documented shape.
+ *
+ * `--full` is required: without it the CLI clips each block to a 200-character
+ * preview, so long paragraphs would come back silently truncated.
  */
 export async function readDocxTextViaCli(runner: CliRunner, path: string): Promise<string> {
-  const outcome = await runner.run(['docs', 'read', path])
+  const outcome = await runner.run(['docs', 'read', path, '--full'])
   if (!outcome.ok || !outcome.json || outcome.json.status !== 'ok') {
     throw new Error(cliErrorMessage(outcome))
   }

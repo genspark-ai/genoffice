@@ -87,4 +87,52 @@ describe('stdio bridge', () => {
     expect(parsed, `no tools/list response; stdout=${JSON.stringify(stdout)}`).toBeDefined()
     expect(parsed!.result!.tools!.map((t) => t.name)).toContain('ping')
   }, 20000)
+
+  it('never answers a notification, even when forwarding it fails', async () => {
+    // no server on this port: every forward fails, which is the case where the
+    // old bridge wrote an id-less error object onto the JSON-RPC stdout channel
+    const port = await freePort()
+
+    child = spawn(process.execPath, [bridgePath, '--port', String(port)], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    const stdout: string[] = []
+    child.stdout!.on('data', (chunk: Buffer) => {
+      for (const line of chunk.toString().split('\n')) if (line.trim()) stdout.push(line.trim())
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    // a notification (no id) followed by a request (id) — only the request may
+    // produce a stdout line
+    child.stdin!.write(
+      JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n',
+    )
+    child.stdin!.write(
+      JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/list', params: {} }) + '\n',
+    )
+
+    const deadline = Date.now() + 8000
+    let sawRequestError = false
+    while (Date.now() < deadline && !sawRequestError) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      sawRequestError = stdout.some((line) => {
+        try {
+          return (JSON.parse(line) as { id?: number }).id === 7
+        } catch {
+          return false
+        }
+      })
+    }
+
+    expect(sawRequestError, `no error for request id 7; stdout=${JSON.stringify(stdout)}`).toBe(
+      true,
+    )
+    // every line must answer a request; an id-less error line is the protocol
+    // violation a stdio client would choke on
+    for (const line of stdout) {
+      const msg = JSON.parse(line) as { id?: unknown; error?: unknown }
+      if (msg.error === undefined) continue
+      expect(msg.id, `answered a notification: ${line}`).toBeDefined()
+    }
+  }, 20000)
 })

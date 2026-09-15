@@ -177,7 +177,8 @@ describe('M3 docx tools', () => {
     expect(result.isError).toBeFalsy()
     const payload = JSON.parse(text(result.content)) as { text: string }
     expect(payload.text).toBe('Title\nBody text here.')
-    expect(cli.last()).toEqual(['docs', 'read', join(dir, 'doc.docx')])
+    // --full matters: without it the CLI clips every block to a preview
+    expect(cli.last()).toEqual(['docs', 'read', join(dir, 'doc.docx'), '--full'])
   })
 
   it('read_docx rejects a missing file and a non-docx extension', async () => {

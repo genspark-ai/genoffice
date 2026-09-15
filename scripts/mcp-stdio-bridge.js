@@ -49,6 +49,16 @@ let connectingPromise = null
 let reconnectTimer = null
 let stopping = false
 
+// The client performs the MCP handshake once, against the first SSE session.
+// A reconnect creates a *new*, uninitialized server session, so the cached
+// handshake is replayed on it — otherwise every tool call after a transient
+// disconnect fails as "not initialized" while the client believes it is ready.
+// Responses to a replayed initialize are dropped: the client already has its
+// handshake result and would see a duplicate response.
+let handshakeMessages = null
+let handshakeSession = null
+const suppressedResponseIds = new Set()
+
 /** stderr only: stdout is the JSON-RPC channel */
 function log(message) {
   process.stderr.write(`[genoffice-mcp-bridge] ${message}\n`)
@@ -123,7 +133,13 @@ function connectSSE() {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              sendResponse(JSON.parse(line.slice(6)))
+              const parsed = JSON.parse(line.slice(6))
+              // drop the answer to a replayed handshake
+              if (parsed && parsed.id !== undefined && suppressedResponseIds.has(parsed.id)) {
+                suppressedResponseIds.delete(parsed.id)
+                continue
+              }
+              sendResponse(parsed)
             } catch {
               // endpoint URL / heartbeat comment: not JSON-RPC
             }
@@ -181,8 +197,47 @@ function scheduleReconnect() {
   }, 5000)
 }
 
+/** Remember the client's handshake so a reconnect can re-establish it. */
+function cacheHandshake(message) {
+  const method = message && typeof message === 'object' ? message.method : undefined
+  if (method !== 'initialize' && method !== 'notifications/initialized') return
+  const cached = (handshakeMessages ?? []).filter((m) => m.method !== method)
+  cached.push(message)
+  handshakeMessages = cached
+  // the exchanged pair completes the handshake on the session that carried it
+  if (method === 'notifications/initialized') handshakeSession = sessionId
+}
+
+/** Re-run the cached handshake against a freshly created session. */
+async function replayHandshake() {
+  const messages = handshakeMessages
+  const target = sessionId
+  if (!messages || messages.length === 0) {
+    handshakeSession = target
+    return
+  }
+  // Mark the session as handshaked up front: sendToServer below would otherwise
+  // see the stale handshakeSession and re-enter this function.
+  handshakeSession = target
+  log('replaying session handshake after reconnect')
+  for (const message of messages) {
+    if (message.id !== undefined && message.id !== null) {
+      suppressedResponseIds.add(message.id)
+    }
+    try {
+      await sendToServer(message)
+    } catch (error) {
+      log(`handshake replay failed: ${error.message}`)
+    }
+  }
+}
+
 async function sendToServer(message) {
   if (!sessionId) await connectSSE()
+  // a reconnect hands us a new, uninitialized session: re-establish the cached
+  // handshake before the client's next call lands on it
+  if (handshakeSession !== null && handshakeSession !== sessionId) await replayHandshake()
+  cacheHandshake(message)
   // legacy SSE delivers responses only on the stream; the POST ack body must
   // not be written to stdout or it corrupts the newline-delimited protocol
   const response = await httpRequest('POST', `/messages?sessionId=${sessionId}`, message)
@@ -196,6 +251,12 @@ async function handleRequest(request) {
   try {
     await sendToServer(request)
   } catch (error) {
+    // A notification (no id) must never be answered: an unsolicited line would
+    // read as a protocol violation to the client. Only log it.
+    if (request.id === undefined || request.id === null) {
+      log(`notification ${request.method} failed: ${error.message}`)
+      return
+    }
     sendResponse({
       jsonrpc: '2.0',
       id: request.id,

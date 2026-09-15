@@ -1077,6 +1077,10 @@ export function SettingsModal({
   const [mcpRunning, setMcpRunning] = useState(false)
   const [mcpEnabled, setMcpEnabled] = useState(false)
   const [mcpPort, setMcpPort] = useState('3093')
+  // the last port the main process confirmed: an invalid edit reverts to this
+  // rather than a hard-coded default, which could disagree with a server that is
+  // already running on another port
+  const mcpSavedPort = useRef('3093')
   const [mcpError, setMcpError] = useState('')
   const [mcpSaving, setMcpSaving] = useState(false)
   const [mcpBackground, setMcpBackground] = useState(false)
@@ -1112,6 +1116,7 @@ export function SettingsModal({
         setMcpRunning(s.running)
         setMcpEnabled(s.enabled)
         setMcpPort(String(s.port))
+        mcpSavedPort.current = String(s.port)
         setMcpBackground(s.background)
         setMcpLogging(s.logging)
         setMcpCaps(s.capabilities ?? ['docs'])
@@ -1163,6 +1168,7 @@ export function SettingsModal({
       setMcpRunning(s.running)
       setMcpEnabled(s.enabled)
       setMcpPort(String(s.port))
+      mcpSavedPort.current = String(s.port)
       setMcpBackground(s.background)
       setMcpLogging(s.logging)
       setMcpCaps(s.capabilities ?? ['docs'])
@@ -1485,10 +1491,14 @@ export function SettingsModal({
                     onBlur={() => {
                       const port = Number(mcpPort)
                       if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-                        setMcpPort('3093')
+                        // revert to the port the main process last confirmed, not
+                        // a literal default that may not match the running server
+                        setMcpPort(mcpSavedPort.current)
                         return
                       }
-                      if (!mcpEnabled) return
+                      if (String(port) === mcpSavedPort.current) return
+                      // persist even while the server is off, so the port is
+                      // configured before it is switched on
                       applyMcp({ port })
                     }}
                   />

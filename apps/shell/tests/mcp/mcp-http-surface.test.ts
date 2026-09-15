@@ -182,7 +182,13 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
       expect(infoJson.name).toBe('GenOffice')
       expect(infoJson.version).toBe('0.9.0-acceptance')
       expect(infoJson.defaultSaveDir).toBe(workDir)
-      expect(infoJson.formats.sort()).toEqual(['docx'])
+      // background generation is off here, so create_docx is not registered and
+      // get_app_info must not advertise a generation format the client cannot use
+      expect(infoJson.formats).toEqual([])
+      expect(infoJson.families.find((f) => f.family === 'docx')!.mcp).toEqual({
+        save: ['docx'],
+        read: 'docx',
+      })
       expect(infoJson.families.map((f) => f.family)).toEqual([
         'docx',
         'xlsx',

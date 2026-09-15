@@ -786,6 +786,9 @@ export function save(
 export interface ExplicitSaveTarget {
   path: string
   overwrite: boolean
+  /** called with the main process's failure reason, so a caller that reports
+   *  outside the UI (MCP) can relay it instead of a generic message */
+  onError?: (message: string) => void
 }
 
 /** the parsed fragment flags every node aiChanged (yellow highlight); a boot-time fill is not a reviewable AI edit */
@@ -887,6 +890,7 @@ async function saveOnce(
         explicitTarget.overwrite,
       )
       if (!result.ok) {
+        explicitTarget.onError?.(result.error ?? '')
         ctx.setStatus(t('appSaveFailed', { error: result.error ?? '' }))
         showToast(t('appSaveFailed', { error: result.error ?? '' }), 'error')
         return false

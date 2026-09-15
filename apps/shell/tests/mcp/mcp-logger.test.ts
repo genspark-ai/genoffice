@@ -63,6 +63,19 @@ describe('McpLogger', () => {
     expect(tail[9]).toContain('line 29')
   })
 
+  it('recent() reads the tail of a file larger than the suffix window', () => {
+    // write past the 256 KiB suffix window so the bounded-read path runs; the
+    // last lines must still come back whole (no truncated first line)
+    const big = 'x'.repeat(4096)
+    for (let i = 0; i < 100; i++) logger.append(`line ${i} ${big}`)
+    const tail = logger.recent(5)
+    expect(tail).toHaveLength(5)
+    expect(tail[0]).toContain('line 95 ')
+    expect(tail[4]).toContain('line 99 ')
+    // every returned line is complete: the partial window edge is dropped
+    for (const line of tail) expect(line).toMatch(/^\[\d{4}-.*\] line \d+ x+$/)
+  })
+
   it('starts each logger with a fresh file (per-launch log, not persisted across runs)', () => {
     logger.append('[mcp] line from a previous run')
     // a new app launch constructs a fresh logger over the same path: the old

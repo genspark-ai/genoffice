@@ -1,4 +1,14 @@
-import { existsSync, readFileSync, appendFileSync, truncateSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  appendFileSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs'
 
 /**
  * Local log for the MCP server: a bounded in-memory ring plus an append-only
@@ -80,9 +90,38 @@ export class McpLogger {
   }
 }
 
-/** last `limit` lines of a text file without loading it all */
+/**
+ * Last `limit` non-empty lines of a text file.
+ *
+ * The settings pane polls this every couple of seconds while logging is on, so
+ * it reads a bounded suffix instead of the whole append-only file: growing the
+ * work with total history would put an unbounded synchronous read on the main
+ * process. A generous per-line allowance covers the long lines a stack trace
+ * can produce; falling back to the whole file when the suffix is too small to
+ * hold `limit` lines keeps the result exact.
+ */
 function readTail(filePath: string, limit: number): string[] {
-  const raw = readFileSync(filePath, 'utf8')
-  const lines = raw.split('\n').filter((l) => l.length > 0)
-  return lines.slice(-limit)
+  const MAX_BYTES = 256 * 1024
+  const { size } = statSync(filePath)
+  if (size <= MAX_BYTES) return tailLines(readFileSync(filePath, 'utf8'), limit)
+
+  const start = size - MAX_BYTES
+  const fh = openSync(filePath, 'r')
+  try {
+    const buffer = Buffer.allocUnsafe(MAX_BYTES)
+    const read = readSync(fh, buffer, 0, MAX_BYTES, start)
+    let lines = buffer.subarray(0, read).toString('utf8').split('\n')
+    // the window starts mid-line, so its first entry is a partial line
+    lines = lines.slice(1)
+    return lines.filter((l) => l.length > 0).slice(-limit)
+  } finally {
+    closeSync(fh)
+  }
+}
+
+function tailLines(raw: string, limit: number): string[] {
+  return raw
+    .split('\n')
+    .filter((l) => l.length > 0)
+    .slice(-limit)
 }

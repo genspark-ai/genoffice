@@ -3604,6 +3604,11 @@ export function registerDocsIpc(): void {
             error: `file already exists: ${filePath} (pass overwrite:true to replace it)`,
           }
         }
+        // An overwrite replaces bytes that were already on disk, so a teardown
+        // rollback must not unlink: deleting the path would destroy the
+        // pre-existing file rather than restoring it. Only a freshly created
+        // path is ours to remove.
+        const existedBefore = existsSync(filePath)
         await mkdir(dirname(filePath), { recursive: true })
         const passwordState = snapshotDocPassword(event.sender.id, null)
         const bytes = passwordState.password
@@ -3611,15 +3616,15 @@ export function registerDocsIpc(): void {
           : Buffer.from(data)
         await atomicWriteFile(filePath, bytes)
         // teardown may have happened while the write was in flight — a file this
-        // handler just wrote is safe to roll back (mirrors docs:save-new)
+        // handler just created is safe to roll back (mirrors docs:save-new)
         if (tornDownWcIds.has(event.sender.id)) {
-          await unlink(filePath).catch(() => {})
+          if (!existedBefore) await unlink(filePath).catch(() => {})
           return { ok: false }
         }
         allowDocWrite(event.sender.id, filePath)
         await rememberDiskState(event.sender.id, filePath, bytes)
         if (tornDownWcIds.has(event.sender.id)) {
-          await unlink(filePath).catch(() => {})
+          if (!existedBefore) await unlink(filePath).catch(() => {})
           return { ok: false }
         }
         const passwordIntentPending = commitDocPasswordSave(

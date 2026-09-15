@@ -81,6 +81,11 @@ export function uniquePathIn(dir: string, fileName: string): string {
  * file base name, land in the default save folder when no path is given, require
  * absolute paths otherwise, append the extension when missing, and refuse to
  * clobber an existing file unless overwrite is set.
+ *
+ * A path that already carries a *different* extension is rejected rather than
+ * having the right one appended: `report.pdf` silently becoming
+ * `report.pdf.docx` would write a file the caller never asked for (and hide a
+ * confused request behind a valid result).
  */
 export function resolveOutputPath(opts: {
   defaultSaveDir: () => string
@@ -96,10 +101,11 @@ export function resolveOutputPath(opts: {
   if (!isAbsolute(opts.requestedPath)) {
     throw new Error('path must be absolute')
   }
-  const finalPath =
-    extname(opts.requestedPath).toLowerCase() === ext
-      ? opts.requestedPath
-      : `${opts.requestedPath}${ext}`
+  const requestedExt = extname(opts.requestedPath)
+  if (requestedExt && requestedExt.toLowerCase() !== ext) {
+    throw new Error(`path must point to a ${ext} file (got "${requestedExt}")`)
+  }
+  const finalPath = requestedExt ? opts.requestedPath : `${opts.requestedPath}${ext}`
   if (existsSync(finalPath) && !opts.overwrite) {
     throw new Error(`file already exists: ${finalPath} (pass overwrite:true to replace it)`)
   }
@@ -216,9 +222,13 @@ export function createDocumentTools(deps: DocToolDeps, host: SessionHost): McpTo
         name: 'GenOffice',
         version: deps.version,
         defaultSaveDir: deps.defaultSaveDir(),
-        formats: ['docx', ...(deps.extraFormats ?? [])],
+        // Every format listed here is written by a headless create/read tool, and
+        // all of them are opt-in: with background generation off there is no
+        // generate tool at all, so advertising docx/pptx/xlsx would describe
+        // capabilities this client cannot reach.
+        formats: deps.background === false ? [] : ['docx', ...(deps.extraFormats ?? [])],
         // editor truth vs. what this server exposes — see tools/formats.ts
-        families: capabilityReport(),
+        families: capabilityReport({ generating: deps.background !== false }),
       }),
     },
     ...createDocxContentTools(deps, host),
@@ -311,8 +321,9 @@ function createDocxContentTools(deps: DocToolDeps, host: SessionHost): McpToolDe
     {
       name: 'read_document',
       description:
-        'Read the visible document: its blocks with indexes, text and current formatting, so you can ' +
-        'target follow-up edits.',
+        'Read the visible document as a block list: one "index|type|text" line per block, where the ' +
+        'index is what apply_ops and insert_content address. Long blocks are clipped for reading; ' +
+        'the list is an overview, not a lossless copy (use read_docx for full text).',
       inputSchema: {},
       handler: async () => {
         const wc = requireActive()
