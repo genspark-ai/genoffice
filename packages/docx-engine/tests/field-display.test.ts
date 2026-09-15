@@ -127,6 +127,15 @@ describe('field paragraph display model', () => {
     expect(leaders).toEqual(['hyphen', 'none', 'dot', undefined, 'underscore'])
   })
 
+  it('a TOC entry reads single-quoted tab stop values and leaders', async () => {
+    const body =
+      '<w:p><w:pPr><w:pStyle w:val="TOC1"/>' +
+      "<w:tabs><w:tab w:val='right' w:leader='dot' w:pos='9350'/></w:tabs></w:pPr>" +
+      '<w:r><w:t>Title</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>3</w:t></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: body }))
+    expect(doc.blocks[0].fieldDisplay).toMatchObject({ kind: 'tocLine', leader: 'dot' })
+  })
+
   it('a TOC entry carries the leading result run face and weight (Word draws the entry with its runs)', async () => {
     const entry = (rPr: string) =>
       '<w:p><w:pPr><w:pStyle w:val="TOC2"/><w:tabs><w:tab w:val="right" w:pos="8786"/></w:tabs>' +

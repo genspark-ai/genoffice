@@ -33,11 +33,11 @@ function tocLeaderOf(pPr: string, style?: StyleInfo): TabStop['leader'] | undefi
   const tabsXml = /<w:tabs>[\s\S]*?<\/w:tabs>/.exec(pPr)?.[0]
   if (tabsXml) {
     const rights = Array.from(tabsXml.matchAll(/<w:tab\s[^>]*\/>/g), (m) => m[0]).filter((t) =>
-      /\sw:val="right"/.test(t),
+      /\sw:val=(?:"right"|'right')/.test(t),
     )
     const last = rights[rights.length - 1]
     if (last) {
-      const v = /\sw:leader="([^"]+)"/.exec(last)?.[1] ?? 'none'
+      const v = /\sw:leader=(?:"([^"]+)"|'([^']+)')/.exec(last)?.slice(1, 3).find(Boolean) ?? 'none'
       return (TAB_LEADERS as readonly string[]).includes(v) ? (v as TabStop['leader']) : 'none'
     }
   }
