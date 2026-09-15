@@ -4664,3 +4664,90 @@ d1c938f docs(agent1): §16.41 W34 续 — 真正基于 pi 能力补足 web/image
 - pi sub-session 跨文档协同
 - 真 tesseract.js OCR 引擎(如有用户需要 100% 离线 OCR)
 - 真实 Tavily/Serper API 集成(高频生产)
+
+### §16.44 W34 补 — 修 stale catalog bug + 永久 E2E 回归(2026-09-15)
+
+#### 16.44.1 真实 Bug — E2E 第二次跑发现
+
+E2E 脚本 `apps/web-server/scripts/e2e-marketplace.sh` 是**回归测试的金标准**:
+它在同一个 server process 里连续 upload + install 两次。第一次跑通,
+第二次就崩 — `SKILL.md MISSING`。
+
+**根因**:`skillMarketCatalog()` 在 `getSkillMarket()` 内部首次调用时
+定稿缓存。第二次 upload 后,`byName` 不含新 id,`market.install(id)`
+找不到 entry → 静默跳过 SKILL.md 写盘 → UI 显示 `ok=True, piInstalled=True`,
+但磁盘啥都没变。
+
+这正好是 §16.40 同一类 bug 的变种:**silent failure**。
+
+#### 16.44.2 修复
+
+新增 `invalidateSkillMarket()` 在 `getSkillMarket()` 同文件作用域。
+每次 `home:marketplace-upload` 完成后调用,让下次 `getSkillMarket()`
+重新构造实例,`byName` 含最新 uploads + curated。
+
+```ts
+function invalidateSkillMarket(): void {
+  skillMarketInstance = null
+}
+```
+
+#### 16.44.3 永久回归脚本
+
+`apps/web-server/scripts/e2e-marketplace.sh` — 7 步完整验证:
+
+1. Upload 全新 skill(随机 id)
+2. Search 找到
+3. Install via IPC
+4. 验证 SKILL.md on disk + frontmatter 满足 pi 严格规范:
+   - `name: <slug>` (小写+连字符)
+   - `description: ...` (frontmatter 必填)
+   - `display_name: ...` (人类可读名)
+5. `home:list-pi-skills` 调 pi loader 验证: matched + 0 diagnostics
+6. Uninstall via IPC
+7. 验证 SKILL.md + .index.json 都清理 + pi loader 看不到
+
+#### 16.44.4 真实验证
+
+**修复前**:第二次 E2E 跑 step 4 `SKILL.md MISSING`。
+**修复后**:
+
+```
+=== E2E run #1 ===
+  [5/7] piSkills matched: 1 | diagnostics: 0 ✓
+  [7/7] disk + index.json cleaned ✓
+
+=== E2E run #2 (catches stale catalog bug) ===
+  [5/7] piSkills matched: 1 | diagnostics: 0 ✓
+  [7/7] disk + index.json cleaned ✓
+```
+
+两次连续跑都通过,同一 server process 内部 — stale catalog 路径已覆盖。
+
+#### 16.44.5 提交链(最终)
+
+```
+407a9e0 feat(web-server): W34 补 — 修 stale catalog bug + 永久 E2E 回归脚本
+37ddba1 feat(skills): W34 终极 — 新增 ocr skill
+13f71d0 docs(agent1): §16.43 W34 终极 — OCR skill 上线
+f52d145 docs(agent1): §16.42 W34 收尾 — ai:web-search/image-search IPC 真实现
+03b36b8 feat(ai): ai:web-search / ai:image-search IPC 转真实现
+d1c938f docs(agent1): §16.41 W34 续 — 真正基于 pi 能力补足 web/image 工具
+459ff63 feat(skills): 新增 web-search + image-search skills
+537dee5 docs(agent1): §16.40 — 全部 marketplace skill 真接通 pi loader
+390ba8a feat(skills+marketplace): W34 5 个核心 bug 修复
+```
+
+#### 16.44.6 §16 完整收尾
+
+| 章节 | 主题 | commit |
+| --- | --- | --- |
+| §16.40 | 5 个 marketplace install bug 修复 | 390ba8a + 537dee5 |
+| §16.41 | web-search + image-search skills | 459ff63 + d1c938f |
+| §16.42 | ai:web-search / ai:image-search IPC 真实现 | 03b36b8 + f52d145 |
+| §16.43 | ocr skill (图片→base64→多模态) | 37ddba1 + 13f71d0 |
+| §16.44 | stale catalog bug + E2E 永久回归 | 407a9e0 |
+
+**§16 = 100% 完成并真实验证**(共 5 个章节 + 9 个 commit + 永久 E2E 脚本)。
+
+`apps/web-server/scripts/e2e-marketplace.sh` 是 W34 全部修复的回归保险。
