@@ -309,6 +309,29 @@ describe('edit_text', () => {
     expect(deps.gotoPage).toHaveBeenCalledWith(2)
   })
 
+  it('locates dotted-capital text with the same fold as the search index', async () => {
+    // 'İ'.toLowerCase() grows to two chars ('i̇'), so a toLowerCase query
+    // never matches the length-preserving foldCase index; the helpers must
+    // fold the query the same way the index was built.
+    const dotted: SearchIndex = [
+      {
+        text: 'İzmir report',
+        lower: 'İzmir report',
+        items: [{ start: 0, end: 12, x: 0, y: 700, w: 120, h: 12 }],
+      },
+    ]
+    const deps = makeDeps({ searchIndex: () => Promise.resolve(dotted), pageCount: () => 1 })
+    const result = await executePdfTool(
+      deps,
+      call('edit_text', { page: 1, old_text: 'İzmir', new_text: 'Ankara' }),
+    )
+    expect(result.isError).toBeUndefined()
+    expect(result.mutated).toBe(true)
+    expect(deps.editText).toHaveBeenCalledWith(
+      expect.objectContaining({ oldText: 'İzmir', newText: 'Ankara' }),
+    )
+  })
+
   it('targets the nth occurrence and passes style overrides through', async () => {
     const deps = makeDeps()
     await executePdfTool(
