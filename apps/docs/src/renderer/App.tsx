@@ -1473,9 +1473,16 @@ export function App() {
             sourceLanguage: command.sourceLanguage,
             targetLanguage: command.targetLanguage,
             preserveFormatting: command.preserveFormatting,
+            memoryEnabled: command.memoryEnabled,
+            qualityCheck: command.qualityCheck,
+            glossaryCategory: command.glossaryCategory,
           },
         }))
         postToEmbedParent({ type: 'ai-progress', status: 'started', progress: 0 })
+      } else if (command.type === 'cancel-translation') {
+        // 通知 AI 面板立即停止：用户从 Dataflare 头部点了"取消翻译"
+        window.dispatchEvent(new CustomEvent('dataflare:cancel-translation'))
+        postToEmbedParent({ type: 'ai-progress', status: 'cancelled', progress: 0 })
       } else if (command.type === 'save') {
         void saveImpl(fileCtxRef.current, false, false).then((ok) => {
           postToEmbedParent(ok

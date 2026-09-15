@@ -164,6 +164,9 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
       targetLang: string
       preserveFormat?: boolean
       range?: { from?: number; to?: number; scope?: string } | null
+      memoryEnabled?: boolean
+      qualityCheck?: boolean
+      glossaryCategory?: string
     }) =>
         t.invoke('ai:translate', {
         instruction: request.instruction,
@@ -171,6 +174,9 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
         targetLang: request.targetLang,
         preserveFormat: request.preserveFormat,
         range: request.range,
+        memoryEnabled: request.memoryEnabled,
+        qualityCheck: request.qualityCheck,
+        glossaryCategory: request.glossaryCategory,
       })),
     aiTranslateBatch: overrides.aiTranslateBatch ?? (async (request) => {
       const results = await Promise.all(request.units.map(async (unit) => {
@@ -180,6 +186,9 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
           targetLang: request.targetLang,
           preserveFormat: request.preserveFormat,
           range: unit.range,
+          memoryEnabled: request.memoryEnabled,
+          qualityCheck: request.qualityCheck,
+          glossaryCategory: request.glossaryCategory,
         })
         return {
           unitId: unit.unitId,
@@ -208,6 +217,9 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
             targetLang: request.targetLang,
             preserveFormat: request.preserveFormat,
             range: unit.range,
+            memoryEnabled: request.memoryEnabled,
+            qualityCheck: request.qualityCheck,
+            glossaryCategory: request.glossaryCategory,
           })
           return {
             unitId: unit.unitId,

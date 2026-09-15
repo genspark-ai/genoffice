@@ -59,6 +59,12 @@ export interface TranslateRequest {
   targetLang: LanguageCode | string
   preserveFormat?: boolean | undefined
   range?: EditorRange | null | undefined
+  /** When false the shared TM is skipped (default true). */
+  memoryEnabled?: boolean | undefined
+  /** When false the post-translation quality assessment is skipped (default true). */
+  qualityCheck?: boolean | undefined
+  /** Free-form bucket label (e.g. 'legal', 'finance') for memory grouping. */
+  glossaryCategory?: string | undefined
 }
 
 export interface TranslateResponse {
@@ -80,6 +86,12 @@ export interface TranslateBatchRequest {
   targetLang: LanguageCode | string
   preserveFormat?: boolean | undefined
   scene?: string | undefined
+  /** When false the shared TM is skipped (default true). */
+  memoryEnabled?: boolean | undefined
+  /** When false the post-translation quality assessment is skipped (default true). */
+  qualityCheck?: boolean | undefined
+  /** Free-form bucket label for memory grouping / routing. */
+  glossaryCategory?: string | undefined
 }
 
 export interface TranslateBatchUnitResult {

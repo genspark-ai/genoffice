@@ -64,11 +64,13 @@ export async function translateOne(
   if (opts.provider !== 'codex' && !opts.config.model) {
     return { ok: false, error: `No model selected for "${opts.provider}".` }
   }
-  const memory = opts.memory ?? sharedMemory
+  const memory = request.memoryEnabled === false
+    ? null
+    : (opts.memory ?? sharedMemory)
   const sourceLang = normalizeSourceLang(request.sourceLang)
   const preserveFormat = request.preserveFormat !== false
 
-  const hit = memory.lookup(sourceLang, targetLang, sourceText)
+  const hit = memory?.lookup(sourceLang, targetLang, sourceText)
   if (hit) {
     return {
       ok: true,
@@ -85,6 +87,7 @@ export async function translateOne(
     sourceLang,
     targetLang,
     preserveFormat,
+    glossaryCategory: request.glossaryCategory,
   })
   try {
     const result = await chatForProvider(
@@ -107,7 +110,7 @@ export async function translateOne(
     if (!translated) {
       return { ok: false, error: 'Translation response did not contain final text.' }
     }
-    memory.save({ sourceLang, targetLang, sourceText, translatedText: translated })
+    if (memory) memory.save({ sourceLang, targetLang, sourceText, translatedText: translated })
     return {
       ok: true,
       translated,
@@ -137,7 +140,9 @@ export async function translateBatch(
   if (!Array.isArray(request.units) || request.units.length === 0) {
     return { ok: false, error: 'ai:translate-batch expected a non-empty `units` array' }
   }
-  const memory = opts.memory ?? sharedMemory
+  const memory = request.memoryEnabled === false
+    ? null
+    : (opts.memory ?? sharedMemory)
   const sourceLang = normalizeSourceLang(request.sourceLang)
   const targetLang = (request.targetLang ?? '').trim()
   const preserveFormat = request.preserveFormat !== false
@@ -145,7 +150,7 @@ export async function translateBatch(
 
   const settled = await Promise.all(
     request.units.map(async (unit): Promise<TranslateBatchUnitResult> => {
-      const hit = memory.lookup(sourceLang, targetLang, unit.sourceText)
+      const hit = memory?.lookup(sourceLang, targetLang, unit.sourceText)
       if (hit) {
         return {
           unitId: unit.unitId,
@@ -162,6 +167,9 @@ export async function translateBatch(
           targetLang,
           preserveFormat,
           range: unit.range ?? null,
+          memoryEnabled: request.memoryEnabled,
+          qualityCheck: request.qualityCheck,
+          glossaryCategory: request.glossaryCategory,
         },
         opts,
       )

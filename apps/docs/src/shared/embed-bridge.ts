@@ -30,9 +30,13 @@ export type DataflareEmbedCommand =
       sourceLanguage?: string
       targetLanguage: string
       preserveFormatting?: boolean
+      memoryEnabled?: boolean
+      qualityCheck?: boolean
+      glossaryCategory?: string
     }
   | { type: 'save' }
   | { type: 'dispose' }
+  | { type: 'cancel-translation' }
   | { type: 'global-state-update'; state: DataflareGlobalState; revision?: number }
 
 export type GenOfficeEmbedEvent =

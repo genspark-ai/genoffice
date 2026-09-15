@@ -331,6 +331,9 @@ export function registerAiCoreHandlers(): void {
       targetLang?: string
       preserveFormat?: boolean
       range?: { from?: number; to?: number; scope?: string } | null
+      memoryEnabled?: boolean
+      qualityCheck?: boolean
+      glossaryCategory?: string
       settings?: AiSettings
     }
     const incoming = req.settings || aiSettings
@@ -346,6 +349,9 @@ export function registerAiCoreHandlers(): void {
         targetLang: req.targetLang ?? '',
         preserveFormat: req.preserveFormat,
         range: castEditorRange(req.range),
+        memoryEnabled: req.memoryEnabled,
+        qualityCheck: req.qualityCheck,
+        glossaryCategory: req.glossaryCategory,
       },
       { provider, config: config as AiProviderConfig, memory: sharedMemory },
     )
@@ -366,6 +372,9 @@ export function registerAiCoreHandlers(): void {
       targetLang?: string
       preserveFormat?: boolean
       scene?: string
+      memoryEnabled?: boolean
+      qualityCheck?: boolean
+      glossaryCategory?: string
     }
     const units = (req.units ?? []).map((u) => ({
       unitId: u.unitId ?? '',
@@ -391,6 +400,9 @@ export function registerAiCoreHandlers(): void {
         targetLang: req.targetLang ?? '',
         preserveFormat: req.preserveFormat,
         scene: req.scene,
+        memoryEnabled: req.memoryEnabled,
+        qualityCheck: req.qualityCheck,
+        glossaryCategory: req.glossaryCategory,
       },
       { provider, config: config as AiProviderConfig, memory: sharedMemory },
     )

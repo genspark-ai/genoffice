@@ -17,17 +17,22 @@ export function buildTranslateSystemPrompt(opts: {
   sourceLang: string | undefined
   targetLang: string
   preserveFormat: boolean
+  /** Optional glossary bucket — when present, hint the model to use domain terms. */
+  glossaryCategory?: string | undefined
 }): string {
   const source = englishLabelFor(opts.sourceLang || 'auto')
   const target = englishLabelFor(opts.targetLang)
   const preserve = opts.preserveFormat
     ? 'Preserve the original formatting: never restyle, never wrap in lists or code blocks unless the source already does so.'
     : 'Return only the translated text; no formatting or commentary.'
+  const glossaryHint = opts.glossaryCategory && opts.glossaryCategory.trim()
+    ? ` Domain glossary: prefer terminology consistent with the "${opts.glossaryCategory.trim()}" domain.`
+    : ''
   return [
     'You are a professional translator.',
     preserve,
     `Source language: ${source}.`,
-    `Target language: ${target}.`,
+    `Target language: ${target}.` + glossaryHint,
     'Translate the user-supplied text faithfully; do not add explanations, do not omit content.',
   ].join(' ')
 }

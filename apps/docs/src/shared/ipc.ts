@@ -357,6 +357,9 @@ export interface DesktopApi {
     targetLang: string
     preserveFormat?: boolean
     range?: { from?: number; to?: number; scope?: string } | null
+    memoryEnabled?: boolean
+    qualityCheck?: boolean
+    glossaryCategory?: string
   }): Promise<{
     ok: boolean
     translated?: string
@@ -381,6 +384,9 @@ export interface DesktopApi {
     targetLang: string
     preserveFormat?: boolean
     scene?: string
+    memoryEnabled?: boolean
+    qualityCheck?: boolean
+    glossaryCategory?: string
   }): Promise<{
     ok: boolean
     units?: Array<{

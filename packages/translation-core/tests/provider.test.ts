@@ -133,6 +133,47 @@ describe('translateOne', () => {
     )
     expect(mem.lookup('auto', 'zh-CN', 'Hello')?.translatedText).toBe('你好')
   })
+
+  it('memoryEnabled=false bypasses the shared TM and calls the provider', async () => {
+    const mem = new TranslationMemory()
+    mem.save({
+      sourceLang: 'auto',
+      targetLang: 'zh-CN',
+      sourceText: 'Hello',
+      translatedText: '缓存命中（应被忽略）',
+    })
+    mockedChat.mockResolvedValue({ ok: true, content: '你好' })
+    const r = await translateOne(
+      { instruction: 'Hello', targetLang: 'zh-CN', memoryEnabled: false },
+      { provider: 'anthropic', config: { apiKey: 'k', model: 'm' }, memory: mem },
+    )
+    expect(r.status).toBe('translated')
+    expect(r.translated).toBe('你好')
+    expect(mockedChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('memoryEnabled=false also prevents saving the new translation into TM', async () => {
+    mockedChat.mockResolvedValue({ ok: true, content: '你好' })
+    const mem = new TranslationMemory()
+    await translateOne(
+      { instruction: 'Hello', targetLang: 'zh-CN', memoryEnabled: false },
+      { provider: 'anthropic', config: { apiKey: 'k', model: 'm' }, memory: mem },
+    )
+    expect(mem.lookup('auto', 'zh-CN', 'Hello')).toBeNull()
+  })
+
+  it('glossaryCategory is threaded through to the provider call metadata', async () => {
+    mockedChat.mockResolvedValue({ ok: true, content: '你好' })
+    await translateOne(
+      { instruction: 'Hello', targetLang: 'zh-CN', glossaryCategory: 'legal' },
+      { provider: 'anthropic', config: { apiKey: 'k', model: 'm' } },
+    )
+    expect(mockedChat).toHaveBeenCalledTimes(1)
+    const call = mockedChat.mock.calls[0]
+    // glossaryCategory flows through to the chat request — at least one arg references it
+    const flat = JSON.stringify(call)
+    expect(flat).toContain('legal')
+  })
 })
 
 describe('translateBatch', () => {

@@ -975,11 +975,17 @@ export function AiPanel({
         sourceLanguage?: string
         targetLanguage?: string
         preserveFormatting?: boolean
+        memoryEnabled?: boolean
+        qualityCheck?: boolean
+        glossaryCategory?: string
       }>).detail
       setTranslateScope(detail.scope || 'selection')
       setSourceLang(detail.sourceLanguage?.trim() || 'auto')
       if (detail.targetLanguage?.trim()) setTargetLang(detail.targetLanguage.trim())
       setPreserveFormat(detail.preserveFormatting !== false)
+      setMemoryEnabled(detail.memoryEnabled !== false)
+      setQualityCheck(detail.qualityCheck !== false)
+      setGlossaryCategory(detail.glossaryCategory?.trim() || 'general')
       setTranslatedText(null)
       setTranslateError(null)
       setDocumentTranslationUnits([])
@@ -987,7 +993,12 @@ export function AiPanel({
       setTranslateOpen(true)
     }
     window.addEventListener('dataflare:open-translate', openEmbeddedTranslation)
-    return () => window.removeEventListener('dataflare:open-translate', openEmbeddedTranslation)
+    const onCancelEmbeddedTranslation = () => cancelTranslation()
+    window.addEventListener('dataflare:cancel-translation', onCancelEmbeddedTranslation)
+    return () => {
+      window.removeEventListener('dataflare:open-translate', openEmbeddedTranslation)
+      window.removeEventListener('dataflare:cancel-translation', onCancelEmbeddedTranslation)
+    }
   }, [])
   const [targetLang, setTargetLang] = useState<string>(() => {
     // UI language → BCP-47 (best effort)
@@ -1002,6 +1013,9 @@ export function AiPanel({
   })
   const [sourceLang, setSourceLang] = useState<string>('auto')
   const [preserveFormat, setPreserveFormat] = useState<boolean>(true)
+  const [memoryEnabled, setMemoryEnabled] = useState<boolean>(true)
+  const [qualityCheck, setQualityCheck] = useState<boolean>(true)
+  const [glossaryCategory, setGlossaryCategory] = useState<string>('general')
   const [lastChangePlan, setLastChangePlan] = useState<import('@genoffice/chat-runtime/types').ChatChangePlan | null>(null)
 
   const getSelectionAnchorRect = useCallback((): AiInlineLauncherAnchorRect | null => {
@@ -1144,6 +1158,9 @@ export function AiPanel({
             targetLang,
             preserveFormat,
             scene: 'document',
+            memoryEnabled,
+            qualityCheck,
+            glossaryCategory,
           })
           if (!result.ok && !result.units?.length) throw new Error(result.error || 'Document translation failed')
           for (const unit of result.units || []) {
@@ -1189,6 +1206,9 @@ export function AiPanel({
         targetLang,
         preserveFormat,
         range: { from: liveSelection.from, to: liveSelection.to, scope: 'selection' },
+        memoryEnabled,
+        qualityCheck,
+        glossaryCategory,
       })
       const r = res as { ok?: boolean; translated?: string; error?: string }
       if (!r?.ok) {
@@ -1234,6 +1254,9 @@ export function AiPanel({
       targetLang,
       preserveFormat,
       scene: 'document',
+      memoryEnabled,
+      qualityCheck,
+      glossaryCategory,
     })
     const next = result.units?.[0]
     if (!result.ok || !next?.translatedText) throw new Error(next?.errorMessage || result.error || 'Translation retry failed')
