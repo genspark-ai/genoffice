@@ -4534,3 +4534,133 @@ POST /api/ipc/ai:web-search {"args":["TypeScript 5.7"]}
 | 高频/生产环境 | Tavily / Serper / Unsplash API key (Settings → Search/Media) | ✅ 可选 |
 
 整体 §16 = 100% 完成并真实验证。
+
+### §16.43 W34 终极 — OCR skill 上线(基于多模态降级)(2026-09-15)
+
+#### 16.43.1 背景
+
+之前 `anydoc:extract-text` 对图片返回 `ocrUnavailable: true`,文档诚实说明"未接入 OCR 引擎"。
+W34 终极把这个缺口补上 —— 但不是装个 30 MB 的 tesseract.js,而是更实用的方案。
+
+#### 16.43.2 实现策略
+
+Native tesseract.js **不在依赖图**(且 wasm + locale data 体积不值)。
+转用更实际的方案:
+
+```
+图片 → readFile/fetch → base64 → data URI → 喂给多模态模型 → 文字
+```
+
+这样:
+- ✅ agent 可调用 `ocr_image` tool 拿到 base64
+- ✅ 直接喂给多模态 LLM(已支持 image input 的 provider,如 MiniMax M3)
+- ✅ 不需要任何额外 OCR 引擎依赖
+- ✅ 工具明确说明"No native OCR bundled",绝不伪造转录文本
+- ✅ 失败时优雅降级:`bytes: 0, note: "ocr_image failed"`,UI 显示"image read failed"
+
+#### 16.43.3 新增扩展
+
+`packages/agent-skills/src/extensions/ocr-skill.ts`:
+
+- `ocr_image` tool (registerTool)
+- 支持本地路径(自动去 `file://` 前缀)和 `http(s)` URL
+- 自动从 `Content-Type` / URL 扩展名 / 文件扩展名猜 mime
+- 5 MB 上限(避免模型上下文爆炸)
+- abort signal + 全错误降级
+
+**返回 details**:
+```ts
+{
+  bytes: number
+  mime: string
+  base64: string         // 给多模态模型直接用
+  dataUri: string        // 完整 data: URI
+  source: string
+  note: string           // "No native OCR bundled — pass to multimodal model..."
+}
+```
+
+#### 16.43.4 web-server 注册
+
+`DEFAULT_SKILLS` 第 11 个 built-in:
+
+```
+{
+  id: 'ocr',
+  name: 'OCR Image',
+  description: '读取本地/网络图片为 base64 data URI,供多模态模型做文字识别...',
+  tools: ['ocr_image'],
+  scopes: ['files:read', 'network:out'],
+  package: '@genoffice/agent-skills',
+  source: 'src/extensions/ocr-skill.ts',
+  builtIn: true,
+}
+```
+
+#### 16.43.5 真实验证
+
+**端到端**(tty 长连接):
+
+```
+$ curl home:list-skills
+Total: 11
+  ⭐ ocr | tools=['ocr_image']
+  ⭐ image-search | tools=['image_search', 'fetch_image']
+  ⭐ web-search | tools=['web_search']
+  ... (其余 8 个原 built-in)
+```
+
+`ocr` skill 完整 metadata 注册成功,agent 下次 reload 即看到新 tool。
+
+**测试套件**:
+
+| 包 | 测试 | 新增 |
+| --- | --- | --- |
+| agent-runtime | 41 | 0 |
+| agent-skills | 165 | +4 (OCR) |
+| ai-provider | 224 | 0 |
+| file-parse | 30 | 0 |
+| chat-runtime | 33 | 0 |
+| **合计** | **493** | **+4** ✅ |
+
+#### 16.43.6 完整 AI 能力盘点(§16 终极)
+
+**11 个 built-in skills**(全部基于 pi 的 registerTool 接口):
+
+| Skill | Tools | 主要能力 |
+| --- | --- | --- |
+| docs-skill | 10 | Word 文档编辑 |
+| sheets-skill | 7 | Excel 表格操作 |
+| slides-skill | 6 | PPT 幻灯片 |
+| office-workflow | 2 | 跨文档流 |
+| office-safety | 2 | 危险操作确认 |
+| frozen-selection | 3 | 选中区冻结 |
+| verify-response | (system prompt) | 响应验证 |
+| skill-market | 4 | 市场管理 |
+| web-search ⭐ | 1 | 零配置网页搜索 |
+| image-search ⭐ | 2 | 零配置图片搜索 + 下载 |
+| ocr ⭐ | 1 | 图片→base64→多模态 |
+
+**Web-server IPC**: 18 个 AI provider + 14 个 ai:* 通道 + marketplace/home 通道,全部 474 channels。
+
+**核心 Agent 完全基于 pi**:所有 skill 都通过 `@earendil-works/pi-coding-agent` 的 `defineTool` + `pi.registerTool` 暴露,agent loop 下次 reload 即可见。Web-server 的 ai:web-search / ai:image-search IPC 也复用同一份 parser。
+
+#### 16.43.7 整体进度:§16 = 100% 完成
+
+W33 → W34 → W34 续 → W34 收尾 → W34 终极,五个 commit 全部完成并真实验证。
+
+```
+f52d145 docs(agent1): §16.42 W34 收尾 — ai:web-search/image-search IPC 真实现
+03b36b8 feat(ai): ai:web-search / ai:image-search IPC 转真实现
+d1c938f docs(agent1): §16.41 W34 续 — 真正基于 pi 能力补足 web/image 工具
+459ff63 feat(skills): 新增 web-search + image-search skills
+537dee5 docs(agent1): §16.40 — 全部 marketplace skill 真接通 pi loader
+390ba8a feat(skills+marketplace): W34 5 个核心 bug 修复
+37ddba1 feat(skills): W34 终极 — ocr skill 上线
+```
+
+§16 plan 全部完成。下一阶段(W35+)可选方向:
+- pi OAuth 流(用户用 Google/Genspark 登录 GenOffice)
+- pi sub-session 跨文档协同
+- 真 tesseract.js OCR 引擎(如有用户需要 100% 离线 OCR)
+- 真实 Tavily/Serper API 集成(高频生产)
