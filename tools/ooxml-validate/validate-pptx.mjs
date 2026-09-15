@@ -122,14 +122,8 @@ export async function validatePptx(input) {
     for (const [schema, parts] of groups) {
       const r = spawnSync(
         'xmllint',
-        [
-          '--noout',
-          '--nonet',
-          '--schema',
-          path.join(SCHEMA_DIR, schema),
-          ...parts.map((p) => p.file),
-        ],
-        { encoding: 'utf8', maxBuffer: 256 << 20 },
+        ['--noout', '--nonet', '--schema', schema, ...parts.map((p) => p.file)],
+        { cwd: SCHEMA_DIR, encoding: 'utf8', maxBuffer: 256 << 20 },
       )
       if (r.error) throw r.error
       for (const line of r.stderr.split('\n')) {
