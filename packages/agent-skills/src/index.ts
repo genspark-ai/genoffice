@@ -156,3 +156,8 @@ export {
   parseDuckDuckGoImages,
   type ImageHit,
 } from "./extensions/image-search-skill";
+
+export {
+  createOcrExtension,
+  ocrExtensionDefaults,
+} from "./extensions/ocr-skill";

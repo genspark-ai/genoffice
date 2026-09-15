@@ -50,6 +50,7 @@ export type SkillKind =
   | 'skill-market'
   | 'web-search'
   | 'image-search'
+  | 'ocr'
   // marketplace skills (3rd-party)
   | 'notion-sync'
   | 'pdf-ocr-pro'
@@ -268,6 +269,20 @@ const DEFAULT_SKILLS: SkillEntry[] = [
     source: 'src/extensions/image-search-skill.ts',
     tools: ['image_search', 'fetch_image'],
     scopes: ['network:out'],
+    status: 'enabled',
+    lastLoadedAt: null,
+    builtIn: true,
+  },
+  {
+    id: 'ocr',
+    name: 'OCR Image',
+    description: '读取本地/网络图片为 base64 data URI,供多模态模型做文字识别(无原生 tesseract 引擎,降级到 LLM 多模态)',
+    author: 'GenOffice',
+    version: '1.0.0',
+    package: '@genoffice/agent-skills',
+    source: 'src/extensions/ocr-skill.ts',
+    tools: ['ocr_image'],
+    scopes: ['files:read', 'network:out'],
     status: 'enabled',
     lastLoadedAt: null,
     builtIn: true,
