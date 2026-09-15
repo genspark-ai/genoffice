@@ -175,6 +175,14 @@ describe('style keys', () => {
     expect(decodeStyle(patchStyle('', { font: 'arial' }))).toEqual({ font: 'arial' })
   })
 
+  it('encodeStyle drops invalid fields instead of storing them', () => {
+    expect(encodeStyle({ font: 'a|b' })).toBe('')
+    expect(encodeStyle({ size: Number.NaN })).toBe('')
+    expect(encodeStyle({ size: Number.POSITIVE_INFINITY })).toBe('')
+    expect(encodeStyle({ color: 'red', font: 'arial' })).toBe(encodeStyle({ font: 'arial' }))
+    expect(decodeStyle(encodeStyle({ font: 'a|b', size: 14 }))).toEqual({ size: 14 })
+  })
+
   it('rejects non-decimal, padded, and out-of-range sizes', () => {
     expect(decodeStyle('x|arial|1e308||')).toEqual({ font: 'arial' })
     expect(decodeStyle('x|arial|0x10||')).toEqual({ font: 'arial' })

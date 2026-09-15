@@ -29,16 +29,22 @@ export interface CharStyle {
 
 /** Canonical key: '' = base; else 'color|font|size|bold|italic' with '' fields
     inheriting and bold/italic '1'/'0' explicit on/off. A bare-color style encodes
-    with trailing '|'s so distinct styles never collide. */
+    with trailing '|'s so distinct styles never collide. Fields are validated
+    with the same gates decodeStyle/patchStyle use, so a crafted value passed
+    straight to encode (bypassing patchStyle) can never inject a '|' field
+    separator or a non-decimal size into a stored key. */
 export function encodeStyle(s: CharStyle): string {
   const tri = (v: boolean | undefined) => (v === undefined ? '' : v ? '1' : '0')
-  const key = [
-    s.color ?? '',
-    s.font ?? '',
-    s.size !== undefined ? String(s.size) : '',
-    tri(s.bold),
-    tri(s.italic),
-  ].join('|')
+  const color = typeof s.color === 'string' && /^#[0-9a-f]{6}$/i.test(s.color) ? s.color : ''
+  const font = typeof s.font === 'string' && isStyleFontId(s.font) ? s.font : ''
+  const size =
+    typeof s.size === 'number' &&
+    Number.isFinite(s.size) &&
+    s.size > 0 &&
+    s.size <= MAX_STYLE_FONT_SIZE
+      ? String(s.size)
+      : ''
+  const key = [color, font, size, tri(s.bold), tri(s.italic)].join('|')
   return key === '||||' ? '' : key
 }
 
