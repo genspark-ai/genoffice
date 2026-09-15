@@ -65,4 +65,24 @@ export function registerPrefsHandlers(): void {
     aiPanel = next
     return { ok: true, prefs: { ...aiPanel } }
   })
+
+  // Web-only aliases for the home:* channels used by the standalone renderer —
+  // the Electron shell owns the persisted values in apps/shell/src/main/index.ts.
+  // Returning the same defaults keeps the standalone shell fully functional.
+  registerHandle('home:get-auto-save-default', () => ({ ...autoSave }))
+  registerHandle('home:set-auto-save-default', (_event: unknown, value: unknown) => {
+    if (!isAutoSaveDefault(value)) return { ok: false, error: 'invalid AutoSaveDefault payload' }
+    autoSave = { ...value }
+    return { ok: true }
+  })
+  registerHandle('home:get-ai-panel-prefs', () => ({ ...aiPanel }))
+  registerHandle('home:set-ai-panel-prefs', (_event: unknown, patch: unknown) => {
+    if (!patch || typeof patch !== 'object') {
+      return { ok: false, error: 'invalid AiPanelPrefs payload' }
+    }
+    const next: AiPanelPrefs = { ...aiPanel, ...(patch as Partial<AiPanelPrefs>) }
+    if (!isAiPanelPrefs(next)) return { ok: false, error: 'invalid AiPanelPrefs payload' }
+    aiPanel = next
+    return { ok: true, prefs: { ...aiPanel } }
+  })
 }

@@ -32,8 +32,22 @@ export type SkillKind =
   | 'frozen-selection'
   | 'verify-response'
   | 'skill-market'
+  // marketplace skills (3rd-party)
+  | 'notion-sync'
+  | 'pdf-ocr-pro'
+  | 'github-integration'
+  | 'jira-bridge'
+  | 'lang-detector'
+  | (string & {}) // allow other marketplace ids without cast at every use site
 
-export type PluginKind = 'agent-team' | 'audit-log' | 'local-models'
+export type PluginKind =
+  | 'agent-team'
+  | 'audit-log'
+  | 'local-models'
+  // marketplace plugins (3rd-party)
+  | 'slack-bridge'
+  | 'gdrive-export'
+  | (string & {}) // allow other marketplace ids without cast at every use site
 
 export type SkillStatus = 'enabled' | 'disabled' | 'error'
 
@@ -345,6 +359,111 @@ function savePlugins(plugins: PluginEntry[]): void {
   } catch {}
 }
 
+
+// ── MARKETPLACE CATALOG ────────────────────────────────────
+// 模拟的市场数据。真实生产会 fetch marketplace API。
+// 这些 skill/plugin 是第三方扩展,用户从市场浏览并安装到自己的环境。
+const MARKETPLACE_SKILLS: Array<Omit<SkillEntry, 'status' | 'lastLoadedAt' | 'builtIn'>> = [
+  {
+    id: 'notion-sync',
+    name: 'Notion Sync',
+    description: '双向同步 Notion workspace 与本地文档,自动转换格式',
+    author: 'Community',
+    version: '1.4.2',
+    package: '@marketplace/notion-sync',
+    source: 'src/notion-sync.ts',
+    tools: ['sync_workspace', 'import_page', 'export_doc', 'resolve_links'],
+    scopes: ['network:out', 'files:read', 'files:write'],
+  },
+  {
+    id: 'pdf-ocr-pro',
+    name: 'PDF OCR Pro',
+    description: '高级 OCR(中英文混合 + 表格识别 + 手写体)',
+    author: 'OCR Labs',
+    version: '2.0.1',
+    package: '@marketplace/pdf-ocr-pro',
+    source: 'src/pdf-ocr-pro.ts',
+    tools: ['ocr_page', 'ocr_table', 'ocr_handwriting', 'ocr_batch'],
+    scopes: ['files:read', 'pdf:read'],
+  },
+  {
+    id: 'github-integration',
+    name: 'GitHub Integration',
+    description: '从 GitHub 仓库读取 issue/PR/commit 并生成 Office 文档',
+    author: 'DevTools Collective',
+    version: '0.9.0',
+    package: '@marketplace/github-integration',
+    source: 'src/github.ts',
+    tools: ['fetch_issue', 'fetch_pr', 'fetch_commit', 'export_to_doc'],
+    scopes: ['network:out', 'docs:edit'],
+  },
+  {
+    id: 'jira-bridge',
+    name: 'Jira Bridge',
+    description: '把 Jira ticket 转换为 Office 任务清单和进度报告',
+    author: 'Atlassian Tools',
+    version: '1.2.0',
+    package: '@marketplace/jira-bridge',
+    source: 'src/jira.ts',
+    tools: ['fetch_tickets', 'sync_sprint', 'export_progress'],
+    scopes: ['network:out', 'sheets:edit'],
+  },
+  {
+    id: 'lang-detector',
+    name: 'Language Detector',
+    description: '检测 Office 文档语言并自动应用翻译预设',
+    author: 'i18n Group',
+    version: '3.1.0',
+    package: '@marketplace/lang-detector',
+    source: 'src/lang-detector.ts',
+    tools: ['detect_language', 'apply_translate_preset'],
+    scopes: ['ai:stream'],
+  },
+]
+
+const MARKETPLACE_PLUGINS: Array<Omit<PluginEntry, 'status' | 'lastLoadedAt' | 'builtIn'>> = [
+  {
+    id: 'slack-bridge',
+    name: 'Slack Bridge',
+    description: '把 Office AI 操作日志转发到 Slack 频道',
+    author: 'Workspace Integrations',
+    version: '1.0.0',
+    package: '@marketplace/slack-bridge',
+    source: 'src/slack.ts',
+    tools: ['send_notification', 'request_approval', 'sync_channel'],
+    scopes: ['network:out'],
+    requirements: ['slack-workspace-token'],
+  },
+  {
+    id: 'gdrive-export',
+    name: 'Google Drive Export',
+    description: '导出 Office 文档到 Google Drive(双向同步)',
+    author: 'Cloud Sync',
+    version: '2.3.1',
+    package: '@marketplace/gdrive-export',
+    source: 'src/gdrive.ts',
+    tools: ['upload_doc', 'sync_folder', 'resolve_permissions'],
+    scopes: ['network:out', 'files:write'],
+    requirements: ['google-oauth-client'],
+  },
+]
+
+function listMarketplaceSkills() {
+  const installed = loadSkills()
+  return MARKETPLACE_SKILLS.map((entry) => ({
+    ...entry,
+    installed: installed.some((s) => s.id === entry.id),
+  }))
+}
+
+function listMarketplacePlugins() {
+  const installed = loadPlugins()
+  return MARKETPLACE_PLUGINS.map((entry) => ({
+    ...entry,
+    installed: installed.some((p) => p.id === entry.id),
+  }))
+}
+
 export function registerSkillHandlers(): void {
   // ── SKILLS ──
   registerHandle('home:list-skills', () => {
@@ -448,7 +567,89 @@ export function registerSkillHandlers(): void {
     return { ok: true, plugins: loadPlugins() }
   })
 
+  // ── MARKETPLACE ──
+  registerHandle('home:list-marketplace-skills', () => {
+    return { skills: listMarketplaceSkills() }
+  })
+
+  registerHandle('home:list-marketplace-plugins', () => {
+    return { plugins: listMarketplacePlugins() }
+  })
+
+  registerHandle('home:install-skill', (_event: unknown, args: unknown) => {
+    // 真实安装:从 marketplace 取元数据,合并到 installed skills
+    // 兼容两种参数风格:前端 IPC 客户端 installSkill(name) 用 {name},marketplace UI 用 {id}
+    const { id: idArg, name } = (args || {}) as { id?: string; name?: string }
+    const id = idArg || name
+    if (!id) return { ok: false, error: 'Missing skill id/name' }
+    const entry = MARKETPLACE_SKILLS.find((s) => s.id === id)
+    if (!entry) {
+      // 也支持已存在的内置/已安装 skill 的 "重新激活" 触发
+      const existing = loadSkills().find((s) => s.id === id)
+      if (!existing) return { ok: false, error: `Skill "${id}" not found in marketplace` }
+      return { ok: true, installed: existing, alreadyInstalled: true }
+    }
+    const skills = loadSkills()
+    if (skills.some((s) => s.id === id)) {
+      const existing = skills.find((s) => s.id === id)!
+      return { ok: true, installed: existing, alreadyInstalled: true, skills }
+    }
+    const installedEntry: SkillEntry = {
+      ...entry,
+      status: 'enabled',
+      lastLoadedAt: new Date().toISOString(),
+      builtIn: false,
+    }
+    const next = [...skills, installedEntry]
+    saveSkills(next)
+    return { ok: true, installed: installedEntry, skills: next }
+  })
+
+  registerHandle('home:install-plugin', (_event: unknown, args: unknown) => {
+    const { id } = (args || {}) as { id: string }
+    const entry = MARKETPLACE_PLUGINS.find((p) => p.id === id)
+    if (!entry) {
+      const existing = loadPlugins().find((p) => p.id === id)
+      if (!existing) return { ok: false, error: `Plugin "${id}" not found in marketplace` }
+      return { ok: true, installed: existing, alreadyInstalled: true }
+    }
+    const plugins = loadPlugins()
+    if (plugins.some((p) => p.id === id)) {
+      const existing = plugins.find((p) => p.id === id)!
+      return { ok: true, installed: existing, alreadyInstalled: true, plugins }
+    }
+    const installedEntry: PluginEntry = {
+      ...entry,
+      status: 'enabled',
+      lastLoadedAt: new Date().toISOString(),
+      builtIn: false,
+    }
+    const next = [...plugins, installedEntry]
+    savePlugins(next)
+    return { ok: true, installed: installedEntry, plugins: next }
+  })
+
+  registerHandle('home:uninstall-plugin', (_event: unknown, args: unknown) => {
+    const { id } = (args || {}) as { id: PluginKind }
+    const plugin = loadPlugins().find((p) => p.id === id)
+    if (!plugin) return { ok: false, error: `Plugin "${id}" not found` }
+    if (plugin.builtIn) return { ok: false, error: `Cannot uninstall built-in plugin "${id}"` }
+    const plugins = loadPlugins().filter((p) => p.id !== id)
+    savePlugins(plugins)
+    return { ok: true, plugins }
+  })
+
+  registerHandle('home:get-marketplace-and-installed', () => {
+    return {
+      marketplaceSkills: listMarketplaceSkills(),
+      marketplacePlugins: listMarketplacePlugins(),
+      installedSkills: loadSkills(),
+      installedPlugins: loadPlugins(),
+    }
+  })
+
   // ── 复合接口: 一次返回 skills + plugins ──
+
   registerHandle('home:get-skills-and-plugins', () => {
     return { skills: loadSkills(), plugins: loadPlugins() }
   })

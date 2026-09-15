@@ -184,10 +184,25 @@ export interface HomeApi {
   toggleSkill(id: SkillKind, enabled: boolean): Promise<SkillEntry[]>
   /** hot-reload a skill (re-run ExtensionRunner registration) */
   reloadSkill(id: SkillKind): Promise<SkillEntry[]>
-  /** install a skill from the marketplace by name */
-  installSkill(name: string): Promise<{ ok: boolean; error?: string; installed?: { id: string; name: string; marketplace: boolean } }>
+  /** list marketplace skills (catalog of available 3rd-party skills) */
+  listMarketplaceSkills(): Promise<MarketplaceEntry[]>
+  /** list marketplace plugins */
+  listMarketplacePlugins(): Promise<MarketplaceEntry[]>
+  /** composite: marketplace + installed skills + installed plugins in one call */
+  getMarketplaceAndInstalled(): Promise<{
+    marketplaceSkills: MarketplaceEntry[]
+    marketplacePlugins: MarketplaceEntry[]
+    installedSkills: SkillEntry[]
+    installedPlugins: PluginEntry[]
+  }>
+  /** install a skill from the marketplace by id */
+  installSkill(name: string): Promise<{ ok: boolean; error?: string; installed?: SkillEntry; skills?: SkillEntry[]; alreadyInstalled?: boolean }>
   /** uninstall a marketplace-installed skill (built-in skills cannot be uninstalled) */
   uninstallSkill(id: SkillKind): Promise<{ ok: boolean; error?: string; skills?: SkillEntry[] }>
+  /** install a plugin from the marketplace by id */
+  installPlugin(id: string): Promise<{ ok: boolean; error?: string; installed?: PluginEntry; plugins?: PluginEntry[]; alreadyInstalled?: boolean }>
+  /** uninstall a marketplace-installed plugin */
+  uninstallPlugin(id: PluginKind): Promise<{ ok: boolean; error?: string; plugins?: PluginEntry[] }>
   /** reset all skills to factory defaults */
   resetSkills(): Promise<SkillEntry[]>
   /** list all plugins (advanced extensions) */
@@ -281,8 +296,24 @@ export type SkillKind =
   | 'frozen-selection'
   | 'verify-response'
   | 'skill-market'
+  // marketplace skills (3rd-party)
+  | 'notion-sync'
+  | 'pdf-ocr-pro'
+  | 'github-integration'
+  | 'jira-bridge'
+  | 'lang-detector'
+  // Allow arbitrary future marketplace ids without per-use casts.
+  | (string & {})
 
-export type PluginKind = 'agent-team' | 'audit-log' | 'local-models'
+export type PluginKind =
+  | 'agent-team'
+  | 'audit-log'
+  | 'local-models'
+  // marketplace plugins (3rd-party)
+  | 'slack-bridge'
+  | 'gdrive-export'
+  // Allow arbitrary future marketplace ids without per-use casts.
+  | (string & {})
 
 export type SkillStatus = 'enabled' | 'disabled' | 'error'
 
@@ -300,6 +331,22 @@ export interface SkillEntry {
   lastLoadedAt: string | null
   error?: string
   builtIn: boolean
+}
+
+/** an entry in the marketplace catalog — not yet installed in the local environment */
+export interface MarketplaceEntry {
+  id: string
+  name: string
+  description: string
+  author: string
+  version: string
+  package: string
+  source: string
+  tools: string[]
+  scopes: string[]
+  requirements?: string[]
+  /** true when this marketplace entry is already installed locally */
+  installed: boolean
 }
 
 export interface PluginEntry {
@@ -467,7 +514,12 @@ export const HOME_CHANNELS = {
   listPlugins: 'home:list-plugins',
   togglePlugin: 'home:toggle-plugin',
   reloadPlugin: 'home:reload-plugin',
+  installPlugin: 'home:install-plugin',
+  uninstallPlugin: 'home:uninstall-plugin',
   resetPlugins: 'home:reset-plugins',
+  listMarketplaceSkills: 'home:list-marketplace-skills',
+  listMarketplacePlugins: 'home:list-marketplace-plugins',
+  getMarketplaceAndInstalled: 'home:get-marketplace-and-installed',
 } as const
 
 export const PROJECT_CHANNELS = {

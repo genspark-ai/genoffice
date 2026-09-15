@@ -16,6 +16,7 @@ import {
   clampMaxOutputTokens,
 } from '@genoffice/ai-provider/browser'
 import type {
+  MarketplaceEntry,
   PluginEntry,
   PluginKind,
   SkillEntry,
@@ -41,7 +42,6 @@ import type {
 import { ProviderLogo } from './provider-logos'
 import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
 import './settings.css'
-import { AiChatPane } from './AiChatPane'
 
 // ── Settings modal (opened from the account menu) ─────────
 // Genspark-style two-pane dialog: section nav on the left, fields on the right.
@@ -159,7 +159,6 @@ type SectionId =
   | 'integrations'
   | 'modules'
   | 'skillsPlugins'
-  | 'aiChat'
   | 'about'
 
 const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
@@ -170,7 +169,6 @@ const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'integrations', labelKey: 'setSecIntegrations' },
   { id: 'modules', labelKey: 'setSecModules' },
   { id: 'skillsPlugins', labelKey: 'setSecSkillsPlugins' },
-  { id: 'aiChat', labelKey: 'setSecAiChat' },
   { id: 'about', labelKey: 'setSecAbout' },
 ]
 
@@ -1077,17 +1075,24 @@ export interface SettingsModalProps {
 function SkillsPluginsPane({ t }: { t: TFunc }) {
   const [skills, setSkills] = useState<SkillEntry[]>([])
   const [plugins, setPlugins] = useState<PluginEntry[]>([])
+  const [marketplaceSkills, setMarketplaceSkills] = useState<MarketplaceEntry[]>([])
+  const [marketplacePlugins, setMarketplacePlugins] = useState<MarketplaceEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [installInput, setInstallInput] = useState('')
   const [installMsg, setInstallMsg] = useState<string | null>(null)
+  const [marketMsg, setMarketMsg] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
-    const [s, p] = await Promise.all([
+    const [s, p, ms, mp] = await Promise.all([
       window.aiOffice.listSkills?.() ?? Promise.resolve([]),
       window.aiOffice.listPlugins?.() ?? Promise.resolve([]),
+      window.aiOffice.listMarketplaceSkills?.() ?? Promise.resolve([]),
+      window.aiOffice.listMarketplacePlugins?.() ?? Promise.resolve([]),
     ])
     setSkills(s)
     setPlugins(p)
+    setMarketplaceSkills(ms as MarketplaceEntry[])
+    setMarketplacePlugins(mp as MarketplaceEntry[])
     setLoading(false)
   }, [])
 
@@ -1138,6 +1143,50 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
       await refresh()
     } else {
       setInstallMsg(`✗ ${res?.error || 'Install failed'}`)
+    }
+  }
+
+  const installMarketSkill = async (id: string) => {
+    setMarketMsg(null)
+    const res = await window.aiOffice.installSkill?.(id)
+    if (res?.ok) {
+      setMarketMsg(`✓ Installed skill "${id}" — see Skills list above and reload to activate`)
+      await refresh()
+    } else {
+      setMarketMsg(`✗ ${res?.error || 'Install failed'}`)
+    }
+  }
+
+  const installMarketPlugin = async (id: string) => {
+    setMarketMsg(null)
+    const res = await window.aiOffice.installPlugin?.(id)
+    if (res?.ok) {
+      setMarketMsg(`✓ Installed plugin "${id}" — see Plugins list above and reload to activate`)
+      await refresh()
+    } else {
+      setMarketMsg(`✗ ${res?.error || 'Install failed'}`)
+    }
+  }
+
+  const uninstallMarketPlugin = async (id: string) => {
+    setMarketMsg(null)
+    const res = await window.aiOffice.uninstallPlugin?.(id as PluginKind)
+    if (res?.ok) {
+      setMarketMsg(`✓ Uninstalled plugin "${id}"`)
+      await refresh()
+    } else {
+      setMarketMsg(`✗ ${res?.error || 'Uninstall failed'}`)
+    }
+  }
+
+  const uninstallMarketSkill = async (id: SkillKind) => {
+    setMarketMsg(null)
+    const res = await window.aiOffice.uninstallSkill?.(id)
+    if (res?.ok) {
+      setMarketMsg(`✓ Uninstalled skill "${id}"`)
+      await refresh()
+    } else {
+      setMarketMsg(`✗ ${res?.error || 'Uninstall failed'}`)
     }
   }
 
@@ -1253,6 +1302,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
       <div className="set-skill-section">
         <div className="set-skill-section-head">
           <h4>{t('marketplace')}</h4>
+          <span className="set-skill-count">{marketplaceSkills.length + marketplacePlugins.length}</span>
         </div>
         <div className="set-field-desc" style={{ marginBottom: 8 }}>{t('marketplaceDesc')}</div>
         <div className="set-skill-install-row">
@@ -1269,6 +1319,111 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
           </button>
         </div>
         {installMsg && <div className="set-install-msg">{installMsg}</div>}
+
+        <div className="set-marketplace-sub">
+          <h5>{t('marketplace')} (skills) · {marketplaceSkills.length}</h5>
+          <ul className="set-skill-list" role="list">
+            {marketplaceSkills.map((m) => (
+              <li key={m.id} className="set-skill-row" data-market-skill-id={m.id}>
+                <div className="set-skill-head">
+                  <span className="set-skill-name">{m.name}</span>
+                  <span
+                    className={`set-skill-badge ${m.installed ? 'set-skill-badge-enabled' : 'set-skill-badge-disabled'}`}
+                    data-installed={m.installed ? '1' : '0'}
+                  >
+                    {m.installed ? t('installedBadge') : t('availableBadge')}
+                  </span>
+                  {m.installed ? (
+                    <button
+                      type="button"
+                      className="set-btn-mini"
+                      onClick={() => void uninstallMarketSkill(m.id as SkillKind)}
+                      title={t('uninstallBtn')}
+                    >
+                      −
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="set-btn-mini"
+                      onClick={() => void installMarketSkill(m.id)}
+                      title={t('install')}
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+                <div className="set-skill-desc">{m.description}</div>
+                <div className="set-skill-meta">
+                  <span>v{m.version}</span>
+                  <span>· {m.author}</span>
+                  <span>· {m.tools.length} {t('tools')}</span>
+                  <span>· {m.package}/{m.source.split('/').pop()}</span>
+                </div>
+                <div className="set-skill-scopes">
+                  {m.scopes.map((sc) => (
+                    <span key={sc} className="set-scope-tag">{sc}</span>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="set-marketplace-sub">
+          <h5>{t('marketplacePlugins')} · {marketplacePlugins.length}</h5>
+          <ul className="set-skill-list" role="list">
+            {marketplacePlugins.map((m) => (
+              <li key={m.id} className="set-skill-row" data-market-plugin-id={m.id}>
+                <div className="set-skill-head">
+                  <span className="set-skill-name">{m.name}</span>
+                  <span
+                    className={`set-skill-badge ${m.installed ? 'set-skill-badge-enabled' : 'set-skill-badge-disabled'}`}
+                    data-installed={m.installed ? '1' : '0'}
+                  >
+                    {m.installed ? t('installedBadge') : t('availableBadge')}
+                  </span>
+                  {m.installed ? (
+                    <button
+                      type="button"
+                      className="set-btn-mini"
+                      onClick={() => void uninstallMarketPlugin(m.id)}
+                      title={t('uninstallBtn')}
+                    >
+                      −
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="set-btn-mini"
+                      onClick={() => void installMarketPlugin(m.id)}
+                      title={t('install')}
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+                <div className="set-skill-desc">{m.description}</div>
+                <div className="set-skill-meta">
+                  <span>v{m.version}</span>
+                  <span>· {m.author}</span>
+                  <span>· {m.tools.length} {t('tools')}</span>
+                  <span>· {m.package}/{m.source.split('/').pop()}</span>
+                </div>
+                {m.requirements && m.requirements.length > 0 && (
+                  <div className="set-skill-scopes">
+                    <span className="set-req-tag">{t('requirements')}: </span>
+                    {m.requirements.map((r) => (
+                      <span key={r} className="set-scope-tag set-scope-tag-req">{r}</span>
+                    ))}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {marketMsg && <div className="set-install-msg" data-market-msg="1">{marketMsg}</div>}
       </div>
     </>
   )
@@ -1564,7 +1719,6 @@ export function SettingsModal({
             {section === 'aiMedia' && <AiMediaPane t={t} />}
             {section === 'modules' && <ModulesPane t={t} />}
             {section === 'skillsPlugins' && <SkillsPluginsPane t={t} />}
-            {section === 'aiChat' && <AiChatPane t={t} />}
             {section === 'general' && (
               <>
                 <h3 className="set-pane-title">{t('setSecGeneral')}</h3>

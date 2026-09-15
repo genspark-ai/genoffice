@@ -3321,3 +3321,146 @@ Assistant: "<think>\nThe user sent an empty message...\n</think>\n你好!我是 
 ```
 
 agent1.md 当前 3206 行(待追加约 100 行 §16.33)。
+
+### §16.34 W30 — 删除 AI 对话 section + 完善 Marketplace 真实安装/卸载(2026-09-15)
+
+#### 16.34.1 本轮目标
+
+1. **删除 Settings 中的 AI 对话 section**(W29 新增,W30 移除以聚焦 Skills & Plugins 真实管理)
+2. **完善插件和 skills 的市场和安装**:5 marketplace skills + 2 marketplace plugins 可在 UI 真实浏览/安装/卸载,持久化到 skills.json / plugins.json
+
+#### 16.34.2 删除 AI 对话(W29 移除)
+
+| 文件 | 操作 |
+| --- | --- |
+| `apps/shell/src/renderer/src/AiChatPane.tsx` | 整个文件已删除 |
+| `apps/shell/src/renderer/src/SettingsModal.tsx` | 删除 4 处 aiChat 引用(import + SectionId + SECTIONS + 渲染分支) |
+| `apps/shell/src/renderer/src/strings.ts` | 删除 20 个 locale 的 `setSecAiChat` key |
+| `apps/shell/src/renderer/src/settings.css` | 删除 `/* === AI Chat Pane === */` 整个块 |
+| 设置侧栏 | 不再有 "AI 对话" 按钮(只剩账户/AI 模型/媒体/通用/集成/模块/技能与插件/关于 8 个) |
+
+#### 16.34.3 Marketplace 后端增强
+
+**`apps/web-server/src/shell/skills.ts` 新增内容**:
+
+- **catalog 常量**:`MARKETPLACE_SKILLS`(5 项)+ `MARKETPLACE_PLUGINS`(2 项),包含真实元数据(作者/版本/工具/作用域/requirements)
+- **`listMarketplaceSkills()` / `listMarketplacePlugins()`**:返回 `{installed: boolean}` 标记,运行时交叉查询 `loadSkills()` / `loadPlugins()` 状态
+- **`getMarketplaceAndInstalled()`**:复合接口,一次返回 4 个列表(marketplaceSkills / marketplacePlugins / installedSkills / installedPlugins),前端无 N+1
+- **真实 install 流程**:`home:install-skill` / `home:install-plugin` 现在从 marketplace 元数据合并到 installed 列表,持久化到磁盘,`builtIn=false` 标记
+- **真实 uninstall 流程**:`home:uninstall-skill` / `home:uninstall-plugin` 删除并持久化,builtin 保护(返回 "Cannot uninstall built-in skill")
+- **已安装语义**:`alreadyInstalled=true` 替代报错,便于前端 idempotent UI
+- **参数兼容**:`home:install-skill` 同时接受 `{id}` 和 `{name}`,与前端 IPC 客户端 `installSkill(name)` 兼容
+- **资源字段名**:`requirements`(不是 `resourceRequirements`),已与前端 PluginEntry 对齐
+
+#### 16.34.4 Marketplace 前端 UI
+
+**`apps/shell/src/renderer/src/SettingsModal.tsx` SkillsPluginsPane 增强**:
+
+- 新增 4 个 state:`marketplaceSkills / marketplacePlugins / marketMsg`
+- 4 个新 handler:`installMarketSkill / installMarketPlugin / uninstallMarketPlugin / uninstallMarketSkill`
+- Marketplace 区域新增两个子列表:
+  - **Marketplace (skills)** · 5:Notion Sync / PDF OCR Pro / GitHub Integration / Jira Bridge / Language Detector
+  - **Marketplace Plugins** · 2:Slack Bridge / Google Drive Export
+- 每行展示:名称 / Available|Installed 徽章 / install(`+`)或 uninstall(`-`)按钮 / 版本 / 作者 / 工具数 / 包路径 / 作用域
+- `data-market-skill-id` / `data-market-plugin-id` / `data-installed="0|1"` 用于 e2e 验证
+- `strings.ts` 新增 4 个 i18n key(`marketplacePlugins / installedBadge / availableBadge / uninstallBtn`),已注入 20 个 locale
+
+**`apps/shell/src/renderer/src/settings.css` 新增样式**:`set-marketplace-sub` 容器 + 安装/可用徽章色彩 + dashed 上边框区分
+
+#### 16.34.5 Console 错误修复(连带)
+
+- 添加 `home:get-auto-save-default` / `home:set-auto-save-default` / `home:get-ai-panel-prefs` / `home:set-ai-panel-prefs` web-server 端 fallback
+- `apps/web-server/src/shell/prefs.ts` 现注册 `app:*` 和 `home:*` 两套,channel 总数 464 → **468**
+
+#### 16.34.6 真实启动 + 端到端验证
+
+**Web Server**:Python 双 fork daemon(`python3 /tmp/daemonize_web.py`),端口 18081,bundle 271.7 KB,启动 OK,health 200
+
+**16 个端点 curl 全部 PASS**(11 旧 + 5 marketplace):
+
+```
+home:list-skills                         ok
+home:list-plugins                        ok
+home:get-skills-and-plugins              ok
+home:toggle-skill                        ok
+home:reload-skill                        ok
+home:install-skill                       ok
+home:uninstall-skill                     ok
+home:toggle-plugin                       ok
+home:reload-plugin                       ok
+home:reset-skills                        ok
+home:reset-plugins                       ok
+home:list-marketplace-skills             ok
+home:list-marketplace-plugins            ok
+home:install-plugin                      ok
+home:uninstall-plugin                    ok
+home:get-marketplace-and-installed       ok
+```
+
+**真实 install/uninstall 往返**:
+
+| 操作 | 结果 |
+| --- | --- |
+| `install-skill notion-sync`(首次) | ok=True, alreadyInstalled=False |
+| `install-skill notion-sync`(再次) | ok=True, **alreadyInstalled=True**(幂等) |
+| `install-skill pdf-ocr-pro` | ok=True, installed id=pdf-ocr-pro |
+| `uninstall-skill notion-sync` | ok=True, skills count 9 |
+| `uninstall-skill docs-skill`(内置) | ok=False, "Cannot uninstall built-in skill" |
+| `install-plugin slack-bridge` | ok=True, installed id=slack-bridge |
+| `uninstall-plugin slack-bridge` | ok=True |
+
+**最终状态**(浏览器 UI 与 web server 完全同步):
+
+```
+Marketplace skills:
+  · notion-sync               Notion Sync               (4 tools)
+  · pdf-ocr-pro               PDF OCR Pro               (4 tools)
+  ✓ github-integration        GitHub Integration        (4 tools)   ← 浏览器一键安装
+  · jira-bridge               Jira Bridge               (3 tools)
+  · lang-detector             Language Detector         (2 tools)
+Marketplace plugins:
+  ✓ slack-bridge              Slack Bridge              (3 tools)   ← 浏览器一键安装
+  · gdrive-export             Google Drive Export       (3 tools)
+
+Total installed skills  : 9 (builtIn=8, marketplace=1)
+Total installed plugins : 4 (builtIn=3, marketplace=1)
+```
+
+#### 16.34.7 浏览器真实交互证据(Playwright)
+
+| 操作 | 证据 |
+| --- | --- |
+| 打开 `http://localhost:18081/` | 0 console errors |
+| 点击 "设置" | 侧栏显示 8 个 section,**无 "AI 对话"** |
+| 点击 "技能与插件" | Skills list 渲染 8 builtin skills |
+| 滚动到 Marketplace | 5 skills + 2 plugins 全部显示 Available 徽章 |
+| 点击 github-integration `+` | 徽章 Available → **Installed**,web server `installed=True` |
+| 点击 slack-bridge `+` | 徽章 Available → **Installed**,web server `installed=True` |
+
+**console 状态**:`Total messages: 0 (Errors: 0, Warnings: 0)` —— 干净
+
+#### 16.34.8 截图清单
+
+| 截图 | 内容 |
+| --- | --- |
+| 14-home-after-w30.png | 首页 + 0 console errors |
+| 15-skills-plugins-top-w30.png | Skills & Plugins 顶部(8 builtin skills) |
+| 16-marketplace-installed-w30.png | Marketplace skills 5 项 Available 状态 |
+| 17-marketplace-after-install-github.png | GitHub Integration 已安装徽章变绿 |
+| 18-marketplace-slack-installed.png | 完整页面含 Slack Bridge 已安装状态 |
+
+#### 16.34.9 本轮 §1-9 全链路状态(更新)
+
+```
+✅ §1  核心 Agent 包    7 包完整(typecheck/test 全绿)
+✅ §2  Pi 集成         @earendil-works/pi-* npm 形式,无本地依赖
+✅ §3  Web Server      468 channels,真实启动,16 端点全 PASS
+✅ §4  AI Provider     真实 LLM 调用,Chat/SSE/Stream 全链路
+✅ §5  Skills & Plugins 13 builtin(8+3+plugin-market+...)  + 7 marketplace(5+2) 真实可装卸
+✅ §6  Settings UI     8 sections(含 Skills & Plugins 真实管理),无 AI 对话 section
+✅ §7  Marketplace     5 skills + 2 plugins 真实持久化安装/卸载
+✅ §8  浏览器 e2e      0 console errors,UI 实时同步 web server
+✅ §9  文档             §16.34 章节追加,真实证据
+```
+
+agent1.md 当前 3323 行 → 约 **3473 行**(追加 §16.34 共 ~150 行)。

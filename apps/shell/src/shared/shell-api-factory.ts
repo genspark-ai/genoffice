@@ -24,6 +24,7 @@ import type {
   AutoSaveDefault,
   CloudProjectsSnapshot,
   HomeApi,
+  MarketplaceEntry,
   ModuleEntry,
   ModuleKind,
   PluginEntry,
@@ -225,7 +226,9 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
       return (await t.invoke(HOME_CHANNELS.installSkill, { name })) as {
         ok: boolean
         error?: string
-        installed?: { id: string; name: string; marketplace: boolean }
+        installed?: SkillEntry
+        skills?: SkillEntry[]
+        alreadyInstalled?: boolean
       }
     },
     async uninstallSkill(id: SkillKind) {
@@ -233,6 +236,38 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
         ok: boolean
         error?: string
         skills?: SkillEntry[]
+      }
+    },
+    async installPlugin(id: string) {
+      return (await t.invoke(HOME_CHANNELS.installPlugin, { id })) as {
+        ok: boolean
+        error?: string
+        installed?: PluginEntry
+        plugins?: PluginEntry[]
+        alreadyInstalled?: boolean
+      }
+    },
+    async uninstallPlugin(id: PluginKind) {
+      return (await t.invoke(HOME_CHANNELS.uninstallPlugin, { id })) as {
+        ok: boolean
+        error?: string
+        plugins?: PluginEntry[]
+      }
+    },
+    async listMarketplaceSkills(): Promise<MarketplaceEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.listMarketplaceSkills)) as { skills?: MarketplaceEntry[] }
+      return Array.isArray(result?.skills) ? result!.skills : []
+    },
+    async listMarketplacePlugins(): Promise<MarketplaceEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.listMarketplacePlugins)) as { plugins?: MarketplaceEntry[] }
+      return Array.isArray(result?.plugins) ? result!.plugins : []
+    },
+    async getMarketplaceAndInstalled() {
+      return (await t.invoke(HOME_CHANNELS.getMarketplaceAndInstalled)) as {
+        marketplaceSkills: MarketplaceEntry[]
+        marketplacePlugins: MarketplaceEntry[]
+        installedSkills: SkillEntry[]
+        installedPlugins: PluginEntry[]
       }
     },
     async resetSkills(): Promise<SkillEntry[]> {

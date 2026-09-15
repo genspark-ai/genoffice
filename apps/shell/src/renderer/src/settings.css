@@ -833,158 +833,6 @@
 .set-module-ext { margin-right: 6px; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-secondary); }
 [data-theme='dark'] .set-module-row:hover { background: rgb(255 255 255 / 4%); }
 
-/* === AI Chat Pane === */
-.ai-chat-pane {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  height: 100%;
-  min-height: 480px;
-}
-
-.ai-chat-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--divider-soft, rgba(127, 127, 127, 0.2));
-}
-
-.ai-chat-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.ai-chat-meta {
-  font-size: 12px;
-  color: var(--text-secondary);
-  opacity: 0.7;
-  font-family: ui-monospace, SFMono-Regular, monospace;
-}
-
-.ai-chat-system {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.ai-chat-system-input,
-.ai-chat-input {
-  width: 100%;
-  background: var(--bg-input, rgba(255, 255, 255, 0.04));
-  border: 1px solid var(--border-input, rgba(127, 127, 127, 0.25));
-  border-radius: 6px;
-  padding: 8px 10px;
-  font: inherit;
-  color: var(--text-primary);
-  resize: vertical;
-  outline: none;
-}
-
-.ai-chat-system-input:focus,
-.ai-chat-input:focus {
-  border-color: var(--accent, #4f8cff);
-  box-shadow: 0 0 0 2px var(--accent-soft, rgba(79, 140, 255, 0.18));
-}
-
-.ai-chat-scroller {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 8px 4px;
-  min-height: 240px;
-  max-height: 360px;
-}
-
-.ai-chat-empty {
-  color: var(--text-secondary);
-  opacity: 0.65;
-  font-size: 13px;
-  padding: 24px;
-  text-align: center;
-}
-
-.ai-chat-msg {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: var(--bg-card-soft, rgba(127, 127, 127, 0.07));
-  font-size: 13.5px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.ai-chat-msg-user {
-  align-self: flex-end;
-  background: var(--accent-soft, rgba(79, 140, 255, 0.18));
-  max-width: 85%;
-}
-
-.ai-chat-msg-assistant {
-  align-self: flex-start;
-  background: var(--bg-card, rgba(127, 127, 127, 0.05));
-  max-width: 95%;
-}
-
-.ai-chat-msg-system {
-  align-self: center;
-  font-style: italic;
-  opacity: 0.6;
-}
-
-.ai-chat-role {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-secondary);
-}
-
-.ai-chat-msg-user .ai-chat-role {
-  color: var(--accent);
-}
-
-.ai-chat-cursor {
-  display: inline-block;
-  width: 8px;
-  height: 14px;
-  background: currentColor;
-  margin-left: 2px;
-  animation: ai-chat-blink 1s steps(1) infinite;
-}
-
-@keyframes ai-chat-blink {
-  50% { opacity: 0; }
-}
-
-.ai-chat-error {
-  background: rgba(255, 80, 80, 0.12);
-  border: 1px solid rgba(255, 80, 80, 0.4);
-  color: #d44;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 12.5px;
-}
-
-.ai-chat-input-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.ai-chat-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
 .set-btn-primary {
   background: var(--accent, #4f8cff);
   color: white;
@@ -997,4 +845,44 @@
 .set-btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* === Marketplace sub-sections (skills + plugins) === */
+.set-marketplace-sub {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-soft, rgb(0 0 0 / 8%));
+}
+.set-marketplace-sub h5 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #5a6b85);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.set-skill-badge-enabled {
+  background: rgb(34 197 94 / 14%);
+  color: rgb(21 128 61);
+}
+.set-skill-badge-disabled {
+  background: rgb(148 163 184 / 16%);
+  color: rgb(100 116 139);
+}
+[data-theme='dark'] .set-skill-badge-enabled {
+  background: rgb(34 197 94 / 22%);
+  color: rgb(134 239 172);
+}
+[data-theme='dark'] .set-skill-badge-disabled {
+  background: rgb(148 163 184 / 22%);
+  color: rgb(203 213 225);
+}
+.set-install-msg[data-market-msg] {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgb(79 140 255 / 10%);
+  font-size: 12.5px;
+  color: var(--text, #1f2937);
 }
