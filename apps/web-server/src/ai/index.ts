@@ -5,9 +5,6 @@
  * registration helpers and the streaming core (settings + provider
  * streaming) used by both the IPC layer and the SSE endpoint.
  */
-export { callMiniMax } from './minimax'
-export type { MiniMaxMessage } from './minimax'
-
 import {
   registerAiCoreHandlers,
   runProviderStream,

@@ -830,10 +830,50 @@ try {
 
 interface UploadedFile {
   kind: 'skill' | 'plugin'
+  /** Absolute path to the on-disk file (used by saveUploadedEntry) */
+  file: string
+  /** ISO timestamp of the original upload */
+  uploadedAt: string
+  /** Single rating history kept inside the file (id, rating, ts) */
+  ratings: { rating: number; ts: string }[]
   entry: MarketplaceSkillEntry | MarketplacePluginEntry
 }
 
 let uploadedCache: UploadedFile[] | null = null
+
+/** Find the persisted upload record for a given id, if any. */
+function findUploaded(kind: 'skill' | 'plugin', id: string): UploadedFile | undefined {
+  return loadUploaded().find((u) => u.kind === kind && u.entry.id === id)
+}
+
+/** Persist mutated fields back to disk; invalidates the cache. */
+function saveUploadedEntry(uploaded: UploadedFile, patch: {
+  entry?: Partial<MarketplaceSkillEntry | MarketplacePluginEntry>
+  ratings?: { rating: number; ts: string }[]
+}): { ok: true } | { ok: false; error: string } {
+  try {
+    if (patch.entry) uploaded.entry = { ...uploaded.entry, ...patch.entry } as UploadedFile['entry']
+    if (patch.ratings) uploaded.ratings = patch.ratings
+    writeFileSync(
+      uploaded.file,
+      JSON.stringify(
+        {
+          kind: uploaded.kind,
+          entry: uploaded.entry,
+          ratings: uploaded.ratings,
+          uploadedAt: uploaded.uploadedAt,
+          reviewStatus: 'pending',
+        },
+        null,
+        2,
+      ),
+    )
+    invalidateUploads()
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
 
 function loadUploaded(): UploadedFile[] {
   if (uploadedCache) return uploadedCache
@@ -846,11 +886,27 @@ function loadUploaded(): UploadedFile[] {
           const raw = JSON.parse(readFileSync(join(UPLOAD_DIR, file), 'utf-8')) as {
             kind?: unknown
             entry?: unknown
+            uploadedAt?: unknown
+            ratings?: unknown
           }
           const entry = raw.entry as (MarketplaceSkillEntry | MarketplacePluginEntry) | undefined
           if (!entry || typeof entry.id !== 'string') continue
+          const ratings = Array.isArray(raw.ratings)
+            ? raw.ratings
+                .map((r) => {
+                  if (!r || typeof r !== 'object') return null
+                  const rating = (r as { rating?: unknown }).rating
+                  const ts = (r as { ts?: unknown }).ts
+                  if (typeof rating !== 'number' || typeof ts !== 'string') return null
+                  return { rating, ts }
+                })
+                .filter((r): r is { rating: number; ts: string } => !!r)
+            : []
           out.push({
             kind: raw.kind === 'plugin' ? 'plugin' : 'skill',
+            file: join(UPLOAD_DIR, file),
+            uploadedAt: typeof raw.uploadedAt === 'string' ? raw.uploadedAt : new Date(0).toISOString(),
+            ratings,
             entry: {
               ...entry,
               rating: typeof entry.rating === 'number' ? entry.rating : 0,
@@ -1151,6 +1207,7 @@ export function registerSkillHandlers(): void {
     }
     const next = [...skills, installedEntry]
     saveSkills(next)
+    bumpMarketplaceDownloads('skill', id)
     return { ok: true, installed: installedEntry, skills: next }
   })
 
@@ -1175,6 +1232,7 @@ export function registerSkillHandlers(): void {
     }
     const next = [...plugins, installedEntry]
     savePlugins(next)
+    bumpMarketplaceDownloads('plugin', id)
     return { ok: true, installed: installedEntry, plugins: next }
   })
 
@@ -1233,7 +1291,9 @@ export function registerSkillHandlers(): void {
   function validateUpload(
     raw: unknown,
     expectedKind: 'skill' | 'plugin',
-  ): { ok: true; entry: MarketplaceSkillEntry | MarketplacePluginEntry } | { ok: false; error: string } {
+  ):
+    | { ok: true; entry: MarketplaceSkillEntry | MarketplacePluginEntry; force?: boolean }
+    | { ok: false; error: string } {
     if (!raw || typeof raw !== 'object') {
       return { ok: false, error: 'Payload must be a JSON object' }
     }
@@ -1276,12 +1336,21 @@ export function registerSkillHandlers(): void {
     if (!validCategories.includes(category)) {
       return { ok: false, error: `category must be one of ${validCategories.join(', ')}` }
     }
+    const force = r.force === true
+    const alreadyUploaded = !!findUploaded(expectedKind, id)
+    if (force) {
+      // explicit overwrite — caller has confirmed; fall through to build a
+      // fresh entry from the new payload and tag it so the handler knows.
+    } else if (alreadyUploaded) {
+      return { ok: false, error: `${expectedKind} "${id}" already uploaded; pass force=true to overwrite` }
+    }
     if (expectedKind === 'skill') {
       if (MARKETPLACE_SKILLS.some((s) => s.id === id)) {
         return { ok: false, error: `Skill "${id}" already exists in marketplace` }
       }
       return {
         ok: true,
+        force: r.force === true,
         entry: {
           id,
           name,
@@ -1305,6 +1374,7 @@ export function registerSkillHandlers(): void {
     }
     return {
       ok: true,
+      force: r.force === true,
       entry: {
         id,
         name,
@@ -1331,12 +1401,40 @@ export function registerSkillHandlers(): void {
     const validated = validateUpload(a.payload, kind)
     if (validated.ok === false) return { ok: false, error: validated.error }
     const entry = validated.entry
+    const isOverwrite = validated.force === true
     try {
       const file = join(UPLOAD_DIR, `${kind}.${entry.id}.json`)
+      // preserve ratings + downloads when overwriting so the community's
+      // voice and download counter survive a publish update
+      let ratings: { rating: number; ts: string }[] = []
+      let downloads = 0
+      let originalUploadedAt: string | undefined
+      if (isOverwrite) {
+        const prev = findUploaded(kind, entry.id)
+        if (prev) {
+          ratings = prev.ratings
+          downloads = prev.entry.downloads || 0
+          originalUploadedAt = prev.uploadedAt
+        }
+      }
+      const entryWithStats = {
+        ...entry,
+        downloads,
+        rating: ratings.length === 0
+          ? entry.rating
+          : Math.round((ratings.reduce((s, r) => s + r.rating, 0) / ratings.length) * 100) / 100,
+      }
       writeFileSync(
         file,
         JSON.stringify(
-          { kind, entry, uploadedAt: new Date().toISOString(), reviewStatus: 'pending' },
+          {
+            kind,
+            entry: entryWithStats,
+            ratings,
+            uploadedAt: originalUploadedAt ?? new Date().toISOString(),
+            lastPublishedAt: new Date().toISOString(),
+            reviewStatus: 'pending',
+          },
           null,
           2,
         ),
@@ -1348,10 +1446,12 @@ export function registerSkillHandlers(): void {
     return {
       ok: true,
       kind,
-      entry: { ...validated.entry, installed: false },
+      entry: { ...entry, installed: false },
       reviewStatus: 'pending',
-      message:
-        '已发布到本地 marketplace。扩展已立即出现在市场中,可搜索/安装;提交 GenOffice 团队审核后即可进入公共目录。',
+      overwritten: isOverwrite,
+      message: isOverwrite
+        ? '已覆盖原 marketplace 条目(保留评分 + downloads),立即生效。'
+        : '已发布到本地 marketplace。扩展已立即出现在市场中,可搜索/安装;提交 GenOffice 团队审核后即可进入公共目录。',
     }
   })
 
@@ -1371,6 +1471,48 @@ export function registerSkillHandlers(): void {
     } catch (err) {
       return { uploads: [], error: err instanceof Error ? err.message : String(err) }
     }
+  })
+
+  // ── downloads 自增: install 之后立刻让 catalog 反映真实热度 ──
+  function bumpMarketplaceDownloads(kind: 'skill' | 'plugin', id: string): void {
+    const uploaded = findUploaded(kind, id)
+    if (uploaded) {
+      const next = (typeof uploaded.entry.downloads === 'number' ? uploaded.entry.downloads : 0) + 1
+      saveUploadedEntry(uploaded, { entry: { downloads: next } })
+      return
+    }
+    // curated entries: bump the in-memory copy so the next search reflects it
+    if (kind === 'skill') {
+      const found = MARKETPLACE_SKILLS.find((s) => s.id === id)
+      if (found) found.downloads = (found.downloads || 0) + 1
+    } else {
+      const found = MARKETPLACE_PLUGINS.find((p) => p.id === id)
+      if (found) found.downloads = (found.downloads || 0) + 1
+    }
+  }
+
+  // ── 用户评分: 把 {rating, ts} 追加到 uploaded 文件,重算平均分并落盘 ──
+  registerHandle('home:marketplace-rate', (_event: unknown, args: unknown) => {
+    const a = (args || {}) as { id?: string; kind?: 'skill' | 'plugin'; rating?: number }
+    const kind = a.kind === 'plugin' ? 'plugin' : 'skill'
+    const id = String(a.id ?? '').trim()
+    const rating = Number(a.rating)
+    if (!id) return { ok: false, error: 'Missing id' }
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+      return { ok: false, error: 'rating must be between 1 and 5' }
+    }
+    const uploaded = findUploaded(kind, id)
+    if (!uploaded) {
+      return { ok: false, error: `${kind} "${id}" is not a community upload; ratings are only tracked for user-published entries` }
+    }
+    const next = [...uploaded.ratings, { rating, ts: new Date().toISOString() }]
+    const avg = next.reduce((s, r) => s + r.rating, 0) / next.length
+    const saved = saveUploadedEntry(uploaded, {
+      ratings: next,
+      entry: { rating: Math.round(avg * 100) / 100, downloads: uploaded.entry.downloads },
+    })
+    if (saved.ok === false) return saved
+    return { ok: true, kind, id, ratingCount: next.length, averageRating: avg }
   })
 
   // ── 复合接口: 一次返回 skills + plugins ──

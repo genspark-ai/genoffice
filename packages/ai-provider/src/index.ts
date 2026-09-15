@@ -89,3 +89,7 @@ export {
   createStreamWatchdog,
 } from './watchdog'
 export type { StreamWatchdog } from './watchdog'
+
+// Codex CLI bridge — exposed so the web build's `ai:codex-models` IPC can
+// hit the same codex-app-server client the Electron main process uses.
+export { listCodexModels } from './codex-app-server'

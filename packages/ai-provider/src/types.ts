@@ -163,6 +163,8 @@ export interface AiChatRequest {
 export interface AiChatResponse {
   ok: boolean
   content?: string
+  /** When the model returned reasoning as a separate field (DeepSeek V4, MiniMax), expose it. */
+  reasoning?: string
   error?: string
 }
 

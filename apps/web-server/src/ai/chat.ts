@@ -28,6 +28,7 @@ import {
   chatForProvider,
   defaultAiSettings,
   isAiNetworkError,
+  listCodexModels,
   isAiOverloadedError,
   maxOutputTokensOf,
   streamForProvider,
@@ -236,7 +237,20 @@ export function registerAiCoreHandlers(): void {
 
   registerHandle('ai:log-run-failure', () => ({ ok: true }))
 
-  registerHandle('ai:codex-models', () => ({ models: [], defaultModel: '' }))
+  registerHandle('ai:codex-models', async () => {
+    // Real lookup against the Codex CLI bridge; falls back to an empty
+    // catalog when the CLI isn't on PATH (which is normal for the
+    // standalone web build — Codex is an opt-in provider).
+    try {
+      return await listCodexModels(aiSettings.providers.codex?.cliPath)
+    } catch (err) {
+      return {
+        models: [],
+        defaultModel: '',
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  })
 
   /**
    * ai:chat — non-streaming one-shot call. Mirrors the Electron

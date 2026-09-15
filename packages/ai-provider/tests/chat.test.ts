@@ -209,3 +209,103 @@ describe('chatForProvider', () => {
     expect(result).toEqual({ ok: false, error: 'AI returned a non-JSON response: ' })
   })
 })
+
+describe('reasoning content normalization', () => {
+  it('strips inline <think>…</think> tags from non-streaming chat replies', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: '<think>The user wants a short reply.</think>\n\nhi',
+              role: 'assistant',
+            },
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await chatForProvider(
+      'minimax',
+      { apiKey: 'k', model: 'MiniMax-M3' },
+      'sys',
+      'say hi',
+    )
+    expect(result).toEqual({ ok: true, content: 'hi' })
+  })
+
+  it('strips multiple consecutive <think> blocks (re-entrant reasoning)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content:
+                '<think>step 1</think>partial<think>step 2</think>final answer',
+              role: 'assistant',
+            },
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await chatForProvider(
+      'minimax',
+      { apiKey: 'k', model: 'MiniMax-M3' },
+      'sys',
+      'go',
+    )
+    expect(result).toEqual({ ok: true, content: 'partialfinal answer' })
+  })
+
+  it('returns reasoning_content as a separate field when the server splits it out', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: 'final',
+              reasoning_content: 'I thought about this',
+              role: 'assistant',
+            },
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await chatForProvider(
+      'deepseek',
+      { apiKey: 'k', model: 'deepseek-v4-pro' },
+      'sys',
+      'go',
+    )
+    expect(result).toEqual({ ok: true, content: 'final', reasoning: 'I thought about this' })
+  })
+
+  it('reports reasoning-only responses as a failed reply (no empty success)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [
+          {
+            message: {
+              content: '',
+              reasoning_content: 'the user said stop, so I stopped',
+              role: 'assistant',
+            },
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await chatForProvider(
+      'deepseek',
+      { apiKey: 'k', model: 'deepseek-v4-pro' },
+      'sys',
+      'stop',
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('AI responded with reasoning only')
+    }
+  })
+})

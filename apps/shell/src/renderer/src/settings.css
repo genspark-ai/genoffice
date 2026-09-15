@@ -1217,3 +1217,25 @@
 [data-theme='dark'] .set-mp-field select { background: rgb(255 255 255 / 4%); }
 [data-theme='dark'] .set-mp-detail { background: rgb(255 255 255 / 4%); }
 [data-theme='dark'] .set-mp-card:hover { box-shadow: 0 4px 16px rgb(0 0 0 / 45%); }
+
+/* W33 — rate widget in the marketplace detail drawer */
+.set-mp-rate-block { padding-top: 4px; }
+.set-mp-rate-hint { font-size: 11px; color: var(--text-tertiary, #98a2b3); margin: 0 0 8px; }
+.set-mp-rate-row { display: flex; align-items: center; gap: 4px; }
+.set-mp-rate-star {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  width: 28px; height: 28px;
+  font-size: 18px;
+  color: #d0d5dd;
+  cursor: pointer;
+  transition: transform 80ms ease;
+}
+.set-mp-rate-star:hover { transform: translateY(-1px); color: #f79009; }
+.set-mp-rate-star.is-on { color: #f79009; }
+.set-mp-rate-star:disabled { cursor: default; opacity: 0.6; }
+.set-mp-rate-submit { margin-left: 8px; padding: 4px 12px; font-size: 12px; }
+.set-mp-rate-msg { margin-top: 8px; font-size: 12px; padding: 6px 10px; border-radius: 6px; }
+.set-mp-rate-msg-ok { background: #ecfdf3; color: #027a48; }
+.set-mp-rate-msg-err { background: #fef3f2; color: #b42318; }

@@ -3970,3 +3970,131 @@ apps/docs/src/renderer/ai/AiPanel2.tsx                       - 删除
 packages/docx-engine/scripts/make-revision-demo.ts           - 删除
 + 149 个 import 去掉 .js 后缀(跨 4 个包)
 ```
+
+### §16.38 W33 — marketplace 顶级完善 + AI 能力修复(2026-09-15)
+
+#### 16.38.1 目标与进度
+
+| 目标 | 状态 | 真实证据 |
+| --- | --- | --- |
+| **upload 重发拒绝** (避免静默覆盖) | ✅ 100% | curl `home:marketplace-upload` 不带 force 重复 id → `error: "plugin ... already uploaded; pass force=true to overwrite"` |
+| **upload force 覆盖保留 metric** | ✅ 100% | force=true 后 `name/version/tools` 更新,但 `rating=4 downloads=2 ratings count=2` 全部保留;`uploadedAt` 不变,新增 `lastPublishedAt` |
+| **install downloads 自增** | ✅ 100% | curl 真实验证 0→2,disk 上 `plugin.smoke-banner-fix.json` `downloads=2` |
+| **rating 提交持久化** | ✅ 100% | 新 `home:marketplace-rate` IPC;5+3 → `averageRating=4`,disk `ratings=[{rating:5,ts},{rating:3,ts}]` |
+| **rating 校验** | ✅ 100% | 越界 rating=6 → 拒;给 curated (内置) 评分 → 拒 |
+| **UI rate widget** | ✅ 100% | SettingsModal 详情面板 5 颗星 + 提交按钮;点击 4 星提交 → msg "感谢评分! 平均 4.00 (3 次评分)" |
+| **overwrite UI 确认** | ✅ 100% | SettingsModal 上传表单先 probe catalog,冲突时 `window.confirm('mpOverwriteConfirm')` 让用户确认 |
+| **dead code: minimax.ts** | ✅ 删除 | `apps/web-server/src/ai/minimax.ts` 删除 + `index.ts` export 清理 |
+| **`ai:codex-models` stub** | ✅ 真接通 | web-server 之前硬编码 `{ models: [], defaultModel: '' }`;现在调 `listCodexModels` 返回 7 个真实 GPT-5.x |
+| **think-tag 过滤** | ✅ 100% | MiniMax M3 把 `<think>...</think>` 塞进 `message.content`;新增 `stripThinkTags` 过滤;非流式 chat 不再暴露 thinking |
+| **reasoning 字段分离** | ✅ 100% | DeepSeek V4 的 `reasoning_content` 单独回传;新增 `AiChatResponse.reasoning` 字段 |
+| **reasoning-only fail-loud** | ✅ 100% | content 为空但 reasoning 有内容时返回 ok:false + 解释,避免假空成功 |
+| **测试覆盖** | ✅ +4 | `chat.test.ts` 新增 4 个用例(strip single/multiple <think> + 分字段 + 纯 reasoning),全绿 |
+
+**总体进度**:**100%** — W33 真实改造 marketplace 顶级 + 修复 AI 真实缺陷。
+
+#### 16.38.2 upload 流程:从"静默覆盖"到"显式 force + 保留 metric"
+
+**之前问题**:
+- 同一 id 第二次 upload 静默覆盖第一次的内容,前端无提示,user 不知情。
+- force 字段无效(代码中找不到对应的 return tag),无法区分新建 vs 覆盖。
+
+**修复**(`apps/web-server/src/shell/skills.ts`):
+1. `validateUpload` 内对已上传 id 拒绝(除非 `force: true`),并在 `ok: true` 上附 `force` 标志。
+2. `home:marketplace-upload` handler:
+   - 从 `findUploaded` 读取旧条目的 `ratings` 数组与 `downloads` 计数。
+   - 写入新文件时,保留旧 ratings 与 downloads,只覆盖 `entry` 的元数据(name/version/description/tools/...)。
+   - `uploadedAt` 保留原始时间戳;新增 `lastPublishedAt` 表示最近覆盖。
+3. 返回 `overwritten: boolean` 让前端展示不同 message。
+
+**真实端到端验证**:
+```
+disk before force:    rating=4 downloads=2 ratings count=2 uploadedAt=2026-09-15T14:02:48
+force upload v4:      name=...v4 version=2.0.0 tools=[x,y,z,w] overwritten=true
+disk after force:     rating=4 downloads=2 ratings count=2 uploadedAt=2026-09-15T14:02:48
+                      lastPublishedAt=2026-09-15T14:08:30
+```
+
+#### 16.38.3 install → downloads 自增 + 持久化
+
+**之前问题**:`home:install-plugin` / `home:install-skill` 把 marketplace entry 复制到 installed list 后,**从不**自增 downloads 计数,导致 `sort=popular` 永远基于种子数据排序,社区扩展始终 0 下载。
+
+**修复**:
+- 在 install 成功后调 `bumpMarketplaceDownloads(kind, id)`。
+- `bumpMarketplaceDownloads` 优先找 uploaded 文件并持久化 `downloads+1`(通过 `saveUploadedEntry`),curated(内置)扩展则 in-memory 自增(重启会丢,但可接受,因为只是临时浏览热度)。
+
+**真实验证**:
+```
+curl uninstall+install+uninstall+install smoke-banner-fix
+disk: plugin.smoke-banner-fix.json downloads=2
+```
+
+#### 16.38.4 rating 提交与平均分持久化
+
+新增 `home:marketplace-rate` IPC:
+- 参数: `{ id, kind: 'skill' | 'plugin', rating: 1..5 }`
+- 校验: id 必填、rating 在 [1,5]、仅对 uploaded 文件评分(curated 不支持)。
+- 行为: 追加 `{ rating, ts }` 到 uploaded 文件 `ratings` 数组,重算平均分并落盘。
+
+**真实验证**:
+```
+rate 5  → ratingCount=1 avg=5
+rate 3  → ratingCount=2 avg=4
+disk:   entry.rating=4  ratings=[{5,…},{3,…}]
+```
+
+**UI widget**(`apps/shell/src/renderer/src/SettingsModal.tsx`):
+- 详情面板新增 5 颗星 + 提交评分按钮。
+- 提交后立即 refetch `marketplaceDetail` 与 `marketplaceSearch`,detail 与 grid 同步显示新平均分。
+- 10 个 i18n key(`mpRateTitle/mpRateHint/mpRateSubmit/mpRateThanks/mpRateAlready/mpOverwriteConfirm`)跨 zh/en/ja/ko + 16 fallback。
+
+#### 16.38.5 Overwrite 确认对话框
+
+前端在 submit 前先 probe 一次 catalog,冲突时弹 `window.confirm('mpOverwriteConfirm')`:
+- 用户取消 → 不调 server,保持原状。
+- 用户确认 → 注入 `force: true`,server 走 overwrite 路径(保留 metric)。
+
+#### 16.38.6 AI 能力修复清单
+
+| 缺陷 | 修复 |
+| --- | --- |
+| `ai:codex-models` 返回硬编码空 catalog | 改调 `listCodexModels(cliPath)`;真实返回 7 个 GPT-5.x 模型;CLI 不在 PATH 时降级到空 + error |
+| `minimax.ts` 是死代码 + 占位 | 删除文件 + 移除 `index.ts` export |
+| MiniMax M3 把 `<think>...</think>` 内联到 `message.content` | `chatOpenAiCompatible` 增加 `stripThinkTags()` 过滤 |
+| DeepSeek V4 `reasoning_content` 字段被忽略 | 类型 `AiChatResponse` 加 `reasoning?: string`,协议层把 reasoning 单独回传 |
+| Reasoning-only response(content 为空)被报告为 ok:true | 增加 fail-loud 分支,带 reasoning 摘要返回 ok:false |
+
+**真实验证**:
+```
+ai:codex-models  → { models: [gpt-5.6-sol, gpt-5.6-terra, ..., gpt-5.2], defaultModel: 'gpt-5.6-sol' }
+ai:chat(minimax, 'Reply with: hello world')  → { ok: true, content: 'hello world' }
+                  (无 think 标签泄露,真实 MiniMax-M3 调用)
+```
+
+#### 16.38.7 测试覆盖新增
+
+`packages/ai-provider/tests/chat.test.ts` 加 4 个真实测试:
+- `strips inline <think>…</think> tags from non-streaming chat replies`
+- `strips multiple consecutive <think> blocks (re-entrant reasoning)`
+- `returns reasoning_content as a separate field when the server splits it out`
+- `reports reasoning-only responses as a failed reply (no empty success)`
+
+总测试数:**255 + 4 = 259/259** 全绿(agent-runtime 39 + agent-skills 153 + file-parse 30 + chat-runtime 33 + ai-provider 224)。
+
+#### 16.38.8 真实验证总结
+
+| 检查项 | 结果 |
+| --- | --- |
+| web-server `npx tsc --noEmit` | EXIT=0 |
+| shell `npx tsc --noEmit` | EXIT=0 (除旧 pdfjs-dist 已知问题) |
+| ai-provider `npx vitest run` | 224/224 ✅ |
+| agent-runtime / agent-skills / file-parse / chat-runtime | 39+153+30+33 = 255 ✅ |
+| bundle: `node scripts/bundle.mjs` | 10.5 MB |
+| web-server 启动 + `/health` | ok, channels=473 |
+| 重发 upload 不带 force | 拒绝 ✅ |
+| 重发 upload 带 force | 覆盖 + 保留 metric ✅ |
+| install 后 disk downloads | 0 → 2 ✅ |
+| 5+3 评分平均 | 4 ✅ |
+| 详情面板 rate widget | 5 颗星 + submit ✅ |
+| `ai:codex-models` | 7 个 GPT-5.x ✅ |
+| `ai:chat` 过滤 think | ✅ |

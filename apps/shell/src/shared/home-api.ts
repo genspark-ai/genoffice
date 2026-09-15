@@ -210,6 +210,18 @@ export interface HomeApi {
     payload: MarketplaceUploadPayload,
   ): Promise<{ ok: boolean; error?: string; kind?: 'skill' | 'plugin'; entry?: MarketplaceEntry; message?: string }>
   marketplaceListUploads(): Promise<{ uploads: MarketplaceUploadEntry[]; error?: string }>
+  marketplaceRate(
+    id: string,
+    kind: 'skill' | 'plugin',
+    rating: number,
+  ): Promise<{
+    ok: boolean
+    error?: string
+    kind?: 'skill' | 'plugin'
+    id?: string
+    ratingCount?: number
+    averageRating?: number
+  }>
   /** install a skill from the marketplace by id */
   installSkill(name: string): Promise<{ ok: boolean; error?: string; installed?: SkillEntry; skills?: SkillEntry[]; alreadyInstalled?: boolean }>
   /** uninstall a marketplace-installed skill (built-in skills cannot be uninstalled) */
@@ -607,6 +619,7 @@ export const HOME_CHANNELS = {
   marketplaceDetail: 'home:marketplace-detail',
   marketplaceUpload: 'home:marketplace-upload',
   marketplaceListUploads: 'home:marketplace-list-uploads',
+  marketplaceRate: 'home:marketplace-rate',
 } as const
 
 export const PROJECT_CHANNELS = {

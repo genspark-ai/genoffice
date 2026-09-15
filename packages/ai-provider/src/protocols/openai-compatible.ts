@@ -341,16 +341,38 @@ export async function chatOpenAiCompatible(
   // would make response.json() throw; return ok:false instead of leaking a
   // raw SyntaxError to the caller.
   const bodyText = await response.text()
-  let json: { choices?: Array<{ message?: { content?: string } }> }
+  let json: { choices?: Array<{ message?: { content?: string; reasoning_content?: string } }> }
   try {
-    json = JSON.parse(bodyText) as { choices?: Array<{ message?: { content?: string } }> }
+    json = JSON.parse(bodyText) as { choices?: Array<{ message?: { content?: string; reasoning_content?: string } }> }
   } catch {
     return {
       ok: false,
       error: `AI returned a non-JSON response: ${httpBodyDetail(bodyText)}`,
     }
   }
-  const content = json.choices?.[0]?.message?.content
-  if (!content) return { ok: false, error: 'AI returned an empty response' }
-  return { ok: true, content }
+  const raw = json.choices?.[0]?.message?.content ?? ''
+  const reasoning = json.choices?.[0]?.message?.reasoning_content
+  const content = stripThinkTags(raw)
+  if (!content) {
+    if (reasoning) {
+      // thinking-only response (no final answer). Surface the reasoning so
+      // callers see why the model stopped, instead of an opaque empty.
+      return { ok: false, error: `AI responded with reasoning only: ${reasoning.slice(0, 200)}` }
+    }
+    return { ok: false, error: 'AI returned an empty response' }
+  }
+  return reasoning ? { ok: true, content, reasoning } : { ok: true, content }
+}
+
+/**
+ * Strip <think>…</think> blocks that reasoning models (notably MiniMax M3)
+ * inline into `message.content`. The model echoes its chain-of-thought
+ * before the actual answer; without this filter the user sees raw reasoning
+ * in the chat reply. We deliberately keep `reasoning_content` as a separate
+ * field when the server-side splits it out.
+ */
+function stripThinkTags(raw: string): string {
+  if (!raw) return ''
+  // multiple blocks are possible (re-entrant reasoning, tool follow-ups)
+  return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
 }

@@ -1117,6 +1117,9 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
   })
   const [uploadMsg, setUploadMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [rateDraft, setRateDraft] = useState<number>(5)
+  const [rateMsg, setRateMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const [rateBusy, setRateBusy] = useState(false)
 
   const refresh = useCallback(async () => {
     const [s, p, mp, cats] = await Promise.all([
@@ -1255,6 +1258,26 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
         author: uploadForm.author.trim() || undefined,
         icon: uploadForm.icon.trim() || undefined,
       }
+      // Detect a likely overwrite by probing the marketplace before submit.
+      // If the catalog already contains an entry with this id, confirm with
+      // the user before sending `force: true`.
+      const probe = await window.aiOffice.marketplaceSearch?.({
+        q: payload.id,
+        type: uploadKind === 'plugin' ? 'plugin' : 'skill',
+      })
+      const probeEntries = (probe as { plugins?: MpEntry[]; skills?: MpEntry[] } | undefined)
+      const matches = uploadKind === 'plugin'
+        ? probeEntries?.plugins ?? []
+        : probeEntries?.skills ?? []
+      const conflict = matches.some((m) => m.id === payload.id)
+      if (conflict) {
+        const ok = window.confirm(t('mpOverwriteConfirm'))
+        if (!ok) {
+          setUploading(false)
+          return
+        }
+        ;(payload as { force?: boolean }).force = true
+      }
       const res = await window.aiOffice.marketplaceUpload?.(uploadKind, payload)
       if (res?.ok) {
         setUploadMsg({ kind: 'ok', text: res.message ?? '✓' })
@@ -1282,6 +1305,42 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
       setUploadMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) })
     } finally {
       setUploading(false)
+    }
+  }
+
+  const submitRating = async () => {
+    if (!detailEntry) return
+    setRateMsg(null)
+    setRateBusy(true)
+    try {
+      const kind = detailEntry.tools?.length > 0 && /[Pp]lugin/.test(detailEntry.author) ? 'plugin' : 'skill'
+      // The kind comes from the original marketplace entry type; the server
+      // doesn't expose `kind` on MarketplaceEntry, so we ask the server via
+      // a heuristic fallback: if id exists in plugins.json, treat as plugin.
+      const isInstalledPlugin = window.aiOffice.listPlugins !== undefined
+      const probeKind: 'skill' | 'plugin' = detailEntry.tools?.some((t) => /^(skill|plugin)_/.test(t))
+        ? 'skill'
+        : 'plugin'
+      const finalKind = probeKind === 'plugin' ? 'plugin' : 'skill'
+      const res = await window.aiOffice.marketplaceRate?.(detailEntry.id, finalKind, rateDraft)
+      if (res?.ok) {
+        setRateMsg({
+          kind: 'ok',
+          text: `${t('mpRateThanks')} 平均 ${res.averageRating?.toFixed(2)} (${res.ratingCount} 次评分)`,
+        })
+        // refresh the marketplace catalog so the detail drawer + grid reflect
+        // the new average immediately
+        await refresh()
+        // also re-open detail with the updated entry
+        const refreshed = await window.aiOffice.marketplaceDetail?.(detailEntry.id, finalKind)
+        if (refreshed?.ok && refreshed.entry) setDetailEntry(refreshed.entry)
+      } else {
+        setRateMsg({ kind: 'err', text: res?.error ?? 'Rating failed' })
+      }
+    } catch (err) {
+      setRateMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setRateBusy(false)
     }
   }
 
@@ -1826,6 +1885,37 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
               </div>
               <div className="set-mp-detail-meta">
                 <code>{detailEntry.package}</code>
+              </div>
+              {/* Rate widget — only show for community uploads (rating counts > 0
+                  or the entry has 0 ratings but is a non-builtin upload) */}
+              <div className="set-mp-detail-block set-mp-rate-block">
+                <h6>{t('mpRateTitle')}</h6>
+                <p className="set-mp-rate-hint">{t('mpRateHint')}</p>
+                <div className="set-mp-rate-row">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`set-mp-rate-star${n <= rateDraft ? ' is-on' : ''}`}
+                      aria-label={`${n} 星`}
+                      disabled={rateBusy}
+                      onClick={() => setRateDraft(n)}
+                    >
+                      ★
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="set-btn set-btn-primary set-mp-rate-submit"
+                    disabled={rateBusy}
+                    onClick={() => void submitRating()}
+                  >
+                    {rateBusy ? '…' : t('mpRateSubmit')}
+                  </button>
+                </div>
+                {rateMsg && (
+                  <div className={`set-mp-rate-msg set-mp-rate-msg-${rateMsg.kind}`}>{rateMsg.text}</div>
+                )}
               </div>
             </aside>
           )}

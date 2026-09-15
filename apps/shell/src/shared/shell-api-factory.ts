@@ -321,6 +321,16 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
       const r = (await t.invoke(HOME_CHANNELS.marketplaceListUploads)) as { uploads?: MarketplaceUploadEntry[]; error?: string }
       return { uploads: Array.isArray(r?.uploads) ? r!.uploads : [], error: r?.error }
     },
+    async marketplaceRate(id: string, kind: 'skill' | 'plugin', rating: number) {
+      return (await t.invoke('home:marketplace-rate', { id, kind, rating })) as {
+        ok: boolean
+        error?: string
+        kind?: 'skill' | 'plugin'
+        id?: string
+        ratingCount?: number
+        averageRating?: number
+      }
+    },
     async resetSkills(): Promise<SkillEntry[]> {
       const result = (await t.invoke(HOME_CHANNELS.resetSkills)) as { skills?: SkillEntry[] }
       return Array.isArray(result?.skills) ? result!.skills : []
