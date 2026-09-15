@@ -54,17 +54,22 @@ function bulletGlyphXml(b: BulletModel): string {
 export function patchTextElementXml(el: TextElement, originalXml: string): string {
   if (!el.text || !el.text.paragraphs.length) return originalXml
 
-  // Collect all model runs (flattened across paragraphs, incl. "\n" soft-break sentinels),
-  // one-to-one with the original XML's <a:r>/<a:br> sequence (parse rewrites <a:br/>
-  // as a sentinel run, order preserved)
+  // Collect all model runs (flattened across paragraphs, incl. "\n" soft-break and
+  // "\t" tab sentinels), one-to-one with the original XML's <a:r>/<a:br>/bare-<a:tab/>
+  // sequence (parse rewrites <a:br/> and bare <a:tab/> as sentinel runs, order preserved)
   const modelRuns: TextRun[] = el.text.paragraphs.flatMap((p) => p.runs)
   const runSpans = findRunSpans(originalXml)
 
-  // Count and kind aligned position by position (sentinel ⇔ <a:br>) → lossless in-place patch of each run, br bytes untouched
+  // Count and kind aligned position by position (sentinel ⇔ <a:br>/bare-<a:tab/>) →
+  // lossless in-place patch of each run, br/tab bytes untouched
   const aligned =
     runSpans.length === modelRuns.length &&
     runSpans.length > 0 &&
-    runSpans.every((s, i) => (s.kind === 'br' || !!s.newlineOnly) === isSoftBreakRun(modelRuns[i]!))
+    runSpans.every(
+      (s, i) =>
+        (s.kind === 'br' || !!s.newlineOnly) === isSoftBreakRun(modelRuns[i]!) &&
+        (s.kind === 'tab' || !!s.tabOnly) === isTabRun(modelRuns[i]!),
+    )
   if (aligned) {
     let out = ''
     let cursor = 0
@@ -72,7 +77,10 @@ export function patchTextElementXml(el: TextElement, originalXml: string): strin
       const span = runSpans[i]!
       out += originalXml.slice(cursor, span.start)
       const slice = originalXml.slice(span.start, span.end)
-      out += span.kind === 'br' || span.newlineOnly ? slice : patchRun(slice, modelRuns[i]!)
+      out +=
+        span.kind === 'br' || span.kind === 'tab' || span.newlineOnly || span.tabOnly
+          ? slice
+          : patchRun(slice, modelRuns[i]!)
       cursor = span.end
     }
     out += originalXml.slice(cursor)
@@ -237,20 +245,36 @@ function isSoftBreakRun(r: TextRun): boolean {
   return r.text === '\n' && !r.field
 }
 
+/** Tab sentinel run (parse rewrites bare <a:tab/> as a run with text="\t").
+ * PowerPoint itself writes tabs as a literal tab inside <a:t>; the bare form is
+ * only seen from third-party producers, so the rebuild path normalizes it to
+ * that valid literal while the in-place path keeps the original bytes. */
+function isTabRun(r: TextRun): boolean {
+  return r.text === '\t' && !r.field
+}
+
 interface Span {
   start: number
   end: number
-  kind: 'r' | 'br'
+  kind: 'r' | 'br' | 'tab'
   newlineOnly?: boolean
+  tabOnly?: boolean
 }
 
-/** Locate all top-level <a:r>…</a:r> and <a:br/> (incl. paired form) spans in document order. */
+/** Locate all top-level <a:r>…</a:r>, <a:br/> (incl. paired form), and bare
+ * <a:tab/> spans in document order. Only the bare tab form counts: attribute-
+ * carrying <a:tab pos="…"/> inside <a:tabLst> defines stops (separate model)
+ * and <a:tabLst> itself never matches (word boundary after "tab"). */
 function findRunSpans(xml: string): Span[] {
   const spans: Span[] = []
-  const re = /<a:r>|<a:r\s[^>]*>|<a:br\b[^>]*\/>|<a:br\b[^>]*>/g
+  const re = /<a:r>|<a:r\s[^>]*>|<a:br\b[^>]*\/>|<a:br\b[^>]*>|<a:tab\s*\/>/g
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     const start = m.index
+    if (m[0].startsWith('<a:tab')) {
+      spans.push({ start, end: re.lastIndex, kind: 'tab' })
+      continue
+    }
     if (m[0].startsWith('<a:br')) {
       if (m[0].endsWith('/>')) {
         spans.push({ start, end: re.lastIndex, kind: 'br' })
@@ -267,9 +291,19 @@ function findRunSpans(xml: string): Span[] {
     if (close < 0) break
     const end = close + '</a:r>'.length
     // A run whose text is only a line break parses as a soft-break sentinel (XML folds
-    // CRLF to LF); keeping its bytes preserves the formatting a bare <a:br/> would drop
-    const newlineOnly = /<a:t(?:\s[^>]*)?>\r?\n<\/a:t>/.test(xml.slice(start, end))
-    spans.push({ start, end, kind: 'r', ...(newlineOnly ? { newlineOnly: true } : {}) })
+    // CRLF to LF); keeping its bytes preserves the formatting a bare <a:br/> would drop.
+    // Likewise a run whose text is exactly one tab (PowerPoint's own encoding) parses
+    // to the same "\t" sentinel as a bare <a:tab/>; keeping its bytes avoids a rebuild.
+    const slice = xml.slice(start, end)
+    const newlineOnly = /<a:t(?:\s[^>]*)?>\r?\n<\/a:t>/.test(slice)
+    const tabOnly = /<a:t(?:\s[^>]*)?>(?:\t|&#9;|&#x9;)<\/a:t>/.test(slice)
+    spans.push({
+      start,
+      end,
+      kind: 'r',
+      ...(newlineOnly ? { newlineOnly: true } : {}),
+      ...(tabOnly ? { tabOnly: true } : {}),
+    })
     re.lastIndex = end
   }
   return spans
@@ -840,6 +874,11 @@ function defRPrXml(d: ParagraphDefaultRunProps): string {
 function generateRunXml(r: TextRun): string {
   // Soft-break sentinel → <a:br/>; embedded "\n" in text (new editor Shift+Enter input) splits into alternating run+br
   if (isSoftBreakRun(r)) return '<a:br/>'
+  // Tab sentinel ("\t") intentionally falls through to the regular <a:r> path:
+  // ECMA-376 CT_TextParagraph allows pPr/r/br/fld/endParaRPr only (a:tab lives in
+  // a:tabLst), and PowerPoint encodes tabs as a literal tab in <a:t>, so the rebuild
+  // normalizes a defensive bare <a:tab/> to that valid form; the in-place path above
+  // still keeps the original <a:tab/> bytes when present (see isTabRun/findRunSpans).
   if (r.text.includes('\n') && !r.field) {
     return r.text
       .split('\n')

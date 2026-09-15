@@ -81,6 +81,7 @@ const parser = new XMLParser({
       'a:p',
       'a:r',
       'a:br',
+      'a:tab',
       'a:fld',
       'p:sp',
       'p:pic',
@@ -289,8 +290,12 @@ function parseShapeFragment(
   // <a:fld> (slide number/date) gets the same treatment: it is structurally an a:r,
   // and rewriting the tag (attributes kept, so @_type survives for run.field) keeps
   // fields in document order instead of being appended after all plain runs.
+  // <a:tab/> (in-paragraph tab separator) → sentinel run "\t", same ordering
+  // rationale as a:br above. Only the bare form rewrites: <a:tab pos=.../>
+  // inside <a:tabLst> defines a tab stop and must survive verbatim.
   const semanticXml = fragXml
     .replace(/<a:br\b[^>]*\/>|<a:br\b[\s\S]*?<\/a:br>/g, '<a:r><a:t>\n</a:t></a:r>')
+    .replace(/<a:tab\s*\/>/g, '<a:r><a:t>\t</a:t></a:r>')
     .replace(/<a:fld\b/g, '<a:r')
     .replace(/<\/a:fld>/g, '</a:r>')
   const doc = parser.parse(semanticXml)
