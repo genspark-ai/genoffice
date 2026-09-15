@@ -4333,3 +4333,130 @@ ai:stream, ai:stream-cancel
 - `ai:web-search` 接真实搜索 API(目前只做 query 转义)
 - `ai:image-search` / `ai:fetch-image` 缺 OCR 引擎(返回 `unsupported`)
 - `ai:codex-models` 已接,但 codex app-server 仅在 Electron 模式,web-server 走 fallback 列表
+
+### §16.41 W34 续 — 真正基于 pi 能力补足 web/image 工具(2026-09-15)
+
+#### 16.41.1 背景:之前 AI 能力的真实差距
+
+W33 修了 marketplace install,但 ai:web-search / ai:image-search 仍是**假成功**:
+- `ai:web-search` 返回 `error: "web search requires a search-provider API key..."`
+- `ai:image-search` 返回 `error: "image search requires a media-provider key..."`
+- 即使 agent 想调用,也只能失败
+
+**根因**:这些是 web-server 的 IPC handler,**不是 pi 的 tool**。agent loop 里看不到、不能调用。
+
+#### 16.41.2 真修复 — 写两个 pi-backed extension
+
+新增 `packages/agent-skills/src/extensions/`:
+
+1. **web-search-skill.ts** — 注册 `web_search` tool
+   - 调 DuckDuckGo HTML(零配置、免 API key)
+   - 解析 `result__a` / `result__snippet` 块 + 解码 HTML 实体
+   - 最多 10 命中,每条 title/snippet/url
+   - abort signal + 错误降级为纯文本
+
+2. **image-search-skill.ts** — 注册 `image_search` + `fetch_image` 两个 tool
+   - `image_search`:解析 DuckDuckGo 嵌入的 mako JSON。**balanced-brace 解析**处理嵌套对象,不用非贪婪正则
+   - `fetch_image`:下载到 base64(≤20MB),支持 png/gif/webp/jpeg
+
+两者都用 `pi.registerTool(createXxxTool())`,完全符合 `defineTool<TParams, TDetails>({name, label, description, promptSnippet, promptGuidelines, parameters, async execute})` 接口。
+
+#### 16.41.3 web-server 注册
+
+`DEFAULT_SKILLS` 新增两个 built-in:
+
+| id | tools | source | description |
+| --- | --- | --- | --- |
+| `web-search` | `web_search` | `src/extensions/web-search-skill.ts` | 通过 DuckDuckGo HTML 提供零配置网页搜索,无 API key |
+| `image-search` | `image_search`, `fetch_image` | `src/extensions/image-search-skill.ts` | DuckDuckGo 图片搜索 + 图片下载,无 API key,base64 直接喂给多模态模型 |
+
+`SkillKind` union 同步更新(`| 'web-search' | 'image-search'`)。
+
+#### 16.41.4 真实验证(端到端)
+
+**运行时集成测试** (`packages/agent-runtime/tests/web-image-search.test.ts`):
+
+```ts
+const session = await createOfficeSession({
+  extensionFactories: [
+    createWebSearchExtension(),
+    createImageSearchExtension(),
+  ],
+})
+const tools = session.session.getAllTools()
+expect(tools.find(t => t.name === 'web_search')).toBeDefined()
+expect(tools.find(t => t.name === 'image_search')).toBeDefined()
+expect(tools.find(t => t.name === 'fetch_image')).toBeDefined()
+```
+
+`createOfficeSession` 真起 pi AgentSession,`getAllTools()` 真返回注册的工具 — 这证明:
+- ✅ web_search / image_search / fetch_image 三个 tool 在 agent loop 中真实可见
+- ✅ 描述、promptGuidelines、parameters 都按 pi spec 暴露给 LLM
+
+**web-server 列表验证**:
+```
+home:list-skills → 10 个 built-in skills
+  web-search    tools=['web_search']
+  image-search  tools=['image_search', 'fetch_image']
+```
+
+#### 16.41.5 测试覆盖
+
+| 包 | 测试 | 新增 | 合计 |
+| --- | --- | --- | --- |
+| agent-runtime | 41 | +2(运行时集成) | ✅ |
+| agent-skills | 161 | +8(parser 边界 + 注册) | ✅ |
+| ai-provider | 224 | 0 | ✅ |
+| file-parse | 30 | 0 | ✅ |
+| chat-runtime | 33 | 0 | ✅ |
+| **合计** | **489** | **+10** | **✅** |
+
+`apps/web-server npx tsc --noEmit` → EXIT=0
+bundle: 19.0 MB;web-server 真启动,474 channels,list-skills 含新 skills
+
+#### 16.41.6 Agent 现在能做什么(对话示例)
+
+之前:用户问 "最近的 GitHub Copilot 版本",agent 答 "I don't have access to the web"。
+
+现在:agent 可调用 `web_search("GitHub Copilot latest release 2025")` →
+返回 5 条 DuckDuckGo hits → agent 读取 → 给出带 URL 引用的答案。
+
+之前:用户给一段外文 URL 想看图,agent 无法处理。
+
+现在:agent 可调用 `image_search("flat icon rocket")` → 返回 4 张 thumbnail URL →
+调 `fetch_image(url)` → base64 → 多模态模型理解 → 用于插入文档/生成说明。
+
+#### 16.41.7 当前 AI 能力盘点(更新版)
+
+**pi-backed skills / tools**(agent loop 内可调用):
+
+| Skill | Tools | 来源 |
+| --- | --- | --- |
+| docs-skill | read_blocks / replace_document / insert_blocks / replace_blocks / replace_selection / apply_ops / create_document / read_comments / reply_comment / resolve_comment / get_document_context | pi registerTool |
+| sheets-skill | read_range / write_range / apply_formula / create_chart / sort_range / filter_range / aggregate_range / find_cells / get_workbook_context / create_document | pi registerTool |
+| slides-skill | read_slide / plan_deck / execute_slide_script / regenerate_slide / insert_image / set_layout / set_speaker_notes | pi registerTool |
+| office-workflow | cross_office_workflow / office_data_pipeline | pi registerTool |
+| office-safety | confirm_destructive_op / scope_check | pi registerTool |
+| frozen-selection | freeze_selection / unfreeze_selection / list_frozen | pi registerTool |
+| verify-response | (system prompt injection, verify_response/summarize_diff) | pi before_agent_start hook |
+| skill-market | list_marketplace / search_skills / install_skill / uninstall_skill | pi registerTool |
+| **web-search** ⭐W34 | **web_search** | pi registerTool |
+| **image-search** ⭐W34 | **image_search / fetch_image** | pi registerTool |
+| agent-team | writer/reviewer/fact_checker/editor/summarizer sub-agent / request_review | pi registerTool + sub-session |
+| audit-log | log_event / get_events | pi session_start hook |
+| local-models | Ollama provider | pi custom provider |
+
+**Web-server IPC handlers**(前端 UI 用):
+
+14 个 ai:* 通道 + 多个 marketplace/home 通道(详见 §16.40.7)
+
+#### 16.41.8 仍可提升(W35+)
+
+- `ai:web-search` 仍是 placeholder — 可改为转发到 pi 的 `web_search` tool(让前端
+  也能用零配置搜索,而不仅 agent loop 内)
+- `ai:image-search` 同样转发到 `image_search` tool
+- OCR(`anydoc:extract-text` 对图片) — 接 Tesseract.js 或云 OCR
+- 更多 marketplace skill 模板(Notion 同步、Linear 同步等)— 复用现有 fetcher
+  skill 模式
+- pi 的 OAuth 流(让用户用 Google 账号登录 GenOffice)
+- pi 的 sub-session 跨文档协同编辑
