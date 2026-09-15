@@ -41,6 +41,13 @@ describe('offsetFormulaRefs (fill/copy reference semantics)', () => {
     expect(offsetFormulaRefs('=SUM(B:B)', 5, 0)).toBe('=SUM(B:B)')
   })
 
+  it('shifts whole-row spans on fill-down and leaves them alone on fill-right', () => {
+    expect(offsetFormulaRefs('=SUM(2:4)', 1, 0)).toBe('=SUM(3:5)')
+    expect(offsetFormulaRefs('=SUM($2:$4)', 1, 0)).toBe('=SUM($2:$4)')
+    expect(offsetFormulaRefs('=SUM(2:4)', 0, 1)).toBe('=SUM(2:4)')
+    expect(offsetFormulaRefs('=SUM(1:2)', -1, 0)).toBe('=SUM(#REF!)')
+  })
+
   it('does not mangle function names that look like references', () => {
     expect(offsetFormulaRefs('=LOG10(A1)', 1, 0)).toBe('=LOG10(A2)')
   })

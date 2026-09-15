@@ -135,7 +135,8 @@ const ROW_SPAN_RE =
  * relative axes shift by the cell's offset from its source cell, `$`-anchored
  * axes stay pinned, and references pushed off the grid become #REF!.
  * Sheet-qualified refs shift too (as in Excel), string literals are skipped,
- * whole-row spans (3:5) are left unchanged.
+ * and whole-row spans (3:5) shift on fill-down while whole-column spans
+ * shift on fill-right ($ pins either axis; off-grid becomes #REF!).
  */
 export function offsetFormulaRefs(formula: string, rowDelta: number, columnDelta: number): string {
   if (rowDelta === 0 && columnDelta === 0) return formula
@@ -184,6 +185,25 @@ export function offsetFormulaRefs(formula: string, rowDelta: number, columnDelta
         }
         const first = shift(aAbs as string, aCol as string)
         const second = shift(bAbs as string, bCol as string)
+        if (first === null || second === null) return `${prefix}#REF!`
+        return `${prefix}${first}:${second}`
+      })
+    }
+    // Whole-row spans (2:4): the row-axis mirror of the column pass above
+    // (fill-down must shift =SUM(2:4) to =SUM(3:5), like =SUM(B:B) → =SUM(C:C)
+    // on fill-right). REF_RE needs a column component, so without this pass
+    // whole-row refs silently stay stale on copy/fill.
+    if (rowDelta !== 0) {
+      out = out.replace(ROW_SPAN_RE, (match, quoted, bare, aAbs, aRow, bAbs, bRow) => {
+        const prefix = quoted !== undefined ? `'${quoted}'!` : bare !== undefined ? `${bare}!` : ''
+        // Returns the full component including its anchor ("$2" stays "$2").
+        const shift = (abs: string, digits: string): string | null => {
+          if (abs === '$') return `$${digits}`
+          const shifted = Number(digits) - 1 + rowDelta
+          return shifted < 0 || shifted >= MAX_GRID_ROWS ? null : String(shifted + 1)
+        }
+        const first = shift(aAbs as string, aRow as string)
+        const second = shift(bAbs as string, bRow as string)
         if (first === null || second === null) return `${prefix}#REF!`
         return `${prefix}${first}:${second}`
       })
