@@ -146,6 +146,7 @@ import {
 import { createCliRunner } from './mcp/cli-runner'
 import { DEFAULT_MCP_PORT } from './mcp/mcp-server'
 import { createDocsControl, installDocsBridge } from './mcp/docs-bridge'
+import { createSlidesControl } from './mcp/slides-bridge'
 import {
   configureSheetsRuntime,
   exportSheetsPdfHeadless,
@@ -2879,6 +2880,17 @@ function openBlankDocsTabForMcp(): number {
   return view.webContents.id
 }
 
+/** MCP: open a blank slides tab and return its webContents id, for the visible-deck bridge */
+function openBlankSlidesTabForMcp(): number {
+  if (!tabManager) throw new Error('GenOffice is not ready')
+  const tabId = tabManager.openSlidesTab()
+  const view = tabManager.slidesTabs().find((t) => t.id === tabId)
+  if (!view) throw new Error('the new presentation tab could not be opened')
+  recordStarPromptDocOpen()
+  analytics.track('file_new', { kind: 'pptx' })
+  return view.webContents.id
+}
+
 function newSlideTab(): void {
   try {
     tabManager?.openSlidesTab()
@@ -4572,6 +4584,7 @@ app.whenReady().then(async () => {
     defaultSaveDir: () => defaultSaveDir(),
     openPath: (filePath) => routeDocumentPath(filePath),
     docsControl: createDocsControl({ openBlankTab: () => openBlankDocsTabForMcp() }),
+    slidesControl: createSlidesControl({ openBlankTab: () => openBlankSlidesTabForMcp() }),
     // the headless create_*/read_* tools delegate to the bundled genoffice CLI
     // (the same engines, no second implementation); it runs on the app's own
     // Node runtime via ELECTRON_RUN_AS_NODE

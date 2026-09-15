@@ -51,6 +51,27 @@ export async function createFileViaCli(
   })
 }
 
+/**
+ * `create --type pptx --ops <staged file> --out <target>` (the CLI's pptx
+ * creation path: a JSON array applied one by one to a blank deck). Ops are
+ * staged to a file rather than piped on stdin so the invocation is uniform with
+ * the other families and trivially inspectable.
+ */
+export async function createPptxViaCli(
+  runner: CliRunner,
+  opts: { ops: unknown[]; out: string; overwrite?: boolean },
+): Promise<{ outcome: CliRunOutcome; summary: string; outputPath: string }> {
+  return withTempDir(async (dir) => {
+    const opsPath = await stage(dir, 'ops.json', JSON.stringify(opts.ops))
+    return runCreate(
+      runner,
+      ['create', '--type', 'pptx', '--ops', opsPath],
+      opts.out,
+      opts.overwrite,
+    )
+  })
+}
+
 async function runCreate(
   runner: CliRunner,
   baseArgs: string[],

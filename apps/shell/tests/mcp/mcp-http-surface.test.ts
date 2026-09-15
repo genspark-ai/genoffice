@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { parseDocx } from '@genoffice/docx-engine'
+import { openPptx } from '@genoffice/pptx-engine'
 import {
   applyMcpSettings,
   configureMcpRuntime,
@@ -14,6 +15,7 @@ import {
   stopMcp,
 } from '../../src/main/mcp/app-mcp'
 import type { DocsControl } from '../../src/main/mcp/tools/document-tools'
+import type { SlidesControl } from '../../src/main/mcp/tools/slides-tools'
 import { realCliRunner } from './real-cli'
 
 /**
@@ -22,25 +24,27 @@ import { realCliRunner } from './real-cli'
  * Boots the server through the app's own composition path (configureMcpRuntime +
  * applyMcpSettings, i.e. exactly what the Settings toggle drives), then connects
  * an MCP client to `http://127.0.0.1:<port>/mcp` — the same URL an
- * `mcpServers` entry would use. Only the docs bridge is faked (no Electron
+ * `mcpServers` entry would use. Only the editor bridges are faked (no Electron
  * windows in a headless run); the transport, handshake, tool registration,
- * schema validation, session host and the real docx headless generation are all
- * exercised for real.
+ * schema validation, session host and the real docx/pptx headless generation are
+ * all exercised for real.
  */
 
 const DEFAULT_NAMES = [
   'apply_ops',
+  'apply_slide_ops',
   'create_session',
   'get_app_info',
   'insert_content',
   'open_in_genoffice',
+  'read_deck',
   'read_document',
   'read_docx',
   'replace_blocks',
   'save_session',
 ].sort()
 
-const BACKGROUND_NAMES = [...DEFAULT_NAMES, 'create_docx'].sort()
+const BACKGROUND_NAMES = [...DEFAULT_NAMES, 'create_docx', 'create_pptx'].sort()
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -86,10 +90,34 @@ function docsControl(): { control: DocsControl; calls: Array<Record<string, unkn
   return { control, calls }
 }
 
+function slidesControl(): { control: SlidesControl; saved: string[] } {
+  const saved: string[] = []
+  let wc = 200
+  return {
+    saved,
+    control: {
+      openBlankTab: async () => ++wc,
+      runTxn: async (_wcId, req) => {
+        const ops = req.ops as Array<{ op: string }>
+        if (ops.some((o) => o.op === 'explode')) {
+          return { applied: false, failures: [{ index: 0, error: 'boom' }] }
+        }
+        return { applied: true, records: ops.map((o) => ({ op: o.op })) }
+      },
+      readDeck: async (wcId) => ({ slides: [{ index: 0, wc: wcId, elements: [] }] }),
+      saveDeck: async (_wcId, path) => {
+        saved.push(path)
+        return { path }
+      },
+    },
+  }
+}
+
 let port: number
 let workDir: string
 let logPath: string
 const docs = docsControl()
+const slides = slidesControl()
 const openedPaths: string[] = []
 
 /** poll /health so we never race a server (re)start — what a real client does */
@@ -150,6 +178,7 @@ beforeAll(async () => {
       return ok
     },
     docsControl: docs.control,
+    slidesControl: slides.control,
     cliRunner: realCliRunner(workDir),
     logFilePath: logPath,
   })
@@ -168,7 +197,7 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
       // ── 1. handshake + tools/list ──────────────────────────────────────────
       const listed = (await client.listTools()).tools.map((t) => t.name).sort()
       expect(listed).toEqual(DEFAULT_NAMES)
-      expect(mcpStatus().capabilities).toEqual(['docs'])
+      expect(mcpStatus().capabilities).toEqual(['docs', 'slides'])
 
       // ── 2. get_app_info: editor matrix + exposed formats ──────────────────
       const info = await call(client, 'get_app_info', {})
@@ -182,7 +211,7 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
       expect(infoJson.name).toBe('GenOffice')
       expect(infoJson.version).toBe('0.9.0-acceptance')
       expect(infoJson.defaultSaveDir).toBe(workDir)
-      expect(infoJson.formats.sort()).toEqual(['docx'])
+      expect(infoJson.formats.sort()).toEqual(['docx', 'pptx'])
       expect(infoJson.families.map((f) => f.family)).toEqual([
         'docx',
         'xlsx',
@@ -234,11 +263,41 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
       expect(read.isError).toBe(false)
       expect((read.json as { text: string }).text).toContain('Quarterly Report')
 
-      // ── 5. format guard on save_session ──────────────────────────────────
-      const relativeSave = await call(client, 'save_session', { path: 'relative.docx' })
+      // ── 5. visible pptx session: create → ops → read ─────────────────────
+      // a second session switches the family; the docx content tool now refuses
+      const pptxSession = await call(client, 'create_session', { family: 'pptx' })
+      expect(pptxSession.isError).toBe(false)
+      const crossEdit = await call(client, 'insert_content', { html: '<p>x</p>' })
+      expect(crossEdit.isError).toBe(true)
+      expect(crossEdit.text).toMatch(/active session is a presentation/)
+
+      // read_deck now works (the active family matches)
+      const deck = await call(client, 'read_deck', {})
+      expect(deck.isError).toBe(false)
+      const txn = await call(client, 'apply_slide_ops', { ops: [{ op: 'addBlankSlide' }] })
+      expect(txn.isError).toBe(false)
+      const failedTxn = await call(client, 'apply_slide_ops', { ops: [{ op: 'explode' }] })
+      expect(failedTxn.isError).toBe(true)
+      expect(failedTxn.text).toContain('boom')
+
+      // ── 6. format guard on save_session ──────────────────────────────────
+      const wrongSave = await call(client, 'save_session', { path: join(workDir, 'deck.docx') })
+      expect(wrongSave.isError).toBe(true)
+      expect(wrongSave.text).toMatch(/presentation session must be saved as \.pptx/)
+
+      const relativeSave = await call(client, 'save_session', { path: 'relative.pptx' })
       expect(relativeSave.isError).toBe(true)
       expect(relativeSave.text).toMatch(/path must be absolute/)
 
+      const savedDeck = await call(client, 'save_session', {
+        path: join(workDir, 'deck.pptx'),
+        overwrite: true,
+      })
+      expect(savedDeck.isError).toBe(false)
+      expect(slides.saved).toEqual([join(workDir, 'deck.pptx')])
+
+      // a fresh docx session saves through the docs driver
+      await call(client, 'create_session', { family: 'docx' })
       const savedDoc = await call(client, 'save_session', {
         path: join(workDir, 'report.docx'),
         overwrite: true,
@@ -255,7 +314,7 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
       expect(saveNoSession.isError).toBe(true)
       expect(saveNoSession.text).toMatch(/no session is open/)
 
-      // ── 6. open_in_genoffice routes .docx, refuses others ────────────────
+      // ── 7. open_in_genoffice routes .docx, refuses others ────────────────
       const openableDocx = join(workDir, 'open-me.docx')
       await writeFile(openableDocx, 'placeholder')
       const opened = await call(client, 'open_in_genoffice', { path: openableDocx })
@@ -297,6 +356,18 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
       expect(readBack.isError).toBe(false)
       expect((readBack.json as { text: string }).text).toContain('Heading')
       expect((readBack.json as { text: string }).text).toContain('Body paragraph')
+
+      // create_pptx → a real 2-slide deck
+      const pptxPath = join(workDir, 'generated.pptx')
+      const madeDeck = await call(client, 'create_pptx', {
+        title: 'Deck',
+        outline: '# One\n- a\n\n# Two\n- b',
+        path: pptxPath,
+      })
+      expect(madeDeck.isError).toBe(false)
+      expect((madeDeck.json as { path: string }).path).toBe(pptxPath)
+      const opened = await openPptx(new Uint8Array(await readFile(pptxPath)))
+      expect(opened.deck.slides).toHaveLength(2)
 
       // the clobber guard still holds for explicit paths
       const clobber = await call(client, 'create_docx', {
@@ -383,35 +454,38 @@ describe('MCP surface over Streamable HTTP (/mcp)', () => {
     console.log('[bad session]', badSession.status, badSession.body)
   })
 
-  it('gives each concurrent client its own active session', async () => {
+  it('isolates the active session between two concurrent clients', async () => {
     // background off so the surface is the visible-session one
     await applyMcpSettings({ enabled: true, port, background: false, logging: true })
 
     const clientA = await connect()
     const clientB = await connect()
     try {
-      // both clients open a docx session: the second must not clobber the first
+      // A opens a docx session, B opens a pptx session — both succeed
       const a = await call(clientA, 'create_session', { family: 'docx' })
       expect(a.isError).toBe(false)
-      const b = await call(clientB, 'create_session', { family: 'docx' })
+      const b = await call(clientB, 'create_session', { family: 'pptx' })
       expect(b.isError).toBe(false)
-      expect((b.json as { sessionId: number }).sessionId).not.toBe(
-        (a.json as { sessionId: number }).sessionId,
-      )
 
-      // each client's content tool works against its own tab
+      // A's docx content tool still works (B's session did not clobber A's)
       const aEdit = await call(clientA, 'insert_content', { html: '<p>a</p>' })
       expect(aEdit.isError).toBe(false)
+      // B's deck tool still works
+      const bRead = await call(clientB, 'read_deck', {})
+      expect(bRead.isError).toBe(false)
+
+      // and each client only sees its own family
+      const aDeck = await call(clientA, 'read_deck', {})
+      expect(aDeck.isError).toBe(true)
+      expect(aDeck.text).toMatch(/active session is a Word document/)
       const bEdit = await call(clientB, 'insert_content', { html: '<p>b</p>' })
-      expect(bEdit.isError).toBe(false)
+      expect(bEdit.isError).toBe(true)
+      expect(bEdit.text).toMatch(/active session is a presentation/)
 
       // closing A's session leaves B's intact
       await call(clientA, 'save_session', { path: join(workDir, 'a.docx'), overwrite: true })
-      const bStill = await call(clientB, 'read_document', {})
+      const bStill = await call(clientB, 'read_deck', {})
       expect(bStill.isError).toBe(false)
-      const aGone = await call(clientA, 'insert_content', { html: '<p>x</p>' })
-      expect(aGone.isError).toBe(true)
-      expect(aGone.text).toMatch(/no session is open/)
     } finally {
       await clientA.close()
       await clientB.close()

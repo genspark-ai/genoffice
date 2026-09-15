@@ -458,6 +458,13 @@ export class TabManager {
       .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
   }
 
+  /** all live slides tabs (MCP bridge resolves its new tab's webContents through this) */
+  slidesTabs(): Array<{ id: string; webContents: WebContents }> {
+    return this.tabs
+      .filter((t) => t.kind === 'slides' && t.view)
+      .map((t) => ({ id: t.id, webContents: t.view!.webContents }))
+  }
+
   /** closes whichever tab is currently active; no-op for Home (Cmd+W target) */
   closeActiveTab(): void {
     void this.closeTab(this.activeId)
