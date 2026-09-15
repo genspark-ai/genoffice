@@ -34,6 +34,7 @@ import {
   streamForProvider,
 } from '@genoffice/ai-provider'
 import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
+import { parseDuckDuckGo, parseDuckDuckGoImages } from '@genoffice/agent-skills'
 import {
   buildTranslationPrompt,
   buildTranslateSystemPrompt,
@@ -445,22 +446,81 @@ export function registerAiCoreHandlers(): void {
   })
 
   registerHandle('ai:web-search', async (_event: unknown, query: unknown) => {
-    // Free web search has no API key configured in the default web build.
-    // Surface that explicitly so the UI can render "search unavailable" rather
-    // than silently returning empty results.
-    return {
-      query: String(query ?? ''),
-      results: [],
-      error:
-        'web search requires a search-provider API key (Tavily/Serper). Configure in Settings → Search.',
+    // Zero-config web search via DuckDuckGo HTML. Same parser the agent uses,
+    // so the UI sees the same hits the agent does. If the network is blocked
+    // (e.g. inside an air-gapped corp firewall) we surface the error so the
+    // UI can show "search unavailable" instead of silently returning nothing.
+    const q = String(query ?? '').trim()
+    if (q.length < 2) {
+      return { query: q, results: [], error: 'query must be at least 2 characters' }
+    }
+    const started = Date.now()
+    try {
+      const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}&kl=us-en`
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15',
+          'Accept': 'text/html',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      })
+      if (!response.ok) {
+        return {
+          query: q,
+          results: [],
+          error: `DuckDuckGo HTTP ${response.status} ${response.statusText}`,
+        }
+      }
+      const html = await response.text()
+      const hits = parseDuckDuckGo(html, 8)
+      return {
+        query: q,
+        results: hits,
+        source: 'duckduckgo',
+        ms: Date.now() - started,
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { query: q, results: [], error: `DuckDuckGo unreachable: ${message}` }
     }
   })
 
   registerHandle('ai:image-search', async (_event: unknown, query: unknown) => {
-    return {
-      query: String(query ?? ''),
-      results: [],
-      error: 'image search requires a media-provider key. Configure in Settings → Media.',
+    // Zero-config image search via DuckDuckGo's image endpoint. Same parser
+    // the agent uses; works without any API key.
+    const q = String(query ?? '').trim()
+    if (q.length < 2) {
+      return { query: q, results: [], error: 'query must be at least 2 characters' }
+    }
+    const started = Date.now()
+    try {
+      const url = `https://duckduckgo.com/?q=${encodeURIComponent(q)}&iax=images&ia=images`
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1.15',
+          'Accept': 'text/html',
+        },
+      })
+      if (!response.ok) {
+        return {
+          query: q,
+          results: [],
+          error: `DuckDuckGo HTTP ${response.status} ${response.statusText}`,
+        }
+      }
+      const html = await response.text()
+      const hits = parseDuckDuckGoImages(html, 8)
+      return {
+        query: q,
+        results: hits,
+        source: 'duckduckgo',
+        ms: Date.now() - started,
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { query: q, results: [], error: `DuckDuckGo unreachable: ${message}` }
     }
   })
 

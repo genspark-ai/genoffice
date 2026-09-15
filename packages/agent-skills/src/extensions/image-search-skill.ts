@@ -27,7 +27,7 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 type ImageSearchArgs = { query: string; max_results?: number }
 type FetchImageArgs = { url: string }
 
-interface ImageHit {
+export interface ImageHit {
 	title: string
 	thumbnail: string
 	page: string

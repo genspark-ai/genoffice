@@ -146,3 +146,13 @@ export {
   createImageSearchExtension,
   imageSearchExtensionDefaults,
 } from "./extensions/image-search-skill";
+
+export {
+  parseDuckDuckGo,
+  type SearchHit,
+} from "./extensions/web-search-skill";
+
+export {
+  parseDuckDuckGoImages,
+  type ImageHit,
+} from "./extensions/image-search-skill";

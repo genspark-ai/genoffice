@@ -25,7 +25,7 @@ type WebSearchArgs = {
 	max_results?: number
 }
 
-interface SearchHit {
+export interface SearchHit {
 	title: string
 	snippet: string
 	url: string
@@ -122,7 +122,7 @@ function createWebSearchTool() {
  * — DDG rotates its markup occasionally. We try a few variants and return
  * what we can parse.
  */
-function parseDuckDuckGo(html: string, maxResults: number): SearchHit[] {
+export function parseDuckDuckGo(html: string, maxResults: number): SearchHit[] {
 	const hits: SearchHit[] = []
 
 	// Variant 1: <a class="result__a" href="...">title</a> + <a class="result__snippet">snippet</a>
