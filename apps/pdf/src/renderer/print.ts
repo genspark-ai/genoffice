@@ -42,9 +42,13 @@ export async function printPdf(doc: PDFDocumentProxy, pages?: number[]): Promise
   const root = document.createElement('div')
   root.className = 'pdf-print-root'
   const canvas = document.createElement('canvas')
+  // Integer-only: a float (1.5) passes the range check but pdf.js getPage
+  // throws on it, aborting the whole job in the measure pass below.
   const targets =
     pages && pages.length > 0
-      ? [...new Set(pages)].filter((n) => n >= 1 && n <= doc.numPages).sort((a, b) => a - b)
+      ? [...new Set(pages)]
+          .filter((n) => Number.isInteger(n) && n >= 1 && n <= doc.numPages)
+          .sort((a, b) => a - b)
       : Array.from({ length: doc.numPages }, (_x, i) => i + 1)
   // First pass: measure each page at unit scale to budget the shared scale.
   // Stream one page at a time so no PDFPageProxy outlives its render — the

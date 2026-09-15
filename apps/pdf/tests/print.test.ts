@@ -79,6 +79,17 @@ describe('printPdf', () => {
     expect(window.print).toHaveBeenCalledTimes(1)
   })
 
+  it('drops non-integer page targets instead of aborting the job', async () => {
+    const { doc, getPage } = fakeDoc(5)
+    await printPdf(doc, [1.5, 2, 99])
+    // 1.5 would throw inside pdf.js getPage and abort the whole print;
+    // only the valid integer target renders (measure + render passes).
+    expect(getPage).toHaveBeenCalledTimes(2)
+    expect(getPage).toHaveBeenNthCalledWith(1, 2)
+    expect(getPage).toHaveBeenNthCalledWith(2, 2)
+    expect(window.print).toHaveBeenCalledTimes(1)
+  })
+
   it('waits for afterprint before resolving', async () => {
     const { doc } = fakeDoc(1)
     let fireAfterPrint: () => void = () => {}
