@@ -29,6 +29,24 @@ describe('sseLines', () => {
     expect(lines).toEqual(['data: a', 'data: b', ''])
   })
 
+  it('flushes a truncated multibyte tail instead of dropping it silently', async () => {
+    const head = new TextEncoder().encode('data: 中')
+    // A stream cut inside the next char (E4… with no completion bytes coming):
+    // without a final decode() the buffered byte is discarded silently.
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(head)
+        controller.enqueue(new Uint8Array([0xe4]))
+        controller.close()
+      },
+    })
+    const lines: string[] = []
+    for await (const line of sseLines(body)) {
+      lines.push(line)
+    }
+    expect(lines).toEqual(['data: 中�'])
+  })
+
   it('releases the reader when the consumer abandons mid-stream', async () => {
     const body = hangingBody()
     const reader = body.getReader()

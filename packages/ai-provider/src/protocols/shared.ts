@@ -20,6 +20,11 @@ export async function* sseLines(
       buffer = lines.pop() ?? ''
       for (const line of lines) yield line
     }
+    // Flush the decoder: bytes of a multibyte char still buffered inside
+    // TextDecoder under { stream: true } are discarded without a final
+    // decode() — a stream cut mid-char (dropped connection) would lose its
+    // tail silently instead of surfacing the standard replacement mark.
+    buffer += decoder.decode()
     if (buffer) yield buffer
   } finally {
     // The consumer may abandon this generator mid-stream (an in-band gateway
