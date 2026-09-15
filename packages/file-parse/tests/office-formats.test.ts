@@ -37,6 +37,35 @@ describe('parseFileToText: docx', () => {
     expect(result.text).toContain('Metric | Value')
     expect(result.text).toContain('Revenue | 100')
   })
+
+  it('includes footnote and endnote text', async () => {
+    const zip = await JSZip.loadAsync(await buildDocxFixture())
+    const part = (tag: string, id: string, text: string) =>
+      `<w:${tag} w:id="${id}"><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:${tag}>`
+    zip.file(
+      'word/footnotes.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        part('footnote', '-1', '') +
+        part('footnote', '1', 'Footnote detail') +
+        '</w:footnotes>',
+    )
+    zip.file(
+      'word/endnotes.xml',
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+        part('endnote', '1', 'Endnote detail') +
+        '</w:endnotes>',
+    )
+    const path = writeFixture(
+      'notes.docx',
+      await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }),
+    )
+    const result = await parseFileToText(path)
+    expect(result.ok).toBe(true)
+    expect(result.text).toContain('Footnote detail')
+    expect(result.text).toContain('Endnote detail')
+  })
 })
 
 describe('parseFileToText: ppt', () => {

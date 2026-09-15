@@ -33,6 +33,16 @@ export async function docxToText(bytes: Uint8Array): Promise<string> {
         }
     }
   }
+  // Footnotes/endnotes live outside the block tree but are part of the
+  // document's readable text (and what AI Q&A over attachments should index).
+  if (doc.footnotes.length > 0) {
+    lines.push('## Footnotes')
+    for (const note of doc.footnotes) lines.push(note.text)
+  }
+  if (doc.endnotes.length > 0) {
+    lines.push('## Endnotes')
+    for (const note of doc.endnotes) lines.push(note.text)
+  }
   return lines.join('\n')
 }
 
