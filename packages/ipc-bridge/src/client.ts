@@ -44,9 +44,25 @@ export class IpcBridgeError extends Error {
   }
 }
 
-/** True when running inside an Electron renderer (preload already exposed window.* APIs). */
+/**
+ * True only when running inside a real Electron renderer whose preload has
+ * already exposed the IPC bridge (window.process.contextIsolated is the
+ * signature of Electron's sandboxed/preload world). Plain Chromium and any
+ * Electron-based *browser* that happens to load HTTP pages have no
+ * `window.process` — they take the web-bridge path so the rest of the
+ * renderer can hit the same surface via HTTP.
+ *
+ * The legacy user-agent check (`/Electron/i.test(navigator.userAgent)`) was
+ * a false positive inside Electron-wrapped in-app browsers (e.g. the Codex
+ * desktop in-app browser) where the UA carries the Electron token even
+ * though there is no preload and no `ipcRenderer` — using it crashed the
+ * docs renderer on the first `window.desktop.X` call with a
+ * "object null is not iterable" TypeError.
+ */
 export function isElectronRuntime(): boolean {
-  return typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)
+  if (typeof window === 'undefined') return false
+  const proc = (window as unknown as { process?: { contextIsolated?: boolean } }).process
+  return !!proc && proc.contextIsolated === true
 }
 
 /** Structural subset of Electron's IpcRenderer the Electron transport needs. */
@@ -81,17 +97,21 @@ export interface HttpIpcTransportOptions {
    * so everything stays same-origin under the page CSP (connect-src 'self').
    */
   baseUrl?: string
+  /** Optional URL path prefix when the web server is reverse-proxied below a subpath. */
+  pathPrefix?: string
 }
 
 export function createHttpIpcTransport(options: HttpIpcTransportOptions = {}): IpcTransport {
   const base = (options.baseUrl ?? '').replace(/\/+$/, '')
+  const pathPrefix = (options.pathPrefix ?? '').replace(/^\/+|\/+$/g, '')
+  const apiPrefix = pathPrefix ? `/${pathPrefix}` : ''
   const session = createSessionId()
-  const pushHub = createPushHub(base, session)
+  const pushHub = createPushHub(base, apiPrefix, session)
 
   async function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
     let response: Response
     try {
-      response = await fetch(`${base}/api/ipc/${encodeURIComponent(channel)}`, {
+      response = await fetch(`${base}${apiPrefix}/api/ipc/${encodeURIComponent(channel)}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-ipc-session': session },
         body: JSON.stringify({ args: args.map((arg) => encodeTransportValue(arg)) }),
@@ -137,13 +157,13 @@ function createSessionId(): string {
  * buffered server-side per session, so subscribing after an `invoke` — or a
  * stream that reconnects — still receives every frame.
  */
-function createPushHub(base: string, session: string) {
+function createPushHub(base: string, apiPrefix: string, session: string) {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>()
   let source: EventSource | null = null
 
   function ensureSource(): void {
     if (source || typeof EventSource === 'undefined') return
-    source = new EventSource(`${base}/api/ipc/events?session=${encodeURIComponent(session)}`)
+    source = new EventSource(`${base}${apiPrefix}/api/ipc/events?session=${encodeURIComponent(session)}`)
     source.onmessage = (event) => {
       let frame: { channel: string; args: unknown[] }
       try {

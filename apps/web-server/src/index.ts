@@ -129,6 +129,12 @@ function pushSseEvent(session: string, channel: string, args: unknown[]): void {
 // ----- request handling ----------------------------------------------------
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || '/', `http://${request.headers.host}`)
+  const pathPrefix = (process.env.WEB_PATH_PREFIX || '').replace(/^\/+|\/+$/g, '')
+  const prefix = pathPrefix ? `/${pathPrefix}` : ''
+  const requestPath = prefix && url.pathname.startsWith(`${prefix}/`)
+    ? url.pathname.slice(prefix.length) || '/'
+    : url.pathname
+  url.pathname = requestPath
 
   response.setHeader('Access-Control-Allow-Origin', '*')
   response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')

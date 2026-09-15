@@ -366,6 +366,44 @@ export interface DesktopApi {
     targetLang?: string
     preserveFormat?: boolean
   }>
+  /** Translate multiple document units while preserving their editor anchors. */
+  aiTranslateBatch(request: {
+    units: Array<{
+      unitId: string
+      kind: string
+      sourceText: string
+      order?: number
+      path?: string
+      metadata?: Record<string, unknown>
+      range?: { from: number; to: number; scope?: string } | null
+    }>
+    sourceLang?: string
+    targetLang: string
+    preserveFormat?: boolean
+    scene?: string
+  }): Promise<{
+    ok: boolean
+    units?: Array<{
+      unitId: string
+      sourceText: string
+      translatedText?: string
+      status?: string
+      matchedTerms?: string[]
+      warnings?: string[]
+      errorMessage?: string
+      range?: { from: number; to: number; scope?: string } | null
+    }>
+    quality?: { overallScore?: number; warnings?: string[] }
+    error?: string
+  }>
+  saveTranslationMemory(request: {
+    requestId: string
+    documentId?: string
+    scene: string
+    sourceLang: string
+    targetLang: string
+    units: Array<{ unitId: string; sourceText: string; translatedText: string }>
+  }): Promise<{ ok: boolean; savedCount?: number; skippedCount?: number; error?: string }>
   /** Genspark account status (gsk login state); withEmail also returns the email (needs a network request, slower) */
   aiGskStatus(withEmail?: boolean): Promise<GenSparkAccountStatus>
   /** Open the browser to log in to Genspark (fire-and-forget; aiGskStatus flips to logged-in when done) */

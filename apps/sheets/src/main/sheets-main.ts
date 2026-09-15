@@ -77,6 +77,7 @@ import {
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
+import { translateOne as translateOneCore } from '@genoffice/translation-core'
 import {
   csvToXlsxBuffer,
   decodeCsvBuffer,
@@ -2329,6 +2330,65 @@ export function registerSheetsIpc(): void {
         ...(op?.aspectRatio ? { aspectRatio: String(op.aspectRatio) } : {}),
       }),
   )
+
+  function castTranslateRange(
+    raw: unknown,
+  ): import('@genoffice/translation-core').EditorRange | null {
+    if (!raw || typeof raw !== 'object') return null
+    const r = raw as { from?: number; to?: number; scope?: string }
+    const scope =
+      r.scope === 'selection' ||
+      r.scope === 'document' ||
+      r.scope === 'paragraph' ||
+      r.scope === 'cell' ||
+      r.scope === 'table'
+        ? r.scope
+        : undefined
+    return { from: r.from, to: r.to, scope }
+  }
+
+  // ai:translate — one-shot translate for the sheets selection assistant.
+  // Sheets previously declared `IPC_CHANNELS.aiTranslate` but never registered
+  // a main-process handler; the renderer's `window.desktopApi?.aiTranslate?.({...})`
+  // silently no-op'd. Real implementation lives in @genoffice/translation-core
+  // so docs / sheets / slides / web-server share the same prompt + memory.
+  ipcMain.handle('ai:translate', async (_event, request: unknown) => {
+    const req = (request ?? {}) as {
+      instruction?: string
+      sourceLang?: string
+      targetLang?: string
+      preserveFormat?: boolean
+      range?: { from?: number; to?: number; scope?: string } | null
+    }
+    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+    const settings = resolveAiSettings(stored, defaultAiSettings())
+    settings.provider = activeProvider(settings)
+    const provider: AiProviderId = settings.provider
+    let config = settings.providers?.[provider]
+    if (provider === 'genspark' && config && !config.apiKey) {
+      // genspark key lives in the gsk login state, not the settings file
+      try {
+        const gskMod = await import('@genoffice/ai-search')
+        config = { ...config, apiKey: gskMod.gskApiKey() }
+      } catch {
+        // fall through with empty key — translateOne returns a clean error
+      }
+    }
+    const result = await translateOneCore(
+      {
+        instruction: req.instruction ?? '',
+        sourceLang: req.sourceLang,
+        targetLang: req.targetLang ?? '',
+        preserveFormat: req.preserveFormat,
+        range: castTranslateRange(req.range),
+      },
+      { provider, config: config ?? { apiKey: '', model: '' } },
+    )
+    if (result.error && isAiOverloadedError(result.error)) {
+      return { ...result, error: 'AI service is busy — please retry shortly.' }
+    }
+    return result
+  })
 
   ipcMain.on(IPC_CHANNELS.recoveryPromptReply, (event, restore: unknown) => {
     recoveryPromptWaiters.get(event.sender.id)?.(restore === true ? 'restore' : 'discard')

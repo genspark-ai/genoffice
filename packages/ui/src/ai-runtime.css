@@ -495,6 +495,72 @@
   word-break: break-word;
   color: var(--color-fg, #222);
 }
+.ai-translate-dialog-units {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+.ai-translate-dialog-quality {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(22, 163, 74, 0.08);
+  color: var(--color-fg-muted, #666);
+  font-size: 11px;
+}
+.ai-translate-dialog-quality strong {
+  color: var(--color-accent-success, #15803d);
+}
+.ai-translate-dialog-unit {
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--color-bg-subtle, rgba(0, 0, 0, 0.02));
+}
+.ai-translate-dialog-unit-source {
+  color: var(--color-fg-muted, #888);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+.ai-translate-dialog-unit-select {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.ai-translate-dialog-unit-select input {
+  margin-top: 3px;
+}
+.ai-translate-dialog-unit-target {
+  margin-top: 4px;
+  color: var(--color-fg, #222);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.ai-translate-dialog-unit-warning {
+  margin-top: 4px;
+  color: #a16207;
+  font-size: 11px;
+}
+.ai-translate-dialog-unit-terms {
+  margin-top: 4px;
+  color: var(--color-accent, #1677ff);
+  font-size: 11px;
+}
+.ai-translate-dialog-unit-retry {
+  margin-top: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.15));
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-accent, #1677ff);
+  font-size: 11px;
+  cursor: pointer;
+}
 .ai-translate-dialog-placeholder {
   color: var(--color-fg-muted, #aaa);
   font-style: italic;
@@ -533,6 +599,12 @@
 .ai-translate-dialog-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.ai-translate-dialog-memory-status {
+  align-self: center;
+  margin-right: auto;
+  color: var(--color-accent-success, #16803c);
+  font-size: 12px;
 }
 
 /* === M3 — ChangeMarker (inline undo anchor) === */

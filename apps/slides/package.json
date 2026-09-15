@@ -89,6 +89,7 @@
   },
   "dependencies": {
     "@genoffice/electron-utils": "*",
+    "@genoffice/translation-core": "*",
     "acorn": "^8.18.0",
     "harfbuzzjs": "^1.4.0",
     "pngjs": "^7.0.0",

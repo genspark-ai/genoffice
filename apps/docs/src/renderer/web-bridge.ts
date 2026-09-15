@@ -18,12 +18,224 @@ import {
   webPrint,
 } from '@genoffice/ipc-bridge/web-native'
 import { createDesktopApi, createProjectApi } from '../shared/desktop-api-factory'
+import {
+  installDataflareEmbedBridge,
+  getDataflareEmbedSessionId,
+  postToEmbedParent,
+  requestDataflareParent,
+  type DataflareEmbedCommand,
+  type DataflareOfficeContext,
+} from '../shared/embed-bridge'
 
 if (!isElectronRuntime()) {
-  const transport = createHttpIpcTransport()
+  const embeddedPathPrefix = window.location.pathname.startsWith('/office-engine/') ? '/office-engine' : ''
+  const transport = createHttpIpcTransport({ pathPrefix: embeddedPathPrefix })
   const files = createWebFileBridge(transport)
+  let dataflareContext: DataflareOfficeContext | null = null
+  let dataflareRevision = '0'
+  const requestDataflare = (path: string, init: RequestInit = {}) => {
+    if (window.parent === window) {
+      const token = localStorage.getItem('Manager-Token')
+      return fetch(path, {
+        ...init,
+        headers: { ...(init.headers || {}), ...(token ? { 'Manager-Token': token } : {}) },
+      })
+    }
+    return requestDataflareParent({
+      type: 'http-request',
+      requestId: `df-http-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      sessionId: getDataflareEmbedSessionId() || '',
+      method: (init.method || 'GET').toUpperCase() as 'GET' | 'POST',
+      path,
+      jsonBody: typeof init.body === 'string' ? init.body : undefined,
+    }).then((result) => new Response(result.body, { status: result.status, headers: result.headers }))
+  }
+  const uploadDataflare = (path: string, data: ArrayBuffer, fields: Record<string, string>) => {
+    if (window.parent === window) {
+      const token = localStorage.getItem('Manager-Token')
+      const form = new FormData()
+      form.append('file', new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), 'document.docx')
+      Object.entries(fields).forEach(([key, value]) => form.append(key, value))
+      return fetch(path, { method: 'POST', headers: token ? { 'Manager-Token': token } : undefined, body: form })
+    }
+    return requestDataflareParent({
+      type: 'http-request',
+      requestId: `df-http-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      sessionId: getDataflareEmbedSessionId() || '',
+      method: 'POST',
+      path,
+      file: { bytes: data, filename: 'document.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+      fields,
+    }).then((result) => new Response(result.body, { status: result.status, headers: result.headers }))
+  }
   const bridgedWindow = window as unknown as Record<string, unknown>
   bridgedWindow.desktop = createDesktopApi(transport, {
+    saveDocx: async (_path, data, _auto) => {
+      const documentId = dataflareContext?.documentId
+      if (!documentId || dataflareContext?.documentSource !== 'knowledge') {
+        return await transport.invoke('docs:save', _path, data, _auto === true)
+      }
+      const response = await uploadDataflare(`/crmapi/knowledge/office/${encodeURIComponent(documentId)}`, data, { expectedRevision: dataflareRevision })
+      const body = await response.json().catch(() => null) as {
+        code?: number
+        msg?: string
+        data?: { revision?: string }
+      } | null
+      if (!response.ok || body?.code !== 0) {
+        const error = body?.msg || `Dataflare document save failed (${response.status})`
+        postToEmbedParent({ type: 'error', code: response.status === 409 || body?.code === 409 ? 'document-conflict' : 'save-failed', message: error })
+        return { ok: false, reason: 'external-modified', error }
+      }
+      dataflareRevision = body.data?.revision || String(Number(dataflareRevision) + 1)
+      postToEmbedParent({
+        type: 'document-saved',
+        documentId: documentId,
+        revision: dataflareRevision,
+      })
+      return { ok: true }
+    },
+    aiTranslate: async (request) => {
+      // Standalone web build: route through the local bridge transport so the
+      // AI translation hits the web-server's `ai:translate` handler (the real
+      // provider-backed translation path). The Dataflare branch only fires
+      // when this window is embedded inside Dataflare with an active context.
+      if (!dataflareContext) {
+        return await transport.invoke('ai:translate', request)
+      }
+      const scope = request.range?.scope === 'document' ? 'document' : 'selection'
+      const unitId = `${scope}-${Date.now().toString(36)}`
+      const response = await requestDataflare('/crmapi/ai/translation/v1/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId: unitId,
+          idempotencyKey: unitId,
+          documentId: dataflareContext?.documentId,
+          documentType: 'docx',
+          scene: scope,
+          sourceLanguage: request.sourceLang || 'auto',
+          targetLanguage: request.targetLang,
+          preserveFormatting: request.preserveFormat !== false,
+          memoryEnabled: true,
+          qualityCheck: true,
+          units: [{
+            unitId,
+            kind: scope === 'document' ? 'document' : 'paragraph',
+            sourceText: request.instruction,
+            order: 0,
+            metadata: request.range ? { range: request.range } : undefined,
+          }],
+        }),
+      })
+      const body = (await response.json()) as {
+        code?: number
+        msg?: string
+        data?: { requestId?: string; units?: Array<{ translatedText?: string; errorMessage?: string }> }
+      }
+      const unit = body.data?.units?.[0]
+      if (!response.ok || body.code !== 0 || !unit?.translatedText) {
+        return { ok: false, error: unit?.errorMessage || body.msg || 'Dataflare translation failed' }
+      }
+      return {
+        ok: true,
+        translated: unit.translatedText,
+        planId: body.data?.requestId || unitId,
+        sourceLang: request.sourceLang,
+        targetLang: request.targetLang,
+        preserveFormat: request.preserveFormat !== false,
+      }
+    },
+    aiTranslateBatch: async (request: Parameters<NonNullable<import('../shared/desktop-api-factory').DesktopApiOverrides['aiTranslateBatch']>>[0]) => {
+      if (!dataflareContext) {
+        return await transport.invoke('ai:translate-batch', request)
+      }
+      const batchId = `document-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      const response = await requestDataflare('/crmapi/ai/translation/v1/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId: batchId,
+          idempotencyKey: batchId,
+          documentId: dataflareContext?.documentId,
+          documentType: 'docx',
+          scene: request.scene || 'document',
+          sourceLanguage: request.sourceLang || 'auto',
+          targetLanguage: request.targetLang,
+          preserveFormatting: request.preserveFormat !== false,
+          memoryEnabled: true,
+          qualityCheck: true,
+          units: request.units.map((unit) => ({
+            unitId: unit.unitId,
+            kind: unit.kind,
+            sourceText: unit.sourceText,
+            order: unit.order,
+            path: unit.path,
+            metadata: { ...(unit.metadata || {}), range: unit.range || undefined },
+          })),
+        }),
+      })
+      const body = await response.json().catch(() => null) as {
+        code?: number
+        msg?: string
+        data?: {
+          units?: Array<{
+            unitId?: string
+            sourceText?: string
+            translatedText?: string
+            status?: string
+            matchedTerms?: string[]
+            warnings?: string[]
+            errorMessage?: string
+          }>
+          quality?: { overallScore?: number; warnings?: string[] }
+        }
+      } | null
+      const units = (body?.data?.units || []).map((unit) => ({
+        unitId: unit.unitId || '',
+        sourceText: unit.sourceText || '',
+        translatedText: unit.translatedText,
+        status: unit.status,
+        matchedTerms: unit.matchedTerms,
+        warnings: unit.warnings,
+        errorMessage: unit.errorMessage,
+        range: request.units.find((input) => input.unitId === unit.unitId)?.range || null,
+      }))
+      return {
+        ok: response.ok && body?.code === 0 && units.length === request.units.length,
+        units,
+        quality: body?.data?.quality,
+        error: body?.msg || (!response.ok ? `Dataflare translation failed (${response.status})` : undefined),
+      }
+    },
+    saveTranslationMemory: async (request) => {
+      if (!dataflareContext) {
+        return await transport.invoke('ai:save-translation-memory', request)
+      }
+      const requestId = `memory-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      const response = await requestDataflare('/crmapi/ai/translation/v1/memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId,
+          documentId: dataflareContext?.documentId,
+          scene: request.scene,
+          sourceLanguage: request.sourceLang,
+          targetLanguage: request.targetLang,
+          units: request.units,
+        }),
+      })
+      const body = await response.json().catch(() => null) as {
+        code?: number
+        msg?: string
+        data?: { savedCount?: number; skippedCount?: number }
+      } | null
+      if (!response.ok || body?.code !== 0) {
+        return { ok: false, error: body?.msg || `Dataflare memory save failed (${response.status})` }
+      }
+      return { ok: true, savedCount: body.data?.savedCount, skippedCount: body.data?.skippedCount }
+    },
     consumePendingOpenDocx: async () => {
       const path = new URLSearchParams(window.location.search).get('open')
       if (!path) return null
@@ -92,6 +304,56 @@ if (!isElectronRuntime()) {
     },
   })
   bridgedWindow.projectApi = createProjectApi(transport)
+  bridgedWindow.dataflareOfficeBridge = {
+    postEvent: postToEmbedParent,
+    isEmbedded: window.parent !== window,
+    getRevision: () => dataflareRevision,
+  }
+  installDataflareEmbedBridge({
+    onCommand: (command: DataflareEmbedCommand) => {
+      if (command.type === 'init') dataflareContext = command.context
+      window.dispatchEvent(new CustomEvent('dataflare:office-command', { detail: command }))
+      if (command.type === 'init' && command.context.documentId && command.context.documentSource === 'knowledge') {
+        void openDataflareKnowledgeDocument(command.context, transport, files, requestDataflare, (revision) => {
+          dataflareRevision = revision
+        })
+      }
+    },
+    onGlobalState: (state, revision) => {
+      // Update cached revision when host pushes a newer one (e.g. another tab/user saved).
+      const incoming = state?.documentRevision
+      if (incoming !== undefined && incoming !== null) {
+        dataflareRevision = String(incoming)
+      }
+      window.dispatchEvent(new CustomEvent('dataflare:office-global-state', { detail: { state, revision } }))
+    },
+  })
+}
+
+async function openDataflareKnowledgeDocument(
+  context: DataflareOfficeContext,
+  transport: { invoke(channel: string, ...args: unknown[]): Promise<unknown> },
+  files: { writeTempFile(name: string, bytes: ArrayBuffer): Promise<string> },
+  requestDataflare: (path: string, init?: RequestInit) => Promise<Response>,
+  onRevision: (revision: string) => void,
+): Promise<void> {
+  const documentId = context.documentId?.trim()
+  if (!documentId || context.documentType !== 'docx') return
+  try {
+    const response = await requestDataflare(`/crmapi/knowledge/office/${encodeURIComponent(documentId)}`)
+    if (!response.ok) throw new Error(`Dataflare document download failed (${response.status})`)
+    onRevision(response.headers.get('X-Office-Revision') || response.headers.get('ETag')?.replace(/^"|"$/g, '') || '0')
+    const bytes = await response.arrayBuffer()
+    const name = `dataflare-${documentId}.docx`
+    const path = await files.writeTempFile(name, bytes)
+    await transport.invoke('docs:open-path', path)
+  } catch (error) {
+    postToEmbedParent({
+      type: 'error',
+      code: 'dataflare-document-open-failed',
+      message: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 const IMAGE_MIME: Record<string, string> = {

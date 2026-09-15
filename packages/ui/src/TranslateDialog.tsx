@@ -35,6 +35,7 @@ export interface TranslateDialogStrings {
   previewLoading: string
   cancel: string
   unsupported: string
+  retry?: string
 }
 
 export interface TranslateDialogProps {
@@ -52,6 +53,23 @@ export interface TranslateDialogProps {
   /** Full target-language list the host wants to expose (e.g. 12 common). */
   languages: TranslateLanguageOption[]
   strings: TranslateDialogStrings
+  /** Optional per-unit preview for document translations. */
+  previewItems?: Array<{
+    id: string
+    sourceText: string
+    translatedText?: string
+    status?: string
+    warnings?: string[]
+    matchedTerms?: string[]
+    range?: { from: number; to: number; scope?: string } | null
+  }>
+  previewQuality?: { overallScore?: number; warnings?: string[] }
+  onRetryUnit?: (unitId: string) => Promise<void>
+  onSaveMemory?: (args: {
+    sourceLang: string
+    targetLang: string
+    units: Array<{ unitId: string; sourceText: string; translatedText: string }>
+  }) => Promise<{ savedCount?: number; skippedCount?: number } | void>
   /**
    * Render the translation. The host wires this to either:
    *   - a sync provider call returning the translated string, or
@@ -79,13 +97,17 @@ function nextPlanId(): string {
 }
 
 export function TranslateDialog(props: TranslateDialogProps): React.JSX.Element | null {
-  const { open, sourceText, sourceRange, defaultSourceLang, defaultTargetLang, languages, strings, onTranslate, onApply, onCancel, app } = props
+  const { open, sourceText, sourceRange, defaultSourceLang, defaultTargetLang, languages, strings, previewItems, previewQuality, onTranslate, onApply, onCancel, app, onRetryUnit, onSaveMemory } = props
   const [sourceLang, setSourceLang] = useState<string>(defaultSourceLang ?? 'auto')
   const [targetLang, setTargetLang] = useState<string>(defaultTargetLang)
   const [preserveFormat, setPreserveFormat] = useState<boolean>(true)
   const [translated, setTranslated] = useState<string | null>(null)
   const [busy, setBusy] = useState<boolean>(false)
+  const [savingMemory, setSavingMemory] = useState<boolean>(false)
+  const [memoryStatus, setMemoryStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selectedPreviewIds, setSelectedPreviewIds] = useState<Set<string>>(new Set())
+  const previewSelectionInitialized = React.useRef(false)
 
   useEffect(() => {
     if (open) {
@@ -95,8 +117,17 @@ export function TranslateDialog(props: TranslateDialogProps): React.JSX.Element 
       setTranslated(null)
       setBusy(false)
       setError(null)
+      setMemoryStatus(null)
+      setSelectedPreviewIds(new Set())
+      previewSelectionInitialized.current = false
     }
   }, [open, defaultSourceLang, defaultTargetLang])
+
+  useEffect(() => {
+    if (!open || previewSelectionInitialized.current || !previewItems?.length) return
+    setSelectedPreviewIds(new Set(previewItems.map((item) => item.id)))
+    previewSelectionInitialized.current = true
+  }, [open, previewItems])
 
   const targetLabel = useMemo(() => {
     const m = languages.find((l) => l.value === targetLang)
@@ -134,6 +165,25 @@ export function TranslateDialog(props: TranslateDialogProps): React.JSX.Element 
 
   const handleApply = () => {
     if (translated === null) return
+    const selectedItems = (previewItems || []).filter((item) =>
+      selectedPreviewIds.has(item.id) && item.translatedText && item.status !== 'failed',
+    )
+    if (previewItems && previewItems.length > 0 && selectedItems.length === 0) return
+    const translateOps = previewItems && previewItems.length > 0
+      ? selectedItems.map((item) => ({
+          sourceText: item.sourceText,
+          targetText: item.translatedText!,
+          targetLang,
+          preserveFormat,
+          range: item.range ?? null,
+        }))
+      : [{
+          sourceText,
+          targetText: translated,
+          targetLang,
+          preserveFormat,
+          range: sourceRange ?? null,
+        }]
     const plan: ChatChangePlan = {
       id: nextPlanId(),
       app: app ?? 'unknown',
@@ -143,13 +193,7 @@ export function TranslateDialog(props: TranslateDialogProps): React.JSX.Element 
         {
           kind: 'translate',
           ops: [
-            {
-              sourceText,
-              targetText: translated,
-              targetLang,
-              preserveFormat,
-              range: sourceRange ?? null,
-            },
+            ...translateOps,
           ],
           description: `Translate ${sourceLang} → ${targetLang}`,
         },
@@ -159,6 +203,47 @@ export function TranslateDialog(props: TranslateDialogProps): React.JSX.Element 
       createdAt: Date.now(),
     }
     onApply(plan, translated)
+  }
+
+  const handleRetryUnit = async (unitId: string) => {
+    if (!onRetryUnit || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onRetryUnit(unitId)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleSaveMemory = async () => {
+    if (!onSaveMemory || savingMemory) return
+    const selectedItems = (previewItems || []).filter((item) =>
+      selectedPreviewIds.has(item.id) && item.translatedText && item.status !== 'failed',
+    )
+    const units = selectedItems.length > 0
+      ? selectedItems.map((item) => ({ unitId: item.id, sourceText: item.sourceText, translatedText: item.translatedText! }))
+      : translated
+        ? [{ unitId: sourceRange ? `selection-${sourceRange.from}-${sourceRange.to}` : 'selection', sourceText, translatedText: translated }]
+        : []
+    if (units.length === 0) return
+    setSavingMemory(true)
+    setError(null)
+    setMemoryStatus(null)
+    try {
+      const result = await onSaveMemory({ sourceLang, targetLang, units })
+      if (result && (typeof result.savedCount === 'number' || typeof result.skippedCount === 'number')) {
+        setMemoryStatus(`Saved ${result.savedCount ?? 0}; skipped ${result.skippedCount ?? 0}`)
+      } else {
+        setMemoryStatus('Translation memory saved')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSavingMemory(false)
+    }
   }
 
   return (
@@ -222,7 +307,55 @@ export function TranslateDialog(props: TranslateDialogProps): React.JSX.Element 
           </section>
           <section className="ai-translate-dialog-side">
             <h3>{strings.translated}</h3>
-            <div className="ai-translate-dialog-text">
+            {previewItems && previewItems.length > 0 ? (
+              <div className="ai-translate-dialog-units">
+                {previewQuality && (
+                  <div className="ai-translate-dialog-quality">
+                    <strong>Quality {Math.round((previewQuality.overallScore ?? 0) * 100)}%</strong>
+                    {previewQuality.warnings && previewQuality.warnings.length > 0 && (
+                      <span>{previewQuality.warnings.join(' · ')}</span>
+                    )}
+                  </div>
+                )}
+                {previewItems.map((item) => (
+                  <article key={item.id} className="ai-translate-dialog-unit">
+                    <label className="ai-translate-dialog-unit-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedPreviewIds.has(item.id)}
+                        onChange={() => setSelectedPreviewIds((current) => {
+                          const next = new Set(current)
+                          if (next.has(item.id)) next.delete(item.id)
+                          else next.add(item.id)
+                          return next
+                        })}
+                        disabled={busy || item.status === 'failed' || !item.translatedText}
+                      />
+                      <span className="ai-translate-dialog-unit-source">{item.sourceText}</span>
+                    </label>
+                    <div className="ai-translate-dialog-unit-target">
+                      {item.status === 'failed' ? (item.warnings?.join(', ') || strings.unsupported) : (item.translatedText || '—')}
+                    </div>
+                    {item.matchedTerms && item.matchedTerms.length > 0 && (
+                      <div className="ai-translate-dialog-unit-terms">Terms: {item.matchedTerms.join(' · ')}</div>
+                    )}
+                    {item.warnings && item.warnings.length > 0 && (
+                      <div className="ai-translate-dialog-unit-warning">{item.warnings.join(' · ')}</div>
+                    )}
+                    {onRetryUnit && (item.status === 'failed' || !item.translatedText) && (
+                      <button
+                        type="button"
+                        className="ai-translate-dialog-unit-retry"
+                        onClick={() => void handleRetryUnit(item.id)}
+                        disabled={busy}
+                      >
+                        {strings.retry || 'Retry'}
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </div>
+            ) : <div className="ai-translate-dialog-text">
               {error ? (
                 <span className="ai-translate-dialog-error">{error}</span>
               ) : translated === null ? (
@@ -230,12 +363,12 @@ export function TranslateDialog(props: TranslateDialogProps): React.JSX.Element 
               ) : (
                 translated
               )}
-            </div>
+            </div>}
           </section>
         </div>
 
         <footer className="ai-translate-dialog-footer">
-          <button type="button" className="ai-translate-dialog-btn" onClick={onCancel} disabled={busy}>
+          <button type="button" className="ai-translate-dialog-btn" onClick={onCancel} disabled={savingMemory}>
             {strings.cancel}
           </button>
           {translated === null ? (
@@ -248,14 +381,27 @@ export function TranslateDialog(props: TranslateDialogProps): React.JSX.Element 
               {strings.start}
             </button>
           ) : (
-            <button
-              type="button"
-              className="ai-translate-dialog-btn ai-translate-dialog-btn--primary"
-              onClick={handleApply}
-              disabled={busy}
+            <>
+              {onSaveMemory && (
+                <button
+                  type="button"
+                  className="ai-translate-dialog-btn"
+                  onClick={() => void handleSaveMemory()}
+                  disabled={busy || savingMemory || (previewItems && previewItems.length > 0 && selectedPreviewIds.size === 0)}
+                >
+                  {savingMemory ? 'Saving…' : 'Save to memory'}
+                </button>
+              )}
+              {memoryStatus && <span className="ai-translate-dialog-memory-status" role="status">{memoryStatus}</span>}
+              <button
+                type="button"
+                className="ai-translate-dialog-btn ai-translate-dialog-btn--primary"
+                onClick={handleApply}
+                disabled={busy || (previewItems && previewItems.length > 0 && selectedPreviewIds.size === 0)}
             >
               {strings.start}
-            </button>
+              </button>
+            </>
           )}
         </footer>
       </div>

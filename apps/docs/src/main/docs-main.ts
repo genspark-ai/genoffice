@@ -82,6 +82,7 @@ import {
   testMediaProvider,
   type AiMediaProviderConfig,
   type AiMediaProviderId,
+  type AiProviderId,
   type AiSearchProviderId,
   resolveAiSettings,
   maxOutputTokensOf,
@@ -106,6 +107,11 @@ import {
   webSearchTool,
   imageSearchTool,
 } from '@genoffice/ai-search'
+import {
+  sharedMemory as coreTranslationMemory,
+  translateBatch as translateBatchCore,
+  translateOne as translateOneCore,
+} from '@genoffice/translation-core'
 import type {
   AiDocContent,
   AttachmentAddResult,
@@ -3009,6 +3015,165 @@ export function registerAiIpc(): void {
     } catch (err) {
       return { ok: false, error: isAiOverloadedError(err) ? tm('errAiBusy') : String(err) }
     }
+  })
+
+  // load the live AI settings + provider id from disk; this is the same path
+  // the renderer uses via `ai:get-settings`, so the desktop TranslateDialog runs
+  // against the provider the user has actually configured.
+  function loadActiveAiSettings(): AiSettings {
+    const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(SETTINGS_PATH(), {})
+    return resolveAiSettings(stored, defaultAiSettings())
+  }
+
+  // shared helper for the ai:translate / ai:translate-batch handlers above
+  function castEditorRange(raw: unknown): import('@genoffice/translation-core').EditorRange | null {
+    if (!raw || typeof raw !== 'object') return null
+    const r = raw as { from?: number; to?: number; scope?: string }
+    const scope =
+      r.scope === 'selection' ||
+      r.scope === 'document' ||
+      r.scope === 'paragraph' ||
+      r.scope === 'cell' ||
+      r.scope === 'table'
+        ? r.scope
+        : undefined
+    return { from: r.from, to: r.to, scope }
+  }
+
+  function resolveTranslateConfig(
+    provider: AiProviderId,
+    settings: AiSettings,
+  ): import('@genoffice/ai-provider').AiProviderConfig | null {
+    let config = settings.providers?.[provider]
+    if (!config) return null
+    if (provider === 'genspark' && !config.apiKey) {
+      config = { ...config, apiKey: gskApiKey() }
+    }
+    return config
+  }
+
+  function localizeTranslateError<T extends { ok: boolean; error?: string }>(
+    result: T,
+    provider: AiProviderId,
+  ): T {
+    if (!result.error) return result
+    return { ...result, error: localizeErrorString(result.error, provider) }
+  }
+
+  function localizeErrorString(error: string, provider?: AiProviderId): string {
+    if (isAiOverloadedError(error)) return tm('errAiBusy')
+    // surface the gsk-not-logged-in / missing-api-key messages in the right locale
+    if (provider === 'genspark' && /genspark/i.test(error) && /api[_-]?key/i.test(error)) {
+      return tm('errGskNotLoggedIn')
+    }
+    return error
+  }
+
+  // ai:translate / ai:translate-batch — one-shot translate through the active
+  // provider. The docs renderer's TranslateDialog dispatches both; desktop
+  // builds were silently failing before because no main-process handler
+  // existed. Delegates to @genoffice/translation-core so the web build, the
+  // Dataflare bridge and the desktop Electron app share one source of truth
+  // for prompts, language handling and the in-memory translation memory.
+  ipcMain.handle('ai:translate', async (_event, request: unknown) => {
+    const req = (request ?? {}) as {
+      instruction?: string
+      sourceLang?: string
+      targetLang?: string
+      preserveFormat?: boolean
+      range?: { from?: number; to?: number; scope?: string } | null
+    }
+    const provider = loadActiveAiSettings().provider
+    const config = resolveTranslateConfig(provider, loadActiveAiSettings())
+    if (!config) {
+      return { ok: false, error: `AI provider "${provider}" not configured` }
+    }
+    const result = await translateOneCore(
+      {
+        instruction: req.instruction ?? '',
+        sourceLang: req.sourceLang,
+        targetLang: req.targetLang ?? '',
+        preserveFormat: req.preserveFormat,
+        range: castEditorRange(req.range),
+      },
+      { provider, config },
+    )
+    return localizeTranslateError(result, provider)
+  })
+
+  ipcMain.handle('ai:translate-batch', async (_event, request: unknown) => {
+    const req = (request ?? {}) as {
+      units?: Array<{
+        unitId?: string
+        kind?: string
+        sourceText?: string
+        order?: number
+        path?: string
+        metadata?: Record<string, unknown>
+        range?: { from?: number; to?: number; scope?: string } | null
+      }>
+      sourceLang?: string
+      targetLang?: string
+      preserveFormat?: boolean
+      scene?: string
+    }
+    const units = (req.units ?? []).map((u) => ({
+      unitId: u.unitId ?? '',
+      kind: (u.kind ?? 'paragraph') as
+        'paragraph' | 'heading' | 'list-item' | 'table-cell' | 'document',
+      sourceText: u.sourceText ?? '',
+      order: u.order ?? 0,
+      path: u.path,
+      metadata: u.metadata,
+      range: castEditorRange(u.range),
+    }))
+    const provider = loadActiveAiSettings().provider
+    const config = resolveTranslateConfig(provider, loadActiveAiSettings())
+    if (!config) {
+      return { ok: false, error: `AI provider "${provider}" not configured` }
+    }
+    const result = await translateBatchCore(
+      {
+        units,
+        sourceLang: req.sourceLang,
+        targetLang: req.targetLang ?? '',
+        preserveFormat: req.preserveFormat,
+        scene: req.scene,
+      },
+      { provider, config },
+    )
+    if (result.error) {
+      return { ...result, error: localizeErrorString(result.error) }
+    }
+    return result
+  })
+
+  // ai:save-translation-memory — desktop fallback. The Dataflare bridge
+  // (when wired) is the source of truth for cross-device memory; in pure
+  // desktop mode we save into the shared in-memory TM so subsequent
+  // retranslations hit the cache instead of the provider. Always succeeds
+  // when there is anything to save.
+  ipcMain.handle('ai:save-translation-memory', async (_event, request: unknown) => {
+    const req = (request ?? {}) as {
+      scene?: string
+      sourceLang?: string
+      targetLang?: string
+      units?: Array<{ unitId?: string; sourceText?: string; translatedText?: string }>
+    }
+    const units = (req.units ?? [])
+      .filter((u) => u.sourceText && u.translatedText)
+      .map((u) => ({
+        unitId: u.unitId ?? '',
+        sourceText: u.sourceText ?? '',
+        translatedText: u.translatedText ?? '',
+      }))
+    const result = coreTranslationMemory.saveMany({
+      scene: req.scene ?? 'document',
+      sourceLang: req.sourceLang ?? 'auto',
+      targetLang: req.targetLang ?? '',
+      units,
+    })
+    return { ok: result.ok, savedCount: result.savedCount, skippedCount: result.skippedCount }
   })
 }
 

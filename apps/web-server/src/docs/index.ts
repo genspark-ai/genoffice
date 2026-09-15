@@ -4,6 +4,7 @@
  * `DOCS_RECENT` map referenced by `home:recents` is the same singleton
  * declared in `common/state.ts`.
  */
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
@@ -39,6 +40,23 @@ function bytesFrom(value: unknown): Buffer | null {
   if (value instanceof ArrayBuffer) return Buffer.from(value)
   if (ArrayBuffer.isView(value)) return Buffer.from(value.buffer, value.byteOffset, value.byteLength)
   return null
+}
+
+
+// Mirrors apps/docs/src/main/docx-encryption.ts:isEncryptedDocx for the web build.
+// The renderer contract (OpenFileResult) distinguishes encrypted from plain
+// docx so a CFB (OLE2) container signals "needs password" instead of being
+// passed to the zip-based parser.
+const CFB_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+const ENCRYPTED_STREAM_UTF16 = Buffer.from('EncryptedPackage', 'utf16le')
+function isCfb(bytes: Buffer): boolean {
+  return bytes.length >= 8 && bytes.subarray(0, 8).equals(CFB_MAGIC)
+}
+function isEncryptedDocxBytes(bytes: Buffer): boolean {
+  return isCfb(bytes) && bytes.includes(ENCRYPTED_STREAM_UTF16)
+}
+function toArrayBuffer(bytes: Buffer): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
 }
 
 export function registerDocsHandlers(): void {
@@ -118,19 +136,36 @@ export function registerDocsHandlers(): void {
       throw new Error(`File not found: ${filePath}`)
     }
 
-    const bytes = readFileSync(filePath as string)
+    const original = readFileSync(filePath as string)
     const name = basename(filePath as string)
-    const id = `doc-${Date.now()}`
+    const path = filePath as string
 
+    // ECMA-376 encrypted docx (CFB / OLE2 + EncryptedPackage): the renderer
+    // prompts for the password and retries via docs:open-decrypt, mirroring
+    // the Electron main process's flow. The web build doesn't yet ship the
+    // crypto dependency, so it surfaces needsPassword instead of pretending
+    // the encrypted bytes parse cleanly.
+    if (isEncryptedDocxBytes(original)) {
+      return { needsPassword: true, path, name }
+    }
+
+    const hash = createHash('sha256').update(original).digest('hex')
+    const id = `doc-${Date.now()}`
     const recent = loadRecentDocs()
-    recent.unshift({ id, path: filePath as string, name, openedAt: Date.now(), modified: false })
+    recent.unshift({ id, path, name, openedAt: Date.now(), modified: false })
     saveRecentDocs(recent)
 
+    // Shape matches OpenFileResult from apps/docs/src/shared/ipc.ts so the
+    // renderer's loadFile (apps/docs/src/renderer/file-actions.ts) reads
+    // result.data and result.hash directly. The previous `bytes` field name
+    // caused the renderer to parse an empty Uint8Array and fail open with a
+    // status-bar toast.
     return {
-      id,
-      path: filePath,
+      path,
       name,
-      bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      data: toArrayBuffer(original),
+      hash,
+      encrypted: false,
     }
   })
 
@@ -139,10 +174,13 @@ export function registerDocsHandlers(): void {
     if (!existsSync(filePath as string)) {
       return null
     }
-    const bytes = readFileSync(filePath as string)
+    const original = readFileSync(filePath as string)
+    if (isEncryptedDocxBytes(original)) return null
     return {
       name: basename(filePath as string),
-      bytes: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      data: toArrayBuffer(original),
+      hash: createHash('sha256').update(original).digest('hex'),
+      encrypted: false,
     }
   })
 

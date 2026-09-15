@@ -12,6 +12,7 @@ import { registerFilesHandlers } from './files.js'
 import { registerHomeHandlers } from './home.js'
 import { registerModuleHandlers } from './modules.js'
 import { registerNotificationHandlers } from './notifications.js'
+import { registerPrefsHandlers } from './prefs.js'
 import { registerOfflineHandlers } from './offline.js'
 import { registerSearchHandlers } from './search.js'
 import { registerSpeechHandlers } from './speech.js'
@@ -35,4 +36,5 @@ export function registerShellHandlers(): void {
   registerSearchHandlers()
   registerSpeechHandlers()
   registerChartHandlers()
+  registerPrefsHandlers()
 }

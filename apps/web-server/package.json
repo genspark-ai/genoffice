@@ -4,30 +4,33 @@
   "private": true,
   "description": "Standalone Web Server for GenOffice - no Electron required",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/bundle/index.js",
   "bin": {
-    "genoffice-web": "./dist/index.js"
+    "genoffice-web": "./dist/bundle/index.js"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && npm run bundle:esbuild",
+    "bundle:esbuild": "node ../../node_modules/esbuild/bin/esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --packages=bundle --external:node:* --external:ws --outfile=dist/bundle/index.js",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/index.js",
-    "start:prod": "HOST=0.0.0.0 PORT=18081 node dist/index.js",
-    "pkg:linux": "pkg dist/index.js --targets node22-linux-x64 --output dist/genoffice-web-linux",
-    "pkg:win": "pkg dist/index.js --targets node22-win-x64 --output dist/genoffice-web-win.exe",
-    "pkg:mac": "pkg dist/index.js --targets node22-macos-x64 --output dist/genoffice-web-mac",
-    "pkg:all": "pkg dist/index.js --targets node22-linux-x64,node22-win-x64,node22-macos-x64 --output dist/genoffice-web",
-    "bundle": "ncc build dist/index.js -o dist/bundle -m --license licenses.txt"
+    "start": "node dist/bundle/index.js",
+    "start:prod": "HOST=0.0.0.0 PORT=18081 node dist/bundle/index.js",
+    "pkg:linux": "pkg dist/bundle/index.js --targets node22-linux-x64 --output dist/genoffice-web-linux",
+    "pkg:win": "pkg dist/bundle/index.js --targets node22-win-x64 --output dist/genoffice-web-win.exe",
+    "pkg:mac": "pkg dist/bundle/index.js --targets node22-macos-x64 --output dist/genoffice-web-mac",
+    "pkg:all": "pkg dist/bundle/index.js --targets node22-linux-x64,node22-win-x64,node22-macos-x64 --output dist/genoffice-web",
+    "bundle": "npm run bundle:esbuild"
   },
   "dependencies": {
     "@genoffice/ipc-bridge": "*",
     "@genoffice/ai-provider": "*",
+    "@genoffice/translation-core": "*",
     "@genoffice/agent-core": "*"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vercel/ncc": "^0.38.0",
+    "esbuild": "0.25.12",
     "pkg": "^5.8.1",
     "tsx": "^4.20.0",
     "typescript": "^5.9.3"

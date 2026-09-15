@@ -21,6 +21,10 @@ import type { ProjectApi } from '@genoffice/project-store'
 import type { IpcTransport } from '@genoffice/ipc-bridge/client'
 
 export interface DesktopApiOverrides {
+  aiTranslate?: DesktopApi['aiTranslate']
+  aiTranslateBatch?: DesktopApi['aiTranslateBatch']
+  saveTranslationMemory?: DesktopApi['saveTranslationMemory']
+  saveDocx?: DesktopApi['saveDocx']
   /** Web-native pending open (browser URL → open-path). */
   consumePendingOpenDocx?: () => Promise<unknown>
   /**
@@ -117,8 +121,10 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
       t.on('docs:opened', (result) => handler(result as Parameters<typeof handler>[0])),
     onRenamedDocx: (handler) =>
       t.on('docs:renamed', (paths) => handler(paths as Parameters<typeof handler>[0])),
-    saveDocx: (path: string, data: ArrayBuffer, auto?: boolean) =>
-      t.invoke('docs:save', path, data, auto === true),
+    saveDocx:
+      overrides.saveDocx ??
+      ((path: string, data: ArrayBuffer, auto?: boolean) =>
+        t.invoke('docs:save', path, data, auto === true)),
     writeRecoveryCopy: (path: string, data: ArrayBuffer) =>
       t.invoke('docs:write-recovery', path, data),
     onTeardown: (handler) => t.on('docs:teardown', () => handler()),
@@ -152,20 +158,46 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
     aiChat: (request: AiChatRequest) => t.invoke('ai:chat', request),
     aiStream: (request: AiStreamRequest) => t.invoke('ai:stream', request),
     aiStreamCancel: (requestId: string) => t.invoke('ai:stream-cancel', requestId),
-    aiTranslate: (request: {
+    aiTranslate: overrides.aiTranslate ?? ((request: {
       instruction: string
       sourceLang?: string
       targetLang: string
       preserveFormat?: boolean
       range?: { from?: number; to?: number; scope?: string } | null
     }) =>
-      t.invoke('ai:translate', {
+        t.invoke('ai:translate', {
         instruction: request.instruction,
         sourceLang: request.sourceLang,
         targetLang: request.targetLang,
         preserveFormat: request.preserveFormat,
         range: request.range,
-      }),
+      })),
+    aiTranslateBatch: overrides.aiTranslateBatch ?? (async (request) => {
+      const results = await Promise.all(request.units.map(async (unit) => {
+        const result = await api.aiTranslate({
+          instruction: unit.sourceText,
+          sourceLang: request.sourceLang,
+          targetLang: request.targetLang,
+          preserveFormat: request.preserveFormat,
+          range: unit.range,
+        })
+        return {
+          unitId: unit.unitId,
+          sourceText: unit.sourceText,
+          translatedText: result.translated,
+          status: result.ok ? 'translated' : 'failed',
+          errorMessage: result.error,
+          range: unit.range,
+        }
+      }))
+      return {
+        ok: results.every((unit) => unit.status === 'translated'),
+        units: results,
+        error: results.find((unit) => unit.errorMessage)?.errorMessage,
+      }
+    }),
+    saveTranslationMemory: overrides.saveTranslationMemory ?? ((request) =>
+      t.invoke('ai:save-translation-memory', request)),
     aiGskStatus: (withEmail?: boolean) => t.invoke('ai:gsk-status', withEmail),
     aiGskLogin: () => t.invoke('ai:gsk-login'),
     webSearch: (query: string, maxResults?: number) => t.invoke('ai:web-search', query, maxResults),

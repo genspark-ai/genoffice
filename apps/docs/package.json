@@ -92,6 +92,7 @@
   },
   "dependencies": {
     "@genoffice/electron-utils": "*",
+    "@genoffice/translation-core": "*",
     "@genoffice/font-metrics": "*",
     "electron-updater": "^6.8.9",
     "pdf-lib": "^1.17.1",

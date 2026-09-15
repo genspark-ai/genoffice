@@ -18,14 +18,10 @@ import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 function resolveMetaDir(): string {
-  // ESM path: `import.meta.url` is a `file://…` URL.
-  // Guard with a try/catch so a packaged CJS binary that lacks the URL
-  // form falls through to the CJS branch instead of crashing on boot.
+  // ESM path: this remains valid after esbuild bundles the server and points
+  // at the directory containing the generated bundle.
   try {
-    const metaUrl = Function('return import.meta')()?.url
-    if (typeof metaUrl === 'string' && metaUrl.length > 0) {
-      return fileURLToPath(new URL('.', metaUrl))
-    }
+    return fileURLToPath(new URL('.', import.meta.url))
   } catch {}
   // CJS path: argv[1] in a packaged binary is the snapshot virtual path
   // (e.g. /snapshot/dist/index.js), not a real file. execPath IS the

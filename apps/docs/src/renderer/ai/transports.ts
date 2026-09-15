@@ -8,13 +8,9 @@
 
 import type { AgentTransport } from '@genoffice/agent-core'
 import { createIpcTransport, createWebTransport } from '@genoffice/agent-core'
+import { isElectronRuntime } from '@genoffice/ipc-bridge/client'
 import type { AiSettings } from '../../shared/ipc'
 import { t } from '../i18n/locale'
-
-/** 检测是否为 Electron 环境 */
-function isElectronRuntime(): boolean {
-  return typeof navigator !== 'undefined' && /Electron/i.test(navigator.userAgent)
-}
 
 /**
  * 获取 Web Server URL

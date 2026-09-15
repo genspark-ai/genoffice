@@ -35,6 +35,7 @@ import {
   type LegacyAiSettings,
 } from '@genoffice/ai-provider'
 import { shutdownCodexAppServers } from '@genoffice/ai-provider/codex-app-server'
+import { translateOne as translateOneCore } from '@genoffice/translation-core'
 import { fetchRemoteImage } from '@genoffice/electron-utils'
 import {
   webSearchTool,
@@ -73,6 +74,62 @@ function writeJson(path: string, value: unknown): void {
 }
 
 const activeAiStreams = new Map<string, AbortController>()
+
+// ai:translate — one-shot translate for the slides selection assistant.
+// Previously the renderer dispatched `ai:translate` against the docs IPC, so
+// slides would either silently no-op or hit the wrong main process. Real
+// implementation lives in @genoffice/translation-core; shares the prompt +
+// translation memory with docs / sheets / web-server.
+ipcMain.handle('ai:translate', async (_event, request: unknown) => {
+  const req = (request ?? {}) as {
+    instruction?: string
+    sourceLang?: string
+    targetLang?: string
+    preserveFormat?: boolean
+    range?: { from?: number; to?: number; scope?: string } | null
+  }
+  const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
+  const settings = resolveAiSettings(stored, defaultAiSettings())
+  settings.provider = activeProvider(settings)
+  const provider = settings.provider
+  let config = settings.providers?.[provider]
+  if (provider === 'genspark' && config && !config.apiKey) {
+    config = { ...config, apiKey: gskApiKey() }
+  }
+  if (!config) {
+    return { ok: false, error: `AI provider "${provider}" not configured` }
+  }
+  const result = await translateOneCore(
+    {
+      instruction: req.instruction ?? '',
+      sourceLang: req.sourceLang,
+      targetLang: req.targetLang ?? '',
+      preserveFormat: req.preserveFormat,
+      range: castTranslateRange(req.range),
+    },
+    { provider, config },
+  )
+  if (result.error && isAiOverloadedError(result.error)) {
+    return { ...result, error: 'AI service is busy — please retry shortly.' }
+  }
+  return result
+})
+
+function castTranslateRange(
+  raw: unknown,
+): import('@genoffice/translation-core').EditorRange | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as { from?: number; to?: number; scope?: string }
+  const scope =
+    r.scope === 'selection' ||
+    r.scope === 'document' ||
+    r.scope === 'paragraph' ||
+    r.scope === 'cell' ||
+    r.scope === 'table'
+      ? r.scope
+      : undefined
+  return { from: r.from, to: r.to, scope }
+}
 
 // ---- Post-mortem log for runs that produced no usable reply ----
 

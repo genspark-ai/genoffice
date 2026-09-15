@@ -40,6 +40,7 @@ import { Markdown } from '@genoffice/ui'
 import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
 import { AiRunHeader, AiToolTimeline, AiErrorRecovery, AiInlineLauncher, TranslateDialog, ChangeMarker, type AiInlineLauncherAnchorRect, type TranslateLanguageOption, type TranslateDialogStrings, type AiInlineLauncherStrings } from '@genoffice/ui'
 import { classifyError } from '@genoffice/chat-runtime/errors'
+import { postToEmbedParent } from '../../shared/embed-bridge'
 import { useChatRuntime } from '@genoffice/chat-runtime/react'
 import type { ChatRunStatus, ChatToolCallRecord } from '@genoffice/chat-runtime/types'
 import type { AgentSkill } from '@genoffice/agent-core'
@@ -952,6 +953,42 @@ export function AiPanel({
   const [translatedText, setTranslatedText] = useState<string | null>(null)
   const [translateBusy, setTranslateBusy] = useState(false)
   const [translateError, setTranslateError] = useState<string | null>(null)
+  const [translateScope, setTranslateScope] = useState<'selection' | 'document'>('selection')
+  const [documentTranslationUnits, setDocumentTranslationUnits] = useState<Array<{
+    id: string
+    kind: string
+    order: number
+    sourceText: string
+    translatedText?: string
+    status?: string
+    matchedTerms?: string[]
+    warnings?: string[]
+    range: { from: number; to: number; scope?: string }
+  }>>([])
+  const [documentTranslationQuality, setDocumentTranslationQuality] = useState<{ overallScore?: number; warnings?: string[] }>()
+  const translationCancelledRef = useRef(false)
+
+  useEffect(() => {
+    const openEmbeddedTranslation = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        scope?: 'selection' | 'document'
+        sourceLanguage?: string
+        targetLanguage?: string
+        preserveFormatting?: boolean
+      }>).detail
+      setTranslateScope(detail.scope || 'selection')
+      setSourceLang(detail.sourceLanguage?.trim() || 'auto')
+      if (detail.targetLanguage?.trim()) setTargetLang(detail.targetLanguage.trim())
+      setPreserveFormat(detail.preserveFormatting !== false)
+      setTranslatedText(null)
+      setTranslateError(null)
+      setDocumentTranslationUnits([])
+      setDocumentTranslationQuality(undefined)
+      setTranslateOpen(true)
+    }
+    window.addEventListener('dataflare:open-translate', openEmbeddedTranslation)
+    return () => window.removeEventListener('dataflare:open-translate', openEmbeddedTranslation)
+  }, [])
   const [targetLang, setTargetLang] = useState<string>(() => {
     // UI language → BCP-47 (best effort)
     const map: Record<string, string> = {
@@ -1045,16 +1082,112 @@ export function AiPanel({
   }, [t, setInput])
 
   const runTranslate = useCallback(async (): Promise<string | null> => {
-    if (!selectionText) return null
+    const sourceText = translateScope === 'document'
+      ? editor.state.doc.textBetween(1, editor.state.doc.content.size, '\n', ' ').trim()
+      : selectionText
+    if (!sourceText) return null
     setTranslateBusy(true)
     setTranslateError(null)
+    translationCancelledRef.current = false
     try {
+      if (translateScope === 'document') {
+        const units: Array<{
+          unitId: string
+          kind: string
+          sourceText: string
+          order: number
+          range: { from: number; to: number; scope: string }
+        }> = []
+        let order = 0
+        editor.state.doc.descendants((node, pos) => {
+          const sourceText = node.textBetween(0, node.content.size, '\n', '\ufffc')
+          if (!node.isTextblock || !sourceText.trim()) return true
+          const range = { from: pos + 1, to: pos + 1 + node.content.size, scope: 'document' }
+          units.push({
+            unitId: `paragraph-${order}`,
+            kind: node.type.name,
+            sourceText,
+            order,
+            range,
+          })
+          order += 1
+          return true
+        })
+        if (units.length === 0) return null
+        const translatedUnits: typeof documentTranslationUnits = []
+        const batches: typeof units[] = []
+        let currentBatch: typeof units = []
+        let currentChars = 0
+        for (const unit of units) {
+          const wouldExceed = currentBatch.length >= 80 || currentChars + unit.sourceText.length > 90_000
+          if (wouldExceed && currentBatch.length > 0) {
+            batches.push(currentBatch)
+            currentBatch = []
+            currentChars = 0
+          }
+          currentBatch.push(unit)
+          currentChars += unit.sourceText.length
+        }
+        if (currentBatch.length > 0) batches.push(currentBatch)
+        const qualityScores: number[] = []
+        const qualityWarnings = new Set<string>()
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex += 1) {
+          if (translationCancelledRef.current) {
+            postToEmbedParent({ type: 'ai-progress', status: 'cancelled', progress: 0 })
+            return null
+          }
+          const batch = batches[batchIndex]
+          const result = await window.desktop.aiTranslateBatch({
+            units: batch,
+            sourceLang,
+            targetLang,
+            preserveFormat,
+            scene: 'document',
+          })
+          if (!result.ok && !result.units?.length) throw new Error(result.error || 'Document translation failed')
+          for (const unit of result.units || []) {
+            const source = units.find((input) => input.unitId === unit.unitId)
+            if (!source) continue
+            translatedUnits.push({
+              id: unit.unitId,
+              kind: source.kind,
+              order: source.order,
+              sourceText: source.sourceText,
+              translatedText: unit.translatedText,
+              status: unit.status,
+              matchedTerms: unit.matchedTerms,
+              warnings: [...(unit.warnings || []), ...(unit.errorMessage ? [unit.errorMessage] : [])],
+              range: source.range,
+            })
+          }
+          if (result.quality) {
+            if (typeof result.quality.overallScore === 'number') qualityScores.push(result.quality.overallScore)
+            for (const warning of result.quality.warnings || []) qualityWarnings.add(warning)
+          }
+          postToEmbedParent({
+            type: 'ai-progress',
+            status: 'running',
+            progress: Math.min(0.99, (batchIndex + 1) / batches.length),
+          })
+        }
+        const successful = translatedUnits.filter((unit) => unit.status === 'translated' || unit.status === 'memory-hit')
+        if (successful.length === 0) throw new Error('Document translation returned no usable units')
+        setDocumentTranslationUnits(translatedUnits)
+        setDocumentTranslationQuality({
+          overallScore: qualityScores.length > 0
+            ? qualityScores.reduce((sum, score) => sum + score, 0) / qualityScores.length
+            : undefined,
+          warnings: [...qualityWarnings],
+        })
+        postToEmbedParent({ type: 'ai-progress', status: 'completed', progress: 1 })
+        return successful.map((unit) => unit.translatedText || '').join('\n')
+      }
       const res = await window.desktop.aiTranslate({
-        instruction: selectionText,
+        instruction: sourceText,
         sourceLang,
         targetLang,
         preserveFormat,
-        range: { from: liveSelection.from, to: liveSelection.to },
+        range: { from: liveSelection.from, to: liveSelection.to, scope: 'selection' },
       })
       const r = res as { ok?: boolean; translated?: string; error?: string }
       if (!r?.ok) {
@@ -1067,14 +1200,70 @@ export function AiPanel({
       return r.translated ?? ''
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e)
+      if (translationCancelledRef.current) return null
       setTranslateError(err)
+      if (translateScope === 'document') postToEmbedParent({ type: 'ai-progress', status: 'failed', progress: 0 })
       // re-throw so TranslateDialog catches and shows the real provider error
       throw e
     } finally {
       setTranslateBusy(false)
     }
-  }, [selectionText, sourceLang, targetLang, preserveFormat, liveSelection])
+  }, [editor, selectionText, sourceLang, targetLang, preserveFormat, liveSelection, translateScope, documentTranslationUnits])
 
+  const cancelTranslation = useCallback(() => {
+    translationCancelledRef.current = true
+    setTranslateBusy(false)
+    setTranslateOpen(false)
+    postToEmbedParent({ type: 'ai-progress', status: 'cancelled', progress: 0 })
+  }, [])
+
+  const retryDocumentUnit = useCallback(async (unitId: string) => {
+    const unit = documentTranslationUnits.find((candidate) => candidate.id === unitId)
+    if (!unit) throw new Error('Translation unit is no longer available')
+    const result = await window.desktop.aiTranslateBatch({
+      units: [{
+        unitId: unit.id,
+        kind: unit.kind,
+        sourceText: unit.sourceText,
+        order: unit.order,
+        range: unit.range,
+      }],
+      sourceLang,
+      targetLang,
+      preserveFormat,
+      scene: 'document',
+    })
+    const next = result.units?.[0]
+    if (!result.ok || !next?.translatedText) throw new Error(next?.errorMessage || result.error || 'Translation retry failed')
+    setDocumentTranslationUnits((current) => current.map((candidate) => candidate.id === unitId
+      ? { ...candidate, translatedText: next.translatedText, status: next.status, matchedTerms: next.matchedTerms, warnings: next.warnings }
+      : candidate))
+  }, [documentTranslationUnits, sourceLang, targetLang, preserveFormat])
+
+  const saveTranslationMemory = useCallback(async (request: {
+    sourceLang: string
+    targetLang: string
+    units: Array<{ unitId: string; sourceText: string; translatedText: string }>
+  }) => {
+    const result = await window.desktop.saveTranslationMemory({
+      requestId: `memory-${Date.now().toString(36)}`,
+      documentId: undefined,
+      scene: translateScope,
+      sourceLang: request.sourceLang,
+      targetLang: request.targetLang,
+      units: request.units,
+    })
+    if (!result.ok) throw new Error(result.error || 'Failed to save translation memory')
+    return { savedCount: result.savedCount, skippedCount: result.skippedCount }
+  }, [translateScope])
+
+  type TranslationItem = {
+    sourceText: string
+    targetText: string
+    targetLang: string
+    preserveFormat?: boolean
+    range?: { from: number; to: number; scope?: string } | null
+  }
   const applyTranslate = useCallback((plan: import('@genoffice/chat-runtime/types').ChatChangePlan) => {
     const op = plan.ops[0]
     if (op?.kind !== 'translate') return
@@ -1085,22 +1274,29 @@ export function AiPanel({
     // The plan stamps the range captured at translate-time (see TranslateDialog);
     // we deliberately don't read `liveSelection` here — by the time the user
     // hits Apply the selection may have wandered to a different paragraph.
-    const planRange = item.range
+    const items: TranslationItem[] = op.ops as TranslationItem[]
+    const orderedItems = [...items].sort((a, b) => (b.range?.from || 0) - (a.range?.from || 0))
     const docSize = ed.state.doc.content.size
-    const from = Math.max(1, Math.min(planRange?.from ?? 1, docSize))
-    const to = Math.max(from, Math.min(planRange?.to ?? from, docSize))
-    if (from === to) return
-    const targetText = item.targetText
-    // Tiptap's `insertContentAt` for a range preserves the mark / node attrs of
-    // the first character of the range — that's the "auto-inherit formatting"
-    // guarantee documented in `tools.ts:117`. No restyling needed.
-    ed.chain()
-      .focus()
-      .insertContentAt({ from, to }, targetText)
-      // Place the caret right after the translated text so the user can keep typing.
-      .setTextSelection(from + targetText.length)
-      .run()
-    setLastChangePlan(plan)
+    const appliedItems = orderedItems.filter((entry) => entry.range && entry.targetText)
+    if (appliedItems.length === 0) return
+    for (const entry of appliedItems) {
+      const currentText = ed.state.doc.textBetween(entry.range!.from, entry.range!.to, '\n', '\ufffc')
+      if (currentText !== entry.sourceText) {
+        setTranslateError('文档内容已发生变化，请重新翻译后再应用')
+        return
+      }
+    }
+    let chain = ed.chain().focus()
+    for (const entry of appliedItems) {
+      const from = Math.max(1, Math.min(entry.range!.from, docSize))
+      const to = Math.max(from, Math.min(entry.range!.to, docSize))
+      chain = chain.insertContentAt({ from, to }, entry.targetText)
+    }
+    chain.run()
+    setLastChangePlan({
+      ...plan,
+      ops: [{ kind: 'translate', description: op.description, ops: appliedItems }],
+    })
     setTranslateOpen(false)
     setInlineOpen(false)
   }, [editor])
@@ -1108,28 +1304,21 @@ export function AiPanel({
   const undoChange = useCallback((p: import('@genoffice/chat-runtime/types').ChatChangePlan) => {
     const op = p.ops[0]
     if (op?.kind !== 'translate') return
-    const item = op.ops[0]
-    if (!item) return
+    const items = op.ops
+    if (!items.length) return
     const ed = editor
     if (!ed) return
     // True restore: rewrite the translated range back to the original source text.
     // The plan-stamped range points at the post-translate span (since apply
     // kept it untouched in the op). Fall back to live selection if missing.
-    const planRange = item.range
     const docSize = ed.state.doc.content.size
-    let from = planRange?.from ?? 1
-    let to = planRange?.to ?? from
-    if (planRange) {
-      // after apply, the range still points at the same byte offset — the
-      // translated text occupies exactly the same span, so to=from+targetLen.
-      to = Math.max(from, Math.min(from + item.targetText.length, docSize))
+    let chain = ed.chain().focus()
+    for (const item of [...items].sort((a, b) => (b.range?.from || 0) - (a.range?.from || 0))) {
+      const from = Math.max(1, Math.min(item.range?.from ?? 1, docSize))
+      const to = Math.max(from, Math.min(from + item.targetText.length, docSize))
+      if (from !== to) chain = chain.insertContentAt({ from, to }, item.sourceText)
     }
-    if (from === to) return
-    ed.chain()
-      .focus()
-      .insertContentAt({ from, to }, item.sourceText)
-      .setTextSelection(from + item.sourceText.length)
-      .run()
+    chain.run()
     setLastChangePlan(null)
   }, [editor])
 
@@ -1731,8 +1920,16 @@ export function AiPanel({
 
       <TranslateDialog
         open={translateOpen}
-        sourceText={selectionText}
-        sourceRange={hasScopeSelection ? { from: liveSelection.from, to: liveSelection.to } : null}
+        sourceText={translateScope === 'document'
+          ? editor.state.doc.textBetween(1, editor.state.doc.content.size, '\n', ' ').trim()
+          : selectionText}
+        sourceRange={translateScope === 'document'
+          ? { from: 1, to: editor.state.doc.content.size }
+          : hasScopeSelection ? { from: liveSelection.from, to: liveSelection.to } : null}
+        previewItems={documentTranslationUnits.length > 0 ? documentTranslationUnits : undefined}
+        previewQuality={documentTranslationQuality}
+        onRetryUnit={translateScope === 'document' ? retryDocumentUnit : undefined}
+        onSaveMemory={window.dataflareOfficeBridge?.isEmbedded ? saveTranslationMemory : undefined}
         defaultSourceLang={sourceLang === 'auto' ? undefined : sourceLang}
         defaultTargetLang={targetLang}
         languages={TRANSLATE_LANGS}
@@ -1740,12 +1937,13 @@ export function AiPanel({
         onTranslate={async () => {
           const result = await runTranslate()
           if (result === null) {
+            if (translationCancelledRef.current) return null
             throw new Error(translateError ?? 'Translation failed')
           }
           return result
         }}
         onApply={applyTranslate}
-        onCancel={() => setTranslateOpen(false)}
+        onCancel={cancelTranslation}
         app="docs"
       />
 
