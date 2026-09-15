@@ -125,6 +125,22 @@ describe('provider registry', () => {
     })
   })
 
+  it('marks Wallaby as fixed-sampling too (it serves the same Kimi K3)', () => {
+    expect(AI_PROVIDER_ADAPTERS.wallaby.resolveEndpoint(config('kimi-k3'))).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://api.wallabytoken.com/v1',
+      omitTemperature: true,
+    })
+    // a stored base URL still overrides (mirrors / self-hosted gateways)
+    expect(
+      AI_PROVIDER_ADAPTERS.wallaby.resolveEndpoint(config('kimi-k3', 'https://mirror.example/v1')),
+    ).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://mirror.example/v1',
+      omitTemperature: true,
+    })
+  })
+
   it('lets a stored base URL override a fixed endpoint (regional mirrors)', () => {
     expect(
       AI_PROVIDER_ADAPTERS.kimi.resolveEndpoint(config('kimi-k3', 'https://api.moonshot.cn/v1')),

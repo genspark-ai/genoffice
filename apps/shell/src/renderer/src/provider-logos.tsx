@@ -230,6 +230,22 @@ const LOGOS: Record<AiProviderId, ReactNode> = {
       />
     </svg>
   ),
+  // Wallaby brand mark: orange rounded square with the white "W" waveform,
+  // same artwork as the models.dev provider logo (brand colors in both themes)
+  wallaby: (
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="14" fill="#f54001" />
+      <path
+        d="M14 44 L22 20 L28 36 L34 16 L40 36 L46 20 L50 44"
+        fill="none"
+        stroke="#fffbf5"
+        strokeWidth="4.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="50" cy="44" r="3" fill="#fffbf5" />
+    </svg>
+  ),
   'opencode-zen': opencodeLogo,
   'opencode-go': opencodeLogo,
   custom: (

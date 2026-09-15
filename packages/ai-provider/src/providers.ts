@@ -208,6 +208,15 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     keyPlaceholder: 'sk-...',
   },
   {
+    id: 'wallaby',
+    label: 'Wallaby',
+    // OpenAI-compatible inference cloud (wallabytoken.com) serving Kimi K3
+    // with USD billing; single-model catalog as of 2026-09
+    models: ['kimi-k3'],
+    defaultModel: 'kimi-k3',
+    keyPlaceholder: 'sk-...',
+  },
+  {
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET

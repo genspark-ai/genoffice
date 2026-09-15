@@ -237,6 +237,16 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
     // a stored base URL selects a regional router (https://router.eu.requesty.ai/v1 for the EU)
     resolveEndpoint: fixedEndpoint('openai-compatible', 'https://router.requesty.ai/v1'),
   },
+  wallaby: {
+    meta: metaOf('wallaby'),
+    // image_url input verified end-to-end through the gateway (2026-09-15);
+    // video input untested
+    capabilities: { auth: 'api-key', vision: true },
+    // K3 fixes sampling here exactly like on the direct Moonshot route
+    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.wallabytoken.com/v1', {
+      omitTemperature: true,
+    }),
+  },
   'opencode-zen': {
     meta: metaOf('opencode-zen'),
     capabilities: { auth: 'api-key', vision: true },
