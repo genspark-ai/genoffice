@@ -1219,6 +1219,16 @@ function getSkillMarket(): SkillMarketApi {
   return skillMarketInstance
 }
 
+/**
+ * Drop the cached skill-market so the next getSkillMarket() rebuilds the
+ * catalog from the current uploaded/curated entries. Required after every
+ * upload — otherwise byName is stale and the SKILL.md write is silently
+ * skipped for new ids (regression found by e2e-marketplace.sh).
+ */
+function invalidateSkillMarket(): void {
+  skillMarketInstance = null
+}
+
 export function registerSkillHandlers(): void {
   // ── SKILLS ──
   registerHandle('home:list-skills', () => {
@@ -1601,6 +1611,9 @@ export function registerSkillHandlers(): void {
         ),
       )
       invalidateUploads()
+      // Drop the cached skill-market so the next install picks up the new id
+      // — otherwise byName is stale and the SKILL.md write is silently skipped.
+      invalidateSkillMarket()
     } catch (err) {
       return { ok: false, error: `Write failed: ${err instanceof Error ? err.message : String(err)}` }
     }
