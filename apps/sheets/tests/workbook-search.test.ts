@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { findWorkbookCells, selectWorkbookRange } from '../src/renderer/ai/workbook-search'
+import {
+  ERROR_VALUE_RE,
+  findWorkbookCells,
+  selectWorkbookRange,
+} from '../src/renderer/ai/workbook-search'
 import { ensureLazyRangeLoaded, readSheetRangeMapped } from '../src/renderer/univer-sync'
 import type { FindCellsOptions } from '../src/renderer/ai/tools'
 import type { WorkbookReadContext } from '../src/renderer/ai/workbook-readers'
@@ -73,6 +77,30 @@ describe('findWorkbookCells: demo workbook', () => {
     const result = await findWorkbookCells(demoCtx(DEMO_SHEETS), options({ errorsOnly: true }))
     expect(result.matches).toHaveLength(1)
     expect(result.matches[0]?.value).toBe('#REF!')
+  })
+
+  it('recognizes every error value Excel can display, modern data-type errors included', () => {
+    for (const value of [
+      '#REF!',
+      '#DIV/0!',
+      '#VALUE!',
+      '#NAME?',
+      '#N/A',
+      '#NUM!',
+      '#NULL!',
+      '#SPILL!',
+      '#CALC!',
+      '#FIELD!',
+      '#CONNECT!',
+      '#BLOCKED!',
+      '#UNKNOWN!',
+      '#GETTING_DATA',
+    ]) {
+      expect(ERROR_VALUE_RE.test(value)).toBe(true)
+    }
+    for (const value of ['#FOO!', 'N/A', '#REF', '', '#12345!']) {
+      expect(ERROR_VALUE_RE.test(value)).toBe(false)
+    }
   })
 
   it('supports regex matching and reports invalid patterns', async () => {
