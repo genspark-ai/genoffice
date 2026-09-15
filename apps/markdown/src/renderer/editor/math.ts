@@ -25,6 +25,47 @@ const StrictInlineMath = InlineMath.extend({
   },
 })
 
+/**
+ * AI chatbots (Gemini, Claude) emit LaTeX with \(...\) inline and \[...\]
+ * block delimiters, but the editor only tokenizes $...$ / $$...$$. Normalize
+ * pasted text so pasted formulas render instead of staying plain text.
+ * Currency ($5, $10) is untouched: only backslash delimiters convert.
+ *
+ * Guard against Markdown escapes: `\[1\]` is also an escaped bracket
+ * (citations like `see \[1\]`), and `\(note\)` an escaped paren. Only convert
+ * when the inner text looks like LaTeX (a `\command`, `^`, `_`, `=`, or an
+ * operator next to a digit); `\[...\]` must additionally sit alone on its
+ * line(s), which is how display math is actually pasted.
+ */
+function isLatexLike(inner: string): boolean {
+  if (inner.includes('^') || inner.includes('_') || inner.includes('=')) return true
+  if (/\\[a-zA-Z]+/.test(inner)) return true
+  if (/\d\s*[+\-*/<>|]|[+\-*/<>|]\s*\d/.test(inner)) return true
+  return false
+}
+
+export function normalizePastedMath(text: string): string {
+  return text
+    .replace(/\\\[(.+?)\\\]/gs, (match: string, latex: string, offset: number, full: string) => {
+      const inner = latex.trim()
+      if (inner === '' || !isLatexLike(inner)) return match
+      const before = full.slice(0, offset)
+      const after = full.slice(offset + match.length)
+      const lineStart = before.lastIndexOf('\n') + 1
+      const beforeOnLine = before.slice(lineStart, offset)
+      const nextNl = after.indexOf('\n')
+      const afterOnLine = nextNl === -1 ? after : after.slice(0, nextNl)
+      if (beforeOnLine.trim() !== '' || afterOnLine.trim() !== '') return match
+      return '$$' + inner + '$$'
+    })
+    .replace(/\\\((.+?)\\\)/gs, (match: string, latex: string) => {
+      const inner = latex.trim()
+      if (inner === '' || inner.includes('\n')) return match
+      if (!isLatexLike(inner)) return match
+      return `$${inner}$`
+    })
+}
+
 /** Math nodes are atoms — clicking one opens the LaTeX edit popover. */
 const MathClickEdit = Extension.create({
   name: 'mathClickEdit',
@@ -34,6 +75,7 @@ const MathClickEdit = Extension.create({
     return [
       new Plugin({
         props: {
+          transformPastedText: (text: string) => normalizePastedMath(text),
           handleClickOn: (view, _pos, node, nodePos, event) => {
             if (node.type.name !== 'blockMath' && node.type.name !== 'inlineMath') return false
             if (!view.editable) return false
