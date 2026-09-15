@@ -26,11 +26,15 @@ import type {
   HomeApi,
   ModuleEntry,
   ModuleKind,
+  PluginEntry,
+  PluginKind,
   RecentEntry,
   RecentPage,
   RenameResult,
   ProjectHomeApi,
   ProjectSummaryEntry,
+  SkillEntry,
+  SkillKind,
   TimelineEntryItem,
   UiLanguage,
 } from './home-api'
@@ -204,6 +208,52 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
     async resetModules(): Promise<ModuleEntry[]> {
       const result = (await t.invoke(HOME_CHANNELS.resetModules)) as { modules?: ModuleEntry[] }
       return Array.isArray(result?.modules) ? result!.modules : []
+    },
+    async listSkills(): Promise<SkillEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.listSkills)) as { skills?: SkillEntry[] }
+      return Array.isArray(result?.skills) ? result!.skills : []
+    },
+    async toggleSkill(id: SkillKind, enabled: boolean): Promise<SkillEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.toggleSkill, { id, enabled })) as { skills?: SkillEntry[] }
+      return Array.isArray(result?.skills) ? result!.skills : []
+    },
+    async reloadSkill(id: SkillKind): Promise<SkillEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.reloadSkill, { id })) as { skills?: SkillEntry[] }
+      return Array.isArray(result?.skills) ? result!.skills : []
+    },
+    async installSkill(name: string) {
+      return (await t.invoke(HOME_CHANNELS.installSkill, { name })) as {
+        ok: boolean
+        error?: string
+        installed?: { id: string; name: string; marketplace: boolean }
+      }
+    },
+    async uninstallSkill(id: SkillKind) {
+      return (await t.invoke(HOME_CHANNELS.uninstallSkill, { id })) as {
+        ok: boolean
+        error?: string
+        skills?: SkillEntry[]
+      }
+    },
+    async resetSkills(): Promise<SkillEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.resetSkills)) as { skills?: SkillEntry[] }
+      return Array.isArray(result?.skills) ? result!.skills : []
+    },
+    async listPlugins(): Promise<PluginEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.listPlugins)) as { plugins?: PluginEntry[] }
+      return Array.isArray(result?.plugins) ? result!.plugins : []
+    },
+    async togglePlugin(id: PluginKind, enabled: boolean): Promise<PluginEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.togglePlugin, { id, enabled })) as { plugins?: PluginEntry[] }
+      return Array.isArray(result?.plugins) ? result!.plugins : []
+    },
+    async reloadPlugin(id: PluginKind): Promise<PluginEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.reloadPlugin, { id })) as { plugins?: PluginEntry[] }
+      return Array.isArray(result?.plugins) ? result!.plugins : []
+    },
+    async resetPlugins(): Promise<PluginEntry[]> {
+      const result = (await t.invoke(HOME_CHANNELS.resetPlugins)) as { plugins?: PluginEntry[] }
+      return Array.isArray(result?.plugins) ? result!.plugins : []
     },
     async removeRecent(paths) {
       await t.invoke(HOME_CHANNELS.removeRecent, paths)

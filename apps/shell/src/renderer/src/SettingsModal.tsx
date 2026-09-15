@@ -16,6 +16,12 @@ import {
   clampMaxOutputTokens,
 } from '@genoffice/ai-provider/browser'
 import type {
+  PluginEntry,
+  PluginKind,
+  SkillEntry,
+  SkillKind,
+} from '../../shared/home-api'
+import type {
   AiMediaProviderId,
   AiMediaProviderMeta,
   AiMediaSettings,
@@ -151,6 +157,7 @@ type SectionId =
   | 'general'
   | 'integrations'
   | 'modules'
+  | 'skillsPlugins'
   | 'about'
 
 const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
@@ -160,6 +167,7 @@ const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'general', labelKey: 'setSecGeneral' },
   { id: 'integrations', labelKey: 'setSecIntegrations' },
   { id: 'modules', labelKey: 'setSecModules' },
+  { id: 'skillsPlugins', labelKey: 'setSecSkillsPlugins' },
   { id: 'about', labelKey: 'setSecAbout' },
 ]
 
@@ -209,7 +217,16 @@ function SectionIcon({ id }: { id: SectionId }) {
         />
       </svg>
     )
+  }  if (id === 'skillsPlugins') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 1.5 9.5 5l3.5 1L9.5 7 8 10.5 6.5 7 3 6l3.5-1L8 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        <path d="M3 12.5 4 11.5l1 1M13 12.5l-1-1-1 1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M8 14v-2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    )
   }
+
   if (id === 'integrations') {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1050,6 +1067,212 @@ export interface SettingsModalProps {
   onSkillUpdateDue?: (due: boolean) => void
 }
 
+/** Skills & Plugins management pane — control GenOffice's agent extensions
+ *  backed by @genoffice/agent-skills (11 built-in extensions: 8 skills + 3 plugins).
+ *  Each entry can be enabled/disabled, hot-reloaded, or installed from marketplace.
+ */
+function SkillsPluginsPane({ t }: { t: TFunc }) {
+  const [skills, setSkills] = useState<SkillEntry[]>([])
+  const [plugins, setPlugins] = useState<PluginEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [installInput, setInstallInput] = useState('')
+  const [installMsg, setInstallMsg] = useState<string | null>(null)
+
+  const refresh = useCallback(async () => {
+    const [s, p] = await Promise.all([
+      window.aiOffice.listSkills?.() ?? Promise.resolve([]),
+      window.aiOffice.listPlugins?.() ?? Promise.resolve([]),
+    ])
+    setSkills(s)
+    setPlugins(p)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  if (loading) return null
+
+  const toggleSkill = async (id: SkillKind, enabled: boolean) => {
+    const next = await window.aiOffice.toggleSkill?.(id, enabled)
+    if (Array.isArray(next)) setSkills(next)
+  }
+
+  const reloadSkill = async (id: SkillKind) => {
+    const next = await window.aiOffice.reloadSkill?.(id)
+    if (Array.isArray(next)) setSkills(next)
+  }
+
+  const togglePlugin = async (id: PluginKind, enabled: boolean) => {
+    const next = await window.aiOffice.togglePlugin?.(id, enabled)
+    if (Array.isArray(next)) setPlugins(next)
+  }
+
+  const reloadPlugin = async (id: PluginKind) => {
+    const next = await window.aiOffice.reloadPlugin?.(id)
+    if (Array.isArray(next)) setPlugins(next)
+  }
+
+  const resetSkills = async () => {
+    const next = await window.aiOffice.resetSkills?.()
+    if (Array.isArray(next)) setSkills(next)
+  }
+
+  const resetPlugins = async () => {
+    const next = await window.aiOffice.resetPlugins?.()
+    if (Array.isArray(next)) setPlugins(next)
+  }
+
+  const install = async () => {
+    const name = installInput.trim()
+    if (!name) return
+    setInstallMsg(null)
+    const res = await window.aiOffice.installSkill?.(name)
+    if (res?.ok) {
+      setInstallMsg(`✓ Installed "${name}" — click reload to activate`)
+      setInstallInput('')
+      await refresh()
+    } else {
+      setInstallMsg(`✗ ${res?.error || 'Install failed'}`)
+    }
+  }
+
+  const renderSkillRow = (s: SkillEntry) => (
+    <li key={s.id} className="set-skill-row" data-skill-id={s.id}>
+      <div className="set-skill-head">
+        <label className="set-toggle">
+          <input
+            type="checkbox"
+            checked={s.status === 'enabled'}
+            onChange={(e) => void toggleSkill(s.id, e.target.checked)}
+          />
+          <span className="set-skill-name">{s.name}</span>
+          <span className={`set-skill-badge set-skill-badge-${s.status}`}>{s.status}</span>
+        </label>
+        <button
+          type="button"
+          className="set-btn-mini"
+          onClick={() => void reloadSkill(s.id)}
+          title={t('reloadSkill')}
+        >
+          ↻
+        </button>
+      </div>
+      <div className="set-skill-desc">{s.description}</div>
+      <div className="set-skill-meta">
+        <span>v{s.version}</span>
+        <span>· {s.author}</span>
+        <span>· {s.tools.length} {t('tools')}</span>
+        <span>· {s.package}/{s.source.split('/').pop()}</span>
+      </div>
+      <div className="set-skill-scopes">
+        {s.scopes.map((sc) => (
+          <span key={sc} className="set-scope-tag">{sc}</span>
+        ))}
+      </div>
+    </li>
+  )
+
+  const renderPluginRow = (p: PluginEntry) => (
+    <li key={p.id} className="set-skill-row" data-plugin-id={p.id}>
+      <div className="set-skill-head">
+        <label className="set-toggle">
+          <input
+            type="checkbox"
+            checked={p.status === 'enabled'}
+            onChange={(e) => void togglePlugin(p.id, e.target.checked)}
+          />
+          <span className="set-skill-name">{p.name}</span>
+          <span className={`set-skill-badge set-skill-badge-${p.status}`}>{p.status}</span>
+        </label>
+        <button
+          type="button"
+          className="set-btn-mini"
+          onClick={() => void reloadPlugin(p.id)}
+          title={t('reloadPlugin')}
+        >
+          ↻
+        </button>
+      </div>
+      <div className="set-skill-desc">{p.description}</div>
+      <div className="set-skill-meta">
+        <span>v{p.version}</span>
+        <span>· {p.author}</span>
+        <span>· {p.tools.length} {t('tools')}</span>
+        <span>· {p.package}/{p.source.split('/').pop()}</span>
+      </div>
+      {p.requirements.length > 0 && (
+        <div className="set-skill-scopes">
+          <span className="set-req-tag">{t('requirements')}: </span>
+          {p.requirements.map((r) => (
+            <span key={r} className="set-scope-tag set-scope-tag-req">{r}</span>
+          ))}
+        </div>
+      )}
+    </li>
+  )
+
+  return (
+    <>
+      <h3 className="set-pane-title">{t('setSecSkillsPlugins')}</h3>
+      <div className="set-field-stack" style={{ marginBottom: 14 }}>
+        <div className="set-field-label">{t('skillsPluginsIntro')}</div>
+        <div className="set-field-desc">
+          {t('skillsPluginsDesc', { count: skills.length + plugins.length })}
+        </div>
+      </div>
+
+      <div className="set-skill-section">
+        <div className="set-skill-section-head">
+          <h4>{t('skillsTitle')}</h4>
+          <span className="set-skill-count">{skills.length}</span>
+          <button type="button" className="set-btn-mini" onClick={() => void resetSkills()}>
+            {t('reset')}
+          </button>
+        </div>
+        <div className="set-field-desc" style={{ marginBottom: 8 }}>{t('skillsDesc')}</div>
+        <ul className="set-skill-list" role="list">{skills.map(renderSkillRow)}</ul>
+      </div>
+
+      <div className="set-skill-section">
+        <div className="set-skill-section-head">
+          <h4>{t('pluginsTitle')}</h4>
+          <span className="set-skill-count">{plugins.length}</span>
+          <button type="button" className="set-btn-mini" onClick={() => void resetPlugins()}>
+            {t('reset')}
+          </button>
+        </div>
+        <div className="set-field-desc" style={{ marginBottom: 8 }}>{t('pluginsDesc')}</div>
+        <ul className="set-skill-list" role="list">{plugins.map(renderPluginRow)}</ul>
+      </div>
+
+      <div className="set-skill-section">
+        <div className="set-skill-section-head">
+          <h4>{t('marketplace')}</h4>
+        </div>
+        <div className="set-field-desc" style={{ marginBottom: 8 }}>{t('marketplaceDesc')}</div>
+        <div className="set-skill-install-row">
+          <input
+            type="text"
+            className="set-input"
+            placeholder={t('marketplacePlaceholder')}
+            value={installInput}
+            onChange={(e) => setInstallInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void install() }}
+          />
+          <button type="button" className="set-btn" onClick={() => void install()}>
+            {t('install')}
+          </button>
+        </div>
+        {installMsg && <div className="set-install-msg">{installMsg}</div>}
+      </div>
+    </>
+  )
+}
+
+
+
 /** Module-manager pane: toggle + drag-to-reorder the home-page Quick Start cards. */
 function ModulesPane({ t }: { t: TFunc }) {
   const [modules, setModules] = useState<ModuleEntry[]>([])
@@ -1337,6 +1560,7 @@ export function SettingsModal({
             {section === 'aiModel' && <AiModelPane t={t} />}
             {section === 'aiMedia' && <AiMediaPane t={t} />}
             {section === 'modules' && <ModulesPane t={t} />}
+            {section === 'skillsPlugins' && <SkillsPluginsPane t={t} />}
             {section === 'general' && (
               <>
                 <h3 className="set-pane-title">{t('setSecGeneral')}</h3>

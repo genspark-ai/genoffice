@@ -178,6 +178,26 @@ export interface HomeApi {
   reorderModules(order: ModuleKind[]): Promise<ModuleEntry[]>
   /** reset all modules to the factory order and enabled=true */
   resetModules(): Promise<ModuleEntry[]>
+  /** list all agent skills (built-in + installed from marketplace) */
+  listSkills(): Promise<SkillEntry[]>
+  /** enable or disable a skill; disabled skills are not loaded by pi's ExtensionRunner */
+  toggleSkill(id: SkillKind, enabled: boolean): Promise<SkillEntry[]>
+  /** hot-reload a skill (re-run ExtensionRunner registration) */
+  reloadSkill(id: SkillKind): Promise<SkillEntry[]>
+  /** install a skill from the marketplace by name */
+  installSkill(name: string): Promise<{ ok: boolean; error?: string; installed?: { id: string; name: string; marketplace: boolean } }>
+  /** uninstall a marketplace-installed skill (built-in skills cannot be uninstalled) */
+  uninstallSkill(id: SkillKind): Promise<{ ok: boolean; error?: string; skills?: SkillEntry[] }>
+  /** reset all skills to factory defaults */
+  resetSkills(): Promise<SkillEntry[]>
+  /** list all plugins (advanced extensions) */
+  listPlugins(): Promise<PluginEntry[]>
+  /** enable or disable a plugin */
+  togglePlugin(id: PluginKind, enabled: boolean): Promise<PluginEntry[]>
+  /** hot-reload a plugin */
+  reloadPlugin(id: PluginKind): Promise<PluginEntry[]>
+  /** reset all plugins to factory defaults */
+  resetPlugins(): Promise<PluginEntry[]>
   /** whether the one-time "star us" prompt should show now (show:true also counts as shown);
    * docOpens personalizes the card copy ("you've opened N documents") */
   starPromptShouldShow(): Promise<StarPromptShow>
@@ -247,6 +267,56 @@ export interface ModuleEntry {
   path: string
   /** When false the module is hidden from the quick-start row. */
   enabled: boolean
+}
+
+// ── Skills & Plugins ────────────────────────────────────────
+// Skills 是 GenOffice 的 agent skill extension(plan §2.1)
+// Plugins 是更高级的扩展(multi-agent/audit/local models)
+export type SkillKind =
+  | 'docs-skill'
+  | 'sheets-skill'
+  | 'slides-skill'
+  | 'office-workflow'
+  | 'office-safety'
+  | 'frozen-selection'
+  | 'verify-response'
+  | 'skill-market'
+
+export type PluginKind = 'agent-team' | 'audit-log' | 'local-models'
+
+export type SkillStatus = 'enabled' | 'disabled' | 'error'
+
+export interface SkillEntry {
+  id: SkillKind
+  name: string
+  description: string
+  author: string
+  version: string
+  package: string
+  source: string
+  tools: string[]
+  scopes: string[]
+  status: SkillStatus
+  lastLoadedAt: string | null
+  error?: string
+  builtIn: boolean
+}
+
+export interface PluginEntry {
+  id: PluginKind
+  name: string
+  description: string
+  author: string
+  version: string
+  package: string
+  source: string
+  tools: string[]
+  scopes: string[]
+  requirements: string[]
+  status: SkillStatus
+  lastLoadedAt: string | null
+  error?: string
+  builtIn: boolean
 }
 
 /** a Genspark web project shown in the home cloud section */
@@ -388,6 +458,16 @@ export const HOME_CHANNELS = {
   setModuleEnabled: 'home:set-module-enabled',
   reorderModules: 'home:reorder-modules',
   resetModules: 'home:reset-modules',
+  listSkills: 'home:list-skills',
+  toggleSkill: 'home:toggle-skill',
+  reloadSkill: 'home:reload-skill',
+  installSkill: 'home:install-skill',
+  uninstallSkill: 'home:uninstall-skill',
+  resetSkills: 'home:reset-skills',
+  listPlugins: 'home:list-plugins',
+  togglePlugin: 'home:toggle-plugin',
+  reloadPlugin: 'home:reload-plugin',
+  resetPlugins: 'home:reset-plugins',
 } as const
 
 export const PROJECT_CHANNELS = {

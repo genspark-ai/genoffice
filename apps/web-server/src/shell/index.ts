@@ -11,6 +11,7 @@ import { registerMobileHandlers, registerMultimodalHandlers } from './devices.js
 import { registerFilesHandlers } from './files.js'
 import { registerHomeHandlers } from './home.js'
 import { registerModuleHandlers } from './modules.js'
+import { registerSkillHandlers } from './skills.js'
 import { registerNotificationHandlers } from './notifications.js'
 import { registerPrefsHandlers } from './prefs.js'
 import { registerOfflineHandlers } from './offline.js'
@@ -23,6 +24,7 @@ export function registerShellHandlers(): void {
   registerAppInfoHandlers()
   registerHomeHandlers()
   registerModuleHandlers()
+  registerSkillHandlers()
   registerTabsHandlers()
   registerUpdateHandlers()
   registerWindowHandlers()
