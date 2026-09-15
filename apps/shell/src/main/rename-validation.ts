@@ -10,6 +10,14 @@ export const RENAME_ILLEGAL_NAME_CHARS = /[\\/:*?"<>|\u0000-\u001f]/
 /** Windows device names reserved with or without an extension (CON.pdf is still CON). */
 const RENAME_RESERVED_BASE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
 
+/** True when the raw requested name is usable: surrounding whitespace is
+    rejected instead of silently trimmed (the Home rename gate must reject
+    "report " with a localized error rather than renaming to "report"). */
+export function isValidRawRenameName(newName: string): boolean {
+  if (newName !== newName.trim()) return false
+  return isValidRenameName(newName.trim())
+}
+
 /** True when the trimmed name is usable as a file name. */
 export function isValidRenameName(name: string): boolean {
   if (name.length === 0 || name.length > 255) return false

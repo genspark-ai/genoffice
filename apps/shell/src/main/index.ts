@@ -243,7 +243,7 @@ import {
   pageRecentPaths,
   statPathEntries,
 } from './recent-files'
-import { isSameFile, isValidRenameName } from './rename-validation'
+import { isSameFile, isValidRawRenameName } from './rename-validation'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
 import { applyUpdateChannel, initAutoUpdater } from './updater'
@@ -3124,8 +3124,13 @@ function registerHomeIpc(): void {
     (_event, path: unknown, newName: unknown): RenameResult => {
       if (typeof path !== 'string' || typeof newName !== 'string')
         return { ok: false, error: tm('errBadArgs') }
+      // Validate the raw name before trimming: trimming first would
+      // silently turn "report " into "report" and make the
+      // trailing-space gate in isValidRenameName unreachable. Reject
+      // with the localized gate instead of renaming to a different
+      // name than requested.
+      if (!isValidRawRenameName(newName)) return { ok: false, error: tm('errBadName') }
       const name = newName.trim()
-      if (!isValidRenameName(name)) return { ok: false, error: tm('errBadName') }
       if (!existsSync(path)) return { ok: false, error: tm('errMissing') }
       const target = join(dirname(path), name)
       if (target === path) return { ok: true, path }
