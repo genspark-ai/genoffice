@@ -1,4 +1,4 @@
-import type { AgentToolCall } from '@genoffice/agent-core'
+import type { AgentImage, AgentMessage, AgentToolCall, AgentToolDef } from '../agent-protocol'
 
 // ---- streaming (SSE line splitting shared by all providers) ----
 

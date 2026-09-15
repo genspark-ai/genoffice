@@ -8,9 +8,11 @@
 /// differs.
 import type { Lang } from '@genoffice/i18n'
 import type { AiStreamChunk } from '@genoffice/ai-provider'
+import type { AiPanelPrefs } from '@genoffice/ui'
 import type { ProjectApi } from '@genoffice/project-store'
 import type { IpcTransport } from '@genoffice/ipc-bridge/client'
 import { AI_CHANNELS, MARKDOWN_CHANNELS } from './ipc'
+import type { AutoSaveDefault } from './ipc'
 import type { ExportFormat, MarkdownApi, SaveMode, UiTheme } from './ipc'
 
 export interface MarkdownApiOverrides {
@@ -58,14 +60,27 @@ export function createMarkdownApi(
     exportDocx:
       overrides.exportDocx ?? ((request) => t.invoke(MARKDOWN_CHANNELS.exportDocx, request)),
     exportPdf: overrides.exportPdf ?? ((request) => t.invoke(MARKDOWN_CHANNELS.exportPdf, request)),
+    consumeHeadlessExport: () => t.invoke(MARKDOWN_CHANNELS.consumeHeadlessExport),
+    headlessExportDone: (result) => t.send(MARKDOWN_CHANNELS.headlessExportDone, result),
     getLanguage: () => t.invoke(MARKDOWN_CHANNELS.getLanguage),
     onLanguageChanged: (handler) =>
       t.on(MARKDOWN_CHANNELS.languageChanged, (lang) => handler(lang as Lang)),
     getTheme: () => t.invoke(MARKDOWN_CHANNELS.getTheme),
     onThemeChanged: (handler) =>
       t.on(MARKDOWN_CHANNELS.themeChanged, (theme) => handler(theme as UiTheme)),
+    getAutoSaveDefault: () => t.invoke(MARKDOWN_CHANNELS.getAutoSaveDefault),
+    onAutoSaveDefaultChanged: (handler) =>
+      t.on(MARKDOWN_CHANNELS.autoSaveDefaultChanged, (value) =>
+        handler(value as AutoSaveDefault),
+      ),
+    getAiPanelPrefs: () => t.invoke(MARKDOWN_CHANNELS.getAiPanelPrefs),
+    onAiPanelPrefsChanged: (handler) =>
+      t.on(MARKDOWN_CHANNELS.aiPanelPrefsChanged, (prefs) =>
+        handler(prefs as AiPanelPrefs),
+      ),
     onChromePressed: (handler) => t.on('app:chrome-pressed', () => handler()),
     getAiSettings: () => t.invoke(AI_CHANNELS.getSettings),
+    aiGskStatus: (withEmail?: boolean) => t.invoke(AI_CHANNELS.gskStatus, withEmail),
     aiStream: (request) => t.invoke(AI_CHANNELS.stream, request),
     aiStreamCancel: (requestId) => t.invoke(AI_CHANNELS.streamCancel, requestId),
     onAiStream: (handler) =>

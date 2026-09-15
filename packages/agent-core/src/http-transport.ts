@@ -259,5 +259,5 @@ export async function httpRequest<T>(
     throw new Error(`HTTP ${response.status}: ${await response.text()}`)
   }
 
-  return response.json()
+  return (await response.json()) as T
 }

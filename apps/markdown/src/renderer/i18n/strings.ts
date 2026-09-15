@@ -2782,6 +2782,7 @@ export const strings = {
     aiChipShorten: 'Zkrátit tuto pasáž',
     aiChipExpand: 'Rozšířit tuto pasáž',
     aiChipFixGrammar: 'Opravit gramatiku a překlepy',
+    aiChipTranslate: 'Přeložit tuto pasáž',
     aiChipTableEdit: 'Upravit řádky/sloupce',
     aiChipReplaceImage: 'Nahradit obrázek',
     aiChipRegenImage: 'Znovu vygenerovat pomocí AI',

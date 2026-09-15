@@ -23,6 +23,14 @@ import type { IpcTransport } from '@genoffice/ipc-bridge/client'
 export interface DesktopApiOverrides {
   aiTranslate?: DesktopApi['aiTranslate']
   aiTranslateBatch?: DesktopApi['aiTranslateBatch']
+  /**
+   * SSE 流式批量翻译：与 aiTranslateBatch 同签名,但通过 onUnit 回调实时推送
+   * 每个 unit 的翻译结果。DesktopApiOverrides 必须支持让 host 把"原生 stream"
+   * 实现注入进来;fallback 仍然走 aiTranslateBatch (整批返回)。
+   */
+  aiTranslateBatchStream?: (
+    request: Parameters<DesktopApi['aiTranslateBatch']>[0],
+  ) => ReturnType<DesktopApi['aiTranslateBatch']>
   saveTranslationMemory?: DesktopApi['saveTranslationMemory']
   saveDocx?: DesktopApi['saveDocx']
   /** Web-native pending open (browser URL → open-path). */

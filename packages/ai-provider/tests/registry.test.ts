@@ -96,7 +96,7 @@ describe('provider registry', () => {
       ['glm', 'glm-5.3', 'https://open.bigmodel.cn/api/paas/v4'],
       ['qwen', 'qwen3.8-max', 'https://dashscope.aliyuncs.com/compatible-mode/v1'],
       ['doubao', 'doubao-seed-2-1-pro-260628', 'https://ark.cn-beijing.volces.com/api/v3'],
-      ['minimax', 'MiniMax-M3', 'https://api.minimax.io/v1'],
+      ['minimax', 'MiniMax-M3', 'https://api.minimax.chat/v1'],
       ['xai', 'grok-4.6', 'https://api.x.ai/v1'],
       ['mistral', 'mistral-large-latest', 'https://api.mistral.ai/v1'],
       ['openrouter', 'openrouter/auto', 'https://openrouter.ai/api/v1'],

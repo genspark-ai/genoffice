@@ -7,11 +7,21 @@
 /// shapes, listener wrappers and return coercion are identical — only the
 /// transport differs.
 import { AI_PROVIDERS, getProviderAdapter } from '@genoffice/ai-provider'
-import type { AiSettings } from '@genoffice/ai-provider'
+import type {
+  AiMediaProviderConfig,
+  AiMediaProviderId,
+  AiMediaProviderMeta,
+  AiSearchProviderId,
+  AiSearchProviderMeta,
+  AiSettings,
+  CodexModelCatalog,
+} from '@genoffice/ai-provider'
 import type { IpcTransport } from '@genoffice/ipc-bridge/client'
+import type { AiPanelPrefs } from '@genoffice/ui'
 import type {
   AccountLoginEvent,
   AccountStatus,
+  AutoSaveDefault,
   CloudProjectsSnapshot,
   HomeApi,
   ModuleEntry,
@@ -137,6 +147,43 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
     async newHtml(opts) {
       if (overrides.newHtml) return await overrides.newHtml(opts)
       await t.invoke(HOME_CHANNELS.newHtml, opts)
+    },
+    async getAutoSaveDefault() {
+      return (await t.invoke(HOME_CHANNELS.getAutoSaveDefault)) as AutoSaveDefault
+    },
+    async setAutoSaveDefault(on: boolean) {
+      await t.invoke(HOME_CHANNELS.setAutoSaveDefault, on)
+    },
+    async getAiPanelPrefs() {
+      return (await t.invoke(HOME_CHANNELS.getAiPanelPrefs)) as AiPanelPrefs
+    },
+    async setAiPanelPrefs(patch: Partial<AiPanelPrefs>) {
+      return (await t.invoke(HOME_CHANNELS.setAiPanelPrefs, patch)) as AiPanelPrefs
+    },
+    getAiMediaProviders(): AiMediaProviderMeta[] {
+      // Synchronous catalog from a bundled registry; renderer reads via
+      // window.aiOffice.getAiMediaProviders?.() (optional chain) so an empty
+      // catalog is acceptable until the registry is wired up.
+      return []
+    },
+    getAiSearchProviders(): AiSearchProviderMeta[] {
+      return []
+    },
+    async getCodexModels(_cliPath?: string): Promise<CodexModelCatalog> {
+      // Codex model catalog is gathered by the main process; the renderer
+      // does not yet wire an IPC channel for it. Return an empty catalog.
+      return {} as CodexModelCatalog
+    },
+    async testAiMediaSettings(_input: {
+      provider: AiMediaProviderId
+      config: AiMediaProviderConfig
+    }) {
+      // No IPC channel yet; treat as failure until the main process registers
+      // a handler for this probe.
+      return { ok: false, error: 'testAiMediaSettings not wired' }
+    },
+    async testAiSearchSettings(_input: { provider: AiSearchProviderId; apiKey: string }) {
+      return { ok: false, error: 'testAiSearchSettings not wired' }
     },
     async listModules(): Promise<ModuleEntry[]> {
       const result = (await t.invoke(HOME_CHANNELS.listModules)) as { modules?: ModuleEntry[] }
@@ -407,6 +454,9 @@ export function createShellTabsApi(t: IpcTransport, overrides: ShellApiOverrides
     async showNewMenu(x, y) {
       if (overrides.tabsShowNewMenu) return await overrides.tabsShowNewMenu(x, y)
       await t.invoke(TABS_CHANNELS.showNewMenu, x, y)
+    },
+    async showAppMenu(x, y) {
+      await t.invoke(TABS_CHANNELS.showAppMenu, x, y)
     },
     async reorder(id, toIndex) {
       if (overrides.tabsReorder) return await overrides.tabsReorder(id, toIndex)

@@ -18,6 +18,7 @@ import {
   webPrint,
 } from '@genoffice/ipc-bridge/web-native'
 import { createDesktopApi, createProjectApi } from '../shared/desktop-api-factory'
+import type { DesktopApi } from '../shared/ipc'
 import {
   installDataflareEmbedBridge,
   getDataflareEmbedSessionId,
@@ -70,6 +71,7 @@ if (!isElectronRuntime()) {
     }).then((result) => new Response(result.body, { status: result.status, headers: result.headers }))
   }
   const bridgedWindow = window as unknown as Record<string, unknown>
+  const desktopApi = (): DesktopApi => bridgedWindow.desktop as DesktopApi
   bridgedWindow.desktop = createDesktopApi(transport, {
     saveDocx: async (_path, data, _auto) => {
       const documentId = dataflareContext?.documentId
@@ -216,9 +218,9 @@ if (!isElectronRuntime()) {
       // 替代旧的"等待整批返回"。
       if (window.parent === window || !getDataflareEmbedSessionId()) {
         // 独立模式：fallback 到同步批量接口
-        return await bridgedWindow.desktop!.aiTranslateBatch(request)
+        return await desktopApi().aiTranslateBatch(request)
       }
-      const streamUnits = new Map<string, NonNullable<Awaited<ReturnType<NonNullable<typeof bridgedWindow.desktop>['aiTranslateBatch']>>>['units'][number]>()
+      const streamUnits = new Map<string, NonNullable<NonNullable<Awaited<ReturnType<DesktopApi['aiTranslateBatch']>>>['units']>[number]>()
       let streamQuality: { overallScore?: number; warnings?: string[] } | undefined
       let streamError: string | undefined
       let streamOk = true

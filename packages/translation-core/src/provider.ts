@@ -243,6 +243,7 @@ export async function translateBatchStream(
   // Build a unit-settler that re-uses the same per-unit logic as translateBatch.
   const settleOne = async (index: number): Promise<void> => {
     const unit = request.units[index]
+    if (!unit) return
     const hit = memory?.lookup(sourceLang, targetLang, unit.sourceText)
     let result: TranslateBatchUnitResult
     if (hit) {

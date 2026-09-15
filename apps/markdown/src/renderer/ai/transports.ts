@@ -8,7 +8,7 @@
 
 import type { AgentTransport } from '@genoffice/agent-core'
 import { createIpcTransport, createWebTransport } from '@genoffice/agent-core'
-import type { AiSettings } from '../../shared/ipc'
+import type { AiSettings } from '@genoffice/ai-provider'
 import { t } from '../i18n/locale'
 
 /** 检测是否为 Electron 环境 */

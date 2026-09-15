@@ -1,3 +1,5 @@
+/// <reference lib="dom" />
+
 /**
  * Web Transport for GenOffice Web Server
  * 
@@ -236,11 +238,11 @@ export class WebIpcClient {
     })
 
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.error?.message || `HTTP ${response.status}`)
+      const error = (await response.json()) as { error?: { message?: string } } | null
+      throw new Error(error?.error?.message || `HTTP ${response.status}`)
     }
 
-    const result = await response.json()
+    const result = (await response.json()) as { ok: boolean; result?: T; error?: { message?: string } }
     if (!result.ok) {
       throw new Error(result.error?.message || 'Unknown error')
     }
