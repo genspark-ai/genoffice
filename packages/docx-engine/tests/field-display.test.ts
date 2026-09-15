@@ -621,6 +621,13 @@ describe('FORMCHECKBOX form fields', () => {
     expect(doc.blocks[0].runs?.[1]).toMatchObject({ text: '☒', instrField: 'FORMCHECKBOX' })
   })
 
+  it('reads uppercase checked values (TRUE/ON) like Word does', async () => {
+    const doc = await parseDocx(
+      await buildDocx({ bodyXml: checkboxParagraph('<w:checked w:val="ON"/>') }),
+    )
+    expect(doc.blocks[0].runs?.[1]).toMatchObject({ text: '☒', instrField: 'FORMCHECKBOX' })
+  })
+
   it('regeneration writes the ffData begin run back verbatim with no cached glyph', async () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: checkboxParagraph('<w:checked w:val="1"/>') }),
@@ -869,6 +876,12 @@ describe('w14:checkbox content controls', () => {
     const xml = generateParagraphXml({ type: 'paragraph', runs }, ctx)
     expect(xml).not.toContain('<w:sdt>')
     expect(xml).toContain('yes')
+  })
+
+  it('reads uppercase checked values (TRUE) as checked', async () => {
+    const xml = sdtCheckboxParagraph('1', '☐').replace('w14:val="1"', 'w14:val="TRUE"')
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(doc.blocks[0].runs?.[1].text).toBe('☒')
   })
 
   it('reads single-quoted checkbox glyph values', () => {

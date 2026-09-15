@@ -34,6 +34,7 @@ import type {
   ThemeFonts,
 } from './types'
 import { resolveThemeColor } from './theme'
+import { isOn } from './checkbox-control'
 
 /** No run un-hides itself and nothing anchors here (bookmarks, comments, sectPr,
  *  drawings, numbering): safe to collapse a style-vanished paragraph entirely */
@@ -418,7 +419,7 @@ export function checkboxStateOf(beginRun: XNode | null): { checked: boolean } | 
   const state = findChild(box, 'w:checked') ?? findChild(box, 'w:default')
   if (!state) return { checked: false }
   const val = attrsOf(state)['w:val']
-  return { checked: val === undefined || val === '1' || val === 'true' || val === 'on' }
+  return { checked: isOn(val) }
 }
 
 /**
