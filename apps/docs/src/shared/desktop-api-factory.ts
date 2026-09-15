@@ -196,6 +196,34 @@ export function createDesktopApi(t: IpcTransport, overrides: DesktopApiOverrides
         error: results.find((unit) => unit.errorMessage)?.errorMessage,
       }
     }),
+    // SSE 流式批量翻译：有 override 时使用，否则降级到上面的 aiTranslateBatch
+    aiTranslateBatchStream:
+      overrides.aiTranslateBatchStream ??
+      overrides.aiTranslateBatch ??
+      ((async (request) => {
+        const results = await Promise.all(request.units.map(async (unit) => {
+          const result = await api.aiTranslate({
+            instruction: unit.sourceText,
+            sourceLang: request.sourceLang,
+            targetLang: request.targetLang,
+            preserveFormat: request.preserveFormat,
+            range: unit.range,
+          })
+          return {
+            unitId: unit.unitId,
+            sourceText: unit.sourceText,
+            translatedText: result.translated,
+            status: result.ok ? 'translated' : 'failed',
+            errorMessage: result.error,
+            range: unit.range,
+          }
+        }))
+        return {
+          ok: results.every((unit) => unit.status === 'translated'),
+          units: results,
+          error: results.find((unit) => unit.errorMessage)?.errorMessage,
+        }
+      }) as DesktopApi['aiTranslateBatch']),
     saveTranslationMemory: overrides.saveTranslationMemory ?? ((request) =>
       t.invoke('ai:save-translation-memory', request)),
     aiGskStatus: (withEmail?: boolean) => t.invoke('ai:gsk-status', withEmail),

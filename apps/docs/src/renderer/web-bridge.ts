@@ -23,6 +23,7 @@ import {
   getDataflareEmbedSessionId,
   postToEmbedParent,
   requestDataflareParent,
+  requestDataflareStreamParent,
   type DataflareEmbedCommand,
   type DataflareOfficeContext,
 } from '../shared/embed-bridge'
@@ -207,6 +208,117 @@ if (!isElectronRuntime()) {
         units,
         quality: body?.data?.quality,
         error: body?.msg || (!response.ok ? `Dataflare translation failed (${response.status})` : undefined),
+      }
+    },
+    aiTranslateBatchStream: async (request: Parameters<NonNullable<import('../shared/desktop-api-factory').DesktopApiOverrides['aiTranslateBatch']>>[0]) => {
+      // SSE 流式批量翻译：每完成一个 unit 立即收到推送事件，
+      // 通过 onUnit 回调让 GenOffice AI 面板实时追加翻译预览，
+      // 替代旧的"等待整批返回"。
+      if (window.parent === window || !getDataflareEmbedSessionId()) {
+        // 独立模式：fallback 到同步批量接口
+        return await bridgedWindow.desktop!.aiTranslateBatch(request)
+      }
+      const streamUnits = new Map<string, NonNullable<Awaited<ReturnType<NonNullable<typeof bridgedWindow.desktop>['aiTranslateBatch']>>>['units'][number]>()
+      let streamQuality: { overallScore?: number; warnings?: string[] } | undefined
+      let streamError: string | undefined
+      let streamOk = true
+      const batchId = `stream-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+      await new Promise<void>((resolve) => {
+        const unsubscribe = requestDataflareStreamParent(
+          {
+            type: 'http-stream-request',
+            requestId: batchId,
+            sessionId: getDataflareEmbedSessionId() || '',
+            method: 'POST',
+            path: '/crmapi/ai/translation/v1/translate/stream',
+            jsonBody: JSON.stringify({
+              requestId: batchId,
+              idempotencyKey: batchId,
+              documentId: dataflareContext?.documentId,
+              documentType: 'docx',
+              scene: request.scene || 'document',
+              sourceLanguage: request.sourceLang || 'auto',
+              targetLanguage: request.targetLang,
+              preserveFormatting: request.preserveFormat !== false,
+              memoryEnabled: true,
+              qualityCheck: true,
+              units: request.units.map((unit) => ({
+                unitId: unit.unitId,
+                kind: unit.kind,
+                sourceText: unit.sourceText,
+                order: unit.order,
+                path: unit.path,
+                metadata: { ...(unit.metadata || {}), range: unit.range || undefined },
+              })),
+            }),
+          },
+          (event) => {
+            try {
+              const payload = JSON.parse(event.data) as {
+                type?: string
+                status?: string
+                unit?: {
+                  unitId?: string
+                  status?: string
+                  sourceText?: string
+                  translatedText?: string
+                  matchedTerms?: string[]
+                  warnings?: string[]
+                  errorMessage?: string
+                }
+                quality?: { overallScore?: number; warnings?: string[] }
+                message?: string
+              }
+              if (payload.type === 'unit' && payload.unit?.unitId) {
+                const input = request.units.find((u) => u.unitId === payload.unit!.unitId)
+                streamUnits.set(payload.unit.unitId, {
+                  unitId: payload.unit.unitId,
+                  sourceText: payload.unit.sourceText || '',
+                  translatedText: payload.unit.translatedText,
+                  status: payload.unit.status,
+                  matchedTerms: payload.unit.matchedTerms,
+                  warnings: payload.unit.warnings,
+                  errorMessage: payload.unit.errorMessage,
+                  range: input?.range || null,
+                })
+                postToEmbedParent({ type: 'ai-progress', status: 'running', progress: streamUnits.size / Math.max(request.units.length, 1) })
+              } else if (payload.type === 'quality' && payload.quality) {
+                streamQuality = payload.quality
+              } else if (payload.type === 'complete') {
+                if (payload.status && payload.status !== 'completed' && payload.status !== 'partial') {
+                  streamOk = false
+                  if (payload.status === 'failed') streamError = 'Dataflare translation completed with failed status'
+                }
+              } else if (payload.type === 'error') {
+                streamOk = false
+                streamError = payload.message || 'Dataflare stream error'
+              }
+            } catch (err) {
+              console.warn('[web-bridge] failed to parse SSE event', err)
+            }
+          },
+          (status) => {
+            if (status >= 400) {
+              streamOk = false
+              streamError = `Dataflare stream failed (${status})`
+            }
+            unsubscribe()
+            resolve()
+          },
+          (error) => {
+            streamOk = false
+            streamError = error.message
+            unsubscribe()
+            resolve()
+          },
+        )
+      })
+      const units = Array.from(streamUnits.values())
+      return {
+        ok: streamOk && units.length === request.units.length,
+        units,
+        quality: streamQuality,
+        error: streamError,
       }
     },
     saveTranslationMemory: async (request) => {

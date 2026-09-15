@@ -64,9 +64,34 @@ export type DataflareParentResponse = {
   body: ArrayBuffer
 }
 
+export type DataflareParentStreamRequest = {
+  type: 'http-stream-request'
+  requestId: string
+  sessionId: string
+  method: 'POST'
+  path: string
+  jsonBody?: string
+}
+
+export type DataflareParentStreamEvent = {
+  type: 'http-stream-event'
+  requestId: string
+  sessionId: string
+  eventName?: string
+  eventId?: string
+  data: string
+}
+
+export type DataflareParentStreamClose = {
+  type: 'http-stream-close'
+  requestId: string
+  sessionId: string
+  status: number
+}
+
 interface EmbedEnvelope<T> {
   protocol: typeof DATAFLARE_EMBED_PROTOCOL
-  kind: 'command' | 'event' | 'request' | 'response'
+  kind: 'command' | 'event' | 'request' | 'response' | 'stream-request' | 'stream-event' | 'stream-close'
   sessionId?: string
   payload: T
 }
@@ -81,6 +106,17 @@ function isCommandEnvelope(value: unknown): value is EmbedEnvelope<DataflareEmbe
   if (!value || typeof value !== 'object') return false
   const candidate = value as Partial<EmbedEnvelope<unknown>>
   return candidate.protocol === DATAFLARE_EMBED_PROTOCOL && candidate.kind === 'command'
+}
+
+export function isStreamEventEnvelope(
+  value: unknown,
+): value is EmbedEnvelope<DataflareParentStreamEvent | DataflareParentStreamClose> {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<EmbedEnvelope<unknown>>
+  return (
+    candidate.protocol === DATAFLARE_EMBED_PROTOCOL &&
+    (candidate.kind === 'stream-event' || candidate.kind === 'stream-close')
+  )
 }
 
 function parentOrigin(): string | null {
@@ -139,6 +175,48 @@ export function requestDataflareParent(request: DataflareParentRequest): Promise
       payload: request,
     }, origin, transfer)
   })
+}
+
+/**
+ * Subscribe to an SSE stream proxied through the Dataflare host page.
+ * Returns an unsubscribe function. The host opens the SSE connection
+ * to Dataflare and forwards each event as a postMessage envelope.
+ */
+export function requestDataflareStreamParent(
+  request: DataflareParentStreamRequest,
+  onEvent: (event: DataflareParentStreamEvent) => void,
+  onClose: (status: number) => void,
+  onError: (error: Error) => void,
+): () => void {
+  const origin = parentOrigin()
+  if (!isEmbeddedInHost() || !origin || !activeSessionId || request.sessionId !== activeSessionId) {
+    onError(new Error('Dataflare stream bridge is unavailable'))
+    return () => {}
+  }
+  const onMessage = (event: MessageEvent<unknown>) => {
+    if (event.source !== window.parent || event.origin !== origin) return
+    if (!isStreamEventEnvelope(event.data)) return
+    const envelope = event.data as EmbedEnvelope<DataflareParentStreamEvent | DataflareParentStreamClose>
+    if (envelope.sessionId !== request.sessionId) return
+    const payload = envelope.payload
+    if (payload.requestId !== request.requestId) return
+    if (envelope.kind === 'stream-event') {
+      onEvent(payload as DataflareParentStreamEvent)
+    } else if (envelope.kind === 'stream-close') {
+      window.removeEventListener('message', onMessage)
+      onClose((payload as DataflareParentStreamClose).status)
+    }
+  }
+  window.addEventListener('message', onMessage)
+  window.parent.postMessage({
+    protocol: DATAFLARE_EMBED_PROTOCOL,
+    kind: 'stream-request',
+    sessionId: request.sessionId,
+    payload: request,
+  }, origin)
+  return () => {
+    window.removeEventListener('message', onMessage)
+  }
 }
 
 export interface DataflareEmbedBridgeHandlers {

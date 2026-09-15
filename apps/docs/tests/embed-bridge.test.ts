@@ -3,6 +3,7 @@ import {
   DATAFLARE_EMBED_PROTOCOL,
   installDataflareEmbedBridge,
   requestDataflareParent,
+  requestDataflareStreamParent,
 } from '../src/shared/embed-bridge'
 
 const parentWindow = {
@@ -213,5 +214,119 @@ describe('Dataflare embed bridge', () => {
     }))
     expect(onCommand).not.toHaveBeenCalled()
     dispose()
+  })
+
+  it('forwards SSE stream events from the parent to subscribed consumers', () => {
+    setEmbeddedWindow()
+    const onCommand = vi.fn()
+    const dispose = installDataflareEmbedBridge(onCommand)
+
+    window.dispatchEvent(new MessageEvent('message', {
+      source: parentWindow as unknown as Window,
+      origin: parentOrigin,
+      data: {
+        protocol: DATAFLARE_EMBED_PROTOCOL,
+        kind: 'command',
+        payload: { type: 'init', sessionId: 'session-stream', context: { documentType: 'docx' } },
+      },
+    }))
+
+    const events: string[] = []
+    const closes: number[] = []
+    const errors: Error[] = []
+    const unsubscribe = requestDataflareStreamParent(
+      {
+        type: 'http-stream-request',
+        requestId: 'stream-1',
+        sessionId: 'session-stream',
+        method: 'POST',
+        path: '/crmapi/ai/translation/v1/translate/stream',
+      },
+      (event) => events.push(event.data),
+      (status) => closes.push(status),
+      (error) => errors.push(error),
+    )
+
+    // Verify the initial stream-request was posted to the parent
+    const streamRequestEnvelope = parentWindow.postMessage.mock.calls.find(
+      (call) => (call[0] as { kind?: string })?.kind === 'stream-request',
+    )?.[0] as { payload?: { requestId?: string; sessionId?: string; path?: string } }
+    expect(streamRequestEnvelope?.payload?.requestId).toBe('stream-1')
+    expect(streamRequestEnvelope?.payload?.sessionId).toBe('session-stream')
+    expect(streamRequestEnvelope?.payload?.path).toBe('/crmapi/ai/translation/v1/translate/stream')
+
+    // Parent sends two SSE events
+    window.dispatchEvent(new MessageEvent('message', {
+      source: parentWindow as unknown as Window,
+      origin: parentOrigin,
+      data: {
+        protocol: DATAFLARE_EMBED_PROTOCOL,
+        kind: 'stream-event',
+        sessionId: 'session-stream',
+        payload: { type: 'http-stream-event', requestId: 'stream-1', sessionId: 'session-stream', eventName: 'unit', data: '{"type":"unit"}' },
+      },
+    }))
+    window.dispatchEvent(new MessageEvent('message', {
+      source: parentWindow as unknown as Window,
+      origin: parentOrigin,
+      data: {
+        protocol: DATAFLARE_EMBED_PROTOCOL,
+        kind: 'stream-event',
+        sessionId: 'session-stream',
+        payload: { type: 'http-stream-event', requestId: 'stream-1', sessionId: 'session-stream', eventName: 'complete', data: '{"type":"complete"}' },
+      },
+    }))
+
+    expect(events).toEqual(['{"type":"unit"}', '{"type":"complete"}'])
+
+    // Parent closes the stream
+    window.dispatchEvent(new MessageEvent('message', {
+      source: parentWindow as unknown as Window,
+      origin: parentOrigin,
+      data: {
+        protocol: DATAFLARE_EMBED_PROTOCOL,
+        kind: 'stream-close',
+        sessionId: 'session-stream',
+        payload: { type: 'http-stream-close', requestId: 'stream-1', sessionId: 'session-stream', status: 200 },
+      },
+    }))
+    expect(closes).toEqual([200])
+    expect(errors).toEqual([])
+
+    // After close, further events for this requestId should be ignored
+    events.length = 0
+    window.dispatchEvent(new MessageEvent('message', {
+      source: parentWindow as unknown as Window,
+      origin: parentOrigin,
+      data: {
+        protocol: DATAFLARE_EMBED_PROTOCOL,
+        kind: 'stream-event',
+        sessionId: 'session-stream',
+        payload: { type: 'http-stream-event', requestId: 'stream-1', sessionId: 'session-stream', data: 'late' },
+      },
+    }))
+    expect(events).toEqual([])
+
+    unsubscribe()
+    dispose()
+  })
+
+  it('rejects stream requests without an active session', () => {
+    setEmbeddedWindow()
+    const errors: Error[] = []
+    requestDataflareStreamParent(
+      {
+        type: 'http-stream-request',
+        requestId: 'no-session',
+        sessionId: 'missing',
+        method: 'POST',
+        path: '/crmapi/ai/translation/v1/translate/stream',
+      },
+      () => {},
+      () => {},
+      (error) => errors.push(error),
+    )
+    expect(errors.length).toBe(1)
+    expect(errors[0].message).toContain('unavailable')
   })
 })

@@ -51,3 +51,4 @@ _scratch-*
 /.agents/
 /.codex/
 /.trae/
+.playwright-mcp/

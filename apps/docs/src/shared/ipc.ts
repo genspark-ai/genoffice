@@ -396,6 +396,12 @@ export interface DesktopApi {
     quality?: { overallScore?: number; warnings?: string[] }
     error?: string
   }>
+  /**
+   * Optional SSE streaming batch translation.
+   * Same signature as aiTranslateBatch; implementations consume
+   * per-unit events from the host and return when complete or aborted.
+   */
+  aiTranslateBatchStream?: (request: Parameters<DesktopApi['aiTranslateBatch']>[0]) => ReturnType<DesktopApi['aiTranslateBatch']>
   saveTranslationMemory(request: {
     requestId: string
     documentId?: string

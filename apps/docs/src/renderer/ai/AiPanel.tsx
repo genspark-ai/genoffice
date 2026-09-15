@@ -1137,7 +1137,8 @@ export function AiPanel({
             return null
           }
           const batch = batches[batchIndex]
-          const result = await window.desktop.aiTranslateBatch({
+          const streamOrBatch = window.desktop.aiTranslateBatchStream ?? window.desktop.aiTranslateBatch
+          const result = await streamOrBatch({
             units: batch,
             sourceLang,
             targetLang,
@@ -1220,7 +1221,8 @@ export function AiPanel({
   const retryDocumentUnit = useCallback(async (unitId: string) => {
     const unit = documentTranslationUnits.find((candidate) => candidate.id === unitId)
     if (!unit) throw new Error('Translation unit is no longer available')
-    const result = await window.desktop.aiTranslateBatch({
+    const streamOrBatch = window.desktop.aiTranslateBatchStream ?? window.desktop.aiTranslateBatch
+    const result = await streamOrBatch({
       units: [{
         unitId: unit.id,
         kind: unit.kind,
