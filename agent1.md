@@ -4171,3 +4171,165 @@ uninstall →
 3. **真实接通 pi**: install 后 agent loop 下次 reload 时会看到新工具
 4. **AI 真实调用**: 18 个 provider 通过 `chatForProvider` / `streamForProvider` 真接 LLM;think-tag 过滤;reasoning 字段分离
 5. **测试覆盖**: 446 个测试全绿
+
+### §16.40 W34 — 顶级修复 — 全部 marketplace skill 真接通 pi loader(2026-09-15)
+
+#### 16.40.1 背景:之前 W33 没真接通
+
+W33 在 `apps/web-server/src/shell/skills.ts` 接入了 `@genoffice/agent-skills` 的 `createSkillMarket`,但实际跑起来才发现**绝大多数 marketplace skill 写不出 SKILL.md**:
+
+| 关键文件 | 之前 bug | 真实症状 |
+| --- | --- | --- |
+| `apps/web-server/src/shell/skills.ts` `skillMarketCatalog()` | 只从 `loadUploaded()` 取,漏掉 14 个 curated 条目 | 14 个 curated skill install 报 `Unknown skill "..."`,被 `try/catch` 吞掉 |
+| `apps/web-server/src/shell/skills.ts` `home:install-skill` | `isCommunityUpload = loadUploaded().some(...)` 判断是否写盘 | curated 全部跳过,只 1 个用户上传写盘 |
+| `apps/web-server/src/shell/skills.ts` `home:uninstall-skill` | 依赖 `loadSkills()` 缓存,缓存过期就 return "not found" | `.index.json` 永久残留,下次 install 必失败 |
+| `packages/agent-skills/src/extensions/skill-market.ts` `market.install` | `ensureNotInstalled` 抛错 | 重装 / 升级场景全废 |
+| `apps/web-server/src/shell/skills.ts` `renderSkillBody` | `name: Browser W32 Verify v4`(大写+空格),`description` 在 body 不在 frontmatter | 违反 pi 严格规范(`^[a-z0-9-]+$` + 必填 `description`) |
+
+**根因**:`install` handler 的 `try/catch` 把所有错误吞掉,UI 报 "ok",但磁盘啥都没变。
+
+#### 16.40.2 完整修复
+
+| 修复 | 文件 | 关键改动 |
+| --- | --- | --- |
+| catalog 用 curated + uploaded | `apps/web-server/src/shell/skills.ts` | `skillMarketCatalog()` → `allMarketplaceSkills().map(...)` |
+| install 总是写 SKILL.md | 同上 `home:install-skill` | 去掉 `isCommunityUpload` 判断,总是调 `market.install(id)` |
+| uninstall 永远清理 market | 同上 `home:uninstall-skill` | 不依赖 cache,非 builtin 总是调 `market.uninstall(id)` |
+| `market.install` 幂等 | `packages/agent-skills/src/extensions/skill-market.ts` | 删除 `ensureNotInstalled`,直接 `upsertRecord` 覆盖 |
+| SKILL.md 满足 pi 严格规范 | 同上 `renderSkillBody` | `name: ${slug}` (entry.id),`display_name: ${entry.name}` (人类可读),frontmatter 必填 `description` |
+
+#### 16.40.3 真实验证(端到端)
+
+启动 web-server (PID 在 tty 长连接),清干净 `/tmp/genoffice-data/pi-skills/`,批量 install 全部 14 个 marketplace skill:
+
+```
+verify-all.sh:
+  ✅ notion-sync
+  ✅ pdf-ocr-pro
+  ✅ github-integration
+  ✅ jira-bridge
+  ✅ lang-detector
+  ✅ figma-export
+  ✅ youtube-transcript
+  ✅ csv-data-viz
+  ✅ linear-sync
+  ✅ finance-spreadsheet
+  ✅ web-clipper
+  ✅ audio-transcribe
+  ✅ diagram-mindmap
+  ✅ browser-w32-verify
+
+PASS=14  FAIL=0
+
+list-pi-skills (调 @earendil-works/pi-coding-agent loadSkillsFromDir):
+  piSkills loaded: 14
+  diagnostics: 0       ← pi 严格校验 0 警告
+  records: 14
+```
+
+**卸载闭环验证**:
+```
+uninstall notion-sync → result.ok=True
+list-pi-skills:
+  piSkills: 14 → 13
+  records: 14 → 13
+  diagnostics: 0
+disk: browser-w32-verify ...(13 个目录,notion-sync 已删)
+.index.json: 13 条记录(无 notion-sync)
+```
+
+#### 16.40.4 旧 SKILL.md 触发 pi 诊断(修复正确性证据)
+
+修复前磁盘上残留的 `browser-w32-verify/SKILL.md`:
+```yaml
+---
+name: Browser W32 Verify v4    ← 旧格式 (大写 + 空格)
+id: browser-w32-verify
+version: 2.0.0
+...
+```
+
+`list-pi-skills` 调 `loadSkillsFromDir` 返回:
+```
+diagnostics:
+  - "description is required"
+  - "name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)"
+piSkills: []  ← 因为校验失败,不入列
+```
+
+修复后(force-delete 重装):
+```yaml
+---
+name: browser-w32-verify                  ← slug
+display_name: Browser W32 Verify v4       ← 人类可读
+description: force v4 - 应保留 downloads=2 rating=4
+...
+```
+
+`list-pi-skills`:
+```
+piSkills: [{ name: "browser-w32-verify", description: "...", filePath: "..." }]
+diagnostics: []
+```
+
+#### 16.40.5 测试套件
+
+| 包 | 测试 | 结果 |
+| --- | --- | --- |
+| agent-runtime | 39 | ✅ |
+| agent-skills (含更新后的幂等 install 测试) | 153 | ✅ |
+| ai-provider | 224 | ✅ |
+| file-parse | 30 | ✅ |
+| chat-runtime | 33 | ✅ |
+| **合计** | **479** | ✅ |
+
+typecheck: `apps/web-server npx tsc --noEmit` → EXIT=0
+
+bundle: `dist/bundle/index.js` 19.0 MB,`node bundle/index.js` 启动 474 channels
+
+#### 16.40.6 现状判断
+
+| 项 | 之前 (W33) | 现在 (W34) |
+| --- | --- | --- |
+| 全部 14 个 marketplace skill 可 install | ❌ 14/14 假成功,1/14 真写盘 | ✅ 14/14 真写盘 |
+| pi `loadSkillsFromDir` 校验通过 | ❌ 旧格式 2 个 warning | ✅ 0 warning |
+| 重复 install(升级 / 重装) | ❌ 抛 `already installed` | ✅ 幂等,覆盖 SKILL.md |
+| uninstall 真删 `.index.json` | ❌ 缓存过期时静默漏掉 | ✅ 总是调 `market.uninstall` |
+| `list-pi-skills` 真实反映 pi loader 状态 | ⚠️ 只返回 `records`(skills.json) | ✅ 同时返回 `piSkills` + `diagnostics` |
+
+**总体进度**:**§16.40 = 100% 完成并真实验证**。
+
+下一步可选项(本轮不做):
+- 旧 SKILL.md 自动迁移(检测 diagnostics 后强制重写一次)
+- plugin 也走 pi loader(目前 plugin 只存 plugins.json,因为 pi 没"plugin"概念)
+- marketplace search UI 接 `ai:web-search`(已有端点)做语义搜索
+
+#### 16.40.7 AI 能力盘点(本轮)
+
+`packages/ai-provider/src/providers.ts` 列出 **18 个 provider**:
+
+```
+genspark, codex, anthropic, gemini, deepseek, openai, kimi, glm,
+qwen, doubao, MiniMax, xai, mistral, openrouter, requesty,
+opencode-zen, opencode-go, custom
+```
+
+`apps/web-server/src/ai/chat.ts` 注册 **14 个 AI IPC**:
+
+```
+ai:get-settings, ai:set-settings, ai:gsk-login, ai:gsk-status,
+ai:log-run-failure, ai:codex-models, ai:chat, ai:translate,
+ai:translate-batch, ai:save-translation-memory,
+ai:web-search, ai:image-search, ai:fetch-image,
+ai:stream, ai:stream-cancel
+```
+
+所有 provider 走统一 `chatForProvider` / `streamForProvider` 抽象,真接 LLM,W33 已修:
+- think-tag 过滤(`<think>...</think>` 不漏到 UI)
+- reasoning 字段分离(DeepSeek V4 `reasoning_content` 单独回传)
+- reasoning-only fail-loud(content 空但 reasoning 有内容时返 `ok:false`)
+
+**仍可提升(W34+)**:
+- `ai:web-search` 接真实搜索 API(目前只做 query 转义)
+- `ai:image-search` / `ai:fetch-image` 缺 OCR 引擎(返回 `unsupported`)
+- `ai:codex-models` 已接,但 codex app-server 仅在 Electron 模式,web-server 走 fallback 列表
