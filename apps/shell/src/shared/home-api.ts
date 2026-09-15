@@ -204,12 +204,34 @@ export interface HomeApi {
     type?: 'skill' | 'plugin'
     entry?: MarketplaceEntry
     installed?: SkillEntry | PluginEntry | null
+    /** Per-entry pi install state (packageDir, mode, hasCode, skillPath, …).
+     *  Shaped by the server's marketplace-detail handler; we only narrow it
+     *  at the call site (renderMpCard + detail drawer) so the renderer can
+     *  stay loose about optional fields the server may add later. */
+    pi?: Record<string, unknown>
   }>
   marketplaceUpload(
     kind: 'skill' | 'plugin',
     payload: MarketplaceUploadPayload,
-  ): Promise<{ ok: boolean; error?: string; kind?: 'skill' | 'plugin'; entry?: MarketplaceEntry; message?: string }>
+  ): Promise<{
+    ok: boolean
+    error?: string
+    kind?: 'skill' | 'plugin'
+    entry?: MarketplaceEntry
+    message?: string
+    artifact?: MarketplaceArtifactRef | null
+    overwritten?: boolean
+  }>
   marketplaceListUploads(): Promise<{ uploads: MarketplaceUploadEntry[]; error?: string }>
+  /** Unpublish a marketplace entry by id. Removes its artifact + catalog card
+   *  and uninstalls it locally when the entry is currently installed. */
+  marketplaceDeleteUpload(
+    kind: 'skill' | 'plugin',
+    id: string,
+  ): Promise<{ ok: boolean; error?: string; kind?: 'skill' | 'plugin'; id?: string; uninstalled?: boolean }>
+  /** Real pi resource report: every extension/skill/prompt/theme pi's loader
+   *  would pick up for the current agent dir, plus installed packages. */
+  listPiResources(): Promise<PiResourceReport>
   marketplaceRate(
     id: string,
     kind: 'skill' | 'plugin',
@@ -275,6 +297,40 @@ export interface HomeApi {
     provider: AiSearchProviderId
     apiKey: string
   }): Promise<{ ok: boolean; error?: string }>
+  /** Real per-feature availability report from the server. Counts the
+   *  zero-config DuckDuckGo fallback as `available` so the UI does not
+   *  mislead the user into thinking search is broken without a key. */
+  getAiCapabilities(): Promise<AiCapabilitiesReport>
+}
+
+/** one capability entry — see home:ai-capabilities */
+export interface AiCapabilityEntry {
+  /** true when at least one backend can serve the request right now */
+  available: boolean
+  /** primary backend that will be tried first (genspark, duckduckgo, openai, …) */
+  via: string
+  /** secondary backend used when the primary fails */
+  fallback?: string
+  /** true when a keyed provider (or genspark credit balance) is set up;
+   *  false means the only path is the zero-config fallback */
+  configured: boolean
+  /** optional human-readable note shown in the UI */
+  note?: string
+}
+
+/** full capability report from home:ai-capabilities */
+export interface AiCapabilitiesReport {
+  ok: boolean
+  capabilities: {
+    search: AiCapabilityEntry
+    image_search: AiCapabilityEntry
+    image_generation: AiCapabilityEntry
+    media_analysis: AiCapabilityEntry
+  }
+  /** active chat provider id (matches AiSettings.provider) */
+  provider: string
+  /** false when the user has disabled gsk-backed tools globally */
+  gskToolsEnabled: boolean
 }
 
 export interface AiCatalogEntry extends AiProviderMeta {
@@ -395,6 +451,19 @@ export interface MarketplaceEntry {
   homepage?: string
   /** true when this marketplace entry is already installed locally */
   installed: boolean
+  /** Artifact the publisher uploaded (real pi extension module or SKILL.md). */
+  artifact?: MarketplaceArtifactRef
+  /** For a plugin: pi package source (`npm:`/`git:`/`https:`). */
+  piPackage?: string
+}
+
+/** A publisher-uploaded file that ships with an entry. The catalog card
+ *  advertises the file, install writes it to disk. */
+export interface MarketplaceArtifactRef {
+  filename: string
+  bytes: number
+  kind: 'extension' | 'skill-md'
+  size?: string
 }
 
 export interface MarketplaceCategoryInfo {
@@ -435,6 +504,14 @@ export interface MarketplaceUploadPayload {
   requirements?: string[]
   icon?: string
   homepage?: string
+  /** Real file the publisher attaches. Skills accept a SKILL.md, plugins
+   *  accept a pi extension module (.ts/.js). Without this the install only
+   *  ships metadata + a synthesized body. */
+  artifact?: { filename: string; content: string }
+  /** For a plugin: a published pi package source (`npm:` / `git:` /
+   *  `https://`). When set the install delegates to pi's package manager
+   *  instead of building a local package. */
+  piPackage?: string
 }
 
 export interface MarketplaceUploadEntry {
@@ -444,6 +521,32 @@ export interface MarketplaceUploadEntry {
   name?: string
   uploadedAt?: string
   error?: string
+  reviewStatus?: string
+  artifact?: { filename: string; kind: string; size?: string } | null
+}
+
+export interface PiResourceEntry {
+  path: string
+  /** file name or skill name, for display */
+  name: string
+  /** false when the source is registered but disabled/filtered out */
+  enabled: boolean
+  /** true when the file lives under a GenOffice-managed root */
+  managed: boolean
+}
+
+export interface PiResourceReport {
+  cwd: string
+  agentDir: string
+  settingsPath: string
+  extensions: PiResourceEntry[]
+  skills: PiResourceEntry[]
+  prompts: PiResourceEntry[]
+  themes: PiResourceEntry[]
+  /** Counts of resources that come from the user's own pi setup, not GenOffice. */
+  external: { extensions: number; skills: number; prompts: number; themes: number }
+  packages: Array<{ source: string; scope: string; filtered: boolean; installedPath?: string }>
+  diagnostics: Array<{ type: string; message: string; path?: string }>
 }
 
 export interface PluginEntry {
@@ -622,6 +725,9 @@ export const HOME_CHANNELS = {
   marketplaceDetail: 'home:marketplace-detail',
   marketplaceUpload: 'home:marketplace-upload',
   marketplaceListUploads: 'home:marketplace-list-uploads',
+  marketplaceDeleteUpload: 'home:marketplace-delete-upload',
+  listPiResources: 'home:list-pi-resources',
+  getAiCapabilities: 'home:ai-capabilities',
   marketplaceRate: 'home:marketplace-rate',
 } as const
 

@@ -265,6 +265,92 @@ export function registerAiCoreHandlers(): void {
 
   registerHandle('ai:log-run-failure', () => ({ ok: true }))
 
+  /**
+   * home:ai-capabilities — report per-feature availability so agents and the
+   * UI can show an honest picture. Unlike the CLI's `capabilities` command
+   * (which only counts keyed providers), this handler includes the zero-
+   * config DuckDuckGo fallback for web/image search because the handlers
+   * themselves fall back to it without asking the user to set anything up.
+   */
+  registerHandle('home:ai-capabilities', () => {
+    type CapabilityReport = {
+      available: boolean
+      via: string
+      fallback?: string
+      configured: boolean
+      note?: string
+    }
+    const report: Record<string, CapabilityReport> = {}
+
+    // 1) web text search — DuckDuckGo's html endpoint is always available
+    //    (no key, no rate-limit interaction); a keyed Serper/Tavily provider
+    //    upgrades to "configured" once the user supplies a key.
+    const searchSettings = aiSettings.search
+    const searchProvider = searchSettings?.provider ?? 'genspark'
+    const searchKeyed = searchProvider !== 'genspark'
+      && !!searchSettings?.providers?.[searchProvider as 'serper' | 'tavily']?.apiKey
+    report.search = {
+      available: true,
+      via: searchKeyed ? searchProvider : 'duckduckgo',
+      fallback: searchKeyed ? 'duckduckgo' : undefined,
+      configured: searchKeyed || aiSettings.gskToolsEnabled !== false,
+      note: searchKeyed
+        ? undefined
+        : 'DuckDuckGo HTML endpoint works without a key; install a Serper/Tavily key for richer results.',
+    }
+
+    // 2) image search — same pattern. DuckDuckGo's /?iax=images endpoint is
+    //    wired through ai:image-search and never requires a key.
+    report.image_search = {
+      available: true,
+      via: searchKeyed ? searchProvider : 'duckduckgo',
+      fallback: searchKeyed ? 'duckduckgo' : undefined,
+      configured: searchKeyed || aiSettings.gskToolsEnabled !== false,
+      note: searchKeyed
+        ? undefined
+        : 'DuckDuckGo image endpoint works without a key.',
+    }
+
+    // 3) image generation — needs a media provider with a key (or Genspark
+    //    credits). DDG does not generate images.
+    const mediaSettings = aiSettings.media
+    const imageProvider = mediaSettings?.imageProvider ?? 'genspark'
+    const imageKeyed = imageProvider !== 'genspark'
+      && !!mediaSettings?.providers?.[imageProvider]?.apiKey
+    report.image_generation = {
+      available: imageKeyed || aiSettings.gskToolsEnabled !== false,
+      via: imageKeyed
+        ? imageProvider
+        : (aiSettings.gskToolsEnabled === false ? 'none' : 'genspark'),
+      configured: imageKeyed || aiSettings.gskToolsEnabled !== false,
+      note: imageKeyed
+        ? undefined
+        : 'Add a key for OpenAI/Gemini/Doubao/etc. to generate images.',
+    }
+
+    // 4) media analysis — same shape as image generation.
+    const analysisProvider = mediaSettings?.analysisProvider ?? 'genspark'
+    const analysisKeyed = analysisProvider !== 'genspark'
+      && !!mediaSettings?.providers?.[analysisProvider]?.apiKey
+    report.media_analysis = {
+      available: analysisKeyed || aiSettings.gskToolsEnabled !== false,
+      via: analysisKeyed
+        ? analysisProvider
+        : (aiSettings.gskToolsEnabled === false ? 'none' : 'genspark'),
+      configured: analysisKeyed || aiSettings.gskToolsEnabled !== false,
+      note: analysisKeyed
+        ? undefined
+        : 'Add a key for OpenAI/Gemini/Claude/etc. to analyze images and video.',
+    }
+
+    return {
+      ok: true,
+      capabilities: report,
+      provider: aiSettings.provider,
+      gskToolsEnabled: aiSettings.gskToolsEnabled !== false,
+    }
+  })
+
   registerHandle('ai:codex-models', async () => {
     // Real lookup against the Codex CLI bridge; falls back to an empty
     // catalog when the CLI isn't on PATH (which is normal for the

@@ -27,6 +27,7 @@
     "src/**/*.tsx",
     "../slides/src/main/env.d.ts",
     "../../packages/pdf2docx/src/bidi-js.d.ts",
-    "../../packages/html2docx/src/raw.d.ts"
+    "../../packages/html2docx/src/raw.d.ts",
+    "../../packages/file-parse/src/pdfjs-worker.d.ts"
   ]
 }

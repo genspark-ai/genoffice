@@ -54,7 +54,10 @@ describe('marketplace E2E flow', () => {
 
   beforeAll(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'genoffice-e2e-'))
-    port = 18000 + Math.floor(Math.random() * 1000)
+    // Pick a port well away from the dev default (18081) so a locally running
+    // web-server never collides with the one this suite spawns. Range
+    // 20000-28999 is unassigned for the usual dev tooling on macOS/Linux.
+    port = 20000 + Math.floor(Math.random() * 9000)
     base = `http://127.0.0.1:${port}`
     const bundle = join(__dirname, '..', 'dist', 'bundle', 'index.js')
     server = spawn(process.execPath, [bundle], {
@@ -170,6 +173,295 @@ describe('marketplace E2E flow', () => {
     )
     expect(afterUninstall.result.piSkills.some((s) => s.name === id)).toBe(false)
   }, 60_000)
+
+  // -------------------------------------------------------------------------
+  // Extensions are pi resources — a plugin install must be a pi package
+  // install, and a skill install must be visible to pi's loader. These tests
+  // drive the real IPC surface of the spawned server and then read the files
+  // and settings pi would read, so a regression in the wiring fails here
+  // instead of silently shipping a UI-only "install".
+  // -------------------------------------------------------------------------
+
+  /** A minimal but real pi extension module. */
+  const EXTENSION_SOURCE = [
+    'export default function (pi) {',
+    '  pi.registerTool({',
+    "    name: 'e2e_plugin_tool',",
+    "    label: 'E2E Plugin Tool',",
+    "    description: 'Registered by the e2e plugin package',",
+    '    parameters: {},',
+    '    async execute() {',
+    "      return { content: [{ type: 'text', text: 'e2e' }], details: {} }",
+    '    },',
+    '  })',
+    '}',
+    '',
+  ].join('\n')
+
+  function publishPlugin(id: string, withArtifact: boolean) {
+    return ipc<{ ok: boolean; artifact?: { kind: string; filename: string } | null; error?: string }>(
+      base,
+      'home:marketplace-upload',
+      [
+        {
+          kind: 'plugin',
+          payload: {
+            id,
+            name: 'E2E Pi Plugin',
+            description: 'End-to-end test of the pi package install path',
+            author: 'E2E',
+            version: '1.0.0',
+            tools: ['e2e_plugin_tool'],
+            scopes: ['files:read'],
+            requirements: [],
+            category: 'dev',
+            tags: ['e2e', 'pi'],
+            ...(withArtifact
+              ? { artifact: { filename: 'index.ts', content: EXTENSION_SOURCE } }
+              : {}),
+          },
+        },
+      ],
+    )
+  }
+
+  it('installs a plugin as a pi package that pi itself resolves', async () => {
+    const id = `e2e-plugin-${Date.now()}`
+    const upload = await publishPlugin(id, true)
+    expect(upload.result.ok).toBe(true)
+    expect(upload.result.artifact?.kind).toBe('extension')
+
+    const install = await ipc<{
+      ok: boolean
+      pi: { mode: string; packageDir: string; hasCode: boolean; extensions: string[] }
+    }>(base, 'home:install-plugin', [{ id }])
+    expect(install.result.ok).toBe(true)
+    expect(install.result.pi.mode).toBe('local-package')
+    expect(install.result.pi.hasCode).toBe(true)
+
+    const dir = join(dataDir, 'pi-plugins', id)
+    const extPath = join(dir, 'extensions', 'index.ts')
+    const skillPath = join(dir, 'skills', id, 'SKILL.md')
+    expect(existsSync(join(dir, 'package.json'))).toBe(true)
+    expect(existsSync(extPath)).toBe(true)
+    expect(existsSync(skillPath)).toBe(true)
+    expect(readFileSync(extPath, 'utf-8')).toContain('registerTool')
+
+    // pi's settings carry the package source — this is what makes the install
+    // survive a restart and be visible to any pi session using this agent dir.
+    const settings = JSON.parse(readFileSync(join(dataDir, 'pi-agent', 'settings.json'), 'utf-8')) as {
+      packages?: unknown[]
+    }
+    expect(settings.packages).toContain(dir)
+
+    const report = await ipc<{
+      extensions: { path: string; enabled: boolean; managed: boolean }[]
+      skills: { path: string; enabled: boolean }[]
+      packages: { source: string }[]
+    }>(base, 'home:list-pi-resources', [])
+    expect(report.result.extensions.some((e) => e.path === extPath && e.enabled && e.managed)).toBe(true)
+    expect(report.result.skills.some((s) => s.path === skillPath && s.enabled)).toBe(true)
+    expect(report.result.packages.some((p) => p.source === dir)).toBe(true)
+
+    // Disabling must change what pi resolves, not just a UI flag.
+    const off = await ipc<{ ok: boolean }>(base, 'home:toggle-plugin', [{ id, enabled: false }])
+    expect(off.result.ok).toBe(true)
+    const disabled = await ipc<{ extensions: { path: string }[]; skills: { path: string }[] }>(
+      base,
+      'home:list-pi-resources',
+      [],
+    )
+    expect(disabled.result.extensions.some((e) => e.path === extPath)).toBe(false)
+    expect(disabled.result.skills.some((s) => s.path === skillPath)).toBe(false)
+
+    const on = await ipc<{ ok: boolean }>(base, 'home:toggle-plugin', [{ id, enabled: true }])
+    expect(on.result.ok).toBe(true)
+    const reenabled = await ipc<{ extensions: { path: string }[] }>(base, 'home:list-pi-resources', [])
+    expect(reenabled.result.extensions.some((e) => e.path === extPath)).toBe(true)
+
+    const removed = await ipc<{ ok: boolean; piRemoved: boolean }>(
+      base,
+      'home:uninstall-plugin',
+      [{ id }],
+    )
+    expect(removed.result.ok).toBe(true)
+    expect(existsSync(dir)).toBe(false)
+    const after = JSON.parse(readFileSync(join(dataDir, 'pi-agent', 'settings.json'), 'utf-8')) as {
+      packages?: string[]
+    }
+    expect(after.packages ?? []).not.toContain(dir)
+  }, 60_000)
+
+  it('installs a plugin without an artifact as guidance only (no fake tools)', async () => {
+    const id = `e2e-plugin-solo-${Date.now()}`
+    const upload = await publishPlugin(id, false)
+    expect(upload.result.ok).toBe(true)
+    expect(upload.result.artifact ?? null).toBeNull()
+
+    const install = await ipc<{ ok: boolean; pi: { hasCode: boolean; extensions: string[] } }>(
+      base,
+      'home:install-plugin',
+      [{ id }],
+    )
+    expect(install.result.ok).toBe(true)
+    expect(install.result.pi.hasCode).toBe(false)
+    expect(install.result.pi.extensions).toEqual([])
+
+    const dir = join(dataDir, 'pi-plugins', id)
+    expect(existsSync(join(dir, 'extensions'))).toBe(false)
+    const body = readFileSync(join(dir, 'skills', id, 'SKILL.md'), 'utf-8')
+    // The generated guidance must say the tools are not registered.
+    expect(body).toContain('NOT registered')
+    await ipc(base, 'home:uninstall-plugin', [{ id }])
+  }, 60_000)
+
+  it('rejects an uploaded module that would register nothing', async () => {
+    const id = `e2e-plugin-bad-${Date.now()}`
+    const upload = await ipc<{ ok: boolean; error?: string }>(base, 'home:marketplace-upload', [
+      {
+        kind: 'plugin',
+        payload: {
+          id,
+          name: 'Broken Plugin',
+          description: 'A plugin module with no default export at all',
+          author: 'E2E',
+          version: '1.0.0',
+          tools: ['nope'],
+          scopes: [],
+          requirements: [],
+          category: 'dev',
+          tags: ['e2e'],
+          artifact: { filename: 'index.ts', content: 'export const nothing = 1\n' },
+        },
+      },
+    ])
+    expect(upload.result.ok).toBe(false)
+    expect(upload.result.error).toMatch(/export default/)
+  })
+
+  it('rejects a SKILL.md whose frontmatter name does not match the entry id', async () => {
+    const id = `e2e-skill-bad-${Date.now()}`
+    const upload = await ipc<{ ok: boolean; error?: string }>(base, 'home:marketplace-upload', [
+      {
+        kind: 'skill',
+        payload: {
+          id,
+          name: 'Mismatched Skill',
+          description: 'Frontmatter name does not match the marketplace id',
+          author: 'E2E',
+          version: '1.0.0',
+          tools: ['some_tool'],
+          scopes: [],
+          category: 'dev',
+          tags: ['e2e'],
+          artifact: {
+            filename: 'SKILL.md',
+            content: '---\nname: something-else\ndescription: Mismatched frontmatter name\n---\n\nBody.\n',
+          },
+        },
+      },
+    ])
+    expect(upload.result.ok).toBe(false)
+    expect(upload.result.error).toMatch(/must be/)
+  })
+
+  it('publishes a real SKILL.md and installs that exact file', async () => {
+    const id = `e2e-skill-md-${Date.now()}`
+    const body = `---\nname: ${id}\ndescription: A publisher-authored skill used by the e2e suite\n---\n\nAlways answer in one sentence.\n`
+    const upload = await ipc<{ ok: boolean; artifact?: { kind: string } | null }>(
+      base,
+      'home:marketplace-upload',
+      [
+        {
+          kind: 'skill',
+          payload: {
+            id,
+            name: 'Publisher Skill',
+            description: 'A publisher-authored skill used by the e2e suite',
+            author: 'E2E',
+            version: '1.0.0',
+            tools: ['none'],
+            scopes: [],
+            category: 'dev',
+            tags: ['e2e'],
+            artifact: { filename: 'SKILL.md', content: body },
+          },
+        },
+      ],
+    )
+    expect(upload.result.ok).toBe(true)
+    expect(upload.result.artifact?.kind).toBe('skill-md')
+
+    const install = await ipc<{ ok: boolean; piInstalled: boolean }>(base, 'home:install-skill', [
+      { id },
+    ])
+    expect(install.result.ok).toBe(true)
+    expect(install.result.piInstalled).toBe(true)
+
+    const skillPath = join(dataDir, 'pi-skills', id, 'SKILL.md')
+    // The uploaded body wins over any body the server could synthesize.
+    expect(readFileSync(skillPath, 'utf-8')).toBe(body)
+
+    // pi's settings must point at the skills dir so a pi session loads it.
+    const settings = JSON.parse(readFileSync(join(dataDir, 'pi-agent', 'settings.json'), 'utf-8')) as {
+      skills?: string[]
+    }
+    expect(settings.skills).toContain(join(dataDir, 'pi-skills'))
+
+    // Toggling the skill off must move it out of pi's discovery path.
+    const off = await ipc<{ ok: boolean; piMoved: boolean; piPath: string }>(
+      base,
+      'home:toggle-skill',
+      [{ id, enabled: false }],
+    )
+    expect(off.result.ok).toBe(true)
+    expect(off.result.piMoved).toBe(true)
+    expect(existsSync(skillPath)).toBe(false)
+    expect(existsSync(join(dataDir, 'pi-skills-disabled', id, 'SKILL.md'))).toBe(true)
+
+    const listed = await ipc<{ piSkills: { name: string; enabled: boolean }[] }>(
+      base,
+      'home:list-pi-skills',
+      [],
+    )
+    expect(listed.result.piSkills.find((s) => s.name === id)?.enabled).toBe(false)
+
+    const on = await ipc<{ ok: boolean; piMoved: boolean }>(base, 'home:toggle-skill', [
+      { id, enabled: true },
+    ])
+    expect(on.result.piMoved).toBe(true)
+    expect(existsSync(skillPath)).toBe(true)
+
+    await ipc(base, 'home:uninstall-skill', [{ id }])
+    expect(existsSync(skillPath)).toBe(false)
+  }, 60_000)
+
+  it('unpublishing removes the catalog entry, its artifact and the install', async () => {
+    const id = `e2e-unpublish-${Date.now()}`
+    const upload = await publishPlugin(id, true)
+    expect(upload.result.ok).toBe(true)
+    await ipc(base, 'home:install-plugin', [{ id }])
+    expect(existsSync(join(dataDir, 'pi-plugins', id))).toBe(true)
+
+    const search = await ipc<{ skills: { id: string }[]; plugins: { id: string }[] }>(
+      base,
+      'home:marketplace-search',
+      [{ q: id }],
+    )
+    expect(search.result.plugins.some((p) => p.id === id)).toBe(true)
+
+    const del = await ipc<{ ok: boolean; uninstalled: boolean }>(
+      base,
+      'home:marketplace-delete-upload',
+      [{ kind: 'plugin', id }],
+    )
+    expect(del.result.ok).toBe(true)
+    expect(del.result.uninstalled).toBe(true)
+    expect(existsSync(join(dataDir, 'pi-plugins', id))).toBe(false)
+
+    const gone = await ipc<{ plugins: { id: string }[] }>(base, 'home:marketplace-search', [{ q: id }])
+    expect(gone.result.plugins.some((p) => p.id === id)).toBe(false)
+  }, 60_000)
 })
 
 import { describe, it, expect } from 'vitest'
@@ -241,6 +533,79 @@ describe('marketplace search sort regression (W35+)', () => {
       if (typeof e.uploadedAt === 'string') {
         const t = Date.parse(e.uploadedAt)
         expect(Number.isFinite(t)).toBe(true)
+      }
+    }
+  })
+})
+
+describe('marketplace search ranking (W35+)', () => {
+  // The old search was a single substring test over a joined haystack.
+  // The W35+ rework tokenizes on whitespace with AND semantics and scores
+  // hits by field weight (id > name > tags > description > author), so a
+  // multi-word query narrows instead of widening and an id/name hit beats
+  // a body-only mention.
+  it('multi-token query uses AND semantics (every token must match)', async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    // "pdf ocr" appears in pdf-ocr-pro's id; both tokens are present there.
+    const both = searchMarketplace({ q: 'pdf ocr' })
+    const hitsBoth = [...both.skills, ...both.plugins]
+    expect(hitsBoth.length).toBeGreaterThan(0)
+    expect(hitsBoth.some((e) => e.id === 'pdf-ocr-pro')).toBe(true)
+
+    // A query whose second token appears in no entry must return nothing,
+    // proving the tokens are AND-ed rather than OR-ed.
+    const impossible = searchMarketplace({ q: 'ocr zzzz-no-such-token' })
+    expect(impossible.total).toBe(0)
+  })
+
+  it('an id/name hit outranks a body-only mention', async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    const res = searchMarketplace({ q: 'ocr' })
+    const hits = [...res.skills, ...res.plugins]
+    expect(hits.length).toBeGreaterThan(0)
+    // The OCR extension itself must be first; any extension that merely
+    // mentions "ocr" in its description sorts below it.
+    expect(hits[0].id).toBe('pdf-ocr-pro')
+  })
+
+  it('relevance leads under the default sort, so name hits surface first', async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    // 'popular' is the UI default → relevance leads when a query is present.
+    const res = searchMarketplace({ q: 'sync' })
+    const hits = [...res.skills, ...res.plugins]
+    expect(hits.length).toBeGreaterThan(0)
+    // Both notion-sync and linear-sync match by name/id; a description-only
+    // mention of "sync" must sort below them.
+    const topIds = hits.slice(0, 2).map((e) => e.id)
+    expect(topIds.some((id) => /sync/i.test(id))).toBe(true)
+  })
+
+  it('an explicit sort is respected verbatim even with a query', async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    // The user explicitly asked for rating order — the control must win.
+    // skills and plugins are sorted as independent lists, so check each.
+    const byRating = searchMarketplace({ q: 'sync', sort: 'rating' })
+    for (const list of [byRating.skills, byRating.plugins]) {
+      for (let i = 1; i < list.length; i++) {
+        expect(list[i - 1].rating).toBeGreaterThanOrEqual(list[i].rating)
+      }
+    }
+  })
+
+  it('does not leak the internal _score field over IPC', async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    const res = searchMarketplace({ q: 'ocr' })
+    for (const e of [...res.skills, ...res.plugins]) {
+      expect(Object.prototype.hasOwnProperty.call(e, '_score')).toBe(false)
+    }
+  })
+
+  it('empty query keeps the chosen sort intact', async () => {
+    const { searchMarketplace } = await import('../src/shell/skills')
+    const res = searchMarketplace({ sort: 'name' })
+    for (const list of [res.skills, res.plugins]) {
+      for (let i = 1; i < list.length; i++) {
+        expect(list[i - 1].name.localeCompare(list[i].name)).toBeLessThanOrEqual(0)
       }
     }
   })

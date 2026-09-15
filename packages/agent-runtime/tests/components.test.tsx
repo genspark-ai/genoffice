@@ -68,6 +68,7 @@ function ProviderWithAdapter(props: {
   const fakeSession = {
     session: {} as never,
     uiAdapter: props.adapter,
+    reloadResources: async () => ({ skills: 0, extensions: 0 }),
     dispose: () => {},
   }
   return (

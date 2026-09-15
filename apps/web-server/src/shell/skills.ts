@@ -19,14 +19,34 @@
  * - 真实生产路径是从 `@genoffice/agent-skills/src/extensions/*.ts` 读取
  * - 这里用元数据 catalog 来驱动 UI,实际启用通过 toggleSkill 触发重新加载
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   createSkillMarket,
   type SkillMarketEntry,
 } from '@genoffice/agent-skills'
-import { loadSkillsFromDir } from '@earendil-works/pi-coding-agent'
 import { DATA_DIR, registerHandle } from '../common/index'
+import {
+  PI_SKILLS_DIR,
+  artifactBytes,
+  ensureSkillDirRegistered,
+  installPiPackage,
+  installPluginPackage,
+  installedSkills,
+  pluginPackageDir,
+  readableBytes,
+  readPluginManifest,
+  removePiPackage,
+  removePluginPackage,
+  removeSkillFromPi,
+  resolvePiResources,
+  sanitizeExtensionFilename,
+  setPackageSourceEnabled,
+  setPluginPackageEnabled,
+  setSkillEnabled,
+  validateSkillMarkdown,
+  type PluginArtifact,
+} from './pi-resources'
 
 /**
  * Where marketplace-installed skills land as `SKILL.md` files. pi's loader
@@ -36,8 +56,8 @@ import { DATA_DIR, registerHandle } from '../common/index'
  * `~/.genoffice/skills`, but pinned under DATA_DIR for the web build so it
  * survives reinstalls and lives next to the rest of the persisted state.
  */
-const PI_SKILLS_DIR = join(DATA_DIR, 'pi-skills')
-mkdirSync(PI_SKILLS_DIR, { recursive: true })
+// PI_SKILLS_DIR comes from the pi resource bridge (./pi-resources) so every
+// module agrees on the directory pi's loader is pointed at.
 
 export type SkillKind =
   | 'docs-skill'
@@ -481,6 +501,8 @@ export interface MarketplaceSkillEntry {
    *  community uploads (read from disk); curated entries may leave it
    *  undefined, in which case the 'newest' sort treats them as epoch 0. */
   uploadedAt?: string
+  /** Artifact this entry was published with (a real SKILL.md). */
+  artifact?: UploadedArtifactRef
 }
 
 export interface MarketplacePluginEntry {
@@ -503,6 +525,29 @@ export interface MarketplacePluginEntry {
   icon?: string
   homepage?: string
   uploadedAt?: string
+  /** pi package source (`npm:` / `git:` / `https:`) when the plugin is a real
+   *  pi package rather than a GenOffice-generated one. */
+  piPackage?: string
+  /** Artifact this entry was published with (a real pi extension module). */
+  artifact?: UploadedArtifactRef
+}
+
+/**
+ * A file a publisher uploaded alongside the metadata. The content lives next
+ * to the JSON record in the upload directory; only the reference travels in
+ * the catalog so search/IPC payloads stay small.
+ */
+export interface UploadedArtifactRef {
+  /** Original file name, sanitized for display */
+  filename: string
+  /** Byte length of the stored content */
+  bytes: number
+  /** Which half of a plugin/skill the file is */
+  kind: 'extension' | 'skill-md'
+  /** File name inside DATA_DIR/marketplace-uploads */
+  storedFile: string
+  /** Human readable size, for the upload history list */
+  size?: string
 }
 
 const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
@@ -905,6 +950,36 @@ interface UploadedFile {
   entry: MarketplaceSkillEntry | MarketplacePluginEntry
 }
 
+/** A stored artifact must look exactly like our own writer produced it — an
+ *  unpublished record from disk is untrusted input like any other. */
+function isArtifactRef(value: unknown): value is UploadedArtifactRef {
+  if (!value || typeof value !== 'object') return false
+  const r = value as Record<string, unknown>
+  return (
+    typeof r.filename === 'string' &&
+    typeof r.storedFile === 'string' &&
+    /^[A-Za-z0-9._-]{1,120}$/.test(r.storedFile) &&
+    (r.kind === 'extension' || r.kind === 'skill-md')
+  )
+}
+
+/** Absolute path of a stored artifact. */
+function artifactPath(storedFile: string): string {
+  return join(UPLOAD_DIR, storedFile)
+}
+
+/** Body of an uploaded artifact (a real SKILL.md or extension module), or
+ *  undefined when the publisher only submitted metadata. */
+function uploadedArtifactContent(uploaded: UploadedFile | undefined): string | undefined {
+  const ref = uploaded?.entry.artifact
+  if (!ref) return undefined
+  try {
+    return readFileSync(artifactPath(ref.storedFile), 'utf-8')
+  } catch {
+    return undefined
+  }
+}
+
 let uploadedCache: UploadedFile[] | null = null
 
 /** Find the persisted upload record for a given id, if any. */
@@ -980,6 +1055,7 @@ function loadUploaded(): UploadedFile[] {
               tags: Array.isArray(entry.tags) ? entry.tags : [],
               tools: Array.isArray(entry.tools) ? entry.tools : [],
               scopes: Array.isArray(entry.scopes) ? entry.scopes : [],
+              ...(isArtifactRef(entry.artifact) ? { artifact: entry.artifact } : { artifact: undefined }),
             },
           })
         } catch {
@@ -1075,31 +1151,96 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
   total: number
 } {
   const q = (filters.q ?? '').trim().toLowerCase()
+  const tokens = q.length > 0 ? q.split(/\s+/).filter(Boolean) : []
   const installedSkills = new Set(loadSkills().map((s) => s.id))
   const installedPlugins = new Set(loadPlugins().map((p) => p.id))
   const minRating = filters.minRating ?? 0
   const sort = filters.sort ?? 'popular'
 
-  function matches(entry: { id: string; name: string; description: string; longDescription?: string; tags: string[]; author: string; rating: number }): boolean {
-    if (q.length > 0) {
-      const haystack = [
-        entry.id,
-        entry.name,
-        entry.description,
-        entry.longDescription ?? '',
-        entry.tags.join(' '),
-        entry.author,
-      ]
-        .join(' \u0001 ')
-        .toLowerCase()
-      if (!haystack.includes(q)) return false
+  /**
+   * Field-weighted relevance score for one entry against the query tokens.
+   * Returns 0 when the entry does not match; every token must match at least
+   * one field (AND semantics) so "pdf ocr" narrows instead of widening the
+   * result set the way the old single-substring test did.
+   *
+   * Field weights are tuned so an id/name hit always outranks a body-only
+   * hit — searching "ocr" surfaces the OCR extension before a plugin that
+   * merely mentions OCR in its long description.
+   */
+  function score(
+    entry: {
+      id: string
+      name: string
+      description: string
+      longDescription?: string
+      tags: string[]
+      author: string
+      category: string
+    },
+    toks: string[],
+  ): number {
+    if (toks.length === 0) return 1
+    const id = entry.id.toLowerCase()
+    const name = entry.name.toLowerCase()
+    const desc = entry.description.toLowerCase()
+    const longDesc = (entry.longDescription ?? '').toLowerCase()
+    const tags = entry.tags.join(' ').toLowerCase()
+    const author = entry.author.toLowerCase()
+    const category = entry.category.toLowerCase()
+
+    let total = 0
+    for (const tok of toks) {
+      let tokenScore = 0
+      // exact id and id prefix are the strongest signals — the id is what a
+      // user types once they already know the extension
+      if (id === tok) tokenScore = Math.max(tokenScore, 1000)
+      else if (id.startsWith(tok)) tokenScore = Math.max(tokenScore, 600)
+      else if (id.includes(tok)) tokenScore = Math.max(tokenScore, 400)
+      if (name === tok) tokenScore = Math.max(tokenScore, 500)
+      else if (name.startsWith(tok)) tokenScore = Math.max(tokenScore, 350)
+      else if (name.includes(tok)) tokenScore = Math.max(tokenScore, 250)
+      if (new RegExp(`(^|[^a-z0-9])${escapeRe(tok)}`).test(tags)) tokenScore = Math.max(tokenScore, 200)
+      else if (tags.includes(tok)) tokenScore = Math.max(tokenScore, 120)
+      if (desc.includes(tok)) tokenScore = Math.max(tokenScore, 80)
+      if (longDesc.includes(tok)) tokenScore = Math.max(tokenScore, 40)
+      if (category.includes(tok)) tokenScore = Math.max(tokenScore, 30)
+      if (author.includes(tok)) tokenScore = Math.max(tokenScore, 20)
+      if (tokenScore === 0) return 0 // AND semantics — every token must hit
+      total += tokenScore
     }
+    // Shorter names with the same score are a better match (less noise);
+    // this mirrors the "more specific beats more generic" rule most search
+    // UIs use for ties.
+    return total + Math.max(0, 60 - name.length)
+  }
+
+  function matches(entry: {
+    id: string
+    name: string
+    description: string
+    longDescription?: string
+    tags: string[]
+    author: string
+    rating: number
+    category: string
+  }): boolean {
+    if (tokens.length > 0 && score(entry, tokens) === 0) return false
     if (entry.rating < minRating) return false
     return true
   }
 
-  function sortBy<T extends { rating: number; downloads: number; name: string; uploadedAt?: string }>(arr: T[]): T[] {
+  /** Escape a user token for safe use inside a RegExp. */
+  function escapeRe(v: string): string {
+    return v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  function sortBy<T extends { rating: number; downloads: number; name: string; uploadedAt?: string; _score?: number }>(arr: T[]): T[] {
     const sorted = [...arr]
+    // When a query is present, relevance is already the leading order
+    // (see relevanceLeads above) — Array.prototype.sort is not stable across
+    // every engine, so pin the relevance as an explicit tiebreaker here to
+    // keep the leading order intact after the chosen sort runs.
+    const relTie = relevanceLeads ? (a: T, b: T) => (b._score ?? 0) - (a._score ?? 0) : null
     switch (sort) {
       case 'rating':
         sorted.sort((a, b) => b.rating - a.rating || b.downloads - a.downloads)
@@ -1123,6 +1264,10 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
       default:
         sorted.sort((a, b) => b.downloads - a.downloads)
     }
+    // Stable re-sort by relevance when the user is searching: JS sort is
+    // stable per spec, so sorting by relevance after the chosen sort makes
+    // relevance the primary key and the chosen sort the tiebreaker.
+    if (relTie) sorted.sort(relTie)
     return sorted
   }
 
@@ -1132,7 +1277,11 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
     if (filters.installed === true && !installedSkills.has(e.id)) return false
     if (filters.installed === false && installedSkills.has(e.id)) return false
     return true
-  }).map((e) => ({ ...e, installed: installedSkills.has(e.id) }))
+  }).map((e) => ({
+    ...e,
+    installed: installedSkills.has(e.id),
+    _score: tokens.length > 0 ? score(e, tokens) : 0,
+  }))
 
   let plugins = allMarketplacePlugins().filter((e) => {
     if (!matches(e)) return false
@@ -1140,14 +1289,35 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
     if (filters.installed === true && !installedPlugins.has(e.id)) return false
     if (filters.installed === false && installedPlugins.has(e.id)) return false
     return true
-  }).map((e) => ({ ...e, installed: installedPlugins.has(e.id) }))
+  }).map((e) => ({
+    ...e,
+    installed: installedPlugins.has(e.id),
+    _score: tokens.length > 0 ? score(e, tokens) : 0,
+  }))
+
+  // Relevance leads only when the user is searching AND has not asked for a
+  // specific ordering. 'popular' is the default the UI ships with, so a query
+  // + the default sort means "best match first"; an explicit rating/newest/name
+  // pick means the user wants that ordering and we respect it verbatim.
+  const relevanceLeads = tokens.length > 0 && sort === 'popular'
+  if (relevanceLeads) {
+    const byRelevance = <T extends { _score: number }>(arr: T[]): T[] =>
+      [...arr].sort((a, b) => b._score - a._score)
+    skills = byRelevance(skills)
+    plugins = byRelevance(plugins)
+  }
 
   if (filters.type === 'skill') plugins = []
   if (filters.type === 'plugin') skills = []
 
+  // `_score` is an internal ranking key — strip it before the entries cross
+  // the IPC boundary so the wire shape stays exactly MarketplaceSkillEntry.
+  const strip = <T extends { _score?: number }>(arr: T[]): T[] =>
+    arr.map(({ _score: _ignored, ...rest }) => rest as T)
+
   return {
-    skills: sortBy(skills),
-    plugins: sortBy(plugins),
+    skills: strip(sortBy(skills)),
+    plugins: strip(sortBy(plugins)),
     total: skills.length + plugins.length,
   }
 }
@@ -1213,23 +1383,33 @@ function renderSkillBody(entry: {
  * every curated skill — see W34 fix.)
  */
 function skillMarketCatalog(): SkillMarketEntry[] {
-  return allMarketplaceSkills().map((e) => ({
-    name: e.id,
-    description: e.description,
-    ...(e.version ? { version: e.version } : {}),
-    tags: e.tags ?? [],
-    body: renderSkillBody({
-      id: e.id,
-      name: e.name,
+  const uploads = loadUploaded()
+  return allMarketplaceSkills().map((e) => {
+    // A publisher who uploaded a real SKILL.md gets exactly that file written
+    // to disk — the metadata form only supplies the catalog card.
+    const uploadedBody = uploadedArtifactContent(
+      uploads.find((u) => u.kind === 'skill' && u.entry.id === e.id),
+    )
+    return {
+      name: e.id,
       description: e.description,
-      version: e.version,
-      author: e.author || 'Anonymous',
-      tools: e.tools,
-      scopes: e.scopes,
-      category: e.category,
-      tags: e.tags,
-    }),
-  }))
+      ...(e.version ? { version: e.version } : {}),
+      tags: e.tags ?? [],
+      body:
+        uploadedBody ??
+        renderSkillBody({
+          id: e.id,
+          name: e.name,
+          description: e.description,
+          version: e.version,
+          author: e.author || 'Anonymous',
+          tools: e.tools,
+          scopes: e.scopes,
+          category: e.category,
+          tags: e.tags,
+        }),
+    }
+  })
 }
 
 type SkillMarketApi = ReturnType<typeof createSkillMarket>
@@ -1257,9 +1437,33 @@ export function registerSkillHandlers(): void {
     return { skills: loadSkills() }
   })
 
-  registerHandle('home:toggle-skill', (_event: unknown, args: unknown) => {
+  registerHandle('home:toggle-skill', async (_event: unknown, args: unknown) => {
     const { id, enabled } = (args || {}) as { id: SkillKind; enabled: boolean }
-    const skills = loadSkills().map((s) =>
+    const all = loadSkills()
+    const target = all.find((s) => s.id === id)
+    // Market-installed skills exist as `<id>/SKILL.md` on disk. Flipping the
+    // UI flag without moving that directory would leave the agent still
+    // loading a skill the user just switched off, so the toggle is wired to
+    // pi's discovery path: enabled = inside PI_SKILLS_DIR, disabled = parked.
+    if (target && !target.builtIn) {
+      const moved = await setSkillEnabled(id, enabled)
+      if (!moved.ok) return { ok: false, error: moved.error, skills: all }
+      if (moved.moved) {
+        const skills = all.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                status: (enabled ? 'enabled' : 'disabled') as SkillStatus,
+                lastLoadedAt: enabled ? new Date().toISOString() : s.lastLoadedAt,
+                error: undefined,
+              }
+            : s,
+        )
+        saveSkills(skills)
+        return { ok: true, skills, piMoved: true, piPath: moved.path }
+      }
+    }
+    const skills = all.map((s) =>
       s.id === id
         ? {
             ...s,
@@ -1270,7 +1474,7 @@ export function registerSkillHandlers(): void {
         : s,
     )
     saveSkills(skills)
-    return { ok: true, skills }
+    return { ok: true, skills, piMoved: false }
   })
 
   registerHandle('home:reload-skill', (_event: unknown, args: unknown) => {
@@ -1303,7 +1507,10 @@ export function registerSkillHandlers(): void {
     } catch (err) {
       console.warn(`[skills] pi uninstall failed for ${id}:`, err)
     }
-    return { ok: true, skills: remaining }
+    // The skill market only knows about the active directory; a skill the
+    // user had disabled lives in the parked root, so clear both.
+    removeSkillFromPi(id)
+    return { ok: true, skills: remaining, piRemoved: true }
   })
 
   registerHandle('home:reset-skills', () => {
@@ -1317,9 +1524,21 @@ export function registerSkillHandlers(): void {
     return { plugins: loadPlugins() }
   })
 
-  registerHandle('home:toggle-plugin', (_event: unknown, args: unknown) => {
+  registerHandle('home:toggle-plugin', async (_event: unknown, args: unknown) => {
     const { id, enabled } = (args || {}) as { id: PluginKind; enabled: boolean }
-    const plugins = loadPlugins().map((p) =>
+    const all = loadPlugins()
+    const target = all.find((p) => p.id === id)
+    if (target && !target.builtIn) {
+      // Installed plugins are pi packages: disabling must change pi's own
+      // resolution (`autoload: false`), otherwise the agent keeps loading a
+      // plugin the user switched off.
+      const entry = allMarketplacePlugins().find((p) => p.id === id)
+      const result = entry?.piPackage
+        ? await setPackageSourceEnabled(entry.piPackage, enabled)
+        : await setPluginPackageEnabled(id, enabled)
+      if (!result.ok) return { ok: false, error: result.error, plugins: all }
+    }
+    const plugins = all.map((p) =>
       p.id === id
         ? {
             ...p,
@@ -1393,18 +1612,30 @@ export function registerSkillHandlers(): void {
     // pi's loader can pick up on next reload. Curated entries are NOT
     // pre-bundled as pi skills — they're just catalog metadata — so writing
     // the SKILL.md is what actually makes the new tool visible to the agent.
+    let piSkillPath: string | null = null
     try {
       await getSkillMarket().install(id)
+      // Point pi at the directory we just wrote into. Without this the
+      // SKILL.md exists but no pi session (embedded agent or `pi` CLI) loads
+      // it, which is what made an install invisible to the model.
+      await ensureSkillDirRegistered()
+      piSkillPath = join(PI_SKILLS_DIR, id, 'SKILL.md')
     } catch (err) {
       // surface the disk error but keep the UI state — re-trying without
       // the marketplace entry may resolve transient fs issues
       console.warn(`[skills] pi install failed for ${id}:`, err)
     }
     bumpMarketplaceDownloads('skill', id)
-    return { ok: true, installed: installedEntry, skills: next, piInstalled: true }
+    return {
+      ok: true,
+      installed: installedEntry,
+      skills: next,
+      piInstalled: piSkillPath !== null && existsSync(piSkillPath),
+      piSkillPath,
+    }
   })
 
-  registerHandle('home:install-plugin', (_event: unknown, args: unknown) => {
+  registerHandle('home:install-plugin', async (_event: unknown, args: unknown) => {
     const { id } = (args || {}) as { id: string }
     const entry = allMarketplacePlugins().find((p) => p.id === id)
     if (!entry) {
@@ -1417,26 +1648,82 @@ export function registerSkillHandlers(): void {
       const existing = plugins.find((p) => p.id === id)!
       return { ok: true, installed: existing, alreadyInstalled: true, plugins }
     }
+
+    // A plugin install is a real pi package install, in one of two shapes:
+    //  - `piPackage` set: a published pi package (npm:/git:). pi's own package
+    //    manager fetches it and persists the source in settings.
+    //  - otherwise: GenOffice builds a local pi package from the catalog entry
+    //    and drops in the extension module the publisher uploaded, when there
+    //    is one. Without an artifact the package still installs (as agent
+    //    guidance via SKILL.md) but ships no executable code, and we say so
+    //    instead of pretending the tools exist.
+    let piInfo: Record<string, unknown>
+    if (entry.piPackage) {
+      const remote = await installPiPackage(entry.piPackage)
+      if (!remote.ok) return { ok: false, error: remote.error }
+      piInfo = { mode: 'pi-package', source: entry.piPackage }
+    } else {
+      const upload = findUploaded('plugin', id)
+      const artifactContent = uploadedArtifactContent(upload)
+      const artifact: PluginArtifact | undefined =
+        artifactContent && entry.artifact
+          ? { filename: entry.artifact.filename, content: artifactContent }
+          : undefined
+      const info = await installPluginPackage({
+        id: entry.id,
+        name: entry.name,
+        description: entry.description,
+        version: entry.version,
+        author: entry.author,
+        ...(entry.longDescription ? { longDescription: entry.longDescription } : {}),
+        tools: entry.tools,
+        scopes: entry.scopes,
+        requirements: entry.requirements,
+        category: entry.category,
+        ...(entry.homepage ? { homepage: entry.homepage } : {}),
+        ...(artifact ? { artifact } : {}),
+      })
+      if (!info.ok) return { ok: false, error: info.error }
+      piInfo = {
+        mode: 'local-package',
+        packageDir: info.packageDir,
+        extensions: info.extensions,
+        skills: info.skills,
+        hasCode: info.hasCode,
+      }
+    }
+
     const installedEntry: PluginEntry = {
       ...entry,
       status: 'enabled',
       lastLoadedAt: new Date().toISOString(),
       builtIn: false,
+      error: undefined,
     }
     const next = [...plugins, installedEntry]
     savePlugins(next)
     bumpMarketplaceDownloads('plugin', id)
-    return { ok: true, installed: installedEntry, plugins: next }
+    return { ok: true, installed: installedEntry, plugins: next, pi: piInfo }
   })
 
-  registerHandle('home:uninstall-plugin', (_event: unknown, args: unknown) => {
+  registerHandle('home:uninstall-plugin', async (_event: unknown, args: unknown) => {
     const { id } = (args || {}) as { id: PluginKind }
     const plugin = loadPlugins().find((p) => p.id === id)
     if (!plugin) return { ok: false, error: `Plugin "${id}" not found` }
     if (plugin.builtIn) return { ok: false, error: `Cannot uninstall built-in plugin "${id}"` }
+    // Remove the pi side first: a plugin whose files are gone but whose source
+    // is still registered in pi settings would fail to load on every reload.
+    const entry = allMarketplacePlugins().find((p) => p.id === id)
+    if (entry?.piPackage) {
+      const remote = await removePiPackage(entry.piPackage)
+      if (!remote.ok) console.warn(`[skills] pi package remove failed for ${id}:`, remote.error)
+    } else {
+      const local = await removePluginPackage(id)
+      if (!local.ok) console.warn(`[skills] pi plugin remove failed for ${id}:`, local.error)
+    }
     const plugins = loadPlugins().filter((p) => p.id !== id)
     savePlugins(plugins)
-    return { ok: true, plugins }
+    return { ok: true, plugins, piRemoved: true }
   })
 
   registerHandle('home:get-marketplace-and-installed', () => {
@@ -1471,21 +1758,119 @@ export function registerSkillHandlers(): void {
       const entry = allMarketplacePlugins().find((p) => p.id === id)
       if (!entry) return { ok: false, error: `Plugin "${id}" not found in marketplace` }
       const installed = loadPlugins().find((p) => p.id === id)
-      return { ok: true, type: 'plugin', entry, installed: installed ?? null }
+      const manifest = readPluginManifest(id)
+      return {
+        ok: true,
+        type: 'plugin',
+        entry,
+        installed: installed ?? null,
+        pi: {
+          packageDir: pluginPackageDir(id),
+          installed: manifest !== null,
+          ...(manifest ?? {}),
+          ...(entry.piPackage ? { piPackage: entry.piPackage } : {}),
+        },
+      }
     }
     const entry = allMarketplaceSkills().find((s) => s.id === id)
     if (!entry) return { ok: false, error: `Skill "${id}" not found in marketplace` }
     const installed = loadSkills().find((s) => s.id === id)
-    return { ok: true, type: 'skill', entry, installed: installed ?? null }
+    const piSkill = installedSkills().find((s) => s.name === id)
+    return {
+      ok: true,
+      type: 'skill',
+      entry,
+      installed: installed ?? null,
+      pi: {
+        skillPath: piSkill?.filePath ?? null,
+        installed: !!piSkill,
+        enabled: piSkill?.enabled ?? false,
+      },
+    }
   })
 
-  // ── 插件上传:用户提交 marketplace 扩展元数据,服务端校验 + 落盘 + 立即可见 ──
+  // ── Extension upload: metadata plus an optional real artifact ──
+  // Publishing is not a metadata-only form anymore. A publisher can attach the
+  // actual file the extension runs on — a pi extension module for a plugin, a
+  // SKILL.md for a skill — and that file is what gets installed, not a body we
+  // synthesized from the form.
+
+  /** Uploaded artifacts are small text files; anything larger is a mistake. */
+  const MAX_EXTENSION_BYTES = 128 * 1024
+  const MAX_SKILL_MD_BYTES = 64 * 1024
+
+  interface ValidatedArtifact {
+    filename: string
+    content: string
+    kind: 'extension' | 'skill-md'
+    bytes: number
+  }
+
+  /** Validate an uploaded artifact with the same rules the agent will live
+   *  under: pi's own skill parser for SKILL.md, pi's extension conventions for
+   *  modules (a module without `export default` would load and register
+   *  nothing, which is worse than refusing it). */
+  function validateArtifact(
+    raw: unknown,
+    expectedKind: 'skill' | 'plugin',
+    id: string,
+  ): { ok: true; artifact?: ValidatedArtifact } | { ok: false; error: string } {
+    if (raw === undefined || raw === null) return { ok: true }
+    if (typeof raw !== 'object') return { ok: false, error: 'artifact must be { filename, content }' }
+    const r = raw as Record<string, unknown>
+    const filename = String(r.filename ?? '').trim()
+    const content = typeof r.content === 'string' ? r.content : ''
+    if (filename.length === 0) return { ok: false, error: 'artifact.filename is required' }
+    if (content.trim().length === 0) return { ok: false, error: 'artifact.content is empty' }
+    if (content.includes('\u0000')) return { ok: false, error: 'artifact.content must be text' }
+
+    if (expectedKind === 'plugin') {
+      const safe = sanitizeExtensionFilename(filename)
+      if (!safe) {
+        return {
+          ok: false,
+          error: 'Plugin artifact must be a single .ts/.js module name (letters, digits, dot, dash, underscore)',
+        }
+      }
+      const bytes = artifactBytes(content)
+      if (bytes > MAX_EXTENSION_BYTES) {
+        return { ok: false, error: `Plugin artifact is ${readableBytes(bytes)}; the limit is ${readableBytes(MAX_EXTENSION_BYTES)}` }
+      }
+      if (!/export\s+default/.test(content)) {
+        return { ok: false, error: 'Plugin artifact must export a default pi extension (export default function (pi) {...})' }
+      }
+      return { ok: true, artifact: { filename: safe, content, kind: 'extension', bytes } }
+    }
+
+    if (!/\.md$/i.test(filename)) {
+      return { ok: false, error: 'Skill artifact must be a Markdown file (SKILL.md)' }
+    }
+    const bytes = artifactBytes(content)
+    if (bytes > MAX_SKILL_MD_BYTES) {
+      return { ok: false, error: `Skill artifact is ${readableBytes(bytes)}; the limit is ${readableBytes(MAX_SKILL_MD_BYTES)}` }
+    }
+    const parsed = validateSkillMarkdown(id, content)
+    if (!parsed.ok) return { ok: false, error: `pi rejected the SKILL.md: ${parsed.error}` }
+    if (parsed.name !== id) {
+      return {
+        ok: false,
+        error: `SKILL.md frontmatter name must be "${id}" (found "${parsed.name}") so the marketplace id and the pi skill name stay in sync`,
+      }
+    }
+    return { ok: true, artifact: { filename: 'SKILL.md', content, kind: 'skill-md', bytes } }
+  }
 
   function validateUpload(
     raw: unknown,
     expectedKind: 'skill' | 'plugin',
   ):
-    | { ok: true; entry: MarketplaceSkillEntry | MarketplacePluginEntry; force?: boolean }
+    | {
+        ok: true
+        entry: MarketplaceSkillEntry | MarketplacePluginEntry
+        force?: boolean
+        artifact?: ValidatedArtifact
+        artifactRef?: UploadedArtifactRef
+      }
     | { ok: false; error: string } {
     if (!raw || typeof raw !== 'object') {
       return { ok: false, error: 'Payload must be a JSON object' }
@@ -1537,6 +1922,17 @@ export function registerSkillHandlers(): void {
     if (homepage.length > 0 && !/^https?:\/\//i.test(homepage)) {
       return { ok: false, error: 'homepage must start with http:// or https://' }
     }
+    const artifact = validateArtifact(r.artifact, expectedKind, id)
+    if (artifact.ok === false) return { ok: false, error: artifact.error }
+    const artifactRef: UploadedArtifactRef | undefined = artifact.artifact
+      ? {
+          filename: artifact.artifact.filename,
+          bytes: artifact.artifact.bytes,
+          kind: artifact.artifact.kind,
+          storedFile: `${expectedKind}.${id}.${artifact.artifact.kind === 'extension' ? artifact.artifact.filename : 'SKILL.md'}`,
+          size: readableBytes(artifact.artifact.bytes),
+        }
+      : undefined
     const force = r.force === true
     const alreadyUploaded = !!findUploaded(expectedKind, id)
     if (force) {
@@ -1552,6 +1948,8 @@ export function registerSkillHandlers(): void {
       return {
         ok: true,
         force: r.force === true,
+        artifact: artifact.artifact,
+        artifactRef,
         entry: {
           id,
           name,
@@ -1569,19 +1967,27 @@ export function registerSkillHandlers(): void {
           downloads: 0,
           icon: typeof r.icon === 'string' ? r.icon.slice(0, 4) : '?',
           ...(homepage ? { homepage } : {}),
+          ...(artifactRef ? { artifact: artifactRef } : {}),
         },
       }
     }
     if (MARKETPLACE_PLUGINS.some((p) => p.id === id)) {
       return { ok: false, error: `Plugin "${id}" already exists in marketplace` }
     }
+    const piPackage = typeof r.piPackage === 'string' ? r.piPackage.trim() : ''
+    if (piPackage.length > 0 && !/^(npm:|git:|https?:)/.test(piPackage)) {
+      return { ok: false, error: 'piPackage must start with npm:, git: or https://' }
+    }
     return {
       ok: true,
       force: r.force === true,
+      artifact: artifact.artifact,
+      artifactRef,
       entry: {
         id,
         name,
         description,
+        ...(longDescription ? { longDescription } : {}),
         author,
         version,
         package: pkg,
@@ -1594,6 +2000,9 @@ export function registerSkillHandlers(): void {
         rating: typeof r.rating === 'number' ? Math.max(0, Math.min(5, r.rating)) : 0,
         downloads: 0,
         icon: typeof r.icon === 'string' ? r.icon.slice(0, 4) : '?',
+        ...(homepage ? { homepage } : {}),
+        ...(piPackage ? { piPackage } : {}),
+        ...(artifactRef ? { artifact: artifactRef } : {}),
       },
     }
   }
@@ -1612,13 +2021,29 @@ export function registerSkillHandlers(): void {
       let ratings: { rating: number; ts: string }[] = []
       let downloads = 0
       let originalUploadedAt: string | undefined
+      let previousArtifact: UploadedArtifactRef | undefined
       if (isOverwrite) {
         const prev = findUploaded(kind, entry.id)
         if (prev) {
           ratings = prev.ratings
           downloads = prev.entry.downloads || 0
           originalUploadedAt = prev.uploadedAt
+          previousArtifact = prev.entry.artifact
         }
+      }
+      // Store the artifact itself next to the record. Without this the file a
+      // publisher attached would be lost on restart and install would silently
+      // fall back to a synthesized body.
+      if (validated.artifact && validated.artifactRef) {
+        writeFileSync(artifactPath(validated.artifactRef.storedFile), validated.artifact.content, 'utf-8')
+      }
+      // Drop a replaced artifact so the upload directory never accumulates
+      // orphans from successive publishes.
+      if (
+        previousArtifact &&
+        previousArtifact.storedFile !== validated.artifactRef?.storedFile
+      ) {
+        rmSync(artifactPath(previousArtifact.storedFile), { force: true })
       }
       const entryWithStats = {
         ...entry,
@@ -1649,16 +2074,61 @@ export function registerSkillHandlers(): void {
     } catch (err) {
       return { ok: false, error: `Write failed: ${err instanceof Error ? err.message : String(err)}` }
     }
+    const hasArtifact = Boolean(validated.artifactRef)
+    const executable = validated.artifactRef?.kind === 'extension'
     return {
       ok: true,
       kind,
       entry: { ...entry, installed: false },
       reviewStatus: 'pending',
       overwritten: isOverwrite,
+      artifact: validated.artifactRef ?? null,
       message: isOverwrite
-        ? '已覆盖原 marketplace 条目(保留评分 + downloads),立即生效。'
-        : '已发布到本地 marketplace。扩展已立即出现在市场中,可搜索/安装;提交 GenOffice 团队审核后即可进入公共目录。',
+        ? hasArtifact
+          ? '已覆盖原 marketplace 条目(保留评分 + downloads),上传的扩展文件已一并更新,立即生效。'
+          : '已覆盖原 marketplace 条目(保留评分 + downloads),立即生效。'
+        : hasArtifact
+          ? executable
+            ? '已发布到本地 marketplace。插件包含可执行 pi 扩展模块,安装后由 pi 加载;提交 GenOffice 团队审核后即可进入公共目录。'
+            : '已发布到本地 marketplace,上传的 SKILL.md 将原样安装到 pi。提交 GenOffice 团队审核后即可进入公共目录。'
+          : '已发布到本地 marketplace(未包含扩展文件,安装后仅提供 agent 指导,不会注册任何工具)。提交 GenOffice 团队审核后即可进入公共目录。',
     }
+  })
+
+  // Unpublish: remove the catalog entry, its artifact and (if installed) the
+  // pi-side install. A published extension that has been withdrawn must not
+  // leave a skill directory or pi package behind.
+  registerHandle('home:marketplace-delete-upload', async (_event: unknown, args: unknown) => {
+    const a = (args || {}) as { kind?: 'skill' | 'plugin'; id?: string }
+    const kind = a.kind === 'plugin' ? 'plugin' : 'skill'
+    const id = String(a.id ?? '').trim()
+    if (!id) return { ok: false, error: 'Missing id' }
+    const uploaded = findUploaded(kind, id)
+    if (!uploaded) return { ok: false, error: `No published ${kind} "${id}"` }
+    let uninstalled = false
+    if (kind === 'plugin') {
+      if (loadPlugins().some((p) => p.id === id)) {
+        const entry = allMarketplacePlugins().find((p) => p.id === id)
+        if (entry?.piPackage) await removePiPackage(entry.piPackage)
+        else await removePluginPackage(id)
+        savePlugins(loadPlugins().filter((p) => p.id !== id))
+        uninstalled = true
+      }
+    } else if (loadSkills().some((s) => s.id === id)) {
+      saveSkills(loadSkills().filter((s) => s.id !== id))
+      try {
+        await getSkillMarket().uninstall(id)
+      } catch {
+        /* already gone */
+      }
+      removeSkillFromPi(id)
+      uninstalled = true
+    }
+    if (uploaded.entry.artifact) rmSync(artifactPath(uploaded.entry.artifact.storedFile), { force: true })
+    rmSync(uploaded.file, { force: true })
+    invalidateUploads()
+    invalidateSkillMarket()
+    return { ok: true, kind, id, uninstalled }
   })
 
   registerHandle('home:marketplace-list-uploads', () => {
@@ -1668,7 +2138,18 @@ export function registerSkillHandlers(): void {
       const items = files.map((f) => {
         try {
           const raw = JSON.parse(readFileSync(join(UPLOAD_DIR, f), 'utf-8'))
-          return { file: f, kind: raw.kind, id: raw.entry?.id, name: raw.entry?.name, uploadedAt: raw.uploadedAt }
+          const artifact = isArtifactRef(raw.entry?.artifact) ? raw.entry.artifact : undefined
+          return {
+            file: f,
+            kind: raw.kind,
+            id: raw.entry?.id,
+            name: raw.entry?.name,
+            uploadedAt: raw.uploadedAt,
+            reviewStatus: raw.reviewStatus ?? 'pending',
+            artifact: artifact
+              ? { filename: artifact.filename, kind: artifact.kind, size: artifact.size ?? readableBytes(artifact.bytes ?? 0) }
+              : null,
+          }
         } catch {
           return { file: f, error: 'unparseable' }
         }
@@ -1721,25 +2202,34 @@ export function registerSkillHandlers(): void {
     return { ok: true, kind, id, ratingCount: next.length, averageRating: avg }
   })
 
-  // ── pi 真加载: 列出 PI_SKILLS_DIR 里实际写盘的 SKILL.md ──
+  // ── pi's own view of what it would load ──
+  // Installed SKILL.md files, parsed by pi's loader. Both the active and the
+  // parked (disabled) roots are listed so the UI can show a real on/off state
+  // instead of trusting its own bookkeeping.
   registerHandle('home:list-pi-skills', async () => {
     const market = getSkillMarket()
     const records = await market.installedRecords()
-    const parsed = loadSkillsFromDir({ dir: PI_SKILLS_DIR, source: 'marketplace' })
+    const skills = installedSkills()
     return {
       skillsDir: PI_SKILLS_DIR,
       records,
-      piSkills: parsed.skills.map((s) => ({
+      piSkills: skills.map((s) => ({
         name: s.name,
         description: s.description,
         filePath: s.filePath,
+        enabled: s.enabled,
       })),
-      diagnostics: parsed.diagnostics.map((d) => ({
-        type: d.type,
-        message: d.message,
-        path: d.path,
-      })),
+      diagnostics: [],
     }
+  })
+
+  // The full pi resource report: extensions / skills / prompts / themes that
+  // pi's package manager resolves for our agent dir, plus the installed
+  // packages and any settings errors. This is the ground truth behind the
+  // "pi runtime" block in Settings → Skills & Plugins.
+  registerHandle('home:list-pi-resources', async () => {
+    const report = await resolvePiResources()
+    return { ok: true, ...report }
   })
 
   // ── 复合接口: 一次返回 skills + plugins ──

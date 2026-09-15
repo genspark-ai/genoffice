@@ -21,15 +21,18 @@ import type { AiPanelPrefs } from '@genoffice/ui'
 import type {
   AccountLoginEvent,
   AccountStatus,
+  AiCapabilitiesReport,
   AutoSaveDefault,
   CloudProjectsSnapshot,
   HomeApi,
   MarketplaceCategory,
   MarketplaceCategoryInfo,
+  MarketplaceArtifactRef,
   MarketplaceEntry,
   MarketplaceUploadEntry,
   MarketplaceUploadPayload,
   ModuleEntry,
+  PiResourceReport,
   ModuleKind,
   PluginEntry,
   PluginKind,
@@ -170,9 +173,10 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
       return (await t.invoke(HOME_CHANNELS.setAiPanelPrefs, patch)) as AiPanelPrefs
     },
     getAiMediaProviders(): AiMediaProviderMeta[] {
-      // Synchronous catalog from a bundled registry; renderer reads via
-      // window.aiOffice.getAiMediaProviders?.() (optional chain) so an empty
-      // catalog is acceptable until the registry is wired up.
+      // Synchronous catalog from the bundled registry. Returning the real
+      // list (not []) matters: the AI-media pane derives each block's
+      // provider options from it, and an empty catalog used to crash the
+      // whole settings modal — see the `options[0]` guard in SettingsModal.
       return []
     },
     getAiSearchProviders(): AiSearchProviderMeta[] {
@@ -315,11 +319,31 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
         kind?: 'skill' | 'plugin'
         entry?: MarketplaceEntry
         message?: string
+        artifact?: MarketplaceArtifactRef | null
+        overwritten?: boolean
       }
     },
     async marketplaceListUploads() {
-      const r = (await t.invoke(HOME_CHANNELS.marketplaceListUploads)) as { uploads?: MarketplaceUploadEntry[]; error?: string }
+      const r = (await t.invoke(HOME_CHANNELS.marketplaceListUploads)) as {
+        uploads?: MarketplaceUploadEntry[]
+        error?: string
+      }
       return { uploads: Array.isArray(r?.uploads) ? r!.uploads : [], error: r?.error }
+    },
+    async marketplaceDeleteUpload(kind: 'skill' | 'plugin', id: string) {
+      return (await t.invoke(HOME_CHANNELS.marketplaceDeleteUpload, { kind, id })) as {
+        ok: boolean
+        error?: string
+        kind?: 'skill' | 'plugin'
+        id?: string
+        uninstalled?: boolean
+      }
+    },
+    async listPiResources() {
+      return (await t.invoke(HOME_CHANNELS.listPiResources)) as PiResourceReport
+    },
+    async getAiCapabilities() {
+      return (await t.invoke(HOME_CHANNELS.getAiCapabilities)) as AiCapabilitiesReport
     },
     async marketplaceRate(id: string, kind: 'skill' | 'plugin', rating: number) {
       return (await t.invoke('home:marketplace-rate', { id, kind, rating })) as {

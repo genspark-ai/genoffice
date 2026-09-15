@@ -25,7 +25,7 @@ function settingsFile(dir: string, settings: Record<string, unknown>): string {
 }
 
 describe('genoffice capabilities', () => {
-  it('reports nothing configured when signed out with default settings', async () => {
+  it('reports web/image search available via DDG fallback even when signed out with default settings', async () => {
     const dir = tempDir()
     const r = await run(['capabilities', '--json'], {
       env: {
@@ -36,8 +36,14 @@ describe('genoffice capabilities', () => {
     })
     expect(r.code).toBe(0)
     const d = r.json().detail
-    expect(d.search.available).toBe(false)
-    expect(d.image_search.available).toBe(false)
+    // Web/image search stay usable through the DuckDuckGo fallback.
+    expect(d.search.configured).toBe(false)
+    expect(d.search.available).toBe(true)
+    expect(d.search.via).toBe('duckduckgo')
+    expect(d.image_search.configured).toBe(false)
+    expect(d.image_search.available).toBe(true)
+    expect(d.image_search.via).toBe('duckduckgo')
+    // Generation + analysis have no fallback, so they remain unavailable.
     expect(d.image_generation.available).toBe(false)
     expect(d.media_analysis.available).toBe(false)
   })
@@ -64,15 +70,21 @@ describe('genoffice capabilities', () => {
     })
     expect(r.code).toBe(0)
     const d = r.json().detail
-    expect(d.search).toEqual({ available: true, via: 'serper' })
-    expect(d.image_search).toEqual({ available: true, via: 'serper' })
-    expect(d.image_generation).toEqual({ available: true, via: 'openai' })
+    expect(d.search.configured).toBe(true)
+    expect(d.search.available).toBe(true)
+    expect(d.search.via).toBe('serper')
+    expect(d.search.fallback).toBe('duckduckgo')
+    expect(d.image_search.configured).toBe(true)
+    expect(d.image_search.via).toBe('serper')
+    expect(d.image_generation.configured).toBe(true)
+    expect(d.image_generation.available).toBe(true)
+    expect(d.image_generation.via).toBe('openai')
     expect(d.media_analysis.available).toBe(false)
     expect(d.app.available).toBe(true)
     expect(r.json().summary).toContain('image_generation')
   })
 
-  it('Tavily gives web search but no image search', async () => {
+  it('Tavily gives web search (with DDG fallback) but no configured image search', async () => {
     const dir = tempDir()
     const settings = settingsFile(dir, {
       search: {
@@ -84,7 +96,12 @@ describe('genoffice capabilities', () => {
       env: { ...process.env, GENOFFICE_AI_SETTINGS: settings },
     })
     const d = r.json().detail
-    expect(d.search).toEqual({ available: true, via: 'tavily' })
-    expect(d.image_search.available).toBe(false)
+    expect(d.search.configured).toBe(true)
+    expect(d.search.via).toBe('tavily')
+    // Image search is NOT configured (Tavily does not serve images), but
+    // the DDG fallback still makes `available` true.
+    expect(d.image_search.configured).toBe(false)
+    expect(d.image_search.available).toBe(true)
+    expect(d.image_search.via).toBe('duckduckgo')
   })
 })

@@ -40,6 +40,13 @@ export interface OfficeSessionOptions {
   uiAdapter?: ReactUIAdapter;
   /** Additional extension file paths (in addition to the default discovery). */
   additionalExtensionPaths?: string[];
+  /**
+   * Additional skill directories (each holding `<name>/SKILL.md`), in addition
+   * to pi's own discovery. GenOffice passes the marketplace skills directory
+   * here so a fresh install is visible to the next session without touching
+   * the user's global pi settings.
+   */
+  additionalSkillPaths?: string[];
   /** In-process extension factories (preferred to file paths for bundlers). */
   extensionFactories?: Array<(pi: ExtensionAPI) => void>;
   /**
@@ -55,6 +62,12 @@ export interface OfficeSession {
   session: AgentSession;
   /** The shared UI adapter — wire React components to it. */
   uiAdapter: ReactUIAdapter;
+  /**
+   * Re-run pi's resource discovery so newly installed skills / plugins /
+   * packages become visible without rebuilding the session. Resolves to the
+   * skill + extension counts after the reload.
+   */
+  reloadResources: () => Promise<{ skills: number; extensions: number }>;
   /** Clean up everything. Safe to call multiple times. */
   dispose: () => void;
 }
@@ -73,6 +86,7 @@ export async function createOfficeSession(opts: OfficeSessionOptions = {}): Prom
     cwd,
     agentDir,
     ...(opts.additionalExtensionPaths ? { additionalExtensionPaths: opts.additionalExtensionPaths } : {}),
+    ...(opts.additionalSkillPaths ? { additionalSkillPaths: opts.additionalSkillPaths } : {}),
     ...(opts.extensionFactories ? { extensionFactories: opts.extensionFactories } : {}),
   });
   await resourceLoader.reload();
@@ -107,5 +121,12 @@ export async function createOfficeSession(opts: OfficeSessionOptions = {}): Prom
     }
   };
 
-  return { session, uiAdapter, dispose };
+  const reloadResources = async (): Promise<{ skills: number; extensions: number }> => {
+    await resourceLoader.reload();
+    const skills = resourceLoader.getSkills().skills.length;
+    const extensions = resourceLoader.getExtensions().extensions.length;
+    return { skills, extensions };
+  };
+
+  return { session, uiAdapter, reloadResources, dispose };
 }

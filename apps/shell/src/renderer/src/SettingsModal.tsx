@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   AI_CUSTOM_FONT_MAX_PX,
@@ -19,7 +19,9 @@ import type {
   MarketplaceCategory,
   MarketplaceCategoryInfo,
   MarketplaceEntry,
+  MarketplaceUploadEntry,
   MarketplaceUploadPayload,
+  PiResourceReport,
   PluginEntry,
   PluginKind,
   SkillEntry,
@@ -344,6 +346,20 @@ function AiModelPane({ t }: { t: TFunc }) {
   const [saved, setSaved] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [capabilities, setCapabilities] = useState<{
+    search: { available: boolean; via: string; configured: boolean; fallback?: string }
+    image_search: { available: boolean; via: string; configured: boolean; fallback?: string }
+    image_generation: { available: boolean; via: string; configured: boolean }
+    media_analysis: { available: boolean; via: string; configured: boolean }
+  } | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void window.aiOffice.getAiCapabilities?.().then((c) => {
+      if (alive && c) setCapabilities(c.capabilities)
+    })
+    return () => { alive = false }
+  }, [])
   /** free-typed value of the output-cap field; committed (and clamped) on blur */
   const [maxTokensDraft, setMaxTokensDraft] = useState<string | null>(null)
 
@@ -663,6 +679,20 @@ function AiMediaPane({ t }: { t: TFunc }) {
   const [saved, setSaved] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [capabilities, setCapabilities] = useState<{
+    search: { available: boolean; via: string; configured: boolean; fallback?: string }
+    image_search: { available: boolean; via: string; configured: boolean; fallback?: string }
+    image_generation: { available: boolean; via: string; configured: boolean }
+    media_analysis: { available: boolean; via: string; configured: boolean }
+  } | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void window.aiOffice.getAiCapabilities?.().then((c) => {
+      if (alive && c) setCapabilities(c.capabilities)
+    })
+    return () => { alive = false }
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -901,7 +931,18 @@ function AiMediaPane({ t }: { t: TFunc }) {
         : cap === 'video'
           ? media.videoAnalysisProvider
           : media.analysisProvider
-    const meta = options.find((m) => m.id === current) ?? options[0]!
+    // Defensive: a build that ships without the media registry (or a future
+    // capability the registry does not implement) used to crash the entire
+    // settings modal here via `options[0]!.id`. Render a hint instead.
+    const meta = options.find((m) => m.id === current) ?? options[0]
+    if (!meta) {
+      return (
+        <section key={cap}>
+          <h4 className="set-pane-subtitle">{title}</h4>
+          <div className="set-field-desc set-ai-note">{t('setAiProviderCatalogEmpty')}</div>
+        </section>
+      )
+    }
     const id = meta.id
     const config = mediaConfigOf(id)
     const pick = (next: string) => {
@@ -947,10 +988,30 @@ function AiMediaPane({ t }: { t: TFunc }) {
   const searchKey =
     search.provider === 'genspark' ? '' : (search.providers[search.provider]?.apiKey ?? '')
 
+  const capRow = (label: string, c: { available: boolean; via: string; configured: boolean; fallback?: string } | undefined) => {
+    if (!c) return null
+    const cls = c.available ? (c.configured ? 'is-on' : 'is-fallback') : 'is-off'
+    return (
+      <span className={`set-cap-pill ${cls}`} title={c.configured ? '' : 'via DuckDuckGo fallback'}>
+        <span className="set-cap-dot" aria-hidden="true" />
+        <span className="set-cap-label">{label}</span>
+        <span className="set-cap-via">{c.via}</span>
+      </span>
+    )
+  }
+
   return (
     <>
       <h3 className="set-pane-title">{t('setSecAiMedia')}</h3>
       <div className="set-field-desc set-ai-note">{t('setAiSharedKeyHint')}</div>
+      {capabilities && (
+        <div className="set-cap-status" data-ai-capability-status="1">
+          {capRow(t('setAiCapSearch'), capabilities.search)}
+          {capRow(t('setAiCapImageSearch'), capabilities.image_search)}
+          {capRow(t('setAiCapImageGen'), capabilities.image_generation)}
+          {capRow(t('setAiCapAnalysis'), capabilities.media_analysis)}
+        </div>
+      )}
       <section>
         <h4 className="set-pane-subtitle">{t('setAiCapSearch')}</h4>
         {providerRow(t('setAiCapSearch'), search.provider, searchCatalog, (v) =>
@@ -1098,10 +1159,16 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
   const [mpInstalled, setMpInstalled] = useState<'all' | boolean>('all')
   const [minRating, setMinRating] = useState(0)
   const [marketMsg, setMarketMsg] = useState<string | null>(null)
-  const [detailEntry, setDetailEntry] = useState<{ entry: MpEntry; kind: 'skill' | 'plugin' } | null>(null)
+  const [detailEntry, setDetailEntry] = useState<{
+    entry: MpEntry
+    kind: 'skill' | 'plugin'
+    pi?: { skillPath?: string | null; installed?: boolean; enabled?: boolean; packageDir?: string; hasCode?: boolean; artifact?: { filename: string; size?: string } | null; piPackage?: string; mode?: string }
+    installed?: unknown
+  } | null>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [uploadKind, setUploadKind] = useState<'skill' | 'plugin'>('skill')
-  const [uploadUploads, setUploadUploads] = useState<{ file: string; id?: string; name?: string; kind?: string; uploadedAt?: string }[]>([])
+  const [uploadUploads, setUploadUploads] = useState<MarketplaceUploadEntry[]>([])
+  const [uploadArtifact, setUploadArtifact] = useState<{ filename: string; content: string; size: number } | null>(null)
   const [uploadStatus, setUploadStatus] = useState<string | null>(null)
   const [uploadForm, setUploadForm] = useState({
     id: '',
@@ -1122,6 +1189,154 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
   const [rateDraft, setRateDraft] = useState<number>(5)
   const [rateMsg, setRateMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [rateBusy, setRateBusy] = useState(false)
+  // pi runtime + search UX
+  const [piResources, setPiResources] = useState<PiResourceReport | null>(null)
+  const [piLoading, setPiLoading] = useState(false)
+  const [recentSearches, setRecentSearches] = useState<string[]>([])
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const [piSectionOpen, setPiSectionOpen] = useState(false)
+  const [unpublishingId, setUnpublishingId] = useState<string | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const mpSectionRef = useRef<HTMLDivElement | null>(null)
+  const artifactInputRef = useRef<HTMLInputElement | null>(null)
+
+  const readableBytes = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  const handleArtifactFile = async (file: File) => {
+    // 128KB cap so we don't bloat the upload body.
+    if (file.size > 128 * 1024) {
+      setUploadMsg({ kind: 'err', text: 'Artifact too large (max 128 KB).' })
+      return
+    }
+    const text = await file.text()
+    setUploadArtifact({ filename: file.name, content: text, size: file.size })
+    setUploadMsg(null)
+  }
+
+  /** Build the flattened result index used by keyboard navigation. */
+  const mpResults = useMemo(() => {
+    const list: Array<{ id: string; kind: 'skill' | 'plugin'; entry: MpEntry }> = []
+    for (const m of mpSkills) list.push({ id: m.id, kind: 'skill', entry: m })
+    for (const m of mpPlugins) list.push({ id: m.id, kind: 'plugin', entry: m })
+    return list
+  }, [mpSkills, mpPlugins])
+
+  const handleSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      if (mpQ) {
+        setMpQ('')
+      } else if (detailEntry) {
+        setDetailEntry(null)
+      } else {
+        searchInputRef.current?.blur()
+      }
+      e.preventDefault()
+      return
+    }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const max = mpResults.length - 1
+      if (max < 0) return
+      const dir = e.key === 'ArrowDown' ? 1 : -1
+      const next = activeIndex < 0 ? (dir > 0 ? 0 : max) : activeIndex + dir
+      const wrapped = ((next % (max + 1)) + (max + 1)) % (max + 1)
+      setActiveIndex(wrapped)
+      e.preventDefault()
+      return
+    }
+    if (e.key === 'Enter') {
+      if (activeIndex >= 0 && mpResults[activeIndex]) {
+        const target = mpResults[activeIndex]
+        void openDetail(target.entry, target.kind)
+        e.preventDefault()
+      } else if (mpQ.trim()) {
+        rememberSearch(mpQ)
+      }
+    }
+  }
+
+  /** Global keyboard shortcuts: '/' or Cmd/Ctrl+K focus the search input. */
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const inEditable = !!target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      )
+      if (!inEditable && e.key === '/') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
+  const unpublishUpload = async (kind: 'skill' | 'plugin', id: string) => {
+    setUnpublishingId(id)
+    try {
+      const res = await window.aiOffice.marketplaceDeleteUpload?.(kind, id)
+      const listed = await window.aiOffice.marketplaceListUploads?.()
+      setUploadUploads((listed as { uploads?: MarketplaceUploadEntry[] })?.uploads ?? [])
+      const note = res && typeof res === 'object' && 'uninstalled' in res
+        ? (res as { uninstalled?: boolean }).uninstalled
+        : undefined
+      setUploadMsg({
+        kind: 'ok',
+        text: note
+          ? t('mpUploadUnpublishedWithUninstall')
+          : t('mpUploadUnpublished'),
+      })
+      await refresh()
+      await refreshPi()
+    } catch (err) {
+      setUploadMsg({ kind: 'err', text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setUnpublishingId(null)
+    }
+  }
+
+  // recent searches persisted under localStorage
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('genoffice.mp.recent')
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr)) {
+          setRecentSearches(arr.filter((x): x is string => typeof x === 'string').slice(0, 8))
+        }
+      }
+    } catch {
+      // localStorage may be unavailable in some test environments — ignore.
+    }
+  }, [])
+
+  const rememberSearch = useCallback((q: string) => {
+    const trimmed = q.trim()
+    if (!trimmed) return
+    setRecentSearches((prev) => {
+      const next = [trimmed, ...prev.filter((x) => x.toLowerCase() !== trimmed.toLowerCase())].slice(0, 5)
+      try { window.localStorage.setItem('genoffice.mp.recent', JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  const refreshPi = useCallback(async () => {
+    setPiLoading(true)
+    try {
+      const r = await window.aiOffice.listPiResources?.()
+      if (r) setPiResources(r as PiResourceReport)
+    } finally {
+      setPiLoading(false)
+    }
+  }, [])
 
   const refresh = useCallback(async () => {
     const [s, p, mp, cats] = await Promise.all([
@@ -1154,9 +1369,15 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
   useEffect(() => {
     if (!showUpload) return
     void window.aiOffice.marketplaceListUploads?.().then((r) => {
-      setUploadUploads((r as { uploads?: typeof uploadUploads }).uploads ?? [])
+      setUploadUploads((r as { uploads?: MarketplaceUploadEntry[] }).uploads ?? [])
     })
   }, [showUpload])
+
+  useEffect(() => {
+    // Fetch pi runtime report on first mount so the panel can render even
+    // before the user opens the marketplace section.
+    void refreshPi()
+  }, [refreshPi])
 
   useEffect(() => {
     void refresh()
@@ -1244,8 +1465,17 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
     // the entry so submitRating / uninstall calls don't have to re-derive
     // it from a fragile heuristic (e.g. checking tool prefixes).
     setDetailEntry({ entry, kind })
-    const res = await window.aiOffice.marketplaceDetail?.(entry.id, kind)
-    if (res?.ok && res.entry) setDetailEntry({ entry: res.entry, kind: (res.type as 'skill' | 'plugin') || kind })
+    const res = (await window.aiOffice.marketplaceDetail?.(entry.id, kind)) as
+      | { ok: boolean; type?: 'skill' | 'plugin'; entry?: MpEntry; pi?: Record<string, unknown>; installed?: unknown; error?: string }
+      | undefined
+    if (res?.ok && res.entry) {
+      setDetailEntry({
+        entry: res.entry,
+        kind: res.type || kind,
+        pi: res.pi,
+        installed: res.installed,
+      })
+    }
   }
 
   const submitUpload = async () => {
@@ -1265,6 +1495,9 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
         author: uploadForm.author.trim() || undefined,
         icon: uploadForm.icon.trim() || undefined,
         homepage: uploadForm.homepage.trim() || undefined,
+        artifact: uploadArtifact
+          ? { filename: uploadArtifact.filename, content: uploadArtifact.content }
+          : undefined,
       }
       // Detect a likely overwrite by probing the marketplace before submit.
       // If the catalog already contains an entry with this id, confirm with
@@ -1303,8 +1536,9 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
           icon: '',
           homepage: '',
         })
+        setUploadArtifact(null)
         const listed = await window.aiOffice.marketplaceListUploads?.()
-        setUploadUploads((listed as { uploads?: typeof uploadUploads })?.uploads ?? [])
+        setUploadUploads((listed as { uploads?: MarketplaceUploadEntry[] })?.uploads ?? [])
         // a publish changes the catalog: re-run the search so the new entry
         // shows up in the grid without the user having to touch a filter
         await refresh()
@@ -1348,27 +1582,52 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
     }
   }
 
+  /** Highlight matches of `q` tokens inside a string. Returns ReactNodes. */
+  const highlightTokens = (text: string, q: string): React.ReactNode => {
+    if (!q.trim()) return text
+    const tokens = q.trim().split(/\s+/).filter(Boolean)
+    if (tokens.length === 0) return text
+    const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    const re = new RegExp(`(${escaped.join('|')})`, 'gi')
+    const parts = text.split(re)
+    return parts.map((part, i) =>
+      i % 2 === 1 ? <mark key={i} className="set-mp-mark">{part}</mark> : <span key={i}>{part}</span>,
+    )
+  }
+
   /** marketplace grid card — icon, rating, tags, install/uninstall + detail */
   const renderMpCard = (m: MpEntry, kind: 'skill' | 'plugin') => {
     const catKey = ('mpCat' + m.category[0].toUpperCase() + m.category.slice(1)) as StringKey
+    const cardIndex = mpResults.findIndex((r) => r.id === m.id && r.kind === kind)
+    const isActive = activeIndex >= 0 && cardIndex === activeIndex
+    const isExtension = m.artifact?.kind === 'extension'
     return (
       <article
         key={`${kind}:${m.id}`}
-        className="set-mp-card"
+        className={`set-mp-card${isActive ? ' is-active' : ''}`}
         data-mp-id={m.id}
         data-mp-kind={kind}
         data-installed={m.installed ? '1' : '0'}
+        data-active={isActive ? '1' : '0'}
+        data-mp-index={cardIndex}
       >
         <header className="set-mp-card-head">
           <span className="set-mp-card-icon">{m.icon || m.name[0]}</span>
           <div className="set-mp-card-title">
-            <span className="set-mp-card-name">{m.name}</span>
+            <span className="set-mp-card-name">{highlightTokens(m.name, mpQ)}</span>
             <span className="set-mp-card-sub">v{m.version} · {m.author}</span>
           </div>
           {m.featured && <span className="set-mp-featured">{t('mpFeatured')}</span>}
         </header>
 
-        <p className="set-mp-card-desc">{m.description}</p>
+        <div className="set-mp-card-badges">
+          {m.piPackage && <span className="set-mp-badge">{t('mpCardPi')}</span>}
+          {isExtension
+            ? <span className="set-mp-badge set-mp-badge-code">{t('mpCardHasCode')}</span>
+            : <span className="set-mp-badge set-mp-badge-soft">{t('mpCardGuidance')}</span>}
+        </div>
+
+        <p className="set-mp-card-desc">{highlightTokens(m.description, mpQ)}</p>
 
         <div className="set-mp-card-tags">
           <span className="set-mp-tag set-mp-tag-cat">{t(catKey)}</span>
@@ -1528,10 +1787,24 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
         <ul className="set-skill-list" role="list">{plugins.map(renderPluginRow)}</ul>
       </div>
 
-      <div className="set-skill-section set-mp" data-marketplace="v2">
+      <div className="set-skill-section set-mp" data-marketplace="v2" ref={mpSectionRef}>
         <div className="set-skill-section-head">
           <h4>{t('marketplace')}</h4>
           <span className="set-skill-count">{mpTotal}</span>
+          <button
+            type="button"
+            className={`set-btn-mini set-mp-pi-toggle ${piSectionOpen ? 'is-open' : ''}`}
+            aria-expanded={piSectionOpen}
+            onClick={() => setPiSectionOpen((v) => !v)}
+            title={t('mpPiTitle')}
+          >
+            <span aria-hidden="true">π</span>
+            <span className="set-mp-pi-counts">
+              {piResources
+                ? `${piResources.extensions.length}/${piResources.skills.length}`
+                : '…'}
+            </span>
+          </button>
           <span className="set-mp-spacer" />
           <button
             type="button"
@@ -1542,6 +1815,97 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
           </button>
         </div>
 
+        {piSectionOpen && (
+          <div className="set-mp-pi" data-pi-runtime="1">
+            <div className="set-mp-pi-head">
+              <span className="set-mp-pi-title">{t('mpPiTitle')}</span>
+              <button
+                type="button"
+                className="set-btn-mini"
+                disabled={piLoading}
+                onClick={() => void refreshPi()}
+                title={t('mpPiRefresh')}
+              >
+                {piLoading ? '…' : t('mpPiRefresh')}
+              </button>
+            </div>
+            {piResources ? (
+              <>
+                <div className="set-mp-pi-paths">
+                  <span className="set-mp-pi-path">
+                    {t('mpPiAgentDir')}: <code>{piResources.agentDir || '—'}</code>
+                  </span>
+                  <span className="set-mp-pi-path">
+                    {t('mpPiSettings')}: <code>{piResources.settingsPath || '—'}</code>
+                  </span>
+                </div>
+                <div className="set-mp-pi-counts-row">
+                  <span className="set-mp-pi-pill">
+                    {t('mpPiExtensions')} <strong>{piResources.extensions.length}</strong>
+                    {piResources.external.extensions > 0 && (
+                      <em> · {piResources.external.extensions} {t('mpPiExternal')}</em>
+                    )}
+                  </span>
+                  <span className="set-mp-pi-pill">
+                    {t('mpPiSkills')} <strong>{piResources.skills.length}</strong>
+                    {piResources.external.skills > 0 && (
+                      <em> · {piResources.external.skills} {t('mpPiExternal')}</em>
+                    )}
+                  </span>
+                  <span className="set-mp-pi-pill">
+                    {t('mpPiPackages')} <strong>{piResources.packages.length}</strong>
+                  </span>
+                </div>
+                {piResources.extensions.length === 0 ? (
+                  <div className="set-mp-pi-empty">{t('mpPiEmpty')}</div>
+                ) : (
+                  <ul className="set-mp-pi-list" role="list">
+                    {piResources.extensions.slice(0, 8).map((ext) => (
+                      <li key={ext.path} className="set-mp-pi-resource-row" data-managed={ext.managed ? '1' : '0'}>
+                        <code>{ext.name}</code>
+                        {ext.managed && <span className="set-mp-pi-tag">genoffice</span>}
+                        {!ext.enabled && <span className="set-mp-pi-tag set-mp-pi-tag-off">off</span>}
+                      </li>
+                    ))}
+                    {piResources.extensions.length > 8 && (
+                      <li className="set-mp-pi-resource-row set-mp-pi-more">
+                        +{piResources.extensions.length - 8} more
+                      </li>
+                    )}
+                  </ul>
+                )}
+                {piResources.skills.length > 0 && (
+                  <ul className="set-mp-pi-list" role="list">
+                    {piResources.skills.slice(0, 8).map((sk) => (
+                      <li key={sk.path} className="set-mp-pi-resource-row" data-managed={sk.managed ? '1' : '0'}>
+                        <code>{sk.name}</code>
+                        {sk.managed && <span className="set-mp-pi-tag">genoffice</span>}
+                        {!sk.enabled && <span className="set-mp-pi-tag set-mp-pi-tag-off">off</span>}
+                      </li>
+                    ))}
+                    {piResources.skills.length > 8 && (
+                      <li className="set-mp-pi-resource-row set-mp-pi-more">
+                        +{piResources.skills.length - 8} more
+                      </li>
+                    )}
+                  </ul>
+                )}
+                {piResources.diagnostics.length > 0 && (
+                  <ul className="set-mp-pi-diag" role="list">
+                    {piResources.diagnostics.map((d, i) => (
+                      <li key={i} data-diag-type={d.type}>
+                        {d.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <div className="set-mp-pi-empty">{piLoading ? '…' : t('mpPiEmpty')}</div>
+            )}
+          </div>
+        )}
+
         {/* ── Search bar ─────────────────────────────────────────── */}
         <div className="set-mp-searchrow">
           <span className="set-mp-searchicon" aria-hidden="true">
@@ -1551,12 +1915,16 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
             </svg>
           </span>
           <input
+            ref={searchInputRef}
             type="text"
             className="set-input set-mp-search"
             placeholder={t('mpSearchPlaceholder')}
             value={mpQ}
             onChange={(e) => setMpQ(e.target.value)}
+            onKeyDown={(e) => handleSearchKey(e)}
+            onFocus={() => setActiveIndex(-1)}
             aria-label={t('mpSearchPlaceholder')}
+            data-mp-search="1"
           />
           {(mpQ || mpCategory || (mpInstalled !== 'all') || minRating > 0) && (
             <button
@@ -1567,12 +1935,45 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
                 setMpCategory('')
                 setMpInstalled('all')
                 setMinRating(0)
+                setActiveIndex(-1)
               }}
             >
               {t('mpResetFilters')}
             </button>
           )}
         </div>
+
+        {/* ── Recent searches (only when the box is empty) ───────── */}
+        {!mpQ && recentSearches.length > 0 && (
+          <div className="set-mp-recent" data-mp-recent="1">
+            <span className="set-mp-recent-label">{t('mpRecentSearches')}</span>
+            {recentSearches.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="set-mp-recent-chip"
+                onClick={() => {
+                  setMpQ(s)
+                  setActiveIndex(-1)
+                  searchInputRef.current?.focus()
+                }}
+              >
+                {s}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="set-mp-recent-clear"
+              onClick={() => {
+                setRecentSearches([])
+                try { window.localStorage.removeItem('genoffice.mp.recent') } catch {}
+              }}
+              aria-label="Clear recent searches"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* ── Category chips ─────────────────────────────────────── */}
         <div className="set-mp-chips" role="tablist" aria-label={t('mpCategory')}>
@@ -1785,6 +2186,58 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
                   onChange={(e) => setUploadForm({ ...uploadForm, homepage: e.target.value })}
                 />
               </label>
+              <label
+                className="set-mp-field set-mp-field-wide set-mp-artifact"
+                data-artifact={uploadArtifact ? '1' : '0'}
+                onDragOver={(e) => { e.preventDefault() }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const file = e.dataTransfer.files?.[0]
+                  if (file) void handleArtifactFile(file)
+                }}
+              >
+                <span>{t('mpUploadArtifact')}</span>
+                <div className="set-mp-artifact-row">
+                  <input
+                    ref={(el) => { artifactInputRef.current = el }}
+                    type="file"
+                    accept=".md,.ts,.js,.mts,.mjs,text/markdown,application/typescript,text/javascript"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) void handleArtifactFile(file)
+                      e.target.value = ''
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="set-btn set-btn-mini"
+                    onClick={() => artifactInputRef.current?.click()}
+                  >
+                    {t('mpUploadPickFile')}
+                  </button>
+                  {uploadArtifact ? (
+                    <>
+                      <span className="set-mp-artifact-chip" title={uploadArtifact.filename}>
+                        <code>{uploadArtifact.filename}</code>
+                        <span className="set-mp-artifact-size">{readableBytes(uploadArtifact.size)}</span>
+                      </span>
+                      <button
+                        type="button"
+                        className="set-btn-mini"
+                        onClick={() => setUploadArtifact(null)}
+                      >
+                        {t('mpUploadClearFile')}
+                      </button>
+                      <span className="set-mp-artifact-badge">
+                        {uploadKind === 'skill' ? t('mpUploadGuidanceOnly') : t('mpUploadExtensionCode')}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="set-mp-artifact-empty">{t('mpUploadArtifactHint')}</span>
+                  )}
+                </div>
+              </label>
             </div>
             <div className="set-mp-upload-actions">
               <button
@@ -1816,10 +2269,31 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
               ) : (
                 <ul className="set-skill-list" role="list">
                   {uploadUploads.map((u) => (
-                    <li key={u.file} className="set-mp-upload-item">
+                    <li key={u.file} className="set-mp-upload-item" data-upload-id={u.id} data-upload-kind={u.kind}>
                       <code>{u.file}</code>
-                      <span>{u.name ?? u.id ?? ''}</span>
+                      <span className="set-mp-upload-name">{u.name ?? u.id ?? ''}</span>
                       <span className="set-mp-upload-kind">{u.kind ?? ''}</span>
+                      {u.artifact && (
+                        <span
+                          className={`set-mp-artifact-chip ${u.artifact.kind === 'extension' ? 'is-code' : 'is-md'}`}
+                          title={u.artifact.filename}
+                        >
+                          <code>{u.artifact.filename}</code>
+                          <span className="set-mp-artifact-size">{u.artifact.size ?? ''}</span>
+                        </span>
+                      )}
+                      {u.reviewStatus && u.reviewStatus !== 'published' && (
+                        <span className="set-mp-upload-pending">{t('mpUploadPending')}</span>
+                      )}
+                      <span className="set-mp-spacer" />
+                      <button
+                        type="button"
+                        className="set-btn-mini set-btn-uninstall"
+                        disabled={unpublishingId === u.id}
+                        onClick={() => u.id && u.kind && void unpublishUpload(u.kind as 'skill' | 'plugin', u.id)}
+                      >
+                        {unpublishingId === u.id ? '…' : t('mpUploadUnpublish')}
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -1833,8 +2307,58 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
         {/* ── Results grid ───────────────────────────────────────── */}
         <div className="set-mp-layout">
           <div className="set-mp-results">
+            {/* Result summary — tells the user how many entries the current
+                query/filters matched and which filters are active, so an
+                empty result is never a dead end. */}
+            <div className="set-mp-summary" data-mp-summary="1">
+              {(() => {
+                const active: string[] = []
+                if (mpQ) active.push(`"${mpQ}"`)
+                if (mpCategory) {
+                  const key = ('mpCat' + mpCategory[0].toUpperCase() + mpCategory.slice(1)) as StringKey
+                  active.push(t(key))
+                }
+                if (mpType !== 'all') active.push(mpType === 'skill' ? t('mpTypeSkill') : t('mpTypePlugin'))
+                if (mpInstalled === true) active.push(t('mpOnlyInstalled'))
+                if (mpInstalled === false) active.push(t('mpOnlyAvailable'))
+                if (minRating > 0) active.push(`★ ${minRating}+`)
+                const shown = mpSkills.length + mpPlugins.length
+                return (
+                  <>
+                    <span className="set-mp-summary-count">
+                      {t('mpShowing')} <strong>{shown}</strong> / {mpTotal}
+                    </span>
+                    {active.length > 0 && (
+                      <span className="set-mp-summary-filters">
+                        {active.map((a) => (
+                          <span key={a} className="set-mp-summary-chip">{a}</span>
+                        ))}
+                      </span>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
             {mpSkills.length + mpPlugins.length === 0 ? (
-              <div className="set-mp-empty">{t('mpNoResults')}</div>
+              <div className="set-mp-empty" data-mp-empty="1">
+                <div className="set-mp-empty-title">{t('mpNoResults')}</div>
+                <div className="set-mp-empty-hint">{t('mpNoResultsHint')}</div>
+                {(mpQ || mpCategory || mpType !== 'all' || mpInstalled !== 'all' || minRating > 0) && (
+                  <button
+                    type="button"
+                    className="set-btn set-btn-primary set-mp-empty-reset"
+                    onClick={() => {
+                      setMpQ('')
+                      setMpCategory('')
+                      setMpType('all')
+                      setMpInstalled('all')
+                      setMinRating(0)
+                    }}
+                  >
+                    {t('mpResetFilters')}
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="set-mp-grid" data-mp-grid="1">
                 {mpSkills.map((m) => renderMpCard(m, 'skill'))}
@@ -1913,6 +2437,79 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
                   </a>
                 )}
               </div>
+              {detailEntry.pi && (
+                <div className="set-mp-detail-block set-mp-pi-detail" data-pi-detail="1">
+                  <h6>{t('mpCardPiDetail')}</h6>
+                  <ul className="set-mp-pi-detail-list" role="list">
+                    {detailEntry.kind === 'plugin' ? (
+                      <>
+                        {(detailEntry.pi as { packageDir?: string }).packageDir && (
+                          <li>
+                            <span>packageDir</span>
+                            <code>{(detailEntry.pi as { packageDir?: string }).packageDir}</code>
+                          </li>
+                        )}
+                        {(detailEntry.pi as { mode?: string }).mode && (
+                          <li>
+                            <span>mode</span>
+                            <code>{(detailEntry.pi as { mode?: string }).mode}</code>
+                          </li>
+                        )}
+                        <li>
+                          <span>code</span>
+                          <code>
+                            {(detailEntry.pi as { hasCode?: boolean }).hasCode
+                              ? t('mpCardHasCode')
+                              : t('mpCardGuidance')}
+                          </code>
+                        </li>
+                        <li>
+                          <span>installed</span>
+                          <code>
+                            {(detailEntry.pi as { installed?: boolean }).installed
+                              ? '✓'
+                              : '—'}
+                          </code>
+                        </li>
+                      </>
+                    ) : (
+                      <>
+                        {(detailEntry.pi as { skillPath?: string | null }).skillPath && (
+                          <li>
+                            <span>SKILL.md</span>
+                            <code>{(detailEntry.pi as { skillPath?: string | null }).skillPath}</code>
+                          </li>
+                        )}
+                        <li>
+                          <span>enabled</span>
+                          <code>
+                            {(detailEntry.pi as { enabled?: boolean }).enabled ? '✓' : '—'}
+                          </code>
+                        </li>
+                      </>
+                    )}
+                  </ul>
+                </div>
+              )}
+              {detailEntry.entry.artifact && (
+                <div className="set-mp-detail-block">
+                  <h6>{t('mpUploadArtifact')}</h6>
+                  <div className="set-mp-artifact-chip" title={detailEntry.entry.artifact.filename}>
+                    <code>{detailEntry.entry.artifact.filename}</code>
+                    <span className="set-mp-artifact-size">{detailEntry.entry.artifact.size ?? ''}</span>
+                  </div>
+                </div>
+              )}
+              {detailEntry.entry.artifact && (
+                <button
+                  type="button"
+                  className="set-btn-mini set-btn-uninstall set-mp-detail-unpublish"
+                  disabled={!!unpublishingId && unpublishingId === detailEntry.entry.id}
+                  onClick={() => void unpublishUpload(detailEntry.kind, detailEntry.entry.id)}
+                >
+                  {t('mpUploadUnpublish')}
+                </button>
+              )}
               {/* Rate widget — only show for community uploads (rating counts > 0
                   or the entry has 0 ratings but is a non-builtin upload) */}
               <div className="set-mp-detail-block set-mp-rate-block">
