@@ -850,7 +850,7 @@ export function themedRFonts(
  *  w:document/w:hdr instead of per element; Word honors the inheritance) */
 export function partXmlSpacePreserve(partXml: string, rootTag: string): boolean {
   const open = new RegExp(`<${rootTag}(\\s[^>]*)?>`).exec(partXml)?.[1] ?? ''
-  return /\sxml:space="preserve"/.test(open)
+  return /\sxml:space=(?:"preserve"|'preserve')/.test(open)
 }
 
 export function mergeRuns(runs: Run[]): Run[] {

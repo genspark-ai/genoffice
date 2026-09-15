@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { parseDocx, saveDocx, type SaveBlock } from '../src/index'
+import { partXmlSpacePreserve } from '../src/parse-props'
 import { buildDocx } from './helpers/build-docx'
 
 function para(inner: string, preserve = true): string {
@@ -40,6 +41,14 @@ describe('raw whitespace inside w:t', () => {
   it('never yields a line break from a w:t newline', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: BODY }))
     for (const b of doc.blocks) for (const r of b.runs ?? []) expect(r.text).not.toMatch(/[\r\n]/)
+  })
+
+  it('honors a single-quoted xml:space on the part root', () => {
+    const root = (attr: string) =>
+      `<w:document ${attr} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body/></w:document>`
+    expect(partXmlSpacePreserve(root('xml:space="preserve"'), 'w:document')).toBe(true)
+    expect(partXmlSpacePreserve(root("xml:space='preserve'"), 'w:document')).toBe(true)
+    expect(partXmlSpacePreserve(root('xml:space="default"'), 'w:document')).toBe(false)
   })
 
   it('saving untouched paragraphs keeps the raw newline bytes', async () => {
