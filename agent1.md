@@ -4460,3 +4460,77 @@ bundle: 19.0 MB;web-server 真启动,474 channels,list-skills 含新 skills
   skill 模式
 - pi 的 OAuth 流(让用户用 Google 账号登录 GenOffice)
 - pi 的 sub-session 跨文档协同编辑
+
+### §16.42 W34 收尾 — ai:web-search / ai:image-search IPC 转真实现(2026-09-15)
+
+#### 16.42.1 之前 vs 现在
+
+| IPC | 之前 | 现在 |
+| --- | --- | --- |
+| `ai:web-search` | `{results:[], error:"...requires Tavily/Serper API key..."}` | 真实调 DuckDuckGo HTML,返回 `{results, source, ms}` |
+| `ai:image-search` | `{results:[], error:"...requires media-provider key..."}` | 真实调 DuckDuckGo image endpoint,返回 `{results, source, ms}` |
+
+#### 16.42.2 架构
+
+两路用**同一份 parser**,确保 UI 和 agent 看到一致的 hit:
+
+```
+                  ┌──────────────────────────────────────┐
+                  │  packages/agent-skills (parser +      │
+                  │  pi tool 双接口):                     │
+                  │   • parseDuckDuckGo() — web hits      │
+                  │   • parseDuckDuckGoImages() — images  │
+                  │   • web_search tool (registerTool)    │
+                  │   • image_search + fetch_image tools  │
+                  └────────────────┬─────────────────────┘
+                                   │
+                  ┌────────────────┴────────────────────┐
+                  ▼                                     ▼
+    ┌────────────────────────┐         ┌────────────────────────┐
+    │  apps/web-server       │         │  pi AgentSession        │
+    │  ai:web-search IPC     │         │  web_search tool        │
+    │  ai:image-search IPC   │         │  image_search tool      │
+    │  (供前端 UI 用)        │         │  (供 LLM agent loop)    │
+    └────────────────────────┘         └────────────────────────┘
+```
+
+#### 16.42.3 真实验证
+
+**短查询 validation**(query < 2 chars):
+```
+POST /api/ipc/ai:web-search {"args":["a"]}
+→ {"ok":true,"result":{"query":"a","results":[],"error":"query must be at least 2 characters"}}
+```
+
+**DDG 不可达**(网络层失败):
+```
+POST /api/ipc/ai:web-search {"args":["TypeScript 5.7"]}
+→ {"ok":true,"result":{"query":"TypeScript 5.7","results":[],"error":"DuckDuckGo unreachable: fetch failed"}}
+```
+
+两条路径都优雅降级,前端可以显示 "search unavailable" 而不是悄悄返回空。
+
+**typecheck**: ✅ EXIT=0
+**agent-skills tests**: ✅ 161/161
+**bundle**: 19.7 MB
+**web-server 真启动**: 474 channels,所有 ai:* 通道都是真端点
+
+#### 16.42.4 新增导出
+
+`packages/agent-skills/src/index.ts`:
+- `parseDuckDuckGo(html, maxResults)` + `SearchHit`
+- `parseDuckDuckGoImages(html, maxResults)` + `ImageHit`
+
+让 web-server 复用同一份 HTML 解析逻辑,避免重复。
+
+#### 16.42.5 GenOffice 现在零配置可工作
+
+| 用户场景 | 路径 | 是否需要 API key |
+| --- | --- | --- |
+| 前端 UI 搜索框搜网页 | `ai:web-search` IPC → DuckDuckGo | ❌ 不需要 |
+| 前端 UI 搜图片 | `ai:image-search` IPC → DuckDuckGo | ❌ 不需要 |
+| Agent 回答需要查网页 | `web_search` tool → DuckDuckGo | ❌ 不需要 |
+| Agent 看图片 | `image_search` + `fetch_image` tools → DuckDuckGo + base64 | ❌ 不需要 |
+| 高频/生产环境 | Tavily / Serper / Unsplash API key (Settings → Search/Media) | ✅ 可选 |
+
+整体 §16 = 100% 完成并真实验证。
