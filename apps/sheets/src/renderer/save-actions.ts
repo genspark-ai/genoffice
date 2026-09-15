@@ -62,16 +62,28 @@ export interface SaveContext {
 /// "Continue as CSV" — asked once per file, like modern Excel's banner.
 const confirmedCsvSaves = new Set<string>()
 
+/** What a save actually did — the MCP bridge needs the outcome, fire-and-forget callers ignore it. */
+export interface SaveOutcome {
+  ok: boolean
+  /** absolute path of the written file when ok */
+  path?: string
+}
+
 /**
  * mode 'recovery': assemble the very same payload but hand it to the
  * crash-recovery writer instead of the save pipeline — no dialogs, no status
  * messages, no session swap, the opened file untouched.
+ *
+ * explicitTarget: MCP save_sheet — a dialog-free Save As to an exact path
+ * (main enforces the overwrite policy; the request carries it). Callers pass
+ * mode 'save-as' with it.
  */
 export async function handleSave(
   ctx: SaveContext,
   mode: 'save' | 'save-as' | 'recovery',
   quiet = false,
-): Promise<void> {
+  explicitTarget?: { path: string; overwrite: boolean },
+): Promise<SaveOutcome> {
   const state = ctx.lazyWorkbookRef.current
   // Captured at save start (the Ctrl+S moment): the post-save session swap
   // reinstalls the workbook and would otherwise bounce the view to A1.
@@ -106,7 +118,7 @@ export async function handleSave(
   })()
   if (!state) {
     if (mode !== 'recovery') ctx.setMessage(t('appDemoNoSave'))
-    return
+    return { ok: false }
   }
   const edits = toSaveEdits(state.editJournal)
   const bulkConstantFills = toSaveBulkConstantFills(state.editJournal)
@@ -126,7 +138,7 @@ export async function handleSave(
     const failed = error instanceof Error ? error.message : t('appFilterSnapshotFailed')
     ctx.setMessage(failed)
     if (mode !== 'recovery' && !quiet) showToast(failed, 'error')
-    return
+    return { ok: false }
   }
   const cfStates = collectCfStates(ctx.univerRef.current, state)
   const dvStates = collectDvStates(ctx.univerRef.current, state)
@@ -211,7 +223,7 @@ export async function handleSave(
         ctx.setMessage(t('appSaveHeldStranded'))
         if (!quiet) showToast(t('appSaveHeldStranded'), 'error')
       }
-      return
+      return { ok: false }
     }
   }
   const total =
@@ -243,7 +255,7 @@ export async function handleSave(
   const restoreWriteBack = mode === 'save' && state.file.restoredFromRecovery === true
   if (total === 0 && mode !== 'save-as' && !restoreWriteBack) {
     if (mode !== 'recovery') ctx.setMessage(t('appNoEditsToSave'))
-    return
+    return { ok: false }
   }
   // CSV session: Save keeps the CSV identity — Excel's "keep this format?"
   // question once per file, then the active sheet rides the save request as
@@ -260,27 +272,26 @@ export async function handleSave(
       const choice = await window.desktopApi.confirmCsvSave()
       if (choice === 'cancel') {
         ctx.setMessage(t('appSaveCanceled'))
-        return
+        return { ok: false }
       }
       if (choice === 'xlsx') {
-        await handleSave(ctx, 'save-as', quiet)
-        return
+        return await handleSave(ctx, 'save-as', quiet, explicitTarget)
       }
       if (state.flags.preloadComplete) confirmedCsvSaves.add(csvPath)
     }
     if (!state.flags.preloadComplete) {
       ctx.setMessage(t('appCsvExportNeedsFullLoad'))
-      return
+      return { ok: false }
     }
     const active = activeCsvSheet(ctx.univerRef.current)
     const serialized = active === null ? null : serializeActiveSheetCsv(active.sheet, state)
     if (serialized === 'too-large') {
       ctx.setMessage(t('appCsvExportTooLarge'))
-      return
+      return { ok: false }
     }
     if (serialized === null) {
       ctx.setMessage(t('appSaveFailed'))
-      return
+      return { ok: false }
     }
     csvContent = serialized
   }
@@ -298,7 +309,7 @@ export async function handleSave(
       ctx.setMessage(t('appSheetOrderReadFailed'))
       if (!quiet) showToast(t('appSheetOrderReadFailed'), 'error')
     }
-    return
+    return { ok: false }
   }
   // Edit sets above the inline IPC cap are uploaded to the main process in
   // chunks first; the request then references the transfer instead.
@@ -306,16 +317,21 @@ export async function handleSave(
   try {
     staged = await stageEditsForSave(window.desktopApi, state.file.sessionId, edits)
   } catch (error: unknown) {
-    if (mode === 'recovery') return
+    if (mode === 'recovery') return { ok: false }
     const message = stripIpcErrorWrapper(error instanceof Error ? error.message : '')
     const failed = message || t('appSaveFailed')
     ctx.setMessage(failed)
     if (!quiet) showToast(failed, 'error')
-    return
+    return { ok: false }
   }
   const payload = {
     sessionId: state.file.sessionId,
     mode: mode === 'recovery' ? ('save' as const) : mode,
+    // MCP explicit-path save: main skips the Save-As dialog and enforces the
+    // overwrite policy from these two fields
+    ...(explicitTarget
+      ? { targetPath: explicitTarget.path, overwrite: explicitTarget.overwrite }
+      : {}),
     edits: staged.edits,
     bulkConstantFills,
     ...(staged.editsTransferId === undefined ? {} : { editsTransferId: staged.editsTransferId }),
@@ -346,7 +362,7 @@ export async function handleSave(
   if (mode === 'recovery') {
     // Best-effort; a failure only means this tick's copy is skipped — but an
     // unconsumed transfer must not sit in main-process memory until expiry.
-    await window.desktopApi.writeWorkbookRecovery(payload).catch(async () => {
+    const written = await window.desktopApi.writeWorkbookRecovery(payload).catch(async () => {
       await abortStagedEditsTransfer(
         window.desktopApi,
         state.file.sessionId,
@@ -354,7 +370,7 @@ export async function handleSave(
       )
       return { ok: false }
     })
-    return
+    return { ok: written.ok === true }
   }
   try {
     ctx.setMessage(t('appSavingEdits', { count: total }))
@@ -363,6 +379,10 @@ export async function handleSave(
       mode,
       ...(restoreWriteBack ? { restoreWriteBack: true } : {}),
       ...(csvContent === undefined ? {} : { csvContent }),
+      // MCP explicit-path save: main skips the Save-As dialog for these
+      ...(explicitTarget
+        ? { targetPath: explicitTarget.path, overwrite: explicitTarget.overwrite }
+        : {}),
       edits: staged.edits,
       bulkConstantFills,
       ...(staged.editsTransferId === undefined ? {} : { editsTransferId: staged.editsTransferId }),
@@ -390,7 +410,7 @@ export async function handleSave(
       workbookProtectionState,
       protectedRangeStates,
     })
-    if (ctx.lazyWorkbookRef.current !== state) return
+    if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
     if (result.canceled) {
       if (result.csvSaveAsPath !== undefined) {
         // The user picked CSV in the Save As dialog: no xlsx was written —
@@ -405,10 +425,10 @@ export async function handleSave(
           },
           result.csvSaveAsPath,
         )
-        return
+        return { ok: false }
       }
       ctx.setMessage(t('appSaveCanceled'))
-      return
+      return { ok: false }
     }
     if (!splitSave) {
       // Cross-save undo: carry the Univer undo stack over the session swap.
@@ -427,7 +447,7 @@ export async function handleSave(
       const saved = t('appSaved')
       ctx.setMessage(saved)
       if (!quiet) showToast(saved)
-      return
+      return { ok: true, ...(result.file.path !== undefined ? { path: result.file.path } : {}) }
     }
     // Two-phase saves reopen twice with structural entanglement; v1 does not
     // carry undo history across them (and clears any stale stash).
@@ -463,20 +483,21 @@ export async function handleSave(
         workbookProtectionState: null,
         protectedRangeStates: [],
       })
-      if (ctx.lazyWorkbookRef.current !== state) return
+      if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       if (second.canceled) {
         ctx.stashViewRestore(viewAtSave)
         ctx.openLazyWorkbook(result.file)
         ctx.setMessage(t('appSaveSecondCanceled'))
-        return
+        return { ok: false }
       }
       ctx.stashViewRestore(viewAtSave)
       ctx.openLazyWorkbook(second.file)
       const saved = t('appSavedTwoPhase')
       ctx.setMessage(saved)
       if (!quiet) showToast(saved)
+      return { ok: true, ...(second.file.path !== undefined ? { path: second.file.path } : {}) }
     } catch (error: unknown) {
-      if (ctx.lazyWorkbookRef.current !== state) return
+      if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       ctx.stashViewRestore(viewAtSave)
       ctx.openLazyWorkbook(result.file)
       const failed = t('appSaveSecondFailed', {
@@ -484,6 +505,7 @@ export async function handleSave(
       })
       ctx.setMessage(failed)
       if (!quiet) showToast(failed, 'error')
+      return { ok: false }
     }
   } catch (error: unknown) {
     // The save may have failed before consuming the chunked transfer (e.g.
@@ -493,6 +515,7 @@ export async function handleSave(
     const failed = localizeSaveError(message) ?? (message || t('appSaveFailed'))
     ctx.setMessage(failed)
     if (!quiet) showToast(failed, 'error')
+    return { ok: false }
   }
 }
 

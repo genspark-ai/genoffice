@@ -3,6 +3,7 @@ import { McpLogger } from './mcp-logger'
 import type { CliRunner } from './cli-runner'
 import { createDocumentTools, documentDriver, type DocsControl } from './tools/document-tools'
 import { createSlidesTools, slidesDriver, type SlidesControl } from './tools/slides-tools'
+import { createSheetsTools, sheetsDriver, type SheetsControl } from './tools/sheets-tools'
 import { createSessionHost, createSessionTools, type FamilyDriver } from './tools/session-tools'
 
 /**
@@ -25,6 +26,8 @@ export interface McpRuntimeDeps {
   docsControl?: DocsControl
   /** drive a visible slides deck (main-process session); absent in headless runs */
   slidesControl?: SlidesControl
+  /** drive a visible sheets grid (renderer workbook session); absent in headless runs */
+  sheetsControl?: SheetsControl
   /** the bundled genoffice CLI, backing the headless create/read tools; absent when unavailable */
   cliRunner?: CliRunner
   /** where the MCP log file lives (userData); logging is unavailable without it */
@@ -94,7 +97,10 @@ export function revealMcpLogFile(): void {
 function buildTools(): McpToolDefinition[] {
   if (!deps) throw new Error('MCP runtime not configured')
   // get_app_info advertises what the registered tool families can generate
-  const extraFormats = [...(deps.slidesControl ? ['pptx'] : [])]
+  const extraFormats = [
+    ...(deps.slidesControl ? ['pptx'] : []),
+    ...(deps.sheetsControl ? ['xlsx'] : []),
+  ]
   // one session host per tool set: create_session / save_session drive whichever
   // family is active, and each family's content tools address that same tab.
   // buildTools runs once per client session (see the server's toolsFactory), so
@@ -103,6 +109,7 @@ function buildTools(): McpToolDefinition[] {
   const drivers: FamilyDriver[] = [
     ...(deps.docsControl ? [documentDriver(deps.docsControl)] : []),
     ...(deps.slidesControl ? [slidesDriver(deps.slidesControl)] : []),
+    ...(deps.sheetsControl ? [sheetsDriver(deps.sheetsControl)] : []),
   ]
   const cli = deps.cliRunner
   return [
@@ -132,6 +139,15 @@ function buildTools(): McpToolDefinition[] {
         defaultSaveDir: deps.defaultSaveDir,
         background: currentSettings.background,
         slides: deps.slidesControl,
+        ...(cli ? { cli } : {}),
+      },
+      host,
+    ),
+    ...createSheetsTools(
+      {
+        defaultSaveDir: deps.defaultSaveDir,
+        background: currentSettings.background,
+        sheets: deps.sheetsControl,
         ...(cli ? { cli } : {}),
       },
       host,
@@ -206,7 +222,11 @@ export function mcpStatus(): McpStatus {
     background: currentSettings.background,
     logging: currentSettings.logging,
     url: running ? service!.getUrl() : null,
-    capabilities: ['docs', ...(deps?.slidesControl ? ['slides'] : [])],
+    capabilities: [
+      'docs',
+      ...(deps?.slidesControl ? ['slides'] : []),
+      ...(deps?.sheetsControl ? ['sheets'] : []),
+    ],
   }
 }
 

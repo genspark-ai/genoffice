@@ -26,7 +26,11 @@ describe('format registry', () => {
       expect(formatFamily(family).mcp).toBeUndefined()
     }
     // only the families MCP actually drives carry an mcp block
-    expect(FORMAT_FAMILIES.filter((f) => f.mcp).map((f) => f.family)).toEqual(['docx', 'pptx'])
+    expect(FORMAT_FAMILIES.filter((f) => f.mcp).map((f) => f.family)).toEqual([
+      'docx',
+      'xlsx',
+      'pptx',
+    ])
   })
 
   it('records the editor export capabilities even where mcp cannot reach them', () => {
@@ -55,17 +59,19 @@ describe('format registry', () => {
 describe('withSaveExtension', () => {
   it('keeps a correct family extension, case-insensitively', () => {
     expect(withSaveExtension('docx', 'C:/x/Report.DOCX')).toBe('C:/x/Report.DOCX')
+    expect(withSaveExtension('xlsx', '/tmp/books.xlsx')).toBe('/tmp/books.xlsx')
     expect(withSaveExtension('pptx', '/tmp/deck.pptx')).toBe('/tmp/deck.pptx')
   })
 
   it('appends the family extension when the path has none', () => {
     expect(withSaveExtension('docx', '/tmp/report')).toBe('/tmp/report.docx')
+    expect(withSaveExtension('xlsx', '/tmp/books')).toBe('/tmp/books.xlsx')
     expect(withSaveExtension('pptx', '/tmp/deck')).toBe('/tmp/deck.pptx')
   })
 
   it('rejects a mismatched extension rather than silently rewriting it', () => {
-    expect(() => withSaveExtension('docx', '/tmp/report.pdf')).toThrow(
-      /Word document session must be saved as \.docx \(got "\.pdf"\)/,
+    expect(() => withSaveExtension('xlsx', '/tmp/report.docx')).toThrow(
+      /spreadsheet session must be saved as \.xlsx \(got "\.docx"\)/,
     )
     expect(() => withSaveExtension('pptx', '/tmp/deck.docx')).toThrow(/must be saved as \.pptx/)
   })

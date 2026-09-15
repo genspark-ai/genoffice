@@ -2874,9 +2874,18 @@ export function registerSheetsIpc(): void {
     // original .csv afterwards.
     const csvInPlace = request.mode === 'save' && session.csvSourcePath !== undefined
     let targetPath = session.path
-    // Converted .xls imports never save silently over the temp copy — the
-    // first save always asks where the .xlsx should live.
-    if (request.mode === 'save-as' || session.suggestSaveAs !== undefined) {
+    // MCP explicit-path save (planning/mcp-server.md): dialog-free Save As to
+    // an exact path with a clobber guard — docs:save-to parity. Only the xlsx
+    // pipeline is reachable this way (.xlsm/.csv need their interactive flows).
+    if (request.targetPath !== undefined) {
+      if (!isAbsolute(request.targetPath)) throw new Error('Save path must be absolute.')
+      targetPath = /\.xlsx$/i.test(request.targetPath)
+        ? request.targetPath
+        : `${request.targetPath}.xlsx`
+      if (existsSync(targetPath) && request.overwrite !== true) {
+        throw new Error(`file already exists: ${targetPath}`)
+      }
+    } else if (request.mode === 'save-as' || session.suggestSaveAs !== undefined) {
       // .xlsm keeps its extension: untouched archive entries (vbaProject.bin,
       // the macro-enabled content type) round-trip verbatim through the save.
       const macroEnabled = /\.xlsm$/i.test(

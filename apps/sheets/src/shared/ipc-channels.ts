@@ -93,6 +93,11 @@ export const IPC_CHANNELS = {
   aiFetchImage: 'ai:fetch-image',
   // sheets: prefix — slides' ai:generate-image only registers once a slides view exists
   aiGenerateImage: 'sheets:ai-generate-image',
+  // MCP visible-grid bridge: shell pushes one command, the renderer that owns
+  // the Univer workbook executes it with the built-in AI's executors
+  mcpCommand: 'sheets:mcp-command',
+  mcpResult: 'sheets:mcp-result',
+  mcpReady: 'sheets:mcp-ready',
   // Chat attachments (sheets: prefix — docs already registers global files:* in
   // the shell; avoids collisions)
   captureScreenSources: 'sheets:capture-screen-sources',

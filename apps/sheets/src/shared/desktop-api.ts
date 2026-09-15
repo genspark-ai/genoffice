@@ -1716,6 +1716,11 @@ export const workbookSaveRequestSchema = z
   .object({
     sessionId: z.string().uuid(),
     mode: z.enum(['save', 'save-as']),
+    /// MCP explicit-path save (planning/mcp-server.md): write to this absolute
+    /// path with no dialog. Skips the Save-As dialog entirely; overwrite policy
+    /// is enforced here, not in the renderer.
+    targetPath: z.string().min(1).max(1024).optional(),
+    overwrite: z.boolean().optional(),
     /// Restored crash-recovery session writing back to the original file: the
     /// change is the workbook bytes themselves, so the request is valid with
     /// an otherwise empty payload (like an explicit Save As).
@@ -2525,6 +2530,21 @@ export interface RecoveryPromptPayload {
   savedAtMs: number
 }
 
+/** MCP visible-grid bridge message (shell → renderer, correlated by requestId). */
+export interface McpCommandMessage {
+  requestId: string
+  command: 'apply_ops' | 'read_sheet' | 'save_sheet'
+  payload: unknown
+}
+
+/** MCP visible-grid bridge reply (renderer → shell). */
+export interface McpCommandResult {
+  requestId: string
+  ok: boolean
+  result?: unknown
+  error?: string
+}
+
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
@@ -2610,6 +2630,12 @@ export interface DesktopApi {
   /// Returns true once when this tab was opened via "New Spreadsheet" from the
   /// shell home.
   consumeNewBlankWorkbook(): Promise<boolean>
+  /// MCP visible-grid bridge (see renderer/mcp-bridge.ts): the shell pushes one
+  /// command at a time; the renderer executes it and reports the correlated
+  /// result. onMcpCommand returns unsubscribe.
+  onMcpCommand(callback: (message: McpCommandMessage) => void): () => void
+  reportMcpResult(result: McpCommandResult): void
+  signalMcpReady(): void
   /// Is a shell-queued workbook path still waiting to be opened? (The shell's
   /// 'open' nudge loop can time out on slow cold starts; the renderer pulls.)
   hasQueuedWorkbook(): Promise<boolean>

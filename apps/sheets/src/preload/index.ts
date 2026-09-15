@@ -14,6 +14,7 @@ import type {
   AttachmentMeta,
   AttachmentReadResult,
   DesktopApi,
+  McpCommandMessage,
   RecoveryPromptPayload,
   ScreenCaptureResult,
   ScreenSourcesResult,
@@ -524,6 +525,26 @@ const desktopApi: DesktopApi = {
   async consumeNewBlankWorkbook() {
     const result: unknown = await ipcRenderer.invoke('sheets:consume-new-blank')
     return result === true
+  },
+  onMcpCommand(callback) {
+    const listener = (_event: unknown, message: unknown): void => {
+      if (
+        isRecord(message) &&
+        typeof message.requestId === 'string' &&
+        typeof message.command === 'string'
+      ) {
+        callback(message as unknown as McpCommandMessage)
+      }
+    }
+    ipcRenderer.on(IPC_CHANNELS.mcpCommand, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.mcpCommand, listener)
+  },
+  reportMcpResult(result) {
+    if (!isRecord(result) || typeof result.requestId !== 'string') return
+    ipcRenderer.send(IPC_CHANNELS.mcpResult, result)
+  },
+  signalMcpReady() {
+    ipcRenderer.send(IPC_CHANNELS.mcpReady)
   },
   async hasQueuedWorkbook() {
     const result: unknown = await ipcRenderer.invoke('sheets:has-queued-workbook')
@@ -1699,6 +1720,15 @@ function parseSaveRequest(input: WorkbookSaveRequest): WorkbookSaveRequest {
   if (input.mode !== 'save' && input.mode !== 'save-as') invalid('mode')
   if (input.restoreWriteBack !== undefined && typeof input.restoreWriteBack !== 'boolean')
     invalid('restore flag')
+  if (
+    input.targetPath !== undefined &&
+    (typeof input.targetPath !== 'string' ||
+      input.targetPath.length === 0 ||
+      input.targetPath.length > 1024)
+  )
+    invalid('target path')
+  if (input.overwrite !== undefined && typeof input.overwrite !== 'boolean')
+    invalid('overwrite flag')
   if (
     input.csvContent !== undefined &&
     (typeof input.csvContent !== 'string' || input.csvContent.length > MAX_CSV_EXPORT_CHARS)
