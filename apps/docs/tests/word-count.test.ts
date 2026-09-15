@@ -59,4 +59,10 @@ describe('word count CJK rule', () => {
     expect(asianCharCount('😀')).toBe(0)
     expect(asianCharCount('👨‍👩‍👧‍👦')).toBe(0)
   })
+
+  it('does not count supplementary private-use or variation selectors as asian chars', () => {
+    expect(asianCharCount(String.fromCodePoint(0xf0000))).toBe(0)
+    expect(asianCharCount(String.fromCodePoint(0x100000))).toBe(0)
+    expect(asianCharCount(String.fromCodePoint(0xe0100))).toBe(0)
+  })
 })
