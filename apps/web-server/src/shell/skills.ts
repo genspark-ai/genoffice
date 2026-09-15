@@ -288,7 +288,7 @@ function loadSkills(): SkillEntry[] {
     if (existsSync(SKILLS_FILE)) {
       const parsed = JSON.parse(readFileSync(SKILLS_FILE, 'utf-8')) as Partial<SkillEntry>[]
       if (Array.isArray(parsed) && parsed.length > 0) {
-        skillsCache = DEFAULT_SKILLS.map((def) => {
+        const builtIns = DEFAULT_SKILLS.map((def) => {
           const override = parsed.find((p) => p && p.id === def.id)
           return {
             ...def,
@@ -298,6 +298,14 @@ function loadSkills(): SkillEntry[] {
             lastLoadedAt: typeof override?.lastLoadedAt === 'string' ? override.lastLoadedAt : def.lastLoadedAt,
           }
         })
+        // Keep marketplace-installed skills (present in skills.json but not in
+        // DEFAULT_SKILLS) — without this they vanish on the first reload.
+        const builtInIds = new Set(DEFAULT_SKILLS.map((d) => d.id as string))
+        const installed = parsed.filter(
+          (p): p is SkillEntry =>
+            !!p && typeof p.id === 'string' && !builtInIds.has(p.id) && typeof p.name === 'string',
+        )
+        skillsCache = [...builtIns, ...installed.map((p) => ({ ...p, builtIn: false }))]
         return skillsCache
       }
     }
@@ -326,7 +334,7 @@ function loadPlugins(): PluginEntry[] {
     if (existsSync(PLUGINS_FILE)) {
       const parsed = JSON.parse(readFileSync(PLUGINS_FILE, 'utf-8')) as Partial<PluginEntry>[]
       if (Array.isArray(parsed) && parsed.length > 0) {
-        pluginsCache = DEFAULT_PLUGINS.map((def) => {
+        const builtIns = DEFAULT_PLUGINS.map((def) => {
           const override = parsed.find((p) => p && p.id === def.id)
           return {
             ...def,
@@ -337,6 +345,14 @@ function loadPlugins(): PluginEntry[] {
             lastLoadedAt: typeof override?.lastLoadedAt === 'string' ? override.lastLoadedAt : def.lastLoadedAt,
           }
         })
+        // Keep marketplace-installed plugins (present in plugins.json but not
+        // in DEFAULT_PLUGINS) — without this they vanish on the first reload.
+        const builtInIds = new Set(DEFAULT_PLUGINS.map((d) => d.id as string))
+        const installed = parsed.filter(
+          (p): p is PluginEntry =>
+            !!p && typeof p.id === 'string' && !builtInIds.has(p.id) && typeof p.name === 'string',
+        )
+        pluginsCache = [...builtIns, ...installed.map((p) => ({ ...p, builtIn: false }))]
         return pluginsCache
       }
     }

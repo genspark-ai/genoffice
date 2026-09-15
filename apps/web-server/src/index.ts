@@ -260,13 +260,28 @@ const server = createServer(async (request, response) => {
       }
     }, SSE_HEARTBEAT_MS)
 
-    request.on('close', () => {
+    // Single teardown path so a client navigating away (or a heartbeat write
+    // failing on a dead socket) ends the chunked stream cleanly instead of
+    // leaving the browser to log ERR_INCOMPLETE_CHUNKED_ENCODING.
+    let closed = false
+    const teardown = () => {
+      if (closed) return
+      closed = true
       clearInterval(heartbeat)
       sessionConnections.get(session)?.delete(response)
       if (sessionConnections.get(session)?.size === 0) {
         sessionConnections.delete(session)
       }
-    })
+      try {
+        response.end()
+      } catch {
+        // socket already gone
+      }
+    }
+
+    request.on('close', teardown)
+    request.on('aborted', teardown)
+    response.on('close', teardown)
     return
   }
 

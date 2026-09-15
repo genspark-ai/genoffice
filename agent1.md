@@ -3643,3 +3643,100 @@ AI 能力由 **docs/sheets/slides 应用内的 AI 助手面板** 承载(见 §16
 ```
 
 agent1.md 当前 3466 行 → 约 **3620 行**。
+
+### §16.36 W31 补丁 — 修复 marketplace 持久化丢失 + SSE 断流错误(2026-09-15)
+
+#### 16.36.1 Bug 1:marketplace 安装的 skill/plugin 在 reload 后丢失
+
+**症状**:通过 marketplace 安装 `github-integration` / `notion-sync` / `slack-bridge` 后,
+一旦触发任何 `saveSkills()` 写盘(如 UI toggle 其他 skill),再次读取时已安装项消失,
+`skills.json` 回退到只剩 8 个内置 skill。
+
+**根因**:`apps/web-server/src/shell/skills.ts` 的 `loadSkills()`(和 `loadPlugins()`)
+只做 `DEFAULT_SKILLS.map(...)` —— 把 `skills.json` 当作「内置 skill 的状态覆盖表」,
+**完全丢弃**了不属于 `DEFAULT_SKILLS` 的记录(marketplace 安装项)。
+
+**修复**:在合并内置项之后,追加 `skills.json` 中非内置的记录并标记 `builtIn: false`:
+
+```ts
+const builtIns = DEFAULT_SKILLS.map((def) => { /* status + lastLoadedAt 覆盖 */ })
+const builtInIds = new Set(DEFAULT_SKILLS.map((d) => d.id as string))
+const installed = parsed.filter(
+  (p): p is SkillEntry =>
+    !!p && typeof p.id === 'string' && !builtInIds.has(p.id) && typeof p.name === 'string',
+)
+skillsCache = [...builtIns, ...installed.map((p) => ({ ...p, builtIn: false }))]
+```
+
+`loadPlugins()` 做同样修复。
+
+**修复前后对比**(真实 curl 证据):
+
+| 步骤 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 安装 github-integration + notion-sync | ok | ok |
+| toggle docs-skill(触发 saveSkills) | skills 回退 8(丢失 2) | skills = **10** |
+| 最终 list-skills | 8 项 | **10 项**(github-integration / notion-sync `builtIn=false`) |
+
+plugin 侧同样验证:安装 `slack-bridge` → toggle `agent-team` → plugins 仍为 4 项,
+`slack-bridge` `builtIn=false` 保留。
+
+浏览器 UI 复核(Playwright DOM 断言):
+
+```
+installedSkills:  10 项(8 内置 + github-integration + notion-sync)
+installedPlugins:  4 项(3 内置 + slack-bridge)
+marketplaceSkills: github-integration installed=1, notion-sync installed=1
+marketplacePlugins: slack-bridge installed=1
+```
+
+#### 16.36.2 Bug 2:SSE 事件流 ERR_INCOMPLETE_CHUNKED_ENCODING
+
+**症状**:浏览器 console 反复出现
+`Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING @ /api/ipc/events?session=...`。
+页面切 tab / 关 tab 时 chunked 响应没有干净收尾。
+
+**根因**:`apps/web-server/src/index.ts` 的 SSE 端点只在 `request.on('close')` 里
+清 timer 和注销连接,**从未调用 `response.end()`**;若此时 heartbeat 已写入部分
+chunk,browser 就判定 chunked 编码不完整。
+
+**修复**:引入单一 `teardown()` 收敛路径,同时挂到 `request close` / `request aborted` /
+`response close`,内部做 `clearInterval` + 注销连接集合 + `response.end()`(带 try/catch):
+
+```ts
+let closed = false
+const teardown = () => {
+  if (closed) return
+  closed = true
+  clearInterval(heartbeat)
+  sessionConnections.get(session)?.delete(response)
+  if (sessionConnections.get(session)?.size === 0) sessionConnections.delete(session)
+  try { response.end() } catch { /* socket already gone */ }
+}
+request.on('close', teardown)
+request.on('aborted', teardown)
+response.on('close', teardown)
+```
+
+**修复后验证**:浏览器首页 + docs app 各停留 6-8 秒,
+`browser_console_messages(level=error)` → **Total messages: 0 (Errors: 0, Warnings: 0)**。
+
+#### 16.36.3 回归验证(修复后)
+
+| 项目 | 结果 |
+| --- | --- |
+| `apps/web-server` typecheck | EXIT=0 |
+| bundle | 272.5 KB |
+| web-server health | `status=ok, channels=468` |
+| marketplace install → toggle → 保留 | ✅ 10 skills / 4 plugins |
+| 内置 skill uninstall 保护 | ✅ `Cannot uninstall built-in skill` |
+| 浏览器 console errors | ✅ **0** |
+| 浏览器 UI 状态 | ✅ 与磁盘 / API 完全一致 |
+
+#### 16.36.4 截图(本轮新增 23-25)
+
+| 截图 | 内容 |
+| --- | --- |
+| 23-skills-plugins-after-fix.png | 修复后 Skills & Plugins 面板(10 skills + 4 plugins) |
+| 24-marketplace-after-fix.png | 修复后 Marketplace 区域 |
+| 25-skills-w31-final.png | Skills 列表顶部,含已安装的 github-integration / notion-sync |
