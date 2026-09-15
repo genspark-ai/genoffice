@@ -461,6 +461,18 @@ describe('field code spanning paragraphs', () => {
     expect(doc.blocks[1].type).toBe('paragraph')
   })
 
+  it('single-quoted fldChar runs fold like double-quoted ones', async () => {
+    const xml = SPLIT_CODE_PARAGRAPHS.replaceAll(
+      /w:fldCharType="(begin|separate|end)"/g,
+      "w:fldCharType='$1'",
+    )
+    const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
+    expect(shownMarkers(doc.blocks)).toEqual([true, true, false, false])
+    const tail = doc.blocks[2]
+    expect(tail.fieldDisplay?.kind).toBe('text')
+    expect(tail.fieldDisplay?.left).toBe('Left {It’s not')
+  })
+
   it('paragraph marks inside a field result (TOC entries) stay visible', async () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: TOC_ENTRY_PARAGRAPH + FIELD_END_PAGEBREAK_PARAGRAPH }),
