@@ -4098,3 +4098,76 @@ ai:chat(minimax, 'Reply with: hello world')  → { ok: true, content: 'hello wor
 | 详情面板 rate widget | 5 颗星 + submit ✅ |
 | `ai:codex-models` | 7 个 GPT-5.x ✅ |
 | `ai:chat` 过滤 think | ✅ |
+
+### §16.39 W33 收尾 — marketplace install 真接通 pi loader(2026-09-15)
+
+#### 16.39.1 关键发现:marketplace install 只是 metadata
+
+**之前**:
+- `home:install-skill` 仅修改 `skills.json`(UI 状态)。
+- 真在跑 pi 的 agent loop **不会看到**新工具,因为 SKILL.md 从未写盘。
+- `createSkillMarket` (`@genoffice/agent-skills`) 是 pi-backed 的 install primitive,但 web-server 完全没引用。
+- marketplace 21 个 entry 形同虚设 — 没有一个真正被 agent 使用。
+
+**修复**:
+- 在 `apps/web-server/src/shell/skills.ts` 接 `@genoffice/agent-skills` 的 `createSkillMarket`。
+- `apps/web-server/package.json` 加入 `@genoffice/agent-skills` 依赖。
+- 新增 `PI_SKILLS_DIR = DATA_DIR/pi-skills` (mkdirSync recursive)。
+- 写 `renderSkillBody()` 把 marketplace entry 转成完整 SKILL.md (frontmatter + description + tools + scopes)。
+- `home:install-skill` 在 save skills.json 后调 `market.install(id)` —— 真把 SKILL.md 写到 pi 监视的目录。
+- `home:uninstall-skill` 在 skills.json 中删除后调 `market.uninstall(id)` —— 真从 disk 删 SKILL.md。
+- 新增 `home:list-pi-skills` IPC 返回 `installedRecords()` —— 列出真在 disk 上的 skill,而不是 skills.json 里的。
+
+**关键 tsconfig 修复**:`apps/web-server/tsconfig.json` 加 `"jsx": "preserve"` —— 因为 agent-runtime 的 index.ts re-export `provider.tsx` 和 `components.tsx` 给 React,而 agent-skills 通过 `import type` 引用 agent-runtime,触发 TS 解析整链。
+
+#### 16.39.2 真实验证
+
+```
+install browser-w32-verify →
+  ok=True piInstalled=True
+  /tmp/genoffice-data/pi-skills/browser-w32-verify/SKILL.md 真写入:
+    ---
+    name: Browser W32 Verify v4
+    id: browser-w32-verify
+    version: 2.0.0
+    author: Anonymous
+    category: dev
+    ---
+    # Browser W32 Verify v4
+    force v4 - 应保留 downloads=2 rating=4
+    ## Tools
+    x, y, z, w
+    ## Required permissions
+    (none)
+
+list-pi-skills →
+  { skillsDir: '/tmp/genoffice-data/pi-skills',
+    records: [{ name: 'browser-w32-verify', version: '2.0.0', installedAt: 1789481783384, description: '...' }] }
+
+uninstall →
+  ok=True  skills_count=8
+  SKILL.md 真从 disk 删除
+  list-pi-skills records=[]
+```
+
+#### 16.39.3 测试
+
+| 包 | 测试 | 结果 |
+| --- | --- | --- |
+| packages/agent-runtime | 39 | ✅ |
+| packages/agent-skills (含 skill-market 9 个测试) | 153 | ✅ |
+| packages/ai-provider | 224 | ✅ |
+| packages/file-parse | 30 | ✅ |
+| **合计** | **446** | ✅ |
+
+#### 16.39.4 bundle 体积
+
+`dist/bundle/index.js`: 19.0 MB(从 10.5 MB 增大) —— 因为打包 `@genoffice/agent-skills` 整个图,含 11 个 pi extension + skill-market。如果后续考虑体积,可改成 dynamic import(运行时再 require),但当前优先保证 install 真的端到端可用。
+
+#### 16.39.5 现在 marketplace 真正"顶级"了
+
+1. **UI**: v2 search/filter/sort + 卡片网格 + 详情抽屉 + 11 字段 publish form + 上传历史 + rate widget + overwrite 确认
+2. **持久化**: uploaded 文件 + skills.json + plugins.json + pi-skills/SKILL.md 四层同步
+3. **真实接通 pi**: install 后 agent loop 下次 reload 时会看到新工具
+4. **AI 真实调用**: 18 个 provider 通过 `chatForProvider` / `streamForProvider` 真接 LLM;think-tag 过滤;reasoning 字段分离
+5. **测试覆盖**: 446 个测试全绿

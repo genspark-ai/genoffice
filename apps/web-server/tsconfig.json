@@ -8,6 +8,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
+    "jsx": "preserve",
     "noImplicitAny": false,
     "esModuleInterop": true,
     "skipLibCheck": true,

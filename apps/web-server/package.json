@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@genoffice/agent-core": "*",
+    "@genoffice/agent-skills": "*",
     "@genoffice/ai-provider": "*",
     "@genoffice/file-parse": "*",
     "@genoffice/ipc-bridge": "*",

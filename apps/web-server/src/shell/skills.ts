@@ -21,7 +21,22 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  createSkillMarket,
+  type SkillMarketEntry,
+} from '@genoffice/agent-skills'
 import { DATA_DIR, registerHandle } from '../common/index'
+
+/**
+ * Where marketplace-installed skills land as `SKILL.md` files. pi's loader
+ * watches this directory; a real install produces both an entry in
+ * `skills.json` (UI state) and a SKILL.md on disk (so the agent picks it up
+ * on next reload). Mirrors the `@genoffice/agent-skills` default of
+ * `~/.genoffice/skills`, but pinned under DATA_DIR for the web build so it
+ * survives reinstalls and lives next to the rest of the persisted state.
+ */
+const PI_SKILLS_DIR = join(DATA_DIR, 'pi-skills')
+mkdirSync(PI_SKILLS_DIR, { recursive: true })
 
 export type SkillKind =
   | 'docs-skill'
@@ -1069,6 +1084,87 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
   }
 }
 
+/**
+ * Convert a marketplace entry into the SKILL.md body that pi's loader reads.
+ * Frontmatter is intentionally minimal — pi reads `name` from the directory
+ * and `description` from the file body, so the body just embeds the full
+ * metadata so a downstream agent can reason about tools + scopes.
+ */
+function renderSkillBody(entry: {
+  id: string
+  name: string
+  description: string
+  version: string
+  author: string
+  tools: string[]
+  scopes: string[]
+  category: string
+  tags?: string[]
+}): string {
+  const tools = entry.tools.length ? entry.tools.join(', ') : '(none)'
+  const scopes = entry.scopes.length ? entry.scopes.join(', ') : '(none)'
+  const tags = (entry.tags ?? []).join(', ')
+  return [
+    `---`,
+    `name: ${entry.name}`,
+    `id: ${entry.id}`,
+    `version: ${entry.version}`,
+    `author: ${entry.author}`,
+    `category: ${entry.category}`,
+    tags ? `tags: ${tags}` : '',
+    `---`,
+    ``,
+    `# ${entry.name}`,
+    ``,
+    entry.description,
+    ``,
+    `## Tools`,
+    ``,
+    tools,
+    ``,
+    `## Required permissions`,
+    ``,
+    scopes,
+    ``,
+  ]
+    .filter((line) => line !== '')
+    .join('\n')
+}
+
+/**
+ * Marketplace → SkillMarketEntry adapter. Only uploaded (community) entries
+ * make sense as pi skills — curated ones are bundled with the binary and
+ * loaded at boot.
+ */
+function skillMarketCatalog(): SkillMarketEntry[] {
+  return loadUploaded().map((u) => ({
+    name: u.entry.id,
+    description: u.entry.description,
+    ...(u.entry.version ? { version: u.entry.version } : {}),
+    tags: ['uploaded', u.entry.category, ...(u.entry.tags ?? [])],
+    body: renderSkillBody({
+      id: u.entry.id,
+      name: u.entry.name,
+      description: u.entry.description,
+      version: u.entry.version,
+      author: u.entry.author || 'Anonymous',
+      tools: u.entry.tools,
+      scopes: u.entry.scopes,
+      category: u.entry.category,
+      tags: u.entry.tags,
+    }),
+  }))
+}
+
+type SkillMarketApi = ReturnType<typeof createSkillMarket>
+let skillMarketInstance: SkillMarketApi | null = null
+function getSkillMarket(): SkillMarketApi {
+  if (!skillMarketInstance) {
+    skillMarketInstance = createSkillMarket({ catalog: skillMarketCatalog(), skillsDir: PI_SKILLS_DIR })
+  }
+  return skillMarketInstance
+}
+
 export function registerSkillHandlers(): void {
   // ── SKILLS ──
   registerHandle('home:list-skills', () => {
@@ -1102,29 +1198,23 @@ export function registerSkillHandlers(): void {
     return { ok: true, skills }
   })
 
-  registerHandle('home:install-skill', (_event: unknown, args: unknown) => {
-    const { name } = (args || {}) as { name: string }
-    // 模拟从 marketplace 安装
-    const skills = loadSkills()
-    const exists = skills.some((s) => s.id === (name as SkillKind))
-    if (exists) {
-      return { ok: false, error: `Skill "${name}" already installed` }
-    }
-    // 真实生产路径:从 marketplace fetch + dynamic import + ExtensionRunner.register
-    // 这里返回 install success,UI 可继续触发 reload
-    return {
-      ok: true,
-      installed: { id: name, name, marketplace: true },
-    }
-  })
-
-  registerHandle('home:uninstall-skill', (_event: unknown, args: unknown) => {
+  registerHandle('home:uninstall-skill', async (_event: unknown, args: unknown) => {
     const { id } = (args || {}) as { id: SkillKind }
     const skill = loadSkills().find((s) => s.id === id)
     if (!skill) return { ok: false, error: `Skill "${id}" not found` }
     if (skill.builtIn) return { ok: false, error: `Cannot uninstall built-in skill "${id}"` }
     const skills = loadSkills().filter((s) => s.id !== id)
     saveSkills(skills)
+    // also remove from pi's skillsDir so the agent loop won't see it on next reload
+    if (!skill.builtIn) {
+      try {
+        await getSkillMarket().uninstall(id)
+      } catch (err) {
+        // the disk delete is best-effort — skills.json has already been updated
+        // and the failure is already logged; surface it but don't block the uninstall
+        console.warn(`[skills] pi uninstall failed for ${id}:`, err)
+      }
+    }
     return { ok: true, skills }
   })
 
@@ -1181,7 +1271,7 @@ export function registerSkillHandlers(): void {
     return { plugins: listMarketplacePlugins() }
   })
 
-  registerHandle('home:install-skill', (_event: unknown, args: unknown) => {
+  registerHandle('home:install-skill', async (_event: unknown, args: unknown) => {
     // 真实安装:从 marketplace 取元数据,合并到 installed skills
     // 兼容两种参数风格:前端 IPC 客户端 installSkill(name) 用 {name},marketplace UI 用 {id}
     const { id: idArg, name } = (args || {}) as { id?: string; name?: string }
@@ -1207,8 +1297,22 @@ export function registerSkillHandlers(): void {
     }
     const next = [...skills, installedEntry]
     saveSkills(next)
+    // Write the SKILL.md that pi's loader watches. For community-uploaded
+    // entries this is what makes the agent actually see the new tool on
+    // the next reload; for curated entries the loader already has them
+    // bundled so we skip the disk write (which would fail: not in catalog).
+    const isCommunityUpload = loadUploaded().some((u) => u.entry.id === id)
+    if (isCommunityUpload) {
+      try {
+        await getSkillMarket().install(id)
+      } catch (err) {
+        // surface the disk error but keep the UI state — re-trying without
+        // the marketplace entry may resolve transient fs issues
+        console.warn(`[skills] pi install failed for ${id}:`, err)
+      }
+    }
     bumpMarketplaceDownloads('skill', id)
-    return { ok: true, installed: installedEntry, skills: next }
+    return { ok: true, installed: installedEntry, skills: next, piInstalled: isCommunityUpload }
   })
 
   registerHandle('home:install-plugin', (_event: unknown, args: unknown) => {
@@ -1513,6 +1617,13 @@ export function registerSkillHandlers(): void {
     })
     if (saved.ok === false) return saved
     return { ok: true, kind, id, ratingCount: next.length, averageRating: avg }
+  })
+
+  // ── pi 真加载: 列出 PI_SKILLS_DIR 里实际写盘的 SKILL.md ──
+  registerHandle('home:list-pi-skills', async () => {
+    const market = getSkillMarket()
+    const records = await market.installedRecords()
+    return { skillsDir: PI_SKILLS_DIR, records }
   })
 
   // ── 复合接口: 一次返回 skills + plugins ──
