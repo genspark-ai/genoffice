@@ -48,6 +48,8 @@ export type SkillKind =
   | 'frozen-selection'
   | 'verify-response'
   | 'skill-market'
+  | 'web-search'
+  | 'image-search'
   // marketplace skills (3rd-party)
   | 'notion-sync'
   | 'pdf-ocr-pro'
@@ -237,6 +239,34 @@ const DEFAULT_SKILLS: SkillEntry[] = [
     package: '@genoffice/agent-skills',
     source: 'src/extensions/skill-market.ts',
     tools: ['list_marketplace', 'search_skills', 'install_skill', 'uninstall_skill'],
+    scopes: ['network:out'],
+    status: 'enabled',
+    lastLoadedAt: null,
+    builtIn: true,
+  },
+  {
+    id: 'web-search',
+    name: 'Web Search',
+    description: '通过 DuckDuckGo HTML 提供零配置网页搜索,无 API key',
+    author: 'GenOffice',
+    version: '1.0.0',
+    package: '@genoffice/agent-skills',
+    source: 'src/extensions/web-search-skill.ts',
+    tools: ['web_search'],
+    scopes: ['network:out'],
+    status: 'enabled',
+    lastLoadedAt: null,
+    builtIn: true,
+  },
+  {
+    id: 'image-search',
+    name: 'Image Search',
+    description: 'DuckDuckGo 图片搜索 + 图片下载,无 API key,base64 直接喂给多模态模型',
+    author: 'GenOffice',
+    version: '1.0.0',
+    package: '@genoffice/agent-skills',
+    source: 'src/extensions/image-search-skill.ts',
+    tools: ['image_search', 'fetch_image'],
     scopes: ['network:out'],
     status: 'enabled',
     lastLoadedAt: null,

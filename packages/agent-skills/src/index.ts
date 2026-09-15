@@ -136,3 +136,13 @@ export {
   type SkillMarketFileSystem,
   type SkillMarketOptions,
 } from "./extensions/skill-market";
+
+export {
+  createWebSearchExtension,
+  webSearchExtensionDefaults,
+} from "./extensions/web-search-skill";
+
+export {
+  createImageSearchExtension,
+  imageSearchExtensionDefaults,
+} from "./extensions/image-search-skill";
