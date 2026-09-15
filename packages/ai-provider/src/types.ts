@@ -166,6 +166,10 @@ export interface AiChatResponse {
   /** When the model returned reasoning as a separate field (DeepSeek V4, MiniMax), expose it. */
   reasoning?: string
   error?: string
+  /** machine-readable error cause ('timeout', exhausted 'credits', 'network'
+   *  connectivity failure, 'overloaded' capacity/rate limit); lets the
+   *  renderer localize the message instead of parsing the raw provider body. */
+  errorCode?: 'timeout' | 'credits' | 'network' | 'overloaded'
 }
 
 export interface AiStreamRequest {

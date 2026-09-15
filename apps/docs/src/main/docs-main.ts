@@ -76,6 +76,7 @@ import {
   AiTimeoutError,
   isAiNetworkError,
   isAiOverloadedError,
+  isAiQuotaExhaustedError,
   chatForProvider,
   defaultAiSettings,
   activeProvider,
@@ -2891,7 +2892,7 @@ export function registerAiIpc(): void {
           error: err instanceof Error ? err.message : String(err),
           ...(err instanceof AiTimeoutError
             ? { errorCode: 'timeout' as const }
-            : err instanceof AiCreditsError
+            : err instanceof AiCreditsError || isAiQuotaExhaustedError(err)
               ? { errorCode: 'credits' as const }
               : isAiNetworkError(err)
                 ? { errorCode: 'network' as const }

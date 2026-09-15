@@ -30,6 +30,7 @@ import {
   isAiNetworkError,
   listCodexModels,
   isAiOverloadedError,
+  isAiQuotaExhaustedError,
   maxOutputTokensOf,
   streamForProvider,
 } from '@genoffice/ai-provider'
@@ -52,6 +53,32 @@ export { buildTranslationPrompt, buildTranslateSystemPrompt, extractTranslationT
 // ----- settings persistence --------------------------------------------------
 
 const AI_SETTINGS_FILE = join(DATA_DIR, 'ai-settings.json')
+
+/** Human-readable provider label for error messages ("MiniMax", "OpenAI", …).
+ *  Falls back to the raw id if the provider isn't in the registry. */
+function providerLabel(id: string): string {
+  const known: Record<string, string> = {
+    genspark: 'Genspark',
+    codex: 'Codex CLI',
+    anthropic: 'Anthropic',
+    gemini: 'Gemini',
+    deepseek: 'DeepSeek',
+    openai: 'OpenAI',
+    kimi: 'Kimi',
+    glm: 'GLM',
+    qwen: 'Qwen',
+    doubao: 'Doubao',
+    minimax: 'MiniMax',
+    xai: 'Grok',
+    mistral: 'Mistral',
+    openrouter: 'OpenRouter',
+    requesty: 'Requesty',
+    'opencode-zen': 'OpenCode Zen',
+    'opencode-go': 'OpenCode Go',
+    custom: 'Custom provider',
+  }
+  return known[id] ?? id
+}
 
 function loadSettings(): AiSettings {
   try {
@@ -196,7 +223,7 @@ export async function runProviderStream(
       error: err instanceof Error ? err.message : String(err),
       ...(err instanceof AiTimeoutError
         ? { errorCode: 'timeout' as const }
-        : err instanceof AiCreditsError
+        : err instanceof AiCreditsError || isAiQuotaExhaustedError(err)
           ? { errorCode: 'credits' as const }
           : isAiNetworkError(err)
             ? { errorCode: 'network' as const }
@@ -294,17 +321,37 @@ export function registerAiCoreHandlers(): void {
         req.system || '',
         req.user,
       )
+      // Quota/credit exhaustion first: retrying cannot help, and a 429 whose
+      // body also carries a quota notice must not be reported as a transient
+      // capacity blip (that message tells the user to do the one thing that
+      // will never work).
+      if (!result.ok && isAiQuotaExhaustedError(result.error)) {
+        return {
+          ok: false,
+          errorCode: 'credits',
+          error: `${providerLabel(provider)} quota exhausted — top up or switch provider in Settings → AI.`,
+        } satisfies AiChatResponse
+      }
       if (!result.ok && isAiOverloadedError(result.error)) {
         return {
           ok: false,
+          errorCode: 'overloaded',
           error: 'The AI service is busy right now. Please retry shortly.',
         } satisfies AiChatResponse
       }
       return result as AiChatResponse
     } catch (err) {
+      if (isAiQuotaExhaustedError(err)) {
+        return {
+          ok: false,
+          errorCode: 'credits',
+          error: `${providerLabel(provider)} quota exhausted — top up or switch provider in Settings → AI.`,
+        } satisfies AiChatResponse
+      }
       if (isAiOverloadedError(err)) {
         return {
           ok: false,
+          errorCode: 'overloaded',
           error: 'The AI service is busy right now. Please retry shortly.',
         } satisfies AiChatResponse
       }

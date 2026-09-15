@@ -77,7 +77,7 @@ export type {
 export { chatForProvider } from './chat'
 export { setAiUserAgent, setRescueFetch } from './fetch'
 export { isAiNetworkError } from './network-error'
-export { isAiOverloadedError } from './overload-error'
+export { isAiOverloadedError, isAiQuotaExhaustedError } from './overload-error'
 export { parseOutputCapRejection } from './output-cap'
 export { AiCreditsError, sseLines, streamForProvider } from './stream'
 export type { StreamCallbacks } from './stream'
