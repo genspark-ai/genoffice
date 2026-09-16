@@ -169,9 +169,11 @@ export function __resetKbForTests(): void { kbInstance = null }
 
 async function getKb(): Promise<KnowledgeBase> {
   if (!kbInstance) {
-    kbInstance = new KnowledgeBase({
-      filePath: join(homedir(), ".genoffice", "translation-kb.json"),
-    })
+    // Respect GENOFFICE_TRANSLATION_KB / DATA_DIR like the rest of the
+    // translation stack. The previous hardcoded ~/.genoffice path diverged
+    // from chat.ts's sharedKnowledgeBase and made the e2e tests' KB
+    // upserts land in a different file than the agent's reads.
+    kbInstance = new KnowledgeBase()
   }
   await kbInstance.load()
   return kbInstance
@@ -637,6 +639,10 @@ function createKbRemoveTool() {
       try {
         const kb = await getKb()
         const removed = await kb.remove(params.id)
+        // Persist the removal so the next getKb() call (which reloads
+        // from disk) sees the same state. Without this, a remove-then-
+        // list round-trip resurrects the entry from the JSON file.
+        await kb.save().catch(() => undefined)
         return {
           content: [{ type: "text" as const, text: `kb_remove(${params.id}) → ${removed}` }],
           details: { ok: true, removed },
@@ -718,8 +724,9 @@ function createKbListTool() {
     promptSnippet: "kb_list([schema][, limit]) → entries[]",
     promptGuidelines: ["Prefer kb_search for targeted lookups; kb_list for full inventories."],
     parameters: KbListParams,
-    async execute(_id, params: { schema?: string; limit?: number }, _signal) {
+    async execute(_id, rawParams: unknown, _signal) {
       try {
+        const params = (rawParams ?? {}) as { schema?: string; limit?: number }
         const kb = await getKb()
         const filter: { schema?: string } = {}
         if (params.schema) filter.schema = params.schema

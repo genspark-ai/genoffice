@@ -128,7 +128,13 @@ export async function callTranslateTool(name: string, args: unknown): Promise<un
     if (!tool) {
       return { ok: false, error: `translate-skill tool "${name}" not registered in pi session` }
     }
-    const result = await (tool as unknown as { execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined) => Promise<{ content: Array<{ type: string; text?: string }>; details: unknown }> }).execute(`ui-${Date.now()}`, args as Record<string, unknown>, undefined)
+    // The IPC transport delivers args as an array. If the caller passed a single
+  // object, unwrap it. If they passed an array of positional args, take the
+  // first one as the params object.
+  const params = Array.isArray(args)
+    ? (args.length > 0 ? args[0] : {})
+    : (args ?? {})
+  const result = await (tool as unknown as { execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined) => Promise<{ content: Array<{ type: string; text?: string }>; details: unknown }> }).execute(`ui-${Date.now()}`, params as Record<string, unknown>, undefined)
     const first = (result?.content ?? []).find((c: { type?: string }) => c.type === 'text') as { text?: string } | undefined
     return {
       ok: (result?.details as { ok?: boolean } | undefined)?.ok ?? true,

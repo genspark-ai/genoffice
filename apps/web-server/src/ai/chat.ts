@@ -1123,16 +1123,40 @@ export function registerAiCoreHandlers(): void {
     if (!req.targetLang) {
       return { ok: false, error: 'ai:translation-kb-resolve expected non-empty `targetLang`' }
     }
-    // The pi session's kb_search does substring match over JSON.stringify(entry);
-    // encode the resolve filter as a query so the same store answers it.
-    const query = req.customerName ?? req.category ?? req.targetLang
-    const result = (await callTranslateTool('kb_search', { query, limit: 500 })) as {
+    // Match the legacy sharedKnowledgeBase.resolve() response shape so the
+    // TranslationKbPane (and the existing tests) keep working: {terms,
+    // promptBlock, ...stats}. The pi session's kb_list + kb_search tools
+    // give us the same entries; we rebuild the promptBlock from the term
+    // entries only.
+    const result = (await callTranslateTool('kb_list', { limit: 1000 })) as {
       ok: boolean; details?: { entries?: unknown[]; count?: number }; summary?: string; error?: string
     }
     if (!result.ok) {
-      return { ok: false, entries: [], error: result.error ?? result.summary ?? 'kb_search failed' }
+      return { ok: false, terms: [], promptBlock: '', error: result.error ?? result.summary ?? 'kb_list failed' }
     }
-    return { ok: true, entries: result.details?.entries ?? [], count: result.details?.count ?? 0 }
+    const all = (result.details?.entries ?? []) as Array<Record<string, unknown>>
+    const sourceLang = req.sourceLang ?? 'auto'
+    const targetLang = req.targetLang
+    const terms = all.filter((e) => {
+      if (e.sourceLang && e.sourceLang !== sourceLang && sourceLang !== 'auto') return false
+      if (e.targetLang && e.targetLang !== targetLang) return false
+      if (req.category && e.category !== req.category) return false
+      if (req.customerName && e.customerName !== req.customerName) return false
+      return true
+    })
+    const termPairs = terms
+      .filter((e) => typeof e.sourceTerm === 'string' && typeof e.targetTerm === 'string')
+      .map((e) => `${e.sourceTerm} → ${e.targetTerm}`)
+    const promptBlock = termPairs.length > 0
+      ? `Use these preferred terms:\n${termPairs.join('\n')}`
+      : ''
+    return {
+      ok: true,
+      terms,
+      promptBlock,
+      total: all.length,
+      matched: terms.length,
+    }
   })
 
   registerHandle('ai:translation-kb-stats', async () => {
