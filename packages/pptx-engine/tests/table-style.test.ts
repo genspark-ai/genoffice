@@ -84,6 +84,18 @@ describe('built-in table style Medium Style 2 (PowerPoint default)', () => {
     expect(t2.rows[0][1].fill).toEqual({ type: 'solid', color: '#4472C4' })
   })
 
+  it('tblPr "true"/"True" flags enable header and banding like "1"', () => {
+    const slide2 = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: tableSlideXml('firstRow="true" bandRow="True"', MEDIUM2_A1),
+      ctx: { theme },
+    })
+    const t2 = slide2.elements[0] as any
+    expect(t2.rows[0][0].fill).toEqual({ type: 'solid', color: '#4472C4' })
+    expect(t2.rows[1][0].fill.color).toBe('#B4C7E7')
+    expect(t2.rows[2][0].fill.color).toBe('#DAE3F3')
+  })
+
   it('tblPr rtl="1" is parsed onto the table element', () => {
     const slide2 = parseSlide({
       path: 'ppt/slides/slide1.xml',

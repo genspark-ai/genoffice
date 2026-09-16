@@ -2,6 +2,7 @@ import { McpServerService, DEFAULT_MCP_PORT, type McpToolDefinition } from './mc
 import { McpLogger } from './mcp-logger'
 import type { CliRunner } from './cli-runner'
 import { createDocumentTools, documentDriver, type DocsControl } from './tools/document-tools'
+import { createPdfTools } from './tools/pdf-tools'
 import { createSlidesTools, slidesDriver, type SlidesControl } from './tools/slides-tools'
 import { createSheetsTools, sheetsDriver, type SheetsControl } from './tools/sheets-tools'
 import { createSessionHost, createSessionTools, type FamilyDriver } from './tools/session-tools'
@@ -238,6 +239,9 @@ export function mcpStatus(): McpStatus {
       'docs',
       ...(deps?.slidesControl ? ['slides'] : []),
       ...(deps?.sheetsControl ? ['sheets'] : []),
+      // read_pdf is headless and always registered, so the family is always
+      // visible (read-only until the pdf editor is driven)
+      'pdf',
     ],
   }
 }

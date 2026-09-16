@@ -205,7 +205,9 @@ export function parseSlide(input: SlideParseInput): Slide {
       ? { type: 'solid' as const, color: defaultBg1 }
       : undefined)
   // Only real slides carry showMasterSp (<p:sldLayout> has "sldLayout" so \b won't match)
-  const masterSpHidden = /<p:sld\b[^>]*\bshowMasterSp="(?:0|false)"/.test(slideXml)
+  const masterSpHidden = /<p:sld\b[^>]*\bshowMasterSp=(?:"(?:0|false)"|'(?:0|false)')/.test(
+    slideXml,
+  )
 
   return {
     path,
@@ -2840,6 +2842,13 @@ function findDescendantPic(node: any, depth = 0): any | undefined {
 
 // ── Table (a:tbl) ───────────────────────────────────────────────────
 
+/** xsd:boolean attributes: PowerPoint writes "1", third-party writers emit
+ *  "true"/"True" — both must enable table flags and merges. */
+const xsdBool = (v: unknown): boolean => {
+  const s = String(v ?? '').toLowerCase()
+  return s === '1' || s === 'true'
+}
+
 function parseTable(
   node: any,
   tbl: any,
@@ -2870,12 +2879,12 @@ function parseTable(
     if (!bgFill && phClr) bgFill = { type: 'solid', color: phClr }
   }
   const flags: TableStyleFlags = {
-    firstRow: tblPr['@_firstRow'] === '1',
-    lastRow: tblPr['@_lastRow'] === '1',
-    firstCol: tblPr['@_firstCol'] === '1',
-    lastCol: tblPr['@_lastCol'] === '1',
-    bandRow: tblPr['@_bandRow'] === '1',
-    bandCol: tblPr['@_bandCol'] === '1',
+    firstRow: xsdBool(tblPr['@_firstRow']),
+    lastRow: xsdBool(tblPr['@_lastRow']),
+    firstCol: xsdBool(tblPr['@_firstCol']),
+    lastCol: xsdBool(tblPr['@_lastCol']),
+    bandRow: xsdBool(tblPr['@_bandRow']),
+    bandCol: xsdBool(tblPr['@_bandCol']),
   }
 
   const nRows = trs.length
@@ -2887,7 +2896,7 @@ function parseTable(
     const gridCols = tableRowGridCols(
       tcs.map((tc) => ({
         gridSpan: tc['@_gridSpan'] ? parseInt(tc['@_gridSpan'], 10) || 1 : 1,
-        merged: tc['@_hMerge'] === '1' || tc['@_vMerge'] === '1',
+        merged: xsdBool(tc['@_hMerge']) || xsdBool(tc['@_vMerge']),
       })),
     )
     return tcs.map((tc, i) => {
@@ -2909,7 +2918,7 @@ function parseTable(
     rows,
     ...(styleId ? { styleId } : {}),
     styleFlags: { ...flags },
-    ...(tblPr['@_rtl'] === '1' || tblPr['@_rtl'] === 'true' ? { rtl: true } : {}),
+    ...(xsdBool(tblPr['@_rtl']) ? { rtl: true } : {}),
     ...(bgFill && bgFill.type !== 'none' ? { bgFill } : {}),
   }
 }
@@ -2983,7 +2992,7 @@ function parseTableCell(
   const rowSpan = tc['@_rowSpan'] ? parseInt(tc['@_rowSpan'], 10) : undefined
   if (gridSpan && gridSpan > 1) cell.gridSpan = gridSpan
   if (rowSpan && rowSpan > 1) cell.rowSpan = rowSpan
-  if (tc['@_hMerge'] === '1' || tc['@_vMerge'] === '1') cell.merged = true
+  if (xsdBool(tc['@_hMerge']) || xsdBool(tc['@_vMerge'])) cell.merged = true
 
   return cell
 }

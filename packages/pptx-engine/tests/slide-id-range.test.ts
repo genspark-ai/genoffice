@@ -8,6 +8,7 @@ import {
   duplicateSlide,
   insertSlideWithLayout,
 } from '../src/index'
+import { nextSlideId } from '../src/slide-ids'
 
 async function deckAtCeiling() {
   const zip = await JSZip.loadAsync(await createBlankPptx())
@@ -17,6 +18,12 @@ async function deckAtCeiling() {
 }
 
 describe('slide id allocation', () => {
+  it('reads single-quoted ids when allocating the next id', () => {
+    const pres =
+      '<p:sldIdLst><p:sldId id=\'256\' r:id=\'rId2\'/><p:sldId id="257" r:id="rId3"/></p:sldIdLst>'
+    expect(nextSlideId(pres)).toBe(258)
+  })
+
   it.each([
     ['duplicateSlide', (o: Awaited<ReturnType<typeof openPptx>>) => duplicateSlide(o, 0)],
     [

@@ -6,7 +6,7 @@ import { familyLabel, withSaveExtension, type SessionFamily } from './formats'
 /**
  * Shared session lifecycle for the visible-editing tools.
  *
- * The families (docs / slides / sheets) each open a real tab and drive it
+ * The three families (docs / slides / sheets) each open a real tab and drive it
  * through their own bridge, but the *lifecycle* is identical: open a blank tab,
  * edit it, save it to a path, end the session. Registering one pair of
  * create_session / save_session tools instead of six near-identical ones keeps
@@ -87,7 +87,7 @@ export function createSessionTools(
       name: 'create_session',
       description:
         `Open a new empty file in a visible GenOffice tab and start an editing session; family picks the editor: ${listing}. ` +
-        "Then add content with that family's content tools and finish with save_session. " +
+        "Then add content with that family's tools (docs: insert_content / replace_blocks / apply_ops; slides: apply_slide_ops; sheets: apply_sheet_ops) and finish with save_session. " +
         'One session is active at a time — a new create_session replaces it. The user watches each step in the app.',
       inputSchema: {
         family: z.enum(families).describe('which editor to open'),
@@ -110,8 +110,9 @@ export function createSessionTools(
       name: 'save_session',
       description:
         'Save the active session to an absolute path and end it. A path with no extension gets the ' +
-        "active family's file format appended; a different extension is refused. Refuses to replace " +
-        'an existing file unless overwrite is true. This is the output step.',
+        "active family's file format appended (docx: .docx; xlsx: .xlsx; pptx: .pptx); a different " +
+        'extension is refused. Refuses to replace an existing file unless overwrite is true. This is ' +
+        'the output step.',
       inputSchema: {
         path: z.string().describe('absolute output path for the file'),
         overwrite: z

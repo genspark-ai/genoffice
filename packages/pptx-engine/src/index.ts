@@ -580,10 +580,14 @@ function buildDecorations(
   // Slide-level showMasterSp="0" ("hide background graphics") hides both master and layout
   // decoration shapes; layout-level only stops the master's from showing through. Footer
   // placeholders are not background graphics and keep following the <p:hf> toggles.
-  const slideHidesInherited = /<p:sld\b[^>]*showMasterSp="(?:0|false)"/.test(slideXml)
+  const slideHidesInherited = /<p:sld\b[^>]*showMasterSp=(?:"(?:0|false)"|'(?:0|false)')/.test(
+    slideXml,
+  )
   const masterShown =
     !slideHidesInherited &&
-    !(layoutXml && /<p:sldLayout\b[^>]*showMasterSp="(?:0|false)"/.test(layoutXml))
+    !(
+      layoutXml && /<p:sldLayout\b[^>]*showMasterSp=(?:"(?:0|false)"|'(?:0|false)')/.test(layoutXml)
+    )
 
   if (masterXml && parts.masterPath) {
     const hfTypes = new Set([...enabled].filter((k) => !slidePh.has(k) && !hasPh(layoutXml, k)))

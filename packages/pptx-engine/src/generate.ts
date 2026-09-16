@@ -463,8 +463,12 @@ function ownRPr(runXml: string) {
 /** Sync <a:hlinkClick> in the rPr with the model: no-op when the rId already matches (keeping bytes). */
 function patchRunHlink(runXml: string, run: TextRun): string {
   const existing = /<a:hlinkClick\b[^>]*>/.exec(runXml)?.[0]
-  const existingRId = existing ? /\br:id="([^"]*)"/.exec(existing)?.[1] : undefined
-  const existingAction = existing ? /\baction="([^"]*)"/.exec(existing)?.[1] : undefined
+  const existingRId = existing
+    ? (/\br:id=(?:"([^"]*)"|'([^']*)')/.exec(existing)?.slice(1, 3).find(Boolean) ?? undefined)
+    : undefined
+  const existingAction = existing
+    ? (/\baction=(?:"([^"]*)"|'([^']*)')/.exec(existing)?.slice(1, 3).find(Boolean) ?? undefined)
+    : undefined
   if (existingRId === run.hyperlinkRId && existingAction === run.hyperlinkAction) return runXml
   // Strip the old one (self-closing or paired)
   runXml = runXml.replace(
@@ -1433,7 +1437,7 @@ export function removeSlideBackgroundXml(bodyPrefix: string): string {
 export function patchSlideShowMasterSpXml(bodyPrefix: string, hidden: boolean): string {
   const open = /<p:sld((?:\s(?:"[^"]*"|'[^']*'|[^"'>])*?)?)>/.exec(bodyPrefix)
   if (!open) return bodyPrefix
-  let attrs = (open[1] ?? '').replace(/\s+showMasterSp="[^"]*"/, '')
+  let attrs = (open[1] ?? '').replace(/\s+showMasterSp=(?:"[^"]*"|'[^']*')/, '')
   if (hidden) attrs += ' showMasterSp="0"'
   return (
     bodyPrefix.slice(0, open.index) +

@@ -44,6 +44,9 @@ export interface Pdfium {
   _FPDFText_LoadPage(page: number): number
   _FPDFText_ClosePage(textPage: number): void
   _FPDFText_CountChars(textPage: number): number
+  /** embedpdf's build drops buffer_size: it copies exactly `count` chars into `buffer` */
+  _FPDFText_GetText(textPage: number, startIndex: number, count: number, buffer: number): number
+  _FPDF_GetMetaText(doc: number, tag: number, buffer: number, bufferLen: number): number
   _FPDFText_GetTextObject(textPage: number, index: number): number
   _FPDFText_GetLooseCharBox(textPage: number, index: number, rect: number): number
   _FPDFText_GetCharOrigin(textPage: number, index: number, x: number, y: number): number

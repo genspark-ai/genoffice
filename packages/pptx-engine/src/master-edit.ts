@@ -113,7 +113,7 @@ export function parseMasterPart(archive: PackageArchive, partPath: string): Slid
 
   // Layout view renders master concrete shapes underneath (master decorations stay visible when editing a layout)
   if (!isMaster && masterXml && masterPath) {
-    if (!/<p:sldLayout\b[^>]*showMasterSp="(?:0|false)"/.test(xml)) {
+    if (!/<p:sldLayout\b[^>]*showMasterSp=(?:"(?:0|false)"|'(?:0|false)')/.test(xml)) {
       const dctx: ParseContext = { theme: ctx.theme, mediaRels: partMedia(archive, masterPath) }
       const dec = parseDecorations(masterXml, dctx, {})
       if (dec.length) slide.decorations = dec

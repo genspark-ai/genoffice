@@ -45,7 +45,8 @@ function appendRel(
   const relsPath = relsPathFor(slide.path)
   const rels = archive.readText(relsPath) ?? EMPTY_RELS
   let maxRid = 0
-  for (const m of rels.matchAll(/Id="rId(\d+)"/g)) maxRid = Math.max(maxRid, Number(m[1]))
+  for (const m of rels.matchAll(/Id=(?:"rId(\d+)"|'rId(\d+)')/g))
+    maxRid = Math.max(maxRid, Number(m[1] ?? m[2]))
   const rid = `rId${maxRid + 1}`
   const mode = external ? ' TargetMode="External"' : ''
   const relXml = `<Relationship Id="${rid}" Type="${type}" Target="${escapeXmlAttr(target)}"${mode}/>`
@@ -239,11 +240,13 @@ export function getRunLinks(
 function resolveLinkInXml(opened: OpenedPptx, slide: Slide, xml: string): LinkTarget | null {
   const tag = /<a:hlinkClick\b[^>]*>/.exec(xml)?.[0]
   if (!tag) return null
-  const action = namedActionOf(/\baction="([^"]*)"/.exec(tag)?.[1])
+  const action = namedActionOf(
+    /\baction=(?:"([^"]*)"|'([^']*)')/.exec(tag)?.slice(1, 3).find(Boolean),
+  )
   if (action) return { kind: 'action', action }
-  const m = /\br:id="(rId\d+)"/.exec(tag)
+  const m = /\br:id=(?:"(rId\d+)"|'(rId\d+)')/.exec(tag)
   if (!m) return null
-  const rel = opened.archive.readRels(slide.path).get(m[1]!)
+  const rel = opened.archive.readRels(slide.path).get(m[1] ?? m[2]!)
   if (!rel) return null
   if (rel.type === HYPERLINK_REL_TYPE) return { kind: 'url', url: rel.target }
   if (rel.type === SLIDE_REL_TYPE) {

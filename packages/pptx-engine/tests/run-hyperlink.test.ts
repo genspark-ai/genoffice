@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import JSZip from 'jszip'
 import { parseSlide } from '../src/parse'
 import {
   openPptx,
@@ -14,8 +15,10 @@ import {
   duplicateSlide,
   ensureRunLinkRels,
   getRunLinks,
+  getSlideLinks,
   patchSlideXml,
   patchTextElementXml,
+  setElementLink,
   type OpenedPptx,
   type TextElement,
 } from '../src/index'
@@ -201,6 +204,35 @@ describe('patch path: hlinkClick surgery without structural change', () => {
     expect(out).not.toMatch(/\su="/)
     expect(out).toContain('r:id="rId9"') // untouched original hlink bytes
   })
+
+  it('keeps single-quoted hlinkClick bytes when the model already matches', () => {
+    const el = parseEl(
+      `<a:bodyPr/><a:p><a:r><a:rPr><a:hlinkClick r:id='rId9'/></a:rPr><a:t>go</a:t></a:r></a:p>`,
+      new Map([['rId9', 'https://x.dev']]),
+    )
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toContain(`r:id='rId9'`)
+  })
+
+  it(`single-quoted r:id/Id resolves after save`, async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const el = opened.deck.slides[0]!.elements.find((e) => e.id)!
+    expect(
+      setElementLink(opened, 0, el.id, { kind: 'url', url: 'https://q.example/a' }),
+    ).not.toBeNull()
+    const zip = await JSZip.loadAsync(await savePptx(opened))
+    let s = await zip.file('ppt/slides/slide1.xml')!.async('string')
+    s = s.replaceAll(/r:id="([^"]*)"/g, `r:id='$1'`)
+    zip.file('ppt/slides/slide1.xml', s)
+    s = await zip.file('ppt/slides/_rels/slide1.xml.rels')!.async('string')
+    s = s.replaceAll(/ Id="([^"]*)"/g, ` Id='$1'`)
+    zip.file('ppt/slides/_rels/slide1.xml.rels', s)
+    const ro = await openPptx(await zip.generateAsync({ type: 'uint8array' }))
+    expect(getSlideLinks(ro, 0).map((l) => l.target)).toContainEqual({
+      kind: 'url',
+      url: 'https://q.example/a',
+    })
+  }, 30000)
 
   it('un-underlining a run that keeps its link writes u="none" and survives a reparse', () => {
     const rels = new Map([['rId9', 'https://x.dev']])
