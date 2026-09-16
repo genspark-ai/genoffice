@@ -308,6 +308,14 @@ export interface HomeApi {
   getTranslationKbStats?(): Promise<TranslationKbStats>
   /** Whole-file translation (PDF / XLS(X) / PPTX / DOCX). */
   getTranslateFileStatus?(): Promise<TranslateFileStatus>
+  /**
+   * The dictionary snippet translation reuses. `null` until a dictionary has
+   * been built in this server process.
+   */
+  getTranslationDictionary?(): Promise<{
+    ok: boolean
+    dictionary: { path: string; terms: number } | null
+  }>
   /** Native file picker for the translation pane; returns an absolute path. */
   pickTranslationFile?(title?: string): Promise<TranslateFilePickResult>
   /** Translate a short text snippet using the active provider + KB + memory. */
@@ -316,11 +324,20 @@ export interface HomeApi {
     sourceLang?: string
     targetLang: string
     customerName?: string
+    /** Reuse a specific generated dictionary. Defaults to the last one built. */
+    dictionaryPath?: string
+    /** Set false to translate without dictionary terminology. Defaults true. */
+    useDictionary?: boolean
   }): Promise<{
     ok: boolean
     translation?: string
     status?: 'translated' | 'memory-hit' | 'failed'
+    /** KB terms the source text touched (dictionary hits are reported separately). */
     matchedTerms?: string[]
+    /** Dictionary terms the source text touched. */
+    dictionaryHits?: string[]
+    /** Which dictionary was applied, when one was. */
+    dictionary?: { path: string; terms: number; hits: number } | null
     sourceLang?: string
     targetLang?: string
     elapsedMs?: number
@@ -881,6 +898,7 @@ export const HOME_CHANNELS = {
   translationKbRemove: 'ai:translation-kb-remove',
   translationKbStats: 'ai:translation-kb-stats',
   translateFileStatus: 'ai:translate-file-status',
+  translateDictionaryStatus: 'ai:translate-dictionary-status',
   translateBuildDictionary: 'ai:translate-build-dictionary',
   translateFileAuto: 'ai:translate-file-auto',
   pickTranslationFile: 'home:pick-translation-file',

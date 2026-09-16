@@ -18,6 +18,13 @@ import type {
   TranslateResponse,
 } from './types'
 import { callLlm } from './llm-client'  // W9: seam between translation-core and the underlying LLM SDK
+import {
+  applyTerminology,
+  matchTermsInSource,
+  resolveKbForCall,
+  terminologyPairs,
+  type TerminologyPair,
+} from './kb-rules'
 
 /**
  * `translateOne` / `translateBatch` are the public call surface shared by the
@@ -60,6 +67,17 @@ export interface TranslateOneOptions {
    * the existing one-shot translation flow stays byte-for-byte identical.
    */
   fuzzyMemoryEnabled?: boolean
+  /**
+   * Extra mandatory `source -> target` pairs on top of the KB terms — the
+   * generated `--dictionary` for the document being worked on. Hosts pass the
+   * pairs (not the path) so translation-core stays filesystem-free; the
+   * web-server resolves `ai:translate-build-dictionary` output into this slot.
+   *
+   * They are rendered into the system prompt, are matched against the source
+   * text for `matchedTerms`, and are enforced on the model output exactly like
+   * KB terms.
+   */
+  dictionary?: readonly TerminologyPair[] | undefined
 }
 
 /**
@@ -93,6 +111,20 @@ export async function translateOne(
   const sourceLang = normalizeSourceLang(request.sourceLang)
   const preserveFormat = request.preserveFormat !== false
 
+  // Resolve terminology once per call: KB mandatory terms plus whatever
+  // dictionary the host layered on top. Both drive the prompt and the
+  // `matchedTerms` the UI badges off, so they are computed before any early
+  // return — a memory hit applied the same terms.
+  const { pairs: termPairs, dictionaryTerms } = resolveTerminology({
+    request,
+    opts,
+    sourceText,
+    sourceLang,
+    targetLang,
+  })
+  const matchedTerms = matchTermsInSource(sourceText, termPairs)
+  const withTerms = matchedTerms.length > 0 ? { matchedTerms } : {}
+
   const hit = memory?.lookup(sourceLang, targetLang, sourceText)
   if (hit) {
     return {
@@ -103,6 +135,7 @@ export async function translateOne(
       targetLang,
       preserveFormat,
       status: 'memory-hit',
+      ...withTerms,
     }
   }
   // Optional fuzzy fallback — only when the host opts in by passing
@@ -121,6 +154,7 @@ export async function translateOne(
         preserveFormat,
         status: 'memory-hit',
         warnings: [`fuzzy-match:${fuzzyHit.confidence.toFixed(2)}`],
+        ...withTerms,
       }
     }
   }
@@ -131,6 +165,7 @@ export async function translateOne(
     preserveFormat,
     glossaryCategory: request.glossaryCategory,
     ...(opts.knowledgeBase ? { knowledgeBase: opts.knowledgeBase } : {}),
+    ...(dictionaryTerms.length > 0 ? { dictionaryTerms } : {}),
   })
   const metadata: Record<string, string> = {}
   if (request.glossaryCategory) metadata.glossaryCategory = request.glossaryCategory
@@ -154,10 +189,12 @@ export async function translateOne(
           : 'Translation failed',
     }
   }
-  const translated = extractTranslationText(result.content ?? '')
-  if (!translated) {
+  const extracted = extractTranslationText(result.content ?? '')
+  if (!extracted) {
     return { ok: false, error: 'Translation response did not contain final text.' }
   }
+  // Enforce the mandatory terms the model may have left in the source language.
+  const translated = applyTerminology(extracted, termPairs)
   if (memory) memory.save({ sourceLang, targetLang, sourceText, translatedText: translated })
   return {
     ok: true,
@@ -167,7 +204,59 @@ export async function translateOne(
     targetLang,
     preserveFormat,
     status: 'translated',
+    ...withTerms,
   }
+}
+
+/**
+ * Build the per-call terminology for {@link translateOne}.
+ *
+ * `pairs` is everything that can rewrite the output (KB mandatory terms first,
+ * then host dictionary pairs). `dictionaryTerms` is the subset the prompt
+ * actually needs: the pairs whose source appears in this specific `sourceText`,
+ * so a 400-segment dictionary does not blow up the system prompt for a one-line
+ * snippet.
+ */
+function resolveTerminology(input: {
+  request: TranslateRequest
+  opts: TranslateOneOptions
+  sourceText: string
+  sourceLang: string
+  targetLang: string
+}): { pairs: TerminologyPair[]; dictionaryTerms: TerminologyPair[] } {
+  const { request, opts, sourceText, sourceLang, targetLang } = input
+  const fromKb = opts.knowledgeBase
+    ? terminologyPairs(
+        resolveKbForCall(opts.knowledgeBase, {
+          sourceLang,
+          targetLang,
+          ...(request.glossaryCategory !== undefined ? { category: request.glossaryCategory } : {}),
+        }),
+      )
+    : []
+  const fromDictionary = opts.dictionary ?? []
+  const dictionaryTerms = fromDictionary.filter((pair) => sourceText.includes(pair.source))
+  return { pairs: [...fromKb, ...fromDictionary], dictionaryTerms }
+}
+
+/**
+ * Terminology for a batch call. The dictionary subset injected into the prompt
+ * is per-unit (see {@link resolveTerminology}); this only needs the pairs used
+ * for `matchedTerms` and output enforcement.
+ */
+function terminologyForBatch(
+  request: TranslateBatchRequest,
+  opts: TranslateOneOptions,
+  sourceLang: string,
+  targetLang: string,
+): TerminologyPair[] {
+  return resolveTerminology({
+    request: { instruction: '', targetLang },
+    opts,
+    sourceText: '',
+    sourceLang,
+    targetLang,
+  }).pairs
 }
 
 /** Translate a batch of units in parallel; preserves order and per-unit status. */
@@ -186,8 +275,11 @@ export async function translateBatch(
   const preserveFormat = request.preserveFormat !== false
   if (!targetLang) return { ok: false, error: 'ai:translate-batch expected non-empty `targetLang`' }
 
+  const termPairs = terminologyForBatch(request, opts, sourceLang, targetLang)
+
   const settled = await Promise.all(
     request.units.map(async (unit): Promise<TranslateBatchUnitResult> => {
+      const matchedTerms = matchTermsInSource(unit.sourceText, termPairs)
       const hit = memory?.lookup(sourceLang, targetLang, unit.sourceText)
       if (hit) {
         return {
@@ -196,6 +288,7 @@ export async function translateBatch(
           translatedText: hit.translatedText,
           status: 'memory-hit',
           range: unit.range ?? null,
+          ...(matchedTerms.length > 0 ? { matchedTerms } : {}),
         }
       }
       const res = await translateOne(
@@ -222,6 +315,7 @@ export async function translateBatch(
       }
       if (res.translated !== undefined) result.translatedText = res.translated
       if (!res.ok && res.error) result.errorMessage = res.error
+      if (res.matchedTerms && res.matchedTerms.length > 0) result.matchedTerms = res.matchedTerms
       return result
     }),
   )
@@ -286,11 +380,13 @@ export async function translateBatchStream(
   const total = request.units.length
   const concurrency = Math.max(1, Math.min(streamOpts.concurrency ?? 25, total))
   const settled: TranslateBatchUnitResult[] = new Array(total)
+  const termPairs = terminologyForBatch(request, opts, sourceLang, targetLang)
 
   // Build a unit-settler that re-uses the same per-unit logic as translateBatch.
   const settleOne = async (index: number): Promise<void> => {
     const unit = request.units[index]
     if (!unit) return
+    const matchedTerms = matchTermsInSource(unit.sourceText, termPairs)
     const hit = memory?.lookup(sourceLang, targetLang, unit.sourceText)
     let result: TranslateBatchUnitResult
     if (hit) {
@@ -300,6 +396,7 @@ export async function translateBatchStream(
         translatedText: hit.translatedText,
         status: 'memory-hit',
         range: unit.range ?? null,
+        ...(matchedTerms.length > 0 ? { matchedTerms } : {}),
       }
     } else {
       const res = await translateOne(
@@ -326,6 +423,7 @@ export async function translateBatchStream(
       }
       if (res.translated !== undefined) result.translatedText = res.translated
       if (!res.ok && res.error) result.errorMessage = res.error
+      if (res.matchedTerms && res.matchedTerms.length > 0) result.matchedTerms = res.matchedTerms
     }
     settled[index] = result
     if (streamOpts.onUnit) {

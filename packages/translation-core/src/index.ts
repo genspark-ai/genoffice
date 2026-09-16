@@ -126,6 +126,18 @@ export {
   type TranslateSkillsLocation,
 } from './file-translate'
 
+// Terminology enforcement for the live translate path (KB terms + generated
+// dictionary). `dictionary.ts` uses the same rules while *building* a
+// dictionary; this module owns them for a single selection / snippet.
+export {
+  applyTerminology,
+  matchTermsInSource,
+  resolveKbForCall,
+  terminologyPairs,
+  type ResolveKbOptions,
+  type TerminologyPair,
+} from './kb-rules'
+
 export {
   applyKbRules,
   batchSegments,

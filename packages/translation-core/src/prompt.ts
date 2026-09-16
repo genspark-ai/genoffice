@@ -1,6 +1,15 @@
+import type { TerminologyPair } from './kb-rules'
 import { englishLabelFor } from './languages'
 import type { LanguageCode } from './types'
 import type { KnowledgeBase } from './knowledge-base'
+
+/**
+ * Cap on dictionary terms rendered into the system prompt. Callers pass the
+ * pairs whose source actually occurs in the text being translated, so this only
+ * bites on pathological inputs (a whole-document paste); it keeps a runaway
+ * prompt from crowding out the source text itself.
+ */
+const MAX_PROMPT_DICTIONARY_TERMS = 200
 
 /**
  * Hardened system prompt for the one-shot translate path.
@@ -31,6 +40,12 @@ export function buildTranslateSystemPrompt(opts: {
   knowledgeBase?: KnowledgeBase | undefined
   /** Optional customer name — filters customer-preference entries. */
   customerName?: string | undefined
+  /**
+   * Mandatory pairs from a generated `--dictionary` (KB + LLM output for the
+   * document in flight). Rendered as an explicit term list so the model honours
+   * terms the KB itself does not carry.
+   */
+  dictionaryTerms?: readonly TerminologyPair[] | undefined
 }): string {
   const source = englishLabelFor(opts.sourceLang || 'auto')
   const target = englishLabelFor(opts.targetLang)
@@ -52,6 +67,8 @@ export function buildTranslateSystemPrompt(opts: {
         .promptBlock
     : ''
 
+  const dictionaryBlock = renderDictionaryBlock(opts.dictionaryTerms)
+
   return [
     'You are a professional translator.',
     preserve,
@@ -59,6 +76,27 @@ export function buildTranslateSystemPrompt(opts: {
     `Target language: ${target}.` + glossaryHint,
     'Translate the user-supplied text faithfully; do not add explanations, do not omit content.',
     kbBlock, // empty string when there are no rules
+    dictionaryBlock, // empty string when there is no dictionary
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+/**
+ * Render the generated-dictionary term list. Unlike the KB block (which is
+ * prose about house style), the dictionary is a hard mapping table, so the
+ * wording asks for exact substitution and the pairs are listed verbatim.
+ */
+function renderDictionaryBlock(terms: readonly TerminologyPair[] | undefined): string {
+  if (!terms || terms.length === 0) return ''
+  const usable = terms.filter((t) => t.source && t.target && t.source !== t.target)
+  if (usable.length === 0) return ''
+  const shown = usable.slice(0, MAX_PROMPT_DICTIONARY_TERMS)
+  const lines = shown.map((t) => `  - ${t.source} => ${t.target}`)
+  return [
+    'Mandatory terminology for this document — use the target exactly as given, even when a more literal translation exists:',
+    ...lines,
+    usable.length > shown.length ? `  (... ${usable.length - shown.length} more not shown)` : '',
   ]
     .filter(Boolean)
     .join('\n')

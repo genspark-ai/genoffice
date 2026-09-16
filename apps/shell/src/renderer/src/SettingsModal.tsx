@@ -1234,6 +1234,16 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   const [status, setStatus] = useState<TranslateFileStatus | null>(null)
   const [savingDict, setSavingDict] = useState(false)
   const [savedDictCount, setSavedDictCount] = useState(0)
+  /** Feed the generated dictionary into snippet translations as terminology. */
+  const [reuseDict, setReuseDict] = useState(true)
+  /**
+   * The dictionary the *server* will reuse. Seeded from the server rather than
+   * from `dict` because the cached dictionary outlives the pane: a fresh open
+   * has `dict === null` while a real dictionary is still in play.
+   */
+  const [serverDict, setServerDict] = useState<{ path: string; terms: number } | null>(null)
+  /** The preview chip list is capped at 12; this reveals the rest. */
+  const [showAllSegments, setShowAllSegments] = useState(false)
 
   const [snippet, setSnippet] = useState('')
   const [snippetBusy, setSnippetBusy] = useState(false)
@@ -1241,6 +1251,8 @@ function TranslationKbPane({ t }: { t: TFunc }) {
     translation: string
     status: 'translated' | 'memory-hit' | 'failed'
     matchedTerms: string[]
+    dictionaryHits: string[]
+    dictionaryPath: string
     elapsedMs: number
   } | null>(null)
   const [snippetError, setSnippetError] = useState('')
@@ -1254,6 +1266,9 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   useEffect(() => {
     void reload()
     void window.aiOffice.getTranslateFileStatus?.().then((s) => s && setStatus(s))
+    void window.aiOffice
+      .getTranslationDictionary?.()
+      .then((s) => setServerDict(s?.dictionary ?? null))
     void window.aiOffice.getAiSettings?.().then((s) => s && setAiSettings(s))
     void window.aiOffice.getAiCapabilities?.().then((c) => {
       if (c) setGskEnabled(c.gskToolsEnabled)
@@ -1412,6 +1427,10 @@ function TranslationKbPane({ t }: { t: TFunc }) {
           setDictError(t('tkbError', { error: result?.error ?? 'translate' }))
           return
         }
+        setServerDict({
+          path: result.dictionaryPath ?? '',
+          terms: (result.dictionary?.kbEntries ?? 0) + (result.dictionary?.llmEntries ?? 0),
+        })
         setDict({
           dictionaryPath: result.dictionaryPath ?? '',
           kbEntries: result.dictionary?.kbEntries ?? 0,
@@ -1435,6 +1454,7 @@ function TranslationKbPane({ t }: { t: TFunc }) {
         setDictError(t('tkbError', { error: result?.error ?? 'dictionary' }))
         return
       }
+      setServerDict({ path: result.dictionaryPath ?? '', terms: result.segments?.length ?? 0 })
       setDict({
         dictionaryPath: result.dictionaryPath ?? '',
         kbEntries: result.kbEntries ?? 0,
@@ -1451,6 +1471,11 @@ function TranslationKbPane({ t }: { t: TFunc }) {
     }
   }
 
+  /** `dict` wins while the pane is open; otherwise fall back to the server cache. */
+  const activeDict = dict?.dictionaryPath
+    ? { path: dict.dictionaryPath, terms: dict.segments.length }
+    : serverDict
+
   const translateSnippet = async () => {
     if (!snippet.trim()) return
     setSnippetBusy(true)
@@ -1463,6 +1488,10 @@ function TranslationKbPane({ t }: { t: TFunc }) {
         sourceLang,
         targetLang,
         ...(customerName.trim() ? { customerName: customerName.trim() } : {}),
+        // Always name the dictionary explicitly so the label above and the
+        // terminology actually applied cannot drift apart.
+        ...(reuseDict && activeDict ? { dictionaryPath: activeDict.path } : {}),
+        useDictionary: reuseDict && activeDict !== null,
       })
       if (!result?.ok) {
         setSnippetError(t('tkbSnippetError', { error: result?.error ?? 'translate' }))
@@ -1472,6 +1501,8 @@ function TranslationKbPane({ t }: { t: TFunc }) {
         translation: result.translation ?? '',
         status: result.status ?? 'translated',
         matchedTerms: result.matchedTerms ?? [],
+        dictionaryHits: result.dictionaryHits ?? [],
+        dictionaryPath: result.dictionary?.path ?? '',
         elapsedMs: result.elapsedMs ?? 0,
       })
     } catch (err) {
@@ -1802,9 +1833,18 @@ function TranslationKbPane({ t }: { t: TFunc }) {
               <div className="set-tkb-preview">
                 <div className="set-tkb-preview-title">
                   {t('tkbPreview', { count: dict.segments.length })}
+                  {dict.segments.length > 12 && (
+                    <button
+                      type="button"
+                      className="set-btn set-tkb-preview-toggle"
+                      onClick={() => setShowAllSegments((v) => !v)}
+                    >
+                      {showAllSegments ? t('tkbShowLess') : t('tkbShowAll')}
+                    </button>
+                  )}
                 </div>
                 <div className="set-tkb-preview-chips">
-                  {dict.segments.slice(0, 12).map((s, i) => (
+                  {(showAllSegments ? dict.segments : dict.segments.slice(0, 12)).map((s, i) => (
                     <span
                       key={i}
                       className={`set-tkb-chip${s.origin === 'kb' ? ' is-kb' : ''}`}
@@ -1815,7 +1855,7 @@ function TranslationKbPane({ t }: { t: TFunc }) {
                       {s.target}
                     </span>
                   ))}
-                  {dict.segments.length > 12 && (
+                  {!showAllSegments && dict.segments.length > 12 && (
                     <span className="set-tkb-chip is-more">+{dict.segments.length - 12}</span>
                   )}
                 </div>
@@ -1929,7 +1969,36 @@ function TranslationKbPane({ t }: { t: TFunc }) {
               KB · {snippetResult.matchedTerms.length}
             </span>
           )}
+          {snippetResult && snippetResult.dictionaryHits.length > 0 && (
+            <span
+              className="set-cap-pill is-fallback"
+              title={t('tkbSnippetTerms', { terms: snippetResult.dictionaryHits.join(', ') })}
+            >
+              {t('tkbDictHits', { count: snippetResult.dictionaryHits.length })}
+            </span>
+          )}
         </div>
+        <label className="set-tkb-check">
+          <input
+            type="checkbox"
+            checked={reuseDict}
+            onChange={(e) => setReuseDict(e.target.checked)}
+          />
+          <span>
+            {t('tkbDictReuse')}
+            {activeDict ? (
+              <>
+                <code title={activeDict.path}>{activeDict.path.split('/').pop()}</code>
+                <span className="set-tkb-muted">
+                  {t('tkbDictTerms', { count: activeDict.terms })}
+                </span>
+              </>
+            ) : (
+              <span className="set-tkb-muted">{t('tkbDictNone')}</span>
+            )}
+          </span>
+        </label>
+        <div className="set-field-desc set-ai-note">{t('tkbDictReuseHint')}</div>
         {snippetResult && (
           <div className="set-tkb-snippet-out">
             <span className="set-tkb-snippet-out-label">{t('tkbSnippetResult')}</span>

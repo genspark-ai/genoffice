@@ -225,7 +225,18 @@ export async function buildDictionary(
       error: `failed to extract text: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
-  if (!text) return { ok: false, error: 'the file contained no extractable text' }
+  if (!text) {
+    // A PDF with no text layer is the common case here (scans, and PDFs whose
+    // fonts carry no ToUnicode map). Say so, and say what to do about it, rather
+    // than reporting a bare extraction failure the user cannot act on.
+    const isPdf = extname(request.inputPath).toLowerCase() === '.pdf'
+    return {
+      ok: false,
+      error: isPdf
+        ? 'this PDF has no text layer to translate (it looks like a scan or uses fonts without a Unicode map); run OCR first, or export a text-based PDF'
+        : 'the file contained no extractable text',
+    }
+  }
 
   const maxSegments = request.maxSegments ?? 400
   const minChars = request.minChars ?? 2

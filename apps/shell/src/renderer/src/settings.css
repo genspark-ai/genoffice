@@ -1573,10 +1573,34 @@
   margin-bottom: 10px;
 }
 .set-tkb-preview-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-tertiary, #98a2b3);
   margin-bottom: 6px;
+}
+/* The show-all toggle is a real button inside the preview caption; at caption
+   scale so it reads as part of the header rather than a card action. */
+.set-tkb-preview-toggle {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  height: auto;
+  line-height: 1.4;
+}
+.set-tkb-muted {
+  font-style: normal;
+  color: var(--text-tertiary, #98a2b3);
+}
+.set-tkb-check code {
+  font-size: 11.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, rgb(0 0 0 / 10%));
 }
 .set-tkb-preview-chips {
   display: flex;

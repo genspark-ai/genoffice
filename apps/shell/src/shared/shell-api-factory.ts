@@ -376,6 +376,12 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
     async getTranslateFileStatus() {
       return (await t.invoke(HOME_CHANNELS.translateFileStatus)) as TranslateFileStatus
     },
+    async getTranslationDictionary() {
+      return (await t.invoke(HOME_CHANNELS.translateDictionaryStatus)) as {
+        ok: boolean
+        dictionary: { path: string; terms: number } | null
+      }
+    },
     async pickTranslationFile(title) {
       if (overrides.pickTranslationFile) return await overrides.pickTranslationFile()
       return (await t.invoke(
@@ -403,6 +409,8 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
         translation?: string
         status?: 'translated' | 'memory-hit' | 'failed'
         matchedTerms?: string[]
+        dictionaryHits?: string[]
+        dictionary?: { path: string; terms: number; hits: number } | null
         sourceLang?: string
         targetLang?: string
         elapsedMs?: number

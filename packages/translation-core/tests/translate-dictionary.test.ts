@@ -253,6 +253,21 @@ describe('buildDictionary', () => {
     expect(result.error).toContain('no translatable segments')
   })
 
+  it('explains how to fix a PDF with no text layer', async () => {
+    // Regression: this used to surface the generic 'no extractable text'
+    // message, which gives the user nothing to act on. Scans and PDFs whose
+    // CJK fonts carry no ToUnicode map land here.
+    const dir = mkdtempSync(join(tmpdir(), 'genoffice-dict-pdf-'))
+    const inputPath = join(__dirname, 'fixtures', 'pdf-without-text-layer.pdf')
+    const result = await buildDictionary(
+      { inputPath, sourceLang: 'zh-CN', targetLang: 'en-US', dataDir: dir },
+      { translateBatch: async () => ({ ok: true, units: [] }) },
+    )
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('no text layer')
+    expect(result.error).toContain('OCR')
+  })
+
   it('reports a missing input file', async () => {
     const result = await buildDictionary(
       { inputPath: '/nope/missing.txt', sourceLang: 'en-US', targetLang: 'zh-CN', dataDir: '/tmp' },

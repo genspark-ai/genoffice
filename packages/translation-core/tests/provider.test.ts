@@ -14,6 +14,7 @@ vi.mock('../src/llm-client', async () => {
 
 import { callLlm } from '../src/llm-client'
 
+import { KnowledgeBase } from '../src/knowledge-base'
 import { TranslationMemory } from '../src/memory'
 import { sharedMemory, translateBatch, translateBatchStream, translateOne } from '../src/provider'
 
@@ -367,5 +368,127 @@ describe('translateBatchStream', () => {
     expect(stream.units?.map((u) => u.unitId)).toEqual(batch.units?.map((u) => u.unitId))
     expect(stream.units?.map((u) => u.translatedText)).toEqual(batch.units?.map((u) => u.translatedText))
     expect(stream.quality?.overallScore).toBe(batch.quality?.overallScore)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Terminology wiring: `matchedTerms` + the host-supplied dictionary.
+//
+// The Settings pane renders a "KB · N" badge off `matchedTerms` and can layer
+// the generated `--dictionary` onto snippet translations. Both were previously
+// never populated by translateOne, so these pin the contract.
+// ---------------------------------------------------------------------------
+describe('translateOne — terminology provenance', () => {
+  const config = { apiKey: 'k', model: 'm' }
+  const kb = () =>
+    new KnowledgeBase({
+      seed: {
+        'trade.translation.term': [
+          {
+            id: 't1',
+            scope: 'company',
+            priority: 50,
+            sourceTerm: 'fabric weight',
+            targetTerm: '克重',
+          },
+          {
+            id: 't2',
+            scope: 'company',
+            priority: 50,
+            sourceTerm: 'cotton',
+            targetTerm: '棉',
+          },
+        ],
+        'trade.translation.brand': [
+          { id: 'b1', scope: 'global', priority: 50, word: 'GSM', policy: 'neverTranslate' },
+        ],
+      },
+    })
+
+  beforeEach(() => {
+    mockedCall.mockReset()
+    sharedMemory.clear()
+  })
+
+  it('reports the KB terms the source text actually touched', async () => {
+    mockedCall.mockResolvedValue({ ok: true, content: '面料克重为220。' })
+    const r = await translateOne(
+      { instruction: 'The fabric weight is 220.', targetLang: 'zh-CN' },
+      { provider: 'anthropic', config, knowledgeBase: kb() },
+    )
+    expect(r.ok).toBe(true)
+    expect(r.matchedTerms).toEqual(['fabric weight'])
+  })
+
+  it('omits matchedTerms when no KB term is present', async () => {
+    mockedCall.mockResolvedValue({ ok: true, content: '你好' })
+    const r = await translateOne(
+      { instruction: 'Hello there', targetLang: 'zh-CN' },
+      { provider: 'anthropic', config, knowledgeBase: kb() },
+    )
+    expect(r.ok).toBe(true)
+    expect(r.matchedTerms).toBeUndefined()
+  })
+
+  it('enforces a KB term the model left in the source language', async () => {
+    mockedCall.mockResolvedValue({ ok: true, content: 'The fabric weight is heavy.' })
+    const r = await translateOne(
+      { instruction: 'The fabric weight is heavy.', targetLang: 'zh-CN' },
+      { provider: 'anthropic', config, knowledgeBase: kb() },
+    )
+    expect(r.translated).toBe('The 克重 is heavy.')
+    expect(r.matchedTerms).toEqual(['fabric weight'])
+  })
+
+  it('still counts terms on a memory hit', async () => {
+    const memory = new TranslationMemory()
+    memory.save({
+      sourceLang: 'en-US',
+      targetLang: 'zh-CN',
+      sourceText: 'cotton shirt',
+      translatedText: '棉衬衫',
+    })
+    const r = await translateOne(
+      { instruction: 'cotton shirt', sourceLang: 'en-US', targetLang: 'zh-CN' },
+      { provider: 'anthropic', config, knowledgeBase: kb(), memory },
+    )
+    expect(r.status).toBe('memory-hit')
+    expect(r.matchedTerms).toEqual(['cotton'])
+    expect(mockedCall).not.toHaveBeenCalled()
+  })
+
+  it('honours a host dictionary: prompt, enforcement and matchedTerms', async () => {
+    // The model left the term in English; enforcement must substitute it.
+    mockedCall.mockResolvedValue({ ok: true, content: 'Order 100 units of Oxford cloth.' })
+    const r = await translateOne(
+      { instruction: 'Order 100 units of Oxford cloth.', targetLang: 'zh-CN' },
+      {
+        provider: 'anthropic',
+        config,
+        dictionary: [{ source: 'Oxford cloth', target: '牛津布' }],
+      },
+    )
+    expect(r.translated).toBe('Order 100 units of 牛津布.')
+    expect(r.matchedTerms).toEqual(['Oxford cloth'])
+    const prompt = mockedCall.mock.calls[0]?.[0]?.systemPrompt ?? ''
+    expect(prompt).toContain('Oxford cloth => 牛津布')
+  })
+
+  it('does not inject dictionary terms the source text lacks', async () => {
+    mockedCall.mockResolvedValue({ ok: true, content: '你好' })
+    await translateOne(
+      { instruction: 'Hello', targetLang: 'zh-CN' },
+      {
+        provider: 'anthropic',
+        config,
+        dictionary: [
+          { source: 'Oxford cloth', target: '牛津布' },
+          { source: 'poplin', target: '府绸' },
+        ],
+      },
+    )
+    const prompt = mockedCall.mock.calls[0]?.[0]?.systemPrompt ?? ''
+    expect(prompt).not.toContain('牛津布')
+    expect(prompt).not.toContain('府绸')
   })
 })

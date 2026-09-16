@@ -54,6 +54,7 @@ import {
   translateOne,
   type KBEntry,
   type KBListFilters,
+  type TerminologyPair,
 } from '@genoffice/translation-core'
 
 // Re-export the shared prompt / text helpers so existing tests and external
@@ -104,6 +105,73 @@ function scheduleMemoryFlush(delayMs = 250): void {
       console.warn('[translation-memory] flush failed:', err)
     })
   }, delayMs)
+}
+
+// Most recently generated `--dictionary`.
+//
+// The Settings pane builds a dictionary for a file, then the user usually wants
+// to keep translating short snippets with the terminology they just curated.
+// Rather than make them re-paste it, the snippet path reuses the last built
+// dictionary (or an explicit `dictionaryPath`). Parsed lazily and cached by
+// path so repeated snippet calls are free.
+let lastDictionary: { path: string; pairs: TerminologyPair[] } | null = null
+
+interface LoadedDictionary {
+  path: string
+  /** Terminology pairs, longest source first so multi-word terms win. */
+  pairs: TerminologyPair[]
+}
+
+/**
+ * Read a generated `{ "source": "target" }` dictionary off disk. Returns null
+ * when the file is missing or malformed — the caller then translates without
+ * the dictionary instead of failing the whole request.
+ */
+function loadDictionary(path: string): LoadedDictionary | null {
+  if (lastDictionary?.path === path) return lastDictionary
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const pairs: TerminologyPair[] = []
+    for (const [source, target] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof target !== 'string') continue
+      if (!source.trim() || !target.trim()) continue
+      pairs.push({ source, target })
+    }
+    if (pairs.length === 0) return null
+    pairs.sort((a, b) => b.source.length - a.source.length)
+    lastDictionary = { path, pairs }
+    return lastDictionary
+  } catch {
+    return null
+  }
+}
+
+/** Remember a freshly written dictionary without a redundant disk read. */
+function rememberDictionary(path: string, pairs: readonly TerminologyPair[]): void {
+  if (pairs.length === 0) return
+  lastDictionary = { path, pairs: [...pairs].sort((a, b) => b.source.length - a.source.length) }
+}
+
+/**
+ * Cache the dictionary a builder call just wrote. The builder returns its
+ * segments, so we avoid re-reading the file we just wrote; when a builder omits
+ * them (older callers) we fall back to reading it back from disk.
+ */
+function rememberBuiltDictionary(result: {
+  ok: boolean
+  dictionaryPath?: string | undefined
+  segments?: Array<{ source: string; target?: string | undefined }> | undefined
+}): void {
+  if (!result.ok || !result.dictionaryPath) return
+  const pairs = (result.segments ?? [])
+    .filter((seg) => seg.target !== undefined && seg.target.trim().length > 0)
+    .map((seg) => ({ source: seg.source, target: seg.target as string }))
+  if (pairs.length === 0) {
+    loadDictionary(result.dictionaryPath)
+    return
+  }
+  rememberDictionary(result.dictionaryPath, pairs)
 }
 
 // ----- settings persistence --------------------------------------------------
@@ -660,6 +728,10 @@ export function registerAiCoreHandlers(): void {
       sourceLang?: string
       targetLang?: string
       customerName?: string
+      /** Reuse a specific generated dictionary; defaults to the last one built. */
+      dictionaryPath?: string
+      /** Set false to translate without any dictionary terminology. */
+      useDictionary?: boolean
       settings?: AiSettings
     }
     const text = (req.text ?? '').trim()
@@ -672,6 +744,18 @@ export function registerAiCoreHandlers(): void {
     const config = incoming.providers?.[provider]
     if (!config) return { ok: false, error: `AI provider "${provider}" not configured` }
     await ensureKbLoaded()
+
+    // Reuse the dictionary the user just built (or one they point at) so the
+    // snippet and file paths agree on terminology.
+    const dictionary =
+      req.useDictionary === false
+        ? null
+        : req.dictionaryPath
+          ? loadDictionary(req.dictionaryPath)
+          : lastDictionary
+    const dictionaryPairs = dictionary?.pairs ?? []
+    const dictionarySources = new Set(dictionaryPairs.map((pair) => pair.source))
+
     const started = Date.now()
     const result = await translateOne(
       {
@@ -685,14 +769,24 @@ export function registerAiCoreHandlers(): void {
         config: config as AiProviderConfig,
         memory: translationMemory,
         knowledgeBase: sharedKnowledgeBase,
+        ...(dictionaryPairs.length > 0 ? { dictionary: dictionaryPairs } : {}),
       },
     )
     scheduleMemoryFlush()
+    // `matchedTerms` merges KB and dictionary hits; split them so the pane can
+    // label the two provenances separately.
+    const allTerms = result.matchedTerms ?? []
+    const dictionaryHits = allTerms.filter((term) => dictionarySources.has(term))
+    const kbTerms = allTerms.filter((term) => !dictionarySources.has(term))
     return {
       ok: result.ok,
       translation: result.translated ?? '',
       status: result.status,
-      matchedTerms: result.matchedTerms ?? [],
+      matchedTerms: kbTerms,
+      dictionaryHits,
+      dictionary: dictionary
+        ? { path: dictionary.path, terms: dictionaryPairs.length, hits: dictionaryHits.length }
+        : null,
       sourceLang: req.sourceLang,
       targetLang: req.targetLang,
       elapsedMs: Date.now() - started,
@@ -729,7 +823,7 @@ export function registerAiCoreHandlers(): void {
       return { ok: false, error: `AI provider "${provider}" not configured` }
     }
     await ensureKbLoaded()
-    return buildDictionary(
+    const built = await buildDictionary(
       {
         inputPath: req.inputPath,
         sourceLang: req.sourceLang ?? 'auto',
@@ -754,6 +848,8 @@ export function registerAiCoreHandlers(): void {
         },
       },
     )
+    rememberBuiltDictionary(built)
+    return built
   })
 
   // ai:translate-file-auto — build the dictionary, then translate in one call.
@@ -810,6 +906,7 @@ export function registerAiCoreHandlers(): void {
     if (!dict.ok || !dict.dictionaryPath) {
       return { ok: false, stage: 'dictionary', error: dict.error ?? 'dictionary build failed' }
     }
+    rememberBuiltDictionary(dict)
 
     const fileResult = await translateFile({
       inputPath: req.inputPath,
@@ -937,6 +1034,16 @@ export function registerAiCoreHandlers(): void {
       ...(req.timeoutMs !== undefined ? { timeoutMs: req.timeoutMs } : {}),
     })
   })
+
+  // ai:translate-dictionary-status — which dictionary snippet translation will
+  // reuse. Without this the pane would show a bare "reuse dictionary" checkbox
+  // and the user could not tell which file it refers to.
+  registerHandle('ai:translate-dictionary-status', () => ({
+    ok: true,
+    dictionary: lastDictionary
+      ? { path: lastDictionary.path, terms: lastDictionary.pairs.length }
+      : null,
+  }))
 
   registerHandle('ai:translate-file-status', () => {
     const location = resolveTranslateSkills()
