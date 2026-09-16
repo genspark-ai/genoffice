@@ -18,6 +18,8 @@ export const HTML_CHANNELS = {
   save: 'html:save',
   saveRequest: 'html:save-request',
   saveRequestAck: 'html:save-request-ack',
+  readTextRequest: 'html:read-text-request',
+  readTextResult: 'html:read-text-result',
   dirtyChanged: 'html:dirty-changed',
   closeSaveRequest: 'html:close-save-request',
   closeSaveResult: 'html:close-save-result',
@@ -213,6 +215,12 @@ export interface HtmlApi {
   onSaveRequest(handler: (mode: SaveMode) => void): () => void
   /** Resolves a menu-save waiter when doSave exits without ever invoking save() (busy/loading) */
   sendSaveRequestAck(ok: boolean): void
+  /**
+   * Main process asks for the live document source — the MCP read of an open
+   * document, unsaved edits included; reply through sendReadTextResult.
+   */
+  onReadTextRequest(handler: () => void): () => void
+  sendReadTextResult(result: { text: string } | { error: string }): void
   /** Main process picked "Save" in the close prompt → renderer saves and replies via sendCloseSaveResult */
   onCloseSaveRequest(handler: () => void): () => void
   sendCloseSaveResult(ok: boolean): void

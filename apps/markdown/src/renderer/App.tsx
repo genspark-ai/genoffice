@@ -474,6 +474,22 @@ export default function App() {
     const offSave = window.markdownApi.onSaveRequest(
       (mode) => void doSave(mode).then((ok) => window.markdownApi.sendSaveRequestAck(ok)),
     )
+    // MCP read of this open document: hand back the same serialization a save
+    // would write, so unsaved edits are included. Staying silent while the
+    // editor is still loading keeps the main process retrying its request
+    // instead of failing on a document that is merely not ready yet.
+    const offReadText = window.markdownApi.onReadTextRequest(() => {
+      const current = editorRef.current
+      if (!current || statusRef.current !== 'ready') return
+      try {
+        const text = serializeDocText(envelopeRef.current, current.getMarkdown())
+        window.markdownApi.sendReadTextResult({ text })
+      } catch (err) {
+        window.markdownApi.sendReadTextResult({
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    })
     const offClose = window.markdownApi.onCloseSaveRequest(() => {
       void (async () => {
         // A close-save arriving during an in-flight autosave must wait for it
@@ -523,6 +539,7 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown, true)
     return () => {
       offSave()
+      offReadText()
       offClose()
       offRenamed()
       window.removeEventListener('keydown', onKeyDown, true)

@@ -805,6 +805,8 @@ const previewTextByWc = new Map<number, string>()
 const closeSaveWaiters = new Map<number, (ok: boolean) => void>()
 /** Resolvers for menu-triggered saves, resolved when the renderer's save invoke completes */
 const saveWaiters = new Map<number, (ok: boolean) => void>()
+/** Resolvers for MCP reads of the live document source, resolved by the renderer's reply */
+const readTextWaiters = new Map<number, (result: { text: string } | { error: string }) => void>()
 
 /** Fired after a save lands on a NEW path (untitled first save / Save As) — the shell syncs tab title, recents, projects */
 let fileSavedHook: ((wc: WebContents, path: string) => void) | null = null
@@ -998,6 +1000,20 @@ export async function requestHtmlClose(
   })
 }
 
+/**
+ * Drop assets staged next to the document but never written into it — the MCP
+ * "discard unsaved changes" path, same cleanup the interactive close prompt
+ * runs when the user picks "Don't Save".
+ */
+export async function htmlDiscardPendingAssets(contents: WebContents): Promise<void> {
+  const documentPath = savePathByWc.get(contents.id)
+  if (!documentPath) return
+  const discarded = await discardPendingOwnedAssets(documentPath)
+  if (discarded.errors.length > 0) {
+    console.warn('[html] pending asset discard incomplete:', discarded.errors)
+  }
+}
+
 /** Menu Save / Save As: ask the renderer to serialize and save; clean views resolve true immediately on plain save */
 export function requestHtmlSave(contents: WebContents, mode: SaveMode): Promise<boolean> {
   if (contents.isDestroyed()) return Promise.resolve(false)
@@ -1015,6 +1031,89 @@ export function requestHtmlSave(contents: WebContents, mode: SaveMode): Promise<
       resolve(ok)
     })
     contents.send(HTML_CHANNELS.saveRequest, mode)
+  })
+}
+
+/**
+ * Read the live document source for an MCP `open_documents` read. The buffer the
+ * renderer pushes for the preview is instrumented for the iframe, so it cannot
+ * be reused here: this asks for the saved serialization instead, unsaved edits
+ * included.
+ */
+export function htmlReadText(contents: WebContents): Promise<string> {
+  if (contents.isDestroyed()) return Promise.reject(new Error('the document is no longer open'))
+  const wcId = contents.id
+  return new Promise<string>((resolve, reject) => {
+    // The renderer registers its listener while mounting, which can land after
+    // the tab appears; a request sent before that is dropped silently. Re-send
+    // on an interval until the renderer answers, the way the shell's own
+    // control channel polls for a not-yet-ready editor.
+    let settled = false
+    const settle = (finish: () => void): void => {
+      if (settled) return
+      settled = true
+      clearInterval(retry)
+      clearTimeout(timer)
+      readTextWaiters.delete(wcId)
+      finish()
+    }
+    const retry = setInterval(() => {
+      if (contents.isDestroyed()) {
+        settle(() => reject(new Error('the document is no longer open')))
+        return
+      }
+      contents.send(HTML_CHANNELS.readTextRequest)
+    }, 250)
+    const timer = setTimeout(
+      () => settle(() => reject(new Error('timed out reading the document'))),
+      30_000,
+    )
+    readTextWaiters.set(wcId, (result) => {
+      settle(() => {
+        if ('text' in result) resolve(result.text)
+        else reject(new Error(result.error))
+      })
+    })
+    contents.send(HTML_CHANNELS.readTextRequest)
+  })
+}
+
+/**
+ * Save the live document to `filePath` with no dialog — the MCP close path
+ * ("save before closing"). Pointing the view's save target at `filePath` first
+ * keeps `resolveSaveTarget` from opening the save dialog, so the renderer's
+ * normal save runs unattended.
+ */
+export function htmlSaveToPath(contents: WebContents, filePath: string): Promise<void> {
+  if (contents.isDestroyed()) return Promise.reject(new Error('the document is no longer open'))
+  const wcId = contents.id
+  const previousPath = savePathByWc.get(wcId)
+  const previousOpenPath = openPathByWc.get(wcId)
+  savePathByWc.set(wcId, filePath)
+  const allowed = allowedByWc.get(wcId) ?? new Set<string>()
+  allowed.add(filePath)
+  allowedByWc.set(wcId, allowed)
+  return new Promise<void>((resolve, reject) => {
+    const restore = (): void => {
+      if (previousPath === undefined) savePathByWc.delete(wcId)
+      else savePathByWc.set(wcId, previousPath)
+      if (previousOpenPath === undefined) openPathByWc.delete(wcId)
+      else openPathByWc.set(wcId, previousOpenPath)
+    }
+    const timer = setTimeout(() => {
+      saveWaiters.delete(wcId)
+      restore()
+      reject(new Error('timed out saving the document'))
+    }, 120_000)
+    saveWaiters.set(wcId, (ok) => {
+      clearTimeout(timer)
+      if (ok) resolve()
+      else {
+        restore()
+        reject(new Error('could not save the document'))
+      }
+    })
+    contents.send(HTML_CHANNELS.saveRequest, 'save')
   })
 }
 
@@ -1602,6 +1701,17 @@ function registerHtmlIpc(): void {
     const waiter = closeSaveWaiters.get(e.sender.id)
     closeSaveWaiters.delete(e.sender.id)
     waiter?.(ok === true)
+  })
+
+  ipcMain.on(HTML_CHANNELS.readTextResult, (e, result: unknown) => {
+    const waiter = readTextWaiters.get(e.sender.id)
+    readTextWaiters.delete(e.sender.id)
+    if (!waiter) return
+    if (result && typeof result === 'object' && 'text' in result) {
+      waiter({ text: String((result as { text: unknown }).text) })
+    } else {
+      waiter({ error: 'the document could not be read' })
+    }
   })
 
   // safety net for menu saves the renderer declined without invoking save()

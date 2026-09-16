@@ -1208,6 +1208,25 @@ export default function App() {
       }
       void doSave(mode)
     })
+    // MCP read of this open document: hand back the same serialization a save
+    // would write, so uncommitted edits are included. Staying silent while the
+    // editor is still loading keeps the main process retrying its request
+    // instead of failing on a document that is merely not ready yet.
+    const offReadText = window.htmlApi.onReadTextRequest(() => {
+      if (statusRef.current !== 'ready') return
+      try {
+        flushPending()
+        const serialized = serializeDocText({
+          text: textRef.current,
+          envelope: envelopeRef.current,
+        })
+        window.htmlApi.sendReadTextResult({ text: serialized })
+      } catch (err) {
+        window.htmlApi.sendReadTextResult({
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    })
     const offClose = window.htmlApi.onCloseSaveRequest(() => {
       void (async () => {
         while (savingRef.current) await new Promise((r) => setTimeout(r, 50))
@@ -1268,6 +1287,7 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown, true)
     return () => {
       offSave()
+      offReadText()
       offClose()
       offRenamed()
       offExport()

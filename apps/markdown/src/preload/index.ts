@@ -28,6 +28,12 @@ const api: MarkdownApi = {
   },
   sendCloseSaveResult: (ok) => ipcRenderer.send(MARKDOWN_CHANNELS.closeSaveResult, ok),
   sendSaveRequestAck: (ok) => ipcRenderer.send(MARKDOWN_CHANNELS.saveRequestAck, ok),
+  onReadTextRequest: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(MARKDOWN_CHANNELS.readTextRequest, listener)
+    return () => ipcRenderer.removeListener(MARKDOWN_CHANNELS.readTextRequest, listener)
+  },
+  sendReadTextResult: (result) => ipcRenderer.send(MARKDOWN_CHANNELS.readTextResult, result),
   onFileRenamed: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, newPath: string) => handler(newPath)
     ipcRenderer.on(MARKDOWN_CHANNELS.fileRenamed, listener)
