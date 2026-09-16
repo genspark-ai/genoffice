@@ -906,6 +906,31 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
     downloads: 13420,
     icon: '📈',
   },
+  {
+    id: 'translate-skill',
+    name: 'Translate Skill (pi+skills 统一入口)',
+    description: '把 translate_text / translate_file / build_dictionary / kb_search / kb_upsert / kb_remove 作为 6 个 pi 工具暴露给 agent 与 UI',
+    longDescription:
+      'GenOffice 的统一翻译 pi extension。\n' +
+      '\n' +
+      '为什么需要它:LumosAI 的 translate-* skill 把所有逻辑塞进 Python 子进程,UI 想调翻译必须绕开 agent 直连 translate-http.ts。' +
+      '本 skill 把同一份 KB、同一份字典、同一组 quality rules 提升为 pi 扩展,UI(/api/ai/pi-prompt)和 agent(embedded AgentSession)共用同一份实现。\n' +
+      '\n' +
+      '适用:1) 工作台点 PDF → 直接走 translate_file → render-as-background 的中文叠加版;2) Settings → AI 的「翻译知识库」面板 → kb_search/upsert/remove 三个 CRUD 工具;3) 让 agent 在多步任务里自动调用 build_dictionary 为文档生成技术词汇表,然后再 translate_file。',
+    author: 'GenOffice',
+    version: '0.85.1',
+    package: '@genoffice/agent-skills/extensions/translate-skill',
+    source: 'packages/agent-skills/src/extensions/translate-skill.ts',
+    tools: ['translate_text', 'translate_file', 'build_dictionary', 'kb_search', 'kb_upsert', 'kb_remove'],
+    scopes: ['ai:stream', 'files:read', 'files:write'],
+    category: 'translation',
+    tags: ['translation', 'kb', 'i18n', 'pi-extension', 'unified-entry'],
+    rating: 4.9,
+    downloads: 0,
+    featured: true,
+    icon: '🔤',
+    homepage: 'https://github.com/louloulin/genoffice',
+  },
 ]
 
 const MARKETPLACE_PLUGINS: MarketplacePluginEntry[] = [

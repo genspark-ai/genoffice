@@ -461,6 +461,7 @@ const BUILT_IN_SKILLS: Array<{
   { id: 'agent-team', name: 'Agent Team', description: '多 Agent 团队协作(5 个内置角色 + request_review 工具)', version: '0.85.1', author: 'GenOffice', tools: ['request_review', 'run_agent', 'coordinate_team'], scopes: ['ai:stream', 'agents:multi'], category: 'dev', tags: ['agents'] },
   { id: 'audit-log', name: 'Audit Log', description: '企业级审计日志(3 个 sink: file/otlp/console + 自动 tool_call/result 配对)', version: '0.85.1', author: 'GenOffice', tools: ['export_audit', 'tail_audit'], scopes: ['audit:write'], category: 'dev', tags: ['audit', 'enterprise'] },
   { id: 'local-models', name: 'Local Models (Ollama)', description: 'Ollama 本地模型 provider(createOllamaProvider + installLocalModels)', version: '0.85.1', author: 'GenOffice', tools: ['list_ollama_models', 'install_ollama_model', 'pull_ollama_model'], scopes: ['network:out', 'providers:add'], category: 'dev', tags: ['local', 'ollama'] },
+  { id: 'translate-skill', name: 'Translate Skill', description: '统一翻译入口(pi+skills):translate_text / translate_file / build_dictionary / kb_search / kb_upsert / kb_remove。KB 5-schema + 字典生成,UI 与 agent 共用同一 source of truth。', version: '0.85.1', author: 'GenOffice', tools: ['translate_text', 'translate_file', 'build_dictionary', 'kb_search', 'kb_upsert', 'kb_remove'], scopes: ['ai:stream', 'files:read', 'files:write'], category: 'translation', tags: ['translation', 'kb', 'i18n'] },
 ]
 
 

@@ -161,3 +161,10 @@ export {
   createOcrExtension,
   ocrExtensionDefaults,
 } from "./extensions/ocr-skill";
+
+export {
+  createTranslateSkillExtension,
+  ALL_TRANSLATE_TOOL_NAMES,
+  type TranslateSkillOptions,
+  type TranslateToolName,
+} from "./extensions/translate-skill";

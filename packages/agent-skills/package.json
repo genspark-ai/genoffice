@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./extensions/docs-skill": "./src/extensions/docs-skill.ts",
     "./extensions/sheets-skill": "./src/extensions/sheets-skill.ts",
-    "./extensions/slides-skill": "./src/extensions/slides-skill.ts"
+    "./extensions/slides-skill": "./src/extensions/slides-skill.ts",
+    "./extensions/translate-skill": "./src/extensions/translate-skill.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -20,7 +21,9 @@
     "@earendil-works/pi-coding-agent": "^0.85.1",
     "@earendil-works/pi-ai": "^0.85.1",
     "@earendil-works/pi-agent-core": "^0.85.1",
-    "@genoffice/agent-runtime": "*"
+    "@genoffice/agent-runtime": "*",
+    "@genoffice/translation-core": "*",
+    "@genoffice/ai-provider": "*"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
