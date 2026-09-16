@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import {
   createTranslateSkillExtension,
   ALL_TRANSLATE_TOOL_NAMES,
   __setReadSettingsForTests,
   __setTranslateOneForTests,
+  aiSettingsCandidates,
   __setChatForProviderForTests,
   __resetKbForTests,
 } from "../src/extensions/translate-skill"
@@ -163,5 +166,41 @@ describe("kb_upsert shortcut fields", () => {
     expect(sDetails.ok).toBe(true)
     const hit = (sDetails.entries ?? []).find((e) => e.sourceTerm === "fabric code" && e.targetTerm === "面料编号")
     expect(hit, "kb_upsert shortcut should land a searchable term entry").toBeTruthy()
+  })
+})
+
+describe("aiSettingsCandidates", () => {
+  // The agent and the host (web-server / Electron shell) must read the SAME
+  // settings file. Hardcoding ~/.genoffice/ai-settings.json made the agent
+  // silently use a different provider than the UI, which surfaced as
+  // "provider X not configured" while the UI showed a working account.
+  it("prefers an explicit GENOFFICE_AI_SETTINGS override", () => {
+    const out = aiSettingsCandidates({
+      GENOFFICE_AI_SETTINGS: "/explicit/ai-settings.json",
+      DATA_DIR: "/data",
+    } as NodeJS.ProcessEnv)
+    expect(out[0]).toBe("/explicit/ai-settings.json")
+  })
+
+  it("falls back to the host DATA_DIR before the legacy home path", () => {
+    const out = aiSettingsCandidates({ DATA_DIR: "/data" } as NodeJS.ProcessEnv)
+    expect(out).toEqual([
+      join("/data", "ai-settings.json"),
+      join(homedir(), ".genoffice", "ai-settings.json"),
+    ])
+  })
+
+  it("honours the GENOFFICE_DATA_DIR / GENOFFICE_WEB_DATA_DIR aliases", () => {
+    expect(aiSettingsCandidates({ GENOFFICE_DATA_DIR: "/d1" } as NodeJS.ProcessEnv)[0]).toBe(
+      join("/d1", "ai-settings.json"),
+    )
+    expect(aiSettingsCandidates({ GENOFFICE_WEB_DATA_DIR: "/d2" } as NodeJS.ProcessEnv)[0]).toBe(
+      join("/d2", "ai-settings.json"),
+    )
+  })
+
+  it("always ends at the legacy home path so a bare env still resolves", () => {
+    const out = aiSettingsCandidates({} as NodeJS.ProcessEnv)
+    expect(out).toEqual([join(homedir(), ".genoffice", "ai-settings.json")])
   })
 })

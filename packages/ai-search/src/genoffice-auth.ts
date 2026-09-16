@@ -44,7 +44,7 @@ let cachedFetch: typeof fetch | undefined
  */
 function resolveFetch(): typeof fetch {
   if (cachedFetch) return cachedFetch
-  let impl: typeof fetch = (...args) => fetch(...args)
+  let impl: typeof fetch = (...args: Parameters<typeof fetch>) => fetch(...args)
   if (process.versions.electron) {
     try {
       const require = createRequire(import.meta.url)
@@ -80,7 +80,7 @@ async function proxyFallbackFetch(): Promise<typeof fetch | null> {
   const proxyUrl = gskProxyUrl()
   if (!proxyUrl) return null
   if (proxyFetchCache?.url === proxyUrl) return proxyFetchCache.impl
-  let impl: typeof fetch = (...args) => fetch(...args)
+  let impl: typeof fetch = (...args: Parameters<typeof fetch>) => fetch(...args)
   if (process.versions.electron) {
     try {
       const require = createRequire(import.meta.url)

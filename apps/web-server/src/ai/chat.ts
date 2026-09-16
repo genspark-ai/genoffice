@@ -35,6 +35,7 @@ import {
   streamForProvider,
 } from '@genoffice/ai-provider'
 import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
+import { gskApiKey, hasGskAuth, gskLoginInfo } from '@genoffice/ai-search'
 
 import { parseDuckDuckGo, parseDuckDuckGoImages } from '@genoffice/agent-skills'
 import {
@@ -206,6 +207,29 @@ function providerLabel(id: string): string {
   return known[id] ?? id
 }
 
+/**
+ * Resolve the config a provider call should actually use.
+ *
+ * Genspark authenticates through the shared gsk login (`~/.genoffice/auth.json`
+ * or the gsk CLI config), not through a key the user pastes into Settings. The
+ * stored config therefore often has an empty `apiKey`, and without this the
+ * proxy request reaches genspark.ai's website instead of its LLM endpoint and
+ * comes back as an HTML 403. Every call site resolves its config through here so
+ * the behaviour cannot drift between the chat / translate / dictionary paths.
+ */
+export function resolveProviderConfig(
+  settings: AiSettings,
+  provider: AiProviderId,
+): AiProviderConfig | undefined {
+  const config = settings.providers?.[provider]
+  if (!config) return undefined
+  if (provider === 'genspark' && !config.apiKey) {
+    const key = gskApiKey()
+    if (key) return { ...config, apiKey: key }
+  }
+  return config
+}
+
 function loadSettings(): AiSettings {
   try {
     if (existsSync(AI_SETTINGS_FILE)) {
@@ -289,7 +313,7 @@ export async function runProviderStream(
   sink: AiStreamSink,
 ): Promise<void> {
   const provider = settings.provider
-  const config = settings.providers?.[provider]
+  const config = resolveProviderConfig(settings, provider)
   if (!config) {
     sink.send({
       requestId: '',
@@ -378,15 +402,24 @@ export function registerAiCoreHandlers(): void {
     return { ok: true }
   })
 
-  registerHandle('ai:gsk-login', () => ({
-    loggedIn: true,
-    email: 'web-user@genoffice.ai',
-    credits: 1000,
-  }))
+  // Genspark sign-in is the shared gsk login, so report the real state rather
+  // than a canned "signed in": a stub here made the UI claim the account was
+  // connected while every genspark call 403'd.
+  registerHandle('ai:gsk-login', async () => {
+    const info = await gskLoginInfo().catch(() => null)
+    const loggedIn = hasGskAuth() || !!info
+    return {
+      loggedIn,
+      email: info?.email ?? null,
+      credits: info?.creditBalance ?? null,
+    }
+  })
 
-  registerHandle('ai:gsk-status', (_event: unknown, withEmail?: unknown) => {
-    if (withEmail === false) return { loggedIn: false }
-    return { loggedIn: true, email: 'web-user@genoffice.ai' }
+  registerHandle('ai:gsk-status', async (_event: unknown, withEmail?: unknown) => {
+    const info = await gskLoginInfo().catch(() => null)
+    const loggedIn = hasGskAuth() || !!info
+    if (withEmail === false) return { loggedIn }
+    return { loggedIn, email: info?.email ?? null }
   })
 
   registerHandle('ai:log-run-failure', () => ({ ok: true }))
@@ -507,7 +540,7 @@ export function registerAiCoreHandlers(): void {
     }
     const incoming = req.settings || aiSettings
     const provider = incoming.provider
-    const config = incoming.providers?.[provider]
+    const config = resolveProviderConfig(incoming, provider)
     if (!config) {
       return {
         ok: false,
@@ -612,7 +645,7 @@ export function registerAiCoreHandlers(): void {
     }
     const incoming = req.settings || aiSettings
     const provider = incoming.provider
-    const config = incoming.providers?.[provider]
+    const config = resolveProviderConfig(incoming, provider)
     if (!config) {
       return { ok: false, error: `AI provider \"${provider}\" not configured` }
     }
@@ -669,7 +702,7 @@ export function registerAiCoreHandlers(): void {
     const incoming = req as { settings?: AiSettings }
     const settings = (incoming as { settings?: AiSettings }).settings || aiSettings
     const provider = settings.provider
-    const config = settings.providers?.[provider]
+    const config = resolveProviderConfig(settings, provider)
     if (!config) {
       return { ok: false, error: `AI provider "${provider}" not configured`, units: [] }
     }
@@ -743,7 +776,7 @@ export function registerAiCoreHandlers(): void {
     }
     const incoming = req.settings || aiSettings
     const provider = incoming.provider
-    const config = incoming.providers?.[provider]
+    const config = resolveProviderConfig(incoming, provider)
     if (!config) return { ok: false, error: `AI provider "${provider}" not configured` }
     await ensureKbLoaded()
 
@@ -819,7 +852,7 @@ export function registerAiCoreHandlers(): void {
     }
     const incoming = req.settings || aiSettings
     const provider = incoming.provider
-    const config = incoming.providers?.[provider]
+    const config = resolveProviderConfig(incoming, provider)
     const wantsLlm = req.useLlm !== false
     if (wantsLlm && !config) {
       return { ok: false, error: `AI provider "${provider}" not configured` }
@@ -912,7 +945,7 @@ export function registerAiCoreHandlers(): void {
 
     const incoming = req.settings || aiSettings
     const provider = incoming.provider
-    const config = incoming.providers?.[provider]
+    const config = resolveProviderConfig(incoming, provider)
     if (!config) return { ok: false, error: `AI provider "${provider}" not configured` }
     await ensureKbLoaded()
 
@@ -999,7 +1032,7 @@ export function registerAiCoreHandlers(): void {
     }
     const incoming = req.settings || aiSettings
     const provider = incoming.provider
-    const config = incoming.providers?.[provider]
+    const config = resolveProviderConfig(incoming, provider)
     if (!config) return { ok: false, error: `AI provider "${provider}" not configured` }
     await ensureKbLoaded()
     const result = await fillDictionaryGaps(

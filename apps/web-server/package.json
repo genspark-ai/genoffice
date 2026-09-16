@@ -28,6 +28,7 @@
     "@genoffice/agent-runtime": "*",
     "@genoffice/agent-skills": "*",
     "@genoffice/ai-provider": "*",
+    "@genoffice/ai-search": "*",
     "@genoffice/file-parse": "*",
     "@genoffice/ipc-bridge": "*",
     "@genoffice/translation-core": "*"

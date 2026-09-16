@@ -55,13 +55,23 @@ import {
 // Settings resolution
 // ============================================================================
 //
-// Every tool reads `~/.genoffice/ai-settings.json` on demand (lazy with a
-// 1-second TTL) so a Settings change in the shell is picked up by the next
-// tool call without rebuilding the agent session.
+// AI settings are read on demand (lazy, 1-second TTL) so a Settings change in
+// the host is picked up by the next tool call without rebuilding the agent
+// session — the same trick the UI's `ai:get-settings` handler uses.
+//
+// Where the file lives matters: the host (web-server / Electron shell) writes
+// the user's provider + API key to its own DATA_DIR, while the desktop app has
+// historically used `~/.genoffice/`. Reading only one of them made the agent
+// silently use a different provider than the UI — the exact bug this resolves.
+// Precedence:
+//   1. GENOFFICE_AI_SETTINGS   — explicit absolute override (tests, custom deploys)
+//   2. <DATA_DIR>/ai-settings.json where DATA_DIR is the host's data dir
+//   3. ~/.genoffice/ai-settings.json — desktop-app legacy location
+// The first existing file wins; if none exist we fall back to defaults.
 
-// Minimal but valid AiSettings used when no ~/.genoffice/ai-settings.json
-// is on disk yet. The shape mirrors `defaultAiSettings()` in
-// @genoffice/ai-provider so we never invent a provider id that isn't real.
+// Minimal but valid AiSettings used when no settings file is on disk yet. The
+// shape mirrors `defaultAiSettings()` in @genoffice/ai-provider so we never
+// invent a provider id that isn't real.
 import { defaultAiSettings } from "@genoffice/ai-provider"
 
 function makeDefaultSettings(): AiSettings {
@@ -78,26 +88,42 @@ export function __setReadSettingsForTests(fn: (() => Promise<AiSettings>) | null
   cachedSettings = null
 }
 
+/**
+ * Candidate settings files, most-specific first. Exported so hosts and tests
+ * can assert which file the agent will actually read.
+ */
+export function aiSettingsCandidates(env: NodeJS.ProcessEnv = process.env): string[] {
+  const candidates: string[] = []
+  const explicit = env.GENOFFICE_AI_SETTINGS
+  if (explicit && explicit.length > 0) candidates.push(explicit)
+  const dataDir = env.DATA_DIR || env.GENOFFICE_DATA_DIR || env.GENOFFICE_WEB_DATA_DIR
+  if (dataDir && dataDir.length > 0) candidates.push(join(dataDir, "ai-settings.json"))
+  candidates.push(join(homedir(), ".genoffice", "ai-settings.json"))
+  return candidates
+}
+
 async function readSettings(): Promise<AiSettings> {
   if (readSettingsOverride) return readSettingsOverride()
   if (cachedSettings && cachedSettings.expiresAt > Date.now()) {
     return cachedSettings.value
   }
-  const path = join(homedir(), ".genoffice", "ai-settings.json")
   let loaded: AiSettings | null = null
-  try {
-    const raw = await readFile(path, "utf-8")
-    const parsed = JSON.parse(raw) as Partial<AiSettings>
-    if (parsed && typeof parsed === "object") {
-      const defaults = makeDefaultSettings()
-      loaded = {
-        ...defaults,
-        ...parsed,
-        providers: { ...defaults.providers, ...(parsed.providers ?? {}) },
+  for (const path of aiSettingsCandidates()) {
+    try {
+      const raw = await readFile(path, "utf-8")
+      const parsed = JSON.parse(raw) as Partial<AiSettings>
+      if (parsed && typeof parsed === "object") {
+        const defaults = makeDefaultSettings()
+        loaded = {
+          ...defaults,
+          ...parsed,
+          providers: { ...defaults.providers, ...(parsed.providers ?? {}) },
+        }
+        break
       }
+    } catch {
+      /* try the next candidate */
     }
-  } catch {
-    /* file missing or malformed → defaults */
   }
   const value = loaded ?? makeDefaultSettings()
   cachedSettings = { value, expiresAt: Date.now() + 1000 }
