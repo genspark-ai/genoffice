@@ -479,6 +479,10 @@ export interface MarketplaceSkillEntry {
   id: string
   name: string
   description: string
+  /** True only when the entry's tools are registered by a real pi extension in the host
+   *  (e.g. translate-skill). Curated marketplace entries default to false and render a
+   *  guidance-only SKILL.md instead of pre-approving phantom tool names. */
+  implemented?: boolean
   longDescription?: string
   author: string
   version: string
@@ -509,6 +513,10 @@ export interface MarketplacePluginEntry {
   id: string
   name: string
   description: string
+  /** True only when the entry's tools are registered by a real pi extension in the host
+   *  (e.g. translate-skill). Curated marketplace entries default to false and render a
+   *  guidance-only SKILL.md instead of pre-approving phantom tool names. */
+  implemented?: boolean
   longDescription?: string
   author: string
   version: string
@@ -793,7 +801,7 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
     version: '1.0.0',
     package: '@marketplace/translate',
     source: 'skills/translate/SKILL.md',
-    tools: ['translate_file', 'translate_text', 'detect_file_type'],
+    tools: ['translate_file', 'translate_text', 'build_dictionary'],
     scopes: ['files:read', 'files:write', 'ai:stream'],
     category: 'translation',
     tags: ['translation', 'document', 'i18n', 'unified-entry', 'pdf', 'xlsx', 'pptx', 'docx'],
@@ -815,14 +823,7 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
     version: '1.0.0',
     package: '@marketplace/translate-config',
     source: 'skills/translate-config/SKILL.md',
-    tools: [
-      'kb_list',
-      'kb_add',
-      'kb_remove',
-      'kb_import',
-      'kb_export',
-      'kb_validate',
-    ],
+    tools: ['kb_search', 'kb_upsert', 'kb_remove'],
     scopes: ['files:read', 'files:write'],
     category: 'translation',
     tags: ['translation', 'knowledge-base', 'glossary', 'terminology', 'config'],
@@ -841,7 +842,7 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
     version: '1.0.0',
     package: '@marketplace/translate-docx',
     source: 'skills/translate-docx/SKILL.md',
-    tools: ['translate_docx', 'extract_docx_text'],
+    tools: ['translate_file', 'translate_text'],
     scopes: ['files:read', 'files:write'],
     category: 'translation',
     tags: ['translation', 'docx', 'word', 'format-preserving'],
@@ -860,7 +861,7 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
     version: '1.0.0',
     package: '@marketplace/translate-pdf',
     source: 'skills/translate-pdf/SKILL.md',
-    tools: ['translate_pdf'],
+    tools: ['translate_file', 'translate_text'],
     scopes: ['files:read', 'files:write'],
     category: 'translation',
     tags: ['translation', 'pdf', 'layout-preserving', 'render-overlay'],
@@ -879,7 +880,7 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
     version: '1.0.0',
     package: '@marketplace/translate-ppt',
     source: 'skills/translate-ppt/SKILL.md',
-    tools: ['translate_pptx', 'extract_pptx_text'],
+    tools: ['translate_file', 'translate_text'],
     scopes: ['files:read', 'files:write'],
     category: 'translation',
     tags: ['translation', 'pptx', 'powerpoint', 'slides'],
@@ -898,7 +899,7 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
     version: '1.0.0',
     package: '@marketplace/translate-xls',
     source: 'skills/translate-xls/SKILL.md',
-    tools: ['translate_xls', 'translate_xlsx', 'extract_sheet_text'],
+    tools: ['translate_file', 'translate_text'],
     scopes: ['files:read', 'files:write'],
     category: 'translation',
     tags: ['translation', 'xlsx', 'excel', 'spreadsheet', 'soffice'],
@@ -908,6 +909,7 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
   },
   {
     id: 'translate-skill',
+    implemented: true,
     name: 'Translate Skill (pi+skills 统一入口)',
     description: '把 translate_text / translate_file / build_dictionary / kb_search / kb_upsert / kb_remove 作为 6 个 pi 工具暴露给 agent 与 UI',
     longDescription:
@@ -1514,7 +1516,9 @@ function renderSkillBody(entry: {
   scopes: string[]
   category: string
   tags?: string[]
+  guidanceOnly?: boolean
 }): string {
+  const guidanceOnly = entry.guidanceOnly === true
   // pi's name constraint: lowercase letters, digits, hyphens only. The
   // directory the file lives in is `entry.id` (always already a valid slug),
   // so we use that as the canonical name.
@@ -1539,9 +1543,11 @@ function renderSkillBody(entry: {
     `author: ${entry.author}`,
     `category: ${entry.category}`,
     tagsList ? `tags:\n${tagsList}` : '',
-    // Pre-approve these tools so the agent does not ask for permission to call
-    // them — they are part of the host's own UI surface, not third-party.
-    toolsList ? `allowed-tools:\n${toolsList}` : '',
+    // Pre-approve ONLY tools the host actually registers with pi. For
+    // curated entries with no executable code we omit `allowed-tools` so the
+    // agent must ask the user for permission before attempting to call a
+    // phantom tool — surfacing the lie instead of silently allowing it.
+    !guidanceOnly && toolsList ? `allowed-tools:\n${toolsList}` : '',
     `---`,
     ``,
     `# ${entry.name}`,
@@ -1550,9 +1556,14 @@ function renderSkillBody(entry: {
     ``,
     `## Tools`,
     ``,
-    `This skill registers the following tools: \`${tools}\`.`,
-    `Each is wired through the host's pi session and exercises real network/file`,
-    `operations only when its declared scope is granted.`,
+    guidanceOnly
+      ? `This entry has no executable code in the web build — it is guidance only.` +
+        ` The named tools are **not** registered with pi; do not call them. Use the` +
+        ` host's built-in \`translate_text\` / \`translate_file\` / \`kb_search\` / ` +
+        `\`kb_upsert\` / \`kb_remove\` / \`build_dictionary\` tools instead (see the` +
+        ` built-in \`translate-skill\` SKILL.md).`
+      : `This skill registers the following tools: \`${tools}\`.` +
+        ` Each is wired through the host's pi session as a real TypeScript extension and exercises network/file operations only when its declared scope is granted.`,
     ``,
     `## Required permissions`,
     ``,
@@ -1600,6 +1611,7 @@ function skillMarketCatalog(): SkillMarketEntry[] {
           scopes: e.scopes,
           category: e.category,
           tags: e.tags,
+          guidanceOnly: !uploadedBody && e.implemented !== true,
         }),
     }
   })
@@ -1624,13 +1636,27 @@ function invalidateSkillMarket(): void {
   skillMarketInstance = null
 }
 
+
+/** Drop the cached pi AgentSession so the next prompt rebuilds it with the
+ *  current skills.json / plugins.json state. Lazy-imported to keep this
+ *  module independent of pi-session's import graph. */
+async function invalidateLivePiSession(): Promise<void> {
+  try {
+    const mod = await import('./pi-session')
+    mod.invalidatePiSession()
+  } catch (err) {
+    console.warn('[skills] failed to invalidate pi session:', err)
+  }
+}
+
 export function registerSkillHandlers(): void {
   // ── SKILLS ──
   registerHandle('home:list-skills', () => {
     return { skills: loadSkills() }
   })
 
-  registerHandle('home:toggle-skill', async (_event: unknown, args: unknown) => {
+  registerHandle('home:toggle-skill', async (_event: unknown, args: unknown) => {    await invalidateLivePiSession()
+
     const { id, enabled } = (args || {}) as { id: SkillKind; enabled: boolean }
     const all = loadSkills()
     const target = all.find((s) => s.id === id)
@@ -1681,7 +1707,8 @@ export function registerSkillHandlers(): void {
     return { ok: true, skills }
   })
 
-  registerHandle('home:uninstall-skill', async (_event: unknown, args: unknown) => {
+  registerHandle('home:uninstall-skill', async (_event: unknown, args: unknown) => {    await invalidateLivePiSession()
+
     const { id } = (args || {}) as { id: SkillKind }
     const all = loadSkills()
     const skill = all.find((s) => s.id === id)
@@ -1706,7 +1733,8 @@ export function registerSkillHandlers(): void {
     return { ok: true, skills: remaining, piRemoved: true }
   })
 
-  registerHandle('home:reset-skills', () => {
+  registerHandle('home:reset-skills', () => {    void invalidateLivePiSession()
+
     skillsCache = null
     saveSkills(DEFAULT_SKILLS.map((s) => ({ ...s })))
     return { ok: true, skills: loadSkills() }
@@ -1756,7 +1784,8 @@ export function registerSkillHandlers(): void {
     return { ok: true, plugins }
   })
 
-  registerHandle('home:reset-plugins', () => {
+  registerHandle('home:reset-plugins', () => {    void invalidateLivePiSession()
+
     pluginsCache = null
     savePlugins(DEFAULT_PLUGINS.map((p) => ({ ...p })))
     return { ok: true, plugins: loadPlugins() }
@@ -1771,7 +1800,8 @@ export function registerSkillHandlers(): void {
     return { plugins: listMarketplacePlugins() }
   })
 
-  registerHandle('home:install-skill', async (_event: unknown, args: unknown) => {
+  registerHandle('home:install-skill', async (_event: unknown, args: unknown) => {    await invalidateLivePiSession()
+
     // 真实安装:从 marketplace 取元数据,合并到 installed skills
     // 兼容两种参数风格:前端 IPC 客户端 installSkill(name) 用 {name},marketplace UI 用 {id}
     const { id: idArg, name } = (args || {}) as { id?: string; name?: string }
@@ -1828,7 +1858,8 @@ export function registerSkillHandlers(): void {
     }
   })
 
-  registerHandle('home:install-plugin', async (_event: unknown, args: unknown) => {
+  registerHandle('home:install-plugin', async (_event: unknown, args: unknown) => {    await invalidateLivePiSession()
+
     const { id } = (args || {}) as { id: string }
     const entry = allMarketplacePlugins().find((p) => p.id === id)
     if (!entry) {
@@ -1899,7 +1930,8 @@ export function registerSkillHandlers(): void {
     return { ok: true, installed: installedEntry, plugins: next, pi: piInfo }
   })
 
-  registerHandle('home:uninstall-plugin', async (_event: unknown, args: unknown) => {
+  registerHandle('home:uninstall-plugin', async (_event: unknown, args: unknown) => {    await invalidateLivePiSession()
+
     const { id } = (args || {}) as { id: PluginKind }
     const plugin = loadPlugins().find((p) => p.id === id)
     if (!plugin) return { ok: false, error: `Plugin "${id}" not found` }
@@ -2291,7 +2323,8 @@ export function registerSkillHandlers(): void {
   // Unpublish: remove the catalog entry, its artifact and (if installed) the
   // pi-side install. A published extension that has been withdrawn must not
   // leave a skill directory or pi package behind.
-  registerHandle('home:marketplace-delete-upload', async (_event: unknown, args: unknown) => {
+  registerHandle('home:marketplace-delete-upload', async (_event: unknown, args: unknown) => {    await invalidateLivePiSession()
+
     const a = (args || {}) as { kind?: 'skill' | 'plugin'; id?: string }
     const kind = a.kind === 'plugin' ? 'plugin' : 'skill'
     const id = String(a.id ?? '').trim()

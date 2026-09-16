@@ -467,14 +467,6 @@ const BUILT_IN_SKILLS: Array<{
 
 function renderBuiltInSkillMarkdown(entry: typeof BUILT_IN_SKILLS[number]): string {
   const desc = entry.description.replace(/[\r\n]+/g, ' ').slice(0, 1024)
-  // Per the Agent Skills spec (https://agentskills.io/specification):
-  //  - `name` must match parent directory, lowercase a-z0-9 and hyphens only.
-  //  - `description` is required, 1-1024 chars.
-  //  - `allowed-tools` is a SPACE-SEPARATED string (not a YAML list) of
-  //    pre-approved tools. Example from the spec: `allowed-tools: Bash(git:*)
-  //    Bash(jq:*) Read`. We list the tool names space-separated.
-  //  - Everything else (version/author/category/tags) goes into `metadata`
-  //    because the spec ignores unknown frontmatter fields.
   const allowedTools = entry.tools.join(' ')
   const metadataLines: string[] = []
   if (entry.version) metadataLines.push(`  version: "${yamlDoubleQuoted(entry.version)}"`)
@@ -485,14 +477,52 @@ function renderBuiltInSkillMarkdown(entry: typeof BUILT_IN_SKILLS[number]): stri
     for (const t of entry.tags) metadataLines.push(`    - "${yamlDoubleQuoted(t)}"`)
   }
   const metadataBlock = metadataLines.length ? `metadata:\n${metadataLines.join('\n')}` : ''
-
-  // Skill body: agent-facing operating instructions, not just a tool list.
-  // The official spec says the body should contain step-by-step instructions
-  // and edge cases so the agent knows when and how to call these tools.
-  const when = entry.tags && entry.tags.length
-    ? entry.tags.join(', ')
-    : entry.category
+  const when = entry.tags && entry.tags.length ? entry.tags.join(', ') : entry.category
   const scopes = entry.scopes.join(', ')
+  const procedure =
+    entry.id === 'translate-skill'
+      ? [
+          '1. Identify the smallest tool that solves the request. Do NOT call',
+          '   `translate_file` for a single sentence — use `translate_text`.',
+          '2. When translating a file with technical vocabulary, call',
+          '   `kb_search` first to pull existing terms, then `build_dictionary`',
+          '   to mine new ones, then `translate_file` with the resulting JSON',
+          '   dictionary attached.',
+          '3. For all KB edits, always go through `kb_upsert` / `kb_remove` so',
+          '   the on-disk JSON store stays in sync with the in-memory state.',
+          '4. If the user asks for a one-off translation with no term overrides,',
+          '   call `translate_text` directly without seeding the KB.',
+        ].join('\n')
+      : entry.tools.length > 0
+        ? [
+            '1. Pick the smallest tool that solves the request. Avoid running',
+            '   every tool in the skill — each call costs a round-trip.',
+            '2. Read before writing: many tools in this skill expose a `read_*`',
+            '   companion that gives you the block / range / slide ids you need',
+            '   to address the right structure.',
+            '3. Surface every error verbatim. These tools return `{ ok: false, error }`',
+            '   rather than throwing, so a non-ok response is the diagnostic.',
+          ].join('\n')
+        : [
+            'This skill registers session listeners (on `session_start` / etc.)',
+            'rather than tools, so it cannot be invoked directly. It takes',
+            'effect automatically once the host session is running.',
+          ].join('\n')
+  const edgeCases =
+    entry.tools.length > 0
+      ? [
+          '- Empty / non-existent input: every tool in this skill returns',
+          '  `{ ok: false, error }` rather than throwing — surface the error',
+          '  verbatim, do NOT retry without addressing the cause.',
+          '- Permission denied: the host permission gate rejects the call',
+          '  before the tool runs; report the gate verdict verbatim.',
+        ].join('\n')
+      : [
+          '- No host editor attached: this skill is a no-op until the host',
+          '  supplies an editor via `FrozenSelectionEditor`. The agent should',
+          '  not try to invoke it manually.',
+        ].join('\n')
+  const toolsLine = entry.tools.length > 0 ? `allowed-tools: ${allowedTools}` : ''
   const body = [
     `# ${entry.name}`,
     '',
@@ -504,56 +534,37 @@ function renderBuiltInSkillMarkdown(entry: typeof BUILT_IN_SKILLS[number]): stri
     '',
     '## Tools',
     '',
-    `This skill exposes ${entry.tools.length} tool(s): ${entry.tools.join(', ')}.`,
-    'They are implemented as a TypeScript pi extension in',
-    '`@genoffice/agent-skills/extensions/` and wired into the host pi session',
-    'via `extensionFactories`, so they are visible to both the embedded',
-    '`AgentSession` and the host UI through the matching `home:*` IPC handlers.',
+    entry.tools.length
+      ? `This skill exposes ${entry.tools.length} tool(s): ${entry.tools.join(', ')}.`
+      : 'This skill does not expose pi tools (it registers session listeners instead).',
+    entry.tools.length
+      ? 'They are implemented as a TypeScript pi extension in `@genoffice/agent-skills/extensions/` and wired into the host pi session via `extensionFactories`, so they are visible to the embedded `AgentSession` and to any host that re-routes those tools.'
+      : '',
     '',
     '## Operating procedure',
     '',
-    '1. Identify the smallest tool that solves the request. Do NOT call',
-    '   `translate_file` for a single sentence — use `translate_text`.',
-    '2. When translating a file with technical vocabulary, call',
-    '   `kb_search` first to pull existing terms, then `build_dictionary`',
-    '   to mine new ones, then `translate_file` with the resulting JSON',
-    '   dictionary attached.',
-    '3. For all KB edits, always go through `kb_upsert` / `kb_remove` so',
-    '   the on-disk JSON store stays in sync with the in-memory state.',
-    '4. If the user asks for a one-off translation with no term overrides,',
-    '   call `translate_text` directly without seeding the KB.',
+    procedure,
     '',
     '## Edge cases',
     '',
-    '- Empty / non-existent input file: `translate_file` and `build_dictionary`',
-    '  return `{ ok: false, error: ... }` rather than throwing — surface the',
-    '  error verbatim, do NOT retry without addressing the cause.',
-    '- Provider 4xx/5xx: `translate_text` returns the upstream error in',
-    '  `details.error`; report it and ask the user whether to switch the',
-    '  provider in `Settings → AI`.',
-    '- KB write conflicts: `kb_upsert` replaces by id; check the returned id',
-    '  to confirm the intended entry was overwritten.',
+    edgeCases,
     '',
     '## Required permissions',
     '',
     scopes + '.',
     '',
   ].join('\n')
-
   return [
     '---',
     `name: ${entry.id}`,
     `description: "${yamlDoubleQuoted(desc)}"`,
-    // Spec: space-separated string, NOT a YAML list. Tools with spaces in
-    // their name (none today) would need quoting — kept simple here.
-    `allowed-tools: ${allowedTools}`,
+    toolsLine,
     metadataBlock,
     '---',
     '',
     body,
   ].filter((line) => line !== '').join('\n')
 }
-
 
 /**
  * Make sure pi's settings point at the marketplace skills directory. Without
