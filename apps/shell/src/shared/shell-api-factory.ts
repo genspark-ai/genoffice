@@ -6,7 +6,7 @@
 /// same object on the HTTP/SSE transport (web version). Channel names, argument
 /// shapes, listener wrappers and return coercion are identical — only the
 /// transport differs.
-import { AI_PROVIDERS, getProviderAdapter } from '@genoffice/ai-provider'
+import { AI_MEDIA_PROVIDERS, AI_PROVIDERS, AI_SEARCH_PROVIDERS, getProviderAdapter } from '@genoffice/ai-provider/browser'
 import type {
   AiMediaProviderConfig,
   AiMediaProviderId,
@@ -177,10 +177,10 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
       // list (not []) matters: the AI-media pane derives each block's
       // provider options from it, and an empty catalog used to crash the
       // whole settings modal — see the `options[0]` guard in SettingsModal.
-      return []
+      return AI_MEDIA_PROVIDERS
     },
     getAiSearchProviders(): AiSearchProviderMeta[] {
-      return []
+      return AI_SEARCH_PROVIDERS
     },
     async getCodexModels(_cliPath?: string): Promise<CodexModelCatalog> {
       // Codex model catalog is gathered by the main process; the renderer
