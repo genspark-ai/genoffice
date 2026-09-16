@@ -62,6 +62,13 @@ export interface BuildDictionaryRequest {
   useLlm?: boolean
   /** Data directory for the default output path. */
   dataDir: string
+  /**
+   * Optional pre-built knowledge base. When omitted the default on-disk KB at
+   * `~/.genoffice/translation-kb.json` is loaded; pass an empty instance to
+   * stay hermetic (unit tests do this so they cannot read whatever the user
+   * happened to seed).
+   */
+  knowledgeBase?: KnowledgeBase
 }
 
 export interface BuildDictionaryResult {
@@ -322,8 +329,10 @@ export async function buildDictionary(
   const missed: string[] = []
 
   // 1) KB seed — mandatory terms are authoritative and do not need a model call.
-  const kb = new KnowledgeBase()
-  await kb.load().catch(() => undefined)
+  const kb = request.knowledgeBase ?? new KnowledgeBase()
+  if (!request.knowledgeBase) {
+    await kb.load().catch(() => undefined)
+  }
   const resolved = kb.resolve({
     sourceLang: request.sourceLang,
     targetLang: request.targetLang,
@@ -529,6 +538,8 @@ export interface FillGapsRequest {
   customerName?: string
   glossaryCategory?: string
   dataDir: string
+  /** Optional pre-built knowledge base. See BuildDictionaryRequest. */
+  knowledgeBase?: KnowledgeBase
 }
 
 export interface FillGapsEntry {

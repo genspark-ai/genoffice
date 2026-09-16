@@ -22,6 +22,11 @@ import {
 } from '../src/dictionary'
 import { KnowledgeBase } from '../src/knowledge-base'
 
+/** Empty KB so the unit tests cannot pick up rows from a polluted
+ *  `~/.genoffice/translation-kb.json`. The buildDictionary / fillDictionaryGaps
+ *  callers accept a fresh KB to stay hermetic. */
+const emptyKb = () => new KnowledgeBase()
+
 describe('mineSegments', () => {
   it('splits lines, collapses whitespace and dedupes', () => {
     const segments = mineSegments(
@@ -181,6 +186,7 @@ describe('buildDictionary', () => {
         targetLang: 'zh-CN',
         outputPath: join(dir, 'dict.json'),
         dataDir: dir,
+        knowledgeBase: emptyKb(),
       },
       {
         translateBatch: async ({ units }) => ({
@@ -268,6 +274,7 @@ describe('buildDictionary', () => {
         outputPath: join(dir, 'dict.json'),
         dataDir: dir,
         useLlm: false,
+        knowledgeBase: emptyKb(),
       },
       {
         translateBatch: async () => {
@@ -350,6 +357,7 @@ describe('coverage + gap filling', () => {
         outputPath: join(dir, 'dict.json'),
         dataDir: dir,
         useLlm: false,
+        knowledgeBase: emptyKb(),
       },
       { translateBatch: async () => ({ ok: true, units: [] }) },
     )
