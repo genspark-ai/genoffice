@@ -156,6 +156,68 @@ describe('applyKbRules', () => {
     expect(matchedTerms).toContain('克重')
   })
 
+  // Regression: brand neverTranslate used to append "(brand)" to every
+  // translated string when the brand was missing — that polluted every
+  // dictionary row that the LLM touched. Fix: only act when the source
+  // actually contained the brand word.
+  it('does not pollute a translation with a brand neverTranslate marker', () => {
+    const kb = new KnowledgeBase()
+    kb.upsert({
+      id: 'b-ykk',
+      scope: 'company',
+      priority: 3,
+      word: 'YKK',
+      policy: 'neverTranslate',
+    })
+    // Source has no YKK — the brand rule must not touch the translation.
+    const { text } = applyKbRules(
+      'fabric weight is 180 GSM',
+      kb,
+      { sourceLang: 'en-US', targetLang: 'zh-CN' },
+      '面料克重为 180。',
+    )
+    expect(text).toBe('fabric weight is 180 GSM')
+    expect(text).not.toContain('YKK')
+  })
+
+  it('prepends a brand neverTranslate marker when the source had it', () => {
+    const kb = new KnowledgeBase()
+    kb.upsert({
+      id: 'b-ykk',
+      scope: 'company',
+      priority: 3,
+      word: 'YKK',
+      policy: 'neverTranslate',
+    })
+    // Source had YKK but the model translated it away — restore it.
+    const { text } = applyKbRules(
+      'high quality zipper',
+      kb,
+      { sourceLang: 'en-US', targetLang: 'zh-CN' },
+      '使用 YKK 拉链',
+    )
+    expect(text.startsWith('YKK')).toBe(true)
+    expect(text).toContain('high quality zipper')
+  })
+
+  it('does not append a brand marker when sourceText is not provided', () => {
+    const kb = new KnowledgeBase()
+    kb.upsert({
+      id: 'b-ykk',
+      scope: 'company',
+      priority: 3,
+      word: 'YKK',
+      policy: 'neverTranslate',
+    })
+    // No source → cannot tell whether the brand was translated away;
+    // the safer default is to do nothing.
+    const { text } = applyKbRules('whatever', kb, {
+      sourceLang: 'en-US',
+      targetLang: 'zh-CN',
+    })
+    expect(text).toBe('whatever')
+  })
+
   it('leaves text alone when nothing matches', () => {
     const kb = new KnowledgeBase()
     seed(kb)

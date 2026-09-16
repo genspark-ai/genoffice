@@ -225,6 +225,10 @@ export function applyKbRules(
   translated: string,
   kb: KnowledgeBase,
   opts: { sourceLang: string; targetLang: string; customerName?: string },
+  /** Original source text — only when known. Used to decide whether a
+   *  neverTranslate brand rule *should* apply: the model can only have
+   *  "translated the brand away" if the source actually had it. */
+  sourceText?: string,
 ): { text: string; matchedTerms: string[] } {
   const resolved = kb.resolve({
     sourceLang: opts.sourceLang,
@@ -243,11 +247,17 @@ export function applyKbRules(
   }
 
   for (const brand of resolved.brands) {
-    if (brand.policy === 'neverTranslate' && brand.word && !text.includes(brand.word)) {
-      // The model translated the brand away; append the original so the
-      // never-translate rule is respected downstream.
-      text = text.includes(brand.word) ? text : `${text} (${brand.word})`
-    } else if (brand.policy === 'translateAs' && brand.word && brand.translateAs) {
+    if (!brand.word) continue
+    if (brand.policy === 'neverTranslate') {
+      // Only act when the source actually contained the brand — otherwise the
+      // rule would pollute every translation with an appended "(brand.word)".
+      // The KB seed pass already wrote `brand.word → brand.word` into the
+      // dictionary for any segment that contained the brand, so the dictionary
+      // handler restores it downstream without us having to touch the text.
+      if (sourceText && sourceText.includes(brand.word) && !text.includes(brand.word)) {
+        text = `${brand.word} ${text}`
+      }
+    } else if (brand.policy === 'translateAs' && brand.translateAs) {
       if (text.includes(brand.word) && !text.includes(brand.translateAs)) {
         text = text.split(brand.word).join(brand.translateAs)
       }
@@ -395,11 +405,16 @@ export async function buildDictionary(
           missed.push(unit.sourceText)
           continue
         }
-        const { text: ruled } = applyKbRules(cleaned, kb, {
-          sourceLang: request.sourceLang,
-          targetLang: request.targetLang,
-          ...(request.customerName !== undefined ? { customerName: request.customerName } : {}),
-        })
+        const { text: ruled } = applyKbRules(
+          cleaned,
+          kb,
+          {
+            sourceLang: request.sourceLang,
+            targetLang: request.targetLang,
+            ...(request.customerName !== undefined ? { customerName: request.customerName } : {}),
+          },
+          unit.sourceText,
+        )
         dictionary[unit.sourceText] = ruled
         dictSegments.push({ source: unit.sourceText, target: ruled, origin: 'llm' })
         llmEntries++
