@@ -2326,7 +2326,7 @@ function SkillsPluginsPane({ t }: { t: TFunc }) {
                 return (
                   <>
                     <span className="set-mp-summary-count">
-                      {t('mpShowing')} <strong>{shown}</strong> / {mpTotal}
+                      {t('mpShowing', { shown, total: mpTotal })}
                     </span>
                     {active.length > 0 && (
                       <span className="set-mp-summary-filters">
