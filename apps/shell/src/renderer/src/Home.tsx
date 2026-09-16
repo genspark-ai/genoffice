@@ -1510,6 +1510,43 @@ export function Home() {
     void window.aiOffice.toggleStar(path).then(refresh)
   }
 
+  const TRANSLATABLE_EXTS = new Set(['pdf', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'])
+  const isTranslatableExt = (ext: string) => TRANSLATABLE_EXTS.has(ext.toLowerCase())
+
+  const [translating, setTranslating] = useState<Record<string, boolean>>({})
+
+  const translateFile = async (entry: RecentEntry) => {
+    setRowMenu(null)
+    if (!window.aiOffice?.translateFileAuto) {
+      window.alert('Translate is not available (update web-server)')
+      return
+    }
+    const ext = (entry.ext || '').toLowerCase()
+    const outputPath = entry.path.replace(/\.([^.]+)$/, '_translated.$1')
+    setTranslating((m) => ({ ...m, [entry.path]: true }))
+    try {
+      const r = await window.aiOffice.translateFileAuto({
+        inputPath: entry.path,
+        outputPath,
+        sourceLang: 'auto',
+        targetLang: i18n.dateLocale,
+      })
+      if (r?.ok) {
+        void refresh()
+      } else {
+        window.alert((r as any)?.error || 'Translate failed')
+      }
+    } catch (e) {
+      window.alert(`Translate failed: ${(e as Error)?.message ?? e}`)
+    } finally {
+      setTranslating((m) => {
+        const next = { ...m }
+        delete next[entry.path]
+        return next
+      })
+    }
+  }
+
   const removeRecent = (paths: string[]) => {
     setRowMenu(null)
     setSelected(new Set())
@@ -1824,6 +1861,18 @@ export function Home() {
                 >
                   {t('copyPath')}
                 </button>
+                {isTranslatableExt(entry.ext) && (
+                  <>
+                    <div className="row-menu-divider" />
+                    <button
+                      role="menuitem"
+                      disabled={!!translating[entry.path]}
+                      onClick={() => void translateFile(entry)}
+                    >
+                      {translating[entry.path] ? (t('translating') ?? 'Translating…') : t('translateFile')}
+                    </button>
+                  </>
+                )}
                 {projectMode && otherProjects.length > 0 && (
                   <>
                     <div className="row-menu-divider" />
