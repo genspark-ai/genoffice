@@ -64,6 +64,15 @@ import { registerEnterpriseHandlers } from './enterprise/index'
 import { registerAnydocHandlers } from './anydoc/index'
 import { registerWebHandlers } from './web/index'
 
+// ----- global error traps (must run before any handler so unexpected
+//       failures in the pi session bridge show a stack instead of dying silently)
+process.on('uncaughtException', (err) => {
+  console.error('[genoffice] uncaughtException:', err)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[genoffice] unhandledRejection:', reason)
+})
+
 // ----- capability wiring ----------------------------------------------------
 initRecentState()
 registerAiHandlers()

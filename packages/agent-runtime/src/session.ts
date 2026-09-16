@@ -13,12 +13,12 @@
 import {
   createAgentSession,
   DefaultResourceLoader,
+  type ResourceLoader,
   ModelRuntime,
   SessionManager,
   type AgentSession,
   type ExtensionAPI,
   type ExtensionUIContext,
-  type ResourceLoader,
   type SessionManager as SessionManagerType,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
@@ -62,6 +62,11 @@ export interface OfficeSession {
   session: AgentSession;
   /** The shared UI adapter — wire React components to it. */
   uiAdapter: ReactUIAdapter;
+  /** The underlying ResourceLoader — useful when hosts need to enumerate the
+   *  skills / extensions pi discovered without rebuilding the session.
+   *  Most callers should use `reloadResources()` instead, which wraps a
+   *  reload + count summary. */
+  resourceLoader: ResourceLoader;
   /**
    * Re-run pi's resource discovery so newly installed skills / plugins /
    * packages become visible without rebuilding the session. Resolves to the
@@ -128,5 +133,5 @@ export async function createOfficeSession(opts: OfficeSessionOptions = {}): Prom
     return { skills, extensions };
   };
 
-  return { session, uiAdapter, reloadResources, dispose };
+  return { session, uiAdapter, resourceLoader, reloadResources, dispose };
 }

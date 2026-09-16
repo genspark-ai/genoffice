@@ -26,13 +26,15 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, join, resolve, sep } from 'node:path'
 import {
   DefaultPackageManager,
   SettingsManager,
@@ -54,6 +56,11 @@ export const PI_SKILLS_DISABLED_DIR = join(DATA_DIR, 'pi-skills-disabled')
 export const PI_PLUGIN_DIR = join(DATA_DIR, 'pi-plugins')
 /** Scratch space for validating an uploaded SKILL.md before it is published. */
 export const PI_STAGING_DIR = join(DATA_DIR, 'pi-staging')
+/** Wrapper SKILL.md files generated from LumosAI's bundled translate suite —
+ *  GenOffice owns the wrapper frontmatter, the upstream LumosAI scripts are
+ *  untouched. Listed here so the pi-session bridge can hand this directory
+ *  to `DefaultResourceLoader.additionalSkillPaths`. */
+export const LUMOS_SKILLS_WRAPPER_DIR = join(DATA_DIR, 'lumos-skill-wrappers')
 
 for (const dir of [PI_CWD, PI_AGENT_DIR, PI_SKILLS_DIR, PI_PLUGIN_DIR, PI_STAGING_DIR]) {
   try {
@@ -92,6 +99,281 @@ export function packageSourceOf(entry: PackageSource): string {
 }
 
 // ── skill dir registration ──────────────────────────────────────────
+
+
+/** LumosAI bundles its translate suite under `~/.lumos/bundled-skills/<hash>/translate*`.
+ *  Without the wrapper below pi's loader silently skips those directories (it only
+ *  understands the Agent Skills frontmatter shape — `name`, `description`, etc.) and
+ *  the GenOffice UI's marketplace entry becomes the only place those skills exist.
+ *  We materialise a tiny `SKILL.md` wrapper per sibling LumosAI skill so the pi agent
+ *  can `bash` into `scripts/translate.py` exactly like a native skill. The LumosAI
+ *  scripts themselves are untouched — GenOffice owns only the wrapper frontmatter.
+ *
+ *  Returned `registered` lists the wrapper SKILL.md paths pi now sees.
+ */
+export async function ensureLumosSkillsRegistered(): Promise<{ registered: string[]; alreadyHad: string[] }> {
+  const lumosHome = process.env.LUMOS_HOME ?? join(homedir(), '.lumos')
+  const bundledRoot = join(lumosHome, 'bundled-skills')
+  if (!existsSync(bundledRoot)) return { registered: [], alreadyHad: [] }
+
+  const settings = openPiSettings()
+  const existing = new Set(settings.getSkillPaths())
+  const registered: string[] = []
+  const alreadyHad: string[] = []
+  const wrapDirs: string[] = []
+
+  // Pick the newest hash; older hashes are stale snapshots we do not shadow.
+  let newestHash: string | null = null
+  let newestMtime = 0
+  for (const entry of readdirSync(bundledRoot)) {
+    const candidate = join(bundledRoot, entry)
+    let mtime = 0
+    try {
+      mtime = statSync(candidate).mtimeMs
+    } catch {
+      continue
+    }
+    if (!newestHash || mtime > newestMtime) {
+      newestHash = entry
+      newestMtime = mtime
+    }
+  }
+  if (!newestHash) return { registered: [], alreadyHad: [] }
+
+  const skillRoot = join(bundledRoot, newestHash)
+  const wrapperRoot = join(DATA_DIR, 'lumos-skill-wrappers')
+  mkdirSync(wrapperRoot, { recursive: true })
+
+  for (const entry of readdirSync(skillRoot)) {
+    const candidate = join(skillRoot, entry, 'SKILL.md')
+    if (!existsSync(candidate)) continue
+    const wrapperDir = join(wrapperRoot, entry)
+    const wrapperSkill = join(wrapperDir, 'SKILL.md')
+    if (existsSync(wrapperSkill)) {
+      alreadyHad.push(wrapperSkill)
+      wrapDirs.push(wrapperDir)
+      continue
+    }
+    mkdirSync(wrapperDir, { recursive: true })
+    const body = readFileSync(candidate, 'utf-8')
+    // Pi reads only frontmatter; everything below is for the agent. We rewrite the
+    // body so the agent sees a clean description + a direct bash pointer at the
+    // upstream LumosAI script. The LumosAI frontmatter (command_dispatch, etc.) is
+    // dropped — pi would warn on those unknown fields anyway.
+    const wrapper = renderLumosSkillWrapper({ name: entry, source: candidate, body })
+    writeFileSync(wrapperSkill, wrapper, 'utf-8')
+    registered.push(wrapperSkill)
+    wrapDirs.push(wrapperDir)
+  }
+
+  // Register the wrapper root exactly once. Re-adding the same path is a no-op
+  // for pi, but we still dedupe so the settings file does not drift.
+  if (!existing.has(wrapperRoot)) {
+    settings.setSkillPaths([...settings.getSkillPaths(), wrapperRoot])
+  }
+  // `flush()` is async on the SettingsManager; fire-and-forget — the path is in
+  // settings.json either way and pi reads on every session start.
+  try {
+    await settings.flush()
+  } catch (err: unknown) {
+    console.warn('[pi-resources] settings.flush failed:', err)
+  }
+
+  return { registered, alreadyHad }
+}
+
+function extractLumosDescription(body: string, fallback: string): string {
+  // LumosAI SKILL.md frontmatter uses YAML single/double-quoted strings that span
+  // many lines. We parse the top-level description by reading between the matching
+  // quotes. If we cannot find one we fall back to the file's name.
+  const start = body.indexOf('---')
+  if (start < 0) return fallback
+  const fmEnd = body.indexOf('\n---', start + 3)
+  if (fmEnd < 0) return fallback
+  const frontmatter = body.slice(0, fmEnd)
+  const single = frontmatter.match(/^description:\s*(?!["'>])([^\n]+)/m)
+  if (single) return single[1].trim()
+  const dq = frontmatter.match(/^description:\s*"([\s\S]*?)"/m)
+  if (dq) return dq[1].replace(/\s+/g, ' ').trim()
+  const sq = frontmatter.match(/^description:\s*'([\s\S]*?)'/m)
+  if (sq) return sq[1].replace(/\s+/g, ' ').trim()
+  const block = frontmatter.match(/^description:\s*>\s*\n([\s\S]+?)(?:^\S|$)/m)
+  if (block) return block[1].replace(/\n\s+/g, ' ').trim()
+  return fallback
+}
+
+function renderLumosSkillWrapper(opts: {
+  name: string
+  source: string
+  body: string
+}): string {
+  const description = extractLumosDescription(opts.body, `LumosAI translation skill — ${opts.name}`).slice(0, 1024)
+  // Re-slug the directory name so pi accepts it (lowercase a-z, 0-9, hyphen only,
+  // no leading/trailing hyphens, no consecutive hyphens, max 64 chars).
+  const slug = opts.name
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 64) || 'skill'
+  const scriptPath = join(dirname(opts.source), 'scripts', 'translate.py')
+  const fallback = `python3 ${scriptPath} <input> <output> --dictionary <dict.json>`
+  return [
+    '---',
+    `name: ${slug}`,
+    `description: ${description.replace(/"/g, "'")}`,
+    'metadata:',
+    '  hermes:',
+    '    tags:',
+    '      - translation',
+    '      - lumos',
+    '      - upstream',
+    `    source: ${opts.source}`,
+    '---',
+    '',
+    `# ${opts.name} (LumosAI wrapper)`,
+    '',
+    'This is a GenOffice wrapper around a LumosAI skill. The upstream `SKILL.md` lives',
+    `at \`${opts.source}\` and is kept verbatim. Pi only reads the frontmatter above; the`,
+    'body below is the agent-facing playbook and points at the upstream Python script.',
+    '',
+    '## When to load',
+    '',
+    description,
+    '',
+    '## How to run',
+    '',
+    'Call the upstream translate script via `bash`. The skill directory contains the',
+    'Python handler that knows the file format:',
+    '',
+    '```bash',
+    fallback,
+    '```',
+    '',
+    '### Generating a dictionary first',
+    '',
+    'The script accepts `--dictionary <path-to-json>` with `{ "source": "target" }`',
+    'mappings. To get one for an unknown file:',
+    '',
+    '1. Run the upstream script in `--dry-run` mode (it will list untranslated strings).',
+    '2. Or build one with the GenOffice KB + LLM pass:',
+    '   `POST /api/ipc/ai:translate-build-dictionary`',
+    `3. Or mine the file yourself with \`pdfplumber\` / \`openpyxl\` and translate the`,
+    '   unique strings.',
+    '',
+    '## Supported formats',
+    '',
+    'PDF (.pdf), Excel (.xls/.xlsx), PowerPoint (.pptx), Word (.docx).',
+    '',
+    '## Failure modes',
+    '',
+    '- **Missing dependency**: the Python stack needs `pypdfium2`, `pdfplumber`,',
+    '  `reportlab`, `python-docx`, `python-pptx`, `openpyxl`, `xlrd`, `Pillow`.',
+    '  `/opt/homebrew/bin/python3` ships them on macOS; otherwise `pip install -r`',
+    '  the LumosAI requirements.',
+    '- **No --dictionary**: the script reformats only — coverage will be 0%.',
+    '- **Source not in supported extensions**: refused up-front with the extension list.',
+  ].join('\n')
+}
+
+
+/**
+ * Materialise SKILL.md files for every built-in skill. Without this the
+ * marketplace catalog entries (`DEFAULT_SKILLS` in `skills.ts`) are pure UI
+ * metadata — there is nothing on disk for pi's loader to discover, so the
+ * agent has no idea the tools (`read_blocks`, `web_search`, etc.) even exist.
+ *
+ * Idempotent: re-running only writes a SKILL.md when the file is missing.
+ * Returns the paths that were written vs. already on disk so callers can log
+ * a one-liner that shows the bootstrap moved.
+ */
+export function ensureBuiltInSkillsMaterialized(): { written: string[]; skipped: string[] } {
+  const written: string[] = []
+  const skipped: string[] = []
+  mkdirSync(PI_SKILLS_DIR, { recursive: true })
+  for (const entry of BUILT_IN_SKILLS) {
+    const dir = join(PI_SKILLS_DIR, entry.id)
+    const skillPath = join(dir, 'SKILL.md')
+    if (existsSync(skillPath)) {
+      skipped.push(skillPath)
+      continue
+    }
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(skillPath, renderBuiltInSkillMarkdown(entry), 'utf-8')
+    written.push(skillPath)
+  }
+  return { written, skipped }
+}
+
+/** All built-in skills with the metadata needed to render a pi-compatible
+ *  SKILL.md. Keep this list in sync with `DEFAULT_SKILLS` in `skills.ts` —
+ *  the two are the same set of tools, just rendered differently (UI vs. pi). */
+const BUILT_IN_SKILLS: Array<{
+  id: string
+  name: string
+  description: string
+  version: string
+  author: string
+  tools: string[]
+  scopes: string[]
+  category: string
+  tags?: string[]
+}> = [
+  { id: 'docs-skill', name: 'Docs Skill', description: 'Word 文档操作工具集(读块/写块/替换/格式/搜索/...)', version: '0.85.1', author: 'GenOffice', tools: ['read_blocks', 'write_block', 'replace_document', 'insert_blocks', 'delete_blocks', 'format_blocks', 'search_blocks', 'find_replace', 'set_page_margins', 'headings_outline'], scopes: ['files:read', 'files:write', 'docs:edit'], category: 'productivity', tags: ['docs', 'word', 'office'] },
+  { id: 'sheets-skill', name: 'Sheets Skill', description: 'Excel 表格操作工具集(读 cell/写 cell/公式/图表/筛选/排序)', version: '0.85.1', author: 'GenOffice', tools: ['read_range', 'write_range', 'apply_formula', 'create_chart', 'sort_range', 'filter_range'], scopes: ['files:read', 'files:write', 'sheets:edit'], category: 'productivity', tags: ['sheets', 'excel', 'office'] },
+  { id: 'slides-skill', name: 'Slides Skill', description: 'PPT 幻灯片操作工具集(读 slide/写 slide/插入图/布局/演讲备注)', version: '0.85.1', author: 'GenOffice', tools: ['read_slides', 'write_slide', 'insert_image', 'set_layout', 'set_speaker_notes'], scopes: ['files:read', 'files:write', 'slides:edit'], category: 'productivity', tags: ['slides', 'ppt', 'office'] },
+  { id: 'office-workflow', name: 'Office Workflow', description: '跨 Office 工作流编排(docs→sheets→slides 数据流)', version: '0.85.1', author: 'GenOffice', tools: ['cross_office_workflow', 'office_data_pipeline'], scopes: ['files:read', 'files:write'], category: 'productivity', tags: ['office', 'workflow'] },
+  { id: 'office-safety', name: 'Office Safety', description: 'Office 操作安全检查(用户确认 + 范围限制 + 撤销支持)', version: '0.85.1', author: 'GenOffice', tools: ['confirm_destructive_op', 'scope_check'], scopes: ['safety'], category: 'productivity', tags: ['safety'] },
+  { id: 'frozen-selection', name: 'Frozen Selection', description: '冻结 AI 选区,防止后续修改误伤用户意图', version: '0.85.1', author: 'GenOffice', tools: ['freeze_selection', 'unfreeze_selection', 'list_frozen'], scopes: ['docs:edit'], category: 'productivity', tags: ['safety'] },
+  { id: 'verify-response', name: 'Verify Response', description: '验证 AI 响应与原文档的一致性(diff + 摘要回归)', version: '0.85.1', author: 'GenOffice', tools: ['verify_response', 'summarize_diff'], scopes: ['ai:stream'], category: 'productivity', tags: ['safety', 'verify'] },
+  { id: 'skill-market', name: 'Skill Marketplace', description: 'Skills 市场(浏览/搜索/安装/卸载第三方 skill)', version: '0.85.1', author: 'GenOffice', tools: ['list_marketplace', 'search_skills', 'install_skill', 'uninstall_skill'], scopes: ['network:out'], category: 'dev', tags: ['marketplace'] },
+  { id: 'web-search', name: 'Web Search', description: '通过 DuckDuckGo HTML 提供零配置网页搜索,无 API key', version: '1.0.0', author: 'GenOffice', tools: ['web_search'], scopes: ['network:out'], category: 'media', tags: ['search'] },
+  { id: 'image-search', name: 'Image Search', description: 'DuckDuckGo 图片搜索 + 图片下载,无 API key,base64 直接喂给多模态模型', version: '1.0.0', author: 'GenOffice', tools: ['image_search', 'fetch_image'], scopes: ['network:out'], category: 'media', tags: ['images'] },
+  { id: 'ocr', name: 'OCR Image', description: '读取本地/网络图片为 base64 data URI,供多模态模型做文字识别', version: '1.0.0', author: 'GenOffice', tools: ['ocr_image'], scopes: ['files:read', 'network:out'], category: 'media', tags: ['ocr'] },
+  { id: 'agent-team', name: 'Agent Team', description: '多 Agent 团队协作(5 个内置角色 + request_review 工具)', version: '0.85.1', author: 'GenOffice', tools: ['request_review', 'run_agent', 'coordinate_team'], scopes: ['ai:stream', 'agents:multi'], category: 'dev', tags: ['agents'] },
+  { id: 'audit-log', name: 'Audit Log', description: '企业级审计日志(3 个 sink: file/otlp/console + 自动 tool_call/result 配对)', version: '0.85.1', author: 'GenOffice', tools: ['export_audit', 'tail_audit'], scopes: ['audit:write'], category: 'dev', tags: ['audit', 'enterprise'] },
+  { id: 'local-models', name: 'Local Models (Ollama)', description: 'Ollama 本地模型 provider(createOllamaProvider + installLocalModels)', version: '0.85.1', author: 'GenOffice', tools: ['list_ollama_models', 'install_ollama_model', 'pull_ollama_model'], scopes: ['network:out', 'providers:add'], category: 'dev', tags: ['local', 'ollama'] },
+]
+
+
+function renderBuiltInSkillMarkdown(entry: typeof BUILT_IN_SKILLS[number]): string {
+  const tools = entry.tools.join(', ')
+  const scopes = entry.scopes.join(', ')
+  const tags = (entry.tags ?? []).join(', ')
+  return [
+    '---',
+    `name: ${entry.id}`,
+    `display_name: ${entry.name}`,
+    `description: ${entry.description.replace(/[\r\n]+/g, ' ').slice(0, 1024)}`,
+    `version: ${entry.version}`,
+    `author: ${entry.author}`,
+    `category: ${entry.category}`,
+    `tags: ${tags}`,
+    // Pre-approve these tools so the agent does not ask for permission to call
+    // them — they are part of the host's own UI surface, not third-party actions.
+    `allowed-tools: ${tools}`,
+    '---',
+    '',
+    `# ${entry.name}`,
+    '',
+    entry.description,
+    '',
+    '## Tools',
+    '',
+    `This skill registers the following tools: ${tools}.`,
+    'Each is implemented as a TypeScript pi extension in the GenOffice agent-skills',
+    'package and is wired into the host pi session automatically.',
+    '',
+    '## Required permissions',
+    '',
+    scopes + '.',
+    '',
+    '## When to load',
+    '',
+    `Load when the user asks about ${entry.tags?.join(', ') ?? entry.category} tasks.`,
+  ].join('\n')
+}
+
 
 /**
  * Make sure pi's settings point at the marketplace skills directory. Without
