@@ -466,43 +466,92 @@ const BUILT_IN_SKILLS: Array<{
 
 
 function renderBuiltInSkillMarkdown(entry: typeof BUILT_IN_SKILLS[number]): string {
+  const desc = entry.description.replace(/[\r\n]+/g, ' ').slice(0, 1024)
+  // Per the Agent Skills spec (https://agentskills.io/specification):
+  //  - `name` must match parent directory, lowercase a-z0-9 and hyphens only.
+  //  - `description` is required, 1-1024 chars.
+  //  - `allowed-tools` is a SPACE-SEPARATED string (not a YAML list) of
+  //    pre-approved tools. Example from the spec: `allowed-tools: Bash(git:*)
+  //    Bash(jq:*) Read`. We list the tool names space-separated.
+  //  - Everything else (version/author/category/tags) goes into `metadata`
+  //    because the spec ignores unknown frontmatter fields.
+  const allowedTools = entry.tools.join(' ')
+  const metadataLines: string[] = []
+  if (entry.version) metadataLines.push(`  version: "${yamlDoubleQuoted(entry.version)}"`)
+  if (entry.author) metadataLines.push(`  author: "${yamlDoubleQuoted(entry.author)}"`)
+  if (entry.category) metadataLines.push(`  category: "${yamlDoubleQuoted(entry.category)}"`)
+  if (entry.tags && entry.tags.length) {
+    metadataLines.push('  tags:')
+    for (const t of entry.tags) metadataLines.push(`    - "${yamlDoubleQuoted(t)}"`)
+  }
+  const metadataBlock = metadataLines.length ? `metadata:\n${metadataLines.join('\n')}` : ''
+
+  // Skill body: agent-facing operating instructions, not just a tool list.
+  // The official spec says the body should contain step-by-step instructions
+  // and edge cases so the agent knows when and how to call these tools.
+  const when = entry.tags && entry.tags.length
+    ? entry.tags.join(', ')
+    : entry.category
   const scopes = entry.scopes.join(', ')
-  // `tags` and `allowed-tools` must be YAML lists per the Agent Skills spec
-  // (https://pi.dev/docs/latest/skills). A bare scalar string would parse as
-  // one value and lose list semantics downstream.
-  const tagsList = (entry.tags ?? []).map((t) => `  - ${t}`).join('\n')
-  const toolsList = entry.tools.map((t) => `  - ${t}`).join('\n')
-  return [
-    '---',
-    `name: ${entry.id}`,
-    `description: "${yamlDoubleQuoted(entry.description.replace(/[\r\n]+/g, ' ')).slice(0, 1024)}"`,
-    `version: ${entry.version}`,
-    `author: ${entry.author}`,
-    `category: ${entry.category}`,
-    tagsList ? `tags:\n${tagsList}` : '',
-    // Pre-approve these tools so the agent does not ask for permission to call
-    // them — they are part of the host's own UI surface, not third-party actions.
-    toolsList ? `allowed-tools:\n${toolsList}` : '',
-    '---',
-    '',
+  const body = [
     `# ${entry.name}`,
     '',
     entry.description,
     '',
+    '## When to use this skill',
+    '',
+    `Load when the user asks about any of: ${when}.`,
+    '',
     '## Tools',
     '',
-    `This skill registers the following tools: ${entry.tools.join(', ')}.`,
-    'Each is implemented as a TypeScript pi extension in the GenOffice agent-skills',
-    'package and is wired into the host pi session automatically.',
+    `This skill exposes ${entry.tools.length} tool(s): ${entry.tools.join(', ')}.`,
+    'They are implemented as a TypeScript pi extension in',
+    '`@genoffice/agent-skills/extensions/` and wired into the host pi session',
+    'via `extensionFactories`, so they are visible to both the embedded',
+    '`AgentSession` and the host UI through the matching `home:*` IPC handlers.',
+    '',
+    '## Operating procedure',
+    '',
+    '1. Identify the smallest tool that solves the request. Do NOT call',
+    '   `translate_file` for a single sentence — use `translate_text`.',
+    '2. When translating a file with technical vocabulary, call',
+    '   `kb_search` first to pull existing terms, then `build_dictionary`',
+    '   to mine new ones, then `translate_file` with the resulting JSON',
+    '   dictionary attached.',
+    '3. For all KB edits, always go through `kb_upsert` / `kb_remove` so',
+    '   the on-disk JSON store stays in sync with the in-memory state.',
+    '4. If the user asks for a one-off translation with no term overrides,',
+    '   call `translate_text` directly without seeding the KB.',
+    '',
+    '## Edge cases',
+    '',
+    '- Empty / non-existent input file: `translate_file` and `build_dictionary`',
+    '  return `{ ok: false, error: ... }` rather than throwing — surface the',
+    '  error verbatim, do NOT retry without addressing the cause.',
+    '- Provider 4xx/5xx: `translate_text` returns the upstream error in',
+    '  `details.error`; report it and ask the user whether to switch the',
+    '  provider in `Settings → AI`.',
+    '- KB write conflicts: `kb_upsert` replaces by id; check the returned id',
+    '  to confirm the intended entry was overwritten.',
     '',
     '## Required permissions',
     '',
     scopes + '.',
     '',
-    '## When to load',
-    '',
-    `Load when the user asks about ${entry.tags?.join(', ') ?? entry.category} tasks.`,
   ].join('\n')
+
+  return [
+    '---',
+    `name: ${entry.id}`,
+    `description: "${yamlDoubleQuoted(desc)}"`,
+    // Spec: space-separated string, NOT a YAML list. Tools with spaces in
+    // their name (none today) would need quoting — kept simple here.
+    `allowed-tools: ${allowedTools}`,
+    metadataBlock,
+    '---',
+    '',
+    body,
+  ].filter((line) => line !== '').join('\n')
 }
 
 
