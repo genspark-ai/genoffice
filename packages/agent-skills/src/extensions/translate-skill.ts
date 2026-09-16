@@ -197,19 +197,42 @@ function lumosScriptPath(ext: string): { script: string; handler: 'lumos-pdf' | 
     }
   }
   if (!newest) return null
+  // The upstream LumosAI translate suite ships each format as its own skill,
+  // but the bundled script filenames are `<format>_translate.py`, not
+  // `translate.py`. Older code pointed at the wrong filename and silently
+  // returned null — every file translation fell through to the TS fallback
+  // path. The single-source-of-truth entry point is the top-level
+  // `translate/scripts/translate.py`, which dispatches on the extension. We
+  // prefer that when it exists (keeps the dispatch logic upstream-managed);
+  // otherwise we fall back to the format-specific sibling scripts so newly
+  // installed skills still work without the top-level entry.
   const lower = ext.toLowerCase()
-  const map: Record<string, { rel: string; handler: 'lumos-pdf' | 'lumos-docx' | 'lumos-xls' | 'lumos-ppt' }> = {
-    ".pdf": { rel: "translate-pdf/scripts/translate.py", handler: "lumos-pdf" },
-    ".docx": { rel: "translate-docx/scripts/translate.py", handler: "lumos-docx" },
-    ".xls": { rel: "translate-xls/scripts/translate.py", handler: "lumos-xls" },
-    ".xlsx": { rel: "translate-xls/scripts/translate.py", handler: "lumos-xls" },
-    ".ppt": { rel: "translate-ppt/scripts/translate.py", handler: "lumos-ppt" },
-    ".pptx": { rel: "translate-ppt/scripts/translate.py", handler: "lumos-ppt" },
+  const formatMap: Record<string, { handler: 'lumos-pdf' | 'lumos-docx' | 'lumos-xls' | 'lumos-ppt' }> = {
+    ".pdf": { handler: "lumos-pdf" },
+    ".docx": { handler: "lumos-docx" },
+    ".xls": { handler: "lumos-xls" },
+    ".xlsx": { handler: "lumos-xls" },
+    ".ppt": { handler: "lumos-ppt" },
+    ".pptx": { handler: "lumos-ppt" },
   }
-  const entry = map[lower]
-  if (!entry) return null
-  const full = join(root, newest, entry.rel)
-  return existsSync(full) ? { script: full, handler: entry.handler } : null
+  const meta = formatMap[lower]
+  if (!meta) return null
+  const unified = join(root, newest, "translate", "scripts", "translate.py")
+  if (existsSync(unified)) return { script: unified, handler: meta.handler }
+  // Format-specific fallback filenames: the PDF sibling is
+  // `translate_pdf.py`; xls/ppt/docx use `<format>_translate.py`.
+  const siblingMap: Record<string, string> = {
+    ".pdf": "translate-pdf/scripts/translate_pdf.py",
+    ".docx": "translate-docx/scripts/translate_docx.py",
+    ".xls": "translate-xls/scripts/translate_xls.py",
+    ".xlsx": "translate-xls/scripts/translate_xls.py",
+    ".ppt": "translate-ppt/scripts/translate_ppt.py",
+    ".pptx": "translate-ppt/scripts/translate_ppt.py",
+  }
+  const sibling = siblingMap[lower]
+  if (!sibling) return null
+  const full = join(root, newest, sibling)
+  return existsSync(full) ? { script: full, handler: meta.handler } : null
 }
 
 // ============================================================================
@@ -324,6 +347,19 @@ const TranslateFileParams = Type.Object({
   ),
   source_lang: Type.Optional(Type.String()),
   target_lang: Type.String(),
+  /**
+   * Run the Python translator in-process instead of returning a bash command.
+   * Defaults to false so the agent loop still gets a `bashCommand` it can
+   * audit; UI-driven IPC handlers pass true so the worker's toolbar actually
+   * receives the translated file.
+   */
+  execute: Type.Optional(Type.Boolean({ default: false })),
+  /**
+   * Override the Python interpreter. Auto-detected from PATH; the host can
+   * pin `/opt/homebrew/bin/python3.14` (which has python-docx / python-pptx
+   * / PyMuPDF preinstalled) when the system python3 lacks those deps.
+   */
+  python_path: Type.Optional(Type.String({ maxLength: 4096 })),
 })
 
 type TranslateFileArgs = {
@@ -332,6 +368,8 @@ type TranslateFileArgs = {
   dictionary_path?: string
   source_lang?: string
   target_lang: string
+  execute?: boolean
+  python_path?: string
 }
 
 interface TranslateFileResult {
@@ -341,6 +379,54 @@ interface TranslateFileResult {
   bashCommand?: string
   elapsedMs?: number
   error?: string
+}
+
+/**
+ * Spawn the upstream LumosAI Python translator and wait for it. Used when
+ * the caller (UI) does not have the agent loop's `bash` tool available.
+ * Mirrors the command shape the agent loop runs.
+ */
+import { spawn as nodeSpawn } from "node:child_process"
+async function executeFileTranslation(args: {
+  script: string
+  inputPath: string
+  outputPath: string
+  dictionaryPath?: string
+  pythonPath?: string
+}): Promise<{ ok: boolean; stdout: string; stderr: string; code: number; elapsedMs: number; error?: string }> {
+  const start = Date.now()
+  const dict = args.dictionaryPath ? ` --dictionary "${args.dictionaryPath}"` : ""
+  const cmd = `${args.pythonPath ?? "python3"} "${args.script}" "${args.inputPath}" "${args.outputPath}"${dict}`
+  return await new Promise((resolve) => {
+    try {
+      const proc = nodeSpawn(args.pythonPath ?? "python3", [
+        args.script,
+        args.inputPath,
+        args.outputPath,
+        ...(args.dictionaryPath ? ["--dictionary", args.dictionaryPath] : []),
+      ], { stdio: ["ignore", "pipe", "pipe"] })
+      let stdout = ""
+      let stderr = ""
+      proc.stdout.on("data", (chunk) => { stdout += chunk.toString("utf-8") })
+      proc.stderr.on("data", (chunk) => { stderr += chunk.toString("utf-8") })
+      proc.on("error", (err) => {
+        resolve({ ok: false, stdout, stderr: stderr + "\n" + err.message, code: -1, elapsedMs: Date.now() - start, error: err.message })
+      })
+      proc.on("close", (code) => {
+        resolve({
+          ok: code === 0,
+          stdout,
+          stderr,
+          code: code ?? -1,
+          elapsedMs: Date.now() - start,
+          ...(code !== 0 ? { error: stderr.split("\n").filter(Boolean).pop() || `exit ${code}` } : {}),
+        })
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      resolve({ ok: false, stdout: "", stderr: msg, code: -1, elapsedMs: Date.now() - start, error: msg })
+    }
+  })
 }
 
 function createTranslateFileTool() {
@@ -368,7 +454,36 @@ function createTranslateFileTool() {
         const lumos = lumosScriptPath(ext)
         if (lumos) {
           const dict = params.dictionary_path ? ` --dictionary ${params.dictionary_path}` : ""
-          const cmd = `python3 ${lumos.script} "${params.input_path}" "${out}"${dict}`
+          const cmd = `${params.python_path ?? "python3"} ${lumos.script} "${params.input_path}" "${out}"${dict}`
+          if (params.execute) {
+            // UI / IPC path: actually run the translator. The agent loop
+            // leaves execute unset and gets back the bash command it can
+            // audit through its own bash tool.
+            const run = await executeFileTranslation({
+              script: lumos.script,
+              inputPath: params.input_path,
+              outputPath: out,
+              ...(params.dictionary_path ? { dictionaryPath: params.dictionary_path } : {}),
+              ...(params.python_path ? { pythonPath: params.python_path } : {}),
+            })
+            const tail = run.ok
+              ? run.stdout.split("\n").filter(Boolean).slice(-6).join(" | ")
+              : run.error ?? `exit ${run.code}`
+            return {
+              content: [{ type: "text" as const, text: `translate_file(${ext}) → ${run.ok ? "ok" : "failed"}: ${tail}` }],
+              details: {
+                ok: run.ok,
+                outputPath: run.ok ? out : undefined,
+                handler: lumos.handler,
+                bashCommand: cmd,
+                stdout: run.stdout,
+                stderr: run.stderr,
+                exitCode: run.code,
+                elapsedMs: Date.now() - start,
+                ...(run.error ? { error: run.error } : {}),
+              },
+            }
+          }
           return {
             content: [
               { type: "text" as const, text: `translate_file(${ext}): run via bash → ${cmd}` },

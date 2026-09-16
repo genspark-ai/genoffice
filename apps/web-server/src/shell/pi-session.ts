@@ -229,6 +229,10 @@ registerHandle('home:pi-list-skills', async () => {
     return callTranslateTool('kb_remove', args)
   })
   registerHandle('home:translate-file', async (_event, args) => {
-    return callTranslateTool('translate_file', args)
+    // The UI is not an agent loop — it has no `bash` tool to run the returned
+    // bashCommand. Force execute=true so the worker actually writes the
+    // translated file; the agent loop still gets the plan-mode command.
+    const params = (Array.isArray(args) ? args[0] : args) as Record<string, unknown> | undefined
+    return callTranslateTool('translate_file', { ...(params ?? {}), execute: true })
   })
 }

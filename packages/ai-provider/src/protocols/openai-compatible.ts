@@ -69,7 +69,11 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
     choices?: Array<{
       message?: {
         content?: string | null
+        // OpenAI's standard reasoning field. Older Ollama / ollama-compat
+        // builds emit plain `reasoning` instead. Read both — when both are
+        // present, the standard name wins so we never double-count.
         reasoning_content?: string
+        reasoning?: string
         tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>
       }
       finish_reason?: string | null
@@ -84,10 +88,19 @@ function emitOpenAiJsonMessage(bodyText: string, cb: StreamCallbacks): void {
   if (msg.error) throw new Error(sseErrorText(msg.error, 'Model error'))
   const choice = msg.choices?.[0]
   let emitted = false
-  if (choice?.message?.reasoning_content) cb.onReasoningDelta?.(choice.message.reasoning_content)
+  // Some thinking models (Ollama, vLLM with `--reasoning-parser`) return the
+  // entire reply inside `reasoning` while `content` stays empty. For non-
+  // streaming chat completion we have no follow-up turn to recover from a
+  // missing answer, so when no content was emitted we promote the reasoning
+  // payload as the assistant's actual reply.
+  const reasoning = choice?.message?.reasoning_content ?? choice?.message?.reasoning
+  if (reasoning) cb.onReasoningDelta?.(reasoning)
   if (choice?.message?.content) {
     emitted = true
     cb.onDelta(choice.message.content)
+  } else if (reasoning) {
+    emitted = true
+    cb.onDelta(reasoning)
   }
   const toolCalls: AgentToolCall[] = []
   for (const tc of choice?.message?.tool_calls ?? []) {
@@ -341,17 +354,23 @@ export async function chatOpenAiCompatible(
   // would make response.json() throw; return ok:false instead of leaking a
   // raw SyntaxError to the caller.
   const bodyText = await response.text()
-  let json: { choices?: Array<{ message?: { content?: string; reasoning_content?: string } }> }
+  let json: { choices?: Array<{ message?: { content?: string; reasoning_content?: string; reasoning?: string } }> }
   try {
-    json = JSON.parse(bodyText) as { choices?: Array<{ message?: { content?: string; reasoning_content?: string } }> }
+    json = JSON.parse(bodyText) as { choices?: Array<{ message?: { content?: string; reasoning_content?: string; reasoning?: string } }> }
   } catch {
     return {
       ok: false,
       error: `AI returned a non-JSON response: ${httpBodyDetail(bodyText)}`,
     }
   }
+  // OpenAI's standard field is `reasoning_content`; Ollama and a few
+  // ollama-compat forks emit the chain-of-thought as plain `reasoning` on
+  // thinking models (e.g. ov_intent_analysis_sft). Read both so a model
+  // whose `content` is empty but whose `reasoning` carries the answer still
+  // surfaces it to the caller.
   const raw = json.choices?.[0]?.message?.content ?? ''
   const reasoning = json.choices?.[0]?.message?.reasoning_content
+    ?? json.choices?.[0]?.message?.reasoning
   const content = stripThinkTags(raw)
   if (!content) {
     if (reasoning) {
