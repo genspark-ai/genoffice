@@ -62,7 +62,8 @@ export {
   type MemorySaveResponse,
 } from './memory'
 
-export { translateOne, translateBatch, translateBatchStream, sharedMemory } from './provider'
+export { translateOne, translateBatch, translateBatchStream, sharedMemory,
+  type TranslationMemoryLike } from './provider'
 export type { TranslateOneOptions, TranslateBatchStreamOptions } from './provider'
 
 // W9 seam — the LLM client boundary. Hosts may swap callers via setLlmCaller().

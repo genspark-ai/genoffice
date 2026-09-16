@@ -140,4 +140,37 @@ describe('PersistentTranslationMemory', () => {
     await tm.flush()
     expect(fs.files.size).toBe(0)
   })
+
+  it('saveMany delegates to the inner TM, marks every pair dirty and persists on flush', async () => {
+    const fs = new MemoryFS()
+    const tm = new PersistentTranslationMemory({ baseDir: '/tmp/tm', fileSystem: fs })
+    const response = tm.saveMany({
+      scene: 'office',
+      sourceLang: 'en-US',
+      targetLang: 'zh-CN',
+      units: [
+        { unitId: 'u1', sourceText: 'Hello', translatedText: '你好' },
+        { unitId: 'u2', sourceText: 'World', translatedText: '世界' },
+      ],
+    })
+    expect(response.ok).toBe(true)
+    expect(response.savedCount).toBe(2)
+    // Inner index sees both
+    expect(tm.lookup('en-US', 'zh-CN', 'Hello')?.translatedText).toBe('你好')
+    await tm.flush()
+    // Rehydrate from disk and confirm both persisted
+    const tm2 = new PersistentTranslationMemory({ baseDir: '/tmp/tm', fileSystem: fs })
+    await tm2.load()
+    expect(tm2.lookup('en-US', 'zh-CN', 'Hello')?.translatedText).toBe('你好')
+    expect(tm2.lookup('en-US', 'zh-CN', 'World')?.translatedText).toBe('世界')
+  })
+
+  it('clear wipes both the inner index and the per-pair cache', () => {
+    const tm = new PersistentTranslationMemory({ baseDir: '/tmp/tm', fileSystem: new MemoryFS() })
+    tm.save({ sourceLang: 'en-US', targetLang: 'zh-CN', sourceText: 'A', translatedText: '甲' })
+    expect(tm.size()).toBeGreaterThan(0)
+    tm.clear()
+    expect(tm.size()).toBe(0)
+    expect(tm.lookup('en-US', 'zh-CN', 'A')).toBeNull()
+  })
 })

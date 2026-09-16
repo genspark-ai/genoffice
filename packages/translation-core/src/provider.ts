@@ -8,6 +8,7 @@ import {
 } from './prompt'
 import { assessBatchQuality, warningsFor } from './quality'
 import { TranslationMemory } from './memory'
+import type { MemoryEntry } from './memory'
 import type { KnowledgeBase } from './knowledge-base'
 import type {
   TranslateBatchRequest,
@@ -27,13 +28,23 @@ import { callLlm } from './llm-client'  // W9: seam between translation-core and
  * The shared instance is a singleton so consecutive calls (the typical
  * retranslation flow) hit the in-memory TM.
  */
+/** Subset of {@link TranslationMemory} the translator actually calls —
+ *  the in-memory and persistent implementations both satisfy it. */
+export interface TranslationMemoryLike {
+  lookup(sourceLang: string, targetLang: string, sourceText: string): MemoryEntry | null
+  save(entry: Omit<MemoryEntry, 'updatedAt'>): void
+}
+
 export const sharedMemory = new TranslationMemory()
 
 export interface TranslateOneOptions {
   provider: AiProviderId
   config: AiProviderConfig
-  /** Optional external memory; falls back to the shared in-memory TM. */
-  memory?: TranslationMemory
+  /** Optional external memory; falls back to the shared in-memory TM.
+   *  Accepts any object that exposes the methods the translator actually
+   *  uses (`lookup` and `save`); the in-memory {@link TranslationMemory} and
+   *  the file-backed {@link PersistentTranslationMemory} both satisfy this. */
+  memory?: TranslationMemoryLike
   /**
    * Optional translation knowledge base. When provided, the resolved rules
    * (term / forbidden / brand / style / customer preferences) are appended

@@ -32,7 +32,7 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises'
 import path from 'node:path'
 
 import { TranslationMemory } from './memory'
-import type { MemoryEntry } from './memory'
+import type { MemoryEntry, MemorySaveRequest, MemorySaveResponse } from './memory'
 
 /** File layout mirrors LumosAI: `~/.lumosai/translation_memory/<pair>.json`. */
 const DEFAULT_BASE_DIR = path.join(
@@ -196,6 +196,42 @@ export class PersistentTranslationMemory {
   }
 
   /** How many entries are cached in memory. */
+  /**
+   * Save a batch of memory entries in one call. Same signature as the
+   * in-memory {@link TranslationMemory.saveMany} so this class is a true
+   * drop-in replacement for callers that import the memory option by type.
+   * Marks every touched pair dirty so the next {@link flush} persists them.
+   */
+  saveMany(req: MemorySaveRequest): MemorySaveResponse {
+    const inner = this.inner.saveMany(req)
+    for (const unit of req.units ?? []) {
+      if (!unit.sourceText) continue
+      const pair = pairKey(req.sourceLang ?? 'auto', req.targetLang ?? 'auto')
+      let cache = this.pairCache.get(pair)
+      if (!cache) {
+        cache = { entries: [] }
+        this.pairCache.set(pair, cache)
+      }
+      cache.entries.push({
+        sourceLang: req.sourceLang ?? 'auto',
+        targetLang: req.targetLang ?? 'auto',
+        sourceText: unit.sourceText,
+        translatedText: unit.translatedText,
+        updatedAt: Date.now(),
+      })
+      this.dirtyPairs.add(pair)
+    }
+    return inner
+  }
+
+  /** Wipe both the in-memory index and the per-pair cache. Mostly useful for
+   *  tests; production callers rarely want to throw away the entire memory. */
+  clear(): void {
+    this.inner.clear()
+    this.pairCache.clear()
+    this.dirtyPairs.clear()
+  }
+
   size(): number {
     return this.inner.size()
   }

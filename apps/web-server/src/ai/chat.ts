@@ -47,6 +47,7 @@ import {
   KnowledgeBase,
   resolveTranslateSkills,
   sharedMemory,
+  PersistentTranslationMemory,
   SUPPORTED_EXTENSIONS,
   translateBatch,
   translateFile,
@@ -74,6 +75,35 @@ function ensureKbLoaded(): Promise<void> {
     })
   }
   return kbLoadPromise
+}
+
+// Persistent translation memory — the in-memory `sharedMemory` loses everything
+// on restart, so any LLM translation the agent makes is wasted work on the next
+// run. `translationMemory` writes per-pair JSON under
+// `~/.genoffice/translation-memory/` and rehydrates on boot, so sentence-level
+// reuse kicks in without the user having to wire anything up.
+export const translationMemory = new PersistentTranslationMemory()
+let tmLoadPromise: Promise<void> | null = null
+function ensureMemoryLoaded(): Promise<void> {
+  if (!tmLoadPromise) {
+    tmLoadPromise = translationMemory.load().catch((err: unknown) => {
+      console.warn('[translation-memory] load failed:', err)
+    })
+  }
+  return tmLoadPromise
+}
+
+// Debounce flushes so a burst of translations doesn't hit the disk on every
+// call; the underlying `isDirty` already prevents redundant work.
+let flushTimer: NodeJS.Timeout | null = null
+function scheduleMemoryFlush(delayMs = 250): void {
+  if (flushTimer) return
+  flushTimer = setTimeout(() => {
+    flushTimer = null
+    void translationMemory.flush().catch((err: unknown) => {
+      console.warn('[translation-memory] flush failed:', err)
+    })
+  }, delayMs)
 }
 
 // ----- settings persistence --------------------------------------------------
@@ -531,7 +561,7 @@ export function registerAiCoreHandlers(): void {
       {
         provider,
         config: config as AiProviderConfig,
-        memory: sharedMemory,
+        memory: translationMemory,
         knowledgeBase: sharedKnowledgeBase,
       },
     )
@@ -588,11 +618,12 @@ export function registerAiCoreHandlers(): void {
       {
         provider,
         config: config as AiProviderConfig,
-        memory: sharedMemory,
+        memory: translationMemory,
         knowledgeBase: sharedKnowledgeBase,
       },
     )
   })
+  scheduleMemoryFlush()
 
   registerHandle('ai:save-translation-memory', async (_event: unknown, request: unknown) => {
     const req = (request ?? {}) as {
@@ -608,12 +639,15 @@ export function registerAiCoreHandlers(): void {
         sourceText: u.sourceText ?? '',
         translatedText: u.translatedText ?? '',
       }))
-    return sharedMemory.saveMany({
+    await ensureMemoryLoaded()
+    const response = translationMemory.saveMany({
       scene: req.scene ?? 'office',
       sourceLang: req.sourceLang ?? 'auto',
       targetLang: req.targetLang ?? 'auto',
       units,
     })
+    await translationMemory.flush()
+    return response
   })
 
   // ai:translate-build-dictionary — KB + LLM produce the `--dictionary` the
@@ -664,7 +698,7 @@ export function registerAiCoreHandlers(): void {
           return translateBatch(input, {
             provider,
             config: config as AiProviderConfig,
-            memory: sharedMemory,
+            memory: translationMemory,
             knowledgeBase: sharedKnowledgeBase,
           })
         },
@@ -718,7 +752,7 @@ export function registerAiCoreHandlers(): void {
           translateBatch(input, {
             provider,
             config: config as AiProviderConfig,
-            memory: sharedMemory,
+            memory: translationMemory,
             knowledgeBase: sharedKnowledgeBase,
           }),
       },
@@ -733,6 +767,7 @@ export function registerAiCoreHandlers(): void {
       dictionaryPath: dict.dictionaryPath,
       ...(req.scale !== undefined ? { scale: req.scale } : {}),
     })
+    scheduleMemoryFlush()
     return {
       ...fileResult,
       stage: fileResult.ok ? 'done' : 'translate',
