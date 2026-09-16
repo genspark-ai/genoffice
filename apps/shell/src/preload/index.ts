@@ -13,16 +13,16 @@ import type {
   AccountLoginEvent,
   AccountStatus,
   CloudProjectsSnapshot,
+  FolderListing,
+  FolderRoot,
+  MoveResult,
   HomeApi,
   RecentEntry,
   RecentPage,
   RenameResult,
-  ProjectHomeApi,
-  ProjectSummaryEntry,
-  TimelineEntryItem,
   UiLanguage,
 } from '../shared/home-api'
-import { HOME_CHANNELS, PROJECT_CHANNELS } from '../shared/home-api'
+import { HOME_CHANNELS } from '../shared/home-api'
 import { INTEGRATIONS_CHANNELS } from '../shared/integrations-api'
 import type {
   IntegrationsApi,
@@ -126,6 +126,36 @@ const homeApi: HomeApi = {
   },
   async deleteFiles(paths) {
     await ipcRenderer.invoke(HOME_CHANNELS.deleteFiles, paths)
+  },
+  async folderRoot() {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.folderRoot)) as FolderRoot
+  },
+  async listFolder(dir) {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.listFolder, dir)) as FolderListing
+  },
+  async createFolder(parent, name) {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.createFolder, parent, name)) as RenameResult
+  },
+  async renameFolder(dir, newName) {
+    return (await ipcRenderer.invoke(HOME_CHANNELS.renameFolder, dir, newName)) as RenameResult
+  },
+  async movePaths(paths, targetDir, onConflict) {
+    return (await ipcRenderer.invoke(
+      HOME_CHANNELS.movePaths,
+      paths,
+      targetDir,
+      onConflict,
+    )) as MoveResult
+  },
+  async deleteFolder(dir) {
+    await ipcRenderer.invoke(HOME_CHANNELS.deleteFolder, dir)
+  },
+  onFolderChanged(handler) {
+    const listener = (_event: IpcRendererEvent, dirs: unknown) => {
+      if (Array.isArray(dirs)) handler(dirs.filter((d): d is string => typeof d === 'string'))
+    }
+    ipcRenderer.on(HOME_CHANNELS.folderChanged, listener)
+    return () => ipcRenderer.removeListener(HOME_CHANNELS.folderChanged, listener)
   },
   async openTrash() {
     await ipcRenderer.invoke(HOME_CHANNELS.openTrash)
@@ -412,41 +442,6 @@ function asCloudProjectsSnapshot(result: unknown): CloudProjectsSnapshot | null 
 }
 
 contextBridge.exposeInMainWorld('aiOffice', homeApi)
-
-const projectApi: ProjectHomeApi = {
-  async listProjects() {
-    const result: unknown = await ipcRenderer.invoke(PROJECT_CHANNELS.list)
-    return Array.isArray(result) ? (result as ProjectSummaryEntry[]) : []
-  },
-  async listFiles(projectId) {
-    const result: unknown = await ipcRenderer.invoke(PROJECT_CHANNELS.files, { projectId })
-    return Array.isArray(result)
-      ? result.filter((path): path is string => typeof path === 'string')
-      : []
-  },
-  async createProject(name) {
-    const result: unknown = await ipcRenderer.invoke(PROJECT_CHANNELS.create, { name })
-    return result as ProjectSummaryEntry
-  },
-  async renameProject(id, name) {
-    await ipcRenderer.invoke(PROJECT_CHANNELS.rename, { id, name })
-  },
-  async deleteProject(id) {
-    await ipcRenderer.invoke(PROJECT_CHANNELS.delete, { id })
-  },
-  async moveFile(filePath, projectId) {
-    await ipcRenderer.invoke(PROJECT_CHANNELS.moveFile, { filePath, projectId })
-  },
-  async getTimeline(projectId, limit) {
-    const result: unknown = await ipcRenderer.invoke(PROJECT_CHANNELS.timeline, {
-      projectId,
-      limit,
-    })
-    return Array.isArray(result) ? (result as TimelineEntryItem[]) : []
-  },
-}
-
-contextBridge.exposeInMainWorld('aiOfficeProject', projectApi)
 
 const integrationsApi: IntegrationsApi = {
   async status() {

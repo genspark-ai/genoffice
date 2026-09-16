@@ -2014,6 +2014,20 @@ html.genoffice-popover-open .ribbon-tabs {
   overflow-y: auto;
 }
 
+.md-outline-resizer {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+  width: 5px;
+  margin: 0 -2px 0 -3px;
+  cursor: col-resize;
+}
+
+.md-outline-resizer:hover,
+.md-outline-resizer.dragging {
+  background: var(--accent-soft);
+}
+
 .md-outline-title {
   padding: 2px 10px 8px;
   font-size: 12px;

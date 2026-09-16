@@ -340,6 +340,8 @@ export interface Props {
   zoom: number
   onZoom: (z: number | ((current: number) => number)) => void
   showThumbs: boolean
+  filesOpen: boolean
+  onToggleFiles: () => void
   onToggleThumbs: () => void
   aiOpen: boolean
   onToggleAi: () => void

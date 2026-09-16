@@ -266,7 +266,8 @@ export function eqFieldToOmml(instr: string): EqField | null {
   return { omml: `<m:oMath>${body.omml}</m:oMath>`, text: body.text }
 }
 
-const FLD_CHAR_RE = /<w:fldChar[^>]*w:fldCharType=(?:"(begin|separate|end)"|'(begin|separate|end)')/g
+const FLD_CHAR_RE =
+  /<w:fldChar[^>]*w:fldCharType=(?:"(begin|separate|end)"|'(begin|separate|end)')/g
 
 /**
  * Paragraph XML with every renderable EQ field replaced by a plain run of its

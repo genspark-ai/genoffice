@@ -1004,7 +1004,7 @@ body.vib .home {
   margin-top: 24px;
 }
 
-/* ── Project sidebar (P1) ─────────────────────────────── */
+/* ── Folders sidebar ─────────────────────────────────── */
 
 .sidebar-divider {
   height: 1px;
@@ -1012,28 +1012,29 @@ body.vib .home {
   background: var(--border-subtle);
 }
 
-.proj-panel {
+.folder-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
   flex: 1;
 }
 
-.proj-panel-head {
+.folder-panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 10px 6px;
 }
 
-.proj-panel-title {
+.folder-panel-title {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text-muted);
 }
 
-.proj-add-btn {
+.folder-add-btn,
+.folder-more-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1049,84 +1050,124 @@ body.vib .home {
     color 0.1s;
 }
 
-.proj-add-btn:hover {
+.folder-add-btn:hover {
   background: var(--surface-subtle);
   color: var(--text);
 }
 
-.proj-new-row {
-  padding: 0 8px 4px;
+.folder-unusable {
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
 }
 
-.proj-rename-input {
+.folder-unusable .btn {
+  margin-top: 8px;
+  font-size: 13px;
+  padding: 5px 10px;
+}
+
+.folder-rename-input {
   width: 100%;
-  padding: 4px 8px;
+  padding: 3px 6px;
   border: 1.5px solid var(--accent);
   border-radius: 6px;
   font: inherit;
   font-size: 14px;
   outline: none;
   background: var(--surface);
+  color: var(--text);
 }
 
-.proj-rename-input.inline {
+.folder-rename-input.inline {
   flex: 1;
   min-width: 0;
   width: auto;
 }
 
-.proj-list {
+.tree,
+.tree-children {
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow-y: auto;
 }
 
-.proj-item {
+.tree {
+  overflow-y: auto;
+  padding: 0 2px;
+}
+
+.tree-item {
+  position: relative;
+}
+
+.tree-row {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 8px 4px 8px;
   border-radius: 8px;
-  margin: 0 2px 1px;
+  margin-bottom: 1px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
 }
 
-.proj-item.active {
+.tree-row:hover {
   background: var(--bg-hover);
 }
 
-.proj-item-main {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex: 1;
-  min-width: 0;
-  padding: 8px 10px;
-  cursor: pointer;
-  border-radius: 8px;
-  user-select: none;
+.tree-row.active {
+  background: var(--bg-hover);
 }
 
-.proj-item-main:focus-visible {
+.tree-row.active .tree-name {
+  font-weight: 600;
+}
+
+.tree-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-.proj-item:hover .proj-item-main {
-  background: var(--bg-hover);
+/* drag hover: an inset ring in the accent color, same for sidebar and table rows */
+.tree-row.drop-target,
+.recent-item.drop-target {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--accent-soft);
 }
 
-.proj-item.active .proj-item-main {
-  background: none;
-}
-
-.proj-item-icon {
-  flex-shrink: 0;
-  color: var(--text-primary);
+.tree-chevron {
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
 }
 
-.proj-item-name {
+.tree-chevron:hover {
+  background: var(--bg-hover-strong);
+  color: var(--text);
+}
+
+.tree-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-primary);
+}
+
+.tree-name {
   flex: 1;
   min-width: 0;
   font-size: 14px;
@@ -1136,75 +1177,32 @@ body.vib .home {
   text-overflow: ellipsis;
 }
 
-.proj-item.active .proj-item-name {
-  font-weight: 600;
-}
-
-.proj-item-meta {
+/* the "..." button only shows on hover / while its menu is open */
+.folder-menu-wrap {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.proj-item-count {
-  min-width: 22px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-/* the "..." button floats over the count slot so hidden rows stay aligned */
-.proj-menu-wrap {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 8px;
   display: flex;
   align-items: center;
   opacity: 0;
   transition: opacity 0.1s;
 }
 
-.proj-item:hover .proj-menu-wrap,
-.proj-menu-wrap:has([aria-expanded='true']) {
+.tree-row:hover .folder-menu-wrap,
+.folder-menu-wrap:has([aria-expanded='true']) {
   opacity: 1;
 }
 
-.proj-item:hover:has(.proj-menu-wrap) .proj-item-meta,
-.proj-item:has(.proj-more-btn[aria-expanded='true']) .proj-item-meta {
-  opacity: 0;
-}
-
-.proj-more-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition:
-    background 0.1s,
-    color 0.1s;
-}
-
-.proj-more-btn:hover,
-.proj-more-btn[aria-expanded='true'] {
+.folder-more-btn:hover,
+.folder-more-btn[aria-expanded='true'] {
   background: var(--bg-hover-accent);
   color: var(--text);
 }
 
 /* fixed-position popup anchored via inline top/right (set at open time) so it
-   escapes the scrollable project list without the list losing overflow-y */
-.proj-menu {
+   escapes the scrollable tree without the tree losing overflow-y */
+.folder-menu {
   position: fixed;
   z-index: 30;
-  min-width: 140px;
+  min-width: 160px;
   padding: 5px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1213,7 +1211,7 @@ body.vib .home {
   animation: menu-in 0.1s ease;
 }
 
-.proj-menu button {
+.folder-menu button {
   display: block;
   width: 100%;
   padding: 6px 9px;
@@ -1225,93 +1223,156 @@ body.vib .home {
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
+  color: var(--text);
 }
 
-.proj-menu button:hover {
+.folder-menu button:hover {
   background: var(--surface-subtle);
 }
 
-.proj-menu button.danger {
+.folder-menu button.danger {
   color: var(--danger);
 }
 
-.proj-menu button.danger:hover {
+.folder-menu button.danger:hover {
   background: var(--danger-bg);
 }
 
-/* "move to project" submenu on a file row */
-.submenu-trigger {
-  display: flex !important;
-  align-items: center;
+/* ---- folder view: sub-folder rows ---- */
+
+.folder-heading {
+  gap: 10px;
+}
+
+.folder-badge {
+  color: var(--text-secondary);
+}
+
+.recent-item.folder-item .recent-name {
+  font-weight: 500;
+}
+
+/* ---- move-to-folder picker ---- */
+
+.picker-modal {
+  width: 440px;
+  max-width: calc(100vw - 48px);
+  display: flex;
+  flex-direction: column;
+}
+
+.picker-search {
   width: 100%;
-}
-
-.move-menu-wrap {
-  position: relative;
-}
-
-/* opens to the right of the host menu; .submenu-left flips it to the left
-   when the window edge leaves no room (WPS-style edge flip) */
-.submenu {
-  position: absolute;
-  top: 0;
-  left: calc(100% + 4px);
-  z-index: 40;
-  min-width: 140px;
-  padding: 5px;
-  background: var(--surface);
+  margin: 4px 0 10px;
+  padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 13%);
-  animation: menu-in 0.1s ease;
-}
-
-.submenu.submenu-left {
-  left: auto;
-  right: calc(100% + 4px);
-}
-
-.submenu button,
-.selection-move-menu button {
-  display: block;
-  width: 100%;
-  padding: 6px 9px;
-  border: none;
-  border-radius: 6px;
-  background: none;
+  border-radius: 8px;
   font: inherit;
   font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.submenu button:hover,
-.selection-move-menu button:hover {
-  background: var(--surface-subtle);
-}
-
-/* bulk move-to-project dropdown in the selection bar (anchored below the button) */
-.selection-move-wrap {
-  position: relative;
-  display: inline-flex;
-}
-
-.selection-move-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 40;
-  min-width: 140px;
-  padding: 5px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 13%);
-  animation: menu-in 0.1s ease;
+  color: var(--text);
+  outline: none;
 }
 
-/* empty-project onboarding copy — centered in the space below the toolbar */
+.picker-search:focus {
+  border-color: var(--accent);
+}
+
+.picker-tree {
+  height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.picker-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.picker-row:hover {
+  background: var(--bg-hover);
+}
+
+.picker-row.active {
+  background: var(--accent-soft);
+}
+
+.picker-row.disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.picker-row.disabled:hover {
+  background: none;
+}
+
+.picker-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker-current,
+.picker-rel {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.picker-empty {
+  margin: 0;
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.picker-buttons {
+  align-items: center;
+}
+
+.picker-spacer {
+  flex: 1;
+}
+
+.picker-buttons .btn {
+  font-size: 14px;
+  padding: 7px 14px;
+}
+
+.btn-primary {
+  background: var(--color-btn-primary);
+  border: none;
+  color: var(--color-btn-primary-text);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-btn-primary-hover);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* empty-list copy — centered in the space below the toolbar */
 .content:has(.proj-empty) {
   display: flex;
   flex-direction: column;
@@ -1614,7 +1675,7 @@ body.vib .home {
 /* placeholder color follows the suite convention (AI input boxes):
    tertiary text, not the browser's UA default */
 .cloud-search input::placeholder,
-.proj-rename-input::placeholder {
+.folder-rename-input::placeholder {
   color: var(--text-tertiary);
 }
 

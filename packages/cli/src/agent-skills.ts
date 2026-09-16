@@ -13,16 +13,55 @@ import {
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import JSZip from 'jszip'
-import type { AgentId, AgentTarget, SkillInstallState } from '../shared/integrations-api'
 
 /**
  * Installing the bundled `genoffice` skill into the coding agents found on this
- * machine (Settings → Integrations). Every write is a click in that pane; the
- * app never installs on its own. Pure functions over an injected home / env so
- * the state table is unit-testable without touching the real dotfolders.
+ * machine, shared by Settings → Integrations and `genoffice skill`. Every write
+ * is a click in that pane or an explicit command; nothing installs on its own.
+ * Pure functions over an injected home / env so the state table is
+ * unit-testable without touching the real dotfolders.
  */
 
 export const SKILL_NAME = 'genoffice'
+
+/** app-settings.json key under which every install this machine's GenOffice wrote is remembered */
+export const LEDGER_KEY = 'agentSkillInstalls'
+
+export type AgentId =
+  'claude-code' | 'codex' | 'cursor' | 'gemini' | 'copilot' | 'opencode' | 'windsurf'
+
+export interface AgentTarget {
+  id: AgentId
+  /** product name, shown as is (not translated) */
+  label: string
+  /** global skills directory the agent scans */
+  skillsDir: string
+}
+
+export type SkillInstallStatus =
+  /** no genoffice/ folder in the skills directory */
+  | 'missing'
+  /** written by this app, same version and bytes as the bundled skill */
+  | 'installed'
+  /** written by this app, older than the bundled skill */
+  | 'outdated'
+  /** written by this app, edited since (bytes differ from what was written) */
+  | 'modified'
+  /** our skill by front matter, but not written by this app (other host, npx, by hand) */
+  | 'foreign'
+  /** a newer skill version than the one bundled, whoever wrote it */
+  | 'newer'
+  /** genoffice/ exists but does not hold our skill */
+  | 'occupied'
+
+export interface SkillInstallState {
+  status: SkillInstallStatus
+  /** `<skillsDir>/genoffice/SKILL.md` */
+  path: string
+  installedVersion?: string
+  /** installed version is older than the bundled one (foreign rows offer an update then) */
+  older?: boolean
+}
 
 interface AgentDef {
   id: AgentId
@@ -77,6 +116,10 @@ const AGENTS: readonly AgentDef[] = [
     skills: (p) => join(p, 'skills'),
   },
 ]
+
+export function agentIds(): AgentId[] {
+  return AGENTS.map((a) => a.id)
+}
 
 /** Agents whose dotfolder exists; the folder standing in for "installed" is a heuristic, so a stale one only adds a row. */
 export function detectAgents(
@@ -139,11 +182,16 @@ export interface LedgerEntry {
   version: string
   sha256: string
   at: string
-  channel: 'app' | 'zip'
+  channel: 'app' | 'zip' | 'cli'
 }
 
 /** absolute SKILL.md path → what this app wrote there */
 export type SkillLedger = Record<string, LedgerEntry>
+
+export function ledgerFromSettings(settings: Record<string, unknown>): SkillLedger {
+  const raw = settings[LEDGER_KEY]
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as SkillLedger) } : {}
+}
 
 export interface BundledSkill {
   bytes: Uint8Array

@@ -176,6 +176,48 @@ const XLFN_FUNCTIONS = new Set([
 // accepts lowercase input, and the marker must still be written.
 const FUNCTION_CALL_PATTERN = /(^|[^A-Za-z0-9_."'!])([A-Za-z][A-Za-z0-9.]*)(?=\s*\()/g
 
+/// Functions whose result spills into neighbouring cells. Excel 365 only
+/// spills a stored formula that is marked as a dynamic array (`t="array"` on
+/// the <f> plus `cm="1"` on the cell); an unmarked call is read as `@FILTER`
+/// and returns one value.
+const SPILL_FUNCTIONS = new Set([
+  'BYCOL',
+  'BYROW',
+  'CHOOSECOLS',
+  'CHOOSEROWS',
+  'DROP',
+  'EXPAND',
+  'FILTER',
+  'HSTACK',
+  'MAKEARRAY',
+  'MAP',
+  'RANDARRAY',
+  'SCAN',
+  'SEQUENCE',
+  'SORT',
+  'SORTBY',
+  'TAKE',
+  'TEXTSPLIT',
+  'TOCOL',
+  'TOROW',
+  'UNIQUE',
+  'VSTACK',
+  'WRAPCOLS',
+  'WRAPROWS',
+])
+
+export function spillsDynamicArray(formula: string): boolean {
+  const segments = formula.replace(/_xlfn\.(?:_xlws\.)?/gi, '').split('"')
+  for (let index = 0; index < segments.length; index += 2) {
+    const segment = segments[index]
+    if (segment === undefined) continue
+    for (const match of segment.matchAll(FUNCTION_CALL_PATTERN)) {
+      if (SPILL_FUNCTIONS.has(match[2]!.toUpperCase())) return true
+    }
+  }
+  return false
+}
+
 /// Prefixes future-function calls with their storage markers, outside
 /// string literals. Marked calls store the canonical uppercase name.
 export function withFutureFunctionMarkers(formula: string): string {

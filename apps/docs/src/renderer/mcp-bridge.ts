@@ -135,15 +135,13 @@ async function runCommand(
       if (typeof input.path !== 'string' || !input.path) {
         throw new Error('save_document requires an absolute "path"')
       }
-      const failures: string[] = []
+      let reason = ''
       const ok = await save(ctx, false, true, undefined, {
         path: input.path,
         overwrite: input.overwrite === true,
-        onError: (message) => failures.push(message),
+        onError: (message) => (reason = message),
       })
-      // the genuine reason matters here: "already exists, pass overwrite:true"
-      // is actionable, while a generic failure sends the agent guessing
-      if (!ok) throw new Error(failures[0] ?? 'the document could not be saved')
+      if (!ok) throw new Error(reason || 'the document could not be saved')
       return { ok: true, path: input.path }
     }
 

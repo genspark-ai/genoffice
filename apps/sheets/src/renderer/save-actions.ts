@@ -185,7 +185,8 @@ export async function handleSave(
           if (state.editJournal.cells.get(sheetId)?.get(key)?.formula !== undefined) return []
           const [row, column] = key.split(':').map(Number)
           if (row === undefined || column === undefined) return []
-          return [{ sheetId, row, column, value: cell.v }]
+          const value = cell.isError && typeof cell.v === 'string' ? { error: cell.v } : cell.v
+          return [{ sheetId, row, column, value }]
         }),
   )
   // The gateway fails closed when these additions ride with structural or

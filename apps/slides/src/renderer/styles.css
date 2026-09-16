@@ -3396,15 +3396,19 @@ body.vib .slide-list {
 }
 
 /* Second-level tabs (填充与线条 / 效果 / 大小与属性 …): Genspark segmented pill track —
-   pills sit in one rounded gray track; active = accent-filled pill */
+   pills sit in one rounded gray track; active = accent-filled pill. Long locales
+   (fr/de/es labels exceed the 260px pane) wrap onto a second row instead of
+   clipping at the pane edge; 16px ≈ the stadium radius at single-row height. */
 .fp-subtabs {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: wrap;
   gap: 2px;
   width: fit-content;
+  max-width: calc(100% - 12px);
   margin: 10px 6px 0;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: 16px;
   background: var(--hover);
 }
 
@@ -4330,8 +4334,12 @@ body.vib .slide-list {
   top: calc(anchor(bottom) + 6px);
   left: anchor(left);
   /* near the right window edge, right-align to the trigger instead of
-     spilling past the (now clipped) viewport */
-  position-try-fallbacks: flip-inline;
+     spilling past the (now clipped) viewport; near the bottom edge (e.g. a
+     collapsed-group flyout on a short window), open above the trigger */
+  position-try-fallbacks:
+    flip-inline,
+    flip-block,
+    flip-block flip-inline;
   /* trigger scrolled out of the ribbon → hide the panel with it */
   position-visibility: anchors-visible;
   z-index: 60;
@@ -8932,6 +8940,7 @@ body.show-curtain::after {
 }
 
 .app-content {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;

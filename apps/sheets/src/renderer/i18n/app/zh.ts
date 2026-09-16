@@ -126,7 +126,6 @@ export const zh = {
   appTruncationNote: '前 {shown}/{total} 项',
   // ExcelShell (name box / ribbon)
   appGoToButtonTitle: '定位（Go To，⌘G）',
-  appNameBoxTitle: '名称框 — 输入地址或名称后回车定位',
   appPivotChartHintIn: '基于当前透视表创建数据透视图',
   appPivotChartHintOut: '先选中透视表输出区内的单元格,再选择图表类型',
   appChartColumn: '柱形图',

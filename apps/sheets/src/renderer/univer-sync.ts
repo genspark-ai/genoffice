@@ -47,6 +47,7 @@ import {
 import type {
   AddConditionalFormatOperation,
   CellFormatPatch,
+  StyleColorInput,
   SetDataValidationOperation,
   SetHyperlinkOperation,
 } from '@genoffice/xlsx-gateway/domain/workbook-dsl'
@@ -59,6 +60,7 @@ import {
 } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { splitSheetRef, type CellBounds } from '@genoffice/xlsx-gateway/domain/chart-visual'
 import { InMemoryWorkbookAdapter } from '@genoffice/xlsx-gateway/domain/in-memory-workbook'
+import { normalizeStyleColor, resolveStyleColor } from '@genoffice/xlsx-gateway/domain/style-color'
 import { WORST_FIRST_ICON_SETS } from '@genoffice/xlsx-gateway/gateway/xlsx-cf'
 import type {
   CellFormatState,
@@ -345,8 +347,18 @@ export function applyFormatPatchToRange(
     if (patch.fontSize === null) range.setValue({ s: { fs: null } } as unknown as ICellData)
     else range.setFontSize(patch.fontSize)
   }
-  if (patch.fontColor !== undefined) range.setFontColor(patch.fontColor)
-  if (patch.fillColor !== undefined) range.setBackground(patch.fillColor as unknown as string)
+  if (patch.fontColor !== undefined) range.setFontColor(displayColor(patch.fontColor))
+  if (patch.fill !== undefined) {
+    const display =
+      patch.fill === null
+        ? null
+        : 'gradient' in patch.fill
+          ? (patch.fill.gradient.stops[0]?.color ?? null)
+          : patch.fill.fg
+    range.setBackground(displayColor(display) as unknown as string)
+  } else if (patch.fillColor !== undefined) {
+    range.setBackground(displayColor(patch.fillColor) as unknown as string)
+  }
   if (patch.numberFormat !== undefined) range.setNumberFormat(patch.numberFormat ?? 'General')
   if (patch.horizontalAlign !== undefined) {
     range.setHorizontalAlignment(
@@ -380,8 +392,15 @@ export function applyFormatPatchToRange(
   }
   if (patch.border !== undefined && patch.border !== null) {
     const type = BORDER_COMMAND_TYPES[patch.border.type]
-    if (type) range.setBorder(type, BorderStyleTypes.THIN, patch.border.color ?? '#000000')
+    if (type) {
+      range.setBorder(type, BorderStyleTypes.THIN, displayColor(patch.border.color ?? '#000000')!)
+    }
   }
+}
+
+/** Univer paints rgb only; theme slots resolve through the default palette here */
+function displayColor(color: StyleColorInput | null): string | null {
+  return color === null ? null : resolveStyleColor(normalizeStyleColor(color))
 }
 
 // Univer's "nothing frozen on this axis" is -1, as the in-app freeze commands
@@ -2406,7 +2425,10 @@ async function runFormulaRecalc(
         unsupported += 1
         continue
       }
-      overlay.set(`${cell.row}:${cell.column}`, { v: cell.number ?? cell.formatted })
+      overlay.set(`${cell.row}:${cell.column}`, {
+        v: cell.number ?? cell.formatted,
+        ...(cell.isError ? { isError: true } : {}),
+      })
     }
     state.recalc.overlay.set(sheetId, overlay)
     state.recalc.follow.set(sheetId, { anchorRow: viewportStartRow, complete: windowComplete })

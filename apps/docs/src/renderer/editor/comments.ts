@@ -63,9 +63,14 @@ export function wordRangeAtCaret(editor: Editor): { from: number; to: number } |
 
 /** attach `id` to every text node in the current selection; false when selection is empty */
 export function addCommentToSelection(editor: Editor, id: string): boolean {
+  const { from, to } = editor.state.selection
+  return addCommentToRange(editor, from, to, id)
+}
+
+/** attach `id` to every text node between the positions; false for an empty range */
+export function addCommentToRange(editor: Editor, from: number, to: number, id: string): boolean {
   const { state } = editor
-  const { from, to } = state.selection
-  if (from === to) return false
+  if (from >= to) return false
   const markType = state.schema.marks.comment
   const tr = state.tr
   tr.setMeta(TRACK_IGNORE, true)

@@ -1,131 +1,175 @@
 import { flagBool } from '../args'
 import type { CommandDef } from '../registry'
-import { docsGuide } from '../formats/docx'
+import { docsCatalog } from '../formats/docx'
+import { sheetCatalog, sheetGuideText } from '../formats/xlsx-catalog'
+import {
+  opLines,
+  renderGroups,
+  withFingerprint,
+  type GuideDomain,
+  type OpCatalog,
+  type OpEntry,
+} from '../op-catalog'
 import { CliError, EXIT, type CommandResult } from '../result'
+import { didYouMean } from '../suggest'
 
-/** Same markdown the in-app AI loads on demand (load_guide); shipped inside the CLI so it never drifts from the ops. */
+const DOMAINS: readonly GuideDomain[] = ['slides', 'docs', 'sheets']
+
+/**
+ * Every op reference is generated from the definition the executor validates against (the pptx-ops
+ * markdown, the sheets zod schema, the docs op registry and tool schemas), so the guide cannot
+ * drift from what `apply` accepts; `--json` returns the same catalog with each op's schema.
+ */
 export const guideCommand: CommandDef = {
   name: 'guide',
   summary: 'Print the op reference and design guides an agent needs before writing ops or specs.',
-  usage: 'guide <slides|docs|sheets> [group|design|spec] [--index]',
+  usage: 'guide <slides|docs|sheets> [group|op|design|spec] [--index] [--fingerprint]',
   options: [
     { name: 'index', description: 'one-line signature of every op instead of a group guide' },
+    {
+      name: 'fingerprint',
+      description:
+        'only the catalog fingerprint (changes with any op or field); no domain = all three',
+    },
   ],
   async run(args) {
-    const [domain, group] = args.positionals
-    if (domain === 'docs') return docsGuideResult()
-    if (domain === 'sheets') return { summary: SHEETS_GUIDE }
-    if (domain !== 'slides') {
-      throw new CliError(EXIT.usage, 'guides available for: slides, docs, sheets', {
-        usage: 'genoffice guide slides | genoffice guide docs | genoffice guide sheets',
-      })
+    const [domain, topic] = args.positionals
+    const json = flagBool(args, 'json')
+    if (flagBool(args, 'fingerprint') && (domain === undefined || isDomain(domain))) {
+      return fingerprints(domain, json)
     }
-    if (group === 'design' || group === 'spec') {
+    if (!isDomain(domain)) {
+      throw new CliError(
+        EXIT.usage,
+        'guides available for: slides, docs, sheets',
+        { usage: 'genoffice guide slides | genoffice guide docs | genoffice guide sheets' },
+        {
+          reason: domain === undefined ? 'missing_argument' : 'invalid_argument',
+          suggestion: 'run `genoffice guide slides|docs|sheets`',
+        },
+      )
+    }
+    if (domain === 'slides' && (topic === 'design' || topic === 'spec')) {
       const { SLIDES_GUIDES } = await import('@genoffice/pipelines/slides')
-      return { summary: SLIDES_GUIDES[group].content }
+      return { summary: SLIDES_GUIDES[topic].content }
     }
-    const docs = await import('@genoffice/pptx-ops/op-docs')
-    if (flagBool(args, 'index')) {
-      return { summary: docs.opSignatureIndex() }
-    }
-    if (!group) {
+    const { catalog, text } = await load(domain, topic, flagBool(args, 'index'))
+    if (!topic) return { summary: text(), ...(json ? { detail: { ...catalog } } : {}) }
+    const group = catalog.groups.find((g) => g.name === topic)
+    if (group) {
+      const entries = catalog.ops.filter((e) => e.group === topic)
       return {
-        summary: [
-          'Op groups (genoffice guide slides <group> prints one):',
-          docs.opGuideCatalog(),
-          '',
-          'Building a new deck: `genoffice guide slides design` (the staged workflow: style sheet, outline, one page file at a time, build, QC) and `genoffice guide slides spec` (the outline and page spec JSON for `genoffice slides check` and `genoffice create --type pptx --spec`).',
-          '',
-          'Every op: { "op": "<name>", "target": { "slide": <index|"s_n">, "el"?: "e_*" }, ...fields }.',
-          'Units are EMU (914400 per inch); font sizes are pt. `genoffice slides read <file>` lists ids and geometry.',
-          'Vocabulary:',
-          docs.opVocabulary(),
-        ].join('\n'),
+        summary: text(topic),
+        ...(json
+          ? { detail: { domain, fingerprint: catalog.fingerprint, group, ops: entries } }
+          : {}),
       }
     }
-    const content = docs.opGuide(group)
-    if (!content) {
-      throw new CliError(EXIT.usage, `unknown group: ${group}`, { groups: [...docs.OP_GROUPS] })
+    const entry = catalog.ops.find((e) => e.op === topic)
+    if (!entry) {
+      const names = [...catalog.groups.map((g) => g.name), ...catalog.ops.map((e) => e.op)]
+      const guess = didYouMean(topic, names)
+      throw new CliError(
+        EXIT.usage,
+        `unknown group or op: ${topic}`,
+        { groups: catalog.groups.map((g) => g.name) },
+        {
+          reason: 'invalid_argument',
+          suggestion: guess
+            ? `did you mean ${guess}?`
+            : `run \`genoffice guide ${domain}\` for the groups and ops`,
+        },
+      )
     }
-    return { summary: content }
+    return { summary: opText(entry), ...(json ? { detail: { ...entry } } : {}) }
   },
 }
 
-async function docsGuideResult(): Promise<CommandResult> {
-  const g = await docsGuide()
+function isDomain(value: string | undefined): value is GuideDomain {
+  return (DOMAINS as readonly string[]).includes(value ?? '')
+}
+
+interface Loaded {
+  catalog: OpCatalog
+  text: (group?: string) => string
+}
+
+async function load(
+  domain: GuideDomain,
+  topic: string | undefined,
+  index: boolean,
+): Promise<Loaded> {
+  if (domain === 'sheets') return { catalog: sheetCatalog(), text: sheetGuideText }
+  if (domain === 'docs') {
+    const { catalog, htmlRules } = await docsCatalog()
+    return { catalog, text: (group) => docsGuideText(catalog, htmlRules, group) }
+  }
+  const docs = await import('@genoffice/pptx-ops/op-docs')
+  const catalog = slidesCatalog(docs)
   return {
-    summary: [
-      'Word ops (genoffice docs apply --ops): a JSON array; every entry has "op".',
-      'Targets: { "blockIndexes": [..] } or { "nodeType": "docHeading"|"docParagraph"|"docListItem", "headingLevel"? }; get indexes from `genoffice docs read`.',
-      '',
-      ...g.signatures,
-      '',
-      'insert_content {html, afterBlockIndex?} — new blocks after an index (-1 = start of document; omitted = end of document)',
-      'replace_blocks {html, startBlockIndex, endBlockIndex} — rewrite a block range',
-      'insert_image {url, maxWidthPx?: 480, afterBlockIndex?} — url is a local path (absolute, or relative to the current directory then to the ops file), a data: URL or an http(s) URL; png/jpg/gif; scaled down to maxWidthPx; appended when afterBlockIndex is omitted',
-      'insert_chart {kind: "bar"|"line"|"pie", title?, categories: string[], series: [{name?, values: (number|null)[]}], afterBlockIndex?} — native Word chart; values per series match the categories',
-      'edit_chart {blockIndex, title?, categories?: (string|null)[], series?: [{index, name?, values?: (number|null)[]}]} — change the data of a chart block (`genoffice docs read` lists blocks with kind "chart"); counts must match the original, null keeps a position',
-      'set_header_footer {kind: "header"|"footer", text, view?: "default"|"first"|"even"} — plain text, \\n between lines, {PAGE} / {NUMPAGES} become page-number fields, "" clears; view first/even switches the different-first-page / odd-even setting on; `genoffice docs read --header-footer` shows the current text',
-      'reply_comment {parentId, text} / resolve_comment {id} — ids from `genoffice docs read --comments`; replies attach to the thread root',
-      '',
-      g.htmlRules,
-    ].join('\n'),
+    catalog,
+    text: (group) => {
+      if (index) return docs.opSignatureIndex()
+      if (group) return docs.opGuide(group)!
+      return [
+        'Op groups (genoffice guide slides <group> prints one; genoffice guide slides <op> prints one op):',
+        docs.opGuideCatalog(),
+        '',
+        'Building a new deck: `genoffice guide slides design` (the staged workflow: style sheet, outline, one page file at a time, build, QC) and `genoffice guide slides spec` (the outline and page spec JSON for `genoffice slides check` and `genoffice create --type pptx --spec`).',
+        '',
+        'Every op: { "op": "<name>", "target": { "slide": <index|"s_n">, "el"?: "e_*" }, ...fields }.',
+        'Units are EMU (914400 per inch; suffixes in/cm/mm/pt/px accepted); font sizes are pt. `genoffice slides read <file>` lists ids and geometry.',
+        'Vocabulary:',
+        docs.opVocabulary(),
+      ].join('\n')
+    },
   }
 }
 
-/** The headless sheets workbook DSL (the in-app propose_operations vocabulary, minus the editor-only ops). */
-const SHEETS_GUIDE = [
-  'Excel ops (genoffice sheet apply --ops): a JSON array; every entry has "op". Address a worksheet with',
-  '"sheet": "<name>" (omitted = the active sheet; `genoffice sheet read` lists names). Ranges are A1:D9,',
-  'rows are 1-based, columns are letters. Strings starting with "=" are formulas.',
-  '',
-  'Content:',
-  '  set_cell {sheet?, address, value}            set_formula {sheet?, address, formula}',
-  '  set_range {sheet?, range, values: [[..],..]}  clear_cell {sheet?, address}   clear_range {sheet?, range}',
-  '  fill_range {sheet?, source, target}          copy_range {sheet?, source, target}',
-  '  find_replace {sheet?, range?, find, replace}  sort_range {sheet?, range, byColumn: "B", order: "asc"|"desc", hasHeader?}',
-  'Format:',
-  '  format_range {sheet?, range, format: {bold?, italic?, underline?, strikethrough?, fontFamily?, fontSize?,',
-  '    fontColor?, fillColor?, numberFormat?, horizontalAlign?: left|center|right, verticalAlign?: top|center|bottom,',
-  '    wrapText?, textRotation?: -90..90|"vertical", indent?, border?: {type: all|top|bottom|left|right|none, color?}}}',
-  '  (null clears a property; colors are #RRGGBB)',
-  '  add_conditional_format {sheet?, range, rule}  rule = {kind: "number", operator: greaterThan|greaterThanOrEqual|lessThan|',
-  '    lessThanOrEqual|equal|notEqual|between|notBetween, value, value2?, format} | {kind: "text", operator: contains|notContains|',
-  '    beginsWith|endsWith, text, format} | {kind: "blank", blank: bool, format} | {kind: "duplicate", unique?, format} |',
-  '    {kind: "top10", rank, percent?, bottom?, format} | {kind: "formula", formula: "=…", format} |',
-  '    {kind: "colorScale", minColor, midColor?, maxColor} | {kind: "dataBar", color?}; format = {fillColor?, fontColor?, bold?, italic?}',
-  '  clear_conditional_formats {sheet?}  (a sheet that already has rules must be cleared before new ones are added)',
-  '  set_data_validation {sheet?, range, validation | null}  validation = {kind: "list", values: [..]} | {kind: "listRef", range} |',
-  '    {kind: "numberBetween", min, max} | {kind: "dateBetween", start: "YYYY-MM-DD", end} | {kind: "checkbox"} | {kind: "formula", formula: "=…"}',
-  'Layout:',
-  '  merge_cells {sheet?, range}   unmerge_cells {sheet?, range}',
-  '  set_row_height {sheet?, row, count?, heightPoints}   set_col_width {sheet?, column, count?, widthPx}',
-  '  set_rows_hidden {sheet?, row, count?, hidden}   set_cols_hidden {sheet?, column, count?, hidden}',
-  '  set_freeze {sheet?, rows, columns}  (0/0 unfreezes)',
-  '  set_filter {sheet?, range}   set_filter_criteria {sheet?, column, values: [..] | null}   clear_filter {sheet?}',
-  '  set_page_setup {sheet?, orientation?: portrait|landscape, paperSize?: 9 (A4) | 1 (Letter) …, scale? | fitToWidth?/fitToHeight?,',
-  '    margins?: normal|wide|narrow, printGridlines?, printHeadings?, printArea?: "A1:F40" | null}',
-  '  protect_sheet {sheet?, protected}',
-  'Data:',
-  '  set_hyperlink {sheet?, address, target: "https://…" | "Sheet1!A1" | null}   set_note {sheet?, address, text | null}',
-  '  add_defined_name {name, ref: "Sheet1!$A$2:$A$9"}   delete_defined_name {name}  (not in a batch with sheet or row/column ops)',
-  '  add_table {sheet?, range, name?, style?: "TableStyleMedium2", bandedRows?}  (first row = unique, non-empty column names)',
-  'Visuals:',
-  '  add_chart {sheet?, chartType: column|bar|line|area|pie|doughnut|scatter|radar|combo, dataRange, title?, anchorCell?}',
-  '    (header row and a leading category column are detected; the chart lands two columns right of the data unless anchorCell)',
-  '  edit_chart {chartPath: "xl/charts/chart1.xml", title?, chartType?, legend?: none|right|bottom|top|left,',
-  '    dataLabels?: none|value|percent|category-percent, grouping?: clustered|stacked|percentStacked, seriesColors?: {"0": "#RRGGBB"},',
-  '    axisTitles?: {category?, value?}}  (`genoffice sheet read` lists chart ids under features.charts)',
-  '  add_image {sheet?, path: "/abs/or/relative.png" | "https://…", anchorCell}   add_shape {sheet?, shapeType | "textbox", anchorCell, fillColor?, text?}',
-  'Structure (cannot share a batch with content ops):',
-  '  insert_rows {sheet?, row, count}   delete_rows {sheet?, row, count}',
-  '  insert_cols {sheet?, column, count}   delete_cols {sheet?, column, count}',
-  '  add_sheet {name}   delete_sheet {sheet}   rename_sheet {sheet, name}   duplicate_sheet {sheet, name?}',
-  '  move_sheet {sheet, position}   set_sheet_hidden {sheet, hidden}',
-  '',
-  'Not available headless (use the GenOffice app): pivots (add_pivot, refresh_pivot), sparklines, edits to tables or',
-  'shapes created in an editor session (add/delete_table_row/column, delete_table, edit_shape, delete_visual), convert_to_values.',
-  'Adding a conditional format or data validation to a sheet that already has rules is refused (the CLI cannot carry the',
-  'existing rules over): clear_conditional_formats first, or use the app. set_filter_criteria needs a filter without criteria.',
-  'Formulas written by a batch are evaluated by the workbook engine and stored with their results.',
-].join('\n')
+type SlidesOpDocs = typeof import('@genoffice/pptx-ops/op-docs')
+
+function slidesCatalog(docs: SlidesOpDocs): OpCatalog {
+  const ops: OpEntry[] = Object.entries(docs.OP_DOCS)
+    .filter(([, d]) => d.aiCallable !== false && !d.pending)
+    .map(([op, d]) => ({ op, group: d.group, signature: d.sig, doc: d.body, examples: d.examples }))
+  const groups = docs.OP_GROUPS.map((g) => ({
+    name: g,
+    summary: docs.OP_GUIDES[g].summary,
+    ops: ops.filter((e) => e.group === g).map((e) => e.op),
+  }))
+  return withFingerprint({ domain: 'slides', groups, ops })
+}
+
+function docsGuideText(catalog: OpCatalog, htmlRules: string, group?: string): string {
+  const lines = [
+    'Word ops (genoffice docs apply --ops): a JSON array; every entry has "op".',
+    'Targets: { "blockIndexes": [..] } or { "nodeType": "docHeading"|"docParagraph"|"docListItem"|"image", "headingLevel"? }; get indexes from `genoffice docs read`.',
+    'Field notation: bare = string, n = number, bool = boolean, ? = optional, a|b = one of.',
+    '',
+    ...renderGroups(catalog, group),
+  ]
+  if (!group || group === 'content') lines.push('', htmlRules)
+  return lines.join('\n')
+}
+
+function opText(entry: OpEntry): string {
+  const lines = opLines(entry)
+  if (entry.doc) lines.push('', entry.doc)
+  else if (entry.schema) lines.push('', JSON.stringify(entry.schema, null, 2))
+  return lines.join('\n')
+}
+
+async function fingerprints(
+  domain: GuideDomain | undefined,
+  json: boolean,
+): Promise<CommandResult> {
+  const domains = domain ? [domain] : DOMAINS
+  const out: Record<string, string> = {}
+  for (const d of domains) out[d] = (await load(d, undefined, false)).catalog.fingerprint
+  return {
+    summary: Object.entries(out)
+      .map(([d, fp]) => `${d} ${fp}`)
+      .join('\n'),
+    ...(json ? { detail: { fingerprints: out } } : {}),
+  }
+}

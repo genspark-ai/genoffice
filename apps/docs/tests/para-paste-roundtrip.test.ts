@@ -1,6 +1,6 @@
 /**
- * Paragraph formatting must survive the clipboard HTML round-trip (alpha
- * ledger r117): copy/paste re-parses renderHTML output, and the paragraph CSS
+ * Paragraph formatting must survive the clipboard HTML round-trip:
+ * copy/paste re-parses renderHTML output, and the paragraph CSS
  * (margin-inline-start etc.) is never parsed back — so before the data-para
  * payload existed, a paste dropped every paragraph attr. In a document whose
  * body paragraphs carry a NEGATIVE left indent, the pasted paragraph then sat

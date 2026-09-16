@@ -24,6 +24,7 @@
 <p align="center" dir="rtl">
   <a href="#download"><b>التنزيل</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
+  <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>الموقع الإلكتروني</b></a> ·
   <a href="https://genoffice.ai/join"><b>المجتمع</b></a> ·
   <a href="../../PRIVACY.md"><b>الخصوصية</b></a>
@@ -183,6 +184,27 @@ Windsurf من إنشاء ملفات Office حقيقية وتحويلها وقر�
 </tr>
 </table>
 
+### 8 · MCP — نفس الأدوات عبر Model Context Protocol
+
+كل أمر من أوامر `genoffice` هو أيضًا أداة MCP. يمكن لـ Claude Code وClaude
+Desktop وCursor وأي عميل MCP آخر تشغيل `genoffice mcp` بأنفسهم، دون الحاجة
+إلى تثبيت مهارة أو فتح نافذة، والحصول على 29 أداة بالإضافة إلى مراجع
+العمليات كموارد (resources). كما يتيح خادم HTTP ثانٍ داخل التطبيق للوكيل
+بناء مستند Word في تبويب محرِّر مرئي بينما تشاهد.
+
+<img src="../assets/readme/mcp-deck-motion.webp" alt="لقطات متسارعة لـ Claude Code وهو يبني عرضًا استثماريًا من ثماني شرائح عن الطاقة المتجدّدة عبر خادم MCP الخاص بـ genoffice: يبحث عن الرسوم البيانية والصور، ويتحقق من كل صورة مرشّحة عبر media، وdeck_start يكتب ورقة الأنماط والمخطط، وdeck_page يضيف صفحة واحدة مُتحقَّقة في كل مرة، وdeck_build يجمّع ملف .pptx، وslides_render يعيد صورة كل شريحة؛ ثم يُفتح العرض النهائي في GenOffice Slides" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/mcp-deck-in-app.webp" alt="GenOffice Slides يعرض عرض Renewable Energy 2026 من ثماني شرائح الذي بناه Claude Code عبر خادم MCP الخاص بـ genoffice: شريحة الغلاف مع صورة فوتوغرافية لمزرعة رياح على لوحة الرسم وثماني مصغّرات على اليسار"></td>
+<td width="50%"><img src="../assets/readme/mcp-integrations.webp" alt="إعدادات GenOffice، صفحة Integrations، جزء MCP: أمر claude mcp add من سطر واحد لـ Claude Code، وكتلة JSON لـ Cursor وClaude Desktop وعملاء MCP الآخرين، وخيار خادم HTTP المحلي أسفل ذلك"></td>
+</tr>
+<tr>
+<td dir="rtl"><b>توجيه واحد، 38 استدعاءً للأدوات، بلا طرفية</b> — "ابنِ عرضًا استثماريًا من ثماني شرائح عن الطاقة المتجدّدة في 2026، بصورة حقيقية على الغلاف وحيثما تفيد صورة." يسحب الوكيل الرسوم البيانية والصور عبر <code>search</code>، ويسأل <code>media</code> عمّا إذا كانت كل صورة مرشّحة صورة فوتوغرافية حقيقية، ثم يستدعي <code>deck_start</code> بورقة أنماط ومخطط، ثم <code>deck_page</code> لكل شريحة؛ تُفحص كل صفحة مقابل المخطط والباليت قبل الاحتفاظ بها، ويجمّع <code>deck_build</code> ملف <code>.pptx</code>، ويبحث <code>slides_audit</code> عن التجاوزات، ويعيد <code>slides_render</code> صورة PNG لكل شريحة كمحتوى صوري يمكن للنموذج النظر إليه، ويُصلح <code>deck_replace</code> الصفحات الثلاث التي لم تعجبه.</td>
+<td dir="rtl"><b>اتصل مرة واحدة، من الإعدادات → التكاملات</b> — انسخ سطر <code>claude mcp add</code> لـ Claude Code، أو كتلة JSON إلى Cursor أو Claude Desktop أو أي عميل MCP آخر. يفعِّل الخيار B خادم HTTP المحلي لمحرِّر Word المرئي. كلاهما موضّح في <a href="#mcp-server">خادم MCP</a>.</td>
+</tr>
+</table>
+
 ## لماذا GenOffice
 
 - **مفتوح المصدر**، برخصة Apache-2.0، ويُطوَّر علنًا على GitHub.
@@ -199,8 +221,9 @@ Windsurf من إنشاء ملفات Office حقيقية وتحويلها وقر�
 - **PDF يُعالَج كما ينبغي.** حرِّر النص داخل الصفحة مباشرة، وحوِّل PDF إلى Word
   أو Excel أو PowerPoint على جهازك، مع OCR للنظام لملفات المسح الممسوحة.
 - **Markdown و HTML أيضًا**، بنفس لوحة الذكاء الاصطناعي وتصدير محلي إلى Word.
-- **قابل للبرمجة.** سطر أوامر `genoffice` ومهارة وكيل يضعان كل محرّك في خدمة
-  Claude Code وCodex وCursor وغيرها من وكلاء البرمجة، مع بقاء كل شيء على الجهاز.
+- **قابل للبرمجة.** سطر أوامر `genoffice`، ومهارة وكيل، وخادم MCP يضعون كل
+  محرّك في خدمة Claude Code وClaude Desktop وCodex وCursor وغيرها من الوكلاء،
+  مع بقاء كل شيء على الجهاز.
 - **مجاني**، للأفراد والفرق على حد سواء.
 
 ## خلفيات الذكاء الاصطناعي
@@ -234,7 +257,8 @@ GenOffice، ولا يحتاج إلى بيئة تشغيل خاصة به، ولا 
 يُنتج ملفات Office حقيقية بدلًا من تقريبات بصيغة Markdown.
 
 **يعمل مع:** Claude Code وCodex وCursor وGemini CLI وGitHub Copilot وOpenCode
-وWindsurf مباشرة دون أي إعداد، ومع أي وكيل آخر يقرأ المهارات.
+وWindsurf مباشرة دون أي إعداد، ومع أي وكيل آخر يقرأ المهارات، وكذلك، عبر
+[خادم MCP](#mcp-server)، مع Claude Desktop وأي عميل MCP.
 
 ### تثبيت المهارة
 
@@ -287,6 +311,62 @@ genoffice open deck/solar-system.pptx
 
 لا يحدث أي استدعاء لنموذج داخل `genoffice`: الوكيل هو من يفكّر، وسطر الأوامر
 هو من يبني ويتحقّق، وتُفتح النتيجة في GenOffice أو PowerPoint كملف `.pptx` عادي.
+
+<a id="mcp-server"></a>
+
+### خادم MCP
+
+الأوامر نفسها متاحة كأدوات [Model Context Protocol](https://modelcontextprotocol.io)
+للمساعدين الذين لا يمكنهم تشغيل طرفية، أو الذين تفضّل ألا تمنحهم واحدة. هناك
+طريقتان للدخول، وكلتاهما موضَّحتان بمقتطفات جاهزة للنسخ في **الإعدادات →
+التكاملات → MCP**:
+
+| الطريقة                            | ما هي                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A · `genoffice mcp`** (موصى بها) | خادم stdio يشغّله المساعد بنفسه؛ لا حاجة لفتح GenOffice. أداة واحدة لكل أمر (`info`، `convert`، `create_docx`، `create_xlsx`، `create_pptx`، `create_pdf`، `docs_read` / `docs_apply` / `docs_check`، `sheet_*`، `slides_*`، `render`، `guide`، `search`، `image`، `media`، `open`) بالإضافة إلى تدفّق العرض المرحلي `deck_start` → `deck_page` → `deck_build` → `deck_replace`. تُمرَّر العمليات والمواصفات وMarkdown مباشرة ضمن الطلب، لذا يعمل حتى العميل بلا نظام ملفات. |
+| **B · خادم HTTP محلي**             | يعمل داخل تطبيق GenOffice على `http://127.0.0.1:3093/mcp` (Streamable HTTP، مع دعم SSE القديم). تُشغِّل أدواته تبويب محرِّر Word المرئي: `create_session`، `insert_content`، `replace_blocks`، `apply_ops`، `read_document`، `save_session`، وتشاهد المستند وهو يتشكّل. مُعطَّل افتراضيًا؛ فعِّله من لوحة الإعدادات نفسها.                                                                                                                                                   |
+
+```bash
+# Claude Code
+claude mcp add --transport stdio genoffice -- genoffice mcp
+```
+
+```jsonc
+// Cursor أو Claude Desktop أو أي عميل MCP آخر
+{ "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
+```
+
+`genoffice` هنا هو سطر الأوامر المرفق داخل التطبيق (على macOS في
+`/Applications/GenOffice.app/Contents/Resources/cli/genoffice`؛ تعرض لوحة
+الإعدادات المسار الدقيق لتثبيتك). يحمل الخادم تعليمات سير عمله الخاصة
+ويعرض مراجع العمليات كموارد `genoffice://guide/*`، لذا لا حاجة لأي مهارة؛
+يمكن للمهارة وخادم MCP التعايش معًا، ويختار المساعد أحدهما. الميزات
+السحابية (`search`، `image`، `media`) لا تزال تمرّ عبر المزوِّد المُعدّ في
+GenOffice؛ أما كل شيء آخر فيعمل محليًا، ويحصر `GENOFFICE_ALLOWED_ROOTS` كل
+أداة ضمن المجلدات التي تحدّدها.
+
+عرض الطاقة المتجدّدة في العرض التوضيحي أعلاه هو ما يبدو عليه توجيه واحد في
+Claude Code، مع تفعيل خادم MCP الخاص بـ `genoffice` فقط، من جهة البروتوكول:
+
+```text
+capabilities · guide(slides, spec) · guide(slides, design)
+search(query) ×4                         → IEA, BNEF and IRENA figures for the slides
+search(query, images) ×7 · media(url, ask) ×7
+                                         → candidate photos, each one checked to be a real photograph
+deck_start(dir, style, outline)          → outline checked: 8 pages to write
+deck_page(dir, 0, page) … deck_page(dir, 7, page)
+                                         → each page checked against the outline and the palette; one page sent again
+deck_build(dir, out)                     → renewables-2026.pptx, no image failures
+slides_audit(file) · slides_render(file, out)
+                                         → no layout findings; 8 PNGs come back as image content
+deck_replace(dir, n, page) ×3 · slides_render(file, out)
+                                         → three pages fixed after looking at the renders
+```
+
+ثمانية وثلاثون استدعاءً، في نحو ثلاث عشرة دقيقة، دون أن يلمس المساعد أي طرفية:
+الرسوم البيانية والصور وكل الأدلة والفحوصات والعروض المصيَّرة انتقلت كنتائج
+لاستدعاءات أدوات MCP. غادر الجهاز فقط `search` و`media`، إلى المزوّد المهيَّأ
+في GenOffice.
 
 <a id="download"></a>
 

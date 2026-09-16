@@ -132,7 +132,6 @@ export const it = {
   appMoreItems: '+{count} altri…',
   appTruncationNote: 'Primi {shown} di {total}',
   appGoToButtonTitle: 'Vai a (⌘G)',
-  appNameBoxTitle: 'Casella Nome — digita un indirizzo o un nome, poi premi Invio',
   appPivotChartHintIn: 'Crea un grafico pivot dalla tabella pivot corrente',
   appPivotChartHintOut:
     "Seleziona prima una cella nell'output della tabella pivot, poi scegli un tipo di grafico",

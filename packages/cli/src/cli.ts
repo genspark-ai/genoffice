@@ -11,14 +11,27 @@ import { guideCommand } from './commands/guide'
 import { imageCommand } from './commands/image'
 import { mediaCommand } from './commands/media'
 import { searchCommand } from './commands/search'
+import { selectionCommand } from './commands/selection'
 import { infoCommand } from './commands/info'
 import { installCommand } from './commands/install'
+import { mcpCommand } from './commands/mcp'
 import { openCommand } from './commands/open'
 import { renderCommand } from './commands/render'
 import { sheetCommand } from './commands/sheet'
+import { skillCommand } from './commands/skill'
 import { slidesCommand } from './commands/slides'
 import { CommandRegistry, commandHelp, type CommandContext } from './registry'
-import { CliError, EXIT, formatHuman, toJsonError, toJsonOk, type ExitCode } from './result'
+import {
+  CliError,
+  EXIT,
+  formatHuman,
+  formatHumanError,
+  toJsonError,
+  toJsonOk,
+  type ExitCode,
+  type Warning,
+} from './result'
+import { didYouMean } from './suggest'
 
 declare const __GENOFFICE_VERSION__: string | undefined
 
@@ -49,8 +62,11 @@ export function defaultRegistry(): CommandRegistry {
     .register(imageCommand)
     .register(mediaCommand)
     .register(openCommand)
+    .register(selectionCommand)
     .register(capabilitiesCommand)
     .register(installCommand)
+    .register(mcpCommand)
+    .register(skillCommand)
 }
 
 export interface RunIo {
@@ -78,10 +94,7 @@ export async function runCli(argv: readonly string[], opts: RunOptions = {}): Pr
 
   const fail = (err: CliError): ExitCode => {
     if (json) io.stdout(JSON.stringify(toJsonError(name, err)))
-    else
-      io.stderr(
-        `genoffice: ${err.message}` + (err.detail ? `\n  ${JSON.stringify(err.detail)}` : ''),
-      )
+    else io.stderr(formatHumanError(err))
     return err.code
   }
 
@@ -96,9 +109,21 @@ export async function runCli(argv: readonly string[], opts: RunOptions = {}): Pr
   const def = registry.get(name === 'help' ? args.positionals[0] : name)
   if (!def)
     return fail(
-      new CliError(EXIT.usage, `unknown command: ${name}`, {
-        commands: registry.list().map((d) => d.name),
-      }),
+      new CliError(
+        EXIT.usage,
+        `unknown command: ${name}`,
+        { commands: registry.list().map((d) => d.name) },
+        {
+          reason: 'unknown_command',
+          suggestion: withGuess(
+            didYouMean(
+              name,
+              registry.list().map((d) => d.name),
+            ),
+            'run `genoffice help` for the command list',
+          ),
+        },
+      ),
     )
   if (name === 'help' || flagBool(args, 'help')) {
     io.stdout(commandHelp(def))
@@ -111,17 +136,25 @@ export async function runCli(argv: readonly string[], opts: RunOptions = {}): Pr
       new CliError(
         EXIT.usage,
         `unknown option${unknown.length > 1 ? 's' : ''} for ${def.name}: ${unknown.map((f) => `--${f}`).join(', ')}`,
+        { options: [...known].map((f) => `--${f}`) },
         {
-          options: [...known].map((f) => `--${f}`),
+          reason: 'unknown_option',
+          suggestion: withGuess(
+            didYouMean(unknown[0]!, known),
+            `run \`genoffice help ${def.name}\` for its options`,
+            '--',
+          ),
         },
       ),
     )
   }
 
+  const warnings: Warning[] = []
   const ctx: CommandContext = {
     cwd: opts.cwd ?? process.cwd(),
     env: opts.env ?? process.env,
     log: (m) => io.stderr(m),
+    warn: (w) => warnings.push(w),
   }
   const started = Date.now()
   const audit = (status: 'ok' | 'error', code: ExitCode, outputPath?: string) =>
@@ -135,9 +168,14 @@ export async function runCli(argv: readonly string[], opts: RunOptions = {}): Pr
       cwd: ctx.cwd,
     })
   try {
-    const result = await def.run(args, ctx)
+    const run = await def.run(args, ctx)
+    const result = warnings.length
+      ? { ...run, warnings: [...(run.warnings ?? []), ...warnings] }
+      : run
     audit('ok', EXIT.ok, result.outputPath)
-    io.stdout(json ? JSON.stringify(toJsonOk(def.name, result)) : formatHuman(result))
+    if (!def.quiet) {
+      io.stdout(json ? JSON.stringify(toJsonOk(def.name, result)) : formatHuman(result))
+    }
     return EXIT.ok
   } catch (err) {
     const error =
@@ -178,6 +216,10 @@ function booleanFlags(registry: CommandRegistry): Set<string> {
   return names
 }
 
+function withGuess(guess: string | undefined, fallback: string, prefix = ''): string {
+  return guess ? `did you mean \`${prefix}${guess}\`? (${fallback})` : fallback
+}
+
 function globalHelp(registry: CommandRegistry): string {
   const defs = registry.list()
   const width = Math.max(...defs.map((d) => d.name.length))
@@ -195,6 +237,8 @@ function globalHelp(registry: CommandRegistry): string {
     '  --version  print the version',
     '',
     'Exit codes: 0 ok, 1 usage, 2 file, 3 conversion failed, 4 app not available',
+    'Errors (--json): { status, code, error, message, suggestion?, detail? }; error is a stable reason such as unknown_op or target_not_found',
+    'Batches (<domain> apply --ops): atomic by default; --best-effort / --stop-on-error write what applied and answer status "partial" with detail.batch counts',
   ].join('\n')
 }
 

@@ -72,7 +72,12 @@ export function patchTextElementXml(el: TextElement, originalXml: string): strin
       const span = runSpans[i]!
       out += originalXml.slice(cursor, span.start)
       const slice = originalXml.slice(span.start, span.end)
-      out += span.kind === 'br' || span.newlineOnly ? slice : patchRun(slice, modelRuns[i]!)
+      out +=
+        span.kind === 'br' || span.newlineOnly
+          ? slice
+          : span.raw
+            ? (modelRuns[i]!.rawXml ?? generateRunXml(modelRuns[i]!))
+            : patchRun(slice, modelRuns[i]!)
       cursor = span.end
     }
     out += originalXml.slice(cursor)
@@ -242,15 +247,28 @@ interface Span {
   end: number
   kind: 'r' | 'br'
   newlineOnly?: boolean
+  /** an <mc:AlternateContent> math block standing in the run sequence */
+  raw?: boolean
 }
 
 /** Locate all top-level <a:r>…</a:r> and <a:br/> (incl. paired form) spans in document order. */
 function findRunSpans(xml: string): Span[] {
   const spans: Span[] = []
-  const re = /<a:r>|<a:r\s[^>]*>|<a:br\b[^>]*\/>|<a:br\b[^>]*>/g
+  const re = /<a:r>|<a:r\s[^>]*>|<a:br\b[^>]*\/>|<a:br\b[^>]*>|<mc:AlternateContent\b[^>]*>/g
   let m: RegExpExecArray | null
   while ((m = re.exec(xml)) !== null) {
     const start = m.index
+    if (m[0].startsWith('<mc:AlternateContent')) {
+      // Only a paragraph-level math block is a run; a shape-level AC anchor is scanned through
+      const head = xml.slice(re.lastIndex, re.lastIndex + 400)
+      if (!/^\s*<mc:Choice\b[^>]*>\s*<a14:m\b/.test(head)) continue
+      const close = xml.indexOf('</mc:AlternateContent>', re.lastIndex)
+      if (close < 0) break
+      const end = close + '</mc:AlternateContent>'.length
+      spans.push({ start, end, kind: 'r', raw: true })
+      re.lastIndex = end
+      continue
+    }
     if (m[0].startsWith('<a:br')) {
       if (m[0].endsWith('/>')) {
         spans.push({ start, end: re.lastIndex, kind: 'br' })
@@ -332,13 +350,15 @@ function patchRunProps(runXml: string, run: TextRun): string {
     tag = setBoolAttr(tag, 'b', run.boldImplicit ? undefined : run.bold)
     tag = setBoolAttr(tag, 'i', run.italicImplicit ? undefined : run.italic)
     // Underline: keep the original style (dbl/wavy… not collapsed to sng); on removal
-    // an existing u becomes none, and no u is injected when there was none (keeping bytes).
+    // an existing u becomes none, and no u is injected when there was none (keeping bytes)
+    // unless the model asks for an explicit none (a still-linked run un-underlined: without
+    // u="none" the reparse re-derives the link underline).
     // underlineImplicit (hlink styling) is display-only — never bake it into a u attr
     const uVal = run.underline
       ? run.underlineImplicit
         ? undefined
         : (run.underlineStyle ?? 'sng')
-      : /\su="[^"]*"/.test(tag)
+      : /\su="[^"]*"/.test(tag) || run.underlineExplicitNone
         ? 'none'
         : undefined
     tag = setAttr(tag, 'u', uVal, /\su="[^"]*"/)
@@ -409,7 +429,8 @@ function patchRunProps(runXml: string, run: TextRun): string {
 
 /** <a:hlinkClick> for the model's rId (empty when none). */
 function hlinkXml(run: TextRun): string {
-  if (!run.hyperlinkRId) return ''
+  // Named show actions carry an empty r:id, so presence (not truthiness) decides
+  if (run.hyperlinkRId === undefined || (!run.hyperlinkRId && !run.hyperlinkAction)) return ''
   return (
     `<a:hlinkClick xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="${escapeXmlAttr(run.hyperlinkRId)}"` +
     (run.hyperlinkAction ? ` action="${escapeXmlAttr(run.hyperlinkAction)}"` : '') +
@@ -441,8 +462,10 @@ function ownRPr(runXml: string) {
 
 /** Sync <a:hlinkClick> in the rPr with the model: no-op when the rId already matches (keeping bytes). */
 function patchRunHlink(runXml: string, run: TextRun): string {
-  const existing = /<a:hlinkClick\b[^>]*?\br:id="([^"]*)"/.exec(runXml)
-  if ((existing?.[1] ?? undefined) === run.hyperlinkRId) return runXml
+  const existing = /<a:hlinkClick\b[^>]*>/.exec(runXml)?.[0]
+  const existingRId = existing ? /\br:id="([^"]*)"/.exec(existing)?.[1] : undefined
+  const existingAction = existing ? /\baction="([^"]*)"/.exec(existing)?.[1] : undefined
+  if (existingRId === run.hyperlinkRId && existingAction === run.hyperlinkAction) return runXml
   // Strip the old one (self-closing or paired)
   runXml = runXml.replace(
     /<a:hlinkClick\b[^>]*\/>|<a:hlinkClick\b[^>]*>[\s\S]*?<\/a:hlinkClick>/,
@@ -838,6 +861,7 @@ function defRPrXml(d: ParagraphDefaultRunProps): string {
 }
 
 function generateRunXml(r: TextRun): string {
+  if (r.rawXml) return r.rawXml
   // Soft-break sentinel → <a:br/>; embedded "\n" in text (new editor Shift+Enter input) splits into alternating run+br
   if (isSoftBreakRun(r)) return '<a:br/>'
   if (r.text.includes('\n') && !r.field) {

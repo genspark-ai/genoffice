@@ -24,6 +24,7 @@ Fail Word, Excel, PowerPoint dan PDF, disunting oleh anda dan AI anda, disimpan 
 <p align="center">
   <a href="#download"><b>Muat Turun</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
+  <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Laman Web</b></a> ·
   <a href="https://genoffice.ai/join"><b>Komuniti</b></a> ·
   <a href="../../PRIVACY.md"><b>Privasi</b></a>
@@ -187,6 +188,28 @@ tetingkap.
 </tr>
 </table>
 
+### 8 · MCP — alat yang sama melalui Model Context Protocol
+
+Setiap arahan `genoffice` turut menjadi alat MCP. Claude Code, Claude
+Desktop, Cursor dan mana-mana klien MCP lain boleh memulakan `genoffice
+mcp` sendiri, tanpa perlu memasang skill dan tanpa membuka tetingkap, lalu
+mendapat 29 alat serta rujukan operasi sebagai sumber (resources). Pelayan
+HTTP kedua di dalam aplikasi membolehkan agen membina dokumen Word dalam
+tab editor yang kelihatan sementara anda memerhati.
+
+<img src="../assets/readme/mcp-deck-motion.webp" alt="Rakaman time-lapse Claude Code membina taklimat pelabur lapan slaid tentang tenaga boleh diperbaharui melalui pelayan MCP genoffice: mencari rajah dan foto, menyemak setiap gambar calon dengan media, deck_start menulis helaian gaya dan rangka, deck_page menambah satu halaman yang disemak pada satu masa, deck_build memasang .pptx dan slides_render memulangkan gambar setiap slaid; deck yang siap kemudian dibuka dalam GenOffice Slides" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/mcp-deck-in-app.webp" alt="GenOffice Slides memaparkan deck Renewable Energy 2026 lapan slaid yang dibina Claude Code melalui pelayan MCP genoffice: slaid muka depan dengan foto ladang angin pada kanvas dan lapan lakaran kecil di kiri"></td>
+<td width="50%"><img src="../assets/readme/mcp-integrations.webp" alt="GenOffice Settings, halaman Integrations, bahagian MCP: arahan satu baris claude mcp add untuk Claude Code, blok JSON untuk Cursor, Claude Desktop dan klien MCP lain, serta pilihan pelayan HTTP tempatan di bawah"></td>
+</tr>
+<tr>
+<td><b>Satu gesaan, 38 panggilan alat, tanpa shell</b> — "Bina taklimat pelabur lapan slaid tentang tenaga boleh diperbaharui pada 2026, dengan foto sebenar pada muka depan dan di mana-mana sahaja foto membantu." Agen menarik rajah dan foto menggunakan <code>search</code>, bertanya kepada <code>media</code> sama ada setiap gambar calon adalah foto sebenar, memanggil <code>deck_start</code> dengan helaian gaya dan rangka, kemudian <code>deck_page</code> bagi setiap slaid; setiap halaman disemak berbanding rangka dan palet sebelum disimpan, <code>deck_build</code> memasang <code>.pptx</code>, <code>slides_audit</code> mencari limpahan, <code>slides_render</code> memulangkan PNG bagi setiap slaid sebagai kandungan imej yang boleh dilihat model, dan <code>deck_replace</code> membetulkan tiga halaman yang tidak disukainya.</td>
+<td><b>Sambung sekali, daripada Tetapan → Integrasi</b> — salin baris <code>claude mcp add</code> untuk Claude Code, atau blok JSON ke dalam Cursor, Claude Desktop atau mana-mana klien MCP lain. Pilihan B menghidupkan pelayan HTTP tempatan untuk editor Word yang kelihatan. Kedua-duanya diterangkan dalam <a href="#mcp-server">Pelayan MCP</a>.</td>
+</tr>
+</table>
+
 ## Mengapa GenOffice
 
 - **Sumber terbuka**, Apache-2.0, dibangunkan secara terbuka di GitHub.
@@ -206,9 +229,9 @@ tetingkap.
   sistem untuk hasil imbasan.
 - **Markdown dan HTML juga**, dengan panel AI yang sama dan eksport setempat
   ke Word.
-- **Boleh dijalankan melalui skrip.** Baris arahan `genoffice` dan skill agen
-  meletakkan setiap enjin di bawah khidmat Claude Code, Codex, Cursor dan agen
-  pengekodan lain, masih di peranti sendiri.
+- **Boleh dijalankan melalui skrip.** Baris arahan `genoffice`, skill agen
+  dan pelayan MCP meletakkan setiap enjin di bawah khidmat Claude Code,
+  Claude Desktop, Codex, Cursor dan agen lain, masih di peranti sendiri.
 - **Percuma**, untuk individu dan pasukan.
 
 ## Bahagian belakang AI
@@ -245,8 +268,9 @@ pengekodan sebagai pekerja dokumen yang menghasilkan fail Office sebenar dan
 bukan anggaran dalam Markdown.
 
 **Berfungsi dengan:** Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot,
-OpenCode dan Windsurf terus tanpa tetapan tambahan, serta mana-mana agen lain
-yang membaca skill.
+OpenCode dan Windsurf terus tanpa tetapan tambahan, mana-mana agen lain yang
+membaca skill, dan, melalui [pelayan MCP](#mcp-server), Claude Desktop serta
+setiap klien MCP.
 
 ### Memasang skill
 
@@ -302,6 +326,65 @@ genoffice open deck/solar-system.pptx
 Tiada panggilan model berlaku di dalam `genoffice`: agen yang berfikir, CLI
 yang membina dan menyemak, dan hasilnya dibuka dalam GenOffice atau PowerPoint
 sebagai `.pptx` biasa.
+
+<a id="mcp-server"></a>
+
+### Pelayan MCP
+
+Arahan yang sama tersedia sebagai alat [Model Context Protocol](https://modelcontextprotocol.io)
+untuk pembantu yang tidak boleh menjalankan terminal, atau yang anda lebih
+suka tidak diberi satu. Terdapat dua cara untuk masuk, kedua-duanya
+ditunjukkan dengan cebisan sedia salin dalam **Tetapan → Integrasi → MCP**:
+
+| Cara                                | Apa dia                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A · `genoffice mcp`** (disyorkan) | Pelayan stdio yang pembantu mulakan sendiri; GenOffice tidak perlu dibuka. Satu alat bagi setiap arahan (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) ditambah aliran deck berperingkat `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Ops, spesifikasi dan Markdown dihantar terus dalam argumen, jadi klien tanpa sistem fail tetap berfungsi. |
+| **B · Pelayan HTTP tempatan**       | Berjalan di dalam aplikasi GenOffice pada `http://127.0.0.1:3093/mcp` (Streamable HTTP, dengan SSE lama). Alatnya memandu tab editor Word yang kelihatan: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session`, dan anda melihat dokumen itu terbentuk. Dimatikan secara lalai; hidupkan pada panel tetapan yang sama.                                                                                                                                                    |
+
+```bash
+# Claude Code
+claude mcp add --transport stdio genoffice -- genoffice mcp
+```
+
+```jsonc
+// Cursor, Claude Desktop atau mana-mana klien MCP lain
+{ "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
+```
+
+`genoffice` di sini ialah CLI yang disertakan di dalam aplikasi (pada macOS
+`/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; panel
+tetapan memaparkan laluan tepat untuk pemasangan anda). Pelayan ini membawa
+arahan aliran kerjanya sendiri dan mendedahkan rujukan operasi sebagai
+sumber `genoffice://guide/*`, jadi tiada skill diperlukan; skill dan
+pelayan MCP boleh wujud bersama dan pembantu memilih salah satu. Ciri awan
+(`search`, `image`, `media`) masih melalui pembekal yang ditetapkan dalam
+GenOffice; selebihnya berjalan secara tempatan, dan
+`GENOFFICE_ALLOWED_ROOTS` mengehadkan setiap alat kepada folder yang anda
+senaraikan.
+
+Deck tenaga boleh diperbaharui dalam demo di atas ialah gambaran, dari sudut
+protokol, satu gesaan dalam Claude Code yang hanya menyambungkan pelayan
+MCP `genoffice`:
+
+```text
+capabilities · guide(slides, spec) · guide(slides, design)
+search(query) ×4                         → IEA, BNEF and IRENA figures for the slides
+search(query, images) ×7 · media(url, ask) ×7
+                                         → candidate photos, each one checked to be a real photograph
+deck_start(dir, style, outline)          → outline checked: 8 pages to write
+deck_page(dir, 0, page) … deck_page(dir, 7, page)
+                                         → each page checked against the outline and the palette; one page sent again
+deck_build(dir, out)                     → renewables-2026.pptx, no image failures
+slides_audit(file) · slides_render(file, out)
+                                         → no layout findings; 8 PNGs come back as image content
+deck_replace(dir, n, page) ×3 · slides_render(file, out)
+                                         → three pages fixed after looking at the renders
+```
+
+Tiga puluh lapan panggilan, kira-kira tiga belas minit, dan pembantu itu
+langsung tidak menyentuh shell: rajah, foto, semua panduan, semakan dan
+render bergerak sebagai hasil panggilan alat MCP. Hanya `search` dan `media`
+meninggalkan mesin, kepada pembekal yang dikonfigurasikan dalam GenOffice.
 
 <a id="download"></a>
 

@@ -171,6 +171,28 @@ describe('REF field switch preservation', () => {
     )
   })
 
+  it('keeps w:dirty on a folded REF field through parse and save', async () => {
+    const para =
+      '<w:p><w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> REF _Ref1 \\p </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+      '<w:r><w:t>above</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: para }))
+    expect(doc.blocks[0].runs![0]).toMatchObject({ refField: '_Ref1', fldDirty: true })
+    const saved = await saveDocx(doc, [
+      {
+        kind: 'generated',
+        block: { type: 'paragraph', runs: [{ text: 'x' }, ...doc.blocks[0].runs!] },
+      },
+    ])
+    const zip = await (await import('jszip')).default.loadAsync(saved)
+    expect(await zip.file('word/document.xml')!.async('string')).toContain(
+      '<w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>' +
+        '<w:r><w:instrText xml:space="preserve"> REF _Ref1 \\p </w:instrText>',
+    )
+  })
+
   it('falls back to the default REF instruction for newly created references', () => {
     const xml = generateParagraphXml(
       { type: 'paragraph', runs: [{ text: '第一章', refField: 'chap1' }] },

@@ -110,6 +110,7 @@ export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph
           else merged.baseline = r.baseline
         }
         if (merged.strike === false) delete merged.strikeStyle
+        if (merged.rawXml && r.text !== oldRun?.text) delete merged.rawXml
         // The editor always returns the resolved display color; treat it as an explicit color
         // only if the user actually changed it (clear colorFollowsTheme, persist as srgbClr),
         // otherwise keep the theme linkage
@@ -135,11 +136,17 @@ export function applyEditParagraphs(oldParas: Paragraph[], edited: EditParagraph
         // A real un-underline/un-strike must survive a rebuild as an explicit
         // "none" override (see buildRPrAttrs); the editor returns resolved
         // booleans, so compare like bold does — unchanged values keep bytes.
-        // A link-derived underline (underlineImplicit) never had a u attr:
-        // dropping it (unlink) must keep omitting u, not bake u="none" in
+        // A link-derived underline (underlineImplicit) never had a u attr, so
+        // dropping it via unlink keeps omitting u; but un-underlining a run
+        // that KEEPS its link must bake u="none" in, or the reparse re-derives
+        // the link underline and the removal never sticks (r202)
+        const keepsLink =
+          r.link !== undefined
+            ? !!r.link
+            : oldRun?.hyperlink !== undefined || oldRun?.hyperlinkRId !== undefined
         if (
           r.underline != null &&
-          !oldRun?.underlineImplicit &&
+          (!oldRun?.underlineImplicit || keepsLink) &&
           r.underline !== (oldRun?.underline ?? false)
         ) {
           if (r.underline) delete merged.underlineExplicitNone

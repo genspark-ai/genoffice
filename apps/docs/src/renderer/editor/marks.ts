@@ -138,7 +138,7 @@ export const LinkMark = Mark.create({
         href: mark.attrs.href,
         class: 'doc-link',
         // Word parity: hovering a link shows its target even without a
-        // stored tooltip (alpha ledger r164 — links were uninspectable)
+        // stored tooltip (links were uninspectable)
         title: mark.attrs.tooltip ? String(mark.attrs.tooltip) : String(mark.attrs.href ?? ''),
       },
       0,
@@ -250,7 +250,8 @@ export const HIGHLIGHT_CSS: Record<string, string> = {
 export const RefFieldMark = Mark.create({
   name: 'refField',
   addAttributes() {
-    return { name: { default: '' } }
+    // instr: the original instruction with its switches (null = plain REF name \h); dirty: Word recomputes on open
+    return { name: { default: '' }, instr: { default: null }, dirty: { default: false } }
   },
   parseHTML() {
     return [{ tag: 'span[data-ref-field]' }]
@@ -389,6 +390,7 @@ export const InstrFieldMark = Mark.create({
     return {
       instr: { default: '' },
       beginXml: { default: null },
+      dirty: { default: false },
       fieldId: { default: null, rendered: false },
       fieldPart: { default: null, rendered: false },
     }
@@ -467,7 +469,7 @@ export function fontAttrsFromFamilyChain(chain: string | undefined): Record<stri
  * data-doc-style JSON payload (the CSS in renderHTML is lossy — highlight,
  * shading, caps, emphasis and dual-font slots don't all survive the
  * style-heuristic parse below). rawRPr/cs stay out: they are rendered:false
- * save-side pass-throughs, deliberately kept off the DOM. (alpha ledger r117)
+ * save-side pass-throughs, deliberately kept off the DOM.
  */
 const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'> = {
   color: 'string',

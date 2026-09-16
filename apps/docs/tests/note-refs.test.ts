@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'
+import type { Node as ProseNode } from '@tiptap/pm/model'
 import type { Run } from '@genoffice/docx-engine'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { inlineToRuns, runsToInline, type PmNode } from '../src/renderer/editor/convert'
+import {
+  buildNotesContext,
+  noteInsertPos,
+  protectedNoteMarkBlock,
+} from '../src/renderer/ai/note-ops'
 
 function createEditor(content: PmNode[]): Editor {
   return new Editor({
@@ -61,5 +67,66 @@ describe('footnote / endnote reference conversion', () => {
     expect(html).toContain('data-note-ref="5"')
     expect(html).toContain('data-xe-term="glossary term"')
     editor.destroy()
+  })
+})
+
+describe('noteInsertPos', () => {
+  it('skips afterText matches that end inside a field result', () => {
+    const editor = createEditor([
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: 0 },
+        content: [
+          { type: 'text', text: 'See ' },
+          { type: 'text', text: 'Table 12', marks: [{ type: 'refField', attrs: { name: 'tbl' } }] },
+          { type: 'text', text: ' below' },
+        ],
+      },
+    ])
+    const doc = editor.state.doc
+    expect(noteInsertPos(doc, 0, 'Table 1')).toEqual({
+      error: expect.stringContaining('ends inside the field { REF tbl }'),
+    })
+    expect(noteInsertPos(doc, 0, 'Table 12')).toEqual({ pos: 1 + 'See Table 12'.length })
+    expect(noteInsertPos(doc, 0, 'See')).toEqual({ pos: 1 + 'See'.length })
+    editor.destroy()
+  })
+})
+
+describe('buildNotesContext', () => {
+  it('locates marks that live only in protected block XML', () => {
+    const editor = createEditor([
+      {
+        type: 'docParagraph',
+        attrs: { docxIndex: 0 },
+        content: [
+          { type: 'text', text: 'a' },
+          { type: 'docNoteRef', attrs: { kind: 'footnote', id: '1', num: 1 } },
+        ],
+      },
+      {
+        type: 'docProtected',
+        attrs: {
+          docxIndex: 1,
+          blockType: 'passthrough',
+          label: 'p',
+          previewText: '',
+          genXml: '<w:p><w:r><w:footnoteReference w:id="2"/></w:r></w:p>',
+        },
+      },
+    ])
+    const doc = editor.state.doc
+    const footnotes = [
+      { id: '1', text: 'first' },
+      { id: '2', text: 'second' },
+      { id: '3', text: 'orphan' },
+    ]
+    const xmlOf = (block: ProseNode) => String(block.attrs.genXml ?? '')
+    const out = buildNotesContext(doc, footnotes, [], (kind, id) =>
+      protectedNoteMarkBlock(doc, xmlOf, kind, id),
+    )
+    expect(out).toContain('id 1 (mark 1 in block 0)')
+    expect(out).toContain('id 2 (mark in protected block 1, cannot be deleted here)')
+    expect(out).toContain('id 3 (no reference mark in the text)')
   })
 })

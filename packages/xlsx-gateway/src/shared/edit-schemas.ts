@@ -1,6 +1,8 @@
 // Zod schemas and limits shared by the xlsx gateway and the sheets app IPC surface.
 import { z } from 'zod'
 
+import { PATTERN_TYPES } from '../domain/style-color'
+
 export const richRunSchema = z
   .object({
     text: z.string(),
@@ -46,6 +48,42 @@ export const MAX_PATCH_ENTRY_BYTES = 500 * 1024 * 1024
 
 export const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/)
 
+/// styles.xml color: literal rgb, or a theme slot Excel re-resolves on theme change.
+export const themeColorSchema = z
+  .object({
+    theme: z.number().int().min(0).max(11),
+    tint: z.number().min(-1).max(1).optional(),
+  })
+  .strict()
+export const styleColorSchema = z.union([hexColorSchema, themeColorSchema])
+
+export const patternFillSchema = z
+  .object({
+    pattern: z.enum(PATTERN_TYPES),
+    fg: styleColorSchema,
+    bg: styleColorSchema.optional(),
+  })
+  .strict()
+export const gradientFillSchema = z
+  .object({
+    gradient: z
+      .object({
+        type: z.enum(['linear', 'path']).optional(),
+        angle: z.number().min(0).max(360).optional(),
+        left: z.number().min(0).max(1).optional(),
+        right: z.number().min(0).max(1).optional(),
+        top: z.number().min(0).max(1).optional(),
+        bottom: z.number().min(0).max(1).optional(),
+        stops: z
+          .array(z.object({ position: z.number().min(0).max(1), color: styleColorSchema }).strict())
+          .min(2)
+          .max(10),
+      })
+      .strict(),
+  })
+  .strict()
+export const fillSpecSchema = z.union([patternFillSchema, gradientFillSchema])
+
 /// OOXML border line styles the editor can write.
 export const editableBorderStyleSchema = z.enum([
   'thin',
@@ -68,7 +106,7 @@ export const styleEditBorderSchema = z.union([
   z
     .object({
       style: editableBorderStyleSchema,
-      color: hexColorSchema.optional(),
+      color: styleColorSchema.optional(),
     })
     .strict(),
   z.null(),
@@ -86,9 +124,11 @@ export const workbookStyleEditSchema = z
     fontFamily: z.string().min(1).max(128).optional(),
     fontSize: z.number().positive().max(409).optional(),
     /// null removes the explicit font color (back to the theme default).
-    fontColor: z.union([hexColorSchema, z.null()]).optional(),
+    fontColor: z.union([styleColorSchema, z.null()]).optional(),
     /// null clears the fill back to the default "none" pattern.
-    fillColor: z.union([hexColorSchema, z.null()]).optional(),
+    fillColor: z.union([styleColorSchema, z.null()]).optional(),
+    /// pattern or gradient fill; wins over fillColor when both are present
+    fill: z.union([fillSpecSchema, z.null()]).optional(),
     horizontalAlignment: z.enum(['left', 'center', 'right', 'justify', 'distributed']).optional(),
     verticalAlignment: z.enum(['top', 'center', 'bottom']).optional(),
     wrapText: z.boolean().optional(),

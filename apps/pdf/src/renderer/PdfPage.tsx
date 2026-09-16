@@ -4,6 +4,7 @@ import { AnnotationMode, TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
 import { pdfRectToCss, quadToRect } from './annotations'
 import type { LocalMarkup, PageGeom } from './annotations'
+import { MAX_PAGE_RENDER_PIXELS } from './view-config'
 
 /** Which items in the container are within the (expanded) viewport — shared lazy-render basis
     for pages/thumbnails. Rebuild the observer when enabled flips (sidebar toggles unmount/remount the root) */
@@ -84,8 +85,13 @@ export function PdfPage({
       const page = await doc.getPage(pageNo)
       if (cancelled) return
       const viewport = page.getViewport({ scale, rotation: (page.rotate + rotationDelta) % 360 })
-      // Cap at 2x: on hi-dpi screens a 3x-dpr full-page bitmap doubles memory with no visible gain
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      // Cap at 2x: on hi-dpi screens a 3x-dpr full-page bitmap doubles memory with no visible gain.
+      // Deep zoom trades dpr for the pixel budget instead — the page is already magnified.
+      const dpr = Math.min(
+        window.devicePixelRatio || 1,
+        2,
+        Math.sqrt(MAX_PAGE_RENDER_PIXELS / (viewport.width * viewport.height)),
+      )
       const canvas = document.createElement('canvas')
       canvas.width = Math.floor(viewport.width * dpr)
       canvas.height = Math.floor(viewport.height * dpr)

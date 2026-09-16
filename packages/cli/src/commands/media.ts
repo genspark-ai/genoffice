@@ -18,7 +18,10 @@ export const mediaCommand: CommandDef = {
   ],
   async run(args, ctx) {
     const ref = args.positionals[0]
-    if (!ref) throw new CliError(EXIT.usage, 'missing <file|url>')
+    if (!ref)
+      throw new CliError(EXIT.usage, 'missing <file|url>', undefined, {
+        reason: 'missing_argument',
+      })
     const target = /^https?:\/\//i.test(ref)
       ? ref
       : resolveInput(ref.startsWith('file:') ? fileURLToPath(ref) : ref, ctx)

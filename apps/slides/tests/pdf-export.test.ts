@@ -5,7 +5,12 @@ import { basename, dirname, join } from 'node:path'
 import { PNG } from 'pngjs'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { exportPageWidthIn, exportSlidesPdf, type PdfExportWindow } from '../src/main/pdf-export'
+import {
+  buildPdfExportHtml,
+  exportPageWidthIn,
+  exportSlidesPdf,
+  type PdfExportWindow,
+} from '../src/main/pdf-export'
 
 const roots: string[] = []
 
@@ -157,6 +162,46 @@ describe('slides PDF export', () => {
     expect(win.loadedPath).not.toBeNull()
     expect(existsSync(dirname(win.loadedPath!))).toBe(false)
     expect(win.destroyed).toBe(true)
+  })
+
+  it('overlays hyperlink rects as anchors so printToPDF emits link annotations', async () => {
+    const win = new TestPdfWindow()
+    const result = await exportSlidesPdf({
+      pngsBase64: ['png1', 'png2'],
+      widthPx: 1600,
+      heightPx: 900,
+      filePath: await outputPath(),
+      links: [
+        [
+          { x: 0.1, y: 0.2, w: 0.25, h: 0.05, href: 'https://x.test/?a=1&b="2"' },
+          { x: 0.5, y: 0.5, w: 0.1, h: 0.1, href: '#pg2' },
+          // corrupt geometry must not produce NaN% markup
+          { x: Number.NaN, y: 0, w: 1, h: 1, href: 'https://dropped.test/' },
+        ],
+        [],
+      ],
+      createWindow: () => win,
+      openExportedPdf: () => {},
+    })
+
+    expect(result.ok).toBe(true)
+    // pages carry ids so "#pgN" anchors become in-document PDF destinations
+    expect(win.loadedHtml).toContain('<div class="page" id="pg1">')
+    expect(win.loadedHtml).toContain('<div class="page" id="pg2">')
+    expect(win.loadedHtml).toContain(
+      '<a href="https://x.test/?a=1&amp;b=&quot;2&quot;" style="left:10%;top:20%;width:25%;height:5%"></a>',
+    )
+    expect(win.loadedHtml).toContain(
+      '<a href="#pg2" style="left:50%;top:50%;width:10%;height:10%"></a>',
+    )
+    expect(win.loadedHtml).not.toContain('dropped.test')
+    expect(win.loadedHtml).not.toContain('NaN')
+  })
+
+  it('emits no anchors when the export carries no links', () => {
+    const html = buildPdfExportHtml(['png'], 13.333, 7.5)
+    expect(html).toContain('<div class="page" id="pg1">')
+    expect(html).not.toContain('<a ')
   })
 
   it('keeps real capture dimensions exact and falls back for degenerate ones', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PmNode } from '../src/renderer/editor/convert'
 import {
+  PHASED_CONTENT_SETTLED_EVENT,
   PHASE1_BLOCKS,
   PHASE_CHUNK_BLOCKS,
   PHASED_MIN_BLOCKS,
@@ -164,5 +165,27 @@ describe('setContentPhased', () => {
     setContentPhased(host, docOf(PHASED_MIN_BLOCKS + 1), s.schedule)
     cancelPhasedContent()
     expect(isPhasedContentPending()).toBe(false)
+  })
+
+  it('announces the settled tail on document, and only then', () => {
+    const { host } = makeHost()
+    const { schedule, drain, pending } = makeScheduler()
+    let announced = 0
+    const onSettled = () => announced++
+    document.addEventListener(PHASED_CONTENT_SETTLED_EVENT, onSettled)
+    try {
+      setContentPhased(host, docOf(PHASE1_BLOCKS + PHASE_CHUNK_BLOCKS * 2), schedule)
+      expect(announced).toBe(0)
+      drain()
+      expect(announced).toBe(0)
+      drain()
+      expect(pending()).toBe(0)
+      expect(announced).toBe(1)
+      // small documents mount in one pass without a tail: nothing to announce
+      setContentPhased(host, docOf(3), schedule)
+      expect(announced).toBe(1)
+    } finally {
+      document.removeEventListener(PHASED_CONTENT_SETTLED_EVENT, onSettled)
+    }
   })
 })

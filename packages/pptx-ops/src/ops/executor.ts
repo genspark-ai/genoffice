@@ -33,6 +33,7 @@ import {
   type OpRecord,
   type OpContext,
 } from './registry'
+import { normalizeLengthUnits } from './units'
 
 /** Resolve the slide the op is about to act on and stamp its durable id onto the
     record. Pre-apply resolution against the live mid-txn state is the truth; a
@@ -175,6 +176,7 @@ export function runTxn(opened: OpenedPptx, req: TxnRequest): TxnResult {
         throw new GuidedError('each op must be an object with an "op" name field.')
       }
       assertXmlSafeStrings(op)
+      normalizeLengthUnits(op)
       lookup(op.op).validate(op, ctx)
       plan.push(planLine(i, op))
     } catch (e) {

@@ -124,7 +124,6 @@ export const he = {
   appMoreItems: '+{count} נוספים…',
   appTruncationNote: '{shown} הראשונים מתוך {total}',
   appGoToButtonTitle: 'עבור אל (⌘G)',
-  appNameBoxTitle: 'תיבת שם — הקלד כתובת או שם והקש Enter',
   appPivotChartHintIn: 'צור תרשים ציר מטבלת הציר הנוכחית',
   appPivotChartHintOut: 'בחר תחילה תא בתוך פלט טבלת הציר, ואז בחר סוג תרשים',
   appChartColumn: 'עמודות',

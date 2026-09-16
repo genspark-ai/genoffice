@@ -352,42 +352,22 @@ textarea:disabled {
   background: var(--surface);
 }
 
-/* Excel's formula-bar row: Name Box (plus its Go To arrow) for now. */
-.name-box-bar {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  padding: 3px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-subtle);
-}
-
-.name-box {
-  width: 120px;
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-small) 0 0 var(--radius-small);
-  background: var(--surface);
-  font-size: 12px;
-}
-
-.name-box:focus {
-  outline: 2px solid var(--focus);
-  outline-offset: -1px;
-}
-
-.name-box.invalid {
-  border-color: var(--sheets-error);
-}
-
-.name-box-goto {
-  padding: 0 5px;
-  border: 1px solid var(--border);
-  border-left: 0;
-  border-radius: 0 var(--radius-small) var(--radius-small) 0;
-  background: var(--surface);
+/* Go To arrow injected beside Univer's formula-bar Name Box (the
+   defined-name selector) — see the ensure() effect in ExcelShell. */
+.goto-in-bar {
+  flex: none;
+  align-self: stretch;
+  padding: 0 6px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  background: transparent;
   color: var(--text-muted);
   font-size: 10px;
+  cursor: pointer;
+}
+
+.goto-in-bar:hover {
+  background: var(--hover);
 }
 
 /* Go To dialog: defined-name list, one row per name with its ref. */
@@ -1561,8 +1541,8 @@ button.check-item:hover {
 /* formula-bar row + spreadsheet */
 .sheet-main {
   display: grid;
-  /* name box / workbook / status bar */
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* workbook / status bar */
+  grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
 }
@@ -1638,6 +1618,23 @@ button.check-item:hover {
 
 .app-shell.copilot-collapsed .sheet-body {
   grid-template-columns: 34px minmax(0, 1fr);
+}
+
+/* Files pane docks between the AI panel and the sheet as a third grid column */
+.app-shell.files-open .sheet-body {
+  grid-template-columns: var(--copilot-width, 360px) auto minmax(0, 1fr);
+}
+
+.app-shell.copilot-collapsed.files-open .sheet-body {
+  grid-template-columns: 34px auto minmax(0, 1fr);
+}
+
+.sheet-main {
+  position: relative;
+}
+
+.sheet-main .files-edge-tab {
+  top: 44px;
 }
 
 .spreadsheet {

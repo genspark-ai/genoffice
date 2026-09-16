@@ -189,6 +189,27 @@ test.describe('MCP visible document session', () => {
       expect(bytes[0]).toBe(0x50)
       expect(bytes[1]).toBe(0x4b)
 
+      // the renderer's direct save IPC only accepts targets the MCP layer resolved
+      const stray = join(outDir, 'stray.docx')
+      const refused = await editorPage.evaluate(
+        (target) =>
+          (
+            window as unknown as {
+              desktop: {
+                saveDocxTo: (
+                  p: string,
+                  d: ArrayBuffer,
+                  o: boolean,
+                ) => Promise<{ ok: boolean; error?: string }>
+              }
+            }
+          ).desktop.saveDocxTo(target, new ArrayBuffer(4), true),
+        stray,
+      )
+      expect(refused.ok).toBe(false)
+      expect(refused.error).toContain('not authorized')
+      expect(existsSync(stray)).toBe(false)
+
       // read it back through the file tool to confirm the content persisted
       const readBack = await call('read_docx', { path: outFile })
       expect(readBack.isError).toBeFalsy()

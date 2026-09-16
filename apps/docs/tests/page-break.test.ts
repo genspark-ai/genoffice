@@ -1,5 +1,5 @@
 /**
- * Word Ctrl+Enter parity (alpha ledger r154): a page break in front of text
+ * Word Ctrl+Enter parity: a page break in front of text
  * moves that text to the next page with NO coupled blank line, and deleting
  * at the break merges the paragraphs (clearing the break) without content
  * loss.
@@ -36,7 +36,7 @@ describe('insertPageBreak (r154)', () => {
   it('document start: a leading break character, not the paragraph attribute', () => {
     // The attribute is Word's paragraph property — a no-op when the block
     // already sits at a page top, so Ctrl+Enter at the document start would
-    // do nothing (bugbot). Pagination honors a leading w:br even onto the
+    // do nothing. Pagination honors a leading w:br even onto the
     // blank first page.
     const editor = makeEditor('world')
     editor.commands.setTextSelection(1)
@@ -54,7 +54,7 @@ describe('insertPageBreak (r154)', () => {
 
   it('paragraph start elsewhere: the block takes the attribute, no line box added', () => {
     // Outside the document start a leading <br> would render a blank first
-    // line at the new page top (bugbot); the attribute path is artifact-free
+    // line at the new page top; the attribute path is artifact-free
     // and pagination honors it on any non-blank page.
     const editor = new Editor({
       element: document.createElement('div'),

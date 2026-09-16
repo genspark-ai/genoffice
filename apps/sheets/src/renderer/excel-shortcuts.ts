@@ -1,5 +1,5 @@
 /**
- * Excel-standard shortcuts Univer doesn't ship (alpha: Merrick, #genoffice-6).
+ * Excel-standard shortcuts Univer doesn't ship.
  *
  * Univer's KeyCode enum stops at SPACE/arrows — Home, End, PageUp and
  * PageDown don't even have names, so nothing upstream can bind them. The

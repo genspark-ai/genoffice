@@ -24,6 +24,7 @@ Soubory Word, Excel, PowerPoint a PDF, upravované vámi a vaší AI, ukládané
 <p align="center">
   <a href="#download"><b>Stažení</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
+  <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Web</b></a> ·
   <a href="https://genoffice.ai/join"><b>Komunita</b></a> ·
   <a href="../../PRIVACY.md"><b>Soukromí</b></a>
@@ -183,6 +184,28 @@ přes stejné enginy jako aplikace, aniž by otevřely jediné okno.
 </tr>
 </table>
 
+### 8 · MCP — stejné nástroje přes Model Context Protocol
+
+Každý příkaz `genoffice` je zároveň nástrojem MCP. Claude Code, Claude
+Desktop, Cursor a jakýkoli jiný MCP klient si mohou sami spustit `genoffice
+mcp` — bez instalace skillu a bez otevřeného okna — a získat 29 nástrojů
+plus referenční příručky k operacím jako zdroje (resources). Druhý,
+HTTP server uvnitř aplikace umožňuje agentovi sestavit dokument Word přímo
+ve viditelné záložce editoru, zatímco se díváte.
+
+<img src="../assets/readme/mcp-deck-motion.webp" alt="Zrychlený záznam toho, jak Claude Code staví osmislajdovou investorskou prezentaci o obnovitelné energii přes MCP server genoffice: hledá obrázky a fotografie, kontroluje každou kandidátní fotografii pomocí media, deck_start zapíše stylový list a osnovu, deck_page přidává vždy jednu zkontrolovanou stránku, deck_build sestaví .pptx a slides_render vrátí obrázek každého slajdu; hotová prezentace se pak otevře v GenOffice Slides" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/mcp-deck-in-app.webp" alt="GenOffice Slides zobrazuje osmislajdovou prezentaci Renewable Energy 2026, kterou Claude Code postavil přes MCP server genoffice: titulní slajd s fotografií větrné farmy na ploše a osm miniatur vlevo"></td>
+<td width="50%"><img src="../assets/readme/mcp-integrations.webp" alt="Nastavení GenOffice, stránka Integrations, část MCP: jednořádkový příkaz claude mcp add pro Claude Code, blok JSON pro Cursor, Claude Desktop a další MCP klienty, a níže možnost lokálního HTTP serveru"></td>
+</tr>
+<tr>
+<td><b>Jeden prompt, 38 volání nástrojů, žádný shell</b> — „Vytvoř osmislajdovou investorskou prezentaci o obnovitelné energii v roce 2026, se skutečnou fotografií na titulní straně a všude, kde fotografie pomůže.“ Agent stáhne obrázky a fotografie pomocí <code>search</code>, zeptá se <code>media</code>, zda je každá kandidátní fotografie skutečnou fotografií, zavolá <code>deck_start</code> se stylovým listem a osnovou, poté <code>deck_page</code> pro každý slajd; každá stránka je zkontrolována proti osnově a paletě, než je přijata, <code>deck_build</code> sestaví <code>.pptx</code>, <code>slides_audit</code> hledá přetečení, <code>slides_render</code> vrátí PNG pro každý slajd jako obrazový obsah, na který se model může podívat, a <code>deck_replace</code> opraví tři stránky, které se mu nelíbily.</td>
+<td><b>Připojte se jednou, z Nastavení → Integrace</b> — zkopírujte řádek <code>claude mcp add</code> pro Claude Code, nebo blok JSON do Cursoru, Claude Desktop či jiného MCP klienta. Možnost B zapíná lokální HTTP server pro viditelný editor Word. Obojí je popsáno v sekci <a href="#mcp-server">MCP server</a>.</td>
+</tr>
+</table>
+
 ## Proč GenOffice
 
 - **Open source**, Apache-2.0, vyvíjený otevřeně na GitHubu.
@@ -201,9 +224,9 @@ přes stejné enginy jako aplikace, aniž by otevřely jediné okno.
 - **PDF udělané správně.** Upravujte text přímo na stránce a převádějte PDF
   do Word, Excel nebo PowerPoint na zařízení, se systémovým OCR pro skeny.
 - **Také Markdown a HTML**, se stejným panelem AI a místním exportem do Word.
-- **Skriptovatelný.** Příkazový řádek `genoffice` a agentní skill dávají
-  každý engine do služeb agentů Claude Code, Codex, Cursor a dalších, stále
-  na zařízení.
+- **Skriptovatelný.** Příkazový řádek `genoffice`, agentní skill a MCP
+  server dávají každý engine do služeb Claude Code, Claude Desktop, Codex,
+  Cursor a dalších agentů, stále na zařízení.
 - **Zdarma**, pro jednotlivce i týmy.
 
 ## AI backendy
@@ -239,8 +262,9 @@ skillem** promění kódovacího agenta v dokumentového pracovníka, který
 vytváří skutečné soubory Office místo přibližných napodobenin v Markdownu.
 
 **Funguje s:** Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot,
-OpenCode a Windsurf hned po instalaci a s jakýmkoli dalším agentem, který
-čte skilly.
+OpenCode a Windsurf hned po instalaci, s jakýmkoli dalším agentem, který čte
+skilly, a díky [MCP serveru](#mcp-server) také s Claude Desktop a jakýmkoli
+MCP klientem.
 
 ### Instalace skillu
 
@@ -295,6 +319,64 @@ genoffice open deck/solar-system.pptx
 Uvnitř `genoffice` neprobíhá žádné volání modelu: agent přemýšlí, CLI staví
 a kontroluje a výsledek se otevře v GenOffice nebo PowerPointu jako obyčejný
 soubor `.pptx`.
+
+<a id="mcp-server"></a>
+
+### MCP server
+
+Stejné příkazy jsou dostupné jako nástroje [Model Context Protocol](https://modelcontextprotocol.io)
+pro asistenty, kteří neumí spustit terminál nebo kterým byste ho raději
+nedávali. Vedou k tomu dvě cesty, obě ukázané s připravenými fragmenty ke
+zkopírování v **Nastavení → Integrace → MCP**:
+
+| Cesta                                | Co to je                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **A · `genoffice mcp`** (doporučeno) | stdio server, který si asistent spustí sám; GenOffice nemusí být otevřené. Jeden nástroj na příkaz (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) plus fázovaný postup sestavování prezentace `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Operace, specifikace a Markdown se předávají přímo v argumentech, takže funguje i klient bez souborového systému. |
+| **B · Lokální HTTP server**          | Běží uvnitř aplikace GenOffice na `http://127.0.0.1:3093/mcp` (Streamable HTTP, se starším SSE). Jeho nástroje ovládají viditelnou záložku editoru Word: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session` — a vy sledujete, jak dokument vzniká. Ve výchozím stavu vypnutý; zapíná se ve stejném panelu nastavení.                                                                                                                                                                 |
+
+```bash
+# Claude Code
+claude mcp add --transport stdio genoffice -- genoffice mcp
+```
+
+```jsonc
+// Cursor, Claude Desktop nebo jakýkoli jiný MCP klient
+{ "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
+```
+
+`genoffice` je tady CLI dodávané uvnitř aplikace (na macOS
+`/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; panel
+nastavení vypíše přesnou cestu pro vaši instalaci). Server nese vlastní
+instrukce k pracovnímu postupu a zpřístupňuje referenční příručky k operacím
+jako zdroje `genoffice://guide/*`, takže skill není potřeba; skill a MCP
+server mohou koexistovat a asistent si jeden z nich vybere. Cloudové funkce
+(`search`, `image`, `media`) stále jdou přes poskytovatele nastaveného v
+GenOffice; všechno ostatní běží lokálně a `GENOFFICE_ALLOWED_ROOTS` omezuje
+každý nástroj na složky, které uvedete.
+
+Prezentace o obnovitelné energii z dema výše je to, jak jeden prompt v
+Claude Code s připojeným pouze MCP serverem `genoffice` vypadá ze strany
+protokolu:
+
+```text
+capabilities · guide(slides, spec) · guide(slides, design)
+search(query) ×4                         → IEA, BNEF and IRENA figures for the slides
+search(query, images) ×7 · media(url, ask) ×7
+                                         → candidate photos, each one checked to be a real photograph
+deck_start(dir, style, outline)          → outline checked: 8 pages to write
+deck_page(dir, 0, page) … deck_page(dir, 7, page)
+                                         → each page checked against the outline and the palette; one page sent again
+deck_build(dir, out)                     → renewables-2026.pptx, no image failures
+slides_audit(file) · slides_render(file, out)
+                                         → no layout findings; 8 PNGs come back as image content
+deck_replace(dir, n, page) ×3 · slides_render(file, out)
+                                         → three pages fixed after looking at the renders
+```
+
+Osmatřicet volání, zhruba třináct minut, a asistent se ani jednou nedotkl
+shellu: obrázky, fotografie, průvodci, kontroly i rendery cestovaly jako
+výsledky volání MCP nástrojů. Pouze `search` a `media` opustily počítač, k
+poskytovateli nastavenému v GenOffice.
 
 <a id="download"></a>
 

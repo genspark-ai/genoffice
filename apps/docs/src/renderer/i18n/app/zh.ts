@@ -102,6 +102,10 @@ export const zh = {
   appExportedPdfMixed: '已导出 PDF: {path}(混合纸张,{n} 组已按页合并)',
   appExportPdfCanceled: '已取消导出 PDF',
   appExportHtmlCanceled: '已取消导出 HTML',
+  appExportingImages: '正在导出图片…',
+  appExportImagesProgress: '正在导出 {count} 张图片…',
+  appExportImagesDone: '已导出 {count} 张图片到 {dir}',
+  appExportImagesFailed: '导出图片失败：{error}',
   appMixedExportOpening: '混合纸张文档:正在打开分页预览并按页合并导出…',
   // Comments
   appSelectTextToComment: '先选中要批注的文字',
@@ -233,6 +237,7 @@ export const zh = {
   // Navigation pane
   appNavTitle: '导航',
   appNavNoHeadings: '文档中没有标题',
+  appNavOutline: '目录',
   // Ruler
   appTabTypeTip: '制表位类型: {type}（点击切换）',
   appTabStopTitle: '{type}制表位 @ {pos}cm',
@@ -284,6 +289,10 @@ export const zh = {
   appLangGerman: '德文',
   appLangSpanish: '西班牙文',
   appWrapTextMenu: '环绕文字',
+  appViewImage: '查看图片',
+  appSaveImageAs: '图片另存为…',
+  appImgActualSize: '实际大小',
+  appImgFitWindow: '适应窗口',
   appHyperlinkMenu: '超链接…',
   appNewComment: '新建批注',
   appWrapInline: '嵌入型',

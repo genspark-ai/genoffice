@@ -370,10 +370,15 @@ Common mistakes
 
 ### setLink
 
-`{link:{kind:"url",url}|{kind:"slide",slideIndex}|null}`
+`{link:{kind:"url",url}|{kind:"slide",slideIndex}|{kind:"action",action}|null}`
 
 Hyperlink on a whole element (click action). `null` removes the link. Links on
 individual runs are set through `setText` run `link` fields.
+
+| Field       | Type                                                                                                   | Notes                                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| link.kind   | `"url"` / `"slide"` / `"action"`                                                                       | `url` opens in the browser; `slide` jumps to `slideIndex` (0-based); `action` is a PowerPoint show action                |
+| link.action | `"nextslide"` / `"previousslide"` / `"firstslide"` / `"lastslide"` / `"lastslideviewed"` / `"endshow"` | Written as `ppaction://hlinkshowjump` with no relationship, exactly like PowerPoint's Action Settings navigation buttons |
 
 ```json
 {
@@ -390,6 +395,66 @@ individual runs are set through `setText` run `link` fields.
   "link": { "kind": "slide", "slideIndex": 1 }
 }
 ```
+
+```json
+{
+  "op": "setLink",
+  "target": { "slide": 0, "el": "e_SHAPE" },
+  "link": { "kind": "action", "action": "nextslide" }
+}
+```
+
+### alignElements
+
+`{els:[ids],mode:"left"|"centerH"|"right"|"top"|"centerV"|"bottom",to?:"selection"|"slide"}`
+
+Lines up several top-level elements on one edge or center line. By default
+the reference is the selection's bounding box (at least two elements);
+`to: "slide"` aligns to the slide edges and accepts a single element. Frames
+are the axis-aligned boxes `slides read` reports (rotation is ignored, as in
+PowerPoint's Align menu); attached connectors follow.
+
+| Field | Type                                 | Notes                                                                   |
+| ----- | ------------------------------------ | ----------------------------------------------------------------------- |
+| els   | array of element ids                 | Top-level elements only; group children are refused (arrange the group) |
+| mode  | see signature                        | `centerH` = same vertical center line, `centerV` = same horizontal one  |
+| to    | `"selection"` (default) or `"slide"` | Reference box                                                           |
+
+```json
+{
+  "op": "alignElements",
+  "target": { "slide": 0 },
+  "els": ["e_TEXT", "e_SHAPE"],
+  "mode": "left"
+}
+```
+
+Common mistakes
+
+- One element without `to: "slide"`: aligning a single box to itself does nothing.
+- Expecting text inside the box to move: this moves frames; text alignment is `setParagraphFormat`.
+
+### distributeElements
+
+`{els:[ids],axis:"horizontal"|"vertical",to?:"selection"|"slide"}`
+
+Spaces elements evenly along one axis. `selection` (default, at least three
+elements) keeps the two outer elements and spreads the gaps between the rest;
+`to: "slide"` gives equal gaps between the slide edges and every element (one
+or more elements). Only the coordinate along `axis` changes.
+
+```json
+{
+  "op": "distributeElements",
+  "target": { "slide": 0 },
+  "els": ["e_TEXT", "e_SHAPE", "e_PICTURE"],
+  "axis": "horizontal"
+}
+```
+
+Common mistakes
+
+- Two elements with the default `to`: there is no gap to even out; align them or pass `to: "slide"`.
 
 ### setImageFill (not-ai-callable)
 

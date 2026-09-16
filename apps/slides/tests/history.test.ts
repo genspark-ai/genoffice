@@ -152,17 +152,27 @@ describe('Slides main-process history batching', () => {
     expect(valueOf(session)).toBe('before')
   })
 
+  it('undo restores the archive-only dirty flag with the deck', () => {
+    const session = sessionWith('before')
+    pushHistory(session)
+    setValue(session, 'notes edited')
+    session.metaDirty = true
+
+    session.redoStack.push(takeSnapshot(session))
+    restoreSnapshot(session, session.undoStack.pop()!)
+    expect(session.metaDirty).toBe(false)
+
+    restoreSnapshot(session, session.redoStack.pop()!)
+    expect(session.metaDirty).toBe(true)
+  })
+
   it('undo → edit → redo replays the state that was undone, not a mutated copy', () => {
     const session = sessionWith('before')
     pushHistory(session)
     setValue(session, 'edited')
 
     // ⌘Z
-    session.redoStack.push({
-      slides: structuredClone(session.opened.deck.slides),
-      entries: new Map(session.opened.archive.entries),
-      size: { ...session.opened.deck.size },
-    })
+    session.redoStack.push(takeSnapshot(session))
     restoreSnapshot(session, session.undoStack.pop()!)
     expect(valueOf(session)).toBe('before')
 

@@ -25,6 +25,17 @@ describe('normalizePastedMath', () => {
     )
   })
 
+  it('leaves LaTeX source verbatim when pasting into a code block', () => {
+    const source = String.raw`\(x_1\) and \[\int_0^1 x\]`
+    expect(normalizePastedMath(source, true)).toBe(source)
+    expect(normalizePastedMath(source, false)).not.toBe(source)
+  })
+
+  it('does not convert inline delimiters nested inside a display block', () => {
+    expect(normalizePastedMath(String.raw`\[a = \(b^2\)\]`)).toBe(String.raw`$$a = \(b^2\)$$`)
+    expect(normalizePastedMath(String.raw`$$x^2$$ and \(y_1\)`)).toBe('$$x^2$$ and $y_1$')
+  })
+
   it('leaves Markdown-escaped parens untouched', () => {
     expect(normalizePastedMath(String.raw`\(note\)`)).toBe(String.raw`\(note\)`)
   })

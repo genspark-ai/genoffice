@@ -1,7 +1,7 @@
 /**
  * Excel draws no outline around an auto-filtered range, but Univer's
  * SheetsFilterRenderController paints a selection-style border over the whole
- * filter range whenever a sheet has a filter (alpha feedback: "a mysterious
+ * filter range whenever a sheet has a filter (user report: "a mysterious
  * outer border appeared"). The controller class isn't exported, so it is
  * caught at render-module registration — recognized by its distinctive
  * prototype — and its range painter is stubbed out. The funnel buttons keep

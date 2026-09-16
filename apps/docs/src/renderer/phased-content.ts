@@ -30,6 +30,10 @@ export interface PhasedContentHost {
   setDirty(dirty: boolean): void
 }
 
+/** dispatched on document once a streamed tail has fully landed (layout
+ *  measurers skip the tail's chunks and measure the whole document once) */
+export const PHASED_CONTENT_SETTLED_EVENT = 'genoffice:phased-content-settled'
+
 /** blocks in the first synchronous mount: overfills the first screens at any zoom */
 export const PHASE1_BLOCKS = 64
 /** blocks appended per scheduled chunk while the tail streams in */
@@ -88,10 +92,15 @@ export function setContentPhased(
   let index = PHASE1_BLOCKS
   const finish = () => {
     if (my !== token) return
-    cancelPending = null
+    // still "pending" through the history reset: it re-creates the plugin
+    // views, whose constructors would otherwise measure the whole document
+    // once before the settled event asks for the same pass again
     if (!host.isDestroyed()) host.resetHistory()
+    cancelPending = null
     host.setLoading(false)
     settle()
+    if (typeof document !== 'undefined')
+      document.dispatchEvent(new Event(PHASED_CONTENT_SETTLED_EVENT))
   }
   const appendChunk = () => {
     if (my !== token) return

@@ -7,7 +7,9 @@
  * the ragged last line never compresses.
  */
 import { describe, expect, it } from 'vitest'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import {
+  mapTextNodes,
   decideCjkHang,
   decideCjkShrinks,
   forbidsLineEnd,
@@ -226,5 +228,63 @@ describe('usesEastAsianRules', () => {
     expect(usesEastAsianRules('en-US')).toBe(false)
     expect(usesEastAsianRules('en-GB')).toBe(false)
     expect(usesEastAsianRules('ko-KR')).toBe(false)
+  })
+})
+
+type FakeChild = {
+  isText: boolean
+  text?: string
+  marks: unknown[]
+  type: { name: string }
+  nodeSize: number
+}
+function fakePara(children: FakeChild[]): ProseMirrorNode {
+  return {
+    forEach(cb: (child: FakeChild, offset: number) => void) {
+      let offset = 0
+      for (const c of children) {
+        cb(c, offset)
+        offset += c.nodeSize
+      }
+    },
+  } as unknown as ProseMirrorNode
+}
+const text = (t: string): FakeChild => ({
+  isText: true,
+  text: t,
+  marks: [],
+  type: { name: 'text' },
+  nodeSize: t.length,
+})
+const hardBreak: FakeChild = { isText: false, marks: [], type: { name: 'hardBreak' }, nodeSize: 1 }
+const image: FakeChild = { isText: false, marks: [], type: { name: 'docImage' }, nodeSize: 1 }
+
+describe('mapTextNodes', () => {
+  const ea = () => true
+  it('maps decoration-split DOM text nodes back to document positions', () => {
+    const p = document.createElement('p')
+    p.innerHTML = 'ab<span class="x">c</span>d<br>ef'
+    const node = fakePara([text('abcd'), hardBreak, text('ef')])
+    const mapped = mapTextNodes(p, node, 100, ea)
+    expect(mapped).not.toBeNull()
+    expect(mapped!.slots.map((s) => [s.dom.data, s.from])).toEqual([
+      ['ab', 101],
+      ['c', 103],
+      ['d', 104],
+      ['ef', 106],
+    ])
+    expect(mapped!.breaks).toEqual([105])
+  })
+
+  it('refuses text the document does not have (widgets, cursor wrappers) and atoms', () => {
+    const p = document.createElement('p')
+    p.innerHTML = 'ab<span contenteditable="false">[1]</span>cd'
+    expect(mapTextNodes(p, fakePara([text('abcd')]), 0, ea)).toBeNull()
+    p.innerHTML = 'ab\ufeffcd'
+    expect(mapTextNodes(p, fakePara([text('abcd')]), 0, ea)).toBeNull()
+    p.innerHTML = 'abc'
+    expect(mapTextNodes(p, fakePara([text('abcd')]), 0, ea)).toBeNull()
+    p.innerHTML = 'ab<img>cd'
+    expect(mapTextNodes(p, fakePara([text('ab'), image, text('cd')]), 0, ea)).toBeNull()
   })
 })

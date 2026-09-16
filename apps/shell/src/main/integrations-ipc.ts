@@ -1,18 +1,20 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, clipboard, dialog, ipcMain, type BrowserWindow } from 'electron'
-import { inspectCliLink } from '@genoffice/cli/install'
 import {
   agentTarget,
   bundledSkillFrom,
   buildSkillZip,
   detectAgents,
   installSkill,
+  LEDGER_KEY,
+  ledgerFromSettings,
   readInstallState,
   uninstallSkill,
   type BundledSkill,
   type SkillLedger,
-} from './agent-skills'
+} from '@genoffice/cli/agent-skills'
+import { inspectCliLink } from '@genoffice/cli/install'
 import { readAppSettings, writeAppSetting } from './app-settings'
 import { isEphemeralInstall } from './cli-link'
 import {
@@ -21,8 +23,6 @@ import {
   type IntegrationsStatus,
   type SkillInstallState,
 } from '../shared/integrations-api'
-
-const LEDGER_KEY = 'agentSkillInstalls'
 
 export interface IntegrationsDeps {
   settingsPath: () => string
@@ -39,10 +39,7 @@ export interface IntegrationsDeps {
 /** Settings → Integrations: probe, install, uninstall, zip. No write happens without a click in that pane. */
 export function registerIntegrationsIpc(deps: IntegrationsDeps): void {
   const bundled = (): BundledSkill => bundledSkillFrom(readFileSync(deps.skillPath))
-  const ledger = (): SkillLedger => {
-    const raw = readAppSettings(deps.settingsPath())[LEDGER_KEY]
-    return raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as SkillLedger) } : {}
-  }
+  const ledger = (): SkillLedger => ledgerFromSettings(readAppSettings(deps.settingsPath()))
   const saveLedger = (l: SkillLedger) => writeAppSetting(deps.settingsPath(), LEDGER_KEY, l)
   const stateOf = (skillsDir: string): SkillInstallState =>
     readInstallState(skillsDir, bundled(), ledger())

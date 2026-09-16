@@ -4,6 +4,52 @@ import type { ChartDisplay, CommentInfo, NewChart } from '@genoffice/docx-engine
 import type { AgentToolCall, AgentToolDef, CreateDocumentType } from '../../shared/ipc'
 import { t } from '../i18n/locale'
 import { executeOps, opNames } from './ops'
+import { clipExcerpt, repliesOf, resolveCommentAnchor } from './comment-ops'
+import {
+  PAGE_SETUP_TOOL,
+  SECTION_BREAK_TOOL,
+  SECTION_BREAK_TYPES,
+  resolvePageSetup,
+  sectionIndexOfBlock,
+  pageSetupContextLines,
+  sectionLine,
+  type AiPageSetupAccess,
+  type SectionBreakType,
+} from './page-setup'
+import {
+  INSERT_PICTURE_TOOL,
+  INSERT_TEXT_BOX_TOOL,
+  SET_WATERMARK_TOOL,
+  insertPosition,
+  pictureNode,
+  resolveFloat,
+  resolvePictureWatermark,
+  resolveWatermark,
+  textBoxNode,
+  type AiWatermarkAccess,
+  type FloatSpec,
+} from './floating-ops'
+import {
+  DEFINE_STYLE_TOOL,
+  LIST_STYLES_TOOL,
+  describeStyles,
+  resolveStyleDefinition,
+  type AiStyleAccess,
+} from './style-ops'
+import {
+  applyRevisionSelection,
+  describePending,
+  listRevisionEntries,
+  validateSelector,
+} from './revision-ops'
+import {
+  buildNotesContext,
+  insertNoteRef,
+  noteInsertPos,
+  removeNoteRefs,
+  type AiNotesAccess,
+  type NoteKind,
+} from './note-ops'
 import {
   DraftLanding,
   type AiDocWriter,
@@ -166,8 +212,74 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'read_revisions',
     description:
-      'List every pending tracked revision (insertions, deletions, formatting/move/table changes) with kind, author, date, block index and the affected text. Read-only: revisions are accepted/rejected by the user in the Review tab.',
+      'List every pending tracked revision (insertions, deletions, formatting/move/table changes) with its id, type, author, date, block index, the affected text and, for formatting changes, what changed. Ids are positional (r1 = first in document order) and renumber after every edit, so read again before accept_changes / reject_changes.',
     inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'accept_changes',
+    description:
+      'Accept pending tracked changes: insertions become plain text, deleted text disappears, new formatting stays. Select with all: true, ids from read_revisions, or any combination of author / type / blockIndex / blockRange / before. Only when the user asks to accept changes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        all: { type: 'boolean', description: 'true = every pending change' },
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'revision ids from read_revisions (r1, r2, …); positional, so re-read after any edit',
+        },
+        author: { type: 'string', description: 'only changes by this author (case-insensitive)' },
+        type: {
+          type: 'string',
+          enum: ['insertion', 'deletion', 'formatting', 'move'],
+          description: 'only changes of this type',
+        },
+        blockIndex: { type: 'integer', description: 'only changes inside this block' },
+        blockRange: {
+          type: 'array',
+          items: { type: 'integer' },
+          minItems: 2,
+          maxItems: 2,
+          description: '[from, to] block indexes, inclusive',
+        },
+        before: { type: 'string', description: 'ISO date; only changes recorded before it' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'reject_changes',
+    description:
+      'Reject pending tracked changes: inserted text disappears, deleted text is restored, formatting goes back to what it was. Same selector as accept_changes. Only when the user asks to reject changes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        all: { type: 'boolean', description: 'true = every pending change' },
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'revision ids from read_revisions (r1, r2, …); positional, so re-read after any edit',
+        },
+        author: { type: 'string', description: 'only changes by this author (case-insensitive)' },
+        type: {
+          type: 'string',
+          enum: ['insertion', 'deletion', 'formatting', 'move'],
+          description: 'only changes of this type',
+        },
+        blockIndex: { type: 'integer', description: 'only changes inside this block' },
+        blockRange: {
+          type: 'array',
+          items: { type: 'integer' },
+          minItems: 2,
+          maxItems: 2,
+          description: '[from, to] block indexes, inclusive',
+        },
+        before: { type: 'string', description: 'ISO date; only changes recorded before it' },
+      },
+      required: [],
+    },
   },
   {
     name: 'read_comments',
@@ -196,6 +308,99 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       type: 'object',
       properties: {
         id: { type: 'string', description: 'id of the comment thread to resolve' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'insert_footnote',
+    description:
+      'Add a footnote: a superscript reference mark goes into the block (right after afterText, else at its end) and the note text prints at the bottom of that page. Use for sources, asides and clarifications the user asks to footnote.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        blockIndex: { type: 'integer', description: 'block that gets the reference mark' },
+        afterText: {
+          type: 'string',
+          description: 'exact text in that block the mark follows; omitted = end of the block',
+        },
+        text: { type: 'string', description: 'the note text (\\n separates paragraphs)' },
+      },
+      required: ['blockIndex', 'text'],
+    },
+  },
+  {
+    name: 'insert_endnote',
+    description:
+      'Add an endnote (same as insert_footnote, but the text collects at the end of the document). Use when the document already uses endnotes or the user asks for them.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        blockIndex: { type: 'integer', description: 'block that gets the reference mark' },
+        afterText: {
+          type: 'string',
+          description: 'exact text in that block the mark follows; omitted = end of the block',
+        },
+        text: { type: 'string', description: 'the note text (\\n separates paragraphs)' },
+      },
+      required: ['blockIndex', 'text'],
+    },
+  },
+  {
+    name: 'delete_note',
+    description:
+      'Remove a footnote or endnote together with its reference mark; ids from read_notes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['footnote', 'endnote'] },
+        id: { type: 'string', description: 'note id from read_notes' },
+      },
+      required: ['kind', 'id'],
+    },
+  },
+  {
+    name: 'read_notes',
+    description:
+      'List every footnote and endnote with its id, number, the block holding its reference mark and its text.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'add_comment',
+    description:
+      'Start a new comment thread on a block or on an exact text span inside it, without changing the document: review notes, questions, suggestions the user should decide on.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        blockIndex: { type: 'integer', description: 'block to annotate' },
+        text: {
+          type: 'string',
+          description:
+            'exact text inside the block to anchor the comment to; omitted = the whole block',
+        },
+        occurrence: {
+          type: 'integer',
+          description: 'which match to anchor when text occurs more than once (1 = first)',
+        },
+        comment: { type: 'string', description: 'comment body; \\n starts a new paragraph' },
+        author: { type: 'string', description: 'author name; default: the AI author' },
+        initials: { type: 'string', description: 'author initials shown in the margin' },
+      },
+      required: ['blockIndex', 'comment'],
+    },
+  },
+  {
+    name: 'delete_comment',
+    description:
+      'Delete a comment. A thread root with replies is refused unless withReplies is true; a reply id deletes just that reply.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'id of the comment to delete' },
+        withReplies: {
+          type: 'boolean',
+          description: 'also delete the replies of a thread root (default false)',
+        },
       },
       required: ['id'],
     },
@@ -355,6 +560,13 @@ export const AGENT_TOOLS: AgentToolDef[] = [
       required: ['kind', 'text'],
     },
   },
+  PAGE_SETUP_TOOL,
+  SECTION_BREAK_TOOL,
+  DEFINE_STYLE_TOOL,
+  LIST_STYLES_TOOL,
+  SET_WATERMARK_TOOL,
+  INSERT_TEXT_BOX_TOOL,
+  INSERT_PICTURE_TOOL,
   {
     name: 'create_document',
     description:
@@ -396,12 +608,27 @@ export interface AiHeaderFooterAccess {
  * the same review-actions code paths as the comments pane, so AI replies and
  * resolves behave exactly like manual ones (anchors, dirty flags, docx save).
  */
+/** Document-level stores beyond the PM doc (styles.xml, the page watermark), handed to the tool executor. */
+export interface AiDocExtras {
+  styles?: AiStyleAccess
+  watermark?: AiWatermarkAccess
+}
+
 export interface AiCommentsAccess {
   list(): CommentInfo[]
   /** false when the parent thread or its anchor no longer exists */
   reply(parentId: string, text: string): boolean
   /** false when the thread does not exist */
   resolve(id: string): boolean
+  /** new thread anchored to the range; the new comment's id, null when the range holds no text */
+  add?(range: { from: number; to: number }, text: string, meta: CommentAuthorMeta): string | null
+  /** the comment and its replies, anchors included; false when the id does not exist */
+  remove?(id: string): boolean
+}
+
+export interface CommentAuthorMeta {
+  author?: string
+  initials?: string
 }
 
 /**
@@ -515,6 +742,25 @@ const INDEX_WRITE_SUMMARIES: Record<string, () => string> = {
   apply_ops: () => t('aiSumApplyCommands'),
   insert_chart: () => t('aiSumInsertChart'),
   edit_chart: () => t('aiSumEditChart'),
+  insert_section_break: () => t('aiSumInsertSectionBreak'),
+  accept_changes: () => t('aiSumAcceptChanges'),
+  reject_changes: () => t('aiSumRejectChanges'),
+  insert_text_box: () => t('aiSumInsertTextBox'),
+  insert_picture: () => t('aiSumInsertPicture'),
+  insert_footnote: () => t('aiSumInsertFootnote'),
+  insert_endnote: () => t('aiSumInsertEndnote'),
+  add_comment: () => t('aiSumAddComment'),
+}
+
+/** set_page_setup only addresses the document by index through blockIndex; section / all-sections stay valid */
+function staleSummaryOf(call: AgentToolCall): (() => string) | undefined {
+  if (call.name === 'set_page_setup') {
+    const { blockIndex } = call.input
+    return blockIndex === undefined || blockIndex === null
+      ? undefined
+      : () => t('aiSumSetPageSetup')
+  }
+  return INDEX_WRITE_SUMMARIES[call.name]
 }
 
 const STALE_DOC_ERROR =
@@ -599,6 +845,8 @@ async function executeAsyncTool(
         summary: t('aiSumImageSearchDone', { query, count: r.images.length }),
       }
     }
+    case 'insert_picture':
+      return insertPicture(editor, call, signal)
     case 'insert_image': {
       const url = String(call.input.url ?? '')
       if (!/^https?:\/\//.test(url)) return fail(t('aiSumInsertImage'), 'invalid url')
@@ -687,6 +935,101 @@ export function sniffImageMime(base64: string): 'image/png' | 'image/jpeg' | 'im
   return null
 }
 
+/** set_watermark with an image: download / decode, then hand the measured bytes to the store */
+async function setPictureWatermark(
+  call: AgentToolCall,
+  signal: AbortSignal | undefined,
+  extras: AiDocExtras | undefined,
+): Promise<ToolExecution> {
+  const summary = t('aiSumSetWatermark')
+  if (!extras?.watermark) return fail(summary, 'the watermark is not available here')
+  const url = String(call.input.image).trim()
+  if (!/^https?:\/\/|^data:image\//.test(url))
+    return fail(summary, 'image must be an http(s) or data: image URL')
+  const fetched = url.startsWith('data:')
+    ? { base64: url.slice(url.indexOf(',') + 1) }
+    : await window.desktop.fetchImage(url)
+  if (signal?.aborted) return fail(summary, 'stopped by the user; the watermark was not set')
+  if (!fetched) return fail(summary, 'download failed (the image may not be accessible)')
+  const mime = sniffImageMime(fetched.base64)
+  if (!mime) return fail(summary, 'unsupported image format (only png/jpg/gif can be embedded)')
+  let natural: { width: number; height: number }
+  try {
+    natural = await imageSizeOf(`data:${mime};base64,${fetched.base64}`)
+  } catch {
+    return fail(summary, 'the image could not be decoded')
+  }
+  const resolved = resolvePictureWatermark(call.input, {
+    base64: fetched.base64,
+    mime,
+    widthPx: natural.width,
+    heightPx: natural.height,
+  })
+  if ('error' in resolved) return fail(summary, resolved.error)
+  const error = extras.watermark.set(resolved.spec)
+  if (error) return fail(summary, error)
+  return {
+    output: `Picture watermark set (${natural.width}x${natural.height}px source).`,
+    mutated: false, // header part state, written on save
+    summary,
+  }
+}
+
+/** insert_picture: sized, optionally floating picture after a block */
+async function insertPicture(
+  editor: Editor,
+  call: AgentToolCall,
+  signal: AbortSignal | undefined,
+): Promise<ToolExecution> {
+  const summary = t('aiSumInsertPicture')
+  const url = String(call.input.url ?? '')
+  if (!/^https?:\/\/|^data:image\//.test(url))
+    return fail(summary, 'url must be an http(s) or data: image URL')
+  let float: FloatSpec | undefined
+  if (call.input.float !== undefined) {
+    const r = resolveFloat(call.input.float)
+    if ('error' in r) return fail(summary, r.error)
+    float = r.float
+  }
+  const at = insertPosition(editor, call.input.afterBlockIndex)
+  if ('error' in at) return fail(summary, at.error)
+  const fetched = url.startsWith('data:')
+    ? { base64: url.slice(url.indexOf(',') + 1) }
+    : await window.desktop.fetchImage(url)
+  if (signal?.aborted) return fail(summary, 'stopped by the user; the picture was not inserted')
+  if (!fetched) return fail(summary, 'download failed (the image may not be accessible)')
+  const mime = sniffImageMime(fetched.base64)
+  if (!mime) return fail(summary, 'unsupported image format (only png/jpg/gif can be embedded)')
+  let natural: { width: number; height: number }
+  try {
+    natural = await imageSizeOf(`data:${mime};base64,${fetched.base64}`)
+  } catch {
+    return fail(summary, 'the image could not be decoded')
+  }
+  if (signal?.aborted) return fail(summary, 'stopped by the user; the picture was not inserted')
+  const built = pictureNode({
+    base64: fetched.base64,
+    mime,
+    naturalWidth: natural.width,
+    naturalHeight: natural.height,
+    width: call.input.width,
+    height: call.input.height,
+    float,
+    ...(typeof call.input.altText === 'string' ? { altText: call.input.altText } : {}),
+  })
+  if ('error' in built) return fail(summary, built.error)
+  if (editedExternally(editor)) return fail(summary, STALE_DOC_ERROR)
+  const pos = insertPosition(editor, call.input.afterBlockIndex)
+  if ('error' in pos) return fail(summary, pos.error)
+  editor.chain().insertContentAt(pos.pos, built.node).run()
+  markDocSeen(editor)
+  return {
+    output: `Inserted the ${float ? 'floating ' : ''}picture (${built.widthPx}x${built.heightPx}px) after block ${at.after}.`,
+    mutated: true,
+    summary,
+  }
+}
+
 /** download a direct image URL and insert it at the cursor as a protected image block */
 async function insertImageFromUrl(
   editor: Editor,
@@ -756,9 +1099,12 @@ export function executeTool(
   comments?: AiCommentsAccess,
   hf?: AiHeaderFooterAccess,
   writer?: AiDocWriter,
+  pageSetup?: AiPageSetupAccess,
+  extras?: AiDocExtras,
+  notes?: AiNotesAccess,
 ): ToolExecution | Promise<ToolExecution> {
   const scope = frozen && frozen.doc === editor.state.doc ? frozen.scope : null
-  const staleSummary = INDEX_WRITE_SUMMARIES[call.name]
+  const staleSummary = staleSummaryOf(call)
   if (staleSummary && editedExternally(editor)) return fail(staleSummary(), STALE_DOC_ERROR)
   const settle = (exec: ToolExecution): ToolExecution => {
     const readsDoc = call.name === 'get_document_context' || call.name === 'read_blocks'
@@ -773,6 +1119,7 @@ export function executeTool(
     call.name === 'web_search' ||
     call.name === 'image_search' ||
     call.name === 'insert_image' ||
+    call.name === 'insert_picture' ||
     call.name === 'generate_image' ||
     call.name === 'create_document'
   ) {
@@ -780,7 +1127,11 @@ export function executeTool(
   }
   if (call.name === 'write_document')
     return writeDocument(editor, call, numIds, track, signal, writer)
-  return settle(executeSyncTool(editor, call, numIds, track, scope, comments, hf))
+  if (call.name === 'set_watermark' && typeof call.input.image === 'string')
+    return setPictureWatermark(call, signal, extras)
+  return settle(
+    executeSyncTool(editor, call, numIds, track, scope, comments, hf, pageSetup, extras, notes),
+  )
 }
 
 async function writeDocument(
@@ -878,13 +1229,19 @@ function executeSyncTool(
   scope?: SelectionScope | null,
   comments?: AiCommentsAccess,
   hf?: AiHeaderFooterAccess,
+  pageSetup?: AiPageSetupAccess,
+  extras?: AiDocExtras,
+  notes?: AiNotesAccess,
 ): ToolExecution {
   switch (call.name) {
     case 'get_document_context':
       return {
         // the still-valid frozen scope keeps the reported selection consistent
         // with what scope:'selection' and cursor-relative inserts will act on
-        output: buildDocumentContext(editor, scope ?? undefined, hf?.read()),
+        output: [
+          buildDocumentContext(editor, scope ?? undefined, hf?.read()),
+          ...(pageSetup ? pageSetupContextLines(pageSetup.list()) : []),
+        ].join('\n'),
         mutated: false,
         summary: t('aiSumReadDocContext'),
       }
@@ -1195,6 +1552,23 @@ function executeSyncTool(
         summary: t('aiSumReadRevisions'),
       }
 
+    case 'accept_changes':
+    case 'reject_changes': {
+      const mode = call.name === 'accept_changes' ? 'accept' : 'reject'
+      const summary = t(mode === 'accept' ? 'aiSumAcceptChanges' : 'aiSumRejectChanges')
+      const sel = validateSelector(call.input)
+      if ('error' in sel) return fail(summary, sel.error)
+      const r = applyRevisionSelection(editor, sel, mode)
+      if ('error' in r) return fail(summary, r.error)
+      const left = listRevisionEntries(editor.state.doc)
+      const verb = mode === 'accept' ? 'Accepted' : 'Rejected'
+      return {
+        output: `${verb} ${r.entries.length} tracked change(s) (${r.entries.map((e) => e.id).join(', ')}). ${left.length ? `Still ${describePending(left)}.` : 'No tracked changes remain.'}`,
+        mutated: true,
+        summary,
+      }
+    }
+
     case 'read_comments': {
       if (!comments) return fail(t('aiSumReadComments'), 'comments are not available here')
       return {
@@ -1253,6 +1627,123 @@ function executeSyncTool(
       }
     }
 
+    case 'insert_footnote':
+    case 'insert_endnote': {
+      const kind: NoteKind = call.name === 'insert_footnote' ? 'footnote' : 'endnote'
+      const summary = t(kind === 'footnote' ? 'aiSumInsertFootnote' : 'aiSumInsertEndnote')
+      if (!notes) return fail(summary, 'footnotes and endnotes are not available here')
+      const text = String(call.input.text ?? '').trim()
+      if (!text) return fail(summary, 'text must not be empty')
+      const afterText =
+        call.input.afterText === undefined || call.input.afterText === null
+          ? undefined
+          : String(call.input.afterText)
+      if (afterText === '') return fail(summary, 'afterText must not be empty when given')
+      const where = noteInsertPos(editor.state.doc, Number(call.input.blockIndex), afterText)
+      if ('error' in where) return fail(summary, where.error)
+      const id = notes.add(kind, text)
+      insertNoteRef(editor, kind, id, where.pos)
+      return {
+        output: `Inserted ${kind} ${id} in block ${call.input.blockIndex}.`,
+        mutated: true,
+        summary,
+      }
+    }
+
+    case 'delete_note': {
+      const summary = t('aiSumDeleteNote')
+      if (!notes) return fail(summary, 'footnotes and endnotes are not available here')
+      const kind = call.input.kind
+      if (kind !== 'footnote' && kind !== 'endnote')
+        return fail(summary, 'kind must be "footnote" or "endnote"')
+      const id = String(call.input.id ?? '').trim()
+      if (!notes.list(kind).some((n) => n.id === id))
+        return fail(summary, `no ${kind} with id ${id}; call read_notes for the current ids`)
+      const locked = notes.protectedMarkBlock?.(kind, id)
+      if (locked !== null && locked !== undefined) {
+        return fail(
+          summary,
+          `the reference mark of ${kind} ${id} sits in protected block ${locked} (a paragraph the editor cannot rewrite); the note was left in place`,
+        )
+      }
+      const removed = removeNoteRefs(editor, kind, id)
+      notes.remove(kind, id)
+      return {
+        output: `Deleted ${kind} ${id}${removed ? ' and its reference mark' : ' (it had no reference mark in the text)'}.`,
+        mutated: true,
+        summary,
+      }
+    }
+
+    case 'read_notes': {
+      const summary = t('aiSumReadNotes')
+      if (!notes) return fail(summary, 'footnotes and endnotes are not available here')
+      return {
+        output: buildNotesContext(
+          editor.state.doc,
+          notes.list('footnote'),
+          notes.list('endnote'),
+          (kind, id) => notes.protectedMarkBlock?.(kind, id) ?? null,
+        ),
+        mutated: false,
+        summary,
+      }
+    }
+
+    case 'add_comment': {
+      if (!comments?.add) return fail(t('aiSumAddComment'), 'comments are not available here')
+      const body = typeof call.input.comment === 'string' ? call.input.comment.trim() : ''
+      if (!body) return fail(t('aiSumAddComment'), 'comment must not be empty')
+      const anchor = resolveCommentAnchor(editor, {
+        blockIndex: call.input.blockIndex,
+        text: call.input.text,
+        occurrence: call.input.occurrence,
+      })
+      if ('error' in anchor) return fail(t('aiSumAddComment'), anchor.error)
+      const meta: CommentAuthorMeta = {}
+      if (typeof call.input.author === 'string' && call.input.author.trim()) {
+        meta.author = call.input.author.trim()
+      }
+      if (typeof call.input.initials === 'string' && call.input.initials.trim()) {
+        meta.initials = call.input.initials.trim()
+      }
+      const id = comments.add({ from: anchor.from, to: anchor.to }, body, meta)
+      if (!id) return fail(t('aiSumAddComment'), 'the range holds no text to anchor a comment to')
+      return {
+        output: `Added comment ${id} on block ${call.input.blockIndex}, anchored to "${clipExcerpt(anchor.excerpt)}".`,
+        mutated: true,
+        summary: t('aiSumAddComment'),
+      }
+    }
+
+    case 'delete_comment': {
+      if (!comments?.remove) return fail(t('aiSumDeleteComment'), 'comments are not available here')
+      const id = String(call.input.id ?? '').trim()
+      const list = comments.list()
+      const target = list.find((c) => c.id === id)
+      if (!target) {
+        return fail(
+          t('aiSumDeleteComment'),
+          `no comment with id ${id}; call read_comments for the current ids`,
+        )
+      }
+      const replies = repliesOf(list, id)
+      if (replies.length > 0 && call.input.withReplies !== true) {
+        return fail(
+          t('aiSumDeleteComment'),
+          `comment ${id} has ${replies.length} repl${replies.length === 1 ? 'y' : 'ies'} (${replies.map((r) => r.id).join(', ')}); set withReplies: true to delete the whole thread`,
+        )
+      }
+      if (!comments.remove(id))
+        return fail(t('aiSumDeleteComment'), `comment ${id} could not be deleted`)
+      const gone = [id, ...replies.map((r) => r.id)]
+      return {
+        output: `Deleted comment${gone.length > 1 ? 's' : ''} ${gone.join(', ')}.`,
+        mutated: true,
+        summary: t('aiSumDeleteComment'),
+      }
+    }
+
     case 'set_header_footer': {
       const kind = String(call.input.kind ?? '')
       const summaryOf = () => t(kind === 'footer' ? 'aiSumSetFooter' : 'aiSumSetHeader')
@@ -1278,6 +1769,124 @@ function executeSyncTool(
       }
     }
 
+    case 'set_page_setup': {
+      const summary = t('aiSumSetPageSetup')
+      if (!pageSetup) return fail(summary, 'page setup is not available here')
+      const sections = pageSetup.list()
+      if (sections.length === 0) return fail(summary, 'the document has no sections yet')
+      const { section, blockIndex, ...fields } = call.input
+      let targets: number[]
+      if (section !== undefined && section !== null) {
+        if (!Number.isInteger(section) || Number(section) < 0 || Number(section) >= sections.length)
+          return fail(summary, `section must be 0-${sections.length - 1}`)
+        targets = [Number(section)]
+      } else if (blockIndex !== undefined && blockIndex !== null) {
+        if (
+          !Number.isInteger(blockIndex) ||
+          Number(blockIndex) < 0 ||
+          Number(blockIndex) >= editor.state.doc.childCount
+        )
+          return fail(summary, rangeError(editor))
+        targets = [sectionIndexOfBlock(sections, Number(blockIndex))]
+      } else {
+        targets = sections.map((s) => s.index)
+      }
+      const lines: string[] = []
+      for (const index of targets) {
+        const current = pageSetup.current(index)
+        if (!current) return fail(summary, `section ${index} is not available`)
+        const resolved = resolvePageSetup(fields, current)
+        if ('error' in resolved) return fail(summary, resolved.error)
+        const error = pageSetup.set(index, resolved)
+        if (error) return fail(summary, error)
+      }
+      for (const s of pageSetup.list()) {
+        if (targets.includes(s.index))
+          lines.push(
+            `section ${s.index} (blocks ${s.firstBlock}-${s.lastBlock}): ${sectionLine(s)}`,
+          )
+      }
+      return {
+        output: `Page setup updated.\n${lines.join('\n')}`,
+        mutated: false, // section settings live beside the document and are written on save
+        summary,
+      }
+    }
+
+    case 'insert_section_break': {
+      const summary = t('aiSumInsertSectionBreak')
+      if (!pageSetup) return fail(summary, 'section breaks are not available here')
+      const after = call.input.afterBlockIndex
+      const count = editor.state.doc.childCount
+      if (!Number.isInteger(after) || Number(after) < -1 || Number(after) >= count)
+        return fail(summary, rangeError(editor))
+      const type = call.input.type === undefined ? 'nextPage' : call.input.type
+      if (!SECTION_BREAK_TYPES.includes(type as SectionBreakType))
+        return fail(summary, `type must be one of ${SECTION_BREAK_TYPES.join(', ')}`)
+      const error = pageSetup.insertBreak(type as SectionBreakType, Number(after))
+      if (error) return fail(summary, error)
+      return {
+        output: `Inserted a ${type} section break after block ${after}; the break is block ${Number(after) + 1} and later indexes shifted by one. Sections now:\n${pageSetup
+          .list()
+          .map(
+            (s) =>
+              `- section ${s.index} (blocks ${s.firstBlock}-${s.lastBlock}): ${sectionLine(s)}`,
+          )
+          .join('\n')}`,
+        mutated: true,
+        summary,
+      }
+    }
+
+    case 'list_styles': {
+      const summary = t('aiSumListStyles')
+      if (!extras?.styles) return fail(summary, 'the style catalog is not available here')
+      return { output: describeStyles(extras.styles.list()), mutated: false, summary }
+    }
+
+    case 'define_style': {
+      const summary = t('aiSumDefineStyle')
+      if (!extras?.styles) return fail(summary, 'style definitions are not available here')
+      const resolved = resolveStyleDefinition(call.input, extras.styles.list())
+      if ('error' in resolved) return fail(summary, resolved.error)
+      const error = extras.styles.upsert(resolved.value.upsert)
+      if (error) return fail(summary, error)
+      const { styleId } = resolved.value.upsert
+      return {
+        output: `${resolved.value.existing ? 'Updated' : 'Created'} style ${styleId}; apply it with the applyStyle op { op: "applyStyle", target, styleId: "${styleId}" }.`,
+        mutated: false, // styles.xml is written on save; the PM doc is untouched
+        summary,
+      }
+    }
+
+    case 'set_watermark': {
+      const summary = t('aiSumSetWatermark')
+      if (!extras?.watermark) return fail(summary, 'the watermark is not available here')
+      const resolved = resolveWatermark(call.input)
+      if ('error' in resolved) return fail(summary, resolved.error)
+      const error = extras.watermark.set(resolved.spec)
+      if (error) return fail(summary, error)
+      return {
+        output: resolved.spec ? `Watermark set to "${resolved.spec.text}".` : 'Watermark removed.',
+        mutated: false, // header part state, written on save
+        summary,
+      }
+    }
+
+    case 'insert_text_box': {
+      const summary = t('aiSumInsertTextBox')
+      const at = insertPosition(editor, call.input.afterBlockIndex)
+      if ('error' in at) return fail(summary, at.error)
+      const built = textBoxNode(call.input)
+      if ('error' in built) return fail(summary, built.error)
+      editor.chain().insertContentAt(at.pos, built.node).run()
+      return {
+        output: `Inserted a ${built.widthPx}x${built.heightPx}px text box after block ${at.after} (it is block ${at.after + 1}; later indexes shifted by one).`,
+        mutated: true,
+        summary,
+      }
+    }
+
     case 'apply_ops': {
       const dryRun = call.input.dryRun === true
       const outcome = executeOps(editor, call.input.ops, {
@@ -1285,6 +1894,7 @@ function executeSyncTool(
         track,
         selection: scope,
         dryRun,
+        styles: extras?.styles,
       })
       if (!outcome.ok) return fail(t('aiSumApplyCommands'), outcome.error ?? 'op execution failed')
       if (dryRun) {

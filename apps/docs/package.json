@@ -95,6 +95,7 @@
     "@genoffice/font-metrics": "*",
     "electron-updater": "^6.8.9",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.2.108",
     "@genoffice/pptx-render": "*"
   }
 }

@@ -1466,7 +1466,7 @@ export function textboxIsFilled(box: TextboxDisplay): boolean {
   return Boolean(box.fill || box.fillImageDataUrl)
 }
 
-export function textboxBoxStyle(box: TextboxDisplay): string {
+export function textboxBoxStyle(box: TextboxDisplay, opts?: { inCell?: boolean }): string {
   const boxW = box.widthPx ?? 189
   const boxH = box.heightPx ?? 113
   // Word keeps shape text inside the preset's text rectangle (e.g. the
@@ -1498,9 +1498,25 @@ export function textboxBoxStyle(box: TextboxDisplay): string {
         : 'background-repeat:no-repeat;background-size:100% 100%')
     : ''
   const transforms = [box.rotDeg ? `rotate(${box.rotDeg}deg)` : '']
+  // Word keeps floating drawing objects on the page: a column-relative X that
+  // would hang past a paper edge is pulled back on (Word-authored files carry
+  // far-negative posOffsets; drawn literally the box leaves the page and cuts
+  // across the body text). The floor is the page left edge (a
+  // float may sit in the margin), the cap the page right edge; a box wider
+  // than the page pins at the left edge like Word. Page-frame offsets
+  // (pagePinned / pageRelX) already measure from the page and stay raw, and
+  // the authored offset is never rewritten — the clamp is display-only.
+  // Cell-anchored boxes resolve against the zero-width .doc-cell-boxes strut
+  // (100% = 0px collapses the cap below the floor, pinning every in-cell
+  // float at the page edge) and position from the cell anyway: no clamp.
+  const rawLeftPx = ((box.offsetXEmu ?? 0) / 9525).toFixed(1)
+  const leftCss =
+    box.widthPx && !box.pagePinned && !box.pageRelX && !opts?.inCell
+      ? `clamp(calc(0px - var(--doc-margin-left,0px)), ${rawLeftPx}px, ` +
+        `calc(var(--doc-content-w,100%) - ${box.widthPx}px + var(--doc-margin-right,0px)))`
+      : `${rawLeftPx}px`
   const floatPos = box.floating
-    ? `position:absolute;left:${((box.offsetXEmu ?? 0) / 9525).toFixed(1)}px;` +
-      `top:${((box.offsetYEmu ?? 0) / 9525).toFixed(1)}px`
+    ? `position:absolute;left:${leftCss};top:${((box.offsetYEmu ?? 0) / 9525).toFixed(1)}px`
     : ''
   return [
     geomCss ?? '',
@@ -1695,8 +1711,8 @@ function textboxRowSpec(para: TextboxParaDisplay): DomSpec {
   return ['div', attrs, ...cells]
 }
 
-export function renderTextboxSpec(box: TextboxDisplay): DomSpec {
-  const style = textboxBoxStyle(box)
+export function renderTextboxSpec(box: TextboxDisplay, opts?: { inCell?: boolean }): DomSpec {
+  const style = textboxBoxStyle(box, opts)
   const boxAttrs: Record<string, string> = {
     class: textboxIsFilled(box) ? 'doc-textbox doc-textbox-filled' : 'doc-textbox',
   }
@@ -1926,7 +1942,7 @@ export function cellBoxesSpec(boxes: TextboxDisplay[]): DomSpec {
       style: bottom > 0 ? `height:${bottom.toFixed(1)}px` : '',
     },
     ...boxes.map((b): DomSpec => {
-      const spec = renderTextboxSpec(b)
+      const spec = renderTextboxSpec(b, { inCell: true })
       if (b.floating) return spec
       const left = (b.offsetXEmu ?? 0) / 9525
       const top = (b.offsetYEmu ?? 0) / 9525

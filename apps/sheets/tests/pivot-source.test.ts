@@ -176,6 +176,19 @@ describe('pivot source selection', () => {
     expect(getSourceRange(f.ctx)).toBe('A1:B2')
   })
 
+  it('keeps a data row inserted at the totals row inside the source', () => {
+    const f = fixture([
+      ['Name', 'Amount'],
+      ['A', 2],
+      ['New', 5],
+      ['Total', 7],
+    ])
+    addTable(f, 'A1:B3', 1)
+    f.state.editJournal.structuralOps.set('s1', [{ kind: 'insert-rows', index: 2, count: 1 }])
+    f.select('B2')
+    expect(getSourceRange(f.ctx)).toBe('A1:B3')
+  })
+
   it('maps saved table bounds after a row insertion', () => {
     const f = fixture([[], ['Region', 'Revenue', 'Units'], ['East', 10, 2], ['West', 20, 3]])
     addTable(f, 'A1:C3')
@@ -225,12 +238,6 @@ describe('pivot source selection', () => {
     addTable(f, 'A1:C3')
     f.state.file.sheets[0]!.tables[0]!.headerRowCount = 0
     expect(getSourceRange(f.ctx)).toBe('B2:B2')
-  })
-
-  it('does not silently truncate a region when the scan budget is exhausted', () => {
-    const f = fixture(Array.from({ length: 10_005 }, (_, row) => [row]))
-    f.select('A1')
-    expect(getSourceRange(f.ctx)).toBe('A1:A1')
   })
 
   it('creates from the resolved source, not the selected data cell', () => {

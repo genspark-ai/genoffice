@@ -6,7 +6,7 @@
  * Google Sheets) bulk-fill works. Univer tiles only when BOTH dimensions of
  * the target are exact multiples of the source; a 13×1 target over a 1×3
  * source falls through to a single anchored paste, so nothing repeats
- * (alpha feedback: "selecting C2:C14 does not bulk-copy").
+ * (user report: "selecting C2:C14 does not bulk-copy").
  *
  * Before Univer computes the paste range, widen an anchor-shaped selection
  * (one axis a whole multiple with more than one repetition, the other axis

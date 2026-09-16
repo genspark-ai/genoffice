@@ -36,6 +36,8 @@ import { useModalKeys } from './modal-keys'
 export interface ContextMenuState {
   x: number
   y: number
+  /** src of the picture under the pointer, when the click landed on one */
+  imageSrc?: string | null
 }
 
 interface EditorContextMenuProps {
@@ -46,6 +48,8 @@ interface EditorContextMenuProps {
   onParagraphDialog: () => void
   onLink: () => void
   onNewComment: () => void
+  onViewImage: (src: string) => void
+  onSaveImageAs: (src: string) => void
   onAiPreset: (instruction: string) => void
   /** List items: restart numbering / continue numbering (shown when the cursor is on a docListItem) */
   onRestartNumbering?: () => void
@@ -75,6 +79,8 @@ export function EditorContextMenu({
   onParagraphDialog,
   onLink,
   onNewComment,
+  onViewImage,
+  onSaveImageAs,
   onAiPreset,
   onRestartNumbering,
   onContinueNumbering,
@@ -311,6 +317,13 @@ export function EditorContextMenu({
       style={{ left: pos.left, top: pos.top, minWidth: MENU_WIDTH }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {menu.imageSrc && (
+        <>
+          {item(t('appViewImage'), { onClick: run(() => onViewImage(menu.imageSrc!)) })}
+          {item(t('appSaveImageAs'), { onClick: run(() => onSaveImageAs(menu.imageSrc!)) })}
+          <div className="ctx-sep" />
+        </>
+      )}
       {item(t('appCut'), {
         key: '⌘X',
         disabled: !hasSelection || !canEdit,

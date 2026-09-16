@@ -436,13 +436,14 @@ describe('paragraph border color/width round trip', () => {
     rawPPr:
       '<w:pPr><w:pBdr><w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/></w:pBdr></w:pPr>',
     runs: [{ text: 'x' }],
-    format: { borders: 'b', borderLines: { b: { color: '4472C4', szPt: 2.25 } } },
+    // the parser keeps a declared positive w:space as spacePt (an omitted/0 one stays undeclared)
+    format: { borders: 'b', borderLines: { b: { color: '4472C4', szPt: 2.25, spacePt: 1 } } },
   }
 
   it('borderLines survive PM attrs and do not dirty the block', () => {
     const doc = blocksToPmDoc([block])
     expect(doc.content?.[0].attrs?.borderLines).toBe(
-      JSON.stringify({ b: { color: '4472C4', szPt: 2.25 } }),
+      JSON.stringify({ b: { color: '4472C4', szPt: 2.25, spacePt: 1 } }),
     )
     const plan = pmDocToSavePlan(doc, [block])
     expect(plan.changedCount).toBe(0)
@@ -458,7 +459,9 @@ describe('paragraph border color/width round trip', () => {
     const plan = pmDocToSavePlan(doc, [block])
     const saved = plan.saveBlocks[0]
     if (saved.kind !== 'generated') throw new Error(`expected generated, got ${saved.kind}`)
-    expect(saved.block.format?.borderLines).toEqual({ b: { color: '4472C4', szPt: 2.25 } })
+    expect(saved.block.format?.borderLines).toEqual({
+      b: { color: '4472C4', szPt: 2.25, spacePt: 1 },
+    })
     expect(saved.block.rawPPr).toContain(
       '<w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/>',
     )

@@ -1,4 +1,5 @@
 import { basename } from 'node:path'
+import { realpathSync } from 'node:fs'
 import { BrowserWindow } from 'electron'
 import type { Rectangle, WebContents, WebContentsView } from 'electron'
 
@@ -533,6 +534,19 @@ export class TabManager {
     }
   }
 
+  /** the editor tab showing this file, whichever module owns it (path compared after resolving links) */
+  findTabByPath(path: string): { id: string; kind: TabKind; webContents: WebContents } | undefined {
+    const wanted = canonicalPath(path)
+    const tab = this.tabs.find(
+      (t) => t.view && t.filePath && !t.present && canonicalPath(t.filePath) === wanted,
+    )
+    return tab?.view ? { id: tab.id, kind: tab.kind, webContents: tab.view.webContents } : undefined
+  }
+
+  webContentsForTab(id: string): WebContents | undefined {
+    return this.tabs.find((t) => t.id === id)?.view?.webContents
+  }
+
   findDocsTabByPath(path: string): string | undefined {
     return this.tabs.find((t) => t.kind === 'docs' && t.filePath === path)?.id
   }
@@ -583,5 +597,13 @@ export class TabManager {
     return tab?.kind === 'pdf' && tab.view
       ? { id: tab.id, webContents: tab.view.webContents, filePath: tab.filePath }
       : undefined
+  }
+}
+
+function canonicalPath(path: string): string {
+  try {
+    return realpathSync.native(path)
+  } catch {
+    return path
   }
 }

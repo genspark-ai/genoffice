@@ -210,6 +210,26 @@ export function handleGlobalKeydown(
       ctx.setCurrent((c) => Math.max(0, Math.min(c + delta, ctx.slides.length - 1)))
       return
     }
+    // Delete/Backspace removes the current slide (thumbnail-pane behavior,
+    // same action as the thumbnail context menu; deleteSlideAt keeps ≥1 slide).
+    // Not while inking or in reading view (both clear the selection), and not
+    // with plain-DOM text dragged (AI panel): the key targets that text.
+    if (
+      !mod &&
+      !e.altKey &&
+      !e.defaultPrevented &&
+      !ctx.masterItems &&
+      ctx.inkTool === 'select' &&
+      ctx.viewMode !== 'reading' &&
+      ctx.slides.length > 0 &&
+      document.activeElement === document.body &&
+      (window.getSelection()?.isCollapsed ?? true) &&
+      (e.key === 'Delete' || e.key === 'Backspace')
+    ) {
+      e.preventDefault()
+      void slideActions.deleteSlideAt(ctx, ctx.current)
+      return
+    }
     // ⌘C/⌘X act on the current slide (thumbnail-pane behavior)
     if (mod && !e.altKey && !e.shiftKey && (e.key === 'c' || e.key === 'C')) {
       e.preventDefault()

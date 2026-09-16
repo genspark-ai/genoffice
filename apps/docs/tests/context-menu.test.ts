@@ -67,6 +67,8 @@ function menuProps(editor: Editor, overrides: Record<string, unknown> = {}) {
     onParagraphDialog: noop,
     onLink: noop,
     onNewComment: noop,
+    onViewImage: noop,
+    onSaveImageAs: noop,
     onAiPreset: noop,
     ...overrides,
   }
@@ -243,5 +245,38 @@ describe('ParagraphDialog', () => {
     expect(editor.getAttributes('docParagraph').align).toBeNull()
     unmount()
     editor.destroy()
+  })
+})
+
+describe('EditorContextMenu picture items', () => {
+  const labels = (container: HTMLElement) =>
+    [...container.querySelectorAll('.ctx-label')].map((el) => el.textContent)
+
+  it('shows View / Save Image As only when the click landed on a picture', () => {
+    const editor = createEditor()
+    const plain = render(createElement(EditorContextMenu, menuProps(editor)))
+    expect(labels(plain.container)).not.toContain('View Image')
+    plain.unmount()
+
+    const onViewImage = vi.fn()
+    const onSaveImageAs = vi.fn()
+    const src = 'data:image/png;base64,AAAA'
+    const { container, unmount } = render(
+      createElement(
+        EditorContextMenu,
+        menuProps(editor, { menu: { x: 10, y: 10, imageSrc: src }, onViewImage, onSaveImageAs }),
+      ),
+    )
+    const names = labels(container)
+    expect(names.slice(0, 2)).toEqual(['View Image', 'Save Image As…'])
+    const byLabel = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('.ctx-item')].find(
+        (b) => b.querySelector('.ctx-label')?.textContent === label,
+      )!
+    byLabel('View Image').click()
+    byLabel('Save Image As…').click()
+    expect(onViewImage).toHaveBeenCalledWith(src)
+    expect(onSaveImageAs).toHaveBeenCalledWith(src)
+    unmount()
   })
 })

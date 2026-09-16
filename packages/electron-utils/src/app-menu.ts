@@ -20,6 +20,9 @@ export interface AppMenuLabels extends ContextMenuLabels {
   zoomIn: string
   zoomOut: string
   fullscreen: string
+  help: string
+  about: string
+  version: string
 }
 
 type Labels = Omit<AppMenuLabels, keyof ContextMenuLabels>
@@ -40,6 +43,9 @@ const EN: Labels = {
   zoomIn: 'Zoom In',
   zoomOut: 'Zoom Out',
   fullscreen: 'Full Screen',
+  help: 'Help',
+  about: 'About GenOffice',
+  version: 'Version',
 }
 
 // Shared table, same rationale as context-menu.ts: one copy instead of
@@ -61,6 +67,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: '放大',
     zoomOut: '缩小',
     fullscreen: '全屏',
+    help: '帮助',
+    about: '关于 GenOffice',
+    version: '版本',
   },
   en: EN,
   ja: {
@@ -79,6 +88,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: '拡大',
     zoomOut: '縮小',
     fullscreen: 'フルスクリーン',
+    help: 'ヘルプ',
+    about: 'GenOffice について',
+    version: 'バージョン',
   },
   ko: {
     window: '창',
@@ -96,6 +108,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: '확대',
     zoomOut: '축소',
     fullscreen: '전체 화면',
+    help: '도움말',
+    about: 'GenOffice 정보',
+    version: '버전',
   },
   fr: {
     window: 'Fenêtre',
@@ -113,6 +128,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Zoom avant',
     zoomOut: 'Zoom arrière',
     fullscreen: 'Plein écran',
+    help: 'Aide',
+    about: 'À propos de GenOffice',
+    version: 'Version',
   },
   de: {
     window: 'Fenster',
@@ -130,6 +148,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Vergrößern',
     zoomOut: 'Verkleinern',
     fullscreen: 'Vollbild',
+    help: 'Hilfe',
+    about: 'Über GenOffice',
+    version: 'Version',
   },
   es: {
     window: 'Ventana',
@@ -147,6 +168,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Acercar',
     zoomOut: 'Alejar',
     fullscreen: 'Pantalla completa',
+    help: 'Ayuda',
+    about: 'Acerca de GenOffice',
+    version: 'Versión',
   },
   th: {
     window: 'หน้าต่าง',
@@ -164,6 +188,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'ขยาย',
     zoomOut: 'ย่อ',
     fullscreen: 'เต็มหน้าจอ',
+    help: 'วิธีใช้',
+    about: 'เกี่ยวกับ GenOffice',
+    version: 'เวอร์ชัน',
   },
   id: {
     window: 'Jendela',
@@ -181,6 +208,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Perbesar',
     zoomOut: 'Perkecil',
     fullscreen: 'Layar Penuh',
+    help: 'Bantuan',
+    about: 'Tentang GenOffice',
+    version: 'Versi',
   },
   ru: {
     window: 'Окно',
@@ -198,6 +228,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Увеличить',
     zoomOut: 'Уменьшить',
     fullscreen: 'Полноэкранный режим',
+    help: 'Справка',
+    about: 'О GenOffice',
+    version: 'Версия',
   },
   ar: {
     window: 'نافذة',
@@ -215,6 +248,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'تكبير',
     zoomOut: 'تصغير العرض',
     fullscreen: 'ملء الشاشة',
+    help: 'تعليمات',
+    about: 'حول GenOffice',
+    version: 'الإصدار',
   },
   pt: {
     window: 'Janela',
@@ -232,6 +268,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Ampliar',
     zoomOut: 'Reduzir',
     fullscreen: 'Tela Cheia',
+    help: 'Ajuda',
+    about: 'Sobre o GenOffice',
+    version: 'Versão',
   },
   it: {
     window: 'Finestra',
@@ -249,6 +288,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Ingrandisci',
     zoomOut: 'Riduci',
     fullscreen: 'Schermo intero',
+    help: 'Aiuto',
+    about: 'Informazioni su GenOffice',
+    version: 'Versione',
   },
   pl: {
     window: 'Okno',
@@ -266,6 +308,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Powiększ',
     zoomOut: 'Pomniejsz',
     fullscreen: 'Pełny ekran',
+    help: 'Pomoc',
+    about: 'O programie GenOffice',
+    version: 'Wersja',
   },
   cs: {
     window: 'Okno',
@@ -283,6 +328,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Přiblížit',
     zoomOut: 'Oddálit',
     fullscreen: 'Celá obrazovka',
+    help: 'Nápověda',
+    about: 'O aplikaci GenOffice',
+    version: 'Verze',
   },
   nl: {
     window: 'Venster',
@@ -300,6 +348,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Inzoomen',
     zoomOut: 'Uitzoomen',
     fullscreen: 'Volledig scherm',
+    help: 'Help',
+    about: 'Over GenOffice',
+    version: 'Versie',
   },
   ms: {
     window: 'Tetingkap',
@@ -317,6 +368,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'Zum Masuk',
     zoomOut: 'Zum Keluar',
     fullscreen: 'Skrin Penuh',
+    help: 'Bantuan',
+    about: 'Perihal GenOffice',
+    version: 'Versi',
   },
   he: {
     window: 'חלון',
@@ -334,6 +388,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'הגדל',
     zoomOut: 'הקטן',
     fullscreen: 'מסך מלא',
+    help: 'עזרה',
+    about: 'אודות GenOffice',
+    version: 'גרסה',
   },
   hi: {
     window: 'विंडो',
@@ -351,6 +408,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: 'ज़ूम इन',
     zoomOut: 'ज़ूम आउट',
     fullscreen: 'पूर्ण स्क्रीन',
+    help: 'सहायता',
+    about: 'GenOffice के बारे में',
+    version: 'संस्करण',
   },
   'zh-TW': {
     window: '視窗',
@@ -368,6 +428,9 @@ const LABELS: Record<string, Labels> = {
     zoomIn: '放大',
     zoomOut: '縮小',
     fullscreen: '全螢幕',
+    help: '說明',
+    about: '關於 GenOffice',
+    version: '版本',
   },
 }
 
@@ -459,6 +522,44 @@ export function viewMenuTemplate(labels: AppMenuLabels): MenuItemConstructorOpti
       { role: 'zoomOut', label: labels.zoomOut },
       { type: 'separator' },
       { role: 'togglefullscreen', label: labels.fullscreen },
+    ],
+  }
+}
+
+/** Help > About: a native dialog with the app version — every window's menu
+ * gets one, so users can report the exact build they run. */
+export function aboutMenuItem(labels: AppMenuLabels): MenuItemConstructorOptions {
+  return {
+    label: labels.about,
+    click: async () => {
+      const { app, dialog, clipboard } = await import('electron')
+      const version = app.getVersion()
+      const { response } = await dialog.showMessageBox({
+        type: 'info',
+        title: 'GenOffice',
+        message: 'GenOffice',
+        detail: `${labels.version} ${version}`,
+        buttons: ['OK', labels.copy],
+        defaultId: 0,
+        cancelId: 0,
+      })
+      if (response === 1) clipboard.writeText(`GenOffice ${version}`)
+    },
+  }
+}
+
+/** Help menu with About; extra app-specific items go before the separator. */
+export function helpMenuTemplate(
+  labels: AppMenuLabels,
+  extraItems: MenuItemConstructorOptions[] = [],
+): MenuItemConstructorOptions {
+  return {
+    role: 'help',
+    label: labels.help,
+    submenu: [
+      ...extraItems,
+      ...(extraItems.length > 0 ? [{ type: 'separator' } as const] : []),
+      aboutMenuItem(labels),
     ],
   }
 }

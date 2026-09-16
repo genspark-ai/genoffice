@@ -37,7 +37,18 @@ const DV_ERROR_STYLE_NAMES: Record<number, string | undefined> = {
   2: 'warning',
 }
 
-export function applyDvRules(worksheetXml: string, rules: readonly DvWireRule[]): string {
+export interface DvApplyOptions {
+  /** keep the existing rules, replace those on the same ranges, drop `remove`, add the rest */
+  readonly append?: boolean | undefined
+  readonly remove?: readonly DvCellArea[] | undefined
+}
+
+export function applyDvRules(
+  worksheetXml: string,
+  rules: readonly DvWireRule[],
+  options: DvApplyOptions = {},
+): string {
+  if (options.append) return appendDvRules(worksheetXml, rules, options.remove ?? [])
   if (/<x14:dataValidation\b/.test(worksheetXml)) {
     throw new DvEditError(
       'This sheet has extended (x14) data validation — editing its rules is not ' +
@@ -59,6 +70,57 @@ export function applyDvRules(worksheetXml: string, rules: readonly DvWireRule[])
   if (anchor) {
     return xml.slice(0, anchor.index) + section + xml.slice(anchor.index)
   }
+  const end = xml.lastIndexOf('</worksheet>')
+  if (end === -1) throw new DvEditError('Worksheet has no closing element.')
+  return xml.slice(0, end) + section + xml.slice(end)
+}
+
+const DV_SECTION_RE =
+  /<dataValidations\b[^>]*>([\s\S]*?)<\/dataValidations>|<dataValidations\b[^>]*\/>/
+const DV_ENTRY_RE = /<dataValidation\b[^>]*?\/>|<dataValidation\b[^>]*>[\s\S]*?<\/dataValidation>/g
+
+function appendDvRules(
+  worksheetXml: string,
+  rules: readonly DvWireRule[],
+  remove: readonly DvCellArea[],
+): string {
+  const section = DV_SECTION_RE.exec(worksheetXml)
+  const replaced = new Set(
+    [...rules.flatMap((rule) => rule.ranges), ...remove].map((area) => normalizeRef(toRef(area))),
+  )
+  // an existing rule loses the areas the batch takes over; a multi-area sqref keeps the rest
+  const kept: string[] = []
+  for (const entry of section?.[1] ? [...section[1].matchAll(DV_ENTRY_RE)].map((m) => m[0]) : []) {
+    const sqref = /\bsqref="([^"]*)"/.exec(entry)?.[1] ?? ''
+    const areas = sqref.split(/\s+/).filter(Boolean)
+    const remaining = areas.filter((area) => !replaced.has(normalizeRef(area)))
+    if (remaining.length === 0) continue
+    kept.push(
+      remaining.length === areas.length
+        ? entry
+        : entry.replace(/\bsqref="[^"]*"/, `sqref="${remaining.join(' ')}"`),
+    )
+  }
+  const entries = [...kept, ...rules.map(serializeRule)]
+  const xml = section ? worksheetXml.replace(section[0], '') : worksheetXml
+  if (entries.length === 0) return xml
+  const body = `<dataValidations count="${entries.length}">${entries.join('')}</dataValidations>`
+  if (section) return xml.slice(0, section.index) + body + xml.slice(section.index)
+  return insertBeforeTail(xml, body)
+}
+
+/** `A1:A1` and `$A$1` name the same cell as `A1`. */
+function normalizeRef(ref: string): string {
+  const [a, b] = ref.replace(/\$/g, '').split(':')
+  return b === undefined || b === a ? a! : `${a}:${b}`
+}
+
+function insertBeforeTail(xml: string, section: string): string {
+  const anchor =
+    /<hyperlinks\b|<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/.exec(
+      xml,
+    )
+  if (anchor) return xml.slice(0, anchor.index) + section + xml.slice(anchor.index)
   const end = xml.lastIndexOf('</worksheet>')
   if (end === -1) throw new DvEditError('Worksheet has no closing element.')
   return xml.slice(0, end) + section + xml.slice(end)

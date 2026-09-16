@@ -88,8 +88,8 @@ function rightEdge(page: Page, rect: CellRect): Promise<number> {
 }
 
 /**
- * Regression for "a mysterious outer border appeared" (alpha
- * feedback): Univer's filter render controller paints a selection-style border
+ * Regression for "a mysterious outer border appeared" (user
+ * report): Univer's filter render controller paints a selection-style border
  * around the whole filter range whenever a sheet has a filter. Excel draws
  * no such outline; the range painter is stubbed out at render-module
  * registration (see filter-range-outline.ts). The pixel probe asserts the

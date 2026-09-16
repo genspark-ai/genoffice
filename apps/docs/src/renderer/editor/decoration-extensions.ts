@@ -16,6 +16,7 @@ import { SearchHighlight } from './extensions'
 import { revisionDisplayState } from './marks'
 import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
 import { rangeSlot } from '../dom-range'
+import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
 
 const alignRange = rangeSlot()
 
@@ -360,6 +361,10 @@ class TabLayoutView {
     this.invalidate()
     this.measure()
   }
+  private onPhasedSettled = () => {
+    this.invalidate()
+    this.measure()
+  }
 
   constructor(
     private view: EditorView,
@@ -367,6 +372,7 @@ class TabLayoutView {
   ) {
     this.measure()
     document.fonts?.addEventListener('loadingdone', this.onFontsLoaded)
+    document.addEventListener(PHASED_CONTENT_SETTLED_EVENT, this.onPhasedSettled)
     if (typeof ResizeObserver !== 'undefined') {
       // width-only trigger: height changes on every keystroke
       this.resizeObserver = new ResizeObserver(() => {
@@ -401,6 +407,7 @@ class TabLayoutView {
 
   destroy() {
     document.fonts?.removeEventListener('loadingdone', this.onFontsLoaded)
+    document.removeEventListener(PHASED_CONTENT_SETTLED_EVENT, this.onPhasedSettled)
     this.resizeObserver?.disconnect()
     if (this.retryRaf) cancelAnimationFrame(this.retryRaf)
   }
@@ -421,6 +428,8 @@ class TabLayoutView {
       this.retryRaf = 0
     }
     const { view } = this
+    // a streamed tail is still landing: measured once, when it has (settled event)
+    if (isPhasedContentPending()) return
     if (!view.dom.isConnected) {
       this.scheduleRetry()
       return

@@ -10,6 +10,7 @@
       "@genoffice/pptx-engine": ["../../packages/pptx-engine/src/index.ts"],
       "@genoffice/pptx-engine/table-grid": ["../../packages/pptx-engine/src/table-grid.ts"],
       "@genoffice/pptx-engine/identity": ["../../packages/pptx-engine/src/identity.ts"],
+      "@genoffice/pptx-engine/named-action": ["../../packages/pptx-engine/src/named-action.ts"],
       "@genoffice/pptx-engine/background-promote": [
         "../../packages/pptx-engine/src/background-promote.ts"
       ],
@@ -21,7 +22,8 @@
       "@genoffice/pipelines/slides/layout-audit": [
         "../../packages/pipelines/src/slides/layout-audit.ts"
       ],
-      "@genoffice/docx-engine/metafile": ["../../packages/docx-engine/src/metafile.ts"]
+      "@genoffice/docx-engine/metafile": ["../../packages/docx-engine/src/metafile.ts"],
+      "@genoffice/docx-engine/math": ["../../packages/docx-engine/src/math.ts"]
     }
   },
   "include": ["src", "tests", "electron.vite.config.ts", "vitest.config.ts"]

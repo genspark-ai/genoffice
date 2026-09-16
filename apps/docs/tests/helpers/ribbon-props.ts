@@ -60,6 +60,8 @@ export function ribbonProps(editor: Editor, formatState: RibbonFormatState) {
     onShowRuler: noop,
     showNav: false,
     onShowNav: noop,
+    showFiles: false,
+    onShowFiles: noop,
     commentCount: 0,
     openCommentCount: 0,
     onShowComments: noop,

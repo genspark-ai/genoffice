@@ -93,3 +93,30 @@ describe('contextMenuLabels', () => {
     expect(contextMenuLabels('xx')).toEqual(contextMenuLabels('en'))
   })
 })
+
+describe('image targets', () => {
+  const image = { ...base, mediaType: 'image' as const, srcURL: 'data:image/png;base64,AAAA' }
+
+  it('offers view / copy / save on a non-editable image', () => {
+    expect(buildContextMenuItems(image, labels)).toEqual([
+      { action: 'viewImage', label: 'View Image' },
+      { action: 'copyImage', label: 'Copy Image' },
+      { action: 'saveImageAs', label: 'Save Image As…' },
+    ])
+  })
+
+  it('puts the image block ahead of the edit set inside an editor', () => {
+    const items = buildContextMenuItems({ ...image, isEditable: true }, labels)
+    expect(items.slice(0, 4)).toEqual([
+      { action: 'viewImage', label: 'View Image' },
+      { action: 'copyImage', label: 'Copy Image' },
+      { action: 'saveImageAs', label: 'Save Image As…' },
+      { type: 'separator' },
+    ])
+    expect(items).toHaveLength(9)
+  })
+
+  it('ignores images without a source', () => {
+    expect(buildContextMenuItems({ ...image, srcURL: '' }, labels)).toEqual([])
+  })
+})

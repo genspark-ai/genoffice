@@ -912,3 +912,45 @@ describe('w14:checkbox content controls', () => {
     expect(glyphs).toEqual({ checked: '☑', unchecked: '☐' })
   })
 })
+
+describe('dirty inline fields', () => {
+  const DIRTY_DATE_P =
+    '<w:p><w:r><w:t xml:space="preserve">Printed </w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>' +
+    '<w:r><w:instrText xml:space="preserve"> DATE \\@ "yyyy-MM-dd" </w:instrText></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+    '<w:r><w:t>2026-01-01</w:t></w:r>' +
+    '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+
+  it('parses w:dirty on the begin fldChar into Run.fldDirty and writes it back', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: DIRTY_DATE_P }))
+    expect(doc.blocks[0].runs?.[1]).toMatchObject({
+      text: '2026-01-01',
+      instrField: 'DATE \\@ "yyyy-MM-dd"',
+      fldDirty: true,
+    })
+    const out = await saveDocx(doc, [
+      {
+        kind: 'generated',
+        block: {
+          type: 'paragraph',
+          runs: [
+            { text: 'Printed ' },
+            { text: '1', instrField: 'NUMPAGES', fldDirty: true },
+            { text: ' of ', instrField: undefined },
+            { text: '3', instrField: 'PAGE' },
+          ],
+        },
+      },
+    ])
+    const xml = await (await JSZip.loadAsync(out)).file('word/document.xml')!.async('string')
+    expect(xml).toContain('<w:fldChar w:fldCharType="begin" w:dirty="true"/>')
+    expect(xml).toMatch(/NUMPAGES[\s\S]*<w:fldChar w:fldCharType="begin"\/>[\s\S]*PAGE/)
+    const reparsed = await parseDocx(out)
+    const fields = reparsed.blocks[0].runs?.filter((r) => r.instrField) ?? []
+    expect(fields.map((r) => [r.instrField, r.fldDirty ?? false])).toEqual([
+      ['NUMPAGES', true],
+      ['PAGE', false],
+    ])
+  })
+})

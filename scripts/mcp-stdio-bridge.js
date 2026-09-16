@@ -8,7 +8,7 @@
  * JSON-RPC to the running app's legacy SSE transport (/sse + /messages).
  *
  * The GenOffice app must be running with the MCP server enabled
- * (Settings > General > Local MCP server).
+ * (Settings > MCP Settings).
  *
  * Usage:
  *   node scripts/mcp-stdio-bridge.js [--port 3093] [--host 127.0.0.1]
@@ -216,28 +216,42 @@ async function replayHandshake() {
     handshakeSession = target
     return
   }
-  // Mark the session as handshaked up front: sendToServer below would otherwise
-  // see the stale handshakeSession and re-enter this function.
-  handshakeSession = target
   log('replaying session handshake after reconnect')
+  // postMessage, not sendToServer: the replay must neither re-cache (which
+  // would reorder initialize/initialized on a failure) nor re-enter this gate
   for (const message of messages) {
-    if (message.id !== undefined && message.id !== null) {
-      suppressedResponseIds.add(message.id)
-    }
+    const hasId = message.id !== undefined && message.id !== null
+    if (hasId) suppressedResponseIds.add(message.id)
     try {
-      await sendToServer(message)
+      await postMessage(message)
     } catch (error) {
+      // the session stays un-handshaked, so the next call replays again in order
+      if (hasId) suppressedResponseIds.delete(message.id)
       log(`handshake replay failed: ${error.message}`)
+      throw error
     }
   }
+  handshakeSession = target
 }
+
+let replayPromise = null
 
 async function sendToServer(message) {
   if (!sessionId) await connectSSE()
   // a reconnect hands us a new, uninitialized session: re-establish the cached
-  // handshake before the client's next call lands on it
-  if (handshakeSession !== null && handshakeSession !== sessionId) await replayHandshake()
+  // handshake before the client's next call lands on it; concurrent callers
+  // wait on the same replay so nothing overtakes initialize
+  if (!replayPromise && handshakeSession !== null && handshakeSession !== sessionId) {
+    replayPromise = replayHandshake().finally(() => {
+      replayPromise = null
+    })
+  }
+  if (replayPromise) await replayPromise
   cacheHandshake(message)
+  await postMessage(message)
+}
+
+async function postMessage(message) {
   // legacy SSE delivers responses only on the stream; the POST ack body must
   // not be written to stdout or it corrupts the newline-delimited protocol
   const response = await httpRequest('POST', `/messages?sessionId=${sessionId}`, message)
@@ -272,9 +286,7 @@ async function main() {
     if (health.status === 200) log('GenOffice MCP server is reachable')
     else log('warning: unexpected /health response; is GenOffice running?')
   } catch {
-    log(
-      'warning: cannot reach GenOffice. Start the app and enable Settings > General > Local MCP server.',
-    )
+    log('warning: cannot reach GenOffice. Start the app and enable Settings > MCP Settings.')
   }
 
   try {

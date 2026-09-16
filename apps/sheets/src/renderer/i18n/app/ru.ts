@@ -128,7 +128,6 @@ export const ru = {
   appMoreItems: 'ещё +{count}…',
   appTruncationNote: 'Первые {shown} из {total}',
   appGoToButtonTitle: 'Переход (⌘G)',
-  appNameBoxTitle: 'Поле имени — введите адрес или имя и нажмите Ввод',
   appPivotChartHintIn: 'Создать сводную диаграмму из текущей сводной таблицы',
   appPivotChartHintOut:
     'Сначала выделите ячейку в области вывода сводной таблицы, затем выберите тип диаграммы',

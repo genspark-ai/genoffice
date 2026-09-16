@@ -129,7 +129,6 @@ export const ko = {
   appTruncationNote: '처음 {shown}/{total}개 항목',
   // ExcelShell (name box / ribbon)
   appGoToButtonTitle: '이동(Go To, ⌘G)',
-  appNameBoxTitle: '이름 상자 — 주소나 이름을 입력한 후 Enter 키로 이동',
   appPivotChartHintIn: '현재 피벗 테이블을 기준으로 피벗 차트 만들기',
   appPivotChartHintOut: '먼저 피벗 테이블 출력 영역의 셀을 선택한 후 차트 종류를 선택하십시오',
   appChartColumn: '세로 막대형 차트',

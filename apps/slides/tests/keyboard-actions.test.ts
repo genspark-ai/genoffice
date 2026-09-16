@@ -15,7 +15,7 @@ vi.mock('../src/renderer/clipboard-actions', () => ({
   duplicateSelected: vi.fn(),
   deleteSelected: vi.fn(),
 }))
-vi.mock('../src/renderer/slide-actions', () => ({ cutSlideAt: vi.fn() }))
+vi.mock('../src/renderer/slide-actions', () => ({ cutSlideAt: vi.fn(), deleteSlideAt: vi.fn() }))
 vi.mock('../src/renderer/arrange-actions', () => ({}))
 vi.mock('../src/renderer/show-actions', () => ({ startSlideShow: vi.fn() }))
 
@@ -29,6 +29,8 @@ function makeCtx(over: Record<string, unknown> = {}): ActionCtx {
     slides: [{}],
     current: 0,
     masterItems: null,
+    inkTool: 'select',
+    viewMode: 'normal',
     brushMode: null,
     enteredGroupId: null,
     findNodeCtx: () => null,
@@ -175,5 +177,59 @@ describe('copy shortcuts with a DOM text selection', () => {
     handleGlobalKeydown(makeCtx(), cut)
     expect(cut.defaultPrevented).toBe(false)
     expect(slideActions.cutSlideAt).not.toHaveBeenCalled()
+  })
+})
+
+describe('Delete/Backspace on the thumbnail pane', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    document.body.innerHTML = ''
+    window.getSelection()?.removeAllRanges()
+  })
+
+  const plain = (key: string) => new KeyboardEvent('keydown', { key, cancelable: true })
+
+  it('deletes the current slide when nothing is selected on canvas', () => {
+    const ctx = makeCtx({ current: 1, slides: [{}, {}] })
+    const e = plain('Backspace')
+    handleGlobalKeydown(ctx, e)
+    expect(e.defaultPrevented).toBe(true)
+    expect(slideActions.deleteSlideAt).toHaveBeenCalledWith(ctx, 1)
+  })
+
+  it('also deletes in the slide sorter view', () => {
+    const e = plain('Delete')
+    handleGlobalKeydown(makeCtx({ viewMode: 'sorter' }), e)
+    expect(slideActions.deleteSlideAt).toHaveBeenCalledTimes(1)
+  })
+
+  it('does nothing while an ink tool is active', () => {
+    const e = plain('Delete')
+    handleGlobalKeydown(makeCtx({ inkTool: 'pen' }), e)
+    expect(e.defaultPrevented).toBe(false)
+    expect(slideActions.deleteSlideAt).not.toHaveBeenCalled()
+  })
+
+  it('does nothing in reading view', () => {
+    const e = plain('Backspace')
+    handleGlobalKeydown(makeCtx({ viewMode: 'reading' }), e)
+    expect(e.defaultPrevented).toBe(false)
+    expect(slideActions.deleteSlideAt).not.toHaveBeenCalled()
+  })
+
+  it('leaves the key to a plain-DOM text selection', () => {
+    selectText()
+    const e = plain('Delete')
+    handleGlobalKeydown(makeCtx(), e)
+    expect(e.defaultPrevented).toBe(false)
+    expect(slideActions.deleteSlideAt).not.toHaveBeenCalled()
+  })
+
+  it('does not fire from master view or with modifiers', () => {
+    const master = plain('Delete')
+    handleGlobalKeydown(makeCtx({ masterItems: [] }), master)
+    const alt = new KeyboardEvent('keydown', { key: 'Backspace', altKey: true, cancelable: true })
+    handleGlobalKeydown(makeCtx(), alt)
+    expect(slideActions.deleteSlideAt).not.toHaveBeenCalled()
   })
 })

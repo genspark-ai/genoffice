@@ -1,11 +1,13 @@
 import type { ParsedArgs } from './args'
-import type { CommandResult } from './result'
+import type { CommandResult, Warning } from './result'
 
 export interface CommandContext {
   cwd: string
   env: NodeJS.ProcessEnv
   /** progress and diagnostics; never part of the machine-readable result */
   log: (message: string) => void
+  /** advisories that belong in the result: merged into `warnings` when the command returns */
+  warn: (warning: Warning) => void
 }
 
 export interface OptionDef {
@@ -20,6 +22,8 @@ export interface CommandDef {
   summary: string
   usage: string
   options?: OptionDef[]
+  /** the command owns stdout for its whole run (a server on stdio); runCli prints nothing after it */
+  quiet?: boolean
   run(args: ParsedArgs, ctx: CommandContext): Promise<CommandResult>
 }
 

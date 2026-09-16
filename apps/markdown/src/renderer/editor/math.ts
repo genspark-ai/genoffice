@@ -44,9 +44,12 @@ function isLatexLike(inner: string): boolean {
   return false
 }
 
-export function normalizePastedMath(text: string): string {
-  return text
-    .replace(/\\\[(.+?)\\\]/gs, (match: string, latex: string, offset: number, full: string) => {
+/** `plain` is ProseMirror's flag for code-block / Shift+paste targets: LaTeX source must stay verbatim there. */
+export function normalizePastedMath(text: string, plain = false): string {
+  if (plain) return text
+  const withBlocks = text.replace(
+    /\\\[(.+?)\\\]/gs,
+    (match: string, latex: string, offset: number, full: string) => {
       const inner = latex.trim()
       if (inner === '' || !isLatexLike(inner)) return match
       const before = full.slice(0, offset)
@@ -57,13 +60,23 @@ export function normalizePastedMath(text: string): string {
       const afterOnLine = nextNl === -1 ? after : after.slice(0, nextNl)
       if (beforeOnLine.trim() !== '' || afterOnLine.trim() !== '') return match
       return '$$' + inner + '$$'
-    })
-    .replace(/\\\((.+?)\\\)/gs, (match: string, latex: string) => {
-      const inner = latex.trim()
-      if (inner === '' || inner.includes('\n')) return match
-      if (!isLatexLike(inner)) return match
-      return `$${inner}$`
-    })
+    },
+  )
+  // inline delimiters convert only outside display blocks: `$…$` nested in
+  // `$$…$$` would split one formula into three tokens
+  return withBlocks
+    .split(/(\$\$[\s\S]*?\$\$)/)
+    .map((segment, index) =>
+      index % 2 === 1
+        ? segment
+        : segment.replace(/\\\((.+?)\\\)/gs, (match: string, latex: string) => {
+            const inner = latex.trim()
+            if (inner === '' || inner.includes('\n')) return match
+            if (!isLatexLike(inner)) return match
+            return `$${inner}$`
+          }),
+    )
+    .join('')
 }
 
 /** Math nodes are atoms — clicking one opens the LaTeX edit popover. */
@@ -75,7 +88,7 @@ const MathClickEdit = Extension.create({
     return [
       new Plugin({
         props: {
-          transformPastedText: (text: string) => normalizePastedMath(text),
+          transformPastedText: (text: string, plain: boolean) => normalizePastedMath(text, plain),
           handleClickOn: (view, _pos, node, nodePos, event) => {
             if (node.type.name !== 'blockMath' && node.type.name !== 'inlineMath') return false
             if (!view.editable) return false

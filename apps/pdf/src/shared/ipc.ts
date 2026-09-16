@@ -41,6 +41,7 @@ export const PDF_CHANNELS = {
   saveAsResult: 'pdf:save-as-result',
   saveAsFlow: 'pdf:save-as-flow',
   printRequest: 'pdf:print-request',
+  fileRenamed: 'pdf:file-renamed',
   getLanguage: 'app:get-language',
   languageChanged: 'app:language-changed',
   getTheme: 'app:get-theme',
@@ -333,6 +334,11 @@ export interface TextEditValidation {
 /** Curated fonts selectable for rebuilt text runs. Single-face .ttf on every platform we
     ship — the subsetter cannot read .ttc collections, which rules out the macOS CJK faces.
     Availability is machine-dependent: the main process reports the usable subset. */
+/** Stroke width of a synthetic-bold run as a fraction of the em. Bold on the document's
+    own face is a same-color fill+stroke (advances unchanged, layout survives); only an
+    explicit edit font loads a real bold face. Shared by the engine and the preview. */
+export const SYNTHETIC_BOLD_STROKE_EM = 0.035
+
 export const EDIT_FONTS = [
   { id: 'arial', label: 'Arial', css: "Arial, 'Helvetica Neue', sans-serif" },
   { id: 'times', label: 'Times New Roman', css: "'Times New Roman', Times, serif" },
@@ -755,6 +761,8 @@ export interface PdfApi {
   onSaveAsFlow(handler: (inFlight: boolean) => void): () => void
   /** Shell menu Print → renderer runs its print flow (save, rasterize, system dialog) */
   onPrintRequest(handler: () => void): () => void
+  /** The file was renamed or moved from the shell (home Folders / Files pane); the viewer follows the new path */
+  onFileRenamed(handler: (newPath: string) => void): () => void
   getLanguage(): Promise<Lang>
   onLanguageChanged(handler: (lang: Lang) => void): () => void
   getTheme(): Promise<UiTheme>

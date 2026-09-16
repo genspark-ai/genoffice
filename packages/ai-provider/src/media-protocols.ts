@@ -32,6 +32,9 @@ export interface GenerateImageInput {
   aspectRatio?: string | undefined
   /** images to edit / draw from */
   references?: MediaBlob[] | undefined
+  /** ask for real PNG alpha where the API has a control for it (gpt-image background=transparent);
+   * vendors without one ignore the flag */
+  transparent?: boolean | undefined
 }
 
 export interface AnalyzeMediaInput {
@@ -233,6 +236,8 @@ async function generateImageOpenAi(
   const style = openAiImagesStyle(provider)
   const size = style.size(input.aspectRatio)
   const refs = input.references ?? []
+  // `background` exists only on the gpt-image family; dall-e-3 and lookalike vendors 400 on it
+  const transparent = input.transparent && /gpt-image/i.test(model)
   if (refs.length && style.edits === 'none') {
     throw new Error(
       `${metaOf(provider).label} cannot edit or reference images here; generate from the prompt alone or pick another image provider.`,
@@ -247,6 +252,7 @@ async function generateImageOpenAi(
         prompt: input.prompt,
         n: 1,
         ...(size ? { size } : {}),
+        ...(transparent ? { background: 'transparent' } : {}),
         ...style.bodyExtras,
         ...(refs.length ? { image: refs.map(dataUrl) } : {}),
       }),
@@ -259,6 +265,7 @@ async function generateImageOpenAi(
   form.set('model', model)
   form.set('prompt', input.prompt)
   if (size) form.set('size', size)
+  if (transparent) form.set('background', 'transparent')
   refs.forEach((ref, i) => {
     const ext = ref.mime.split('/')[1]?.replace('jpeg', 'jpg') ?? 'png'
     form.append(

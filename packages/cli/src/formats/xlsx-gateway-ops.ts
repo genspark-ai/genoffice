@@ -25,13 +25,22 @@ import type {
 } from '@genoffice/xlsx-gateway/gateway/xlsx-defined-names'
 import type { ChartAdd, DrawingAnchor } from '@genoffice/xlsx-gateway/gateway/xlsx-drawing-add'
 import type { DvWireRule } from '@genoffice/xlsx-gateway/gateway/xlsx-dv'
+import {
+  areasOverlap,
+  buildPivotLayout,
+  PivotLayoutError,
+  pivotOutputArea,
+  type PivotScalar,
+} from '@genoffice/xlsx-gateway/domain/pivot-layout'
 import type { SheetFilterState } from '@genoffice/xlsx-gateway/gateway/xlsx-filter'
 import type {
   SheetCfState,
   SheetDvState,
   SheetHyperlinkEdits,
   SheetNoteState,
+  SheetPivotAddition,
   SheetProtectionState,
+  SheetSparklineAddition,
   SheetStructuralOps,
   SheetTableAddition,
   SheetVisualAddition,
@@ -40,6 +49,7 @@ import type { SheetNote } from '@genoffice/xlsx-gateway/gateway/xlsx-notes'
 import type { SheetPageSetupState } from '@genoffice/xlsx-gateway/gateway/xlsx-page-setup'
 import type { WorkbookChartEdit } from '@genoffice/xlsx-gateway/shared/edit-schemas'
 import { assertAllowed, type PathContext } from '../fs'
+import { classifyOpError } from '../op-errors'
 import { CliError, EXIT } from '../result'
 import { imageSize } from './image-size'
 
@@ -73,13 +83,13 @@ export const GATEWAY_DSL_OPS = [
   'set_data_validation',
   'add_defined_name',
   'delete_defined_name',
+  'add_pivot',
+  'add_sparkline',
 ] as const
 
 /** Ops whose save payload only the live editor can produce, with the reason the agent sees. */
 export const REFUSED_DSL_OPS: Readonly<Record<string, string>> = {
-  add_pivot: 'the pivot layout is computed by the editor',
   refresh_pivot: 'the pivot layout is computed by the editor',
-  add_sparkline: 'sparkline groups are written from the editor state',
   add_table_row: 'edits a table created in the same editor session',
   add_table_column: 'edits a table created in the same editor session',
   delete_table_row: 'edits a table created in the same editor session',
@@ -87,8 +97,6 @@ export const REFUSED_DSL_OPS: Readonly<Record<string, string>> = {
   delete_table: 'removes a table created in the same editor session',
   edit_shape: 'targets a shape created in the same editor session',
   delete_visual: 'targets a visual by its editor session id',
-  convert_to_values:
-    'needs the formula results the editor holds; use `convert --to csv` for values',
 }
 
 /** Existing per-sheet state the payloads must carry over (the gateway rewrites whole sections). */
@@ -99,6 +107,16 @@ export interface SheetFileState {
   /** 0-based rows the file hides */
   hiddenRows: number[]
   notes: SheetNote[]
+  pivots: { name: string; range: RangeBounds }[]
+}
+
+/** A pivot output cell the batch writes next to the pivot definition. */
+export interface BakedCell {
+  sheetName: string
+  row: number
+  column: number
+  value: string | number
+  numberFormat?: string
 }
 
 export interface WorkbookFileState {
@@ -130,6 +148,9 @@ export interface GatewayPayloads {
   chartEdits: WorkbookChartEdit[]
   hiddenOps: SheetStructuralOps[]
   tabs: SheetTabOps
+  pivotAdditions: SheetPivotAddition[]
+  bakedCells: BakedCell[]
+  sparklineAdditions: SheetSparklineAddition[]
   warnings: string[]
 }
 
@@ -147,6 +168,9 @@ export const EMPTY_PAYLOADS: GatewayPayloads = {
   chartEdits: [],
   hiddenOps: [],
   tabs: { moves: [], hidden: [], duplicates: [] },
+  pivotAdditions: [],
+  bakedCells: [],
+  sparklineAdditions: [],
   warnings: [],
 }
 
@@ -165,7 +189,9 @@ export function hasGatewayPayloads(p: GatewayPayloads): boolean {
       p.hiddenOps.length +
       p.tabs.moves.length +
       p.tabs.hidden.length +
-      p.tabs.duplicates.length >
+      p.tabs.duplicates.length +
+      p.pivotAdditions.length +
+      p.sparklineAdditions.length >
       0 || p.definedNamesState !== null
   )
 }
@@ -175,11 +201,20 @@ export interface GatewayBuildInput {
   ops: readonly (WorkbookOperation & { readonly __index: number })[]
   /** sheet id → the name the file uses */
   namesById: Map<string, string>
+  /** the workbook as read from the file, before the batch */
+  before: WorkbookSnapshot
   /** the workbook after the adapter applied what it could */
   after: WorkbookSnapshot
   file: WorkbookFileState
   ctx: PathContext | undefined
+  /** formula results the workbook engine computes from the file on disk; absent when the batch runs on a buffer */
+  computed?: (
+    sheetName: string,
+    bounds: RangeBounds,
+  ) => Promise<Map<string, { value: PivotScalar; isError: boolean }>>
 }
+
+const MAX_SPARKLINES_PER_OP = 200
 
 const NOTE_AUTHOR = 'GenOffice'
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -187,7 +222,7 @@ const MAX_IMAGE_BYTES = 20 * 1024 * 1024
 type FilterDraft = { range: RangeBounds; columns: Map<number, string[]>; cleared: boolean }
 
 export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<GatewayPayloads> {
-  const { ops, namesById, after, file } = input
+  const { ops, namesById, before, after, file } = input
   const name = (sheetId: string) => namesById.get(sheetId) ?? sheetId
   const fileState = (sheetName: string): SheetFileState =>
     file.sheets.get(sheetName) ?? {
@@ -196,11 +231,20 @@ export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<Ga
       autoFilter: null,
       hiddenRows: [],
       notes: [],
+      pivots: [],
     }
   const sheetAfter = (sheetId: string): WorksheetState | undefined =>
     after.sheets.find((s) => s.id === sheetId)
   const reject = (index: number, op: string, message: string): never => {
-    throw new CliError(EXIT.usage, `ops[${index}] (${op}) rejected: ${message}`)
+    throw new CliError(
+      EXIT.usage,
+      `ops[${index}] (${op}) rejected: ${message}`,
+      { failures: [classifyOpError(index, op, message)] },
+      {
+        reason: 'op_rejected',
+        suggestion: 'fix the op against `genoffice guide sheets`, then resend the whole batch',
+      },
+    )
   }
 
   const hyperlinks = new Map<string, SheetHyperlinkEdits['edits'][number][]>()
@@ -211,12 +255,15 @@ export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<Ga
   const pageSetup = new Map<string, PageSetupPatch>()
   const filters = new Map<string, FilterDraft>()
   const cf = new Map<string, { rules: CfWireRule[]; cleared: boolean }>()
-  const dv = new Map<string, DvWireRule[]>()
+  const dv = new Map<string, { rules: DvWireRule[]; remove: RangeBounds[] }>()
   const protections = new Map<string, boolean>()
   const hidden = new Map<string, SheetStructuralOps['ops'][number][]>()
   const tables: SheetTableAddition[] = []
   const visuals: SheetVisualAddition[] = []
   const chartEdits: WorkbookChartEdit[] = []
+  const pivots: SheetPivotAddition[] = []
+  const baked: BakedCell[] = []
+  const sparklines: SheetSparklineAddition[] = []
   const tabs: SheetTabOps = { moves: [], hidden: [], duplicates: [] }
   const warnings: string[] = []
   let names: DefinedNameEntry[] | null = null
@@ -265,6 +312,11 @@ export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<Ga
         if (op.printGridlines !== undefined) patch.printGridlines = op.printGridlines
         if (op.printHeadings !== undefined) patch.printHeadings = op.printHeadings
         if (op.printArea !== undefined) patch.printArea = op.printArea
+        if (op.printTitles !== undefined) patch.printTitles = op.printTitles
+        if (op.header !== undefined) patch.header = op.header
+        if (op.footer !== undefined) patch.footer = op.footer
+        if (op.rowBreaks !== undefined) patch.rowBreaks = op.rowBreaks
+        if (op.colBreaks !== undefined) patch.colBreaks = op.colBreaks
         // scale and fit-to-page are exclusive, as in the app: the op that sets one wins
         if (op.scale !== undefined) {
           patch.scale = op.scale
@@ -373,13 +425,6 @@ export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<Ga
       case 'add_conditional_format': {
         const sheet = name(op.sheetId)
         const state = cf.get(sheet) ?? { rules: [], cleared: false }
-        if (!state.cleared && fileState(sheet).conditionalFormats > 0) {
-          reject(
-            i,
-            op.op,
-            `${sheet} already has ${fileState(sheet).conditionalFormats} conditional format(s) the CLI cannot carry over; run clear_conditional_formats on the sheet first or use the GenOffice app`,
-          )
-        }
         state.rules.push(cfWireRule(op.rule, parseRange(op.range)))
         cf.set(sheet, state)
         break
@@ -389,25 +434,22 @@ export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<Ga
         break
       case 'set_data_validation': {
         const sheet = name(op.sheetId)
-        if (fileState(sheet).dataValidations > 0) {
-          reject(
-            i,
-            op.op,
-            `${sheet} already has ${fileState(sheet).dataValidations} data validation rule(s) the CLI cannot carry over; use the GenOffice app`,
-          )
-        }
         const bounds = parseRange(op.range)
-        const rules = (dv.get(sheet) ?? []).filter((r) => !sameArea(r.ranges[0]!, bounds))
+        const draft = dv.get(sheet) ?? { rules: [], remove: [] }
+        const before = draft.rules.length
+        draft.rules = draft.rules.filter((r) => !sameArea(r.ranges[0]!, bounds))
+        draft.remove = draft.remove.filter((r) => !sameArea(r, bounds))
         if (op.validation === null) {
-          if (rules.length === (dv.get(sheet) ?? []).length) {
+          if (fileState(sheet).dataValidations > 0) draft.remove.push(bounds)
+          else if (draft.rules.length === before) {
             warnings.push(
               `ops[${i}] (set_data_validation): ${sheet}!${op.range} has no validation; nothing to remove`,
             )
           }
         } else {
-          rules.push({ ranges: [bounds], rule: dvWireRule(op.validation) })
+          draft.rules.push({ ranges: [bounds], rule: dvWireRule(op.validation) })
         }
-        dv.set(sheet, rules)
+        dv.set(sheet, draft)
         break
       }
       case 'add_defined_name': {
@@ -524,6 +566,176 @@ export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<Ga
         })
         break
       }
+      case 'add_sparkline': {
+        const sheet = name(op.sheetId)
+        const bounds = parseRange(op.dataRange)
+        const rows = bounds.endRow - bounds.startRow + 1
+        if (rows > MAX_SPARKLINES_PER_OP) {
+          reject(
+            i,
+            op.op,
+            `dataRange ${op.dataRange} spans ${rows} rows; one op writes at most ${MAX_SPARKLINES_PER_OP} sparklines, split the range`,
+          )
+        }
+        const base =
+          op.targetCell === undefined
+            ? { row: bounds.startRow, column: bounds.endColumn + 1 }
+            : parseAddress(op.targetCell)
+        const quoted = `'${sheet.replace(/'/g, "''")}'`
+        sparklines.push({
+          sheetName: sheet,
+          type: op.type,
+          ...(op.color === undefined ? {} : { color: op.color }),
+          cells: Array.from({ length: rows }, (_, offset) => ({
+            cell: `${columnLabel(base.column)}${base.row + offset + 1}`,
+            sourceRef:
+              `${quoted}!$${columnLabel(bounds.startColumn)}$${bounds.startRow + offset + 1}` +
+              `:$${columnLabel(bounds.endColumn)}$${bounds.startRow + offset + 1}`,
+          })),
+        })
+        break
+      }
+      case 'add_pivot': {
+        const sourceName = name(op.sheetId)
+        const targetId = op.targetSheetId ?? op.sheetId
+        const targetName = name(targetId)
+        // the writer pins both sheets' coordinates: a sheet born in this batch has none yet
+        if (!file.order.includes(targetName)) {
+          reject(
+            i,
+            op.op,
+            `target sheet "${targetName}" is added in this batch; add it in a previous batch, then create the pivot`,
+          )
+        }
+        const source = parseRange(op.sourceRange)
+        const sourceCells = sheetAfter(op.sheetId)?.cells ?? {}
+        const formulaCells: string[] = []
+        for (let r = source.startRow; r <= source.endRow; r++) {
+          for (let c = source.startColumn; c <= source.endColumn; c++) {
+            const address = `${columnLabel(c)}${r + 1}`
+            if (sourceCells[address]?.formula) formulaCells.push(address)
+          }
+        }
+        let results = new Map<string, { value: PivotScalar; isError: boolean }>()
+        if (formulaCells.length) {
+          // the engine evaluates formulas from the file on disk, which has none of this batch's
+          // cell edits; precedents can sit anywhere, so any edited cell disqualifies
+          const edited = editedCells(before, after, name)
+          if (edited.length) {
+            reject(
+              i,
+              op.op,
+              `the source has formulas (${formulaCells.slice(0, 5).join(', ')}) and this batch edits cells (${edited.slice(0, 5).join(', ')}); apply the edits in a previous batch, then create the pivot`,
+            )
+          }
+          if (input.computed === undefined) {
+            reject(
+              i,
+              op.op,
+              `the source has formulas (${formulaCells.slice(0, 5).join(', ')}); needs the workbook file on disk`,
+            )
+          }
+          results = await input.computed!(sourceName, source)
+          const errors = formulaCells.filter((address) => {
+            const at = parseAddress(address)
+            return results.get(`${at.row}|${at.column}`)?.isError !== false
+          })
+          if (errors.length) {
+            reject(
+              i,
+              op.op,
+              `source formula(s) ${errors.slice(0, 5).join(', ')} evaluate to an error; fix them before creating the pivot`,
+            )
+          }
+        }
+        const grid: PivotScalar[][] = []
+        for (let r = source.startRow; r <= source.endRow; r++) {
+          const row: PivotScalar[] = []
+          for (let c = source.startColumn; c <= source.endColumn; c++) {
+            const cell = sourceCells[`${columnLabel(c)}${r + 1}`]
+            if (cell?.formula) row.push(results.get(`${r}|${c}`)?.value ?? null)
+            else row.push((cell?.rawValue ?? cell?.value ?? null) as PivotScalar)
+          }
+          grid.push(row)
+        }
+        let layout
+        try {
+          layout = buildPivotLayout(grid, op)
+        } catch (err) {
+          if (err instanceof PivotLayoutError) reject(i, op.op, err.message)
+          throw err
+        }
+        const anchor = parseAddress(op.targetCell)
+        const location = pivotOutputArea(anchor, layout!)
+        const ref = `${columnLabel(location.startColumn)}${location.startRow + 1}:${columnLabel(location.endColumn)}${location.endRow + 1}`
+        if (targetId === op.sheetId && areasOverlap(location, source)) {
+          reject(i, op.op, `the pivot output ${ref} would overlap its source ${op.sourceRange}`)
+        }
+        const clash =
+          fileState(targetName).pivots.find((p) => areasOverlap(location, p.range)) ??
+          pivots.find((p) => p.sheetName === targetName && areasOverlap(location, p.location))
+        if (clash) reject(i, op.op, `the pivot output ${ref} would overlap pivot "${clash.name}"`)
+        const targetCells = sheetAfter(targetId)?.cells ?? {}
+        const occupied = Object.entries(targetCells).filter(([address, cell]) => {
+          if ((cell.value === null || cell.value === '') && !cell.formula) return false
+          const at = parseAddress(address)
+          return (
+            at.row >= location.startRow &&
+            at.row <= location.endRow &&
+            at.column >= location.startColumn &&
+            at.column <= location.endColumn
+          )
+        })
+        if (occupied.length) {
+          reject(
+            i,
+            op.op,
+            `the pivot output ${ref} would overwrite ${occupied.length} non-empty cell(s) (${occupied
+              .slice(0, 3)
+              .map(([a]) => a)
+              .join(', ')}); pick an empty targetCell or a targetSheet`,
+          )
+        }
+        const taken = new Set(
+          [...file.sheets.values()].flatMap((s) => s.pivots.map((p) => p.name.toLowerCase())),
+        )
+        for (const p of pivots) taken.add(p.name.toLowerCase())
+        let pivotName = op.name
+        if (pivotName === undefined) {
+          for (let n = 1; ; n++) {
+            if (!taken.has(`pivottable${n}`)) {
+              pivotName = `PivotTable${n}`
+              break
+            }
+          }
+        } else if (taken.has(pivotName.toLowerCase())) {
+          reject(i, op.op, `a pivot named "${pivotName}" already exists`)
+        }
+        pivots.push({
+          sheetName: targetName,
+          sourceSheetName: sourceName,
+          sourceArea: source,
+          location,
+          name: pivotName!,
+          ...layout!.definition,
+        })
+        const formats = new Map(layout!.numberFormats.map((f) => [f.columnOffset, f.format]))
+        layout!.matrix.forEach((line, r) => {
+          line.forEach((value, c) => {
+            if (value === null || value === '') return
+            // value columns' numFmt covers the data rows only (no header, no grand total)
+            const format = r > 0 && r < layout!.height - 1 ? formats.get(c) : undefined
+            baked.push({
+              sheetName: targetName,
+              row: anchor.row + r,
+              column: anchor.column + c,
+              value,
+              ...(format === undefined ? {} : { numberFormat: format }),
+            })
+          })
+        })
+        break
+      }
       default:
         break
     }
@@ -559,8 +771,13 @@ export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<Ga
     noteStates: [...notes].map(([sheetName, list]) => ({ sheetName, notes: list })),
     pageSetupStates: [...pageSetup].map(([sheetName, s]) => ({ sheetName, ...s })),
     filterStates,
-    cfStates: [...cf].map(([sheetName, s]) => ({ sheetName, rules: s.rules })),
-    dvStates: [...dv].map(([sheetName, rules]) => ({ sheetName, rules })),
+    cfStates: [...cf].map(([sheetName, s]) => ({ sheetName, rules: s.rules, append: !s.cleared })),
+    dvStates: [...dv].map(([sheetName, d]) => ({
+      sheetName,
+      rules: d.rules,
+      append: fileState(sheetName).dataValidations > 0,
+      remove: d.remove,
+    })),
     definedNamesState: names === null ? null : { names, preserveNames: [] },
     visualAdditions: visuals,
     sheetProtections: [...protections].map(([sheetName, p]) => ({ sheetName, protected: p })),
@@ -568,8 +785,30 @@ export async function buildGatewayPayloads(input: GatewayBuildInput): Promise<Ga
     chartEdits,
     hiddenOps: [...hidden].map(([sheetName, ops]) => ({ sheetName, ops })),
     tabs,
+    pivotAdditions: pivots,
+    bakedCells: baked,
+    sparklineAdditions: sparklines,
     warnings,
   }
+}
+
+/** `Sheet!A1` for every cell whose value or formula differs between the snapshots */
+export function editedCells(
+  before: WorkbookSnapshot,
+  after: WorkbookSnapshot,
+  name: (sheetId: string) => string,
+): string[] {
+  const out: string[] = []
+  for (const sheet of after.sheets) {
+    const was = before.sheets.find((s) => s.id === sheet.id)?.cells ?? {}
+    for (const address of new Set([...Object.keys(was), ...Object.keys(sheet.cells)])) {
+      const a = was[address]
+      const b = sheet.cells[address]
+      if ((a?.value ?? null) !== (b?.value ?? null) || a?.formula !== b?.formula)
+        out.push(`${name(sheet.id)}!${address}`)
+    }
+  }
+  return out
 }
 
 function pushHidden(
@@ -859,5 +1098,10 @@ async function loadImage(
 }
 
 function reject_(index: number, message: string): never {
-  throw new CliError(EXIT.usage, `ops[${index}] (add_image) rejected: ${message}`)
+  throw new CliError(
+    EXIT.usage,
+    `ops[${index}] (add_image) rejected: ${message}`,
+    { failures: [classifyOpError(index, 'add_image', message)] },
+    { reason: 'op_rejected' },
+  )
 }

@@ -121,25 +121,41 @@ Sets one column's width in EMU.
 
 ### setTableStyle
 
-`{styleName} | {firstRow?,bandRow?,shadingColor?,borderColor?,borderWidthPt?,borderPreset?}`
+`{styleName} | {styleId?,firstRow?,lastRow?,firstCol?,lastCol?,bandRow?,bandCol?,keepFormatting?,shadingColor?,borderColor?,borderWidthPt?,borderPreset?}`
 
-Restyles the whole table: either apply one preset by name, or change
-individual header/banding flags, cell shading and border lines. A preset wins
-over the other fields and, like PowerPoint's style gallery, clears direct cell
-fills and borders so the style shows through.
+Restyles the whole table: apply one fixed-color preset by `styleName`, pick one
+of PowerPoint's 74 built-in styles by `styleId` (gallery name such as
+`"Medium Style 2 - Accent 1"` or its GUID; they follow the deck's theme
+colors), or change individual region flags, cell shading and border lines. A
+preset wins over the other fields; a preset or `styleId` clears direct cell
+fills and borders like PowerPoint's style gallery (`keepFormatting: true`
+keeps them). `slides read` shows a table's current `style`.
 
-| Field         | Type                  | Notes                                                                                                     |
-| ------------- | --------------------- | --------------------------------------------------------------------------------------------------------- |
-| styleName     | string                | `none`, `lightGrid`, `zebraBlue`, `zebraGray`, `headerDarkBlue`, `headerOrange`, `noBorder`, `fullBorder` |
-| firstRow      | boolean               | Header-row emphasis                                                                                       |
-| bandRow       | boolean               | Banded rows                                                                                               |
-| shadingColor  | `#RRGGBB` or `"none"` | Cell fill for every cell                                                                                  |
-| borderColor   | `#RRGGBB`             | Border line color                                                                                         |
-| borderWidthPt | number (pt)           | Border line width; > 0                                                                                    |
-| borderPreset  | `"all"` or `"none"`   | Draw all border lines, or clear them                                                                      |
+| Field                               | Type                  | Notes                                                                                                                                                                                                                                          |
+| ----------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| styleName                           | string                | `none`, `lightGrid`, `zebraBlue`, `zebraGray`, `headerDarkBlue`, `headerOrange`, `noBorder`, `fullBorder`                                                                                                                                      |
+| styleId                             | string                | Built-in gallery name or `{GUID}`: `No Style, No Grid`, `No Style, Table Grid`, `Themed Style 1/2 - Accent N`, `Light Style 1/2/3 [- Accent N]`, `Medium Style 1/2/3/4 [- Accent N]`, `Dark Style 1 [- Accent N]`, `Dark Style 2 [- Accent N]` |
+| firstRow                            | boolean               | Header-row emphasis                                                                                                                                                                                                                            |
+| lastRow, firstCol, lastCol, bandCol | boolean               | Total row, first/last column emphasis, banded columns                                                                                                                                                                                          |
+| bandRow                             | boolean               | Banded rows                                                                                                                                                                                                                                    |
+| keepFormatting                      | boolean               | With `styleId`: keep direct cell fills/borders instead of clearing them                                                                                                                                                                        |
+| shadingColor                        | `#RRGGBB` or `"none"` | Cell fill for every cell                                                                                                                                                                                                                       |
+| borderColor                         | `#RRGGBB`             | Border line color                                                                                                                                                                                                                              |
+| borderWidthPt                       | number (pt)           | Border line width; > 0                                                                                                                                                                                                                         |
+| borderPreset                        | `"all"` or `"none"`   | Draw all border lines, or clear them                                                                                                                                                                                                           |
 
 ```json
 { "op": "setTableStyle", "target": { "slide": 0, "el": "e_TABLE" }, "styleName": "zebraBlue" }
+```
+
+```json
+{
+  "op": "setTableStyle",
+  "target": { "slide": 0, "el": "e_TABLE" },
+  "styleId": "Medium Style 2 - Accent 1",
+  "firstRow": true,
+  "bandRow": true
+}
 ```
 
 ```json
@@ -157,6 +173,7 @@ Common mistakes
 
 - Passing a color name (`"blue"`): colors are `#RRGGBB`.
 - Mixing `styleName` with the other fields: the preset is applied and the rest is ignored.
+- A built-in name in `styleName`: gallery names and GUIDs go in `styleId`.
 - Restyling one cell's text: that is `setTableCell` with styled runs, not this op.
 
 ### setChart (not-ai-callable)

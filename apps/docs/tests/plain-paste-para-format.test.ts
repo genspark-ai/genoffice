@@ -3,7 +3,7 @@
  * formatting on every created paragraph (Word Keep Text Only formats like
  * typing Enter there). Only the first line merges into the destination
  * paragraph, so lines 2+ landed as DEFAULT paragraphs and dropped the
- * surrounding indent/line-spacing/alignment (alpha field report: multi-
+ * surrounding indent/line-spacing/alignment (user report: multi-
  * paragraph Ctrl+Shift+V applied the document paragraph format to the
  * first paragraph only).
  */

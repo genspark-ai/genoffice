@@ -28,6 +28,9 @@ export function dirOf(path: string): string {
  * the main process's md-asset:// handler — a plain file:// subresource would be
  * blocked when the renderer page itself is served over http (dev server).
  */
+/** renderer-local: double-click on a picture asks App to open the viewer */
+export const VIEW_IMAGE_EVENT = 'markdown-view-image'
+
 export function resolveImageSrc(src: string, baseDir: string | null = imageBaseDir): string {
   if (!src) return src
   // ':' is legal in URL path segments (RFC 3986) — restore it after encoding so
@@ -131,6 +134,13 @@ export const LocalImage = Image.extend({
       new Plugin({
         key: new PluginKey('localImageUpload'),
         props: {
+          handleDoubleClickOn(_view, _pos, node, _nodePos, event) {
+            if (node.type.name !== 'image') return false
+            const src = (event.target as HTMLImageElement | null)?.currentSrc
+            if (!src) return false
+            window.dispatchEvent(new CustomEvent(VIEW_IMAGE_EVENT, { detail: { src } }))
+            return true
+          },
           handlePaste(view, event) {
             const file = imageFileIn(event.clipboardData)
             if (!file) return false

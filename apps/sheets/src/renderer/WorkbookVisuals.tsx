@@ -95,6 +95,12 @@ export function isEditableShape(visual: WorkbookVisualObject): boolean {
   return visual.kind === 'shape' && visual.id.startsWith('added-shape-')
 }
 
+/// Pictures pasted or inserted this session move/resize/delete the same way
+/// (no text editing).
+export function isEditableAddedImage(visual: WorkbookVisualObject): boolean {
+  return visual.kind === 'image' && visual.id.startsWith('added-image-')
+}
+
 /// Images and shapes already in the file move/delete through a surgical
 /// anchor edit, located by the sidecar's (drawingPath, drawingIndex) pair.
 /// Charts keep their own editor; deletion routes through the same edit.
@@ -191,7 +197,10 @@ export function installWorkbookVisuals(
     if (!worksheet) continue
     const componentKey = `xlsx-${file.sessionId}-${visual.id}`
     const editable =
-      isEditableShape(visual) || isEditableFileVisual(visual) || isEditableChart(visual)
+      isEditableShape(visual) ||
+      isEditableAddedImage(visual) ||
+      isEditableFileVisual(visual) ||
+      isEditableChart(visual)
     // Lazy grids are sized to the data, but session-added visuals anchor
     // beyond it (default: two columns right of the data) — grow the grid so
     // the float keeps its frame instead of being clamped into a sliver.

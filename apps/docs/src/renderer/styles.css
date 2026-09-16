@@ -2815,12 +2815,59 @@ th.cell-rev-del {
   overflow: hidden;
 }
 
+.nav-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
 .nav-pane-title {
-  padding: 10px 14px 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  border-bottom: 1px solid var(--border);
+}
+
+.nav-pane-close {
+  display: flex;
+  border: none;
+  background: none;
+  padding: 3px;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.nav-pane-close:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* docked handle at the page edge while the pane is closed: the View-tab
+   toggle alone was too easy to miss */
+.nav-edge-tab {
+  position: absolute;
+  left: 0;
+  top: 16px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: var(--shadow-btn-hover);
+}
+
+.nav-edge-tab:hover {
+  background: var(--hover);
+  color: var(--accent);
 }
 
 .nav-pane-list {
@@ -9212,6 +9259,7 @@ body.docs-crop-active
   .status-bar,
   .ai-dock,
   .nav-pane,
+  .nav-edge-tab,
   .ruler,
   .find-panel {
     display: none !important;
@@ -9434,6 +9482,7 @@ body.docs-crop-active
 .read-mode .ribbon,
 .read-mode .ai-dock,
 .read-mode .nav-pane,
+.read-mode .nav-edge-tab,
 .read-mode .find-panel,
 .read-mode .comments-pane,
 .read-mode .split-pane {

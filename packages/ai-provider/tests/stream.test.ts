@@ -109,7 +109,7 @@ describe('streamForProvider: temperature policy', () => {
 describe('streamForProvider: empty SSE streams surface as errors', () => {
   // A 200 SSE stream with zero text and zero tool calls previously dissolved
   // into an empty "successful" turn; the UI then showed a generic "no content"
-  // message with no diagnostics (alpha rows 36/37)
+  // message with no diagnostics
   it.each([
     ['anthropic', 'claude-sonnet-5', /Claude returned no content/],
     ['gemini', 'gemini-2.5-flash', /Gemini returned no content/],

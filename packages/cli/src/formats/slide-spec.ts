@@ -25,7 +25,9 @@ import {
 import { HeuristicMetrics } from '@genoffice/pptx-render'
 import { extract } from '@genoffice/pdf2docx'
 import { assertAllowed, type PathContext } from '../fs'
-import { CliError, EXIT } from '../result'
+import { CliError, EXIT, type ErrorHints } from '../result'
+
+const INVALID: ErrorHints = { reason: 'invalid_argument' }
 import { imageSize } from './image-size'
 import { readImageSource } from './image-source'
 import { loadPdfium } from './pdf'
@@ -69,7 +71,7 @@ export async function buildDeckFromSpec(
   specDir?: string,
 ): Promise<BuiltDeck> {
   const parsed = parseDeckSpec(text, { localImages: true })
-  if (!parsed.ok) throw new CliError(EXIT.usage, `${source}: ${parsed.error}`)
+  if (!parsed.ok) throw new CliError(EXIT.usage, `${source}: ${parsed.error}`, undefined, INVALID)
   const built = await buildDeckPptx(parsed.spec, specDeps(ctx, specDir))
   return {
     bytes: built.bytes,
@@ -229,7 +231,8 @@ export async function buildDeckFromDir(
   stage: StageContext,
 ): Promise<BuiltDeckFromDir> {
   const files = listPageFiles(dir)
-  if (files.length === 0) throw new CliError(EXIT.usage, `${dir}: no page files (*.json)`)
+  if (files.length === 0)
+    throw new CliError(EXIT.usage, `${dir}: no page files (*.json)`, undefined, INVALID)
   const outline = stage.outline?.outline
   if (outline && outline.pages.length !== files.length) {
     throw new CliError(
@@ -243,11 +246,16 @@ export async function buildDeckFromDir(
     try {
       pages.push(JSON.parse(readFileSync(file, 'utf-8')))
     } catch (err) {
-      throw new CliError(EXIT.usage, `${file}: invalid JSON (${(err as Error).message})`)
+      throw new CliError(
+        EXIT.usage,
+        `${file}: invalid JSON (${(err as Error).message})`,
+        undefined,
+        { reason: 'invalid_json' },
+      )
     }
   }
   const parsed = parseDeckSpec(JSON.stringify({ pages }), { localImages: true })
-  if (!parsed.ok) throw new CliError(EXIT.usage, `${dir}: ${parsed.error}`)
+  if (!parsed.ok) throw new CliError(EXIT.usage, `${dir}: ${parsed.error}`, undefined, INVALID)
   const named = (i: number) => ({ file: basename(files[i]!) })
 
   const outlineFindings: BuiltDeckFromDir['outlineFindings'] = []
@@ -293,7 +301,7 @@ export function pageIndexOf(file: string): number {
 
 export function readOutline(path: string): DeckOutline {
   const r = parseOutline(readFileSync(path, 'utf-8'))
-  if (!r.ok) throw new CliError(EXIT.usage, `${path}: ${r.error}`)
+  if (!r.ok) throw new CliError(EXIT.usage, `${path}: ${r.error}`, undefined, INVALID)
   return r.outline
 }
 
@@ -310,7 +318,7 @@ function parseOnePage(
   what: string,
 ): { raw: unknown; spec: PageSpec; warnings: string[] } {
   const parsed = parseDeckSpec(text, { localImages: true })
-  if (!parsed.ok) throw new CliError(EXIT.usage, `${source}: ${parsed.error}`)
+  if (!parsed.ok) throw new CliError(EXIT.usage, `${source}: ${parsed.error}`, undefined, INVALID)
   if (parsed.spec.pages.length !== 1) {
     throw new CliError(
       EXIT.usage,
@@ -411,7 +419,12 @@ export async function rasterizePdf(
     const count = m._FPDF_GetPageCount(doc)
     if (only !== undefined && (only < 0 || only >= count)) {
       const [lo, hi] = range.oneBased ? [1, count] : [0, count - 1]
-      throw new CliError(EXIT.usage, `--${range.flag} out of range (${lo}-${hi})`)
+      throw new CliError(
+        EXIT.usage,
+        `--${range.flag} out of range (${lo}-${hi})`,
+        { valid_range: [lo, hi] },
+        { reason: 'out_of_range', suggestion: `use a value between ${lo} and ${hi}` },
+      )
     }
     const out: RasterizedPage[] = []
     for (let i = 0; i < count; i++) {

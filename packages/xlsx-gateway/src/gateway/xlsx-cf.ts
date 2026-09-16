@@ -82,11 +82,18 @@ interface PreservedBlock {
   matched: boolean
 }
 
+export interface CfApplyOptions {
+  /** keep every existing section and add the rules after them (headless callers without the full rule set) */
+  readonly append?: boolean | undefined
+}
+
 export function applyCfRules(
   worksheetXml: string,
   rules: readonly CfWireRule[],
   dxfs: DxfSink,
+  options: CfApplyOptions = {},
 ): string {
+  if (options.append) return appendCfRules(worksheetXml, rules, dxfs)
   // Blocks whose cfRule carries an extLst are the base half of an x14
   // extension (linked via x14:id) — kept verbatim and guarded below. The
   // x14 part in the worksheet extLst is never rewritten.
@@ -146,13 +153,37 @@ export function applyCfRules(
     const end = xml.lastIndexOf(last.text) + last.text.length
     return xml.slice(0, end) + body + xml.slice(end)
   }
+  return insertBeforeTail(xml, body)
+}
+
+const CF_BLOCK_RE =
+  /<conditionalFormatting\b[^>]*?\/>|<conditionalFormatting\b[^>]*>[\s\S]*?<\/conditionalFormatting>/g
+
+function appendCfRules(xml: string, rules: readonly CfWireRule[], dxfs: DxfSink): string {
+  if (rules.length === 0) return xml
+  const used = new Set<number>()
+  for (const match of xml.matchAll(/<(?:\w+:)?cfRule\b[^>]*?\spriority="(\d+)"/g)) {
+    used.add(Number(match[1]))
+  }
+  let priority = 0
+  const nextPriority = (): number => {
+    do priority += 1
+    while (used.has(priority))
+    return priority
+  }
+  const body = rules.map((rule) => serializeRule(rule, nextPriority(), dxfs)).join('')
+  let end = -1
+  for (const block of xml.matchAll(CF_BLOCK_RE)) end = block.index + block[0].length
+  if (end !== -1) return xml.slice(0, end) + body + xml.slice(end)
+  return insertBeforeTail(xml, body)
+}
+
+function insertBeforeTail(xml: string, body: string): string {
   const anchor =
     /<dataValidations\b|<hyperlinks\b|<printOptions\b|<pageMargins\b|<pageSetup\b|<headerFooter\b|<rowBreaks\b|<colBreaks\b|<drawing\b|<legacyDrawing\b|<picture\b|<oleObjects\b|<tableParts\b|<extLst\b/.exec(
       xml,
     )
-  if (anchor) {
-    return xml.slice(0, anchor.index) + body + xml.slice(anchor.index)
-  }
+  if (anchor) return xml.slice(0, anchor.index) + body + xml.slice(anchor.index)
   const end = xml.lastIndexOf('</worksheet>')
   if (end === -1) throw new CfEditError('Worksheet has no closing element.')
   return xml.slice(0, end) + body + xml.slice(end)

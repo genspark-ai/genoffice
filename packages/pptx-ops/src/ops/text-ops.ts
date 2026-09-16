@@ -41,6 +41,7 @@ import {
   register,
   requireFinite,
   requireHexColor,
+  requireLinkTarget,
   resolveElement,
   resolveGroup,
   resolveGroupChildId,
@@ -138,6 +139,11 @@ register({
   validate(op, ctx) {
     if (!Array.isArray(op.paragraphs)) {
       throw new GuidedError('op "setText" needs "paragraphs": an EditParagraph array.')
+    }
+    for (const p of op.paragraphs as Array<{ runs?: Array<{ link?: unknown }> }>) {
+      for (const r of p?.runs ?? []) {
+        if (r && r.link !== undefined) requireLinkTarget('setText', r.link, 'runs[].link')
+      }
     }
     if (op.group) {
       const { index, slide } = resolveSlide(ctx, op)

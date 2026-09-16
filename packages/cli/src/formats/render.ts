@@ -40,12 +40,18 @@ export interface RenderedFile {
 
 export function parseScale(raw: string | undefined): number {
   const scale = raw === undefined ? 1 : Number(raw)
-  if (!(scale > 0 && scale <= 4)) throw new CliError(EXIT.usage, '--scale must be between 0 and 4')
+  if (!(scale > 0 && scale <= 4))
+    throw new CliError(EXIT.usage, '--scale must be between 0 and 4', undefined, {
+      reason: 'invalid_argument',
+    })
   return scale
 }
 
 export function outputDirectory(spec: string | undefined, ctx: PathContext): string {
-  if (!spec) throw new CliError(EXIT.usage, 'missing --out <directory>')
+  if (!spec)
+    throw new CliError(EXIT.usage, 'missing --out <directory>', undefined, {
+      reason: 'missing_argument',
+    })
   const dir = isAbsolute(spec) ? spec : resolve(ctx.cwd, spec)
   return assertAllowed(dir, ctx.env, 'write')
 }
@@ -62,7 +68,12 @@ export async function renderToPngs(
 ): Promise<RenderedFile[]> {
   const ext = extname(path).slice(1).toLowerCase()
   if (!RENDERABLE.includes(ext)) {
-    throw new CliError(EXIT.usage, `cannot render .${ext || '?'}`, { supported: RENDERABLE })
+    throw new CliError(
+      EXIT.usage,
+      `cannot render .${ext || '?'}`,
+      { supported: RENDERABLE },
+      { reason: 'unsupported' },
+    )
   }
   const tmpPdf = ext === 'pdf' ? null : join(tmpdir(), `genoffice-render-${randomUUID()}.pdf`)
   try {

@@ -14,7 +14,7 @@ import {
   readInstallState,
   uninstallSkill,
   type SkillLedger,
-} from '../src/main/agent-skills'
+} from '../src/agent-skills'
 
 const skillText = (version: string, body = 'Run `genoffice --version` first.') =>
   `---\nname: genoffice\ndescription: test\nmetadata:\n  version: ${version}\n  cli: '>=0.4.0'\n---\n\n${body}\n`

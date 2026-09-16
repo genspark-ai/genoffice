@@ -11,10 +11,12 @@ import {
 import { pmTableToModel, tableModelToPmNode, type PmMark, type PmNode } from '../editor/convert'
 import { equationBlockJson, inlineEquationNodeJson } from '../editor/equation'
 import { inheritFrom, inheritTableFormatting, sameBlockRole } from './inherit-formatting'
-import { collectRevisions, TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
+import { TRACK_IGNORE, type RevisionRange } from '../editor/revisions'
 import { countWords } from '../word-count'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
 import { opSignatures } from './ops'
+import { pageSetupContextLines, type AiSectionState } from './page-setup'
+import { listRevisionEntries } from './revision-ops'
 
 export { blockRangePositions, isTrackedDeleted, liveText }
 
@@ -44,7 +46,7 @@ export const OPS_GUIDE = [
   'Target (all conditions are ANDed; provide at least one):',
   '```',
   'interface Target {',
-  "  nodeType?: 'docHeading' | 'docParagraph' | 'docListItem' | 'image'  // image = image block",
+  "  nodeType?: 'docHeading' | 'docParagraph' | 'docListItem' | 'image' | 'table'  // image = image block, table = editable table (row/column/merge/format ops)",
   "  headingLevel?: number        // only together with nodeType: 'docHeading'",
   '  containsText?: string        // block plain text contains this substring',
   '  matchCase?: boolean          // defaults to true',
@@ -69,6 +71,7 @@ export const OPS_GUIDE = [
   '- "Make the selected words 14 pt blue" (partial selection) → ops: [{"op":"setFont","target":{"scope":"selection"},"fontSize":14,"color":"#1A73E8"}]',
   '- "Two-character first-line indent for the whole document" (11 pt font) → one setParagraphFormat for docParagraph with "indentFirstLine":440',
   '- "Insert a table of contents at the beginning" → ops: [{"op":"insertToc","afterBlockIndex":-1}]; if the user wants the TOC on its own page, also setParagraphFormat the first body block after the TOC with "pageBreakBefore":true',
+  '- "Number the figures" → one insertField {"type":"SEQ","args":"Figure \\* ARABIC"} per caption paragraph (afterText places the number after the label); "refresh the numbering / the date" → [{"op":"updateFields"}]; a cross-reference is insertBookmark on the target paragraph, then insertField {"type":"REF","args":"Name \\h"} where it is cited',
   '- Cover page recipe: use insert_content to insert one paragraph each for title/subtitle/date at the start of the document, then setFont to enlarge the title (e.g. "fontSize":36), setParagraphFormat to center everything and give the title "spaceBefore":4800, and finally set "pageBreakBefore":true on the first body block after the cover',
   '',
   'Discipline:',
@@ -129,11 +132,16 @@ export const AGENT_SYSTEM_PROMPT = [
   '- When the user asks to handle/address/resolve the comments, process them one at a time: read the anchored block, apply the requested change with the normal editing tools, then reply_comment with a one-sentence summary of what changed, then resolve_comment. Handle each comment in its own tool sequence — never one giant edit for all of them.',
   '- A comment that is a question or is ambiguous gets a reply_comment with an answer or a clarifying question, no document change and no resolve.',
   "- Never modify content beyond a comment's anchored passage unless the comment explicitly requires it; skip threads that are already resolved.",
+  '- When the user asks for review notes, questions or suggestions without changing the text (proofread and comment, flag weak spots, ask the author), use add_comment on the exact passage instead of editing; delete_comment only when the user asks to remove a comment.',
   '',
   '# Template filling',
   '- When the user asks to fill in a template/form, first scan the document for placeholders: [bracketed labels], {{curly names}}, runs of underscores (____), and protected content-control blocks whose label reads as a field.',
   "- List every placeholder found (with block indexes). Fill the ones the user's message answers via findReplace with a target so the surrounding formatting survives; for the rest, ask for the missing values in one consolidated question — never invent facts to fill a field.",
   "- Dates follow the user's locale; never change text outside the placeholders.",
+  '',
+  '# Fields, footnotes & endnotes',
+  '- insertField writes real Word fields (SEQ caption numbers, DATE/TIME, REF/PAGEREF to a bookmark, MERGEFIELD, PAGE/NUMPAGES, AUTHOR…). Results the editor cannot compute (page numbers, document properties) are placeholders marked for Word to recompute when the file opens; mention that when you report. TOC → insertToc, never insertField.',
+  '- insert_footnote / insert_endnote put a superscript reference mark into a block (after afterText, else at its end) and store the note text; read_notes lists notes with ids and anchored blocks; delete_note removes one with its mark. Notes are not document blocks — never reach them via block indexes or rewrite a block just to change its note.',
   '',
   '# Headers & footers',
   '- The message context lists the current header/footer text. Change them with set_header_footer: plain text, \\n between lines; the tokens {PAGE} and {NUMPAGES} become live page-number fields (e.g. text "{PAGE} / {NUMPAGES}" renders as "3 / 12"); an empty string clears the text.',
@@ -631,30 +639,18 @@ const REVISION_KIND_LABEL: Record<RevisionRange['kind'], string> = {
   blockDel: 'block deleted',
 }
 
-/** top-level block index containing a document position */
-function blockIndexOfPos(doc: ProseMirrorNode, pos: number): number {
-  let index = 0
-  let result = Math.max(0, doc.childCount - 1)
-  doc.forEach((node, offset) => {
-    if (pos >= offset && pos <= offset + node.nodeSize) result = index
-    index++
-  })
-  return result
-}
-
 /** flat listing of every pending tracked change; backs the read_revisions tool */
 export function buildRevisionsContext(editor: Editor): string {
-  const revisions = collectRevisions(editor.state.doc)
+  const revisions = listRevisionEntries(editor.state.doc)
   if (revisions.length === 0) return '(the document has no tracked revisions)'
-  const doc = editor.state.doc
   const shown = revisions.slice(0, REVISIONS_CONTEXT_MAX)
   const lines = shown.map((rev) => {
-    const text = doc.textBetween(rev.from, rev.to, '\n', ' ').replace(/\s+/g, ' ').trim()
     const date = rev.date ? ` on ${rev.date.slice(0, 10)}` : ''
-    const excerpt = text ? `: "${clip(text, 200)}"` : ''
-    return `- block ${blockIndexOfPos(doc, rev.from)} | ${REVISION_KIND_LABEL[rev.kind]} by ${rev.author || 'unknown'}${date}${excerpt}`
+    const excerpt = rev.text ? `: "${clip(rev.text, 200)}"` : ''
+    const change = rev.change ? ` (${rev.change})` : ''
+    return `- ${rev.id} | block ${rev.blockIndex} | ${REVISION_KIND_LABEL[rev.kind]} by ${rev.author || 'unknown'}${date}${change}${excerpt}`
   })
-  const header = `Tracked revisions (${revisions.length} pending; deleted text shows what will disappear on accept):`
+  const header = `Tracked revisions (${revisions.length} pending; deleted text shows what will disappear on accept; ids are positional and renumber after every edit):`
   const overflow =
     revisions.length > shown.length
       ? [`…and ${revisions.length - shown.length} more revision(s) not listed.`]
@@ -758,6 +754,7 @@ export function buildDocContext(
   scope?: SelectionScope,
   comments?: CommentInfo[],
   hf?: AiHfState,
+  sections?: AiSectionState[],
 ): string {
   const isEmptyDoc = isBlankDocument(editor)
   scope ??= getSelectionScope(editor)
@@ -787,6 +784,7 @@ export function buildDocContext(
       : `Document block list:\n${buildDocumentContext(editor, scope, hf)}`,
     // a blank body can still carry headers/footers (template setup): keep them visible
     isEmptyDoc && hf ? hfContextLines(hf).join('\n') : '',
+    sections ? pageSetupContextLines(sections).join('\n') : '',
     selectionHtml ? selectionLines.join('\n') : '',
     comments && comments.length > 0 ? buildCommentsContext(editor, comments) : '',
   ]

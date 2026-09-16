@@ -1143,6 +1143,12 @@ button {
   background: var(--hover);
 }
 
+.pdf-outline-note {
+  padding: 2px 8px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* ── Encrypted document password ── */
 
 /* ---- encrypted-PDF password dialog (Genspark DS form dialog, matching the

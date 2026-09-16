@@ -5,6 +5,7 @@
  * (one-to-one in top-level shape order). Phase 1 supports: text boxes / pictures /
  * simple shapes; everything else → passthrough.
  */
+import { namedActionOf } from './named-action'
 import { XMLParser } from 'fast-xml-parser'
 import { layoutHierTree, parseHierConstraints } from './dgm-hier'
 import { scanSlide, type SpElement } from './scan'
@@ -35,6 +36,7 @@ import {
   type LevelTextStyle,
 } from './placeholder'
 import type {
+  RunStyleSource,
   Slide,
   SlideElement,
   TextElement,
@@ -276,6 +278,39 @@ function isHiddenElement(node: any, tagName: string): boolean {
   return hidden === '1' || hidden === 'true'
 }
 
+/** A paragraph-level <mc:AlternateContent> whose Choice is an a14:m equation. */
+const MATH_AC_RE =
+  /<mc:AlternateContent\b[^>]*>\s*<mc:Choice\b[^>]*>\s*<a14:m\b[\s\S]*?<\/mc:AlternateContent>/g
+
+/**
+ * Equations are paragraph children fast-xml-parser would file outside the run
+ * list (losing their position and, on rebuild, the block itself). They become a
+ * run carrying the block verbatim (base64 in an attribute, TextRun.rawXml after
+ * parseRun) with the Fallback's text — or the m:t tokens — as its display text.
+ */
+function mathBlockAsRun(block: string): string {
+  const fallback = /<mc:Fallback\b[^>]*>([\s\S]*?)<\/mc:Fallback>/.exec(block)?.[1] ?? ''
+  const texts = (m: string) =>
+    [...m.matchAll(/<(?:a|m):t(?:\s[^>]*)?>([\s\S]*?)<\/(?:a|m):t>/g)].map((x) => x[1]!).join('')
+  const text = texts(fallback) || texts(block)
+  return `<a:r gxRaw="${utf8ToBase64(block)}"><a:rPr/><a:t>${text}</a:t></a:r>`
+}
+
+function utf8ToBase64(s: string): string {
+  const bytes = new TextEncoder().encode(s)
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
+}
+
+function base64ToUtf8(b64: string): string {
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new TextDecoder().decode(bytes)
+}
+
 function parseShapeFragment(
   sp: SpElement,
   fragXml: string,
@@ -290,6 +325,7 @@ function parseShapeFragment(
   // and rewriting the tag (attributes kept, so @_type survives for run.field) keeps
   // fields in document order instead of being appended after all plain runs.
   const semanticXml = fragXml
+    .replace(MATH_AC_RE, mathBlockAsRun)
     .replace(/<a:br\b[^>]*\/>|<a:br\b[\s\S]*?<\/a:br>/g, '<a:r><a:t>\n</a:t></a:r>')
     .replace(/<a:fld\b/g, '<a:r')
     .replace(/<\/a:fld>/g, '</a:r>')
@@ -398,13 +434,15 @@ function parseSpShape(
         phIdx,
       )
     : ctx.defaultTextStyle
-      ? [ctx.defaultTextStyle]
+      ? [{ ...ctx.defaultTextStyle, src: 'presentation defaultTextStyle' }]
       : []
   // <p:style> fontRef color ranks between the shape's own lstStyle and the
   // layout/master defaults (a styled placeholder shows the style color, not the
   // master txStyles color — PowerPoint behavior, bnc904423)
   const fontRefColor = resolveColorNode(node['p:style']?.['a:fontRef'], ctx)
-  const chainLayers = fontRefColor ? [{ levels: [{ color: fontRefColor }] }, ...phChain] : phChain
+  const chainLayers = fontRefColor
+    ? [{ levels: [{ color: fontRefColor }], src: 'shape style' }, ...phChain]
+    : phChain
   const phInsets = ph
     ? resolvePlaceholderInsets(ctx.layoutPlaceholders, ctx.masterPlaceholders, phType, phIdx)
     : undefined
@@ -2869,7 +2907,8 @@ function parseTable(
     colWidths,
     rowHeights,
     rows,
-    styleFlags: { firstRow: flags.firstRow, bandRow: flags.bandRow },
+    ...(styleId ? { styleId } : {}),
+    styleFlags: { ...flags },
     ...(tblPr['@_rtl'] === '1' || tblPr['@_rtl'] === 'true' ? { rtl: true } : {}),
     ...(bgFill && bgFill.type !== 'none' ? { bgFill } : {}),
   }
@@ -3258,7 +3297,10 @@ function parseTextBody(
   const ownStyle = parseLstStyleLevels(txBody['a:lstStyle'], ctx.theme, {
     mediaRels: ctx.mediaRels,
   })
-  const chain: Array<TextStyleLevels | undefined> = [ownStyle, ...phChain]
+  const chain: Array<TextStyleLevels | undefined> = [
+    ownStyle ? { ...ownStyle, src: 'shape lstStyle' } : undefined,
+    ...phChain,
+  ]
   const paragraphs: Paragraph[] = paras.map((p: any) => parseParagraph(p, ctx, chain))
 
   let autofit: TextBody['autofit'] = 'none'
@@ -3372,15 +3414,19 @@ function parseParagraph(
   // without sz/b/fill takes them from here (python-pptx paragraph.font, WPS exports).
   const defRPrNode = pPr['a:defRPr']
   const paraStyle = parseDefRPrStyle(defRPrNode, ctx.theme, ctx.phClr)
-  const runDflt = paraStyle ? { ...dflt, ...paraStyle } : dflt
+  const runDflt = paraStyle
+    ? { ...dflt, ...paraStyle, src: paragraphSources(dflt, paraStyle) }
+    : dflt
   // A paragraph defRPr naming a concrete ea face replaces the level's theme ref, not just its resolution
   if (runDflt && paraStyle?.eaFont && !paraStyle.eaFontRef) delete runDflt.eaFontRef
+  if (runDflt && paraStyle?.latinFont && !paraStyle.latinFontRef) delete runDflt.latinFontRef
   const defRPr = paraStyle ? parseParagraphDefRPr(defRPrNode, paraStyle) : undefined
   const runsRaw = p['a:r'] ? (Array.isArray(p['a:r']) ? p['a:r'] : [p['a:r']]) : []
   const runs: TextRun[] = runsRaw.map((r: any) => {
     const run = parseRun(r, ctx, runDflt)
     // a:fld rewritten to a:r by parseShapeFragment (a genuine a:r never carries @_type)
     if (r?.['@_type']) run.field = String(r['@_type'])
+    if (r?.['@_gxRaw']) run.rawXml = base64ToUtf8(String(r['@_gxRaw']))
     return run
   })
   // <a:fld> reaching here in its original form (parse paths without the fragment
@@ -3399,7 +3445,7 @@ function parseParagraph(
   // A field with no cached text (<a:fld type="slidenum"> straight from the layout,
   // never opened in PowerPoint) is not empty: its value is substituted at render time.
   const endPr = p['a:endParaRPr']
-  if (endPr && typeof endPr === 'object' && runs.every((r) => !r.text && !r.field)) {
+  if (endPr && typeof endPr === 'object' && runs.every((r) => !r.text && !r.field && !r.rawXml)) {
     const mark = parseRun({ 'a:rPr': endPr, 'a:t': '' }, ctx, runDflt)
     mark.paraMark = true
     runs.splice(0, runs.length, mark)
@@ -3519,6 +3565,9 @@ function parseParagraph(
   return {
     runs,
     align: pPr['@_algn'] ? alignMap[pPr['@_algn']] : dflt?.align,
+    ...(pPr['@_algn'] || dflt?.align != null
+      ? { alignSrc: pPr['@_algn'] ? 'paragraph' : (dflt?.src?.align ?? 'inherited') }
+      : {}),
     ...(rtl != null ? { rtl } : {}),
     level,
     pPrExplicit,
@@ -3579,6 +3628,34 @@ const CJK_RE =
 const CS_RE =
   /[\u0590-\u07bf\u08a0-\u08ff\u0900-\u0dff\u0e00-\u0eff\u1000-\u109f\u1780-\u17ff\ufb1d-\ufdff\ufe70-\ufeff]/
 
+const SOURCE_FIELDS = [
+  'fontSize',
+  'bold',
+  'italic',
+  'color',
+  'latinFont',
+  'eaFont',
+  'csFont',
+  'align',
+] as const
+
+/** The paragraph's own defRPr overrides the chain for the fields it sets. */
+function paragraphSources(
+  dflt: LevelTextStyle | undefined,
+  paraStyle: LevelTextStyle,
+): NonNullable<LevelTextStyle['src']> {
+  const src: NonNullable<LevelTextStyle['src']> = { ...dflt?.src }
+  for (const field of SOURCE_FIELDS) {
+    if (paraStyle[field] != null) src[field] = 'paragraph defRPr'
+  }
+  return src
+}
+
+function themeFontSource(ref: string | undefined): string | undefined {
+  if (!ref?.startsWith('+')) return undefined
+  return ref.startsWith('+mj') ? 'theme major' : 'theme minor'
+}
+
 function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   const rPr = r['a:rPr'] ?? {}
   const rawT = r['a:t']
@@ -3592,7 +3669,12 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
           : String(rawT),
   )
   const hlink = rPr['a:hlinkClick']
-  const hlinkTarget = hlink?.['@_r:id'] ? ctx.hlinkRels?.get(String(hlink['@_r:id'])) : undefined
+  const hlinkNamedAction = namedActionOf(hlink?.['@_action'] ? String(hlink['@_action']) : null)
+  const hlinkTarget = hlinkNamedAction
+    ? `action:${hlinkNamedAction}`
+    : hlink?.['@_r:id']
+      ? ctx.hlinkRels?.get(String(hlink['@_r:id']))
+      : undefined
   const fill = rPr['a:solidFill']
   // WordArt gradient text fill: resolved stops for display, mid-stop as the flat fallback color
   let gradient: TextRun['gradient']
@@ -3730,8 +3812,47 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
   const csRaw = rPr['a:cs']?.['@_typeface']
   // Linked runs underline by default (PowerPoint hlink styling) unless u is explicit
   const linkUnderline = hlinkTarget != null && uAttr === undefined
+  const inherited = (field: keyof NonNullable<LevelTextStyle['src']>, has: boolean) =>
+    has ? (dflt?.src?.[field] ?? 'inherited') : 'default'
+  const fontSource = (): string => {
+    if (picked === undefined) return 'default'
+    if (puaOnly) return 'run'
+    const slot =
+      picked === csPair
+        ? 'a:cs'
+        : picked === eaPair
+          ? 'a:ea'
+          : picked === latinPair
+            ? 'a:latin'
+            : null
+    if (slot === null) return 'theme minor'
+    const own = rPr[slot]?.['@_typeface']
+    if (own != null) return themeFontSource(String(own)) ?? 'run'
+    const ref =
+      slot === 'a:latin' ? dflt?.latinFontRef : slot === 'a:ea' ? dflt?.eaFontRef : undefined
+    const layer =
+      slot === 'a:latin'
+        ? dflt?.src?.latinFont
+        : slot === 'a:ea'
+          ? dflt?.src?.eaFont
+          : dflt?.src?.csFont
+    return [themeFontSource(ref), layer ?? 'inherited'].filter(Boolean).join(' via ')
+  }
+  const styleSrc: RunStyleSource = {
+    fontSize: rPr['@_sz'] ? 'run' : inherited('fontSize', dflt?.fontSize != null),
+    bold: bAttr != null ? 'run' : inherited('bold', dflt?.bold != null),
+    italic: iAttr != null ? 'run' : inherited('italic', dflt?.italic != null),
+    color:
+      fill || gradient
+        ? 'run'
+        : hlinkTarget && ctx.theme?.colors?.hlink
+          ? 'theme hlink'
+          : inherited('color', dflt?.color != null),
+    fontFamily: fontSource(),
+  }
   return {
     text,
+    styleSrc,
     bold: bAttr != null ? bAttr === '1' || bAttr === 'true' : !!dflt?.bold,
     ...(bAttr == null ? { boldImplicit: true } : {}),
     italic: iAttr != null ? iAttr === '1' || iAttr === 'true' : !!dflt?.italic,
@@ -3775,9 +3896,9 @@ function parseRun(r: any, ctx: ParseContext, dflt?: LevelTextStyle): TextRun {
     ...(gradient ? { gradient } : {}),
     ...(runGlow ? { glow: runGlow } : {}),
     ...(reflection ? { reflection: true } : {}),
-    ...(hlink?.['@_r:id']
+    ...(hlink && (hlink['@_r:id'] != null || hlinkNamedAction)
       ? {
-          hyperlinkRId: String(hlink['@_r:id']),
+          hyperlinkRId: String(hlink['@_r:id'] ?? ''),
           ...(hlinkTarget ? { hyperlink: hlinkTarget } : {}),
           ...(hlink['@_action'] ? { hyperlinkAction: String(hlink['@_action']) } : {}),
           ...(hlink['@_tooltip'] ? { hyperlinkTooltip: String(hlink['@_tooltip']) } : {}),

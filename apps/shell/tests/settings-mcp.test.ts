@@ -6,8 +6,14 @@ import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HomeApi } from '../src/shared/home-api'
-import { LocaleProvider } from '../src/renderer/src/locale'
-import { SettingsModal } from '../src/renderer/src/SettingsModal'
+import { LocaleProvider, useI18n } from '../src/renderer/src/locale'
+import { McpServerSection } from '../src/renderer/src/McpServerSection'
+
+/** the section as Settings → Integrations → MCP → B mounts it */
+function Section() {
+  const { t } = useI18n()
+  return createElement(McpServerSection, { t })
+}
 
 const actEnvironment = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean
@@ -45,7 +51,6 @@ async function renderModal(
     background?: boolean
     logging?: boolean
     url: string | null
-    capabilities?: string[]
   },
   logLines?: string[],
 ): Promise<void> {
@@ -76,35 +81,12 @@ async function renderModal(
   } as unknown as HomeApi
 
   await act(async () => {
-    root.render(
-      createElement(
-        LocaleProvider,
-        { initial: 'en' },
-        createElement(SettingsModal, {
-          status: null,
-          loggingOut: false,
-          loginWaiting: false,
-          loginUrl: null,
-          urlCopied: false,
-          onOpenLoginUrl: vi.fn(),
-          onCopyLoginUrl: vi.fn(),
-          onClose: vi.fn(),
-          onLogin: vi.fn(),
-          onLogout: vi.fn(),
-        }),
-      ),
-    )
+    root.render(createElement(LocaleProvider, { initial: 'en' }, createElement(Section)))
     await Promise.resolve()
   })
-
-  const mcp = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-nav-item')).find((button) =>
-    button.textContent?.includes('MCP Settings'),
-  )
-  expect(mcp).toBeDefined()
-  await click(mcp!)
 }
 
-describe('MCP settings pane', () => {
+describe('MCP local server section', () => {
   it('shows the running status, connection info and a copyable config example', async () => {
     const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
@@ -124,17 +106,21 @@ describe('MCP settings pane', () => {
     expect(host.textContent).toContain('http://127.0.0.1:3093/mcp')
     expect(host.textContent).toContain('http://127.0.0.1:3093/sse')
 
-    // config example names the server and the streamable URL
+    // config example names the server apart from the stdio entry, with the streamable URL
     const code = host.querySelector('.set-code')
-    expect(code?.textContent).toContain('"genoffice"')
+    expect(code?.textContent).toContain('"genoffice-editor"')
+    expect(code?.textContent).not.toContain('"genoffice"')
     expect(code?.textContent).toContain('http://127.0.0.1:3093/mcp')
 
-    // the first copy button copies the streamable URL and flashes "Copied"
+    // the first copy button copies the config example and flashes "Copied"
     const copyButtons = Array.from(host.querySelectorAll<HTMLButtonElement>('.set-btn'))
-    expect(copyButtons.length).toBeGreaterThanOrEqual(3)
+    expect(copyButtons.length).toBeGreaterThanOrEqual(4)
     await click(copyButtons[0]!)
-    expect(writeText).toHaveBeenCalledWith('http://127.0.0.1:3093/mcp')
+    expect(writeText).toHaveBeenCalledWith(code!.textContent)
     expect(copyButtons[0]!.textContent).toBe('Copied')
+    // the advanced rows copy the bare endpoints
+    await click(copyButtons[1]!)
+    expect(writeText).toHaveBeenLastCalledWith('http://127.0.0.1:3093/mcp')
   })
 
   it('shows the capability rows and a stopped status when disabled', async () => {
@@ -147,38 +133,6 @@ describe('MCP settings pane', () => {
 
     expect(host.querySelector('.set-status-dot.running')).toBeNull()
     expect(host.textContent).toContain('Not running')
-
-    // documents are live; slides/sheets/pdf follow the build's capabilities —
-    // with no capability report only the docs row shows
-    expect(host.textContent).toContain('Docs (Word)')
-    expect(host.textContent).not.toContain('Slides (PowerPoint)')
-    expect(host.textContent).not.toContain('Read .pdf text')
-  })
-
-  it('lists slides and sheets capability rows when the build exposes them', async () => {
-    await renderModal({
-      running: false,
-      enabled: false,
-      port: 3093,
-      url: null,
-      capabilities: ['docs', 'slides', 'sheets'],
-    })
-    expect(host.textContent).toContain('Slides (PowerPoint)')
-    expect(host.textContent).toContain('Sheets (Excel)')
-    expect(host.textContent).toContain('Docs (Word)')
-    expect(host.textContent).not.toContain('Read .pdf text')
-  })
-
-  it('shows the read-only pdf row once the build advertises it', async () => {
-    await renderModal({
-      running: false,
-      enabled: false,
-      port: 3093,
-      url: null,
-      capabilities: ['docs', 'slides', 'sheets', 'pdf'],
-    })
-    expect(host.textContent).toContain('PDF')
-    expect(host.textContent).toContain('Read .pdf text, page count and metadata')
   })
 
   it('background and logging toggles persist through setMcpSettings', async () => {

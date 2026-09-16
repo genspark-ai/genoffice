@@ -3,8 +3,10 @@ import {
   MAX_VIEW_ENTRIES,
   VIEW_STATE_KEY,
   captureViewState,
+  captureZoomAnchor,
   loadViewState,
   saveViewState,
+  zoomAnchorY,
 } from '../src/renderer/view-state'
 import type { PdfViewState } from '../src/renderer/view-state'
 
@@ -153,5 +155,58 @@ describe('captureViewState', () => {
       scrollTop: 120,
     })
     expect(view.page).toBe(3)
+  })
+})
+
+describe('captureZoomAnchor / zoomAnchorY', () => {
+  const heights = [800, 800, 600, 800]
+  const gap = 16
+  const roundTrip = (y: number, from: number, to: number) => {
+    const anchor = captureZoomAnchor({ y, rowHeights: heights, gap, scale: from })
+    return anchor && zoomAnchorY(anchor, heights, gap, to)
+  }
+
+  it('returns the same point when the scale does not change', () => {
+    for (const y of [0, 16, 500, 816, 1650, 3000]) expect(roundTrip(y, 1, 1)).toBe(y)
+  })
+
+  it('keeps the document top at the top across a zoom', () => {
+    expect(roundTrip(0, 1, 2)).toBe(0)
+    expect(roundTrip(0, 1, 0.5)).toBe(0)
+    expect(roundTrip(16, 0.5, 4)).toBe(16)
+  })
+
+  it('is row-exact: fixed gaps do not scale, page content does', () => {
+    // 200px into row 2 at scale 1 → row tops shift by two scaled rows and two gaps
+    const anchor = captureZoomAnchor({
+      y: gap + 800 + gap + 800 + gap + 200,
+      rowHeights: heights,
+      gap,
+      scale: 1,
+    })
+    expect(anchor).toEqual({ rowIdx: 2, content: 200, fixed: 0 })
+    expect(zoomAnchorY(anchor!, heights, gap, 2)).toBe(gap + 1600 + gap + 1600 + gap + 400)
+    // a naive scrollTop * ratio would land 3 gaps too far
+    expect(zoomAnchorY(anchor!, heights, gap, 2)).not.toBe((gap + 800 + gap + 800 + gap + 200) * 2)
+  })
+
+  it('carries a point inside the inter-row gap over unscaled', () => {
+    const anchor = captureZoomAnchor({ y: gap + 800 + 10, rowHeights: heights, gap, scale: 1 })
+    expect(anchor).toEqual({ rowIdx: 0, content: 800, fixed: 10 })
+    expect(zoomAnchorY(anchor!, heights, gap, 3)).toBe(gap + 2400 + 10)
+  })
+
+  it('captures at a non-unit scale in scale-1 units', () => {
+    const anchor = captureZoomAnchor({ y: gap + 400, rowHeights: heights, gap, scale: 2 })
+    expect(anchor).toEqual({ rowIdx: 0, content: 200, fixed: 0 })
+    expect(zoomAnchorY(anchor!, heights, gap, 1)).toBe(gap + 200)
+  })
+
+  it('sticks to the last row when overscrolled and rejects empty documents', () => {
+    const anchor = captureZoomAnchor({ y: 10_000, rowHeights: heights, gap, scale: 1 })
+    expect(anchor?.rowIdx).toBe(3)
+    expect(anchor?.content).toBe(800)
+    expect(captureZoomAnchor({ y: 100, rowHeights: [], gap, scale: 1 })).toBeNull()
+    expect(captureZoomAnchor({ y: 100, rowHeights: heights, gap, scale: 0 })).toBeNull()
   })
 })

@@ -131,7 +131,6 @@ export const nl = {
   appMoreItems: '+{count} meer…',
   appTruncationNote: 'Eerste {shown} van {total}',
   appGoToButtonTitle: 'Ga naar (⌘G)',
-  appNameBoxTitle: 'Naamvak — typ een adres of naam en druk op Enter',
   appPivotChartHintIn: 'Een draaigrafiek maken op basis van de huidige draaitabel',
   appPivotChartHintOut:
     'Selecteer eerst een cel in de uitvoer van de draaitabel en kies dan een grafiektype',

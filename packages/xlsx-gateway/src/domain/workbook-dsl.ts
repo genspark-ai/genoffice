@@ -2,6 +2,13 @@ import { z } from 'zod'
 import { ADDABLE_SHAPE_TYPES } from '../shared/shape-types'
 import { columnIndex, columnLabel, formatAddress, parseRange, rangeCellCount } from './cell-address'
 import { computeSortChanges } from './sort-range'
+import {
+  describeStyleColor,
+  normalizeStyleColor,
+  PATTERN_TYPES,
+  THEME_SHORTHAND_PATTERN,
+  THEME_SLOT_NAMES,
+} from './style-color'
 
 const cellAddressSchema = z.string().regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}$/)
 const cellRangeSchema = z.string().regex(/^[A-Z]{1,3}[1-9][0-9]{0,6}(:[A-Z]{1,3}[1-9][0-9]{0,6})?$/)
@@ -13,6 +20,54 @@ const sheetNameSchema = z
   .max(31)
   .refine((name) => !/[:\\/?*[\]]/.test(name))
 const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/)
+// "#RRGGBB", a theme slot ("accent1", "accent1+40%", "dk2-25%") or {theme, tint}
+const styleColorSchema = z
+  .union([
+    hexColorSchema,
+    z.string().regex(THEME_SHORTHAND_PATTERN),
+    z
+      .object({
+        theme: z.union([z.number().int().min(0).max(11), z.enum(THEME_SLOT_NAMES)]),
+        tint: z.number().min(-1).max(1).optional(),
+      })
+      .strict(),
+  ])
+  .describe(
+    '"#RRGGBB", a theme slot name (lt1 dk1 lt2 dk2 accent1-6 hlink folHlink) optionally with a tint like "accent1+40%" or "dk2-25%", or {theme, tint}',
+  )
+const fillPatchSchema = z
+  .union([
+    z
+      .object({
+        pattern: z.enum(PATTERN_TYPES),
+        fg: styleColorSchema,
+        bg: styleColorSchema.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        gradient: z
+          .object({
+            type: z.enum(['linear', 'path']).optional(),
+            angle: z.number().min(0).max(360).optional(),
+            left: z.number().min(0).max(1).optional(),
+            right: z.number().min(0).max(1).optional(),
+            top: z.number().min(0).max(1).optional(),
+            bottom: z.number().min(0).max(1).optional(),
+            stops: z
+              .array(
+                z.object({ position: z.number().min(0).max(1), color: styleColorSchema }).strict(),
+              )
+              .min(2)
+              .max(10),
+          })
+          .strict(),
+      })
+      .strict(),
+  ])
+  .describe(
+    'pattern fill {pattern: solid|lightGray|darkHorizontal|…, fg, bg?} or gradient {gradient: {angle?, stops: [{position 0..1, color}]}}; wins over fillColor',
+  )
 const cellScalarSchema = z.union([z.string(), z.number().finite(), z.boolean(), z.null()])
 
 const setCellSchema = z.object({
@@ -620,6 +675,12 @@ const setDataValidationSchema = z.object({
 // Print/page-layout settings; saved into the file, mirroring the Page Layout
 // ribbon. At least one setting required (checked at expansion). scale and
 // fitToWidth/fitToHeight are mutually exclusive.
+const headerFooterPartsSchema = z.object({
+  left: z.string().max(255).optional(),
+  center: z.string().max(255).optional(),
+  right: z.string().max(255).optional(),
+})
+
 const setPageSetupSchema = z.object({
   op: z.literal('set_page_setup'),
   sheetId: z.string().min(1),
@@ -637,6 +698,19 @@ const setPageSetupSchema = z.object({
   printHeadings: z.boolean().optional(),
   /** A1 range to print; null clears the print area */
   printArea: cellRangeSchema.nullable().optional(),
+  /** rows repeated at the top of every printed page, e.g. "1:1"; null clears */
+  printTitles: z
+    .string()
+    .regex(/^\$?\d{1,7}:\$?\d{1,7}$/)
+    .nullable()
+    .optional(),
+  /** printed header / footer sections; text carries Excel codes (&P page, &N pages, &D date, &F file, &A sheet); null clears */
+  header: headerFooterPartsSchema.nullable().optional(),
+  footer: headerFooterPartsSchema.nullable().optional(),
+  /** manual page breaks: 1-based row numbers after which a new page starts; [] clears */
+  rowBreaks: z.array(z.number().int().min(1).max(1_048_575)).max(1_023).optional(),
+  /** manual page breaks: 1-based column numbers after which a new page starts; [] clears */
+  colBreaks: z.array(z.number().int().min(1).max(16_383)).max(1_023).optional(),
 })
 
 // Cell note (legacy comment): text null removes the note.
@@ -698,7 +772,7 @@ const deleteDefinedNameSchema = z.object({
 // 'none' removes all borders. Clearing is 'none', so null is not accepted.
 const borderPatchSchema = z.object({
   type: z.enum(['all', 'top', 'bottom', 'left', 'right', 'none']),
-  color: hexColorSchema.optional(),
+  color: styleColorSchema.optional(),
 })
 
 // Every field optional; null clears that property back to the default.
@@ -710,8 +784,9 @@ const formatPatchSchema = z
     strikethrough: z.boolean().nullable().optional(),
     fontFamily: z.string().min(1).max(128).nullable().optional(),
     fontSize: z.number().min(1).max(409).nullable().optional(),
-    fontColor: hexColorSchema.nullable().optional(),
-    fillColor: hexColorSchema.nullable().optional(),
+    fontColor: styleColorSchema.nullable().optional(),
+    fillColor: styleColorSchema.nullable().optional(),
+    fill: fillPatchSchema.nullable().optional(),
     numberFormat: z.string().min(1).max(255).nullable().optional(),
     horizontalAlign: z.enum(['left', 'center', 'right']).nullable().optional(),
     verticalAlign: z.enum(['top', 'center', 'bottom']).nullable().optional(),
@@ -893,6 +968,8 @@ export type FillRangeOperation = z.infer<typeof fillRangeSchema>
 export type FormatRangeOperation = z.infer<typeof formatRangeSchema>
 export type CellFormatPatch = z.infer<typeof formatPatchSchema>
 export type BorderPatch = z.infer<typeof borderPatchSchema>
+export type FillPatch = z.infer<typeof fillPatchSchema>
+export type StyleColorInput = z.infer<typeof styleColorSchema>
 export type StructuralOperation =
   | z.infer<typeof insertRowsSchema>
   | z.infer<typeof deleteRowsSchema>
@@ -1728,12 +1805,23 @@ const FORMAT_FIELD_LABELS: Record<string, string> = {
   fontSize: 'font size',
   fontColor: 'font color',
   fillColor: 'fill',
+  fill: 'fill',
   numberFormat: 'number format',
   horizontalAlign: 'align',
   verticalAlign: 'vertical align',
   wrapText: 'wrap',
   textRotation: 'rotation',
   indent: 'indent',
+}
+
+function describeFillPatch(fill: FillPatch): string {
+  if ('gradient' in fill) {
+    const stops = fill.gradient.stops.map((stop) =>
+      describeStyleColor(normalizeStyleColor(stop.color)),
+    )
+    return `gradient ${stops.join(' → ')}`
+  }
+  return `${fill.pattern} ${describeStyleColor(normalizeStyleColor(fill.fg))}`
 }
 
 export function formatOpLabel(op: FormatRangeOperation): string {
@@ -1744,9 +1832,17 @@ export function formatOpLabel(op: FormatRangeOperation): string {
       if (key === 'border') {
         const border = value as BorderPatch
         if (border.type === 'none') return 'clear borders'
-        return `border ${border.type}${border.color ? ` ${border.color}` : ''}`
+        const color =
+          border.color === undefined
+            ? ''
+            : ` ${describeStyleColor(normalizeStyleColor(border.color))}`
+        return `border ${border.type}${color}`
       }
       if (value === null) return `clear ${name}`
+      if (key === 'fontColor' || key === 'fillColor') {
+        return `${name} ${describeStyleColor(normalizeStyleColor(value as string | { theme: number | string; tint?: number }))}`
+      }
+      if (key === 'fill') return `fill ${describeFillPatch(value as FillPatch)}`
       if (value === true) return name
       if (value === false) return `no ${name}`
       return `${name} ${String(value)}`
@@ -1903,6 +1999,12 @@ export function layoutOpLabel(op: LayoutOperation): string {
         parts.push(`${op.printHeadings ? 'print' : 'no'} headings`)
       if (op.printArea !== undefined)
         parts.push(op.printArea === null ? 'clear print area' : `print area ${op.printArea}`)
+      if (op.printTitles !== undefined)
+        parts.push(op.printTitles === null ? 'clear print titles' : `repeat rows ${op.printTitles}`)
+      if (op.header !== undefined) parts.push(op.header === null ? 'clear header' : 'header')
+      if (op.footer !== undefined) parts.push(op.footer === null ? 'clear footer' : 'footer')
+      if (op.rowBreaks !== undefined) parts.push(`${op.rowBreaks.length} row break(s)`)
+      if (op.colBreaks !== undefined) parts.push(`${op.colBreaks.length} column break(s)`)
       return `Page setup: ${parts.join(', ')}`
     }
     case 'set_freeze':

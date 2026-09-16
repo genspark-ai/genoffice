@@ -1,6 +1,6 @@
 # Insert ops
 
-> Create new elements on a slide: text boxes, preset shapes and lines (addElement), tables, native charts, SmartArt-style diagrams.
+> Create new elements on a slide: text boxes, preset shapes and lines (addElement), connectors glued to shapes, tables, native charts, SmartArt-style diagrams.
 
 Insert ops take `target:{slide}` (no `el`) and an `offset:{x,y,cx,cy}` frame
 in document-space EMU. They report the new element id in `created`; later ops
@@ -65,6 +65,40 @@ Common mistakes
 - Building whole pages element by element on an empty deck: use `generate_deck`; `addElement` is for adding to an already designed page.
 - Pixel frames: convert with the px-to-EMU factor from `read_slide`.
 - `autoFit` values other than `"shrink"`/`"resize"`.
+
+### addConnector
+
+`{from,to,kind?:"straight"|"elbow"|"curved",fromSide?,toSide?,arrow?:"none"|"end"|"both",line?:{color?,widthPt?,dash?}}`
+
+Draws a connector glued to two shapes (`a:stCxn`/`a:endCxn`), so PowerPoint
+and later `setTransform` moves keep it attached. When `fromSide`/`toSide`
+(`top`/`left`/`bottom`/`right`) are omitted, the pair of edge midpoints that
+are closest to each other is chosen. The frame is derived from the two
+connection points; the new element id is in `created`.
+
+| Field            | Type                                    | Notes                                                                        |
+| ---------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
+| from, to         | element ids                             | Two different top-level elements on `target.slide`                           |
+| kind             | `straight` (default), `elbow`, `curved` |                                                                              |
+| fromSide, toSide | side name                               | Pin one or both ends; omitted sides are chosen automatically                 |
+| arrow            | `none`, `end` (default), `both`         | Arrowhead at the `to` end, both ends, or none                                |
+| line             | `{color?, widthPt?, dash?}`             | Defaults 1 pt black solid; `dash` is an OOXML preset (`dash`, `sysDot`, ...) |
+
+```json
+{
+  "op": "addConnector",
+  "target": { "slide": 0 },
+  "from": "e_SHAPE",
+  "to": "e_PICTURE",
+  "kind": "elbow",
+  "line": { "color": "#1A73E8", "widthPt": 1.5 }
+}
+```
+
+Common mistakes
+
+- Drawing a free line with `addElement` and hoping it follows the shapes: only `addConnector` (or `setConnectorEndpoints` with `start`/`end`) attaches.
+- Using it between a group child and a shape: connect to the group (top-level ids only).
 
 ### addPicture (not-ai-callable)
 

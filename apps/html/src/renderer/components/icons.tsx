@@ -215,3 +215,17 @@ export function IconSummarize({ size = 24 }: IconProps) {
     </svg>
   )
 }
+
+export function IconFolderTree({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M2.5 5.5A1.5 1.5 0 0 1 4 4h3.6c.4 0 .8.16 1.07.45L10 5.8h6A1.5 1.5 0 0 1 17.5 7.3v7.2A1.5 1.5 0 0 1 16 16H4a1.5 1.5 0 0 1-1.5-1.5v-9z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M2.5 8.5h15" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  )
+}

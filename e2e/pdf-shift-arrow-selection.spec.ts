@@ -30,7 +30,7 @@ function twoRunTextPdf(): Buffer {
 
 /**
  * Regression for "Shift+→ cannot extend the selection over the trailing
- * digits" (alpha feedback): the viewer's window keydown handler mapped
+ * digits" (user report): the viewer's window keydown handler mapped
  * ArrowRight to a page flip and preventDefault-ed it without checking
  * shiftKey, so the browser's native selection extension never ran. With a
  * non-collapsed selection present, Shift+navigation must reach the browser.

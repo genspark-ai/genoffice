@@ -3,6 +3,7 @@ export { deobfuscateOdttf, isSfnt, parseFontTable, readEmbeddedFonts } from './f
 export { decodeEntities } from './parse-xml-text'
 export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
 export { parseDocx, styleRunFormat, type ParseExtras, type ParseOptions } from './parse'
+export { DOCX_ZIP_LIMITS } from './zip-load'
 export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
 export { tocLevelOf } from './parse-fields'
 export {
@@ -88,14 +89,33 @@ export {
   applySectionSettings,
   applyPageNumType,
   applySectionStartType,
+  applyTitlePg,
+  sectionFromSectPr,
   readPageColor,
   readSections,
   readSectionSettings,
   sectionSettingsFromXml,
   notePropsFromXml,
+  xmlFlagOn,
 } from './section'
 export { nextNoteId, parseNotesXml, type NoteKind } from './notes'
-export { readWatermarkText } from './watermark'
+export {
+  isPictureWatermark,
+  pictureWatermarkPreviewImage,
+  readPictureWatermark,
+  readWatermarkText,
+  type PictureWatermarkInfo,
+  type PictureWatermarkSpec,
+  type Watermark,
+  type WatermarkSpec,
+} from './watermark'
+export {
+  mergeStyleXml,
+  pendingHeadingLevel,
+  type StyleHeadingInfo,
+  type StyleParaProps,
+  type StyleRunProps,
+} from './style-upsert'
 export {
   INK_NAME_PREFIX,
   anchoredInkRunXml,

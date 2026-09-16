@@ -34,8 +34,8 @@ function caretRect(view: EditorView, head: number, dir: -1 | 1): Rect {
     // A focus parked ON the gap widget (a click near the page seam leaves it
     // there) yields the gap's own multi-hundred-px box as the "caret" rect;
     // every downstream computation then runs on garbage and the dispatched
-    // jump can land paragraphs — or the whole document — past the boundary
-    // (alpha ledger r143). Only a text-line-sized rect off the gap counts.
+    // jump can land paragraphs — or the whole document — past the boundary.
+    // Only a text-line-sized rect off the gap counts.
     const focusEl =
       domSel.focusNode.nodeType === Node.TEXT_NODE
         ? domSel.focusNode.parentElement
@@ -57,7 +57,7 @@ function caretRect(view: EditorView, head: number, dir: -1 | 1): Rect {
 }
 
 /**
- * Vertical caret motion across page gaps (alpha ledger r118/r122): the
+ * Vertical caret motion across page gaps: the
  * inter-page gap is a large contentEditable=false widget, and Chromium's
  * native ArrowDown/ArrowUp — including their Shift-extension — give up on it
  * when the page break falls MID-paragraph (inline gap inside the textblock):
@@ -87,10 +87,9 @@ function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   // Horizontal comes from the POSITION estimate, not the DOM rect: under key
   // repeat the DOM selection rect can be read mid-reflow and report a stale x
   // at the page margin — every hit-test below then probes the wrong column,
-  // the band test passes vacuously and the landing resolves garbage (alpha
-  // ledger r143 reopen: page 2 selections jumped to page 4). The DOM rect
-  // stays authoritative for the VERTICAL line only (the r122 wrap-boundary
-  // ambiguity it was introduced for).
+  // the band test passes vacuously and the landing resolves garbage (page 2
+  // selections jumped to page 4). The DOM rect stays authoritative for the
+  // VERTICAL line only (the wrap-boundary ambiguity it was introduced for).
   const estimate = view.coordsAtPos(selection.head, dir === 1 ? -1 : 1)
   const x = (estimate.left + estimate.right) / 2
   // nearest gap in the pressed direction at this x (rect scan, not
@@ -150,7 +149,7 @@ function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
     const mid = view.posAtCoords({ left: x, top: (b.top + b.bottom) / 2 })
     if (!mid) {
       // still unresolvable: declining can at worst leave native to move one
-      // line; jumping could skip every remaining line on the page (bugbot)
+      // line; jumping could skip every remaining line on the page
       restore()
       return false
     }
@@ -196,7 +195,7 @@ function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
   }
   // a successful crossing clears the absorb marker: a LATER transient
   // failure at this same head must get its skipped tick again instead of
-  // falling straight to native (bugbot)
+  // falling straight to native
   lastConsumedHead = -1
   view.dispatch(view.state.tr.setSelection(next).scrollIntoView())
   return true
@@ -205,7 +204,7 @@ function crossPageGap(view: EditorView, dir: -1 | 1, extend: boolean): boolean {
 /** A vertical arrow press handed to native, with the gap doc-positions at
  *  press time: whatever native does, ONE press may cross at most ONE page
  *  boundary. Rect-based guards keep failing in ways we cannot fully
- *  enumerate (alpha ledger r143, twice reopened) — document positions are
+ *  enumerate (the fix reopened twice) — document positions are
  *  the only stable ground truth, so the invariant is enforced after the
  *  fact on native's own transaction. */
 let nativeArrow: {
@@ -278,7 +277,7 @@ export const PageGapNavExtension = Extension.create({
           // gaps between the old and new head. Inline gaps sit AT the first
           // position of the new page, so the endpoint on the far side of the
           // motion counts too: landing exactly on a downward gap position (or
-          // starting exactly on one going up) is a real crossing (bugbot)
+          // starting exactly on one going up) is a real crossing
           const crossed = pending.gapPositions.filter((gapPos) =>
             pending.dir === 1
               ? gapPos > pending.head && gapPos <= selection.head
@@ -297,10 +296,10 @@ export const PageGapNavExtension = Extension.create({
           // itself allows a cursor (inline widget), where Selection.near's
           // bias is a no-op — nudge one position in the motion direction so
           // an upward clamp really lands on the previous page's last line
-          // and a downward one on the new page's first (bugbot)
+          // and a downward one on the new page's first
           const firstGap = pending.dir === 1 ? Math.min(...crossed) : Math.max(...crossed)
           // never nudge onto or past the NEXT boundary: a degenerate one-
-          // position page would otherwise still be skipped (bugbot) — in that
+          // position page would otherwise still be skipped — in that
           // case stay on the gap position itself
           const neighborGap =
             pending.dir === 1
@@ -315,7 +314,7 @@ export const PageGapNavExtension = Extension.create({
           // the page after next — overshoot at equality. Upward, landing ON
           // the previous gap position IS the destination (it's that page's
           // first position), so only going strictly below it overshoots
-          // (bugbot: one-position pages were skipped on upward clamps).
+          // (one-position pages were skipped on upward clamps).
           const nudged =
             pending.dir === 1
               ? nudgedCandidate >= neighborGap

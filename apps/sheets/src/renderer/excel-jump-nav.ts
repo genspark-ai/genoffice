@@ -6,7 +6,7 @@
  * Excel stops at any cell with a value OR A FORMULA — so upstream skips
  * formula cells whose result is an empty string, and, worse, in cache mode
  * (values not materialized client-side) whole formula regions look blank and
- * Ctrl+Down sails past them to the sheet end (alpha: Merrick, v0.8.684).
+ * Ctrl+Down sails past them to the sheet end.
  *
  * Fix: re-register the eight jump shortcuts (move + expand × 4 directions)
  * at a higher priority with the same preconditions, backed by a faithful
@@ -469,7 +469,7 @@ export function registerExcelJumpNav(runtime: UniverRuntime): void {
       // extending — so upstream pairs its ExpandSelectionCommand with a scroll
       // controller listener that follows the moving edge. That listener keys
       // on upstream's command id and never fires for this override, leaving
-      // the viewport behind the growing selection (alpha feedback, v0.8.x,
+      // the viewport behind the growing selection (user report:
       // Ctrl+Shift+Down extended B2:B65 with no scroll). Reveal the moving
       // edge ourselves; the scroll no-ops when it is already visible.
       if (applied) {

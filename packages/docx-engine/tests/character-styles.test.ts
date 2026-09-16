@@ -287,8 +287,70 @@ describe('styleUpserts style write-back', () => {
     const stylesXml = await zip.file('word/styles.xml')!.async('string')
     expect(stylesXml.match(/w:styleId="MyQuote"/g)).toHaveLength(1)
     const reparsed2 = await parseDocx(saved2)
-    expect(reparsed2.styles.get('MyQuote')!.display).toMatchObject({ bold: true })
-    expect(reparsed2.styles.get('MyQuote')!.display?.italic).toBeUndefined()
+    // a re-upsert patches: bold added, the earlier italic/color kept
+    expect(reparsed2.styles.get('MyQuote')!.display).toMatchObject({
+      bold: true,
+      italic: true,
+      color: '595959',
+    })
+  })
+
+  it('patching an existing style keeps the children and attributes it does not name', async () => {
+    const { saveDocx, mergeStyleXml } = await import('../src/index')
+    const existing =
+      '<w:style w:type="paragraph" w:styleId="Body"><w:name w:val="Body Text"/>' +
+      '<w:basedOn w:val="Normal"/><w:link w:val="BodyChar"/><w:uiPriority w:val="9"/>' +
+      '<w:pPr><w:keepNext/><w:spacing w:before="240" w:after="120" w:line="276" w:lineRule="auto"/><w:ind w:left="720" w:hanging="360"/></w:pPr>' +
+      '<w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsiaTheme="minorEastAsia"/><w:b/><w:sz w:val="24"/></w:rPr></w:style>'
+    const out = mergeStyleXml(existing, {
+      styleId: 'Body',
+      pPr: { spaceAfterTwips: 0, firstLineTwips: 480, align: 'justify' },
+      rPr: { bold: false, italic: true, sizeHalfPoints: 22, eastAsiaFont: 'SimSun' },
+    })
+    expect(out).toContain('<w:basedOn w:val="Normal"/>')
+    expect(out).toContain('<w:link w:val="BodyChar"/>')
+    expect(out).toContain('<w:uiPriority w:val="9"/>')
+    expect(out).toContain('<w:keepNext/>')
+    expect(out).toContain('<w:spacing w:before="240" w:after="0" w:line="276" w:lineRule="auto"/>')
+    expect(out).toContain('<w:ind w:left="720" w:firstLine="480"/>')
+    expect(out).not.toContain('w:hanging')
+    expect(out).toContain('<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="SimSun"/>')
+    expect(out).toContain('<w:b w:val="0"/>')
+    expect(out).toContain('<w:i/>')
+    expect(out).toContain('<w:sz w:val="22"/><w:szCs w:val="22"/>')
+    // schema order: pPr children spacing < ind < jc; rPr b before i before sz
+    expect(out.indexOf('<w:spacing')).toBeLessThan(out.indexOf('<w:ind'))
+    expect(out.indexOf('<w:ind')).toBeLessThan(out.indexOf('<w:jc'))
+    expect(out.indexOf('<w:b ')).toBeLessThan(out.indexOf('<w:i/>'))
+    expect(out.indexOf('<w:pPr>')).toBeLessThan(out.indexOf('<w:rPr>'))
+    expect(out.indexOf('<w:uiPriority')).toBeLessThan(out.indexOf('<w:pPr>'))
+
+    const parsed = await parseDocx(
+      await buildDocx({ bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' }),
+    )
+    const blocks = parsed.blocks
+      .filter((b) => !b.hidden && b.docxIndex !== null)
+      .map((b) => ({ kind: 'original' as const, docxIndex: b.docxIndex! }))
+    const saved = await saveDocx(parsed, blocks, {
+      styleUpserts: [
+        { styleId: 'Heading1', pPr: { spaceBeforeTwips: 480 }, rPr: { color: 'FF0000' } },
+        {
+          styleId: 'Callout',
+          type: 'paragraph',
+          basedOn: 'Normal',
+          next: 'Normal',
+          rPr: { italic: true },
+        },
+      ],
+    })
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.styles.get('Heading1')!.headingLevel).toBe(1)
+    expect(reparsed.styles.get('Heading1')!.display?.color).toBe('FF0000')
+    expect(reparsed.styles.get('Callout')).toMatchObject({ name: 'Callout', basedOn: 'Normal' })
+    const zip = await (await import('jszip')).default.loadAsync(saved)
+    const stylesXml = await zip.file('word/styles.xml')!.async('string')
+    expect(stylesXml).toContain('<w:next w:val="Normal"/>')
+    expect(stylesXml.match(/w:styleId="Heading1"/g)).toHaveLength(1)
   })
 })
 

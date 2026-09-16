@@ -1,4 +1,5 @@
 import type { WorkbookStyleEdit } from '../shared/edit-schemas'
+import { isGradientFill, type FillSpec, type StyleColor } from '../domain/style-color'
 import { shortDateNumFmtId } from '../shared/short-date'
 
 /// Copy-on-write editor for xl/styles.xml. Existing entries are never
@@ -85,7 +86,7 @@ export class StylesheetEditor {
   /// Returns the cellXfs index of a format equal to the base format with the
   /// delta applied, appending new numFmt/font/fill/xf entries as needed.
   resolveStyle(baseXfIndex: number, delta: WorkbookStyleEdit): number {
-    const cacheKey = `${baseXfIndex}|${JSON.stringify(delta, Object.keys(delta).sort())}`
+    const cacheKey = `${baseXfIndex}|${stableJson(delta)}`
     const cached = this.cache.get(cacheKey)
     if (cached !== undefined) return cached
 
@@ -99,8 +100,10 @@ export class StylesheetEditor {
     if (hasFontDelta(delta)) {
       fontId = this.internFont(buildFont(this.fonts[fontId] ?? '<font/>', delta))
     }
-    if (delta.fillColor !== undefined) {
-      // Fill index 0 is the stylesheet's mandatory "none" pattern.
+    // Fill index 0 is the stylesheet's mandatory "none" pattern.
+    if (delta.fill !== undefined) {
+      fillId = delta.fill === null ? 0 : this.internFill(buildFill(delta.fill))
+    } else if (delta.fillColor !== undefined) {
       fillId = delta.fillColor === null ? 0 : this.internFill(buildSolidFill(delta.fillColor))
     }
     if (delta.numberFormat !== undefined) {
@@ -251,7 +254,7 @@ function buildFont(baseFontXml: string, delta: WorkbookStyleEdit): string {
   if (delta.fontColor !== undefined) {
     override(
       /<color\b[^>]*\/?>/g,
-      delta.fontColor === null ? '' : `<color rgb="${toArgb(delta.fontColor)}"/>`,
+      delta.fontColor === null ? '' : `<color ${colorAttributes(delta.fontColor)}/>`,
     )
   }
   if (delta.fontFamily !== undefined) {
@@ -261,8 +264,40 @@ function buildFont(baseFontXml: string, delta: WorkbookStyleEdit): string {
   return content === '' ? '<font/>' : `<font>${content}</font>`
 }
 
-function buildSolidFill(fillColor: string): string {
-  return `<fill><patternFill patternType="solid"><fgColor rgb="${toArgb(fillColor)}"/><bgColor indexed="64"/></patternFill></fill>`
+function buildSolidFill(fillColor: StyleColor): string {
+  return `<fill><patternFill patternType="solid"><fgColor ${colorAttributes(fillColor)}/><bgColor indexed="64"/></patternFill></fill>`
+}
+
+function buildFill(fill: FillSpec): string {
+  if (isGradientFill(fill)) {
+    const g = fill.gradient
+    const attributes = [
+      ...(g.type === 'path' ? ['type="path"'] : []),
+      ...(g.type !== 'path' && g.angle !== undefined ? [`degree="${g.angle}"`] : []),
+      ...(['left', 'right', 'top', 'bottom'] as const).flatMap((edge) =>
+        g.type === 'path' && g[edge] !== undefined ? [`${edge}="${g[edge]}"`] : [],
+      ),
+    ]
+    const stops = g.stops
+      .map(
+        (stop) =>
+          `<stop position="${stop.position}"><color ${colorAttributes(stop.color)}/></stop>`,
+      )
+      .join('')
+    const open =
+      attributes.length === 0 ? '<gradientFill>' : `<gradientFill ${attributes.join(' ')}>`
+    return `<fill>${open}${stops}</gradientFill></fill>`
+  }
+  if (fill.pattern === 'solid' && fill.bg === undefined) return buildSolidFill(fill.fg)
+  const bg = fill.bg === undefined ? '' : `<bgColor ${colorAttributes(fill.bg)}/>`
+  return `<fill><patternFill patternType="${fill.pattern}"><fgColor ${colorAttributes(fill.fg)}/>${bg}</patternFill></fill>`
+}
+
+/** CT_Color attributes: cached rgb for literals, theme index (+ tint) for theme slots */
+function colorAttributes(color: StyleColor): string {
+  if (typeof color === 'string') return `rgb="${toArgb(color)}"`
+  const tint = color.tint === undefined || color.tint === 0 ? '' : ` tint="${color.tint}"`
+  return `theme="${color.theme}"${tint}`
 }
 
 const BORDER_EDGE_TAGS = ['left', 'right', 'top', 'bottom'] as const
@@ -294,7 +329,7 @@ function buildBorder(baseBorderXml: string, delta: WorkbookStyleEdit): string {
     const edge = delta[BORDER_DELTA_KEYS[tag]]
     if (edge === undefined) return childOf(tag)
     if (edge === null) return `<${tag}/>`
-    const color = edge.color === undefined ? '' : `<color rgb="${toArgb(edge.color)}"/>`
+    const color = edge.color === undefined ? '' : `<color ${colorAttributes(edge.color)}/>`
     return color === ''
       ? `<${tag} style="${edge.style}"/>`
       : `<${tag} style="${edge.style}">${color}</${tag}>`
@@ -386,6 +421,19 @@ const XLSX_VERTICAL: Record<string, string> = {
   top: 'top',
   center: 'center',
   bottom: 'bottom',
+}
+
+/** key-sorted at every level: a replacer array would drop nested keys (border edges, fills) */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`)
+    return `{${entries.join(',')}}`
+  }
+  return JSON.stringify(value)
 }
 
 function internElement(list: string[], element: string): number {

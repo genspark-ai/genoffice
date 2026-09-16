@@ -1,3 +1,5 @@
+import type { NamedAction } from '@genoffice/pptx-engine'
+
 // Edit payload types shared by the op layer and the slides app IPC surface.
 
 /** One rich-text run (sent by the editor, with independent formatting). */
@@ -87,4 +89,7 @@ export interface ApplyEditScriptOp {
 }
 
 /** Element hyperlink target. */
-export type LinkTargetOp = { kind: 'url'; url: string } | { kind: 'slide'; slideIndex: number }
+export type LinkTargetOp =
+  | { kind: 'url'; url: string }
+  | { kind: 'slide'; slideIndex: number }
+  | { kind: 'action'; action: NamedAction }

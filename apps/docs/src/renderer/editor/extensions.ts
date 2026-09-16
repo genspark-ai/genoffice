@@ -229,7 +229,7 @@ const anchorAttrs = {
   contextualSpacing: { default: null as boolean | null },
   // never copied to the second half of an Enter split: Word's page break is a
   // character before the paragraph content, so a newline must not clone the
-  // break onto the new paragraph (alpha ledger r157)
+  // break onto the new paragraph
   pageBreakBefore: { default: false, keepOnSplit: false },
   /** RTL paragraph (w:bidi); align is already the visual value */
   bidi: { default: false },
@@ -282,7 +282,7 @@ const anchorAttrs = {
   /** JSON marks snapshot for an empty block's caret (Word's pilcrow
       formatting): stamped while the caret holds stored marks in an empty
       block, restored as storedMarks when the caret re-enters bare — arrow
-      navigation must not drop the pending format (alpha ledger r114) */
+      navigation must not drop the pending format */
   caretMarks: { default: null as string | null },
 }
 
@@ -489,7 +489,7 @@ function perLineFactors(node: PmNode): { strut: string; runs: RunFactorRange[] }
  * a crafted/corrupt payload can't smuggle wrong-typed values into the model.
  * Identity/anchor attrs stay out on purpose: a pasted paragraph is NEW content,
  * so docxIndex (save patch anchor), bookmarks, comment endpoints, sdtShell and
- * revision metadata must not be duplicated by copy/paste (alpha ledger r117).
+ * revision metadata must not be duplicated by copy/paste.
  */
 const CLIPBOARD_PARA_ATTR_TYPES: Record<string, 'string' | 'number' | 'boolean'> = {
   styleId: 'string',
@@ -1217,7 +1217,7 @@ export const WordSelectAllDelete = Extension.create({
 
 /**
  * Enter must replace ANY non-empty selection with a paragraph break (Word).
- * Two selection shapes broke the default chain (alpha ledger r125/r129):
+ * Two selection shapes broke the default chain:
  * - Ctrl+A's AllSelection: every command in the split chain declines
  *   (splitBlock needs a textblock-depth selection; AllSelection's ends sit at
  *   doc depth 0) — the press was a silent no-op.
@@ -1239,8 +1239,8 @@ export const EnterReplacesSelection = Extension.create({
         // Word keeps the formatting of the START of the replaced selection
         // for what is typed next; the split-off caret often sits in an
         // EMPTIED paragraph with no neighbor to inherit from, so the first
-        // deleted character's marks must ride along explicitly (alpha
-        // ledger r133: keyboard whole-line selections type in theme font)
+        // deleted character's marks must ride along explicitly (keyboard
+        // whole-line selections otherwise type in the theme font)
         // paragraph formatting of the START of the replaced range: when the
         // selection consumes whole paragraphs the delete leaves a DEFAULT
         // filler block, so style-derived fonts, alignment and the
@@ -1252,7 +1252,7 @@ export const EnterReplacesSelection = Extension.create({
           // sits at doc depth 0, where nodeAt returns the block, not a run)
           const marks = firstTextMarksIn(sel.$from.doc, sel.from, sel.to)
           // formatting only: comment/link/ins/del must not reattach to new
-          // typing (they are inclusive:false for the same reason — bugbot)
+          // typing (they are inclusive:false for the same reason)
           const found = (marks ?? sel.$from.marks()).filter((mark) =>
             FORMAT_MARKS.has(mark.type.name),
           )
@@ -1327,7 +1327,7 @@ export const WordEditorShortcuts = Extension.create({
       // content — at offset 0 that is the second half (the new empty line
       // above must not steal it), everywhere else the first (splitting must
       // not clone the break onto the new paragraph and turn Enter into
-      // another page jump — alpha ledger r157). TipTap's keepOnSplit only
+      // another page jump). TipTap's keepOnSplit only
       // filters end-of-paragraph splits, so mid-splits are fixed up here.
       Enter: () => {
         const { $from, empty } = this.editor.state.selection
@@ -1668,84 +1668,155 @@ function hostsAnchoredPicture(node: PmNode): boolean {
 
 function lineFactorDecos(doc: PmNode): DecorationSet {
   const decos: Decoration[] = []
-  doc.descendants((node, pos) => {
-    if (!LINE_FACTOR_BLOCKS.has(node.type.name)) return true
-    // a class decoration instead of a stylesheet :has(): Blink's :has()
-    // invalidation crashed the renderer (OOM) on long picture-heavy documents
-    if (hostsAnchoredPicture(node)) {
-      decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'doc-anchor-origin' }))
-    }
-    if (node.textContent && !isSpaceOnlyParagraph(node)) {
-      let cached = lineFactorCache.get(node)
-      if (cached === undefined) {
-        const perLine = perLineFactors(node)
-        let style = `--doc-line-factor:${perLine ? perLine.strut : paraLineFactor(node)}`
-        let cls: string | undefined
-        const fam = paraDeclaredFontFamily(node)
-        if (fam) style += `;font-family:${fam}`
-        else if (paraMixedDeclaredCjk(node)) cls = 'doc-grid-strut'
-        const strut = explicitStrutHalfPoints(node)
-        if (strut) style += `;${strutFontCss(strut).join(';')}`
-        cached = { style, ...(cls ? { cls } : {}), ...(perLine ? { runs: perLine.runs } : {}) }
-        lineFactorCache.set(node, cached)
-      }
-      decos.push(
-        Decoration.node(pos, pos + node.nodeSize, {
-          style: cached.style,
-          ...(cached.cls ? { class: cached.cls } : {}),
-        }),
-      )
-      if (cached.runs) {
-        for (const r of cached.runs) {
-          decos.push(
-            Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, {
-              class: 'doc-run-lf',
-              style: r.style,
-            }),
-          )
-        }
-      }
-      if (node.attrs.autoSpace !== false) {
-        for (const r of autospaceRanges(node)) {
-          decos.push(
-            Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { class: 'doc-autospace-pad' }),
-          )
-        }
-      }
-      // ・/〜 in SimSun-substituted runs: Word lifts the whole line to 1.7143 ×
-      // size (probe 2026-08-13); a taller inline strut reproduces the row lift.
-      // exact lineRule pins the line, so no lift there.
-      if (node.attrs.lineRule !== 'exact') {
-        const ranges = simsunGapRanges(node)
-        if (ranges.length > 0) {
-          const m =
-            Number(node.attrs.lineSpacing) ||
-            (node.attrs.lineRule === 'auto' && node.attrs.lineRawTwips
-              ? Number(node.attrs.lineRawTwips) / 240
-              : 1)
-          const gapStyle = `line-height:${cssSimsunGapLineExpr(m)}`
-          for (const r of ranges) {
-            decos.push(Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { style: gapStyle }))
-          }
-        }
-      }
-      // symbols Chromium justifies like ideographs stay unstretched in non-CJK
-      // paragraphs (Word stretches only their spaces); CJK paragraphs keep
-      // Chromium's inter-ideograph distribution around them
-      if (
-        (node.attrs.align === 'justify' || node.attrs.align === 'distribute') &&
-        !textHasCjk(node.textContent)
-      ) {
-        for (const r of justifySymbolOffsets(node)) {
-          decos.push(
-            Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { class: 'doc-justify-symbol' }),
-          )
-        }
-      }
-    }
-    return false
-  })
+  doc.descendants((node, pos) => pushLineFactorDecos(node, pos, decos))
   return DecorationSet.create(doc, decos)
+}
+
+/**
+ * Top-level blocks a transaction touched, as offsets in its final document;
+ * null when a step replaces so much that recomputing everything is cheaper.
+ */
+function touchedTopLevelBlocks(tr: Transaction): Set<number> | null {
+  const { doc } = tr
+  const maps = tr.mapping.maps
+  const ranges: Array<[number, number]> = []
+  let unknown = false
+  tr.steps.forEach((step, i) => {
+    // positions after step i, carried through the later steps into the final doc
+    const push = (start: number, end: number) => {
+      let from = start
+      let to = end
+      for (let j = i + 1; j < maps.length; j++) {
+        from = maps[j].map(from, -1)
+        to = maps[j].map(to, 1)
+      }
+      ranges.push([from, to])
+    }
+    let moved = false
+    maps[i].forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+      moved = true
+      push(newStart, newEnd)
+    })
+    if (moved) return
+    // mark and attribute steps leave positions alone but change the nodes
+    const s = step as { from?: unknown; to?: unknown; pos?: unknown }
+    if (typeof s.from === 'number' && typeof s.to === 'number') push(s.from, s.to)
+    else if (typeof s.pos === 'number') push(s.pos, s.pos + 1)
+    else unknown = true
+  })
+  if (unknown) return null
+  const touched = new Set<number>()
+  doc.forEach((node, offset) => {
+    const end = offset + node.nodeSize
+    if (ranges.some(([from, to]) => offset < to && end > from)) touched.add(offset)
+  })
+  return touched.size * 2 > doc.childCount ? null : touched
+}
+
+/**
+ * Only the touched top-level blocks recompute; every other block's
+ * decorations ride the mapping. Decorations are a pure function of the block
+ * node, so the result equals a full rebuild — without DecorationSet.create's
+ * scan of every span for every top-level block, which made each edit or
+ * streamed chunk cost (blocks × decorations) on long documents.
+ */
+function updateLineFactorDecos(old: DecorationSet, tr: Transaction): DecorationSet {
+  const { doc } = tr
+  const touched = touchedTopLevelBlocks(tr)
+  if (!touched) return lineFactorDecos(doc)
+  let set = old.map(tr.mapping, doc)
+  const decos: Decoration[] = []
+  for (const offset of touched) {
+    const node = doc.nodeAt(offset)
+    if (!node) continue
+    const end = offset + node.nodeSize
+    // find() also returns neighbours that merely touch the boundary
+    const stale = set.find(offset, end).filter((d) => d.from >= offset && d.to <= end)
+    if (stale.length) set = set.remove(stale)
+    if (pushLineFactorDecos(node, offset, decos)) {
+      node.descendants((child, pos) => pushLineFactorDecos(child, offset + 1 + pos, decos))
+    }
+  }
+  return decos.length ? set.add(doc, decos) : set
+}
+
+/** decorations of one node; returns whether to descend into its children */
+function pushLineFactorDecos(node: PmNode, pos: number, decos: Decoration[]): boolean {
+  if (!LINE_FACTOR_BLOCKS.has(node.type.name)) return true
+  // a class decoration instead of a stylesheet :has(): Blink's :has()
+  // invalidation crashed the renderer (OOM) on long picture-heavy documents
+  if (hostsAnchoredPicture(node)) {
+    decos.push(Decoration.node(pos, pos + node.nodeSize, { class: 'doc-anchor-origin' }))
+  }
+  if (node.textContent && !isSpaceOnlyParagraph(node)) {
+    let cached = lineFactorCache.get(node)
+    if (cached === undefined) {
+      const perLine = perLineFactors(node)
+      let style = `--doc-line-factor:${perLine ? perLine.strut : paraLineFactor(node)}`
+      let cls: string | undefined
+      const fam = paraDeclaredFontFamily(node)
+      if (fam) style += `;font-family:${fam}`
+      else if (paraMixedDeclaredCjk(node)) cls = 'doc-grid-strut'
+      const strut = explicitStrutHalfPoints(node)
+      if (strut) style += `;${strutFontCss(strut).join(';')}`
+      cached = { style, ...(cls ? { cls } : {}), ...(perLine ? { runs: perLine.runs } : {}) }
+      lineFactorCache.set(node, cached)
+    }
+    decos.push(
+      Decoration.node(pos, pos + node.nodeSize, {
+        style: cached.style,
+        ...(cached.cls ? { class: cached.cls } : {}),
+      }),
+    )
+    if (cached.runs) {
+      for (const r of cached.runs) {
+        decos.push(
+          Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, {
+            class: 'doc-run-lf',
+            style: r.style,
+          }),
+        )
+      }
+    }
+    if (node.attrs.autoSpace !== false) {
+      for (const r of autospaceRanges(node)) {
+        decos.push(
+          Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { class: 'doc-autospace-pad' }),
+        )
+      }
+    }
+    // ・/〜 in SimSun-substituted runs: Word lifts the whole line to 1.7143 ×
+    // size (probe 2026-08-13); a taller inline strut reproduces the row lift.
+    // exact lineRule pins the line, so no lift there.
+    if (node.attrs.lineRule !== 'exact') {
+      const ranges = simsunGapRanges(node)
+      if (ranges.length > 0) {
+        const m =
+          Number(node.attrs.lineSpacing) ||
+          (node.attrs.lineRule === 'auto' && node.attrs.lineRawTwips
+            ? Number(node.attrs.lineRawTwips) / 240
+            : 1)
+        const gapStyle = `line-height:${cssSimsunGapLineExpr(m)}`
+        for (const r of ranges) {
+          decos.push(Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { style: gapStyle }))
+        }
+      }
+    }
+    // symbols Chromium justifies like ideographs stay unstretched in non-CJK
+    // paragraphs (Word stretches only their spaces); CJK paragraphs keep
+    // Chromium's inter-ideograph distribution around them
+    if (
+      (node.attrs.align === 'justify' || node.attrs.align === 'distribute') &&
+      !textHasCjk(node.textContent)
+    ) {
+      for (const r of justifySymbolOffsets(node)) {
+        decos.push(
+          Decoration.inline(pos + 1 + r.from, pos + 1 + r.to, { class: 'doc-justify-symbol' }),
+        )
+      }
+    }
+  }
+  return false
 }
 
 /** ranges (relative to the block's content start) of Chromium's justification symbols */
@@ -1779,7 +1850,7 @@ export const LineFactorExtension = Extension.create({
             // inserting pad widgets next to an active IME composition aborts it;
             // keep the old set mapped and refresh on compositionend
             if (editor?.view?.composing) return old.map(tr.mapping, tr.doc)
-            return lineFactorDecos(tr.doc)
+            return updateLineFactorDecos(old, tr)
           },
         },
         props: {
@@ -2659,8 +2730,8 @@ export const DocTable = Node.create({
       // w:tblpX with horzAnchor="page" measures from the PAGE edge, not the
       // content box — subtract the left margin. And the offset is CLAMPED so
       // the table never hangs past the right content edge: unclamped
-      // page-anchored deal-doc captables rendered half off-page (alpha
-      // ledger, #genoffice-feedback task #6). Word keeps floats on the page.
+      // page-anchored captables rendered half off-page. Word keeps floats on
+      // the page.
       const fromPageEdge = node.attrs.tblFloatHorzAnchor === 'page'
       const tblWidth = Number(node.attrs.widthPx) || Number(node.attrs.tblFloatWidthPx) || 0
       const xSpec = node.attrs.tblFloatXSpec as string | null
@@ -3763,7 +3834,7 @@ function protectedDomSpec(node: PmNode): DomSpec {
     }
     const children: DomSpec[] = sideBox
       ? [sideWrappedBoxSpec(sideBox)]
-      : boxes.map(renderTextboxSpec)
+      : boxes.map((b) => renderTextboxSpec(b))
     // the anchor paragraph's own text (e.g. a heading sharing its paragraph
     // with a sidebar box) renders as a display-only line before the boxes
     if (strayRuns?.length) {
@@ -5732,7 +5803,7 @@ export interface SearchHighlight {
 }
 
 /**
- * Word's AutoFormat-as-you-type for links (alpha ledger r151): a URL followed
+ * Word's AutoFormat-as-you-type for links: a URL followed
  * by a space or Enter turns into a hyperlink. Runs on keydown BEFORE the key
  * itself applies (marks the URL, then lets the key proceed), matching Word's
  * behavior of linkifying the word just completed. Trailing punctuation stays

@@ -129,7 +129,6 @@ export const id = {
   appMoreItems: '+{count} lagi…',
   appTruncationNote: '{shown} pertama dari {total}',
   appGoToButtonTitle: 'Buka (Go To, ⌘G)',
-  appNameBoxTitle: 'Kotak Nama — ketik alamat atau nama, lalu tekan Enter',
   appPivotChartHintIn: 'Buat PivotChart dari PivotTable saat ini',
   appPivotChartHintOut:
     'Pilih dahulu sel di dalam area keluaran PivotTable, lalu pilih jenis bagan',

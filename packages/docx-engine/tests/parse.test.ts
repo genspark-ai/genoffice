@@ -120,6 +120,9 @@ describe('parseDocx', () => {
         '<w:style w:type="paragraph" w:styleId="MySub"><w:name w:val="My Sub"/><w:basedOn w:val="Heading2"/></w:style>' +
         // Word's TOCHeading pattern: basedOn Heading1 but outlineLvl 9 = body text
         '<w:style w:type="paragraph" w:styleId="TOCHeading"><w:name w:val="TOC Heading"/><w:basedOn w:val="Heading1"/>' +
+        '<w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>' +
+        // outline-off root style: no basedOn to resolve, the flag must still be set
+        '<w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/>' +
         '<w:pPr><w:outlineLvl w:val="9"/></w:pPr></w:style>',
       bodyXml: [
         p('<w:pStyle w:val="Heading1"/>', 'h1 via built-in style'),
@@ -145,6 +148,11 @@ describe('parseDocx', () => {
       ['paragraph', undefined],
       ['paragraph', undefined],
     ])
+    expect(doc.styles.get('TOCHeading')).toMatchObject({ headingOutlineOff: true })
+    expect(doc.styles.get('TOCHeading')?.headingLevel).toBeUndefined()
+    expect(doc.styles.get('Caption')).toMatchObject({ headingOutlineOff: true })
+    expect(doc.styles.get('Caption')?.headingLevel).toBeUndefined()
+    expect(doc.styles.get('MySub')).toMatchObject({ headingLevel: 2, headingLevelInherited: true })
   })
 })
 

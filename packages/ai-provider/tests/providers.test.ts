@@ -44,6 +44,12 @@ describe('provider model catalog', () => {
     expect(genspark.models).not.toContain('deep-seek-v4-flash-vision-exp-openrouter')
   })
 
+  it('serves DeepSeek V4.1 Flash through the Genspark proxy under its hyphenated pool id', () => {
+    const genspark = AI_PROVIDERS.find((provider) => provider.id === 'genspark')!
+    expect(genspark.models).toContain('deep-seek-v4.1-flash')
+    expect(genspark.models).not.toContain('deep-seek-v4-pro')
+  })
+
   it('keeps Responses-only models out of the OpenCode tiers (no such protocol yet)', () => {
     for (const id of ['opencode-zen', 'opencode-go'] as const) {
       const meta = AI_PROVIDERS.find((provider) => provider.id === id)!

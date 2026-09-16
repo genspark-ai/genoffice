@@ -24,6 +24,7 @@ Word-, Excel-, PowerPoint- en PDF-bestanden, bewerkt door jou en je AI, opgeslag
 <p align="center">
   <a href="#download"><b>Download</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
+  <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Website</b></a> ·
   <a href="https://genoffice.ai/join"><b>Community</b></a> ·
   <a href="../../PRIVACY.md"><b>Privacy</b></a>
@@ -185,6 +186,28 @@ venster te openen.
 </tr>
 </table>
 
+### 8 · MCP — dezelfde tools via het Model Context Protocol
+
+Elk `genoffice`-commando is ook een MCP-tool. Claude Code, Claude Desktop,
+Cursor en elke andere MCP-client kunnen zelf `genoffice mcp` starten,
+zonder skill om te installeren en zonder venster te openen, en krijgen 29
+tools plus de op-referenties als resources. Een tweede, HTTP-server in de
+app laat een agent een Word-document opbouwen in een zichtbaar
+editortabblad terwijl je toekijkt.
+
+<img src="../assets/readme/mcp-deck-motion.webp" alt="Time-lapse van Claude Code dat via de genoffice MCP-server een investeerderspresentatie van acht slides over hernieuwbare energie bouwt: zoekt naar figuren en foto's, controleert elke kandidaat-afbeelding met media, deck_start schrijft de stylesheet en de outline, deck_page voegt telkens één gecontroleerde pagina toe, deck_build stelt de .pptx samen en slides_render geeft een afbeelding van elke slide terug; het afgeronde deck opent daarna in GenOffice Slides" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/mcp-deck-in-app.webp" alt="GenOffice Slides toont het deck Renewable Energy 2026 van acht slides dat Claude Code via de genoffice MCP-server heeft gebouwd: de openingsslide met een foto van een windmolenpark op het canvas en acht miniaturen links"></td>
+<td width="50%"><img src="../assets/readme/mcp-integrations.webp" alt="GenOffice-instellingen, pagina Integraties, MCP-onderdeel: het eenregelige commando claude mcp add voor Claude Code, het JSON-blok voor Cursor, Claude Desktop en andere MCP-clients, en de optie voor de lokale HTTP-server daaronder"></td>
+</tr>
+<tr>
+<td><b>Eén prompt, 38 tool-aanroepen, geen terminal</b> — "Bouw een investeerderspresentatie van acht slides over hernieuwbare energie in 2026, met een echte foto op de omslag en overal waar een foto helpt." De agent haalt de figuren en de foto's op met <code>search</code>, vraagt <code>media</code> of elke kandidaat-afbeelding een echte foto is, roept <code>deck_start</code> aan met een stylesheet en een outline, daarna <code>deck_page</code> één keer per slide; elke pagina wordt tegen de outline en het kleurenpalet gecontroleerd voordat ze wordt bewaard, <code>deck_build</code> stelt de <code>.pptx</code> samen, <code>slides_audit</code> zoekt naar overloop, <code>slides_render</code> geeft per slide een PNG terug als beeldinhoud die het model kan bekijken, en <code>deck_replace</code> verbetert de drie pagina's die niet bevielen.</td>
+<td><b>Eén keer verbinden, via Instellingen → Integraties</b> — kopieer de <code>claude mcp add</code>-regel voor Claude Code, of het JSON-blok in Cursor, Claude Desktop of een andere MCP-client. Optie B schakelt de lokale HTTP-server in voor de zichtbare Word-editor. Beide worden beschreven in <a href="#mcp-server">MCP-server</a>.</td>
+</tr>
+</table>
+
 ## Waarom GenOffice
 
 - **Open source**, Apache-2.0, in het openbaar ontwikkeld op GitHub.
@@ -204,9 +227,9 @@ venster te openen.
   naar Word, Excel of PowerPoint on-device, met systeem-OCR voor scans.
 - **Ook Markdown en HTML**, met hetzelfde AI-paneel en lokale export naar
   Word.
-- **Scriptbaar.** Een `genoffice`-opdrachtregel en een agent-skill stellen
-  elke engine ter beschikking van Claude Code, Codex, Cursor en andere coding
-  agents, nog altijd on-device.
+- **Scriptbaar.** Een `genoffice`-opdrachtregel, een agent-skill en een
+  MCP-server stellen elke engine ter beschikking van Claude Code, Claude
+  Desktop, Codex, Cursor en andere agents, nog altijd on-device.
 - **Gratis**, voor individuen en teams.
 
 ## AI-backends
@@ -243,8 +266,9 @@ documentenwerker die echte Office-bestanden oplevert in plaats van
 Markdown-benaderingen.
 
 **Werkt met:** Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot,
-OpenCode en Windsurf direct uit de doos, en met elke andere agent die skills
-leest.
+OpenCode en Windsurf direct uit de doos, met elke andere agent die skills
+leest, en, via de [MCP-server](#mcp-server), Claude Desktop en elke
+MCP-client.
 
 ### De skill installeren
 
@@ -300,6 +324,67 @@ genoffice open deck/solar-system.pptx
 Binnen `genoffice` vindt geen enkele modelaanroep plaats: de agent doet het
 denkwerk, de CLI het bouwen en controleren, en het resultaat opent in
 GenOffice of PowerPoint als een gewone `.pptx`.
+
+<a id="mcp-server"></a>
+
+### MCP-server
+
+Dezelfde commando's zijn ook beschikbaar als
+[Model Context Protocol](https://modelcontextprotocol.io)-tools, voor
+assistenten die geen terminal kunnen draaien of waaraan je liever geen
+terminal geeft. Er zijn twee manieren om te verbinden, allebei getoond met
+kant-en-klare snippets in **Instellingen → Integraties → MCP**:
+
+| Manier                               | Wat het is                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A · `genoffice mcp`** (aanbevolen) | Een stdio-server die de assistent zelf start; GenOffice hoeft niet open te staan. Eén tool per commando (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) plus de gefaseerde deck-flow `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Ops, specs en Markdown worden inline doorgegeven, dus werkt ook een client zonder bestandssysteem. |
+| **B · Lokale HTTP-server**           | Draait binnen de GenOffice-app op `http://127.0.0.1:3093/mcp` (Streamable HTTP, met legacy SSE). De tools ervan sturen een zichtbaar Word-editortabblad aan: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session`, en je ziet het document vorm aannemen. Standaard uit; zet hem aan in hetzelfde instellingenscherm.                                                                                                                                         |
+
+```bash
+# Claude Code
+claude mcp add --transport stdio genoffice -- genoffice mcp
+```
+
+```jsonc
+// Cursor, Claude Desktop of een andere MCP-client
+{ "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
+```
+
+`genoffice` is hier de CLI die met de app wordt meegeleverd (op macOS
+`/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; het
+instellingenscherm toont het exacte pad voor jouw installatie). De server
+draagt zijn eigen workflow-instructies mee en stelt de op-referenties
+beschikbaar als `genoffice://guide/*`-resources, dus is er geen skill
+nodig; de skill en de MCP-server kunnen naast elkaar bestaan en de
+assistent kiest er één. Cloudfuncties (`search`, `image`, `media`) lopen
+nog steeds via de provider die in GenOffice is ingesteld; al het andere
+draait lokaal, en `GENOFFICE_ALLOWED_ROOTS` beperkt elke tool tot de
+mappen die je opgeeft.
+
+Het deck over hernieuwbare energie uit de demo hierboven laat zien hoe één
+prompt in Claude Code met alleen de `genoffice` MCP-server aangesloten er
+aan de protocolkant uitziet:
+
+```text
+capabilities · guide(slides, spec) · guide(slides, design)
+search(query) ×4                         → IEA, BNEF and IRENA figures for the slides
+search(query, images) ×7 · media(url, ask) ×7
+                                         → candidate photos, each one checked to be a real photograph
+deck_start(dir, style, outline)          → outline checked: 8 pages to write
+deck_page(dir, 0, page) … deck_page(dir, 7, page)
+                                         → each page checked against the outline and the palette; one page sent again
+deck_build(dir, out)                     → renewables-2026.pptx, no image failures
+slides_audit(file) · slides_render(file, out)
+                                         → no layout findings; 8 PNGs come back as image content
+deck_replace(dir, n, page) ×3 · slides_render(file, out)
+                                         → three pages fixed after looking at the renders
+```
+
+Achtendertig aanroepen, ongeveer dertien minuten, en de assistent heeft
+nooit een terminal aangeraakt: de figuren, de foto's, de gidsen, de
+controles en de renders reisden allemaal als MCP-tool-resultaten. Alleen
+`search` en `media` verlieten de machine, naar de provider die in
+GenOffice is geconfigureerd.
 
 <a id="download"></a>
 

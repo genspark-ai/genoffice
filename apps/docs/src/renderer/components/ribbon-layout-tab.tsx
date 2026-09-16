@@ -200,7 +200,7 @@ export function LayoutTab({
     const shown = Math.round(twips * PT_PER_TWIP)
     // selection identity in the key: a commit that leaves the LIVE
     // selection's value unchanged must still remount the field, or it keeps
-    // showing the number just applied to a different paragraph (bugbot)
+    // showing the number just applied to a different paragraph
     const selFrom = editor.state.selection.from
     return (
       <label className="layout-num" data-tip={title}>
@@ -217,7 +217,7 @@ export function LayoutTab({
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           }}
           // the paragraphs the entry is FOR: by blur, a click may already have
-          // moved the live selection elsewhere (bugbot)
+          // moved the live selection elsewhere
           onFocus={() => {
             const { from, to } = editor.state.selection
             ptInputTargetRef.current = { from, to }
@@ -240,7 +240,7 @@ export function LayoutTab({
             }
             // regardless of whether anything changed: Enter-blur (no
             // relatedTarget) hands focus back to the editor; a blur INTO
-            // another control must not steal it back (bugbot ×2)
+            // another control must not steal it back
             if (!e.relatedTarget) editor.commands.focus()
           }}
         />

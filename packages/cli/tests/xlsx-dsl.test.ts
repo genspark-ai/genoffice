@@ -5,20 +5,13 @@ import { describe, expect, it } from 'vitest'
 import { patchToStyleEdit } from '../src/formats/xlsx-dsl'
 import { xlsxSidecarPath } from '../src/resources'
 import { run, tempDir } from './helpers'
+import { book, cells } from './xlsx-helpers'
 
 const sidecar = Boolean(xlsxSidecarPath())
 
 async function part(path: string, name: string): Promise<string> {
   const zip = await JSZip.loadAsync(readFileSync(path))
   return zip.file(name)!.async('string')
-}
-
-async function book(dir: string, rows: unknown[][]): Promise<string> {
-  const table = join(dir, 'table.json')
-  writeFileSync(table, JSON.stringify(rows))
-  const out = join(dir, 'book.xlsx')
-  expect((await run(['create', '--type', 'xlsx', '--from', table, '--out', out])).code).toBe(0)
-  return out
 }
 
 describe('genoffice sheet apply --ops (workbook DSL)', () => {
@@ -101,14 +94,36 @@ describe('genoffice sheet apply --ops (workbook DSL)', () => {
     expect(sheet).toMatch(/<c r="A2"[^>]*>/)
   })
 
-  it('refuses unsupported ops and mixed batches with a usage error', async () => {
+  it('takes the source sheet of a copy by name', async () => {
+    const dir = tempDir()
+    const out = await book(dir, [
+      ['item', 'qty'],
+      ['Apple', 2],
+    ])
+    const add = join(dir, 'add.json')
+    writeFileSync(add, JSON.stringify([{ op: 'add_sheet', name: 'Notes' }]))
+    expect((await run(['sheet', 'apply', out, '--ops', add, '--json'])).code).toBe(0)
+    const copy = join(dir, 'copy.json')
+    writeFileSync(
+      copy,
+      JSON.stringify([
+        { op: 'copy_range', sheet: 'Notes', sourceSheet: 'table', source: 'A1:B2', target: 'A1' },
+      ]),
+    )
+    expect((await run(['sheet', 'apply', out, '--ops', copy, '--json'])).code).toBe(0)
+    const notes = await part(out, 'xl/worksheets/sheet2.xml')
+    expect(notes).toMatch(/<c r="A2"[^>]*>/)
+    expect(notes).toMatch(/<c r="B2"[^>]*><v>2<\/v>/)
+    const guide = await run(['guide', 'sheets', 'copy_range'])
+    expect(guide.stdout).toContain('sourceSheet?')
+    expect(guide.stdout).not.toContain('sourceSheetId')
+  })
+
+  it('refuses unsupported ops, runs structural and content ops in one batch', async () => {
     const dir = tempDir()
     const out = await book(dir, [['a']])
     const bad = join(dir, 'bad.json')
-    writeFileSync(
-      bad,
-      JSON.stringify([{ op: 'add_sparkline', sheet: 'table', dataRange: 'A1:B2', type: 'line' }]),
-    )
+    writeFileSync(bad, JSON.stringify([{ op: 'refresh_pivot', sheet: 'table' }]))
     const r = await run(['sheet', 'apply', out, '--ops', bad, '--json'])
     expect(r.code).toBe(1)
     expect(r.json().message).toContain('not available headless')
@@ -124,8 +139,11 @@ describe('genoffice sheet apply --ops (workbook DSL)', () => {
       ]),
     )
     const m = await run(['sheet', 'apply', out, '--ops', mixed, '--json'])
-    expect(m.code).toBe(1)
-    expect(m.json().message).toContain('rejected')
+    expect(m.code).toBe(0)
+    expect(m.json().detail).toMatchObject({ cells: 1, structural: 1 })
+    const shifted = await cells(out, 'xl/worksheets/sheet1.xml')
+    expect(shifted.get('A1')).toEqual({ value: 'x' })
+    expect(shifted.get('A2')).toEqual({ value: 'a' })
 
     const nosheet = join(dir, 'nosheet.json')
     writeFileSync(
@@ -164,6 +182,45 @@ describe('genoffice sheet apply --ops (workbook DSL)', () => {
       borderLeft: { style: 'thin', color: '#000000' },
       borderRight: { style: 'thin', color: '#000000' },
     })
+    expect(
+      patchToStyleEdit({
+        fontColor: 'accent1+40%',
+        fillColor: { theme: 'dk2', tint: -0.25 },
+        border: { type: 'top', color: 'tx1' },
+      }),
+    ).toEqual({
+      fontColor: { theme: 4, tint: 0.4 },
+      fillColor: { theme: 3, tint: -0.25 },
+      borderTop: { style: 'thin', color: { theme: 1 } },
+    })
+    expect(
+      patchToStyleEdit({
+        fillColor: '#ffffff',
+        fill: {
+          gradient: {
+            angle: 90,
+            stops: [
+              { position: 0, color: 'accent2' },
+              { position: 1, color: '#FFFFFF' },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      fill: {
+        gradient: {
+          angle: 90,
+          stops: [
+            { position: 0, color: { theme: 5 } },
+            { position: 1, color: '#FFFFFF' },
+          ],
+        },
+      },
+    })
+    expect(patchToStyleEdit({ fill: { pattern: 'lightGray', fg: '#ff0000' } })).toEqual({
+      fill: { pattern: 'lightGray', fg: '#FF0000' },
+    })
+    expect(patchToStyleEdit({ fill: null })).toEqual({ fill: null })
     expect(patchToStyleEdit({ textRotation: 'vertical', border: { type: 'none' } })).toEqual({
       textRotation: 255,
       borderTop: null,
@@ -204,6 +261,45 @@ describe('genoffice sheet apply --ops (workbook DSL)', () => {
     const unknown = await run(['sheet', 'apply', out, '--ops', ops, '--sheet', 'Nope', '--json'])
     expect(unknown.code).toBe(1)
     expect(unknown.json().detail.sheets).toEqual(['table'])
+  })
+
+  it('lets a later fillColor replace an earlier pattern or gradient fill on the same cell', async () => {
+    const dir = tempDir()
+    const out = await book(dir, [['a', 'b', 'c']])
+    const ops = join(dir, 'ops.json')
+    const gradient = {
+      gradient: {
+        angle: 90,
+        stops: [
+          { position: 0, color: '#112233' },
+          { position: 1, color: '#FFFFFF' },
+        ],
+      },
+    }
+    writeFileSync(
+      ops,
+      JSON.stringify([
+        {
+          op: 'format_range',
+          range: 'A1:C1',
+          format: { fill: { pattern: 'lightGray', fg: '#445566' } },
+        },
+        { op: 'format_range', range: 'A1', format: { fillColor: '#00FF00' } },
+        { op: 'format_range', range: 'B1', format: { fill: gradient } },
+        { op: 'format_range', range: 'B1', format: { fillColor: null } },
+        { op: 'format_range', range: 'C1', format: { fillColor: '#FF0000' } },
+        { op: 'format_range', range: 'C1', format: { fill: gradient } },
+      ]),
+    )
+    expect((await run(['sheet', 'apply', out, '--ops', ops])).code).toBe(0)
+    const styles = await part(out, 'xl/styles.xml')
+    expect(styles).toContain('<patternFill patternType="solid"><fgColor rgb="FF00FF00"/>')
+    expect(styles).toContain('<gradientFill degree="90">')
+    expect(styles).not.toContain('lightGray')
+    expect(styles).not.toContain('FF0000')
+    const sheet = await part(out, 'xl/worksheets/sheet1.xml')
+    const b1 = /<c r="B1"[^>]*>/.exec(sheet)![0]
+    expect(b1).not.toMatch(/ s="[1-9]/)
   })
 
   it.skipIf(!sidecar)('caches formula results when the same batch renames the sheet', async () => {

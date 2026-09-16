@@ -11,7 +11,7 @@ process.env.GENOFFICE_DEBUG_HOOKS = '1'
 
 /**
  * Regression for "Ctrl+Shift+Down extends the selection but the viewport
- * stays put" (alpha feedback): the reveal on SetSelectionsOperation
+ * stays put" (user report): the reveal on SetSelectionsOperation
  * scrolls to the anchor cell, which never moves while extending, so the
  * grid never followed the selection off-screen. The jump-nav override must
  * scroll the moving edge into view — and back when the selection shrinks.
@@ -86,7 +86,7 @@ test.describe('sheets: ctrl+shift+arrow scroll follow', () => {
         await debug.univerAPI.getActiveWorkbook().getActiveSheet().getRange(0, 0).setValue(42)
       })
       await sheets.mouse.click(grid.x + 46 + 43, grid.y + 24 + 12)
-      await expect(sheets.locator('.name-box')).toHaveValue('A1')
+      await expect(sheets.locator('[data-u-comp="defined-name"] input')).toHaveValue('A1')
       const before = await gridState(sheets)
       expect(before.visible.startRow).toBe(0)
       expect(before.selection).toEqual({ startRow: 0, endRow: 0 })

@@ -25,6 +25,33 @@ class FakeDxfs {
 const range = { startRow: 0, endRow: 4, startColumn: 0, endColumn: 0 }
 
 describe('applyCfRules', () => {
+  it('appends after the existing sections with a free priority', () => {
+    const dxfs = new FakeDxfs()
+    const xml = applyCfRules(
+      SHEET,
+      [
+        {
+          ranges: [{ startRow: 0, endRow: 0, startColumn: 1, endColumn: 1 }],
+          stopIfTrue: false,
+          rule: {
+            type: 'highlightCell',
+            subType: 'number',
+            operator: 'greaterThan',
+            value: 5,
+            style: { bg: { rgb: '#FFF2CC' } },
+          },
+        },
+      ],
+      dxfs,
+      { append: true },
+    )
+    expect(xml).toContain('type="cellIs" dxfId="0" priority="1" operator="lessThan"')
+    expect(xml.match(/<conditionalFormatting\b/g)).toHaveLength(2)
+    expect(xml.indexOf('sqref="B1"')).toBeGreaterThan(xml.indexOf('sqref="A1:A5"'))
+    expect(xml).toMatch(/sqref="B1"><cfRule type="cellIs" dxfId="0" priority="2"/)
+    expect(xml.indexOf('</conditionalFormatting><pageMargins')).toBeGreaterThan(0)
+  })
+
   it('replaces every existing section with the snapshot', () => {
     const dxfs = new FakeDxfs()
     const xml = applyCfRules(

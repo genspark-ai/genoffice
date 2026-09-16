@@ -30,7 +30,7 @@ describe('sseLines', () => {
   })
 
   it('flushes a truncated multibyte tail instead of dropping it silently', async () => {
-    const head = new TextEncoder().encode('data: 中')
+    const head = new TextEncoder().encode('data: \u4e2d')
     // A stream cut inside the next char (E4… with no completion bytes coming):
     // without a final decode() the buffered byte is discarded silently.
     const body = new ReadableStream<Uint8Array>({
@@ -44,7 +44,7 @@ describe('sseLines', () => {
     for await (const line of sseLines(body)) {
       lines.push(line)
     }
-    expect(lines).toEqual(['data: 中�'])
+    expect(lines).toEqual(['data: \u4e2d\ufffd'])
   })
 
   it('releases the reader when the consumer abandons mid-stream', async () => {

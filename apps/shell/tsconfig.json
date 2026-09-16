@@ -18,7 +18,9 @@
       "@genoffice/i18n": ["../../packages/i18n/src/index.ts"],
       "@genoffice/ui": ["../../packages/ui/src/index.ts"],
       "@genoffice/pptx-engine": ["../../packages/pptx-engine/src/index.ts"],
-      "@genoffice/cli/install": ["../../packages/cli/src/install.ts"]
+      "@genoffice/cli/install": ["../../packages/cli/src/install.ts"],
+      "@genoffice/cli/agent-skills": ["../../packages/cli/src/agent-skills.ts"],
+      "@genoffice/cli/control-protocol": ["../../packages/cli/src/control-protocol.ts"]
     }
   },
   "include": [

@@ -4,7 +4,7 @@
  * ProseMirror instead keeps the pending format in transient storedMarks,
  * which any selection move clears; the caret then re-derives marks from
  * adjacent text, and an empty paragraph has none — so navigation silently
- * reset new paragraphs to the document default (alpha ledger r114).
+ * reset new paragraphs to the document default.
  *
  * This extension gives empty blocks a pilcrow memory via the shared
  * `caretMarks` attr: while the caret sits in an empty block *with* stored

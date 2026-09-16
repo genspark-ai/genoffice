@@ -29,6 +29,7 @@ import type {
   NoteInfo,
   NoteProps,
   HfImage,
+  PictureWatermarkInfo,
   HfTextBox,
   HfParagraph,
   HfTableCell,
@@ -58,7 +59,12 @@ import type {
   ThemeColors,
   ThemeFonts,
 } from './types'
-import { readWatermarkShape, readWatermarkText } from './watermark'
+import {
+  isPictureWatermarkShape,
+  readPictureWatermark,
+  readWatermarkShape,
+  readWatermarkText,
+} from './watermark'
 import {
   attrsOf,
   boolProp,
@@ -541,6 +547,7 @@ export async function parseDocx(
     ...(fontTable.length > 0 ? { fontTable } : {}),
     ...(embeddedFonts.length > 0 ? { embeddedFonts } : {}),
     watermarkText: header?.watermark ?? null,
+    watermarkPicture: header?.watermarkPicture ?? null,
     headerText: header?.text ?? null,
     headerParas: header?.paras ?? null,
     footerParas: footer?.paras ?? null,
@@ -3520,6 +3527,7 @@ const RESULT_FORMAT_SKIP = new Set([
   'refInstr',
   'instrField',
   'fldBeginXml',
+  'fldDirty',
   'sdtCheckboxXml',
   'commentIds',
   'ins',
@@ -3617,6 +3625,7 @@ function extractRuns(
   let fieldCached = ''
   let fieldCachedRuns: Run[] = []
   let fieldBeginRun: XNode | null = null
+  let fieldDirty = false
   const eqField = (instr: string) => (/^\s*EQ\b/i.test(instr) ? eqFieldToOmml(instr) : null)
   // formatting of the field result: the first cached run, else the field code's rPr
   const resultFormat = (): Partial<Run> => {
@@ -3688,6 +3697,7 @@ function extractRuns(
           fieldCached = ''
           fieldCachedRuns = []
           fieldBeginRun = node
+          fieldDirty = /^(?:true|1)$/.test(String(attrsOf(fldChar)['w:dirty'] ?? ''))
         }
       } else if (type === 'separate') {
         if (fieldDepth === 1) fieldSeparated = true
@@ -3700,7 +3710,15 @@ function extractRuns(
           if (xe) pushRun({ text: '', xeTerm: xe[1] ?? xe[2] }, rev)
           else if (ref) {
             const name = ref[1] ?? ref[2]
-            pushRun({ text: fieldCached || name, refField: name, refInstr: fieldInstr }, rev)
+            pushRun(
+              {
+                text: fieldCached || name,
+                refField: name,
+                refInstr: fieldInstr,
+                ...(fieldDirty ? { fldDirty: true } : {}),
+              },
+              rev,
+            )
           } else if (hyper) {
             // fold the field into plain link runs (the cached result keeps its
             // formatting); regeneration emits w:hyperlink + a fresh rel
@@ -3747,7 +3765,12 @@ function extractRuns(
           } else if (SIMPLE_INLINE_FIELD_RE.test(fieldInstr)) {
             // an unformatted result run would drop to the paragraph default size
             pushRun(
-              { ...resultFormat(), text: fieldCached || ' ', instrField: fieldInstr.trim() },
+              {
+                ...resultFormat(),
+                text: fieldCached || ' ',
+                instrField: fieldInstr.trim(),
+                ...(fieldDirty ? { fldDirty: true } : {}),
+              },
               rev,
             )
           } else if (eqField(fieldInstr)) {
@@ -3872,11 +3895,31 @@ function extractRuns(
     const format = cached[0]
       ? Object.fromEntries(Object.entries(cached[0]).filter(([k]) => !RESULT_FORMAT_SKIP.has(k)))
       : {}
+    const dirty = /^(?:true|1)$/.test(String(attrsOf(node)['w:dirty'] ?? ''))
     if (xe) pushRun({ text: '', xeTerm: xe[1] ?? xe[2] }, rev)
     else if (ref) {
       const name = ref[1] ?? ref[2]
-      pushRun({ ...format, text: text || name, refField: name, refInstr: ` ${instr.trim()} ` }, rev)
-    } else pushRun({ ...format, text: text || ' ', instrField: instr.trim() }, rev)
+      pushRun(
+        {
+          ...format,
+          text: text || name,
+          refField: name,
+          refInstr: ` ${instr.trim()} `,
+          ...(dirty ? { fldDirty: true } : {}),
+        },
+        rev,
+      )
+    } else {
+      pushRun(
+        {
+          ...format,
+          text: text || ' ',
+          instrField: instr.trim(),
+          ...(dirty ? { fldDirty: true } : {}),
+        },
+        rev,
+      )
+    }
   }
   const walk = (nodes: XNode[], link?: Run['link'], rev?: RevCtx) => {
     for (const node of nodes) {
@@ -5206,6 +5249,7 @@ async function hfImages(zip: JSZip, partPath: string, partXml: string): Promise<
     if (/position:absolute/.test(style)) {
       image.floating = true
       if (/z-index:\s*-/.test(style)) image.behind = true
+      if (isPictureWatermarkShape(frag)) image.watermark = true
       const rot = vmlRotationDeg(style)
       if (rot != null) image.rotationDeg = rot
       vmlFloatAnchor(style, image)
@@ -5613,7 +5657,13 @@ function hfContentFromXml(
   tableMedia?: Map<string, string>,
   compatibilityMode = 0,
   themeFonts?: ThemeFonts | null,
-): { text: string; hasPageNumber: boolean; watermark: string | null; paras: HfParagraph[] } {
+): {
+  text: string
+  hasPageNumber: boolean
+  watermark: string | null
+  watermarkPicture: PictureWatermarkInfo | null
+  paras: HfParagraph[]
+} {
   // Rewrite each field span (begin..end) for display. PAGE and NUMPAGES become
   // private-use markers (the renderer substitutes real numbers; a literal '#'
   // in the part text must never be mistaken for the field), dropping their
@@ -5680,6 +5730,7 @@ function hfContentFromXml(
     text: plainText(cleaned),
     hasPageNumber,
     watermark: kind === 'header' ? readWatermarkText(xml) : null,
+    watermarkPicture: kind === 'header' ? readPictureWatermark(xml) : null,
     // strip leftover field chars so the page marker parses as plain text
     paras: hfParagraphs(
       cleaned.replace(/<w:fldChar[^>]*?(?:\/>|>\s*<\/w:fldChar>)/g, ''),
@@ -5707,6 +5758,7 @@ async function readHeaderFooterPart(
   text: string
   hasPageNumber: boolean
   watermark: string | null
+  watermarkPicture: PictureWatermarkInfo | null
   paras: HfParagraph[]
   images?: HfImage[]
 } | null> {

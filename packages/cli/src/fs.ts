@@ -1,4 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import {
   basename,
   delimiter,
@@ -11,7 +22,10 @@ import {
   sep,
 } from 'node:path'
 import { assertNotOpenInGui } from './gui'
-import { CliError, EXIT } from './result'
+import { assertPackageWithinLimits } from './limits'
+import { CliError, EXIT, type ErrorHints } from './result'
+
+const MISSING: ErrorHints = { reason: 'missing_argument' }
 
 /** What path resolution needs from the command context. */
 export interface PathContext {
@@ -66,8 +80,10 @@ export function assertAllowed(
     throw new CliError(
       EXIT.file,
       `refusing to ${purpose} outside GENOFFICE_ALLOWED_ROOTS: ${abs}`,
+      { allowed_roots: roots },
       {
-        allowed_roots: roots,
+        reason: 'outside_allowed_roots',
+        suggestion: 'use a path under one of detail.allowed_roots',
       },
     )
   }
@@ -75,12 +91,50 @@ export function assertAllowed(
 }
 
 export function resolveInput(path: string | undefined, ctx: PathContext): string {
-  if (!path) throw new CliError(EXIT.usage, 'missing <file> argument')
+  if (!path) throw new CliError(EXIT.usage, 'missing <file> argument', undefined, MISSING)
   const abs = isAbsolute(path) ? path : resolve(ctx.cwd, path)
   assertAllowed(abs, ctx.env, 'read')
   if (!existsSync(abs)) throw new CliError(EXIT.file, `file not found: ${abs}`)
   if (!statSync(abs).isFile()) throw new CliError(EXIT.file, `not a file: ${abs}`)
+  assertPackageWithinLimits(abs, extension(abs))
   return abs
+}
+
+/** Windows: antivirus or the indexer briefly locks the rename target. */
+const RETRYABLE_RENAME = new Set(['EPERM', 'EACCES', 'EBUSY'])
+const RENAME_RETRIES = 4
+
+/**
+ * Same-directory temp file + rename: an interrupted `apply` leaves the old
+ * file or the new one, never a truncated one. Mirrors the app's atomic-write:
+ * the target's mode is kept, a locked target is retried with backoff and,
+ * failing that, overwritten in place so a finished edit is never dropped.
+ */
+export function writeOutput(abs: string, bytes: Uint8Array | string): void {
+  const tmp = join(dirname(abs), `.${basename(abs)}.${randomBytes(6).toString('hex')}.tmp`)
+  const mode = existsSync(abs) ? statSync(abs).mode & 0o7777 : undefined
+  try {
+    writeFileSync(tmp, bytes, mode === undefined ? {} : { mode })
+    if (mode !== undefined) chmodSync(tmp, mode)
+    for (let attempt = 0; ; attempt++) {
+      try {
+        renameSync(tmp, abs)
+        return
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code ?? ''
+        if (!RETRYABLE_RENAME.has(code)) throw err
+        if (attempt >= RENAME_RETRIES) {
+          writeFileSync(abs, bytes)
+          rmSync(tmp, { force: true })
+          return
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50 * 2 ** attempt)
+      }
+    }
+  } catch (err) {
+    rmSync(tmp, { force: true })
+    throw err
+  }
 }
 
 export interface OutputOptions {
@@ -103,10 +157,13 @@ export function resolveOutput(
   opts: OutputOptions = {},
 ): string {
   const abs = spec ? (isAbsolute(spec) ? spec : resolve(ctx.cwd, spec)) : opts.fallback
-  if (!abs) throw new CliError(EXIT.usage, 'missing --out <path>')
+  if (!abs) throw new CliError(EXIT.usage, 'missing --out <path>', undefined, MISSING)
   assertAllowed(abs, ctx.env, 'write')
   if (opts.fresh && !opts.force && existsSync(abs)) {
-    throw new CliError(EXIT.file, `output exists: ${abs} (use --force to overwrite)`)
+    throw new CliError(EXIT.file, `output exists: ${abs} (use --force to overwrite)`, undefined, {
+      reason: 'output_exists',
+      suggestion: 'pass --force to overwrite, or choose another --out',
+    })
   }
   if (!opts.force) assertNotOpenInGui(abs, ctx.env)
   mkdirSync(dirname(abs), { recursive: true })

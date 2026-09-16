@@ -129,7 +129,6 @@ export const ms = {
   appMoreItems: '+{count} lagi…',
   appTruncationNote: '{shown} pertama daripada {total}',
   appGoToButtonTitle: 'Pergi Ke (⌘G)',
-  appNameBoxTitle: 'Kotak Nama — taip alamat atau nama, kemudian tekan Enter',
   appPivotChartHintIn: 'Cipta Carta Pangsi daripada Jadual Pangsi semasa',
   appPivotChartHintOut: 'Pilih sel dalam output Jadual Pangsi dahulu, kemudian pilih jenis carta',
   appChartColumn: 'Lajur',

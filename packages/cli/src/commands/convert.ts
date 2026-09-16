@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { PdfLoadError } from '@genoffice/pdf2docx'
 import { flagBool, flagString, type ParsedArgs } from '../args'
@@ -8,7 +7,7 @@ import { convertLegacyWorkbook, sheetToCsv } from '../formats/xlsx'
 import { exportViaApp, type AppExportTarget } from '../formats/app-export'
 import { htmlToMarkdown, markdownToDocx, markdownToHtml } from '../formats/markdown'
 import { closeDocument, documentHtml, openDocument } from '../formats/docx'
-import { extension, readInput, resolveInput, resolveOutput } from '../fs'
+import { extension, readInput, resolveInput, resolveOutput, writeOutput } from '../fs'
 import type { CommandContext, CommandDef } from '../registry'
 import { CliError, EXIT } from '../result'
 
@@ -75,12 +74,18 @@ export const convertCommand: CommandDef = {
     const input = resolveInput(args.positionals[0], ctx)
     const from = extension(input)
     const to = flagString(args, 'to')?.toLowerCase()
-    if (!to) throw new CliError(EXIT.usage, 'missing --to <format>')
+    if (!to)
+      throw new CliError(EXIT.usage, 'missing --to <format>', undefined, {
+        reason: 'missing_argument',
+      })
     const targets = ROUTES[from]
     if (!targets?.includes(to)) {
-      throw new CliError(EXIT.usage, `cannot convert .${from} to .${to}`, {
-        supported: describeRoutes(),
-      })
+      throw new CliError(
+        EXIT.usage,
+        `cannot convert .${from} to .${to}`,
+        { supported: describeRoutes() },
+        { reason: 'unsupported', suggestion: 'pick a route from detail.supported' },
+      )
     }
     // before run(): the sidecar and app routes write the output themselves
     const output = resolveOutput(flagString(args, 'out'), ctx, {
@@ -89,7 +94,7 @@ export const convertCommand: CommandDef = {
       fresh: true,
     })
     const result = await run(input, from, to, output, args, ctx)
-    if (result.bytes) writeFileSync(output, result.bytes)
+    if (result.bytes) writeOutput(output, result.bytes)
     return {
       summary: `converted ${basename(input)} → ${basename(output)}`,
       outputPath: output,
@@ -154,6 +159,13 @@ async function run(
     try {
       const exported = documentHtml(doc)
       const markdown = await htmlToMarkdown(exported.html)
+      if (exported.skipped.images > 0) {
+        ctx.warn({
+          code: 'images_dropped',
+          message: `${exported.skipped.images} image(s) have no Markdown form and were dropped`,
+          suggestion: 'use `genoffice docs read --html` when the images matter',
+        })
+      }
       return {
         bytes: Buffer.from(markdown.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n', 'utf-8'),
         detail: {

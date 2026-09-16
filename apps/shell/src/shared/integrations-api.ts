@@ -1,40 +1,12 @@
+import type {
+  AgentId,
+  AgentTarget,
+  SkillInstallState,
+  SkillInstallStatus,
+} from '@genoffice/cli/agent-skills'
 import type { InstallOutcome } from '@genoffice/cli/install'
 
-export type AgentId =
-  'claude-code' | 'codex' | 'cursor' | 'gemini' | 'copilot' | 'opencode' | 'windsurf'
-
-export interface AgentTarget {
-  id: AgentId
-  /** product name, shown as is (not translated) */
-  label: string
-  /** global skills directory the agent scans */
-  skillsDir: string
-}
-
-export type SkillInstallStatus =
-  /** no genoffice/ folder in the skills directory */
-  | 'missing'
-  /** written by this app, same version and bytes as the bundled skill */
-  | 'installed'
-  /** written by this app, older than the bundled skill */
-  | 'outdated'
-  /** written by this app, edited since (bytes differ from what was written) */
-  | 'modified'
-  /** our skill by front matter, but not written by this app (other host, npx, by hand) */
-  | 'foreign'
-  /** a newer skill version than the one bundled, whoever wrote it */
-  | 'newer'
-  /** genoffice/ exists but does not hold our skill */
-  | 'occupied'
-
-export interface SkillInstallState {
-  status: SkillInstallStatus
-  /** `<skillsDir>/genoffice/SKILL.md` */
-  path: string
-  installedVersion?: string
-  /** installed version is older than the bundled one (foreign rows offer an update then) */
-  older?: boolean
-}
+export type { AgentId, AgentTarget, SkillInstallState, SkillInstallStatus }
 
 export interface CliStatus extends InstallOutcome {
   /** directory holding the genoffice launcher (what `~/.genoffice/launcher` points at) */

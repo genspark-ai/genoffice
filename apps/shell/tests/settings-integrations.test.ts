@@ -7,6 +7,7 @@ import type { Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HomeApi } from '../src/shared/home-api'
 import type { IntegrationsApi, IntegrationsStatus } from '../src/shared/integrations-api'
+import { mcpClaudeCommand, mcpConfigJson, mcpLaunch } from '../src/renderer/src/IntegrationsPane'
 import { LocaleProvider } from '../src/renderer/src/locale'
 import { SettingsModal, type SettingsModalProps } from '../src/renderer/src/SettingsModal'
 
@@ -157,8 +158,49 @@ describe('Settings → Integrations', () => {
     // guidance: hero steps, one-of-three note, example prompts, npx command shown inline
     expect(host.querySelectorAll('.set-intg-hero-steps li')).toHaveLength(3)
     expect(host.textContent).toContain('Pick any one of these three ways')
-    expect(host.querySelectorAll('.set-intg-example')).toHaveLength(3)
+    // the same three prompts appear under both the CLI and the MCP part
+    expect(host.querySelectorAll('.set-intg-example')).toHaveLength(6)
     expect(host.textContent).toContain('npx skills add genspark-ai/genoffice')
+    // MCP block: the launcher itself while genoffice is not on the PATH, as a command and as JSON
+    const mcp = [...host.querySelectorAll('.set-intg-mcp code')].map((c) => c.textContent)
+    expect(mcp[0]).toBe(
+      'claude mcp add --transport stdio genoffice -- /Applications/GenOffice.app/Contents/Resources/cli/genoffice mcp',
+    )
+    expect(JSON.parse(mcp[1]!)).toEqual({
+      mcpServers: {
+        genoffice: {
+          command: '/Applications/GenOffice.app/Contents/Resources/cli/genoffice',
+          args: ['mcp'],
+        },
+      },
+    })
+    expect(host.textContent).toContain('assistant picks one')
+  })
+
+  it('names the bare command once genoffice is on the PATH and runs the app as Node on Windows', () => {
+    expect(
+      mcpLaunch({
+        status: 'present',
+        launcherDir: '/Applications/GenOffice.app/Contents/Resources/cli',
+      }),
+    ).toEqual({ command: 'genoffice', args: ['mcp'] })
+    const winDir = 'C:\\Users\\Jane Doe\\AppData\\Local\\Programs\\GenOffice\\resources\\cli'
+    const win = {
+      command: `${winDir}\\..\\..\\GenOffice.exe`,
+      args: [`${winDir}\\genoffice.cjs`, 'mcp'],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    }
+    expect(mcpLaunch({ status: 'missing', launcherDir: winDir })).toEqual(win)
+    expect(mcpLaunch({ status: 'present', launcherDir: winDir })).toEqual(win)
+    expect(mcpClaudeCommand(win)).toBe(
+      `claude mcp add -e ELECTRON_RUN_AS_NODE=1 --transport stdio genoffice -- "${win.command}" "${win.args[0]}" mcp`,
+    )
+    expect(JSON.parse(mcpConfigJson(win))).toEqual({ mcpServers: { genoffice: win } })
+    expect(
+      mcpClaudeCommand({ command: '/Applications/Gen Office.app/cli/genoffice', args: ['mcp'] }),
+    ).toBe(
+      'claude mcp add --transport stdio genoffice -- "/Applications/Gen Office.app/cli/genoffice" mcp',
+    )
   })
 
   it('writes only after the path was shown and confirmed, then refreshes the row', async () => {

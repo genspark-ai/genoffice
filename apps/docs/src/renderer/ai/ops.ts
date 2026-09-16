@@ -5,6 +5,9 @@ import { generateTocFieldXml, type TocEntry } from '@genoffice/docx-engine'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
+import { styleOpDefs, type AiStyleAccess } from './style-ops'
+import { fieldOpDefs } from './field-ops'
+import { tableOpDefs } from './table-ops'
 
 /**
  * Canonical edit ops for the document. The model (apply_ops) and, later, the
@@ -21,8 +24,8 @@ import { blockRangePositions, isTrackedDeleted, liveText } from './doc-utils'
 
 /** All given conditions filter with AND; at least one condition is required */
 export interface Target {
-  /** 'image' matches protected image blocks (docProtected + blockType image) */
-  nodeType?: 'docHeading' | 'docParagraph' | 'docListItem' | 'image'
+  /** 'image' matches protected image blocks (docProtected + blockType image); 'table' matches native (editable) tables */
+  nodeType?: 'docHeading' | 'docParagraph' | 'docListItem' | 'image' | 'table'
   /** Restrict heading level (only with nodeType: 'docHeading') */
   headingLevel?: number
   /** The block's plain text contains this substring (case-sensitive unless matchCase: false) */
@@ -89,6 +92,8 @@ export interface OpContext {
   markAi?: boolean
   /** validate and plan only; nothing is dispatched */
   dryRun?: boolean
+  /** style catalog for applyStyle (ids, heading levels, pending define_style entries) */
+  styles?: AiStyleAccess
 }
 
 /** the changed-block highlight belongs to AI edits only */
@@ -115,19 +120,20 @@ export interface ExecuteOutcome {
 
 // ---- registry ----
 
-interface SelRange {
+export interface SelRange {
   from: number
   to: number
 }
 
-interface RunEnv {
+export interface RunEnv {
   tr: Transaction
   schema: Schema
   sel: SelRange
   ctx: OpContext
+  editor: Editor
 }
 
-interface OpDef {
+export interface OpDef {
   name: string
   /** one-line usage: listed in the tool description, appended to validation errors */
   signature: string
@@ -158,9 +164,18 @@ export function opSignatures(): string[] {
   return callable().map((d) => d.signature)
 }
 
+export function opCatalog(): Pick<OpDef, 'name' | 'signature' | 'keys' | 'target'>[] {
+  return callable().map((d) => ({
+    name: d.name,
+    signature: d.signature,
+    keys: d.keys,
+    target: d.target,
+  }))
+}
+
 // ---- validation ----
 
-const NODE_TYPES = ['docHeading', 'docParagraph', 'docListItem', 'image'] as const
+const NODE_TYPES = ['docHeading', 'docParagraph', 'docListItem', 'image', 'table'] as const
 const BASELINES = ['superscript', 'subscript', 'none'] as const
 const ALIGNS = ['left', 'center', 'right', 'justify'] as const
 const FONT_KEYS = [
@@ -354,7 +369,7 @@ function validateAfterBlockIndex(op: Op, where: string): string | null {
 
 // ---- target matching ----
 
-interface TopBlock {
+export interface TopBlock {
   index: number
   pos: number
   node: PmDocNode
@@ -385,6 +400,8 @@ function matchTarget(doc: PmDocNode, target: Target, sel: SelRange): TopBlock[] 
     if (target.blockIndexes && !target.blockIndexes.includes(b.index)) return false
     if (target.nodeType === 'image') {
       if (b.node.type.name !== 'docProtected' || b.node.attrs.blockType !== 'image') return false
+    } else if (target.nodeType === 'table') {
+      if (b.node.type.name !== 'docTable') return false
     } else if (target.nodeType && b.node.type.name !== target.nodeType) {
       return false
     }
@@ -1209,6 +1226,20 @@ register({
   apply: runInsertToc,
 })
 
+for (const def of fieldOpDefs({ validateShape, matchTarget, markChanged })) {
+  register(def)
+}
+
+for (const def of tableOpDefs({
+  validateShape,
+  matchTarget,
+  markChanged,
+  normalizeHex,
+  checkHex,
+})) {
+  register(def)
+}
+
 // ---- UI-only ops (same executor, same target resolution, never offered to the model) ----
 
 const validDelta = (op: Op, where: string): string | null =>
@@ -1254,6 +1285,16 @@ register({
   },
   apply: runStepHangingIndent,
 })
+
+for (const def of styleOpDefs({
+  validateShape,
+  matchTarget,
+  changedAttrs,
+  paragraphsIn,
+  scopedRange,
+})) {
+  register(def)
+}
 
 // ---- entry point ----
 
@@ -1375,7 +1416,7 @@ export function executeOps(editor: Editor, ops: unknown, ctx: OpContext = {}): E
         from: tr.mapping.map(selection.from),
         to: tr.mapping.map(selection.to),
       }
-      results.push(def.apply(op, { tr, schema, sel, ctx }))
+      results.push(def.apply(op, { tr, schema, sel, ctx, editor }))
     }
   } catch (e) {
     return failure(e instanceof Error ? e.message : String(e))

@@ -40,6 +40,7 @@ import {
   saveAsSuggestion,
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
+  helpMenuTemplate,
   toggleDevToolsItem,
   installRendererProtocol,
   registerRendererScheme,
@@ -57,6 +58,13 @@ import {
 import { matchesElementRef } from '@genoffice/pptx-engine/identity'
 import { buildPagePptx, parsePageSpec } from '@genoffice/pipelines/slides'
 import { sniffImageMime } from './media-mime'
+import {
+  newPasteCascade,
+  pageKey,
+  pasteShiftPx,
+  recordPaste,
+  type PasteCascade,
+} from './paste-cascade'
 import { getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
 import { ProjectStore } from '@genoffice/project-store'
 import {
@@ -384,8 +392,8 @@ function trackSlidesWebContents(wc: WebContents): void {
   })
 }
 
-// ── In-app element clipboard (app-wide, so elements copied in one deck paste into any other open deck; pasteCount drives cascading offset) ─
-let elementClipboard: { items: ElementClipboardItem[]; pasteCount: number } | null = null
+// ── In-app element clipboard (app-wide, so elements copied in one deck paste into any other open deck; the cascade decides the paste offset) ─
+let elementClipboard: { items: ElementClipboardItem[]; cascade: PasteCascade } | null = null
 
 /** Shell hook: a view opened a file (including ⌘O inside a tab) — used to update tab titles and de-duplicate paths */
 let slidesOpenedHook: ((wc: WebContents, path: string) => void) | null = null
@@ -3218,7 +3226,10 @@ export function registerSlidesIpc(): void {
       .filter((el): el is NonNullable<typeof el> => !!el)
       .map((el) => copyElementData(session.opened, slide, el))
     if (items.length) {
-      elementClipboard = { items, pasteCount: 0 }
+      elementClipboard = {
+        items,
+        cascade: newPasteCascade(op.cut ? null : pageKey(e.sender.id, op.slideIndex)),
+      }
       // Write our marker to the OS clipboard: an external copy overwrites it, so at paste time it tells whether internal or external is newer
       clipboard.writeBuffer('io.genoffice.slides.elements', Buffer.from('1'))
     }
@@ -3232,8 +3243,12 @@ export function registerSlidesIpc(): void {
     if (!session.opened.deck.slides[op.slideIndex]) return null
     const baseWidthPx = session.opened.deck.size.cx / EMU_PER_PX_96
     const scale = op.fitWidthPx / baseWidthPx
-    // Cascading offset: each paste shifts another 16px relative to the original
-    const shift = Math.round(((16 * (clip.pasteCount + 1)) / scale) * EMU_PER_PX_96)
+    // Cascade only past occupied spots: the first paste onto another page lands
+    // at the source coordinates exactly; the copy page and repeat
+    // pastes keep shifting 16px per landing relative to the original.
+    const target = pageKey(e.sender.id, op.slideIndex)
+    const shiftPx = pasteShiftPx(clip.cascade, target)
+    const shift = Math.round((shiftPx / scale) * EMU_PER_PX_96)
     const r = sessionTxn(session, {
       ops: [
         {
@@ -3246,7 +3261,7 @@ export function registerSlidesIpc(): void {
       ],
     })
     if (!r) return null
-    clip.pasteCount++
+    recordPaste(clip.cascade, target)
     session.fitWidthPx = op.fitWidthPx
     const rebuilt = rebuildSlide(session, op.slideIndex)
     return rebuilt ? { slide: rebuilt, sourceIds: r.records![0]!.created! } : null
@@ -4631,6 +4646,7 @@ export function buildSlidesMenu(): Menu {
         toggleDevToolsItem(labels),
       ],
     },
+    helpMenuTemplate(labels),
   ]
   return Menu.buildFromTemplate(template)
 }

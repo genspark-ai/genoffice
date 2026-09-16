@@ -1,9 +1,9 @@
 /**
  * A copy of one unformatted spreadsheet cell (Sheets/Excel put a 1x1 table on
  * the clipboard) pastes as text with the insertion point's formatting, like
- * typing — not as unmarked text that falls back to the theme font (alpha
- * ledger r176: cell copied in AI Sheets pasted into AI Docs showed the Aptos
- * theme font instead of the destination's Calibri).
+ * typing — not as unmarked text that falls back to the theme font (a cell
+ * copied in Sheets pasted into Docs showed the Aptos theme font instead of
+ * the destination's Calibri).
  */
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'

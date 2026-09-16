@@ -134,7 +134,6 @@ export const fr = {
   appMoreItems: '+{count} éléments…',
   appTruncationNote: '{shown} premiers sur {total}',
   appGoToButtonTitle: 'Atteindre (⌘G)',
-  appNameBoxTitle: 'Zone Nom — saisissez une adresse ou un nom, puis appuyez sur Entrée',
   appPivotChartHintIn:
     'Créer un graphique croisé dynamique à partir du tableau croisé dynamique actuel',
   appPivotChartHintOut:

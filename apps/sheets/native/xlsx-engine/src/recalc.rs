@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use ironcalc::base::Model;
+use ironcalc::base::types::CellType;
 use ironcalc::import::load_from_xlsx;
 use serde::{Deserialize, Serialize};
 
@@ -59,6 +60,9 @@ pub struct RecalcCell {
     /// Raw numeric value when the cell evaluates to a number.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub number: Option<f64>,
+    /// The engine typed the result as an error (`#DIV/0!`), as opposed to a
+    /// formula whose text result merely spells one (`="#N/A"`).
+    pub is_error: bool,
     pub is_formula: bool,
 }
 
@@ -298,12 +302,17 @@ fn run(
                     }
                 }
                 let number = raw_number(&entry.model, sheet, row_1, column_1);
+                let is_error = matches!(
+                    entry.model.get_cell_type(sheet, row_1, column_1),
+                    Ok(CellType::ErrorValue)
+                );
                 cells.push(RecalcCell {
                     sheet: read.sheet.clone(),
                     row: row as u32,
                     column: column as u32,
                     formatted,
                     number,
+                    is_error,
                     is_formula,
                 });
             }
@@ -475,6 +484,26 @@ mod tests {
         assert_eq!(sum.number, Some(120.0));
         assert!(sum.is_formula);
         assert!(!result.cached);
+    }
+
+    #[test]
+    fn types_error_results_but_not_error_looking_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("recalc.xlsx");
+        fixture(&path);
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells(
+            &mut cache,
+            &path,
+            &[edit("A1", "=1/0"), edit("A2", "=\"#N/A\"")],
+            &[read_a1_a3()],
+        )
+        .unwrap();
+        let at = |row: u32| result.cells.iter().find(|cell| cell.row == row).unwrap();
+        assert_eq!(at(0).formatted, "#DIV/0!");
+        assert!(at(0).is_error);
+        assert_eq!(at(1).formatted, "#N/A");
+        assert!(!at(1).is_error);
     }
 
     #[test]

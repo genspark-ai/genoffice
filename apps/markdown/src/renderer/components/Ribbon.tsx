@@ -8,6 +8,7 @@ import {
   RibbonExpandButton,
   useDismissablePopover,
   useRibbonCollapse,
+  filesPaneTitle,
 } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import type { StringKey } from '../i18n/locale'
@@ -20,11 +21,13 @@ import {
   IconLink,
   IconNumbered,
   IconOutlineView,
+  IconFolderTree,
   IconPicture,
   IconProperties,
   IconRedo,
   IconSave,
   IconSearch,
+  IconSpellcheck,
   IconTable,
   IconTaskList,
   IconUndo,
@@ -44,7 +47,11 @@ interface Props {
   onToggleFrontmatter: () => void
   outlineOpen: boolean
   onToggleOutline: () => void
+  filesOpen: boolean
+  onToggleFiles: () => void
   hasOutline: boolean
+  spellcheck: boolean
+  onToggleSpellcheck: () => void
   aiOpen: boolean
   onToggleAi: () => void
   onAiPreset: (instruction: string) => void
@@ -165,12 +172,16 @@ export function Ribbon({
   onToggleFrontmatter,
   outlineOpen,
   onToggleOutline,
+  filesOpen,
+  onToggleFiles,
   hasOutline,
+  spellcheck,
+  onToggleSpellcheck,
   aiOpen,
   onToggleAi,
   onAiPreset,
 }: Props) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const collapse = useRibbonCollapse('mdapp.ribbonCollapsed')
   const [linkOpen, setLinkOpen] = useState(false)
   const [linkUrl, setLinkUrl] = useState('')
@@ -503,6 +514,17 @@ export function Ribbon({
               onClick={onToggleOutline}
             >
               <IconOutlineView size={ICON} />
+            </IconBtn>
+            <IconBtn title={filesPaneTitle(lang)} active={filesOpen} onClick={onToggleFiles}>
+              <IconFolderTree size={ICON} />
+            </IconBtn>
+            <IconBtn
+              title={t('spellcheck')}
+              active={spellcheck}
+              disabled={disabled}
+              onClick={onToggleSpellcheck}
+            >
+              <IconSpellcheck size={ICON} />
             </IconBtn>
           </div>
         </div>

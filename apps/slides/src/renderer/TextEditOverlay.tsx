@@ -95,20 +95,32 @@ function groupLinesToParagraphs(lines: TextLine[]): TextLine[][] {
 
 /** Preserve the layout engine's glyph fragments so the editor uses the same measured advances as canvas.
  * Extraction merges adjacent fragments back into source model runs by srcRunIdx. Trailing spaces swallowed
- * on wrap are restored at the previous fragment's tail; <a:br/> soft breaks are restored as "\n" sentinels. */
+ * on wrap are restored after the previous fragment; <a:br/> soft breaks are restored as "\n" sentinels. */
 interface EditorSeg {
   run?: GlyphRun
   srcRun?: number
   text: string
   /** Stacked cell of a vertical column (eaVert/wordArtVert): the engine's advance to the next cell (px) */
   stackAdvPx?: number
+  /** Wrap-swallowed space restored between lines: must flow naturally, never get a fixed advance.
+   * Its run's widthPx excludes this space (the engine strips it before measuring the line), so a
+   * fixed-width fragment would clip it once an edit reflows it into the middle of a line. Under
+   * pre-wrap it hangs invisibly at the original wrap point, so the untouched editor still matches
+   * the canvas. */
+  natural?: boolean
 }
 
 function editorParaRuns(paraLines: TextLine[], vertical = false): EditorSeg[] {
   const segs: EditorSeg[] = []
   paraLines.forEach((line, li) => {
     if (li > 0 && paraLines[li - 1]!.trailingSpace && segs.length) {
-      segs[segs.length - 1]!.text += paraLines[li - 1]!.trailingText ?? ' '
+      const prev = segs[segs.length - 1]!
+      const restored = paraLines[li - 1]!.trailingText ?? ' '
+      if (!vertical && prev.run && !prev.run.rtl) {
+        segs.push({ run: prev.run, srcRun: prev.srcRun, text: restored, natural: true })
+      } else {
+        prev.text += restored
+      }
     }
     // Canvas consumes visual bidi order; contentEditable must receive logical source order and
     // lets Chromium perform bidi shaping/reordering itself.
@@ -459,7 +471,7 @@ export function populateEditorDom(
         })
       }
     }
-    for (const { run, srcRun, text, stackAdvPx } of editorParaRuns(paraLines, vertical)) {
+    for (const { run, srcRun, text, stackAdvPx, natural } of editorParaRuns(paraLines, vertical)) {
       if (run) {
         const prev = p.lastElementChild as HTMLElement | null
         const src = srcRun != null ? String(srcRun) : undefined
@@ -502,8 +514,9 @@ export function populateEditorDom(
         // one grapheme per fragment; Latin/SEA keep their script-aware token boundaries. RTL stays
         // in normal inline flow so Chromium can preserve joining and bidirectional shaping.
         // Vertical editing skips fixed advances entirely: the engine's widthPx is a horizontal
-        // measure, and inline-block cells would break writing-mode glyph orientation
-        if (!run.rtl && !vertical) {
+        // measure, and inline-block cells would break writing-mode glyph orientation. Restored
+        // wrap-swallowed spaces (natural) also flow free: their run's widthPx excludes them.
+        if (!run.rtl && !vertical && !natural) {
           fragment.style.display = 'inline-block'
           fragment.style.width = `${run.widthPx}px`
         }
@@ -1477,12 +1490,41 @@ export function resizeSelectionFont(dir: 1 | -1): void {
   const root = document.activeElement
   if (!(root instanceof HTMLElement) || !root.isContentEditable) return
   const norm = parseFloat(root.dataset.norm ?? '') || 1
+  // When the selection exactly covers a sized span (our own product from the
+  // previous click), execCommand replaces that span with the <font> wrapper —
+  // the current size is gone before we can read it, and the parent computed
+  // style still holds the pre-step size, so every further click would restep
+  // from the same base. Snapshot each selected text node's size first: the
+  // wrap moves text nodes intact, so they key the snapshot across the reflow.
+  const selRange = (() => {
+    const sel = window.getSelection()
+    return sel && sel.rangeCount ? sel.getRangeAt(0) : null
+  })()
+  const preSizes = new Map<Node, number>()
+  if (selRange) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) {
+      const node = walker.currentNode
+      if (!selRange.intersectsNode(node) || !node.parentElement) continue
+      const px = parseFloat(window.getComputedStyle(node.parentElement).fontSize)
+      if (Number.isFinite(px)) preSizes.set(node, px)
+    }
+  }
   document.execCommand('styleWithCSS', false, 'false')
   document.execCommand('fontSize', false, '7')
   const spans: HTMLElement[] = []
   root.querySelectorAll('font[size="7"]').forEach((f) => {
     const font = f as HTMLElement
-    const basePx = parseFloat(window.getComputedStyle(font.parentElement ?? root).fontSize) || 18
+    let basePx: number | undefined
+    const walker = document.createTreeWalker(font, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) {
+      const snap = preSizes.get(walker.currentNode)
+      if (snap !== undefined) {
+        basePx = snap
+        break
+      }
+    }
+    basePx ??= parseFloat(window.getComputedStyle(font.parentElement ?? root).fontSize) || 18
     const pt = stepFontSizePt(pxToPt(basePx, norm), dir)
     const span = document.createElement('span')
     span.style.fontSize = `${(pt * 96 * norm) / 72}px`

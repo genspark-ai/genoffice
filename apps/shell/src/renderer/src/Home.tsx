@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ReactElement } from 'react'
+import type { DragEvent as ReactDragEvent, ReactElement } from 'react'
 import logoLockup from './assets/genoffice-logo.svg'
 import iconDocx from './assets/file-docx.svg'
 import iconXlsx from './assets/file-xlsx.svg'
@@ -11,9 +11,11 @@ import type {
   AccountStatus,
   CloudProjectKind,
   CloudProjectsSnapshot,
+  FolderEntry,
+  FolderListing,
+  FolderRoot,
   HomeApi,
-  ProjectHomeApi,
-  ProjectSummaryEntry,
+  MoveConflictPolicy,
   RecentEntry,
 } from '../../shared/home-api'
 import type { IntegrationsApi } from '../../shared/integrations-api'
@@ -27,7 +29,6 @@ import { skillUpdateDue } from './IntegrationsPane'
 declare global {
   interface Window {
     aiOffice: HomeApi
-    aiOfficeProject?: ProjectHomeApi
     aiOfficeIntegrations?: IntegrationsApi
   }
 }
@@ -62,6 +63,13 @@ const FILE_ICONS: Record<string, string> = {
    sync with the main-process open-dialog filter (OPEN_DIALOG_EXTENSIONS). */
 const OPEN_LOCAL_EXTENSIONS = '.docx / .xlsx / .xlsm / .xls / .csv / .pptx / .pdf / .md / .html'
 
+/** drag payload of home file/folder rows (JSON array of absolute paths) */
+const DRAG_PATHS_MIME = 'application/x-genoffice-paths'
+/** hovering a collapsed folder this long while dragging expands it */
+const DRAG_EXPAND_DELAY_MS = 600
+/** expanded folders survive a home reload; the selection is per session */
+const TREE_STATE_KEY = 'home.folderTree'
+
 function FileBadge({ ext, size }: { ext: string; size: number }) {
   const icon = FILE_ICONS[ext]
   if (icon) {
@@ -87,6 +95,51 @@ function FileBadge({ ext, size }: { ext: string; size: number }) {
   )
 }
 
+function FolderIcon({ size = 16, open = false }: { size?: number; open?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.44 0 .85.19 1.13.52L8.4 4.4H13A1.5 1.5 0 0 1 14.5 5.9v5.6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+        fill={open ? 'currentColor' : 'none'}
+        fillOpacity={open ? 0.12 : 0}
+      />
+    </svg>
+  )
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+      style={{ transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 0.12s' }}
+    >
+      <path
+        d="M4.5 2.5l4 3.5-4 3.5"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        fill="none"
+      />
+    </svg>
+  )
+}
+
+function MoreDots() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="3.2" cy="8" r="1.35" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.35" fill="currentColor" />
+      <circle cx="12.8" cy="8" r="1.35" fill="currentColor" />
+    </svg>
+  )
+}
+
 function formatModified(mtimeMs: number, i18n: I18n): string {
   const date = new Date(mtimeMs)
   const now = new Date()
@@ -104,9 +157,28 @@ function formatSize(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
+function splitPath(path: string): string[] {
+  return path.split(/[\\/]/).filter(Boolean)
+}
+
 function parentDir(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean)
+  const parts = splitPath(path)
   return parts[parts.length - 2] ?? ''
+}
+
+function dirOf(path: string): string {
+  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  if (cut < 0) return path
+  // keep the separator on a filesystem root ("/" or "C:\") instead of an empty or bare-drive string
+  const dir = path.slice(0, cut)
+  return dir === '' || /^[A-Za-z]:$/.test(dir) ? path.slice(0, cut + 1) : dir
+}
+
+function isUnder(root: string, path: string): boolean {
+  if (path === root) return true
+  // a root that already ends with a separator ("/" or "C:\") must not get a second one
+  if (/[\\/]$/.test(root)) return path.startsWith(root)
+  return path.startsWith(root + '/') || path.startsWith(root + '\\')
 }
 
 function fileName(path: string): string {
@@ -117,11 +189,27 @@ function baseName(entry: RecentEntry): string {
   return entry.ext ? entry.name.slice(0, -(entry.ext.length + 1)) : entry.name
 }
 
-// ── Project hooks ─────────────────────────────────────────
+/** "Clients / Contracts" for a file under the root; the parent folder name elsewhere */
+function locationLabel(path: string, root: FolderRoot | null): string {
+  const dir = dirOf(path)
+  if (root && isUnder(root.path, dir)) {
+    if (dir === root.path) return root.name
+    return splitPath(dir.slice(root.path.length)).join(' / ')
+  }
+  return parentDir(path)
+}
 
-/** whether we are inside the shell (aiOfficeProject API available) */
-function hasProjectApi(): boolean {
-  return typeof window.aiOfficeProject !== 'undefined'
+/** the folders between root and `dir` (inclusive) */
+function crumbsOf(root: FolderRoot, dir: string): Array<{ path: string; name: string }> {
+  const crumbs = [{ path: root.path, name: root.name }]
+  if (dir === root.path) return crumbs
+  const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
+  let acc = root.path
+  for (const part of splitPath(dir.slice(root.path.length))) {
+    acc = `${acc}${sep}${part}`
+    crumbs.push({ path: acc, name: part })
+  }
+  return crumbs
 }
 
 const FILTERS: { key: string; label: StringKey }[] = [
@@ -133,6 +221,20 @@ const FILTERS: { key: string; label: StringKey }[] = [
   { key: 'md', label: 'filterMd' },
   { key: 'html', label: 'filterHtml' },
 ]
+
+/** sidebar filter keys that stand for a family of extensions (mirrors recent-files.ts) */
+const FILTER_FAMILY: Record<string, readonly string[]> = {
+  docx: ['docx', 'doc'],
+  xlsx: ['xlsx', 'xlsm', 'xls', 'csv'],
+  pptx: ['pptx', 'ppt'],
+  md: ['md', 'markdown'],
+  html: ['html', 'htm'],
+}
+
+function matchesFilter(entry: RecentEntry, filter: string): boolean {
+  if (filter === 'all') return true
+  return (FILTER_FAMILY[filter] ?? [filter]).includes(entry.ext)
+}
 
 /** Check glyph marking the selected sort option; invisible on the others so labels stay aligned */
 function SortCheck({ visible }: { visible: boolean }): ReactElement {
@@ -157,296 +259,384 @@ function SortCheck({ visible }: { visible: boolean }): ReactElement {
   )
 }
 
-// ── Project sidebar component ────────────────────────────
+// ── Folder tree state (shared by the sidebar and the move picker) ──
 
-interface ProjectPanelProps {
-  projects: ProjectSummaryEntry[]
-  selectedId: string | null
-  onSelect: (id: string | null) => void
-  onRefresh: () => void
+interface TreeState {
+  expanded: string[]
+  /** the root the layout was saved for; a layout for another root is not applied */
+  root: string | null
 }
 
-function ProjectPanel({ projects, selectedId, onSelect, onRefresh }: ProjectPanelProps) {
+function readTreeState(): TreeState {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TREE_STATE_KEY) ?? 'null') as TreeState | null
+    if (raw && Array.isArray(raw.expanded)) {
+      return {
+        expanded: raw.expanded.filter((p): p is string => typeof p === 'string'),
+        root: typeof raw.root === 'string' ? raw.root : null,
+      }
+    }
+  } catch {
+    // corrupt or absent: start collapsed
+  }
+  return { expanded: [], root: null }
+}
+
+function writeTreeState(state: TreeState): void {
+  try {
+    localStorage.setItem(TREE_STATE_KEY, JSON.stringify(state))
+  } catch {
+    // quota / private mode: the tree just forgets its layout
+  }
+}
+
+/**
+ * Lazily loaded folder listings keyed by directory. Listing a folder that is
+ * already cached is a no-op; `invalidate` drops entries so the next render
+ * refetches them (the main process reports changed directories via watch).
+ */
+function useFolderListings() {
+  const [listings, setListings] = useState<ReadonlyMap<string, FolderListing>>(new Map())
+  // dir → whether a reload was requested while its request was in flight (the
+  // in-flight answer may predate the change, so it is fetched once more)
+  const inflight = useRef(new Map<string, boolean>())
+
+  const load = useCallback((dir: string, force = false) => {
+    if (inflight.current.has(dir)) {
+      if (force) inflight.current.set(dir, true)
+      return
+    }
+    inflight.current.set(dir, false)
+    void window.aiOffice
+      .listFolder(dir)
+      .then((listing) => {
+        setListings((prev) => {
+          const next = new Map(prev)
+          next.set(dir, listing)
+          return next
+        })
+      })
+      .finally(() => {
+        const again = inflight.current.get(dir)
+        inflight.current.delete(dir)
+        if (again) load(dir, true)
+      })
+  }, [])
+
+  const invalidate = useCallback(
+    (dirs: readonly string[]) => {
+      setListings((prev) => {
+        let changed = false
+        const next = new Map(prev)
+        for (const dir of dirs) {
+          if (next.delete(dir)) changed = true
+        }
+        return changed ? next : prev
+      })
+      for (const dir of dirs) load(dir, true)
+    },
+    [load],
+  )
+
+  const reset = useCallback(() => setListings(new Map()), [])
+
+  /** shown or currently loading: the folders a watch event should refresh */
+  const tracked = useCallback(
+    (dir: string) => listings.has(dir) || inflight.current.has(dir),
+    [listings],
+  )
+
+  return { listings, load, invalidate, reset, tracked }
+}
+
+// ── Move-to-folder picker ────────────────────────────────
+
+interface FolderPickerProps {
+  root: FolderRoot
+  /** folders the moved items already live in (greyed, not selectable) */
+  currentDirs: ReadonlySet<string>
+  /** folders being moved: they and their descendants cannot be targets */
+  movingDirs: readonly string[]
+  count: number
+  onCancel: () => void
+  onPick: (dir: string) => void
+}
+
+function FolderPicker({
+  root,
+  currentDirs,
+  movingDirs,
+  count,
+  onCancel,
+  onPick,
+}: FolderPickerProps) {
   const { t } = useI18n()
-  const [creating, setCreating] = useState(false)
+  const { listings, load } = useFolderListings()
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set([root.path]))
+  const [picked, setPicked] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [creatingIn, setCreatingIn] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
-  // open menu id + fixed-position anchor (viewport coords), so the popup can
-  // escape the scrollable project list without the list losing overflow-y
-  const [projMenu, setProjMenu] = useState<{ id: string; top: number; right: number } | null>(null)
-  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null)
-  const newInputRef = useRef<HTMLInputElement>(null)
-  // wrap (… button + popup) of the row whose menu is open — the dismissal guard root
-  const projMenuWrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (creating && newInputRef.current) newInputRef.current.focus()
-  }, [creating])
-
-  // unified dismissal: outside press, window blur, chrome press (tab strip / window drag)
-  useDismissablePopover(projMenu !== null, () => setProjMenu(null), {
-    inside: () => [projMenuWrapRef.current],
-  })
-
-  // also close on any scroll (the fixed-position popup would otherwise detach
-  // from its row while the list scrolls)
-  useEffect(() => {
-    if (!projMenu) return
-    const close = () => setProjMenu(null)
-    window.addEventListener('scroll', close, true)
-    return () => window.removeEventListener('scroll', close, true)
-  }, [projMenu])
-
-  const commitCreate = async () => {
-    const name = newName.trim()
-    setCreating(false)
-    setNewName('')
-    if (!name) return
-    try {
-      await window.aiOfficeProject?.createProject(name)
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error))
-      return
-    }
-    onRefresh()
-  }
-
-  const commitRename = async () => {
-    if (!renaming) return
-    const name = renaming.value.trim()
-    const id = renaming.id
-    setRenaming(null)
-    if (!name) return
-    try {
-      await window.aiOfficeProject?.renameProject(id, name)
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error))
-      return
-    }
-    onRefresh()
-  }
-
-  // in-app confirm dialog (same style as the delete-files modal), not window.confirm
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-
-  const doDelete = (id: string) => {
-    setProjMenu(null)
-    setConfirmDeleteId(id)
-  }
-
-  const confirmDeleteNow = async () => {
-    const id = confirmDeleteId
-    setConfirmDeleteId(null)
-    if (!id) return
-    try {
-      await window.aiOfficeProject?.deleteProject(id)
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error))
-      return
-    }
-    if (selectedId === id) onSelect(null)
-    onRefresh()
-  }
+    for (const dir of expanded) load(dir)
+  }, [expanded, load])
 
   useEffect(() => {
-    if (!confirmDeleteId) return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setConfirmDeleteId(null)
+      if (e.key === 'Escape') onCancel()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [confirmDeleteId])
+  }, [onCancel])
 
-  return (
-    <div className="proj-panel">
-      <div className="proj-panel-head">
-        <span className="proj-panel-title">{t('projects')}</span>
-        <button
-          className="proj-add-btn"
-          data-tip={t('newProject')}
-          onClick={() => setCreating(true)}
-          aria-label={t('newProject')}
+  const disabledDir = (dir: string) =>
+    currentDirs.has(dir) || movingDirs.some((m) => isUnder(m, dir))
+
+  // Enter or blur commits, Escape cancels; the blur an unmount may fire reads
+  // the edit from a ref mirrored during render, so a finished edit is a no-op
+  const creatingRef = useRef<{ parent: string; name: string } | null>(null)
+  creatingRef.current = creatingIn ? { parent: creatingIn, name: newName } : null
+  const commitCreate = async () => {
+    const pending = creatingRef.current
+    creatingRef.current = null
+    setCreatingIn(null)
+    setNewName('')
+    const parent = pending?.parent
+    const name = pending?.name.trim()
+    if (!parent || !name) return
+    const result = await window.aiOffice.createFolder(parent, name)
+    if (!result.ok) {
+      window.alert(result.error ?? t('renameFailed'))
+      return
+    }
+    load(parent, true)
+    setExpanded((prev) => new Set([...prev, parent]))
+    if (result.path) setPicked(result.path)
+  }
+
+  // name search flattens the tree to every loaded folder whose name matches;
+  // folders not yet expanded are loaded on the fly one level at a time
+  const needle = query.trim().toLowerCase()
+  const renderNode = (entry: { path: string; name: string }, depth: number): ReactElement => {
+    const listing = listings.get(entry.path)
+    const isOpen = expanded.has(entry.path)
+    const children = listing?.folders ?? []
+    const disabled = disabledDir(entry.path)
+    const isCurrent = currentDirs.has(entry.path)
+    return (
+      <li key={entry.path}>
+        <div
+          className={`picker-row${picked === entry.path ? ' active' : ''}${disabled ? ' disabled' : ''}`}
+          style={{ paddingLeft: 8 + depth * 16 }}
+          role="treeitem"
+          aria-selected={picked === entry.path}
+          aria-expanded={children.length > 0 ? isOpen : undefined}
+          onClick={() => {
+            if (!disabled) setPicked(entry.path)
+          }}
+          onDoubleClick={() => {
+            if (!disabled) onPick(entry.path)
+          }}
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path
-              d="M7 1v12M1 7h12"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-
-      {creating && (
-        <div className="proj-new-row">
-          <input
-            ref={newInputRef}
-            className="proj-rename-input"
-            placeholder={t('projectName')}
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onBlur={() => void commitCreate()}
-            onKeyDown={(e) => {
-              // IME (e.g. pinyin): Enter/Escape during composition only affects
-              // the composition, it must not commit or cancel the field
-              if (e.nativeEvent.isComposing) return
-              if (e.key === 'Enter') void commitCreate()
-              if (e.key === 'Escape') {
-                setCreating(false)
-                setNewName('')
-              }
+          <button
+            className="tree-chevron"
+            tabIndex={-1}
+            aria-hidden="true"
+            style={{ visibility: listing && children.length === 0 ? 'hidden' : undefined }}
+            onClick={(e) => {
+              e.stopPropagation()
+              setExpanded((prev) => {
+                const next = new Set(prev)
+                if (next.has(entry.path)) next.delete(entry.path)
+                else next.add(entry.path)
+                return next
+              })
             }}
-          />
+          >
+            <Chevron open={isOpen} />
+          </button>
+          <FolderIcon open={isOpen} />
+          <span className="picker-name">{entry.name}</span>
+          {isCurrent && <span className="picker-current">{t('currentFolder')}</span>}
         </div>
-      )}
-
-      <ul className="proj-list">
-        {projects.map((proj) => {
-          const isActive = selectedId === proj.id
-          const isRenaming = renaming?.id === proj.id
-          return (
-            <li key={proj.id} className={`proj-item${isActive ? ' active' : ''}`}>
-              <div
-                className="proj-item-main"
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelect(isActive ? null : proj.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onSelect(isActive ? null : proj.id)
-                }}
-              >
-                <span className="proj-item-icon" aria-hidden="true">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path
-                      d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.44 0 .85.19 1.13.52L8.4 4.4H13A1.5 1.5 0 0 1 14.5 5.9v5.6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4z"
-                      stroke="currentColor"
-                      strokeWidth="1.2"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-                {isRenaming ? (
+        {isOpen && (
+          <ul role="group">
+            {children.map((child) => renderNode(child, depth + 1))}
+            {creatingIn === entry.path && (
+              <li>
+                <div className="picker-row" style={{ paddingLeft: 8 + (depth + 1) * 16 }}>
+                  <span className="tree-chevron" aria-hidden="true" />
+                  <FolderIcon />
                   <input
-                    className="proj-rename-input inline"
-                    value={renaming.value}
+                    className="folder-rename-input inline"
                     autoFocus
-                    onFocus={(e) => e.target.select()}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => setRenaming({ id: proj.id, value: e.target.value })}
-                    onBlur={() => void commitRename()}
+                    placeholder={t('untitledFolder')}
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onBlur={() => void commitCreate()}
                     onKeyDown={(e) => {
                       e.stopPropagation()
                       if (e.nativeEvent.isComposing) return
-                      if (e.key === 'Enter') void commitRename()
-                      if (e.key === 'Escape') setRenaming(null)
+                      if (e.key === 'Enter') void commitCreate()
+                      if (e.key === 'Escape') {
+                        setCreatingIn(null)
+                        setNewName('')
+                      }
                     }}
                   />
-                ) : (
-                  <span className="proj-item-name">
-                    {proj.isDefault ? t('defaultProject') : proj.name}
-                  </span>
-                )}
-                <span className="proj-item-meta">
-                  <span className="proj-item-count">{proj.fileCount}</span>
-                </span>
-              </div>
-
-              {!proj.isDefault && (
-                <div
-                  className="proj-menu-wrap"
-                  ref={projMenu?.id === proj.id ? projMenuWrapRef : undefined}
-                >
-                  <button
-                    className="proj-more-btn"
-                    aria-label={t('projMoreActions', { name: proj.name })}
-                    aria-expanded={projMenu?.id === proj.id}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (projMenu?.id === proj.id) {
-                        setProjMenu(null)
-                        return
-                      }
-                      const rect = e.currentTarget.getBoundingClientRect()
-                      setProjMenu({
-                        id: proj.id,
-                        top: rect.bottom + 4,
-                        right: window.innerWidth - rect.right,
-                      })
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                      <circle cx="3.2" cy="8" r="1.35" fill="currentColor" />
-                      <circle cx="8" cy="8" r="1.35" fill="currentColor" />
-                      <circle cx="12.8" cy="8" r="1.35" fill="currentColor" />
-                    </svg>
-                  </button>
-                  {projMenu?.id === proj.id && (
-                    <div
-                      className="proj-menu"
-                      role="menu"
-                      style={{ top: projMenu.top, right: projMenu.right }}
-                    >
-                      <button
-                        role="menuitem"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setProjMenu(null)
-                          setRenaming({ id: proj.id, value: proj.name })
-                        }}
-                      >
-                        {t('rename')}
-                      </button>
-                      <div className="row-menu-divider" />
-                      <button
-                        role="menuitem"
-                        className="danger"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          doDelete(proj.id)
-                        }}
-                      >
-                        {t('deleteProject')}
-                      </button>
-                    </div>
-                  )}
                 </div>
-              )}
+              </li>
+            )}
+          </ul>
+        )}
+      </li>
+    )
+  }
+
+  const renderSearch = (): ReactElement => {
+    const hits: Array<{ path: string; name: string; rel: string }> = []
+    for (const listing of listings.values()) {
+      for (const f of listing.folders) {
+        if (f.name.toLowerCase().includes(needle)) {
+          hits.push({ path: f.path, name: f.name, rel: locationLabel(f.path + '/x', root) })
+        }
+        if (!listings.has(f.path)) load(f.path)
+      }
+    }
+    hits.sort((a, b) => a.name.localeCompare(b.name))
+    if (hits.length === 0) return <p className="picker-empty">{t('noMatchingFolders')}</p>
+    return (
+      <ul role="tree">
+        {hits.map((h) => {
+          const disabled = disabledDir(h.path)
+          return (
+            <li key={h.path}>
+              <div
+                className={`picker-row${picked === h.path ? ' active' : ''}${disabled ? ' disabled' : ''}`}
+                role="treeitem"
+                aria-selected={picked === h.path}
+                onClick={() => {
+                  if (!disabled) setPicked(h.path)
+                }}
+                onDoubleClick={() => {
+                  if (!disabled) onPick(h.path)
+                }}
+              >
+                <span className="tree-chevron" aria-hidden="true" />
+                <FolderIcon />
+                <span className="picker-name">{h.name}</span>
+                <span className="picker-rel">{h.rel}</span>
+              </div>
             </li>
           )
         })}
       </ul>
+    )
+  }
 
-      {confirmDeleteId &&
-        (() => {
-          // locale string is "title?\nbody" — split it across the dialog
-          const [confirmTitle, ...confirmBody] = t('deleteProjectConfirm').split('\n')
-          return (
-            <div className="modal-overlay" onClick={() => setConfirmDeleteId(null)}>
-              <div
-                className="modal"
-                role="dialog"
-                aria-modal="true"
-                aria-label={confirmTitle}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <h3>{confirmTitle}</h3>
-                <p>{confirmBody.join('\n')}</p>
-                <div className="modal-buttons">
-                  <button
-                    className="btn btn-secondary"
-                    autoFocus
-                    onClick={() => setConfirmDeleteId(null)}
-                  >
-                    {t('cancel')}
-                  </button>
-                  <button className="btn btn-danger" onClick={() => void confirmDeleteNow()}>
-                    {t('delete')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )
-        })()}
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div
+        className="modal picker-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('moveToFolderTitle')}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3>{t('moveToFolderTitle')}</h3>
+        <input
+          className="picker-search"
+          type="search"
+          placeholder={t('searchFolders')}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="picker-tree">
+          {needle ? renderSearch() : <ul role="tree">{renderNode(root, 0)}</ul>}
+        </div>
+        <div className="modal-buttons picker-buttons">
+          <button
+            className="btn btn-secondary picker-new"
+            onClick={() => {
+              const parent = picked ?? root.path
+              setExpanded((prev) => new Set([...prev, parent]))
+              setCreatingIn(parent)
+              setNewName('')
+            }}
+          >
+            {t('newFolder')}
+          </button>
+          <span className="picker-spacer" />
+          <button className="btn btn-secondary" onClick={onCancel}>
+            {t('cancel')}
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={!picked || disabledDir(picked)}
+            onClick={() => {
+              if (picked) onPick(picked)
+            }}
+          >
+            {t('moveCount', { n: count })}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Same-name conflict prompt ───────────────────────────
+
+interface ConflictPromptProps {
+  names: string[]
+  onChoose: (policy: MoveConflictPolicy) => void
+}
+
+function ConflictPrompt({ names, onChoose }: ConflictPromptProps) {
+  const { t } = useI18n()
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onChoose('skip')
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onChoose])
+  return (
+    <div className="modal-overlay" onClick={() => onChoose('skip')}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('conflictTitle')}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3>{t('conflictTitle')}</h3>
+        <p>
+          {names.length === 1
+            ? t('conflictBodyOne', { name: names[0] })
+            : t('conflictBodyMany', { n: names.length })}
+        </p>
+        {names.length > 1 && (
+          <ul className="modal-file-list">
+            {names.slice(0, 6).map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+            {names.length > 6 && <li>{t('deleteMoreCount', { n: names.length })}</li>}
+          </ul>
+        )}
+        <div className="modal-buttons">
+          <button className="btn btn-secondary" autoFocus onClick={() => onChoose('skip')}>
+            {t('cancel')}
+          </button>
+          <button className="btn btn-secondary" onClick={() => onChoose('keepBoth')}>
+            {t('conflictKeepBoth')}
+          </button>
+          <button className="btn btn-danger" onClick={() => onChoose('replace')}>
+            {t('conflictReplace')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1160,10 +1350,10 @@ export function Home() {
   const [navCounts, setNavCounts] = useState({ recent: 0, starred: 0 })
   const [loadingMore, setLoadingMore] = useState(false)
   const [view, setView] = useState<'recent' | 'starred'>('recent')
-  // Genspark web projects take over the content area (like a selected project)
+  // Genspark web projects take over the content area (like a selected folder)
   const [cloudMode, setCloudMode] = useState(false)
   const [filter, setFilter] = useState('all')
-  // modified-column sort (WPS-style header popover), shared by the global and project tables
+  // modified-column sort (WPS-style header popover), shared by the global and folder tables
   const [fileSort, setFileSort] = useState<'recent' | 'oldest'>('recent')
   const [fileSortMenuOpen, setFileSortMenuOpen] = useState(false)
   const fileSortRef = useRef<HTMLDivElement>(null)
@@ -1192,11 +1382,101 @@ export function Home() {
     () => GREET_ASK_KEYS[Math.floor(Math.random() * GREET_ASK_KEYS.length)]!,
   )
 
-  // ── Project state ──
-  const [projects, setProjects] = useState<ProjectSummaryEntry[]>([])
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  // ── Folder tree state ──
+  const [root, setRoot] = useState<FolderRoot | null>(null)
+  const [treeState] = useState(readTreeState)
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(treeState.expanded))
+  // a root without a saved layout of its own is opened once when first seen
+  const seededRoot = useRef<string | null>(null)
+  const {
+    listings,
+    load: loadFolder,
+    invalidate: invalidateFolders,
+    reset: resetFolders,
+    tracked: trackedFolder,
+  } = useFolderListings()
+  // open folder menu: path + fixed-position anchor (viewport coords), so the
+  // popup can escape the scrollable tree without the tree losing overflow-y
+  const [folderMenu, setFolderMenu] = useState<{
+    path: string
+    where: 'tree' | 'table'
+    top: number
+    right: number
+  } | null>(null)
+  const menuOpenAt = (where: 'tree' | 'table', path: string) =>
+    folderMenu?.where === where && folderMenu.path === path
+  const folderMenuWrapRef = useRef<HTMLDivElement>(null)
+  const [folderRenaming, setFolderRenaming] = useState<{
+    path: string
+    where: 'tree' | 'table'
+    value: string
+  } | null>(null)
+  // inline "new folder" input in the tree, under this parent
+  const [creating, setCreating] = useState<{ parent: string } | null>(null)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [confirmDeleteFolder, setConfirmDeleteFolder] = useState<string | null>(null)
+  // move-to-folder picker for these paths; then the conflict prompt for the ones that collided
+  const [movePicker, setMovePicker] = useState<string[] | null>(null)
+  const [conflict, setConflict] = useState<{ paths: string[]; targetDir: string } | null>(null)
+  // folder row currently hovered by a drag (sidebar or table)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const dragExpandTimer = useRef<number | null>(null)
 
-  const projectMode = hasProjectApi()
+  const loadRoot = useCallback(() => {
+    void window.aiOffice.folderRoot().then((next) => {
+      setRoot((prev) => {
+        if (prev && prev.path !== next.path) {
+          // the default save folder changed in settings: the old tree is meaningless
+          resetFolders()
+          setSelectedFolder(null)
+          setExpanded(new Set([next.path]))
+        }
+        return next
+      })
+    })
+  }, [resetFolders])
+
+  useEffect(loadRoot, [loadRoot])
+
+  useEffect(() => {
+    if (root?.usable) writeTreeState({ expanded: [...expanded], root: root.path })
+  }, [expanded, root])
+
+  useEffect(() => {
+    if (!root?.usable) return
+    if (seededRoot.current !== root.path) {
+      seededRoot.current = root.path
+      if (treeState.root !== root.path) {
+        // a layout saved for another root is not ours: start from just the root
+        setExpanded(new Set([root.path]))
+        return
+      }
+    }
+    for (const dir of expanded) loadFolder(dir)
+  }, [root, expanded, loadFolder, treeState])
+
+  useEffect(() => {
+    if (selectedFolder) loadFolder(selectedFolder)
+  }, [selectedFolder, loadFolder])
+
+  // a remembered selection that no longer exists (deleted in Finder) falls back to the root
+  useEffect(() => {
+    if (!root?.usable || !selectedFolder) return
+    if (!isUnder(root.path, selectedFolder)) {
+      setSelectedFolder(null)
+      return
+    }
+    if (listings.get(selectedFolder)?.missing) {
+      setSelectedFolder(selectedFolder === root.path ? null : dirOf(selectedFolder))
+    }
+  }, [root, selectedFolder, listings])
+
+  useEffect(() => {
+    return window.aiOffice.onFolderChanged((dirs) => {
+      invalidateFolders(dirs.filter(trackedFolder))
+    })
+  }, [invalidateFolders, trackedFolder])
 
   // ── Paged loading ──
   // stale responses are dropped via a request sequence number (when views/filters switch quickly)
@@ -1230,30 +1510,25 @@ export function Home() {
           : { ...prev, recent: visiblePageCount(page) },
       )
     })
-    if (projectMode) {
-      void window.aiOfficeProject!.listProjects().then(setProjects)
-    }
   }
   const reloadRef = useRef(reload)
   reloadRef.current = reload
 
-  // refresh signal for project-view data (re-pull file stats after file changes)
-  const [projectTick, setProjectTick] = useState(0)
-
+  /** everything on screen re-pulls: the paged list, the root and every loaded folder */
   const refresh = () => {
     reloadRef.current(true)
-    setProjectTick((n) => n + 1)
+    loadRoot()
+    invalidateFolders([...listings.keys()])
   }
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
 
   useEffect(() => {
     reloadRef.current(false)
   }, [view, filter])
 
   useEffect(() => {
-    const onFocus = () => {
-      reloadRef.current(true)
-      setProjectTick((n) => n + 1)
-    }
+    const onFocus = () => refreshRef.current()
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [])
@@ -1308,104 +1583,39 @@ export function Home() {
   useDismissablePopover(rowMenu !== null, () => setRowMenu(null), {
     inside: () => [rowMenuWrapRef.current],
   })
-
-  // Escape closes the row menu and the delete-confirm dialog
+  useDismissablePopover(folderMenu !== null, () => setFolderMenu(null), {
+    inside: () => [folderMenuWrapRef.current],
+  })
+  // the fixed-position folder menu would detach from its row while the tree scrolls
   useEffect(() => {
-    if (rowMenu === null && confirmDelete === null && confirmMissing === null) return
+    if (!folderMenu) return
+    const close = () => setFolderMenu(null)
+    window.addEventListener('scroll', close, true)
+    return () => window.removeEventListener('scroll', close, true)
+  }, [folderMenu])
+
+  // Escape closes the row menu and the confirm dialogs
+  useEffect(() => {
+    if (
+      rowMenu === null &&
+      folderMenu === null &&
+      confirmDelete === null &&
+      confirmMissing === null &&
+      confirmDeleteFolder === null
+    )
+      return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setRowMenu(null)
+        setFolderMenu(null)
         setConfirmDelete(null)
         setConfirmMissing(null)
+        setConfirmDeleteFolder(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [rowMenu, confirmDelete, confirmMissing])
-
-  // ── Project files state ────────────────────────────────
-
-  const [projectFileEntries, setProjectFileEntries] = useState<RecentEntry[]>([])
-  const [moveFileMenu, setMoveFileMenu] = useState<string | null>(null)
-  // submenu opens rightward by default; flips left when the window edge is too close
-  const [moveMenuFlip, setMoveMenuFlip] = useState(false)
-  // hover-open/close delays: avoid flashing the submenu while the pointer passes
-  // through, and keep it open while crossing the 4px gap into it
-  const moveMenuTimers = useRef<{ open: number | null; close: number | null }>({
-    open: null,
-    close: null,
-  })
-  // wrap (trigger + submenu) of the row whose move submenu is open — the dismissal guard root
-  const moveMenuWrapRef = useRef<HTMLDivElement>(null)
-
-  const openMoveMenu = (path: string) => {
-    setMoveMenuFlip(false)
-    setMoveFileMenu(path)
-  }
-
-  // ref runs pre-paint, so measuring the real width (long project names exceed
-  // the min-width) and flipping never flashes; once flipped the check no longer hits
-  const measureSubmenu = (el: HTMLDivElement | null) => {
-    if (el && el.getBoundingClientRect().right > document.documentElement.clientWidth - 8) {
-      setMoveMenuFlip(true)
-    }
-  }
-
-  const clearMoveMenuTimer = (kind: 'open' | 'close') => {
-    const timers = moveMenuTimers.current
-    if (timers[kind] !== null) {
-      window.clearTimeout(timers[kind])
-      timers[kind] = null
-    }
-  }
-  const [bulkMoveMenu, setBulkMoveMenu] = useState(false)
-  // selection-bar wrap (trigger + menu) of the bulk move menu — the dismissal guard root
-  const bulkMoveWrapRef = useRef<HTMLSpanElement>(null)
-
-  useEffect(() => {
-    if (!projectMode || !selectedProjectId) {
-      setProjectFileEntries([])
-      return
-    }
-    let active = true
-    const api = window.aiOfficeProject!
-    void api.listFiles(selectedProjectId).then(async (paths) => {
-      const stats = await window.aiOffice.statPaths(paths)
-      if (!active) return
-      setProjectFileEntries(stats.sort((a, b) => b.mtimeMs - a.mtimeMs))
-    })
-    return () => {
-      active = false
-    }
-  }, [projectMode, selectedProjectId, projectTick])
-
-  // the submenu lives inside the row menu: when that closes, drop the stale
-  // submenu state and any pending hover timers so it doesn't reopen expanded
-  useEffect(() => {
-    if (rowMenu === null) {
-      clearMoveMenuTimer('open')
-      clearMoveMenuTimer('close')
-      setMoveFileMenu(null)
-    }
-  }, [rowMenu])
-
-  // move-file submenu: unified dismissal (outside press, window blur, chrome press)
-  useDismissablePopover(moveFileMenu !== null, () => setMoveFileMenu(null), {
-    inside: () => [moveMenuWrapRef.current],
-  })
-
-  // bulk move-to-project menu in the selection bar: unified dismissal, plus Escape
-  useDismissablePopover(bulkMoveMenu, () => setBulkMoveMenu(false), {
-    inside: () => [bulkMoveWrapRef.current],
-  })
-  useEffect(() => {
-    if (!bulkMoveMenu) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setBulkMoveMenu(false)
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [bulkMoveMenu])
+  }, [rowMenu, folderMenu, confirmDelete, confirmMissing, confirmDeleteFolder])
 
   // WPS-style sortable "modified" column header, shared by both file tables
   const renderModifiedHeader = () => (
@@ -1456,19 +1666,22 @@ export function Home() {
     </div>
   )
 
-  // ── Plain view (no project selected): filtering runs in the main process; entries is the visible list ──
+  // ── Plain view (no folder selected): filtering runs in the main process; entries is the visible list ──
   const selectedPaths = entries.filter((e) => selected.has(e.path)).map((e) => e.path)
   const allSelected = entries.length > 0 && selectedPaths.length === entries.length
 
-  // project view shares the same `selected` set (keyed by path)
-  const projSelectedPaths = projectFileEntries
-    .filter((e) => selected.has(e.path))
-    .map((e) => e.path)
-  const projAllSelected =
-    projectFileEntries.length > 0 && projSelectedPaths.length === projectFileEntries.length
+  // folder view: files of the selected folder under the type filter; shares the same `selected` set
+  const folderListing = selectedFolder ? listings.get(selectedFolder) : undefined
+  const folderFiles = (folderListing?.files ?? []).filter((e) => matchesFilter(e, filter))
+  const folderSubfolders = folderListing?.folders ?? []
+  const folderSelectedPaths = folderFiles.filter((e) => selected.has(e.path)).map((e) => e.path)
+  const folderAllSelected =
+    folderFiles.length > 0 && folderSelectedPaths.length === folderFiles.length
 
   const changeView = (next: 'recent' | 'starred') => {
     setView(next)
+    setSelectedFolder(null)
+    setCloudMode(false)
     setSelected(new Set())
     setRowMenu(null)
   }
@@ -1477,6 +1690,32 @@ export function Home() {
     setFilter(key)
     setSelected(new Set())
     setRowMenu(null)
+  }
+
+  const selectFolder = (dir: string) => {
+    setSelectedFolder(dir)
+    setCloudMode(false)
+    setSelected(new Set())
+    setRowMenu(null)
+    setFolderMenu(null)
+  }
+
+  const toggleExpanded = (dir: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(dir)) next.delete(dir)
+      else next.add(dir)
+      return next
+    })
+  }
+
+  const expandTo = (dir: string) => {
+    if (!root) return
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      for (const crumb of crumbsOf(root, dir)) next.add(crumb.path)
+      return next
+    })
   }
 
   const toggleSelect = (path: string, on: boolean) => {
@@ -1492,8 +1731,8 @@ export function Home() {
     setSelected(allSelected ? new Set() : new Set(entries.map((e) => e.path)))
   }
 
-  const toggleSelectAllProject = () => {
-    setSelected(projAllSelected ? new Set() : new Set(projectFileEntries.map((e) => e.path)))
+  const toggleSelectAllFolder = () => {
+    setSelected(folderAllSelected ? new Set() : new Set(folderFiles.map((e) => e.path)))
   }
 
   const toggleStar = (path: string) => {
@@ -1539,75 +1778,201 @@ export function Home() {
     })
   }
 
-  const moveFileTo = async (filePath: string, targetProjectId: string) => {
-    setMoveFileMenu(null)
-    setRowMenu(null)
-    try {
-      await window.aiOfficeProject?.moveFile(filePath, targetProjectId)
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error))
+  // ── Folder actions ──
+
+  const startCreateFolder = (parent: string) => {
+    setFolderMenu(null)
+    expandTo(parent)
+    setCreating({ parent })
+    setNewFolderName('')
+  }
+
+  // inline inputs commit on Enter or blur and cancel on Escape; the blur an
+  // unmount may fire reads the edit from refs mirrored during render, so a
+  // finished or cancelled edit is a no-op (see FolderPicker.commitCreate)
+  const creatingFolderRef = useRef<{ parent: string; name: string } | null>(null)
+  creatingFolderRef.current = creating ? { parent: creating.parent, name: newFolderName } : null
+  const folderRenamingRef = useRef(folderRenaming)
+  folderRenamingRef.current = folderRenaming
+
+  const commitCreateFolder = async () => {
+    const pending = creatingFolderRef.current
+    creatingFolderRef.current = null
+    const name = pending?.name.trim()
+    setCreating(null)
+    setNewFolderName('')
+    if (!pending || !name) return
+    const result = await window.aiOffice.createFolder(pending.parent, name)
+    if (!result.ok) {
+      window.alert(result.error ?? t('renameFailed'))
       return
     }
+    invalidateFolders([pending.parent])
+  }
+
+  const startRenameFolder = (entry: { path: string; name: string }, where: 'tree' | 'table') => {
+    setFolderMenu(null)
+    setRowMenu(null)
+    setFolderRenaming({ path: entry.path, where, value: entry.name })
+  }
+
+  const commitRenameFolder = async () => {
+    const pending = folderRenamingRef.current
+    folderRenamingRef.current = null
+    setFolderRenaming(null)
+    if (!pending) return
+    const value = pending.value.trim()
+    if (!value || value === fileName(pending.path)) return
+    const result = await window.aiOffice.renameFolder(pending.path, value)
+    if (!result.ok) {
+      window.alert(result.error ?? t('renameFailed'))
+      return
+    }
+    if (result.path) {
+      const renamed = result.path
+      // selection / expansion follow the renamed folder (and anything inside it)
+      const rebase = (p: string) =>
+        p === pending.path || isUnder(pending.path, p) ? renamed + p.slice(pending.path.length) : p
+      setExpanded((prev) => new Set([...prev].map(rebase)))
+      if (selectedFolder) setSelectedFolder(rebase(selectedFolder))
+    }
     refresh()
-    if (selectedProjectId) {
-      setProjectFileEntries((prev) => prev.filter((e) => e.path !== filePath))
-    }
   }
 
-  const moveFilesTo = async (paths: string[], targetProjectId: string) => {
-    setBulkMoveMenu(false)
+  const confirmDeleteFolderNow = async () => {
+    const dir = confirmDeleteFolder
+    setConfirmDeleteFolder(null)
+    if (!dir) return
+    await window.aiOffice.deleteFolder(dir)
+    if (selectedFolder && (selectedFolder === dir || isUnder(dir, selectedFolder))) {
+      setSelectedFolder(dirOf(dir))
+    }
+    refresh()
+  }
+
+  const startMove = (paths: string[]) => {
+    setRowMenu(null)
+    setFolderMenu(null)
+    if (paths.length > 0) setMovePicker(paths)
+  }
+
+  const doMove = async (paths: string[], targetDir: string, policy: MoveConflictPolicy) => {
+    setMovePicker(null)
+    setConflict(null)
     setSelected(new Set())
-    // drop moved rows immediately (same as moveFileTo) so they cannot be
-    // re-selected or re-moved while the sequential IPC loop is in flight
-    const moved = new Set(paths)
-    setProjectFileEntries((prev) => prev.filter((e) => !moved.has(e.path)))
-    try {
-      for (const path of paths) {
-        await window.aiOfficeProject?.moveFile(path, targetProjectId)
+    const result = await window.aiOffice.movePaths(paths, targetDir, policy)
+    if (result.moved.length > 0 && selectedFolder) {
+      // a moved folder that held the selection drags the selection along
+      for (const { from, to } of result.moved) {
+        if (selectedFolder === from || isUnder(from, selectedFolder)) {
+          setSelectedFolder(to + selectedFolder.slice(from.length))
+        }
       }
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : String(error))
-    } finally {
-      // A bulk move can fail after earlier paths succeeded; reload to restore
-      // unmoved rows while keeping successfully moved rows out of this project.
-      refresh()
+    }
+    refresh()
+    if (result.failed.length > 0) window.alert(result.failed[0].error)
+    if (result.conflicts.length > 0) setConflict({ paths: result.conflicts, targetDir })
+  }
+
+  // ── Drag & drop (rows → folder rows) ──
+
+  const dragPathsFor = (path: string, context: 'global' | 'folder'): string[] => {
+    const pool = context === 'folder' ? folderSelectedPaths : selectedPaths
+    return pool.includes(path) ? pool : [path]
+  }
+
+  const onRowDragStart = (event: ReactDragEvent, paths: string[]) => {
+    event.dataTransfer.setData(DRAG_PATHS_MIME, JSON.stringify(paths))
+    event.dataTransfer.effectAllowed = 'move'
+    setRowMenu(null)
+  }
+
+  const readDragPaths = (event: ReactDragEvent): string[] => {
+    try {
+      const raw = JSON.parse(event.dataTransfer.getData(DRAG_PATHS_MIME)) as unknown
+      return Array.isArray(raw) ? raw.filter((p): p is string => typeof p === 'string') : []
+    } catch {
+      return []
     }
   }
 
-  // ── New file (passes projectId when a project is selected) ──
-  const handleNewDoc = () => {
-    void window.aiOffice.newDoc(selectedProjectId ? { projectId: selectedProjectId } : undefined)
+  const clearDragExpand = () => {
+    if (dragExpandTimer.current !== null) {
+      window.clearTimeout(dragExpandTimer.current)
+      dragExpandTimer.current = null
+    }
   }
 
-  const handleNewSheet = () => {
-    void window.aiOffice.newSheet(selectedProjectId ? { projectId: selectedProjectId } : undefined)
-  }
+  const folderDropProps = (dir: string, { autoExpand }: { autoExpand: boolean }) => ({
+    onDragOver: (event: ReactDragEvent) => {
+      if (!event.dataTransfer.types.includes(DRAG_PATHS_MIME)) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+      if (dropTarget !== dir) {
+        setDropTarget(dir)
+        clearDragExpand()
+        if (autoExpand && !expanded.has(dir)) {
+          dragExpandTimer.current = window.setTimeout(() => {
+            setExpanded((prev) => new Set([...prev, dir]))
+          }, DRAG_EXPAND_DELAY_MS)
+        }
+      }
+    },
+    onDragLeave: (event: ReactDragEvent) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+      if (dropTarget === dir) setDropTarget(null)
+      clearDragExpand()
+    },
+    onDrop: (event: ReactDragEvent) => {
+      event.preventDefault()
+      setDropTarget(null)
+      clearDragExpand()
+      const paths = readDragPaths(event).filter((p) => p !== dir && !isUnder(p, dir))
+      if (paths.length > 0) void doMove(paths, dir, 'ask')
+    },
+  })
 
-  const handleNewSlide = () => {
-    void window.aiOffice.newSlide(selectedProjectId ? { projectId: selectedProjectId } : undefined)
-  }
-
-  const handleNewMarkdown = () => {
-    void window.aiOffice.newMarkdown(
-      selectedProjectId ? { projectId: selectedProjectId } : undefined,
-    )
-  }
-
-  const handleNewHtml = () => {
-    void window.aiOffice.newHtml(selectedProjectId ? { projectId: selectedProjectId } : undefined)
-  }
-
-  const handleNewPdf = () => {
-    void window.aiOffice.newPdf(selectedProjectId ? { projectId: selectedProjectId } : undefined)
-  }
+  // ── New file (lands in the selected folder) ──
+  const newFileOpts =
+    selectedFolder && root && selectedFolder !== root.path ? { dir: selectedFolder } : undefined
 
   const NEW_ITEMS = [
-    { ext: 'docx', title: t('newDoc'), sub: '.docx', action: handleNewDoc },
-    { ext: 'xlsx', title: t('newSheet'), sub: '.xlsx', action: handleNewSheet },
-    { ext: 'pptx', title: t('newSlide'), sub: '.pptx', action: handleNewSlide },
-    { ext: 'md', title: t('newMarkdown'), sub: '.md', action: handleNewMarkdown },
-    { ext: 'html', title: t('newHtml'), sub: '.html', action: handleNewHtml },
-    { ext: 'pdf', title: t('newPdf'), sub: '.pdf', action: handleNewPdf },
+    {
+      ext: 'docx',
+      title: t('newDoc'),
+      sub: '.docx',
+      action: () => window.aiOffice.newDoc(newFileOpts),
+    },
+    {
+      ext: 'xlsx',
+      title: t('newSheet'),
+      sub: '.xlsx',
+      action: () => window.aiOffice.newSheet(newFileOpts),
+    },
+    {
+      ext: 'pptx',
+      title: t('newSlide'),
+      sub: '.pptx',
+      action: () => window.aiOffice.newSlide(newFileOpts),
+    },
+    {
+      ext: 'md',
+      title: t('newMarkdown'),
+      sub: '.md',
+      action: () => window.aiOffice.newMarkdown(newFileOpts),
+    },
+    {
+      ext: 'html',
+      title: t('newHtml'),
+      sub: '.html',
+      action: () => window.aiOffice.newHtml(newFileOpts),
+    },
+    {
+      ext: 'pdf',
+      title: t('newPdf'),
+      sub: '.pdf',
+      action: () => window.aiOffice.newPdf(newFileOpts),
+    },
   ]
 
   function renderQuickCards() {
@@ -1631,14 +1996,7 @@ export function Home() {
           data-tip={OPEN_LOCAL_EXTENSIONS}
         >
           <span className="quick-folder">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M1.5 4A1.5 1.5 0 0 1 3 2.5h3.1c.44 0 .85.19 1.13.52L8.4 4.4H13A1.5 1.5 0 0 1 14.5 5.9v5.6A1.5 1.5 0 0 1 13 13H3a1.5 1.5 0 0 1-1.5-1.5V4z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <FolderIcon size={18} />
           </span>
           <span className="quick-text">
             <span className="quick-title-row">
@@ -1651,19 +2009,252 @@ export function Home() {
     )
   }
 
-  // ── File row rendering (shared by the plain view and the project files view) ──
+  // ── Sidebar folder tree ──
 
-  function renderFileRow(entry: RecentEntry, context: 'global' | 'project') {
-    const isRenaming = renaming?.path === entry.path
-    const otherProjects = projects.filter(
-      (p) => p.id !== (context === 'project' ? selectedProjectId : undefined),
+  const renderFolderMenu = (entry: { path: string; name: string }, isRoot: boolean) => (
+    <div
+      className="folder-menu-wrap"
+      ref={menuOpenAt('tree', entry.path) ? folderMenuWrapRef : undefined}
+    >
+      <button
+        className="folder-more-btn"
+        aria-label={t('folderMoreActions', { name: entry.name })}
+        aria-expanded={menuOpenAt('tree', entry.path)}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (menuOpenAt('tree', entry.path)) {
+            setFolderMenu(null)
+            return
+          }
+          const rect = e.currentTarget.getBoundingClientRect()
+          setFolderMenu({
+            path: entry.path,
+            where: 'tree',
+            top: rect.bottom + 4,
+            right: window.innerWidth - rect.right,
+          })
+        }}
+      >
+        <MoreDots />
+      </button>
+      {folderMenu && menuOpenAt('tree', entry.path) && (
+        <div
+          className="folder-menu"
+          role="menu"
+          style={{ top: folderMenu.top, right: folderMenu.right }}
+        >
+          <button role="menuitem" onClick={() => startCreateFolder(entry.path)}>
+            {t('newSubfolder')}
+          </button>
+          {!isRoot && (
+            <button role="menuitem" onClick={() => startRenameFolder(entry, 'tree')}>
+              {t('rename')}
+            </button>
+          )}
+          {!isRoot && (
+            <button role="menuitem" onClick={() => startMove([entry.path])}>
+              {t('moveToFolder')}
+            </button>
+          )}
+          <button
+            role="menuitem"
+            onClick={() => {
+              setFolderMenu(null)
+              void window.aiOffice.revealPath(entry.path)
+            }}
+          >
+            {t('revealInFolder')}
+          </button>
+          {!isRoot && (
+            <>
+              <div className="row-menu-divider" />
+              <button
+                role="menuitem"
+                className="danger"
+                onClick={() => {
+                  setFolderMenu(null)
+                  setConfirmDeleteFolder(entry.path)
+                }}
+              >
+                {t('deleteFolder')}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
+  const renderNewFolderInput = (depth: number) => (
+    <li className="tree-item">
+      <div className="tree-row" style={{ paddingLeft: 8 + depth * 14 }}>
+        <span className="tree-chevron" aria-hidden="true" />
+        <span className="tree-icon" aria-hidden="true">
+          <FolderIcon />
+        </span>
+        <input
+          className="folder-rename-input inline"
+          autoFocus
+          placeholder={t('untitledFolder')}
+          value={newFolderName}
+          onChange={(e) => setNewFolderName(e.target.value)}
+          onBlur={() => void commitCreateFolder()}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.nativeEvent.isComposing) return
+            if (e.key === 'Enter') void commitCreateFolder()
+            if (e.key === 'Escape') {
+              setCreating(null)
+              setNewFolderName('')
+            }
+          }}
+        />
+      </div>
+    </li>
+  )
+
+  function renderTreeNode(
+    entry: { path: string; name: string; hasSubfolders: boolean },
+    depth: number,
+  ): ReactElement {
+    const isRoot = root !== null && entry.path === root.path
+    const isOpen = expanded.has(entry.path)
+    const children = listings.get(entry.path)?.folders ?? []
+    const isActive = selectedFolder === entry.path
+    const isRenaming = folderRenaming?.where === 'tree' && folderRenaming.path === entry.path
+    const showChevron = isRoot || entry.hasSubfolders || children.length > 0
+    return (
+      <li key={entry.path} className="tree-item">
+        <div
+          className={`tree-row${isActive ? ' active' : ''}${dropTarget === entry.path ? ' drop-target' : ''}`}
+          style={{ paddingLeft: 8 + depth * 14 }}
+          role="treeitem"
+          aria-selected={isActive}
+          aria-expanded={showChevron ? isOpen : undefined}
+          tabIndex={0}
+          onClick={() => selectFolder(entry.path)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') selectFolder(entry.path)
+            if (e.key === 'ArrowRight' && !isOpen) toggleExpanded(entry.path)
+            if (e.key === 'ArrowLeft' && isOpen) toggleExpanded(entry.path)
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setFolderMenu({
+              path: entry.path,
+              where: 'tree',
+              top: e.clientY + 2,
+              right: window.innerWidth - e.clientX,
+            })
+          }}
+          draggable={!isRoot && !isRenaming}
+          onDragStart={(e) => onRowDragStart(e, [entry.path])}
+          {...folderDropProps(entry.path, { autoExpand: true })}
+        >
+          <button
+            className="tree-chevron"
+            tabIndex={-1}
+            aria-hidden="true"
+            style={{ visibility: showChevron ? undefined : 'hidden' }}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleExpanded(entry.path)
+            }}
+          >
+            <Chevron open={isOpen} />
+          </button>
+          <span className="tree-icon" aria-hidden="true">
+            <FolderIcon open={isOpen} />
+          </span>
+          {isRenaming ? (
+            <input
+              className="folder-rename-input inline"
+              value={folderRenaming.value}
+              autoFocus
+              onFocus={(e) => e.target.select()}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                setFolderRenaming({ path: entry.path, where: 'tree', value: e.target.value })
+              }
+              onBlur={() => void commitRenameFolder()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.nativeEvent.isComposing) return
+                if (e.key === 'Enter') void commitRenameFolder()
+                if (e.key === 'Escape') setFolderRenaming(null)
+              }}
+            />
+          ) : (
+            <span className="tree-name">{entry.name}</span>
+          )}
+          {renderFolderMenu(entry, isRoot)}
+        </div>
+        {isOpen && (children.length > 0 || creating?.parent === entry.path) && (
+          <ul className="tree-children" role="group">
+            {creating?.parent === entry.path && renderNewFolderInput(depth + 1)}
+            {children.map((child) => renderTreeNode(child, depth + 1))}
+          </ul>
+        )}
+      </li>
     )
+  }
+
+  function renderFolderPanel() {
+    return (
+      <div className="folder-panel">
+        <div className="folder-panel-head">
+          <span className="folder-panel-title">{t('folders')}</span>
+          {root?.usable && (
+            <button
+              className="folder-add-btn"
+              data-tip={t('newFolder')}
+              aria-label={t('newFolder')}
+              onClick={() => startCreateFolder(selectedFolder ?? root.path)}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path
+                  d="M7 1v12M1 7h12"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
+        {root && !root.usable ? (
+          <div className="folder-unusable">
+            <p>{t('rootUnusable')}</p>
+            <button
+              className="btn btn-secondary"
+              onClick={() => void window.aiOffice.pickDefaultSaveDir().then(() => loadRoot())}
+            >
+              {t('pickSaveDir')}
+            </button>
+          </div>
+        ) : (
+          <ul className="tree" role="tree">
+            {root && renderTreeNode({ path: root.path, name: root.name, hasSubfolders: true }, 0)}
+          </ul>
+        )}
+      </div>
+    )
+  }
+
+  // ── File row rendering (shared by the plain view and the folder view) ──
+
+  function renderFileRow(entry: RecentEntry, context: 'global' | 'folder') {
+    const isRenaming = renaming?.path === entry.path
+    const canDelete =
+      context === 'folder' ? folderSelectedPaths.length === 0 : selectedPaths.length === 0
     return (
       <li className="recent-row" key={entry.path}>
         <div
           className={`recent-item${entry.missing ? ' missing' : ''}`}
           role="button"
           tabIndex={0}
+          draggable={!isRenaming && !entry.missing}
+          onDragStart={(e) => onRowDragStart(e, dragPathsFor(entry.path, context))}
           onClick={() => {
             if (isRenaming) return
             if (entry.missing) setConfirmMissing(entry)
@@ -1707,7 +2298,9 @@ export function Home() {
           ) : (
             <span className="recent-name">{entry.name}</span>
           )}
-          <span className="recent-path">{parentDir(entry.path)}</span>
+          <span className="recent-path" title={dirOf(entry.path)}>
+            {locationLabel(entry.path, root)}
+          </span>
           <span className="recent-time">
             {entry.missing ? '—' : formatModified(entry.mtimeMs, i18n)}
           </span>
@@ -1776,76 +2369,12 @@ export function Home() {
                 >
                   {t('copyPath')}
                 </button>
-                {projectMode && otherProjects.length > 0 && (
+                {root?.usable && !entry.missing && (
                   <>
                     <div className="row-menu-divider" />
-                    <div
-                      className="move-menu-wrap"
-                      ref={moveFileMenu === entry.path ? moveMenuWrapRef : undefined}
-                      onMouseEnter={() => {
-                        clearMoveMenuTimer('close')
-                        if (moveFileMenu === entry.path) return
-                        clearMoveMenuTimer('open')
-                        moveMenuTimers.current.open = window.setTimeout(
-                          () => openMoveMenu(entry.path),
-                          160,
-                        )
-                      }}
-                      onMouseLeave={() => {
-                        clearMoveMenuTimer('open')
-                        clearMoveMenuTimer('close')
-                        moveMenuTimers.current.close = window.setTimeout(
-                          () => setMoveFileMenu(null),
-                          140,
-                        )
-                      }}
-                    >
-                      <button
-                        role="menuitem"
-                        className="submenu-trigger"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          clearMoveMenuTimer('open')
-                          clearMoveMenuTimer('close')
-                          if (moveFileMenu === entry.path) setMoveFileMenu(null)
-                          else openMoveMenu(entry.path)
-                        }}
-                      >
-                        {t('moveToProject')}
-                        <svg
-                          width="11"
-                          height="11"
-                          viewBox="0 0 12 12"
-                          aria-hidden="true"
-                          style={{ marginLeft: 'auto' }}
-                        >
-                          <path
-                            d="M4.5 2.5l4 3.5-4 3.5"
-                            stroke="currentColor"
-                            strokeWidth="1.3"
-                            strokeLinecap="round"
-                            fill="none"
-                          />
-                        </svg>
-                      </button>
-                      {moveFileMenu === entry.path && (
-                        <div
-                          className={`submenu${moveMenuFlip ? ' submenu-left' : ''}`}
-                          role="menu"
-                          ref={measureSubmenu}
-                        >
-                          {otherProjects.map((p) => (
-                            <button
-                              key={p.id}
-                              role="menuitem"
-                              onClick={() => void moveFileTo(entry.path, p.id)}
-                            >
-                              {p.isDefault ? t('defaultProject') : p.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <button role="menuitem" onClick={() => startMove([entry.path])}>
+                      {t('moveToFolder')}
+                    </button>
                   </>
                 )}
                 <div className="row-menu-divider" />
@@ -1855,12 +2384,14 @@ export function Home() {
                 <button role="menuitem" onClick={() => duplicateFile(entry.path)}>
                   {t('duplicate')}
                 </button>
-                {context === 'global' && selectedPaths.length === 0 && (
+                {canDelete && (
                   <>
                     <div className="row-menu-divider" />
-                    <button role="menuitem" onClick={() => removeRecent([entry.path])}>
-                      {t('removeFromList')}
-                    </button>
+                    {context === 'global' && (
+                      <button role="menuitem" onClick={() => removeRecent([entry.path])}>
+                        {t('removeFromList')}
+                      </button>
+                    )}
                     <button
                       role="menuitem"
                       className="danger"
@@ -1878,13 +2409,174 @@ export function Home() {
     )
   }
 
-  // ── Project files view ────────────────────────────────
+  /** sub-folder row in the folder view's table: enter on click, same … menu as the tree */
+  function renderSubfolderRow(entry: FolderEntry) {
+    const isRenaming = folderRenaming?.where === 'table' && folderRenaming.path === entry.path
+    return (
+      <li className="recent-row" key={entry.path}>
+        <div
+          className={`recent-item folder-item${dropTarget === entry.path ? ' drop-target' : ''}`}
+          role="button"
+          tabIndex={0}
+          draggable={!isRenaming}
+          onDragStart={(e) => onRowDragStart(e, [entry.path])}
+          {...folderDropProps(entry.path, { autoExpand: false })}
+          onClick={() => {
+            if (isRenaming) return
+            expandTo(entry.path)
+            selectFolder(entry.path)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && event.target === event.currentTarget) {
+              expandTo(entry.path)
+              selectFolder(entry.path)
+            }
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setFolderMenu({
+              path: entry.path,
+              where: 'table',
+              top: e.clientY + 2,
+              right: window.innerWidth - e.clientX,
+            })
+          }}
+        >
+          <span className="col-check" aria-hidden="true" />
+          <span className="recent-icon folder-badge">
+            <FolderIcon size={22} />
+          </span>
+          {isRenaming ? (
+            <input
+              className="rename-input"
+              value={folderRenaming.value}
+              autoFocus
+              onFocus={(event) => event.target.select()}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) =>
+                setFolderRenaming({ path: entry.path, where: 'table', value: event.target.value })
+              }
+              onBlur={() => void commitRenameFolder()}
+              onKeyDown={(event) => {
+                event.stopPropagation()
+                if (event.nativeEvent.isComposing) return
+                if (event.key === 'Enter') void commitRenameFolder()
+                if (event.key === 'Escape') setFolderRenaming(null)
+              }}
+            />
+          ) : (
+            <span className="recent-name">{entry.name}</span>
+          )}
+          <span className="recent-path">{t('folderType')}</span>
+          <span className="recent-time">{formatModified(entry.mtimeMs, i18n)}</span>
+          <span className="recent-size">—</span>
+          <span />
+          <span
+            className="recent-actions"
+            ref={menuOpenAt('table', entry.path) ? folderMenuWrapRef : undefined}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              className="more-btn"
+              aria-label={t('folderMoreActions', { name: entry.name })}
+              aria-expanded={menuOpenAt('table', entry.path)}
+              onClick={(e) => {
+                if (menuOpenAt('table', entry.path)) {
+                  setFolderMenu(null)
+                  return
+                }
+                const rect = e.currentTarget.getBoundingClientRect()
+                setFolderMenu({
+                  path: entry.path,
+                  where: 'table',
+                  top: rect.bottom + 4,
+                  right: window.innerWidth - rect.right,
+                })
+              }}
+            >
+              <MoreDots />
+            </button>
+            {folderMenu && menuOpenAt('table', entry.path) && (
+              <div
+                className="folder-menu"
+                role="menu"
+                style={{ top: folderMenu.top, right: folderMenu.right }}
+              >
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setFolderMenu(null)
+                    expandTo(entry.path)
+                    selectFolder(entry.path)
+                  }}
+                >
+                  {t('open')}
+                </button>
+                <button role="menuitem" onClick={() => startRenameFolder(entry, 'table')}>
+                  {t('rename')}
+                </button>
+                <button role="menuitem" onClick={() => startMove([entry.path])}>
+                  {t('moveToFolder')}
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setFolderMenu(null)
+                    void window.aiOffice.revealPath(entry.path)
+                  }}
+                >
+                  {t('revealInFolder')}
+                </button>
+                <div className="row-menu-divider" />
+                <button
+                  role="menuitem"
+                  className="danger"
+                  onClick={() => {
+                    setFolderMenu(null)
+                    setConfirmDeleteFolder(entry.path)
+                  }}
+                >
+                  {t('deleteFolder')}
+                </button>
+              </div>
+            )}
+          </span>
+        </div>
+      </li>
+    )
+  }
 
-  function renderProjectContent() {
-    const proj = projects.find((p) => p.id === selectedProjectId)
-    if (!proj) return null
-    const otherProjects = projects.filter((p) => p.id !== proj.id)
+  const renderEmpty = (hint: string) => (
+    <p className="empty proj-empty">
+      <svg
+        className="proj-empty-icon"
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M6.29297 3.75H14.1729C14.4927 3.75 14.7979 3.88392 15.0146 4.11914L18.5566 7.96387C18.7512 8.17512 18.8593 8.45208 18.8594 8.73926V19.1055C18.8593 19.7376 18.346 20.25 17.7139 20.25H6.29297C5.66091 20.2499 5.14855 19.7375 5.14844 19.1055V4.89453C5.14855 4.26247 5.66091 3.75011 6.29297 3.75Z"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
+        <path
+          d="M13.8984 4V7.11C13.8984 8.15382 14.7446 9 15.7884 9H18.8984"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
+      </svg>
+      <span className="empty-hint">{hint}</span>
+    </p>
+  )
 
+  // ── Folder view ────────────────────────────────────────
+
+  function renderFolderContent() {
+    if (!root) return null
+    const total = folderSubfolders.length + folderFiles.length
+    const sortedFiles = fileSort === 'oldest' ? [...folderFiles].reverse() : folderFiles
     return (
       <main className="content">
         <section className="quick-start" aria-label={t('secQuickStart')}>
@@ -1894,46 +2586,19 @@ export function Home() {
           {renderQuickCards()}
         </section>
 
-        <section className="recents" aria-label={t('secProjectFiles')}>
+        <section className="recents" aria-label={t('folders')}>
           <div className="recents-toolbar">
-            <div className="recents-heading">
-              <span className="section-label">{t('secProjectFiles')}</span>
-              <span className="file-count">
-                {t(fileCountKey(projectFileEntries.length), { n: projectFileEntries.length })}
-              </span>
-            </div>
-            {projSelectedPaths.length > 0 && (
+            {folderSelectedPaths.length > 0 ? (
               <div className="selection-bar">
                 <span className="selection-count">
-                  {t('selectedCount', { n: projSelectedPaths.length })}
+                  {t('selectedCount', { n: folderSelectedPaths.length })}
                 </span>
-                {otherProjects.length > 0 && (
-                  <span className="selection-move-wrap" ref={bulkMoveWrapRef}>
-                    <button
-                      className="selection-action"
-                      aria-expanded={bulkMoveMenu}
-                      onClick={() => setBulkMoveMenu((open) => !open)}
-                    >
-                      {t('moveToProject')}
-                    </button>
-                    {bulkMoveMenu && (
-                      <div className="selection-move-menu" role="menu">
-                        {otherProjects.map((p) => (
-                          <button
-                            key={p.id}
-                            role="menuitem"
-                            onClick={() => void moveFilesTo(projSelectedPaths, p.id)}
-                          >
-                            {p.isDefault ? t('defaultProject') : p.name}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </span>
-                )}
+                <button className="selection-action" onClick={() => startMove(folderSelectedPaths)}>
+                  {t('moveToFolder')}
+                </button>
                 <button
                   className="selection-action danger"
-                  onClick={() => deleteFiles(projSelectedPaths)}
+                  onClick={() => deleteFiles(folderSelectedPaths)}
                 >
                   {t('deleteFiles')}
                 </button>
@@ -1941,40 +2606,39 @@ export function Home() {
                   {t('cancel')}
                 </button>
               </div>
+            ) : (
+              <div className="filter-pills" role="tablist" aria-label={t('filterAria')}>
+                {FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    className={`filter-pill${filter === f.key ? ' active' : ''}`}
+                    onClick={() => changeFilter(f.key)}
+                  >
+                    {t(f.label)}
+                  </button>
+                ))}
+              </div>
             )}
+            <div className="recents-heading folder-heading">
+              <span className="file-count">
+                {t(total === 1 ? 'itemCountOne' : 'itemCount', { n: total })}
+              </span>
+            </div>
           </div>
 
-          {projectFileEntries.length === 0 ? (
-            <p className="empty proj-empty">
-              <svg
-                className="proj-empty-icon"
-                width="48"
-                height="48"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6.29297 3.75H14.1729C14.4927 3.75 14.7979 3.88392 15.0146 4.11914L18.5566 7.96387C18.7512 8.17512 18.8593 8.45208 18.8594 8.73926V19.1055C18.8593 19.7376 18.346 20.25 17.7139 20.25H6.29297C5.66091 20.2499 5.14855 19.7375 5.14844 19.1055V4.89453C5.14855 4.26247 5.66091 3.75011 6.29297 3.75Z"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
-                <path
-                  d="M13.8984 4V7.11C13.8984 8.15382 14.7446 9 15.7884 9H18.8984"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
-              </svg>
-              <span className="empty-hint">{t('projEmptyHint')}</span>
-            </p>
+          {total === 0 ? (
+            renderEmpty(filter === 'all' ? t('emptyFolder') : t('emptyFiltered'))
           ) : (
-            <div className="recent-table">
+            <div
+              className={`recent-table${folderSelectedPaths.length > 0 ? ' has-selection' : ''}`}
+            >
               <div className="recent-columns">
                 <span className="col-check">
                   <input
                     type="checkbox"
-                    checked={projAllSelected}
-                    onChange={toggleSelectAllProject}
+                    checked={folderAllSelected}
+                    disabled={folderFiles.length === 0}
+                    onChange={toggleSelectAllFolder}
                     aria-label={t('selectAll')}
                   />
                 </span>
@@ -1986,10 +2650,8 @@ export function Home() {
                 <span />
               </div>
               <ul className="recent-list">
-                {(fileSort === 'oldest'
-                  ? [...projectFileEntries].reverse()
-                  : projectFileEntries
-                ).map((entry) => renderFileRow(entry, 'project'))}
+                {folderSubfolders.map((entry) => renderSubfolderRow(entry))}
+                {sortedFiles.map((entry) => renderFileRow(entry, 'folder'))}
               </ul>
             </div>
           )}
@@ -2035,6 +2697,11 @@ export function Home() {
                 <span className="selection-count">
                   {t('selectedCount', { n: selectedPaths.length })}
                 </span>
+                {root?.usable && (
+                  <button className="selection-action" onClick={() => startMove(selectedPaths)}>
+                    {t('moveToFolder')}
+                  </button>
+                )}
                 <button className="selection-action" onClick={() => removeRecent(selectedPaths)}>
                   {t('removeFromList')}
                 </button>
@@ -2070,34 +2737,13 @@ export function Home() {
           </div>
 
           {entries.length === 0 ? (
-            <p className="empty proj-empty">
-              <svg
-                className="proj-empty-icon"
-                width="48"
-                height="48"
-                viewBox="0 0 24 24"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6.29297 3.75H14.1729C14.4927 3.75 14.7979 3.88392 15.0146 4.11914L18.5566 7.96387C18.7512 8.17512 18.8593 8.45208 18.8594 8.73926V19.1055C18.8593 19.7376 18.346 20.25 17.7139 20.25H6.29297C5.66091 20.2499 5.14855 19.7375 5.14844 19.1055V4.89453C5.14855 4.26247 5.66091 3.75011 6.29297 3.75Z"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
-                <path
-                  d="M13.8984 4V7.11C13.8984 8.15382 14.7446 9 15.7884 9H18.8984"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
-              </svg>
-              <span className="empty-hint">
-                {view === 'starred'
-                  ? t('emptyStarred')
-                  : navCounts.recent === 0
-                    ? t('emptyRecent')
-                    : t('emptyFiltered')}
-              </span>
-            </p>
+            renderEmpty(
+              view === 'starred'
+                ? t('emptyStarred')
+                : navCounts.recent === 0
+                  ? t('emptyRecent')
+                  : t('emptyFiltered'),
+            )
           ) : (
             <div className={`recent-table${selectedPaths.length > 0 ? ' has-selection' : ''}`}>
               <div className="recent-columns">
@@ -2133,21 +2779,24 @@ export function Home() {
     )
   }
 
+  const movingDirs = (paths: string[]) =>
+    paths.filter((p) => {
+      // a folder being moved: its own listing is cached, or it is a known sub-folder
+      if (listings.has(p)) return true
+      const parent = listings.get(dirOf(p))
+      return parent?.folders.some((f) => f.path === p) ?? false
+    })
+
   return (
     <div className="home">
       <aside className="sidebar">
         <div className="sidebar-logo">
           <img className="logo-lockup" src={logoLockup} alt="GenOffice" />
         </div>
-
         <nav className="sidebar-nav">
           <button
-            className={`nav-item${view === 'recent' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
-            onClick={() => {
-              changeView('recent')
-              setSelectedProjectId(null)
-              setCloudMode(false)
-            }}
+            className={`nav-item${view === 'recent' && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            onClick={() => changeView('recent')}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.3" />
@@ -2162,12 +2811,8 @@ export function Home() {
             <span className="nav-count">{navCounts.recent}</span>
           </button>
           <button
-            className={`nav-item${view === 'starred' && !selectedProjectId && !cloudMode ? ' active' : ''}`}
-            onClick={() => {
-              changeView('starred')
-              setSelectedProjectId(null)
-              setCloudMode(false)
-            }}
+            className={`nav-item${view === 'starred' && !selectedFolder && !cloudMode ? ' active' : ''}`}
+            onClick={() => changeView('starred')}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path
@@ -2182,10 +2827,10 @@ export function Home() {
           </button>
           {loggedIn && (
             <button
-              className={`nav-item${cloudMode && !selectedProjectId ? ' active' : ''}`}
+              className={`nav-item${cloudMode && !selectedFolder ? ' active' : ''}`}
               onClick={() => {
                 setCloudMode(true)
-                setSelectedProjectId(null)
+                setSelectedFolder(null)
                 setSelected(new Set())
                 setRowMenu(null)
               }}
@@ -2218,37 +2863,17 @@ export function Home() {
             </button>
           )}
         </nav>
-
-        {/* project sidebar */}
-        {projectMode && (
-          <>
-            <div className="sidebar-divider" />
-            <ProjectPanel
-              projects={projects}
-              selectedId={selectedProjectId}
-              onSelect={(id) => {
-                setSelectedProjectId(id)
-                // reset list-selection state on any project switch (paths are
-                // shared between the plain view and project views)
-                setSelected(new Set())
-                setRowMenu(null)
-              }}
-              onRefresh={refresh}
-            />
-          </>
-        )}
-
+        <div className="sidebar-divider" />
+        {renderFolderPanel()}
         <AccountEntry onStatusChange={handleAccountStatus} />
       </aside>
-
-      {selectedProjectId ? (
-        renderProjectContent()
+      {selectedFolder && root?.usable ? (
+        renderFolderContent()
       ) : cloudMode ? (
         <CloudProjectsView />
       ) : (
         renderGlobalContent()
       )}
-
       {confirmDelete && (
         <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
           <div
@@ -2290,6 +2915,33 @@ export function Home() {
         </div>
       )}
 
+      {confirmDeleteFolder && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteFolder(null)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('deleteFolderTitle')}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3>{t('deleteFolderTitle')}</h3>
+            <p>{t('deleteFolderConfirm', { name: fileName(confirmDeleteFolder) })}</p>
+            <div className="modal-buttons">
+              <button
+                className="btn btn-secondary"
+                autoFocus
+                onClick={() => setConfirmDeleteFolder(null)}
+              >
+                {t('cancel')}
+              </button>
+              <button className="btn btn-danger" onClick={() => void confirmDeleteFolderNow()}>
+                {t('delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmMissing && (
         <div className="modal-overlay" onClick={() => setConfirmMissing(null)}>
           <div
@@ -2322,6 +2974,27 @@ export function Home() {
             </div>
           </div>
         </div>
+      )}
+
+      {movePicker && root?.usable && (
+        <FolderPicker
+          root={root}
+          currentDirs={new Set(movePicker.map(dirOf))}
+          movingDirs={movingDirs(movePicker)}
+          count={movePicker.length}
+          onCancel={() => setMovePicker(null)}
+          onPick={(dir) => void doMove(movePicker, dir, 'ask')}
+        />
+      )}
+
+      {conflict && (
+        <ConflictPrompt
+          names={conflict.paths.map(fileName)}
+          onChoose={(policy) => {
+            if (policy === 'skip') setConflict(null)
+            else void doMove(conflict.paths, conflict.targetDir, policy)
+          }}
+        />
       )}
 
       <DropToOpenOverlay />

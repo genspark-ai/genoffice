@@ -16,7 +16,7 @@ const FILES_SYSTEM_PROMPT = `## Attachments
 The user may attach local files to the conversation (see the "attachment list" in each turn's context).
 - When the user's request involves attachment content, read it with read_attachment first, then answer or generate; don't guess content from file names.
 - Long files are read in pages: the result gives the total character count and the current range; to continue, set offset to the previous chunk's end position.
-- Image attachments (png/jpg/gif/webp) were already sent as images with the user message — just look at them; read_attachment is only for text attachments.
+- Image attachments (png/jpg/gif/webp) were already sent as images with the user message — just look at them; read_attachment is only for text attachments. To PLACE an attached image on a slide, call insert_web_image (or replace_image) with url=attachment://<file name> so the original file is embedded as-is — never recreate it with generate_image.
 - When there are no attachments or they are irrelevant to the request, don't call read_attachment.`
 
 function formatSize(bytes: number): string {
@@ -74,7 +74,7 @@ export function createFilesSkill(
       // No text extraction for images: they are already provided as multimodal images with the user message
       if (ATTACHMENT_IMAGE_EXTS.has(att.ext)) {
         return {
-          output: `${att.name} is an image attachment already sent as an image with the user message; just view the image in the message, no text reading needed.`,
+          output: `${att.name} is an image attachment already sent as an image with the user message; just view the image in the message, no text reading needed. To place it on a slide, use insert_web_image (or replace_image) with url=attachment://${att.name} — the original file is embedded as-is.`,
           mutated: false,
           summary: t('aiSumImageAttachment', { name: att.name }),
         }

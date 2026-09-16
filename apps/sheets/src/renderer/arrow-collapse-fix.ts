@@ -4,7 +4,7 @@
  * Univer's MoveSelectionCommand computes the arrow step from the selection
  * RANGE's edge in the pressed direction, so with K97:L97 selected (active
  * cell K97) ArrowRight lands on M97 — one past the range — instead of
- * Excel's L97, one step from the ACTIVE cell (alpha feedback, right after
+ * Excel's L97, one step from the ACTIVE cell (user report, right after
  * cutting the two cells). Excel's rule: a plain or Ctrl arrow first
  * collapses the selection to the active cell, then moves from there.
  *

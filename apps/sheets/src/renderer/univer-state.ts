@@ -143,9 +143,9 @@ export interface LazyWorkbookState {
     readonly overlay: Map<string, Map<string, PinnedClosureCell>>
     /// per-sheet: viewport row the last SUCCESSFUL overlay window was
     /// anchored at and whether it covered every formula band; a partial
-    /// window re-anchors when the user scrolls far from it (alpha ledger
-    /// r141). Written only after the sidecar run succeeds — early writes
-    /// latched stale flags on failure (bugbot).
+    /// window re-anchors when the user scrolls far from it. Written only
+    /// after the sidecar run succeeds — early writes latched stale flags on
+    /// failure.
     readonly follow: Map<string, { anchorRow: number; complete: boolean }>
     /// re-anchor throttle: no new run while one is in flight, and at most
     /// one every few seconds — each run reads thousands of sidecar cells
@@ -157,6 +157,7 @@ export interface LazyWorkbookState {
 export interface PinnedClosureCell {
   readonly f?: string
   readonly v?: string | number | boolean | null
+  readonly isError?: boolean
 }
 
 /// Data extent in screen coordinates: the file extent shifted by this

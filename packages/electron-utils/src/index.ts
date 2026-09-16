@@ -2,12 +2,22 @@ export {
   buildContextMenuItems,
   contextMenuLabels,
   installContextMenu,
+  VIEW_IMAGE_CHANNEL,
   type ContextMenuItem,
   type ContextMenuLabels,
 } from './context-menu'
 export {
+  decodeDataUrl,
+  isSavableImageUrl,
+  saveImageFromUrl,
+  suggestImageFileName,
+  type SaveImageResult,
+} from './save-image'
+export {
+  aboutMenuItem,
   appMenuLabels,
   editMenuTemplate,
+  helpMenuTemplate,
   toggleDevToolsItem,
   viewMenuTemplate,
   windowMenuTemplate,

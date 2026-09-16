@@ -11,6 +11,7 @@ import {
   parseCsv,
   resolveImportDelimiter,
   sniffDelimiter,
+  splitSepDeclaration,
 } from '@genoffice/xlsx-gateway/gateway/csv-import'
 
 describe('decodeCsvBuffer', () => {
@@ -73,6 +74,33 @@ function encodeWith(text: string, charset: string): Buffer {
 
 const gbkBytes = (text: string): Buffer => encodeWith(text, 'gb18030')
 const shiftJisBytes = (text: string): Buffer => encodeWith(text, 'shift_jis')
+
+describe('sep= declaration', () => {
+  it('names the delimiter and is never a data row', () => {
+    const text = 'sep=;\nname;qty\nApple;3\n'
+    expect(splitSepDeclaration(text)).toEqual({ text: 'name;qty\nApple;3\n', delimiter: ';' })
+    expect(sniffDelimiter(text)).toBe(';')
+    expect(parseCsv(text)).toEqual([
+      ['name', 'qty'],
+      ['Apple', '3'],
+    ])
+    expect(sniffDelimiter('\ufeffsep=\t\na\tb\n')).toBe('\t')
+    expect(splitSepDeclaration('separator,x\n1,2\n').delimiter).toBeUndefined()
+  })
+
+  it('overrides the prose guard on the import path', () => {
+    const prose = 'sep=;\nnotes\nhello; world\nplain text\n'
+    expect(resolveImportDelimiter(prose)).toBe(';')
+    expect(resolveImportDelimiter(prose.slice('sep=;\n'.length))).toBe(',')
+  })
+
+  it('is stripped by the workbook import too', async () => {
+    const zip = await JSZip.loadAsync(await csvToXlsxBuffer('sep=;\na;b\n1;2\n'))
+    const sheet = await zip.file('xl/worksheets/sheet1.xml')!.async('string')
+    expect(sheet).not.toContain('sep=')
+    expect(sheet).toContain('<c r="B2"><v>2</v></c>')
+  })
+})
 
 describe('parseCsv', () => {
   it('handles quotes, embedded delimiters, escaped quotes, and CRLF', () => {

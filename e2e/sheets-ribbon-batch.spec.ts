@@ -155,7 +155,7 @@ test.describe('sheets: ribbon batch-2 features', () => {
       await sheets.getByRole('button', { name: 'Formulas' }).click()
       await sheets.getByRole('button', { name: 'Error Checking' }).click()
       await expect(status).toContainText('1 errors — at D1: #DIV/0!')
-      await expect(sheets.locator('.name-box')).toHaveValue('D1')
+      await expect(sheets.locator('[data-u-comp="defined-name"] input')).toHaveValue('D1')
 
       // ── Data > What-If > Goal Seek: D2 = 40 by changing D3 ──
       await sheets.getByRole('button', { name: 'Data', exact: true }).click()

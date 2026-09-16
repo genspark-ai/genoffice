@@ -1083,7 +1083,7 @@ describe('research cursor stability (r167)', () => {
     } as IFindMoveParams) as LazyCellMatch
     expect(walked).toBe(innerList[1])
     // walk steps must not carry stayIfOnMatch: with the selection on another
-    // in-window hit the inner model would re-anchor there forever (bugbot)
+    // in-window hit the inner model would re-anchor there forever
     for (const call of innerMove.mock.calls) {
       expect((call[0] as { stayIfOnMatch?: boolean } | undefined)?.stayIfOnMatch).toBe(false)
     }

@@ -422,7 +422,7 @@ describe('buildSheetPrintPayload', () => {
       'Book.pdf',
       'S1',
     )
-    expect(b5.pageSize).toEqual({ width: 6.93, height: 9.84 })
+    expect(b5.pageSize).toEqual({ width: 7.17, height: 10.12 })
     const folio = buildSheetPrintPayload(
       fakeWorksheet(),
       payloadSetup({ paperSize: 14 }),

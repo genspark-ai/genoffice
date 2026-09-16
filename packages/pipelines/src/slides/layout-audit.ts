@@ -27,6 +27,7 @@ interface AuditEntry {
   overflowPx: number
   /** Pixels by which the widest laid-out line exceeds the box inner width (wrap=false lines, over-wide tokens) */
   overflowXPx: number
+  rotationDeg: number
 }
 
 const PREVIEW_MAX = 18
@@ -96,6 +97,7 @@ function collectEntries(nodes: RenderNode[]): AuditEntry[] {
       preview,
       overflowPx,
       overflowXPx,
+      rotationDeg: n.box.rotationDeg,
     })
   }
   return out
@@ -134,6 +136,40 @@ const OVERLAP_MIN_AREA = 400
 /** Background color blocks (≥70% of canvas area) don't participate in overlap detection */
 const BACKGROUND_AREA_RATIO = 0.7
 const MAX_ISSUES = 12
+/** slack a suggested box adds beyond the measured need */
+const SUGGEST_SLACK_PX = 4
+const EMU_PER_PX = 9525
+
+export type AuditCode = 'out_of_bounds' | 'text_overflow' | 'text_overflow_width' | 'overlap'
+
+export interface AuditBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** A `setTransform` an agent can apply as is (EMU); `target.slide` is added by the deck-level caller. */
+export interface AuditSuggest {
+  op: 'setTransform'
+  target: { slide?: number | string; el: string }
+  box: { x: number; y: number; cx: number; cy: number }
+  rotDeg?: number
+}
+
+export interface AuditFinding {
+  code: AuditCode
+  level: 'error' | 'warning'
+  /** id of the element (idOf applied); overlap: the first of the pair */
+  el: string
+  els?: string[]
+  message: string
+  /** element box in slide px */
+  box: AuditBox
+  /** px the text exceeds the box (text_overflow: height, text_overflow_width: width) */
+  overflowPx?: number
+  suggest?: AuditSuggest
+}
 
 /**
  * Audit one page's layout and return the list of problems (empty array = pass).
@@ -143,13 +179,20 @@ export function auditSlideLayout(
   slide: RenderSlide,
   idOf: (sourceId: string) => string = (id) => id,
 ): string[] {
+  return auditSlideFindings(slide, idOf).map((f) => f.message)
+}
+
+/** The same audit with each finding typed, located and, where geometry alone fixes it, carrying the op. */
+export function auditSlideFindings(
+  slide: RenderSlide,
+  idOf: (sourceId: string) => string = (id) => id,
+): AuditFinding[] {
   const entries = collectEntries(slide.nodes)
-  const issues: string[] = []
+  const findings: AuditFinding[] = []
   const W = slide.widthPx
   const H = slide.heightPx
-
-  // 1. Out of bounds
-  for (const e of entries) {
+  const boxOf = (e: AuditEntry): AuditBox => ({ x: e.x, y: e.y, w: e.w, h: e.h })
+  const outside = (e: AuditEntry): string[] => {
     const parts: string[] = []
     if (e.x < -EDGE_TOLERANCE_PX) parts.push(`${Math.round(-e.x)}px past the left edge`)
     if (e.y < -EDGE_TOLERANCE_PX) parts.push(`${Math.round(-e.y)}px past the top edge`)
@@ -157,15 +200,83 @@ export function auditSlideLayout(
       parts.push(`${Math.round(e.x + e.w - W)}px past the right edge`)
     if (e.y + e.h > H + EDGE_TOLERANCE_PX)
       parts.push(`${Math.round(e.y + e.h - H)}px past the bottom edge`)
-    if (parts.length) issues.push(`Out of bounds: ${label(e, idOf)} ${parts.join(', ')}`)
+    return parts
+  }
+  // One box per element that answers every finding on it at once (grown for the text,
+  // then brought inside the canvas), so applying the suggestions in any order converges.
+  interface Plan {
+    suggest?: AuditSuggest
+    grewW: boolean
+    grewH: boolean
+  }
+  const plans = new Map<AuditEntry, Plan>()
+  const planFor = (e: AuditEntry): Plan => {
+    const cached = plans.get(e)
+    if (cached) return cached
+    // A grown axis that would not fit the slide is left alone: the message then asks for a
+    // smaller font instead of a suggestion that cannot clear the finding.
+    const wantW =
+      e.w + (e.overflowXPx > OVERFLOW_TOLERANCE_PX ? e.overflowXPx + SUGGEST_SLACK_PX : 0)
+    const wantH = e.h + (e.overflowPx > OVERFLOW_TOLERANCE_PX ? e.overflowPx + SUGGEST_SLACK_PX : 0)
+    const grewW = wantW > e.w && wantW <= W
+    const grewH = wantH > e.h && wantH <= H
+    const w = Math.min(grewW ? wantW : e.w, W)
+    const h = Math.min(grewH ? wantH : e.h, H)
+    const box = { x: clamp(e.x, 0, W - w), y: clamp(e.y, 0, H - h), w, h }
+    const same = box.x === e.x && box.y === e.y && box.w === e.w && box.h === e.h
+    const plan: Plan = {
+      grewW,
+      grewH,
+      ...(same
+        ? {}
+        : {
+            suggest: {
+              op: 'setTransform' as const,
+              target: { el: idOf(e.id) },
+              box: {
+                x: Math.round(box.x * EMU_PER_PX),
+                y: Math.round(box.y * EMU_PER_PX),
+                cx: Math.round(box.w * EMU_PER_PX),
+                cy: Math.round(box.h * EMU_PER_PX),
+              },
+              ...(e.rotationDeg ? { rotDeg: e.rotationDeg } : {}),
+            },
+          }),
+    }
+    plans.set(e, plan)
+    return plan
+  }
+  const withSuggest = (e: AuditEntry, when: (plan: Plan) => boolean = () => true) => {
+    const plan = planFor(e)
+    return plan.suggest && when(plan) ? { suggest: plan.suggest } : {}
+  }
+
+  // 1. Out of bounds
+  for (const e of entries) {
+    const parts = outside(e)
+    if (!parts.length) continue
+    findings.push({
+      code: 'out_of_bounds',
+      level: 'error',
+      el: idOf(e.id),
+      message: `Out of bounds: ${label(e, idOf)} ${parts.join(', ')}`,
+      box: boxOf(e),
+      ...withSuggest(e),
+    })
   }
 
   // 2. Text overflow
   for (const e of entries) {
     if (e.overflowPx > OVERFLOW_TOLERANCE_PX) {
-      issues.push(
-        `Text overflow: ${label(e, idOf)} content exceeds the box height by ${e.overflowPx}px (make the box taller or reduce the font size)`,
-      )
+      findings.push({
+        code: 'text_overflow',
+        level: 'error',
+        el: idOf(e.id),
+        message: `Text overflow: ${label(e, idOf)} content exceeds the box height by ${e.overflowPx}px (make the box taller or reduce the font size)`,
+        box: boxOf(e),
+        overflowPx: e.overflowPx,
+        ...withSuggest(e, (plan) => plan.grewH),
+      })
     }
   }
 
@@ -175,9 +286,15 @@ export function auditSlideLayout(
   // shrink the font, or enable wrapping instead of leaving invisible overlap.
   for (const e of entries) {
     if (e.overflowXPx > OVERFLOW_TOLERANCE_PX) {
-      issues.push(
-        `Text overflow (width): ${label(e, idOf)} content exceeds the box width by ${e.overflowXPx}px (widen the box, reduce the font size, or turn on wrapping)`,
-      )
+      findings.push({
+        code: 'text_overflow_width',
+        level: 'warning',
+        el: idOf(e.id),
+        message: `Text overflow (width): ${label(e, idOf)} content exceeds the box width by ${e.overflowXPx}px (widen the box, reduce the font size, or turn on wrapping)`,
+        box: boxOf(e),
+        overflowPx: e.overflowXPx,
+        ...withSuggest(e, (plan) => plan.grewW),
+      })
     }
   }
 
@@ -195,15 +312,24 @@ export function auditSlideLayout(
       const inter = ix * iy
       const minArea = Math.min(a.w * a.h, b.w * b.h)
       if (inter < OVERLAP_MIN_AREA || inter < minArea * OVERLAP_RATIO) continue
-      issues.push(
-        `Overlap: ${label(a, idOf)} and ${label(b, idOf)} intersect by ${Math.round(ix)}×${Math.round(iy)}px`,
-      )
-      if (issues.length >= MAX_ISSUES) break
+      findings.push({
+        code: 'overlap',
+        level: 'warning',
+        el: idOf(a.id),
+        els: [idOf(a.id), idOf(b.id)],
+        message: `Overlap: ${label(a, idOf)} and ${label(b, idOf)} intersect by ${Math.round(ix)}×${Math.round(iy)}px`,
+        box: boxOf(a),
+      })
+      if (findings.length >= MAX_ISSUES) break
     }
-    if (issues.length >= MAX_ISSUES) break
+    if (findings.length >= MAX_ISSUES) break
   }
 
-  return issues.slice(0, MAX_ISSUES)
+  return findings.slice(0, MAX_ISSUES)
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
 }
 
 /** Format the audit result as trailing text for a tool's return value. */

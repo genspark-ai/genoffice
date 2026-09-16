@@ -37,7 +37,7 @@
 
 ## Page setup (printing)
 
-`{op:"set_page_setup", sheetId, orientation?, paperSize?, scale?, fitToWidth?, fitToHeight?, margins?, printGridlines?, printHeadings?, printArea?}` — at least one property, only works on imported xlsx files, written on save:
+`{op:"set_page_setup", sheetId, orientation?, paperSize?, scale?, fitToWidth?, fitToHeight?, margins?, printGridlines?, printHeadings?, printArea?, printTitles?, header?, footer?, rowBreaks?, colBreaks?}` — at least one property, only works on imported xlsx files, written on save:
 
 - `orientation`: "portrait" | "landscape"
 - `paperSize`: OOXML paper code (1=Letter, 8=A3, 9=A4, 11=A5)
@@ -45,4 +45,7 @@
 - `margins`: "normal" | "wide" | "narrow"
 - `printGridlines` / `printHeadings`: print gridlines / row-column headings
 - `printArea`: "A1:H40" sets the print area, null clears it
+- `printTitles`: "1:1" repeats those rows at the top of every printed page, null clears
+- `header` / `footer`: `{left?, center?, right?}` printed text; Excel codes work (&P page, &N pages, &D date, &F file name, &A sheet name); null clears
+- `rowBreaks` / `colBreaks`: 1-based row/column numbers after which a new page starts; the list replaces the manual breaks, [] clears them
 - Settings are only written into the file (take effect when printing); the canvas does not show pagination.

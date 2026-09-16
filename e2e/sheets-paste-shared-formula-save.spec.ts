@@ -9,8 +9,8 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 process.env.GENOFFICE_DEBUG_HOOKS = '1'
 
 /**
- * Regression for "tile-pasted cells vanish after save" (alpha
- * feedback): pasting a copied formula row into a taller target writes follower
+ * Regression for "tile-pasted cells vanish after save" (user
+ * report): pasting a copied formula row into a taller target writes follower
  * cells as {si, v} — shared-formula id without formula text. The journal
  * must materialize those into real formulas; before the fix the follow-up
  * recalc mutation wiped them and the saved file lost the whole block.

@@ -39,6 +39,7 @@ export async function cutSelected(ctx: ActionCtx): Promise<void> {
   const n = await window.slidesApi.copyElements({
     slideIndex: ctx.current,
     sourceIds: ctx.selectedIds,
+    cut: true,
   })
   if (n > 0) {
     ctx.setHasClipboard(true)

@@ -148,6 +148,7 @@ function ensureService(): McpServerService {
       // active editing session; the factory re-reads settings at connect time
       toolsFactory: buildTools,
       logger: mcpLogger,
+      version: deps.version,
     })
   }
   return service

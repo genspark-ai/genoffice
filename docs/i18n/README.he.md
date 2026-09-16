@@ -24,6 +24,7 @@
 <p align="center" dir="rtl">
   <a href="#download"><b>הורדה</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
+  <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>אתר</b></a> ·
   <a href="https://genoffice.ai/join"><b>קהילה</b></a> ·
   <a href="../../PRIVACY.md"><b>פרטיות</b></a>
@@ -180,6 +181,27 @@ GenOffice מגיעה עם שורת פקודה `genoffice` ועם skill לסוכ�
 </tr>
 </table>
 
+### 8 · MCP — אותם כלים דרך Model Context Protocol
+
+כל פקודת `genoffice` היא גם כלי MCP. Claude Code,‏ Claude Desktop,‏ Cursor
+וכל לקוח MCP אחר יכולים להפעיל בעצמם את `genoffice mcp`, בלי צורך להתקין
+skill ובלי לפתוח חלון, ולקבל 29 כלים בתוספת מדריכי הפעולות כמשאבים
+(resources). שרת HTTP שני בתוך האפליקציה מאפשר לסוכן לבנות מסמך Word
+בלשונית עורך גלויה בזמן שאתם צופים.
+
+<img src="../assets/readme/mcp-deck-motion.webp" alt="צילום מואץ של Claude Code בונה תדריך משקיעים בן שמונה שקופיות על אנרגיה מתחדשת דרך שרת ה-MCP של genoffice: מחפש איורים ותמונות, בודק כל תמונה מועמדת עם media, deck_start כותב את גיליון הסטייל והתווה, deck_page מוסיף עמוד מאומת אחד בכל פעם, deck_build מרכיב את קובץ ה-.pptx ו-slides_render מחזיר תמונה של כל שקופית; המצגת המוגמרת נפתחת לאחר מכן ב-GenOffice Slides" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/mcp-deck-in-app.webp" alt="GenOffice Slides מציג את מצגת Renewable Energy 2026 בת שמונה השקופיות ש-Claude Code בנה דרך שרת ה-MCP של genoffice: שקופית השער עם תצלום של חוות רוח על הקנבס ושמונה תמונות ממוזערות בצד שמאל"></td>
+<td width="50%"><img src="../assets/readme/mcp-integrations.webp" alt="הגדרות GenOffice, עמוד Integrations, חלק ה-MCP: פקודת claude mcp add בשורה אחת עבור Claude Code, בלוק ה-JSON עבור Cursor,‏ Claude Desktop ולקוחות MCP אחרים, ואפשרות שרת ה-HTTP המקומי מתחת"></td>
+</tr>
+<tr>
+<td dir="rtl"><b>פרומפט אחד, 38 קריאות לכלים, בלי shell</b> — ״בנו תדריך משקיעים בן שמונה שקופיות על אנרגיה מתחדשת ב-2026, עם תמונה אמיתית על השער ובכל מקום שתמונה עוזרת.״ הסוכן מושך את האיורים והתמונות עם <code>search</code>, שואל את <code>media</code> אם כל תמונה מועמדת היא תצלום אמיתי, קורא ל-<code>deck_start</code> עם גיליון סטייל ותווה, ואז <code>deck_page</code> פעם אחת לכל שקופית; כל עמוד נבדק מול התווה והפלטה לפני שהוא נשמר, <code>deck_build</code> מרכיב את ה-<code>.pptx</code>, <code>slides_audit</code> מחפש גלישות, <code>slides_render</code> מחזיר PNG לכל שקופית כתוכן תמונה שהמודל יכול להסתכל עליו, ו-<code>deck_replace</code> מתקן את שלושת העמודים שלא מצאו חן בעיניו.</td>
+<td dir="rtl"><b>התחברו פעם אחת, מתוך הגדרות → שילובים</b> — העתיקו את שורת <code>claude mcp add</code> עבור Claude Code, או את בלוק ה-JSON אל Cursor,‏ Claude Desktop או כל לקוח MCP אחר. אפשרות B מפעילה את שרת ה-HTTP המקומי עבור עורך ה-Word הגלוי. שתיהן מתוארות ב<a href="#mcp-server">שרת MCP</a>.</td>
+</tr>
+</table>
+
 ## למה GenOffice
 
 - **קוד פתוח**, ברישיון Apache-2.0, מפותח בפומבי ב-GitHub.
@@ -196,8 +218,9 @@ GenOffice מגיעה עם שורת פקודה `genoffice` ועם skill לסוכ�
 - **PDF שמטופל כמו שצריך.** ערכו טקסט ישירות בתוך העמוד, והמירו PDF ל-Word,
   Excel או PowerPoint במכשיר עצמו, עם OCR מובנה למסמכים סרוקים.
 - **גם Markdown ו-HTML**, עם אותו פאנל AI וייצוא מקומי ל-Word.
-- **ניתן לסקריפטים.** שורת פקודה `genoffice` ו-skill לסוכנים מעמידים כל מנוע
-  לרשות Claude Code,‏ Codex,‏ Cursor וסוכני קוד אחרים, עדיין על המכשיר.
+- **ניתן לסקריפטים.** שורת פקודה `genoffice`, skill לסוכנים ושרת MCP
+  מעמידים כל מנוע לרשות Claude Code,‏ Claude Desktop,‏ Codex,‏ Cursor וסוכנים
+  אחרים, עדיין על המכשיר.
 - **חינם**, גם ליחידים וגם לצוותים.
 
 ## ספקי ה-AI
@@ -230,7 +253,8 @@ Markdown ו-HTML על אותם מנועים, ללא ממשק גרפי. היא מ
 במקום קירובים ב-Markdown.
 
 **עובד עם:** Claude Code,‏ Codex,‏ Cursor,‏ Gemini CLI,‏ GitHub Copilot,‏
-OpenCode ו-Windsurf ישר מהקופסה, ועם כל סוכן אחר שקורא skills.
+OpenCode ו-Windsurf ישר מהקופסה, עם כל סוכן אחר שקורא skills, וגם, דרך
+[שרת ה-MCP](#mcp-server), עם Claude Desktop וכל לקוח MCP.
 
 ### התקנת ה-skill
 
@@ -284,6 +308,61 @@ genoffice open deck/solar-system.pptx
 
 שום קריאה למודל לא מתבצעת בתוך `genoffice`: הסוכן חושב, ה-CLI בונה ובודק,
 והתוצאה נפתחת ב-GenOffice או ב-PowerPoint כקובץ `.pptx` רגיל.
+
+<a id="mcp-server"></a>
+
+### שרת MCP
+
+אותן פקודות זמינות ככלי [Model Context Protocol](https://modelcontextprotocol.io)
+עבור עוזרים שלא יכולים להריץ טרמינל, או שהייתם מעדיפים לא לתת להם אחד. יש
+שתי דרכים להתחבר, שתיהן מוצגות עם קטעי קוד מוכנים להעתקה ב-**הגדרות →
+שילובים → MCP**:
+
+| דרך                              | מה זה                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **A ·‏ `genoffice mcp`** (מומלץ) | שרת stdio שהעוזר מפעיל בעצמו; אין צורך ש-GenOffice יהיה פתוח. כלי אחד לכל פקודה (`info`,‏ `convert`,‏ `create_docx`,‏ `create_xlsx`,‏ `create_pptx`,‏ `create_pdf`,‏ `docs_read` / `docs_apply` / `docs_check`,‏ `sheet_*`,‏ `slides_*`,‏ `render`,‏ `guide`,‏ `search`,‏ `image`,‏ `media`,‏ `open`) ובנוסף תהליך המצגת המדורג `deck_start` → `deck_page` → `deck_build` → `deck_replace`. פעולות, מפרטים ו-Markdown מועברים ישירות בקריאה, כך שגם לקוח בלי מערכת קבצים עובד. |
+| **B · שרת HTTP מקומי**           | רץ בתוך אפליקציית GenOffice בכתובת `http://127.0.0.1:3093/mcp` (Streamable HTTP, עם SSE ישן לתאימות). הכלים שלו מפעילים לשונית עורך Word גלויה: `create_session`,‏ `insert_content`,‏ `replace_blocks`,‏ `apply_ops`,‏ `read_document`,‏ `save_session`, ואתם צופים במסמך מקבל צורה. כבוי כברירת מחדל; הפעילו אותו באותה חלונית הגדרות.                                                                                                                                        |
+
+```bash
+# Claude Code
+claude mcp add --transport stdio genoffice -- genoffice mcp
+```
+
+```jsonc
+// Cursor,‏ Claude Desktop או כל לקוח MCP אחר
+{ "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
+```
+
+`genoffice` כאן הוא ה-CLI המצורף בתוך האפליקציה (ב-macOS
+`/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; חלונית
+ההגדרות מציגה את הנתיב המדויק להתקנה שלכם). השרת נושא הוראות תהליך עבודה
+משלו וחושף את מדריכי הפעולות כמשאבי `genoffice://guide/*`, כך שאין צורך
+ב-skill; ה-skill ושרת ה-MCP יכולים להתקיים זה לצד זה, והעוזר בוחר אחד
+מהם. יכולות הענן (`search`,‏ `image`,‏ `media`) עדיין עוברות דרך הספק
+שהוגדר ב-GenOffice; כל השאר רץ מקומית, ו-`GENOFFICE_ALLOWED_ROOTS` מגביל
+כל כלי לתיקיות שציינתם.
+
+מצגת האנרגיה המתחדשת בהדגמה למעלה היא איך שנראה פרומפט אחד ב-Claude Code
+עם שרת ה-MCP של `genoffice` בלבד מחובר, מצד הפרוטוקול:
+
+```text
+capabilities · guide(slides, spec) · guide(slides, design)
+search(query) ×4                         → IEA, BNEF and IRENA figures for the slides
+search(query, images) ×7 · media(url, ask) ×7
+                                         → candidate photos, each one checked to be a real photograph
+deck_start(dir, style, outline)          → outline checked: 8 pages to write
+deck_page(dir, 0, page) … deck_page(dir, 7, page)
+                                         → each page checked against the outline and the palette; one page sent again
+deck_build(dir, out)                     → renewables-2026.pptx, no image failures
+slides_audit(file) · slides_render(file, out)
+                                         → no layout findings; 8 PNGs come back as image content
+deck_replace(dir, n, page) ×3 · slides_render(file, out)
+                                         → three pages fixed after looking at the renders
+```
+
+שלושים ושמונה קריאות, כשלוש עשרה דקות, והעוזר מעולם לא נגע בטרמינל: האיורים,
+התמונות, כל המדריכים, הבדיקות והרינדורים עברו כתוצאות של קריאות לכלי MCP. רק
+`search` ו-`media` יצאו מהמכונה, אל הספק המוגדר ב-GenOffice.
 
 <a id="download"></a>
 

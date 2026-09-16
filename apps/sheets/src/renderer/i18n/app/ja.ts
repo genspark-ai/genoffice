@@ -131,7 +131,6 @@ export const ja = {
   appTruncationNote: '先頭 {shown}/{total} 項目',
   // ExcelShell (name box / ribbon)
   appGoToButtonTitle: 'ジャンプ（Go To、⌘G）',
-  appNameBoxTitle: '名前ボックス — アドレスまたは名前を入力して Enter で移動',
   appPivotChartHintIn: '現在のピボットテーブルからピボットグラフを作成',
   appPivotChartHintOut:
     '先にピボットテーブルの出力範囲内のセルを選択してから、グラフの種類を選択してください',

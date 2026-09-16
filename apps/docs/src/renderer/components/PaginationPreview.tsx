@@ -739,6 +739,7 @@ export function PaginationPreview({
   hf,
   watermark,
   watermarkDirty,
+  watermarkPicture,
   blockMetaOf,
   pageFootnotesOf,
   footnotesBeneathText,
@@ -770,6 +771,8 @@ export function PaginationPreview({
   watermark: string | null
   /** unsaved Design → Watermark edit: draw `watermark` as the ghost text and hide the parsed WordArt shape */
   watermarkDirty?: boolean
+  /** unsaved picture watermark (set_watermark image): drawn in place of the parsed watermark shape */
+  watermarkPicture?: HfImage | null
   /** docxIndex → parse-layer pagination constraints (keepNext/widow/table-row flags) */
   blockMetaOf?: BlockMetaOf
   /** Per-page footnote collection (referencing page → entry list), for page-bottom rendering */
@@ -1479,23 +1482,26 @@ export function PaginationPreview({
                     })}
                   </div>
                 )}
-                {(parts.headerImages ?? [])
-                  .filter((img) => img.floating && !(watermarkDirty && img.wordArt))
-                  .map((img, k) => {
-                    // picture watermark (anchored image in the header): drawn once
-                    // per page behind the body (negative z-index; .pv-page isolates)
-                    const pos = hfFloatPagePos(img, {
-                      pageW,
-                      pageH,
-                      marginLeft: twipsToPx(s.marginLeft),
-                      marginRight: twipsToPx(s.marginRight),
-                      marginTop: mTop,
-                      marginBottom: mBottom,
-                      headerDist: pageBox.headerDist,
-                      sectMarginTop: twipsToPx(s.marginTop),
-                    })
-                    return <FloatHfImg key={`wm${k}`} img={img} pos={pos} />
-                  })}
+                {[
+                  ...(watermarkDirty && watermarkPicture ? [watermarkPicture] : []),
+                  ...(parts.headerImages ?? []).filter(
+                    (img) => img.floating && !(watermarkDirty && (img.wordArt || img.watermark)),
+                  ),
+                ].map((img, k) => {
+                  // picture watermark (anchored image in the header): drawn once
+                  // per page behind the body (negative z-index; .pv-page isolates)
+                  const pos = hfFloatPagePos(img, {
+                    pageW,
+                    pageH,
+                    marginLeft: twipsToPx(s.marginLeft),
+                    marginRight: twipsToPx(s.marginRight),
+                    marginTop: mTop,
+                    marginBottom: mBottom,
+                    headerDist: pageBox.headerDist,
+                    sectMarginTop: twipsToPx(s.marginTop),
+                  })
+                  return <FloatHfImg key={`wm${k}`} img={img} pos={pos} />
+                })}
                 {(parts.footerImages ?? [])
                   .filter((img) => img.floating)
                   .map((img, k) => {

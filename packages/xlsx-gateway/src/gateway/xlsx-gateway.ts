@@ -17,7 +17,7 @@ import type {
   WorkbookStyleEdit,
   WorkbookVisualEdit,
 } from '../shared/edit-schemas'
-import { withFutureFunctionMarkers } from './future-functions'
+import { spillsDynamicArray, withFutureFunctionMarkers } from './future-functions'
 import { decodeXlsxEscapes, encodeXlsxEscapes } from './xlsx-escapes'
 import { applyChartEdit } from './xlsx-chart'
 import { applyVisualEdits } from './xlsx-drawing-edit'
@@ -79,7 +79,7 @@ import {
   DefinedNameError,
   type DefinedNamesState,
 } from './xlsx-defined-names'
-import { applyDvRules, type DvWireRule } from './xlsx-dv'
+import { applyDvRules, type DvCellArea, type DvWireRule } from './xlsx-dv'
 import { applyPageSetupState, applyPrintAreas, type SheetPageSetupState } from './xlsx-page-setup'
 import {
   applyProtectedRanges,
@@ -116,8 +116,10 @@ import {
 } from './xlsx-structure'
 import { StylesheetEditor } from './xlsx-styles'
 
-const MAX_ENTRY_COUNT = 10_000
-const MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+/** Shared with the CLI's pre-open check so both layers accept the same files. */
+export const XLSX_ZIP_LIMITS = { maxParts: 10_000, maxTotalBytes: 256 * 1024 * 1024 } as const
+const MAX_ENTRY_COUNT = XLSX_ZIP_LIMITS.maxParts
+const MAX_UNCOMPRESSED_BYTES = XLSX_ZIP_LIMITS.maxTotalBytes
 
 export interface PackageEntry {
   readonly path: string
@@ -149,11 +151,16 @@ export interface SheetHyperlinkEdits {
 export interface SheetCfState {
   readonly sheetName: string
   readonly rules: readonly CfWireRule[]
+  /** add to the sheet's existing rules instead of replacing them */
+  readonly append?: boolean
 }
 
 export interface SheetDvState {
   readonly sheetName: string
   readonly rules: readonly DvWireRule[]
+  readonly append?: boolean
+  /** append mode: ranges whose existing rule goes away */
+  readonly remove?: readonly DvCellArea[]
 }
 
 export interface SheetProtectionState {
@@ -171,12 +178,16 @@ export interface SheetProtectedRangesState {
 /// computed them for the screen, and the save writes them into <v> so the file's
 /// inputs and outputs agree even for readers without a formula engine
 /// (openpyxl data_only, pandas, preview services).
+/// `{ error }` is a result the engine typed as an error; a plain string is
+/// text even when it spells one (`="#N/A"`).
+export type FormulaCachedValue = string | number | boolean | null | { readonly error: string }
+
 export interface SheetFormulaValues {
   readonly sheetName: string
   readonly cells: readonly {
     readonly row: number
     readonly column: number
-    readonly value: string | number | boolean | null
+    readonly value: FormulaCachedValue
   }[]
 }
 
@@ -366,6 +377,80 @@ async function addDefaultStylesheet(
     pkg.write(contentTypesPath, contentTypes.replace('</Types>', `${override}</Types>`))
     touchedEntries.add(contentTypesPath)
   }
+}
+
+const METADATA_REL_TYPE =
+  'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sheetMetadata'
+const METADATA_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml'
+/// Excel 365's own metadata part for a workbook whose only cell metadata is
+/// the dynamic-array flag: `cm="1"` on a cell points at this record.
+const DYNAMIC_ARRAY_METADATA_XML =
+  '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+  '<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+  'xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">' +
+  '<metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/></metadataTypes>' +
+  '<futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata>' +
+  '<cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>'
+
+/**
+ * The 1-based `cm` index of a cell-metadata record that means "dynamic
+ * array" in this metadata part, or null when there is none. `rc t=` counts
+ * metadataTypes from 1 in document order; rich values or in-cell images may
+ * come first, so XLDAPR is looked up by name rather than assumed to be type 1.
+ */
+export function dynamicArrayCellMetaIndex(metadataXml: string): number | null {
+  const types = [...metadataXml.matchAll(/<metadataType\b[^>]*\bname="([^"]*)"/g)].map((m) => m[1])
+  const typeIndex = types.indexOf('XLDAPR') + 1
+  if (typeIndex === 0) return null
+  const cellMeta = /<cellMetadata\b[^>]*>([\s\S]*?)<\/cellMetadata>/.exec(metadataXml)?.[1]
+  if (!cellMeta) return null
+  const records = [...cellMeta.matchAll(/<bk\b[^>]*>([\s\S]*?)<\/bk>/g)]
+  const at = records.findIndex((bk) => new RegExp(`<rc\\b[^>]*\\bt="${typeIndex}"`).test(bk[1]!))
+  return at === -1 ? null : at + 1
+}
+
+/// The `cm` index to put on spill anchors: 1 for the part written here, the
+/// file's own XLDAPR record when it has one, null when `cm` cannot be trusted.
+async function ensureDynamicArrayMetadata(
+  pkg: PackageEditor,
+  touchedEntries: Set<string>,
+): Promise<number | null> {
+  const metadataPath = 'xl/metadata.xml'
+  if (await pkg.has(metadataPath)) {
+    return dynamicArrayCellMetaIndex(await pkg.readText(metadataPath))
+  }
+  pkg.add(metadataPath, DYNAMIC_ARRAY_METADATA_XML)
+  touchedEntries.add(metadataPath)
+
+  const relationshipsPath = 'xl/_rels/workbook.xml.rels'
+  const relationships = await pkg.readText(relationshipsPath)
+  if (!relationships.includes(`Type="${METADATA_REL_TYPE}"`)) {
+    const relationship =
+      `<Relationship Id="rId${maxRelationshipId(relationships) + 1}" ` +
+      `Type="${METADATA_REL_TYPE}" Target="metadata.xml"/>`
+    pkg.write(
+      relationshipsPath,
+      relationships.replace('</Relationships>', `${relationship}</Relationships>`),
+    )
+    touchedEntries.add(relationshipsPath)
+  }
+
+  const contentTypesPath = '[Content_Types].xml'
+  const contentTypes = await pkg.readText(contentTypesPath)
+  if (!contentTypes.includes('PartName="/xl/metadata.xml"')) {
+    const override = `<Override PartName="/xl/metadata.xml" ContentType="${METADATA_CONTENT_TYPE}"/>`
+    pkg.write(contentTypesPath, contentTypes.replace('</Types>', `${override}</Types>`))
+    touchedEntries.add(contentTypesPath)
+  }
+  return 1
+}
+
+function markDynamicArrayAnchor(worksheetXml: string, address: string, cm: number): string {
+  const cellPattern = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*)>`)
+  return worksheetXml.replace(cellPattern, (open, before: string, after: string) =>
+    /\bcm="/.test(open) ? open : `<c${before}r="${address}"${after} cm="${cm}">`,
+  )
 }
 
 export async function createBufferEntrySource(buffer: Buffer): Promise<EntrySource> {
@@ -769,8 +854,8 @@ export async function planCellEditsToXlsx(
   }
 
   // Stylesheet editor created up front: cell-edit styles and CF need it, and
-  // 'set-col-style' structural ops (select-all/full-column formatting, alpha
-  // ledger r124) intern their column xf during the structural pass below.
+  // 'set-col-style' structural ops (select-all/full-column formatting) intern
+  // their column xf during the structural pass below.
   let stylesheet: StylesheetEditor | null = null
   const stylesPath = 'xl/styles.xml'
   if (
@@ -862,6 +947,12 @@ export async function planCellEditsToXlsx(
     }
   }
 
+  const spillEdits = edits.filter(
+    (edit) => edit.writeValue && edit.cell.formula && spillsDynamicArray(edit.cell.formula),
+  )
+  const dynamicArrayCm =
+    spillEdits.length > 0 ? await ensureDynamicArrayMetadata(pkg, touchedEntries) : null
+
   const editsBySheet = groupBySheet(edits)
   const fillsBySheet = groupBySheet(bulkConstantFills)
   // (stylesheet was created before the structural pass — see above)
@@ -910,6 +1001,19 @@ export async function planCellEditsToXlsx(
         ? expandWorksheetDimensionToCells(edited)
         : edited,
     )
+  }
+  if (dynamicArrayCm !== null) {
+    for (const [sheetName, group] of groupBySheet(spillEdits)) {
+      let worksheetXml = worksheetXmls.get(sheetName) ?? ''
+      for (const edit of group) {
+        worksheetXml = markDynamicArrayAnchor(
+          worksheetXml,
+          toA1Address(edit.row, edit.column),
+          dynamicArrayCm,
+        )
+      }
+      worksheetXmls.set(sheetName, worksheetXml)
+    }
   }
   // Recalculated formula results: refresh each formula cell's cached
   // <v> while leaving its <f> alone. Applied after the value edits so a cell the
@@ -1001,14 +1105,20 @@ export async function planCellEditsToXlsx(
   for (const state of cfStates) {
     const worksheetXml = worksheetXmls.get(state.sheetName)
     if (worksheetXml === undefined || stylesheet === null) continue
-    worksheetXmls.set(state.sheetName, applyCfRules(worksheetXml, state.rules, stylesheet))
+    worksheetXmls.set(
+      state.sheetName,
+      applyCfRules(worksheetXml, state.rules, stylesheet, { append: state.append }),
+    )
   }
 
   // Data validation follows the same declarative rewrite.
   for (const state of dvStates) {
     const worksheetXml = worksheetXmls.get(state.sheetName)
     if (worksheetXml === undefined) continue
-    worksheetXmls.set(state.sheetName, applyDvRules(worksheetXml, state.rules))
+    worksheetXmls.set(
+      state.sheetName,
+      applyDvRules(worksheetXml, state.rules, { append: state.append, remove: state.remove }),
+    )
   }
 
   for (const state of sheetProtections) {
@@ -2029,7 +2139,7 @@ function patchCellKeepingStyle(
 function patchFormulaCachedValue(
   worksheetXml: string,
   address: string,
-  value: string | number | boolean | null,
+  value: FormulaCachedValue,
 ): string {
   // Paired form only: a self-closing <c/> has no formula to keep.
   const cellPattern = new RegExp(`<c\\b([^>]*)\\br="${address}"([^>]*)>([\\s\\S]*?)</c>`)
@@ -2038,8 +2148,9 @@ function patchFormulaCachedValue(
   const body = existing[3] ?? ''
   if (!/<f[\s/>]/.test(body)) return worksheetXml
   const attrs = `${existing[1] ?? ''}${existing[2] ?? ''}`
-  // Formula results carry t="str" for text, no t (numeric default) otherwise;
-  // booleans use t="b" with 1/0. A null result drops the cached value entirely.
+  // Formula results carry t="str" for text, t="e" for an engine-typed error,
+  // no t (numeric default) otherwise; booleans use t="b" with 1/0. A null
+  // result drops the cached value entirely.
   const numeric = typeof value === 'number' && Number.isFinite(value)
   const stripped = attrs.replace(/\st="[^"]*"/g, '')
   let typeAttr = ''
@@ -2049,6 +2160,9 @@ function patchFormulaCachedValue(
   } else if (typeof value === 'boolean') {
     typeAttr = ' t="b"'
     valueXml = `<v>${value ? 1 : 0}</v>`
+  } else if (typeof value === 'object' && value !== null) {
+    typeAttr = ' t="e"'
+    valueXml = `<v>${escapeCellText(value.error)}</v>`
   } else if (value !== null && value !== undefined && value !== '') {
     typeAttr = ' t="str"'
     valueXml = `<v>${escapeCellText(String(value))}</v>`
@@ -2643,7 +2757,7 @@ function serializeStyledCell(
 ): string {
   const style = styleIndex === undefined ? '' : ` s="${styleIndex}"`
   if (cell.formula) {
-    return `<c r="${address}"${style}><f>${escapeXmlText(withFutureFunctionMarkers(cell.formula.replace(/^=/, '')))}</f></c>`
+    return `<c r="${address}"${style}>${formulaXml(address, cell.formula.replace(/^=/, ''))}</c>`
   }
   if (cell.value === null) {
     // A cleared cell keeps its formatting only if it keeps a style index.
@@ -2717,9 +2831,16 @@ function lettersToColumn(letters: string): number {
   return column - 1
 }
 
+function formulaXml(address: string, formula: string): string {
+  const text = escapeXmlText(withFutureFunctionMarkers(formula))
+  return spillsDynamicArray(formula)
+    ? `<f t="array" ref="${address}">${text}</f>`
+    : `<f>${text}</f>`
+}
+
 function serializeCell(address: string, cell: CellState): string {
   if (cell.formula) {
-    return `<c r="${address}"><f>${escapeXmlText(withFutureFunctionMarkers(cell.formula.slice(1)))}</f></c>`
+    return `<c r="${address}">${formulaXml(address, cell.formula.slice(1))}</c>`
   }
   if (cell.value === null) return ''
   if (typeof cell.value === 'string') {

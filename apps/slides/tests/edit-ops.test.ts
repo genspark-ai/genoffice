@@ -25,6 +25,8 @@ import {
   elementDurableId,
   slideDurableId,
   mapScriptOps,
+  normalizeLengthUnits,
+  parseLength,
 } from '@genoffice/pptx-ops'
 
 let opened: OpenedPptx
@@ -1289,5 +1291,84 @@ describe('setTableStyle resolves model-facing fields', () => {
     })
     expect(named.applied).toBe(false)
     expect(named.failures![0]!.error).toContain('#RRGGBB')
+  })
+})
+
+describe('length units', () => {
+  it('converts unit suffixes to EMU and leaves everything else alone', () => {
+    expect(parseLength('2.54cm')).toBe(914400)
+    expect(parseLength('1in')).toBe(914400)
+    expect(parseLength('10 mm')).toBe(360000)
+    expect(parseLength('12pt')).toBe(152400)
+    expect(parseLength('96px')).toBe(914400)
+    expect(parseLength('914400emu')).toBe(914400)
+    expect(parseLength('2cm wide')).toBeUndefined()
+    const op = normalizeLengthUnits({
+      op: 'setTransform',
+      box: { x: '1in', y: 0, cx: '2.54cm', cy: 457200 },
+      text: '10cm of rope',
+      colWidthsEmu: ['1in', 914400],
+      hEmu: '1cm',
+      stroke: { widthEmu: '2pt' },
+      props: { insets: { l: '0.5cm', t: 0 } },
+      style: { l: '1cm' },
+    }) as {
+      box: { x: number; cx: number; cy: number }
+      text: string
+      colWidthsEmu: number[]
+      hEmu: number
+      stroke: { widthEmu: number }
+      props: { insets: { l: number; t: number } }
+      style: { l: string }
+    }
+    expect(op.box).toEqual({ x: 914400, y: 0, cx: 914400, cy: 457200 })
+    expect(op.text).toBe('10cm of rope')
+    expect(op.colWidthsEmu).toEqual([914400, 914400])
+    expect(op.hEmu).toBe(360000)
+    expect(op.stroke.widthEmu).toBe(25400)
+    expect(op.props.insets).toEqual({ l: 180000, t: 0 })
+    expect(op.style.l).toBe('1cm')
+    const bytes = new Uint8Array(4 * 1024 * 1024)
+    const started = performance.now()
+    const pic = normalizeLengthUnits({ op: 'addPicture', bytes, offset: { x: '1in' } }) as {
+      bytes: Uint8Array
+      offset: { x: number }
+    }
+    expect(pic.bytes).toBe(bytes)
+    expect(pic.offset.x).toBe(914400)
+    expect(performance.now() - started).toBeLessThan(200)
+  })
+
+  it('lets ops take lengths with units end to end', () => {
+    const added = runTxn(opened, {
+      ops: [
+        {
+          op: 'addElement',
+          target: { slide: 0 },
+          kind: 'rect',
+          offset: { x: '1in', y: '0.5in', cx: '2in', cy: '1in' },
+        },
+      ],
+    })
+    expect(added.applied).toBe(true)
+    const id = added.records![0]!.created![0]!
+    const el = opened.deck.slides[0]!.elements.find((x) => x.id === id)!
+    expect(el.transform.offset).toEqual({ x: 914400, y: 457200, cx: 1828800, cy: 914400 })
+    const moved = runTxn(opened, {
+      ops: [
+        {
+          op: 'setTransform',
+          target: { slide: 0, el: id },
+          box: { x: '2cm', y: '2cm', cx: '4cm', cy: '3cm' },
+        },
+      ],
+    })
+    expect(moved.applied).toBe(true)
+    expect(opened.deck.slides[0]!.elements.find((x) => x.id === id)!.transform.offset).toEqual({
+      x: 720000,
+      y: 720000,
+      cx: 1440000,
+      cy: 1080000,
+    })
   })
 })

@@ -97,3 +97,72 @@ describe('replace_image', () => {
     )
   })
 })
+
+describe('attachment:// references (r182 family: embed the original file, never redraw)', () => {
+  const withResolver = (): DeckAccess => {
+    const access = mkAccess()
+    access.resolveAttachmentImage = vi.fn(async (name: string) =>
+      name === 'logo radio gen.png'
+        ? { ok: true as const, base64: 'QUJD', ext: 'png' }
+        : { ok: false as const, error: `No image attachment named "${name}".` },
+    )
+    return access
+  }
+
+  it('insert_web_image embeds a resolved attachment as bytes (no url)', async () => {
+    ;(api() as Record<string, unknown>).insertImageUrl = vi.fn(async () => ({
+      slide: deck,
+      sourceId: 'pic9',
+    }))
+    const r = await createSlidesSkill(withResolver()).executeTool!(
+      call('insert_web_image', {
+        url: 'attachment://logo%20radio%20gen.png',
+        x: 10,
+        y: 20,
+        w: 100,
+        h: 50,
+      }),
+    )
+    expect(r.mutated).toBe(true)
+    expect(api().insertImageUrl).toHaveBeenCalledWith({
+      slideIndex: 0,
+      base64: 'QUJD',
+      ext: 'png',
+      xPx: 10,
+      yPx: 20,
+      wPx: 100,
+      hPx: 50,
+      fitWidthPx: 1280,
+    })
+  })
+
+  it('replace_image embeds a resolved attachment as bytes', async () => {
+    const r = await createSlidesSkill(withResolver()).executeTool!(
+      call('replace_image', { url: 'attachment://logo radio gen.png' }),
+    )
+    expect(r.mutated).toBe(true)
+    expect(api().replacePictureUrl).toHaveBeenCalledWith({
+      slideIndex: 0,
+      sourceId: 'pic1',
+      base64: 'QUJD',
+      ext: 'png',
+    })
+  })
+
+  it('unknown attachment name surfaces the resolver error and calls nothing', async () => {
+    const r = await createSlidesSkill(withResolver()).executeTool!(
+      call('replace_image', { url: 'attachment://missing.png' }),
+    )
+    expect(r.mutated).toBeFalsy()
+    expect(String(r.output)).toContain('missing.png')
+    expect(api().replacePictureUrl).not.toHaveBeenCalled()
+  })
+
+  it('fails cleanly when no resolver is wired', async () => {
+    const r = await createSlidesSkill(mkAccess()).executeTool!(
+      call('replace_image', { url: 'attachment://logo.png' }),
+    )
+    expect(r.mutated).toBeFalsy()
+    expect(api().replacePictureUrl).not.toHaveBeenCalled()
+  })
+})

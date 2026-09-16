@@ -61,8 +61,14 @@ export function assertNotOpenInGui(abs: string, env: NodeJS.ProcessEnv): void {
   if (!open || open.paths.length === 0) return
   const target = realizedPath(abs)
   if (!open.paths.some((p) => realizedPath(p) === target)) return
-  throw new CliError(EXIT.file, `GenOffice has this file open: ${abs}`, {
-    hint: 'close the tab in GenOffice first, or pass --force to write anyway (the editor may overwrite your change on its next save)',
-    gui_pid: open.pid,
-  })
+  throw new CliError(
+    EXIT.file,
+    `GenOffice has this file open: ${abs}`,
+    { gui_pid: open.pid },
+    {
+      reason: 'file_open_in_gui',
+      suggestion:
+        'close the tab in GenOffice first, or pass --force to write anyway (the editor may overwrite your change on its next save)',
+    },
+  )
 }

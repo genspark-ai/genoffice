@@ -47,6 +47,14 @@ describe('genoffice create/slides (pptx ops)', () => {
     const deck = read.json().detail
     expect(deck.slides).toBe(2)
     expect(deck.pages[0].id).toMatch(/^s_/)
+    const styled = deck.pages[0].elements.find(
+      (e: { text?: string }) => e.text === 'Hello genoffice',
+    )
+    expect(styled.effective).toMatchObject({ fontSizePt: 32, bold: true, italic: false })
+    expect(styled.effective.src.fontSize).toBe('run')
+    expect(styled.effective.src.bold).toBe('run')
+    expect(styled.effective.src.italic).not.toBe('run')
+    expect(typeof styled.effective.src.fontFamily).toBe('string')
     const textbox = deck.pages[0].elements.find(
       (e: { text?: string }) => e.text === 'Hello genoffice',
     )
@@ -94,14 +102,19 @@ describe('genoffice create/slides (pptx ops)', () => {
     expect((await run(['create', '--type', 'pptx', '--ops', create, '--out', out])).code).toBe(0)
 
     const preview = (await run(['slides', 'read', out, '--json'])).json().detail.pages[0]
-    expect(preview.elements[0].text).toHaveLength(300)
-    expect(preview.elements[0].text.endsWith('...')).toBe(true)
+    expect(preview.elements[0].text).toBe(`${long.slice(0, 300)}…(+${long.length - 300} chars)`)
+    expect(preview.elements[0].truncated).toBe(true)
     expect(preview.elements[1].text.split('\n')).toHaveLength(3)
+    expect(preview.elements[1].truncated).toBe(true)
     expect(preview.notes).toBeUndefined()
+    const clipped = (await run(['slides', 'read', out, '--max-chars', '40', '--json'])).json()
+      .detail.pages[0]
+    expect(clipped.elements[0].text).toBe(`${long.slice(0, 40)}…(+${long.length - 40} chars)`)
 
     const full = (await run(['slides', 'read', out, '--full', '--json'])).json().detail.pages[0]
     expect(full.elements[0].text).toBe(long)
     expect(full.elements[1].text.split('\n')).toHaveLength(5)
+    expect(full.elements[1].truncated).toBeUndefined()
     expect(full.notes).toBe('read me aloud')
   })
 
@@ -332,5 +345,228 @@ describe('slides apply runs ops in order', () => {
     expect(perOp.json().detail.plan.map((l: string) => l.split(':')[0])).toEqual(['0', '2'])
     expect(perOp.json().detail.failures[0].index).toBe(1)
     expect(readFileSync(pptx).equals(before)).toBe(true)
+  })
+})
+
+describe('genoffice slides (arrangement, table styles, layouts)', () => {
+  it('lists layouts, adds a slide by layout name, styles a table and glues a connector', async () => {
+    const dir = tempDir()
+    const out = join(dir, 'arrange.pptx')
+    const create = opsFile(dir, 'create.json', [
+      {
+        op: 'addElement',
+        target: { slide: 0 },
+        kind: 'rect',
+        offset: { x: 0, y: 0, cx: INCH, cy: INCH },
+      },
+      {
+        op: 'addElement',
+        target: { slide: 0 },
+        kind: 'ellipse',
+        offset: { x: 4 * INCH, y: 2 * INCH, cx: INCH, cy: INCH },
+      },
+      {
+        op: 'addTable',
+        target: { slide: 0 },
+        rows: 2,
+        cols: 2,
+        offset: { x: 0, y: 4 * INCH, cx: 4 * INCH, cy: INCH },
+      },
+    ])
+    expect(
+      (await run(['create', '--type', 'pptx', '--ops', create, '--out', out, '--json'])).code,
+    ).toBe(0)
+
+    const read = (await run(['slides', 'read', out, '--layouts', '--json'])).json().detail
+    expect(read.layouts).toEqual([{ index: 0, name: 'Blank', type: 'blank', placeholders: [] }])
+    const [rect, ellipse, table] = read.pages[0].elements.map((e: { id: string }) => e.id)
+    expect(read.pages[0].elements[2].style.name).toBe('Medium Style 2 - Accent 1')
+
+    const edit = opsFile(dir, 'edit.json', [
+      { op: 'alignElements', target: { slide: 0 }, els: [rect, ellipse], mode: 'top' },
+      { op: 'addConnector', target: { slide: 0 }, from: rect, to: ellipse, kind: 'straight' },
+      {
+        op: 'setTableStyle',
+        target: { slide: 0, el: table },
+        styleId: 'Light Style 1 - Accent 2',
+        firstRow: true,
+        bandRow: false,
+        lastRow: true,
+      },
+      { op: 'addSlideWithLayout', layout: 'Blank' },
+    ])
+    const applied = await run(['slides', 'apply', out, '--ops', edit, '--json'])
+    expect(applied.code).toBe(0)
+    expect(applied.json().detail).toMatchObject({ applied: true, ops: 4 })
+
+    const after = (await run(['slides', 'read', out, '--json'])).json().detail
+    expect(after.slides).toBe(2)
+    const els = after.pages[0].elements
+    expect(els.find((e: { id: string }) => e.id === ellipse).box.y).toBe(0)
+    expect(els.find((e: { id: string }) => e.id === table).style).toEqual({
+      id: '{0E3FDE45-AF77-4B5C-9715-49D594BDF05E}',
+      name: 'Light Style 1 - Accent 2',
+      flags: ['firstRow', 'lastRow'],
+    })
+    const zip = await JSZip.loadAsync(readFileSync(out))
+    const xml = await zip.file('ppt/slides/slide1.xml')!.async('string')
+    expect(xml).toMatch(/<a:stCxn id="\d+" idx="3"\/><a:endCxn id="\d+" idx="2"\/>/)
+    expect(zip.file('ppt/slides/slide2.xml')).not.toBeNull()
+
+    const bad = await run([
+      'slides',
+      'apply',
+      out,
+      '--ops',
+      opsFile(dir, 'bad.json', [{ op: 'addSlideWithLayout', layout: 'Title Only' }]),
+      '--json',
+    ])
+    expect(bad.code).toBe(1)
+    expect(bad.json().message).toContain('0: "Blank"')
+  })
+})
+
+describe('slides animations and equations', () => {
+  it('adds, lists and removes animations and writes an a14:m equation', async () => {
+    const dir = tempDir()
+    const out = join(dir, 'anim.pptx')
+    const create = opsFile(dir, 'create.json', [
+      {
+        op: 'addElement',
+        target: { slide: 0 },
+        kind: 'textbox',
+        offset: { x: INCH, y: INCH, cx: 4 * INCH, cy: INCH },
+        paragraphs: [{ runs: [{ text: 'Hello' }] }],
+      },
+    ])
+    expect(
+      (await run(['create', '--type', 'pptx', '--ops', create, '--out', out, '--json'])).code,
+    ).toBe(0)
+    const first = JSON.parse((await run(['slides', 'read', out, '--json'])).stdout)
+    const el = first.detail.pages[0].elements[0].id
+    expect(first.detail.pages[0].animations).toBeUndefined()
+
+    const edit = opsFile(dir, 'edit.json', [
+      {
+        op: 'addAnimation',
+        target: { slide: 0, el },
+        effect: 'flyIn',
+        direction: 'left',
+        duration: 800,
+      },
+      { op: 'addAnimation', target: { slide: 0, el }, effect: 'fadeOut', trigger: 'afterPrev' },
+      { op: 'insertEquation', target: { slide: 0, el }, latex: '\\frac{a}{b}' },
+    ])
+    const applied = await run(['slides', 'apply', out, '--ops', edit, '--json'])
+    expect(applied.code, applied.stderr).toBe(0)
+
+    const read = JSON.parse((await run(['slides', 'read', out, '--slide', '0', '--json'])).stdout)
+    const page = read.detail.pages[0]
+    expect(
+      page.animations.map((a: { seq: number; effect: string; kind: string; trigger: string }) => [
+        a.seq,
+        a.effect,
+        a.kind,
+        a.trigger,
+      ]),
+    ).toEqual([
+      [0, 'flyIn', 'entrance', 'onClick'],
+      [1, 'fadeOut', 'exit', 'afterPrev'],
+    ])
+    expect(page.animations[0].el).toBe(el)
+    expect(page.animations[0].direction).toBe('left')
+    expect(page.animations[0].durationMs).toBe(800)
+    expect(page.elements[0].text).toContain('a/b')
+
+    const zip = await JSZip.loadAsync(readFileSync(out))
+    const slideXml = await zip.file('ppt/slides/slide1.xml')!.async('string')
+    expect(slideXml).toContain('<p:timing>')
+    expect(slideXml).toContain('presetClass="entr" presetSubtype="8"')
+    expect(slideXml).toContain('<a14:m><m:oMathPara')
+    expect(slideXml).toMatch(/<mc:Fallback><a:r>[\s\S]*<a:t>a\/b<\/a:t>/)
+
+    const remove = opsFile(dir, 'remove.json', [
+      { op: 'removeAnimation', target: { slide: 0 }, seq: 0 },
+    ])
+    expect((await run(['slides', 'apply', out, '--ops', remove, '--json'])).code).toBe(0)
+    const after = JSON.parse((await run(['slides', 'read', out, '--slide', '0', '--json'])).stdout)
+    expect(after.detail.pages[0].animations.map((a: { effect: string }) => a.effect)).toEqual([
+      'fadeOut',
+    ])
+
+    const bad = await run([
+      'slides',
+      'apply',
+      out,
+      '--ops',
+      opsFile(dir, 'bad.json', [{ op: 'reorderAnimation', target: { slide: 0 }, seq: 4, to: 0 }]),
+      '--json',
+    ])
+    expect(bad.code).toBe(1)
+    expect(JSON.parse(bad.stdout).message).toContain('0-0')
+  })
+})
+
+describe('setLink / setText named show actions', () => {
+  it('writes ppaction://hlinkshowjump links, reads them back, rejects unknown actions', async () => {
+    const dir = tempDir()
+    const out = join(dir, 'actions.pptx')
+    const create = opsFile(dir, 'create.json', [
+      {
+        op: 'addElement',
+        target: { slide: 0 },
+        kind: 'rect',
+        offset: { x: INCH, y: INCH, cx: 2 * INCH, cy: INCH },
+      },
+      {
+        op: 'addElement',
+        target: { slide: 0 },
+        kind: 'textbox',
+        offset: { x: INCH, y: 3 * INCH, cx: 6 * INCH, cy: INCH },
+        paragraphs: [{ runs: [{ text: 'Back to start' }] }],
+      },
+    ])
+    expect((await run(['create', '--type', 'pptx', '--ops', create, '--out', out])).code).toBe(0)
+    const before = await run(['slides', 'read', out, '--json'])
+    const [rect, box] = before.json().detail.pages[0].elements as Array<{ id: string }>
+
+    const edit = opsFile(dir, 'edit.json', [
+      {
+        op: 'setLink',
+        target: { slide: 0, el: rect!.id },
+        link: { kind: 'action', action: 'nextslide' },
+      },
+      {
+        op: 'setText',
+        target: { slide: 0, el: box!.id },
+        paragraphs: [
+          { runs: [{ text: 'Back to start', link: { kind: 'action', action: 'firstslide' } }] },
+        ],
+      },
+    ])
+    const applied = await run(['slides', 'apply', out, '--ops', edit, '--json'])
+    expect(applied.code).toBe(0)
+
+    const zip = await JSZip.loadAsync(readFileSync(out))
+    const slideXml = await zip.file('ppt/slides/slide1.xml')!.async('string')
+    expect(slideXml).toContain('r:id="" action="ppaction://hlinkshowjump?jump=nextslide"')
+    expect(slideXml).toContain('r:id="" action="ppaction://hlinkshowjump?jump=firstslide"')
+    const rels = await zip.file('ppt/slides/_rels/slide1.xml.rels')!.async('string')
+    expect(rels).not.toContain('hyperlink')
+
+    const after = await run(['slides', 'read', out, '--json'])
+    const [rect2] = after.json().detail.pages[0].elements as Array<{ link?: unknown }>
+    expect(rect2!.link).toEqual({ kind: 'action', action: 'nextslide' })
+
+    const bad = opsFile(dir, 'bad.json', [
+      {
+        op: 'setLink',
+        target: { slide: 0, el: rect!.id },
+        link: { kind: 'action', action: 'home' },
+      },
+    ])
+    const rejected = await run(['slides', 'apply', out, '--ops', bad, '--json'])
+    expect(rejected.code).not.toBe(0)
+    expect(JSON.stringify(rejected.json())).toContain('nextslide, previousslide, firstslide')
   })
 })

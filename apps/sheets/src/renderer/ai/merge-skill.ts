@@ -1,5 +1,5 @@
 /**
- * AI-driven workbook merging (alpha: Olivia/Merrick, #genoffice-7): the user
+ * AI-driven workbook merging: the user
  * attaches spreadsheet files in the chat and asks the assistant to combine
  * them. The heavy lifting stays engine-side — the tool imports every sheet of
  * the chosen attachments into the current workbook through the same pipeline

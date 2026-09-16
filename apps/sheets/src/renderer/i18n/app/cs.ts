@@ -126,7 +126,6 @@ export const cs = {
   appMoreItems: '+{count} dalších…',
   appTruncationNote: 'Prvních {shown} z {total}',
   appGoToButtonTitle: 'Přejít na (⌘G)',
-  appNameBoxTitle: 'Pole názvů — zadejte adresu nebo název a stiskněte Enter',
   appPivotChartHintIn: 'Vytvořit kontingenční graf z aktuální kontingenční tabulky',
   appPivotChartHintOut:
     'Nejprve vyberte buňku ve výstupu kontingenční tabulky a pak zvolte typ grafu',

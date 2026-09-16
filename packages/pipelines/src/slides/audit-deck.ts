@@ -1,12 +1,14 @@
 import { elementDurableId, openPptx, slideDurableId } from '@genoffice/pptx-engine'
 import { buildRenderSlide, EMU_PER_PX_96, type FontMetricsProvider } from '@genoffice/pptx-render'
-import { auditSlideLayout } from './layout-audit'
+import { auditSlideFindings, type AuditFinding } from './layout-audit'
 
 export interface DeckAuditPage {
   /** 0-based slide index */
   slide: number
   id: string
   issues: string[]
+  /** the same issues typed, with a `setTransform` suggestion where geometry alone fixes one */
+  findings: AuditFinding[]
 }
 
 /**
@@ -29,11 +31,13 @@ export async function auditDeck(
       ...(opts.metrics ? { metrics: opts.metrics } : {}),
       slideNo: index + 1,
     })
-    out.push({
-      slide: index,
-      id: slideDurableId(slide),
-      issues: auditSlideLayout(rendered, (id) => ids.get(id) ?? id),
-    })
+    const slideId = slideDurableId(slide)
+    const findings = auditSlideFindings(rendered, (id) => ids.get(id) ?? id).map((f) =>
+      f.suggest
+        ? { ...f, suggest: { ...f.suggest, target: { slide: slideId, el: f.suggest.target.el } } }
+        : f,
+    )
+    out.push({ slide: index, id: slideId, issues: findings.map((f) => f.message), findings })
   }
   return out
 }

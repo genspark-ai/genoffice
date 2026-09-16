@@ -10,8 +10,8 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 process.env.GENOFFICE_DEBUG_HOOKS = '1'
 
 /**
- * Regression for "cut K97:L97, press Right, lands on M97" (alpha
- * feedback): an arrow on a multi-cell selection must collapse to the ACTIVE
+ * Regression for "cut K97:L97, press Right, lands on M97" (user
+ * report): an arrow on a multi-cell selection must collapse to the ACTIVE
  * cell and move one step from it (Excel), not step past the range's edge.
  */
 

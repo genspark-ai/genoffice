@@ -19,6 +19,7 @@
  * parts back once per transaction (the flush also re-materializes every deck
  * slide, because slides resolve inherited styles against the chrome).
  */
+import { NAMED_ACTIONS } from '@genoffice/pptx-engine'
 import {
   elementDurableId,
   groupChildDurableId,
@@ -345,4 +346,25 @@ export function resolveGroupChildId(slide: Slide, groupId: string, ref: string):
       elementDurableId(c) === ref,
   )
   return child ? child.id : ref
+}
+
+/** A `link` value: url / slide / named show action, or null to remove. */
+export function requireLinkTarget(opName: string, link: unknown, field = 'link'): void {
+  if (link === null) return
+  const l = link as
+    { kind?: unknown; url?: unknown; slideIndex?: unknown; action?: unknown } | undefined
+  const usage = `op "${opName}" "${field}" must be {kind:"url",url}, {kind:"slide",slideIndex}, {kind:"action",action} or null.`
+  if (!l || typeof l !== 'object') throw new GuidedError(usage)
+  if (l.kind === 'url') {
+    if (typeof l.url !== 'string' || !l.url) throw new GuidedError(usage)
+  } else if (l.kind === 'slide') {
+    if (!Number.isInteger(l.slideIndex) || (l.slideIndex as number) < 0)
+      throw new GuidedError(usage)
+  } else if (l.kind === 'action') {
+    if (!(NAMED_ACTIONS as readonly unknown[]).includes(l.action)) {
+      throw new GuidedError(
+        `op "${opName}" "${field}.action" must be one of ${NAMED_ACTIONS.join(', ')} (got ${JSON.stringify(l.action)}).`,
+      )
+    }
+  } else throw new GuidedError(usage)
 }

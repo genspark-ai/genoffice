@@ -321,6 +321,8 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('deep-seek-v4-flash-baseten')).toBe(true)
     expect(modelLacksVision('deepseek-v4-pro')).toBe(true)
     expect(modelLacksVision('deepseek-v4-flash')).toBe(true)
+    expect(modelLacksVision('deep-seek-v4-pro')).toBe(true)
+    expect(modelLacksVision('deep-seek-v4.1-flash')).toBe(false)
     expect(modelLacksVision('deepseek-v4-flash-vision-exp')).toBe(false)
     expect(modelLacksVision('deep-seek-v4-flash-vision-exp-openrouter')).toBe(false)
     expect(modelLacksVision('claude-opus-4-7')).toBe(false)

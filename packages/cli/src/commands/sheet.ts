@@ -3,24 +3,57 @@ import { basename } from 'node:path'
 import { flagBool, flagString } from '../args'
 import {
   cellEditsFromInputs,
+  READ_WHERE,
   readSheet,
   workbookSummary,
   writeWorkbook,
   type CellInput,
+  type ReadWhere,
 } from '../formats/xlsx'
-import { runWorkbookDsl, SUPPORTED_DSL_OPS } from '../formats/xlsx-dsl'
+import { checkWorkbook, SHEET_CHECKS } from '../formats/xlsx-check'
+import { runWorkbookDsl, SUPPORTED_DSL_OPS, type DslOutcome } from '../formats/xlsx-dsl'
 import { hasGatewayPayloads, type GatewayPayloads } from '../formats/xlsx-gateway-ops'
-import { resolveInput, resolveOutput } from '../fs'
+import { readInput, resolveInput, resolveOutput } from '../fs'
 import type { CommandContext, CommandDef } from '../registry'
-import { CliError, EXIT, type CommandResult } from '../result'
+import { checkResult } from '../check'
+import { CliError, EXIT, type CommandResult, type Warning } from '../result'
+import { didYouMean, sheetNotFoundHints } from '../suggest'
+import {
+  BATCH_OPTIONS,
+  batchCounts,
+  batchMode,
+  batchResult,
+  failedBatch,
+  pinnedFailure,
+  type BatchMode,
+} from '../batch'
+import type { OpFailure } from '../op-errors'
+
+const FORMULAS_NOT_CACHED = (message: string): Warning => ({ code: 'formulas_not_cached', message })
 
 export const sheetCommand: CommandDef = {
   name: 'sheet',
   summary: 'Read or edit an .xlsx with the same write path the app uses.',
-  usage: 'sheet <read|apply> <file.xlsx> (--cells <file|-> | --ops <file|->) [options]',
+  usage: 'sheet <read|apply|check> <file.xlsx> (--cells <file|-> | --ops <file|->) [options]',
   options: [
     { name: 'sheet', value: 'name', description: 'worksheet (default: the active one)' },
     { name: 'range', value: 'A1:D20', description: 'read: cell range (default: up to 500×100)' },
+    { name: 'cols', value: 'A,C,E:G', description: 'read: only these columns of the range' },
+    {
+      name: 'max-rows',
+      value: 'n',
+      description: 'read: stop after n rows; the result says how many rows the range has',
+    },
+    {
+      name: 'where',
+      value: 'kind',
+      description: `read: only cells of one kind (${READ_WHERE.join(' | ')}) as { ref, value, formula }, no row grid`,
+    },
+    {
+      name: 'stats',
+      description:
+        'read: counts (non-empty, formulas, errors, numbers, text), used range and sheet list instead of the cells',
+    },
     {
       name: 'formats',
       description:
@@ -39,6 +72,7 @@ export const sheetCommand: CommandDef = {
         'apply: JSON array of workbook DSL ops (the in-app propose_operations vocabulary; `genoffice guide sheets`); "-" reads stdin',
     },
     { name: 'dry-run', description: 'apply --ops: validate and print the plan without writing' },
+    ...BATCH_OPTIONS,
     { name: 'out', value: 'path', description: 'apply: write here instead of in place' },
     {
       name: 'force',
@@ -53,13 +87,35 @@ export const sheetCommand: CommandDef = {
         return read(file, args, ctx)
       case 'apply':
         return apply(file, args, ctx)
+      case 'check':
+        return check(file, ctx)
       default:
-        throw new CliError(EXIT.usage, 'expected "sheet read <file>" or "sheet apply <file>"')
+        throw new CliError(
+          EXIT.usage,
+          'expected "sheet read <file>", "sheet apply <file>" or "sheet check <file>"',
+          undefined,
+          {
+            reason: verb === undefined ? 'missing_argument' : 'invalid_argument',
+            suggestion: 'run `genoffice help sheet`',
+          },
+        )
     }
   },
 }
 
 type Args = Parameters<CommandDef['run']>[0]
+
+/** Findings never fail the command: the exit code is 0 and the agent decides what to fix. */
+async function check(file: string | undefined, ctx: CommandContext): Promise<CommandResult> {
+  const path = resolveInput(file, ctx)
+  const { issues } = await checkWorkbook(readInput(path))
+  return checkResult(
+    path,
+    issues,
+    SHEET_CHECKS,
+    'cached values are read from the file, nothing is recalculated; number_overflow widths are approximate (Calibri metrics)',
+  )
+}
 
 async function read(
   file: string | undefined,
@@ -67,20 +123,68 @@ async function read(
   ctx: CommandContext,
 ): Promise<CommandResult> {
   const path = resolveInput(file, ctx)
-  const data = await readSheet(path, {
+  const where = readWhere(flagString(args, 'where'))
+  const stats = flagBool(args, 'stats')
+  const { rows, formulas, ...data } = await readSheet(path, {
     sheet: flagString(args, 'sheet'),
     range: flagString(args, 'range'),
     formats: flagBool(args, 'formats'),
+    cols: flagString(args, 'cols'),
+    maxRows: positiveInt(flagString(args, 'max-rows'), '--max-rows'),
+    where,
+    stats,
   })
-  const filled = data.rows.filter((r) => r.some((v) => v !== null)).length
-  return {
-    summary: `${basename(path)} · ${data.sheet}!${data.range}: ${filled} non-empty rows`,
-    detail: {
-      ...data,
-      units:
-        'rows are 0-based row order within the range; formulas and formats keyed by A1 address; features describe the sheet (merges and hyperlinks: the range)',
-    },
+  const filled = rows.filter((r) => r.some((v) => v !== null)).length
+  const head = `${basename(path)} · ${data.sheet}!${data.range}`
+  const summary = data.stats
+    ? `${head}: ${data.stats.nonEmpty} non-empty cells, ${data.stats.formulas} formulas, ${data.stats.errors} errors`
+    : where
+      ? `${head}: ${data.matches} ${where} cells`
+      : `${head}: ${filled} non-empty rows`
+  const detail: Record<string, unknown> = {
+    ...(where || data.stats ? {} : { rows, formulas }),
+    ...data,
+    units:
+      'rows are 0-based row order within the range; formulas and formats keyed by A1 address; features describe the sheet (merges and hyperlinks: the range)',
   }
+  const notes: string[] = []
+  if (where && data.matches! > data.cells!.length)
+    notes.push(
+      `${data.cells!.length} of ${data.matches} matching cells listed; narrow --range or --cols`,
+    )
+  if (data.rowsShown < data.rowsTotal) {
+    const [, col, row] = /^([A-Z]+)(\d+):/.exec(data.range)!
+    const [, endCol] = /:([A-Z]+)\d+$/.exec(data.range)!
+    const next = `${col}${Number(row) + data.rowsShown}:${endCol}${Number(row) + data.rowsTotal - 1}`
+    notes.push(`${data.rowsShown} of ${data.rowsTotal} rows shown; continue with --range ${next}`)
+  }
+  if (notes.length) detail.note = notes.join('; ')
+  return { summary, detail }
+}
+
+function readWhere(value: string | undefined): ReadWhere | undefined {
+  if (value === undefined) return undefined
+  if ((READ_WHERE as readonly string[]).includes(value)) return value as ReadWhere
+  const guess = didYouMean(value, READ_WHERE)
+  throw new CliError(
+    EXIT.usage,
+    `--where must be one of ${READ_WHERE.join(', ')} (got ${value})`,
+    { supported: READ_WHERE },
+    {
+      reason: 'invalid_argument',
+      ...(guess ? { suggestion: `did you mean --where ${guess}` } : {}),
+    },
+  )
+}
+
+function positiveInt(value: string | undefined, flag: string): number | undefined {
+  if (value === undefined) return undefined
+  const n = Number(value)
+  if (!Number.isInteger(n) || n < 1)
+    throw new CliError(EXIT.usage, `${flag} must be a positive integer (got ${value})`, undefined, {
+      reason: 'invalid_argument',
+    })
+  return n
 }
 
 async function apply(
@@ -92,7 +196,9 @@ async function apply(
   const cellsSpec = flagString(args, 'cells')
   const opsSpec = flagString(args, 'ops')
   if (!cellsSpec && !opsSpec)
-    throw new CliError(EXIT.usage, 'missing --cells <file|-> or --ops <file|->')
+    throw new CliError(EXIT.usage, 'missing --cells <file|-> or --ops <file|->', undefined, {
+      reason: 'missing_argument',
+    })
   if (opsSpec) return applyOps(path, opsSpec, args, ctx)
   return applyCells(path, cellsSpec!, args, ctx)
 }
@@ -104,14 +210,22 @@ function readJsonList(spec: string, flag: string, ctx: CommandContext): unknown[
   try {
     parsed = JSON.parse(text)
   } catch (err) {
-    throw new CliError(EXIT.usage, `${flag}: not valid JSON (${(err as Error).message})`)
+    throw new CliError(
+      EXIT.usage,
+      `${flag}: not valid JSON (${(err as Error).message})`,
+      undefined,
+      { reason: 'invalid_json' },
+    )
   }
   const list = Array.isArray(parsed)
     ? parsed
     : parsed && typeof parsed === 'object' && Array.isArray((parsed as { ops?: unknown }).ops)
       ? (parsed as { ops: unknown[] }).ops
       : null
-  if (!list?.length) throw new CliError(EXIT.usage, `${flag}: expected a non-empty JSON array`)
+  if (!list?.length)
+    throw new CliError(EXIT.usage, `${flag}: expected a non-empty JSON array`, undefined, {
+      reason: 'invalid_argument',
+    })
   return list
 }
 
@@ -123,7 +237,9 @@ async function applyOps(
 ): Promise<CommandResult> {
   const ops = readJsonList(spec, '--ops', ctx)
   const source = readFileSync(path)
-  const r = await runWorkbookDsl(source, ops, flagString(args, 'sheet'), ctx)
+  const mode = batchMode(args)
+  const { outcome: r, failures, applied } = await runBatch(source, ops, mode, args, ctx, path)
+  const counts = batchCounts(ops.length, applied, failures.length)
   const detail: Record<string, unknown> = {
     plan: r.plan,
     cells: r.edits.length,
@@ -132,10 +248,14 @@ async function applyOps(
     sheets_changed: r.sheetPlan
       ? r.sheetPlan.additions.length + r.sheetPlan.removals.length + r.sheetPlan.renames.length
       : 0,
-    ...(r.warnings.length ? { warnings: r.warnings } : {}),
   }
+  for (const message of r.warnings) ctx.warn({ code: 'op_warning', message })
   if (flagBool(args, 'dry-run')) {
-    return { summary: `dry run: ${ops.length} ops validated, nothing written`, detail }
+    return batchResult(
+      { summary: `dry run: ${applied} of ${ops.length} ops validated, nothing written`, detail },
+      counts,
+      failures,
+    )
   }
   const output = resolveOutput(flagString(args, 'out'), ctx, {
     fallback: path,
@@ -149,15 +269,85 @@ async function applyOps(
     renames: r.renames,
     gateway: r.gateway,
   })
-  return {
-    summary: `applied ${ops.length} ops to ${basename(output)}`,
-    outputPath: output,
-    detail: {
-      ...detail,
-      formulas: w.formulas,
-      cached_values: w.cachedValues,
-      ...(w.warning ? { warning: w.warning } : {}),
+  return batchResult(
+    {
+      summary: `applied ${applied} of ${ops.length} ops to ${basename(output)}`,
+      outputPath: output,
+      detail: {
+        ...detail,
+        formulas: w.formulas,
+        cached_values: w.cachedValues,
+      },
+      ...writeWarnings(w),
     },
+    counts,
+    failures,
+  )
+}
+
+/**
+ * The DSL plans the whole list against one in-memory workbook and rejects on
+ * the first bad op. A non-atomic run drops that op (best effort) or everything
+ * from it on (stop on error) and plans the rest again from the file, so an op
+ * that only worked because of a rejected one fails too instead of half-applying.
+ * Rejections the DSL cannot pin to one op (a forbidden mix of ops) stay fatal.
+ */
+async function runBatch(
+  source: Buffer,
+  ops: unknown[],
+  mode: BatchMode,
+  args: Args,
+  ctx: CommandContext,
+  sourcePath: string,
+): Promise<{ outcome: DslOutcome; failures: OpFailure[]; applied: number }> {
+  const failures: OpFailure[] = []
+  // the DSL's own error per dropped op: its detail (sheets, supported, …) and hints are the contract
+  const dropped: CliError[] = []
+  let pending = ops.map((op, index) => ({ op, index }))
+  for (;;) {
+    try {
+      const outcome = await runWorkbookDsl(
+        source,
+        pending.map((p) => p.op),
+        flagString(args, 'sheet'),
+        ctx,
+        { sourcePath },
+      )
+      return { outcome, failures, applied: pending.length }
+    } catch (err) {
+      const f = pinnedFailure(err)
+      if (mode === 'atomic' || !f || !pending[f.index] || !(err instanceof CliError)) {
+        throw mode === 'atomic' && err instanceof CliError ? failedBatch(err, ops.length) : err
+      }
+      const index = pending[f.index]!.index
+      failures.push({ ...f, index })
+      dropped.push(
+        new CliError(
+          err.code,
+          err.message.replace(/^ops\[\d+\]/, `ops[${index}]`),
+          { ...err.detail, failures: [{ ...f, index }] },
+          { reason: err.reason, suggestion: err.suggestion },
+        ),
+      )
+      pending =
+        mode === 'stop_on_error'
+          ? pending.slice(0, f.index)
+          : pending.filter((_, i) => i !== f.index)
+      if (!pending.length) {
+        // gateway rejections surface after planning, so the first one found is not always the lowest index
+        const first = [...dropped].sort(
+          (a, b) =>
+            (a.detail!.failures as OpFailure[])[0]!.index -
+            (b.detail!.failures as OpFailure[])[0]!.index,
+        )[0]!
+        throw new CliError(
+          first.code,
+          `no ops were applied: ${first.message}`,
+          { ...first.detail, failures, batch: batchCounts(ops.length, 0, failures.length) },
+          { reason: first.reason, suggestion: first.suggestion },
+        )
+      }
+    }
   }
 }
 
@@ -178,6 +368,8 @@ function featureCounts(g: GatewayPayloads): Record<string, number> {
     sheet_tabs: g.tabs.moves.length + g.tabs.hidden.length + g.tabs.duplicates.length,
     protections: g.sheetProtections.length,
     defined_names: g.definedNamesState?.names.length ?? 0,
+    pivots: g.pivotAdditions.length,
+    sparklines: g.sparklineAdditions.reduce((n, s) => n + s.cells.length, 0),
   }
   return Object.fromEntries(Object.entries(counts).filter(([, n]) => n > 0))
 }
@@ -204,7 +396,12 @@ async function applyCells(
   const edits = cellEditsFromInputs(inputs as CellInput[], defaultSheet)
   const unknown = edits.find((e) => !known.has(e.sheetName))
   if (unknown) {
-    throw new CliError(EXIT.usage, `sheet not found: ${unknown.sheetName}`, { sheets: [...known] })
+    throw new CliError(
+      EXIT.usage,
+      `sheet not found: ${unknown.sheetName}`,
+      { sheets: [...known] },
+      sheetNotFoundHints(unknown.sheetName, [...known]),
+    )
   }
   const r = await writeWorkbook(readFileSync(path), edits, output)
   return {
@@ -214,9 +411,14 @@ async function applyCells(
       cells: r.cells,
       formulas: r.formulas,
       cached_values: r.cachedValues,
-      ...(r.warning ? { warning: r.warning } : {}),
     },
+    ...writeWarnings(r),
   }
+}
+
+function writeWarnings(w: { warning?: string; notes?: Warning[] }): { warnings?: Warning[] } {
+  const warnings = [...(w.warning ? [FORMULAS_NOT_CACHED(w.warning)] : []), ...(w.notes ?? [])]
+  return warnings.length ? { warnings } : {}
 }
 
 export { SUPPORTED_DSL_OPS }

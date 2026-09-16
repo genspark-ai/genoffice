@@ -17,6 +17,12 @@ export interface TableStyleEdit {
   firstRow?: boolean
   /** Change only the bandRow flag */
   bandRow?: boolean
+  lastRow?: boolean
+  firstCol?: boolean
+  lastCol?: boolean
+  bandCol?: boolean
+  /** Replace a:tableStyleId (a built-in GUID or a custom style id already in tableStyles.xml), keeping the rest of tblPr */
+  styleId?: string
   /** Right-to-left table (tblPr rtl: mirrored grid); false removes the attribute */
   rtl?: boolean
   /** Shading color #RRGGBB or 'none' (<a:solidFill> / <a:noFill> per tc) */
@@ -199,18 +205,22 @@ export function patchTableStyleXml(originalXml: string, edit: TableStyleEdit): s
       next = next.replace(/^<a:tblPr/, '<a:tblPr rtl="1"')
     }
     xml = replaceTblPr(xml, next)
-  } else if (edit.firstRow !== undefined || edit.bandRow !== undefined || edit.rtl !== undefined) {
+  } else if (
+    FLAG_ATTRS.some((k) => edit[k] !== undefined) ||
+    edit.rtl !== undefined ||
+    edit.styleId !== undefined
+  ) {
     // Change only the flags, keeping the rest (styleId etc.)
+    if (!/<a:tblPr[\s>/]/.test(xml)) xml = replaceTblPr(xml, '<a:tblPr/>')
     const tblPrMatch = /<a:tblPr(\s[^>]*)?(\/?>)/s.exec(xml)
     if (tblPrMatch) {
       // With attributes present the greedy [^>]* swallows a trailing "/" into group 1,
       // so self-closing must be detected on the whole tag and the slash stripped
       const selfClosing = tblPrMatch[0].endsWith('/>')
       let attrs = (tblPrMatch[1] ?? '').replace(/\/\s*$/, '')
-      if (edit.firstRow !== undefined)
-        attrs = setAttr(attrs, 'firstRow', edit.firstRow ? '1' : undefined)
-      if (edit.bandRow !== undefined)
-        attrs = setAttr(attrs, 'bandRow', edit.bandRow ? '1' : undefined)
+      for (const k of FLAG_ATTRS) {
+        if (edit[k] !== undefined) attrs = setAttr(attrs, k, edit[k] ? '1' : undefined)
+      }
       if (edit.rtl !== undefined) attrs = setAttr(attrs, 'rtl', edit.rtl ? '1' : undefined)
       // Self-closing expands into <a:tblPr...></a:tblPr>
       xml =
@@ -219,6 +229,7 @@ export function patchTableStyleXml(originalXml: string, edit: TableStyleEdit): s
         (selfClosing ? '</a:tblPr>' : '') +
         xml.slice(tblPrMatch.index + tblPrMatch[0].length)
     }
+    if (edit.styleId !== undefined) xml = setTableStyleId(xml, edit.styleId)
   }
 
   // ── 2. Shading / borders: patch the targeted <a:tcPr> nodes ────────
@@ -231,6 +242,23 @@ export function patchTableStyleXml(originalXml: string, edit: TableStyleEdit): s
   }
 
   return xml
+}
+
+const FLAG_ATTRS = ['firstRow', 'lastRow', 'firstCol', 'lastCol', 'bandRow', 'bandCol'] as const
+
+/** Set a:tableStyleId inside an open/close tblPr (CT_TableProperties: the style id is the last child before extLst). */
+function setTableStyleId(xml: string, styleId: string): string {
+  const m = /<a:tblPr(\s[^>]*)?>([\s\S]*?)<\/a:tblPr>/.exec(xml)
+  if (!m) return xml
+  const tag = `<a:tableStyleId>${escapeXmlAttr(styleId)}</a:tableStyleId>`
+  let inner = m[2]!.replace(/<a:tableStyleId>[^<]*<\/a:tableStyleId>/, '')
+  const ext = inner.indexOf('<a:extLst')
+  inner = ext >= 0 ? inner.slice(0, ext) + tag + inner.slice(ext) : inner + tag
+  return (
+    xml.slice(0, m.index) +
+    `<a:tblPr${m[1] ?? ''}>${inner}</a:tblPr>` +
+    xml.slice(m.index + m[0].length)
+  )
 }
 
 /** Replace <a:tblPr>…</a:tblPr> (or its self-closing form) in the XML with a new value. */

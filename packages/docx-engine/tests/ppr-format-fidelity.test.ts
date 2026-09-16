@@ -86,19 +86,22 @@ describe('mergePPrFormat keeps unedited groups byte-identical', () => {
   it('changing only a border color rebuilds pBdr with the declared color/sz', () => {
     const out = mergePPrFormat(RAW, {
       ...MODEL,
-      borderLines: { t: { color: '00FF00', szPt: 1.5 }, b: { color: 'FF0000', szPt: 1.5 } },
+      borderLines: {
+        t: { color: '00FF00', szPt: 1.5, spacePt: 1 },
+        b: { color: 'FF0000', szPt: 1.5, spacePt: 1 },
+      },
     })
     expect(out).toContain('<w:top w:val="single" w:sz="12" w:space="1" w:color="00FF00"/>')
     expect(out).toContain('<w:bottom w:val="single" w:sz="12" w:space="1" w:color="FF0000"/>')
     expect(out).not.toContain('dashed')
   })
 
-  it('rebuilding pBdr from a bare model writes declared color/sz', () => {
+  it('rebuilding pBdr from a bare model writes declared color/sz and a 0 space', () => {
     const out = mergePPrFormat('<w:pPr></w:pPr>', {
       borders: 'b',
       borderLines: { b: { color: '4472C4', szPt: 2.25 } },
     })
-    expect(out).toContain('<w:bottom w:val="single" w:sz="18" w:space="1" w:color="4472C4"/>')
+    expect(out).toContain('<w:bottom w:val="single" w:sz="18" w:space="0" w:color="4472C4"/>')
   })
 
   it('a declared w:space rebuilds per side and an unchanged one keeps the raw bytes', async () => {

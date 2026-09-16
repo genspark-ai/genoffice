@@ -11,6 +11,7 @@ import {
   assembleWithJsZip,
   createBufferEntrySource,
   planCellEditsToXlsx,
+  toA1Address,
   type CellEdit,
   type SheetFormulaValues,
   type SheetStructuralOps,
@@ -19,9 +20,24 @@ import {
 import type { SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 import { EMPTY_PAYLOADS, type GatewayPayloads } from './xlsx-gateway-ops'
 import type { WorkbookStyleEdit } from '@genoffice/xlsx-gateway/shared/edit-schemas'
+import {
+  echoStyleColor,
+  fillDisplayColor,
+  isGradientFill,
+  isThemeColor,
+  resolveStyleColor,
+  type StyleColor,
+  type StyleColorEcho,
+} from '@genoffice/xlsx-gateway/domain/style-color'
+import {
+  parseStylesheetFormats,
+  type StylesheetFormats,
+} from '@genoffice/xlsx-gateway/gateway/xlsx-style-read'
+import { readFile } from 'node:fs/promises'
 import { atomicWriteFile } from '../../../../apps/sheets/src/main/atomic-write'
 import { XlsxSidecarClient } from '../../../../apps/sheets/src/main/xlsx-sidecar-client'
 import { CliError, EXIT } from '../result'
+import { sheetNotFoundHints } from '../suggest'
 import { xlsxSidecarPath } from '../resources'
 
 export type Scalar = string | number | boolean | null
@@ -52,10 +68,13 @@ interface OpenedWorkbook {
     hidden?: boolean
     tables?: { range: CellArea; name?: string }[]
     comments?: { row: number; column: number }[]
+    pivotTables?: { path: string; outputRef: string }[]
   }[]
   activeTab: number
   definedNames?: unknown[]
   styles?: CellStyle[]
+  /** #RRGGBB in theme index order [lt1, dk1, lt2, dk2, accent1-6, hlink, folHlink] */
+  themeColors?: string[]
   visuals?: {
     id: string
     sheetId: string
@@ -136,15 +155,28 @@ function pickSheet(wb: OpenedWorkbook, name: string | undefined): SheetMeta {
     ? wb.sheets.find((s) => s.name === name)
     : (wb.sheets[wb.activeTab] ?? wb.sheets[0])
   if (!meta) {
-    throw new CliError(EXIT.usage, `sheet not found: ${name}`, {
-      sheets: wb.sheets.map((s) => s.name),
-    })
+    throw new CliError(
+      EXIT.usage,
+      `sheet not found: ${name}`,
+      { sheets: wb.sheets.map((s) => s.name) },
+      sheetNotFoundHints(
+        name ?? '',
+        wb.sheets.map((s) => s.name),
+      ),
+    )
   }
   return meta
 }
 
 interface RecalcResult {
-  cells: { sheet: string; row: number; column: number; formatted: string; number?: number }[]
+  cells: {
+    sheet: string
+    row: number
+    column: number
+    formatted: string
+    number?: number
+    isError?: boolean
+  }[]
 }
 
 /** One short-lived sidecar process per call; the CLI has no session to keep alive. */
@@ -219,6 +251,8 @@ export interface SheetFeatures {
   merges: string[]
   charts: { id: string; title: string; types: string[]; series: number; anchor: string }[]
   tables: { name: string | null; range: string }[]
+  /** output ranges of the sheet's pivot tables */
+  pivots: string[]
   conditionalFormats: number
   dataValidations: number
   /** links on cells of the read range */
@@ -237,10 +271,66 @@ export interface CellFormat {
   fontFamily?: string
   fontSize?: number
   fontColor?: string
+  /** when the font color is a theme slot: the slot and tint behind `fontColor` */
+  fontColorTheme?: { theme: string; tint?: number }
   fillColor?: string
+  /** pattern / gradient / theme-slot fills as stored, with each color resolved to rgb */
+  fill?: FillEcho
   horizontalAlign?: string
   verticalAlign?: string
   numberFormat?: string
+}
+
+export type FillEcho =
+  | { pattern: string; fg: StyleColorEcho; bg?: StyleColorEcho }
+  | {
+      gradient: {
+        type?: 'linear' | 'path'
+        angle?: number
+        left?: number
+        right?: number
+        top?: number
+        bottom?: number
+        stops: { position: number; color: StyleColorEcho }[]
+      }
+    }
+export type ReadWhere = 'formula' | 'error' | 'empty' | 'number' | 'text'
+export const READ_WHERE: readonly ReadWhere[] = ['formula', 'error', 'empty', 'number', 'text']
+
+const ERROR_VALUE = /^#(N\/A|REF!|VALUE!|DIV\/0!|NAME\?|NUM!|NULL!|SPILL!|CALC!|GETTING_DATA)$/
+
+export interface ReadOptions {
+  sheet?: string
+  range?: string
+  formats?: boolean
+  /** columns to keep, `A,C,E:G` */
+  cols?: string
+  /** stop after this many rows of the range */
+  maxRows?: number
+  where?: ReadWhere
+  stats?: boolean
+}
+
+export interface MatchedCell {
+  ref: string
+  value: Scalar
+  formula?: string
+}
+
+export interface SheetStats {
+  sheets: { name: string; rows: number; columns: number }[]
+  usedRange: string | null
+  rows: number
+  columns: number
+  /** the range the counts below were taken over (the whole used area unless capped or --range) */
+  scanned: string
+  nonEmpty: number
+  formulas: number
+  errors: number
+  numbers: number
+  text: number
+  booleans: number
+  merges: number
 }
 
 export interface SheetRead {
@@ -249,6 +339,14 @@ export interface SheetRead {
   rows: Scalar[][]
   formulas: Record<string, string>
   truncated: boolean
+  rowsShown: number
+  rowsTotal: number
+  /** with `cols`: the column of each entry of every row */
+  columns?: string[]
+  /** with `where`: only the matching cells */
+  cells?: MatchedCell[]
+  matches?: number
+  stats?: SheetStats
   features: SheetFeatures
   /** with `formats`: styled cells of the range, by A1 address */
   formats?: Record<string, CellFormat>
@@ -270,7 +368,9 @@ export function parseAddressChecked(
   try {
     parsed = parseAddress(address.toUpperCase())
   } catch {
-    throw new CliError(EXIT.usage, `invalid ${what} address: ${address}`)
+    throw new CliError(EXIT.usage, `invalid ${what} address: ${address}`, undefined, {
+      reason: 'invalid_argument',
+    })
   }
   if (parsed.row >= MAX_ROWS || parsed.column >= MAX_COLUMNS) {
     throw new CliError(
@@ -281,9 +381,31 @@ export function parseAddressChecked(
   return parsed
 }
 
+const MATCH_CAP = 1000
+
+function parseCols(spec: string): number[] {
+  const bad = (): CliError =>
+    new CliError(EXIT.usage, `--cols must look like A,C,E:G (got ${spec})`, undefined, {
+      reason: 'invalid_argument',
+    })
+  const out = new Set<number>()
+  for (const part of spec.split(',')) {
+    const m = /^([A-Za-z]{1,3})(?::([A-Za-z]{1,3}))?$/.exec(part.trim())
+    if (!m) throw bad()
+    const a = parseAddressChecked(`${m[1]}1`, 'column').column
+    const b = m[2] ? parseAddressChecked(`${m[2]}1`, 'column').column : a
+    for (let c = Math.min(a, b); c <= Math.max(a, b); c++) out.add(c)
+  }
+  if (!out.size) throw bad()
+  return [...out].sort((x, y) => x - y)
+}
+
 function parseRangeChecked(range: string): Bounds {
   const parts = range.split(':')
-  if (parts.length > 2 || !parts[0]) throw new CliError(EXIT.usage, `invalid range: ${range}`)
+  if (parts.length > 2 || !parts[0])
+    throw new CliError(EXIT.usage, `invalid range: ${range}`, undefined, {
+      reason: 'invalid_argument',
+    })
   const first = parseAddressChecked(parts[0], 'range')
   const second = parts[1] ? parseAddressChecked(parts[1], 'range') : first
   return {
@@ -294,10 +416,8 @@ function parseRangeChecked(range: string): Bounds {
   }
 }
 
-export async function readSheet(
-  path: string,
-  opts: { sheet?: string; range?: string; formats?: boolean },
-): Promise<SheetRead> {
+export async function readSheet(path: string, opts: ReadOptions): Promise<SheetRead> {
+  const cols = opts.cols ? parseCols(opts.cols) : undefined
   return withOpenWorkbook(path, async (client, wb) => {
     const meta = pickSheet(wb, opts.sheet)
     const bounds = opts.range
@@ -372,32 +492,80 @@ export async function readSheet(
       }
     }
     const rangeLabel = `${columnLabel(bounds.startColumn)}${bounds.startRow + 1}:${columnLabel(bounds.endColumn)}${bounds.endRow + 1}`
+    const stats = opts.stats ? sheetStats(wb, meta, result, rows, formulas, rangeLabel) : undefined
+    const rowsTotal = opts.range ? height : Math.max(meta.rowCount, height)
+    const shownRows =
+      opts.maxRows !== undefined && opts.maxRows < rows.length ? rows.slice(0, opts.maxRows) : rows
+    const lastRow = bounds.startRow + Math.max(shownRows.length, 1) - 1
+    const keptColumns = cols?.filter((c) => c >= bounds.startColumn && c <= bounds.endColumn)
+    if (keptColumns && !keptColumns.length) {
+      throw new CliError(
+        EXIT.usage,
+        `--cols ${opts.cols} lies outside ${rangeLabel}`,
+        { valid_range: rangeLabel },
+        { reason: 'out_of_range', suggestion: 'widen --range or drop --cols' },
+      )
+    }
+    const inScope = (address: string): boolean => {
+      const a = parseAddress(address)
+      return a.row <= lastRow && (!keptColumns || keptColumns.includes(a.column))
+    }
+    const pick = <T>(byAddress: Record<string, T>): Record<string, T> =>
+      Object.fromEntries(Object.entries(byAddress).filter(([k]) => inScope(k)))
     const read: SheetRead = {
       sheet: meta.name,
-      range: rangeLabel,
-      rows,
-      formulas,
-      truncated,
+      range:
+        shownRows.length < rows.length
+          ? `${columnLabel(bounds.startColumn)}${bounds.startRow + 1}:${columnLabel(bounds.endColumn)}${lastRow + 1}`
+          : rangeLabel,
+      rows: keptColumns
+        ? shownRows.map((r) => keptColumns.map((c) => r[c - bounds.startColumn] ?? null))
+        : shownRows,
+      formulas: pick(formulas),
+      truncated: truncated || shownRows.length < rowsTotal,
+      rowsShown: shownRows.length,
+      rowsTotal,
+      ...(keptColumns ? { columns: keptColumns.map(columnLabel) } : {}),
       features: sheetFeatures(wb, meta, result),
     }
+    if (opts.where) {
+      const cells: MatchedCell[] = []
+      const columns = keptColumns ?? Array.from({ length: width }, (_, k) => bounds.startColumn + k)
+      let matches = 0
+      shownRows.forEach((r, i) => {
+        columns.forEach((c) => {
+          const value = r[c - bounds.startColumn] ?? null
+          const ref = `${columnLabel(c)}${bounds.startRow + i + 1}`
+          const formula = formulas[ref]
+          if (!cellMatches(opts.where!, value, formula)) return
+          matches++
+          if (cells.length < MATCH_CAP) cells.push({ ref, value, ...(formula ? { formula } : {}) })
+        })
+      })
+      read.cells = cells
+      read.matches = matches
+    }
+    if (stats) read.stats = stats
     if (opts.formats) {
       const formats: Record<string, CellFormat> = {}
       // xf 0 is the workbook default; a style only counts where it differs from it
       const base = wb.styles?.[0]
+      const stored = await storedFormats(path)
       for (const c of result.cells) {
         if (!c.styleIndex) continue
         const style = wb.styles?.[c.styleIndex]
         const format = style ? cellFormat(style, base) : undefined
-        if (format) formats[`${columnLabel(c.column)}${c.row + 1}`] = format
+        const echoed = withStoredColors(format, stored, c.styleIndex, wb.themeColors)
+        if (echoed) formats[`${columnLabel(c.column)}${c.row + 1}`] = echoed
       }
-      read.formats = formats
+      read.formats = pick(formats)
       read.columnWidths = Object.fromEntries(
         (meta.columnWidths ?? [])
           .filter((w) => w.width !== undefined)
           .flatMap((w) => {
             const out: [string, number][] = []
             for (let c = w.startColumn; c <= Math.min(w.endColumn, bounds.endColumn); c++) {
-              if (c >= bounds.startColumn)
+              if (c >= bounds.startColumn && (!keptColumns || keptColumns.includes(c)))
                 out.push([columnLabel(c), Math.round(w.width! * PX_PER_CHAR)])
             }
             return out
@@ -405,12 +573,177 @@ export async function readSheet(
       )
       read.rowHeights = Object.fromEntries(
         (result.rows ?? [])
-          .filter((r) => r.height !== undefined)
+          .filter((r) => r.height !== undefined && r.row <= lastRow)
           .map((r) => [String(r.row + 1), r.height!]),
       )
     }
     return read
   })
+}
+
+async function hasThemePart(source: Buffer): Promise<boolean> {
+  const zip = await JSZip.loadAsync(source)
+  return zip.file('xl/theme/theme1.xml') !== null
+}
+
+function styleHasThemeColor(style: WorkbookStyleEdit): boolean {
+  const colors: unknown[] = [style.fontColor, style.fillColor]
+  for (const edge of [style.borderTop, style.borderBottom, style.borderLeft, style.borderRight]) {
+    if (edge) colors.push(edge.color)
+  }
+  if (style.fill) {
+    if ('gradient' in style.fill) colors.push(...style.fill.gradient.stops.map((s) => s.color))
+    else colors.push(style.fill.fg, style.fill.bg)
+  }
+  return colors.some((c) => isThemeColor(c as StyleColor | null | undefined))
+}
+
+function flattenThemeColors(style: WorkbookStyleEdit): WorkbookStyleEdit {
+  const rgb = <T extends StyleColor | null | undefined>(c: T): string | T =>
+    isThemeColor(c) ? resolveStyleColor(c) : c
+  const out: WorkbookStyleEdit = { ...style }
+  if (out.fontColor !== undefined) out.fontColor = rgb(out.fontColor)
+  if (out.fillColor !== undefined) out.fillColor = rgb(out.fillColor)
+  for (const key of ['borderTop', 'borderBottom', 'borderLeft', 'borderRight'] as const) {
+    const edge = out[key]
+    if (edge && edge.color !== undefined) out[key] = { ...edge, color: rgb(edge.color) }
+  }
+  if (out.fill) {
+    out.fill =
+      'gradient' in out.fill
+        ? {
+            gradient: {
+              ...out.fill.gradient,
+              stops: out.fill.gradient.stops.map((s) => ({ ...s, color: rgb(s.color) })),
+            },
+          }
+        : {
+            ...out.fill,
+            fg: rgb(out.fill.fg),
+            ...(out.fill.bg === undefined ? {} : { bg: rgb(out.fill.bg) }),
+          }
+  }
+  return out
+}
+
+function sameStyleColor(a: StyleColor | undefined, b: StyleColor | undefined): boolean {
+  if (typeof a === 'string' || typeof b === 'string' || !a || !b) return a === b
+  return a.theme === b.theme && (a.tint ?? 0) === (b.tint ?? 0)
+}
+
+async function storedFormats(path: string): Promise<StylesheetFormats | undefined> {
+  try {
+    const zip = await JSZip.loadAsync(await readFile(path))
+    const xml = await zip.file('xl/styles.xml')?.async('string')
+    return xml === undefined ? undefined : parseStylesheetFormats(xml)
+  } catch {
+    return undefined
+  }
+}
+
+/** the sidecar resolves every color to rgb; styles.xml still knows the theme slot and the pattern */
+function withStoredColors(
+  format: CellFormat | undefined,
+  stored: StylesheetFormats | undefined,
+  styleIndex: number,
+  palette: readonly string[] | undefined,
+): CellFormat | undefined {
+  const xf = stored?.xfs[styleIndex]
+  if (!stored || !xf) return format
+  const out: CellFormat = { ...format }
+  // the Normal font is usually theme="1": only a font the cell chose over it is a format
+  const baseFont = stored.fontColors[stored.xfs[0]?.fontId ?? 0]
+  const fontColor = stored.fontColors[xf.fontId]
+  if (isThemeColor(fontColor) && !sameStyleColor(fontColor, baseFont)) {
+    const echo = echoStyleColor(fontColor, palette)
+    out.fontColor = echo.rgb
+    out.fontColorTheme = { theme: echo.theme!, ...(echo.tint ? { tint: echo.tint } : {}) }
+  }
+  const fill = stored.fills[xf.fillId]
+  if (fill) {
+    // theme slots resolve here so fillColor and fill.fg.rgb agree byte for byte
+    const display = fillDisplayColor(fill)
+    if (display && (!out.fillColor || isThemeColor(display))) {
+      out.fillColor = echoStyleColor(display, palette).rgb
+    }
+    if (isGradientFill(fill)) {
+      const g = fill.gradient
+      out.fill = {
+        gradient: {
+          ...(g.type ? { type: g.type } : {}),
+          ...(g.angle !== undefined ? { angle: g.angle } : {}),
+          ...(g.left !== undefined ? { left: g.left } : {}),
+          ...(g.right !== undefined ? { right: g.right } : {}),
+          ...(g.top !== undefined ? { top: g.top } : {}),
+          ...(g.bottom !== undefined ? { bottom: g.bottom } : {}),
+          stops: g.stops.map((stop) => ({
+            position: stop.position,
+            color: echoStyleColor(stop.color, palette),
+          })),
+        },
+      }
+    } else if (fill.pattern !== 'solid' || isThemeColor(fill.fg)) {
+      out.fill = {
+        pattern: fill.pattern,
+        fg: echoStyleColor(fill.fg, palette),
+        ...(fill.bg === undefined ? {} : { bg: echoStyleColor(fill.bg, palette) }),
+      }
+    }
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+function cellMatches(where: ReadWhere, value: Scalar, formula: string | undefined): boolean {
+  switch (where) {
+    case 'formula':
+      return formula !== undefined
+    case 'error':
+      return typeof value === 'string' && ERROR_VALUE.test(value)
+    case 'empty':
+      return value === null && formula === undefined
+    case 'number':
+      return typeof value === 'number'
+    case 'text':
+      return typeof value === 'string' && !ERROR_VALUE.test(value)
+  }
+}
+
+function sheetStats(
+  wb: OpenedWorkbook,
+  meta: SheetMeta,
+  result: RangeResult,
+  rows: Scalar[][],
+  formulas: Record<string, string>,
+  scanned: string,
+): SheetStats {
+  const stats: SheetStats = {
+    sheets: wb.sheets.map((s) => ({ name: s.name, rows: s.rowCount, columns: s.columnCount })),
+    usedRange:
+      meta.rowCount && meta.columnCount
+        ? `A1:${columnLabel(meta.columnCount - 1)}${meta.rowCount}`
+        : null,
+    rows: meta.rowCount,
+    columns: meta.columnCount,
+    scanned,
+    nonEmpty: 0,
+    formulas: Object.keys(formulas).length,
+    errors: 0,
+    numbers: 0,
+    text: 0,
+    booleans: 0,
+    merges: result.merges?.length ?? 0,
+  }
+  for (const row of rows) {
+    for (const v of row) {
+      if (v === null) continue
+      stats.nonEmpty++
+      if (typeof v === 'number') stats.numbers++
+      else if (typeof v === 'boolean') stats.booleans++
+      else if (ERROR_VALUE.test(v)) stats.errors++
+      else stats.text++
+    }
+  }
+  return stats
 }
 
 /** OOXML column widths are in characters of the default font; 7 px per character is Calibri 11. */
@@ -438,6 +771,7 @@ function sheetFeatures(wb: OpenedWorkbook, meta: SheetMeta, result: RangeResult)
         anchor: `${columnLabel(v.anchor.fromColumn)}${v.anchor.fromRow + 1}`,
       })),
     tables: (meta.tables ?? []).map((t) => ({ name: t.name ?? null, range: areaLabel(t.range) })),
+    pivots: (meta.pivotTables ?? []).map((p) => p.outputRef),
     conditionalFormats: result.conditionalRules?.length ?? 0,
     dataValidations: result.dataValidations?.length ?? 0,
     hyperlinks: result.hyperlinks?.length ?? 0,
@@ -599,6 +933,42 @@ export interface CellInput {
 export interface TableInput {
   name: string
   rows: Scalar[][]
+  /** `row:column` → number format for cells whose value was typed on import (ISO dates) */
+  formats?: Record<string, string>
+}
+
+export interface CsvTableOptions {
+  /** decimal separator used by the file; `,` also accepts `.` as a thousands separator */
+  decimal?: '.' | ','
+}
+
+const EXCEL_EPOCH_UTC = Date.UTC(1899, 11, 30)
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/
+
+/** Serial day number Excel stores for an ISO date or date-time; undefined for anything else. */
+export function isoDateSerial(value: string): { serial: number; format: string } | undefined {
+  const m = ISO_DATE.exec(value.trim())
+  if (!m) return undefined
+  const [y, mo, d, hh, mm, ss] = m
+    .slice(1)
+    .map((part) => (part === undefined ? undefined : Number(part)))
+  const utc = Date.UTC(y!, mo! - 1, d!, hh ?? 0, mm ?? 0, ss ?? 0)
+  const date = new Date(utc)
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== mo! - 1 || date.getUTCDate() !== d) {
+    return undefined
+  }
+  if ((hh ?? 0) > 23 || (mm ?? 0) > 59 || (ss ?? 0) > 59) return undefined
+  const serial = (utc - EXCEL_EPOCH_UTC) / 86_400_000
+  const format =
+    hh === undefined ? 'yyyy-mm-dd' : ss === undefined ? 'yyyy-mm-dd hh:mm' : 'yyyy-mm-dd hh:mm:ss'
+  return { serial, format }
+}
+
+/** `1.234,5` → 1234.5 under a comma decimal; plain `1234,5` too. Leading zeros stay text as in isNumericCell. */
+function commaDecimalNumber(value: string): number | undefined {
+  if (!/^-?(?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d+)?$/.test(value)) return undefined
+  const normalized = value.replace(/\./g, '').replace(',', '.')
+  return isNumericCell(normalized) ? Number(normalized) : undefined
 }
 
 const STYLES_XML =
@@ -629,26 +999,43 @@ export async function blankWorkbook(sheetName = 'Sheet1'): Promise<Buffer> {
     'xl/_rels/workbook.xml.rels',
     rels.replace(
       '</Relationships>',
-      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
+      '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
     ),
   )
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
 /** CSV → table; numeric-looking cells become numbers like the app's importer. */
-export function csvTable(bytes: Uint8Array, name: string): TableInput {
-  const rows = parseCsv(decodeCsvBuffer(bytes)).map((r) =>
-    r.map((v) => (isNumericCell(v) ? Number(v) : v)),
+export function csvTable(bytes: Uint8Array, name: string, opts: CsvTableOptions = {}): TableInput {
+  const formats: Record<string, string> = {}
+  const rows = parseCsv(decodeCsvBuffer(bytes)).map((r, rowIndex) =>
+    r.map((v, columnIndex) => {
+      if (opts.decimal === ',') {
+        const n = commaDecimalNumber(v)
+        if (n !== undefined) return n
+      } else if (isNumericCell(v)) {
+        return Number(v)
+      }
+      const date = isoDateSerial(v)
+      if (!date) return v
+      formats[`${rowIndex}:${columnIndex}`] = date.format
+      return date.serial
+    }),
   )
-  return { name, rows }
+  return Object.keys(formats).length ? { name, rows, formats } : { name, rows }
 }
 
-export function cellEditsFromTable(sheet: string, rows: Scalar[][]): CellEdit[] {
+export function cellEditsFromTable(
+  sheet: string,
+  rows: Scalar[][],
+  formats: Record<string, string> = {},
+): CellEdit[] {
   const edits: CellEdit[] = []
   rows.forEach((row, r) => {
     row.forEach((raw, c) => {
       if (raw === null || raw === undefined || raw === '') return
-      edits.push(cellEdit(sheet, r, c, raw))
+      const numberFormat = formats[`${r}:${c}`]
+      edits.push(cellEdit(sheet, r, c, raw, numberFormat ? { numberFormat } : undefined))
     })
   })
   return edits
@@ -675,13 +1062,17 @@ function cellEdit(
 export function cellEditsFromInputs(inputs: CellInput[], defaultSheet: string): CellEdit[] {
   return inputs.map((input, i) => {
     if (typeof input.cell !== 'string') {
-      throw new CliError(EXIT.usage, `cells[${i}]: missing "cell" address (e.g. "B2")`)
+      throw new CliError(EXIT.usage, `cells[${i}]: missing "cell" address (e.g. "B2")`, undefined, {
+        reason: 'invalid_argument',
+      })
     }
     let coords: { row: number; column: number }
     try {
       coords = parseAddressChecked(input.cell)
     } catch {
-      throw new CliError(EXIT.usage, `cells[${i}]: invalid address "${input.cell}"`)
+      throw new CliError(EXIT.usage, `cells[${i}]: invalid address "${input.cell}"`, undefined, {
+        reason: 'invalid_argument',
+      })
     }
     const raw: Scalar =
       input.formula !== undefined
@@ -700,7 +1091,11 @@ export interface WriteOutcome {
   formulas: number
   /** false when formulas were written but the engine could not fill their cached values */
   cachedValues: boolean
+  /** `Sheet!A1` of formulas left without a cached value on purpose */
+  uncached?: string[]
   warning?: string
+  /** side effects a program should know about that are not formula related */
+  notes?: { code: string; message: string }[]
 }
 
 /**
@@ -724,6 +1119,16 @@ export async function writeWorkbook(
   } = {},
 ): Promise<WriteOutcome> {
   const { plan, structuralOps = [], renames = {}, gateway = EMPTY_PAYLOADS } = opts
+  const notes: { code: string; message: string }[] = []
+  if (edits.some((e) => e.style && styleHasThemeColor(e.style)) && !(await hasThemePart(source))) {
+    // without xl/theme/theme1.xml Excel has no palette to resolve a slot against
+    edits = edits.map((e) => (e.style ? { ...e, style: flattenThemeColors(e.style) } : e))
+    notes.push({
+      code: 'theme_colors_flattened',
+      message:
+        'the workbook has no theme part, so theme colors were written as their Office-theme rgb values',
+    })
+  }
   const save = async (formulaValues: readonly SheetFormulaValues[]): Promise<XlsxMutation> => {
     const mutation = await planCellEditsToXlsx(
       await createBufferEntrySource(source),
@@ -741,11 +1146,11 @@ export async function writeWorkbook(
       gateway.pageSetupStates,
       gateway.noteStates,
       gateway.tableAdditions,
+      gateway.pivotAdditions,
       [],
       [],
       [],
-      [],
-      [],
+      gateway.sparklineAdditions,
       formulaValues,
     )
     return assembleWithJsZip(source, mutation)
@@ -755,11 +1160,20 @@ export async function writeWorkbook(
     first = await save([])
   } catch (err) {
     // the gateway fails closed with a sentence about the file (x14 rules, name clashes, table overlaps)
-    throw new CliError(EXIT.usage, `ops rejected by the workbook writer: ${(err as Error).message}`)
+    throw new CliError(
+      EXIT.usage,
+      `ops rejected by the workbook writer: ${(err as Error).message}`,
+      undefined,
+      { reason: 'op_rejected' },
+    )
   }
   await atomicWriteFile(outputPath, first.buffer)
   const formulaCells = edits.filter((e) => e.cell.formula)
-  const base = { cells: edits.length, formulas: formulaCells.length }
+  const base = {
+    cells: edits.length,
+    formulas: formulaCells.length,
+    ...(notes.length ? { notes } : {}),
+  }
   if (formulaCells.length === 0) return { ...base, cachedValues: true }
   if (!xlsxSidecarPath()) {
     return {
@@ -769,11 +1183,18 @@ export async function writeWorkbook(
     }
   }
   try {
-    const values = await evaluateFormulas(outputPath, formulaCells, renames)
+    const { values, uncached } = await evaluateFormulas(outputPath, formulaCells, renames)
     if (values.length) {
       const second = await save(values)
       await atomicWriteFile(outputPath, second.buffer)
-      return { ...base, cachedValues: true }
+      if (uncached.length === 0) return { ...base, cachedValues: true }
+      const shown = uncached.slice(0, 3).join(', ') + (uncached.length > 3 ? ', …' : '')
+      return {
+        ...base,
+        cachedValues: uncached.length < formulaCells.length,
+        uncached,
+        warning: `${uncached.length} formula(s) use functions the local engine does not evaluate (${shown}); they have no cached value and recalculate on open`,
+      }
     }
     return {
       ...base,
@@ -791,11 +1212,18 @@ export async function writeWorkbook(
   }
 }
 
+/**
+ * `#NAME?` from the local engine means "a function it does not implement" at
+ * least as often as a typo, and `#ERROR!` is the engine's own failure, not an
+ * Excel error: neither result is cached. The cell keeps its formula and no
+ * <v>, and Excel computes it on open (fullCalcOnLoad).
+ */
+const UNCACHED_RESULTS = new Set(['#NAME?', '#ERROR!'])
 async function evaluateFormulas(
   path: string,
   formulaCells: readonly CellEdit[],
   renames: Record<string, string>,
-): Promise<SheetFormulaValues[]> {
+): Promise<{ values: SheetFormulaValues[]; uncached: string[] }> {
   const bySheet = new Map<string, CellEdit[]>()
   for (const e of formulaCells) bySheet.set(e.sheetName, [...(bySheet.get(e.sheetName) ?? []), e])
   // edits carry the file's original sheet names; the written file has the renamed ones
@@ -804,19 +1232,29 @@ async function evaluateFormulas(
     Object.entries(renames).find(([, after]) => after === written)?.[0] ?? written
   return withSidecar(async (client) => {
     const out: SheetFormulaValues[] = []
+    const uncached: string[] = []
     for (const [sheet, cells] of bySheet) {
       const evaluated = await recalcRange(client, path, renames[sheet] ?? sheet, boundingBox(cells))
       const values = evaluated
         .filter((cell) => wanted.has(`${originalName(cell.sheet)} ${cell.row} ${cell.column}`))
-        .map((cell) => ({
-          row: cell.row,
-          column: cell.column,
-          value: (cell.number ?? (cell.formatted === '' ? null : cell.formatted)) as Scalar,
-        }))
+        .map((cell) => {
+          if (UNCACHED_RESULTS.has(cell.formatted)) {
+            uncached.push(`${sheet}!${toA1Address(cell.row, cell.column)}`)
+            return { row: cell.row, column: cell.column, value: null }
+          }
+          if (cell.isError) {
+            return { row: cell.row, column: cell.column, value: { error: cell.formatted } }
+          }
+          return {
+            row: cell.row,
+            column: cell.column,
+            value: (cell.number ?? (cell.formatted === '' ? null : cell.formatted)) as Scalar,
+          }
+        })
       // the refresh is keyed like the edits, by the file's original sheet name
       if (values.length) out.push({ sheetName: sheet, cells: values })
     }
-    return out
+    return { values: out, uncached }
   })
 }
 
@@ -879,6 +1317,24 @@ async function recalcRange(
     cells.push(...r.cells)
   }
   return cells
+}
+
+/** What the workbook engine computes for a range of the file on disk, keyed `row|column` (0-based). */
+export async function computedValues(
+  path: string,
+  sheet: string,
+  bounds: Bounds,
+): Promise<Map<string, { value: Scalar; isError: boolean }>> {
+  const out = new Map<string, { value: Scalar; isError: boolean }>()
+  await withSidecar(async (client) => {
+    for (const cell of await recalcRange(client, path, sheet, bounds)) {
+      out.set(`${cell.row}|${cell.column}`, {
+        value: cell.number ?? (cell.formatted === '' ? null : cell.formatted),
+        isError: cell.isError === true,
+      })
+    }
+  })
+  return out
 }
 
 /** Multi-sheet plan for a fresh workbook whose blank already carries `first`. */

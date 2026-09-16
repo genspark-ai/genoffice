@@ -5,7 +5,7 @@
  * a shared-formula id with NO formula text; only the group's master carries
  * `f`. The journal recorded such cells as plain values at best, and the
  * follow-up `{v: null}` recalc mutation then wiped even that, so saving
- * dropped the whole pasted block (alpha feedback: copy C2:E2 → tile-paste
+ * dropped the whole pasted block (user report: copy C2:E2 → tile-paste
  * C3:E21 → save lost every cell). OOXML shared formulas cannot round-trip
  * Univer's string ids, so materialize the follower's real formula at journal
  * time instead: find the group's master cell, shift its formula by the

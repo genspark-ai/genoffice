@@ -10,7 +10,7 @@ const key = new PluginKey<boolean>('inactiveSelection')
  * combobox has keyboard focus. In the browser, focusing the font family/size
  * <input> RELOCATES the DOM selection into the input, so the document
  * highlight vanishes entirely even though the editor state still holds the
- * selection and formatting will apply to it (alpha ledger r119: users read
+ * selection and formatting will apply to it (users read
  * that as "my text got deselected" and abort). While a ribbon control opts in
  * (focus → on, blur → off), decorate the state selection so it stays visible.
  */

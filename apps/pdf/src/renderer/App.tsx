@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { handlePdfControl, type ControlRequest } from './control'
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 // legacy build: the modern build relies on new APIs like Math.sumPrecise that the current
 // Electron V8 lacks, making embedded font parsing fail and whole pages render as garbled raw char codes
@@ -53,11 +54,18 @@ import type { CropFractions, ImageBakeOp } from './image-bake'
 import { removeBackground, type PixelImage } from './cutout'
 import { navAction } from './keyNav'
 import { rowOfVisIdx, spreadRows, stepPage } from './spread'
-import { captureViewState, loadViewState, saveViewState } from './view-state'
-import type { PdfViewState } from './view-state'
+import {
+  captureViewState,
+  captureZoomAnchor,
+  loadViewState,
+  saveViewState,
+  zoomAnchorY,
+} from './view-state'
+import type { PdfViewState, ZoomAnchor } from './view-state'
 import { LinkLayer } from './LinkLayer'
 import { OutlinePanel } from './OutlinePanel'
 import type { OutlineNode } from './OutlinePanel'
+import { buildHeadingOutline, remapOutlinePages } from './heading-outline'
 import { printPdf } from './print'
 import { PasswordDialog } from './PasswordDialog'
 import { PropertiesDialog } from './PropertiesDialog'
@@ -99,7 +107,10 @@ import type { CharStyle } from './color-runs'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
+  FilesEdgeTab,
+  FilesPane,
   RibbonCollapseButton,
+  filesPaneTitle,
   useDismissablePopover,
   useRibbonCollapse,
 } from '@genoffice/ui'
@@ -155,6 +166,8 @@ import {
   rgb255ToHex,
   styleRunsToKeyRuns,
   styleSegCss,
+  boldCss,
+  boldToken,
   keyRunsToStyleRuns,
   blockRectKey,
   blockMoveInput,
@@ -186,6 +199,7 @@ import type {
 } from './edit-state'
 import {
   IconThumbs,
+  IconFolderTree,
   IconHighlight,
   IconUnderline,
   IconStrike,
@@ -285,6 +299,12 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageInput, setPageInput] = useState('1')
   const [sidebar, setSidebar] = useState<'thumbs' | 'outline' | null>('thumbs')
+  const [filesOpen, setFilesOpen] = useState(
+    () => localStorage.getItem('genoffice-pdf-show-files') === '1',
+  )
+  useEffect(() => {
+    localStorage.setItem('genoffice-pdf-show-files', filesOpen ? '1' : '0')
+  }, [filesOpen])
   const [sidebarW, setSidebarW] = useState(loadSidebarW)
   /** raster width for thumbnails — only updated when a drag ends (re-rastering every frame would jank) */
   const [thumbRasterW, setThumbRasterW] = useState(() => loadSidebarW() - SIDEBAR_CHROME)
@@ -337,6 +357,8 @@ export default function App() {
   const [spread, setSpread] = useState<1 | 2>(1)
   const [nightMode, setNightMode] = useState(false)
   const [outline, setOutline] = useState<OutlineNode[] | null>(null)
+  const [outlineGenerated, setOutlineGenerated] = useState(false)
+  const outlineDocRef = useRef<PDFDocumentProxy | null>(null)
   const [markups, setMarkups] = useState<LocalMarkup[]>([])
   const markupsRef = useRef(markups)
   markupsRef.current = markups
@@ -1034,6 +1056,7 @@ export default function App() {
         // write was in flight stay pending, with page indices remapped through the
         // saved deletions/reorder (a page missing from pageMap is gone from the file).
         const remap = saved.pageMap
+        setOutline((prev) => (prev ? remapOutlinePages(prev, remap) : prev))
         setMarkups((prev) =>
           prev.flatMap((mk) => {
             if (saved.markupIds.has(mk.id)) return []
@@ -1161,10 +1184,28 @@ export default function App() {
       setDeleteToast(false)
       setUndoStack([])
       setRedoStack([])
-      void loaded.getOutline().then(
-        (o) => setOutline(o && o.length > 0 ? (o as OutlineNode[]) : null),
-        () => setOutline(null),
-      )
+      outlineDocRef.current = loaded
+      // A save-reload keeps the current tree (page indices already remapped
+      // above) visible while headings rescan
+      if (!saved) {
+        setOutline(null)
+        setOutlineGenerated(false)
+      }
+      void loaded
+        .getOutline()
+        .then(
+          (o) => (o && o.length > 0 ? (o as OutlineNode[]) : null),
+          () => null,
+        )
+        .then(async (embedded) => {
+          const stale = () => outlineDocRef.current !== loaded
+          const generated = embedded
+            ? null
+            : await buildHeadingOutline(loaded, stale).catch(() => null)
+          if (stale()) return
+          setOutline(embedded ?? generated)
+          setOutlineGenerated(!embedded && generated !== null)
+        })
       // pdfjs-dist 6.x removed PDFDocumentProxy.destroy(); go through the loading task
       if (previous) void previous.loadingTask.destroy()
       return loaded.numPages
@@ -1253,39 +1294,57 @@ export default function App() {
     [rows, rowSize, scale],
   )
 
-  /** Scroll offset that keeps the content point at the viewport top in place across a scale
-   *  change. Row-exact: the fixed page gaps don't scale, so a plain scrollTop*ratio drifts
-   *  by a full page once enough rows are above the viewport. Applied via layout effect so
-   *  the write lands after React commits the resized pages (a rAF write raced the render
-   *  and could get clamped against the old scrollHeight). */
-  const pendingZoomScrollRef = useRef<number | null>(null)
-  const anchorZoomScroll = useCallback(
-    (nextScale: number) => {
-      const el = scrollRef.current
-      if (!el || scale <= 0 || rows.length === 0 || nextScale === scale) return
-      const y = el.scrollTop
-      let rowIdx = 0
-      for (let i = 0; i < rows.length; i++) {
-        if (rowTop(i) <= y) rowIdx = i
-        else break
-      }
-      let top = PAGE_GAP
-      for (let i = 0; i < rowIdx; i++) top += rowSize(rows[i]!).height * nextScale + PAGE_GAP
-      // Only the page-content part of the within-row offset scales; anything outside the
-      // page band (the leading margin above row 0, the inter-row gap) is fixed-size and
-      // carries over unscaled — else zooming at the document top writes a non-zero scrollTop
-      const within = y - rowTop(rowIdx)
-      const content = Math.min(Math.max(within, 0), rowSize(rows[rowIdx]!).height * scale)
-      pendingZoomScrollRef.current = top + (content / scale) * nextScale + (within - content)
-    },
-    [rows, rowSize, rowTop, scale],
-  )
+  /** Scale-free zoom anchor (see `captureZoomAnchor`) plus page-relative x and viewport point.
+   *  Written back by a layout effect so it lands after React commits the resized pages; being
+   *  scale-free, a burst of queued wheel ticks resolves against one anchor without oscillating. */
+  const zoomAnchorRef = useRef<
+    (ZoomAnchor & { col: number; pageX: number | null; vx: number; vy: number }) | null
+  >(null)
+  const rowPages = (el: HTMLElement, rowIdx: number) =>
+    el.querySelectorAll(`.pdf-row[data-idx="${rowIdx}"] > .pdf-page`)
+  const rowHeights = useMemo(() => rows.map((row) => rowSize(row).height), [rows, rowSize])
+  /** Committed layout: the native wheel listener can fire before the passive effect
+   *  re-subscribes it, when its closure still holds the previous render's scale. */
+  const layoutRef = useRef({ scale, rowHeights })
   useLayoutEffect(() => {
-    if (pendingZoomScrollRef.current === null) return
+    layoutRef.current = { scale, rowHeights }
+  })
+  /** A pending anchor is kept: the DOM has not moved since it was captured. */
+  const anchorZoomScroll = useCallback((nextScale: number, vx = 0, vy = 0) => {
     const el = scrollRef.current
-    if (el) el.scrollTop = pendingZoomScrollRef.current
-    pendingZoomScrollRef.current = null
-  }, [scale])
+    const { scale, rowHeights } = layoutRef.current
+    if (!el || nextScale === scale || zoomAnchorRef.current) return
+    const anchor = captureZoomAnchor({ y: el.scrollTop + vy, rowHeights, gap: PAGE_GAP, scale })
+    if (!anchor) return
+    // measure x against the spread page under the cursor: the unscaled gap between the two
+    // pages must not be folded into pageX
+    const pages = rowPages(el, anchor.rowIdx)
+    const elLeft = el.getBoundingClientRect().left
+    let col = 0
+    let pageX: number | null = null
+    pages.forEach((page, i) => {
+      const left = page.getBoundingClientRect().left - elLeft
+      if (i === 0 || left <= vx) {
+        col = i
+        pageX = (vx - left) / scale
+      }
+    })
+    zoomAnchorRef.current = { ...anchor, col, pageX, vx, vy }
+  }, [])
+  useLayoutEffect(() => {
+    const anchor = zoomAnchorRef.current
+    if (!anchor) return
+    zoomAnchorRef.current = null
+    const el = scrollRef.current
+    if (!el || anchor.rowIdx >= rowHeights.length) return
+    el.scrollTop = zoomAnchorY(anchor, rowHeights, PAGE_GAP, scale) - anchor.vy
+    if (anchor.pageX === null) return
+    const page = rowPages(el, anchor.rowIdx)[anchor.col]
+    if (!page) return
+    const pageLeft =
+      page.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft
+    el.scrollLeft = pageLeft + anchor.pageX * scale - anchor.vx
+  }, [scale, rowHeights])
 
   /** Reserve the WPS-style comments margin while the doc has notes or one is being added */
   const noteMarginOn = useMemo(
@@ -1423,6 +1482,18 @@ export default function App() {
     const target = Math.min(Math.max(1, n), pageCount)
     el.scrollTop = rowTop(rowOfVis(target - 1)) - PAGE_GAP / 2
   }
+
+  // genoffice CLI (`open --page`, `selection`): the shell evaluates this hook
+  useEffect(() => {
+    ;(window as unknown as Record<string, unknown>).__genofficeControl = (req: ControlRequest) =>
+      handlePdfControl(req, {
+        loaded: doc !== null,
+        pageCount,
+        currentPage,
+        scrollToPage,
+        selectedText: () => window.getSelection()?.toString() ?? '',
+      })
+  })
 
   // A reorder committed by an AI tool has not been laid out yet when the tool wants to
   // scroll, so the target waits for the render that carries the new order
@@ -2822,9 +2893,11 @@ export default function App() {
         (d.font ? EDIT_FONT_BY_ID.get(d.font)?.css : undefined) ??
         seedF?.css ??
         getComputedStyle(document.body).fontFamily
-      const cssStyle = `${d.italic || seedF?.italic ? 'italic ' : ''}${
-        d.bold ? 'bold' : seedF?.weight ? String(seedF.weight) : ''
-      }`.trim()
+      const cssStyle = `${d.italic || seedF?.italic ? 'italic ' : ''}${boldToken(
+        d.bold,
+        !!d.font,
+        seedF?.weight,
+      )}`.trim()
       lineLeading = d.block.lineHeight * (size / d.fontSize)
       const wrapped = d.value
         .split('\n')
@@ -5458,6 +5531,13 @@ export default function App() {
   })
 
   // Ctrl/⌘ + wheel zoom (native listener: React's wheel is passive and can't preventDefault)
+  const queuedScaleRef = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    queuedScaleRef.current = null
+  }, [scale])
+
+  // renamed / moved from the shell: keep saving to the file's new location
+  useEffect(() => window.pdfApi.onFileRenamed((next) => setFilePath(next)), [])
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -5465,10 +5545,24 @@ export default function App() {
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
       if (e.deltaY === 0) return
+      // Accumulate against the queued scale so a fast pinch loses no ticks between renders
+      const committed = layoutRef.current.scale
+      const current = queuedScaleRef.current ?? committed
+      const next = clampScale(current - e.deltaY * 0.006)
+      if (next === current) return
+      if (next === committed) {
+        // nets out to no change: the queue must still be overridden, else an intermediate
+        // tick commits with no anchor; React then bails and the DOM never moves
+        queuedScaleRef.current = null
+        zoomAnchorRef.current = null
+        setScale(committed)
+        return
+      }
       fitModeRef.current = null
-      // Match Docs: accumulate against the latest queued scale and avoid the
-      // per-event scroll anchoring that makes a continuous pinch oscillate.
-      setScale((current) => clampScale(current - e.deltaY * 0.006))
+      queuedScaleRef.current = next
+      const box = el.getBoundingClientRect()
+      anchorZoomScroll(next, e.clientX - box.left, e.clientY - box.top)
+      setScale(next)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -5783,6 +5877,16 @@ export default function App() {
             <IconOutline />
           </span>
           {t('outline')}
+        </button>
+        <button
+          className={`rb-big${filesOpen ? ' active' : ''}`}
+          aria-pressed={filesOpen}
+          onClick={() => setFilesOpen((v) => !v)}
+        >
+          <span className="rb-big-icon">
+            <IconFolderTree />
+          </span>
+          {filesPaneTitle(lang)}
         </button>
         {searchBtn}
         <button
@@ -6529,11 +6633,27 @@ export default function App() {
             onClearSelection={() => setAiSelection(null)}
           />
         </div>
+        {filesOpen && (
+          <FilesPane
+            api={window.filesPaneApi}
+            lang={lang}
+            currentPath={filePath || null}
+            onClose={() => setFilesOpen(false)}
+          />
+        )}
         <div className="app-content">
           <div className="pdf-body">
+            {/* only while no thumbnail / outline pane occupies the left edge; the View button remains */}
+            {!filesOpen && sidebar === null && (
+              <FilesEdgeTab lang={lang} onOpen={() => setFilesOpen(true)} />
+            )}
             {sidebar === 'outline' && outline && (
               <div className="pdf-thumbs pdf-outline-pane" style={{ width: sidebarW }}>
-                <OutlinePanel outline={outline} onGoToDest={(dest) => void goToDest(dest)} />
+                <OutlinePanel
+                  outline={outline}
+                  note={outlineGenerated ? t('outlineGenerated') : undefined}
+                  onGoToDest={(dest) => void goToDest(dest)}
+                />
               </div>
             )}
             {sidebar === 'thumbs' && (
@@ -7253,13 +7373,7 @@ export default function App() {
                                   const sizePt = textDraft.size ?? textDraft.fontSize
                                   const draftStyle = `${
                                     textDraft.italic || seedF?.italic ? 'italic ' : ''
-                                  }${
-                                    textDraft.bold
-                                      ? 'bold'
-                                      : seedF?.weight
-                                        ? String(seedF.weight)
-                                        : ''
-                                  }`.trim()
+                                  }${boldToken(textDraft.bold, !!textDraft.font, seedF?.weight)}`.trim()
                                   // Block editor: width locks to the block so the textarea's
                                   // soft wrap previews the reflow; height tracks the committed
                                   // wrap count (in the block's own leading, plus headroom for
@@ -7455,7 +7569,7 @@ export default function App() {
                                               : {}),
                                             ...(draftCss ? { fontFamily: draftCss } : {}),
                                             ...(textDraft.bold
-                                              ? { fontWeight: 700 }
+                                              ? boldCss(true, !!textDraft.font, seedF?.weight)
                                               : seedF?.weight
                                                 ? { fontWeight: seedF.weight }
                                                 : {}),
@@ -7536,7 +7650,7 @@ export default function App() {
                                                 'var(--pdf-textedit-ink)',
                                               ...(draftCss ? { fontFamily: draftCss } : {}),
                                               ...(textDraft.bold
-                                                ? { fontWeight: 700 }
+                                                ? boldCss(true, !!textDraft.font, seedF?.weight)
                                                 : seedF?.weight
                                                   ? { fontWeight: seedF.weight }
                                                   : {}),
@@ -7551,7 +7665,10 @@ export default function App() {
                                                   return <Fragment key={i}>{seg.text}</Fragment>
                                                 const s = decodeStyle(seg.color)
                                                 return (
-                                                  <span key={i} style={styleSegCss(s, scale)}>
+                                                  <span
+                                                    key={i}
+                                                    style={styleSegCss(s, scale, textDraft.font)}
+                                                  >
                                                     {seg.text}
                                                   </span>
                                                 )

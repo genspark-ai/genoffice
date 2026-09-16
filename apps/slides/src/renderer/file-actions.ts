@@ -4,7 +4,9 @@
  * (Printing lives in components/PrintDialog.tsx — preview + options dialog.)
  */
 import type { RenderSlide } from '@genoffice/pptx-render'
+import type { ExportPdfLink } from '../shared/ipc'
 import type { ActionCtx } from './action-context'
+import { collectExportPdfLinks } from './export-links'
 import { renderSlidesToPngBase64 } from './export-render'
 import { t } from './i18n/locale'
 import { showToast } from './components/toast-bus'
@@ -159,6 +161,26 @@ export async function exportImages(ctx: ActionCtx): Promise<void> {
 }
 
 /**
+ * Element and text-run hyperlinks of every exported page as clickable overlay
+ * rects (the pages are rasterized, so links must ride along separately). Link
+ * fetch failures degrade to a link-less PDF rather than failing the export.
+ */
+async function collectPdfLinks(ctx: ActionCtx): Promise<ExportPdfLink[][]> {
+  const modelIndexes = ctx.slides.flatMap((s, i) => (s.hidden ? [] : [i]))
+  const pageOfModelIndex = new Map(modelIndexes.map((mi, page) => [mi, page] as const))
+  try {
+    const [linkLists, runLinkLists] = await Promise.all([
+      Promise.all(modelIndexes.map((mi) => window.slidesApi.getSlideLinks(mi))),
+      Promise.all(modelIndexes.map((mi) => window.slidesApi.getRunLinks(mi))),
+    ])
+    const visible = modelIndexes.map((mi) => ctx.slides[mi]!)
+    return collectExportPdfLinks(visible, linkLists, runLinkLists, pageOfModelIndex)
+  } catch {
+    return []
+  }
+}
+
+/**
  * Export as PDF: each page (skipping hidden ones) rendered offscreen to 2x PNG;
  * main process printToPDF in a hidden window.
  *
@@ -176,11 +198,13 @@ export async function exportPdf(ctx: ActionCtx, outPath?: string): Promise<boole
   ctx.setStatus(t('appExportPdfProgress'))
   try {
     const pngs = await renderSlidesToPngBase64(visible, ctx.images)
+    const links = await collectPdfLinks(ctx)
     const r = await window.slidesApi.exportPdf({
       filePath: target,
       pngsBase64: pngs,
       widthPx: visible[0].widthPx,
       heightPx: visible[0].heightPx,
+      links,
     })
     ctx.setStatus(
       r.ok

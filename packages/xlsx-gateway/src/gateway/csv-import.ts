@@ -5,6 +5,7 @@
 import JSZip from 'jszip'
 
 import { encodeXlsxEscapes } from './xlsx-escapes'
+import { DEFAULT_THEME_XML } from './xlsx-default-theme'
 
 const DELIMITERS = [',', ';', '\t'] as const
 
@@ -74,9 +75,22 @@ export function decodeCsvBuffer(bytes: Uint8Array, preferred?: string): string {
   return best
 }
 
+/// Excel's own hint line: a first line of exactly `sep=<char>` names the
+/// delimiter and is not data. Excel writes it for CSV exports in locales
+/// that use ";" and honours it on open.
+const SEP_DECLARATION = /^\uFEFF?sep=(.)\r?\n/i
+
+export function splitSepDeclaration(text: string): { text: string; delimiter?: string } {
+  const match = SEP_DECLARATION.exec(text)
+  if (!match) return { text }
+  return { text: text.slice(match[0].length), delimiter: match[1]! }
+}
+
 /// Counts delimiter occurrences outside quotes over the first lines and
-/// picks the most frequent one; ties favor the comma.
-export function sniffDelimiter(text: string): string {
+/// picks the most frequent one; ties favor the comma. A `sep=` line wins.
+export function sniffDelimiter(input: string): string {
+  const { text, delimiter } = splitSepDeclaration(input)
+  if (delimiter !== undefined) return delimiter
   const sample = text
     .slice(0, 64 * 1024)
     .split(/\r?\n/)
@@ -115,7 +129,8 @@ export function sniffDelimiter(text: string): string {
 }
 
 export function parseCsv(input: string, delimiter = sniffDelimiter(input)): string[][] {
-  const text = input.startsWith('﻿') ? input.slice(1) : input
+  const stripped = splitSepDeclaration(input).text
+  const text = stripped.startsWith('﻿') ? stripped.slice(1) : stripped
   const rows: string[][] = []
   let row: string[] = []
   let field = ''
@@ -229,8 +244,11 @@ export async function csvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Pr
  * one column. A genuine table keeps its delimiter: multi-field header, or a
  * title row over body rows that mostly share the same width (a comma-free
  * `;`/tab table must not collapse just because its first line is a title).
+ * A `sep=` line is Excel's own declaration and skips the guard.
  */
 export function resolveImportDelimiter(csvText: string): string {
+  const declared = splitSepDeclaration(csvText).delimiter
+  if (declared !== undefined) return declared
   const sniffed = sniffDelimiter(csvText)
   if (sniffed === ',') return sniffed
   const sniffedRows = parseCsv(csvText, sniffed)
@@ -279,6 +297,7 @@ async function xlsxBufferFromRows(
       '<Default Extension="xml" ContentType="application/xml"/>' +
       '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
       '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+      '<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>' +
       '</Types>',
   )
   zip.file(
@@ -299,8 +318,10 @@ async function xlsxBufferFromRows(
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' +
       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
       '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>' +
       '</Relationships>',
   )
+  zip.file('xl/theme/theme1.xml', DEFAULT_THEME_XML)
   zip.file('xl/worksheets/sheet1.xml', buildWorksheetXml(rows))
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }

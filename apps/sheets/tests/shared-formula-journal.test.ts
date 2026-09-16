@@ -2,7 +2,7 @@
  * Shared-formula followers (`{si, v}` with no `f` — tiled paste / fill) must
  * journal as real formulas, materialized from the group master by offset —
  * otherwise the save writes them as plain values at best, and the follow-up
- * recalc mutation (`{v: null}`) wipes them entirely (alpha: copy C2:E2 →
+ * recalc mutation (`{v: null}`) wipes them entirely (user report: copy C2:E2 →
  * tile-paste C3:E21 → save lost the block).
  */
 import { describe, expect, it, vi } from 'vitest'

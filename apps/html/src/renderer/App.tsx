@@ -36,7 +36,13 @@ import {
   type CanvasMode,
   type ViewMode,
 } from './components/Ribbon'
-import { CropDialog, CutoutDialog, type ImageDialogLabels } from '@genoffice/ui'
+import {
+  CropDialog,
+  CutoutDialog,
+  FilesEdgeTab,
+  FilesPane,
+  type ImageDialogLabels,
+} from '@genoffice/ui'
 import { FloatToolbar } from './components/FloatToolbar'
 import {
   insertOp,
@@ -113,7 +119,7 @@ async function loadImageDataUrl(src: string): Promise<string | null> {
 }
 
 export default function App() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [status, setStatus] = useState<LoadStatus>('loading')
   const [path, setPath] = useState<string | null>(null)
   const [text, setText] = useState('')
@@ -133,6 +139,9 @@ export default function App() {
   const [draftHtml, setDraftHtml] = useState<string | null>(null)
   const [historyState, setHistoryState] = useState({ undo: false, redo: false })
   const [aiOpen, setAiOpen] = useState(() => localStorage.getItem('htmlapp.showAi') !== '0')
+  const [filesOpen, setFilesOpen] = useState(
+    () => localStorage.getItem('htmlapp.showFiles') === '1',
+  )
   const [aiPreset, setAiPreset] = useState<AiPreset | null>(null)
   const [editQueue, setEditQueue] = useState<EditQueueItem[]>([])
   const [askMode, setAskMode] = useState<AskMode | null>(null)
@@ -329,6 +338,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('htmlapp.showAi', aiOpen ? '1' : '0')
   }, [aiOpen])
+
+  useEffect(() => {
+    localStorage.setItem('htmlapp.showFiles', filesOpen ? '1' : '0')
+  }, [filesOpen])
 
   useEffect(() => {
     localStorage.setItem('htmlapp.device', device)
@@ -1407,6 +1420,8 @@ export default function App() {
         onView={setView}
         aiOpen={aiOpen}
         onToggleAi={() => setAiOpen((v) => !v)}
+        filesOpen={filesOpen}
+        onToggleFiles={() => setFilesOpen((v) => !v)}
         canInsert={canvasMode === 'edit'}
         onInsert={(kind, opts) => void insertElement(kind, opts)}
         onAiPreset={(text) => {
@@ -1444,7 +1459,18 @@ export default function App() {
             onCollapse={() => setAiOpen(false)}
           />
         </div>
+        {filesOpen && canvasMode !== 'present' && (
+          <FilesPane
+            api={window.filesPaneApi}
+            lang={lang}
+            currentPath={path}
+            onClose={() => setFilesOpen(false)}
+          />
+        )}
         <div className="app-content">
+          {!filesOpen && canvasMode !== 'present' && (
+            <FilesEdgeTab lang={lang} onOpen={() => setFilesOpen(true)} />
+          )}
           {findTarget && (
             <FindPanel
               target={findTarget}

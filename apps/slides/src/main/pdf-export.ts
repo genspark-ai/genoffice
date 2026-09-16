@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ExportPdfLink } from '../shared/ipc'
 
 export interface PdfExportWindow {
   loadFile(path: string): Promise<void>
@@ -16,6 +17,8 @@ export interface ExportSlidesPdfOptions {
   widthPx: number
   heightPx: number
   filePath: string
+  /** Per-page clickable link overlays (fractions of the page box), same order as pngsBase64 */
+  links?: ExportPdfLink[][]
   createWindow(): PdfExportWindow
   openExportedPdf(path: string): void
 }
@@ -26,15 +29,54 @@ export interface ExportSlidesPdfResult {
   error?: string
 }
 
-function buildPdfExportHtml(pngsBase64: string[], widthIn: number, heightIn: number): string {
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+/** Fraction (0..1) → CSS percentage; NaN/Infinity would corrupt the markup, so reject the rect. */
+function pct(v: number): string | null {
+  return Number.isFinite(v) ? `${Math.round(v * 100000) / 1000}%` : null
+}
+
+/**
+ * Transparent <a> boxes over the page image: printToPDF converts them to PDF
+ * link annotations (URI actions for URLs, in-document destinations for the
+ * "#pgN" page anchors — pages carry matching ids), keeping element and text
+ * hyperlinks clickable in the exported PDF like a PowerPoint export.
+ */
+export function buildPdfLinkOverlays(links: ExportPdfLink[] | undefined): string {
+  if (!links?.length) return ''
+  return links
+    .map((l) => {
+      const [x, y, w, h] = [pct(l.x), pct(l.y), pct(l.w), pct(l.h)]
+      if (x == null || y == null || w == null || h == null || !l.href) return ''
+      return `<a href="${escapeAttr(l.href)}" style="left:${x};top:${y};width:${w};height:${h}"></a>`
+    })
+    .join('')
+}
+
+export function buildPdfExportHtml(
+  pngsBase64: string[],
+  widthIn: number,
+  heightIn: number,
+  links?: ExportPdfLink[][],
+): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
 @page { size: ${widthIn}in ${heightIn}in; margin: 0; }
 html, body { margin: 0; padding: 0; }
-.page { width: ${widthIn}in; height: ${heightIn}in; overflow: hidden; page-break-after: always; }
+.page { position: relative; width: ${widthIn}in; height: ${heightIn}in; overflow: hidden; page-break-after: always; }
 .page:last-child { page-break-after: auto; }
 .page img { display: block; width: 100%; height: 100%; }
+.page a { position: absolute; display: block; }
 </style></head><body>${pngsBase64
-    .map((b64) => `<div class="page"><img src="data:image/png;base64,${b64}"></div>`)
+    .map(
+      (b64, i) =>
+        `<div class="page" id="pg${i + 1}"><img src="data:image/png;base64,${b64}">${buildPdfLinkOverlays(links?.[i])}</div>`,
+    )
     .join('')}</body></html>`
 }
 
@@ -59,6 +101,7 @@ export async function exportSlidesPdf({
   widthPx,
   heightPx,
   filePath,
+  links,
   createWindow,
   openExportedPdf,
 }: ExportSlidesPdfOptions): Promise<ExportSlidesPdfResult> {
@@ -70,7 +113,7 @@ export async function exportSlidesPdf({
   try {
     tempDir = await mkdtemp(join(tmpdir(), 'genoffice-slides-pdf-'))
     const htmlPath = join(tempDir, 'slides.html')
-    await writeFile(htmlPath, buildPdfExportHtml(pngsBase64, widthIn, heightIn), 'utf8')
+    await writeFile(htmlPath, buildPdfExportHtml(pngsBase64, widthIn, heightIn, links), 'utf8')
     await win.loadFile(htmlPath)
     // Wait for fonts and all images to decode before printing, avoiding blank pages
     await win.webContents.executeJavaScript(

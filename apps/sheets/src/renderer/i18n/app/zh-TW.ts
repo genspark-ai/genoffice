@@ -123,7 +123,6 @@ export const zhTW = {
   appMoreItems: '+{count} 項…',
   appTruncationNote: '前 {shown}/{total} 項',
   appGoToButtonTitle: '到（Go To，⌘G）',
-  appNameBoxTitle: '名稱方塊 — 輸入位址或名稱後按 Enter 定位',
   appPivotChartHintIn: '根據目前的樞紐分析表建立樞紐分析圖',
   appPivotChartHintOut: '先選取樞紐分析表輸出範圍內的儲存格，再選擇圖表類型',
   appChartColumn: '直條圖',

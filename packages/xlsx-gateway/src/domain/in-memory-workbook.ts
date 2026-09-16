@@ -10,11 +10,20 @@ import {
   MAX_EXPANDED_CELL_OPS,
   parseWorkbookCommandBatch,
   structuralOpLabel,
+  type BorderPatch,
   type CellFormatPatch,
+  type FillPatch,
   type FormatRangeOperation,
+  type StyleColorInput,
   type LayoutOperation,
   type StructuralOperation,
 } from './workbook-dsl'
+import {
+  fillDisplayColor,
+  normalizeStyleColor,
+  resolveStyleColor,
+  type FillSpec,
+} from './style-color'
 import {
   columnIndex,
   columnLabel,
@@ -788,8 +797,20 @@ function mergeFormat(
   const merged: Record<string, unknown> = { ...existing }
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue
-    if (value === null) delete merged[key]
-    else merged[key] = value
+    if (value === null) {
+      delete merged[key === 'fill' ? 'fillColor' : key]
+    } else if (key === 'fontColor' || key === 'fillColor') {
+      merged[key] = resolveStyleColor(normalizeStyleColor(value as StyleColorInput))
+    } else if (key === 'fill') {
+      const display = fillDisplayColor(value as FillPatch as FillSpec)
+      if (display) merged.fillColor = resolveStyleColor(normalizeStyleColor(display))
+    } else if (key === 'border') {
+      const border = value as BorderPatch
+      merged.border =
+        border.color === undefined
+          ? border
+          : { ...border, color: resolveStyleColor(normalizeStyleColor(border.color)) }
+    } else merged[key] = value
   }
   return Object.keys(merged).length > 0 ? (merged as CellFormatState) : null
 }

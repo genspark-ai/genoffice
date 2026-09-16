@@ -2,7 +2,7 @@
  * Plain-text paste takes the insertion point's formatting like typing (Word
  * Keep Text Only), including the pilcrow memory of a paragraph emptied by
  * Delete/Backspace/Cut — pasting a new title over a deleted line must not
- * fall back to the theme font (alpha ledger r172).
+ * fall back to the theme font.
  */
 import { describe, expect, it } from 'vitest'
 import { Editor } from '@tiptap/core'

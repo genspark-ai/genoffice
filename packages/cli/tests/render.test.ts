@@ -68,6 +68,72 @@ describe('genoffice render', () => {
     expect(existsSync(files[0]!.path)).toBe(true)
   })
 
+  it('crops a slide to an element and builds a contact sheet', async () => {
+    if (process.platform === 'win32') return
+    const dir = tempDir()
+    const INCH = 914400
+    const create = join(dir, 'create.json')
+    writeFileSync(
+      create,
+      JSON.stringify([
+        {
+          op: 'addElement',
+          target: { slide: 0 },
+          kind: 'textbox',
+          offset: { x: INCH, y: INCH, cx: 2 * INCH, cy: INCH },
+          paragraphs: [{ runs: [{ text: 'Crop me' }] }],
+        },
+      ]),
+    )
+    const deck = join(dir, 'deck.pptx')
+    expect((await run(['create', '--type', 'pptx', '--ops', create, '--out', deck])).code).toBe(0)
+    const read = (await run(['slides', 'read', deck, '--json'])).json().detail
+    const id = read.pages[0].elements[0].id as string
+    const pdf = writeMinimalPdf(join(dir, 'export.pdf'))
+    const shots = join(dir, 'shots')
+    const env = { ...process.env, GENOFFICE_APP_BIN: fakeApp(dir, pdf) }
+    const r = await run(
+      ['render', deck, '--out', shots, '--el', id, '--pad', '10', '--grid', '--json'],
+      { env },
+    )
+    expect(r.code).toBe(0)
+    const files = r.json().detail.files as {
+      path: string
+      width: number
+      height: number
+      el?: string
+    }[]
+    const crop = files.find((f) => f.el === id)!
+    expect(crop.path).toBe(join(shots, `deck-01-${id}.png`))
+    const pxPerEmu = 612 / read.size.cx
+    expect(crop.width).toBe(Math.ceil(3 * INCH * pxPerEmu + 10) - Math.floor(INCH * pxPerEmu - 10))
+    expect(existsSync(crop.path)).toBe(true)
+    const grid = r.json().detail.grid
+    expect(grid.path).toBe(join(shots, 'deck-grid.png'))
+    expect(grid.tiles).toEqual([{ page: 1, x: 8, y: 8, w: 320, h: Math.round((792 * 320) / 612) }])
+    expect(r.json().summary).toContain('1 crop(s) and a contact sheet')
+
+    const tight = await run(['render', deck, '--out', shots, '--el', id, '--pad', '0', '--json'], {
+      env,
+    })
+    expect(tight.code).toBe(0)
+    const tightCrop = (tight.json().detail.files as { el?: string; width: number }[]).find(
+      (f) => f.el === id,
+    )!
+    expect(tightCrop.width).toBe(Math.ceil(3 * INCH * pxPerEmu) - Math.floor(INCH * pxPerEmu))
+    const missing = await run(['render', deck, '--out', shots, '--el', 'e_nope', '--json'], { env })
+    expect(missing.code).toBe(1)
+    expect(missing.json().error).toBe('target_not_found')
+    const wrongPage = await run(
+      ['render', deck, '--out', shots, '--el', id, '--page', '2', '--json'],
+      { env },
+    )
+    expect(wrongPage.code).toBe(1)
+    expect(wrongPage.json().suggestion).toContain('page 1')
+    const notPptx = await run(['render', pdf, '--out', shots, '--el', id, '--json'])
+    expect(notPptx.json().error).toBe('unsupported')
+  })
+
   it('refuses unknown formats and needs --out', async () => {
     const dir = tempDir()
     const txt = join(dir, 'notes.txt')

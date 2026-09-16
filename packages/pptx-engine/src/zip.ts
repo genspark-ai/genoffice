@@ -25,6 +25,41 @@ export interface Relationship {
   targetMode?: string
 }
 
+/** Shared with the CLI's pre-open check so both layers accept the same files. */
+export const PPTX_ZIP_LIMITS = {
+  maxParts: 10000,
+  maxPartBytes: 512 * 1024 * 1024,
+  maxTotalBytes: 1.5 * 1024 * 1024 * 1024,
+} as const
+
+/** Declared sizes from the central directory, checked before any part is inflated. */
+export function assertZipWithinLimits(zip: JSZip): void {
+  const files = Object.values(zip.files).filter((f) => !f.dir)
+  if (files.length > PPTX_ZIP_LIMITS.maxParts) {
+    throw new Error(
+      `pptx rejected: ${files.length} parts exceeds the ${PPTX_ZIP_LIMITS.maxParts} limit`,
+    )
+  }
+  let total = 0
+  for (const file of files) {
+    const size =
+      (file as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize ?? 0
+    if (size > PPTX_ZIP_LIMITS.maxPartBytes) {
+      throw new Error(
+        `pptx rejected: part ${file.name} declares ${size} uncompressed bytes ` +
+          `(limit ${PPTX_ZIP_LIMITS.maxPartBytes})`,
+      )
+    }
+    if (size > 0) total += size
+  }
+  if (total > PPTX_ZIP_LIMITS.maxTotalBytes) {
+    throw new Error(
+      `pptx rejected: total uncompressed size ${total} exceeds the ` +
+        `${PPTX_ZIP_LIMITS.maxTotalBytes} limit`,
+    )
+  }
+}
+
 export class PackageArchive {
   private constructor(
     private readonly zip: JSZip,
@@ -36,6 +71,7 @@ export class PackageArchive {
   static async open(bytes: Uint8Array): Promise<PackageArchive> {
     const originalHash = createHash('sha256').update(bytes).digest('hex')
     const zip = await JSZip.loadAsync(bytes)
+    assertZipWithinLimits(zip)
     const entries = new Map<string, Uint8Array>()
     const names = Object.keys(zip.files)
     for (const name of names) {

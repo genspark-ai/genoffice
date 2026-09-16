@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { TFunc } from './locale'
+import { McpServerSection } from './McpServerSection'
 import type {
   AgentId,
   AgentTarget,
@@ -33,6 +34,44 @@ export const skillUpdateDue = (s: IntegrationsStatus): boolean =>
   s.agents.some((a) => a.state.older === true)
 
 const EXAMPLE_KEYS = ['intgExample1', 'intgExample2', 'intgExample3'] as const
+
+export interface McpLaunch {
+  command: string
+  args: string[]
+  env?: Record<string, string>
+}
+
+/**
+ * How an MCP client starts `genoffice mcp`. Clients spawn without a shell, so on Windows
+ * neither genoffice.cmd nor cmd /c is safe (a path with a space splits); the snippet does
+ * what genoffice.cmd does: the app binary as Node on the bundled CLI. Elsewhere it is the
+ * bare name once it is on the PATH, else the launcher itself.
+ */
+export function mcpLaunch(cli: { status: string; launcherDir: string }): McpLaunch {
+  const dir = cli.launcherDir
+  if (dir.includes('\\')) {
+    return {
+      command: `${dir}\\..\\..\\GenOffice.exe`,
+      args: [`${dir}\\genoffice.cjs`, 'mcp'],
+      env: { ELECTRON_RUN_AS_NODE: '1' },
+    }
+  }
+  return { command: cli.status === 'present' ? 'genoffice' : `${dir}/genoffice`, args: ['mcp'] }
+}
+
+const shellWord = (w: string) => (/\s/.test(w) ? `"${w}"` : w)
+
+/** `-e` is variadic in `claude mcp add`, so it goes before `--transport`, never right before the name. */
+export function mcpClaudeCommand(launch: McpLaunch): string {
+  const env = Object.entries(launch.env ?? {}).map(([k, v]) => `-e ${k}=${v} `)
+  const words = [launch.command, ...launch.args].map(shellWord).join(' ')
+  return `claude mcp add ${env.join('')}--transport stdio genoffice -- ${words}`
+}
+
+export function mcpConfigJson(launch: McpLaunch): string {
+  const json = JSON.stringify({ mcpServers: { genoffice: launch } }, null, 2)
+  return json.replace(/"args": \[[^\]]*\]/, `"args": ${JSON.stringify(launch.args)}`)
+}
 
 const api = () => window.aiOfficeIntegrations
 
@@ -155,6 +194,20 @@ export function IntegrationsPane({
     status.cli.version &&
     compare(status.cli.version, status.skillNeedsCli) < 0
   const anyInstalled = status.agents.some((a) => a.state.status !== 'missing')
+  const launch = mcpLaunch(status.cli)
+
+  const examples = (
+    <div className="set-intg-examples">
+      {EXAMPLE_KEYS.map((key) => (
+        <div key={key} className="set-intg-example">
+          <span className="set-intg-example-text">“{t(key)}”</span>
+          <button className="set-btn" onClick={() => copy(t(key), key)}>
+            {copied === key ? t('intgCopied') : t('intgCopy')}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
 
   return (
     <>
@@ -170,180 +223,244 @@ export function IntegrationsPane({
         </ol>
       </section>
 
-      <h4 className="set-pane-subtitle set-intg-step">
-        <span className="set-intg-step-no">1</span>
-        {t('intgStep1Title')}
-        <span className="set-intg-version">{t('intgSkillVersion', { v: bundled })}</span>
-      </h4>
-      <div className="set-field-desc set-intg-lead">
-        {t('intgStep1Desc')} {t('intgStep1Update')}
-      </div>
-      {cliTooOld && (
-        <div className="set-field-desc set-intg-warn">
-          {t('intgCliNeedsUpdate', { v: status.skillNeedsCli })}
-        </div>
-      )}
+      <section className="set-intg-part">
+        <h4 className="set-pane-subtitle set-intg-step">
+          <span className="set-intg-step-no">1</span>
+          {t('intgCliPartTitle')}
+          <span className="set-intg-version">{t('intgSkillVersion', { v: bundled })}</span>
+        </h4>
+        <div className="set-field-desc set-intg-lead">{t('intgCliPartDesc')}</div>
 
-      {status.agents.map((row) => {
-        const { state } = row
-        return (
-          <div key={row.id} className="set-intg-row" data-agent={row.id} data-state={state.status}>
-            <div className="set-field">
-              <div className="set-field-text">
-                <div className="set-field-stack">
-                  <div className="set-field-label">{row.label}</div>
-                  <div className="set-field-desc set-intg-state" data-tip={state.path}>
-                    {stateText(t, state, bundled)}
+        <h5 className="set-intg-sub">{t('intgStep1Title')}</h5>
+        <div className="set-field-desc set-intg-lead">
+          {t('intgStep1Desc')} {t('intgStep1Update')}
+        </div>
+        {cliTooOld && (
+          <div className="set-field-desc set-intg-warn">
+            {t('intgCliNeedsUpdate', { v: status.skillNeedsCli })}
+          </div>
+        )}
+        {status.agents.map((row) => {
+          const { state } = row
+          return (
+            <div
+              key={row.id}
+              className="set-intg-row"
+              data-agent={row.id}
+              data-state={state.status}
+            >
+              <div className="set-field">
+                <div className="set-field-text">
+                  <div className="set-field-stack">
+                    <div className="set-field-label">{row.label}</div>
+                    <div className="set-field-desc set-intg-state" data-tip={state.path}>
+                      {stateText(t, state, bundled)}
+                    </div>
                   </div>
                 </div>
+                <div className="set-intg-actions">
+                  {state.status === 'missing' && (
+                    <button className="set-btn primary" onClick={() => askInstall(row)}>
+                      {t('intgInstall')}
+                    </button>
+                  )}
+                  {(state.status === 'outdated' || (state.status === 'foreign' && state.older)) && (
+                    <button className="set-btn primary" onClick={() => askInstall(row)}>
+                      {t('intgUpdate')}
+                    </button>
+                  )}
+                  {state.status === 'modified' && (
+                    <button
+                      className="set-btn primary"
+                      onClick={() => askInstall(row, t('intgConfirmOverwriteModified'))}
+                    >
+                      {t('intgUpdate')}
+                    </button>
+                  )}
+                  {state.status === 'newer' && (
+                    <button className="set-btn" onClick={() => askInstall(row)}>
+                      {t('intgReinstall', { v: bundled })}
+                    </button>
+                  )}
+                  {state.status === 'occupied' && (
+                    <button
+                      className="set-btn"
+                      onClick={() => askInstall(row, t('intgConfirmOverwriteOccupied'))}
+                    >
+                      {t('intgOverwrite')}
+                    </button>
+                  )}
+                  {(state.status === 'installed' ||
+                    state.status === 'outdated' ||
+                    state.status === 'modified') && (
+                    <button className="set-btn" onClick={() => askUninstall(row)}>
+                      {t('intgUninstall')}
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="set-intg-actions">
-                {state.status === 'missing' && (
-                  <button className="set-btn primary" onClick={() => askInstall(row)}>
-                    {t('intgInstall')}
-                  </button>
-                )}
-                {(state.status === 'outdated' || (state.status === 'foreign' && state.older)) && (
-                  <button className="set-btn primary" onClick={() => askInstall(row)}>
-                    {t('intgUpdate')}
-                  </button>
-                )}
-                {state.status === 'modified' && (
-                  <button
-                    className="set-btn primary"
-                    onClick={() => askInstall(row, t('intgConfirmOverwriteModified'))}
-                  >
-                    {t('intgUpdate')}
-                  </button>
-                )}
-                {state.status === 'newer' && (
-                  <button className="set-btn" onClick={() => askInstall(row)}>
-                    {t('intgReinstall', { v: bundled })}
-                  </button>
-                )}
-                {state.status === 'occupied' && (
-                  <button
-                    className="set-btn"
-                    onClick={() => askInstall(row, t('intgConfirmOverwriteOccupied'))}
-                  >
-                    {t('intgOverwrite')}
-                  </button>
-                )}
-                {(state.status === 'installed' ||
-                  state.status === 'outdated' ||
-                  state.status === 'modified') && (
-                  <button className="set-btn" onClick={() => askUninstall(row)}>
-                    {t('intgUninstall')}
-                  </button>
-                )}
+              {pending?.agentId === row.id && confirmBlock(pending)}
+              {notice?.agentId === row.id && (
+                <div className="set-field-desc set-intg-notice">{notice.text}</div>
+              )}
+            </div>
+          )
+        })}
+
+        <details className="set-intg-details" open={status.agents.length === 0}>
+          <summary>{t('intgOtherToggle')}</summary>
+          <div className="set-field-desc set-intg-lead">{t('intgOtherDesc')}</div>
+
+          <div className="set-intg-option">
+            <span className="set-intg-option-letter">A</span>
+            <div className="set-field-stack">
+              <div className="set-field-label">{t('intgOtherFolderTitle')}</div>
+              <div className="set-field-desc">{t('intgOtherFolderDesc')}</div>
+            </div>
+            <button className="set-btn" onClick={() => void installElsewhere()}>
+              {t('intgInstallElsewhere')}
+            </button>
+          </div>
+
+          <div className="set-intg-option">
+            <span className="set-intg-option-letter">B</span>
+            <div className="set-field-stack">
+              <div className="set-field-label">{t('intgOtherZipTitle')}</div>
+              <div className="set-field-desc">{t('intgOtherZipDesc')}</div>
+            </div>
+            <button className="set-btn" onClick={() => void downloadZip()}>
+              {t('intgDownloadZip')}
+            </button>
+          </div>
+
+          <div className="set-intg-option">
+            <span className="set-intg-option-letter">C</span>
+            <div className="set-field-stack">
+              <div className="set-field-label">{t('intgOtherNpxTitle')}</div>
+              <div className="set-field-desc">{t('intgOtherNpxDesc')}</div>
+              <div className="set-intg-code">
+                <code>{NPX_INSTALL_COMMAND}</code>
+                <button className="set-btn" onClick={() => copy(NPX_INSTALL_COMMAND, 'npx')}>
+                  {copied === 'npx' ? t('intgCopied') : t('intgCopy')}
+                </button>
               </div>
             </div>
-            {pending?.agentId === row.id && confirmBlock(pending)}
-            {notice?.agentId === row.id && (
-              <div className="set-field-desc set-intg-notice">{notice.text}</div>
-            )}
           </div>
-        )
-      })}
 
-      <details className="set-intg-details" open={status.agents.length === 0}>
-        <summary>{t('intgOtherToggle')}</summary>
-        <div className="set-field-desc set-intg-lead">{t('intgOtherDesc')}</div>
+          {pending && !pending.agentId && confirmBlock(pending)}
+          {notice && !notice.agentId && (
+            <div className="set-field-desc set-intg-notice">{notice.text}</div>
+          )}
+        </details>
 
-        <div className="set-intg-option">
-          <span className="set-intg-option-letter">A</span>
-          <div className="set-field-stack">
-            <div className="set-field-label">{t('intgOtherFolderTitle')}</div>
-            <div className="set-field-desc">{t('intgOtherFolderDesc')}</div>
-          </div>
-          <button className="set-btn" onClick={() => void installElsewhere()}>
-            {t('intgInstallElsewhere')}
-          </button>
+        <h5 className="set-intg-sub">{t('intgStep2Title')}</h5>
+        <div className="set-field-desc set-intg-lead">
+          {anyInstalled ? t('intgStep2Desc') : t('intgStep2DescBefore')}
         </div>
+        {examples}
+        <div className="set-field-desc set-intg-lead">{t('intgStep2Note')}</div>
 
-        <div className="set-intg-option">
-          <span className="set-intg-option-letter">B</span>
-          <div className="set-field-stack">
-            <div className="set-field-label">{t('intgOtherZipTitle')}</div>
-            <div className="set-field-desc">{t('intgOtherZipDesc')}</div>
+        <details className="set-intg-details set-intg-cli">
+          <summary>{t('intgCliTitle')}</summary>
+          <div className="set-field-desc set-intg-lead">
+            {status.cli.ephemeral
+              ? t('intgCliEphemeral')
+              : status.cli.status === 'present'
+                ? t('intgCliReady', { v: status.cli.version, path: status.cli.location ?? '' })
+                : t('intgCliNotOnPath', { v: status.cli.version })}
           </div>
-          <button className="set-btn" onClick={() => void downloadZip()}>
-            {t('intgDownloadZip')}
-          </button>
-        </div>
-
-        <div className="set-intg-option">
-          <span className="set-intg-option-letter">C</span>
-          <div className="set-field-stack">
-            <div className="set-field-label">{t('intgOtherNpxTitle')}</div>
-            <div className="set-field-desc">{t('intgOtherNpxDesc')}</div>
+          {status.cli.status !== 'present' && status.cli.manual && !status.cli.ephemeral && (
             <div className="set-intg-code">
-              <code>{NPX_INSTALL_COMMAND}</code>
-              <button className="set-btn" onClick={() => copy(NPX_INSTALL_COMMAND, 'npx')}>
-                {copied === 'npx' ? t('intgCopied') : t('intgCopy')}
+              <code>{status.cli.manual}</code>
+              <button className="set-btn" onClick={() => copy(status.cli.manual!, 'manual')}>
+                {copied === 'manual' ? t('intgCopied') : t('intgCopy')}
+              </button>
+            </div>
+          )}
+          <div className="set-field">
+            <div className="set-field-text">
+              <div className="set-field-stack">
+                <div className="set-field-desc">{t('intgCliLauncher')}</div>
+                <div className="set-field-value set-intg-path" data-tip={status.cli.launcherDir}>
+                  {status.cli.launcherDir}
+                </div>
+              </div>
+            </div>
+            <div className="set-intg-actions">
+              <button className="set-btn" onClick={() => copy(status.cli.launcherDir, 'path')}>
+                {copied === 'path' ? t('intgCopied') : t('intgCopyPath')}
               </button>
             </div>
           </div>
-        </div>
+        </details>
+      </section>
 
-        {pending && !pending.agentId && confirmBlock(pending)}
-        {notice && !notice.agentId && (
-          <div className="set-field-desc set-intg-notice">{notice.text}</div>
-        )}
-      </details>
+      <section className="set-intg-part">
+        <h4 className="set-pane-subtitle set-intg-step">
+          <span className="set-intg-step-no">2</span>
+          {t('intgMcpPartTitle')}
+        </h4>
+        <div className="set-field-desc set-intg-lead">{t('intgMcpPartDesc')}</div>
 
-      <h4 className="set-pane-subtitle set-intg-step">
-        <span className="set-intg-step-no">2</span>
-        {t('intgStep2Title')}
-      </h4>
-      <div className="set-field-desc set-intg-lead">
-        {anyInstalled ? t('intgStep2Desc') : t('intgStep2DescBefore')}
-      </div>
-      <div className="set-intg-examples">
-        {EXAMPLE_KEYS.map((key) => (
-          <div key={key} className="set-intg-example">
-            <span className="set-intg-example-text">“{t(key)}”</span>
-            <button className="set-btn" onClick={() => copy(t(key), key)}>
-              {copied === key ? t('intgCopied') : t('intgCopy')}
-            </button>
-          </div>
-        ))}
-      </div>
-      <div className="set-field-desc set-intg-lead">{t('intgStep2Note')}</div>
-
-      <details className="set-intg-details set-intg-cli">
-        <summary>{t('intgCliTitle')}</summary>
-        <div className="set-field-desc set-intg-lead">
-          {status.cli.ephemeral
-            ? t('intgCliEphemeral')
-            : status.cli.status === 'present'
-              ? t('intgCliReady', { v: status.cli.version, path: status.cli.location ?? '' })
-              : t('intgCliNotOnPath', { v: status.cli.version })}
-        </div>
-        {status.cli.status !== 'present' && status.cli.manual && !status.cli.ephemeral && (
-          <div className="set-intg-code">
-            <code>{status.cli.manual}</code>
-            <button className="set-btn" onClick={() => copy(status.cli.manual!, 'manual')}>
-              {copied === 'manual' ? t('intgCopied') : t('intgCopy')}
-            </button>
-          </div>
-        )}
-        <div className="set-field">
-          <div className="set-field-text">
-            <div className="set-field-stack">
-              <div className="set-field-desc">{t('intgCliLauncher')}</div>
-              <div className="set-field-value set-intg-path" data-tip={status.cli.launcherDir}>
-                {status.cli.launcherDir}
+        <div className="set-intg-mcp">
+          <h5 className="set-intg-sub">
+            <span className="set-intg-option-letter">A</span>
+            {t('intgMcpStdioTitle')}
+          </h5>
+          <div className="set-field-desc set-intg-lead">{t('intgMcpStdioDesc')}</div>
+          {status.cli.ephemeral ? (
+            <div className="set-field-desc set-intg-lead">{t('intgCliEphemeral')}</div>
+          ) : (
+            <>
+              <div className="set-intg-option">
+                <div className="set-field-stack">
+                  <div className="set-field-label">{t('intgMcpClaudeTitle')}</div>
+                  <div className="set-field-desc">{t('intgMcpClaudeDesc')}</div>
+                  <div className="set-intg-code">
+                    <code>{mcpClaudeCommand(launch)}</code>
+                    <button
+                      className="set-btn"
+                      onClick={() => copy(mcpClaudeCommand(launch), 'mcp-claude')}
+                    >
+                      {copied === 'mcp-claude' ? t('intgCopied') : t('intgCopy')}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="set-intg-actions">
-            <button className="set-btn" onClick={() => copy(status.cli.launcherDir, 'path')}>
-              {copied === 'path' ? t('intgCopied') : t('intgCopyPath')}
-            </button>
-          </div>
+              <div className="set-intg-option">
+                <div className="set-field-stack">
+                  <div className="set-field-label">{t('intgMcpOtherTitle')}</div>
+                  <div className="set-field-desc">{t('intgMcpOtherDesc')}</div>
+                  <div className="set-intg-code set-intg-code-block">
+                    <code>{mcpConfigJson(launch)}</code>
+                    <button
+                      className="set-btn"
+                      onClick={() => copy(mcpConfigJson(launch), 'mcp-json')}
+                    >
+                      {copied === 'mcp-json' ? t('intgCopied') : t('intgCopy')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+          <div className="set-field-desc set-intg-lead">{t('intgMcpNote')}</div>
         </div>
-      </details>
+
+        <div className="set-intg-mcp-http">
+          <h5 className="set-intg-sub">
+            <span className="set-intg-option-letter">B</span>
+            {t('intgMcpHttpTitle')}
+          </h5>
+          <div className="set-field-desc set-intg-lead">{t('intgMcpHttpDesc')}</div>
+          <McpServerSection t={t} />
+        </div>
+
+        <h5 className="set-intg-sub">{t('intgStep2Title')}</h5>
+        <div className="set-field-desc set-intg-lead">{t('intgStep2Desc')}</div>
+        {examples}
+        <div className="set-field-desc set-intg-lead">{t('intgMcpTryNote')}</div>
+      </section>
     </>
   )
 }

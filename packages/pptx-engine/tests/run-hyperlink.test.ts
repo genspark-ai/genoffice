@@ -103,6 +103,70 @@ describe('parse: run hlinkClick resolved via ctx.hlinkRels', () => {
   })
 })
 
+describe('named show actions on runs', () => {
+  const ACTION_RUN =
+    '<a:bodyPr/><a:p><a:r><a:rPr><a:hlinkClick r:id="" action="ppaction://hlinkshowjump?jump=endshow"/></a:rPr><a:t>End</a:t></a:r></a:p>'
+
+  it('parses an action-only hlinkClick (empty r:id) as action:<name> with hlink styling', () => {
+    const el = parseEl(ACTION_RUN, undefined, { colors: { hlink: '#0563C1' } } as unknown as Theme)
+    const r = el.text!.paragraphs[0]!.runs[0]!
+    expect(r.hyperlink).toBe('action:endshow')
+    expect(r.hyperlinkRId).toBe('')
+    expect(r.hyperlinkAction).toBe('ppaction://hlinkshowjump?jump=endshow')
+    expect(r.underlineImplicit).toBe(true)
+    expect(r.color).toBe('#0563C1')
+  })
+
+  it('unrelated text edits keep the action bytes; changing the action rewrites it', () => {
+    const el = parseEl(ACTION_RUN)
+    const r = el.text!.paragraphs[0]!.runs[0]!
+    r.text = 'Finish'
+    expect(patchTextElementXml(el, el.anchor.originalXml)).toContain(
+      'r:id="" action="ppaction://hlinkshowjump?jump=endshow"',
+    )
+    r.hyperlink = 'action:firstslide'
+    r.hyperlinkAction = 'ppaction://hlinkshowjump?jump=firstslide'
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toContain('r:id="" action="ppaction://hlinkshowjump?jump=firstslide"')
+    expect(out).not.toContain('endshow')
+  })
+
+  it('action link set in-session needs no relationship and survives save → reopen', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const { el, pi, ri } = findTextRun(opened)
+    const slide = opened.deck.slides[0]!
+    const relsBefore = opened.archive.readText(relsPathFor(slide.path))
+    const run = el.text!.paragraphs[pi]!.runs[ri]!
+    run.hyperlink = 'action:lastslideviewed'
+    delete run.hyperlinkRId
+    delete run.hyperlinkAction
+    el.dirty = true
+    expect(ensureRunLinkRels(opened, 0, el.text!.paragraphs)).toBe(true)
+    expect(run.hyperlinkRId).toBe('')
+    expect(run.hyperlinkAction).toBe('ppaction://hlinkshowjump?jump=lastslideviewed')
+    // Idempotent: a second pass allocates nothing
+    expect(ensureRunLinkRels(opened, 0, el.text!.paragraphs)).toBe(false)
+    expect(opened.archive.readText(relsPathFor(slide.path))).toBe(relsBefore)
+    expect(getRunLinks(opened, 0)).toContainEqual({
+      elementId: el.id,
+      paraIndex: pi,
+      runIndex: ri,
+      target: { kind: 'action', action: 'lastslideviewed' },
+    })
+
+    const reopened = await openPptx(await savePptx(opened))
+    const again = findTextRun(reopened)
+    const r2 = again.el.text!.paragraphs[again.pi]!.runs[again.ri]!
+    expect(r2.hyperlink).toBe('action:lastslideviewed')
+    expect(getRunLinks(reopened, 0)).toContainEqual({
+      elementId: again.el.id,
+      paraIndex: again.pi,
+      runIndex: again.ri,
+      target: { kind: 'action', action: 'lastslideviewed' },
+    })
+  })
+})
+
 describe('patch path: hlinkClick surgery without structural change', () => {
   it('adds hlinkClick for a link set this session', () => {
     const el = parseEl('<a:bodyPr/><a:p><a:r><a:rPr b="1"/><a:t>text</a:t></a:r></a:p>')
@@ -136,6 +200,26 @@ describe('patch path: hlinkClick surgery without structural change', () => {
     const out = patchTextElementXml(el, el.anchor.originalXml)
     expect(out).not.toMatch(/\su="/)
     expect(out).toContain('r:id="rId9"') // untouched original hlink bytes
+  })
+
+  it('un-underlining a run that keeps its link writes u="none" and survives a reparse', () => {
+    const rels = new Map([['rId9', 'https://x.dev']])
+    const el = parseEl(LINKED_RID9, rels)
+    const r = el.text!.paragraphs[0]!.runs[0]!
+    expect(r.underline).toBe(true)
+    // what the text-edit merge produces for "underline off, link kept"
+    r.underline = false
+    delete r.underlineImplicit
+    r.underlineExplicitNone = true
+    const out = patchTextElementXml(el, el.anchor.originalXml)
+    expect(out).toContain('u="none"')
+    expect(out).toContain('r:id="rId9"')
+    const again = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideWith(out),
+      ctx: { hlinkRels: rels },
+    }).elements[0] as TextElement
+    expect(again.text!.paragraphs[0]!.runs[0]!.underline).toBe(false)
   })
 })
 const LINKED_RID9 =

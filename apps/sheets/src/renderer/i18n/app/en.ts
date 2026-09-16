@@ -127,7 +127,6 @@ export const en = {
   appMoreItems: '+{count} more…',
   appTruncationNote: 'First {shown} of {total}',
   appGoToButtonTitle: 'Go To (⌘G)',
-  appNameBoxTitle: 'Name Box — type an address or name, then press Enter',
   appPivotChartHintIn: 'Create a PivotChart from the current PivotTable',
   appPivotChartHintOut: 'Select a cell inside the PivotTable output first, then pick a chart type',
   appChartColumn: 'Column',

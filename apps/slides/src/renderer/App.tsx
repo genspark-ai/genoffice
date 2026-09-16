@@ -9,6 +9,7 @@ import type {
   PictureRenderNode,
   TableRenderNode,
 } from '@genoffice/pptx-render'
+import { handleSlidesControl, type ControlRequest } from './control'
 import type {
   AiSettings,
   AnimEffectKind,
@@ -85,7 +86,13 @@ import { AnimationPane } from './components/AnimationPane'
 import { AnimPreviewOverlay } from './components/AnimatedSlide'
 import { EquationDialog, HeaderFooterDialog, LinkDialog } from './components/InsertDialogs'
 import { CutoutDialog } from './components/CutoutDialog'
-import { useAutoSavePref, type AiScopeQuoteData, type WordArtPreset } from '@genoffice/ui'
+import {
+  FilesEdgeTab,
+  FilesPane,
+  useAutoSavePref,
+  type AiScopeQuoteData,
+  type WordArtPreset,
+} from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
 import { ToastHost } from './components/toast'
@@ -379,6 +386,12 @@ export function App() {
     return () => window.clearTimeout(t)
   }, [status])
   const [showThumbs, setShowThumbs] = useState(true)
+  const [filesOpen, setFilesOpen] = useState(
+    () => localStorage.getItem('ai-slides-show-files') === '1',
+  )
+  useEffect(() => {
+    localStorage.setItem('ai-slides-show-files', filesOpen ? '1' : '0')
+  }, [filesOpen])
   // ── Thumbnail sidebar width (drag the divider to resize; persisted) ─────────
   const [thumbsW, setThumbsW] = useState(loadThumbsW)
   const thumbsListRef = useRef<HTMLDivElement | null>(null)
@@ -637,7 +650,11 @@ export function App() {
   /** Last auto-fit value: if current zoom still equals it → treated as "fit mode", re-fit on size changes */
   const lastFitRef = useRef<number | null>(null)
   const zoomLiveRef = useRef(1)
-  useEffect(() => {
+  // Layout effect, not passive: committing a zoom step past fit makes scrollbars
+  // appear, and the fit-keeper ResizeObserver fires BEFORE passive effects run.
+  // With a stale ref it still reads the old fit value, decides "fit mode", and
+  // snaps the fresh zoom straight back — a single +/− step from fit never sticks.
+  useLayoutEffect(() => {
     zoomLiveRef.current = zoom
   }, [zoom])
   const slideLiveRef = useRef<RenderSlide | undefined>(undefined)
@@ -1165,8 +1182,17 @@ export function App() {
     return off
   }, [applyOpen, newBlank])
 
-  // File renamed externally (shell Home list rename) → sync the title-bar path (content unchanged, dirty untouched)
-  useEffect(() => window.slidesApi.onRenamed((p) => setPath(p)), [])
+  // Path changed outside this renderer (shell Home list rename, or an MCP save that
+  // wrote the session to disk) → sync the title-bar path and ask the session
+  // whether it is still dirty rather than assuming
+  useEffect(
+    () =>
+      window.slidesApi.onRenamed((p) => {
+        setPath(p)
+        void window.slidesApi.isDirty().then(setDirty)
+      }),
+    [],
+  )
 
   useEffect(() => {
     void window.slidesApi.getAiSettings().then(setAiSettings)
@@ -2335,9 +2361,23 @@ export function App() {
         }
         return
       }
+      if (target.kind === 'action') {
+        // Show-only actions (last viewed / end show) have no editor meaning
+        const last = slides.length - 1
+        const to = {
+          nextslide: Math.min(current + 1, last),
+          previousslide: Math.max(current - 1, 0),
+          firstslide: 0,
+          lastslide: last,
+          lastslideviewed: null,
+          endshow: null,
+        }[target.action]
+        if (to != null) setCurrent(to)
+        return
+      }
       window.open(target.url, '_blank', 'noreferrer')
     },
-    [slides.length],
+    [slides.length, current],
   )
 
   const onTransform = useCallback(
@@ -2779,6 +2819,7 @@ export function App() {
     setBrushMode,
     inkTool,
     setInkTool,
+    viewMode,
     animations,
     setAnimations,
     selAnim,
@@ -2867,6 +2908,20 @@ export function App() {
 
   const _fileName = slide ? path?.split('/').pop() || t('appUntitledPresentation') : undefined
 
+  // genoffice CLI (`open --slide/--el`, `selection`): the shell evaluates this hook
+  useEffect(() => {
+    ;(window as unknown as Record<string, unknown>).__genofficeControl = (req: ControlRequest) =>
+      handleSlidesControl(req, {
+        slides,
+        path,
+        current,
+        selectedIds,
+        setCurrent,
+        setSelectedIds,
+        clearEditing: () => setEditing(null),
+      })
+  })
+
   return (
     <div className="app">
       <ToastHost />
@@ -2892,6 +2947,8 @@ export function App() {
         onZoom={previewZoom}
         showThumbs={showThumbs}
         onToggleThumbs={() => setShowThumbs((v) => !v)}
+        filesOpen={filesOpen}
+        onToggleFiles={() => setFilesOpen((v) => !v)}
         aiOpen={showAi}
         onToggleAi={toggleAi}
         onAiPreset={(text, opts) => pushAiPreset(text, true, undefined, undefined, opts?.slideShot)}
@@ -3249,7 +3306,19 @@ export function App() {
             )}
           </div>
         )}
+        {slide && viewMode !== 'reading' && filesOpen && (
+          <FilesPane
+            api={window.filesPaneApi}
+            lang={lang}
+            currentPath={path}
+            onClose={() => setFilesOpen(false)}
+          />
+        )}
         <div className="app-content">
+          {/* only while the thumbnail rail is hidden, so it never covers the rail; the View check remains */}
+          {slide && viewMode !== 'reading' && !filesOpen && !showThumbs && (
+            <FilesEdgeTab lang={lang} onOpen={() => setFilesOpen(true)} />
+          )}
           {missingFonts.length > 0 && (
             <div className="font-missing-banner">
               <span className="fmb-text">
@@ -3793,7 +3862,7 @@ export function App() {
                                 onCommit={commitEdit}
                                 onCancel={() => setEditing(null)}
                                 onFollowLink={followRunLink}
-                                frameColor={selectionChromeColor(slide, images)}
+                                frameColor={selectionChromeColor(slide, images, editNode.box)}
                                 zoom={zoom}
                                 onFrameDrag={(ev) => {
                                   // Drop the overlay now; the text commit above lands via setSlides on its own
@@ -3810,7 +3879,7 @@ export function App() {
                                 onCancel={() => setEditingCell(null)}
                                 onTabNav={(paragraphs, dir) => void navigateCell(paragraphs, dir)}
                                 onFollowLink={followRunLink}
-                                frameColor={selectionChromeColor(slide, images)}
+                                frameColor={selectionChromeColor(slide, images, cellEditNode.box)}
                                 zoom={zoom}
                               />
                             )}

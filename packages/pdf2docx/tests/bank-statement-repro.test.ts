@@ -1,5 +1,5 @@
 /**
- * Borderless bank-statement layout (alpha feedback): every transaction
+ * Borderless bank-statement layout: every transaction
  * prints one value row (dates, description, amounts) followed by several
  * 1-unit description continuation lines (reference-number stacks). The
  * run-strength gate used to take its median over ALL run rows, so two

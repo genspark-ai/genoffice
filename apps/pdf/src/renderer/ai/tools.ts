@@ -28,6 +28,7 @@ import { t } from '../i18n/locale'
 import { buildFormCatalog } from '../form-catalog'
 import { flattenThread, type NoteThreadItem } from '../note-threads'
 import type { StampConfig } from '../edit-state'
+import { boldToken } from '../text-edit-preview'
 import type { LocalTextInsert } from '../text-edit-preview'
 import { DEFAULT_HEADER_FOOTER, DEFAULT_WATERMARK } from '../stamps'
 import { STATIC_FORM_MARK_SIZE } from '../static-form-fill'
@@ -2176,7 +2177,8 @@ async function editBlock(deps: PdfAiDeps, input: Record<string, unknown>): Promi
     getComputedStyle(document.body).fontFamily
   const bold = input.bold === true ? true : undefined
   const italic = input.italic === true ? true : undefined
-  const cssStyle = `${italic ? 'italic ' : ''}${bold ? 'bold' : ''}`.trim()
+  // bold on the document's own face is a stroke with regular advances (boldToken)
+  const cssStyle = `${italic ? 'italic ' : ''}${boldToken(bold, !!newFont)}`.trim()
   const align = input.align === undefined ? block.align : String(input.align)
   if (align !== 'left' && align !== 'center' && align !== 'right') {
     return err('align must be one of left, center, right', summary)
@@ -2460,7 +2462,7 @@ function faceCss(font: string | undefined, bold: boolean | undefined, italic: bo
     cssFamily:
       (font ? EDIT_FONTS.find((f) => f.id === font)?.css : undefined) ??
       getComputedStyle(document.body).fontFamily,
-    cssStyle: `${italic ? 'italic ' : ''}${bold ? 'bold' : ''}`.trim(),
+    cssStyle: `${italic ? 'italic ' : ''}${boldToken(bold, !!font)}`.trim(),
   }
 }
 

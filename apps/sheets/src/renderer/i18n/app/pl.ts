@@ -128,7 +128,6 @@ export const pl = {
   appMoreItems: '+{count} więcej…',
   appTruncationNote: 'Pierwsze {shown} z {total}',
   appGoToButtonTitle: 'Przejdź do (⌘G)',
-  appNameBoxTitle: 'Pole nazwy — wpisz adres lub nazwę, a następnie naciśnij Enter',
   appPivotChartHintIn: 'Utwórz wykres przestawny na podstawie bieżącej tabeli przestawnej',
   appPivotChartHintOut:
     'Najpierw zaznacz komórkę w obszarze wyników tabeli przestawnej, a następnie wybierz typ wykresu',

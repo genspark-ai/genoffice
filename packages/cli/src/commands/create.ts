@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, resolve } from 'node:path'
 import { flagBool, flagString } from '../args'
-import { assertAllowed, resolveInput, resolveOutput } from '../fs'
+import { assertAllowed, resolveInput, resolveOutput, writeOutput } from '../fs'
 import { applyOps, blankDeck, inlineLocalFiles, parseOps, saveDeck } from '../formats/pptx'
 import { buildDeckFromDir, buildDeckFromSpec, stageContext } from '../formats/slide-spec'
 import {
@@ -10,11 +10,14 @@ import {
   cellEditsFromTable,
   csvTable,
   writeWorkbook,
+  type CsvTableOptions,
   type TableInput,
 } from '../formats/xlsx'
 import { exportViaApp } from '../formats/app-export'
 import { blankDocument, closeDocument, fillFromHtml, saveDocument } from '../formats/docx'
 import { markdownToDocx } from '../formats/markdown'
+import { runWorkbookDsl } from '../formats/xlsx-dsl'
+import { columnLabel } from '@genoffice/xlsx-gateway/domain/cell-address'
 import { readOpsInput } from '../ops-input'
 import type { CommandContext, CommandDef } from '../registry'
 import type { TxnResult } from '@genoffice/pptx-ops'
@@ -55,14 +58,33 @@ export const createCommand: CommandDef = {
       description:
         'xlsx: a .csv, or a .json holding a 2-D array of cell values or { "sheets": [{ "name", "rows" }] }; strings starting with "=" are formulas. docx: a .md file, or a .html file holding a restricted-HTML fragment (see `genoffice guide docs`). pdf: any .md/.html/.docx/.xlsx/.pptx file, printed by the GenOffice renderer',
     },
+    {
+      name: 'header',
+      description:
+        'xlsx: treat row 1 of every sheet as a header — freeze it and put an AutoFilter on the used range',
+    },
+    {
+      name: 'decimal',
+      value: ', or .',
+      description:
+        'xlsx --from .csv: the decimal separator the file uses (default "."); with "," a "." is read as a thousands separator',
+    },
     { name: 'out', value: 'path', description: 'output file (required)' },
     { name: 'force', description: 'overwrite an existing output file' },
   ],
   async run(args, ctx) {
     const type = flagString(args, 'type')?.toLowerCase()
-    if (!type) throw new CliError(EXIT.usage, 'missing --type <type>')
+    if (!type)
+      throw new CliError(EXIT.usage, 'missing --type <type>', undefined, {
+        reason: 'missing_argument',
+      })
     if (!(TYPES as readonly string[]).includes(type)) {
-      throw new CliError(EXIT.usage, `cannot create .${type} yet`, { supported: [...TYPES] })
+      throw new CliError(
+        EXIT.usage,
+        `cannot create .${type} yet`,
+        { supported: [...TYPES] },
+        { reason: 'unsupported', suggestion: 'pick a type from detail.supported' },
+      )
     }
     const output = resolveOutput(flagString(args, 'out'), ctx, {
       force: flagBool(args, 'force'),
@@ -70,7 +92,10 @@ export const createCommand: CommandDef = {
     })
     if (type === 'pdf') {
       const from = flagString(args, 'from')
-      if (!from) throw new CliError(EXIT.usage, 'pdf needs --from <document>')
+      if (!from)
+        throw new CliError(EXIT.usage, 'pdf needs --from <document>', undefined, {
+          reason: 'missing_argument',
+        })
       const source = resolveInput(from, ctx)
       const r = await exportViaApp(source, 'pdf', output, { env: ctx.env, log: ctx.log })
       return {
@@ -81,7 +106,7 @@ export const createCommand: CommandDef = {
     }
     if (type === 'docx') {
       const r = await createDocx(args, ctx)
-      writeFileSync(output, r.bytes)
+      writeOutput(output, r.bytes)
       return { summary: `created ${basename(output)}`, outputPath: output, detail: r.detail }
     }
     if (type === 'xlsx') {
@@ -96,7 +121,7 @@ export const createCommand: CommandDef = {
       flagString(args, 'spec') !== undefined
         ? await createPptxFromSpec(args, ctx)
         : await createPptx(args, ctx)
-    writeFileSync(output, result.bytes)
+    writeOutput(output, result.bytes)
     return {
       summary: `created ${basename(output)} (${result.slides} slides)`,
       outputPath: output,
@@ -157,7 +182,10 @@ async function createPptxFromSpec(
       },
     }
   }
-  if (outlinePath) throw new CliError(EXIT.usage, '--outline goes with --spec <directory>')
+  if (outlinePath)
+    throw new CliError(EXIT.usage, '--outline goes with --spec <directory>', undefined, {
+      reason: 'invalid_argument',
+    })
   const source = spec === '-' ? 'stdin' : resolveInput(spec, ctx)
   const text = spec === '-' ? readFileSync(0, 'utf-8') : readFileSync(source, 'utf-8')
   const built = await buildDeckFromSpec(
@@ -185,36 +213,82 @@ async function createXlsx(
   output: string,
 ): Promise<Record<string, unknown>> {
   const from = flagString(args, 'from')
-  if (!from) throw new CliError(EXIT.usage, 'xlsx needs --from <data.csv|table.json>')
+  if (!from)
+    throw new CliError(EXIT.usage, 'xlsx needs --from <data.csv|table.json>', undefined, {
+      reason: 'missing_argument',
+    })
   const source = resolveInput(from, ctx)
-  const tables = readTables(source, basename(source, extname(source)))
+  const decimal = flagString(args, 'decimal')
+  if (decimal !== undefined && decimal !== ',' && decimal !== '.') {
+    throw new CliError(EXIT.usage, `--decimal must be "," or ".", got "${decimal}"`, undefined, {
+      reason: 'invalid_argument',
+    })
+  }
+  const tables = readTables(source, basename(source, extname(source)), { decimal })
   const [first, ...rest] = tables
-  if (!first) throw new CliError(EXIT.usage, `${from}: no sheets`)
-  const edits = tables.flatMap((t) => cellEditsFromTable(t.name, t.rows))
-  const r = await writeWorkbook(await blankWorkbook(first.name), edits, output, {
+  if (!first)
+    throw new CliError(EXIT.usage, `${from}: no sheets`, undefined, { reason: 'invalid_argument' })
+  const edits = tables.flatMap((t) => cellEditsFromTable(t.name, t.rows, t.formats))
+  let r = await writeWorkbook(await blankWorkbook(first.name), edits, output, {
     plan: additionPlan(
       first.name,
       rest.map((t) => t.name),
     ),
   })
+  if (flagBool(args, 'header')) {
+    const ops = tables.flatMap((t) => headerOps(t))
+    const dsl = await runWorkbookDsl(readFileSync(output), ops, first.name, ctx, {
+      sourcePath: output,
+    })
+    const w = await writeWorkbook(readFileSync(output), dsl.edits, output, {
+      plan: dsl.sheetPlan,
+      structuralOps: dsl.structuralOps,
+      renames: dsl.renames,
+      gateway: dsl.gateway,
+    })
+    r = { ...r, warning: r.warning ?? w.warning }
+    for (const note of w.notes ?? []) ctx.warn(note)
+  }
 
+  if (r.warning) ctx.warn({ code: 'formulas_not_cached', message: r.warning })
   return {
     sheets: tables.length,
     cells: r.cells,
     formulas: r.formulas,
     cached_values: r.cachedValues,
-    ...(r.warning ? { warning: r.warning } : {}),
   }
 }
 
-function readTables(source: string, fallbackName: string): TableInput[] {
+/** Freeze row 1 and filter the used range: what Excel's own import wizard does for a header row. */
+function headerOps(table: TableInput): Record<string, unknown>[] {
+  const width = table.rows.reduce((max, row) => Math.max(max, row.length), 0)
+  if (table.rows.length < 1 || width < 1) return []
+  const range = `A1:${columnLabel(width - 1)}${Math.max(table.rows.length, 2)}`
+  return [
+    { op: 'set_freeze', sheet: table.name, rows: 1, columns: 0 },
+    { op: 'set_filter', sheet: table.name, range },
+  ]
+}
+
+function readTables(
+  source: string,
+  fallbackName: string,
+  opts: CsvTableOptions = {},
+): TableInput[] {
   const sheetName = fallbackName.slice(0, 31) || 'Sheet1'
-  if (extname(source).toLowerCase() === '.csv') return [csvTable(readFileSync(source), sheetName)]
+  if (extname(source).toLowerCase() === '.csv') {
+    return [csvTable(readFileSync(source), sheetName, opts)]
+  }
   let parsed: unknown
   try {
     parsed = JSON.parse(readFileSync(source, 'utf-8'))
   } catch (err) {
-    throw new CliError(EXIT.usage, `${source}: not valid JSON (${(err as Error).message})`)
+    throw new CliError(
+      EXIT.usage,
+      `${source}: not valid JSON (${(err as Error).message})`,
+      undefined,
+      { reason: 'invalid_json' },
+    )
   }
   if (Array.isArray(parsed)) return [{ name: sheetName, rows: parsed as TableInput['rows'] }]
   const sheets = (parsed as { sheets?: unknown })?.sheets
@@ -222,6 +296,8 @@ function readTables(source: string, fallbackName: string): TableInput[] {
     throw new CliError(
       EXIT.usage,
       `${source}: expected a 2-D array or { "sheets": [{ "name", "rows" }] }`,
+      undefined,
+      { reason: 'invalid_argument' },
     )
   }
   return sheets.map((s, i) => {
@@ -238,7 +314,10 @@ async function createDocx(
   ctx: CommandContext,
 ): Promise<{ bytes: Uint8Array; detail: Record<string, unknown> }> {
   const from = flagString(args, 'from')
-  if (!from) throw new CliError(EXIT.usage, 'docx needs --from <content.md|fragment.html>')
+  if (!from)
+    throw new CliError(EXIT.usage, 'docx needs --from <content.md|fragment.html>', undefined, {
+      reason: 'missing_argument',
+    })
   const source = resolveInput(from, ctx)
   const text = readFileSync(source, 'utf-8')
   const ext = extname(source).toLowerCase()
@@ -260,5 +339,7 @@ async function createDocx(
   throw new CliError(
     EXIT.usage,
     `docx --from needs a .md or .html file, got ${ext || 'no extension'}`,
+    undefined,
+    { reason: 'unsupported' },
   )
 }

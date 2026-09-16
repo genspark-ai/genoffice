@@ -1,5 +1,5 @@
 /**
- * Hyperlink viewing/editing (alpha ledger r164): the caret on an existing
+ * Hyperlink viewing/editing: the caret on an existing
  * link must expose its range and address (the Ctrl+K dialog pre-fills and
  * edits it), Remove Link strips the mark but keeps the text, and a
  * tooltip-less link renders its target as the hover title without the
@@ -76,7 +76,7 @@ describe('link edit at caret (r164)', () => {
 
   it('reads the address from the run at the trailing edge of a link', () => {
     // inclusive:false drops the mark from $head.marks() at the trailing
-    // boundary — the range-based read must still see the address (bugbot)
+    // boundary — the range-based read must still see the address
     const editor = makeEditor()
     editor.commands.setTextSelection(15) // right after "our site"
     const range = linkRangeAtCaret(editor)

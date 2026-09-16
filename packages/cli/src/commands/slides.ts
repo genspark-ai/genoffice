@@ -1,15 +1,17 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { basename, dirname } from 'node:path'
 import { flagBool, flagString } from '../args'
 import {
   applyOps,
   describeDeck,
+  PREVIEW_CHARS,
   inlineLocalFiles,
   openDeck,
   parseOps,
   saveDeck,
 } from '../formats/pptx'
-import { readInput, resolveInput, resolveOutput } from '../fs'
+import { previewChars } from '../preview'
+import { readInput, resolveInput, resolveOutput, writeOutput } from '../fs'
 import { outputDirectory, parseScale, renderToPngs } from '../formats/render'
 import {
   auditDeckBytes,
@@ -25,6 +27,8 @@ import type { TxnResult } from '@genoffice/pptx-ops'
 import type { CommandContext, CommandDef } from '../registry'
 import { CliError, EXIT, type CommandResult } from '../result'
 import { txnDetail, txnFailure } from './txn'
+import { BATCH_OPTIONS, batchCounts, batchMode, batchResult, failedBatch } from '../batch'
+import type { OpFailure } from '../op-errors'
 
 export const slidesCommand: CommandDef = {
   name: 'slides',
@@ -42,6 +46,17 @@ export const slidesCommand: CommandDef = {
       name: 'full',
       description: 'read: whole text and every table row instead of previews, plus speaker notes',
     },
+    {
+      name: 'layouts',
+      description:
+        'read: also list the deck layouts (name, index, placeholders) for addSlideWithLayout',
+    },
+    {
+      name: 'max-chars',
+      value: 'n',
+      description:
+        'read: preview length per text element (default 300); clipped text ends in …(+n chars)',
+    },
     { name: 'ops', value: 'file', description: 'apply: JSON ops file, or "-" for stdin' },
     { name: 'spec', value: 'file', description: 'replace: the one-page spec file to build' },
     {
@@ -51,12 +66,23 @@ export const slidesCommand: CommandDef = {
         'check <page.json> / replace: the outline the page is checked against (default: outline.json beside the page file or one folder up)',
     },
     { name: 'dry-run', description: 'apply: validate and print the plan without writing' },
-    { name: 'isolation', value: 'mode', description: 'apply: atomic (default) or per_op' },
+    ...BATCH_OPTIONS,
+    {
+      name: 'isolation',
+      value: 'mode',
+      description: 'apply: atomic (default) or per_op (same as --best-effort)',
+    },
     { name: 'out', value: 'path', description: 'apply: write here instead of in place' },
     {
       name: 'force',
       description:
         'apply: overwrite an existing --out file, or write while GenOffice has the file open',
+    },
+    {
+      name: 'page',
+      value: 'n',
+      description:
+        "check <page.json>: the 0-based outline entry the page is checked against (default: the file's position among its folder's page files)",
     },
     {
       name: 'scale',
@@ -83,6 +109,11 @@ export const slidesCommand: CommandDef = {
         throw new CliError(
           EXIT.usage,
           'expected "slides read|apply|audit|render|replace <file.pptx>" or "slides check <outline.json|page.json>"',
+          undefined,
+          {
+            reason: verb === undefined ? 'missing_argument' : 'invalid_argument',
+            suggestion: 'run `genoffice help slides`',
+          },
         )
     }
   },
@@ -91,7 +122,14 @@ export const slidesCommand: CommandDef = {
 function slideFlag(args: Parameters<CommandDef['run']>[0], count: number): number | undefined {
   const index = slideFlagValue(args)
   if (index === undefined) return undefined
-  if (index >= count) throw new CliError(EXIT.usage, `--slide out of range (0-${count - 1})`)
+  if (index >= count) {
+    throw new CliError(
+      EXIT.usage,
+      `--slide out of range (0-${count - 1})`,
+      { valid_range: [0, count - 1] },
+      { reason: 'out_of_range', suggestion: `use a 0-based index between 0 and ${count - 1}` },
+    )
+  }
   return index
 }
 
@@ -108,6 +146,8 @@ function slideFlagValue(args: Parameters<CommandDef['run']>[0]): number | undefi
     throw new CliError(
       EXIT.usage,
       `--slide must be one 0-based slide index (e.g. --slide 2), got "${only}"`,
+      undefined,
+      { reason: 'invalid_argument' },
     )
   }
   return index
@@ -121,12 +161,19 @@ async function read(
   const path = resolveInput(file, ctx)
   const opened = await openDeck(readInput(path))
   const index = slideFlag(args, opened.deck.slides.length)
-  const deck = describeDeck(opened, index, flagBool(args, 'full'))
+  const deck = describeDeck(
+    opened,
+    index,
+    flagBool(args, 'full'),
+    previewChars(args, PREVIEW_CHARS),
+    flagBool(args, 'layouts'),
+  )
   return {
-    summary: `${basename(path)}: ${deck.slides} slides`,
+    summary: `${basename(path)}: ${deck.slides} slides${deck.layouts ? `, ${deck.layouts.length} layouts` : ''}`,
     detail: {
       ...deck,
-      units: 'EMU (914400 per inch); slide ids s_<n> and element ids e_* are durable op targets',
+      units:
+        'EMU (914400 per inch); slide ids s_<n> and element ids e_* are durable op targets; layouts[].name/index feed addSlideWithLayout',
     },
   }
 }
@@ -137,10 +184,7 @@ async function apply(
   ctx: CommandContext,
 ): Promise<CommandResult> {
   const path = resolveInput(file, ctx)
-  const isolation = flagString(args, 'isolation') ?? 'atomic'
-  if (isolation !== 'atomic' && isolation !== 'per_op') {
-    throw new CliError(EXIT.usage, '--isolation must be atomic or per_op')
-  }
+  const mode = batchMode(args)
   const { text, source } = readOpsInput(args, ctx)
   const ops = inlineLocalFiles(parseOps(text, source), ctx)
   const opened = await openDeck(readInput(path))
@@ -148,47 +192,51 @@ async function apply(
   // One transaction per op, as `create` does: the executor validates a batch
   // against the pre-transaction deck, so a slide added by op 0 would not exist
   // for op 1 in a single transaction. Atomic still means nothing is written
-  // unless every op applied; per_op keeps what applied and reports the rest.
+  // unless every op applied; the other modes keep what applied and report the rest.
   const records: NonNullable<TxnResult['records']> = []
   const failures: NonNullable<TxnResult['failures']> = []
   // dry-run plan lines keep the caller's op index, so they line up with failures
   const plan: string[] = []
+  let applied = 0
   for (const [index, op] of ops.entries()) {
     // the op's own isolation mode, so a per_op failure is not worded as an atomic rollback
-    const r = applyOps(opened, [op], { isolation })
+    const r = applyOps(opened, [op], { isolation: mode === 'atomic' ? 'atomic' : 'per_op' })
     if (r.applied) {
+      applied++
       records.push(...(r.records ?? []))
       const slide = r.records?.[0]?.slideId
       plan.push(`${index}: ${op.op}${slide ? ` on ${slide}` : ''}`)
       continue
     }
-    if (isolation === 'atomic') throw txnFailure(r, index)
+    if (mode === 'atomic') throw failedBatch(txnFailure(r, index), ops.length)
     failures.push(...(r.failures ?? []).map((f) => ({ ...f, index })))
+    if (mode === 'stop_on_error') break
   }
   const r: TxnResult = { applied: records.length > 0, records, failures }
+  const counts = batchCounts(ops.length, applied, failures.length)
+  const finish = (base: CommandResult): CommandResult => {
+    const { failures: classified, ...detail } = txnDetail(r)
+    return batchResult({ ...base, detail }, counts, (classified as OpFailure[] | undefined) ?? [])
+  }
+  if (!applied) throw failedBatch(txnFailure(r), ops.length)
   if (dryRun) {
     // the batch ran on the in-memory deck only: nothing is applied to the file
     r.applied = false
     r.dryRun = true
     r.plan = plan
-    return {
-      summary: `dry run: ${records.length} of ${ops.length} ops validated`,
-      detail: txnDetail(r),
-    }
+    return finish({ summary: `dry run: ${applied} of ${ops.length} ops validated` })
   }
-  if (!r.applied) throw txnFailure(r)
   const output = resolveOutput(flagString(args, 'out'), ctx, {
     fallback: path,
     force: flagBool(args, 'force'),
     // in-place edits overwrite by design; --out onto another existing file needs --force
     fresh: flagString(args, 'out') !== undefined,
   })
-  writeFileSync(output, await saveDeck(opened))
-  return {
-    summary: `applied ${r.records?.length ?? 0} ops to ${basename(output)}`,
+  writeOutput(output, await saveDeck(opened))
+  return finish({
+    summary: `applied ${applied} of ${ops.length} ops to ${basename(output)}`,
     outputPath: output,
-    detail: txnDetail(r),
-  }
+  })
 }
 
 /** Geometry audit per slide: out of bounds, text overflow, overlapping content, with durable ids. */
@@ -204,14 +252,32 @@ async function audit(
   const pages = await auditDeckBytes(bytes, index)
   const failing = pages.filter((p) => p.issues.length > 0)
   const total = failing.reduce((n, p) => n + p.issues.length, 0)
+  const flat = pages.flatMap((p) => p.findings.map((f) => ({ page: p, f })))
+  const counts = { error: 0, warning: 0 }
+  for (const { f } of flat) counts[f.level]++
+  const issues = flat.map(({ page, f }, i) => ({
+    id: `${f.level[0]!.toUpperCase()}${i + 1}`,
+    code: f.code,
+    level: f.level,
+    path: `${page.id}/${f.el}`,
+    slide: page.slide,
+    el: f.el,
+    ...(f.els ? { els: f.els } : {}),
+    message: f.message,
+    box: f.box,
+    ...(f.overflowPx !== undefined ? { overflowPx: f.overflowPx } : {}),
+    ...(f.suggest ? { suggest: f.suggest } : {}),
+  }))
   return {
     summary: failing.length
       ? `${basename(path)}: ${total} issue(s) on ${failing.length} of ${pages.length} slide(s)`
       : `${basename(path)}: ${pages.length} slide(s), no layout issues`,
     detail: {
-      slides: pages,
+      issues,
+      counts,
+      slides: pages.map((p) => ({ slide: p.slide, id: p.id, issues: p.issues })),
       metrics: 'heuristic glyph widths; overflow figures are approximate',
-      ids: 'element ids match `slides read` / `slides apply` targets',
+      ids: 'element ids match `slides read` / `slides apply` targets; `suggest` is a setTransform op (EMU) for `slides apply`',
     },
   }
 }
@@ -231,7 +297,11 @@ async function check(
   const dir = dirname(path)
   if (looksLikeOutline(text)) {
     const r = parseOutline(text)
-    if (!r.ok) throw new CliError(EXIT.usage, `${basename(path)}: ${r.error}`)
+    if (!r.ok) {
+      throw new CliError(EXIT.usage, `${basename(path)}: ${r.error}`, undefined, {
+        reason: 'invalid_argument',
+      })
+    }
     const errors = r.issues.filter((i) => i.level === 'error')
     const style = findStageFiles(dir, ctx).style
     const detail = {
@@ -257,7 +327,7 @@ async function check(
   }
   const explicit = flagString(args, 'outline')
   const stage = stageContext(dir, ctx, explicit ? resolveInput(explicit, ctx) : undefined)
-  const page = pageIndexOf(path)
+  const page = pageFlagValue(args) ?? pageIndexOf(path)
   const r = await checkPageSpec(text, path, ctx, { context: stage, page })
   const outline = r.stage?.outline ?? []
   const offPalette = r.stage?.offPalette ?? []
@@ -300,6 +370,20 @@ async function check(
   }
 }
 
+function pageFlagValue(args: Parameters<CommandDef['run']>[0]): number | undefined {
+  const raw = flagString(args, 'page')
+  if (raw === undefined) return undefined
+  if (!/^\d+$/.test(raw.trim())) {
+    throw new CliError(
+      EXIT.usage,
+      `--page must be one 0-based outline index (e.g. --page 2), got "${raw}"`,
+      undefined,
+      { reason: 'invalid_argument' },
+    )
+  }
+  return Number(raw)
+}
+
 function looksLikeOutline(text: string): boolean {
   try {
     const v = JSON.parse(text) as Record<string, unknown> | null
@@ -317,10 +401,14 @@ async function replace(
   args: Parameters<CommandDef['run']>[0],
   ctx: CommandContext,
 ): Promise<CommandResult> {
-  if (slideFlagValue(args) === undefined) throw new CliError(EXIT.usage, 'missing --slide <n>')
+  if (slideFlagValue(args) === undefined)
+    throw new CliError(EXIT.usage, 'missing --slide <n>', undefined, { reason: 'missing_argument' })
   const path = resolveInput(file, ctx)
   const specFile = flagString(args, 'spec')
-  if (!specFile) throw new CliError(EXIT.usage, 'missing --spec <page.json>')
+  if (!specFile)
+    throw new CliError(EXIT.usage, 'missing --spec <page.json>', undefined, {
+      reason: 'missing_argument',
+    })
   const specPath = resolveInput(specFile, ctx)
   const opened = await openDeck(readInput(path))
   const index = slideFlag(args, opened.deck.slides.length)!
@@ -343,7 +431,7 @@ async function replace(
     force: flagBool(args, 'force'),
     fresh: flagString(args, 'out') !== undefined,
   })
-  writeFileSync(output, await saveDeck(opened))
+  writeOutput(output, await saveDeck(opened))
   return {
     summary: `replaced slide ${index} of ${basename(output)} from ${basename(specPath)}`,
     outputPath: output,

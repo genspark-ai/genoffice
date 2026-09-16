@@ -241,10 +241,13 @@ export function SlideShowView({
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  /** Play-order position shown before the current one ("last slide viewed" action) */
+  const lastViewedRef = useRef<number | null>(null)
   const goTo = useCallback(
     (nextPos: number, animate: boolean) => {
       const target = order[nextPos]
       if (target == null) return
+      if (nextPos !== pos) lastViewedRef.current = pos
       navModeRef.current = animate ? 'fresh' : 'all'
       const current = order[pos]
       let kind: TransitionKind = 'none'
@@ -299,10 +302,38 @@ export function SlideShowView({
         }
         return
       }
+      if (target.kind === 'action') {
+        const jump = (p: number | null) => {
+          if (p == null || p < 0 || p >= order.length) return
+          setEnded(false)
+          goTo(p, true)
+        }
+        // Page moves only, like PowerPoint: no animation stepping, nothing past either end
+        switch (target.action) {
+          case 'nextslide':
+            jump(pos + 1)
+            return
+          case 'previousslide':
+            jump(pos - 1)
+            return
+          case 'firstslide':
+            jump(0)
+            return
+          case 'lastslide':
+            jump(order.length - 1)
+            return
+          case 'lastslideviewed':
+            jump(lastViewedRef.current)
+            return
+          case 'endshow':
+            exitRef.current()
+            return
+        }
+      }
       // Electron routes window.open to the system browser (setWindowOpenHandler denies in-app windows)
-      window.open(target.kind === 'url' ? target.url : '', '_blank', 'noreferrer')
+      window.open(target.url, '_blank', 'noreferrer')
     },
-    [order, goTo],
+    [order, goTo, pos],
   )
   /** Click/hover position → slide-model px → topmost linked element's target (null = no link there) */
   const linkAt = useCallback(

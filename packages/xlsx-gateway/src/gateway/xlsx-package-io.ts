@@ -370,7 +370,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 /**
  * Same-directory temp + rename keeps the save atomic. Windows refuses the
  * rename with EPERM/EACCES/EBUSY while antivirus, search indexing, or cloud
- * sync briefly holds either path (alpha: "EPERM: operation not permitted,
+ * sync briefly holds either path (user report: "EPERM: operation not permitted,
  * rename .tmp.xlsx → …") — retry with backoff, then fall back to copying the
  * finished bytes over the target in place; the temp file survives until the
  * copy lands. The in-place copy truncates the target before writing, so the

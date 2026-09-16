@@ -133,7 +133,6 @@ export const de = {
   appMoreItems: '+{count} weitere…',
   appTruncationNote: 'Erste {shown} von {total}',
   appGoToButtonTitle: 'Gehe zu (⌘G)',
-  appNameBoxTitle: 'Namenfeld — Adresse oder Namen eingeben, dann Eingabetaste drücken',
   appPivotChartHintIn: 'PivotChart aus der aktuellen PivotTable erstellen',
   appPivotChartHintOut:
     'Wählen Sie zuerst eine Zelle im PivotTable-Ausgabebereich aus, dann einen Diagrammtyp',

@@ -107,6 +107,10 @@ export const ko = {
     'PDF를 내보냈습니다: {path}(용지 크기 혼합, {n}개 그룹을 페이지 순서로 병합)',
   appExportPdfCanceled: 'PDF 내보내기를 취소했습니다',
   appExportHtmlCanceled: 'HTML 내보내기를 취소했습니다',
+  appExportingImages: '이미지 내보내는 중…',
+  appExportImagesProgress: '이미지 {count}장 내보내는 중…',
+  appExportImagesDone: '이미지 {count}장을 {dir}에 내보냈습니다',
+  appExportImagesFailed: '이미지 내보내기 실패: {error}',
   appMixedExportOpening:
     '용지 크기가 혼합된 문서: 페이지 미리 보기를 열어 페이지별로 병합하여 내보내는 중…',
   // Comments
@@ -244,6 +248,7 @@ export const ko = {
   // Navigation pane
   appNavTitle: '탐색',
   appNavNoHeadings: '문서에 제목이 없습니다',
+  appNavOutline: '목차',
   // Ruler
   appTabTypeTip: '탭 종류: {type}(클릭하여 전환)',
   appTabStopTitle: '{type} 탭 @ {pos}cm',
@@ -295,6 +300,10 @@ export const ko = {
   appLangGerman: '독일어',
   appLangSpanish: '스페인어',
   appWrapTextMenu: '텍스트 줄 바꿈',
+  appViewImage: '이미지 보기',
+  appSaveImageAs: '이미지를 다른 이름으로 저장…',
+  appImgActualSize: '실제 크기',
+  appImgFitWindow: '창에 맞추기',
   appHyperlinkMenu: '하이퍼링크…',
   appNewComment: '새 메모',
   appWrapInline: '텍스트 줄 안',

@@ -125,7 +125,6 @@ export const ar = {
   appMoreItems: '+{count} عنصرًا آخر…',
   appTruncationNote: 'أول {shown} من {total}',
   appGoToButtonTitle: 'الانتقال إلى (⌘G)',
-  appNameBoxTitle: 'مربع الاسم — اكتب عنوانًا أو اسمًا ثم اضغط Enter',
   appPivotChartHintIn: 'إنشاء مخطط PivotChart من الجدول المحوري الحالي',
   appPivotChartHintOut: 'حدد أولاً خلية داخل ناحية إخراج الجدول المحوري ثم اختر نوع المخطط',
   appChartColumn: 'عمودي',

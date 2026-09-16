@@ -54,8 +54,8 @@ export function modelHasFixedSampling(model: string): boolean {
 
 /**
  * Model ids that reject image input even under a vision-capable provider.
- * DeepSeek V4 Pro and Flash are text-only; their -vision* branches are
- * excluded so the direct Vision Exp model can receive screenshots.
+ * DeepSeek V4 Pro and V4 Flash are text-only; V4.1 Flash and the -vision*
+ * branches take images, so they fall through and receive screenshots.
  */
 export function modelLacksVision(model: string): boolean {
   return /(^|\/)deep-?seek-v4-(?:pro(?:$|-)|flash(?!-vision))/i.test(model)

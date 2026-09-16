@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { Lang } from '@genoffice/i18n'
 import type { AiStreamChunk } from '@genoffice/ai-provider'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
+import { installFilesPaneBridge } from '@genoffice/electron-utils/files-pane-bridge'
 import { AI_CHANNELS, PDF_CHANNELS } from '../shared/ipc'
 import type { PdfApi, UiTheme } from '../shared/ipc'
 
@@ -65,6 +66,11 @@ const api: PdfApi = {
     ipcRenderer.on(PDF_CHANNELS.printRequest, listener)
     return () => ipcRenderer.removeListener(PDF_CHANNELS.printRequest, listener)
   },
+  onFileRenamed: (handler) => {
+    const listener = (_e: Electron.IpcRendererEvent, newPath: string) => handler(newPath)
+    ipcRenderer.on(PDF_CHANNELS.fileRenamed, listener)
+    return () => ipcRenderer.removeListener(PDF_CHANNELS.fileRenamed, listener)
+  },
   getLanguage: () => ipcRenderer.invoke(PDF_CHANNELS.getLanguage),
   onLanguageChanged: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, lang: Lang) => handler(lang)
@@ -100,7 +106,7 @@ const api: PdfApi = {
 }
 
 // Shared project chat store (registered app-wide by the shell's main init):
-// AI PDF conversations persist per file, like Docs/Sheets (alpha ledger r142)
+// AI PDF conversations persist per file, like Docs/Sheets
 const projectApi = {
   resolveChat: (args: { filePath: string | null; tempChatId?: string }) =>
     ipcRenderer.invoke('project:resolveChat', args),
@@ -116,3 +122,5 @@ contextBridge.exposeInMainWorld('projectApi', projectApi)
 
 // open documents dragged from the OS onto this tab as a new shell tab
 installDropOpenBridge()
+// folder tree over the default save folder (Files pane)
+installFilesPaneBridge()

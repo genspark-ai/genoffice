@@ -126,9 +126,19 @@ export interface MediaToolOptions {
   notLoggedInError?: string
 }
 
+/** Genspark background-removal model — chained after generation for transparentBackground */
+export const GSK_RMBG_MODEL = 'fal-bria-rmbg'
+
+export type GenerateImageToolOp = GskGenerateImageOptions & {
+  /** The result must have real PNG alpha (icons/logos/cutouts). Generation models cannot
+   * produce transparency from the prompt alone — they paint a fake gray checkerboard into
+   * the pixels — so the tool strips the background in a second pass instead. */
+  transparentBackground?: boolean
+}
+
 export async function generateImageTool(
   settingsPath: string,
-  op: GskGenerateImageOptions,
+  op: GenerateImageToolOp,
   options: MediaToolOptions = {},
 ): Promise<{ url?: string; error?: string }> {
   const prompt = String(op.prompt ?? '').trim()
@@ -139,7 +149,18 @@ export async function generateImageTool(
     if (!byok) {
       const gate = gskGate(settings, options.notLoggedInError ?? GSK_NOT_LOGGED_IN_ERROR)
       if (gate) return gate
-      return { url: (await gskGenerateImage({ ...op, prompt })).url }
+      const gen = await gskGenerateImage({ ...op, prompt })
+      if (!op.transparentBackground || op.model === GSK_RMBG_MODEL) return { url: gen.url }
+      try {
+        const cut = await gskGenerateImage({
+          prompt: 'remove the background completely, keep only the subject',
+          model: GSK_RMBG_MODEL,
+          referenceImageUrls: [gen.url],
+        })
+        return { url: cut.url }
+      } catch {
+        return { url: gen.url } // strip failed: the opaque image is still usable
+      }
     }
     // `model` names Genspark-only special models (fal-*); BYOK uses the configured image model
     const references = await Promise.all((op.referenceImageUrls ?? []).map(loadMediaReference))
@@ -147,6 +168,7 @@ export async function generateImageTool(
       prompt,
       aspectRatio: op.aspectRatio,
       references,
+      transparent: op.transparentBackground === true,
     })
     return { url: storeGeneratedImage(image.bytes, image.mime) }
   } catch (err) {

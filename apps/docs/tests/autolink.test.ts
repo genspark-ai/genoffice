@@ -1,5 +1,5 @@
 /**
- * Word AutoFormat parity (alpha ledger r151): a URL followed by space or
+ * Word AutoFormat parity: a URL followed by space or
  * Enter becomes a hyperlink; trailing punctuation stays outside; existing
  * links and non-URLs are untouched.
  */

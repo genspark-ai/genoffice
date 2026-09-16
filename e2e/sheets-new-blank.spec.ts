@@ -45,7 +45,7 @@ test.describe('sheets: new blank workbook', () => {
       })
       if (!grid) throw new Error('worksheet canvas not found')
       await sheets.mouse.click(grid.x + 46 + 43, grid.y + 24 + 12)
-      await expect(sheets.locator('.name-box')).toHaveValue('A1')
+      await expect(sheets.locator('[data-u-comp="defined-name"] input')).toHaveValue('A1')
       await sheets.keyboard.type('42', { delay: 50 })
       await sheets.keyboard.press('Enter')
       await sheets.screenshot({ path: screenshotPath('sheets-new-blank-edited') })

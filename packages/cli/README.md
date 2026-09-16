@@ -11,21 +11,24 @@ genoffice convert scan.pdf --to docx
 genoffice convert data.csv --to xlsx --out out/data.xlsx
 genoffice open report.docx
 genoffice convert scan.pdf --to pptx --json
-genoffice guide slides                         # op groups; `genoffice guide slides insert` for one group
-genoffice slides read deck.pptx [--full] --json # durable ids + geometry an agent targets ops at; --full: whole text, tables, notes
+genoffice guide slides                         # op groups; `genoffice guide slides insert` for one group, `genoffice guide slides setText` for one op
+genoffice slides read deck.pptx [--full] --json # durable ids + geometry an agent targets ops at; --full: whole text, tables, notes; text elements add `effective` (displayed style of the first run + `src` = the inheritance layer each value comes from)
 genoffice create --type pptx --ops deck.json --out deck.pptx
 genoffice create --type pptx --spec deck/pages --outline deck/outline.json --out deck.pptx   # one page spec file per slide (`genoffice guide slides design|spec`)
 genoffice slides check deck/outline.json | deck/pages/03.json   # outline rules (exit 1 on errors) / build + audit one page file
 genoffice slides replace deck.pptx --slide 2 --spec deck/pages/03.json   # rebuild one slide from its page file
 genoffice slides apply deck.pptx --ops edit.json [--dry-run] [--out copy.pptx]
-genoffice slides audit deck.pptx [--slide 0] --json            # out-of-bounds / text overflow / overlap per slide, durable ids
+genoffice slides audit deck.pptx [--slide 0] --json            # out-of-bounds / text overflow / overlap: typed issues with durable ids and a setTransform `suggest` where geometry fixes it
 genoffice slides render deck.pptx --out shots/ [--scale 2]     # one PNG per slide through the app's PDF export
 genoffice render report.docx|book.xlsx|page.html|file.pdf --out shots/ [--page 3] [--scale 2]   # one PNG per page of any document, to look at what was made
+genoffice render deck.pptx --out shots/ --el e_12 [--pad 16]   # plus the page cropped to that element (<stem>-NN-e_12.png)
+genoffice render deck.pptx --out shots/ --grid [--cols 4] [--tile 320]   # plus <stem>-grid.png: every page on one contact sheet
 genoffice create --type xlsx --from table.json --out book.xlsx   # 2-D array or {sheets:[{name,rows}]}; "=..." cells are formulas
-genoffice create --type xlsx --from data.csv --out data.xlsx
+genoffice create --type xlsx --from data.csv --out data.xlsx [--header] [--decimal ,]   # ISO dates become real dates; sep= lines are honoured
 genoffice sheet read book.xlsx [--sheet Data] [--range A1:D20] [--formats] --json   # values, formulas, sheet features; --formats adds styles, widths, heights
 genoffice sheet apply book.xlsx --cells cells.json    # [{cell:"B2", value|formula, style?, sheet?}]
 genoffice sheet apply book.xlsx --ops ops.json [--dry-run]   # workbook DSL: cells, formats, charts, tables, filters, conditional formats, validation, links, notes, panes, page setup, sheets (`genoffice guide sheets`)
+genoffice sheet check book.xlsx --json                # formula errors, missing-sheet references, broken defined names, chart ranges off the data, ### columns (suggest: set_col_width), placeholder text, existing rules; exit 0
 genoffice create --type docx --from report.md --out report.docx      # or --from fragment.html (restricted HTML)
 genoffice convert notes.md --to docx|html
 genoffice convert report.docx --to html               # the Word editor's standalone-HTML export
@@ -38,7 +41,8 @@ genoffice image "isometric office, soft light" --aspect 16:9 --out hero.png
 genoffice media photo.jpg --ask "What text is in this picture?" --json
 genoffice docs read report.docx [--range 0-9] [--html] [--full] [--comments] [--revisions] [--header-footer] --json   # blocks (--full: whole text), comment threads, tracked changes, header/footer text
 genoffice docs apply report.docx --ops ops.json [--dry-run]           # apply_ops entries + insert_content / replace_blocks / insert_image / insert_chart / edit_chart / set_header_footer / reply_comment / resolve_comment
-genoffice guide docs                                                   # op signatures + restricted-HTML rules
+genoffice docs check report.docx --json                               # fields without results, broken bookmark references, stale TOC, missing images, empty charts/headings, heading level skips, placeholder text, pending revisions, open comments; exit 0
+genoffice guide docs                                                   # op signatures + restricted-HTML rules (`guide <domain> --json` = the catalog with each op's schema and a fingerprint)
 ```
 
 Word and Markdown commands run the docs and markdown editors under jsdom (installed once per process, loaded lazily). Those modules are imported from the app renderers by relative path until they move into packages of their own.
@@ -50,9 +54,50 @@ Workbook writes go through `@genoffice/xlsx-gateway` (the app's save path). The 
 `create --type pptx --spec` is the CLI end of the app's deck generation pipeline (`@genoffice/pipelines`): the caller's agent does the design work following `genoffice guide slides design`, writing the style sheet, the outline and one page spec file per slide (`genoffice guide slides spec`), and the same page builder the app uses turns them into a pptx, measuring every text box and growing it to its content. Where the app separates the stages into model calls, the CLI separates them into files: `slides check` validates the outline against the planning rules and builds and audits a single page file, then checks it against its outline entry and the style sheet's palette (both found beside the page files), `create --spec <dir>` runs the same checks on every file and refuses to assemble a deck with pages missing or disagreeing with the outline, and `slides replace` rebuilds one slide from its file. `slides audit` runs the app's deterministic layout audit; `slides render` gives the agent PNGs to look at. No model call happens inside genoffice.
 
 Every command prints a one-line human summary by default or a single JSON
-object with `--json` (`{ status, command, summary, output_path?, detail? }`).
-Exit codes: `0` ok, `1` usage, `2` file, `3` conversion failed, `4` app not
-available.
+object with `--json` (`{ status, command, summary, output_path?, warnings?, detail? }`);
+`warnings[]` (`{ code, message, suggestion? }`) carries advisories about a
+result that still succeeded.
+Errors are `{ status: "error", code, error, message, suggestion?, detail? }`:
+`code` is the exit code, `error` a stable snake_case reason (`unknown_op`,
+`target_not_found`, `out_of_range`, `sheet_not_found`, `file_open_in_gui`, …)
+and `suggestion` the next step (with `did you mean …?` for one-typo
+mistakes); the facts an agent needs to retry (valid
+ranges, available ids, sheet names, usage lines) come back as fields in
+`detail` rather than only inside the message. Exit codes: `0` ok, `1` usage,
+`2` file, `3` conversion failed, `4` app not available.
+
+## MCP server
+
+`genoffice mcp` serves the same commands as Model Context Protocol tools on
+stdio, for clients that cannot run a shell or should not (Claude Desktop,
+Cursor, sandboxed agents). Nothing else is needed on the machine: the process
+runs on the app's Node runtime like every other command, and GenOffice itself
+only starts, hidden, for the conversions that need its renderer.
+
+```bash
+claude mcp add --transport stdio genoffice -- genoffice mcp
+```
+
+```json
+{ "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
+```
+
+The tool table is `src/mcp/tools.ts`: one tool per command verb
+(`docs_read`, `docs_apply`, `sheet_apply`, `slides_render`, `convert`, …),
+each parameter taken from the command's own option list, so the two surfaces
+cannot drift. Ops, cell lists, specs and Markdown are passed inline and land
+in a scratch directory for the length of the call; `render` and
+`slides_render` return the PNGs as image content. Results are the same JSON
+envelope `--json` prints; an error comes back with `isError` and the same
+`error` reason. The op references are also resources (`genoffice://guide/docs`,
+`…/sheets`, `…/slides`, `…/slides/design`, `…/slides/spec`).
+
+A new deck goes through `deck_start` (style sheet + outline, returns the
+design and spec guides), `deck_page` (one page per call, checked against its
+outline entry and the palette), `deck_build` and `deck_replace`
+(`src/mcp/deck.ts`). The deck directory is the state, laid out exactly as the
+command line's staged flow, so a deck started from either side can be finished
+from the other.
 
 ## Putting genoffice on the PATH
 

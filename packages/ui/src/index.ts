@@ -76,6 +76,7 @@ export {
   type CropFractions,
   type ImageDialogLabels,
 } from './image-dialogs'
+export { ImageViewer, type ImageViewerLabels } from './image-viewer'
 export {
   removeBackground,
   sampleBackgroundColors,
@@ -92,3 +93,15 @@ export {
   type AutoSaveDefault,
   type AutoSaveDefaultApi,
 } from './auto-save-pref'
+export { FilesPane, FilesEdgeTab, type FilesPaneProps } from './files-pane/FilesPane'
+export { filesPaneTitle } from './files-pane/strings'
+export type {
+  FileEntry,
+  FileOpResult,
+  FilesPaneApi,
+  FolderEntry,
+  FolderListing,
+  FolderRoot,
+  MoveConflictPolicy,
+  MoveResult,
+} from './files-pane/types'

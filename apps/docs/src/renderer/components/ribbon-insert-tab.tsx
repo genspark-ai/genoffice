@@ -528,7 +528,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
   // Word parity: with the caret on an existing hyperlink the dialog EDITS it
   // — text and address pre-filled, plus Remove Link. Imported links carry the
   // same mark as in-app ones, but there was no way to view, change, or
-  // remove any link after creation (alpha ledger r164).
+  // remove any link after creation.
   const [linkAtOpen] = useState(() => {
     const { $from, empty } = editor.state.selection
     const markType = editor.state.schema.marks.link
@@ -541,7 +541,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
     if (!empty && (from < range.from || to > range.to)) return null
     // Read attrs from the run itself, not the selection: at the link's
     // trailing edge $head.marks() drops inclusive:false marks, so
-    // getAttributes('link') comes back empty for a real link (bugbot).
+    // getAttributes('link') comes back empty for a real link.
     const attrs = editor.state.doc
       .nodeAt(range.from)
       ?.marks.find((mark) => mark.type === markType)?.attrs
@@ -555,7 +555,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
     }
   })
   // Word parity: selected text pre-populates the display-text field, so a
-  // select-then-link flow only needs the address (alpha ledger r150).
+  // select-then-link flow only needs the address.
   const [selectionAtOpen] = useState(() => {
     const { from, to } = editor.state.selection
     return { from, to, text: from === to ? '' : editor.state.doc.textBetween(from, to, ' ') }
@@ -593,7 +593,7 @@ export function LinkInsertModal({ editor, onClose }: { editor: Editor; onClose: 
     } else if (selectionAtOpen.text && text === selectionAtOpen.text.trim()) {
       // untouched display text: mark the ORIGINAL selection instead of
       // re-inserting plain text — character formatting, comments and inline
-      // objects in the selection survive (bugbot)
+      // objects in the selection survive
       editor
         .chain()
         .focus()

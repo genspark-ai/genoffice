@@ -54,7 +54,9 @@ async function describe(path: string, ext: string, password?: string): Promise<D
     case 'txt':
       return describeText(path, ext)
     default:
-      throw new CliError(EXIT.usage, `unsupported file type: .${ext}`)
+      throw new CliError(EXIT.usage, `unsupported file type: .${ext}`, undefined, {
+        reason: 'unsupported',
+      })
   }
 }
 

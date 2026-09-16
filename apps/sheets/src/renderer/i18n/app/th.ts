@@ -126,7 +126,6 @@ export const th = {
   appMoreItems: '+{count} รายการ…',
   appTruncationNote: '{shown} รายการแรกจาก {total}',
   appGoToButtonTitle: 'ไปที่ (⌘G)',
-  appNameBoxTitle: 'กล่องชื่อ — พิมพ์ที่อยู่หรือชื่อ แล้วกด Enter',
   appPivotChartHintIn: 'สร้าง PivotChart จาก PivotTable ปัจจุบัน',
   appPivotChartHintOut: 'เลือกเซลล์ภายในพื้นที่แสดงผลของ PivotTable ก่อน แล้วจึงเลือกชนิดแผนภูมิ',
   appChartColumn: 'คอลัมน์',

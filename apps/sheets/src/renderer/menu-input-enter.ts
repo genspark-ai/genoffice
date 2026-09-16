@@ -5,7 +5,7 @@
  * N rows", column width / row height) use its MenuItemInput label component,
  * whose Enter handler only commits the typed number — the menu stays open
  * and nothing happens until the user separately clicks the row, so Enter
- * looks dead (alpha feedback: typed a count into "Insert N columns left" and pressed
+ * looks dead (user report: typed a count into "Insert N columns left" and pressed
  * Enter to no effect). Excel executes on Enter.
  *
  * Re-register the component (ComponentManager.register overwrites by key)

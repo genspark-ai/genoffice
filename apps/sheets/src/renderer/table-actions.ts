@@ -48,9 +48,7 @@ export function inferContinuousRegion(
   const lastRow = Math.max(anchorRow, worksheet.getLastRow())
   const lastColumn = Math.max(anchorColumn, worksheet.getLastColumn())
   let grew = true
-  let guard = 0
-  while (grew && guard < 10_000) {
-    guard += 1
+  while (grew) {
     grew = false
     if (startRow > 0) {
       for (let c = startColumn; c <= endColumn; c += 1) {
@@ -89,8 +87,7 @@ export function inferContinuousRegion(
       }
     }
   }
-  // A capped scan has not found the boundary; never return a truncated source.
-  // Need at least header plus one data row.
-  if (grew || endRow <= startRow) return null
+  // Need at least header plus one data row
+  if (endRow <= startRow) return null
   return { startRow, startColumn, endRow, endColumn }
 }

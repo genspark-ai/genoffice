@@ -207,6 +207,48 @@ describe('generateImageWithProvider', () => {
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined()
   })
 
+  it('passes background=transparent only to gpt-image models', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider(
+      'openai',
+      { apiKey: 'sk-1', imageModel: 'gpt-image-1', analysisModel: '' },
+      { prompt: 'a red icon', transparent: true },
+    )
+    let body = JSON.parse(
+      (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    )
+    expect(body.background).toBe('transparent')
+    // dall-e-3 and lookalike vendors reject the field — it must stay off their requests
+    fetchMock.mockClear()
+    await generateImageWithProvider(
+      'openai',
+      { apiKey: 'sk-1', imageModel: 'dall-e-3', analysisModel: '' },
+      { prompt: 'a red icon', transparent: true },
+    )
+    body = JSON.parse(
+      (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string,
+    )
+    expect(body.background).toBeUndefined()
+  })
+
+  it('passes background=transparent on gpt-image multipart edits', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ data: [{ b64_json: PNG_B64 }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateImageWithProvider(
+      'openai',
+      { apiKey: 'sk-1', imageModel: 'gpt-image-1', analysisModel: '' },
+      {
+        prompt: 'isolate the icon',
+        references: [{ bytes: PNG, mime: 'image/png' }],
+        transparent: true,
+      },
+    )
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.openai.com/v1/images/edits')
+    expect((init.body as FormData).get('background')).toBe('transparent')
+  })
+
   it('calls Gemini generateContent with IMAGE modality and reads inlineData back', async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

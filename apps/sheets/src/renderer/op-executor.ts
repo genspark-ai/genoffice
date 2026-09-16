@@ -39,6 +39,7 @@ import {
   removeBulkConstantFill,
   removeTableAdd,
   restoreJournalCells,
+  type HeaderFooterParts,
   type PageSetupJournalState,
 } from './edit-journal'
 import { indexedFormulaText } from './formula-view'
@@ -692,6 +693,11 @@ async function executeOp(op: PlannedOp, run: OpRun): Promise<void> {
     if (op.printGridlines !== undefined) patch.printGridlines = op.printGridlines
     if (op.printHeadings !== undefined) patch.printHeadings = op.printHeadings
     if (op.printArea !== undefined) patch.printArea = op.printArea
+    if (op.printTitles !== undefined) patch.printTitles = op.printTitles
+    if (op.header !== undefined) patch.header = headerFooterParts(op.header)
+    if (op.footer !== undefined) patch.footer = headerFooterParts(op.footer)
+    if (op.rowBreaks !== undefined) patch.rowBreaks = op.rowBreaks
+    if (op.colBreaks !== undefined) patch.colBreaks = op.colBreaks
     // Scale and fit-to-page are exclusive; whichever the op sets wins,
     // and a fit on one axis keeps the other axis' prior value.
     if (op.scale !== undefined) {
@@ -1514,4 +1520,19 @@ async function executeOp(op: PlannedOp, run: OpRun): Promise<void> {
     )
   }
   run.markApplied()
+}
+
+function headerFooterParts(
+  parts: {
+    left?: string | undefined
+    center?: string | undefined
+    right?: string | undefined
+  } | null,
+): HeaderFooterParts | null {
+  if (parts === null) return null
+  return {
+    ...(parts.left === undefined ? {} : { left: parts.left }),
+    ...(parts.center === undefined ? {} : { center: parts.center }),
+    ...(parts.right === undefined ? {} : { right: parts.right }),
+  }
 }

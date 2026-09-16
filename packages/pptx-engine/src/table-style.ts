@@ -151,6 +151,80 @@ const BUILTIN: Record<string, { family: BuiltinFamily; accent?: string }> = {
   '{46F890A9-2807-4EBB-B81D-B2AA78EC7F39}': { family: 'dark2', accent: 'accent5' },
 }
 
+const FAMILY_LABEL: Record<BuiltinFamily, string> = {
+  themed1: 'Themed Style 1',
+  themed2: 'Themed Style 2',
+  light1: 'Light Style 1',
+  light2: 'Light Style 2',
+  light3: 'Light Style 3',
+  medium1: 'Medium Style 1',
+  medium2: 'Medium Style 2',
+  medium3: 'Medium Style 3',
+  medium4: 'Medium Style 4',
+  dark1: 'Dark Style 1',
+  dark2: 'Dark Style 2',
+}
+
+export interface BuiltinTableStyle {
+  id: string
+  /** Gallery name as PowerPoint shows it ("Medium Style 2 - Accent 1") */
+  name: string
+  family: BuiltinFamily
+  accent?: string
+}
+
+function builtinName(family: BuiltinFamily, accent?: string): string {
+  if (!accent) {
+    if (family === 'themed1') return 'No Style, No Grid'
+    if (family === 'themed2') return 'No Style, Table Grid'
+    return FAMILY_LABEL[family]
+  }
+  const n = accent.slice('accent'.length)
+  // Dark Style 2 pairs two accents per definition (official gallery labels)
+  if (family === 'dark2') return `${FAMILY_LABEL[family]} - Accent ${n}/Accent ${Number(n) + 1}`
+  return `${FAMILY_LABEL[family]} - Accent ${n}`
+}
+
+/** The 74 PowerPoint built-in table styles, gallery order. */
+export const BUILTIN_TABLE_STYLES: readonly BuiltinTableStyle[] = Object.entries(BUILTIN).map(
+  ([id, def]) => ({
+    id,
+    name: builtinName(def.family, def.accent),
+    family: def.family,
+    ...(def.accent ? { accent: def.accent } : {}),
+  }),
+)
+
+/** Gallery name of a built-in style id, or undefined for custom/unknown ids. */
+export function builtinTableStyleName(styleId: string | undefined): string | undefined {
+  if (!styleId) return undefined
+  const def = BUILTIN[styleId]
+  return def ? builtinName(def.family, def.accent) : undefined
+}
+
+/**
+ * GUID for a built-in style given its GUID or gallery name (case-insensitive,
+ * "Dark Style 2 - Accent 2" resolves to the Accent 1/Accent 2 definition).
+ */
+export function resolveBuiltinTableStyleId(nameOrId: string): string | undefined {
+  const key = nameOrId.trim()
+  if (/^\{[0-9A-Fa-f-]{36}\}$/.test(key)) {
+    const upper = key.toUpperCase()
+    return BUILTIN[upper] ? upper : undefined
+  }
+  const norm = key.toLowerCase().replace(/\s+/g, ' ')
+  for (const s of BUILTIN_TABLE_STYLES) {
+    if (s.name.toLowerCase() === norm) return s.id
+    if (s.family === 'dark2' && s.accent) {
+      const n = Number(s.accent.slice('accent'.length))
+      for (const alt of [n, n + 1]) {
+        if (norm === `dark style 2 - accent ${alt}`) return s.id
+      }
+    }
+  }
+  return undefined
+}
+
 /** Compatibility: the made-up "no style" GUID this app used to write (not in the official table). */
 export const LEGACY_NO_STYLE = '{2D5ABB26-0587-4C30-8999-92F81FD0307D}'
 

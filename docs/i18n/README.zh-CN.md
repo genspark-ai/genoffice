@@ -24,6 +24,7 @@ Word、Excel、PowerPoint 和 PDF 文件，由你与你的 AI 共同编辑，并
 <p align="center">
   <a href="#download"><b>下载</b></a> ·
   <a href="#command-line-and-agent-skill"><b>CLI</b></a> ·
+  <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>官网</b></a> ·
   <a href="https://genoffice.ai/join"><b>社区</b></a> ·
   <a href="../../PRIVACY.md"><b>隐私</b></a>
@@ -175,6 +176,27 @@ Claude Code、Codex、Cursor、Gemini CLI、GitHub Copilot、OpenCode 或 Windsu
 </tr>
 </table>
 
+### 8 · MCP —— 通过 Model Context Protocol 提供的同一套工具
+
+每一条 `genoffice` 命令同时也是一个 MCP 工具。Claude Code、Claude Desktop、
+Cursor 及任何其他 MCP 客户端都能自行启动 `genoffice mcp`，无需安装 skill，
+也无需打开任何窗口，即可获得 29 个工具以及以资源形式提供的操作参考文档。
+应用内置的第二个 HTTP 服务器，还能让智能体在一个可见的编辑器标签页中构建
+Word 文档，供你实时查看。
+
+<img src="../assets/readme/mcp-deck-motion.webp" alt="Claude Code 通过 genoffice MCP 服务器构建一份八页可再生能源投资简报的过程延时：它会搜索图表和照片，并用 media 检查每一张候选图片，deck_start 写入样式表和大纲，deck_page 逐页添加经过检查的页面，deck_build 组装出 .pptx，slides_render 返回每一页的图片；最终这份演示文稿会在 GenOffice Slides 中打开" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="../assets/readme/mcp-deck-in-app.webp" alt="GenOffice Slides 中显示 Claude Code 通过 genoffice MCP 服务器构建的八页可再生能源 2026 演示文稿：画布上是带有风电场照片的封面页，左侧是八张缩略图"></td>
+<td width="50%"><img src="../assets/readme/mcp-integrations.webp" alt="GenOffice 设置的「集成」页面，MCP 部分：Claude Code 对应的一行 claude mcp add 命令，Cursor、Claude Desktop 及其他 MCP 客户端对应的 JSON 代码块，以及下方的本地 HTTP 服务器选项"></td>
+</tr>
+<tr>
+<td><b>一句提示词，三十八次工具调用，不用终端</b> —— “制作一份关于 2026 年可再生能源的八页投资简报，封面和其他合适的地方都配上真实照片。”智能体先用 <code>search</code> 搜集图表和照片，再用 <code>media</code> 确认每一张候选图片是不是真实照片，然后带着样式表和大纲调用 <code>deck_start</code>，接着逐页调用 <code>deck_page</code>；每一页都会先对照大纲和配色方案检查过关才会被保留，接着 <code>deck_build</code> 组装出 <code>.pptx</code>，<code>slides_audit</code> 检查是否溢出，<code>slides_render</code> 为每一页交回一张供模型查看的 PNG 图片内容，最后 <code>deck_replace</code> 修复了它不满意的三页。</td>
+<td><b>在设置 → 集成中连接一次即可</b> —— 复制 Claude Code 的 <code>claude mcp add</code> 命令行，或把 JSON 代码块粘贴进 Cursor、Claude Desktop 或任何其他 MCP 客户端。选项 B 会开启本地 HTTP 服务器，用于可见的 Word 编辑器。两者都在<a href="#mcp-server">MCP 服务器</a>中有详细说明。</td>
+</tr>
+</table>
+
 ## 为什么选择 GenOffice
 
 - **开源**，Apache-2.0 协议，在 GitHub 上公开开发。
@@ -189,8 +211,9 @@ Claude Code、Codex、Cursor、Gemini CLI、GitHub Copilot、OpenCode 或 Windsu
 - **认真做好 PDF。** 在页面内直接编辑文字，本机将 PDF 转换为 Word、Excel 或
   PowerPoint，扫描件支持系统 OCR。
 - **同样支持 Markdown 和 HTML**，共用同一个 AI 面板，并可本机导出为 Word。
-- **可脚本化。** `genoffice` 命令行和 agent skill 让每一个引擎都能为 Claude Code、
-  Codex、Cursor 及其他编程智能体所用，且仍然在本机运行。
+- **可脚本化。** `genoffice` 命令行、agent skill 和 MCP 服务器让每一个引擎都能
+  为 Claude Code、Claude Desktop、Codex、Cursor 及其他智能体所用，且仍然在本机
+  运行。
 - **免费**，个人和团队皆可使用。
 
 ## AI 后端
@@ -220,7 +243,8 @@ Grok、Qwen、MiniMax 或任何 OpenAI 兼容的图片端点。
 产出真正的 Office 文件，而不是用 Markdown 勉强凑合。
 
 **支持：** Claude Code、Codex、Cursor、Gemini CLI、GitHub Copilot、OpenCode
-和 Windsurf 开箱即用，以及任何其他能读取 skill 的智能体。
+和 Windsurf 开箱即用，任何其他能读取 skill 的智能体，以及通过
+[MCP 服务器](#mcp-server) 支持的 Claude Desktop 和所有 MCP 客户端。
 
 ### 安装 skill
 
@@ -272,6 +296,57 @@ genoffice open deck/solar-system.pptx
 
 `genoffice` 内部不会发起任何模型调用：思考由智能体负责，构建和检查由 CLI
 负责，最后的成果会以一份普通的 `.pptx` 在 GenOffice 或 PowerPoint 中打开。
+
+<a id="mcp-server"></a>
+
+### MCP 服务器
+
+同样这些命令也以 [Model Context Protocol](https://modelcontextprotocol.io) 工具
+的形式提供，供那些无法运行终端、或者你不想给它终端权限的助手使用。接入方式
+有两种，**设置 → 集成 → MCP** 中都提供了可直接复制的代码片段：
+
+| 方式                            | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A · `genoffice mcp`**（推荐） | 一个由助手自行启动的 stdio 服务器，GenOffice 无需处于打开状态。每条命令对应一个工具（`info`、`convert`、`create_docx`、`create_xlsx`、`create_pptx`、`create_pdf`、`docs_read` / `docs_apply` / `docs_check`、`sheet_*`、`slides_*`、`render`、`guide`、`search`、`image`、`media`、`open`），再加上分阶段的幻灯片构建流程 `deck_start` → `deck_page` → `deck_build` → `deck_replace`。Ops、spec 和 Markdown 都以内联方式传入，因此没有文件系统的客户端同样可以正常工作。 |
+| **B · 本地 HTTP 服务器**        | 运行在 GenOffice 应用内部，地址为 `http://127.0.0.1:3093/mcp`（Streamable HTTP，兼容旧版 SSE）。它的工具驱动一个可见的 Word 编辑器标签页：`create_session`、`insert_content`、`replace_blocks`、`apply_ops`、`read_document`、`save_session`，你可以实时看着文档成形。默认关闭；在同一个设置面板中开启。                                                                                                                                                                  |
+
+```bash
+# Claude Code
+claude mcp add --transport stdio genoffice -- genoffice mcp
+```
+
+```jsonc
+// Cursor、Claude Desktop 或任何其他 MCP 客户端
+{ "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
+```
+
+这里的 `genoffice` 就是应用内置的那个 CLI（在 macOS 上位于
+`/Applications/GenOffice.app/Contents/Resources/cli/genoffice`；设置面板会
+打印出你本机安装的确切路径）。这个服务器自带工作流说明，并把操作参考文档以
+`genoffice://guide/*` 资源的形式暴露出来，因此不需要额外的 skill；skill 和
+MCP 服务器可以共存，由助手自行选择使用哪一个。云端能力（`search`、`image`、
+`media`）仍然经由 GenOffice 中配置的服务商完成；其余一切都在本机运行，
+`GENOFFICE_ALLOWED_ROOTS` 会把每个工具都限制在你列出的文件夹之内。
+
+上方演示中的可再生能源演示文稿，就是仅接入 `genoffice` MCP 服务器时，
+Claude Code 里一句提示词从协议层面呈现出的样子：
+
+```text
+capabilities · guide(slides, spec) · guide(slides, design)
+search(query) ×4                         → IEA, BNEF and IRENA figures for the slides
+search(query, images) ×7 · media(url, ask) ×7
+                                         → candidate photos, each one checked to be a real photograph
+deck_start(dir, style, outline)          → outline checked: 8 pages to write
+deck_page(dir, 0, page) … deck_page(dir, 7, page)
+                                         → each page checked against the outline and the palette; one page sent again
+deck_build(dir, out)                     → renewables-2026.pptx, no image failures
+slides_audit(file) · slides_render(file, out)
+                                         → no layout findings; 8 PNGs come back as image content
+deck_replace(dir, n, page) ×3 · slides_render(file, out)
+                                         → three pages fixed after looking at the renders
+```
+
+三十八次调用，大约十三分钟，助手全程没有碰过终端：图表、照片、指南、检查和渲染结果都是作为 MCP 工具结果传递的。只有 `search` 和 `media` 离开过本机，发往 GenOffice 中配置的服务商。
 
 <a id="download"></a>
 

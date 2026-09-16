@@ -28,7 +28,15 @@ const phParser = new XMLParser({
 })
 
 /** Default run/paragraph style for one indent level (from lstStyle's lvlNpPr/defRPr). */
+/** Fields whose inheritance source a level records (see mergeTextStyleChain). */
+export type StyleSourceField =
+  'fontSize' | 'bold' | 'italic' | 'color' | 'latinFont' | 'eaFont' | 'csFont' | 'align'
+
 export interface LevelTextStyle {
+  /** Which chain layer supplied each field (only set by mergeTextStyleChain) */
+  src?: Partial<Record<StyleSourceField, string>>
+  /** The level's unresolved latin theme ref (+mj-lt / +mn-lt), kept beside the resolved name */
+  latinFontRef?: string
   /** Font size (pt) */
   fontSize?: number
   bold?: boolean
@@ -82,6 +90,8 @@ export interface LevelTextStyle {
 /** Default styles for the 9 levels (index = level, 0-based). */
 export interface TextStyleLevels {
   levels: Array<LevelTextStyle | undefined>
+  /** where this layer sits in the inheritance chain, for style provenance */
+  src?: string
 }
 
 /** master <p:txStyles>: the title/body/other families. */
@@ -358,8 +368,10 @@ export function parseDefRPrStyle(
   }
   const eaScript = eaScriptOfLang(defRPr['@_altLang']) ?? eaScriptOfLang(defRPr['@_lang'])
   if (eaScript) out.eaScript = eaScript
-  const latin = resolveFontRef(typefaceAttr(defRPr['a:latin']), theme, eaScript)
+  const latinAttr = typefaceAttr(defRPr['a:latin'])
+  const latin = resolveFontRef(latinAttr, theme, eaScript)
   if (latin) out.latinFont = latin
+  if (latinAttr?.startsWith('+')) out.latinFontRef = latinAttr
   const eaAttr = typefaceAttr(defRPr['a:ea'])
   const ea = resolveFontRef(eaAttr, theme, eaScript)
   if (ea) out.eaFont = ea
@@ -547,16 +559,16 @@ export function placeholderStyleChain(
 ): TextStyleLevels[] {
   const chain: TextStyleLevels[] = []
   const fromLayout = findStyleInMap(layout, type, idx)
-  if (fromLayout) chain.push(fromLayout)
+  if (fromLayout) chain.push({ ...fromLayout, src: 'layout placeholder' })
   const fromMaster = findStyleInMap(master, type, idx)
-  if (fromMaster) chain.push(fromMaster)
+  if (fromMaster) chain.push({ ...fromMaster, src: 'master placeholder' })
   const t = type ?? 'body'
-  const family = TITLE_TYPES.has(t)
-    ? masterTx?.title
+  const [family, familySrc] = TITLE_TYPES.has(t)
+    ? [masterTx?.title, 'master titleStyle']
     : BODY_TYPES.has(t)
-      ? masterTx?.body
-      : masterTx?.other
-  if (family) chain.push(family)
+      ? [masterTx?.body, 'master bodyStyle']
+      : [masterTx?.other, 'master otherStyle']
+  if (family) chain.push({ ...family, src: familySrc })
   return chain
 }
 
@@ -570,26 +582,51 @@ export function mergeTextStyleChain(
   level: number,
 ): LevelTextStyle | undefined {
   const out: LevelTextStyle = {}
+  const src: NonNullable<LevelTextStyle['src']> = {}
   let any = false
   for (const layer of chain) {
     if (!layer) continue
     const lvl = layer.levels[level] ?? layer.levels[0]
     if (!lvl) continue
     any = true
-    if (out.fontSize == null && lvl.fontSize != null) out.fontSize = lvl.fontSize
-    if (out.bold == null && lvl.bold != null) out.bold = lvl.bold
-    if (out.italic == null && lvl.italic != null) out.italic = lvl.italic
+    const from = layer.src ?? 'inherited'
+    if (out.fontSize == null && lvl.fontSize != null) {
+      out.fontSize = lvl.fontSize
+      src.fontSize = from
+    }
+    if (out.bold == null && lvl.bold != null) {
+      out.bold = lvl.bold
+      src.bold = from
+    }
+    if (out.italic == null && lvl.italic != null) {
+      out.italic = lvl.italic
+      src.italic = from
+    }
     if (out.cap == null && lvl.cap != null) out.cap = lvl.cap
-    if (out.color == null && lvl.color != null) out.color = lvl.color
+    if (out.color == null && lvl.color != null) {
+      out.color = lvl.color
+      src.color = from
+    }
     if (out.shadow == null && lvl.shadow != null) out.shadow = lvl.shadow
-    if (out.latinFont == null && lvl.latinFont != null) out.latinFont = lvl.latinFont
+    if (out.latinFont == null && lvl.latinFont != null) {
+      out.latinFont = lvl.latinFont
+      if (lvl.latinFontRef != null) out.latinFontRef = lvl.latinFontRef
+      src.latinFont = from
+    }
     if (out.eaFont == null && lvl.eaFont != null) {
       out.eaFont = lvl.eaFont
       if (lvl.eaFontRef != null) out.eaFontRef = lvl.eaFontRef
+      src.eaFont = from
     }
-    if (out.csFont == null && lvl.csFont != null) out.csFont = lvl.csFont
+    if (out.csFont == null && lvl.csFont != null) {
+      out.csFont = lvl.csFont
+      src.csFont = from
+    }
     if (out.eaScript == null && lvl.eaScript != null) out.eaScript = lvl.eaScript
-    if (out.align == null && lvl.align != null) out.align = lvl.align
+    if (out.align == null && lvl.align != null) {
+      out.align = lvl.align
+      src.align = from
+    }
     if (out.bullet == null && lvl.bullet != null) out.bullet = lvl.bullet
     if (out.marL == null && lvl.marL != null) out.marL = lvl.marL
     if (out.indent == null && lvl.indent != null) out.indent = lvl.indent
@@ -619,6 +656,7 @@ export function mergeTextStyleChain(
       if (lvl.spaceAfterPct != null) out.spaceAfterPct = lvl.spaceAfterPct
     }
   }
+  if (Object.keys(src).length) out.src = src
   return any ? out : undefined
 }
 

@@ -194,15 +194,6 @@
   color: var(--text-secondary);
 }
 
-/* MCP pane: sub-section heading inside a pane (Connection, Available capabilities) */
-.set-group-title {
-  margin: 20px 0 2px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--text-tertiary);
-}
-
 /* MCP service row: the label + description + status stack reads better with the
    switch aligned to the label line instead of centered against three lines */
 .set-field-top {
@@ -693,6 +684,45 @@
 
 .set-intg-cli {
   margin-top: 24px;
+}
+
+/* the two routes (CLI, MCP) as numbered parts with a rule between them */
+.set-intg-part {
+  margin-top: 8px;
+}
+
+.set-intg-part + .set-intg-part {
+  margin-top: 28px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.set-intg-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 22px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.set-intg-mcp-http {
+  margin-top: 8px;
+}
+
+.set-mcp-advanced {
+  margin-top: 16px;
+}
+
+.set-intg-code-block {
+  align-items: flex-start;
+}
+
+.set-intg-code-block code {
+  white-space: pre;
+  word-break: normal;
+  overflow-x: auto;
 }
 
 .set-intg-option {

@@ -37,7 +37,7 @@ describe('inactive selection highlight (r119)', () => {
     editor.destroy()
   })
 
-  it('highlights a ctrl-A AllSelection too (bugbot: non-text selections)', () => {
+  it('highlights a ctrl-A AllSelection too (non-text selections)', () => {
     const editor = makeEditor()
     editor.view.dispatch(editor.state.tr.setSelection(new AllSelection(editor.state.doc)))
     setInactiveSelectionShown(editor, true)

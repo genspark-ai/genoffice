@@ -13,11 +13,13 @@
     "./color-picker.css": "./src/color-picker.css",
     "./dropdown.css": "./src/dropdown.css",
     "./find-panel.css": "./src/find-panel.css",
+    "./files-pane.css": "./src/files-pane.css",
     "./ribbon-collapse.css": "./src/ribbon-collapse.css",
     "./markdown.css": "./src/markdown.css",
     "./ai-panel-prefs.css": "./src/ai-panel-prefs.css",
     "./ai-scope-quote.css": "./src/ai-scope-quote.css",
     "./image-dialogs.css": "./src/image-dialogs.css",
+    "./image-viewer.css": "./src/image-viewer.css",
     "./fonts/*": "./src/fonts/*"
   },
   "scripts": {

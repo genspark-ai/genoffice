@@ -21,6 +21,7 @@ import {
   THEME_COLORS,
   THEME_COLOR_SHADES,
   STANDARD_COLORS,
+  filesPaneTitle,
 } from '@genoffice/ui'
 import { getRecentColors, pushRecentColor } from '../recent-colors'
 import { ICON_COLORS } from '../insert-presets'
@@ -1099,6 +1100,8 @@ export function Ribbon({
   onZoom,
   showThumbs,
   onToggleThumbs,
+  filesOpen,
+  onToggleFiles,
   aiOpen,
   onToggleAi,
   onAiPreset,
@@ -1234,7 +1237,7 @@ export function Ribbon({
   onFlip,
   canDistribute,
 }: Props) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const contextTab = contextTabForElement(contextElementType ?? null)
   const autoContextTab = autoContextTabForElement(contextElementType ?? null)
 
@@ -2633,6 +2636,12 @@ export function Ribbon({
                   on={showThumbs}
                   title={t('ribbonThumbnailPaneTip')}
                   onClick={onToggleThumbs}
+                />
+                <RbCheck
+                  label={filesPaneTitle(lang)}
+                  on={filesOpen}
+                  title={filesPaneTitle(lang)}
+                  onClick={onToggleFiles}
                 />
               </div>
             </Group>

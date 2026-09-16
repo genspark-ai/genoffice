@@ -5,6 +5,8 @@
  * - External URL: a hyperlink relationship with TargetMode="External" in the slide rels;
  * - In-document slide jump: hlinkClick with action="ppaction://hlinksldjump",
  *   whose relationship (type=slide) points at the target slideN.xml.
+ * - Named show action (next/previous/first/last slide, last viewed, end show):
+ *   action="ppaction://hlinkshowjump?jump=<name>" with an empty r:id and no relationship.
  *
  * Implemented via "XML surgery + materialize": edit the cNvPr in the element's
  * current fragment, then reparse the whole slide (same path as appendRawElements).
@@ -15,6 +17,7 @@ import { sliceGroupChildXmls } from './parse'
 import { relsPathFor, resolveTarget } from './zip'
 import { cleanupSupersededSlideResources } from './resource-cleanup'
 import { materializeSlide, patchedElementXml, patchSlideXml, type OpenedPptx } from './index'
+import { namedActionAttr, namedActionOf, type NamedAction } from './named-action'
 
 const HYPERLINK_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
@@ -22,7 +25,10 @@ const SLIDE_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/re
 const SLDJUMP_ACTION = 'ppaction://hlinksldjump'
 const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 
-export type LinkTarget = { kind: 'url'; url: string } | { kind: 'slide'; slideIndex: number }
+export type LinkTarget =
+  | { kind: 'url'; url: string }
+  | { kind: 'slide'; slideIndex: number }
+  | { kind: 'action'; action: NamedAction }
 
 const EMPTY_RELS =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
@@ -82,6 +88,8 @@ export function setElementLink(
     if (target.kind === 'url') {
       const rid = appendRel(opened, slide, HYPERLINK_REL_TYPE, target.url, true)
       hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="${rid}"/>`
+    } else if (target.kind === 'action') {
+      hlink = `<a:hlinkClick xmlns:r="${R_NS}" r:id="" action="${namedActionAttr(target.action)}"/>`
     } else {
       const dst = opened.deck.slides[target.slideIndex]
       if (!dst) return null
@@ -113,16 +121,23 @@ export function setElementLink(
   return materializeSlide(opened, slideIndex)
 }
 
-/** Parse a TextRun.hyperlink encoded target ("slide:N" or url); null on bad input. */
+/** Parse a TextRun.hyperlink encoded target ("slide:N", "action:<name>" or url); null on bad input. */
 export function decodeRunLink(s: string): LinkTarget | null {
   const m = /^slide:(\d+)$/.exec(s)
   if (m) return { kind: 'slide', slideIndex: Number(m[1]) }
+  const a = /^action:(\w+)$/.exec(s)
+  if (a) {
+    const action = namedActionOf(namedActionAttr(a[1]!))
+    return action ? { kind: 'action', action } : null
+  }
   return s ? { kind: 'url', url: s } : null
 }
 
 /** TextRun.hyperlink encoding of a link target. */
 export function encodeRunLink(target: LinkTarget): string {
-  return target.kind === 'slide' ? `slide:${target.slideIndex}` : target.url
+  if (target.kind === 'slide') return `slide:${target.slideIndex}`
+  if (target.kind === 'action') return `action:${target.action}`
+  return target.url
 }
 
 /**
@@ -144,12 +159,15 @@ export function ensureRunLinkRels(
   let changed = false
   for (const p of paragraphs) {
     for (const run of p.runs) {
-      if (!run.hyperlink || run.hyperlinkRId) continue
+      if (!run.hyperlink || run.hyperlinkRId !== undefined) continue
       const target = decodeRunLink(run.hyperlink)
       if (!target) continue
       if (target.kind === 'url') {
         run.hyperlinkRId = appendRel(opened, slide, HYPERLINK_REL_TYPE, target.url, true)
         delete run.hyperlinkAction
+      } else if (target.kind === 'action') {
+        run.hyperlinkRId = ''
+        run.hyperlinkAction = namedActionAttr(target.action)
       } else {
         const dst = opened.deck.slides[target.slideIndex]
         if (!dst) continue
@@ -202,8 +220,12 @@ export function getRunLinks(
       if ((el.type !== 'text' && el.type !== 'shape') || !('text' in el) || !el.text) continue
       el.text.paragraphs.forEach((p, paraIndex) => {
         p.runs.forEach((run, runIndex) => {
-          if (!run.hyperlinkRId) return
-          const target = resolve(run.hyperlinkRId)
+          const action = namedActionOf(run.hyperlinkAction)
+          const target = action
+            ? { kind: 'action' as const, action }
+            : run.hyperlinkRId
+              ? resolve(run.hyperlinkRId)
+              : null
           if (target) out.push({ elementId: el.id, paraIndex, runIndex, target })
         })
       })
@@ -215,7 +237,11 @@ export function getRunLinks(
 
 /** Resolve the hlinkClick rId in an element fragment against the slide rels; null if none/unresolvable. */
 function resolveLinkInXml(opened: OpenedPptx, slide: Slide, xml: string): LinkTarget | null {
-  const m = /<a:hlinkClick\b[^>]*\br:id="(rId\d+)"/.exec(xml)
+  const tag = /<a:hlinkClick\b[^>]*>/.exec(xml)?.[0]
+  if (!tag) return null
+  const action = namedActionOf(/\baction="([^"]*)"/.exec(tag)?.[1])
+  if (action) return { kind: 'action', action }
+  const m = /\br:id="(rId\d+)"/.exec(tag)
   if (!m) return null
   const rel = opened.archive.readRels(slide.path).get(m[1]!)
   if (!rel) return null

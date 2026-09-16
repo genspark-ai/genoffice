@@ -17,6 +17,7 @@ import type {
 } from '../shared/ipc'
 import type { BrushFormat } from './format-brush'
 import type { InkTool } from './ink'
+import type { SlidesViewMode } from './components/ribbon-shared'
 import type { CustomShow } from './slideshow-utils'
 
 type Set<T> = React.Dispatch<React.SetStateAction<T>>
@@ -136,6 +137,7 @@ export interface ActionCtx {
   /** Freehand ink tool ('select' = not drawing); Esc drops back to select */
   inkTool: InkTool
   setInkTool: Set<InkTool>
+  viewMode: SlidesViewMode
 
   // Animations / transition
   animations: AnimationItem[]

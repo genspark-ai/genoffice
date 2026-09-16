@@ -133,7 +133,6 @@ export const pt = {
   appMoreItems: '+{count} itens…',
   appTruncationNote: 'Primeiros {shown} de {total}',
   appGoToButtonTitle: 'Ir para (⌘G)',
-  appNameBoxTitle: 'Caixa de nome — digite um endereço ou nome e pressione Enter',
   appPivotChartHintIn: 'Criar um Gráfico Dinâmico a partir da Tabela Dinâmica atual',
   appPivotChartHintOut:
     'Selecione primeiro uma célula dentro da saída da Tabela Dinâmica e escolha um tipo de gráfico',

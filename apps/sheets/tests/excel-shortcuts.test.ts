@@ -1,6 +1,6 @@
 /**
  * Excel-standard shortcuts Univer doesn't ship: worksheet-tab switching,
- * Ctrl+Home/End, Home, whole row/column selection (#genoffice-6 task #1).
+ * Ctrl+Home/End, Home, whole row/column selection.
  */
 import { describe, expect, it } from 'vitest'
 import { Styles, Worksheet } from '@univerjs/core'

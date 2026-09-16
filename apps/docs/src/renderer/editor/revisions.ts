@@ -47,7 +47,7 @@ export const TRACK_IGNORE = 'trackIgnore'
 
 const TRACKED_FORMAT_MARKS = new Set(['bold', 'italic', 'underline', 'strike', 'docTextStyle'])
 
-const TEXT_STYLE_FIELDS = [
+export const TEXT_STYLE_FIELDS = [
   'color',
   'sizeHalfPoints',
   'font',
@@ -60,7 +60,7 @@ const TEXT_STYLE_FIELDS = [
 ] as const
 
 const PARAGRAPH_NODE_TYPES = new Set(['docParagraph', 'docHeading', 'docListItem'])
-const PARAGRAPH_FORMAT_FIELDS = [
+export const PARAGRAPH_FORMAT_FIELDS = [
   'align',
   'lineSpacing',
   'lineRule',
@@ -266,7 +266,11 @@ function stripTrackMarker(raw: string | null, tag: string, container: string): s
   return out
 }
 
-function applyRevisions(editor: Editor, ranges: RevisionRange[], mode: 'accept' | 'reject'): void {
+export function applyRevisions(
+  editor: Editor,
+  ranges: RevisionRange[],
+  mode: 'accept' | 'reject',
+): void {
   if (ranges.length === 0) return
   const { state } = editor
   const tr = state.tr

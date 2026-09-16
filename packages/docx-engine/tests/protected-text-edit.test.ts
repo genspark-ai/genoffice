@@ -110,6 +110,23 @@ describe('protected visible-text patching', () => {
     expect(parsed.blocks[0].fieldDisplay?.left).toBe('Hello')
   })
 
+  it('pins preserve when a self-closing run gains edge whitespace', () => {
+    const entry =
+      '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>' +
+      '<w:r><w:t/></w:r><w:r><w:tab/></w:r>' +
+      '<w:r><w:t>7</w:t></w:r></w:p>'
+    const patched = patchFieldParagraphXml(entry, { left: '\u00A0Hello', right: '7' })
+    expect(patched).toContain('<w:t xml:space="preserve">\u00A0Hello</w:t>')
+  })
+
+  it('ignores self-closing <m:t/> so the token count matches mathTokensOf', () => {
+    const withEmpty = FORMULA.replace('<m:den>', '<m:den><m:r><m:t/></m:r>')
+    const patched = patchMathTokens(withEmpty, ['a', 'b'])
+    expect(patched).toContain('<m:t>a</m:t>')
+    expect(patched).toContain('<m:t>b</m:t>')
+    expect(patched).toContain('<m:t/>')
+  })
+
   it('leaves out-of-range and surrogate char refs untouched instead of throwing', () => {
     const base =
       '<w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr>' +

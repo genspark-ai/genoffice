@@ -9,8 +9,8 @@ import { launchShell, closeAndSaveVideo, waitForPageWithUrl } from './helpers'
 process.env.GENOFFICE_DEBUG_HOOKS = '1'
 
 /**
- * Regression for "copied C2:E2, selected C2:C14, paste didn't repeat" (alpha
- * feedback): pasting a copied row into a single-column multi-row
+ * Regression for "copied C2:E2, selected C2:C14, paste didn't repeat" (user
+ * report): pasting a copied row into a single-column multi-row
  * target must repeat the row for each selected row, spilling the source's
  * width — Excel/Google Sheets bulk-fill.
  */

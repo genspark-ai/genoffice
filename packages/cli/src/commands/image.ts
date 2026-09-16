@@ -1,12 +1,11 @@
 import { randomBytes } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
 import { extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { generateImageTool } from '@genoffice/ai-search'
 import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
 import { flagBool, flagString } from '../args'
 import { aiSettingsPath, prepareCloud } from '../cloud'
-import { resolveInput, resolveOutput } from '../fs'
+import { resolveInput, resolveOutput, writeOutput } from '../fs'
 import type { CommandDef } from '../registry'
 import { CliError, EXIT } from '../result'
 
@@ -47,14 +46,19 @@ export const imageCommand: CommandDef = {
   ],
   async run(args, ctx) {
     const prompt = args.positionals.join(' ').trim()
-    if (!prompt) throw new CliError(EXIT.usage, 'missing <prompt>')
+    if (!prompt)
+      throw new CliError(EXIT.usage, 'missing <prompt>', undefined, { reason: 'missing_argument' })
     const aspect = flagString(args, 'aspect')
     if (aspect && !ASPECTS.includes(aspect)) {
-      throw new CliError(EXIT.usage, `--aspect must be one of ${ASPECTS.join(', ')}`)
+      throw new CliError(EXIT.usage, `--aspect must be one of ${ASPECTS.join(', ')}`, undefined, {
+        reason: 'invalid_argument',
+      })
     }
     const size = flagString(args, 'size')
     if (size && !SIZES.includes(size)) {
-      throw new CliError(EXIT.usage, `--size must be one of ${SIZES.join(', ')}`)
+      throw new CliError(EXIT.usage, `--size must be one of ${SIZES.join(', ')}`, undefined, {
+        reason: 'invalid_argument',
+      })
     }
     const refs = (flagString(args, 'ref') ?? '')
       .split(',')
@@ -100,7 +104,7 @@ export const imageCommand: CommandDef = {
       : (out && outExt) || ext === 'png'
         ? chosen
         : resolveOutput(`${stem}.${ext}`, ctx, { force, fresh: true })
-    writeFileSync(output, image.bytes)
+    writeOutput(output, image.bytes)
     return {
       summary: `saved ${image.bytes.byteLength} bytes (${image.mime}) to ${output}`,
       outputPath: output,
@@ -108,10 +112,18 @@ export const imageCommand: CommandDef = {
         mime: image.mime,
         bytes: image.bytes.byteLength,
         source_url: r.url,
-        ...(renamed
-          ? { note: `provider returned ${image.mime}; saved with .${ext} instead of .${outExt}` }
-          : {}),
       },
+      ...(renamed
+        ? {
+            warnings: [
+              {
+                code: 'output_renamed',
+                message: `provider returned ${image.mime}; saved with .${ext} instead of .${outExt}`,
+                suggestion: 'read output_path for the real file name',
+              },
+            ],
+          }
+        : {}),
     }
   },
 }

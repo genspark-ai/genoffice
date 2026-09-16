@@ -1,3 +1,12 @@
+/** Picture watermark found in a header part (VML picture frame behind the body). */
+export interface PictureWatermarkInfo {
+  /** header-part relationship of the image */
+  rId: string
+  widthPt: number
+  heightPt: number
+  washout: boolean
+}
+
 /** author/date of one tracked change (a w:ins or w:del wrapper). */
 export interface RevisionInfo {
   author: string
@@ -147,6 +156,8 @@ export interface Run {
   /** Original field-begin run XML (w:fldChar + w:ffData), written back verbatim so form-field
    * definitions survive; when set, the run text is a synthesized glyph (☐/☒), not a cached result */
   fldBeginXml?: string
+  /** the field's begin fldChar carries w:dirty="true": Word recomputes the result on open */
+  fldDirty?: true
   /** w:sdtPr of a content-control checkbox (w14:checkbox) wrapping this run; the run text is the
    * box glyph, and write-back sets w14:checked from it */
   sdtCheckboxXml?: string
@@ -653,6 +664,8 @@ export interface SectionInfo {
   /** header/footer reference rIds, by variant */
   headerRefs: Partial<Record<'default' | 'first' | 'even', string>>
   footerRefs: Partial<Record<'default' | 'first' | 'even', string>>
+  /** editor-side: created by a not yet saved section break; its sectPr lives in the break paragraph's generated XML, not in a parsed block */
+  pendingBreak?: true
 }
 
 /** one rich paragraph of a header / footer part */
@@ -832,6 +845,8 @@ export interface HfImage {
   floating?: boolean
   /** behind body text (negative VML z-index / wp:anchor behindDoc): picture watermarks */
   behind?: boolean
+  /** the header's picture watermark shape (Word's WordPictureWatermark / ours) */
+  watermark?: boolean
   /** VML mso-position-horizontal / wp:positionH wp:align */
   posH?: 'left' | 'center' | 'right'
   /** VML mso-position-vertical / wp:positionV wp:align */
@@ -1333,6 +1348,8 @@ export interface NewImage {
   heightPx: number
   /** paragraph alignment for the image (w:jc) */
   align?: 'left' | 'center' | 'right'
+  /** alternative text (wp:docPr descr) */
+  altText?: string
   /** floating wrap mode; absent = inline */
   wrap?: ImageWrap
   /**
@@ -1341,7 +1358,7 @@ export interface NewImage {
    * wrap mode's default <wp:align> placement. `relativeTo: 'page'` pins both
    * axes to the page box instead (full-page backgrounds).
    */
-  posOffsetEmu?: { x: number; y: number; relativeTo?: 'page' }
+  posOffsetEmu?: { x: number; y: number; relativeTo?: 'page' | 'margin' }
   /**
    * stacking rank among anchored drawings (only with `wrap`): written as
    * relativeHeight base + zOrder, so overlapping behindDoc anchors keep a
@@ -1921,6 +1938,12 @@ export interface StyleInfo {
   name: string
   type: 'paragraph' | 'character' | 'table'
   headingLevel?: number
+  /** headingLevel came from a basedOn ancestor, not this style's name or w:outlineLvl */
+  headingLevelInherited?: true
+  /** own w:outlineLvl 9: body text even when a basedOn ancestor is a heading */
+  headingOutlineOff?: true
+  /** w:basedOn (the parent's own id, unresolved) */
+  basedOn?: string
   /** w:semiHidden — Word itself hides it from the style gallery (e.g. DefaultParagraphFont) */
   semiHidden?: boolean
   /** w:qFormat — candidate for Word's quick style gallery */
@@ -2138,6 +2161,8 @@ export interface ParsedDoc {
   footerImages?: HfImage[] | null
   /** text watermark (VML textpath) in the default header, null when none */
   watermarkText?: string | null
+  /** picture watermark (VML picture frame) in the default header, null when none */
+  watermarkPicture?: PictureWatermarkInfo | null
   /** plain text of the default page footer (PAGE fields appear as PAGE_MARK) */
   footerText?: string | null
   /** the default footer contains an automatic page number field */

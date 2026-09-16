@@ -14,6 +14,10 @@ const workspaceAlias = {
     '../../packages/pptx-engine/src/table-grid.ts',
   ),
   '@genoffice/pptx-engine/identity': resolve(here, '../../packages/pptx-engine/src/identity.ts'),
+  '@genoffice/pptx-engine/named-action': resolve(
+    here,
+    '../../packages/pptx-engine/src/named-action.ts',
+  ),
   '@genoffice/pptx-engine/custgeom': resolve(here, '../../packages/pptx-engine/src/custgeom.ts'),
   '@genoffice/pptx-engine/background-promote': resolve(
     here,
@@ -35,6 +39,7 @@ const workspaceAlias = {
   '@genoffice/pipelines/slides': resolve(here, '../../packages/pipelines/src/slides/index.ts'),
   // Metafile (EMF/WMF) rasterizer shared with the docs engine (renderer-only: needs canvas)
   '@genoffice/docx-engine/metafile': resolve(here, '../../packages/docx-engine/src/metafile.ts'),
+  '@genoffice/docx-engine/math': resolve(here, '../../packages/docx-engine/src/math.ts'),
 }
 
 export default defineConfig({

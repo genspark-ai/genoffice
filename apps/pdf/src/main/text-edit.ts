@@ -11,12 +11,16 @@ import type {
   TextInsertFailure,
   TextInsertInput,
 } from '../shared/ipc'
+import { SYNTHETIC_BOLD_STROKE_EM } from '../shared/ipc'
 import { foldRadicals } from '../shared/radicals'
 import { chainLayers } from '../shared/x-layers'
 
 export const FPDF_PAGEOBJ_TEXT = 1
 const FPDF_FONT_TYPE1 = 1
 const FPDF_FONT_TRUETYPE = 2
+const FPDF_TEXTRENDERMODE_FILL_STROKE = 2
+const FPDF_TEXTRENDERMODE_FILL_STROKE_CLIP = 6
+const FPDF_LINEJOIN_ROUND = 1
 
 /** Emscripten module surface we call into (raw FPDF_* exports + heap access) */
 export interface Pdfium {
@@ -58,6 +62,13 @@ export interface Pdfium {
   _FPDFPageObj_SetMatrix(obj: number, matrix: number): number
   _FPDFPageObj_GetFillColor(obj: number, r: number, g: number, b: number, a: number): number
   _FPDFPageObj_SetFillColor(obj: number, r: number, g: number, b: number, a: number): number
+  _FPDFPageObj_GetStrokeColor(obj: number, r: number, g: number, b: number, a: number): number
+  _FPDFPageObj_SetStrokeColor(obj: number, r: number, g: number, b: number, a: number): number
+  _FPDFPageObj_GetStrokeWidth(obj: number, width: number): number
+  _FPDFPageObj_SetStrokeWidth(obj: number, width: number): number
+  _FPDFPageObj_SetLineJoin(obj: number, join: number): number
+  _FPDFTextObj_GetTextRenderMode(obj: number): number
+  _FPDFTextObj_SetTextRenderMode(obj: number, mode: number): number
   _FPDFPageObj_CreateTextObj(doc: number, font: number, size: number): number
   _FPDFTextObj_GetText(obj: number, textPage: number, buf: number, len: number): number
   _FPDFTextObj_GetFont(obj: number): number
@@ -649,6 +660,7 @@ function canReuseFont(
   newText: string,
   matches: PageTextObj[],
   all: PageTextObj[],
+  whole: boolean,
 ): boolean {
   if (matches.length !== 1) return false
   if (edit.newFontSize !== undefined || edit.newColor !== undefined || edit.newFont !== undefined)
@@ -659,8 +671,10 @@ function canReuseFont(
   // Centered/right blocks reposition every line: SetText keeps the object's own
   // matrix, so a shorter replacement would stay at the old x instead of re-centering
   if (edit.lineXOffsets !== undefined) return false
-  // Bold/italic toggles swap the face: the object's existing font cannot draw them
-  if (edit.newBold || edit.newItalic) return false
+  // Italic swaps the face: the object's existing font cannot draw it. Bold on the
+  // original face is a stroke on the object itself — but only when the object IS the
+  // edited text, else the untouched rest of the container would embolden too
+  if (edit.newItalic || (edit.newBold && (edit.newFont || !whole))) return false
   if (!/^[\x20-\x7e]*$/.test(newText)) return false
   const font = matches[0]!.font
   const charset = new Set<string>()
@@ -932,23 +946,24 @@ function fontString(m: Pdfium, read: (buf: number, len: number) => number): stri
   }
 }
 
-/** Font bytes for a rebuilt run, best fidelity first. Explicit choice: that face when its
-    cmap covers every replacement char (chars it can't map would subset into .notdef boxes).
-    No choice ("keep original"): the run's own embedded font when its subset already holds
-    every glyph, else the installed font with the same PostScript/family name — a subset
-    physically lacks glyphs the document never drew, so new chars need the full face
-    (Acrobat resolves the same way). The fallback face otherwise. */
-async function rebuildFontBytes(
+/** Rebuild font plus whether bold must be synthesized by stroking. A bold toggle on
+    "keep original" never swaps the face: the same glyphs with a thin same-color
+    stroke keep every advance, so the surrounding layout survives (a bold face file
+    reflows the line). Only an explicit edit-font choice loads a real bold variant. */
+async function resolveRebuildFont(
   m: Pdfium,
   font: number,
   edit: TextEditInput,
   newText: string,
-): Promise<Buffer> {
+): Promise<{ bytes: Buffer; syntheticBold: boolean }> {
   const drawn = newText.replace(/\n/g, '')
+  // The run's own face being bold only matters when that face is kept
+  const wantBold = !!edit.newBold && (!!edit.newFont || !(font && faceIsBold(m, font)))
+  const done = (bytes: Buffer) => ({ bytes, syntheticBold: wantBold })
   const style: EditFontStyle =
-    edit.newBold && edit.newItalic
+    edit.newFont && wantBold && edit.newItalic
       ? 'bolditalic'
-      : edit.newBold
+      : edit.newFont && wantBold
         ? 'bold'
         : edit.newItalic
           ? 'italic'
@@ -957,7 +972,10 @@ async function rebuildFontBytes(
     // Style variant first, base face as the degrade (never fail the edit over style)
     for (const s of style === 'regular' ? (['regular'] as const) : ([style, 'regular'] as const)) {
       const chosen = loadEditFont(edit.newFont, s)
-      if (chosen && fontCoversText(chosen, drawn)) return subsetTtf(chosen, drawn)
+      if (chosen && fontCoversText(chosen, drawn)) {
+        const gotBold = s === 'bold' || s === 'bolditalic'
+        return { bytes: await subsetTtf(chosen, drawn), syntheticBold: wantBold && !gotBold }
+      }
     }
   } else if (font) {
     if (style !== 'regular') {
@@ -991,7 +1009,7 @@ async function rebuildFontBytes(
         }
         if (sys && fontCoversText(sys, drawn)) {
           try {
-            return identityCffCharset(await subsetTtf(sys, drawn))
+            return done(identityCffCharset(await subsetTtf(sys, drawn)))
           } catch {
             /* charset not rewritable: degrade to the base face below */
           }
@@ -1004,7 +1022,7 @@ async function rebuildFontBytes(
     // the coverage check, falling through to the name lookup.
     if (embedded && fontCoversText(embedded, drawn)) {
       try {
-        return identityCffCharset(embedded)
+        return done(identityCffCharset(embedded))
       } catch {
         /* charset not rewritable: try the installed face instead */
       }
@@ -1018,7 +1036,7 @@ async function rebuildFontBytes(
       const sys = findSystemFont(ps, family)
       if (sys && fontCoversText(sys, drawn)) {
         try {
-          return identityCffCharset(await subsetTtf(sys, drawn))
+          return done(identityCffCharset(await subsetTtf(sys, drawn)))
         } catch {
           /* charset not rewritable: fall back */
         }
@@ -1037,14 +1055,88 @@ async function rebuildFontBytes(
   try {
     // CFF-flavored fallbacks (e.g. PingFang) need the charset rewrite for viewer
     // compat; a no-op for TrueType faces
-    return identityCffCharset(sub)
+    return done(identityCffCharset(sub))
   } catch {
     // TrueType subsets never needed the rewrite, so the raw subset is safe. A CFF
     // subset without it can save fine yet render BLANK in viewers that resolve CID
     // through the charset (Acrobat) — reject this edit (reported as skipped with
     // this reason) instead of embedding bytes that look saved but display nothing.
-    if (isTruetype(sub)) return sub
+    if (isTruetype(sub)) return done(sub)
     throw new Error('the fallback font for this text could not be embedded')
+  }
+}
+
+/** The run's own face already carries weight (by PostScript name): stroking it again
+    would over-embolden, and a bold toggle on it is a no-op today as well */
+function faceIsBold(m: Pdfium, font: number): boolean {
+  const ps = fontString(m, (b, l) => m._FPDFFont_GetBaseFontName(font, b, l))
+  return /bold|black|heavy|semibold|demibold|extrabold|ultrabold/i.test(ps)
+}
+
+/** Stroke attributes carried over from the edited run, so a re-edit of a synthetic-bold
+    run (or an authored outline) keeps its look. `sameAsFill` = the stroke tracked the
+    fill color, so a recolor moves both. */
+interface InheritedStroke {
+  mode: number
+  color: readonly [number, number, number, number]
+  width: number
+  sameAsFill: boolean
+}
+
+function readStroke(m: Pdfium, obj: number): InheritedStroke | null {
+  const mode = m._FPDFTextObj_GetTextRenderMode(obj)
+  if (mode !== FPDF_TEXTRENDERMODE_FILL_STROKE && mode !== FPDF_TEXTRENDERMODE_FILL_STROKE_CLIP)
+    return null
+  const ptr = m._malloc(36)
+  try {
+    if (!m._FPDFPageObj_GetStrokeColor(obj, ptr, ptr + 4, ptr + 8, ptr + 12)) return null
+    const color = [0, 4, 8, 12].map((o) => m.HEAPU8[ptr + o]!) as [number, number, number, number]
+    const width = m._FPDFPageObj_GetStrokeWidth(obj, ptr + 16) ? m.HEAPF32[(ptr + 16) >> 2]! : 0
+    const hasFill = m._FPDFPageObj_GetFillColor(obj, ptr + 20, ptr + 24, ptr + 28, ptr + 32)
+    const sameAsFill = !!hasFill && [20, 24, 28].every((o, i) => m.HEAPU8[ptr + o] === color[i])
+    return { mode, color, width, sameAsFill }
+  } finally {
+    m._free(ptr)
+  }
+}
+
+/** Fill+stroke the glyphs: bold without touching the face or the advances */
+function strokeObject(
+  m: Pdfium,
+  obj: number,
+  color: readonly [number, number, number, number],
+  width: number,
+  mode = FPDF_TEXTRENDERMODE_FILL_STROKE,
+): void {
+  m._FPDFTextObj_SetTextRenderMode(obj, mode)
+  m._FPDFPageObj_SetStrokeColor(obj, color[0], color[1], color[2], color[3])
+  m._FPDFPageObj_SetStrokeWidth(obj, width)
+  m._FPDFPageObj_SetLineJoin(obj, FPDF_LINEJOIN_ROUND)
+}
+
+/** `emPt` = rendered em in page units (font size × matrix scale) */
+const syntheticBoldWidth = (emPt: number) => emPt * SYNTHETIC_BOLD_STROKE_EM
+
+function fillColorOf(m: Pdfium, obj: number): readonly [number, number, number, number] {
+  const ptr = m._malloc(16)
+  try {
+    if (!m._FPDFPageObj_GetFillColor(obj, ptr, ptr + 4, ptr + 8, ptr + 12)) return [0, 0, 0, 255]
+    const c = [0, 4, 8, 12].map((o) => m.HEAPU8[ptr + o]!) as [number, number, number, number]
+    if (c[3] === 0) c[3] = 255
+    return c
+  } finally {
+    m._free(ptr)
+  }
+}
+
+function renderedEm(m: Pdfium, obj: number): number {
+  const ptr = m._malloc(24)
+  try {
+    const size = m._FPDFTextObj_GetFontSize(obj, ptr) ? m.HEAPF32[ptr >> 2]! : 1
+    if (!m._FPDFPageObj_GetMatrix(obj, ptr)) return size
+    return size * Math.hypot(m.HEAPF32[ptr >> 2]!, m.HEAPF32[(ptr >> 2) + 1]!)
+  } finally {
+    m._free(ptr)
   }
 }
 
@@ -1549,9 +1641,18 @@ async function rebuildRun(
     }
 
     let font = 0
+    let fontSynth = false
     let anyCff = false
-    const loadFont = async (styleEdit: TextEditInput, text: string): Promise<number> => {
-      const fontBytes = await rebuildFontBytes(m, anchor.font, styleEdit, text.trim() ? text : 'x')
+    const loadFont = async (
+      styleEdit: TextEditInput,
+      text: string,
+    ): Promise<{ font: number; synth: boolean }> => {
+      const { bytes: fontBytes, syntheticBold } = await resolveRebuildFont(
+        m,
+        anchor.font,
+        styleEdit,
+        text.trim() ? text : 'x',
+      )
       const fontPtr = m._malloc(fontBytes.length)
       m.HEAPU8.set(fontBytes, fontPtr)
       const f = m._FPDFText_LoadFont(
@@ -1564,11 +1665,12 @@ async function rebuildRun(
       m._free(fontPtr)
       if (!f) throw new Error('FPDFText_LoadFont failed')
       anyCff = anyCff || !isTruetype(fontBytes)
-      return f
+      return { font: f, synth: syntheticBold }
     }
     const loadRebuild = async (text: string) => {
-      font = await loadFont(edit, text)
+      ;({ font, synth: fontSynth } = await loadFont(edit, text))
     }
+    const inherited = readStroke(m, anchor.obj)
     await loadRebuild(keeps ? redrawOnly() : newText)
 
     // Effective face/size of a segment style: explicit run fields over the whole-edit
@@ -1588,7 +1690,7 @@ async function rebuildRun(
     // One extra font per distinct non-base face among the styled chars, subset to
     // exactly the text that face draws (styled ranges are never kept, so the set is
     // known up front and survives a PreserveAbort re-load of the base font)
-    const styleFonts = new Map<string, number>()
+    const styleFonts = new Map<string, { font: number; synth: boolean }>()
     if (charStyles) {
       const byFace = new Map<string, { style: RunStyle; text: string }>()
       for (let k = 0; k < newText.length; k++) {
@@ -1611,7 +1713,9 @@ async function rebuildRun(
         )
       }
     }
-    const fontFor = (s: RunStyle | null): number => styleFonts.get(faceKeyOf(s)) ?? font
+    const fontFor = (s: RunStyle | null): number => styleFonts.get(faceKeyOf(s))?.font ?? font
+    const synthFor = (s: RunStyle | null): boolean =>
+      styleFonts.get(faceKeyOf(s))?.synth ?? fontSynth
 
     // Advance of one codepoint in text-space pt, measured with the face and size that
     // will draw it (same unicode→charcode mapping FPDFText_SetText uses)
@@ -1644,8 +1748,15 @@ async function rebuildRun(
       lineMatrix[5] = y
       m.HEAPF32.set(lineMatrix, matPtr >> 2)
       m._FPDFPageObj_SetMatrix(newObj, matPtr)
-      const c = style?.color ? [style.color[0], style.color[1], style.color[2], 255] : color
-      m._FPDFPageObj_SetFillColor(newObj, c[0]!, c[1]!, c[2]!, c[3]!)
+      const c: readonly [number, number, number, number] = style?.color
+        ? [style.color[0], style.color[1], style.color[2], 255]
+        : color
+      m._FPDFPageObj_SetFillColor(newObj, c[0], c[1], c[2], c[3])
+      const emPt = sizeOf(style) * Math.hypot(matrix[0]!, matrix[1]!)
+      if (synthFor(style)) strokeObject(m, newObj, c, syntheticBoldWidth(emPt))
+      else if (inherited?.sameAsFill)
+        strokeObject(m, newObj, c, syntheticBoldWidth(emPt), inherited.mode)
+      else if (inherited) strokeObject(m, newObj, inherited.color, inherited.width, inherited.mode)
       newObjs.push(newObj)
       segAnchors.push(lastKeptObj)
     }
@@ -1774,7 +1885,13 @@ async function rebuildRun(
       m.HEAPF32[(matPtr >> 2) + 4] += v.dx
       m.HEAPF32[(matPtr >> 2) + 5] += v.dy
       m._FPDFPageObj_SetMatrix(v.obj, matPtr)
-      if (v.color) m._FPDFPageObj_SetFillColor(v.obj, v.color[0]!, v.color[1]!, v.color[2]!, 255)
+      if (v.color) {
+        // a synthetic-bold stroke tracks the fill: recolor both (read before the fill changes)
+        const st = readStroke(m, v.obj)
+        m._FPDFPageObj_SetFillColor(v.obj, v.color[0]!, v.color[1]!, v.color[2]!, 255)
+        if (st?.sameAsFill)
+          m._FPDFPageObj_SetStrokeColor(v.obj, v.color[0]!, v.color[1]!, v.color[2]!, 255)
+      }
     }
     const removed = matches.filter((t) => !kept.has(t.obj))
     for (const t of removed) {
@@ -1961,7 +2078,12 @@ export function applyTextInserts(
             const created: number[] = []
             let font = 0
             try {
-              const fontBytes = await rebuildFontBytes(m, 0, pseudoEdit, input.text)
+              const { bytes: fontBytes, syntheticBold } = await resolveRebuildFont(
+                m,
+                0,
+                pseudoEdit,
+                input.text,
+              )
               const fontPtr = m._malloc(fontBytes.length)
               m.HEAPU8.set(fontBytes, fontPtr)
               font = m._FPDFText_LoadFont(
@@ -2008,6 +2130,13 @@ export function applyTextInserts(
                     input.color[2],
                     255,
                   )
+                  if (syntheticBold)
+                    strokeObject(
+                      m,
+                      obj,
+                      [input.color[0], input.color[1], input.color[2], 255],
+                      syntheticBoldWidth(input.fontSize),
+                    )
                   created.push(obj)
                 }
               } finally {
@@ -2154,11 +2283,15 @@ async function applyTextEditsInner(
             ? edit
             : { ...edit, origin: undefined, lineLeading: undefined, lineXOffsets: undefined }
           try {
-            if (canReuseFont(eff, newText, matches, objects)) {
+            if (canReuseFont(eff, newText, matches, objects, whole)) {
+              const obj = matches[0]!.obj
               const textPtr = utf16Ptr(m, newText)
-              const ok = m._FPDFText_SetText(matches[0]!.obj, textPtr)
+              const ok = m._FPDFText_SetText(obj, textPtr)
               m._free(textPtr)
               if (!ok) throw new Error('FPDFText_SetText failed')
+              if (eff.newBold && !faceIsBold(m, matches[0]!.font) && !readStroke(m, obj)) {
+                strokeObject(m, obj, fillColorOf(m, obj), syntheticBoldWidth(renderedEm(m, obj)))
+              }
             } else {
               embeddedCff =
                 (await rebuildRun(m, doc, page, eff, matches, newText, textPage)) || embeddedCff

@@ -9,6 +9,7 @@ import { nextNoteId, parseDocx, type CommentInfo, type NoteInfo } from '@genoffi
 import type { Dispatch, SetStateAction } from 'react'
 import type { DocState } from './doc-state'
 import {
+  addCommentToRange,
   addCommentToSelection,
   addReplyToCommentRange,
   nextCommentId,
@@ -155,6 +156,28 @@ export function submitNewComment(ctx: ReviewContext, text: string): void {
   ctx.setCommentComposing(false)
   ctx.dirtyRef.current = true
   ctx.setStatus(t('appCommentAdded'))
+}
+
+/** New thread on an explicit range (AI add_comment); the new id, null when the range holds no text */
+export function addCommentAt(
+  ctx: ReviewContext,
+  range: { from: number; to: number },
+  text: string,
+  author: string,
+  initials?: string,
+): string | null {
+  if (!ctx.editor) return null
+  const id = nextCommentId(ctx.comments)
+  if (!addCommentToRange(ctx.editor, range.from, range.to, id)) return null
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+  ctx.setComments((prev) => [
+    ...prev,
+    { id, author, date: now, text, ...(initials ? { initials } : {}) },
+  ])
+  ctx.setCommentsDirty(true)
+  ctx.dirtyRef.current = true
+  ctx.setStatus(t('appCommentAdded'))
+  return id
 }
 
 /** Reply to a comment: the new entry carries parentId; the anchor shares the parent comment's range */

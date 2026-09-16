@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { inflateSync } from 'node:zlib'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import {
@@ -8,6 +9,7 @@ import {
   textInsertAxes,
   validateTextEdits,
 } from '../src/main/text-edit'
+import { SYNTHETIC_BOLD_STROKE_EM } from '../src/shared/ipc'
 import type { TextEditInput, TextInsertInput } from '../src/shared/ipc'
 
 /** Happy-path apply: no edit may be skipped */
@@ -36,16 +38,47 @@ interface Fixture {
 }
 
 /** One-page PDF with a single Helvetica text run at a known position */
-async function makeFixture(text: string): Promise<Fixture> {
+async function makeFixture(
+  text: string,
+  face: StandardFonts = StandardFonts.Helvetica,
+): Promise<Fixture> {
   const doc = await PDFDocument.create()
   const page = doc.addPage([595, 842])
-  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const font = await doc.embedFont(face)
   const size = 14
   page.drawText(text, { x: 50, y: 700, size, font })
   const w = font.widthOfTextAtSize(text, size)
   return {
     bytes: await doc.save({ useObjectStreams: false }),
     rect: [45, 694, 50 + w + 5, 700 + size + 4],
+  }
+}
+
+/** Text render modes, stroke colors (0–255) and line widths set in the content streams
+    (read from the streams themselves: pdf.js drops the operator list after a font it
+    cannot load, which the non-embedded fixture face triggers in this environment) */
+function strokeOps(bytes: Uint8Array) {
+  const raw = Buffer.from(bytes)
+  const text = raw.toString('latin1')
+  let content = ''
+  for (const m of text.matchAll(/(?<!end)stream\r?\n/g)) {
+    const start = m.index! + m[0].length
+    const chunk = raw.subarray(start, text.indexOf('endstream', start))
+    let body: string
+    try {
+      body = inflateSync(chunk).toString('latin1')
+    } catch {
+      body = chunk.toString('latin1')
+    }
+    if (/T[jJ]/.test(body)) content += body
+  }
+  const nums = (re: RegExp) => [...content.matchAll(re)].map((m) => m.slice(1).map(Number))
+  return {
+    renderModes: nums(/(\d) Tr\b/g).map(([m]) => m!),
+    strokeColors: nums(/([\d.]+) ([\d.]+) ([\d.]+) RG\b/g).map((c) =>
+      c.map((v) => Math.round(v * 255)),
+    ),
+    lineWidths: nums(/([\d.]+) w\b/g).map(([w]) => w!),
   }
 }
 
@@ -1498,5 +1531,135 @@ describe('whitespace edits (space deletion/insertion between runs)', () => {
     } finally {
       await pdf.loadingTask.destroy()
     }
+  })
+})
+
+describe('synthetic bold (stroke instead of a bold face)', () => {
+  const FILL_STROKE = 2
+  const hasArialUnicode = existsSync('/System/Library/Fonts/Supplemental/Arial Unicode.ttf')
+
+  it('strokes the existing object in place when only the bold toggle changes', async () => {
+    const f = await makeFixture('Amount due 500')
+    const out = await applyAll(f.bytes, [
+      { ...edit(f, 'Amount due 500', 'Amount due 500'), newBold: true },
+    ])
+    expect(await extractText(out)).toBe('Amount due 500')
+    const ops = strokeOps(out)
+    expect(ops.renderModes).toContain(FILL_STROKE)
+    expect(ops.strokeColors).toContainEqual([0, 0, 0])
+    expect(ops.lineWidths.some((w) => Math.abs(w - 14 * SYNTHETIC_BOLD_STROKE_EM) < 0.01)).toBe(
+      true,
+    )
+    expect(Buffer.from(out).toString('latin1')).not.toMatch(/Bold/)
+  })
+
+  it('keeps the original face and advances on a bold rebuild', async () => {
+    if (!hasArialUnicode) return
+    const f = await makeFixture('Amount due 500')
+    const plain = await applyAll(f.bytes, [
+      { ...edit(f, 'Amount due 500', 'Amount due 900'), newColor: [211, 47, 47] },
+    ])
+    const bold = await applyAll(f.bytes, [
+      { ...edit(f, 'Amount due 500', 'Amount due 900'), newColor: [211, 47, 47], newBold: true },
+    ])
+    expect(await extractText(bold)).toBe('Amount due 900')
+    const ops = strokeOps(bold)
+    expect(ops.renderModes).toContain(FILL_STROKE)
+    expect(ops.strokeColors).toContainEqual([211, 47, 47])
+    expect(strokeOps(plain).renderModes).not.toContain(FILL_STROKE)
+    // Same glyph advances: the bold run ends where the regular rebuild ends
+    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    const widthOf = async (bytes: Uint8Array) => {
+      const doc = await getDocument({ data: bytes.slice(), useSystemFonts: true }).promise
+      try {
+        const content = await (await doc.getPage(1)).getTextContent()
+        const item = content.items.find((i) => 'str' in i && i.str === 'Amount due 900')
+        return item && 'width' in item ? item.width : NaN
+      } finally {
+        await doc.loadingTask.destroy()
+      }
+    }
+    expect(await widthOf(bold)).toBeCloseTo(await widthOf(plain), 3)
+    expect(Buffer.from(bold).toString('latin1')).not.toMatch(/Bold/)
+  })
+
+  it('loads the real bold face for an explicit edit font instead of stroking', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Bold.ttf')) return
+    const f = await makeFixture('Amount due 500')
+    const out = await applyAll(f.bytes, [
+      { ...edit(f, 'Amount due 500', 'Amount due 900'), newFont: 'arial', newBold: true },
+    ])
+    expect(Buffer.from(out).toString('latin1')).toContain('Arial-BoldMT')
+    expect(strokeOps(out).renderModes).not.toContain(FILL_STROKE)
+  })
+
+  it('still loads the explicit bold face when the original run is already bold', async () => {
+    if (!existsSync('/System/Library/Fonts/Supplemental/Arial Bold.ttf')) return
+    const f = await makeFixture('Already bold', StandardFonts.HelveticaBold)
+    const out = await applyAll(f.bytes, [
+      { ...edit(f, 'Already bold', 'Still bold'), newFont: 'arial', newBold: true },
+    ])
+    expect(Buffer.from(out).toString('latin1')).toContain('Arial-BoldMT')
+  })
+
+  it('recolors the stroke of a kept synthetic-bold object', async () => {
+    if (!hasArialUnicode) return
+    const f = await makeFixture('Amount due 500')
+    const first = await applyAll(f.bytes, [
+      { ...edit(f, 'Amount due 500', 'Amount due 500'), newBold: true },
+    ])
+    // identical text + color only: the object survives via the keep plan (translated, recolored)
+    const second = await applyAll(first, [
+      { ...edit(f, 'Amount due 500', 'Amount due 500'), newColor: [211, 47, 47] },
+    ])
+    const ops = strokeOps(second)
+    expect(ops.renderModes).toContain(FILL_STROKE)
+    expect(ops.strokeColors).toContainEqual([211, 47, 47])
+    expect(ops.strokeColors).not.toContainEqual([0, 0, 0])
+  })
+
+  it('does not stroke a run whose face is already bold', async () => {
+    const f = await makeFixture('Already bold', StandardFonts.HelveticaBold)
+    const out = await applyAll(f.bytes, [
+      { ...edit(f, 'Already bold', 'Already bold'), newBold: true },
+    ])
+    expect(strokeOps(out).renderModes).not.toContain(FILL_STROKE)
+  })
+
+  it('strokes inserted text when no edit font is chosen', async () => {
+    if (!hasArialUnicode) return
+    const f = await makeFixture('Existing text')
+    const result = await applyTextInserts(f.bytes, [
+      {
+        pageIndex: 0,
+        origin: [50, 650],
+        text: 'Inserted',
+        fontSize: 20,
+        color: [0, 0, 255],
+        bold: true,
+      },
+    ])
+    expect(result.skipped).toEqual([])
+    const ops = strokeOps(result.bytes)
+    expect(ops.renderModes).toContain(FILL_STROKE)
+    expect(ops.strokeColors).toContainEqual([0, 0, 255])
+    expect(ops.lineWidths.some((w) => Math.abs(w - 20 * SYNTHETIC_BOLD_STROKE_EM) < 0.01)).toBe(
+      true,
+    )
+  })
+
+  it('carries the stroke through a later edit and recolors it with the fill', async () => {
+    if (!hasArialUnicode) return
+    const f = await makeFixture('Amount due 500')
+    const first = await applyAll(f.bytes, [
+      { ...edit(f, 'Amount due 500', 'Amount due 500'), newBold: true },
+    ])
+    const second = await applyAll(first, [
+      { ...edit(f, 'Amount due 500', 'Amount due 900'), newColor: [211, 47, 47] },
+    ])
+    expect(await extractText(second)).toBe('Amount due 900')
+    const ops = strokeOps(second)
+    expect(ops.renderModes).toContain(FILL_STROKE)
+    expect(ops.strokeColors).toContainEqual([211, 47, 47])
   })
 })

@@ -50,9 +50,15 @@ function neutralizeUnicodePathFields(bytes: Uint8Array): Uint8Array {
   return out ?? bytes
 }
 
-const MAX_ZIP_PARTS = 10000
-const MAX_PART_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
-const MAX_TOTAL_UNCOMPRESSED_BYTES = 1.5 * 1024 * 1024 * 1024
+/** Shared with the CLI's pre-open check so both layers accept the same files. */
+export const DOCX_ZIP_LIMITS = {
+  maxParts: 10000,
+  maxPartBytes: 512 * 1024 * 1024,
+  maxTotalBytes: 1.5 * 1024 * 1024 * 1024,
+} as const
+const MAX_ZIP_PARTS = DOCX_ZIP_LIMITS.maxParts
+const MAX_PART_UNCOMPRESSED_BYTES = DOCX_ZIP_LIMITS.maxPartBytes
+const MAX_TOTAL_UNCOMPRESSED_BYTES = DOCX_ZIP_LIMITS.maxTotalBytes
 
 /**
  * Reject zip bombs before any part is inflated, using the declared

@@ -270,7 +270,7 @@ function hfRefs(
   return refs
 }
 
-function sectionFromSectPr(
+export function sectionFromSectPr(
   sectPrXml: string,
   firstBlockIndex: number,
   lastBlockIndex: number,
@@ -305,13 +305,21 @@ export function applyPageNumType(
   fmt: string | undefined,
   start: number | undefined,
 ): string {
-  let xml = sectPrXml.replace(/<w:pgNumType[^>]*\/>/, '')
+  const xml = sectPrXml.replace(/<w:pgNumType[^>]*\/>/, '')
   if (fmt === undefined && start === undefined) return xml
   const tag = `<w:pgNumType${fmt !== undefined ? ` w:fmt="${fmt}"` : ''}${start !== undefined ? ` w:start="${start}"` : ''}/>`
-  if (/<w:cols[\s/>]/.test(xml)) xml = xml.replace(/(<w:cols[\s/>])/, `${tag}$1`)
-  else if (/<w:docGrid/.test(xml)) xml = xml.replace(/(<w:docGrid)/, `${tag}$1`)
-  else xml = xml.replace(/<\/w:sectPr>/, `${tag}</w:sectPr>`)
-  return xml
+  return insertBefore(xml, tag, PG_NUM_TYPE_FOLLOWERS)
+}
+
+/** CT_SectPr children that follow pgNumType / titlePg, in schema order */
+const PG_NUM_TYPE_FOLLOWERS =
+  /<w:(?:cols|formProt|vAlign|noEndnote|titlePg|textDirection|bidi|rtlGutter|docGrid|printerSettings)[\s/>]/
+const TITLE_PG_FOLLOWERS = /<w:(?:textDirection|bidi|rtlGutter|docGrid|printerSettings)[\s/>]/
+
+function insertBefore(sectPrXml: string, tag: string, followers: RegExp): string {
+  const m = followers.exec(sectPrXml)
+  if (m) return `${sectPrXml.slice(0, m.index)}${tag}${sectPrXml.slice(m.index)}`
+  return sectPrXml.replace(/<\/w:sectPr>/, `${tag}</w:sectPr>`)
 }
 
 /**
@@ -375,12 +383,14 @@ export function applySectionSettings(sectPrXml: string, settings: SectionSetting
       tag = replaceMarAttr(tag, 'w:header', settings.headerDist)
     if (settings.footerDist !== undefined)
       tag = replaceMarAttr(tag, 'w:footer', settings.footerDist)
+    if (settings.gutter !== undefined) tag = replaceMarAttr(tag, 'w:gutter', gutter)
     xml = xml.replace(marMatch[0], tag)
   } else {
+    const gutter = settings.gutter ?? 0
     const pgMar =
-      `<w:pgMar w:top="${settings.marginTop}" w:right="${settings.marginRight}"` +
-      ` w:bottom="${settings.marginBottom}" w:left="${settings.marginLeft}"` +
-      ' w:header="708" w:footer="708" w:gutter="0"/>'
+      `<w:pgMar w:top="${settings.marginTop - (settings.gutterAtTop ? gutter : 0)}" w:right="${settings.marginRight}"` +
+      ` w:bottom="${settings.marginBottom}" w:left="${settings.marginLeft - (settings.gutterAtTop ? 0 : gutter)}"` +
+      ` w:header="708" w:footer="708" w:gutter="${gutter}"/>`
     xml = xml.replace(/<\/w:sectPr>/, `${pgMar}</w:sectPr>`)
   }
 
@@ -482,6 +492,12 @@ export function applySectionStartType(
   if (/<w:pgSz/.test(xml)) xml = xml.replace(/(<w:pgSz)/, `${tag}$1`)
   else xml = xml.replace(/(<w:sectPr[^>]*>)/, `$1${tag}`)
   return xml
+}
+
+/** set or remove w:titlePg (different first page) at its CT_SectPr position */
+export function applyTitlePg(sectPrXml: string, on: boolean): string {
+  const xml = sectPrXml.replace(/<w:titlePg[^>]*\/>/, '')
+  return on ? insertBefore(xml, '<w:titlePg/>', TITLE_PG_FOLLOWERS) : xml
 }
 
 /** Read the page color (w:background) from document.xml; null when unset. */

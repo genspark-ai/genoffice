@@ -60,7 +60,7 @@ test.describe('sheets: macro-enabled workbook (.xlsm)', () => {
 
       const a1 = await cellA1(sheets)
       await sheets.mouse.click(a1.x, a1.y)
-      await expect(sheets.locator('.name-box')).toHaveValue('A1')
+      await expect(sheets.locator('[data-u-comp="defined-name"] input')).toHaveValue('A1')
 
       await sheets.keyboard.type('MacroSafe', { delay: 50 })
       await sheets.keyboard.press('Enter')
@@ -97,7 +97,7 @@ test.describe('sheets: macro-enabled workbook (.xlsm)', () => {
 
       const a1 = await cellA1(sheets)
       await sheets.mouse.click(a1.x, a1.y)
-      await expect(sheets.locator('.name-box')).toHaveValue('A1')
+      await expect(sheets.locator('[data-u-comp="defined-name"] input')).toHaveValue('A1')
       if (canReadClipboard) {
         expect(await copyActiveCell(sheets)).toBe('MacroSafe')
       }

@@ -39,6 +39,8 @@ export interface McpServerOptions {
    */
   toolsFactory?: () => McpToolDefinition[]
   logger?: (message: string) => void
+  /** reported to clients in the initialize handshake; defaults to the app version when wired */
+  version?: string
   /** EADDRINUSE retry tuning (exposed so tests do not wait out the backoff) */
   maxListenAttempts?: number
   listenRetryDelayMs?: number
@@ -52,6 +54,7 @@ export class McpServerService {
   private readonly tools: McpToolDefinition[]
   private readonly toolsFactory?: () => McpToolDefinition[]
   private readonly logger: (message: string) => void
+  private readonly version: string
   private readonly maxListenAttempts: number
   private readonly listenRetryDelayMs: number
   private httpServer?: Server
@@ -72,6 +75,7 @@ export class McpServerService {
     this.toolsFactory = options.toolsFactory
     this.port = options.port
     this.logger = options.logger ?? (() => undefined)
+    this.version = options.version ?? '0.1.0'
     this.maxListenAttempts = options.maxListenAttempts ?? 5
     this.listenRetryDelayMs = options.listenRetryDelayMs ?? LISTEN_RETRY_DELAY_MS
   }
@@ -92,7 +96,7 @@ export class McpServerService {
   // ── tool registration ─────────────────────────────────────────────────────
 
   private createSessionServer(): McpServer {
-    const server = new McpServer({ name: 'GenOffice', version: '0.1.0' })
+    const server = new McpServer({ name: 'GenOffice', version: this.version })
     // a factory gives each connected client its own tool instances (session
     // state lives in their closures); otherwise the fixed set is shared
     const tools = this.toolsFactory ? this.toolsFactory() : this.tools

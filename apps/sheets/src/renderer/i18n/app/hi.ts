@@ -127,7 +127,6 @@ export const hi = {
   appMoreItems: '+{count} और…',
   appTruncationNote: '{total} में से पहले {shown}',
   appGoToButtonTitle: 'इस पर जाएँ (⌘G)',
-  appNameBoxTitle: 'नाम बॉक्स — पता या नाम टाइप करें, फिर Enter दबाएँ',
   appPivotChartHintIn: 'वर्तमान पिवट टेबल से पिवट चार्ट बनाएँ',
   appPivotChartHintOut: 'पहले पिवट टेबल आउटपुट के भीतर एक सेल चुनें, फिर चार्ट प्रकार चुनें',
   appChartColumn: 'स्तंभ',

@@ -42,9 +42,12 @@ function Item({
 /** Outline (bookmark) tree: click jumps to internal destinations; url entries open external links */
 export function OutlinePanel({
   outline,
+  note,
   onGoToDest,
 }: {
   outline: OutlineNode[]
+  /** Caption above the tree, e.g. when the tree was derived from headings */
+  note?: string
   onGoToDest: (dest: unknown) => void
 }): ReactElement {
   const onGo = (n: OutlineNode) => {
@@ -53,6 +56,7 @@ export function OutlinePanel({
   }
   return (
     <div className="pdf-outline">
+      {note && <div className="pdf-outline-note">{note}</div>}
       {outline.map((n, i) => (
         <Item key={i} node={n} depth={0} onGo={onGo} />
       ))}

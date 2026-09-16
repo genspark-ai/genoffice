@@ -19,6 +19,7 @@ const recalcResultSchema = z
           column: z.number().int().nonnegative(),
           formatted: z.string(),
           number: z.number().optional(),
+          isError: z.boolean(),
           isFormula: z.boolean(),
         })
         .strict(),
@@ -213,9 +214,42 @@ describe('sidecar IronCalc recalculation channel', () => {
         column: 0,
         formatted: '120',
         number: 120,
+        isError: false,
         isFormula: true,
       })
       expect(result.cached).toBe(false)
+    } finally {
+      client.stop()
+    }
+  })
+
+  it('types error results, not text that spells an error', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'xlsx-recalc-test-'))
+    cleanups.push(directory)
+    const path = join(directory, 'recalc.xlsx')
+    await writeFile(path, await buildRecalcFixture())
+    const client = new XlsxSidecarClient(sidecarBinaryPath())
+    try {
+      const result = recalcResultSchema.parse(
+        await client.recalcCells({
+          path,
+          edits: [
+            { sheet: 'Data', row: 0, column: 0, input: '=1/0' },
+            { sheet: 'Data', row: 1, column: 0, input: '="#N/A"' },
+          ],
+          reads: [
+            { sheet: 'Data', range: { startRow: 0, endRow: 1, startColumn: 0, endColumn: 0 } },
+          ],
+        }),
+      )
+      expect(result.cells.find((cell) => cell.row === 0)).toMatchObject({
+        formatted: '#DIV/0!',
+        isError: true,
+      })
+      expect(result.cells.find((cell) => cell.row === 1)).toMatchObject({
+        formatted: '#N/A',
+        isError: false,
+      })
     } finally {
       client.stop()
     }
