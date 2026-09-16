@@ -776,6 +776,136 @@ const MARKETPLACE_SKILLS: MarketplaceSkillEntry[] = [
     downloads: 3411,
     icon: 'M',
   },
+  // ── Translate suite (ported from LumosAI's translate-* skills) ──────────
+  // The 6 entries below mirror the unified translation workflow shipped in
+  // ~/.lumos/bundled-skills/*/translate*/: one entry point, four file-type
+  // handlers, one knowledge-base configurator. `tools` names intentionally
+  // match the pi tools the agent exposes so the marketplace card and the
+  // runtime agree.
+  {
+    id: 'translate',
+    name: 'Translate (统一翻译入口)',
+    description: '按扩展名自动选择处理器,翻译 PDF/Excel/PPT/Word 并保留版式',
+    longDescription:
+      '统一翻译入口:识别 .pdf / .xls / .xlsx / .pptx / .docx 并路由到对应子技能。' +
+      '翻译时自动注入翻译知识库(术语/禁用译法/品牌词/风格规则/客户偏好),保留原始格式、合并单元格、图片与图表。',
+    author: 'LumosAI',
+    version: '1.0.0',
+    package: '@marketplace/translate',
+    source: 'skills/translate/SKILL.md',
+    tools: ['translate_file', 'translate_text', 'detect_file_type'],
+    scopes: ['files:read', 'files:write', 'ai:stream'],
+    category: 'translation',
+    tags: ['translation', 'document', 'i18n', 'unified-entry', 'pdf', 'xlsx', 'pptx', 'docx'],
+    rating: 4.8,
+    downloads: 28640,
+    featured: true,
+    icon: '🌐',
+    homepage: 'https://github.com/louloulin/genoffice',
+  },
+  {
+    id: 'translate-config',
+    name: 'Translate Config (知识库配置)',
+    description: '翻译知识库的 5 schema CRUD:术语/禁用译法/品牌词/风格/客户偏好',
+    longDescription:
+      '对话式配置翻译知识库。支持 5 种 schema:term(必译术语)、forbidden(禁用译法)、' +
+      'brand(品牌词策略)、styleRule(风格规则)、customerPreference(客户偏好)。' +
+      '优先级层级 session > customer > project > company > global,客户级规则自动覆盖全局默认值。',
+    author: 'LumosAI',
+    version: '1.0.0',
+    package: '@marketplace/translate-config',
+    source: 'skills/translate-config/SKILL.md',
+    tools: [
+      'kb_list',
+      'kb_add',
+      'kb_remove',
+      'kb_import',
+      'kb_export',
+      'kb_validate',
+    ],
+    scopes: ['files:read', 'files:write'],
+    category: 'translation',
+    tags: ['translation', 'knowledge-base', 'glossary', 'terminology', 'config'],
+    rating: 4.7,
+    downloads: 9420,
+    icon: '⚙️',
+  },
+  {
+    id: 'translate-docx',
+    name: 'Translate DOCX',
+    description: 'Word 文档 run 级 in-place 翻译,保留所有样式、表格、页眉页脚',
+    longDescription:
+      '基于 python-docx 的 run 级原位替换,不重建段落,因此保留加粗/斜体/字号/颜色/' +
+      '编号列表/嵌套表格/页眉页脚。适合合同、标书、说明书等需要视觉保真的场景。',
+    author: 'LumosAI',
+    version: '1.0.0',
+    package: '@marketplace/translate-docx',
+    source: 'skills/translate-docx/SKILL.md',
+    tools: ['translate_docx', 'extract_docx_text'],
+    scopes: ['files:read', 'files:write'],
+    category: 'translation',
+    tags: ['translation', 'docx', 'word', 'format-preserving'],
+    rating: 4.7,
+    downloads: 12080,
+    icon: '📝',
+  },
+  {
+    id: 'translate-pdf',
+    name: 'Translate PDF',
+    description: 'PDF 渲染为背景图后叠加中文,最大程度保留排版、表格与插图',
+    longDescription:
+      '把每一页渲染成高分辨率背景图,在文本区域叠加译文。字体、版式、公式、图表全部保留,' +
+      '可调 --scale 控制渲染精度。适合扫描件、手册、产品资料等排版复杂的 PDF。',
+    author: 'LumosAI',
+    version: '1.0.0',
+    package: '@marketplace/translate-pdf',
+    source: 'skills/translate-pdf/SKILL.md',
+    tools: ['translate_pdf'],
+    scopes: ['files:read', 'files:write'],
+    category: 'translation',
+    tags: ['translation', 'pdf', 'layout-preserving', 'render-overlay'],
+    rating: 4.6,
+    downloads: 15630,
+    icon: '📄',
+  },
+  {
+    id: 'translate-ppt',
+    name: 'Translate PPT',
+    description: 'PowerPoint run 级翻译,保留所有样式、母版、图片与动画',
+    longDescription:
+      '基于 python-pptx 的 run 级原位替换,遍历形状/文本框/表格/备注,保留母版配色与占位符布局。' +
+      '返回未翻译项清单,方便二次校对。',
+    author: 'LumosAI',
+    version: '1.0.0',
+    package: '@marketplace/translate-ppt',
+    source: 'skills/translate-ppt/SKILL.md',
+    tools: ['translate_pptx', 'extract_pptx_text'],
+    scopes: ['files:read', 'files:write'],
+    category: 'translation',
+    tags: ['translation', 'pptx', 'powerpoint', 'slides'],
+    rating: 4.6,
+    downloads: 10890,
+    icon: '📊',
+  },
+  {
+    id: 'translate-xls',
+    name: 'Translate XLS',
+    description: 'Excel 单元格原地翻译,保留图片/图表/合并单元格/数字格式',
+    longDescription:
+      '主路径优先用 LibreOffice(soffice)转换为 xlsx 再翻译,完整保留内嵌图片、图表与自定义数字格式;' +
+      '无 soffice 时回退到 xlrd + openpyxl 重建路径。支持最长匹配优先的复合术语替换。',
+    author: 'LumosAI',
+    version: '1.0.0',
+    package: '@marketplace/translate-xls',
+    source: 'skills/translate-xls/SKILL.md',
+    tools: ['translate_xls', 'translate_xlsx', 'extract_sheet_text'],
+    scopes: ['files:read', 'files:write'],
+    category: 'translation',
+    tags: ['translation', 'xlsx', 'excel', 'spreadsheet', 'soffice'],
+    rating: 4.7,
+    downloads: 13420,
+    icon: '📈',
+  },
 ]
 
 const MARKETPLACE_PLUGINS: MarketplacePluginEntry[] = [
@@ -1176,6 +1306,9 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
       tags: string[]
       author: string
       category: string
+      /** Tool names the extension exposes to the agent. Optional because
+       *  curated rows that predate this field don't list any. */
+      tools?: string[]
     },
     toks: string[],
   ): number {
@@ -1187,6 +1320,11 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
     const tags = entry.tags.join(' ').toLowerCase()
     const author = entry.author.toLowerCase()
     const category = entry.category.toLowerCase()
+    // Tool names are the vocabulary an agent (and a power user reading the
+    // card) actually types, so an exact tool hit should rank above a
+    // description mention. Joined with a separator that is not `[a-z0-9]`
+    // so the boundary regex below anchors correctly.
+    const tools = (entry.tools ?? []).join(' ').toLowerCase()
 
     let total = 0
     for (const tok of toks) {
@@ -1199,6 +1337,8 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
       if (name === tok) tokenScore = Math.max(tokenScore, 500)
       else if (name.startsWith(tok)) tokenScore = Math.max(tokenScore, 350)
       else if (name.includes(tok)) tokenScore = Math.max(tokenScore, 250)
+      if (new RegExp(`(^|[^a-z0-9])${escapeRe(tok)}`).test(tools)) tokenScore = Math.max(tokenScore, 300)
+      else if (tools.includes(tok)) tokenScore = Math.max(tokenScore, 160)
       if (new RegExp(`(^|[^a-z0-9])${escapeRe(tok)}`).test(tags)) tokenScore = Math.max(tokenScore, 200)
       else if (tags.includes(tok)) tokenScore = Math.max(tokenScore, 120)
       if (desc.includes(tok)) tokenScore = Math.max(tokenScore, 80)
@@ -1223,6 +1363,7 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
     author: string
     rating: number
     category: string
+    tools?: string[]
   }): boolean {
     if (tokens.length > 0 && score(entry, tokens) === 0) return false
     if (entry.rating < minRating) return false

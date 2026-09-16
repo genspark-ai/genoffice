@@ -7,6 +7,7 @@
  *     chunkDocument, buildTranslationPrompt, extractTranslationText,
  *     LANGUAGES, englishLabelFor,
  *     assessQuality, assessBatchQuality,
+ *     KnowledgeBase, PersistentTranslationMemory,
  *   } from '@genoffice/translation-core'
  *
  * The Electron main-process handlers (docs / sheets / slides) and the
@@ -18,6 +19,13 @@
  * standalone web-server's `/api/ai/translate/stream` SSE endpoint and the
  * Dataflare parent's bridge forwarder; it shares logic with `translateBatch`
  * but settles units under a bounded concurrency budget.
+ *
+ * `KnowledgeBase` and `PersistentTranslationMemory` are the storage layer that
+ * mirrors the LumosAI translation suite (`translate-config` 5-schema KB +
+ * JSON-backed TM with fuzzy match). Hosts pass them into `translateOne` /
+ * `translateBatch` via the `TranslateOneOptions.knowledgeBase` and
+ * `TranslateOneOptions.memory` slots — both are optional, so existing call
+ * sites keep working unchanged.
  */
 
 export type {
@@ -69,3 +77,35 @@ export {
   type LlmCallOptions,
   type LlmCallResult,
 } from './llm-client'
+
+// W35+ translation knowledge base + persistent TM — mirrors LumosAI's
+// translate-config / translation_memory layout under
+// `~/.genoffice/translation-kb.json` and `~/.genoffice/translation-memory/`.
+export {
+  KnowledgeBase,
+  SCOPES,
+  SCHEMA_IDS,
+  SCHEMA_KEY_TO_ID,
+  SCHEMA_TO_KEY,
+  type BrandEntry,
+  type CustomerPreferenceEntry,
+  type ForbiddenEntry,
+  type KBEntry,
+  type KBListFilters,
+  type KBStore,
+  type KnowledgeBaseFileSystem,
+  type KnowledgeBaseOptions,
+  type ResolvedRules,
+  type Scope,
+  type SchemaId,
+  type SchemaKey,
+  type StyleRuleEntry,
+  type TermEntry,
+} from './knowledge-base'
+
+export {
+  PersistentTranslationMemory,
+  type PersistentLookupHit,
+  type PersistentMemoryFileSystem,
+  type PersistentTranslationMemoryOptions,
+} from './persistent-memory'

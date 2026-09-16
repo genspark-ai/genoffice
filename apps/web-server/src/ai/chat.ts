@@ -35,20 +35,46 @@ import {
   streamForProvider,
 } from '@genoffice/ai-provider'
 import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
+import {
+  defaultOutputPath,
+  isSupportedExtension,
+  resolveTranslateSkills,
+  SUPPORTED_EXTENSIONS,
+  translateFile,
+} from './translate-files'
 import { parseDuckDuckGo, parseDuckDuckGoImages } from '@genoffice/agent-skills'
 import {
   buildTranslationPrompt,
   buildTranslateSystemPrompt,
   extractTranslationText,
+  KnowledgeBase,
   sharedMemory,
   translateBatch,
   translateOne,
+  type KBEntry,
+  type KBListFilters,
 } from '@genoffice/translation-core'
 
 // Re-export the shared prompt / text helpers so existing tests and external
 // callers don't need to know that the canonical home moved to
 // `@genoffice/translation-core`.
 export { buildTranslationPrompt, buildTranslateSystemPrompt, extractTranslationText }
+
+// Shared translation knowledge base — mirrors LumosAI's translate-config
+// 5-schema KB at ~/.genoffice/translation-kb.json. The load promise is
+// memoised so every caller can `await ensureKbLoaded()`; that ordering matters
+// because a fire-and-forget load would race a subsequent upsert and clobber
+// the in-memory store with the (empty) on-disk state.
+export const sharedKnowledgeBase = new KnowledgeBase()
+let kbLoadPromise: Promise<void> | null = null
+function ensureKbLoaded(): Promise<void> {
+  if (!kbLoadPromise) {
+    kbLoadPromise = sharedKnowledgeBase.load().catch((err: unknown) => {
+      console.warn('[translation-kb] load failed:', err)
+    })
+  }
+  return kbLoadPromise
+}
 
 // ----- settings persistence --------------------------------------------------
 
@@ -490,6 +516,7 @@ export function registerAiCoreHandlers(): void {
     if (!config) {
       return { ok: false, error: `AI provider \"${provider}\" not configured` }
     }
+    await ensureKbLoaded()
     return translateOne(
       {
         instruction: req.instruction ?? '',
@@ -501,7 +528,12 @@ export function registerAiCoreHandlers(): void {
         qualityCheck: req.qualityCheck,
         glossaryCategory: req.glossaryCategory,
       },
-      { provider, config: config as AiProviderConfig, memory: sharedMemory },
+      {
+        provider,
+        config: config as AiProviderConfig,
+        memory: sharedMemory,
+        knowledgeBase: sharedKnowledgeBase,
+      },
     )
   })
 
@@ -541,6 +573,7 @@ export function registerAiCoreHandlers(): void {
     if (!config) {
       return { ok: false, error: `AI provider "${provider}" not configured`, units: [] }
     }
+    await ensureKbLoaded()
     return translateBatch(
       {
         units,
@@ -552,7 +585,12 @@ export function registerAiCoreHandlers(): void {
         qualityCheck: req.qualityCheck,
         glossaryCategory: req.glossaryCategory,
       },
-      { provider, config: config as AiProviderConfig, memory: sharedMemory },
+      {
+        provider,
+        config: config as AiProviderConfig,
+        memory: sharedMemory,
+        knowledgeBase: sharedKnowledgeBase,
+      },
     )
   })
 
@@ -576,6 +614,129 @@ export function registerAiCoreHandlers(): void {
       targetLang: req.targetLang ?? 'auto',
       units,
     })
+  })
+
+  // ----- translation knowledge base CRUD --------------------------------------
+  // Mirrors LumosAI's translate-config CLI: list / add / remove / save.
+  // The UI (Settings -> AI -> Translation Knowledge) and the agent tools both
+  // hit these handlers; the JSON file at ~/.genoffice/translation-kb.json is
+  // the single source of truth.
+  registerHandle('ai:translation-kb-list', async (_event: unknown, filters: unknown) => {
+    await ensureKbLoaded()
+    const f = (filters ?? {}) as KBListFilters
+    return { ok: true, entries: sharedKnowledgeBase.list(f) }
+  })
+
+  registerHandle('ai:translation-kb-upsert', async (_event: unknown, entry: unknown) => {
+    await ensureKbLoaded()
+    if (!entry || typeof entry !== 'object') {
+      return { ok: false, error: 'ai:translation-kb-upsert expected a KB entry object' }
+    }
+    const candidate = entry as Partial<KBEntry> & { id?: string }
+    if (!candidate.id || typeof candidate.id !== 'string') {
+      return { ok: false, error: 'KB entry must include a string `id`' }
+    }
+    try {
+      sharedKnowledgeBase.upsert(candidate as KBEntry)
+      await sharedKnowledgeBase.save()
+      return { ok: true, entry: candidate }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  registerHandle('ai:translation-kb-remove', async (_event: unknown, id: unknown) => {
+    await ensureKbLoaded()
+    const targetId = String(id ?? '').trim()
+    if (!targetId) return { ok: false, error: 'ai:translation-kb-remove expected a non-empty id' }
+    const removed = sharedKnowledgeBase.remove(targetId)
+    if (removed) await sharedKnowledgeBase.save()
+    return { ok: true, removed }
+  })
+
+  registerHandle('ai:translation-kb-resolve', async (_event: unknown, request: unknown) => {
+    await ensureKbLoaded()
+    const req = (request ?? {}) as {
+      sourceLang?: string
+      targetLang?: string
+      category?: string
+      customerName?: string
+    }
+    if (!req.targetLang) {
+      return { ok: false, error: 'ai:translation-kb-resolve expected non-empty `targetLang`' }
+    }
+    const resolved = sharedKnowledgeBase.resolve({
+      sourceLang: req.sourceLang ?? 'auto',
+      targetLang: req.targetLang,
+      ...(req.category !== undefined ? { category: req.category } : {}),
+      ...(req.customerName !== undefined ? { customerName: req.customerName } : {}),
+    })
+    return { ok: true, ...resolved }
+  })
+
+  registerHandle('ai:translation-kb-stats', async () => {
+    await ensureKbLoaded()
+    const all = sharedKnowledgeBase.list()
+    const bySchema: Record<string, number> = {}
+    for (const entry of all) {
+      const key = ('sourceTerm' in entry && 'targetTerm' in entry) ? 'term'
+        : ('forbiddenText' in entry) ? 'forbidden'
+        : ('policy' in entry) ? 'brand'
+        : ('description' in entry && 'name' in entry) ? 'styleRule'
+        : 'customerPreference'
+      bySchema[key] = (bySchema[key] ?? 0) + 1
+    }
+    return { ok: true, total: all.length, bySchema, dirty: sharedKnowledgeBase.isDirty() }
+  })
+
+  // ----- whole-file translation (PDF / XLS(X) / PPTX / DOCX) ----------------
+  // Delegates to the upstream LumosAI `translate.py`, which dispatches by
+  // extension. The dictionary is built by the caller (typically from the KB +
+  // an LLM extraction pass) and passed as a path; without one the script is a
+  // no-op reformatter, which is why we surface that in the result rather than
+  // pretending the file was translated.
+  registerHandle('ai:translate-file', async (_event: unknown, request: unknown) => {
+    const req = (request ?? {}) as {
+      inputPath?: string
+      outputPath?: string
+      dictionaryPath?: string
+      scale?: number
+      timeoutMs?: number
+    }
+    if (!req.inputPath) {
+      return { ok: false, error: 'ai:translate-file expected a non-empty `inputPath`' }
+    }
+    if (!isSupportedExtension(req.inputPath)) {
+      return {
+        ok: false,
+        error: `Unsupported file type; expected one of ${SUPPORTED_EXTENSIONS.join(', ')}`,
+      }
+    }
+    return translateFile({
+      inputPath: req.inputPath,
+      ...(req.outputPath !== undefined ? { outputPath: req.outputPath } : {}),
+      ...(req.dictionaryPath !== undefined ? { dictionaryPath: req.dictionaryPath } : {}),
+      ...(req.scale !== undefined ? { scale: req.scale } : {}),
+      ...(req.timeoutMs !== undefined ? { timeoutMs: req.timeoutMs } : {}),
+    })
+  })
+
+  registerHandle('ai:translate-file-status', () => {
+    const location = resolveTranslateSkills()
+    return {
+      ok: true,
+      available: location.source !== 'missing',
+      source: location.source,
+      skillDir: location.skillDir,
+      pythonPath: location.pythonPath,
+      supportedExtensions: [...SUPPORTED_EXTENSIONS],
+    }
+  })
+
+  registerHandle('ai:translate-file-output-path', (_event: unknown, inputPath: unknown) => {
+    const p = String(inputPath ?? '')
+    if (!p) return { ok: false, error: 'expected a non-empty inputPath' }
+    return { ok: true, outputPath: defaultOutputPath(p) }
   })
 
   registerHandle('ai:web-search', async (_event: unknown, query: unknown) => {

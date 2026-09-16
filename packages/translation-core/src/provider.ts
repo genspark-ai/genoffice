@@ -8,6 +8,7 @@ import {
 } from './prompt'
 import { assessBatchQuality, warningsFor } from './quality'
 import { TranslationMemory } from './memory'
+import type { KnowledgeBase } from './knowledge-base'
 import type {
   TranslateBatchRequest,
   TranslateBatchResponse,
@@ -33,6 +34,21 @@ export interface TranslateOneOptions {
   config: AiProviderConfig
   /** Optional external memory; falls back to the shared in-memory TM. */
   memory?: TranslationMemory
+  /**
+   * Optional translation knowledge base. When provided, the resolved rules
+   * (term / forbidden / brand / style / customer preferences) are appended
+   * to the system prompt so the model respects the user's house style.
+   * Hosts construct one via `new KnowledgeBase({ filePath })` and call
+   * `.load()` on startup; the same instance is safe to share across
+   * concurrent translate calls.
+   */
+  knowledgeBase?: KnowledgeBase
+  /**
+   * When the supplied `memory` exposes `fuzzyLookup`, fall back to a
+   * similarity-based hit when no exact entry is found. Defaults to false so
+   * the existing one-shot translation flow stays byte-for-byte identical.
+   */
+  fuzzyMemoryEnabled?: boolean
 }
 
 /**
@@ -78,12 +94,32 @@ export async function translateOne(
       status: 'memory-hit',
     }
   }
+  // Optional fuzzy fallback — only when the host opts in by passing
+  // `fuzzyMemoryEnabled: true` and the memory exposes `fuzzyLookup`.
+  // PersistentTranslationMemory ships this method; the plain TranslationMemory
+  // does not, so the lookup stays exact-match for legacy callers.
+  if (opts.fuzzyMemoryEnabled && memory && typeof (memory as { fuzzyLookup?: unknown }).fuzzyLookup === 'function') {
+    const fuzzyHit = (memory as unknown as { fuzzyLookup: (s: string, t: string, x: string) => { translatedText: string; confidence: number } | null }).fuzzyLookup(sourceLang, targetLang, sourceText)
+    if (fuzzyHit) {
+      return {
+        ok: true,
+        translated: fuzzyHit.translatedText,
+        planId: `translate-fuzzy-${Date.now().toString(36)}`,
+        sourceLang,
+        targetLang,
+        preserveFormat,
+        status: 'memory-hit',
+        warnings: [`fuzzy-match:${fuzzyHit.confidence.toFixed(2)}`],
+      }
+    }
+  }
 
   const system = buildTranslateSystemPrompt({
     sourceLang,
     targetLang,
     preserveFormat,
     glossaryCategory: request.glossaryCategory,
+    ...(opts.knowledgeBase ? { knowledgeBase: opts.knowledgeBase } : {}),
   })
   const metadata: Record<string, string> = {}
   if (request.glossaryCategory) metadata.glossaryCategory = request.glossaryCategory

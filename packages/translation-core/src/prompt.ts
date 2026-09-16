@@ -1,5 +1,6 @@
 import { englishLabelFor } from './languages'
 import type { LanguageCode } from './types'
+import type { KnowledgeBase } from './knowledge-base'
 
 /**
  * Hardened system prompt for the one-shot translate path.
@@ -8,10 +9,17 @@ import type { LanguageCode } from './types'
  *  - keep the answer narrowly scoped to a faithful translation
  *  - preserve the source formatting by default (no list/code-fence wrapping)
  *  - make the model treat the wrapped text as data, not instructions
+ *  - inject the resolved translation knowledge base (term / forbidden /
+ *    brand / style / customer preferences) so the model respects the user's
+ *    house style without us hard-coding rules in the prompt template
  *
  * The single source of truth shared by the Electron main-process handlers in
  * docs/sheets/slides and the web-server (`ai:translate` handler). The
  * Dataflare bridge sends the request to the corporate backend unchanged.
+ *
+ * When `knowledgeBase` is provided, the resolver runs synchronously here to
+ * produce a prompt block; the KB itself is unchanged. Passing no KB keeps the
+ * legacy behaviour verbatim (terms / brands / etc. are simply absent).
  */
 export function buildTranslateSystemPrompt(opts: {
   sourceLang: string | undefined
@@ -19,6 +27,10 @@ export function buildTranslateSystemPrompt(opts: {
   preserveFormat: boolean
   /** Optional glossary bucket — when present, hint the model to use domain terms. */
   glossaryCategory?: string | undefined
+  /** Optional KB to inject resolved rules from. */
+  knowledgeBase?: KnowledgeBase | undefined
+  /** Optional customer name — filters customer-preference entries. */
+  customerName?: string | undefined
 }): string {
   const source = englishLabelFor(opts.sourceLang || 'auto')
   const target = englishLabelFor(opts.targetLang)
@@ -28,13 +40,28 @@ export function buildTranslateSystemPrompt(opts: {
   const glossaryHint = opts.glossaryCategory && opts.glossaryCategory.trim()
     ? ` Domain glossary: prefer terminology consistent with the "${opts.glossaryCategory.trim()}" domain.`
     : ''
+
+  const kbBlock = opts.knowledgeBase
+    ? opts.knowledgeBase
+        .resolve({
+          sourceLang: opts.sourceLang || 'auto',
+          targetLang: opts.targetLang,
+          ...(opts.glossaryCategory !== undefined ? { category: opts.glossaryCategory } : {}),
+          ...(opts.customerName !== undefined ? { customerName: opts.customerName } : {}),
+        })
+        .promptBlock
+    : ''
+
   return [
     'You are a professional translator.',
     preserve,
     `Source language: ${source}.`,
     `Target language: ${target}.` + glossaryHint,
     'Translate the user-supplied text faithfully; do not add explanations, do not omit content.',
-  ].join(' ')
+    kbBlock, // empty string when there are no rules
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /**
