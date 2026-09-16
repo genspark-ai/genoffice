@@ -38,8 +38,10 @@ import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
 
 import { parseDuckDuckGo, parseDuckDuckGoImages } from '@genoffice/agent-skills'
 import {
+  assessFileCoverage,
   buildDictionary,
   buildTranslationPrompt,
+  fillDictionaryGaps,
   buildTranslateSystemPrompt,
   defaultOutputPath,
   extractTranslationText,
@@ -864,6 +866,8 @@ export function registerAiCoreHandlers(): void {
       customerName?: string
       glossaryCategory?: string
       scale?: number
+      /** Reuse an existing dictionary instead of building a new one. */
+      dictionaryPath?: string
       settings?: AiSettings
     }
     if (!req.inputPath) {
@@ -878,6 +882,34 @@ export function registerAiCoreHandlers(): void {
         error: `Unsupported file type; expected one of ${SUPPORTED_EXTENSIONS.join(', ')}`,
       }
     }
+    // Re-run path: the caller already has a dictionary (typically the extended
+    // one from ai:translate-fill-gaps) and does not want it rebuilt — that would
+    // throw away the gap-filling work. It is a pure dictionary rewrite, so it
+    // needs no provider and runs even before one is configured.
+    if (req.dictionaryPath) {
+      const scored = await assessFileCoverage({
+        inputPath: req.inputPath,
+        dictionaryPath: req.dictionaryPath,
+      })
+      if (!scored.ok) {
+        return { ok: false, stage: 'dictionary', error: scored.error ?? 'dictionary unreadable' }
+      }
+      const fileResult = await translateFile({
+        inputPath: req.inputPath,
+        ...(req.outputPath !== undefined ? { outputPath: req.outputPath } : {}),
+        dictionaryPath: req.dictionaryPath,
+        ...(req.scale !== undefined ? { scale: req.scale } : {}),
+      })
+      scheduleMemoryFlush()
+      return {
+        ...fileResult,
+        stage: fileResult.ok ? 'done' : 'translate',
+        dictionaryPath: req.dictionaryPath,
+        dictionaryReused: true,
+        coverage: scored.coverage,
+      }
+    }
+
     const incoming = req.settings || aiSettings
     const provider = incoming.provider
     const config = incoming.providers?.[provider]
@@ -927,7 +959,78 @@ export function registerAiCoreHandlers(): void {
         elapsedMs: dict.elapsedMs,
         segments: dict.segments,
       },
+      // How much of the file the dictionary actually reached. The handlers
+      // report nothing useful for a zh -> en pass (their miss heuristic only
+      // looks at Latin/kana text), so the answer is recomputed from the mined
+      // segments before the file pass has even run.
+      coverage: dict.coverage,
     }
+  })
+
+  // ai:translate-fill-gaps — translate whatever the dictionary missed and write
+  // an extended dictionary. This is the "fill in the values and re-run" step the
+  // format handlers print, done by the model instead of by hand. Only the
+  // uncovered segments are sent, so the cost is proportional to the gap.
+  registerHandle('ai:translate-fill-gaps', async (_event: unknown, request: unknown) => {
+    const req = (request ?? {}) as {
+      inputPath?: string
+      sourceLang?: string
+      targetLang?: string
+      dictionaryPath?: string
+      outputPath?: string
+      maxSegments?: number
+      minChars?: number
+      customerName?: string
+      glossaryCategory?: string
+      settings?: AiSettings
+    }
+    if (!req.inputPath) {
+      return { ok: false, error: 'ai:translate-fill-gaps expected a non-empty `inputPath`' }
+    }
+    if (!req.targetLang) {
+      return { ok: false, error: 'ai:translate-fill-gaps expected a non-empty `targetLang`' }
+    }
+    const dictionaryPath = req.dictionaryPath ?? lastDictionary?.path
+    if (!dictionaryPath) {
+      return {
+        ok: false,
+        error: 'ai:translate-fill-gaps found no dictionary to extend; build one first',
+      }
+    }
+    const incoming = req.settings || aiSettings
+    const provider = incoming.provider
+    const config = incoming.providers?.[provider]
+    if (!config) return { ok: false, error: `AI provider "${provider}" not configured` }
+    await ensureKbLoaded()
+    const result = await fillDictionaryGaps(
+      {
+        inputPath: req.inputPath,
+        sourceLang: req.sourceLang ?? 'auto',
+        targetLang: req.targetLang,
+        dictionaryPath,
+        ...(req.outputPath !== undefined ? { outputPath: req.outputPath } : {}),
+        ...(req.maxSegments !== undefined ? { maxSegments: req.maxSegments } : {}),
+        ...(req.minChars !== undefined ? { minChars: req.minChars } : {}),
+        ...(req.customerName !== undefined ? { customerName: req.customerName } : {}),
+        ...(req.glossaryCategory !== undefined ? { glossaryCategory: req.glossaryCategory } : {}),
+        dataDir: DATA_DIR,
+      },
+      {
+        translateBatch: async (input) =>
+          translateBatch(input, {
+            provider,
+            config: config as AiProviderConfig,
+            memory: translationMemory,
+            knowledgeBase: sharedKnowledgeBase,
+          }),
+      },
+    )
+    scheduleMemoryFlush()
+    // The extended dictionary is now the one worth reusing.
+    if (result.ok && result.dictionaryPath && result.added && result.added > 0) {
+      loadDictionary(result.dictionaryPath)
+    }
+    return result
   })
 
   // ----- translation knowledge base CRUD --------------------------------------

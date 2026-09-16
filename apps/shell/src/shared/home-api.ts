@@ -360,6 +360,28 @@ export interface HomeApi {
     totalSegments?: number
     elapsedMs?: number
     segments?: { source: string; target: string; origin: 'kb' | 'llm' }[]
+  /** How much of the file the dictionary reaches. `ratio` is 0..1. */
+  coverage?: TranslationCoverage
+    error?: string
+  }>
+  /**
+   * Translate whatever `dictionaryPath` misses and write an extended
+   * dictionary. Only the uncovered segments are sent to the model.
+   */
+  fillTranslationGaps?(input: {
+    inputPath: string
+    sourceLang?: string
+    targetLang: string
+    dictionaryPath?: string
+    outputPath?: string
+  }): Promise<{
+    ok: boolean
+    dictionaryPath?: string
+    added?: number
+    stillUncovered?: string[]
+    coverageBefore?: TranslationCoverage
+    coverageAfter?: TranslationCoverage
+    elapsedMs?: number
     error?: string
   }>
   /** Build the dictionary, then translate the file in one call. */
@@ -371,6 +393,11 @@ export interface HomeApi {
     customerName?: string
     glossaryCategory?: string
     scale?: number
+    /**
+     * Re-run the file pass with this dictionary instead of building a new one.
+     * Pure dictionary rewrite — no model call, so no provider needed.
+     */
+    dictionaryPath?: string
   }): Promise<TranslateFileResult>
 }
 
@@ -464,6 +491,22 @@ export interface TranslationKbStats {
 }
 
 /** Result of a whole-file translation (PDF / XLS(X) / PPTX / DOCX). */
+/** How much of a file a generated dictionary reaches. */
+export interface TranslationCoverage {
+  /** Segments mined from the file. */
+  total: number
+  /** Segments the dictionary changes (`exact + partial`). */
+  covered: number
+  /** Segments the dictionary rewrites in full. */
+  exact: number
+  /** Segments only rewritten in part — these come out mixed-language. */
+  partial: string[]
+  /** Segments that will stay in the source language. */
+  uncovered: string[]
+  /** `covered / total`, 0..1. */
+  ratio: number
+}
+
 export interface TranslateFileResult {
   ok: boolean
   stage?: 'dictionary' | 'translate' | 'done'
@@ -472,6 +515,8 @@ export interface TranslateFileResult {
   elapsedMs?: number
   error?: string
   dictionaryPath?: string
+  /** true when the pass reused a dictionary instead of building one */
+  dictionaryReused?: boolean
   dictionary?: {
     kbEntries?: number
     llmEntries?: number
@@ -480,6 +525,8 @@ export interface TranslateFileResult {
     elapsedMs?: number
     segments?: { source: string; target: string; origin: 'kb' | 'llm' }[]
   }
+  /** How much of the file the dictionary reaches. `ratio` is 0..1. */
+  coverage?: TranslationCoverage
 }
 
 export interface TranslateFilePickResult {
@@ -900,6 +947,7 @@ export const HOME_CHANNELS = {
   translateFileStatus: 'ai:translate-file-status',
   translateDictionaryStatus: 'ai:translate-dictionary-status',
   translateBuildDictionary: 'ai:translate-build-dictionary',
+  translateFillGaps: 'ai:translate-fill-gaps',
   translateFileAuto: 'ai:translate-file-auto',
   pickTranslationFile: 'home:pick-translation-file',
   translateSnippet: 'home:translate-snippet',

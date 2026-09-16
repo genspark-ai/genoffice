@@ -51,7 +51,11 @@ import type {
   TimelineEntryItem,
   UiLanguage,
 } from './home-api'
-import { HOME_CHANNELS, PROJECT_CHANNELS } from './home-api'
+import {
+  HOME_CHANNELS,
+  PROJECT_CHANNELS,
+  type TranslationCoverage,
+} from './home-api'
 import type { TabsApi, TabSummary } from './tabs-api'
 import { TABS_CHANNELS } from './tabs-api'
 
@@ -397,6 +401,18 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
         llmEntries?: number
         missed?: string[]
         totalSegments?: number
+        error?: string
+      }
+    },
+    async fillTranslationGaps(input) {
+      return (await t.invoke(HOME_CHANNELS.translateFillGaps, input)) as {
+        ok: boolean
+        dictionaryPath?: string
+        added?: number
+        stillUncovered?: string[]
+        coverageBefore?: TranslationCoverage
+        coverageAfter?: TranslationCoverage
+        elapsedMs?: number
         error?: string
       }
     },

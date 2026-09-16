@@ -1591,6 +1591,39 @@
   height: auto;
   line-height: 1.4;
 }
+/* Segments the dictionary does not reach — shown in the "still in the source
+   language" list, so they read as a warning rather than as a translated term. */
+.set-tkb-chip.is-missing {
+  background: rgb(239 68 68 / 6%);
+  border-color: rgb(239 68 68 / 28%);
+  color: var(--text, #1f2937);
+}
+/* Partly matched segments: the dictionary swapped a substring, so source text
+   survives around the translated term and the output reads mixed-language. */
+.set-tkb-chip.is-partial {
+  background: rgb(217 119 6 / 8%);
+  border-color: rgb(217 119 6 / 32%);
+  color: var(--text, #1f2937);
+}
+.set-tkb-uncovered {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, rgb(0 0 0 / 8%));
+  border-radius: 10px;
+  background: var(--surface-2, rgb(0 0 0 / 2%));
+}
+.set-tkb-uncovered-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(185 28 28);
+  margin-bottom: 6px;
+}
+.set-tkb-uncovered-head.is-partial {
+  color: rgb(180 83 9);
+}
+.set-tkb-uncovered-head.is-partial:not(:first-child) {
+  margin-top: 10px;
+}
 .set-tkb-muted {
   font-style: normal;
   color: var(--text-tertiary, #98a2b3);

@@ -138,12 +138,33 @@ export {
   type TerminologyPair,
 } from './kb-rules'
 
+// Coverage: what a generated dictionary will and will not translate. Computed
+// from the mined segments rather than the handlers' own report, which only
+// flags Latin/kana misses and so reads "0 untranslated" on a zh -> en pass.
+export {
+  assessCoverage,
+  isSegmentCovered,
+  mergeDictionary,
+  type CoverageReport,
+  type TranslationDictionary,
+} from './coverage'
+
 export {
   applyKbRules,
+  assessFileCoverage,
   batchSegments,
+  fillDictionaryGaps,
+  type FileCoverageRequest,
+  type FileCoverageResult,
+  readDictionaryFile,
+  type DictionaryFile,
+  type FillGapsRequest,
+  type FillGapsResult,
   buildDictionary,
   defaultDictionaryPath,
   mineSegments,
+  segmentFormatForPath,
+  type SegmentFormat,
   type BuildDictionaryDeps,
   type BuildDictionaryRequest,
   type BuildDictionaryResult,

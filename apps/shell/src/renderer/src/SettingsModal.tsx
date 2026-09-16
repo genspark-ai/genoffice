@@ -47,6 +47,7 @@ import type {
   TranslationKbSchema,
   TranslationKbScope,
   UiTheme,
+  TranslationCoverage,
 } from '../../shared/home-api'
 import { ProviderLogo } from './provider-logos'
 import { IntegrationsPane, skillUpdateDue } from './IntegrationsPane'
@@ -1187,6 +1188,20 @@ interface DictResult {
   totalSegments: number
   elapsedMs: number
   segments: DictSegment[]
+  /** Share of the file this dictionary reaches; see buildDictionary. */
+  coverage?: Coverage
+}
+
+type Coverage = TranslationCoverage
+
+/** Used when a response omits coverage; never rendered for a real pass. */
+const EMPTY_COVERAGE: TranslationCoverage = {
+  total: 0,
+  covered: 0,
+  exact: 0,
+  partial: [],
+  uncovered: [],
+  ratio: 1,
 }
 
 function tkbRowText(entry: TranslationKbEntry): { primary: string; secondary: string } {
@@ -1244,6 +1259,27 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   const [serverDict, setServerDict] = useState<{ path: string; terms: number } | null>(null)
   /** The preview chip list is capped at 12; this reveals the rest. */
   const [showAllSegments, setShowAllSegments] = useState(false)
+  /**
+   * Result of the last gap-filling pass. Held separately from `dict` because
+   * the extended dictionary is a new file the user has not re-run the file
+   * pass with yet.
+   */
+  const [gaps, setGaps] = useState<{
+    dictionaryPath: string
+    added: number
+    stillUncovered: string[]
+    coverageBefore: Coverage
+    coverageAfter: Coverage
+  } | null>(null)
+  const [filling, setFilling] = useState(false)
+  const [gapError, setGapError] = useState('')
+  /**
+   * Coverage of the last *file pass*. The dictionary card reports the coverage
+   * of the dictionary it built (held on `dict`), because that number is a
+   * property of the dictionary + file pair and must not be overwritten when a
+   * different dictionary is later run against the same file.
+   */
+  const [runCoverage, setRunCoverage] = useState<Coverage | null>(null)
 
   const [snippet, setSnippet] = useState('')
   const [snippetBusy, setSnippetBusy] = useState(false)
@@ -1414,6 +1450,9 @@ function TranslationKbPane({ t }: { t: TFunc }) {
     setDict(null)
     setOutputPath('')
     setSavedDictCount(0)
+    setGaps(null)
+    setGapError('')
+    setRunCoverage(null)
     const common = {
       inputPath: filePath,
       sourceLang,
@@ -1439,7 +1478,9 @@ function TranslationKbPane({ t }: { t: TFunc }) {
           totalSegments: result.dictionary?.totalSegments ?? 0,
           elapsedMs: result.dictionary?.elapsedMs ?? 0,
           segments: result.dictionary?.segments ?? [],
+          ...(result.coverage ? { coverage: result.coverage } : {}),
         })
+        setRunCoverage(result.coverage ?? null)
         if (result.outputPath) {
           setOutputPath(result.outputPath)
           await reload()
@@ -1463,7 +1504,9 @@ function TranslationKbPane({ t }: { t: TFunc }) {
         totalSegments: result.totalSegments ?? 0,
         elapsedMs: result.elapsedMs ?? 0,
         segments: result.segments ?? [],
+        ...(result.coverage ? { coverage: result.coverage } : {}),
       })
+      setRunCoverage(result.coverage ?? null)
     } catch (err) {
       setDictError(t('tkbError', { error: err instanceof Error ? err.message : String(err) }))
     } finally {
@@ -1471,10 +1514,99 @@ function TranslationKbPane({ t }: { t: TFunc }) {
     }
   }
 
+  /**
+   * Segments a gap-fill pass would fix: untouched + only partly rewritten.
+   * Scoped to the dictionary card so the number always describes the dictionary
+   * the buttons underneath it would actually extend.
+   */
+  const coverage = dict?.coverage ?? null
+  const needsAttention = coverage
+    ? coverage.uncovered.length + coverage.partial.length
+    : 0
+
   /** `dict` wins while the pane is open; otherwise fall back to the server cache. */
   const activeDict = dict?.dictionaryPath
     ? { path: dict.dictionaryPath, terms: dict.segments.length }
     : serverDict
+
+  /**
+   * Ask the model for the segments the dictionary missed, then write an
+   * extended dictionary. This is the "fill in the values and re-run" step the
+   * Python handlers print — except the model fills them.
+   */
+  const fillGaps = async () => {
+    if (!filePath) {
+      setGapError(t('tkbNoFile'))
+      return
+    }
+    const dictionaryPath = gaps?.dictionaryPath ?? dict?.dictionaryPath ?? activeDict?.path
+    if (!dictionaryPath) {
+      setGapError(t('tkbNoFile'))
+      return
+    }
+    setFilling(true)
+    setGapError('')
+    try {
+      const result = await window.aiOffice.fillTranslationGaps?.({
+        inputPath: filePath,
+        sourceLang,
+        targetLang,
+        dictionaryPath,
+        ...(customerName.trim() ? { customerName: customerName.trim() } : {}),
+      })
+      if (!result?.ok) {
+        setGapError(t('tkbError', { error: result?.error ?? 'gaps' }))
+        return
+      }
+      setGaps({
+        dictionaryPath: result.dictionaryPath ?? dictionaryPath,
+        added: result.added ?? 0,
+        stillUncovered: result.stillUncovered ?? [],
+        coverageBefore: result.coverageBefore ?? EMPTY_COVERAGE,
+        coverageAfter: result.coverageAfter ?? EMPTY_COVERAGE,
+      })
+      await window.aiOffice
+        .getTranslationDictionary?.()
+        .then((s) => setServerDict(s?.dictionary ?? null))
+    } catch (err) {
+      setGapError(t('tkbError', { error: err instanceof Error ? err.message : String(err) }))
+    } finally {
+      setFilling(false)
+    }
+  }
+
+  /** Re-run the file pass with a dictionary that already exists. */
+  const rerunWithDictionary = async (dictionaryPath: string) => {
+    if (!filePath) {
+      setDictError(t('tkbNoFile'))
+      return
+    }
+    setBusy(true)
+    setDictError('')
+    try {
+      const result = await window.aiOffice.translateFileAuto?.({
+        inputPath: filePath,
+        sourceLang,
+        targetLang,
+        dictionaryPath,
+      })
+      if (!result?.ok) {
+        setDictError(t('tkbError', { error: result?.error ?? 'translate' }))
+        return
+      }
+      if (result.outputPath) {
+        setOutputPath(result.outputPath)
+        await reload()
+      }
+      setRunCoverage(result.coverage ?? null)
+      // The extended dictionary has been used; keep the card honest about it.
+      setGaps(null)
+    } catch (err) {
+      setDictError(t('tkbError', { error: err instanceof Error ? err.message : String(err) }))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const translateSnippet = async () => {
     if (!snippet.trim()) return
@@ -1828,6 +1960,35 @@ function TranslationKbPane({ t }: { t: TFunc }) {
                   {t('tkbElapsed', { ms: dict.elapsedMs })}
                 </span>
               )}
+              {coverage && (
+                <span
+                  className={`set-cap-pill ${coverage.ratio >= 1 ? 'is-on' : 'is-off'}`}
+                  title={t('tkbCoverageHint', {
+                    covered: coverage.covered,
+                    total: coverage.total,
+                  })}
+                  data-tkb-coverage={coverage.ratio >= 1 ? 'full' : 'partial'}
+                >
+                  {t('tkbCoverage', { pct: Math.round(coverage.ratio * 100) })}
+                </span>
+              )}
+              {coverage && coverage.uncovered.length > 0 && (
+                <span
+                  className="set-cap-pill is-off"
+                  title={coverage.uncovered.join('\n')}
+                >
+                  {t('tkbUncovered', { count: coverage.uncovered.length })}
+                </span>
+              )}
+              {coverage && coverage.partial.length > 0 && (
+                <span
+                  className="set-cap-pill is-fallback"
+                  title={coverage.partial.join('\n')}
+                  data-tkb-partial="1"
+                >
+                  {t('tkbPartial', { count: coverage.partial.length })}
+                </span>
+              )}
             </div>
             {dict.segments.length > 0 && (
               <div className="set-tkb-preview">
@@ -1882,14 +2043,118 @@ function TranslationKbPane({ t }: { t: TFunc }) {
                     : t('tkbSaveDict', { count: dict.llmEntries })}
                 </button>
               )}
+              {needsAttention > 0 && !gaps && (
+                <button
+                  type="button"
+                  className="set-btn primary"
+                  disabled={filling || !providerConfigured}
+                  title={providerConfigured ? undefined : t('tkbNoProvider')}
+                  onClick={() => void fillGaps()}
+                >
+                  {filling ? t('tkbGapsFilling') : t('tkbFillGaps', { count: needsAttention })}
+                </button>
+              )}
             </div>
           </div>
         )}
+
+        {coverage && needsAttention > 0 && !gaps && (
+          <div className="set-tkb-uncovered">
+            {coverage.uncovered.length > 0 && (
+              <>
+                <div className="set-tkb-uncovered-head">
+                  {t('tkbUncoveredHead', { count: coverage.uncovered.length })}
+                </div>
+                <div className="set-tkb-preview-chips">
+                  {coverage.uncovered.slice(0, 12).map((text, i) => (
+                    <span key={i} className="set-tkb-chip is-missing" title={text}>
+                      {text}
+                    </span>
+                  ))}
+                  {coverage.uncovered.length > 12 && (
+                    <span className="set-tkb-chip is-more">
+                      +{coverage.uncovered.length - 12}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+            {coverage.partial.length > 0 && (
+              <>
+                <div className="set-tkb-uncovered-head is-partial">
+                  {t('tkbPartialHead', { count: coverage.partial.length })}
+                </div>
+                <div className="set-tkb-preview-chips">
+                  {coverage.partial.slice(0, 12).map((text, i) => (
+                    <span key={i} className="set-tkb-chip is-partial" title={text}>
+                      {text}
+                    </span>
+                  ))}
+                  {coverage.partial.length > 12 && (
+                    <span className="set-tkb-chip is-more">
+                      +{coverage.partial.length - 12}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {gaps && (
+          <div className="set-mp-upload-history set-tkb-result-card">
+            <div className="set-tkb-result">
+              <span className="set-cap-pill is-on">
+                {t('tkbGapsAdded', { count: gaps.added })}
+              </span>
+              <span className={`set-cap-pill ${gaps.coverageAfter.ratio >= 1 ? 'is-on' : 'is-off'}`}>
+                {t('tkbCoverage', { pct: Math.round(gaps.coverageAfter.ratio * 100) })}
+              </span>
+              {gaps.stillUncovered.length > 0 && (
+                <span className="set-cap-pill is-off">
+                  {t('tkbUncovered', { count: gaps.stillUncovered.length })}
+                </span>
+              )}
+            </div>
+            <div className="set-mp-upload-item">
+              <code>{gaps.dictionaryPath}</code>
+              <button
+                type="button"
+                className="set-btn"
+                onClick={() => void window.aiOffice.revealPath?.(gaps.dictionaryPath)}
+              >
+                {t('tkbRevealInFinder')}
+              </button>
+              <button
+                type="button"
+                className="set-btn primary"
+                disabled={busy || skillMissing || !filePath}
+                onClick={() => void rerunWithDictionary(gaps.dictionaryPath)}
+              >
+                {busy ? t('tkbTranslating') : t('tkbRerunWithDict')}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {gapError && <div className="set-tkb-flash is-err">{gapError}</div>}
 
         {outputPath && (
           <div className="set-mp-upload-history set-tkb-output">
             <div className="set-tkb-output-head">
               <span className="set-cap-pill is-on">{t('tkbOpenOutput')}</span>
+              {runCoverage && (
+                <span
+                  className={`set-cap-pill ${runCoverage.ratio >= 1 ? 'is-on' : 'is-off'}`}
+                  title={t('tkbCoverageHint', {
+                    covered: runCoverage.covered,
+                    total: runCoverage.total,
+                  })}
+                  data-tkb-run-coverage={runCoverage.ratio >= 1 ? 'full' : 'partial'}
+                >
+                  {t('tkbCoverage', { pct: Math.round(runCoverage.ratio * 100) })}
+                </span>
+              )}
               <code>{outputPath}</code>
             </div>
             <div className="set-mp-upload-actions">
