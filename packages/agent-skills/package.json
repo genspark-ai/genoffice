@@ -7,10 +7,18 @@
   "description": "GenOffice docx/sheets/slides/skill extensions on top of @earendil-works/pi-coding-agent",
   "exports": {
     ".": "./src/index.ts",
+    "./extensions/agent-team": "./src/extensions/agent-team.ts",
+    "./extensions/audit-log": "./src/extensions/audit-log.ts",
     "./extensions/docs-skill": "./src/extensions/docs-skill.ts",
+    "./extensions/image-search-skill": "./src/extensions/image-search-skill.ts",
+    "./extensions/local-models": "./src/extensions/local-models.ts",
+    "./extensions/ocr-skill": "./src/extensions/ocr-skill.ts",
     "./extensions/sheets-skill": "./src/extensions/sheets-skill.ts",
+    "./extensions/skill-market": "./src/extensions/skill-market.ts",
     "./extensions/slides-skill": "./src/extensions/slides-skill.ts",
-    "./extensions/translate-skill": "./src/extensions/translate-skill.ts"
+    "./extensions/translate-skill": "./src/extensions/translate-skill.ts",
+    "./extensions/verify-response": "./src/extensions/verify-response.ts",
+    "./extensions/web-search-skill": "./src/extensions/web-search-skill.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

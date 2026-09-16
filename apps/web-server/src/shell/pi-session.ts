@@ -26,12 +26,20 @@
 
 import { join } from 'node:path'
 import {
+  ReactUIAdapter,
   createOfficeSession,
   type OfficeSession,
   type OfficeSessionOptions,
 } from '@genoffice/agent-runtime'
 
 import { DATA_DIR, registerHandle } from '../common/index'
+import { createWebSearchExtension } from '@genoffice/agent-skills/extensions/web-search-skill'
+import { createImageSearchExtension } from '@genoffice/agent-skills/extensions/image-search-skill'
+import { createOcrExtension } from '@genoffice/agent-skills/extensions/ocr-skill'
+import { installAgentTeam } from '@genoffice/agent-skills/extensions/agent-team'
+import { JsonlAuditSink, installAuditLog } from '@genoffice/agent-skills/extensions/audit-log'
+import { installLocalModels } from '@genoffice/agent-skills/extensions/local-models'
+import { getEnabledBuiltinIds } from './skills'
 import { PI_AGENT_DIR, PI_PLUGIN_DIR, PI_SKILLS_DIR, PI_CWD } from './pi-resources'
 import { LUMOS_SKILLS_WRAPPER_DIR } from './pi-resources'
 
@@ -59,6 +67,11 @@ export async function getPiSession(): Promise<OfficeSession> {
 }
 
 async function buildPiSession(): Promise<OfficeSession> {
+  const enabled = getEnabledBuiltinIds()
+  const enabledSet = new Set<string>([...enabled.skills, ...enabled.plugins])
+  // One shared UI adapter so every built-in extension and the host session
+  // see the same data bag (DialogRequest / NotificationItem / etc.).
+  const uiAdapter = new ReactUIAdapter()
   // In-process extension factories — preferred over file paths because the
   // web-server bundle already has every agent-skills extension loaded.
   // The translate-skill is the unification point: when this factory is in
@@ -72,11 +85,24 @@ async function buildPiSession(): Promise<OfficeSession> {
   const extensionFactories: NonNullable<OfficeSessionOptions['extensionFactories']> = [
     createTranslateSkillExtension(),
   ]
+  if (enabledSet.has('web-search')) extensionFactories.push(createWebSearchExtension())
+  if (enabledSet.has('image-search')) extensionFactories.push(createImageSearchExtension())
+  if (enabledSet.has('ocr')) extensionFactories.push(createOcrExtension())
+  if (enabledSet.has('agent-team')) extensionFactories.push((pi) => installAgentTeam(pi, {}))
+  if (enabledSet.has('audit-log')) extensionFactories.push((pi) =>
+    installAuditLog(pi, {
+      sink: new JsonlAuditSink({
+        filePath: process.env.GENOFFICE_AUDIT_LOG ?? `${process.env.DATA_DIR ?? '.genoffice'}/audit-log.jsonl`,
+      }),
+    }),
+  )
+  if (enabledSet.has('local-models')) extensionFactories.push((pi) => installLocalModels(pi, {}))
 
   const opts: OfficeSessionOptions = {
     cwd: PI_CWD,
     agentDir: PI_AGENT_DIR,
     extensionMode: 'print',
+    uiAdapter,
     additionalSkillPaths: [PI_SKILLS_DIR, LUMOS_SKILLS_WRAPPER_DIR].filter(
       (dir): dir is string => !!dir && dir.length > 0,
     ),

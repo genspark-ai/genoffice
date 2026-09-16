@@ -24,7 +24,7 @@ import { join } from 'node:path'
 import {
   createSkillMarket,
   type SkillMarketEntry,
-} from '@genoffice/agent-skills'
+} from '@genoffice/agent-skills/extensions/skill-market'
 import { DATA_DIR, registerHandle } from '../common/index'
 import {
   PI_SKILLS_DIR,
@@ -1646,6 +1646,23 @@ async function invalidateLivePiSession(): Promise<void> {
     mod.invalidatePiSession()
   } catch (err) {
     console.warn('[skills] failed to invalidate pi session:', err)
+  }
+}
+
+/** The ids of every built-in skill currently enabled in skills.json.
+ *  pi-session uses this to build the extensionFactories list so the live
+ *  session sees exactly the skill surface the UI is showing. */
+export function getEnabledBuiltinIds(): {
+  skills: ReadonlyArray<string>
+  plugins: ReadonlyArray<string>
+} {
+  return {
+    skills: loadSkills()
+      .filter((s) => s.builtIn && s.status === 'enabled')
+      .map((s) => s.id),
+    plugins: loadPlugins()
+      .filter((p) => p.builtIn && p.status === 'enabled')
+      .map((p) => p.id),
   }
 }
 
