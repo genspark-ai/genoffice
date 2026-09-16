@@ -397,6 +397,18 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
     async translateFileAuto(input) {
       return (await t.invoke(HOME_CHANNELS.translateFileAuto, input)) as TranslateFileResult
     },
+    async translateSnippet(input) {
+      return (await t.invoke(HOME_CHANNELS.translateSnippet, input)) as {
+        ok: boolean
+        translation?: string
+        status?: 'translated' | 'memory-hit' | 'failed'
+        matchedTerms?: string[]
+        sourceLang?: string
+        targetLang?: string
+        elapsedMs?: number
+        error?: string
+      }
+    },
     async marketplaceRate(id: string, kind: 'skill' | 'plugin', rating: number) {
       return (await t.invoke('home:marketplace-rate', { id, kind, rating })) as {
         ok: boolean

@@ -650,6 +650,56 @@ export function registerAiCoreHandlers(): void {
     return response
   })
 
+  // home:translate-snippet — quick text-paste translation for the Settings pane.
+  // Wraps translateOne with a string input instead of an editor range, and
+  // forwards the customer's translation memory so memory-hit responses are
+  // surfaced to the UI for the "saved N ms · cache" badge.
+  registerHandle('home:translate-snippet', async (_event: unknown, request: unknown) => {
+    const req = (request ?? {}) as {
+      text?: string
+      sourceLang?: string
+      targetLang?: string
+      customerName?: string
+      settings?: AiSettings
+    }
+    const text = (req.text ?? '').trim()
+    if (!text) return { ok: false, error: 'home:translate-snippet expected non-empty `text`' }
+    if (!req.targetLang) {
+      return { ok: false, error: 'home:translate-snippet expected non-empty `targetLang`' }
+    }
+    const incoming = req.settings || aiSettings
+    const provider = incoming.provider
+    const config = incoming.providers?.[provider]
+    if (!config) return { ok: false, error: `AI provider "${provider}" not configured` }
+    await ensureKbLoaded()
+    const started = Date.now()
+    const result = await translateOne(
+      {
+        instruction: text,
+        sourceLang: req.sourceLang,
+        targetLang: req.targetLang,
+        ...(req.customerName ? { glossaryCategory: req.customerName } : {}),
+      },
+      {
+        provider,
+        config: config as AiProviderConfig,
+        memory: translationMemory,
+        knowledgeBase: sharedKnowledgeBase,
+      },
+    )
+    scheduleMemoryFlush()
+    return {
+      ok: result.ok,
+      translation: result.translated ?? '',
+      status: result.status,
+      matchedTerms: result.matchedTerms ?? [],
+      sourceLang: req.sourceLang,
+      targetLang: req.targetLang,
+      elapsedMs: Date.now() - started,
+      error: result.error,
+    }
+  })
+
   // ai:translate-build-dictionary — KB + LLM produce the `--dictionary` the
   // upstream file handlers consume, so the user never hand-writes one.
   registerHandle('ai:translate-build-dictionary', async (_event: unknown, request: unknown) => {

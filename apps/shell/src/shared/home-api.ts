@@ -310,6 +310,22 @@ export interface HomeApi {
   getTranslateFileStatus?(): Promise<TranslateFileStatus>
   /** Native file picker for the translation pane; returns an absolute path. */
   pickTranslationFile?(title?: string): Promise<TranslateFilePickResult>
+  /** Translate a short text snippet using the active provider + KB + memory. */
+  translateSnippet?(input: {
+    text: string
+    sourceLang?: string
+    targetLang: string
+    customerName?: string
+  }): Promise<{
+    ok: boolean
+    translation?: string
+    status?: 'translated' | 'memory-hit' | 'failed'
+    matchedTerms?: string[]
+    sourceLang?: string
+    targetLang?: string
+    elapsedMs?: number
+    error?: string
+  }>
   /** Build a `--dictionary` from a file using the KB + the active provider. */
   buildTranslationDictionary?(input: {
     inputPath: string
@@ -868,6 +884,7 @@ export const HOME_CHANNELS = {
   translateBuildDictionary: 'ai:translate-build-dictionary',
   translateFileAuto: 'ai:translate-file-auto',
   pickTranslationFile: 'home:pick-translation-file',
+  translateSnippet: 'home:translate-snippet',
   marketplaceRate: 'home:marketplace-rate',
 } as const
 

@@ -1235,6 +1235,17 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   const [savingDict, setSavingDict] = useState(false)
   const [savedDictCount, setSavedDictCount] = useState(0)
 
+  const [snippet, setSnippet] = useState('')
+  const [snippetBusy, setSnippetBusy] = useState(false)
+  const [snippetResult, setSnippetResult] = useState<{
+    translation: string
+    status: 'translated' | 'memory-hit' | 'failed'
+    matchedTerms: string[]
+    elapsedMs: number
+  } | null>(null)
+  const [snippetError, setSnippetError] = useState('')
+  const [snippetCopied, setSnippetCopied] = useState(false)
+
   const reload = useCallback(async () => {
     const result = await window.aiOffice.listTranslationKb?.()
     setEntries(result?.entries ?? [])
@@ -1437,6 +1448,56 @@ function TranslationKbPane({ t }: { t: TFunc }) {
       setDictError(t('tkbError', { error: err instanceof Error ? err.message : String(err) }))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const translateSnippet = async () => {
+    if (!snippet.trim()) return
+    setSnippetBusy(true)
+    setSnippetError('')
+    setSnippetResult(null)
+    setSnippetCopied(false)
+    try {
+      const result = await window.aiOffice.translateSnippet?.({
+        text: snippet.trim(),
+        sourceLang,
+        targetLang,
+        ...(customerName.trim() ? { customerName: customerName.trim() } : {}),
+      })
+      if (!result?.ok) {
+        setSnippetError(t('tkbSnippetError', { error: result?.error ?? 'translate' }))
+        return
+      }
+      setSnippetResult({
+        translation: result.translation ?? '',
+        status: result.status ?? 'translated',
+        matchedTerms: result.matchedTerms ?? [],
+        elapsedMs: result.elapsedMs ?? 0,
+      })
+    } catch (err) {
+      setSnippetError(
+        t('tkbSnippetError', { error: err instanceof Error ? err.message : String(err) }),
+      )
+    } finally {
+      setSnippetBusy(false)
+    }
+  }
+
+  const swapLanguages = () => {
+    // Snippet + dictionary share these targets; swapping both in one click
+    // is the standard translator UX.
+    setSourceLang(targetLang)
+    setTargetLang(sourceLang)
+  }
+
+  const copySnippet = async () => {
+    if (!snippetResult) return
+    try {
+      await navigator.clipboard.writeText(snippetResult.translation)
+      setSnippetCopied(true)
+      window.setTimeout(() => setSnippetCopied(false), 1500)
+    } catch {
+      // clipboard denied in non-secure context — non-fatal
     }
   }
 
@@ -1660,6 +1721,17 @@ function TranslationKbPane({ t }: { t: TFunc }) {
               ))}
             </select>
           </label>
+          <div className="set-mp-swap">
+            <button
+              type="button"
+              className="set-tkb-swap"
+              title="⇄"
+              onClick={swapLanguages}
+              aria-label="⇄"
+            >
+              ⇄
+            </button>
+          </div>
           <label className="set-mp-field">
             <span>{t('tkbTargetLang')}</span>
             <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
@@ -1805,6 +1877,73 @@ function TranslationKbPane({ t }: { t: TFunc }) {
             {t('tkbNoProvider')}
           </div>
         )}
+      </div>
+
+      <h4 className="set-pane-subtitle">{t('tkbSnippet')}</h4>
+      <div className="set-field-desc set-ai-note">{t('tkbSnippetDesc')}</div>
+      <div className="set-mp-upload set-tkb-snippet">
+        <div className="set-mp-upload-grid">
+          <label className="set-mp-field set-mp-field-wide">
+            <span>{t('tkbSnippetSource')}</span>
+            <textarea
+              className="set-tkb-snippet-area"
+              rows={3}
+              value={snippet}
+              placeholder={t('tkbSnippetPlaceholder')}
+              onChange={(e) => setSnippet(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') void translateSnippet()
+              }}
+            />
+          </label>
+        </div>
+        <div className="set-mp-upload-actions">
+          <button
+            type="button"
+            className="set-btn primary"
+            disabled={snippetBusy || !snippet.trim() || skillMissing}
+            onClick={() => void translateSnippet()}
+          >
+            {snippetBusy ? t('tkbSnippetTranslating') : t('tkbSnippetTranslate')}
+          </button>
+          {sourceLang !== 'auto' && sourceLang === targetLang && (
+            <span className="set-cap-pill is-off">
+              {t('tkbSourceLang')} = {t('tkbTargetLang')}
+            </span>
+          )}
+          {snippetResult?.status === 'memory-hit' && (
+            <span className="set-cap-pill is-on" title={t('tkbSnippetMemoryHit')}>
+              {t('tkbSnippetMemoryHit')}
+            </span>
+          )}
+          {snippetResult && snippetResult.elapsedMs > 0 && (
+            <span className="set-cap-pill is-fallback">
+              {t('tkbSnippetElapsed', { ms: snippetResult.elapsedMs })}
+            </span>
+          )}
+          {snippetResult && snippetResult.matchedTerms.length > 0 && (
+            <span
+              className="set-cap-pill is-on"
+              title={t('tkbSnippetTerms', { terms: snippetResult.matchedTerms.join(', ') })}
+            >
+              KB · {snippetResult.matchedTerms.length}
+            </span>
+          )}
+        </div>
+        {snippetResult && (
+          <div className="set-tkb-snippet-out">
+            <span className="set-tkb-snippet-out-label">{t('tkbSnippetResult')}</span>
+            <pre className="set-tkb-snippet-pre">{snippetResult.translation}</pre>
+            <button
+              type="button"
+              className="set-btn"
+              onClick={() => void copySnippet()}
+            >
+              {snippetCopied ? t('tkbSaved') : t('tkbSnippetCopy')}
+            </button>
+          </div>
+        )}
+        {snippetError && <div className="set-tkb-flash is-err">{snippetError}</div>}
       </div>
     </>
   )

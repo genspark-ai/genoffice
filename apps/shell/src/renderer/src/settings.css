@@ -1632,3 +1632,59 @@
 [data-theme='dark'] .set-tkb-chip.is-kb { background: rgb(34 197 94 / 18%); color: #6ce9a6; border-color: rgb(34 197 94 / 30%); }
 [data-theme='dark'] .set-tkb-output-head code { background: rgb(255 255 255 / 4%); }
 [data-theme='dark'] .set-tkb-result-card { background: rgb(34 197 94 / 8%); border-color: rgb(34 197 94 / 30%); }
+/* Translation KB — paste-and-translate snippet box. */
+.set-tkb-snippet-area {
+  width: 100%;
+  border: 1px solid var(--border-color, rgb(0 0 0 / 12%));
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  resize: vertical;
+  background: var(--bg-primary, #fff);
+  color: var(--text, #1f2937);
+  box-sizing: border-box;
+}
+.set-tkb-snippet-out {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft, rgb(0 0 0 / 8%));
+  border-radius: 8px;
+  background: var(--bg-primary, #fff);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.set-tkb-snippet-out-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary, #98a2b3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.set-tkb-snippet-pre {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text, #1f2937);
+  font-family: inherit;
+}
+[data-theme='dark'] .set-tkb-snippet-area { background: rgb(255 255 255 / 4%); border-color: rgb(255 255 255 / 8%); }
+[data-theme='dark'] .set-tkb-snippet-out { background: rgb(255 255 255 / 4%); border-color: rgb(255 255 255 / 8%); }
+.set-mp-swap { display: flex; align-items: flex-end; padding-bottom: 4px; }
+.set-tkb-swap {
+  border: 1px solid var(--border-color, rgb(0 0 0 / 12%));
+  background: var(--bg-primary, #fff);
+  color: var(--text-secondary, #5a6b85);
+  border-radius: 6px;
+  width: 32px; height: 32px;
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.set-tkb-swap:hover { background: rgb(79 140 255 / 10%); color: rgb(37 99 235); }
+[data-theme='dark'] .set-tkb-swap { background: rgb(255 255 255 / 4%); border-color: rgb(255 255 255 / 8%); }
