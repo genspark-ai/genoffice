@@ -742,6 +742,8 @@ export function registerAiCoreHandlers(): void {
         llmEntries: dict.llmEntries,
         missed: dict.missed,
         totalSegments: dict.totalSegments,
+        elapsedMs: dict.elapsedMs,
+        segments: dict.segments,
       },
     }
   })

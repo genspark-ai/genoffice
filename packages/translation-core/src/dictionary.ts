@@ -75,6 +75,8 @@ export interface BuildDictionaryResult {
   totalSegments?: number
   /** How long the whole build took, ms. */
   elapsedMs?: number
+  /** All dictionary entries in insertion order, with KB/ LLM provenance for the UI. */
+  segments?: DictionarySegment[]
   error?: string
 }
 
@@ -246,10 +248,12 @@ export async function buildDictionary(
     ...(request.customerName !== undefined ? { customerName: request.customerName } : {}),
   })
   let kbEntries = 0
+  const dictSegments: DictionarySegment[] = []
   for (const term of resolved.terms) {
     if (!term.sourceTerm || !term.targetTerm) continue
     if (dictionary[term.sourceTerm] === term.targetTerm) continue
     dictionary[term.sourceTerm] = term.targetTerm
+    dictSegments.push({ source: term.sourceTerm, target: term.targetTerm, origin: 'kb' })
     kbEntries++
   }
 
@@ -305,6 +309,7 @@ export async function buildDictionary(
           ...(request.customerName !== undefined ? { customerName: request.customerName } : {}),
         })
         dictionary[unit.sourceText] = ruled
+        dictSegments.push({ source: unit.sourceText, target: ruled, origin: 'llm' })
         llmEntries++
       }
     }
@@ -335,5 +340,6 @@ export async function buildDictionary(
     missed,
     totalSegments: segments.length,
     elapsedMs: Date.now() - started,
+    segments: dictSegments,
   }
 }

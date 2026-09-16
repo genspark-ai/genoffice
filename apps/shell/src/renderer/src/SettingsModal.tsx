@@ -1178,6 +1178,17 @@ function tkbKindOf(entry: TranslationKbEntry): TranslationKbSchema {
 }
 
 /** Short source → target pair shown on a row, whatever the schema. */
+interface DictSegment { source: string; target: string; origin: 'kb' | 'llm' }
+interface DictResult {
+  dictionaryPath: string
+  kbEntries: number
+  llmEntries: number
+  missed: number
+  totalSegments: number
+  elapsedMs: number
+  segments: DictSegment[]
+}
+
 function tkbRowText(entry: TranslationKbEntry): { primary: string; secondary: string } {
   switch (tkbKindOf(entry)) {
     case 'term':
@@ -1208,6 +1219,8 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   const [policy, setPolicy] = useState<(typeof TKB_BRAND_POLICIES)[number]>('neverTranslate')
   const [flash, setFlash] = useState(false)
   const [error, setError] = useState('')
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null)
+  const [gskEnabled, setGskEnabled] = useState(false)
 
   const [filePath, setFilePath] = useState('')
   const [sourceLang, setSourceLang] = useState('auto')
@@ -1217,10 +1230,10 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   const [kbOnly, setKbOnly] = useState(false)
   const [dictError, setDictError] = useState('')
   const [outputPath, setOutputPath] = useState('')
-  const [dict, setDict] = useState<{ kb: number; llm: number; missed: number; path: string } | null>(
-    null,
-  )
+  const [dict, setDict] = useState<DictResult | null>(null)
   const [status, setStatus] = useState<TranslateFileStatus | null>(null)
+  const [savingDict, setSavingDict] = useState(false)
+  const [savedDictCount, setSavedDictCount] = useState(0)
 
   const reload = useCallback(async () => {
     const result = await window.aiOffice.listTranslationKb?.()
@@ -1230,7 +1243,41 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   useEffect(() => {
     void reload()
     void window.aiOffice.getTranslateFileStatus?.().then((s) => s && setStatus(s))
+    void window.aiOffice.getAiSettings?.().then((s) => s && setAiSettings(s))
+    void window.aiOffice.getAiCapabilities?.().then((c) => {
+      if (c) setGskEnabled(c.gskToolsEnabled)
+    })
+    // Restore the last-used target/source/customer so the user does not have
+    // to re-pick them every time the modal opens.
+    try {
+      const raw = localStorage.getItem('genoffice:tkb-prefs')
+      if (raw) {
+        const p = JSON.parse(raw) as Partial<{
+          sourceLang: string
+          targetLang: string
+          customerName: string
+          kbOnly: boolean
+        }>
+        if (p.sourceLang) setSourceLang(p.sourceLang)
+        if (p.targetLang) setTargetLang(p.targetLang)
+        if (typeof p.customerName === 'string') setCustomerName(p.customerName)
+        if (typeof p.kbOnly === 'boolean') setKbOnly(p.kbOnly)
+      }
+    } catch {
+      /* ignore corrupt local cache */
+    }
   }, [reload])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        'genoffice:tkb-prefs',
+        JSON.stringify({ sourceLang, targetLang, customerName, kbOnly }),
+      )
+    } catch {
+      /* private mode / quota — non-fatal */
+    }
+  }, [sourceLang, targetLang, customerName, kbOnly])
 
   useEffect(() => {
     if (!flash) return
@@ -1304,6 +1351,33 @@ function TranslationKbPane({ t }: { t: TFunc }) {
     if (picked?.ok && picked.path) setFilePath(picked.path)
   }
 
+  /** Save the LLM-extracted segments from the last dictionary build into the KB
+   *  so future translations automatically pick them up. KB-only segments are
+   *  skipped because they already came from the KB. */
+  const saveDictToKb = async () => {
+    if (!dict) return
+    const llmOnly = dict.segments.filter((s) => s.origin === 'llm' && s.source && s.target)
+    if (llmOnly.length === 0) return
+    setSavingDict(true)
+    let ok = 0
+    for (const seg of llmOnly) {
+      const id = `llm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+      const result = await window.aiOffice.upsertTranslationKb?.({
+        id,
+        scope: 'company',
+        priority: 30,
+        sourceTerm: seg.source,
+        targetTerm: seg.target,
+        targetLang,
+      })
+      if (result?.ok) ok++
+    }
+    setSavedDictCount(ok)
+    setSavingDict(false)
+    setFlash(true)
+    await reload()
+  }
+
   const build = async (thenTranslate: boolean) => {
     if (!filePath) {
       setDictError(t('tkbNoFile'))
@@ -1313,6 +1387,7 @@ function TranslationKbPane({ t }: { t: TFunc }) {
     setDictError('')
     setDict(null)
     setOutputPath('')
+    setSavedDictCount(0)
     const common = {
       inputPath: filePath,
       sourceLang,
@@ -1327,10 +1402,13 @@ function TranslationKbPane({ t }: { t: TFunc }) {
           return
         }
         setDict({
-          kb: result.dictionary?.kbEntries ?? 0,
-          llm: result.dictionary?.llmEntries ?? 0,
+          dictionaryPath: result.dictionaryPath ?? '',
+          kbEntries: result.dictionary?.kbEntries ?? 0,
+          llmEntries: result.dictionary?.llmEntries ?? 0,
           missed: result.dictionary?.missed?.length ?? 0,
-          path: result.dictionaryPath ?? '',
+          totalSegments: result.dictionary?.totalSegments ?? 0,
+          elapsedMs: result.dictionary?.elapsedMs ?? 0,
+          segments: result.dictionary?.segments ?? [],
         })
         if (result.outputPath) {
           setOutputPath(result.outputPath)
@@ -1347,10 +1425,13 @@ function TranslationKbPane({ t }: { t: TFunc }) {
         return
       }
       setDict({
-        kb: result.kbEntries ?? 0,
-        llm: result.llmEntries ?? 0,
+        dictionaryPath: result.dictionaryPath ?? '',
+        kbEntries: result.kbEntries ?? 0,
+        llmEntries: result.llmEntries ?? 0,
         missed: result.missed?.length ?? 0,
-        path: result.dictionaryPath ?? '',
+        totalSegments: result.totalSegments ?? 0,
+        elapsedMs: result.elapsedMs ?? 0,
+        segments: result.segments ?? [],
       })
     } catch (err) {
       setDictError(t('tkbError', { error: err instanceof Error ? err.message : String(err) }))
@@ -1371,11 +1452,49 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   const visible = entries.filter((e) => tkbKindOf(e) === schema)
   const fields = TKB_FIELDS[schema]
   const skillMissing = status !== null && !status.available
+  const providerId = aiSettings?.provider ?? '—'
+  // genspark is the zero-config default — it counts as configured whenever
+  // gsk tools are enabled (i.e. the user is signed in to genspark).
+  const hasApiKey = !!aiSettings?.providers?.[aiSettings.provider]?.apiKey
+  const providerConfigured = !!aiSettings && (providerId === 'genspark' ? gskEnabled : hasApiKey)
+  const providerLabel = providerId
 
   return (
     <>
       <h3 className="set-pane-title">{t('setSecTranslationKb')}</h3>
       <div className="set-field-desc set-ai-note">{t('tkbDesc')}</div>
+
+      <div className="set-cap-status set-tkb-status" data-tkb-status="1">
+        <span
+          className={`set-cap-pill ${status && status.available ? 'is-on' : 'is-off'}`}
+          title={status ? `${status.source} · ${status.skillDir}` : ''}
+        >
+          <span className="set-cap-dot" aria-hidden="true" />
+          <span className="set-cap-label">translate</span>
+          <span className="set-cap-via">{status?.source ?? '…'}</span>
+        </span>
+        {status && (
+          <span className="set-cap-pill is-on" title={status.pythonPath}>
+            <span className="set-cap-dot" aria-hidden="true" />
+            <span className="set-cap-label">python</span>
+            <span className="set-cap-via">{status.pythonPath.split('/').pop()}</span>
+          </span>
+        )}
+        <span
+          className={`set-cap-pill ${providerConfigured ? 'is-on' : 'is-fallback'}`}
+          title={t('tkbProvider')}
+        >
+          <span className="set-cap-dot" aria-hidden="true" />
+          <span className="set-cap-label">{t('tkbProvider')}</span>
+          <span className="set-cap-via">{providerLabel}</span>
+        </span>
+        {!providerConfigured && (
+          <span className="set-cap-pill is-off" title={t('tkbNoProvider')}>
+            <span className="set-cap-dot" aria-hidden="true" />
+            <span className="set-cap-label">{t('tkbNoProvider')}</span>
+          </span>
+        )}
+      </div>
 
       <div className="set-mp-chips" role="tablist" aria-label={t('setSecTranslationKb')}>
         {TKB_SCHEMAS.map((s) => (
@@ -1508,6 +1627,23 @@ function TranslationKbPane({ t }: { t: TFunc }) {
                 placeholder={t('tkbNoFile')}
                 spellCheck={false}
                 onChange={(e) => setFilePath(e.target.value)}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const file = e.dataTransfer.files[0]
+                  if (!file) return
+                  // Electron: the path is on the File object; the browser does
+                  // not expose it, so we fall back to a regular file picker.
+                  const filePath =
+                    (file as File & { path?: string }).path ?? ''
+                  if (filePath) {
+                    setFilePath(filePath)
+                  } else {
+                    void pickFile()
+                  }
+                }}
               />
               <button type="button" className="set-btn" onClick={() => void pickFile()}>
                 {t('tkbPickFile')}
@@ -1559,56 +1695,120 @@ function TranslationKbPane({ t }: { t: TFunc }) {
           </button>
           <button
             type="button"
-            className="set-btn"
-            disabled={busy || skillMissing}
+            className="set-btn primary"
+            disabled={busy || skillMissing || (!providerConfigured && !kbOnly)}
             onClick={() => void build(true)}
           >
             {t('tkbGenerateAndTranslate')}
           </button>
         </div>
+
         {dict && (
-          <div className="set-mp-upload-history">
+          <div className="set-mp-upload-history set-tkb-result-card">
             <div className="set-tkb-result">
-              <span className="set-cap-pill is-on">{t('tkbDictKb', { count: dict.kb })}</span>
+              <span className="set-cap-pill is-on">{t('tkbDictKb', { count: dict.kbEntries })}</span>
               <span className="set-cap-pill is-fallback">
-                {t('tkbDictLlm', { count: dict.llm })}
+                {t('tkbDictLlm', { count: dict.llmEntries })}
               </span>
               {dict.missed > 0 && (
                 <span className="set-cap-pill is-off">
                   {t('tkbDictMissed', { count: dict.missed })}
                 </span>
               )}
+              {dict.totalSegments > 0 && (
+                <span className="set-cap-pill is-on" title={t('tkbExtracted', { count: dict.totalSegments })}>
+                  {t('tkbExtracted', { count: dict.totalSegments })}
+                </span>
+              )}
+              {dict.elapsedMs > 0 && (
+                <span className="set-cap-pill is-fallback">
+                  {t('tkbElapsed', { ms: dict.elapsedMs })}
+                </span>
+              )}
             </div>
+            {dict.segments.length > 0 && (
+              <div className="set-tkb-preview">
+                <div className="set-tkb-preview-title">
+                  {t('tkbPreview', { count: dict.segments.length })}
+                </div>
+                <div className="set-tkb-preview-chips">
+                  {dict.segments.slice(0, 12).map((s, i) => (
+                    <span
+                      key={i}
+                      className={`set-tkb-chip${s.origin === 'kb' ? ' is-kb' : ''}`}
+                      title={s.source}
+                    >
+                      {s.source}
+                      <span className="set-tkb-chip-arrow">→</span>
+                      {s.target}
+                    </span>
+                  ))}
+                  {dict.segments.length > 12 && (
+                    <span className="set-tkb-chip is-more">+{dict.segments.length - 12}</span>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="set-mp-upload-item">
-              <code>{dict.path}</code>
+              <code>{dict.dictionaryPath}</code>
               <button
                 type="button"
                 className="set-btn"
-                onClick={() => void window.aiOffice.revealPath?.(dict.path)}
+                onClick={() => void window.aiOffice.revealPath?.(dict.dictionaryPath)}
               >
-                {t('open')}
+                {t('tkbRevealInFinder')}
               </button>
-            </div>
-            {outputPath && (
-              <div className="set-mp-upload-item">
-                <code>{outputPath}</code>
+              {dict.llmEntries > 0 && (
                 <button
                   type="button"
                   className="set-btn"
-                  onClick={() => void window.aiOffice.openPath(outputPath)}
+                  disabled={savingDict || savedDictCount > 0}
+                  onClick={() => void saveDictToKb()}
                 >
-                  {t('open')}
+                  {savedDictCount > 0
+                    ? t('tkbSaved')
+                    : t('tkbSaveDict', { count: dict.llmEntries })}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
+
+        {outputPath && (
+          <div className="set-mp-upload-history set-tkb-output">
+            <div className="set-tkb-output-head">
+              <span className="set-cap-pill is-on">{t('tkbOpenOutput')}</span>
+              <code>{outputPath}</code>
+            </div>
+            <div className="set-mp-upload-actions">
+              <button
+                type="button"
+                className="set-btn primary"
+                onClick={() => void window.aiOffice.openPath(outputPath)}
+              >
+                {t('tkbOpenOutput')}
+              </button>
+              <button
+                type="button"
+                className="set-btn"
+                onClick={() => void window.aiOffice.revealPath?.(outputPath)}
+              >
+                {t('tkbRevealInFinder')}
+              </button>
+            </div>
+          </div>
+        )}
+
         {dictError && <div className="set-tkb-flash is-err">{dictError}</div>}
+        {!providerConfigured && !kbOnly && !dict && (
+          <div className="set-tkb-flash is-err">
+            {t('tkbNoProvider')}
+          </div>
+        )}
       </div>
     </>
   )
 }
-
 function AiStatusPill({ status }: { status: AiStatus | null }) {
   if (!status) return null
   return (

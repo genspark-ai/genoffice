@@ -160,6 +160,10 @@ describe('buildDictionary', () => {
     const written = JSON.parse(readFileSync(result.dictionaryPath!, 'utf8')) as Record<string, string>
     expect(Object.keys(written)).toEqual(['Good morning', 'Hello world'])
     expect(written['Hello world']).toBe('你好世界')
+    expect(result.segments).toEqual([
+      { source: 'Hello world', target: '你好世界', origin: 'llm' },
+      { source: 'Good morning', target: '早上好', origin: 'llm' },
+    ])
   })
 
   it('records segments the model failed on instead of dropping them silently', async () => {

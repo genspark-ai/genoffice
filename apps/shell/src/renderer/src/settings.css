@@ -1553,3 +1553,82 @@
   color: var(--text-secondary, #5a6b85);
 }
 .set-tkb-check input { accent-color: rgb(79 140 255); }
+
+/* Translation KB pane — status bar, result card, preview chips, output CTA. */
+.set-tkb-status { margin: 4px 0 14px; }
+.set-tkb-result-card {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgb(34 197 94 / 4%);
+  border: 1px solid rgb(34 197 94 / 25%);
+  border-radius: 10px;
+}
+.set-tkb-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.set-tkb-preview {
+  margin-bottom: 10px;
+}
+.set-tkb-preview-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary, #98a2b3);
+  margin-bottom: 6px;
+}
+.set-tkb-preview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.set-tkb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border-color, rgb(0 0 0 / 10%));
+  font-size: 11.5px;
+  color: var(--text, #1f2937);
+  max-width: 100%;
+  overflow: hidden;
+}
+.set-tkb-chip.is-kb {
+  border-color: rgb(34 197 94 / 40%);
+  background: rgb(34 197 94 / 12%);
+  color: rgb(21 128 61);
+}
+.set-tkb-chip.is-more { background: var(--bg-hover, rgb(0 0 0 / 4%)); color: var(--text-tertiary, #98a2b3); font-variant-numeric: tabular-nums; }
+.set-tkb-chip-arrow { color: var(--text-tertiary, #98a2b3); }
+.set-tkb-output {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgb(79 140 255 / 30%);
+  border-radius: 10px;
+  background: rgb(79 140 255 / 6%);
+}
+.set-tkb-output-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.set-tkb-output-head code {
+  font-size: 11px;
+  color: var(--text-secondary, #5a6b85);
+  background: var(--bg-primary, #fff);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-tkb-file input { cursor: text; }
+[data-theme='dark'] .set-tkb-chip { background: rgb(255 255 255 / 4%); border-color: rgb(255 255 255 / 8%); }
+[data-theme='dark'] .set-tkb-chip.is-kb { background: rgb(34 197 94 / 18%); color: #6ce9a6; border-color: rgb(34 197 94 / 30%); }
+[data-theme='dark'] .set-tkb-output-head code { background: rgb(255 255 255 / 4%); }
+[data-theme='dark'] .set-tkb-result-card { background: rgb(34 197 94 / 8%); border-color: rgb(34 197 94 / 30%); }

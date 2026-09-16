@@ -325,6 +325,8 @@ export interface HomeApi {
     llmEntries?: number
     missed?: string[]
     totalSegments?: number
+    elapsedMs?: number
+    segments?: { source: string; target: string; origin: 'kb' | 'llm' }[]
     error?: string
   }>
   /** Build the dictionary, then translate the file in one call. */
@@ -442,6 +444,8 @@ export interface TranslateFileResult {
     llmEntries?: number
     missed?: string[]
     totalSegments?: number
+    elapsedMs?: number
+    segments?: { source: string; target: string; origin: 'kb' | 'llm' }[]
   }
 }
 
