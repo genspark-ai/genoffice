@@ -28,7 +28,7 @@ describe('marketplace curated entries', () => {
     })
     try {
       const realTools = new Set(session.session.getAllTools().map((t) => t.name))
-      const phantom = ['detect_file_type', 'translate_docx', 'translate_pdf', 'translate_pptx', 'translate_xls', 'translate_xlsx', 'extract_docx_text', 'extract_pptx_text', 'extract_sheet_text', 'kb_list', 'kb_add', 'kb_import', 'kb_export', 'kb_validate']
+      const phantom = ['detect_file_type', 'translate_docx', 'translate_pdf', 'translate_pptx', 'translate_xls', 'translate_xlsx', 'extract_docx_text', 'extract_pptx_text', 'extract_sheet_text', 'kb_add', 'kb_import', 'kb_export', 'kb_validate']
       for (const name of phantom) {
         expect(realTools.has(name), `translate-skill must not advertise phantom tool: ${name}`).toBe(false)
       }
@@ -46,7 +46,7 @@ describe('marketplace curated entries', () => {
     for (const id of ['translate', 'translate-config', 'translate-docx', 'translate-pdf', 'translate-ppt', 'translate-xls']) {
       expect(ids.has(id), `expected curated entry ${id} in marketplace`).toBe(true)
       const entry = [...results.skills, ...results.plugins].find((e) => e.id === id)!
-      const phantom = ['detect_file_type', 'translate_docx', 'translate_pdf', 'translate_pptx', 'translate_xls', 'translate_xlsx', 'kb_list', 'kb_add', 'kb_import', 'kb_export', 'kb_validate']
+      const phantom = ['detect_file_type', 'translate_docx', 'translate_pdf', 'translate_pptx', 'translate_xls', 'translate_xlsx', 'kb_add', 'kb_import', 'kb_export', 'kb_validate']
       for (const name of phantom) {
         expect(entry.tools.includes(name), `${id} must not advertise phantom tool ${name}`).toBe(false)
       }

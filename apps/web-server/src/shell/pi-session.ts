@@ -115,6 +115,28 @@ async function buildPiSession(): Promise<OfficeSession> {
 /* IPC handlers — the UI consumes the pi session through these.       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Look up a tool by name in the live pi session and execute it. The
+ * shared entry point for every UI / IPC handler that needs to talk to
+ * a translate-skill tool (kb_list / kb_search / kb_upsert / kb_remove /
+ * translate_text / translate_file / build_dictionary). The same function
+ * the agent uses — one source of truth for the whole translation surface.
+ */
+export async function callTranslateTool(name: string, args: unknown): Promise<unknown> {
+    const { session: agent } = await getPiSession()
+    const tool = agent.getToolDefinition(name)
+    if (!tool) {
+      return { ok: false, error: `translate-skill tool "${name}" not registered in pi session` }
+    }
+    const result = await (tool as unknown as { execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined) => Promise<{ content: Array<{ type: string; text?: string }>; details: unknown }> }).execute(`ui-${Date.now()}`, args as Record<string, unknown>, undefined)
+    const first = (result?.content ?? []).find((c: { type?: string }) => c.type === 'text') as { text?: string } | undefined
+    return {
+      ok: (result?.details as { ok?: boolean } | undefined)?.ok ?? true,
+      details: result?.details ?? null,
+      summary: first?.text ?? '',
+    }
+  }
+
 export function registerPiSessionHandlers(): void {
 registerHandle('home:pi-list-skills', async () => {
     try {
@@ -180,26 +202,16 @@ registerHandle('home:pi-list-skills', async () => {
   // untouched so existing renderer code keeps working while we migrate.
   // ------------------------------------------------------------------
 
-  async function callTranslateTool(name: string, args: unknown): Promise<unknown> {
-    const { session: agent } = await getPiSession()
-    const tool = agent.getToolDefinition(name)
-    if (!tool) {
-      return { ok: false, error: `translate-skill tool "${name}" not registered in pi session` }
-    }
-    const result = await (tool as unknown as { execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined) => Promise<{ content: Array<{ type: string; text?: string }>; details: unknown }> }).execute(`ui-${Date.now()}`, args as Record<string, unknown>, undefined)
-    const first = (result?.content ?? []).find((c: { type?: string }) => c.type === 'text') as { text?: string } | undefined
-    return {
-      ok: (result?.details as { ok?: boolean } | undefined)?.ok ?? true,
-      details: result?.details ?? null,
-      summary: first?.text ?? '',
-    }
-  }
+
 
   registerHandle('home:translate-text', async (_event, args) => {
     return callTranslateTool('translate_text', args)
   })
   registerHandle('home:translate-build-dictionary', async (_event, args) => {
     return callTranslateTool('build_dictionary', args)
+  })
+  registerHandle('home:translate-kb-list', async (_event, args) => {
+    return callTranslateTool('kb_list', args)
   })
   registerHandle('home:translate-kb-search', async (_event, args) => {
     return callTranslateTool('kb_search', args)

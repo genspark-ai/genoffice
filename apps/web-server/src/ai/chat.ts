@@ -38,6 +38,7 @@ import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
 import { gskApiKey, hasGskAuth, gskLoginInfo } from '@genoffice/ai-search'
 
 import { parseDuckDuckGo, parseDuckDuckGoImages } from '@genoffice/agent-skills'
+import { callTranslateTool } from '../shell/pi-session'
 import {
   assessFileCoverage,
   buildDictionary,
@@ -1071,62 +1072,80 @@ export function registerAiCoreHandlers(): void {
   // The UI (Settings -> AI -> Translation Knowledge) and the agent tools both
   // hit these handlers; the JSON file at ~/.genoffice/translation-kb.json is
   // the single source of truth.
+  // ----- translation knowledge base CRUD --------------------------------------
+  // UNIFIED ON PI+SKILLS: every KB mutation goes through the translate-skill
+  // kb_* tools registered in the live pi session. The pi session is the
+  // single source of truth — the agent and the UI hit the same execute()
+  // body, the same KnowledgeBase instance, the same JSON file on disk.
   registerHandle('ai:translation-kb-list', async (_event: unknown, filters: unknown) => {
-    await ensureKbLoaded()
-    const f = (filters ?? {}) as KBListFilters
-    return { ok: true, entries: sharedKnowledgeBase.list(f) }
+    const f = (filters ?? {}) as { schema?: string; limit?: number }
+    const result = (await callTranslateTool('kb_list', {
+      schema: f.schema,
+      limit: f.limit,
+    })) as { ok: boolean; details?: { entries?: unknown[]; count?: number }; summary?: string; error?: string }
+    if (!result.ok) {
+      return { ok: false, entries: [], error: result.error ?? result.summary ?? 'kb_list failed' }
+    }
+    return { ok: true, entries: result.details?.entries ?? [] }
   })
 
   registerHandle('ai:translation-kb-upsert', async (_event: unknown, entry: unknown) => {
-    await ensureKbLoaded()
     if (!entry || typeof entry !== 'object') {
       return { ok: false, error: 'ai:translation-kb-upsert expected a KB entry object' }
     }
-    const candidate = entry as Partial<KBEntry> & { id?: string }
+    const candidate = entry as Record<string, unknown>
     if (!candidate.id || typeof candidate.id !== 'string') {
       return { ok: false, error: 'KB entry must include a string `id`' }
     }
-    try {
-      sharedKnowledgeBase.upsert(candidate as KBEntry)
-      await sharedKnowledgeBase.save()
-      return { ok: true, entry: candidate }
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    const result = (await callTranslateTool('kb_upsert', { entry: candidate })) as {
+      ok: boolean; details?: { id?: string }; summary?: string; error?: string
     }
+    if (!result.ok) {
+      return { ok: false, error: result.error ?? result.summary ?? 'kb_upsert failed' }
+    }
+    return { ok: true, entry: candidate, id: result.details?.id }
   })
 
   registerHandle('ai:translation-kb-remove', async (_event: unknown, id: unknown) => {
-    await ensureKbLoaded()
     const targetId = String(id ?? '').trim()
     if (!targetId) return { ok: false, error: 'ai:translation-kb-remove expected a non-empty id' }
-    const removed = sharedKnowledgeBase.remove(targetId)
-    if (removed) await sharedKnowledgeBase.save()
-    return { ok: true, removed }
+    const result = (await callTranslateTool('kb_remove', { id: targetId })) as {
+      ok: boolean; details?: { removed?: boolean }; summary?: string; error?: string
+    }
+    if (!result.ok) {
+      return { ok: false, removed: false, error: result.error ?? result.summary ?? 'kb_remove failed' }
+    }
+    return { ok: true, removed: result.details?.removed ?? false }
   })
 
   registerHandle('ai:translation-kb-resolve', async (_event: unknown, request: unknown) => {
-    await ensureKbLoaded()
-    const req = (request ?? {}) as {
-      sourceLang?: string
-      targetLang?: string
-      category?: string
-      customerName?: string
-    }
+    const req = (request ?? {}) as { sourceLang?: string; targetLang?: string; category?: string; customerName?: string }
     if (!req.targetLang) {
       return { ok: false, error: 'ai:translation-kb-resolve expected non-empty `targetLang`' }
     }
-    const resolved = sharedKnowledgeBase.resolve({
-      sourceLang: req.sourceLang ?? 'auto',
-      targetLang: req.targetLang,
-      ...(req.category !== undefined ? { category: req.category } : {}),
-      ...(req.customerName !== undefined ? { customerName: req.customerName } : {}),
-    })
-    return { ok: true, ...resolved }
+    // The pi session's kb_search does substring match over JSON.stringify(entry);
+    // encode the resolve filter as a query so the same store answers it.
+    const query = req.customerName ?? req.category ?? req.targetLang
+    const result = (await callTranslateTool('kb_search', { query, limit: 500 })) as {
+      ok: boolean; details?: { entries?: unknown[]; count?: number }; summary?: string; error?: string
+    }
+    if (!result.ok) {
+      return { ok: false, entries: [], error: result.error ?? result.summary ?? 'kb_search failed' }
+    }
+    return { ok: true, entries: result.details?.entries ?? [], count: result.details?.count ?? 0 }
   })
 
   registerHandle('ai:translation-kb-stats', async () => {
-    await ensureKbLoaded()
-    const all = sharedKnowledgeBase.list()
+    // Pull a full inventory from the pi session, then bucket by schema.
+    // The pi session's kb_list is the single source of truth — the same
+    // store the agent and the UI mutate.
+    const result = (await callTranslateTool('kb_list', { limit: 1000 })) as {
+      ok: boolean; details?: { entries?: unknown[]; count?: number }; error?: string; summary?: string
+    }
+    if (!result.ok) {
+      return { ok: false, total: 0, bySchema: {}, error: result.error ?? result.summary ?? 'kb_list failed' }
+    }
+    const all = (result.details?.entries ?? []) as Array<Record<string, unknown>>
     const bySchema: Record<string, number> = {}
     for (const entry of all) {
       const key = ('sourceTerm' in entry && 'targetTerm' in entry) ? 'term'
@@ -1136,7 +1155,7 @@ export function registerAiCoreHandlers(): void {
         : 'customerPreference'
       bySchema[key] = (bySchema[key] ?? 0) + 1
     }
-    return { ok: true, total: all.length, bySchema, dirty: sharedKnowledgeBase.isDirty() }
+    return { ok: true, total: all.length, bySchema }
   })
 
   // ----- whole-file translation (PDF / XLS(X) / PPTX / DOCX) ----------------

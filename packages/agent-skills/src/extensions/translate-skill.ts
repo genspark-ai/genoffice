@@ -691,6 +691,60 @@ function createKbSearchTool() {
   })
 }
 
+const KbListParams = Type.Object({
+  schema: Type.Optional(
+    Type.Union(
+      [
+        Type.Literal("term"),
+        Type.Literal("forbidden"),
+        Type.Literal("brand"),
+        Type.Literal("styleRule"),
+        Type.Literal("customerPreference"),
+      ],
+      { description: "Optional filter to a single KB schema." },
+    ),
+  ),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000, default: 500 })),
+})
+
+function createKbListTool() {
+  return defineTool<typeof KbListParams, { ok: boolean; entries?: unknown[]; count?: number; schema?: string; error?: string }>({
+    name: "kb_list",
+    label: "KB List",
+    description:
+      "List every entry in the translation knowledge base, optionally filtered " +
+      "by schema. Use this to enumerate the KB before deciding what to upsert " +
+      "or remove. The companion to kb_search (which does substring matching).",
+    promptSnippet: "kb_list([schema][, limit]) → entries[]",
+    promptGuidelines: ["Prefer kb_search for targeted lookups; kb_list for full inventories."],
+    parameters: KbListParams,
+    async execute(_id, params: { schema?: string; limit?: number }, _signal) {
+      try {
+        const kb = await getKb()
+        const filter: { schema?: string } = {}
+        if (params.schema) filter.schema = params.schema
+        const entries = await kb.list(filter as never)
+        const sliced = entries.slice(0, params.limit ?? 500)
+        return {
+          content: [{ type: "text" as const, text: `kb_list → ${sliced.length}/${entries.length} entries` }],
+          details: {
+            ok: true,
+            entries: sliced,
+            count: sliced.length,
+            schema: params.schema,
+          },
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return {
+          content: [{ type: "text" as const, text: `kb_list error: ${msg}` }],
+          details: { ok: false, error: msg },
+        }
+      }
+    },
+  })
+}
+
 // ============================================================================
 // Extension factory
 // ============================================================================
@@ -704,6 +758,7 @@ export const ALL_TRANSLATE_TOOL_NAMES = [
   "translate_text",
   "translate_file",
   "build_dictionary",
+  "kb_list",
   "kb_search",
   "kb_upsert",
   "kb_remove",
@@ -724,5 +779,6 @@ export function createTranslateSkillExtension(
     pi.registerTool(createKbUpsertTool())
     pi.registerTool(createKbRemoveTool())
     pi.registerTool(createKbSearchTool())
+    pi.registerTool(createKbListTool())
   }
 }
