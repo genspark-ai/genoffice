@@ -182,24 +182,146 @@ export async function ensureLumosSkillsRegistered(): Promise<{ registered: strin
   return { registered, alreadyHad }
 }
 
-function extractLumosDescription(body: string, fallback: string): string {
-  // LumosAI SKILL.md frontmatter uses YAML single/double-quoted strings that span
-  // many lines. We parse the top-level description by reading between the matching
-  // quotes. If we cannot find one we fall back to the file's name.
+/**
+ * Unescape a YAML single-line scalar. Handles backslash escapes (\\, \", \n,
+ * \t, \r, \0) and unknown escapes are kept as-is. Block scalars also benefit
+ * from this since they may contain literal `\` characters.
+ */
+function unescapeYamlScalar(text: string): string {
+  return text.replace(/\\(.)/g, (_match, ch: string) => {
+    switch (ch) {
+      case 'n': return '\\n'
+      case 't': return '\\t'
+      case 'r': return '\\r'
+      case '"': return '"'
+      case "'": return "'"
+      case '\\': return '\\'
+      case '0': return '\\0'
+      default: return ch
+    }
+  })
+}
+
+/**
+ * Collapse doubled apostrophes inside a YAML single-quoted scalar
+ * (YAML uses `''` to escape a literal `'`).
+ */
+function unescapeYamlSingleQuoted(text: string): string {
+  return text.replace(/''/g, "'")
+}
+
+/**
+ * Walk a string from index 0, treating every `\X` (YAML escape) as a single
+ * token, and return the index of the first unescaped `"` (or `'`). Used by
+ * the double-quoted and single-quoted scalar branches so a description like
+ * `app_update(action=\"check\")` is not cut short at the first escaped quote.
+ */
+function indexOfClosingQuote(haystack: string, quote: '"' | "'"): number {
+  let k = 0
+  while (k < haystack.length) {
+    const ch = haystack[k]
+    if (ch === '\\' && quote === '"' && k + 1 < haystack.length) {
+      k += 2 // skip \X as one token
+      continue
+    }
+    if (ch === "'" && quote === "'" && haystack[k + 1] === "'") {
+      k += 2 // skip '' as one token (YAML single-quoted escape)
+      continue
+    }
+    if (ch === quote) return k
+    k++
+  }
+  return -1
+}
+
+export function extractLumosDescription(body: string, fallback: string): string {
+  // LumosAI SKILL.md frontmatter uses YAML multi-line forms — folded `>`
+  // /literal `|` block scalars, single- or double-quoted strings that span
+  // many lines. We parse the top-level description by reading the line after
+  // `description:` and continuing based on the first character of its content.
+  // If we cannot find one we fall back to the file's name.
   const start = body.indexOf('---')
   if (start < 0) return fallback
   const fmEnd = body.indexOf('\n---', start + 3)
   if (fmEnd < 0) return fallback
   const frontmatter = body.slice(0, fmEnd)
-  const single = frontmatter.match(/^description:\s*(?!["'>])([^\n]+)/m)
-  if (single) return single[1].trim()
-  const dq = frontmatter.match(/^description:\s*"([\s\S]*?)"/m)
-  if (dq) return dq[1].replace(/\s+/g, ' ').trim()
-  const sq = frontmatter.match(/^description:\s*'([\s\S]*?)'/m)
-  if (sq) return sq[1].replace(/\s+/g, ' ').trim()
-  const block = frontmatter.match(/^description:\s*>\s*\n([\s\S]+?)(?:^\S|$)/m)
-  if (block) return block[1].replace(/\n\s+/g, ' ').trim()
+  const lines = frontmatter.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const m = line.match(/^description:\s*(.*)$/)
+    if (!m) continue
+    const content = m[1]
+    const trimmed = content.trim()
+    if (!trimmed) continue
+    const firstChar = trimmed[0]
+    if (firstChar === '"') {
+      const afterQuote = trimmed.slice(trimmed.indexOf('"') + 1)
+      const closing = indexOfClosingQuote(afterQuote, '"')
+      if (closing >= 0) {
+        return unescapeYamlScalar(afterQuote.slice(0, closing)).replace(/\s+/g, ' ').trim()
+      }
+      let buffer = afterQuote
+      for (let j = i + 1; j < lines.length; j++) {
+        const idx = indexOfClosingQuote(lines[j], '"')
+        if (idx >= 0) {
+          buffer += ' ' + lines[j].slice(0, idx)
+          return unescapeYamlScalar(buffer).replace(/\s+/g, ' ').trim()
+        }
+        buffer += ' ' + lines[j]
+      }
+      return unescapeYamlScalar(buffer).replace(/\s+/g, ' ').trim()
+    }
+    if (firstChar === "'") {
+      const afterQuote = trimmed.slice(trimmed.indexOf("'") + 1)
+      const closing = indexOfClosingQuote(afterQuote, "'")
+      if (closing >= 0) {
+        return unescapeYamlSingleQuoted(
+          unescapeYamlScalar(afterQuote.slice(0, closing)),
+        ).replace(/\s+/g, ' ').trim()
+      }
+      let buffer = afterQuote
+      for (let j = i + 1; j < lines.length; j++) {
+        const idx = indexOfClosingQuote(lines[j], "'")
+        if (idx >= 0) {
+          buffer += ' ' + lines[j].slice(0, idx)
+          return unescapeYamlSingleQuoted(
+            unescapeYamlScalar(buffer),
+          ).replace(/\s+/g, ' ').trim()
+        }
+        buffer += ' ' + lines[j]
+      }
+      return unescapeYamlSingleQuoted(
+        unescapeYamlScalar(buffer),
+      ).replace(/\s+/g, ' ').trim()
+    }
+    if (firstChar === '>' || firstChar === '|') {
+      // Folded/literal block scalar — collect every indented line until a
+      // non-indented line (which is the next YAML key).
+      let buffer = ''
+      for (let j = i + 1; j < lines.length; j++) {
+        if (lines[j].startsWith(' ') || lines[j].startsWith('\t')) {
+          buffer += (buffer ? ' ' : '') + lines[j].trim()
+        } else {
+          break
+        }
+      }
+      return unescapeYamlScalar(buffer).trim() || fallback
+    }
+    // Plain scalar on the same line.
+    return trimmed
+  }
   return fallback
+}
+
+
+
+
+/**
+ * Encode a string so it can sit inside a YAML double-quoted scalar: backslash
+ * and double-quote are the only two characters that need escaping.
+ */
+function yamlDoubleQuoted(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
 function renderLumosSkillWrapper(opts: {
@@ -221,7 +343,7 @@ function renderLumosSkillWrapper(opts: {
   return [
     '---',
     `name: ${slug}`,
-    `description: ${description.replace(/"/g, "'")}`,
+    `description: "${yamlDoubleQuoted(description).slice(0, 1024)}"`,
     'metadata:',
     '  hermes:',
     '    tags:',
@@ -344,7 +466,7 @@ function renderBuiltInSkillMarkdown(entry: typeof BUILT_IN_SKILLS[number]): stri
     '---',
     `name: ${entry.id}`,
     `display_name: ${entry.name}`,
-    `description: ${entry.description.replace(/[\r\n]+/g, ' ').slice(0, 1024)}`,
+    `description: "${yamlDoubleQuoted(entry.description.replace(/[\r\n]+/g, ' ')).slice(0, 1024)}"`,
     `version: ${entry.version}`,
     `author: ${entry.author}`,
     `category: ${entry.category}`,
@@ -541,7 +663,7 @@ function renderPluginSkill(input: PluginPackageInput): string {
   return [
     '---',
     `name: ${input.id}`,
-    `description: ${input.description.replace(/\s+/g, ' ').slice(0, 280)}`,
+    `description: "${yamlDoubleQuoted(input.description.replace(/\s+/g, ' ')).slice(0, 280)}"`,
     `display_name: ${input.name.replace(/\s+/g, ' ')}`,
     '---',
     '',

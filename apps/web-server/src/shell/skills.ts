@@ -1470,6 +1470,15 @@ export function searchMarketplace(filters: MarketplaceSearchFilters): {
  * frontmatter — not in the body. We sanitize the human-readable `name`
  * into a slug and put the original in `display_name`.
  */
+
+/**
+ * Encode a string so it can sit inside a YAML double-quoted scalar: backslash
+ * and double-quote are the only two characters that need escaping.
+ */
+function yamlDoubleQuoted(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
 function renderSkillBody(entry: {
   id: string
   name: string
@@ -1498,7 +1507,7 @@ function renderSkillBody(entry: {
     `---`,
     `name: ${slug}`,
     `display_name: ${entry.name}`,
-    `description: ${entry.description.replace(/[\r\n]+/g, ' ').slice(0, 1024)}`,
+    `description: "${yamlDoubleQuoted(entry.description.replace(/[\r\n]+/g, ' ')).slice(0, 1024)}"`,
     `version: ${entry.version}`,
     `author: ${entry.author}`,
     `category: ${entry.category}`,
