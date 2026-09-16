@@ -1455,3 +1455,101 @@
 [data-theme='dark'] .set-cap-pill.is-on { background: rgb(34 197 94 / 14%); color: #6ce9a6; border-color: rgb(34 197 94 / 30%); }
 [data-theme='dark'] .set-cap-pill.is-fallback { background: rgb(247 144 9 / 14%); color: #fdb022; border-color: rgb(247 144 9 / 30%); }
 [data-theme='dark'] .set-cap-pill.is-off { background: rgb(180 35 24 / 14%); color: #fda29b; border-color: rgb(180 35 24 / 30%); }
+
+/* ── translation knowledge base pane ─────────────────────────────
+   Settings → AI → Translation KB. A schema tab strip, a flat rule list and a
+   compact add form; the dictionary block below reuses the publish-form
+   layout so it matches the marketplace upload card. */
+.set-tkb-total {
+  margin-left: auto;
+  align-self: center;
+  font-size: 11.5px;
+  color: var(--text-tertiary, #98a2b3);
+  font-variant-numeric: tabular-nums;
+}
+.set-tkb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.set-tkb-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-tertiary, #98a2b3);
+  border: 1px dashed var(--border-color, rgb(0 0 0 / 12%));
+  border-radius: 8px;
+}
+.set-tkb-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-soft, rgb(0 0 0 / 8%));
+  border-radius: 8px;
+  background: var(--bg-primary, #fff);
+  font-size: 12.5px;
+}
+.set-tkb-primary {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text, #1f2937);
+}
+.set-tkb-arrow { color: var(--text-tertiary, #98a2b3); font-size: 11px; }
+.set-tkb-secondary {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary, #5a6b85);
+}
+.set-tkb-scope {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgb(79 140 255 / 12%);
+  color: rgb(37 99 235);
+  font-size: 10.5px;
+}
+.set-tkb-prio {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-tertiary, #98a2b3);
+  font-variant-numeric: tabular-nums;
+}
+.set-tkb-del {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary, #98a2b3);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.set-tkb-del:hover { background: rgb(220 38 38 / 10%); color: rgb(185 28 28); }
+.set-tkb-add { margin-top: 4px; }
+.set-tkb-flash { align-self: center; font-size: 11.5px; color: rgb(21 128 61); }
+.set-tkb-flash.is-err { color: rgb(185 28 28); }
+.set-tkb-file { display: flex; gap: 8px; align-items: center; }
+.set-tkb-file input { flex: 1; }
+.set-tkb-result { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+[data-theme='dark'] .set-tkb-row { background: rgb(255 255 255 / 3%); }
+[data-theme='dark'] .set-tkb-scope { background: rgb(79 140 255 / 20%); color: #93b4f8; }
+[data-theme='dark'] .set-tkb-flash { color: #6ce9a6; }
+[data-theme='dark'] .set-tkb-flash.is-err { color: #fda29b; }
+.set-tkb-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary, #5a6b85);
+}
+.set-tkb-check input { accent-color: rgb(79 140 255); }

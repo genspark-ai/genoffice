@@ -35,21 +35,21 @@ import {
   streamForProvider,
 } from '@genoffice/ai-provider'
 import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
-import {
-  defaultOutputPath,
-  isSupportedExtension,
-  resolveTranslateSkills,
-  SUPPORTED_EXTENSIONS,
-  translateFile,
-} from './translate-files'
+
 import { parseDuckDuckGo, parseDuckDuckGoImages } from '@genoffice/agent-skills'
 import {
+  buildDictionary,
   buildTranslationPrompt,
   buildTranslateSystemPrompt,
+  defaultOutputPath,
   extractTranslationText,
+  isSupportedExtension,
   KnowledgeBase,
+  resolveTranslateSkills,
   sharedMemory,
+  SUPPORTED_EXTENSIONS,
   translateBatch,
+  translateFile,
   translateOne,
   type KBEntry,
   type KBListFilters,
@@ -614,6 +614,136 @@ export function registerAiCoreHandlers(): void {
       targetLang: req.targetLang ?? 'auto',
       units,
     })
+  })
+
+  // ai:translate-build-dictionary — KB + LLM produce the `--dictionary` the
+  // upstream file handlers consume, so the user never hand-writes one.
+  registerHandle('ai:translate-build-dictionary', async (_event: unknown, request: unknown) => {
+    const req = (request ?? {}) as {
+      inputPath?: string
+      sourceLang?: string
+      targetLang?: string
+      outputPath?: string
+      maxSegments?: number
+      minChars?: number
+      customerName?: string
+      glossaryCategory?: string
+      useLlm?: boolean
+      settings?: AiSettings
+    }
+    if (!req.inputPath) {
+      return { ok: false, error: 'ai:translate-build-dictionary expected a non-empty `inputPath`' }
+    }
+    if (!req.targetLang) {
+      return { ok: false, error: 'ai:translate-build-dictionary expected a non-empty `targetLang`' }
+    }
+    const incoming = req.settings || aiSettings
+    const provider = incoming.provider
+    const config = incoming.providers?.[provider]
+    const wantsLlm = req.useLlm !== false
+    if (wantsLlm && !config) {
+      return { ok: false, error: `AI provider "${provider}" not configured` }
+    }
+    await ensureKbLoaded()
+    return buildDictionary(
+      {
+        inputPath: req.inputPath,
+        sourceLang: req.sourceLang ?? 'auto',
+        targetLang: req.targetLang,
+        ...(req.outputPath !== undefined ? { outputPath: req.outputPath } : {}),
+        ...(req.maxSegments !== undefined ? { maxSegments: req.maxSegments } : {}),
+        ...(req.minChars !== undefined ? { minChars: req.minChars } : {}),
+        ...(req.customerName !== undefined ? { customerName: req.customerName } : {}),
+        ...(req.glossaryCategory !== undefined ? { glossaryCategory: req.glossaryCategory } : {}),
+        ...(req.useLlm !== undefined ? { useLlm: req.useLlm } : {}),
+        dataDir: DATA_DIR,
+      },
+      {
+        translateBatch: async (input) => {
+          if (!config) return { ok: false, error: `AI provider "${provider}" not configured` }
+          return translateBatch(input, {
+            provider,
+            config: config as AiProviderConfig,
+            memory: sharedMemory,
+            knowledgeBase: sharedKnowledgeBase,
+          })
+        },
+      },
+    )
+  })
+
+  // ai:translate-file-auto — build the dictionary, then translate in one call.
+  // This is the flow the UI uses; the two halves stay separately callable so a
+  // user can review or hand-edit a dictionary before spending the file pass.
+  registerHandle('ai:translate-file-auto', async (_event: unknown, request: unknown) => {
+    const req = (request ?? {}) as {
+      inputPath?: string
+      outputPath?: string
+      sourceLang?: string
+      targetLang?: string
+      customerName?: string
+      glossaryCategory?: string
+      scale?: number
+      settings?: AiSettings
+    }
+    if (!req.inputPath) {
+      return { ok: false, error: 'ai:translate-file-auto expected a non-empty `inputPath`' }
+    }
+    if (!req.targetLang) {
+      return { ok: false, error: 'ai:translate-file-auto expected a non-empty `targetLang`' }
+    }
+    if (!isSupportedExtension(req.inputPath)) {
+      return {
+        ok: false,
+        error: `Unsupported file type; expected one of ${SUPPORTED_EXTENSIONS.join(', ')}`,
+      }
+    }
+    const incoming = req.settings || aiSettings
+    const provider = incoming.provider
+    const config = incoming.providers?.[provider]
+    if (!config) return { ok: false, error: `AI provider "${provider}" not configured` }
+    await ensureKbLoaded()
+
+    const dict = await buildDictionary(
+      {
+        inputPath: req.inputPath,
+        sourceLang: req.sourceLang ?? 'auto',
+        targetLang: req.targetLang,
+        ...(req.customerName !== undefined ? { customerName: req.customerName } : {}),
+        ...(req.glossaryCategory !== undefined ? { glossaryCategory: req.glossaryCategory } : {}),
+        dataDir: DATA_DIR,
+      },
+      {
+        translateBatch: async (input) =>
+          translateBatch(input, {
+            provider,
+            config: config as AiProviderConfig,
+            memory: sharedMemory,
+            knowledgeBase: sharedKnowledgeBase,
+          }),
+      },
+    )
+    if (!dict.ok || !dict.dictionaryPath) {
+      return { ok: false, stage: 'dictionary', error: dict.error ?? 'dictionary build failed' }
+    }
+
+    const fileResult = await translateFile({
+      inputPath: req.inputPath,
+      ...(req.outputPath !== undefined ? { outputPath: req.outputPath } : {}),
+      dictionaryPath: dict.dictionaryPath,
+      ...(req.scale !== undefined ? { scale: req.scale } : {}),
+    })
+    return {
+      ...fileResult,
+      stage: fileResult.ok ? 'done' : 'translate',
+      dictionaryPath: dict.dictionaryPath,
+      dictionary: {
+        kbEntries: dict.kbEntries,
+        llmEntries: dict.llmEntries,
+        missed: dict.missed,
+        totalSegments: dict.totalSegments,
+      },
+    }
   })
 
   // ----- translation knowledge base CRUD --------------------------------------

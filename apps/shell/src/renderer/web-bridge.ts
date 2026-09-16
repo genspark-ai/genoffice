@@ -185,6 +185,16 @@ if (!isElectronRuntime()) {
   }
 
   bridgedWindow.aiOffice = createShellHomeApi(transport, {
+    // Browser equivalent of the Electron picker: upload the chosen bytes to the
+    // host's temp dir and hand back that path, which is what the translate
+    // pipeline (running server-side) can actually read.
+    pickTranslationFile: async () => {
+      const picked = await pickFileBytes('.pdf,.docx,.pptx,.xlsx,.xlsm,.xls,.csv', false)
+      const file = picked?.[0]
+      if (!file) return { ok: false, canceled: true }
+      const path = await files.writeTempFile(file.name, file.bytes)
+      return { ok: true, path }
+    },
     browse: async () => {
       const picked = await pickFileBytes(undefined, false)
       if (!picked) return

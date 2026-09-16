@@ -15,7 +15,7 @@ import {
   resolveTranslateSkills,
   SUPPORTED_EXTENSIONS,
   translateFile,
-} from '../src/ai/translate-files'
+} from '../src/file-translate'
 
 describe('translate-file bridge', () => {
   it('recognises every supported extension', () => {
@@ -40,7 +40,7 @@ describe('translate-file bridge', () => {
 
   it('resolveTranslateSkills honours the explicit override', () => {
     const previous = process.env.GENOFFICE_TRANSLATE_SKILLS_DIR
-    const dir = join(__dirname, '..', 'src', 'ai')
+    const dir = join(__dirname, '..', 'src')
     process.env.GENOFFICE_TRANSLATE_SKILLS_DIR = dir
     try {
       const loc = resolveTranslateSkills()

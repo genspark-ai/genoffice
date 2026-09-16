@@ -22,6 +22,11 @@ import type {
   AccountLoginEvent,
   AccountStatus,
   AiCapabilitiesReport,
+  TranslateFilePickResult,
+  TranslateFileResult,
+  TranslateFileStatus,
+  TranslationKbEntry,
+  TranslationKbStats,
   AutoSaveDefault,
   CloudProjectsSnapshot,
   HomeApi,
@@ -86,6 +91,8 @@ function asRecentPage(result: unknown): RecentPage {
 }
 
 export interface ShellApiOverrides {
+  /** Web-native file picker that returns a server-side path (uploads to a temp dir). */
+  pickTranslationFile?: (title?: string) => Promise<TranslateFilePickResult>
   /** Web-native browse (browser file picker → open-path). */
   browse?: () => Promise<void>
   /** Web-native default save dir picker (browser download dir is not selectable; returns null). */
@@ -344,6 +351,51 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
     },
     async getAiCapabilities() {
       return (await t.invoke(HOME_CHANNELS.getAiCapabilities)) as AiCapabilitiesReport
+    },
+    async listTranslationKb(input) {
+      return (await t.invoke(HOME_CHANNELS.translationKbList, input ?? {})) as {
+        ok: boolean
+        entries: TranslationKbEntry[]
+      }
+    },
+    async upsertTranslationKb(entry) {
+      return (await t.invoke(HOME_CHANNELS.translationKbUpsert, entry)) as {
+        ok: boolean
+        error?: string
+      }
+    },
+    async removeTranslationKb(id) {
+      return (await t.invoke(HOME_CHANNELS.translationKbRemove, id)) as {
+        ok: boolean
+        removed: boolean
+      }
+    },
+    async getTranslationKbStats() {
+      return (await t.invoke(HOME_CHANNELS.translationKbStats)) as TranslationKbStats
+    },
+    async getTranslateFileStatus() {
+      return (await t.invoke(HOME_CHANNELS.translateFileStatus)) as TranslateFileStatus
+    },
+    async pickTranslationFile(title) {
+      if (overrides.pickTranslationFile) return await overrides.pickTranslationFile()
+      return (await t.invoke(
+        HOME_CHANNELS.pickTranslationFile,
+        title ?? '',
+      )) as TranslateFilePickResult
+    },
+    async buildTranslationDictionary(input) {
+      return (await t.invoke(HOME_CHANNELS.translateBuildDictionary, input)) as {
+        ok: boolean
+        dictionaryPath?: string
+        kbEntries?: number
+        llmEntries?: number
+        missed?: string[]
+        totalSegments?: number
+        error?: string
+      }
+    },
+    async translateFileAuto(input) {
+      return (await t.invoke(HOME_CHANNELS.translateFileAuto, input)) as TranslateFileResult
     },
     async marketplaceRate(id: string, kind: 'skill' | 'plugin', rating: number) {
       return (await t.invoke('home:marketplace-rate', { id, kind, rating })) as {

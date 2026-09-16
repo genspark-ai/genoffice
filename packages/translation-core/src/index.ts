@@ -109,3 +109,30 @@ export {
   type PersistentMemoryFileSystem,
   type PersistentTranslationMemoryOptions,
 } from './persistent-memory'
+
+// Whole-file translation bridge + KB/LLM dictionary builder. Both are
+// host-agnostic (Node built-ins + `@genoffice/file-parse` only) so the Electron
+// main process and the standalone web-server share one implementation.
+export {
+  SUPPORTED_EXTENSIONS,
+  defaultOutputPath,
+  isSupportedExtension,
+  resolveTranslateSkills,
+  translateFile,
+  type SupportedExtension,
+  type TranslateFileRequest,
+  type TranslateFileResult,
+  type TranslateSkillsLocation,
+} from './file-translate'
+
+export {
+  applyKbRules,
+  batchSegments,
+  buildDictionary,
+  defaultDictionaryPath,
+  mineSegments,
+  type BuildDictionaryDeps,
+  type BuildDictionaryRequest,
+  type BuildDictionaryResult,
+  type DictionarySegment,
+} from './dictionary'

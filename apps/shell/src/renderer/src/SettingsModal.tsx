@@ -42,6 +42,10 @@ import type {
   AiCatalogEntry,
   ModuleEntry,
   ModuleKind,
+  TranslateFileStatus,
+  TranslationKbEntry,
+  TranslationKbSchema,
+  TranslationKbScope,
   UiTheme,
 } from '../../shared/home-api'
 import { ProviderLogo } from './provider-logos'
@@ -160,6 +164,7 @@ type SectionId =
   | 'account'
   | 'aiModel'
   | 'aiMedia'
+  | 'translationKb'
   | 'general'
   | 'integrations'
   | 'modules'
@@ -170,6 +175,7 @@ const SECTIONS: readonly { id: SectionId; labelKey: StringKey }[] = [
   { id: 'account', labelKey: 'setSecAccount' },
   { id: 'aiModel', labelKey: 'setSecAiModel' },
   { id: 'aiMedia', labelKey: 'setSecAiMedia' },
+  { id: 'translationKb', labelKey: 'setSecTranslationKb' },
   { id: 'general', labelKey: 'setSecGeneral' },
   { id: 'integrations', labelKey: 'setSecIntegrations' },
   { id: 'modules', labelKey: 'setSecModules' },
@@ -189,6 +195,24 @@ function SectionIcon({ id }: { id: SectionId }) {
         />
         <path
           d="M12.8 11.2v3M11.3 12.7h3"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinecap="round"
+        />
+      </svg>
+    )
+  }
+  if (id === 'translationKb') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M3 2.5h6.5A2 2 0 0 1 11.5 4.5v9H5a2 2 0 0 0-2 2v-13Z"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M13 4.5v7M5.2 5.6h4M5.2 8h4"
           stroke="currentColor"
           strokeWidth="1.3"
           strokeLinecap="round"
@@ -1066,6 +1090,525 @@ interface AiStatus {
 }
 
 /** colored feedback pill in the AI pane footer: spinner while testing, then success/error */
+/* ── translation knowledge base ─────────────────────────────────────
+ * Settings → AI → Translation KB. Five schemas (mirroring the
+ * `trade.translation.*` set the upstream LumosAI translate-config skill
+ * writes), each a CRUD list backed by `~/.genoffice/translation-kb.json`
+ * through the ai:translation-kb-* channels.
+ *
+ * The same page also drives the file pipeline: pick a document, let the KB +
+ * the active provider mine a `--dictionary`, then optionally translate the
+ * file in one go.
+ */
+
+const TKB_SCHEMAS: readonly { key: TranslationKbSchema; labelKey: StringKey }[] = [
+  { key: 'term', labelKey: 'tkbSchemaTerm' },
+  { key: 'forbidden', labelKey: 'tkbSchemaForbidden' },
+  { key: 'brand', labelKey: 'tkbSchemaBrand' },
+  { key: 'styleRule', labelKey: 'tkbSchemaStyle' },
+  { key: 'customerPreference', labelKey: 'tkbSchemaCustomer' },
+]
+
+const TKB_SCOPES: readonly TranslationKbScope[] = [
+  'session',
+  'customer',
+  'project',
+  'company',
+  'global',
+]
+
+/** Field ids double as the KB entry property names they fill in. */
+const TKB_FIELDS: Record<TranslationKbSchema, readonly { id: string; labelKey: StringKey }[]> = {
+  term: [
+    { id: 'sourceTerm', labelKey: 'tkbFieldSource' },
+    { id: 'targetTerm', labelKey: 'tkbFieldTarget' },
+  ],
+  forbidden: [
+    { id: 'forbiddenText', labelKey: 'tkbFieldForbidden' },
+    { id: 'replacement', labelKey: 'tkbFieldReplacement' },
+  ],
+  brand: [
+    { id: 'word', labelKey: 'tkbFieldWord' },
+    { id: 'translateAs', labelKey: 'tkbFieldTranslateAs' },
+  ],
+  styleRule: [
+    { id: 'name', labelKey: 'tkbFieldName' },
+    { id: 'description', labelKey: 'tkbFieldDesc' },
+  ],
+  customerPreference: [
+    { id: 'customerName', labelKey: 'tkbCustomer' },
+    { id: 'preferenceType', labelKey: 'tkbFieldPrefType' },
+    { id: 'value', labelKey: 'tkbFieldPrefValue' },
+  ],
+}
+
+const TKB_BRAND_POLICIES = ['neverTranslate', 'keep', 'translateAs'] as const
+
+/** Language tags offered to the dictionary builder; labels stay native so the
+ *  picker reads the same in every UI locale. */
+const TKB_LANGS: readonly { value: string; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'zh-CN', label: '中文（简体）' },
+  { value: 'zh-TW', label: '中文（繁體）' },
+  { value: 'en-US', label: 'English' },
+  { value: 'ja-JP', label: '日本語' },
+  { value: 'ko-KR', label: '한국어' },
+  { value: 'de-DE', label: 'Deutsch' },
+  { value: 'fr-FR', label: 'Français' },
+  { value: 'es-ES', label: 'Español' },
+  { value: 'pt-BR', label: 'Português' },
+  { value: 'it-IT', label: 'Italiano' },
+  { value: 'ru-RU', label: 'Русский' },
+  { value: 'ar-SA', label: 'العربية' },
+  { value: 'th-TH', label: 'ไทย' },
+  { value: 'vi-VN', label: 'Tiếng Việt' },
+  { value: 'id-ID', label: 'Bahasa Indonesia' },
+]
+
+/**
+ * The KB is a bag of rows discriminated by their own field names, not by a tag
+ * — `kind` never lands on disk, so it is derived here for the UI to group by.
+ */
+function tkbKindOf(entry: TranslationKbEntry): TranslationKbSchema {
+  if (typeof entry.sourceTerm === 'string') return 'term'
+  if (typeof entry.forbiddenText === 'string') return 'forbidden'
+  if (typeof entry.word === 'string') return 'brand'
+  if (typeof entry.name === 'string') return 'styleRule'
+  return 'customerPreference'
+}
+
+/** Short source → target pair shown on a row, whatever the schema. */
+function tkbRowText(entry: TranslationKbEntry): { primary: string; secondary: string } {
+  switch (tkbKindOf(entry)) {
+    case 'term':
+      return { primary: entry.sourceTerm ?? '', secondary: entry.targetTerm ?? '' }
+    case 'forbidden':
+      return { primary: entry.forbiddenText ?? '', secondary: entry.replacement ?? '' }
+    case 'brand':
+      return {
+        primary: entry.word ?? '',
+        secondary: entry.translateAs ?? entry.policy ?? '',
+      }
+    case 'styleRule':
+      return { primary: entry.name ?? '', secondary: entry.description ?? '' }
+    default:
+      return {
+        primary: entry.customerName ?? '',
+        secondary: [entry.preferenceType, entry.value].filter(Boolean).join(' = '),
+      }
+  }
+}
+
+function TranslationKbPane({ t }: { t: TFunc }) {
+  const [entries, setEntries] = useState<TranslationKbEntry[]>([])
+  const [schema, setSchema] = useState<TranslationKbSchema>('term')
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [scope, setScope] = useState<TranslationKbScope>('company')
+  const [priority, setPriority] = useState(50)
+  const [policy, setPolicy] = useState<(typeof TKB_BRAND_POLICIES)[number]>('neverTranslate')
+  const [flash, setFlash] = useState(false)
+  const [error, setError] = useState('')
+
+  const [filePath, setFilePath] = useState('')
+  const [sourceLang, setSourceLang] = useState('auto')
+  const [targetLang, setTargetLang] = useState('en-US')
+  const [customerName, setCustomerName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [kbOnly, setKbOnly] = useState(false)
+  const [dictError, setDictError] = useState('')
+  const [outputPath, setOutputPath] = useState('')
+  const [dict, setDict] = useState<{ kb: number; llm: number; missed: number; path: string } | null>(
+    null,
+  )
+  const [status, setStatus] = useState<TranslateFileStatus | null>(null)
+
+  const reload = useCallback(async () => {
+    const result = await window.aiOffice.listTranslationKb?.()
+    setEntries(result?.entries ?? [])
+  }, [])
+
+  useEffect(() => {
+    void reload()
+    void window.aiOffice.getTranslateFileStatus?.().then((s) => s && setStatus(s))
+  }, [reload])
+
+  useEffect(() => {
+    if (!flash) return
+    const id = window.setTimeout(() => setFlash(false), 1600)
+    return () => window.clearTimeout(id)
+  }, [flash])
+
+  const add = async () => {
+    const get = (id: string) => (draft[id] ?? '').trim()
+    const base = {
+      id: `${schema}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      scope,
+      priority,
+    }
+    let entry: TranslationKbEntry | null = null
+    if (schema === 'term') {
+      if (!get('sourceTerm') || !get('targetTerm')) return
+      entry = {
+        ...base,
+        sourceTerm: get('sourceTerm'),
+        targetTerm: get('targetTerm'),
+        ...(sourceLang !== 'auto' ? { sourceLang } : {}),
+        targetLang,
+      }
+    } else if (schema === 'forbidden') {
+      if (!get('forbiddenText')) return
+      entry = {
+        ...base,
+        forbiddenText: get('forbiddenText'),
+        ...(get('replacement') ? { replacement: get('replacement') } : {}),
+      }
+    } else if (schema === 'brand') {
+      if (!get('word')) return
+      entry = {
+        ...base,
+        word: get('word'),
+        policy,
+        ...(get('translateAs') ? { translateAs: get('translateAs') } : {}),
+      }
+    } else if (schema === 'styleRule') {
+      if (!get('name') || !get('description')) return
+      entry = { ...base, name: get('name'), description: get('description') }
+    } else {
+      if (!get('customerName') || !get('value')) return
+      entry = {
+        ...base,
+        customerName: get('customerName'),
+        preferenceType: get('preferenceType') || 'style',
+        value: get('value'),
+        targetLang,
+      }
+    }
+    const result = await window.aiOffice.upsertTranslationKb?.(entry)
+    if (!result?.ok) {
+      setError(result?.error ?? t('tkbError', { error: 'upsert' }))
+      return
+    }
+    setError('')
+    setDraft({})
+    setFlash(true)
+    await reload()
+  }
+
+  const remove = async (id: string) => {
+    await window.aiOffice.removeTranslationKb?.(id)
+    await reload()
+  }
+
+  const pickFile = async () => {
+    const picked = await window.aiOffice.pickTranslationFile?.(t('tkbDictTitle'))
+    if (picked?.ok && picked.path) setFilePath(picked.path)
+  }
+
+  const build = async (thenTranslate: boolean) => {
+    if (!filePath) {
+      setDictError(t('tkbNoFile'))
+      return
+    }
+    setBusy(true)
+    setDictError('')
+    setDict(null)
+    setOutputPath('')
+    const common = {
+      inputPath: filePath,
+      sourceLang,
+      targetLang,
+      ...(customerName.trim() ? { customerName: customerName.trim() } : {}),
+    }
+    try {
+      if (thenTranslate) {
+        const result = await window.aiOffice.translateFileAuto?.(common)
+        if (!result?.ok) {
+          setDictError(t('tkbError', { error: result?.error ?? 'translate' }))
+          return
+        }
+        setDict({
+          kb: result.dictionary?.kbEntries ?? 0,
+          llm: result.dictionary?.llmEntries ?? 0,
+          missed: result.dictionary?.missed?.length ?? 0,
+          path: result.dictionaryPath ?? '',
+        })
+        if (result.outputPath) {
+          setOutputPath(result.outputPath)
+          await reload()
+        }
+        return
+      }
+      const result = await window.aiOffice.buildTranslationDictionary?.({
+        ...common,
+        ...(kbOnly ? { useLlm: false } : {}),
+      })
+      if (!result?.ok) {
+        setDictError(t('tkbError', { error: result?.error ?? 'dictionary' }))
+        return
+      }
+      setDict({
+        kb: result.kbEntries ?? 0,
+        llm: result.llmEntries ?? 0,
+        missed: result.missed?.length ?? 0,
+        path: result.dictionaryPath ?? '',
+      })
+    } catch (err) {
+      setDictError(t('tkbError', { error: err instanceof Error ? err.message : String(err) }))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const counts = useMemo(() => {
+    const out: Partial<Record<TranslationKbSchema, number>> = {}
+    for (const entry of entries) {
+      const kind = tkbKindOf(entry)
+      out[kind] = (out[kind] ?? 0) + 1
+    }
+    return out
+  }, [entries])
+
+  const visible = entries.filter((e) => tkbKindOf(e) === schema)
+  const fields = TKB_FIELDS[schema]
+  const skillMissing = status !== null && !status.available
+
+  return (
+    <>
+      <h3 className="set-pane-title">{t('setSecTranslationKb')}</h3>
+      <div className="set-field-desc set-ai-note">{t('tkbDesc')}</div>
+
+      <div className="set-mp-chips" role="tablist" aria-label={t('setSecTranslationKb')}>
+        {TKB_SCHEMAS.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            role="tab"
+            aria-selected={schema === s.key}
+            className={`set-mp-chip${schema === s.key ? ' set-mp-chip-active' : ''}`}
+            onClick={() => {
+              setSchema(s.key)
+              setDraft({})
+            }}
+          >
+            {t(s.labelKey)}
+            <span className="set-mp-chip-count">{counts[s.key] ?? 0}</span>
+          </button>
+        ))}
+        <span className="set-tkb-total">{t('tkbTotal', { total: entries.length })}</span>
+      </div>
+
+      <div className="set-tkb-list">
+        {visible.length === 0 ? (
+          <div className="set-tkb-empty">{t('tkbEmpty')}</div>
+        ) : (
+          visible.map((entry) => {
+            const row = tkbRowText(entry)
+            return (
+              <div className="set-tkb-row" key={entry.id}>
+                <span className="set-tkb-primary" title={row.primary}>
+                  {row.primary}
+                </span>
+                <span className="set-tkb-arrow" aria-hidden="true">
+                  →
+                </span>
+                <span className="set-tkb-secondary" title={row.secondary}>
+                  {row.secondary || '—'}
+                </span>
+                <span className="set-tkb-scope" title={t('tkbScopePriority')}>
+                  {entry.scope}
+                </span>
+                <span className="set-tkb-prio">{entry.priority}</span>
+                <button
+                  type="button"
+                  className="set-tkb-del"
+                  title={t('tkbDelete')}
+                  aria-label={`${t('tkbDelete')} ${row.primary}`}
+                  onClick={() => void remove(entry.id)}
+                >
+                  ✕
+                </button>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      <div className="set-mp-upload set-tkb-add">
+        <h5>{t('tkbAdd')}</h5>
+        <div className="set-mp-upload-grid">
+          {fields.map((f) => (
+            <label className="set-mp-field" key={f.id}>
+              <span>{t(f.labelKey)}</span>
+              <input
+                type="text"
+                value={draft[f.id] ?? ''}
+                spellCheck={false}
+                onChange={(e) => setDraft({ ...draft, [f.id]: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void add()
+                }}
+              />
+            </label>
+          ))}
+          {schema === 'brand' && (
+            <label className="set-mp-field">
+              <span>{t('tkbFieldPolicy')}</span>
+              <select
+                value={policy}
+                onChange={(e) => setPolicy(e.target.value as (typeof TKB_BRAND_POLICIES)[number])}
+              >
+                {TKB_BRAND_POLICIES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="set-mp-field">
+            <span>{t('tkbScope')}</span>
+            <select value={scope} onChange={(e) => setScope(e.target.value as TranslationKbScope)}>
+              {TKB_SCOPES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="set-mp-field">
+            <span>{t('tkbPriority')}</span>
+            <input
+              type="number"
+              min={0}
+              max={999}
+              value={priority}
+              onChange={(e) => setPriority(Math.max(0, Math.min(999, Number(e.target.value) || 0)))}
+            />
+          </label>
+        </div>
+        <div className="set-mp-upload-actions">
+          <button type="button" className="set-btn primary" onClick={() => void add()}>
+            {t('tkbAdd')}
+          </button>
+          {flash && <span className="set-tkb-flash">{t('tkbSaved')}</span>}
+          {error && <span className="set-tkb-flash is-err">{error}</span>}
+        </div>
+      </div>
+
+      <h4 className="set-pane-subtitle">{t('tkbDictTitle')}</h4>
+      <div className="set-field-desc set-ai-note">{t('tkbDictDesc')}</div>
+      <div className="set-mp-upload">
+        <div className="set-mp-upload-grid">
+          <label className="set-mp-field set-mp-field-wide">
+            <span>{t('tkbDictTitle')}</span>
+            <div className="set-tkb-file">
+              <input
+                type="text"
+                value={filePath}
+                placeholder={t('tkbNoFile')}
+                spellCheck={false}
+                onChange={(e) => setFilePath(e.target.value)}
+              />
+              <button type="button" className="set-btn" onClick={() => void pickFile()}>
+                {t('tkbPickFile')}
+              </button>
+            </div>
+          </label>
+          <label className="set-mp-field">
+            <span>{t('tkbSourceLang')}</span>
+            <select value={sourceLang} onChange={(e) => setSourceLang(e.target.value)}>
+              {TKB_LANGS.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="set-mp-field">
+            <span>{t('tkbTargetLang')}</span>
+            <select value={targetLang} onChange={(e) => setTargetLang(e.target.value)}>
+              {TKB_LANGS.filter((l) => l.value !== 'auto').map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="set-mp-field">
+            <span>{t('tkbCustomer')}</span>
+            <input
+              type="text"
+              value={customerName}
+              spellCheck={false}
+              onChange={(e) => setCustomerName(e.target.value)}
+            />
+          </label>
+        </div>
+        <label className="set-tkb-check">
+          <input type="checkbox" checked={kbOnly} onChange={(e) => setKbOnly(e.target.checked)} />
+          {t('tkbKbOnly')}
+        </label>
+        <div className="set-mp-upload-actions">
+          <button
+            type="button"
+            className="set-btn primary"
+            disabled={busy || skillMissing}
+            onClick={() => void build(false)}
+          >
+            {busy ? t('tkbDictBuilding') : t('tkbDictBuild')}
+          </button>
+          <button
+            type="button"
+            className="set-btn"
+            disabled={busy || skillMissing}
+            onClick={() => void build(true)}
+          >
+            {t('tkbGenerateAndTranslate')}
+          </button>
+        </div>
+        {dict && (
+          <div className="set-mp-upload-history">
+            <div className="set-tkb-result">
+              <span className="set-cap-pill is-on">{t('tkbDictKb', { count: dict.kb })}</span>
+              <span className="set-cap-pill is-fallback">
+                {t('tkbDictLlm', { count: dict.llm })}
+              </span>
+              {dict.missed > 0 && (
+                <span className="set-cap-pill is-off">
+                  {t('tkbDictMissed', { count: dict.missed })}
+                </span>
+              )}
+            </div>
+            <div className="set-mp-upload-item">
+              <code>{dict.path}</code>
+              <button
+                type="button"
+                className="set-btn"
+                onClick={() => void window.aiOffice.revealPath?.(dict.path)}
+              >
+                {t('open')}
+              </button>
+            </div>
+            {outputPath && (
+              <div className="set-mp-upload-item">
+                <code>{outputPath}</code>
+                <button
+                  type="button"
+                  className="set-btn"
+                  onClick={() => void window.aiOffice.openPath(outputPath)}
+                >
+                  {t('open')}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {dictError && <div className="set-tkb-flash is-err">{dictError}</div>}
+      </div>
+    </>
+  )
+}
+
 function AiStatusPill({ status }: { status: AiStatus | null }) {
   if (!status) return null
   return (
@@ -2837,6 +3380,7 @@ export function SettingsModal({
             )}
             {section === 'aiModel' && <AiModelPane t={t} />}
             {section === 'aiMedia' && <AiMediaPane t={t} />}
+            {section === 'translationKb' && <TranslationKbPane t={t} />}
             {section === 'modules' && <ModulesPane t={t} />}
             {section === 'skillsPlugins' && <SkillsPluginsPane t={t} />}
             {section === 'general' && (

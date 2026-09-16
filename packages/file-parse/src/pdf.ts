@@ -1,3 +1,4 @@
+/// <reference path="./pdfjs-worker.d.ts" />
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 

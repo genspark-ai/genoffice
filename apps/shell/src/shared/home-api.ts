@@ -301,6 +301,42 @@ export interface HomeApi {
    *  zero-config DuckDuckGo fallback as `available` so the UI does not
    *  mislead the user into thinking search is broken without a key. */
   getAiCapabilities(): Promise<AiCapabilitiesReport>
+  /** Translation knowledge base — CRUD + resolution. */
+  listTranslationKb?(input?: TranslationKbListInput): Promise<{ ok: boolean; entries: TranslationKbEntry[] }>
+  upsertTranslationKb?(entry: TranslationKbEntry): Promise<{ ok: boolean; error?: string }>
+  removeTranslationKb?(id: string): Promise<{ ok: boolean; removed: boolean }>
+  getTranslationKbStats?(): Promise<TranslationKbStats>
+  /** Whole-file translation (PDF / XLS(X) / PPTX / DOCX). */
+  getTranslateFileStatus?(): Promise<TranslateFileStatus>
+  /** Native file picker for the translation pane; returns an absolute path. */
+  pickTranslationFile?(title?: string): Promise<TranslateFilePickResult>
+  /** Build a `--dictionary` from a file using the KB + the active provider. */
+  buildTranslationDictionary?(input: {
+    inputPath: string
+    sourceLang?: string
+    targetLang: string
+    customerName?: string
+    glossaryCategory?: string
+    useLlm?: boolean
+  }): Promise<{
+    ok: boolean
+    dictionaryPath?: string
+    kbEntries?: number
+    llmEntries?: number
+    missed?: string[]
+    totalSegments?: number
+    error?: string
+  }>
+  /** Build the dictionary, then translate the file in one call. */
+  translateFileAuto?(input: {
+    inputPath: string
+    outputPath?: string
+    sourceLang?: string
+    targetLang: string
+    customerName?: string
+    glossaryCategory?: string
+    scale?: number
+  }): Promise<TranslateFileResult>
 }
 
 /** one capability entry — see home:ai-capabilities */
@@ -331,6 +367,98 @@ export interface AiCapabilitiesReport {
   provider: string
   /** false when the user has disabled gsk-backed tools globally */
   gskToolsEnabled: boolean
+}
+
+/** Scope ordering for a translation KB entry — most specific first. */
+export type TranslationKbScope = 'session' | 'customer' | 'project' | 'company' | 'global'
+
+/** The five schemas the translation knowledge base understands. */
+export type TranslationKbSchema =
+  | 'term'
+  | 'forbidden'
+  | 'brand'
+  | 'styleRule'
+  | 'customerPreference'
+
+/**
+ * A single KB row. The backend derives the schema (`trade.translation.*`) from
+ * which fields are present, so `kind` is a UI convenience only — read it back
+ * with a shape check rather than trusting the wire, and never send it.
+ */
+export interface TranslationKbEntry {
+  id: string
+  kind?: TranslationKbSchema
+  scope: TranslationKbScope
+  priority: number
+  /** term */
+  sourceTerm?: string
+  targetTerm?: string
+  category?: string
+  /** forbidden */
+  forbiddenText?: string
+  replacement?: string
+  reason?: string
+  /** brand */
+  word?: string
+  policy?: 'neverTranslate' | 'keep' | 'translateAs'
+  translateAs?: string
+  /** style rule */
+  name?: string
+  description?: string
+  /** customer preference */
+  customerName?: string
+  preferenceType?: string
+  value?: string
+  /** optional language filter (term / forbidden / customerPreference) */
+  sourceLang?: string
+  targetLang?: string
+}
+
+export interface TranslationKbListInput {
+  schema?: TranslationKbSchema
+  scope?: TranslationKbScope
+  sourceLang?: string
+  targetLang?: string
+}
+
+export interface TranslationKbStats {
+  ok: boolean
+  total: number
+  bySchema: Partial<Record<TranslationKbSchema, number>>
+  dirty: boolean
+}
+
+/** Result of a whole-file translation (PDF / XLS(X) / PPTX / DOCX). */
+export interface TranslateFileResult {
+  ok: boolean
+  stage?: 'dictionary' | 'translate' | 'done'
+  outputPath?: string
+  bytes?: number
+  elapsedMs?: number
+  error?: string
+  dictionaryPath?: string
+  dictionary?: {
+    kbEntries?: number
+    llmEntries?: number
+    missed?: string[]
+    totalSegments?: number
+  }
+}
+
+export interface TranslateFilePickResult {
+  ok: boolean
+  /** absolute path on the host filesystem; absent when the user cancelled */
+  path?: string
+  canceled?: boolean
+}
+
+export interface TranslateFileStatus {
+  ok: boolean
+  available: boolean
+  source: 'override' | 'bundled' | 'legacy' | 'missing'
+  skillDir: string
+  pythonPath: string
+  supportedExtensions: string[]
 }
 
 export interface AiCatalogEntry extends AiProviderMeta {
@@ -728,6 +856,14 @@ export const HOME_CHANNELS = {
   marketplaceDeleteUpload: 'home:marketplace-delete-upload',
   listPiResources: 'home:list-pi-resources',
   getAiCapabilities: 'home:ai-capabilities',
+  translationKbList: 'ai:translation-kb-list',
+  translationKbUpsert: 'ai:translation-kb-upsert',
+  translationKbRemove: 'ai:translation-kb-remove',
+  translationKbStats: 'ai:translation-kb-stats',
+  translateFileStatus: 'ai:translate-file-status',
+  translateBuildDictionary: 'ai:translate-build-dictionary',
+  translateFileAuto: 'ai:translate-file-auto',
+  pickTranslationFile: 'home:pick-translation-file',
   marketplaceRate: 'home:marketplace-rate',
 } as const
 

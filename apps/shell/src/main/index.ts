@@ -3026,6 +3026,32 @@ function registerHomeIpc(): void {
     if (!result.canceled) for (const path of result.filePaths) openDocumentPath(path)
   })
 
+  // Translation pane file picker — returns a host path instead of opening the
+  // file, so the KB/dictionary pipeline can read it in place.
+  ipcMain.handle(
+    HOME_CHANNELS.pickTranslationFile,
+    async (event, title: unknown): Promise<{ ok: boolean; path?: string; canceled?: boolean }> => {
+      const win = BrowserWindow.fromWebContents(event.sender) ?? shellWindow
+      const opts: Electron.OpenDialogOptions = {
+        title: String(title ?? ''),
+        filters: [
+          {
+            name: tm('filterSupported'),
+            extensions: ['pdf', 'docx', 'pptx', 'xlsx', 'xlsm', 'xls', 'csv'],
+          },
+          { name: tm('filterWord'), extensions: ['docx', 'doc'] },
+          { name: tm('filterExcel'), extensions: ['xlsx', 'xlsm', 'xls', 'csv'] },
+          { name: tm('filterPpt'), extensions: ['pptx', 'ppt'] },
+          { name: tm('filterPdf'), extensions: ['pdf'] },
+        ],
+        properties: ['openFile'],
+      }
+      const result = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
+      if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true }
+      return { ok: true, path: result.filePaths[0] }
+    },
+  )
+
   ipcMain.handle(HOME_CHANNELS.newDoc, (_event, opts?: { projectId?: string }) => {
     if (opts?.projectId && opts.projectId !== 'default') {
       pendingNewFileProject.set('doc', opts.projectId)
