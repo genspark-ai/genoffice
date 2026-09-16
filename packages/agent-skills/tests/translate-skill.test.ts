@@ -132,3 +132,36 @@ describe("translate-skill", () => {
     expect(details.outputPath).toBe(outPath)
   })
 })
+
+describe("kb_upsert shortcut fields", () => {
+  afterEach(() => {
+    __setReadSettingsForTests(null)
+    __setTranslateOneForTests(null)
+    __setChatForProviderForTests(null)
+    __resetKbForTests()
+  })
+
+  it("accepts schema/source/target shortcut and persists a term entry", async () => {
+    const pi = makeFakePi()
+    __setReadSettingsForTests(async () => fakeSettings())
+    createTranslateSkillExtension()(pi as never)
+    const tool = pi.tools.get("kb_upsert")!
+    const out = await tool.execute(
+      "c1",
+      { schema: "term", source: "fabric code", target: "面料编号", priority: 80 },
+      undefined,
+    )
+    const details = out.details as { ok: boolean; id?: string; error?: string }
+    expect(details.ok).toBe(true)
+    expect(typeof details.id).toBe("string")
+    expect(details.id).toBeTruthy()
+
+    // Round-trip: search should find it
+    const search = pi.tools.get("kb_search")!
+    const sOut = await search.execute("c2", { query: "fabric", limit: 5 }, undefined)
+    const sDetails = sOut.details as { ok: boolean; entries?: Array<{ sourceTerm?: string; targetTerm?: string }> }
+    expect(sDetails.ok).toBe(true)
+    const hit = (sDetails.entries ?? []).find((e) => e.sourceTerm === "fabric code" && e.targetTerm === "面料编号")
+    expect(hit, "kb_upsert shortcut should land a searchable term entry").toBeTruthy()
+  })
+})

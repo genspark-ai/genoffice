@@ -492,10 +492,45 @@ function createBuildDictionaryTool() {
 // ============================================================================
 
 const KbUpsertParams = Type.Object({
-  entry: Type.Record(Type.String(), Type.Any(), { description: "Full KB entry object (must include `id` and schema-specific fields)." }),
+  // Either provide a fully-formed entry, or the common shortcut fields below.
+  entry: Type.Optional(Type.Record(Type.String(), Type.Any(), { description: "Full KB entry object." })),
+  schema: Type.Optional(Type.Union([
+    Type.Literal('term'),
+    Type.Literal('forbidden'),
+    Type.Literal('brand'),
+    Type.Literal('styleRule'),
+    Type.Literal('customerPreference'),
+  ], { description: "Shortcut: KB schema type." })),
+  source: Type.Optional(Type.String({ description: "Shortcut: source text (for schema=term/forbidden)." })),
+  target: Type.Optional(Type.String({ description: "Shortcut: target text (for schema=term)." })),
+  replacement: Type.Optional(Type.String({ description: "Shortcut: replacement (for schema=forbidden)." })),
+  word: Type.Optional(Type.String({ description: "Shortcut: brand word (for schema=brand)." })),
+  policy: Type.Optional(Type.String({ description: "Shortcut: brand policy (for schema=brand)." })),
+  name: Type.Optional(Type.String({ description: "Shortcut: style rule name (for schema=styleRule)." })),
+  description: Type.Optional(Type.String({ description: "Shortcut: style rule description (for schema=styleRule)." })),
+  customerName: Type.Optional(Type.String({ description: "Shortcut: customer name (for schema=customerPreference)." })),
+  preference: Type.Optional(Type.String({ description: "Shortcut: customer preference text (for schema=customerPreference)." })),
+  priority: Type.Optional(Type.Number({ description: "Priority (higher = earlier). Defaults to 50." })),
+  sourceLang: Type.Optional(Type.String({ description: "Source language code." })),
+  targetLang: Type.Optional(Type.String({ description: "Target language code." })),
 })
 
-type KbUpsertArgs = { entry: Record<string, unknown> }
+type KbUpsertArgs = {
+  entry?: Record<string, unknown>
+  schema?: 'term' | 'forbidden' | 'brand' | 'styleRule' | 'customerPreference'
+  source?: string
+  target?: string
+  replacement?: string
+  word?: string
+  policy?: string
+  name?: string
+  description?: string
+  customerName?: string
+  preference?: string
+  priority?: number
+  sourceLang?: string
+  targetLang?: string
+}
 
 function createKbUpsertTool() {
   return defineTool<typeof KbUpsertParams, { ok: boolean; id?: string; error?: string }>({
@@ -513,7 +548,39 @@ function createKbUpsertTool() {
     async execute(_id, params: KbUpsertArgs, _signal) {
       try {
         const kb = await getKb()
-        const saved = await kb.upsert(params.entry as never)
+        // Allow callers to pass shortcuts (schema/source/target/...) directly
+        // OR a pre-built entry object. Build the entry when shortcuts are used.
+        const entry: Record<string, unknown> = params.entry
+          ? { ...params.entry }
+          : { schema: params.schema }
+        if (!entry.schema && params.schema) entry.schema = params.schema
+        if (params.schema === 'term') {
+          entry.sourceTerm = params.source ?? entry.sourceTerm
+          entry.targetTerm = params.target ?? entry.targetTerm
+        } else if (params.schema === 'forbidden') {
+          entry.forbiddenText = params.source ?? entry.forbiddenText
+          entry.replacement = params.replacement ?? entry.replacement
+        } else if (params.schema === 'brand') {
+          entry.word = params.word ?? entry.word
+          entry.policy = params.policy ?? entry.policy
+        } else if (params.schema === 'styleRule') {
+          entry.name = params.name ?? entry.name
+          entry.description = params.description ?? entry.description
+        } else if (params.schema === 'customerPreference') {
+          entry.customerName = params.customerName ?? entry.customerName
+          entry.preference = params.preference ?? entry.preference
+        }
+        if (params.priority !== undefined) entry.priority = params.priority
+        if (params.sourceLang) entry.sourceLang = params.sourceLang
+        if (params.targetLang) entry.targetLang = params.targetLang
+        // Auto-generate a stable id when the caller did not provide one.
+        if (!entry.id) {
+          const seed =
+            (entry.sourceTerm ?? entry.forbiddenText ?? entry.word ?? entry.name ?? entry.customerName ?? "").toString()
+          entry.id = `${entry.schema ?? "entry"}-${seed.replace(/\s+/g, "-").toLowerCase() || Date.now().toString(36)}`
+        }
+        const saved = await kb.upsert(entry as never)
+        await kb.save().catch(() => undefined) // best-effort persistence; tolerate read-only mounts
         const id = (saved as { id?: string }).id ?? null
         return {
           content: [{ type: "text" as const, text: `kb_upsert → ${id ?? "(no id)"}` }],

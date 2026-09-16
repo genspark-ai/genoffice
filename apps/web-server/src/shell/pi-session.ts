@@ -59,6 +59,20 @@ export async function getPiSession(): Promise<OfficeSession> {
 }
 
 async function buildPiSession(): Promise<OfficeSession> {
+  // In-process extension factories — preferred over file paths because the
+  // web-server bundle already has every agent-skills extension loaded.
+  // The translate-skill is the unification point: when this factory is in
+  // the list, the same 6 tools (translate_text / translate_file /
+  // build_dictionary / kb_search / kb_upsert / kb_remove) become visible
+  // to the embedded AgentSession AND to the UI through the home:translate-*
+  // IPC handlers registered below. No more `translate-http.ts` bypass.
+  const { createTranslateSkillExtension } = await import(
+    '@genoffice/agent-skills/extensions/translate-skill'
+  )
+  const extensionFactories: NonNullable<OfficeSessionOptions['extensionFactories']> = [
+    createTranslateSkillExtension(),
+  ]
+
   const opts: OfficeSessionOptions = {
     cwd: PI_CWD,
     agentDir: PI_AGENT_DIR,
@@ -66,12 +80,7 @@ async function buildPiSession(): Promise<OfficeSession> {
     additionalSkillPaths: [PI_SKILLS_DIR, LUMOS_SKILLS_WRAPPER_DIR].filter(
       (dir): dir is string => !!dir && dir.length > 0,
     ),
-    // Extension paths is empty — the agent-skills package's `createXxxTool`
-    // factories are imported by the renderer (apps/docs/src/renderer/ai),
-    // not wired into the web-server's server-side pi session. Wiring them
-    // here would require duplicating the ReactUIAdapter surface. For now the
-    // web-server's pi session is skill-only; renderer code wires tools
-    // through the docs/sheets/slides IPC paths.
+    extensionFactories,
   }
   return createOfficeSession(opts)
 }
@@ -112,22 +121,22 @@ registerHandle('home:pi-list-skills', async () => {
   })
 
   registerHandle('home:pi-reload-resources', async () => {
-    const session = await getPiSession()
-    const result = await session.reloadResources()
+    const office = await getPiSession()
+    const result = await office.reloadResources()
     return { ok: true, ...result }
   })
 
   registerHandle('home:pi-status', async () => {
     try {
-      const session = await getPiSession()
-      const tools = session.session.getAllTools()
+      const { session } = await getPiSession()
+      const tools = session.getAllTools()
       const skills = (await import('node:fs')).readdirSync(PI_SKILLS_DIR).filter((n) => !n.startsWith('.'))
       return {
         ok: true,
         ready: true,
         skills,
         toolCount: tools.length,
-        sessionId: (session.session as unknown as { sessionId?: string }).sessionId ?? null,
+        sessionId: (session as unknown as { sessionId?: string }).sessionId ?? null,
       }
     } catch (err) {
       return {
@@ -136,5 +145,46 @@ registerHandle('home:pi-list-skills', async () => {
         error: err instanceof Error ? err.message : String(err),
       }
     }
+  })
+
+  // ------------------------------------------------------------------
+  // UI-facing translation handlers — every call goes through the
+  // translate-skill pi extension registered above. The legacy
+  // chat.ts handlers (`ai:translate`, `ai:translate-file`, ...) remain
+  // untouched so existing renderer code keeps working while we migrate.
+  // ------------------------------------------------------------------
+
+  async function callTranslateTool(name: string, args: unknown): Promise<unknown> {
+    const { session: agent } = await getPiSession()
+    const tool = agent.getToolDefinition(name)
+    if (!tool) {
+      return { ok: false, error: `translate-skill tool "${name}" not registered in pi session` }
+    }
+    const result = await (tool as unknown as { execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined) => Promise<{ content: Array<{ type: string; text?: string }>; details: unknown }> }).execute(`ui-${Date.now()}`, args as Record<string, unknown>, undefined)
+    const first = (result?.content ?? []).find((c: { type?: string }) => c.type === 'text') as { text?: string } | undefined
+    return {
+      ok: (result?.details as { ok?: boolean } | undefined)?.ok ?? true,
+      details: result?.details ?? null,
+      summary: first?.text ?? '',
+    }
+  }
+
+  registerHandle('home:translate-text', async (_event, args) => {
+    return callTranslateTool('translate_text', args)
+  })
+  registerHandle('home:translate-build-dictionary', async (_event, args) => {
+    return callTranslateTool('build_dictionary', args)
+  })
+  registerHandle('home:translate-kb-search', async (_event, args) => {
+    return callTranslateTool('kb_search', args)
+  })
+  registerHandle('home:translate-kb-upsert', async (_event, args) => {
+    return callTranslateTool('kb_upsert', args)
+  })
+  registerHandle('home:translate-kb-remove', async (_event, args) => {
+    return callTranslateTool('kb_remove', args)
+  })
+  registerHandle('home:translate-file', async (_event, args) => {
+    return callTranslateTool('translate_file', args)
   })
 }
