@@ -531,12 +531,24 @@ export interface FillGapsRequest {
   dataDir: string
 }
 
+export interface FillGapsEntry {
+  /** The segment the dictionary missed, exactly as it appeared in the file. */
+  source: string
+  /** The model's translation of that segment. */
+  target: string
+}
+
 export interface FillGapsResult {
   ok: boolean
   /** The extended dictionary. */
   dictionaryPath?: string
   /** How many segments the pass added. */
   added?: number
+  /**
+   * The pairs the model produced. Returned alongside `added` so the UI can
+   * offer "save these to the KB" without having to diff dictionaries.
+   */
+  addedEntries?: FillGapsEntry[]
   /**
    * Segments that still need attention afterwards — untouched by the
    * dictionary, or only rewritten in part. A provider failure is the usual
@@ -600,6 +612,7 @@ export async function fillDictionaryGaps(
       ok: true,
       dictionaryPath: existing.path,
       added: 0,
+      addedEntries: [],
       stillUncovered: [],
       coverageBefore,
       coverageAfter: coverageBefore,
@@ -664,10 +677,14 @@ export async function fillDictionaryGaps(
   }
 
   const coverageAfter = assessCoverage(segments, merged)
+  const addedPairs: FillGapsEntry[] = Object.entries(addedEntries)
+    .map(([source, target]) => ({ source, target }))
+    .sort((a, b) => a.source.localeCompare(b.source, 'en'))
   return {
     ok: true,
     dictionaryPath: outputPath,
-    added: Object.keys(merged).length - Object.keys(existing.entries).length,
+    added: addedPairs.length,
+    addedEntries: addedPairs,
     stillUncovered: [...coverageAfter.partial, ...coverageAfter.uncovered],
     coverageBefore,
     coverageAfter,

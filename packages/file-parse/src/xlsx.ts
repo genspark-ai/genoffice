@@ -3,6 +3,34 @@ import { XMLParser } from 'fast-xml-parser'
 
 // Text fidelity: no trim (xml:space="preserve" runs carry the spaces between words),
 // no numeric coercion of tag values (otherwise <t>02139</t> becomes a number and loses characters)
+const NUMERIC_REF = /&#(\d+);/g
+const HEX_REF = /&#x([0-9a-fA-F]+);/g
+/** fast-xml-parser leaves numeric character references and the standard entities
+ *  undecoded. Excel emits `&#29289;` for `物` and so on, so without this every cell
+ *  reads as the literal entity — mineSegments then sees no letters and the whole
+ *  sheet ends up "no translatable segments". */
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(NUMERIC_REF, (_match, code: string) => {
+      const n = Number(code)
+      // Codepoints above the BMP use a surrogate pair.
+      return n > 0xffff
+        ? String.fromCodePoint(n)
+        : String.fromCharCode(n)
+    })
+    .replace(HEX_REF, (_match, code: string) => {
+      const n = parseInt(code, 16)
+      return n > 0xffff
+        ? String.fromCodePoint(n)
+        : String.fromCharCode(n)
+    })
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+}
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
@@ -11,7 +39,7 @@ const parser = new XMLParser({
   // trimValues also governs attributes; nothing read here (r:id, Target, cell ref, sheet
   // name) carries meaningful edge whitespace, and an untrimmed Target builds the wrong zip
   // path, which silently drops the whole sheet
-  attributeValueProcessor: (_name, value) => value.trim(),
+  attributeValueProcessor: (_name, value) => value.trim(),  tagValueProcessor: (_tagName, value) => decodeXmlEntities(typeof value === "string" ? value : String(value ?? "")),
 })
 
 function asArray<T>(value: T | T[] | undefined): T[] {

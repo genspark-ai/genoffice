@@ -378,6 +378,9 @@ export interface HomeApi {
     ok: boolean
     dictionaryPath?: string
     added?: number
+    /** The pairs the model produced; lets the UI offer to save them to the KB
+     *  without diffing dictionaries. */
+    addedEntries?: { source: string; target: string }[]
     stillUncovered?: string[]
     coverageBefore?: TranslationCoverage
     coverageAfter?: TranslationCoverage

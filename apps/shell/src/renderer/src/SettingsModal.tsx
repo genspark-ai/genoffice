@@ -1267,10 +1267,15 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   const [gaps, setGaps] = useState<{
     dictionaryPath: string
     added: number
+    /** Pairs the gap-fill pass produced — surfaced so the user can promote
+     *  them to KB without diffing dictionaries on disk. */
+    addedEntries: { source: string; target: string }[]
     stillUncovered: string[]
     coverageBefore: Coverage
     coverageAfter: Coverage
   } | null>(null)
+  const [savingGapsToKb, setSavingGapsToKb] = useState(false)
+  const [gapsSavedCount, setGapsSavedCount] = useState(0)
   const [filling, setFilling] = useState(false)
   const [gapError, setGapError] = useState('')
   /**
@@ -1416,6 +1421,36 @@ function TranslationKbPane({ t }: { t: TFunc }) {
   /** Save the LLM-extracted segments from the last dictionary build into the KB
    *  so future translations automatically pick them up. KB-only segments are
    *  skipped because they already came from the KB. */
+  /**
+   * Promote the gap-fill entries the model just produced into the knowledge
+   * base. IDs are derived from (scope, sourceLang, targetLang, sourceTerm) so a
+   * later pass that produces the same term updates the same row instead of
+   * adding a `llm-<timestamp>-<rnd>` duplicate.
+   */
+  const saveGapsToKb = async () => {
+    if (!gaps || gaps.addedEntries.length === 0) return
+    setSavingGapsToKb(true)
+    let ok = 0
+    for (const entry of gaps.addedEntries) {
+      if (!entry.source || !entry.target) continue
+      const id = `gaps:${sourceLang}:${targetLang}:${entry.source}`
+      const result = await window.aiOffice.upsertTranslationKb?.({
+        id,
+        scope: 'company',
+        priority: 30,
+        sourceTerm: entry.source,
+        targetTerm: entry.target,
+        sourceLang,
+        targetLang,
+      })
+      if (result?.ok) ok++
+    }
+    setGapsSavedCount(ok)
+    setSavingGapsToKb(false)
+    setFlash(true)
+    await reload()
+  }
+
   const saveDictToKb = async () => {
     if (!dict) return
     const llmOnly = dict.segments.filter((s) => s.origin === 'llm' && s.source && s.target)
@@ -1423,13 +1458,16 @@ function TranslationKbPane({ t }: { t: TFunc }) {
     setSavingDict(true)
     let ok = 0
     for (const seg of llmOnly) {
-      const id = `llm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+      // Deterministic id so re-running the same file updates the same KB row
+      // instead of creating a `llm-<timestamp>-<rnd>` duplicate each time.
+      const id = `build:${sourceLang}:${targetLang}:${seg.source}`
       const result = await window.aiOffice.upsertTranslationKb?.({
         id,
         scope: 'company',
         priority: 30,
         sourceTerm: seg.source,
         targetTerm: seg.target,
+        sourceLang,
         targetLang,
       })
       if (result?.ok) ok++
@@ -1561,10 +1599,12 @@ function TranslationKbPane({ t }: { t: TFunc }) {
       setGaps({
         dictionaryPath: result.dictionaryPath ?? dictionaryPath,
         added: result.added ?? 0,
+        addedEntries: result.addedEntries ?? [],
         stillUncovered: result.stillUncovered ?? [],
         coverageBefore: result.coverageBefore ?? EMPTY_COVERAGE,
         coverageAfter: result.coverageAfter ?? EMPTY_COVERAGE,
       })
+      setGapsSavedCount(0)
       await window.aiOffice
         .getTranslationDictionary?.()
         .then((s) => setServerDict(s?.dictionary ?? null))
@@ -2125,6 +2165,21 @@ function TranslationKbPane({ t }: { t: TFunc }) {
               >
                 {t('tkbRevealInFinder')}
               </button>
+              {gaps.addedEntries.length > 0 && (
+                <button
+                  type="button"
+                  className="set-btn"
+                  disabled={savingGapsToKb || gapsSavedCount > 0}
+                  onClick={() => void saveGapsToKb()}
+                  title={t('tkbSaveGapsToKbHint')}
+                >
+                  {gapsSavedCount > 0
+                    ? t('tkbSaved')
+                    : savingGapsToKb
+                    ? t('tkbSaving')
+                    : t('tkbSaveGapsToKb', { count: gaps.addedEntries.length })}
+                </button>
+              )}
               <button
                 type="button"
                 className="set-btn primary"

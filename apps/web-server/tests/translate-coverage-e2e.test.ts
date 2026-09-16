@@ -170,6 +170,33 @@ describe('dictionary coverage + gap filling E2E', () => {
     docxPath = join(dataDir, 'supplier-notes.docx')
     await writeDocx(docxPath, PARAGRAPHS, TABLE_ROW)
 
+    // xlsx fixture: openpyxl writes Chinese as numeric character references
+    // (&#29289; for 物), so this is the shape that exposed the extractor
+    // bug. Use a shell + python helper because the xlsx format is fiddly
+    // to build from JSZip.
+    await new Promise<void>((resolve, reject) => {
+      const code = `from openpyxl import Workbook
+wb = Workbook()
+ws = wb.active
+ws.title = "报价明细"
+ws.append(["物料", "单价", "交期"])
+ws.append(["牛津布", "12.50", "三周"])
+ws.append(["涤纶面料", "9.80", "两周"])
+ws.append(["备注", "价格不含税"])
+wb.create_sheet("汇总")
+ws2 = wb["汇总"]
+ws2.append(["项目", "金额"])
+ws2.append(["样品费", "1200"])
+wb.save(${JSON.stringify(join(dataDir, 'verify-supplier.xlsx'))})
+`
+      const child = spawn('/Users/louloulin/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3',
+        ['-c', code], { stdio: ['ignore', 'pipe', 'pipe'] })
+      let stderr = ''
+      child.stderr.on('data', (chunk) => (stderr += chunk.toString('utf8')))
+      child.on('error', reject)
+      child.on('exit', (status) => status === 0 ? resolve() : reject(new Error(`xlsx fixture failed: ${stderr}`)))
+    })
+
     fake = await startFakeProvider()
     const port = 21000 + Math.floor(Math.random() * 8000)
     base = `http://127.0.0.1:${port}`
@@ -346,6 +373,31 @@ describe('dictionary coverage + gap filling E2E', () => {
     expect(result.coverage?.uncovered).toEqual([])
     expect(result.outputPath).toBe(outputPath)
     expect(existsSync(outputPath)).toBe(true)
+  })
+
+  it('reaches the cells in a real xlsx despite numeric character references', async () => {
+    // openpyxl emits Chinese as &#29289; for 物 etc; without entity decoding
+    // the extractor returned raw &#29289; which mineSegments then filtered as
+    // non-letter, hiding every cell from the dictionary.
+    const xlsxPath = join(dataDir, 'verify-supplier.xlsx')
+    const { ok, result } = await ipc<{
+      ok: boolean
+      totalSegments?: number
+      coverage?: { total: number; uncovered: string[] }
+    }>(base, 'ai:translate-build-dictionary', [
+      {
+        inputPath: xlsxPath,
+        sourceLang: 'zh-CN',
+        targetLang: 'en-US',
+        useLlm: false,
+      },
+    ])
+    expect(ok).toBe(true)
+    expect(result.ok).toBe(true)
+    expect(result.totalSegments).toBeGreaterThan(0)
+    // Cells were mined as actual Chinese text, not as `&#29289;` entities.
+    expect(result.coverage?.uncovered.some((s) => /[\u4e00-\u9fff]/.test(s))).toBe(true)
+    expect(result.coverage?.uncovered.some((s) => s.includes('&#'))).toBe(false)
   })
 
   it('fails the re-run when the dictionary cannot be read', async () => {

@@ -409,6 +409,7 @@ export function createShellHomeApi(t: IpcTransport, overrides: ShellApiOverrides
         ok: boolean
         dictionaryPath?: string
         added?: number
+        addedEntries?: { source: string; target: string }[]
         stillUncovered?: string[]
         coverageBefore?: TranslationCoverage
         coverageAfter?: TranslationCoverage

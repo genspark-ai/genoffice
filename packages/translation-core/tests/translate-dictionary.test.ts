@@ -509,4 +509,58 @@ describe('coverage + gap filling', () => {
     expect(result.added).toBe(0)
     expect(result.stillUncovered).toEqual(['Alpha', 'Beta'])
   })
+
+  it('returns the pairs the model produced so the UI can promote them to KB', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'genoffice-dict-fill-entries-'))
+    const inputPath = writeInput('Alpha\nBeta\n')
+    const empty = join(dir, 'empty.json')
+    writeFileSync(empty, '{}', 'utf8')
+    const result = await fillDictionaryGaps(
+      {
+        inputPath,
+        sourceLang: 'en-US',
+        targetLang: 'zh-CN',
+        dictionaryPath: empty,
+        outputPath: join(dir, 'out.json'),
+        dataDir: dir,
+      },
+      {
+        translateBatch: async (input) => ({
+          ok: true,
+          units: input.units.map((u) => ({
+            unitId: u.unitId,
+            sourceText: u.sourceText,
+            translatedText: `译：${u.sourceText}`,
+            status: 'translated' as const,
+          })),
+        }),
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.addedEntries?.length).toBe(2)
+    // Sorted so the UI doesn't have to reorder the cards.
+    expect(result.addedEntries?.map((e) => e.source)).toEqual(['Alpha', 'Beta'])
+    expect(result.addedEntries?.[0]).toEqual({ source: 'Alpha', target: '译：Alpha' })
+  })
+
+  it('returns an empty addedEntries list when the dictionary already covers the file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'genoffice-dict-fill-none-'))
+    const inputPath = writeInput('Only line\n')
+    const seed = join(dir, 'seed.json')
+    writeFileSync(seed, JSON.stringify({ 'Only line': '译文' }, null, 2), 'utf8')
+    const result = await fillDictionaryGaps(
+      {
+        inputPath,
+        sourceLang: 'en-US',
+        targetLang: 'zh-CN',
+        dictionaryPath: seed,
+        outputPath: join(dir, 'out.json'),
+        dataDir: dir,
+      },
+      { translateBatch: async () => ({ ok: false, units: [], error: 'should not be called' }) },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.added).toBe(0)
+    expect(result.addedEntries).toEqual([])
+  })
 })

@@ -5,11 +5,36 @@ import { XMLParser } from 'fast-xml-parser'
 // no numeric coercion of tag values (otherwise <a:t>02139</a:t> becomes a number and loses characters).
 // preserveOrder keeps <a:br> and <a:fld> in sequence with the <a:r> runs around them; grouped by
 // tag name they lose that position, and a deck's soft breaks and field text land in the wrong place.
+const NUMERIC_REF = /&#(\d+);/g
+const HEX_REF = /&#x([0-9a-fA-F]+);/g
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(NUMERIC_REF, (_match, code: string) => {
+      const n = Number(code)
+      return n > 0xffff
+        ? String.fromCodePoint(n)
+        : String.fromCharCode(n)
+    })
+    .replace(HEX_REF, (_match, code: string) => {
+      const n = parseInt(code, 16)
+      return n > 0xffff
+        ? String.fromCodePoint(n)
+        : String.fromCharCode(n)
+    })
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+}
+
 const parser = new XMLParser({
   ignoreAttributes: true,
   trimValues: false,
   parseTagValue: false,
   preserveOrder: true,
+  // preserveOrder returns an array of positional entries; textNodeTransform is
+  // called for each text node and the returned value lands back in the array.
 })
 
 function slideNumber(path: string): number {
