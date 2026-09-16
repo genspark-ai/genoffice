@@ -80,7 +80,16 @@ export const aiProviderCaller: LlmCaller = async (opts) => {
         overloaded: isAiOverloadedError(result.error),
       }
     }
-    return { ok: true, content: result.content ?? '' }
+    // Ollama (and other ollama-compat forks) put the answer in `reasoning`
+    // on thinking models while `content` comes back empty. The reasoning
+    // payload contains the actual translation interleaved with the model's
+    // chain-of-thought, so we forward it as `content` for translation-core
+    // to scrub with `extractTranslationText`; downstream callers do not
+    // need to know which provider put the reply where.
+    const content = result.content && result.content.length > 0
+      ? result.content
+      : (result.reasoning && result.reasoning.length > 0 ? result.reasoning : '')
+    return { ok: true, content }
   } catch (err) {
     return {
       ok: false,

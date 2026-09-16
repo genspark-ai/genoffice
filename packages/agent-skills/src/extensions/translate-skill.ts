@@ -596,6 +596,7 @@ function createBuildDictionaryTool() {
     parameters: BuildDictParams,
     async execute(_id, params: BuildDictArgs, _signal) {
       const out = params.output_path ?? `${params.input_path}.dictionary.json`
+      await mkdir(join(out, ".."), { recursive: true }).catch(() => undefined)
       try {
         const settings = await readSettings()
         const { provider, config } = asProvider(settings)
@@ -606,24 +607,61 @@ function createBuildDictionaryTool() {
           "Skip generic words; focus on technical vocabulary, brand names, and domain-specific phrases.",
           "Return ONLY the `source : target` lines — no headers, no commentary.",
         ].join("\n")
-        const raw = await callProviderForDict(prompt, provider, config)
-        const pairs = parseDictionaryFromLlm(extractTranslationText(raw) ?? raw)
-        await mkdir(join(out, ".."), { recursive: true }).catch(() => undefined)
+        // 45s hard cap: a stalled provider (e.g. an offline Ollama) must not
+        // freeze the whole UI. On timeout/empty/error we fall through to the
+        // KB-only path, so the user always gets a usable dictionary file
+        // even when the LLM is unavailable.
+        type LlmOutcome = { kind: "ok"; raw: string } | { kind: "timeout" }
+        const llmPromise: Promise<LlmOutcome> = callProviderForDict(prompt, provider, config)
+          .then((r): LlmOutcome => ({ kind: "ok", raw: r }))
+        const timeoutPromise: Promise<LlmOutcome> = new Promise((res) => setTimeout(() => res({ kind: "timeout" }), 45_000))
+        const llmResult = await Promise.race([llmPromise, timeoutPromise])
+        let pairs: Record<string, string> = {}
+        let llmSource: "llm" | "kb-fallback" | "empty" = "empty"
+        if (llmResult.kind === "ok") {
+          pairs = parseDictionaryFromLlm(extractTranslationText(llmResult.raw) ?? llmResult.raw)
+          llmSource = pairCountOf(pairs) > 0 ? "llm" : "empty"
+        } else {
+          llmSource = "kb-fallback"
+        }
+        // Layer the active KB term entries on top so terminology the user has
+        // curated still appears even when the LLM is down. Lower-cased keys
+        // so the Python translator's exact-match lookup picks them up.
+        try {
+          const kbEntries = await (await getKb()).list({})
+          for (const e of kbEntries) {
+            if (!e || typeof e !== "object") continue
+            const obj = e as unknown as Record<string, unknown>
+            const source = (obj.sourceTerm ?? obj.word ?? obj.name) as string | undefined
+            const target = (obj.targetTerm ?? obj.policy ?? obj.value) as string | undefined
+            if (typeof source === "string" && typeof target === "string" && source && target && source !== target) {
+              pairs[source] = target
+            }
+          }
+        } catch {
+          /* best-effort KB merge — the LLM result is still authoritative */
+        }
         await writeFile(out, JSON.stringify(pairs, null, 2), "utf-8")
         return {
-          content: [{ type: "text" as const, text: `build_dictionary → ${pairCountOf(pairs)} pairs at ${out}` }],
+          content: [{ type: "text" as const, text: `build_dictionary → ${pairCountOf(pairs)} pairs at ${out} (source: ${llmSource})` }],
           details: {
             ok: true as const,
             outputPath: out,
             pairCount: pairCountOf(pairs),
             sourceTerms: Object.keys(pairs),
+            llmSource,
           },
         }
       } catch (err) {
+        // Catastrophic failure (KB not loadable, write permission denied,
+        // etc.). Best-effort: still write an empty file so the caller has
+        // something to pass to translate_file — an empty --dictionary is
+        // legal and just produces zero substitutions.
         const msg = err instanceof Error ? err.message : String(err)
+        try { await writeFile(out, "{}", "utf-8") } catch { /* ignore */ }
         return {
           content: [{ type: "text" as const, text: `build_dictionary error: ${msg}` }],
-          details: { ok: false, error: msg },
+          details: { ok: false, error: msg, outputPath: out },
         }
       }
     },
