@@ -1490,34 +1490,33 @@ function renderSkillBody(entry: {
   category: string
   tags?: string[]
 }): string {
-  const tools = entry.tools.length ? entry.tools.join(', ') : '(none)'
-  const scopes = entry.scopes.length ? entry.scopes.join(', ') : '(none)'
-  const tags = (entry.tags ?? []).join(', ')
   // pi's name constraint: lowercase letters, digits, hyphens only. The
   // directory the file lives in is `entry.id` (always already a valid slug),
   // so we use that as the canonical name.
   const slug = entry.id.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 64)
+  // Used by the markdown body below.
+  const scopes = entry.scopes.length ? entry.scopes.join(', ') : '(none)'
+  const tools = entry.tools.length ? entry.tools.join(', ') : '(none)'
   // Pi frontmatter we rely on (per https://pi.dev/docs/latest/skills):
   //   name, description (1024 char cap), version, author, tags, allowed-tools.
   // Without `allowed-tools` the agent asks the user for permission to call each
   // tool on first invocation — fine for truly third-party skills, but every
   // marketplace skill here is published under GenOffice's own account, so we
   // pre-approve them.
+  // `tags` and `allowed-tools` must be YAML lists per the Agent Skills spec.
+  const tagsList = (entry.tags ?? []).map((t) => `  - ${t}`).join('\n')
+  const toolsList = entry.tools.map((t) => `  - ${t}`).join('\n')
   const lines: string[] = [
     `---`,
     `name: ${slug}`,
-    `display_name: ${entry.name}`,
     `description: "${yamlDoubleQuoted(entry.description.replace(/[\r\n]+/g, ' ')).slice(0, 1024)}"`,
     `version: ${entry.version}`,
     `author: ${entry.author}`,
     `category: ${entry.category}`,
-    tags ? `tags: ${tags}` : '',
-    entry.tools.length ? `allowed-tools: ${entry.tools.join(' ')}` : '',
-    `metadata:`,
-    `  hermes:`,
-    `    source: genoffice-marketplace`,
-    `    category: ${entry.category}`,
-    `    scopes: ${entry.scopes.join(',')}`,
+    tagsList ? `tags:\n${tagsList}` : '',
+    // Pre-approve these tools so the agent does not ask for permission to call
+    // them — they are part of the host's own UI surface, not third-party.
+    toolsList ? `allowed-tools:\n${toolsList}` : '',
     `---`,
     ``,
     `# ${entry.name}`,

@@ -343,21 +343,27 @@ function renderLumosSkillWrapper(opts: {
   return [
     '---',
     `name: ${slug}`,
+    // Keep the description short and behavioural per pi.dev guidance; the full
+    // upstream text lives in the body so the agent has it when it bash-calls
+    // the script.
     `description: "${yamlDoubleQuoted(description).slice(0, 1024)}"`,
-    'metadata:',
-    '  hermes:',
-    '    tags:',
-    '      - translation',
-    '      - lumos',
-    '      - upstream',
-    `    source: ${opts.source}`,
+    // Pi ignores unknown metadata fields, so we drop the LumosAI-specific
+    // `metadata.hermes` block (which only ever meant something to LumosAI).
     '---',
     '',
-    `# ${opts.name} (LumosAI wrapper)`,
+    `# ${opts.name}`,
     '',
     'This is a GenOffice wrapper around a LumosAI skill. The upstream `SKILL.md` lives',
     `at \`${opts.source}\` and is kept verbatim. Pi only reads the frontmatter above; the`,
     'body below is the agent-facing playbook and points at the upstream Python script.',
+    '',
+    '## Setup',
+    '',
+    'The upstream script depends on the LumosAI Python stack:',
+    '',
+    '```bash',
+    'pip install pypdfium2 pdfplumber reportlab python-docx python-pptx openpyxl xlrd Pillow',
+    '```',
     '',
     '## When to load',
     '',
@@ -459,21 +465,23 @@ const BUILT_IN_SKILLS: Array<{
 
 
 function renderBuiltInSkillMarkdown(entry: typeof BUILT_IN_SKILLS[number]): string {
-  const tools = entry.tools.join(', ')
   const scopes = entry.scopes.join(', ')
-  const tags = (entry.tags ?? []).join(', ')
+  // `tags` and `allowed-tools` must be YAML lists per the Agent Skills spec
+  // (https://pi.dev/docs/latest/skills). A bare scalar string would parse as
+  // one value and lose list semantics downstream.
+  const tagsList = (entry.tags ?? []).map((t) => `  - ${t}`).join('\n')
+  const toolsList = entry.tools.map((t) => `  - ${t}`).join('\n')
   return [
     '---',
     `name: ${entry.id}`,
-    `display_name: ${entry.name}`,
     `description: "${yamlDoubleQuoted(entry.description.replace(/[\r\n]+/g, ' ')).slice(0, 1024)}"`,
     `version: ${entry.version}`,
     `author: ${entry.author}`,
     `category: ${entry.category}`,
-    `tags: ${tags}`,
+    tagsList ? `tags:\n${tagsList}` : '',
     // Pre-approve these tools so the agent does not ask for permission to call
     // them — they are part of the host's own UI surface, not third-party actions.
-    `allowed-tools: ${tools}`,
+    toolsList ? `allowed-tools:\n${toolsList}` : '',
     '---',
     '',
     `# ${entry.name}`,
@@ -482,7 +490,7 @@ function renderBuiltInSkillMarkdown(entry: typeof BUILT_IN_SKILLS[number]): stri
     '',
     '## Tools',
     '',
-    `This skill registers the following tools: ${tools}.`,
+    `This skill registers the following tools: ${entry.tools.join(', ')}.`,
     'Each is implemented as a TypeScript pi extension in the GenOffice agent-skills',
     'package and is wired into the host pi session automatically.',
     '',

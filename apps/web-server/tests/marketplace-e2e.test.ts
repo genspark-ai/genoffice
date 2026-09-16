@@ -139,7 +139,7 @@ describe('marketplace E2E flow', () => {
     const content = readFileSync(skillPath, 'utf-8')
     expect(content).toMatch(new RegExp(`^name: ${id}$`, 'm')) // pi slug in frontmatter
     expect(content).toMatch(/^description: /m) // required by pi
-    expect(content).toMatch(/^display_name: E2E Test Skill$/m) // human name
+    expect(content).toMatch(/^# E2E Test Skill$/m) // human name lives in the H1 per pi.dev
 
     // 5. Verify pi loader actually sees it
     const piSkills = await ipc<{

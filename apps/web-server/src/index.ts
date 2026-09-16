@@ -395,6 +395,17 @@ const server = createServer(async (request, response) => {
     return
   }
 
+  // POST /api/ai/pi-prompt — drives the embedded pi AgentSession. The renderer
+  // POSTs { text } and receives a `text/event-stream` of AgentSessionEvents
+  // (agent_start, message_update, tool_call, tool_result, agent_end). This is
+  // the channel the GenOffice UI uses when the user wants the agent to drive
+  // translation through the SKILL.md wrappers instead of through the TS path,
+  // and it is also the foundation for a future in-shell agent panel.
+  if (url.pathname === '/api/ai/pi-prompt' && request.method === 'POST') {
+    void handlePiPromptStreamHttp(request, response)
+    return
+  }
+
   // ----- static / SPA fallback ---------------------------------------------
   const pathMatch = url.pathname.match(
     /^\/(docs|sheets|slides|pdf|markdown|html|shell)(?:\/(.*))?$/,
@@ -495,3 +506,127 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
   server.close(() => process.exit(0))
 })
+
+
+/**
+ * SSE bridge to the embedded pi AgentSession. We lazy-import `pi-session` so
+ * the cost of building the agent (model runtime + resource loader) is paid on
+ * first use, not at server start.
+ */
+async function handlePiPromptStreamHttp(
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const { getPiSession, invalidatePiSession } = (await import('./shell/pi-session')) as {
+    getPiSession: () => Promise<{
+      session: {
+        prompt: (text: string, options?: Record<string, unknown>) => Promise<void>
+        subscribe: (listener: (event: Record<string, unknown>) => void) => () => void
+      }
+    }>
+    invalidatePiSession: () => void
+  }
+
+  let promptText = ''
+  let dropped = false
+  try {
+    const body = await readBody(request)
+    const req = JSON.parse(body || '{}') as { text?: string }
+    promptText = String(req.text ?? '').trim()
+  } catch {
+    response.writeHead(400, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify({ ok: false, error: 'pi-prompt: invalid JSON body' }))
+    return
+  }
+  if (!promptText) {
+    response.writeHead(400, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify({ ok: false, error: 'pi-prompt: empty text' }))
+    return
+  }
+
+  const streamId = `pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Request-Id': streamId,
+  })
+
+  const send = (chunk: Record<string, unknown>) => {
+    if (dropped) return
+    try {
+      response.write(`data: ${JSON.stringify({ ...chunk, requestId: streamId })}\n\n`)
+    } catch {
+      dropped = true
+    }
+  }
+
+  let officeSession: Awaited<ReturnType<typeof getPiSession>> | null = null
+  let unsubscribe: (() => void) | null = null
+
+  const teardown = () => {
+    if (unsubscribe) {
+      try { unsubscribe() } catch { /* ignore */ }
+      unsubscribe = null
+    }
+  }
+  request.on('close', teardown)
+  request.on('aborted', teardown)
+  response.on('close', teardown)
+
+  try {
+    send({ type: 'start', requestId: streamId, text: promptText })
+    officeSession = await getPiSession()
+    // Translate pi AgentSessionEvent → a flat SSE-friendly shape.
+    unsubscribe = officeSession.session.subscribe((event) => {
+      const e = event as { type?: string } & Record<string, unknown>
+      switch (e.type) {
+        case 'agent_start':
+          send({ type: 'agent_start' })
+          break
+        case 'message_update':
+          send({ type: 'message_update', message: e.message })
+          break
+        case 'tool_call':
+          send({
+            type: 'tool_call',
+            toolName: e.toolName,
+            args: e.args,
+            toolCallId: e.toolCallId,
+          })
+          break
+        case 'tool_result':
+          send({
+            type: 'tool_result',
+            toolName: e.toolName,
+            result: e.result,
+            isError: e.isError,
+            toolCallId: e.toolCallId,
+          })
+          break
+        case 'turn_end':
+          send({ type: 'turn_end', message: e.message, toolCalls: e.toolCalls })
+          break
+        case 'agent_end':
+          send({ type: 'agent_end', messages: e.messages })
+          break
+        default:
+          // Forward every other event verbatim so the client can render it.
+          send({ type: e.type ?? 'unknown', event: e })
+      }
+    })
+    await officeSession.session.prompt(promptText)
+    send({ type: 'complete', requestId: streamId })
+  } catch (error) {
+    send({
+      type: 'error',
+      requestId: streamId,
+      message: error instanceof Error ? error.message : String(error),
+    })
+    // If the agent itself is broken, drop the session so the next call rebuilds.
+    try { invalidatePiSession() } catch { /* ignore */ }
+  } finally {
+    teardown()
+    try { response.end() } catch { /* ignore */ }
+  }
+}
