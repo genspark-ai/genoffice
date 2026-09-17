@@ -850,6 +850,44 @@ describe('side-wrapped pictures that leave no room for text', () => {
     editor.destroy()
   })
 
+  it('a cell picture lifted above its anchor paragraph leaves room for the cell clamp', async () => {
+    // signature anchored two empty lines above a name block inside a borderless
+    // table cell: Word keeps a layoutInCell picture inside the cell
+    const cell = (body: string) =>
+      '<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:tc>' +
+      `<w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr><w:p/>${body}` +
+      '<w:p><w:r><w:t>(Name)</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+    // jsdom drops a calc() with var() from the parsed inline style: read the
+    // rendered declaration off the node spec instead
+    const renderedImg = async (body: string) => {
+      const { editor } = await openImageDoc(cell(body))
+      let attrs: Record<string, string> | undefined
+      editor.state.doc.descendants((node) => {
+        if (node.type.name === 'docInlineImage') {
+          const spec = editor.schema.nodes.docInlineImage.spec.toDOM!(node) as [
+            string,
+            typeof attrs,
+          ]
+          attrs = spec[1]
+        }
+      })
+      expect(editor.view.dom.querySelector('td img.doc-inline-img--wrap-tight-left')).toBeTruthy()
+      editor.destroy()
+      return attrs!
+    }
+    const inCell = anchoredPicture(1261745, -2315845, 1910080, 677545)
+    const clamped = await renderedImg(`<w:p>${inCell}</w:p>`)
+    expect(clamped.style).toContain('margin-top:calc(-243.1px + var(--cell-lift,0px))')
+    expect(clamped['data-cell-lift']).toBe('1')
+
+    const free = await renderedImg(
+      `<w:p>${inCell.replace('layoutInCell="1"', 'layoutInCell="0"')}</w:p>`,
+    )
+    expect(free.style).toContain('margin-top:-243.1px')
+    expect(free['data-cell-lift']).toBeUndefined()
+  })
+
   it('composes the posOffset Y of a quarter-turned run-level float with its footprint inset', async () => {
     // 157x100 turned 90deg sticks out (157-100)/2 = 28.5px above the extent box
     const turned = anchoredPicture(5156200, 359410, 1498600, 952500).replace(

@@ -36,6 +36,7 @@ import {
   krLineFactor,
   cjkDeclaredLineFactor,
   lineHeightFactor,
+  symbolBulletLinePt,
   simsunGapLineFactor,
   paraLineFactorCss,
   snapSpacingToGrid,
@@ -692,6 +693,52 @@ describe('cssFontFamily', () => {
     })
   })
 
+  describe('HG faces (Word for Mac ships four cuts, substitutes the rest with Yu Gothic)', () => {
+    afterEach(() => vi.restoreAllMocks())
+    const kyokasho = 'HG\u6559\u79d1\u66f8\u4f53'
+    const minchoB = 'HG\u660e\u671dB'
+    const popTai = 'HGP\u5275\u82f1\u89d2\uff8e\uff9f\uff6f\uff8c\uff9f\u4f53'
+    const gothicM = 'HG\uff7a\uff9e\uff7c\uff6f\uff78M'
+    const hiraginoKakuGo = '\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4 Pro W3'
+    const maruGothic = 'HG\u4e38\uff7a\uff9e\uff7c\uff6f\uff78M-PRO'
+    const minchoE = 'HG\u660e\u671dE'
+
+    it('missing non-shipped names take the JA sans chain and the Yu Gothic factor, even the Mincho cut', () => {
+      for (const name of [kyokasho, minchoB, popTai, gothicM, hiraginoKakuGo]) {
+        expect(lineHeightFactor(name)).toBe(1.44)
+        expect(cssFontFamily(name)).toBe(
+          `'${name}','Yu Gothic','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif`,
+        )
+        expect(isCjkFontName(name)).toBe(true)
+      }
+    })
+
+    it('the shipped cuts keep the MS-class pitch and their own classification', () => {
+      expect(lineHeightFactor(maruGothic)).toBe(1.3029)
+      expect(lineHeightFactor(minchoE)).toBe(1.3029)
+      // half-width spelling of the shipped Gothic E cut
+      expect(lineHeightFactor('HG\uff7a\uff9e\uff7c\uff6f\uff78E')).toBe(1.3029)
+      expect(cssFontFamily(minchoE)).toMatch(/,serif$/)
+    })
+
+    it('an installed face renders real', () => {
+      const installed = 'HGS\u6559\u79d1\u66f8\u4f53'
+      stubCanvas([installed])
+      expect(lineHeightFactor(installed)).toBe(1.3029)
+    })
+
+    it('the line simulator applies the Yu Gothic factor to half-width spellings too', () => {
+      const metrics = new HeuristicMetrics()
+      const runs = [{ text: '\u6587\u5b57', sizeHalfPoints: 20 }]
+      const [halfWidth] = simulateLines(runs, 500, metrics, 10, gothicM)
+      const [fullWidth] = simulateLines(runs, 500, metrics, 10, kyokasho)
+      expect(halfWidth.naturalLineH).toBeCloseTo(fullWidth.naturalLineH, 5)
+      expect(halfWidth.naturalLineH).toBeGreaterThan(
+        simulateLines(runs, 500, metrics, 10, maruGothic)[0].naturalLineH,
+      )
+    })
+  })
+
   it('Meiryo (UI) leads with the range-limited metric aliases ahead of the JP sans chain', () => {
     expect(cssFontFamily('Meiryo UI')).toBe(
       "'Meiryo UI','Meiryo UI GO','Yu Gothic','GenOffice Hiragino Sans','Meiryo','Noto Sans JP',sans-serif",
@@ -725,10 +772,16 @@ describe('cssFontFamily', () => {
     expect(dual).not.toContain('JA GO')
     expect(cssDualFontFamily('MS UI Gothic', 'Meiryo')).not.toContain('JA GO')
     expect(docLatinChainCss('MS PGothic')).not.toContain('JA GO')
-    // Mincho and other JP names are untouched
+    // Berlin Sans FB Demi rides its bold alias; the regular cut is unprobed
+    expect(cssFontFamily('Berlin Sans FB Demi')).toContain("'Berlin Sans FB GO'")
+    expect(cssFontFamily('Berlin Sans FB')).not.toContain("'Berlin Sans FB GO'")
+    // MS Mincho shares the fixed-pitch Latin alias; other JP names are untouched
     expect(cssFontFamily('ＭＳ ゴシック 太字')).not.toContain(' GO')
-    expect(cssFontFamily('MS Mincho')).not.toContain(' GO')
+    expect(cssFontFamily('MS Mincho')).toMatch(/^'MS Mincho','MS Mincho GO',/)
+    expect(cssFontFamily('\uFF2D\uFF33 \u660E\u671D')).toContain("'MS Mincho GO'")
+    expect(cssFontFamily('MS PMincho')).not.toContain(' GO')
     expect(monospaceAdvanceEm("'ＭＳ ゴシック','MS Gothic GO'")).toBe(0.5)
+    expect(monospaceAdvanceEm("'MS Mincho','MS Mincho GO'")).toBe(0.5)
     expect(monospaceAdvanceEm("'MS PGothic'")).toBeNull()
   })
 
@@ -1522,5 +1575,32 @@ describe('justifySymbolRanges', () => {
     expect(isChromiumCjkSymbol(0x4e00)).toBe(false)
     expect(justifySymbolRanges('за № 470-EL')).toEqual([{ from: 3, to: 4 }])
     expect(justifySymbolRanges('plain text 12%')).toEqual([])
+  })
+})
+
+describe('Latin faces probed 2026-09-17 (Word for Mac, 10/11/12pt single spacing)', () => {
+  it('renders the M365 cloud faces real at their hhea totals', () => {
+    expect(lineHeightFactor('Roboto')).toBe(1.172)
+    expect(lineHeightFactor('Montserrat')).toBe(1.219)
+    expect(lineHeightFactor('Georgia Pro')).toBe(0.98)
+    expect(lineHeightFactor('Georgia')).toBe(1.1375)
+    expect(lineHeightFactor('Calibri Light')).toBe(1.22)
+  })
+})
+
+describe('symbolBulletLinePt', () => {
+  it('lifts a bullet line to Symbol ascent + text descent (Word probe 2026-09-17)', () => {
+    // Aptos 10pt text, Symbol bullet at the 10pt run size: 10.054 + 2.817
+    expect(symbolBulletLinePt('Symbol', 10, 'Aptos', 10)).toBe(12.871)
+    // Cambria 11pt text + Symbol 11pt: 11.059 + 2.444 (Word 15.36-15.6 at 1.15)
+    expect(symbolBulletLinePt('Symbol', 11, 'Cambria', 11)).toBe(13.504)
+    expect(symbolBulletLinePt('Symbol', 12, null, 12)).toBe(15.065)
+  })
+  it('leaves lines alone when the text face is as tall as the bullet face', () => {
+    expect(symbolBulletLinePt('Wingdings', 11, 'Calibri', 11)).toBeNull()
+    expect(symbolBulletLinePt('Webdings', 12, 'Times New Roman', 12)).toBeNull()
+    expect(symbolBulletLinePt('Symbol', 11, 'Segoe UI', 11)).toBeNull()
+    expect(symbolBulletLinePt('Courier New', 11, 'Calibri', 11)).toBeNull()
+    expect(symbolBulletLinePt('Symbol', 0, 'Calibri', 11)).toBeNull()
   })
 })

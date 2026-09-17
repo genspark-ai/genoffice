@@ -139,10 +139,17 @@ describe('docStyleCss dark twins', () => {
 
   it('pairs every color rule with a .page-dark rule inside one @media screen block', () => {
     const styles = new Map<string, StyleInfo>()
+    styles.set('Normal', {
+      styleId: 'Normal',
+      name: 'Normal',
+      type: 'paragraph',
+      isDefault: true,
+    } as StyleInfo)
     styles.set('Heading1', {
       styleId: 'Heading1',
       name: 'heading 1',
       type: 'paragraph',
+      basedOn: 'Normal',
       display: { color: '2f5496', shadingFill: 'f2f2f2' } as StyleDisplay,
     } as StyleInfo)
     styles.set('Grid', {

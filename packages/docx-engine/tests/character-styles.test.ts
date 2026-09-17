@@ -408,3 +408,37 @@ describe('toggle-off (w:val="0") overrides inherited formatting', () => {
     expect(runs[2].caps).toBeUndefined()
   })
 })
+
+describe('linked styles (w:link)', () => {
+  const BODY_TEXT_PAIR =
+    '<w:style w:type="paragraph" w:styleId="BodyText"><w:name w:val="Body Text"/><w:link w:val="BodyTextChar"/></w:style>' +
+    '<w:style w:type="character" w:styleId="BodyTextChar"><w:name w:val="Body Text Char"/><w:link w:val="BodyText"/></w:style>'
+
+  it('fills a character shell from its reciprocal paragraph twin', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>',
+        extraStylesXml:
+          '<w:style w:type="paragraph" w:styleId="Quote"><w:name w:val="Quote"/><w:link w:val="QuoteChar"/><w:rPr><w:i/></w:rPr></w:style>' +
+          '<w:style w:type="character" w:styleId="QuoteChar"><w:name w:val="Quote Char"/><w:link w:val="Quote"/></w:style>',
+      }),
+    )
+    expect(doc.styles.get('QuoteChar')!.display?.italic).toBe(true)
+  })
+
+  it("ignores a one-way w:link into another style's character twin", async () => {
+    // a caption style pointing at Body Text Char must not italicize Body Text
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          '<w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t>plain</w:t></w:r></w:p>',
+        extraStylesXml:
+          BODY_TEXT_PAIR +
+          '<w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/><w:link w:val="BodyTextChar"/><w:rPr><w:i/></w:rPr></w:style>',
+      }),
+    )
+    expect(doc.styles.get('BodyText')!.display?.italic).toBeUndefined()
+    expect(doc.styles.get('BodyTextChar')!.display?.italic).toBeUndefined()
+    expect(doc.styles.get('Caption')!.display?.italic).toBe(true)
+  })
+})

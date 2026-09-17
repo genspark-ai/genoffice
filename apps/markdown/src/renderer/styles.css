@@ -2138,11 +2138,11 @@ html.genoffice-popover-open .ribbon-tabs {
   background: var(--hover);
 }
 
-/* ---- mermaid diagrams (```mermaid code blocks) ---- */
+/* ---- diagrams (```mermaid / ```wavedrom code blocks) ---- */
 
 /* the source stays in the DOM (ProseMirror needs its contentDOM) but is
    visually collapsed while the caret is outside the block */
-.md-mermaid-collapsed pre {
+.md-diagram-collapsed pre {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -2151,7 +2151,7 @@ html.genoffice-popover-open .ribbon-tabs {
   opacity: 0;
 }
 
-.md-mermaid-preview {
+.md-diagram-preview {
   margin: 0.8em 0;
   padding: 12px 16px;
   border: 1px solid var(--border);
@@ -2161,16 +2161,16 @@ html.genoffice-popover-open .ribbon-tabs {
   cursor: text;
 }
 
-.md-mermaid:not(.md-mermaid-collapsed) .md-mermaid-preview {
+.md-diagram:not(.md-diagram-collapsed) .md-diagram-preview {
   margin-top: 8px;
 }
 
-.md-mermaid-preview svg {
+.md-diagram-preview svg {
   max-width: 100%;
   height: auto;
 }
 
-.md-mermaid-error {
+.md-diagram-error {
   margin-top: 6px;
   padding: 6px 10px;
   border: 1px solid var(--md-error-border);

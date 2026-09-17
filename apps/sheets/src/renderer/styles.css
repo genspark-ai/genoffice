@@ -1571,6 +1571,7 @@ button.check-item:hover {
 .status-left {
   display: flex;
   align-items: center;
+  gap: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1620,21 +1621,8 @@ button.check-item:hover {
   grid-template-columns: 34px minmax(0, 1fr);
 }
 
-/* Files pane docks between the AI panel and the sheet as a third grid column */
-.app-shell.files-open .sheet-body {
-  grid-template-columns: var(--copilot-width, 360px) auto minmax(0, 1fr);
-}
-
-.app-shell.copilot-collapsed.files-open .sheet-body {
-  grid-template-columns: 34px auto minmax(0, 1fr);
-}
-
 .sheet-main {
   position: relative;
-}
-
-.sheet-main .files-edge-tab {
-  top: 44px;
 }
 
 .spreadsheet {

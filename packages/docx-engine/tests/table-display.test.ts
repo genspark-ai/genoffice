@@ -199,9 +199,29 @@ describe('fixed-layout grid vs tcW arbitration', () => {
     expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4680, 4680])
   })
 
-  it('auto layout keeps the grid when only the absolute sums differ', async () => {
+  it('auto layout with no declared width takes tcW as well (Word probe 2026-09-16)', async () => {
     const doc = await parseDocx(await buildDocx({ bodyXml: fixedTable('') }))
-    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([6120, 6120])
+    expect(doc.blocks[0].table!.colWidthsTwips).toEqual([4680, 4680])
+  })
+
+  it('auto layout keeps an unequal grid over disagreeing tcW; fixed layout takes tcW', async () => {
+    const table = (layout: string) =>
+      `<w:tbl><w:tblPr><w:tblW w:w="3372" w:type="dxa"/>${layout}</w:tblPr>` +
+      '<w:tblGrid><w:gridCol w:w="571"/><w:gridCol w:w="999"/><w:gridCol w:w="766"/><w:gridCol w:w="1036"/></w:tblGrid>' +
+      '<w:tr>' +
+      [542, 1038, 719, 966]
+        .map(
+          (w) =>
+            `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc>`,
+        )
+        .join('') +
+      '</w:tr></w:tbl>'
+    const auto = await parseDocx(await buildDocx({ bodyXml: table('') }))
+    expect(auto.blocks[0].table!.colWidthsTwips).toEqual([571, 999, 766, 1036])
+    const fixed = await parseDocx(
+      await buildDocx({ bodyXml: table('<w:tblLayout w:type="fixed"/>') }),
+    )
+    expect(fixed.blocks[0].table!.colWidthsTwips).toEqual([542, 1038, 719, 966])
   })
 
   it('garbage over-wide grid widths stay raw in the model (clamping is render-side only)', async () => {

@@ -22,6 +22,7 @@ import {
   toSaveVisualEdits,
 } from './edit-journal'
 import { activeCsvSheet, handleExportCsv, serializeActiveSheetCsv } from './csv-export'
+import type { CellState } from '@genoffice/xlsx-gateway/domain/workbook.types'
 import { verifiedFormulaValues } from './formula-values'
 import { t } from './i18n/locale'
 import { abortStagedEditsTransfer, stageEditsForSave, type StagedEdits } from './save-edits-staging'
@@ -43,6 +44,8 @@ export interface SaveContext {
   lazyWorkbookRef: { readonly current: LazyWorkbookState | null }
   setMessage: (message: string) => void
   openLazyWorkbook: (opened: WorkbookFile) => void
+  /** live cell readout, for the cached values of formulas an MCP batch wrote (optional in tests) */
+  readCells?: (addresses: string[], sheetId: string) => Record<string, CellState>
   /** Saving swaps the session and reinstalls the workbook, which resets the
       view to the first sheet's A1 — stash where the user was so the
       reinstall lands there instead. `viewRow`/`viewColumn` is the viewport's
@@ -68,6 +71,8 @@ export interface SaveOutcome {
   ok: boolean
   /** absolute path of the written file when ok */
   path?: string
+  /** the main-process refusal, verbatim, when the save request itself failed */
+  error?: string
 }
 
 /**
@@ -202,14 +207,9 @@ export async function handleSave(
           return [{ sheetId, row, column, value }]
         }),
   )
-  // Journaled formulas are covered by values an MCP batch read back *after* the
-  // engine settled (see formula-values.ts). They were left out above because the
-  // overlay could be stale; these were observed, and each is dropped unless the
-  // cell still holds the formula that produced it.
-  const journaledValues = verifiedFormulaValues(
-    (sheetId, row, column) =>
-      state.editJournal.cells.get(sheetId)?.get(`${row}:${column}`)?.formula,
-  )
+  // Journaled formulas an MCP batch saw settle (see formula-values.ts) were left
+  // out above because the overlay could be stale; their values are read live here.
+  const journaledValues = ctx.readCells ? verifiedFormulaValues(ctx.readCells) : []
   const formulaValues = [...overlayValues, ...journaledValues]
   // The gateway fails closed when these additions ride with structural or
   // sheet changes (their coordinates entangle). Instead of bouncing the
@@ -526,7 +526,7 @@ export async function handleSave(
     const failed = localizeSaveError(message) ?? (message || t('appSaveFailed'))
     ctx.setMessage(failed)
     if (!quiet) showToast(failed, 'error')
-    return { ok: false }
+    return { ok: false, error: message || failed }
   }
 }
 

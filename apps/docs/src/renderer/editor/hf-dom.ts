@@ -153,6 +153,23 @@ export function hfRowStyle(row: HfTableRow | undefined): Record<string, string> 
   return style
 }
 
+/** w:ind of a stacked strip paragraph (twips): logical margins (RTL-aware), so a w:pBdr border
+ *  keeps its own padding and draws at the indent edge like Word. Tabbed paragraphs
+ *  stay full-width: their stops are laid out from the column edge (hfTabSegments). */
+export function hfParaIndentStyle(para: {
+  indentLeft?: number
+  indentRight?: number
+  indentFirstLine?: number
+  runs?: Array<{ text: string }>
+}): Record<string, string> {
+  const style: Record<string, string> = {}
+  if (para.runs?.some((r) => r.text.includes('\t'))) return style
+  if (para.indentLeft) style.marginInlineStart = px(para.indentLeft)
+  if (para.indentRight) style.marginInlineEnd = px(para.indentRight)
+  if (para.indentFirstLine) style.textIndent = px(para.indentFirstLine)
+  return style
+}
+
 /** cell paragraph box; a tab-wrapped paragraph spans several line boxes, so
  *  first-line-only (indent, space before) and last-line-only (space after)
  *  props land on the matching line */
@@ -1205,6 +1222,7 @@ export function makeGapHfEl(opts: {
       continue
     }
     if (para.bidi) p.style.direction = 'rtl'
+    Object.assign(p.style, hfParaIndentStyle(para))
     if (para.align) {
       p.style.textAlign =
         para.align === 'left' || para.align === 'center' || para.align === 'right'
@@ -1281,7 +1299,10 @@ export function makeGapHfEl(opts: {
       host.append(p)
       continue
     }
-    if (para.runs.length === 0) p.textContent = ' '
+    if (para.runs.length === 0) {
+      p.textContent = ' '
+      if (para.emptyRunSizeHalfPoints) p.style.fontSize = `${para.emptyRunSizeHalfPoints / 2}pt`
+    }
     for (const run of para.runs) {
       const span = document.createElement('span')
       span.textContent = display(run.text)

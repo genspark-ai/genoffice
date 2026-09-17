@@ -326,3 +326,83 @@ describe('parseChartPartXml presentation features', () => {
     ).toBeUndefined()
   })
 })
+
+describe('parseChartPartXml text sizes and label overrides', () => {
+  const rPr = (sz: number, color = '000000') =>
+    `<a:pPr><a:defRPr sz="${sz}"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:defRPr></a:pPr>`
+  const txPr = (sz: number, color?: string) =>
+    `<c:txPr><a:bodyPr/><a:lstStyle/><a:p>${rPr(sz, color)}</a:p></c:txPr>`
+  const flags = (val: number, cat: number, pct: number) =>
+    `<c:showLegendKey val="0"/><c:showVal val="${val}"/><c:showCatName val="${cat}"/>` +
+    `<c:showSerName val="0"/><c:showPercent val="${pct}"/><c:showBubbleSize val="0"/>`
+  const title =
+    '<c:title><c:tx><c:rich><a:bodyPr/><a:p><a:pPr><a:defRPr sz="1800"/></a:pPr>' +
+    '<a:r><a:rPr sz="1800"/><a:t>Revenue</a:t></a:r></a:p></c:rich></c:tx></c:title>'
+
+  it('reads title, axis and legend sizes, axis label color and major gridline color', () => {
+    const chart = parseChartPartXml(
+      chartSpace(
+        `<c:barChart><c:barDir val="col"/>${barSer(0, [1, 2])}<c:axId val="1"/><c:axId val="2"/></c:barChart>` +
+          `<c:catAx><c:axId val="1"/><c:axPos val="b"/>${txPr(1200, '000000')}<c:crossAx val="2"/></c:catAx>` +
+          '<c:valAx><c:axId val="2"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln>' +
+          '<a:solidFill><a:srgbClr val="888888"/></a:solidFill></a:ln></c:spPr></c:majorGridlines>' +
+          `${txPr(1200)}<c:crossAx val="1"/></c:valAx>`,
+        '',
+        `${title}<c:legend><c:legendPos val="b"/>${txPr(900)}</c:legend>`,
+      ),
+      'word/charts/chart1.xml',
+      THEME,
+    )!
+    expect(chart.titleFontPt).toBe(18)
+    expect(chart.legendFontPt).toBe(9)
+    expect(chart.xAxis).toMatchObject({ fontPt: 12, color: '000000' })
+    expect(chart.yAxis).toMatchObject({ fontPt: 12, gridLine: '888888' })
+  })
+
+  it('gives an automatic major gridline the Office tint and none without c:majorGridlines', () => {
+    const axes = (grid: string) =>
+      `<c:barChart><c:barDir val="col"/>${barSer(0, [1, 2])}<c:axId val="1"/><c:axId val="2"/></c:barChart>` +
+      '<c:catAx><c:axId val="1"/><c:axPos val="b"/><c:crossAx val="2"/></c:catAx>' +
+      `<c:valAx><c:axId val="2"/><c:axPos val="l"/>${grid}<c:crossAx val="1"/></c:valAx>`
+    const auto = parseChartPartXml(chartSpace(axes('<c:majorGridlines/>')), 'p', THEME)!
+    expect(auto.yAxis?.gridLine).toBe('D9D9D9')
+    const none = parseChartPartXml(chartSpace(axes('')), 'p', THEME)!
+    expect(none.yAxis?.gridLine).toBeUndefined()
+    expect(none.titleFontPt).toBeUndefined()
+  })
+
+  it('reads bar value labels with their size, color and number format', () => {
+    const dLbls = `<c:dLbls><c:numFmt formatCode="#,##0" sourceLinked="0"/>${txPr(1200, '000000')}${flags(1, 0, 0)}</c:dLbls>`
+    const chart = parseChartPartXml(
+      chartSpace(`<c:barChart><c:barDir val="col"/>${barSer(0, [1997, 2213], dLbls)}</c:barChart>`),
+      'p',
+      THEME,
+    )!
+    expect(chart.dataLabels).toEqual({ val: true, fontPt: 12, color: '000000', numFmt: '#,##0' })
+  })
+
+  it('lets per-point c:dLbl blocks covering every point override the series flags', () => {
+    const point = (i: number) =>
+      `<c:dLbl><c:idx val="${i}"/><c:numFmt formatCode="0%" sourceLinked="0"/>${txPr(1200)}${flags(0, 0, 1)}</c:dLbl>`
+    const dLbls =
+      `<c:dLbls>${point(0)}${point(1)}<c:numFmt formatCode="0%" sourceLinked="0"/>${txPr(1800)}` +
+      `${flags(0, 1, 1)}</c:dLbls>`
+    const full = parseChartPartXml(
+      chartSpace(
+        `<c:doughnutChart>${barSer(0, [3, 7], dLbls)}<c:holeSize val="50"/></c:doughnutChart>`,
+      ),
+      'p',
+      THEME,
+    )!
+    // Word shows only what the point blocks enable (percent, 12pt), not the series category names
+    expect(full.dataLabels).toEqual({ pct: true, fontPt: 12, color: '000000', numFmt: '0%' })
+    const partial = parseChartPartXml(
+      chartSpace(
+        `<c:doughnutChart>${barSer(0, [3, 7], `<c:dLbls>${point(0)}${txPr(1800)}${flags(0, 1, 1)}</c:dLbls>`)}</c:doughnutChart>`,
+      ),
+      'p',
+      THEME,
+    )!
+    expect(partial.dataLabels).toEqual({ pct: true, cat: true, fontPt: 18, color: '000000' })
+  })
+})

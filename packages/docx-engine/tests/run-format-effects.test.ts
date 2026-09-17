@@ -105,6 +105,25 @@ describe('Hyperlink character style', () => {
   })
 })
 
+describe('kashida justification values', () => {
+  it('lays lowKashida/highKashida/thaiDistribute paragraphs and styles as justify', async () => {
+    const doc = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          para(run('', 'a'), '<w:pPr><w:jc w:val="lowKashida"/></w:pPr>') +
+          para(run('', 'b'), '<w:pPr><w:jc w:val="thaiDistribute"/></w:pPr>') +
+          para(run('', 'c'), '<w:pPr><w:pStyle w:val="KashidaBody"/></w:pPr>'),
+        extraStylesXml:
+          '<w:style w:type="paragraph" w:styleId="KashidaBody"><w:name w:val="Kashida Body"/>' +
+          '<w:pPr><w:jc w:val="highKashida"/></w:pPr></w:style>',
+      }),
+    )
+    expect(doc.blocks[0].format?.align).toBe('justify')
+    expect(doc.blocks[1].format?.align).toBe('justify')
+    expect(doc.styles.get('KashidaBody')?.display?.align).toBe('justify')
+  })
+})
+
 describe('style-level w:bidi', () => {
   const RTL_NORMAL =
     '<w:style w:type="paragraph" w:styleId="RtlBody"><w:name w:val="Rtl Body"/>' +

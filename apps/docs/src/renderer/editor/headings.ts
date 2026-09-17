@@ -17,11 +17,3 @@ export function collectHeadings(doc: PmNode): HeadingRef[] {
   })
   return out
 }
-
-export function hasHeadings(doc: PmNode): boolean {
-  for (let i = 0; i < doc.childCount; i++) {
-    const node = doc.child(i)
-    if (node.type.name === 'docHeading' && node.textContent.trim()) return true
-  }
-  return false
-}

@@ -336,6 +336,10 @@ export async function parseStyles(
     const a = styles.get(fromId)
     const b = styles.get(toId)
     if (!a || !b) continue
+    // Word pairs linked styles both ways; a stray one-way w:link (a caption style
+    // pointing at another paragraph style's character twin) contributes nothing
+    const back = linkedIds.get(toId)
+    if (back !== undefined && back !== fromId) continue
     for (const [self, other] of [
       [a, b],
       [b, a],
@@ -607,7 +611,7 @@ function styleDisplayOf(
     if (overflowPunct !== undefined) display.overflowPunct = overflowPunct
     const jc = attrsOf(findChild(pPr, 'w:jc') ?? {})['w:val']
     if (jc === 'center' || jc === 'right' || jc === 'left' || jc === 'justify') display.align = jc
-    else if (jc === 'both') display.align = 'justify'
+    else if (jc === 'both' || /kashida$|^thaiDistribute$/i.test(jc ?? '')) display.align = 'justify'
     else if (jc === 'distribute') display.align = 'distribute'
     const bidi = onOffOf(pPr, 'w:bidi')
     if (bidi !== undefined) display.bidi = bidi

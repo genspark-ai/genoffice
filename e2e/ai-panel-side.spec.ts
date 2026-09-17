@@ -4,21 +4,18 @@ import { join } from 'node:path'
 
 // Use each app's production styles in a minimal editor layout. Browser geometry
 // catches grid/flex ordering and resize handles that jsdom cannot measure.
-for (const variant of ['docs', 'sheets', 'sheets-files', 'slides', 'pdf', 'markdown', 'html']) {
-  const app = variant === 'sheets-files' ? 'sheets' : variant
-  const filesOpen = variant === 'sheets-files'
-  test(`${variant}: switching AI panel sides preserves navigation and the collapsed rail`, async () => {
+for (const app of ['docs', 'sheets', 'slides', 'pdf', 'markdown', 'html']) {
+  test(`${app}: switching AI panel sides preserves navigation and the collapsed rail`, async () => {
     const browser = await chromium.launch()
     try {
       const page = await browser.newPage({ viewport: { width: 1200, height: 800 } })
       const sheets = app === 'sheets'
       const panelClass = app === 'docs' || app === 'slides' ? 'ai-panel' : 'copilot'
       await page.setContent(
-        `<div class="app-shell${filesOpen ? ' files-open' : ''}"><div class="${sheets ? 'sheet-body' : 'app-main'}" style="width:1000px;height:600px">` +
+        `<div class="app-shell"><div class="${sheets ? 'sheet-body' : 'app-main'}" style="width:1000px;height:600px">` +
           (sheets
             ? '<aside class="copilot"><div class="ai-panel-resizer"></div><button class="ai-panel-collapse"><svg width="16" height="16"></svg></button>AI chat</aside>'
             : `<div class="ai-dock"><aside class="${panelClass}" style="width:360px"><div class="ai-panel-resizer"></div><button class="ai-panel-collapse"><svg width="16" height="16"></svg></button>AI chat</aside><button class="ai-rail" style="display:none">AI</button></div>`) +
-          (filesOpen ? '<aside class="fixture-files" style="width:200px">Files</aside>' : '') +
           '<div class="fixture-document" style="flex:1;min-width:0;display:flex"><nav style="width:160px">Navigation</nav><article style="flex:1">Document</article></div></div></div>',
       )
       for (const path of [
@@ -44,12 +41,6 @@ for (const variant of ['docs', 'sheets', 'sheets-files', 'slides', 'pdf', 'markd
         const docBox = (await document.boundingBox())!
         expect(side === 'left' ? box.x < docBox.x : box.x > docBox.x).toBe(true)
         expect((await nav.boundingBox())!.x).toBeCloseTo(docBox.x, 0)
-        if (filesOpen) {
-          const files = (await page.locator('.fixture-files').boundingBox())!
-          expect(files.x + files.width).toBeLessThanOrEqual(docBox.x)
-          expect(files.y).toBe(docBox.y)
-          expect(box.y).toBe(docBox.y)
-        }
         const handle = (await page.locator('.ai-panel-resizer').boundingBox())!
         expect(
           Math.abs(

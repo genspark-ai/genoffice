@@ -63,8 +63,8 @@ describe('provider registry', () => {
     })
   })
 
-  it('marks the GPT-5 family as fixed-sampling (rejects any non-default temperature)', () => {
-    for (const model of ['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.5', 'gpt-5.4-mini']) {
+  it('marks the GPT-5/GPT-6 families as fixed-sampling (reject any non-default temperature)', () => {
+    for (const model of ['gpt-6-astra', 'gpt-5.6', 'gpt-5.6-terra', 'gpt-5.5', 'gpt-5.4-mini']) {
       expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config(model))).toEqual({
         protocol: 'openai-compatible',
         baseUrl: 'https://api.openai.com/v1',
@@ -343,6 +343,7 @@ describe('modelLacksVision', () => {
     expect(modelLacksVision('deep-seek-v4-pro')).toBe(true)
     expect(modelLacksVision('deep-seek-v4.1-flash')).toBe(false)
     expect(modelLacksVision('deepseek-v4-flash-vision-exp')).toBe(false)
+    expect(modelLacksVision('deepseek-flash')).toBe(false)
     expect(modelLacksVision('deep-seek-v4-flash-vision-exp-openrouter')).toBe(false)
     expect(modelLacksVision('claude-opus-4-7')).toBe(false)
   })
@@ -360,6 +361,7 @@ describe('modelEchoesReasoning', () => {
     expect(modelEchoesReasoning('minimax-m2p7')).toBe(true)
     expect(modelEchoesReasoning('deep-seek-v4-flash')).toBe(true)
     expect(modelEchoesReasoning('deepseek-v4-pro')).toBe(true)
+    expect(modelEchoesReasoning('deepseek-flash')).toBe(true)
     expect(modelEchoesReasoning('gpt-5.6-luna')).toBe(false)
     expect(modelEchoesReasoning('kimi-k3')).toBe(false)
   })

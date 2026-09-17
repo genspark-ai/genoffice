@@ -37,11 +37,3 @@ html[data-ai-panel-side='right'] .app-shell.copilot-collapsed .sheet-body {
 html[data-ai-panel-side='right'] .ai-panel-collapse svg {
   transform: scaleX(-1);
 }
-
-html[data-ai-panel-side='right'] .app-shell.files-open .sheet-body {
-  grid-template-columns: auto minmax(0, 1fr) var(--copilot-width, 360px);
-}
-
-html[data-ai-panel-side='right'] .app-shell.copilot-collapsed.files-open .sheet-body {
-  grid-template-columns: auto minmax(0, 1fr) 34px;
-}

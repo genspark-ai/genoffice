@@ -36,7 +36,10 @@ export interface McpSheetHandlers {
   /** apply a workbook DSL batch (planFromOps + applyChangePlan) */
   applyOps: (ops: WorkbookOperation[], dryRun: boolean) => Promise<unknown>
   /** save to an explicit absolute path (dialog-free) */
-  saveTo: (path: string, overwrite: boolean) => Promise<{ ok: boolean; path?: string }>
+  saveTo: (
+    path: string,
+    overwrite: boolean,
+  ) => Promise<{ ok: boolean; path?: string; error?: string }>
 }
 
 export function installSheetsMcpBridge(handlers: McpSheetHandlers): () => void {
@@ -143,7 +146,13 @@ export function installSheetsMcpBridge(handlers: McpSheetHandlers): () => void {
             reply(false, undefined, 'save_sheet needs an absolute path')
             return
           }
-          reply(true, await handlers.saveTo(path, overwrite))
+          const saved = await handlers.saveTo(path, overwrite)
+          // a refused save must surface as an error so the agent keeps its session and can retry
+          if (!saved.ok) {
+            reply(false, undefined, saved.error ?? 'the spreadsheet could not be saved')
+            return
+          }
+          reply(true, saved)
           return
         }
         default:

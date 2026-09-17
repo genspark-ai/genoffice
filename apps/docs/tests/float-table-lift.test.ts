@@ -47,6 +47,16 @@ describe('suppressed text-anchored float with a negative w:tblpY', () => {
     expect(attrs['data-tblp-lift']).toBe('73.1')
   })
 
+  it('keeps a positive text-relative offset as a plain top margin (no lift)', () => {
+    const [, attrs] = tableSpec({ ...suppressedFloat, tblFloatYTwips: 312 })
+    expect(attrs['data-tblp-lift']).toBeUndefined()
+    expect(attrs.style).toContain('margin-top:20.8px')
+    expect(
+      tableSpec({ ...suppressedFloat, tblFloatVertAnchor: 'margin', tblFloatYTwips: 312 })[1]
+        .style ?? '',
+    ).not.toContain('margin-top:20.8px')
+  })
+
   it('does not lift a positive offset, a page anchor or a live float', () => {
     expect(
       tableSpec({ ...suppressedFloat, tblFloatYTwips: 72 })[1]['data-tblp-lift'],

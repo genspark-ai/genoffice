@@ -232,8 +232,6 @@ interface RibbonProps {
   onShowRuler: (v: boolean) => void
   showNav: boolean
   onShowNav: (v: boolean) => void
-  showFiles: boolean
-  onShowFiles: (v: boolean) => void
   commentCount: number
   /** unresolved root comments (drives the AI resolve-comments action) */
   openCommentCount: number
@@ -685,8 +683,6 @@ function RibbonInner({
   onShowRuler,
   showNav,
   onShowNav,
-  showFiles,
-  onShowFiles,
   commentCount,
   openCommentCount,
   onShowComments,
@@ -725,7 +721,8 @@ function RibbonInner({
   const docEmpty = !hasDoc || fs.docEmpty
   const [tab, setTab] = useState<RibbonTab>('home')
   const [dropdown, setDropdown] = useState<string | null>(null)
-  const [penColor, setPenColor] = useState('C00000')
+  // null = Automatic: the pen button clears the run colour instead of writing one
+  const [penColor, setPenColor] = useState<string | null>('C00000')
   const [penHighlight, setPenHighlight] = useState('yellow')
   const [painter, setPainter] = useState<PainterState | null>(null)
   const fontStepRef = useRef<{
@@ -3308,13 +3305,14 @@ function RibbonInner({
                       className="rb-icon rb-color-btn"
                       disabled={!canEdit}
                       data-tip={t('ribbonFontColor')}
-                      onClick={() =>
-                        setTextStyle({ color: penColor === '000000' ? null : penColor })
-                      }
+                      onClick={() => setTextStyle({ color: penColor })}
                     >
                       <span className="rb-color-glyph rb-color-glyph-svg">
                         <IconFontColorA />
-                        <span className="rb-color-bar" style={{ background: `#${penColor}` }} />
+                        <span
+                          className="rb-color-bar"
+                          style={{ background: `#${penColor ?? '000000'}` }}
+                        />
                       </span>
                     </button>
                     <button
@@ -3330,11 +3328,11 @@ function RibbonInner({
                         noneLabel={t('ribbonAutomatic')}
                         onPick={(hex) => {
                           if (!hex) {
-                            setPenColor('000000')
+                            setPenColor(null)
                             setTextStyle({ color: null })
                           } else {
                             setPenColor(hex)
-                            setTextStyle({ color: hex === '000000' ? null : hex })
+                            setTextStyle({ color: hex })
                           }
                         }}
                       />
@@ -3876,8 +3874,6 @@ function RibbonInner({
             onShowRuler={onShowRuler}
             showNav={showNav}
             onShowNav={onShowNav}
-            showFiles={showFiles}
-            onShowFiles={onShowFiles}
             viewMode={viewMode}
             onViewMode={onViewMode}
             readMode={readMode}

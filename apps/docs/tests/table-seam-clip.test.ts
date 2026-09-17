@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { markTableSeamSlices, TABLE_SEAM_PX } from '../src/renderer/pagination-slices'
+import { markTableSeamSlices, seamWindow, TABLE_SEAM_PX } from '../src/renderer/pagination-slices'
 import type { BlockBox, PageSlice } from '../src/renderer/pagination-types'
 
 const block = (tag: string, top: number, height: number): BlockBox => ({
@@ -66,7 +66,68 @@ describe('markTableSeamSlices', () => {
     expect(slices.some((s) => s.cutTable)).toBe(false)
   })
 
+  it('flags a page opening on the bottom edge of the previous table', () => {
+    const blocks = [block('p', 0, 100), block('table', 100, 500), block('p', 600, 100)]
+    const slices: PageSlice[] = [
+      { start: 0, end: 600, section: 0 },
+      { start: 600, end: 700, section: 0 },
+    ]
+    markTableSeamSlices(slices, blocks)
+    expect(slices.map((s) => s.tailTable ?? false)).toEqual([false, true])
+    expect(slices.some((s) => s.cutTable || s.leadTable)).toBe(false)
+  })
+
+  it('reads the table box bottom under a folded inter-block gap', () => {
+    const gapped = { ...block('table', 100, 508), spaceAfterPx: 8 }
+    const blocks = [block('p', 0, 100), gapped, block('p', 608, 100)]
+    const slices: PageSlice[] = [
+      { start: 0, end: 608, section: 0 },
+      { start: 608, end: 708, section: 0 },
+    ]
+    markTableSeamSlices(slices, blocks)
+    expect(slices[1].tailTable).toBeUndefined()
+    expect(slices[1].cutTable).toBeUndefined()
+  })
+
+  it('prefers the lead flag when a table opens right under the previous one', () => {
+    const blocks = [block('table', 0, 300), block('table', 300, 300)]
+    const slices: PageSlice[] = [
+      { start: 0, end: 300, section: 0 },
+      { start: 300, end: 600, section: 0 },
+    ]
+    markTableSeamSlices(slices, blocks)
+    expect(slices[1].leadTable).toBe(true)
+    expect(slices[1].tailTable).toBeUndefined()
+  })
+
   it('shaves a whole CSS pixel, inside the table margin', () => {
     expect(TABLE_SEAM_PX).toBe(1)
+  })
+})
+
+describe('seamWindow', () => {
+  const s = (extra: Partial<PageSlice> = {}): PageSlice => ({
+    start: 0,
+    end: 100,
+    section: 0,
+    ...extra,
+  })
+
+  it('opens a cut page up and grows the page before it', () => {
+    expect(seamWindow(s({ cutTable: true }), undefined)).toEqual({ lift: 1, extend: 0 })
+    expect(seamWindow(s(), s({ cutTable: true }))).toEqual({ lift: 0, extend: 1 })
+  })
+
+  it('moves the pixel from a tail page to the page before it', () => {
+    expect(seamWindow(s({ tailTable: true }), undefined)).toEqual({ lift: -1, extend: 0 })
+    expect(seamWindow(s(), s({ tailTable: true }))).toEqual({ lift: 0, extend: 1 })
+  })
+
+  it('shaves the page before a lead table and leaves lifted tail pages alone', () => {
+    expect(seamWindow(s(), s({ leadTable: true }))).toEqual({ lift: 0, extend: -1 })
+    expect(seamWindow(s({ tailTable: true, liftTop: 4 }), undefined)).toEqual({
+      lift: 0,
+      extend: 0,
+    })
   })
 })

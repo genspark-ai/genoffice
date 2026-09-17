@@ -56,7 +56,7 @@ import { docStyleCss } from './doc-style-css'
 import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
 import { blocksToPmDoc, pmDocOptions, pmDocToSavePlan, type PmNode } from './editor/convert'
-import { TABLE_TRAILING_SKIP } from './editor/extensions'
+import { TABLE_TRAILING_SKIP, setLazyMediaHashes } from './editor/extensions'
 import { TRACK_IGNORE } from './editor/revisions'
 import {
   cancelPhasedContent,
@@ -342,6 +342,7 @@ export async function loadFile(
   try {
     const parsed = await parseDocx(new Uint8Array(result.data))
     if (generation !== openGeneration) return 'superseded'
+    setLazyMediaHashes(parsed.extras.lazyMediaHashes)
     // before setContent: blockAttrs/marks bake fontTable-driven factors and chains into the DOM
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return 'superseded'
@@ -466,6 +467,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     const bytes = await buildBlankDocx({ eastAsiaFont: defaultEastAsiaFontFor(getLang()) })
     const parsed = await parseDocx(bytes)
     if (generation !== openGeneration) return
+    setLazyMediaHashes([])
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
     if (!adopted || generation !== openGeneration) return
     setDocFontTable(parsed.fontTable)
@@ -897,6 +899,7 @@ async function saveOnce(
     // already landed on disk — overwrite that file instead of creating another
     let savedPath = doc.filePath ?? pathlessDocSavedPath
     let passwordIntentPending = false
+    let fullBytes: Uint8Array | undefined
     if (explicitTarget) {
       // MCP-driven explicit output: no dialog, no derived name — always write to
       // the caller's path (overwrite policy is enforced in the main process).
@@ -913,6 +916,7 @@ async function saveOnce(
       }
       savedPath = result.path!
       passwordIntentPending = result.passwordIntentPending === true
+      if (result.data) fullBytes = new Uint8Array(result.data)
       if (!doc.filePath) pathlessDocSavedPath = savedPath
     } else if (saveAs || !savedPath) {
       // A never-saved document still called "Untitled" gets a name derived from its first heading
@@ -932,6 +936,7 @@ async function saveOnce(
       }
       savedPath = result.path!
       passwordIntentPending = result.passwordIntentPending === true
+      if (result.data) fullBytes = new Uint8Array(result.data)
       if (!doc.filePath) pathlessDocSavedPath = savedPath
     } else {
       const result = await window.desktop.saveDocx(savedPath, buffer, auto)
@@ -945,9 +950,10 @@ async function saveOnce(
         return false
       }
       passwordIntentPending = result.passwordIntentPending === true
+      if (result.data) fullBytes = new Uint8Array(result.data)
     }
     // parse before the identity check: a document opened during this await must not be rewritten
-    const reparsed = await parseDocx(bytes)
+    const reparsed = await parseDocx(fullBytes ?? bytes)
     if (editor.state.doc !== docSnapshot || passwordIntentPending) {
       // The user kept editing, opened another document or chose another
       // password after the main process captured this save. Keep the live state
@@ -973,6 +979,7 @@ async function saveOnce(
       return true
     }
     // Reload from saved bytes so docxIndex anchors point at the new file.
+    setLazyMediaHashes(reparsed.extras.lazyMediaHashes)
     setDocFontTable(reparsed.fontTable)
     editor.storage.listNumbering.styles = reparsed.styles
     editor.storage.listNumbering.docDefaults = reparsed.docDefaults

@@ -244,6 +244,7 @@ export interface McpSaveResult {
   path?: string
   error?: string
   passwordIntentPending?: boolean
+  data?: ArrayBuffer
 }
 
 export interface DesktopApi {
@@ -315,6 +316,9 @@ export interface DesktopApi {
     reason?: 'external-modified'
     /** a newer password choice arrived after this save's snapshot */
     passwordIntentPending?: boolean
+    /** the saved document in full when an encrypted save absorbed lazily served
+     *  pictures: the renderer reparses from it and leaves lazy mode */
+    data?: ArrayBuffer
   }>
   /** crash-recovery copy of a dirty document, stored under userData */
   writeRecoveryCopy(path: string, data: ArrayBuffer): Promise<{ ok: boolean }>
@@ -335,12 +339,24 @@ export interface DesktopApi {
     defaultName: string,
     data: ArrayBuffer,
     sourcePath?: string | null,
-  ): Promise<{ ok: boolean; path?: string; error?: string; passwordIntentPending?: boolean }>
+  ): Promise<{
+    ok: boolean
+    path?: string
+    error?: string
+    passwordIntentPending?: boolean
+    data?: ArrayBuffer
+  }>
   /** first save of a new document: silently writes into the default folder, no dialog */
   saveDocxNew(
     defaultName: string,
     data: ArrayBuffer,
-  ): Promise<{ ok: boolean; path?: string; error?: string; passwordIntentPending?: boolean }>
+  ): Promise<{
+    ok: boolean
+    path?: string
+    error?: string
+    passwordIntentPending?: boolean
+    data?: ArrayBuffer
+  }>
   /** MCP-driven output: write the current document to an explicit absolute path
    *  with no dialog; refuses to replace an existing file unless overwrite is true */
   saveDocxTo(path: string, data: ArrayBuffer, overwrite: boolean): Promise<McpSaveResult>

@@ -459,13 +459,32 @@ export function appendFloatSpillBlock(
   return top + spill
 }
 
-/** Extract each tr's tblHeader/cantSplit/atLeast-trHeight flags from table XML (header repetition across breaks / unsplittable rows / reserved row heights) */
+/** Extract each tr's tblHeader/cantSplit/keepNext/atLeast-trHeight flags from table XML (header
+ *  repetition across breaks / unsplittable rows / rows kept with the next row / reserved row heights).
+ *  `styleKeepNext` resolves a cell paragraph's pStyle to its keepNext (Word probe 2026-09-17: one
+ *  keepNext paragraph anywhere in the row chains it to the next row). */
 export function tableRowFlags(
   tableXml: string,
-): Array<{ isHeader: boolean; cantSplit: boolean; minHPx?: number }> {
-  const flags: Array<{ isHeader: boolean; cantSplit: boolean; minHPx?: number }> = []
+  styleKeepNext?: (styleId: string) => boolean,
+): Array<{ isHeader: boolean; cantSplit: boolean; keepNext?: boolean; minHPx?: number }> {
+  const flags: Array<{
+    isHeader: boolean
+    cantSplit: boolean
+    keepNext?: boolean
+    minHPx?: number
+  }> = []
   for (const m of tableXml.matchAll(/<w:tr[\s>][\s\S]*?(?=<w:tr[\s>]|<\/w:tbl>)/g)) {
     const trPr = m[0].match(/<w:trPr>[\s\S]*?<\/w:trPr>/)?.[0] ?? ''
+    let keepNext = false
+    for (const pp of m[0].matchAll(/<w:pPr>([\s\S]*?)<\/w:pPr>/g)) {
+      const direct = /<w:keepNext\b[^>]*>/.exec(pp[1])?.[0]
+      if (direct) {
+        if (!/w:val="(?:0|false)"/.test(direct)) keepNext = true
+        continue
+      }
+      const styleId = /<w:pStyle w:val="([^"]+)"/.exec(pp[1])?.[1]
+      if (styleId && styleKeepNext?.(styleId)) keepNext = true
+    }
     // non-exact w:trHeight = atLeast (parse.ts semantics); exact rows keep the
     // split path (deliberate clip deviation, see _placeTable). Clamp mirrors
     // parse.ts (MS-OI29500 2.1.51: 31680 twips / 22in).
@@ -475,6 +494,7 @@ export function tableRowFlags(
     flags.push({
       isHeader: /<w:tblHeader(?!\s+w:val="(?:0|false)")/.test(trPr),
       cantSplit: /<w:cantSplit(?!\s+w:val="(?:0|false)")/.test(trPr),
+      ...(keepNext ? { keepNext } : {}),
       ...(atLeast ? { minHPx: Math.min(val, 31680) / 15 } : {}),
     })
   }

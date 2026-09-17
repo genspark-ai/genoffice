@@ -23,8 +23,13 @@
     "@genoffice/project-store": "*",
     "@genoffice/ui": "*",
     "@tiptap/core": "3.31.0",
+    "@tiptap/extension-bold": "3.31.0",
     "@tiptap/extension-code-block": "3.31.0",
+    "@tiptap/extension-hard-break": "3.31.0",
+    "@tiptap/extension-heading": "3.31.0",
+    "@tiptap/extension-horizontal-rule": "3.31.0",
     "@tiptap/extension-image": "3.31.0",
+    "@tiptap/extension-italic": "3.31.0",
     "@tiptap/extension-list": "3.31.0",
     "@tiptap/extension-table": "3.31.0",
     "@tiptap/extensions": "3.31.0",
@@ -49,6 +54,8 @@
   "dependencies": {
     "@tiptap/extension-mathematics": "3.31.0",
     "katex": "^0.16.47",
-    "mermaid": "^11.17.2"
+    "json5": "^2.2.3",
+    "mermaid": "^11.17.2",
+    "wavedrom": "^3.7.0"
   }
 }

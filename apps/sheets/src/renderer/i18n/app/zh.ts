@@ -278,7 +278,6 @@ export const zh = {
   appTableFilterNoEdit: '该工作表的筛选属于 Excel 表格——编辑后暂时无法保存。',
   appAutofillStreaming: '暂不允许向仍在流式加载的区域自动填充。',
   appDvNeedsIndexed: '编辑数据验证需要该工作表先完成索引——稍后再试。',
-  appDuplicateNeedsFullLoad: '复制工作表需要完整加载模式——这个工作簿太大，只做了流式加载。',
   appPivotSheetNoDuplicate: '该工作表含数据透视表——暂不支持复制该表。',
   appDuplicateScopedNames: '该工作表含表级定义名称——暂不支持复制该表。',
   appMoveRowsColsUnsaved: '整列移动暂时无法保存到导入的工作簿——整行移动已支持。',
@@ -553,6 +552,8 @@ export const zh = {
   appFullyLoaded: '工作簿已完整加载——公式实时重算，行列可编辑。',
   appRangeMustBeVector: '{range} 必须是单行或单列的单元格。',
   appRangeTooManyCells: '{range} 超过 {max} 个单元格。',
+  appCopyLoadingRange: '正在为复制加载 {range}…',
+  appCopyValuesOnly: '{range} 已按纯值复制（{cells} 个单元格）：超过 {max} 个单元格不保留样式。',
   appSheetStillIndexing: '工作表还在索引中——稍后再试。',
   // Print (export PDF)
   appPrintNothing: '该工作表没有可打印的内容。',

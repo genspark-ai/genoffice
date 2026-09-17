@@ -1067,6 +1067,31 @@
   font-weight: bold;
   font-style: normal;
 }
+/* Berlin Sans FB Demi (Office display face): Word renders the real bold cut;
+   Arial Bold rescaled to its advances (probe 2026-09-17: 0.953x at 15pt), and the
+   demi weight is bold at every requested weight */
+@font-face {
+  font-family: 'Berlin Sans FB GO';
+  src:
+    local('Arial-BoldMT'),
+    local('Arial Bold'),
+    url('./LiberationSans-Bold.ttf') format('truetype');
+  size-adjust: 95.3%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Berlin Sans FB GO';
+  src:
+    local('Arial-BoldMT'),
+    local('Arial Bold'),
+    url('./LiberationSans-Bold.ttf') format('truetype');
+  size-adjust: 95.3%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
 /* MS Gothic family (Word-private on macOS, so the JA chain lands on Hiragino
  * Sans whose Latin is proportional and kana fullwidth). Advances measured from
  * Word's msgothic.ttc and confirmed by a Word probe (2026-09-03): MS Gothic
@@ -1103,6 +1128,35 @@
 }
 @font-face {
   font-family: 'MS Gothic GO';
+  src: url('./LiberationMono-Regular.ttf') format('truetype');
+  unicode-range: U+00A8, U+00B0, U+00B4;
+  size-adjust: 166.667%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+/* MS Mincho: the same fixed-pitch half-width Latin as MS Gothic (Word probe 2026-09-17) */
+@font-face {
+  font-family: 'MS Mincho GO';
+  src: url('./LiberationMono-Regular.ttf') format('truetype');
+  unicode-range:
+    U+0020-007E, U+00A0-00A6, U+00A9-00AF, U+00B2-00B3, U+00B5, U+00B7-00D6, U+00D8-00F6,
+    U+00F8-00FF;
+  size-adjust: 83.333%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'MS Mincho GO';
+  src: url('./NotoSansCJKsc-Regular-subset.woff2') format('woff2');
+  unicode-range: U+00A7, U+00B1, U+00B6, U+00D7, U+00F7;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'MS Mincho GO';
   src: url('./LiberationMono-Regular.ttf') format('truetype');
   unicode-range: U+00A8, U+00B0, U+00B4;
   size-adjust: 166.667%;

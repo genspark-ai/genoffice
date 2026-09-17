@@ -2844,32 +2844,6 @@ th.cell-rev-del {
   color: var(--text);
 }
 
-/* docked handle at the page edge while the pane is closed: the View-tab
-   toggle alone was too easy to miss */
-.nav-edge-tab {
-  position: absolute;
-  left: 0;
-  top: 16px;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px 6px 8px;
-  border: 1px solid var(--border);
-  border-left: none;
-  border-radius: 0 8px 8px 0;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  box-shadow: var(--shadow-btn-hover);
-}
-
-.nav-edge-tab:hover {
-  background: var(--hover);
-  color: var(--accent);
-}
-
 .nav-pane-list {
   overflow-y: auto;
   padding: 6px 0;
@@ -4253,6 +4227,12 @@ th.cell-rev-del {
   font-size: inherit;
 }
 
+/* text of a w:bidi paragraph whose runs carry no w:rtl: one LTR item on an RTL line (Word) */
+.doc-ltr-runs {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 .doc-link {
   color: var(--docs-paper-link);
   text-decoration: underline;
@@ -4343,6 +4323,7 @@ th.cell-rev-del {
   /* --li-marker-lh: 0 for scaled substitute glyphs; an oversized level w:sz sets the
      marker's natural height (Word does not grid-snap the number like a run) */
   line-height: var(--li-marker-lh, inherit);
+  vertical-align: var(--li-marker-va, baseline);
   /* w:lvl rPr color; the --dk-li-mc twin recolors it on the dark page */
   color: var(--li-marker-color, inherit);
 }
@@ -4540,9 +4521,9 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   pointer-events: none;
 }
 
-/* Native ProseMirror tables */
+/* Native ProseMirror tables: no vertical gap of their own (Word) */
 .doc-page > .doc-table {
-  margin: 2px 0;
+  margin: 0;
 }
 
 .doc-protected[data-doc-protected='table'] {
@@ -5049,6 +5030,8 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
    the pagination preview clones per-page flow with no gaps, so it neutralizes it */
 .doc-protected-floating > .doc-textbox {
   translate: 0 var(--page-float-dy, 0px);
+  /* anchored shapes keep their declared extent past the column (Word) */
+  max-width: none;
 }
 .pv-clip .doc-protected-floating > .doc-textbox {
   translate: none;
@@ -5125,9 +5108,12 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
 }
 
 /* anchor-paragraph text next to all-floating boxes keeps its flow line:
-   the wrapper takes the stray line's height instead of collapsing */
+   the wrapper takes the stray line's height instead of collapsing. flow-root
+   keeps the line's space-before inside, where Word's paragraph-relative box
+   offsets count from */
 .doc-protected.doc-protected-floating.doc-protected-floating-stray {
   height: auto;
+  display: flow-root;
 }
 
 /* preview: an anchor-shifted box reaching above its page top rides --pv-anchor-lift
@@ -5255,6 +5241,7 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   font-family: var(--li-marker-font, inherit);
   font-size: calc(var(--li-marker-size, 1em) * var(--li-marker-scale, 1));
   line-height: var(--li-marker-lh, inherit);
+  vertical-align: var(--li-marker-va, baseline);
   color: var(--li-marker-color, inherit);
 }
 
@@ -5285,6 +5272,7 @@ body.docs-crop-active .doc-protected[data-doc-protected='image'] .doc-img-wrap {
   font-family: var(--li-marker-font, inherit);
   font-size: calc(var(--li-marker-size, 1em) * var(--li-marker-scale, 1));
   line-height: var(--li-marker-lh, inherit);
+  vertical-align: var(--li-marker-va, baseline);
   color: var(--li-marker-color, inherit);
 }
 
@@ -9261,7 +9249,6 @@ body.docs-crop-active
   .status-bar,
   .ai-dock,
   .nav-pane,
-  .nav-edge-tab,
   .ruler,
   .find-panel {
     display: none !important;
@@ -9484,7 +9471,6 @@ body.docs-crop-active
 .read-mode .ribbon,
 .read-mode .ai-dock,
 .read-mode .nav-pane,
-.read-mode .nav-edge-tab,
 .read-mode .find-panel,
 .read-mode .comments-pane,
 .read-mode .split-pane {

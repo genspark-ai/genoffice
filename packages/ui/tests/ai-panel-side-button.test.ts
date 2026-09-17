@@ -3,6 +3,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AiPanelSideButton } from '../src/AiPanelSideButton'
+import { AI_PANEL_SIDE_LABELS } from '../src/strings-ai-panel-side'
 import { applyAiPanelPrefs } from '../src/ai-panel-prefs-store'
 import { DEFAULT_AI_PANEL_PREFS } from '../src/ai-panel-prefs'
 
@@ -45,7 +46,7 @@ it('keeps the existing side when saving the preference fails', async () => {
   act(() => root.render(createElement(AiPanelSideButton, { lang: 'zh', onMove })))
   const button = host.querySelector('button')!
   await act(async () => button.click())
-  expect(button.getAttribute('aria-label')).toBe('将 AI 面板移到右侧')
+  expect(button.getAttribute('aria-label')).toBe(AI_PANEL_SIDE_LABELS.zh.right)
   expect(button.disabled).toBe(false)
   expect(document.documentElement.dataset.aiPanelSide).not.toBe('right')
 })

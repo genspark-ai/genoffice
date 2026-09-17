@@ -310,8 +310,6 @@ export const en = {
   appAutofillStreaming: 'Autofill into an area that is still streaming in is not allowed yet.',
   appDvNeedsIndexed:
     'Editing data validation needs this sheet fully indexed first — try again in a moment.',
-  appDuplicateNeedsFullLoad:
-    'Duplicating a sheet needs the fully-loaded mode — this workbook is too large and streams partially.',
   appPivotSheetNoDuplicate:
     'This sheet contains a PivotTable — duplicating it is not supported yet.',
   appDuplicateScopedNames:
@@ -606,6 +604,9 @@ export const en = {
   appFullyLoaded: 'Workbook fully loaded — formulas recalculate live, rows/columns editable.',
   appRangeMustBeVector: '{range} must be a single row or a single column of cells.',
   appRangeTooManyCells: '{range} covers more than {max} cells.',
+  appCopyLoadingRange: 'Loading {range} for copy…',
+  appCopyValuesOnly:
+    '{range} copied as values only ({cells} cells): styles are kept only up to {max} cells.',
   appSheetStillIndexing: 'The sheet is still indexing — try again in a moment.',
   appPrintNothing: 'The sheet has nothing to print.',
   appPrintTooLarge:

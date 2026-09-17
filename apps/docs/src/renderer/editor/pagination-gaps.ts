@@ -4,10 +4,41 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import type { LineAnchor } from '../pagination'
 import { rangeSlot } from '../dom-range'
+import { TopLevelPositions } from './top-level-pos'
 
 const anchorRange = rangeSlot()
 
 const key = new PluginKey<DecorationSet>('paginationGaps')
+
+/**
+ * The decoration metas of one pagination pass, dispatched as a single
+ * transaction. Each dispatch is a view update whose next DOM read forces a
+ * whole-document layout, so four dispatches per pass cost four layouts.
+ */
+export class LayoutBatch {
+  private readonly metas: Array<[PluginKey | string, unknown]> = []
+  private readonly after: Array<() => void> = []
+
+  constructor(private readonly view: EditorView) {}
+
+  set(key: PluginKey | string, value: unknown): void {
+    this.metas.push([key, value])
+  }
+
+  /** DOM-only work that must follow the dispatch */
+  then(fn: () => void): void {
+    this.after.push(fn)
+  }
+
+  commit(): void {
+    if (this.metas.length > 0) {
+      let tr = this.view.state.tr.setMeta('addToHistory', false)
+      for (const [k, v] of this.metas) tr = tr.setMeta(k, v)
+      this.view.dispatch(tr)
+    }
+    for (const fn of this.after) fn()
+  }
+}
 
 /**
  * Always-on pagination in the canvas: renders a "page gap" widget before each
@@ -89,6 +120,7 @@ export function rowFillAttrs(
 export function setRowFills(
   view: EditorView,
   fills: Array<{ el: Element; targetPx: number; extraPx?: number }>,
+  batch?: LayoutBatch,
 ): void {
   const decos: Decoration[] = []
   for (const [i, fill] of fills.entries()) {
@@ -110,8 +142,10 @@ export function setRowFills(
   }
   const next = DecorationSet.create(view.state.doc, decos)
   const prev = rowFillKey.getState(view.state)
-  if (!prev || !sameGaps(prev, next))
-    view.dispatch(view.state.tr.setMeta(rowFillKey, next).setMeta('addToHistory', false))
+  if (!prev || !sameGaps(prev, next)) {
+    if (batch) batch.set(rowFillKey, next)
+    else view.dispatch(view.state.tr.setMeta(rowFillKey, next).setMeta('addToHistory', false))
+  }
 }
 
 /**
@@ -202,15 +236,19 @@ export function insideFloatTable(el: Element): boolean {
 export function setFloatVShifts(
   view: EditorView,
   shifts: Array<{ el: Element; dyPx: number; flow?: boolean; carryPx?: number }>,
+  batch?: LayoutBatch,
 ): void {
   const decos: Decoration[] = []
   const flowKeys: string[] = []
+  const positions = new TopLevelPositions(view)
   for (const [i, shift] of shifts.entries()) {
     if (shift.carryPx !== undefined) {
       const carry = Math.round(shift.carryPx * 10) / 10
       if (carry < 0.5) continue
       try {
-        const pos = view.state.doc.resolve(view.posAtDOM(shift.el, 0)).before(1)
+        const pos =
+          positions.of(shift.el)?.from ??
+          view.state.doc.resolve(view.posAtDOM(shift.el, 0)).before(1)
         decos.push(
           Decoration.widget(
             pos,
@@ -232,7 +270,9 @@ export function setFloatVShifts(
     const dy = Math.round(shift.dyPx * 10) / 10
     if (!shift.flow && Math.abs(dy) < 0.5) continue
     try {
-      const $inside = view.state.doc.resolve(view.posAtDOM(shift.el, 0))
+      // a top-level table / protected block resolves from the walk; nested ones (cell content) still scan
+      const top = shift.el.parentElement === view.dom ? positions.of(shift.el) : null
+      const $inside = view.state.doc.resolve(top ? top.from + 1 : view.posAtDOM(shift.el, 0))
       for (let d = $inside.depth; d > 0; d--) {
         const name = $inside.node(d).type.name
         if (name !== 'docTable' && name !== 'docProtected') continue
@@ -270,12 +310,17 @@ export function setFloatVShifts(
       .map((d) => String(d.from))
       .sort()
     const flowChanged = prevFlow.join(',') !== flowKeys.sort().join(',')
-    view.dispatch(
-      view.state.tr
-        .setMeta(floatVKey, next)
-        .setMeta(floatFlowChangedMeta, flowChanged)
-        .setMeta('addToHistory', false),
-    )
+    if (batch) {
+      batch.set(floatVKey, next)
+      batch.set(floatFlowChangedMeta, flowChanged)
+    } else {
+      view.dispatch(
+        view.state.tr
+          .setMeta(floatVKey, next)
+          .setMeta(floatFlowChangedMeta, flowChanged)
+          .setMeta('addToHistory', false),
+      )
+    }
   }
 }
 
@@ -406,7 +451,9 @@ export function setPageGaps(
    *  a zero-height page-float-host widget that measurement/clones ignore
    *  (not page-gap: page-boundary consumers must not count it as a page) */
   firstPageEls?: { els: HTMLElement[]; key: string },
+  batch?: LayoutBatch,
 ): void {
+  const positions = new TopLevelPositions(view)
   const decos: Decoration[] = []
   if (firstPageEls?.els.length) {
     decos.push(
@@ -432,8 +479,14 @@ export function setPageGaps(
     if ('el' in gap) {
       kind = 'block'
       try {
-        const $inside = view.state.doc.resolve(view.posAtDOM(gap.el, 0))
-        pos = $inside.before(1)
+        let after: number
+        const range = positions.of(gap.el)
+        if (range) ({ from: pos, to: after } = range)
+        else {
+          const $inside = view.state.doc.resolve(view.posAtDOM(gap.el, 0))
+          pos = $inside.before(1)
+          after = $inside.after(1)
+        }
         if (gap.carryPx !== undefined) {
           const carry = Math.round(gap.carryPx)
           decos.push(
@@ -455,7 +508,7 @@ export function setPageGaps(
           decos.push(
             Decoration.node(
               pos,
-              $inside.after(1),
+              after,
               { class: 'page-break-lead' },
               { key: `page-lead-${ordinal}` },
             ),
@@ -517,17 +570,23 @@ export function setPageGaps(
   }
   const next = DecorationSet.create(view.state.doc, decos)
   const prev = key.getState(view.state)
-  if (!prev || !sameGaps(prev, next))
-    view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+  if (!prev || !sameGaps(prev, next)) {
+    if (batch) batch.set(key, next)
+    else view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+  }
   // DOM-only rowspan bridging; observer paused so PM never re-parses the mutated
   // cells (a reparse would wipe cell attrs that don't round-trip through DOM)
-  const obs = (view as unknown as { domObserver?: { stop(): void; start(): void } }).domObserver
-  obs?.stop()
-  try {
-    syncPhantomRowspans(view.dom as HTMLElement)
-  } finally {
-    obs?.start()
+  const bridge = () => {
+    const obs = (view as unknown as { domObserver?: { stop(): void; start(): void } }).domObserver
+    obs?.stop()
+    try {
+      syncPhantomRowspans(view.dom as HTMLElement)
+    } finally {
+      obs?.start()
+    }
   }
+  if (batch) batch.then(bridge)
+  else bridge()
 }
 
 /** Line top of a cut anchor (screen px); falls back to the parent element's top. */
@@ -1131,7 +1190,11 @@ export function syncFloatShifts(
     })
     acc += r.height
   }
-  for (const f of floats) {
+  // reads first: a style write between two getBoundingClientRect calls forces
+  // a whole-document layout per float (thousands of anchored pictures hung
+  // the renderer for minutes)
+  const curTops = floats.map((f) => f.el.getBoundingClientRect().top)
+  floats.forEach((f, i) => {
     let above = 0
     let pageStart = 0
     let pagePush = firstPagePush
@@ -1153,8 +1216,7 @@ export function syncFloatShifts(
     const rel = f.pageRelV ? f.top - (f.anchorTop ?? 0) - (f.pageRelFromPage ? pagePush : 0) : f.top
     const desired = origin + (pageStart + rel) * factor + above
     const applied = parseFloat(f.el.dataset.pageFloatDy ?? '0') || 0
-    const cur = f.el.getBoundingClientRect().top
-    const next = applied + (desired - cur) / factor
+    const next = applied + (desired - curTops[i]) / factor
     if (Math.abs(next) < 0.5) {
       f.el.style.removeProperty('--page-float-dy')
       delete f.el.dataset.pageFloatDy
@@ -1162,7 +1224,7 @@ export function syncFloatShifts(
       f.el.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
       f.el.dataset.pageFloatDy = String(next)
     }
-  }
+  })
 }
 
 /**
@@ -1176,7 +1238,13 @@ export function syncFloatShifts(
  */
 export function syncAnchorBands(pm: HTMLElement, factor: number): void {
   let run: HTMLElement[] = []
+  // the inputs are static band data and anchor-line heights, so the writes
+  // can wait until the walk has read everything (no layout per anchor run)
+  const writes: Array<[HTMLElement, number]> = []
   const apply = (el: HTMLElement, minHeight: number): void => {
+    writes.push([el, minHeight])
+  }
+  const commit = (el: HTMLElement, minHeight: number): void => {
     const own = Math.round(parseFloat(el.dataset.band ?? '0') || 0)
     if (minHeight === own) {
       if (el.dataset.bandAdj === undefined) return
@@ -1303,6 +1371,7 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
   }
   flush()
   settleBeside(null)
+  for (const [el, minHeight] of writes) commit(el, minHeight)
 }
 
 /**
@@ -1314,11 +1383,13 @@ export function syncAnchorBands(pm: HTMLElement, factor: number): void {
  * --page-float-dy channel as syncFloatShifts.
  */
 export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: number): void {
-  for (const box of Array.from(
+  const boxes = Array.from(
     pm.querySelectorAll<HTMLElement>('.doc-cell-boxes > .doc-textbox, .doc-cell-boxes > div'),
-  )) {
-    const r = box.getBoundingClientRect()
-    if (r.height <= 0) continue
+  )
+  const rects = boxes.map((box) => box.getBoundingClientRect())
+  boxes.forEach((box, i) => {
+    const r = rects[i]
+    if (r.height <= 0) return
     const applied = parseFloat(box.dataset.pageFloatDy ?? '0') || 0
     const naturalTop = r.top - applied * factor
     const next = Math.max(0, (paperTop - naturalTop) / factor)
@@ -1331,7 +1402,38 @@ export function clampCellBoxTops(pm: HTMLElement, paperTop: number, factor: numb
       box.style.setProperty('--page-float-dy', `${next.toFixed(1)}px`)
       box.dataset.pageFloatDy = String(next)
     }
-  }
+  })
+}
+
+/** Word confines a layoutInCell picture to its cell: a negative anchor offset
+ *  lifting it past the cell top is pushed back down (--cell-lift margin term). */
+export function clampCellImageTops(pm: HTMLElement, factor: number): void {
+  const imgs = Array.from(pm.querySelectorAll<HTMLElement>('td img[data-cell-lift]'))
+  const rects = imgs.map((img) => {
+    const cell = img.closest('td')
+    if (!cell) return null
+    const cs = getComputedStyle(cell)
+    const inset = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0)
+    return {
+      top: img.getBoundingClientRect().top,
+      cellTop: cell.getBoundingClientRect().top + inset * factor,
+    }
+  })
+  imgs.forEach((img, i) => {
+    const r = rects[i]
+    if (!r) return
+    const applied = parseFloat(img.dataset.cellLiftDy ?? '') || 0
+    const next = Math.max(0, (r.cellTop - (r.top - applied * factor)) / factor)
+    if (next < 0.5) {
+      if (applied) {
+        img.style.removeProperty('--cell-lift')
+        delete img.dataset.cellLiftDy
+      }
+    } else if (Math.abs(next - applied) > 0.5) {
+      img.style.setProperty('--cell-lift', `${next.toFixed(1)}px`)
+      img.dataset.cellLiftDy = String(next)
+    }
+  })
 }
 
 /**
@@ -1353,23 +1455,23 @@ export function alignTableGapFills(pm: HTMLElement, factor: number): void {
   // ('-32.0px' would read back as '-32px' and defeat the dirty checks)
   const px = (v: number) => `${Math.round(v * 10) / 10}px`
   const pmRect = pm.getBoundingClientRect()
-  for (const fill of Array.from(fills)) {
-    const cell = fill.parentElement
-    if (!cell) continue
+  // measure every cell before the first style write (one layout, not one per fill)
+  const cellLefts = Array.from(fills, (fill) => fill.parentElement?.getBoundingClientRect().left)
+  Array.from(fills).forEach((fill, i) => {
+    const cellLeft = cellLefts[i]
+    if (cellLeft === undefined) return
     // differing-width documents: the fill covers the table's own page, not the paper
     const gap = fill.closest<HTMLElement>('.page-gap')
     const pageX = parseFloat(gap?.style.getPropertyValue('--gap-page-x') ?? '')
     const pageW = parseFloat(gap?.style.getPropertyValue('--gap-page-w') ?? '')
     const onPage = Number.isFinite(pageX) && Number.isFinite(pageW)
-    const left = px(
-      (pmRect.left - cell.getBoundingClientRect().left) / factor + (onPage ? pageX : 0),
-    )
+    const left = px((pmRect.left - cellLeft) / factor + (onPage ? pageX : 0))
     const width = px(onPage ? pageW : pmRect.width / factor)
     if (fill.style.left !== left) fill.style.left = left
     if (fill.style.width !== width) fill.style.width = width
     // inset:0 from the stylesheet would over-constrain against the explicit width
     if (fill.style.right !== 'auto') fill.style.right = 'auto'
-  }
+  })
 }
 
 /**
@@ -1382,7 +1484,18 @@ export function alignTableGapFills(pm: HTMLElement, factor: number): void {
 export function alignGapHfStrips(pm: HTMLElement, bodyLeftPx: number, factor: number): void {
   const pmLeft = pm.getBoundingClientRect().left
   const canvasTarget = pmLeft + bodyLeftPx * factor
-  for (const el of Array.from(pm.querySelectorAll<HTMLElement>('.page-gap-hf'))) {
+  const strips = Array.from(pm.querySelectorAll<HTMLElement>('.page-gap-hf'))
+  // widget DOM reused from an equal-width era still carries the stylesheet
+  // centering (left:50% + translateX(-50%)): pin every strip before measuring,
+  // or the increment is applied against the wrong base. Pins, then one round
+  // of measurement, then the shifts: a write between two measurements forces
+  // a whole-document layout per strip
+  for (const el of strips) {
+    if (el.style.transform !== 'none') el.style.transform = 'none'
+    if (!el.style.left) el.style.left = '0px'
+  }
+  const stripLefts = strips.map((el) => el.getBoundingClientRect().left)
+  strips.forEach((el, i) => {
     // prefer the strip's own section inset (--hf-ml: the footer above a section
     // break belongs to the PREVIOUS section, the header below it to the next one),
     // then the gap's next-section inset (--gap-ml, makeGapEl): mixed-margin
@@ -1393,26 +1506,20 @@ export function alignGapHfStrips(pm: HTMLElement, bodyLeftPx: number, factor: nu
       el.closest<HTMLElement>('.page-gap')?.style.getPropertyValue('--gap-ml')
     const ownPx = own ? parseFloat(own) : NaN
     const target = Number.isFinite(ownPx) ? pmLeft + ownPx * factor : canvasTarget
-    // widget DOM reused from an equal-width era still carries the stylesheet
-    // centering (left:50% + translateX(-50%)): pin it before measuring, or the
-    // increment is applied against the wrong base
-    if (el.style.transform !== 'none') el.style.transform = 'none'
-    if (!el.style.left) el.style.left = '0px'
-    const delta = (target - el.getBoundingClientRect().left) / factor
-    if (Math.abs(delta) < 0.5) continue
+    const delta = (target - stripLefts[i]) / factor
+    if (Math.abs(delta) < 0.5) return
     el.style.left = `${((parseFloat(el.style.left) || 0) + delta).toFixed(1)}px`
-  }
+  })
   // floating header images and footnote areas carry their paper x; an image's own
   // rect includes the anchor translate, so re-anchor from the positioned host's origin
-  for (const el of Array.from(pm.querySelectorAll<HTMLElement>('.page-gap [data-paper-x]'))) {
-    const host = el.offsetParent
-    if (!host) continue
-    const left = (
-      parseFloat(el.dataset.paperX!) -
-      (host.getBoundingClientRect().left - pmLeft) / factor
-    ).toFixed(1)
+  const anchored = Array.from(pm.querySelectorAll<HTMLElement>('.page-gap [data-paper-x]'))
+  const hostLefts = anchored.map((el) => el.offsetParent?.getBoundingClientRect().left)
+  anchored.forEach((el, i) => {
+    const hostLeft = hostLefts[i]
+    if (hostLeft === undefined) return
+    const left = (parseFloat(el.dataset.paperX!) - (hostLeft - pmLeft) / factor).toFixed(1)
     if (el.style.left !== `${left}px`) el.style.left = `${left}px`
-  }
+  })
 }
 
 /** remove all float display shifts (leaving print view) */

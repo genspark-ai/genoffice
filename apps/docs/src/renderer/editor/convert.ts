@@ -1,5 +1,6 @@
 import {
   mergePPrFormat,
+  parseLazyMediaUrl,
   setPPrChange,
   stripPPrChange,
   ommlToLatex,
@@ -347,13 +348,15 @@ const MEASURED_SLACK = 1.02
 /** collapsed half-borders plus px rounding eat ~1px per side of the measured word (CI cap tables shattered "Board") */
 const MEASURED_EDGE_PX = 2
 
-/** per grid column (twips): widest unbreakable word in single-span cells, plus side padding */
+/** per grid column (twips): widest unbreakable word in single-span cells, plus side
+ * padding; `bare` drops the slack (a grid Word laid out already holds its words) */
 function minContentColTwips(
   model: TableModel,
   colCount: number,
   metrics: FontMetricsProvider | null,
+  bare = false,
 ): number[] {
-  const slack = metrics ? MEASURED_SLACK : MIN_CONTENT_SLACK
+  const slack = bare ? 1 : metrics ? MEASURED_SLACK : MIN_CONTENT_SLACK
   const mins = new Array<number>(colCount).fill(0)
   for (const row of model.rows) {
     let column = 0
@@ -371,7 +374,7 @@ function minContentColTwips(
       }
       let wordPx = cellMaxWordPx(cell, metrics)
       if (wordPx <= 0) continue
-      if (metrics) wordPx += MEASURED_EDGE_PX
+      if (metrics && !bare) wordPx += MEASURED_EDGE_PX
       mins[start] = Math.max(mins[start], Math.ceil(wordPx * slack * 15) + pad)
     }
   }
@@ -469,6 +472,7 @@ export function expandAutofitColWidths(
   fitTwips: number = availTwips,
   metrics: FontMetricsProvider | null = canvasMetrics(),
   nested = false,
+  legacy = false,
 ): TableModel {
   const indent = tableIndentTwips(model)
   const budget = availTwips - indent
@@ -493,16 +497,36 @@ export function expandAutofitColWidths(
     }
   }
   if (autofit && (resolvedPct || !model.widthPct) && widths?.length && budget > 0) {
-    const mins = minContentColTwips(model, widths.length, metrics).map((m) => Math.min(m, budget))
+    const mins = minContentColTwips(model, widths.length, metrics, !!model.layoutGrid).map((m) =>
+      Math.min(m, budget),
+    )
     const declared = widths.reduce((a, b) => a + b, 0)
-    const target = Math.min(fitTwips, availTwips) - indent
-    // Word aligns cell text, not the border, with the text column: a tblW auto
-    // grid may hang into both margins by its side cell margins, and over-wide
-    // tcW (preferred widths) compress to that box, not to the column itself.
-    // A nested table sits inside the cell padding, so it never hangs.
+    const fit = Math.min(fitTwips, availTwips)
+    const target = fit - indent
+    // Over-wide tblW-auto preferred widths compress to the column less the
+    // signed table indent (Word probe 2026-09-17, compat 14 and 15: tblInd -108
+    // widens the box by 108, +558 narrows it by 558, the right edge stays on
+    // the margin). Compat < 15 measures the indent to the cell text, so the
+    // border box hangs by the side cell margins - the left one is already in
+    // the legacy indent shift, the right one is added here (centered tables
+    // shift nothing and hang on both sides). A nested table sits inside the
+    // cell padding, so it never hangs. An explicit dxa tblW is honoured as
+    // long as the table stays on the paper (measured: landscape and portrait
+    // forms 7-22% wider than the column, negative tblInd, drawn at full width).
     const sideMar = sideMarginTwips(model)
+    const leftAligned = model.align !== 'center' && model.align !== 'right'
+    const legacyHang = !legacy
+      ? 0
+      : leftAligned && !model.floatSide
+        ? (model.cellMarTwips?.right ?? DEFAULT_CELL_MAR)
+        : sideMar
+    const box = fit - (leftAligned ? (model.indentTwips ?? 0) : 0) + legacyHang
+    const hang = leftAligned ? Math.min(model.indentTwips ?? 0, 0) : 0
+    const explicitDxa = !model.autoLayout && !nested && declared + hang <= budget
     const kept =
-      resolvedPct || nested ? target : Math.max(target, Math.min(declared, target + sideMar))
+      resolvedPct || nested
+        ? target
+        : Math.max(target, explicitDxa ? declared : Math.min(declared, box))
     if (mins.some((m, i) => m > widths![i]) || (!resolvedPct && declared > kept)) {
       const grown = widths.map((w, i) => Math.max(w, mins[i]))
       const overflow = grown.reduce((a, b) => a + b, 0) - kept
@@ -558,7 +582,14 @@ function displayTable(
   if (options.legacyTableIndent) t = legacyIndentTable(t)
   if (rowCapTwips != null) t = capTableRowHeights(t, rowCapTwips)
   if (budget != null) {
-    t = expandAutofitColWidths(t, budgetAvail(t, budget), budget.fit)
+    t = expandAutofitColWidths(
+      t,
+      budgetAvail(t, budget),
+      budget.fit,
+      undefined,
+      false,
+      options.legacyTableIndent ?? false,
+    )
     t = clampTableColWidths(t, budget.paper)
   }
   return t
@@ -773,7 +804,14 @@ export function tableModelToPmNode(
   if (legacyIndent) model = legacyIndentTable(model)
   if (rowCapTwips != null) model = capTableRowHeights(model, rowCapTwips)
   if (availTwips != null) {
-    model = expandAutofitColWidths(model, availTwips, fitTwips ?? availTwips)
+    model = expandAutofitColWidths(
+      model,
+      availTwips,
+      fitTwips ?? availTwips,
+      undefined,
+      false,
+      legacyIndent,
+    )
     model = clampTableColWidths(model, paperTwips ?? availTwips)
   }
   const positions = model.rows.map((row) => {
@@ -892,8 +930,8 @@ export function tableModelToPmNode(
               cellMar: cell.cellMarTwips ?? null,
               textDirection: cell.textDirection ?? null,
               fill: cell.fill ?? null,
-              color: cell.color ?? null,
-              bold: cell.bold ?? false,
+              color: cell.styleColor ?? null,
+              bold: cell.styleBold ?? false,
               align: cell.align ?? null,
               vAlign: cell.vAlign ?? null,
               borders: cell.borders ?? null,
@@ -2246,13 +2284,15 @@ export function pmDocToSavePlan(inputDoc: PmNode, originalBlocks: Block[]): Save
 /** rebuild a pasted image copy from its preview bytes; null when not materializable */
 function imageFromProtectedAttrs(node: PmNode): NewImage | null {
   if (node.attrs?.blockType !== 'image') return null
-  const m = /^data:(image\/(?:png|jpeg|gif));base64,(.+)$/.exec(
-    String(node.attrs?.imageDataUrl ?? ''),
-  )
+  const src = String(node.attrs?.imageDataUrl ?? '')
+  const lazy = parseLazyMediaUrl(src)
+  const m = lazy ? null : /^data:(image\/(?:png|jpeg|gif));base64,(.+)$/.exec(src)
   const widthPx = Number(node.attrs?.imageWidthPx)
   const heightPx = Number(node.attrs?.imageHeightPx)
-  if (!m || !widthPx || !heightPx) return null
-  const image: NewImage = { base64: m[2], mime: m[1] as NewImage['mime'], widthPx, heightPx }
+  if ((!m && !lazy) || !widthPx || !heightPx) return null
+  const image: NewImage = lazy
+    ? { base64: '', mime: 'image/png', sourcePart: lazy.partPath, widthPx, heightPx }
+    : { base64: m![2], mime: m![1] as NewImage['mime'], widthPx, heightPx }
   const align = node.attrs?.imageAlign as NewImage['align'] | null
   if (align) image.align = align
   const wrap = node.attrs?.imageWrap as ImageWrap | null

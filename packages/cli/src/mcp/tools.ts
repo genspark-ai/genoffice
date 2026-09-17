@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { CommandRegistry, OptionDef } from '../registry'
+import type { McpMode } from './run'
 
 /**
  * How a tool parameter reaches the command: `inline` values are written to a
@@ -471,15 +472,31 @@ export function stripVerbPrefix(description: string): string {
 
 export type ZodShape = Record<string, z.ZodTypeAny>
 
-export function toolShape(tool: ResolvedTool): ZodShape {
+/** Parameters that name a document on disk; a remote client passes URLs here instead. */
+export const PATH_KEYS = new Set(['file', 'from', 'outline'])
+
+const REMOTE_PATH_NOTE = '; or an http(s) URL, such as the one POST /files returned for an upload'
+const REMOTE_OUT_NOTE = '; omit it and the file comes back in the result as a download URL'
+
+export function toolShape(tool: ResolvedTool, mode: McpMode = 'stdio'): ZodShape {
+  const remote = mode === 'http'
   const shape: ZodShape = {}
   for (const p of tool.positionals ?? []) {
-    const s = z.string().describe(p.description)
+    const note = remote && PATH_KEYS.has(p.key) ? REMOTE_PATH_NOTE : ''
+    const s = z.string().describe(p.description + note)
     shape[p.key] = p.optional ? s.optional() : s
   }
   for (const p of tool.params) {
-    const s = kindSchema(p.kind).describe(p.description)
-    shape[p.key] = p.required ? s : s.optional()
+    let description = p.description
+    let required = p.required
+    if (remote && p.key === 'out') {
+      description = description.replace(/ \(required\)$/, '') + REMOTE_OUT_NOTE
+      required = false
+    } else if (remote && p.kind === 'string' && PATH_KEYS.has(p.option)) {
+      description += REMOTE_PATH_NOTE
+    }
+    const s = kindSchema(p.kind).describe(description)
+    shape[p.key] = required ? s : s.optional()
   }
   return shape
 }

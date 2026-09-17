@@ -101,3 +101,20 @@ describe('strip paragraph line spacing', () => {
     expect(paras[1].style.lineHeight).toBe('')
   })
 })
+
+describe('makeGapHfEl blank paragraph size', () => {
+  it('sizes a run-less paragraph line by its mark / style size', () => {
+    const el = makeGapHfEl({
+      kind: 'header',
+      value: {
+        text: '',
+        paras: [{ runs: [] }, { runs: [], emptyRunSizeHalfPoints: 24 }] as never,
+      },
+      pageNo: 1,
+      pageTotal: 1,
+    })
+    const paras = el.querySelectorAll<HTMLElement>('.page-hf-para')
+    expect(paras[0].style.fontSize).toBe('')
+    expect(paras[1].style.fontSize).toBe('12pt')
+  })
+})

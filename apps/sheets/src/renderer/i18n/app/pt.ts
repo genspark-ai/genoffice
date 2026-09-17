@@ -340,8 +340,6 @@ export const pt = {
     'O preenchimento automático em uma área ainda em streaming não é permitido por enquanto.',
   appDvNeedsIndexed:
     'Editar a validação de dados requer que esta planilha seja totalmente indexada primeiro — tente novamente em instantes.',
-  appDuplicateNeedsFullLoad:
-    'Duplicar uma planilha requer o modo de carregamento completo — esta pasta de trabalho é muito grande e é carregada parcialmente por streaming.',
   appPivotSheetNoDuplicate:
     'Esta planilha contém uma Tabela Dinâmica — duplicá-la ainda não é suportado.',
   appDuplicateScopedNames:
@@ -661,6 +659,9 @@ export const pt = {
     'Pasta de trabalho totalmente carregada — fórmulas recalculam ao vivo, linhas/colunas editáveis.',
   appRangeMustBeVector: '{range} deve ser uma única linha ou uma única coluna de células.',
   appRangeTooManyCells: '{range} cobre mais de {max} células.',
+  appCopyLoadingRange: 'Carregando {range} para copiar…',
+  appCopyValuesOnly:
+    '{range} copiado apenas como valores ({cells} células): os estilos só são mantidos até {max} células.',
   appSheetStillIndexing: 'A planilha ainda está sendo indexada — tente novamente em instantes.',
   appPrintNothing: 'A planilha não tem nada para imprimir.',
   appPrintTooLarge:

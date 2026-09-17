@@ -1,4 +1,6 @@
 import JSZip from 'jszip'
+import type { JSZipObject } from 'jszip'
+import { LAZY_MEDIA_PLACEHOLDER_BYTES, lazyMediaHashOf, lazyMediaUrl } from './lazy-media'
 import { parseCustGeom } from '@genoffice/pptx-engine/custgeom'
 import { parseChartPartXml } from './chart'
 import { findInkRuns, stripInkRuns } from './ink'
@@ -289,6 +291,8 @@ export interface ParseExtras {
   elements: BodyElement[]
   /** original XML of chart parts referenced by chart blocks (partPath -> xml) */
   chartParts: Record<string, string>
+  /** source-document hashes named by lazily served pictures */
+  lazyMediaHashes: string[]
 }
 
 export interface ParseOptions {
@@ -475,6 +479,7 @@ export async function parseDocx(
       styles,
       compatibilityMode,
       theme.fonts,
+      docDefaults,
     )
   const header = await readHf('header', 'default')
   const footer = await readHf('footer', 'default')
@@ -492,6 +497,7 @@ export async function parseDocx(
     theme.colors,
     compatibilityMode,
     theme.fonts,
+    docDefaults,
   )
   if (layoutSettings.balanceDbcsSpacing) {
     const hfGroups: Array<Run[] | undefined> = []
@@ -577,7 +583,7 @@ export async function parseDocx(
       bodyInnerStart: scan.innerStart,
       bodyInnerEnd: scan.innerEnd,
     },
-    extras: { elements, chartParts },
+    extras: { elements, chartParts, lazyMediaHashes: [...(lazyHashesByZip.get(zip) ?? [])] },
   }
 }
 
@@ -1297,10 +1303,16 @@ async function buildBlock(
         // geometry on Run.image and float in the editor like Word.
         const multiPic = (detect.match(/<a:blip[ />]/g) ?? []).length > 1
         const hasText = plainText(stripTextboxes(detect)).trim() !== ''
-        const anchoredDrawings = topLevelDrawings(detect).filter((f) =>
-          f.includes('<wp:anchor'),
-        ).length
-        if ((hasText && !hasWsp) || (multiPic && !detect.includes('<wp:anchor'))) {
+        const drawings = topLevelDrawings(detect)
+        const anchoredDrawings = drawings.filter((f) => f.includes('<wp:anchor')).length
+        // logo row (one floating + inline pictures): the image block would keep only the floating blip
+        const inlineBesideAnchor =
+          anchoredDrawings === 1 &&
+          drawings.some((f) => !f.includes('<wp:anchor') && f.includes('<pic:pic'))
+        if (
+          (hasText && !hasWsp) ||
+          (multiPic && (!detect.includes('<wp:anchor') || (inlineBesideAnchor && !hasWsp)))
+        ) {
           await resolveBlipMedia(detect, ctx)
           spanningPhotoRow =
             hasText &&
@@ -1407,6 +1419,10 @@ async function buildBlock(
         ...(stray && stray.runs.length > 0
           ? {
               strayRuns: stray.runs,
+              // the stray line lays out with the anchor paragraph's spacing and
+              // line rule; wp:positionV paragraph offsets count from the top of
+              // its space-before (Word probe 2026-09-17)
+              anchorLine: strayAnchorLine(xml, ctx),
               ...(stray.styleId ? { strayStyleId: stray.styleId } : {}),
               ...(stray.indent ? { strayIndent: stray.indent } : {}),
               ...(stray.align ? { strayAlign: stray.align } : {}),
@@ -2384,7 +2400,7 @@ function extractTextboxes(
           box.borderWidthPx = Math.round((w / EMU_PER_PX) * 100) / 100
         }
         const dash = attrsOf(findChild(ln, 'a:prstDash') ?? {})['val']
-        if (dash) box.borderDash = /dot/i.test(dash) ? 'dotted' : 'dashed'
+        if (dash && dash !== 'solid') box.borderDash = /dot/i.test(dash) ? 'dotted' : 'dashed'
       }
       // shape-style references (wps:style): theme fill/line for shapes whose
       // spPr declares no explicit color (Word gallery shapes)
@@ -2487,6 +2503,7 @@ function extractTextboxes(
   ): void => {
     if (!meta.anchored) return
     if (meta.behind) box.behind = true
+    if (meta.noWrap) box.noWrap = true
     if (meta.z !== undefined) box.z = meta.z
     // first-page page-anchored cover art: raw page coordinates, rendered
     // against the page box (doc-protected-pagepinned)
@@ -3243,6 +3260,29 @@ function anchorLineOf(xml: string): Block['anchorLine'] {
   )
   if (Number.isFinite(sz) && sz > 0) format = { ...(format ?? {}), emptyRunSizeHalfPoints: sz }
   return { ...(styleId ? { styleId } : {}), ...(format ? { format } : {}) }
+}
+
+/** anchor line of a stray textbox paragraph with the style chain's tab stops
+ *  merged in (direct stops win per position, w:val=clear removes) — the
+ *  display-only stray line has no style lookup of its own */
+function strayAnchorLine(xml: string, ctx: BuildContext): Block['anchorLine'] {
+  const line = anchorLineOf(xml)
+  const style = line?.styleId ? ctx.styles.get(line.styleId)?.display : undefined
+  if (!line || !style) return line
+  const format = { ...(line.format ?? {}) }
+  const styleStops = style.tabStops ?? []
+  if (styleStops.length) {
+    const direct = format.tabStops ?? []
+    format.tabStops = [
+      ...styleStops.filter((t) => !direct.some((d) => d.pos === t.pos)),
+      ...direct.filter((t) => t.val !== 'clear'),
+    ]
+  }
+  // stops are margin-relative: the tab grid needs the effective left indent,
+  // style-inherited included
+  if (format.indentLeft === undefined && style.indentLeftTwips !== undefined)
+    format.indentLeft = style.indentLeftTwips
+  return { ...line, format }
 }
 
 /** w:framePr sized frame (not a drop cap): the box Word lays the paragraph out in */
@@ -4526,6 +4566,38 @@ function flattenedTableModel(tbl: XNode): TableModel | undefined {
   return { rows: [[cell]], autoLayout: true }
 }
 
+/**
+ * Widths Word shrinks an over-wide autofit table to: the text column, one
+ * newspaper column in a multi-column section, each less the signed table indent
+ * (a negative indent widens the box to the left, the right edge stays on the
+ * margin); compat < 15 measures the indent to the cell text, so the border box hangs by
+ * the side cell margins (probe 2026-09-17: compat 14 tblInd 558 in an 8550
+ * column -> 8208 = 8550 - 558 + 216; compat 15 -> 7992).
+ */
+function usableTableWidths(sect: SectionSettings, tblIndTwips: number, hangTwips = 0): number[] {
+  const text = sect.pageWidth - sect.marginLeft - sect.marginRight
+  const perColumn =
+    sect.columns > 1
+      ? sect.colWidths?.length === sect.columns
+        ? sect.colWidths
+        : [(text - (sect.colSpace ?? 720) * (sect.columns - 1)) / sect.columns]
+      : []
+  const indent = Number.isFinite(tblIndTwips) ? tblIndTwips : 0
+  const bases = [text, ...perColumn]
+  const spans = [...bases, ...bases.map((w) => w - indent)]
+  if (hangTwips > 0) spans.push(...spans.map((w) => w + hangTwips))
+  return [...new Set(spans)].filter((w) => w > 0)
+}
+
+const DEFAULT_TABLE_CELL_MAR = 108
+
+/** every gridCol within 1% of the mean: a generator placeholder, not a laid-out grid */
+function isUniformGrid(widths: number[] | undefined): boolean {
+  if (!widths) return true
+  const total = widths.reduce((a, b) => a + b, 0)
+  return widths.every((w) => Math.abs(w * widths.length - total) <= Math.max(2, total * 0.01))
+}
+
 function extractTableModel(
   tbl: XNode,
   ctx: BuildContext,
@@ -4547,27 +4619,58 @@ function extractTableModel(
   }
   const tblPrNode = findChild(tbl, 'w:tblPr')
   const fixedLayout = attrsOf(findChild(tblPrNode ?? {}, 'w:tblLayout') ?? {})['w:type'] === 'fixed'
+  const tblWNode = findChild(tblPrNode ?? {}, 'w:tblW')
+  const tblW = attrsOf(tblWNode ?? {})
+  const tblInd = attrsOf(findChild(tblPrNode ?? {}, 'w:tblInd') ?? {})
+  const tblIndTwips = !tblInd['w:type'] || tblInd['w:type'] === 'dxa' ? Number(tblInd['w:w']) : NaN
+  const cellMar = cellMarginsOf(findChild(tblPrNode ?? {}, 'w:tblCellMar'))
+  // Borders/margins from the table style (styles.xml, basedOn chain included): fallback
+  // when the document level declares none
+  const styleIdEarly = attrsOf(findChild(tblPrNode ?? {}, 'w:tblStyle') ?? {})['w:val']
+  const styleTable = styleIdEarly ? ctx.styles.get(styleIdEarly)?.tableDisplay : undefined
+  const effCellMar = cellMar ?? styleTable?.cellMarTwips
+  const legacyHang =
+    (ctx.compatibilityMode ?? 0) < 15
+      ? (effCellMar?.left ?? DEFAULT_TABLE_CELL_MAR) + (effCellMar?.right ?? DEFAULT_TABLE_CELL_MAR)
+      : 0
+  const uniformGrid = isUniformGrid(colWidthsTwips)
   // Cell-level w:tcW is Word's actual layout input for auto tables; generators often
   // leave a stale evenly-split tblGrid behind. When the two disagree, tcW wins.
   const tcwWidths = tcwColumnWidths(tbl)
+  let tcwWins = false
   if (tcwWidths) {
     const tcwTotal = tcwWidths.reduce((a, b) => a + b, 0)
     const tcwPct = tcwWidths.map((w) => (w / tcwTotal) * 100)
     // Fixed layout sizes columns from tcW alone, so a matching ratio with a
-    // different absolute sum still means the grid is stale.
+    // different absolute sum still means the grid is stale. So does a table with
+    // no declared width (tblW auto): Word sizes it from the cells' preferred widths,
+    // unless those overflow the text column - then Word shrinks the table to the
+    // column and the saved grid already is that shrunk layout, so a grid spanning
+    // the column stays (a narrower same-ratio grid is still a stale placeholder).
     const gridTotal = (colWidthsTwips ?? []).reduce((a, b) => a + b, 0)
+    // an autofit grid with unequal columns is Word's finished layout (Word
+    // draws it on open even when tcW disagree); only an evenly split
+    // placeholder grid yields to tcW
+    const tblWAuto =
+      tblW['w:type'] === 'auto' ||
+      ((!tblW['w:type'] || tblW['w:type'] === 'dxa') && !(Number(tblW['w:w']) > 0))
+    const sect = docOffset !== undefined ? ctx.sectionAt?.(docOffset) : undefined
+    const gridIsShrunkLayout = (sect ? usableTableWidths(sect, tblIndTwips, legacyHang) : []).some(
+      (usable) =>
+        tcwTotal > usable + tcwWidths.length && Math.abs(gridTotal - usable) <= usable * 0.03,
+    )
     const disagree =
       !colWidthsPct ||
       colWidthsPct.length !== tcwPct.length ||
-      colWidthsPct.some((w, i) => Math.abs(w - tcwPct[i]) > 2) ||
-      (fixedLayout && Math.abs(gridTotal - tcwTotal) > tcwWidths.length)
+      ((fixedLayout || uniformGrid) && colWidthsPct.some((w, i) => Math.abs(w - tcwPct[i]) > 2)) ||
+      ((fixedLayout || (tblWAuto && !gridIsShrunkLayout)) &&
+        Math.abs(gridTotal - tcwTotal) > tcwWidths.length)
     if (disagree) {
       colWidthsPct = tcwPct
       colWidthsTwips = tcwWidths
+      tcwWins = true
     }
   }
-  const tblWNode = findChild(tblPrNode ?? {}, 'w:tblW')
-  const tblW = attrsOf(tblWNode ?? {})
   let widthPct: number | undefined
   if (tblW['w:type'] === 'pct') {
     const raw = String(tblW['w:w'] ?? '')
@@ -4586,13 +4689,10 @@ function extractTableModel(
       colWidthsTwips = colWidthsTwips.map((w) => Math.round(w * scale))
     }
   }
-  const cellMar = cellMarginsOf(findChild(tblPrNode ?? {}, 'w:tblCellMar'))
   const tblBorders = mergedBorderLinesOf(tblPrNode, 'w:tblBorders', true)
   const tblJc = attrsOf(findChild(tblPrNode ?? {}, 'w:jc') ?? {})['w:val']
   const tblAlign =
     tblJc === 'center' ? 'center' : tblJc === 'right' || tblJc === 'end' ? 'right' : undefined
-  const tblInd = attrsOf(findChild(tblPrNode ?? {}, 'w:tblInd') ?? {})
-  const tblIndTwips = !tblInd['w:type'] || tblInd['w:type'] === 'dxa' ? Number(tblInd['w:w']) : NaN
   const tblpPr = attrsOf(findChild(tblPrNode ?? {}, 'w:tblpPr') ?? {})
   let floatSide: TableModel['floatSide']
   let floatPos: TableModel['floatPos']
@@ -4726,12 +4826,7 @@ function extractTableModel(
     const total = reconciled.reduce((a, b) => a + b, 0)
     colWidthsPct = reconciled.map((w) => (w / total) * 100)
   }
-  // Borders/margins from the table style (styles.xml, basedOn chain included): fallback
-  // when the document level declares none
-  const styleIdEarly = attrsOf(findChild(tblPrNode ?? {}, 'w:tblStyle') ?? {})['w:val']
-  const styleTable = styleIdEarly ? ctx.styles.get(styleIdEarly)?.tableDisplay : undefined
   const effBorders = tblBorders ?? styleTable?.borders
-  const effCellMar = cellMar ?? styleTable?.cellMarTwips
   const model: TableModel = { rows, colWidthsPct }
   if (colWidthsTwips) model.colWidthsTwips = colWidthsTwips
   if (widthPct) model.widthPct = widthPct
@@ -4743,6 +4838,10 @@ function extractTableModel(
   // pct widths still lay out with the autofit algorithm (only w:tblLayout
   // fixed switches it off), so their columns keep the min-content floor
   if (!fixedLayout && (autoWidth || widthPct)) model.autoLayout = true
+  // Word lays a tblW-auto table out from tcW/content and saves the result as the
+  // grid, so an unequal grid it kept is Word's own measure of every word
+  if (!fixedLayout && autoWidth && !widthPct && colWidthsTwips && !tcwWins && !uniformGrid)
+    model.layoutGrid = true
   model.autoFit =
     fixedLayout || (!autoWidth && !widthPct) ? 'fixed' : widthPct === 100 ? 'window' : 'contents'
   if (fixedLayout) model.fixedLayout = true
@@ -4875,9 +4974,15 @@ function applyTableStyleDisplay(
         cell.fill = conds.find((c) => c?.fill)?.fill ?? bandFill ?? ts.fill ?? undefined
       }
       const bold = conds.some((c) => c?.bold) || ts.wholeTable?.bold
-      if (bold && cell.bold === undefined) cell.bold = true
+      if (bold) {
+        cell.styleBold = true
+        if (cell.bold === undefined) cell.bold = true
+      }
       const color = conds.find((c) => c?.color)?.color ?? ts.wholeTable?.color
-      if (color && !cell.color) cell.color = color
+      if (color) {
+        cell.styleColor = color
+        if (!cell.color) cell.color = color
+      }
     }
   })
 }
@@ -4975,7 +5080,13 @@ function extractCell(tc: XNode, ctx: BuildContext, depth: number, docOffset?: nu
         ? rawPXml.replace(/<mc:Fallback[^>]*>[\s\S]*?<\/mc:Fallback>/g, '')
         : rawPXml
       if (pXml.includes('<wp:anchor') || /<w:pict[\s>]/.test(pXml)) {
-        const boxes = extractTextboxes(pXml, ctx, { shapes: true, docOffset })
+        // two or more pictures anchored in one cell paragraph sit at their own
+        // offsets (side by side in Word); as run images they would float one
+        // below the other and grow the row
+        const pictures =
+          topLevelDrawings(pXml).filter((f) => f.includes('<wp:anchor') && f.includes('<pic:pic'))
+            .length >= 2
+        const boxes = extractTextboxes(pXml, ctx, { shapes: true, pictures, docOffset })
         if (boxes.length > 0) {
           cell.anchoredBoxes = [...(cell.anchoredBoxes ?? []), ...boxes]
           // positionV relativeFrom="paragraph" measures from the anchor
@@ -4990,9 +5101,8 @@ function extractCell(tc: XNode, ctx: BuildContext, depth: number, docOffset?: nu
           try {
             let txml = pXml
             for (const frag of topLevelDrawings(txml)) {
-              // keep anchored pictures: they are not extracted as shape boxes
-              // and must stay on the run-image path
-              if (frag.includes('<wp:anchor') && !frag.includes('<pic:pic')) {
+              // a lone anchored picture is no shape box: it stays on the run-image path
+              if (frag.includes('<wp:anchor') && (pictures || !frag.includes('<pic:pic'))) {
                 txml = txml.split(frag).join('')
               }
             }
@@ -5657,6 +5767,7 @@ function hfContentFromXml(
   tableMedia?: Map<string, string>,
   compatibilityMode = 0,
   themeFonts?: ThemeFonts | null,
+  docDefaults?: DocDefaults,
 ): {
   text: string
   hasPageNumber: boolean
@@ -5739,6 +5850,7 @@ function hfContentFromXml(
       tableMedia,
       compatibilityMode,
       themeFonts,
+      docDefaults,
     ),
   }
 }
@@ -5754,6 +5866,7 @@ async function readHeaderFooterPart(
   styles?: Map<string, StyleInfo>,
   compatibilityMode = 0,
   themeFonts?: ThemeFonts | null,
+  docDefaults?: DocDefaults,
 ): Promise<{
   text: string
   hasPageNumber: boolean
@@ -5788,6 +5901,7 @@ async function readHeaderFooterPart(
     await hfTableMedia(zip, path, xml),
     compatibilityMode,
     themeFonts,
+    docDefaults,
   )
   const images = await hfImages(zip, path, xml)
   return images.length > 0 ? { ...content, images } : content
@@ -5801,6 +5915,7 @@ async function parseAllHfParts(
   theme?: ThemeColors | null,
   compatibilityMode = 0,
   themeFonts?: ThemeFonts | null,
+  docDefaults?: DocDefaults,
 ): Promise<Record<string, HfPartInfo>> {
   const out: Record<string, HfPartInfo> = {}
   for (const [rId, rel] of rels) {
@@ -5822,6 +5937,7 @@ async function parseAllHfParts(
       await hfTableMedia(zip, path, xml),
       compatibilityMode,
       themeFonts,
+      docDefaults,
     )
     const images = await hfImages(zip, path, xml)
     out[rId] = {
@@ -5866,14 +5982,54 @@ function hfParaStyleLayers(
   return { direct, d: styleId ? styles?.get(styleId)?.display : undefined }
 }
 
-function hfStyledParaFormat(pNode: XNode, styles: Map<string, StyleInfo> | undefined): ParaFormat {
+function hfStyledParaFormat(
+  pNode: XNode,
+  styles: Map<string, StyleInfo> | undefined,
+  docDefaults?: DocDefaults,
+): ParaFormat {
   const { direct, d } = hfParaStyleLayers(pNode, styles)
+  // an unstyled strip paragraph is a Normal paragraph: its spacing chain starts
+  // at the default paragraph style, not at docDefaults
+  const chain = d ?? hfDefaultParaStyle(styles)?.display
   return {
     ...(d?.align && d.align !== 'justify' ? { align: d.align } : {}),
     ...hfStyleLineSpacing(d, direct),
     ...direct,
+    ...hfResolvedSpacing(chain, direct, docDefaults),
     ...(d?.borderSides ? mergeStyleBorders(d.borderSides, direct) : {}),
   }
+}
+
+/** Word's HTML auto paragraph spacing (w:beforeAutospacing / w:afterAutospacing), twips */
+const HF_AUTO_SPACING_TWIPS = 280
+
+function hfDefaultParaStyle(styles: Map<string, StyleInfo> | undefined): StyleInfo | undefined {
+  if (!styles) return undefined
+  for (const info of styles.values()) if (info.type === 'paragraph' && info.isDefault) return info
+  return undefined
+}
+
+/** Strip paragraphs stack their before/after; Word resolves them through the
+ *  style chain and docDefaults like body paragraphs (a Normal (Web) blank line
+ *  in a header adds 14pt above and below), so the display format carries the
+ *  resolved twips, autospacing as 14pt. */
+function hfResolvedSpacing(
+  d: StyleInfo['display'],
+  direct: ParaFormat | undefined,
+  dd: DocDefaults | undefined,
+): Pick<ParaFormat, 'spaceBefore' | 'spaceAfter'> {
+  const out: Pick<ParaFormat, 'spaceBefore' | 'spaceAfter'> = {}
+  const before =
+    (direct?.spaceBeforeAuto ?? d?.spaceBeforeAuto ?? dd?.spaceBeforeAuto)
+      ? HF_AUTO_SPACING_TWIPS
+      : (direct?.spaceBefore ?? d?.spaceBeforeTwips ?? dd?.spaceBeforeTwips)
+  const after =
+    (direct?.spaceAfterAuto ?? d?.spaceAfterAuto ?? dd?.spaceAfterAuto)
+      ? HF_AUTO_SPACING_TWIPS
+      : (direct?.spaceAfter ?? d?.spaceAfterTwips ?? dd?.spaceAfterTwips)
+  if (before) out.spaceBefore = before
+  if (after) out.spaceAfter = after
+  return out
 }
 
 function hfStyleLineSpacing(
@@ -5898,6 +6054,7 @@ function hfParagraphs(
   tableMedia?: Map<string, string>,
   compatibilityMode = 0,
   themeFonts?: ThemeFonts | null,
+  docDefaults?: DocDefaults,
 ): HfParagraph[] {
   let parsed: XNode[]
   try {
@@ -5955,7 +6112,7 @@ function hfParagraphs(
         !hasDeepChildOutside(pNode, WP_INLINE, TXBX_CONTENT)
       ) {
         for (const p of boxed) p.box!.anchorPara = out.length
-        out.push({ ...hfStyledParaFormat(pNode, styles), runs: [] })
+        out.push({ ...hfStyledParaFormat(pNode, styles, docDefaults), runs: [] })
       }
       out.push(...boxed)
       flushDeferred()
@@ -5999,11 +6156,19 @@ function hfParagraphs(
             ? ('left' as const)
             : undefined
     const mergedStops = mergeTabStops(d?.tabStops, direct?.tabStops)
+    // a blank strip line is sized by its paragraph mark, else by the style's run size
+    const styleId = pPr ? attrsOf(findChild(pPr, 'w:pStyle') ?? {})['w:val'] : undefined
+    const emptySz =
+      runs.length === 0
+        ? (emptyParaSizeHalfPoints(pNode, pPr) ??
+          (styleId ? styles?.get(styleId)?.display?.sizeHalfPoints : undefined))
+        : undefined
     out.push({
-      ...hfStyledParaFormat(pNode, styles),
+      ...hfStyledParaFormat(pNode, styles, docDefaults),
       ...(mergedStops ? { tabStops: mergedStops } : {}),
       ...(sawPtab ? { ptabAligns } : {}),
       ...(frameXAlign ? { frameXAlign } : {}),
+      ...(emptySz ? { emptyRunSizeHalfPoints: emptySz } : {}),
       runs,
     })
     out.push(...anchoredBoxes)
@@ -6744,12 +6909,55 @@ async function mediaDataUrl(
   if (!rel || rel.targetMode === 'External') return null
   const path = rel.target.startsWith('/') ? rel.target.slice(1) : `word/${rel.target}`
   const partPath = path.replace(/^word\/\.\.\//, '')
+  return mediaPartDataUrl(zip, partPath)
+}
+
+/** one string per media part: a picture anchored on thousands of paragraphs
+ * (pdf2docx output) otherwise holds thousands of base64 copies and OOMs the renderer */
+const mediaDataUrlCache = new WeakMap<JSZip, Map<string, Promise<string | null>>>()
+
+function mediaPartDataUrl(zip: JSZip, partPath: string): Promise<string | null> {
+  let cache = mediaDataUrlCache.get(zip)
+  if (!cache) mediaDataUrlCache.set(zip, (cache = new Map()))
+  let pending = cache.get(partPath)
+  if (!pending) {
+    pending = readMediaPartDataUrl(zip, partPath)
+    cache.set(partPath, pending)
+  }
+  return pending
+}
+
+async function readMediaPartDataUrl(zip: JSZip, partPath: string): Promise<string | null> {
   const file = zip.file(partPath)
   if (!file) return null
   const mime = await imagePartMime(zip, partPath)
   if (!mime) return null
   if (isMetafileMime(mime)) return metafileToDataUrl(await file.async('arraybuffer'), mime)
   if (isTiffMime(mime)) return tiffToDataUrl(await file.async('arraybuffer'))
+  return mediaPartSrc(zip, file, partPath, mime)
+}
+
+/** picture URL for a media part: a lazy-media placeholder points at the
+ *  source document's part, anything else inlines the bytes */
+const lazyHashesByZip = new WeakMap<JSZip, Set<string>>()
+
+async function mediaPartSrc(
+  zip: JSZip,
+  file: JSZipObject,
+  partPath: string,
+  mime: string,
+): Promise<string> {
+  const declared = (file as unknown as { _data?: { uncompressedSize?: number } })._data
+    ?.uncompressedSize
+  if (declared === LAZY_MEDIA_PLACEHOLDER_BYTES) {
+    const hash = lazyMediaHashOf(await file.async('uint8array'))
+    if (hash) {
+      let seen = lazyHashesByZip.get(zip)
+      if (!seen) lazyHashesByZip.set(zip, (seen = new Set()))
+      seen.add(hash)
+      return lazyMediaUrl(hash, partPath)
+    }
+  }
   return `data:${mime};base64,${await file.async('base64')}`
 }
 
@@ -6877,14 +7085,7 @@ async function extractImage(xml: string, ctx: BuildContext): Promise<string | nu
     /^word\/\.\.\//,
     '',
   )
-  const file = ctx.zip.file(path)
-  if (!file) return null
-  const mime = await imagePartMime(ctx.zip, path)
-  if (!mime) return null
-  if (isMetafileMime(mime)) return metafileToDataUrl(await file.async('arraybuffer'), mime)
-  if (isTiffMime(mime)) return tiffToDataUrl(await file.async('arraybuffer'))
-  const base64 = await file.async('base64')
-  return `data:${mime};base64,${base64}`
+  return mediaPartDataUrl(ctx.zip, path)
 }
 
 /** resolve a document rel to its zip path ("word/…"), or null for external targets */
@@ -7154,7 +7355,7 @@ async function extractDiagramDrawing(
     const mime = await imagePartMime(ctx.zip, path)
     if (!mime) return null
     if (isMetafileMime(mime)) return metafileToDataUrl(await f.async('arraybuffer'), mime)
-    return `data:${mime};base64,${await f.async('base64')}`
+    return mediaPartSrc(ctx.zip, f, path, mime)
   }
   const sps: XNode[] = []
   collectNodes(parsed, 'dsp:sp', sps)
@@ -7273,7 +7474,7 @@ async function oleDisplay(
       const converted = await metafileToDataUrl(await file.async('arraybuffer'), mime)
       if (converted) out.imageDataUrl = converted
     } else if (mime) {
-      out.imageDataUrl = `data:${mime};base64,${await file.async('base64')}`
+      out.imageDataUrl = await mediaPartSrc(ctx.zip, file, path, mime)
     }
   }
   // Word draws the preview at the declared size — v:shape style (pt), falling

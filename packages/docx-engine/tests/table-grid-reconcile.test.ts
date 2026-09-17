@@ -11,8 +11,8 @@ function gridXml(widths: number[]): string {
   return `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`
 }
 
-async function tableOf(bodyXml: string) {
-  const doc = await parseDocx(await buildDocx({ bodyXml }))
+async function tableOf(bodyXml: string, sectPrExtra?: string) {
+  const doc = await parseDocx(await buildDocx({ bodyXml, sectPrExtra }))
   const block = doc.blocks[0]
   expect(block.type).toBe('table')
   return block.table!
@@ -105,6 +105,125 @@ describe('grid reconciliation from tcW boundaries', () => {
     expect(table.rows[0][1].colSpan).toBe(2)
     expect(table.rows[1].every((c) => (c.colSpan ?? 1) === 1)).toBe(true)
   })
+
+  it("a table with no declared width takes its cells' preferred widths over the grid", async () => {
+    const cell = tc('title', '<w:tcW w:w="6480" w:type="dxa"/>')
+    const auto = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:jc w:val="center"/></w:tblPr>' +
+        gridXml([10469]) +
+        `<w:tr>${cell}</w:tr></w:tbl>`,
+    )
+    expect(auto.colWidthsTwips).toEqual([6480])
+    // a declared dxa width keeps the (consistent-ratio) grid
+    const declared = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="10469" w:type="dxa"/></w:tblPr>' +
+        gridXml([10469]) +
+        `<w:tr>${cell}</w:tr></w:tbl>`,
+    )
+    expect(declared.colWidthsTwips).toEqual([10469])
+    // a percent width is declared too: the grid stays authoritative
+    const pct = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="100%" w:type="pct"/></w:tblPr>' +
+        gridXml([10469]) +
+        `<w:tr>${cell}</w:tr></w:tbl>`,
+    )
+    expect(pct.colWidthsTwips).toEqual([10469])
+  })
+
+  it('keeps the grid of an undeclared-width table whose preferred widths overflow the column', async () => {
+    // Word shrinks over-wide tcW (9740 under a 9026 column) to the column and saves
+    // that layout as the grid; the same ratios in tcW must not widen it again
+    const row =
+      '<w:tr>' +
+      tc('a', '<w:tcW w:w="3840" w:type="dxa"/>') +
+      tc('b', '<w:tcW w:w="1520" w:type="dxa"/>') +
+      tc('c', '<w:tcW w:w="4380" w:type="dxa"/>') +
+      '</w:tr>'
+    const table = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+        gridXml([3554, 1411, 4051]) +
+        row +
+        row +
+        '</w:tbl>',
+    )
+    expect(table.colWidthsTwips).toEqual([3554, 1411, 4051])
+  })
+
+  it('a same-ratio grid well below the column is still a stale placeholder when tcW overflow', async () => {
+    const row =
+      '<w:tr>' +
+      tc('a', '<w:tcW w:w="4000" w:type="dxa"/>') +
+      tc('b', '<w:tcW w:w="4000" w:type="dxa"/>') +
+      tc('c', '<w:tcW w:w="4000" w:type="dxa"/>') +
+      '</w:tr>'
+    const table = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+        gridXml([2000, 2000, 2000]) +
+        row +
+        '</w:tbl>',
+    )
+    expect(table.colWidthsTwips).toEqual([4000, 4000, 4000])
+  })
+
+  it('in a two-column section the shrunk layout spans one newspaper column', async () => {
+    // (9026 - 720) / 2 = 4153 per column; tcW 5000 overflow it
+    const row =
+      '<w:tr>' +
+      tc('a', '<w:tcW w:w="2000" w:type="dxa"/>') +
+      tc('b', '<w:tcW w:w="1000" w:type="dxa"/>') +
+      tc('c', '<w:tcW w:w="2000" w:type="dxa"/>') +
+      '</w:tr>'
+    const xml =
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+      gridXml([1661, 830, 1662]) +
+      row +
+      '</w:tbl>'
+    expect((await tableOf(xml, '<w:cols w:num="2" w:space="720"/>')).colWidthsTwips).toEqual([
+      1661, 830, 1662,
+    ])
+    // the same grid under a single column is a stale placeholder
+    expect((await tableOf(xml)).colWidthsTwips).toEqual([2000, 1000, 2000])
+  })
+
+  it('a positive table indent narrows the width the shrunk layout spans', async () => {
+    // 9026 - 720 indent = 8306; tcW 10000 overflow the column
+    const row =
+      '<w:tr>' +
+      tc('a', '<w:tcW w:w="4000" w:type="dxa"/>') +
+      tc('b', '<w:tcW w:w="2000" w:type="dxa"/>') +
+      tc('c', '<w:tcW w:w="4000" w:type="dxa"/>') +
+      '</w:tr>'
+    const table = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="720" w:type="dxa"/></w:tblPr>' +
+        gridXml([3322, 1661, 3323]) +
+        row +
+        '</w:tbl>',
+    )
+    expect(table.colWidthsTwips).toEqual([3322, 1661, 3323])
+  })
+
+  it('a negative table indent widens the box the shrunk layout spans', async () => {
+    // 9026 + 500 = 9526 (the box grows to the left, the right edge stays on the
+    // margin); tcW 10600 overflow it, the saved unequal grid at 9526 is the layout
+    const row =
+      '<w:tr>' +
+      tc('a', '<w:tcW w:w="4200" w:type="dxa"/>') +
+      tc('b', '<w:tcW w:w="2100" w:type="dxa"/>') +
+      tc('c', '<w:tcW w:w="4300" w:type="dxa"/>') +
+      '</w:tr>'
+    const tbl = (ind: string) =>
+      `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>${ind}</w:tblPr>` +
+      gridXml([3800, 1900, 3826]) +
+      row +
+      '</w:tbl>'
+    const widened = await tableOf(tbl('<w:tblInd w:w="-500" w:type="dxa"/>'))
+    expect(widened.colWidthsTwips).toEqual([3800, 1900, 3826])
+    expect(widened.layoutGrid).toBe(true)
+    // without the indent the same grid overshoots the column: a stale placeholder
+    const plain = await tableOf(tbl(''))
+    expect(plain.colWidthsTwips).toEqual([4200, 2100, 4300])
+    expect(plain.layoutGrid).toBeUndefined()
+  })
 })
 
 describe('gridBefore/gridAfter', () => {
@@ -185,5 +304,88 @@ describe('cell spacing and shading patterns', () => {
     expect(gray.fill).toBe('F2F2F2')
     expect(stripe.fill).toBe('B7D98D')
     expect(plain.fill).toBeUndefined()
+  })
+})
+
+describe('tblW-auto layout grid flag', () => {
+  const SETTINGS_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml'
+  const settingsPart = (compat: number) => ({
+    path: 'word/settings.xml',
+    xml:
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:compat>' +
+      `<w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="${compat}"/>` +
+      '</w:compat></w:settings>',
+    contentType: SETTINGS_CT,
+  })
+  const row = (tcws: Array<number | null>) =>
+    '<w:tr>' +
+    tcws
+      .map((w, i) =>
+        tc(
+          'c' + i,
+          w === null ? '<w:tcW w:w="0" w:type="auto"/>' : `<w:tcW w:w="${w}" w:type="dxa"/>`,
+        ),
+      )
+      .join('') +
+    '</w:tr>'
+
+  it('marks the unequal grid an autofit table keeps as Word-laid-out', async () => {
+    // audit table: grid 9016 = column, tcW 9740 overflow -> the grid is Word's shrunk layout
+    const kept = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+        gridXml([3554, 1411, 4051]) +
+        row([3840, 1520, 4380]) +
+        '</w:tbl>',
+    )
+    expect(kept.colWidthsTwips).toEqual([3554, 1411, 4051])
+    expect(kept.layoutGrid).toBe(true)
+    // tcW auto: Word re-autofits from content and saves the result as the grid
+    const autoCells = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+        gridXml([3813, 2508, 929, 2110]) +
+        row([null, null, null, null]) +
+        '</w:tbl>',
+    )
+    expect(autoCells.colWidthsTwips).toEqual([3813, 2508, 929, 2110])
+    expect(autoCells.layoutGrid).toBe(true)
+  })
+
+  it('leaves placeholder grids, tcW-driven widths and declared-width tables unflagged', async () => {
+    const placeholder = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr>' +
+        gridXml([2000, 2000, 2000]) +
+        row([3000, 3000, 3000]) +
+        '</w:tbl>',
+    )
+    expect(placeholder.colWidthsTwips).toEqual([3000, 3000, 3000])
+    expect(placeholder.layoutGrid).toBeUndefined()
+    const declared = await tableOf(
+      '<w:tbl><w:tblPr><w:tblW w:w="9016" w:type="dxa"/></w:tblPr>' +
+        gridXml([3554, 1411, 4051]) +
+        row([3554, 1411, 4051]) +
+        '</w:tbl>',
+    )
+    expect(declared.layoutGrid).toBeUndefined()
+  })
+
+  it('legacy compat lets the shrunk layout hang by the cell margins', async () => {
+    // 9026 column - 1000 indent = 8026 of cell text; compat 14 borders hang by the
+    // 200-twip side margins -> a saved grid of 8426 is that layout, compat 15 has no
+    // hang and the same grid is a stale placeholder under the overflowing tcW
+    const xml =
+      '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblInd w:w="1000" w:type="dxa"/>' +
+      '<w:tblCellMar><w:left w:w="200" w:type="dxa"/><w:right w:w="200" w:type="dxa"/></w:tblCellMar></w:tblPr>' +
+      gridXml([1200, 3400, 1600, 2226]) +
+      row([1300, 3600, 1700, 2400]) +
+      '</w:tbl>'
+    const of = async (compat: number) =>
+      (await parseDocx(await buildDocx({ bodyXml: xml, extraParts: [settingsPart(compat)] })))
+        .blocks[0].table!
+    const legacy = await of(14)
+    expect(legacy.colWidthsTwips).toEqual([1200, 3400, 1600, 2226])
+    expect(legacy.layoutGrid).toBe(true)
+    const modern = await of(15)
+    expect(modern.colWidthsTwips).toEqual([1300, 3600, 1700, 2400])
+    expect(modern.layoutGrid).toBeUndefined()
   })
 })

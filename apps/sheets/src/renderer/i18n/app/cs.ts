@@ -320,8 +320,6 @@ export const cs = {
     'Automatické vyplnění do oblasti, která se stále načítá, zatím není povoleno.',
   appDvNeedsIndexed:
     'Úprava ověření dat vyžaduje nejprve úplné indexování tohoto listu — zkuste to za chvíli znovu.',
-  appDuplicateNeedsFullLoad:
-    'Duplikování listu vyžaduje režim úplného načtení — tento sešit je příliš velký a načítá se po částech.',
   appPivotSheetNoDuplicate:
     'Tento list obsahuje kontingenční tabulku — jeho duplikování zatím není podporováno.',
   appDuplicateScopedNames:
@@ -626,6 +624,9 @@ export const cs = {
   appFullyLoaded: 'Sešit plně načten — vzorce se přepočítávají živě, řádky/sloupce lze upravovat.',
   appRangeMustBeVector: '{range} musí být jediný řádek nebo jediný sloupec buněk.',
   appRangeTooManyCells: '{range} pokrývá více než {max} buněk.',
+  appCopyLoadingRange: 'Načítání {range} pro kopírování…',
+  appCopyValuesOnly:
+    '{range} zkopírováno pouze jako hodnoty ({cells} buněk): styly se zachovávají jen do {max} buněk.',
   appSheetStillIndexing: 'List se stále indexuje — zkuste to za chvíli znovu.',
   appPrintNothing: 'Na listu není co tisknout.',
   appPrintTooLarge:

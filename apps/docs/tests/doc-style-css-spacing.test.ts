@@ -13,7 +13,19 @@ import { docStyleCss } from '../src/renderer/doc-style-css'
 
 function parsedWith(styleId: string, display: StyleDisplay): ParsedDocFull {
   const styles = new Map<string, StyleInfo>()
-  styles.set(styleId, { styleId, name: styleId, type: 'paragraph', display } as StyleInfo)
+  styles.set('Normal', {
+    styleId: 'Normal',
+    name: 'Normal',
+    type: 'paragraph',
+    isDefault: true,
+  } as StyleInfo)
+  styles.set(styleId, {
+    styleId,
+    name: styleId,
+    type: 'paragraph',
+    basedOn: 'Normal',
+    display,
+  } as StyleInfo)
   return { styles, docDefaults: {}, blocks: [] } as unknown as ParsedDocFull
 }
 
@@ -123,6 +135,56 @@ describe('docStyleCss spacing', () => {
     )
     expect(css).toContain(
       '[data-style="SBul"] + [data-style="SBul"].ctx-sp { margin-top:0 !important }',
+    )
+  })
+})
+
+describe('docStyleCss styles off the Normal chain', () => {
+  const parsedOff = (display: StyleDisplay, docDefaults: object = {}): ParsedDocFull => {
+    const styles = new Map<string, StyleInfo>()
+    styles.set('Normal', {
+      styleId: 'Normal',
+      name: 'Normal',
+      type: 'paragraph',
+      isDefault: true,
+      display: {
+        spaceAfterTwips: 160,
+        lineRule: 'auto',
+        lineRawTwips: 259,
+        lineSpacing: 259 / 240,
+      },
+    } as StyleInfo)
+    styles.set('NoSpacing', {
+      styleId: 'NoSpacing',
+      name: 'No Spacing',
+      type: 'paragraph',
+      display,
+    } as StyleInfo)
+    return { styles, docDefaults, blocks: [] } as unknown as ParsedDocFull
+  }
+
+  it('a paragraph style without w:basedOn takes docDefaults spacing and line, not Normal', () => {
+    const css = docStyleCss(parsedOff({ sizeHalfPoints: 22 }))
+    const rule = /\[data-style="NoSpacing"\] \{ ([^}]*) \}/.exec(css)![1]
+    expect(rule).toContain('margin-top:0.0pt')
+    expect(rule).toContain('margin-bottom:0.0pt')
+    expect(rule).toMatch(/line-height:/)
+    expect(rule).not.toContain('1.079')
+  })
+
+  it('docDefaults spacing reaches it when declared', () => {
+    const css = docStyleCss(
+      parsedOff({ sizeHalfPoints: 22 }, { spaceAfterTwips: 200, spaceBeforeAuto: true }),
+    )
+    const rule = /\[data-style="NoSpacing"\] \{ ([^}]*) \}/.exec(css)![1]
+    expect(rule).toContain('margin-top:14.0pt')
+    expect(rule).toContain('margin-bottom:10.0pt')
+  })
+
+  it('own spacing still wins over docDefaults', () => {
+    const css = docStyleCss(parsedOff({ spaceAfterTwips: 60 }, { spaceAfterTwips: 200 }))
+    expect(/\[data-style="NoSpacing"\] \{ ([^}]*) \}/.exec(css)![1]).toContain(
+      'margin-bottom:3.0pt',
     )
   })
 })

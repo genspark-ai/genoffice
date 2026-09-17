@@ -113,7 +113,8 @@ export async function awaitFormulaValues(
 }
 
 /**
- * Computed values this session has actually observed, keyed `sheetId!address`.
+ * Formula cells this session has seen the engine settle on, keyed
+ * `sheetId!address`, with the formula text that was settled.
  *
  * The save path refuses to cache a formula it has not seen a value for (the
  * overlay it used to read deliberately skips journaled cells, and trusting it
@@ -122,32 +123,29 @@ export async function awaitFormulaValues(
  * Excel recalculated on open so nothing looked broken, but read-only consumers
  * — the CLI, a preview, a diff — showed those cells as empty.
  *
- * An entry here is different from an overlay guess: it was read back from the
- * engine *after* the write settled (awaitFormulaValues above), and it is only
- * used when the cell's current formula text still matches what produced it. A
- * user editing the formula afterwards changes the text and retires the entry.
+ * Only the *address* is trusted from here. The value written at save time is
+ * read live from the grid, so an edit to a precedent cell after the batch (by
+ * the user or a later batch) cannot leave the file carrying the earlier result.
  */
 export interface VerifiedFormulaValue {
   readonly formula: string
-  readonly value: string | number | boolean | null
-  readonly isError?: boolean
 }
 
 /**
  * One renderer process hosts exactly one open workbook session, so the verified
- * values live in a module-level map rather than keyed by the workbook facade:
+ * cells live in a module-level map rather than keyed by the workbook facade:
  * `univerAPI.getActiveWorkbook()` hands back a fresh facade on every call, and a
  * WeakMap keyed on it would never match the instance the save path asks with.
  * `clearVerifiedFormulaValues` runs when a different workbook is loaded.
  */
 const verified = new Map<string, VerifiedFormulaValue>()
 
-/** forget every verified value — a save replaced the session, so they are stale */
+/** forget every verified cell — a save replaced the session, so they are stale */
 export function clearVerifiedFormulaValues(): void {
   verified.clear()
 }
 
-/** remember the value a formula was observed to compute */
+/** remember that a formula was observed to settle on a value */
 export function rememberFormulaValue(
   sheetId: string,
   address: string,
@@ -165,27 +163,48 @@ export interface CachedFormulaValue {
 }
 
 /**
- * Values verified this session, in the shape the save path's `formulaValues`
- * takes. `currentFormula` answers the cell's formula text now — in journal
- * coordinates, `row:column` — so an entry whose formula has since been replaced
- * is dropped rather than cached against the wrong result.
+ * Live values of the verified cells, in the shape the save path's
+ * `formulaValues` takes. A cell whose formula text no longer matches what was
+ * settled, or whose result the engine has not written yet, is left out rather
+ * than cached against the wrong result; a sheet the reader cannot resolve
+ * (removed since) is skipped.
  */
 export function verifiedFormulaValues(
-  currentFormula: (sheetId: string, row: number, column: number) => string | undefined,
+  read: (addresses: string[], sheetId: string) => Record<string, CellState>,
 ): CachedFormulaValue[] {
   if (verified.size === 0) return []
-  const out: CachedFormulaValue[] = []
+  const bySheet = new Map<string, Map<string, VerifiedFormulaValue>>()
   for (const [key, entry] of verified) {
     const at = key.lastIndexOf('!')
     if (at <= 0) continue
     const sheetId = key.slice(0, at)
-    const address = key.slice(at + 1)
-    const parsed = parseAddressParts(address)
-    if (!parsed) continue
-    if (currentFormula(sheetId, parsed.row, parsed.column) !== entry.formula) continue
-    const value =
-      entry.isError && typeof entry.value === 'string' ? { error: entry.value } : entry.value
-    out.push({ sheetId, row: parsed.row, column: parsed.column, value })
+    const cells = bySheet.get(sheetId) ?? new Map<string, VerifiedFormulaValue>()
+    cells.set(key.slice(at + 1), entry)
+    bySheet.set(sheetId, cells)
+  }
+  const out: CachedFormulaValue[] = []
+  for (const [sheetId, entries] of bySheet) {
+    let cells: Record<string, CellState>
+    try {
+      cells = read([...entries.keys()], sheetId)
+    } catch {
+      continue
+    }
+    for (const [address, entry] of entries) {
+      const parsed = parseAddressParts(address)
+      const cell = cells[address]
+      if (!parsed || !cell || cell.formula !== entry.formula) continue
+      // rawValue is the model value where `value` is the rendered text (dates, number formats)
+      const live = cell.rawValue === undefined ? cell.value : cell.rawValue
+      // #ERROR! is IronCalc's own failure, never a value Excel would cache
+      if (live === null || live === '#ERROR!') continue
+      out.push({
+        sheetId,
+        row: parsed.row,
+        column: parsed.column,
+        value: isErrorResult(live) ? { error: live } : live,
+      })
+    }
   }
   return out
 }

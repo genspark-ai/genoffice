@@ -18,6 +18,19 @@ export const RENDERER_SCHEME_PRIVILEGE: CustomScheme = {
   },
 }
 
+/** docs' lazily served pictures (packages/docx-engine/src/lazy-media.ts); a
+ * secure page may only load pictures from another secure scheme */
+export const DOCX_MEDIA_SCHEME_PRIVILEGE: CustomScheme = {
+  scheme: 'genoffice-docx-media',
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true,
+  },
+}
+
 export type RendererHost = 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html'
 
 /** Dev server URL when one is configured, otherwise the module's scheme URL; the

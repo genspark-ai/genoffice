@@ -21,7 +21,19 @@ const BODY =
 
 function parsedWith(styleId: string, display: StyleDisplay): ParsedDocFull {
   const styles = new Map<string, StyleInfo>()
-  styles.set(styleId, { styleId, name: styleId, type: 'paragraph', display } as StyleInfo)
+  styles.set('Normal', {
+    styleId: 'Normal',
+    name: 'Normal',
+    type: 'paragraph',
+    isDefault: true,
+  } as StyleInfo)
+  styles.set(styleId, {
+    styleId,
+    name: styleId,
+    type: 'paragraph',
+    basedOn: 'Normal',
+    display,
+  } as StyleInfo)
   return { styles, docDefaults: {}, blocks: [] } as unknown as ParsedDocFull
 }
 

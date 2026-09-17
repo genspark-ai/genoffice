@@ -102,8 +102,6 @@ function ribbonProps(editor: Editor) {
     onShowRuler: noop,
     showNav: false,
     onShowNav: noop,
-    showFiles: false,
-    onShowFiles: noop,
     commentCount: 0,
     openCommentCount: 0,
     onShowComments: noop,

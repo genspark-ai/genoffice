@@ -319,8 +319,6 @@ export const ko = {
   appAutofillStreaming: '아직 스트리밍 로드 중인 영역으로는 자동 채우기를 할 수 없습니다.',
   appDvNeedsIndexed:
     '데이터 유효성 검사를 편집하려면 먼저 이 시트의 인덱싱이 완료되어야 합니다 — 잠시 후 다시 시도하십시오.',
-  appDuplicateNeedsFullLoad:
-    '시트 복제에는 전체 로드 모드가 필요합니다. 이 통합 문서는 너무 커서 스트리밍 방식으로만 로드되었습니다.',
   appPivotSheetNoDuplicate: '이 시트에는 피벗 테이블이 있어 아직 시트 복제를 지원하지 않습니다.',
   appDuplicateScopedNames:
     '이 시트에는 시트 범위로 정의된 이름이 있어 아직 시트 복제를 지원하지 않습니다.',
@@ -632,6 +630,9 @@ export const ko = {
     '통합 문서를 모두 로드했습니다 — 수식이 실시간으로 다시 계산되고 행/열을 편집할 수 있습니다.',
   appRangeMustBeVector: '{range}은(는) 단일 행 또는 단일 열의 셀이어야 합니다.',
   appRangeTooManyCells: '{range}이(가) 셀 {max}개를 초과합니다.',
+  appCopyLoadingRange: '복사를 위해 {range}을(를) 불러오는 중…',
+  appCopyValuesOnly:
+    '{range}을(를) 값만 복사했습니다({cells}개 셀): {max}개 셀을 넘으면 서식은 유지되지 않습니다.',
   appSheetStillIndexing: '시트의 인덱스를 만드는 중입니다 — 잠시 후 다시 시도하십시오.',
   // Print (export PDF)
   appPrintNothing: '이 시트에는 인쇄할 내용이 없습니다.',

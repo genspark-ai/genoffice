@@ -4,7 +4,6 @@ import type { IpcRendererEvent } from 'electron'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { ProjectApi } from '@genoffice/project-store'
 import { installDropOpenBridge } from '@genoffice/electron-utils/drop-open'
-import { installFilesPaneBridge } from '@genoffice/electron-utils/files-pane-bridge'
 import type {
   AddChartOp,
   AddElementOp,
@@ -472,5 +471,3 @@ contextBridge.exposeInMainWorld('projectApi', projectApi)
 
 // open documents dragged from the OS onto this tab as a new shell tab
 installDropOpenBridge()
-// folder tree over the default save folder (Files pane)
-installFilesPaneBridge()

@@ -233,7 +233,8 @@ async function anthropicTurn(
   if (pendingTools.size > 0 && !stopReason) {
     const received = [...pendingTools.values()].reduce((n, p) => n + p.json.length, 0)
     throw new Error(
-      `Claude stream closed while sending tool arguments (${received} chars received); the connection was dropped`,
+      `Claude stream closed while sending tool arguments (${received} chars received); the connection was dropped. ` +
+        'If this recurs on a large request (e.g. generating a whole document), ask for the output in several smaller parts.',
     )
   }
   const lastTool = completedTools.at(-1)

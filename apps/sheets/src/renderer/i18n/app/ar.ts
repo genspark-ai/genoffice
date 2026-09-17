@@ -307,8 +307,6 @@ export const ar = {
   appAutofillStreaming: 'التعبئة التلقائية في ناحية لا تزال قيد التحميل بالبث غير مسموح بها بعد.',
   appDvNeedsIndexed:
     'يتطلب تحرير التحقق من صحة البيانات فهرسة الورقة بالكامل أولاً — أعد المحاولة لاحقًا.',
-  appDuplicateNeedsFullLoad:
-    'يتطلب تكرار الورقة وضع التحميل الكامل — هذا المصنف كبير جدًا ومحمّل جزئيًا بالبث.',
   appPivotSheetNoDuplicate: 'تحتوي هذه الورقة على جدول محوري — تكرارها غير مدعوم بعد.',
   appDuplicateScopedNames:
     'تحتوي هذه الورقة على أسماء معرفة على مستوى الورقة — تكرارها غير مدعوم بعد.',
@@ -593,6 +591,9 @@ export const ar = {
     'حُمّل المصنف بالكامل — تُعاد الصيغ للحساب مباشرة والصفوف والأعمدة قابلة للتحرير.',
   appRangeMustBeVector: 'يجب أن يكون {range} صفًا واحدًا أو عمودًا واحدًا من الخلايا.',
   appRangeTooManyCells: 'يغطي {range} أكثر من {max} خلية.',
+  appCopyLoadingRange: 'جارٍ تحميل {range} للنسخ…',
+  appCopyValuesOnly:
+    'تم نسخ {range} كقيم فقط ({cells} خلية): يُحتفظ بالتنسيقات حتى {max} خلية فقط.',
   appSheetStillIndexing: 'الورقة لا تزال قيد الفهرسة — أعد المحاولة لاحقًا.',
   appPrintNothing: 'لا يوجد في الورقة ما يمكن طباعته.',
   appPrintTooLarge:

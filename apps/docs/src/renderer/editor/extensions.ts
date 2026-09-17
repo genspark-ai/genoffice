@@ -13,6 +13,8 @@ import {
   type Transaction,
 } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { appendsAtEnd, touchedTopLevelBlocks } from './touched-blocks'
+import { installProseMirrorPerf } from './prosemirror-perf'
 import type { EditorView } from '@tiptap/pm/view'
 import {
   CellSelection,
@@ -37,6 +39,7 @@ import {
   cssLineHeight,
   isCjkFontName,
   lineHeightFactor,
+  symbolBulletLinePt,
   paraLineFactorCss,
   SIMSUN_GAP_CHAR_RE,
   simsunGapLineFactor,
@@ -54,6 +57,7 @@ import { noteMarkText } from '../note-format'
 import { t } from '../i18n/locale'
 import {
   ommlToMathML,
+  parseLazyMediaUrl,
   patchMathTokens,
   type ChartDisplay,
   type DiagramDisplay,
@@ -88,6 +92,8 @@ import { dropActiveSubEditor, notifySubEditorState, setActiveSubEditor } from '.
 import { type BorderLine, borderDrawnPx, borderTruePx } from './border-metrics'
 import { borderLineCss, paraBorderCss, paraBorderPadding, paraBorderPaddingDecls } from './hf-dom'
 import { paraFrameCss } from './para-frame'
+
+installProseMirrorPerf()
 
 export { borderLineCss }
 import {
@@ -134,7 +140,7 @@ import { constrainTableWidthAtCell } from './table-sizing'
 
 import {
   CHART_MAX_WIDTH_PX,
-  CHART_TITLE_ROW_PX,
+  chartTitleRowPx,
   cellBoxesSpec,
   drawChartSvg,
   renderChartSpec,
@@ -154,6 +160,7 @@ import {
   DelMark,
   InsMark,
   CtrlCheckboxMark,
+  FormatOffClearExtension,
   InstrFieldMark,
   SymMark,
   ItalicMark,
@@ -570,6 +577,25 @@ export function clipboardParaAttrs(el: HTMLElement): Record<string, unknown> | n
     attrs[key] = v
   }
   return Object.keys(attrs).length > 0 ? attrs : null
+}
+
+/**
+ * Word orders a run without w:rtl left-to-right even inside a w:bidi paragraph
+ * (probe 2026-09-16: "arabic (LATIN)" keeps the Latin on the right, a leading
+ * bullet glyph stays at the left edge). The paragraph keeps its RTL start side
+ * and mirrored indents; only the text is isolated as one LTR item when no run
+ * is an RTL run. Runs marked rtl (or inheriting it) keep the browser's RTL base.
+ */
+function paraContentSpec(node: PmNode): DOMOutputSpec | 0 {
+  if (!(node.attrs.bidi || node.attrs.bidiInferred) || !node.textContent) return 0
+  let rtlRun = false
+  node.descendants((child) => {
+    if (child.isText && child.marks.some((m) => m.attrs.cs === true || m.attrs.rtl === true)) {
+      rtlRun = true
+    }
+    return !rtlRun
+  })
+  return rtlRun ? 0 : ['span', { class: 'doc-ltr-runs' }, 0]
 }
 
 function blockAttrs(
@@ -1069,6 +1095,11 @@ export const DocInlineImage = Node.create({
         // a float excludes its whole margin box: without a shape the lines
         // above the picture (Word lays them at full width) would shorten too
         if (ty - qt > 0) styles.push(`shape-outside:inset(${px(ty - qt)} 0 0 0)`)
+        // clampCellImageTops fills --cell-lift once the cell top is measured
+        if (ty < 0 && !/layoutInCell="(?:0|false)"/.test(String(node.attrs.xml ?? ''))) {
+          margin.top = `calc(${px(ty)} + var(--cell-lift,0px))`
+          attrs['data-cell-lift'] = '1'
+        }
       }
     }
     // positionV line/center: lift so the picture centers on the anchor line
@@ -1391,7 +1422,7 @@ export const DocParagraph = Node.create({
     return [{ tag: 'p', getAttrs: (el) => clipboardParaAttrs(el as HTMLElement) }]
   },
   renderHTML({ node }) {
-    return ['p', blockAttrs(node), 0]
+    return ['p', blockAttrs(node), paraContentSpec(node)]
   },
 })
 
@@ -1418,7 +1449,7 @@ export const DocHeading = Node.create({
     const attrs = blockAttrs(node)
     // heading by direct w:outlineLvl alone: the built-in h1-h6 font rules skip this class
     if (node.attrs.outlineOnly) attrs.class = `${attrs.class ?? ''} doc-outline-only`.trim()
-    return [`h${level}`, attrs, 0]
+    return [`h${level}`, attrs, paraContentSpec(node)]
   },
 })
 
@@ -1481,7 +1512,7 @@ export const DocListItem = Node.create({
     ]
       .filter(Boolean)
       .join(' ')
-    return ['div', { ...base, class: cls }, 0]
+    return ['div', { ...base, class: cls }, paraContentSpec(node)]
   },
   addCommands() {
     return {
@@ -1673,47 +1704,6 @@ function lineFactorDecos(doc: PmNode): DecorationSet {
 }
 
 /**
- * Top-level blocks a transaction touched, as offsets in its final document;
- * null when a step replaces so much that recomputing everything is cheaper.
- */
-function touchedTopLevelBlocks(tr: Transaction): Set<number> | null {
-  const { doc } = tr
-  const maps = tr.mapping.maps
-  const ranges: Array<[number, number]> = []
-  let unknown = false
-  tr.steps.forEach((step, i) => {
-    // positions after step i, carried through the later steps into the final doc
-    const push = (start: number, end: number) => {
-      let from = start
-      let to = end
-      for (let j = i + 1; j < maps.length; j++) {
-        from = maps[j].map(from, -1)
-        to = maps[j].map(to, 1)
-      }
-      ranges.push([from, to])
-    }
-    let moved = false
-    maps[i].forEach((_oldStart, _oldEnd, newStart, newEnd) => {
-      moved = true
-      push(newStart, newEnd)
-    })
-    if (moved) return
-    // mark and attribute steps leave positions alone but change the nodes
-    const s = step as { from?: unknown; to?: unknown; pos?: unknown }
-    if (typeof s.from === 'number' && typeof s.to === 'number') push(s.from, s.to)
-    else if (typeof s.pos === 'number') push(s.pos, s.pos + 1)
-    else unknown = true
-  })
-  if (unknown) return null
-  const touched = new Set<number>()
-  doc.forEach((node, offset) => {
-    const end = offset + node.nodeSize
-    if (ranges.some(([from, to]) => offset < to && end > from)) touched.add(offset)
-  })
-  return touched.size * 2 > doc.childCount ? null : touched
-}
-
-/**
  * Only the touched top-level blocks recompute; every other block's
  * decorations ride the mapping. Decorations are a pure function of the block
  * node, so the result equals a full rebuild — without DecorationSet.create's
@@ -1724,7 +1714,8 @@ function updateLineFactorDecos(old: DecorationSet, tr: Transaction): DecorationS
   const { doc } = tr
   const touched = touchedTopLevelBlocks(tr)
   if (!touched) return lineFactorDecos(doc)
-  let set = old.map(tr.mapping, doc)
+  // streamed tail chunks: mapping the whole set walked every decoration per chunk
+  let set = appendsAtEnd(tr) ? old : old.map(tr.mapping, doc)
   const decos: Decoration[] = []
   for (const offset of touched) {
     const node = doc.nodeAt(offset)
@@ -1870,6 +1861,20 @@ export const LineFactorExtension = Extension.create({
     ]
   },
 })
+
+function firstRunFontAscii(node: PmNode): string | null {
+  let font: string | null = null
+  node.descendants((child) => {
+    if (font !== null) return false
+    if (child.isText) {
+      const mark = child.marks.find((m) => m.type.name === 'docTextStyle')
+      font = ((mark?.attrs.fontAscii ?? mark?.attrs.font) as string | null) ?? null
+      return false
+    }
+    return true
+  })
+  return font
+}
 
 function firstRunSizeHalfPoints(node: PmNode): number | null {
   let sz: number | null = null
@@ -2019,6 +2024,17 @@ function paragraphTabStops(
 }
 
 /** the stray line's list geometry in docListItem attr shape (its w:ind is the anchor paragraph's) */
+/** the paragraph's direct w:lineRule, else its style's (strays carry no direct spacing) */
+function effectiveLineRule(
+  nodeAttrs: Record<string, unknown>,
+  storage: ListNumberingStorage,
+): string | undefined {
+  if (nodeAttrs.lineRule != null || nodeAttrs.lineRawTwips != null) {
+    return (nodeAttrs.lineRule as string | null) ?? 'auto'
+  }
+  return storage.styles?.get(String(nodeAttrs.styleId ?? ''))?.display?.lineRule
+}
+
 function strayGeometryAttrs(node: PmNode): Record<string, unknown> {
   const ind = node.attrs.strayIndent as StrayIndent | null
   return {
@@ -2031,6 +2047,51 @@ function strayGeometryAttrs(node: PmNode): Record<string, unknown> {
 
 /** the anchor paragraph's own empty line, laid out like any paragraph; the
  *  picture block ahead of it already carries the paragraph's page break */
+/** spacing / line-rule declarations of an anchor line spec for the stray line
+ *  (indent and alignment come from the stray's own attrs; fonts from its runs) */
+const STRAY_LINE_PROPS = new Set([
+  'margin-top',
+  'margin-bottom',
+  'line-height',
+  '--doc-line-mult',
+  '--doc-line-factor',
+  '--doc-grid-pitch',
+  'font-size',
+])
+const STRAY_LINE_CLASSES = new Set(['doc-lh-fixed', 'doc-nosnap', 'sp-auto-b', 'sp-auto-a'])
+
+function strayLineCss(spec: DomSpec, strayAttrs: Record<string, string>): string {
+  const attrs = spec[1] as Record<string, string>
+  for (const cls of (attrs.class ?? '').split(' ')) {
+    if (STRAY_LINE_CLASSES.has(cls)) strayAttrs.class += ` ${cls}`
+  }
+  return (attrs.style ?? '')
+    .split(';')
+    .filter((decl) => STRAY_LINE_PROPS.has(decl.slice(0, decl.indexOf(':')).trim()))
+    .join(';')
+}
+
+/** Chromium expands a tab to the next multiple of tab-size from the content
+ *  edge, so the first custom stop past the indent sizes that grid: exact for the
+ *  one-stop operator rows PDF converters emit, a plain grid beyond it */
+function strayTabCss(line: Record<string, unknown>, ind: StrayIndent | null): string {
+  let stops: TabStop[] = []
+  if (typeof line.tabStops === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(line.tabStops)
+      if (Array.isArray(parsed)) stops = parsed as TabStop[]
+    } catch {
+      /* malformed attr: default grid */
+    }
+  }
+  const left = ind?.leftTwips ?? (typeof line.indentLeft === 'number' ? line.indentLeft : 0)
+  const next = stops
+    .filter((s) => s.val !== 'clear' && s.val !== 'bar' && !s.rel && s.pos > left)
+    .map((s) => s.pos)
+    .sort((a, b) => a - b)[0]
+  return `white-space:pre-wrap;tab-size:${((next ?? left + 720) - left) / 20}pt`
+}
+
 export function anchorLineSpec(line: Record<string, unknown>): DomSpec {
   const attrs = blockAttrs({
     attrs: { ...line, docxIndex: null, pageBreakBefore: false },
@@ -2177,6 +2238,23 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
           // natural height (Word); equal sizes keep the inherited line untouched
           if (level.szHalfPoints && level.szHalfPoints > (runSizeHalf ?? para.sizeHalf)) {
             styles.push(MARKER_NATURAL_LINE_HEIGHT)
+          } else if (marker.symbolFont && effectiveLineRule(nodeAttrs, storage) !== 'exact') {
+            // Word's line is the tallest ascent plus the tallest descent on it:
+            // a Symbol bullet's ascent tops every Latin text face, so the box
+            // (bottom-aligned, the glyph stays on the baseline) sets that height
+            const textPt = (runSizeHalf ?? para.sizeHalf) / 2
+            const linePt = symbolBulletLinePt(
+              marker.symbolFont,
+              (szHalf ?? para.sizeHalf) / 2,
+              (stray ? null : firstRunFontAscii(nodes[i].node)) ?? para.family,
+              textPt,
+            )
+            if (linePt) {
+              styles.push(
+                `--li-marker-lh:calc(${linePt}pt * var(--doc-line-mult,1))`,
+                '--li-marker-va:bottom',
+              )
+            }
           }
           if (level.color) {
             styles.push(
@@ -2654,11 +2732,14 @@ export const DocTable = Node.create({
         styles.push(`width:min(${widthPx}px,${paper})`)
         centerMargin = `margin-left:calc((${contentW} - min(${widthPx}px,${paper}))/2)`
       } else {
+        // a negative w:tblInd moves the box into the left margin, so the same
+        // amount is added back to the right-hand spill allowance
         const indented =
-          !tblFloated && node.attrs.tblAlign !== 'right' && Number(node.attrs.indentTwips) > 0
+          !tblFloated && node.attrs.tblAlign !== 'right' && Number(node.attrs.indentTwips)
         const indentPx = indented ? Number(node.attrs.indentTwips) / 15 : 0
+        const shift = indentPx < 0 ? `+ ${(-indentPx).toFixed(1)}px` : `- ${indentPx.toFixed(1)}px`
         const spill = indentPx
-          ? `calc(${contentW} + ${spillMargin} - ${indentPx.toFixed(1)}px)`
+          ? `calc(${contentW} + ${spillMargin} ${shift})`
           : `calc(${contentW} + ${spillMargin})`
         widthExpr = `min(${widthPx}px,${spill})`
         styles.push(`width:${widthExpr}`)
@@ -2775,16 +2856,18 @@ export const DocTable = Node.create({
     // a suppressed text-anchored float with a negative w:tblpY still hangs that far
     // above its anchor paragraph in Word (cover logo strips reach into the top
     // margin), so the inline table keeps the lift as a negative top margin
-    const liftTwips =
-      node.attrs.tblFloatSuppressed &&
-      (node.attrs.tblFloatVertAnchor ?? 'text') === 'text' &&
-      Number(node.attrs.tblFloatYTwips) < 0
-        ? -Number(node.attrs.tblFloatYTwips)
+    const suppressedTextY =
+      node.attrs.tblFloatSuppressed && (node.attrs.tblFloatVertAnchor ?? 'text') === 'text'
+        ? Number(node.attrs.tblFloatYTwips) || 0
         : 0
+    const liftTwips = suppressedTextY < 0 ? -suppressedTextY : 0
     if (liftTwips > 0) {
       const lift = (liftTwips / 15).toFixed(1)
       styles.push(`margin-top:-${lift}px`)
       attrs['data-tblp-lift'] = lift
+    } else if (suppressedTextY > 0) {
+      // ... and a positive one keeps the table that far below its anchor
+      styles.push(`margin-top:${(suppressedTextY / 15).toFixed(1)}px`)
     }
     if (styles.length > 0) attrs.style = styles.join(';')
     // A colgroup with normalized percentages defines the column grid whenever the
@@ -3158,6 +3241,18 @@ export const NativeTableSupport = Extension.create({
 /** formats pmDocToSavePlan can rebuild into the docx (see imageFromProtectedAttrs) */
 const PERSISTABLE_IMAGE_URL = /^data:image\/(?:png|jpeg|gif);base64,/
 
+let lazyMediaHashes = new Set<string>()
+/** pictures served lazily from the open document persist by part reference */
+export function setLazyMediaHashes(hashes: Iterable<string>): void {
+  lazyMediaHashes = new Set(hashes)
+}
+const isLazyImage = (src: string): boolean => {
+  const hash = parseLazyMediaUrl(src)?.hash
+  return hash !== undefined && lazyMediaHashes.has(hash)
+}
+const persistableImage = (src: string): boolean =>
+  PERSISTABLE_IMAGE_URL.test(src) || isLazyImage(src)
+
 /** display attrs a copied picture needs to round-trip through clipboard HTML */
 /**
  * CSS filter pair for the affine map y = slope * (x + offset - 0.5) + 0.5.
@@ -3232,12 +3327,17 @@ export const ImageCopyExtension = Extension.create({
       const node = sel.node
       if (node.type.name !== 'docProtected' || node.attrs.blockType !== 'image') return false
       let dataUrl = node.attrs.imageDataUrl
-      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
+      if (typeof dataUrl !== 'string') return false
+      if (!dataUrl.startsWith('data:image/') && !isLazyImage(dataUrl)) return false
+      const lazyPart = parseLazyMediaUrl(dataUrl)?.partPath
+      const directlyCopyable = lazyPart
+        ? /\.(?:png|jpe?g|gif)$/i.test(lazyPart)
+        : PERSISTABLE_IMAGE_URL.test(dataUrl)
       // the save pipeline persists only png/jpeg/gif; display-only formats
       // (bmp/webp/svg/tiff...) are transcoded to PNG from the already-decoded
       // DOM img so the copy stays saveable — undecodable ones keep the
-      // default HTML copy
-      if (!PERSISTABLE_IMAGE_URL.test(dataUrl)) {
+      // default HTML copy (a lazy picture is read from the file by the main process)
+      if (!directlyCopyable) {
         const dom = view.nodeDOM(sel.from) as HTMLElement | null
         const img = dom?.querySelector?.('img.doc-protected-img') as HTMLImageElement | null
         if (!img || !img.naturalWidth || !img.naturalHeight) return false
@@ -3405,7 +3505,7 @@ export const DocProtected = Node.create({
       const src = img?.getAttribute('src') ?? ''
       // persistable formats only: a bmp/webp/svg picture would display and
       // then silently vanish on save — the placeholder shell is honest
-      if (!PERSISTABLE_IMAGE_URL.test(src)) return null
+      if (!persistableImage(src)) return null
       let meta: Record<string, unknown> = {}
       try {
         meta = JSON.parse(el.getAttribute('data-image-meta') ?? '{}') as Record<string, unknown>
@@ -3437,7 +3537,7 @@ export const DocProtected = Node.create({
         getAttrs: (el) => {
           const img = el as HTMLImageElement
           const src = img.getAttribute('src') ?? ''
-          if (!PERSISTABLE_IMAGE_URL.test(src)) return false
+          if (!persistableImage(src)) return false
           let meta: Record<string, unknown> = {}
           try {
             meta = JSON.parse(img.getAttribute('data-image-meta') ?? '{}') as Record<
@@ -3861,7 +3961,11 @@ function protectedDomSpec(node: PmNode): DomSpec {
         : ''
       const align = node.attrs.strayAlign as string | null
       const alignCss = align === 'center' || align === 'right' ? `text-align:${align}` : ''
-      const strayCss = [strayStyle, indCss, alignCss].filter(Boolean).join(';')
+      const line = node.attrs.anchorLine as Record<string, unknown> | null
+      const lineCss = line ? strayLineCss(anchorLineSpec(line), strayAttrs) : ''
+      const tabCss =
+        line && strayRuns.some((r) => r.text.includes('\t')) ? strayTabCss(line, ind) : ''
+      const strayCss = [lineCss, tabCss, strayStyle, indCss, alignCss].filter(Boolean).join(';')
       if (strayCss) strayAttrs.style = strayCss
       if (node.attrs.strayStyleId) strayAttrs['data-style'] = String(node.attrs.strayStyleId)
       const stray: DomSpec = ['div', strayAttrs, ...strayRuns.flatMap((run) => runSpanSpecs(run))]
@@ -5118,8 +5222,7 @@ function imageResizePlugin(): Plugin {
                       ...display,
                       widthPx: Math.round(w),
                       // the handle measures the plot SVG; heightPx spans title row + plot
-                      heightPx:
-                        Math.round(h) + (display.title !== undefined ? CHART_TITLE_ROW_PX : 0),
+                      heightPx: Math.round(h) + chartTitleRowPx(display),
                     },
                   }),
                 )
@@ -5791,6 +5894,7 @@ const textboxSubExtensions = [
   CtrlCheckboxMark,
   CheckboxToggleExtension,
   TextStyleMark,
+  FormatOffClearExtension,
   CommentMark,
   UndoRedo,
 ]
@@ -5880,6 +5984,7 @@ export const editorExtensions = [
   CtrlCheckboxMark,
   RprChangeMark,
   TextStyleMark,
+  FormatOffClearExtension,
   CommentMark,
   InsMark,
   DelMark,

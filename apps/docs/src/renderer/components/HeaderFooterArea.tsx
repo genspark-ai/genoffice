@@ -29,6 +29,7 @@ import {
   type HfStripGeom,
   type HfTabLayout,
   hfParaLineHeightCss,
+  hfParaIndentStyle,
   hfStackedSpacingPx,
 } from '../editor/hf-dom'
 import { applyHfText, hfEditText, hfParasOf, PAGE_TOKEN } from '../editor/hf-text'
@@ -79,6 +80,7 @@ function paraStyle(para: HfParagraph): React.CSSProperties {
   const lh = hfParaLineHeightCss(para)
   if (lh) style.lineHeight = lh
   if (para.bidi) style.direction = 'rtl'
+  Object.assign(style, hfParaIndentStyle(para))
   if (para.align) {
     style.textAlign =
       para.align === 'left' || para.align === 'center' || para.align === 'right'
@@ -382,7 +384,13 @@ function HfContent({
             <div
               key={i}
               className={`page-hf-para${para.frameXAlign ? ' page-hf-frame' : ''}`}
-              style={{ ...paraStyle(para), ...margins(i) }}
+              style={{
+                ...paraStyle(para),
+                ...margins(i),
+                ...(para.runs.length === 0 && para.emptyRunSizeHalfPoints
+                  ? { fontSize: `${para.emptyRunSizeHalfPoints / 2}pt` }
+                  : {}),
+              }}
             >
               {para.runs.length === 0 ? ' ' : null}
               {para.runs.map((run, j) => (

@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { OpenDocumentTab, TabKind } from '../../../shared/tabs-api'
@@ -88,7 +89,12 @@ export function resolveOpenDocument(
 }
 
 function normalizePath(value: string): string {
-  const resolved = resolve(value)
+  let resolved = resolve(value)
+  try {
+    resolved = realpathSync.native(resolved)
+  } catch {
+    // unsaved or moved file: compare the resolved path as-is
+  }
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved
 }
 

@@ -8,9 +8,6 @@ import {
   ShapePreview,
   useDismissablePopover,
   useRibbonCollapse,
-  FilesEdgeTab,
-  FilesPane,
-  filesPaneTitle,
 } from '@genoffice/ui'
 
 import {
@@ -222,8 +219,6 @@ interface ExcelShellProps {
   /// Save As remains available for a clean workbook, but requires a real
   /// file-backed session (the in-memory demo workbook has nowhere to copy).
   readonly canSaveAs: boolean
-  /** absolute path of the open workbook (null while untitled), highlighted in the Files pane */
-  readonly workbookPath: string | null
   readonly onSaveAs: () => void
   /// QAT redo (workbook history, same path as the app menu's ⇧⌘Z); undo
   /// shares the AI panel's onUndo above.
@@ -376,7 +371,6 @@ export function ExcelShell({
   canSave,
   onSave,
   canSaveAs,
-  workbookPath,
   onSaveAs,
   onRedo,
   canUndo,
@@ -388,7 +382,7 @@ export function ExcelShell({
   calcManual,
   onGoalSeek,
 }: ExcelShellProps): React.JSX.Element {
-  const { t, lang } = useI18n()
+  const { t } = useI18n()
   const [activeTab, setActiveTab] = useState<RibbonTab>('Home')
   const collapse = useRibbonCollapse('ai-sheets-ribbon-collapsed')
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
@@ -398,12 +392,6 @@ export function ExcelShell({
   useEffect(() => {
     localStorage.setItem('ai-sheets-show-ai', isCopilotOpen ? '1' : '0')
   }, [isCopilotOpen])
-  const [filesOpen, setFilesOpen] = useState(
-    () => localStorage.getItem('ai-sheets-show-files') === '1',
-  )
-  useEffect(() => {
-    localStorage.setItem('ai-sheets-show-files', filesOpen ? '1' : '0')
-  }, [filesOpen])
   const [showFormatCells, setShowFormatCells] = useState(false)
   const [axisSizeTarget, setAxisSizeTarget] = useState<'row' | 'col' | null>(null)
   const [showLinkDialog, setShowLinkDialog] = useState(false)
@@ -568,9 +556,7 @@ export function ExcelShell({
   const saveAsTitle = `${t('appSaveAs')} (${platformShortcuts('⇧⌘S')})`
 
   return (
-    <main
-      className={`app-shell ${isCopilotOpen ? '' : 'copilot-collapsed'}${filesOpen ? ' files-open' : ''}`}
-    >
+    <main className={`app-shell ${isCopilotOpen ? '' : 'copilot-collapsed'}`}>
       <header className={`excel-header ${collapse.rootClass}`} ref={collapse.rootRef}>
         <nav
           className={`ribbon-tabs ${IN_TAB ? '' : IS_MAC ? 'ribbon-tabs-mac' : 'ribbon-tabs-win'}`}
@@ -656,8 +642,6 @@ export function ExcelShell({
           workbookProtected={onGetWorkbookProtection()}
           formulaBarVisible={formulaBarVisible}
           crossHighlightVisible={crossHighlightVisible}
-          filesOpen={filesOpen}
-          onToggleFiles={() => setFilesOpen((v) => !v)}
           pageLayout={pageLayout}
           selectedChart={selectedChart}
           onListNames={() => {
@@ -741,16 +725,7 @@ export function ExcelShell({
           onExpand={() => setIsCopilotOpen(true)}
           onCollapse={() => setIsCopilotOpen(false)}
         />
-        {filesOpen && (
-          <FilesPane
-            api={window.filesPaneApi}
-            lang={lang}
-            currentPath={workbookPath}
-            onClose={() => setFilesOpen(false)}
-          />
-        )}
         <div className="sheet-main">
-          {!filesOpen && <FilesEdgeTab lang={lang} onOpen={() => setFilesOpen(true)} />}
           <section className="workbook-area">
             <div id="univer-container" className="spreadsheet" />
           </section>
@@ -1264,8 +1239,6 @@ function Ribbon({
   workbookProtected,
   formulaBarVisible,
   crossHighlightVisible,
-  filesOpen,
-  onToggleFiles,
   pageLayout,
   selectedChart,
   onCommand,
@@ -1285,8 +1258,6 @@ function Ribbon({
   /// View > Show echo for the formula bar toggle (app-level, not per sheet).
   readonly formulaBarVisible: boolean
   readonly crossHighlightVisible: boolean
-  readonly filesOpen: boolean
-  readonly onToggleFiles: () => void
   readonly pageLayout: PageLayoutEcho
   readonly selectedChart: SelectedChartRibbon | null
   readonly onCommand: (command: string) => void
@@ -1302,7 +1273,7 @@ function Ribbon({
   readonly onRefreshPivot: () => string | null
   readonly onIsSelectionInPivot: () => boolean
 }): React.JSX.Element {
-  const { t, lang } = useI18n()
+  const { t } = useI18n()
   const [fontColor, setFontColor] = useState('#C00000')
   const [fillColor, setFillColor] = useState('#FFF2CC')
   const [borderColor, setBorderColor] = useState('#000000')
@@ -2379,15 +2350,6 @@ function Ribbon({
             >
               <i className="check-box">{crossHighlightVisible ? '✓' : ''}</i>
               {t('appCrossHighlight')}
-            </button>
-            <button
-              className="check-item"
-              data-tip={filesPaneTitle(lang)}
-              aria-pressed={filesOpen}
-              onClick={onToggleFiles}
-            >
-              <i className="check-box">{filesOpen ? '✓' : ''}</i>
-              {filesPaneTitle(lang)}
             </button>
           </div>
         </RibbonGroup>

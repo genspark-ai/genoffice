@@ -5,7 +5,6 @@ import {
   SHAPE_GALLERY_GROUPS,
   useDismissablePopover,
   wordArtSolidColor,
-  filesPaneTitle,
   type WordArtPreset,
 } from '@genoffice/ui'
 import {
@@ -40,7 +39,6 @@ import {
   IconLock,
   IconMoon,
   IconNavPane,
-  IconFilesPane,
   IconOutlineView,
   IconPageWidth,
   IconGridlines,
@@ -1077,8 +1075,6 @@ interface ViewTabProps {
   onShowRuler: (v: boolean) => void
   showNav: boolean
   onShowNav: (v: boolean) => void
-  showFiles: boolean
-  onShowFiles: (v: boolean) => void
   viewMode: ViewMode
   onViewMode: (mode: ViewMode) => void
   readMode: boolean
@@ -1104,8 +1100,6 @@ export function ViewTab({
   onShowRuler,
   showNav,
   onShowNav,
-  showFiles,
-  onShowFiles,
   viewMode,
   onViewMode,
   readMode,
@@ -1116,7 +1110,7 @@ export function ViewTab({
   onSplitView,
   onPagePreview,
 }: ViewTabProps) {
-  const { t, lang } = useI18n()
+  const { t } = useI18n()
   const [winMenuOpen, setWinMenuOpen] = useState(false)
   const [windows, setWindows] = useState<DocsTabInfo[]>([])
   /** wrap holding both the switch-tabs trigger and its menu */
@@ -1326,17 +1320,6 @@ export function ViewTab({
               <IconNavPane size={BIG} />
             </span>
             <span>{t('ribbonNavPane')}</span>
-          </button>
-          <button
-            className={`rb-big ${showFiles ? 'active' : ''}`}
-            disabled={!hasDoc}
-            data-tip={filesPaneTitle(lang)}
-            onClick={() => onShowFiles(!showFiles)}
-          >
-            <span className="rb-big-icon">
-              <IconFilesPane size={BIG} />
-            </span>
-            <span>{filesPaneTitle(lang)}</span>
           </button>
         </div>
         <div className="ribbon-group-label">{t('ribbonGroupShow')}</div>

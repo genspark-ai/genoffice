@@ -332,8 +332,6 @@ export const ja = {
   appAutofillStreaming: 'ストリーミング読み込み中の範囲へのオートフィルはまだ許可されていません。',
   appDvNeedsIndexed:
     'データの入力規則を編集するには、このシートのインデックス作成が完了している必要があります — しばらくしてからお試しください。',
-  appDuplicateNeedsFullLoad:
-    'シートのコピーには完全読み込みモードが必要です。このブックは大きすぎるため、ストリーミング読み込みのみ行われました。',
   appPivotSheetNoDuplicate:
     'このシートにはピボットテーブルが含まれています — このシートのコピーには未対応です。',
   appDuplicateScopedNames:
@@ -657,6 +655,9 @@ export const ja = {
   appFullyLoaded: 'ブックを完全に読み込みました — 数式はライブで再計算され、行列を編集できます。',
   appRangeMustBeVector: '{range} は 1 行または 1 列のセルである必要があります。',
   appRangeTooManyCells: '{range} が {max} 個のセルを超えています。',
+  appCopyLoadingRange: 'コピーのため {range} を読み込んでいます…',
+  appCopyValuesOnly:
+    '{range} を値のみでコピーしました（{cells} セル）：{max} セルを超える範囲では書式は保持されません。',
   appSheetStillIndexing: 'シートのインデックスを作成中です — しばらくしてからお試しください。',
   // Print (export PDF)
   appPrintNothing: 'このシートには印刷できる内容がありません。',

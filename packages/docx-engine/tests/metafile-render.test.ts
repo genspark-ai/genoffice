@@ -623,3 +623,123 @@ describe('EMR_CREATEDIBPATTERNBRUSHPT (synthetic)', () => {
     expect(calls[fillIdx].args).toEqual([10, 10, 40, 2])
   })
 })
+
+/**
+ * Minimal EMF+ dual-mode file the way Office writes chart pictures: the plot is
+ * clipped with SetClipRect, then SetClipRegion(region object) widens the clip
+ * back to the whole chart before the title/legend are drawn. Region objects
+ * carry ObjectType 4 (MS-EMFPLUS 2.1.1.22) and a single leaf node has
+ * RegionNodeCount 0.
+ */
+function buildEmfPlusRegionClipFile(): ArrayBuffer {
+  const plusRecord = (type: number, flags: number, data: number[]): number[] => {
+    const size = 12 + data.length
+    return [...u16(type), ...u16(flags), ...u32(size), ...u32(data.length), ...data]
+  }
+  const plus = [
+    ...plusRecord(0x4001, 1, [...u32(0xdbc01002), ...u32(1), ...u32(96), ...u32(96)]),
+    ...plusRecord(0x4032, 1 << 8, [...f32(10), ...f32(10), ...f32(20), ...f32(20)]),
+    ...plusRecord(0x4008, (4 << 8) | 0, [
+      ...u32(0xdbc01002),
+      ...u32(0),
+      ...u32(0x10000000),
+      ...f32(0),
+      ...f32(0),
+      ...f32(100),
+      ...f32(60),
+    ]),
+    ...plusRecord(0x4034, 1 << 8, []),
+    ...plusRecord(0x400a, 0x8000, [
+      ...u32(0xff0000ff),
+      ...u32(1),
+      ...f32(0),
+      ...f32(0),
+      ...f32(100),
+      ...f32(60),
+    ]),
+    ...plusRecord(0x4002, 0, []),
+  ]
+  const commentData = [...u32(0x2b464d45), ...plus]
+  const comment = [
+    ...u32(70),
+    ...u32(12 + commentData.length),
+    ...u32(commentData.length),
+    ...commentData,
+  ]
+  const eof = [...u32(14), ...u32(20), ...u32(0), ...u32(16), ...u32(20)]
+  const total = 88 + comment.length + eof.length
+  const header = [
+    ...u32(1),
+    ...u32(88),
+    ...i32(0),
+    ...i32(0),
+    ...i32(100),
+    ...i32(60),
+    ...i32(0),
+    ...i32(0),
+    ...i32(2646),
+    ...i32(1588),
+    ...u32(0x464d4520),
+    ...u32(0x10000),
+    ...u32(total),
+    ...u32(3),
+    ...u16(1),
+    ...u16(0),
+    ...u32(0),
+    ...u32(0),
+    ...u32(0),
+    ...i32(1000),
+    ...i32(600),
+    ...i32(265),
+    ...i32(159),
+  ]
+  return new Uint8Array([...header, ...comment, ...eof]).buffer
+}
+function u16(v: number): number[] {
+  return [v & 0xff, (v >>> 8) & 0xff]
+}
+function u32(v: number): number[] {
+  return [v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff]
+}
+function i32(v: number): number[] {
+  return u32(v >>> 0)
+}
+function f32(v: number): number[] {
+  const b = new Uint8Array(4)
+  new DataView(b.buffer).setFloat32(0, v, true)
+  return [...b]
+}
+
+describe('EMF+ SetClipRegion (synthetic dual-mode chart picture)', () => {
+  it('restores the whole-chart clip from a region object before the fill', async () => {
+    reset()
+    const url = await convertEmfToDataUrl(buildEmfPlusRegionClipFile(), { dpiScale: 1 })
+    expect(url).toMatch(/^data:image\/png/)
+    const fillAt = calls.findIndex((c) => c.method === 'fillRect')
+    expect(fillAt).toBeGreaterThan(0)
+    const clipAt = calls
+      .slice(0, fillAt)
+      .map((c) => c.method)
+      .lastIndexOf('clip')
+    expect(clipAt).toBeGreaterThan(0)
+    const pathStart = calls
+      .slice(0, clipAt)
+      .map((c) => c.method)
+      .lastIndexOf('beginPath')
+    const xs: number[] = []
+    const ys: number[] = []
+    for (const c of calls.slice(pathStart, clipAt)) {
+      if (c.method === 'rect') {
+        const [x, y, w, h] = c.args as number[]
+        xs.push(x, x + w)
+        ys.push(y, y + h)
+      } else if (c.method === 'moveTo' || c.method === 'lineTo') {
+        xs.push(c.args[0] as number)
+        ys.push(c.args[1] as number)
+      }
+    }
+    // the 20x20 plot clip must have been replaced by the 100x60 region
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(90)
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(50)
+  })
+})

@@ -3,8 +3,8 @@ import { NodeViewContent, NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { Dropdown } from '@genoffice/ui'
 import { t } from '../i18n/locale'
-import { MERMAID_LANGUAGE, renderMermaid } from './mermaid'
-import type { MermaidResult } from './mermaid'
+import { DIAGRAM_LANGUAGES, diagramLanguage, renderDiagram } from './diagrams'
+import type { DiagramLanguage, DiagramResult } from './diagrams'
 
 const LANGUAGES = [
   'plaintext',
@@ -24,7 +24,6 @@ const LANGUAGES = [
   'kotlin',
   'lua',
   'markdown',
-  MERMAID_LANGUAGE,
   'objectivec',
   'php',
   'python',
@@ -38,7 +37,8 @@ const LANGUAGES = [
   'typescript',
   'xml',
   'yaml',
-]
+  ...DIAGRAM_LANGUAGES,
+].sort()
 
 const RERENDER_DEBOUNCE_MS = 300
 
@@ -47,10 +47,15 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
   const copyTimerRef = useRef<number | null>(null)
   const mountedRef = useRef(true)
   const language = String(node.attrs.language ?? '') || 'plaintext'
-  const isMermaid = language === MERMAID_LANGUAGE
+  const diagramLang = diagramLanguage(language)
   const source = node.textContent
 
-  const [diagram, setDiagram] = useState<MermaidResult | null>(null)
+  const [rendered, setRendered] = useState<{
+    language: DiagramLanguage
+    result: DiagramResult
+  } | null>(null)
+  // a result for another language is stale the moment the fence is relabelled
+  const diagram = rendered && rendered.language === diagramLang ? rendered.result : null
   const hasDiagramRef = useRef(false)
   hasDiagramRef.current = diagram !== null
   const [caretInside, setCaretInside] = useState(false)
@@ -64,7 +69,7 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
   }, [])
 
   useEffect(() => {
-    if (!isMermaid) return
+    if (!diagramLang) return
     const update = () => {
       const pos = getPos()
       if (pos === undefined) return
@@ -79,26 +84,26 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
     return () => {
       editor.off('selectionUpdate', update)
     }
-  }, [editor, getPos, isMermaid])
+  }, [editor, getPos, diagramLang])
 
   useEffect(() => {
-    if (!isMermaid || !source.trim()) {
-      setDiagram(null)
+    if (!diagramLang || !source.trim()) {
+      setRendered(null)
       return
     }
     let cancelled = false
     // first paint right away, then debounce while the user types
     const delay = hasDiagramRef.current ? RERENDER_DEBOUNCE_MS : 0
     const timer = window.setTimeout(() => {
-      void renderMermaid(source).then((result) => {
-        if (!cancelled) setDiagram(result)
+      void renderDiagram(diagramLang, source).then((result) => {
+        if (!cancelled) setRendered({ language: diagramLang, result })
       })
     }, delay)
     return () => {
       cancelled = true
       window.clearTimeout(timer)
     }
-  }, [isMermaid, source])
+  }, [diagramLang, source])
 
   const copy = () => {
     void navigator.clipboard
@@ -125,20 +130,20 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
       .run()
   }
 
-  const rendered = isMermaid && diagram?.ok === true
-  const showSource = !rendered || caretInside
-  const error = isMermaid && diagram && !diagram.ok && source.trim() ? diagram.error : null
+  const hasPicture = diagram?.ok === true
+  const showSource = !hasPicture || caretInside
+  const error = diagram && !diagram.ok && source.trim() ? diagram.error : null
 
   const className = [
     'md-codeblock',
-    isMermaid && 'md-mermaid',
-    !showSource && 'md-mermaid-collapsed',
+    diagramLang && 'md-diagram',
+    !showSource && 'md-diagram-collapsed',
   ]
     .filter(Boolean)
     .join(' ')
 
   return (
-    <NodeViewWrapper className={className} data-mermaid={rendered ? 'rendered' : undefined}>
+    <NodeViewWrapper className={className} data-diagram={hasPicture ? 'rendered' : undefined}>
       <div className="md-codeblock-bar" contentEditable={false}>
         <Dropdown
           className="md-codeblock-lang"
@@ -155,13 +160,13 @@ export function CodeBlockView({ node, updateAttributes, editor, getPos }: NodeVi
         <NodeViewContent<'code'> as="code" />
       </pre>
       {error && (
-        <div className="md-mermaid-error" contentEditable={false}>
+        <div className="md-diagram-error" contentEditable={false}>
           {t('mermaidError')}: {error}
         </div>
       )}
-      {isMermaid && diagram?.ok && (
+      {diagram?.ok && (
         <div
-          className="md-mermaid-preview"
+          className="md-diagram-preview"
           contentEditable={false}
           onClick={editSource}
           dangerouslySetInnerHTML={{ __html: diagram.svg }}

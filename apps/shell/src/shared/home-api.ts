@@ -10,7 +10,6 @@ import type {
   CodexModelCatalog,
 } from '@genoffice/ai-provider'
 import type { UpdateChannel } from './update-api'
-import type { FolderListing, FolderRoot, MoveConflictPolicy, MoveResult } from '@genoffice/ui'
 import type { AiPanelPrefs } from '@genoffice/ui/ai-panel-prefs'
 
 /** UI language; kept self-contained here (mirrors Lang in @genoffice/i18n) */
@@ -324,14 +323,56 @@ export interface NewFileOpts {
 }
 
 // ── Folder tree (home "Folders" panel over the default save folder) ──────
-// The data shapes live in @genoffice/ui so the editors' Files pane shares them.
-export type {
-  FolderEntry,
-  FolderListing,
-  FolderRoot,
-  MoveConflictPolicy,
-  MoveResult,
-} from '@genoffice/ui'
+
+export interface FolderRoot {
+  path: string
+  /** folder name shown on the root row */
+  name: string
+  /** false when the folder does not exist and cannot be created, or is read-only */
+  usable: boolean
+}
+
+export interface FolderEntry {
+  path: string
+  name: string
+  mtimeMs: number
+  /** whether it contains at least one visible sub-folder (drives the expand chevron) */
+  hasSubfolders: boolean
+}
+
+/** a document file listed by the tree (same shape as the home recents rows) */
+export interface FileEntry {
+  path: string
+  name: string
+  /** lowercased extension without the dot */
+  ext: string
+  mtimeMs: number
+  sizeBytes: number
+  starred: boolean
+  /** the path failed to stat */
+  missing?: boolean
+}
+
+export interface FolderListing {
+  dir: string
+  folders: FolderEntry[]
+  /** supported document files directly inside `dir`, newest first */
+  files: FileEntry[]
+  /** the directory could not be read (deleted or moved outside the app) */
+  missing?: boolean
+}
+
+/** what to do when a moved item's name already exists in the target */
+export type MoveConflictPolicy = 'ask' | 'replace' | 'keepBoth' | 'skip'
+
+export interface MoveResult {
+  /** old path → new path for everything that moved */
+  moved: Array<{ from: string; to: string }>
+  /** items skipped because the name exists in the target (policy 'ask'/'skip') */
+  conflicts: string[]
+  /** items that failed for another reason */
+  failed: Array<{ path: string; error: string }>
+}
 
 export const HOME_CHANNELS = {
   recents: 'home:recents',

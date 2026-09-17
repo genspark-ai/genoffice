@@ -209,7 +209,7 @@ export function fieldDisplayOf(
           ? 'right'
           : jc === 'center'
             ? 'center'
-            : jc === 'both' || jc === 'distribute'
+            : jc === 'both' || jc === 'distribute' || /kashida$|^thaiDistribute$/i.test(jc ?? '')
               ? 'justify'
               : undefined
     // explicit line spacing (same extraction as tocLine): the renderer must

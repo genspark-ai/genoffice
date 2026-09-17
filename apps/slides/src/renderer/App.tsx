@@ -86,13 +86,7 @@ import { AnimationPane } from './components/AnimationPane'
 import { AnimPreviewOverlay } from './components/AnimatedSlide'
 import { EquationDialog, HeaderFooterDialog, LinkDialog } from './components/InsertDialogs'
 import { CutoutDialog } from './components/CutoutDialog'
-import {
-  FilesEdgeTab,
-  FilesPane,
-  useAutoSavePref,
-  type AiScopeQuoteData,
-  type WordArtPreset,
-} from '@genoffice/ui'
+import { useAutoSavePref, type AiScopeQuoteData, type WordArtPreset } from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from './insert-presets'
 import { GensparkMark, IconAiBeautify, IconAiFactCheck, IconAiImage } from './components/icons'
 import { ToastHost } from './components/toast'
@@ -386,12 +380,6 @@ export function App() {
     return () => window.clearTimeout(t)
   }, [status])
   const [showThumbs, setShowThumbs] = useState(true)
-  const [filesOpen, setFilesOpen] = useState(
-    () => localStorage.getItem('ai-slides-show-files') === '1',
-  )
-  useEffect(() => {
-    localStorage.setItem('ai-slides-show-files', filesOpen ? '1' : '0')
-  }, [filesOpen])
   // ── Thumbnail sidebar width (drag the divider to resize; persisted) ─────────
   const [thumbsW, setThumbsW] = useState(loadThumbsW)
   const thumbsListRef = useRef<HTMLDivElement | null>(null)
@@ -2947,8 +2935,6 @@ export function App() {
         onZoom={previewZoom}
         showThumbs={showThumbs}
         onToggleThumbs={() => setShowThumbs((v) => !v)}
-        filesOpen={filesOpen}
-        onToggleFiles={() => setFilesOpen((v) => !v)}
         aiOpen={showAi}
         onToggleAi={toggleAi}
         onAiPreset={(text, opts) => pushAiPreset(text, true, undefined, undefined, opts?.slideShot)}
@@ -3306,19 +3292,7 @@ export function App() {
             )}
           </div>
         )}
-        {slide && viewMode !== 'reading' && filesOpen && (
-          <FilesPane
-            api={window.filesPaneApi}
-            lang={lang}
-            currentPath={path}
-            onClose={() => setFilesOpen(false)}
-          />
-        )}
         <div className="app-content">
-          {/* only while the thumbnail rail is hidden, so it never covers the rail; the View check remains */}
-          {slide && viewMode !== 'reading' && !filesOpen && !showThumbs && (
-            <FilesEdgeTab lang={lang} onOpen={() => setFilesOpen(true)} />
-          )}
           {missingFonts.length > 0 && (
             <div className="font-missing-banner">
               <span className="fmb-text">

@@ -30,7 +30,7 @@ import { FILE_READ_BATCH_CELLS, MAX_SCAN_CELLS } from './ai/workbook-search'
 import { t } from './i18n/locale'
 import { installSparseFind, type SpillLookup } from './sparse-find'
 import { netAxisDelta } from './view-transform'
-import type { LazyWorkbookState, UniverRuntime } from './univer-state'
+import { lazySheetMeta, type LazyWorkbookState, type UniverRuntime } from './univer-state'
 import { ensureLazyRangeLoaded, readSheetRangeMapped } from './univer-sync'
 
 /** Same match shape the built-in sheets provider produces (ISheetCellMatch). */
@@ -793,7 +793,7 @@ export class LazyExtendedFindModel extends FindModel {
       for (const cell of collectJournalMatches(this.state, sheetId, test)) {
         collected.push({ ...cell, sheetId })
       }
-      const meta = this.state.file.sheets.find((candidate) => candidate.id === sheetId)
+      const meta = lazySheetMeta(this.state, sheetId)
       // Sheets added this session live entirely in the journal.
       if (!meta || meta.rowCount <= 0 || meta.columnCount <= 0) {
         this.refreshExtras(collected, comparator, unitId)

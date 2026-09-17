@@ -9,6 +9,7 @@ import {
   syncPageSheets,
   syncPhantomRowspans,
   clampCellBoxTops,
+  clampCellImageTops,
   pageBorderArtStripStyle,
   pageBorderStyleOf,
   rowFillAttrs,
@@ -244,6 +245,53 @@ describe('clampCellBoxTops', () => {
     box.getBoundingClientRect = () => ({ top: 0, bottom: 45, height: 45, width: 100 }) as DOMRect
     clampCellBoxTops(pm, 0, 1)
     expect(box.style.getPropertyValue('--page-float-dy')).toBe('62.0px')
+  })
+})
+
+describe('clampCellImageTops', () => {
+  const cellImage = (pm: HTMLElement, imgTop: number, cellTop: number): HTMLElement => {
+    const table = document.createElement('table')
+    const cell = document.createElement('td')
+    cell.style.border = '0'
+    cell.style.padding = '0'
+    cell.getBoundingClientRect = () => ({ top: cellTop, height: 80, width: 200 }) as DOMRect
+    const img = document.createElement('img')
+    img.dataset.cellLift = '1'
+    img.style.marginTop = 'calc(-243.0px + var(--cell-lift,0px))'
+    let lifted = 0
+    // the live rect follows the applied lift, like the real layout
+    img.getBoundingClientRect = () =>
+      ({ top: imgTop + lifted, bottom: imgTop + lifted + 71, height: 71, width: 201 }) as DOMRect
+    Object.defineProperty(img, 'lift', { set: (v: number) => (lifted = v) })
+    cell.appendChild(img)
+    table.appendChild(cell)
+    pm.appendChild(table)
+    return img
+  }
+
+  // mounted: jsdom computes the cell insets only for elements in the document
+  const mounted = () => document.body.appendChild(document.createElement('div'))
+
+  it('pushes a picture lifted above its cell top back to the edge; in-cell pictures stay', () => {
+    const pm = mounted()
+    const above = cellImage(pm, 440, 660)
+    const inside = cellImage(pm, 700, 660)
+    clampCellImageTops(pm, 1)
+    expect(above.style.getPropertyValue('--cell-lift')).toBe('220.0px')
+    expect(above.dataset.cellLiftDy).toBe('220')
+    expect(inside.style.getPropertyValue('--cell-lift')).toBe('')
+    pm.remove()
+  })
+
+  it('is idempotent against the already-lifted rect and scales by the zoom factor', () => {
+    const pm = mounted()
+    const img = cellImage(pm, 440, 660)
+    clampCellImageTops(pm, 2)
+    expect(img.style.getPropertyValue('--cell-lift')).toBe('110.0px')
+    ;(img as unknown as { lift: number }).lift = 220
+    clampCellImageTops(pm, 2)
+    expect(img.style.getPropertyValue('--cell-lift')).toBe('110.0px')
+    pm.remove()
   })
 })
 

@@ -73,7 +73,9 @@ export function charScaleXAttr(text: string, scalePct: number, perCharEm: number
   })
 }
 
-/** glyphs compress like Word; the negative margin hands the saved width back to the line */
+/** glyphs compress like Word; the negative margin hands the saved width back to the line.
+ *  text-indent:0 — the block would inherit a hanging indent and shrink-to-fit
+ *  to zero width, piling every glyph onto one spot */
 export function charScaleXDecls(json: string): string[] {
   let v: Partial<CharScaleX>
   try {
@@ -87,6 +89,7 @@ export function charScaleXDecls(json: string): string[] {
     `transform:scaleX(${v.s})`,
     'transform-origin:0 50%',
     `margin-right:${v.gapEm}em`,
+    'text-indent:0',
   ]
 }
 

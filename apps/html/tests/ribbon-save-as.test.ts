@@ -51,7 +51,7 @@ function renderRibbon(disabled = false) {
 
 function saveAsButton(container: HTMLElement): HTMLButtonElement {
   const button = container.querySelector<HTMLButtonElement>(
-    '.ribbon-tabs button[aria-label="另存为…"]',
+    '.ribbon-tabs button[aria-label="\u53e6\u5b58\u4e3a\u2026"]',
   )
   expect(button, 'Save As must be available in the top-left quick-access row').not.toBeNull()
   return button!
@@ -61,7 +61,7 @@ describe('Save As quick-access button', () => {
   it('can save a copy of an unchanged document without triggering normal save', () => {
     const { container, onSave, onSaveAs } = renderRibbon()
     const button = saveAsButton(container)
-    expect(button.textContent).toBe('另存为…')
+    expect(button.textContent).toBe('\u53e6\u5b58\u4e3a\u2026')
     expect(button.disabled).toBe(false)
     act(() => button.click())
     expect(onSaveAs).toHaveBeenCalledOnce()

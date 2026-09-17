@@ -78,26 +78,21 @@ export function createPdfTools(): McpToolDefinition[] {
         // probe just the page count, then extract the requested span for real
         const pageCount = (await open()).pageCount
 
-        let fromPage = 1
-        let toPage = pageCount
-        let wanted: number[] | null = null
         const spec = typeof args.pages === 'string' ? args.pages.trim() : ''
-        if (spec) {
-          wanted = parsePageList(spec, pageCount)
-          fromPage = wanted[0]!
-          toPage = wanted[wanted.length - 1]!
-        }
+        const wanted = spec ? parsePageList(spec, pageCount) : undefined
 
-        // `truncated` means the budget clipped text inside the requested span —
-        // pages the caller never asked for do not count as truncation
-        const doc = await readPdfText(bytes, { fromPage, toPage, charBudget: MAX_TOTAL_CHARS })
-        const pages = wanted ? doc.pages.filter((p) => wanted!.includes(p.page)) : doc.pages
+        // only the requested pages are extracted, so pages the caller never
+        // asked for neither spend the budget nor count as truncation
+        const doc = await readPdfText(bytes, {
+          ...(wanted ? { pages: wanted } : {}),
+          charBudget: MAX_TOTAL_CHARS,
+        })
         return {
           path: filePath,
           name: basename(filePath),
           pageCount: doc.pageCount,
           info: doc.info,
-          pages,
+          pages: doc.pages,
           truncated: doc.truncated,
         }
       },

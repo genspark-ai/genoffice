@@ -1673,6 +1673,19 @@ export function markSheetsUntitledPath(path: string): void {
   untitledWorkbookPaths.add(path)
 }
 
+const mcpWritablePaths = new Map<number, Set<string>>()
+
+/** MCP save_session: the shell resolved this path for the tab, so a dialog-free save may write it */
+export function authorizeMcpSheetWrite(wcId: number, filePath: string): void {
+  const set = mcpWritablePaths.get(wcId) ?? new Set<string>()
+  set.add(filePath)
+  mcpWritablePaths.set(wcId, set)
+}
+
+function canMcpSheetWrite(wcId: number, filePath: string): boolean {
+  return mcpWritablePaths.get(wcId)?.has(filePath) === true
+}
+
 /** Sanitize an AI-provided sheet name into a safe filename base: strip illegal path chars, collapse whitespace, cap length; null if invalid. (Mirrors slides' draft naming.) */
 function sanitizeAutoRenameBase(raw: string): string | null {
   const cleaned = raw
@@ -2886,10 +2899,15 @@ export function registerSheetsIpc(): void {
     // an exact path with a clobber guard — docs:save-to parity. Only the xlsx
     // pipeline is reachable this way (.xlsm/.csv need their interactive flows).
     if (request.targetPath !== undefined) {
+      if (request.mode !== 'save-as') throw new Error('An explicit save path needs Save As.')
       if (!isAbsolute(request.targetPath)) throw new Error('Save path must be absolute.')
       targetPath = /\.xlsx$/i.test(request.targetPath)
         ? request.targetPath
         : `${request.targetPath}.xlsx`
+      // only a target the MCP layer resolved for this tab may be written without a dialog
+      if (!canMcpSheetWrite(event.sender.id, targetPath)) {
+        throw new Error('save target was not authorized')
+      }
       if (existsSync(targetPath) && request.overwrite !== true) {
         throw new Error(`file already exists: ${targetPath}`)
       }

@@ -316,8 +316,6 @@ export const id = {
   appAutofillStreaming: 'IsiOtomatis ke area yang masih dimuat secara streaming belum diizinkan.',
   appDvNeedsIndexed:
     'Mengedit validasi data memerlukan lembar ini terindeks penuh dahulu — coba lagi sebentar lagi.',
-  appDuplicateNeedsFullLoad:
-    'Menduplikasi lembar memerlukan mode muat penuh — buku kerja ini terlalu besar dan dimuat sebagian secara streaming.',
   appPivotSheetNoDuplicate: 'Lembar ini berisi PivotTable — menduplikasinya belum didukung.',
   appDuplicateScopedNames:
     'Lembar ini memiliki nama terdefinisi berlingkup lembar — menduplikasinya belum didukung.',
@@ -622,6 +620,9 @@ export const id = {
     'Buku kerja termuat penuh — rumus dihitung ulang secara langsung, baris/kolom dapat diedit.',
   appRangeMustBeVector: '{range} harus berupa satu baris atau satu kolom sel.',
   appRangeTooManyCells: '{range} mencakup lebih dari {max} sel.',
+  appCopyLoadingRange: 'Memuat {range} untuk disalin…',
+  appCopyValuesOnly:
+    '{range} disalin sebagai nilai saja ({cells} sel): gaya hanya dipertahankan hingga {max} sel.',
   appSheetStillIndexing: 'Lembar masih diindeks — coba lagi sebentar lagi.',
   appPrintNothing: 'Lembar ini tidak memiliki apa pun untuk dicetak.',
   appPrintTooLarge:

@@ -337,8 +337,6 @@ export const es = {
     'Aún no se permite el autorrelleno hacia un área que todavía se está cargando por streaming.',
   appDvNeedsIndexed:
     'Editar la validación de datos requiere que esta hoja esté totalmente indexada — inténtelo de nuevo en un momento.',
-  appDuplicateNeedsFullLoad:
-    'Duplicar una hoja requiere el modo de carga completa — este libro es demasiado grande y se carga parcialmente por streaming.',
   appPivotSheetNoDuplicate:
     'Esta hoja contiene una tabla dinámica — su duplicación aún no se admite.',
   appDuplicateScopedNames:
@@ -661,6 +659,9 @@ export const es = {
     'Libro completamente cargado — las fórmulas se recalculan en vivo y las filas/columnas son editables.',
   appRangeMustBeVector: '{range} debe ser una sola fila o una sola columna de celdas.',
   appRangeTooManyCells: '{range} abarca más de {max} celdas.',
+  appCopyLoadingRange: 'Cargando {range} para copiar…',
+  appCopyValuesOnly:
+    '{range} copiado solo como valores ({cells} celdas): los estilos solo se conservan hasta {max} celdas.',
   appSheetStillIndexing: 'La hoja todavía se está indexando — inténtelo de nuevo en un momento.',
   appPrintNothing: 'La hoja no tiene nada que imprimir.',
   appPrintTooLarge:

@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { installCopyMaterialize } from '../src/renderer/copy-materialize'
-import { ensureLazyRangeLoaded } from '../src/renderer/univer-sync'
+import { ensureLazyRangeLoaded, readCopySourceDirect } from '../src/renderer/univer-sync'
 
 vi.mock('../src/renderer/univer-sync', () => ({
   ensureLazyRangeLoaded: vi.fn().mockResolvedValue(true),
+  readCopySourceDirect: vi.fn(),
 }))
 
 const mockEnsure = vi.mocked(ensureLazyRangeLoaded)
+const mockDirect = vi.mocked(readCopySourceDirect)
 
 function harness(opts: {
   fileRows: number
@@ -52,6 +54,7 @@ function harness(opts: {
 describe('copy materialize screen extent', () => {
   beforeEach(() => {
     mockEnsure.mockClear()
+    mockDirect.mockReset()
   })
 
   it('clamps to the screen extent after row inserts, not the file extent', async () => {
@@ -104,6 +107,80 @@ describe('copy materialize screen extent', () => {
     expect(mockEnsure).toHaveBeenCalledTimes(1)
     const range = mockEnsure.mock.calls[0]![3] as { startRow: number; endRow: number }
     expect(range).toMatchObject({ startRow: 8, endRow: 9 })
+    dispose()
+  })
+
+  it('loads a selection past the old 20k cap as one resident window', async () => {
+    // 1200 x 120 = 144k cells: below the full-load budget, so the grid copy
+    // runs on real cells instead of the blanks the lazy window never held
+    const h = harness({
+      fileRows: 1200,
+      fileCols: 120,
+      ops: [],
+      selection: { row: 0, column: 0, height: 1200, width: 120 },
+    })
+    const { dispose } = h.installer()
+    await h.clipboard.copy()
+    expect(mockEnsure).toHaveBeenCalledTimes(1)
+    expect(mockEnsure.mock.calls[0]![3]).toMatchObject({
+      startRow: 0,
+      endRow: 1199,
+      endColumn: 119,
+    })
+    expect(h.messages.some((m) => /A1:DP1200\b/.test(m))).toBe(true)
+    dispose()
+  })
+
+  it('copies a selection past the full-load budget as values straight from the file', async () => {
+    const written: string[] = []
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { clipboard: { writeText: async (text: string) => void written.push(text) } },
+    })
+    mockDirect.mockResolvedValue([
+      [
+        { v: 'Año', t: 1, s: null, f: null, fileFormula: null },
+        { v: 1234.5, t: null, s: { n: { pattern: '#,##0.00' } }, f: null, fileFormula: null },
+      ],
+      [
+        { v: null, t: null, s: null, f: null, fileFormula: null },
+        { v: 1, t: 3, s: null, f: null, fileFormula: null },
+      ],
+    ])
+    const h = harness({
+      fileRows: 12000,
+      fileCols: 120,
+      ops: [],
+      selection: { row: 0, column: 0, height: 12000, width: 120 },
+    })
+    const { dispose } = h.installer()
+    const ok = await h.clipboard.copy()
+    expect(ok).toBe(true)
+    expect(mockEnsure).not.toHaveBeenCalled()
+    expect(mockDirect).toHaveBeenCalledTimes(1)
+    expect(mockDirect.mock.calls[0]![2]).toMatchObject({
+      startRow: 0,
+      endRow: 11999,
+      endColumn: 119,
+    })
+    expect(written).toEqual(['Año\t1,234.50\n\tTRUE'])
+    expect(h.messages.at(-1)).toMatch(/A1:DP12000.*1,440,000.*250,000/)
+    dispose()
+  })
+
+  it('refuses a cut past the full-load budget instead of clearing unseen cells', async () => {
+    const h = harness({
+      fileRows: 12000,
+      fileCols: 120,
+      ops: [],
+      selection: { row: 0, column: 0, height: 12000, width: 120 },
+    })
+    const cutSpy = h.clipboard.cut
+    const { dispose } = h.installer()
+    expect(await h.clipboard.cut()).toBe(false)
+    expect(mockDirect).not.toHaveBeenCalled()
+    expect(cutSpy).not.toHaveBeenCalled()
+    expect(h.messages.at(-1)).toMatch(/A1:DP12000.*250000/)
     dispose()
   })
 })

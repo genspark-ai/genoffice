@@ -265,9 +265,17 @@ function pointColor(chart: ChartDisplay, s: number, i: number): string {
 export function renderChartSpec(chart: ChartDisplay): DomSpec {
   const frame: DomSpec[] = []
   if (chart.title !== undefined) {
+    const titleStyle: Record<string, string> =
+      chart.titleFontPt !== undefined
+        ? {
+            style:
+              `font-size:${chart.titleFontPt}pt;height:${chartTitleRowPx(chart)}px;` +
+              `line-height:${Math.round(chart.titleFontPt * PT_TO_PX * 1.2)}px`,
+          }
+        : {}
     frame.push([
       'div',
-      { class: 'doc-chart-title', contenteditable: 'false' },
+      { class: 'doc-chart-title', contenteditable: 'false', ...titleStyle },
       chart.title || '\u00a0',
     ])
   }
@@ -353,6 +361,8 @@ interface ChartGeom {
   sideRight?: number
   /** a data table under the plot carries the category texts */
   noCatLabels?: boolean
+  /** axis tick-label size in px (explicit c:txPr sz, else 10) */
+  labelPx?: number
 }
 
 export function chartPlotWidth(chart: ChartDisplay): number {
@@ -423,6 +433,61 @@ export const CHART_MAX_WIDTH_PX = 660
 /** height of the title row above the plot SVG; heightPx = title row + plot,
  * so the resize write-back must add it before storing the measured SVG height */
 export const CHART_TITLE_ROW_PX = 22
+const PT_TO_PX = 96 / 72
+
+/** estimated text advance at a font size: CJK glyphs ~1em, Latin ~0.7em (0.55em at title sizes) */
+function chartTextPx(text: string, fontPx: number, latinEm = 0.7): number {
+  return [...text].reduce((w, ch) => w + fontPx * (isCjk(ch.codePointAt(0) ?? 0) ? 1 : latinEm), 0)
+}
+
+/** greedy word wrap (CJK breaks anywhere) for category labels that overflow their slot */
+function wrapChartText(text: string, maxPx: number, fontPx: number): string[] {
+  const lines: string[] = []
+  let cur = ''
+  for (const ch of text) {
+    if (cur && chartTextPx(cur + ch, fontPx) > maxPx && lines.length < 2) {
+      const space = cur.lastIndexOf(' ')
+      if (space > 0 && !isCjk(ch.codePointAt(0) ?? 0)) {
+        lines.push(cur.slice(0, space))
+        cur = cur.slice(space + 1) + ch
+      } else {
+        lines.push(cur)
+        cur = ch
+      }
+    } else cur += ch
+  }
+  if (cur) lines.push(cur)
+  return lines.length ? lines : [text]
+}
+
+/** title row height; an explicit c:title size wraps inside the chart width like Word */
+export function chartTitleRowPx(chart: ChartDisplay): number {
+  if (chart.title === undefined) return 0
+  if (chart.titleFontPt === undefined) return CHART_TITLE_ROW_PX
+  const fontPx = chart.titleFontPt * PT_TO_PX
+  const lines = Math.max(
+    1,
+    Math.ceil(chartTextPx(chart.title, fontPx, 0.55) / Math.max(1, chartPlotWidth(chart) - 16)),
+  )
+  return Math.round(lines * fontPx * 1.2 + 6)
+}
+
+/** inline size/color of document-authored chart text (beats the class defaults) */
+function chartTextStyle(fontPt?: number, color?: string): Record<string, string> {
+  const decls: string[] = []
+  if (fontPt !== undefined) decls.push(`font-size:${Math.round(fontPt * PT_TO_PX * 10) / 10}px`)
+  if (color) decls.push(`fill:#${color}`)
+  return decls.length ? { style: decls.join(';') } : {}
+}
+
+/** c:numFmt subset for data labels: decimals from the 0s after '.', ',' switches grouping on */
+function formatDataLabel(value: number, fmt?: string): string {
+  if (!fmt || fmt === 'General') return formatAxisValue(value)
+  const decimals = /\.(0+)/.exec(fmt)?.[1].length ?? 0
+  const [int, frac] = Math.abs(value).toFixed(decimals).split('.')
+  const grouped = fmt.includes(',') ? int.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : int
+  return (value < 0 ? '-' : '') + grouped + (frac ? `.${frac}` : '')
+}
 
 /** draw the read-only SVG preview into the node's .doc-chart-canvas */
 export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void {
@@ -444,11 +509,13 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
   // the title row renders above the SVG but Word draws the title inside the
   // drawing extent; shrink the plot so title + plot together fill heightPx,
   // or pagination gains ~22px per titled chart and drifts
-  const titleRowPx = chart.title !== undefined ? CHART_TITLE_ROW_PX : 0
-  // horizontal bars put category labels on the y axis; reserve room for the
-  // longest one (10px axis font: CJK glyphs are ~1em wide, Latin ~0.7em)
-  const catLabelPx = (s: string) =>
-    [...s].reduce((w, ch) => w + (isCjk(ch.codePointAt(0) ?? 0) ? 10 : 7), 0)
+  const titleRowPx = chartTitleRowPx(chart)
+  const axisPt = chart.xAxis?.fontPt ?? chart.yAxis?.fontPt
+  const labelPx = axisPt !== undefined ? axisPt * PT_TO_PX : 10
+  const legendPx = chart.legendFontPt !== undefined ? chart.legendFontPt * PT_TO_PX : 10
+  // horizontal bars put category labels on the y axis; reserve room for the longest one
+  const catLabelPx = (s: string) => chartTextPx(s, labelPx)
+  const legendTextPx = (s: string) => chartTextPx(s, legendPx)
   const maxCatPx = Math.max(0, ...chart.categories.map(catLabelPx))
   const width = chartPlotWidth(chart)
   // l/r/tr legends stack vertically in a side gutter, like Word; other
@@ -457,8 +524,27 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
     showLegend && (chart.legendPos === 'l' || chart.legendPos === 'r' || chart.legendPos === 'tr')
   const topLegend = showLegend && chart.legendPos === 't'
   const legendW = sideLegend
-    ? Math.min(Math.round(width * 0.35), 20 + Math.max(0, ...legendNames.map(catLabelPx)))
+    ? Math.min(Math.round(width * 0.35), 20 + Math.max(0, ...legendNames.map(legendTextPx)))
     : 0
+  // bottom legends wrap into centered rows when the entries overflow the width, like Word
+  const legendEntryW = (i: number) => 14 + legendTextPx(legendNames[i]) + 12
+  const legendEntryH = Math.max(18, Math.round(legendPx * 1.8))
+  const legendRows: number[][] = []
+  if (showLegend && !sideLegend && !topLegend) {
+    let row: number[] = []
+    let rowW = 0
+    legendNames.forEach((_, i) => {
+      if (row.length > 0 && rowW + legendEntryW(i) > width - 8) {
+        legendRows.push(row)
+        row = []
+        rowW = 0
+      }
+      row.push(i)
+      rowW += legendEntryW(i)
+    })
+    if (row.length > 0) legendRows.push(row)
+  }
+  const bottomLegendPx = legendRows.length * legendEntryH
   const legendLeft = sideLegend && chart.legendPos === 'l'
   const cartesian = !isPie && !isRadar
   const xTitle = cartesian && !chart.xAxis?.deleted ? chart.xAxis?.title : undefined
@@ -479,17 +565,28 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
     // also capped against the chart's own width: resize allows 120px-wide
     // charts, and a gutter wider than the plot would flip plotW negative
     left:
-      (chart.kind === 'bar' && chart.horizontal ? Math.min(140, width * 0.4, 16 + maxCatPx) : 46) +
+      (chart.kind === 'bar' && chart.horizontal
+        ? Math.min(140, width * 0.4, 16 + maxCatPx)
+        : Math.round(4.6 * labelPx)) +
       (legendLeft ? legendW : 0) +
       (yTitle ? 14 : 0),
     right: 12 + (sideLegend && !legendLeft ? legendW : 0),
     top: 12 + (topLegend ? 18 : 0),
     bottom:
-      (dataTable ? 4 + tableH : 26) +
-      (showLegend && !sideLegend && !topLegend ? 18 : 0) +
-      (xTitle ? 14 : 0),
+      (dataTable ? 4 + tableH : Math.round(2.6 * labelPx)) + bottomLegendPx + (xTitle ? 14 : 0),
     ...(sideLegend ? (legendLeft ? { sideLeft: legendW } : { sideRight: legendW }) : {}),
     ...(dataTable ? { noCatLabels: true } : {}),
+    labelPx,
+  }
+  // column charts wrap overflowing category labels inside their slot like Word
+  if (cartesian && !(chart.kind === 'bar' && chart.horizontal) && !geom.noCatLabels) {
+    const cols = Math.max(chart.categories.length, 1)
+    const slotW = (geom.width - geom.left - geom.right) / cols
+    const lines = Math.max(
+      1,
+      ...chart.categories.map((c) => wrapChartText(c, slotW - 4, labelPx).length),
+    )
+    geom.bottom += (lines - 1) * Math.round(labelPx * 1.2)
   }
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('viewBox', `0 0 ${geom.width} ${geom.height}`)
@@ -521,7 +618,7 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
     )
   }
   if (xTitle) {
-    const legendRow = showLegend && !sideLegend && !topLegend ? 18 : 0
+    const legendRow = bottomLegendPx
     svgEl(
       svg,
       'text',
@@ -581,9 +678,30 @@ export function drawChartSvg(dom: HTMLElement, chart: ChartDisplay | null): void
         legendNames[i],
       )
     })
+  } else if (showLegend && !topLegend) {
+    legendRows.forEach((row, r) => {
+      const rowW = row.reduce((w, i) => w + legendEntryW(i), 0) - 12
+      let x = (geom.width - rowW) / 2
+      const y = geom.height - bottomLegendPx + r * legendEntryH + 3
+      for (const i of row) {
+        drawKey(x, y, i)
+        svgEl(
+          svg,
+          'text',
+          {
+            x: String(x + 14),
+            y: String(y + 8),
+            class: 'doc-chart-axis-label',
+            ...chartTextStyle(chart.legendFontPt),
+          },
+          legendNames[i],
+        )
+        x += legendEntryW(i)
+      }
+    })
   } else if (showLegend) {
     const slot = geom.width / legendNames.length
-    const rowY = topLegend ? 4 : geom.height - 15
+    const rowY = 4
     legendNames.forEach((name, i) => {
       const cx = slot * i + slot / 2
       drawKey(cx - Math.min(name.length * 3.2, slot / 2 - 14) - 12, rowY, i)
@@ -768,27 +886,36 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
   const yOf = (v: number) => geom.top + plotH - ((v - min) / span) * plotH
   const slotW = plotW / cols
 
-  // horizontal gridlines with value labels
+  // horizontal gridlines with value labels; a parsed value axis without
+  // c:majorGridlines draws none, like Word
+  const grid = chart.yAxis?.gridLine
+  const labelPx = geom.labelPx ?? 10
+  const yStyle = chartTextStyle(chart.yAxis?.fontPt, chart.yAxis?.color)
+  const xStyle = chartTextStyle(chart.xAxis?.fontPt, chart.xAxis?.color)
   const steps = Math.max(1, Math.round(span / step))
   for (let i = 0; i <= steps; i++) {
     const v = min + step * i
     const y = yOf(v)
-    svgEl(svg, 'line', {
-      x1: String(geom.left),
-      y1: String(y),
-      x2: String(geom.width - geom.right),
-      y2: String(y),
-      class: 'doc-chart-grid',
-    })
+    if (!chart.yAxis || grid !== undefined) {
+      svgEl(svg, 'line', {
+        x1: String(geom.left),
+        y1: String(y),
+        x2: String(geom.width - geom.right),
+        y2: String(y),
+        class: 'doc-chart-grid',
+        ...(grid ? { style: `stroke:#${grid}` } : {}),
+      })
+    }
     if (chart.yAxis?.deleted) continue
     svgEl(
       svg,
       'text',
       {
         x: String(geom.left - 6),
-        y: String(y + 3),
+        y: String(y + labelPx * 0.3),
         class: 'doc-chart-axis-label',
         'text-anchor': 'end',
+        ...yStyle,
       },
       formatAxisValue(v) + (pct ? '%' : ''),
     )
@@ -798,18 +925,42 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
   // category labels
   chart.categories.forEach((cat, c) => {
     if (c >= cols || geom.noCatLabels || chart.xAxis?.deleted) return
+    wrapChartText(cat, slotW - 4, labelPx).forEach((line, k) => {
+      svgEl(
+        svg,
+        'text',
+        {
+          x: String(geom.left + slotW * c + slotW / 2),
+          y: String(
+            geom.height - geom.bottom + Math.round(labelPx * 1.4) + k * Math.round(labelPx * 1.2),
+          ),
+          class: 'doc-chart-axis-label',
+          'text-anchor': 'middle',
+          ...xStyle,
+        },
+        line,
+      )
+    })
+  })
+
+  // c:showVal on bars: clustered labels sit above the bar, stacked ones in the segment
+  const valueLabels = chart.dataLabels?.val ? chart.dataLabels : undefined
+  const labelStyle = chartTextStyle(valueLabels?.fontPt, valueLabels?.color)
+  const valueLabelPx = valueLabels?.fontPt !== undefined ? valueLabels.fontPt * PT_TO_PX : 10
+  const drawValueLabel = (cx: number, y: number, value: number) => {
     svgEl(
       svg,
       'text',
       {
-        x: String(geom.left + slotW * c + slotW / 2),
-        y: String(geom.height - geom.bottom + 14),
+        x: String(cx),
+        y: String(y),
         class: 'doc-chart-axis-label',
         'text-anchor': 'middle',
+        ...labelStyle,
       },
-      cat,
+      formatDataLabel(value, valueLabels?.numFmt),
     )
-  })
+  }
 
   if (chart.kind === 'bar' && stacked) {
     // one bar per category, series segments cumulated up (down for negatives)
@@ -831,6 +982,13 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
           height: String(Math.max(1, Math.abs(y0 - y1))),
           fill: seriesColor(chart, s),
         })
+        if (valueLabels && Math.abs(y0 - y1) >= valueLabelPx) {
+          drawValueLabel(
+            geom.left + slotW * c + slotW / 2,
+            (y0 + y1) / 2 + valueLabelPx * 0.35,
+            value,
+          )
+        }
         if (v >= 0) posBase[c] = to
         else negBase[c] = to
       })
@@ -851,6 +1009,13 @@ function drawAxes(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
           height: String(Math.max(1, Math.abs(y0 - y1))),
           fill: seriesColor(chart, s),
         })
+        if (valueLabels) {
+          drawValueLabel(
+            x + barW / 2,
+            value >= 0 ? Math.min(y0, y1) - 3 : Math.max(y0, y1) + valueLabelPx,
+            value,
+          )
+        }
       })
     })
   } else if (chart.kind === 'area' && stacked) {
@@ -1341,8 +1506,9 @@ function drawPie(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
     if (labels.val) parts.push(String(value))
     if (labels.pct) parts.push(`${Math.round((value / total) * 100)}%`)
     const text = parts.join(', ')
+    const labelPx = labels.fontPt !== undefined ? labels.fontPt * PT_TO_PX : 10
     // bestFit: inside the slice when the arc at the label radius fits the text, else just outside
-    const inside = sweep * r * 0.65 >= text.length * 6 && !single
+    const inside = sweep * r * 0.65 >= text.length * labelPx * 0.6 && !single
     const lr = inside ? Math.max(ri, r * 0.65) : r + 10
     svgEl(
       svg,
@@ -1351,6 +1517,7 @@ function drawPie(svg: SVGElement, chart: ChartDisplay, geom: ChartGeom): void {
         x: String(cx + lr * Math.cos(mid)),
         y: String(cy + lr * Math.sin(mid) + 3),
         class: inside ? 'doc-chart-axis-label doc-chart-label-in' : 'doc-chart-axis-label',
+        ...chartTextStyle(labels.fontPt, labels.color),
         'text-anchor': inside
           ? 'middle'
           : Math.cos(mid) > 0.1
@@ -1923,15 +2090,23 @@ function cellParaSpec(
   if (fmt?.spaceBeforeAuto) classes.push('sp-auto-b')
   if (fmt?.spaceAfterAuto) classes.push('sp-auto-a')
   if (classes.length) attrs.class = classes.join(' ')
-  return content.length > 0 ? ['div', attrs, ...content] : ['div', attrs, ['br', {}]]
+  if (content.length === 0) return ['div', attrs, ['br', {}]]
+  // runs without w:rtl order LTR inside an RTL paragraph (same rule as the editor's paraContentSpec)
+  const ltrRuns =
+    (fmt?.bidi || inferredBidi(fmt, runs ?? undefined)) && !!runs?.length && !runs.some((r) => r.cs)
+  return ltrRuns
+    ? ['div', attrs, ['span', { class: 'doc-ltr-runs' }, ...content]]
+    : ['div', attrs, ...content]
 }
 
 /** anchored shapes/textboxes of a table cell: a zero-width float strut whose
- * height reserves the lowest box bottom (Word grows the row to hold them) */
+ * height reserves the lowest box bottom (Word grows the row to hold them);
+ * wrapNone boxes overlay the cell without growing it */
 export function cellBoxesSpec(boxes: TextboxDisplay[]): DomSpec {
   if (boxes.length === 0) return ['div', { class: 'doc-cell-boxes' }]
   let bottom = 0
   for (const b of boxes) {
+    if (b.noWrap) continue
     bottom = Math.max(bottom, (b.offsetYEmu ?? 0) / 9525 + (b.heightPx ?? b.minHeightPx ?? 0))
   }
   return [
@@ -1987,8 +2162,8 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
         // vertical-text cells: writing-mode rides the .cell-vert/.cell-clip wrapper below
         cell.textDirection ? 'position:relative' : '',
         // authored colors stay the declarations; --dk-* twins feed the dark page (dark-page.ts)
-        cell.color ? `color:#${cell.color};${dkColor(cell.color)}` : '',
-        cell.bold ? 'font-weight:600' : '',
+        cell.styleColor ? `color:#${cell.styleColor};${dkColor(cell.styleColor)}` : '',
+        cell.styleBold ? 'font-weight:600' : '',
         cell.fill ? `background-color:#${cell.fill};${dkBackground(`#${cell.fill}`)}` : '',
         cell.align ? `text-align:${cell.align}` : '',
         cell.vAlign && cell.vAlign !== 'top'
@@ -2147,13 +2322,18 @@ export function renderTableSpec(model: TableModel, nested = false): DomSpec {
       centerMargin = `margin-left:calc((${contentW} - min(${widthPx}px,${paper}))/2)`
     } else {
       const indented =
-        model.align !== 'center' && model.align !== 'right' && (model.indentTwips ?? 0) > 0
+        model.align !== 'center' && model.align !== 'right' && (model.indentTwips ?? 0) !== 0
       const indentPx = indented ? model.indentTwips! / 15 : 0
       const base = nested ? '100%' : `calc(${contentW} + ${spillMargin})`
+      // a negative w:tblInd moves the box into the left margin and widens the
+      // right-hand spill allowance by the same amount (see DocTable.renderHTML)
+      const shift = indentPx < 0 ? `+ ${(-indentPx).toFixed(1)}px` : `- ${indentPx.toFixed(1)}px`
       const avail = indentPx
         ? nested
-          ? `calc(100% - ${indentPx.toFixed(1)}px)`
-          : `calc(${contentW} + ${spillMargin} - ${indentPx.toFixed(1)}px)`
+          ? indentPx > 0
+            ? `calc(100% - ${indentPx.toFixed(1)}px)`
+            : base
+          : `calc(${contentW} + ${spillMargin} ${shift})`
         : base
       widthExpr = `min(${widthPx}px,${avail})`
       tableStyles.push(`width:${widthExpr}`)

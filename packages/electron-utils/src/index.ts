@@ -16,8 +16,10 @@ export {
 export {
   aboutMenuItem,
   appMenuLabels,
+  checkUpdatesMenuItem,
   editMenuTemplate,
   helpMenuTemplate,
+  setUpdateCheckInvoker,
   toggleDevToolsItem,
   viewMenuTemplate,
   windowMenuTemplate,
@@ -83,6 +85,7 @@ export {
 } from './headless-export'
 export {
   RENDERER_SCHEME,
+  DOCX_MEDIA_SCHEME_PRIVILEGE,
   RENDERER_SCHEME_PRIVILEGE,
   rendererUrl,
   resolveRendererFile,

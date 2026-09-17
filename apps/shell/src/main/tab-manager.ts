@@ -45,7 +45,7 @@ import {
   setActiveSlidesWebContents,
   slidesIsDirty,
 } from '../../../slides/src/main/slides-main'
-import type { OpenDocumentTab, TabKind, TabSummary } from '../shared/tabs-api'
+import type { DocumentTabKind, OpenDocumentTab, TabKind, TabSummary } from '../shared/tabs-api'
 
 interface TabRecord {
   id: string
@@ -209,19 +209,17 @@ export class TabManager {
    * renderer. Hence the async signature.
    */
   async openDocuments(): Promise<OpenDocumentTab[]> {
-    const documents: OpenDocumentTab[] = []
-    for (const tab of this.tabs) {
-      if (tab.kind === 'home' || tab.present || !tab.view) continue
-      documents.push({
+    const tabs = this.tabs.filter((tab) => tab.kind !== 'home' && !tab.present && tab.view)
+    return Promise.all(
+      tabs.map(async (tab) => ({
         id: tab.id,
-        kind: tab.kind,
+        kind: tab.kind as DocumentTabKind,
         title: tab.title,
         ...(tab.filePath ? { filePath: tab.filePath } : {}),
         active: tab.id === this.activeId,
         dirty: await this.tabIsDirty(tab),
-      })
-    }
-    return documents
+      })),
+    )
   }
 
   /** unsaved-changes state of one tab, whichever family owns it */
@@ -246,7 +244,6 @@ export class TabManager {
     }
   }
 
-  /** the webContents id behind a tab, for callers that drive a family bridge */
   openHomeTab(): void {
     this.activateTab(HOME_ID)
   }

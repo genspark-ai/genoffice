@@ -110,7 +110,13 @@ test.describe('MCP visible grid session', () => {
     const userDataDir = await mkdtemp(join(tmpdir(), 'genoffice-mcp-sheet-userdata-'))
     await writeFile(
       join(userDataDir, 'app-settings.json'),
-      JSON.stringify({ onboardingSeen: true, mcpEnabled: true, mcpPort: port }),
+      // the blank workbook create_session writes lands in the default save folder
+      JSON.stringify({
+        onboardingSeen: true,
+        mcpEnabled: true,
+        mcpPort: port,
+        defaultSaveDir: outDir,
+      }),
     )
     const launched = await launchShell({
       videoDir: 'mcp-visible-sheet',

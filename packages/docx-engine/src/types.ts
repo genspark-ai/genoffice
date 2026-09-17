@@ -1012,6 +1012,12 @@ export interface ChartAxis {
   line?: string
   /** c:delete: the axis (labels and line) is not drawn */
   deleted?: boolean
+  /** tick-label size in pt (c:txPr sz); absent = renderer default */
+  fontPt?: number
+  /** tick-label color (c:txPr solid fill), hex without '#'; absent = renderer default */
+  color?: string
+  /** major gridline color (c:majorGridlines); absent = the part draws no major gridlines */
+  gridLine?: string
 }
 
 /** One data series of an embedded chart, read from the cached values in its chart part. */
@@ -1053,8 +1059,19 @@ export interface ChartDisplay {
   holePct?: number
   /** pie: slice offset from the center as % of the radius (c:explosion) */
   explosionPct?: number
-  /** data labels (c:dLbls show* flags); absent = none */
-  dataLabels?: { val?: boolean; pct?: boolean; cat?: boolean }
+  /** data labels (c:dLbls show* flags, label text size/color, c:numFmt); absent = none */
+  dataLabels?: {
+    val?: boolean
+    pct?: boolean
+    cat?: boolean
+    fontPt?: number
+    color?: string
+    numFmt?: string
+  }
+  /** title text size in pt (c:title rich text sz); absent = renderer default */
+  titleFontPt?: number
+  /** legend text size in pt (c:legend/c:txPr sz); absent = renderer default */
+  legendFontPt?: number
   /** legend position (c:legend/c:legendPos); absent = no c:legend element */
   legendPos?: 'b' | 'l' | 'r' | 't' | 'tr'
   /** the chart part has no c:legend (models built without one keep the default legend) */
@@ -1188,9 +1205,13 @@ export interface TableCell {
   vMerge?: 'restart' | 'continue'
   /** cell shading fill, hex without '#' (w:shd w:fill) */
   fill?: string
-  /** first-run text color, hex without '#' */
+  /** text colour every run shares, else the table style's; hex without '#' */
   color?: string
   bold?: boolean
+  /** what the table style's conditional formatting hands to runs without their own rPr;
+   *  the cell paints only these (the aggregates above are already carried by the runs) */
+  styleColor?: string
+  styleBold?: true
   align?: ParaAlign
   /** vertical alignment (w:vAlign): top (default)/center/bottom */
   vAlign?: 'top' | 'center' | 'bottom'
@@ -1230,6 +1251,9 @@ export interface TableModel {
   widthPct?: number
   /** autofit layout (no fixed w:tblLayout; w:tblW auto/absent/zero or pct): display may widen columns to min-content */
   autoLayout?: boolean
+  /** colWidthsTwips are the unequal w:tblGrid Word saved for a tblW-auto table: Word's own
+   * layout, already sized to its words, so display widens a column only past a true overflow */
+  layoutGrid?: boolean
   /** editable Word AutoFit mode (w:tblLayout + w:tblW) */
   autoFit?: TableAutoFitMode
   /** literal w:tblLayout type="fixed": Word keeps the declared column widths even when the
@@ -1341,9 +1365,11 @@ export type ImageWrap =
 
 /** A new image to embed at save time (becomes word/media/... + relationship). */
 export interface NewImage {
-  /** raw image bytes, base64 encoded */
+  /** raw image bytes, base64 encoded (empty when sourcePart is set) */
   base64: string
   mime: 'image/png' | 'image/jpeg' | 'image/gif'
+  /** reuse this media part of the document being saved instead of landing base64 */
+  sourcePart?: string
   widthPx: number
   heightPx: number
   /** paragraph alignment for the image (w:jc) */
@@ -1693,6 +1719,8 @@ export interface TextboxDisplay {
   floating?: boolean
   /** behindDoc="1" anchor: this box paints under the body text */
   behind?: boolean
+  /** wrapNone anchor: overlays the text with no flow footprint (a cell row does not grow for it) */
+  noWrap?: boolean
   /** wp:anchor relativeHeight rank (display-only): paint order among overlapping floats */
   z?: number
   /** first-page page-anchored cover art: offsets are raw page coordinates and

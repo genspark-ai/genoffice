@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { runCli } from '../cli'
 import type { JsonError, JsonOk } from '../result'
+import type { FileStore } from './files'
 import type { InlineFile } from './tools'
+
+export type McpMode = 'stdio' | 'http'
 
 export interface McpContext {
   cwd: string
@@ -13,6 +16,12 @@ export interface McpContext {
   log: (message: string) => void
   /** where inline parameters land as files for the duration of one call */
   scratchDir: string
+  /** stdio: the client shares this file system; http: the client is remote and files travel as URLs and result content */
+  mode: McpMode
+  /** http mode: uploads and the outputs handed back to the client */
+  files?: FileStore
+  /** http mode: the URL the client reached this server at, used to build download links */
+  baseUrl?: string
 }
 
 export type Outcome = { ok: JsonOk; error?: undefined } | { ok?: undefined; error: JsonError }
@@ -21,13 +30,21 @@ export function createContext(base: {
   cwd: string
   env: NodeJS.ProcessEnv
   log: (m: string) => void
+  mode?: McpMode
+  files?: FileStore
+  baseUrl?: string
+  scratchDir?: string
 }): McpContext {
-  const scratchDir = join(
-    tmpdir(),
-    `genoffice-mcp-${process.pid}-${randomBytes(4).toString('hex')}`,
-  )
+  const scratchDir =
+    base.scratchDir ??
+    join(tmpdir(), `genoffice-mcp-${process.pid}-${randomBytes(4).toString('hex')}`)
   mkdirSync(scratchDir, { recursive: true })
-  return { ...base, env: allowScratch(base.env, scratchDir), scratchDir }
+  return {
+    ...base,
+    mode: base.mode ?? 'stdio',
+    env: allowScratch(base.env, scratchDir),
+    scratchDir,
+  }
 }
 
 export function disposeContext(ctx: McpContext): void {

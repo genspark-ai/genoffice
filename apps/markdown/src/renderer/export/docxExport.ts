@@ -20,12 +20,17 @@ import type {
   TableModel,
   TableParagraph,
 } from '@genoffice/docx-engine'
+import { diagramLanguage } from '../editor/diagrams'
+import type { DiagramLanguage } from '../editor/diagrams'
 
 /** Resolve an authored image src to embeddable bytes; null → fall back to alt text */
 export type ImageLoader = (src: string) => Promise<NewImage | null>
 
-/** Rasterize a ```mermaid block; null → the source is exported as code */
-export type DiagramRenderer = (source: string) => Promise<NewImage | null>
+/** Rasterize a diagram code block; null → the source is exported as code */
+export type DiagramRenderer = (
+  source: string,
+  language: DiagramLanguage,
+) => Promise<NewImage | null>
 
 /** widest image that fits the A4 text column */
 export const DOCX_MAX_IMAGE_PX = 620
@@ -87,7 +92,7 @@ interface WalkContext {
   loadImage: ImageLoader
   renderDiagram?: DiagramRenderer
   pendingImages: Array<{ index: number; src: string; alt: string }>
-  pendingDiagrams: Array<{ index: number; source: string }>
+  pendingDiagrams: Array<{ index: number; source: string; language: DiagramLanguage }>
 }
 
 function mergeFormat(base: ParaFormat | undefined, extra: ParaFormat): ParaFormat {
@@ -221,8 +226,9 @@ function walkBlock(ctx: WalkContext, node: JSONContent, base?: ParaFormat): void
         runs: [{ text: source, font: CODE_FONT, sizeHalfPoints: 19 }],
         format: mergeFormat(base, { shadingFill: CODE_FILL }),
       }
-      if (node.attrs?.language === 'mermaid' && ctx.renderDiagram && source.trim()) {
-        ctx.pendingDiagrams.push({ index: ctx.blocks.length, source })
+      const language = diagramLanguage(node.attrs?.language)
+      if (language && ctx.renderDiagram && source.trim()) {
+        ctx.pendingDiagrams.push({ index: ctx.blocks.length, source, language })
       }
       pushParagraph(ctx, code)
       break
@@ -285,7 +291,7 @@ export async function mapDocToSaveBlocks(
   for (const node of doc.content ?? []) walkBlock(ctx, node)
 
   for (const pending of ctx.pendingDiagrams) {
-    const image = await ctx.renderDiagram!(pending.source).catch(() => null)
+    const image = await ctx.renderDiagram!(pending.source, pending.language).catch(() => null)
     if (image) ctx.blocks[pending.index] = { kind: 'image', image }
   }
 

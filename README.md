@@ -321,6 +321,7 @@ give one. There are two ways in, both shown with copy-ready snippets in
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A · `genoffice mcp`** (recommended) | A stdio server the assistant starts itself; GenOffice does not need to be open. One tool per command (`info`, `convert`, `create_docx`, `create_xlsx`, `create_pptx`, `create_pdf`, `docs_read` / `docs_apply` / `docs_check`, `sheet_*`, `slides_*`, `render`, `guide`, `search`, `image`, `media`, `open`) plus the staged deck flow `deck_start` → `deck_page` → `deck_build` → `deck_replace`. Ops, specs and Markdown are passed inline, so a client without a file system still works. |
 | **B · Local HTTP server**             | Runs inside the GenOffice app on `http://127.0.0.1:3093/mcp` (Streamable HTTP, with legacy SSE). Its tools drive a visible Word editor tab: `create_session`, `insert_content`, `replace_blocks`, `apply_ops`, `read_document`, `save_session`, and you watch the document take shape. Off by default; switch it on in the same settings pane.                                                                                                                                               |
+| **C · `genoffice mcp --http`**        | The stdio tool set as a Streamable HTTP server for clients on other machines: a container, a sandbox, a shared box on your network. Files travel with the calls: `PUT /files/<name>` uploads one and returns a URL, every `file` parameter takes an http(s) URL, and a tool that writes a file hands it back as a download URL plus, when small, the bytes as an MCP resource. `--host 0.0.0.0` opens it to the network, `--token` protects it.                                              |
 
 ```bash
 # Claude Code
@@ -331,6 +332,24 @@ claude mcp add --transport stdio genoffice -- genoffice mcp
 // Cursor, Claude Desktop or any other MCP client
 { "mcpServers": { "genoffice": { "command": "genoffice", "args": ["mcp"] } } }
 ```
+
+```bash
+# On the machine that has GenOffice (private network; add --token for a shared box)
+genoffice mcp --http 3093 --host 0.0.0.0 --token "$GENOFFICE_MCP_TOKEN"
+
+# From the client: upload, then use the URL wherever a tool takes a file
+curl -T report.docx -H "Authorization: Bearer $GENOFFICE_MCP_TOKEN" http://server:3093/files/
+#   → { "url": "http://server:3093/files/<id>/report.docx", ... }
+#   docs_read({ "file": "http://server:3093/files/<id>/report.docx" })
+#   docs_apply(...) → output_url, downloadable with curl -o
+```
+
+Over HTTP every session gets a private scratch folder, relative paths and deck
+folders resolve inside it, `open` is not offered, and with
+`GENOFFICE_ALLOWED_ROOTS` unset the tools cannot leave the server's own file
+store. `render`, `convert` to PDF and `create_pdf` still start a hidden
+GenOffice process, so a headless host needs the app installed and a virtual
+display (`xvfb-run`).
 
 `genoffice` here is the CLI shipped inside the app (on macOS
 `/Applications/GenOffice.app/Contents/Resources/cli/genoffice`; the settings

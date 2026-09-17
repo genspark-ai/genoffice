@@ -200,14 +200,21 @@ export function createOpenDocumentsControl(deps: OpenDocumentsBridgeDeps): OpenD
             'unsaved state to settle',
         )
       }
+      // the caller's snapshot may predate an edit: settle against the live state
+      const live = (await deps.list()).find((doc) => doc.id === tab.id)
+      if (!live) throw new Error(`"${tab.title}" is already closed`)
       let savedPath: string | undefined
-      if (unsaved === 'save' && tab.dirty) {
-        savedPath = closeSavePath(tab, deps.defaultSaveDir)
-        await saveTo(tab, savedPath)
+      if (unsaved === 'save' && live.dirty) {
+        savedPath = closeSavePath(live, deps.defaultSaveDir)
+        await saveTo(live, savedPath)
       } else if (unsaved === 'discard') {
-        await discardStagedAssets(tab)
+        await discardStagedAssets(live)
       }
-      if (!deps.closeTab(tab.id)) throw new Error(`"${tab.title}" is already closed`)
+      if (!deps.closeTab(live.id)) {
+        throw new Error(
+          `"${live.title}" could not be closed: it is already closed or waiting on a prompt`,
+        )
+      }
       return savedPath ? { savedPath } : {}
     },
   }

@@ -64,13 +64,15 @@ export function findMatches(editor: Editor, query: string, opts: FindOptions): R
 interface FindPanelProps {
   editor: Editor
   onClose: () => void
+  /** Ctrl+F / menu Find bump this to put focus back in the find field while the panel is already open */
+  focusFindNonce?: number
   /** Ctrl+H bumps this to land focus on the replace field (falls back to find when read-only) */
   focusReplaceNonce?: number
 }
 
 const SCAN_DEBOUNCE_MS = 150
 
-export function FindPanel({ editor, onClose, focusReplaceNonce }: FindPanelProps) {
+export function FindPanel({ editor, onClose, focusFindNonce, focusReplaceNonce }: FindPanelProps) {
   const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [replacement, setReplacement] = useState('')
@@ -147,6 +149,12 @@ export function FindPanel({ editor, onClose, focusReplaceNonce }: FindPanelProps
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
     }
   }, [])
+
+  useEffect(() => {
+    if (!focusFindNonce) return
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [focusFindNonce])
 
   // declared after the mount effect so opening straight into replace wins the focus
   useEffect(() => {

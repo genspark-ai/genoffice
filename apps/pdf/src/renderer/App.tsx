@@ -107,10 +107,7 @@ import type { CharStyle } from './color-runs'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
-  FilesEdgeTab,
-  FilesPane,
   RibbonCollapseButton,
-  filesPaneTitle,
   useDismissablePopover,
   useRibbonCollapse,
 } from '@genoffice/ui'
@@ -199,7 +196,6 @@ import type {
 } from './edit-state'
 import {
   IconThumbs,
-  IconFolderTree,
   IconHighlight,
   IconUnderline,
   IconStrike,
@@ -299,12 +295,6 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1)
   const [pageInput, setPageInput] = useState('1')
   const [sidebar, setSidebar] = useState<'thumbs' | 'outline' | null>('thumbs')
-  const [filesOpen, setFilesOpen] = useState(
-    () => localStorage.getItem('genoffice-pdf-show-files') === '1',
-  )
-  useEffect(() => {
-    localStorage.setItem('genoffice-pdf-show-files', filesOpen ? '1' : '0')
-  }, [filesOpen])
   const [sidebarW, setSidebarW] = useState(loadSidebarW)
   /** raster width for thumbnails — only updated when a drag ends (re-rastering every frame would jank) */
   const [thumbRasterW, setThumbRasterW] = useState(() => loadSidebarW() - SIDEBAR_CHROME)
@@ -5878,16 +5868,6 @@ export default function App() {
           </span>
           {t('outline')}
         </button>
-        <button
-          className={`rb-big${filesOpen ? ' active' : ''}`}
-          aria-pressed={filesOpen}
-          onClick={() => setFilesOpen((v) => !v)}
-        >
-          <span className="rb-big-icon">
-            <IconFolderTree />
-          </span>
-          {filesPaneTitle(lang)}
-        </button>
         {searchBtn}
         <button
           className={`rb-big${spread === 2 ? ' active' : ''}`}
@@ -6633,20 +6613,8 @@ export default function App() {
             onClearSelection={() => setAiSelection(null)}
           />
         </div>
-        {filesOpen && (
-          <FilesPane
-            api={window.filesPaneApi}
-            lang={lang}
-            currentPath={filePath || null}
-            onClose={() => setFilesOpen(false)}
-          />
-        )}
         <div className="app-content">
           <div className="pdf-body">
-            {/* only while no thumbnail / outline pane occupies the left edge; the View button remains */}
-            {!filesOpen && sidebar === null && (
-              <FilesEdgeTab lang={lang} onOpen={() => setFilesOpen(true)} />
-            )}
             {sidebar === 'outline' && outline && (
               <div className="pdf-thumbs pdf-outline-pane" style={{ width: sidebarW }}>
                 <OutlinePanel

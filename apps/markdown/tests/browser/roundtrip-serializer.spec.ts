@@ -85,7 +85,7 @@ async function openSource(page: Page, enabled: boolean, rebase = false): Promise
     },
     { text: rebase ? rebaseSource : source, enabled, rebase },
   )
-  await page.goto('http://localhost:5177')
+  await page.goto(`http://localhost:${Number(process.env.MARKDOWN_DEV_PORT) || 5177}`)
   await expect(page.locator('.doc-editor')).toBeVisible()
 }
 
@@ -109,9 +109,10 @@ for (const enabled of [false, true]) {
             window.dispatchEvent(new Event('test:read-source'))
           }),
       )
+    // block-level splicing already returns an unedited document's source; the
+    // opt-in shortcut must agree with it
     const initial = await read()
-    if (enabled) expect(initial).toBe(source)
-    else expect(initial).not.toBe(source)
+    expect(initial).toBe(source)
     await page.evaluate(() => window.dispatchEvent(new Event('test:save')))
     await expect(page.locator('body')).toHaveAttribute('data-saved', initial)
     await page.locator('.doc-editor').evaluate((node) => {
@@ -126,20 +127,30 @@ for (const enabled of [false, true]) {
       const editor = (node as HTMLElement & { editor: Editor }).editor
       editor.commands.undo()
     })
-    expect(await read()).toBe(initial)
+    // the shortcut restores the loaded bytes; the splice path has already
+    // written the edited heading, so undo re-serializes that block and keeps
+    // the untouched list verbatim
+    const reverted = await read()
+    if (enabled) expect(reverted).toBe(initial)
+    else {
+      expect(reverted).not.toContain('edited')
+      expect(reverted).toContain('\n* item  \n')
+    }
   })
 }
 
-test('Save As preserves raw HTML and rebases the snapshot for subsequent saves', async ({
-  page,
-}) => {
-  await openSource(page, true, true)
-  await expect(page.locator('.doc-editor img')).toHaveCount(1)
-  await page.evaluate(() => window.dispatchEvent(new Event('test:save')))
-  await expect(page.locator('body')).toHaveAttribute('data-saved', rebaseSource)
-  await page.evaluate(() => window.dispatchEvent(new Event('test:save')))
-  await expect(page.locator('body')).toHaveAttribute(
-    'data-saved',
-    rebaseSource.replace('assets/old.png', 'assets/new.png'),
-  )
-})
+for (const enabled of [false, true]) {
+  test(`Save As preserves raw HTML and rebases the ${enabled ? 'snapshot' : 'source map'} for subsequent saves`, async ({
+    page,
+  }) => {
+    await openSource(page, enabled, true)
+    await expect(page.locator('.doc-editor img')).toHaveCount(1)
+    await page.evaluate(() => window.dispatchEvent(new Event('test:save')))
+    await expect(page.locator('body')).toHaveAttribute('data-saved', rebaseSource)
+    await page.evaluate(() => window.dispatchEvent(new Event('test:save')))
+    await expect(page.locator('body')).toHaveAttribute(
+      'data-saved',
+      rebaseSource.replace('assets/old.png', 'assets/new.png'),
+    )
+  })
+}

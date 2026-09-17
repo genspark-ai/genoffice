@@ -6,6 +6,7 @@ import type { StringKey } from '../i18n/locale'
 import { t } from '../i18n/locale'
 import { openMathCreate } from './mathEdit'
 import { MERMAID_TEMPLATE } from './mermaid'
+import { WAVEDROM_TEMPLATE } from './wavedrom'
 import { uiOp, type MdOp } from './ops'
 
 export interface SlashItem {
@@ -124,6 +125,12 @@ export function buildSlashItems(extra?: { insertImage?: () => void }): SlashItem
       labelKey: 'insertDiagram',
       keywords: ['mermaid', 'chart', 'flowchart', 'graph'],
       run: slashOp({ op: 'insertContent', after: 'selection', markdown: MERMAID_TEMPLATE }),
+    },
+    {
+      id: 'waveform',
+      labelKey: 'insertWaveform',
+      keywords: ['wavedrom', 'timing', 'waveform', 'signal', 'clock'],
+      run: slashOp({ op: 'insertContent', after: 'selection', markdown: WAVEDROM_TEMPLATE }),
     },
   ]
   if (extra?.insertImage) {

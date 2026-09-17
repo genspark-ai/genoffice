@@ -42,8 +42,28 @@ export function anchorBoxLift(
 /** one CSS pixel of preview window given or taken at a table seam: shaved when
  *  the next page opens with a table (its 2px margin-top keeps the shaved row in
  *  margin space), added when a page break cuts a table so the collapsed border
- *  straddling the cut shows whole on both pages */
+ *  straddling the cut shows whole on both pages, and moved from the next page
+ *  to the previous one when a page ends on a table's bottom edge */
 export const TABLE_SEAM_PX = 1
+
+/** preview window adjustments at table seams (px): `lift` opens this page's
+ *  window above its start (negative: below it), `extend` grows its bottom */
+export function seamWindow(
+  slice: PageSlice,
+  next: PageSlice | undefined,
+): { lift: number; extend: number } {
+  const lift = slice.cutTable
+    ? TABLE_SEAM_PX
+    : slice.tailTable && !slice.liftTop
+      ? -TABLE_SEAM_PX
+      : 0
+  const extend = next?.leadTable
+    ? -TABLE_SEAM_PX
+    : next?.cutTable || next?.tailTable
+      ? TABLE_SEAM_PX
+      : 0
+  return { lift, extend }
+}
 
 /** open each page's clip window above its start by the part of a lifted block
  *  (negative text-relative w:tblpY table) that hangs above the page's first block */
@@ -62,12 +82,16 @@ export function applyLiftTops(slices: PageSlice[], blocks: BlockBox[]): void {
 }
 
 /**
- * Flag single-flow pages that open with a native table (leadTable) or inside one
- * (cutTable). A window edge exactly on a table's top edge lets Chromium pixel-snap
- * the collapsed top border onto the page before it, where Word draws nothing; a
- * window edge on a row seam leaves each page half of that border, while Word
- * draws the cut row's bottom border on the outgoing page and the next row's top
- * border on the incoming one (probe 2026-09-05).
+ * Flag single-flow pages that open with a native table (leadTable), inside one
+ * (cutTable) or right on one's bottom edge (tailTable). A window edge exactly on
+ * a table's top edge lets Chromium pixel-snap the collapsed top border onto the
+ * page before it, where Word draws nothing; a window edge on a row seam leaves
+ * each page half of that border, while Word draws the cut row's bottom border
+ * on the outgoing page and the next row's top border on the incoming one (probe
+ * 2026-09-05). A window edge on the table's bottom edge (the next block has no
+ * top margin) puts the outer half of the collapsed bottom border, which lies
+ * outside the table box, on the incoming page as a hairline; Word paints the
+ * whole border with the table.
  */
 export function markTableSeamSlices(slices: PageSlice[], blocks: BlockBox[]): void {
   let bi = 0
@@ -81,7 +105,14 @@ export function markTableSeamSlices(slices: PageSlice[], blocks: BlockBox[]): vo
       continue
     }
     const prev = blocks[bi - 1]
-    if (prev?.el?.tagName === 'TABLE' && prev.top + prev.height > s.start + 0.5) s.cutTable = true
+    if (prev?.el?.tagName !== 'TABLE') continue
+    if (prev.top + prev.height > s.start + 0.5) {
+      s.cutTable = true
+      continue
+    }
+    // the inter-block gap was folded into the table's height as spaceAfterPx
+    const boxBottom = prev.top + prev.height - (prev.spaceAfterPx ?? 0)
+    if (Math.abs(boxBottom - s.start) <= 0.5) s.tailTable = true
   }
 }
 
@@ -1265,16 +1296,28 @@ export function planRowSplit(
   firstAvail: number,
   contentH: number,
   turn: (placed: number, y: number) => number,
+  widow = true,
 ): { lastFragment: number; target: number; rules: RowSplitRule[] } | 'nofit' | null {
   const cells = row.cells ?? []
   const next = cells.map(() => 0)
   const dy = cells.map(() => 0)
   const rules: RowSplitRule[] = []
   const lastBottom = (c: RowCellBox) => (c.lines.length ? c.lines[c.lines.length - 1][1] : 0)
+  // clip-path insets are border-box relative: without measured boxes the ink
+  // extents stand in (synthetic rows tile lines edge to edge)
   const childTop = (c: RowCellBox, ch: number) =>
+    c.childBox?.[ch]?.[0] ??
     Math.min(...c.lines.filter((_, i) => c.childOf[i] === ch).map((l) => l[0]))
   const childBottom = (c: RowCellBox, ch: number) =>
+    c.childBox?.[ch]?.[1] ??
     Math.max(...c.lines.filter((_, i) => c.childOf[i] === ch).map((l) => l[1]))
+  // Word breaks between line boxes; the ink bands leave the leading around
+  // them, so the boundary before line i is the middle of the gap above it (a
+  // paragraph's first line starts at its box top)
+  const lineTop = (c: RowCellBox, i: number) =>
+    i > 0 && c.childOf[i - 1] === c.childOf[i]
+      ? (c.lines[i - 1][1] + c.lines[i][0]) / 2
+      : Math.min(c.lines[i][0], childTop(c, c.childOf[i]))
   const naturalH = row.height - (row.splitExtra ?? 0)
   const padB = Math.max(0, naturalH - Math.max(0, ...cells.map(lastBottom)))
   let y = 0
@@ -1291,7 +1334,9 @@ export function planRowSplit(
         else break
       }
       const raw = fit
-      if (fit < c.lines.length && fit > j && c.paraOf[fit - 1] === c.paraOf[fit]) {
+      // widow/orphan control inside cells is Word 2013+ layout only: legacy
+      // mode cuts a cell paragraph after any line (probe 2026-09-17: 4+1, 1+1)
+      if (widow && fit < c.lines.length && fit > j && c.paraOf[fit - 1] === c.paraOf[fit]) {
         const p = c.paraOf[fit]
         let start = fit
         while (start > 0 && c.paraOf[start - 1] === p) start--
@@ -1304,6 +1349,11 @@ export function planRowSplit(
       else if (raw > j) held = true
       return fit
     })
+    // a row splits only when every cell fits or breaks legally: a cell whose
+    // fitting lines are all held back by the widow rule makes Word move the
+    // row whole (probe 2026-09-17: 3-line cell with 2 lines of room), unless
+    // the page is already fresh
+    if (frag === 0 && held && firstAvail < contentH - 0.5) return 'nofit'
     if (!progressed) {
       if (frag === 0) return 'nofit'
       // a fresh page still holds no whole line: force one line per pending cell.
@@ -1351,7 +1401,7 @@ export function planRowSplit(
       if (Math.abs(d) > 0.05) rules.push({ from, cell: k, child: first, tail: true, dy: d })
       const clipTop =
         start > 0 && c.childOf[start - 1] === first
-          ? c.lines[start][0] - childTop(c, first)
+          ? lineTop(c, start) - childTop(c, first)
           : undefined
       if (end >= c.lines.length) {
         if (clipTop !== undefined) rules.push({ from, cell: k, child: first, clipTop })
@@ -1359,7 +1409,7 @@ export function planRowSplit(
       }
       const last = c.childOf[end]
       if (end > 0 && c.childOf[end - 1] === last) {
-        const clipBottom = childBottom(c, last) - c.lines[end][0]
+        const clipBottom = childBottom(c, last) - lineTop(c, end)
         if (last === first && clipTop !== undefined)
           rules.push({ from, cell: k, child: last, clipTop, clipBottom })
         else {
@@ -1376,7 +1426,7 @@ export function planRowSplit(
     cells.forEach((c, k) => {
       const fit = cutIdx[k]
       next[k] = fit
-      if (fit < c.lines.length) dy[k] = y + avail - c.lines[fit][0]
+      if (fit < c.lines.length) dy[k] = y + avail - lineTop(c, fit)
     })
     y += avail
     avail = turn(avail, y)
@@ -1387,6 +1437,31 @@ export function planRowSplit(
 /**
  * Place a table (row-level page breaking).
  */
+/** the shortest fragment a row can leave on a page (row-relative px): with cells
+ *  (and a cell split path), the lowest cell cut that is legal under the widow rule
+ *  (two lines of an opening paragraph, or that paragraph whole when it is shorter
+ *  than four lines); else the first cut point; an unsplittable row demands its
+ *  full height, a declared-height row at least its page-capped minimum */
+function firstLegalCut(
+  row: TableRowBox,
+  widow: boolean,
+  contentH: number,
+  cellSplit: boolean,
+): number {
+  const minH = Math.min(row.minHPx ?? 0, contentH)
+  if (row.cantSplit) return row.height
+  if (!row.cells?.length || !cellSplit) return Math.max(row.cutYs?.[0] ?? row.height, minH)
+  let cut = 0
+  for (const c of row.cells) {
+    if (c.lines.length === 0) continue
+    let n = 0
+    while (n < c.lines.length && c.paraOf[n] === c.paraOf[0]) n++
+    const keep = !widow ? 1 : n >= 4 ? 2 : n
+    cut = Math.max(cut, c.lines[keep - 1][1])
+  }
+  return Math.max(Math.min(cut, row.height), minH)
+}
+
 /** height a floating table needs on its first page: the leading header rows
  *  plus the first body row (a header block taller than the page cannot stay
  *  together, so only the first row counts) */
@@ -1446,6 +1521,34 @@ function _placeTable(
   // footnote heights charged with their referencing rows (Word lays a row's
   // notes on the row's page, so a row fits only with its notes)
   let chargedNotes = 0
+  // Word 2013+ layout: a tblHeader block is never left alone at a page bottom —
+  // when the first body row has to turn the page, the header goes with it
+  // (probe 2026-09-17; legacy mode leaves the header and repeats it). The
+  // header rows placed on the table's opening page are retracted and the
+  // table restarts on the fresh page.
+  let firstBodyRow = leadHeaderRows
+  while (firstBodyRow < rows.length && rows[firstBodyRow].vMergeContinue) firstBodyRow++
+  let headerPlacedPx = 0
+  let headerNotes = 0
+  let chainUntil = -1
+  let retractable =
+    block.modernTableHeaders && leadHeaderRows > 0 && headerBlockH <= contentH && !pageEmpty()
+  const turnBeforeRow = (ri: number, repeatH: number): boolean => {
+    if (retractable && ri === firstBodyRow) {
+      retractable = false
+      place(-headerPlacedPx)
+      chargedNotes -= headerNotes
+      headerPlacedPx = 0
+      headerNotes = 0
+      chainUntil = -1
+      placedHeader = false
+      rowCursor = block.top
+      newPage(block.top, curSection)
+      return true
+    }
+    newPage(rowCursor, curSection, repeatH, block.top)
+    return false
+  }
 
   for (let ri = 0; ri < rows.length; ri++) {
     const row = rows[ri]
@@ -1459,6 +1562,35 @@ function _placeTable(
     const repeatH = placedHeader && ri >= headerRows ? headerHeight : 0
     const notes = row.notesPx ?? 0
     chargedNotes += notes
+    if (ri < leadHeaderRows) {
+      headerPlacedPx += row.height + notes
+      headerNotes += notes
+    }
+
+    // keepNext rows chain to the next row (probe 2026-09-17: one keepNext
+    // paragraph in any cell; the chain needs the anchor row's first segment,
+    // or the whole anchor when it cannot split). A chain taller than a page
+    // is placed normally, like a paragraph chain that cannot be honored.
+    if (row.keepNext && ri > chainUntil) {
+      let k = ri
+      let need = 0
+      for (; k < rows.length && rows[k].keepNext; k++)
+        need += rows[k].height + (rows[k].notesPx ?? 0)
+      chainUntil = k - 1
+      const anchor = rows[k]
+      if (anchor)
+        need +=
+          firstLegalCut(anchor, block.modernTableHeaders === true, contentH, !!onRowSplit) +
+          (anchor.notesPx ?? 0)
+      if (need <= contentH + 0.01 && !fits(need) && !pageEmpty()) {
+        chargedNotes -= notes
+        if (turnBeforeRow(ri, repeatH)) {
+          ri = -1
+          continue
+        }
+        chargedNotes += notes
+      }
+    }
 
     if (!fits(row.height + notes)) {
       const contentEnd =
@@ -1477,7 +1609,10 @@ function _placeTable(
       // full page still split afterwards — from the fresh page.
       let turnedForMinH = false
       if (row.minHPx !== undefined && row.minHPx > remain() + 0.01 && !pageEmpty()) {
-        newPage(rowCursor, curSection, repeatH, block.top)
+        if (turnBeforeRow(ri, repeatH)) {
+          ri = -1
+          continue
+        }
         turnedForMinH = true
       }
       const keepWhole = row.isHeader && ri < leadHeaderRows && row.height <= contentH + 0.01
@@ -1490,11 +1625,15 @@ function _placeTable(
           newPage(rowCursor + y, curSection, repeatH, block.top)
           return remain()
         }
-        let plan = planRowSplit(row, remain() - notes, contentH, turn)
+        const widow = block.modernTableHeaders === true
+        let plan = planRowSplit(row, remain() - notes, contentH, turn, widow)
         if (plan === 'nofit' && !pageEmpty() && !turnedForMinH) {
-          newPage(rowCursor, curSection, repeatH, block.top)
+          if (turnBeforeRow(ri, repeatH)) {
+            ri = -1
+            continue
+          }
           turnedForMinH = true
-          plan = planRowSplit(row, remain() - notes, contentH, turn)
+          plan = planRowSplit(row, remain() - notes, contentH, turn, widow)
         }
         if (plan && plan !== 'nofit') {
           place(plan.lastFragment + (firstFragment ? notes : 0))
@@ -1530,6 +1669,11 @@ function _placeTable(
         }
         return prev
       }
+      // the first segment not fitting is a whole push of the row's head: under
+      // the header rule it takes the header block along
+      const firstSegment = (bounds: number[]) => bounds.find((c) => c > 0.5) ?? 0
+      const headTurns = (bounds: number[]) =>
+        !fits(firstSegment(bounds) + notes) && !pageEmpty() && !turnedForMinH
       // Word probe 2026-08-27 (kr_fill_repro): when a declared-height (atLeast
       // trHeight) row splits across pages, the continuation fragment honors the
       // full declared height again as its own minimum — Word lays the row out
@@ -1576,6 +1720,10 @@ function _placeTable(
         }
         cuts = cuts.filter((c) => c < contentEnd - 0.01)
         if (cuts.length > 0 || contentEnd < row.height - 0.5) {
+          if (headTurns([...cuts, contentEnd]) && turnBeforeRow(ri, repeatH)) {
+            ri = -1
+            continue
+          }
           const prev = placeSegments([...cuts, contentEnd])
           const fill = row.height - prev
           if (fill > 0.5) place(Math.min(fill, remain()))
@@ -1585,6 +1733,10 @@ function _placeTable(
           continue
         }
       } else if (cuts.length > 0) {
+        if (headTurns([...cuts, row.height]) && turnBeforeRow(ri, repeatH)) {
+          ri = -1
+          continue
+        }
         placeSegments([...cuts, row.height])
         continuationFill()
         rowCursor += row.height
@@ -1594,7 +1746,10 @@ function _placeTable(
       // cantSplit / empty / no cut points: the row is atomic; turn the page
       // first if it doesn't fit. A repeated header keeps the fresh page
       // non-empty, so the minH turn above must not double up here.
-      if (!pageEmpty() && !turnedForMinH) newPage(rowCursor, curSection, repeatH, block.top)
+      if (!pageEmpty() && !turnedForMinH && turnBeforeRow(ri, repeatH)) {
+        ri = -1
+        continue
+      }
     }
     place(row.height + notes)
     rowCursor += row.height

@@ -292,8 +292,6 @@ export const he = {
   appAutofillStreaming: 'מילוי אוטומטי לאזור שעדיין נטען בהזרמה אינו מותר עדיין.',
   appDvNeedsIndexed:
     'עריכת אימות נתונים דורשת שגיליון זה יסיים תחילה את יצירת האינדקס — נסה שוב בעוד רגע.',
-  appDuplicateNeedsFullLoad:
-    'שכפול גיליון דורש מצב טעינה מלאה — חוברת עבודה זו גדולה מדי ונטענת בהזרמה חלקית.',
   appPivotSheetNoDuplicate: 'גיליון זה מכיל טבלת ציר — שכפולו אינו נתמך עדיין.',
   appDuplicateScopedNames: 'גיליון זה מכיל שמות מוגדרים ברמת הגיליון — שכפולו אינו נתמך עדיין.',
   appMoveRowsColsUnsaved:
@@ -573,6 +571,8 @@ export const he = {
     'חוברת העבודה נטענה במלואה — נוסחאות מחושבות מחדש באופן חי, שורות/עמודות ניתנות לעריכה.',
   appRangeMustBeVector: '{range} חייב להיות שורה בודדת או עמודה בודדת של תאים.',
   appRangeTooManyCells: '{range} מכסה יותר מ-{max} תאים.',
+  appCopyLoadingRange: 'טוען את {range} להעתקה…',
+  appCopyValuesOnly: '{range} הועתק כערכים בלבד ({cells} תאים): העיצוב נשמר רק עד {max} תאים.',
   appSheetStillIndexing: 'הגיליון עדיין באינדוקס — נסה שוב בעוד רגע.',
   appPrintNothing: 'בגיליון אין מה להדפיס.',
   appPrintTooLarge: 'טווח ההדפסה גדול מדי — הגדר אזור הדפסה קטן יותר בכרטיסייה פריסת עמוד.',

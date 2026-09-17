@@ -565,6 +565,8 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
   )
   const [style, setStyle] = useState<string>(initialStyle)
   const [color, setColor] = useState(`#${(textAttrs.color as string | null) ?? '000000'}`)
+  // the input has no "unset" state: an untouched swatch keeps the run's colour as it was
+  const [colorTouched, setColorTouched] = useState(false)
   const [underline, setUnderline] = useState(editor.isActive('underline'))
   const [strike, setStrike] = useState(editor.isActive('strike'))
   const [vertAlign, setVertAlign] = useState<string>((textAttrs.vertAlign as string | null) ?? '')
@@ -574,12 +576,13 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
       onClose()
       return
     }
-    const hex = color.replace('#', '').toUpperCase()
     let chain = editor
       .chain()
       .focus()
       .setMark('docTextStyle', {
-        color: hex === '000000' ? null : hex,
+        color: colorTouched
+          ? color.replace('#', '').toUpperCase()
+          : ((textAttrs.color as string | null) ?? null),
         sizeHalfPoints: Math.round(size * 2),
         // picks target only their script's rFonts slot; the other slot survives
         ...(!font
@@ -672,7 +675,10 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
               type="color"
               className="font-color-input"
               value={color}
-              onChange={(e) => setColor(e.target.value)}
+              onChange={(e) => {
+                setColor(e.target.value)
+                setColorTouched(true)
+              }}
             />
           </label>
           <label className="font-check">

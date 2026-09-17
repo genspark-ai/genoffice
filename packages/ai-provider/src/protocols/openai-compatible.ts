@@ -289,7 +289,8 @@ async function openAiCompatibleTurn(
     if (broken.length > 0) {
       const received = broken.reduce((n, p) => n + p.json.length, 0)
       throw new Error(
-        `The model stream closed while sending tool arguments (${received} chars received); the connection was dropped`,
+        `The model stream closed while sending tool arguments (${received} chars received); the connection was dropped. ` +
+          'If this recurs on a large request (e.g. generating a whole document), ask for the output in several smaller parts.',
       )
     }
   }

@@ -63,6 +63,7 @@ describe('text effect declarations', () => {
       'transform:scaleX(0.33)',
       'transform-origin:0 50%',
       'margin-right:-0.348em',
+      'text-indent:0',
     ])
     expect(charScaleXDecls('nope')).toEqual([])
   })

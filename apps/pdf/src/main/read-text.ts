@@ -35,6 +35,8 @@ export interface ReadPdfTextOptions {
   fromPage?: number
   /** 1-based inclusive; default pageCount */
   toPage?: number
+  /** explicit 1-based pages to extract (unsorted ok); overrides fromPage/toPage */
+  pages?: readonly number[]
   /** stop extracting once the accumulated text reaches this many chars */
   charBudget?: number
 }
@@ -70,7 +72,8 @@ function metaText(m: Pdfium, doc: number, tag: string): string {
 /** whole textpage text (UTF-16LE, pdfium uses \r\n line breaks) normalized to \n */
 function pageText(m: Pdfium, textPage: number, count: number): string {
   if (count <= 0) return ''
-  const buf = m._malloc(count * 2)
+  // pdfium writes count chars plus a UTF-16 NUL terminator
+  const buf = m._malloc((count + 1) * 2)
   if (!buf) return ''
   try {
     const written = m._FPDFText_GetText(textPage, 0, count, buf)
@@ -100,6 +103,9 @@ export function readPdfText(
       const pageCount = m._FPDF_GetPageCount(doc)
       const from = Math.max(1, Math.min(options.fromPage ?? 1, pageCount))
       const to = Math.max(from, Math.min(options.toPage ?? pageCount, pageCount))
+      const wanted = options.pages
+        ? [...new Set(options.pages.filter((p) => p >= 1 && p <= pageCount))].sort((a, b) => a - b)
+        : Array.from({ length: to - from + 1 }, (_, i) => from + i)
       const budget = options.charBudget ?? Number.POSITIVE_INFINITY
 
       const info: { title?: string; author?: string } = {}
@@ -111,7 +117,8 @@ export function readPdfText(
       const pages: PdfPageText[] = []
       let spent = 0
       let truncated = false
-      for (let index = from; index <= to && !truncated; index++) {
+      for (const index of wanted) {
+        if (truncated) break
         const page = m._FPDF_LoadPage(doc, index - 1)
         if (!page) {
           pages.push({

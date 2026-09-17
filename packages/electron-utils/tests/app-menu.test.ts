@@ -2,17 +2,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const electronMock = vi.hoisted(() => ({
   getFocusedWebContents: vi.fn(),
+  showMessageBox: vi.fn(),
+  writeText: vi.fn(),
 }))
 
 vi.mock('electron', () => ({
   webContents: {
     getFocusedWebContents: electronMock.getFocusedWebContents,
   },
+  app: {
+    getVersion: () => '1.2.3',
+  },
+  dialog: {
+    showMessageBox: electronMock.showMessageBox,
+  },
+  clipboard: {
+    writeText: electronMock.writeText,
+  },
 }))
 
 import {
+  aboutMenuItem,
   appMenuLabels,
+  checkUpdatesMenuItem,
   editMenuTemplate,
+  helpMenuTemplate,
+  setUpdateCheckInvoker,
   viewMenuTemplate,
   windowMenuTemplate,
   type AppMenuLabels,
@@ -48,6 +63,7 @@ const submenuOf = (tpl: { submenu?: unknown }): Item[] => tpl.submenu as Item[]
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setUpdateCheckInvoker(null)
 })
 
 describe('appMenuLabels', () => {
@@ -162,5 +178,55 @@ describe('viewMenuTemplate', () => {
 
     expect(target.openDevTools).toHaveBeenCalledWith({ mode: 'detach' })
     expect(target.closeDevTools).toHaveBeenCalledOnce()
+  })
+})
+
+describe('checkUpdatesMenuItem / manual update check wiring', () => {
+  it('sits directly above About in the help menu', () => {
+    const items = submenuOf(helpMenuTemplate(en))
+    expect(items.at(-2)!.label).toBe(en.checkUpdates)
+    expect(items.at(-1)!.label).toBe(en.about)
+  })
+
+  it('invokes the shell-registered check on click, and no-ops unregistered', () => {
+    const item = checkUpdatesMenuItem(en) as { label: string; click: () => void }
+    expect(item.label).toBe(en.checkUpdates)
+    expect(() => item.click()).not.toThrow()
+
+    const invoke = vi.fn()
+    setUpdateCheckInvoker(invoke)
+    item.click()
+    expect(invoke).toHaveBeenCalledOnce()
+  })
+
+  it('About dialog offers the check button only when a check is registered', async () => {
+    electronMock.showMessageBox.mockResolvedValue({ response: 0 })
+    const about = aboutMenuItem(en) as { click: () => Promise<void> }
+
+    await about.click()
+    expect(electronMock.showMessageBox.mock.calls.at(-1)![0].buttons).toEqual(['OK', en.copy])
+
+    setUpdateCheckInvoker(() => {})
+    await about.click()
+    expect(electronMock.showMessageBox.mock.calls.at(-1)![0].buttons).toEqual([
+      'OK',
+      en.copy,
+      en.checkUpdates,
+    ])
+  })
+
+  it('About dialog third button triggers the registered check', async () => {
+    const invoke = vi.fn()
+    setUpdateCheckInvoker(invoke)
+    electronMock.showMessageBox.mockResolvedValue({ response: 2 })
+    await (aboutMenuItem(en) as { click: () => Promise<void> }).click()
+    expect(invoke).toHaveBeenCalledOnce()
+    expect(electronMock.writeText).not.toHaveBeenCalled()
+  })
+
+  it('About dialog copy button still copies name + version', async () => {
+    electronMock.showMessageBox.mockResolvedValue({ response: 1 })
+    await (aboutMenuItem(en) as { click: () => Promise<void> }).click()
+    expect(electronMock.writeText).toHaveBeenCalledWith('GenOffice 1.2.3')
   })
 })

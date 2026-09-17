@@ -342,8 +342,6 @@ export const it = {
     "Il riempimento automatico in un'area ancora in streaming non è ancora consentito.",
   appDvNeedsIndexed:
     "La modifica della convalida dati richiede prima l'indicizzazione completa di questo foglio — riprova tra poco.",
-  appDuplicateNeedsFullLoad:
-    'La duplicazione di un foglio richiede la modalità a caricamento completo — questa cartella di lavoro è troppo grande e viene caricata parzialmente in streaming.',
   appPivotSheetNoDuplicate:
     'Questo foglio contiene una tabella pivot — la sua duplicazione non è ancora supportata.',
   appDuplicateScopedNames:
@@ -658,6 +656,9 @@ export const it = {
     'Cartella di lavoro completamente caricata — le formule si ricalcolano in tempo reale, righe/colonne modificabili.',
   appRangeMustBeVector: '{range} deve essere una singola riga o una singola colonna di celle.',
   appRangeTooManyCells: '{range} copre più di {max} celle.',
+  appCopyLoadingRange: 'Caricamento di {range} per la copia…',
+  appCopyValuesOnly:
+    '{range} copiato solo come valori ({cells} celle): gli stili sono mantenuti solo fino a {max} celle.',
   appSheetStillIndexing: 'Il foglio è ancora in fase di indicizzazione — riprova tra poco.',
   appPrintNothing: 'Il foglio non ha nulla da stampare.',
   appPrintTooLarge:

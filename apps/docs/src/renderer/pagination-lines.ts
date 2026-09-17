@@ -423,6 +423,7 @@ export function fillLineBoxes(
             // before the document is saved and reopened.
             if (r.isHeader === undefined && flags[i]?.isHeader) r.isHeader = true
             if (flags[i]?.cantSplit) r.cantSplit = true
+            if (flags[i]?.keepNext) r.keepNext = true
             if (flags[i]?.minHPx) r.minHPx = flags[i].minHPx
           })
         const bands =
@@ -496,7 +497,7 @@ function tileBoxes(
  *  decoration rows (page gaps / repeated tblHeader clones) are not page-split
  *  units — counting them would add phantom boundaries and shift the
  *  tableRowFlags index alignment */
-function outerTableRows(el: HTMLElement): HTMLElement[] {
+export function outerTableRows(el: HTMLElement): HTMLElement[] {
   return Array.from(el.querySelectorAll<HTMLElement>('tr')).filter(
     (tr) =>
       !tr.closest('.doc-nested-table') &&
@@ -698,7 +699,7 @@ function rowCutYs(
     }
     if (bands.length > 0) cellBands.push(bands)
     for (const list of byPara.values()) paraBands.push(list)
-    if (cellsOk) cellBoxes.push(cellBoxOf(cell as HTMLElement, entries, zoomFactor))
+    if (cellsOk) cellBoxes.push(cellBoxOf(cell as HTMLElement, entries, zoomFactor, toBand))
   }
   const contentBottom = cellBands.reduce(
     (max, bands) => bands.reduce((m, [, b]) => Math.max(m, b), max),
@@ -718,6 +719,7 @@ function cellBoxOf(
   cell: HTMLElement,
   entries: Array<{ band: [number, number]; child: number; para: number }>,
   zoomFactor: number,
+  toBand: (r: DOMRect) => [number, number],
 ): RowCellBox {
   const va = cell.style.verticalAlign
   let alignDy = 0
@@ -740,7 +742,11 @@ function cellBoxOf(
         band: [e.band[0] - alignDy, e.band[1] - alignDy] as [number, number],
       }))
     : entries
-  return { ...cellLinesOf(shifted), alignDy, alignFrac }
+  const childBox = Array.from(cell.children, (ch): [number, number] => {
+    const [t, b] = toBand(ch.getBoundingClientRect())
+    return [t - alignDy, b - alignDy]
+  })
+  return { ...cellLinesOf(shifted), childBox, alignDy, alignFrac }
 }
 
 /** Pure core of cellBoxOf: rect entries → clustered lines (same overlap rule as
@@ -903,7 +909,11 @@ function domLineRects(el: HTMLElement, zoomFactor: number): DomLineRect[] {
   const lines: DomLineRect[] = []
   let lineBottom = -Infinity
   for (const { r, node } of rects) {
-    if (r.top >= lineBottom - 1) {
+    // glyph boxes taller than the line pitch (Batang-class KR faces: 1.45em
+    // content area under a 1.3029 line) overlap the next line by a few px; a
+    // rect the open line covers less than half of starts a new line
+    const overlap = lineBottom - r.top
+    if (overlap <= 1 || overlap < r.height / 2) {
       lines.push({
         offset: (r.top - elTop - gapAbove(r.top)) / zoomFactor,
         bottom: (r.bottom - elTop - gapAbove(r.top)) / zoomFactor,

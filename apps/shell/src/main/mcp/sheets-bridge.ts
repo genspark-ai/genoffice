@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { ipcMain, webContents } from 'electron'
 import type { SheetsControl } from './tools/sheets-tools'
 
@@ -141,6 +142,8 @@ export interface SheetsBridgeDeps {
   /** open a fresh blank sheets tab (a real backing file, like the app's own
    *  "new spreadsheet"); returns its webContents id */
   openBlankTab: () => Promise<number>
+  /** grant the tab's renderer write access to the resolved save target (the sheets save handler checks it) */
+  authorizeSave: (wcId: number, filePath: string) => void
   /**
    * Close a blank tab whose session never became ready and delete the empty
    * workbook file created for it. `create_session` must not leave a tab and an
@@ -159,6 +162,19 @@ export function createSheetsControl(deps: SheetsBridgeDeps): SheetsControl {
     const wc = webContents.fromId(wcId)
     if (!wc || wc.isDestroyed()) throw new Error('the target spreadsheet is no longer open')
     await waitForReady(wcId)
+    if (command === 'save_sheet') {
+      const { path: requested, overwrite } = (payload ?? {}) as {
+        path?: unknown
+        overwrite?: unknown
+      }
+      if (typeof requested !== 'string') throw new Error('save_sheet requires a path')
+      // same normalisation as the sheets save handler, so the authorized path is the written one
+      const target = /\.xlsx$/i.test(requested) ? requested : `${requested}.xlsx`
+      if (existsSync(target) && overwrite !== true) {
+        throw new Error(`file already exists: ${target} (pass overwrite:true to replace it)`)
+      }
+      deps.authorizeSave(wcId, target)
+    }
     const requestId = `mcp-${++requestSeq}`
     const result = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {

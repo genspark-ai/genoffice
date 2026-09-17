@@ -101,6 +101,9 @@ export type SaveBlock = (
     }
   /** a new inline image; bytes become word/media/... + relationship */
   | { kind: 'image'; image: NewImage }
+  /** several anchored pictures sharing one holder paragraph (page-pinned floats
+   *  of a rebuilt page): one block instead of one empty paragraph per picture */
+  | { kind: 'images'; images: NewImage[] }
   /** a new embedded chart; data becomes word/charts/chartN.xml + relationship */
   | { kind: 'chart'; chart: NewChart; extentPx?: { w: number; h: number } }
 ) & {
@@ -449,7 +452,12 @@ export async function saveDocx(
   let imageSeq = nextImageSeq(zip)
   let docPrSeq = imageSeq
   /** Land image bytes as a media part (no relationship); identical bytes share one part. */
-  const landMedia = (image: { base64: string; mime: NewImage['mime'] }): string => {
+  const landMedia = (image: {
+    base64: string
+    mime: NewImage['mime']
+    sourcePart?: string
+  }): string => {
+    if (image.sourcePart) return image.sourcePart
     const contentKey = `${image.mime}:${image.base64}`
     let mediaPath = mediaPathByContent.get(contentKey)
     if (mediaPath === undefined) {
@@ -463,8 +471,14 @@ export async function saveDocx(
   }
   /** Land image bytes as a media part + document relationship; returns the rId.
    *  Identical bytes reuse ONE media part (repeated logos / per-page backgrounds). */
-  const embedImageMedia = (image: { base64: string; mime: NewImage['mime'] }): string => {
-    const contentKey = `${image.mime}:${image.base64}`
+  const embedImageMedia = (image: {
+    base64: string
+    mime: NewImage['mime']
+    sourcePart?: string
+  }): string => {
+    const contentKey = image.sourcePart
+      ? `part:${image.sourcePart}`
+      : `${image.mime}:${image.base64}`
     let rId = mediaRelByContent.get(contentKey)
     if (rId === undefined) {
       const mediaPath = landMedia(image)
@@ -522,6 +536,16 @@ export async function saveDocx(
     return image.wrap
       ? applyImageWrap(xml, image.wrap, image.posOffsetEmu, undefined, image.zOrder)
       : xml
+  }
+  /** the pictures' runs collected into the first picture's holder paragraph */
+  const embedImages = (images: NewImage[]): string => {
+    const paras = images.map(embedImage)
+    if (paras.length <= 1) return paras[0] ?? ''
+    const runOf = (para: string) => para.slice(para.indexOf('<w:r>'), para.lastIndexOf('</w:p>'))
+    const first = paras[0]
+    return (
+      first.slice(0, first.lastIndexOf('</w:p>')) + paras.slice(1).map(runOf).join('') + '</w:p>'
+    )
   }
 
   // ---- new embedded charts: chart part + workbook + relationship + drawing paragraph ----
@@ -1030,6 +1054,8 @@ export async function saveDocx(
       if (fb.replaceImage) xml = retargetImageBlip(xml, embedImageMedia(fb.replaceImage))
     } else if (fb.kind === 'chart') {
       xml = await embedChart(fb.chart, fb.extentPx)
+    } else if (fb.kind === 'images') {
+      xml = embedImages(fb.images)
     } else {
       xml = embedImage(fb.image)
     }

@@ -37,7 +37,7 @@ export interface SheetsToolDeps {
    * Resolve a caller-supplied document reference (tab id or path) to the
    * webContents of that open tab, so the grid tools can edit a workbook the
    * *user* has open rather than only the session's own blank one. Absent in
-   * headless/unit runs, which drops the `document` argument from the schema.
+   * headless/unit runs, where a `document` argument is refused.
    */
   resolveTarget?: TargetResolver
 }
@@ -59,6 +59,8 @@ export interface SheetsControl {
 }
 
 const XLSX_EXT = `.${generateExtension('xlsx')}`
+// same ceiling as the built-in AI's read_cells
+const MAX_READ_ADDRESSES = 100
 
 /** the headless tool: a row matrix -> xlsx through the bundled CLI */
 function createHeadlessXlsxTool(deps: SheetsToolDeps): McpToolDefinition {
@@ -180,7 +182,7 @@ function createGridContentTools(deps: SheetsToolDeps, host: SessionHost): McpToo
           .array(z.string())
           .optional()
           .describe(
-            'A1 addresses to read (values + formulas); omit to get the workbook overview only',
+            'A1 addresses to read (values + formulas, at most 100 per call); omit to get the workbook overview only',
           ),
         sheetId: z
           .string()
@@ -192,6 +194,9 @@ function createGridContentTools(deps: SheetsToolDeps, host: SessionHost): McpToo
       },
       handler: async (args) => {
         const wc = await target(args.document)
+        if (Array.isArray(args.addresses) && args.addresses.length > MAX_READ_ADDRESSES) {
+          throw new Error(`read at most ${MAX_READ_ADDRESSES} addresses per call`)
+        }
         const payload = {
           ...(Array.isArray(args.addresses) ? { addresses: args.addresses.map(String) } : {}),
           ...(typeof args.sheetId === 'string' ? { sheetId: args.sheetId } : {}),

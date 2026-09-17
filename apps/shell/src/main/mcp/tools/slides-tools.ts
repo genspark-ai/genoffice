@@ -34,7 +34,7 @@ export interface SlidesToolDeps {
    * Resolve a caller-supplied document reference (tab id or path) to the
    * webContents of that open tab, so the deck tools can edit a presentation the
    * *user* has open rather than only the session's own blank one. Absent in
-   * headless/unit runs, which drops the `document` argument from the schema.
+   * headless/unit runs, where a `document` argument is refused.
    */
   resolveTarget?: TargetResolver
 }

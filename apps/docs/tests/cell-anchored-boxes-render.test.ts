@@ -50,6 +50,27 @@ describe('renderTableSpec anchored cell boxes', () => {
     expect((all[0] as HTMLElement).style.height).toBe('35.1px')
   })
 
+  it('a wrapNone box reserves no strut height', () => {
+    const model: TableModel = {
+      rows: [
+        [
+          {
+            paras: ['head'],
+            anchoredBoxes: [
+              { ...checkbox, offsetYEmu: 217920, heightPx: 193, noWrap: true, behind: true },
+              // behind is z-order only: a wrapped behind-text box still grows the row
+              { ...checkbox, offsetYEmu: 0, heightPx: 30, behind: true },
+            ],
+            anchoredBoxAnchors: [0],
+          },
+        ],
+      ],
+    }
+    const strut = render(renderTableSpec(model)).querySelector<HTMLElement>('.doc-cell-boxes')!
+    expect(strut.style.height).toBe('30px')
+    expect(strut.querySelectorAll('.doc-textbox').length).toBe(2)
+  })
+
   it('a cell without anchored boxes renders no strut', () => {
     const dom = render(renderTableSpec({ rows: [[{ paras: ['plain'] }]] }))
     expect(dom.querySelectorAll('.doc-cell-boxes').length).toBe(0)

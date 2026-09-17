@@ -60,6 +60,8 @@ import {
   showSaveDialogWithMemory,
   windowMenuTemplate,
   aboutMenuItem,
+  checkUpdatesMenuItem,
+  setUpdateCheckInvoker,
   installRendererProtocol,
 } from '@genoffice/electron-utils'
 import { readAppSettings, writeAppSetting, writeAppSettings } from './app-settings'
@@ -163,6 +165,7 @@ import {
   requestSheetsClose,
   resolveSheetsSessionPath,
   markSheetsUntitledPath,
+  authorizeMcpSheetWrite,
   sendSheetsMenuAction,
   sheetsFileRenamed,
   setSheetsCloseTabHook,
@@ -280,7 +283,7 @@ import {
 } from './folder-tree'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
-import { applyUpdateChannel, initAutoUpdater } from './updater'
+import { applyUpdateChannel, checkForUpdatesNow, initAutoUpdater } from './updater'
 import { isUpdateChannel, type UpdateChannel } from '../shared/update-api'
 
 /**
@@ -3022,7 +3025,9 @@ async function openBlankSheetsTabForMcp(): Promise<number> {
     }
     throw new Error('the new spreadsheet tab could not be opened')
   }
-  mcpBlankSheetPaths.set(view.webContents.id, filePath)
+  const wcId = view.webContents.id
+  mcpBlankSheetPaths.set(wcId, filePath)
+  view.webContents.once('destroyed', () => mcpBlankSheetPaths.delete(wcId))
   // Same nudge the interactive path uses: the renderer subscribes to the open
   // action only after Univer mounts, so a single push can land in the void on a
   // cold start and leave the tab sitting on a blank in-memory workbook.
@@ -3046,20 +3051,32 @@ function abandonBlankSheetsTabForMcp(wcId: number): void {
   const filePath = mcpBlankSheetPaths.get(wcId)
   mcpBlankSheetPaths.delete(wcId)
   if (!manager) return
-  const tab = manager.sheetsTabs().find((t) => t.webContents.id === wcId)
-  if (tab) {
-    try {
-      manager.closeTabWithoutPrompt(tab.id)
-    } catch (error) {
-      console.warn('[mcp] could not close the unused spreadsheet tab:', error)
-      return
-    }
-  }
+  // the grid may already be usable while the MCP bridge is not: keep anything the user typed
+  if (manager.dirtySheetsTabs().some((t) => t.webContents.id === wcId)) return
+  if (!abandonBlankTabForMcp(manager.sheetsTabs(), wcId)) return
   if (!filePath) return
   try {
     if (existsSync(filePath)) rmSync(filePath)
   } catch (error) {
     console.warn('[mcp] could not remove the unused blank workbook:', error)
+  }
+}
+
+/**
+ * MCP: close a tab whose session never became ready. Returns false when the
+ * tab could not be closed (it is already gone, or the close failed).
+ */
+function abandonBlankTabForMcp(
+  tabs: Array<{ id: string; webContents: WebContents }>,
+  wcId: number,
+): boolean {
+  const tab = tabs.find((t) => t.webContents.id === wcId)
+  if (!tab || !tabManager) return false
+  try {
+    return tabManager.closeTabWithoutPrompt(tab.id)
+  } catch (error) {
+    console.warn('[mcp] could not close the unused tab:', error)
+    return false
   }
 }
 
@@ -3915,6 +3932,7 @@ function buildHomeMenu(): void {
       submenu: [
         { label: tm('thirdPartyNotices'), click: () => void openThirdPartyNotices() },
         { type: 'separator' },
+        checkUpdatesMenuItem(appMenuLabels(currentLang())),
         aboutMenuItem(appMenuLabels(currentLang())),
       ],
     },
@@ -3997,6 +4015,7 @@ function buildPdfMenu(): void {
       submenu: [
         { label: tm('thirdPartyNotices'), click: () => void openThirdPartyNotices() },
         { type: 'separator' },
+        checkUpdatesMenuItem(appMenuLabels(currentLang())),
         aboutMenuItem(appMenuLabels(currentLang())),
       ],
     },
@@ -4088,6 +4107,7 @@ function buildMarkdownMenu(): void {
       submenu: [
         { label: tm('thirdPartyNotices'), click: () => void openThirdPartyNotices() },
         { type: 'separator' },
+        checkUpdatesMenuItem(appMenuLabels(currentLang())),
         aboutMenuItem(appMenuLabels(currentLang())),
       ],
     },
@@ -4179,6 +4199,7 @@ function buildHtmlMenu(): void {
       submenu: [
         { label: tm('thirdPartyNotices'), click: () => void openThirdPartyNotices() },
         { type: 'separator' },
+        checkUpdatesMenuItem(appMenuLabels(currentLang())),
         aboutMenuItem(appMenuLabels(currentLang())),
       ],
     },
@@ -4883,12 +4904,19 @@ app.whenReady().then(async () => {
   const mcpDocsControl = createDocsControl({
     openBlankTab: () => openBlankDocsTabForMcp(),
     authorizeSave: authorizeMcpDocWrite,
+    abandonBlankTab: (wcId) => {
+      if (tabManager) abandonBlankTabForMcp(tabManager.docsTabs(), wcId)
+    },
   })
   const mcpSlidesControl = createSlidesControl({
     openBlankTab: () => openBlankSlidesTabForMcp(),
+    abandonBlankTab: (wcId) => {
+      if (tabManager) abandonBlankTabForMcp(tabManager.slidesTabs(), wcId)
+    },
   })
   const mcpSheetsControl = createSheetsControl({
     openBlankTab: () => openBlankSheetsTabForMcp(),
+    authorizeSave: authorizeMcpSheetWrite,
     abandonBlankTab: (wcId) => abandonBlankSheetsTabForMcp(wcId),
   })
   configureMcpRuntime({
@@ -4954,6 +4982,7 @@ app.whenReady().then(async () => {
   // deferred to ready: labels need currentLang(), which reads app.getLocale()
   installBackToHomeItems()
   installDockMenu()
+  setUpdateCheckInvoker(() => void checkForUpdatesNow())
   initAutoUpdater(() => shellWindow, currentUpdateChannel())
 
   if (!pendingLaunchPath || !openDocumentPath(pendingLaunchPath)) tabManager?.openHomeTab()

@@ -204,6 +204,32 @@ describe('anchor paragraph line', () => {
     expect(doc.blocks[1].anchorLine).toBeUndefined()
   })
 
+  it('keeps an inline picture that shares its paragraph with one floating picture', async () => {
+    const inline =
+      `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">` +
+      `<wp:extent cx="1535430" cy="654050"/><wp:docPr id="2" name="Picture 2"/>` +
+      `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">` +
+      `<pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="Picture 2"/><pic:cNvPicPr/></pic:nvPicPr>` +
+      `<pic:blipFill><a:blip r:embed="rId10"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+      `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1535430" cy="654050"/></a:xfrm>` +
+      `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>` +
+      `</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`
+    // logo row: a right-hugging floating logo and an inline logo in one
+    // textless paragraph; the single-image block kept only the floating blip
+    const para =
+      `<w:p><w:r>` +
+      picture({ x: 5082785, y: 90951, cx: 815340, cy: 678815, behind: true }) +
+      `</w:r>${inline}</w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: para, withImage: true }))
+    const block = doc.blocks[0]
+    expect(block.type).toBe('paragraph')
+    const images = block.runs!.filter((r) => r.image).map((r) => r.image!)
+    expect(images.map((im) => im.widthPx)).toEqual([86, 161])
+    expect(images[0].wrap).toBe('tight-right')
+    expect(images[0].offsetYEmu).toBe(90951)
+    expect(images[1].wrap).toBeUndefined()
+  })
+
   it('keeps the line of a paragraph holding only VML shapetype definitions', async () => {
     const para =
       `<w:p><w:pPr><w:spacing w:after="0" w:line="276" w:lineRule="auto"/></w:pPr><w:r><w:pict>` +

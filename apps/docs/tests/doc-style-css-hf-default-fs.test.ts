@@ -1,10 +1,8 @@
 /**
  * Header/footer strip default font size: Word's Header/Footer styles are based
- * on Normal, so unstyled strip runs take the document default size. The var is
- * shrink-only — strips price their line boxes with the document-wide script
- * strut, which overshoots Word on Latin-only strip lines, so a default above
- * the static 10.5pt guess must not grow the push-down reserve
- * (prod_082 8pt regression / prod_008+091 guard).
+ * on Normal, so unstyled strip runs take the document default size, both below
+ * and above the static 10.5pt guess (a 12pt-default header wraps its long line
+ * where Word does).
  */
 import { describe, expect, it } from 'vitest'
 import type { ParsedDocFull, StyleDisplay, StyleInfo } from '@genoffice/docx-engine'
@@ -44,9 +42,9 @@ describe('docStyleCss --hf-default-fs', () => {
     expect(css).toContain('--hf-default-fs:9.5pt')
   })
 
-  it('stays silent at or above the 10.5pt static guess', () => {
-    expect(docStyleCss(parsedWith({ ddSizeHalfPoints: 21 }))).not.toContain('--hf-default-fs')
-    expect(docStyleCss(parsedWith({ ddSizeHalfPoints: 22 }))).not.toContain('--hf-default-fs')
+  it('grows the strip base above the 10.5pt static guess too', () => {
+    expect(docStyleCss(parsedWith({ ddSizeHalfPoints: 21 }))).toContain('--hf-default-fs:10.5pt')
+    expect(docStyleCss(parsedWith({ ddSizeHalfPoints: 24 }))).toContain('--hf-default-fs:12pt')
   })
 
   it("no size anywhere: Word's built-in 10pt default drives body and strips", () => {

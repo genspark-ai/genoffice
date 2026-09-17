@@ -188,11 +188,11 @@ var EMFPLUS_OFFSETCLIP = 16437;
 var EMFPLUS_OBJECTTYPE_BRUSH = 1;
 var EMFPLUS_OBJECTTYPE_PEN = 2;
 var EMFPLUS_OBJECTTYPE_PATH = 3;
-var EMFPLUS_OBJECTTYPE_IMAGEATTRIBUTES = 4;
+var EMFPLUS_OBJECTTYPE_IMAGEATTRIBUTES = 8;
 var EMFPLUS_OBJECTTYPE_IMAGE = 5;
 var EMFPLUS_OBJECTTYPE_FONT = 6;
 var EMFPLUS_OBJECTTYPE_STRINGFORMAT = 7;
-var EMFPLUS_OBJECTTYPE_REGION = 8;
+var EMFPLUS_OBJECTTYPE_REGION = 4;
 var EMFPLUS_BRUSHTYPE_SOLID = 0;
 var EMFPLUS_BRUSHTYPE_HATCHFILL = 1;
 var EMFPLUS_BRUSHTYPE_PATHGRADIENT = 3;
@@ -4178,7 +4178,7 @@ function parseEmfPlusRegionObject(view, off, maxLen) {
   }
   view.getUint32(off, true);
   const regionNodeCount = view.getUint32(off + 4, true);
-  if (regionNodeCount === 0 || regionNodeCount > 1e5) {
+  if (regionNodeCount > 1e5) {
     return null;
   }
   const endOff = off + maxLen;

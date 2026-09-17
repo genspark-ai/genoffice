@@ -72,26 +72,6 @@ export async function createPptxViaCli(
   })
 }
 
-/**
- * `create --type xlsx --from <staged table> --out <target>`: the caller stages
- * a row matrix as JSON; the CLI's gateway writes it (formula cells included,
- * with the sidecar computing cached values).
- */
-export async function createXlsxViaCli(
-  runner: CliRunner,
-  opts: { data: unknown; out: string; overwrite?: boolean },
-): Promise<{ outcome: CliRunOutcome; summary: string; outputPath: string }> {
-  return withTempDir(async (dir) => {
-    const inputPath = await stage(dir, 'table.json', JSON.stringify(opts.data))
-    return runCreate(
-      runner,
-      ['create', '--type', 'xlsx', '--from', inputPath],
-      opts.out,
-      opts.overwrite,
-    )
-  })
-}
-
 async function runCreate(
   runner: CliRunner,
   baseArgs: string[],

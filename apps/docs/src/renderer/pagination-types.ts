@@ -150,6 +150,8 @@ export interface TableRowBox {
   cantSplit?: boolean
   /** tblHeader: the row is a header row, repeated at the top of the next page after a break */
   isHeader?: boolean
+  /** a cell paragraph carries keepNext: the row stays on the page of the next row (Word "keep with next" for rows) */
+  keepNext?: boolean
   /** vertical merge (vMerge continue): the row continues a merged row; its height is not counted independently */
   vMergeContinue?: boolean
   /** in-row safe cut points (relative to row top, px, ascending): spanning all cells without splitting any text line/image.
@@ -179,6 +181,9 @@ export interface RowCellBox {
   childOf: number[]
   /** per line: paragraph id (lines sharing an id form one widow/orphan unit) */
   paraOf: number[]
+  /** border-box [top, bottom] of each direct child of the cell (clip-path insets
+   *  are box-relative; a line's ink sits half a leading inside its box) */
+  childBox?: Array<[number, number]>
   /** offset the canvas' vertical-align (middle/bottom) already applied to the content; 0 for top */
   alignDy: number
   /** 0 top, 0.5 middle, 1 bottom */
@@ -240,6 +245,9 @@ export interface PageSlice {
   leadTable?: true
   /** The page opens inside a native table that began on an earlier page (markTableSeamSlices). */
   cutTable?: true
+  /** The previous page ends exactly on a native table's bottom edge, so the outer
+   *  half of the collapsed bottom border lies in this page's window (markTableSeamSlices). */
+  tailTable?: true
   /** The owning section began mid-page on an earlier page (continuous break), so
    *  this is not its first page for w:titlePg header/footer selection. */
   continuedSection?: true
@@ -526,8 +534,15 @@ export interface BlockMeta {
   /** false only when explicitly disabled (Word default on) */
   widowControl?: false
   /** table blocks: per-tr header/unsplittable/reserved-height flags (applied by fillLineBoxes when collecting rows) */
-  tableRowFlags?: Array<{ isHeader: boolean; cantSplit: boolean; minHPx?: number }>
-  /** Word 2013+ layout (settings compatibilityMode >= 15): a multirow tblHeader block that doesn't fit the remaining space pushes the table to a fresh page */
+  tableRowFlags?: Array<{
+    isHeader: boolean
+    cantSplit: boolean
+    keepNext?: boolean
+    minHPx?: number
+  }>
+  /** Word 2013+ table layout (settings compatibilityMode >= 15): a tblHeader block that doesn't fit the
+   *  remaining space (or would stay alone at the page bottom) pushes the table to a fresh page, and
+   *  widow/orphan control applies inside split cells */
   modernTableHeaders?: boolean
   /** page-bottom height reserved for footnote refs inside the block (px): merged into the block height (consumes page capacity like Word's note area) */
   footnoteExtraPx?: number

@@ -8,7 +8,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./math": "./src/math.ts",
-    "./metafile": "./src/metafile.ts"
+    "./metafile": "./src/metafile.ts",
+    "./zip-splice": "./src/zip-splice.ts",
+    "./lazy-media": "./src/lazy-media.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

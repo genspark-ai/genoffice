@@ -1,5 +1,5 @@
 import { Extension } from '@tiptap/core'
-import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { isInTable } from '@tiptap/pm/tables'
@@ -17,6 +17,7 @@ import { revisionDisplayState } from './marks'
 import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
 import { rangeSlot } from '../dom-range'
 import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
+import { appendsAtEnd, touchedTopLevelBlocks } from './touched-blocks'
 
 const alignRange = rangeSlot()
 
@@ -137,6 +138,54 @@ export const ResolvedCommentsExtension = Extension.create({
   },
 })
 
+/**
+ * Plugin state for inline decorations that are a pure function of each text
+ * node: a full scan at init, then only the top-level blocks a transaction
+ * touched recompute (a `decorations` prop rescanned the whole document on
+ * every view update — tens of ms per keystroke on a 10k-paragraph file).
+ */
+function textDecorationState(
+  key: PluginKey<DecorationSet>,
+  decosOf: (node: ProseMirrorNode, pos: number, out: Decoration[]) => void,
+) {
+  const scan = (root: ProseMirrorNode, base: number, out: Decoration[]) =>
+    root.descendants((node, pos) => {
+      if (node.isText) decosOf(node, base + pos, out)
+    })
+  const full = (doc: ProseMirrorNode) => {
+    const decos: Decoration[] = []
+    scan(doc, 0, decos)
+    return decos.length > 0 ? DecorationSet.create(doc, decos) : DecorationSet.empty
+  }
+  return {
+    key,
+    state: {
+      init: (_config: unknown, state: EditorState) => full(state.doc),
+      apply(tr: Transaction, old: DecorationSet) {
+        if (!tr.docChanged) return old
+        const touched = touchedTopLevelBlocks(tr)
+        if (!touched) return full(tr.doc)
+        let set = appendsAtEnd(tr) ? old : old.map(tr.mapping, tr.doc)
+        const decos: Decoration[] = []
+        for (const offset of touched) {
+          const node = tr.doc.nodeAt(offset)
+          if (!node) continue
+          const end = offset + node.nodeSize
+          const stale = set.find(offset, end).filter((d) => d.from >= offset && d.to <= end)
+          if (stale.length) set = set.remove(stale)
+          scan(node, offset + 1, decos)
+        }
+        return decos.length ? set.add(tr.doc, decos) : set
+      },
+    },
+    props: {
+      decorations(state: EditorState) {
+        return key.getState(state)
+      },
+    },
+  }
+}
+
 // ---- tab stop rendering extension ----
 
 const tabStopPluginKey = new PluginKey<DecorationSet>('tabStops')
@@ -190,6 +239,9 @@ export interface TabTargetInput {
   /** left indent (tab-origin px) of a paragraph whose first line starts before
    *  it (w:hanging); only passed for tabs on that first line */
   hangingX?: number
+  /** the segment can wrap on its own (spaces / CJK): Word keeps the stop and
+   *  wraps a segment overflowing the edge by more than a space (probe 2026-09-17) */
+  segBreakable?: boolean
 }
 
 export interface TabTarget {
@@ -253,9 +305,12 @@ export function resolveTabTarget(input: TabTargetInput): TabTarget {
   else if (val === 'center') target -= segWidth / 2
   // no flush-right pin inside the hanging area: Word wraps the first-line
   // text on to the left indent rather than stranding the label
+  const overflow = target + segWidth - (paraW - 1)
   if (
-    target + segWidth > paraW - 1 &&
-    (val !== 'left' || target > paraW - 1 || (!inHang && paraW - segWidth - 1 > x))
+    overflow > 0 &&
+    (val !== 'left' ||
+      target > paraW - 1 ||
+      (!inHang && paraW - segWidth - 1 > x && !(input.segBreakable && overflow > minAdv)))
   )
     target = paraW - 1 - restWidth
   let collapsed = false
@@ -311,9 +366,23 @@ export function tabSegmentWidth(
   paraW: number,
   zoom: number,
 ): number {
-  const sameLine = end.top < start.bottom && end.bottom > start.top
-  if (!sameLine) return paraW
+  if (!sameVisualLine(start, end)) return paraW
   return Math.max(0, (end.left - start.left) / zoom)
+}
+
+/**
+ * Two caret rects sit on one line when either's vertical middle falls inside
+ * the other: a plain overlap test also matched consecutive lines whose boxes
+ * overlap under a tight line rule (line=177 auto: 20px boxes 15px apart), which
+ * read the next line's tab as a same-line continuation.
+ */
+export function sameVisualLine(
+  a: { top: number; bottom: number },
+  b: { top: number; bottom: number },
+): boolean {
+  const midA = (a.top + a.bottom) / 2
+  const midB = (b.top + b.bottom) / 2
+  return (midA > b.top && midA < b.bottom) || (midB > a.top && midB < a.bottom)
 }
 
 function spaceWidthPx(cs: CSSStyleDeclaration): number {
@@ -335,6 +404,9 @@ function tabGlyphLeft(view: EditorView, pos: number): number | null {
   const rect = range.getClientRects()[0]
   return rect ? rect.left : null
 }
+
+/** inner whitespace or CJK text: a wrap opportunity inside the tab segment */
+const SEG_BREAKABLE_RE = /\s|[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFF00-\uFFEF]/
 
 const MEASURE_RETRY_MAX = 10
 /**
@@ -623,6 +695,7 @@ class TabLayoutView {
     // otherwise the computed target depends on the layout being measured and
     // re-measure never reaches a fixed point.
     const endsAtBreak: boolean[] = []
+    const segBreakable: boolean[] = []
     const segWidths = tabPositions.map((tabPos, i) => {
       const segStart = tabPos + 1
       const nextTab = i + 1 < tabPositions.length ? tabPositions[i + 1] : paraEnd
@@ -631,6 +704,9 @@ class TabLayoutView {
       endsAtBreak[i] = nextBreak !== undefined
       const segEnd = nextBreak ?? nextTab
       if (segEnd <= segStart) return 0
+      segBreakable[i] = SEG_BREAKABLE_RE.test(
+        node.textBetween(segStart - pos - 1, segEnd - pos - 1).trim(),
+      )
       try {
         return tabSegmentWidth(
           view.coordsAtPos(segStart, 1),
@@ -670,8 +746,7 @@ class TabLayoutView {
         continue
       }
       const measuredX = (coords.left - alignShiftAt(coords) - originX) / zoom
-      const sameLine =
-        prevLine != null && coords.top < prevLine.bottom && coords.bottom > prevLine.top
+      const sameLine = prevLine != null && sameVisualLine(coords, prevLine)
       const x = sameLine ? prevEnd : measuredX
       prevLine = { top: coords.top, bottom: coords.bottom }
 
@@ -688,6 +763,7 @@ class TabLayoutView {
         stops: stopsPx,
         gridPx: gridTwips > 0 ? gridTwips / TWIPS_PER_PX : 0,
         hangingX: inHang ? contentEdge : undefined,
+        segBreakable: segBreakable[i],
       })
       // convert the Word-space target to a CSS tab-size: the next multiple of
       // it past the tab's position must be the target itself, so it needs to
@@ -836,26 +912,17 @@ export const WsRunLineHeightExtension = Extension.create({
   name: 'wsRunLineHeight',
   addProseMirrorPlugins() {
     return [
-      new Plugin({
-        key: wsRunPluginKey,
-        props: {
-          decorations(state) {
-            const decos: Decoration[] = []
-            state.doc.descendants((node, pos) => {
-              if (!node.isText || !node.text) return
-              if (!/^[ \t]+$/.test(node.text)) return
-              // only runs with a font-size source can inflate the line
-              const styled = node.marks.some(
-                (m) =>
-                  m.type.name === 'docTextStyle' && (m.attrs.sizeHalfPoints || m.attrs.styleId),
-              )
-              if (!styled) return
-              decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'doc-ws-run' }))
-            })
-            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
-          },
-        },
-      }),
+      new Plugin(
+        textDecorationState(wsRunPluginKey, (node, pos, decos) => {
+          if (!node.text || !/^[ \t]+$/.test(node.text)) return
+          // only runs with a font-size source can inflate the line
+          const styled = node.marks.some(
+            (m) => m.type.name === 'docTextStyle' && (m.attrs.sizeHalfPoints || m.attrs.styleId),
+          )
+          if (!styled) return
+          decos.push(Decoration.inline(pos, pos + node.nodeSize, { class: 'doc-ws-run' }))
+        }),
+      ),
     ]
   },
 })
@@ -895,23 +962,16 @@ export const EaHintQuotesExtension = Extension.create({
   name: 'eaHintQuotes',
   addProseMirrorPlugins() {
     return [
-      new Plugin({
-        key: eaHintQuotesPluginKey,
-        props: {
-          decorations(state) {
-            const decos: Decoration[] = []
-            state.doc.descendants((node, pos) => {
-              if (!node.isText || !node.text) return
-              const style = node.marks.find((m) => m.type.name === 'docTextStyle')
-              const raw = style?.attrs.rawRPr as string | null | undefined
-              for (const r of eaHintQuoteRanges(raw, node.text)) {
-                decos.push(Decoration.inline(pos + r.from, pos + r.to, { class: 'doc-ea-quotes' }))
-              }
-            })
-            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
-          },
-        },
-      }),
+      new Plugin(
+        textDecorationState(eaHintQuotesPluginKey, (node, pos, decos) => {
+          if (!node.text) return
+          const style = node.marks.find((m) => m.type.name === 'docTextStyle')
+          const raw = style?.attrs.rawRPr as string | null | undefined
+          for (const r of eaHintQuoteRanges(raw, node.text)) {
+            decos.push(Decoration.inline(pos + r.from, pos + r.to, { class: 'doc-ea-quotes' }))
+          }
+        }),
+      ),
     ]
   },
 })

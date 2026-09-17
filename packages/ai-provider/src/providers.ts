@@ -46,11 +46,13 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     // must stay within the proxy's served set (GET /api/llm_proxy/v1/models);
     // bare gpt-5.6 and the gemini family dropped off it (verified 2026-08-31).
     // DeepSeek goes by the proxy's hyphenated pool id; V4.1 Flash takes images
-    // (live-verified 2026-09-15)
+    // (live-verified 2026-09-15). gpt-6-astra: chat, tool call and image
+    // input all live-verified through the proxy 2026-09-17
     models: [
       'claude-opus-4-7',
       'claude-opus-4-8',
       'claude-sonnet-4-6',
+      'gpt-6-astra',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
       'deep-seek-v4.1-flash',
@@ -101,10 +103,11 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'deepseek',
     label: 'DeepSeek',
-    // V4 ids per api-docs.deepseek.com (2026-08). Vision Exp is available
-    // through the normal DeepSeek API key; indirect-route aliases such as
-    // `-openrouter` do not belong in this direct-provider list.
-    models: ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'],
+    // exactly what GET api.deepseek.com/v1/models serves (2026-09-16):
+    // `deepseek-flash` is V4.1 Flash with native vision. The legacy
+    // `deepseek-v4-flash` still answers but the model behind it is retired;
+    // indirect-route aliases such as `-openrouter` do not belong here either.
+    models: ['deepseek-v4-pro', 'deepseek-flash'],
     defaultModel: 'deepseek-v4-pro',
     keyPlaceholder: 'sk-...',
   },
@@ -113,7 +116,9 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     label: 'OpenAI',
     // GPT-5.6 naming: sol is the flagship (the bare `gpt-5.6` alias resolves to
     // it, but spell it out so the picker says which tier it is), terra balances
-    // cost/intelligence, luna is the high-volume tier (2026-08)
+    // cost/intelligence, luna is the high-volume tier (2026-08). gpt-6-astra
+    // is deliberately absent: OpenAI serves its tool calls only through the
+    // Responses API, which has no protocol here (2026-09-17)
     models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
     defaultModel: 'gpt-5.6-terra',
     keyPlaceholder: 'sk-...',
@@ -184,6 +189,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     models: [
       'openrouter/auto',
       'anthropic/claude-sonnet-5',
+      'openai/gpt-6-astra',
       'openai/gpt-5.6-sol',
       'moonshotai/kimi-k3',
     ],
@@ -355,11 +361,16 @@ export function activeProvider(settings: AiSettings): AiProviderId {
  * settings file keeps sending an id the API now rejects.
  */
 const RETIRED_MODELS: Partial<Record<AiProviderId, Record<string, string>>> = {
-  // aliases retired 2026-07-24; DeepSeek pointed both at the V4-Flash line,
-  // where thinking mode is a request parameter rather than a separate id
+  // chat/reasoner retired 2026-07-24 (thinking became a request parameter);
+  // V4 Flash and V4 Flash Vision Exp retired 2026-09-10 in favour of V4.1
+  // Flash, which carries vision natively. The Genspark pool spelling is
+  // accepted too: the vendor API 400s on it (verified 2026-09-16)
   deepseek: {
-    'deepseek-chat': 'deepseek-v4-flash',
-    'deepseek-reasoner': 'deepseek-v4-flash',
+    'deepseek-chat': 'deepseek-flash',
+    'deepseek-reasoner': 'deepseek-flash',
+    'deepseek-v4-flash': 'deepseek-flash',
+    'deepseek-v4-flash-vision-exp': 'deepseek-flash',
+    'deep-seek-v4.1-flash': 'deepseek-flash',
   },
   // proxy stopped serving bare gpt-5.6 (400) and removed the gemini route
   // entirely (405), verified 2026-08-31; gemini selections fall back to the

@@ -129,6 +129,18 @@ describe('docx export', () => {
     expect(mapping.blocks[0]).toEqual({ kind: 'image', image: png })
   })
 
+  it('wavedrom blocks export through the renderer tagged with their language', async () => {
+    const editor = createEditor('```wavedrom\n{ signal: [{ name: "clk", wave: "p.." }] }\n```')
+    const png = { base64: 'iVBORw0KGgo=', mime: 'image/png' as const, widthPx: 200, heightPx: 100 }
+    const seen: string[] = []
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages, async (_src, language) => {
+      seen.push(language)
+      return png
+    })
+    expect(seen).toEqual(['wavedrom'])
+    expect(mapping.blocks[0]).toEqual({ kind: 'image', image: png })
+  })
+
   it('mermaid blocks fall back to their source when rendering fails or is absent', async () => {
     const md = '```mermaid\nflowchart LR\n    A --> B\n```'
     const failing = await mapDocToSaveBlocks(createEditor(md).getJSON(), noImages, () =>

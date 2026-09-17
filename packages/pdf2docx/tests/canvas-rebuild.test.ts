@@ -164,6 +164,32 @@ describe('canvas page assembly (P19)', () => {
     expect(xml).toContain('<w:framePr')
   })
 
+  it('pins of one page share a single holder paragraph', async () => {
+    const pin = (x0: number, y0: number, z: number): ImageBlock => ({
+      kind: 'image',
+      box: { x0, y0, x1: x0 + 12, y1: y0 + 12 },
+      data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      mime: 'image/png',
+      pixelWidth: 2,
+      pixelHeight: 2,
+      float: { wrap: 'behind', xOffsetPt: x0 },
+      z,
+    })
+    const pins = [pin(60, 400, 0), pin(60, 380, 1), pin(60, 360, 2)]
+    const xml = await docXml(
+      await rebuildDocx([canvasPage([...pins, blockAt('form label', 100, 400, 200, 12)])]),
+    )
+    const holder = xml.match(/<w:p>(?:(?!<\/w:p>).)*?<wp:anchor.*?<\/w:p>/s)!
+    expect(holder).not.toBeNull()
+    expect(holder[0].match(/<wp:anchor/g)).toHaveLength(3)
+    // one holder paragraph, not one per picture
+    expect(xml.match(/<wp:anchor/g)).toHaveLength(3)
+    expect((xml.match(/<w:p>/g) ?? []).length).toBeLessThanOrEqual(3)
+    // stacking order still rides on relativeHeight per anchor
+    const heights = [...holder[0].matchAll(/relativeHeight="(\d+)"/g)].map((m) => Number(m[1]))
+    expect(new Set(heights).size).toBe(3)
+  })
+
   it('mixes canvas and flow pages: flow pages keep their break/budget path', async () => {
     const flowPage: IrPage = {
       index: 1,

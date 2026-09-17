@@ -186,7 +186,7 @@ describe('native editable tables', () => {
     expect(json.content?.[0].type).toBe('docTable')
     expect(json.content?.[0].content?.[0].content?.[0]).toMatchObject({
       type: 'docTableCell',
-      attrs: { fill: 'D9EAF7', bold: true, color: '1F4E78', colspan: 1, rowspan: 1 },
+      attrs: { fill: 'D9EAF7', bold: false, color: null, colspan: 1, rowspan: 1 },
     })
     expect(json.content?.[0].content?.[0].content?.[0].content?.[0].content?.[0].marks).toEqual([
       { type: 'bold' },
@@ -482,6 +482,22 @@ describe('native editable tables', () => {
       'width:min(1200px,calc(var(--doc-content-w,100%) + var(--doc-margin-right,0px) - 96.7px))',
     )
     expect(spec[1].style).toContain('margin-left:96.7px')
+    // a negative indent hangs into the left margin and widens the spill by as much
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(0, undefined, {
+        ...table.attrs,
+        widthPx: 1200,
+        indentTwips: -714,
+      }),
+    )
+    const hanging = editor.schema.nodes.docTable.spec.toDOM!(editor.state.doc.firstChild!) as [
+      string,
+      Record<string, string>,
+    ]
+    expect(hanging[1].style).toContain(
+      'width:min(1200px,calc(var(--doc-content-w,100%) + var(--doc-margin-right,0px) + 47.6px))',
+    )
+    expect(hanging[1].style).toContain('margin-left:-47.6px')
     editor.destroy()
   })
 

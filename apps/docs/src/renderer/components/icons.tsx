@@ -1328,15 +1328,6 @@ export function IconRuler(props: IconProps) {
   )
 }
 
-export function IconFilesPane(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M 2.5 4.2 h 4 l 1.2 1.3 h 5.8 v 6.3 h -11 z" />
-      <path d="M 2.5 7.2 h 11" strokeWidth="1" />
-    </Svg>
-  )
-}
-
 export function IconNavPane(props: IconProps) {
   return (
     <Svg {...props}>

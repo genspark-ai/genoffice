@@ -108,6 +108,26 @@ describe('resolveTabTarget', () => {
     expect(resolveTabTarget({ ...base, stops: [], gridPx: 0 }).target).toBe(105)
   })
 
+  it('keeps a left stop under a breakable segment that overflows by more than a space', () => {
+    // Word wraps the segment at its spaces (probe 2026-09-17); pinning would
+    // pull the stop left and let text that Word wraps ride the line
+    const input = {
+      ...base,
+      x: 22,
+      stops: [{ x: 65, val: 'left' as const }],
+      segWidth: 570,
+      restWidth: 570,
+    }
+    expect(resolveTabTarget({ ...input, segBreakable: true }).target).toBe(65)
+    // an unbreakable segment (single word) still pins: Chromium would
+    // otherwise drop the whole word to the next line
+    expect(resolveTabTarget({ ...input, segBreakable: false }).target).toBe(PARA_W - 1 - 570)
+    // a rounding-class overflow (under a space) pins either way
+    expect(
+      resolveTabTarget({ ...input, segWidth: 560, restWidth: 560, segBreakable: true }).target,
+    ).toBe(PARA_W - 1 - 560)
+  })
+
   it('pins a stop past the edge flush right, reserving the trailing segments', () => {
     const r = resolveTabTarget({
       ...base,

@@ -24,13 +24,18 @@ function createEditor(text: string): Editor {
   })
 }
 
-function render(element: React.ReactElement): { container: HTMLElement; unmount: () => void } {
+function render(element: React.ReactElement): {
+  container: HTMLElement
+  rerender: (next: React.ReactElement) => void
+  unmount: () => void
+} {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
   act(() => root.render(element))
   return {
     container,
+    rerender: (next) => act(() => root.render(next)),
     unmount: () => {
       act(() => root.unmount())
       container.remove()
@@ -117,6 +122,24 @@ describe('FindPanel', () => {
       vi.advanceTimersByTime(200)
     })
     expect(count()).toBe('1/1')
+    unmount()
+    editor.destroy()
+  })
+
+  it('focuses the find input on mount and again when focusFindNonce bumps', () => {
+    const editor = createEditor('hello world')
+    const { container, rerender, unmount } = render(
+      createElement(FindPanel, { editor, onClose: () => {}, focusFindNonce: 0 }),
+    )
+    const input = container.querySelector<HTMLInputElement>('.find-input')!
+    expect(document.activeElement).toBe(input)
+    // user clicks back into the document, then hits Ctrl+F with the panel open
+    act(() => {
+      input.blur()
+    })
+    expect(document.activeElement).not.toBe(input)
+    rerender(createElement(FindPanel, { editor, onClose: () => {}, focusFindNonce: 1 }))
+    expect(document.activeElement).toBe(input)
     unmount()
     editor.destroy()
   })

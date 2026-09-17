@@ -34,6 +34,7 @@ import {
   nativeImage,
   net,
   shell,
+  webContents,
 } from 'electron'
 import {
   appMenuLabels,
@@ -51,6 +52,7 @@ import {
   showOpenDialogWithMemory,
   showSaveDialogWithMemory,
   aboutMenuItem,
+  checkUpdatesMenuItem,
   toggleDevToolsItem,
   windowMenuTemplate,
   type HeadlessExportFormat,
@@ -123,6 +125,15 @@ import type {
 import { ATTACHMENT_IMAGE_EXTS } from '../shared/ipc'
 import { findDocxPath } from '../shared/open-file'
 import { atomicWriteFile, looksLikeZip } from './atomic-write'
+import {
+  adoptLazyMediaHashes,
+  forgetLazyMediaOwner,
+  materializeLazyDocx,
+  openLazyDocx,
+  pointLazyMediaAt,
+  readLazyMedia,
+  registerLazyMediaProtocol,
+} from './lazy-media'
 import {
   commitDocPasswordSave,
   currentDocPasswordIntentRevision,
@@ -2385,14 +2396,14 @@ export function removeStarredFiles(filePaths: string[]): void {
 
 // ---- original archive (pass-through base: original file archived by content hash) ----
 
-async function archiveOriginal(filePath: string, bytes: Buffer): Promise<string> {
-  const hash = sha256Hex(bytes)
+async function archiveOriginal(filePath: string, hash: string, size: number): Promise<void> {
+  // a copy larger than the whole cap would only evict every other original
+  if (size > ORIGINALS_MAX_BYTES) return
   const dir = userDataPath('originals')
   await mkdir(dir, { recursive: true })
   const target = join(dir, `${hash}.docx`)
   if (!existsSync(target)) await copyFile(filePath, target)
   void pruneOriginals(dir)
-  return hash
 }
 
 const ORIGINALS_MAX_BYTES = 500 * 1024 * 1024
@@ -2484,6 +2495,7 @@ function dropDocWriter(wcId: number): void {
   imageExportTemps.delete(wcId)
   imageExportDirs.delete(wcId)
   docDiskStates.delete(wcId)
+  forgetLazyMediaOwner(wcId)
   // Destroyed renderers count as torn down too: window-close paths never run
   // teardownDocsRenderer, but an in-flight save handler resuming after the
   // destruction must still fail its re-check (wcIds are never reused, so the
@@ -2497,11 +2509,11 @@ const docDiskStates = new Map<number, Map<string, DiskFileState>>()
 
 const sha256Hex = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
 
-async function rememberDiskState(wcId: number, filePath: string, bytes: Buffer): Promise<void> {
+async function rememberDiskState(wcId: number, filePath: string, hash: string): Promise<void> {
   try {
     const s = await stat(filePath)
     const states = docDiskStates.get(wcId) ?? new Map<string, DiskFileState>()
-    states.set(filePath, { mtimeMs: s.mtimeMs, size: s.size, hash: sha256Hex(bytes) })
+    states.set(filePath, { mtimeMs: s.mtimeMs, size: s.size, hash })
     docDiskStates.set(wcId, states)
   } catch {
     /* unstatable target: skip tracking; the next save simply won't flag a conflict */
@@ -2530,6 +2542,7 @@ async function diskChangedExternally(wcId: number, filePath: string): Promise<bo
 export function teardownDocsRenderer(contents: WebContents): void {
   teardownZoteroIpc(contents)
   tornDownWcIds.add(contents.id)
+  forgetLazyMediaOwner(contents.id)
   // Sweep recovery copies for this renderer's documents: every non-crash close
   // either saved (docs:save already cleared it) or explicitly discarded, so a
   // copy still on disk here is a leftover from an in-flight recovery write.
@@ -2611,6 +2624,17 @@ async function maybeRecoverDocBytes(
   return { bytes: original, recovered: false }
 }
 
+// Word's own .docx ceiling; past ~1 GB the IPC reply serializer doubles its buffer beyond the allocator's map limit and crashes the main process
+const MAX_OPEN_BYTES = 512 * 1024 * 1024
+
+async function showOpenError(wcId: number, detail: string): Promise<void> {
+  const wc = webContents.fromId(wcId)
+  const parent = docsShellWindow ?? (wc && BrowserWindow.fromWebContents(wc)) ?? mainWindow
+  const options = { type: 'error' as const, message: tm('dlgOpenDoc'), detail }
+  if (parent && !parent.isDestroyed()) await dialog.showMessageBox(parent, options)
+  else await dialog.showMessageBox(options)
+}
+
 async function loadDocx(
   filePath: string,
   wcId: number,
@@ -2618,7 +2642,14 @@ async function loadDocx(
 ): Promise<OpenDocxResult> {
   if (typeof filePath !== 'string' || !/\.docx$/i.test(filePath)) return null
   if (!existsSync(filePath)) return null
-  const original = await readFile(filePath)
+  const size = (await stat(filePath)).size
+  const lazy = await openLazyDocx(filePath, wcId)
+  if ((lazy?.bytes.length ?? size) > MAX_OPEN_BYTES) {
+    const mb = MAX_OPEN_BYTES / 1024 / 1024
+    await showOpenError(wcId, `${basename(filePath)}: ${tm('errTooLarge', { mb })}`)
+    return null
+  }
+  const original = lazy?.bytes ?? (await readFile(filePath))
   // Password-protected docx (ECMA-376 CFB container): without a password, hand
   // back a marker — the renderer prompts and retries via docs:open-decrypt.
   // No side effects (recents/write grant) until the password checks out.
@@ -2634,7 +2665,8 @@ async function loadDocx(
   }
   // the archive keeps the on-disk original as-is (encrypted ones included: they
   // reopen with the user's password), so a bad save never loses the source file
-  const hash = await archiveOriginal(filePath, original)
+  const hash = lazy?.hash ?? sha256Hex(original)
+  await archiveOriginal(filePath, hash, size)
   const recovery = await maybeRecoverDocBytes(filePath, plainBytes)
   let bytes = recovery.bytes
   let recovered = recovery.recovered
@@ -2648,12 +2680,13 @@ async function loadDocx(
       recovered = false
     }
   }
+  if (recovered) await adoptLazyMediaHashes(bytes, filePath, wcId)
   pushRecent(filePath)
   allowDocWrite(wcId, filePath)
   if (fileOpenedHook) fileOpenedHook(wcId, filePath)
   markDiskEncrypted(wcId, filePath, encrypted)
   // record the on-disk file, not the recovery copy: what matters is what save would overwrite
-  await rememberDiskState(wcId, filePath, original)
+  await rememberDiskState(wcId, filePath, hash)
   return {
     path: filePath,
     name: basename(filePath),
@@ -3240,9 +3273,26 @@ export function registerProjectIpc(): void {
 const ALT_CHUNK_VIEWPORT = { width: 794, height: 1123, deviceScaleFactor: 2 }
 const ALT_CHUNK_HTML_MAX_CHARS = 64 * 1024 * 1024
 
+/** an encrypted save leaves no plain file to serve lazy pictures from: the
+ *  renderer takes the materialized document back and leaves lazy mode */
+const reissuedDoc = (
+  encrypted: boolean,
+  hashes: Set<string>,
+  plain: Buffer,
+): { data?: ArrayBuffer } =>
+  encrypted && hashes.size > 0
+    ? {
+        data: plain.buffer.slice(
+          plain.byteOffset,
+          plain.byteOffset + plain.byteLength,
+        ) as ArrayBuffer,
+      }
+    : {}
+
 /** document/attachment/window IPC (everything except the AI proxy above) */
 export function registerDocsIpc(): void {
   registerZoteroIpc()
+  void app.whenReady().then(registerLazyMediaProtocol)
   // Node fetch (undici) direct connections get reset under VPN/tun setups; retry over Chromium's stack
   setRescueFetch((url, init) => net.fetch(url, init))
   setAiUserAgent(`GenOffice/${app.getVersion()}`)
@@ -3440,19 +3490,24 @@ export function registerDocsIpc(): void {
         // Snapshot desired state: the disk password remains unchanged until the
         // atomic write succeeds, and a newer ribbon intent survives this save.
         const passwordState = snapshotDocPassword(event.sender.id, filePath)
-        const bytes = passwordState.password
-          ? encryptDocx(Buffer.from(data), passwordState.password)
-          : Buffer.from(data)
+        const { bytes: plain, hashes } = await materializeLazyDocx(Buffer.from(data))
+        const bytes = passwordState.password ? encryptDocx(plain, passwordState.password) : plain
         await atomicWriteFile(filePath, bytes)
         // Teardown may have cleared all in-memory secrets while the atomic
         // write was pending. Never resurrect state for an orphaned renderer.
         if (tornDownWcIds.has(event.sender.id)) {
           return { ok: false, error: 'save target is not an opened document' }
         }
-        await rememberDiskState(event.sender.id, filePath, bytes)
+        await rememberDiskState(event.sender.id, filePath, sha256Hex(bytes))
         if (tornDownWcIds.has(event.sender.id)) {
           return { ok: false, error: 'save target is not an opened document' }
         }
+        pointLazyMediaAt(
+          hashes,
+          filePath,
+          event.sender.id,
+          passwordState.password ? plain : undefined,
+        )
         // Commit immediately after the final await: intents received during
         // post-write bookkeeping are included, with no later async race.
         const passwordIntentPending = commitDocPasswordSave(
@@ -3462,7 +3517,11 @@ export function registerDocsIpc(): void {
         )
         clearRecoveryCopy(filePath)
         pushRecent(filePath)
-        return { ok: true, passwordIntentPending }
+        return {
+          ok: true,
+          passwordIntentPending,
+          ...reissuedDoc(!!passwordState.password, hashes, plain),
+        }
       } catch (err) {
         return { ok: false, error: String(err) }
       }
@@ -3561,13 +3620,18 @@ export function registerDocsIpc(): void {
           event.sender.id,
           typeof sourcePath === 'string' && sourcePath ? sourcePath : null,
         )
-        const bytes = passwordState.password
-          ? encryptDocx(Buffer.from(data), passwordState.password)
-          : Buffer.from(data)
+        const { bytes: plain, hashes } = await materializeLazyDocx(Buffer.from(data))
+        const bytes = passwordState.password ? encryptDocx(plain, passwordState.password) : plain
         await atomicWriteFile(result.filePath, bytes)
         if (tornDownWcIds.has(event.sender.id)) return { ok: false }
         allowDocWrite(event.sender.id, result.filePath)
-        await rememberDiskState(event.sender.id, result.filePath, bytes)
+        await rememberDiskState(event.sender.id, result.filePath, sha256Hex(bytes))
+        pointLazyMediaAt(
+          hashes,
+          result.filePath,
+          event.sender.id,
+          passwordState.password ? plain : undefined,
+        )
         if (tornDownWcIds.has(event.sender.id)) return { ok: false }
         const passwordIntentPending = commitDocPasswordSave(
           event.sender.id,
@@ -3576,7 +3640,12 @@ export function registerDocsIpc(): void {
         )
         pushRecent(result.filePath)
         notifyFileSaved(event.sender, result.filePath)
-        return { ok: true, path: result.filePath, passwordIntentPending }
+        return {
+          ok: true,
+          path: result.filePath,
+          passwordIntentPending,
+          ...reissuedDoc(!!passwordState.password, hashes, plain),
+        }
       } catch (err) {
         return { ok: false, error: String(err) }
       }
@@ -3590,9 +3659,8 @@ export function registerDocsIpc(): void {
       if (tornDownWcIds.has(event.sender.id)) return { ok: false }
       const filePath = uniquePathIn(defaultSaveDir(), defaultName)
       const passwordState = snapshotDocPassword(event.sender.id, null)
-      const bytes = passwordState.password
-        ? encryptDocx(Buffer.from(data), passwordState.password)
-        : Buffer.from(data)
+      const { bytes: plain, hashes } = await materializeLazyDocx(Buffer.from(data))
+      const bytes = passwordState.password ? encryptDocx(plain, passwordState.password) : plain
       await atomicWriteFile(filePath, bytes)
       // teardown may have happened while the write was in flight — the path is
       // freshly created, so rolling it back is safe (mirrors docs:write-recovery)
@@ -3601,7 +3669,13 @@ export function registerDocsIpc(): void {
         return { ok: false }
       }
       allowDocWrite(event.sender.id, filePath)
-      await rememberDiskState(event.sender.id, filePath, bytes)
+      await rememberDiskState(event.sender.id, filePath, sha256Hex(bytes))
+      pointLazyMediaAt(
+        hashes,
+        filePath,
+        event.sender.id,
+        passwordState.password ? plain : undefined,
+      )
       if (tornDownWcIds.has(event.sender.id)) {
         await unlink(filePath).catch(() => {})
         return { ok: false }
@@ -3609,7 +3683,12 @@ export function registerDocsIpc(): void {
       const passwordIntentPending = commitDocPasswordSave(event.sender.id, passwordState, filePath)
       pushRecent(filePath)
       notifyFileSaved(event.sender, filePath)
-      return { ok: true, path: filePath, passwordIntentPending }
+      return {
+        ok: true,
+        path: filePath,
+        passwordIntentPending,
+        ...reissuedDoc(!!passwordState.password, hashes, plain),
+      }
     } catch (err) {
       return { ok: false, error: String(err) }
     }
@@ -3649,9 +3728,8 @@ export function registerDocsIpc(): void {
         }
         await mkdir(dirname(filePath), { recursive: true })
         const passwordState = snapshotDocPassword(event.sender.id, null)
-        const bytes = passwordState.password
-          ? encryptDocx(Buffer.from(data), passwordState.password)
-          : Buffer.from(data)
+        const { bytes: plain, hashes } = await materializeLazyDocx(Buffer.from(data))
+        const bytes = passwordState.password ? encryptDocx(plain, passwordState.password) : plain
         await atomicWriteFile(filePath, bytes)
         // teardown may have happened while the write was in flight — only a file
         // this handler created is safe to roll back; an overwritten one stays
@@ -3660,7 +3738,13 @@ export function registerDocsIpc(): void {
           return { ok: false }
         }
         if (tornDownWcIds.has(event.sender.id)) return rollback()
-        await rememberDiskState(event.sender.id, filePath, bytes)
+        await rememberDiskState(event.sender.id, filePath, sha256Hex(bytes))
+        pointLazyMediaAt(
+          hashes,
+          filePath,
+          event.sender.id,
+          passwordState.password ? plain : undefined,
+        )
         if (tornDownWcIds.has(event.sender.id)) return rollback()
         const passwordIntentPending = commitDocPasswordSave(
           event.sender.id,
@@ -3669,7 +3753,12 @@ export function registerDocsIpc(): void {
         )
         pushRecent(filePath)
         notifyFileSaved(event.sender, filePath)
-        return { ok: true, path: filePath, passwordIntentPending }
+        return {
+          ok: true,
+          path: filePath,
+          passwordIntentPending,
+          ...reissuedDoc(!!passwordState.password, hashes, plain),
+        }
       } catch (err) {
         return { ok: false, error: String(err) }
       }
@@ -3777,12 +3866,22 @@ export function registerDocsIpc(): void {
   // (the protected wrapper round-tripped as a "protected content" shell).
   ipcMain.handle(
     'docs:copy-image-to-clipboard',
-    (_event, dataUrl: unknown, meta: unknown): boolean => {
-      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return false
-      const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
+    async (_event, dataUrl: unknown, meta: unknown): Promise<boolean> => {
+      if (typeof dataUrl !== 'string') return false
+      let bytes: Buffer
+      let htmlSrc = dataUrl
+      if (dataUrl.startsWith('data:image/')) {
+        bytes = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64')
+      } else {
+        const media = await readLazyMedia(dataUrl)
+        if (!media) return false
+        bytes = media.body
+        // another document cannot resolve this document's lazy URL; inline the bytes
+        htmlSrc = `data:${media.mime};base64,${bytes.toString('base64')}`
+      }
       // createFromBuffer, not createFromDataURL — the latter returns an empty
       // image for valid PNGs in this Electron
-      const image = nativeImage.createFromBuffer(Buffer.from(base64, 'base64'))
+      const image = nativeImage.createFromBuffer(bytes)
       if (image.isEmpty()) return false
       // the html flavor carries the DISPLAY size + layout meta so an in-app
       // paste keeps size/align/wrap instead of falling back to bitmap pixels
@@ -3804,7 +3903,7 @@ export function registerDocsIpc(): void {
       }
       clipboard.write({
         image,
-        html: `<img src="${dataUrl}" width="${width}" height="${height}"${metaAttr}>`,
+        html: `<img src="${htmlSrc}" width="${width}" height="${height}"${metaAttr}>`,
       })
       return true
     },
@@ -4416,6 +4515,7 @@ export function buildDocsMenu(): void {
         { type: 'separator' },
         { label: tm('menuDocsHelp'), enabled: false },
         { type: 'separator' },
+        checkUpdatesMenuItem(appMenuLabels(getUiLang())),
         aboutMenuItem(appMenuLabels(getUiLang())),
       ],
     },

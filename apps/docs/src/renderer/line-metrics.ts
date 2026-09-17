@@ -57,7 +57,7 @@ const MONO_FONT_RE =
 /** Constant Latin advance for monospace families (chain-head name decides); null when proportional */
 export function monospaceAdvanceEm(fontFamily: string): number | null {
   const head = fontFamily.split(',')[0]
-  if (/^'?(ms gothic|ＭＳ ゴシック)'?$/i.test(head.trim())) return 0.5
+  if (/^'?(ms (gothic|mincho)|ＭＳ (ゴシック|\u660e\u671d))'?$/i.test(head.trim())) return 0.5
   if (!MONO_FONT_RE.test(head)) return null
   return /consolas/i.test(head) ? 0.55 : 0.6
 }
@@ -237,7 +237,9 @@ export function lineHeightFactor(fontFamily: string): number {
   // BIZ UD: Word for Mac lacks the UDP cuts and substitutes Yu Gothic wholesale
   // (probe 2026-09-03: 1.44 at 10.5/11/12pt); an installed face renders real
   if (f.includes('biz ud')) return bizUdSubstituted(fontFamily) ? 1.44 : 1.3029
-  if (/mincho|明朝|ゴシック|ms (ui )?p?gothic|hiragino|osaka|kozuka|小塚/.test(f)) return 1.3029
+  if (hgSubstituted(fontFamily)) return 1.44
+  if (/mincho|明朝|ゴシック|ms (ui )?p?gothic|hiragino|osaka|kozuka|小塚/.test(f.normalize('NFKC')))
+    return 1.3029
   // missing Noto/Source Han SC: Word substitutes SimSun at 1.3029 (probe
   // 2026-08-13; bare 'Noto Sans SC' presumed same substitution)
   if (/^noto sans sc$/.test(f)) return 1.3029
@@ -302,6 +304,9 @@ export function lineHeightFactor(fontFamily: string): number {
   // a 4% surplus per line cascades into whole-paragraph pagination drift,
   // so the big Office faces get their real values.
   if (f.includes('times') || f.includes('liberation serif')) return 1.15
+  // Georgia Pro (M365 cloud face) renders real with its typo metrics (Word
+  // probe 2026-09-17: 9.72/10.8/11.76pt at 10/11/12pt)
+  if (f.includes('georgia pro')) return 0.98
   if (f.includes('georgia')) return 1.1375
   // 1.172 = Cambria's Win metrics (1172/1000), probe 2026-08-23 measured
   // 1.1724 at 36pt; the unknown-name fallback below substitutes to Cambria
@@ -359,7 +364,10 @@ export function lineHeightFactor(fontFamily: string): number {
   if (f.includes('lucida sans')) return 1.179
   if (f.includes('bradley hand')) return 1.25
   if (f.includes('open sans')) return 1.365
-  if (f.includes('roboto')) return 1.169
+  // Roboto and Montserrat are M365 cloud faces Word renders real at their hhea
+  // totals (probe 2026-09-17: 11.76/12.96/14.16 and 12.24/13.44/14.64pt at 10/11/12pt)
+  if (f.includes('roboto')) return 1.172
+  if (f.includes('montserrat')) return 1.219
   if (f.includes('shonar bangla')) return 1.0
   // IRANYekan substitutes to Arial like the Iranian B/XB faces (probe 2026-08-23)
   if (f.includes('iranyekan')) return 1.15
@@ -372,6 +380,57 @@ export function lineHeightFactor(fontFamily: string): number {
   // fabricated names and HCI Poppy both render as Cambria) — same factor as
   // the cambria branch above
   return 1.172
+}
+
+/** Word DFonts win ascent (em) of the symbol bullet faces */
+const SYMBOL_FACE_ASCENT: Record<string, number> = {
+  symbol: 1.0054,
+  wingdings: 0.8989,
+  'wingdings 2': 0.8433,
+  'wingdings 3': 0.9277,
+  webdings: 0.7998,
+}
+
+/** Descent (em) Word lays the common Latin text faces with (hhea/win, whichever its factor follows) */
+const LATIN_DESCENT: Array<[RegExp, number]> = [
+  [/calibri|carlito/, 0.2686],
+  [/aptos/, 0.2817],
+  [/cambria|caladea/, 0.2222],
+  [/times|liberation serif/, 0.2163],
+  [/arial|helvetica|liberation sans/, 0.2119],
+  [/georgia/, 0.2192],
+  [/consolas/, 0.251],
+  [/courier/, 0.3003],
+  [/verdana/, 0.21],
+  [/tahoma/, 0.2065],
+  [/segoe ui/, 0.251],
+  [/roboto/, 0.25],
+  [/lato/, 0.213],
+  [/montserrat/, 0.251],
+  [/open sans/, 0.293],
+]
+
+/**
+ * Natural height (pt) of a list item's first line when a symbol-font bullet
+ * sits on it, or null when the text face alone is as tall. Word sizes a line
+ * by the max ascent plus the max descent of the faces on it, so Symbol (ascent
+ * 1.0054em, above every Latin text face) lifts bullet lines: probe 2026-09-17,
+ * Aptos 10pt text + Symbol 10.5pt bullet at 1.15 = 15.12-15.36pt against
+ * 14.0pt text-only lines; Cambria 11pt + Symbol 11pt = 15.36-15.6 vs 14.9.
+ */
+export function symbolBulletLinePt(
+  symbolFont: string,
+  markerPt: number,
+  textFont: string | null,
+  textPt: number,
+): number | null {
+  const asc = SYMBOL_FACE_ASCENT[symbolFont.trim().toLowerCase()]
+  if (asc === undefined || !(markerPt > 0) || !(textPt > 0)) return null
+  const f = (textFont ?? '').toLowerCase()
+  const desc = LATIN_DESCENT.find(([re]) => re.test(f))?.[1] ?? 0.25
+  const line = asc * markerPt + desc * textPt
+  if (line <= lineHeightFactor(textFont ?? 'Calibri') * textPt + 0.01) return null
+  return Math.round(line * 1000) / 1000
 }
 
 /**
@@ -700,6 +759,25 @@ export function bizUdSubstituted(font: string): boolean {
   return isBundledFont(head) || !isFontAvailable(head)
 }
 
+/**
+ * Ricoh HG faces of the Windows JP Office bundle that Word for Mac does not
+ * ship (its DFonts carry only Gothic E, Mincho E, Soei Kaku Gothic UB and Maru
+ * Gothic M-PRO, rendered real at the MS-class pitch): Word substitutes Yu
+ * Gothic wholesale, kana, kanji and Latin alike, whatever the name says (probe
+ * 2026-09-16: 14.4pt @10pt = 1.44 for HG(P/S) Kyokashotai, HG Mincho B, HG
+ * Gyoshotai, HG Sei-Kaishotai-PRO, HG Soei Kaku Pop-tai, HGS Soei Presence EB,
+ * HG Gothic M; the JP-named Hiragino Kaku Gothic Pro W3 the same).
+ */
+const HG_SUBSTITUTED_RE = new RegExp(
+  `^hg[ps]?(\u6559\u79d1\u66f8\u4f53|\u660e\u671db|\u884c\u66f8\u4f53|\u6b63\u6977\u66f8\u4f53|\u5275\u82f1\u89d2\u30dd\u30c3\u30d7\u4f53|\u5275\u82f1\u30d7\u30ec\u30bc\u30f3\u30b9|\u30b4\u30b7\u30c3\u30afm)|^\u30d2\u30e9\u30ae\u30ce\u89d2\u30b4`,
+)
+
+export function hgSubstituted(font: string): boolean {
+  const head = font.split(',')[0].replace(/['"]/g, '').trim()
+  if (!HG_SUBSTITUTED_RE.test(head.normalize('NFKC').toLowerCase())) return false
+  return isBundledFont(head) || !isFontAvailable(head)
+}
+
 export function cssFontFamily(font: string, followAltName = true): string {
   const f = font.toLowerCase()
   const chain = (...families: string[]) =>
@@ -736,8 +814,16 @@ export function cssFontFamily(font: string, followAltName = true): string {
   // (probe 2026-08-23); macOS Palatino matches their Latin widths within 0.2%
   if (f.includes('palatino') || f.includes('book antiqua'))
     return `${chain(font, 'Palatino Linotype', 'Palatino', 'Book Antiqua', BOX, CJK_SERIF)},serif`
-  if (f === 'arial' || f.startsWith('arial '))
+  // a missing "Arial MT Black"-style name with a fontTable altName substitutes
+  // like any unknown face (Word draws its Courier New alias)
+  if ((f === 'arial' || f.startsWith('arial ')) && !(followAltName && fontTableAltName(font)))
     return `${chain(font, 'Liberation Sans', CJK_SANS)},sans-serif`
+  // Berlin Sans FB Demi ships with Office and Word renders it real, a bold
+  // display cut 0.953x Arial Bold wide (probe 2026-09-17); the size-adjusted
+  // bold alias (fonts.css) stands in where the face is missing. The regular
+  // cut is a different (unprobed) weight and keeps the generic fallback
+  if (/berlin sans fb demi/.test(f))
+    return `${chain(font, 'Berlin Sans FB GO', CJK_SANS)},sans-serif`
   // Segoe UI is an M365 cloud font Word renders real; where it is missing the
   // size-adjusted Helvetica alias (fonts.css) carries its narrower advances
   if (SEGOE_UI_TEXT_RE.test(f))
@@ -909,11 +995,12 @@ export function cssFontFamily(font: string, followAltName = true): string {
     return `${chain(...head, ...krLatin, ...chainFor, ...hangulTail)},${serif ? 'serif' : 'sans-serif'}`
   }
   if (
-    /[぀-ヿ]|mincho|meiryo|hiragino|osaka|yugoth|yu (gothic|mincho)|ms (ui )?p?(gothic|mincho)|明朝|biz ud|kozuka|小塚/i.test(
+    /[぀-ヿ]|mincho|meiryo|hiragino|osaka|yugoth|yu (gothic|mincho)|ms (ui )?p?(gothic|mincho)|明朝|biz ud|kozuka|小塚|^hg[ps]?(\u6559\u79d1\u66f8|\u884c\u66f8|\u6b63\u6977\u66f8|\u5275\u82f1)/i.test(
       nfkc,
     )
   ) {
-    const serif = /mincho|明朝/i.test(nfkc) && !bizUdSubstituted(font)
+    const serif =
+      /mincho|\u660e\u671d/i.test(nfkc) && !bizUdSubstituted(font) && !hgSubstituted(font)
     // Meiryo (UI): Word renders the real faces; the range-limited aliases
     // (fonts.css) rescale the Hiragino/Verdana fallbacks to Meiryo advances
     if (/meiryo|メイリオ/i.test(nfkc)) {
@@ -921,15 +1008,20 @@ export function cssFontFamily(font: string, followAltName = true): string {
       return `${chain(font, alias, ...JA_SANS)},sans-serif`
     }
     // MS Gothic family renders real in Word (half-width mono Latin / proportional
-    // kana); the range-limited aliases (fonts.css) reproduce those advances
+    // kana); the range-limited aliases (fonts.css) reproduce those advances.
+    // MS Mincho (Word probe 2026-09-17: real MS-Mincho, digits 0.5em, fullwidth
+    // colon 1em) shares the fixed-pitch Latin alias
     const msGothic = /^ms (ui )?(p)?(gothic|ゴシック)$/i.exec(nfkc.trim())
-    const msAlias = !msGothic
-      ? []
-      : msGothic[1]
-        ? ['MS UI Gothic GO', 'MS UI Gothic JA GO']
-        : msGothic[2]
-          ? ['MS PGothic GO', 'MS PGothic JA GO']
-          : ['MS Gothic GO']
+    const msMincho = /^ms (mincho|\u660e\u671d)$/i.test(nfkc.trim())
+    const msAlias = msMincho
+      ? ['MS Mincho GO']
+      : !msGothic
+        ? []
+        : msGothic[1]
+          ? ['MS UI Gothic GO', 'MS UI Gothic JA GO']
+          : msGothic[2]
+            ? ['MS PGothic GO', 'MS PGothic JA GO']
+            : ['MS Gothic GO']
     return `${chain(font, ...msAlias, ...(serif ? JA_SERIF : JA_SANS))},${serif ? 'serif' : 'sans-serif'}`
   }
   if (
@@ -1544,19 +1636,23 @@ export function isCjkFontName(fontFamily: string): boolean {
   const f = fontFamily.toLowerCase()
   const nfkc = f.normalize('NFKC')
   // hangul-lettered vendor names are Korean faces even when otherwise unknown
-  return CJK_FONT_NAME_RE.test(f) || KO_FONT_RE.test(nfkc) || /[가-힣ᄀ-ᇿ㄰-㆏]/.test(nfkc)
+  return (
+    CJK_FONT_NAME_RE.test(f) ||
+    CJK_FONT_NAME_RE.test(nfkc) ||
+    KO_FONT_RE.test(nfkc) ||
+    /[가-힣ᄀ-ᇿ㄰-㆏]/.test(nfkc)
+  )
 }
 
 const CJK_FONT_NAME_RE =
-  /宋|黑|楷|仿|明|雅黑|等线|simsun|simhei|simkai|simfang|kaiti|fangsong|songti|stsong|yahei|dengxian|mingliu|jhenghei|biaukai|dfkai|kaiu|mincho|ms (ui )?p?gothic|yu gothic|ゴシック|meiryo|メイリオ|hiragino|osaka|kozuka|biz ud|游|arial unicode|(noto|source han) (sans|serif)( cjk)? ?(sc|cn|jp|tc|kr)\b/i
+  /宋|黑|楷|仿|明|雅黑|等线|simsun|simhei|simkai|simfang|kaiti|fangsong|songti|stsong|yahei|dengxian|mingliu|jhenghei|biaukai|dfkai|kaiu|mincho|ms (ui )?p?gothic|yu gothic|ゴシック|meiryo|メイリオ|hiragino|\u30d2\u30e9\u30ae\u30ce|osaka|kozuka|biz ud|游|\u6559\u79d1\u66f8\u4f53|\u884c\u66f8\u4f53|\u5275\u82f1|arial unicode|(noto|source han) (sans|serif)( cjk)? ?(sc|cn|jp|tc|kr)\b/i
 
 function cjkLineHFactor(fontFamily: string): number {
   const f = fontFamily.toLowerCase()
   if (f.includes('pmingliu') || f.includes('mingliu')) return 1.0
   const declared = cjkDeclaredLineFactor(fontFamily)
   if (declared !== null) return declared
-  if (KO_FONT_RE.test(f)) return lineHeightFactor(fontFamily)
-  if (CJK_FONT_NAME_RE.test(f)) return lineHeightFactor(fontFamily)
+  if (isCjkFontName(fontFamily)) return lineHeightFactor(fontFamily)
   return 1.3
 }
 
@@ -2042,6 +2138,11 @@ export function estimateHfHeight(
           lineSpacing?: number
           spaceBefore?: number
           spaceAfter?: number
+          /** w:ind (twips): narrows the wrap width of a stacked paragraph */
+          indentLeft?: number
+          indentRight?: number
+          /** blank paragraph: the mark's (or style's) size sizes its line */
+          emptyRunSizeHalfPoints?: number
         }>
       }
     | null
@@ -2086,7 +2187,7 @@ export function estimateHfHeight(
     : part.text.trim()
       ? part.text.split('\n').map((t) => ({ runs: [{ text: t }] }))
       : []
-  const lineH = (runs: HfRunLike[], rich?: HfLineSpacingLike) =>
+  const lineH = (runs: HfRunLike[], rich?: HfLineSpacingLike, availWidthPx = contentWidthPx) =>
     computeLineMetrics({
       runs: runs.map((r) => ({
         text: r.text,
@@ -2095,7 +2196,7 @@ export function estimateHfHeight(
         ...(r.bold ? { bold: true } : {}),
         ...(r.italic ? { italic: true } : {}),
       })),
-      availWidthPx: contentWidthPx,
+      availWidthPx,
       ...(rich?.lineRule ? { lineRule: rich.lineRule } : {}),
       ...(rich?.lineRawTwips
         ? { lineRawTwips: rich.lineRawTwips }
@@ -2129,7 +2230,12 @@ export function estimateHfHeight(
       )
       continue
     }
-    height += lineH(p.runs, p)
+    const indentPx = ((p.indentLeft ?? 0) + (p.indentRight ?? 0)) / 15
+    const runs =
+      p.runs.length === 0 && p.emptyRunSizeHalfPoints
+        ? [{ text: '', sizeHalfPoints: p.emptyRunSizeHalfPoints }]
+        : p.runs
+    height += lineH(runs, p, Math.max(1, contentWidthPx - indentPx))
   }
   return Math.max(height + imagesHeight, anchoredPx)
 }

@@ -4,6 +4,8 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { EditorView } from '@tiptap/pm/view'
 import { splitFloatStyle } from '../pagination-lines'
 import type { ColumnSplitShape, VerticalBlockSpec } from '../pagination-types'
+import { TopLevelPositions } from './top-level-pos'
+import type { LayoutBatch } from './pagination-gaps'
 
 const key = new PluginKey<DecorationSet>('columnLayout')
 
@@ -142,8 +144,13 @@ function specClass(spec: ColumnBlockSpec): string {
 }
 
 /** Rebuild the column-layout decorations (an empty list clears them). */
-export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): void {
+export function setColumnLayout(
+  view: EditorView,
+  specs: ColumnBlockSpec[],
+  batch?: LayoutBatch,
+): void {
   const decos: Decoration[] = []
+  const positions = new TopLevelPositions(view)
   const styleOf = new Map<HTMLElement, { style: string; cls: string }>()
   const splitOf = new Map<HTMLElement, string>()
   for (const spec of specs) {
@@ -172,15 +179,9 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
       `--col-dx:${round2(spec.dx)}px;--col-dy:${round2(spec.dy)}px`
     const cls = specClass(spec)
     styleOf.set(spec.el, { style, cls })
-    let from: number
-    let to: number
-    try {
-      const $inside = view.state.doc.resolve(view.posAtDOM(spec.el, 0))
-      from = $inside.before(1)
-      to = $inside.after(1)
-    } catch {
-      continue
-    }
+    const range = positions.of(spec.el)
+    if (!range) continue
+    const { from, to } = range
     decos.push(Decoration.node(from, to, { class: cls, style }, { key: `col-${cls}-${style}` }))
     const split = splitOf.get(spec.el)
     if (split)
@@ -194,11 +195,24 @@ export function setColumnLayout(view: EditorView, specs: ColumnBlockSpec[]): voi
   }
   const next = DecorationSet.create(view.state.doc, decos)
   const prev = key.getState(view.state)
-  if (!prev || !sameCols(prev, next))
-    view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
-  // custom NodeViews (protected blocks etc.) don't apply node decorations — patch
-  // their DOM directly, observer paused so PM never re-parses the mutation (same
-  // technique as the phantom-rowspan sync). Re-applied by every remeasure pass.
+  if (!prev || !sameCols(prev, next)) {
+    if (batch) batch.set(key, next)
+    else view.dispatch(view.state.tr.setMeta(key, next).setMeta('addToHistory', false))
+  }
+  if (batch) batch.then(() => patchNodeViews(view, styleOf, splitOf))
+  else patchNodeViews(view, styleOf, splitOf)
+}
+
+/**
+ * custom NodeViews (protected blocks etc.) don't apply node decorations — patch
+ * their DOM directly, observer paused so PM never re-parses the mutation (same
+ * technique as the phantom-rowspan sync). Re-applied by every remeasure pass.
+ */
+function patchNodeViews(
+  view: EditorView,
+  styleOf: Map<HTMLElement, { style: string; cls: string }>,
+  splitOf: Map<HTMLElement, string>,
+): void {
   const obs = (view as unknown as { domObserver?: { stop(): void; start(): void } }).domObserver
   obs?.stop()
   try {

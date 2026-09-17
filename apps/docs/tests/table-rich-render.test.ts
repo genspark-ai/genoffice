@@ -101,7 +101,7 @@ describe('renderTableSpec rich cell content', () => {
         ],
       ],
     }
-    const spans = renderTable(model).querySelectorAll('td span')
+    const spans = renderTable(model).querySelectorAll('td span:not(.doc-ltr-runs)')
     const arabic = spans[0].getAttribute('style')!
     expect(arabic).toMatch(/font-family:\s*['"]Traditional Arabic['"]/)
     expect(arabic).toContain('Calibri')
@@ -181,19 +181,28 @@ describe('renderTableSpec rich cell content', () => {
     expect(para.querySelector('img.doc-inline-img')).not.toBeNull()
   })
 
-  it('cell-level color/bold stay as td-level fallback', () => {
-    const model: TableModel = {
+  it('paints table-style color/bold on the td, never the run aggregates', () => {
+    const aggregated: TableModel = {
+      rows: [[{ ...cell(['t'], [{ runs: [{ text: 't' }] }]), color: '112233', bold: true }]],
+    }
+    const plain = renderTable(aggregated).querySelector('td')!.getAttribute('style') ?? ''
+    expect(plain).not.toMatch(/color:/)
+    expect(plain).not.toMatch(/font-weight/)
+
+    const styled: TableModel = {
       rows: [
         [
           {
             ...cell(['t'], [{ runs: [{ text: 't' }] }]),
             color: '112233',
             bold: true,
+            styleColor: '112233',
+            styleBold: true,
           },
         ],
       ],
     }
-    const td = renderTable(model).querySelector('td')!
+    const td = renderTable(styled).querySelector('td')!
     const tdStyle = td.getAttribute('style')!
     expect(tdStyle).toMatch(/color:\s*(#112233|rgb\(17,\s*34,\s*51\))/i)
     expect(tdStyle).toMatch(/font-weight:\s*600/)

@@ -64,6 +64,14 @@ describe('readPdfText (pdfium extraction)', () => {
     expect(capped.truncated).toBe(true)
   })
 
+  it('extracts an explicit page list only, in page order', async () => {
+    const { readFileSync } = await import('node:fs')
+    const bytes = new Uint8Array(readFileSync(threePages))
+    const sparse = await readPdfText(bytes, { pages: [3, 1, 3] })
+    expect(sparse.pages.map((p) => p.page)).toEqual([1, 3])
+    expect(sparse.pages[1]!.text).toContain('Tail page')
+  })
+
   // Regression: a budget spent exactly on a page boundary used to keep pushing
   // empty pages with `truncated:false`, so the result claimed a complete read
   // while pairing `hasTextLayer:true` with empty text.
@@ -122,6 +130,10 @@ describe('read_pdf tool', () => {
     }
     expect(out.pages.map((p) => p.page)).toEqual([3])
     expect(out.pages[0]!.text).toContain('Tail page')
+    const sparse = (await handler({ path: threePages, pages: '1,3' })) as {
+      pages: Array<{ page: number }>
+    }
+    expect(sparse.pages.map((p) => p.page)).toEqual([1, 3])
     await expect(handler({ path: threePages, pages: '9' })).rejects.toThrow(/out of range/)
   })
 

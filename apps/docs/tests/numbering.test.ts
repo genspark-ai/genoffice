@@ -455,8 +455,54 @@ describe('computeListMarkers', () => {
     const style = el.getAttribute('style') ?? ''
     expect(style).toContain("--li-marker-font: Arial,'Helvetica Neue',sans-serif")
     expect(style).toContain('--li-marker-scale: 1.25')
-    expect(style).toContain('--li-marker-lh: 0')
+    // Symbol's ascent tops the 12pt Calibri text: the bullet box carries Word's
+    // max-ascent + max-descent line (1.0054 + 0.2686 em) and sits on the bottom
+    expect(style).toContain('--li-marker-lh: calc(15.288pt * var(--doc-line-mult,1))')
+    expect(style).toContain('--li-marker-va: bottom')
     expect(style).toContain('--li-marker-size: 12pt')
+    editor.destroy()
+  })
+
+  it('keeps the bullet box flat on exact lines, direct or style-level', async () => {
+    const numberingXml =
+      '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+      '<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/>' +
+      '<w:lvlText w:val="\uF0B7"/><w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol"/></w:rPr>' +
+      '<w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum>' +
+      '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'
+    const item = (pPr: string) =>
+      `<w:p><w:pPr>${pPr}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>` +
+      '<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>item</w:t></w:r></w:p>'
+    const parsed = await parseDocx(
+      await buildDocx({
+        bodyXml:
+          item('<w:spacing w:line="240" w:lineRule="exact"/>') +
+          item('<w:pStyle w:val="Tight"/>') +
+          item('<w:pStyle w:val="Tight"/><w:spacing w:line="276" w:lineRule="auto"/>') +
+          item(''),
+        numberingXml,
+        extraStylesXml:
+          '<w:style w:type="paragraph" w:styleId="Tight"><w:name w:val="Tight"/>' +
+          '<w:pPr><w:spacing w:line="240" w:lineRule="exact"/></w:pPr></w:style>',
+      }),
+    )
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+    })
+    editor.storage.listNumbering.defs = parsed.numbering
+    editor.storage.listNumbering.styles = parsed.styles
+    editor.commands.setContent(blocksToPmDoc(parsed.blocks) as never)
+    const styles = [...editor.view.dom.querySelectorAll('.doc-li')].map(
+      (el) => el.getAttribute('style') ?? '',
+    )
+    expect(styles[0]).toContain('--li-marker-lh: 0')
+    expect(styles[0]).not.toContain('--li-marker-va')
+    expect(styles[1]).toContain('--li-marker-lh: 0')
+    expect(styles[1]).not.toContain('--li-marker-va')
+    // a direct auto rule overrides the style's exact one
+    expect(styles[2]).toContain('--li-marker-va: bottom')
+    expect(styles[3]).toContain('--li-marker-va: bottom')
     editor.destroy()
   })
 })

@@ -446,16 +446,11 @@ export function docStyleCss(parsed: ParsedDocFull): string {
       // first-page header/footer strips are .doc-page siblings
       rules.push(`.page-wrap, .doc-page, .pv-page { --doc-base-fs:${sizeHalf / 2}pt }`)
       // Header/footer strips (.page-hf) resolve their default run size through
-      // this var (Word's Header/Footer styles are based on Normal, so runs
-      // without their own w:sz take the document default, not the static
-      // 10.5pt guess). Shrink-only: the strip line-height carries the
-      // document-wide script strut, which overshoots Word on Latin-only strip
-      // lines — letting the base size grow would over-reserve push-down and
-      // push page counts up (prod_008/091). .page-wrap too — the canvas
-      // strips are .doc-page siblings.
-      if (sizeHalf < 21) {
-        rules.push(`.page-wrap, .doc-page, .pv-page { --hf-default-fs:${sizeHalf / 2}pt }`)
-      }
+      // this var: Word's Header/Footer styles are based on Normal, so runs
+      // without their own w:sz take the document default (a 12pt default wraps
+      // a long header line one line earlier than the old 10.5pt guess).
+      // .page-wrap too — the canvas strips are .doc-page siblings.
+      rules.push(`.page-wrap, .doc-page, .pv-page { --hf-default-fs:${sizeHalf / 2}pt }`)
     }
     const color = normal?.color ?? dd?.color
     // auto = the paper ink the page already uses
@@ -754,7 +749,17 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         darkDecls.push(AUTO_INK.light.dark)
       }
     }
-    const styleLh = cssLineHeight(d.lineRule, d.lineRawTwips, d.lineSpacing)
+    // a paragraph style whose w:basedOn chain never reaches the default style
+    // inherits docDefaults only: Normal's spacing and line (the .doc-page base)
+    // must not leak into it (a No Spacing letterhead packs its lines in Word)
+    const offNormalChain =
+      info.type === 'paragraph' && !info.isDefault && !chainReachesDefault(parsed.styles, info)
+    const dd = offNormalChain ? parsed.docDefaults : undefined
+    const styleLh =
+      cssLineHeight(d.lineRule, d.lineRawTwips, d.lineSpacing) ??
+      (offNormalChain
+        ? (cssLineHeight(dd?.lineRule, dd?.lineRawTwips, dd?.lineSpacing) ?? cssGridLineBase())
+        : undefined)
     if (styleLh) decls.push(`line-height:${styleLh}`)
     // grid span snapping scales by the style's multiple (an explicit single
     // still overrides an inherited document multiple); the extra rule keeps
@@ -788,12 +793,18 @@ export function docStyleCss(parsed: ParsedDocFull): string {
         } }`,
       )
     }
-    if (d.spaceBeforeAuto) decls.push(`margin-top:${cssGridSpacingPt(WORD_AUTO_SPACING_PT)}`)
-    else if (d.spaceBeforeTwips !== undefined)
-      decls.push(`margin-top:${cssGridSpacingPt(d.spaceBeforeTwips / 20)}`)
-    if (d.spaceAfterAuto) decls.push(`margin-bottom:${cssGridSpacingPt(WORD_AUTO_SPACING_PT)}`)
-    else if (d.spaceAfterTwips !== undefined)
-      decls.push(`margin-bottom:${cssGridSpacingPt(d.spaceAfterTwips / 20)}`)
+    const beforeAuto = d.spaceBeforeAuto ?? dd?.spaceBeforeAuto
+    const beforeTwips =
+      d.spaceBeforeTwips ?? (offNormalChain ? (dd?.spaceBeforeTwips ?? 0) : undefined)
+    if (beforeAuto) decls.push(`margin-top:${cssGridSpacingPt(WORD_AUTO_SPACING_PT)}`)
+    else if (beforeTwips !== undefined)
+      decls.push(`margin-top:${cssGridSpacingPt(beforeTwips / 20)}`)
+    const afterAuto = d.spaceAfterAuto ?? dd?.spaceAfterAuto
+    const afterTwips =
+      d.spaceAfterTwips ?? (offNormalChain ? (dd?.spaceAfterTwips ?? 0) : undefined)
+    if (afterAuto) decls.push(`margin-bottom:${cssGridSpacingPt(WORD_AUTO_SPACING_PT)}`)
+    else if (afterTwips !== undefined)
+      decls.push(`margin-bottom:${cssGridSpacingPt(afterTwips / 20)}`)
     // style-level auto spacing collapses to 0 between two list items (Word),
     // mirroring the .sp-auto-* rules for direct autospacing (styles.css);
     // un-!important so a direct explicit margin (inline, auto turned off) wins —
@@ -918,4 +929,16 @@ export function docStyleCss(parsed: ParsedDocFull): string {
   }
   if (darkRules.length > 0) rules.push(`@media screen {\n${darkRules.join('\n')}\n}`)
   return rules.join('\n')
+}
+
+/** the style's w:basedOn chain ends at the default paragraph style (it inherits Normal) */
+function chainReachesDefault(styles: Map<string, StyleInfo>, info: StyleInfo): boolean {
+  const seen = new Set<string>()
+  let cur: StyleInfo | undefined = info
+  while (cur && !seen.has(cur.styleId)) {
+    if (cur.isDefault) return true
+    seen.add(cur.styleId)
+    cur = cur.basedOn ? styles.get(cur.basedOn) : undefined
+  }
+  return false
 }

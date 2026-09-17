@@ -127,13 +127,20 @@ function readDeckModel(session: Session): Record<string, unknown> {
 export interface SlidesBridgeDeps {
   /** open a fresh blank slides tab; returns its webContents id */
   openBlankTab: () => number
+  /** close a blank tab whose session never became ready, so a failed create_session leaves no orphan */
+  abandonBlankTab?: (wcId: number) => void
 }
 
 export function createSlidesControl(deps: SlidesBridgeDeps): SlidesControl {
   return {
     openBlankTab: async () => {
       const wcId = await deps.openBlankTab()
-      await waitSession(wcId)
+      try {
+        await waitSession(wcId)
+      } catch (error) {
+        deps.abandonBlankTab?.(wcId)
+        throw error
+      }
       return wcId
     },
     runTxn: async (wcId: number, req: SlidesTxnRequest) => {

@@ -282,6 +282,76 @@ describe('grouped and sibling pictures', () => {
     expect(img?.heightPx).toBe(25)
   })
 
+  it('an explicit solid prstDash keeps a solid border; dash presets map to dashed/dotted', async () => {
+    const withDash = (val: string) =>
+      anchorParagraph(
+        `<wps:wsp ${WPS_NS}><wps:cNvSpPr/><wps:spPr>` +
+          `<a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="476250"/></a:xfrm>` +
+          `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+          `<a:ln w="6096"><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:prstDash val="${val}"/></a:ln>` +
+          `</wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>term</w:t></w:r></w:p>` +
+          `</w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>`,
+        SHAPE_URI,
+      )
+    const dashOf = async (val: string) =>
+      (await parseDocx(await buildDocx({ bodyXml: withDash(val) }))).blocks[0].textboxes![0]
+        .borderDash
+    expect(await dashOf('solid')).toBeUndefined()
+    expect(await dashOf('dash')).toBe('dashed')
+    expect(await dashOf('sysDot')).toBe('dotted')
+  })
+
+  it('a text-bearing anchor paragraph keeps its own spacing as the stray line format', async () => {
+    const textbox = anchorParagraph(
+      `<wps:wsp ${WPS_NS}><wps:cNvSpPr/><wps:spPr>` +
+        `<a:xfrm><a:off x="0" y="0"/><a:ext cx="952500" cy="476250"/></a:xfrm>` +
+        `<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>` +
+        `</wps:spPr><wps:txbx><w:txbxContent><w:p><w:r><w:t>term</w:t></w:r></w:p>` +
+        `</w:txbxContent></wps:txbx><wps:bodyPr/></wps:wsp>`,
+      SHAPE_URI,
+    )
+      .replace('<w:p>', '<w:p><w:pPr><w:spacing w:before="169"/><w:ind w:left="2894"/></w:pPr>')
+      .replace(
+        /<\/w:p>$/,
+        '<w:r><w:t>=</w:t></w:r><w:r><w:tab/></w:r><w:r><w:t>+</w:t></w:r></w:p>',
+      )
+    const doc = await parseDocx(await buildDocx({ bodyXml: textbox }))
+    const block = doc.blocks[0]
+    expect(block.strayRuns?.map((r) => r.text).join('')).toBe('=\t+')
+    expect(block.anchorLine?.format?.spaceBefore).toBe(169)
+    expect(block.strayIndent).toEqual({ leftTwips: 2894 })
+    // style-chain stops reach the stray line too (direct wins per position, clear removes)
+    const styled = await parseDocx(
+      await buildDocx({
+        bodyXml: textbox.replace(
+          '<w:pPr>',
+          '<w:pPr><w:pStyle w:val="Ops"/><w:tabs><w:tab w:val="clear" w:pos="1200"/><w:tab w:val="left" w:pos="4385"/></w:tabs>',
+        ),
+        extraStylesXml:
+          '<w:style w:type="paragraph" w:styleId="Ops"><w:name w:val="Ops"/><w:pPr><w:tabs>' +
+          '<w:tab w:val="left" w:pos="1200"/><w:tab w:val="right" w:pos="4385"/><w:tab w:val="left" w:pos="6000"/>' +
+          '</w:tabs><w:ind w:left="143"/></w:pPr></w:style>',
+      }),
+    )
+    expect(styled.blocks[0].anchorLine?.format?.tabStops).toEqual([
+      { pos: 6000, val: 'left' },
+      { pos: 4385, val: 'left' },
+    ])
+    // the direct w:ind wins; a style-only indent still reaches the stray line's tab grid
+    expect(styled.blocks[0].anchorLine?.format?.indentLeft).toBe(2894)
+    const styleInd = await parseDocx(
+      await buildDocx({
+        bodyXml: textbox
+          .replace('<w:ind w:left="2894"/>', '')
+          .replace('<w:pPr>', '<w:pPr><w:pStyle w:val="Ops"/>'),
+        extraStylesXml:
+          '<w:style w:type="paragraph" w:styleId="Ops"><w:name w:val="Ops"/><w:pPr>' +
+          '<w:ind w:left="143"/></w:pPr></w:style>',
+      }),
+    )
+    expect(styleInd.blocks[0].anchorLine?.format?.indentLeft).toBe(143)
+  })
+
   it('an anchored sibling picture becomes a floating photo box carrying its rotation', async () => {
     const textbox = anchorParagraph(
       `<wps:wsp ${WPS_NS}><wps:cNvSpPr/><wps:spPr>` +
