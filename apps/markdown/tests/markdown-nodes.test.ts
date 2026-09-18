@@ -268,3 +268,38 @@ describe('bracket escaping on save', () => {
     expect(stable).toBe(true)
   })
 })
+
+describe('formatted inline code', () => {
+  const editor = createEditor()
+  it.each([
+    ['**`bold code`**', 'bold'],
+    ['*`italic code`*', 'italic'],
+    ['~~`struck code`~~', 'strike'],
+    ['[`linked code`](https://example.com)', 'link'],
+  ])('opens, edits and reopens %s with valid marks', (source, outerMark) => {
+    editor.commands.setContent(source, { contentType: 'markdown' })
+    expect(() => editor.state.doc.check()).not.toThrow()
+    const text = editor.state.doc.firstChild!.firstChild!
+    expect(text.marks.map((mark) => mark.type.name)).toContain(outerMark)
+    expect(text.marks.map((mark) => mark.type.name)).toContain('code')
+    editor.commands.insertContentAt(2, 'X')
+    const saved = editor.getMarkdown()
+    editor.commands.setContent(saved, { contentType: 'markdown' })
+    expect(() => editor.state.doc.check()).not.toThrow()
+    expect(editor.state.doc.textContent).toContain('X')
+    const reopened = editor.state.doc.firstChild!.firstChild!
+    expect(reopened.marks.map((mark) => mark.type.name)).toContain(outerMark)
+    expect(reopened.marks.map((mark) => mark.type.name)).toContain('code')
+  })
+})
+
+it('keeps emphasis and link syntax inside code literal', () => {
+  const editor = createEditor()
+  editor.commands.setContent('`**literal** [text](https://example.com)`', {
+    contentType: 'markdown',
+  })
+  expect(() => editor.state.doc.check()).not.toThrow()
+  const text = editor.state.doc.firstChild!.firstChild!
+  expect(text.text).toBe('**literal** [text](https://example.com)')
+  expect(text.marks.map((mark) => mark.type.name)).toEqual(['code'])
+})

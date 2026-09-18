@@ -2,6 +2,7 @@ import type { AnyExtension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { Table, TableKit } from '@tiptap/extension-table'
 import { OrderedList, TaskList } from '@tiptap/extension-list'
+import { Code } from '@tiptap/extension-code'
 import { CodeBlock } from '@tiptap/extension-code-block'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { Placeholder } from '@tiptap/extensions'
@@ -42,6 +43,7 @@ export function buildExtensions(options: BuildExtensionsOptions): AnyExtension[]
       link: { openOnClick: false },
       // replaced by the NodeView-enhanced variant below (language picker + copy)
       codeBlock: false,
+      code: false,
       // underline would serialize as `++text++` — not part of GFM
       underline: false,
       // re-added below with a linear-time markdown tokenizer
@@ -56,6 +58,8 @@ export function buildExtensions(options: BuildExtensionsOptions): AnyExtension[]
     }),
     StyledBold,
     StyledItalic,
+    // Register after emphasis so its delimiters wrap code, not the other way around.
+    Code.extend({ excludes: '' }),
     StyledHeading,
     StyledHorizontalRule,
     StyledHardBreak,
