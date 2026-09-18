@@ -314,7 +314,7 @@ export async function convertHtmlToDocx(
   const shotIds: string[] = []
   const shotNodes = new Map<string, any>()
   const pageBgShotIds = new Set<string>(
-    ir.filter((node) => node.type === 'pagebg' && node.shotId).map((node) => node.shotId),
+    ir.filter((node) => node.type === 'pagebg' && node.shotId).map((node) => node.shotId as string),
   )
   const collectRunShots = (runs: any[] | undefined) => {
     for (const run of runs || []) {
