@@ -198,6 +198,7 @@ describe('native editable tables', () => {
           sizeHalfPoints: null,
           font: 'Calibri',
           fontAscii: 'Calibri',
+          eastAsiaFont: 'Calibri',
           csFont: null,
           charSpacingTwips: null,
           charScaleEm: null,

@@ -410,7 +410,8 @@ describe('per-line factors in mixed-script paragraphs', () => {
       `max(var(--doc-line-factor-latin,1.2), ${lineHeightFactor('Arial')})`,
     )
     const lifted = stretches(editor)
-    expect(lifted.map((s) => s.textContent)).toEqual(['수소는 결정', '결함', '결합해'])
+    // Script-font decorations may split a stretch without changing its line metrics.
+    expect(lifted.map((s) => s.textContent).join('')).toBe('수소는 결정결함결합해')
     for (const s of lifted) {
       expect(s.style.getPropertyValue('--doc-line-factor')).toBe('var(--doc-line-factor-kr,1.3029)')
       expect(s.style.getPropertyValue('line-height')).toBe('')

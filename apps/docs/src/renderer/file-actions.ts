@@ -28,6 +28,7 @@ import {
   type Block,
   type CommentInfo,
   type DocProtection,
+  type DefaultFonts,
   type HeaderFooter,
   type NoteInfo,
   type ParsedDocFull,
@@ -155,6 +156,10 @@ export interface FileActionContext {
   pendingNumbering: PendingNumbering
   numberingDirty: boolean
   setPendingNumbering: (value: PendingNumbering) => void
+  defaultFonts?: DefaultFonts
+  setDefaultFonts?: (fonts: DefaultFonts | undefined) => void
+  fontSettingsVersionRef?: { current: number }
+  settleFontSettings?: () => Promise<FileActionContext>
   styleUpserts: Record<string, StyleUpsert>
   setStyleUpserts: (value: Record<string, StyleUpsert>) => void
   comments: CommentInfo[]
@@ -586,6 +591,9 @@ function deriveAutoFileName(editor: Editor): string | null {
  * crash-recovery copies.
  */
 export async function buildDocBytes(ctx: FileActionContext): Promise<Uint8Array | null> {
+  const generation = docGeneration
+  if (ctx.settleFontSettings) ctx = await ctx.settleFontSettings()
+  if (docGeneration !== generation) return null
   const { doc, editor } = ctx
   if (!doc || !editor) return null
   const plan = pmDocToSavePlan(editor.getJSON() as PmNode, doc.parsed.blocks)
@@ -662,6 +670,7 @@ export async function buildDocBytes(ctx: FileActionContext): Promise<Uint8Array 
     pgNumType: ctx.pgNumEdit ?? undefined,
     sectionHf: sectionHf.length > 0 ? sectionHf : undefined,
     numbering: ctx.numberingDirty ? ctx.pendingNumbering : undefined,
+    defaultFonts: ctx.defaultFonts,
     styleUpserts:
       Object.keys(ctx.styleUpserts).length > 0 ? Object.values(ctx.styleUpserts) : undefined,
     pageColor: ctx.pageColorDirty ? ctx.pageColor : undefined,
@@ -794,8 +803,13 @@ export function save(
   // in-flight edit/password races. A pass that left anything runs its own pass;
   // saveOnce resolves a stale pathless snapshot via pathlessDocSavedPath, so
   // the retry can no longer create a duplicate file.
+  const generation = docGeneration
   return runSerializedSave(
-    () => saveOnce(ctx, saveAs, auto, newDocName, explicitTarget),
+    async () => {
+      const settled = ctx.settleFontSettings ? await ctx.settleFontSettings() : ctx
+      if (docGeneration !== generation) return false
+      return saveOnce(settled, saveAs, auto, newDocName, explicitTarget)
+    },
     // an explicit MCP target must always write, never reuse an earlier pass
     () => !saveAs && !explicitTarget && !ctx.saveIncompleteRef.current && !isDocDirty(ctx),
   )
@@ -887,6 +901,7 @@ async function saveOnce(
     // flush pending in-place table cell / textbox edits into the PM doc first
     window.dispatchEvent(new Event('ai-docs-commit-tables'))
     // identity snapshot: detects edits that arrive while the save is in flight
+    const fontSettingsVersion = ctx.fontSettingsVersionRef?.current
     const docSnapshot = editor.state.doc
     const selectionPos = editor.state.selection.from
     const bytes = await buildDocBytes(ctx)
@@ -954,7 +969,11 @@ async function saveOnce(
     }
     // parse before the identity check: a document opened during this await must not be rewritten
     const reparsed = await parseDocx(fullBytes ?? bytes)
-    if (editor.state.doc !== docSnapshot || passwordIntentPending) {
+    if (
+      editor.state.doc !== docSnapshot ||
+      passwordIntentPending ||
+      ctx.fontSettingsVersionRef?.current !== fontSettingsVersion
+    ) {
       // The user kept editing, opened another document or chose another
       // password after the main process captured this save. Keep the live state
       // dirty; replacing it with the saved snapshot or marking it clean would

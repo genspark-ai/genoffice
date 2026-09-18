@@ -3,7 +3,7 @@ import type { Mark as PmMark } from '@tiptap/pm/model'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import {} from '@tiptap/pm/tables'
-import { cssCsFontFamily, cssRunFontFamily } from '../line-metrics'
+import { cssCsFontFamily, cssRunFontFamily, cssFontFamily } from '../line-metrics'
 import { isEastAsianFontName } from '../font-list'
 import { t } from '../i18n/locale'
 import { dkBackground } from './dark-page'
@@ -478,6 +478,7 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   font: 'string',
   eaSlotEmpty: 'boolean',
   fontAscii: 'string',
+  eastAsiaFont: 'string',
   csFont: 'string',
   charSpacingTwips: 'number',
   charScaleEm: 'number',
@@ -574,6 +575,7 @@ export const TextStyleMark = Mark.create({
       eaSlotEmpty: { default: null as boolean | null },
       // Latin slot (w:ascii/w:hAnsi) when it differs from the primary/eastAsia font
       fontAscii: { default: null as string | null },
+      eastAsiaFont: { default: null as string | null, rendered: false },
       // complex-script slot (w:cs); convert sets it only when the run text needs it
       csFont: { default: null as string | null },
       charSpacingTwips: { default: null as number | null },
@@ -654,6 +656,9 @@ export const TextStyleMark = Mark.create({
       const ea = mark.attrs.font ? String(mark.attrs.font) : null
       const ascii = mark.attrs.fontAscii ? String(mark.attrs.fontAscii) : null
       const cs = mark.attrs.csFont ? String(mark.attrs.csFont) : null
+      const explicitEa = mark.attrs.eastAsiaFont ?? (!mark.attrs.rawRPr ? ea : null)
+      if (explicitEa && !mark.attrs.eaSlotEmpty)
+        styles.push(`--doc-east-asian-font:${cssFontFamily(String(explicitEa))}`)
       styles.push(
         `font-family:${
           cs

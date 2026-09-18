@@ -125,7 +125,7 @@ describe('rFonts dual-slot model', () => {
     )
   })
 
-  it('setting only the Latin font on a run without rFonts leaves eastAsia empty', async () => {
+  it('setting only the Latin font leaves East Asian and complex-script slots inherited', async () => {
     const doc = await parseDocx(
       await buildDocx({ bodyXml: '<w:p><w:r><w:t>plain text</w:t></w:r></w:p>' }),
     )
@@ -134,7 +134,8 @@ describe('rFonts dual-slot model', () => {
       { type: 'paragraph', runs: [{ ...run, fontAscii: 'Arial' }] },
       GEN_CTX,
     )
-    expect(xml).toContain('<w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>')
+    expect(xml).toContain('<w:rFonts w:ascii="Arial" w:hAnsi="Arial"/>')
+    expect(xml).not.toContain('w:cs=')
     expect(xml).not.toContain('eastAsia')
   })
 })

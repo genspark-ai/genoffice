@@ -398,12 +398,16 @@ export function docStyleCss(parsed: ParsedDocFull): string {
     decls.push(`--doc-line-factor-kr:${krLineFactor(normalEaKr ?? dd?.eastAsiaFont)}`)
     // dual-slot baseline: Latin families first, then the East Asian chain
     const baseAscii = normal?.fontAscii ?? dd?.asciiFont
-    const baseEa = normal?.font ?? dd?.eastAsiaFont
+    const baseEa =
+      normal?.eastAsiaFont ??
+      (normal?.font !== normal?.fontAscii ? normal?.font : undefined) ??
+      dd?.eastAsiaFont
     const baseFamily =
       baseAscii && baseEa && baseAscii !== baseEa
         ? cssDualFontFamily(baseAscii, baseEa)
         : cssFontFamily(baseEa ?? baseAscii ?? 'Calibri')
     decls.push(`font-family:${baseFamily}`)
+    if (baseEa) decls.push(`--doc-east-asian-font:${cssFontFamily(baseEa)}`)
     // Mixed declared/inherited-font paragraphs under a typed grid (blockAttrs
     // .doc-grid-strut): Chromium's line box unions the strut's and every inline
     // box's half-leading geometry, so a Latin-primary strut under EA-primary
@@ -709,6 +713,8 @@ export function docStyleCss(parsed: ParsedDocFull): string {
             ? cssFontFamily(d.font)
             : cssEaOnlyFontFamily(d.font)
       decls.push(`font-family:${styleFamily}`)
+      if (!d.eaSlotEmpty && (d.eastAsiaFont || d.font !== d.fontAscii))
+        decls.push(`--doc-east-asian-font:${cssFontFamily(d.eastAsiaFont ?? d.font)}`)
       // the strut alias tail must follow the style's own chain, not the doc base
       if (gridStrut) decls.push(`--doc-grid-strut-tail:${styleFamily}`)
       if (d.fontAscii) decls.push(`--doc-latin-chain:${docLatinChainCss(d.fontAscii)}`)

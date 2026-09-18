@@ -64,7 +64,12 @@ import type {
 import { PAGE_MARK, TOTAL_PAGES_MARK } from './types'
 import { patchParagraphTexts } from './text-patch'
 import { balanceFieldChars } from './field-balance'
-import { mergeStyleXml, type StyleUpsert } from './style-upsert'
+import {
+  mergeStyleXml,
+  mergeDefaultFontsXml,
+  type DefaultFonts,
+  type StyleUpsert,
+} from './style-upsert'
 import {
   WATERMARK_NS,
   isPictureWatermark,
@@ -176,6 +181,7 @@ export interface SaveOptions {
   }
   /** create/modify styles: surgical upsert of word/styles.xml by styleId (replace when present, else append) */
   styleUpserts?: StyleUpsert[]
+  defaultFonts?: DefaultFonts
   /**
    * Replace whole zip parts by path (e.g. patched chart parts from
    * patchChartPartXml). Only paths that already exist in the package are
@@ -372,6 +378,7 @@ export async function saveDocx(
     options.titlePg === undefined &&
     (options.sectionHf === undefined || options.sectionHf.length === 0) &&
     options.numbering === undefined &&
+    options.defaultFonts === undefined &&
     (options.styleUpserts === undefined || options.styleUpserts.length === 0) &&
     options.evenAndOddHeaders === undefined &&
     options.comments === undefined &&
@@ -883,7 +890,7 @@ export async function saveDocx(
   // ---- styles: surgical upsert of word/styles.xml (create/modify styles) ----
   const stylesPath = 'word/styles.xml'
   let stylesXmlOut: string | null = null
-  if ((options.styleUpserts?.length ?? 0) > 0) {
+  if ((options.styleUpserts?.length ?? 0) > 0 || options.defaultFonts !== undefined) {
     const file = zip.file(stylesPath)
     let xml = file
       ? await file.async('string')
@@ -899,7 +906,7 @@ export async function saveDocx(
         ? xml.replace(existing, () => styleXml)
         : xml.replace('</w:styles>', `${styleXml}</w:styles>`)
     }
-    stylesXmlOut = xml
+    stylesXmlOut = options.defaultFonts ? mergeDefaultFontsXml(xml, options.defaultFonts) : xml
   }
 
   // ---- comments: regenerate word/comments.xml from the full desired list ----

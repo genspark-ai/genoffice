@@ -1518,6 +1518,7 @@ function runMarks(run: Run): PmMark[] {
         font: run.font ?? null,
         eaSlotEmpty: run.eaSlotEmpty ?? null,
         fontAscii: run.fontAscii ?? null,
+        eastAsiaFont: run.eastAsiaFont ?? null,
         // cs chain only kicks in for complex-script text (Word's w:cs semantics)
         csFont: run.csFont && textHasComplexScript(run.text) ? run.csFont : null,
         charSpacingTwips: run.charSpacingTwips ?? null,
@@ -3016,6 +3017,7 @@ function runFromMarks(text: string, marks: PmMark[]): Run {
       if (mark.attrs?.sizeHalfPoints) run.sizeHalfPoints = Number(mark.attrs.sizeHalfPoints)
       if (mark.attrs?.font) run.font = String(mark.attrs.font)
       if (mark.attrs?.fontAscii) run.fontAscii = String(mark.attrs.fontAscii)
+      if (mark.attrs?.eastAsiaFont) run.eastAsiaFont = String(mark.attrs.eastAsiaFont)
       if (mark.attrs?.csFont) run.csFont = String(mark.attrs.csFont)
       if (mark.attrs?.charSpacingTwips != null)
         run.charSpacingTwips = Number(mark.attrs.charSpacingTwips)
@@ -3105,6 +3107,7 @@ function runStyleKey(run: Run): string {
     run.sizeHalfPoints ?? null,
     run.font ?? null,
     run.fontAscii ?? null,
+    run.eastAsiaFont ?? null,
     run.highlight ?? null,
     run.shading ?? null,
     run.textOutline ? JSON.stringify(run.textOutline) : null,
@@ -3158,6 +3161,7 @@ function normalizedRuns(runs: Run[]): unknown[] {
           r.sizeHalfPoints ?? null,
           r.font ?? null,
           r.fontAscii ?? null,
+          r.eastAsiaFont ?? null,
           r.highlight ?? null,
           r.vertAlign ?? null,
           r.link?.href ?? null,

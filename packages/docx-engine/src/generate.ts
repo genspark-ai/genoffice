@@ -2645,11 +2645,15 @@ function freshRFontsXml(
   font: string | undefined,
   fontAscii: string | undefined,
   fontCs?: string,
+  eastAsiaFont?: string,
 ): string {
-  const a = escapeXmlAttr(fontAscii ?? font ?? fontCs ?? '')
-  const ea = font ? ` w:eastAsia="${escapeXmlAttr(font)}"` : ''
-  const cs = fontCs ? escapeXmlAttr(fontCs) : a
-  return `<w:rFonts w:ascii="${a}"${ea} w:hAnsi="${a}" w:cs="${cs}"/>`
+  // Older callers use a lone primary font for every slot. Explicit slot edits
+  // must leave the other slots absent so their style/theme inheritance survives.
+  const legacy = font && fontAscii === undefined && eastAsiaFont === undefined ? font : undefined
+  const ascii = fontAscii ?? legacy
+  const ea = eastAsiaFont ?? font
+  const cs = fontCs ?? legacy
+  return `<w:rFonts${ascii ? ` w:ascii="${escapeXmlAttr(ascii)}"` : ''}${ea ? ` w:eastAsia="${escapeXmlAttr(ea)}"` : ''}${ascii ? ` w:hAnsi="${escapeXmlAttr(ascii)}"` : ''}${cs ? ` w:cs="${escapeXmlAttr(cs)}"` : ''}/>`
 }
 
 /**
@@ -2674,7 +2678,11 @@ function mergeRFontsXml(rawXml: string, run: Run): string {
     set('w:ascii', 'w:asciiTheme', run.fontAscii)
     set('w:hAnsi', 'w:hAnsiTheme', run.fontAscii)
   }
-  if (run.font && run.font !== run.themeRFonts?.font && (hadEastAsia || run.font !== rawPrimary)) {
+  if (
+    run.font &&
+    run.font !== run.themeRFonts?.font &&
+    (hadEastAsia || run.font !== rawPrimary || run.eastAsiaFont !== undefined)
+  ) {
     set('w:eastAsia', 'w:eastAsiaTheme', run.font)
   }
   if (run.fontCs) set('w:cs', 'w:cstheme', run.fontCs)
@@ -2719,7 +2727,10 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   const styleId = run.styleId ?? (insideLink ? 'Hyperlink' : undefined)
   if (styleId) out.push({ name: 'w:rStyle', xml: `<w:rStyle w:val="${escapeXmlAttr(styleId)}"/>` })
   if (run.font || run.fontAscii || run.fontCs) {
-    out.push({ name: 'w:rFonts', xml: freshRFontsXml(run.font, run.fontAscii, run.fontCs) })
+    out.push({
+      name: 'w:rFonts',
+      xml: freshRFontsXml(run.font, run.fontAscii, run.fontCs, run.eastAsiaFont),
+    })
   }
   // the Cs twins carry the same flag for complex-script text; without them clicking Bold
   // on Arabic or Hebrew changes nothing on screen, which is what Word writes too
@@ -2808,6 +2819,9 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
             (run.font !== undefined && run.font === run.themeRFonts?.font)) &&
           (ascii === run.fontAscii ||
             (run.fontAscii !== undefined && run.fontAscii === run.themeRFonts?.fontAscii)) &&
+          (run.eastAsiaFont === undefined ||
+            rawAttr(attrs, 'w:eastAsia') === run.eastAsiaFont ||
+            run.eastAsiaFont === run.themeRFonts?.font) &&
           (run.fontCs === undefined || rawAttr(attrs, 'w:cs') === run.fontCs)
         )
       }

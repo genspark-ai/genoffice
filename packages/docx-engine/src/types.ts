@@ -62,7 +62,7 @@ export interface Run {
   /** Latin-slot font (w:rFonts ascii/hAnsi) when the run declares one; may equal `font`.
    * Kept separate so editing one script's font never flattens the other slot. */
   fontAscii?: string
-  /** the run's own East Asian slot (display-only; `font` falls back to the Latin slots) */
+  /** Explicit East Asian slot; unlike `font`, never derived from a Latin fallback. */
   eastAsiaFont?: string
   /** w:lang w:eastAsia of the run or its character style (display-only: Word applies
    *  kinsoku / hanging / punctuation compression only under a CJK East Asian language) */
@@ -1836,6 +1836,7 @@ export interface StyleDisplay {
   strike?: boolean
   /** character border (rPr w:bdr) inherited by runs without their own */
   bdr?: Run['bdr']
+  eastAsiaFont?: string
   font?: string
   /** latin-slot font when it differs from the east-asian one (w:ascii/w:hAnsi) */
   fontAscii?: string

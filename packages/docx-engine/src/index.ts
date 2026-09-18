@@ -112,6 +112,8 @@ export {
 } from './watermark'
 export {
   mergeStyleXml,
+  mergeDefaultFontsXml,
+  type DefaultFonts,
   pendingHeadingLevel,
   type StyleHeadingInfo,
   type StyleParaProps,
@@ -146,3 +148,5 @@ export {
   type ListItemRef,
   type ListMarkerInfo,
 } from './list-markers'
+
+export { previewFontSettings } from './font-settings'

@@ -326,6 +326,7 @@ export async function parseStyles(
     'strike',
     'font',
     'fontAscii',
+    'eastAsiaFont',
     'csFont',
     'caps',
     'bdr',
@@ -533,6 +534,7 @@ function styleDisplayOf(
     const font = rf.eastAsia ?? rf.ascii ?? rf.hAnsi
     const fontAscii = rf.ascii ?? rf.hAnsi
     if (fontAscii) display.fontAscii = fontAscii
+    if (rf.eastAsia && !rf.eaSlotEmpty) display.eastAsiaFont = rf.eastAsia
     if (rf.cs) display.csFont = rf.cs
     if (font) display.font = font
     if (rf.eaSlotEmpty && font && font === rf.eastAsia) display.eaSlotEmpty = true

@@ -1,3 +1,4 @@
+import { scriptFontHtml } from './editor/script-fonts'
 import { DOC_CSS_COMMITTED_EVENT } from './editor/cjk-punct-shrink'
 import { justifyShrinkPluginKey } from './editor/justify-shrink'
 import {
@@ -66,6 +67,8 @@ import {
   pendingHeadingLevel,
   pictureWatermarkPreviewImage,
   type StyleUpsert,
+  type DefaultFonts,
+  previewFontSettings,
   type ThemeColors,
   type ThemeFonts,
   type PictureWatermarkSpec,
@@ -261,7 +264,7 @@ import { InkOverlay } from './components/InkOverlay'
 import { collectRevisions, gotoRevision, type TrackChangesStorage } from './editor/revisions'
 import { NavPane } from './components/NavPane'
 import { Ruler } from './components/Ruler'
-import { docBodyFont, docLineFactor, docThemeCss } from './doc-style-css'
+import { docBodyFont, docLineFactor, docThemeCss, docStyleCss } from './doc-style-css'
 import { isDocDirty } from './doc-dirty'
 import {
   EMPTY_HF_VARIANTS,
@@ -285,6 +288,7 @@ import {
   writeRecoveryCopy as writeRecoveryCopyImpl,
   type FileActionContext,
   type PendingPdfExport,
+  currentDocGeneration,
 } from './file-actions'
 import { isPhasedContentPending } from './phased-content'
 
@@ -826,6 +830,9 @@ export function App() {
   }>({})
   const [showComments, setShowComments] = useState(false)
   /** Style definitions pending write-back (key = styleId), saved via SaveOptions.styleUpserts */
+  const [defaultFonts, setDefaultFonts] = useState<DefaultFonts>()
+  const fontSettingsVersionRef = useRef(0)
+  const fontSettingsPendingRef = useRef<Promise<void> | null>(null)
   const [styleUpserts, setStyleUpserts] = useState<Record<string, StyleUpsert>>({})
   const [comments, setCommentsState] = useState<CommentInfo[]>([])
   // Synchronous mirror of the comments state: an agent turn can run several
@@ -1636,7 +1643,7 @@ export function App() {
   // Split pane: keep the read-only bottom copy in sync with the editor (debounced)
   useEffect(() => {
     if (!splitView || !editor) return
-    const sync = () => setSplitHtml(editor.getHTML())
+    const sync = () => setSplitHtml(scriptFontHtml(editor.getHTML()))
     sync()
     let timer = 0
     const onUpdate = () => {
@@ -1729,6 +1736,13 @@ export function App() {
     setPendingNumbering,
     styleUpserts,
     setStyleUpserts,
+    defaultFonts,
+    setDefaultFonts,
+    fontSettingsVersionRef,
+    settleFontSettings: async () => {
+      await fontSettingsPendingRef.current?.catch(() => {})
+      return fileCtxRef.current
+    },
     comments,
     commentsDirty,
     setComments,
@@ -5188,6 +5202,53 @@ export function App() {
   // between renders, so a define_style followed by applyStyle must see the pending entry.
   const aiStyleUpsertsRef = useRef(styleUpserts)
   aiStyleUpsertsRef.current = styleUpserts
+  const onFontSettings = useCallback((scope: string, patch: DefaultFonts): Promise<void> => {
+    const task = (async () => {
+      const ctx = fileCtxRef.current
+      const generation = currentDocGeneration()
+      if (!ctx.doc || !ctx.editor?.isEditable) return
+      const upserts = { ...aiStyleUpsertsRef.current }
+      let defaults = ctx.defaultFonts
+      if (scope === 'defaults') defaults = { ...defaults, ...patch }
+      else {
+        const styleId = scope.slice(6)
+        const style = ctx.doc.parsed.styles.get(styleId)
+        if (!style || (style.type !== 'paragraph' && style.type !== 'character')) return
+        upserts[styleId] = {
+          ...upserts[styleId],
+          styleId,
+          rPr: { ...upserts[styleId]?.rPr, ...patch },
+        }
+      }
+      fontSettingsVersionRef.current++
+      const resolved = await previewFontSettings(ctx.doc.parsed, Object.values(upserts), defaults)
+      // In-flight saves see the version bump; new saves wait for this task.
+      if (currentDocGeneration() !== generation || !fileCtxRef.current.doc) return
+      const latestDoc = fileCtxRef.current.doc
+      const parsed = { ...latestDoc.parsed, ...resolved }
+      aiStyleUpsertsRef.current = upserts
+      setStyleUpserts(upserts)
+      setDefaultFonts(defaults)
+      ctx.editor.storage.listNumbering.styles = resolved.styles
+      ctx.editor.storage.listNumbering.docDefaults = resolved.docDefaults
+      setDocCss(docStyleCss(parsed))
+      const nextDoc = { ...latestDoc, parsed }
+      setDoc((prev) => (prev ? { ...prev, parsed } : prev))
+      // Save/recovery callers resuming before React commits need the same snapshot.
+      fileCtxRef.current = {
+        ...fileCtxRef.current,
+        doc: nextDoc,
+        styleUpserts: upserts,
+        defaultFonts: defaults,
+      }
+      ctx.dirtyRef.current = true
+    })()
+    fontSettingsPendingRef.current = task
+    return task.finally(() => {
+      if (fontSettingsPendingRef.current === task) fontSettingsPendingRef.current = null
+    })
+  }, [])
+
   const aiDocExtras = useMemo<AiDocExtras>(
     () => ({
       styles: {
@@ -5730,6 +5791,7 @@ export function App() {
         hasDoc={!!doc}
         blocks={doc?.parsed.blocks ?? EMPTY_BLOCKS}
         styles={ribbonStyles}
+        onFontSettings={onFontSettings}
         docDefaults={doc?.parsed.docDefaults}
         showAi={showAi}
         section={sections[activeSection]?.settings ?? section}

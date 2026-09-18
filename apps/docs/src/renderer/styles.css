@@ -11177,3 +11177,24 @@ tr > .page-gap-cut {
   font-size: 12px;
   cursor: pointer;
 }
+
+/* Both script slots remain visible while editing mixed-language text. */
+.rb-font-slot-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-right: 4px;
+  white-space: nowrap;
+}
+.rb-font-scope-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.rb-font-scope-row select {
+  max-width: 190px;
+  font: inherit;
+  color: inherit;
+  border: 0;
+  background: transparent;
+}

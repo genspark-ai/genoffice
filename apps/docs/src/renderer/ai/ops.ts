@@ -551,8 +551,9 @@ function buildTextMarkPatch(op: Op): Record<string, unknown> {
   if (op.fontFamily !== undefined) {
     // route to the matching rFonts slot; clearing clears both
     const v = op.fontFamily as string | null
-    if (!v) Object.assign(patch, { font: null, fontAscii: null })
-    else if (isEastAsianFontName(v)) patch.font = v
+    if (!v) Object.assign(patch, { font: null, fontAscii: null, eastAsiaFont: null })
+    else if (isEastAsianFontName(v))
+      Object.assign(patch, { font: v, eastAsiaFont: v, eaSlotEmpty: false })
     else patch.fontAscii = v
   }
   if (op.color !== undefined) patch.color = normalizeHex(op.color, op.op, 'color')

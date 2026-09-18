@@ -78,6 +78,7 @@ describe('isDocDirty', () => {
     ['hfVariantsDirty', { hfVariantsDirty: ['headerFirst'] }],
     ['pgNumDirtySections', { pgNumDirtySections: [0] }],
     ['sectionHfEdits', { sectionHfEdits: { '3:header': {} } }],
+    ['defaultFonts', { defaultFonts: { eastAsiaFont: 'SimSun' } }],
     ['styleUpserts', { styleUpserts: { Heading1: {} } }],
     ['pgNumEdit', { pgNumEdit: { fmt: 'decimal' } }],
     ['trailingStartType', { trailingStartType: 'nextPage' }],
@@ -96,6 +97,7 @@ describe('resetCrossDocEditState', () => {
       setPgNumDirtySections: vi.fn(),
       setPendingNumbering: vi.fn(),
       setStyleUpserts: vi.fn(),
+      setDefaultFonts: vi.fn(),
     }
   }
 
@@ -109,6 +111,7 @@ describe('resetCrossDocEditState', () => {
     expect(sink.setPgNumDirtySections).toHaveBeenCalledWith([])
     expect(sink.setPendingNumbering).toHaveBeenCalledWith({ newDefs: [], restartNums: [] })
     expect(sink.setStyleUpserts).toHaveBeenCalledWith({})
+    expect(sink.setDefaultFonts).toHaveBeenCalledWith(undefined)
   })
 
   it('leaves a state carrying those edits clean afterwards', () => {

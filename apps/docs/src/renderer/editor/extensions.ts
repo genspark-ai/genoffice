@@ -1,3 +1,4 @@
+import { ScriptFonts } from './script-fonts'
 import { Editor, Extension, Node } from '@tiptap/core'
 import type { ChainedCommands, RawCommands } from '@tiptap/core'
 import { Gapcursor, UndoRedo } from '@tiptap/extensions'
@@ -5955,6 +5956,7 @@ export const AutoLinkOnDelimiter = Extension.create({
 })
 
 export const editorExtensions = [
+  ScriptFonts,
   DocDocument,
   DocText,
   DocHardBreak,
