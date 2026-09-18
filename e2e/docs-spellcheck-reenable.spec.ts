@@ -57,15 +57,21 @@ test('re-enabling spellcheck respells existing text without user input', async (
 
     // re-enable via the ribbon only — no click into the text, no typing
     await spelling.click()
-    await wait(3500)
-    const on = await redCount(editor)
+    // Native spellchecking and painting complete asynchronously, especially
+    // on shared CI runners. Wait for the original visual requirements rather
+    // than sampling once after a fixed delay; missing markers still fail.
+    await expect
+      .poll(() => redCount(editor), {
+        message: 'existing text regains its spelling markers after re-enabling',
+        timeout: 15_000,
+        intervals: [250, 500, 1000],
+      })
+      .toBeGreaterThanOrEqual(Math.max(off + 101, Math.floor(baseline * 0.8)))
 
     const textAfter = await editor.evaluate(
       () => document.querySelector('.doc-page')?.textContent ?? '',
     )
 
-    expect(on).toBeGreaterThan(off + 100) // squiggles came back…
-    expect(on).toBeGreaterThanOrEqual(Math.floor(baseline * 0.8)) // …on the existing lines
     expect(textAfter).toBe(textBefore) // and the respell kick left no trace
     expect(textAfter).not.toContain('​')
     expect(textAfter).not.toContain('  ')

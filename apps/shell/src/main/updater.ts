@@ -11,12 +11,7 @@ import type {
   UpdateUiState,
   UpdateUiStrings,
 } from '../shared/update-api'
-import {
-  closeUpdateWindow,
-  isUpdateWindowOpen,
-  pushUpdateState,
-  showUpdateWindow,
-} from './update-window'
+import { closeUpdateWindow, pushUpdateState, showUpdateWindow } from './update-window'
 
 /**
  * Full-package auto-update over the generic provider (Azure CDN).
@@ -450,8 +445,6 @@ function manualDownloadUrlFor(info: UpdateInfo): string | null {
 }
 
 let started = false
-// version the user declined this session — don't nag again until next launch
-let dismissedVersion: string | null = null
 // re-shows the GENOFFICE_FAKE_UPDATE window so the manual check is
 // exercisable in dev runs too
 let fakeShowAgain: (() => void) | null = null
@@ -536,10 +529,10 @@ export async function checkForUpdatesNow(): Promise<void> {
       if (response === 1) void shell.openExternal(DOWNLOAD_PAGE_URL)
       return
     }
-    dismissedVersion = null
     let result
     try {
       result = await autoUpdater.checkForUpdates()
+      if (result === null) throw new Error('Update check was skipped')
     } catch (err) {
       log('manual check failed:', (err as Error)?.message ?? err)
       await dialog.showMessageBox({
@@ -554,7 +547,7 @@ export async function checkForUpdatesNow(): Promise<void> {
     }
     // an available update already opened the update window via the
     // 'update-available' handler; only "nothing new" needs a dialog here
-    if (result?.isUpdateAvailable) return
+    if (result.isUpdateAvailable) return
     await dialog.showMessageBox({
       type: 'info',
       title: tUpd(lang, 'updTitle'),
@@ -597,8 +590,8 @@ export function initAutoUpdater(
   // back off since a beta user switching to stable must not downgrade
   autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = false
-  // if the user picked "later" after download, install on normal quit
-  autoUpdater.autoInstallOnAppQuit = true
+  // Downloading is not consent to install: "later" must also survive app quit.
+  autoUpdater.autoInstallOnAppQuit = false
   // full-package policy: never attempt blockmap differential downloads
   // (CI does not publish .blockmap files)
   autoUpdater.disableDifferentialDownload = true
@@ -648,7 +641,6 @@ export function initAutoUpdater(
       setImmediate(() => autoUpdater.quitAndInstall(true, true))
     },
     onLater: () => {
-      dismissedVersion = latestSeenVersion
       closeUpdateWindow()
     },
     onOpenDownload: () => {
@@ -664,20 +656,17 @@ export function initAutoUpdater(
   })
 
   autoUpdater.on('update-available', (info: UpdateInfo) => {
-    if (info.version === dismissedVersion) return
+    // Only an explicit check may interrupt the user with an update offer.
+    // Background checks must not open or change the active update window.
+    if (!manualCheckInFlight) return
     const sameVersionRecheck = info.version === latestSeenVersion
     // progress/downloaded/error events carry no version, so a newer release
     // landing while the previous one is downloading or already downloaded
-    // stays out until that flow ends (it installs on quit and the next launch
-    // picks up the newer one); it must not hijack the open window
+    // stays out until the user installs it; it must not hijack the open window
     if (!sameVersionRecheck && (downloadInFlight || phase === 'downloaded')) {
       log('update available:', info.version, 'ignored while', latestSeenVersion, 'is', phase)
-      // an explicit check still owes feedback: bring back the flow in progress
-      // (a background recheck stays quiet)
-      if (manualCheckInFlight && !isUpdateWindowOpen()) {
-        const version = latestSeenVersion ?? info.version
-        showUpdateWindow(getWindow(), { ...initialState(version), phase, percent }, actions)
-      }
+      const version = latestSeenVersion ?? info.version
+      showUpdateWindow(getWindow(), { ...initialState(version), phase, percent }, actions)
       return
     }
     if (!sameVersionRecheck) {
@@ -688,11 +677,7 @@ export function initAutoUpdater(
     latestSeenVersion = info.version
     manualDownloadUrl = manualDownloadUrlFor(info)
     log('update available:', info.version)
-    // a periodic recheck resolving to the version the open dialog already
-    // shows must not reset its phase to 'available' — that would wipe an
-    // in-progress download or a terminal 'manual' fallback back to the
-    // "Update Now" offer
-    if (sameVersionRecheck && isUpdateWindowOpen()) return
+    // Reuse and focus the existing window, preserving progress and retry state.
     showUpdateWindow(getWindow(), { ...initialState(info.version), phase, percent }, actions)
   })
 
