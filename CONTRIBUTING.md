@@ -72,6 +72,11 @@ The same philosophy holds in sheets and slides: the original file is the
 source of truth, edits are applied as narrow patches, and everything the
 editor didn't touch survives the round trip untouched.
 
+## Docs
+
+- [CLI / MCP matrix](docs/cli-mcp-matrix.md) — CLI commands, MCP tools, path policy and audit log.
+- [Round-trip guarantee](docs/roundtrip-guarantee.md) — per-format byte-preservation promise and test pattern.
+
 ## Getting started
 
 Prerequisites: Node 22+, npm 10+, and a Rust toolchain (`cargo` on PATH,
