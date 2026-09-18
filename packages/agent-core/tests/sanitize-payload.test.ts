@@ -39,6 +39,40 @@ describe('sanitizeAgentPayload', () => {
     )
   })
 
+  it('masks unquoted password assignments', () => {
+    expect(sanitizeAgentPayload('password=hunter2')).toBe('password=[REDACTED_SECURE_TOKEN]')
+    expect(sanitizeAgentPayload('password: hunter2 done')).toBe(
+      'password: [REDACTED_SECURE_TOKEN] done',
+    )
+  })
+
+  it('masks unquoted api_key and secret_key assignments', () => {
+    expect(sanitizeAgentPayload('api_key=AKIA1234567890')).toBe('api_key=[REDACTED_SECURE_TOKEN]')
+    expect(sanitizeAgentPayload('secret_key: abc123xyz done')).toBe(
+      'secret_key: [REDACTED_SECURE_TOKEN] done',
+    )
+  })
+
+  it('stops unquoted values at comma, semicolon, whitespace, or quote', () => {
+    expect(sanitizeAgentPayload('password=hunter2, next=1')).toBe(
+      'password=[REDACTED_SECURE_TOKEN], next=1',
+    )
+    expect(sanitizeAgentPayload('password=hunter2; done')).toBe(
+      'password=[REDACTED_SECURE_TOKEN]; done',
+    )
+    expect(sanitizeAgentPayload('api_key=abc123 done')).toBe('api_key=[REDACTED_SECURE_TOKEN] done')
+  })
+
+  it('masks quoted api_key assignments while keeping the separator', () => {
+    const input = `api_key = "AKIA1234567890"`
+    expect(sanitizeAgentPayload(input)).toBe(`api_key = "[REDACTED_SECURE_TOKEN]"`)
+  })
+
+  it('leaves prose without an assignment separator untouched', () => {
+    const input = 'my password is hunter2 and the api_key needs review'
+    expect(sanitizeAgentPayload(input)).toBe(input)
+  })
+
   it('returns unrelated prose unchanged', () => {
     const input = 'Summarize the quarterly report and draft an email to the team.'
     expect(sanitizeAgentPayload(input)).toBe(input)

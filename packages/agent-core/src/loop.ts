@@ -703,7 +703,13 @@ export class AgentLoop<TSnapshot = unknown> {
         const output = call.truncated
           ? 'Tool arguments were cut off by the output length limit; the tool was not executed. Split this operation into several smaller tool calls (less content per call) and try again.'
           : `Tool input JSON failed to parse; the tool was not executed: ${call.inputError}\nFix the arguments (make sure quotes inside strings are escaped) and call again.`
-        results.push({ id: call.id, name: call.name, output, isError: true })
+        // Sanitize on store: rejected input echoes back to the model next turn.
+        results.push({
+          id: call.id,
+          name: call.name,
+          output: sanitizeAgentPayload(output),
+          isError: true,
+        })
         events?.onToolExecuted?.({
           call,
           execution: { output, isError: true, summary: call.name },
@@ -733,7 +739,10 @@ export class AgentLoop<TSnapshot = unknown> {
       results.push({
         id: call.id,
         name: call.name,
-        output: execution.output,
+        // Sanitize on store: file reads may contain secrets, and history is
+        // resent to the remote model on later turns. The event keeps the
+        // original output for local UI display.
+        output: sanitizeAgentPayload(execution.output),
         isError: execution.isError,
       })
       events?.onToolExecuted?.({
@@ -822,11 +831,20 @@ export class AgentLoop<TSnapshot = unknown> {
  * prose is never rewritten.
  */
 export function sanitizeAgentPayload(payload: string): string {
-  return payload
-    .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
-    .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
-    .replace(
-      /(password|passwd|secret_key|private_key)(\s*[:=]\s*)["'][^"']+["']/gi,
-      '$1$2"[REDACTED_SECURE_TOKEN]"',
-    )
+  return (
+    payload
+      .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
+      .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
+      .replace(
+        /(password|passwd|private[_-]?key|secret[_-]?key|api[_-]?key|secret)(\s*[:=]\s*)["'][^"']+["']/gi,
+        '$1$2"[REDACTED_SECURE_TOKEN]"',
+      )
+      // Unquoted assignments (password=hunter2, api_key=abc123): the value runs
+      // to whitespace, comma, semicolon, or quote and is capped at 256 chars.
+      // A plain character class keeps the match linear (no nested quantifiers).
+      .replace(
+        /(password|passwd|private[_-]?key|secret[_-]?key|api[_-]?key|secret)(\s*[:=]\s*)[^\s,;'"`]{1,256}/gi,
+        '$1$2[REDACTED_SECURE_TOKEN]',
+      )
+  )
 }
