@@ -5,7 +5,7 @@ const port = Number(process.env.MARKDOWN_DEV_PORT) || 5177
 /** Browser-only renderer coverage: it must not boot the Electron shell. */
 export default defineConfig({
   testDir: './tests/browser',
-  testMatch: 'roundtrip-serializer.spec.ts',
+  testMatch: '*.spec.ts',
   outputDir: '../../test-results/markdown-roundtrip',
   timeout: 30_000,
   workers: 1,
