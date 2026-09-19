@@ -12,15 +12,24 @@ export interface OutlineNode {
 function Item({
   node,
   depth,
+  currentDest,
   onGo,
 }: {
   node: OutlineNode
   depth: number
+  currentDest?: unknown
   onGo: (n: OutlineNode) => void
 }): ReactElement {
+  const hasChildren = (node.items?.length ?? 0) > 0
+  const isCurrent = currentDest != null && node.dest != null && node.dest === currentDest
   return (
     <>
       <button
+        type="button"
+        role="treeitem"
+        aria-level={depth + 1}
+        aria-expanded={hasChildren ? true : undefined}
+        aria-current={isCurrent ? true : undefined}
         className="pdf-outline-item"
         style={{
           paddingLeft: 10 + depth * 14,
@@ -33,7 +42,7 @@ function Item({
         {node.title}
       </button>
       {node.items?.map((c, i) => (
-        <Item key={i} node={c} depth={depth + 1} onGo={onGo} />
+        <Item key={i} node={c} depth={depth + 1} currentDest={currentDest} onGo={onGo} />
       ))}
     </>
   )
@@ -43,11 +52,20 @@ function Item({
 export function OutlinePanel({
   outline,
   note,
+  label,
+  emptyLabel,
+  currentDest,
   onGoToDest,
 }: {
   outline: OutlineNode[]
   /** Caption above the tree, e.g. when the tree was derived from headings */
   note?: string
+  /** Accessible name for the tree; caller passes t('outline') (English fallback kept local) */
+  label?: string
+  /** Empty-state copy; caller passes t('searchNoResults') (English fallback kept local) */
+  emptyLabel?: string
+  /** Destination of the current location, when known; matching item gets aria-current */
+  currentDest?: unknown
   onGoToDest: (dest: unknown) => void
 }): ReactElement {
   const onGo = (n: OutlineNode) => {
@@ -55,11 +73,17 @@ export function OutlinePanel({
     else if (n.dest != null) onGoToDest(n.dest)
   }
   return (
-    <div className="pdf-outline">
+    <div className="pdf-outline" role="tree" aria-label={label ?? 'Outline'}>
       {note && <div className="pdf-outline-note">{note}</div>}
-      {outline.map((n, i) => (
-        <Item key={i} node={n} depth={0} onGo={onGo} />
-      ))}
+      {outline.length === 0 ? (
+        <div className="pdf-outline-empty" role="status">
+          {emptyLabel ?? 'No results'}
+        </div>
+      ) : (
+        outline.map((n, i) => (
+          <Item key={i} node={n} depth={0} currentDest={currentDest} onGo={onGo} />
+        ))
+      )}
     </div>
   )
 }

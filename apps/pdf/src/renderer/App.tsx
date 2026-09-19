@@ -6793,6 +6793,8 @@ export default function App() {
                 <OutlinePanel
                   outline={outline}
                   note={outlineGenerated ? t('outlineGenerated') : undefined}
+                  label={t('outline')}
+                  emptyLabel={t('searchNoResults')}
                   onGoToDest={(dest) => void goToDest(dest)}
                 />
               </div>
@@ -8367,7 +8369,7 @@ export default function App() {
               </div>
             )}
             {deleteToast && (
-              <div className="pdf-toast">
+              <div className="pdf-toast" role="status">
                 <span>{t(deletedInsertedText ? 'insertedTextDeleted' : 'annotationDeleted')}</span>
                 <button
                   type="button"
@@ -8381,7 +8383,7 @@ export default function App() {
               </div>
             )}
             {notice && (
-              <div className="pdf-toast pdf-toast-notice">
+              <div className="pdf-toast pdf-toast-notice" role="status">
                 <span>{notice}</span>
                 <button type="button" onClick={() => setNotice(null)}>
                   {t('ok')}
