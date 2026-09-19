@@ -65,6 +65,7 @@ export {
   parseChartPartXml,
   patchChartPartXml,
   lumHex,
+  colLetter,
   CHART_WORKBOOK_REL_TYPE,
   type ChartPatch,
   type ChartSeriesPatch,

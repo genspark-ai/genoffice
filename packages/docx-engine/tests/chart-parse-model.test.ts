@@ -183,6 +183,10 @@ describe('parseChartPartXml doughnut hole and legend position', () => {
     expect(parseChartPartXml(doughnut(''), 'p')!.holePct).toBe(50)
   })
 
+  it('defaults the hole to 50% when c:holeSize is unparseable', () => {
+    expect(parseChartPartXml(doughnut('<c:holeSize val="large"/>'), 'p')!.holePct).toBe(50)
+  })
+
   it('leaves plain pies without a hole', () => {
     const xml = chartSpace(`<c:pieChart><c:varyColors val="1"/>${pieSer}</c:pieChart>`)
     expect(parseChartPartXml(xml, 'p')!.holePct).toBeUndefined()
