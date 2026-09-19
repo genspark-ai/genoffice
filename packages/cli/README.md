@@ -43,6 +43,11 @@ genoffice docs read report.docx [--range 0-9] [--html] [--full] [--comments] [--
 genoffice docs apply report.docx --ops ops.json [--dry-run]           # apply_ops entries + insert_content / replace_blocks / insert_image / insert_chart / edit_chart / set_header_footer / reply_comment / resolve_comment
 genoffice docs check report.docx --json                               # fields without results, broken bookmark references, stale TOC, missing images, empty charts/headings, heading level skips, placeholder text, pending revisions, open comments; exit 0
 genoffice guide docs                                                   # op signatures + restricted-HTML rules (`guide <domain> --json` = the catalog with each op's schema and a fingerprint)
+genoffice selection report.docx --json   # what the user has selected in the editor showing the file
+genoffice skill list   # coding agents found on this machine and the skill version each has
+genoffice skill install --dir ./skills --force   # copy the bundled skill into a skills directory
+genoffice install-cli   # put genoffice on the PATH
+genoffice mcp --http 3000 [--host 127.0.0.1] [--token secret]   # Streamable HTTP for clients on other machines; omit --http for stdio
 ```
 
 Word and Markdown commands run the docs and markdown editors under jsdom (installed once per process, loaded lazily). Those modules are imported from the app renderers by relative path until they move into packages of their own.
