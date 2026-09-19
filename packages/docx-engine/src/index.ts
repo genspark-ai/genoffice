@@ -127,7 +127,13 @@ export {
 export { bibliographyLine, citationText, parseSourcesXml } from './sources'
 export { parseZoteroDocumentDataXml, patchZoteroDocumentDataXml } from './zotero-doc-props'
 export { readThemeColors, readThemeFonts } from './theme'
-export { hashProtectionPassword, verifyProtectionPassword } from './protection'
+export {
+  DEFAULT_SPIN_COUNT,
+  MAX_SPIN_COUNT,
+  hashProtectionPassword,
+  resolveSpinCount,
+  verifyProtectionPassword,
+} from './protection'
 export {
   decodeSymbolChar,
   decodeSymbolText,
