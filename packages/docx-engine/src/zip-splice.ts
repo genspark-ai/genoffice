@@ -91,7 +91,13 @@ export async function readZipEntries(src: ByteSource): Promise<ZipEntry[]> {
   if (count === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) {
     throw new Error('zip: zip64 archives are not supported')
   }
+  if (cdOffset > src.size || cdSize > src.size || cdOffset + cdSize > src.size) {
+    throw new Error('zip: corrupt central directory')
+  }
   const cd = await src.read(cdOffset, cdSize)
+  if (cd.length < cdSize) {
+    throw new Error('zip: corrupt central directory')
+  }
   const entries: ZipEntry[] = []
   let pos = 0
   for (let i = 0; i < count; i++) {
@@ -131,13 +137,18 @@ export async function readZipEntries(src: ByteSource): Promise<ZipEntry[]> {
   // the local header's name/extra lengths may differ from the central copy
   for (const e of entries) {
     const local = await src.read(e.dataOffset, 30)
-    if (local.readUInt32LE(0) !== SIG_LOCAL)
+    if (local.length < 30 || local.readUInt32LE(0) !== SIG_LOCAL)
       throw new Error(`zip: corrupt local header for ${e.name}`)
     e.dataOffset += 30 + local.readUInt16LE(26) + local.readUInt16LE(28)
   }
   return entries
 }
 
+/**
+ * Opens a file-backed archive. The caller owns the handle and must call
+ * close() in a finally block. The handle is closed automatically when
+ * opening fails.
+ */
 export async function openZipFile(path: string): Promise<ZipFile> {
   const fh = await open(path, 'r')
   try {
@@ -220,6 +231,7 @@ export interface SlimDocx {
 /**
  * Copy of the archive with its lazy-media parts replaced by placeholders
  * naming `hash`; null when less than `minBytes` of media would be stripped.
+ * Does not close zip; the caller retains ownership of the handle.
  */
 export async function slimDocx(
   zip: ZipFile,
@@ -276,6 +288,11 @@ export async function lazyMediaHashesIn(bytes: Buffer): Promise<Set<string>> {
 /**
  * Saved archive with every placeholder swapped back for the original part
  * bytes; the input is returned as-is when it holds no placeholders.
+ *
+ * Takes ownership of every ZipFile returned by sourceFor and closes each
+ * one before returning or throwing, including on error paths. Provide a
+ * fresh handle per hash (for example `() => openZipFile(path)`) and do not
+ * reuse a handle after the call.
  */
 export async function materializeDocx(
   bytes: Buffer,
@@ -285,21 +302,38 @@ export async function materializeDocx(
   const entries = await readZipEntries(src)
   const out: OutEntry[] = []
   let swapped = false
-  for (const e of entries) {
-    const raw = await src.read(e.dataOffset, e.csize)
-    const hash = await placeholderHash(src, e, raw)
-    if (!hash) {
-      out.push({ meta: e, data: raw })
-      continue
+  const cache = new Map<string, ZipFile | null>()
+  const owned = new Set<ZipFile>()
+  try {
+    for (const e of entries) {
+      const raw = await src.read(e.dataOffset, e.csize)
+      const hash = await placeholderHash(src, e, raw)
+      if (!hash) {
+        out.push({ meta: e, data: raw })
+        continue
+      }
+      let source = cache.get(hash)
+      if (source === undefined) {
+        source = await sourceFor(hash)
+        cache.set(hash, source)
+        if (source) owned.add(source)
+      }
+      const original = source?.entries.get(e.name)
+      if (!source || !original) throw new Error(`lazy media source unavailable for ${e.name}`)
+      out.push({
+        meta: { ...original, nameBytes: e.nameBytes },
+        data: await source.read(original.dataOffset, original.csize),
+      })
+      swapped = true
     }
-    const source = await sourceFor(hash)
-    const original = source?.entries.get(e.name)
-    if (!source || !original) throw new Error(`lazy media source unavailable for ${e.name}`)
-    out.push({
-      meta: { ...original, nameBytes: e.nameBytes },
-      data: await source.read(original.dataOffset, original.csize),
-    })
-    swapped = true
+    return swapped ? writeZip(out) : bytes
+  } finally {
+    for (const source of owned) {
+      try {
+        await source.close()
+      } catch {
+        // ignore close errors so the original result is preserved
+      }
+    }
   }
-  return swapped ? writeZip(out) : bytes
 }

@@ -28,11 +28,11 @@ import { IMAGE_PARAGRAPH_XML, TINY_PNG_BASE64, buildDocx } from './helpers/build
 const HASH = 'a'.repeat(64)
 const PNG = Buffer.from(TINY_PNG_BASE64, 'base64')
 
-async function tempZipFile(bytes: Uint8Array): Promise<ZipFile> {
+async function tempZipFile(bytes: Uint8Array): Promise<{ file: ZipFile; path: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'lazy-media-'))
   const path = join(dir, 'doc.docx')
   await writeFile(path, bytes)
-  return openZipFile(path)
+  return { file: await openZipFile(path), path }
 }
 
 /** one STORE entry written with a data descriptor (bit 3), as streaming writers do */
@@ -155,59 +155,62 @@ describe('zip splice', () => {
         },
       ],
     })
-    const file = await tempZipFile(original)
-    expect(await slimDocx(file, HASH, 1 << 20)).toBeNull()
-    const slim = await slimDocx(file, HASH, 1024)
-    expect(slim).not.toBeNull()
-    expect(slim!.lazyParts.sort()).toEqual(['word/media/image1.png', 'word/media/image2.png'])
+    const { file, path } = await tempZipFile(original)
+    try {
+      expect(await slimDocx(file, HASH, 1 << 20)).toBeNull()
+      const slim = await slimDocx(file, HASH, 1024)
+      expect(slim).not.toBeNull()
+      expect(slim!.lazyParts.sort()).toEqual(['word/media/image1.png', 'word/media/image2.png'])
 
-    const slimZip = await JSZip.loadAsync(slim!.bytes)
-    expect(lazyMediaHashOf(await slimZip.file('word/media/image1.png')!.async('uint8array'))).toBe(
-      HASH,
-    )
-    expect((await slimZip.file('word/media/image3.emf')!.async('uint8array')).length).toBe(
-      big.length,
-    )
-    expect(await lazyMediaHashesIn(slim!.bytes)).toEqual(new Set([HASH]))
+      const slimZip = await JSZip.loadAsync(slim!.bytes)
+      expect(
+        lazyMediaHashOf(await slimZip.file('word/media/image1.png')!.async('uint8array')),
+      ).toBe(HASH)
+      expect((await slimZip.file('word/media/image3.emf')!.async('uint8array')).length).toBe(
+        big.length,
+      )
+      expect(await lazyMediaHashesIn(slim!.bytes)).toEqual(new Set([HASH]))
 
-    const part = file.entries.get('word/media/image2.png')!
-    const served = await file.read(part.dataOffset, part.csize)
-    expect(part.method === 8 ? inflateRawSync(served) : served).toEqual(big)
+      const part = file.entries.get('word/media/image2.png')!
+      const served = await file.read(part.dataOffset, part.csize)
+      expect(part.method === 8 ? inflateRawSync(served) : served).toEqual(big)
 
-    const parsed = await parseDocx(slim!.bytes)
-    const image = parsed.blocks.find((b) => b.type === 'image')!
-    expect(image.imageDataUrl).toBe(lazyMediaUrl(HASH, 'word/media/image1.png'))
-    expect(parsed.extras.lazyMediaHashes).toEqual([HASH])
+      const parsed = await parseDocx(slim!.bytes)
+      const image = parsed.blocks.find((b) => b.type === 'image')!
+      expect(image.imageDataUrl).toBe(lazyMediaUrl(HASH, 'word/media/image1.png'))
+      expect(parsed.extras.lazyMediaHashes).toEqual([HASH])
 
-    const originals = parsed.blocks.flatMap((b) =>
-      b.docxIndex == null ? [] : [{ kind: 'original' as const, docxIndex: b.docxIndex }],
-    )
-    const sourceFor = async (hash: string) => (hash === HASH ? file : null)
-    // untouched document: the save hands back the slim bytes themselves
-    expect(
-      await materializeDocx(Buffer.from(await saveDocx(parsed, originals, {})), sourceFor),
-    ).not.toBe(slim!.bytes)
-    const saved = Buffer.from(
-      await saveDocx(
-        parsed,
-        [...originals, { kind: 'xml', xml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' }],
-        {},
-      ),
-    )
-    const full = await materializeDocx(saved, sourceFor)
-    const fullZip = await JSZip.loadAsync(full)
-    expect(Buffer.from(await fullZip.file('word/media/image1.png')!.async('uint8array'))).toEqual(
-      PNG,
-    )
-    expect(Buffer.from(await fullZip.file('word/media/image2.png')!.async('uint8array'))).toEqual(
-      big,
-    )
-    expect(await fullZip.file('word/document.xml')!.async('string')).toContain('<w:t>x</w:t>')
+      const originals = parsed.blocks.flatMap((b) =>
+        b.docxIndex == null ? [] : [{ kind: 'original' as const, docxIndex: b.docxIndex }],
+      )
+      const sourceFor = async (hash: string) => (hash === HASH ? await openZipFile(path) : null)
+      // untouched document: the save hands back the slim bytes themselves
+      expect(
+        await materializeDocx(Buffer.from(await saveDocx(parsed, originals, {})), sourceFor),
+      ).not.toBe(slim!.bytes)
+      const saved = Buffer.from(
+        await saveDocx(
+          parsed,
+          [...originals, { kind: 'xml', xml: '<w:p><w:r><w:t>x</w:t></w:r></w:p>' }],
+          {},
+        ),
+      )
+      const full = await materializeDocx(saved, sourceFor)
+      const fullZip = await JSZip.loadAsync(full)
+      expect(Buffer.from(await fullZip.file('word/media/image1.png')!.async('uint8array'))).toEqual(
+        PNG,
+      )
+      expect(Buffer.from(await fullZip.file('word/media/image2.png')!.async('uint8array'))).toEqual(
+        big,
+      )
+      expect(await fullZip.file('word/document.xml')!.async('string')).toContain('<w:t>x</w:t>')
 
-    const untouched = Buffer.from(original)
-    expect(await materializeDocx(untouched, sourceFor)).toBe(untouched)
-    await expect(materializeDocx(saved, async () => null)).rejects.toThrow(/source unavailable/)
-    await file.close()
+      const untouched = Buffer.from(original)
+      expect(await materializeDocx(untouched, sourceFor)).toBe(untouched)
+      await expect(materializeDocx(saved, async () => null)).rejects.toThrow(/source unavailable/)
+    } finally {
+      await file.close()
+    }
   })
 
   it('reuses a lazy part for an image saved by part reference', async () => {
