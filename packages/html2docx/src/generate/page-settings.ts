@@ -31,11 +31,20 @@ function partitionIr(ir) {
   return { bodyIr, docSettings, footerNode, headerNode, pageBgNode }
 }
 
+// pageBg colors arrive as bare 6-hex (no '#') from the in-page extractor.
+// Anything else (short forms, color names, empty, '#'-prefixed) must not
+// become a black full-page float: callers skip the float and w:background.
+export function parsePageBgColor(color) {
+  return typeof color === 'string' && /^[0-9a-fA-F]{6}$/.test(color) ? color : null
+}
+
 // Word ignores <w:background> when printing / exporting PDF, so a plain
 // page color must also become a behind-text float. A 1×1 PNG stretched to
-// page size costs ~70 bytes.
+// page size costs ~70 bytes. Returns null for invalid colors (see above).
 function solidColorPng(hex) {
-  const rgb = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) || 0)
+  const valid = parsePageBgColor(hex)
+  if (!valid) return null
+  const rgb = [0, 2, 4].map((i) => parseInt(valid.slice(i, i + 2), 16))
   const chunk = (type, data) => {
     const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
     const out = Buffer.alloc(body.length + 8)
@@ -214,12 +223,13 @@ function createDocument(context, parts, rendered, generator) {
     : context.pageMargins
 
   const meta = parts.docSettings?.meta || {}
+  const pageBgColor = parsePageBgColor(parts.pageBgNode?.color)
   return new Document({
     title: meta.title,
     creator: meta.author || 'html2docx',
     description: meta.description,
     keywords: meta.keywords,
-    background: parts.pageBgNode?.color ? { color: parts.pageBgNode.color } : undefined,
+    background: pageBgColor ? { color: pageBgColor } : undefined,
     numbering: { config: buildNumberingConfig() },
     styles: {
       default: {
