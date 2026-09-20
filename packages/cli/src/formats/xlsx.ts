@@ -17,7 +17,7 @@ import {
   type SheetStructuralOps,
   type XlsxMutation,
 } from '@genoffice/xlsx-gateway/gateway/xlsx-gateway'
-import type { SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
+import { maxRelationshipId, type SheetEditPlan } from '@genoffice/xlsx-gateway/gateway/xlsx-sheets'
 import { EMPTY_PAYLOADS, type GatewayPayloads } from './xlsx-gateway-ops'
 import type { WorkbookStyleEdit } from '@genoffice/xlsx-gateway/shared/edit-schemas'
 import {
@@ -982,26 +982,39 @@ const STYLES_XML =
   '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
   '</styleSheet>'
 
-/** The app's blank workbook has no stylesheet; the formula engine refuses to import such a package, so add a minimal one. */
+const STYLES_REL_TYPE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles'
+const STYLES_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml'
+
+/**
+ * The blank workbook normally ships a stylesheet of its own; this tops one up for a
+ * blank that does not, because the formula engine refuses to import such a package.
+ * Every part is added only when missing — a second styles Override or Relationship
+ * would duplicate a PartName and a Relationship Id, which makes Excel repair the file.
+ */
 export async function blankWorkbook(sheetName = 'Sheet1'): Promise<Buffer> {
   const zip = await JSZip.loadAsync(await blankXlsxBuffer(sheetName))
-  zip.file('xl/styles.xml', STYLES_XML)
+  if (!zip.file('xl/styles.xml')) zip.file('xl/styles.xml', STYLES_XML)
   const types = await zip.file('[Content_Types].xml')!.async('string')
-  zip.file(
-    '[Content_Types].xml',
-    types.replace(
-      '</Types>',
-      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>',
-    ),
-  )
+  if (!types.includes('PartName="/xl/styles.xml"')) {
+    zip.file(
+      '[Content_Types].xml',
+      types.replace(
+        '</Types>',
+        `<Override PartName="/xl/styles.xml" ContentType="${STYLES_CONTENT_TYPE}"/></Types>`,
+      ),
+    )
+  }
   const rels = await zip.file('xl/_rels/workbook.xml.rels')!.async('string')
-  zip.file(
-    'xl/_rels/workbook.xml.rels',
-    rels.replace(
-      '</Relationships>',
-      '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>',
-    ),
-  )
+  if (!rels.includes(`Type="${STYLES_REL_TYPE}"`)) {
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      rels.replace(
+        '</Relationships>',
+        `<Relationship Id="rId${maxRelationshipId(rels) + 1}" ` +
+          `Type="${STYLES_REL_TYPE}" Target="styles.xml"/></Relationships>`,
+      ),
+    )
+  }
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 

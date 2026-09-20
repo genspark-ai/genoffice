@@ -628,3 +628,53 @@ describe('formula cache policy', () => {
     },
   )
 })
+
+describe('package validity', () => {
+  /// Duplicate Relationship Ids or Override PartNames are invalid under the Open
+  /// Packaging Conventions, and Excel opens such a workbook only after repairing it.
+  async function expectSingleStylesPart(out: string): Promise<void> {
+    const rels = await part(out, 'xl/_rels/workbook.xml.rels')
+    const ids = [...rels.matchAll(/\bId="([^"]+)"/g)].map((m) => m[1])
+    expect(ids).toEqual([...new Set(ids)])
+    expect([...rels.matchAll(/\bType="[^"]*\/relationships\/styles"/g)].length).toBe(1)
+
+    const types = await part(out, '[Content_Types].xml')
+    const names = [...types.matchAll(/\bPartName="([^"]+)"/g)].map((m) => m[1])
+    expect(names).toEqual([...new Set(names)])
+    expect(names.filter((name) => name === '/xl/styles.xml')).toEqual(['/xl/styles.xml'])
+
+    expect(await part(out, 'xl/styles.xml')).toContain('<cellXfs')
+  }
+
+  it('writes the styles part once in a new workbook', async () => {
+    const dir = tempDir()
+    const table = join(dir, 'table.json')
+    writeFileSync(
+      table,
+      JSON.stringify([
+        ['item', 'qty'],
+        ['Apple', 2],
+      ]),
+    )
+    const out = join(dir, 'table.xlsx')
+    expect((await run(['create', '--type', 'xlsx', '--from', table, '--out', out])).code).toBe(0)
+    await expectSingleStylesPart(out)
+  })
+
+  it('writes the styles part once in a multi-sheet workbook', async () => {
+    const dir = tempDir()
+    const multi = join(dir, 'multi.json')
+    writeFileSync(
+      multi,
+      JSON.stringify({
+        sheets: [
+          { name: 'Data', rows: [['a', 1]] },
+          { name: 'Notes', rows: [['hello']] },
+        ],
+      }),
+    )
+    const out = join(dir, 'multi.xlsx')
+    expect((await run(['create', '--type', 'xlsx', '--from', multi, '--out', out])).code).toBe(0)
+    await expectSingleStylesPart(out)
+  })
+})
