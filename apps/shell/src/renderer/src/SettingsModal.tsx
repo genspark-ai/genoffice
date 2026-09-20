@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   AI_CUSTOM_FONT_MAX_PX,
@@ -257,6 +257,20 @@ function Field({
   )
 }
 
+/**
+ * Long enough that typing an address does not fire a request per keystroke,
+ * short enough that the picker is populated by the time the eye reaches it.
+ */
+const CUSTOM_MODELS_DEBOUNCE_MS = 400
+
+/** replace one catalog entry's model list, leaving every other entry untouched */
+function foldModels(providerId: string, models: string[]) {
+  return (current: AiCatalogEntry[]): AiCatalogEntry[] =>
+    current.map((entry) =>
+      entry.id === providerId ? { ...entry, models, defaultModel: '' } : entry,
+    )
+}
+
 /** AI model pane: provider / model / key / base URL, saved to userData/ai-settings.json */
 function AiModelPane({ t }: { t: TFunc }) {
   const [catalog, setCatalog] = useState<AiCatalogEntry[]>(
@@ -307,6 +321,64 @@ function AiModelPane({ t }: { t: TFunc }) {
       alive = false
     }
   }, [refreshCodexModels])
+
+  // A user-hosted endpoint gets the same live model list as Codex, asked of the
+  // endpoint itself. Keyed on the catalog's `needsBaseUrl` flag rather than on
+  // the literal 'custom' id, so it follows the slot rather than the name, and
+  // stays a no-op while any other provider is selected — a local server saved
+  // months ago is never contacted while Genspark is in use.
+  const endpointProvider = catalog.find(
+    (entry) => entry.id === settings?.provider && entry.needsBaseUrl,
+  )?.id
+  const endpointConfig = settings ? settings.providers[settings.provider] : undefined
+  const endpointBaseUrl = (endpointConfig?.baseUrl ?? '').trim()
+  const endpointApiKey = endpointConfig?.apiKey ?? ''
+  // The stored model decides where the pin goes below, but changing it must not
+  // send another request, so it is read when the reply lands rather than keyed on.
+  const selectedModelRef = useRef('')
+  useEffect(() => {
+    selectedModelRef.current = endpointConfig?.model ?? ''
+  })
+  /** the address that produced the list currently folded in; '' when none is */
+  const listedForRef = useRef('')
+
+  useEffect(() => {
+    if (!endpointProvider) return
+    // A list belonging to a different server — or to no server, once the address
+    // is cleared — is misinformation, so it goes the moment the address changes:
+    // the free-text box is the honest thing to show while the answer is unknown.
+    if (listedForRef.current && listedForRef.current !== endpointBaseUrl) {
+      listedForRef.current = ''
+      setCatalog(foldModels(endpointProvider, []))
+    }
+    if (!endpointBaseUrl || !window.aiOffice.getCustomModels) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      void window.aiOffice
+        .getCustomModels(endpointBaseUrl, endpointApiKey)
+        .then((live) => {
+          // A server that will not answer leaves the current list alone: a blip
+          // must not wipe a picker mid-use.
+          if (cancelled || !live || live.models.length === 0) return
+          // A hand-typed id is pinned to the top so it never vanishes from the
+          // picker. The catalog is the only thing written — writing settings
+          // here would revert whatever the user typed while the probe was in
+          // flight, since `updateConfig` rebuilds them from its own render.
+          const selected = selectedModelRef.current.trim()
+          const models =
+            selected && !live.models.includes(selected) ? [selected, ...live.models] : live.models
+          listedForRef.current = endpointBaseUrl
+          setCatalog(foldModels(endpointProvider, models))
+        })
+        .catch(() => undefined)
+    }, CUSTOM_MODELS_DEBOUNCE_MS)
+    // React's own cleanup drops a superseded reply, so a slow answer from the
+    // previous address can never overwrite a fast one from the current address.
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [endpointProvider, endpointBaseUrl, endpointApiKey])
 
   if (!settings) return null
   const provider = settings.provider
