@@ -188,6 +188,31 @@ describe('parseFileToText: pptx', () => {
     )
   })
 
+  it.each(['slides\\custom.xml', 'slides\\..\\slides\\custom.xml'])(
+    'resolves a Windows-style backslash relationship target %s',
+    async (target) => {
+      const zip = await presentationFixture(
+        '<p:sldId id="256" r:id="custom"/>',
+        slideRelationship('custom', target),
+      )
+      zip.file('ppt/slides/custom.xml', await zip.file('ppt/slides/slide10.xml')!.async('text'))
+      expect(await pptxToText(await zip.generateAsync({ type: 'uint8array' }))).toBe(
+        '## Slide 1\nSummary Slide',
+      )
+    },
+  )
+
+  it('clamps above-root dot-dot chains at the zip root', async () => {
+    const zip = await presentationFixture(
+      '<p:sldId id="256" r:id="custom"/>',
+      slideRelationship('custom', '../../ppt/slides/custom.xml'),
+    )
+    zip.file('ppt/slides/custom.xml', await zip.file('ppt/slides/slide10.xml')!.async('text'))
+    expect(await pptxToText(await zip.generateAsync({ type: 'uint8array' }))).toBe(
+      '## Slide 1\nSummary Slide',
+    )
+  })
+
   it('preserves positions across missing ids, parts, blank slides and rejected relationships', async () => {
     const zip = await presentationFixture(
       '<p:sldId id="256"/><p:sldId r:id=""/><p:sldId r:id="unknown"/>' +

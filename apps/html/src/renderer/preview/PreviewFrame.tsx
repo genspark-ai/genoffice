@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
 import { isFromInspector, type FromInspector, type ToInspector } from './inspector-protocol'
 import { DraftPreview } from './DraftPreview'
+import { useI18n } from '../i18n/locale'
 
 export interface PreviewFrameHandle {
   post(msg: ToInspector): void
@@ -30,6 +31,7 @@ export const PreviewFrame = forwardRef<PreviewFrameHandle, Props>(function Previ
   ref,
 ) {
   const frameRef = useRef<HTMLIFrameElement>(null)
+  const { t } = useI18n()
   const onMessageRef = useRef(onMessage)
   onMessageRef.current = onMessage
   const src = useMemo(() => (url ? `${url}?v=${nonce}` : 'about:blank'), [url, nonce])
@@ -54,7 +56,7 @@ export const PreviewFrame = forwardRef<PreviewFrameHandle, Props>(function Previ
       <iframe
         ref={frameRef}
         className="preview-frame"
-        title="preview"
+        title={t('viewPreview')}
         src={src}
         onLoad={onLoad}
         sandbox="allow-scripts allow-forms allow-popups allow-modals"

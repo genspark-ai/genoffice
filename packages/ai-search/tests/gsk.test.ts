@@ -26,6 +26,22 @@ describe('parseGskOutput', () => {
     expect(parseGskOutput(out)).toEqual({ a: 1 })
   })
 
+  it('skips trailing log lines after JSON', () => {
+    const out = '{"status":"ok","data":[1,2]}\n[INFO] done in 120ms'
+    expect(parseGskOutput(out)).toEqual({ status: 'ok', data: [1, 2] })
+  })
+
+  it('parses multi-line JSON surrounded by leading and trailing noise', () => {
+    const out =
+      '[INFO] Calling /tools...\n{\n "a": 1,\n "b": [1, 2]\n}\n[INFO] cache hit\n[INFO] done'
+    expect(parseGskOutput(out)).toEqual({ a: 1, b: [1, 2] })
+  })
+
+  it('prefers the last JSON block when the CLI echoes an earlier payload', () => {
+    const out = '{"status":"stale"}\n[INFO] retrying\n{"status":"ok"}'
+    expect(parseGskOutput(out)).toEqual({ status: 'ok' })
+  })
+
   it('throws when no JSON present', () => {
     expect(() => parseGskOutput('[INFO] nothing here')).toThrow()
   })

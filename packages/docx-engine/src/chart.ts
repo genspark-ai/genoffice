@@ -83,12 +83,11 @@ export function parseChartPartXml(
           : false
   const scatterLines = kind === 'scatter' && /line|smooth/i.test(scatterStyle ?? '')
   const holeVal = attrsOf(findChild(plot, 'c:holeSize') ?? {})['val']
+  // The spec default hole is 50%; an unparseable value falls back to it
+  // instead of zeroing (which would silently drop the setting from the model).
+  const holeParsed = holeVal !== undefined ? parseInt(holeVal, 10) : NaN
   const holePct =
-    nameOf(plot) === 'c:doughnutChart'
-      ? holeVal !== undefined
-        ? parseInt(holeVal, 10) || 0
-        : 50
-      : 0
+    nameOf(plot) === 'c:doughnutChart' ? (Number.isFinite(holeParsed) ? holeParsed : 50) : 0
   const legendPos = legendPosOf(chart)
   const legendFontPt = textProps(findChild(findChild(chart, 'c:legend') ?? {}, 'c:txPr')).fontPt
   const dataLabels = dataLabelsOf(plot, theme)
@@ -715,7 +714,18 @@ const _XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spread
 export const CHART_WORKBOOK_REL_TYPE =
   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/package'
 
-const colLetter = (i: number) => String.fromCharCode(66 + i) // B, C, D...
+// Series data columns start at B (column A holds the categories):
+// 0 → B … 24 → Z, 25 → AA, 26 → AB, … (plain charCode arithmetic breaks past Z).
+export const colLetter = (i: number): string => {
+  let n = i + 2 // 1-based column number: A = 1, B = 2
+  let label = ''
+  while (n > 0) {
+    const rem = (n - 1) % 26
+    label = String.fromCharCode(65 + rem) + label
+    n = Math.floor((n - 1) / 26)
+  }
+  return label
+}
 
 function strCacheXml(values: string[], f: string): string {
   return (

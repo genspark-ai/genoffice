@@ -53,4 +53,83 @@ describe('TopLevelPositions', () => {
     expect(positions.of(document.createElement('p'))).toBeNull()
     view.destroy()
   })
+
+  it('refreshes cached positions after the doc changes', () => {
+    const doc = schema.node('doc', null, [
+      schema.node('paragraph', null, schema.text('first')),
+      schema.node('paragraph', null, schema.text('second')),
+    ])
+    const view = new EditorView(document.body.appendChild(document.createElement('div')), {
+      state: EditorState.create({ doc }),
+    })
+    const positions = new TopLevelPositions(view)
+    const first = view.dom.children[0] as Element
+    expect(positions.of(first)).toEqual({ from: 0, to: 7 })
+    view.dispatch(view.state.tr.insert(0, schema.node('paragraph', null, schema.text('new'))))
+    const shifted = blockOffset(view.state.doc, 1)
+    const second = view.dom.children[1] as Element
+    // a never-invalidated walk would miss the new DOM and report stale spots
+    expect(positions.of(second)).toEqual({ from: shifted, to: shifted + 7 })
+    const head = view.dom.children[0] as Element
+    expect(positions.of(head)).toEqual({ from: 0, to: 5 })
+    view.destroy()
+  })
+
+  it('invalidate() drops the cached walk and the next lookup rebuilds', () => {
+    const doc = schema.node('doc', null, [
+      schema.node('paragraph', null, schema.text('first')),
+      schema.node('paragraph', null, schema.text('second')),
+    ])
+    const view = new EditorView(document.body.appendChild(document.createElement('div')), {
+      state: EditorState.create({ doc }),
+    })
+    const positions = new TopLevelPositions(view)
+    expect(positions.of(view.dom.children[0] as Element)).toEqual({ from: 0, to: 7 })
+    positions.invalidate()
+    expect(positions.of(view.dom.children[1] as Element)).toEqual({ from: 7, to: 15 })
+    view.dispatch(view.state.tr.insert(0, schema.node('paragraph', null, schema.text('new'))))
+    positions.invalidate()
+    expect(positions.of(view.dom.children[0] as Element)).toEqual({ from: 0, to: 5 })
+    // detached elements never resolve to a block
+    expect(positions.of(document.createElement('p'))).toBeNull()
+    view.destroy()
+  })
+
+  it('falls back to posAtDOM when the child-desc walk misses an element', () => {
+    const doc = schema.node('doc', null, [
+      schema.node('paragraph', null, schema.text('first')),
+      schema.node('paragraph', null, schema.text('second')),
+    ])
+    const container = document.createElement('div')
+    const first = document.createElement('p')
+    const widget = document.createElement('hr')
+    container.append(first, widget)
+    const throwing = document.createElement('p')
+    container.append(throwing)
+    // an empty child-desc walk: every lookup must go through the fallback
+    const fake = {
+      dom: container,
+      state: { doc },
+      docView: { children: [] },
+      posAtDOM(el: Element) {
+        if (el === throwing) throw new RangeError('no position')
+        return el === first ? 1 : 8
+      },
+      nodeDOM(pos: number) {
+        return pos === 0 ? first : undefined
+      },
+    } as unknown as EditorView
+    const positions = new TopLevelPositions(fake)
+    expect(positions.of(first)).toEqual({ from: 0, to: 7 })
+    // a widget resolves inside a block it does not own: still null
+    expect(positions.of(widget)).toBeNull()
+    // posAtDOM failures stay null instead of throwing
+    expect(positions.of(throwing)).toBeNull()
+  })
 })
+
+const blockOffset = (doc: { child(i: number): { nodeSize: number } }, index: number): number => {
+  let offset = 0
+  for (let i = 0; i < index; i++) offset += doc.child(i).nodeSize
+  return offset
+}

@@ -22,6 +22,16 @@ describe('tolerance helpers', () => {
     expect(median([4, 1, 2, 3])).toBe(2.5)
     expect(median([])).toBe(0)
   })
+
+  it('median ignores non-finite inputs', () => {
+    expect(median([1, NaN, 3])).toBe(2)
+    expect(median([Infinity, 10, 20])).toBe(15)
+    expect(median([-Infinity, 4])).toBe(4)
+    // Nothing finite left behaves like an empty list, so existing
+    // `|| 12` fallbacks keep working instead of leaking Infinity.
+    expect(median([NaN])).toBe(0)
+    expect(median([Infinity, -Infinity])).toBe(0)
+  })
 })
 
 describe('rect math', () => {
