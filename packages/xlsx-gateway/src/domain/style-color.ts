@@ -108,7 +108,7 @@ export function resolveStyleColor(
   color: StyleColor,
   palette: readonly string[] = DEFAULT_THEME_PALETTE,
 ): string {
-  if (typeof color === 'string') return color.toUpperCase()
+  if (typeof color === 'string') return isValidHexColor(color) ? color.toUpperCase() : '#000000'
   const base = palette[color.theme] ?? DEFAULT_THEME_PALETTE[color.theme] ?? '#000000'
   return applyTint(base, color.tint ?? 0)
 }
@@ -116,14 +116,22 @@ export function resolveStyleColor(
 /// ECMA-376 tint: lighten towards white for positive, darken towards black for
 /// negative, on the HLS luminance channel. Channels truncate on the way back,
 /// which lands on Office's palette swatches within one step per channel.
+/// Malformed hex falls back to black, matching the missing-palette fallback
+/// in resolveStyleColor, so NaN channels never leak into outputs.
 export function applyTint(hex: string, tint: number): string {
+  if (!isValidHexColor(hex)) return '#000000'
   if (tint === 0) return hex.toUpperCase()
   const [h, l, s] = rgbToHls(hex)
   const lum = tint < 0 ? l * (1 + tint) : l * (1 - tint) + tint
   return hlsToRgb(h, Math.min(1, Math.max(0, lum)), s)
 }
 
+function isValidHexColor(hex: string): boolean {
+  return /^#[0-9A-Fa-f]{6}$/.test(hex)
+}
+
 function rgbToHls(hex: string): [number, number, number] {
+  if (!isValidHexColor(hex)) return [0, 0, 0]
   const r = parseInt(hex.slice(1, 3), 16) / 255
   const g = parseInt(hex.slice(3, 5), 16) / 255
   const b = parseInt(hex.slice(5, 7), 16) / 255

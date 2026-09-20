@@ -83,10 +83,15 @@ async function zipText(zip: JSZip, path: string): Promise<string | undefined> {
 function resolveTarget(basePart: string, target: string): string {
   if (target.startsWith('/')) return target.slice(1)
   const parts = basePart.slice(0, basePart.lastIndexOf('/')).split('/').filter(Boolean)
-  for (const seg of target.split('/')) {
+  // Some Windows producers emit backslash separators; OPC uses forward
+  // slashes, so normalize before splitting. Clamp '..' at the zip root:
+  // popping an empty stack is already a no-op, but spelling it out keeps a
+  // hostile '../../..' chain from reading as a deeper traversal than root.
+  for (const seg of target.replace(/\\/g, '/').split('/')) {
     if (seg === '.' || seg === '') continue
-    if (seg === '..') parts.pop()
-    else parts.push(seg)
+    if (seg === '..') {
+      if (parts.length > 0) parts.pop()
+    } else parts.push(seg)
   }
   return parts.join('/')
 }

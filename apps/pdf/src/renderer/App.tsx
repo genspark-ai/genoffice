@@ -6793,6 +6793,8 @@ export default function App() {
                 <OutlinePanel
                   outline={outline}
                   note={outlineGenerated ? t('outlineGenerated') : undefined}
+                  label={t('outline')}
+                  emptyLabel={t('searchNoResults')}
                   onGoToDest={(dest) => void goToDest(dest)}
                 />
               </div>
@@ -7995,12 +7997,14 @@ export default function App() {
                                 pageWidth={size.width}
                                 pageHeight={size.height}
                                 marks={redactions.filter((mark) => mark.pageIndex === origIdx)}
+                                markLabel={t('redact')}
                                 onCommit={(rect) =>
                                   setRedactions((prev) => [
                                     ...prev,
                                     { id: newId(), pageIndex: origIdx, rect },
                                   ])
                                 }
+                                onTooSmall={() => showNotice(t('redactHint'))}
                               />
                               {/* Ghost pin for the note being typed into the margin draft card */}
                               {noteDraft?.origIdx === origIdx &&
@@ -8367,7 +8371,7 @@ export default function App() {
               </div>
             )}
             {deleteToast && (
-              <div className="pdf-toast">
+              <div className="pdf-toast" role="status">
                 <span>{t(deletedInsertedText ? 'insertedTextDeleted' : 'annotationDeleted')}</span>
                 <button
                   type="button"
@@ -8381,7 +8385,7 @@ export default function App() {
               </div>
             )}
             {notice && (
-              <div className="pdf-toast pdf-toast-notice">
+              <div className="pdf-toast pdf-toast-notice" role="status">
                 <span>{notice}</span>
                 <button type="button" onClick={() => setNotice(null)}>
                   {t('ok')}

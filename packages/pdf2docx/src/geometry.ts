@@ -117,8 +117,13 @@ export function complementIntervals(
 
 /** median of a non-empty list; 0 for an empty one */
 export function median(values: readonly number[]): number {
-  if (values.length === 0) return 0
-  const sorted = [...values].sort((a, b) => a - b)
+  // Geometry inputs come from raw PDF numbers, so NaN/Infinity slip in.
+  // Ignoring them keeps one corrupt metric from poisoning the aggregate:
+  // callers' `|| 12` fallbacks catch NaN/0 but not Infinity, which would
+  // otherwise flow into thresholds (e.g. an infinite column gap never splits).
+  const finite = values.filter((v) => Number.isFinite(v))
+  if (finite.length === 0) return 0
+  const sorted = [...finite].sort((a, b) => a - b)
   const mid = Math.floor(sorted.length / 2)
   return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
 }

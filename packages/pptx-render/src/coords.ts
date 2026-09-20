@@ -46,13 +46,23 @@ export interface Viewport {
 /**
  * Computes a proportional viewport from the slide size + target width.
  * Pass fitWidthPx: the canvas fills that width proportionally, height follows the slide ratio.
+ * Degenerate inputs (non-finite or <= 0) fall back to the default slide size
+ * 9144000x6858000 EMU per axis so the result stays finite.
  */
 export function makeViewport(size: SlideSize, fitWidthPx: number): Viewport {
-  const baseWidthPx = size.cx / EMU_PER_PX_96 // the slide's "natural" pixel width at 96dpi
-  const scale = fitWidthPx / baseWidthPx
+  // Default 10in x 7.5in slide in EMU.
+  const DEFAULT_CX_EMU = 9144000
+  const DEFAULT_CY_EMU = 6858000
+  const isPositiveFinite = (v: number): boolean => Number.isFinite(v) && v > 0
+  const safeCx = isPositiveFinite(size.cx) ? size.cx : DEFAULT_CX_EMU
+  const safeCy = isPositiveFinite(size.cy) ? size.cy : DEFAULT_CY_EMU
+  // Fall back to the natural width (scale 1) when the target width is degenerate.
+  const safeFitWidthPx = isPositiveFinite(fitWidthPx) ? fitWidthPx : safeCx / EMU_PER_PX_96
+  const baseWidthPx = safeCx / EMU_PER_PX_96 // the slide's "natural" pixel width at 96dpi
+  const scale = safeFitWidthPx / baseWidthPx
   return {
-    widthPx: fitWidthPx,
-    heightPx: (size.cy / EMU_PER_PX_96) * scale,
+    widthPx: safeFitWidthPx,
+    heightPx: (safeCy / EMU_PER_PX_96) * scale,
     scale,
   }
 }

@@ -63,6 +63,32 @@ function ensureDir(dir: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 }
 
+// Default number of chat messages returned by loadChat when limit is missing or not finite
+const DEFAULT_CHAT_LIMIT = 200
+// Upper bound for loadChat limit to avoid unbounded reads
+const MAX_CHAT_LIMIT = 10_000
+
+// Allowlist for project and chat ids (fail-closed: rejects traversal and separators)
+const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]+$/
+
+// Throws a descriptive Error when an id could escape the store directory
+function assertSafeId(value: string, kind: 'projectId' | 'chatId'): void {
+  if (typeof value !== 'string' || !SAFE_ID_PATTERN.test(value)) {
+    throw new Error(
+      `Invalid ${kind} "${value}": must be non-empty and match ${String(SAFE_ID_PATTERN)} (rejects "..", "/" and backslash)`,
+    )
+  }
+}
+
+// Clamps limit to a finite integer in 1..MAX_CHAT_LIMIT (non-finite falls back to default)
+function normalizeChatLimit(limit: number): number {
+  if (!Number.isFinite(limit)) return DEFAULT_CHAT_LIMIT
+  const floored = Math.floor(limit)
+  if (floored < 1) return 1
+  if (floored > MAX_CHAT_LIMIT) return MAX_CHAT_LIMIT
+  return floored
+}
+
 function readJson<T>(filePath: string): T | null {
   try {
     if (!existsSync(filePath)) return null
@@ -98,6 +124,7 @@ export class ProjectStore {
   }
 
   private projectDir(projectId: string): string {
+    assertSafeId(projectId, 'projectId')
     return join(this.baseDir, projectId)
   }
 
@@ -110,6 +137,7 @@ export class ProjectStore {
   }
 
   private chatPath(projectId: string, chatId: string): string {
+    assertSafeId(chatId, 'chatId')
     return join(this.chatsDir(projectId), `${chatId}.jsonl`)
   }
 
@@ -283,6 +311,9 @@ export class ProjectStore {
 
   /** Flushes buffered opening messages to disk (materialized before rebind: once the file is saved, the opening messages should be kept). */
   private flushPending(projectId: string, chatId: string): void {
+    // Validate before any IO so traversal ids throw instead of being swallowed below
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(chatId, 'chatId')
     const key = this.seqKey(projectId, chatId)
     const buf = this.pendingFirstWrite.get(key)
     this.pendingFirstWrite.delete(key)
@@ -307,6 +338,9 @@ export class ProjectStore {
     chatId: string,
     msg: Omit<ChatMessage, 'seq' | 'ts'> & { ts?: string },
   ): void {
+    // Validate ids before the IO try block so traversal attempts throw fail-closed
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(chatId, 'chatId')
     try {
       const seq = this.nextSeq(projectId, chatId)
       const ts = msg.ts ?? nowIso()
@@ -355,7 +389,12 @@ export class ProjectStore {
    * Reads the most recent `limit` messages (in ascending seq order).
    * A bad JSONL line is skipped without crashing.
    */
-  loadChat(projectId: string, chatId: string, limit = 200): ChatMessage[] {
+  loadChat(projectId: string, chatId: string, limit = DEFAULT_CHAT_LIMIT): ChatMessage[] {
+    // Validate ids fail-closed before touching the filesystem
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(chatId, 'chatId')
+    // Clamp limit so 0 no longer returns all messages via slice(-0)
+    const safeLimit = normalizeChatLimit(limit)
     const pending = this.pendingFirstWrite.get(this.seqKey(projectId, chatId)) ?? []
     const filePath = this.chatPath(projectId, chatId)
     const messages: ChatMessage[] = [...pending]
@@ -378,9 +417,9 @@ export class ProjectStore {
           }
         }
       }
-      // Sort by seq and take the most recent `limit` entries
+      // Sort by seq and take the most recent entries (safeLimit is always >= 1)
       messages.sort((a, b) => a.seq - b.seq)
-      return messages.slice(-limit)
+      return messages.slice(-safeLimit)
     } catch {
       return messages
     }

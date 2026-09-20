@@ -119,8 +119,7 @@ describe('opt-in Markdown round trips', () => {
   })
 })
 
-// Exercise the actual legacy loading path. Schema validation changes belong to
-// the separate opening-fixes stage; this adapter does not change editor marks.
+// Exercise the actual loading path and validate the resulting editor schema.
 const root = resolve(import.meta.dirname, '../../..')
 const corpus = execFileSync('git', ['ls-files', '-z', '*.md'], { cwd: root, encoding: 'utf8' })
   .split('\0')
@@ -132,7 +131,8 @@ describe('tracked repository Markdown corpus', () => {
   })
   it.each(corpus)('opens and preserves every byte of %s', (path) => {
     const raw = readFileSync(resolve(root, path))
-    const { save, body } = open(raw.toString('utf8'))
+    const { editor, save, body } = open(raw.toString('utf8'))
+    expect(() => editor.state.doc.check()).not.toThrow()
     expect(Buffer.from(save(), 'utf8')).toEqual(raw)
     expect(body).not.toHaveBeenCalled()
   })

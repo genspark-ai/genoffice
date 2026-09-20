@@ -7,6 +7,7 @@ import type { ActionCtx } from './action-context'
 import type { PasteSlideMode } from '../shared/ipc'
 import { FIT_WIDTH } from './app-constants'
 import { renderSlidesToPngBase64 } from './export-render'
+import { renderSelectionToPngBase64 } from './selection-image'
 import {
   extractBrushFormat,
   computeBrushApply,
@@ -24,13 +25,24 @@ export async function deleteSelected(ctx: ActionCtx): Promise<void> {
 
 export async function copySelected(ctx: ActionCtx): Promise<void> {
   if (ctx.selectedIds.length === 0) return
+  const clipboardToken = crypto.randomUUID()
+  const sourceIds = [...ctx.selectedIds]
   const n = await window.slidesApi.copyElements({
     slideIndex: ctx.current,
-    sourceIds: ctx.selectedIds,
+    sourceIds,
+    clipboardToken,
   })
   if (n > 0) {
     ctx.setHasClipboard(true)
     ctx.setStatus(t('appStatusCopied', { count: n }))
+    if (ctx.slide) {
+      try {
+        const png = await renderSelectionToPngBase64(ctx.slide, sourceIds, ctx.images)
+        await window.slidesApi.copyElementsImage(clipboardToken, png)
+      } catch {
+        // The editable copy is already available if rendering or image decoding fails.
+      }
+    }
   }
 }
 

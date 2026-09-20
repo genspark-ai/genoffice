@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { readFile, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -30,6 +29,8 @@ import {
 } from '@genoffice/electron-utils'
 import { createI18n, getUiLang } from '@genoffice/i18n'
 import { generateImageTool } from '@genoffice/ai-search'
+import { ImageExportSessions } from './image-export'
+import { printMarkdownPdf } from './print-pdf'
 import { atomicWriteFile } from './atomic-write'
 import {
   copyImageIntoOwnedAssets,
@@ -51,6 +52,7 @@ import type {
   ExportDocxRequest,
   ExportFormat,
   ExportPdfRequest,
+  ImageExportPreparation,
   ExportResult,
   ImageData,
   SaveMarkdownRequest,
@@ -690,6 +692,8 @@ function registerImageProtocol(): void {
   })
 }
 
+const imageExports = new ImageExportSessions()
+
 let ipcRegistered = false
 
 function registerMarkdownIpc(): void {
@@ -964,29 +968,69 @@ function registerMarkdownIpc(): void {
               configuredDefaultSaveDir(app),
             )
       if (picked.canceled || !picked.filePath) return { ok: true, canceled: true }
-      // sheets-style: render the print HTML in a hidden scripting-disabled window
-      const workDir = await mkdtemp(join(tmpdir(), 'genoffice-md-pdf-'))
-      const printWin = new BrowserWindow({
-        show: false,
-        webPreferences: { sandbox: true, javascript: false },
-      })
       try {
-        const htmlPath = join(workDir, 'print.html')
-        await writeFile(htmlPath, request.html, 'utf8')
-        await printWin.loadFile(htmlPath)
-        const pdf = await printWin.webContents.printToPDF({
-          pageSize: 'A4',
-          printBackground: true,
-          margins: { top: 0.6, bottom: 0.6, left: 0.6, right: 0.6 },
-        })
+        const pdf = await printMarkdownPdf(request.html)
         await writeFile(picked.filePath, pdf)
         openExportedPdf(picked.filePath)
         return { ok: true, path: picked.filePath }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
-      } finally {
-        printWin.destroy()
-        await rm(workDir, { recursive: true, force: true })
+      }
+    },
+  )
+
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.prepareImageExport,
+    async (e, request: ExportPdfRequest): Promise<ImageExportPreparation> => {
+      if (typeof request?.html !== 'string' || !request.html)
+        return { ok: false, error: 'Empty document' }
+      let id: string | undefined
+      try {
+        const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+        const picked = await showOpenDialogWithMemory(
+          dialog,
+          win,
+          {
+            properties: ['openDirectory', 'createDirectory'],
+          },
+          configuredDefaultSaveDir(app),
+        )
+        if (picked.canceled || !picked.filePaths[0]) return { ok: true, canceled: true }
+        id = await imageExports.start(
+          e.sender.id,
+          picked.filePaths[0],
+          String(request.suggestedName || tm('untitledFile')),
+        )
+        const pdf = await printMarkdownPdf(request.html)
+        if (e.sender.isDestroyed()) throw new Error('Document closed during export')
+        return { ok: true, id, pdfBase64: pdf.toString('base64') }
+      } catch (err) {
+        if (id) await imageExports.finish(e.sender.id, id, false).catch(() => {})
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.writeExportImage,
+    async (e, id: string, page: number, base64: string) => {
+      try {
+        await imageExports.write(e.sender.id, id, page, base64)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    },
+  )
+  ipcMain.handle(
+    MARKDOWN_CHANNELS.finishImageExport,
+    async (e, id: string, success: boolean): Promise<ExportResult> => {
+      try {
+        const dir = await imageExports.finish(e.sender.id, id, success === true)
+        if (!dir) return { ok: true, canceled: true }
+        shell.showItemInFolder(join(dir, 'page-01.png'))
+        return { ok: true, path: dir }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     },
   )
@@ -1039,6 +1083,9 @@ function grantAndTrack(wc: WebContents, openPath?: string | null): void {
     return { action: 'deny' }
   })
   wc.once('destroyed', () => {
+    void imageExports
+      .dispose(wcId)
+      .catch((err) => console.warn('[markdown] image export cleanup:', err))
     openPathByWc.delete(wcId)
     allowedByWc.delete(wcId)
     savePathByWc.delete(wcId)

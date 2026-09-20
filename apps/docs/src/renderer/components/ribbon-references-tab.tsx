@@ -31,7 +31,9 @@ import {
 import { BIG, TabProps, toggleDropdown } from './ribbon-tabs'
 
 function collectTocEntries(editor: Editor): TocEntry[] {
-  return collectHeadings(editor.state.doc).map(({ level, text }) => ({ level, text }))
+  return collectHeadings(editor.state.doc, editor.storage.listNumbering?.styles).map(
+    ({ level, text }) => ({ level, text }),
+  )
 }
 
 /** Heading entries + real page numbers (headingPages and collectTocEntries share document order) */
