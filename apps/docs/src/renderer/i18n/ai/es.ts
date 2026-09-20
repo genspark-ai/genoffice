@@ -126,6 +126,8 @@ export const es = {
   aiSumWebSearchDone: 'Búsqueda de «{query}» ({count} resultados)',
   aiSumImageSearch: 'Búsqueda de imágenes',
   aiSumImageSearchDone: 'Búsqueda de imágenes «{query}» ({count} imágenes)',
+  aiSumAnalyzeMedia: 'Analizar contenido',
+  aiSumAnalyzeMediaDone: 'Contenido analizado',
   aiSumInsertImage: 'Insertar imagen',
   aiSumInsertWebImage: 'Imagen web insertada',
   aiSumGenerateImage: 'Generar imagen',

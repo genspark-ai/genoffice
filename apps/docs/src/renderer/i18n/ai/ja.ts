@@ -123,6 +123,8 @@ export const ja = {
   aiSumWebSearchDone: '「{query}」を検索({count} 件)',
   aiSumImageSearch: '画像検索',
   aiSumImageSearchDone: '「{query}」の画像を検索({count} 枚)',
+  aiSumAnalyzeMedia: 'メディアを解析',
+  aiSumAnalyzeMediaDone: 'メディアを解析しました',
   aiSumInsertImage: '画像を挿入',
   aiSumInsertWebImage: 'ウェブ画像を挿入',
   aiSumGenerateImage: '画像を生成',

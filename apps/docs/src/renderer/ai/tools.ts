@@ -432,6 +432,33 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     },
   },
   {
+    name: 'analyze_media',
+    description:
+      'Look at a picture that is in the document and answer questions about it, or analyze image/audio/video given by URL or local file path; returns the analysis as text. An image block in the document carries no text of its own — read_blocks cannot tell you what a picture shows, so this is the only way to see it. Pass blockIndex for an image block listed by get_document_context, and/or mediaUrls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        blockIndex: {
+          type: 'integer',
+          description:
+            'block index of an image block of the document, as listed by get_document_context',
+        },
+        mediaUrls: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            'media URLs or local file paths (image/audio/video); optional when blockIndex is given',
+        },
+        requirements: {
+          type: 'string',
+          description:
+            'analysis requirements (English): what to extract, or the question to answer about the media',
+        },
+      },
+      required: ['requirements'],
+    },
+  },
+  {
     name: 'insert_image',
     description:
       'Download a direct image link (an imageUrl from image_search) and insert it into the document (at the cursor / end of document).',
@@ -771,6 +798,22 @@ function rangeError(editor: Editor): string {
   return `block index invalid or out of range (the document has ${editor.state.doc.childCount} blocks); call get_document_context for fresh indexes`
 }
 
+/** the embedded picture of a top-level block; null when the block is not an image block */
+function imageBlockSource(
+  editor: Editor,
+  index: unknown,
+): { src: string; label: string | undefined } | null {
+  if (!Number.isInteger(index)) return null
+  const i = Number(index)
+  const doc = editor.state.doc
+  if (i < 0 || i >= doc.childCount) return null
+  const node = doc.child(i)
+  if (node.type.name !== 'docProtected' || node.attrs.blockType !== 'image') return null
+  const src = typeof node.attrs.imageDataUrl === 'string' ? node.attrs.imageDataUrl : ''
+  if (!src) return null
+  return { src, label: typeof node.attrs.label === 'string' ? node.attrs.label : undefined }
+}
+
 function validRange(
   editor: Editor,
   start: unknown,
@@ -844,6 +887,38 @@ async function executeAsyncTool(
         mutated: false,
         summary: t('aiSumImageSearchDone', { query, count: r.images.length }),
       }
+    }
+    case 'analyze_media': {
+      const requirements = String(call.input.requirements ?? '').trim()
+      if (!requirements) return fail(t('aiSumAnalyzeMedia'), 'requirements must not be empty')
+      const urls: string[] = Array.isArray(call.input.mediaUrls)
+        ? (call.input.mediaUrls as unknown[]).map(String).filter(Boolean)
+        : []
+      if (call.input.blockIndex !== undefined) {
+        const image = imageBlockSource(editor, call.input.blockIndex)
+        if (!image) {
+          return fail(
+            t('aiSumAnalyzeMedia'),
+            `block ${String(call.input.blockIndex)} is not an image block of the document; call get_document_context for the current block list`,
+          )
+        }
+        urls.unshift(image.src)
+      }
+      if (!urls.length) {
+        return fail(
+          t('aiSumAnalyzeMedia'),
+          'give blockIndex (an image block of the document) or mediaUrls (URLs / local file paths)',
+        )
+      }
+      const r = await window.desktop.analyzeMedia({ mediaUrls: urls, requirements })
+      if (!r.text) return fail(t('aiSumAnalyzeMedia'), r.error ?? 'media analysis failed')
+      // analysis text can be long: keep the head of it, like the other readers
+      const MAX_ANALYSIS_CHARS = 6000
+      const text =
+        r.text.length > MAX_ANALYSIS_CHARS
+          ? `${r.text.slice(0, MAX_ANALYSIS_CHARS)}\n…(truncated)`
+          : r.text
+      return { output: text, mutated: false, summary: t('aiSumAnalyzeMediaDone') }
     }
     case 'insert_picture':
       return insertPicture(editor, call, signal)

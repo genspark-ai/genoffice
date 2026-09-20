@@ -125,6 +125,8 @@ export const nl = {
   aiSumWebSearchDone: 'Gezocht naar "{query}" ({count} resultaten)',
   aiSumImageSearch: 'Afbeeldingen zoeken',
   aiSumImageSearchDone: 'Afbeeldingen gezocht met "{query}" ({count} afbeeldingen)',
+  aiSumAnalyzeMedia: 'Media analyseren',
+  aiSumAnalyzeMediaDone: 'Media geanalyseerd',
   aiSumInsertImage: 'Afbeelding invoegen',
   aiSumInsertWebImage: 'Webafbeelding ingevoegd',
   aiSumGenerateImage: 'Afbeelding genereren',

@@ -123,6 +123,8 @@ export const hi = {
   aiSumWebSearchDone: '"{query}" खोजा ({count} परिणाम)',
   aiSumImageSearch: 'चित्र खोज',
   aiSumImageSearchDone: 'चित्र खोज "{query}" ({count} चित्र)',
+  aiSumAnalyzeMedia: 'मीडिया का विश्लेषण करें',
+  aiSumAnalyzeMediaDone: 'मीडिया का विश्लेषण किया गया',
   aiSumInsertImage: 'चित्र सम्मिलित करें',
   aiSumInsertWebImage: 'वेब चित्र सम्मिलित किया गया',
   aiSumGenerateImage: 'चित्र बनाएँ',

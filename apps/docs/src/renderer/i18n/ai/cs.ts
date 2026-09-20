@@ -124,6 +124,8 @@ export const cs = {
   aiSumWebSearchDone: 'Hledáno „{query}“ ({count} výsledků)',
   aiSumImageSearch: 'Hledání obrázků',
   aiSumImageSearchDone: 'Hledání obrázků „{query}“ ({count} obrázků)',
+  aiSumAnalyzeMedia: 'Analyzovat média',
+  aiSumAnalyzeMediaDone: 'Média analyzována',
   aiSumInsertImage: 'Vložit obrázek',
   aiSumInsertWebImage: 'Vložen obrázek z webu',
   aiSumGenerateImage: 'Vygenerovat obrázek',

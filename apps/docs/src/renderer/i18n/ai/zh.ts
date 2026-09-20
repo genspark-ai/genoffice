@@ -114,6 +114,8 @@ export const zh = {
   aiSumWebSearchDone: '搜索“{query}”({count} 条)',
   aiSumImageSearch: '图片搜索',
   aiSumImageSearchDone: '搜图“{query}”({count} 张)',
+  aiSumAnalyzeMedia: '分析媒体',
+  aiSumAnalyzeMediaDone: '已分析媒体',
   aiSumInsertImage: '插入图片',
   aiSumInsertWebImage: '插入联网图片',
   aiSumGenerateImage: '生成配图',

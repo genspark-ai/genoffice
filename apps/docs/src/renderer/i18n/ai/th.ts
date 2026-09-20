@@ -121,6 +121,8 @@ export const th = {
   aiSumWebSearchDone: 'ค้นหา "{query}" ({count} รายการ)',
   aiSumImageSearch: 'ค้นหารูปภาพ',
   aiSumImageSearchDone: 'ค้นหารูป "{query}" ({count} รูป)',
+  aiSumAnalyzeMedia: 'วิเคราะห์สื่อ',
+  aiSumAnalyzeMediaDone: 'วิเคราะห์สื่อแล้ว',
   aiSumInsertImage: 'แทรกรูปภาพ',
   aiSumInsertWebImage: 'แทรกรูปภาพจากเว็บ',
   aiSumGenerateImage: 'สร้างรูปภาพ',

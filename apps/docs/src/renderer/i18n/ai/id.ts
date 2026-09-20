@@ -123,6 +123,8 @@ export const id = {
   aiSumWebSearchDone: 'Mencari "{query}" ({count} hasil)',
   aiSumImageSearch: 'Pencarian gambar',
   aiSumImageSearchDone: 'Pencarian gambar "{query}" ({count} gambar)',
+  aiSumAnalyzeMedia: 'Analisis media',
+  aiSumAnalyzeMediaDone: 'Media dianalisis',
   aiSumInsertImage: 'Sisipkan gambar',
   aiSumInsertWebImage: 'Gambar web disisipkan',
   aiSumGenerateImage: 'Hasilkan gambar',

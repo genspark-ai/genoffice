@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, streamText, type AgentImage } from '@genoffice/agent-core'
-import { imageGenerationAvailable } from '@genoffice/ai-provider/browser'
+import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
@@ -765,6 +765,7 @@ export function AiPanel({
           () => pageSetupAccessRef.current,
           () => docExtrasRef.current,
           () => notesAccessRef.current,
+          () => mediaAnalysisAvailable(settingsRef.current, gskLoggedInRef.current),
         ),
         createFilesSkill(availableAttachments),
       ]),

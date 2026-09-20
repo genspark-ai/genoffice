@@ -23,6 +23,9 @@ import type { AiNotesAccess } from './note-ops'
 const IMAGE_GEN_OFF_NOTE =
   '\n\nNote: generate_image is currently unavailable (no image provider: signed out of Genspark or cloud tools off, and no media API key in Settings). Do not call or promise it; use image_search for imagery.'
 
+const MEDIA_ANALYSIS_OFF_NOTE =
+  '\n\nNote: analyze_media is currently unavailable (no media provider: signed out of Genspark or cloud tools off, and no media API key in Settings). You cannot see what a picture inside the document shows — tell the user that instead of guessing at its content.'
+
 /**
  * The docx capability as an AgentSkill: document skeleton context, the five
  * document tools, and the local executor. Future apps register their own
@@ -42,23 +45,33 @@ export function createDocsSkill(
   /** styles.xml catalog + page watermark stores (define_style / applyStyle / set_watermark) */
   getExtras?: () => AiDocExtras | undefined,
   getNotes?: () => AiNotesAccess | undefined,
+  /** same as imageGenAvailable, for analyze_media (seeing pictures that are in the document) */
+  mediaAnalysisAvailable?: () => boolean,
 ): AgentSkill {
   // Selection frozen per run: tools act on the range the prompt described,
   // not on wherever the user's live selection has wandered mid-run. The doc
   // snapshot bounds the freeze's validity (see FrozenSelection).
   let frozen: FrozenSelection | null = null
+  /** tools that need a media provider: Genspark login + cloud tools, or a BYOK media key in Settings */
+  const mediaToolsOff = (): Set<string> => {
+    const hidden = new Set<string>()
+    if (imageGenAvailable?.() === false) hidden.add('generate_image')
+    if (mediaAnalysisAvailable?.() === false) hidden.add('analyze_media')
+    return hidden
+  }
+  const mediaOffNote = (): string =>
+    [...mediaToolsOff()]
+      .map((name) => (name === 'generate_image' ? IMAGE_GEN_OFF_NOTE : MEDIA_ANALYSIS_OFF_NOTE))
+      .join('')
   return {
     id: 'docx',
     // live: the predicate is re-read before every model request
     get systemPrompt() {
-      return imageGenAvailable?.() === false
-        ? AGENT_SYSTEM_PROMPT + IMAGE_GEN_OFF_NOTE
-        : AGENT_SYSTEM_PROMPT
+      return AGENT_SYSTEM_PROMPT + mediaOffNote()
     },
     get tools() {
-      return imageGenAvailable?.() === false
-        ? AGENT_TOOLS.filter((t) => t.name !== 'generate_image')
-        : AGENT_TOOLS
+      const hidden = mediaToolsOff()
+      return hidden.size === 0 ? AGENT_TOOLS : AGENT_TOOLS.filter((t) => !hidden.has(t.name))
     },
     buildContext: () => {
       const editor = getEditor()

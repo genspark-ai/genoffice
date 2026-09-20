@@ -108,6 +108,7 @@ import {
   hasGskAuth,
   webSearchTool,
   imageSearchTool,
+  analyzeMediaTool,
 } from '@genoffice/ai-search'
 import type {
   AiDocContent,
@@ -3018,6 +3019,28 @@ export function registerAiIpc(): void {
       return { images: [], method: 'error', error: String(err) }
     }
   })
+
+  // media understanding (pictures in the document, attachments, local files): BYOK media
+  // provider when one is configured, otherwise the Genspark CLI behind its login gate.
+  ipcMain.handle(
+    'ai:analyze-media',
+    async (_event, op: { mediaUrls: string[]; requirements: string }) => {
+      const mediaUrls = (op.mediaUrls ?? []).map(String).filter(Boolean)
+      // a picture opened lazily from a large docx is only addressable by its main-process
+      // store; hand its bytes over as a data URL so the loader can read them like any other
+      const resolved: string[] = []
+      for (const url of mediaUrls) {
+        const lazy = await readLazyMedia(url).catch(() => null)
+        resolved.push(
+          lazy ? `data:${lazy.mime};base64,${lazy.body.toString('base64')}` : url,
+        )
+      }
+      return analyzeMediaTool(SETTINGS_PATH(), {
+        mediaUrls: resolved,
+        requirements: String(op.requirements ?? ''),
+      })
+    },
+  )
 
   // download image from URL → base64+mime (download in the main process avoids CORS; the renderer builds the image node and measures size itself)
   ipcMain.handle(

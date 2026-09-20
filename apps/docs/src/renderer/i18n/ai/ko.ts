@@ -121,6 +121,8 @@ export const ko = {
   aiSumWebSearchDone: '"{query}" 검색({count}건)',
   aiSumImageSearch: '이미지 검색',
   aiSumImageSearchDone: '"{query}" 이미지 검색({count}장)',
+  aiSumAnalyzeMedia: '미디어 분석',
+  aiSumAnalyzeMediaDone: '미디어 분석 완료',
   aiSumInsertImage: '이미지 삽입',
   aiSumInsertWebImage: '웹 이미지 삽입',
   aiSumGenerateImage: '이미지 생성',

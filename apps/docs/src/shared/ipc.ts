@@ -451,6 +451,11 @@ export interface DesktopApi {
     /** failure reason when method === 'error' */
     error?: string
   }>
+  /** media understanding (image/audio/video) via the configured media provider; returns analysis text */
+  analyzeMedia(op: {
+    mediaUrls: string[]
+    requirements: string
+  }): Promise<{ text?: string; error?: string }>
   fetchImage(url: string): Promise<{ base64: string; mime: string } | null>
   /** AI image generation via the Genspark cloud channel (requires login + cloud tools) */
   aiGenerateImage(op: {

@@ -107,6 +107,16 @@ export async function loadMediaReference(ref: string): Promise<MediaBlob> {
     if (!mime) throw new Error(`Could not tell the media type of ${ref}`)
     return { bytes, mime, ...(name ? { name } : {}) }
   }
+  // data URLs (pictures embedded in a document) carry their own bytes and type
+  if (ref.startsWith('data:')) {
+    const m = /^data:([^;,]+);base64,([\s\S]*)$/.exec(ref)
+    if (!m) throw new Error('Unsupported data URL: only base64-encoded media can be analyzed')
+    const bytes = new Uint8Array(Buffer.from(m[2].replace(/\s+/g, ''), 'base64'))
+    if (bytes.byteLength > MAX_MEDIA_BYTES) {
+      throw new MediaTooLargeError('data URL is too large to analyze')
+    }
+    return { bytes, mime: m[1].toLowerCase() }
+  }
   if (ref.startsWith('file:')) {
     const local = readGeneratedImage(ref)
     if (!local) throw new Error(`Not an accessible image: ${ref}`)

@@ -532,6 +532,11 @@ export function buildDocumentContext(
       deleted = isTrackedDeleted(node)
       type = String(node.attrs.label || node.attrs.blockType || 'protected')
       preview = String(node.attrs.previewText ?? '')
+      // A picture carries no text of its own: an empty preview reads as "this
+      // content is invisible to me", so name the way to actually see it.
+      if (node.attrs.blockType === 'image' && !preview) {
+        preview = `(picture, no text — use analyze_media with blockIndex ${index} to see it)`
+      }
       if (deleted) hasPendingDeletions = true
       else fullText += node.textContent
     } else {
