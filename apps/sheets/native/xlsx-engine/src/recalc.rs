@@ -231,6 +231,7 @@ fn run(
             let mut model = load_from_xlsx(path_text, "en", "UTC", "en").map_err(|error| {
                 SidecarError::Workbook(format!("Formula engine import failed: {error}"))
             })?;
+            requote_bare_sheet_names(&mut model);
             pin_unparsable_formulas(&mut model);
             ResidentModel {
                 model,
@@ -321,6 +322,121 @@ fn run(
     Ok((entry, cells))
 }
 
+/// IronCalc writes a sheet name that needs quoting without its quotes when it
+/// converts an imported formula to R1C1: `name_needs_quoting`
+/// (`expressions/utils`) lists only `()'$,;-+{}` and space, so a name holding
+/// an `&` — `R&D`, `P&L` — slips through. The stored `R&D!R[-17]C[0]` never
+/// parses again, and every reference to that sheet is lost along with
+/// everything that depends on it.
+///
+/// Put the quotes back and re-parse. The text is the engine's own R1C1 and
+/// the sheet is one of this workbook's, so this restores what the file said
+/// rather than guessing at it: a formula is rewritten only when it already
+/// failed to parse and only when the quoted form parses cleanly.
+fn requote_bare_sheet_names(model: &mut Model) {
+    use ironcalc::base::expressions::lexer::LexerMode;
+    use ironcalc::base::expressions::parser::{Node, new_parser_english};
+    use ironcalc::base::expressions::types::CellReferenceRC;
+
+    let names: Vec<String> = model
+        .workbook
+        .worksheets
+        .iter()
+        .map(|worksheet| worksheet.name.clone())
+        .collect();
+    let mut parser = new_parser_english(
+        names.clone(),
+        model.workbook.get_defined_names_with_scope(),
+        model.workbook.tables.clone(),
+    );
+    parser.set_lexer_mode(LexerMode::R1C1);
+
+    for (sheet, worksheet) in model.workbook.worksheets.iter_mut().enumerate() {
+        let Some(parsed) = model.parsed_formulas.get_mut(sheet) else {
+            continue;
+        };
+        // Stored R1C1 is not tied to a cell, so the sheet is the whole
+        // context — the same one `Model::parse_formulas` uses.
+        let context = CellReferenceRC {
+            sheet: worksheet.name.clone(),
+            row: 1,
+            column: 1,
+        };
+        for (index, formula) in worksheet.shared_formulas.iter_mut().enumerate() {
+            if !matches!(parsed.get(index), Some(Node::ParseErrorKind { .. })) {
+                continue;
+            }
+            let Some(quoted) = quote_bare_sheet_names(formula, &names) else {
+                continue;
+            };
+            let node = parser.parse(&quoted, &context);
+            if matches!(node, Node::ParseErrorKind { .. }) {
+                continue;
+            }
+            parsed[index] = node;
+            *formula = quoted;
+        }
+    }
+}
+
+/// Wraps every bare `Name!` reference to one of `names` in quotes, doubling
+/// any `'` inside the name as Excel does. Returns None when there was nothing
+/// to quote. Text literals and already-quoted names are copied through
+/// untouched, so a formula that merely spells a sheet name inside a string is
+/// left alone.
+fn quote_bare_sheet_names(formula: &str, names: &[String]) -> Option<String> {
+    let mut out = String::with_capacity(formula.len());
+    let mut index = 0;
+    let mut in_text = false;
+    let mut in_quoted_name = false;
+    let mut changed = false;
+    while index < formula.len() {
+        let Some(char) = formula[index..].chars().next() else {
+            break;
+        };
+        if in_text || in_quoted_name {
+            // A doubled quote toggles off and straight back on, which lands
+            // in the same state an escape should leave us in.
+            if char == '"' && in_text {
+                in_text = false;
+            } else if char == '\'' && in_quoted_name {
+                in_quoted_name = false;
+            }
+            out.push(char);
+            index += char.len_utf8();
+            continue;
+        }
+        if char == '"' || char == '\'' {
+            if char == '"' {
+                in_text = true;
+            } else {
+                in_quoted_name = true;
+            }
+            out.push(char);
+            index += char.len_utf8();
+            continue;
+        }
+        // Longest wins: "R&D" must not shadow "R&D Notes".
+        let matched = names
+            .iter()
+            .filter(|name| !name.is_empty() && formula[index..].starts_with(&format!("{name}!")))
+            .max_by_key(|name| name.len());
+        if let Some(name) = matched
+            && !continues_a_sheet_name(&formula[..index])
+        {
+            out.push('\'');
+            out.push_str(&name.replace('\'', "''"));
+            out.push_str("'!");
+            index += name.len() + 1;
+            changed = true;
+            continue;
+        }
+        out.push(char);
+        index += char.len_utf8();
+    }
+    changed.then_some(out)
+}
+
 enum PinnedValue {
     Number(f64),
     Text(String),
@@ -334,12 +450,13 @@ enum PinnedValue {
 /// dependents compute against it. The renderer never sees the cell as a
 /// formula afterwards, so its own cached copy stays on screen.
 ///
-/// A formula that names a sheet of *this* workbook is excluded: the data is
-/// in the file, so a parse failure there is an engine gap, not an
-/// unreachable source, and the cached value is not an answer — a file
-/// written without cached values (openpyxl writes an empty `<v/>`) imports
-/// as zero, which would pin a number nobody computed. Those cells
-/// keep their #ERROR!, which the renderer already declines to display.
+/// A formula still naming a sheet of *this* workbook after
+/// `requote_bare_sheet_names` has had its turn is excluded: the data is in
+/// the file, so a parse failure there is an engine gap, not an unreachable
+/// source, and the cached value is not an answer — a file written without
+/// cached values (openpyxl writes an empty `<v/>`) imports as zero, which
+/// would pin a number nobody computed. Those cells keep their #ERROR!,
+/// which the renderer already declines to display.
 fn pin_unparsable_formulas(model: &mut Model) {
     use ironcalc::base::expressions::parser::Node;
     use ironcalc::base::types::Cell;
@@ -724,8 +841,11 @@ mod tests {
 
     /// Two sheets, one named `R&D`, and a Summary formula written the way
     /// every other producer writes it: quoted name, no cached value.
-    fn write_ampersand_sheet_fixture(path: &Path) {
+    fn write_ampersand_sheet_fixture(path: &Path, formula: &str) {
         use std::io::Write;
+        let sheet1 = format!(
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1"><f>{formula}</f><v /></c></row></sheetData></worksheet>"#
+        );
         let entries: [(&str, &str); 7] = [
             (
                 "[Content_Types].xml",
@@ -747,13 +867,10 @@ mod tests {
                 "xl/styles.xml",
                 r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#,
             ),
-            (
-                "xl/worksheets/sheet1.xml",
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1"><f>'R&amp;D'!A1</f><v /></c></row></sheetData></worksheet>"#,
-            ),
+            ("xl/worksheets/sheet1.xml", &sheet1),
             (
                 "xl/worksheets/sheet2.xml",
-                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1"><v>59.5</v></c></row></sheetData></worksheet>"#,
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A2"/><sheetData><row r="1"><c r="A1"><v>59.5</v></c></row><row r="2"><c r="A2"><v>10</v></c></row></sheetData></worksheet>"#,
             ),
         ];
         let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
@@ -788,34 +905,78 @@ mod tests {
 
     /// IronCalc 0.7.1 drops the quotes around a sheet name containing `&`
     /// when it converts an imported formula to R1C1 (`name_needs_quoting` in
-    /// `expressions/utils` omits `&`), so `'R&D'!A1` is stored as `R&D!A1`
-    /// and never parses again. Nothing here can compute the reference, but
-    /// the sidecar must not invent a value for it: a file with no cached
-    /// value (openpyxl writes a bare <v />) imports as zero, and pinning that would report 0 for a cell
-    /// Excel computes as 59.5.
+    /// `expressions/utils` omits `&`), so the file's `'R&D'!A1` is stored as
+    /// the unparsable `R&D!A1`. The sidecar puts the quotes back, and the
+    /// value matches what Excel and the app's grid show.
     #[test]
-    fn ampersand_sheet_references_are_not_pinned_to_an_invented_zero() {
+    fn ampersand_sheet_references_resolve_across_sheets() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("ampersand.xlsx");
-        write_ampersand_sheet_fixture(&path);
+        write_ampersand_sheet_fixture(&path, "'R&amp;D'!A1");
+        let cell = read_summary_a1(&path);
+        assert_eq!(cell.formatted, "59.5");
+        assert_eq!(cell.number, Some(59.5));
+        assert!(!cell.is_error);
+    }
+
+    /// One formula, several references to the same broken name: the repair
+    /// walks the whole text, not just the first match.
+    #[test]
+    fn every_reference_in_one_formula_is_requoted() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ampersand-twice.xlsx");
+        write_ampersand_sheet_fixture(&path, "'R&amp;D'!A1+'R&amp;D'!A2");
+        let cell = read_summary_a1(&path);
+        assert_eq!(cell.number, Some(69.5));
+        assert!(!cell.is_error);
+    }
+
+    /// A formula naming a sheet of this workbook that still will not parse
+    /// after the repair keeps its #ERROR!. The pin exists for
+    /// external-workbook references whose source is unreachable; here the
+    /// data is in the file, and a producer that writes no cached value
+    /// (openpyxl writes a bare `<v />`) imports as zero — pinning that would
+    /// report a number nobody computed.
+    #[test]
+    fn an_irreparable_local_reference_is_not_pinned_to_an_invented_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("malformed.xlsx");
+        write_ampersand_sheet_fixture(&path, "R&amp;D!A1++");
         let cell = read_summary_a1(&path);
         assert_eq!(cell.formatted, "#ERROR!");
         assert!(cell.is_error);
         assert_eq!(cell.number, None);
     }
 
-    /// The value Excel and the app's grid both show. Un-ignore this once
-    /// IronCalc quotes sheet names that need it on the way to R1C1.
     #[test]
-    #[ignore = "blocked on IronCalc 0.7.1: name_needs_quoting omits '&', so 'R&D'!A1 round-trips to the unparsable R&D!A1"]
-    fn ampersand_sheet_references_resolve_across_sheets() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("ampersand.xlsx");
-        write_ampersand_sheet_fixture(&path);
-        let cell = read_summary_a1(&path);
-        assert_eq!(cell.formatted, "59.5");
-        assert_eq!(cell.number, Some(59.5));
-        assert!(!cell.is_error);
+    fn quoting_covers_every_bare_reference_and_leaves_the_rest_alone() {
+        let names = vec![
+            "Sheet1".to_string(),
+            "R&D".to_string(),
+            "R&D Notes".to_string(),
+        ];
+        assert_eq!(
+            quote_bare_sheet_names("R&D!R[-17]C[0]", &names).unwrap(),
+            "'R&D'!R[-17]C[0]"
+        );
+        assert_eq!(
+            quote_bare_sheet_names("R&D!R[1]C[1]+R&D!R[2]C[1]", &names).unwrap(),
+            "'R&D'!R[1]C[1]+'R&D'!R[2]C[1]"
+        );
+        // longest name wins, so the shorter one does not truncate it
+        assert_eq!(
+            quote_bare_sheet_names("R&D Notes!R[1]C[1]", &names).unwrap(),
+            "'R&D Notes'!R[1]C[1]"
+        );
+        // a sheet name inside a text literal is not a reference
+        assert_eq!(quote_bare_sheet_names(r#""R&D!""#, &names), None);
+        // external workbooks and already-quoted names are left as they are
+        assert_eq!(quote_bare_sheet_names("[1]Sheet1!R[0]C[0]*2", &names), None);
+        assert_eq!(quote_bare_sheet_names("'R&D'!R[1]C[1]", &names), None);
+        assert_eq!(
+            quote_bare_sheet_names("SUM(R[1]C[1]:R[2]C[1])", &names),
+            None
+        );
     }
 
     #[test]
