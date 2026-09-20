@@ -40,7 +40,12 @@ export function rendererUrl(
   host: RendererHost,
   query?: Record<string, string>,
 ): string {
-  const url = new URL(devUrl ?? `${RENDERER_SCHEME}://${host}/index.html`)
+  let url: URL
+  try {
+    url = new URL(devUrl ?? `${RENDERER_SCHEME}://${host}/index.html`)
+  } catch {
+    throw new Error(`Invalid dev URL for renderer "${host}": "${devUrl}"`)
+  }
   for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value)
   return url.toString()
 }
@@ -65,6 +70,14 @@ export function resolveRendererFile(
   } catch {
     return null
   }
-  const file = resolve(root, pathname.replace(/^\/+/, ''))
-  return file === root || file.startsWith(root + sep) ? file : null
+  // Treat backslashes as separators too: %5c decodes to `\`, which resolves
+  // as a directory separator on Windows but not on POSIX.
+  const relative = pathname.replace(/\\/g, '/').replace(/^\/+/, '')
+  // Normalize the root first so trailing slashes or mixed separators cannot
+  // break the containment check below.
+  const base = resolve(root)
+  const file = resolve(base, relative)
+  // The root itself is a directory, not a file to serve.
+  if (file === base) return null
+  return file.startsWith(base + sep) ? file : null
 }

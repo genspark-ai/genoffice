@@ -88,6 +88,33 @@ describe('normalizeSheetRefs', () => {
     const result = normalizeSheetRefs([{ op: 'set_cell', sheet: 'Nope', address: 'A1' }], [])
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining('none') })
   })
+
+  it('ignores an empty-string ref like an absent one', () => {
+    const result = normalizeSheetRefs([{ op: 'set_cell', sheet: '', address: 'A1' }], SHEETS)
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error('expected ok')
+    expect(result.ops).toHaveLength(1)
+    expect(result.ops[0]).not.toHaveProperty('sheet')
+    expect(result.ops[0]).toMatchObject({ op: 'set_cell', address: 'A1' })
+  })
+
+  it('strips an empty-string name but keeps an explicit id', () => {
+    const result = normalizeSheetRefs(
+      [{ op: 'set_cell', sheet: '', sheetId: 'sheet-1', address: 'A1' }],
+      SHEETS,
+    )
+    expect(result).toMatchObject({ ops: [{ sheetId: 'sheet-1', address: 'A1' }] })
+    if (result.ok) expect(result.ops[0]).not.toHaveProperty('sheet')
+  })
+
+  it('resolves duplicate names deterministically: first tab wins', () => {
+    const dupes = [
+      { id: 'sheet-1', name: 'Summary' },
+      { id: 'sheet-9', name: 'summary' },
+    ]
+    const result = normalizeSheetRefs([{ op: 'set_cell', sheet: 'SUMMARY', address: 'A1' }], dupes)
+    expect(result).toMatchObject({ ops: [{ sheetId: 'sheet-1' }] })
+  })
 })
 
 describe('primarySheetId / primaryCellOf', () => {
@@ -111,6 +138,56 @@ describe('primarySheetId / primaryCellOf', () => {
   it('has nothing to report for a sheet-level op', () => {
     expect(primarySheetId([{ op: 'add_sheet', name: 'New' }])).toBeUndefined()
     expect(primaryCellOf([{ op: 'add_sheet', name: 'New' }])).toBeUndefined()
+  })
+
+  it('finds the primary sheet inside nested series data', () => {
+    expect(
+      primarySheetId([
+        {
+          op: 'edit_chart',
+          chartPath: 'added-chart-1',
+          seriesData: [{ index: 0, sheetId: 'jg_nIT-Asw-tL3tvR3f4q', valuesRange: 'A1:A5' }],
+        },
+      ]),
+    ).toBe('jg_nIT-Asw-tL3tvR3f4q')
+  })
+
+  it('prefers the top-level sheet but falls back to nested series', () => {
+    expect(
+      primarySheetId([
+        {
+          op: 'add_chart',
+          sheetId: 'sheet-1',
+          series: [{ sheetId: 'jg_nIT-Asw-tL3tvR3f4q' }],
+        },
+      ]),
+    ).toBe('sheet-1')
+  })
+
+  it('reports the copy target cell for a source-sheet-only op', () => {
+    expect(
+      primaryCellOf([
+        {
+          op: 'copy_range',
+          sourceSheetId: 'jg_nIT-Asw-tL3tvR3f4q',
+          source: 'A1:B2',
+          target: 'C3',
+        },
+      ]),
+    ).toBe('C3')
+  })
+
+  it('reports the target over the source for copy_range', () => {
+    expect(
+      primaryCellOf([{ op: 'copy_range', sheetId: 'sheet-1', source: 'A1:B2', target: 'C3:D4' }]),
+    ).toBe('C3')
+  })
+
+  it('focuses the top of a whole-column range and skips named ranges', () => {
+    expect(primaryCellOf([{ op: 'clear_range', sheetId: 'sheet-1', range: 'A:C' }])).toBe('A1')
+    expect(
+      primaryCellOf([{ op: 'clear_range', sheetId: 'sheet-1', range: 'MyRange' }]),
+    ).toBeUndefined()
   })
 })
 

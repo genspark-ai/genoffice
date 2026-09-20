@@ -8,6 +8,8 @@ export interface LocalRedaction extends RedactionInput {
   id: string
 }
 
+export const REDACTION_MIN_PTS = 3
+
 export function RedactionLayer({
   active,
   geom,
@@ -15,7 +17,9 @@ export function RedactionLayer({
   pageWidth,
   pageHeight,
   marks,
+  markLabel,
   onCommit,
+  onTooSmall,
 }: {
   active: boolean
   geom: PageGeom
@@ -23,7 +27,11 @@ export function RedactionLayer({
   pageWidth: number
   pageHeight: number
   marks: LocalRedaction[]
+  /** Translated label for pending marks (pass t('redact')); no new locale keys. */
+  markLabel: string
   onCommit: (rect: RedactionInput['rect']) => void
+  /** Called when a drag is discarded for falling below the minimum size. */
+  onTooSmall?: () => void
 }) {
   const [live, setLive] = useState<RedactionInput['rect'] | null>(null)
   const start = useRef<[number, number] | null>(null)
@@ -47,10 +55,17 @@ export function RedactionLayer({
     const rect = live
     start.current = null
     setLive(null)
-    if (!rect || rect[2] - rect[0] < 3 || rect[3] - rect[1] < 3) return
+    if (!rect) return
+    if (rect[2] - rect[0] < REDACTION_MIN_PTS || rect[3] - rect[1] < REDACTION_MIN_PTS) {
+      onTooSmall?.()
+      return
+    }
     onCommit(rect)
   }
-  const all = [...marks.map((mark) => mark.rect), ...(live ? [live] : [])]
+  const cancel = () => {
+    start.current = null
+    setLive(null)
+  }
   return (
     <div
       className="pdf-redaction-layer"
@@ -62,16 +77,24 @@ export function RedactionLayer({
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
-      onPointerCancel={up}
+      onPointerCancel={cancel}
     >
-      {all.map((rect, index) => (
+      {marks.map((mark) => (
         <div
-          key={index}
+          key={mark.id}
           className="pdf-redaction-mark"
-          style={pdfRectToCss(geom, rect, scale)}
-          aria-label="Pending redaction"
+          style={pdfRectToCss(geom, mark.rect, scale)}
+          aria-label={markLabel}
         />
       ))}
+      {live && (
+        <div
+          key="live"
+          className="pdf-redaction-mark"
+          style={pdfRectToCss(geom, live, scale)}
+          aria-label={markLabel}
+        />
+      )}
     </div>
   )
 }

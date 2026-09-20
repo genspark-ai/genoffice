@@ -32,7 +32,7 @@ export function Breadcrumb({ text, map, sid, state, onSelect }: Props): ReactEle
     current,
   ]
   return (
-    <div className="crumbs" role="navigation" aria-label="element path">
+    <div className="crumbs" role="navigation" aria-label={t('elementToolbar')}>
       {chain.map((e, i) => (
         <span key={e.sid} className="crumb-wrap">
           {i > 0 && <span className="crumb-sep">›</span>}

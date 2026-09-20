@@ -65,6 +65,7 @@ export {
   parseChartPartXml,
   patchChartPartXml,
   lumHex,
+  colLetter,
   CHART_WORKBOOK_REL_TYPE,
   type ChartPatch,
   type ChartSeriesPatch,
@@ -127,7 +128,13 @@ export {
 export { bibliographyLine, citationText, parseSourcesXml } from './sources'
 export { parseZoteroDocumentDataXml, patchZoteroDocumentDataXml } from './zotero-doc-props'
 export { readThemeColors, readThemeFonts } from './theme'
-export { hashProtectionPassword, verifyProtectionPassword } from './protection'
+export {
+  DEFAULT_SPIN_COUNT,
+  MAX_SPIN_COUNT,
+  hashProtectionPassword,
+  resolveSpinCount,
+  verifyProtectionPassword,
+} from './protection'
 export {
   decodeSymbolChar,
   decodeSymbolText,
