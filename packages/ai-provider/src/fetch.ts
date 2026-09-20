@@ -31,7 +31,7 @@ export function setAiUserAgent(ua: string): void {
 }
 
 /** protocols pass plain header records; keep that shape so callers can read the request back */
-function withUserAgent(init: RequestInit): RequestInit {
+export function withUserAgent(init: RequestInit): RequestInit {
   const given = init.headers
   const headers: Record<string, string> = {}
   if (given instanceof Headers) given.forEach((value, name) => (headers[name] = value))
