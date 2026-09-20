@@ -246,11 +246,12 @@ async function createXlsx(
       renames: dsl.renames,
       gateway: dsl.gateway,
     })
-    r = { ...r, warning: r.warning ?? w.warning }
+    r = { ...r, warning: r.warning ?? w.warning, formulaError: r.formulaError ?? w.formulaError }
     for (const note of w.notes ?? []) ctx.warn(note)
   }
 
   if (r.warning) ctx.warn({ code: 'formulas_not_cached', message: r.warning })
+  if (r.formulaError) ctx.warn({ code: 'formula_errors', message: r.formulaError })
   return {
     sheets: tables.length,
     cells: r.cells,

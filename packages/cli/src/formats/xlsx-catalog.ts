@@ -126,7 +126,9 @@ const FOOTER = [
   'sheet added or renamed earlier in the batch is addressed by its new name. Rules, links, notes, filters and',
   'visuals must come after any row/column op of their sheet; defined-name ops cannot share a batch with sheet',
   'or row/column ops. Formulas written by a batch are evaluated by the workbook engine and stored',
-  'with their results; functions the engine lacks are left for Excel to compute on open (warning formulas_not_cached).',
+  'with their results; functions the engine lacks are left for Excel to compute on open (warning formulas_not_cached),',
+  'and a formula the engine cannot parse is reported separately (warning formula_errors) so a bad reference is not',
+  'mistaken for a missing function.',
 ]
 
 function opSchemas(): Map<string, JsonSchema> {
