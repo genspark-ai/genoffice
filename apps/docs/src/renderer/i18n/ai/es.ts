@@ -168,7 +168,7 @@ export const es = {
   aiCmdNoneSkipped:
     'No hay bloques editables; el documento no se modificó ({count} bloques protegidos omitidos: las tablas/imágenes no se pueden modificar con comandos de estilo).',
   aiCmdNoneUnchanged:
-    '{count} bloque(s) coincidente(s) ya tenían el estado solicitado; el documento no se modificó.',
+    '{count} bloque(s) coincidente(s) quedaron sin cambios; el documento no se modificó.',
   aiCmdTextStyle: 'Estilo de texto actualizado en {count} bloque(s)',
   aiCmdMatchedStyle: 'Estilo aplicado a {count} coincidencia(s) en {blocks} bloque(s)',
   aiCmdParaStyle: 'Formato de párrafo actualizado en {count} bloque(s)',

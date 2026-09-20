@@ -164,7 +164,7 @@ export const en = {
   aiCmdNoneSkipped:
     'No editable blocks; the document was not changed ({count} protected blocks skipped — tables/images cannot be changed by style commands).',
   aiCmdNoneUnchanged:
-    '{count} matching block(s) already had the requested state; the document was not changed.',
+    '{count} matching block(s) were left unchanged; the document was not changed.',
   aiCmdTextStyle: 'Updated text style on {count} block(s)',
   aiCmdMatchedStyle: 'Styled {count} match(es) across {blocks} block(s)',
   aiCmdParaStyle: 'Updated paragraph format on {count} block(s)',

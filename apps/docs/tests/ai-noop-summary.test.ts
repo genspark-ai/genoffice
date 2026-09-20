@@ -12,7 +12,15 @@ interface JsonNode {
   marks?: Array<{ type: string; attrs?: Record<string, unknown> }>
 }
 
+const REV = { author: 'Bob', date: '2026-08-20T10:00:00Z' }
+
 const boldText = (t: string): JsonNode => ({ type: 'text', text: t, marks: [{ type: 'bold' }] })
+
+const deletedText = (t: string): JsonNode => ({
+  type: 'text',
+  text: t,
+  marks: [{ type: 'del', attrs: REV }],
+})
 
 const para = (content: JsonNode[]): JsonNode => ({
   type: 'docParagraph',
@@ -39,14 +47,14 @@ function createEditor(content: JsonNode[]): Editor {
 setModuleLang('en')
 
 describe('no-op command summary', () => {
-  it('reports blocks that matched but already had the requested state', () => {
+  it('reports blocks that matched but were left unchanged', () => {
     const editor = createEditor([para([boldText('Already bold')]), para([boldText('Also bold')])])
     const outcome = executeOps(editor, [
       { op: 'setFont', target: { nodeType: 'docParagraph' }, bold: true },
     ])
     expect(outcome.ok, outcome.error).toBe(true)
     expect(outcome.results[0]).toMatchObject({ matched: 2, changed: 0, skippedProtected: 0 })
-    expect(outcome.summary).toContain('2 matching block(s) already had the requested state')
+    expect(outcome.summary).toContain('2 matching block(s) were left unchanged')
     expect(outcome.summary).not.toContain('No matching')
   })
 
@@ -58,5 +66,23 @@ describe('no-op command summary', () => {
     expect(outcome.ok, outcome.error).toBe(true)
     expect(outcome.results[0]).toMatchObject({ matched: 0, changed: 0 })
     expect(outcome.summary).toBe('No matching blocks; the document was not changed.')
+  })
+
+  it('does not let tracked-deleted hits cancel out another op’s matches', () => {
+    const editor = createEditor([
+      para([boldText('Already bold')]),
+      para([boldText('Also bold')]),
+      para([deletedText('foo foo foo')]),
+    ])
+    const outcome = executeOps(editor, [
+      { op: 'setFont', target: { blockIndexes: [0, 1] }, bold: true },
+      { op: 'findReplace', find: 'foo', replace: 'bar' },
+    ])
+    expect(outcome.ok, outcome.error).toBe(true)
+    expect(outcome.results[0]).toMatchObject({ matched: 2, changed: 0 })
+    // findReplace counts struck-through hits, not blocks, and leaves them out of `matched`
+    expect(outcome.results[1]).toMatchObject({ matched: 0, changed: 0, skippedDeleted: 3 })
+    expect(outcome.summary).toContain('2 matching block(s) were left unchanged')
+    expect(outcome.summary).not.toContain('No matching')
   })
 })

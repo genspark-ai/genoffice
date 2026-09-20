@@ -165,8 +165,7 @@ export const cs = {
   aiCmdNone: 'Žádné odpovídající bloky; dokument nebyl změněn.',
   aiCmdNoneSkipped:
     'Žádné upravitelné bloky; dokument nebyl změněn (přeskočeno {count} chráněných bloků – tabulky/obrázky nelze měnit příkazy stylů).',
-  aiCmdNoneUnchanged:
-    'Odpovídající bloky už byly v požadovaném stavu: {count} – dokument nebyl změněn.',
+  aiCmdNoneUnchanged: 'Odpovídající bloky zůstaly beze změny: {count} – dokument nebyl změněn.',
   aiCmdTextStyle: 'Aktualizován styl textu u bloků: {count}',
   aiCmdMatchedStyle: 'Nastylováno shod: {count} v blocích: {blocks}',
   aiCmdParaStyle: 'Aktualizován formát odstavce u bloků: {count}',

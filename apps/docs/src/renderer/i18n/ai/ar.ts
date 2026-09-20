@@ -161,7 +161,7 @@ export const ar = {
   aiCmdNone: 'لا توجد كتل مطابقة؛ لم يتغير المستند.',
   aiCmdNoneSkipped:
     'لا توجد كتل قابلة للتعديل؛ لم يتغير المستند (تم تخطي {count} كتلة محمية — لا يمكن تعديل الجداول/الصور بأوامر الأنماط).',
-  aiCmdNoneUnchanged: '{count} كتلة مطابقة كانت بالفعل بالحالة المطلوبة؛ لم يتغير المستند.',
+  aiCmdNoneUnchanged: 'تُركت {count} كتلة مطابقة دون تغيير؛ لم يتغير المستند.',
   aiCmdTextStyle: 'تم تحديث نمط النص في {count} كتلة',
   aiCmdMatchedStyle: 'طُبق النمط على {count} تطابقات في {blocks} كتل',
   aiCmdParaStyle: 'تم تحديث تنسيق الفقرة في {count} كتلة',

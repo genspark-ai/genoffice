@@ -164,8 +164,7 @@ export const ms = {
   aiCmdNone: 'Tiada blok sepadan; dokumen tidak diubah.',
   aiCmdNoneSkipped:
     'Tiada blok boleh disunting; dokumen tidak diubah ({count} blok dilindungi dilangkau — jadual/imej tidak boleh diubah dengan perintah gaya).',
-  aiCmdNoneUnchanged:
-    '{count} blok sepadan sudah berada dalam keadaan yang diminta; dokumen tidak diubah.',
+  aiCmdNoneUnchanged: '{count} blok sepadan dibiarkan tanpa perubahan; dokumen tidak diubah.',
   aiCmdTextStyle: 'Gaya teks dikemas kini pada {count} blok',
   aiCmdMatchedStyle: 'Gaya digunakan pada {count} padanan dalam {blocks} blok',
   aiCmdParaStyle: 'Format perenggan dikemas kini pada {count} blok',

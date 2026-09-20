@@ -167,7 +167,7 @@ export const nl = {
   aiCmdNoneSkipped:
     'Geen bewerkbare blokken; het document is niet gewijzigd ({count} beveiligde blokken overgeslagen — tabellen/afbeeldingen kunnen niet met stijlopdrachten worden gewijzigd).',
   aiCmdNoneUnchanged:
-    '{count} overeenkomende blok(ken) hadden de gevraagde staat al; het document is niet gewijzigd.',
+    '{count} overeenkomende blok(ken) bleven ongewijzigd; het document is niet gewijzigd.',
   aiCmdTextStyle: 'Tekststijl bijgewerkt in {count} blok(ken)',
   aiCmdMatchedStyle: 'Stijl toegepast op {count} overeenkomst(en) in {blocks} blok(ken)',
   aiCmdParaStyle: 'Alineaopmaak bijgewerkt in {count} blok(ken)',

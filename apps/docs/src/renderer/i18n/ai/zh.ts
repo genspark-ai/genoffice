@@ -154,7 +154,7 @@ export const zh = {
   aiCmdNone: '没有命中需要修改的块,文档未改动。',
   aiCmdNoneSkipped:
     '没有可修改的块,文档未改动(跳过 {count} 个受保护块,表格/图片等无法用样式命令修改)。',
-  aiCmdNoneUnchanged: '{count} 个块已经是目标状态,文档未改动。',
+  aiCmdNoneUnchanged: '{count} 个命中的块未作修改,文档未改动。',
   aiCmdTextStyle: '已更新 {count} 个块的文字样式',
   aiCmdMatchedStyle: '已为 {count} 处匹配文字更新样式({blocks} 个块)',
   aiCmdParaStyle: '已更新 {count} 个块的段落格式',
