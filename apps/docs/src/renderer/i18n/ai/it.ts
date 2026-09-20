@@ -168,6 +168,8 @@ export const it = {
   aiCmdNone: 'Nessun blocco corrispondente; il documento non è stato modificato.',
   aiCmdNoneSkipped:
     'Nessun blocco modificabile; il documento non è stato modificato ({count} blocchi protetti ignorati — tabelle/immagini non possono essere modificate con comandi di stile).',
+  aiCmdNoneUnchanged:
+    '{count} blocco/i corrispondente/i erano già nello stato richiesto; il documento non è stato modificato.',
   aiCmdTextStyle: 'Stile del testo aggiornato in {count} blocco/i',
   aiCmdMatchedStyle: 'Stile applicato a {count} occorrenze in {blocks} blocchi',
   aiCmdParaStyle: 'Formato del paragrafo aggiornato in {count} blocco/i',

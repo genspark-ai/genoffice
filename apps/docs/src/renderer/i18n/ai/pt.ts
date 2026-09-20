@@ -167,6 +167,8 @@ export const pt = {
   aiCmdNone: 'Nenhum bloco correspondente; o documento não foi alterado.',
   aiCmdNoneSkipped:
     'Nenhum bloco editável; o documento não foi alterado ({count} blocos protegidos ignorados — tabelas/imagens não podem ser alteradas por comandos de estilo).',
+  aiCmdNoneUnchanged:
+    '{count} bloco(s) correspondente(s) já estavam no estado solicitado; o documento não foi alterado.',
   aiCmdTextStyle: 'Estilo de texto atualizado em {count} bloco(s)',
   aiCmdMatchedStyle: 'Estilo aplicado a {count} ocorrência(s) em {blocks} bloco(s)',
   aiCmdParaStyle: 'Formato de parágrafo atualizado em {count} bloco(s)',

@@ -161,6 +161,7 @@ export const ko = {
   aiCmdNone: '수정할 블록이 없어 문서가 변경되지 않았습니다.',
   aiCmdNoneSkipped:
     '수정 가능한 블록이 없어 문서가 변경되지 않았습니다(보호된 블록 {count}개 건너뜀. 표/그림 등은 스타일 명령으로 수정할 수 없습니다).',
+  aiCmdNoneUnchanged: '블록 {count}개가 이미 요청한 상태여서 문서가 변경되지 않았습니다.',
   aiCmdTextStyle: '블록 {count}개의 텍스트 스타일을 업데이트했습니다',
   aiCmdMatchedStyle: '일치 텍스트 {count}곳의 스타일을 업데이트했습니다({blocks}개 블록)',
   aiCmdParaStyle: '블록 {count}개의 단락 서식을 업데이트했습니다',

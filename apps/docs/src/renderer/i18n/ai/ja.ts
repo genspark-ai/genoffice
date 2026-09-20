@@ -164,6 +164,8 @@ export const ja = {
   aiCmdNone: '変更対象のブロックが見つからなかったため、文書は変更されていません。',
   aiCmdNoneSkipped:
     '変更可能なブロックがないため、文書は変更されていません({count} 個の保護されたブロックをスキップ。表や画像などはスタイルコマンドでは変更できません)。',
+  aiCmdNoneUnchanged:
+    '{count} 個のブロックはすでに指定どおりの状態のため、文書は変更されていません。',
   aiCmdTextStyle: '{count} 個のブロックの文字スタイルを更新しました',
   aiCmdMatchedStyle: '{count} 件の一致テキストのスタイルを更新しました({blocks} ブロック)',
   aiCmdParaStyle: '{count} 個のブロックの段落書式を更新しました',

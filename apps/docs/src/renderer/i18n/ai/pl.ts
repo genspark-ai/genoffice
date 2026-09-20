@@ -165,6 +165,8 @@ export const pl = {
   aiCmdNone: 'Brak pasujących bloków; dokument nie został zmieniony.',
   aiCmdNoneSkipped:
     'Brak bloków do edycji; dokument nie został zmieniony (pominięto chronione bloki: {count} — tabel/obrazów nie można zmieniać poleceniami stylu).',
+  aiCmdNoneUnchanged:
+    'Pasujące bloki były już w żądanym stanie: {count} — dokument nie został zmieniony.',
   aiCmdTextStyle: 'Zaktualizowano styl tekstu w blokach: {count}',
   aiCmdMatchedStyle: 'Zastosowano styl do {count} dopasowań w {blocks} blokach',
   aiCmdParaStyle: 'Zaktualizowano format akapitu w blokach: {count}',

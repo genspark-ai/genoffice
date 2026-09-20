@@ -1317,7 +1317,11 @@ function summarize(results: OpResult[]): string {
   const total = results.reduce((sum, r) => sum + r.changed, 0)
   if (total === 0) {
     const skipped = results.reduce((sum, r) => sum + r.skippedProtected, 0)
-    return skipped > 0 ? t('aiCmdNoneSkipped', { count: skipped }) : t('aiCmdNone')
+    if (skipped > 0) return t('aiCmdNoneSkipped', { count: skipped })
+    // blocks were found but needed no edit: say so, or the model retries other selectors.
+    // tracked-deletion skips are not "already as requested", so they do not count here.
+    const unchanged = results.reduce((sum, r) => sum + r.matched - (r.skippedDeleted ?? 0), 0)
+    return unchanged > 0 ? t('aiCmdNoneUnchanged', { count: unchanged }) : t('aiCmdNone')
   }
   const parts = results.map((r) => {
     let part: string

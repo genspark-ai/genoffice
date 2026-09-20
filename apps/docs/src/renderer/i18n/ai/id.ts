@@ -163,6 +163,8 @@ export const id = {
   aiCmdNone: 'Tidak ada blok yang cocok; dokumen tidak diubah.',
   aiCmdNoneSkipped:
     'Tidak ada blok yang dapat diedit; dokumen tidak diubah ({count} blok terlindungi dilewati — tabel/gambar tidak dapat diubah dengan perintah gaya).',
+  aiCmdNoneUnchanged:
+    '{count} blok yang cocok sudah dalam keadaan yang diminta; dokumen tidak diubah.',
   aiCmdTextStyle: 'Gaya teks diperbarui pada {count} blok',
   aiCmdMatchedStyle: 'Gaya diterapkan pada {count} kecocokan di {blocks} blok',
   aiCmdParaStyle: 'Format paragraf diperbarui pada {count} blok',

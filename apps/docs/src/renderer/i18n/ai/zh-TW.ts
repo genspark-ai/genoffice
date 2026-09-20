@@ -156,6 +156,7 @@ export const zhTW = {
   aiCmdNone: '沒有命中需要修改的區塊,文件未變更。',
   aiCmdNoneSkipped:
     '沒有可修改的區塊,文件未變更(略過 {count} 個受保護區塊,表格/圖片等無法用樣式命令修改)。',
+  aiCmdNoneUnchanged: '{count} 個區塊已經是目標狀態,文件未變更。',
   aiCmdTextStyle: '已更新 {count} 個區塊的文字樣式',
   aiCmdMatchedStyle: '已為 {count} 處匹配文字更新樣式({blocks} 個區塊)',
   aiCmdParaStyle: '已更新 {count} 個區塊的段落格式',
