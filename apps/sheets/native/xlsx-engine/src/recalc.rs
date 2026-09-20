@@ -333,9 +333,22 @@ enum PinnedValue {
 /// unreachable, so pin those cells to the value the file carries and let the
 /// dependents compute against it. The renderer never sees the cell as a
 /// formula afterwards, so its own cached copy stays on screen.
+///
+/// A formula that names a sheet of *this* workbook is excluded: the data is
+/// in the file, so a parse failure there is an engine gap, not an
+/// unreachable source, and the cached value is not an answer — a file
+/// written without cached values (openpyxl writes an empty `<v/>`) imports
+/// as zero, which would pin a number nobody computed. Those cells
+/// keep their #ERROR!, which the renderer already declines to display.
 fn pin_unparsable_formulas(model: &mut Model) {
     use ironcalc::base::expressions::parser::Node;
     use ironcalc::base::types::Cell;
+    let names: Vec<String> = model
+        .workbook
+        .worksheets
+        .iter()
+        .map(|worksheet| worksheet.name.clone())
+        .collect();
     let mut pins = Vec::new();
     for (sheet, worksheet) in model.workbook.worksheets.iter().enumerate() {
         let Some(parsed) = model.parsed_formulas.get(sheet) else {
@@ -349,12 +362,21 @@ fn pin_unparsable_formulas(model: &mut Model) {
                     Cell::CellFormulaBoolean { f, v, .. } => (*f, PinnedValue::Bool(*v)),
                     _ => continue,
                 };
-                if matches!(
+                if !matches!(
                     parsed.get(formula as usize),
                     Some(Node::ParseErrorKind { .. })
                 ) {
-                    pins.push((sheet as u32, *row, *column, value));
+                    continue;
                 }
+                let text = worksheet
+                    .shared_formulas
+                    .get(formula as usize)
+                    .map(String::as_str)
+                    .unwrap_or_default();
+                if references_a_sheet_of_this_workbook(text, &names) {
+                    continue;
+                }
+                pins.push((sheet as u32, *row, *column, value));
             }
         }
     }
@@ -368,6 +390,29 @@ fn pin_unparsable_formulas(model: &mut Model) {
             PinnedValue::Text(text) => model.update_cell_with_text(sheet, row, column, &text),
             PinnedValue::Bool(flag) => model.update_cell_with_bool(sheet, row, column, flag),
         };
+    }
+}
+
+/// True when the formula text carries a bare `Name!` reference to one of the
+/// workbook's own sheets. The prefix test rejects the external-workbook forms
+/// (`[1]Sheet1!A1`, `'[1]Sheet1'!A1`) and any longer name that merely ends in
+/// this one.
+fn references_a_sheet_of_this_workbook(formula: &str, names: &[String]) -> bool {
+    names.iter().any(|name| {
+        !name.is_empty()
+            && formula
+                .match_indices(&format!("{name}!"))
+                .any(|(at, _)| at == 0 || !continues_a_sheet_name(&formula[..at]))
+    })
+}
+
+fn continues_a_sheet_name(before: &str) -> bool {
+    match before.chars().next_back() {
+        // ']' closes an external-workbook index, '\'' closes a quoted name
+        // (which parses fine and never reaches here), '!' a 3-D range.
+        Some(']') | Some('\'') | Some('!') => true,
+        Some(char) => char.is_alphanumeric() || char == '_' || char == '.',
+        None => false,
     }
 }
 
@@ -675,6 +720,129 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, SidecarError::InvalidRequest(_)));
+    }
+
+    /// Two sheets, one named `R&D`, and a Summary formula written the way
+    /// every other producer writes it: quoted name, no cached value.
+    fn write_ampersand_sheet_fixture(path: &Path) {
+        use std::io::Write;
+        let entries: [(&str, &str); 7] = [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Summary" sheetId="1" r:id="rId1"/><sheet name="R&amp;D" sheetId="2" r:id="rId2"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/styles.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1"><f>'R&amp;D'!A1</f><v /></c></row></sheetData></worksheet>"#,
+            ),
+            (
+                "xl/worksheets/sheet2.xml",
+                r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:A1"/><sheetData><row r="1"><c r="A1"><v>59.5</v></c></row></sheetData></worksheet>"#,
+            ),
+        ];
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, content) in entries {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(content.as_bytes()).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    fn read_summary_a1(path: &Path) -> RecalcCell {
+        let mut cache = RecalcCache::new();
+        let result = recalc_cells(
+            &mut cache,
+            path,
+            &[],
+            &[RecalcRead {
+                sheet: "Summary".into(),
+                range: CellRange {
+                    start_row: 0,
+                    end_row: 0,
+                    start_column: 0,
+                    end_column: 0,
+                },
+            }],
+        )
+        .unwrap();
+        result.cells.into_iter().next().unwrap()
+    }
+
+    /// IronCalc 0.7.1 drops the quotes around a sheet name containing `&`
+    /// when it converts an imported formula to R1C1 (`name_needs_quoting` in
+    /// `expressions/utils` omits `&`), so `'R&D'!A1` is stored as `R&D!A1`
+    /// and never parses again. Nothing here can compute the reference, but
+    /// the sidecar must not invent a value for it: a file with no cached
+    /// value (openpyxl writes a bare <v />) imports as zero, and pinning that would report 0 for a cell
+    /// Excel computes as 59.5.
+    #[test]
+    fn ampersand_sheet_references_are_not_pinned_to_an_invented_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ampersand.xlsx");
+        write_ampersand_sheet_fixture(&path);
+        let cell = read_summary_a1(&path);
+        assert_eq!(cell.formatted, "#ERROR!");
+        assert!(cell.is_error);
+        assert_eq!(cell.number, None);
+    }
+
+    /// The value Excel and the app's grid both show. Un-ignore this once
+    /// IronCalc quotes sheet names that need it on the way to R1C1.
+    #[test]
+    #[ignore = "blocked on IronCalc 0.7.1: name_needs_quoting omits '&', so 'R&D'!A1 round-trips to the unparsable R&D!A1"]
+    fn ampersand_sheet_references_resolve_across_sheets() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ampersand.xlsx");
+        write_ampersand_sheet_fixture(&path);
+        let cell = read_summary_a1(&path);
+        assert_eq!(cell.formatted, "59.5");
+        assert_eq!(cell.number, Some(59.5));
+        assert!(!cell.is_error);
+    }
+
+    #[test]
+    fn a_sheet_name_is_recognised_only_as_a_bare_reference() {
+        let names = vec!["Sheet1".to_string(), "R&D".to_string()];
+        assert!(references_a_sheet_of_this_workbook(
+            "R&D!R[-17]C[0]",
+            &names
+        ));
+        assert!(references_a_sheet_of_this_workbook(
+            "SUM(R&D!R[1]C[1])",
+            &names
+        ));
+        // external workbooks keep their pin
+        assert!(!references_a_sheet_of_this_workbook(
+            "[1]Sheet1!R[0]C[0]*2",
+            &names
+        ));
+        assert!(!references_a_sheet_of_this_workbook(
+            r#"'[1]Sheet1'!R[0]C[0]&" units""#,
+            &names
+        ));
+        // a longer name that merely ends in one of ours
+        assert!(!references_a_sheet_of_this_workbook(
+            "OldSheet1!R[0]C[0]",
+            &names
+        ));
     }
 
     fn write_external_link_fixture(path: &Path) {
