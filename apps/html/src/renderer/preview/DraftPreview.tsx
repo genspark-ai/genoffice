@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactElement } from 'react'
+import { useI18n } from '../i18n/locale'
 
 /**
  * Read-only mirror of a page while the AI is still writing it. The draft grows
@@ -9,6 +10,7 @@ import { useEffect, useRef, type ReactElement } from 'react'
  * Scripts stay off through the sandbox; this is a progress view, not the document.
  */
 export function DraftPreview({ html }: { html: string }): ReactElement {
+  const { t } = useI18n()
   const frameRef = useRef<HTMLIFrameElement>(null)
   const writtenRef = useRef('')
 
@@ -30,7 +32,7 @@ export function DraftPreview({ html }: { html: string }): ReactElement {
       <iframe
         ref={frameRef}
         className="draft-preview-frame"
-        title="draft"
+        title={t('viewPreview')}
         sandbox="allow-same-origin"
       />
     </div>

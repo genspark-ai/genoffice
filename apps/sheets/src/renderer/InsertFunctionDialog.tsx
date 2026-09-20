@@ -374,7 +374,7 @@ export function InsertFunctionDialog({
       <div
         className="format-cells-dialog insert-function-dialog"
         role="dialog"
-        aria-label="Insert Function"
+        aria-label={t('appInsertFunction')}
         onClick={(event) => event.stopPropagation()}
       >
         <header>{t('dlgFnTitle', { target: targetLabel })}</header>

@@ -16,7 +16,7 @@ export const NavPane = memo(function NavPane({
   onClose: () => void
 }) {
   const { t } = useI18n()
-  const headings = collectHeadings(doc)
+  const headings = collectHeadings(doc, editor.storage.listNumbering?.styles)
   return (
     <aside className="nav-pane">
       <div className="nav-pane-head">

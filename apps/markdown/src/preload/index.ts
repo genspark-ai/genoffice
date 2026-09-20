@@ -59,6 +59,12 @@ const api: MarkdownApi = {
   },
   exportDocx: (request) => ipcRenderer.invoke(MARKDOWN_CHANNELS.exportDocx, request),
   exportPdf: (request) => ipcRenderer.invoke(MARKDOWN_CHANNELS.exportPdf, request),
+  prepareImageExport: (request) =>
+    ipcRenderer.invoke(MARKDOWN_CHANNELS.prepareImageExport, request),
+  writeExportImage: (id, page, base64) =>
+    ipcRenderer.invoke(MARKDOWN_CHANNELS.writeExportImage, id, page, base64),
+  finishImageExport: (id, success) =>
+    ipcRenderer.invoke(MARKDOWN_CHANNELS.finishImageExport, id, success),
   getLanguage: () => ipcRenderer.invoke(MARKDOWN_CHANNELS.getLanguage),
   onLanguageChanged: (handler) => {
     const listener = (_e: Electron.IpcRendererEvent, lang: Lang) => handler(lang)

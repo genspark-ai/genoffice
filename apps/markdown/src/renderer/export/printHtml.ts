@@ -61,7 +61,10 @@ export function buildPrintHtml(editorRoot: HTMLElement, title: string): string {
     el.removeAttribute('contenteditable')
 
   // editor-only code block chrome (language picker + copy button) must not print
-  for (const bar of clone.querySelectorAll('.md-codeblock-bar, .md-diagram-error')) bar.remove()
+  for (const bar of clone.querySelectorAll(
+    '.md-codeblock-bar, .md-diagram-error, .ProseMirror-separator',
+  ))
+    bar.remove()
   // a rendered diagram block prints as its picture; an unrendered one keeps its source
   for (const block of clone.querySelectorAll('[data-diagram="rendered"] pre')) block.remove()
 

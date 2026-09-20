@@ -14,6 +14,8 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import { FindPanel, type FindFocusRequest, type FindPanelStrings } from '@genoffice/ui'
 import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
+import { exportImages } from './export/imageExport'
+import type { StringKey } from './i18n/locale'
 import { useI18n } from './i18n/locale'
 import {
   buildFrontmatterRaw,
@@ -130,6 +132,11 @@ export default function App() {
   const [filePath, setFilePath] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [saveState, setSaveState] = useState<SaveState>('idle')
+  const exportingImagesRef = useRef(false)
+  const [imageExportStatus, setImageExportStatus] = useState<{
+    key: StringKey
+    params?: Record<string, string | number>
+  } | null>(null)
   const [slashState, setSlashState] = useState<SlashMenuState | null>(null)
   const [fmOpen, setFmOpen] = useState(false)
   const [fmText, setFmText] = useState('')
@@ -402,6 +409,44 @@ export default function App() {
       (filePathRef.current
         ? filePathRef.current.replace(/^.*[/\\]/, '').replace(/\.(md|markdown)$/i, '')
         : deriveAutoFileName(current)) || 'Untitled'
+    if (format === 'png') {
+      if (exportingImagesRef.current) return false
+      exportingImagesRef.current = true
+      setImageExportStatus({ key: 'appExportingImages' })
+      try {
+        await document.fonts.ready
+        await Promise.all(
+          [
+            ...current.view.dom.querySelectorAll<HTMLImageElement>(
+              'img[src]:not(.ProseMirror-separator)',
+            ),
+          ].map((image) => image.decode().catch(() => {})),
+        )
+        const result = await exportImages(
+          buildPrintHtml(current.view.dom, suggestedName),
+          suggestedName,
+          (count) => setImageExportStatus({ key: 'appExportImagesProgress', params: { count } }),
+        )
+        if (!result.ok) throw new Error(result.error)
+        if ('canceled' in result) {
+          setImageExportStatus(null)
+          return false
+        }
+        setImageExportStatus({
+          key: 'appExportImagesDone',
+          params: { count: result.count ?? 0, dir: result.path },
+        })
+        return true
+      } catch (err) {
+        setImageExportStatus({
+          key: 'appExportImagesFailed',
+          params: { error: err instanceof Error ? err.message : String(err) },
+        })
+        return false
+      } finally {
+        exportingImagesRef.current = false
+      }
+    }
     try {
       if (format === 'pdf') {
         const html = buildPrintHtml(current.view.dom, suggestedName)
@@ -860,6 +905,11 @@ export default function App() {
           </div>
           <footer className="status-bar">
             <div className="status-left">
+              {imageExportStatus && (
+                <span className="status-item status-export" role="status">
+                  {t(imageExportStatus.key, imageExportStatus.params)}
+                </span>
+              )}
               {fileName && <span className="status-item status-file">{fileName}</span>}
             </div>
             <div className="status-right">

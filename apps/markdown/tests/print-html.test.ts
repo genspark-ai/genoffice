@@ -33,13 +33,14 @@ describe('buildPrintHtml', () => {
   it('strips editor-only chrome from the clone', () => {
     const html = buildPrintHtml(
       editorRoot(
-        '<p contenteditable="true">text</p>' +
+        '<p contenteditable="true">text<img class="ProseMirror-separator" alt=""></p>' +
           '<div class="md-codeblock-bar"><button>copy</button></div>',
       ),
       'Notes',
     )
     expect(html).not.toContain('contenteditable')
     expect(html).not.toContain('md-codeblock-bar')
+    expect(html).not.toContain('ProseMirror-separator')
     expect(html).toContain('<p>text</p>')
   })
 })

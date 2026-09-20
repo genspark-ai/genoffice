@@ -27,7 +27,15 @@ export const COPYRIGHT_HOSTS = ['gettyimages', 'istockphoto', 'shutterstock', 'c
 export function isCopyrightHost(imageUrl: string): boolean {
   const host = safeHost(imageUrl).toLowerCase()
   if (!host) return false
-  return COPYRIGHT_HOSTS.some((d) => host.includes(d))
+  const labels = host.split('.')
+  return COPYRIGHT_HOSTS.some((entry) => {
+    const d = entry.toLowerCase()
+    // Exact host or subdomain suffix match.
+    if (host === d || host.endsWith('.' + d)) return true
+    // Bare stock names match the registrable domain label, so
+    // myshutterstock.com stays allowed while sub.shutterstock.com stays blocked.
+    return labels.length >= 2 && labels[labels.length - 2] === d
+  })
 }
 
 export function safeHost(url: unknown): string {

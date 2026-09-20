@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import type { Editor } from '@tiptap/core'
+import { openSource } from './helpers'
 const rebaseSource = '<details>\n<img src="assets/old.png">\n</details>\n'
 const source = 'Title\n=====\n\n* item  \n\n\n'
 

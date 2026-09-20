@@ -263,6 +263,8 @@ const api: SlidesApi = {
   getChartData: (slideIndex: number, sourceId: string) =>
     ipcRenderer.invoke('slides:get-chart-data', slideIndex, sourceId),
   copyElements: (op: CopyElementsOp) => ipcRenderer.invoke('slides:copy-elements', op),
+  copyElementsImage: (clipboardToken: string, pngBase64: string) =>
+    ipcRenderer.invoke('slides:copy-elements-image', clipboardToken, pngBase64),
   pasteElements: (op: PasteElementsOp) => ipcRenderer.invoke('slides:paste-elements', op),
   duplicateElements: (op: DuplicateElementsOp) =>
     ipcRenderer.invoke('slides:duplicate-elements', op),
