@@ -21,10 +21,23 @@ function freshEditor(extensions: Editor['options']['extensions']): Editor {
   return editor
 }
 
+/** `loose` exists only in our schema; drop it before comparing with the stock parse */
+function withoutLoose(json: unknown): unknown {
+  if (Array.isArray(json)) return json.map(withoutLoose)
+  if (!json || typeof json !== 'object') return json
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(json)) {
+    if (key === 'loose') continue
+    out[key] = withoutLoose(value)
+  }
+  if (out.attrs && Object.keys(out.attrs as object).length === 0) delete out.attrs
+  return out
+}
+
 function parseWith(extensions: Editor['options']['extensions'], md: string): unknown {
   const editor = freshEditor(extensions)
   editor.commands.setContent(md, { contentType: 'markdown' })
-  return editor.getJSON()
+  return withoutLoose(editor.getJSON())
 }
 
 /** the stock tokenizers, for equivalence checks */

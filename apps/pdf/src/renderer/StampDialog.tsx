@@ -41,7 +41,11 @@ export function StampDialog({
     previouslyFocused.current = document.activeElement as HTMLElement | null
     const root = dialogRef.current
     if (root && !root.contains(document.activeElement)) {
-      root.querySelector<HTMLElement>('input, textarea, select, button')?.focus()
+      // The tab strip precedes the text field; land in the field so typing works
+      ;(
+        root.querySelector<HTMLElement>('input, textarea, select') ??
+        root.querySelector<HTMLElement>('button')
+      )?.focus()
     }
     return () => {
       previouslyFocused.current?.focus?.()

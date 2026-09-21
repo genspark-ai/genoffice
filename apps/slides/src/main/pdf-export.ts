@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ExportPdfLink } from '../shared/ipc'
+import type { ExportPdfLink, ExportPdfPage } from '../shared/ipc'
 
 export interface PdfExportWindow {
   loadFile(path: string): Promise<void>
@@ -13,12 +13,14 @@ export interface PdfExportWindow {
 }
 
 export interface ExportSlidesPdfOptions {
-  pngsBase64: string[]
+  pages: ExportPdfPage[]
   widthPx: number
   heightPx: number
   filePath: string
-  /** Per-page clickable link overlays (fractions of the page box), same order as pngsBase64 */
+  /** Per-page clickable link overlays (fractions of the page box), same order as pages */
   links?: ExportPdfLink[][]
+  /** @font-face rules for the SVG pages' text (data: URLs) */
+  fontCss?: string
   createWindow(): PdfExportWindow
   openExportedPdf(path: string): void
 }
@@ -43,7 +45,7 @@ function pct(v: number): string | null {
 }
 
 /**
- * Transparent <a> boxes over the page image: printToPDF converts them to PDF
+ * Transparent <a> boxes over the page: printToPDF converts them to PDF
  * link annotations (URI actions for URLs, in-document destinations for the
  * "#pgN" page anchors — pages carry matching ids), keeping element and text
  * hyperlinks clickable in the exported PDF like a PowerPoint export.
@@ -59,26 +61,55 @@ export function buildPdfLinkOverlays(links: ExportPdfLink[] | undefined): string
     .join('')
 }
 
+/** A `</style>` inside the font CSS would end the block early; it cannot occur in valid rules. */
+function safeCss(css: string | undefined): string {
+  return css ? css.replace(/<\/style/gi, '') : ''
+}
+
+function pageMarkup(page: ExportPdfPage): string {
+  return 'svg' in page ? page.svg : `<img src="data:image/png;base64,${page.png}">`
+}
+
 export function buildPdfExportHtml(
-  pngsBase64: string[],
+  pages: ExportPdfPage[],
   widthIn: number,
   heightIn: number,
   links?: ExportPdfLink[][],
+  fontCss?: string,
 ): string {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
+${safeCss(fontCss)}
 @page { size: ${widthIn}in ${heightIn}in; margin: 0; }
 html, body { margin: 0; padding: 0; }
 .page { position: relative; width: ${widthIn}in; height: ${heightIn}in; overflow: hidden; page-break-after: always; }
 .page:last-child { page-break-after: auto; }
-.page img { display: block; width: 100%; height: 100%; }
+.page img, .page > svg { display: block; width: 100%; height: 100%; }
 .page a { position: absolute; display: block; }
-</style></head><body>${pngsBase64
+</style></head><body>${pages
     .map(
-      (b64, i) =>
-        `<div class="page" id="pg${i + 1}"><img src="data:image/png;base64,${b64}">${buildPdfLinkOverlays(links?.[i])}</div>`,
+      (page, i) =>
+        `<div class="page" id="pg${i + 1}">${pageMarkup(page)}${buildPdfLinkOverlays(links?.[i])}</div>`,
     )
     .join('')}</body></html>`
 }
+
+/**
+ * Fonts and every bitmap decoded before printing, or pages print blank. SVG
+ * `<image>` elements are not in document.images: decoding the same data URL
+ * through an Image primes the shared cache, and two frames let the SVG pick
+ * it up.
+ */
+export const PRINT_READY_SCRIPT = `Promise.all([
+  document.fonts.ready,
+  ...Array.from(document.images).map((i) => i.decode().catch(() => {})),
+  ...Array.from(document.querySelectorAll('svg image')).map((el) => {
+    const href = el.getAttribute('href') || el.getAttribute('xlink:href')
+    if (!href) return Promise.resolve()
+    const img = new Image()
+    img.src = href
+    return img.decode().catch(() => {})
+  }),
+]).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))`
 
 /** PDF page size: fixed 7.5in height, width by slide ratio (16:9 -> 13.333in, 4:3 -> 10in).
     Rendered dimensions can be zeroed by a failed capture or non-finite from a
@@ -95,13 +126,14 @@ export function exportPageWidthIn(widthPx: number, heightPx: number): number {
   return Math.round(safe * PDF_EXPORT_HEIGHT_IN * 1000) / 1000
 }
 
-/** Export rendered slide PNGs via an app-owned temporary HTML file. */
+/** Export rendered slide pages via an app-owned temporary HTML file. */
 export async function exportSlidesPdf({
-  pngsBase64,
+  pages,
   widthPx,
   heightPx,
   filePath,
   links,
+  fontCss,
   createWindow,
   openExportedPdf,
 }: ExportSlidesPdfOptions): Promise<ExportSlidesPdfResult> {
@@ -113,13 +145,9 @@ export async function exportSlidesPdf({
   try {
     tempDir = await mkdtemp(join(tmpdir(), 'genoffice-slides-pdf-'))
     const htmlPath = join(tempDir, 'slides.html')
-    await writeFile(htmlPath, buildPdfExportHtml(pngsBase64, widthIn, heightIn, links), 'utf8')
+    await writeFile(htmlPath, buildPdfExportHtml(pages, widthIn, heightIn, links, fontCss), 'utf8')
     await win.loadFile(htmlPath)
-    // Wait for fonts and all images to decode before printing, avoiding blank pages
-    await win.webContents.executeJavaScript(
-      'Promise.all([document.fonts.ready, ...Array.from(document.images).map((i) => i.decode().catch(() => {}))])',
-      true,
-    )
+    await win.webContents.executeJavaScript(PRINT_READY_SCRIPT, true)
     const pdf = await win.webContents.printToPDF({
       landscape: false, // The page size is already landscape (width > height); passing landscape would rotate a second time
       printBackground: true,

@@ -76,6 +76,16 @@ describe('chatForProvider', () => {
     )
   })
 
+  it('deepseek: sends the listed V4.1 Flash name under the vendor wire id', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await chatForProvider('deepseek', { apiKey: 'k', model: 'deep-seek-v4.1-flash' }, 'sys', 'hi')
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body.model).toBe('deepseek-flash')
+  })
+
   it('custom: uses the configured base URL', async () => {
     const fetchMock = vi
       .fn()

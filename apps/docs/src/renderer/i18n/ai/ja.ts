@@ -55,6 +55,7 @@ export const ja = {
   aiSumInsertFootnote: '脚注を挿入',
   aiSumInsertEndnote: '文末脚注を挿入',
   aiSumDeleteNote: '注を削除',
+  aiSumEditNote: '注を編集',
   aiSumReadNotes: '注を読み取り',
   aiSumAddComment: 'コメントを追加',
   aiSumDeleteComment: 'コメントを削除',

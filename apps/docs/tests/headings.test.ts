@@ -53,11 +53,14 @@ const STYLES: HeadingStyles = new Map<string, StyleInfo>([
 
 describe('collectHeadings', () => {
   it('collects docHeading nodes without a style lookup', () => {
-    const editor = createEditor([heading('方案修订史', 1), heading('附录1', 2)])
+    const editor = createEditor([
+      heading('\u65b9\u6848\u4fee\u8ba2\u53f2', 1),
+      heading('\u9644\u5f551', 2),
+    ])
     const refs = collectHeadings(editor.state.doc)
     expect(refs.map(({ level, text }) => ({ level, text }))).toEqual([
-      { level: 1, text: '方案修订史' },
-      { level: 2, text: '附录1' },
+      { level: 1, text: '\u65b9\u6848\u4fee\u8ba2\u53f2' },
+      { level: 2, text: '\u9644\u5f551' },
     ])
     expect(refs[0]!.pos).toBe(0)
     expect(refs[1]!.pos).toBeGreaterThan(refs[0]!.pos)
@@ -66,16 +69,16 @@ describe('collectHeadings', () => {
 
   it('collects numbered headings (style-driven outline level) in document order', () => {
     const editor = createEditor([
-      heading('目录', 1),
-      numberedHeading('背景介绍', '2'),
-      numberedHeading('研究理论依据', '3'),
-      listItem('肺功能测定', '40'),
+      heading('\u76ee\u5f55', 1),
+      numberedHeading('\u80cc\u666f\u4ecb\u7ecd', '2'),
+      numberedHeading('\u7814\u7a76\u7406\u8bba\u4f9d\u636e', '3'),
+      listItem('\u80ba\u529f\u80fd\u6d4b\u5b9a', '40'),
     ])
     const refs = collectHeadings(editor.state.doc, STYLES)
     expect(refs.map(({ level, text }) => ({ level, text }))).toEqual([
-      { level: 1, text: '目录' },
-      { level: 1, text: '背景介绍' },
-      { level: 2, text: '研究理论依据' },
+      { level: 1, text: '\u76ee\u5f55' },
+      { level: 1, text: '\u80cc\u666f\u4ecb\u7ecd' },
+      { level: 2, text: '\u7814\u7a76\u7406\u8bba\u4f9d\u636e' },
     ])
     // document order, no sorting
     expect(refs.map((r) => r.pos)).toEqual([...refs.map((r) => r.pos)].sort((a, b) => a - b))
@@ -84,15 +87,15 @@ describe('collectHeadings', () => {
 
   it('ignores nodes without a style lookup, without a heading style, or with outlineLvl 9', () => {
     const editor = createEditor([
-      numberedHeading('背景介绍', '2'),
-      listItem('肺功能测定'),
-      listItem('普通列表', '40'),
-      numberedHeading('正文伪装', '54'),
+      numberedHeading('\u80cc\u666f\u4ecb\u7ecd', '2'),
+      listItem('\u80ba\u529f\u80fd\u6d4b\u5b9a'),
+      listItem('\u666e\u901a\u5217\u8868', '40'),
+      numberedHeading('\u6b63\u6587\u4f2a\u88c5', '54'),
     ])
     expect(collectHeadings(editor.state.doc)).toEqual([])
     expect(
       collectHeadings(editor.state.doc, STYLES).map(({ level, text }) => ({ level, text })),
-    ).toEqual([{ level: 1, text: '背景介绍' }])
+    ).toEqual([{ level: 1, text: '\u80cc\u666f\u4ecb\u7ecd' }])
     editor.destroy()
   })
 

@@ -56,6 +56,7 @@ export const id = {
   aiSumInsertFootnote: 'Catatan kaki disisipkan',
   aiSumInsertEndnote: 'Catatan akhir disisipkan',
   aiSumDeleteNote: 'Catatan dihapus',
+  aiSumEditNote: 'Catatan diedit',
   aiSumReadNotes: 'Membaca catatan',
   aiSumAddComment: 'Menambahkan komentar',
   aiSumDeleteComment: 'Menghapus komentar',

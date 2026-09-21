@@ -1119,3 +1119,26 @@ describe('legacy <c:style> dark row + literal data + automatic markers', () => {
     expect(parseChartXml(wrap('', SER(0), '<c:marker val="0"/>'))!.series[0]!.marker).toBe(false)
   })
 })
+
+describe('per-point picture fills (c:dPt blipFill)', () => {
+  it('resolve through the injected fill resolver instead of falling back to the series color', () => {
+    const BAR = `<?xml version="1.0"?><c:chartSpace xmlns:c="c" xmlns:a="a" xmlns:r="r"><c:chart><c:plotArea><c:layout/>
+<c:barChart><c:barDir val="col"/><c:ser><c:idx val="0"/><c:order val="0"/>
+  <c:spPr><a:solidFill><a:srgbClr val="4472C4"/></a:solidFill></c:spPr>
+  <c:dPt><c:idx val="1"/><c:spPr><a:blipFill><a:blip r:embed="rId3"/><a:stretch><a:fillRect/></a:stretch></a:blipFill></c:spPr></c:dPt>
+  <c:cat><c:strRef><c:f>x</c:f><c:strCache><c:ptCount val="2"/><c:pt idx="0"><c:v>A</c:v></c:pt><c:pt idx="1"><c:v>B</c:v></c:pt></c:strCache></c:strRef></c:cat>
+  <c:val><c:numRef><c:f>y</c:f><c:numCache><c:ptCount val="2"/><c:pt idx="0"><c:v>1</c:v></c:pt><c:pt idx="1"><c:v>2</c:v></c:pt></c:numCache></c:numRef></c:val>
+</c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`
+    const image = {
+      type: 'image' as const,
+      mediaRef: 'ppt/media/image9.png',
+      mode: 'stretch' as const,
+    }
+    const m = parseChartXml(BAR, undefined, (spPr: any) =>
+      spPr?.['a:blipFill'] ? image : undefined,
+    )!
+    expect(m.series[0]!.pointFills?.[1]).toEqual(image)
+    expect(m.series[0]!.pointFills?.[0]).toBeUndefined()
+    expect(m.series[0]!.pointColors).toBeUndefined()
+  })
+})

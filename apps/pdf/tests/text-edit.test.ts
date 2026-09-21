@@ -7,7 +7,11 @@ import {
   applyTextInserts,
   mergeEngineCodepoints,
   textInsertAxes,
+  eraseTextRuns,
+  loadPdfium,
+  saveDoc,
   validateTextEdits,
+  withDocument,
 } from '../src/main/text-edit'
 import { SYNTHETIC_BOLD_STROKE_EM } from '../src/shared/ipc'
 import type { TextEditInput, TextInsertInput } from '../src/shared/ipc'
@@ -1661,5 +1665,43 @@ describe('synthetic bold (stroke instead of a bold face)', () => {
     const ops = strokeOps(second)
     expect(ops.renderModes).toContain(FILL_STROKE)
     expect(ops.strokeColors).toContainEqual([211, 47, 47])
+  })
+})
+
+describe('eraseTextRuns', () => {
+  /** Erase in memory on the loaded page, then save so a second engine can read the result */
+  async function erase(bytes: Uint8Array, probes: TextEditInput[]) {
+    const m = await loadPdfium()
+    return withDocument(m, bytes, async (doc) => {
+      const page = m._FPDF_LoadPage(doc, 0)
+      try {
+        const erased = await eraseTextRuns(m, doc, page, probes)
+        return { erased, bytes: saveDoc(m, doc) }
+      } finally {
+        m._FPDF_ClosePage(page)
+      }
+    })
+  }
+
+  it('removes a whole run so the preview render shows the page without it', async () => {
+    const f = await makeFixture('Erase this heading')
+    const probe = { ...edit(f, 'Erase this heading', 'Erase this heading'), newText: 'ignored' }
+    const { erased, bytes } = await erase(f.bytes, [probe])
+    expect(erased).toEqual([true])
+    expect(await extractText(bytes)).toBe('')
+  })
+
+  it('erases only the fragment of a larger run and keeps its neighbours', async () => {
+    const f = await makeFixture('Alpha beta gamma')
+    const { erased, bytes } = await erase(f.bytes, [edit(f, 'beta', '')])
+    expect(erased).toEqual([true])
+    expect((await extractText(bytes)).replace(/\s+/g, ' ').trim()).toBe('Alpha gamma')
+  })
+
+  it('reports runs it cannot locate and leaves the page untouched', async () => {
+    const f = await makeFixture('Still here')
+    const { erased, bytes } = await erase(f.bytes, [edit(f, 'Never was here', '')])
+    expect(erased).toEqual([false])
+    expect(await extractText(bytes)).toBe('Still here')
   })
 })

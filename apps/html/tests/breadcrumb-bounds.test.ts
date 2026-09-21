@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  ancestorsOf,
-  buildParseMap,
-  type ParseMap,
-} from '../src/renderer/document/parse-map'
+import { ancestorsOf, buildParseMap, type ParseMap } from '../src/renderer/document/parse-map'
 import { label, MAX_CRUMB_ID_CHARS } from '../src/renderer/components/Breadcrumb'
 
 describe('ancestorsOf', () => {

@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { mergeStyleXml } from '../src/style-upsert'
 
 describe('style font size validation', () => {
-  it('rejects non-finite and out-of-range half-point sizes', () => {
-    for (const bad of [NaN, Infinity, -10, 0, 3169, 1e9]) {
-      expect(() =>
-        mergeStyleXml(null, { styleId: 'Normal', rPr: { sizeHalfPoints: bad } }),
-      ).toThrow(/Invalid (font size|numeric value)/)
-    }
+  it('clamps non-finite and out-of-range half-point sizes to the Word range', () => {
+    const sz = (v: number) =>
+      mergeStyleXml(null, { styleId: 'Normal', rPr: { sizeHalfPoints: v } }).match(
+        /w:sz w:val="(\d+)"/,
+      )?.[1]
+    for (const low of [NaN, -Infinity, -10, 0, 1]) expect(sz(low)).toBe('2')
+    for (const high of [Infinity, 3277, 1e9]) expect(sz(high)).toBe('3276')
+    expect(sz(3276)).toBe('3276')
+    expect(sz(3200)).toBe('3200')
   })
 
   it('accepts normal sizes', () => {
@@ -34,7 +37,9 @@ import { buildDocx } from './helpers/build-docx'
 import { parseDocx, saveDocx } from '../src/index'
 import JSZip from 'jszip'
 it('saves document default fonts independently without changing paragraph defaults', async () => {
-  const bytes = await buildDocx({ bodyXml: '<w:p><w:r><w:t>中文 English 123</w:t></w:r></w:p>' })
+  const bytes = await buildDocx({
+    bodyXml: '<w:p><w:r><w:t>\u4e2d\u6587 English 123</w:t></w:r></w:p>',
+  })
   const zip = await JSZip.loadAsync(bytes)
   zip.file(
     'word/styles.xml',
@@ -60,7 +65,7 @@ it('records an explicit East Asian choice equal to the previous Latin fallback',
   const parsed = await parseDocx(
     await buildDocx({
       bodyXml:
-        '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr><w:t>中文 English</w:t></w:r></w:p>',
+        '<w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/></w:rPr><w:t>\u4e2d\u6587 English</w:t></w:r></w:p>',
     }),
   )
   const run = parsed.blocks[0].runs![0]
@@ -78,7 +83,7 @@ import { previewFontSettings } from '../src/font-settings'
 it('previews and persists per-slot inheritance for both style types', async () => {
   const parsed = await parseDocx(
     await buildDocx({
-      bodyXml: '<w:p><w:r><w:t>中文 English 123</w:t></w:r></w:p>',
+      bodyXml: '<w:p><w:r><w:t>\u4e2d\u6587 English 123</w:t></w:r></w:p>',
       stylesXml:
         '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Base"><w:rPr><w:rFonts w:eastAsia="SimSun" w:ascii="Arial"/><w:b/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Child"><w:basedOn w:val="Base"/></w:style><w:style w:type="character" w:styleId="Emphasis"><w:rPr><w:i/></w:rPr></w:style></w:styles>',
     }),
@@ -108,7 +113,7 @@ it('previews and persists per-slot inheritance for both style types', async () =
 })
 it('an East Asian-only edit does not materialize inherited Latin or complex-script slots', async () => {
   const parsed = await parseDocx(
-    await buildDocx({ bodyXml: '<w:p><w:r><w:t>中文 English 123</w:t></w:r></w:p>' }),
+    await buildDocx({ bodyXml: '<w:p><w:r><w:t>\u4e2d\u6587 English 123</w:t></w:r></w:p>' }),
   )
   const saved = await saveDocx(parsed, [
     {

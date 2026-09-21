@@ -46,6 +46,7 @@ export const en = {
   elementMoveUp: 'Move up',
   elementMoveDown: 'Move down',
   elementToolbar: 'Element toolbar',
+  elementPath: 'Element path',
   fmtBold: 'Bold',
   fmtItalic: 'Italic',
   openExternal: 'Link opened in your browser',

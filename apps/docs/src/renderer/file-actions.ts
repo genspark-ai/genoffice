@@ -53,6 +53,10 @@ import {
   type HfView,
   type PendingNumbering,
 } from './doc-state'
+import { fetchDocBytes } from './doc-bytes'
+import { parseDocxOffThread } from './parse-off-thread'
+import { PHASED_APPEND } from './editor/streaming-tail-guard'
+import { docTextLength, docWeight, openTierFor } from './large-document'
 import { docStyleCss } from './doc-style-css'
 import { setNoteNumFmts } from './note-format'
 import type { CompareEntry } from './editor/compare'
@@ -111,6 +115,10 @@ export interface FileActionContext {
   setDocCss: (css: string) => void
   /** true while a phased open streams the document tail (editor stays read-only) */
   setDocLoading: (loading: boolean) => void
+  /** Read Mode toggle: a very large document opens in it */
+  setReadMode: (readMode: boolean) => void
+  /** a large document opens with check-as-you-type spelling off */
+  setLargeDocSpellOff: (off: boolean) => void
   setShowPagePreview: (show: boolean) => void
   section: SectionSettings | null
   sectionDirty: boolean
@@ -299,6 +307,7 @@ export function appendStreamedNodes(editor: Editor, nodes: PmNode[]): void {
     nodes.map((n) => editor.schema.nodeFromJSON(n)),
   )
   tr.setMeta('addToHistory', false)
+  tr.setMeta(PHASED_APPEND, true)
   // forced Track Changes must not record the streamed tail as insertions
   tr.setMeta(TRACK_IGNORE, true)
   tr.setMeta(TABLE_TRAILING_SKIP, true)
@@ -309,11 +318,16 @@ export function appendStreamedNodes(editor: Editor, nodes: PmNode[]): void {
 /** binds the phased content streamer to the editor and App state behind ctx */
 function phasedHostFor(ctx: FileActionContext): PhasedContentHost {
   return {
+    // the remount after a refused chunk replaces the whole document: it must
+    // pass the streaming tail guard like the appends do, and like them it is
+    // not an edit to undo
     setContent: (doc) =>
       ctx.editor
         ?.chain()
+        .setMeta('addToHistory', false)
         .setMeta(TRACK_IGNORE, true)
         .setMeta(TABLE_TRAILING_SKIP, true)
+        .setMeta(PHASED_APPEND, true)
         .setContent(doc as never)
         .run(),
     appendNodes: (nodes) => {
@@ -345,8 +359,20 @@ export async function loadFile(
   }
   const generation = ++openGeneration
   try {
-    const parsed = await parseDocx(new Uint8Array(result.data))
+    const parsed = await parseDocxOffThread(await fetchDocBytes(result.dataUrl), { owned: true })
     if (generation !== openGeneration) return 'superseded'
+    const tier = openTierFor(docWeight(parsed.blocks))
+    if (tier === 'refuse') {
+      const msg = t('appDocTooLargeBlocks', {
+        name: result.name,
+        blocks: parsed.blocks.length,
+        chars: docTextLength(parsed.blocks),
+      })
+      ctx.setStatus(msg)
+      showToast(msg, 'error')
+      // like a parse failure: a tab with no document falls back to a blank one
+      return 'failed'
+    }
     setLazyMediaHashes(parsed.extras.lazyMediaHashes)
     // before setContent: blockAttrs/marks bake fontTable-driven factors and chains into the DOM
     const adopted = await adoptEmbeddedFonts(parsed.embeddedFonts)
@@ -410,6 +436,8 @@ export async function loadFile(
     ctx.setEvenOddHfDirty(false)
     ctx.setHfView('default')
     ctx.setShowComments(hasUnanchoredComments(parsed.comments, parsed.blocks))
+    ctx.setReadMode(tier === 'readOnly')
+    ctx.setLargeDocSpellOff(tier !== 'normal')
     ctx.setComments(parsed.comments)
     ctx.setCommentsDirty(false)
     ctx.setWatermark(parsed.watermarkText ?? null)
@@ -444,7 +472,12 @@ export async function loadFile(
     // until an explicit/automatic save lands it on the original path.
     ctx.dirtyRef.current = openedFileStartsDirty(result)
     const missing = checkMissingFonts(collectDocFonts(parsed))
-    if (missing.length > 0) {
+    // one status line per open: the Read Mode explanation outranks the rest
+    if (tier === 'readOnly') {
+      ctx.setStatus(t('appDocLargeReadOnly', { blocks: parsed.blocks.length }))
+    } else if (tier === 'lite') {
+      ctx.setStatus(t('appDocLargeSpellOff', { blocks: parsed.blocks.length }))
+    } else if (missing.length > 0) {
       const names = missing
         .slice(0, 3)
         .map((m) => (m.substitute ? `${m.name} → ${m.substitute}` : m.name))
@@ -488,6 +521,9 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
     resetEditorHistory(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: null, fileName: t('appUntitledDocx'), hash: '', isBlank: true })
+    // a very large document opened in Read Mode must not leave it on for the new one
+    ctx.setReadMode(false)
+    ctx.setLargeDocSpellOff(false)
     // a fresh blank draft starts unencrypted: drop any pending password left by
     // the previous draft (its DocState, including the encrypted flag, is gone)
     discardStalePasswordIntents()
@@ -728,6 +764,10 @@ export async function buildDocBytes(ctx: FileActionContext): Promise<Uint8Array 
 export async function writeRecoveryCopy(ctx: FileActionContext): Promise<void> {
   const { doc, editor } = ctx
   if (!doc || !editor || ctx.saveInFlightRef.current || !isDocDirty(ctx)) return
+  // an edit during a phased open marks the document dirty while the tail is
+  // still streaming: a snapshot now would persist a truncated document. The
+  // next tick covers it.
+  if (isPhasedContentPending()) return
   if (!doc.filePath) {
     if (isBlankDocument(editor)) return
     if (editor.view.composing) return
@@ -931,7 +971,7 @@ async function saveOnce(
       }
       savedPath = result.path!
       passwordIntentPending = result.passwordIntentPending === true
-      if (result.data) fullBytes = new Uint8Array(result.data)
+      if (result.dataUrl) fullBytes = await fetchDocBytes(result.dataUrl)
       if (!doc.filePath) pathlessDocSavedPath = savedPath
     } else if (saveAs || !savedPath) {
       // A never-saved document still called "Untitled" gets a name derived from its first heading
@@ -951,7 +991,7 @@ async function saveOnce(
       }
       savedPath = result.path!
       passwordIntentPending = result.passwordIntentPending === true
-      if (result.data) fullBytes = new Uint8Array(result.data)
+      if (result.dataUrl) fullBytes = await fetchDocBytes(result.dataUrl)
       if (!doc.filePath) pathlessDocSavedPath = savedPath
     } else {
       const result = await window.desktop.saveDocx(savedPath, buffer, auto)
@@ -965,10 +1005,10 @@ async function saveOnce(
         return false
       }
       passwordIntentPending = result.passwordIntentPending === true
-      if (result.data) fullBytes = new Uint8Array(result.data)
+      if (result.dataUrl) fullBytes = await fetchDocBytes(result.dataUrl)
     }
     // parse before the identity check: a document opened during this await must not be rewritten
-    const reparsed = await parseDocx(fullBytes ?? bytes)
+    const reparsed = await parseDocxOffThread(fullBytes ?? bytes)
     if (
       editor.state.doc !== docSnapshot ||
       passwordIntentPending ||

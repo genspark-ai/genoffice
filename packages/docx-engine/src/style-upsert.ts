@@ -211,11 +211,10 @@ const num = (n: number) => {
   return String(Math.round(n))
 }
 
-/** Valid style font size in half-points (Word range 1..3168). */
-function assertFontSizeHalfPoints(v: number): void {
-  if (!Number.isFinite(v) || v < 1 || v > 3168) {
-    throw new Error(`Invalid font size: ${String(v)} half-points (expected 1..3168)`)
-  }
+/** Word's size range is 1..1638 pt (2..3276 half-points); NaN/Infinity land on the floor. */
+function clampFontSizeHalfPoints(v: number): number {
+  if (Number.isNaN(v)) return 2
+  return Math.min(3276, Math.max(2, Math.round(v)))
 }
 
 function patchRun(children: Children, rp: StyleRunProps): void {
@@ -241,8 +240,7 @@ function patchRun(children: Children, rp: StyleRunProps): void {
     )
   }
   if (rp.sizeHalfPoints !== undefined) {
-    if (rp.sizeHalfPoints !== null) assertFontSizeHalfPoints(rp.sizeHalfPoints)
-    const sz = rp.sizeHalfPoints === null ? null : num(rp.sizeHalfPoints)
+    const sz = rp.sizeHalfPoints === null ? null : clampFontSizeHalfPoints(rp.sizeHalfPoints)
     children.set('w:sz', sz === null ? null : `<w:sz w:val="${sz}"/>`)
     children.set('w:szCs', sz === null ? null : `<w:szCs w:val="${sz}"/>`)
   }

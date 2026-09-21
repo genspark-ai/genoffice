@@ -114,6 +114,11 @@ export function buildSourceMap(editor: Editor, doc: PmNode, source: string): Sou
 
   const tokens = splitAbsorbedBlankLines(rawTokens)
   const nonSpace = tokens.map((t) => t.type !== 'space')
+  // a block parsed alone still needs the `[id]: url` definitions, or `![alt][id]` stays text
+  const definitions = tokens
+    .filter((t) => t.type === 'def')
+    .map((t) => t.raw.trimEnd())
+    .join('\n')
   const units: Unit[] = [{ core: '', glue: '', space: false, first: 0, count: 0, style: {} }]
   const types: string[] = []
   for (let i = 0; i < tokens.length; i++) {
@@ -129,8 +134,13 @@ export function buildSourceMap(editor: Editor, doc: PmNode, source: string): Sou
       space = true
     } else {
       let parsed
+      const core = token.raw.replace(TRAILING_BLANK_LINES, '')
+      const alone =
+        definitions && token.type !== 'def' && core.includes(']')
+          ? `${core}\n\n${definitions}`
+          : core
       try {
-        parsed = manager.parse(token.raw.replace(TRAILING_BLANK_LINES, '')).content ?? []
+        parsed = manager.parse(alone).content ?? []
       } catch {
         return null
       }

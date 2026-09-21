@@ -18,6 +18,7 @@ import { borderMergeFlags, type ParaBorderAttrs } from './para-border-merge'
 import { rangeSlot } from '../dom-range'
 import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
 import { appendsAtEnd, touchedTopLevelBlocks } from './touched-blocks'
+import { blockDecorationPlugin } from './local-edit'
 
 const alignRange = rangeSlot()
 
@@ -978,7 +979,7 @@ export const EaHintQuotesExtension = Extension.create({
 
 // ---- adjacent-paragraph border merging (Word border groups) ----
 
-const paraBorderMergePluginKey = new PluginKey<DecorationSet>('paraBorderMerge')
+const paraBorderMergePluginKey = new PluginKey('paraBorderMerge')
 
 /**
  * Word border groups (ECMA-376 §17.3.1.24): adjacent top-level paragraphs with
@@ -989,30 +990,35 @@ export const ParaBorderMergeExtension = Extension.create({
   name: 'paraBorderMerge',
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      blockDecorationPlugin({
         key: paraBorderMergePluginKey,
-        props: {
-          decorations(state) {
-            const items: ParaBorderAttrs[] = []
-            const spans: Array<{ from: number; to: number }> = []
-            state.doc.forEach((node, offset) => {
-              // non-paragraph blocks (tables...) enter as border-less entries: they break adjacency
-              items.push(node.isTextblock ? (node.attrs as ParaBorderAttrs) : {})
-              spans.push({ from: offset, to: offset + node.nodeSize })
-            })
-            const decos: Decoration[] = []
-            borderMergeFlags(items).forEach((f, i) => {
-              if (!f.suppressTop && !f.suppressBottom) return
-              const cls = [
-                f.suppressTop ? 'pbdr-suppress-top' : '',
-                f.suppressBottom ? 'pbdr-suppress-bottom' : '',
-              ]
-                .filter(Boolean)
-                .join(' ')
-              decos.push(Decoration.node(spans[i].from, spans[i].to, { class: cls }))
-            })
-            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
-          },
+        build(doc) {
+          const items: ParaBorderAttrs[] = []
+          const spans: Array<{ from: number; to: number }> = []
+          doc.forEach((node, offset) => {
+            // non-paragraph blocks (tables...) enter as border-less entries: they break adjacency
+            items.push(node.isTextblock ? (node.attrs as ParaBorderAttrs) : {})
+            spans.push({ from: offset, to: offset + node.nodeSize })
+          })
+          const decos: Decoration[] = []
+          borderMergeFlags(items).forEach((f, i) => {
+            if (!f.suppressTop && !f.suppressBottom) return
+            const cls = [
+              f.suppressTop ? 'pbdr-suppress-top' : '',
+              f.suppressBottom ? 'pbdr-suppress-bottom' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')
+            decos.push(Decoration.node(spans[i].from, spans[i].to, { class: cls }))
+          })
+          return decos
+        },
+        // a bordered block can join or leave a group; a border-less one only
+        // matters when it was grouped before (then it carried a decoration)
+        needsRecompute: (node) => {
+          if (!node.isTextblock) return false
+          const a = node.attrs as ParaBorderAttrs
+          return !!(a.borders || a.borderLines || a.shadingFill || a.shadingDisplay)
         },
       }),
     ]
@@ -1117,30 +1123,29 @@ export const SdtExtension = Extension.create({
 
 // ---- move revision rendering extension ----
 
-const moveRevisionPluginKey = new PluginKey<DecorationSet>('moveRevision')
+const moveRevisionPluginKey = new PluginKey('moveRevision')
 
 export const MoveRevisionExtension = Extension.create({
   name: 'moveRevision',
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      blockDecorationPlugin({
         key: moveRevisionPluginKey,
-        props: {
-          decorations(state) {
-            const decos: Decoration[] = []
-            state.doc.forEach((node, offset) => {
-              const rev = node.attrs?.moveRevision as string | null
-              if (!rev) return
-              decos.push(
-                Decoration.node(offset, offset + node.nodeSize, {
-                  'data-move-revision': rev,
-                  class: rev === 'from' ? 'has-move-from' : 'has-move-to',
-                }),
-              )
-            })
-            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
-          },
+        build(doc) {
+          const decos: Decoration[] = []
+          doc.forEach((node, offset) => {
+            const rev = node.attrs?.moveRevision as string | null
+            if (!rev) return
+            decos.push(
+              Decoration.node(offset, offset + node.nodeSize, {
+                'data-move-revision': rev,
+                class: rev === 'from' ? 'has-move-from' : 'has-move-to',
+              }),
+            )
+          })
+          return decos
         },
+        needsRecompute: (node) => !!node.attrs?.moveRevision,
       }),
     ]
   },
@@ -1148,7 +1153,7 @@ export const MoveRevisionExtension = Extension.create({
 
 // ---- deleted paragraph mark (w:pPr/w:rPr/w:del) collapse extension ----
 
-const paraMarkDelPluginKey = new PluginKey<DecorationSet>('paraMarkDel')
+const paraMarkDelPluginKey = new PluginKey('paraMarkDel')
 
 /**
  * A paragraph whose mark is a tracked deletion and whose inline content is all
@@ -1161,26 +1166,25 @@ export const ParaMarkDelExtension = Extension.create({
   name: 'paraMarkDel',
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      blockDecorationPlugin({
         key: paraMarkDelPluginKey,
-        props: {
-          decorations(state) {
-            const decos: Decoration[] = []
-            state.doc.forEach((node, offset) => {
-              if (!node.attrs?.paraMarkDel) return
-              let visible = false
-              node.forEach((child) => {
-                if (!child.marks.some((m) => m.type.name === 'del')) visible = true
-              })
-              decos.push(
-                Decoration.node(offset, offset + node.nodeSize, {
-                  class: visible ? 'doc-para-mark-del' : 'doc-para-mark-del doc-para-del-collapse',
-                }),
-              )
+        build(doc) {
+          const decos: Decoration[] = []
+          doc.forEach((node, offset) => {
+            if (!node.attrs?.paraMarkDel) return
+            let visible = false
+            node.forEach((child) => {
+              if (!child.marks.some((m) => m.type.name === 'del')) visible = true
             })
-            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
-          },
+            decos.push(
+              Decoration.node(offset, offset + node.nodeSize, {
+                class: visible ? 'doc-para-mark-del' : 'doc-para-mark-del doc-para-del-collapse',
+              }),
+            )
+          })
+          return decos
         },
+        needsRecompute: (node) => !!node.attrs?.paraMarkDel,
       }),
     ]
   },
@@ -1188,62 +1192,63 @@ export const ParaMarkDelExtension = Extension.create({
 
 // ---- pPrChange (tracked paragraph format) rendering extension ----
 
-const pPrChangePluginKey = new PluginKey<DecorationSet>('pPrChange')
+const pPrChangePluginKey = new PluginKey('pPrChange')
 
 export const PPrChangeExtension = Extension.create({
   name: 'pPrChange',
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      blockDecorationPlugin({
         key: pPrChangePluginKey,
-        props: {
-          decorations(state) {
-            const decos: Decoration[] = []
-            state.doc.forEach((node, offset) => {
-              const raw = node.attrs?.pPrChange as string | null
-              if (!raw) return
-              let author = ''
-              let old: Record<string, unknown> = {}
-              try {
-                const parsed = JSON.parse(raw)
-                author = parsed?.author || ''
-                old = (parsed?.old ?? {}) as Record<string, unknown>
-              } catch {
-                /* ignore */
+        build(doc) {
+          const decos: Decoration[] = []
+          doc.forEach((node, offset) => {
+            const raw = node.attrs?.pPrChange as string | null
+            if (!raw) return
+            let author = ''
+            let old: Record<string, unknown> = {}
+            try {
+              const parsed = JSON.parse(raw)
+              author = parsed?.author || ''
+              old = (parsed?.old ?? {}) as Record<string, unknown>
+            } catch {
+              /* ignore */
+            }
+            // original view: override with the pre-revision paragraph format (mirroring the restore subset of revisions.ts reject)
+            let style = ''
+            if (revisionDisplayState.mode === 'original') {
+              const styles = [
+                `text-align:${(old.align as string) ?? 'start'}`,
+                `margin-left:${old.indentLeft ? Number(old.indentLeft) / 20 : 0}pt`,
+                `margin-right:${old.indentRight ? Number(old.indentRight) / 20 : 0}pt`,
+                `text-indent:${old.indentFirstLine ? Number(old.indentFirstLine) / 20 : 0}pt`,
+                `margin-top:${old.spaceBefore ? Number(old.spaceBefore) / 20 : 0}pt`,
+                `margin-bottom:${old.spaceAfter ? Number(old.spaceAfter) / 20 : 0}pt`,
+                `background:${old.shadingFill ? `#${old.shadingFill}` : 'transparent'}`,
+              ]
+              if (old.lineRule === 'exact' || old.lineRule === 'atLeast') {
+                styles.push(`line-height:${Number(old.lineRawTwips || 240) / 20}pt`)
+              } else if (old.lineSpacing) {
+                styles.push(`line-height:${Number(old.lineSpacing) * 1.2}`)
+              } else {
+                styles.push('line-height:inherit')
               }
-              // original view: override with the pre-revision paragraph format (mirroring the restore subset of revisions.ts reject)
-              let style = ''
-              if (revisionDisplayState.mode === 'original') {
-                const styles = [
-                  `text-align:${(old.align as string) ?? 'start'}`,
-                  `margin-left:${old.indentLeft ? Number(old.indentLeft) / 20 : 0}pt`,
-                  `margin-right:${old.indentRight ? Number(old.indentRight) / 20 : 0}pt`,
-                  `text-indent:${old.indentFirstLine ? Number(old.indentFirstLine) / 20 : 0}pt`,
-                  `margin-top:${old.spaceBefore ? Number(old.spaceBefore) / 20 : 0}pt`,
-                  `margin-bottom:${old.spaceAfter ? Number(old.spaceAfter) / 20 : 0}pt`,
-                  `background:${old.shadingFill ? `#${old.shadingFill}` : 'transparent'}`,
-                ]
-                if (old.lineRule === 'exact' || old.lineRule === 'atLeast') {
-                  styles.push(`line-height:${Number(old.lineRawTwips || 240) / 20}pt`)
-                } else if (old.lineSpacing) {
-                  styles.push(`line-height:${Number(old.lineSpacing) * 1.2}`)
-                } else {
-                  styles.push('line-height:inherit')
-                }
-                style = styles.join(';')
-              }
-              decos.push(
-                Decoration.node(offset, offset + node.nodeSize, {
-                  'data-ppr-change-author': author,
-                  'data-ppr-change-label': t('editorFormatRevision'),
-                  class: 'has-ppr-change',
-                  ...(style ? { style } : {}),
-                }),
-              )
-            })
-            return decos.length > 0 ? DecorationSet.create(state.doc, decos) : DecorationSet.empty
-          },
+              style = styles.join(';')
+            }
+            decos.push(
+              Decoration.node(offset, offset + node.nodeSize, {
+                'data-ppr-change-author': author,
+                'data-ppr-change-label': t('editorFormatRevision'),
+                class: 'has-ppr-change',
+                ...(style ? { style } : {}),
+              }),
+            )
+          })
+          return decos
         },
+        needsRecompute: (node) => !!node.attrs?.pPrChange,
+        // the original view restores the pre-revision format through these decorations
+        signature: () => revisionDisplayState.mode,
       }),
     ]
   },

@@ -68,7 +68,7 @@ export const OP_DOCS: Record<string, OpDoc> = {
 
   // ── text ──────────────────────────────────────────────────────────────
   putTextEdit: {
-    sig: '{input:TextEditInput,id?,cover?,moveBy?} — engine record; use edit_text / edit_block instead',
+    sig: '{input:TextEditInput,id?,cover?,moveBy?,paper?} — engine record; use edit_text / edit_block instead',
     group: 'text',
     aiCallable: false,
   },

@@ -29,4 +29,10 @@ describe('createRenderContext degenerate inputs', () => {
     expect(ctx.pxToTwips(NaN)).toBe(0)
     expect(ctx.pxToTwips(10)).toBeGreaterThan(0)
   })
+
+  it('falls back to A4 for a zero page size (display:none root)', () => {
+    const ctx = createRenderContext({ pageSizePx: { width: 0, height: 0 } })
+    expect(ctx.pageWidthDxa).toBe(794 * 15)
+    expect(ctx.pageHeightDxa).toBe(1123 * 15)
+  })
 })

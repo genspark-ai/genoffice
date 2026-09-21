@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { SettledParagraphCache } from '../src/renderer/editor/settled-measure'
+import { SettledParagraphCache, noteFloatTransaction } from '../src/renderer/editor/settled-measure'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { Editor } from '@tiptap/core'
+import { editorExtensions } from '../src/renderer/editor/extensions'
 
 function fakeView(el: HTMLElement) {
   return {
@@ -17,6 +19,17 @@ function sized(el: HTMLElement, box: () => { width: number; height: number }) {
 }
 
 const shiftAll = (r: number[], d: number) => r.map((v) => v + d)
+
+const editor = new Editor({
+  element: document.createElement('div'),
+  extensions: editorExtensions,
+  content: {
+    type: 'doc',
+    content: [{ type: 'docParagraph', content: [{ type: 'text', text: 'abc' }] }],
+  },
+})
+/** a transaction that inserts a node: the float scan runs again on the next pass */
+const nodeInsert = () => editor.state.tr.insert(0, editor.schema.nodes.docParagraph.create())
 
 describe('SettledParagraphCache', () => {
   const node = {} as ProseMirrorNode
@@ -97,6 +110,12 @@ describe('SettledParagraphCache', () => {
     float.className = 'doc-table doc-table-float-left'
     float.getBoundingClientRect = () => ({ top: 40, bottom: 80 }) as DOMRect
     view.dom.appendChild(float)
+    noteFloatTransaction(nodeInsert())
+    // flowed in place by the paginator: not a float until that class goes
+    float.classList.add('doc-table-float-flow')
+    pass()
+    expect(fn).toHaveBeenCalledTimes(2)
+    float.classList.remove('doc-table-float-flow')
     pass()
     expect(fn).toHaveBeenCalledTimes(3)
     top = 60
@@ -181,5 +200,25 @@ describe('SettledParagraphCache', () => {
     cache.beginPass(view)
     cache.measure(view, a, 1, fn, pa)
     expect(fn).toHaveBeenCalledWith(pa)
+  })
+
+  it('scans for floats once per editor state and only again after a node insert', () => {
+    const dom = document.createElement('div')
+    const el = document.createElement('p')
+    const view = { dom, nodeDOM: () => el, state: {} } as unknown as EditorView
+    const scan = vi.spyOn(dom, 'querySelectorAll')
+    const pass = () => new SettledParagraphCache<number[]>(shiftAll).beginPass(view)
+    noteFloatTransaction(nodeInsert())
+    pass()
+    pass()
+    expect(scan).toHaveBeenCalledTimes(1)
+    ;(view as unknown as { state: object }).state = {}
+    noteFloatTransaction(editor.state.tr.insertText('x', 2))
+    pass()
+    expect(scan).toHaveBeenCalledTimes(1)
+    ;(view as unknown as { state: object }).state = {}
+    noteFloatTransaction(nodeInsert())
+    pass()
+    expect(scan).toHaveBeenCalledTimes(2)
   })
 })

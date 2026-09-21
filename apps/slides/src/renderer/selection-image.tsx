@@ -25,6 +25,7 @@ async function selectionImages(nodes: RenderNode[], cached: Map<string, HTMLImag
       if (n.type === 'chart') {
         fill(n.bgFill)
         fill(n.plotRect?.fill)
+        for (const b of n.bars) fill(b.fill)
       }
       if (n.type === 'table') fill(n.bgFill)
       if (n.type === 'group') walk(n.children)

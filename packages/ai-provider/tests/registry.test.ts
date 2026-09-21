@@ -56,6 +56,13 @@ describe('provider registry', () => {
       baseUrl: 'https://api.deepseek.com/v1',
       bodyExtras: { thinking: { type: 'disabled' } },
     })
+    // the listed V4.1 Flash name is the pool spelling; the vendor only serves `deepseek-flash`
+    expect(AI_PROVIDER_ADAPTERS.deepseek.resolveEndpoint(config('deep-seek-v4.1-flash'))).toEqual({
+      protocol: 'openai-compatible',
+      baseUrl: 'https://api.deepseek.com/v1',
+      bodyExtras: { thinking: { type: 'disabled' } },
+      model: 'deepseek-flash',
+    })
     expect(AI_PROVIDER_ADAPTERS.openai.resolveEndpoint(config('gpt-4.1-mini'))).toEqual({
       protocol: 'openai-compatible',
       baseUrl: 'https://api.openai.com/v1',

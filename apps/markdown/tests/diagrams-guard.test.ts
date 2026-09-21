@@ -70,12 +70,14 @@ describe('wavedrom guards', () => {
     expect(prevalidateWaveSource('[1, 2]')).toMatch(/starting with "\{"/)
     expect(prevalidateWaveSource(42)).toMatch(/WaveJSON/)
     expect(prevalidateWaveSource('{ signal: [] }')).toBeNull()
+    expect(prevalidateWaveSource('// clock\n/* wave */ { signal: [] }')).toBeNull()
   })
 
   it('rejects empty WaveJSON arrays as non-WaveJSON', () => {
     expect(isWaveJson({ signal: [] })).toBe(false)
     expect(isWaveJson({ signal: [{ wave: 'p...' }] })).toBe(true)
     expect(isWaveJson({ signal: ['oops'] })).toBe(false)
+    expect(isWaveJson({ signal: [['group', { name: 'clk', wave: 'p..' }]] })).toBe(true)
     expect(isWaveJson({ foo: 1 })).toBe(false)
   })
 

@@ -56,6 +56,10 @@ function blockPreview(node: PmNode): string {
 
 function blockLabel(node: PmNode): string {
   if (node.type.name === 'heading') return `h${node.attrs.level}`
+  // a paragraph holding only a picture reads better as the picture
+  if (node.isTextblock && !node.textContent && node.childCount === 1 && node.firstChild?.isAtom) {
+    return node.firstChild.type.name
+  }
   return node.type.name
 }
 

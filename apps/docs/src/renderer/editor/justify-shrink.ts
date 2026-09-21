@@ -3,7 +3,7 @@ import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { rangeSlot } from '../dom-range'
-import { SettledParagraphCache } from './settled-measure'
+import { SettledParagraphCache, noteFloatTransaction } from './settled-measure'
 import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
 
 /**
@@ -548,9 +548,13 @@ export const JustifyShrinkExtension = Extension.create({
         state: {
           init: () => DecorationSet.empty,
           apply(tr, old) {
+            noteFloatTransaction(tr)
             const meta = tr.getMeta(justifyShrinkPluginKey) as Decoration[] | undefined
             if (meta)
-              return meta.length > 0 ? DecorationSet.create(tr.doc, meta) : DecorationSet.empty
+              // create() consumes (nulls out) entries of the array it is given;
+              // the meta array must survive for the App-level 'transaction'
+              // listener that re-anchors the pagination pass on it
+              return meta.length > 0 ? DecorationSet.create(tr.doc, [...meta]) : DecorationSet.empty
             return old.map(tr.mapping, tr.doc)
           },
         },

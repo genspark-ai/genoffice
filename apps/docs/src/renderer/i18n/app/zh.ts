@@ -45,6 +45,10 @@ export const zh = {
   appUntitledDocx: '未命名文档.docx',
   appOpenedFile: '已打开 {name}',
   appOpenFailed: '打开失败: {error}',
+  appDocTooLargeBlocks: '{name}：文档过大（{blocks} 个段落、{chars} 个字符），无法打开',
+  appDocLargeReadOnly: '文档很大（{blocks} 个段落），已以只读模式打开；按 Esc 可开始编辑',
+  appDocLargeSpellOff:
+    '文档很大（{blocks} 个段落），已关闭输入时拼写检查；可在「审阅 › 拼写」重新开启',
   appFontsMissing: '文档字体未安装：{names}（已用替代字体显示）',
   appVerticalTextNotice: '文档包含竖排文字（暂以横排显示，保存不受影响）',
   appNewDocCreated: '已新建空白文档,可在左侧 AI 面板直接描述要生成的内容',

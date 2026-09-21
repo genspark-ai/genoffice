@@ -4,7 +4,13 @@
  * rebuilding, undo bookkeeping) stay in the shims; model mutation, link-rel
  * upkeep, superseded-resource cleanup, and level rematerialization live here.
  */
-import { FONT_SIZE_PT_MIN, FONT_SIZE_PT_MAX } from '../font-size'
+import {
+  DEFAULT_FONT_SIZE_PT,
+  FONT_SIZE_PT_MIN,
+  FONT_SIZE_PT_MAX,
+  applyFontSizeStep,
+  type FontSizeStep,
+} from '../font-size'
 import {
   addImageMediaAndRel,
   cleanupSupersededSlideResources,
@@ -235,13 +241,26 @@ register({
     if (typeof op.font !== 'object' || op.font === null) {
       throw new GuidedError('op "setFont" needs "font": an ElementFontPatch object.')
     }
-    const font = op.font as { color?: unknown; fontSizePt?: unknown }
+    const font = op.font as { color?: unknown; fontSizePt?: unknown; fontSizeStep?: unknown }
     if (font.color !== undefined) requireHexColor(font.color, 'setFont', 'font.color')
     if (font.fontSizePt !== undefined) {
       requireFinite(font.fontSizePt, 'setFont', 'font.fontSizePt')
       if (font.fontSizePt < FONT_SIZE_PT_MIN || font.fontSizePt > FONT_SIZE_PT_MAX) {
         throw new GuidedError(
           `op "setFont": "font.fontSizePt" must be ${FONT_SIZE_PT_MIN}..${FONT_SIZE_PT_MAX} (points).`,
+        )
+      }
+    }
+    if (font.fontSizeStep !== undefined) {
+      const step = font.fontSizeStep as Partial<FontSizeStep> | null
+      if (
+        font.fontSizePt !== undefined ||
+        !step ||
+        (step.dir !== 1 && step.dir !== -1) ||
+        (step.mode !== 'ladder' && step.mode !== 'point')
+      ) {
+        throw new GuidedError(
+          'op "setFont": "font.fontSizeStep" must be { dir: 1 | -1, mode: "ladder" | "point" } and cannot be combined with "font.fontSizePt".',
         )
       }
     }
@@ -253,22 +272,25 @@ register({
     resolveElement(ctx, op)
   },
   apply(op, ctx): OpRecord {
-    const font = op.font as ElementFontPatch
+    const { fontSizeStep, ...font } = op.font as ElementFontPatch & { fontSizeStep?: FontSizeStep }
+    const sizeMap = fontSizeStep
+      ? (pt: number | undefined) => applyFontSizeStep(pt ?? DEFAULT_FONT_SIZE_PT, fontSizeStep)
+      : undefined
     const { index, slide } = resolveSlide(ctx, op)
     let id = String(op.target?.el ?? '')
     let ok: boolean
     if (op.group) {
       const groupId = resolveGroup(op, index, slide.elements)
       id = resolveGroupChildId(slide, groupId, id)
-      ok = setGroupChildFont(slide, groupId, id, font)
+      ok = setGroupChildFont(slide, groupId, id, font, sizeMap)
     } else {
       id = resolveElement(ctx, op).el.id
-      ok = setElementFont(slide, id, font)
+      ok = setElementFont(slide, id, font, sizeMap)
     }
     if (!ok) {
       throw new GuidedError(`op "setFont": element "${id}" has no editable text to format.`)
     }
-    return { op, after: font }
+    return { op, after: op.font }
   },
 })
 

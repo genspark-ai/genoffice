@@ -44,6 +44,12 @@ export const en = {
   appUntitledDocx: 'Untitled.docx',
   appOpenedFile: 'Opened {name}',
   appOpenFailed: 'Open failed: {error}',
+  appDocTooLargeBlocks:
+    '{name}: the document is too large to open ({blocks} paragraphs, {chars} characters)',
+  appDocLargeReadOnly:
+    'Large document ({blocks} paragraphs): opened in Read Mode — press Esc to edit',
+  appDocLargeSpellOff:
+    'Large document ({blocks} paragraphs): check-as-you-type spelling is off — turn it on under Review › Spelling',
   appFontsMissing: 'Missing document fonts: {names} (substitutes shown)',
   appVerticalTextNotice:
     'This document contains vertical text (shown horizontally for now; saving is unaffected)',

@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test'
-const rebaseSource = '<details>\n<img src="assets/old.png">\n</details>\n'
-const source = 'Title\n=====\n\n* item  \n\n\n'
+export const rebaseSource = '<details>\n<img src="assets/old.png">\n</details>\n'
+export const source = 'Title\n=====\n\n* item  \n\n\n'
 
 export async function openSource(
   page: Page,

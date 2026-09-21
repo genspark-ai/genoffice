@@ -35,11 +35,12 @@ describe('defaultAiSettings', () => {
 })
 
 describe('provider model catalog', () => {
-  it('offers DeepSeek V4.1 Flash directly and drops the retired Vision Exp id', () => {
+  it('offers DeepSeek V4.1 Flash directly under the same versioned name as the pool', () => {
     const genspark = AI_PROVIDERS.find((provider) => provider.id === 'genspark')!
     const deepseek = AI_PROVIDERS.find((provider) => provider.id === 'deepseek')!
 
-    expect(deepseek.models).toContain('deepseek-flash')
+    expect(deepseek.models).toContain('deep-seek-v4.1-flash')
+    expect(deepseek.models).not.toContain('deepseek-flash')
     expect(deepseek.models).not.toContain('deepseek-v4-flash')
     expect(deepseek.models).not.toContain('deepseek-v4-flash-vision-exp')
     expect(genspark.models).not.toContain('deep-seek-v4-flash')
@@ -137,16 +138,19 @@ describe('resolveAiSettings', () => {
       },
       defaultAiSettings(),
     )
-    expect(resolved.providers.deepseek).toEqual({ apiKey: 'sk-user', model: 'deepseek-flash' })
+    expect(resolved.providers.deepseek).toEqual({
+      apiKey: 'sk-user',
+      model: 'deep-seek-v4.1-flash',
+    })
   })
 
-  it('rewrites the retired V4 Flash id and the Genspark pool spelling to deepseek-flash', () => {
-    for (const model of ['deepseek-v4-flash', 'deep-seek-v4.1-flash']) {
+  it('rewrites the retired V4 Flash id and the vendor wire id to the listed V4.1 Flash name', () => {
+    for (const model of ['deepseek-v4-flash', 'deepseek-flash']) {
       const resolved = resolveAiSettings(
         { providers: { deepseek: { apiKey: 'sk-user', model } } as never },
         defaultAiSettings(),
       )
-      expect(resolved.providers.deepseek.model).toBe('deepseek-flash')
+      expect(resolved.providers.deepseek.model).toBe('deep-seek-v4.1-flash')
     }
   })
 
@@ -210,7 +214,7 @@ describe('resolveAiSettings', () => {
       },
       defaultAiSettings(),
     )
-    expect(resolved.providers.deepseek.model).toBe('deepseek-flash')
+    expect(resolved.providers.deepseek.model).toBe('deep-seek-v4.1-flash')
   })
 
   it('trims the legacy single-endpoint key and base URL too', () => {

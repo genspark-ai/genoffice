@@ -401,6 +401,8 @@ export interface TableCellRender {
   fill: RenderFill
   /** Border lines on the four sides (default none) */
   borders?: { l?: RenderStroke; r?: RenderStroke; t?: RenderStroke; b?: RenderStroke }
+  /** <a:cell3D> bevel bands drawn over the (already darkened) fill */
+  bevel?: import('./cell-bevel').CellBevelRender
   text?: RenderTextLayout
 }
 
@@ -498,7 +500,7 @@ export interface ChartRenderNode extends RenderNodeBase {
   /** Tick / category / legend / axis-title text */
   labels: ChartLabel[]
   /** Bars */
-  bars: Array<{ x: number; y: number; w: number; h: number; color: string }>
+  bars: Array<{ x: number; y: number; w: number; h: number; color: string; fill?: RenderFill }>
   /** Polylines (points is flat [x0,y0,x1,y1,...]); closed+fill for filled radar charts etc. */
   polylines: Array<{
     points: number[]
@@ -553,6 +555,8 @@ export interface RenderSlide {
   nodes: RenderNode[]
   /** Hidden slide (<p:sld show="0">): thumbnails get a badge, skipped during presentation */
   hidden?: boolean
+  /** Slide part path (ppt/slides/slideN.xml): stable identity across insert/delete/reorder */
+  partPath?: string
 }
 
 // Convenience type re-exports (for internal render logic)

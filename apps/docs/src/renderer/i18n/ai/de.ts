@@ -57,6 +57,7 @@ export const de = {
   aiSumInsertFootnote: 'Fußnote eingefügt',
   aiSumInsertEndnote: 'Endnote eingefügt',
   aiSumDeleteNote: 'Notiz gelöscht',
+  aiSumEditNote: 'Notiz bearbeitet',
   aiSumReadNotes: 'Fuß-/Endnoten gelesen',
   aiSumAddComment: 'Kommentar hinzugefügt',
   aiSumDeleteComment: 'Kommentar gelöscht',

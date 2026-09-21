@@ -1030,3 +1030,29 @@ describe('chartSpace default text color + legacy line width', () => {
     expect(modern.polylines[0]!.widthPx).toBeCloseTo(ptToPx(1.5, vp.scale), 3)
   })
 })
+
+describe('per-point picture fills', () => {
+  it('paint the bar with the resolved image instead of the series color (c:dPt blipFill)', () => {
+    const bar: ChartModel = {
+      kind: 'bar',
+      categories: ['a', 'b'],
+      series: [
+        {
+          values: [1, 2],
+          pointFills: [
+            undefined,
+            { type: 'image', mediaRef: 'ppt/media/image9.png', mode: 'stretch' },
+          ],
+        },
+      ],
+    }
+    const media = () => 'data:image/png;base64,AAAA'
+    const node = buildChartNode('r_9', 'el9', bar, box, vp, metrics, media)!
+    expect(node.bars).toHaveLength(2)
+    expect(node.bars[0]!.fill).toBeUndefined()
+    expect(node.bars[1]!.fill).toMatchObject({
+      kind: 'image',
+      dataUrl: 'data:image/png;base64,AAAA',
+    })
+  })
+})

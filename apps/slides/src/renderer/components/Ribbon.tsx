@@ -27,6 +27,7 @@ import { ICON_COLORS } from '../insert-presets'
 import { THEME_PRESETS, type SlideThemePreset } from '../themes'
 import { restoreEditSelection } from '../TextEditOverlay'
 import { armColorInput, toPickerHex } from '../color-input'
+import { nextPreset, prevPreset } from '../zoom-steps'
 import { TABLE_SHADING_COLORS } from './table-shading-colors'
 import { useI18n, type StringKey } from '../i18n/locale'
 import {
@@ -272,7 +273,7 @@ const TRANSITIONS: Array<{ kind: TransitionKind; label: StringKey; icon: React.R
 const ANIM_EFFECTS: Array<{
   kind: AnimEffectKind
   label: StringKey
-  cls: 'entr' | 'emph' | 'exit'
+  cls: 'entr' | 'emph' | 'exit' | 'media'
 }> = [
   { kind: 'appear', label: 'ribbonAnimAppear', cls: 'entr' },
   { kind: 'fade', label: 'ribbonAnimFade', cls: 'entr' },
@@ -293,12 +294,16 @@ const ANIM_EFFECTS: Array<{
   { kind: 'wipeOut', label: 'ribbonAnimWipeOut', cls: 'exit' },
   { kind: 'shrink', label: 'ribbonAnimShrinkTurn', cls: 'exit' },
   { kind: 'zoomOut', label: 'ribbonAnimZoomOut', cls: 'exit' },
+  { kind: 'mediaPlay', label: 'ribbonAnimMediaPlay', cls: 'media' },
+  { kind: 'mediaPause', label: 'ribbonAnimMediaPause', cls: 'media' },
+  { kind: 'mediaStop', label: 'ribbonAnimMediaStop', cls: 'media' },
 ]
 
-const ANIM_CLS_TITLE: Record<'entr' | 'emph' | 'exit', StringKey> = {
+const ANIM_CLS_TITLE: Record<'entr' | 'emph' | 'exit' | 'media', StringKey> = {
   entr: 'ribbonAnimEntrance',
   emph: 'ribbonAnimEmphasis',
   exit: 'ribbonAnimExit',
+  media: 'ribbonAnimMedia',
 }
 
 /** Motion path presets (path coordinates 0..1 relative to slide size, matching OOXML animMotion). */
@@ -1102,7 +1107,6 @@ export function Ribbon({
   aiOpen,
   onToggleAi,
   onAiPreset,
-  onInsert,
   onPickShape,
   onInsertImage,
   onFormatBackground,
@@ -1150,6 +1154,7 @@ export function Ribbon({
   transition,
   onTransition,
   selectedAnimEffect,
+  selectionIsMedia,
   timingAnim,
   onApplyAnimation,
   onAnimHoverPreview,
@@ -1197,7 +1202,8 @@ export function Ribbon({
   onInsertWordArt,
   onInsertField,
   onOpenLink,
-  onInsertZoom,
+  onOpenZoom,
+  hasSections,
   slideCount,
   currentSlide,
   onOpenHeaderFooter,
@@ -1207,6 +1213,7 @@ export function Ribbon({
   recording,
   onToggleScreenRecord,
   contextElementType,
+  tabRequest,
   contextElementId: _contextElementId,
   contextSlideIndex: _contextSlideIndex,
   contextChartStyle,
@@ -1461,6 +1468,13 @@ export function Ribbon({
     prevContextTab.current = contextTab
   }, [contextTab, autoContextTab])
 
+  const handledTabRequest = useRef(0)
+  useEffect(() => {
+    if (!tabRequest || tabRequest.seq === handledTabRequest.current) return
+    handledTabRequest.current = tabRequest.seq
+    if (tabRequest.tab === contextTab) setTab(tabRequest.tab)
+  }, [tabRequest, contextTab])
+
   /** Insert tab dropdown big button (click toggles, content stopPropagation) */
   const dropBig = (
     key: NonNullable<typeof insertDrop>,
@@ -1619,7 +1633,6 @@ export function Ribbon({
     onFormat,
     onFormatBrushClick,
     onFormatBrushDoubleClick,
-    onInsert,
     onPickShape,
     onInsertChart,
     onInsertField,
@@ -1630,7 +1643,8 @@ export function Ribbon({
     onInsertSmartArt,
     onInsertTable,
     onInsertWordArt,
-    onInsertZoom,
+    onOpenZoom,
+    hasSections,
     onNewComment,
     onOpenEquation,
     onOpenHeaderFooter,
@@ -2200,10 +2214,10 @@ export function Ribbon({
                 <button
                   key={a.kind}
                   className={`rb-big ${selectedAnimEffect === a.kind ? 'active' : ''}`}
-                  disabled={!hasDoc || !hasSelection}
+                  disabled={!hasDoc || !hasSelection || (a.cls === 'media' && !selectionIsMedia)}
                   onClick={() => onApplyAnimation(a.kind)}
                   onMouseEnter={() => {
-                    if (hasDoc && hasSelection) animHoverStart(a.kind)
+                    if (hasDoc && hasSelection && a.cls !== 'media') animHoverStart(a.kind)
                   }}
                   onMouseLeave={animHoverStop}
                   data-tip={t('ribbonAnimApplyTip', {
@@ -2261,7 +2275,14 @@ export function Ribbon({
                 t('ribbonAddAnimation'),
                 t('ribbonAddAnimationTip'),
                 <div className="rb-menu rb-anim-menu">
-                  {(['entr', 'emph', 'exit'] as const).map((cls) => (
+                  {(
+                    [
+                      'entr',
+                      'emph',
+                      'exit',
+                      ...(selectionIsMedia ? (['media'] as const) : []),
+                    ] as const
+                  ).map((cls) => (
                     <React.Fragment key={cls}>
                       <div className="rb-drop-title">{t(ANIM_CLS_TITLE[cls])}</div>
                       {ANIM_EFFECTS.filter((a) => a.cls === cls).map((a) => (
@@ -2272,7 +2293,7 @@ export function Ribbon({
                             setInsertDrop(null)
                           }}
                           onMouseEnter={() => {
-                            if (hasDoc && hasSelection) animHoverStart(a.kind)
+                            if (hasDoc && hasSelection && cls !== 'media') animHoverStart(a.kind)
                           }}
                           onMouseLeave={animHoverStop}
                         >
@@ -2639,19 +2660,11 @@ export function Ribbon({
             <div className="ribbon-sep" />
             <Group label={t('ribbonGroupZoom')}>
               <div className="rb-col">
-                <button
-                  className="rb-small"
-                  disabled={!hasDoc}
-                  onClick={() => onZoom((z) => Math.min(z * 1.15, 3))}
-                >
+                <button className="rb-small" disabled={!hasDoc} onClick={() => onZoom(nextPreset)}>
                   <IconZoomIn size={18} />
                   <span>{t('ribbonZoomIn')}</span>
                 </button>
-                <button
-                  className="rb-small"
-                  disabled={!hasDoc}
-                  onClick={() => onZoom((z) => Math.max(z / 1.15, 0.25))}
-                >
+                <button className="rb-small" disabled={!hasDoc} onClick={() => onZoom(prevPreset)}>
                   <IconZoomOut size={18} />
                   <span>{t('ribbonZoomOut')}</span>
                 </button>

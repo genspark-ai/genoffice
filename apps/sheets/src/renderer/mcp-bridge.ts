@@ -181,8 +181,10 @@ export function installSheetsMcpBridge(handlers: McpSheetHandlers): () => void {
             return
           }
           const sheetId = primarySheetId(parsed.data)
-          if (sheetId !== undefined) handlers.focusSheet(sheetId, primaryCellOf(parsed.data))
-          reply(true, await handlers.applyOps(parsed.data, payload.dryRun === true))
+          const dryRun = payload.dryRun === true
+          if (sheetId !== undefined && !dryRun)
+            handlers.focusSheet(sheetId, primaryCellOf(parsed.data))
+          reply(true, await handlers.applyOps(parsed.data, dryRun))
           return
         }
         case 'save_sheet': {

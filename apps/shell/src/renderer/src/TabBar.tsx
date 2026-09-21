@@ -279,6 +279,15 @@ export function TabBar() {
               // full title (the close button's own tooltip still wins there)
               title={tab.title}
               style={dragStyle}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                if (tab.id === 'home') return
+                void window.aiOfficeTabs.showTabMenu(
+                  tab.id,
+                  Math.round(event.clientX),
+                  Math.round(event.clientY),
+                )
+              }}
               onPointerDown={(event) => {
                 if (event.button !== 0) return
                 if ((event.target as HTMLElement).closest('.tab-close')) return

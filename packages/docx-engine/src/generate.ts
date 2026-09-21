@@ -2651,7 +2651,9 @@ function freshRFontsXml(
   // must leave the other slots absent so their style/theme inheritance survives.
   const legacy = font && fontAscii === undefined && eastAsiaFont === undefined ? font : undefined
   const ascii = fontAscii ?? legacy
-  const ea = eastAsiaFont ?? font
+  // a Latin-only run carries the same face in both slots; writing it as eastAsia
+  // would pin CJK to the Latin font (see mergeRFontsXml)
+  const ea = eastAsiaFont ?? (fontAscii !== undefined && font === fontAscii ? undefined : font)
   const cs = fontCs ?? legacy
   return `<w:rFonts${ascii ? ` w:ascii="${escapeXmlAttr(ascii)}"` : ''}${ea ? ` w:eastAsia="${escapeXmlAttr(ea)}"` : ''}${ascii ? ` w:hAnsi="${escapeXmlAttr(ascii)}"` : ''}${cs ? ` w:cs="${escapeXmlAttr(cs)}"` : ''}/>`
 }

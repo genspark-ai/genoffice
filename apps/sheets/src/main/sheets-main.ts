@@ -1541,6 +1541,21 @@ export function setSheetsShellWindow(win: BrowserWindow | null): void {
   sheetsShellWindow = win
 }
 
+/** the window hosting a tab's WebContentsView when BrowserWindow.fromWebContents
+ *  cannot tell (detached "Open in New Window" editors) */
+let hostWindowHook: ((wc: WebContents) => BrowserWindow | undefined) | null = null
+export function setSheetsHostWindowHook(
+  fn: ((wc: WebContents) => BrowserWindow | undefined) | null,
+): void {
+  hostWindowHook = fn
+}
+
+function hostWindowFor(wc: WebContents): BrowserWindow | undefined {
+  const own = hostWindowHook?.(wc) ?? BrowserWindow.fromWebContents(wc)
+  if (own && !own.isDestroyed()) return own
+  return sheetsShellWindow && !sheetsShellWindow.isDestroyed() ? sheetsShellWindow : undefined
+}
+
 interface SheetsTabSession {
   readonly webContents: WebContents
   readonly client: XlsxSidecarClient
@@ -1587,7 +1602,7 @@ function resolveTransferredEdits(
 }
 
 function dialogParent(event: IpcMainInvokeEvent): BrowserWindow | undefined {
-  return sheetsShellWindow ?? BrowserWindow.fromWebContents(event.sender) ?? undefined
+  return hostWindowFor(event.sender)
 }
 
 async function openFileDialog(event: IpcMainInvokeEvent, options: OpenDialogOptions) {
@@ -2679,9 +2694,7 @@ export function registerSheetsIpc(): void {
     ) {
       return screenSourcesResultSchema.parse({ status: 'denied', sources: [] })
     }
-    // In tab mode the sheets renderer is a WebContentsView, so fromWebContents
-    // on the sender is null; the shell window is the one to exclude.
-    const selfWindow = sheetsShellWindow ?? BrowserWindow.fromWebContents(event.sender)
+    const selfWindow = hostWindowFor(event.sender)
     const selfId = selfWindow?.getMediaSourceId()
     return screenSourcesResultSchema.parse({
       status: 'ok',
@@ -3526,11 +3539,9 @@ export function registerProjectIpc(): void {
       if (typeof args.text !== 'string' || args.text.length > 200_000) {
         throw new Error('Invalid chat text: must be a string up to 200000 chars')
       }
-      if (args.tools && (!Array.isArray(args.tools) || args.tools.length > 50)) {
-        throw new Error('Invalid chat tools: must be an array up to 50 entries')
-      }
-      if (args.attachments && (!Array.isArray(args.attachments) || args.attachments.length > 20)) {
-        throw new Error('Invalid chat attachments: must be an array up to 20 entries')
+      if (args.tools && !Array.isArray(args.tools)) throw new Error('Invalid chat tools')
+      if (args.attachments && !Array.isArray(args.attachments)) {
+        throw new Error('Invalid chat attachments')
       }
       const msg: Parameters<ProjectStore['appendChatMessage']>[2] = {
         role: args.role,

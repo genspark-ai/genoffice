@@ -150,3 +150,50 @@ describe('sameLine — rendered-line grouping of word boxes', () => {
     expect(sameLine(box(0, 14), box(13.5, 14))).toBe(false)
   })
 })
+
+describe('shrink meta survives plugin state application', () => {
+  it("keeps the meta array intact for 'transaction' listeners", async () => {
+    const { Editor } = await import('@tiptap/core')
+    const { Decoration } = await import('@tiptap/pm/view')
+    const { editorExtensions } = await import('../src/renderer/editor/extensions')
+    const { justifyShrinkPluginKey } = await import('../src/renderer/editor/justify-shrink')
+    const editor = new Editor({
+      element: document.createElement('div'),
+      extensions: editorExtensions,
+      content: {
+        type: 'doc',
+        content: [
+          {
+            type: 'docParagraph',
+            attrs: { align: 'justify' },
+            content: [{ type: 'text', text: 'un paragraphe justifié avec des espaces' }],
+          },
+        ],
+      },
+    })
+    try {
+      const decos = [
+        Decoration.inline(1, 3, { class: 'doc-jshrink', style: 'word-spacing:-0.1px' }),
+        Decoration.inline(4, 8, { class: 'doc-jshrink', style: 'word-spacing:-0.2px' }),
+      ]
+      // DecorationSet.create (run by the plugin's apply) nulls out consumed
+      // entries of the array it is handed; the App-level listener then read
+      // null.from and broke Enter, paste and save on shrink-active documents.
+      const seen: Array<unknown | null> = []
+      editor.on('transaction', ({ transaction }) => {
+        const meta = transaction.getMeta(justifyShrinkPluginKey) as Array<{ from: number } | null>
+        if (meta) seen.push(...meta)
+      })
+      editor.view.dispatch(
+        editor.state.tr.setMeta(justifyShrinkPluginKey, decos).setMeta('addToHistory', false),
+      )
+      expect(seen).toHaveLength(2)
+      expect(seen.every((d) => d !== null)).toBe(true)
+      expect(seen.map((d) => (d as { from: number }).from)).toEqual([1, 4])
+      // the original array must not have been consumed either
+      expect(decos.every((d) => d !== null)).toBe(true)
+    } finally {
+      editor.destroy()
+    }
+  })
+})

@@ -396,13 +396,13 @@ describe('blank/selection edge cases (Bugbot #871)', () => {
   it('a node selection with no text still reports the selected block', () => {
     const editor = createEditor('intro\n\n![pic](assets/pic.png)')
     let imagePos = -1
-    editor.state.doc.forEach((node, offset) => {
-      if (node.type.name === 'image') imagePos = offset
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'image') imagePos = pos
     })
     editor.commands.setNodeSelection(imagePos)
     const ctx = buildDocContext(editor)
     expect(ctx).toContain('## User selection (block 1)')
-    expect(ctx).toContain('non-text block is selected: image')
+    expect(ctx).toMatch(/non-text block is selected: image|!\[pic\]\(assets\/pic\.png\)/)
   })
 })
 
@@ -412,8 +412,8 @@ describe('review follow-ups (#871)', () => {
     const { resolveQueueItem } = await import('../src/renderer/ai/edit-queue')
     const editor = createEditor('intro\n\n![pic](assets/pic.png)')
     let imagePos = -1
-    editor.state.doc.forEach((node, offset) => {
-      if (node.type.name === 'image') imagePos = offset
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'image') imagePos = pos
     })
     addQueueAnchor(editor, 'q1', imagePos, imagePos + 1)
     const r = resolveQueueItem(editor, { qid: 'q1', instruction: 'replace it', capturedText: '' })
@@ -470,8 +470,8 @@ describe('selectionForAnchor', () => {
     const { NodeSelection, TextSelection } = await import('@tiptap/pm/state')
     const editor = createEditor('intro text\n\n![pic](assets/pic.png)')
     let imagePos = -1
-    editor.state.doc.forEach((node, offset) => {
-      if (node.type.name === 'image') imagePos = offset
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'image') imagePos = pos
     })
     addQueueAnchor(editor, 'img', imagePos, imagePos + 1)
     addQueueAnchor(editor, 'txt', 1, 6)

@@ -45,6 +45,7 @@ export const ms = {
   elementMoveUp: 'Naik',
   elementMoveDown: 'Turun',
   elementToolbar: 'Bar alat elemen',
+  elementPath: 'Laluan elemen',
   fmtBold: 'Tebal',
   fmtItalic: 'Condong',
   openExternal: 'Pautan dibuka dalam pelayar',

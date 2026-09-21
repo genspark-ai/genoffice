@@ -138,7 +138,7 @@ describe('structural ops on index targets', () => {
     }
     expect(blocks(editor)).toEqual([
       'paragraph:intro',
-      'image:',
+      'paragraph:',
       'horizontalRule:',
       'paragraph:outro',
     ])
@@ -188,7 +188,7 @@ describe('structural ops on index targets', () => {
     )
     expect(r.applied).toBe(3)
     expect(blocks(editor).map((b) => b.split(':')[0])).toEqual([
-      'image',
+      'paragraph',
       'paragraph',
       'table',
       'paragraph',

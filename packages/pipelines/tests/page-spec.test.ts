@@ -193,6 +193,8 @@ describe('buildPagePptx', () => {
     const shapes = slide.elements.filter((e) => e.type === 'shape')
     expect(shapes.length).toBeGreaterThanOrEqual(1)
     expect(texts).toHaveLength(1)
+    // generated text boxes grow with edits like PowerPoint's own
+    expect(texts[0]!.text!.autofit).toBe('resize')
     const run = texts[0]!.text!.paragraphs[0]!.runs[0]!
     expect(run.text).toBe('Quarterly Wins')
     expect(run.bold).toBe(true)

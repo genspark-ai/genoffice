@@ -1,5 +1,6 @@
 import { ScriptFonts } from './script-fonts'
 import { Editor, Extension, Node } from '@tiptap/core'
+import { StreamingTailGuardExtension } from './streaming-tail-guard'
 import type { ChainedCommands, RawCommands } from '@tiptap/core'
 import { Gapcursor, UndoRedo } from '@tiptap/extensions'
 import { DOMSerializer } from '@tiptap/pm/model'
@@ -15,6 +16,7 @@ import {
 } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import { appendsAtEnd, touchedTopLevelBlocks } from './touched-blocks'
+import { containsNode, localEditBlocks, touchedNeedsRecompute } from './local-edit'
 import { installProseMirrorPerf } from './prosemirror-perf'
 import type { EditorView } from '@tiptap/pm/view'
 import {
@@ -2137,7 +2139,19 @@ export const AnchorLineExtension = Extension.create({
       new Plugin({
         state: {
           init: (_, state) => build(state.doc),
-          apply: (tr, old) => (tr.docChanged ? build(tr.doc) : old),
+          apply: (tr, old) => {
+            if (!tr.docChanged) return old
+            // a local edit outside every anchored textbox block keeps the widgets
+            const touched = localEditBlocks(tr)
+            if (!touched) return build(tr.doc)
+            const mapped = old.map(tr.mapping, tr.doc)
+            // anchored textbox blocks also live inside table cells
+            return touchedNeedsRecompute(tr, touched, mapped, (node) =>
+              containsNode(node, (n) => n.type.name === 'docProtected'),
+            )
+              ? build(tr.doc)
+              : mapped
+          },
         },
         props: {
           decorations(state) {
@@ -2334,9 +2348,22 @@ export const ListNumberingExtension = Extension.create<object, ListNumberingStor
           init: (_config, state) => ({ defs: storage.defs, decos: compute(state.doc) }),
           apply(tr, old) {
             // defs is replaced (never mutated) on open/reparse and marker overlay
-            if (tr.docChanged || old.defs !== storage.defs)
-              return { defs: storage.defs, decos: compute(tr.doc) }
-            return old.decos ? { defs: old.defs, decos: old.decos.map(tr.mapping, tr.doc) } : old
+            if (old.defs !== storage.defs) return { defs: storage.defs, decos: compute(tr.doc) }
+            if (!tr.docChanged) return old
+            // markers depend on the sequence of list items: a local edit that
+            // touches no list item (and adds/removes no block) cannot move one
+            const touched = localEditBlocks(tr)
+            if (touched && old.decos) {
+              const mapped = old.decos.map(tr.mapping, tr.doc)
+              // list items inside a touched table count too (a cell can hold a list)
+              const isListNode = (n: PmNode) =>
+                n.type.name === 'docListItem' ||
+                (n.type.name === 'docProtected' && !!n.attrs.strayList)
+              const hasList = (node: PmNode) => containsNode(node, isListNode)
+              if (!touchedNeedsRecompute(tr, touched, mapped, hasList))
+                return { defs: old.defs, decos: mapped }
+            }
+            return { defs: storage.defs, decos: compute(tr.doc) }
           },
         },
         props: {
@@ -5956,6 +5983,7 @@ export const AutoLinkOnDelimiter = Extension.create({
 })
 
 export const editorExtensions = [
+  StreamingTailGuardExtension,
   ScriptFonts,
   DocDocument,
   DocText,

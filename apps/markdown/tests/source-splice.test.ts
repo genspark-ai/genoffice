@@ -182,6 +182,21 @@ describe('source splice', () => {
     expect(out).toBe('# A\n\n- one\n- two\n\ntail\n')
   })
 
+  it('keeps a reference-style image and its definition verbatim', () => {
+    for (const source of [
+      'Para.\n\n![Alt text][id]\n\n[id]: https://x/a.jpg  "The Dojocat"\n',
+      'Para.\n\n![Alt text][id]\n\n[id]: https://x/a.jpg\n',
+      'Para.\n\n![Alt text][id] tail\n\n[id]: https://x/a.jpg\n',
+    ]) {
+      const editor = createEditor()
+      expect(save(editor, source)).toBe(source)
+      const map = load(editor, source)!
+      editor.commands.insertContentAt(endOfBlock(editor, 0), ' EDITED')
+      const out = spliceMarkdown(editor, editor.state.doc, map)
+      expect(out).toBe(source.replace('Para.', 'Para. EDITED'))
+    }
+  })
+
   it('declines a CRLF source rather than guessing', () => {
     const editor = createEditor()
     expect(load(editor, '# A\r\n\r\nb\r\n')).toBeNull()

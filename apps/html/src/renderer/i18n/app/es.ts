@@ -48,6 +48,7 @@ export const es = {
   elementMoveUp: 'Subir',
   elementMoveDown: 'Bajar',
   elementToolbar: 'Barra de herramientas del elemento',
+  elementPath: 'Ruta del elemento',
   fmtBold: 'Negrita',
   fmtItalic: 'Cursiva',
   openExternal: 'Enlace abierto en el navegador',

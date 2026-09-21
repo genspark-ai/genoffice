@@ -9,20 +9,20 @@ function createRenderContext(docSettings: any = {}, options: any = {}) {
   // Every numeric here arrives from page JavaScript: NaN/Infinity/negatives
   // must degrade to defaults instead of poisoning page geometry (NaN margins
   // make contentDxa NaN; an infinite page size makes every extent infinite).
-  const finiteOr = (v: any, fallback: number): number =>
-    Number.isFinite(v) ? v : fallback
+  const finiteOr = (v: any, fallback: number): number => (Number.isFinite(v) ? v : fallback)
   const marginsPx = docSettings.marginsPx || {}
   const marginPx = (v: any): number => {
     const n = finiteOr(v, MARGIN_DXA / 15)
     return n < 0 ? MARGIN_DXA / 15 : n
   }
+  const pageDim = (v: any, fallback: number): number => (Number.isFinite(v) && v > 0 ? v : fallback)
   const pageWidthDxa = Math.max(
     1440,
-    Math.round(finiteOr(docSettings.pageSizePx?.width, DEFAULT_PAGE_WIDTH_PX) * 15),
+    Math.round(pageDim(docSettings.pageSizePx?.width, DEFAULT_PAGE_WIDTH_PX) * 15),
   )
   const pageHeightDxa = Math.max(
     1440,
-    Math.round(finiteOr(docSettings.pageSizePx?.height, DEFAULT_PAGE_HEIGHT_PX) * 15),
+    Math.round(pageDim(docSettings.pageSizePx?.height, DEFAULT_PAGE_HEIGHT_PX) * 15),
   )
   const viewportW = finiteOr(docSettings.viewportWidthPx, 0)
   const baseScale = viewportW > 0 ? Math.min(1, pageWidthDxa / 15 / viewportW) : 1

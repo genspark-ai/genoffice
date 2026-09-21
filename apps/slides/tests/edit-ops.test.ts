@@ -131,6 +131,20 @@ describe('op validation (guided errors)', () => {
     expect(r.failures![0]!.error).toContain('finite number')
   })
 
+  it('setFont rejects a malformed fontSizeStep or one combined with fontSizePt', () => {
+    for (const font of [
+      { fontSizeStep: { dir: 2, mode: 'ladder' } },
+      { fontSizeStep: { dir: 1, mode: 'steps' } },
+      { fontSizeStep: { dir: 1, mode: 'point' }, fontSizePt: 20 },
+    ]) {
+      const r = runTxn(opened, {
+        ops: [{ op: 'setFont', target: { slide: 0, el: titleId }, font }],
+      })
+      expect(r.applied).toBe(false)
+      expect(r.failures![0]!.error).toContain('font.fontSizeStep')
+    }
+  })
+
   it('setFont rejects a non-hex color', () => {
     const r = runTxn(opened, {
       ops: [{ op: 'setFont', target: { slide: 0, el: titleId }, font: { color: 'red' } }],
@@ -1370,5 +1384,48 @@ describe('length units', () => {
       cx: 1440000,
       cy: 1080000,
     })
+  })
+})
+
+describe('setFont fontSizeStep', () => {
+  const runs = () => (els().find((e) => e.id === titleId) as TextElement).text!.paragraphs[0]!.runs
+
+  beforeEach(() => {
+    const title = els().find((e) => e.id === titleId) as TextElement
+    title.text!.paragraphs[0]!.runs = [
+      { text: 'Big ', fontSize: 44 },
+      { text: 'odd ', fontSize: 13 },
+      { text: 'inherits', fontSizeImplicit: true },
+    ]
+  })
+
+  it('steps every run along the ladder from its own size', () => {
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'setFont',
+          target: { slide: 0, el: titleId },
+          font: { fontSizeStep: { dir: 1, mode: 'ladder' } },
+        },
+      ],
+    })
+    expect(r.applied).toBe(true)
+    expect(runs().map((run) => run.fontSize)).toEqual([48, 14, 20])
+    expect(runs().some((run) => run.fontSizeImplicit)).toBe(false)
+  })
+
+  it('nudges every run by one point, never below 1 pt', () => {
+    runs()[1]!.fontSize = 1
+    const r = runTxn(opened, {
+      ops: [
+        {
+          op: 'setFont',
+          target: { slide: 0, el: titleId },
+          font: { fontSizeStep: { dir: -1, mode: 'point' } },
+        },
+      ],
+    })
+    expect(r.applied).toBe(true)
+    expect(runs().map((run) => run.fontSize)).toEqual([43, 1, 17])
   })
 })

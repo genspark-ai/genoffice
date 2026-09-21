@@ -54,6 +54,7 @@ export const zhTW = {
   aiSumInsertFootnote: '插入註腳',
   aiSumInsertEndnote: '插入章節附註',
   aiSumDeleteNote: '刪除註腳/附註',
+  aiSumEditNote: '編輯註腳/附註',
   aiSumReadNotes: '讀取註腳/附註',
   aiSumAddComment: '新增註解',
   aiSumDeleteComment: '刪除註解',

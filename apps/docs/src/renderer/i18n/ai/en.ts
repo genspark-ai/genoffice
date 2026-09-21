@@ -55,6 +55,7 @@ export const en = {
   aiSumInsertFootnote: 'Inserted footnote',
   aiSumInsertEndnote: 'Inserted endnote',
   aiSumDeleteNote: 'Deleted note',
+  aiSumEditNote: 'Edited note',
   aiSumReadNotes: 'Read notes',
   aiSumAddComment: 'Added comment',
   aiSumDeleteComment: 'Deleted comment',

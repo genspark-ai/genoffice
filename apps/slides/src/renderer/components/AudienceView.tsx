@@ -14,6 +14,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import type { RenderFill, RenderNode, RenderSlide } from '@genoffice/pptx-render'
 import type { AnimationItem, ShapeKey, ShowSyncState, TransitionKind } from '../../shared/ipc'
 import { AnimatedSlideStage, useAnimPlayer } from './AnimatedSlide'
+import { ShowMediaLayer } from './ShowMediaLayer'
 import { useI18n } from '../i18n/locale'
 import { MorphStage } from './MorphStage'
 import { InkLayer, type InkStroke } from './ShowInk'
@@ -205,7 +206,14 @@ export function AudienceView() {
     const cursor = `${sync.idx}:${sync.played}:${sync.playing}`
     if (cursor !== cursorRef.current) {
       cursorRef.current = cursor
-      player.seek(allAnims[sync.idx] ?? [], sync.played, sync.playing)
+      // Same page: media steps reached since the last cursor still fire; a forward page turn
+      // fires everything as reached; landing backwards on a played page fires nothing
+      player.seek(
+        allAnims[sync.idx] ?? [],
+        sync.played,
+        sync.playing,
+        shownRef.current === sync.idx ? 'keep' : sync.fresh ? 'fresh' : 'all',
+      )
     }
     if (shownRef.current !== sync.idx) {
       const from = shownRef.current
@@ -267,18 +275,32 @@ export function AudienceView() {
               key={anim.nonce}
               className={`ss-frame${anim.kind !== 'none' ? ` ss-anim-${anim.kind}` : ''}`}
             >
-              <AnimatedSlideStage
-                slide={slide}
-                images={images}
-                width={fitW}
-                states={player.states}
-              />
+              <div style={{ position: 'relative', width: fitW, margin: '0 auto' }}>
+                <AnimatedSlideStage
+                  slide={slide}
+                  images={images}
+                  width={fitW}
+                  states={player.states}
+                />
+                <ShowMediaLayer
+                  key={sync.idx}
+                  slide={slide}
+                  slideIndex={sync.idx}
+                  width={fitW}
+                  commands={player.mediaCmds}
+                  epoch={player.epoch}
+                  mediaBase={player.mediaBase}
+                  interactive={false}
+                />
+              </div>
             </div>
           )}
           <InkLayer strokes={strokes} laser={laser} width={fitW} height={fitH} />
         </div>
       )}
-      {sync.black && !sync.ended && <div className="ss-black" />}
+      {!sync.ended && (sync.black || sync.white) && (
+        <div className={sync.black ? 'ss-black' : 'ss-white'} />
+      )}
     </div>
   )
 }

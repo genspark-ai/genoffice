@@ -46,6 +46,11 @@ export const ko = {
   appUntitledDocx: '제목 없는 문서.docx',
   appOpenedFile: '{name}을(를) 열었습니다',
   appOpenFailed: '열기 실패: {error}',
+  appDocTooLargeBlocks: '{name}: 문서가 너무 커서 열 수 없습니다 ({blocks}개 단락, {chars}자)',
+  appDocLargeReadOnly:
+    '큰 문서({blocks}개 단락)이므로 읽기 모드로 열었습니다. Esc를 누르면 편집할 수 있습니다',
+  appDocLargeSpellOff:
+    '큰 문서({blocks}개 단락): 입력 시 맞춤법 검사가 꺼져 있습니다. 검토 › 맞춤법에서 켤 수 있습니다',
   appFontsMissing: '문서 글꼴이 설치되어 있지 않습니다: {names} (대체 글꼴로 표시)',
   appVerticalTextNotice:
     '세로쓰기 텍스트가 포함된 문서입니다(현재 가로쓰기로 표시되며 저장에는 영향이 없습니다)',

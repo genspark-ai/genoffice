@@ -44,6 +44,12 @@ export const pl = {
   appUntitledDocx: 'Bez tytułu.docx',
   appOpenedFile: 'Otwarto {name}',
   appOpenFailed: 'Otwieranie nie powiodło się: {error}',
+  appDocTooLargeBlocks:
+    '{name}: dokument jest zbyt duży, aby go otworzyć ({blocks} akapitów, {chars} znaków)',
+  appDocLargeReadOnly:
+    'Duży dokument ({blocks} akapitów): otwarty w trybie czytania — naciśnij Esc, aby edytować',
+  appDocLargeSpellOff:
+    'Duży dokument ({blocks} akapitów): sprawdzanie pisowni podczas pisania jest wyłączone – włącz je w Recenzja › Pisownia',
   appFontsMissing: 'Brak czcionek dokumentu: {names} (wyświetlane zamienniki)',
   appVerticalTextNotice:
     'Ten dokument zawiera tekst pionowy (na razie wyświetlany poziomo; zapis pozostaje bez zmian)',

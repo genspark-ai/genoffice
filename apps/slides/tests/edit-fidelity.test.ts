@@ -83,8 +83,33 @@ describe('run fragmentation: layout fragments merge back into original runs by s
     expect(fragments.some((fragment) => fragment.style.width !== '')).toBe(true)
     releaseEditorLayoutConstraints(div)
     expect(
-      fragments.every((fragment) => fragment.style.width === '' && fragment.style.display === ''),
+      fragments.every(
+        (fragment) =>
+          fragment.style.width === '' &&
+          fragment.style.display === '' &&
+          fragment.style.whiteSpace === '',
+      ),
     ).toBe(true)
+  })
+
+  it('fixed-width cells never wrap inside themselves (contentEditable defaults to break-word)', () => {
+    const div = document.createElement('div')
+    populateEditorDom(
+      div,
+      layout([{ runs: [{ text: 'AI \u539f\u751f APP \u65ad\u5c42\u7b2c\u4e00', bold: true }] }])
+        .lines,
+    )
+    const cells = [...div.querySelectorAll<HTMLElement>('[data-layout-fragment]')].filter(
+      (f) => f.style.width !== '',
+    )
+    expect(cells.map((f) => f.textContent)).toContain('APP')
+    expect(cells.every((f) => f.style.whiteSpace === 'pre')).toBe(true)
+    const caret = document.createRange()
+    const app = cells.find((f) => f.textContent === 'APP')!
+    caret.setStart(app.firstChild!, 1)
+    caret.collapse(true)
+    releaseFragmentsAtEdit(div, [caret])
+    expect(app.style.whiteSpace).toBe('')
   })
 
   it('a collapsed-caret edit releases only the touched fragment and its neighbors', () => {

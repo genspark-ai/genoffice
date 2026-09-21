@@ -108,7 +108,7 @@ describe('vision capability fallback', () => {
     const withProvider = (provider: AiProviderId) => ({ ...defaultAiSettings(), provider })
     const deepseek = withProvider('deepseek')
     expect(settingsSupportVision(deepseek)).toBe(false)
-    deepseek.providers.deepseek.model = 'deepseek-flash'
+    deepseek.providers.deepseek.model = 'deep-seek-v4.1-flash'
     expect(settingsSupportVision(deepseek)).toBe(true)
     expect(settingsSupportVision(withProvider('glm'))).toBe(false)
     expect(settingsSupportVision(withProvider('gemini'))).toBe(true)

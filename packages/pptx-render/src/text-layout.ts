@@ -96,7 +96,9 @@ function scaleHexAlpha(hex: string, factor: number): string {
 }
 
 function runStyle(run: TextRun, scale: number, fontScale: number): RunStyle {
-  const sizePt = run.fontSize ?? DEFAULT_SIZE_PT
+  // Super/subscript glyphs draw at 2/3 of the run size whatever the offset is (probe: 18pt
+  // at baseline 13.3 / 30 / -25 / 100 % all measure 12pt in the PDF export)
+  const sizePt = (run.fontSize ?? DEFAULT_SIZE_PT) * (run.baseline ? 2 / 3 : 1)
   // PowerPoint renders autofit text at round(size × fontScale) whole points — glyphs
   // and the 1.2em line pitch both quantize (probe-measured: 20pt at 46/44/42.5% all
   // draw 9pt, 47.5/48% draw 10pt, 28pt×46%=12.88 draws 13pt, 20pt×52%=10.4 draws 10pt).
@@ -329,8 +331,9 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
     const color = run.color ?? '#000000'
     const underline = !!run.underline
     const ls = run.letterSpacing ? ptToPx(run.letterSpacing, scale) * fontScale : 0
-    // Super/subscript: baseline% (30 = superscript raised 30% of font size, negative = subscript lowered)
-    const blShift = run.baseline ? style.fontSizePx * (run.baseline / 100) : 0
+    // Super/subscript: baseline% of the run's full size (30 = raised 30%, negative = subscript
+    // lowered); the glyphs themselves draw at 2/3 (runStyle), so scale the shift back up
+    const blShift = run.baseline ? style.fontSizePx * 1.5 * (run.baseline / 100) : 0
     const base = {
       style,
       color,
@@ -1597,7 +1600,9 @@ function layoutAll(
     const bulletOverflowPx = hasBullet ? Math.max(bulletX + bulletW - textX, 0) : 0
     // The first line's x shift: bullet-overflow push, or the first-line indent itself —
     // it consumes (negative: adds) that much of the first line's wrap budget
-    const firstLineDx = hasBullet ? bulletOverflowPx : indentPx
+    // Without a bullet a hanging indent cannot pull the first line left of the inset
+    // (PowerPoint's ruler clamps marL+indent at 0; prod deck: marL 0 / indent -0.44in)
+    const firstLineDx = hasBullet ? bulletOverflowPx : Math.max(indentPx, -marLPx)
     const laid = layoutParagraph(p, avail, wrap, metrics, scale, fontScale, lnSpcRed, firstLineDx, {
       stopsPx: (p.tabStops ?? []).map((t) => emuToPx(t.pos, scale)),
       defaultPx: Math.max(emuToPx(p.defTabSz ?? 914400, scale), 1),
@@ -1615,9 +1620,10 @@ function layoutAll(
       const baseline = y + (ln.leadAbove ?? 0) + ln.ascent
       inkBottom = Math.max(inkBottom, baseline + ln.descent)
       const lineWidth = ln.runs.reduce((acc, r) => acc + r.widthPx, 0)
-      // Without a bullet the first line adds indent (positive or negative); with a bullet
-      // the body starts at marL, pushed right when the glyph overflows the hanging indent
-      const firstShift = !hasBullet && li === 0 ? indentPx : 0
+      // Without a bullet the first line adds indent (positive or negative, clamped at the
+      // inset); with a bullet the body starts at marL, pushed right when the glyph
+      // overflows the hanging indent
+      const firstShift = !hasBullet && li === 0 ? firstLineDx : 0
       const bulletShift = li === 0 ? bulletOverflowPx : 0
       // justify: lines filled by wrapping (not paragraph-final, not hard breaks) spread
       // the remaining width into word gaps (U+0020 only), like PowerPoint — letter

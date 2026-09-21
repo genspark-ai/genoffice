@@ -44,6 +44,12 @@ export const de = {
   appUntitledDocx: 'Unbenanntes Dokument.docx',
   appOpenedFile: '{name} geöffnet',
   appOpenFailed: 'Öffnen fehlgeschlagen: {error}',
+  appDocTooLargeBlocks:
+    '{name}: Das Dokument ist zu groß zum Öffnen ({blocks} Absätze, {chars} Zeichen)',
+  appDocLargeReadOnly:
+    'Großes Dokument ({blocks} Absätze): im Lesemodus geöffnet – Esc zum Bearbeiten',
+  appDocLargeSpellOff:
+    'Großes Dokument ({blocks} Absätze): Rechtschreibprüfung beim Schreiben ist aus – unter Überprüfen › Rechtschreibung einschalten',
   appFontsMissing: 'Fehlende Dokumentschriftarten: {names} (Ersatzschriften werden angezeigt)',
   appVerticalTextNotice:
     'Dieses Dokument enthält vertikalen Text (vorerst horizontal angezeigt; das Speichern ist nicht betroffen)',

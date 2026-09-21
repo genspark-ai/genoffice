@@ -1,7 +1,7 @@
 import type { Editor } from '@tiptap/core'
 import type { Node as PmNode } from '@tiptap/pm/model'
 import type { Transaction } from '@tiptap/pm/state'
-import type { NoteInfo } from '@genoffice/docx-engine'
+import type { NoteInfo, NoteRun } from '@genoffice/docx-engine'
 import { posAfterText } from './after-text'
 
 export type NoteKind = 'footnote' | 'endnote'
@@ -17,8 +17,93 @@ export interface AiNotesAccess {
   add(kind: NoteKind, text: string): string
   /** false when no note has that id */
   remove(kind: NoteKind, id: string): boolean
+  /** swaps the note with that id for `next` (same id); false when no note has that id */
+  replace(kind: NoteKind, id: string, next: NoteInfo): boolean
   /** block index of a protected block whose XML still holds the reference mark (nothing here can remove it) */
   protectedMarkBlock?(kind: NoteKind, id: string): number | null
+}
+
+/** every occurrence of `find` in `text`, honouring matchCase */
+function occurrences(text: string, find: string, matchCase: boolean): number[] {
+  const hay = matchCase ? text : text.toLowerCase()
+  const needle = matchCase ? find : find.toLowerCase()
+  const out: number[] = []
+  let at = hay.indexOf(needle)
+  while (at !== -1) {
+    out.push(at)
+    at = hay.indexOf(needle, at + needle.length)
+  }
+  return out
+}
+
+function replaceAll(text: string, find: string, replace: string, matchCase: boolean): string {
+  const hits = occurrences(text, find, matchCase)
+  let out = ''
+  let cursor = 0
+  for (const at of hits) {
+    out += text.slice(cursor, at) + replace
+    cursor = at + find.length
+  }
+  return out + text.slice(cursor)
+}
+
+/**
+ * findReplace inside one paragraph's display runs: a match that spans several runs lands in the
+ * first run's formatting, the covered tail of the later runs goes. Returns how many matched.
+ */
+function replaceInRuns(runs: NoteRun[], find: string, replace: string, matchCase: boolean): number {
+  const joined = runs.map((r) => r.text).join('')
+  const hits = occurrences(joined, find, matchCase)
+  for (const at of [...hits].reverse()) {
+    const end = at + find.length
+    let offset = 0
+    let first = -1
+    for (let i = 0; i < runs.length; i++) {
+      const run = runs[i]!
+      const runStart = offset
+      const runEnd = offset + run.text.length
+      offset = runEnd
+      if (runEnd <= at || runStart >= end) continue
+      const head = run.text.slice(0, Math.max(0, at - runStart))
+      const tail = run.text.slice(Math.min(run.text.length, end - runStart))
+      if (first === -1) {
+        first = i
+        run.text = head + replace + tail
+      } else {
+        run.text = head + tail
+      }
+    }
+  }
+  return hits.length
+}
+
+/**
+ * The note with `find` swapped for `replace` throughout (findReplace semantics). Display runs are
+ * patched in place when they agree with the text; otherwise the plain text alone carries the
+ * change and the saved part is re-patched from it at the w:t level.
+ */
+export function editNoteText(
+  note: NoteInfo,
+  find: string,
+  replace: string,
+  matchCase = true,
+): { note: NoteInfo; count: number } {
+  const count = occurrences(note.text, find, matchCase).length
+  if (count === 0) return { note, count }
+  const next: NoteInfo = { ...note, text: replaceAll(note.text, find, replace, matchCase) }
+  // runs are per paragraph: a match or replacement crossing a paragraph break cannot be patched in them
+  if (note.richParas && !find.includes('\n') && !replace.includes('\n')) {
+    const richParas = note.richParas.map((runs) => runs.map((r) => ({ ...r })))
+    const patched = richParas.reduce(
+      (n, runs) => n + replaceInRuns(runs, find, replace, matchCase),
+      0,
+    )
+    if (patched === count) next.richParas = richParas
+    else delete next.richParas
+  } else {
+    delete next.richParas
+  }
+  return { note: next, count }
 }
 
 export interface NoteAnchor {

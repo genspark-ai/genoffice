@@ -40,6 +40,9 @@ export const en = {
   paneAnimEffShrink: 'Shrink & Turn',
   paneAnimEffZoomOut: 'Zoom Out',
   paneAnimEffMotionPath: 'Motion Path',
+  paneAnimEffMediaPlay: 'Play',
+  paneAnimEffMediaPause: 'Pause',
+  paneAnimEffMediaStop: 'Stop',
 
   paneChartEditTitle: 'Edit Chart Data',
   paneChartCategoryN: 'Category {n}',
@@ -277,4 +280,13 @@ export const en = {
   paneShowEnded: 'End of slide show.',
   paneShowRehearseTip: 'Rehearse Timings: time on this slide / total time',
   paneShowRehearseTotal: 'Total {time}',
+  paneShowMenuNext: 'Next',
+  paneShowMenuPrev: 'Previous',
+  paneShowMenuLastViewed: 'Last Viewed',
+  paneShowMenuSeeAll: 'See All Slides',
+  paneShowMenuScreen: 'Screen',
+  paneShowMenuBlack: 'Black Screen',
+  paneShowMenuWhite: 'White Screen',
+  paneShowMenuEnd: 'End Show',
+  panePresenterWhiteOn: 'White screen (press W to resume)',
 } satisfies Record<keyof typeof zh, string>

@@ -73,3 +73,25 @@ describe('2.1 coordinate system', () => {
     expect(box.centerY).toBeCloseTo(160, 4)
   })
 })
+
+describe('group child scaling of quarter-turned children', () => {
+  it('placeTransform: a 90° child in a non-uniformly scaled group scales its visual box', () => {
+    const vp = makeViewport({ cx: 9525 * 1000, cy: 9525 * 1000 }, 1000)
+    const t: Transform = {
+      offset: { x: 0, y: 0, cx: 9525 * 200, cy: 9525 * 50 },
+      rot: 5400000,
+      flipH: false,
+      flipV: false,
+    }
+    // visual box 50 wide × 200 tall → 50 × 600 on screen, so the shape's own w/h swap factors
+    const box = placeTransform(t, vp, { x: 0, y: 0, scaleX: 1, scaleY: 3 })
+    expect(box.w).toBeCloseTo(600, 4)
+    expect(box.h).toBeCloseTo(50, 4)
+    expect(box.centerX).toBeCloseTo(100, 4)
+    expect(box.centerY).toBeCloseTo(75, 4)
+    // unrotated children keep the plain per-axis scaling
+    const flat = placeTransform({ ...t, rot: 0 }, vp, { x: 0, y: 0, scaleX: 1, scaleY: 3 })
+    expect(flat.w).toBeCloseTo(200, 4)
+    expect(flat.h).toBeCloseTo(150, 4)
+  })
+})

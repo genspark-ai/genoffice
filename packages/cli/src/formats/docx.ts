@@ -445,6 +445,7 @@ const SIDE_TOOLS = new Set([
   'insert_footnote',
   'insert_endnote',
   'delete_note',
+  'edit_note',
   'read_notes',
 ])
 
@@ -632,6 +633,14 @@ function notesAccess(doc: OpenDocument): AiNotesAccess {
       setList(
         kind,
         listOf(kind).filter((n) => n.id !== id),
+      )
+      return true
+    },
+    replace: (kind, id, next) => {
+      if (!listOf(kind).some((n) => n.id === id)) return false
+      setList(
+        kind,
+        listOf(kind).map((n) => (n.id === id ? next : n)),
       )
       return true
     },
@@ -1143,6 +1152,7 @@ const CONTENT_OPS = [
   'reject_changes',
   'insert_footnote',
   'insert_endnote',
+  'edit_note',
   'delete_note',
   'delete_comment',
 ] as const
@@ -1182,6 +1192,8 @@ const CONTENT_NOTES: Record<(typeof CONTENT_OPS)[number], string> = {
   insert_footnote:
     'a superscript reference mark goes into blockIndex (right after afterText, else at the block end) and the note text prints at the page bottom; `genoffice docs read --notes` lists notes',
   insert_endnote: 'like insert_footnote, but the note text collects at the end of the document',
+  edit_note:
+    'findReplace inside one footnote or endnote (id from `genoffice docs read --notes`; kind only when a footnote and an endnote share the id): every occurrence of find becomes replace, the note keeps its id, reference mark and formatting; matchCase defaults to true',
   delete_note:
     'kind footnote|endnote and an id from `genoffice docs read --notes`; removes the reference mark too',
   delete_comment:

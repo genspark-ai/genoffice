@@ -45,14 +45,17 @@ export function RedactionLayer({
     e.currentTarget.setPointerCapture(e.pointerId)
     start.current = toPdf(e)
   }
+  const rectTo = (e: ReactPointerEvent, [sx, sy]: [number, number]): RedactionInput['rect'] => {
+    const [x, y] = toPdf(e)
+    return [Math.min(sx, x), Math.min(sy, y), Math.max(sx, x), Math.max(sy, y)]
+  }
   const move = (e: ReactPointerEvent) => {
     if (!active || !start.current) return
-    const [x, y] = toPdf(e)
-    const [sx, sy] = start.current
-    setLive([Math.min(sx, x), Math.min(sy, y), Math.max(sx, x), Math.max(sy, y)])
+    setLive(rectTo(e, start.current))
   }
-  const up = () => {
-    const rect = live
+  const up = (e: ReactPointerEvent) => {
+    // pointerup carries the final position; a cancel only has the last rendered rectangle
+    const rect = start.current && e.type === 'pointerup' ? rectTo(e, start.current) : live
     start.current = null
     setLive(null)
     if (!rect) return

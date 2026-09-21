@@ -43,6 +43,12 @@ test('rejects non-finite or negative numeric geometry', () => {
     assert.throws(() => normalizeIr([{ type: 'image', height: bad }]), /index 0.*height/)
   }
   assert.throws(() => normalizeIr([{ type: 'image', widthFrac: Infinity }]), /widthFrac/)
+  assert.throws(() => normalizeIr([{ type: 'image', xPx: NaN }]), /xPx/)
+})
+
+test('accepts negative offsets: elements may overhang their origin', () => {
+  const ir = normalizeIr([{ type: 'image', xPx: -12, yPx: -3 }])
+  assert.equal(ir.length, 1)
 })
 
 test('accepts honest numeric geometry', () => {

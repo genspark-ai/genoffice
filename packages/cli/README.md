@@ -104,6 +104,10 @@ outline entry and the palette), `deck_build` and `deck_replace`
 command line's staged flow, so a deck started from either side can be finished
 from the other.
 
+Behind a reverse proxy, set `GENOFFICE_TRUST_PROXY_HEADERS=1` so the download
+URLs the server hands out use the forwarded host and scheme; by default the
+`X-Forwarded-*` headers are ignored.
+
 `genoffice mcp --http <port> [--host <addr>] [--token <secret>]` serves the
 same tools over Streamable HTTP for clients on other machines (`src/mcp/http.ts`).
 Files travel with the calls: `PUT /files/<name>` uploads one and returns a URL,

@@ -11,15 +11,26 @@
  * left column timer (pause/reset) + clock → big frame → toolbar (pen/laser/clear ink/blackout)
  * + page progress navigation, right column next-slide preview + notes (adjustable font size),
  * bottom full-width thumbnail strip with click-to-jump.
- * Keyboard: →/space/enter/PgDn next step; ←/PgUp previous page; Home/End first/last; B blackout; Esc exit.
+ * Keyboard: →/space/enter/PgDn next step; ←/PgUp previous page; Home/End first/last; B/. black
+ * screen, W/, white screen; digits + Enter go to that slide number; Esc exit.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { AnimationItem, ShowSyncState } from '../../shared/ipc'
 import { AnimatedSlideStage, useAnimPlayer } from './AnimatedSlide'
+import { ShowMediaLayer } from './ShowMediaLayer'
 import { useI18n } from '../i18n/locale'
 import { SlideThumb } from '../SlideThumb'
 import { InkLayer, type InkStroke } from './ShowInk'
+import {
+  gotoPosition,
+  INITIAL_SHOW_KEYS,
+  reduceAudienceNav,
+  reduceShowKey,
+  toggleScreen,
+  type ShowKeyState,
+  type ShowScreen,
+} from '../show-keys'
 import { liftShowCurtain } from '../show-actions'
 
 /** Layout constants (aligned with styles.css) */
@@ -68,7 +79,13 @@ export function PresenterView({
   }, [slides, startAt])
   const [pos, setPos] = useState(() => Math.max(0, order.indexOf(startAt)))
   const [ended, setEnded] = useState(false)
-  const [black, setBlack] = useState(false)
+  /** Key state (blackout + typed digits); the screen part mirrored into state for rendering/sync */
+  const showKeysRef = useRef<ShowKeyState>(INITIAL_SHOW_KEYS)
+  const [blank, setBlank] = useState<ShowScreen>('none')
+  const setKeys = useCallback((k: ShowKeyState) => {
+    showKeysRef.current = k
+    setBlank(k.screen)
+  }, [])
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight })
   /** Per-page animation lists + notes (prefetched once on entry, zero IPC on page turns) */
   const [allAnims, setAllAnims] = useState<AnimationItem[][] | null>(null)
@@ -147,10 +164,11 @@ export function PresenterView({
       played: player.played,
       playing: player.playing,
       ended,
-      black,
+      black: blank === 'black',
+      white: blank === 'white',
     }
     window.slidesApi.presenterSync(state)
-  }, [player.epoch, player.played, player.playing, ended, black])
+  }, [player.epoch, player.played, player.playing, ended, blank])
 
   // Clear ink on page turn (the audience side clears in sync)
   useEffect(() => {
@@ -248,47 +266,52 @@ export function PresenterView({
   useEffect(
     () =>
       window.slidesApi.onAudienceNav((action) => {
-        if (action === 'next') nextRef.current()
-        else if (action === 'prev') prevRef.current()
-        else exitRef.current()
+        const r = reduceAudienceNav(showKeysRef.current, action)
+        setKeys(r.state)
+        if (r.action.type === 'next') nextRef.current()
+        else if (r.action.type === 'prev') prevRef.current()
+        else if (r.action.type === 'exit') exitRef.current()
       }),
-    [],
+    [setKeys],
   )
 
-  // Keyboard navigation (capture beats the editor's generic shortcuts; keys match SlideShowView + B blackout)
+  // Keyboard navigation (capture beats the editor's generic shortcuts; keys match SlideShowView)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        exitRef.current()
-      } else if (
-        e.key === 'ArrowRight' ||
-        e.key === 'ArrowDown' ||
-        e.key === ' ' ||
-        e.key === 'Enter' ||
-        e.key === 'PageDown'
-      ) {
-        e.preventDefault()
-        next()
-      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
-        e.preventDefault()
-        prev()
-      } else if (e.key === 'Home') {
-        e.preventDefault()
-        setEnded(false)
-        goTo(0, false)
-      } else if (e.key === 'End') {
-        e.preventDefault()
-        setEnded(false)
-        goTo(order.length - 1, false)
-      } else if (e.key === 'b' || e.key === 'B') {
-        e.preventDefault()
-        setBlack((v) => !v)
+      const r = reduceShowKey(showKeysRef.current, e.key)
+      if (!r) return
+      e.preventDefault()
+      setKeys(ended ? { ...r.state, screen: 'none' } : r.state)
+      switch (r.action.type) {
+        case 'exit':
+          exitRef.current()
+          return
+        case 'next':
+          next()
+          return
+        case 'prev':
+          prev()
+          return
+        case 'first':
+          setEnded(false)
+          goTo(0, false)
+          return
+        case 'last':
+          setEnded(false)
+          goTo(order.length - 1, false)
+          return
+        case 'goto': {
+          const p = gotoPosition(r.action.slideNumber, order)
+          if (p == null) return
+          setEnded(false)
+          goTo(p, false)
+          return
+        }
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [next, prev, goTo, order.length])
+  }, [next, prev, goTo, order, ended, setKeys])
 
   // Scroll the current thumbnail into view
   const filmRef = useRef<HTMLDivElement>(null)
@@ -436,7 +459,14 @@ export function PresenterView({
               {clock}
             </span>
           </div>
-          <div className="pv-stage" onClick={tool === 'none' ? next : undefined}>
+          <div
+            className="pv-stage"
+            onClick={
+              tool === 'none'
+                ? () => (blank === 'none' ? next() : setKeys(INITIAL_SHOW_KEYS))
+                : undefined
+            }
+          >
             {ended ? (
               <div className="pv-end">{t('panePresenterEnded')}</div>
             ) : (
@@ -455,8 +485,26 @@ export function PresenterView({
                   width={fitW}
                   states={player.states}
                 />
+                <ShowMediaLayer
+                  key={order[pos]!}
+                  slide={slide}
+                  slideIndex={order[pos]!}
+                  width={fitW}
+                  commands={player.mediaCmds}
+                  epoch={player.epoch}
+                  mediaBase={player.mediaBase}
+                  muted
+                  interactive={false}
+                />
                 <InkLayer strokes={strokes} laser={laser} width={fitW} height={fitH} />
-                {black && <div className="pv-black" data-tip={t('panePresenterBlackOn')} />}
+                {blank !== 'none' && (
+                  <div
+                    className={blank === 'black' ? 'pv-black' : 'pv-white'}
+                    data-tip={t(
+                      blank === 'black' ? 'panePresenterBlackOn' : 'panePresenterWhiteOn',
+                    )}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -488,8 +536,8 @@ export function PresenterView({
                 ⌫
               </button>
               <button
-                className={`pv-tool-btn${black ? ' pv-tool-on' : ''}`}
-                onClick={() => setBlack((v) => !v)}
+                className={`pv-tool-btn${blank === 'black' ? ' pv-tool-on' : ''}`}
+                onClick={() => setKeys(toggleScreen(showKeysRef.current, 'black'))}
                 data-tip={t('panePresenterBlackTip')}
                 aria-label={t('panePresenterBlackTip')}
               >

@@ -49,6 +49,7 @@ import {
 } from './fill'
 import { layoutText } from './text-layout'
 import { HeuristicMetrics, type FontMetricsProvider } from './metrics'
+import { bevelFaceColor, buildCellBevel } from './cell-bevel'
 import {
   isConnectorPreset,
   isPillPreset,
@@ -191,6 +192,7 @@ export function buildRenderSlide(
     ...(slide.masterSpHidden ? { bgGraphicsHidden: true } : {}),
     nodes,
     ...(hidden ? { hidden: true } : {}),
+    partPath: slide.path,
   }
 }
 
@@ -237,7 +239,7 @@ function buildNodeInner(
       const appCreated = chartEl.descr === 'aislides-chart'
       // Unsupported chart types fall back to a placeholder chip
       const node =
-        buildChartNode(`r_${el.id}`, el.id, chartEl.chart, box, vp, metrics) ??
+        buildChartNode(`r_${el.id}`, el.id, chartEl.chart, box, vp, metrics, media) ??
         chipNode(el.id, box, 'chart', CHIP_LABEL['chart']!)
       if (appCreated && node.type === 'chart') {
         ;(node as import('./render-tree').ChartRenderNode).appCreated = true
@@ -427,7 +429,12 @@ function buildShape(
       }
     }
   }
-  const stroke = resolveStroke(el.stroke, vp)
+  // Parsed spPr with neither <a:prstGeom> nor <a:custGeom> (and no placeholder geometry to
+  // inherit): PowerPoint has nothing to fill or outline and draws the text alone (prod
+  // deck: a generator dropped the geometry of a title bar that PowerPoint leaves
+  // invisible). Editor-built elements without presetGeometry still render as rects.
+  if (el.noGeometry) node.fill = { kind: 'none' }
+  const stroke = el.noGeometry ? undefined : resolveStroke(el.stroke, vp)
   if (stroke) node.stroke = stroke
   const shadow = resolveShadow(el.shadow, vp)
   if (shadow) node.shadow = shadow
@@ -726,6 +733,15 @@ function buildTable(
         // PowerPoint anchors a cell's tiled picture to the table box, not the cell: each
         // cell shows the part of the picture under it (photo-mosaic layout)
         fill: resolveFill(cell.fill, vp, media, { x: -x, y: -y, w: totalW, h: totalH }),
+      }
+      // cell3D: PowerPoint darkens the face and shades four bevel bands; only a solid
+      // fill has a base color to shade (picture/gradient cells keep their plain fill)
+      if (cell.bevel && out.fill.kind === 'solid') {
+        const bw = Math.min(emuToPx(cell.bevel.widthEmu, vp.scale), w / 2, h / 2)
+        if (bw >= 0.5) {
+          out.bevel = buildCellBevel(out.fill.color, bw, cell.bevel.preset, cell.bevel.lightDir)
+          out.fill = { kind: 'solid', color: bevelFaceColor(out.fill.color) }
+        }
       }
       const borders: NonNullable<TableCellRender['borders']> = {}
       for (const k of ['l', 'r', 't', 'b'] as const) {

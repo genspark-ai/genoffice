@@ -43,6 +43,7 @@ export const zh = {
   elementMoveUp: '上移',
   elementMoveDown: '下移',
   elementToolbar: '元素工具栏',
+  elementPath: '元素路径',
   fmtBold: '粗体',
   fmtItalic: '斜体',
   openExternal: '已在浏览器中打开链接',

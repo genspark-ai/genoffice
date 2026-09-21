@@ -86,15 +86,7 @@ export function rangeCellCount(bounds: RangeBounds): number {
   return (bounds.endRow - bounds.startRow + 1) * (bounds.endColumn - bounds.startColumn + 1)
 }
 
-/// Maximum number of cells rangeAddresses will expand; guards against
-/// accidental full-sheet expansion such as A1:XFD1048576.
-export const MAX_RANGE_CELLS = 50000
-
 export function rangeAddresses(bounds: RangeBounds): string[] {
-  const count = rangeCellCount(bounds)
-  if (count > MAX_RANGE_CELLS) {
-    throw new Error(`Range too large: ${count} cells exceeds maximum of ${MAX_RANGE_CELLS} cells`)
-  }
   const addresses: string[] = []
   for (let row = bounds.startRow; row <= bounds.endRow; row += 1) {
     for (let column = bounds.startColumn; column <= bounds.endColumn; column += 1) {

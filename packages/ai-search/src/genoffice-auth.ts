@@ -142,6 +142,11 @@ export function loadGenofficeAuth(): GenofficeAuth | null {
   return cachedAuth
 }
 
+/** Drop the cache so the next read sees a key written by another process. */
+export function reloadGenofficeAuth(): void {
+  cachedAuth = undefined
+}
+
 /** The GenOffice-named api key; '' when not signed in. Cached (invalidated by login/logout). */
 export function genofficeApiKey(): string {
   return loadGenofficeAuth()?.apiKey ?? ''

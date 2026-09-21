@@ -44,6 +44,7 @@ export const zhTW = {
   elementMoveUp: '上移',
   elementMoveDown: '下移',
   elementToolbar: '元素工具列',
+  elementPath: '元素路徑',
   fmtBold: '粗體',
   fmtItalic: '斜體',
   openExternal: '已在瀏覽器中開啟連結',

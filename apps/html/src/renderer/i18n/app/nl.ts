@@ -48,6 +48,7 @@ export const nl = {
   elementMoveUp: 'Omhoog',
   elementMoveDown: 'Omlaag',
   elementToolbar: 'Elementwerkbalk',
+  elementPath: 'Elementpad',
   fmtBold: 'Vet',
   fmtItalic: 'Cursief',
   openExternal: 'Link geopend in de browser',

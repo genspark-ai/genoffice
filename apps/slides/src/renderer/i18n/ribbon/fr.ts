@@ -60,7 +60,7 @@ export const fr = {
   ribbonGroupSlides: 'Diapositives',
   ribbonNewSlide: 'Nouvelle diapositive',
   ribbonNewSlideTip:
-    "Nouvelle diapositive vide (conserve l'arrière-plan de disposition de la diapositive actuelle)",
+    "Nouvelle diapositive vide (conserve l'arrière-plan de disposition de la diapositive actuelle; ⌘M)",
   ribbonChooseLayout: 'Choisir une disposition',
   ribbonChooseLayoutNew: 'Nouvelle diapositive avec disposition',
   ribbonChooseLayoutChange: 'Modifier la disposition de la diapositive',
@@ -219,7 +219,6 @@ export const fr = {
   ribbonZoomJump: 'Zoom',
   ribbonZoomJumpTip:
     'Insérer un bouton de navigation qui accède à une diapositive pendant le diaporama',
-  ribbonZoomJumpItem: 'Atteindre la diapositive {n}',
   ribbonCurrentSlideSuffix: ' (actuelle)',
   ribbonGroupComments: 'Commentaires',
   ribbonComment: 'Commentaire',
@@ -340,6 +339,10 @@ export const fr = {
   ribbonAnimWipeOut: 'Balayage (sortie)',
   ribbonAnimShrinkTurn: 'Rétrécir et pivoter',
   ribbonAnimZoomOut: 'Zoom (sortie)',
+  ribbonAnimMedia: 'Média',
+  ribbonAnimMediaPlay: 'Lecture',
+  ribbonAnimMediaPause: 'Pause',
+  ribbonAnimMediaStop: 'Arrêter',
   ribbonAnimEntrance: 'Entrée',
   ribbonAnimEmphasis: 'Accentuation',
   ribbonAnimExit: 'Sortie',
@@ -763,4 +766,10 @@ export const fr = {
   ribbonEqStdDev: 'Écart type',
   ribbonEqFourier: 'Transformée de Fourier',
   ribbonEqNormalDist: 'Loi normale',
+  ribbonZoomSummary: 'Zoom de synthèse',
+  ribbonZoomSection: 'Zoom de section',
+  ribbonZoomSlide: 'Zoom de diapositive',
+  ribbonZoomSectionItem: 'Diapositive {n} Section {k} : {name}',
+  ribbonZoomSelectedSlides: '{n} diapositives sélectionnées',
+  ribbonZoomSelectedSections: '{n} sections sélectionnées',
 } satisfies Record<keyof typeof zh, string>

@@ -5,6 +5,7 @@
  * assembled pages to the system print dialog.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEscOverlay } from '../esc-overlay'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import { useI18n } from '../i18n/locale'
 import {
@@ -34,6 +35,7 @@ export function PrintDialog({
   onClose: () => void
   setStatus: (s: string) => void
 }) {
+  useEscOverlay(true)
   const { t } = useI18n()
   const [pngs, setPngs] = useState<string[] | null>(null)
   const [notes, setNotes] = useState<string[]>([])

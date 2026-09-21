@@ -99,6 +99,7 @@ const tDlg = createI18n({
     dlgMergePages: '合并页面保存为',
     dlgReplace: '选择用于替换的 PDF',
     dlgSplitPages: '拆分页面保存为',
+    dlgRedactCopy: '保存涂黑副本为',
     filterPdf: 'PDF 文档',
     closeUnsavedMsg: '此 PDF 有未保存的更改。',
     closeUnsavedDetail: '关闭前是否保存？',
@@ -116,6 +117,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Save Merged Pages As',
     dlgReplace: 'Choose a Replacement PDF',
     dlgSplitPages: 'Save Split Pages As',
+    dlgRedactCopy: 'Save Redacted Copy As',
     filterPdf: 'PDF Documents',
     closeUnsavedMsg: 'This PDF has unsaved changes.',
     closeUnsavedDetail: 'Do you want to save them before closing?',
@@ -133,6 +135,7 @@ const tDlg = createI18n({
     dlgMergePages: '結合したページの保存先',
     dlgReplace: '差し替え用の PDF を選択',
     dlgSplitPages: '分割したページの保存先',
+    dlgRedactCopy: '墨消し済みコピーの保存先',
     filterPdf: 'PDF ドキュメント',
     closeUnsavedMsg: 'この PDF に未保存の変更があります。',
     closeUnsavedDetail: '閉じる前に保存しますか？',
@@ -150,6 +153,7 @@ const tDlg = createI18n({
     dlgMergePages: '합쳐진 페이지 저장',
     dlgReplace: '교체할 PDF 선택',
     dlgSplitPages: '분할된 페이지 저장',
+    dlgRedactCopy: '마스킹된 복사본 저장',
     filterPdf: 'PDF 문서',
     closeUnsavedMsg: '이 PDF에 저장하지 않은 변경 사항이 있습니다.',
     closeUnsavedDetail: '닫기 전에 저장하시겠습니까?',
@@ -167,6 +171,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Enregistrer les pages fusionnées sous',
     dlgReplace: 'Choisir un PDF de remplacement',
     dlgSplitPages: 'Enregistrer les pages divisées sous',
+    dlgRedactCopy: 'Enregistrer la copie caviardée sous',
     filterPdf: 'Documents PDF',
     closeUnsavedMsg: 'Ce PDF contient des modifications non enregistrées.',
     closeUnsavedDetail: 'Voulez-vous les enregistrer avant de fermer ?',
@@ -184,6 +189,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Zusammengefasste Seiten speichern unter',
     dlgReplace: 'Ersatz-PDF wählen',
     dlgSplitPages: 'Geteilte Seiten speichern unter',
+    dlgRedactCopy: 'Geschwärzte Kopie speichern unter',
     filterPdf: 'PDF-Dokumente',
     closeUnsavedMsg: 'Dieses PDF enthält ungespeicherte Änderungen.',
     closeUnsavedDetail: 'Vor dem Schließen speichern?',
@@ -201,6 +207,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Guardar páginas combinadas como',
     dlgReplace: 'Elegir un PDF de reemplazo',
     dlgSplitPages: 'Guardar páginas divididas como',
+    dlgRedactCopy: 'Guardar copia censurada como',
     filterPdf: 'Documentos PDF',
     closeUnsavedMsg: 'Este PDF tiene cambios sin guardar.',
     closeUnsavedDetail: '¿Quieres guardarlos antes de cerrar?',
@@ -218,6 +225,7 @@ const tDlg = createI18n({
     dlgMergePages: 'บันทึกหน้าที่รวมแล้วเป็น',
     dlgReplace: 'เลือก PDF สำหรับแทนที่',
     dlgSplitPages: 'บันทึกหน้าที่แยกแล้วเป็น',
+    dlgRedactCopy: 'บันทึกสำเนาที่ปิดทับเป็น',
     filterPdf: 'เอกสาร PDF',
     closeUnsavedMsg: 'PDF นี้มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก',
     closeUnsavedDetail: 'ต้องการบันทึกก่อนปิดหรือไม่?',
@@ -235,6 +243,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Simpan halaman gabungan sebagai',
     dlgReplace: 'Pilih PDF pengganti',
     dlgSplitPages: 'Simpan halaman terpisah sebagai',
+    dlgRedactCopy: 'Simpan Salinan Teredaksi Sebagai',
     filterPdf: 'Dokumen PDF',
     closeUnsavedMsg: 'PDF ini memiliki perubahan yang belum disimpan.',
     closeUnsavedDetail: 'Simpan sebelum menutup?',
@@ -252,6 +261,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Сохранить объединённые страницы как',
     dlgReplace: 'Выберите PDF для замены',
     dlgSplitPages: 'Сохранить разделённые страницы как',
+    dlgRedactCopy: 'Сохранить затемнённую копию как',
     filterPdf: 'Документы PDF',
     closeUnsavedMsg: 'В этом PDF есть несохранённые изменения.',
     closeUnsavedDetail: 'Сохранить их перед закрытием?',
@@ -269,6 +279,7 @@ const tDlg = createI18n({
     dlgMergePages: 'حفظ الصفحات المدمجة باسم',
     dlgReplace: 'اختر PDF بديلاً',
     dlgSplitPages: 'حفظ الصفحات المقسّمة باسم',
+    dlgRedactCopy: 'حفظ النسخة المنقّحة باسم',
     filterPdf: 'مستندات PDF',
     closeUnsavedMsg: 'يحتوي هذا الـ PDF على تغييرات غير محفوظة.',
     closeUnsavedDetail: 'هل تريد حفظها قبل الإغلاق؟',
@@ -286,6 +297,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Salvar páginas combinadas como',
     dlgReplace: 'Escolher um PDF de substituição',
     dlgSplitPages: 'Salvar páginas divididas como',
+    dlgRedactCopy: 'Salvar cópia censurada como',
     filterPdf: 'Documentos PDF',
     closeUnsavedMsg: 'Este PDF tem alterações não salvas.',
     closeUnsavedDetail: 'Deseja salvá-las antes de fechar?',
@@ -303,6 +315,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Salva le pagine combinate come',
     dlgReplace: 'Scegli un PDF sostitutivo',
     dlgSplitPages: 'Salva le pagine divise come',
+    dlgRedactCopy: 'Salva copia oscurata con nome',
     filterPdf: 'Documenti PDF',
     closeUnsavedMsg: 'Questo PDF contiene modifiche non salvate.',
     closeUnsavedDetail: 'Vuoi salvarle prima di chiudere?',
@@ -320,6 +333,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Zapisz scalone strony jako',
     dlgReplace: 'Wybierz PDF zastępczy',
     dlgSplitPages: 'Zapisz podzielone strony jako',
+    dlgRedactCopy: 'Zapisz zaczernioną kopię jako',
     filterPdf: 'Dokumenty PDF',
     closeUnsavedMsg: 'Ten PDF ma niezapisane zmiany.',
     closeUnsavedDetail: 'Czy zapisać je przed zamknięciem?',
@@ -337,6 +351,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Uložit sloučené stránky jako',
     dlgReplace: 'Vyberte náhradní PDF',
     dlgSplitPages: 'Uložit rozdělené stránky jako',
+    dlgRedactCopy: 'Uložit začerněnou kopii jako',
     filterPdf: 'Dokumenty PDF',
     closeUnsavedMsg: 'Tento PDF obsahuje neuložené změny.',
     closeUnsavedDetail: 'Chcete je před zavřením uložit?',
@@ -354,6 +369,7 @@ const tDlg = createI18n({
     dlgMergePages: "Gecombineerde pagina's opslaan als",
     dlgReplace: 'Kies een vervangende PDF',
     dlgSplitPages: "Gesplitste pagina's opslaan als",
+    dlgRedactCopy: 'Zwartgemaakte kopie opslaan als',
     filterPdf: 'PDF-documenten',
     closeUnsavedMsg: 'Deze PDF bevat niet-opgeslagen wijzigingen.',
     closeUnsavedDetail: 'Wilt u ze opslaan voordat u sluit?',
@@ -371,6 +387,7 @@ const tDlg = createI18n({
     dlgMergePages: 'Simpan halaman gabungan sebagai',
     dlgReplace: 'Pilih PDF pengganti',
     dlgSplitPages: 'Simpan halaman dipisah sebagai',
+    dlgRedactCopy: 'Simpan Salinan Teredaksi Sebagai',
     filterPdf: 'Dokumen PDF',
     closeUnsavedMsg: 'PDF ini mempunyai perubahan yang belum disimpan.',
     closeUnsavedDetail: 'Simpan sebelum menutup?',
@@ -388,6 +405,7 @@ const tDlg = createI18n({
     dlgMergePages: 'שמירת העמודים המאוחדים בשם',
     dlgReplace: 'בחרו PDF חלופי',
     dlgSplitPages: 'שמירת העמודים המפוצלים בשם',
+    dlgRedactCopy: 'שמירת עותק מושחר בשם',
     filterPdf: 'מסמכי PDF',
     closeUnsavedMsg: 'ב-PDF הזה יש שינויים שלא נשמרו.',
     closeUnsavedDetail: 'האם לשמור אותם לפני הסגירה?',
@@ -405,6 +423,7 @@ const tDlg = createI18n({
     dlgMergePages: 'संयोजित पृष्ठ इस रूप में सहेजें',
     dlgReplace: 'प्रतिस्थापन के लिए PDF चुनें',
     dlgSplitPages: 'विभाजित पृष्ठ इस रूप में सहेजें',
+    dlgRedactCopy: 'काला किया गया प्रति इस रूप में सहेजें',
     filterPdf: 'PDF दस्तावेज़',
     closeUnsavedMsg: 'इस PDF में सहेजे नहीं गए परिवर्तन हैं।',
     closeUnsavedDetail: 'क्या बंद करने से पहले उन्हें सहेजना चाहते हैं?',
@@ -422,6 +441,7 @@ const tDlg = createI18n({
     dlgMergePages: '合併頁面儲存為',
     dlgReplace: '選擇用於取代的 PDF',
     dlgSplitPages: '拆分頁面儲存為',
+    dlgRedactCopy: '儲存塗黑副本為',
     filterPdf: 'PDF 文件',
     closeUnsavedMsg: '此 PDF 有未儲存的變更。',
     closeUnsavedDetail: '關閉前是否儲存？',
@@ -462,6 +482,7 @@ type DlgKey =
   | 'dlgMergePages'
   | 'dlgReplace'
   | 'dlgSplitPages'
+  | 'dlgRedactCopy'
   | 'filterPdf'
   | 'closeUnsavedMsg'
   | 'closeUnsavedDetail'
@@ -960,8 +981,8 @@ function registerPdfIpc(): void {
     try {
       const parent = BrowserWindow.fromWebContents(e.sender)
       const options = {
-        title: 'Save redacted PDF copy',
-        defaultPath: `${base}-redacted.pdf`,
+        title: tm('dlgRedactCopy'),
+        defaultPath: join(dirname(path), `${base}-redacted.pdf`),
         filters: [{ name: 'PDF', extensions: ['pdf'] }],
       }
       const picked = parent
@@ -1083,13 +1104,15 @@ function registerPdfIpc(): void {
   )
 
   ipcMain.handle(PDF_CHANNELS.pagePreviewPng, async (e, request: PagePreviewRequest) => {
-    const { path, pageIndex, excludeRects, excludeAnnots, clip, pxWidth, rotate } = request ?? {}
+    const { path, pageIndex, excludeRects, excludeAnnots, excludeText, clip, pxWidth, rotate } =
+      request ?? {}
     if (
       typeof path !== 'string' ||
       !allowedByWc.get(e.sender.id)?.has(path) ||
       typeof pageIndex !== 'number' ||
       !Array.isArray(excludeRects) ||
       (excludeAnnots !== undefined && !Array.isArray(excludeAnnots)) ||
+      (excludeText !== undefined && !Array.isArray(excludeText)) ||
       typeof clip !== 'object' ||
       typeof pxWidth !== 'number' ||
       typeof rotate !== 'number'
@@ -1101,6 +1124,7 @@ function registerPdfIpc(): void {
       pageIndex,
       excludeRects,
       excludeAnnots,
+      excludeText,
       clip,
       pxWidth,
       rotate,

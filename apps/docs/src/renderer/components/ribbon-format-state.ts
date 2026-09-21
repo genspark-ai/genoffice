@@ -138,7 +138,17 @@ export const EMPTY_FORMAT_STATE: RibbonFormatState = {
   spaceAfter: 0,
 }
 
-const docEmptyOf = cachedByDoc((doc: PmNode) => doc.textContent.trim() === '')
+// stops at the first character instead of building the whole document's text
+const docEmptyOf = cachedByDoc((doc: PmNode) => {
+  let empty = true
+  doc.descendants((node) => {
+    if (!empty) return false
+    if (node.isText && node.text?.trim()) empty = false
+    else if (node.isLeaf && !node.isText) empty = false
+    return empty
+  })
+  return empty
+})
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null)
 const num = (v: unknown): number | null => {
@@ -233,11 +243,9 @@ export function computeFormatState(
   const imageSelected = protAttrs.blockType === 'image' && !!protAttrs.imageDataUrl
 
   const textAttrs = ed.getAttributes('docTextStyle')
-  // Dual-slot runs: like Word's font box, show the slot matching the script at the caret
+  const fonts = selectedFonts(ed, styles, docDefaults)
+  // Word's font box names the slot matching the script at the caret; null = mixed
   const displayFont = (): string => {
-    const font = str(textAttrs.font)
-    const fontAscii = str(textAttrs.fontAscii)
-    if (!font || !fontAscii || font === fontAscii) return font ?? fontAscii ?? ''
     const { from, to } = ed.state.selection
     const sample =
       from === to
@@ -246,7 +254,12 @@ export function computeFormatState(
             Math.min(ed.state.doc.content.size, from + 1),
           )
         : ed.state.doc.textBetween(from, Math.min(to, from + 32), ' ')
-    return textHasCjk(sample) ? font : fontAscii
+    const slot = textHasCjk(sample)
+      ? fonts.fontEastAsia === ''
+        ? fonts.fontLatin
+        : fonts.fontEastAsia
+      : fonts.fontLatin
+    return slot ?? ''
   }
   const paraAttrs = sub ? ed.getAttributes('docParagraph') : paraAttrsOf(editor)
   const mainPara = paraAttrsOf(editor)
@@ -297,7 +310,7 @@ export function computeFormatState(
     charStyleId: str(textAttrs.styleId),
     fontSizePt: (effectiveSizeHalfPoints(ed, styles, docDefaults) ?? 20) / 2,
     fontFamily: displayFont(),
-    ...selectedFonts(ed, styles, docDefaults),
+    ...fonts,
     headingLevel: editor.isActive('docHeading')
       ? Number(editor.getAttributes('docHeading').level ?? 1)
       : null,

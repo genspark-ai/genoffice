@@ -1,32 +1,63 @@
 import { Extension } from '@tiptap/core'
-import { Plugin } from '@tiptap/pm/state'
+import type { Node as PmNode } from '@tiptap/pm/model'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { cachedByDoc } from '../doc-cache'
+import { touchedTopLevelBlocks } from './touched-blocks'
 
 // Font fallback cannot select a script when the Latin face itself covers CJK.
 // Decorations keep the text/runs intact, including undo, copying and DOCX export.
 const eastAsianText =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Bopomofo}\u3000-\u303f\uff01-\uff60\uffe0-\uffee]+/gu
 
-const decorations = cachedByDoc((doc) => {
+const attrs = {
+  class: 'doc-east-asian-font',
+  style: 'font-family:var(--doc-east-asian-font, inherit)',
+}
+
+function decorationsIn(doc: PmNode, from: number, to: number): Decoration[] {
   const ranges: Decoration[] = []
-  doc.descendants((node, pos) => {
+  doc.nodesBetween(from, to, (node, pos) => {
     if (!node.isText) return
     for (const match of node.text!.matchAll(eastAsianText)) {
-      ranges.push(
-        Decoration.inline(pos + match.index, pos + match.index + match[0].length, {
-          class: 'doc-east-asian-font',
-          style: 'font-family:var(--doc-east-asian-font, inherit)',
-        }),
-      )
+      ranges.push(Decoration.inline(pos + match.index, pos + match.index + match[0].length, attrs))
     }
   })
-  return DecorationSet.create(doc, ranges)
-})
+  return ranges
+}
+
+const key = new PluginKey<DecorationSet>('scriptFonts')
+
 export const ScriptFonts = Extension.create({
   name: 'scriptFonts',
   addProseMirrorPlugins() {
-    return [new Plugin({ props: { decorations: (state) => decorations(state.doc) } })]
+    return [
+      new Plugin<DecorationSet>({
+        key,
+        state: {
+          init: (_, state) =>
+            DecorationSet.create(state.doc, decorationsIn(state.doc, 0, state.doc.content.size)),
+          // Rebuilding for the whole document on every keystroke costs blocks×text
+          // on long files; only the top-level blocks the transaction touched are
+          // rescanned, the rest of the set is mapped through the change.
+          apply(tr, old) {
+            if (!tr.docChanged) return old
+            const touched = touchedTopLevelBlocks(tr)
+            if (!touched)
+              return DecorationSet.create(tr.doc, decorationsIn(tr.doc, 0, tr.doc.content.size))
+            let set = old.map(tr.mapping, tr.doc)
+            for (const pos of touched) {
+              const block = tr.doc.nodeAt(pos)
+              if (!block) continue
+              const to = pos + block.nodeSize
+              set = set.remove(set.find(pos, to))
+              set = set.add(tr.doc, decorationsIn(tr.doc, pos, to))
+            }
+            return set
+          },
+        },
+        props: { decorations: (state) => key.getState(state) },
+      }),
+    ]
   },
 })
 

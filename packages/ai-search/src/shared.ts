@@ -24,6 +24,18 @@ export const COPYRIGHT_HOSTS = ['gettyimages', 'istockphoto', 'shutterstock', 'c
  * stock site ("…/shutterstock-review.png") is kept, while host matching keeps
  * the previous behavior (gettyimages.com and its subdomains stay blocked).
  */
+const SECOND_LEVEL_SUFFIXES = new Set(['co', 'com', 'org', 'net', 'ac', 'gov', 'edu'])
+
+/// 'shutterstock' for shutterstock.com, sub.shutterstock.co.uk, ...
+function registrableLabel(labels: string[]): string | undefined {
+  if (labels.length < 2) return undefined
+  const tld = labels[labels.length - 1]!
+  const second = labels[labels.length - 2]!
+  if (labels.length >= 3 && tld.length === 2 && SECOND_LEVEL_SUFFIXES.has(second))
+    return labels[labels.length - 3]
+  return second
+}
+
 export function isCopyrightHost(imageUrl: string): boolean {
   const host = safeHost(imageUrl).toLowerCase()
   if (!host) return false
@@ -34,7 +46,7 @@ export function isCopyrightHost(imageUrl: string): boolean {
     if (host === d || host.endsWith('.' + d)) return true
     // Bare stock names match the registrable domain label, so
     // myshutterstock.com stays allowed while sub.shutterstock.com stays blocked.
-    return labels.length >= 2 && labels[labels.length - 2] === d
+    return registrableLabel(labels) === d
   })
 }
 

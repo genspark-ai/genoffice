@@ -91,7 +91,16 @@ export function ChartBody({
         />
       ))}
       {chart.bars.map((b, i) => (
-        <Rect key={`b${i}`} x={b.x} y={b.y} width={b.w} height={b.h} fill={b.color} />
+        <Rect
+          key={`b${i}`}
+          x={b.x}
+          y={b.y}
+          width={b.w}
+          height={b.h}
+          {...(b.fill
+            ? fillToKonva(b.fill, b.w, b.h, images, { x: chart.box.x + b.x, y: chart.box.y + b.y })
+            : { fill: b.color })}
+        />
       ))}
       {chart.polylines.map((p, i) => (
         <Line

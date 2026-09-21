@@ -9,6 +9,7 @@
  * through onPick while that dialog stays open.
  */
 import { useEffect, useRef, useState } from 'react'
+import { useEscOverlay } from '../esc-overlay'
 import { ColorPicker } from '@genoffice/ui'
 import { useI18n } from '../i18n/locale'
 import { armColorInput } from '../color-input'
@@ -25,6 +26,7 @@ export function ColorWell({
 }): React.JSX.Element {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
+  useEscOverlay(open)
   const wrapRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (!open) return

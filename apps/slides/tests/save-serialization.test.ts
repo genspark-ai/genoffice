@@ -30,64 +30,40 @@ function ctx(): ActionCtx {
 }
 
 describe('slides save serialization', () => {
-  it('resets state when the saved slide index is no longer valid', () => {
-    const setSlides = vi.fn()
-    const setSelectedIds = vi.fn()
-    const setEnteredGroupId = vi.fn()
-    const setEditing = vi.fn()
-    const setEditingCell = vi.fn()
-    const context = {
-      ...ctx(),
-      slides: [],
-      current: 0,
-      setSlides,
-      setSelectedIds,
-      setEnteredGroupId,
-      setEditing,
-      setEditingCell,
-    } as unknown as ActionCtx
+  it('keeps the saved deck and clears stale selection when the current index is gone', () => {
+    const slide = {
+      widthPx: 960,
+      heightPx: 540,
+      scale: 1,
+      background: { kind: 'solid', color: 'FFFFFF' },
+      nodes: [],
+    } as ActionCtx['slides'][number]
+    for (const [slides, current, next] of [
+      [[], 0, []],
+      [[slide], 1, [slide]],
+    ] as const) {
+      const setSlides = vi.fn()
+      const setSelectedIds = vi.fn()
+      const setEditing = vi.fn()
+      const setEditingCell = vi.fn()
+      const context = {
+        ...ctx(),
+        slides,
+        current,
+        setSlides,
+        setSelectedIds,
+        setEnteredGroupId: vi.fn(),
+        setEditing,
+        setEditingCell,
+      } as unknown as ActionCtx
 
-    adoptSavedSlides(context, [])
+      adoptSavedSlides(context, [...next])
 
-    expect(setSlides).toHaveBeenCalledWith([])
-    expect(setSelectedIds).toHaveBeenCalledWith([])
-    expect(setEnteredGroupId).toHaveBeenCalledWith(null)
-    expect(setEditing).toHaveBeenCalledWith(null)
-    expect(setEditingCell).toHaveBeenCalledWith(null)
-  })
-
-  it('resets state when the current slide index is out of range', () => {
-    const setSlides = vi.fn()
-    const setSelectedIds = vi.fn()
-    const setEnteredGroupId = vi.fn()
-    const setEditing = vi.fn()
-    const setEditingCell = vi.fn()
-    const context = {
-      ...ctx(),
-      slides: [
-        {
-          widthPx: 960,
-          heightPx: 540,
-          scale: 1,
-          background: { kind: 'solid', color: 'FFFFFF' },
-          nodes: [],
-        } as ActionCtx['slides'][number],
-      ],
-      current: 1,
-      setSlides,
-      setSelectedIds,
-      setEnteredGroupId,
-      setEditing,
-      setEditingCell,
-    } as unknown as ActionCtx
-
-    adoptSavedSlides(context, [])
-
-    expect(setSlides).toHaveBeenCalledWith([])
-    expect(setSelectedIds).toHaveBeenCalledWith([])
-    expect(setEnteredGroupId).toHaveBeenCalledWith(null)
-    expect(setEditing).toHaveBeenCalledWith(null)
-    expect(setEditingCell).toHaveBeenCalledWith(null)
+      expect(setSlides).toHaveBeenCalledWith(next)
+      expect(setSelectedIds.mock.calls[0]![0](['a', 'b'])).toEqual([])
+      expect(setEditing.mock.calls[0]![0]({ sourceId: 'a' })).toBeNull()
+      expect(setEditingCell.mock.calls[0]![0]({ sourceId: 'a', row: 0, col: 0 })).toBeNull()
+    }
   })
 
   it('queues concurrent saves so only one IPC write runs at a time', async () => {

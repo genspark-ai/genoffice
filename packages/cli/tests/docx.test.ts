@@ -317,6 +317,55 @@ describe('genoffice docx (docs editor under jsdom)', () => {
     expect(xml).toContain('w:name="Opening"')
     expect(xml).toMatch(/w:dirty="true"[\s\S]{0,60} SEQ Figure \\\* ARABIC /)
 
+    // edit_note patches the note text in place: same id, same reference mark
+    const edit = join(dir, 'edit.json')
+    if (notes[0]!.id === notes[1]!.id) {
+      writeFileSync(
+        edit,
+        JSON.stringify([
+          { op: 'edit_note', id: notes[0]!.id, find: 'annual', replace: 'quarterly' },
+        ]),
+      )
+      const ambiguous = await run(['docs', 'apply', copy, '--ops', edit, '--json'])
+      expect(ambiguous.code).toBe(1)
+      expect(ambiguous.json().message).toContain('pass kind')
+    }
+    writeFileSync(
+      edit,
+      JSON.stringify([
+        {
+          op: 'edit_note',
+          kind: 'footnote',
+          id: notes[0]!.id,
+          find: 'annual',
+          replace: 'quarterly',
+        },
+      ]),
+    )
+    const edited = await run(['docs', 'apply', copy, '--ops', edit, '--json'])
+    expect(edited.code).toBe(0)
+    expect(edited.json().detail.results[0].output).toContain('1 occurrence')
+    const afterEdit = (await run(['docs', 'read', copy, '--notes', '--json'])).json().detail.notes
+    expect(afterEdit[0]).toMatchObject({
+      kind: 'footnote',
+      id: notes[0]!.id,
+      text: 'Source: quarterly report.',
+    })
+    const editedZip = await JSZip.loadAsync(readFileSync(copy))
+    const editedFootnotes = await editedZip.file('word/footnotes.xml')!.async('string')
+    expect(editedFootnotes).toContain('Source: quarterly report.')
+    expect(editedFootnotes).not.toContain('annual report')
+    expect(await documentXml(copy)).toContain(`<w:footnoteReference w:id="${notes[0]!.id}"/>`)
+    writeFileSync(
+      edit,
+      JSON.stringify([
+        { op: 'edit_note', kind: 'footnote', id: notes[0]!.id, find: 'annual', replace: 'x' },
+      ]),
+    )
+    const noMatch = await run(['docs', 'apply', copy, '--ops', edit, '--json'])
+    expect(noMatch.code).toBe(1)
+    expect(noMatch.json().message).toContain('does not contain')
+
     // the endnote mark sits in the (now protected) SEQ paragraph: refused, nothing changes
     const locked = join(dir, 'locked.json')
     writeFileSync(

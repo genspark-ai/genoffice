@@ -1,5 +1,5 @@
-// Wheel/trackpad paging for the editing stage (PowerPoint/WPS behavior: while
-// the slide fits the viewport, plain scrolling turns pages).
+// Wheel-stream intent for zoom and paging, shared by the Docs/Sheets/Slides
+// renderers.
 //
 // The hard part is telling one user intent apart from a stream of WheelEvents:
 //  - a mouse wheel emits one large delta per notch, with real time between
@@ -25,7 +25,7 @@
 
 /** A single event at/above this is a notch; smaller deltas accumulate toward
  * it before the first flip of a trackpad gesture. */
-const NOTCH = 60
+export const NOTCH = 60
 /** Silence longer than this ends the current gesture (momentum events arrive
  * well under this apart, deliberate consecutive swipes well over it). */
 const GAP_MS = 200
@@ -115,4 +115,51 @@ export function createWheelPager(): { feed: (deltaY: number, now: number) => Fli
   }
 
   return { feed }
+}
+
+export type ZoomWheelIntent = 'pinch' | 'zoom-in' | 'zoom-out' | null
+
+/**
+ * Ctrl/Cmd+wheel intent for the zoom handler, sharing the pager's notch/stream
+ * reasoning so a Windows mouse notch steps once while a trackpad pinch stays
+ * continuous. Chromium synthesizes a pinch as ctrlKey wheel events with small
+ * fractional deltas (never metaKey); a wheel notch is a line-mode delta or an
+ * integer pixel delta, and Cmd+two-finger streams accumulate to one step via
+ * the pager instead of stepping per event.
+ */
+export function createZoomWheelClassifier(): {
+  feed: (
+    ev: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey' | 'metaKey'>,
+    now: number,
+  ) => ZoomWheelIntent
+} {
+  const pager = createWheelPager()
+  const feed = (
+    ev: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey' | 'metaKey'>,
+    now: number,
+  ): ZoomWheelIntent => {
+    if (ev.deltaY === 0) return null
+    if (
+      ev.deltaMode === 0 &&
+      ev.ctrlKey &&
+      !ev.metaKey &&
+      !Number.isInteger(ev.deltaY) &&
+      Math.abs(ev.deltaY) < NOTCH
+    ) {
+      return 'pinch'
+    }
+    if (ev.deltaMode !== 0) return ev.deltaY > 0 ? 'zoom-out' : 'zoom-in'
+    const flip = pager.feed(ev.deltaY, now)
+    return flip === 0 ? null : flip > 0 ? 'zoom-out' : 'zoom-in'
+  }
+  return { feed }
+}
+
+export function clampZoom(z: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, z))
+}
+
+/** One wheel notch / button click: whole percents so repeated steps never drift. */
+export function notchStep(z: number, dir: 1 | -1, min: number, max: number): number {
+  return clampZoom(Math.round(z * 100 + dir * 10) / 100, min, max)
 }

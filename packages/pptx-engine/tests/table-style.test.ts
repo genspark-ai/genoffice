@@ -144,9 +144,13 @@ describe('tableStyles.xml custom styles', () => {
     expect(resolveTableStyle(undefined, xml, theme)).toBeUndefined()
   })
 
-  it('a populated part without the referenced built-in id renders unstyled; an empty part keeps the built-in', () => {
-    // PowerPoint-measured: the built-in gallery only backs a def-id-only part
-    expect(resolveTableStyle(MEDIUM2_A1, xml, theme)).toBeUndefined()
+  it('a built-in id missing from a populated part still resolves from the gallery', () => {
+    // PowerPoint draws Light Style 1 - Accent 3 banding next to a one-entry part (prod
+    // deck); the earlier "unstyled" reading came from cells with an explicit <a:noFill/>
+    expect(resolveTableStyle(MEDIUM2_A1, xml, theme)?.firstRow?.fill).toEqual({
+      type: 'solid',
+      color: '#4472C4',
+    })
     const emptyPart = `<?xml version="1.0"?><a:tblStyleLst xmlns:a="a" def="${MEDIUM2_A1}"/>`
     expect(resolveTableStyle(MEDIUM2_A1, emptyPart, theme)?.firstRow?.fill).toEqual({
       type: 'solid',

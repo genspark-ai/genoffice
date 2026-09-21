@@ -90,6 +90,8 @@ describe('rebuildPptx', () => {
     // source lines stay hard breaks; the box never re-wraps them
     expect(joined).toBe('Title line one\nand line two')
     expect(texts[0].text.wrap).toBe(false)
+    // grows with edits like a native PowerPoint text box instead of overflowing a fixed frame
+    expect(texts[0].text.autofit).toBe('resize')
     // same style spans merge into a single run per line (the parser reads
     // the <a:br/> back as its own '\n' run)
     const textRuns = paras[0].runs.filter((r: any) => r.text !== '\n')

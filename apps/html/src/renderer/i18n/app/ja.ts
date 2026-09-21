@@ -46,6 +46,7 @@ export const ja = {
   elementMoveUp: '上へ移動',
   elementMoveDown: '下へ移動',
   elementToolbar: '要素ツールバー',
+  elementPath: '要素のパス',
   fmtBold: '太字',
   fmtItalic: '斜体',
   openExternal: 'ブラウザでリンクを開きました',

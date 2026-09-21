@@ -40,6 +40,9 @@ export const id = {
   paneAnimEffShrink: 'Menyusut & Berputar',
   paneAnimEffZoomOut: 'Zoom Keluar',
   paneAnimEffMotionPath: 'Jalur Gerakan',
+  paneAnimEffMediaPlay: 'Putar',
+  paneAnimEffMediaPause: 'Jeda',
+  paneAnimEffMediaStop: 'Berhenti',
 
   paneChartEditTitle: 'Edit Data Bagan',
   paneChartCategoryN: 'Kategori {n}',
@@ -278,4 +281,13 @@ export const id = {
   paneShowEnded: 'Peragaan slide berakhir.',
   paneShowRehearseTip: 'Latih Pengaturan Waktu: waktu pada slide ini / total waktu',
   paneShowRehearseTotal: 'Total {time}',
+  paneShowMenuNext: 'Berikutnya',
+  paneShowMenuPrev: 'Sebelumnya',
+  paneShowMenuLastViewed: 'Terakhir Dilihat',
+  paneShowMenuSeeAll: 'Lihat Semua Slide',
+  paneShowMenuScreen: 'Layar',
+  paneShowMenuBlack: 'Layar Hitam',
+  paneShowMenuWhite: 'Layar Putih',
+  paneShowMenuEnd: 'Akhiri Peragaan',
+  panePresenterWhiteOn: 'Layar putih (tekan W untuk kembali)',
 } satisfies Record<keyof typeof zh, string>

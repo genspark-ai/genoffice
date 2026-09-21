@@ -28,6 +28,7 @@ export async function chatForProvider(
         error: e instanceof Error ? e.message : String(e),
       })
     }
+    if (endpoint.model) config = { ...config, model: endpoint.model }
     switch (endpoint.protocol) {
       case 'codex-app-server':
         return chatCodexAppServer(config, system, user, wd.signal)

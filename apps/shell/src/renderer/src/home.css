@@ -297,14 +297,17 @@ body.vib .home {
   z-index: 30;
 }
 
-.login-hint button {
+/* class selectors so the per-button font-size below is not out-specified by a descendant rule */
+.login-hint-open,
+.login-hint-copy {
   border: none;
   background: none;
   font: inherit;
   cursor: pointer;
 }
 
-.login-hint button:hover {
+.login-hint-open:hover,
+.login-hint-copy:hover {
   background: var(--bg-hover);
 }
 

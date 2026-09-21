@@ -45,6 +45,7 @@ export const ar = {
   elementMoveUp: 'تحريك لأعلى',
   elementMoveDown: 'تحريك لأسفل',
   elementToolbar: 'شريط أدوات العنصر',
+  elementPath: 'مسار العنصر',
   fmtBold: 'غامق',
   fmtItalic: 'مائل',
   openExternal: 'تم فتح الرابط في المتصفح',

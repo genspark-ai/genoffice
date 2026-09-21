@@ -1039,6 +1039,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'ページ {page} の画像の背景を削除',
     aiToolDeleteImage: 'ページ {page} の画像を削除',
     drawInk: '手書き',
+    redact: '墨消し領域',
+    redactHint: 'ドラッグして永久に削除する範囲を指定',
+    redactClear: 'マークをクリア',
+    redactApply: '墨消しを適用',
+    redactConfirm:
+      'マークした領域の内容は永久に削除されます。続行後、システムの「名前を付けて保存」ダイアログで新しいコピーを選択します。続行しますか？',
+    redactSaveAsHint:
+      '墨消しは適用されていません。「墨消しを適用」を再度クリックして新しいコピーを選択してください。通常の保存ではこれらのマークは適用されません。',
+    redactSaveFirst: '墨消しを適用する前に、他の未保存の変更を保存してください。',
+    redactStructureBlocked:
+      'ページ構成を変更する前に、保留中の墨消しを適用またはクリアしてください。',
     editText: 'テキスト編集',
     editTextHint: 'ページ上のテキストをクリックして編集',
     textBlockMoveHint: '枠をドラッグして段落全体を移動',
@@ -1364,6 +1375,16 @@ export const strings = {
     aiToolRemoveImageBackground: '{page}페이지 이미지 배경 제거',
     aiToolDeleteImage: '{page}페이지의 이미지 삭제',
     drawInk: '자유 그리기',
+    redact: '영역 마스킹',
+    redactHint: '드래그하여 영구적으로 제거할 내용을 표시',
+    redactClear: '표시 지우기',
+    redactApply: '마스킹 적용',
+    redactConfirm:
+      '표시한 영역의 내용이 영구적으로 제거됩니다. 계속한 뒤 시스템 "다른 이름으로 저장" 대화상자에서 새 복사본을 선택하세요. 계속하시겠습니까?',
+    redactSaveAsHint:
+      '마스킹이 적용되지 않았습니다. "마스킹 적용"을 다시 클릭하여 새 복사본을 선택하세요. 일반 저장은 이 표시를 적용하지 않습니다.',
+    redactSaveFirst: '마스킹을 적용하기 전에 다른 변경 사항을 먼저 저장하세요.',
+    redactStructureBlocked: '페이지 구조를 변경하기 전에 대기 중인 마스킹을 적용하거나 지우세요.',
     editText: '텍스트 편집',
     editTextHint: '페이지의 텍스트를 클릭하여 수정',
     textBlockMoveHint: '테두리를 드래그하여 텍스트 블록 이동',
@@ -1692,6 +1713,18 @@ export const strings = {
     aiToolRemoveImageBackground: "Suppression de l'arrière-plan de l'image page {page}",
     aiToolDeleteImage: 'Supprimer une image page {page}',
     drawInk: 'Dessin',
+    redact: 'Caviarder une zone',
+    redactHint: 'Faites glisser pour marquer le contenu à supprimer définitivement',
+    redactClear: 'Effacer les marques',
+    redactApply: 'Appliquer le caviardage',
+    redactConfirm:
+      'Le contenu des zones marquées sera définitivement supprimé. Continuer, puis choisir une nouvelle copie dans la boîte de dialogue Enregistrer sous ?',
+    redactSaveAsHint:
+      "Le caviardage n'a pas été appliqué. Cliquez de nouveau sur Appliquer le caviardage pour choisir une nouvelle copie ; l'enregistrement normal n'applique jamais ces marques.",
+    redactSaveFirst:
+      "Enregistrez les autres modifications en attente avant d'appliquer le caviardage.",
+    redactStructureBlocked:
+      'Appliquez ou effacez les caviardages en attente avant de modifier la structure des pages.',
     editText: 'Modifier le texte',
     editTextHint: 'Cliquez sur le texte de la page pour le modifier',
     textBlockMoveHint: 'Faites glisser la bordure pour déplacer ce bloc de texte',
@@ -2022,6 +2055,18 @@ export const strings = {
     aiToolRemoveImageBackground: 'Hintergrund des Bildes auf Seite {page} entfernen',
     aiToolDeleteImage: 'Bild auf Seite {page} löschen',
     drawInk: 'Freihand',
+    redact: 'Bereich schwärzen',
+    redactHint: 'Ziehen, um dauerhaft zu entfernenden Inhalt zu markieren',
+    redactClear: 'Markierungen löschen',
+    redactApply: 'Schwärzungen anwenden',
+    redactConfirm:
+      'Der Inhalt der markierten Bereiche wird dauerhaft entfernt. Fortfahren und dann im Dialog „Speichern unter“ eine neue Kopie wählen?',
+    redactSaveAsHint:
+      'Die Schwärzungen wurden nicht angewendet. Klicken Sie erneut auf „Schwärzungen anwenden“, um eine neue Kopie zu wählen; normales Speichern wendet diese Markierungen nie an.',
+    redactSaveFirst:
+      'Speichern Sie andere ausstehende Änderungen, bevor Sie Schwärzungen anwenden.',
+    redactStructureBlocked:
+      'Wenden Sie ausstehende Schwärzungen an oder löschen Sie sie, bevor Sie die Seitenstruktur ändern.',
     editText: 'Text bearbeiten',
     editTextHint: 'Text auf der Seite anklicken und ändern',
     textBlockMoveHint: 'Rahmen ziehen, um diesen Textblock zu verschieben',
@@ -2351,6 +2396,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Quitar fondo de la imagen de la página {page}',
     aiToolDeleteImage: 'Eliminar imagen de la página {page}',
     drawInk: 'Dibujar',
+    redact: 'Censurar área',
+    redactHint: 'Arrastra para marcar el contenido que se eliminará permanentemente',
+    redactClear: 'Borrar marcas',
+    redactApply: 'Aplicar censura',
+    redactConfirm:
+      'El contenido de las áreas marcadas se eliminará permanentemente. ¿Continuar y elegir una copia nueva en el diálogo Guardar como del sistema?',
+    redactSaveAsHint:
+      'La censura no se aplicó. Haz clic de nuevo en Aplicar censura para elegir una copia nueva; el guardado normal nunca aplica estas marcas.',
+    redactSaveFirst: 'Guarda los demás cambios pendientes antes de aplicar la censura.',
+    redactStructureBlocked:
+      'Aplica o borra las censuras pendientes antes de cambiar la estructura de páginas.',
     editText: 'Editar texto',
     editTextHint: 'Haz clic en el texto de la página para modificarlo',
     textBlockMoveHint: 'Arrastra el borde para mover este bloque de texto',
@@ -2678,6 +2734,16 @@ export const strings = {
     aiToolRemoveImageBackground: 'ลบพื้นหลังรูปภาพหน้า {page}',
     aiToolDeleteImage: 'ลบรูปภาพในหน้า {page}',
     drawInk: 'วาดมือ',
+    redact: 'ปิดทับพื้นที่',
+    redactHint: 'ลากเพื่อทำเครื่องหมายเนื้อหาที่จะถูกลบอย่างถาวร',
+    redactClear: 'ล้างเครื่องหมาย',
+    redactApply: 'ใช้การปิดทับ',
+    redactConfirm:
+      'เนื้อหาในพื้นที่ที่ทำเครื่องหมายจะถูกลบอย่างถาวร ดำเนินการต่อแล้วเลือกสำเนาใหม่ในกล่องโต้ตอบบันทึกเป็นของระบบหรือไม่',
+    redactSaveAsHint:
+      'ยังไม่ได้ใช้การปิดทับ คลิก "ใช้การปิดทับ" อีกครั้งเพื่อเลือกสำเนาใหม่ การบันทึกปกติจะไม่ใช้เครื่องหมายเหล่านี้',
+    redactSaveFirst: 'บันทึกการเปลี่ยนแปลงอื่นที่รอดำเนินการก่อนใช้การปิดทับ',
+    redactStructureBlocked: 'ใช้หรือล้างการปิดทับที่รอดำเนินการก่อนเปลี่ยนโครงสร้างหน้า',
     editText: 'แก้ไขข้อความ',
     editTextHint: 'คลิกข้อความบนหน้าเพื่อแก้ไข',
     textBlockMoveHint: 'ลากขอบเพื่อย้ายบล็อกข้อความนี้',
@@ -3003,6 +3069,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Menghapus latar belakang gambar di halaman {page}',
     aiToolDeleteImage: 'Hapus gambar di halaman {page}',
     drawInk: 'Gambar',
+    redact: 'Redaksi area',
+    redactHint: 'Seret untuk menandai konten yang akan dihapus permanen',
+    redactClear: 'Hapus tanda',
+    redactApply: 'Terapkan redaksi',
+    redactConfirm:
+      'Konten di dalam area yang ditandai akan dihapus secara permanen. Lanjutkan, lalu pilih salinan baru di dialog Simpan Sebagai sistem?',
+    redactSaveAsHint:
+      'Redaksi belum diterapkan. Klik Terapkan redaksi lagi untuk memilih salinan baru; Simpan biasa tidak pernah menerapkan tanda ini.',
+    redactSaveFirst: 'Simpan perubahan tertunda lainnya sebelum menerapkan redaksi.',
+    redactStructureBlocked:
+      'Terapkan atau hapus redaksi tertunda sebelum mengubah struktur halaman.',
     editText: 'Edit teks',
     editTextHint: 'Klik teks pada halaman untuk mengubahnya',
     textBlockMoveHint: 'Seret tepi untuk memindahkan blok teks ini',
@@ -3330,6 +3407,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Удаление фона изображения на стр. {page}',
     aiToolDeleteImage: 'Удаление изображения со стр. {page}',
     drawInk: 'Рисование',
+    redact: 'Затемнить область',
+    redactHint: 'Перетащите, чтобы отметить содержимое для безвозвратного удаления',
+    redactClear: 'Снять отметки',
+    redactApply: 'Применить затемнение',
+    redactConfirm:
+      'Содержимое отмеченных областей будет удалено безвозвратно. Продолжить и выбрать новую копию в системном диалоге «Сохранить как»?',
+    redactSaveAsHint:
+      'Затемнение не применено. Нажмите «Применить затемнение» ещё раз, чтобы выбрать новую копию; обычное сохранение никогда не применяет эти отметки.',
+    redactSaveFirst: 'Сохраните другие несохранённые изменения перед применением затемнения.',
+    redactStructureBlocked:
+      'Примените или снимите ожидающие отметки затемнения перед изменением структуры страниц.',
     editText: 'Изменить текст',
     editTextHint: 'Нажмите на текст на странице, чтобы изменить его',
     textBlockMoveHint: 'Перетащите рамку, чтобы переместить этот блок текста',
@@ -3656,6 +3744,16 @@ export const strings = {
     aiToolRemoveImageBackground: 'إزالة خلفية الصورة في الصفحة {page}',
     aiToolDeleteImage: 'حذف صورة من الصفحة {page}',
     drawInk: 'رسم حر',
+    redact: 'تنقيح منطقة',
+    redactHint: 'اسحب لتحديد المحتوى الذي سيُحذف نهائيًا',
+    redactClear: 'مسح العلامات',
+    redactApply: 'تطبيق التنقيح',
+    redactConfirm:
+      'سيُحذف المحتوى داخل المناطق المحددة نهائيًا. هل تريد المتابعة ثم اختيار نسخة جديدة في مربع حوار "حفظ باسم"؟',
+    redactSaveAsHint:
+      'لم يُطبَّق التنقيح. انقر "تطبيق التنقيح" مرة أخرى لاختيار نسخة جديدة؛ الحفظ العادي لا يطبّق هذه العلامات أبدًا.',
+    redactSaveFirst: 'احفظ التغييرات المعلقة الأخرى قبل تطبيق التنقيح.',
+    redactStructureBlocked: 'طبّق التنقيحات المعلقة أو امسحها قبل تغيير بنية الصفحات.',
     editText: 'تحرير النص',
     editTextHint: 'انقر على النص في الصفحة لتعديله',
     textBlockMoveHint: 'اسحب الإطار لنقل كتلة النص هذه',
@@ -3982,6 +4080,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Remover fundo da imagem da página {page}',
     aiToolDeleteImage: 'Excluir imagem da página {page}',
     drawInk: 'Desenho livre',
+    redact: 'Censurar área',
+    redactHint: 'Arraste para marcar o conteúdo que será removido permanentemente',
+    redactClear: 'Limpar marcações',
+    redactApply: 'Aplicar censura',
+    redactConfirm:
+      'O conteúdo das áreas marcadas será removido permanentemente. Continuar e escolher uma nova cópia na caixa de diálogo Salvar como do sistema?',
+    redactSaveAsHint:
+      'A censura não foi aplicada. Clique em Aplicar censura novamente para escolher uma nova cópia; o salvamento normal nunca aplica essas marcações.',
+    redactSaveFirst: 'Salve as outras alterações pendentes antes de aplicar a censura.',
+    redactStructureBlocked:
+      'Aplique ou limpe as censuras pendentes antes de alterar a estrutura das páginas.',
     editText: 'Editar texto',
     editTextHint: 'Clique no texto da página para alterá-lo',
     textBlockMoveHint: 'Arraste a borda para mover este bloco de texto',
@@ -4311,6 +4420,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Rimuovi sfondo immagine a pagina {page}',
     aiToolDeleteImage: 'Elimina immagine da pagina {page}',
     drawInk: 'Disegno a mano libera',
+    redact: 'Oscura area',
+    redactHint: 'Trascina per contrassegnare il contenuto da rimuovere definitivamente',
+    redactClear: 'Cancella contrassegni',
+    redactApply: 'Applica oscuramenti',
+    redactConfirm:
+      'Il contenuto delle aree contrassegnate verrà rimosso definitivamente. Continuare e scegliere una nuova copia nella finestra Salva con nome del sistema?',
+    redactSaveAsHint:
+      'Gli oscuramenti non sono stati applicati. Fai di nuovo clic su Applica oscuramenti per scegliere una nuova copia; il salvataggio normale non applica mai questi contrassegni.',
+    redactSaveFirst: 'Salva le altre modifiche in sospeso prima di applicare gli oscuramenti.',
+    redactStructureBlocked:
+      'Applica o cancella gli oscuramenti in sospeso prima di modificare la struttura delle pagine.',
     editText: 'Modifica testo',
     editTextHint: 'Fai clic sul testo della pagina per modificarlo',
     textBlockMoveHint: 'Trascina il bordo per spostare questo blocco di testo',
@@ -4640,6 +4760,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Usunięcie tła obrazu na stronie {page}',
     aiToolDeleteImage: 'Usuń obraz ze strony {page}',
     drawInk: 'Rysowanie odręczne',
+    redact: 'Zaczernij obszar',
+    redactHint: 'Przeciągnij, aby oznaczyć treść do trwałego usunięcia',
+    redactClear: 'Wyczyść oznaczenia',
+    redactApply: 'Zastosuj zaczernienia',
+    redactConfirm:
+      'Treść w oznaczonych obszarach zostanie trwale usunięta. Kontynuować i wybrać nową kopię w systemowym oknie „Zapisz jako”?',
+    redactSaveAsHint:
+      'Zaczernienia nie zostały zastosowane. Kliknij ponownie „Zastosuj zaczernienia”, aby wybrać nową kopię; zwykły zapis nigdy nie stosuje tych oznaczeń.',
+    redactSaveFirst: 'Zapisz pozostałe oczekujące zmiany przed zastosowaniem zaczernień.',
+    redactStructureBlocked:
+      'Zastosuj lub wyczyść oczekujące zaczernienia przed zmianą struktury stron.',
     editText: 'Edytuj tekst',
     editTextHint: 'Kliknij tekst na stronie, aby go zmienić',
     textBlockMoveHint: 'Przeciągnij ramkę, aby przenieść ten blok tekstu',
@@ -4967,6 +5098,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Odstranit pozadí obrázku na stránce {page}',
     aiToolDeleteImage: 'Odstranit obrázek na stránce {page}',
     drawInk: 'Kreslit',
+    redact: 'Začernit oblast',
+    redactHint: 'Tažením označte obsah, který bude trvale odstraněn',
+    redactClear: 'Vymazat značky',
+    redactApply: 'Použít začernění',
+    redactConfirm:
+      'Obsah v označených oblastech bude trvale odstraněn. Pokračovat a poté vybrat novou kopii v systémovém dialogu Uložit jako?',
+    redactSaveAsHint:
+      'Začernění nebylo použito. Klikněte znovu na Použít začernění a vyberte novou kopii; běžné uložení tyto značky nikdy nepoužije.',
+    redactSaveFirst: 'Před použitím začernění uložte ostatní čekající změny.',
+    redactStructureBlocked:
+      'Před změnou struktury stránek použijte nebo vymažte čekající začernění.',
     editText: 'Upravit text',
     editTextHint: 'Kliknutím na text na stránce ho změníte',
     textBlockMoveHint: 'Tažením za okraj přesunete tento textový blok',
@@ -5295,6 +5437,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Achtergrond van afbeelding op pagina {page} verwijderen',
     aiToolDeleteImage: 'Afbeelding verwijderen van pagina {page}',
     drawInk: 'Tekenen',
+    redact: 'Gebied zwart maken',
+    redactHint: 'Sleep om inhoud te markeren die permanent wordt verwijderd',
+    redactClear: 'Markeringen wissen',
+    redactApply: 'Zwart maken toepassen',
+    redactConfirm:
+      'De inhoud in de gemarkeerde gebieden wordt permanent verwijderd. Doorgaan en daarna een nieuwe kopie kiezen in het systeemvenster Opslaan als?',
+    redactSaveAsHint:
+      'Het zwart maken is niet toegepast. Klik opnieuw op Zwart maken toepassen om een nieuwe kopie te kiezen; gewoon opslaan past deze markeringen nooit toe.',
+    redactSaveFirst: 'Sla andere openstaande wijzigingen op voordat u zwart maken toepast.',
+    redactStructureBlocked:
+      'Pas openstaande markeringen toe of wis ze voordat u de paginastructuur wijzigt.',
     editText: 'Tekst bewerken',
     editTextHint: 'Klik op tekst op de pagina om die te wijzigen',
     textBlockMoveHint: 'Sleep de rand om dit tekstblok te verplaatsen',
@@ -5622,6 +5775,17 @@ export const strings = {
     aiToolRemoveImageBackground: 'Membuang latar belakang imej di halaman {page}',
     aiToolDeleteImage: 'Padam imej dari halaman {page}',
     drawInk: 'Lukis',
+    redact: 'Redaksi kawasan',
+    redactHint: 'Seret untuk menanda kandungan yang akan dibuang secara kekal',
+    redactClear: 'Kosongkan tanda',
+    redactApply: 'Gunakan redaksi',
+    redactConfirm:
+      'Kandungan dalam kawasan bertanda akan dibuang secara kekal. Teruskan, kemudian pilih salinan baharu dalam dialog Simpan Sebagai sistem?',
+    redactSaveAsHint:
+      'Redaksi belum digunakan. Klik Gunakan redaksi sekali lagi untuk memilih salinan baharu; simpan biasa tidak akan menggunakan tanda ini.',
+    redactSaveFirst: 'Simpan perubahan lain yang belum selesai sebelum menggunakan redaksi.',
+    redactStructureBlocked:
+      'Gunakan atau kosongkan redaksi yang belum selesai sebelum mengubah struktur halaman.',
     editText: 'Edit teks',
     editTextHint: 'Klik teks pada halaman untuk mengubahnya',
     textBlockMoveHint: 'Seret sempadan untuk mengalihkan blok teks ini',
@@ -5943,6 +6107,16 @@ export const strings = {
     aiToolRemoveImageBackground: 'הסרת רקע תמונה בעמוד {page}',
     aiToolDeleteImage: 'מחיקת תמונה מעמוד {page}',
     drawInk: 'ציור חופשי',
+    redact: 'השחרת אזור',
+    redactHint: 'גררו כדי לסמן תוכן שיוסר לצמיתות',
+    redactClear: 'ניקוי סימונים',
+    redactApply: 'החלת השחרות',
+    redactConfirm:
+      'התוכן באזורים המסומנים יוסר לצמיתות. להמשיך ואז לבחור עותק חדש בתיבת הדו-שיח "שמירה בשם"?',
+    redactSaveAsHint:
+      'ההשחרות לא הוחלו. לחצו שוב על "החלת השחרות" כדי לבחור עותק חדש; שמירה רגילה לעולם אינה מחילה סימונים אלה.',
+    redactSaveFirst: 'שמרו שינויים ממתינים אחרים לפני החלת ההשחרות.',
+    redactStructureBlocked: 'החילו או נקו השחרות ממתינות לפני שינוי מבנה העמודים.',
     editText: 'עריכת טקסט',
     editTextHint: 'לחצו על טקסט בעמוד כדי לשנות אותו',
     textBlockMoveHint: 'גררו את המסגרת כדי להזיז את בלוק הטקסט',
@@ -6267,6 +6441,16 @@ export const strings = {
     aiToolRemoveImageBackground: 'पृष्ठ {page} की छवि की पृष्ठभूमि हटाएँ',
     aiToolDeleteImage: 'पृष्ठ {page} से छवि हटाएं',
     drawInk: 'हाथ से बनाएँ',
+    redact: 'क्षेत्र काला करें',
+    redactHint: 'स्थायी रूप से हटाई जाने वाली सामग्री को चिह्नित करने के लिए खींचें',
+    redactClear: 'चिह्न हटाएँ',
+    redactApply: 'कालापन लागू करें',
+    redactConfirm:
+      'चिह्नित क्षेत्रों की सामग्री स्थायी रूप से हटा दी जाएगी। जारी रखें और फिर सिस्टम के "इस रूप में सहेजें" संवाद में नई प्रति चुनें?',
+    redactSaveAsHint:
+      'कालापन लागू नहीं हुआ। नई प्रति चुनने के लिए "कालापन लागू करें" पर फिर क्लिक करें; सामान्य सहेजना इन चिह्नों को कभी लागू नहीं करता।',
+    redactSaveFirst: 'कालापन लागू करने से पहले अन्य लंबित परिवर्तन सहेजें।',
+    redactStructureBlocked: 'पृष्ठ संरचना बदलने से पहले लंबित कालापन लागू करें या हटाएँ।',
     editText: 'टेक्स्ट संपादित करें',
     editTextHint: 'बदलने के लिए पृष्ठ पर टेक्स्ट क्लिक करें',
     textBlockMoveHint: 'इस टेक्स्ट ब्लॉक को खिसकाने के लिए किनारा खींचें',
@@ -6586,6 +6770,16 @@ export const strings = {
     aiToolRemoveImageBackground: '移除第 {page} 頁圖片的背景',
     aiToolDeleteImage: '刪除第 {page} 頁的圖片',
     drawInk: '手繪',
+    redact: '塗黑區域',
+    redactHint: '拖曳以標記將永久移除的區域',
+    redactClear: '清除標記',
+    redactApply: '套用塗黑',
+    redactConfirm:
+      '標記區域中的內容將被永久移除。繼續後請在系統「另存新檔」對話方塊中選擇新副本。是否繼續？',
+    redactSaveAsHint:
+      '塗黑尚未套用。請再次點擊「套用塗黑」並選擇新副本；一般儲存不會套用這些標記。',
+    redactSaveFirst: '請先儲存其他待處理的變更，再套用塗黑。',
+    redactStructureBlocked: '請先套用或清除待處理的塗黑標記，再變更頁面結構。',
     editText: '編輯文字',
     editTextHint: '點擊頁面文字直接修改',
     textBlockMoveHint: '拖動邊框移動整段文字',

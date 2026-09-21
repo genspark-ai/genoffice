@@ -47,6 +47,7 @@ export const de = {
   elementMoveUp: 'Nach oben',
   elementMoveDown: 'Nach unten',
   elementToolbar: 'Element-Symbolleiste',
+  elementPath: 'Elementpfad',
   fmtBold: 'Fett',
   fmtItalic: 'Kursiv',
   openExternal: 'Link im Browser geöffnet',

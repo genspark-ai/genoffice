@@ -146,3 +146,46 @@ describe('Latin-only runs: declared charset steers the substitute, lang alone do
     expect(run('typeface="NanumSquareExtraBold"').fontScriptHint).toBeUndefined()
   })
 })
+
+describe('presentation defaultTextStyle in table cells', () => {
+  it('a cell run without sz takes the presentation default size (Google Slides export: 14pt tables)', () => {
+    const frame =
+      '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table 1"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>' +
+      '<p:xfrm><a:off x="0" y="0"/><a:ext cx="1000" cy="500"/></p:xfrm>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr/>' +
+      '<a:tblGrid><a:gridCol w="1000"/></a:tblGrid><a:tr h="500"><a:tc><a:txBody><a:bodyPr/>' +
+      '<a:p><a:r><a:rPr lang="ja-JP"/><a:t>cell</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc></a:tr>' +
+      '</a:tbl></a:graphicData></a:graphic></p:graphicFrame>'
+    const ctx = { defaultTextStyle: parseDefaultTextStyle(PRES) }
+    const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(frame), ctx })
+    const tbl = slide.elements[0] as any
+    expect(tbl.type).toBe('table')
+    expect(tbl.rows[0][0].text.paragraphs[0].runs[0].fontSize).toBe(12)
+  })
+})
+
+describe('table cell3D bevel', () => {
+  it('parses a:cell3D bevel width, preset and light direction', () => {
+    const frame = (tcPr: string) =>
+      '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table 1"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>' +
+      '<p:xfrm><a:off x="0" y="0"/><a:ext cx="1000" cy="500"/></p:xfrm>' +
+      '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr/>' +
+      '<a:tblGrid><a:gridCol w="1000"/></a:tblGrid><a:tr h="500"><a:tc><a:txBody><a:bodyPr/><a:p/></a:txBody>' +
+      `${tcPr}</a:tc></a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`
+    const cellOf = (tcPr: string) =>
+      (
+        parseSlide({ path: 'ppt/slides/slide1.xml', slideXml: slideWith(frame(tcPr)), ctx: {} })
+          .elements[0] as any
+      ).rows[0][0]
+    const dflt = cellOf(
+      '<a:tcPr><a:cell3D prstMaterial="dkEdge"><a:bevel/><a:lightRig rig="flood" dir="t"/></a:cell3D><a:solidFill><a:srgbClr val="F9F5F4"/></a:solidFill></a:tcPr>',
+    )
+    expect(dflt.bevel).toEqual({ widthEmu: 76200, lightDir: 't' })
+    expect(dflt.fill).toEqual({ type: 'solid', color: '#F9F5F4' })
+    const wide = cellOf(
+      '<a:tcPr><a:cell3D><a:bevel w="152400" h="50800" prst="angle"/></a:cell3D></a:tcPr>',
+    )
+    expect(wide.bevel).toEqual({ widthEmu: 152400, preset: 'angle' })
+    expect(cellOf('<a:tcPr/>').bevel).toBeUndefined()
+  })
+})

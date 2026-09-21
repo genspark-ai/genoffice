@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest'
  * (packages/pptx-ops/src/ops/table-ops.ts resolveTableStyle):
  * old check `!(Number(w) > 0)` passes Infinity, then
  * Math.round(Infinity * EMU_PER_PT) writes Infinity EMU.
- * New check requires finite 0 < w <= 12.
+ * New check requires finite 0 < w <= 1584 (PowerPoint's line weight limit).
  */
 function isValidBorderWidthPt(v: unknown): boolean {
   const w = Number(v)
-  return Number.isFinite(w) && w > 0 && w <= 12
+  return Number.isFinite(w) && w > 0 && w <= 1584
 }
 
 describe('setTableStyle borderWidthPt validation', () => {
@@ -21,7 +21,7 @@ describe('setTableStyle borderWidthPt validation', () => {
   })
 
   it('rejects unreasonably large widths', () => {
-    expect(isValidBorderWidthPt(13)).toBe(false)
+    expect(isValidBorderWidthPt(1585)).toBe(false)
     expect(isValidBorderWidthPt(1e308)).toBe(false)
   })
 
@@ -29,5 +29,6 @@ describe('setTableStyle borderWidthPt validation', () => {
     expect(isValidBorderWidthPt(0.5)).toBe(true)
     expect(isValidBorderWidthPt(1)).toBe(true)
     expect(isValidBorderWidthPt(12)).toBe(true)
+    expect(isValidBorderWidthPt(1584)).toBe(true)
   })
 })

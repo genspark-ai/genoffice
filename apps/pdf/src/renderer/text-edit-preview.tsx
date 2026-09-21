@@ -43,6 +43,8 @@ export const hexTo255 = (hex: string): [number, number, number] => [
   parseInt(hex.slice(3, 5), 16),
   parseInt(hex.slice(5, 7), 16),
 ]
+const luminance = ([r, g, b]: readonly [number, number, number]): number =>
+  (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 export const rgb255ToHex = (c: readonly [number, number, number]): string =>
   `#${c
     .map((v) =>
@@ -126,6 +128,9 @@ export interface LocalTextEdit {
   /** Local look-alike of the run's own font (display-only, from the PostScript
       name): the pending preview reads like the document. Never sent to the engine. */
   baseFont?: DocFontStyle
+  /** Page color sampled around the run when the draft opened (CSS). Backs the preview
+      until the live render has erased the original ink; display-only. */
+  paper?: string
   /** Accumulated block-move delta (PDF user space). Renderer metadata only: the preview
       and hover box draw at rect + moveBy while input.rect stays at the original position
       (it is the save-time match key). The engine-side position rides in input.translate
@@ -135,6 +140,23 @@ export interface LocalTextEdit {
 
 /** Stable per-render key for a clustered block's rect (same idea as imageRectKey) */
 export const blockRectKey = (r: readonly number[]): string => r.map((v) => v.toFixed(2)).join(',')
+
+/** Probe the live page render erases a run with (same shape the open validation sends) */
+export const textEraseProbe = (
+  pageIndex: number,
+  rect: [number, number, number, number],
+  oldText: string,
+  fontSize: number,
+): TextEditInput => ({ pageIndex, rect, oldText, newText: '', fontSize })
+
+/** Identity of an erase probe across draft → pending edit (both address the same run) */
+export const textEraseKey = (p: TextEditInput): string =>
+  `${p.pageIndex}|${blockRectKey(p.rect)}|${p.oldText}`
+
+/** Background for a run's editor/preview box: transparent once the live render has
+    erased the original ink, the sampled page color until then, paper as the last resort */
+export const paperCss = (erased: boolean, paper: string | undefined): CSSProperties =>
+  erased ? { background: 'transparent' } : paper ? { background: paper } : {}
 
 export const shiftRect = (
   r: readonly [number, number, number, number],
@@ -339,6 +361,7 @@ export const textEditPreviewParts = (
   te: LocalTextEdit,
   geom: PageGeom,
   scale: number,
+  erased = false,
 ): { style: CSSProperties; coverStyle: CSSProperties | null } => {
   const fs = (te.input.newFontSize ?? te.input.fontSize) * scale * 0.92
   const lineCount = te.input.newText.split('\n').length
@@ -349,6 +372,7 @@ export const textEditPreviewParts = (
     ...pdfRectToCss(geom, te.moveBy ? shiftRect(te.input.rect, te.moveBy) : te.input.rect, scale),
     fontSize: fs,
     ...(te.input.lineLeading ? { lineHeight: `${leadPx}px` } : {}),
+    ...paperCss(erased, te.paper),
   }
   if (te.input.newColor) {
     style.color = `rgb(${te.input.newColor.join(', ')})`
@@ -408,9 +432,13 @@ export const textEditPreviewParts = (
     if (te.input.align === 'center') style.justifyContent = 'center'
     if (te.input.align === 'right') style.justifyContent = 'flex-end'
   }
-  const coverStyle = te.cover
-    ? inflateCss(pdfRectToCss(geom, unionCover(te.input.rect, te.cover), scale), 1.5)
-    : null
+  const coverStyle =
+    te.cover && !erased
+      ? {
+          ...inflateCss(pdfRectToCss(geom, unionCover(te.input.rect, te.cover), scale), 1.5),
+          ...paperCss(false, te.paper),
+        }
+      : null
   return { style, coverStyle }
 }
 
@@ -466,6 +494,8 @@ export interface TextDraft {
   /** Local look-alike of the run's own font (async, from the dominant run's
       PostScript name). Display + reflow measurement only; never committed. */
   seedFont?: DocFontStyle
+  /** Page color sampled around the run at open (CSS); see LocalTextEdit.paper */
+  paper?: string
   /** EDIT_FONTS id; undefined = automatic rebuild font */
   font?: string
   /** Style toggles; true = on, undefined = off (resolved via font variants at save) */
@@ -508,10 +538,10 @@ export interface TextDraft {
     rebuild still preserves the colors on save). */
 export const seedDraftColors = (d: TextDraft, v: TextEditValidation): TextDraft => {
   let next = d
-  // Near-white ink would vanish on the editor's white background; keep default ink
+  // Ink indistinguishable from the box behind it would vanish; keep default ink then
   if (v.baseColor && !next.color && !next.seedInk) {
-    const [r, g, b] = v.baseColor
-    if ((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 <= 0.85)
+    const paper = next.paper ? hexTo255(next.paper) : ([255, 255, 255] as const)
+    if (Math.abs(luminance(v.baseColor) - luminance(paper)) > 0.15)
       next = { ...next, seedInk: rgb255ToHex(v.baseColor) }
   }
   if (!v.colorRuns || v.colorRuns.length === 0) return next

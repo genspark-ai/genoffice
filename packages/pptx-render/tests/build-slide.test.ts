@@ -1064,3 +1064,74 @@ describe('durable ids on chart nodes', () => {
     expect(chart!.durableId).toMatch(/^e_[0-9a-f]{8}$/)
   })
 })
+
+describe('shapes without geometry', () => {
+  it('draw no fill or outline when the parsed spPr had none (PowerPoint leaves them invisible)', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const mk = (extra: Record<string, unknown>): any => ({
+      id: 'sp_geomless',
+      type: 'text',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      fill: { type: 'solid', color: '#1F497D' },
+      stroke: { fill: { type: 'solid', color: '#FFFFFF' }, width: 12700 },
+      ...extra,
+    })
+    const first = (el: any) =>
+      buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+        fitWidthPx: 1280,
+      }).nodes[0] as any
+    const bare = first(mk({ noGeometry: true }))
+    expect(bare.fill).toEqual({ kind: 'none' })
+    expect(bare.stroke).toBeUndefined()
+    // editor-built text boxes carry no presetGeometry either and must keep their fill
+    expect(first(mk({})).fill).toEqual({ kind: 'solid', color: '#1F497D' })
+    expect(first(mk({ presetGeometry: 'rect' })).fill).toEqual({ kind: 'solid', color: '#1F497D' })
+  })
+})
+
+describe('table cell3D bevel', () => {
+  it('shades the face and emits bevel bands for solid cells only', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const mk = (fill: any): any => ({
+      id: 'tbl1',
+      type: 'table',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 1828800, cy: 914400 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      colWidths: [1828800],
+      rowHeights: [914400],
+      rows: [[{ fill, bevel: { widthEmu: 76200, lightDir: 't' } }]],
+    })
+    const first = (el: any) =>
+      buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+        fitWidthPx: 1280,
+      }).nodes[0] as any
+    const solid = first(mk({ type: 'solid', color: '#F9F5F4' }))
+    expect(solid.cells[0].fill).toEqual({ kind: 'solid', color: '#D4D0CF' })
+    expect(solid.cells[0].bevel.widthPx).toBeCloseTo(8, 1)
+    expect(solid.cells[0].bevel.edges.l[0].color).toBe('#FFFFFF')
+    const grad = first(
+      mk({
+        type: 'gradient',
+        stops: [
+          { pos: 0, color: '#000000' },
+          { pos: 1, color: '#FFFFFF' },
+        ],
+        angle: 0,
+      }),
+    )
+    expect(grad.cells[0].bevel).toBeUndefined()
+  })
+})

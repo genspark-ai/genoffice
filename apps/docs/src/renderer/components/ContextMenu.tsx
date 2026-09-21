@@ -19,7 +19,7 @@ import {
 import { platformShortcuts } from '@genoffice/i18n'
 import { Dropdown, isSymbolFontFamily, type DropdownOption } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
-import { fontFamiliesFor, isEastAsianFontName } from '../font-list'
+import { fontFamiliesFor } from '../font-list'
 import { useSystemFontFamilies } from '../system-fonts'
 import { cssFontFamily } from '../line-metrics'
 import { setParaAttrs, activeParaAttrs } from './ribbon-tabs'
@@ -557,9 +557,8 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
       ? 'italic'
       : 'regular'
 
-  const [font, setFont] = useState(
-    (textAttrs.font as string | null) ?? (textAttrs.fontAscii as string | null) ?? '',
-  )
+  const [fontEastAsia, setFontEastAsia] = useState((textAttrs.font as string | null) ?? '')
+  const [fontLatin, setFontLatin] = useState((textAttrs.fontAscii as string | null) ?? '')
   const [size, setSize] = useState(
     textAttrs.sizeHalfPoints ? Number(textAttrs.sizeHalfPoints) / 2 : 11,
   )
@@ -584,12 +583,11 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
           ? color.replace('#', '').toUpperCase()
           : ((textAttrs.color as string | null) ?? null),
         sizeHalfPoints: Math.round(size * 2),
-        // picks target only their script's rFonts slot; the other slot survives
-        ...(!font
-          ? { font: null, fontAscii: null }
-          : isEastAsianFontName(font)
-            ? { font }
-            : { fontAscii: font }),
+        // each picker writes only its own rFonts slot; empty means inherit
+        fontAscii: fontLatin || null,
+        font: fontEastAsia || null,
+        eastAsiaFont: fontEastAsia || null,
+        eaSlotEmpty: fontEastAsia ? false : null,
         highlight: textAttrs.highlight ?? null,
         vertAlign: vertAlign || null,
       })
@@ -603,6 +601,38 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
     onClose()
   }
 
+  const fontPicker = (value: string, onPick: (v: string) => void, label: string) => (
+    <label>
+      {label}
+      <Dropdown
+        value={value}
+        ariaLabel={label}
+        options={[
+          { value: '', label: t('appDefaultBodyFont') } as DropdownOption,
+          ...fontFamilies.map((f): DropdownOption => ({
+            value: f,
+            label: f,
+            render: <span style={{ fontFamily: cssFontFamily(f) }}>{f}</span>,
+          })),
+          ...systemFontFamilies.map((f): DropdownOption => ({
+            value: f,
+            label: f,
+            render: (
+              // symbol fonts would render their own name as pictographs
+              <span style={{ fontFamily: isSymbolFontFamily(f) ? undefined : cssFontFamily(f) }}>
+                {f}
+              </span>
+            ),
+          })),
+          ...(value && !fontFamilies.includes(value) && !systemFontFamilies.includes(value)
+            ? [{ value, label: value } as DropdownOption]
+            : []),
+        ]}
+        onPick={onPick}
+      />
+    </label>
+  )
+
   return (
     <div
       className="modal-backdrop"
@@ -613,39 +643,8 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
       <div className="modal">
         <h2>{t('appFontDialogTitle')}</h2>
         <div className="font-dialog-row">
-          <label>
-            {t('appFontFamilyLabel')}
-            <Dropdown
-              value={font}
-              ariaLabel={t('appFontFamilyLabel')}
-              options={[
-                { value: '', label: t('appDefaultBodyFont') } as DropdownOption,
-                ...fontFamilies.map((f): DropdownOption => ({
-                  value: f,
-                  label: f,
-                  render: <span style={{ fontFamily: cssFontFamily(f) }}>{f}</span>,
-                })),
-                ...systemFontFamilies.map((f): DropdownOption => ({
-                  value: f,
-                  label: f,
-                  render: (
-                    // symbol fonts would render their own name as pictographs
-                    <span
-                      style={{
-                        fontFamily: isSymbolFontFamily(f) ? undefined : cssFontFamily(f),
-                      }}
-                    >
-                      {f}
-                    </span>
-                  ),
-                })),
-                ...(font && !fontFamilies.includes(font) && !systemFontFamilies.includes(font)
-                  ? [{ value: font, label: font } as DropdownOption]
-                  : []),
-              ]}
-              onPick={setFont}
-            />
-          </label>
+          {fontPicker(fontLatin, setFontLatin, t('ribbonFontLatin'))}
+          {fontPicker(fontEastAsia, setFontEastAsia, t('ribbonFontEastAsia'))}
           <label>
             {t('appFontStyleLabel')}
             <Dropdown
@@ -713,7 +712,11 @@ export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () =>
         <div
           className="font-preview"
           style={{
-            fontFamily: font ? cssFontFamily(font) : undefined,
+            fontFamily:
+              [fontLatin, fontEastAsia]
+                .filter(Boolean)
+                .map((f) => cssFontFamily(f))
+                .join(', ') || undefined,
             fontSize: `${Math.min(size, 28)}pt`,
             fontWeight: style === 'bold' || style === 'boldItalic' ? 600 : 400,
             fontStyle: style === 'italic' || style === 'boldItalic' ? 'italic' : 'normal',

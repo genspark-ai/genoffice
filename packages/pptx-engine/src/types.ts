@@ -531,6 +531,8 @@ export interface TextElement extends ElementBase {
   adjust?: Record<string, number>
   /** Custom geometry (mutually exclusive with presetGeometry) */
   customGeometry?: CustomGeometry
+  /** spPr carried neither a:prstGeom nor a:custGeom (non-placeholder): PowerPoint draws only the text */
+  noGeometry?: true
   fill?: Fill
   /** <p:sp useBgFill="1">: painted with the slide's effective background fill (fill is only a fallback) */
   useBgFill?: boolean
@@ -626,6 +628,8 @@ export interface TableCell {
   /** Cell fill (explicit tcPr fill; table-style inheritance not yet supported) */
   fill?: Fill
   borders?: TableCellBorders
+  /** <a:tcPr><a:cell3D>: bevelled cell (width EMU from a:bevel@w, default 76200) */
+  bevel?: { widthEmu: number; preset?: string; lightDir?: string }
   /** Horizontal merge span in columns (gridSpan, default 1) */
   gridSpan?: number
   /** Vertical merge span in rows (rowSpan, default 1) */

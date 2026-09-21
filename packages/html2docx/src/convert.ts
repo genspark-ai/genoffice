@@ -97,7 +97,8 @@ export function normalizeIr(raw: unknown): ValidatedIr[] {
       const v = candidate[key]
       if (v !== undefined && v !== null) {
         const n = Number(v)
-        if (!Number.isFinite(n) || n < 0) {
+        const signed = key === 'xPx' || key === 'yPx'
+        if (!Number.isFinite(n) || (!signed && n < 0)) {
           throw new Error(
             `html2docx: extractor returned malformed IR at index ${index} ` +
               `(invalid numeric "${key}"); refusing to continue with compromised page JavaScript`,

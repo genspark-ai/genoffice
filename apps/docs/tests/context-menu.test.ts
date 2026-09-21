@@ -178,12 +178,19 @@ describe('FontDialog', () => {
     select(editor, 1, 10)
     const { container, unmount } = render(createElement(FontDialog, { editor, onClose: noop }))
     const dds = container.querySelectorAll<HTMLButtonElement>('.gs-dd-btn')
-    // Font style → bold
-    pickDropdown(container, dds[1]!, 'bold')
+    // Latin font, East Asian font, font style → bold
+    pickDropdown(container, dds[0]!, 'Arial')
+    pickDropdown(container, dds[1]!, '\u5b8b\u4f53')
+    pickDropdown(container, dds[2]!, 'bold')
     const ok = [...container.querySelectorAll('button')].find((b) => b.textContent === 'OK')!
     act(() => ok.click())
     expect(editor.isActive('bold')).toBe(true)
-    expect(editor.getAttributes('docTextStyle').sizeHalfPoints).toBe(22)
+    const attrs = editor.getAttributes('docTextStyle')
+    expect(attrs.sizeHalfPoints).toBe(22)
+    // each picker writes only its own rFonts slot
+    expect(attrs.fontAscii).toBe('Arial')
+    expect(attrs.font).toBe('\u5b8b\u4f53')
+    expect(attrs.eastAsiaFont).toBe('\u5b8b\u4f53')
     unmount()
     editor.destroy()
   })

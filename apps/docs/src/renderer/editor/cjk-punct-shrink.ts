@@ -2,7 +2,7 @@ import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey, type EditorState } from '@tiptap/pm/state'
 import { Decoration, DecorationSet, type EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { SettledParagraphCache } from './settled-measure'
+import { SettledParagraphCache, noteFloatTransaction } from './settled-measure'
 import { sameLine } from './justify-shrink'
 import { rangeSlot } from '../dom-range'
 import { PHASED_CONTENT_SETTLED_EVENT, isPhasedContentPending } from '../phased-content'
@@ -771,6 +771,7 @@ export const CjkPunctShrinkExtension = Extension.create({
         state: {
           init: () => DecorationSet.empty,
           apply(tr, old) {
+            noteFloatTransaction(tr)
             const meta = tr.getMeta(cjkPunctShrinkPluginKey) as Decoration[] | undefined
             if (meta)
               return meta.length > 0 ? DecorationSet.create(tr.doc, meta) : DecorationSet.empty

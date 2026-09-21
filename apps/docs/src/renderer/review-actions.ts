@@ -7,6 +7,7 @@
 import type { Editor } from '@tiptap/core'
 import { nextNoteId, parseDocx, type CommentInfo, type NoteInfo } from '@genoffice/docx-engine'
 import type { Dispatch, SetStateAction } from 'react'
+import { fetchDocBytes } from './doc-bytes'
 import type { DocState } from './doc-state'
 import {
   addCommentToRange,
@@ -280,7 +281,7 @@ export async function compareWithFile(ctx: ReviewContext): Promise<void> {
     return
   }
   try {
-    const otherParsed = await parseDocx(new Uint8Array(other.data))
+    const otherParsed = await parseDocx(await fetchDocBytes(other.dataUrl))
     const entries = compareParagraphs(
       blockTexts(ctx.doc.parsed.blocks),
       blockTexts(otherParsed.blocks),

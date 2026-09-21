@@ -1865,6 +1865,25 @@ const ANIM_EFFECT_BODIES: Record<AnimEffectKind, ReactNode> = {
       <path d="M18.9 10.9 l0.5 5.4 -5.4 -0.6" />
     </>
   ),
+  // media
+  mediaPlay: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M10 8.5 L15.5 12 L10 15.5 Z" fill="currentColor" stroke="none" />
+    </>
+  ),
+  mediaPause: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M9.6 8.5 V15.5 M14.4 8.5 V15.5" strokeWidth="2.2" />
+    </>
+  ),
+  mediaStop: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <rect x="9" y="9" width="6" height="6" rx="0.8" fill="currentColor" stroke="none" />
+    </>
+  ),
 }
 
 export function AnimEffectIcon({ kind, size }: { kind: AnimEffectKind; size?: number }) {

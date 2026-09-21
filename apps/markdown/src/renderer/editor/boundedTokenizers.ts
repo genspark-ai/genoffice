@@ -63,19 +63,54 @@ export function boundTaskList(base: MarkdownTokenizer): MarkdownTokenizer {
   return boundList(base, TASK_ITEM)
 }
 
+/** cells of a table row, outer pipes stripped, escaped pipes kept inside their cell */
+function rowCells(line: string): string[] {
+  const cells: string[] = []
+  let cell = ''
+  const body = line.trim().replace(/^\||\|$/g, '')
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]!
+    if (ch === '\\' && i + 1 < body.length) {
+      cell += ch + body[++i]
+    } else if (ch === '|') {
+      cells.push(cell)
+      cell = ''
+    } else cell += ch
+  }
+  cells.push(cell)
+  return cells
+}
+
+/**
+ * GFM only makes a table when the delimiter row has exactly as many cells as
+ * the header. marked's lexer probes `start` on `src.slice(1)` for every block,
+ * so answering 0 for a header/delimiter mismatch that the tokenizer then
+ * rejects cuts the source one character at a time into a shredded paragraph.
+ */
+function isTableHead(header: string, delimiter: string): boolean {
+  if (!header.includes('|') || !delimiter.includes('|')) return false
+  const cells = rowCells(delimiter)
+  if (!cells.every((cell) => /^\s*:?-+:?\s*$/.test(cell))) return false
+  return cells.length === rowCells(header).length
+}
+
 /** The upstream table tokenizer already limits itself to the text before the
  *  first blank line except for one trailing `src.split('\n')`; `start` reads
  *  the first two lines but splits everything. */
 export function boundTable(base: MarkdownTokenizer): MarkdownTokenizer {
-  const start = (src: string): number => {
+  const firstTwoLines = (src: string): [string, string] | null => {
     const a = src.indexOf('\n')
-    if (a < 0) return -1
+    if (a < 0) return null
     const b = src.indexOf('\n', a + 1)
-    const sep = src.slice(a + 1, b < 0 ? undefined : b)
-    if (!/^[ \t|:]*-[ \t|:-]*$/.test(sep) || !sep.includes('|')) return -1
-    return src.slice(0, a).includes('|') ? 0 : -1
+    return [src.slice(0, a), src.slice(a + 1, b < 0 ? undefined : b)]
+  }
+  const start = (src: string): number => {
+    const lines = firstTwoLines(src)
+    return lines && isTableHead(...lines) ? 0 : -1
   }
   const tokenize: Tokenize = function (this: unknown, src, tokens, lexer) {
+    const lines = firstTwoLines(src)
+    if (!lines || !isTableHead(...lines)) return undefined
     const blank = src.indexOf('\n\n')
     return base.tokenize.call(this, blank >= 0 ? src.slice(0, blank) : src, tokens, lexer)
   }

@@ -4,7 +4,8 @@
  * ingestion, and the format painter. Functions take the ActionCtx built fresh per call.
  */
 import type { ActionCtx } from './action-context'
-import type { PasteSlideMode } from '../shared/ipc'
+import type { PasteSlideMode, PasteSlideResult } from '../shared/ipc'
+import { rangeSelection } from '../shared/slide-selection'
 import { FIT_WIDTH } from './app-constants'
 import { renderSlidesToPngBase64 } from './export-render'
 import { renderSelectionToPngBase64 } from './selection-image'
@@ -16,8 +17,11 @@ import {
 import { t } from './i18n/locale'
 
 export async function deleteSelected(ctx: ActionCtx): Promise<void> {
-  for (const id of ctx.selectedIds) {
-    const updated = await window.slidesApi.deleteElement({ slideIndex: ctx.current, sourceId: id })
+  if (ctx.selectedIds.length) {
+    const updated = await window.slidesApi.deleteElements({
+      slideIndex: ctx.current,
+      sourceIds: ctx.selectedIds,
+    })
     if (updated) ctx.applySlide(ctx.current, updated)
   }
   ctx.setSelectedIds([])
@@ -60,34 +64,25 @@ export async function cutSelected(ctx: ActionCtx): Promise<void> {
   }
 }
 
-/** Insert an external image at page center at natural size (clamped to half the page). */
+/** Insert an external image at PowerPoint's dpi-aware size (main's pictureFrame), centered on the page or `atPx`. */
 export async function insertExternalImage(
   ctx: ActionCtx,
   base64: string,
   ext: string,
   atPx?: { x: number; y: number },
 ): Promise<void> {
-  const dims = await new Promise<{ w: number; h: number }>((resolve) => {
+  const naturalPx = await new Promise<{ width: number; height: number }>((resolve) => {
     const img = new Image()
-    img.onload = () => resolve({ w: img.naturalWidth || 320, h: img.naturalHeight || 240 })
-    img.onerror = () => resolve({ w: 320, h: 240 })
+    img.onload = () => resolve({ width: img.naturalWidth || 320, height: img.naturalHeight || 240 })
+    img.onerror = () => resolve({ width: 320, height: 240 })
     img.src = `data:image/${ext};base64,${base64}`
   })
-  const maxW = (ctx.slide?.widthPx ?? FIT_WIDTH) / 2
-  const maxH = (ctx.slide?.heightPx ?? FIT_WIDTH * 0.5625) / 2
-  const k = Math.min(1, maxW / dims.w, maxH / dims.h)
-  const w = Math.max(24, dims.w * k)
-  const h = Math.max(24, dims.h * k)
-  const x = atPx ? atPx.x - w / 2 : ((ctx.slide?.widthPx ?? FIT_WIDTH) - w) / 2
-  const y = atPx ? atPx.y - h / 2 : ((ctx.slide?.heightPx ?? FIT_WIDTH * 0.5625) - h) / 2
   const r = await window.slidesApi.addImageBytes({
     slideIndex: ctx.current,
     base64,
     ext,
-    xPx: x,
-    yPx: y,
-    wPx: w,
-    hPx: h,
+    naturalPx,
+    ...(atPx ? { centerPx: atPx } : {}),
     fitWidthPx: FIT_WIDTH,
   })
   if (!r) return
@@ -100,19 +95,33 @@ export async function insertExternalImage(
   ctx.setSelectedIds([r.sourceId])
 }
 
-export async function copySlideAt(ctx: ActionCtx, index: number): Promise<void> {
-  // A rendering of the page rides along for 'picture'-mode pastes (the source
-  // deck may be gone by paste time). Copy still succeeds if the capture fails.
-  let png: string | undefined
+export async function copySlides(ctx: ActionCtx, indexes: number[]): Promise<void> {
+  const sel = [...new Set(indexes)].sort((a, b) => a - b).filter((i) => ctx.slides[i])
+  if (!sel.length) return
+  // Renderings ride along for 'picture'-mode pastes (the source deck may be
+  // gone by paste time). Copy still succeeds if the capture fails.
+  let pngs: string[] | undefined
   try {
-    const slide = ctx.slides[index]
-    if (slide) [png] = await renderSlidesToPngBase64([slide], ctx.images)
+    pngs = await renderSlidesToPngBase64(
+      sel.map((i) => ctx.slides[i]!),
+      ctx.images,
+    )
   } catch {
-    png = undefined
+    pngs = undefined
   }
-  const ok = await window.slidesApi.copySlide(index, png)
+  const ok = await window.slidesApi.copySlides({ slideIndexes: sel, ...(pngs ? { pngs } : {}) })
   ctx.setCanPasteSlide(ok)
   ctx.setStatus(ok ? t('appStatusSlideCopied') : t('appStatusSlideCopyFailed'))
+}
+
+function applySlidePaste(ctx: ActionCtx, r: PasteSlideResult, mode: PasteSlideMode): void {
+  ctx.setSlides(r.slides)
+  ctx.setCurrent(r.index)
+  ctx.setSelectedSlides(rangeSelection(r.index, r.index + Math.max(r.count - 1, 0)))
+  ctx.setSelectedIds(r.sourceIds ?? [])
+  ctx.setEditing(null)
+  ctx.setDirty(true)
+  ctx.setPasteFloater({ index: r.index, mode })
 }
 
 export async function pasteSlideAfter(
@@ -125,12 +134,7 @@ export async function pasteSlideAfter(
     ctx.setStatus(t('appStatusSlidePasteFailed'))
     return
   }
-  ctx.setSlides(r.slides)
-  ctx.setCurrent(r.index)
-  ctx.setSelectedIds(r.sourceId ? [r.sourceId] : [])
-  ctx.setEditing(null)
-  ctx.setDirty(true)
-  ctx.setPasteFloater({ index: r.index, mode })
+  applySlidePaste(ctx, r, mode)
 }
 
 /** Paste-options floater: redo the just-completed paste with another mode. */
@@ -142,12 +146,7 @@ export async function repasteSlideAs(ctx: ActionCtx, mode: PasteSlideMode): Prom
     ctx.setStatus(t('appStatusPasteOptionsExpired'))
     return
   }
-  ctx.setSlides(r.slides)
-  ctx.setCurrent(r.index)
-  ctx.setSelectedIds(r.sourceId ? [r.sourceId] : [])
-  ctx.setEditing(null)
-  ctx.setDirty(true)
-  ctx.setPasteFloater({ index: r.index, mode })
+  applySlidePaste(ctx, r, mode)
 }
 
 /**
@@ -157,7 +156,7 @@ export async function repasteSlideAs(ctx: ActionCtx, mode: PasteSlideMode): Prom
 export async function pasteClipboard(ctx: ActionCtx): Promise<void> {
   const external = await window.slidesApi.clipboardExternal()
   if (external.kind === 'slide') {
-    await pasteSlideAfter(ctx, ctx.current)
+    await pasteSlideAfter(ctx, Math.max(...ctx.selectedSlides, ctx.current))
     return
   }
   if (external.kind === 'image') {

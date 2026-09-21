@@ -45,6 +45,7 @@ export const pl = {
   elementMoveUp: 'Przenieś w górę',
   elementMoveDown: 'Przenieś w dół',
   elementToolbar: 'Pasek narzędzi elementu',
+  elementPath: 'Ścieżka elementu',
   fmtBold: 'Pogrubienie',
   fmtItalic: 'Kursywa',
   openExternal: 'Link otwarty w przeglądarce',

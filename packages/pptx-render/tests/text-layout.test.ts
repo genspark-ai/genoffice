@@ -1969,3 +1969,42 @@ describe('bullet parity (PowerPoint)', () => {
     expect(noMedia.text).toBe('•')
   })
 })
+
+describe('PowerPoint super/subscript glyph size + hanging indent clamp', () => {
+  it('super/subscript runs draw at 2/3 of the run size (probe: 18pt reads 12pt at any offset)', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [
+          {
+            runs: [
+              { text: 'x', fontSize: 18 },
+              { text: '2', fontSize: 18, baseline: 30 },
+              { text: 'n', fontSize: 18, baseline: -25 },
+            ],
+          },
+        ],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    const [base, sup, sub] = layout.lines[0]!.runs
+    expect(base!.fontSizePx).toBeCloseTo(24, 4)
+    expect(sup!.fontSizePx).toBeCloseTo(16, 4)
+    expect(sub!.fontSizePx).toBeCloseTo(16, 4)
+  })
+
+  it('a hanging indent without a bullet cannot start the first line left of the inset', () => {
+    const layout = layoutText({
+      body: body({
+        paragraphs: [{ runs: [{ text: 'Hello', fontSize: 18 }], marL: 0, indent: -402590 }],
+      }),
+      boxWidthPx: 400,
+      boxHeightPx: 200,
+      metrics: new HeuristicMetrics(),
+      vp,
+    })
+    expect(layout.lines[0]!.runs[0]!.x).toBeCloseTo(0, 4)
+  })
+})

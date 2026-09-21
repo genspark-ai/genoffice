@@ -58,6 +58,7 @@ export const it = {
   aiSumInsertFootnote: 'Nota a piè di pagina inserita',
   aiSumInsertEndnote: 'Nota di chiusura inserita',
   aiSumDeleteNote: 'Nota eliminata',
+  aiSumEditNote: 'Nota modificata',
   aiSumReadNotes: 'Note lette',
   aiSumAddComment: 'Commento aggiunto',
   aiSumDeleteComment: 'Commento eliminato',

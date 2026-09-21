@@ -2,12 +2,14 @@
 // line-split re-slice, table row cut positions and line anchors.
 import { rangeSlot } from './dom-range'
 import { applyBlockMeta } from './pagination-measure'
+import { CapacityWindows, SortedYs } from './pagination-index'
 import { blockInlineExtraPx } from './pagination-sections'
 import {
   columnLineSplits,
   computeSectionedSlicesF2,
   insertParityBlanks,
   sectionFirstPages,
+  type SliceResume,
 } from './pagination-slices'
 import type {
   BlockBox,
@@ -33,6 +35,31 @@ const anchorRange = rangeSlot()
  * one page get line collection (at most one per page, negligible cost).
  * metaOf: docxIndex → parse-layer pagination constraints (keepNext/widow/table row flags).
  */
+/**
+ * Resume a pass from the first page whose slicing can differ from the previous
+ * pass: the pages above it are taken over unchanged and only the blocks from
+ * that page on are sliced (Word starts repagination at the changed page too).
+ */
+export interface PassResume {
+  /** the previous pass's slicing before parity blanks (SliceOutputs.preParity) */
+  prevSlices: PageSlice[]
+  /** index into prevSlices of the first page to slice again */
+  page: number
+  /** index into blocks of that page's first block (its top is the page start) */
+  block: number
+  /** the previous pass's outputs: patches for blocks above the page are kept */
+  prevOut?: SliceOutputs
+}
+
+const PATCH_KEYS = [
+  'rowFills',
+  'rowSplits',
+  'floatVShifts',
+  'floatFlows',
+  'floatSplits',
+  'oversizeClips',
+] as const
+
 export function sliceWithLineSplit(
   blocks: BlockBox[],
   geoms: SectionGeom[],
@@ -40,24 +67,78 @@ export function sliceWithLineSplit(
   zoomFactor: number,
   metaOf?: BlockMetaOf,
   out?: SliceOutputs,
+  resume?: PassResume,
 ): PageSlice[] {
   if (metaOf) applyBlockMeta(blocks, metaOf, zoomFactor)
   const outs: SliceOutputs = out ?? {}
   outs.colWrapRequests ??= []
-  let slices = computeSectionedSlicesF2(blocks, geoms, totalHeight, outs)
+  const prefix = resume ? resume.prevSlices.slice(0, resume.page) : []
+  const run = resume ? blocks.slice(resume.block) : blocks
+  const seed = resume ? resumeSeed(resume.prevSlices, resume.page) : undefined
+  let slices = prefix.concat(computeSectionedSlicesF2(run, geoms, totalHeight, outs, seed))
   // re-slicing can surface new candidate blocks (a block pushed to a page top only
   // after an earlier block gained line data) — iterate to a fixed point, bounded.
   // The cascade can run one block per page boundary (a dense two-column grid doc
   // packs tighter on every pass: SAS prod_043 left whole paragraphs unsplit at
   // column bottoms with a bound of 3), so the bound follows the page count.
   const maxPasses = Math.max(3, Math.min(24, slices.length))
-  for (let i = 0; i < maxPasses; i++) {
-    const changed = fillLineBoxes(blocks, geoms, zoomFactor, slices, metaOf)
-    const wrapped = fillColWraps(blocks, colWrapRequestsOf(blocks, slices, geoms, outs), zoomFactor)
-    if (!changed && !wrapped) break
-    slices = computeSectionedSlicesF2(blocks, geoms, totalHeight, outs)
+  outs.iterations = 1
+  outs.fillMs = 0
+  outs.sliceRunMs = 0
+  sigMemo = new Map()
+  try {
+    for (let i = 0; i < maxPasses; i++) {
+      const t0 = performance.now()
+      const changed = fillLineBoxes(run, geoms, zoomFactor, slices, metaOf)
+      const wrapped = fillColWraps(run, colWrapRequestsOf(run, slices, geoms, outs), zoomFactor)
+      outs.fillMs += performance.now() - t0
+      if (!changed && !wrapped) break
+      const t1 = performance.now()
+      slices = prefix.concat(computeSectionedSlicesF2(run, geoms, totalHeight, outs, seed))
+      outs.sliceRunMs += performance.now() - t1
+      outs.iterations++
+    }
+  } finally {
+    sigMemo = null
   }
+  if (resume?.prevOut) keepPatchesAbove(outs, resume.prevOut, resume.prevSlices[resume.page].start)
+  outs.preParity = slices
   return insertParityBlanks(slices, geoms)
+}
+
+/**
+ * Whether a pass can resume at page `page` of a previous slicing: a page of its
+ * own (a blank sharing its start with the page before it is re-created by the
+ * first block's extra breaks, so resuming there would double it) that opens
+ * neither inside a table nor under a lifted block.
+ */
+export function isResumePage(prev: PageSlice[], page: number): boolean {
+  const p = prev[page]
+  if (page < 1 || !p || p.end <= p.start + 0.01) return false
+  if (prev[page - 1].start >= p.start - 0.5) return false
+  return !p.repeatHeader && !p.liftTop
+}
+
+function resumeSeed(prev: PageSlice[], page: number): SliceResume {
+  const p = prev[page]
+  const continued = !!p.continuedSection
+  return {
+    y: p.start,
+    section: p.section,
+    firstOfSection: !continued && (page === 0 || prev[page - 1].section !== p.section),
+    continued,
+  }
+}
+
+/** patches of the previous pass for blocks above `y` stay; the resumed run only produced the rest */
+function keepPatchesAbove(outs: SliceOutputs, prev: SliceOutputs, y: number): void {
+  type Patches = Record<string, Array<{ blockTop: number }> | undefined>
+  const o = outs as Patches
+  const p = prev as Patches
+  for (const key of PATCH_KEYS) {
+    const kept = p[key]?.filter((patch) => patch.blockTop < y - 0.5)
+    if (kept?.length) o[key] = [...kept, ...(o[key] ?? [])]
+  }
 }
 
 /** Balance requests plus the tables every line-cut paragraph between unequal
@@ -294,7 +375,20 @@ export function bumpLineSampleFontEpoch(): void {
   lineSampleFontEpoch++
 }
 
+// the DOM does not change inside one slicing call, so its fixed-point iterations
+// share the per-element signature reads instead of repeating them
+let sigMemo: Map<HTMLElement, string> | null = null
+
 function lineSampleSig(el: HTMLElement, textH: number): string {
+  const memoKey = Math.round(textH * 4)
+  const memoHit = sigMemo?.get(el)
+  if (memoHit && memoHit.startsWith(`${memoKey}:`)) return memoHit.slice(memoHit.indexOf(':') + 1)
+  const sig = computeLineSampleSig(el, textH)
+  sigMemo?.set(el, `${memoKey}:${sig}`)
+  return sig
+}
+
+function computeLineSampleSig(el: HTMLElement, textH: number): string {
   // djb2 over the text: equal-length edits must still invalidate
   const text = el.textContent ?? ''
   let h = 5381
@@ -324,15 +418,27 @@ export function fillLineBoxes(
   const geomOf = (s: number) => geoms[Math.max(0, Math.min(s, geoms.length - 1))]
   // cut bounds = page bounds + column bounds of multi-column pages (blocks crossing within a column also need line-level splits)
   const breaks: number[] = []
+  // column windows of mixed-column pages and titlePg first pages, by start with
+  // a running max end: a block top lies in at most the few windows the back
+  // scan visits before the max end drops below it
+  const windows: Array<{ start: number; end: number; cap: number }> = []
   ;(slices ?? []).forEach((s, i) => {
     if (i > 0) breaks.push(s.start)
     for (const r of s.regions ?? []) {
       for (const c of r.columns) {
-        if (c.start > 0.5 && !breaks.includes(c.start)) breaks.push(c.start)
+        if (c.start > 0.5) breaks.push(c.start)
+        windows.push({ start: c.start, end: c.end, cap: r.height })
       }
     }
   })
   const firsts = sectionFirstPages(slices ?? [])
+  slices?.forEach((s, si) => {
+    if (!firsts[si]) return
+    const fc = geomOf(s.section)?.firstContentHeight
+    if (fc !== undefined) windows.push({ start: s.start, end: s.end, cap: fc })
+  })
+  const capWindows = new CapacityWindows(windows)
+  const breakYs = new SortedYs(breaks)
   let changed = false
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]
@@ -349,29 +455,15 @@ export function fillLineBoxes(
     const contentH = geomOf(block.section ?? 0)?.contentHeight ?? 0
     if (contentH <= 0) continue
     const bottom = block.top + block.height
-    const crossing = breaks.some((y) => block.top < y && y < bottom)
-    const atPageTop = breaks.some((y) => Math.abs(block.top - y) < 0.5)
+    const crossing = breakYs.hasBetween(block.top, bottom)
+    const atPageTop = breakYs.hasNear(block.top, 0.5)
     // region-aware capacity: a block in a mixed-column page's later region has
     // only the region's height, not the full page — a table there must get row
     // data even when its height fits a page (otherwise the first pass places
     // it whole as an "over-page" block and the collapse becomes a fixed point:
-    // the ANSI table after a 3-col region, real_run2/61)
-    let capH = contentH
-    for (const s of slices ?? []) {
-      for (const r of s.regions ?? []) {
-        if (r.columns.some((c) => c.start - 0.5 <= block.top && block.top < c.end - 0.5)) {
-          capH = Math.min(capH, r.height)
-        }
-      }
-    }
-    // a block on a section's FIRST page has only the titlePg capacity: it must
-    // get line/row data even when it fits the default page height, or the first
-    // pass places it whole and the collapse becomes a fixed point
-    slices?.forEach((s, si) => {
-      if (!firsts[si] || block.top < s.start - 0.5 || block.top >= s.end - 0.5) return
-      const fc = geomOf(s.section)?.firstContentHeight
-      if (fc !== undefined) capH = Math.min(capH, fc)
-    })
+    // the ANSI table after a 3-col region). A block on a
+    // section's FIRST page likewise has only the titlePg capacity.
+    const capH = capWindows.capAt(block.top, contentH)
     // a block already carrying the renderer-baked oversize clip measures at the
     // clipped (fitting) height, so it must bypass the fit gates to re-qualify —
     // otherwise the flag drops, the clip clears, and the layout oscillates

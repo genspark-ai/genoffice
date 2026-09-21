@@ -301,6 +301,39 @@ Common mistakes
 
 - Fractions like 0.25: adjustment values are the raw avLst numbers (25 percent of the range is 25000 for most presets).
 
+### setShapeCustomGeometry
+
+`{path:{w,h,cmds:[{op:"M"|"L"|"C"|"Q"|"Z",pts:[…]}]}} — freeform path replacing the shape's geometry (group children: add group)`
+
+Turns a shape into a freeform (PowerPoint "Edit Points"): the preset or
+previous custom geometry is replaced by one closed or open path. `w`/`h` set
+the path coordinate space and normally equal the element's `cx`/`cy` in EMU so
+`pts` are EMU inside the element box. The first command must be `M`; `pts`
+holds 2 numbers for `M`/`L`, 4 for `Q`, 6 for `C`, none for `Z`. Fill, line,
+text and effects are kept.
+
+```json
+{
+  "op": "setShapeCustomGeometry",
+  "target": { "slide": 0, "el": "e_SHAPE" },
+  "path": {
+    "w": 1828800,
+    "h": 914400,
+    "cmds": [
+      { "op": "M", "pts": [0, 914400] },
+      { "op": "L", "pts": [914400, 0] },
+      { "op": "L", "pts": [1828800, 914400] },
+      { "op": "Z", "pts": [] }
+    ]
+  }
+}
+```
+
+Common mistakes
+
+- Pictures, tables, charts and connectors: only text boxes and shapes take a path.
+- Points outside 0..w / 0..h draw outside the element box (allowed, but the selection frame stays the box).
+
 ### setTextAnchor
 
 `{anchor:"top"|"middle"|"bottom"}`

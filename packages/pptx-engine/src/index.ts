@@ -21,6 +21,7 @@ import {
   type TextStyleLevels,
 } from './placeholder'
 import { isPresetShapeType } from './preset-shape-types'
+import { custGeomXml, parseCustGeom, validCustGeomPath, type CustGeomPath } from './custgeom'
 import { nextSlideId } from './slide-ids'
 import {
   alternateContentBranches,
@@ -96,6 +97,7 @@ export { cleanupSupersededSlideResources }
 export type { ResourceCleanupStats } from './resource-cleanup'
 export {
   animClassOf,
+  isMediaEffect,
   buildTimingXml,
   DEFAULT_MOTION_PATH,
   elementSpid,
@@ -211,6 +213,14 @@ export {
   type ThemeSpec,
 } from './theme-apply'
 export { escapeXmlText, escapeXmlAttr } from './xml-utils'
+export {
+  custGeomXml,
+  parseCustGeom,
+  validCustGeomPath,
+  CUST_GEOM_PT_COUNT,
+  type CustGeomPath,
+  type CustGeomPathCmd,
+} from './custgeom'
 export {
   extractFormat,
   applyFormat,
@@ -1088,7 +1098,7 @@ export function setShapePresetGeometry(slide: Slide, elementId: string, prst: st
   if (!isPresetShapeType(prst)) return false
   const el = slide.elements.find((e) => e.id === elementId)
   if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
-  const xml = swapGeometryXml(patchedElementXml(el), prst)
+  const xml = swapGeometryXml(patchedElementXml(el), presetGeomXml(prst))
   if (xml == null) return false
   el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
   el.dirtyPPr = undefined
@@ -1099,6 +1109,39 @@ export function setShapePresetGeometry(slide: Slide, elementId: string, prst: st
   delete shape.customGeometry
   slide.structureDirty = true
   return true
+}
+
+/**
+ * Replace a shape's geometry with a freeform path ("Edit Points"): <a:prstGeom>
+ * or the previous <a:custGeom> becomes a single-path <a:custGeom> whose w/h are
+ * the path space (callers pass the element extents so points are EMU). The
+ * model's customGeometry is re-parsed from the written XML so the render matches
+ * a reopen byte for byte. Byte surgery baked directly into originalXml.
+ */
+export function setShapeCustomGeometry(
+  slide: Slide,
+  elementId: string,
+  geom: CustGeomPath,
+): boolean {
+  if (!validCustGeomPath(geom)) return false
+  const el = slide.elements.find((e) => e.id === elementId)
+  if (!el || (el.type !== 'text' && el.type !== 'shape')) return false
+  const xml = swapGeometryXml(patchedElementXml(el), custGeomXml(geom))
+  if (xml == null) return false
+  el.dirty = el.dirtyTransform = el.dirtyFill = el.dirtyStroke = false
+  el.dirtyPPr = undefined
+  el.anchor.originalXml = xml
+  applyCustomGeometryModel(el as TextElement, xml)
+  slide.structureDirty = true
+  return true
+}
+
+function applyCustomGeometryModel(shape: TextElement, xml: string): void {
+  const { cx, cy } = shape.transform.offset
+  delete shape.presetGeometry
+  delete shape.adjust
+  delete shape.noGeometry
+  shape.customGeometry = parseCustGeom(xml, cx, cy)
 }
 
 /** Serialize adjust values as an <a:avLst> ("val" formulas only). */
@@ -1160,9 +1203,10 @@ export function setShapeAdjustValues(
   return true
 }
 
-/** Replace <a:prstGeom>/<a:custGeom> in a shape's XML with the new preset; null if no anchor point exists. */
-function swapGeometryXml(xml: string, prst: string): string | null {
-  const geomXml = `<a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>`
+const presetGeomXml = (prst: string) => `<a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>`
+
+/** Replace <a:prstGeom>/<a:custGeom> in a shape's XML with the given geometry; null if no anchor point exists. */
+function swapGeometryXml(xml: string, geomXml: string): string | null {
   const existing =
     /<a:prstGeom\b[^>]*\/>|<a:prstGeom\b[\s\S]*?<\/a:prstGeom>|<a:custGeom\b[\s\S]*?<\/a:custGeom>/.exec(
       xml,
@@ -1201,6 +1245,26 @@ export function setElementTextAnchor(
   t.text.anchor = anchor
   slide.structureDirty = true
   return true
+}
+
+/**
+ * Landing-time normalization for generated pages: the cloud html→pptx converter writes text
+ * boxes without any autofit child, which PowerPoint reads as "do not autofit" — typing past
+ * the frame overflows a box that never grows. Bare txBox bodies get spAutoFit, the default of
+ * a PowerPoint-inserted text box; explicit noAutofit/normAutofit and autoshapes are kept.
+ * Top-level elements only (mirrors the editor's autofit resize).
+ */
+export function autofitGeneratedTextBoxes(slide: Slide): number {
+  let count = 0
+  for (const el of slide.elements) {
+    if ((el.type !== 'text' && el.type !== 'shape') || !el.txBox || !el.text) continue
+    const body = /<a:bodyPr\b[^>]*?\/>|<a:bodyPr\b[^>]*>[\s\S]*?<\/a:bodyPr>/.exec(
+      patchedElementXml(el),
+    )
+    if (!body || /<a:(?:noAutofit|normAutofit|spAutoFit)\b/.test(body[0])) continue
+    if (setElementTextBodyProps(slide, el.id, { autofit: 'resize' })) count++
+  }
+  return count
 }
 
 /** Patch for setElementTextBodyProps; only the provided fields are written. */
@@ -2923,7 +2987,14 @@ export interface ElementFontPatch {
   color?: string
 }
 
-function applyFontPatch(paragraphs: Paragraph[], patch: ElementFontPatch): void {
+/** Per-run size rewrite (relative grow/shrink); undefined = the run inherits its size. */
+export type FontSizeMap = (pt: number | undefined) => number
+
+function applyFontPatch(
+  paragraphs: Paragraph[],
+  patch: ElementFontPatch,
+  sizeMap?: FontSizeMap,
+): void {
   for (const p of paragraphs) {
     // Empty paragraph (e.g. a blank table cell): leave an empty marker run so the
     // format persists and text typed later inherits it
@@ -2940,8 +3011,8 @@ function applyFontPatch(paragraphs: Paragraph[], patch: ElementFontPatch): void 
         delete r.fontImplicit
         delete r.latinFamily
       }
-      if (patch.fontSizePt !== undefined) {
-        r.fontSize = patch.fontSizePt
+      if (patch.fontSizePt !== undefined || sizeMap) {
+        r.fontSize = sizeMap ? sizeMap(r.fontSize) : patch.fontSizePt
         delete r.fontSizeImplicit
       }
       if (patch.strike !== undefined) {
@@ -2981,10 +3052,15 @@ function applyFontPatch(paragraphs: Paragraph[], patch: ElementFontPatch): void 
   }
 }
 
-export function setElementFont(slide: Slide, elementId: string, patch: ElementFontPatch): boolean {
+export function setElementFont(
+  slide: Slide,
+  elementId: string,
+  patch: ElementFontPatch,
+  sizeMap?: FontSizeMap,
+): boolean {
   const el = slide.elements.find((e) => e.id === elementId)
   if (!el) return false
-  const apply = (paragraphs: Paragraph[]) => applyFontPatch(paragraphs, patch)
+  const apply = (paragraphs: Paragraph[]) => applyFontPatch(paragraphs, patch, sizeMap)
   if (el.type === 'text' || el.type === 'shape') {
     const t = el as TextElement
     if (!t.text?.paragraphs.length) return false
@@ -4320,13 +4396,14 @@ export function setGroupChildFont(
   groupId: string,
   childId: string,
   patch: ElementFontPatch,
+  sizeMap?: FontSizeMap,
 ): boolean {
   const found = findGroupChild(slide, groupId, childId)
   const child = found?.child
   if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
   const t = child as TextElement
   if (!t.text?.paragraphs.length) return false
-  applyFontPatch(t.text.paragraphs, patch)
+  applyFontPatch(t.text.paragraphs, patch, sizeMap)
   return patchGroupChildText(slide, groupId, t)
 }
 
@@ -4457,7 +4534,7 @@ export function setGroupChildShapePresetGeometry(
   if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
   let swapped = false
   const ok = patchGroupChildXml(found!.grp, child, (xml) => {
-    const next = swapGeometryXml(xml, prst)
+    const next = swapGeometryXml(xml, presetGeomXml(prst))
     swapped = next != null
     return next ?? xml
   })
@@ -4466,6 +4543,28 @@ export function setGroupChildShapePresetGeometry(
   shape.presetGeometry = prst
   delete shape.adjust
   delete shape.customGeometry
+  slide.structureDirty = true
+  return true
+}
+
+/** Group-child freeform geometry (same semantics as setShapeCustomGeometry). */
+export function setGroupChildShapeCustomGeometry(
+  slide: Slide,
+  groupId: string,
+  childId: string,
+  geom: CustGeomPath,
+): boolean {
+  if (!validCustGeomPath(geom)) return false
+  const found = findGroupChild(slide, groupId, childId)
+  const child = found?.child
+  if (!child || (child.type !== 'text' && child.type !== 'shape')) return false
+  let written: string | null = null
+  const ok = patchGroupChildXml(found!.grp, child, (xml) => {
+    written = swapGeometryXml(xml, custGeomXml(geom))
+    return written ?? xml
+  })
+  if (!ok || written == null) return false
+  applyCustomGeometryModel(child as TextElement, written)
   slide.structureDirty = true
   return true
 }

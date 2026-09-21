@@ -252,10 +252,7 @@ function resolveEndpoint(op: Op, slide: Slide, field: 'from' | 'to', index: numb
 }
 
 /** Resolve a connector line width to EMU, rejecting overflow to Infinity. Exported for tests. */
-export function resolveConnectorWidthEmu(line: {
-  widthPt?: unknown
-  widthEmu?: unknown
-}): number {
+export function resolveConnectorWidthEmu(line: { widthPt?: unknown; widthEmu?: unknown }): number {
   const widthEmu =
     line.widthEmu !== undefined
       ? Math.round(line.widthEmu as number)

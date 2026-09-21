@@ -570,7 +570,8 @@ function insertNodes(exec: Exec, after: InsertAnchor, nodes: PmNode[]): void {
 function requireText(doc: PmNode, range: Range): void {
   let hasText = false
   doc.nodesBetween(range.from, range.to, (node) => {
-    if (node.isTextblock) hasText = true
+    // an empty paragraph is typable; one holding only an image is not
+    if (node.isTextblock && (node.childCount === 0 || node.textContent.length > 0)) hasText = true
     return !hasText
   })
   if (!hasText) fail(`${describeBlocks(doc, range)} has no text to act on (image/rule blocks)`)
@@ -933,8 +934,8 @@ function execOp(exec: Exec, op: MdOp): OpResult {
 
     case 'insertImage': {
       if (!op.src.trim()) fail('src must not be empty')
-      const node = editor.schema.nodes.image!.create({ src: op.src, alt: op.alt?.trim() || null })
-      insertNodes(exec, op.after, [node])
+      const image = editor.schema.nodes.image!.create({ src: op.src, alt: op.alt?.trim() || null })
+      insertNodes(exec, op.after, [editor.schema.nodes.paragraph!.create(null, image)])
       return { ok: true, message: 'Inserted the image.' }
     }
 

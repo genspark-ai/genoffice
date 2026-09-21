@@ -101,6 +101,7 @@ function lazyCtx(options: {
 
 function stubReadWorkbookRange(
   cells: { row: number; column: number; value: string | number | boolean | null }[],
+  hiddenRows: number[] = [],
 ) {
   const readWorkbookRange = vi
     .fn()
@@ -118,6 +119,9 @@ function stubReadWorkbookRange(
               cell.column >= range.startColumn &&
               cell.column <= range.endColumn,
           ),
+          rows: hiddenRows
+            .filter((row) => row >= range.startRow && row <= range.endRow)
+            .map((row) => ({ row, hidden: true })),
           indexedThroughRow: Number.MAX_SAFE_INTEGER,
         }),
     )
@@ -167,6 +171,61 @@ describe('aggregateWorkbookRange: demo workbook', () => {
 })
 
 describe('aggregateWorkbookRange: lazy workbook', () => {
+  it('drops fill-band cells on file-hidden rows and still reads fully filled batches for row properties', async () => {
+    const readWorkbookRange = stubReadWorkbookRange(
+      [
+        { row: 0, column: 0, value: 1 },
+        { row: 3, column: 0, value: 4 },
+      ],
+      [1],
+    )
+    const ctx = lazyCtx({
+      rowCount: 4,
+      columnCount: 1,
+      fills: [{ startRow: 0, endRow: 3, startColumn: 0, endColumn: 0, value: 10 }],
+    })
+
+    const all = await aggregateWorkbookRange(ctx, 'sheet-1', parseRange('A1:A4'))
+    expect(all.ok && all.aggregate.sum).toBe(40)
+    expect(readWorkbookRange).not.toHaveBeenCalled()
+
+    const visible = await aggregateWorkbookRange(ctx, 'sheet-1', parseRange('A1:A4'), {
+      skipFileHiddenRows: true,
+    })
+    expect(readWorkbookRange).toHaveBeenCalledOnce()
+    expect(visible.ok).toBe(true)
+    if (visible.ok) {
+      expect(visible.aggregate.cells).toBe(3)
+      expect(visible.aggregate.nonEmpty).toBe(3)
+      expect(visible.aggregate.sum).toBe(30)
+    }
+  })
+
+  it('skips file-hidden rows only when asked, using the per-batch row properties', async () => {
+    const cells = [
+      { row: 0, column: 0, value: 1 },
+      { row: 1, column: 0, value: 2 },
+      { row: 2, column: 0, value: 3 },
+      { row: 3, column: 0, value: 4 },
+    ]
+    stubReadWorkbookRange(cells, [1, 3])
+    const ctx = lazyCtx({ rowCount: 4, columnCount: 1, fills: [] })
+
+    const all = await aggregateWorkbookRange(ctx, 'sheet-1', parseRange('A1:A4'))
+    expect(all.ok && all.aggregate.sum).toBe(10)
+
+    const visible = await aggregateWorkbookRange(ctx, 'sheet-1', parseRange('A1:A4'), {
+      skipFileHiddenRows: true,
+    })
+    expect(visible.ok).toBe(true)
+    if (visible.ok) {
+      expect(visible.aggregate.cells).toBe(2)
+      expect(visible.aggregate.nonEmpty).toBe(2)
+      expect(visible.aggregate.numericCount).toBe(2)
+      expect(visible.aggregate.sum).toBe(4)
+    }
+  })
+
   it('overlays bulk fills on streamed file values while retaining uncovered cells', async () => {
     const readWorkbookRange = stubReadWorkbookRange([
       { row: 0, column: 0, value: 1 },

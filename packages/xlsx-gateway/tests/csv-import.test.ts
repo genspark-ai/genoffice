@@ -145,11 +145,12 @@ describe('decodeCsvBuffer', () => {
 })
 
 describe('parseCsv row/col caps', () => {
-  it('rejects too many columns', () => {
-    const wide = Array(MAX_CSV_COLS + 2)
+  it('rejects too many columns, counting the last field of an unterminated row', () => {
+    const wide = Array(MAX_CSV_COLS + 1)
       .fill('a')
       .join(',')
     expect(() => parseCsv(wide, ',')).toThrow(/too many columns/)
+    expect(parseCsv(Array(MAX_CSV_COLS).fill('a').join(','), ',')[0]).toHaveLength(MAX_CSV_COLS)
   })
 
   it('accepts normal grids', () => {
@@ -157,8 +158,8 @@ describe('parseCsv row/col caps', () => {
   })
 
   it('exposes row/col caps', () => {
-    expect(MAX_CSV_ROWS).toBe(200_000)
-    expect(MAX_CSV_COLS).toBe(1_000)
+    expect(MAX_CSV_ROWS).toBe(1_048_576)
+    expect(MAX_CSV_COLS).toBe(16_384)
   })
 })
 

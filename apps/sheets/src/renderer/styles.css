@@ -3081,7 +3081,17 @@ textarea:focus {
 .format-cells-dialog {
   display: grid;
   gap: 10px;
-  width: 420px;
+  /* The tab row cannot compress below its labels, and the single grid column
+     sizes every row to that width — with a fixed 420px card, locales with
+     long tab labels (fr 490px, pl 528px measured) paint the fields, lists and
+     buttons past the card edge. Size the card to its widest incompressible
+     row instead; 420px stays the floor (en fits at 407px, so en/zh keep
+     today's exact size), the cap keeps small windows usable. The sample
+     <output> keeps overflow: hidden, so a long cell value contributes no
+     min-content and cannot widen the card. */
+  width: min-content;
+  min-width: 420px;
+  max-width: min(92vw, 560px);
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   padding: 14px;
@@ -3759,6 +3769,7 @@ textarea:focus {
 /* Recommended Charts dialog */
 .recommended-charts-dialog {
   width: 640px;
+  max-width: min(92vw, 640px);
 }
 
 .recommended-charts-grid {

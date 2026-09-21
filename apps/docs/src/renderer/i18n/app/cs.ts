@@ -44,6 +44,12 @@ export const cs = {
   appUntitledDocx: 'Bez názvu.docx',
   appOpenedFile: 'Otevřeno: {name}',
   appOpenFailed: 'Otevření se nezdařilo: {error}',
+  appDocTooLargeBlocks:
+    '{name}: dokument je příliš velký k otevření ({blocks} odstavců, {chars} znaků)',
+  appDocLargeReadOnly:
+    'Velký dokument ({blocks} odstavců): otevřen v režimu čtení — stiskněte Esc pro úpravy',
+  appDocLargeSpellOff:
+    'Velký dokument ({blocks} odstavců): kontrola pravopisu při psaní je vypnutá – zapněte ji v Revize › Pravopis',
   appFontsMissing: 'Chybějící písma dokumentu: {names} (zobrazena náhradní)',
   appVerticalTextNotice:
     'Tento dokument obsahuje svislý text (zatím se zobrazuje vodorovně; ukládání není ovlivněno)',

@@ -8,6 +8,7 @@ import type { InsertKind, LinkTargetOp } from '../shared/ipc'
 import type { ActionCtx } from './action-context'
 import { applySelectionLink, saveEditSelection, selectionLink } from './TextEditOverlay'
 import { FIT_WIDTH } from './app-constants'
+import { fileExt } from '../shared/media-kinds'
 import type { WordArtPreset } from '@genoffice/ui'
 import {
   chartSampleData,
@@ -18,6 +19,18 @@ import {
 } from './insert-presets'
 import { t } from './i18n/locale'
 import { isLineDrawKind, type DrawRect } from './draw-shape'
+import {
+  EQUATION_BODY_PR,
+  EQUATION_FONT_FAMILY,
+  EQUATION_FONT_PT,
+  equationInsertFrame,
+  graphicFrameInsertFrame,
+} from './insert-defaults'
+import { defaultShapeStyle } from './default-shape'
+import { tableInsertSpec } from './table-insert'
+import { textBoxInsertSpec } from './textbox-insert'
+import { WORDART_FONT_PT, wordArtInsertSpec } from './wordart-insert'
+import { insertSlideZooms } from './zoom-actions'
 
 /** Draw-mode commit: insert a gallery shape at the drawn box (PowerPoint click-or-drag sizing). */
 export async function insertShapeAt(
@@ -36,7 +49,7 @@ export async function insertShapeAt(
     wPx: Math.round(rect.w),
     hPx: Math.round(rect.h),
     fitWidthPx: FIT_WIDTH,
-    ...(isLine ? { stroke: { color: '#000000', widthPt: 1 } } : { fillColor: '#C43E1C' }),
+    ...(isLine ? { stroke: { color: '#000000', widthPt: 1 } } : defaultShapeStyle()),
   })
   if (!r) return
   let updated = r.slide
@@ -56,34 +69,25 @@ export async function insertShapeAt(
   ctx.setSelectedIds([r.sourceId])
 }
 
-export async function insertElement(ctx: ActionCtx, kind: InsertKind): Promise<void> {
+/** Draw-mode commit for Insert > Text Box: empty one-line box at the gesture, straight into typing. */
+export async function insertTextBoxAt(ctx: ActionCtx, rect: DrawRect): Promise<void> {
   const { slide, current } = ctx
   if (!slide) return
-  // Lines insert as a horizontal stroke-only connector (no fill, no text);
-  // bent/curved connectors need a real box for their elbow/curve geometry
-  const isStraightLine = kind === 'line' || kind === 'lineArrow' || kind === 'lineArrowDouble'
-  const isLine = isStraightLine || kind === 'lineBent' || kind === 'lineCurved'
-  const w = kind === 'textbox' ? 360 : 240
-  const h = kind === 'textbox' ? 60 : isStraightLine ? 0 : 160
+  const spec = textBoxInsertSpec(rect)
   const r = await window.slidesApi.addElement({
     slideIndex: current,
-    kind,
-    xPx: Math.round((slide.widthPx - w) / 2),
-    yPx: Math.round((slide.heightPx - h) / 2),
-    wPx: w,
-    hPx: h,
+    kind: 'textbox',
+    xPx: spec.x,
+    yPx: spec.y,
+    wPx: spec.w,
+    hPx: spec.h,
     fitWidthPx: FIT_WIDTH,
-    ...(kind === 'textbox'
-      ? { text: '' }
-      : isLine
-        ? { stroke: { color: '#000000', widthPt: 1 } }
-        : { fillColor: '#C43E1C' }),
+    bodyPr: spec.bodyPr,
   })
-  if (r) {
-    ctx.applySlide(current, r.slide)
-    ctx.setSelectedIds([r.sourceId])
-    if (kind === 'textbox') ctx.setEditing({ sourceId: r.sourceId })
-  }
+  if (!r) return
+  ctx.applySlide(current, r.slide)
+  ctx.setSelectedIds([r.sourceId])
+  ctx.setEditing({ sourceId: r.sourceId, discardIfEmpty: true })
 }
 
 export async function insertImage(ctx: ActionCtx): Promise<void> {
@@ -102,16 +106,16 @@ export async function insertImage(ctx: ActionCtx): Promise<void> {
 export async function insertTable(ctx: ActionCtx, rows: number, cols: number): Promise<void> {
   const { slide, current } = ctx
   if (!slide) return
-  const w = Math.min(Math.round(slide.widthPx * 0.7), 760)
-  const h = Math.min(Math.round(slide.heightPx * 0.6), rows * 44)
+  const spec = tableInsertSpec(slide, rows)
   const r = await window.slidesApi.addTable({
     slideIndex: current,
     rows,
     cols,
-    xPx: Math.round((slide.widthPx - w) / 2),
-    yPx: Math.round((slide.heightPx - h) / 2),
-    wPx: w,
-    hPx: h,
+    xPx: spec.x,
+    yPx: spec.y,
+    wPx: spec.w,
+    hPx: spec.h,
+    rowHeightEmu: spec.rowHeightEmu,
     fitWidthPx: FIT_WIDTH,
   })
   if (r) {
@@ -164,17 +168,16 @@ export async function insertChart(ctx: ActionCtx, kind: ChartPresetDef['kind']):
   const { slide, current } = ctx
   if (!slide) return
   const data = chartSampleData(kind)
-  const w = Math.round(slide.widthPx * 0.62)
-  const h = Math.round(slide.heightPx * 0.62)
+  const frame = graphicFrameInsertFrame(slide)
   const r = await window.slidesApi.addChart({
     slideIndex: current,
     kind,
     categories: data.categories,
     series: data.series,
-    xPx: Math.round((slide.widthPx - w) / 2),
-    yPx: Math.round((slide.heightPx - h) / 2),
-    wPx: w,
-    hPx: h,
+    xPx: frame.x,
+    yPx: frame.y,
+    wPx: frame.w,
+    hPx: frame.h,
     fitWidthPx: FIT_WIDTH,
   })
   if (r) {
@@ -187,16 +190,15 @@ export async function insertChart(ctx: ActionCtx, kind: ChartPresetDef['kind']):
 export async function insertSmartArt(ctx: ActionCtx, def: SmartArtDef): Promise<void> {
   const { slide, current } = ctx
   if (!slide) return
-  const w = Math.round(slide.widthPx * 0.7)
-  const h = Math.round(slide.heightPx * 0.5)
+  const frame = graphicFrameInsertFrame(slide)
   const r = await window.slidesApi.addSmartArt({
     slideIndex: current,
     layout: def.layout,
     items: def.defaultItems,
-    xPx: Math.round((slide.widthPx - w) / 2),
-    yPx: Math.round((slide.heightPx - h) / 2),
-    wPx: w,
-    hPx: h,
+    xPx: frame.x,
+    yPx: frame.y,
+    wPx: frame.w,
+    hPx: frame.h,
     fitWidthPx: FIT_WIDTH,
   })
   if (r) {
@@ -209,23 +211,23 @@ export async function insertSmartArt(ctx: ActionCtx, def: SmartArtDef): Promise<
 export async function insertWordArt(ctx: ActionCtx, preset: WordArtPreset): Promise<void> {
   const { slide, current } = ctx
   if (!slide) return
-  const w = 520
-  const h = 100
+  const spec = wordArtInsertSpec(slide)
   const r = await window.slidesApi.addElement({
     slideIndex: current,
     kind: 'textbox',
-    xPx: Math.round((slide.widthPx - w) / 2),
-    yPx: Math.round((slide.heightPx - h) / 2),
-    wPx: w,
-    hPx: h,
+    xPx: spec.x,
+    yPx: spec.y,
+    wPx: spec.w,
+    hPx: spec.h,
     fitWidthPx: FIT_WIDTH,
+    bodyPr: spec.bodyPr,
     paragraphs: [
       {
         align: 'center',
         runs: [
           {
             text: t('appWordArtPlaceholder'),
-            fontSize: 40,
+            fontSize: WORDART_FONT_PT,
             bold: preset.bold,
             italic: preset.italic,
             color: preset.fill,
@@ -238,6 +240,7 @@ export async function insertWordArt(ctx: ActionCtx, preset: WordArtPreset): Prom
   if (r) {
     ctx.applySlide(current, r.slide)
     ctx.setSelectedIds([r.sourceId])
+    ctx.setEditing({ sourceId: r.sourceId, selectAll: true })
     ctx.setStatus(t('appStatusWordArtInserted'))
   }
 }
@@ -313,43 +316,9 @@ export async function applyLink(ctx: ActionCtx, target: LinkTargetOp | null): Pr
   }
 }
 
-/** Zoom link (simplified Zoom): a button shape with an internal jump link. */
+/** Single-target Slide Zoom, a compatibility wrapper over the cascading insert. */
 export async function insertZoom(ctx: ActionCtx, target: number): Promise<void> {
-  const { slide, current } = ctx
-  if (!slide) return
-  const w = 200
-  const h = 60
-  const r = await window.slidesApi.addElement({
-    slideIndex: current,
-    kind: 'roundRect',
-    xPx: slide.widthPx - w - 28,
-    yPx: slide.heightPx - h - 28,
-    wPx: w,
-    hPx: h,
-    fitWidthPx: FIT_WIDTH,
-    fillColor: '#4472C4',
-    paragraphs: [
-      {
-        align: 'center',
-        runs: [
-          {
-            text: t('appZoomButtonText', { page: target + 1 }),
-            fontSize: 17,
-            bold: true,
-            color: '#FFFFFF',
-          },
-        ],
-      },
-    ],
-  })
-  if (!r) return
-  const linked = await window.slidesApi.setLink({
-    slideIndex: current,
-    sourceId: r.sourceId,
-    target: { kind: 'slide', slideIndex: target },
-  })
-  ctx.applySlide(current, linked ?? r.slide)
-  ctx.setStatus(t('appStatusZoomInserted', { page: target + 1 }))
+  await insertSlideZooms(ctx, [target])
 }
 
 export async function openHeaderFooter(ctx: ActionCtx): Promise<void> {
@@ -374,31 +343,36 @@ export async function applyHf(
   }
 }
 
-/** Equations: approximated as Cambria Math italic text (Unicode math symbols) for pptx compatibility. */
+/**
+ * Equations: approximated as Cambria Math italic text (Unicode math symbols) for pptx compatibility.
+ * PowerPoint drops a 1 in square centered on the slide that auto-fits the math and opens it for editing.
+ */
 export async function insertEquation(ctx: ActionCtx, text: string): Promise<void> {
   ctx.setEqDialogOpen(false)
   const { slide, current } = ctx
   if (!slide) return
-  const w = 420
-  const h = 84
+  const frame = equationInsertFrame(slide)
   const r = await window.slidesApi.addElement({
     slideIndex: current,
     kind: 'textbox',
-    xPx: Math.round((slide.widthPx - w) / 2),
-    yPx: Math.round((slide.heightPx - h) / 2),
-    wPx: w,
-    hPx: h,
+    xPx: frame.x,
+    yPx: frame.y,
+    wPx: frame.w,
+    hPx: frame.h,
     fitWidthPx: FIT_WIDTH,
+    bodyPr: EQUATION_BODY_PR,
     paragraphs: [
       {
-        align: 'center',
-        runs: [{ text, fontSize: 28, italic: true, fontFamily: 'Cambria Math' }],
+        runs: [
+          { text, fontSize: EQUATION_FONT_PT, italic: true, fontFamily: EQUATION_FONT_FAMILY },
+        ],
       },
     ],
   })
   if (r) {
     ctx.applySlide(current, r.slide)
     ctx.setSelectedIds([r.sourceId])
+    ctx.setEditing({ sourceId: r.sourceId })
     ctx.setStatus(t('appStatusEquationInserted'))
   }
 }
@@ -411,6 +385,49 @@ export async function insertMediaFile(ctx: ActionCtx, kind: 'video' | 'audio'): 
     ctx.setSelectedIds([r.sourceId])
     ctx.setStatus(kind === 'video' ? t('appStatusVideoInserted') : t('appStatusAudioInserted'))
   }
+}
+
+/**
+ * A video/audio file dropped on the canvas, embedded like the Insert dialog does but
+ * centered on the drop point. Electron hands us the file's path, which lets main
+ * build the poster frame from the system thumbnail; a path-less File falls back to bytes.
+ */
+export async function insertDroppedMedia(
+  ctx: ActionCtx,
+  file: File,
+  kind: 'video' | 'audio',
+  atPx: { x: number; y: number },
+): Promise<void> {
+  if (!ctx.slide) return
+  const slideIndex = ctx.current
+  const path = window.desktop.getPathForFile(file)
+  const source = path
+    ? { path }
+    : { base64: bytesToBase64(new Uint8Array(await file.arrayBuffer())) }
+  const r = await window.slidesApi.addMediaBytes({
+    slideIndex,
+    kind,
+    ext: fileExt(file.name),
+    fitWidthPx: FIT_WIDTH,
+    name: file.name,
+    centerPx: atPx,
+    ...source,
+  })
+  if (!r) return
+  ctx.applySlide(slideIndex, r.slide)
+  ctx.setSelectedIds([r.sourceId])
+  ctx.setStatus(
+    r.warning ?? (kind === 'video' ? t('appStatusVideoInserted') : t('appStatusAudioInserted')),
+  )
+}
+
+/** Chunked: spreading a large array into fromCharCode would blow the call stack. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  }
+  return btoa(bin)
 }
 
 export async function insertModel3dFile(ctx: ActionCtx): Promise<void> {
@@ -441,6 +458,7 @@ export async function toggleScreenRecord(ctx: ActionCtx): Promise<void> {
       if (ev.data.size > 0) chunks.push(ev.data)
     }
     const slideIndex = ctx.current
+    const { width, height } = stream.getVideoTracks()[0]?.getSettings() ?? {}
     rec.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop())
       ctx.recorderRef.current = null
@@ -450,19 +468,14 @@ export async function toggleScreenRecord(ctx: ActionCtx): Promise<void> {
         ctx.setStatus(t('appStatusRecordingEmpty'))
         return
       }
-      // Blob → base64 (chunked to avoid call stack overflow)
-      const buf = new Uint8Array(await blob.arrayBuffer())
-      let bin = ''
-      for (let i = 0; i < buf.length; i += 0x8000) {
-        bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
-      }
       const r = await window.slidesApi.addMediaBytes({
         slideIndex,
         kind: 'video',
-        base64: btoa(bin),
+        base64: bytesToBase64(new Uint8Array(await blob.arrayBuffer())),
         ext: 'webm',
         fitWidthPx: FIT_WIDTH,
         name: `Screen recording ${new Date().toLocaleTimeString()}`,
+        ...(width && height ? { natural: { width, height } } : {}),
       })
       if (r) {
         ctx.applySlide(slideIndex, r.slide)

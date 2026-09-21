@@ -44,6 +44,12 @@ export const fr = {
   appUntitledDocx: 'Document sans titre.docx',
   appOpenedFile: '{name} ouvert',
   appOpenFailed: "Échec de l'ouverture : {error}",
+  appDocTooLargeBlocks:
+    '{name} : le document est trop volumineux pour être ouvert ({blocks} paragraphes, {chars} caractères)',
+  appDocLargeReadOnly:
+    'Document volumineux ({blocks} paragraphes) : ouvert en mode lecture — appuyez sur Échap pour modifier',
+  appDocLargeSpellOff:
+    'Document volumineux ({blocks} paragraphes) : la vérification orthographique à la saisie est désactivée — activez-la dans Révision › Orthographe',
   appFontsMissing: 'Polices du document manquantes : {names} (polices de substitution affichées)',
   appVerticalTextNotice:
     "Ce document contient du texte vertical (affiché horizontalement pour l'instant ; l'enregistrement n'est pas affecté)",

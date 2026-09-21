@@ -1,8 +1,15 @@
-// Stage wheel paging: discrete mouse-wheel notches flip one page each, trackpad
+// Wheel paging: discrete mouse-wheel notches flip one page each, trackpad
 // swipes accumulate to one flip per gesture with the momentum tail swallowed,
-// and a direction reversal or quiet gap starts a fresh gesture.
+// and a direction reversal or quiet gap starts a fresh gesture. The zoom
+// classifier reuses that reasoning so a Ctrl+wheel notch steps once while a
+// trackpad pinch stays continuous.
 import { describe, expect, it } from 'vitest'
-import { createWheelPager } from '../src/renderer/wheel-page-flip'
+import {
+  clampZoom,
+  createWheelPager,
+  createZoomWheelClassifier,
+  notchStep,
+} from '../src/wheel-zoom'
 
 describe('createWheelPager', () => {
   it('flips next on a single mouse-wheel notch down', () => {
@@ -165,5 +172,76 @@ describe('createWheelPager', () => {
     pager.feed(30, 16)
     pager.feed(0, 24)
     expect(pager.feed(40, 32)).toBe(1)
+  })
+})
+
+describe('notchStep', () => {
+  it('moves ten percentage points per notch inside the given range', () => {
+    expect(notchStep(0.5, 1, 0.5, 2)).toBeCloseTo(0.6, 10)
+    expect(notchStep(0.5, -1, 0.5, 2)).toBe(0.5)
+    expect(notchStep(1.95, 1, 0.5, 2)).toBe(2)
+  })
+
+  it('rounds to whole percents so repeated notches do not drift', () => {
+    let z = 0.6437
+    for (let i = 0; i < 5; i++) z = notchStep(z, 1, 0.1, 4)
+    expect(z).toBe(1.14)
+  })
+
+  it('clampZoom pins to the range', () => {
+    expect(clampZoom(0, 0.1, 4)).toBe(0.1)
+    expect(clampZoom(9, 0.1, 4)).toBe(4)
+    expect(clampZoom(1.2, 0.1, 4)).toBe(1.2)
+  })
+})
+
+describe('createZoomWheelClassifier', () => {
+  const wheel = (deltaY: number, extra: Partial<WheelEvent> = {}) => ({
+    deltaY,
+    deltaMode: 0,
+    ctrlKey: true,
+    metaKey: false,
+    ...extra,
+  })
+
+  it('a Windows Ctrl+wheel notch up is one zoom-in step, notch down one zoom-out step', () => {
+    const c = createZoomWheelClassifier()
+    expect(c.feed(wheel(-100), 0)).toBe('zoom-in')
+    expect(c.feed(wheel(-100), 120)).toBe('zoom-in')
+    expect(c.feed(wheel(100), 300)).toBe('zoom-out')
+  })
+
+  it('line-mode deltas (Firefox-style wheels) are notches regardless of size', () => {
+    const c = createZoomWheelClassifier()
+    expect(c.feed(wheel(-3, { deltaMode: 1 }), 0)).toBe('zoom-in')
+    expect(c.feed(wheel(3, { deltaMode: 1 }), 100)).toBe('zoom-out')
+  })
+
+  it('Chromium pinch (ctrlKey, small fractional deltas) stays continuous', () => {
+    const c = createZoomWheelClassifier()
+    expect(c.feed(wheel(-3.4), 0)).toBe('pinch')
+    expect(c.feed(wheel(-7.25), 16)).toBe('pinch')
+    expect(c.feed(wheel(2.1), 32)).toBe('pinch')
+  })
+
+  it('Cmd+two-finger scroll accumulates to a single step and swallows the tail', () => {
+    const c = createZoomWheelClassifier()
+    const cmd = (d: number) => wheel(d, { ctrlKey: false, metaKey: true })
+    expect(c.feed(cmd(-10), 0)).toBeNull()
+    expect(c.feed(cmd(-20), 16)).toBeNull()
+    expect(c.feed(cmd(-40), 32)).toBe('zoom-in')
+    expect(c.feed(cmd(-120), 48)).toBeNull()
+    expect(c.feed(cmd(-80), 64)).toBeNull()
+  })
+
+  it('a Cmd+mouse-wheel notch on macOS steps once per notch', () => {
+    const c = createZoomWheelClassifier()
+    const cmd = (d: number) => wheel(d, { ctrlKey: false, metaKey: true })
+    expect(c.feed(cmd(-100), 0)).toBe('zoom-in')
+    expect(c.feed(cmd(-100), 90)).toBe('zoom-in')
+  })
+
+  it('ignores zero deltas', () => {
+    expect(createZoomWheelClassifier().feed(wheel(0), 0)).toBeNull()
   })
 })

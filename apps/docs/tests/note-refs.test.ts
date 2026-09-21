@@ -6,6 +6,7 @@ import { editorExtensions } from '../src/renderer/editor/extensions'
 import { inlineToRuns, runsToInline, type PmNode } from '../src/renderer/editor/convert'
 import {
   buildNotesContext,
+  editNoteText,
   noteInsertPos,
   protectedNoteMarkBlock,
 } from '../src/renderer/ai/note-ops'
@@ -128,5 +129,78 @@ describe('buildNotesContext', () => {
     expect(out).toContain('id 1 (mark 1 in block 0)')
     expect(out).toContain('id 2 (mark in protected block 1, cannot be deleted here)')
     expect(out).toContain('id 3 (no reference mark in the text)')
+  })
+})
+
+describe('editNoteText', () => {
+  it('replaces every occurrence in the plain text and reports the count', () => {
+    const { note, count } = editNoteText(
+      { id: '3', text: 'See Smith 2019; cf. Smith 2019.' },
+      'Smith 2019',
+      'Smith 2020',
+    )
+    expect(count).toBe(2)
+    expect(note).toEqual({ id: '3', text: 'See Smith 2020; cf. Smith 2020.' })
+  })
+
+  it('returns the same note untouched when nothing matches', () => {
+    const original = { id: '1', text: 'Docket 12-345.' }
+    const { note, count } = editNoteText(original, '99-000', '12-346')
+    expect(count).toBe(0)
+    expect(note).toBe(original)
+  })
+
+  it('matches case-insensitively only when asked', () => {
+    const original = { id: '1', text: 'ibid. Ibid.' }
+    expect(editNoteText(original, 'ibid.', 'id.').note.text).toBe('id. Ibid.')
+    expect(editNoteText(original, 'ibid.', 'id.', false).note.text).toBe('id. id.')
+  })
+
+  it('patches display runs in place, keeping the formatting of the run the match starts in', () => {
+    const { note } = editNoteText(
+      {
+        id: '2',
+        text: 'Brown v. Board, 347 U.S. 483 (1954).',
+        richParas: [
+          [
+            { text: 'Brown v. Board', italic: true },
+            { text: ', 347 U.S. ' },
+            { text: '483', bold: true },
+            { text: ' (1954).' },
+          ],
+        ],
+      },
+      'U.S. 483',
+      'U.S. 484',
+    )
+    expect(note.text).toBe('Brown v. Board, 347 U.S. 484 (1954).')
+    expect(note.richParas).toEqual([
+      [
+        { text: 'Brown v. Board', italic: true },
+        { text: ', 347 U.S. 484' },
+        { text: '', bold: true },
+        { text: ' (1954).' },
+      ],
+    ])
+  })
+
+  it('drops display runs when the replacement introduces a paragraph break', () => {
+    const { note } = editNoteText(
+      { id: '4', text: 'one two', richParas: [[{ text: 'one two', italic: true }]] },
+      ' ',
+      '\n',
+    )
+    expect(note.text).toBe('one\ntwo')
+    expect(note.richParas).toBeUndefined()
+  })
+
+  it('drops display runs that disagree with the text instead of showing stale formatting', () => {
+    const { note } = editNoteText(
+      { id: '2', text: 'alpha beta', richParas: [[{ text: 'gamma', bold: true }]] },
+      'beta',
+      'delta',
+    )
+    expect(note.text).toBe('alpha delta')
+    expect(note.richParas).toBeUndefined()
   })
 })

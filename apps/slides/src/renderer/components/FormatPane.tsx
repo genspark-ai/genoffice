@@ -515,6 +515,9 @@ interface Props {
     } | null,
   ) => void
   onCollapse: () => void
+  /** Bumped by "Size and Position…": jump to the Size & Properties tab, then report back so the request is one-shot */
+  sizeRequest?: number
+  onSizeRequestDone?: () => void
   /** Picture: enter crop mode */
   onPictureCrop?: () => void
   /** Picture: enter cutout (background removal) mode */
@@ -800,6 +803,8 @@ export function FormatPane({
   onEffects,
   onStroke,
   onCollapse,
+  sizeRequest,
+  onSizeRequestDone,
   onPictureCrop,
   onPictureCutout,
   pictureCanCutout,
@@ -828,6 +833,13 @@ export function FormatPane({
   // PPT-style second-level tabs: shape → fill&line / effects / size&props, text → fill&outline / effects / text box
   const [shapeSub, setShapeSub] = useState<'fill' | 'effects' | 'size'>('fill')
   const [textSub, setTextSub] = useState<'fill' | 'effects' | 'textbox'>('textbox')
+  useEffect(() => {
+    if (!sizeRequest) return
+    setPaneTab('shape')
+    setShapeSub('size')
+    onSizeRequestDone?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sizeRequest])
   // PPT-style collapsible fill / line sections
   const [fillOpen, setFillOpen] = useState(true)
   const [lineOpen, setLineOpen] = useState(true)

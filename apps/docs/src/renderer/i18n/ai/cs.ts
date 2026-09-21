@@ -56,6 +56,7 @@ export const cs = {
   aiSumInsertFootnote: 'Vložena poznámka pod čarou',
   aiSumInsertEndnote: 'Vložena vysvětlivka',
   aiSumDeleteNote: 'Poznámka odstraněna',
+  aiSumEditNote: 'Poznámka upravena',
   aiSumReadNotes: 'Čtení poznámek',
   aiSumAddComment: 'Komentář přidán',
   aiSumDeleteComment: 'Komentář smazán',

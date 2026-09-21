@@ -54,6 +54,7 @@ export const he = {
   aiSumInsertFootnote: 'הערת שוליים נוספה',
   aiSumInsertEndnote: 'הערת סיום נוספה',
   aiSumDeleteNote: 'ההערה נמחקה',
+  aiSumEditNote: 'ההערה נערכה',
   aiSumReadNotes: 'קריאת הערות',
   aiSumAddComment: 'הערה נוספה',
   aiSumDeleteComment: 'הערה נמחקה',

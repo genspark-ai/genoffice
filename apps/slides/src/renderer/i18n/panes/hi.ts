@@ -40,6 +40,9 @@ export const hi = {
   paneAnimEffShrink: 'सिकुड़ना और मुड़ना',
   paneAnimEffZoomOut: 'ज़ूम आउट',
   paneAnimEffMotionPath: 'गति पथ',
+  paneAnimEffMediaPlay: 'चलाएँ',
+  paneAnimEffMediaPause: 'रोकें',
+  paneAnimEffMediaStop: 'बंद करें',
 
   paneChartEditTitle: 'चार्ट डेटा संपादित करें',
   paneChartCategoryN: 'श्रेणी {n}',
@@ -277,4 +280,13 @@ export const hi = {
   paneShowEnded: 'स्लाइड शो समाप्त।',
   paneShowRehearseTip: 'समय का पूर्वाभ्यास: इस स्लाइड पर समय / कुल समय',
   paneShowRehearseTotal: 'कुल {time}',
+  paneShowMenuNext: 'अगला',
+  paneShowMenuPrev: 'पिछला',
+  paneShowMenuLastViewed: 'अंतिम बार देखा गया',
+  paneShowMenuSeeAll: 'सभी स्लाइड देखें',
+  paneShowMenuScreen: 'स्क्रीन',
+  paneShowMenuBlack: 'काली स्क्रीन',
+  paneShowMenuWhite: 'सफ़ेद स्क्रीन',
+  paneShowMenuEnd: 'शो समाप्त करें',
+  panePresenterWhiteOn: 'सफ़ेद स्क्रीन (वापस जाने के लिए W दबाएँ)',
 } satisfies Record<keyof typeof zh, string>

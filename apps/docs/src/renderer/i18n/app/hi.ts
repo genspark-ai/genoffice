@@ -44,6 +44,12 @@ export const hi = {
   appUntitledDocx: 'शीर्षकहीन.docx',
   appOpenedFile: '{name} खोला गया',
   appOpenFailed: 'खोलने में विफल: {error}',
+  appDocTooLargeBlocks:
+    '{name}: दस्तावेज़ खोलने के लिए बहुत बड़ा है ({blocks} अनुच्छेद, {chars} वर्ण)',
+  appDocLargeReadOnly:
+    'बड़ा दस्तावेज़ ({blocks} अनुच्छेद): पठन मोड में खोला गया — संपादन के लिए Esc दबाएँ',
+  appDocLargeSpellOff:
+    'बड़ा दस्तावेज़ ({blocks} अनुच्छेद): टाइप करते समय वर्तनी जाँच बंद है — समीक्षा › वर्तनी में इसे चालू करें',
   appFontsMissing: 'दस्तावेज़ के फ़ॉन्ट इंस्टॉल नहीं हैं: {names} (विकल्प फ़ॉन्ट दिखाए गए)',
   appVerticalTextNotice:
     'इस दस्तावेज़ में लंबवत पाठ है (फ़िलहाल क्षैतिज रूप में दिखाया गया है; सहेजने पर असर नहीं)',

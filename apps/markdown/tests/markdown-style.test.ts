@@ -50,6 +50,21 @@ function replaceBlock(editor: Editor, source: string, index: number, html: strin
   return spliceMarkdown(editor, editor.state.doc, map!)
 }
 
+/** load `source`, type `text` at the end of the first paragraph of the first block, and save */
+function appendToFirstParagraph(editor: Editor, source: string, text: string): string {
+  editor.commands.setContent(source, { contentType: 'markdown' })
+  const map = buildSourceMap(editor, editor.state.doc, source)
+  expect(map).not.toBeNull()
+  let pos = -1
+  editor.state.doc.descendants((node, nodePos) => {
+    if (pos >= 0) return false
+    if (node.type.name === 'paragraph') pos = nodePos + node.nodeSize - 1
+    return pos < 0
+  })
+  editor.commands.insertContentAt(pos, text)
+  return spliceMarkdown(editor, editor.state.doc, map!)
+}
+
 describe('style detection', () => {
   it('reads the conventions a document uses', () => {
     const editor = createEditor()
@@ -93,6 +108,7 @@ describe('style detection', () => {
       orderedRepeat: true,
       fence: '~',
       rule: '* * *',
+      tableAligned: false,
     })
   })
 
@@ -130,7 +146,7 @@ describe('edited blocks keep their conventions', () => {
       1,
       '<ul><li><p>a</p></li><li><p>b</p><ul><li><p>c</p></li></ul></li></ul>',
     )
-    expect(out).toBe('# T\n\n* a\n* b\n    * c\n')
+    expect(out).toBe('# T\n\n* a\n* b\n  * c\n')
   })
 
   it('ordered delimiter and repeated numbering', () => {
@@ -234,6 +250,82 @@ describe('edited blocks keep their conventions', () => {
       '<ul><li><p>b <em>y</em></p></li></ul>',
     )
     expect(spliceMarkdown(editor, editor.state.doc, map)).toBe('* a\n\n_x_\n\n* b _y_\n')
+  })
+
+  it('a loose list keeps its blank lines and content-column indent after an edit', () => {
+    const editor = createEditor()
+    const source = '* Item one.\n\n  ```text\n  code\n  ```\n\n  ![alt](/x.png)\n\n* Item two.\n'
+    expect(appendToFirstParagraph(editor, source, ' EDITED')).toBe(
+      '* Item one. EDITED\n\n  ```text\n  code\n  ```\n\n  ![alt](/x.png)\n\n* Item two.\n',
+    )
+  })
+
+  it('a tight list stays tight; blocks that need a blank line before them get one', () => {
+    const editor = createEditor()
+    expect(appendToFirstParagraph(editor, '- a\n  ```\n  x\n  ```\n- b\n', '!')).toBe(
+      '- a!\n  ```\n  x\n  ```\n- b\n',
+    )
+    // a blank line inside an item makes the whole list loose (CommonMark), so
+    // the items are separated too; the image is never glued to the paragraph
+    expect(appendToFirstParagraph(editor, '- a\n\n  ![i](/i.png)\n- b\n', '!')).toBe(
+      '- a!\n\n  ![i](/i.png)\n\n- b\n',
+    )
+  })
+
+  it('ordered items indent their children by the marker width', () => {
+    const editor = createEditor()
+    expect(appendToFirstParagraph(editor, '1. a\n   - b\n2. c\n', '!')).toBe(
+      '1. a!\n   - b\n2. c\n',
+    )
+    expect(appendToFirstParagraph(editor, '9. a\n10. b\n    - c\n', '!')).toBe(
+      '9. a!\n10. b\n    - c\n',
+    )
+  })
+
+  it('lazy continuation lines are indented to the content column', () => {
+    const editor = createEditor()
+    const source =
+      '- Use a **x** for deps. Deno reads it,\n  so most projects run.\n- Add a **y**.\n'
+    expect(appendToFirstParagraph(editor, source, ' EDITED')).toBe(
+      '- Use a **x** for deps. Deno reads it,\n  so most projects run. EDITED\n- Add a **y**.\n',
+    )
+  })
+
+  it('task items follow the same rules', () => {
+    const editor = createEditor()
+    expect(appendToFirstParagraph(editor, '* [ ] a\n  * [x] b\n* [ ] c\n', '!')).toBe(
+      '* [ ] a!\n  * [x] b\n* [ ] c\n',
+    )
+  })
+
+  it('the saved list reads back as the document the user saw', () => {
+    const editor = createEditor()
+    const source = '- a\n\n  b\n- c\n\n1. x\n   - y\n   z\n2. w\n'
+    const saved = appendToFirstParagraph(editor, source, '!')
+    expect(saved).toBe('- a!\n\n  b\n\n- c\n\n1. x\n   - y\n   z\n2. w\n')
+    const reread = editor
+      .markdown!.parse(saved)
+      .content!.map((json) => editor.schema.nodeFromJSON(json).toJSON())
+    const shown = editor.getJSON().content!
+    expect(reread).toEqual(shown.slice(0, reread.length))
+    expect(shown.slice(reread.length)).toEqual([{ type: 'paragraph' }])
+  })
+
+  it('a compact table stays compact, an aligned one stays aligned', () => {
+    const editor = createEditor()
+    const cell =
+      '<table><tr><th>a</th><th>b</th></tr><tr><td>longer cell X</td><td>2</td></tr></table>'
+    expect(replaceBlock(editor, 'p\n\n| a | b |\n|---|---|\n| longer cell | 2 |\n', 1, cell)).toBe(
+      'p\n\n| a | b |\n| --- | --- |\n| longer cell X | 2 |\n',
+    )
+    expect(
+      replaceBlock(
+        editor,
+        '| a           | b |\n|-------------|---|\n| longer cell | 2 |\n',
+        0,
+        cell,
+      ),
+    ).toBe('| a             | b   |\n| ------------- | --- |\n| longer cell X | 2   |\n')
   })
 
   it('leaves the plain serializer at its defaults', () => {

@@ -52,7 +52,7 @@ export function safeName(raw: string | undefined, fallback = 'file'): string {
   let clean = base.replace(/[^\w.\- ()]/g, '_').replace(/^\.+/, '')
   if (clean === '') return fallback
   if (clean.length > MAX_SAFE_NAME_CHARS) {
-    const ext = extname(base).slice(0, 16)
+    const ext = extname(clean).slice(0, 16)
     const stem = clean.slice(0, MAX_SAFE_NAME_CHARS - ext.length)
     clean = stem + ext
   }

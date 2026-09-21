@@ -2165,6 +2165,11 @@ html.genoffice-popover-open .ribbon-tabs {
   margin-top: 8px;
 }
 
+.md-diagram-preview:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--md-focus-ring-blue);
+}
+
 .md-diagram-preview svg {
   max-width: 100%;
   height: auto;

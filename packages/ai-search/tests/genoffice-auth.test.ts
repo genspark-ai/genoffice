@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -13,7 +13,7 @@ import {
   startGenofficeLogin,
   type GskLoginProgress,
 } from '../src/genoffice-auth'
-import { gskApiKey, setGskProxyUrl } from '../src/gsk'
+import { gskApiKey, setGskProxyUrl, watchGskApiKey } from '../src/gsk'
 
 const CODE = 'a'.repeat(64)
 const AUTH_URL = `https://www.genspark.ai/api/office_addin_auth/verify?code=${CODE}`
@@ -294,5 +294,25 @@ describe('genofficeLogout', () => {
     vi.stubGlobal('fetch', fetchMock)
     await genofficeLogout()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('watchGskApiKey', () => {
+  it('drops the cached key and reports the new one when another process rewrites auth.json', async () => {
+    const write = (key: string) =>
+      writeFileSync(join(dir, 'auth.json'), JSON.stringify({ api_key: key, key_id: key }))
+    write('gsk-old')
+    expect(gskApiKey()).toBe('gsk-old')
+    const seen: string[] = []
+    const stop = watchGskApiKey((key) => seen.push(key), 20)
+    try {
+      // the first stat runs off-thread; a write that lands before it becomes the baseline
+      await new Promise((r) => setTimeout(r, 100))
+      write('gsk-new')
+      await vi.waitFor(() => expect(seen).toEqual(['gsk-new']), { timeout: 3000 })
+      expect(genofficeApiKey()).toBe('gsk-new')
+    } finally {
+      stop()
+    }
   })
 })

@@ -171,6 +171,37 @@ describe('docx export', () => {
     expect(texts.some((t) => t.includes('architecture diagram'))).toBe(true)
   })
 
+  it('an image between text splits the block: text, picture, text', async () => {
+    const png = { base64: 'iVBORw0KGgo=', mime: 'image/png' as const, widthPx: 20, heightPx: 10 }
+    const editor = createEditor('# Title ![badge](b.svg) tail\n\nBefore ![pic](p.png) after.')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), () => Promise.resolve(png))
+    const shape = mapping.blocks.map((b) =>
+      b.kind === 'generated'
+        ? `${b.block.type}:${b.block.runs.map((r) => r.text).join('')}`
+        : b.kind,
+    )
+    expect(shape).toEqual([
+      'heading:Title ',
+      'image',
+      'heading: tail',
+      'paragraph:Before ',
+      'image',
+      'paragraph: after.',
+    ])
+  })
+
+  it('empty paragraphs still export as blank paragraphs', async () => {
+    const editor = createEditor('a\n\n\n\nb')
+    const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)
+    expect(mapping.blocks.length).toBe(editor.state.doc.childCount)
+  })
+
+  it('images inside list items keep their alt text', async () => {
+    const parsed = await exportAndParse('- item ![icon](i.png) tail')
+    const texts = parsed.blocks.map((b) => (b.runs ?? []).map((r) => r.text).join(''))
+    expect(texts).toContain('item [icon] tail')
+  })
+
   it('separate ordered lists restart numbering', async () => {
     const editor = createEditor('1. a\n\ntext between\n\n1. b')
     const mapping = await mapDocToSaveBlocks(editor.getJSON(), noImages)

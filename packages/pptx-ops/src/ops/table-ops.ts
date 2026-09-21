@@ -31,6 +31,9 @@ import type { EditParagraph } from '../types'
 import { applyEditParagraphs, collectParagraphFormatPatches } from '../edit-text'
 import { GuidedError, register, resolveElement, type Op, type OpRecord } from './registry'
 
+/** PowerPoint's line weight ceiling. */
+const MAX_BORDER_WIDTH_PT = 1584
+
 register({
   name: 'setTableCell',
   validate(op, ctx) {
@@ -265,9 +268,9 @@ function resolveTableStyle(op: Op): ResolvedTableStyle {
   }
   if (op.borderWidthPt != null) {
     const w = Number(op.borderWidthPt)
-    if (!Number.isFinite(w) || w <= 0 || w > 12) {
+    if (!Number.isFinite(w) || w <= 0 || w > MAX_BORDER_WIDTH_PT) {
       throw new GuidedError(
-        'op "setTableStyle": borderWidthPt must be a finite number > 0 and <= 12.',
+        'op "setTableStyle": borderWidthPt must be a finite number > 0 and <= 1584.',
       )
     }
   }

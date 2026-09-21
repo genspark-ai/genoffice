@@ -40,6 +40,9 @@ export const nl = {
   paneAnimEffShrink: 'Verkleinen en draaien',
   paneAnimEffZoomOut: 'Uitzoomen',
   paneAnimEffMotionPath: 'Bewegingspad',
+  paneAnimEffMediaPlay: 'Afspelen',
+  paneAnimEffMediaPause: 'Pauzeren',
+  paneAnimEffMediaStop: 'Stoppen',
 
   paneChartEditTitle: 'Grafiekgegevens bewerken',
   paneChartCategoryN: 'Categorie {n}',
@@ -280,4 +283,13 @@ export const nl = {
   paneShowEnded: 'Einde van de diavoorstelling.',
   paneShowRehearseTip: 'Try-out: tijd op deze dia / totale tijd',
   paneShowRehearseTotal: 'Totaal {time}',
+  paneShowMenuNext: 'Volgende',
+  paneShowMenuPrev: 'Vorige',
+  paneShowMenuLastViewed: 'Laatst bekeken',
+  paneShowMenuSeeAll: "Alle dia's weergeven",
+  paneShowMenuScreen: 'Scherm',
+  paneShowMenuBlack: 'Zwart scherm',
+  paneShowMenuWhite: 'Wit scherm',
+  paneShowMenuEnd: 'Voorstelling beëindigen',
+  panePresenterWhiteOn: 'Wit scherm (W om terug te keren)',
 } satisfies Record<keyof typeof zh, string>

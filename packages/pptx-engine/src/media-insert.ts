@@ -179,9 +179,10 @@ export function addMedia(
   const mediaPath = newMediaPart(opened, 'media', ext, opts.bytes)
   ensureDefaultContentType(opened, ext, mime)
 
-  // 2) Poster frame part (solid color by default)
+  // 2) Poster frame part (solid color by default; square for audio, whose frame is PowerPoint's 64 pt icon)
   const poster = opts.poster ?? {
-    bytes: solidPng(16, 9, opts.kind === 'video' ? [38, 38, 44] : [240, 240, 244]),
+    bytes:
+      opts.kind === 'video' ? solidPng(16, 9, [38, 38, 44]) : solidPng(16, 16, [240, 240, 244]),
     ext: 'png',
   }
   const posterExt = poster.ext.toLowerCase()

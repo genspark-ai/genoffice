@@ -34,6 +34,7 @@ export const cs = {
   elementMoveUp: 'Přesunout nahoru',
   elementMoveDown: 'Přesunout dolů',
   elementToolbar: 'Panel nástrojů prvku',
+  elementPath: 'Cesta prvku',
   fmtBold: 'Tučné',
   fmtItalic: 'Kurzíva',
   openExternal: 'Odkaz byl otevřen v prohlížeči',

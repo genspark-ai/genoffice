@@ -51,7 +51,10 @@ export function selectedFonts(
     const ea =
       typeof attrs.eastAsiaFont === 'string'
         ? attrs.eastAsiaFont
-        : typeof attrs.font === 'string' && !attrs.eaSlotEmpty && !attrs.rawRPr
+        : typeof attrs.font === 'string' &&
+            !attrs.eaSlotEmpty &&
+            !attrs.rawRPr &&
+            attrs.font !== attrs.fontAscii
           ? attrs.font
           : undefined
     const next = {

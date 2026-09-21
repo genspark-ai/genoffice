@@ -79,12 +79,6 @@ export const ko = {
   // Home · Font
   ribbonFontEastAsia: '동아시아 글꼴',
   ribbonFontLatin: '영문 글꼴',
-  ribbonFontMixed: '혼합',
-  ribbonFontScope: '글꼴 적용 범위',
-  ribbonFontSelection: '선택 영역',
-  ribbonFontDefaults: '문서 기본값',
-  ribbonFontCharacterStyle: '문자 스타일',
-  ribbonFontParagraphStyle: '단락 스타일',
   ribbonFontFamilyTip: '글꼴',
   ribbonFontsCommon: '자주 쓰는 글꼴',
   ribbonFontsSystem: '시스템 글꼴',
@@ -113,7 +107,6 @@ export const ko = {
   ribbonThemeColorShadeTip: '테마 색 {r}-{c}',
   ribbonStandardColors: '표준 색',
   ribbonMoreColors: '다른 색…',
-  ribbonGroupFont: '글꼴',
   // Home · Paragraph
   ribbonBullets: '글머리 기호',
   ribbonNumbering: '번호 매기기',

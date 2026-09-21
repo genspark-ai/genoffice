@@ -78,12 +78,6 @@ export const zh = {
   // Home · Font
   ribbonFontEastAsia: '东亚字体',
   ribbonFontLatin: '西文字体',
-  ribbonFontMixed: '混合',
-  ribbonFontScope: '字体设置范围',
-  ribbonFontSelection: '当前选区',
-  ribbonFontDefaults: '文档默认',
-  ribbonFontCharacterStyle: '字符样式',
-  ribbonFontParagraphStyle: '段落样式',
   ribbonFontFamilyTip: '字体',
   ribbonFontsCommon: '常用字体',
   ribbonFontsSystem: '系统字体',
@@ -112,7 +106,6 @@ export const zh = {
   ribbonThemeColorShadeTip: '主题颜色 {r}-{c}',
   ribbonStandardColors: '标准色',
   ribbonMoreColors: '其他颜色…',
-  ribbonGroupFont: '字体',
   // Home · Paragraph
   ribbonBullets: '项目符号',
   ribbonNumbering: '编号',

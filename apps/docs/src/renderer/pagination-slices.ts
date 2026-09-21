@@ -1,6 +1,7 @@
 // The slicing engine: greedy page breaking of measured blocks into page slices
 // (F2 model with table-row and line-level placement), plus page lookups.
 import { FOOTNOTE_SEPARATOR_H } from './line-metrics'
+import { BlockIndex } from './pagination-index'
 import type {
   BlockBox,
   PageSlice,
@@ -254,11 +255,28 @@ export function computeSectionedSlices(
  *
  * Constraint priority: pageBreakBefore > keepNext chain > keepLines > widowControl
  */
+/**
+ * Start slicing at a page of a previous run instead of at the document top:
+ * `blocks` are then the blocks from that page on, and the slicer opens its
+ * first page exactly as the previous run did (position, section, titlePg
+ * capacity, continuous-break state).
+ */
+export interface SliceResume {
+  /** page start (absolute flow Y) */
+  y: number
+  section: number
+  /** the page is its section's first page (firstContentHeight applies) */
+  firstOfSection: boolean
+  /** the section began mid-page earlier (continuous break) */
+  continued: boolean
+}
+
 export function computeSectionedSlicesF2(
   blocks: BlockBox[],
   geoms: SectionGeom[],
   totalHeight: number,
   out?: SliceOutputs,
+  resume?: SliceResume,
 ): PageSlice[] {
   if (out?.rowFills) out.rowFills.length = 0
   if (out?.rowSplits) out.rowSplits.length = 0
@@ -275,7 +293,7 @@ export function computeSectionedSlicesF2(
   for (const b of blocks) sectionHasBlocks.add(b.section ?? 0)
   const firstSection = blocks[0]?.section ?? 0
   if (geoms.length === 0 || geoms.every((g) => g.contentHeight <= 0)) {
-    return [{ start: 0, end: total, section: firstSection }]
+    return [{ start: resume?.y ?? 0, end: total, section: firstSection }]
   }
   const geomOf = (s: number) => geoms[Math.max(0, Math.min(s, geoms.length - 1))]
   const colsOf = (s: number) => Math.max(1, geomOf(s).cols ?? 1)
@@ -289,7 +307,11 @@ export function computeSectionedSlicesF2(
       !sectionHasBlocks.has(s - 1)
     )
   }
-  const initSection = firstSection > 0 && emptySectionClaimsPage(1) ? 0 : firstSection
+  const initSection = resume
+    ? resume.section
+    : firstSection > 0 && emptySectionClaimsPage(1)
+      ? 0
+      : firstSection
 
   type ColEntry = { y: number; repeatHeader?: { top: number; height: number } }
   type Region = { top: number; height: number; section: number; cols: number; entries: ColEntry[] }
@@ -396,7 +418,10 @@ export function computeSectionedSlicesF2(
     const continued = (midPageStart.get(section) ?? Infinity) < y - 0.5
     if (!continued) midPageStart.delete(section)
     const firstOfSection =
-      !continued && (pages.length === 0 || pages[pages.length - 1].section !== section)
+      !continued &&
+      (pages.length === 0
+        ? (resume?.firstOfSection ?? true)
+        : pages[pages.length - 1].section !== section)
     const g = geomOf(section)
     contentH = Math.max((firstOfSection ? g.firstContentHeight : undefined) ?? g.contentHeight, 1)
     pages.push({ section, regions: [], ...(continued ? { continued: true } : {}) })
@@ -663,7 +688,8 @@ export function computeSectionedSlicesF2(
     anyContent = true
   }
 
-  startPage(0, initSection)
+  if (resume?.continued) midPageStart.set(resume.section, -Infinity)
+  startPage(resume?.y ?? 0, initSection)
 
   // precompute keepNext chains (runs of consecutive keepNext blocks; the last block closes the chain)
   // chainStart[i] = chain start index (-1 when not in a chain)
@@ -764,7 +790,7 @@ export function computeSectionedSlicesF2(
       (doubleBreak ||
         pendingForce ||
         !pageBlank() ||
-        (block.breakBeforeBr && !anyContent && pages.length === 1))
+        (block.breakBeforeBr && !anyContent && pages.length === 1 && !resume))
     ) {
       startPage(breakY(block.top), curSection)
     }
@@ -2161,8 +2187,9 @@ export function visiblePageCount(slices: PageSlice[], upTo = slices.length): num
  */
 export function pageStartBlocks(blocks: BlockBox[], slices: PageSlice[]): number[] {
   const starts: number[] = []
+  const index = new BlockIndex(blocks)
   for (const slice of slices.slice(1)) {
-    const i = blocks.findIndex((b) => Math.abs(b.top - slice.start) < 0.5)
+    const i = index.firstAtTop(slice.start)
     if (i >= 0) starts.push(i)
   }
   return starts

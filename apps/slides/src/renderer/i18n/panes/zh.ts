@@ -39,6 +39,9 @@ export const zh = {
   paneAnimEffShrink: '缩小旋转',
   paneAnimEffZoomOut: '缩放退出',
   paneAnimEffMotionPath: '动作路径',
+  paneAnimEffMediaPlay: '播放',
+  paneAnimEffMediaPause: '暂停',
+  paneAnimEffMediaStop: '停止',
 
   paneChartEditTitle: '编辑图表数据',
   paneChartCategoryN: '类目 {n}',
@@ -273,4 +276,13 @@ export const zh = {
   paneShowEnded: '放映结束。',
   paneShowRehearseTip: '排练计时：当前页停留 / 总时长',
   paneShowRehearseTotal: '总时长 {time}',
+  paneShowMenuNext: '下一页',
+  paneShowMenuPrev: '上一页',
+  paneShowMenuLastViewed: '上次查看的',
+  paneShowMenuSeeAll: '查看所有幻灯片',
+  paneShowMenuScreen: '屏幕',
+  paneShowMenuBlack: '黑屏',
+  paneShowMenuWhite: '白屏',
+  paneShowMenuEnd: '结束放映',
+  panePresenterWhiteOn: '白屏中（W 键恢复）',
 }

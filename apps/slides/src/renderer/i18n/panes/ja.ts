@@ -40,6 +40,9 @@ export const ja = {
   paneAnimEffShrink: '縮小および回転',
   paneAnimEffZoomOut: 'ズームアウト',
   paneAnimEffMotionPath: 'アニメーションの軌跡',
+  paneAnimEffMediaPlay: '再生',
+  paneAnimEffMediaPause: '一時停止',
+  paneAnimEffMediaStop: '停止',
 
   paneChartEditTitle: 'グラフ データの編集',
   paneChartCategoryN: 'カテゴリ {n}',
@@ -276,4 +279,13 @@ export const ja = {
   paneShowEnded: 'スライドショーの最後です。',
   paneShowRehearseTip: 'リハーサル：現在のスライドの時間 / 合計時間',
   paneShowRehearseTotal: '合計 {time}',
+  paneShowMenuNext: '次へ',
+  paneShowMenuPrev: '前へ',
+  paneShowMenuLastViewed: '最後に表示したスライド',
+  paneShowMenuSeeAll: 'すべてのスライドを表示',
+  paneShowMenuScreen: 'スクリーン',
+  paneShowMenuBlack: '黒い画面',
+  paneShowMenuWhite: '白い画面',
+  paneShowMenuEnd: 'スライドショーの終了',
+  panePresenterWhiteOn: '白い画面（W キーで戻る）',
 } satisfies Record<keyof typeof zh, string>

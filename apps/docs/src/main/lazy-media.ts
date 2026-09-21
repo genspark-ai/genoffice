@@ -4,6 +4,7 @@ import { open, stat } from 'node:fs/promises'
 import { inflateRawSync } from 'node:zlib'
 import { protocol } from 'electron'
 import { DOCX_MEDIA_SCHEME_PRIVILEGE } from '@genoffice/electron-utils'
+import { takeHandoff } from './byte-handoff'
 import {
   LAZY_MEDIA_SCHEME,
   isLazyMediaPart,
@@ -20,8 +21,11 @@ import {
   type ZipFile,
 } from '@genoffice/docx-engine/zip-splice'
 
-/** documents carrying at least this much browser-decodable media open lazily */
-const LAZY_MEDIA_MIN_BYTES = 16 * 1024 * 1024
+/** documents carrying at least this much browser-decodable media open lazily:
+ *  below it the pictures ride along as data URLs (a copy in the model, the DOM
+ *  and the undo history each) — cheap enough for a screenshot or two, not for
+ *  a photo-heavy report */
+const LAZY_MEDIA_MIN_BYTES = 1024 * 1024
 
 interface Source {
   path: string
@@ -233,6 +237,16 @@ export function registerLazyMediaProtocol(): void {
   }
   if (protocol.isProtocolHandled(LAZY_MEDIA_SCHEME)) return
   protocol.handle(LAZY_MEDIA_SCHEME, async (request) => {
+    const handed = takeHandoff(request.url)
+    if (handed) {
+      return new Response(new Uint8Array(handed), {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(handed.byteLength),
+          'Access-Control-Allow-Origin': '*',
+        },
+      })
+    }
     const media = await readLazyMedia(request.url)
     if (!media) return new Response(null, { status: 404 })
     return new Response(new Uint8Array(media.body), { headers: { 'Content-Type': media.mime } })

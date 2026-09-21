@@ -175,7 +175,9 @@ function maskTransparentStopColors(
 }
 
 /** Konva colorStops array with linear-sRGB interpolated midpoints between each stop pair. */
-function linearRampStops(stops: Array<{ pos: number; color: string }>): Array<number | string> {
+export function linearRampStops(
+  stops: Array<{ pos: number; color: string }>,
+): Array<number | string> {
   const sorted = maskTransparentStopColors([...stops].sort((a, b) => a.pos - b.pos))
   const out: Array<number | string> = []
   for (let i = 0; i < sorted.length; i++) {
@@ -214,7 +216,7 @@ function linearRampStops(stops: Array<{ pos: number; color: string }>): Array<nu
  * the near-vertical direction (h·cosθ, w·sinθ), pixel-matching PowerPoint's export;
  * the untransformed 45° (and the diagonal direction (w·cosθ, h·sinθ)) both miss it.
  */
-function linearGradientDirection(
+export function linearGradientDirection(
   angleDeg: number,
   scaled: boolean | undefined,
   w: number,
@@ -486,6 +488,55 @@ export function strokeToKonva(
   }
 }
 
+type KonvaStrokeProps = ReturnType<typeof strokeToKonva>
+
+/**
+ * Connector stroke: the line color plus the gradient ramp when the stroke has
+ * one. A gradient line whose first stop is transparent (theme divider rules
+ * fade in from the ends) is invisible when drawn in its fallback color alone.
+ */
+export function connectorStrokeProps(
+  props: KonvaStrokeProps,
+): Pick<
+  KonvaStrokeProps,
+  | 'stroke'
+  | 'strokeWidth'
+  | 'strokeLinearGradientStartPoint'
+  | 'strokeLinearGradientEndPoint'
+  | 'strokeLinearGradientColorStops'
+> {
+  return {
+    stroke: props.stroke ?? normalizeColor('#000000'),
+    strokeWidth: props.strokeWidth ?? 1,
+    ...(props.strokeLinearGradientColorStops
+      ? {
+          strokeLinearGradientStartPoint: props.strokeLinearGradientStartPoint,
+          strokeLinearGradientEndPoint: props.strokeLinearGradientEndPoint,
+          strokeLinearGradientColorStops: props.strokeLinearGradientColorStops,
+        }
+      : {}),
+  }
+}
+
+/** Arrowhead fill for a connector: the most opaque gradient stop, else the line color. */
+export function connectorHeadColor(props: KonvaStrokeProps): string {
+  const stops = props.strokeLinearGradientColorStops
+  const base = props.stroke ?? normalizeColor('#000000')
+  if (!stops) return base
+  let best = base
+  let bestAlpha = -1
+  for (let i = 1; i < stops.length; i += 2) {
+    const c = String(stops[i])
+    const m = /^rgba\((\d+),(\d+),(\d+),([0-9.]+)\)$/.exec(c)
+    const alpha = m ? Number(m[4]) : 1
+    if (alpha > bestAlpha) {
+      bestAlpha = alpha
+      best = c
+    }
+  }
+  return best
+}
+
 /** Inner/perspective shadows can't be expressed as canvas shadow props — they draw as an offscreen overlay instead. */
 export function isOverlayShadow(s: RenderShadow | undefined): boolean {
   return !!s && (!!s.inner || s.scaleX != null || s.scaleY != null || !!s.skewXDeg || !!s.skewYDeg)
@@ -659,7 +710,7 @@ const featherCache = new Map<string, HTMLCanvasElement>()
 const insetTileCache = new Map<string, HTMLCanvasElement>()
 
 /** Image composited into a transparent-padded tile per <a:stretch><a:fillRect> insets (negative insets crop). */
-function insetFillTile(
+export function insetFillTile(
   src: HTMLImageElement | HTMLCanvasElement,
   cacheKey: string,
   fr: { l: number; t: number; r: number; b: number },
@@ -723,7 +774,7 @@ function patternCellCanvas(
  * Shape-sized pattern canvas, cell grid phase-locked to the page origin (pre-composited
  * with no-repeat for the same Skia pixelRatio reason as anchoredTileCanvas).
  */
-function patternCanvas(
+export function patternCanvas(
   fill: { preset: string; fg: string; bg: string; cellPx: number },
   w: number,
   h: number,
@@ -756,7 +807,7 @@ const anchoredTileCache = new Map<string, HTMLCanvasElement>()
  * natural size x sx/sy (the caller bakes the dpi into t.scaleX/Y), anchored per algn
  * (tl..br) with tx/ty offsets inside t.frame (default: the shape box), repeating over the shape.
  */
-function anchoredTileCanvas(
+export function anchoredTileCanvas(
   src: HTMLImageElement | HTMLCanvasElement,
   cacheKey: string,
   w: number,
@@ -854,7 +905,7 @@ export function flatColorImage(
 const avgColorCache = new Map<string, string>()
 
 /** Mean RGB of an image (degenerate-texture flat fill). */
-function averageColor(img: HTMLImageElement | HTMLCanvasElement, cacheKey: string): string {
+export function averageColor(img: HTMLImageElement | HTMLCanvasElement, cacheKey: string): string {
   let c = avgColorCache.get(cacheKey)
   if (!c) {
     c = '#ffffff'
@@ -1786,6 +1837,11 @@ export function normalizeColor(c: string): string {
     return `rgba(${r},${g},${b},${a.toFixed(3)})`
   }
   return c.startsWith('#') || c.startsWith('rgb') ? c : `#${c}`
+}
+
+/** Whether a node is a connector (read-only geometry: no Transformer, no keyboard resize). */
+export function isConnectorNode(node: RenderNode): boolean {
+  return (node.type === 'shape' || node.type === 'text') && !!(node as ShapeRenderNode).line
 }
 
 export function isEditableText(node: RenderNode): node is ShapeRenderNode {

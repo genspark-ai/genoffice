@@ -48,6 +48,7 @@ export const fr = {
   elementMoveUp: 'Monter',
   elementMoveDown: 'Descendre',
   elementToolbar: "Barre d'outils de l'élément",
+  elementPath: "Chemin de l'élément",
   fmtBold: 'Gras',
   fmtItalic: 'Italique',
   openExternal: 'Lien ouvert dans le navigateur',

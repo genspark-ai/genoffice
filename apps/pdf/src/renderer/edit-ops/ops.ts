@@ -280,6 +280,7 @@ register({
       ...(op.moveBy ? { moveBy: op.moveBy as [number, number] } : {}),
       ...(op.baseInk ? { baseInk: op.baseInk as string } : {}),
       ...(op.baseFont ? { baseFont: op.baseFont as LocalTextEdit['baseFont'] } : {}),
+      ...(op.paper ? { paper: op.paper as string } : {}),
     }
     const i = s.textEdits.findIndex((e) => e.id === edit.id)
     return {

@@ -95,7 +95,7 @@ describe('slides PDF export', () => {
     expect(decodedSecondPng.height).toBeGreaterThan(0)
 
     const result = await exportSlidesPdf({
-      pngsBase64: [firstPng, secondPng],
+      pages: [{ png: firstPng }, { png: secondPng }],
       widthPx: 1600,
       heightPx: 900,
       filePath,
@@ -111,6 +111,8 @@ describe('slides PDF export', () => {
     expect(win.loadedHtml.endsWith(`${secondPng}"></div></body></html>`)).toBe(true)
     expect(win.loadedHtml).toContain('@page { size: 13.333in 7.5in; margin: 0; }')
     expect(win.executedScript).toContain('document.fonts.ready')
+    // vector pages carry their bitmaps as SVG <image>, outside document.images
+    expect(win.executedScript).toContain("querySelectorAll('svg image')")
     expect(win.executedWithUserGesture).toBe(true)
     expect(win.printOptions).toEqual({
       landscape: false,
@@ -131,7 +133,7 @@ describe('slides PDF export', () => {
     win.shouldFailLoad = true
 
     const result = await exportSlidesPdf({
-      pngsBase64: ['png'],
+      pages: [{ png: 'png' }],
       widthPx: 4,
       heightPx: 3,
       filePath: await outputPath(),
@@ -150,7 +152,7 @@ describe('slides PDF export', () => {
     win.shouldFailPrint = true
 
     const result = await exportSlidesPdf({
-      pngsBase64: ['png'],
+      pages: [{ png: 'png' }],
       widthPx: 4,
       heightPx: 3,
       filePath: await outputPath(),
@@ -167,7 +169,7 @@ describe('slides PDF export', () => {
   it('overlays hyperlink rects as anchors so printToPDF emits link annotations', async () => {
     const win = new TestPdfWindow()
     const result = await exportSlidesPdf({
-      pngsBase64: ['png1', 'png2'],
+      pages: [{ png: 'png1' }, { png: 'png2' }],
       widthPx: 1600,
       heightPx: 900,
       filePath: await outputPath(),
@@ -198,8 +200,27 @@ describe('slides PDF export', () => {
     expect(win.loadedHtml).not.toContain('NaN')
   })
 
+  it('inlines SVG pages as-is and scopes the font CSS to the head', () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540"><text x="1" y="2">Hi</text></svg>'
+    const html = buildPdfExportHtml(
+      [{ svg }, { png: 'png' }],
+      13.333,
+      7.5,
+      undefined,
+      "@font-face{font-family:'Carlito';src:url(data:font/ttf;base64,AAAA)}</style><script>1</script>",
+    )
+    expect(html).toContain(`<div class="page" id="pg1">${svg}</div>`)
+    expect(html).toContain('<div class="page" id="pg2"><img src="data:image/png;base64,png"></div>')
+    expect(html).toContain("@font-face{font-family:'Carlito'")
+    // a stray </style> in the CSS cannot break out of the style block
+    expect(html).not.toContain('</style><script>')
+    expect(html.match(/<\/style>/g)).toHaveLength(1)
+    expect(html).toContain('.page img, .page > svg { display: block; width: 100%; height: 100%; }')
+  })
+
   it('emits no anchors when the export carries no links', () => {
-    const html = buildPdfExportHtml(['png'], 13.333, 7.5)
+    const html = buildPdfExportHtml([{ png: 'png' }], 13.333, 7.5)
     expect(html).toContain('<div class="page" id="pg1">')
     expect(html).not.toContain('<a ')
   })
@@ -223,7 +244,7 @@ describe('slides PDF export', () => {
 
     const win = new TestPdfWindow()
     const result = await exportSlidesPdf({
-      pngsBase64: ['png'],
+      pages: [{ png: 'png' }],
       widthPx: 0,
       heightPx: 0,
       filePath: await outputPath(),

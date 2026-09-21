@@ -26,6 +26,7 @@ export async function streamForProvider(
 ): Promise<void> {
   const endpoint = getProviderAdapter(provider).resolveEndpoint(config)
   const { baseUrl } = endpoint
+  if (endpoint.model) config = { ...config, model: endpoint.model }
   if (endpoint.protocol === 'codex-app-server') {
     return streamCodexAppServer(config, system, messages, tools, maxTokens, cb)
   }

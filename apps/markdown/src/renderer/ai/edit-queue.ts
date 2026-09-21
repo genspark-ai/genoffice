@@ -43,8 +43,13 @@ export function resolveQueueItem(editor: Editor, item: EditQueueItem): ResolvedQ
     .replace(/\s+/g, ' ')
     .trim()
   // a textless anchor (image/table node selection) is still a live target —
-  // label it by block type instead of declaring it orphaned
-  const excerpt = text || `(${editor.state.doc.child(indexes.startIndex).type.name} block, no text)`
+  // label it by block type and the atoms it holds instead of declaring it orphaned
+  const atoms: string[] = []
+  editor.state.doc.nodesBetween(range.from, range.to, (node) => {
+    if (node.isAtom && !node.isText) atoms.push(node.type.name)
+  })
+  const block = editor.state.doc.child(indexes.startIndex).type.name
+  const excerpt = text || `(${block} block, no text${atoms.length ? `: ${atoms.join(', ')}` : ''})`
   return { item, target: { ...indexes, excerpt } }
 }
 

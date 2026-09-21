@@ -18,9 +18,12 @@ import type {
 import type { InkPenSettings, InkTool } from '../ink'
 import type { WordArtPreset } from '@genoffice/ui'
 import type { ChartPresetDef, IconDef, SmartArtDef } from '../insert-presets'
+import type { ZoomMode } from '../zoom-actions'
 import type { SlideThemePreset } from '../themes'
 import type { ChartStyleInfo } from '@genoffice/pptx-render'
-import { useI18n, type StringKey } from '../i18n/locale'
+import type { ContextTabRequest } from './context-tabs'
+import { useI18n } from '../i18n/locale'
+import { layoutLabel } from '../layout-names'
 
 export type InsertDropKey =
   'shapes' | 'icons' | 'chart' | 'smartart' | 'wordart' | 'zoom' | 'addanim'
@@ -77,10 +80,8 @@ export const FONT_FAMILIES = [
   'PingFang TC',
 ]
 
-/** Font size dropdown candidates (pt, same ladder as PowerPoint) */
-export const FONT_SIZES = [
-  8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 66, 72, 80, 88, 96,
-]
+/** Font size dropdown candidates (pt): the same ladder grow/shrink font walks */
+export { FONT_SIZES } from '@genoffice/pptx-ops/font-size'
 
 /** Font color palette (applied with onMouseDown while editing, so the native picker doesn't steal focus and commit the edit) */
 export const TEXT_COLORS = [
@@ -158,16 +159,6 @@ export function RbCaret() {
   )
 }
 
-/** PowerPoint's canonical layout names → localized labels (the built-in set; unknown names show as-is) */
-const LAYOUT_NAME_KEYS: Record<string, StringKey> = {
-  'Title Slide': 'ribbonLayoutTitleSlide',
-  'Title and Content': 'ribbonLayoutTitleAndContent',
-  'Section Header': 'ribbonLayoutSectionHeader',
-  'Two Content': 'ribbonLayoutTwoContent',
-  'Title Only': 'ribbonLayoutTitleOnly',
-  Blank: 'ribbonLayoutBlank',
-}
-
 /** Layout candidates with placeholder-sketch previews (new-slide dropdown + layout picker) */
 export function LayoutList({
   layouts,
@@ -187,8 +178,7 @@ export function LayoutList({
   return (
     <div className="rb-layout-list">
       {list.map((lay) => {
-        const key = LAYOUT_NAME_KEYS[lay.name]
-        const name = key ? t(key) : lay.name
+        const name = layoutLabel(lay.name, t)
         return (
           <button
             key={lay.path}
@@ -346,9 +336,7 @@ export interface Props {
   /** Push a preset instruction to the AI panel and expand it (autoRun executes immediately) */
   /** slideShot: attach the current slide's rendering so the model sees the page (AI Beautify) */
   onAiPreset: (text: string, opts?: { slideShot?: boolean }) => void
-  /** Insert an element on the current page */
-  onInsert: (kind: InsertKind) => void
-  /** Shape gallery pick: enter canvas draw mode (crosshair; click = default size, drag = custom, Esc cancels) */
+  /** Shape gallery / Text Box pick: enter canvas draw mode (crosshair; click = default size, drag = custom, Esc cancels) */
   onPickShape: (kind: InsertKind) => void
   /** Open the image picker dialog and insert into the current page */
   onInsertImage: () => void
@@ -444,6 +432,8 @@ export interface Props {
   // ── Animations tab ─────────────────────────────────────────────────────
   /** Selected shape's current animation effect (gallery highlight; null when no selection/no animation) */
   selectedAnimEffect: AnimEffectKind | null
+  /** Selection is a single video/audio shape (enables the Media effects, PowerPoint shows them only then) */
+  selectionIsMedia: boolean
   /** Animation bound to the timing controls (animation pane selection first, else the selected shape's last one) */
   timingAnim: AnimationItem | null
   /** Apply an animation to the selected shape (replacing its existing ones); 'none' removes all its animations */
@@ -523,9 +513,11 @@ export interface Props {
   onInsertField: (type: 'datetime' | 'slidenum') => void
   /** Open the hyperlink dialog (requires a selected element) */
   onOpenLink: () => void
-  /** Insert a Zoom link (button shape jumping to a given page) */
-  onInsertZoom: (slideIndex: number) => void
-  /** Document page count / current page (for the Zoom dropdown) */
+  /** Open the Summary / Section / Slide Zoom picker */
+  onOpenZoom: (mode: ZoomMode) => void
+  /** Section Zoom is only offered when the deck has sections */
+  hasSections: boolean
+  /** Document page count / current page */
   slideCount: number
   currentSlide: number
   /** Open the header & footer dialog */
@@ -542,6 +534,8 @@ export interface Props {
   // ── Contextual tabs: table design / chart design / picture format ────────────────
   /** Current selection category used to expose and activate contextual tabs */
   contextElementType?: 'table' | 'chart' | 'picture' | 'shape' | 'textShape' | 'mixed' | null
+  /** Double-click on the canvas asks for the object's tools tab */
+  tabRequest?: ContextTabRequest | null
   /** Currently selected element sourceId (for contextual tab operation callbacks) */
   contextElementId?: string
   /** Current page index (for contextual tab operations) */
@@ -648,7 +642,6 @@ export interface RibbonTabCtx extends Pick<
   | 'onFormat'
   | 'onFormatBrushClick'
   | 'onFormatBrushDoubleClick'
-  | 'onInsert'
   | 'onPickShape'
   | 'onInsertChart'
   | 'onInsertField'
@@ -659,7 +652,8 @@ export interface RibbonTabCtx extends Pick<
   | 'onInsertSmartArt'
   | 'onInsertTable'
   | 'onInsertWordArt'
-  | 'onInsertZoom'
+  | 'onOpenZoom'
+  | 'hasSections'
   | 'onNewComment'
   | 'onOpenEquation'
   | 'onOpenHeaderFooter'

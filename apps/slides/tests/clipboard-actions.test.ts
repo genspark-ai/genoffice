@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CopyElementsOp } from '../src/shared/ipc'
+import type { CopyElementsOp, DeleteElementsOp } from '../src/shared/ipc'
 import type { ActionCtx } from '../src/renderer/action-context'
-import { copySelected } from '../src/renderer/clipboard-actions'
+import { copySelected, cutSelected, deleteSelected } from '../src/renderer/clipboard-actions'
 import { renderSelectionToPngBase64 } from '../src/renderer/selection-image'
 
 vi.mock('../src/renderer/selection-image', () => ({ renderSelectionToPngBase64: vi.fn() }))
@@ -69,5 +69,61 @@ describe('copy selected slide elements', () => {
     expect(renderSelectionToPngBase64).not.toHaveBeenCalled()
     expect(api.copyElementsImage).not.toHaveBeenCalled()
     expect(ctx.setHasClipboard).not.toHaveBeenCalled()
+  })
+})
+
+describe('delete selected slide elements', () => {
+  function deleteSetup(selectedIds: string[]) {
+    const api = {
+      copyElements: vi.fn(async () => selectedIds.length),
+      deleteElements: vi.fn(async (_op: DeleteElementsOp) => ({ nodes: [] })),
+    }
+    vi.stubGlobal('window', { slidesApi: api })
+    const ctx = {
+      current: 3,
+      selectedIds,
+      applySlide: vi.fn(),
+      setSelectedIds: vi.fn(),
+      setHasClipboard: vi.fn(),
+      setStatus: vi.fn(),
+    } as unknown as ActionCtx
+    return { api, ctx }
+  }
+
+  it('deletes the whole selection in one call and applies the slide once', async () => {
+    const { api, ctx } = deleteSetup(['a', 'b', 'c'])
+    await deleteSelected(ctx)
+    expect(api.deleteElements).toHaveBeenCalledTimes(1)
+    expect(api.deleteElements).toHaveBeenCalledWith({ slideIndex: 3, sourceIds: ['a', 'b', 'c'] })
+    expect(ctx.applySlide).toHaveBeenCalledTimes(1)
+    expect(ctx.applySlide).toHaveBeenCalledWith(3, { nodes: [] })
+    expect(ctx.setSelectedIds).toHaveBeenCalledWith([])
+  })
+
+  it('clears the selection without an IPC call when nothing is selected', async () => {
+    const { api, ctx } = deleteSetup([])
+    await deleteSelected(ctx)
+    expect(api.deleteElements).not.toHaveBeenCalled()
+    expect(ctx.setSelectedIds).toHaveBeenCalledWith([])
+  })
+
+  it('leaves the page alone when the main process refuses the batch', async () => {
+    const { api, ctx } = deleteSetup(['a'])
+    api.deleteElements.mockResolvedValue(null as never)
+    await deleteSelected(ctx)
+    expect(ctx.applySlide).not.toHaveBeenCalled()
+    expect(ctx.setSelectedIds).toHaveBeenCalledWith([])
+  })
+
+  it('cut copies, deletes as one batch, then reports the cut count', async () => {
+    const { api, ctx } = deleteSetup(['a', 'b'])
+    await cutSelected(ctx)
+    expect(api.copyElements).toHaveBeenCalledWith({
+      slideIndex: 3,
+      sourceIds: ['a', 'b'],
+      cut: true,
+    })
+    expect(api.deleteElements).toHaveBeenCalledTimes(1)
+    expect(ctx.setStatus).toHaveBeenCalledWith('appStatusCut')
   })
 })

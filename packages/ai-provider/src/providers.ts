@@ -39,6 +39,9 @@ export function opencodeSessionHeaders(
     : {}
 }
 
+/** DeepSeek V4.1 Flash under the Genspark pool spelling, shared by the direct provider so the two lists read alike */
+export const DEEPSEEK_V41_FLASH = 'deep-seek-v4.1-flash'
+
 export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'genspark',
@@ -55,7 +58,7 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
       'gpt-6-astra',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
-      'deep-seek-v4.1-flash',
+      DEEPSEEK_V41_FLASH,
     ],
     defaultModel: 'claude-opus-4-7',
     keyPlaceholder: 'Not required - sign in to Genspark',
@@ -103,11 +106,12 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'deepseek',
     label: 'DeepSeek',
-    // exactly what GET api.deepseek.com/v1/models serves (2026-09-16):
-    // `deepseek-flash` is V4.1 Flash with native vision. The legacy
-    // `deepseek-v4-flash` still answers but the model behind it is retired;
-    // indirect-route aliases such as `-openrouter` do not belong here either.
-    models: ['deepseek-v4-pro', 'deepseek-flash'],
+    // GET api.deepseek.com/v1/models serves `deepseek-v4-pro` and
+    // `deepseek-flash` (verified 2026-09-21); the latter is V4.1 Flash with
+    // native vision. We list it under the Genspark pool spelling so both
+    // providers show the same versioned name; the adapter maps it back to
+    // the unversioned wire id (see DEEPSEEK_WIRE_IDS in registry.ts).
+    models: ['deepseek-v4-pro', DEEPSEEK_V41_FLASH],
     defaultModel: 'deepseek-v4-pro',
     keyPlaceholder: 'sk-...',
   },
@@ -363,14 +367,14 @@ export function activeProvider(settings: AiSettings): AiProviderId {
 const RETIRED_MODELS: Partial<Record<AiProviderId, Record<string, string>>> = {
   // chat/reasoner retired 2026-07-24 (thinking became a request parameter);
   // V4 Flash and V4 Flash Vision Exp retired 2026-09-10 in favour of V4.1
-  // Flash, which carries vision natively. The Genspark pool spelling is
-  // accepted too: the vendor API 400s on it (verified 2026-09-16)
+  // Flash, which carries vision natively. The vendor's own `deepseek-flash`
+  // id is folded in as well so the stored value matches the listed one.
   deepseek: {
-    'deepseek-chat': 'deepseek-flash',
-    'deepseek-reasoner': 'deepseek-flash',
-    'deepseek-v4-flash': 'deepseek-flash',
-    'deepseek-v4-flash-vision-exp': 'deepseek-flash',
-    'deep-seek-v4.1-flash': 'deepseek-flash',
+    'deepseek-chat': DEEPSEEK_V41_FLASH,
+    'deepseek-reasoner': DEEPSEEK_V41_FLASH,
+    'deepseek-v4-flash': DEEPSEEK_V41_FLASH,
+    'deepseek-v4-flash-vision-exp': DEEPSEEK_V41_FLASH,
+    'deepseek-flash': DEEPSEEK_V41_FLASH,
   },
   // proxy stopped serving bare gpt-5.6 (400) and removed the gemini route
   // entirely (405), verified 2026-08-31; gemini selections fall back to the

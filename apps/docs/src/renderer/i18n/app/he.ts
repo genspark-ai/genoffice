@@ -44,6 +44,10 @@ export const he = {
   appUntitledDocx: 'ללא שם.docx',
   appOpenedFile: '{name} נפתח',
   appOpenFailed: 'הפתיחה נכשלה: {error}',
+  appDocTooLargeBlocks: '{name}: המסמך גדול מדי לפתיחה ({blocks} פסקאות, {chars} תווים)',
+  appDocLargeReadOnly: 'מסמך גדול ({blocks} פסקאות): נפתח במצב קריאה — הקש Esc לעריכה',
+  appDocLargeSpellOff:
+    'מסמך גדול ({blocks} פסקאות): בדיקת האיות בזמן ההקלדה כבויה — ניתן להפעיל אותה תחת סקירה › איות',
   appFontsMissing: 'גופני המסמך חסרים: {names} (מוצגים גופנים חלופיים)',
   appVerticalTextNotice: 'המסמך מכיל טקסט אנכי (מוצג אופקית בינתיים; השמירה אינה מושפעת)',
   appNewDocCreated: 'נוצר מסמך ריק. תארו בחלונית ה-AI משמאל מה ליצור.',

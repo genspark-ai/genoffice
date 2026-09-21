@@ -60,7 +60,7 @@ export const es = {
   ribbonGroupSlides: 'Diapositivas',
   ribbonNewSlide: 'Nueva diapositiva',
   ribbonNewSlideTip:
-    'Nueva diapositiva en blanco (conserva el fondo del diseño de la diapositiva actual)',
+    'Nueva diapositiva en blanco (conserva el fondo del diseño de la diapositiva actual; ⌘M)',
   ribbonChooseLayout: 'Elegir diseño',
   ribbonChooseLayoutNew: 'Nueva diapositiva con diseño',
   ribbonChooseLayoutChange: 'Cambiar diseño de la diapositiva actual',
@@ -219,7 +219,6 @@ export const es = {
   ribbonZoomJump: 'Zoom',
   ribbonZoomJumpTip:
     'Insertar un botón de navegación que salta a una diapositiva durante la presentación',
-  ribbonZoomJumpItem: 'Ir a la diapositiva {n}',
   ribbonCurrentSlideSuffix: ' (actual)',
   ribbonGroupComments: 'Comentarios',
   ribbonComment: 'Comentario',
@@ -341,6 +340,10 @@ export const es = {
   ribbonAnimWipeOut: 'Barrido (salida)',
   ribbonAnimShrinkTurn: 'Encoger y girar',
   ribbonAnimZoomOut: 'Zoom (salida)',
+  ribbonAnimMedia: 'Multimedia',
+  ribbonAnimMediaPlay: 'Reproducir',
+  ribbonAnimMediaPause: 'Pausar',
+  ribbonAnimMediaStop: 'Detener',
   ribbonAnimEntrance: 'Entrada',
   ribbonAnimEmphasis: 'Énfasis',
   ribbonAnimExit: 'Salida',
@@ -760,4 +763,10 @@ export const es = {
   ribbonEqStdDev: 'Desviación estándar',
   ribbonEqFourier: 'Transformada de Fourier',
   ribbonEqNormalDist: 'Distribución normal',
+  ribbonZoomSummary: 'Zoom de resumen',
+  ribbonZoomSection: 'Zoom de sección',
+  ribbonZoomSlide: 'Zoom de diapositiva',
+  ribbonZoomSectionItem: 'Diapositiva {n} Sección {k}: {name}',
+  ribbonZoomSelectedSlides: '{n} diapositivas seleccionadas',
+  ribbonZoomSelectedSections: '{n} secciones seleccionadas',
 } satisfies Record<keyof typeof zh, string>

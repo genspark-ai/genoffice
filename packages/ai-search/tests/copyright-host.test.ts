@@ -13,6 +13,8 @@ describe('isCopyrightHost suffix match', () => {
     expect(isCopyrightHost('https://sub.shutterstock.com/y.jpg')).toBe(true)
     expect(isCopyrightHost('https://media.shutterstock.com/y.jpg')).toBe(true)
     expect(isCopyrightHost('https://media.gettyimages.com/x.jpg')).toBe(true)
+    expect(isCopyrightHost('https://www.shutterstock.co.uk/y.jpg')).toBe(true)
+    expect(isCopyrightHost('https://gettyimages.com.au/x.jpg')).toBe(true)
   })
 
   it('allows lookalike domains that merely contain a stock name', () => {

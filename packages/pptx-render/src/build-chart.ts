@@ -9,11 +9,12 @@
  * independent right-side range + tick labels). Unrecognized types fall back to a
  * placeholder chip upstream.
  */
-import type { ChartModel } from '@genoffice/pptx-engine'
+import type { ChartModel, Fill } from '@genoffice/pptx-engine'
 import type { ChartRenderNode } from './render-tree'
 import type { PlacedBox } from './coords'
 import { emuToPx, ptToPx, type Viewport } from './coords'
 import type { FontMetricsProvider, RunStyle } from './metrics'
+import { resolveFill, type MediaResolver } from './fill'
 
 /** Default series palette (approximation of PowerPoint's default theme accent sequence). */
 const PALETTE = ['#4472C4', '#ED7D31', '#A5A5A5', '#FFC000', '#5B9BD5', '#70AD47']
@@ -127,9 +128,10 @@ export function buildChartNode(
   box: PlacedBox,
   vp: Viewport,
   metrics: FontMetricsProvider,
+  media?: MediaResolver,
 ): ChartRenderNode | null {
   if (!model.title) {
-    const node = buildChartNodeInner(id, sourceId, model, box, vp, metrics)
+    const node = buildChartNodeInner(id, sourceId, model, box, vp, metrics, media)
     if (node) extrudeBars(node, model)
     return node
   }
@@ -165,6 +167,7 @@ export function buildChartNode(
     manual ? box : { ...box, h: Math.max(box.h - titleH, 10) },
     vp,
     metrics,
+    media,
   )
   if (!node) return null
   if (!manual) shiftChartNode(node, titleH)
@@ -236,6 +239,15 @@ function shiftChartNode(node: ChartRenderNode, dy: number): void {
   if (node.plotRect) node.plotRect.y += dy
 }
 
+/** Per-point picture/gradient fill (c:dPt blipFill) → bar `fill`; solid colors stay on `color`. */
+function pointFillResolver(vp: Viewport, media?: MediaResolver) {
+  return (f: Fill | undefined) => {
+    if (!f) return {}
+    const rf = resolveFill(f, vp, media)
+    return rf.kind === 'none' ? {} : { fill: rf }
+  }
+}
+
 function buildChartNodeInner(
   id: string,
   sourceId: string,
@@ -243,6 +255,7 @@ function buildChartNodeInner(
   box: PlacedBox,
   vp: Viewport,
   metrics: FontMetricsProvider,
+  media?: MediaResolver,
 ): ChartRenderNode | null {
   if (model.kind === 'pie') return buildPieNode(id, sourceId, model, box, vp, metrics)
   if (model.kind === 'scatter') return buildScatterNode(id, sourceId, model, box, vp, metrics)
@@ -250,7 +263,7 @@ function buildChartNodeInner(
   if (model.kind === 'funnel') return buildFunnelNode(id, sourceId, model, box, vp, metrics)
   if (model.kind === 'sunburst') return buildSunburstNode(id, sourceId, model, box, vp, metrics)
   if (model.kind === 'bar' && model.barDir === 'bar') {
-    return buildHBarNode(id, sourceId, model, box, vp, metrics)
+    return buildHBarNode(id, sourceId, model, box, vp, metrics, media)
   }
   // True 3D columns: non-stacked pure-bar charts only ('standard' spreads series along
   // the depth axis, the 3D default); stacked/combo stay on the pseudo-3D path
@@ -328,6 +341,7 @@ function buildChartNodeInner(
   const palette = chartPalette(model)
   const seriesColor = (i: number) =>
     model.series[i]?.color ?? palette[(model.series[i]?.paletteIdx ?? i) % palette.length]!
+  const pointFill = pointFillResolver(vp, media)
 
   // ── Value range + nice ticks (primary/secondary axes independent) ──
   if (!priVals.length) return null
@@ -962,7 +976,14 @@ function buildChartNodeInner(
         // min/max in screen space: a reversed axis flips which value maps higher
         const yTop = Math.min(yOf(from), yOf(to))
         const yBot = Math.max(yOf(from), yOf(to))
-        node.bars.push({ x, y: yTop, w: barW, h: Math.max(yBot - yTop, 0.5), color })
+        node.bars.push({
+          x,
+          y: yTop,
+          w: barW,
+          h: Math.max(yBot - yTop, 0.5),
+          color,
+          ...pointFill(ser.pointFills?.[i]),
+        })
         dLbl(si, i, x + barW / 2, (yTop + yBot) / 2 - dlSize * 0.55, ser.values[i]!, true)
       })
     }
@@ -991,6 +1012,7 @@ function buildChartNodeInner(
           w: barW,
           h: Math.max(yBot - yTop, 0.5),
           color: ser.pointColors?.[i] ?? color,
+          ...pointFill(ser.pointFills?.[i]),
         })
         // 3D bars: the label clears the box's top face (its back edge rises depth3d above
         // the front top). The outer tip flips with a reversed axis (screen-space edges).
@@ -2089,7 +2111,9 @@ function buildHBarNode(
   box: PlacedBox,
   vp: Viewport,
   metrics: FontMetricsProvider,
+  media?: MediaResolver,
 ): ChartRenderNode | null {
+  const pointFill = pointFillResolver(vp, media)
   const grouping = model.grouping ?? 'clustered'
   const stacked = grouping === 'stacked' || grouping === 'percentStacked'
   const node = emptyChartNode(id, sourceId, box)
@@ -2313,6 +2337,7 @@ function buildHBarNode(
           w: Math.max(xR - xL, 0.5),
           h: barH,
           color: ser.pointColors?.[i] ?? seriesColor(si),
+          ...pointFill(ser.pointFills?.[i]),
         })
         dLbl(si, i, (xL + xR) / 2, y + barH / 2, ser.values[i]!, true)
       })
@@ -2339,6 +2364,7 @@ function buildHBarNode(
           w: Math.max(xR - xL, 0.5),
           h: barH,
           color: ser.pointColors?.[i] ?? color,
+          ...pointFill(ser.pointFills?.[i]),
         })
         const lblText = composeDataLabel(model, si, i, fmtDataLabel(v, model.dataLabelFmt))
         // outer tip flips with a reversed axis (screen-space edges)

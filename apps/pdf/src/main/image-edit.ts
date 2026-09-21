@@ -1,11 +1,19 @@
 import { nativeImage } from 'electron'
-import { FPDF_PAGEOBJ_TEXT, chainPdfium, loadPdfium, saveDoc, withDocument } from './text-edit'
+import {
+  FPDF_PAGEOBJ_TEXT,
+  chainPdfium,
+  eraseTextRuns,
+  loadPdfium,
+  saveDoc,
+  withDocument,
+} from './text-edit'
 import type { Pdfium } from './text-edit'
 import type {
   ImageEditFailure,
   ImageEditInput,
   PageImageRef,
   PagePreviewRequest,
+  PagePreviewResult,
 } from '../shared/ipc'
 
 const FPDF_PAGEOBJ_IMAGE = 3
@@ -391,8 +399,8 @@ export function renderImagePng(
 export function renderPagePreviewPng(
   bytes: Uint8Array,
   request: Omit<PagePreviewRequest, 'path'>,
-): Promise<string | null> {
-  const { pageIndex, excludeRects, excludeAnnots, clip, pxWidth, rotate } = request
+): Promise<PagePreviewResult | null> {
+  const { pageIndex, excludeRects, excludeAnnots, excludeText, clip, pxWidth, rotate } = request
   return chainPdfium(async () => {
     const m = await loadPdfium()
     return withDocument(m, bytes, async (doc) => {
@@ -409,6 +417,10 @@ export function renderPagePreviewPng(
           const { removeMatchingAnnots } = await import('./annot-delete')
           removeMatchingAnnots(m, page, excludeAnnots)
         }
+        const textErased =
+          excludeText && excludeText.length > 0
+            ? await eraseTextRuns(m, doc, page, excludeText)
+            : []
         // Page size in display orientation (pdfium already applies /Rotate; the
         // unsaved delta passed as quarter turns swaps the axes again when odd)
         const baseW = m._FPDF_GetPageWidthF(page)
@@ -443,7 +455,7 @@ export function renderPagePreviewPng(
           )
           const tight = Buffer.from(m.HEAPU8.subarray(bufPtr, bufPtr + w * h * 4))
           const png = nativeImage.createFromBitmap(tight, { width: w, height: h }).toPNG()
-          return png.toString('base64')
+          return { png: png.toString('base64'), textErased }
         } finally {
           m._FPDFBitmap_Destroy(bmp)
           m._free(bufPtr)

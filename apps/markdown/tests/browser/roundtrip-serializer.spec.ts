@@ -2,9 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { Editor } from '@tiptap/core'
-import { openSource } from './helpers'
-const rebaseSource = '<details>\n<img src="assets/old.png">\n</details>\n'
-const source = 'Title\n=====\n\n* item  \n\n\n'
+import { openSource, rebaseSource, source } from './helpers'
 
 for (const enabled of [false, true]) {
   test(`save and MCP read use the ${enabled ? 'opt-in' : 'default'} serializer`, async ({
@@ -61,7 +59,7 @@ for (const enabled of [false, true]) {
     page,
   }) => {
     await openSource(page, enabled, true)
-    await expect(page.locator('.doc-editor img')).toHaveCount(1)
+    await expect(page.locator('.doc-editor img:not(.ProseMirror-separator)')).toHaveCount(1)
     await page.evaluate(() => window.dispatchEvent(new Event('test:save')))
     await expect(page.locator('body')).toHaveAttribute('data-saved', rebaseSource)
     await page.evaluate(() => window.dispatchEvent(new Event('test:save')))

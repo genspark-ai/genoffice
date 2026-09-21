@@ -3,6 +3,7 @@ import {
   animClassOf,
   animStateKey,
   buildSteps,
+  computeMediaCommands,
   computeNodeStates,
   parseParaStateKey,
   pointAtPath,
@@ -222,5 +223,41 @@ describe('motion paths', () => {
     const steps = buildSteps([item({ sourceId: 'a', effect: 'motionPath', durationMs: 1000 })])
     const done = computeNodeStates(steps, 1, null, H, W).get('a')!
     expect(done.dx).toBeCloseTo(0.25 * W, 5)
+  })
+})
+
+describe('media commands', () => {
+  const play = item({ sourceId: 'v', effect: 'mediaPlay', durationMs: 0 })
+  const fade = item({ sourceId: 't', effect: 'fade' })
+
+  it('media items take a step but leave no visual state', () => {
+    const steps = buildSteps([play, fade])
+    expect(steps).toHaveLength(2)
+    const states = computeNodeStates(steps, 0, null, 900)
+    expect(states.has('v')).toBe(false)
+    expect(states.get('t')!.hidden).toBe(true)
+    expect(animClassOf('mediaPause')).toBe('media')
+  })
+
+  it('fires commands of played steps in order and the current step by time', () => {
+    const stop = item({ sourceId: 'v', effect: 'mediaStop', trigger: 'withPrev', delayMs: 300 })
+    const steps = buildSteps([play, fade, stop])
+    expect(computeMediaCommands(steps, 0, null)).toEqual([])
+    expect(computeMediaCommands(steps, 0, 1)).toEqual([{ sourceId: 'v', effect: 'mediaPlay' }])
+    expect(computeMediaCommands(steps, 1, null)).toEqual([{ sourceId: 'v', effect: 'mediaPlay' }])
+    // Second step: the fade is running but the stop (delay 300) has not started
+    expect(computeMediaCommands(steps, 1, 100)).toHaveLength(1)
+    expect(computeMediaCommands(steps, 1, 301).map((c) => c.effect)).toEqual([
+      'mediaPlay',
+      'mediaStop',
+    ])
+    expect(computeMediaCommands(steps, 2, null)).toHaveLength(2)
+  })
+
+  it('an auto first step fires its media command on page entry', () => {
+    const auto = item({ sourceId: 'v', effect: 'mediaPlay', trigger: 'withPrev', durationMs: 0 })
+    const steps = buildSteps([auto])
+    expect(steps[0]!.auto).toBe(true)
+    expect(computeMediaCommands(steps, 1, null)).toEqual([{ sourceId: 'v', effect: 'mediaPlay' }])
   })
 })

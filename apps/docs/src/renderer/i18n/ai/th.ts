@@ -54,6 +54,7 @@ export const th = {
   aiSumInsertFootnote: 'แทรกเชิงอรรถแล้ว',
   aiSumInsertEndnote: 'แทรกอ้างอิงท้ายเรื่องแล้ว',
   aiSumDeleteNote: 'ลบหมายเหตุแล้ว',
+  aiSumEditNote: 'แก้ไขหมายเหตุแล้ว',
   aiSumReadNotes: 'อ่านหมายเหตุ',
   aiSumAddComment: 'เพิ่มข้อคิดเห็น',
   aiSumDeleteComment: 'ลบข้อคิดเห็น',

@@ -10,6 +10,8 @@ import React, { useLayoutEffect, useRef, useState, useSyncExternalStore } from '
 import type Konva from 'konva'
 import { Group, Rect, Ellipse, Text, Line, Arrow, Image as KImage, Path } from 'react-konva'
 import type {
+  BevelEdge,
+  CellBevelRender,
   RenderNode,
   ShapeRenderNode,
   PictureRenderNode,
@@ -45,6 +47,8 @@ import {
   normalizeColor,
   boxPivotProps,
   centerFillProps,
+  connectorHeadColor,
+  connectorStrokeProps,
   subscribeFontsEpoch,
   getFontsEpoch,
 } from './konva-adapter'
@@ -309,16 +313,19 @@ export const NodeBody = React.memo(function NodeBody({
               : layoutGlyphs(cell.text)
           return (
             <React.Fragment key={i}>
+              {/* Bevel bands tile the outer ring, so the face keeps to the inner rect and a
+                  translucent fill never composites twice */}
               <Rect
-                x={cell.x}
-                y={cell.y}
-                width={cell.w}
-                height={cell.h}
+                x={cell.x + (cell.bevel?.widthPx ?? 0)}
+                y={cell.y + (cell.bevel?.widthPx ?? 0)}
+                width={cell.w - 2 * (cell.bevel?.widthPx ?? 0)}
+                height={cell.h - 2 * (cell.bevel?.widthPx ?? 0)}
                 {...fillToKonva(cell.fill, cell.w, cell.h, images, {
                   x: box.x + cell.x,
                   y: box.y + cell.y,
                 })}
               />
+              {cell.bevel && <CellBevelBands cell={cell} bevel={cell.bevel} />}
               {cell.borders?.t && (
                 <Line
                   points={[cell.x, cell.y, cell.x + cell.w, cell.y]}
@@ -443,8 +450,9 @@ export const NodeBody = React.memo(function NodeBody({
 
   // Connector/straight line: polyline (flip already baked into points), with optional arrow endpoints
   if (shape.line) {
-    const color = strokeProps.stroke ?? normalizeColor('#000000')
-    const sw = strokeProps.strokeWidth ?? 1
+    const lineStroke = connectorStrokeProps(strokeProps)
+    const color = connectorHeadColor(strokeProps)
+    const sw = lineStroke.strokeWidth ?? 1
     const { headEnd, tailEnd, bezier } = shape.line
 
     // Curved connector: draw the bezier with an SVG Path
@@ -462,8 +470,7 @@ export const NodeBody = React.memo(function NodeBody({
         <>
           <Path
             data={d}
-            stroke={color}
-            strokeWidth={sw}
+            {...lineStroke}
             hitStrokeWidth={Math.max(sw, 12)}
             fill="transparent"
             lineCap="round"
@@ -490,8 +497,7 @@ export const NodeBody = React.memo(function NodeBody({
         {useKonvaArrow ? (
           <Arrow
             points={shape.line.points}
-            stroke={color}
-            strokeWidth={sw}
+            {...lineStroke}
             hitStrokeWidth={Math.max(sw, 12)}
             {...(strokeProps.dash ? { dash: strokeProps.dash } : {})}
             fill={color}
@@ -518,8 +524,7 @@ export const NodeBody = React.memo(function NodeBody({
         ) : (
           <Line
             points={shape.line.points}
-            stroke={color}
-            strokeWidth={sw}
+            {...lineStroke}
             hitStrokeWidth={Math.max(sw, 12)}
             {...(strokeProps.dash ? { dash: strokeProps.dash } : {})}
             lineCap="round"
@@ -1150,3 +1155,62 @@ export const StaticNode = React.memo(function StaticNode({
     </Group>
   )
 })
+
+/** Four mitred bevel bands of a cell3D table cell, each a linear gradient from the outer edge
+    inward. They stay listening: the face rect is inset under them, so the ring is the cell's
+    pointer target there. */
+function CellBevelBands({
+  cell,
+  bevel,
+}: {
+  cell: { x: number; y: number; w: number; h: number }
+  bevel: CellBevelRender
+}) {
+  const { x, y, w, h } = cell
+  const b = bevel.widthPx
+  const bands: Array<{
+    key: BevelEdge
+    points: number[]
+    from: { x: number; y: number }
+    to: { x: number; y: number }
+  }> = [
+    {
+      key: 't',
+      points: [x, y, x + w, y, x + w - b, y + b, x + b, y + b],
+      from: { x, y },
+      to: { x, y: y + b },
+    },
+    {
+      key: 'r',
+      points: [x + w, y, x + w, y + h, x + w - b, y + h - b, x + w - b, y + b],
+      from: { x: x + w, y },
+      to: { x: x + w - b, y },
+    },
+    {
+      key: 'b',
+      points: [x, y + h, x + w, y + h, x + w - b, y + h - b, x + b, y + h - b],
+      from: { x, y: y + h },
+      to: { x, y: y + h - b },
+    },
+    {
+      key: 'l',
+      points: [x, y, x, y + h, x + b, y + h - b, x + b, y + b],
+      from: { x, y },
+      to: { x: x + b, y },
+    },
+  ]
+  return (
+    <>
+      {bands.map((band) => (
+        <Line
+          key={band.key}
+          points={band.points}
+          closed
+          fillLinearGradientStartPoint={band.from}
+          fillLinearGradientEndPoint={band.to}
+          fillLinearGradientColorStops={bevel.edges[band.key].flatMap((s) => [s.pos, s.color])}
+        />
+      ))}
+    </>
+  )
+}

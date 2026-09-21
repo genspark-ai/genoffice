@@ -46,6 +46,7 @@ export const id = {
   elementMoveUp: 'Naikkan',
   elementMoveDown: 'Turunkan',
   elementToolbar: 'Bilah alat elemen',
+  elementPath: 'Jalur elemen',
   fmtBold: 'Tebal',
   fmtItalic: 'Miring',
   openExternal: 'Tautan dibuka di browser',

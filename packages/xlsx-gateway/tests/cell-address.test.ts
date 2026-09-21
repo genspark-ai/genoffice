@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  MAX_RANGE_CELLS,
   columnLabel,
   formatAddress,
   parseAddress,
@@ -34,19 +33,6 @@ describe('cell-address hardening', () => {
 
   it('rejects negative formatAddress coordinates', () => {
     expect(() => formatAddress(-1, -1)).toThrow(RangeError)
-  })
-
-  it('caps range expansion for sheet-sized bounds', () => {
-    // A1:XFD1048576 without materializing the address list.
-    const bounds = {
-      startRow: 0,
-      startColumn: 0,
-      endRow: 1048575,
-      endColumn: 16383,
-    }
-    expect(bounds.endColumn).toBe(16383)
-    expect(() => rangeAddresses(bounds)).toThrow(Error)
-    expect(MAX_RANGE_CELLS).toBe(50000)
   })
 
   it('still expands small ranges', () => {

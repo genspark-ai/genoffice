@@ -59,7 +59,7 @@ export const ja = {
   // Home: slides
   ribbonGroupSlides: 'スライド',
   ribbonNewSlide: '新しいスライド',
-  ribbonNewSlideTip: '新しい空白スライド（現在のスライドのレイアウト背景を引き継ぎ）',
+  ribbonNewSlideTip: '新しい空白スライド（現在のスライドのレイアウト背景を引き継ぎ；⌘M）',
   ribbonChooseLayout: 'レイアウトの選択',
   ribbonChooseLayoutNew: 'レイアウトを選んで新規スライド',
   ribbonChooseLayoutChange: '現在のスライドのレイアウトを変更',
@@ -218,7 +218,6 @@ export const ja = {
   ribbonZoomJump: 'ズーム',
   ribbonZoomJumpTip:
     '指定したスライドへ移動するナビゲーションボタンを挿入（スライドショー中にクリックで移動）',
-  ribbonZoomJumpItem: 'スライド {n} へ移動',
   ribbonCurrentSlideSuffix: '（現在のスライド）',
   ribbonGroupComments: 'コメント',
   ribbonComment: 'コメント',
@@ -339,6 +338,10 @@ export const ja = {
   ribbonAnimWipeOut: 'ワイプ（終了）',
   ribbonAnimShrinkTurn: '縮小および回転',
   ribbonAnimZoomOut: 'ズーム（終了）',
+  ribbonAnimMedia: 'メディア',
+  ribbonAnimMediaPlay: '再生',
+  ribbonAnimMediaPause: '一時停止',
+  ribbonAnimMediaStop: '停止',
   ribbonAnimEntrance: '開始',
   ribbonAnimEmphasis: '強調',
   ribbonAnimExit: '終了',
@@ -761,4 +764,10 @@ export const ja = {
   ribbonEqStdDev: '標準偏差',
   ribbonEqFourier: 'フーリエ変換',
   ribbonEqNormalDist: '正規分布',
+  ribbonZoomSummary: 'サマリー ズーム',
+  ribbonZoomSection: 'セクション ズーム',
+  ribbonZoomSlide: 'スライド ズーム',
+  ribbonZoomSectionItem: 'スライド {n} セクション {k}: {name}',
+  ribbonZoomSelectedSlides: '{n} 枚のスライドを選択中',
+  ribbonZoomSelectedSections: '{n} 個のセクションを選択中',
 } satisfies Record<keyof typeof zh, string>

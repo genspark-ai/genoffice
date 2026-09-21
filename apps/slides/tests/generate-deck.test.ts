@@ -579,10 +579,17 @@ describe('generate_deck Style Skill template persistence', () => {
 
   it('saveSidecar is not called when all pages fail to generate', async () => {
     const { access, sidecarSaves } = makeAccess({ failPages: [1, 2] })
+    const doneEvents: Array<{ total: number; outcome?: string }> = []
+    access.onProgress = (e) => {
+      if (e.stage === 'done') doneEvents.push({ total: e.total, outcome: e.outcome })
+    }
     const skill = createSlidesSkill(access)
-    await skill.executeTool(topicCall('Shanghai Travel'))
+    const res = (await skill.executeTool(topicCall('Shanghai Travel'))) as { isError?: boolean }
+    expect(res.isError).toBe(true)
     // landedPages=0 -> no sidecar written
     expect(sidecarSaves.length).toBe(0)
+    // the terminal progress event says failed; the card must not read it as "done, 0 slides"
+    expect(doneEvents).toEqual([{ total: 0, outcome: 'failed' }])
   })
 
   it('state.lastStyleSkill is recorded after generate_deck and usable by save_style_template', async () => {

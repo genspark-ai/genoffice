@@ -46,6 +46,11 @@ export const ja = {
   appUntitledDocx: '無題の文書.docx',
   appOpenedFile: '{name} を開きました',
   appOpenFailed: '開けませんでした: {error}',
+  appDocTooLargeBlocks: '{name}: 文書が大きすぎて開けません（{blocks} 段落、{chars} 文字）',
+  appDocLargeReadOnly:
+    '大きな文書（{blocks} 段落）のため閲覧モードで開きました。Esc で編集できます',
+  appDocLargeSpellOff:
+    '大きな文書（{blocks} 段落）のため入力時のスペルチェックをオフにしました。「校閲 › スペル」でオンにできます',
   appFontsMissing: '文書のフォントが未インストールです: {names}（代替フォントで表示）',
   appVerticalTextNotice: '縦書きテキストを含む文書です（現在は横書きで表示。保存には影響しません）',
   appNewDocCreated: '空白の文書を作成しました。左側の AI パネルで生成したい内容を記述できます',

@@ -41,7 +41,7 @@ describe('aria-label/title i18n (existing keys)', () => {
     )
     const nav = container.querySelector('.crumbs')
     expect(nav).not.toBeNull()
-    expect(nav!.getAttribute('aria-label')).toBe('元素工具栏')
+    expect(nav!.getAttribute('aria-label')).toBe('\u5143\u7d20\u8def\u5f84')
     expect(nav!.getAttribute('aria-label')).not.toBe('element path')
   })
 
@@ -56,7 +56,7 @@ describe('aria-label/title i18n (existing keys)', () => {
     )
     const frame = container.querySelector('iframe.preview-frame')
     expect(frame).not.toBeNull()
-    expect(frame!.getAttribute('title')).toBe('预览')
+    expect(frame!.getAttribute('title')).toBe('\u9884\u89c8')
     expect(frame!.getAttribute('title')).not.toBe('preview')
   })
 
@@ -64,7 +64,7 @@ describe('aria-label/title i18n (existing keys)', () => {
     const container = mount(createElement(DraftPreview, { html: '<p>hi</p>' }))
     const frame = container.querySelector('iframe.draft-preview-frame')
     expect(frame).not.toBeNull()
-    expect(frame!.getAttribute('title')).toBe('预览')
+    expect(frame!.getAttribute('title')).toBe('\u9884\u89c8')
     expect(frame!.getAttribute('title')).not.toBe('draft')
   })
 })

@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { resolveTarget } from './opc'
 import { XMLParser } from 'fast-xml-parser'
 
 // Text fidelity: no trim (xml:space="preserve" runs carry the spaces between words),
@@ -80,22 +81,6 @@ async function zipText(zip: JSZip, path: string): Promise<string | undefined> {
   return file ? file.async('text') : undefined
 }
 
-function resolveTarget(basePart: string, target: string): string {
-  if (target.startsWith('/')) return target.slice(1)
-  const parts = basePart.slice(0, basePart.lastIndexOf('/')).split('/').filter(Boolean)
-  // Some Windows producers emit backslash separators; OPC uses forward
-  // slashes, so normalize before splitting. Clamp '..' at the zip root:
-  // popping an empty stack is already a no-op, but spelling it out keeps a
-  // hostile '../../..' chain from reading as a deeper traversal than root.
-  for (const seg of target.replace(/\\/g, '/').split('/')) {
-    if (seg === '.' || seg === '') continue
-    if (seg === '..') {
-      if (parts.length > 0) parts.pop()
-    } else parts.push(seg)
-  }
-  return parts.join('/')
-}
-
 /**
  * One paragraph's text in document order. Only #text directly under a:t counts: untrimmed, the
  * whitespace laying out any other element is a value too. <a:br> is a soft line break, <a:tab>
@@ -136,29 +121,66 @@ function collectParagraphs(nodes: readonly unknown[], out: string[]): void {
   }
 }
 
+function countPictures(nodes: readonly unknown[]): number {
+  let count = 0
+  for (const node of nodes) {
+    if (node == null || typeof node !== 'object') continue
+    for (const [key, value] of Object.entries(node)) {
+      if (!Array.isArray(value)) continue
+      if (key === 'p:pic') count += 1
+      else count += countPictures(value)
+    }
+  }
+  return count
+}
+
+/**
+ * A slide whose only content is pictures yields no a:t text. Without a marker the model
+ * (and the user reading the attachment chip) takes the bare "## Slide N" heading for a slide
+ * that was read, when its figures never reached anyone.
+ */
+interface SlideSection {
+  section: string
+  hasText: boolean
+  pictures: number
+}
+
+function slideSection(heading: string, xml: string): SlideSection {
+  const tree = parser.parse(xml)
+  const paras: string[] = []
+  collectParagraphs(tree, paras)
+  if (paras.length > 0)
+    return { section: [heading, ...paras].join('\n'), hasText: true, pictures: 0 }
+  const pictures = countPictures(tree)
+  const note = `[picture-only slide: ${pictures} image${pictures === 1 ? '' : 's'}, no extractable text]`
+  return { section: pictures > 0 ? `${heading}\n${note}` : heading, hasText: false, pictures }
+}
+
+function joinSections(sections: SlideSection[]): string {
+  const body = sections.map((s) => s.section).join('\n\n')
+  if (sections.some((s) => s.hasText) || !sections.some((s) => s.pictures > 0)) return body
+  const n = sections.length
+  return `[No extractable text: none of the ${n} slide${n === 1 ? '' : 's'} carries text; the content is in embedded images, which this extraction does not read.]\n\n${body}`
+}
+
 /** extract slide text from a pptx: one "## Slide N" section per slide, a line per paragraph */
 export async function pptxToText(bytes: Uint8Array): Promise<string> {
   const zip = await JSZip.loadAsync(bytes)
   const slideEntries = await presentationSlideEntries(zip)
+  const sections: SlideSection[] = []
   if (slideEntries) {
-    const sections: string[] = []
     for (const [index, path] of slideEntries.entries()) {
       if (path === null) continue
       const xml = await zipText(zip, path)
       if (!xml) continue
-      const paras: string[] = []
-      collectParagraphs(parser.parse(xml), paras)
-      sections.push([`## Slide ${index + 1}`, ...paras].join('\n'))
+      sections.push(slideSection(`## Slide ${index + 1}`, xml))
     }
-    return sections.join('\n\n')
+    return joinSections(sections)
   }
-  const sections: string[] = []
   for (const path of legacySlidePaths(zip)) {
     const xml = await zipText(zip, path)
     if (!xml) continue
-    const paras: string[] = []
-    collectParagraphs(parser.parse(xml), paras)
-    sections.push([`## Slide ${slideNumber(path)}`, ...paras].join('\n'))
+    sections.push(slideSection(`## Slide ${slideNumber(path)}`, xml))
   }
-  return sections.join('\n\n')
+  return joinSections(sections)
 }

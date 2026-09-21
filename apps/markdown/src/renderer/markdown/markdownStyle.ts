@@ -15,7 +15,9 @@ export interface MarkdownStyle {
   setext: boolean
   fence: '`' | '~'
   rule: string
-  hardBreak: 'spaces' | 'backslash'
+  hardBreak: 'spaces' | 'backslash' | 'html'
+  /** cells padded so the pipes line up across rows */
+  tableAligned: boolean
 }
 
 export type StyleHints = Partial<MarkdownStyle>
@@ -30,6 +32,7 @@ export const DEFAULT_MARKDOWN_STYLE: MarkdownStyle = {
   fence: '`',
   rule: '---',
   hardBreak: 'spaces',
+  tableAligned: true,
 }
 
 /** what the renderers consult; the serializer's defaults outside a scope */
@@ -67,6 +70,7 @@ export interface MarkedToken {
   depth?: number
   ordered?: boolean
   tokens?: MarkedToken[]
+  nestedTokens?: MarkedToken[]
   items?: MarkedToken[]
   header?: Array<{ tokens?: MarkedToken[] }>
   rows?: Array<Array<{ tokens?: MarkedToken[] }>>
@@ -105,6 +109,16 @@ function walk(tokens: MarkedToken[], tally: Tally): void {
         for (const item of items) walk(item.tokens ?? [], tally)
         continue
       }
+      case 'taskList': {
+        // the task list tokenizer leaves item raws empty; the marker is at the start of the list
+        const bullet = /^\s*([-*+])/.exec(token.raw)?.[1]
+        if (bullet === '-' || bullet === '*' || bullet === '+') vote(tally, 'bullet', bullet)
+        for (const item of token.items ?? []) {
+          walk(item.tokens ?? [], tally)
+          walk(item.nestedTokens ?? [], tally)
+        }
+        continue
+      }
       case 'heading':
         // only levels 1 and 2 can be underlined, so only they express a choice
         if ((token.depth ?? 1) <= 2) vote(tally, 'setext', !/^ {0,3}#/.test(token.raw))
@@ -126,10 +140,20 @@ function walk(tokens: MarkedToken[], tally: Tally): void {
       case 'br':
         vote(tally, 'hardBreak', token.raw.startsWith('\\') ? 'backslash' : 'spaces')
         break
-      case 'table':
+      case 'html':
+        if (/^<br\s*\/?>$/i.test(token.raw)) vote(tally, 'hardBreak', 'html')
+        break
+      case 'table': {
+        const lines = token.raw.trimEnd().split('\n')
+        vote(
+          tally,
+          'tableAligned',
+          lines.every((line) => line.trimEnd().length === lines[0]!.trimEnd().length),
+        )
         for (const cell of token.header ?? []) walk(cell.tokens ?? [], tally)
         for (const row of token.rows ?? []) for (const cell of row) walk(cell.tokens ?? [], tally)
         continue
+      }
       default:
         break
     }

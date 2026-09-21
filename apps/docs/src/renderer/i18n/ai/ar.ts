@@ -54,6 +54,7 @@ export const ar = {
   aiSumInsertFootnote: 'تمت إضافة حاشية سفلية',
   aiSumInsertEndnote: 'تمت إضافة تعليق ختامي',
   aiSumDeleteNote: 'تم حذف الحاشية',
+  aiSumEditNote: 'تم تعديل الحاشية',
   aiSumReadNotes: 'قراءة الحواشي',
   aiSumAddComment: 'إضافة تعليق',
   aiSumDeleteComment: 'حذف تعليق',

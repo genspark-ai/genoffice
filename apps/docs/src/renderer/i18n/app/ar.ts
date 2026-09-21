@@ -44,6 +44,10 @@ export const ar = {
   appUntitledDocx: 'مستند بلا عنوان.docx',
   appOpenedFile: 'تم فتح {name}',
   appOpenFailed: 'فشل الفتح: {error}',
+  appDocTooLargeBlocks: '{name}: المستند أكبر من أن يُفتح ({blocks} فقرة، {chars} حرفًا)',
+  appDocLargeReadOnly: 'مستند كبير ({blocks} فقرة): تم فتحه في وضع القراءة — اضغط Esc للتحرير',
+  appDocLargeSpellOff:
+    'مستند كبير ({blocks} فقرة): تم إيقاف التدقيق الإملائي أثناء الكتابة — يمكن تشغيله من مراجعة › الإملاء',
   appFontsMissing: 'خطوط المستند غير مثبتة: {names} (تُعرض بخطوط بديلة)',
   appVerticalTextNotice: 'يحتوي المستند على نص عمودي (يُعرض أفقيًا حاليًا؛ لا يؤثر ذلك على الحفظ)',
   appNewDocCreated:

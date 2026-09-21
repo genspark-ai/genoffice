@@ -44,6 +44,11 @@ export const th = {
   appUntitledDocx: 'เอกสารไม่มีชื่อ.docx',
   appOpenedFile: 'เปิด {name} แล้ว',
   appOpenFailed: 'เปิดไม่สำเร็จ: {error}',
+  appDocTooLargeBlocks:
+    '{name}: เอกสารมีขนาดใหญ่เกินกว่าจะเปิดได้ ({blocks} ย่อหน้า, {chars} ตัวอักษร)',
+  appDocLargeReadOnly: 'เอกสารขนาดใหญ่ ({blocks} ย่อหน้า): เปิดในโหมดอ่าน — กด Esc เพื่อแก้ไข',
+  appDocLargeSpellOff:
+    'เอกสารขนาดใหญ่ ({blocks} ย่อหน้า): ปิดการตรวจการสะกดขณะพิมพ์แล้ว — เปิดได้ที่ รีวิว › การสะกด',
   appFontsMissing: 'ไม่มีแบบอักษรของเอกสาร: {names} (แสดงด้วยแบบอักษรทดแทน)',
   appVerticalTextNotice: 'เอกสารนี้มีข้อความแนวตั้ง (แสดงเป็นแนวนอนชั่วคราว ไม่มีผลต่อการบันทึก)',
   appNewDocCreated: 'สร้างเอกสารเปล่าแล้ว อธิบายเนื้อหาที่ต้องการสร้างได้ในแผง AI ทางซ้าย',

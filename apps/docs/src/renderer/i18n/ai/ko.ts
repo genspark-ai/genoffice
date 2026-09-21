@@ -55,6 +55,7 @@ export const ko = {
   aiSumInsertFootnote: '각주 삽입',
   aiSumInsertEndnote: '미주 삽입',
   aiSumDeleteNote: '주석 삭제',
+  aiSumEditNote: '주석 편집',
   aiSumReadNotes: '주석 읽기',
   aiSumAddComment: '메모 추가',
   aiSumDeleteComment: '메모 삭제',

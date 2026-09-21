@@ -12,6 +12,7 @@ import {
   elementDurableId,
   elementSpid,
   getSlideAnimations,
+  isMediaEffect,
   setSlideAnimations,
   type AnimClass,
   type AnimDirection,
@@ -99,6 +100,9 @@ const EFFECT_ALIASES: Record<string, AnimEffectKind> = {
   zoomout: 'zoomOut',
   path: 'motionPath',
   motion: 'motionPath',
+  play: 'mediaPlay',
+  pause: 'mediaPause',
+  stop: 'mediaStop',
 }
 
 const TRIGGER_ALIASES: Record<string, AnimTrigger> = {
@@ -118,10 +122,11 @@ const CLASS_DEFAULT_EFFECT: Record<string, AnimEffectKind> = {
   emph: 'pulse',
   exit: 'fadeOut',
   path: 'motionPath',
+  mediacall: 'mediaPlay',
 }
 
 function defaultDuration(effect: AnimEffectKind): number {
-  if (effect === 'appear' || effect === 'disappear') return 0
+  if (effect === 'appear' || effect === 'disappear' || isMediaEffect(effect)) return 0
   if (effect === 'spin' || effect === 'grow' || effect === 'bounce' || effect === 'motionPath')
     return 2000
   if (effect === 'pulse' || effect === 'teeter') return 1000
@@ -244,6 +249,15 @@ function buildAnimation(op: Op, el: SlideElement): SlideAnimation {
     trigger: parseTrigger(op),
     durationMs: parseMs(op, 'duration', defaultDuration(effect)),
     delayMs: parseMs(op, 'delay', 0),
+  }
+  if (isMediaEffect(effect)) {
+    const media = el.type === 'picture' ? el.media : undefined
+    if (!media) {
+      throw new GuidedError(
+        `op "${op.op}": "${effect}" only applies to a video or audio element; "${el.id}" is a ${el.type}.`,
+      )
+    }
+    anim.mediaKind = media.kind
   }
   if (op.direction !== undefined) {
     const d = ANIM_DIRECTIONS.find((x) => x === op.direction)

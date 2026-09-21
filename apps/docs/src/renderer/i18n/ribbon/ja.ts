@@ -80,12 +80,6 @@ export const ja = {
   // Home · Font
   ribbonFontEastAsia: '東アジアのフォント',
   ribbonFontLatin: '英数字のフォント',
-  ribbonFontMixed: '混在',
-  ribbonFontScope: 'フォントの適用範囲',
-  ribbonFontSelection: '選択範囲',
-  ribbonFontDefaults: '文書の既定値',
-  ribbonFontCharacterStyle: '文字スタイル',
-  ribbonFontParagraphStyle: '段落スタイル',
   ribbonFontFamilyTip: 'フォント',
   ribbonFontsCommon: 'よく使うフォント',
   ribbonFontsSystem: 'システムフォント',
@@ -114,7 +108,6 @@ export const ja = {
   ribbonThemeColorShadeTip: 'テーマの色 {r}-{c}',
   ribbonStandardColors: '標準の色',
   ribbonMoreColors: 'その他の色…',
-  ribbonGroupFont: 'フォント',
   // Home · Paragraph
   ribbonBullets: '箇条書き',
   ribbonNumbering: '段落番号',

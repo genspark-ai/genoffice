@@ -56,6 +56,7 @@ export const hi = {
   aiSumInsertFootnote: 'फ़ुटनोट जोड़ा गया',
   aiSumInsertEndnote: 'एंडनोट जोड़ा गया',
   aiSumDeleteNote: 'नोट हटाया गया',
+  aiSumEditNote: 'नोट संपादित किया गया',
   aiSumReadNotes: 'नोट पढ़े गए',
   aiSumAddComment: 'टिप्पणी जोड़ी',
   aiSumDeleteComment: 'टिप्पणी हटाई',

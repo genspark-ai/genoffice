@@ -13,6 +13,7 @@
  * covers the whole original (crop removed).
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { useEscOverlay } from './esc-overlay'
 
 export interface CropRect {
   l: number
@@ -120,6 +121,7 @@ function srcRectFromRect(full: NodeBox, cx: number, cy: number, cw: number, ch: 
 }
 
 export function CropOverlay({ box, fullBox, imgSrc, onConfirm, onCancel }: Props) {
+  useEscOverlay(true)
   // The frame starts at the current visible region; the ghost of the full original
   // renders behind it, so dragging outward reveals (and restores) cropped content.
   const [cx, setCx] = useState(box.x)

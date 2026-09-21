@@ -56,6 +56,7 @@ export const ms = {
   aiSumInsertFootnote: 'Nota kaki disisipkan',
   aiSumInsertEndnote: 'Nota hujung disisipkan',
   aiSumDeleteNote: 'Nota dipadam',
+  aiSumEditNote: 'Nota disunting',
   aiSumReadNotes: 'Membaca nota',
   aiSumAddComment: 'Menambah komen',
   aiSumDeleteComment: 'Memadam komen',

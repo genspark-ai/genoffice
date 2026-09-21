@@ -7,6 +7,7 @@ import type { RenderSlide } from '@genoffice/pptx-render'
 import type { ExportPdfLink } from '../shared/ipc'
 import type { ActionCtx } from './action-context'
 import { collectExportPdfLinks } from './export-links'
+import { renderSlidesToPdfPages } from './export-pages'
 import { renderSlidesToPngBase64 } from './export-render'
 import { t } from './i18n/locale'
 import { showToast } from './components/toast-bus'
@@ -30,23 +31,22 @@ export async function flushActiveEdit(ctx: ActionCtx): Promise<void> {
  * the render tree, mapping selection/edit state to new ids by per-page node ordinal.
  */
 export function adoptSavedSlides(ctx: ActionCtx, next: RenderSlide[]): void {
-  if (!ctx.slides[ctx.current]) {
-    ctx.setSlides([])
-    ctx.setSelectedIds([])
-    ctx.setEnteredGroupId(null)
-    ctx.setEditing(null)
-    ctx.setEditingCell(null)
-    return
-  }
-
+  const page = ctx.slides[ctx.current]
   const remap = (id: string) => {
-    const i = ctx.slides[ctx.current]?.nodes.findIndex((n) => n.sourceId === id) ?? -1
-    return next[ctx.current]?.nodes[i]?.sourceId ?? null
+    const i = page?.nodes.findIndex((n) => n.sourceId === id) ?? -1
+    return i >= 0 ? (next[ctx.current]?.nodes[i]?.sourceId ?? null) : null
   }
   ctx.setSelectedIds((ids) => ids.map(remap).filter((x): x is string => x !== null))
   ctx.setEnteredGroupId(null) // Group children ids can't be mapped by top-level ordinal; exit in-group editing after save
-  ctx.setEditing((e) => (e && remap(e.sourceId) ? { sourceId: remap(e.sourceId)! } : e))
-  ctx.setEditingCell((c) => (c && remap(c.sourceId) ? { ...c, sourceId: remap(c.sourceId)! } : c))
+  // A stale edit target (page gone, deck shrunk) cannot be mapped: drop it rather than keep an id no node owns
+  ctx.setEditing((e) => {
+    const id = e && remap(e.sourceId)
+    return id ? { sourceId: id } : null
+  })
+  ctx.setEditingCell((c) => {
+    const id = c && remap(c.sourceId)
+    return id && c ? { ...c, sourceId: id } : null
+  })
   ctx.setSlides(next)
 }
 
@@ -190,7 +190,8 @@ async function collectPdfLinks(ctx: ActionCtx): Promise<ExportPdfLink[][]> {
 }
 
 /**
- * Export as PDF: each page (skipping hidden ones) rendered offscreen to 2x PNG;
+ * Export as PDF: each page (skipping hidden ones) rendered to vector SVG (text
+ * stays text; a page the SVG backend cannot build falls back to its 2x PNG);
  * main process printToPDF in a hidden window.
  *
  * `outPath` skips the save dialog — the headless CLI entry already knows where
@@ -206,14 +207,15 @@ export async function exportPdf(ctx: ActionCtx, outPath?: string): Promise<boole
   if (!target) return false
   ctx.setStatus(t('appExportPdfProgress'))
   try {
-    const pngs = await renderSlidesToPngBase64(visible, ctx.images)
+    const { pages, fontCss } = await renderSlidesToPdfPages(visible, ctx.images)
     const links = await collectPdfLinks(ctx)
     const r = await window.slidesApi.exportPdf({
       filePath: target,
-      pngsBase64: pngs,
+      pages,
       widthPx: visible[0].widthPx,
       heightPx: visible[0].heightPx,
       links,
+      fontCss,
     })
     ctx.setStatus(
       r.ok

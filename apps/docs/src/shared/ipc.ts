@@ -1,8 +1,8 @@
 export interface OpenFileResult {
   path: string
   name: string
-  /** raw docx bytes */
-  data: ArrayBuffer
+  /** one-shot URL serving the docx bytes (fetch it exactly once) */
+  dataUrl: string
   /** sha256 of the original file; original archived under this hash */
   hash: string
   /** the on-disk file is password protected (opened via decrypt; saves re-encrypt) */
@@ -244,7 +244,7 @@ export interface McpSaveResult {
   path?: string
   error?: string
   passwordIntentPending?: boolean
-  data?: ArrayBuffer
+  dataUrl?: string
 }
 
 export interface DesktopApi {
@@ -316,9 +316,9 @@ export interface DesktopApi {
     reason?: 'external-modified'
     /** a newer password choice arrived after this save's snapshot */
     passwordIntentPending?: boolean
-    /** the saved document in full when an encrypted save absorbed lazily served
-     *  pictures: the renderer reparses from it and leaves lazy mode */
-    data?: ArrayBuffer
+    /** one-shot URL of the saved document in full when an encrypted save absorbed
+     *  lazily served pictures: the renderer reparses from it and leaves lazy mode */
+    dataUrl?: string
   }>
   /** crash-recovery copy of a dirty document, stored under userData */
   writeRecoveryCopy(path: string, data: ArrayBuffer): Promise<{ ok: boolean }>
@@ -344,7 +344,7 @@ export interface DesktopApi {
     path?: string
     error?: string
     passwordIntentPending?: boolean
-    data?: ArrayBuffer
+    dataUrl?: string
   }>
   /** first save of a new document: silently writes into the default folder, no dialog */
   saveDocxNew(
@@ -355,7 +355,7 @@ export interface DesktopApi {
     path?: string
     error?: string
     passwordIntentPending?: boolean
-    data?: ArrayBuffer
+    dataUrl?: string
   }>
   /** MCP-driven output: write the current document to an explicit absolute path
    *  with no dialog; refuses to replace an existing file unless overwrite is true */

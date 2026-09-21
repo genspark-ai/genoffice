@@ -5,6 +5,7 @@
 import type { PictureRenderNode } from '@genoffice/pptx-render'
 import { FIT_WIDTH } from './app-constants'
 import type { ActionCtx } from './action-context'
+import { renderSelectionToPngBase64 } from './selection-image'
 import { t } from './i18n/locale'
 
 /** Enter picture crop mode: find the selected picture node and read its box and srcRect */
@@ -148,4 +149,37 @@ export async function replacePicture(ctx: ActionCtx): Promise<void> {
   ctx.applySlide(ctx.current, updated)
   ctx.setSelectedIds([targetId])
   ctx.setDirty(true)
+}
+
+/** Only top-level slide nodes render into the selection PNG, so an entered group's children cannot be saved */
+export function canSaveAsPicture(ctx: ActionCtx, sourceIds: readonly string[]): boolean {
+  return !!ctx.slide && sourceIds.length > 0 && !ctx.enteredGroupId
+}
+
+function pictureFileName(ctx: ActionCtx, sourceIds: readonly string[]): string {
+  const node =
+    sourceIds.length === 1 ? ctx.slide?.nodes.find((n) => n.sourceId === sourceIds[0]) : null
+  const name = (node as { name?: string } | undefined)?.name
+    ?.replace(/[\\/:*?"<>|\s]+/g, ' ')
+    .trim()
+  return name || 'Picture'
+}
+
+/** PowerPoint "Save as Picture…": the selected elements as one transparent PNG */
+export async function saveSelectionAsPicture(
+  ctx: ActionCtx,
+  sourceIds: readonly string[] = ctx.selectedIds,
+): Promise<void> {
+  if (!ctx.slide || !canSaveAsPicture(ctx, sourceIds)) return
+  try {
+    const pngBase64 = await renderSelectionToPngBase64(ctx.slide, sourceIds, ctx.images)
+    const r = await window.slidesApi.savePicture({
+      pngBase64,
+      defaultName: pictureFileName(ctx, sourceIds),
+    })
+    if (r.ok && r.path) ctx.setStatus(t('appStatusPictureSaved', { path: r.path }))
+    else if (r.error) ctx.setStatus(t('appStatusPictureSaveFailed', { error: r.error }))
+  } catch (err) {
+    ctx.setStatus(t('appStatusPictureSaveFailed', { error: String(err) }))
+  }
 }

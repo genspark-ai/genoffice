@@ -48,6 +48,7 @@ export const it = {
   elementMoveUp: 'Sposta su',
   elementMoveDown: 'Sposta giù',
   elementToolbar: 'Barra degli strumenti elemento',
+  elementPath: "Percorso dell'elemento",
   fmtBold: 'Grassetto',
   fmtItalic: 'Corsivo',
   openExternal: 'Link aperto nel browser',

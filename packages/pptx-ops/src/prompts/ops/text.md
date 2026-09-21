@@ -58,7 +58,7 @@ Related: `setFont` (restyle without changing the words), `setTableCell` (table c
 
 ### setFont
 
-`{font:{fontFamily?,fontSizePt?,bold?,italic?,underline?,strike?,color?}} — merges onto every run of the element`
+`{font:{fontFamily?,fontSizePt?,fontSizeStep?,bold?,italic?,underline?,strike?,color?}} — merges onto every run of the element`
 
 Applies the given properties to every run of the element (or every cell of a
 table) and leaves everything else untouched. Use it for "make the title blue
@@ -68,6 +68,7 @@ and bold" style requests; use `setText` when the words change.
 | ------------------------------------ | ----------- | ---------------------------------------------- |
 | font.fontFamily                      | string      | Omit to keep the theme font (recommended)      |
 | font.fontSizePt                      | number > 0  | Points                                         |
+| font.fontSizeStep                    | {dir, mode} | Relative per run: 'ladder' rung or 'point' ±1  |
 | font.bold, italic, underline, strike | boolean     | Only the keys you pass change                  |
 | font.color                           | `"#RRGGBB"` | Explicit color; clears theme-color inheritance |
 | group                                | string      | Only for a direct child of a group             |

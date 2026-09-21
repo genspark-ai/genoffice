@@ -45,6 +45,7 @@ export const ru = {
   elementMoveUp: 'Вверх',
   elementMoveDown: 'Вниз',
   elementToolbar: 'Панель инструментов элемента',
+  elementPath: 'Путь к элементу',
   fmtBold: 'Жирный',
   fmtItalic: 'Курсив',
   openExternal: 'Ссылка открыта в браузере',

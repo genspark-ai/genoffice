@@ -97,6 +97,7 @@ import {
   journalEntriesInRange,
   NO_FILL_STYLE,
   ooxmlTextRotationToUniver,
+  plainCellValue,
   recordHyperlinkEdit,
   recordSetRangeValues,
   toRecalcUserInput,
@@ -7402,7 +7403,7 @@ export function lazyCellReader(worksheet: UniverWorksheet): (address: string) =>
     // paragraph breaks (\r) become \n, matching extractRichText and typed text
     const richText =
       typeof richStream === 'string' ? richStream.replace(/\r\n$/, '').replace(/\r/g, '\n') : null
-    const rawValue = (rawCell?.v ?? richText) as CellState['rawValue']
+    const rawValue = (plainCellValue(rawCell?.v, rawCell?.t) ?? richText) as CellState['rawValue']
     // Formula cells also carry their computed value (the AI needs to see results
     // and error values like #REF!/#DIV/0!; drift checks compare only formula
     // text for formula cells, see planStillMatches)

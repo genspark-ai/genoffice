@@ -593,7 +593,13 @@ function readImages(
       return
     }
     if (type !== FPDF_PAGEOBJ_IMAGE) return
-    const composed = parent === null ? readMatrix(obj) : composeMatrix(parent, readMatrix(obj))
+    const own = readMatrix(obj)
+    const composed = parent === null ? own : composeMatrix(parent, own)
+    // GetRenderedBitmap draws in the object's own frame; an enclosing form
+    // that flips an axis (Skia wraps svg content in a y-flipping form and
+    // pre-flips the image matrix to compensate) leaves those pixels mirrored
+    // relative to the page
+    const mirror = parent === null ? NO_MIRROR : mirrorBetweenFrames(own, composed)
     let box: Rect
     if (parent === null) {
       if (!m._FPDFPageObj_GetBounds(obj, f6, f6 + 4, f6 + 8, f6 + 12)) return
@@ -644,7 +650,7 @@ function readImages(
           bottom: (cropBox.y0 - box.y0) / (box.y1 - box.y0),
         }
       : null
-    const image = extractImagePayload(m, doc, page, obj, box, crop, alpha, rotation)
+    const image = extractImagePayload(m, doc, page, obj, box, crop, alpha, rotation, mirror)
     if (image) images.push({ ...image, ...(cropBox ? { box: cropBox } : {}), z })
   }
   try {
@@ -808,6 +814,7 @@ function extractImagePayload(
   crop: CropWindow | null = null,
   gsAlpha = 255,
   rotation = 0,
+  mirror: Mirror = { x: false, y: false },
 ): ExtractedImage | null {
   const [naturalW, naturalH] = withAlloc(m, 8, (p) => {
     return m._FPDFImageObj_GetImagePixelSize(obj, p, p + 4)
@@ -826,7 +833,8 @@ function extractImagePayload(
   // not raw JPEG, and transparent JPEGs must carry their mask via PNG; a
   // cropped or constant-alpha-washed image needs pixel surgery — P34.)
   const filters = imageFilters(m, obj)
-  const needsSurgery = crop !== null || gsAlpha < IMAGE_OPAQUE_ALPHA || rotation !== 0
+  const needsSurgery =
+    crop !== null || gsAlpha < IMAGE_OPAQUE_ALPHA || rotation !== 0 || mirror.x || mirror.y
   if (!transparent && !needsSurgery && filters.length === 1 && filters[0] === 'DCTDecode') {
     const raw = tryRawJpeg(m, obj, box, naturalW, naturalH)
     if (raw) return raw
@@ -847,6 +855,7 @@ function extractImagePayload(
     )
     if (scale > 1) px = renderImageObjRgba(m, doc, page, obj, scale) ?? px
   }
+  if (mirror.x || mirror.y) px = mirrorRgba(px, mirror)
   if (crop !== null) {
     px = cropRgba(px, crop)
     if (!px) return null
@@ -1019,6 +1028,52 @@ export function rotateRgbaQuarter(
     }
   }
   return { rgba: out, width: ow, height: oh }
+}
+
+/** which axes of a rendered image run opposite to the page (mirroring form matrix) */
+export interface Mirror {
+  x: boolean
+  y: boolean
+}
+
+const NO_MIRROR: Mirror = { x: false, y: false }
+
+/**
+ * Axes along which the render frame (the image's own matrix) runs opposite to
+ * the page frame (the composed matrix). Only axis-aligned frames can mirror: a
+ * rotated form leaves both diagonals near zero, which is no sign flip at all.
+ */
+export function mirrorBetweenFrames(own: Matrix, composed: Matrix): Mirror {
+  const aligned = (mt: Matrix) =>
+    Math.abs(mt[1]) + Math.abs(mt[2]) < 1e-3 * (Math.abs(mt[0]) + Math.abs(mt[3]))
+  if (!aligned(own) || !aligned(composed)) return NO_MIRROR
+  return { x: own[0] * composed[0] < 0, y: own[3] * composed[3] < 0 }
+}
+
+/** mirror an RGBA render along the flagged axes so row 0 / column 0 face the page's top-left */
+export function mirrorRgba(
+  px: { rgba: Uint8Array; width: number; height: number },
+  mirror: Mirror,
+): { rgba: Uint8Array; width: number; height: number } {
+  if (!mirror.x && !mirror.y) return px
+  const { width: w, height: h, rgba } = px
+  const out = new Uint8Array(rgba.length)
+  for (let y = 0; y < h; y++) {
+    const sy = mirror.y ? h - 1 - y : y
+    if (!mirror.x) {
+      out.set(rgba.subarray(sy * w * 4, (sy + 1) * w * 4), y * w * 4)
+      continue
+    }
+    for (let x = 0; x < w; x++) {
+      const si = (sy * w + (w - 1 - x)) * 4
+      const di = (y * w + x) * 4
+      out[di] = rgba[si]!
+      out[di + 1] = rgba[si + 1]!
+      out[di + 2] = rgba[si + 2]!
+      out[di + 3] = rgba[si + 3]!
+    }
+  }
+  return { rgba: out, width: w, height: h }
 }
 
 /** crop an RGBA render to a fractional window (row 0 = page-space top) */

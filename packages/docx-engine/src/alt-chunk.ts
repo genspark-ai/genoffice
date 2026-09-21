@@ -15,6 +15,11 @@ export function setAltChunkHtmlConverter(fn: AltChunkHtmlConverter | null): void
   htmlConverter = fn
 }
 
+/** an HTML/MHT chunk can only expand where the host installed a converter */
+export function hasAltChunkHtmlConverter(): boolean {
+  return htmlConverter !== null
+}
+
 export type AltChunkKind = 'html' | 'mht' | 'docx'
 
 const ALT_CHUNK_REL = /\/aFChunk$/

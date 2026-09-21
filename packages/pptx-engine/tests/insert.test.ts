@@ -2,7 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { openPptx, savePptx, addElement, addTable, deleteElement } from '../src/index'
+import {
+  openPptx,
+  savePptx,
+  addElement,
+  addTable,
+  deleteElement,
+  createBlankPptx,
+} from '../src/index'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const fx = (name: string) => readFileSync(join(here, 'fixtures', name))
@@ -147,6 +154,31 @@ describe('insert-time shape options (genpptx parity)', () => {
     expect(grow.anchor.originalXml).toContain('anchor="ctr"><a:spAutoFit/></a:bodyPr>')
     expect(grow.text!.autofit).toBe('resize')
   })
+
+  it('click-to-type text box: wrap="none" + spAutoFit round-trips at the PowerPoint 14.5x29pt size', async () => {
+    const opened = await openPptx(fx('01_standard_business.pptx'))
+    const slide = opened.deck.slides[0]!
+    // PowerPoint for Mac drops a 14.5 x 29 pt empty box on click (1 pt = 12700 EMU)
+    const offset = { x: 914400, y: 914400, cx: 14.5 * 12700, cy: 29 * 12700 }
+    const el = addElement(slide, {
+      kind: 'textbox',
+      offset: { ...offset },
+      bodyPr: { wrap: 'none', autoFit: 'resize' },
+    })
+    expect(el.anchor.originalXml).toContain(
+      '<a:bodyPr wrap="none" rtlCol="0"><a:spAutoFit/></a:bodyPr>',
+    )
+    expect(el.text!.wrap).toBe(false)
+    expect(el.text!.autofit).toBe('resize')
+
+    const reopened = await openPptx(await savePptx(opened))
+    const slide2 = reopened.deck.slides[0]!
+    const el2: any = slide2.elements[slide2.elements.length - 1]
+    expect(el2.type).toBe('text')
+    expect(el2.transform.offset).toEqual(offset)
+    expect(el2.text.wrap).toBe(false)
+    expect(el2.text.autofit).toBe('resize')
+  })
 })
 
 describe('addTable explicit grid options (genpptx parity)', () => {
@@ -197,5 +229,25 @@ describe('addTable explicit grid options (genpptx parity)', () => {
     })!
     const el: any = opened.deck.slides[0]!.elements.find((e) => e.id === r.elementId)
     expect(el.anchor.originalXml).toContain('<a:gridCol w="1000000"/>'.repeat(3))
+  })
+})
+
+describe('shape outline color', () => {
+  it('keeps an #RRGGBBAA stroke translucent like the fill', async () => {
+    const opened = await openPptx(await createBlankPptx())
+    const slide = opened.deck.slides[0]!
+    const el = addElement(slide, {
+      kind: 'rect',
+      offset: { x: 0, y: 0, cx: 914400, cy: 914400 },
+      fillColor: '#11223380',
+      stroke: { color: '#ff000080', widthEmu: 12700 },
+    })
+    const xml = el.anchor.originalXml
+    expect(xml).toContain(
+      '<a:solidFill><a:srgbClr val="112233"><a:alpha val="50196"/></a:srgbClr></a:solidFill>',
+    )
+    expect(xml).toContain(
+      '<a:ln w="12700"><a:solidFill><a:srgbClr val="FF0000"><a:alpha val="50196"/></a:srgbClr></a:solidFill></a:ln>',
+    )
   })
 })

@@ -110,19 +110,27 @@ export function switchPresenterToShow(ctx: ActionCtx, lastIndex: number): void {
   ctx.setSlideShow({ startAt: lastIndex })
 }
 
-export async function toggleHidden(ctx: ActionCtx, index: number): Promise<void> {
-  const s = ctx.slides[index]
-  if (!s) return
-  const updated = await window.slidesApi.setSlideHidden({
-    slideIndex: index,
-    hidden: !s.hidden,
-  })
-  if (updated) {
-    ctx.applySlide(index, updated)
+/** Hide/unhide a thumbnail selection as one undo step; the selection stays put */
+export async function setSlidesHidden(
+  ctx: ActionCtx,
+  indexes: number[],
+  hidden: boolean,
+): Promise<void> {
+  const sel = [...new Set(indexes)].filter((i) => ctx.slides[i])
+  if (!sel.length) return
+  const r = await window.slidesApi.setSlidesHidden({ slideIndexes: sel, hidden })
+  if (!r) return
+  ctx.setSlides(r)
+  ctx.setDirty(true)
+  if (sel.length === 1) {
+    const page = sel[0]! + 1
     ctx.setStatus(
-      updated.hidden
-        ? t('appStatusSlideHidden', { page: index + 1 })
-        : t('appStatusSlideUnhidden', { page: index + 1 }),
+      hidden ? t('appStatusSlideHidden', { page }) : t('appStatusSlideUnhidden', { page }),
+    )
+  } else {
+    const count = sel.length
+    ctx.setStatus(
+      hidden ? t('appStatusSlidesHidden', { count }) : t('appStatusSlidesUnhidden', { count }),
     )
   }
 }

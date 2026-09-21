@@ -231,6 +231,7 @@ export function measureBlocks(
     blocks.push({
       top: top - relVApplied,
       height,
+      domHeight: height,
       ...(floated ? { floated: true } : {}),
       ...(floatTable ? { floatTable: true } : {}),
       ...(floatFlowed ? { floatFlowed: true } : {}),

@@ -29,6 +29,9 @@ export interface BlockBox {
   colBreakBefore?: boolean
   /** source DOM block (filled during canvas measurement, used to position page-gap decorations) */
   el?: HTMLElement
+  /** the element's own measured height (px at 100% zoom) before the inter-block
+   *  margins and lead space are folded into `height` */
+  domHeight?: number
   /** the block's docxIndex (DOM data-idx; new unsaved blocks lack one) */
   docxIndex?: number
   /** owning section index (filled by assignSections) */
@@ -352,6 +355,10 @@ export interface RowSplitPatch {
 }
 
 export interface SliceOutputs {
+  /** slicer runs the fixed-point loop took, and where its time went (diagnostics) */
+  iterations?: number
+  fillMs?: number
+  sliceRunMs?: number
   rowFills?: RowFillPatch[]
   rowSplits?: RowSplitPatch[]
   floatVShifts?: FloatVShiftPatch[]
@@ -361,6 +368,8 @@ export interface SliceOutputs {
   /** paragraphs the unequal-column balance wants to cut mid-paragraph but has no
    *  ColWrapTable for yet (fillColWraps measures them, then the slicer reruns) */
   colWrapRequests?: ColWrapRequest[]
+  /** the slicing before parity blanks were inserted (what a resumed pass builds on) */
+  preParity?: PageSlice[]
 }
 
 export interface ColWrapTable {

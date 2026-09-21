@@ -40,6 +40,9 @@ export const de = {
   paneAnimEffShrink: 'Verkleinern und drehen',
   paneAnimEffZoomOut: 'Zoom (Beenden)',
   paneAnimEffMotionPath: 'Animationspfad',
+  paneAnimEffMediaPlay: 'Wiedergabe',
+  paneAnimEffMediaPause: 'Pause',
+  paneAnimEffMediaStop: 'Beenden',
 
   paneChartEditTitle: 'Diagrammdaten bearbeiten',
   paneChartCategoryN: 'Kategorie {n}',
@@ -281,4 +284,13 @@ export const de = {
   paneShowEnded: 'Ende der Bildschirmpräsentation.',
   paneShowRehearseTip: 'Neue Einblendezeiten testen: Zeit auf dieser Folie / Gesamtzeit',
   paneShowRehearseTotal: 'Gesamt {time}',
+  paneShowMenuNext: 'Weiter',
+  paneShowMenuPrev: 'Zurück',
+  paneShowMenuLastViewed: 'Zuletzt angesehen',
+  paneShowMenuSeeAll: 'Alle Folien anzeigen',
+  paneShowMenuScreen: 'Bildschirm',
+  paneShowMenuBlack: 'Schwarzer Bildschirm',
+  paneShowMenuWhite: 'Weißer Bildschirm',
+  paneShowMenuEnd: 'Präsentation beenden',
+  panePresenterWhiteOn: 'Weißer Bildschirm (W zum Fortsetzen)',
 } satisfies Record<keyof typeof zh, string>

@@ -40,6 +40,9 @@ export const ko = {
   paneAnimEffShrink: '회전하며 축소',
   paneAnimEffZoomOut: '확대/축소(끝내기)',
   paneAnimEffMotionPath: '이동 경로',
+  paneAnimEffMediaPlay: '재생',
+  paneAnimEffMediaPause: '일시 중지',
+  paneAnimEffMediaStop: '중지',
 
   paneChartEditTitle: '차트 데이터 편집',
   paneChartCategoryN: '항목 {n}',
@@ -276,4 +279,13 @@ export const ko = {
   paneShowEnded: '슬라이드 쇼가 끝났습니다.',
   paneShowRehearseTip: '예행 연습: 현재 슬라이드 시간 / 전체 시간',
   paneShowRehearseTotal: '전체 {time}',
+  paneShowMenuNext: '다음',
+  paneShowMenuPrev: '이전',
+  paneShowMenuLastViewed: '마지막으로 본 슬라이드',
+  paneShowMenuSeeAll: '모든 슬라이드 보기',
+  paneShowMenuScreen: '화면',
+  paneShowMenuBlack: '검은 화면',
+  paneShowMenuWhite: '흰 화면',
+  paneShowMenuEnd: '쇼 마침',
+  panePresenterWhiteOn: '흰 화면 (W 키로 복귀)',
 } satisfies Record<keyof typeof zh, string>

@@ -1,6 +1,6 @@
 import { ANTHROPIC_BASE_URL } from './protocols/anthropic'
 import { GEMINI_BASE_URL } from './protocols/gemini'
-import { AI_PROVIDERS, GENSPARK_LLM_BASE_URLS } from './providers'
+import { AI_PROVIDERS, DEEPSEEK_V41_FLASH, GENSPARK_LLM_BASE_URLS } from './providers'
 import type { AiProviderConfig, AiProviderId, AiProviderMeta } from './types'
 
 /** Wire protocols every provider maps onto, including the official Codex app-server bridge. */
@@ -22,6 +22,8 @@ export interface ResolvedEndpoint {
   useMaxCompletionTokens?: boolean
   /** vendor-specific request fields merged into the chat-completions body */
   bodyExtras?: Record<string, unknown>
+  /** id to put on the wire when the vendor spells the configured model differently */
+  model?: string
 }
 
 export interface ProviderAdapter {
@@ -80,6 +82,12 @@ export function modelEchoesReasoning(model: string): boolean {
  * alias did — until the transcript can round-trip reasoning.
  */
 const DEEPSEEK_NON_THINKING = { thinking: { type: 'disabled' } }
+
+/**
+ * The direct API 400s on the versioned pool spelling we list (verified
+ * 2026-09-21: GET /v1/models serves only `deepseek-flash` and `deepseek-v4-pro`).
+ */
+const DEEPSEEK_WIRE_IDS: Record<string, string> = { [DEEPSEEK_V41_FLASH]: 'deepseek-flash' }
 
 /**
  * OpenCode Zen / Go (opencode.ai) are protocol passthrough gateways: each
@@ -174,9 +182,15 @@ export const AI_PROVIDER_ADAPTERS: Record<AiProviderId, ProviderAdapter> = {
   deepseek: {
     meta: metaOf('deepseek'),
     capabilities: { auth: 'api-key', vision: true },
-    resolveEndpoint: fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1', {
-      bodyExtras: DEEPSEEK_NON_THINKING,
-    }),
+    resolveEndpoint(config) {
+      const wire = DEEPSEEK_WIRE_IDS[config.model]
+      return {
+        ...fixedEndpoint('openai-compatible', 'https://api.deepseek.com/v1', {
+          bodyExtras: DEEPSEEK_NON_THINKING,
+        })(config),
+        ...(wire ? { model: wire } : {}),
+      }
+    },
   },
   openai: {
     meta: metaOf('openai'),

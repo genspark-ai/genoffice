@@ -25,6 +25,10 @@ import {
   setShapePresetGeometry,
   setGroupChildShapePresetGeometry,
   setShapeAdjustValues,
+  setShapeCustomGeometry,
+  setGroupChildShapeCustomGeometry,
+  validCustGeomPath,
+  type CustGeomPath,
   setGroupChildShapeAdjustValues,
   ungroupElement,
   updateConnectorsForMoved,
@@ -480,6 +484,42 @@ register({
       throw new GuidedError(`op "setShapeAdjust": element "${el.id}" has no preset geometry.`)
     }
     return { op, after: adjust }
+  },
+})
+
+register({
+  name: 'setShapeCustomGeometry',
+  validate(op, ctx) {
+    if (!validCustGeomPath(op.path)) {
+      throw new GuidedError(
+        'op "setShapeCustomGeometry" needs "path": { w, h, cmds:[{op:"M"|"L"|"C"|"Q"|"Z", pts:number[]}] } starting with "M" (pts: M/L 2, Q 4, C 6, Z 0).',
+      )
+    }
+    if (op.group) {
+      const { index, slide } = resolveSlide(ctx, op)
+      resolveGroup(op, index, slide.elements)
+      return
+    }
+    resolveElement(ctx, op, { types: ['text', 'shape'] })
+  },
+  apply(op, ctx): OpRecord {
+    const path = op.path as CustGeomPath
+    if (op.group) {
+      const { index, slide } = resolveSlide(ctx, op)
+      const groupId = resolveGroup(op, index, slide.elements)
+      const id = resolveGroupChildId(slide, groupId, String(op.target?.el ?? ''))
+      if (!setGroupChildShapeCustomGeometry(slide, groupId, id, path)) {
+        throw new GuidedError(
+          `op "setShapeCustomGeometry": no shape child "${id}" in group "${groupId}".`,
+        )
+      }
+      return { op, after: path }
+    }
+    const { slide, el } = resolveElement(ctx, op, { types: ['text', 'shape'] })
+    if (!setShapeCustomGeometry(slide, el.id, path)) {
+      throw new GuidedError(`op "setShapeCustomGeometry": element "${el.id}" has no geometry.`)
+    }
+    return { op, after: path }
   },
 })
 

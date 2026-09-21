@@ -66,11 +66,11 @@ export interface OpenTargetDeps {
    */
   activate?: (tabId: string) => void
   /**
-   * Bring the app window itself forward (un-minimize, show, focus). Separate
-   * from `activate` because raising the window is a stronger action than
-   * switching a tab inside it.
+   * Bring the window hosting this document forward (un-minimize, show, focus):
+   * the shell, or a detached editor window. Separate from `activate` because
+   * raising the window is a stronger action than switching a tab inside it.
    */
-  revealWindow?: () => void
+  revealWindow?: (tabId: string) => void
 }
 
 /**
@@ -98,7 +98,7 @@ export function createOpenTargetResolver(
       // must not fail the command the caller actually asked for.
       try {
         deps.activate?.(doc.id)
-        deps.revealWindow?.()
+        deps.revealWindow?.(doc.id)
       } catch (error) {
         console.warn('[mcp] could not bring the target document into view:', error)
       }

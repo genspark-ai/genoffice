@@ -44,6 +44,12 @@ export const pt = {
   appUntitledDocx: 'Sem título.docx',
   appOpenedFile: '{name} aberto',
   appOpenFailed: 'Falha ao abrir: {error}',
+  appDocTooLargeBlocks:
+    '{name}: o documento é grande demais para ser aberto ({blocks} parágrafos, {chars} caracteres)',
+  appDocLargeReadOnly:
+    'Documento grande ({blocks} parágrafos): aberto no modo de leitura — pressione Esc para editar',
+  appDocLargeSpellOff:
+    'Documento grande ({blocks} parágrafos): a verificação ortográfica ao digitar está desativada — ative-a em Revisão › Ortografia',
   appFontsMissing: 'Fontes do documento ausentes: {names} (substitutas exibidas)',
   appVerticalTextNotice:
     'Este documento contém texto vertical (exibido horizontalmente por enquanto; o salvamento não é afetado)',

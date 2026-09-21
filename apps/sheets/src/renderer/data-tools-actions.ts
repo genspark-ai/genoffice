@@ -76,9 +76,12 @@ export function handleImportCsv(ctx: DataToolsContext): void {
       ctx.setMessage(t('appCsvTooLarge'))
       return
     }
-    void file.arrayBuffer().then((buffer) => {
-      importCsvText(ctx, decodeCsvBuffer(new Uint8Array(buffer), CSV_CHARSET_BY_LANG[getLang()]))
-    })
+    void file
+      .arrayBuffer()
+      .then((buffer) => {
+        importCsvText(ctx, decodeCsvBuffer(new Uint8Array(buffer), CSV_CHARSET_BY_LANG[getLang()]))
+      })
+      .catch(() => ctx.setMessage(t('appCsvTooLarge')))
   }
   input.click()
 }

@@ -656,7 +656,9 @@ export const TextStyleMark = Mark.create({
       const ea = mark.attrs.font ? String(mark.attrs.font) : null
       const ascii = mark.attrs.fontAscii ? String(mark.attrs.fontAscii) : null
       const cs = mark.attrs.csFont ? String(mark.attrs.csFont) : null
-      const explicitEa = mark.attrs.eastAsiaFont ?? (!mark.attrs.rawRPr ? ea : null)
+      // a Latin-only chain fills both slots (fontAttrsFromFamilyChain), so an
+      // unparsed run's font only names an East Asian face when the slots differ
+      const explicitEa = mark.attrs.eastAsiaFont ?? (!mark.attrs.rawRPr && ea !== ascii ? ea : null)
       if (explicitEa && !mark.attrs.eaSlotEmpty)
         styles.push(`--doc-east-asian-font:${cssFontFamily(String(explicitEa))}`)
       styles.push(

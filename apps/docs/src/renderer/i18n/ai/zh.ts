@@ -53,6 +53,7 @@ export const zh = {
   aiSumInsertFootnote: '插入脚注',
   aiSumInsertEndnote: '插入尾注',
   aiSumDeleteNote: '删除脚注/尾注',
+  aiSumEditNote: '编辑脚注/尾注',
   aiSumReadNotes: '读取脚注/尾注',
   aiSumAddComment: '新建批注',
   aiSumDeleteComment: '删除批注',

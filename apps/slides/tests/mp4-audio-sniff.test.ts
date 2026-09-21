@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audioSampleFormats, unplayableAudioCodec } from '../src/main/mp4-audio-sniff'
+import { audioSampleFormats, mp4VideoSize, unplayableAudioCodec } from '../src/main/mp4-audio-sniff'
 
 // ── Tiny ISO-BMFF builders ──────────────────────────────────────────────
 
@@ -39,8 +39,34 @@ function stsd(format: string): Uint8Array {
   return box('stsd', u32(0), u32(1), entry)
 }
 
-function trak(handler: string, format: string): Uint8Array {
-  return box('trak', box('mdia', hdlr(handler), box('minf', box('stbl', stsd(format)))))
+/** tkhd v0: 16.16 width/height after the 3x3 fixed-point matrix; `rotate` swaps a/d for b/c. */
+function tkhd(width: number, height: number, rotate = false): Uint8Array {
+  const fixed = (n: number) => u32(Math.round(n * 65536))
+  const matrix = rotate
+    ? [0, 0x10000, 0, -0x10000 >>> 0, 0, 0, 0, 0, 0x40000000]
+    : [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000]
+  return box(
+    'tkhd',
+    u32(0x00000003),
+    u32(0),
+    u32(0),
+    u32(1),
+    u32(0),
+    u32(0),
+    new Uint8Array(8),
+    u32(0),
+    u32(0),
+    ...matrix.map(u32),
+    fixed(width),
+    fixed(height),
+  )
+}
+
+function trak(handler: string, format: string, size?: Uint8Array): Uint8Array {
+  // minf carries the data handler (`url `) that must not shadow the media handler
+  const minf = box('minf', hdlr('url '), box('stbl', stsd(format)))
+  const mdia = box('mdia', hdlr(handler), minf)
+  return size ? box('trak', size, mdia) : box('trak', mdia)
 }
 
 function file(...traks: Uint8Array[]): Uint8Array {
@@ -78,5 +104,25 @@ describe('mp4 audio codec sniffing', () => {
     // Truncation invalidates the enclosing moov size: degrade to "no formats", never throw
     const good = file(trak('soun', 'ac-3'))
     expect(unplayableAudioCodec(good.slice(0, good.length - 5))).toBeNull()
+  })
+})
+
+describe('mp4 video frame size', () => {
+  it('reads tkhd width/height of the video track only', () => {
+    const bytes = file(trak('soun', 'mp4a', tkhd(0, 0)), trak('vide', 'avc1', tkhd(1280, 720)))
+    expect(mp4VideoSize(bytes)).toEqual({ width: 1280, height: 720 })
+  })
+
+  it('transposes a 90-degree display matrix', () => {
+    expect(mp4VideoSize(file(trak('vide', 'avc1', tkhd(1920, 1080, true))))).toEqual({
+      width: 1080,
+      height: 1920,
+    })
+  })
+
+  it('returns null without a video track or size', () => {
+    expect(mp4VideoSize(file(trak('soun', 'mp4a')))).toBeNull()
+    expect(mp4VideoSize(file(trak('vide', 'avc1')))).toBeNull()
+    expect(mp4VideoSize(new Uint8Array([0, 0, 0]))).toBeNull()
   })
 })

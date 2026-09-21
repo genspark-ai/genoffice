@@ -24,6 +24,7 @@ function makeThumbCtx(index: number) {
     selectedIds: [],
     slide: null,
     current: 0,
+    selectedSlides: [0],
     hasClipboard: false,
     canPasteSlide: false,
     setCurrent: vi.fn(),

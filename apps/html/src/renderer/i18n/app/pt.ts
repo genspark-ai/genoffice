@@ -47,6 +47,7 @@ export const pt = {
   elementMoveUp: 'Mover para cima',
   elementMoveDown: 'Mover para baixo',
   elementToolbar: 'Barra de ferramentas do elemento',
+  elementPath: 'Caminho do elemento',
   fmtBold: 'Negrito',
   fmtItalic: 'Itálico',
   openExternal: 'Link aberto no navegador',

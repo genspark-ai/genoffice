@@ -111,7 +111,7 @@ describe('opt-in Markdown round trips', () => {
   it('does not reuse source after image paths are rewritten during Save As', () => {
     const { editor, save } = open('![sample](assets/old.png)\n')
     editor.commands.command(({ tr }) => {
-      tr.setNodeMarkup(0, undefined, { src: 'assets/new.png', alt: 'sample' })
+      tr.setNodeMarkup(1, undefined, { src: 'assets/new.png', alt: 'sample' })
       return true
     })
     expect(save()).toContain('assets/new.png')

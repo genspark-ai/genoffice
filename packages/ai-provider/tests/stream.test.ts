@@ -76,6 +76,22 @@ describe('streamForProvider: temperature policy', () => {
   const okTurn = () =>
     okResponse(sseStream(['data: {"choices":[{"delta":{"content":"hi"},"finish_reason":"stop"}]}']))
 
+  it('deepseek: sends the listed V4.1 Flash name under the vendor wire id', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(okTurn()))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamForProvider(
+      'deepseek',
+      { apiKey: 'k', model: 'deep-seek-v4.1-flash' },
+      'sys',
+      [],
+      [],
+      100,
+      collector().cb,
+    )
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body.model).toBe('deepseek-flash')
+  })
+
   it('omits temperature for fixed-sampling endpoints (Kimi) and keeps 0.3 elsewhere', async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(okTurn()))
     vi.stubGlobal('fetch', fetchMock)
@@ -287,7 +303,15 @@ describe('streamForProvider: anthropic', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(sseStream(starts))))
     const { cb } = collector()
     await expect(
-      streamForProvider('anthropic', { apiKey: 'k', model: 'claude-sonnet-5' }, 'sys', [], [], 100, cb),
+      streamForProvider(
+        'anthropic',
+        { apiKey: 'k', model: 'claude-sonnet-5' },
+        'sys',
+        [],
+        [],
+        100,
+        cb,
+      ),
     ).rejects.toThrow(/Too many streamed tool calls/)
   })
 

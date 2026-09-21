@@ -38,16 +38,16 @@ function tryResolvePath(file: File, getPathForFile: PathResolver): string {
   }
 }
 
-/**
- * Resolve an event's dropped files to local paths. Returns null when the drag
- * carries no OS files at all (internal text/element drags), or [] when it does
- * but none resolve (directories, virtual entries) — both mean "not ours".
- */
 /** Early bound for path resolution: downstream caps opens at 20, but resolving
  *  10k dropped files first still costs. Overlong paths are skipped outright. */
 export const MAX_RESOLVED_DROP_PATHS = 100
 export const MAX_DROP_PATH_CHARS = 4096
 
+/**
+ * Resolve an event's dropped files to local paths. Returns null when the drag
+ * carries no OS files at all (internal text/element drags), or [] when it does
+ * but none resolve (directories, virtual entries) — both mean "not ours".
+ */
 export function droppableFilePaths(
   ev: Pick<DragEvent, 'dataTransfer'>,
   getPathForFile: PathResolver,

@@ -56,6 +56,7 @@ export const pl = {
   aiSumInsertFootnote: 'Wstawiono przypis dolny',
   aiSumInsertEndnote: 'Wstawiono przypis końcowy',
   aiSumDeleteNote: 'Usunięto przypis',
+  aiSumEditNote: 'Zmieniono przypis',
   aiSumReadNotes: 'Odczyt przypisów',
   aiSumAddComment: 'Dodano komentarz',
   aiSumDeleteComment: 'Usunięto komentarz',

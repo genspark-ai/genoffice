@@ -95,3 +95,11 @@ export {
   type AutoSaveDefault,
   type AutoSaveDefaultApi,
 } from './auto-save-pref'
+export {
+  NOTCH,
+  clampZoom,
+  createWheelPager,
+  createZoomWheelClassifier,
+  notchStep,
+  type ZoomWheelIntent,
+} from './wheel-zoom'

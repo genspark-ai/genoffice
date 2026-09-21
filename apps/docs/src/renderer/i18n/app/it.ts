@@ -44,6 +44,12 @@ export const it = {
   appUntitledDocx: 'Senza titolo.docx',
   appOpenedFile: '{name} aperto',
   appOpenFailed: 'Apertura non riuscita: {error}',
+  appDocTooLargeBlocks:
+    '{name}: il documento è troppo grande per essere aperto ({blocks} paragrafi, {chars} caratteri)',
+  appDocLargeReadOnly:
+    'Documento di grandi dimensioni ({blocks} paragrafi): aperto in modalità lettura — premi Esc per modificare',
+  appDocLargeSpellOff:
+    'Documento grande ({blocks} paragrafi): il controllo ortografico durante la digitazione è disattivato; attivalo in Revisione › Ortografia',
   appFontsMissing: 'Font del documento mancanti: {names} (mostrati sostituti)',
   appVerticalTextNotice:
     'Questo documento contiene testo verticale (mostrato orizzontalmente per ora; il salvataggio non è interessato)',

@@ -47,6 +47,7 @@ export const hi = {
   elementMoveUp: 'ऊपर ले जाएँ',
   elementMoveDown: 'नीचे ले जाएँ',
   elementToolbar: 'तत्व टूलबार',
+  elementPath: 'तत्व पथ',
   fmtBold: 'बोल्ड',
   fmtItalic: 'इटैलिक',
   openExternal: 'लिंक ब्राउज़र में खोला गया',

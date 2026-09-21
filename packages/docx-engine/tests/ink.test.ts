@@ -50,8 +50,12 @@ describe('ink save (wp:anchor floating picture)', () => {
     expect(second).not.toBeNull()
     expect(second![0]).toContain('behindDoc="0"')
     expect(second![0]).toContain('<wp:wrapNone/>')
-    expect(second![0]).toContain('<wp:positionH relativeFrom="column"><wp:posOffset>381000</wp:posOffset>')
-    expect(second![0]).toContain('<wp:positionV relativeFrom="paragraph"><wp:posOffset>-95250</wp:posOffset>')
+    expect(second![0]).toContain(
+      '<wp:positionH relativeFrom="column"><wp:posOffset>381000</wp:posOffset>',
+    )
+    expect(second![0]).toContain(
+      '<wp:positionV relativeFrom="paragraph"><wp:posOffset>-95250</wp:posOffset>',
+    )
     expect(second![0]).toContain(`name="${INK_NAME_PREFIX} `)
     expect(second![0]).toContain('descr="{&quot;strokes&quot;')
 
@@ -80,7 +84,9 @@ describe('ink save (wp:anchor floating picture)', () => {
     const saved = await saveDocx(doc, asOriginal(doc), { inks: [makeInk(0)] })
     const zip = await JSZip.loadAsync(saved)
     expect(zip.file('word/media/aidocsink1.png')).toBeNull()
-    expect(await zip.file('word/_rels/document.xml.rels')!.async('string')).not.toContain('aidocsink')
+    expect(await zip.file('word/_rels/document.xml.rels')!.async('string')).not.toContain(
+      'aidocsink',
+    )
     expect(await docXmlOf(saved)).not.toContain(INK_NAME_PREFIX)
   })
 
@@ -126,7 +132,9 @@ describe('ink reopen (ParsedDoc.inks)', () => {
     expect((await parseDocx(cleared)).inks).toHaveLength(0)
     const zip = await JSZip.loadAsync(cleared)
     expect(zip.file('word/media/aidocsink1.png')).toBeNull()
-    expect(await zip.file('word/_rels/document.xml.rels')!.async('string')).not.toContain('aidocsink')
+    expect(await zip.file('word/_rels/document.xml.rels')!.async('string')).not.toContain(
+      'aidocsink',
+    )
   })
 
   it('re-saving does not accumulate media parts or relationships', async () => {

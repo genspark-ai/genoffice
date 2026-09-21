@@ -57,6 +57,7 @@ export const fr = {
   aiSumInsertFootnote: 'Note de bas de page insérée',
   aiSumInsertEndnote: 'Note de fin insérée',
   aiSumDeleteNote: 'Note supprimée',
+  aiSumEditNote: 'Note modifiée',
   aiSumReadNotes: 'Notes lues',
   aiSumAddComment: 'Commentaire ajouté',
   aiSumDeleteComment: 'Commentaire supprimé',

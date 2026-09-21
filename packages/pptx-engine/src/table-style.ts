@@ -465,11 +465,10 @@ export function resolveTableStyle(
     const def = parseTableStylesXml(tableStylesXml, styleId, theme)
     if (def) return def
   }
-  // A tableStyles part that defines explicit styles but not this id renders unstyled in
-  // PowerPoint — the built-in gallery only backs an empty part (def-id only). Measured on
-  // prod imports: same undefined Medium2/Accent1 id styled with an empty part, transparent
-  // with a populated one (decorative shapes behind the table show through).
-  if (tableStylesXml && /<a:tblStyle[\s>]/.test(tableStylesXml)) return undefined
+  // The built-in gallery backs an undefined id even when the part defines other styles
+  // (prod deck: Light Style 1 - Accent 3 banding drawn next to a one-entry part). The
+  // earlier "transparent with a populated part" reading came from decks whose cells
+  // carried an explicit <a:noFill/>, which hides any style fill anyway.
   const builtin = BUILTIN[styleId]
   if (builtin) return builtinStyle(builtin.family, builtin.accent, theme)
   if (styleId === LEGACY_NO_STYLE) return {}

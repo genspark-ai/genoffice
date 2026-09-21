@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import { parseFileToText } from '../src/index'
 import { pptxToText } from '../src/pptx'
-import { normalizeXlsxRelTarget, xlsxToText } from '../src/xlsx'
+import { xlsxToText } from '../src/xlsx'
+import { resolveTarget } from '../src/opc'
 import {
   buildDocxFixture,
   buildPptxFixture,
@@ -115,6 +116,51 @@ describe('parseFileToText: pptx', () => {
     expect(result.text).not.toMatch(/Before\n[^\S\n]/)
     // and the comment the slide carries is markup, not text
     expect(result.text).not.toContain('authoring note')
+  })
+
+  const PIC_SLIDE =
+    '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' +
+    'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<p:cSld><p:spTree>' +
+    '<p:pic><p:blipFill><a:blip r:embed="rId2"/></p:blipFill></p:pic>' +
+    '<p:grpSp><p:pic><p:blipFill><a:blip r:embed="rId3"/></p:blipFill></p:pic></p:grpSp>' +
+    '<p:sp><p:txBody><a:p><a:endParaRPr/></a:p></p:txBody></p:sp>' +
+    '</p:spTree></p:cSld></p:sld>'
+
+  it('marks picture-only slides instead of emitting a bare heading', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'ppt/slides/slide1.xml',
+      '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' +
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+        '<p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Agenda</a:t></a:r></a:p>' +
+        '</p:txBody></p:sp></p:spTree></p:cSld></p:sld>',
+    )
+    zip.file('ppt/slides/slide2.xml', PIC_SLIDE)
+    const text = await pptxToText(await zip.generateAsync({ type: 'uint8array' }))
+    expect(text).toContain('## Slide 1\nAgenda')
+    expect(text).toContain('## Slide 2\n[picture-only slide: 2 images, no extractable text]')
+    expect(text).not.toContain('No extractable text')
+  })
+
+  it('leads with a deck-level note when every slide is picture-only', async () => {
+    const zip = new JSZip()
+    zip.file('ppt/slides/slide1.xml', PIC_SLIDE)
+    zip.file('ppt/slides/slide2.xml', PIC_SLIDE)
+    const text = await pptxToText(await zip.generateAsync({ type: 'uint8array' }))
+    expect(text.startsWith('[No extractable text: none of the 2 slides carries text')).toBe(true)
+    expect(text).toContain('## Slide 1\n[picture-only slide: 2 images, no extractable text]')
+  })
+
+  it('leaves a blank slide (no text, no pictures) as a bare heading', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'ppt/slides/slide1.xml',
+      '<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">' +
+        '<p:cSld><p:spTree/></p:cSld></p:sld>',
+    )
+    expect(await pptxToText(await zip.generateAsync({ type: 'uint8array' }))).toBe('## Slide 1')
   })
 
   it('keeps a:tab as a tab between runs', async () => {
@@ -302,6 +348,77 @@ describe('parseFileToText: xlsx', () => {
     expect(result.error).toBeTruthy()
   })
 
+  it('marks an image-only sheet and counts the pictures in its drawing part', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="Chart" sheetId="1" r:id="rId1"/><sheet name="Data" sheetId="2" r:id="rId2"/></sheets></workbook>',
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' +
+        '</Relationships>',
+    )
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheetData/><drawing r:id="rId1"/></worksheet>',
+    )
+    zip.file(
+      'xl/worksheets/_rels/sheet1.xml.rels',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>' +
+        '</Relationships>',
+    )
+    zip.file(
+      'xl/drawings/drawing1.xml',
+      '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing">' +
+        '<xdr:twoCellAnchor><xdr:pic/></xdr:twoCellAnchor>' +
+        '</xdr:wsDr>',
+    )
+    zip.file(
+      'xl/worksheets/sheet2.xml',
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+        '<row r="1"><c r="A1"><v>7</v></c></row></sheetData></worksheet>',
+    )
+    const text = await xlsxToText(await zip.generateAsync({ type: 'uint8array' }))
+    expect(text).toContain('# Chart\n[image-only sheet: 1 image, no cell data]')
+    expect(text).toContain('# Data\n7')
+    expect(text).not.toContain('No extractable text')
+  })
+
+  it('leads with a workbook-level note when every sheet is image-only', async () => {
+    const zip = new JSZip()
+    zip.file(
+      'xl/workbook.xml',
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    )
+    zip.file(
+      'xl/_rels/workbook.xml.rels',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '</Relationships>',
+    )
+    // no sheet rels at all: the drawing is still reported, just without a count
+    zip.file(
+      'xl/worksheets/sheet1.xml',
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t> </t></is></c></row></sheetData>' +
+        '<drawing r:id="rId1"/></worksheet>',
+    )
+    const text = await xlsxToText(await zip.generateAsync({ type: 'uint8array' }))
+    expect(text.startsWith('[No extractable text: none of the 1 sheet holds cell data')).toBe(true)
+    expect(text).toContain('# Sheet1\n \n[image-only sheet: a drawing but no cell data]')
+  })
+
   it('reads lowercase cell refs at the right columns', async () => {
     const zip = new JSZip()
     zip.file(
@@ -426,14 +543,13 @@ describe('parseFileToText: xlsx', () => {
     expect(text.length).toBeLessThan(1000)
   })
 
-  it('normalizes workbook rel targets to zip paths', () => {
-    expect(normalizeXlsxRelTarget('worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
-    expect(normalizeXlsxRelTarget('worksheets\\sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
-    expect(normalizeXlsxRelTarget('/xl/worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
-    expect(normalizeXlsxRelTarget('../worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
-    expect(normalizeXlsxRelTarget('../../xl/worksheets/sheet1.xml')).toBe(
-      'xl/worksheets/sheet1.xml',
-    )
+  it('resolves workbook rel targets against xl/workbook.xml', () => {
+    const wb = (t: string) => resolveTarget('xl/workbook.xml', t)
+    expect(wb('worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
+    expect(wb('worksheets\\sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
+    expect(wb('/xl/worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
+    expect(wb('../customXml/item1.xml')).toBe('customXml/item1.xml')
+    expect(wb('../../xl/worksheets/sheet1.xml')).toBe('xl/worksheets/sheet1.xml')
   })
 
   it('resolves sheets through backslash rel targets from Windows producers', async () => {

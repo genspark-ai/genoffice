@@ -56,6 +56,7 @@ export const ru = {
   aiSumInsertFootnote: 'Вставлена сноска',
   aiSumInsertEndnote: 'Вставлена концевая сноска',
   aiSumDeleteNote: 'Сноска удалена',
+  aiSumEditNote: 'Сноска изменена',
   aiSumReadNotes: 'Чтение сносок',
   aiSumAddComment: 'Примечание добавлено',
   aiSumDeleteComment: 'Примечание удалено',

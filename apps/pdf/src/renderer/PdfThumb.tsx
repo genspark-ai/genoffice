@@ -11,6 +11,7 @@ import { MarkupOverlay } from './PdfPage'
 import {
   textEditPreviewContent,
   textEditPreviewParts,
+  textEraseKey,
   textInsertPreviewStyle,
 } from './text-edit-preview'
 import type { LocalTextEdit, LocalTextInsert } from './text-edit-preview'
@@ -136,6 +137,7 @@ export function ThumbPendingOverlay({
   markups,
   drawings,
   textEdits,
+  erasedText,
   textInserts,
   imageEdits,
   stamps,
@@ -145,6 +147,8 @@ export function ThumbPendingOverlay({
   markups: LocalMarkup[]
   drawings: LocalDrawing[]
   textEdits: LocalTextEdit[]
+  /** textEraseKey of runs the page's live render already erased */
+  erasedText?: Set<string>
   textInserts: LocalTextInsert[]
   imageEdits: LocalImageEdit[]
   stamps: StampInput[]
@@ -210,7 +214,12 @@ export function ThumbPendingOverlay({
         </div>
       ))}
       {textEdits.map((te) => {
-        const { style, coverStyle } = textEditPreviewParts(te, geom, 1)
+        const { style, coverStyle } = textEditPreviewParts(
+          te,
+          geom,
+          1,
+          !!erasedText?.has(textEraseKey(te.input)),
+        )
         return (
           <Fragment key={te.id}>
             {coverStyle && <div className="pdf-textedit-cover" style={coverStyle} />}

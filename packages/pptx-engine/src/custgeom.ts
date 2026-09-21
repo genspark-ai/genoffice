@@ -421,3 +421,64 @@ function emitNorm(cmds: AbsCmd[], vw: number, vh: number): string {
   }
   return parts.length ? parts.join(' ') : ''
 }
+
+/** Absolute path command in <a:path> space (EMU when w/h are the element extents). */
+export interface CustGeomPathCmd {
+  op: 'M' | 'L' | 'C' | 'Q' | 'Z'
+  pts: number[]
+}
+
+/** Editable single-path custom geometry: what Edit Points writes back as <a:custGeom>. */
+export interface CustGeomPath {
+  w: number
+  h: number
+  cmds: CustGeomPathCmd[]
+}
+
+export const CUST_GEOM_PT_COUNT: Record<CustGeomPathCmd['op'], number> = {
+  M: 2,
+  L: 2,
+  C: 6,
+  Q: 4,
+  Z: 0,
+}
+
+export function validCustGeomPath(p: unknown): p is CustGeomPath {
+  if (!p || typeof p !== 'object') return false
+  const { w, h, cmds } = p as Partial<CustGeomPath>
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w! <= 0 || h! <= 0) return false
+  if (!Array.isArray(cmds) || !cmds.length || cmds[0]!.op !== 'M') return false
+  return cmds.every(
+    (c) =>
+      c &&
+      typeof c === 'object' &&
+      c.op in CUST_GEOM_PT_COUNT &&
+      Array.isArray(c.pts) &&
+      c.pts.length === CUST_GEOM_PT_COUNT[c.op] &&
+      c.pts.every((v) => Number.isFinite(v)),
+  )
+}
+
+const CMD_TAG: Record<Exclude<CustGeomPathCmd['op'], 'Z'>, string> = {
+  M: 'a:moveTo',
+  L: 'a:lnTo',
+  C: 'a:cubicBezTo',
+  Q: 'a:quadBezTo',
+}
+
+/** Serialize a path as a complete <a:custGeom> (integer coordinates, path w/h as the space). */
+export function custGeomXml(p: CustGeomPath): string {
+  const body = p.cmds
+    .map((c) => {
+      if (c.op === 'Z') return '<a:close/>'
+      let pts = ''
+      for (let i = 0; i < c.pts.length; i += 2)
+        pts += `<a:pt x="${Math.round(c.pts[i]!)}" y="${Math.round(c.pts[i + 1]!)}"/>`
+      return `<${CMD_TAG[c.op]}>${pts}</${CMD_TAG[c.op]}>`
+    })
+    .join('')
+  return (
+    `<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="0" t="0" r="r" b="b"/>` +
+    `<a:pathLst><a:path w="${Math.round(p.w)}" h="${Math.round(p.h)}">${body}</a:path></a:pathLst></a:custGeom>`
+  )
+}

@@ -174,13 +174,17 @@ describe('text', () => {
   })
 
   it('putTextEdit appends new records and replaces by id', () => {
-    const a = run(empty(), [{ op: 'putTextEdit', input: input(), moveBy: [1, 1] }])
+    const a = run(empty(), [
+      { op: 'putTextEdit', input: input(), moveBy: [1, 1], paper: '#0b1220' },
+    ])
     const id = a.state.textEdits[0]!.id
     expect(a.state.textEdits[0]!.moveBy).toEqual([1, 1])
+    expect(a.state.textEdits[0]!.paper).toBe('#0b1220')
     const b = run(a.state, [{ op: 'putTextEdit', id, input: input(1) }])
     expect(b.state.textEdits).toHaveLength(1)
     expect(b.state.textEdits[0]!.input.pageIndex).toBe(1)
     expect(b.state.textEdits[0]!.moveBy).toBeUndefined()
+    expect(b.state.textEdits[0]!.paper).toBeUndefined()
   })
 
   it('text inserts add and remove', () => {

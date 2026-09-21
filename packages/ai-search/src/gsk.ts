@@ -12,7 +12,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unwatchFile, watchFile, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -25,7 +25,7 @@ import {
   type ImageSearchResult,
   type WebSearchResult,
 } from './shared'
-import { genofficeApiKey } from './genoffice-auth'
+import { genofficeApiKey, genofficeAuthPath, reloadGenofficeAuth } from './genoffice-auth'
 
 const SEARCH_TIMEOUT_MS = 60_000
 const GENERATE_TIMEOUT_MS = 600_000
@@ -98,6 +98,28 @@ export function gskApiKey(): string {
 }
 
 /**
+ * Fires when the effective gsk key changes on disk — another GenOffice-family
+ * app re-logging in mints a new key and revokes the one this process holds.
+ * Polls by path (watchFile): auth.json is replaced whole, and fs.watch misses
+ * events for a moment after it is armed.
+ */
+export function watchGskApiKey(onChange: (key: string) => void, intervalMs = 2000): () => void {
+  let last = gskApiKey()
+  const check = (): void => {
+    reloadGenofficeAuth()
+    const key = gskApiKey()
+    if (key === last) return
+    last = key
+    onChange(key)
+  }
+  const files = [genofficeAuthPath(), join(homedir(), '.genspark-tool-cli', 'config.json')]
+  for (const f of files) watchFile(f, { persistent: false, interval: intervalMs }, check)
+  return () => {
+    for (const f of files) unwatchFile(f, check)
+  }
+}
+
+/**
  * Whether gsk is usable (CLI installed and logged in / has a key). Callers use this to decide fallback.
  * Set AI_SEARCH_DISABLE_GSK=1 to force-disable (test isolation / force Serper).
  */
@@ -157,8 +179,10 @@ export function parseGskOutput(stdout: string): unknown {
   } catch {
     /* fall through to line-by-line scan */
   }
+  // Pretty-printed output puts inner elements on their own `{` lines, so the
+  // scan must start from the earliest candidate and take the longest parse.
   const lines = trimmed.split('\n')
-  for (let i = lines.length - 1; i >= 0; i--) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim()
     if (line.startsWith('{') || line.startsWith('[')) {
       for (let j = lines.length; j > i; j--) {
@@ -249,7 +273,7 @@ export function parseGskWebSearch(
   const answerRaw = typeof data.answer === 'string' && data.answer ? data.answer : undefined
   const answer =
     answerRaw !== undefined && answerRaw.length > MAX_GSK_SNIPPET_CHARS
-      ? answerRaw.slice(0, MAX_GSK_SNIPPET_CHARS)
+      ? `${answerRaw.slice(0, MAX_GSK_SNIPPET_CHARS)}…`
       : answerRaw
   return answer !== undefined ? { results, answer } : { results }
 }

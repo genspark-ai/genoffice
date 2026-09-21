@@ -33,12 +33,11 @@ export const DOCX_MEDIA_SCHEME_PRIVILEGE: CustomScheme = {
 
 export type RendererHost = 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html'
 
-/** Dev server URL when one is configured, otherwise the module's scheme URL; the
- * query is appended either way so a dev URL that already carries params stays valid. */
-/** Max renderer query entries and value chars: prevents MB URLs from IPC. */
 export const MAX_RENDERER_QUERY_ENTRIES = 20
 export const MAX_RENDERER_QUERY_CHARS = 4_000
 
+/** Dev server URL when one is configured, otherwise the module's scheme URL; the
+ * query is appended either way so a dev URL that already carries params stays valid. */
 export function rendererUrl(
   devUrl: string | undefined,
   host: RendererHost,

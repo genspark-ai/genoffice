@@ -46,6 +46,7 @@ export const ko = {
   elementMoveUp: '위로 이동',
   elementMoveDown: '아래로 이동',
   elementToolbar: '요소 도구 모음',
+  elementPath: '요소 경로',
   fmtBold: '굵게',
   fmtItalic: '기울임',
   openExternal: '브라우저에서 링크를 열었습니다',

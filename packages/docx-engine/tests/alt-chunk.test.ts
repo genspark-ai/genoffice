@@ -172,6 +172,15 @@ describe('w:altChunk expansion', () => {
     const visible = parsed.blocks.filter((b) => !b.hidden)
     expect(visible.map((b) => b.type)).toEqual(['passthrough', 'paragraph'])
     expect(visible[0].label).toBe('w:altChunk')
+    // a host that can convert (the UI thread) reparses when it sees this
+    expect(parsed.extras.altChunksNeedConverter).toBe(1)
+  })
+
+  it('does not flag chunks when a converter is installed', async () => {
+    installStubConverter()
+    const bytes = await hostDocx({ path: 'word/afchunk.htm', body: HTML, contentType: 'text/html' })
+    const parsed = await parseDocx(bytes)
+    expect(parsed.extras.altChunksNeedConverter).toBeUndefined()
   })
 })
 

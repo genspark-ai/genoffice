@@ -57,6 +57,7 @@ export const nl = {
   aiSumInsertFootnote: 'Voetnoot ingevoegd',
   aiSumInsertEndnote: 'Eindnoot ingevoegd',
   aiSumDeleteNote: 'Noot verwijderd',
+  aiSumEditNote: 'Noot bewerkt',
   aiSumReadNotes: 'Noten gelezen',
   aiSumAddComment: 'Opmerking toegevoegd',
   aiSumDeleteComment: 'Opmerking verwijderd',

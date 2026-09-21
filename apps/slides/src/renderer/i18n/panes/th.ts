@@ -40,6 +40,9 @@ export const th = {
   paneAnimEffShrink: 'ย่อและหมุน',
   paneAnimEffZoomOut: 'ซูมออก',
   paneAnimEffMotionPath: 'เส้นทางการเคลื่อนที่',
+  paneAnimEffMediaPlay: 'เล่น',
+  paneAnimEffMediaPause: 'หยุดชั่วคราว',
+  paneAnimEffMediaStop: 'หยุด',
 
   paneChartEditTitle: 'แก้ไขข้อมูลแผนภูมิ',
   paneChartCategoryN: 'ประเภท {n}',
@@ -275,4 +278,13 @@ export const th = {
   paneShowEnded: 'จบการนำเสนอแล้ว',
   paneShowRehearseTip: 'ซ้อมการกำหนดเวลา: เวลาบนสไลด์นี้ / เวลารวม',
   paneShowRehearseTotal: 'รวม {time}',
+  paneShowMenuNext: 'ถัดไป',
+  paneShowMenuPrev: 'ก่อนหน้า',
+  paneShowMenuLastViewed: 'สไลด์ที่ดูล่าสุด',
+  paneShowMenuSeeAll: 'ดูสไลด์ทั้งหมด',
+  paneShowMenuScreen: 'หน้าจอ',
+  paneShowMenuBlack: 'หน้าจอสีดำ',
+  paneShowMenuWhite: 'หน้าจอสีขาว',
+  paneShowMenuEnd: 'จบการนำเสนอ',
+  panePresenterWhiteOn: 'หน้าจอสีขาว (กด W เพื่อกลับ)',
 } satisfies Record<keyof typeof zh, string>

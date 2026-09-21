@@ -71,7 +71,8 @@ export function prevalidateWaveSource(source: unknown): string | null {
   if (!source.trim()) {
     return 'wavedrom source is empty: expected WaveJSON like { signal: [...] }'
   }
-  const trimmed = source.trimStart()
+  // json5 allows leading comments; look past them for the object start
+  const trimmed = source.replace(/^(?:\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)+/, '')
   if (!trimmed.startsWith('{')) {
     const preview = trimmed.slice(0, 24)
     return `expected a WaveJSON object starting with "{", got "${preview}": provide an object like { signal: [...] }`
@@ -88,11 +89,8 @@ export function isWaveJson(value: unknown): value is Record<string, unknown> {
     if (arr === undefined) continue
     if (!Array.isArray(arr)) return false
     if (arr.length === 0) continue
-    if (
-      !arr.every((entry) => typeof entry === 'object' && entry !== null && !Array.isArray(entry))
-    ) {
-      return false
-    }
+    // groups are nested arrays: ['name', { ... }, ...]
+    if (!arr.every((entry) => typeof entry === 'object' && entry !== null)) return false
     found = true
   }
   return found

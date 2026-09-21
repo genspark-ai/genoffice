@@ -44,6 +44,12 @@ export const nl = {
   appUntitledDocx: 'Naamloos.docx',
   appOpenedFile: '{name} geopend',
   appOpenFailed: 'Openen mislukt: {error}',
+  appDocTooLargeBlocks:
+    "{name}: het document is te groot om te openen ({blocks} alinea's, {chars} tekens)",
+  appDocLargeReadOnly:
+    "Groot document ({blocks} alinea's): geopend in leesmodus — druk op Esc om te bewerken",
+  appDocLargeSpellOff:
+    "Groot document ({blocks} alinea's): spellingcontrole tijdens het typen staat uit – zet deze aan via Controleren › Spelling",
   appFontsMissing: 'Ontbrekende documentlettertypen: {names} (vervangingen weergegeven)',
   appVerticalTextNotice:
     'Dit document bevat verticale tekst (voorlopig horizontaal weergegeven; opslaan wordt niet beïnvloed)',

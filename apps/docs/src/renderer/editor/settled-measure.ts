@@ -1,10 +1,68 @@
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import type { Transaction } from '@tiptap/pm/state'
+import { AddMarkStep, RemoveMarkStep, ReplaceStep } from '@tiptap/pm/transform'
 import type { EditorView } from '@tiptap/pm/view'
 
 /** CSS floats: the only layout where a paragraph's vertical position changes its line breaks */
-const FLOAT_SELECTOR =
-  '[class*="-wrap-square-"], [class*="-wrap-tight-"], [class*="-wrap-through-"], ' +
-  '[class*="doc-table-float-"]:not(.doc-table-float-flow), .doc-cell-boxes'
+// wrap-around floats the paragraphs flow beside (explicit classes: an
+// attribute-substring selector scanned the whole editor on every keystroke)
+const FLOAT_SELECTOR = [
+  ...['square', 'tight', 'through'].flatMap((mode) =>
+    ['left', 'right'].flatMap((side) => [
+      `.img-wrap-${mode}-${side}`,
+      `.doc-inline-img--wrap-${mode}-${side}`,
+    ]),
+  ),
+  '.doc-table-float-left',
+  '.doc-table-float-right',
+  '.doc-table-float-center',
+  '.doc-cell-boxes',
+].join(', ')
+
+/** float bands of one editor state, shared by every cache measuring against it */
+const floatBandsByState = new WeakMap<object, number[][]>()
+/** the float elements of the last scan of one editor; null once a transaction may have added one */
+let floatScan: { dom: Element; els: Element[] } | null = null
+
+/** Only a transaction that inserts something other than text can add a float:
+ *  plain typing keeps the element list and re-reads the boxes. */
+export function noteFloatTransaction(tr: Transaction): void {
+  if (!floatScan || !tr.docChanged) return
+  for (const step of tr.steps) {
+    if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) continue
+    if (step instanceof ReplaceStep && step.slice.openStart === 0 && step.slice.openEnd === 0) {
+      let text = true
+      step.slice.content.forEach((n) => {
+        if (!n.isText) text = false
+      })
+      if (text) continue
+    }
+    floatScan = null
+    return
+  }
+}
+
+function floatBandsOf(view: EditorView): number[][] {
+  const state = (view as { state?: object }).state
+  const cached = state && floatBandsByState.get(state)
+  if (cached) return cached
+  if (!floatScan || floatScan.dom !== view.dom || floatScan.els.some((f) => !f.isConnected))
+    floatScan = { dom: view.dom, els: Array.from(view.dom.querySelectorAll(FLOAT_SELECTOR)) }
+  // a floating table the paginator flows in place (doc-table-float-flow, a
+  // decoration class) is not a float for this pass
+  const bands = floatScan.els
+    .filter((f) => !f.classList.contains('doc-table-float-flow'))
+    .map((f) => {
+      const r = f.getBoundingClientRect()
+      const cs = getComputedStyle(f)
+      return [
+        r.top - (parseFloat(cs.marginTop) || 0),
+        r.bottom + (parseFloat(cs.marginBottom) || 0),
+      ]
+    })
+  if (state) floatBandsByState.set(state, bands)
+  return bands
+}
 
 interface Entry<T> {
   /** paragraph start when measured; results are stored at that offset */
@@ -56,14 +114,7 @@ export class SettledParagraphCache<T> {
     this.gen++
     for (const [node, entry] of this.results)
       if (entry.gen < this.gen - 1) this.results.delete(node)
-    this.floatBands = Array.from(view.dom.querySelectorAll(FLOAT_SELECTOR), (f) => {
-      const r = f.getBoundingClientRect()
-      const cs = getComputedStyle(f)
-      return [
-        r.top - (parseFloat(cs.marginTop) || 0),
-        r.bottom + (parseFloat(cs.marginBottom) || 0),
-      ]
-    })
+    this.floatBands = floatBandsOf(view)
   }
 
   /**

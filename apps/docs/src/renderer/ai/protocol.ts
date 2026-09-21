@@ -141,7 +141,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '',
   '# Fields, footnotes & endnotes',
   '- insertField writes real Word fields (SEQ caption numbers, DATE/TIME, REF/PAGEREF to a bookmark, MERGEFIELD, PAGE/NUMPAGES, AUTHOR…). Results the editor cannot compute (page numbers, document properties) are placeholders marked for Word to recompute when the file opens; mention that when you report. TOC → insertToc, never insertField.',
-  '- insert_footnote / insert_endnote put a superscript reference mark into a block (after afterText, else at its end) and store the note text; read_notes lists notes with ids and anchored blocks; delete_note removes one with its mark. Notes are not document blocks — never reach them via block indexes or rewrite a block just to change its note.',
+  '- insert_footnote / insert_endnote put a superscript reference mark into a block (after afterText, else at its end) and store the note text; read_notes lists notes with ids and anchored blocks; edit_note changes the text of one in place (findReplace inside the note, id kept); delete_note removes one with its mark. Notes are not document blocks — never reach them via block indexes or rewrite a block just to change its note.',
   '',
   '# Headers & footers',
   '- The message context lists the current header/footer text. Change them with set_header_footer: plain text, \\n between lines; the tokens {PAGE} and {NUMPAGES} become live page-number fields (e.g. text "{PAGE} / {NUMPAGES}" renders as "3 / 12"); an empty string clears the text.',

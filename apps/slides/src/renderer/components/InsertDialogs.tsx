@@ -2,7 +2,8 @@
  * The Insert tab's three dialogs: hyperlink / header & footer / equation.
  * Reuses SettingsModal's .modal-backdrop/.modal styles.
  */
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
+import { useEscOverlay } from '../esc-overlay'
 import { Dropdown } from '@genoffice/ui'
 import type { LinkTargetOp } from '../../shared/ipc'
 import { EQUATION_GALLERY } from '../insert-presets'
@@ -27,6 +28,7 @@ export function LinkDialog({
   onApply,
   onClose,
 }: LinkDialogProps) {
+  useEscOverlay(true, onClose)
   const { t } = useI18n()
   const [mode, setMode] = useState<'url' | 'slide'>(initial?.kind === 'slide' ? 'slide' : 'url')
   const [url, setUrl] = useState(initial?.kind === 'url' ? initial.url : 'https://')
@@ -119,6 +121,7 @@ interface HeaderFooterDialogProps {
 }
 
 export function HeaderFooterDialog({ initial, onApply, onClose }: HeaderFooterDialogProps) {
+  useEscOverlay(true, onClose)
   const { t } = useI18n()
   const [dateOn, setDateOn] = useState(!!initial.date)
   const [dateAuto, setDateAuto] = useState(true)
@@ -205,15 +208,9 @@ interface EquationDialogProps {
 }
 
 export function EquationDialog({ onInsert, onClose }: EquationDialogProps) {
+  useEscOverlay(true, onClose)
   const { t } = useI18n()
   const [text, setText] = useState('')
-
-  // Esc closes
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -264,15 +261,10 @@ export function TableInsertDialog({
   onInsert: (rows: number, cols: number) => void
   onClose: () => void
 }) {
+  useEscOverlay(true, onClose)
   const { t } = useI18n()
   const [cols, setCols] = useState(5)
   const [rows, setRows] = useState(2)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   const insert = () => onInsert(rows, cols)
 

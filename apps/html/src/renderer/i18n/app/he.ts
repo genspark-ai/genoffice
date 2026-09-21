@@ -44,6 +44,7 @@ export const he = {
   elementMoveUp: 'העלה',
   elementMoveDown: 'הורד',
   elementToolbar: 'סרגל כלים של אלמנט',
+  elementPath: 'נתיב הרכיב',
   fmtBold: 'מודגש',
   fmtItalic: 'נטוי',
   openExternal: 'הקישור נפתח בדפדפן',

@@ -37,9 +37,9 @@ describe('parseGskOutput', () => {
     expect(parseGskOutput(out)).toEqual({ a: 1, b: [1, 2] })
   })
 
-  it('prefers the last JSON block when the CLI echoes an earlier payload', () => {
-    const out = '{"status":"stale"}\n[INFO] retrying\n{"status":"ok"}'
-    expect(parseGskOutput(out)).toEqual({ status: 'ok' })
+  it('returns the root of a pretty-printed array followed by logs', () => {
+    const out = '{\n  "items": [\n    { "id": 1 },\n    { "id": 2 }\n  ]\n}\n[INFO] done'
+    expect(parseGskOutput(out)).toEqual({ items: [{ id: 1 }, { id: 2 }] })
   })
 
   it('throws when no JSON present', () => {
