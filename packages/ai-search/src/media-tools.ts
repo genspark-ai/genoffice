@@ -111,11 +111,15 @@ export async function loadMediaReference(ref: string): Promise<MediaBlob> {
   if (ref.startsWith('data:')) {
     const m = /^data:([^;,]+);base64,([\s\S]*)$/.exec(ref)
     if (!m) throw new Error('Unsupported data URL: only base64-encoded media can be analyzed')
-    const bytes = new Uint8Array(Buffer.from(m[2].replace(/\s+/g, ''), 'base64'))
+    const mimeType = m[1]
+    const base64 = m[2]
+    if (!mimeType || base64 === undefined)
+      throw new Error('Unsupported data URL: only base64-encoded media can be analyzed')
+    const bytes = new Uint8Array(Buffer.from(base64.replace(/\s+/g, ''), 'base64'))
     if (bytes.byteLength > MAX_MEDIA_BYTES) {
       throw new MediaTooLargeError('data URL is too large to analyze')
     }
-    return { bytes, mime: m[1].toLowerCase() }
+    return { bytes, mime: mimeType.toLowerCase() }
   }
   if (ref.startsWith('file:')) {
     const local = readGeneratedImage(ref)
