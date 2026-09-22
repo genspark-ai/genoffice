@@ -115,6 +115,15 @@ export async function adoptLazyMediaHashes(
   }
 }
 
+/** the file behind these pictures moved on disk: keep serving them from the new path */
+export function moveLazyMediaSource(oldPath: string, newPath: string): void {
+  for (const source of sources.values()) {
+    if (source.path !== oldPath) continue
+    source.path = newPath
+    source.table = undefined
+  }
+}
+
 export function forgetLazyMediaOwner(wcId: number): void {
   for (const [hash, source] of sources) {
     source.owners.delete(wcId)

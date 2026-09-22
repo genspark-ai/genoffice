@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fetchRemoteImage, remoteImageHeaders } from '../src/remote-image'
+import {
+  ResponseTooLargeError,
+  fetchRemoteImage,
+  readBodyCapped,
+  remoteImageHeaders,
+} from '../src/remote-image'
 
 const png = () => new Response('img', { status: 200 })
 
@@ -84,5 +89,57 @@ describe('fetchRemoteImage', () => {
     })
     expect(resp).toBeNull()
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})
+
+describe('readBodyCapped', () => {
+  const chunked = (chunks: Uint8Array[], headers: Record<string, string> = {}) =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const next = chunks.shift()
+          if (next) controller.enqueue(next)
+          else controller.close()
+        },
+      }),
+      { status: 200, headers },
+    )
+
+  it('concatenates a chunked body within the cap', async () => {
+    const bytes = await readBodyCapped(chunked([new Uint8Array([1, 2]), new Uint8Array([3])]), 10)
+    expect(Array.from(bytes)).toEqual([1, 2, 3])
+  })
+
+  it('rejects a Content-Length above the cap without reading the body', async () => {
+    const pull = vi.fn()
+    const resp = new Response(new ReadableStream({ pull }), {
+      headers: { 'content-length': '11' },
+    })
+    await expect(readBodyCapped(resp, 10)).rejects.toBeInstanceOf(ResponseTooLargeError)
+    expect(pull).not.toHaveBeenCalled()
+  })
+
+  it('stops a chunked body (no Content-Length) as soon as it passes the cap', async () => {
+    let served = 0
+    const resp = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          served++
+          controller.enqueue(new Uint8Array(4))
+        },
+      }),
+    )
+    await expect(readBodyCapped(resp, 10)).rejects.toBeInstanceOf(ResponseTooLargeError)
+    expect(served).toBeLessThanOrEqual(4)
+  })
+
+  it('does not trust a Content-Length that undercounts the body', async () => {
+    const resp = chunked([new Uint8Array(8), new Uint8Array(8)], { 'content-length': '1' })
+    await expect(readBodyCapped(resp, 10)).rejects.toBeInstanceOf(ResponseTooLargeError)
+  })
+
+  it('treats a missing Content-Length as unknown rather than zero', async () => {
+    const bytes = await readBodyCapped(chunked([new Uint8Array(5)]), 10)
+    expect(bytes.byteLength).toBe(5)
   })
 })

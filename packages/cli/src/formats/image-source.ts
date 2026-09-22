@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { extname, isAbsolute, resolve } from 'node:path'
-import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
+import {
+  MAX_REMOTE_IMAGE_BYTES,
+  ResponseTooLargeError,
+  fetchRemoteImage,
+  readBodyCapped,
+} from '@genoffice/electron-utils/remote-image'
 import { assertAllowed, type PathContext } from '../fs'
 import { imageSize } from './image-size'
 
@@ -29,7 +34,11 @@ export async function readImageSource(
   if (/^https?:\/\//i.test(url)) {
     const resp = await fetchRemoteImage(url)
     if (!resp || !resp.ok) return null
-    const bytes = new Uint8Array(await resp.arrayBuffer())
+    const bytes = await readBodyCapped(resp, MAX_REMOTE_IMAGE_BYTES).catch((err: unknown) => {
+      if (err instanceof ResponseTooLargeError) return null
+      throw err
+    })
+    if (!bytes) return null
     const declared = (resp.headers.get('content-type') ?? '').split('/')[1]?.split(';')[0] ?? ''
     return withType(bytes, declared)
   }

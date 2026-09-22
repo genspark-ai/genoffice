@@ -124,8 +124,10 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 8px 28px 24px;
+  padding: 0 28px 24px;
   overflow-y: auto;
+  /* height of the sticky title row, so focus/scroll-into-view lands below it */
+  scroll-padding-top: 49px;
 }
 
 /* the pane scrolls, so rows must keep their natural height: .set-field's
@@ -136,11 +138,44 @@
 }
 
 .set-pane-title {
-  margin: 0 0 18px;
+  margin: 8px 0 18px;
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.2;
+}
+
+/* title row pinned to the top of the scrolling pane so the test/save actions
+   and their result pill stay in view however long the form is */
+.set-pane-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 -28px 12px;
+  padding: 8px 28px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.set-pane-head .set-pane-title {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.set-pane-actions {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.set-pane-actions .set-ai-status {
+  margin-right: 0;
 }
 
 .set-field {
@@ -511,7 +546,7 @@
   line-height: 1.5;
 }
 
-/* footer feedback pill: spinner while testing, green on success/saved, red on failure */
+/* feedback pill: spinner while testing, green on success/saved, red on failure */
 .set-ai-status {
   display: inline-flex;
   align-items: center;
@@ -569,6 +604,23 @@
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+}
+
+.set-pane-subhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 28px 0 4px;
+}
+
+.set-pane-subhead .set-pane-subtitle {
+  margin: 0;
+}
+
+.set-pane-subhead .set-ai-status {
+  margin-right: 0;
+  padding: 2px 8px 2px 6px;
+  font-size: 12px;
 }
 
 /* ── Integrations pane ── */

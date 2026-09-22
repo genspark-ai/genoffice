@@ -85,14 +85,8 @@ const PAPER_SIZES = [
   { key: 'b5', name: 'B5 (JIS)', w: 10319, h: 14572 },
 ]
 
-/** Paper size caption from data (twips → trimmed cm), so the unit string
- *  stays in i18n instead of hardcoded English. */
 export function paperSizeCaption(wTwips: number, hTwips: number, unit: string): string {
-  const cm = (twips: number): string => {
-    if (!Number.isFinite(twips) || twips < 0) return '0'
-    return String(parseFloat((twips / 567).toFixed(2)))
-  }
-  return `${cm(wTwips)} × ${cm(hTwips)} ${unit}`
+  return `${cmFromTwips(wTwips)} × ${cmFromTwips(hTwips)} ${unit}`
 }
 
 interface LayoutTabProps extends TabProps {

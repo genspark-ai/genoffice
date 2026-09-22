@@ -299,6 +299,12 @@ export class ProjectStore {
    * project.files and chatIdByPath are updated accordingly, while the chatId
    * stays the same (history needs no relocation).
    */
+  /** every file path the index keys on (project membership and chat ids) */
+  knownFilePaths(): string[] {
+    const index = this.readIndex()
+    return [...new Set([...Object.keys(index.fileMap), ...Object.keys(index.chatIdByPath ?? {})])]
+  }
+
   fileRenamed(oldPath: string, newPath: string): void {
     if (oldPath === newPath) return
     const index = this.readIndex()

@@ -236,7 +236,7 @@ describe('setElementFont (change font family/size for a whole selected element)'
   })
 })
 
-describe('identity round-trip keeps inherited run bytes (prod-import run4)', () => {
+describe('identity round-trip keeps inherited run bytes', () => {
   const slideWith = (sp: string) =>
     '<?xml version="1.0"?><p:sld xmlns:p="p" xmlns:a="a" xmlns:r="r"><p:cSld>' +
     `<p:spTree><p:nvGrpSpPr/><p:grpSpPr/>${sp}</p:spTree></p:cSld></p:sld>`

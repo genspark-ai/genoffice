@@ -6,7 +6,10 @@ export default defineConfig({
   // Bundle everything into the shell main (same policy as apps/docs): the
   // imported docs/sheets main modules are TS source with no build artifacts,
   // so externalizing them would break Node ESM resolution at runtime.
-  main: {},
+  main: {
+    // node:sqlite is a Node 22+ builtin the bundler's builtin list may predate
+    build: { rollupOptions: { external: ['node:sqlite'] } },
+  },
   preload: {
     build: {
       rollupOptions: {

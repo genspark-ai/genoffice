@@ -73,7 +73,7 @@ const MAX_PRINT_CELLS = 50_000
  * accumulators, and scale math as NaNpt. Clamp to a finite positive value.
  */
 function finitePt(value: number, fallback: number): number {
-  if (!Number.isFinite(value) || value <= 0) return fallback
+  if (!Number.isFinite(value) || value < 0) return fallback
   return Math.min(value, 100000)
 }
 

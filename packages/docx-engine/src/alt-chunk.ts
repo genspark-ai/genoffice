@@ -24,10 +24,6 @@ export type AltChunkKind = 'html' | 'mht' | 'docx'
 
 const ALT_CHUNK_REL = /\/aFChunk$/
 const MAX_CHUNK_BYTES = 64 * 1024 * 1024
-/** MHT parts beyond this are ignored (see splitMultipart) */
-export const MAX_MHT_PARTS = 1000
-/** decodeMhtToHtml refuses inputs beyond this (mirrors the chunk cap) */
-export const MAX_MHT_BYTES = 64 * 1024 * 1024
 
 export function altChunkKind(
   path: string,
@@ -140,9 +136,7 @@ function splitMultipart(body: Uint8Array, boundary: string): MimePart[] {
   const parts: MimePart[] = []
   const marker = new TextEncoder().encode(`--${boundary}`)
   let pos = indexOfBytes(body, marker, 0)
-  // A hostile archive can pack unbounded part counts; each part costs header
-  // scans plus an html-wide regex pass during image inlining.
-  while (pos !== -1 && parts.length < MAX_MHT_PARTS) {
+  while (pos !== -1) {
     let start = pos + marker.length
     if (body[start] === 0x2d && body[start + 1] === 0x2d) break
     if (body[start] === 0x0d) start++
@@ -196,7 +190,6 @@ function decodeTransfer(part: MimePart): Uint8Array {
  * the converter sees them without the package.
  */
 export function decodeMhtToHtml(bytes: Uint8Array): string | null {
-  if (bytes.length > MAX_MHT_BYTES) return null
   const top = splitHeadersBody(bytes)
   const type = top.headers.get('content-type') ?? ''
   const boundary = headerParam(type, 'boundary')
@@ -207,33 +200,37 @@ export function decodeMhtToHtml(bytes: Uint8Array): string | null {
   if (!htmlPart) return null
   const htmlBytes = decodeTransfer(htmlPart)
   const charset = headerParam(htmlPart.headers.get('content-type'), 'charset')
-  let html = charset ? decodeWithCharset(htmlBytes, charset) : decodeHtmlBytes(htmlBytes)
+  const html = charset ? decodeWithCharset(htmlBytes, charset) : decodeHtmlBytes(htmlBytes)
   const baseLocation = htmlPart.headers.get('content-location') ?? ''
+  // one map + one pass over the html: per-part regexes made this parts x html
+  const inline = new Map<string, string>()
   for (const part of parts) {
     if (part === htmlPart) continue
     const ct = (part.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase()
     if (!ct.startsWith('image/')) continue
     const dataUrl = `data:${ct};base64,${btoa(latin1(decodeTransfer(part)))}`
-    const refs = new Set<string>()
     const location = part.headers.get('content-location')
     if (location) {
-      refs.add(location)
+      inline.set(location.toLowerCase(), dataUrl)
       if (baseLocation) {
         const base = baseLocation.replace(/[^/]*$/, '')
-        if (location.startsWith(base)) refs.add(location.slice(base.length))
+        if (location.startsWith(base))
+          inline.set(location.slice(base.length).toLowerCase(), dataUrl)
       }
     }
     const cid = part.headers.get('content-id')?.replace(/^<|>$/g, '')
-    if (cid) refs.add(`cid:${cid}`)
-    for (const ref of refs) {
-      const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      html = html.replace(
-        new RegExp(`(src|href)\\s*=\\s*(["']?)${escaped}\\2`, 'gi'),
-        (_m, attr: string, q: string) => `${attr}=${q || '"'}${dataUrl}${q || '"'}`,
-      )
-    }
+    if (cid) inline.set(`cid:${cid}`.toLowerCase(), dataUrl)
   }
-  return html
+  if (inline.size === 0) return html
+  return html.replace(
+    /\b(src|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi,
+    (m, attr: string, dq?: string, sq?: string, uq?: string) => {
+      const dataUrl = inline.get((dq ?? sq ?? uq ?? '').toLowerCase())
+      if (!dataUrl) return m
+      const q = sq !== undefined ? "'" : '"'
+      return `${attr}=${q}${dataUrl}${q}`
+    },
+  )
 }
 
 export function altChunkPartPath(rels: Map<string, RelInfo>, rId: string): string | null {

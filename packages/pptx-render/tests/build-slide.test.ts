@@ -294,6 +294,37 @@ describe('buildRenderSlide (end-to-end on real fixture)', () => {
     expect(glyphText(withoutNo)).toBe('Pg3')
   })
 
+  it('a bevelled shape under a rig without band calibration still takes the rig face tint', async () => {
+    const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
+    const slide = deck.slides[0]!
+    const el: any = {
+      id: 'sp_bev',
+      type: 'text',
+      anchor: { spIndex: -1, originalXml: '', range: [0, 0] },
+      transform: {
+        offset: { x: 0, y: 0, cx: 1800000, cy: 650000 },
+        rot: 0,
+        flipH: false,
+        flipV: false,
+      },
+      fill: { type: 'solid', color: '#A5A5A5' },
+      scene3d: {
+        cameraPreset: 'orthographicFront',
+        lightRig: 'contrasting',
+        lightDir: 't',
+        material: 'translucentPowder',
+        bevelTop: { wEmu: 127000, hEmu: 25400, preset: 'circle' },
+      },
+      text: { paragraphs: [], insets: { l: 0, t: 0, r: 0, b: 0 } },
+    }
+    const node = buildRenderSlide({ ...slide, elements: [el], decorations: [] }, deck.size, {
+      fitWidthPx: 1280,
+    }).nodes[0] as any
+    expect(node.extrusion).toBeUndefined()
+    // 0.69 x 165 + 54 (contrasting powder additive) = 168
+    expect(node.fill.color.toLowerCase()).toBe('#a8a8a8')
+  })
+
   it('renders tables as table nodes with positioned cells (no more chip)', async () => {
     const { deck } = await openPptx(enginePptx('01_standard_business.pptx'))
     let sawTable = false

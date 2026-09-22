@@ -10,7 +10,7 @@ describe('print arg validators', () => {
   })
 
   it('rejects non-finite and out-of-range geometry', () => {
-    for (const v of [NaN, Infinity, -Infinity, 0, -100, 719, 72001, 1e12, '12240', null]) {
+    for (const v of [NaN, Infinity, -Infinity, 0, -100, 143, 72001, 1e12, '12240', null]) {
       expect(validPrintDim(v)).toBe(false)
     }
     for (const s of [NaN, Infinity, -Infinity, 0, 0.05, 5.1, 1e9, '2']) {

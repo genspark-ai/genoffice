@@ -118,15 +118,29 @@ function runStyle(run: TextRun, scale: number, fontScale: number): RunStyle {
   }
 }
 
+// Weight baked into the family name: a heavy family (HG "...UB" gothics, "Futura Black")
+// drawn with a substitute must still read bold; a light family with b=1 renders in
+// PowerPoint as a synthetic-bold light face — about regular weight, never a true bold.
+const HEAVY_FAMILY_RE = /\s(?:black|heavy|(?:extra|ultra)[- ]?bold)$/i
+const HG_HEAVY_RE = /^HG.*(?:UB|EB)$/
+const LIGHT_FAMILY_RE = /\s(?:thin|hairline|(?:extra|ultra|semi)?[- ]?light)$/i
+
 /**
  * PowerPoint never kerns text drawn with a substituted font: an overlapped pair of
  * identical runs (kern default vs kern=0) diverges when the font is installed but
  * coincides pixel-exactly when it's missing (probe-measured). A substituted token
  * measures and draws unkerned, keeping the two sides consistent either way.
  */
-function substituteKerning(tok: Token, metrics: FontMetricsProvider): Token {
-  if (tok.style.kerning === false || !metrics.substituted?.(tok.style)) return tok
-  return { ...tok, style: { ...tok.style, kerning: false } }
+function substituteStyle(tok: Token, metrics: FontMetricsProvider): Token {
+  const st = tok.style
+  let next: RunStyle | undefined
+  if (st.bold && LIGHT_FAMILY_RE.test(st.fontFamily)) next = { ...st, bold: false }
+  if (metrics.substituted?.(st)) {
+    if (st.kerning !== false) next = { ...(next ?? st), kerning: false }
+    if (!st.bold && (HEAVY_FAMILY_RE.test(st.fontFamily) || HG_HEAVY_RE.test(st.fontFamily)))
+      next = { ...(next ?? st), bold: true }
+  }
+  return next ? { ...tok, style: next } : tok
 }
 
 /** Token width = font advance width + letter spacing × char count (matches canvas letterSpacing: appended after each char) */
@@ -429,7 +443,10 @@ function tokenizeParagraph(p: Paragraph, scale: number, fontScale: number): Toke
         // width (fonts like Carlito have no U+00A0 glyph → the missing-glyph
         // fallback would badly over-measure it)
         buf += ' '
-      } else if (isWideChar(cp)) {
+      } else if (isWideChar(cp) && (!isHangul(cp) || p.latinLnBrk)) {
+        // Hangul is wide but wraps by word (probe: PowerPoint moves the whole space-delimited
+        // Korean word down, never a syllable), so it stays in the word buffer — unless the
+        // paragraph allows mid-word breaks (latinLnBrk="1": prod deck broke 불꽃|에)
         flushWord()
         tokens.push({ ...base, text: ch, breakable: true, isSpace: false })
       } else if (BREAK_AFTER_DASH.has(cp) && buf) {
@@ -578,6 +595,27 @@ const KINSOKU_NO_END = new Set('([{$（［｛＄〈《「『【〔〝｢£¥￡�
 const kinsokuNoStart = (t: Token) => KINSOKU_NO_START.has(t.text)
 const kinsokuNoEnd = (t: Token) => KINSOKU_NO_END.has(t.text)
 
+/** Hangul syllables / jamo / compatibility jamo (incl. the ㆍ middle dot): word-wrapped like Latin. */
+function isHangul(cp: number): boolean {
+  return (
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0x1100 && cp <= 0x11ff) ||
+    (cp >= 0x3130 && cp <= 0x318f) ||
+    (cp >= 0xa960 && cp <= 0xa97f) ||
+    (cp >= 0xd7b0 && cp <= 0xd7ff)
+  )
+}
+
+/** Closing marks PowerPoint lets overhang the right margin at a line end in East Asian
+ *  paragraphs (probe on ko-KR Malgun text: `)` hangs by its 3.6pt advance, `）` by 10pt,
+ *  a trailing Hangul syllable not at all; rIns does not change the allowance). */
+const HANGING_PUNCT = new Set('、。，．,.)]}）］｝〉》」』】〕〗〙〛!?！？:;：；')
+function hangingTailWidth(tok: Token, metrics: FontMetricsProvider): number {
+  const last = [...tok.text].pop()
+  if (!last || !HANGING_PUNCT.has(last)) return 0
+  return tokenWidth({ ...tok, text: last, wOverride: undefined }, metrics)
+}
+
 /** Dashes that allow a break after them (U+2011 non-breaking hyphen intentionally absent). */
 const BREAK_AFTER_DASH = new Set([0x2d, 0x2010, 0x2012, 0x2013, 0x2014])
 
@@ -706,7 +744,7 @@ function layoutParagraph(
 ): LaidLine[] {
   const tokens = applyBidi(tokenizeParagraph(p, scale, fontScale), p.rtl).map(
     (tok, logicalOrder) => ({
-      ...substituteKerning(tok, metrics),
+      ...substituteStyle(tok, metrics),
       logicalOrder,
     }),
   )
@@ -780,6 +818,8 @@ function layoutParagraph(
     lines.push(line)
   }
 
+  // East Asian paragraphs hang trailing punctuation unless <a:pPr hangingPunct="0">
+  const hangingOn = p.hangingPunct !== false && p.runs.some((r) => hasWideChar(r.text))
   let endedWithBreak = false
   for (const tok of tokens) {
     // <a:br/> forced break: breaks regardless of wrap; record the sentinel run index for editor round-trips
@@ -805,25 +845,31 @@ function layoutParagraph(
     // The first line loses firstLineShrinkPx to the overflowing bullet glyph; evaluated
     // lazily because the soft wrap right below can end line 0 for this same token
     const lineAvail = () => (lines.length === 0 ? availWidth - firstLineShrinkPx : availWidth)
-    if (wrap && cur.length && curW + w > lineAvail() && !tok.isSpace) {
+    // A closing mark ending the line may hang past the margin by its own advance
+    const hangW = hangingOn && !tok.isSpace ? hangingTailWidth(tok, metrics) : 0
+    if (wrap && cur.length && curW + w - hangW > lineAvail() && !tok.isSpace) {
       // Kinsoku: pull the predecessor down when the new line would start with a closing
       // mark, push an opening bracket down when it would end the old line.
       const carry: Token[] = []
       while (cur.length > 1) {
         const head = carry[0] ?? tok
         const last = cur[cur.length - 1]!
-        if (last.isSpace || (!kinsokuNoStart(head) && !kinsokuNoEnd(last))) break
+        if (last.isSpace || p.eaLnBrk === false) break
+        if (!kinsokuNoStart(head) && !kinsokuNoEnd(last)) break
         carry.unshift(cur.pop()!)
       }
       pushLine(cur)
       cur = carry
       curW = carry.reduce((s, t) => s + tokenWidth(t, metrics), 0)
     }
-    // Hard-break over-long words (a single token wider than the line)
-    if (wrap && !cur.length && w > lineAvail() && tok.text.length > 1 && !tok.isSpace) {
-      for (const seg of hardBreak(tok, lineAvail(), metrics)) {
-        pushLine([seg])
-      }
+    // Hard-break over-long words (a single token wider than the line, even with its closing
+    // mark hanging); the last piece stays open so following words continue on that line
+    if (wrap && !cur.length && w - hangW > lineAvail() && tok.text.length > 1 && !tok.isSpace) {
+      const segs = hardBreak(tok, lineAvail(), metrics)
+      for (const seg of segs.slice(0, -1)) pushLine([seg])
+      const tail = segs[segs.length - 1]!
+      cur.push(tail)
+      curW += tokenWidth(tail, metrics)
       continue
     }
     cur.push(tok)
@@ -1437,7 +1483,7 @@ function layoutTextVertical(
     }
 
     for (const rawTok of tokenizeParagraph(p, scale, fontScale)) {
-      const tok = substituteKerning(rawTok, metrics)
+      const tok = substituteStyle(rawTok, metrics)
       if (tok.isBreak) {
         finishCol(tok.srcRun)
         continue

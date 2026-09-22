@@ -27,6 +27,7 @@ import type {
   TableCellRender,
   TableRenderNode,
 } from '@genoffice/pptx-render'
+import { extrusionFrontFace } from '@genoffice/pptx-render'
 import {
   anchoredTileCanvas,
   averageColor,
@@ -53,6 +54,7 @@ import {
   smoothTension,
   type GlyphDraw,
   type ShadowGeom,
+  displayFontFamily,
 } from './konva-adapter'
 
 /** Raster of one top-level node in slide px (data URL), for effects SVG cannot express. */
@@ -1216,8 +1218,20 @@ function emitChart(b: PageBuilder, chart: ChartRenderNode): string {
   for (const m of chart.markers) out.push(el('circle', { cx: m.x, cy: m.y, r: m.r, fill: m.color }))
   for (const s of chart.swatches)
     out.push(el('rect', { x: s.x, y: s.y, width: s.w, height: s.h, fill: s.color, rx: 1, ry: 1 }))
-  b.fontFamilies.add(CHART_FONT)
-  for (const l of chart.labels)
+  for (const l of chart.labels) {
+    const family = l.fontFamily ? displayFontFamily(l.fontFamily) : CHART_FONT
+    b.fontFamilies.add(family)
+    if (l.fill || l.stroke)
+      out.push(
+        el('rect', {
+          x: l.x - l.fontSizePx * 0.3,
+          y: l.y - l.fontSizePx * 0.1,
+          width: (l.w ?? 0) + l.fontSizePx * 0.6,
+          height: l.fontSizePx * 1.35,
+          fill: l.fill ?? 'none',
+          ...(l.stroke ? { stroke: l.stroke, 'stroke-width': 1 } : {}),
+        }),
+      )
     out.push(
       el(
         'text',
@@ -1226,7 +1240,7 @@ function emitChart(b: PageBuilder, chart: ChartRenderNode): string {
           // Konva anchors single-line text on the em-box middle half a line below the top
           y: l.y + l.fontSizePx / 2,
           'dominant-baseline': 'central',
-          'font-family': CHART_FONT,
+          'font-family': family,
           'font-size': l.fontSizePx,
           'font-weight': l.bold ? 700 : undefined,
           'font-style': l.italic ? 'italic' : undefined,
@@ -1237,6 +1251,7 @@ function emitChart(b: PageBuilder, chart: ChartRenderNode): string {
         escText(l.text),
       ),
     )
+  }
   if (chart.border)
     out.push(
       el('rect', {
@@ -1364,6 +1379,13 @@ function emitShape(b: PageBuilder, shape: ShapeRenderNode, flip: FlipParity): st
 
   let geometry = ''
   if (shape.extrusion) {
+    const front = extrusionFrontFace(shape.extrusion.faces)
+    if (shape.extrusion.shadowPath && front && filter)
+      geometry += el('path', {
+        d: shape.extrusion.shadowPath,
+        ...(front.front ? fillA : { fill: normalizeColor(front.color) }),
+        filter,
+      })
     for (const f of shape.extrusion.faces)
       geometry += el('path', {
         d: f.path,
@@ -1433,7 +1455,7 @@ function emitShape(b: PageBuilder, shape: ShapeRenderNode, flip: FlipParity): st
 
   let shadowUnder = ''
   let shadowOver = ''
-  if (isOverlayShadow(shape.shadow) && !shape.extrusion) {
+  if (isOverlayShadow(shape.shadow) && (!shape.extrusion || shape.extrusion.flat)) {
     const ov = shapeShadowOverlay(shape.shadow, shadowGeom(shape), box.w, box.h)
     if (ov) {
       const img = overlayImage(b, ov)

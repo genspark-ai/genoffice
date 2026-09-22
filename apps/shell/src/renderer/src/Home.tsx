@@ -17,13 +17,18 @@ import type {
   HomeApi,
   MoveConflictPolicy,
   RecentEntry,
+  FileSearchHit,
+  FileSearchPage,
+  FileSearchRerank,
 } from '../../shared/home-api'
 import type { IntegrationsApi } from '../../shared/integrations-api'
+import { markText } from '../../shared/text-marks'
 import { useDismissablePopover } from '@genoffice/ui'
 import { fileCountKey, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
 import { SettingsModal } from './SettingsModal'
+import type { SettingsTarget } from './SettingsModal'
 import { skillUpdateDue } from './IntegrationsPane'
 
 declare global {
@@ -189,10 +194,20 @@ function baseName(entry: RecentEntry): string {
   return entry.ext ? entry.name.slice(0, -(entry.ext.length + 1)) : entry.name
 }
 
-/** "Clients / Contracts" for a file under the root; the parent folder name elsewhere */
-function locationLabel(path: string, root: FolderRoot | null): string {
+/** the root that holds `path`; the deepest one when roots nest */
+function rootOf(path: string, roots: readonly FolderRoot[]): FolderRoot | null {
+  let best: FolderRoot | null = null
+  for (const root of roots) {
+    if (isUnder(root.path, path) && (!best || root.path.length > best.path.length)) best = root
+  }
+  return best
+}
+
+/** "Clients / Contracts" for a file under a root; the parent folder name elsewhere */
+function locationLabel(path: string, roots: readonly FolderRoot[]): string {
   const dir = dirOf(path)
-  if (root && isUnder(root.path, dir)) {
+  const root = rootOf(dir, roots)
+  if (root) {
     if (dir === root.path) return root.name
     return splitPath(dir.slice(root.path.length)).join(' / ')
   }
@@ -234,6 +249,21 @@ const FILTER_FAMILY: Record<string, readonly string[]> = {
 function matchesFilter(entry: RecentEntry, filter: string): boolean {
   if (filter === 'all') return true
   return (FILTER_FAMILY[filter] ?? [filter]).includes(entry.ext)
+}
+
+/** wrap every matched fragment of a name or folder label in the shared search-hit mark */
+function highlightText(text: string, needles: readonly string[]): ReactElement[] | string {
+  const marks = markText(text, needles)
+  if (!marks.some((m) => m.hit)) return text
+  return marks.map((m, i) =>
+    m.hit ? (
+      <mark key={i} className="search-hit">
+        {m.text}
+      </mark>
+    ) : (
+      <span key={i}>{m.text}</span>
+    ),
+  )
 }
 
 /** Check glyph marking the selected sort option; invisible on the others so labels stay aligned */
@@ -352,7 +382,7 @@ function useFolderListings() {
 // ── Move-to-folder picker ────────────────────────────────
 
 interface FolderPickerProps {
-  root: FolderRoot
+  roots: readonly FolderRoot[]
   /** folders the moved items already live in (greyed, not selectable) */
   currentDirs: ReadonlySet<string>
   /** folders being moved: they and their descendants cannot be targets */
@@ -363,7 +393,7 @@ interface FolderPickerProps {
 }
 
 function FolderPicker({
-  root,
+  roots,
   currentDirs,
   movingDirs,
   count,
@@ -372,7 +402,9 @@ function FolderPicker({
 }: FolderPickerProps) {
   const { t } = useI18n()
   const { listings, load } = useFolderListings()
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set([root.path]))
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
+    () => new Set(roots.map((r) => r.path)),
+  )
   const [picked, setPicked] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [creatingIn, setCreatingIn] = useState<string | null>(null)
@@ -391,7 +423,9 @@ function FolderPicker({
   }, [onCancel])
 
   const disabledDir = (dir: string) =>
-    currentDirs.has(dir) || movingDirs.some((m) => isUnder(m, dir))
+    currentDirs.has(dir) ||
+    movingDirs.some((m) => isUnder(m, dir)) ||
+    rootOf(dir, roots)?.usable === false
 
   // Enter or blur commits, Escape cancels; the blur an unmount may fire reads
   // the edit from a ref mirrored during render, so a finished edit is a no-op
@@ -499,7 +533,7 @@ function FolderPicker({
     for (const listing of listings.values()) {
       for (const f of listing.folders) {
         if (f.name.toLowerCase().includes(needle)) {
-          hits.push({ path: f.path, name: f.name, rel: locationLabel(f.path + '/x', root) })
+          hits.push({ path: f.path, name: f.name, rel: locationLabel(f.path + '/x', roots) })
         }
         if (!listings.has(f.path)) load(f.path)
       }
@@ -553,13 +587,18 @@ function FolderPicker({
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="picker-tree">
-          {needle ? renderSearch() : <ul role="tree">{renderNode(root, 0)}</ul>}
+          {needle ? (
+            renderSearch()
+          ) : (
+            <ul role="tree">{roots.map((root) => renderNode(root, 0))}</ul>
+          )}
         </div>
         <div className="modal-buttons picker-buttons">
           <button
             className="btn btn-secondary picker-new"
             onClick={() => {
-              const parent = picked ?? root.path
+              const parent = picked ?? roots.find((r) => r.usable)?.path
+              if (!parent) return
               setExpanded((prev) => new Set([...prev, parent]))
               setCreatingIn(parent)
               setNewName('')
@@ -652,8 +691,13 @@ const LOGIN_MAX_WAIT_MS = 300_000
 
 function AccountEntry({
   onStatusChange,
+  onFileSearchSettingsChange,
+  openRequest,
 }: {
   onStatusChange?: (status: AccountStatus | null) => void
+  onFileSearchSettingsChange?: () => void
+  /** a fresh object per request: the home list asks to open the modal on a given block */
+  openRequest?: SettingsTarget | null
 }) {
   const { t } = useI18n()
   const [status, setStatus] = useState<AccountStatus | null>(null)
@@ -794,15 +838,21 @@ function AccountEntry({
     })
   }
 
-  const handleClick = () => {
+  const [target, setTarget] = useState<SettingsTarget | null>(null)
+  const openSettings = useCallback((to: SettingsTarget | null) => {
     // refresh the login state / credit balance; drop the response
     // when a logout happened while it was in flight
     const seq = statusSeq.current
     void window.aiOffice.accountStatus?.().then((s) => {
       if (seq === statusSeq.current) setStatus(s)
     })
+    setTarget(to)
     setSettingsOpen(true)
-  }
+  }, [])
+  const handleClick = () => openSettings(null)
+  useEffect(() => {
+    if (openRequest) openSettings(openRequest)
+  }, [openRequest, openSettings])
 
   return (
     <div className="account-entry">
@@ -816,6 +866,7 @@ function AccountEntry({
           onOpenLoginUrl={openLoginUrl}
           onCopyLoginUrl={copyLoginUrl}
           onClose={() => setSettingsOpen(false)}
+          onFileSearchChange={onFileSearchSettingsChange}
           onLogin={() => {
             setSettingsOpen(false)
             startLogin()
@@ -823,6 +874,7 @@ function AccountEntry({
           onLogout={doLogout}
           skillUpdateDue={skillUpdate}
           onSkillUpdateDue={setSkillUpdate}
+          target={target}
         />
       )}
       {!settingsOpen && waiting && authUrl && (
@@ -1353,6 +1405,18 @@ export function Home() {
   // Genspark web projects take over the content area (like a selected folder)
   const [cloudMode, setCloudMode] = useState(false)
   const [filter, setFilter] = useState('all')
+  // ── File search (names + indexed content); active while the box has text ──
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchPage, setSearchPage] = useState<FileSearchPage | null>(null)
+  const [rerank, setRerank] = useState<{ key: string; result: FileSearchRerank } | null>(null)
+  // bumped when the Jev settings change so the current results are judged again (or the order dropped)
+  const [rerankSettingsTick, setRerankSettingsTick] = useState(0)
+  const [settingsRequest, setSettingsRequest] = useState<SettingsTarget | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  // IME composition: wait for the committed text instead of searching each keystroke
+  const composingRef = useRef(false)
+  const searchSeq = useRef(0)
+  const searchActive = searchQuery.trim().length > 0
   // modified-column sort (WPS-style header popover), shared by the global and folder tables
   const [fileSort, setFileSort] = useState<'recent' | 'oldest'>('recent')
   const [fileSortMenuOpen, setFileSortMenuOpen] = useState(false)
@@ -1383,7 +1447,12 @@ export function Home() {
   )
 
   // ── Folder tree state ──
-  const [root, setRoot] = useState<FolderRoot | null>(null)
+  // the default save folder first, then the folders the user added; `root` is the default one
+  const [roots, setRoots] = useState<FolderRoot[]>([])
+  const root = roots[0] ?? null
+  const canMove = roots.some((r) => r.usable)
+  const editableAt = (path: string) => rootOf(path, roots)?.usable !== false
+  const [panelDrop, setPanelDrop] = useState(false)
   const [treeState] = useState(readTreeState)
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(treeState.expanded))
@@ -1424,13 +1493,18 @@ export function Home() {
   const dragExpandTimer = useRef<number | null>(null)
 
   const loadRoot = useCallback(() => {
-    void window.aiOffice.folderRoot().then((next) => {
-      setRoot((prev) => {
-        if (prev && prev.path !== next.path) {
+    void window.aiOffice.folderRoots().then((next) => {
+      setRoots((prev) => {
+        if (prev[0] && prev[0].path !== next[0]?.path) {
           // the default save folder changed in settings: the old tree is meaningless
           resetFolders()
           setSelectedFolder(null)
-          setExpanded(new Set([next.path]))
+          setExpanded(new Set(next.map((r) => r.path)))
+        } else if (prev.length > 0) {
+          // a folder just added opens so its contents show right away
+          const known = new Set(prev.map((r) => r.path))
+          const added = next.filter((r) => !known.has(r.path)).map((r) => r.path)
+          if (added.length > 0) setExpanded((e) => new Set([...e, ...added]))
         }
         return next
       })
@@ -1448,13 +1522,13 @@ export function Home() {
     if (seededRoot.current !== root.path) {
       seededRoot.current = root.path
       if (treeState.root !== root.path) {
-        // a layout saved for another root is not ours: start from just the root
-        setExpanded(new Set([root.path]))
+        // a layout saved for another root is not ours: start from the root rows
+        setExpanded(new Set(roots.map((r) => r.path)))
         return
       }
     }
     for (const dir of expanded) loadFolder(dir)
-  }, [root, expanded, loadFolder, treeState])
+  }, [root, roots, expanded, loadFolder, treeState])
 
   useEffect(() => {
     if (selectedFolder) loadFolder(selectedFolder)
@@ -1462,15 +1536,16 @@ export function Home() {
 
   // a remembered selection that no longer exists (deleted in Finder) falls back to the root
   useEffect(() => {
-    if (!root?.usable || !selectedFolder) return
-    if (!isUnder(root.path, selectedFolder)) {
+    if (!selectedFolder || roots.length === 0) return
+    const owner = rootOf(selectedFolder, roots)
+    if (!owner?.readable) {
       setSelectedFolder(null)
       return
     }
     if (listings.get(selectedFolder)?.missing) {
-      setSelectedFolder(selectedFolder === root.path ? null : dirOf(selectedFolder))
+      setSelectedFolder(selectedFolder === owner.path ? null : dirOf(selectedFolder))
     }
-  }, [root, selectedFolder, listings])
+  }, [roots, selectedFolder, listings])
 
   useEffect(() => {
     return window.aiOffice.onFolderChanged((dirs) => {
@@ -1526,6 +1601,65 @@ export function Home() {
   useEffect(() => {
     reloadRef.current(false)
   }, [view, filter])
+
+  const q = searchQuery.trim()
+  useEffect(() => {
+    if (!q) {
+      searchSeq.current++
+      setSearchPage(null)
+      return
+    }
+    let timer = 0
+    const run = () => {
+      if (composingRef.current) {
+        timer = window.setTimeout(run, 150)
+        return
+      }
+      const seq = ++searchSeq.current
+      const ext = filter === 'all' ? undefined : filter
+      void window.aiOffice.searchFiles({ q, ext, limit: 100 }).then((page) => {
+        if (seq !== searchSeq.current) return
+        setSearchPage(page)
+        // results grow while the background index catches up
+        if (page.index.pending > 0 || page.index.scanning) timer = window.setTimeout(run, 1500)
+      })
+    }
+    timer = window.setTimeout(run, 150)
+    return () => window.clearTimeout(timer)
+  }, [q, filter])
+
+  // Jev judges the top local hits once they settle; the main process answers null when reranking is off.
+  // The key changes only with the query, filter or candidate set, so index polls do not restart the timer.
+  const rerankKey =
+    q && searchPage && searchPage.hits.length >= 2
+      ? [q, filter, ...searchPage.hits.slice(0, 20).map((h) => h.path)].join('\n')
+      : ''
+  useEffect(() => {
+    if (!rerankKey) return
+    const key = rerankKey
+    const paths = key.split('\n').slice(2)
+    const timer = window.setTimeout(() => {
+      void window.aiOffice.rerankSearch({ q, paths }).then((result) => {
+        if (result) setRerank({ key, result })
+        else setRerank((cur) => (cur && cur.key === key ? null : cur))
+      })
+    }, 600)
+    return () => window.clearTimeout(timer)
+  }, [q, filter, rerankKey, rerankSettingsTick])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
+      if (event.key !== 'f' && event.key !== 'p') return
+      const input = searchInputRef.current
+      if (!input) return
+      event.preventDefault()
+      input.focus()
+      input.select()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   useEffect(() => {
     const onFocus = () => refreshRef.current()
@@ -1710,10 +1844,11 @@ export function Home() {
   }
 
   const expandTo = (dir: string) => {
-    if (!root) return
+    const owner = rootOf(dir, roots)
+    if (!owner) return
     setExpanded((prev) => {
       const next = new Set(prev)
-      for (const crumb of crumbsOf(root, dir)) next.add(crumb.path)
+      for (const crumb of crumbsOf(owner, dir)) next.add(crumb.path)
       return next
     })
   }
@@ -1905,6 +2040,7 @@ export function Home() {
 
   const folderDropProps = (dir: string, { autoExpand }: { autoExpand: boolean }) => ({
     onDragOver: (event: ReactDragEvent) => {
+      if (rootOf(dir, roots)?.usable === false) return
       if (!event.dataTransfer.types.includes(DRAG_PATHS_MIME)) return
       event.preventDefault()
       event.dataTransfer.dropEffect = 'move'
@@ -1934,7 +2070,9 @@ export function Home() {
 
   // ── New file (lands in the selected folder) ──
   const newFileOpts =
-    selectedFolder && root && selectedFolder !== root.path ? { dir: selectedFolder } : undefined
+    selectedFolder && root && selectedFolder !== root.path && rootOf(selectedFolder, roots)?.usable
+      ? { dir: selectedFolder }
+      : undefined
 
   const NEW_ITEMS = [
     {
@@ -2011,7 +2149,47 @@ export function Home() {
 
   // ── Sidebar folder tree ──
 
-  const renderFolderMenu = (entry: { path: string; name: string }, isRoot: boolean) => (
+  const addFolderRoot = () => {
+    void window.aiOffice.addFolderRoot().then((added) => {
+      if (added) loadRoot()
+    })
+  }
+
+  /** the folder leaves the list only; whatever it held on disk stays where it is */
+  const removeFolderRoot = (path: string) => {
+    setFolderMenu(null)
+    if (selectedFolder && isUnder(path, selectedFolder)) setSelectedFolder(null)
+    setExpanded((prev) => new Set([...prev].filter((dir) => !isUnder(path, dir))))
+    void window.aiOffice.removeFolderRoot(path).then(loadRoot)
+  }
+
+  // folders dragged in from the OS join the tree in place; documents open as they do anywhere else
+  const panelDropProps = {
+    onDragOver: (event: ReactDragEvent) => {
+      if (!event.dataTransfer.types.includes('Files')) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'link'
+      if (!panelDrop) setPanelDrop(true)
+    },
+    onDragLeave: (event: ReactDragEvent) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+      setPanelDrop(false)
+    },
+    onDrop: (event: ReactDragEvent) => {
+      if (!event.dataTransfer.types.includes('Files')) return
+      event.preventDefault()
+      setPanelDrop(false)
+      const paths = Array.from(event.dataTransfer.files)
+        .map((file) => window.aiOffice.pathForFile(file))
+        .filter(Boolean)
+      if (paths.length === 0) return
+      void window.aiOffice.dropFolderRoots(paths).then((added) => {
+        if (added.length > 0) loadRoot()
+      })
+    },
+  }
+
+  const renderFolderMenu = (entry: { path: string; name: string }, rootEntry?: FolderRoot) => (
     <div
       className="folder-menu-wrap"
       ref={menuOpenAt('tree', entry.path) ? folderMenuWrapRef : undefined}
@@ -2043,29 +2221,33 @@ export function Home() {
           role="menu"
           style={{ top: folderMenu.top, right: folderMenu.right }}
         >
-          <button role="menuitem" onClick={() => startCreateFolder(entry.path)}>
-            {t('newSubfolder')}
-          </button>
-          {!isRoot && (
+          {editableAt(entry.path) && (
+            <button role="menuitem" onClick={() => startCreateFolder(entry.path)}>
+              {t('newSubfolder')}
+            </button>
+          )}
+          {!rootEntry && editableAt(entry.path) && (
             <button role="menuitem" onClick={() => startRenameFolder(entry, 'tree')}>
               {t('rename')}
             </button>
           )}
-          {!isRoot && (
+          {!rootEntry && editableAt(entry.path) && (
             <button role="menuitem" onClick={() => startMove([entry.path])}>
               {t('moveToFolder')}
             </button>
           )}
-          <button
-            role="menuitem"
-            onClick={() => {
-              setFolderMenu(null)
-              void window.aiOffice.revealPath(entry.path)
-            }}
-          >
-            {t('revealInFolder')}
-          </button>
-          {!isRoot && (
+          {(rootEntry?.readable ?? true) && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setFolderMenu(null)
+                void window.aiOffice.revealPath(entry.path)
+              }}
+            >
+              {t('revealInFolder')}
+            </button>
+          )}
+          {!rootEntry && editableAt(entry.path) && (
             <>
               <div className="row-menu-divider" />
               <button
@@ -2077,6 +2259,14 @@ export function Home() {
                 }}
               >
                 {t('deleteFolder')}
+              </button>
+            </>
+          )}
+          {rootEntry?.removable && (
+            <>
+              <div className="row-menu-divider" />
+              <button role="menuitem" onClick={() => removeFolderRoot(entry.path)}>
+                {t('removeFolderRoot')}
               </button>
             </>
           )}
@@ -2117,24 +2307,29 @@ export function Home() {
     entry: { path: string; name: string; hasSubfolders: boolean },
     depth: number,
   ): ReactElement {
-    const isRoot = root !== null && entry.path === root.path
-    const isOpen = expanded.has(entry.path)
+    const rootEntry = roots.find((r) => r.path === entry.path)
+    const isRoot = rootEntry !== undefined
+    const unavailable = rootEntry !== undefined && !rootEntry.readable
+    const isOpen = expanded.has(entry.path) && !unavailable
     const children = listings.get(entry.path)?.folders ?? []
     const isActive = selectedFolder === entry.path
     const isRenaming = folderRenaming?.where === 'tree' && folderRenaming.path === entry.path
-    const showChevron = isRoot || entry.hasSubfolders || children.length > 0
+    const showChevron = !unavailable && (isRoot || entry.hasSubfolders || children.length > 0)
     return (
       <li key={entry.path} className="tree-item">
         <div
-          className={`tree-row${isActive ? ' active' : ''}${dropTarget === entry.path ? ' drop-target' : ''}`}
+          className={`tree-row${isActive ? ' active' : ''}${dropTarget === entry.path ? ' drop-target' : ''}${unavailable ? ' unavailable' : ''}`}
           style={{ paddingLeft: 8 + depth * 14 }}
           role="treeitem"
           aria-selected={isActive}
           aria-expanded={showChevron ? isOpen : undefined}
           tabIndex={0}
-          onClick={() => selectFolder(entry.path)}
+          title={isRoot ? entry.path : undefined}
+          onClick={() => {
+            if (!unavailable) selectFolder(entry.path)
+          }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') selectFolder(entry.path)
+            if (e.key === 'Enter' && !unavailable) selectFolder(entry.path)
             if (e.key === 'ArrowRight' && !isOpen) toggleExpanded(entry.path)
             if (e.key === 'ArrowLeft' && isOpen) toggleExpanded(entry.path)
           }}
@@ -2187,7 +2382,8 @@ export function Home() {
           ) : (
             <span className="tree-name">{entry.name}</span>
           )}
-          {renderFolderMenu(entry, isRoot)}
+          {unavailable && <span className="tree-hint">{t('rootUnavailable')}</span>}
+          {renderFolderMenu(entry, rootEntry)}
         </div>
         {isOpen && (children.length > 0 || creating?.parent === entry.path) && (
           <ul className="tree-children" role="group">
@@ -2200,43 +2396,76 @@ export function Home() {
   }
 
   function renderFolderPanel() {
+    const createIn = selectedFolder ?? root?.path
+    const canCreate = createIn !== undefined && rootOf(createIn, roots)?.usable === true
     return (
-      <div className="folder-panel">
+      <div className={`folder-panel${panelDrop ? ' drop-target' : ''}`} {...panelDropProps}>
         <div className="folder-panel-head">
           <span className="folder-panel-title">{t('folders')}</span>
-          {root?.usable && (
-            <button
-              className="folder-add-btn"
-              data-tip={t('newFolder')}
-              aria-label={t('newFolder')}
-              onClick={() => startCreateFolder(selectedFolder ?? root.path)}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                <path
-                  d="M7 1v12M1 7h12"
+          <div className="folder-panel-actions">
+            {roots.length > 0 && (
+              <button
+                className="folder-add-btn folder-add-root-btn"
+                data-tip={t('addFolderRoot')}
+                aria-label={t('addFolderRoot')}
+                onClick={addFolderRoot}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
                   stroke="currentColor"
-                  strokeWidth="1.7"
+                  strokeWidth="2.4"
                   strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          )}
-        </div>
-        {root && !root.usable ? (
-          <div className="folder-unusable">
-            <p>{t('rootUnusable')}</p>
-            <button
-              className="btn btn-secondary"
-              onClick={() => void window.aiOffice.pickDefaultSaveDir().then(() => loadRoot())}
-            >
-              {t('pickSaveDir')}
-            </button>
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1" />
+                  <path d="M2 13h10" />
+                  <path d="m9 16 3-3-3-3" />
+                </svg>
+              </button>
+            )}
+            {canCreate && (
+              <button
+                className="folder-add-btn folder-new-btn"
+                data-tip={t('newFolder')}
+                aria-label={t('newFolder')}
+                onClick={() => startCreateFolder(createIn)}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                  <path
+                    d="M7 1v12M1 7h12"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            )}
           </div>
-        ) : (
-          <ul className="tree" role="tree">
-            {root && renderTreeNode({ path: root.path, name: root.name, hasSubfolders: true }, 0)}
-          </ul>
-        )}
+        </div>
+        <ul className="tree" role="tree">
+          {root && !root.usable ? (
+            <li className="folder-unusable">
+              <p>{t('rootUnusable')}</p>
+              <button
+                className="btn btn-secondary"
+                onClick={() => void window.aiOffice.pickDefaultSaveDir().then(() => loadRoot())}
+              >
+                {t('pickSaveDir')}
+              </button>
+            </li>
+          ) : (
+            root && renderTreeNode({ path: root.path, name: root.name, hasSubfolders: true }, 0)
+          )}
+          {roots
+            .slice(1)
+            .map((r) =>
+              renderTreeNode({ path: r.path, name: r.name, hasSubfolders: r.readable }, 0),
+            )}
+        </ul>
       </div>
     )
   }
@@ -2245,6 +2474,7 @@ export function Home() {
 
   function renderFileRow(entry: RecentEntry, context: 'global' | 'folder') {
     const isRenaming = renaming?.path === entry.path
+    const editable = editableAt(entry.path)
     const canDelete =
       context === 'folder' ? folderSelectedPaths.length === 0 : selectedPaths.length === 0
     return (
@@ -2299,7 +2529,7 @@ export function Home() {
             <span className="recent-name">{entry.name}</span>
           )}
           <span className="recent-path" title={dirOf(entry.path)}>
-            {locationLabel(entry.path, root)}
+            {locationLabel(entry.path, roots)}
           </span>
           <span className="recent-time">
             {entry.missing ? '—' : formatModified(entry.mtimeMs, i18n)}
@@ -2369,7 +2599,7 @@ export function Home() {
                 >
                   {t('copyPath')}
                 </button>
-                {root?.usable && !entry.missing && (
+                {canMove && editable && !entry.missing && (
                   <>
                     <div className="row-menu-divider" />
                     <button role="menuitem" onClick={() => startMove([entry.path])}>
@@ -2377,14 +2607,18 @@ export function Home() {
                     </button>
                   </>
                 )}
-                <div className="row-menu-divider" />
-                <button role="menuitem" onClick={() => startRename(entry)}>
-                  {t('rename')}
-                </button>
-                <button role="menuitem" onClick={() => duplicateFile(entry.path)}>
-                  {t('duplicate')}
-                </button>
-                {canDelete && (
+                {editable && (
+                  <>
+                    <div className="row-menu-divider" />
+                    <button role="menuitem" onClick={() => startRename(entry)}>
+                      {t('rename')}
+                    </button>
+                    <button role="menuitem" onClick={() => duplicateFile(entry.path)}>
+                      {t('duplicate')}
+                    </button>
+                  </>
+                )}
+                {canDelete && (context === 'global' || editable) && (
                   <>
                     <div className="row-menu-divider" />
                     {context === 'global' && (
@@ -2392,13 +2626,15 @@ export function Home() {
                         {t('removeFromList')}
                       </button>
                     )}
-                    <button
-                      role="menuitem"
-                      className="danger"
-                      onClick={() => deleteFiles([entry.path])}
-                    >
-                      {t('deleteFiles')}
-                    </button>
+                    {editable && (
+                      <button
+                        role="menuitem"
+                        className="danger"
+                        onClick={() => deleteFiles([entry.path])}
+                      >
+                        {t('deleteFiles')}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -2412,6 +2648,7 @@ export function Home() {
   /** sub-folder row in the folder view's table: enter on click, same … menu as the tree */
   function renderSubfolderRow(entry: FolderEntry) {
     const isRenaming = folderRenaming?.where === 'table' && folderRenaming.path === entry.path
+    const editable = editableAt(entry.path)
     return (
       <li className="recent-row" key={entry.path}>
         <div
@@ -2512,12 +2749,16 @@ export function Home() {
                 >
                   {t('open')}
                 </button>
-                <button role="menuitem" onClick={() => startRenameFolder(entry, 'table')}>
-                  {t('rename')}
-                </button>
-                <button role="menuitem" onClick={() => startMove([entry.path])}>
-                  {t('moveToFolder')}
-                </button>
+                {editable && (
+                  <>
+                    <button role="menuitem" onClick={() => startRenameFolder(entry, 'table')}>
+                      {t('rename')}
+                    </button>
+                    <button role="menuitem" onClick={() => startMove([entry.path])}>
+                      {t('moveToFolder')}
+                    </button>
+                  </>
+                )}
                 <button
                   role="menuitem"
                   onClick={() => {
@@ -2527,17 +2768,21 @@ export function Home() {
                 >
                   {t('revealInFolder')}
                 </button>
-                <div className="row-menu-divider" />
-                <button
-                  role="menuitem"
-                  className="danger"
-                  onClick={() => {
-                    setFolderMenu(null)
-                    setConfirmDeleteFolder(entry.path)
-                  }}
-                >
-                  {t('deleteFolder')}
-                </button>
+                {editable && (
+                  <>
+                    <div className="row-menu-divider" />
+                    <button
+                      role="menuitem"
+                      className="danger"
+                      onClick={() => {
+                        setFolderMenu(null)
+                        setConfirmDeleteFolder(entry.path)
+                      }}
+                    >
+                      {t('deleteFolder')}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </span>
@@ -2573,8 +2818,164 @@ export function Home() {
 
   // ── Folder view ────────────────────────────────────────
 
+  const clearSearch = () => {
+    setSearchQuery('')
+    searchInputRef.current?.focus()
+  }
+
+  const renderSearchSettingsButton = () => (
+    <button
+      className="file-search-settings"
+      title={t('searchJevSettings')}
+      aria-label={t('searchJevSettings')}
+      onClick={() => setSettingsRequest({ section: 'aiMedia', block: 'rerank' })}
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M12 20V4M12 4l-4 4M12 4l4 4" />
+        <path d="M3 12h6M3 16h5M3 20h4" />
+      </svg>
+    </button>
+  )
+
+  const renderSearchBox = () => (
+    <div className={`file-search${searchActive ? ' active' : ''}`}>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+        <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+      <input
+        ref={searchInputRef}
+        type="search"
+        value={searchQuery}
+        placeholder={t('searchFilesPlaceholder')}
+        aria-label={t('searchFilesPlaceholder')}
+        spellCheck={false}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        onCompositionStart={() => {
+          composingRef.current = true
+        }}
+        onCompositionEnd={(e) => {
+          composingRef.current = false
+          setSearchQuery(e.currentTarget.value)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && searchQuery) {
+            e.stopPropagation()
+            clearSearch()
+          }
+        }}
+      />
+      {searchQuery && (
+        <button className="file-search-clear" aria-label={t('searchClear')} onClick={clearSearch}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path
+              d="M2 2l8 8M10 2l-8 8"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+
+  const renderSearchRow = (hit: FileSearchHit) => (
+    <li
+      key={hit.path}
+      className="search-row"
+      role="button"
+      tabIndex={0}
+      onClick={() => void window.aiOffice.openPath(hit.path)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') void window.aiOffice.openPath(hit.path)
+      }}
+    >
+      <span className="recent-icon">
+        <FileBadge ext={hit.ext} size={24} />
+      </span>
+      <div className="search-main">
+        <div className="search-head">
+          <span className="search-name">{highlightText(hit.name, hit.needles)}</span>
+          <span className="search-path" title={dirOf(hit.path)}>
+            {highlightText(locationLabel(hit.path, roots), hit.needles)}
+          </span>
+        </div>
+        {hit.snippet && (
+          <p className="search-snippet">
+            {hit.snippet.map((part, i) =>
+              part.hit ? (
+                <mark key={i} className="search-hit">
+                  {part.text}
+                </mark>
+              ) : (
+                <span key={i}>{part.text}</span>
+              ),
+            )}
+          </p>
+        )}
+      </div>
+      <span className="search-time">{formatModified(hit.mtimeMs, i18n)}</span>
+    </li>
+  )
+
+  const renderSearchResults = () => {
+    const page = searchPage
+    const busy = !!page && (page.index.pending > 0 || page.index.scanning)
+    return (
+      <div className="search-results" aria-live="polite">
+        {busy && (
+          <div className="search-status">
+            <span className="load-more-spinner" />
+            {t('searchIndexing', { n: page.index.pending })}
+          </div>
+        )}
+        {page && page.hits.length === 0 && !busy
+          ? renderEmpty(t('searchNoResults', { q }))
+          : page && (
+              <ul className="search-list">{orderedSearchHits(page.hits).map(renderSearchRow)}</ul>
+            )}
+      </div>
+    )
+  }
+
+  const rerankApplied = rerank && rerank.key === rerankKey ? rerank.result : null
+
+  /** judged hits in Jev's order, then the rest in local order */
+  const orderedSearchHits = (hits: readonly FileSearchHit[]): FileSearchHit[] => {
+    if (!rerankApplied) return [...hits]
+    const rank = new Map(rerankApplied.order.map((path, i) => [path, i]))
+    return [...hits].sort((a, b) => (rank.get(a.path) ?? Infinity) - (rank.get(b.path) ?? Infinity))
+  }
+
+  const renderSearchHeading = () => {
+    const total = searchPage?.total ?? 0
+    return (
+      <div className="recents-heading">
+        {rerankApplied && (
+          <span className="search-rerank-badge" title={t('searchRerankedBy')}>
+            Jev
+          </span>
+        )}
+        <span className="file-count">
+          {t(total === 1 ? 'searchResultCountOne' : 'searchResultCount', { n: total })}
+        </span>
+      </div>
+    )
+  }
+
   function renderFolderContent() {
-    if (!root) return null
+    if (roots.length === 0) return null
     const total = folderSubfolders.length + folderFiles.length
     const sortedFiles = fileSort === 'oldest' ? [...folderFiles].reverse() : folderFiles
     return (
@@ -2593,15 +2994,22 @@ export function Home() {
                 <span className="selection-count">
                   {t('selectedCount', { n: folderSelectedPaths.length })}
                 </span>
-                <button className="selection-action" onClick={() => startMove(folderSelectedPaths)}>
-                  {t('moveToFolder')}
-                </button>
-                <button
-                  className="selection-action danger"
-                  onClick={() => deleteFiles(folderSelectedPaths)}
-                >
-                  {t('deleteFiles')}
-                </button>
+                {selectedFolder && editableAt(selectedFolder) && (
+                  <>
+                    <button
+                      className="selection-action"
+                      onClick={() => startMove(folderSelectedPaths)}
+                    >
+                      {t('moveToFolder')}
+                    </button>
+                    <button
+                      className="selection-action danger"
+                      onClick={() => deleteFiles(folderSelectedPaths)}
+                    >
+                      {t('deleteFiles')}
+                    </button>
+                  </>
+                )}
                 <button className="selection-action" onClick={() => setSelected(new Set())}>
                   {t('cancel')}
                 </button>
@@ -2619,14 +3027,24 @@ export function Home() {
                 ))}
               </div>
             )}
-            <div className="recents-heading folder-heading">
-              <span className="file-count">
-                {t(total === 1 ? 'itemCountOne' : 'itemCount', { n: total })}
-              </span>
+            <div className="file-search-group">
+              {renderSearchBox()}
+              {renderSearchSettingsButton()}
             </div>
+            {searchActive ? (
+              renderSearchHeading()
+            ) : (
+              <div className="recents-heading folder-heading">
+                <span className="file-count">
+                  {t(total === 1 ? 'itemCountOne' : 'itemCount', { n: total })}
+                </span>
+              </div>
+            )}
           </div>
 
-          {total === 0 ? (
+          {searchActive ? (
+            renderSearchResults()
+          ) : total === 0 ? (
             renderEmpty(filter === 'all' ? t('emptyFolder') : t('emptyFiltered'))
           ) : (
             <div
@@ -2697,7 +3115,7 @@ export function Home() {
                 <span className="selection-count">
                   {t('selectedCount', { n: selectedPaths.length })}
                 </span>
-                {root?.usable && (
+                {canMove && (
                   <button className="selection-action" onClick={() => startMove(selectedPaths)}>
                     {t('moveToFolder')}
                   </button>
@@ -2728,15 +3146,25 @@ export function Home() {
                 ))}
               </div>
             )}
-            <div className="recents-heading">
-              <span className="section-label">
-                {view === 'recent' ? t('secRecent') : t('secStarred')}
-              </span>
-              <span className="file-count">{t(fileCountKey(listTotal), { n: listTotal })}</span>
+            <div className="file-search-group">
+              {renderSearchBox()}
+              {renderSearchSettingsButton()}
             </div>
+            {searchActive ? (
+              renderSearchHeading()
+            ) : (
+              <div className="recents-heading">
+                <span className="section-label">
+                  {view === 'recent' ? t('secRecent') : t('secStarred')}
+                </span>
+                <span className="file-count">{t(fileCountKey(listTotal), { n: listTotal })}</span>
+              </div>
+            )}
           </div>
 
-          {entries.length === 0 ? (
+          {searchActive ? (
+            renderSearchResults()
+          ) : entries.length === 0 ? (
             renderEmpty(
               view === 'starred'
                 ? t('emptyStarred')
@@ -2865,9 +3293,13 @@ export function Home() {
         </nav>
         <div className="sidebar-divider" />
         {renderFolderPanel()}
-        <AccountEntry onStatusChange={handleAccountStatus} />
+        <AccountEntry
+          onStatusChange={handleAccountStatus}
+          onFileSearchSettingsChange={() => setRerankSettingsTick((n) => n + 1)}
+          openRequest={settingsRequest}
+        />
       </aside>
-      {selectedFolder && root?.usable ? (
+      {selectedFolder && rootOf(selectedFolder, roots)?.readable ? (
         renderFolderContent()
       ) : cloudMode ? (
         <CloudProjectsView />
@@ -2976,9 +3408,9 @@ export function Home() {
         </div>
       )}
 
-      {movePicker && root?.usable && (
+      {movePicker && canMove && (
         <FolderPicker
-          root={root}
+          roots={roots}
           currentDirs={new Set(movePicker.map(dirOf))}
           movingDirs={movingDirs(movePicker)}
           count={movePicker.length}

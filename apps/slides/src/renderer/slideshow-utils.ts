@@ -14,7 +14,7 @@ export interface CustomShow {
  * Compute the playback sequence (array of original indexes).
  * - Default: all slides in order, skipping hidden ones (starting from a hidden slide still plays it)
  * - Non-empty customOrder: play in its order (out-of-range slides filtered; hidden slides still skipped, except the start slide)
- * - Fallback: when the result is empty, at least play the start slide
+ * - Fallback: when the result is empty, play the start slide; an out-of-range start yields []
  */
 export function computePlayOrder(
   slides: ReadonlyArray<{ hidden?: boolean }>,

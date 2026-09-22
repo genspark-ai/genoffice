@@ -25,7 +25,7 @@ const MAX_CHARTEX_POINTS = 10000
 
 function readLvl(lvl: any): string[] {
   const parsed = parseInt(lvl?.['@_ptCount'], 10) || 0
-  const n = Number.isFinite(parsed) ? Math.min(Math.max(0, parsed), MAX_CHARTEX_POINTS) : 0
+  const n = Math.min(Math.max(0, parsed), MAX_CHARTEX_POINTS)
   const out: string[] = Array.from({ length: n }, () => '')
   const ptsRaw = lvl?.['cx:pt']
   const pts: any[] = Array.isArray(ptsRaw) ? ptsRaw : ptsRaw ? [ptsRaw] : []

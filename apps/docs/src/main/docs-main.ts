@@ -61,6 +61,8 @@ import {
   installRendererProtocol,
   registerRendererScheme,
   rendererUrl,
+  MAX_REMOTE_IMAGE_BYTES,
+  readBodyCapped,
 } from '@genoffice/electron-utils'
 import { configureMetricsCache, familyVerticalMetrics } from '@genoffice/font-metrics'
 import { createI18n, getUiLang, normalizeLang, setUiLang } from '@genoffice/i18n'
@@ -132,6 +134,7 @@ import {
   adoptLazyMediaHashes,
   forgetLazyMediaOwner,
   materializeLazyDocx,
+  moveLazyMediaSource,
   openLazyDocx,
   pointLazyMediaAt,
   readLazyMedia,
@@ -2366,6 +2369,7 @@ export function docsFileRenamed(wc: WebContents, oldPath: string, newPath: strin
   // an encrypted document's password must follow the path, or the next save
   // finds no password under the new name and silently writes plaintext
   renameDocPassword(wc.id, oldPath, newPath)
+  moveLazyMediaSource(oldPath, newPath)
   wc.send('docs:renamed', { oldPath, newPath })
 }
 
@@ -3073,7 +3077,7 @@ export function registerAiIpc(): void {
         // fetchRemoteImage adds CDN-friendly headers and transient-error retries.
         const resp = await fetchRemoteImage(String(url))
         if (!resp || !resp.ok) return null
-        const buf = Buffer.from(await resp.arrayBuffer())
+        const buf = Buffer.from(await readBodyCapped(resp, MAX_REMOTE_IMAGE_BYTES))
         const ct = resp.headers.get('content-type') ?? ''
         const mime = ct.includes('png')
           ? 'image/png'
@@ -3161,15 +3165,19 @@ function getProjectStore(): ProjectStore {
  * Fired when a save lands on a new path (save-as / first silent save). The shell
  * uses it to sync the tab title/path, record recents and apply a pending project —
  * same contract as the sheets/slides opened hooks. Never called standalone.
+ * Returns the final path when the shell filed the new file into a Home folder.
  */
-let fileSavedHook: ((wc: WebContents, filePath: string) => void) | null = null
+let fileSavedHook: ((wc: WebContents, filePath: string) => string | void) | null = null
 
-export function setDocsFileSavedHook(hook: (wc: WebContents, filePath: string) => void): void {
+export function setDocsFileSavedHook(
+  hook: (wc: WebContents, filePath: string) => string | void,
+): void {
   fileSavedHook = hook
 }
 
-function notifyFileSaved(wc: WebContents, filePath: string): void {
-  if (fileSavedHook) fileSavedHook(wc, filePath)
+function notifyFileSaved(wc: WebContents, filePath: string): string {
+  const moved = fileSavedHook ? fileSavedHook(wc, filePath) : undefined
+  return typeof moved === 'string' && moved ? moved : filePath
 }
 
 /**
@@ -3199,6 +3207,14 @@ export function setSessionPathResolver(
 }
 
 /** After a file is renamed/moved on disk, sync project-store (fileMap/chatIdByPath re-key accordingly; history follows the file). */
+export function projectFilePaths(): string[] {
+  try {
+    return getProjectStore().knownFilePaths()
+  } catch {
+    return []
+  }
+}
+
 export function projectFileRenamed(oldPath: string, newPath: string): void {
   try {
     getProjectStore().fileRenamed(oldPath, newPath)
@@ -3684,10 +3700,12 @@ export function registerDocsIpc(): void {
           result.filePath,
         )
         pushRecent(result.filePath)
-        notifyFileSaved(event.sender, result.filePath)
+        // the renderer has no path yet to match a rename notification against,
+        // so the reply must carry the path it may save to next
+        const savedPath = notifyFileSaved(event.sender, result.filePath)
         return {
           ok: true,
-          path: result.filePath,
+          path: savedPath,
           passwordIntentPending,
           ...reissuedDoc(!!passwordState.password, hashes, plain),
         }
@@ -3727,10 +3745,10 @@ export function registerDocsIpc(): void {
       }
       const passwordIntentPending = commitDocPasswordSave(event.sender.id, passwordState, filePath)
       pushRecent(filePath)
-      notifyFileSaved(event.sender, filePath)
+      const savedPath = notifyFileSaved(event.sender, filePath)
       return {
         ok: true,
-        path: filePath,
+        path: savedPath,
         passwordIntentPending,
         ...reissuedDoc(!!passwordState.password, hashes, plain),
       }

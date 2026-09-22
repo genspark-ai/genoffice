@@ -373,7 +373,19 @@ function parseShapeFragment(
       const fb = node['mc:Fallback']
       const picRaw = fb?.['p:pic']
       const pic = Array.isArray(picRaw) ? picRaw[0] : picRaw
-      if (pic) return parsePicture(pic, anchor, ctx)
+      if (pic) {
+        const el = parsePicture(pic, anchor, ctx)
+        // Ink (p:contentPart) fallback bitmaps are placed by the ink's own p14:xfrm; the
+        // fallback picture's box is often a much taller strip that PowerPoint never shows
+        const inkXfrm = choices
+          .map((ch) => {
+            const cp = ch?.['p:contentPart']
+            return (Array.isArray(cp) ? cp[0] : cp)?.['p14:xfrm']
+          })
+          .find(Boolean)
+        if (inkXfrm) el.transform = parseXfrm(inkXfrm)
+        return el
+      }
       const spRaw = fb?.['p:sp']
       const sp2 = Array.isArray(spRaw) ? spRaw[0] : spRaw
       if (sp2) return parseSpShape(sp2, anchor, ctx)
@@ -756,6 +768,7 @@ function parseScene3D(spPr: any, ctx: ParseContext): import('./types').Scene3D |
     return { lat: intOr(r['@_lat'], 0), lon: intOr(r['@_lon'], 0), rev: intOr(r['@_rev'], 0) }
   }
   const rig = s3['a:lightRig']
+  const bevelT = sp3d?.['a:bevelT']
   const extrusionClr = sp3d?.['a:extrusionClr']
   const extrusionColor =
     extrusionClr && typeof extrusionClr === 'object'
@@ -773,6 +786,15 @@ function parseScene3D(spPr: any, ctx: ParseContext): import('./types').Scene3D |
     ...(sp3d?.['@_z'] != null ? { zEmu: intOr(sp3d['@_z'], 0) } : {}),
     ...(extrusionColor ? { extrusionColor } : {}),
     ...(sp3d?.['@_prstMaterial'] ? { material: sp3d['@_prstMaterial'] } : {}),
+    ...(bevelT !== undefined
+      ? {
+          bevelTop: {
+            wEmu: intOr(bevelT?.['@_w'], 76200),
+            hEmu: intOr(bevelT?.['@_h'], 76200),
+            preset: typeof bevelT?.['@_prst'] === 'string' ? bevelT['@_prst'] : 'circle',
+          },
+        }
+      : {}),
   }
 }
 
@@ -2909,7 +2931,20 @@ function parseTable(
   const tblPr = tbl['a:tblPr'] ?? {}
   const styleIdRaw = tblPr['a:tableStyleId']
   const styleId = typeof styleIdRaw === 'string' ? styleIdRaw : styleIdRaw?.['#text']
-  const styleDef = resolveTableStyle(styleId, ctx.tableStyles, ctx.theme)
+  // No tableStyleId and no cell of its own defines a border: PowerPoint draws "No Style,
+  // Table Grid" (all-dk1 lines). Any explicit <a:lnX> (even w="0" / noFill) leaves the
+  // table line-less instead (probe: four prod decks)
+  const cellsDefineLines = trs.some((tr) => {
+    const tcs = tr?.['a:tc']
+    return (Array.isArray(tcs) ? tcs : tcs ? [tcs] : []).some((tc: any) =>
+      ['a:lnL', 'a:lnR', 'a:lnT', 'a:lnB'].some((k) => tc?.['a:tcPr']?.[k] !== undefined),
+    )
+  })
+  const styleDef = resolveTableStyle(
+    styleId ?? (cellsDefineLines ? undefined : '{5940675A-B579-460E-94D1-54222C63F5DA}'),
+    ctx.tableStyles,
+    ctx.theme,
+  )
   // <a:tblBg>: direct fill, or a fillRef instantiated from the theme fill styles
   let bgFill = styleDef?.tblBg
   if (!bgFill && styleDef?.tblBgRef) {
@@ -3615,6 +3650,10 @@ function parseParagraph(
       : rtlAttr === '0' || rtlAttr === 'false'
         ? false
         : undefined
+  const hangAttr = pPr['@_hangingPunct']
+  const hangingOff = hangAttr === '0' || hangAttr === 'false'
+  const latinLnBrk = pPr['@_latinLnBrk'] === '1' || pPr['@_latinLnBrk'] === 'true'
+  const eaLnBrkOff = pPr['@_eaLnBrk'] === '0' || pPr['@_eaLnBrk'] === 'false'
 
   // Record which properties come from an explicit pPr (the rebuild path writes only explicit items; inherited values are not baked in)
   const pPrExplicit: NonNullable<Paragraph['pPrExplicit']> = {
@@ -3637,6 +3676,9 @@ function parseParagraph(
       ? { alignSrc: pPr['@_algn'] ? 'paragraph' : (dflt?.src?.align ?? 'inherited') }
       : {}),
     ...(rtl != null ? { rtl } : {}),
+    ...(hangingOff ? { hangingPunct: false } : {}),
+    ...(latinLnBrk ? { latinLnBrk: true } : {}),
+    ...(eaLnBrkOff ? { eaLnBrk: false } : {}),
     level,
     pPrExplicit,
     ...(lineHeight != null ? { lineHeight } : {}),

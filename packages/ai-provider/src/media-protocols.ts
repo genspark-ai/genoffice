@@ -146,11 +146,43 @@ function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout
 }
 
+const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
+
+/** the body counted as it streams and dropped past the cap; a missing Content-Length is unknown, not zero */
+async function readCapped(resp: Response, label: string): Promise<Uint8Array> {
+  const declared = Number(resp.headers.get('content-length') ?? NaN)
+  if (declared > MAX_DOWNLOAD_BYTES) {
+    await resp.body?.cancel().catch(() => {})
+    throw new Error(`${label} download too large`)
+  }
+  if (!resp.body) return new Uint8Array(await resp.arrayBuffer())
+  const reader = resp.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > MAX_DOWNLOAD_BYTES) {
+      await reader.cancel().catch(() => {})
+      throw new Error(`${label} download too large`)
+    }
+    chunks.push(value)
+  }
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return out
+}
+
 /** vendors that return a URL instead of bytes: download it (the links are short-lived, so right away) */
 async function downloadImage(label: string, url: string, signal: AbortSignal): Promise<MediaBlob> {
   const img = await aiFetch(url, { signal })
   if (!img.ok) return failFrom(`${label} download`, img)
-  const bytes = new Uint8Array(await img.arrayBuffer())
+  const bytes = await readCapped(img, label)
   return { bytes, mime: sniffImageMime(bytes, img.headers.get('content-type') ?? 'image/png') }
 }
 

@@ -403,7 +403,7 @@ describe('hostile colSpan values', () => {
     })
     expect(Date.now() - start).toBeLessThan(5000)
     expect(xml).not.toContain('Infinity')
-    expect(xml).toContain('<w:gridSpan w:val="64"/>')
+    expect(xml).toContain('<w:gridSpan w:val="1000"/>')
     // the clamped model round-trips through the parser with a finite grid
     const doc = await parseDocx(await buildDocx({ bodyXml: xml }))
     expect(doc.blocks[0].table).toBeDefined()

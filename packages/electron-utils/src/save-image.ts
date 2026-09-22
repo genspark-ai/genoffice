@@ -4,6 +4,7 @@
 import { writeFile } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import { showSaveDialogWithMemory } from './dialog-memory'
+import { MAX_REMOTE_IMAGE_BYTES, readBodyCapped } from './remote-image'
 
 const EXT_BY_MIME: Record<string, string> = {
   'image/png': 'png',
@@ -64,7 +65,10 @@ async function fetchImageBytes(url: string): Promise<{ bytes: Buffer; mime: stri
   const { net } = await import('electron')
   const res = await net.fetch(url)
   if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`)
-  return { bytes: Buffer.from(await res.arrayBuffer()), mime: res.headers.get('content-type') }
+  return {
+    bytes: Buffer.from(await readBodyCapped(res, MAX_REMOTE_IMAGE_BYTES)),
+    mime: res.headers.get('content-type'),
+  }
 }
 
 export async function saveImageFromUrl(

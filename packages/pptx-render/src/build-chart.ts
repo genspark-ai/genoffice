@@ -55,6 +55,11 @@ function chartTextPt(model: ChartModel): number {
   return model.defaultTextPt ?? 10
 }
 
+/** Chart text typeface: the part's own txPr font (Arial, theme minor …), else Calibri. */
+function chartFont(model: ChartModel): string {
+  return model.fontFamily ?? LABEL_FONT
+}
+
 /** Multiply an #RRGGBB color's channels (pseudo-3D face shading); non-hex passes through. */
 // Modern charts carry a chartStyle part whose label defaults are gray; legacy charts
 // (python-pptx, Office 2007-era) have none and PowerPoint renders their labels black
@@ -130,6 +135,20 @@ export function buildChartNode(
   metrics: FontMetricsProvider,
   media?: MediaResolver,
 ): ChartRenderNode | null {
+  const node = buildChartNodeTitled(id, sourceId, model, box, vp, metrics, media)
+  if (node && model.fontFamily) for (const l of node.labels) l.fontFamily ??= model.fontFamily
+  return node
+}
+
+function buildChartNodeTitled(
+  id: string,
+  sourceId: string,
+  model: ChartModel,
+  box: PlacedBox,
+  vp: Viewport,
+  metrics: FontMetricsProvider,
+  media?: MediaResolver,
+): ChartRenderNode | null {
   if (!model.title) {
     const node = buildChartNodeInner(id, sourceId, model, box, vp, metrics, media)
     if (node) extrudeBars(node, model)
@@ -142,7 +161,7 @@ export function buildChartNode(
   const titleBold = model.titleBold ?? true
   const measureTitle = (t: string) =>
     metrics.measure(t, {
-      fontFamily: LABEL_FONT,
+      fontFamily: chartFont(model),
       fontSizePx: titleSizePx,
       bold: titleBold,
       italic: !!model.titleItalic,
@@ -331,7 +350,7 @@ function buildChartNodeInner(
   )
   const catLabelColor = model.catAxis?.labelColor ?? labelColor
   const style = (sizePx: number): RunStyle => ({
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: sizePx,
     bold: false,
     italic: false,
@@ -393,16 +412,25 @@ function buildChartNodeInner(
   // Large charts stay on the 5-10 interval ratio rule (poi/aspose calibration
   // untouched - the cap only ever makes ticks sparser)
   const maxIntervals = Math.max(3, Math.min(10, Math.floor(box.h / (labelSizePx * 1.75))))
-  const { min, max, ticks } = ppTicks(
-    model.valAxis?.min ?? dataMin,
-    model.valAxis?.max ?? dataMax,
-    model.valAxis?.min == null && grouping !== 'percentStacked',
-    model.valAxis?.max == null && grouping !== 'percentStacked',
-    false,
-    maxIntervals,
-    false,
-    model.valAxis?.majorUnit,
-  )
+  const logBase = model.valAxis?.logBase
+  const { min, max, ticks } = logBase
+    ? logTicks(
+        Math.min(...priVals.filter((v) => v > 0), Infinity),
+        dataMax,
+        model.valAxis?.min,
+        model.valAxis?.max,
+        logBase,
+      )
+    : ppTicks(
+        model.valAxis?.min ?? dataMin,
+        model.valAxis?.max ?? dataMax,
+        model.valAxis?.min == null && grouping !== 'percentStacked',
+        model.valAxis?.max == null && grouping !== 'percentStacked',
+        false,
+        maxIntervals,
+        false,
+        model.valAxis?.majorUnit,
+      )
   // Secondary value axis ticks (right side): range fully independent of the primary (e.g. left axis revenue 0-250, right axis growth% 0-30)
   const sec = secVals.length
     ? ppTicks(
@@ -438,7 +466,7 @@ function buildChartNodeInner(
         Math.max(
           ...legendItems.map((t) =>
             metrics.measure(t, {
-              fontFamily: LABEL_FONT,
+              fontFamily: chartFont(model),
               fontSizePx: legendSizePx,
               bold: legendBold,
               italic: false,
@@ -465,7 +493,9 @@ function buildChartNodeInner(
       ? `${fmtNum(t)}%`
       : model.valAxis?.numFmt
         ? fmtDataLabel(t, model.valAxis.numFmt)
-        : fmtNum(t),
+        : logBase
+          ? String(t) // PowerPoint prints log-axis powers without grouping (1000, 10000)
+          : fmtNum(t),
   )
   // Garbage-baseline labels draw nothing but still reserve a slot the width of the
   // formatted zero (ChartEntities measured: 0.0% at 16pt = the 44px PowerPoint keeps),
@@ -483,7 +513,7 @@ function buildChartNodeInner(
     sizePx: number,
   ) =>
     metrics.measure(a?.title ?? '', {
-      fontFamily: LABEL_FONT,
+      fontFamily: chartFont(model),
       fontSizePx: sizePx,
       bold: !!a?.titleBold,
       italic: !!a?.titleItalic,
@@ -511,12 +541,21 @@ function buildChartNodeInner(
 
   // Tick-label-to-axis gap (PPT measured 23px at 18pt: outward tick marks + label offset)
   const valLabelGap = valNoReserve ? 6 : labelSizePx * 0.95
-  const plotX = pad + axisTitleW + yLabelW + valLabelGap
+  // The value axis sits where it crosses the category axis: at the first category, which
+  // a reversed (maxMin) category axis puts on the right; crosses=max flips that again
+  const valRight =
+    !model.pseudo3D && !sec && !!model.catAxis?.reversed !== (model.valAxis?.crosses === 'max')
+  const valSideW = axisTitleW + yLabelW + valLabelGap
+  const plotX = pad + (valRight ? labelSizePx * 0.7 : valSideW)
   // Headroom for the top tick label's upper half — whenever label space is reserved
   // (garbage-baseline labels keep the slot even though nothing draws)
   const plotY = pad + (legendPos === 't' ? legendH + 4 : 0) + (valNoReserve ? 0 : labelSizePx * 0.6)
   // Right side: no secondary axis → small gap (PowerPoint measured ≈1.5% width); with one, reserve space for tick labels + title
-  const plotR = box.w - pad - (sec ? y2LabelW + axisTitle2W + 10 : labelSizePx * 0.7) - legendW
+  const plotR =
+    box.w -
+    pad -
+    (sec ? y2LabelW + axisTitle2W + 10 : valRight ? valSideW : labelSizePx * 0.7) -
+    legendW
   const nCats = Math.max(model.categories.length, 1)
   const maxCatW = Math.max(...model.categories.map((c) => measure(c, catLabelSizePx)), 1)
   // Category label mode: an explicit txPr rotation wins; otherwise crowded labels wrap
@@ -565,6 +604,7 @@ function buildChartNodeInner(
   const catAtZero =
     min < 0 &&
     max > 0 &&
+    model.catAxis?.tickLblPos !== 'low' &&
     !catNoReserve &&
     !rotateCats &&
     !model.categoryGroups &&
@@ -621,7 +661,10 @@ function buildChartNodeInner(
   // c:orientation maxMin flips the mapping (max at the bottom)
   const rev = !!model.valAxis?.reversed
   const yOf = (v: number) => {
-    const f = (v - min) / (max - min || 1)
+    // log axis: values at or below zero have no position, they sit on the axis floor
+    const f = logBase
+      ? (Math.log(Math.max(v, min)) - Math.log(min)) / (Math.log(max) - Math.log(min) || 1)
+      : (v - min) / (max - min || 1)
     return plot.y + plot.h * (rev ? f : 1 - f)
   }
   // Secondary axis mapping: same plot-area height, independent range
@@ -671,9 +714,14 @@ function buildChartNodeInner(
       const r = Math.abs(v - min) % majorStep
       return Math.min(r, majorStep - r) < minorStep * 1e-3
     }
-    for (let k = 1; min + k * minorStep <= max - minorStep * 1e-6; k++) {
-      const v = min + k * minorStep
-      if (onMajor(v)) continue
+    const minors: number[] = []
+    if (logBase) minors.push(...logMinors(min, max, logBase))
+    else
+      for (let k = 1; min + k * minorStep <= max - minorStep * 1e-6; k++) {
+        const v = min + k * minorStep
+        if (!onMajor(v)) minors.push(v)
+      }
+    for (const v of minors) {
       const my = yOf(v) - depth3d
       node.gridLines.push({
         x1: gxa,
@@ -706,7 +754,9 @@ function buildChartNodeInner(
     const text = tickLabels[i]!
     node.labels.push({
       text,
-      x: plot.x + depth3d * 0.5 - valLabelGap - measure(text, labelSizePx),
+      x: valRight
+        ? plot.x + plot.w + valLabelGap
+        : plot.x + depth3d * 0.5 - valLabelGap - measure(text, labelSizePx),
       y: y - labelSizePx * 0.55,
       fontSizePx: labelSizePx,
       color: labelColor,
@@ -726,11 +776,12 @@ function buildChartNodeInner(
     color: axisColor,
     widthPx: axisW,
   })
+  const valAxisX = valRight ? plot.x + plot.w : plot.x + depth3d * 0.5
   if (!valHidden)
     node.axisLines.push({
-      x1: plot.x + depth3d * 0.5,
+      x1: valAxisX,
       y1: plot.y - depth3d,
-      x2: plot.x + depth3d * 0.5,
+      x2: valAxisX,
       y2: plot.y - depth3d + plot.h,
       color: axisColor,
       widthPx: axisW,
@@ -797,7 +848,7 @@ function buildChartNodeInner(
     const tw = measureAxisTitle(a, sz)
     node.labels.push({
       text: a.title!,
-      x: pad,
+      x: valRight ? box.w - pad - legendW - sz * 1.2 : pad,
       y: plot.y + plot.h / 2 + tw / 2,
       fontSizePx: sz,
       color: a.titleColor ?? labelColor,
@@ -946,14 +997,21 @@ function buildChartNodeInner(
   // Data labels (c:dLbls showVal): white centered inside stacked segments, dark gray outside points/bars otherwise
   const dLbl = (si: number, catIdx: number, cx: number, y: number, v: number, inside: boolean) => {
     if (!(model.series[si]?.dataLabels ?? model.dataLabels)) return
-    const text = composeDataLabel(model, si, catIdx, fmtDataLabel(v, model.dataLabelFmt))
+    const text = composeDataLabel(model, si, catIdx, fmtDataLabel(v, labelFmt(model, si)))
+    if (!text) return
+    // a point's own dLbl txPr (size/color) replaces the series look
+    const ov = pointLabelOverride(model, si, catIdx)
+    const size = ov?.sizePt ? ptToPx(ov.sizePt, vp.scale) : dlSize
     node.labels.push({
       text,
-      x: cx - measure(text, dlSize) / 2,
+      x: cx - measure(text, size) / 2,
       y,
-      fontSizePx: dlSize,
-      color: inside ? '#FFFFFF' : (model.defaultTextColor ?? (dlBold ? '#000000' : '#404040')),
+      fontSizePx: size,
+      color: inside
+        ? '#FFFFFF'
+        : (ov?.color ?? model.defaultTextColor ?? (dlBold ? '#000000' : '#404040')),
       ...(dlBold ? { bold: true } : {}),
+      ...labelBoxOf(model, si, catIdx, measure(text, size)),
     })
   }
   if (barSeriesIdx.length && stacked) {
@@ -976,6 +1034,7 @@ function buildChartNodeInner(
         // min/max in screen space: a reversed axis flips which value maps higher
         const yTop = Math.min(yOf(from), yOf(to))
         const yBot = Math.max(yOf(from), yOf(to))
+        if (ser.noFill) return
         node.bars.push({
           x,
           y: yTop,
@@ -1001,7 +1060,7 @@ function buildChartNodeInner(
       const ser = model.series[si]!
       const color = seriesColor(si)
       ser.values.forEach((v, i) => {
-        if (v == null || i >= n) return
+        if (v == null || i >= n || ser.noFill) return
         const x = plot.x + catSlot(i) * slotW + (slotW - groupW) / 2 + slot * step
         const yTop = Math.min(yOf(v), yOf(base))
         const yBot = Math.max(yOf(v), yOf(base))
@@ -1158,14 +1217,14 @@ function buildChartNodeInner(
     // PowerPoint legend swatches are ~0.5em squares (measured 10px at 18pt text)
     const sw = legendSizePx * 0.5
     const legendTextStyle: RunStyle = {
-      fontFamily: LABEL_FONT,
+      fontFamily: chartFont(model),
       fontSizePx: legendSizePx,
       bold: legendBold,
       italic: false,
     }
     const legendMeasure = (t: string) => metrics.measure(t, legendTextStyle)
-    const items = model.series.map((s, i) => ({
-      label: s.name ?? '',
+    const items = (model.legendOrder ?? model.series.map((_, i) => i)).map((i) => ({
+      label: model.series[i]?.name ?? '',
       color: seriesColor(i),
     }))
     const itemWs = items.map((it) => sw + 4 + legendMeasure(it.label) + legendSizePx * 0.5)
@@ -1220,10 +1279,12 @@ function buildChartNodeInner(
       // and the legend sits another 8+…+8 to its right)
       const overlayX = sec
         ? box.w - pad - legendColW + 6
-        : box.w - pad - labelSizePx * 0.7 - legendColW + 8
+        : valRight
+          ? box.w - pad - valSideW - legendColW + 8
+          : box.w - pad - labelSizePx * 0.7 - legendColW + 8
       const autoX = model.legendOverlay
         ? Math.max(overlayX, plot.x + 4)
-        : plot.x + plot.w + 8 + (sec ? y2LabelW + axisTitle2W + 8 : 0)
+        : plot.x + plot.w + 8 + (sec ? y2LabelW + axisTitle2W + 8 : valRight ? valSideW : 0)
       const p = applyLayout(autoX, autoY, legendColW, colH)
       let y = p.y
       items.forEach((it) => {
@@ -1233,6 +1294,178 @@ function buildChartNodeInner(
     }
   }
 
+  return node
+}
+
+// ── Pie of pie ──────────────────────────────────────────────────────
+
+/**
+ * c:ofPieChart: the main pie keeps the leading points plus one "other" slice summing the
+ * trailing splitPos points, which the secondary pie (secondPieSize % of the main) breaks
+ * out to the right, gapWidth % of its own diameter apart. Both pies reuse the plain pie
+ * builder on square sub-layouts; the legend lists every source category.
+ */
+function buildOfPieNode(
+  id: string,
+  sourceId: string,
+  model: ChartModel,
+  box: PlacedBox,
+  vp: Viewport,
+  metrics: FontMetricsProvider,
+): ChartRenderNode | null {
+  const ser = model.series[0]
+  const of = model.ofPie
+  if (!ser || !of) return null
+  const n = ser.values.length
+  const cut = n - Math.min(Math.max(of.splitPos, 1), Math.max(n - 1, 1))
+  const palette = chartPalette(model)
+  const colorOf = (i: number) => ser.pointColors?.[i] ?? palette[i % palette.length]!
+  const pos = (v: number | null | undefined) => (v != null && v > 0 ? v : 0)
+  const secVals = ser.values.slice(cut)
+  const other = secVals.reduce<number>((a, v) => a + pos(v), 0)
+  const mainVals = [...ser.values.slice(0, cut), other]
+  const mainColors = [
+    ...ser.values.slice(0, cut).map((_, i) => colorOf(i)),
+    palette[n % palette.length]!,
+  ]
+  const secColors = secVals.map((_, k) => colorOf(cut + k))
+
+  const node = emptyChartNode(id, sourceId, box)
+  const labelSizePx = ptToPx(chartTextPt(model), vp.scale)
+  const labelColor = model.valAxis?.labelColor ?? chartLabelDefault(model)
+  const style: RunStyle = {
+    fontFamily: chartFont(model),
+    fontSizePx: labelSizePx,
+    bold: false,
+    italic: false,
+  }
+  const measure = (t: string) => metrics.measure(t, style)
+  const pad = Math.max(6, Math.min(box.w, box.h) * 0.03)
+  const legendPos = model.legendPos
+  const items = model.categories.map((label, i) => ({ label, color: colorOf(i) }))
+  const sideLegend = legendPos === 'l' || legendPos === 'r' || legendPos === 'tr'
+  const legendW = sideLegend
+    ? Math.min(
+        box.w * 0.4,
+        Math.max(...items.map((it) => measure(it.label)), 0) + labelSizePx * 2.2,
+      )
+    : 0
+  const legendRowH = labelSizePx * 1.5
+  let plotX = pad
+  let plotY = pad
+  let plotW = box.w - pad * 2
+  let plotH = box.h - pad * 2
+  if (legendPos === 'l') {
+    plotX += legendW
+    plotW -= legendW
+  } else if (sideLegend) plotW -= legendW
+  else if (legendPos === 't') {
+    plotY += legendRowH
+    plotH -= legendRowH
+  } else if (legendPos === 'b') plotH -= legendRowH
+
+  const k = of.secondPieSize / 100
+  const gap = (of.gapWidth / 100) * 2 * k // in main-pie radii
+  const r1 = Math.max(Math.min(plotH / 2, plotW / (2 + gap + 2 * k)), 5)
+  const r2 = r1 * k
+  const x0 = plotX + (plotW - (2 * r1 + gap * r1 + 2 * r2)) / 2
+  const cy = plotY + plotH / 2
+  const cx1 = x0 + r1
+  const cx2 = x0 + 2 * r1 + gap * r1 + r2
+  const { ofPie: _of, legendPos: _lp, plotLayout: _pl, pctBase: _pb, ...rest } = model
+  const seriesTotal = ser.values.reduce<number>((a, v) => a + pos(v), 0)
+  const {
+    pointColors: _pc,
+    pointNoFill: _pn,
+    pointFills: _pf,
+    pointLines: _pln,
+    pointExplosionPct: _pe,
+    explosionPct: _e,
+    ...serRest
+  } = ser
+  const sub = (
+    values: Array<number | null>,
+    colors: string[],
+    categories: string[],
+    cx: number,
+    r: number,
+  ) =>
+    buildPieNode(
+      id,
+      sourceId,
+      {
+        ...rest,
+        categories,
+        series: [{ ...serRest, values, pointColors: colors }],
+        pctBase: seriesTotal,
+        plotLayout: {
+          x: (cx - r) / box.w,
+          y: (cy - r) / box.h,
+          w: (2 * r) / box.w,
+          h: (2 * r) / box.h,
+        },
+      },
+      box,
+      vp,
+      metrics,
+    )
+  const main = sub(mainVals, mainColors, [...model.categories.slice(0, cut), ''], cx1, r1)
+  const sec = sub(secVals, secColors, model.categories.slice(cut), cx2, r2)
+  for (const part of [main, sec]) {
+    if (!part) continue
+    if (part.wedges?.length) (node.wedges ??= []).push(...part.wedges)
+    if (part.paths?.length) (node.paths ??= []).push(...part.paths)
+    node.labels.push(...part.labels)
+  }
+  // Connector lines: the "other" slice's edges lead to the secondary pie's top and bottom
+  const mainTotal = mainVals.reduce<number>((a, v) => a + pos(v), 0)
+  if (other > 0 && mainTotal > 0) {
+    const start = -90 + (model.firstSliceAngDeg ?? 0) + ((mainTotal - other) / mainTotal) * 360
+    const end = start + (other / mainTotal) * 360
+    const at = (deg: number) => {
+      const t = (deg * Math.PI) / 180
+      return [cx1 + Math.cos(t) * r1, cy + Math.sin(t) * r1]
+    }
+    node.polylines.push(
+      { points: [...at(start), cx2, cy - r2], color: '#A6A6A6', widthPx: 1 },
+      { points: [...at(end), cx2, cy + r2], color: '#A6A6A6', widthPx: 1 },
+    )
+  }
+  if (legendPos) {
+    const sw = labelSizePx * 0.5
+    const entry = (x: number, y: number, it: { label: string; color: string }) => {
+      node.swatches.push({
+        x,
+        y: y + labelSizePx * 0.25,
+        w: sw,
+        h: labelSizePx * 0.5,
+        color: it.color,
+      })
+      node.labels.push({
+        text: it.label,
+        x: x + sw + 4,
+        y,
+        fontSizePx: labelSizePx,
+        color: labelColor,
+      })
+    }
+    if (legendPos === 't' || legendPos === 'b') {
+      const itemWs = items.map((it) => sw + 4 + measure(it.label) + labelSizePx * 0.5)
+      let x = Math.max((box.w - itemWs.reduce((a, b) => a + b, 0)) / 2, pad)
+      const y = legendPos === 't' ? pad * 0.5 : box.h - pad * 0.5 - labelSizePx * 1.2
+      items.forEach((it, i) => {
+        entry(x, y, it)
+        x += itemWs[i]!
+      })
+    } else {
+      const x = legendPos === 'l' ? pad : box.w - legendW
+      let y = Math.max(cy - (items.length * legendRowH) / 2, pad)
+      for (const it of items) {
+        entry(x, y, it)
+        y += legendRowH
+      }
+    }
+  }
   return node
 }
 
@@ -1249,9 +1482,12 @@ function buildPieNode(
   // Pie uses the first series; wedge colors prefer per-point colors (c:dPt), default palette by category index
   const ser = model.series[0]
   if (!ser) return null
+  if (model.ofPie) return buildOfPieNode(id, sourceId, model, box, vp, metrics)
   const vals = ser.values.map((v) => (v != null && v > 0 ? v : 0))
   const total = vals.reduce((a, b) => a + b, 0)
   if (total <= 0) return null
+  // pie-of-pie breakout slices state their share of the whole series, not of the "other" group
+  const pctTotal = model.pctBase ?? total
 
   const node: ChartRenderNode = {
     id,
@@ -1271,7 +1507,7 @@ function buildPieNode(
   const labelSizePx = ptToPx(chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? chartLabelDefault(model)
   const style: RunStyle = {
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: labelSizePx,
     bold: false,
     italic: false,
@@ -1466,19 +1702,28 @@ function buildPieNode(
       // At the wedge midline radius: doughnut uses the ring-band midpoint, pie uses 2/3 radius
       const midRad = ((angle + sweep / 2) * Math.PI) / 180
       const r = innerR > 0 ? (innerR + outerR) / 2 : outerR * 0.66
-      const valueText = model.dataLabelsPct ? `${Math.round((v / total) * 100)}%` : fmtNum(v)
+      const pctText = `${Math.round((v / pctTotal) * 100)}%`
+      const ov = pointLabelOverride(model, 0, i)
+      const showPct = ov ? ov.pct : model.dataLabelsPct || model.dataLabelsValPct
+      const showVal = ov ? ov.val : !model.dataLabelsPct
+      const valueText = [showVal ? fmtNum(v) : '', showPct ? pctText : '']
+        .filter(Boolean)
+        .join(', ')
       const text = composeDataLabel(model, 0, i, valueText)
-      const dlSize = model.dataLabelPt ? ptToPx(model.dataLabelPt, vp.scale) : labelSizePx * 0.9
+      const dlPt = ov?.sizePt ?? model.dataLabelPt
+      const dlSize = dlPt ? ptToPx(dlPt, vp.scale) : labelSizePx * 0.9
       const dlBold = !!model.dataLabelBold
       const dlW = metrics.measure(text, { ...style, fontSizePx: dlSize, bold: dlBold })
-      node.labels.push({
-        text,
-        x: cx + dx + Math.cos(midRad) * (p3d ? rx * 0.66 : r) - dlW / 2,
-        y: cy + dy + Math.sin(midRad) * (p3d ? ry * 0.66 : r) - dlSize * 0.55,
-        fontSizePx: dlSize,
-        color: '#FFFFFF',
-        ...(dlBold ? { bold: true } : {}),
-      })
+      if (text)
+        node.labels.push({
+          text,
+          x: cx + dx + Math.cos(midRad) * (p3d ? rx * 0.66 : r) - dlW / 2,
+          y: cy + dy + Math.sin(midRad) * (p3d ? ry * 0.66 : r) - dlSize * 0.55,
+          fontSizePx: dlSize,
+          color: ov?.color ?? '#FFFFFF',
+          ...(dlBold ? { bold: true } : {}),
+          ...labelBoxOf(model, 0, i, dlW),
+        })
     }
     angle += sweep
   })
@@ -1601,7 +1846,7 @@ function buildBar3DNode(
   )
   const catLabelColor = model.catAxis?.labelColor ?? labelColor
   const style = (sizePx: number): RunStyle => ({
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: sizePx,
     bold: false,
     italic: false,
@@ -1835,7 +2080,7 @@ function buildArea3DNode(
   )
   const catLabelColor = model.catAxis?.labelColor ?? labelColor
   const style = (sizePx: number): RunStyle => ({
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: sizePx,
     bold: false,
     italic: false,
@@ -2120,13 +2365,16 @@ function buildHBarNode(
 
   const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? chartLabelDefault(model)
+  const valLabelsOff =
+    !!model.valAxis?.hidden || !!model.valAxis?.tickLblHidden || !!model.valAxis?.tickLblGarbage
+  const valNoReserve = !!model.valAxis?.hidden || !!model.valAxis?.tickLblHidden
   const catLabelSizePx = ptToPx(
     model.catAxis?.labelSizePt ?? model.valAxis?.labelSizePt ?? chartTextPt(model),
     vp.scale,
   )
   const catLabelColor = model.catAxis?.labelColor ?? labelColor
   const style = (sizePx: number): RunStyle => ({
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: sizePx,
     bold: false,
     italic: false,
@@ -2179,6 +2427,8 @@ function buildHBarNode(
     model.valAxis?.max == null && grouping !== 'percentStacked',
     true,
     maxIntervalsH,
+    false,
+    model.valAxis?.majorUnit,
   )
 
   // Layout: left category-label width + bottom value-tick row + legend
@@ -2192,7 +2442,22 @@ function buildHBarNode(
   const catLabelW = catNoReserve
     ? 0
     : Math.max(...model.categories.map((c) => measure(c, catLabelSizePx)), 0)
-  const plotX = pad + Math.min(catLabelW, box.w * 0.35) + 8
+  // Axis titles: the category title stands on the left (rotated), the value title lies under the tick row
+  const axisTitleStyle = (a: ChartModel['valAxis'], dflt: number): RunStyle => ({
+    fontFamily: chartFont(model),
+    fontSizePx: a?.titleSizePt ? ptToPx(a.titleSizePt, vp.scale) : dflt,
+    bold: !!a?.titleBold,
+    italic: !!a?.titleItalic,
+  })
+  const catTitleStyle = axisTitleStyle(model.catAxis, catLabelSizePx)
+  const valTitleStyle = axisTitleStyle(model.valAxis, labelSizePx)
+  const catTitleW =
+    model.catAxis?.title && !model.catAxis.titleOverlay ? catTitleStyle.fontSizePx * 1.2 + 8 : 0
+  const valTitleH =
+    model.valAxis?.title && !model.valAxis.titleOverlay
+      ? valTitleStyle.fontSizePx * 1.2 + labelSizePx * 0.4
+      : 0
+  const plotX = pad + catTitleW + Math.min(catLabelW, box.w * 0.35) + 8
   const plotY = pad + (legendPos === 't' ? legendH + 4 : 0) + labelSizePx * 0.6
   // Side legends reserve their true column width (mirrors the vertical builder); addSeriesLegend
   // draws at plot.x + plot.w + 8 with 0.5em swatch + 4px gap entries
@@ -2207,7 +2472,12 @@ function buildHBarNode(
       : 0
   const plotR = box.w - pad - labelSizePx * 0.7 - legendW
   // Bottom row = 0.75em tick gap + one label line (PPT-measured ≈2em at 18pt)
-  const plotB = box.h - pad - labelSizePx * 2.0 - (legendPos === 'b' ? legendH : 0)
+  const plotB =
+    box.h -
+    pad -
+    valTitleH -
+    labelSizePx * (valNoReserve ? 0.5 : 2.0) -
+    (legendPos === 'b' ? legendH : 0)
   // An explicit inner plot rect wins over the heuristics — decks position hbar
   // frames partly off-slide and rely on the manual layout for what stays visible
   const L = model.plotLayout
@@ -2247,6 +2517,7 @@ function buildHBarNode(
         ...(model.valAxis?.gridDash ? { dash: [4, 4] } : {}),
       })
     }
+    if (valLabelsOff) return
     const text = tickLabels[i]!
     node.labels.push({
       text,
@@ -2275,6 +2546,34 @@ function buildHBarNode(
     widthPx: axisW,
   })
 
+  if (model.valAxis?.title) {
+    const a = model.valAxis
+    const tw = metrics.measure(a.title!, valTitleStyle)
+    node.labels.push({
+      text: a.title!,
+      x: plot.x + (plot.w - tw) / 2,
+      y: box.h - pad - (legendPos === 'b' ? legendH : 0) - valTitleStyle.fontSizePx * 1.2,
+      fontSizePx: valTitleStyle.fontSizePx,
+      color: a.titleColor ?? labelColor,
+      ...(a.titleBold ? { bold: true } : {}),
+      ...(a.titleItalic ? { italic: true } : {}),
+    })
+  }
+  if (model.catAxis?.title) {
+    const a = model.catAxis
+    const tw = metrics.measure(a.title!, catTitleStyle)
+    node.labels.push({
+      text: a.title!,
+      x: pad,
+      y: plot.y + plot.h / 2 + tw / 2,
+      fontSizePx: catTitleStyle.fontSizePx,
+      color: a.titleColor ?? catLabelColor,
+      ...(a.titleBold ? { bold: true } : {}),
+      ...(a.titleItalic ? { italic: true } : {}),
+      rotationDeg: -90,
+    })
+  }
+
   // Category labels (y axis, left). PowerPoint default (minMax) puts the first category at the
   // BOTTOM for horizontal bars; c:orientation maxMin flips the first one to the top
   const n = Math.max(model.categories.length, 1)
@@ -2296,7 +2595,7 @@ function buildHBarNode(
 
   // Data bars
   const gap = (model.gapWidthPct ?? 150) / 100
-  const dlSize = labelSizePx * 0.9
+  const dlSize = model.dataLabelPt ? ptToPx(model.dataLabelPt, vp.scale) : labelSizePx * 0.9
   const dLbl = (
     si: number,
     catIdx: number,
@@ -2306,13 +2605,17 @@ function buildHBarNode(
     inside: boolean,
   ) => {
     if (!(model.series[si]?.dataLabels ?? model.dataLabels)) return
-    const text = composeDataLabel(model, si, catIdx, fmtDataLabel(v, model.dataLabelFmt))
+    const text = composeDataLabel(model, si, catIdx, fmtDataLabel(v, labelFmt(model, si)))
+    if (!text) return
+    const ov = pointLabelOverride(model, si, catIdx)
+    const size = ov?.sizePt ? ptToPx(ov.sizePt, vp.scale) : dlSize
     node.labels.push({
       text,
-      x: inside ? x - measure(text, dlSize) / 2 : x,
-      y: yMid - dlSize * 0.55,
-      fontSizePx: dlSize,
-      color: inside ? '#FFFFFF' : '#404040',
+      x: inside ? x - measure(text, size) / 2 : x,
+      y: yMid - size * 0.55,
+      fontSizePx: size,
+      color: inside ? '#FFFFFF' : (ov?.color ?? '#404040'),
+      ...labelBoxOf(model, si, catIdx, measure(text, size)),
     })
   }
   if (stacked) {
@@ -2328,6 +2631,7 @@ function buildHBarNode(
         const to = from + v
         if (v > 0) posAcc = to
         else negAcc = to
+        if (ser.noFill) return
         // min/max in screen space: a reversed axis flips which value maps further right
         const xL = Math.min(xOf(from), xOf(to))
         const xR = Math.max(xOf(from), xOf(to))
@@ -2352,10 +2656,12 @@ function buildHBarNode(
     model.series.forEach((ser, si) => {
       const color = seriesColor(si)
       ser.values.forEach((v, i) => {
-        if (v == null || i >= n) return
+        if (v == null || i >= n || ser.noFill) return
         // PowerPoint stacks horizontal-bar series bottom-up: series 1 sits nearest the
-        // category axis (the bottom of the group), later series above it
-        const y = rowY(i) + (slotH - groupH) / 2 + (sCount - 1 - si) * step
+        // category axis (the bottom of the group), later series above it; a maxMin
+        // category axis flips the group so series 1 is on top
+        const slotIdx = model.catAxis?.reversed ? si : sCount - 1 - si
+        const y = rowY(i) + (slotH - groupH) / 2 + slotIdx * step
         const xL = Math.min(xOf(v), xOf(base))
         const xR = Math.max(xOf(v), xOf(base))
         node.bars.push({
@@ -2366,7 +2672,7 @@ function buildHBarNode(
           color: ser.pointColors?.[i] ?? color,
           ...pointFill(ser.pointFills?.[i]),
         })
-        const lblText = composeDataLabel(model, si, i, fmtDataLabel(v, model.dataLabelFmt))
+        const lblText = composeDataLabel(model, si, i, fmtDataLabel(v, labelFmt(model, si)))
         // outer tip flips with a reversed axis (screen-space edges)
         const tipRight = v >= 0 !== rev
         dLbl(si, i, tipRight ? xR + 4 : xL - 4 - measure(lblText, dlSize), y + barH / 2, v, false)
@@ -2374,8 +2680,19 @@ function buildHBarNode(
     })
   }
 
-  // legend order mirrors the bottom-up series stacking (Series N listed first)
-  addSeriesLegend(node, model, box, plot, labelSizePx, measure, pad, seriesColor, true)
+  // legend order mirrors the series stacking: bottom-up (Series N first) unless a reversed
+  // category axis put series 1 on top
+  addSeriesLegend(
+    node,
+    model,
+    box,
+    plot,
+    labelSizePx,
+    measure,
+    pad,
+    seriesColor,
+    !model.catAxis?.reversed,
+  )
   return node
 }
 
@@ -2392,8 +2709,12 @@ function buildScatterNode(
   const node = emptyChartNode(id, sourceId, box)
   const labelSizePx = ptToPx(model.valAxis?.labelSizePt ?? chartTextPt(model), vp.scale)
   const labelColor = model.valAxis?.labelColor ?? chartLabelDefault(model)
+  const yLabelsOff =
+    !!model.valAxis?.hidden || !!model.valAxis?.tickLblHidden || !!model.valAxis?.tickLblGarbage
+  const xLabelsOff =
+    !!model.catAxis?.hidden || !!model.catAxis?.tickLblHidden || !!model.catAxis?.tickLblGarbage
   const style = (sizePx: number): RunStyle => ({
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: sizePx,
     bold: false,
     italic: false,
@@ -2471,6 +2792,7 @@ function buildScatterNode(
         ...(model.valAxis?.gridDash ? { dash: [4, 4] } : {}),
       })
     }
+    if (yLabelsOff) return
     const text = fmtNum(t)
     node.labels.push({
       text,
@@ -2493,6 +2815,7 @@ function buildScatterNode(
         ...(model.catAxis?.gridDash ? { dash: [4, 4] } : {}),
       })
     }
+    if (xLabelsOff) return
     const text = fmtNum(t)
     node.labels.push({
       text,
@@ -2573,8 +2896,11 @@ function buildScatterNode(
           color: model.defaultTextColor ?? '#404040',
         })
       }
-      if (ser.dataLabels ?? model.dataLabels) {
-        const text = composeDataLabel(model, si, p.i, fmtNum(round12(p.y)))
+      const text =
+        (ser.dataLabels ?? model.dataLabels)
+          ? composeDataLabel(model, si, p.i, fmtNum(round12(p.y)))
+          : ''
+      if (text) {
         node.labels.push({
           text,
           x: x - measure(text, labelSizePx * 0.9) / 2,
@@ -2616,7 +2942,7 @@ function buildFunnelNode(
 
   const labelSizePx = ptToPx(chartTextPt(model), vp.scale) * 0.9
   const style: RunStyle = {
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: labelSizePx,
     bold: false,
     italic: false,
@@ -2706,7 +3032,7 @@ function buildSunburstNode(
 
   const labelSizePx = ptToPx(chartTextPt(model), vp.scale) * 0.8
   const style: RunStyle = {
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: labelSizePx,
     bold: false,
     italic: false,
@@ -2802,7 +3128,7 @@ function buildRadarNode(
   const labelColor = model.valAxis?.labelColor ?? chartLabelDefault(model)
   const catLabelColor = model.catAxis?.labelColor ?? labelColor
   const style = (sizePx: number): RunStyle => ({
-    fontFamily: LABEL_FONT,
+    fontFamily: chartFont(model),
     fontSizePx: sizePx,
     bold: false,
     italic: false,
@@ -2952,11 +3278,11 @@ function addSeriesLegend(
   const legendPos = model.legendPos
   if (!legendPos || !model.series.some((s) => s.name)) return
   const sw = labelSizePx * 0.5
-  const items = model.series.map((s, i) => ({
-    label: s.name ?? '',
+  const items = (model.legendOrder ?? model.series.map((_, i) => i)).map((i) => ({
+    label: model.series[i]?.name ?? '',
     color: seriesColor(i),
   }))
-  if (reverse) items.reverse()
+  if (reverse && !model.legendOrder) items.reverse()
   const itemWs = items.map((it) => sw + 4 + measure(it.label, labelSizePx) + labelSizePx * 0.5)
   const labelColor = model.valAxis?.labelColor ?? chartLabelDefault(model)
   if (legendPos === 't' || legendPos === 'b') {
@@ -3050,6 +3376,46 @@ function ppTicks(
   return { min: lo, max: hi, ticks }
 }
 
+/** Logarithmic value axis: one tick per power of the base; auto ends snap to the powers
+ *  enclosing the positive data (PowerPoint: 9..960 on base 10 → 1, 10, 100, 1000). */
+function logTicks(
+  posDataMin: number,
+  dataMax: number,
+  explicitMin: number | undefined,
+  explicitMax: number | undefined,
+  base: number,
+): { min: number; max: number; ticks: number[] } {
+  // log(1000)/log(10) = 2.999…: snap exponents with slack so exact powers stay put
+  const lg = (v: number) => Math.log(v) / Math.log(base)
+  const lo =
+    explicitMin && explicitMin > 0
+      ? explicitMin
+      : base **
+        Math.floor(lg(Number.isFinite(posDataMin) && posDataMin > 0 ? posDataMin : 1) + 1e-9)
+  let hi =
+    explicitMax && explicitMax > lo
+      ? explicitMax
+      : base ** Math.ceil(lg(Math.max(dataMax, lo * base)) - 1e-9)
+  if (hi <= lo) hi = lo * base
+  const ticks: number[] = []
+  if (Math.abs(lg(lo) - Math.round(lg(lo))) > 1e-9) ticks.push(lo)
+  for (let e = Math.ceil(lg(lo) - 1e-9); base ** e <= hi * (1 + 1e-9); e++)
+    ticks.push(round12(base ** e))
+  return { min: lo, max: hi, ticks }
+}
+
+/** Minor positions of a log axis: 2..base-1 multiples of every decade inside the range. */
+function logMinors(min: number, max: number, base: number): number[] {
+  const out: number[] = []
+  const e0 = Math.floor(Math.log(min) / Math.log(base) + 1e-9)
+  for (let e = e0; base ** e < max; e++)
+    for (let k = 2; k < base; k++) {
+      const v = k * base ** e
+      if (v > min * (1 + 1e-9) && v < max * (1 - 1e-9)) out.push(round12(v))
+    }
+  return out
+}
+
 /** Legacy 1/2/5 rounding of span/8 (kept for horizontal axes, where PowerPoint places
  *  sparser ticks than the vertical-axis rule below — measured: hbar range 8.6 → unit 2). */
 function ppUnitLegacy(x: number): number {
@@ -3080,17 +3446,47 @@ function round12(v: number): number {
 }
 
 /** Compose a data label: optional series/category name parts plus the value (c:showSerName/showCatName). */
+/** Series-level c:dLbls/c:numFmt wins over the chart-level format. */
+function labelFmt(model: ChartModel, si: number): string | undefined {
+  return model.series[si]?.dataLabelFmt ?? model.dataLabelFmt
+}
+
+/** Data-label box colors (point dLbl → series dLbls) with the text width the box wraps. */
+function labelBoxOf(
+  model: ChartModel,
+  si: number,
+  catIdx: number,
+  textW: number,
+): { fill?: string; stroke?: string; w?: number } {
+  const s = model.series[si]
+  const ov = s?.dLblOverrides?.find((o) => o.idx === catIdx)
+  // a point's explicit a:noFill (null) clears the series box; absent inherits it
+  const fill = ov && ov.fill !== undefined ? ov.fill : s?.dataLabelFill
+  const stroke = ov && ov.border !== undefined ? ov.border : s?.dataLabelBorder
+  if (!fill && !stroke) return {}
+  return { ...(fill ? { fill } : {}), ...(stroke ? { stroke } : {}), w: textW }
+}
+
 function composeDataLabel(
   model: ChartModel,
   si: number,
   catIdx: number,
   valueText: string,
 ): string {
+  const ov = pointLabelOverride(model, si, catIdx)
+  if (ov?.hidden) return ''
   const parts: string[] = []
-  if (model.dataLabelSerName) parts.push(model.series[si]?.name ?? '')
-  if (model.dataLabelCatName) parts.push(model.categories?.[catIdx] ?? '')
-  if (!model.dataLabelNoValue) parts.push(valueText)
+  if (ov ? ov.ser : model.dataLabelSerName) parts.push(model.series[si]?.name ?? '')
+  if (ov ? ov.cat : model.dataLabelCatName) parts.push(model.categories?.[catIdx] ?? '')
+  if (ov ? ov.val || ov.pct : !model.dataLabelNoValue) parts.push(valueText)
   return parts.filter(Boolean).join(', ')
+}
+
+function pointLabelOverride(model: ChartModel, si: number, idx: number) {
+  const ser = model.series[si]
+  const ov = ser?.dLblOverrides?.find((o) => o.idx === idx)
+  if (ov) return ov
+  return ser?.dLblOnlyPoints ? { idx, hidden: true } : undefined
 }
 
 /** Tick number formatting: integers get thousands separators, decimals keep needed digits. */

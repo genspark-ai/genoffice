@@ -1,7 +1,11 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, resolve } from 'node:path'
-import { fetchRemoteImage } from '@genoffice/electron-utils/remote-image'
+import {
+  ResponseTooLargeError,
+  fetchRemoteImage,
+  readBodyCapped,
+} from '@genoffice/electron-utils/remote-image'
 import {
   columnIndex,
   columnLabel,
@@ -1069,11 +1073,11 @@ async function loadImage(
   if (/^https?:\/\//i.test(source)) {
     const resp = await fetchRemoteImage(source)
     if (!resp || !resp.ok) fail(`could not download ${source}`)
-    if (Number(resp!.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) {
-      fail(`image larger than 20 MB: ${source}`)
-    }
-    bytes = new Uint8Array(await resp!.arrayBuffer())
-    if (bytes.length > MAX_IMAGE_BYTES) fail(`image larger than 20 MB: ${source}`)
+    bytes = await readBodyCapped(resp!, MAX_IMAGE_BYTES).catch((err: unknown) =>
+      err instanceof ResponseTooLargeError
+        ? fail(`image larger than 20 MB: ${source}`)
+        : Promise.reject(err),
+    )
   } else {
     const expanded = source.startsWith('~/') ? resolve(homedir(), source.slice(2)) : source
     const path = isAbsolute(expanded) ? expanded : resolve(ctx?.cwd ?? process.cwd(), expanded)

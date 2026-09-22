@@ -59,6 +59,8 @@ import {
   presetPath,
 } from './preset-geometry'
 import {
+  bevelMaterialFaceColor,
+  buildBevelFaces,
   buildExtrusion,
   inPlaneRotationDeg,
   flatCameraMirror,
@@ -465,10 +467,6 @@ function applyScene3D(el: TextElement, node: ShapeRenderNode, vp: Viewport): voi
   if (node.line) return // connectors keep their polyline rendering
   const scene = el.scene3d!
   const spin = inPlaneRotationDeg(scene)
-  if (spin != null) {
-    if (spin !== 0) node.box = { ...node.box, rotationDeg: node.box.rotationDeg + spin }
-    return
-  }
   const depthPx = emuToPx(scene.extrusionEmu ?? 0, vp.scale)
   const box = node.box
   let rings: number[][] | undefined
@@ -487,6 +485,35 @@ function applyScene3D(el: TextElement, node: ShapeRenderNode, vp: Viewport): voi
       ? fill.stops[Math.floor(fill.stops.length / 2)]!.color
       : undefined
   const frontColor = frontSolid ?? gradientMid ?? '#FFFFFF'
+  if (spin != null) {
+    if (spin !== 0) node.box = { ...node.box, rotationDeg: node.box.rotationDeg + spin }
+    // Straight-on shape with a top bevel and no depth (SmartArt "Polished"/3D styles):
+    // rig-shaded bands around the outline plus the (material-tinted) flat face. The rig
+    // tints the face even when no bands are drawn (no bevel, or a rig without a band
+    // calibration).
+    if (depthPx <= 0 && fill.kind !== 'none') {
+      const bev = scene.bevelTop
+        ? buildBevelFaces({
+            rings,
+            w: box.w,
+            h: box.h,
+            scene,
+            frontColor,
+            bevelPx: emuToPx(scene.bevelTop.wEmu, vp.scale),
+            ...(node.stroke
+              ? { strokeColor: node.stroke.color, strokeWidthPx: node.stroke.widthPx }
+              : {}),
+            ...(fill.kind !== 'solid' ? { frontUsesFill: true } : {}),
+          })
+        : null
+      if (bev) node.extrusion = bev
+      else if (fill.kind === 'solid') {
+        const tinted = bevelMaterialFaceColor(fill.color, scene)
+        if (tinted !== fill.color) node.fill = { ...fill, color: tinted }
+      }
+    }
+    return
+  }
   // PowerPoint colors the extruded walls with the outline color when one exists, else the fill.
   const sideColor = scene.extrusionColor ?? node.stroke?.color ?? frontColor
   const ext = buildExtrusion({

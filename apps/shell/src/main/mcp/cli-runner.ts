@@ -78,7 +78,7 @@ function parseJson(stdout: string): CliJsonOk | CliJsonError | undefined {
 }
 
 /** Child output budget: past this the buffers are truncated and the child killed. */
-export const MAX_CLI_OUTPUT_BYTES = 5 * 1024 * 1024
+export const MAX_CLI_OUTPUT_BYTES = 64 * 1024 * 1024
 
 export function createCliRunner(paths: CliRunnerPaths): CliRunner {
   return {

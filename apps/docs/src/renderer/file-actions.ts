@@ -345,6 +345,28 @@ function phasedHostFor(ctx: FileActionContext): PhasedContentHost {
   }
 }
 
+/** Word parity: a freshly opened or created document starts with the caret at
+ *  its beginning — typing must work without a click into the page.
+ *  Skipped when something else in this webContents already holds keyboard
+ *  focus (e.g. the user clicked into the AI composer while the file parsed). */
+function focusDocumentStart(editor: Editor): void {
+  const startedAt = performance.now()
+  const attempt = (): void => {
+    if (editor.isDestroyed) return
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    const dom = editor.view.dom as HTMLElement
+    // behind the opening screen the editor is display:none and DOM focus
+    // silently drops — wait for it to be laid out, then focus once
+    if (dom.isConnected && dom.offsetParent !== null) {
+      editor.commands.focus('start', { scrollIntoView: false })
+      if (document.activeElement !== document.body) return
+    }
+    if (performance.now() - startedAt < 10_000) requestAnimationFrame(attempt)
+  }
+  attempt()
+}
+
 /** bumped when a document replacement starts; a slower one still parsing must not land */
 let openGeneration = 0
 
@@ -387,6 +409,7 @@ export async function loadFile(
       blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)),
     )
     resetEditorHistory(ctx.editor)
+    if (tier !== 'readOnly') focusDocumentStart(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({
       parsed,
@@ -519,6 +542,7 @@ export async function newFile(ctx: FileActionContext): Promise<boolean | undefin
       blocksToPmDoc(parsed.blocks, readSections(parsed), pmDocOptions(parsed)) as never,
     )
     resetEditorHistory(ctx.editor)
+    focusDocumentStart(ctx.editor)
     noteDocumentSwapped()
     ctx.setDoc({ parsed, filePath: null, fileName: t('appUntitledDocx'), hash: '', isBlank: true })
     // a very large document opened in Read Mode must not leave it on for the new one

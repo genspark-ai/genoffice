@@ -18,6 +18,7 @@ export interface Scene3DProps {
   zEmu?: number
   extrusionColor?: string
   material?: string
+  bevelTop?: { wEmu: number; hEmu: number; preset: string }
 }
 
 export interface ExtrusionFaceRender {
@@ -36,6 +37,15 @@ export interface ExtrusionRender {
   faces: ExtrusionFaceRender[]
   /** legacyWireframe material: faces carry no fill, only edges */
   wireframe?: boolean
+  /** Projected silhouette the shape's shadow/glow is cast from (front cap or bevel outline) */
+  shadowPath?: string
+  /** Straight-on bevel: the faces stay inside the flat outline, so flat-geometry effects still apply */
+  flat?: boolean
+}
+
+/** The face whose fill backs the shadow silhouette: the front cap, else the last filled face (wireframes have none). */
+export function extrusionFrontFace(faces: ExtrusionFaceRender[]): ExtrusionFaceRender | undefined {
+  return faces.find((f) => f.front) ?? faces.filter((f) => f.color !== 'transparent').at(-1)
 }
 
 interface CameraPreset {
@@ -473,16 +483,14 @@ const LAMBERT: MaterialParams = { spec: 0, shin: 1, diffuse: 1, ambient: 1 }
 
 /** Blinn-Phong shading of a base color by the rig's ambient + diffuse lights plus a
  *  material specular term (view direction = +z toward the viewer). */
-function shade(
-  base: [number, number, number],
+/** Unclamped lighting of a normal: per-channel diffuse+ambient factors and the additive specular (0..1). */
+function lightTerms(
   normal: Vec3,
   rig: LightRig,
   lightXf: Mat3,
-  mat: MaterialParams = LAMBERT,
-  // Specular highlights depend on the eye, so they always use the view-space normal
-  // even when diffuse shading is camera-invariant (shape-space normal)
-  viewNormal: Vec3 = normal,
-): string {
+  mat: MaterialParams,
+  viewNormal: Vec3,
+): { f: [number, number, number]; spec: number } {
   let fr = rig.ambient * mat.ambient
   let fg = fr
   let fb = fr
@@ -521,8 +529,22 @@ function shade(
     fg *= k
     fb *= k
   }
+  return { f: [fr, fg, fb], spec }
+}
+
+function shade(
+  base: [number, number, number],
+  normal: Vec3,
+  rig: LightRig,
+  lightXf: Mat3,
+  mat: MaterialParams = LAMBERT,
+  // Specular highlights depend on the eye, so they always use the view-space normal
+  // even when diffuse shading is camera-invariant (shape-space normal)
+  viewNormal: Vec3 = normal,
+): string {
+  const { f, spec } = lightTerms(normal, rig, lightXf, mat, viewNormal)
   const s = spec * 255
-  return `#${toHex(base[0] * fr + s)}${toHex(base[1] * fg + s)}${toHex(base[2] * fb + s)}`
+  return `#${toHex(base[0] * f[0] + s)}${toHex(base[1] * f[1] + s)}${toHex(base[2] * f[2] + s)}`
 }
 
 /**
@@ -748,6 +770,311 @@ export function flatCameraMirror(
   return { flipH, flipV, rotationDeg: rev === 0 ? 0 : -rev }
 }
 
+/** Light rig of a scene plus the transform that turns its dir/rot into the screen frame. */
+function rigOf(scene: Scene3DProps): { rig: LightRig; lightXf: Mat3 } {
+  const rig = LIGHT_RIGS[scene.lightRig ?? ''] ?? LIGHT_RIGS.threePt!
+  let lightXf: Mat3 = IDENT
+  if (scene.lightRot) {
+    // Measured on Scene3d_material_highlight (twoPt rev=90°): PowerPoint keeps the rig's
+    // table directions — a rev spin does not move the lights. lat/lon still reposition
+    // the rig (inverse, like the dir attribute's z-steps).
+    const c = cameraMatrix(scene.lightRot.lat * D, scene.lightRot.lon * D, 0)
+    lightXf = [c[0], c[3], c[6], c[1], c[4], c[7], c[2], c[5], c[8]]
+  } else {
+    const dirDeg = RIG_DIR_DEG[scene.lightDir ?? 't'] ?? 0
+    if (dirDeg) lightXf = rotZ(rad(dirDeg))
+  }
+  return { rig, lightXf }
+}
+
+// ── Front-face bevel (orthographic camera, no extrusion) ────────────
+
+/**
+ * translucentPowder lifts the whole face toward the rig's light: PowerPoint renders it as
+ * 0.69 × fill + a rig-dependent additive, capped at 227 per channel (probe decks: six fills ×
+ * fifteen rigs; colored rigs add per channel).
+ */
+const POWDER_TINT: Record<string, [number, number, number]> = {
+  chilly: [51, 51, 59],
+  threePt: [98, 98, 98],
+  flat: [76, 76, 76],
+  soft: [72, 72, 72],
+  harsh: [65, 65, 65],
+  balanced: [90, 90, 90],
+  brightRoom: [67, 67, 67],
+  glow: [54, 54, 54],
+  contrasting: [54, 54, 54],
+  twoPt: [83, 83, 83],
+  flood: [55, 55, 55],
+  freezing: [16, 25, 41],
+  morning: [41, 37, 26],
+  sunrise: [35, 29, 13],
+  sunset: [37, 16, 0],
+}
+const POWDER_SCALE = 0.69
+const POWDER_CAP = 227
+/** Other materials keep the fill under the white rigs but take the rig's light color
+ *  and intensity under the colored/dim ones (probe: matte gray under flood → 85%). */
+const FACE_MUL: Record<string, [number, number, number]> = {
+  glow: [0.98, 0.98, 0.98],
+  contrasting: [0.98, 0.98, 0.98],
+  twoPt: [0.97, 0.97, 0.97],
+  flood: [0.85, 0.85, 0.85],
+  freezing: [0.66, 0.75, 0.86],
+  morning: [0.86, 0.84, 0.76],
+  sunrise: [0.84, 0.78, 0.66],
+  sunset: [0.85, 0.68, 0.53],
+}
+/**
+ * Sign of the band normal's x/y before lighting, per rig, calibrated against PowerPoint:
+ * the seven white rigs light the bands with the rig mirrored left-right relative to the
+ * extrusion walls (chilly dir=t brightens top and RIGHT), glow follows the rig table as
+ * written (left band 1.0, right 0.7), the colored rigs need the vertical sense flipped.
+ * contrasting (specular-only lights) and twoPt (table intensities don't match) stay flat.
+ */
+const BEVEL_RIG_SIGNS: Record<string, [number, number]> = {
+  chilly: [-1, 1],
+  threePt: [-1, 1],
+  flat: [-1, 1],
+  soft: [-1, 1],
+  harsh: [-1, 1],
+  balanced: [-1, 1],
+  brightRoom: [-1, 1],
+  glow: [1, 1],
+  flood: [1, -1],
+  freezing: [1, -1],
+  morning: [1, -1],
+  sunrise: [1, -1],
+  sunset: [1, -1],
+}
+
+/** #RRGGBBAA alpha suffix: translucent fills keep it on the face and the bands */
+const alphaOf = (hex: string): string => (/^#[0-9a-fA-F]{8}$/.test(hex) ? hex.slice(7) : '')
+const rgbHex = (c: number[], alpha = ''): string =>
+  `#${toHex(c[0]!)}${toHex(c[1]!)}${toHex(c[2]!)}${alpha}`
+
+export function bevelMaterialFaceColor(fill: string, scene: Scene3DProps): string {
+  const rig = scene.lightRig ?? 'threePt'
+  const base = parseRgb(fill)
+  if (scene.material !== 'translucentPowder' && scene.material !== 'powder') {
+    const mul = scene.material === 'flat' ? undefined : FACE_MUL[rig]
+    return mul
+      ? rgbHex(
+          base.map((v, i) => v * mul[i]!),
+          alphaOf(fill),
+        )
+      : fill
+  }
+  const k = POWDER_TINT[rig]
+  if (!k) return fill
+  const c = base.map((v, i) => Math.min(POWDER_CAP, v * POWDER_SCALE + k[i]!))
+  return rgbHex(c, alphaOf(fill))
+}
+
+/**
+ * Bevel cross-section as (inner position 0..1 across the band, slope angle deg) samples;
+ * softRound/circle slope steeply at the rim and flatten toward the face, relaxedInset
+ * flips halfway (an inset ring), the angled presets keep one slope. Negative = tilted inward.
+ */
+function bevelProfile(preset: string): Array<[number, number]> {
+  switch (preset) {
+    case 'relaxedInset':
+      return [
+        [0.5, -35],
+        [1, 35],
+      ]
+    // probe: the chamfer presets light like an inward slope (top edge dark, bottom lit)
+    case 'angle':
+    case 'slope':
+    case 'hardEdge':
+    case 'coolSlant':
+    case 'artDeco':
+      return [[1, -30]]
+    case 'convex':
+    case 'cross':
+    case 'divot':
+    case 'riblet':
+      return [
+        [0.5, 40],
+        [1, 15],
+      ]
+    default:
+      // quarter-round: steep at the rim, flat at the face (probe: peak 3 px in, gone at the width)
+      return [
+        [0.12, 62],
+        [0.25, 48],
+        [0.4, 36],
+        [0.55, 25],
+        [0.72, 15],
+        [0.87, 7],
+        [1, 2],
+      ]
+  }
+}
+
+function norm2(x: number, y: number): [number, number] {
+  const l = Math.hypot(x, y) || 1
+  return [x / l, y / l]
+}
+
+/** Ring inset by `d` px along the per-vertex mitre (adjacent edge normals averaged). */
+function insetRing(ring: number[], rings: number[][], d: number): number[] {
+  const n = ring.length / 2
+  const out: number[] = []
+  for (let i = 0; i < n; i++) {
+    const px = ring[i * 2]!
+    const py = ring[i * 2 + 1]!
+    const pv: [number, number] = [ring[((i - 1 + n) % n) * 2]!, ring[((i - 1 + n) % n) * 2 + 1]!]
+    const nx: [number, number] = [ring[((i + 1) % n) * 2]!, ring[((i + 1) % n) * 2 + 1]!]
+    const e1 = norm2(px - pv[0], py - pv[1])
+    const e2 = norm2(nx[0] - px, nx[1] - py)
+    // outward normals of both edges, then their bisector
+    let n1: [number, number] = [e1[1], -e1[0]]
+    let n2: [number, number] = [e2[1], -e2[0]]
+    const mx = (px + nx[0]) / 2
+    const my = (py + nx[1]) / 2
+    if (insideRings(rings, mx + n2[0] * 0.75, my + n2[1] * 0.75)) {
+      n1 = [-n1[0], -n1[1]]
+      n2 = [-n2[0], -n2[1]]
+    }
+    const b = norm2(n1[0] + n2[0], n1[1] + n2[1])
+    const cosHalf = Math.max(0.35, b[0] * n1[0] + b[1] * n1[1])
+    out.push(px - (b[0] * d) / cosHalf, py - (b[1] * d) / cosHalf)
+  }
+  return out
+}
+
+export interface BuildBevelInput {
+  rings: number[][]
+  w: number
+  h: number
+  scene: Scene3DProps
+  /** Resolved solid front color (gradients reduced to a mid color) */
+  frontColor: string
+  /** Front cap keeps the shape's own non-solid fill */
+  frontUsesFill?: boolean
+  /** Bevel band width (px) */
+  bevelPx: number
+  strokeColor?: string
+  strokeWidthPx?: number
+}
+
+/**
+ * Front-face bevel of a straight-on shape: concentric bands around the outline, each
+ * segment shaded by the rig for its tilted normal, plus the flat inner face. Bands are
+ * expressed relative to the flat face so the face itself stays exactly the (tinted) fill.
+ */
+export function buildBevelFaces(input: BuildBevelInput): ExtrusionRender | null {
+  const { rings, w, h, scene } = input
+  const outer = rings[0]
+  if (!outer || outer.length < 6 || input.bevelPx <= 0) return null
+  // the flat material shows no bevel shading at all (probe), only the face
+  if (scene.material === 'flat' || scene.material === 'legacyMatte') return null
+  const signs = BEVEL_RIG_SIGNS[scene.lightRig ?? 'threePt']
+  if (!signs) return null
+  const bw = Math.min(input.bevelPx, w / 2, h / 2)
+  const { rig, lightXf: rigXf } = rigOf(scene)
+  // On a flat bevel the rig's rev spin does turn the lights, counter to the z rotation
+  // sense used for `dir` (probe: glow rev=25° lights the top band from the strong left
+  // light and the bottom from the weak right one) — unlike extrusions, where a rev spin
+  // leaves the table directions alone
+  const revDeg = -(scene.lightRot?.rev ?? 0) * D
+  const lightXf = revDeg ? matMul(rotZ(rad(revDeg)), rigXf) : rigXf
+  const alpha = alphaOf(input.frontColor)
+  const face = parseRgb(bevelMaterialFaceColor(input.frontColor, scene))
+  const powder = scene.material === 'translucentPowder' || scene.material === 'powder'
+  // Bands are diffuse-only whatever the material (probe: matte, plastic, metal, warmMatte,
+  // dkEdge and softEdge share one profile — a specular term would darken the bands against
+  // the highlighted flat face). Contrast relative to the wall model ≈0.7×; translucentPowder
+  // is a softer ≈0.5×.
+  const bandMat = MATERIALS.matte!
+  const gain = powder ? 0.5 : 0.7
+  const flatT = lightTerms([0, 0, 1], rig, lightXf, bandMat, [0, 0, 1])
+  const relative = (normal: Vec3): string => {
+    const lit = lightTerms(normal, rig, lightXf, bandMat, normal)
+    const c = face.map((v, i) => {
+      const flatV = v * flatT.f[i]! + flatT.spec * 255
+      const litV = v * lit.f[i]! + lit.spec * 255
+      const ratio = flatV > 0 ? litV / flatV : 1
+      return v * (1 + (ratio - 1) * gain)
+    })
+    return rgbHex(c, alpha)
+  }
+  const rnd = (v: number) => Math.round(v * 100) / 100
+  const poly = (pts: number[]): string => {
+    let d = ''
+    for (let i = 0; i < pts.length; i += 2)
+      d += `${i ? ' L' : 'M'} ${rnd(pts[i]!)} ${rnd(pts[i + 1]!)}`
+    return d + ' Z'
+  }
+  const out: ExtrusionFaceRender[] = []
+  // Outward edge normals of the outline, decided once on the outer ring (an inset ring's
+  // test point is always inside the outline and would flip them)
+  const n = outer.length / 2
+  const normals: Array<[number, number] | null> = []
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n
+    const ex = outer[j * 2]! - outer[i * 2]!
+    const ey = outer[j * 2 + 1]! - outer[i * 2 + 1]!
+    const el = Math.hypot(ex, ey)
+    if (el < 1e-6) {
+      normals.push(null)
+      continue
+    }
+    let nx = ey / el
+    let ny = -ex / el
+    const mx = (outer[i * 2]! + outer[j * 2]!) / 2
+    const my = (outer[i * 2 + 1]! + outer[j * 2 + 1]!) / 2
+    if (insideRings(rings, mx + nx * 0.75, my + ny * 0.75)) {
+      nx = -nx
+      ny = -ny
+    }
+    normals.push([nx, ny])
+  }
+  let prevRing = outer
+  for (const [pos, angleDeg] of bevelProfile(scene.bevelTop?.preset ?? 'circle')) {
+    const ring = insetRing(outer, rings, pos * bw)
+    const sin = Math.sin(rad(Math.abs(angleDeg)))
+    const cos = Math.cos(rad(Math.abs(angleDeg)))
+    const sign = angleDeg < 0 ? -1 : 1
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n
+      const nrm = normals[i]
+      if (!nrm) continue
+      const nx = signs[0] * nrm[0]
+      const ny = signs[1] * nrm[1]
+      out.push({
+        path: poly([
+          prevRing[i * 2]!,
+          prevRing[i * 2 + 1]!,
+          prevRing[j * 2]!,
+          prevRing[j * 2 + 1]!,
+          ring[j * 2]!,
+          ring[j * 2 + 1]!,
+          ring[i * 2]!,
+          ring[i * 2 + 1]!,
+        ]),
+        color: relative([nx * sin * sign, ny * sin * sign, cos]),
+      })
+    }
+    prevRing = ring
+  }
+  out.push({
+    path: [prevRing, ...rings.slice(1)].map(poly).join(' '),
+    color: input.frontUsesFill ? input.frontColor : rgbHex(face, alpha),
+    ...(input.frontUsesFill ? { front: true } : {}),
+  })
+  if (input.strokeColor) {
+    out.push({
+      path: rings.map(poly).join(' '),
+      color: 'transparent',
+      stroke: input.strokeColor,
+      strokeWidthPx: input.strokeWidthPx ?? 1,
+    })
+  }
+  return { faces: out, shadowPath: rings.map(poly).join(' '), flat: true }
+}
+
 export function buildExtrusion(input: BuildExtrusionInput): ExtrusionRender | null {
   const { rings, w, h, depthPx, scene } = input
   const preset = CAMERA_PRESETS[scene.cameraPreset]
@@ -829,18 +1156,7 @@ export function buildExtrusion(input: BuildExtrusionInput): ExtrusionRender | nu
     ]
   }
 
-  const rig = LIGHT_RIGS[scene.lightRig ?? ''] ?? LIGHT_RIGS.threePt!
-  let lightXf: Mat3 = IDENT
-  if (scene.lightRot) {
-    // Measured on Scene3d_material_highlight (twoPt rev=90°): PowerPoint keeps the rig's
-    // table directions — a rev spin does not move the lights. lat/lon still reposition
-    // the rig (inverse, like the dir attribute's z-steps).
-    const c = cameraMatrix(scene.lightRot.lat * D, scene.lightRot.lon * D, 0)
-    lightXf = [c[0], c[3], c[6], c[1], c[4], c[7], c[2], c[5], c[8]]
-  } else {
-    const dirDeg = RIG_DIR_DEG[scene.lightDir ?? 't'] ?? 0
-    if (dirDeg) lightXf = rotZ(rad(dirDeg))
-  }
+  const { rig, lightXf } = rigOf(scene)
 
   const frontBase = parseRgb(input.frontColor)
   const sideBase = parseRgb(scene.extrusionColor ?? input.sideColor)
@@ -942,5 +1258,7 @@ export function buildExtrusion(input: BuildExtrusionInput): ExtrusionRender | nu
         : {}),
     })
   }
-  return { faces: out }
+  // The shadow hangs on the front cap: the back cap is culled on most cameras and a wall
+  // would cast a sliver
+  return { faces: out, ...(frontR[0] ? { shadowPath: capPath(frontR) } : {}) }
 }

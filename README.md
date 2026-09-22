@@ -17,6 +17,7 @@ Word, Excel, PowerPoint and PDF files, edited by you and your AI, saved back in 
   <a href="https://github.com/genspark-ai/genoffice/releases/latest"><img src="https://img.shields.io/github/v/release/genspark-ai/genoffice" alt="Latest release"></a>
   <a href="https://github.com/genspark-ai/genoffice/releases"><img src="https://img.shields.io/github/downloads/genspark-ai/genoffice/total" alt="Downloads"></a>
   <a href="https://github.com/genspark-ai/genoffice/stargazers"><img src="https://img.shields.io/github/stars/genspark-ai/genoffice?style=flat" alt="GitHub stars"></a>
+  <a href="https://x.com/merrickbuilds"><img src="https://img.shields.io/badge/follow-%40merrickbuilds-000000?logo=x&logoColor=white" alt="Follow @merrickbuilds on X"></a>
 </p>
 
 <p align="center"><b>English</b> · <a href="docs/i18n/README.es.md">Español</a> · <a href="docs/i18n/README.pt-BR.md">Português (Brasil)</a> · <a href="docs/i18n/README.de.md">Deutsch</a> · <a href="docs/i18n/README.fr.md">Français</a> · <a href="docs/i18n/README.zh-CN.md">简体中文</a> · <a href="docs/i18n/README.zh-TW.md">繁體中文</a> · <a href="docs/i18n/README.ko.md">한국어</a> · <a href="docs/i18n/README.ja.md">日本語</a> · <a href="docs/i18n/README.ar.md">العربية</a> · <a href="docs/i18n/README.ru.md">Русский</a> · <a href="docs/i18n/README.it.md">Italiano</a> · <a href="docs/i18n/README.nl.md">Nederlands</a> · <a href="docs/i18n/README.pl.md">Polski</a> · <a href="docs/i18n/README.cs.md">Čeština</a> · <a href="docs/i18n/README.id.md">Bahasa Indonesia</a> · <a href="docs/i18n/README.ms.md">Bahasa Melayu</a> · <a href="docs/i18n/README.th.md">ไทย</a> · <a href="docs/i18n/README.hi.md">हिन्दी</a> · <a href="docs/i18n/README.he.md">עברית</a></p><!-- lang-switcher · public-hygiene: allow -->
@@ -27,6 +28,7 @@ Word, Excel, PowerPoint and PDF files, edited by you and your AI, saved back in 
   <a href="#mcp-server"><b>MCP</b></a> ·
   <a href="https://genoffice.ai/"><b>Website</b></a> ·
   <a href="https://genoffice.ai/join"><b>Community</b></a> ·
+  <a href="https://x.com/merrickbuilds"><b>X</b></a> ·
   <a href="PRIVACY.md"><b>Privacy</b></a>
 </p>
 
@@ -45,6 +47,11 @@ file, makes the change, and shows you exactly what it touched.
 - **Local by design.** Files open, edit, save and convert on your machine.
   PDF → Word / Excel / PowerPoint, Markdown → Word and HTML → Word all run
   on-device. Only the AI calls leave the machine, to the provider you choose.
+- **Find files by what they say.** The home screen searches the names,
+  folders and full text of your `.docx`, `.xlsx`, `.pptx`, PDF, Markdown and
+  HTML files from a local SQLite index, CJK included. Optionally, the top hits
+  are reranked by **[TypeSafe Jev](https://typesafe.ai/)**, the System One
+  judgment model, so the file that answers your question comes first.
 - **Your keys or none.** Sign in with Genspark and skip keys, or bring your own
   key for Claude, OpenAI, Gemini, DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax,
   Grok, Mistral, OpenRouter, Requesty, Opper, or any OpenAI-compatible endpoint, local
@@ -61,7 +68,8 @@ details and requirements in [Download](#download).
 
 ## Demo
 
-Six apps, one AI panel, and a command line for your coding agent. Every
+Six apps, one AI panel, a file search reranked by TypeSafe Jev, and a
+command line for your coding agent. Every
 screenshot is the real app on macOS, with the AI driven from the prompt you
 can read in the panel.
 
@@ -161,7 +169,31 @@ self-contained `.html` file against those tokens.
 </tr>
 </table>
 
-### 7 · CLI — your coding agent drives GenOffice, on your machine
+### 7 · Search — find the file that answers the question, with TypeSafe Jev
+
+Every file in your work folder is indexed on-device: names, folders and the
+extracted text of Word, Excel, PowerPoint, PDF, Markdown and HTML files, in a
+SQLite full-text index with CJK-aware tokenizing. Switch on **Jev search
+reranking** and the top 20 local hits are judged by
+[TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+the System One model that returns one calibrated relevance score per document
+in a single call instead of generating text. The list is reordered by
+that score; if the call fails or times out, the local order stays.
+
+<img src="docs/assets/readme/search-jev-motion.webp" alt="Screen recording of the GenOffice home screen: typing laptop refresh policy lists a browser-cache policy, a brand-refresh plan and a dashboard-refresh schedule first while the equipment standards document is last; the Settings page shows Jev search reranking switched on under AI Media & Search with the TypeSafe endpoint; the same search then shows the equipment standards document first with a Jev badge next to the result count" width="100%">
+
+<table>
+<tr>
+<td width="50%"><img src="docs/assets/readme/search-jev-before-after.webp" alt="Two result lists for the query laptop refresh policy side by side: without Jev the dashboard refresh schedule, brand refresh plan and browser cache refresh policy lead and the company equipment standards document is fifth; with Jev the equipment standards document, which states the three-year laptop replacement cycle, is first"></td>
+<td width="50%"><img src="docs/assets/readme/search-jev-settings.webp" alt="GenOffice Settings, AI Media & Search page: the Local file search block with the Jev search reranking switch, the endpoint choice between OpenRouter and TypeSafe, and the API key field"></td>
+</tr>
+<tr>
+<td><b>Same words, different answers</b> — "laptop refresh policy" matches a browser-cache refresh policy, a brand-refresh plan and a dashboard-refresh schedule word for word, so full-text ranking puts them first. Jev reads the excerpts and moves the equipment standards document, the one that states the three-year replacement cycle, to the top. The <b>Jev</b> badge next to the result count shows when the order came from the model.</td>
+<td><b>Off by default, one switch to turn on</b> — Settings → AI Media & Search → Local file search. Pick OpenRouter or TypeSafe direct, paste a key, hit Test connection. Only when the switch is on do excerpts of the top hits leave the device; the index itself never does.</td>
+</tr>
+</table>
+
+### 8 · CLI — your coding agent drives GenOffice, on your machine
 
 GenOffice ships a `genoffice` command line and an agent skill. Install the
 skill and Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, OpenCode or
@@ -181,7 +213,7 @@ same engines as the apps, without opening a window.
 </tr>
 </table>
 
-### 8 · MCP — the same tools over the Model Context Protocol
+### 9 · MCP — the same tools over the Model Context Protocol
 
 Every `genoffice` command is also an MCP tool. Claude Code, Claude Desktop,
 Cursor and any other MCP client can start `genoffice mcp` themselves, with no
@@ -218,6 +250,9 @@ document in a visible editor tab while you watch.
 - **PDF done properly.** Edit text inside the page, and convert PDF to Word,
   Excel or PowerPoint on-device, with system OCR for scans.
 - **Markdown and HTML too**, with the same AI panel and local export to Word.
+- **Search that finds the answer, not the keyword.** Full-text search over
+  every document in your folders, indexed on-device, with optional reranking
+  by TypeSafe Jev, the System One judgment model.
 - **Scriptable.** A `genoffice` command line, an agent skill and an MCP server
   put every engine at the service of Claude Code, Claude Desktop, Codex, Cursor
   and other agents, still on-device.
@@ -238,20 +273,17 @@ search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax or any
 OpenAI-compatible images endpoint for image generation and image/video
 analysis.
 
-To use **Parallel Search**, open **Settings → AI Media & Search**, select
-**Parallel** under Web search, and click **Save**. Leave the key blank to use
-the [free Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp)
-without an account, subject to its free-tier limits. Optionally enter a key
-from [Parallel](https://platform.parallel.ai/) to use the Search API with your
-account instead. **Test connection** checks whichever mode is selected.
-The saved provider is shared by the editors, CLI and MCP search tools. A blank
-saved key explicitly selects free search, even if `PARALLEL_API_KEY` is set.
-For headless use with default settings, `PARALLEL_API_KEY` enables the API in
-the existing fallback chain; anonymous Parallel requests are only enabled by
-selecting Parallel. If Parallel is unavailable or rate-limited, the existing
-search fallbacks still apply.
-Parallel supplies web results and source excerpts, not image search; existing
-image-search fallbacks remain available. Genspark remains the default provider.
+**TypeSafe Jev** reranks the home screen's file search. Under **AI Media & Search →
+Local file search**, switch on Jev search reranking and pick an endpoint:
+[OpenRouter](https://openrouter.ai/typesafe) (model `typesafe/jev-1.13`) or
+TypeSafe's own API. The key is stored only on this device. It is off by
+default; when on, the excerpts of the top 20 local hits are sent for judgment
+and nothing else leaves the machine.
+
+**Parallel** works without an account: select it under Web search and leave the
+key blank to use its free Search MCP (rate-limited), or enter a
+[Parallel](https://platform.parallel.ai/) key for the Search API. Anonymous
+Parallel requests are only made once Parallel is the selected provider.
 
 The whole suite ships light, dark and system themes. Themes only change what
 is on screen: exports, prints and saved files always keep the document's own
@@ -489,6 +521,8 @@ GenOffice is in active development and your feedback shapes it.
   [GitHub Issues](https://github.com/genspark-ai/genoffice/issues).
 - **Join the GenOffice group chat** on
   [GenTeam](https://genoffice.ai/join) to talk to the team and other users.
+- **Follow [@merrickbuilds](https://x.com/merrickbuilds) on X** for release
+  notes, demos and what is being built next.
 - **Star the repo** if GenOffice is useful to you — it is the best way to
   support the project.
 

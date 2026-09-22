@@ -35,7 +35,7 @@ import type {
 } from '@genoffice/pptx-render'
 import { boxPivotProps, fillToKonva, isConnectorNode, isEditableText } from './konva-adapter'
 import { tableCellAtPoint, tableCellOverlayBox, tableLocalPointFromStage } from './table-hit'
-import { isPromptPlaceholder, textHitAtPoint } from './text-hit-area'
+import { EDGE_GRIP_PX, isPromptPlaceholder, textHitAtPoint } from './text-hit-area'
 import type { EditCaret, EditPointsState } from './action-context'
 import {
   computeSnap,
@@ -2245,7 +2245,8 @@ function NodeView({
     const local = g.getAbsoluteTransform().copy().invert().point(pos)
     // NodeBody counter-flips the text, so mirror the point back into text coordinates
     const p = { x: box.flipH ? box.w - local.x : local.x, y: box.flipV ? box.h - local.y : local.y }
-    return textHitAtPoint(node as ShapeRenderNode, box, p, 4 / Math.max(zoom, 0.1))
+    const z = Math.max(zoom, 0.1)
+    return textHitAtPoint(node as ShapeRenderNode, box, p, 4 / z, EDGE_GRIP_PX / z)
   }
   // Double-click a group = enter in-group editing and select the child hit by the double-click (pointer converted to group-local coordinates, bounding-box hit)
   const onGroupDblClick = (e: Konva.KonvaEventObject<Event>) => {
@@ -2329,7 +2330,7 @@ function NodeView({
             height={box.h}
             stroke="transparent"
             strokeWidth={0}
-            hitStrokeWidth={8 / Math.max(zoom, 0.1)}
+            hitStrokeWidth={(2 * EDGE_GRIP_PX) / Math.max(zoom, 0.1)}
           />
         )}
         {/* group children don't take hits (listening=false); add a transparent hit area so the whole group can be selected/dragged */}

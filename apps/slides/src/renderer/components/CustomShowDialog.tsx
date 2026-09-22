@@ -100,7 +100,10 @@ export function CustomShowDialog({
                 const ids = shows.map((s) => s.id)
                 const at = ids.indexOf(selId ?? '')
                 const next = e.key === 'ArrowDown' ? at + 1 : at - 1
-                if (next >= 0 && next < ids.length) setSelId(ids[next]!)
+                if (next < 0 || next >= ids.length) return
+                setSelId(ids[next]!)
+                const options = e.currentTarget.querySelectorAll<HTMLElement>('[role="option"]')
+                options[next]?.focus()
               }}
             >
               {shows.length === 0 && <div className="csd-empty">{t('paneCsdEmpty')}</div>}

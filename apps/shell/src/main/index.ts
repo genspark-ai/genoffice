@@ -128,6 +128,7 @@ import {
   setDocsMenuGate,
   setDocsShellHooks,
   createAiDocument,
+  projectFilePaths,
   projectFileRenamed,
   setDocsHostWindowHook,
   setDocsShellWindow,
@@ -183,6 +184,7 @@ import {
   discardSlidesRecovery,
   exportSlidesPdfHeadless,
   installSlidesMenu,
+  readSlidesRecentFiles,
   replaceSlidesRecentFile,
   requestSlidesClose,
   setSlidesCloseTabHook,
@@ -254,6 +256,10 @@ import type {
   RenameResult,
   StarPromptShow,
   UiTheme,
+  FileSearchPage,
+  FileSearchQuery,
+  FileSearchRerank,
+  FileSearchSettings,
 } from '../shared/home-api'
 import { HOME_CHANNELS } from '../shared/home-api'
 import {
@@ -273,10 +279,10 @@ import {
 import { isSameFile, isValidRawRenameName } from './rename-validation'
 import {
   FolderWatcher,
-  collectTreeFiles,
   createFolder,
   describeRoot,
   isInsideRoot,
+  pathsUnder,
   listFolder,
   movePathsInto,
   rebasePath,
@@ -284,6 +290,22 @@ import {
   uniqueNameIn,
   type FolderErrors,
 } from './folder-tree'
+import {
+  FOLDER_ROOTS_KEY,
+  describeExtraRoot,
+  readExtraRoots,
+  withExtraRoot,
+  withoutExtraRoot,
+} from './folder-roots'
+import extractWorkerPath from './file-index/extract-worker?modulePath'
+import { FileIndexer } from './file-index/indexer'
+import { FileIndexStore } from './file-index/store'
+import {
+  jevEndpointOf,
+  normalizeFileSearchSettings,
+  probeJev,
+  SearchReranker,
+} from './file-index/rerank'
 import { runHeadlessExport, type HeadlessExporters } from './headless-export'
 import { TabManager } from './tab-manager'
 import {
@@ -644,6 +666,8 @@ async function fetchGithubStars(): Promise<number | null> {
 
 const tMain = createI18n({
   zh: {
+    dlgAddFolderRoot: '添加文件夹到首页',
+    errFolderRootUnusable: '无法读取所选文件夹',
     menuFile: '文件',
     menuSectionNew: '新建',
     menuOpenInNewWindow: '在新窗口中打开',
@@ -727,6 +751,8 @@ const tMain = createI18n({
     errSaveDirUnusable: '所选文件夹不可写，无法用作默认保存位置',
   },
   en: {
+    dlgAddFolderRoot: 'Add Folder to Home',
+    errFolderRootUnusable: 'The selected folder cannot be read',
     menuFile: 'File',
     menuSectionNew: 'New',
     menuOpenInNewWindow: 'Open in New Window',
@@ -818,6 +844,8 @@ const tMain = createI18n({
       'The selected folder is not writable and cannot be used as the default save location',
   },
   ja: {
+    dlgAddFolderRoot: 'フォルダーをホームに追加',
+    errFolderRootUnusable: '選択したフォルダーを読み取れません',
     menuFile: 'ファイル',
     menuSectionNew: '新規作成',
     menuOpenInNewWindow: '新しいウィンドウで開く',
@@ -909,6 +937,8 @@ const tMain = createI18n({
       '選択したフォルダーは書き込みできないため、既定の保存先として使用できません',
   },
   ko: {
+    dlgAddFolderRoot: '홈에 폴더 추가',
+    errFolderRootUnusable: '선택한 폴더를 읽을 수 없습니다',
     menuFile: '파일',
     menuSectionNew: '새로 만들기',
     menuOpenInNewWindow: '새 창에서 열기',
@@ -999,6 +1029,8 @@ const tMain = createI18n({
     errSaveDirUnusable: '선택한 폴더에 쓸 수 없어 기본 저장 위치로 사용할 수 없습니다',
   },
   fr: {
+    dlgAddFolderRoot: "Ajouter un dossier à l'accueil",
+    errFolderRootUnusable: 'Le dossier sélectionné ne peut pas être lu',
     menuFile: 'Fichier',
     menuSectionNew: 'Nouveau',
     menuOpenInNewWindow: 'Ouvrir dans une nouvelle fenêtre',
@@ -1091,6 +1123,8 @@ const tMain = createI18n({
       "Le dossier sélectionné n'est pas accessible en écriture et ne peut pas servir d'emplacement d'enregistrement par défaut",
   },
   de: {
+    dlgAddFolderRoot: 'Ordner zur Startseite hinzufügen',
+    errFolderRootUnusable: 'Der ausgewählte Ordner kann nicht gelesen werden',
     menuFile: 'Datei',
     menuSectionNew: 'Neu',
     menuOpenInNewWindow: 'In neuem Fenster öffnen',
@@ -1183,6 +1217,8 @@ const tMain = createI18n({
       'Der ausgewählte Ordner ist nicht beschreibbar und kann nicht als Standard-Speicherort verwendet werden',
   },
   es: {
+    dlgAddFolderRoot: 'Añadir carpeta al inicio',
+    errFolderRootUnusable: 'No se puede leer la carpeta seleccionada',
     menuFile: 'Archivo',
     menuSectionNew: 'Nuevo',
     menuOpenInNewWindow: 'Abrir en una ventana nueva',
@@ -1275,6 +1311,8 @@ const tMain = createI18n({
       'La carpeta seleccionada no admite escritura y no puede usarse como ubicación de guardado predeterminada',
   },
   th: {
+    dlgAddFolderRoot: 'เพิ่มโฟลเดอร์ไปยังหน้าแรก',
+    errFolderRootUnusable: 'ไม่สามารถอ่านโฟลเดอร์ที่เลือกได้',
     menuFile: 'ไฟล์',
     menuSectionNew: 'สร้างใหม่',
     menuOpenInNewWindow: 'เปิดในหน้าต่างใหม่',
@@ -1363,6 +1401,8 @@ const tMain = createI18n({
     errSaveDirUnusable: 'โฟลเดอร์ที่เลือกไม่สามารถเขียนได้ จึงใช้เป็นตำแหน่งบันทึกเริ่มต้นไม่ได้',
   },
   id: {
+    dlgAddFolderRoot: 'Tambahkan Folder ke Beranda',
+    errFolderRootUnusable: 'Folder yang dipilih tidak dapat dibaca',
     menuFile: 'File',
     menuSectionNew: 'Baru',
     menuOpenInNewWindow: 'Buka di Jendela Baru',
@@ -1455,6 +1495,8 @@ const tMain = createI18n({
       'Folder yang dipilih tidak dapat ditulis dan tidak bisa digunakan sebagai lokasi penyimpanan default',
   },
   ru: {
+    dlgAddFolderRoot: 'Добавить папку на главную',
+    errFolderRootUnusable: 'Не удалось прочитать выбранную папку',
     menuFile: 'Файл',
     menuSectionNew: 'Создать',
     menuOpenInNewWindow: 'Открыть в новом окне',
@@ -1547,6 +1589,8 @@ const tMain = createI18n({
       'Выбранная папка недоступна для записи и не может использоваться как папка сохранения по умолчанию',
   },
   ar: {
+    dlgAddFolderRoot: 'إضافة مجلد إلى الصفحة الرئيسية',
+    errFolderRootUnusable: 'لا يمكن قراءة المجلد المحدد',
     menuFile: 'ملف',
     menuSectionNew: 'جديد',
     menuOpenInNewWindow: 'فتح في نافذة جديدة',
@@ -1635,6 +1679,8 @@ const tMain = createI18n({
     errSaveDirUnusable: 'المجلد المحدد غير قابل للكتابة ولا يمكن استخدامه كموقع حفظ افتراضي',
   },
   pt: {
+    dlgAddFolderRoot: 'Adicionar pasta à página inicial',
+    errFolderRootUnusable: 'Não é possível ler a pasta selecionada',
     menuFile: 'Arquivo',
     menuSectionNew: 'Novo',
     menuOpenInNewWindow: 'Abrir em nova janela',
@@ -1727,6 +1773,8 @@ const tMain = createI18n({
       'A pasta selecionada não permite gravação e não pode ser usada como local de salvamento padrão',
   },
   it: {
+    dlgAddFolderRoot: 'Aggiungi cartella alla Home',
+    errFolderRootUnusable: 'Impossibile leggere la cartella selezionata',
     menuFile: 'File',
     menuSectionNew: 'Nuovo',
     menuOpenInNewWindow: 'Apri in una nuova finestra',
@@ -1819,6 +1867,8 @@ const tMain = createI18n({
       'La cartella selezionata non è scrivibile e non può essere usata come posizione di salvataggio predefinita',
   },
   pl: {
+    dlgAddFolderRoot: 'Dodaj folder do strony głównej',
+    errFolderRootUnusable: 'Nie można odczytać wybranego folderu',
     menuFile: 'Plik',
     menuSectionNew: 'Nowy',
     menuOpenInNewWindow: 'Otwórz w nowym oknie',
@@ -1911,6 +1961,8 @@ const tMain = createI18n({
       'Wybrany folder nie pozwala na zapis i nie może być domyślną lokalizacją zapisu',
   },
   cs: {
+    dlgAddFolderRoot: 'Přidat složku na domovskou stránku',
+    errFolderRootUnusable: 'Vybranou složku nelze načíst',
     menuFile: 'Soubor',
     menuSectionNew: 'Nový',
     menuOpenInNewWindow: 'Otevřít v novém okně',
@@ -2001,6 +2053,8 @@ const tMain = createI18n({
       'Do vybrané složky nelze zapisovat a nelze ji použít jako výchozí umístění pro ukládání',
   },
   nl: {
+    dlgAddFolderRoot: 'Map toevoegen aan startpagina',
+    errFolderRootUnusable: 'De geselecteerde map kan niet worden gelezen',
     menuFile: 'Bestand',
     menuSectionNew: 'Nieuw',
     menuOpenInNewWindow: 'Openen in nieuw venster',
@@ -2093,6 +2147,8 @@ const tMain = createI18n({
       'De geselecteerde map is niet beschrijfbaar en kan niet als standaard opslaglocatie worden gebruikt',
   },
   ms: {
+    dlgAddFolderRoot: 'Tambah Folder ke Laman Utama',
+    errFolderRootUnusable: 'Folder yang dipilih tidak dapat dibaca',
     menuFile: 'Fail',
     menuSectionNew: 'Baharu',
     menuOpenInNewWindow: 'Buka dalam Tetingkap Baharu',
@@ -2184,6 +2240,8 @@ const tMain = createI18n({
       'Folder yang dipilih tidak boleh ditulis dan tidak dapat digunakan sebagai lokasi simpanan lalai',
   },
   he: {
+    dlgAddFolderRoot: 'הוספת תיקייה לדף הבית',
+    errFolderRootUnusable: 'לא ניתן לקרוא את התיקייה שנבחרה',
     menuFile: 'קובץ',
     menuSectionNew: 'חדש',
     menuOpenInNewWindow: 'פתח בחלון חדש',
@@ -2273,6 +2331,8 @@ const tMain = createI18n({
       'התיקייה שנבחרה אינה ניתנת לכתיבה ולא ניתן להשתמש בה כמיקום שמירה כברירת מחדל',
   },
   hi: {
+    dlgAddFolderRoot: 'होम में फ़ोल्डर जोड़ें',
+    errFolderRootUnusable: 'चयनित फ़ोल्डर पढ़ा नहीं जा सका',
     menuFile: 'फ़ाइल',
     menuSectionNew: 'नया',
     menuOpenInNewWindow: 'नई विंडो में खोलें',
@@ -2365,6 +2425,8 @@ const tMain = createI18n({
       'चयनित फ़ोल्डर में लिखा नहीं जा सकता, इसलिए इसे डिफ़ॉल्ट सहेजने के स्थान के रूप में उपयोग नहीं किया जा सकता',
   },
   'zh-TW': {
+    dlgAddFolderRoot: '將資料夾加入首頁',
+    errFolderRootUnusable: '無法讀取所選資料夾',
     menuFile: '檔案',
     menuSectionNew: '新增',
     menuOpenInNewWindow: '在新視窗中開啟',
@@ -2465,6 +2527,24 @@ let tabManager: TabManager | null = null
  * created, and the tab's first save moves the fresh file there.
  * key: 'doc' | 'sheet' | 'slide' | 'markdown' | 'html' | 'pdf'
  */
+/** folders the user added to the home tree beside the default save folder */
+function extraFolderRoots(): string[] {
+  return readExtraRoots(readAppSettings(APP_SETTINGS_PATH()), defaultSaveDir())
+}
+
+function folderRootPaths(): string[] {
+  return [defaultSaveDir(), ...extraFolderRoots()]
+}
+
+function insideAnyRoot(path: string): boolean {
+  return folderRootPaths().some((root) => isInsideRoot(root, path))
+}
+
+function isAnyRoot(path: string): boolean {
+  const key = resolve(path)
+  return folderRootPaths().some((root) => resolve(root) === key)
+}
+
 const pendingNewFileDir = new Map<string, { dir: string; setAt: number }>()
 /** folder bound to a freshly created editor tab, keyed by its webContents id; consumed by the first save */
 const pendingDirByWc = new Map<number, { dir: string; setAt: number }>()
@@ -2473,8 +2553,7 @@ const PENDING_DIR_TTL_MS = 30 * 60 * 1000
 
 function rememberPendingDir(kind: string, opts?: NewFileOpts): void {
   const dir = opts?.dir
-  const root = defaultSaveDir()
-  if (!dir || resolve(dir) === resolve(root) || !isInsideRoot(root, dir)) {
+  if (!dir || resolve(dir) === resolve(defaultSaveDir()) || !insideAnyRoot(dir)) {
     pendingNewFileDir.delete(kind)
     return
   }
@@ -2559,26 +2638,74 @@ function afterFileMoved(oldPath: string, newPath: string): void {
   }
 }
 
-/** a folder moved/renamed: re-key every file that lived under it */
+function trackedFilesUnder(dir: string): string[] {
+  return pathsUnder(dir, [
+    ...readRecentFiles(),
+    ...readStarredFiles(),
+    ...projectFilePaths(),
+    ...readSlidesRecentFiles(),
+    ...(tabManager?.openFilePaths() ?? []),
+    ...detachedFilePaths(),
+  ])
+}
+
+/** a folder moved/renamed: re-key every tracked file that lived under it */
 function afterFolderMoved(oldDir: string, newDir: string, filesBefore: readonly string[]): void {
   for (const file of filesBefore) afterFileMoved(file, rebasePath(file, oldDir, newDir))
 }
 
-let folderWatcher: FolderWatcher | null = null
-let folderWatcherRoot = ''
+const folderWatchers = new Map<string, FolderWatcher>()
 
-/** (re)start the root watcher; the tree root follows the default save folder setting */
-function ensureFolderWatcher(): void {
-  const root = defaultSaveDir()
-  if (folderWatcher?.active && folderWatcherRoot === root) return
-  folderWatcher?.close()
-  folderWatcherRoot = root
-  // the home screen and every editor's Files pane listen
-  folderWatcher = new FolderWatcher(root, (dirs) => {
-    for (const wc of webContents.getAllWebContents()) {
-      if (!wc.isDestroyed()) wc.send(HOME_CHANNELS.folderChanged, dirs)
-    }
+let fileIndexStore: FileIndexStore | null = null
+let fileIndexer: FileIndexer | null = null
+let searchReranker: SearchReranker | null = null
+
+function readFileSearchSettings(): FileSearchSettings {
+  return normalizeFileSearchSettings(readAppSettings(APP_SETTINGS_PATH()).fileSearch)
+}
+
+/** the search index lives in userData and follows the save folder plus recents/starred */
+function ensureFileIndexer(): FileIndexer | null {
+  if (fileIndexer) return fileIndexer
+  try {
+    fileIndexStore = new FileIndexStore(join(app.getPath('userData'), 'file-index.db'))
+  } catch (e) {
+    console.warn('[file-index] unavailable:', e instanceof Error ? e.message : e)
+    return null
+  }
+  fileIndexer = new FileIndexer(fileIndexStore, extractWorkerPath, {
+    roots: () => folderRootPaths().filter((root) => existsSync(root)),
+    extraPaths: () => [...readRecentFiles(), ...readStarredFiles()],
   })
+  return fileIndexer
+}
+
+const SEARCH_EXT_FAMILY: Record<string, readonly string[]> = {
+  docx: ['docx', 'doc'],
+  xlsx: ['xlsx', 'xlsm', 'xls', 'csv'],
+  pptx: ['pptx', 'ppt'],
+  md: ['md', 'markdown'],
+  html: ['html', 'htm'],
+}
+
+/** one recursive watcher per tree root; follows the save-folder setting and the added folders */
+function ensureFolderWatchers(): void {
+  const wanted = new Set(folderRootPaths().filter((root) => existsSync(root)))
+  for (const [root, watcher] of folderWatchers) {
+    if (wanted.has(root) && watcher.active) continue
+    watcher.close()
+    folderWatchers.delete(root)
+  }
+  for (const root of wanted) {
+    if (folderWatchers.has(root)) continue
+    const watcher = new FolderWatcher(root, (dirs) => {
+      fileIndexer?.refresh()
+      for (const wc of webContents.getAllWebContents()) {
+        if (!wc.isDestroyed()) wc.send(HOME_CHANNELS.folderChanged, dirs)
+      }
+    })
+    folderWatchers.set(root, watcher)
+  }
 }
 
 function applyMenuFor(kind: TabKind): void {
@@ -2644,8 +2771,13 @@ function createShellWindow(): void {
   // DOM event anywhere — will-move is the only signal to dismiss popovers
   win.on('will-move', () => broadcastChromePressed())
   // A detached editor window claims the process-global menu/active-editor targets
-  // while focused; take them back when the shell window regains focus
-  win.on('focus', () => tabManager?.refreshActiveTargets())
+  // while focused; take them back when the shell window regains focus. Keyboard
+  // focus must land back on the active tab's view too — regaining window focus
+  // gives it to the chrome webContents, leaving typing dead in the document.
+  win.on('focus', () => {
+    tabManager?.refreshActiveTargets()
+    tabManager?.focusActiveView()
+  })
 
   const manager = new TabManager(
     win,
@@ -2743,7 +2875,7 @@ function createShellWindow(): void {
     manager.setTabFileFor(wc.id, path)
     detachedSetFileFor(wc.id, path)
     recordRecentFile(path)
-    applyPendingDir(wc.id, path)
+    return applyPendingDir(wc.id, path)
   })
   // ⌘O / open-path inside a docs tab: sync the tab title immediately, same
   // contract as the sheets/slides opened hooks (a plain save to the original
@@ -2934,14 +3066,16 @@ function showAppWarning(message: string): void {
  * and route through the normal File > Open pipeline; detached editor windows
  * can host the drop target, so the shell must reveal itself after opening.
  */
+const droppedFilesDeps = () => ({
+  openDocumentPath,
+  revealShellWindow,
+  showWarning: showAppWarning,
+  unsupportedMessage: (exts: string[]) => tm('errUnsupportedExt', { ext: exts.join(', ') }),
+})
+
 function registerDroppedFilesIpc(): void {
   ipcMain.on(DROP_OPEN_CHANNEL, (_event, raw: unknown) =>
-    handleDroppedFiles(raw, {
-      openDocumentPath,
-      revealShellWindow,
-      showWarning: showAppWarning,
-      unsupportedMessage: (exts) => tm('errUnsupportedExt', { ext: exts.join(', ') }),
-    }),
+    handleDroppedFiles(raw, droppedFilesDeps()),
   )
 }
 
@@ -3322,6 +3456,71 @@ function registerHomeIpc(): void {
     pageRecentPaths(readRecentFiles(), query, new Set(readStarredFiles())),
   )
 
+  ipcMain.handle(HOME_CHANNELS.searchFiles, (_event, raw: unknown): FileSearchPage => {
+    const query = (raw && typeof raw === 'object' ? raw : {}) as Partial<FileSearchQuery>
+    const indexer = ensureFileIndexer()
+    if (!indexer || !fileIndexStore) {
+      return { hits: [], total: 0, index: { indexed: 0, pending: 0, scanning: false } }
+    }
+    // an open search box is the moment a stale index shows; rescan at most once a minute
+    indexer.refreshIfStale(60_000)
+    const q = typeof query.q === 'string' ? query.q.trim().slice(0, 200) : ''
+    const filter = typeof query.ext === 'string' ? query.ext : ''
+    const exts = filter && filter !== 'all' ? (SEARCH_EXT_FAMILY[filter] ?? [filter]) : undefined
+    const offset = Number.isFinite(query.offset) ? Math.max(0, Math.floor(query.offset!)) : 0
+    const limit = Number.isFinite(query.limit) ? Math.max(0, Math.floor(query.limit!)) : 50
+    const starred = new Set(readStarredFiles())
+    const result = q ? fileIndexStore.search(q, { exts, offset, limit }) : { hits: [], total: 0 }
+    return {
+      hits: result.hits.map((h) => ({ ...h, starred: starred.has(h.path) })),
+      total: result.total,
+      index: indexer.progress(),
+    }
+  })
+
+  ipcMain.handle(
+    HOME_CHANNELS.rerankSearch,
+    async (_event, raw: unknown): Promise<FileSearchRerank | null> => {
+      const settings = readFileSearchSettings()
+      if (!settings.rerank) return null
+      const query = (raw && typeof raw === 'object' ? raw : {}) as { q?: unknown; paths?: unknown }
+      const q = typeof query.q === 'string' ? query.q.trim().slice(0, 200) : ''
+      const paths = Array.isArray(query.paths)
+        ? query.paths.filter((p): p is string => typeof p === 'string').slice(0, 20)
+        : []
+      if (!q || paths.length < 2 || !ensureFileIndexer() || !fileIndexStore) return null
+      searchReranker ??= new SearchReranker(fileIndexStore)
+      return searchReranker.rerank(q, paths, settings)
+    },
+  )
+
+  ipcMain.handle(HOME_CHANNELS.getFileSearchSettings, (): FileSearchSettings =>
+    readFileSearchSettings(),
+  )
+
+  ipcMain.handle(
+    HOME_CHANNELS.setFileSearchSettings,
+    (_event, patch: unknown): FileSearchSettings => {
+      const current = readFileSearchSettings()
+      const p = (patch && typeof patch === 'object' ? patch : {}) as Partial<FileSearchSettings>
+      const next = normalizeFileSearchSettings({
+        ...current,
+        ...p,
+        jevKeys: { ...current.jevKeys, ...(p.jevKeys ?? {}) },
+      })
+      writeAppSetting(APP_SETTINGS_PATH(), 'fileSearch', next)
+      return next
+    },
+  )
+
+  ipcMain.handle(HOME_CHANNELS.testFileSearchRerank, (_event, input: unknown) => {
+    const { endpoint, apiKey } = (input && typeof input === 'object' ? input : {}) as {
+      endpoint?: unknown
+      apiKey?: unknown
+    }
+    return probeJev(jevEndpointOf(endpoint), typeof apiKey === 'string' ? apiKey : '')
+  })
+
   // Starred files sort by mtime, which requires stat-ing them all first; they are hand-picked and few, so this is fine
   ipcMain.handle(HOME_CHANNELS.starred, (_event, query: unknown): RecentPage => {
     const { offset, limit, ext } = normalizeRecentQuery(query)
@@ -3345,6 +3544,7 @@ function registerHomeIpc(): void {
   ipcMain.handle(HOME_CHANNELS.openPath, (_event, path: unknown) => {
     if (typeof path !== 'string' || !path || path.length > 4096) return
     openDocumentPath(path)
+    fileIndexer?.refresh()
   })
 
   ipcMain.handle(HOME_CHANNELS.browse, async (event) => {
@@ -3634,14 +3834,61 @@ function registerHomeIpc(): void {
     failed: tm('errRenameFailed'),
   })
   const insideRoot = (path: unknown): path is string =>
-    typeof path === 'string' && isInsideRoot(defaultSaveDir(), path)
-  const isRoot = (path: string) => resolve(path) === resolve(defaultSaveDir())
+    typeof path === 'string' && insideAnyRoot(path)
+  const isRoot = (path: string) => isAnyRoot(path)
 
-  ipcMain.handle(HOME_CHANNELS.folderRoot, (): FolderRoot => {
-    // describeRoot creates a missing root, so the watcher has something to attach to
-    const root = describeRoot(defaultSaveDir())
-    if (root.usable) ensureFolderWatcher()
-    return root
+  ipcMain.handle(HOME_CHANNELS.folderRoots, (): FolderRoot[] => {
+    // describeRoot creates a missing save folder, so its watcher has something to attach to
+    const roots = [describeRoot(defaultSaveDir()), ...extraFolderRoots().map(describeExtraRoot)]
+    ensureFolderWatchers()
+    return roots
+  })
+
+  // an added folder joins the tree where it is: nothing on disk is created, copied or moved
+  const addFolderRoot = (path: string): FolderRoot | null => {
+    const extras = withExtraRoot(extraFolderRoots(), defaultSaveDir(), path)
+    if (!extras) return null
+    writeAppSetting(APP_SETTINGS_PATH(), FOLDER_ROOTS_KEY, extras)
+    ensureFolderWatchers()
+    fileIndexer?.refresh()
+    return describeExtraRoot(path)
+  }
+
+  ipcMain.handle(HOME_CHANNELS.addFolderRoot, async (): Promise<FolderRoot | null> => {
+    const result = await showOpenDialogWithMemory(dialog, shellWindow, {
+      title: tm('dlgAddFolderRoot'),
+      properties: ['openDirectory'],
+    })
+    const picked = result.filePaths[0]
+    if (result.canceled || !picked) return null
+    if (!describeExtraRoot(picked).readable) {
+      showErrorDialog(shellWindow, tm('errFolderRootUnusable'), picked)
+      return null
+    }
+    return addFolderRoot(picked)
+  })
+
+  ipcMain.handle(HOME_CHANNELS.dropFolderRoots, (_event, paths: unknown): FolderRoot[] => {
+    const added: FolderRoot[] = []
+    const files: string[] = []
+    for (const path of stringPaths(paths)) {
+      if (!describeExtraRoot(path).readable) {
+        files.push(path)
+        continue
+      }
+      const root = addFolderRoot(path)
+      if (root) added.push(root)
+    }
+    if (files.length > 0) handleDroppedFiles(files, droppedFilesDeps())
+    return added
+  })
+
+  ipcMain.handle(HOME_CHANNELS.removeFolderRoot, (_event, path: unknown) => {
+    if (typeof path !== 'string') return
+    const extras = withoutExtraRoot(extraFolderRoots(), path)
+    writeAppSetting(APP_SETTINGS_PATH(), FOLDER_ROOTS_KEY, extras)
+    ensureFolderWatchers()
+    fileIndexer?.refresh()
   })
 
   ipcMain.handle(HOME_CHANNELS.listFolder, (_event, dir: unknown): FolderListing => {
@@ -3663,7 +3910,7 @@ function registerHomeIpc(): void {
     (_event, dir: unknown, newName: unknown): RenameResult => {
       if (!insideRoot(dir) || isRoot(dir) || typeof newName !== 'string')
         return { ok: false, error: tm('errBadArgs') }
-      const filesBefore = collectTreeFiles(dir)
+      const filesBefore = trackedFilesUnder(dir)
       const result = renameFolder(dir, newName, folderErrors())
       if (result.ok && result.path && result.path !== dir) {
         afterFolderMoved(dir, result.path, filesBefore)
@@ -3689,9 +3936,9 @@ function registerHomeIpc(): void {
           return false
         }
       }
-      // files may come from anywhere (the Recent list); folders only from inside the tree
-      const sources = list.filter((p) => !isDir(p) || isInsideRoot(defaultSaveDir(), p))
-      const dirFiles = new Map(sources.filter(isDir).map((p) => [p, collectTreeFiles(p)]))
+      // files may come from anywhere (the Recent list); folders only from inside the tree, never a root itself
+      const sources = list.filter((p) => !isDir(p) || (insideAnyRoot(p) && !isAnyRoot(p)))
+      const dirFiles = new Map(sources.filter(isDir).map((p) => [p, trackedFilesUnder(p)]))
       // 'replace' must not destroy data: the displaced target goes to the trash,
       // and everything keyed on its path (recents, stars, chat history) leaves
       // with it so the incoming file does not inherit another document's record
@@ -3699,7 +3946,7 @@ function registerHomeIpc(): void {
       const result = movePathsInto(sources, targetDir, conflictPolicy, folderErrors(), {
         replaceExisting: (path) => {
           const parked = join(dirname(path), `.genoffice-replaced-${Date.now()}-${basename(path)}`)
-          const files = isDir(path) ? collectTreeFiles(path) : [path]
+          const files = isDir(path) ? trackedFilesUnder(path) : [path]
           renameSync(path, parked)
           return {
             commit: () => {
@@ -3730,7 +3977,7 @@ function registerHomeIpc(): void {
 
   ipcMain.handle(HOME_CHANNELS.deleteFolder, async (_event, dir: unknown) => {
     if (!insideRoot(dir) || isRoot(dir)) return
-    const files = collectTreeFiles(dir)
+    const files = trackedFilesUnder(dir)
     try {
       await shell.trashItem(dir)
     } catch {
@@ -3755,7 +4002,7 @@ function registerHomeIpc(): void {
       return null
     }
     writeAppSetting(APP_SETTINGS_PATH(), DEFAULT_SAVE_DIR_KEY, picked)
-    ensureFolderWatcher()
+    ensureFolderWatchers()
     return picked
   })
 
@@ -4957,6 +5204,8 @@ async function runHeadlessExportEntry(
 }
 
 app.whenReady().then(async () => {
+  // first scan waits for the windows to come up; later ones follow folder changes
+  setTimeout(() => ensureFileIndexer()?.refresh(), 4000)
   installRendererProtocol({
     docs: join(DOCS_OUT, 'renderer'),
     sheets: join(SHEETS_OUT, 'renderer'),
@@ -5196,8 +5445,10 @@ app.on('before-quit', () => {
 
 // after every window has closed, so the shell window's own 'closed' republish cannot revive the file
 app.on('will-quit', () => {
+  fileIndexer?.stop()
+  fileIndexStore?.close()
   stopAuthWatch?.()
-  folderWatcher?.close()
+  for (const watcher of folderWatchers.values()) watcher.close()
   controlServer?.close()
   // a second instance that lost the lock quits too; it must not delete the running editor's list
   if (ownsOpenDocumentsRegistry) clearOpenDocuments(OPEN_DOCUMENTS_PATH())

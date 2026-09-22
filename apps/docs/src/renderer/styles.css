@@ -2797,8 +2797,10 @@ th.cell-rev-del {
   padding-bottom: max(0px, calc(var(--header-dist, 48px) - 24px));
 }
 
-.page-wrap:has(.page-hf-header:hover) .hf-chips-idle,
-.page-wrap:has(.page-hf-header.page-hf-editing) .hf-chips-idle,
+/* data-hf-active is set by HeaderFooterArea (header hovered or being edited):
+   a :has() anchored on .page-wrap re-ran on every editor DOM mutation and
+   restyled every span in the document (75k on a 400-page table file) */
+.page-wrap[data-hf-active] .hf-chips-idle,
 .hf-variant-chips.hf-chips-idle:hover {
   opacity: 1;
   pointer-events: auto;
@@ -6361,7 +6363,7 @@ body.docs-crop-active
   font-family: 'Segoe UI', var(--ui-cjk), sans-serif;
 }
 
-.editor-scroll:has(> .start-screen) {
+.editor-scroll.start-screen-host {
   padding: 0;
   background: var(--surface);
 }

@@ -2008,3 +2008,87 @@ describe('PowerPoint super/subscript glyph size + hanging indent clamp', () => {
     expect(layout.lines[0]!.runs[0]!.x).toBeCloseTo(0, 4)
   })
 })
+
+describe('Korean word wrap and hanging punctuation (PowerPoint probe)', () => {
+  const m = new HeuristicMetrics()
+  // 24pt runs lay out at 32px (scale 1)
+  const style = { fontFamily: 'Arial', fontSizePx: 32, bold: false, italic: false }
+  const w = (t: string) => m.measure(t, style)
+  const lines = (text: string, boxWidthPx: number, para: Partial<Paragraph> = {}) =>
+    layoutText({
+      body: body({ paragraphs: [{ runs: [{ text, fontSize: 24 }], ...para }] }),
+      boxWidthPx,
+      boxHeightPx: 3000,
+      metrics: m,
+      vp,
+    }).lines.map((l) =>
+      l.runs
+        .map((r) => r.text)
+        .join('')
+        .trim(),
+    )
+
+  it('Hangul wraps by word: the whole space-delimited word moves down', () => {
+    // room for one more syllable, but PowerPoint keeps the second word together
+    const box = w('가나다 라') + 1
+    expect(lines('가나다 라마바', box)).toEqual(['가나다', '라마바'])
+  })
+
+  it('a Hangul word wider than the line still hard-breaks per syllable', () => {
+    const box = w('가나') + 1
+    expect(lines('가나다라', box)).toEqual(['가나', '다라'])
+  })
+
+  it('an over-long word leaves its last piece open for the following words', () => {
+    // two syllables fill a line; the tail '다' shares its line with ' 라'
+    const box = w('\uac00\ub098') + w('\uac00') / 2
+    expect(lines('\uac00\ub098\ub2e4 \ub77c', box)).toEqual(['\uac00\ub098', '\ub2e4 \ub77c'])
+  })
+
+  it('a first-on-line word wider than the box only by its closing mark hangs instead of breaking', () => {
+    const box = w('\u3042\u3042\u3042\u3042') + w('\uff09') / 2
+    expect(lines('\u3042\u3042\u3042\u3042\uff09', box)).toEqual(['\u3042\u3042\u3042\u3042\uff09'])
+  })
+
+  it('a trailing closing mark hangs past the margin by its own advance', () => {
+    // room for the ideographs and only half the bracket: the bracket overhangs
+    const box = w('あああ') + w('）') / 2
+    expect(lines('あああ）', box)).toEqual(['あああ）'])
+    // the allowance is the mark itself: anything after it starts the next line
+    expect(lines('あああ）い', box)).toEqual(['あああ）', 'い'])
+  })
+
+  it('a trailing Hangul syllable gets no allowance', () => {
+    const box = w('가나다 라마') + w('바') / 2
+    expect(lines('가나다 라마바', box)).toEqual(['가나다', '라마바'])
+  })
+
+  it('hangingPunct="0" switches the overhang off', () => {
+    const box = w('あああ') + w('）') / 2
+    expect(lines('あああ）', box, { hangingPunct: false }).length).toBe(2)
+  })
+
+  it('latinLnBrk="1" lets Hangul break per syllable again', () => {
+    const box = w('\uac00\ub098\ub2e4 \ub77c') + 1
+    expect(lines('\uac00\ub098\ub2e4 \ub77c\ub9c8\ubc14', box, { latinLnBrk: true })).toEqual([
+      '\uac00\ub098\ub2e4 \ub77c',
+      '\ub9c8\ubc14',
+    ])
+  })
+
+  it('eaLnBrk="0" switches kinsoku off: a closing mark may start a line', () => {
+    // hanging punctuation off too, so the mark cannot simply overhang
+    const box = w('\u3042\u3042\u3042\u3042') + 1
+    const text = '\u3042\u3042\u3042\u3042\u3001\u3044'
+    expect(lines(text, box, { eaLnBrk: false, hangingPunct: false })).toEqual([
+      '\u3042\u3042\u3042\u3042',
+      '\u3001\u3044',
+    ])
+    expect(lines(text, box, { hangingPunct: false })[0]).toBe('\u3042\u3042\u3042')
+  })
+
+  it('Latin-only paragraphs never hang', () => {
+    const box = w('aaa bb') + w(')') / 2
+    expect(lines('aaa bb)', box)).toEqual(['aaa', 'bb)'])
+  })
+})

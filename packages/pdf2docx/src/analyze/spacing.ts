@@ -57,7 +57,7 @@ export function applySpacingChain(sections: readonly PageSection[]): string[] {
           warnings.push(`overlapping blocks: negative gap ${gap.toFixed(1)}pt clamped to 0`)
           gap = 0
         }
-        if (gap >= EMIT_MIN_PT) block.spacingBeforePt = Math.min(gap, 1440)
+        if (gap >= EMIT_MIN_PT) block.spacingBeforePt = Math.min(gap, 1584)
       }
     }
     prevSectionBottom = section.box.y0

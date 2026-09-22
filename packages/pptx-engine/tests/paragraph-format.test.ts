@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { parseSlide } from '../src/parse'
+import { generateParagraphXml } from '../src/generate'
 import { patchedElementXml, setElementParagraphFormat } from '../src/index'
 import { parseMasterTextStyles } from '../src/placeholder'
 import type { TextElement } from '../src/types'
@@ -378,5 +379,25 @@ describe('empty paragraph endParaRPr', () => {
     const p = el.text!.paragraphs[0]!
     expect(p.runs[0]!.text).toBe('Hello')
     expect(p.runs[0]!.fontSize).toBe(20)
+  })
+})
+
+describe('East Asian wrap flags', () => {
+  it('eaLnBrk/latinLnBrk/hangingPunct parse from pPr and are written back by the generator', () => {
+    const { el } = parseOne(
+      '<a:bodyPr/><a:p><a:pPr eaLnBrk="0" latinLnBrk="1" hangingPunct="0"/><a:r><a:t>Hi</a:t></a:r></a:p>',
+    )
+    const p = el.text!.paragraphs[0]!
+    expect(p.eaLnBrk).toBe(false)
+    expect(p.latinLnBrk).toBe(true)
+    expect(p.hangingPunct).toBe(false)
+    const out = generateParagraphXml(p)
+    expect(out).toContain('eaLnBrk="0"')
+    expect(out).toContain('latinLnBrk="1"')
+    expect(out).toContain('hangingPunct="0"')
+    // defaults stay implicit
+    expect(generateParagraphXml({ runs: [{ text: 'a' }] })).not.toMatch(
+      /eaLnBrk|latinLnBrk|hangingPunct/,
+    )
   })
 })

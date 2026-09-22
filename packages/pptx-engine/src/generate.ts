@@ -799,6 +799,9 @@ export function generateParagraphXml(p: Paragraph): string {
     pPrAttrs.push(`indent="${clampInt(p.indent, -51206400, 51206400)}"`)
   if (p.align && want('align')) pPrAttrs.push(`algn="${alignMap[p.align]}"`)
   if (p.rtl != null) pPrAttrs.push(`rtl="${p.rtl ? 1 : 0}"`)
+  if (p.eaLnBrk === false) pPrAttrs.push('eaLnBrk="0"')
+  if (p.latinLnBrk) pPrAttrs.push('latinLnBrk="1"')
+  if (p.hangingPunct === false) pPrAttrs.push('hangingPunct="0"')
   if (p.level) pPrAttrs.push(`lvl="${p.level}"`)
 
   // CT_TextParagraphProperties child order: lnSpc → spcBef → spcAft → buClr → buSzPct → buFont → bu*

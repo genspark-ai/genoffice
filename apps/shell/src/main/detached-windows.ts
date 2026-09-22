@@ -50,12 +50,7 @@ export function setDetachedChangedListener(listener: () => void): void {
 function recordById(id: string): DetachedRecord | undefined {
   if (!id.startsWith(ID_PREFIX)) return undefined
   const rec = detached.get(Number(id.slice(ID_PREFIX.length)))
-  return rec && isLiveRecord(rec) ? rec : undefined
-}
-
-/** A record is usable only while both the window and its view contents live. */
-function isLiveRecord(rec: DetachedRecord): boolean {
-  return !rec.window.isDestroyed() && !rec.view.webContents.isDestroyed()
+  return rec && !rec.window.isDestroyed() ? rec : undefined
 }
 
 function bringToFront(win: BrowserWindow): void {
@@ -78,7 +73,7 @@ export function isDetachedEditorWindow(win: BrowserWindow): boolean {
 export function focusDetachedByPath(path: string): boolean {
   const wanted = canonicalPath(path)
   for (const rec of detached.values()) {
-    if (rec.filePath && canonicalPath(rec.filePath) === wanted && isLiveRecord(rec)) {
+    if (rec.filePath && canonicalPath(rec.filePath) === wanted && !rec.window.isDestroyed()) {
       bringToFront(rec.window)
       return true
     }
@@ -92,7 +87,7 @@ export function findDetachedTabByPath(
 ): { id: string; kind: TabKind; webContents: WebContents } | undefined {
   const wanted = canonicalPath(path)
   for (const [wcId, rec] of detached) {
-    if (rec.filePath && canonicalPath(rec.filePath) === wanted && isLiveRecord(rec)) {
+    if (rec.filePath && canonicalPath(rec.filePath) === wanted && !rec.window.isDestroyed()) {
       return { id: ID_PREFIX + wcId, kind: rec.kind, webContents: rec.view.webContents }
     }
   }
@@ -109,7 +104,7 @@ export function detachedWindowForWebContents(wcId: number): BrowserWindow | unde
 /** editor kind of the focused detached window, if a detached window has focus */
 export function focusedDetachedKind(): TabKind | undefined {
   for (const rec of detached.values()) {
-    if (isLiveRecord(rec) && rec.window.isFocused()) return rec.kind
+    if (!rec.window.isDestroyed() && rec.window.isFocused()) return rec.kind
   }
   return undefined
 }
@@ -141,7 +136,7 @@ export function closeDetachedWithoutPrompt(id: string): boolean {
 export async function detachedOpenDocuments(): Promise<OpenDocumentTab[]> {
   const out: OpenDocumentTab[] = []
   for (const [wcId, rec] of detached) {
-    if (rec.window.isDestroyed() || rec.view.webContents.isDestroyed()) continue
+    if (rec.window.isDestroyed()) continue
     const wc = rec.view.webContents
     const dirty =
       rec.kind === 'sheets'
@@ -149,8 +144,8 @@ export async function detachedOpenDocuments(): Promise<OpenDocumentTab[]> {
         : rec.kind === 'docs'
           ? await docsQueryDirty(wc)
           : false
-    // The await above yields: re-check liveness before touching the window.
-    if (!isLiveRecord(rec)) continue
+    // the dirty query yielded: the window may have closed meanwhile
+    if (rec.window.isDestroyed()) continue
     out.push({
       id: ID_PREFIX + wcId,
       kind: rec.kind as OpenDocumentTab['kind'],
@@ -180,7 +175,7 @@ export function detachedRenameFile(
 ): { kind: TabKind; webContents: WebContents } | undefined {
   const wanted = canonicalPath(oldPath)
   for (const rec of detached.values()) {
-    if (rec.filePath && canonicalPath(rec.filePath) === wanted && isLiveRecord(rec)) {
+    if (rec.filePath && canonicalPath(rec.filePath) === wanted) {
       rec.filePath = newPath
       if (!rec.window.isDestroyed()) rec.window.setTitle(basename(newPath))
       onChanged()
@@ -194,7 +189,7 @@ export function detachedRenameFile(
 export function detachedFilePaths(): string[] {
   const paths: string[] = []
   for (const rec of detached.values())
-    if (rec.filePath && isLiveRecord(rec)) paths.push(rec.filePath)
+    if (rec.filePath && !rec.window.isDestroyed()) paths.push(rec.filePath)
   return paths
 }
 

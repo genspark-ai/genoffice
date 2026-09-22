@@ -5,9 +5,9 @@
  * Electron-free so unit tests can import this module directly.
  */
 
-/** printable page dimension in twips: 0.5in .. 50in */
+/** printable page dimension in twips: 0.1in (Word's floor) .. 50in */
 export function validPrintDim(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v) && v >= 720 && v <= 72000
+  return typeof v === 'number' && Number.isFinite(v) && v >= 144 && v <= 72000
 }
 
 /** print scale factor: 0.1 .. 5 (undefined = Chromium default) */

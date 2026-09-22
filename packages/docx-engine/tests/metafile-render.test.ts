@@ -275,8 +275,11 @@ describe('EMR_ALPHABLEND (w-icon.emf)', () => {
     }
     expect(transparent).toBe(240)
     expect(opaque).toBe(784)
-    // the caption text still replays after the blend
-    const texts = calls.filter((c) => c.method === 'fillText').map((c) => c.args[0])
+    // the caption text still replays after the blend (glyph by glyph along its Dx advances)
+    const texts = calls
+      .filter((c) => c.method === 'fillText')
+      .map((c) => c.args[0])
+      .join('')
     expect(texts).toContain('Документ-в-докуме')
     expect(texts).toContain('нте')
   })
@@ -365,10 +368,425 @@ describe('EMR_EXTTEXTOUTW alignment (ole-caption.emf)', () => {
     reset()
     await convertEmfToDataUrl(loadFixture('ole-caption.emf'), { dpiScale: 2 })
     const canvas = canvases[0]
-    const text = calls.find((c) => c.method === 'fillText')
-    expect(text?.args[0]).toBe('simple.txt')
-    expect(text?.args[1]).toBeCloseTo(canvas.width / 2, 0)
-    expect(canvas.getContext('2d')?.textAlign).toBe('center')
+    // glyphs are placed individually along the Dx advances; the run is centered on the
+    // reference point instead of hanging off it to the left
+    const glyphs = calls.filter((c) => c.method === 'fillText')
+    expect(glyphs.map((c) => c.args[0]).join('')).toBe('simple.txt')
+    const xs = glyphs.map((c) => c.args[1] as number)
+    expect(Math.min(...xs)).toBeLessThan(canvas.width / 2)
+    expect(Math.max(...xs)).toBeGreaterThan(canvas.width / 2)
+    expect(canvas.getContext('2d')?.textAlign).toBe('left')
+  })
+})
+
+// ── Synthetic EMF/EMF+ builders ─────────────────────────────────────
+
+function emfHeader(nBytes: number, nRecords: number): Uint8Array {
+  const header = new Uint8Array(88)
+  const hv = new DataView(header.buffer)
+  hv.setUint32(0, 1, true)
+  hv.setUint32(4, 88, true)
+  hv.setInt32(16, 200, true) // rclBounds right
+  hv.setInt32(20, 100, true) // rclBounds bottom
+  hv.setInt32(32, 5292, true) // rclFrame (.01 mm)
+  hv.setInt32(36, 2646, true)
+  hv.setUint32(40, 0x464d4520, true)
+  hv.setUint32(44, 0x00010000, true)
+  hv.setUint32(48, nBytes, true)
+  hv.setUint32(52, nRecords, true)
+  hv.setUint16(56, 2, true)
+  hv.setInt32(72, 1920, true)
+  hv.setInt32(76, 1080, true)
+  hv.setInt32(80, 508, true)
+  hv.setInt32(84, 286, true)
+  return header
+}
+
+function emfEof(): Uint8Array {
+  const eof = new Uint8Array(20)
+  const ev = new DataView(eof.buffer)
+  ev.setUint32(0, 14, true)
+  ev.setUint32(4, 20, true)
+  return eof
+}
+
+function emfRectangle(l: number, t: number, r: number, b: number): Uint8Array {
+  const rec = new Uint8Array(24)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 43, true) // EMR_RECTANGLE
+  v.setUint32(4, 24, true)
+  v.setInt32(8, l, true)
+  v.setInt32(12, t, true)
+  v.setInt32(16, r, true)
+  v.setInt32(20, b, true)
+  return rec
+}
+
+/** EMR_EXTTEXTOUTW with an optional Dx advance array (logical units). */
+function emfTextOut(text: string, dx?: number[], options = 0): Uint8Array {
+  const dxBytes = dx ? dx.length * 4 : 0
+  const rec = new Uint8Array(76 + text.length * 2 + dxBytes)
+  const tv = new DataView(rec.buffer)
+  tv.setUint32(0, 84, true)
+  tv.setUint32(4, rec.length, true)
+  tv.setUint32(24, 1, true) // GM_COMPATIBLE
+  tv.setInt32(36, 10, true) // reference x
+  tv.setInt32(40, 20, true) // reference y
+  tv.setUint32(44, text.length, true)
+  tv.setUint32(48, 76, true) // offString
+  tv.setUint32(52, options, true)
+  if (dx) tv.setUint32(72, 76 + text.length * 2, true) // offDx
+  for (let i = 0; i < text.length; i++) tv.setUint16(76 + i * 2, text.charCodeAt(i), true)
+  dx?.forEach((d, i) => tv.setInt32(76 + text.length * 2 + i * 4, d, true))
+  return rec
+}
+
+/** EMR_CREATEPEN (ihPen 1) + EMR_SELECTOBJECT + EMR_MOVETOEX + EMR_LINETO: one stroked line. */
+function emfPenLine(widthUnits: number): Uint8Array[] {
+  const pen = new Uint8Array(28)
+  const pv = new DataView(pen.buffer)
+  pv.setUint32(0, 38, true)
+  pv.setUint32(4, 28, true)
+  pv.setUint32(8, 1, true) // ihPen
+  pv.setUint32(12, 0, true) // PS_SOLID
+  pv.setInt32(16, widthUnits, true)
+  pv.setUint32(24, 0x000000, true)
+  const sel = new Uint8Array(12)
+  const sv = new DataView(sel.buffer)
+  sv.setUint32(0, 37, true)
+  sv.setUint32(4, 12, true)
+  sv.setUint32(8, 1, true)
+  const move = new Uint8Array(16)
+  const mv = new DataView(move.buffer)
+  mv.setUint32(0, 27, true)
+  mv.setUint32(4, 16, true)
+  mv.setInt32(8, 10, true)
+  mv.setInt32(12, 30, true)
+  const line = new Uint8Array(16)
+  const lv = new DataView(line.buffer)
+  lv.setUint32(0, 54, true)
+  lv.setUint32(4, 16, true)
+  lv.setInt32(8, 150, true)
+  lv.setInt32(12, 30, true)
+  return [pen, sel, move, line]
+}
+
+function emfSetTextAlign(value: number): Uint8Array {
+  const rec = new Uint8Array(12)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 22, true) // EMR_SETTEXTALIGN
+  v.setUint32(4, 12, true)
+  v.setUint32(8, value, true)
+  return rec
+}
+
+/** One EMF+ record (12-byte header + payload). */
+function plusRecord(type: number, flags: number, payload: Uint8Array): Uint8Array {
+  const rec = new Uint8Array(12 + payload.length)
+  const v = new DataView(rec.buffer)
+  v.setUint16(0, type, true)
+  v.setUint16(2, flags, true)
+  v.setUint32(4, rec.length, true)
+  v.setUint32(8, payload.length, true)
+  rec.set(payload, 12)
+  return rec
+}
+
+/** EMR_COMMENT carrying EMF+ records. */
+function emfPlusComment(...records: Uint8Array[]): Uint8Array {
+  const body = records.reduce((n, r) => n + r.length, 0)
+  const size = 16 + body
+  const padded = size + ((4 - (size % 4)) % 4)
+  const rec = new Uint8Array(padded)
+  const v = new DataView(rec.buffer)
+  v.setUint32(0, 70, true) // EMR_COMMENT
+  v.setUint32(4, padded, true)
+  v.setUint32(8, 4 + body, true) // DataSize
+  v.setUint32(12, 0x2b464d45, true) // 'EMF+'
+  let at = 16
+  for (const r of records) {
+    rec.set(r, at)
+    at += r.length
+  }
+  return rec
+}
+
+function plusHeader(dual: boolean): Uint8Array {
+  const payload = new Uint8Array(16)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 0xdbc01002, true)
+  v.setUint32(4, dual ? 1 : 0, true)
+  v.setUint32(8, 96, true)
+  v.setUint32(12, 96, true)
+  return plusRecord(0x4001, dual ? 1 : 0, payload)
+}
+
+function plusGetDC(): Uint8Array {
+  return plusRecord(0x4004, 0, new Uint8Array(0))
+}
+
+function plusFontObject(id: number, family: string, emSize: number): Uint8Array {
+  const payload = new Uint8Array(24 + family.length * 2)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 0xdbc01002, true)
+  v.setFloat32(4, emSize, true)
+  v.setUint32(8, 2, true) // UnitTypePixel
+  v.setUint32(12, 0, true)
+  v.setUint32(20, family.length, true)
+  for (let i = 0; i < family.length; i++) v.setUint16(24 + i * 2, family.charCodeAt(i), true)
+  return plusRecord(0x4008, (6 << 8) | id, payload) // ObjectTypeFont
+}
+
+function plusDrawDriverString(fontId: number, text: string, pos: number[][]): Uint8Array {
+  const payload = new Uint8Array(16 + text.length * 2 + pos.length * 8 + 24)
+  const v = new DataView(payload.buffer)
+  v.setUint32(0, 0xff000000, true) // brush: opaque black ARGB
+  v.setUint32(4, 1, true) // DriverStringOptionsCmapLookup
+  v.setUint32(8, 1, true) // MatrixPresent
+  v.setUint32(12, text.length, true)
+  let at = 16
+  for (let i = 0; i < text.length; i++, at += 2) v.setUint16(at, text.charCodeAt(i), true)
+  for (const [x, y] of pos) {
+    v.setFloat32(at, x, true)
+    v.setFloat32(at + 4, y, true)
+    at += 8
+  }
+  for (const m of [1, 0, 0, 1, 0, 0]) {
+    v.setFloat32(at, m, true)
+    at += 4
+  }
+  return plusRecord(0x4036, 0x8000 | fontId, payload)
+}
+
+function assembleEmf(records: Uint8Array[]): ArrayBuffer {
+  const eof = emfEof()
+  const body = records.reduce((n, r) => n + r.length, 0) + 88 + eof.length
+  const parts = [emfHeader(body, records.length + 2), ...records, eof]
+  const emf = new Uint8Array(body)
+  let at = 0
+  for (const p of parts) {
+    emf.set(p, at)
+    at += p.length
+  }
+  return emf.buffer
+}
+
+describe('GDI pen width', () => {
+  it('scales the logical pen width to device pixels (1 unit → 2 px at dpiScale 2)', async () => {
+    reset()
+    await convertEmfToDataUrl(assembleEmf(emfPenLine(1)), { dpiScale: 2 })
+    const strokeIdx = calls.findIndex((c) => c.method === 'stroke')
+    expect(strokeIdx).toBeGreaterThan(0)
+    const page = canvases.find((c) => c.width === 400)
+    expect(page?.getContext('2d')?.lineWidth).toBe(2)
+  })
+
+  it('keeps a hairline (width 0) at one device pixel', async () => {
+    reset()
+    await convertEmfToDataUrl(assembleEmf(emfPenLine(0)), { dpiScale: 2 })
+    const page = canvases.find((c) => c.width === 400)
+    expect(page?.getContext('2d')?.lineWidth).toBe(1)
+  })
+})
+
+describe('EMR_EXTTEXTOUTW Dx advances', () => {
+  it("places every glyph by the writer's advances, not the substitute font's widths", async () => {
+    reset()
+    await convertEmfToDataUrl(assembleEmf([emfTextOut('ab', [30, 40])]), { dpiScale: 2 })
+    const glyphs = calls.filter((c) => c.method === 'fillText')
+    expect(glyphs.map((c) => c.args[0])).toEqual(['a', 'b'])
+    // bounds 200 wide → canvas 400 → 2 px per logical unit; 'b' sits 30 units after 'a'
+    const [ax, bx] = glyphs.map((c) => c.args[1] as number)
+    expect(bx - ax).toBeCloseTo(60, 3)
+  })
+
+  it('ETO_PDY interleaves y offsets: glyphs step vertically too', async () => {
+    reset()
+    await convertEmfToDataUrl(assembleEmf([emfTextOut('ab', [30, 5, 40, -5], 0x2000)]), {
+      dpiScale: 2,
+    })
+    const glyphs = calls.filter((c) => c.method === 'fillText')
+    expect(glyphs.map((c) => c.args[0])).toEqual(['a', 'b'])
+    expect((glyphs[1]!.args[1] as number) - (glyphs[0]!.args[1] as number)).toBeCloseTo(60, 3)
+    expect((glyphs[1]!.args[2] as number) - (glyphs[0]!.args[2] as number)).toBeCloseTo(10, 3)
+  })
+
+  it('TA_UPDATECP advances the current point by the text extent even without Dx', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([emfSetTextAlign(1), emfTextOut('ab'), emfTextOut('cd')]),
+      { dpiScale: 2 },
+    )
+    const runs = calls.filter((c) => c.method === 'fillText')
+    expect(runs.map((c) => c.args[0])).toEqual(['ab', 'cd'])
+    // the fake measureText reports 10 px: the second run starts one extent further right
+    expect((runs[1]!.args[1] as number) - (runs[0]!.args[1] as number)).toBeCloseTo(10, 3)
+  })
+
+  it('keeps the whole-string draw when no Dx array is present', async () => {
+    reset()
+    await convertEmfToDataUrl(assembleEmf([emfTextOut('ab')]), { dpiScale: 2 })
+    expect(calls.filter((c) => c.method === 'fillText').map((c) => c.args[0])).toEqual(['ab'])
+  })
+})
+
+describe('EMF+ dual mode', () => {
+  it('skips GDI drawing outside an EmfPlusGetDC window and paints it inside one', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(plusHeader(true)),
+        emfRectangle(0, 0, 50, 50), // GDI twin of an EMF+ fill: must not paint
+        emfPlusComment(plusGetDC()),
+        emfRectangle(100, 0, 150, 50), // GDI-only content after GetDC: paints
+      ]),
+      { dpiScale: 2 },
+    )
+    const rects = calls.filter((c) => /^(rect|fillRect|strokeRect)$/.test(c.method))
+    expect(rects.length).toBeGreaterThan(0)
+    expect(rects.every((c) => (c.args[0] as number) >= 200)).toBe(true)
+  })
+
+  it('a non-dual EMF+ file still replays its GDI records', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([emfPlusComment(plusHeader(false)), emfRectangle(0, 0, 50, 50)]),
+      { dpiScale: 2 },
+    )
+    expect(calls.some((c) => /^(rect|fillRect|strokeRect)$/.test(c.method))).toBe(true)
+  })
+})
+
+/** EMF+ image object (compressed PNG bytes) split into continuation records, each chunk
+ *  prefixed by the 4-byte TotalObjectSize like GDI+ writes them. */
+function plusImageObjectChunks(
+  id: number,
+  png: Uint8Array,
+  chunkSize: number,
+  bareLastChunk = false,
+): Uint8Array[] {
+  const body = new Uint8Array(28 + png.length)
+  const v = new DataView(body.buffer)
+  v.setUint32(0, 0xdbc01002, true)
+  v.setUint32(4, 1, true) // ImageDataTypeBitmap
+  v.setUint32(24, 1, true) // BitmapDataTypeCompressed
+  body.set(png, 28)
+  const out: Uint8Array[] = []
+  for (let at = 0; at < body.length; at += chunkSize) {
+    const slice = body.subarray(at, Math.min(at + chunkSize, body.length))
+    const last = at + chunkSize >= body.length
+    if (bareLastChunk && last) {
+      // spec-literal final chunk: continue flag clear, no size prefix
+      out.push(plusRecord(0x4008, (5 << 8) | id, slice))
+      continue
+    }
+    const payload = new Uint8Array(4 + slice.length)
+    new DataView(payload.buffer).setUint32(0, body.length, true)
+    payload.set(slice, 4)
+    out.push(plusRecord(0x4008, 0x8000 | (5 << 8) | id, payload))
+  }
+  return out
+}
+
+function plusDrawImagePoints(id: number): Uint8Array {
+  const payload = new Uint8Array(28 + 24)
+  const v = new DataView(payload.buffer)
+  v.setUint32(24, 3, true) // point count
+  const pts = [0, 0, 100, 0, 0, 50]
+  pts.forEach((p, i) => v.setFloat32(28 + i * 4, p, true))
+  return plusRecord(0x401b, id, payload)
+}
+
+describe('EMF+ continued image objects', () => {
+  it('a final chunk without the size prefix (continue flag clear) still completes the object', async () => {
+    reset()
+    const created: Blob[] = []
+    const savedCIB = globals.createImageBitmap
+    globals.createImageBitmap = async (blob: Blob) => {
+      created.push(blob)
+      return { width: 10, height: 5, close() {} }
+    }
+    try {
+      const png = new Uint8Array(150)
+      for (let i = 0; i < png.length; i++) png[i] = i & 0xff
+      const chunks = plusImageObjectChunks(3, png, 64, true)
+      await convertEmfToDataUrl(
+        assembleEmf([emfPlusComment(plusHeader(false), ...chunks, plusDrawImagePoints(3))]),
+        { dpiScale: 1 },
+      )
+      expect(created).toHaveLength(1)
+      const bytes = new Uint8Array(await created[0]!.arrayBuffer())
+      expect(bytes.length).toBe(150)
+      expect(bytes[149]).toBe(149)
+    } finally {
+      if (savedCIB === undefined) delete globals.createImageBitmap
+      else globals.createImageBitmap = savedCIB
+    }
+  })
+
+  it('reassembles chunks that each repeat the size prefix, across comment records', async () => {
+    reset()
+    const created: Blob[] = []
+    const savedCIB = globals.createImageBitmap
+    globals.createImageBitmap = async (blob: Blob) => {
+      created.push(blob)
+      return { width: 10, height: 5, close() {} }
+    }
+    try {
+      const png = new Uint8Array(150)
+      png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+      for (let i = 8; i < png.length; i++) png[i] = i & 0xff
+      const chunks = plusImageObjectChunks(3, png, 64)
+      expect(chunks.length).toBe(3)
+      await convertEmfToDataUrl(
+        assembleEmf([
+          emfPlusComment(plusHeader(false), chunks[0]!),
+          emfPlusComment(chunks[1]!),
+          emfPlusComment(chunks[2]!, plusDrawImagePoints(3)),
+        ]),
+        { dpiScale: 1 },
+      )
+      // the decoded bitmap is the exact PNG payload: byte-identical after reassembly
+      expect(created).toHaveLength(1)
+      const bytes = new Uint8Array(await created[0]!.arrayBuffer())
+      expect(bytes.length).toBe(150)
+      expect(Array.from(bytes.slice(0, 8))).toEqual([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      ])
+      expect(bytes[100]).toBe(100)
+      expect(bytes[149]).toBe(149)
+      // painted in place (pre-decoded pass), not deferred past the replay
+      expect(calls.some((c) => c.method === 'drawImage')).toBe(true)
+    } finally {
+      if (savedCIB === undefined) delete globals.createImageBitmap
+      else globals.createImageBitmap = savedCIB
+    }
+  })
+})
+
+describe('EmfPlusDrawDriverString glyph positions', () => {
+  it('reads an odd glyph count without padding and places each glyph', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      assembleEmf([
+        emfPlusComment(
+          plusHeader(false),
+          plusFontObject(0, 'Arial', 12),
+          plusDrawDriverString(0, 'abc', [
+            [5, 10],
+            [15, 10],
+            [25, 10],
+          ]),
+        ),
+      ]),
+      { dpiScale: 2 },
+    )
+    const glyphs = calls.filter((c) => c.method === 'fillText')
+    expect(glyphs.map((c) => c.args.slice(0, 3))).toEqual([
+      ['a', 5, 10],
+      ['b', 15, 10],
+      ['c', 25, 10],
+    ])
   })
 })
 
@@ -628,6 +1046,22 @@ describe('EMR_CREATEDIBPATTERNBRUSHPT (synthetic)', () => {
     expect(lastFillStyle?.args[0]).toEqual({ pattern: tile })
     expect(calls[fillIdx].args).toEqual([10, 10, 40, 2])
   })
+
+  it('tiles the brush in device pixels: the 8x8 DIB becomes a 16x16 tile at dpiScale 2', async () => {
+    reset()
+    await convertEmfToDataUrl(buildPatternBrushEmf(), { dpiScale: 2 })
+    const patterns = calls.filter((c) => c.method === 'createPattern')
+    expect(patterns).toHaveLength(1)
+    const tile = patterns[0].args[0] as FakeOffscreenCanvas
+    expect([tile.width, tile.height]).toEqual([16, 16])
+    // nearest-neighbour blow-up of the 8x8 source, not a smoothed resample
+    const blowUp = calls.find(
+      (c) => c.method === 'drawImage' && c.args[3] === 16 && c.args[4] === 16,
+    )
+    expect(blowUp).toBeDefined()
+    const bigCtx = canvases.find((c) => c.width === 16 && c.height === 16)
+    expect(bigCtx?.getContext('2d')?.imageSmoothingEnabled).toBe(false)
+  })
 })
 
 /**
@@ -747,5 +1181,37 @@ describe('EMF+ SetClipRegion (synthetic dual-mode chart picture)', () => {
     // the 20x20 plot clip must have been replaced by the 100x60 region
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(90)
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(50)
+  })
+})
+
+describe('GDI TA_TOP text uses the Windows ascent of known faces', () => {
+  it('Yu Gothic text sits 1.29 em below the top (canvas hhea metrics would put it at 0.88 em)', async () => {
+    reset()
+    await convertEmfToDataUrl(buildEmfWithText('\u6e38\u30b4\u30b7\u30c3\u30af', 'ab'), {
+      dpiScale: 2,
+    })
+    const glyphs = calls.filter((c) => c.method === 'fillText')
+    expect(glyphs.length).toBeGreaterThan(0)
+    // reference y 20 logical → 40 px; lfHeight -15 → 30 px em; baseline = 40 + 1.292 × 30
+    expect(glyphs[0].args[2] as number).toBeCloseTo(40 + 1.292 * 30, 1)
+  })
+
+  it('localized MS face names with fullwidth Latin match the table (MS PGothic 0.859 em)', async () => {
+    reset()
+    await convertEmfToDataUrl(
+      buildEmfWithText('\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af', 'ab'),
+      {
+        dpiScale: 2,
+      },
+    )
+    const glyphs = calls.filter((c) => c.method === 'fillText')
+    expect(glyphs[0].args[2] as number).toBeCloseTo(40 + 0.859 * 30, 1)
+  })
+
+  it('unknown faces keep the canvas top baseline', async () => {
+    reset()
+    await convertEmfToDataUrl(buildEmfWithText('Some Unknown Face', 'ab'), { dpiScale: 2 })
+    const glyphs = calls.filter((c) => c.method === 'fillText')
+    expect(glyphs[0].args[2]).toBe(40)
   })
 })

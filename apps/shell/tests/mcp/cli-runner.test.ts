@@ -20,7 +20,7 @@ describe('createCliRunner output cap', () => {
     const runner = createCliRunner({
       executable: process.execPath,
       entry: script(
-        `process.stdout.write('x'.repeat(10 * 1024 * 1024)); setInterval(() => {}, 1000)`,
+        `process.stdout.write('x'.repeat(${MAX_CLI_OUTPUT_BYTES + 1024 * 1024})); setInterval(() => {}, 1000)`,
       ),
     })
     const start = Date.now()

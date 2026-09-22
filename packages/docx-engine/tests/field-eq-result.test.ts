@@ -207,7 +207,7 @@ describe('inline field result formatting', () => {
     const start = Date.now()
     const eq = eqFieldToOmml('EQ \\a \\co9999999999 (a,b)')!
     expect(Date.now() - start).toBeLessThan(5000)
-    expect(eq.omml).toContain('m:val="16"')
+    expect(eq.omml).toContain('m:val="64"')
     expect(eq.omml.match(/<m:mr>/g)).toHaveLength(1)
   })
 })

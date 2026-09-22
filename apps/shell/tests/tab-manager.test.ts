@@ -31,6 +31,7 @@ interface FakeWebContents {
   once: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
   reload: ReturnType<typeof vi.fn>
+  focus: ReturnType<typeof vi.fn>
   isDestroyed: ReturnType<typeof vi.fn>
   listeners: Map<string, () => void>
 }
@@ -55,6 +56,7 @@ function makeFakeView(): FakeView {
       once: vi.fn(),
       close: vi.fn(),
       reload: vi.fn(),
+      focus: vi.fn(),
       isDestroyed: vi.fn(() => false),
     },
     setVisible: vi.fn(),
@@ -130,8 +132,9 @@ const WINDOW_HEIGHT = 600
 
 interface FakeShellWindow {
   on: ReturnType<typeof vi.fn>
-  webContents: { once: ReturnType<typeof vi.fn> }
+  webContents: { once: ReturnType<typeof vi.fn>; focus: ReturnType<typeof vi.fn> }
   isDestroyed: ReturnType<typeof vi.fn>
+  isFocused: ReturnType<typeof vi.fn>
   getContentBounds: () => { x: number; y: number; width: number; height: number }
   contentView: {
     addChildView: ReturnType<typeof vi.fn>
@@ -142,8 +145,9 @@ interface FakeShellWindow {
 function makeShellWindow(): FakeShellWindow {
   return {
     on: vi.fn(),
-    webContents: { once: vi.fn() },
+    webContents: { once: vi.fn(), focus: vi.fn() },
     isDestroyed: vi.fn(() => false),
+    isFocused: vi.fn(() => true),
     getContentBounds: () => ({ x: 0, y: 0, width: WINDOW_WIDTH, height: WINDOW_HEIGHT }),
     contentView: { addChildView: vi.fn(), removeChildView: vi.fn() },
   }
@@ -335,6 +339,30 @@ describe('activation', () => {
       height: WINDOW_HEIGHT - TAB_STRIP_HEIGHT,
     })
     expect(manager.list().find((t) => t.id === docsId)?.active).toBe(true)
+  })
+
+  it('hands keyboard focus to the activated view so typing works right after open/switch', () => {
+    const docsId = manager.openDocsTab()
+    const docsView = lastCreatedView(createDocsView)
+    expect(docsView.webContents.focus).toHaveBeenCalled()
+
+    docsView.webContents.focus.mockClear()
+    manager.activateTab('home')
+    expect(shellWindow.webContents.focus).toHaveBeenCalled()
+    manager.activateTab(docsId)
+    expect(docsView.webContents.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not steal OS focus for a background open (window unfocused)', () => {
+    shellWindow.isFocused.mockReturnValue(false)
+    manager.openDocsTab()
+    const docsView = lastCreatedView(createDocsView)
+    expect(docsView.webContents.focus).not.toHaveBeenCalled()
+
+    // the window `focus` handler runs it once the user comes back
+    shellWindow.isFocused.mockReturnValue(true)
+    manager.focusActiveView()
+    expect(docsView.webContents.focus).toHaveBeenCalledTimes(1)
   })
 
   it('ignores activation of unknown tab ids', () => {

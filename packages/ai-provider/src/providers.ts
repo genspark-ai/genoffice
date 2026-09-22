@@ -415,16 +415,18 @@ export function maxOutputTokensOf(
     : clampMaxOutputTokens(settings.maxOutputTokens)
 }
 
+const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
+
 /** pasted keys/URLs/model ids often carry stray whitespace, which turns into a 401 with a valid key */
 function trimConfigs(providers: AiSettings['providers']): AiSettings['providers'] {
   const trimmed = { ...providers }
   for (const [id, config] of Object.entries(trimmed)) {
     trimmed[id as AiProviderId] = {
       ...config,
-      apiKey: config.apiKey?.trim() ?? '',
-      model: config.model?.trim() ?? '',
-      ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl.trim() } : {}),
-      ...(config.cliPath !== undefined ? { cliPath: config.cliPath.trim() } : {}),
+      apiKey: str(config.apiKey),
+      model: str(config.model),
+      ...(config.baseUrl !== undefined ? { baseUrl: str(config.baseUrl) } : {}),
+      ...(config.cliPath !== undefined ? { cliPath: str(config.cliPath) } : {}),
     }
   }
   return trimmed
@@ -453,9 +455,9 @@ export function resolveAiSettings(
   if (!stored.providers) {
     if (stored.apiKey) {
       defaults.providers.custom = {
-        apiKey: stored.apiKey.trim(),
-        model: stored.model?.trim() ?? '',
-        baseUrl: (stored.baseUrl ?? 'https://api.openai.com/v1').trim(),
+        apiKey: str(stored.apiKey),
+        model: str(stored.model),
+        baseUrl: str(stored.baseUrl) || 'https://api.openai.com/v1',
       }
     }
     return defaults

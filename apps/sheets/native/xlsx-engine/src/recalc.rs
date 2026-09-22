@@ -515,12 +515,32 @@ fn pin_unparsable_formulas(model: &mut Model) {
 /// (`[1]Sheet1!A1`, `'[1]Sheet1'!A1`) and any longer name that merely ends in
 /// this one.
 fn references_a_sheet_of_this_workbook(formula: &str, names: &[String]) -> bool {
+    let code = blank_text_literals(formula);
     names.iter().any(|name| {
         !name.is_empty()
-            && formula
+            && code
                 .match_indices(&format!("{name}!"))
-                .any(|(at, _)| at == 0 || !continues_a_sheet_name(&formula[..at]))
+                .any(|(at, _)| at == 0 || !continues_a_sheet_name(&code[..at]))
     })
+}
+
+/// The formula with every `"..."` literal replaced by spaces of the same byte
+/// length, so a sheet name mentioned inside text does not count as a reference
+/// and byte offsets still line up with the original.
+fn blank_text_literals(formula: &str) -> String {
+    let mut out = String::with_capacity(formula.len());
+    let mut in_text = false;
+    for char in formula.chars() {
+        if char == '"' {
+            in_text = !in_text;
+            out.push(char);
+        } else if in_text {
+            out.extend(std::iter::repeat_n(' ', char.len_utf8()));
+        } else {
+            out.push(char);
+        }
+    }
+    out
 }
 
 fn continues_a_sheet_name(before: &str) -> bool {
@@ -1002,6 +1022,15 @@ mod tests {
         // a longer name that merely ends in one of ours
         assert!(!references_a_sheet_of_this_workbook(
             "OldSheet1!R[0]C[0]",
+            &names
+        ));
+        // a sheet name inside a text literal is not a reference
+        assert!(!references_a_sheet_of_this_workbook(
+            r#"[1]Sheet1!R[0]C[0]&" from Sheet1! ""#,
+            &names
+        ));
+        assert!(references_a_sheet_of_this_workbook(
+            r#""see Sheet1!"&Sheet1!R[0]C[0]"#,
             &names
         ));
     }

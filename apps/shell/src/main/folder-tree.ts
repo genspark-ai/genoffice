@@ -99,7 +99,7 @@ export function describeRoot(root: string): FolderRoot {
   } catch {
     usable = false
   }
-  return { path: root, name: basename(root) || root, usable }
+  return { path: root, name: basename(root) || root, usable, readable: usable, removable: false }
 }
 
 function hasVisibleSubfolder(dir: string): boolean {
@@ -143,27 +143,12 @@ export function listFolder(dir: string, starredPaths: ReadonlySet<string>): Fold
   return { dir, folders, files }
 }
 
-/** every supported file under `dir`, recursively (visible folders only) */
-export function collectTreeFiles(dir: string): string[] {
-  const out: string[] = []
-  const walk = (d: string) => {
-    let dirents: import('node:fs').Dirent[]
-    try {
-      dirents = readdirSync(d, { withFileTypes: true })
-    } catch {
-      return
-    }
-    for (const ent of dirents) {
-      const path = join(d, ent.name)
-      if (ent.isDirectory()) {
-        if (!isHiddenEntry(d, ent.name, true)) walk(path)
-      } else if (ent.isFile() && isSupportedTreeFile(ent.name)) {
-        out.push(path)
-      }
-    }
-  }
-  walk(dir)
-  return out
+/** the candidates below `dir` at any depth; bookkeeping filters tracked paths instead of walking the disk */
+export function pathsUnder(dir: string, candidates: Iterable<string>): string[] {
+  const prefix = resolve(dir) + sep
+  const out = new Set<string>()
+  for (const path of candidates) if (resolve(path).startsWith(prefix)) out.add(path)
+  return [...out]
 }
 
 export interface FolderErrors {

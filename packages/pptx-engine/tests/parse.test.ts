@@ -748,6 +748,19 @@ describe('table (p:graphicFrame a:tbl) parsing', () => {
     expect(el.rows[1][1].merged).toBe(true)
   })
 
+  it('no tableStyleId and no cell borders → PowerPoint "No Style, Table Grid" dk1 lines', () => {
+    const bare = tableXml.replace(/<a:ln[LRTB][^>]*>.*?<\/a:ln[LRTB]>/gs, '')
+    expect(bare).not.toContain('<a:lnB')
+    const slide = parseSlide({
+      path: 'ppt/slides/slide1.xml',
+      slideXml: slideXml.replace(tableXml, bare),
+      ctx: {},
+    })
+    const c00 = (slide.elements[0] as any).rows[0][0]
+    expect(c00.borders.b).toEqual({ fill: { type: 'solid', color: '#000000' }, width: 12700 })
+    expect(c00.borders.l).toEqual({ fill: { type: 'solid', color: '#000000' }, width: 12700 })
+  })
+
   it('table element keeps byte fidelity (originalXml passthrough on save)', () => {
     const slide = parseSlide({ path: 'ppt/slides/slide1.xml', slideXml, ctx: {} })
     expect(reassembleSlideXml(slide)).toBe(slideXml)

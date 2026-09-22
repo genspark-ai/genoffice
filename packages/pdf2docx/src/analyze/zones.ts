@@ -142,11 +142,11 @@ export function buildStackCell(
     const gap = i === 0 ? (cell.vAlign ? 0 : box.y1 - b.box.y1) : blocks[i - 1]!.box.y0 - b.box.y1
     // Raw PDF boxes can be non-finite: gate the gap like the spacing chain does.
     if (Number.isFinite(gap) && gap >= ZONE_CELL_GAP_MIN_PT) {
-      b.spacingBeforePt = Math.min(gap, 1440)
+      b.spacingBeforePt = Math.min(gap, 1584)
     }
     const inset = b.box.x0 - box.x0
     if (Number.isFinite(inset) && inset >= ZONE_CELL_INSET_MIN_PT) {
-      b.firstLineIndentPt = Math.min(inset, 1440)
+      b.firstLineIndentPt = Math.min(inset, 1584)
     }
   }
   return cell

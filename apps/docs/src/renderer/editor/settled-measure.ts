@@ -72,9 +72,20 @@ interface Entry<T> {
   rectKey: string
   result: T
   settled: boolean
+  /** distinct results seen so far */
+  rounds: number
   /** last pass that visited the paragraph (unvisited entries are pruned) */
   gen: number
 }
+
+/**
+ * A paragraph whose compression re-wraps its own lines can answer differently
+ * every round without ever repeating itself. Each answer fits the lines it
+ * was measured against, so after this many the last one stays; otherwise the
+ * whole document re-measures every unsettled paragraph on every round until
+ * the loop's signature cap freezes it (12 rounds on a 6k-paragraph document).
+ */
+export const MAX_PARA_ROUNDS = 3
 
 /**
  * Per-paragraph result cache for the measure → decorate → re-measure loops of
@@ -158,12 +169,17 @@ export class SettledParagraphCache<T> {
       return null
     }
     const key = JSON.stringify(this.shift(result, -pos))
+    const rounds = (prev?.rounds ?? 0) + 1
     this.results.set(node, {
       pos,
       key,
       rectKey,
       result,
-      settled: (prev !== undefined && prev.key === key) || this.stableNow(result),
+      settled:
+        (prev !== undefined && prev.key === key) ||
+        this.stableNow(result) ||
+        rounds >= MAX_PARA_ROUNDS,
+      rounds,
       gen: this.gen,
     })
     return result

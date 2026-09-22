@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
@@ -64,7 +65,7 @@ test.describe('home folders panel', () => {
       await page.screenshot({ path: screenshotPath('home-folders-contracts') })
 
       // new folder from the sidebar header: lands under the selected folder
-      await page.locator('.folder-add-btn').click()
+      await page.locator('.folder-new-btn').click()
       const input = page.locator('.folder-panel .tree .folder-rename-input')
       await input.fill('Drafts')
       await input.press('Enter')
@@ -120,6 +121,61 @@ test.describe('home folders panel', () => {
       await page.screenshot({ path: screenshotPath('home-folders-personal') })
     } finally {
       await closeAndSaveVideo(launched, 'home-folders')
+    }
+  })
+
+  test('an added folder joins the tree in place and leaves the list without touching disk', async () => {
+    const extra = realpathSync(mkdtempSync(join(tmpdir(), 'genoffice-e2e-extra-')))
+    mkdirSync(join(extra, 'Projects', 'Alpha'), { recursive: true })
+    writeFileSync(join(extra, 'Projects', 'plan.md'), '# plan')
+    const launched = await launchShell({
+      onboardingSeen: true,
+      settings: { defaultSaveDir: root, folderRoots: [extra] },
+      videoDir: 'home-folders-roots',
+    })
+    const { page, userDataDir } = launched
+    try {
+      const tree = page.locator('.folder-panel .tree')
+      const rootRows = tree.locator(':scope > .tree-item > .tree-row')
+      await expect(rootRows).toHaveCount(2)
+      await expect(rootRows.nth(0)).toContainText(root.split('/').pop()!)
+      await expect(rootRows.nth(1)).toContainText(extra.split('/').pop()!)
+
+      // every root row opens on a fresh profile, so the added root shows its real contents
+      await expect(rootRows.nth(1)).toHaveAttribute('aria-expanded', 'true')
+      await expect(tree.locator('.tree-name', { hasText: 'Projects' })).toBeVisible()
+      await tree.locator('.tree-name', { hasText: 'Projects' }).click()
+      await expect(page.locator('.recent-list .recent-name', { hasText: 'plan.md' })).toBeVisible()
+      await expect(page.locator('.recent-list .recent-name', { hasText: 'Alpha' })).toBeVisible()
+
+      // edits happen where the folder really is
+      await page.locator('.folder-new-btn').click()
+      const input = page.locator('.folder-panel .tree .folder-rename-input')
+      await input.fill('Beta')
+      await input.press('Enter')
+      await expect(
+        page.locator('.recent-list .folder-item .recent-name', { hasText: 'Beta' }),
+      ).toBeVisible()
+      expect(existsSync(join(extra, 'Projects', 'Beta'))).toBe(true)
+      await page.screenshot({ path: screenshotPath('home-folders-extra-root') })
+
+      // remove from the list: the row goes, the setting empties, the disk is untouched
+      await rootRows.nth(1).hover()
+      await rootRows.nth(1).locator('.folder-more-btn').click()
+      await page.locator('.folder-menu button', { hasText: 'Remove from list' }).click()
+      await expect(rootRows).toHaveCount(1)
+      await expect(page.locator('.recent-list .recent-name', { hasText: 'plan.md' })).toHaveCount(0)
+      await expect
+        .poll(() => {
+          const settings = JSON.parse(readFileSync(join(userDataDir, 'app-settings.json'), 'utf8'))
+          return settings.folderRoots
+        })
+        .toEqual([])
+      expect(existsSync(join(extra, 'Projects', 'plan.md'))).toBe(true)
+      expect(existsSync(join(extra, 'Projects', 'Beta'))).toBe(true)
+    } finally {
+      await closeAndSaveVideo(launched, 'home-folders-roots')
+      rmSync(extra, { recursive: true, force: true })
     }
   })
 

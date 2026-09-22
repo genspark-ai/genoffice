@@ -13,7 +13,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  collectTreeFiles,
   createFolder,
   describeRoot,
   isHiddenEntry,
@@ -21,6 +20,7 @@ import {
   isSelfOrDescendant,
   listFolder,
   movePathsInto,
+  pathsUnder,
   rebasePath,
   renameFolder,
   uniqueNameIn,
@@ -140,6 +140,31 @@ describe('createFolder / renameFolder', () => {
   })
 })
 
+describe('pathsUnder', () => {
+  it('keeps only the candidates below the folder, at any depth, once each', () => {
+    const dir = join(root, 'src')
+    const deep = join(dir, 'a', 'b', 'deep.md')
+    const direct = join(dir, 'report.docx')
+    expect(
+      pathsUnder(dir, [
+        deep,
+        direct,
+        direct,
+        dir,
+        join(root, 'src-other', 'x.docx'),
+        join(root, 'report.docx'),
+        join(dir, '..', 'outside.md'),
+      ]),
+    ).toEqual([deep, direct])
+  })
+
+  it('never touches the disk', () => {
+    const dir = join(root, 'never-created')
+    expect(pathsUnder(dir, [join(dir, 'x.docx')])).toEqual([join(dir, 'x.docx')])
+    expect(existsSync(dir)).toBe(false)
+  })
+})
+
 describe('movePathsInto', () => {
   it('moves files and folders, reporting old → new paths', () => {
     const file = touch('report.docx')
@@ -155,12 +180,7 @@ describe('movePathsInto', () => {
       { from: file, to: join(root, 'dest', 'report.docx') },
       { from: join(root, 'src'), to: join(root, 'dest', 'src') },
     ])
-    expect(collectTreeFiles(join(root, 'dest'))).toEqual(
-      expect.arrayContaining([
-        join(root, 'dest', 'report.docx'),
-        join(root, 'dest', 'src', 'deep.md'),
-      ]),
-    )
+    expect(existsSync(join(root, 'dest', 'src', 'deep.md'))).toBe(true)
     expect(rebasePath(nested, join(root, 'src'), join(root, 'dest', 'src'))).toBe(
       join(root, 'dest', 'src', 'deep.md'),
     )
@@ -274,7 +294,13 @@ describe('helpers', () => {
 
   it('describeRoot creates a missing root and reports it usable', () => {
     const fresh = join(root, 'GenOffice')
-    expect(describeRoot(fresh)).toEqual({ path: fresh, name: 'GenOffice', usable: true })
+    expect(describeRoot(fresh)).toEqual({
+      path: fresh,
+      name: 'GenOffice',
+      usable: true,
+      readable: true,
+      removable: false,
+    })
   })
 
   it('describeRoot reports a path blocked by a file as unusable', () => {

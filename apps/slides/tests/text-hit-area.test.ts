@@ -128,3 +128,45 @@ describe('textHitAtPoint (single click on text edits, frame around it selects)',
     expect(textHitAtPoint(s, box, { x: 10 + 50, y: 5 + 40 + 10 })).toBe(false)
   })
 })
+
+describe('frame-edge grip band', () => {
+  // text 5px below the top edge and running to 3px above the bottom: a tight autofit box
+  const tight = shape(
+    {
+      text: {
+        lines: [{ runs: [run('WorkBuddy', 0, 200)], top: 0, height: 24, paraStart: true }],
+        insets: { l: 10, t: 5, r: 10, b: 3 },
+        anchor: 'top',
+        fontScale: 1,
+        contentHeight: 24,
+        wrap: true,
+      },
+    },
+    0,
+  )
+  const tightBox = { w: 300, h: 32 }
+
+  it('keeps a band along every edge as a grip even where the text pad reaches the frame', () => {
+    expect(textHitAtPoint(tight, tightBox, { x: 100, y: 3 })).toBe(false)
+    expect(textHitAtPoint(tight, tightBox, { x: 100, y: 29 })).toBe(false)
+    expect(textHitAtPoint(tight, tightBox, { x: 4, y: 16 })).toBe(false)
+    expect(textHitAtPoint(tight, tightBox, { x: 100, y: 16 })).toBe(true)
+    expect(textHitAtPoint(tight, tightBox, { x: 12, y: 16 })).toBe(true)
+  })
+
+  it('band width follows the caller (screen px divided by zoom)', () => {
+    expect(textHitAtPoint(tight, tightBox, { x: 100, y: 8 }, 4, 6)).toBe(true)
+    expect(textHitAtPoint(tight, tightBox, { x: 100, y: 6 }, 4, 12)).toBe(false)
+  })
+
+  it('shrinks on a tiny box so its middle half stays text', () => {
+    expect(textHitAtPoint(tight, { w: 300, h: 16 }, { x: 100, y: 8 }, 4, 12)).toBe(true)
+    expect(textHitAtPoint(tight, { w: 300, h: 16 }, { x: 100, y: 3 }, 4, 12)).toBe(false)
+  })
+
+  it('applies to prompt placeholders too', () => {
+    const ph = shape({ placeholder: 'body' }, 0)
+    expect(textHitAtPoint(ph, box, { x: 150, y: 3 })).toBe(false)
+    expect(textHitAtPoint(ph, box, { x: 150, y: 100 })).toBe(true)
+  })
+})

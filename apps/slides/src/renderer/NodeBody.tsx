@@ -22,6 +22,7 @@ import type {
   ArrowEndRender,
   RenderReflection,
 } from '@genoffice/pptx-render'
+import { extrusionFrontFace } from '@genoffice/pptx-render'
 import {
   featheredImage,
   featheredShapeCanvas,
@@ -544,9 +545,18 @@ export const NodeBody = React.memo(function NodeBody({
 
   let geom: React.ReactNode
   if (shape.extrusion) {
-    // scene3d/sp3d extrusion: pre-projected shaded faces in painter order replace the flat geometry
+    // scene3d/sp3d extrusion: pre-projected shaded faces in painter order replace the flat
+    // geometry; the shadow/glow is cast by the silhouette underneath them
+    const front = extrusionFrontFace(shape.extrusion.faces)
     geom = (
       <>
+        {shape.extrusion.shadowPath && front && 'shadowColor' in shadowProps && (
+          <Path
+            data={shape.extrusion.shadowPath}
+            {...(front.front ? fillProps : { fill: normalizeColor(front.color) })}
+            {...shadowProps}
+          />
+        )}
         {shape.extrusion.faces.map((f, i) => (
           <Path
             key={i}
@@ -693,7 +703,7 @@ export const NodeBody = React.memo(function NodeBody({
   // Inner/perspective shadows draw as an offscreen overlay (canvas shadow props can't express them)
   let shapeShadowUnder: React.ReactNode = null
   let shapeShadowOver: React.ReactNode = null
-  if (isOverlayShadow(shape.shadow) && !shape.extrusion && !shape.line) {
+  if (isOverlayShadow(shape.shadow) && (!shape.extrusion || shape.extrusion.flat) && !shape.line) {
     const sg: ShadowGeom =
       shape.fillPathData || shape.pathData
         ? { kind: 'path', data: (shape.fillPathData ?? shape.pathData)! }

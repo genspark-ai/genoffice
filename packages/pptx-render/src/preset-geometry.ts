@@ -1291,6 +1291,42 @@ export function presetPath(
       b.L(t, h).Z()
       return { path: b.d() }
     }
+    case 'curvedDownArrow':
+    case 'curvedUpArrow': {
+      // ECMA-376 curvedDownArrow: two equal half-ellipses (radii wR×h, centres th apart) form
+      // the arch, ending in a down-pointing head at the right; curvedUpArrow is its mirror
+      const up = preset === 'curvedUpArrow'
+      const a1 = Math.min(Math.max(adjust?.adj1 ?? 25000, 0), 100000)
+      const a2 = Math.min(Math.max(adjust?.adj2 ?? 50000, 0), (50000 * w) / ss)
+      const th = (ss * a1) / 100000
+      const aw = (ss * a2) / 100000
+      const wR = w / 2 - (th + aw) / 4
+      if (wR <= 0 || h <= 0) return null
+      const idy = (Math.sqrt(Math.max(4 * wR * wR - th * th, 0)) * h) / (2 * wR)
+      const a3 = Math.min(Math.max(adjust?.adj3 ?? 25000, 0), (100000 * idy) / ss)
+      const ah = (ss * a3) / 100000
+      const dx = (Math.sqrt(Math.max(h * h - ah * ah, 0)) * wR) / h
+      const x3 = wR + th
+      const x5 = wR + dx
+      const x7 = x3 + dx
+      const dh = (aw - th) / 2
+      const x6 = w - aw / 2
+      const y1 = h - ah
+      // Polar angle (from the centre) of the head base on the outer ellipse → parametric angle
+      const polar = Math.atan2(dx, ah)
+      const paramDeg = (Math.atan2(wR * Math.sin(polar), h * Math.cos(polar)) * 180) / Math.PI
+      const Y = (y: number) => (up ? h - y : y)
+      const A = (deg: number) => (up ? -deg : deg)
+      const b = new PathB()
+        .M(x6, Y(h))
+        .L(x5 - dh, Y(y1))
+        .L(x5, Y(y1))
+      b.arc(wR, Y(h), wR, h, A(270 + paramDeg), A(-(90 + paramDeg)))
+      b.L(th, Y(h))
+      b.arc(x3, Y(h), wR, h, A(180), A(90 + paramDeg))
+      b.L(x7 + dh, Y(y1)).Z()
+      return { path: b.d() }
+    }
     case 'curvedRightArrow': {
       const t = ss * frac('adj1', 25000)
       const b = new PathB().M(0, 0)

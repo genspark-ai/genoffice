@@ -101,7 +101,7 @@ describe('applySpacingChain', () => {
     const huge = block(640)
     huge.box = { x0: 72, x1: 300, y0: -1e12, y1: -1e12 }
     applySpacingChain([sectionOf([column(a, huge)])])
-    expect(huge.spacingBeforePt).toBeLessThanOrEqual(1440)
+    expect(huge.spacingBeforePt).toBeLessThanOrEqual(1584)
   })
 
   it('chains the first block of a later section from the previous section bottom', () => {

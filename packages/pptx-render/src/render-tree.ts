@@ -12,7 +12,7 @@
  */
 import type { Fill, Stroke } from '@genoffice/pptx-engine'
 import type { PlacedBox } from './coords'
-import type { ExtrusionFaceRender } from './scene3d'
+import type { ExtrusionRender } from './scene3d'
 
 export type RenderNodeType =
   | 'shape' // vector shape (may contain text)
@@ -328,7 +328,7 @@ export interface ShapeRenderNode extends RenderNodeBase {
   glow?: RenderGlow
   reflection?: RenderReflection
   /** scene3d+sp3d extrusion: pre-projected shaded faces (painter order) replacing the flat geometry */
-  extrusion?: { faces: ExtrusionFaceRender[]; wireframe?: boolean }
+  extrusion?: ExtrusionRender
   text?: RenderTextLayout
 }
 
@@ -432,8 +432,14 @@ export interface ChartLabel {
   color: string
   bold?: boolean
   italic?: boolean
+  /** Chart text typeface (ChartModel.fontFamily); unset = the renderer's Calibri stack */
+  fontFamily?: string
   /** Rotation angle (e.g. -90 for a value-axis title) */
   rotationDeg?: number
+  /** Data-label box (c:dLbls/c:spPr): fill / outline color and the measured text width it wraps */
+  fill?: string
+  stroke?: string
+  w?: number
 }
 
 /** Current chart style (for the Ribbon "Chart Design" display; kind aligns with EditChartOp.kind). */

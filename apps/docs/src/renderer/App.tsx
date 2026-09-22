@@ -265,7 +265,7 @@ import { InkOverlay } from './components/InkOverlay'
 import { collectRevisions, gotoRevision, type TrackChangesStorage } from './editor/revisions'
 import { NavPane } from './components/NavPane'
 import { Ruler } from './components/Ruler'
-import { docBodyFont, docLineFactor, docThemeCss } from './doc-style-css'
+import { docBodyFont, docHasCjk, docLineFactor, docThemeCss } from './doc-style-css'
 import { isDocDirty } from './doc-dirty'
 import {
   EMPTY_HF_VARIANTS,
@@ -307,6 +307,9 @@ const STREAMING_PASS_GAP_MAX_MS = 15_000
 /** after an edit, the pass waits this many times its own last duration (300 ms floor) */
 const EDIT_PASS_DUTY = 3
 const EDIT_PASS_DEBOUNCE_MAX_MS = 2000
+/** a pass re-running for its own late-applied widths / suppression: nobody is
+ *  typing, so it only waits for the previous pass's DOM writes to commit */
+const FOLLOW_UP_PASS_DELAY_MS = 100
 const WORD_COUNT_THROTTLE_MS = 400
 /** consecutive follow-up passes a pass may schedule for itself */
 const MAX_FOLLOW_UP_PASSES = 6
@@ -962,12 +965,21 @@ export function App() {
   // so a value computed in the render pass that introduced new CSS is replaced
   // by a post-commit measure instead of going stale
   const [hfMeasureEpoch, setHfMeasureEpoch] = useState(0)
+  // docCss already carries the parse-time factor: the live override only
+  // exists once the body's CJK-ness differs from what parsing saw. Keying the
+  // commit event on it (not on liveDocCjk) spares the shrink measurers a
+  // second whole-document pass when the first live recompute agrees.
+  const parsedDocCjk = useMemo(() => (doc ? docHasCjk(doc.parsed) : false), [doc])
+  const liveLineFactor =
+    doc && liveDocCjk != null && liveDocCjk !== parsedDocCjk
+      ? docLineFactor(doc.parsed, liveDocCjk)
+      : null
   useEffect(() => {
     setHfMeasureEpoch((e) => e + 1)
     // measurement views that read computed alignment/spacing re-run once the
     // stylesheet is in the DOM (setContent measured against the previous one)
     document.dispatchEvent(new Event(DOC_CSS_COMMITTED_EVENT))
-  }, [docCss, liveDocCjk, themeFonts, themeColors])
+  }, [docCss, liveLineFactor, themeFonts, themeColors])
   const [stats, setStats] = useState<DocStats | null>(null)
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [showTableModal, setShowTableModal] = useState(false)
@@ -3172,7 +3184,7 @@ export function App() {
       retrigger.push(why)
       if (followUps >= MAX_FOLLOW_UP_PASSES) return
       selfScheduled = true
-      onUpdate()
+      onUpdate(null, null, true)
     }
     let secWidthSig = ''
     let charSpaceSig = ''
@@ -4456,7 +4468,11 @@ export function App() {
       }
       locate()
     }
-    const onUpdate = (fastIndex: number | null = null, dirtyIndex: number | null = fastIndex) => {
+    const onUpdate = (
+      fastIndex: number | null = null,
+      dirtyIndex: number | null = fastIndex,
+      isFollowUp = false,
+    ) => {
       if (fastIndex === null) fastEdits = null
       else fastEdits?.add(fastIndex)
       dirtyFrom = dirtyIndex === null || dirtyFrom === null ? null : Math.min(dirtyFrom, dirtyIndex)
@@ -4478,10 +4494,13 @@ export function App() {
       if (timer) window.clearTimeout(timer)
       // a whole-document pass after every pause blocks typing on long
       // documents: wait longer when the last pass was slow (Word paginates in
-      // the background too); short documents keep the 300 ms feel
+      // the background too); short documents keep the 300 ms feel. A typed
+      // edit arriving after a follow-up re-arms the timer with the edit delay.
       timer = window.setTimeout(
         remeasure,
-        Math.min(EDIT_PASS_DEBOUNCE_MAX_MS, Math.max(300, lastPassMs * EDIT_PASS_DUTY)),
+        isFollowUp
+          ? FOLLOW_UP_PASS_DELAY_MS
+          : Math.min(EDIT_PASS_DEBOUNCE_MAX_MS, Math.max(300, lastPassMs * EDIT_PASS_DUTY)),
       )
     }
     remeasure()
@@ -5949,8 +5968,8 @@ export function App() {
     >
       <ToastHost />
       {docCss && <style data-doc-css="">{docCss}</style>}
-      {doc && liveDocCjk != null && (
-        <style data-doc-css="">{`.doc-page { --doc-line-factor:${docLineFactor(doc.parsed, liveDocCjk)} }`}</style>
+      {liveLineFactor != null && (
+        <style data-doc-css="">{`.doc-page { --doc-line-factor:${liveLineFactor} }`}</style>
       )}
       {doc && (gridPitchPt ?? mixedGridPitchPt) != null && (
         // typed w:docGrid: line-height round(up) expressions snap to this pitch
@@ -6098,7 +6117,7 @@ export function App() {
             {doc && <PasteOptionsChip editor={editor} />}
             <div className="editor-area">
               <main
-                className={imageDragOver ? 'editor-scroll image-drop-target' : 'editor-scroll'}
+                className={`editor-scroll${imageDragOver ? ' image-drop-target' : ''}${doc ? '' : ' start-screen-host'}`}
                 ref={scrollContainerRef}
                 onScroll={(e) => {
                   scrollPosRef.current = {

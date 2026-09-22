@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { SettledParagraphCache, noteFloatTransaction } from '../src/renderer/editor/settled-measure'
+import {
+  MAX_PARA_ROUNDS,
+  SettledParagraphCache,
+  noteFloatTransaction,
+} from '../src/renderer/editor/settled-measure'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { Editor } from '@tiptap/core'
@@ -51,6 +55,26 @@ describe('SettledParagraphCache', () => {
     expect(pass()).toEqual([2])
     expect(pass()).toEqual([2])
     expect(fn).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps the last answer of a paragraph that never repeats itself', () => {
+    const el = document.createElement('p')
+    const view = fakeView(el)
+    const cache = new SettledParagraphCache<number[]>(shiftAll)
+    let n = 0
+    const fn = vi.fn(() => [++n])
+    const pass = () => {
+      cache.beginPass(view)
+      return cache.measure(view, node, 1, fn)
+    }
+    for (let i = 1; i <= MAX_PARA_ROUNDS; i++) expect(pass()).toEqual([i])
+    expect(pass()).toEqual([MAX_PARA_ROUNDS])
+    expect(pass()).toEqual([MAX_PARA_ROUNDS])
+    expect(fn).toHaveBeenCalledTimes(MAX_PARA_ROUNDS)
+    // a layout change (box) measures afresh and the count starts over
+    cache.clear()
+    expect(pass()).toEqual([MAX_PARA_ROUNDS + 1])
+    expect(pass()).toEqual([MAX_PARA_ROUNDS + 2])
   })
 
   it('invalidates on clear(), a different node, a box change or an unmeasurable pass', () => {

@@ -148,7 +148,7 @@ function parseCommandInner(p: Parser): Piece | null {
       // \co arrives from the file: a huge count fills each row's padding
       // loop (while cells.length < cols) and writes an invalid m:count.
       const rawCols = parseInt(argOf('co') ?? '1', 10)
-      const cols = Number.isFinite(rawCols) ? Math.min(Math.max(1, rawCols), 16) : 1
+      const cols = Number.isFinite(rawCols) ? Math.min(Math.max(1, rawCols), 64) : 1
       const jc = has('al') ? 'left' : has('ar') ? 'right' : 'center'
       const rows: string[] = []
       const lines: string[] = []
