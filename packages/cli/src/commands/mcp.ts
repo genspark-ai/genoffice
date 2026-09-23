@@ -40,6 +40,18 @@ export const mcpCommand: CommandDef = {
         reason: 'invalid_argument',
       })
     }
+    const tokenFlag = flagString(args, 'token')
+    // `--token ""` — e.g. `--token "$MY_TOKEN"` with the variable unset —
+    // would reach authorized() as "no auth configured": the operator believes
+    // the lock is on while every request passes. Fail closed instead.
+    if (tokenFlag !== undefined && tokenFlag.trim() === '') {
+      throw new CliError(
+        EXIT.usage,
+        '--token needs a non-empty value (omit the flag, or set GENOFFICE_MCP_TOKEN)',
+        undefined,
+        { reason: 'invalid_argument' },
+      )
+    }
     const { serveHttp } = await import('../mcp/http')
     await serveHttp({
       cwd: ctx.cwd,
@@ -47,7 +59,7 @@ export const mcpCommand: CommandDef = {
       log: ctx.log,
       port,
       host: flagString(args, 'host'),
-      token: flagString(args, 'token') ?? (ctx.env.GENOFFICE_MCP_TOKEN?.trim() || undefined),
+      token: tokenFlag ?? (ctx.env.GENOFFICE_MCP_TOKEN?.trim() || undefined),
     })
     return { summary: 'mcp server stopped' }
   },

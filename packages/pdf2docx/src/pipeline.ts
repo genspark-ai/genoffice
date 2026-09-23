@@ -113,7 +113,7 @@ function isNearWhiteHex(hex: string): boolean {
 }
 
 /** authored visible-ink boxes: chars, images, and non-white opaque path fills */
-function authoredInkBoxes(extracted: ExtractedPage): Rect[] {
+export function authoredInkBoxes(extracted: ExtractedPage): Rect[] {
   const boxes: Rect[] = []
   for (const c of extracted.chars) {
     if (!c.isGenerated && !c.invisible && c.text.trim() !== '') boxes.push(c.box)
@@ -125,14 +125,20 @@ function authoredInkBoxes(extracted: ExtractedPage): Rect[] {
     if (!p.filled || (p.fillAlpha ?? 255) < 128 || isNearWhiteHex(p.fillColor)) continue
     for (const sub of p.subpaths) {
       if (sub.points.length < 3) continue
-      const xs = sub.points.map((pt) => pt.x)
-      const ys = sub.points.map((pt) => pt.y)
-      boxes.push({
-        x0: Math.min(...xs),
-        y0: Math.min(...ys),
-        x1: Math.max(...xs),
-        y1: Math.max(...ys),
-      })
+      // a single path can carry 100k+ points (maps, CAD, chart exports);
+      // Math.min(...points) would spread them as arguments and throw past
+      // the engine's argument-count limit
+      let x0 = Infinity
+      let y0 = Infinity
+      let x1 = -Infinity
+      let y1 = -Infinity
+      for (const pt of sub.points) {
+        if (pt.x < x0) x0 = pt.x
+        if (pt.x > x1) x1 = pt.x
+        if (pt.y < y0) y0 = pt.y
+        if (pt.y > y1) y1 = pt.y
+      }
+      boxes.push({ x0, y0, x1, y1 })
     }
   }
   return boxes

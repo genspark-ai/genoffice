@@ -30,6 +30,21 @@ describe('mcp http hardening', () => {
     await handle.close()
   })
 
+  it('fails closed on an empty --token value instead of serving unauthenticated', async () => {
+    const { mcpCommand } = await import('../src/commands/mcp')
+    const { parseArgs } = await import('../src/args')
+    await expect(
+      mcpCommand.run(
+        parseArgs(['mcp', 'serve', '--http', '8080', '--token', '']),
+        {
+          cwd: process.cwd(),
+          env: {},
+          log: () => {},
+        } as Parameters<typeof mcpCommand.run>[1],
+      ),
+    ).rejects.toThrow(/--token needs a non-empty value/)
+  })
+
   it('ignores poisoned forwarded host/proto by default', async () => {
     const res = await fetch(`${handle.url}/files/report.txt`, {
       method: 'PUT',
