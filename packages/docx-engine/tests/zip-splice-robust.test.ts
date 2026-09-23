@@ -97,6 +97,31 @@ describe('zip splice robustness', () => {
     )
   })
 
+  it('rejects entries whose declared data lies outside the archive', async () => {
+    const valid = writeZip([storeEntry('word/document.xml', Buffer.from('<w:document/>'))])
+    const CENTRAL_SIG = Buffer.from([0x50, 0x4b, 0x01, 0x02])
+
+    // readers allocate from the declared csize before touching the file; an
+    // >int32 length additionally aborts Node outright inside fs.read
+    const oversized = Buffer.from(valid)
+    const c1 = oversized.indexOf(CENTRAL_SIG)
+    oversized.writeUInt32LE(0xffffff00, c1 + 20)
+    await expect(readZipEntries(bufferSource(oversized))).rejects.toThrow(
+      /outside the .*-byte archive/,
+    )
+
+    // so must a csize that merely overshoots the end of the file
+    const overhang = Buffer.from(valid)
+    const c2 = overhang.indexOf(CENTRAL_SIG)
+    overhang.writeUInt32LE(overhang.length, c2 + 20)
+    await expect(readZipEntries(bufferSource(overhang))).rejects.toThrow(
+      /outside the .*-byte archive/,
+    )
+
+    // the unmodified archive still parses
+    expect((await readZipEntries(bufferSource(Buffer.from(valid)))).length).toBe(1)
+  })
+
   it('closes materialize sources on success and lets the caller use the result', async () => {
     const hash = 'c'.repeat(64)
     const placeholder = Buffer.from(lazyMediaPlaceholder(hash))

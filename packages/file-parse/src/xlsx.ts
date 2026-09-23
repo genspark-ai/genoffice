@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { assertZipWithinLimits } from '@genoffice/docx-engine'
 import { resolveTarget } from './opc'
 import { XMLParser } from 'fast-xml-parser'
 import {
@@ -136,6 +137,7 @@ export const MAX_XLSX_COLS = 16_384
 /** extract sheet text from an xlsx: one "# SheetName" section per sheet, cells joined with " | " */
 export async function xlsxToText(bytes: Uint8Array): Promise<string> {
   const zip = await JSZip.loadAsync(bytes)
+  assertZipWithinLimits(zip)
   const workbookXml = await zipText(zip, 'xl/workbook.xml')
   if (!workbookXml) throw new Error('Invalid xlsx: missing xl/workbook.xml')
 
