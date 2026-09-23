@@ -3,7 +3,7 @@ export { deobfuscateOdttf, isSfnt, parseFontTable, readEmbeddedFonts } from './f
 export { decodeEntities } from './parse-xml-text'
 export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
 export { parseDocx, styleRunFormat, type ParseExtras, type ParseOptions } from './parse'
-export { assertZipWithinLimits, DOCX_ZIP_LIMITS } from './zip-load'
+export { assertZipInflatesWithinLimits, assertZipWithinLimits, DOCX_ZIP_LIMITS } from './zip-load'
 export { LAZY_MEDIA_SCHEME, isLazyMediaPart, lazyMediaUrl, parseLazyMediaUrl } from './lazy-media'
 export { setAltChunkHtmlConverter, type AltChunkHtmlConverter } from './alt-chunk'
 export { tocLevelOf } from './parse-fields'
