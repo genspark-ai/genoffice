@@ -21,6 +21,7 @@ import type { ChartPresetDef, IconDef, SmartArtDef } from '../insert-presets'
 import type { ZoomMode } from '../zoom-actions'
 import type { SlideThemePreset } from '../themes'
 import type { ChartStyleInfo } from '@genoffice/pptx-render'
+import { BUILTIN_FONT_FAMILIES } from '@genoffice/ui'
 import type { ContextTabRequest } from './context-tabs'
 import { useI18n } from '../i18n/locale'
 import { layoutLabel } from '../layout-names'
@@ -44,41 +45,9 @@ export type FormatCmd =
 /** View modes: normal editing / outline / slide sorter / reading view. */
 export type SlidesViewMode = 'normal' | 'outline' | 'sorter' | 'reading'
 
-/** Font dropdown candidates (Western + common CJK/Traditional; the current font is inserted first when not in the list) */
-export const FONT_FAMILIES = [
-  'Calibri',
-  'Calibri Light',
-  'Arial',
-  'Times New Roman',
-  'Cambria',
-  'Georgia',
-  'Verdana',
-  'Tahoma',
-  'Courier New',
-  'Impact',
-  '等线',
-  '等线 Light',
-  '宋体',
-  '黑体',
-  '微软雅黑',
-  '楷体',
-  '仿宋',
-  'PingFang SC',
-  'Noto Sans SC',
-  'Noto Serif SC',
-  'Yu Gothic',
-  'Yu Mincho',
-  'Meiryo',
-  'MS Mincho',
-  'Hiragino Sans',
-  'Noto Sans JP',
-  'Malgun Gothic',
-  'Batang',
-  'Apple SD Gothic Neo',
-  'Microsoft JhengHei',
-  'PMingLiU',
-  'PingFang TC',
-]
+/** Font dropdown candidates: the suite-wide list shared with docs and sheets
+ * (Windows + macOS + Noto names; the current font is inserted first when not in the list) */
+export const FONT_FAMILIES = BUILTIN_FONT_FAMILIES
 
 /** Font size dropdown candidates (pt): the same ladder grow/shrink font walks */
 export { FONT_SIZES } from '@genoffice/pptx-ops/font-size'
