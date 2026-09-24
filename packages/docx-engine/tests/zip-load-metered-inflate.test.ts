@@ -111,6 +111,33 @@ describe('assertZipInflatesWithinLimits', () => {
   })
 })
 
+describe('the gate runs where Blob#stream is missing', () => {
+  it('inflates without Blob.prototype.stream', async () => {
+    // jsdom — the environment apps/docs' tests run in — ships a Blob with no
+    // stream(). Inflating through it failed 389 docs tests in CI on #781 while
+    // every Node-environment suite passed, so the gate must not depend on it.
+    const proto = Blob.prototype as unknown as { stream?: () => unknown; [k: string]: unknown }
+    const descriptor = Object.getOwnPropertyDescriptor(proto, 'stream')
+    Object.defineProperty(proto, 'stream', { value: undefined, configurable: true, writable: true })
+    try {
+      const truth = Buffer.from('<?xml version="1.0"?><w:document/>')
+      const payload = deflateRawSync(truth)
+      const honest = writeZip([
+        { meta: entry('word/document.xml', payload, truth.length), data: payload },
+      ])
+      await expect(assertZipInflatesWithinLimits(honest, LIMITS)).resolves.toBeUndefined()
+
+      // and it still catches a lie through the same path
+      await expect(
+        assertZipInflatesWithinLimits(onePartArchive('word/document.xml', 64 * MB, 300), LIMITS),
+      ).rejects.toThrow(/inflates past/)
+    } finally {
+      if (descriptor) Object.defineProperty(proto, 'stream', descriptor)
+      else delete proto.stream
+    }
+  })
+})
+
 describe('zip-load stays bundleable into the renderer', () => {
   it('imports no Node builtins and nothing from zip-splice', () => {
     // The Docs renderer bundles zip-load through parseDocx. zip-splice is built
