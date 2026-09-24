@@ -511,4 +511,97 @@ export const FONT_CATALOG: CatalogFamily[] = [
       },
     ],
   },
+  // Serif coverage for every CJK script (the Songti/Mincho/Myeongjo class), so
+  // body text can pick a serif while headings keep a sans. Files pinned from the
+  // Google Fonts css2 pipeline (full static TTFs), same source as the entries above.
+  {
+    family: 'Noto Serif SC',
+    script: 'sc',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifSC-regular.ttf',
+        sha256: '968be826d702638d29546002a5e24d8c55036ab441bbc09db9e22aee90d73606',
+        bytes: 14780348,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifSC-bold.ttf',
+        sha256: '9868e5845782ccce226e0941b7a5d1fea3b2520f7e59e6e62e89e02f132eb0ab',
+        bytes: 14779260,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif TC',
+    script: 'tc',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifTC-regular.ttf',
+        sha256: '5bd260cf7ec3ab0f45285ff620c6888d10a915b826331ee3d4f6dad49950c090',
+        bytes: 9929552,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifTC-bold.ttf',
+        sha256: '3ecda7da01528e80f1aca90d750d656aa65a52c4eacb473550ce54c3f4d23ade',
+        bytes: 9932316,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif JP',
+    script: 'ja',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifJP-regular.ttf',
+        sha256: '369b50fee252106b6a73574c7703028b79a78e8aeb0cc4d59c4d9d1b3f9b9e57',
+        bytes: 7477960,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifJP-bold.ttf',
+        sha256: '1cbf95fb7f021b919b4bf43ba67479bc1b25094e1a567929e92bf4b7797ef102',
+        bytes: 7472676,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif KR',
+    script: 'ko',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifKR-regular.ttf',
+        sha256: 'b19654a4161c3623ba30ca64d3eadf5bb6a92b1dc13d332c60cbb18231bf117a',
+        bytes: 14045780,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifKR-bold.ttf',
+        sha256: '9a6dbb18ee4c88b8f1df0bf892baca9af901ef5a3c82de210f2413cc4fed08f9',
+        bytes: 14049420,
+      },
+    ],
+  },
+  {
+    family: 'Nanum Myeongjo',
+    script: 'ko',
+    files: [
+      {
+        style: 'regular',
+        file: 'NanumMyeongjo-regular.ttf',
+        sha256: 'd3109373f86b59a4b36c542b38d0c095cd45167c1aa51540f4b409e257b42e6f',
+        bytes: 3056312,
+      },
+      {
+        style: 'bold',
+        file: 'NanumMyeongjo-bold.ttf',
+        sha256: 'c6c9d7ddba9d339867ecd9d65f67e79386a91b1d1582b5adc43eebc90557de80',
+        bytes: 3072528,
+      },
+    ],
+  },
 ]
