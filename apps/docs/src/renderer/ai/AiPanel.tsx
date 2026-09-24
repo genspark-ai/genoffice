@@ -7,7 +7,6 @@ import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
-import { TABLE_TRAILING_SKIP } from '../editor/extensions'
 import { countWords, findNumId, type NumIds } from './protocol'
 import { DOC_NAV_SCHEME, navigateToBlock, parseDocNavHref } from './doc-nav'
 import {
@@ -42,6 +41,9 @@ import { waitForFullContent } from '../phased-content'
 import { currentDocGeneration } from '../file-actions'
 import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
+import { applyDocument } from './rollback-doc'
+import { AiVersionList } from './AiVersionList'
+import { clearRollback, markRolledBack, pushVersion, type DocVersion } from './version-history'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
@@ -100,8 +102,12 @@ interface ChatEntry {
   loginRequired?: boolean
   /** tool executions performed during this assistant turn */
   tools?: ToolActivity[]
-  /** document state before this turn's first edit — rendered as an inline roll-back action */
-  snapshot?: PmNode
+  /**
+   * Document state before this turn's first edit — one rollback point per AI
+   * turn. The state itself lives in `versions` (indexed by this id) so a roll
+   * back can be undone and so the panel can list the whole evolution (#293).
+   */
+  versionId?: number
   /** attachments consumed from the composer by this user message (read-only echo chips) */
   attachments?: AttachmentMeta[]
   /** the selection this user message targeted, frozen at send */
@@ -353,6 +359,15 @@ export function AiPanel({
   /** a send waiting on a phased open's tail; Stop / New chat abort it before it runs */
   const pendingSendRef = useRef<{ aborted: boolean } | null>(null)
   const [chat, setChat] = useState<ChatEntry[]>([])
+  /**
+   * The document's evolution, oldest first: one entry per AI turn that edited it.
+   * Drives both the per-message roll-back action and the versions list (#293),
+   * and it is the single source of truth for what a roll back can still reach.
+   */
+  const [versions, setVersions] = useState<DocVersion[]>([])
+  /** same list for the roll-back handlers, which need to read before they write */
+  const versionsRef = useRef<DocVersion[]>([])
+  versionsRef.current = versions
   /** a streamed write stopped early: the draft stays in the document until the user keeps or discards it */
   const [activePartial, setActivePartial] = useState<{ blocks: number } | null>(null)
   const partialResolverRef = useRef<((keep: boolean) => void) | null>(null)
@@ -543,9 +558,10 @@ export function AiPanel({
   }
   /** instruction of the in-flight run */
   const instructionRef = useRef('')
-  /** document state before the run's first edit — attached to the turn's final
-      segment at run end (mid-turn segments never show the action toolbar) */
-  const runSnapshotRef = useRef<PmNode | null>(null)
+  /** id of the version this run's first edit registered, if it made one */
+  const runVersionIdRef = useRef<number | null>(null)
+  /** monotonic version ids: never reused, so a version stays addressable */
+  const nextVersionIdRef = useRef(1)
   /** last sent instruction, for one-click retry */
   const lastInstructionRef = useRef('')
   /** Tool activity of the whole run (with args/output, accumulated across turns) — for full
@@ -782,8 +798,20 @@ export function AiPanel({
           }))
         },
         onToolExecuted: ({ call, execution, snapshotBefore }) => {
-          // The run's first pre-edit state wins so one roll-back undoes the whole run
-          if (snapshotBefore && !runSnapshotRef.current) runSnapshotRef.current = snapshotBefore
+          // One version per run: the loop only reports `snapshotBefore` for the
+          // run's first mutating tool, so a single roll back undoes the whole run.
+          if (snapshotBefore && runVersionIdRef.current === null) {
+            const id = nextVersionIdRef.current++
+            runVersionIdRef.current = id
+            setVersions((prev) =>
+              pushVersion(prev, {
+                id,
+                label: lastInstructionRef.current.trim().slice(0, 40),
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                doc: snapshotBefore,
+              }),
+            )
+          }
           if (execution.mutated) {
             // tracking off: accept immediately (same tick, so the yellow never paints);
             // tracking on: revisions stay pending, handled in the Review tab
@@ -835,7 +863,7 @@ export function AiPanel({
             text: finalText || (last.tools?.length ? last.text : tModule('aiNoReply')),
             // A stop mid-tool can leave a running placeholder behind — drop it
             tools: last.tools?.filter((tl) => !tl.running),
-            snapshot: runSnapshotRef.current ?? undefined,
+            versionId: runVersionIdRef.current ?? undefined,
           }))
           setBusy(false)
           // App listens: a run that generated content into a never-saved document
@@ -857,7 +885,7 @@ export function AiPanel({
                 streaming: false,
                 error,
                 tools: last.tools?.filter((tl) => !tl.running),
-                snapshot: runSnapshotRef.current ?? undefined,
+                versionId: runVersionIdRef.current ?? undefined,
               }
             }
             return next
@@ -1027,7 +1055,7 @@ export function AiPanel({
     instructionRef.current = instruction
     lastInstructionRef.current = instruction
     runToolsRef.current = []
-    runSnapshotRef.current = null
+    runVersionIdRef.current = null
     stickToBottomRef.current = true
     setChat((prev) => [
       ...prev,
@@ -1118,6 +1146,9 @@ export function AiPanel({
     // Restored history is painted above the live turn: without this the
     // previous conversation survives "New chat" on screen (#195).
     setHistoricChat([])
+    // The versions list is the record of *this* conversation's edits: a new chat
+    // starts a new record. The document itself is untouched.
+    setVersions([])
     // Unsent composer attachments would otherwise ride into the next chat's
     // file context (availableAttachments merges sent + live). The typed
     // draft itself is kept — only staged files are dropped.
@@ -1190,17 +1221,26 @@ export function AiPanel({
     if (!next) acceptChanges()
   }
 
-  const rollback = (entryIdx: number, snapshot: PmNode) => {
-    editor
-      .chain()
-      .setMeta(TABLE_TRAILING_SKIP, true)
-      .setContent(snapshot as never)
-      .run()
-    // The document rewound to before this turn, so this and every later
-    // rollback point now describe discarded futures
-    setChat((prev) =>
-      prev.map((e, i) => (i >= entryIdx && e.snapshot ? { ...e, snapshot: undefined } : e)),
-    )
+  /** Rewind the document to what it was before this turn, reversibly. */
+  const rollback = (id: number) => {
+    const version = versionsRef.current.find((v) => v.id === id)
+    if (!version || version.discarded || version.rolledBack || busy) return
+    // Captured before the swap: this is what "undo roll back" restores.
+    const before = editor.getJSON() as PmNode
+    // No highlight bookkeeping here: `aiChanged` lives on the document nodes, so
+    // restoring the snapshot *is* resetting the review state to that moment.
+    // Clearing on top of it would drop the pending revisions of earlier turns,
+    // which a roll back of this turn deliberately keeps.
+    applyDocument(editor, version.doc)
+    setVersions((prev) => markRolledBack(prev, id, before))
+  }
+
+  /** Put the pre-roll-back document back, and re-arm every version it voided. */
+  const undoRollback = (id: number) => {
+    const version = versionsRef.current.find((v) => v.id === id)
+    if (!version?.rolledBackFrom || busy) return
+    applyDocument(editor, version.rolledBackFrom)
+    setVersions((prev) => clearRollback(prev, id))
   }
 
   const resizeCleanupRef = useRef<(() => void) | null>(null)
@@ -1375,12 +1415,17 @@ export function AiPanel({
           // (mid-turn segments have a following assistant entry; the live turn ends when !busy)
           const nextEntry = chat[i + 1]
           const turnEnded = nextEntry ? nextEntry.role === 'user' : !busy
+          // the version still reachable from this turn: a version a later roll
+          // back discarded is listed, but it can no longer be restored to
+          const version =
+            entry.versionId != null ? versions.find((v) => v.id === entry.versionId) : undefined
+          const restorable = version && !version.discarded ? version : undefined
           const showToolbar =
             entry.role === 'assistant' &&
             !entry.streaming &&
             turnEnded &&
             // edits-only turns have no text but still carry the rollback point
-            !!(entry.text || entry.error || entry.snapshot)
+            !!(entry.text || entry.error || restorable)
           return (
             <div
               key={i}
@@ -1470,14 +1515,19 @@ export function AiPanel({
                       </svg>
                     </button>
                   )}
-                  {entry.snapshot && (
+                  {restorable && (
                     <>
                       {/* hairline between reply actions (icons) and the document action (icon+label);
                           CSS shows it only when an icon button actually precedes it */}
                       <span className="ai-rollback-sep" aria-hidden />
                       <RollbackButton
                         disabled={busy}
-                        onClick={() => rollback(i, entry.snapshot!)}
+                        undo={restorable.rolledBack}
+                        onClick={() =>
+                          restorable.rolledBack
+                            ? undoRollback(restorable.id)
+                            : rollback(restorable.id)
+                        }
                       />
                     </>
                   )}
@@ -1492,6 +1542,8 @@ export function AiPanel({
           )
         })}
       </div>
+
+      <AiVersionList versions={versions} busy={busy} onRollback={rollback} onUndo={undoRollback} />
 
       <div className="ai-composer">
         {attachNotice && <div className="ai-attach-notice">{attachNotice}</div>}
@@ -1730,8 +1782,17 @@ function StepIcon({ status }: { status: 'running' | 'done' | 'error' }) {
   )
 }
 
-/** Quiet roll-back action in the message toolbar: restores the document to before the run's edits */
-function RollbackButton({ disabled, onClick }: { disabled: boolean; onClick: () => void }) {
+/** Quiet roll-back action in the message toolbar: restores the document to before the run's
+ *  edits, and turns into its own undo once it has been used. */
+function RollbackButton({
+  disabled,
+  undo,
+  onClick,
+}: {
+  disabled: boolean
+  undo?: boolean
+  onClick: () => void
+}) {
   const { t: tr } = useI18n()
   return (
     <button type="button" className="ai-rollback-btn" disabled={disabled} onClick={onClick}>
@@ -1750,7 +1811,7 @@ function RollbackButton({ disabled, onClick }: { disabled: boolean; onClick: () 
         <path d="M5.91026 4L2.5 7.14791L5.91026 10.8205" />
         <path d="M3.96154 7.41028H15.1636C18.5169 7.41028 21.3646 10.1484 21.4953 13.5C21.6334 17.0416 18.707 20.0769 15.1636 20.0769H6.88384" />
       </svg>
-      {tr('aiRollback')}
+      {undo ? tr('aiRollbackUndo') : tr('aiRollback')}
     </button>
   )
 }

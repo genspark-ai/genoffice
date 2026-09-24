@@ -7247,6 +7247,95 @@ body.docs-crop-active
   cursor: default;
 }
 
+/* Versions footer: one row per AI turn that edited the document (same shape as
+   the Markdown / HTML snapshot footers). Scrolls so a long session stays small. */
+.ai-versions {
+  border-top: 1px solid var(--border);
+  padding: 8px 14px 10px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.ai-versions-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.ai-version-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border-radius: 6px;
+}
+
+.ai-version-row:hover {
+  background: var(--hover);
+}
+
+/* The version the document currently sits on, and the futures a roll back to an
+   earlier one discarded: kept in the list as part of the record, dimmed, and
+   without a restore button until the roll back is undone. */
+.ai-version-rolled-back {
+  background: var(--hover);
+}
+
+.ai-version-discarded .ai-version-label {
+  color: var(--text-dim);
+}
+
+.ai-version-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text);
+  min-width: 0;
+}
+
+.ai-version-label > :last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-version-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-version-rollback {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--word-blue);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.ai-version-rollback:hover:not(:disabled) {
+  background: var(--active-bg);
+}
+
+.ai-version-rollback:disabled {
+  color: var(--text-dim);
+  cursor: default;
+  background: none;
+}
+
 .ai-msg-tool-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--docs-focus-ring-blue);

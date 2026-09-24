@@ -84,6 +84,7 @@ export const de = {
   aiRegenerateTitle: 'Neu generieren',
   aiSnapshotsTitle: 'Versionsschnappschüsse',
   aiRollback: 'Zurücksetzen',
+  aiRollbackUndo: 'Zurücksetzen rückgängig machen',
   aiScopeSelected: '{count} Absatz/Absätze ausgewählt',
   aiScopeEmptyDoc: 'Leeres Dokument',
   aiScopeCursor: 'An der Cursorposition',

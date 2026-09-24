@@ -84,6 +84,7 @@ export const pt = {
   aiRegenerateTitle: 'Gerar novamente',
   aiSnapshotsTitle: 'Instantâneos de versão',
   aiRollback: 'Reverter',
+  aiRollbackUndo: 'Desfazer a reversão',
   aiScopeSelected: '{count} parágrafo(s) selecionado(s)',
   aiScopeEmptyDoc: 'Documento em branco',
   aiScopeCursor: 'No cursor',

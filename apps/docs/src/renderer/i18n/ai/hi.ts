@@ -83,6 +83,7 @@ export const hi = {
   aiRegenerateTitle: 'फिर से जनरेट करें',
   aiSnapshotsTitle: 'संस्करण स्नैपशॉट',
   aiRollback: 'रोलबैक',
+  aiRollbackUndo: 'रोलबैक पूर्ववत करें',
   aiScopeSelected: '{count} अनुच्छेद चयनित',
   aiScopeEmptyDoc: 'खाली दस्तावेज़',
   aiScopeCursor: 'कर्सर पर',

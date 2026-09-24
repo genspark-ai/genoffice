@@ -85,6 +85,7 @@ export const fr = {
   aiRegenerateTitle: 'Régénérer',
   aiSnapshotsTitle: 'Instantanés de version',
   aiRollback: 'Restaurer',
+  aiRollbackUndo: 'Annuler la restauration',
   aiScopeSelected: '{count} paragraphe(s) sélectionné(s)',
   aiScopeEmptyDoc: 'Document vide',
   aiScopeCursor: 'Au curseur',

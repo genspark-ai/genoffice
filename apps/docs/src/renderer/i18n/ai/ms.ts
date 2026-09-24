@@ -83,6 +83,7 @@ export const ms = {
   aiRegenerateTitle: 'Jana semula',
   aiSnapshotsTitle: 'Snapshot versi',
   aiRollback: 'Kembalikan',
+  aiRollbackUndo: 'Batalkan pengembalian',
   aiScopeSelected: '{count} perenggan dipilih',
   aiScopeEmptyDoc: 'Dokumen kosong',
   aiScopeCursor: 'Pada kursor',

@@ -83,6 +83,7 @@ export const ru = {
   aiRegenerateTitle: 'Создать заново',
   aiSnapshotsTitle: 'Снимки версий',
   aiRollback: 'Откатить',
+  aiRollbackUndo: 'Отменить откат',
   aiScopeSelected: 'Выделено абзацев: {count}',
   aiScopeEmptyDoc: 'Пустой документ',
   aiScopeCursor: 'У курсора',

@@ -80,6 +80,7 @@ export const zh = {
   aiRegenerateTitle: '重新生成',
   aiSnapshotsTitle: '版本快照',
   aiRollback: '回滚',
+  aiRollbackUndo: '撤销回滚',
   aiScopeSelected: '已选中 {count} 段',
   aiScopeEmptyDoc: '空白文档',
   aiScopeCursor: '在光标处',

@@ -81,6 +81,7 @@ export const ar = {
   aiRegenerateTitle: 'إعادة الإنشاء',
   aiSnapshotsTitle: 'لقطات الإصدارات',
   aiRollback: 'استرجاع',
+  aiRollbackUndo: 'تراجع عن الاسترجاع',
   aiScopeSelected: 'تم تحديد {count} فقرة',
   aiScopeEmptyDoc: 'مستند فارغ',
   aiScopeCursor: 'عند المؤشر',

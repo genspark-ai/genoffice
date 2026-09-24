@@ -83,6 +83,7 @@ export const cs = {
   aiRegenerateTitle: 'Vygenerovat znovu',
   aiSnapshotsTitle: 'Snímky',
   aiRollback: 'Vrátit zpět',
+  aiRollbackUndo: 'Zrušit vrácení zpět',
   aiScopeSelected: 'Vybráno odstavců: {count}',
   aiScopeEmptyDoc: 'Prázdný dokument',
   aiScopeCursor: 'Na pozici kurzoru',
