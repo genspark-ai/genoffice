@@ -108,6 +108,7 @@ import UniverPresetSheetsTableEnUS from '@univerjs/preset-sheets-table/locales/e
 import '@univerjs/preset-sheets-table/lib/index.css'
 import { greenTheme } from '@univerjs/themes'
 import { createUniver } from './create-univer'
+import { setUniverAPI } from './scripting/script-api-access'
 
 import {
   AgentLoop,
@@ -1581,6 +1582,9 @@ export function App(): React.JSX.Element {
     installFilterRangeOutlineSuppression(runtime)
     loadSnapshotIntoUniver(runtime, initialSnapshot, 'new-workbook', 'Untitled')
     univerRef.current = runtime
+    // the scripting sandbox runs in a worker that reaches the grid only through
+    // this facade handle (issue #815)
+    setUniverAPI(runtime.univerAPI)
     // a throwing construction must not poison the injector's depth counter
     installInjectorResolutionGuard(runtime)
     // find-bar reveals share scrollToCell's broken freeze offset (r135)

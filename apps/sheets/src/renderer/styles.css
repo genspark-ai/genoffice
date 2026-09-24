@@ -5633,3 +5633,140 @@ textarea:focus {
 .menu-select-drop .menu-option-icon:hover {
   background: transparent;
 }
+
+/* ── Script editor (issue #815) ──────────────────────────────────────────
+   Two panes: the script library and the editor, with the run output pinned
+   under the code. Sized to a desktop window; the code area is the only part
+   that grows. */
+.script-editor-dialog {
+  display: grid;
+  gap: 10px;
+  width: min(92vw, 900px);
+  height: min(86vh, 640px);
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--sheets-shadow-float, 0 12px 32px rgba(0, 0, 0, 0.24));
+  grid-template-rows: auto 1fr auto;
+}
+
+.script-editor-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.script-editor-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.script-editor-body {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  min-height: 0;
+}
+
+.script-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.script-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.script-list-item {
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.script-list-item:hover {
+  background: var(--hover);
+}
+
+.script-list-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.script-main {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: 6px;
+  min-height: 0;
+}
+
+.script-name-input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.script-code {
+  min-height: 180px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  resize: none;
+  tab-size: 2;
+}
+
+.script-log-head {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.script-log {
+  height: 120px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.script-log-line + .script-log-line {
+  margin-top: 2px;
+}
+
+.dialog-actions-spacer {
+  flex: 1;
+}

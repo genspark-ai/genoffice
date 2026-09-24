@@ -35,6 +35,7 @@ import { GoToDialog } from './GoToDialog'
 import { COLOR_SCHEMES, FONT_SCHEMES, THEME_PRESETS } from './themes'
 import { useI18n, type StringKey } from './i18n/locale'
 import { NameManagerDialog, type DefinedNameAction, type DefinedNameRow } from './NameManagerDialog'
+import { ScriptEditorDialog } from './ScriptEditorDialog'
 import { categoryOptionForPattern, numberFormatCategories } from './number-format'
 import { type SelectionFormat } from './selection-format'
 import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
@@ -404,6 +405,8 @@ export function ExcelShell({
   const [showSortDialog, setShowSortDialog] = useState(false)
   const [showDedupeDialog, setShowDedupeDialog] = useState(false)
   const [showNameManager, setShowNameManager] = useState(false)
+  /// Script editor (issue #815); the dialog reaches the grid through the shared facade handle.
+  const [showScriptEditor, setShowScriptEditor] = useState(false)
   const [showPivotDialog, setShowPivotDialog] = useState(false)
   const [pivotEditSeed, setPivotEditSeed] = useState<PivotEditSeed | null>(null)
   /** null = closed; string = open on that catalog category ('All' for the plain button) */
@@ -670,6 +673,7 @@ export function ExcelShell({
             else if (command === 'link-open') setShowLinkDialog(true)
             else if (command === 'sort-custom-open') setShowSortDialog(true)
             else if (command === 'remove-duplicates-open') setShowDedupeDialog(true)
+            else if (command === 'scripts-open') setShowScriptEditor(true)
             else if (command === 'name-manager-open') setShowNameManager(true)
             else if (command === 'pivot-open') setShowPivotDialog(true)
             else if (command === 'pivot-edit') setPivotEditSeed(onGetPivotEditSeed())
@@ -844,6 +848,7 @@ export function ExcelShell({
       {showDedupeDialog && (
         <RemoveDuplicatesDialog onCommand={onCommand} onClose={() => setShowDedupeDialog(false)} />
       )}
+      {showScriptEditor && <ScriptEditorDialog onClose={() => setShowScriptEditor(false)} />}
       {showNameManager &&
         (() => {
           const data = onGetDefinedNames()
@@ -2288,6 +2293,15 @@ function Ribbon({
           {largeMenu(t('appWhatIfAnalysis'), '❔', t('appWhatIfTitle'), [
             { value: 'goal-seek-open', label: t('appGoalSeek') },
           ])}
+        </RibbonGroup>
+        <RibbonGroup label={t('appGroupScripts')}>
+          <RibbonButton
+            large
+            label={t('appScripts')}
+            detail={t('appScriptsDetail')}
+            symbol="{ }"
+            onClick={() => onCommand('scripts-open')}
+          />
         </RibbonGroup>
         <RibbonGroup label={t('appGroupOutline')}>
           {largeMenu(t('appOutlineGroup'), '⊟', t('appOutlineGroupTitle'), [
