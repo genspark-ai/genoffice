@@ -83,6 +83,7 @@ export const ko = {
   aiSnapshotsTitle: '버전 스냅샷',
   aiRollback: '롤백',
   aiRollbackUndo: '롤백 취소',
+  aiVersionExpired: '스냅샷 만료됨',
   aiScopeSelected: '{count}개 단락 선택됨',
   aiScopeEmptyDoc: '빈 문서',
   aiScopeCursor: '커서 위치',

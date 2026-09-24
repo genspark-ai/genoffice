@@ -82,6 +82,7 @@ export const th = {
   aiSnapshotsTitle: 'สแนปช็อตของเวอร์ชัน',
   aiRollback: 'ย้อนกลับ',
   aiRollbackUndo: 'ยกเลิกการย้อนกลับ',
+  aiVersionExpired: 'สแนปชอตหมดอายุ',
   aiScopeSelected: 'เลือก {count} ย่อหน้า',
   aiScopeEmptyDoc: 'เอกสารเปล่า',
   aiScopeCursor: 'ที่ตำแหน่งเคอร์เซอร์',

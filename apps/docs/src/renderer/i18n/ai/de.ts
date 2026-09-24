@@ -85,6 +85,7 @@ export const de = {
   aiSnapshotsTitle: 'Versionsschnappschüsse',
   aiRollback: 'Zurücksetzen',
   aiRollbackUndo: 'Zurücksetzen rückgängig machen',
+  aiVersionExpired: 'Snapshot abgelaufen',
   aiScopeSelected: '{count} Absatz/Absätze ausgewählt',
   aiScopeEmptyDoc: 'Leeres Dokument',
   aiScopeCursor: 'An der Cursorposition',

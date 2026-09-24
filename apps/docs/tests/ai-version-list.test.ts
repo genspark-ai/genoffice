@@ -133,6 +133,36 @@ describe('AiVersionList', () => {
     expect(onRollback).not.toHaveBeenCalled()
   })
 
+  it('says an expired version is expired instead of hiding its action', () => {
+    // the stored snapshot is gone and this session never loaded it: the row is
+    // part of the record and stays put, with the reason where its button was
+    const container = mount(
+      createElement(AiVersionList, {
+        versions: [version({ id: 1, snapshotId: 'snap-1', expired: true, doc: undefined })],
+        busy: false,
+        onRollback: () => {},
+        onUndo: () => {},
+      }),
+    )
+    expect(rows(container)).toHaveLength(1)
+    expect(rows(container)[0].className).toContain('ai-version-expired')
+    expect(container.querySelector('.ai-version-rollback')).toBeNull()
+    expect(container.querySelector('.ai-version-note')?.textContent).toBe(t('aiVersionExpired'))
+  })
+
+  it('still offers a version read back from disk once its document has been loaded', () => {
+    const container = mount(
+      createElement(AiVersionList, {
+        versions: [version({ id: 1, snapshotId: 'snap-1', expired: true, doc: doc('loaded') })],
+        busy: false,
+        onRollback: () => {},
+        onUndo: () => {},
+      }),
+    )
+    expect(container.querySelector('.ai-version-rollback')?.textContent).toBe(t('aiRollback'))
+    expect(container.querySelector('.ai-version-note')).toBeNull()
+  })
+
   it('disables its buttons while a run is in flight', () => {
     const container = mount(
       createElement(AiVersionList, {

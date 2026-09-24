@@ -83,6 +83,7 @@ export const ja = {
   aiSnapshotsTitle: 'バージョンスナップショット',
   aiRollback: 'ロールバック',
   aiRollbackUndo: 'ロールバックを取り消す',
+  aiVersionExpired: 'スナップショットは期限切れ',
   aiScopeSelected: '{count} 段落を選択中',
   aiScopeEmptyDoc: '空の文書',
   aiScopeCursor: 'カーソル位置',

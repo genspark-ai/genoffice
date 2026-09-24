@@ -86,6 +86,7 @@ export const it = {
   aiSnapshotsTitle: 'Snapshot delle versioni',
   aiRollback: 'Ripristina',
   aiRollbackUndo: 'Annulla il ripristino',
+  aiVersionExpired: 'Istantanea scaduta',
   aiScopeSelected: '{count} paragrafo/i selezionato/i',
   aiScopeEmptyDoc: 'Documento vuoto',
   aiScopeCursor: 'Al cursore',

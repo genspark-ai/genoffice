@@ -7,6 +7,7 @@ import type {
   ChatMessage,
   ChatMeta,
   ChatScope,
+  ChatVersionRef,
   ProjectSummary,
   TimelineEntry,
   ToolActivity,
@@ -17,6 +18,7 @@ export type {
   ChatMessage,
   ChatMeta,
   ChatScope,
+  ChatVersionRef,
   ProjectSummary,
   TimelineEntry,
   ToolActivity,
@@ -30,6 +32,8 @@ export interface AppendChatArgs {
   tools?: ToolActivity[]
   attachments?: ChatAttachment[]
   scope?: ChatScope
+  /** Rollback point this assistant turn created */
+  version?: ChatVersionRef
 }
 
 export interface LoadChatArgs {
@@ -76,4 +80,35 @@ export interface ProjectApi {
   loadChat(args: LoadChatArgs): Promise<ChatMessage[]>
   /** Renames the JSONL file (called after the file first hits disk); returns the new projectId/chatId */
   rebindChat(args: RebindChatArgs): Promise<ResolveChatResult>
+  /** Stores one document snapshot (gzipped) for a turn's rollback point */
+  saveChatSnapshot(args: SaveChatSnapshotArgs): Promise<SaveChatSnapshotResult>
+  /** Reads a stored snapshot back as the document JSON, or null when it is no longer there */
+  loadChatSnapshot(args: LoadChatSnapshotArgs): Promise<string | null>
+  /** Keys of the snapshots still stored for a chat, so the panel can show which points expired */
+  listChatSnapshots(args: ListChatSnapshotsArgs): Promise<string[]>
+}
+
+export interface SaveChatSnapshotArgs {
+  projectId: string
+  chatId: string
+  /** Serialized document (ProseMirror JSON) as it was before the turn's first edit */
+  json: string
+}
+
+export interface SaveChatSnapshotResult {
+  /** Key to store on the message; null when the snapshot was too large to keep */
+  snapshotId: string | null
+  /** Stored size in bytes (the gzipped size); 0 when nothing was stored */
+  bytes: number
+}
+
+export interface LoadChatSnapshotArgs {
+  projectId: string
+  chatId: string
+  snapshotId: string
+}
+
+export interface ListChatSnapshotsArgs {
+  projectId: string
+  chatId: string
 }

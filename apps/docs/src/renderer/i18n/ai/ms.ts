@@ -84,6 +84,7 @@ export const ms = {
   aiSnapshotsTitle: 'Snapshot versi',
   aiRollback: 'Kembalikan',
   aiRollbackUndo: 'Batalkan pengembalian',
+  aiVersionExpired: 'Petikan luput',
   aiScopeSelected: '{count} perenggan dipilih',
   aiScopeEmptyDoc: 'Dokumen kosong',
   aiScopeCursor: 'Pada kursor',

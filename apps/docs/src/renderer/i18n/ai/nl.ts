@@ -85,6 +85,7 @@ export const nl = {
   aiSnapshotsTitle: 'Versiesnapshots',
   aiRollback: 'Terugdraaien',
   aiRollbackUndo: 'Terugdraaien ongedaan maken',
+  aiVersionExpired: 'Momentopname verlopen',
   aiScopeSelected: "{count} alinea('s) geselecteerd",
   aiScopeEmptyDoc: 'Leeg document',
   aiScopeCursor: 'Bij de cursor',

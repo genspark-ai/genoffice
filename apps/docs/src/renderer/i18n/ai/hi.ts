@@ -84,6 +84,7 @@ export const hi = {
   aiSnapshotsTitle: 'संस्करण स्नैपशॉट',
   aiRollback: 'रोलबैक',
   aiRollbackUndo: 'रोलबैक पूर्ववत करें',
+  aiVersionExpired: 'स्नैपशॉट समाप्त',
   aiScopeSelected: '{count} अनुच्छेद चयनित',
   aiScopeEmptyDoc: 'खाली दस्तावेज़',
   aiScopeCursor: 'कर्सर पर',

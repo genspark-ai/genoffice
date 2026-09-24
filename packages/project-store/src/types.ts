@@ -32,6 +32,27 @@ export interface ChatAttachment {
 // ────────────────────────────────────────────────────────────
 
 /**
+ * One rollback point an assistant turn created: the document as it was before
+ * that turn's first edit (see the AI panel's version list). The document itself
+ * is **not** in here — it is a gzipped snapshot next to the chat file, addressed
+ * by `snapshotId`, because a full document per turn would dwarf the transcript.
+ */
+export interface ChatVersionRef {
+  /** Renderer-side id, unique within the chat: what the message's roll-back action addresses */
+  id: number
+  /** The turn's instruction, trimmed — the version's "commit message" */
+  label: string
+  /** Local wall-clock time of the turn, `HH:MM` */
+  time: string
+  /**
+   * Key of the stored snapshot. Absent when the snapshot was too large to keep:
+   * the rollback point then works for the rest of the session but is gone on
+   * reopen, which the panel shows as expired rather than hiding.
+   */
+  snapshotId?: string
+}
+
+/**
  * One JSONL line corresponds to one message.
  * ts: UTC ISO string
  * seq: monotonically increasing integer within a chat (maintained by the store; the renderer sorts by seq)
@@ -50,6 +71,8 @@ export interface ChatMessage {
   attachments?: ChatAttachment[]
   /** Document selection a user message targeted */
   scope?: ChatScope
+  /** Rollback point this assistant turn created, if it edited the document */
+  version?: ChatVersionRef
 }
 
 /** What a user message was scoped to: a caption plus an excerpt of the selected content */

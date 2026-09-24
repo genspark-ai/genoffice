@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import type { ChatMessage } from '@genoffice/project-store'
 import type { PmNode } from '../src/renderer/editor/convert'
 import {
   MAX_VERSIONS,
+  attachDoc,
+  attachSnapshot,
+  canRestore,
   clearRollback,
+  markExpired,
   markRolledBack,
   pushVersion,
+  versionsFromChat,
   type DocVersion,
 } from '../src/renderer/ai/version-history'
 
@@ -107,5 +113,104 @@ describe('clearRollback', () => {
     list = markRolledBack(list, 3, doc('b'))
     expect(list[2].rolledBackFrom).toEqual(doc('b'))
     expect(discarded(list)).toEqual([])
+  })
+})
+
+describe('versions kept on disk', () => {
+  const stored = (over: Partial<DocVersion> = {}): DocVersion => ({
+    id: 1,
+    label: 'rewrite the intro',
+    time: '10:05',
+    snapshotId: 'snap-1',
+    ...over,
+  })
+
+  it('offers a stored version whose document is not loaded yet', () => {
+    // reopened file: the ref is there, the bytes are one IPC call away
+    expect(canRestore(stored())).toBe(true)
+  })
+
+  it('stops offering a version whose snapshot is gone', () => {
+    expect(canRestore(stored({ expired: true }))).toBe(false)
+    // unless this session already read the document into memory
+    expect(canRestore(stored({ expired: true, doc: doc('loaded') }))).toBe(true)
+  })
+
+  it('never offers a discarded version', () => {
+    expect(canRestore(stored({ discarded: true, doc: doc('x') }))).toBe(false)
+  })
+
+  it('remembers where a version was stored, and clears the expiry', () => {
+    const list = attachSnapshot([stored({ snapshotId: undefined, expired: true })], 1, 'snap-9')
+    expect(list[0].snapshotId).toBe('snap-9')
+    expect(list[0].expired).toBeUndefined()
+  })
+
+  it('caches a document read back from disk', () => {
+    const list = attachDoc([stored({ expired: true })], 1, doc('from disk'))
+    expect(list[0].doc).toEqual(doc('from disk'))
+    expect(list[0].expired).toBeUndefined()
+  })
+
+  it('marks a version expired without dropping a document it already holds', () => {
+    const list = markExpired([stored({ doc: doc('in memory') })], 1)
+    expect(list[0].expired).toBeUndefined()
+    expect(list[0].doc).toEqual(doc('in memory'))
+    expect(markExpired([stored()], 1)[0].expired).toBe(true)
+  })
+})
+
+describe('versionsFromChat', () => {
+  const ref = (id: number, snapshotId?: string) => ({
+    version: { id, label: `turn ${id}`, time: `10:0${id}`, ...(snapshotId ? { snapshotId } : {}) },
+  })
+
+  it('rebuilds the list from a reopened transcript', () => {
+    // user turns carry no ref and are skipped, not mistaken for a version
+    const transcript: Array<Partial<ChatMessage>> = [
+      ref(1, 'a'),
+      { role: 'user', text: 'rewrite the intro' },
+      ref(2, 'b'),
+    ]
+    const { versions: list } = versionsFromChat(transcript, ['a', 'b'])
+    expect(list.map((v) => v.id)).toEqual([1, 2])
+    expect(list.every((v) => !v.expired)).toBe(true)
+    // the document is not in the transcript: it is read when it is needed
+    expect(list.every((v) => v.doc === undefined)).toBe(true)
+  })
+
+  it('marks a version whose snapshot the store no longer has', () => {
+    const { versions: list } = versionsFromChat([ref(1, 'gone'), ref(2, 'kept')], ['kept'])
+    expect(list[0].expired).toBe(true)
+    expect(list[1].expired).toBeUndefined()
+  })
+
+  it('marks a version that never got a snapshot stored', () => {
+    // too large to keep when the turn ran: the transcript records the point anyway
+    const { versions: list } = versionsFromChat([ref(1)], [])
+    expect(list[0].expired).toBe(true)
+    expect(list[0].snapshotId).toBeUndefined()
+  })
+
+  it('keeps the newest MAX_VERSIONS after a long history', () => {
+    const refs = Array.from({ length: MAX_VERSIONS + 7 }, (_, i) => ref(i + 1, `s${i + 1}`))
+    const { versions: list } = versionsFromChat(
+      refs,
+      refs.map((r) => r.version.snapshotId!),
+    )
+    expect(list).toHaveLength(MAX_VERSIONS)
+    expect(list[0].id).toBe(8)
+  })
+
+  it('hands back an id no later run can collide with', () => {
+    // ids are per chat and monotonic across sessions, including refs the ring
+    // dropped: continuing at max + 1 is what keeps them addressable
+    const refs = Array.from({ length: MAX_VERSIONS + 3 }, (_, i) => ref(i + 1, `s${i + 1}`))
+    const { nextId } = versionsFromChat(refs, [])
+    expect(nextId).toBe(MAX_VERSIONS + 4)
+  })
+
+  it('starts a fresh chat at 1', () => {
+    expect(versionsFromChat([], []).nextId).toBe(1)
   })
 })

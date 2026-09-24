@@ -84,6 +84,7 @@ export const cs = {
   aiSnapshotsTitle: 'Snímky',
   aiRollback: 'Vrátit zpět',
   aiRollbackUndo: 'Zrušit vrácení zpět',
+  aiVersionExpired: 'Snímek vypršel',
   aiScopeSelected: 'Vybráno odstavců: {count}',
   aiScopeEmptyDoc: 'Prázdný dokument',
   aiScopeCursor: 'Na pozici kurzoru',

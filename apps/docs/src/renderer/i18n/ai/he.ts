@@ -82,6 +82,7 @@ export const he = {
   aiSnapshotsTitle: 'תמונות מצב של גרסאות',
   aiRollback: 'שחזור',
   aiRollbackUndo: 'ביטול שחזור',
+  aiVersionExpired: 'תמונת המצב פגה',
   aiScopeSelected: 'נבחרו {count} פסקאות',
   aiScopeEmptyDoc: 'מסמך ריק',
   aiScopeCursor: 'במיקום הסמן',

@@ -84,6 +84,7 @@ export const ru = {
   aiSnapshotsTitle: 'Снимки версий',
   aiRollback: 'Откатить',
   aiRollbackUndo: 'Отменить откат',
+  aiVersionExpired: 'Снимок недоступен',
   aiScopeSelected: 'Выделено абзацев: {count}',
   aiScopeEmptyDoc: 'Пустой документ',
   aiScopeCursor: 'У курсора',

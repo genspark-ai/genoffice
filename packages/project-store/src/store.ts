@@ -7,6 +7,7 @@
  *     project.json
  *     chats/
  *       <chat-id>.jsonl
+ *       <chat-id>.snapshots/<snapshot-id>.json.gz
  *
  * Design principles:
  * - No Electron dependency; the userData path is injected by the caller
@@ -15,19 +16,21 @@
  * - seq is maintained by the store layer: auto-incremented on each appendChatMessage
  */
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
   readdirSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import type {
   ChatMeta,
   ChatMessage,
@@ -53,6 +56,9 @@ const TOOL_FIELD_MAX_CHARS = 16_000
 const TEXT_MAX_CHARS = 32_000
 /** Max stored characters of a scope excerpt */
 const SCOPE_TEXT_MAX_CHARS = 400
+/** Max stored characters of a version's instruction label / time */
+const VERSION_LABEL_MAX_CHARS = 200
+const VERSION_TIME_MAX_CHARS = 32
 const TEXT_TRUNCATED_MARK = '\n\n[truncated]'
 /**
  * Max opening messages buffered in memory per chat before the first
@@ -60,6 +66,33 @@ const TEXT_TRUNCATED_MARK = '\n\n[truncated]'
  * pre-first-reply user messages accumulate unboundedly in the map.
  */
 export const MAX_PENDING_OPENING_MESSAGES = 200
+
+/**
+ * Rollback points kept per chat. Matches the AI panels' own version ring
+ * (docs/markdown/html/slides all keep 20), so the list a reopened file shows is
+ * the same one the user had; older snapshots are deleted from the tail.
+ */
+export const MAX_CHAT_SNAPSHOTS = 20
+
+/**
+ * Cap on one stored snapshot, measured after gzip. A full document per turn is
+ * the biggest thing this store ever writes; past this it is dropped (the turn
+ * keeps its rollback point for the rest of the session, and the panel says the
+ * point expired once the file is reopened) rather than letting one document
+ * fill the disk.
+ */
+export const MAX_CHAT_SNAPSHOT_BYTES = 4 * 1024 * 1024
+
+/**
+ * Cap on what a snapshot may inflate to. The store wrote the file itself, but a
+ * repository that guards every other decompression against bombs (metafile,
+ * zip-load) should not gunzip its own data unbounded either.
+ */
+const MAX_CHAT_SNAPSHOT_JSON_BYTES = 64 * 1024 * 1024
+
+/** Suffix of a chat's snapshot directory: `<chatId>.snapshots/` next to its JSONL */
+const SNAPSHOT_DIR_SUFFIX = '.snapshots'
+const SNAPSHOT_FILE_SUFFIX = '.json.gz'
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -91,7 +124,7 @@ function normalizeTimelineLimit(limit: number): number {
 const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]+$/
 
 // Throws a descriptive Error when an id could escape the store directory
-function assertSafeId(value: string, kind: 'projectId' | 'chatId'): void {
+function assertSafeId(value: string, kind: 'projectId' | 'chatId' | 'snapshotId'): void {
   if (typeof value !== 'string' || !SAFE_ID_PATTERN.test(value)) {
     throw new Error(
       `Invalid ${kind} "${value}": must be non-empty and match ${String(SAFE_ID_PATTERN)} (rejects "..", "/" and backslash)`,
@@ -158,6 +191,17 @@ export class ProjectStore {
   private chatPath(projectId: string, chatId: string): string {
     assertSafeId(chatId, 'chatId')
     return join(this.chatsDir(projectId), `${chatId}.jsonl`)
+  }
+
+  /** Where a chat's rollback-point snapshots live: a directory beside its JSONL */
+  private chatSnapshotDir(projectId: string, chatId: string): string {
+    assertSafeId(chatId, 'chatId')
+    return join(this.chatsDir(projectId), `${chatId}${SNAPSHOT_DIR_SUFFIX}`)
+  }
+
+  private chatSnapshotPath(projectId: string, chatId: string, snapshotId: string): string {
+    assertSafeId(snapshotId, 'snapshotId')
+    return join(this.chatSnapshotDir(projectId, chatId), `${snapshotId}${SNAPSHOT_FILE_SUFFIX}`)
   }
 
   // ── seq counters (in-memory cache, initialized from JSONL line count on first read) ──
@@ -384,6 +428,16 @@ export class ProjectStore {
         }))
       }
       if (msg.attachments !== undefined) record.attachments = msg.attachments
+      if (msg.version !== undefined) {
+        // The label is the turn's instruction and the id addresses the snapshot;
+        // both are capped here so a bad caller cannot write an unbounded line.
+        record.version = {
+          id: msg.version.id,
+          label: msg.version.label.slice(0, VERSION_LABEL_MAX_CHARS),
+          time: msg.version.time.slice(0, VERSION_TIME_MAX_CHARS),
+          ...(msg.version.snapshotId !== undefined ? { snapshotId: msg.version.snapshotId } : {}),
+        }
+      }
       if (msg.scope !== undefined) {
         record.scope = {
           label: msg.scope.label,
@@ -456,6 +510,128 @@ export class ProjectStore {
       return messages.slice(-safeLimit)
     } catch {
       return messages
+    }
+  }
+
+  // ── Rollback-point snapshots (AI panel versions) ──────────
+
+  /**
+   * Stores one document snapshot for a turn's rollback point, gzipped.
+   *
+   * The document is by far the biggest thing this store writes, so it never goes
+   * into the JSONL line: the message keeps a `version` ref with the returned key
+   * and the bytes live in `<chatId>.snapshots/`. Returns `snapshotId: null` when
+   * the snapshot is over `MAX_CHAT_SNAPSHOT_BYTES` — the caller keeps the
+   * rollback point in memory and reports it as expired once the file reopens.
+   */
+  saveChatSnapshot(
+    projectId: string,
+    chatId: string,
+    json: string,
+  ): { snapshotId: string | null; bytes: number } {
+    // Validate ids before the IO try block so traversal attempts throw fail-closed
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(chatId, 'chatId')
+    try {
+      const gz = gzipSync(Buffer.from(json, 'utf8'))
+      if (gz.byteLength > MAX_CHAT_SNAPSHOT_BYTES) {
+        return { snapshotId: null, bytes: gz.byteLength }
+      }
+      const dir = this.chatSnapshotDir(projectId, chatId)
+      ensureDir(dir)
+      const snapshotId = randomUUID()
+      writeFileSync(join(dir, `${snapshotId}${SNAPSHOT_FILE_SUFFIX}`), gz)
+      // Keep the ring bounded on the write path, like every other append here
+      this.pruneChatSnapshots(projectId, chatId)
+      return { snapshotId, bytes: gz.byteLength }
+    } catch (err) {
+      console.warn('[project-store] saveChatSnapshot failed:', err)
+      return { snapshotId: null, bytes: 0 }
+    }
+  }
+
+  /** Reads a stored snapshot back as the document JSON; null when it is gone. */
+  loadChatSnapshot(projectId: string, chatId: string, snapshotId: string): string | null {
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(chatId, 'chatId')
+    assertSafeId(snapshotId, 'snapshotId')
+    try {
+      const path = this.chatSnapshotPath(projectId, chatId, snapshotId)
+      if (statSync(path).size > MAX_CHAT_SNAPSHOT_BYTES) return null
+      return gunzipSync(readFileSync(path), {
+        maxOutputLength: MAX_CHAT_SNAPSHOT_JSON_BYTES,
+      }).toString('utf8')
+    } catch {
+      // Missing, unreadable or not our data: the panel treats it as an expired point
+      return null
+    }
+  }
+
+  /** Keys of the snapshots still stored for a chat (newest last). */
+  listChatSnapshots(projectId: string, chatId: string): string[] {
+    assertSafeId(projectId, 'projectId')
+    assertSafeId(chatId, 'chatId')
+    const dir = this.chatSnapshotDir(projectId, chatId)
+    if (!existsSync(dir)) return []
+    try {
+      return readdirSync(dir)
+        .filter((name) => name.endsWith(SNAPSHOT_FILE_SUFFIX))
+        .map((name) => name.slice(0, -SNAPSHOT_FILE_SUFFIX.length))
+    } catch {
+      return []
+    }
+  }
+
+  /** Drops the oldest snapshots past the ring. Never throws. */
+  private pruneChatSnapshots(projectId: string, chatId: string): void {
+    const dir = this.chatSnapshotDir(projectId, chatId)
+    try {
+      const files = readdirSync(dir)
+        .filter((name) => name.endsWith(SNAPSHOT_FILE_SUFFIX))
+        .map((name) => {
+          const path = join(dir, name)
+          return { path, mtimeMs: statSync(path).mtimeMs }
+        })
+      if (files.length <= MAX_CHAT_SNAPSHOTS) return
+      files.sort((a, b) => a.mtimeMs - b.mtimeMs)
+      for (const file of files.slice(0, files.length - MAX_CHAT_SNAPSHOTS)) {
+        try {
+          unlinkSync(file.path)
+        } catch {
+          /* already gone */
+        }
+      }
+    } catch (err) {
+      console.warn('[project-store] pruneChatSnapshots failed:', err)
+    }
+  }
+
+  /**
+   * Moves a chat's snapshots with its JSONL, so a renamed file (or one that only
+   * just got a path) keeps the rollback points its transcript refers to. Names
+   * are unique, so a merge never collides.
+   */
+  private moveChatSnapshots(
+    fromProjectId: string,
+    fromId: string,
+    toProjectId: string,
+    toId: string,
+  ): void {
+    const fromDir = this.chatSnapshotDir(fromProjectId, fromId)
+    if (!existsSync(fromDir)) return
+    try {
+      const toDir = this.chatSnapshotDir(toProjectId, toId)
+      ensureDir(toDir)
+      for (const name of readdirSync(fromDir)) {
+        try {
+          renameSync(join(fromDir, name), join(toDir, name))
+        } catch {
+          /* one file left behind is not worth failing the move */
+        }
+      }
+      rmSync(fromDir, { recursive: true, force: true })
+    } catch (err) {
+      console.warn('[project-store] moveChatSnapshots failed:', err)
     }
   }
 
@@ -532,6 +708,9 @@ export class ProjectStore {
     if (next !== undefined) {
       this.seqCounters.set(this.seqKey(toProjectId, toId), next)
     }
+
+    // The transcript's `version` refs point at these, so they travel with it
+    this.moveChatSnapshots(fromProjectId, fromId, toProjectId, toId)
   }
 
   /**
@@ -774,6 +953,9 @@ export class ProjectStore {
     const cur = this.seqCounters.get(oldKey)
     this.seqCounters.delete(oldKey)
     if (cur !== undefined) this.seqCounters.set(newKey, cur)
+
+    // 6. The transcript's `version` refs point at these, so they travel with it
+    this.moveChatSnapshots(fromProjectId, chatId, targetProjectId, chatId)
   }
 
   /**

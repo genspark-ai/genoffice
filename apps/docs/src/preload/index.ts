@@ -220,6 +220,9 @@ const projectApi: ProjectApi = {
   appendChat: (args) => ipcRenderer.invoke('project:appendChat', args),
   loadChat: (args) => ipcRenderer.invoke('project:loadChat', args),
   rebindChat: (args) => ipcRenderer.invoke('project:rebindChat', args),
+  saveChatSnapshot: (args) => ipcRenderer.invoke('project:saveChatSnapshot', args),
+  loadChatSnapshot: (args) => ipcRenderer.invoke('project:loadChatSnapshot', args),
+  listChatSnapshots: (args) => ipcRenderer.invoke('project:listChatSnapshots', args),
 }
 
 contextBridge.exposeInMainWorld('desktop', api)

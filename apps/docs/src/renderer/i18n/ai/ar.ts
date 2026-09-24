@@ -82,6 +82,7 @@ export const ar = {
   aiSnapshotsTitle: 'لقطات الإصدارات',
   aiRollback: 'استرجاع',
   aiRollbackUndo: 'تراجع عن الاسترجاع',
+  aiVersionExpired: 'انتهت صلاحية اللقطة',
   aiScopeSelected: 'تم تحديد {count} فقرة',
   aiScopeEmptyDoc: 'مستند فارغ',
   aiScopeCursor: 'عند المؤشر',

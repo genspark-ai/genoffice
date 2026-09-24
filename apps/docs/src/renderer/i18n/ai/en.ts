@@ -83,6 +83,7 @@ export const en = {
   aiSnapshotsTitle: 'Snapshots',
   aiRollback: 'Roll back',
   aiRollbackUndo: 'Undo roll back',
+  aiVersionExpired: 'Snapshot expired',
   aiScopeSelected: 'Selected {count} paragraph(s)',
   aiScopeEmptyDoc: 'Blank document',
   aiScopeCursor: 'At cursor',

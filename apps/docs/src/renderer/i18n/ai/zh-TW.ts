@@ -82,6 +82,7 @@ export const zhTW = {
   aiSnapshotsTitle: '版本快照',
   aiRollback: '還原',
   aiRollbackUndo: '撤銷回滾',
+  aiVersionExpired: '快照已失效',
   aiScopeSelected: '已選取 {count} 段',
   aiScopeEmptyDoc: '空白文件',
   aiScopeCursor: '在游標處',

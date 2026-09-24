@@ -5,6 +5,7 @@ import type { Block } from '@genoffice/docx-engine'
 import { AgentLoop, composeSkills, streamText, type AgentImage } from '@genoffice/agent-core'
 import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
+import type { ChatVersionRef } from '@genoffice/project-store'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import type { PmNode } from '../editor/convert'
 import { countWords, findNumId, type NumIds } from './protocol'
@@ -43,7 +44,17 @@ import { createFilesSkill } from './files-skill'
 import { createElectronTransport } from './transport'
 import { applyDocument } from './rollback-doc'
 import { AiVersionList } from './AiVersionList'
-import { clearRollback, markRolledBack, pushVersion, type DocVersion } from './version-history'
+import {
+  attachDoc,
+  attachSnapshot,
+  canRestore,
+  clearRollback,
+  markExpired,
+  markRolledBack,
+  pushVersion,
+  versionsFromChat,
+  type DocVersion,
+} from './version-history'
 import { useI18n, t as tModule, aiLangDirective, type StringKey } from '../i18n/locale'
 import { Markdown } from '@genoffice/ui'
 import { AiComposer, AiScopeQuote, AiTypingIndicator, type AiScopeQuoteData } from '@genoffice/ui'
@@ -81,6 +92,22 @@ const CHIP_UPDATE_MS = 400
 
 /** Cap on tool args/output persisted in the transcript (the store layer has another 16k truncation fallback) */
 const PERSIST_TOOL_FIELD_MAX = 16_000
+
+/** The preload bridge, or null outside the app shell (browser, tests) */
+function projectApiOrNull(): typeof window.projectApi | null {
+  return (window as Window & { projectApi?: typeof window.projectApi }).projectApi ?? null
+}
+
+/** Document JSON read back from a stored snapshot; anything else is unusable. */
+function parseSnapshot(json: string | null): PmNode | null {
+  if (!json) return null
+  try {
+    const parsed = JSON.parse(json) as PmNode
+    return parsed && typeof parsed.type === 'string' ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 /** Tool args → JSON string (truncated; returns undefined on serialization failure, doesn't block persistence) */
 function safeJsonInput(input: unknown): string | undefined {
@@ -560,6 +587,14 @@ export function AiPanel({
   const instructionRef = useRef('')
   /** id of the version this run's first edit registered, if it made one */
   const runVersionIdRef = useRef<number | null>(null)
+  /** label/time of that version, for the transcript ref written when the run ends */
+  const runVersionMetaRef = useRef<{ id: number; label: string; time: string } | null>(null)
+  /** that version's in-flight snapshot save; resolves to its store key, or null */
+  const runSnapshotRef = useRef<Promise<string | null> | null>(null)
+  /** the document JSON that save was given, for a re-store after a chat rebind */
+  const runSnapshotJsonRef = useRef<string | null>(null)
+  /** chat that save addressed, so a rebound chat can be detected at run end */
+  const snapshotSaveChatIdRef = useRef<string | null>(null)
   /** monotonic version ids: never reused, so a version stays addressable */
   const nextVersionIdRef = useRef(1)
   /** last sent instruction, for one-click retry */
@@ -572,7 +607,7 @@ export function AiPanel({
 
   // ── Chat-history persistence ────────────────────────────────────────────
   useEffect(() => {
-    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    const api = projectApiOrNull()
     if (!api) return
     const tempChatId = `unsaved-${Date.now()}`
     void api
@@ -581,8 +616,21 @@ export function AiPanel({
         chatRefIds.current = ids
         return api.loadChat({ projectId: ids.projectId, chatId: ids.chatId, limit: 200 })
       })
-      .then((msgs) => {
+      .then(async (msgs) => {
         if (msgs.length === 0) return
+        // Rollback points the turns registered, rehydrated so "roll back to
+        // before this turn" still works on a file that was closed and reopened
+        // (#543 P1). Which of them are still on disk decides which read expired.
+        const ids = chatRefIds.current
+        const available =
+          ids && api.listChatSnapshots
+            ? await api
+                .listChatSnapshots({ projectId: ids.projectId, chatId: ids.chatId })
+                .catch(() => [])
+            : []
+        const restored = versionsFromChat(msgs, available)
+        setVersions(restored.versions)
+        nextVersionIdRef.current = restored.nextId
         setHistoricChat(
           msgs.map((m) => ({
             role: m.role,
@@ -617,7 +665,7 @@ export function AiPanel({
   /** After an unsaved document's first save yields a real path, bind the unsaved-* history to that file (recoverable by path on reopen) */
   useEffect(() => {
     const ids = chatRefIds.current
-    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    const api = projectApiOrNull()
     if (!api || !ids || !filePath || !ids.chatId.startsWith('unsaved-')) return
     void api
       .rebindChat({ projectId: ids.projectId, tempChatId: ids.chatId, newFilePath: filePath })
@@ -641,9 +689,10 @@ export function AiPanel({
     }>,
     attachments?: AttachmentMeta[],
     scope?: AiScopeQuoteData,
+    version?: ChatVersionRef,
   ) => {
     const ids = chatRefIds.current
-    const api = (window as Window & { projectApi?: typeof window.projectApi }).projectApi
+    const api = projectApiOrNull()
     if (!ids || !api) return
     void api
       .appendChat({
@@ -663,10 +712,61 @@ export function AiPanel({
             }
           : {}),
         ...(scope ? { scope } : {}),
+        ...(version ? { version } : {}),
       })
       .catch(() => {
         /* silent */
       })
+  }
+
+  /**
+   * Hand this turn's snapshot to the main process, which keeps it gzipped beside
+   * the chat file and returns the key the transcript stores. Resolves to null
+   * when there is nowhere to put it (unsaved session) or it is over the store's
+   * cap — the rollback point then lives only for this session.
+   */
+  const saveSnapshot = (id: number, json: string): Promise<string | null> => {
+    const ids = chatRefIds.current
+    const api = projectApiOrNull()
+    if (!ids || !api?.saveChatSnapshot) return Promise.resolve(null)
+    snapshotSaveChatIdRef.current = ids.chatId
+    return api
+      .saveChatSnapshot({ projectId: ids.projectId, chatId: ids.chatId, json })
+      .then((res) => {
+        if (!res?.snapshotId) return null
+        setVersions((prev) => attachSnapshot(prev, id, res.snapshotId!))
+        return res.snapshotId
+      })
+      .catch(() => null)
+  }
+
+  /**
+   * Write this run's transcript entry, carrying the version ref the panel needs
+   * on reopen (#543 P1).
+   *
+   * The snapshot is stored while the run is still streaming, so the ref is only
+   * written once its key is known. An unsaved session that got a real file path
+   * in between has had its chat rebound — the snapshot is then stored again
+   * under the chat the transcript is going to, instead of being orphaned in the
+   * directory the chat left behind.
+   */
+  const persistRunMessage = (text: string) => {
+    const meta = runVersionMetaRef.current
+    if (!meta) {
+      persistMessage('assistant', text, runToolsRef.current)
+      return
+    }
+    void (runSnapshotRef.current ?? Promise.resolve(null)).then(async (snapshotId) => {
+      const json = runSnapshotJsonRef.current
+      const rebound =
+        snapshotSaveChatIdRef.current !== null &&
+        chatRefIds.current?.chatId !== snapshotSaveChatIdRef.current
+      const key = rebound && json ? await saveSnapshot(meta.id, json) : snapshotId
+      persistMessage('assistant', text, runToolsRef.current, undefined, undefined, {
+        ...meta,
+        ...(key ? { snapshotId: key } : {}),
+      })
+    })
   }
 
   const patchLastAssistant = (
@@ -803,14 +903,16 @@ export function AiPanel({
           if (snapshotBefore && runVersionIdRef.current === null) {
             const id = nextVersionIdRef.current++
             runVersionIdRef.current = id
-            setVersions((prev) =>
-              pushVersion(prev, {
-                id,
-                label: lastInstructionRef.current.trim().slice(0, 40),
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                doc: snapshotBefore,
-              }),
-            )
+            const label = lastInstructionRef.current.trim().slice(0, 40)
+            const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            setVersions((prev) => pushVersion(prev, { id, label, time, doc: snapshotBefore }))
+            // Stored as soon as it exists, not at run end: the run may still be
+            // streaming, and this is the only moment the pre-edit document is
+            // in hand. The run's transcript entry waits for the key.
+            const json = JSON.stringify(snapshotBefore)
+            runVersionMetaRef.current = { id, label, time }
+            runSnapshotJsonRef.current = json
+            runSnapshotRef.current = saveSnapshot(id, json)
           }
           if (execution.mutated) {
             // tracking off: accept immediately (same tick, so the yellow never paints);
@@ -872,7 +974,7 @@ export function AiPanel({
           // persist outside the updater (a double-invoked updater would write history twice); tools stores the whole run's full activity.
           // Edits-only runs (tools ran, no text) persist too, or the whole turn vanishes from the restored transcript
           if (!cancelled && (finalText || runToolsRef.current.length > 0)) {
-            persistMessage('assistant', finalText, runToolsRef.current)
+            persistRunMessage(finalText)
           }
         },
         onError: (error) => {
@@ -1056,6 +1158,10 @@ export function AiPanel({
     lastInstructionRef.current = instruction
     runToolsRef.current = []
     runVersionIdRef.current = null
+    runVersionMetaRef.current = null
+    runSnapshotRef.current = null
+    runSnapshotJsonRef.current = null
+    snapshotSaveChatIdRef.current = null
     stickToBottomRef.current = true
     setChat((prev) => [
       ...prev,
@@ -1221,18 +1327,51 @@ export function AiPanel({
     if (!next) acceptChanges()
   }
 
-  /** Rewind the document to what it was before this turn, reversibly. */
-  const rollback = (id: number) => {
-    const version = versionsRef.current.find((v) => v.id === id)
-    if (!version || version.discarded || version.rolledBack || busy) return
+  /** Swap the document for a version's snapshot and mark the version rolled back. */
+  const applyRollback = (version: DocVersion) => {
     // Captured before the swap: this is what "undo roll back" restores.
     const before = editor.getJSON() as PmNode
     // No highlight bookkeeping here: `aiChanged` lives on the document nodes, so
     // restoring the snapshot *is* resetting the review state to that moment.
     // Clearing on top of it would drop the pending revisions of earlier turns,
     // which a roll back of this turn deliberately keeps.
-    applyDocument(editor, version.doc)
-    setVersions((prev) => markRolledBack(prev, id, before))
+    applyDocument(editor, version.doc!)
+    setVersions((prev) => markRolledBack(prev, version.id, before))
+  }
+
+  /** Rewind the document to what it was before this turn, reversibly. */
+  const rollback = (id: number) => {
+    const version = versionsRef.current.find((v) => v.id === id)
+    if (!version || !canRestore(version) || version.rolledBack || busy) return
+    if (version.doc) {
+      applyRollback(version)
+      return
+    }
+    // Reopened file: the document is on disk, so this is the first time this
+    // session needs it. Read it now rather than at load — most sessions never
+    // roll back, and a document per version is not worth holding in memory.
+    const ids = chatRefIds.current
+    const api = projectApiOrNull()
+    if (!ids || !api?.loadChatSnapshot || !version.snapshotId) {
+      setVersions((prev) => markExpired(prev, id))
+      return
+    }
+    void api
+      .loadChatSnapshot({
+        projectId: ids.projectId,
+        chatId: ids.chatId,
+        snapshotId: version.snapshotId,
+      })
+      .then((json) => {
+        const doc = parseSnapshot(json)
+        if (!doc) {
+          setVersions((prev) => markExpired(prev, id))
+          return
+        }
+        setVersions((prev) => attachDoc(prev, id, doc))
+        applyRollback({ ...version, doc })
+      })
+      .catch(() => setVersions((prev) => markExpired(prev, id)))
   }
 
   /** Put the pre-roll-back document back, and re-arm every version it voided. */
@@ -1415,11 +1554,12 @@ export function AiPanel({
           // (mid-turn segments have a following assistant entry; the live turn ends when !busy)
           const nextEntry = chat[i + 1]
           const turnEnded = nextEntry ? nextEntry.role === 'user' : !busy
-          // the version still reachable from this turn: a version a later roll
-          // back discarded is listed, but it can no longer be restored to
+          // the version still reachable from this turn: one a later roll back
+          // discarded, or whose stored snapshot is gone, is listed in the footer
+          // but carries no inline action here
           const version =
             entry.versionId != null ? versions.find((v) => v.id === entry.versionId) : undefined
-          const restorable = version && !version.discarded ? version : undefined
+          const restorable = version && canRestore(version) ? version : undefined
           const showToolbar =
             entry.role === 'assistant' &&
             !entry.streaming &&

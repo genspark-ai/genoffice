@@ -7292,6 +7292,19 @@ body.docs-crop-active
   color: var(--text-dim);
 }
 
+/* The stored snapshot is gone (retention, or it was too large to keep): the row
+   stays as part of the record and says so where its button would be. */
+.ai-version-expired .ai-version-label {
+  color: var(--text-dim);
+}
+
+.ai-version-note {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 2px 8px;
+}
+
 .ai-version-label {
   display: flex;
   align-items: baseline;

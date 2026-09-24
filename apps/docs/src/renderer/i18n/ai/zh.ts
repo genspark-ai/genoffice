@@ -81,6 +81,7 @@ export const zh = {
   aiSnapshotsTitle: '版本快照',
   aiRollback: '回滚',
   aiRollbackUndo: '撤销回滚',
+  aiVersionExpired: '快照已失效',
   aiScopeSelected: '已选中 {count} 段',
   aiScopeEmptyDoc: '空白文档',
   aiScopeCursor: '在光标处',

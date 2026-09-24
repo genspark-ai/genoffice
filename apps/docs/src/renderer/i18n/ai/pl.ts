@@ -84,6 +84,7 @@ export const pl = {
   aiSnapshotsTitle: 'Migawki wersji',
   aiRollback: 'Przywróć',
   aiRollbackUndo: 'Cofnij przywrócenie',
+  aiVersionExpired: 'Migawka wygasła',
   aiScopeSelected: 'Zaznaczono akapitów: {count}',
   aiScopeEmptyDoc: 'Pusty dokument',
   aiScopeCursor: 'Przy kursorze',

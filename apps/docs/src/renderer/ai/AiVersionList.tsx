@@ -1,6 +1,6 @@
 import { useI18n } from '../i18n/locale'
 import { IconClock } from '../components/icons'
-import type { DocVersion } from './version-history'
+import { canRestore, type DocVersion } from './version-history'
 
 export interface AiVersionListProps {
   versions: DocVersion[]
@@ -16,7 +16,8 @@ export interface AiVersionListProps {
  *
  * Discarded versions stay listed — they are part of the record — but lose their
  * button, since the future they describe is no longer reachable while an earlier
- * roll back stands.
+ * roll back stands. Versions whose stored snapshot is gone say so instead of
+ * quietly losing their action.
  */
 export function AiVersionList({
   versions,
@@ -38,7 +39,8 @@ export function AiVersionList({
           className={
             'ai-version-row' +
             (v.discarded ? ' ai-version-discarded' : '') +
-            (v.rolledBack ? ' ai-version-rolled-back' : '')
+            (v.rolledBack ? ' ai-version-rolled-back' : '') +
+            (canRestore(v) ? '' : ' ai-version-expired')
           }
         >
           <span className="ai-version-label" data-tip={v.label}>
@@ -54,7 +56,9 @@ export function AiVersionList({
             >
               {t('aiRollbackUndo')}
             </button>
-          ) : v.discarded ? null : (
+          ) : !canRestore(v) ? (
+            <span className="ai-version-note">{t('aiVersionExpired')}</span>
+          ) : (
             <button
               type="button"
               className="ai-version-rollback"

@@ -85,6 +85,7 @@ export const es = {
   aiSnapshotsTitle: 'Instantáneas de versión',
   aiRollback: 'Revertir',
   aiRollbackUndo: 'Deshacer la reversión',
+  aiVersionExpired: 'Instantánea caducada',
   aiScopeSelected: '{count} párrafo(s) seleccionado(s)',
   aiScopeEmptyDoc: 'Documento en blanco',
   aiScopeCursor: 'En el cursor',

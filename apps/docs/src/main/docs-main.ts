@@ -3270,6 +3270,7 @@ export function registerProjectIpc(): void {
         }>
         attachments?: Array<{ name: string; path?: string; ext?: string; sizeBytes?: number }>
         scope?: { label: string; text?: string }
+        version?: { id: number; label: string; time: string; snapshotId?: string }
       },
     ) => {
       if (args.role !== 'user' && args.role !== 'assistant') {
@@ -3290,6 +3291,15 @@ export function registerProjectIpc(): void {
       if (args.tools) msg.tools = args.tools
       if (args.attachments) msg.attachments = args.attachments
       if (args.scope) msg.scope = args.scope
+      if (args.version) {
+        if (typeof args.version.id !== 'number' || !Number.isFinite(args.version.id)) {
+          throw new Error('Invalid chat version id')
+        }
+        if (typeof args.version.label !== 'string' || typeof args.version.time !== 'string') {
+          throw new Error('Invalid chat version label/time')
+        }
+        msg.version = args.version
+      }
 
       store.appendChatMessage(args.projectId, args.chatId, msg)
     },
@@ -3336,7 +3346,44 @@ export function registerProjectIpc(): void {
       return { projectId: args.projectId, chatId: args.newChatId ?? args.tempChatId }
     },
   )
+
+  /**
+   * Store one rollback-point snapshot for a turn (AI panel versions, #543 P1).
+   * Returns `snapshotId: null` when it is too large to keep; the transcript then
+   * records the version without a snapshot, which reads as expired on reopen.
+   */
+  ipcMain.handle(
+    'project:saveChatSnapshot',
+    (_event, args: { projectId: string; chatId: string; json: string }) => {
+      if (typeof args.json !== 'string') throw new Error('Invalid snapshot json')
+      // The renderer serializes a whole document here; refuse anything absurd
+      // before it becomes a Buffer and a gzip pass.
+      if (args.json.length > CHAT_SNAPSHOT_JSON_MAX_CHARS) {
+        throw new Error('Invalid snapshot json: too large')
+      }
+      return getProjectStore().saveChatSnapshot(args.projectId, args.chatId, args.json)
+    },
+  )
+
+  /** Read a stored snapshot back; null means the rollback point is gone */
+  ipcMain.handle(
+    'project:loadChatSnapshot',
+    (_event, args: { projectId: string; chatId: string; snapshotId: string }) => {
+      if (typeof args.snapshotId !== 'string') throw new Error('Invalid snapshot id')
+      return getProjectStore().loadChatSnapshot(args.projectId, args.chatId, args.snapshotId)
+    },
+  )
+
+  /** Which snapshots a chat still has, so the panel can mark the rest expired */
+  ipcMain.handle(
+    'project:listChatSnapshots',
+    (_event, args: { projectId: string; chatId: string }) =>
+      getProjectStore().listChatSnapshots(args.projectId, args.chatId),
+  )
 }
+
+/** Ceiling on the document JSON handed to project:saveChatSnapshot (UTF-16 chars) */
+const CHAT_SNAPSHOT_JSON_MAX_CHARS = 64 * 1024 * 1024
 
 /** A4 at 96dpi, as the HTML app exports */
 const ALT_CHUNK_VIEWPORT = { width: 794, height: 1123, deviceScaleFactor: 2 }
