@@ -2314,12 +2314,6 @@ export function App() {
     [railWindowed, railOffsets, thumbScroll, thumbViewportH, railRowHeights.length],
   )
   // ── Media decoded on demand (#763 follow-up) ──────────────────────────────
-  /** Retained size cap: 2x the widest slide, clamped so small decks stay crisp and
-   *  huge ones do not carry 4K textures for a preview. */
-  const mediaDecodeCapPx = useMemo(() => {
-    const widest = slides.reduce((max, s) => Math.max(max, s.widthPx || 0), 0) || 1280
-    return Math.min(4096, Math.max(2048, Math.round(widest * 2)))
-  }, [slides])
   /**
    * Slides whose media is worth decoding right now: the current slide plus a
    * neighbour for prefetch, plus whatever the rail has mounted. Anything the app
@@ -2462,13 +2456,6 @@ export function App() {
       return out
     }
     const urls = collect(mediaSlideRange.from, mediaSlideRange.to)
-    // Only what the stage draws needs stage-sized pixels; the rail draws at 126 px, and
-    // decoding its rows at the stage cap was seven times the byte budget (#952).
-    const lastSlide = Math.max(0, slides.length - 1)
-    const stageUrls =
-      printDlgOpen || presenter
-        ? urls
-        : collect(Math.max(0, current - 1), Math.min(lastSlide, current + 1))
     if (!imageLoaderRef.current) {
       imageLoaderRef.current = createImageLoader(
         (entries) => {
@@ -2479,12 +2466,10 @@ export function App() {
           })
         },
         {
-          // A rail thumbnail is 126 px and the stage 1280 px: media is retained at a
-          // capped size, and dropped again once it leaves the visible window (#763).
-          maxSide: mediaDecodeCapPx,
-          // a rail thumbnail is 126 px wide: 2x that keeps it crisp without holding
-          // stage-sized pixels for every row the window has mounted
-          thumbMaxSide: Math.max(128, Math.round(thumbW * 2)),
+          // Media is decoded at its own size and dropped again once it leaves the
+          // visible window (#763). No downscaling: that is a fidelity trade the
+          // maintainers should decide on, and as configured it bought ~5% of the
+          // process memory while making fast scrolling visibly worse.
           onEvict: (url) =>
             setImages((prev) => {
               if (!prev.has(url)) return prev
@@ -2500,8 +2485,8 @@ export function App() {
         window as unknown as { __genofficeSlidesMediaStats?: () => unknown }
       ).__genofficeSlidesMediaStats = () => imageLoaderRef.current?.stats() ?? null
     }
-    imageLoaderRef.current.load(urls, stageUrls)
-  }, [slides, mediaSlideRange, mediaDecodeCapPx, thumbW, current, printDlgOpen, presenter])
+    imageLoaderRef.current.load(urls)
+  }, [slides, mediaSlideRange])
   // Dispose on unmount and clear the ref so a remount (e.g. React Strict Mode's
   // dev double-mount) lazily recreates a fresh loader instead of reusing a disposed one.
   useEffect(

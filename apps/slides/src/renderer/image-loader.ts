@@ -35,17 +35,6 @@ export const MAX_METAFILE_BASE64_CHARS = 56 * 1024 * 1024
 /** 4 bytes per pixel: what a decoded image or canvas costs. */
 const BYTES_PER_PIXEL = 4
 
-/** Longest side retained when the caller does not say (2x the 1280 px stage). */
-export const DEFAULT_MAX_SIDE_PX = 2560
-
-/**
- * Longest side for images the app only draws in the rail. The rail thumbnail is
- * 126 px wide, so decoding at the stage cap wasted most of the pixels: measured on
- * the reporter's deck, one 16-row window needs ~100 pictures, which at 2560 px came
- * to 2.7 GB — seven times the byte budget, so nothing was ever evictable.
- */
-export const DEFAULT_THUMB_MAX_SIDE_PX = 256
-
 /** Decodes in flight at once; the pipeline runs on the main thread. */
 export const DEFAULT_MAX_CONCURRENT = 4
 
@@ -86,83 +75,6 @@ async function rasterizeMetafile(url: string): Promise<string | null> {
   return metafileToDataUrl(bytes, mime)
 }
 
-function loadElement(url: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => resolve(null)
-    img.src = url
-  })
-}
-
-/**
- * Sources worth capping: any raster. This started out as lossy-only (JPEG/WebP/AVIF)
- * on the assumption that PNG is small — wrong for the measured deck, whose 138 parts
- * are PNG screenshots: they took the uncapped path and were held at 31-44 MB each, so
- * a 16-row window (~100 pictures) came to 2.7 GB and nothing could be evicted.
- * SVG stays out: it is retinted per slide, so it is never capped.
- */
-const CAP_CANDIDATE_RE = /^data:image\/(png|jpeg|jpg|webp|avif|gif|bmp)[;,]/
-
-function elementFromBlob(blob: Blob): Promise<HTMLImageElement | null> {
-  const url = URL.createObjectURL(blob)
-  return loadElement(url).finally(() => URL.revokeObjectURL(url))
-}
-
-/**
- * Decode `url`, keeping it at most `maxSide` px on the longest side.
- *
- * The cap is only applied to lossy sources (JPEG/WebP/AVIF) that exceed it: a
- * 3000 px photo is drawn once into a `maxSide` canvas and handed back as an
- * object-URL image, so what the renderer holds — and what the GPU uploads — is the
- * capped size. PNG/EMF/SVG keep the existing path untouched (they are usually
- * already small, and re-encoding them would cost more than it saves).
- *
- * Falls back to a plain `<img>` whenever the pipeline is unavailable (no
- * `createImageBitmap`, an undecodable blob, a test environment), i.e. exactly the
- * behaviour this module had before the cap existed.
- */
-export async function decodeCapped(url: string, maxSide: number): Promise<SlideImage | null> {
-  let sourceUrl = url
-  if (METAFILE_RE.test(url)) {
-    const png = await rasterizeMetafile(url)
-    if (!png) return null
-    sourceUrl = png
-  }
-  const capWorthTrying =
-    CAP_CANDIDATE_RE.test(sourceUrl) &&
-    typeof createImageBitmap === 'function' &&
-    typeof fetch === 'function'
-  if (!capWorthTrying) return await loadElement(sourceUrl)
-
-  let bitmap: ImageBitmap | null = null
-  try {
-    const blob = await (await fetch(sourceUrl)).blob()
-    bitmap = await createImageBitmap(blob)
-    const longest = Math.max(bitmap.width, bitmap.height)
-    if (longest <= maxSide) return await loadElement(sourceUrl)
-    const scale = maxSide / longest
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale))
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return await loadElement(sourceUrl)
-    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    // PNG keeps its format: screenshots and anything with alpha should not be re-encoded
-    // lossily; everything else goes to WebP, which keeps alpha and compresses harder.
-    const isPng = /^data:image\/png/i.test(sourceUrl)
-    const capped = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), isPng ? 'image/png' : 'image/webp', 0.92),
-    )
-    if (!capped) return await loadElement(sourceUrl)
-    return await elementFromBlob(capped)
-  } catch {
-    return await loadElement(sourceUrl)
-  } finally {
-    bitmap?.close?.()
-  }
-}
-
 /** Decoded cost of an image: 4 bytes per pixel. */
 export function imageBytes(image: SlideImage): number {
   const w = image.naturalWidth || image.width
@@ -171,10 +83,6 @@ export function imageBytes(image: SlideImage): number {
 }
 
 export interface ImageLoaderOptions {
-  /** Longest side a retained image keeps, in px: what the stage can draw. */
-  maxSide?: number
-  /** Longest side for images the app only shows in the rail (see the default). */
-  thumbMaxSide?: number
   /** Decoded pixels kept before the least recently needed images are dropped. */
   budgetBytes?: number
   /** Called for every dropped image, so the UI can forget it. */
@@ -192,8 +100,6 @@ export interface ImageLoaderOptions {
 }
 
 export function createImageLoader(apply: ApplyImages, options: ImageLoaderOptions = {}) {
-  const maxSide = options.maxSide ?? DEFAULT_MAX_SIDE_PX
-  const thumbMaxSide = Math.min(options.thumbMaxSide ?? DEFAULT_THUMB_MAX_SIDE_PX, maxSide)
   const budgetBytes = options.budgetBytes ?? DEFAULT_BUDGET_BYTES
   const batchSize = options.batchSize ?? 16
   const delayMs = options.delayMs ?? 100
@@ -201,19 +107,12 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
 
   /** Urls the app wants right now; anything else is an eviction candidate. */
   let needed = new Set<string>()
-  /** Urls the app draws on the stage rather than only in the rail. */
-  let large = new Set<string>()
   /** Recency order — the first key is the coldest. */
   const loaded = new Map<string, SlideImage>()
-  /** Longest side each retained image was decoded at, so a rail-sized one can be upgraded. */
-  const decodedSide = new Map<string, number>()
   const loading = new Set<string>()
   const queue: string[] = []
   const queued = new Set<string>()
   const buf = new Map<string, SlideImage>()
-
-  /** Stage-sized for what is on the canvas, rail-sized for thumbnails. */
-  const sideFor = (url: string) => (large.has(url) ? maxSide : thumbMaxSide)
   let bytes = 0
   let decoded = 0
   let evicted = 0
@@ -239,7 +138,6 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
       if (needed.has(url) || buf.has(url)) continue // on screen, or about to be
       const image = loaded.get(url)
       loaded.delete(url)
-      decodedSide.delete(url)
       if (image) bytes -= imageBytes(image)
       evicted += 1
       options.onEvict?.(url)
@@ -253,11 +151,10 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
     loaded.set(url, image)
   }
 
-  const settle = (url: string, image: SlideImage | null, side: number) => {
+  const settle = (url: string, image: SlideImage | null) => {
     loading.delete(url)
     if (image && !disposed) {
       loaded.set(url, image)
-      decodedSide.set(url, side)
       bytes += imageBytes(image)
       decoded += 1
       buf.set(url, image)
@@ -275,8 +172,7 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
       queued.delete(url)
       if (loaded.has(url) || loading.has(url)) continue
       loading.add(url)
-      if (capAvailable && CAP_CANDIDATE_RE.test(url)) startCapped(url, sideFor(url))
-      else startUncapped(url)
+      startUncapped(url)
     }
   }
 
@@ -287,8 +183,7 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
    */
   const startUncapped = (url: string) => {
     const img = new Image()
-    // uncapped sources are kept as decoded; MAX_SAFE_INTEGER marks them as never worth upgrading
-    const done = (ok: boolean) => settle(url, ok ? img : null, Number.MAX_SAFE_INTEGER)
+    const done = (ok: boolean) => settle(url, ok ? img : null)
     img.onload = () => done(true)
     img.onerror = () => done(false)
     if (METAFILE_RE.test(url)) {
@@ -302,15 +197,6 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
       img.src = url
     }
   }
-
-  /** Lossy sources that exceed `maxSide` are decoded through the capping pipeline. */
-  const startCapped = (url: string, side: number) => {
-    void decodeCapped(url, side)
-      .then((image) => settle(url, image, side))
-      .catch(() => settle(url, null, side))
-  }
-
-  const capAvailable = typeof createImageBitmap === 'function' && typeof fetch === 'function'
 
   return {
     /** urls still decoding — 0 means every image the deck asked for has settled */
@@ -327,47 +213,25 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
      * memory is still high, the bytes are in the browser's own image cache, not here.
      */
     stats() {
-      let largeRetained = 0
-      let thumbRetained = 0
-      for (const side of decodedSide.values()) {
-        if (side >= maxSide) largeRetained += 1
-        else thumbRetained += 1
-      }
       return {
         retainedBytes: bytes,
         retainedImages: loaded.size,
         neededImages: needed.size,
         inFlight: loading.size,
         queued: queue.length,
-        largeRetained,
-        thumbRetained,
         decoded,
         evicted,
-        stageSide: maxSide,
-        thumbSide: thumbMaxSide,
       }
     },
     /**
      * The urls needed right now. Anything else becomes evictable once the budget
      * is exceeded, so paging through a long deck does not retain its whole media set.
      */
-    load(urls: Iterable<string>, stageUrls: Iterable<string> = []) {
+    load(urls: Iterable<string>) {
       needed = new Set(urls)
-      large = new Set(stageUrls)
       for (const url of needed) {
         touch(url)
-        const want = sideFor(url)
-        const held = decodedSide.get(url)
-        if (held !== undefined && held >= want) continue
-        if (held !== undefined) {
-          // held at rail size but now drawn on the stage: drop it and decode larger
-          const image = loaded.get(url)
-          loaded.delete(url)
-          decodedSide.delete(url)
-          if (image) bytes -= imageBytes(image)
-          options.onEvict?.(url)
-        }
-        if (loading.has(url) || queued.has(url)) continue
+        if (loaded.has(url) || loading.has(url) || queued.has(url)) continue
         queued.add(url)
         queue.push(url)
       }
@@ -384,7 +248,6 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
     /** Forget decoded media (a different deck was opened). */
     clear() {
       loaded.clear()
-      decodedSide.clear()
       buf.clear()
       queue.length = 0
       queued.clear()
