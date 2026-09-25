@@ -38,6 +38,7 @@ import { ZOOM_MAX, ZOOM_MIN, clampZoom, nextPreset, notchStep, prevPreset } from
 import type { DrawRect } from './draw-shape'
 import { paragraphsBlank } from './textbox-insert'
 import { SlideThumb } from './SlideThumb'
+import { WINDOWING_MIN_SLIDES, rowOffsets, thumbRowHeight, visibleRowRange } from './thumb-window'
 import { MasterView } from './MasterView'
 import {
   TextEditOverlay,
@@ -413,6 +414,33 @@ export function App() {
   // ── Thumbnail sidebar width (drag the divider to resize; persisted) ─────────
   const [thumbsW, setThumbsW] = useState(loadThumbsW)
   const thumbsListRef = useRef<HTMLDivElement | null>(null)
+  // ── Thumbnail rail windowing (#763) ────────────────────────────────────
+  // Long decks used to mount a canvas per slide (409 canvases for a 409-slide
+  // deck, each with its own Konva tree) before anything was visible. The rail
+  // now mounts only the rows around the viewport; the rest keep their geometry
+  // as placeholders so scrolling, drag-reorder and the right-click insertion
+  // point behave exactly as before. See thumb-window.ts.
+  const [thumbScroll, setThumbScroll] = useState(0)
+  const [thumbViewportH, setThumbViewportH] = useState(0)
+  /** Current rail layout: slide index → its top in rail content coordinates */
+  const thumbTopsRef = useRef<number[]>([])
+  /** `.section-header` height, measured once: the row model needs it to place groups */
+  const [sectionHeaderH, setSectionHeaderH] = useState(30)
+  const thumbScrollRafRef = useRef(0)
+  const onThumbsScroll = () => {
+    const list = thumbsListRef.current
+    if (!list || thumbScrollRafRef.current) return
+    thumbScrollRafRef.current = requestAnimationFrame(() => {
+      thumbScrollRafRef.current = 0
+      setThumbScroll(list.scrollTop)
+    })
+  }
+  useEffect(
+    () => () => {
+      if (thumbScrollRafRef.current) cancelAnimationFrame(thumbScrollRafRef.current)
+    },
+    [],
+  )
   // Re-clamp when the window shrinks (max is 40% of the window), like the AI panel
   useEffect(() => {
     const onResize = () => setThumbsW((w) => clampThumbsW(w))
@@ -515,8 +543,44 @@ export function App() {
   // Follow slide changes made outside the list (arrow keys, canvas paging); viewMode/showThumbs
   // re-run it because the list remounts at scroll 0 when the normal view returns
   useEffect(() => {
-    thumbsListRef.current?.querySelector('.thumb.active')?.scrollIntoView({ block: 'nearest' })
+    const list = thumbsListRef.current
+    if (!list) return
+    const active = list.querySelector('.thumb.active')
+    if (active) {
+      active.scrollIntoView({ block: 'nearest' })
+      return
+    }
+    // Windowed off the rail: the active row has no element to scroll into view,
+    // so scroll to where the row model says it is.
+    const top = thumbTopsRef.current[current]
+    if (top === undefined) return
+    const slide = slides[current]
+    const h = slide ? thumbRowHeight(slide, Math.max(60, thumbsW - 24)) : 0
+    if (top < list.scrollTop) list.scrollTop = top
+    else if (top + h > list.scrollTop + list.clientHeight) {
+      list.scrollTop = top + h - list.clientHeight
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, showThumbs, viewMode])
+  // Rail height decides the window; it changes with the window and with the view
+  // mode. It re-runs when the deck arrives (the rail only mounts with slides).
+  useEffect(() => {
+    const list = thumbsListRef.current
+    if (!list) return
+    const measure = () => {
+      // A hidden or not-yet-laid-out rail reports 0: keep the last real value
+      // rather than windowing against an empty viewport.
+      if (list.clientHeight > 0) setThumbViewportH(list.clientHeight)
+      const header = list.querySelector('.section-header')
+      if (header) setSectionHeaderH(header.getBoundingClientRect().height)
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(list)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showThumbs, viewMode, slides.length > 0])
   const [masterItems, setMasterItems] = useState<MasterPartItem[] | null>(null)
   // ── Slide show: when non-null, covers the whole window (startAt is the start page index;
   //    customOrder = custom show playback sequence; rehearse = rehearsal timing mode) ────────
@@ -2194,6 +2258,62 @@ export function App() {
     [sections, slides.length],
   )
 
+  // ── Thumbnail rail layout: row heights → offsets → the mounted window (#763) ──
+  // width = sidebar minus horizontal padding (20) and .thumb border (4)
+  const thumbW = Math.max(60, thumbsW - 24)
+  const railHeights = useMemo(() => slides.map((s) => thumbRowHeight(s, thumbW)), [slides, thumbW])
+  /** heights of every rail row, section headers included */
+  const railRowHeights = useMemo(() => {
+    if (!sectionGroups) return railHeights
+    const heights: number[] = []
+    for (const g of sectionGroups) {
+      heights.push(sectionHeaderH)
+      if (g.id != null && collapsedSecs.has(g.id)) continue
+      for (let i = g.start; i < g.end; i++) heights.push(railHeights[i] ?? 0)
+    }
+    return heights
+  }, [sectionGroups, railHeights, sectionHeaderH, collapsedSecs])
+  const railOffsets = useMemo(() => rowOffsets(railRowHeights), [railRowHeights])
+  /** rail row of each slide (flat decks: the row is the slide index) */
+  const railRowOfSlide = useMemo(() => {
+    const rows = new Array<number>(slides.length).fill(-1)
+    if (!sectionGroups) {
+      for (let i = 0; i < slides.length; i++) rows[i] = i
+      return rows
+    }
+    let row = 0
+    for (const g of sectionGroups) {
+      row += 1 // the group's header row
+      if (g.id != null && collapsedSecs.has(g.id)) continue
+      for (let i = g.start; i < g.end; i++) rows[i] = row++
+    }
+    return rows
+  }, [slides.length, sectionGroups, collapsedSecs])
+  /** rail row of each group header */
+  const railRowOfGroup = useMemo(() => {
+    if (!sectionGroups) return []
+    const rows: number[] = []
+    let row = 0
+    for (const g of sectionGroups) {
+      rows.push(row)
+      row += 1
+      if (g.id != null && collapsedSecs.has(g.id)) continue
+      row += Math.max(0, g.end - g.start)
+    }
+    return rows
+  }, [sectionGroups, collapsedSecs])
+  // A drag reads geometry off the mounted rows (drop targets, the blank-space
+  // insertion point), so the whole rail stays mounted while one is in flight —
+  // the same reasoning as a deck small enough that windowing buys nothing.
+  const railWindowed = slides.length >= WINDOWING_MIN_SLIDES && dragThumb === null
+  const railRange = railWindowed
+    ? visibleRowRange(railOffsets, thumbScroll, thumbViewportH)
+    : { start: 0, end: railRowHeights.length }
+  const railRowVisible = (row: number): boolean =>
+    !railWindowed || (row >= railRange.start && row < railRange.end)
+  // Keep the scroll-into-view fallback current without re-running that effect on every scroll
+  thumbTopsRef.current = railRowOfSlide.map((row) => railOffsets[row] ?? 0)
+
   /** Canvas right-click: select the hit element first (replace the selection if it isn't in it), clear selection on blank */
   const onCanvasContextMenu = useCallback(
     (sourceId: string | null, x: number, y: number, cell?: { row: number; col: number }) => {
@@ -3637,11 +3757,10 @@ export function App() {
                         tabIndex={0}
                         ref={thumbsListRef}
                         style={{ width: thumbsW }}
+                        onScroll={onThumbsScroll}
                         onContextMenu={(e) => onGapContextMenu(e)}
                       >
                         {(() => {
-                          // width = sidebar minus horizontal padding (20) and .thumb border (4)
-                          const thumbW = Math.max(60, thumbsW - 24)
                           const thumbItem = (s: RenderSlide, i: number) => (
                             <div
                               key={i}
@@ -3665,63 +3784,95 @@ export function App() {
                               )}
                             </div>
                           )
-                          if (!sectionGroups) return slides.map((s, i) => thumbItem(s, i))
+                          /**
+                           * Off-window rows keep the exact box of a real thumbnail — same
+                           * border, same margin, `data-index` included — but no Konva Stage,
+                           * so nothing is drawn for it. They exist for geometry: the rail's
+                           * scroll height and the position-based interactions stay put.
+                           */
+                          const thumbPlaceholder = (s: RenderSlide, i: number) => (
+                            <div
+                              key={`placeholder-${i}`}
+                              data-index={i}
+                              aria-hidden
+                              className={`thumb thumb-placeholder${s.hidden ? ' thumb-hidden' : ''}`}
+                              style={{
+                                height: Math.max(
+                                  1,
+                                  Math.round(s.heightPx * (thumbW / Math.max(1, s.widthPx))),
+                                ),
+                              }}
+                            />
+                          )
+                          const thumbRow = (s: RenderSlide, i: number) =>
+                            railRowVisible(railRowOfSlide[i])
+                              ? thumbItem(s, i)
+                              : thumbPlaceholder(s, i)
+                          if (!sectionGroups) return slides.map((s, i) => thumbRow(s, i))
                           return sectionGroups.map((g, gi) => {
                             const collapsed = g.id != null && collapsedSecs.has(g.id)
                             return (
                               <div key={g.id ?? `lead-${gi}`} className="section-group">
-                                <div
-                                  className={`section-header${g.id == null ? ' section-header-none' : ''}`}
-                                  onClick={g.id != null ? () => toggleSection(g.id!) : undefined}
-                                  onContextMenu={(e) => {
-                                    e.preventDefault()
-                                    setCtxMenu({
-                                      kind: 'section',
-                                      x: e.clientX,
-                                      y: e.clientY,
-                                      sectionId: g.id,
-                                    })
-                                  }}
-                                  title={g.id != null ? t('appSectionHeaderTitle') : undefined}
-                                >
-                                  {g.id != null && (
-                                    <span className={`section-arrow${collapsed ? '' : ' open'}`}>
-                                      ▸
-                                    </span>
-                                  )}
-                                  {renamingSec && g.id != null && renamingSec.id === g.id ? (
-                                    <input
-                                      className="section-rename-input"
-                                      autoFocus
-                                      value={renamingSec.value}
-                                      onClick={(e) => e.stopPropagation()}
-                                      onChange={(e) =>
-                                        setRenamingSec({ id: g.id!, value: e.target.value })
-                                      }
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') commitRenameSection()
-                                        else if (e.key === 'Escape') setRenamingSec(null)
-                                      }}
-                                      onBlur={commitRenameSection}
-                                    />
-                                  ) : (
-                                    <span
-                                      className="section-name"
-                                      onDoubleClick={
-                                        g.id != null
-                                          ? () => setRenamingSec({ id: g.id!, value: g.name })
-                                          : undefined
-                                      }
-                                    >
-                                      {g.id == null ? t('appSectionDefault') : g.name}
-                                    </span>
-                                  )}
-                                  <span className="section-count">{g.end - g.start}</span>
-                                </div>
+                                {railRowVisible(railRowOfGroup[gi]) ? (
+                                  <div
+                                    className={`section-header${g.id == null ? ' section-header-none' : ''}`}
+                                    onClick={g.id != null ? () => toggleSection(g.id!) : undefined}
+                                    onContextMenu={(e) => {
+                                      e.preventDefault()
+                                      setCtxMenu({
+                                        kind: 'section',
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        sectionId: g.id,
+                                      })
+                                    }}
+                                    title={g.id != null ? t('appSectionHeaderTitle') : undefined}
+                                  >
+                                    {g.id != null && (
+                                      <span className={`section-arrow${collapsed ? '' : ' open'}`}>
+                                        ▸
+                                      </span>
+                                    )}
+                                    {renamingSec && g.id != null && renamingSec.id === g.id ? (
+                                      <input
+                                        className="section-rename-input"
+                                        autoFocus
+                                        value={renamingSec.value}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) =>
+                                          setRenamingSec({ id: g.id!, value: e.target.value })
+                                        }
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') commitRenameSection()
+                                          else if (e.key === 'Escape') setRenamingSec(null)
+                                        }}
+                                        onBlur={commitRenameSection}
+                                      />
+                                    ) : (
+                                      <span
+                                        className="section-name"
+                                        onDoubleClick={
+                                          g.id != null
+                                            ? () => setRenamingSec({ id: g.id!, value: g.name })
+                                            : undefined
+                                        }
+                                      >
+                                        {g.id == null ? t('appSectionDefault') : g.name}
+                                      </span>
+                                    )}
+                                    <span className="section-count">{g.end - g.start}</span>
+                                  </div>
+                                ) : (
+                                  <div
+                                    className="section-header section-header-placeholder"
+                                    aria-hidden
+                                    style={{ height: sectionHeaderH }}
+                                  />
+                                )}
                                 {!collapsed &&
                                   slides
                                     .slice(g.start, g.end)
-                                    .map((s, k) => thumbItem(s, g.start + k))}
+                                    .map((s, k) => thumbRow(s, g.start + k))}
                               </div>
                             )
                           })
