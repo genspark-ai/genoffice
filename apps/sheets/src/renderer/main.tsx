@@ -77,8 +77,10 @@ async function bootstrap(): Promise<void> {
     .then(applyAiPanelPrefs)
     .catch(() => {})
   window.desktopApi?.onAiPanelPrefsChanged?.(applyAiPanelPrefs)
-  // store fonts downloaded/installed in earlier sessions become selectable immediately
-  void registerStoreFonts()
+  // store fonts downloaded/installed in earlier sessions become selectable
+  // immediately — deferred off the boot path: the spare-view focus handoff is
+  // timing-sensitive and must not share the boot window with extra IPC
+  window.requestIdleCallback?.(() => void registerStoreFonts(), { timeout: 4000 })
   ReactDOM.createRoot(root!).render(
     <LocaleProvider initial={lang}>
       <App />

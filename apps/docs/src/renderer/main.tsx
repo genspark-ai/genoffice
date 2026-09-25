@@ -50,8 +50,9 @@ async function bootstrap(): Promise<void> {
     .then(applyAiPanelPrefs)
     .catch(() => {})
   window.desktop?.onAiPanelPrefsChanged?.(applyAiPanelPrefs)
-  // store fonts downloaded/installed in earlier sessions become selectable immediately
-  void registerStoreFonts()
+  // store fonts downloaded/installed in earlier sessions become selectable
+  // immediately — deferred off the boot path so first paint never waits on IPC
+  window.requestIdleCallback?.(() => void registerStoreFonts(), { timeout: 4000 })
   createRoot(document.getElementById('root')!).render(
     <LocaleProvider initial={lang}>
       <App />
