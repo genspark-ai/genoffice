@@ -271,7 +271,7 @@ URL + key), including local model servers. Search and media have their own
 per-capability providers under **AI Media & Search**: Serper, Tavily or Parallel for web
 search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax or any
 OpenAI-compatible images endpoint for image generation and image/video
-analysis.
+analysis, plus DeepSeek V4.1 Flash for image analysis.
 
 **TypeSafe Jev** reranks the home screen's file search. Under **AI Media & Search →
 Local file search**, switch on Jev search reranking and pick an endpoint:
