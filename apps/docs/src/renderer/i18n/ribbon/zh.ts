@@ -712,4 +712,8 @@ export const zh = {
   ribbonClearAll: '全部清除',
   ribbonClearAllTip: '删除文档中的所有笔迹',
   ribbonGroupClear: '清除',
+  ribbonFontsDownloadable: '可下载字体',
+  ribbonFontInstallLocal: '安装字体文件…',
+  ribbonFontDownloading: '下载中…',
+  ribbonFontDownloadFailed: '下载失败,点击重试',
 }

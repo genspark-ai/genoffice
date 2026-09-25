@@ -1331,6 +1331,22 @@ html.genoffice-popover-open .ribbon-tabs {
   color: var(--text);
 }
 
+.rb-font-download {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.rb-font-download-tag {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.rb-font-install-local {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  color: var(--accent);
+}
+
 .rb-font-family-menu button.active:hover {
   background: var(--hover);
 }

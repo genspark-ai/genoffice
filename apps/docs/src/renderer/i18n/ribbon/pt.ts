@@ -713,4 +713,8 @@ export const pt = {
   ribbonClearAll: 'Limpar Tudo',
   ribbonClearAllTip: 'Excluir toda a tinta do documento',
   ribbonGroupClear: 'Limpar',
+  ribbonFontsDownloadable: 'Fontes para download',
+  ribbonFontInstallLocal: 'Instalar arquivo de fonte…',
+  ribbonFontDownloading: 'Baixando…',
+  ribbonFontDownloadFailed: 'Falha no download — clique para tentar novamente',
 } satisfies Record<keyof typeof zh, string>

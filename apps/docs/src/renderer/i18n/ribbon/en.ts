@@ -705,4 +705,8 @@ export const en = {
   ribbonClearAll: 'Clear All',
   ribbonClearAllTip: 'Delete all ink in the document',
   ribbonGroupClear: 'Clear',
+  ribbonFontsDownloadable: 'Downloadable fonts',
+  ribbonFontInstallLocal: 'Install font file…',
+  ribbonFontDownloading: 'Downloading…',
+  ribbonFontDownloadFailed: 'Download failed — click to retry',
 } satisfies Record<keyof typeof zh, string>

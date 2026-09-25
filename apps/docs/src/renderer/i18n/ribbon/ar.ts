@@ -703,4 +703,8 @@ export const ar = {
   ribbonClearAll: 'مسح الكل',
   ribbonClearAllTip: 'حذف كل الحبر في المستند',
   ribbonGroupClear: 'مسح',
+  ribbonFontsDownloadable: 'خطوط قابلة للتنزيل',
+  ribbonFontInstallLocal: 'تثبيت ملف خط…',
+  ribbonFontDownloading: 'جارٍ التنزيل…',
+  ribbonFontDownloadFailed: 'فشل التنزيل — انقر لإعادة المحاولة',
 } satisfies Record<keyof typeof zh, string>

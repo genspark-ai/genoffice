@@ -721,4 +721,8 @@ export const es = {
   ribbonClearAll: 'Borrar todo',
   ribbonClearAllTip: 'Eliminar toda la entrada de lápiz del documento',
   ribbonGroupClear: 'Borrar',
+  ribbonFontsDownloadable: 'Fuentes descargables',
+  ribbonFontInstallLocal: 'Instalar archivo de fuente…',
+  ribbonFontDownloading: 'Descargando…',
+  ribbonFontDownloadFailed: 'Error de descarga: haga clic para reintentar',
 } satisfies Record<keyof typeof zh, string>

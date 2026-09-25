@@ -697,4 +697,8 @@ export const he = {
   ribbonClearAll: 'נקה הכל',
   ribbonClearAllTip: 'מחק את כל הדיו במסמך',
   ribbonGroupClear: 'ניקוי',
+  ribbonFontsDownloadable: 'גופנים להורדה',
+  ribbonFontInstallLocal: 'התקנת קובץ גופן…',
+  ribbonFontDownloading: 'מוריד…',
+  ribbonFontDownloadFailed: 'ההורדה נכשלה — לחץ לניסיון חוזר',
 } satisfies Record<keyof typeof zh, string>

@@ -720,4 +720,8 @@ export const fr = {
   ribbonClearAll: 'Tout effacer',
   ribbonClearAllTip: "Supprimer toute l'encre du document",
   ribbonGroupClear: 'Effacer',
+  ribbonFontsDownloadable: 'Polices téléchargeables',
+  ribbonFontInstallLocal: 'Installer un fichier de police…',
+  ribbonFontDownloading: 'Téléchargement…',
+  ribbonFontDownloadFailed: 'Échec du téléchargement — cliquez pour réessayer',
 } satisfies Record<keyof typeof zh, string>

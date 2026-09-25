@@ -718,4 +718,8 @@ export const nl = {
   ribbonClearAll: 'Alles wissen',
   ribbonClearAllTip: 'Alle inkt in het document verwijderen',
   ribbonGroupClear: 'Wissen',
+  ribbonFontsDownloadable: 'Downloadbare lettertypen',
+  ribbonFontInstallLocal: 'Lettertypebestand installeren…',
+  ribbonFontDownloading: 'Downloaden…',
+  ribbonFontDownloadFailed: 'Download mislukt — klik om opnieuw te proberen',
 } satisfies Record<keyof typeof zh, string>

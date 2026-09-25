@@ -714,4 +714,8 @@ export const ms = {
   ribbonClearAll: 'Kosongkan Semua',
   ribbonClearAllTip: 'Padamkan semua dakwat dalam dokumen',
   ribbonGroupClear: 'Kosongkan',
+  ribbonFontsDownloadable: 'Fon boleh muat turun',
+  ribbonFontInstallLocal: 'Pasang fail fon…',
+  ribbonFontDownloading: 'Memuat turun…',
+  ribbonFontDownloadFailed: 'Muat turun gagal — klik untuk cuba lagi',
 } satisfies Record<keyof typeof zh, string>

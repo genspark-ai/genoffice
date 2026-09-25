@@ -9,7 +9,14 @@
  * no Electron import: the app injects its store dir, CDN URL and fetch impl.
  */
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 import { FONT_CATALOG, type FontScript } from './font-catalog'
 
@@ -194,7 +201,9 @@ export function resolveFontCdnBaseUrl(opts: {
 }): string | null {
   if (!opts.isPackaged) return normalizeFontCdnBaseUrl(opts.envUrl)
   try {
-    return extractFontCdnBaseUrl(JSON.parse(readFileSync(join(opts.appPath, 'package.json'), 'utf8')))
+    return extractFontCdnBaseUrl(
+      JSON.parse(readFileSync(join(opts.appPath, 'package.json'), 'utf8')),
+    )
   } catch {
     return null
   }
@@ -238,7 +247,11 @@ async function fetchVerified(
 /** Download every style file of a catalog family into the store. Throws on any failure;
  *  a concurrent call for the same family joins the in-flight download. */
 export function downloadFontFamily(
-  opts: { baseUrl: string | null; storeDir: string; fetchImpl: (input: string) => Promise<Response> },
+  opts: {
+    baseUrl: string | null
+    storeDir: string
+    fetchImpl: (input: string) => Promise<Response>
+  },
   family: string,
 ): Promise<void> {
   const entry = FONT_CATALOG.find((f) => f.family === family)

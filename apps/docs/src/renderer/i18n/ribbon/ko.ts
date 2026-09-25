@@ -725,4 +725,8 @@ export const ko = {
   ribbonClearAll: '모두 지우기',
   ribbonClearAllTip: '문서의 모든 잉크 삭제',
   ribbonGroupClear: '지우기',
+  ribbonFontsDownloadable: '다운로드 가능한 글꼴',
+  ribbonFontInstallLocal: '글꼴 파일 설치…',
+  ribbonFontDownloading: '다운로드 중…',
+  ribbonFontDownloadFailed: '다운로드 실패 — 클릭하여 재시도',
 } satisfies Record<keyof typeof zh, string>

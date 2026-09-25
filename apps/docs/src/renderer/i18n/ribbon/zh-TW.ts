@@ -690,4 +690,8 @@ export const zhTW = {
   ribbonClearAll: '全部清除',
   ribbonClearAllTip: '刪除文件中的所有筆跡',
   ribbonGroupClear: '清除',
+  ribbonFontsDownloadable: '可下載字型',
+  ribbonFontInstallLocal: '安裝字型檔案…',
+  ribbonFontDownloading: '下載中…',
+  ribbonFontDownloadFailed: '下載失敗,點擊重試',
 } satisfies Record<keyof typeof zh, string>

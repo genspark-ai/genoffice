@@ -84,9 +84,15 @@ describe('font store core', () => {
         envUrl: ' https://fonts.example.test/v1/ ',
       }),
     ).toBe('https://fonts.example.test/v1')
-    expect(resolveFontCdnBaseUrl({ isPackaged: true, appPath: '/nonexistent', envUrl: '' })).toBeNull()
     expect(
-      resolveFontCdnBaseUrl({ isPackaged: false, appPath: '/x', envUrl: 'http://fonts.example.test' }),
+      resolveFontCdnBaseUrl({ isPackaged: true, appPath: '/nonexistent', envUrl: '' }),
+    ).toBeNull()
+    expect(
+      resolveFontCdnBaseUrl({
+        isPackaged: false,
+        appPath: '/x',
+        envUrl: 'http://fonts.example.test',
+      }),
     ).toBeNull()
   })
 
@@ -94,22 +100,32 @@ describe('font store core', () => {
     const family = FONT_CATALOG[0]!
     // Re-pin the first family's hashes to the fake payloads for the test
     for (const f of family.files) {
-      f.sha256 = createHash('sha256').update(Buffer.from(`sfnt-${f.style}`)).digest('hex')
+      f.sha256 = createHash('sha256')
+        .update(Buffer.from(`sfnt-${f.style}`))
+        .digest('hex')
     }
     const fetchImpl = vi.fn(async (input: string) => {
       const file = decodeURIComponent(input.split('/').pop()!)
       const style = family.files.find((f) => f.file === file)!.style
       return new Response(new Uint8Array(Buffer.from(`sfnt-${style}`)), { status: 200 })
     })
-    await downloadFontFamily({ baseUrl: 'https://fonts.example.test/v1', storeDir, fetchImpl }, family.family)
+    await downloadFontFamily(
+      { baseUrl: 'https://fonts.example.test/v1', storeDir, fetchImpl },
+      family.family,
+    )
     expect(fetchImpl).toHaveBeenCalled()
     for (const f of family.files) expect(existsSync(join(storeDir, f.file))).toBe(true)
   })
 
   it('rejects unknown families and checksum mismatches', async () => {
-    const fetchImpl = vi.fn(async () => new Response(new Uint8Array(Buffer.from('tampered')), { status: 200 }))
+    const fetchImpl = vi.fn(
+      async () => new Response(new Uint8Array(Buffer.from('tampered')), { status: 200 }),
+    )
     await expect(
-      downloadFontFamily({ baseUrl: 'https://fonts.example.test/v1', storeDir, fetchImpl }, 'Meiryo UI'),
+      downloadFontFamily(
+        { baseUrl: 'https://fonts.example.test/v1', storeDir, fetchImpl },
+        'Meiryo UI',
+      ),
     ).rejects.toThrow(/not in catalog/)
     await expect(
       downloadFontFamily(
@@ -131,7 +147,10 @@ describe('font store core', () => {
     expect(families).toEqual(['Brand Sans'])
     const stored = storeFontFaces(storeDir)
     // readdir order is not contractual
-    expect(stored.map((f) => `${f.family}/${f.weight}`).sort()).toEqual(['Brand Sans/400', 'Brand Sans/700'])
+    expect(stored.map((f) => `${f.family}/${f.weight}`).sort()).toEqual([
+      'Brand Sans/400',
+      'Brand Sans/700',
+    ])
   })
 
   it('serves store faces for renderer FontFace registration and rejects traversal', () => {

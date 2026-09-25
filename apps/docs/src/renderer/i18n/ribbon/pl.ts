@@ -714,4 +714,8 @@ export const pl = {
   ribbonClearAll: 'Wyczyść wszystko',
   ribbonClearAllTip: 'Usuń całe pismo odręczne z dokumentu',
   ribbonGroupClear: 'Czyszczenie',
+  ribbonFontsDownloadable: 'Czcionki do pobrania',
+  ribbonFontInstallLocal: 'Zainstaluj plik czcionki…',
+  ribbonFontDownloading: 'Pobieranie…',
+  ribbonFontDownloadFailed: 'Pobieranie nie powiodło się — kliknij, aby ponowić',
 } satisfies Record<keyof typeof zh, string>

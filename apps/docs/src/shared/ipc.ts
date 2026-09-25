@@ -44,6 +44,8 @@ import type {
   GenSparkAccountStatus,
 } from '@genoffice/ai-provider'
 import type { HeadlessExportTarget } from '@genoffice/electron-utils/headless-export'
+import type { FontScript } from '@genoffice/electron-utils/font-catalog'
+import type { StoreFontFace } from '@genoffice/electron-utils/font-store'
 import type { FaceVerticalMetrics } from '@genoffice/font-metrics'
 import type { AiPanelPrefs } from '@genoffice/ui'
 
@@ -370,6 +372,18 @@ export interface DesktopApi {
   pickImage(): Promise<PickImageResult | null>
   /** vertical metrics of an installed family (exact name match), null when missing */
   fontMetrics(family: string): Promise<FaceVerticalMetrics | null>
+  /** Curated downloadable (OFL) font catalog with per-family install state */
+  fontCatalog(): Promise<
+    Array<{ family: string; script: FontScript; installed: boolean; downloading: boolean }>
+  >
+  /** download one catalog family into the store; ok=false carries the error message */
+  fontDownload(family: string): Promise<{ ok: boolean; error?: string }>
+  /** pick local font files to install into the store; returns the installed families */
+  fontInstallLocal(): Promise<{ families: string[] }>
+  /** registrable faces currently in the store (per-face for ttc collections) */
+  fontStoreFaces(): Promise<StoreFontFace[]>
+  /** standalone sfnt bytes of one store face, for renderer FontFace registration */
+  fontData(file: string, faceOffset: number): Promise<ArrayBuffer | null>
   getAiSettings(): Promise<AiSettings>
   setAiSettings(settings: AiSettings): Promise<void>
   /** system print dialog for the current window; ok=false without error = canceled.

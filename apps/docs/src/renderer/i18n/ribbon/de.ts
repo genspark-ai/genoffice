@@ -720,4 +720,8 @@ export const de = {
   ribbonClearAll: 'Alles löschen',
   ribbonClearAllTip: 'Alle Freihandeingaben im Dokument löschen',
   ribbonGroupClear: 'Löschen',
+  ribbonFontsDownloadable: 'Herunterladbare Schriftarten',
+  ribbonFontInstallLocal: 'Schriftdatei installieren…',
+  ribbonFontDownloading: 'Wird heruntergeladen…',
+  ribbonFontDownloadFailed: 'Download fehlgeschlagen – zum Wiederholen klicken',
 } satisfies Record<keyof typeof zh, string>

@@ -707,4 +707,8 @@ export const cs = {
   ribbonClearAll: 'Vymazat vše',
   ribbonClearAllTip: 'Odstranit veškerý rukopis z dokumentu',
   ribbonGroupClear: 'Vymazat',
+  ribbonFontsDownloadable: 'Písma ke stažení',
+  ribbonFontInstallLocal: 'Instalovat soubor písma…',
+  ribbonFontDownloading: 'Stahování…',
+  ribbonFontDownloadFailed: 'Stažení se nezdařilo — klikněte pro opakování',
 } satisfies Record<keyof typeof zh, string>

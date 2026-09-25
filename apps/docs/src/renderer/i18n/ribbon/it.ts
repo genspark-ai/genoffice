@@ -718,4 +718,8 @@ export const it = {
   ribbonClearAll: 'Cancella tutto',
   ribbonClearAllTip: "Elimina tutto l'input penna nel documento",
   ribbonGroupClear: 'Cancella',
+  ribbonFontsDownloadable: 'Caratteri scaricabili',
+  ribbonFontInstallLocal: 'Installa file di carattere…',
+  ribbonFontDownloading: 'Download in corso…',
+  ribbonFontDownloadFailed: 'Download non riuscito — fai clic per riprovare',
 } satisfies Record<keyof typeof zh, string>

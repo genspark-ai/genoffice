@@ -700,4 +700,8 @@ export const th = {
   ribbonClearAll: 'ล้างทั้งหมด',
   ribbonClearAllTip: 'ลบหมึกทั้งหมดในเอกสาร',
   ribbonGroupClear: 'ล้าง',
+  ribbonFontsDownloadable: 'แบบอักษรที่ดาวน์โหลดได้',
+  ribbonFontInstallLocal: 'ติดตั้งไฟล์แบบอักษร…',
+  ribbonFontDownloading: 'กำลังดาวน์โหลด…',
+  ribbonFontDownloadFailed: 'ดาวน์โหลดล้มเหลว — คลิกเพื่อลองใหม่',
 } satisfies Record<keyof typeof zh, string>

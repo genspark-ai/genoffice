@@ -714,4 +714,8 @@ export const ru = {
   ribbonClearAll: 'Очистить всё',
   ribbonClearAllTip: 'Удалить весь рукописный ввод в документе',
   ribbonGroupClear: 'Очистка',
+  ribbonFontsDownloadable: 'Загружаемые шрифты',
+  ribbonFontInstallLocal: 'Установить файл шрифта…',
+  ribbonFontDownloading: 'Загрузка…',
+  ribbonFontDownloadFailed: 'Ошибка загрузки — нажмите, чтобы повторить',
 } satisfies Record<keyof typeof zh, string>

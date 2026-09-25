@@ -22,6 +22,13 @@ import {
   writeFile,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import {
+  docsFontData,
+  docsFontStoreFaces,
+  downloadDocsFont,
+  installLocalDocsFonts,
+  listDocsFontCatalog,
+} from './font-store'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -3366,6 +3373,25 @@ export function registerDocsIpc(): void {
   configureMetricsCache(userDataPath('font-metrics'))
   ipcMain.handle('docs:font-metrics', (_event, family: string) =>
     typeof family === 'string' ? familyVerticalMetrics(family) : null,
+  )
+
+  // Downloadable/installable font store — the shared pipeline with slides
+  // (apps/docs/src/main/font-store.ts); the renderer registers the faces as web fonts.
+  ipcMain.handle('docs:font-catalog', () => listDocsFontCatalog())
+  ipcMain.handle('docs:font-download', (_event, family: string) =>
+    downloadDocsFont(family).then(
+      () => ({ ok: true }),
+      (err: unknown) => ({ ok: false, error: String(err) }),
+    ),
+  )
+  ipcMain.handle('docs:font-install-local', (event) =>
+    installLocalDocsFonts(hostWindowFor(event.sender)).then((families) => ({ families })),
+  )
+  ipcMain.handle('docs:font-store-faces', () => docsFontStoreFaces())
+  ipcMain.handle('docs:font-data', (_event, file: string, faceOffset: number) =>
+    typeof file === 'string' && Number.isInteger(faceOffset)
+      ? docsFontData(file, faceOffset)
+      : null,
   )
 
   ipcMain.handle('docs:open', async (event) => {

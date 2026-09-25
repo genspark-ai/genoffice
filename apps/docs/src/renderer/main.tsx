@@ -16,6 +16,7 @@ import './styles.css'
 import './fonts/fonts.css'
 import { applyAiPanelPrefs, installScreenTips } from '@genoffice/ui'
 import { setAltChunkHtmlConverter } from '@genoffice/docx-engine'
+import { registerStoreFonts } from './store-fonts'
 
 installScreenTips()
 if (window.desktop?.convertAltChunkHtml) {
@@ -49,6 +50,8 @@ async function bootstrap(): Promise<void> {
     .then(applyAiPanelPrefs)
     .catch(() => {})
   window.desktop?.onAiPanelPrefsChanged?.(applyAiPanelPrefs)
+  // store fonts downloaded/installed in earlier sessions become selectable immediately
+  void registerStoreFonts()
   createRoot(document.getElementById('root')!).render(
     <LocaleProvider initial={lang}>
       <App />

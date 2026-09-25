@@ -712,4 +712,8 @@ export const id = {
   ribbonClearAll: 'Hapus Semua',
   ribbonClearAllTip: 'Hapus semua tinta di dokumen',
   ribbonGroupClear: 'Hapus',
+  ribbonFontsDownloadable: 'Font yang dapat diunduh',
+  ribbonFontInstallLocal: 'Instal file font…',
+  ribbonFontDownloading: 'Mengunduh…',
+  ribbonFontDownloadFailed: 'Unduhan gagal — klik untuk mencoba lagi',
 } satisfies Record<keyof typeof zh, string>

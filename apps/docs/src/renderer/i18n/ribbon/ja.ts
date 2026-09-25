@@ -727,4 +727,8 @@ export const ja = {
   ribbonClearAll: 'すべてクリア',
   ribbonClearAllTip: 'ドキュメント内のすべてのインクを削除',
   ribbonGroupClear: 'クリア',
+  ribbonFontsDownloadable: 'ダウンロード可能なフォント',
+  ribbonFontInstallLocal: 'フォントファイルをインストール…',
+  ribbonFontDownloading: 'ダウンロード中…',
+  ribbonFontDownloadFailed: 'ダウンロード失敗 — クリックで再試行',
 } satisfies Record<keyof typeof zh, string>

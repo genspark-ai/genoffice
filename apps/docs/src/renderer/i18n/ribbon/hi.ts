@@ -712,4 +712,8 @@ export const hi = {
   ribbonClearAll: 'सभी साफ़ करें',
   ribbonClearAllTip: 'दस्तावेज़ की सारी स्याही हटाएँ',
   ribbonGroupClear: 'साफ़ करें',
+  ribbonFontsDownloadable: 'डाउनलोड योग्य फ़ॉन्ट',
+  ribbonFontInstallLocal: 'फ़ॉन्ट फ़ाइल इंस्टॉल करें…',
+  ribbonFontDownloading: 'डाउनलोड हो रहा है…',
+  ribbonFontDownloadFailed: 'डाउनलोड विफल — पुनः प्रयास के लिए क्लिक करें',
 } satisfies Record<keyof typeof zh, string>

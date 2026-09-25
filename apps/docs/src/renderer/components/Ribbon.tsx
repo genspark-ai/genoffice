@@ -61,6 +61,7 @@ import {
 } from '../editor/table-properties'
 import { useI18n, type StringKey } from '../i18n/locale'
 import { fontFamiliesFor, isEastAsianFontName, partitionFontFamilies } from '../font-list'
+import { useFontCatalog } from '../font-catalog'
 import { useSystemFontFamilies } from '../system-fonts'
 import { cssFontFamily } from '../line-metrics'
 import {
@@ -1356,11 +1357,30 @@ function RibbonInner({
   // computed unconditionally (not inside the dropdown render): cheap, and the
   // render-isolation test uses fontFamiliesFor calls as its render probe
   const { families: allSystemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const {
+    catalog: fontCatalog,
+    busy: fontBusy,
+    failed: fontFailed,
+    load: loadFontCatalog,
+    download: downloadCatalogFont,
+    installLocal: installLocalFonts,
+  } = useFontCatalog()
+  // Store fonts are invisible to queryLocalFonts, so downloaded families count as
+  // known even though the enumeration misses them.
+  const installedStoreFamilies = fontCatalog.filter((c) => c.installed).map((c) => c.family)
   // Candidates the machine proves absent drop out; when enumeration is
   // unavailable the full candidate list stays visible.
   const { builtin: fontFamilies, system: systemFontFamilies } = partitionFontFamilies(
     fontFamiliesFor(lang),
     allSystemFontFamilies,
+    installedStoreFamilies,
+  )
+  // Uninstalled catalog families keep an in-picker download path; installed ones
+  // only list here when no builtin/system row already offers them.
+  const catalogFonts = fontCatalog.filter((c) =>
+    c.installed
+      ? !(fontFamilies.includes(c.family) || systemFontFamilies.includes(c.family))
+      : true,
   )
   // unset align follows the paragraph direction: start is left in LTR, right in RTL
   const activeAlign = fs.align ?? (fs.bidi ? 'right' : 'left')
@@ -3058,7 +3078,10 @@ function RibbonInner({
                       data-tip={t('ribbonFontFamilyTip')}
                       aria-label={t('ribbonFontFamilyTip')}
                       onClick={() => {
-                        if (dropdown !== 'fontFamily') loadSystemFonts()
+                        if (dropdown !== 'fontFamily') {
+                          loadSystemFonts()
+                          loadFontCatalog()
+                        }
                         setDropdown((v) => (v === 'fontFamily' ? null : 'fontFamily'))
                       }}
                     >
@@ -3110,6 +3133,51 @@ function RibbonInner({
                               ))}
                           </>
                         )}
+                        {catalogFonts.length > 0 && (
+                          <>
+                            <div className="rb-menu-group-label">
+                              {t('ribbonFontsDownloadable')}
+                            </div>
+                            {catalogFonts.map((c) => (
+                              <button
+                                key={c.family}
+                                className={`rb-font-download${c.family === currentFont ? ' active' : ''}`}
+                                disabled={!canEdit || fontBusy.has(c.family)}
+                                style={{ fontFamily: cssFontFamily(c.family) }}
+                                onClick={() => {
+                                  if (c.installed) {
+                                    setFont(c.family)
+                                    return
+                                  }
+                                  void downloadCatalogFont(c.family).then((ok) => {
+                                    if (ok) {
+                                      setFont(c.family)
+                                      setDropdown(null)
+                                    }
+                                  })
+                                }}
+                              >
+                                {c.family}
+                                {!c.installed && (
+                                  <span className="rb-font-download-tag">
+                                    {fontBusy.has(c.family)
+                                      ? t('ribbonFontDownloading')
+                                      : fontFailed.has(c.family)
+                                        ? t('ribbonFontDownloadFailed')
+                                        : '⤓'}
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </>
+                        )}
+                        <button
+                          className="rb-font-install-local"
+                          disabled={!canEdit}
+                          onClick={() => void installLocalFonts()}
+                        >
+                          {t('ribbonFontInstallLocal')}
+                        </button>
                       </div>
                     )}
                   </div>
