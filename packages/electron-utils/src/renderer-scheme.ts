@@ -31,6 +31,21 @@ export const DOCX_MEDIA_SCHEME_PRIVILEGE: CustomScheme = {
   },
 }
 
+/** slides' lazily served pictures (apps/slides/src/main/media-protocol.ts); the
+ * render tree carries a URL instead of a base64 copy of every photo */
+export const SLIDES_MEDIA_SCHEME = 'genoffice-slides-media'
+
+export const SLIDES_MEDIA_SCHEME_PRIVILEGE: CustomScheme = {
+  scheme: SLIDES_MEDIA_SCHEME,
+  privileges: {
+    standard: true,
+    secure: true,
+    supportFetchAPI: true,
+    corsEnabled: true,
+    stream: true,
+  },
+}
+
 export type RendererHost = 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html'
 
 export const MAX_RENDERER_QUERY_ENTRIES = 20

@@ -21,6 +21,8 @@ import {
   type RenderSlide,
 } from '@genoffice/pptx-render'
 import { createSystemFontMetrics, resetFontRegistry } from './fonts'
+import { registerSlidesMediaSource } from './media-protocol'
+import { shouldServeLazily, slidesMediaUrl } from '../shared/media-url'
 import { tiffToPng } from './tiff-decode'
 import { neutralizeJpegOrientation } from './jpeg-orientation'
 import { displayMime } from './media-mime'
@@ -386,7 +388,7 @@ export function buildAllRenderSlides(opened: OpenedPptx, fitWidthPx: number): Re
   return opened.deck.slides.map((s, i) =>
     buildRenderSlide(s, opened.deck.size, {
       fitWidthPx,
-      media: makeMediaResolver(opened, s.path),
+      media: makeLazyMediaResolver(opened, s.path),
       metrics: getFontMetrics(),
       slideNo: i + 1,
     }),
@@ -446,6 +448,34 @@ export function retintThemedSvg(svg: string, opened: OpenedPptx, slidePath?: str
   )
 }
 
+/** The bytes to serve for one media ref, after the display-time transforms. */
+export function resolveMediaPart(
+  opened: OpenedPptx,
+  mediaRef: string,
+  slidePath?: string,
+): { bytes: Uint8Array; mime: string } | undefined {
+  const bytes = opened.archive.readBytes(mediaRef)
+  if (!bytes) return undefined
+  const mime = displayMime(mediaRef, bytes)
+  if (mime === 'image/tiff') {
+    const decoded = tiffToPng(bytes)
+    return decoded ? { bytes: decoded.png, mime: 'image/png' } : undefined
+  }
+  if (mime === 'image/svg+xml') {
+    let text = Buffer.from(bytes).toString('utf8')
+    if (text.includes('MsftOfcThm_')) text = retintThemedSvg(text, opened, slidePath)
+    return { bytes: Buffer.from(text, 'utf8'), mime }
+  }
+  // PowerPoint ignores EXIF orientation; Chromium applies it on decode — neutralize
+  // the flag so rotated-pixel JPEGs with a shape-level rot don't double-rotate
+  const served = mime === 'image/jpeg' ? neutralizeJpegOrientation(bytes) : bytes
+  return { bytes: served, mime }
+}
+
+function mediaDataUrl(part: { bytes: Uint8Array; mime: string }): string {
+  return `data:${part.mime};base64,${Buffer.from(part.bytes).toString('base64')}`
+}
+
 /** Image mediaRef -> dataUrl (lazily decoded). TIFF is transcoded to PNG for display
     (Chromium can't decode it); the archive keeps the original bytes for save fidelity.
     The mime comes from magic-byte sniffing first (legacy decks mislabel media — a PNG
@@ -454,22 +484,52 @@ export function makeMediaResolver(opened: OpenedPptx, slidePath?: string) {
   const cache = new Map<string, string | undefined>()
   return (mediaRef: string): string | undefined => {
     if (cache.has(mediaRef)) return cache.get(mediaRef)
-    const bytes = opened.archive.readBytes(mediaRef)
+    const part = resolveMediaPart(opened, mediaRef, slidePath)
+    const url = part ? mediaDataUrl(part) : undefined
+    cache.set(mediaRef, url)
+    return url
+  }
+}
+
+/**
+ * Media served by URL instead of inlined (#763 follow-up): the render tree keeps a
+ * short `genoffice-slides-media://…` URL per raster picture, so a photo-heavy deck
+ * stops carrying its media as base64 strings inside the model and every copy of it.
+ *
+ * Only rasters take this path: SVG goes through a per-slide theme retint and stays
+ * inline, which also keeps one media source per deck (rasters need no slide context)
+ * rather than one per slide.
+ */
+const lazyMediaSources = new WeakMap<OpenedPptx, string>()
+
+export function makeLazyMediaResolver(opened: OpenedPptx, slidePath?: string) {
+  const cache = new Map<string, string | undefined>()
+  return (mediaRef: string): string | undefined => {
+    if (cache.has(mediaRef)) return cache.get(mediaRef)
+    const raw = opened.archive.readBytes(mediaRef)
     let url: string | undefined
-    if (bytes) {
-      const mime = displayMime(mediaRef, bytes)
-      if (mime === 'image/tiff') {
-        const decoded = tiffToPng(bytes)
-        if (decoded) url = `data:image/png;base64,${Buffer.from(decoded.png).toString('base64')}`
-      } else if (mime === 'image/svg+xml') {
-        let text = Buffer.from(bytes).toString('utf8')
-        if (text.includes('MsftOfcThm_')) text = retintThemedSvg(text, opened, slidePath)
-        url = `data:${mime};base64,${Buffer.from(text, 'utf8').toString('base64')}`
+    if (raw) {
+      const mime = displayMime(mediaRef, raw)
+      if (shouldServeLazily(mime, raw.byteLength)) {
+        let base = lazyMediaSources.get(opened)
+        if (!base) {
+          // A WeakRef, so serving a deck never keeps its archive alive: once the
+          // session drops it, requests for its media resolve to nothing (404) and
+          // the deck is collectable. Without it, the protocol's registry would pin
+          // every deck the user has opened in this process.
+          const weak = new WeakRef(opened)
+          base = registerSlidesMediaSource({
+            read: (ref) => {
+              const deck = weak.deref()
+              return deck ? resolveMediaPart(deck, ref) : undefined
+            },
+          })
+          lazyMediaSources.set(opened, base)
+        }
+        url = slidesMediaUrl(base, mediaRef)
       } else {
-        // PowerPoint ignores EXIF orientation; Chromium applies it on decode — neutralize
-        // the flag so rotated-pixel JPEGs with a shape-level rot don't double-rotate
-        const served = mime === 'image/jpeg' ? neutralizeJpegOrientation(bytes) : bytes
-        url = `data:${mime};base64,${Buffer.from(served).toString('base64')}`
+        const part = resolveMediaPart(opened, mediaRef, slidePath)
+        url = part ? mediaDataUrl(part) : undefined
       }
     }
     cache.set(mediaRef, url)
@@ -483,7 +543,7 @@ export function rebuildSlide(session: Session, slideIndex: number): RenderSlide 
   if (!slide) return null
   return buildRenderSlide(slide, session.opened.deck.size, {
     fitWidthPx: session.fitWidthPx,
-    media: makeMediaResolver(session.opened, slide.path),
+    media: makeLazyMediaResolver(session.opened, slide.path),
     metrics: getFontMetrics(),
     slideNo: slideIndex + 1,
   })
@@ -499,7 +559,7 @@ export function rebuildSlideWithReparse(session: Session, slideIndex: number): R
   if (!fresh) return null
   return buildRenderSlide(fresh, session.opened.deck.size, {
     fitWidthPx: session.fitWidthPx,
-    media: makeMediaResolver(session.opened, fresh.path),
+    media: makeLazyMediaResolver(session.opened, fresh.path),
     metrics: getFontMetrics(),
     slideNo: slideIndex + 1,
   })

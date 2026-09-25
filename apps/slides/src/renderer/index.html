@@ -2,10 +2,10 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <!-- script-src 'wasm-unsafe-eval': harfbuzzjs text shaping; media-src data:/blob:: pptx-embedded audio and video -->
+    <!-- script-src 'wasm-unsafe-eval': harfbuzzjs text shaping; media-src data:/blob:: pptx-embedded audio and video; genoffice-slides-media: lazily served pictures -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ws://localhost:*"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: genoffice-slides-media:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ws://localhost:* genoffice-slides-media:"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GenOffice Slides</title>
