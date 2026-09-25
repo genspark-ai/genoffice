@@ -8,6 +8,7 @@
  */
 import {
   SCRIPT_RPC_TIMEOUT_MS,
+  SCRIPT_WORKER_URL,
   dispatchRpc,
   type HostMessage,
   type ScriptHost,
@@ -25,12 +26,15 @@ export interface ScriptWorkerLike {
   postMessage(message: HostMessage): void
   terminate(): void
   onmessage: ((event: { data: WorkerMessage }) => void) | null
+  /** Worker-level failures (script errors are caught inside and arrive as messages):
+   *  without this a worker that never starts would hang until the timeout. */
+  onerror?: ((event: { message?: string }) => void) | null
 }
 
 export type WorkerFactory = () => ScriptWorkerLike
 
 const defaultWorkerFactory: WorkerFactory = () =>
-  new Worker(new URL('./script-worker.ts', import.meta.url), {
+  new Worker(SCRIPT_WORKER_URL, {
     type: 'module',
     name: 'genoffice-script',
   }) as unknown as ScriptWorkerLike
@@ -81,8 +85,14 @@ export function createScriptRunner(
     },
     run(code, runHandlers) {
       if (handlers) this.stop()
+      // Fresh worker per run: handles and globals of the previous run must not leak.
+      host.reset?.()
       handlers = runHandlers
       worker = createWorker()
+      worker.onerror = (event) => {
+        handlers?.onError(event.message || 'Script worker failed to start')
+        finish(true)
+      }
       worker.onmessage = (event) => {
         const message = event.data
         if (message.kind === 'log') {

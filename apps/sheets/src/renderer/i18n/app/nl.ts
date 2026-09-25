@@ -1386,4 +1386,5 @@ export const nl = {
     'Scripts draaien in een geïsoleerde omgeving; API-aanroepen worden awaited: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'Nog geen scripts — klik op Nieuw.',
   dlgScriptsNoWorkbook: 'Open eerst een spreadsheet.',
+  appScriptsSaveFailed: 'Scripts konden niet worden opgeslagen — opslag vol',
 } satisfies Record<keyof typeof zh, string>

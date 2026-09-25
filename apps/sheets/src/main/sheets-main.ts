@@ -35,6 +35,7 @@ import type {
   WebContents,
 } from 'electron'
 import { z } from 'zod'
+import { installScriptWorkerProtocol } from './script-worker-protocol'
 import {
   appMenuLabels,
   buildPrintableHtml,
@@ -51,6 +52,7 @@ import {
   viewMenuTemplate,
   windowMenuTemplate,
   installRendererProtocol,
+  SCRIPT_SCHEME_PRIVILEGE,
   registerRendererScheme,
   rendererUrl,
 } from '@genoffice/electron-utils'
@@ -4200,7 +4202,7 @@ async function applyMainProcessProxy(): Promise<void> {
 }
 
 export function startSheetsStandalone(): void {
-  registerRendererScheme()
+  registerRendererScheme(SCRIPT_SCHEME_PRIVILEGE)
   installNavigationGuard(app)
   installContextMenu(app, () => contextMenuLabels(getUiLang()))
   // GENOFFICE_USER_DATA: test drivers point this at a scratch dir so automated
@@ -4213,6 +4215,7 @@ export function startSheetsStandalone(): void {
   void applyMainProcessProxy()
   app.whenReady().then(() => {
     installRendererProtocol({ sheets: join(__dirname, '../renderer') })
+    installScriptWorkerProtocol(runtime.rendererUrl, join(__dirname, '../renderer'))
     setUiLang(normalizeLang(process.env.GENOFFICE_LANG ?? app.getLocale()))
     app.setAccessibilitySupportEnabled(true)
     installApplicationMenu()

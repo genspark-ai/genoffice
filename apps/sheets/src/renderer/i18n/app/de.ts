@@ -1401,4 +1401,5 @@ export const de = {
     'Skripte laufen in einer isolierten Umgebung; API-Aufrufe werden awaited: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'Noch keine Skripte — auf Neu klicken.',
   dlgScriptsNoWorkbook: 'Öffnen Sie zuerst eine Tabelle.',
+  appScriptsSaveFailed: 'Skripte konnten nicht gespeichert werden — Speicher ist voll',
 } satisfies Record<keyof typeof zh, string>

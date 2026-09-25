@@ -1264,4 +1264,5 @@ export const zhTW = {
     '指令碼在隔離環境中執行，API 呼叫需 await：SpreadsheetApp.getActiveSpreadsheet()、sheet.getRange()、range.getValues()、Logger.log()',
   dlgScriptsEmpty: '尚無指令碼，按「新增」開始。',
   dlgScriptsNoWorkbook: '請先開啟一個試算表。',
+  appScriptsSaveFailed: '指令碼無法儲存,瀏覽器儲存空間已滿',
 } satisfies Record<keyof typeof zh, string>

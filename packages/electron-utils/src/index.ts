@@ -93,6 +93,7 @@ export {
   RENDERER_SCHEME,
   DOCX_MEDIA_SCHEME_PRIVILEGE,
   RENDERER_SCHEME_PRIVILEGE,
+  SCRIPT_SCHEME_PRIVILEGE,
   rendererUrl,
   resolveRendererFile,
   type RendererHost,

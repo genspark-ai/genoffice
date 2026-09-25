@@ -1348,4 +1348,5 @@ export const hi = {
     'स्क्रिप्ट अलग-थलग वातावरण में चलती हैं; API कॉल को await करें: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'अभी कोई स्क्रिप्ट नहीं — नया दबाएँ।',
   dlgScriptsNoWorkbook: 'पहले एक स्प्रेडशीट खोलें।',
+  appScriptsSaveFailed: 'स्क्रिप्ट सहेजी नहीं जा सकीं — स्टोरेज भरा हुआ है',
 } satisfies Record<keyof typeof zh, string>

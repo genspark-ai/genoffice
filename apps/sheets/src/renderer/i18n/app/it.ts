@@ -1390,4 +1390,5 @@ export const it = {
     'Gli script vengono eseguiti in un ambiente isolato; le chiamate API si awaitano: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'Nessuno script — premi Nuovo.',
   dlgScriptsNoWorkbook: 'Apri prima un foglio di calcolo.',
+  appScriptsSaveFailed: 'Impossibile salvare gli script — archiviazione piena',
 } satisfies Record<keyof typeof zh, string>

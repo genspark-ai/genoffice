@@ -1351,4 +1351,5 @@ export const id = {
     'Skrip berjalan di lingkungan terisolasi; pemanggilan API di-await: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'Belum ada skrip — tekan Baru.',
   dlgScriptsNoWorkbook: 'Buka spreadsheet terlebih dahulu.',
+  appScriptsSaveFailed: 'Skrip tidak dapat disimpan — penyimpanan penuh',
 } satisfies Record<keyof typeof zh, string>

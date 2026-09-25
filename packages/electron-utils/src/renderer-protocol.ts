@@ -1,3 +1,4 @@
+import type { CustomScheme } from 'electron'
 import { net, protocol } from 'electron'
 import { pathToFileURL } from 'node:url'
 import {
@@ -10,8 +11,12 @@ import {
 /** Before app ready; a process may call registerSchemesAsPrivileged only once,
  * so hosts that register other schemes spread RENDERER_SCHEME_PRIVILEGE into
  * their own list instead. */
-export function registerRendererScheme(): void {
-  protocol.registerSchemesAsPrivileged([RENDERER_SCHEME_PRIVILEGE, DOCX_MEDIA_SCHEME_PRIVILEGE])
+export function registerRendererScheme(...extra: CustomScheme[]): void {
+  protocol.registerSchemesAsPrivileged([
+    RENDERER_SCHEME_PRIVILEGE,
+    DOCX_MEDIA_SCHEME_PRIVILEGE,
+    ...extra,
+  ])
 }
 
 /** After app ready: serve each module's built renderer directory. */

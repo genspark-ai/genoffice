@@ -1373,4 +1373,5 @@ export const ko = {
     '스크립트는 격리된 환경에서 실행되며 API 호출은 await 합니다: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: '스크립트가 없습니다. [새로 만들기]를 누르세요.',
   dlgScriptsNoWorkbook: '스프레드시트를 먼저 여세요.',
+  appScriptsSaveFailed: '스크립트를 저장할 수 없습니다 — 저장 공간이 가득 찼습니다',
 } satisfies Record<keyof typeof zh, string>

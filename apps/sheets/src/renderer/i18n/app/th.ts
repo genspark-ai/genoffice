@@ -1316,4 +1316,5 @@ export const th = {
     'สคริปต์ทำงานในสภาพแวดล้อมที่แยก และต้อง await การเรียก API: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'ยังไม่มีสคริปต์ กดใหม่เพื่อเริ่ม',
   dlgScriptsNoWorkbook: 'เปิดสเปรดชีตก่อน',
+  appScriptsSaveFailed: 'บันทึกสคริปต์ไม่สำเร็จ — พื้นที่จัดเก็บเต็ม',
 } satisfies Record<keyof typeof zh, string>

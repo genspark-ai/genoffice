@@ -10,7 +10,27 @@
  * Apps Script is synchronous; this API is not, because every call is a message to
  * the host. Scripts therefore `await` (documented in the editor's help text).
  */
-import type { HandleRef, HostMessage, WorkerMessage } from './script-rpc'
+import { isHandleRef, type HandleRef, type HostMessage, type WorkerMessage } from './script-rpc'
+
+// Defense in depth: the worker response carries its own strict CSP (a dedicated
+// worker never sees the page's CSP, so serving the worker from its own protocol
+// is the real gate), but shadow the obvious network surfaces too. import() cannot
+// be shadowed — which is exactly why the CSP, not this list, is the boundary.
+for (const name of [
+  'fetch',
+  'XMLHttpRequest',
+  'WebSocket',
+  'EventSource',
+  'importScripts',
+  'Worker',
+  'SharedWorker',
+]) {
+  try {
+    Reflect.deleteProperty(self, name)
+  } catch {
+    /* non-configurable global: the CSP still denies the traffic */
+  }
+}
 
 const pending = new Map<number, (message: HostMessage) => void>()
 let nextRequestId = 1
@@ -32,6 +52,9 @@ function ask(target: number | 'app', method: string, args: unknown[]): Promise<u
 }
 
 function wrap(value: unknown): unknown {
+  // __h === 0 marks an absent object (e.g. getSheetByName('missing')): the script
+  // sees null instead of a handle whose every call would throw.
+  if (isHandleRef(value) && value.__h === 0) return null
   if (typeof value !== 'object' || value === null) return value
   switch ((value as HandleRef).__k) {
     case 'workbook':

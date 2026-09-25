@@ -1400,4 +1400,5 @@ export const ja = {
     'スクリプトは隔離された環境で実行されます。API は await します：SpreadsheetApp.getActiveSpreadsheet()、sheet.getRange()、range.getValues()、Logger.log()',
   dlgScriptsEmpty: 'スクリプトがありません。[新規] から作成してください。',
   dlgScriptsNoWorkbook: '先にスプレッドシートを開いてください。',
+  appScriptsSaveFailed: 'スクリプトを保存できません — ストレージがいっぱいです',
 } satisfies Record<keyof typeof zh, string>

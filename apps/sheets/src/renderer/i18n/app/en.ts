@@ -1331,4 +1331,5 @@ export const en = {
     'Scripts run in an isolated sandbox; API calls are awaited: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'No scripts yet — press New to start one.',
   dlgScriptsNoWorkbook: 'Open a spreadsheet first.',
+  appScriptsSaveFailed: 'Scripts could not be saved — browser storage is full',
 } satisfies Record<keyof typeof zh, string>

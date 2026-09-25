@@ -77,6 +77,31 @@ describe('FacadeScriptHost', () => {
     expect(() => host.call(workbook.__h, 'notAThing', [])).toThrow(/not available/)
   })
 
+  it('enforces the method allowlist host-side, per handle kind', () => {
+    const host = new FacadeScriptHost(api)
+    // 'dispose' exists on real Univer objects — the allowlist, not the facade, is
+    // what stops a crafted rpc from reaching it.
+    const workbook = host.call('app', 'getActiveSpreadsheet', []) as HandleRef
+    expect(() => host.call('app', 'dispose', [])).toThrow(/not available/)
+    expect(() => host.call(workbook.__h, 'dispose', [])).toThrow(/not available/)
+    const active = host.call(workbook.__h, 'getActiveSheet', []) as HandleRef
+    expect(() => host.call(active.__h, 'setRowHeight', [100])).toThrow(/not available/)
+  })
+
+  it('getSheetByName on a missing sheet yields an absent handle (0), not a broken one', () => {
+    const host = new FacadeScriptHost(api)
+    const workbook = host.call('app', 'getActiveSpreadsheet', []) as HandleRef
+    const missing = host.call(workbook.__h, 'getSheetByName', ['nope']) as HandleRef
+    expect(missing.__h).toBe(0)
+  })
+
+  it('reset() invalidates every handle from the previous run', () => {
+    const host = new FacadeScriptHost(api)
+    const workbook = host.call('app', 'getActiveSpreadsheet', []) as HandleRef
+    host.reset()
+    expect(() => host.call(workbook.__h, 'getName', [])).toThrow(/no longer valid/)
+  })
+
   it('rejects input that is not a 2D array', () => {
     const host = new FacadeScriptHost(api)
     const workbook = host.call('app', 'getActiveSpreadsheet', []) as HandleRef

@@ -1292,4 +1292,5 @@ export const zh = {
     '脚本在隔离环境中运行，API 调用需要 await：SpreadsheetApp.getActiveSpreadsheet()、sheet.getRange()、range.getValues()、Logger.log()',
   dlgScriptsEmpty: '还没有脚本，点“新建”开始。',
   dlgScriptsNoWorkbook: '请先打开一个电子表格。',
+  appScriptsSaveFailed: '脚本无法保存,浏览器存储空间已满',
 }

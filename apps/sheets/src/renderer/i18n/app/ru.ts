@@ -1369,4 +1369,5 @@ export const ru = {
     'Скрипты выполняются в изолированной среде; вызовы API нужно await: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'Скриптов пока нет — нажмите «Создать».',
   dlgScriptsNoWorkbook: 'Сначала откройте электронную таблицу.',
+  appScriptsSaveFailed: 'Не удалось сохранить скрипты — хранилище переполнено',
 } satisfies Record<keyof typeof zh, string>

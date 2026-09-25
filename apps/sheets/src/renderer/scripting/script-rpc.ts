@@ -13,6 +13,49 @@
 
 export const SCRIPT_RPC_TIMEOUT_MS = 30_000
 
+/** Where the sandbox worker is served from (see main/script-worker-protocol.ts):
+ *  its own protocol so its response can carry the sandbox CSP. */
+export const SCRIPT_WORKER_URL = 'genoffice-script://worker/script-worker.js'
+
+/**
+ * Host-enforced method allowlist per handle kind. The worker is untrusted code:
+ * whatever it posts as `method` is checked HERE, before the facade is touched —
+ * the worker-side wrapper objects are a convenience, not a security boundary.
+ */
+export const SCRIPT_METHODS: Readonly<Record<HandleKind, ReadonlySet<string>>> = {
+  app: new Set(['getActiveSpreadsheet', 'getActiveSheet']),
+  workbook: new Set(['getName', 'getActiveSheet', 'getSheetByName', 'getSheets', 'getSheetNames']),
+  sheet: new Set([
+    'getName',
+    'getLastRow',
+    'getLastColumn',
+    'getMaxRows',
+    'getMaxColumns',
+    'getRange',
+    'getDataRange',
+  ]),
+  range: new Set([
+    'getA1Notation',
+    'getRow',
+    'getColumn',
+    'getNumRows',
+    'getNumColumns',
+    'getValue',
+    'getValues',
+    'setValue',
+    'setValues',
+    'clear',
+  ]),
+}
+
+/** Names used in script-visible errors, per handle kind. */
+export const SCRIPT_KIND_NAMES: Readonly<Record<HandleKind, string>> = {
+  app: 'SpreadsheetApp',
+  workbook: 'Spreadsheet',
+  sheet: 'Sheet',
+  range: 'Range',
+}
+
 /** Methods the host accepts, per handle kind. `app` is the entry point. */
 export type HandleKind = 'app' | 'workbook' | 'sheet' | 'range'
 
@@ -66,6 +109,9 @@ export function dispatchRpc(
 
 export interface ScriptHost {
   call(target: number | 'app', method: string, args: unknown[]): unknown
+  /** Drop all live handles; called before each run so a stopped script's objects
+   *  are released and a fresh run cannot reach the previous run's objects. */
+  reset?(): void
 }
 
 /** Method signature check used by the host implementation. */

@@ -48,7 +48,7 @@ export function loadScripts(storage: Pick<Storage, 'getItem'> = localStorage): S
 export function saveScripts(
   scripts: readonly SavedScript[],
   storage: Pick<Storage, 'setItem'> = localStorage,
-): void {
+): boolean {
   try {
     storage.setItem(
       SCRIPT_STORAGE_KEY,
@@ -58,16 +58,21 @@ export function saveScripts(
           .map((s) => ({ ...s, code: s.code.slice(0, SCRIPT_MAX_CHARS) })),
       ),
     )
+    return true
   } catch {
-    /* quota or private mode: the library simply doesn't persist */
+    // quota or private mode: reported by the caller, not silently swallowed
+    return false
   }
 }
 
 export const SAMPLE_SCRIPT = `// Read the used range of the active sheet and log it.
-const sheet = await SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+// Every API call is asynchronous — await it.
+const spreadsheet = await SpreadsheetApp.getActiveSpreadsheet();
+if (!spreadsheet) throw new Error('No workbook is open');
+const sheet = await spreadsheet.getActiveSheet();
 const range = await sheet.getDataRange();
 const values = await range.getValues();
 
-Logger.log(sheet.getName() + ': ' + values.length + ' rows');
+Logger.log((await sheet.getName()) + ': ' + values.length + ' rows');
 for (const row of values) Logger.log(row.join(' | '));
 `

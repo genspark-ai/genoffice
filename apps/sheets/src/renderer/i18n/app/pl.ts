@@ -1379,4 +1379,5 @@ export const pl = {
     'Skrypty działają w odizolowanym środowisku; wywołania API trzeba awaitować: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'Brak skryptów — kliknij Nowy.',
   dlgScriptsNoWorkbook: 'Najpierw otwórz arkusz.',
+  appScriptsSaveFailed: 'Nie udało się zapisać skryptów — pamięć pełna',
 } satisfies Record<keyof typeof zh, string>

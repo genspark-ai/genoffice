@@ -1354,4 +1354,5 @@ export const cs = {
     'Skripty běží v izolovaném prostředí; volání API je třeba awaitovat: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'Zatím žádné skripty — stiskněte Nový.',
   dlgScriptsNoWorkbook: 'Nejprve otevřete sešit.',
+  appScriptsSaveFailed: 'Skripty nebylo možné uložit — úložiště je plné',
 } satisfies Record<keyof typeof zh, string>

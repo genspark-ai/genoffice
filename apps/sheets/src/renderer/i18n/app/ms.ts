@@ -1352,4 +1352,5 @@ export const ms = {
     'Skrip berjalan dalam persekitaran terpencil; panggilan API perlu di-await: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'Tiada skrip lagi — tekan Baharu.',
   dlgScriptsNoWorkbook: 'Buka hamparan terlebih dahulu.',
+  appScriptsSaveFailed: 'Skrip tidak dapat disimpan — storan penuh',
 } satisfies Record<keyof typeof zh, string>

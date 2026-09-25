@@ -1294,4 +1294,5 @@ export const he = {
     'הסקריפטים רצים בסביבה מבודדת; קריאות API מחייבות await: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'אין עדיין סקריפטים — לחץ על חדש.',
   dlgScriptsNoWorkbook: 'פתח תחילה גיליון אלקטרוני.',
+  appScriptsSaveFailed: 'לא ניתן לשמור את הסקריפטים — האחסון מלא',
 } satisfies Record<keyof typeof zh, string>

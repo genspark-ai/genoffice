@@ -1316,4 +1316,5 @@ export const ar = {
     'تعمل البرامج النصية في بيئة معزولة؛ يجب await استدعاءات الواجهة: SpreadsheetApp.getActiveSpreadsheet(), sheet.getRange(), range.getValues(), Logger.log()',
   dlgScriptsEmpty: 'لا توجد برامج نصية بعد — اضغط جديد.',
   dlgScriptsNoWorkbook: 'افتح جدول بيانات أولاً.',
+  appScriptsSaveFailed: 'تعذر حفظ البرامج النصية — مساحة التخزين ممتلئة',
 } satisfies Record<keyof typeof zh, string>

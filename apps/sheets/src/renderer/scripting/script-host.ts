@@ -10,6 +10,8 @@
 import {
   missingMethod,
   pickFunction,
+  SCRIPT_KIND_NAMES,
+  SCRIPT_METHODS,
   type HandleKind,
   type HandleRef,
   type ScriptHost,
@@ -64,10 +66,20 @@ export class FacadeScriptHost implements ScriptHost {
 
   constructor(private readonly api: unknown) {}
 
+  /** ScriptHost.reset: a new run must not reach the previous run's handles. */
+  reset(): void {
+    this.handles.clear()
+    this.nextHandle = 1
+  }
+
   call(target: number | 'app', method: string, args: unknown[]): unknown {
+    // Untrusted input: the allowlist is enforced here, host-side, before anything
+    // on the facade is resolved or called.
+    const kind = target === 'app' ? 'app' : (this.handles.get(target)?.kind ?? null)
+    if (!kind) throw new Error('This object is no longer valid (the script was stopped?)')
+    if (!SCRIPT_METHODS[kind].has(method)) missingMethod(SCRIPT_KIND_NAMES[kind], method)
     if (target === 'app') return this.callApp(method, args)
-    const entry = this.handles.get(target)
-    if (!entry) throw new Error('This object is no longer valid (the script was stopped?)')
+    const entry = this.handles.get(target)!
     switch (entry.kind) {
       case 'workbook':
         return this.callWorkbook(entry.value, method, args)
