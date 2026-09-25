@@ -8,7 +8,12 @@ import {
   type ToolDisplay,
 } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
-import { imageGenerationAvailable, mediaAnalysisAvailable } from '@genoffice/ai-provider/browser'
+import {
+  activeProvider,
+  cloudToolsEnabled,
+  imageGenerationAvailable,
+  mediaAnalysisAvailable,
+} from '@genoffice/ai-provider/browser'
 import type { AiSettings, AttachmentAddResult, AttachmentMeta } from '../../shared/ipc'
 import { ATTACHMENT_IMAGE_EXTS } from '../../shared/ipc'
 import {
@@ -1005,6 +1010,14 @@ export function AiPanel({
         })
       },
       isCloudPageGenEnabled: async () => {
+        // Cloud page generation runs on Genspark's own slide model and spends
+        // Genspark credits, so it only applies when the effective provider is
+        // Genspark with cloud tools on. A BYOK provider (e.g. DeepSeek) must use
+        // the local spec pipeline built on the user's own model — otherwise a
+        // signed-in but free Genspark account routes every page to a
+        // credits-exhausted error even though the deck could be built locally.
+        const cur = settingsRef.current
+        if (activeProvider(cur) !== 'genspark' || !cloudToolsEnabled(cur)) return false
         try {
           return !!(await window.slidesApi.cloudGenStatus())?.enabled
         } catch {

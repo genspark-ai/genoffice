@@ -92,6 +92,25 @@ describe('regenerate_slide', () => {
     expect(generatePageCloud).toHaveBeenCalledTimes(2)
   })
 
+  it('cloud generation fails but local is available → falls back to the local pipeline', async () => {
+    const regenerateSlide = vi.fn(async () => ({ ok: true }))
+    const generatePageCloud = vi.fn(async () => ({ ok: false, error: 'free plan' }))
+    const generatePageLocal = vi.fn(async () => ({ ok: true, marker: 'localpptx:/tmp/p.pptx' }))
+    const skill = createSlidesSkill(
+      mkAccess([page], {
+        regenerateSlide,
+        generatePageCloud,
+        generatePageLocal,
+        retryBackoffMs: 0,
+      }),
+    )
+    const r = await skill.executeTool!(call('regenerate_slide', { slideIndex: 0, brief: 'x' }))
+    expect(r.isError).toBeUndefined()
+    expect(generatePageCloud).toHaveBeenCalledTimes(2)
+    expect(generatePageLocal).toHaveBeenCalledOnce()
+    expect(regenerateSlide).toHaveBeenCalledWith(0, 'localpptx:/tmp/p.pptx')
+  })
+
   it('cloud unavailable → the local spec builder produces the marker and lands it', async () => {
     const regenerateSlide = vi.fn(async () => ({ ok: true }))
     const generatePageLocal = vi.fn(async () => ({ ok: true, marker: 'localpptx:/tmp/p.pptx' }))

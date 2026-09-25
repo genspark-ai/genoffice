@@ -13,6 +13,7 @@ function makeAccess(opts?: {
   failPages?: number[]
   failAttempts?: Record<number, number>
   cloudEnabled?: boolean
+  cloudDown?: boolean
   localImageFails?: Record<number, string[]>
   landFailOnce?: number[]
   searchImagesFail?: boolean
@@ -80,6 +81,11 @@ function makeAccess(opts?: {
       genPageCalls.push(args.pageIndex)
       stylesSeen.push(args.style)
       imagesSeen.push([...args.images])
+      if (opts?.cloudDown)
+        return {
+          ok: false,
+          error: 'tool_cli /slide_generate failed: the Genspark CLI requires a paid plan',
+        }
       if (failPages.has(args.pageIndex)) return { ok: false, error: 'mock fail' }
       if (failAttempts[args.pageIndex] && failAttempts[args.pageIndex] > 0) {
         failAttempts[args.pageIndex] -= 1
@@ -275,6 +281,16 @@ describe('generate_deck local page generation (cloud/gsk unavailable)', () => {
     expect(res.output).toContain('Missing images')
     expect(res.output).toContain('page 2')
     expect(res.output).toContain('https://img.example/broken.jpg')
+  })
+
+  it('cloud fails (e.g. Genspark free plan) → falls back to the local pipeline and still produces the deck', async () => {
+    const { access, localPageCalls, getPages } = makeAccess({ cloudDown: true })
+    const skill = createSlidesSkill(access)
+    const res = (await skill.executeTool(deckCall(3))) as { output: string }
+    expect(getPages()).toBe(3)
+    expect(localPageCalls.sort((a, b) => a - b)).toEqual([1, 2, 3])
+    expect(res.output).toContain('3/3')
+    expect(res.output).toContain('locally')
   })
 
   it('neither cloud nor local pipeline available → fails fast', async () => {
