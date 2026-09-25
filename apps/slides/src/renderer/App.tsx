@@ -2309,6 +2309,33 @@ export function App() {
   const railRange = railWindowed
     ? visibleRowRange(railOffsets, thumbScroll, thumbViewportH)
     : { start: 0, end: railRowHeights.length }
+  // ── Media decoded on demand (#763 follow-up) ──────────────────────────────
+  /** Retained size cap: 2x the widest slide, clamped so small decks stay crisp and
+   *  huge ones do not carry 4K textures for a preview. */
+  const mediaDecodeCapPx = useMemo(() => {
+    const widest = slides.reduce((max, s) => Math.max(max, s.widthPx || 0), 0) || 1280
+    return Math.min(4096, Math.max(2048, Math.round(widest * 2)))
+  }, [slides])
+  /**
+   * Slides whose media is worth decoding right now: the current slide plus a
+   * neighbour for prefetch, plus whatever the rail has mounted. Anything the app
+   * paints wholesale — the print preview, the presenter view, a deck short enough
+   * that the rail is not windowed, a reorder drag in flight — needs the whole deck.
+   */
+  const mediaSlideRange = useMemo(() => {
+    const last = slides.length - 1
+    if (last < 0) return { from: 0, to: -1 }
+    if (printDlgOpen || presenter || !railWindowed) return { from: 0, to: last }
+    let from = Math.max(0, current - 1)
+    let to = Math.min(last, current + 1)
+    for (let i = 0; i < slides.length; i++) {
+      const row = railRowOfSlide[i]!
+      if (row < 0 || row < railRange.start || row >= railRange.end) continue
+      if (i < from) from = i
+      if (i > to) to = i
+    }
+    return { from, to }
+  }, [slides, current, printDlgOpen, presenter, railWindowed, railRange, railRowOfSlide])
   const railRowVisible = (row: number): boolean =>
     !railWindowed || (row >= railRange.start && row < railRange.end)
   // Keep the scroll-into-view fallback current without re-running that effect on every scroll
@@ -2421,21 +2448,35 @@ export function App() {
         }
       }
     }
-    for (const s of slides) {
+    for (const s of slides.slice(mediaSlideRange.from, mediaSlideRange.to + 1)) {
       addFillUrl(s.background)
       walk(s.nodes)
     }
     if (!imageLoaderRef.current) {
-      imageLoaderRef.current = createImageLoader((entries) => {
-        setImages((prev) => {
-          const m = new Map(prev)
-          for (const [k, v] of entries) m.set(k, v)
-          return m
-        })
-      })
+      imageLoaderRef.current = createImageLoader(
+        (entries) => {
+          setImages((prev) => {
+            const m = new Map(prev)
+            for (const [k, v] of entries) m.set(k, v)
+            return m
+          })
+        },
+        {
+          // A rail thumbnail is 126 px and the stage 1280 px: media is retained at a
+          // capped size, and dropped again once it leaves the visible window (#763).
+          maxSide: mediaDecodeCapPx,
+          onEvict: (url) =>
+            setImages((prev) => {
+              if (!prev.has(url)) return prev
+              const m = new Map(prev)
+              m.delete(url)
+              return m
+            }),
+        },
+      )
     }
     imageLoaderRef.current.load(urls)
-  }, [slides])
+  }, [slides, mediaSlideRange, mediaDecodeCapPx])
   // Dispose on unmount and clear the ref so a remount (e.g. React Strict Mode's
   // dev double-mount) lazily recreates a fresh loader instead of reusing a disposed one.
   useEffect(
