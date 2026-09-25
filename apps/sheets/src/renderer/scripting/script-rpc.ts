@@ -72,7 +72,6 @@ export interface ScriptHost {
 export function pickFunction(
   value: unknown,
   method: string,
-  on: string,
 ): ((...args: unknown[]) => unknown) | null {
   if (!value) return null
   const fn = (value as Record<string, unknown>)[method]

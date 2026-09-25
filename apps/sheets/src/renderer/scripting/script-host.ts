@@ -89,21 +89,21 @@ export class FacadeScriptHost implements ScriptHost {
 
   private callApp(method: string, args: unknown[]): unknown {
     if (method === 'getActiveSpreadsheet') {
-      const fn = pickFunction(this.api, 'getActiveWorkbook', 'SpreadsheetApp')
+      const fn = pickFunction(this.api, 'getActiveWorkbook')
       if (!fn) missingMethod('SpreadsheetApp', 'getActiveSpreadsheet')
       return this.ref('workbook', fn!(...args))
     }
     if (method === 'getActiveSheet') {
-      const workbook = pickFunction(this.api, 'getActiveWorkbook', 'SpreadsheetApp')?.()
+      const workbook = pickFunction(this.api, 'getActiveWorkbook')?.()
       if (!workbook) return { __h: 0, __k: 'sheet' }
-      const sheet = pickFunction(workbook, 'getActiveSheet', 'Spreadsheet')?.()
+      const sheet = pickFunction(workbook, 'getActiveSheet')?.()
       return this.ref('sheet', sheet)
     }
     missingMethod('SpreadsheetApp', method)
   }
 
   private callWorkbook(workbook: unknown, method: string, args: unknown[]): unknown {
-    const fn = pickFunction(workbook, method, 'Spreadsheet')
+    const fn = pickFunction(workbook, method)
     if (!fn) missingMethod('Spreadsheet', method)
     const value = fn!(...args)
     switch (method) {
@@ -121,7 +121,7 @@ export class FacadeScriptHost implements ScriptHost {
   }
 
   private callSheet(sheet: unknown, method: string, args: unknown[]): unknown {
-    const fn = pickFunction(sheet, method, 'Sheet')
+    const fn = pickFunction(sheet, method)
     if (!fn) missingMethod('Sheet', method)
     const value = fn!(...args)
     switch (method) {
@@ -134,7 +134,7 @@ export class FacadeScriptHost implements ScriptHost {
   }
 
   private callRange(range: unknown, method: string, args: unknown[]): unknown {
-    const fn = pickFunction(range, method, 'Range')
+    const fn = pickFunction(range, method)
     if (!fn) missingMethod('Range', method)
     switch (method) {
       case 'setValues':
