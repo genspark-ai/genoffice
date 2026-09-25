@@ -188,4 +188,60 @@ describe('createImageLoader', () => {
     await settle()
     expect(evicted).toEqual([])
   })
+
+  it('decodes rail-only media at the rail size and stage media at the cap', async () => {
+    const loader = createImageLoader(() => {}, { maxSide: 1000, thumbMaxSide: 100 })
+    const railOnly = 'data:image/jpeg;base64,rail-only'
+    const onStage = 'data:image/jpeg;base64,on-stage'
+    for (const url of [railOnly, onStage]) sizes.set(url, { w: 4000, h: 3000 })
+
+    loader.load([railOnly, onStage], [onStage])
+    await settle()
+    const stats = loader.stats()
+    expect(stats.thumbRetained).toBe(1)
+    expect(stats.largeRetained).toBe(1)
+    // 100x75 for the rail row + 1000x750 for the stage, not 2x 4000x3000
+    expect(stats.retainedBytes).toBe(100 * 75 * 4 + 1000 * 750 * 4)
+  })
+
+  it('re-decodes at the stage size when a rail image moves onto the stage', async () => {
+    const evicted: string[] = []
+    const loader = createImageLoader(() => {}, {
+      maxSide: 1000,
+      thumbMaxSide: 100,
+      onEvict: (url) => evicted.push(url),
+    })
+    const url = 'data:image/jpeg;base64,promote-me'
+    sizes.set(url, { w: 4000, h: 3000 })
+
+    loader.load([url])
+    await settle()
+    expect(loader.stats().thumbRetained).toBe(1)
+
+    loader.load([url], [url]) // now the slide is current: it is drawn on the stage
+    await settle()
+    const stats = loader.stats()
+    expect(stats.largeRetained).toBe(1)
+    expect(stats.thumbRetained).toBe(0)
+    expect(stats.decoded).toBe(2)
+    expect(stats.retainedBytes).toBe(1000 * 750 * 4)
+    expect(evicted).toEqual([url])
+  })
+
+  it('decodes no more than maxConcurrent at a time', async () => {
+    const loader = createImageLoader(() => {}, {
+      maxConcurrent: 2,
+      maxSide: 100,
+      thumbMaxSide: 100,
+    })
+    const urls = [1, 2, 3, 4, 5].map((n) => `data:image/jpeg;base64,c${n}`)
+    for (const url of urls) sizes.set(url, { w: 400, h: 400 })
+
+    loader.load(urls)
+    expect(loader.pending()).toBe(2)
+    expect(loader.stats().queued).toBe(3)
+    await settle(20)
+    expect(loader.pending()).toBe(0)
+    expect(loader.stats().retainedImages).toBe(5)
+  })
 })

@@ -2422,40 +2422,53 @@ export function App() {
   // background images/pictures of non-current pages (otherwise unvisited pages' thumbnails are blank).
   useEffect(() => {
     if (slides.length === 0) return
-    const urls = new Set<string>()
-    const addFillUrl = (fill: RenderFill | undefined) => {
-      if (fill && fill.kind === 'image' && fill.dataUrl) urls.add(fill.dataUrl)
+    const addFillUrl = (out: Set<string>, fill: RenderFill | undefined) => {
+      if (fill && fill.kind === 'image' && fill.dataUrl) out.add(fill.dataUrl)
     }
     const addBulletUrls = (
+      out: Set<string>,
       text: { lines: Array<{ runs: Array<{ image?: string }> }> } | undefined,
     ) => {
-      for (const l of text?.lines ?? []) for (const r of l.runs) if (r.image) urls.add(r.image)
+      for (const l of text?.lines ?? []) for (const r of l.runs) if (r.image) out.add(r.image)
     }
-    const walk = (nodes: readonly RenderNode[]) => {
+    const walk = (out: Set<string>, nodes: readonly RenderNode[]) => {
       for (const n of nodes) {
-        if (n.type === 'picture' && n.dataUrl) urls.add(n.dataUrl)
+        if (n.type === 'picture' && n.dataUrl) out.add(n.dataUrl)
         if (n.type === 'shape' || n.type === 'text') {
-          if (n.fill) addFillUrl(n.fill)
-          addBulletUrls(n.text)
+          if (n.fill) addFillUrl(out, n.fill)
+          addBulletUrls(out, n.text)
         }
         if (n.type === 'chart') {
-          addFillUrl((n as { bgFill?: RenderFill }).bgFill)
+          addFillUrl(out, (n as { bgFill?: RenderFill }).bgFill)
           for (const b of (n as { bars: Array<{ fill?: RenderFill }> }).bars)
-            if (b.fill) addFillUrl(b.fill)
+            if (b.fill) addFillUrl(out, b.fill)
         }
-        if (n.type === 'group' && Array.isArray(n.children)) walk(n.children)
+        if (n.type === 'group' && Array.isArray(n.children)) walk(out, n.children)
         if (n.type === 'table' && Array.isArray(n.cells)) {
           for (const c of n.cells) {
-            if (c.fill) addFillUrl(c.fill)
-            addBulletUrls(c.text)
+            if (c.fill) addFillUrl(out, c.fill)
+            addBulletUrls(out, c.text)
           }
         }
       }
     }
-    for (const s of slides.slice(mediaSlideRange.from, mediaSlideRange.to + 1)) {
-      addFillUrl(s.background)
-      walk(s.nodes)
+    const collect = (from: number, to: number) => {
+      const out = new Set<string>()
+      for (const s of slides.slice(from, to + 1)) {
+        if (!s) continue
+        addFillUrl(out, s.background)
+        walk(out, s.nodes)
+      }
+      return out
     }
+    const urls = collect(mediaSlideRange.from, mediaSlideRange.to)
+    // Only what the stage draws needs stage-sized pixels; the rail draws at 126 px, and
+    // decoding its rows at the stage cap was seven times the byte budget (#952).
+    const lastSlide = Math.max(0, slides.length - 1)
+    const stageUrls =
+      printDlgOpen || presenter
+        ? urls
+        : collect(Math.max(0, current - 1), Math.min(lastSlide, current + 1))
     if (!imageLoaderRef.current) {
       imageLoaderRef.current = createImageLoader(
         (entries) => {
@@ -2469,6 +2482,9 @@ export function App() {
           // A rail thumbnail is 126 px and the stage 1280 px: media is retained at a
           // capped size, and dropped again once it leaves the visible window (#763).
           maxSide: mediaDecodeCapPx,
+          // a rail thumbnail is 126 px wide: 2x that keeps it crisp without holding
+          // stage-sized pixels for every row the window has mounted
+          thumbMaxSide: Math.max(128, Math.round(thumbW * 2)),
           onEvict: (url) =>
             setImages((prev) => {
               if (!prev.has(url)) return prev
@@ -2484,8 +2500,8 @@ export function App() {
         window as unknown as { __genofficeSlidesMediaStats?: () => unknown }
       ).__genofficeSlidesMediaStats = () => imageLoaderRef.current?.stats() ?? null
     }
-    imageLoaderRef.current.load(urls)
-  }, [slides, mediaSlideRange, mediaDecodeCapPx])
+    imageLoaderRef.current.load(urls, stageUrls)
+  }, [slides, mediaSlideRange, mediaDecodeCapPx, thumbW, current, printDlgOpen, presenter])
   // Dispose on unmount and clear the ref so a remount (e.g. React Strict Mode's
   // dev double-mount) lazily recreates a fresh loader instead of reusing a disposed one.
   useEffect(
