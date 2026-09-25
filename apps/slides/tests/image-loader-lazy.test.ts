@@ -8,6 +8,8 @@ import { createImageLoader, decodeCapped } from '../src/renderer/image-loader'
 /** Natural sizes the fake decoder reports, keyed by data URL. */
 const sizes = new Map<string, { w: number; h: number }>()
 const decoded: string[] = []
+/** mime given to canvas.toBlob, i.e. what the cap re-encoded into */
+const encodeMimes: string[] = []
 
 class FakeImage {
   onload: (() => void) | null = null
@@ -46,6 +48,7 @@ const settle = async (rounds = 6) => {
 beforeEach(() => {
   sizes.clear()
   decoded.length = 0
+  encodeMimes.length = 0
   vi.stubGlobal('Image', FakeImage)
   vi.stubGlobal('fetch', async (input: unknown) => {
     lastSource = String(input)
@@ -64,7 +67,9 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(function (
     this: HTMLCanvasElement,
     cb: BlobCallback,
+    mime?: string,
   ) {
+    encodeMimes.push(String(mime))
     const blob = new Blob(['x']) as Blob & { __size?: string }
     blob.__size = `${this.width}x${this.height}`
     cb(blob)
@@ -97,12 +102,20 @@ describe('decodeCapped', () => {
     expect(decoded.some((u) => u.startsWith('blob:capped:'))).toBe(false)
   })
 
-  it('does not re-encode non-lossy sources', async () => {
+  it('caps PNG too and keeps it PNG (screenshots are the big ones on the measured deck)', async () => {
     const url = 'data:image/png;base64,CCCC'
     sizes.set(url, { w: 4000, h: 3000 })
     const image = await decodeCapped(url, 2560)
-    expect(image!.naturalWidth).toBe(4000)
-    expect(decoded.some((u) => u.startsWith('blob:capped:'))).toBe(false)
+    expect(image!.naturalWidth).toBe(2560)
+    expect(image!.naturalHeight).toBe(1920)
+    expect(encodeMimes.at(-1)).toBe('image/png') // not re-encoded lossily
+  })
+
+  it('uses WebP for the lossy sources', async () => {
+    const url = 'data:image/jpeg;base64,EEEE'
+    sizes.set(url, { w: 4000, h: 3000 })
+    await decodeCapped(url, 2560)
+    expect(encodeMimes.at(-1)).toBe('image/webp')
   })
 
   it('falls back to the plain element when the bitmap pipeline fails', async () => {
@@ -226,6 +239,27 @@ describe('createImageLoader', () => {
     expect(stats.decoded).toBe(2)
     expect(stats.retainedBytes).toBe(1000 * 750 * 4)
     expect(evicted).toEqual([url])
+  })
+
+  it('forgets the decoded size of an image it evicts', async () => {
+    const loader = createImageLoader(() => {}, {
+      maxSide: 100,
+      thumbMaxSide: 100,
+      budgetBytes: 40 * 40 * 4,
+    })
+    const a = 'data:image/png;base64,gone-a'
+    const b = 'data:image/png;base64,stays-b'
+    for (const url of [a, b]) sizes.set(url, { w: 40, h: 40 })
+    loader.load([a])
+    await settle()
+    expect(loader.stats().retainedImages).toBe(1)
+    loader.load([b]) // a is no longer needed and the budget only fits one
+    await settle()
+    const stats = loader.stats()
+    expect(stats.evicted).toBe(1)
+    expect(stats.retainedImages).toBe(1)
+    // the bookkeeping must not keep counting an image that is gone
+    expect(stats.largeRetained + stats.thumbRetained).toBe(1)
   })
 
   it('decodes no more than maxConcurrent at a time', async () => {

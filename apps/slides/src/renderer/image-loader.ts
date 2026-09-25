@@ -95,8 +95,14 @@ function loadElement(url: string): Promise<HTMLImageElement | null> {
   })
 }
 
-/** Sources worth capping: lossy, and typically the ones that arrive at camera sizes. */
-const CAP_CANDIDATE_RE = /^data:image\/(jpeg|jpg|webp|avif)[;,]/
+/**
+ * Sources worth capping: any raster. This started out as lossy-only (JPEG/WebP/AVIF)
+ * on the assumption that PNG is small — wrong for the measured deck, whose 138 parts
+ * are PNG screenshots: they took the uncapped path and were held at 31-44 MB each, so
+ * a 16-row window (~100 pictures) came to 2.7 GB and nothing could be evicted.
+ * SVG stays out: it is retinted per slide, so it is never capped.
+ */
+const CAP_CANDIDATE_RE = /^data:image\/(png|jpeg|jpg|webp|avif|gif|bmp)[;,]/
 
 function elementFromBlob(blob: Blob): Promise<HTMLImageElement | null> {
   const url = URL.createObjectURL(blob)
@@ -142,8 +148,11 @@ export async function decodeCapped(url: string, maxSide: number): Promise<SlideI
     const ctx = canvas.getContext('2d')
     if (!ctx) return await loadElement(sourceUrl)
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    // PNG keeps its format: screenshots and anything with alpha should not be re-encoded
+    // lossily; everything else goes to WebP, which keeps alpha and compresses harder.
+    const isPng = /^data:image\/png/i.test(sourceUrl)
     const capped = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), 'image/webp', 0.92),
+      canvas.toBlob((b) => resolve(b), isPng ? 'image/png' : 'image/webp', 0.92),
     )
     if (!capped) return await loadElement(sourceUrl)
     return await elementFromBlob(capped)
@@ -230,6 +239,7 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
       if (needed.has(url) || buf.has(url)) continue // on screen, or about to be
       const image = loaded.get(url)
       loaded.delete(url)
+      decodedSide.delete(url)
       if (image) bytes -= imageBytes(image)
       evicted += 1
       options.onEvict?.(url)
