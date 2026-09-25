@@ -36,7 +36,7 @@ export function registerSlidesMediaProtocol(): void {
     const parsed = parseSlidesMediaUrl(request.url)
     const part = parsed ? sources.get(parsed.key)?.read(parsed.mediaRef) : undefined
     if (!part) return new Response(null, { status: 404 })
-    return new Response(part.bytes, {
+    return new Response(new Uint8Array(part.bytes), {
       headers: {
         'Content-Type': part.mime,
         'Content-Length': String(part.bytes.byteLength),
