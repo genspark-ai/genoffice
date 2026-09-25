@@ -2306,9 +2306,13 @@ export function App() {
   // insertion point), so the whole rail stays mounted while one is in flight —
   // the same reasoning as a deck small enough that windowing buys nothing.
   const railWindowed = slides.length >= WINDOWING_MIN_SLIDES && dragThumb === null
-  const railRange = railWindowed
-    ? visibleRowRange(railOffsets, thumbScroll, thumbViewportH)
-    : { start: 0, end: railRowHeights.length }
+  const railRange = useMemo(
+    () =>
+      railWindowed
+        ? visibleRowRange(railOffsets, thumbScroll, thumbViewportH)
+        : { start: 0, end: railRowHeights.length },
+    [railWindowed, railOffsets, thumbScroll, thumbViewportH, railRowHeights.length],
+  )
   // ── Media decoded on demand (#763 follow-up) ──────────────────────────────
   /** Retained size cap: 2x the widest slide, clamped so small decks stay crisp and
    *  huge ones do not carry 4K textures for a preview. */

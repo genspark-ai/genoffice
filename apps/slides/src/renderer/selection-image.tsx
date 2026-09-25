@@ -40,9 +40,13 @@ async function selectionImages(nodes: RenderNode[], cached: Map<string, HTMLImag
   const images = new Map(cached)
   const missing = [...urls].filter((url) => !images.get(url)?.naturalWidth)
   if (!missing.length) return images
-  const loader = createImageLoader((entries) => {
-    for (const [url, img] of entries) images.set(url, img)
-  }, 1)
+  const loader = createImageLoader(
+    (entries) => {
+      for (const [url, img] of entries) images.set(url, img)
+    },
+    // surface each decoded image immediately: this path waits on `pending()`, not on batches
+    { batchSize: 1 },
+  )
   try {
     loader.load(missing)
     const deadline = Date.now() + 5000

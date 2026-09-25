@@ -210,6 +210,49 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
     loaded.set(url, image)
   }
 
+  const settle = (url: string, image: SlideImage | null) => {
+    loading.delete(url)
+    if (image && !disposed) {
+      loaded.set(url, image)
+      bytes += imageBytes(image)
+      buf.set(url, image)
+    }
+    if (buf.size >= batchSize || loading.size === 0) flush()
+    else if (!timer && buf.size > 0) timer = setTimeout(flush, delayMs)
+    if (loading.size === 0) evict()
+  }
+
+  /**
+   * The path every source took before the cap existed: an `<img>` created
+   * synchronously and decoded by the browser at its own size. Kept as-is for
+   * non-lossy sources (PNG/EMF/SVG), which are usually already small.
+   */
+  const startUncapped = (url: string) => {
+    const img = new Image()
+    const done = (ok: boolean) => settle(url, ok ? img : null)
+    img.onload = () => done(true)
+    img.onerror = () => done(false)
+    if (METAFILE_RE.test(url)) {
+      void rasterizeMetafile(url)
+        .then((png) => {
+          if (png) img.src = png
+          else done(false)
+        })
+        .catch(() => done(false))
+    } else {
+      img.src = url
+    }
+  }
+
+  /** Lossy sources that exceed `maxSide` are decoded through the capping pipeline. */
+  const startCapped = (url: string) => {
+    void decodeCapped(url, maxSide)
+      .then((image) => settle(url, image))
+      .catch(() => settle(url, null))
+  }
+
+  const capAvailable = typeof createImageBitmap === 'function' && typeof fetch === 'function'
+
   return {
     /** urls still decoding — 0 means every image the deck asked for has settled */
     pending(): number {
@@ -229,22 +272,8 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
       for (const url of needed) {
         if (loaded.has(url) || loading.has(url)) continue
         loading.add(url)
-        void decodeCapped(url, maxSide)
-          .then((image) => {
-            loading.delete(url)
-            if (image && !disposed) {
-              loaded.set(url, image)
-              bytes += imageBytes(image)
-              buf.set(url, image)
-            }
-            if (buf.size >= batchSize || loading.size === 0) flush()
-            else if (!timer && buf.size > 0) timer = setTimeout(flush, delayMs)
-            if (loading.size === 0) evict()
-          })
-          .catch(() => {
-            loading.delete(url)
-            if (loading.size === 0) flush()
-          })
+        if (capAvailable && CAP_CANDIDATE_RE.test(url)) startCapped(url)
+        else startUncapped(url)
       }
       if (loading.size === 0) evict()
     },
