@@ -1279,4 +1279,6 @@ export const he = {
   appFindTitle: 'חפש ובחר ⌘F',
   appReplace: 'החלף',
   appGoTo: 'עבור אל',
+  appFontInstallFile: 'התקנת קובץ גופן…',
+  appFontDownloadFailed: 'ההורדה נכשלה — לחץ לניסיון חוזר',
 } satisfies Record<keyof typeof zh, string>

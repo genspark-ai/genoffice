@@ -1277,4 +1277,6 @@ export const zh = {
   appFindTitle: '查找和选择 ⌘F',
   appReplace: '替换',
   appGoTo: '定位',
+  appFontInstallFile: '安装字体文件…',
+  appFontDownloadFailed: '下载失败,点击重试',
 }

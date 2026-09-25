@@ -48,11 +48,18 @@ export function useSystemFontFamilies(): {
 }
 
 /// The echoed value stays listed even when uninstalled (document echo).
+/// `knownAvailable` lists families queryLocalFonts cannot see but that are known
+/// installed (store fonts), so they keep their candidate slot.
 export function fontFamilyGroups(
   systemFamilies: readonly string[],
   echoFamily: string | null | undefined,
+  knownAvailable: readonly string[] = [],
 ): { readonly common: readonly string[]; readonly system: readonly string[] } {
-  const { builtin, system } = partitionFontFamilies(DEFAULT_FONT_FAMILIES, systemFamilies)
+  const { builtin, system } = partitionFontFamilies(
+    DEFAULT_FONT_FAMILIES,
+    systemFamilies,
+    knownAvailable,
+  )
   const known = !echoFamily || builtin.includes(echoFamily) || systemFamilies.includes(echoFamily)
   return {
     common: known ? builtin : [echoFamily, ...builtin],

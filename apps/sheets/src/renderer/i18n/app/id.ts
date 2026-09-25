@@ -1336,4 +1336,6 @@ export const id = {
   appFindTitle: 'Temukan & Pilih ⌘F',
   appReplace: 'Ganti',
   appGoTo: 'Buka',
+  appFontInstallFile: 'Instal file font…',
+  appFontDownloadFailed: 'Unduhan gagal — klik untuk mencoba lagi',
 } satisfies Record<keyof typeof zh, string>

@@ -1339,4 +1339,6 @@ export const cs = {
   appFindTitle: 'Najít a vybrat ⌘F',
   appReplace: 'Nahradit',
   appGoTo: 'Přejít na',
+  appFontInstallFile: 'Instalovat soubor písma…',
+  appFontDownloadFailed: 'Stažení se nezdařilo — klikněte pro opakování',
 } satisfies Record<keyof typeof zh, string>

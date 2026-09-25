@@ -5633,3 +5633,9 @@ textarea:focus {
 .menu-select-drop .menu-option-icon:hover {
   background: transparent;
 }
+
+.rb-font-install-local {
+  margin-top: 4px;
+  color: var(--accent);
+  text-align: left;
+}

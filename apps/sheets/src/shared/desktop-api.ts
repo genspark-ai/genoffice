@@ -1,3 +1,5 @@
+import type { FontScript } from '@genoffice/electron-utils/font-catalog'
+import type { StoreFontFace } from '@genoffice/electron-utils/font-store'
 import { z } from 'zod'
 
 import {
@@ -2555,6 +2557,18 @@ export interface McpCommandResult {
 }
 
 export interface DesktopApi {
+  /** Curated downloadable (OFL) font catalog with per-family install state */
+  fontCatalog(): Promise<
+    Array<{ family: string; script: FontScript; installed: boolean; downloading: boolean }>
+  >
+  /** download one catalog family into the store; ok=false carries the error message */
+  fontDownload(family: string): Promise<{ ok: boolean; error?: string }>
+  /** pick local font files to install into the store; returns the installed families */
+  fontInstallLocal(): Promise<{ families: string[] }>
+  /** registrable faces currently in the store (per-face for ttc collections) */
+  fontStoreFaces(): Promise<StoreFontFace[]>
+  /** standalone sfnt bytes of one store face, for renderer FontFace registration */
+  fontData(file: string, faceOffset: number): Promise<ArrayBuffer | null>
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
   /** language switched from the shell home page */

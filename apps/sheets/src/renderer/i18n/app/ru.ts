@@ -1354,4 +1354,6 @@ export const ru = {
   appFindTitle: 'Найти и выделить ⌘F',
   appReplace: 'Заменить',
   appGoTo: 'Перейти',
+  appFontInstallFile: 'Установить файл шрифта…',
+  appFontDownloadFailed: 'Ошибка загрузки — нажмите, чтобы повторить',
 } satisfies Record<keyof typeof zh, string>

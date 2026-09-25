@@ -1371,4 +1371,6 @@ export const nl = {
   appFindTitle: 'Zoeken en selecteren ⌘F',
   appReplace: 'Vervangen',
   appGoTo: 'Ga naar',
+  appFontInstallFile: 'Lettertypebestand installeren…',
+  appFontDownloadFailed: 'Download mislukt — klik om opnieuw te proberen',
 } satisfies Record<keyof typeof zh, string>

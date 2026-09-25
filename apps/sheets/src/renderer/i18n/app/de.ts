@@ -1386,4 +1386,6 @@ export const de = {
   appFindTitle: 'Suchen und Auswählen ⌘F',
   appReplace: 'Ersetzen',
   appGoTo: 'Gehe zu',
+  appFontInstallFile: 'Schriftdatei installieren…',
+  appFontDownloadFailed: 'Download fehlgeschlagen – zum Wiederholen klicken',
 } satisfies Record<keyof typeof zh, string>

@@ -1301,4 +1301,6 @@ export const ar = {
   appFindTitle: 'بحث وتحديد ⌘F',
   appReplace: 'استبدال',
   appGoTo: 'الانتقال إلى',
+  appFontInstallFile: 'تثبيت ملف خط…',
+  appFontDownloadFailed: 'فشل التنزيل — انقر لإعادة المحاولة',
 } satisfies Record<keyof typeof zh, string>

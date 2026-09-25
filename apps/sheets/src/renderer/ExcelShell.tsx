@@ -38,6 +38,8 @@ import { NameManagerDialog, type DefinedNameAction, type DefinedNameRow } from '
 import { categoryOptionForPattern, numberFormatCategories } from './number-format'
 import { type SelectionFormat } from './selection-format'
 import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
+import { useFontCatalog } from './font-catalog'
+import { showToast } from './toast-bus'
 import { isGridKeyTarget, shouldInterceptClearSelection } from './clear-selection-keyboard'
 
 import type { ChartSeriesVisualState } from '@genoffice/xlsx-gateway/domain/chart-visual'
@@ -1300,6 +1302,13 @@ function Ribbon({
   const [fillColor, setFillColor] = useState('#FFF2CC')
   const [borderColor, setBorderColor] = useState('#000000')
   const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const {
+    catalog: fontCatalog,
+    busy: fontBusy,
+    failed: fontFailed,
+    load: loadFontCatalog,
+    ensureInstalled: ensureFontInstalled,
+  } = useFontCatalog()
   // Large menu button: a native select stretched invisibly over the tool,
   // each option carrying its full command string.
   const largeMenu = (
@@ -2525,12 +2534,28 @@ function Ribbon({
   const fontSizes = [9, 10, 11, 12, 14, 16, 18, 22, 26]
   const echoFamily = selectionFormat?.fontFamily ?? 'Aptos'
   const echoSize = selectionFormat?.fontSize ?? 11
-  const fontGroups = fontFamilyGroups(systemFontFamilies, echoFamily)
+  // Store fonts are invisible to queryLocalFonts, so downloaded families count as known.
+  const installedStoreFamilies = fontCatalog.filter((c) => c.installed).map((c) => c.family)
+  const fontGroups = fontFamilyGroups(systemFontFamilies, echoFamily, installedStoreFamilies)
+  // Uninstalled catalog families keep an in-picker download path; installed ones
+  // only list when no common/system row already offers them.
+  const catalogRows = fontCatalog.filter((c) =>
+    c.installed
+      ? !(fontGroups.common.includes(c.family) || systemFontFamilies.includes(c.family))
+      : true,
+  )
+  const catalogLabel = (family: string) =>
+    fontBusy.has(family) ? `${family} …` : fontFailed.has(family) ? `${family} ✕` : family
   const familyOptions = [
     ...fontGroups.common.map((family) => ({ value: family, label: family })),
     ...fontGroups.system.map((family, index) => ({
       value: family,
       label: family,
+      sep: index === 0,
+    })),
+    ...catalogRows.map((c, index) => ({
+      value: c.family,
+      label: c.installed ? catalogLabel(c.family) : `${catalogLabel(c.family)} ⤓`,
       sep: index === 0,
     })),
   ]
@@ -2663,9 +2688,22 @@ function Ribbon({
               data-tip={t('appFontFamilyTip')}
               value={echoFamily}
               options={familyOptions}
-              onOpen={loadSystemFonts}
-              onPick={(value) => onCommand(`font-family:${value}`)}
-              commit={(text) => onCommand(`font-family:${text}`)}
+              onOpen={() => {
+                loadSystemFonts()
+                loadFontCatalog()
+              }}
+              onPick={(value) => {
+                void ensureFontInstalled(value).then((ok) => {
+                  if (ok) onCommand(`font-family:${value}`)
+                  else showToast(t('appFontDownloadFailed'), 'error')
+                })
+              }}
+              commit={(text) => {
+                void ensureFontInstalled(text).then((ok) => {
+                  if (ok) onCommand(`font-family:${text}`)
+                  else showToast(t('appFontDownloadFailed'), 'error')
+                })
+              }}
             />
             <EditableMenuSelect
               className="select-like font-size"

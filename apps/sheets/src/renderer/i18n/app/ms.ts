@@ -1337,4 +1337,6 @@ export const ms = {
   appFindTitle: 'Cari & Pilih ⌘F',
   appReplace: 'Ganti',
   appGoTo: 'Pergi Ke',
+  appFontInstallFile: 'Pasang fail fon…',
+  appFontDownloadFailed: 'Muat turun gagal — klik untuk cuba lagi',
 } satisfies Record<keyof typeof zh, string>

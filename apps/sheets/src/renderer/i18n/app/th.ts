@@ -1301,4 +1301,6 @@ export const th = {
   appFindTitle: 'ค้นหาและเลือก ⌘F',
   appReplace: 'แทนที่',
   appGoTo: 'ไปที่',
+  appFontInstallFile: 'ติดตั้งไฟล์แบบอักษร…',
+  appFontDownloadFailed: 'ดาวน์โหลดล้มเหลว — คลิกเพื่อลองใหม่',
 } satisfies Record<keyof typeof zh, string>

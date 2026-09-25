@@ -17,6 +17,7 @@ import { installCanvasFontFallback, registerCellFontAliases } from './cell-font-
 import { LocaleProvider, setModuleLang } from './i18n/locale'
 import type { UiTheme } from '../shared/desktop-api'
 import './styles.css'
+import { registerStoreFonts } from './store-fonts'
 
 if (import.meta.hot) {
   import.meta.hot.on('vite:beforeUpdate', ({ updates }) => {
@@ -76,6 +77,8 @@ async function bootstrap(): Promise<void> {
     .then(applyAiPanelPrefs)
     .catch(() => {})
   window.desktopApi?.onAiPanelPrefsChanged?.(applyAiPanelPrefs)
+  // store fonts downloaded/installed in earlier sessions become selectable immediately
+  void registerStoreFonts()
   ReactDOM.createRoot(root!).render(
     <LocaleProvider initial={lang}>
       <App />

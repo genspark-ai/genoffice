@@ -1385,4 +1385,6 @@ export const ja = {
   appFindTitle: '検索と選択 ⌘F',
   appReplace: '置換',
   appGoTo: 'ジャンプ',
+  appFontInstallFile: 'フォントファイルをインストール…',
+  appFontDownloadFailed: 'ダウンロード失敗 — クリックで再試行',
 } satisfies Record<keyof typeof zh, string>

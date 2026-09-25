@@ -1358,4 +1358,6 @@ export const ko = {
   appFindTitle: '찾기 및 선택 ⌘F',
   appReplace: '바꾸기',
   appGoTo: '이동',
+  appFontInstallFile: '글꼴 파일 설치…',
+  appFontDownloadFailed: '다운로드 실패 — 클릭하여 재시도',
 } satisfies Record<keyof typeof zh, string>

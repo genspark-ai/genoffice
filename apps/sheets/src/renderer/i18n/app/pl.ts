@@ -1364,4 +1364,6 @@ export const pl = {
   appFindTitle: 'Znajdź i zaznacz ⌘F',
   appReplace: 'Zamień',
   appGoTo: 'Przejdź do',
+  appFontInstallFile: 'Zainstaluj plik czcionki…',
+  appFontDownloadFailed: 'Pobieranie nie powiodło się — kliknij, aby ponowić',
 } satisfies Record<keyof typeof zh, string>

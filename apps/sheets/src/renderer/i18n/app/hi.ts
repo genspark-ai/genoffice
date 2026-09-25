@@ -1333,4 +1333,6 @@ export const hi = {
   appFindTitle: 'ढूँढें और चुनें ⌘F',
   appReplace: 'बदलें',
   appGoTo: 'इस पर जाएँ',
+  appFontInstallFile: 'फ़ॉन्ट फ़ाइल इंस्टॉल करें…',
+  appFontDownloadFailed: 'डाउनलोड विफल — पुनः प्रयास के लिए क्लिक करें',
 } satisfies Record<keyof typeof zh, string>

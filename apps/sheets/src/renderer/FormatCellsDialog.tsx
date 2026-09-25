@@ -24,6 +24,8 @@ import {
 
 import type { SelectionFormat } from './selection-format'
 import { fontFamilyGroups, useSystemFontFamilies } from './system-fonts'
+import { useFontCatalog } from './font-catalog'
+import { showToast } from './toast-bus'
 
 /// Excel's Format Cells dialog (⌘1), scoped to what the save pipeline can
 /// persist today: number format, alignment, font, border, fill, and
@@ -170,9 +172,31 @@ export function FormatCellsDialog({
   const negativeSample = -Math.abs(typeof sample === 'number' ? sample : 1234.56)
 
   const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const {
+    catalog: fontCatalog,
+    busy: fontBusy,
+    failed: fontFailed,
+    load: loadFontCatalog,
+    installLocal: installLocalFonts,
+    ensureInstalled: ensureFontInstalled,
+  } = useFontCatalog()
   // the dialog opens from a click, so activation is still live here
-  useEffect(() => loadSystemFonts(), [loadSystemFonts])
-  const fontGroups = fontFamilyGroups(systemFontFamilies, draft.family)
+  useEffect(() => {
+    loadSystemFonts()
+    loadFontCatalog()
+  }, [loadSystemFonts, loadFontCatalog])
+  // Store fonts are invisible to queryLocalFonts, so downloaded families count as known.
+  const installedStoreFamilies = fontCatalog.filter((c) => c.installed).map((c) => c.family)
+  const fontGroups = fontFamilyGroups(systemFontFamilies, draft.family, installedStoreFamilies)
+  // Uninstalled catalog families keep an in-dialog download path; installed ones
+  // only list when no common/system row already offers them.
+  const catalogRows = fontCatalog.filter((c) =>
+    c.installed
+      ? !(fontGroups.common.includes(c.family) || systemFontFamilies.includes(c.family))
+      : true,
+  )
+  const catalogLabel = (family: string) =>
+    fontBusy.has(family) ? `${family} …` : fontFailed.has(family) ? `${family} ✕` : family
   const sizeOptions =
     !draft.size || FONT_SIZES.includes(draft.size)
       ? FONT_SIZES
@@ -437,9 +461,25 @@ export function FormatCellsDialog({
                       ...fontGroups.common,
                       ...fontGroups.system.filter((f) => !fontGroups.common.includes(f)),
                     ].map((f) => ({ value: f, label: f })),
+                    ...catalogRows.map((c) => ({
+                      value: c.family,
+                      label: c.installed ? catalogLabel(c.family) : `${catalogLabel(c.family)} ⤓`,
+                    })),
                   ]}
-                  onPick={(v) => set('family', v)}
+                  onPick={(v) => {
+                    void ensureFontInstalled(v).then((ok) => {
+                      if (ok) set('family', v)
+                      else showToast(t('appFontDownloadFailed'), 'error')
+                    })
+                  }}
                 />
+                <button
+                  type="button"
+                  className="rb-font-install-local"
+                  onClick={() => void installLocalFonts()}
+                >
+                  {t('appFontInstallFile')}
+                </button>
               </label>
               <label>
                 {t('dlgFcSize')}

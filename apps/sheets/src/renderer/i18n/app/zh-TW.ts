@@ -1249,4 +1249,6 @@ export const zhTW = {
   appFindTitle: '尋找與選取 ⌘F',
   appReplace: '取代',
   appGoTo: '到',
+  appFontInstallFile: '安裝字型檔案…',
+  appFontDownloadFailed: '下載失敗,點擊重試',
 } satisfies Record<keyof typeof zh, string>

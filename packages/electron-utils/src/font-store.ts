@@ -197,7 +197,7 @@ export function extractFontCdnBaseUrl(pkg: unknown): string | null {
 export function resolveFontCdnBaseUrl(opts: {
   isPackaged: boolean
   appPath: string
-  envUrl?: string
+  envUrl?: string | undefined
 }): string | null {
   if (!opts.isPackaged) return normalizeFontCdnBaseUrl(opts.envUrl)
   try {

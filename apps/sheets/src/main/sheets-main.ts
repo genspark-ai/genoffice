@@ -36,6 +36,13 @@ import type {
 } from 'electron'
 import { z } from 'zod'
 import {
+  downloadSheetsFont,
+  installLocalSheetsFonts,
+  listSheetsFontCatalog,
+  sheetsFontData,
+  sheetsFontStoreFaces,
+} from './font-store'
+import {
   appMenuLabels,
   buildPrintableHtml,
   configuredDefaultSaveDir,
@@ -2356,6 +2363,25 @@ export function registerSheetsIpc(): void {
   // shared with the other editor modules — last (identical) registration wins
   ipcMain.removeHandler('app:get-language')
   ipcMain.handle('app:get-language', () => getUiLang())
+
+  // Downloadable/installable font store — the shared pipeline with slides and docs
+  // (apps/sheets/src/main/font-store.ts); the renderer registers the faces as web fonts.
+  ipcMain.handle('sheets:font-catalog', () => listSheetsFontCatalog())
+  ipcMain.handle('sheets:font-download', (_event, family: string) =>
+    downloadSheetsFont(family).then(
+      () => ({ ok: true }),
+      (err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+    ),
+  )
+  ipcMain.handle('sheets:font-install-local', (event) =>
+    installLocalSheetsFonts(hostWindowFor(event.sender)).then((families) => ({ families })),
+  )
+  ipcMain.handle('sheets:font-store-faces', () => sheetsFontStoreFaces())
+  ipcMain.handle('sheets:font-data', (_event, file: string, faceOffset: number) =>
+    typeof file === 'string' && Number.isInteger(faceOffset)
+      ? sheetsFontData(file, faceOffset)
+      : null,
+  )
 
   /** returns true once when shell opened this tab for a new blank workbook */
   ipcMain.handle('sheets:consume-new-blank', () => {

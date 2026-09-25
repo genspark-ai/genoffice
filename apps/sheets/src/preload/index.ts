@@ -638,6 +638,11 @@ const desktopApi: DesktopApi = {
   getPathForFile(file) {
     return webUtils.getPathForFile(file)
   },
+  fontCatalog: () => ipcRenderer.invoke('sheets:font-catalog'),
+  fontDownload: (family) => ipcRenderer.invoke('sheets:font-download', family),
+  fontInstallLocal: () => ipcRenderer.invoke('sheets:font-install-local'),
+  fontStoreFaces: () => ipcRenderer.invoke('sheets:font-store-faces'),
+  fontData: (file, faceOffset) => ipcRenderer.invoke('sheets:font-data', file, faceOffset),
 }
 
 function parseAttachmentAddResult(input: unknown): AttachmentAddResult {
