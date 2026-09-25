@@ -27,7 +27,7 @@ vi.mock('react-konva', () => {
 })
 
 import { App } from '../src/renderer/App'
-import { WINDOWING_MIN_SLIDES, thumbRowHeight } from '../src/renderer/thumb-window'
+import { THUMB_GAP_PX, WINDOWING_MIN_SLIDES, thumbRowHeight } from '../src/renderer/thumb-window'
 
 const SLIDE_COUNT = 120
 const RAIL_VIEWPORT_H = 800
@@ -183,6 +183,32 @@ describe('long-deck thumbnail rail (#763)', () => {
     // height, drag drop targets and the blank-space insertion point all read the DOM.
     expect(mountedThumbs(list) + placeholderThumbs(list)).toBe(SLIDE_COUNT)
     expect(list.querySelectorAll('[data-index]').length).toBe(SLIDE_COUNT)
+  })
+
+  it('gives every spacer the height of a whole row', async () => {
+    // This is the invariant that was missing: the window is picked from a row model
+    // built with `thumbRowHeight` (stage + 4px borders + 10px gap), while the spacer
+    // only set the *stage* height. Under `* { box-sizing: border-box }` that put the
+    // borders inside the box, so each spacer was 4px short — 4px of drift per row
+    // against the model. By row ~300 that is 1,200px (~17 rows against the 600px
+    // overscan), which is why a long jump left its target row as a placeholder and
+    // why fast scrolling showed blanks. jsdom has no layout to catch that; this
+    // asserts the arithmetic the layout would have shown.
+    const list = await bootApp()
+    const thumbW = railThumbW(list)
+    const rowHeight = thumbRowHeight(slide(), thumbW)
+
+    const spacers = [...list.querySelectorAll<HTMLElement>('.thumb-placeholder')]
+    expect(spacers.length).toBeGreaterThan(0)
+    for (const spacer of spacers) {
+      expect(Number.parseFloat(spacer.style.height)).toBe(rowHeight - THUMB_GAP_PX)
+    }
+    // and they add up to exactly the rows they stand in for
+    const asRows = spacers.reduce(
+      (sum, el) => sum + Number.parseFloat(el.style.height) + THUMB_GAP_PX,
+      0,
+    )
+    expect(asRows).toBe(spacers.length * rowHeight)
   })
 
   it('mounts the far end of the deck once it is scrolled to', async () => {
