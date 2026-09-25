@@ -1301,7 +1301,30 @@ export interface SlidesApi {
   fontCatalog: () => Promise<
     Array<{
       family: string
-      script: 'latin' | 'ja' | 'ko' | 'sc' | 'tc'
+      script:
+        | 'latin'
+        | 'ja'
+        | 'ko'
+        | 'sc'
+        | 'tc'
+        | 'am'
+        | 'ar'
+        | 'bn'
+        | 'gu'
+        | 'he'
+        | 'hi'
+        | 'hy'
+        | 'ka'
+        | 'km'
+        | 'kn'
+        | 'lo'
+        | 'ml'
+        | 'my'
+        | 'pa'
+        | 'si'
+        | 'ta'
+        | 'te'
+        | 'th'
       installed: boolean
       downloading: boolean
     }>

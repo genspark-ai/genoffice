@@ -8,7 +8,30 @@ export interface CatalogFile {
 export interface CatalogFamily {
   family: string
   /** Primary script, for grouping in the picker */
-  script: 'latin' | 'ja' | 'ko' | 'sc' | 'tc'
+  script:
+    | 'latin'
+    | 'ja'
+    | 'ko'
+    | 'sc'
+    | 'tc'
+    | 'am'
+    | 'ar'
+    | 'bn'
+    | 'gu'
+    | 'he'
+    | 'hi'
+    | 'hy'
+    | 'ka'
+    | 'km'
+    | 'kn'
+    | 'lo'
+    | 'ml'
+    | 'my'
+    | 'pa'
+    | 'si'
+    | 'ta'
+    | 'te'
+    | 'th'
   files: CatalogFile[]
 }
 
@@ -601,6 +624,1000 @@ export const FONT_CATALOG: CatalogFamily[] = [
         file: 'NanumMyeongjo-bold.ttf',
         sha256: 'c6c9d7ddba9d339867ecd9d65f67e79386a91b1d1582b5adc43eebc90557de80',
         bytes: 3072528,
+      },
+    ],
+  },
+  // World-language coverage: a sans (and serif where the script has one) per writing
+  // system plus popular local standards, so CJK, Thai, Arabic, Hebrew, Indic, SE Asian
+  // and other scripts can author documents without relying on preinstalled fonts.
+  // Files pinned from the Google Fonts css2 pipeline (full static TTFs) as above.
+  {
+    family: 'PT Sans',
+    script: 'latin',
+    files: [
+      {
+        style: 'regular',
+        file: 'PTSans-regular.ttf',
+        sha256: 'fd416bbea21b05983676b0336d56efd9c782e5ff715ce1d1d542cee20cfbca11',
+        bytes: 265676,
+      },
+      {
+        style: 'bold',
+        file: 'PTSans-bold.ttf',
+        sha256: 'cfe988a60051e5004fcf0ce0edcd32658482d9ddf332c6a25c86603027189876',
+        bytes: 275408,
+      },
+      {
+        style: 'italic',
+        file: 'PTSans-italic.ttf',
+        sha256: 'e74cb297fba7325d8622fc1b933a8b7bf170479e16a28b65782bb4fdbec5d019',
+        bytes: 257988,
+      },
+      {
+        style: 'boldItalic',
+        file: 'PTSans-boldItalic.ttf',
+        sha256: '9391e121f829ab79e586ee8a171ba721a2f1f7473bab0f49a90003b25cadb83a',
+        bytes: 197292,
+      },
+    ],
+  },
+  {
+    family: 'PT Serif',
+    script: 'latin',
+    files: [
+      {
+        style: 'regular',
+        file: 'PTSerif-regular.ttf',
+        sha256: '6902e32186c45fd344901f936d563fe61dfd8d29133e3d97f7163c86b08ede9c',
+        bytes: 202596,
+      },
+      {
+        style: 'bold',
+        file: 'PTSerif-bold.ttf',
+        sha256: '86fe68d3c03f693cfeb3bfa2410273d3f688c712581d738201bf69fb832545fc',
+        bytes: 183172,
+      },
+      {
+        style: 'italic',
+        file: 'PTSerif-italic.ttf',
+        sha256: '009698a23dcc4267ecabc3e0e72f30b61174fe78db20ac6172ef98d15c5f0927',
+        bytes: 219344,
+      },
+      {
+        style: 'boldItalic',
+        file: 'PTSerif-boldItalic.ttf',
+        sha256: '5f929308b70cbd9dd92576f7695825130d15779d0d57f325881defd4e5100eaa',
+        bytes: 180832,
+      },
+    ],
+  },
+  {
+    family: 'Be Vietnam Pro',
+    script: 'latin',
+    files: [
+      {
+        style: 'regular',
+        file: 'BeVietnamPro-regular.ttf',
+        sha256: '4ad53eac036092be79a34b5fa0aa32d0ebb3c7e5df4bc058764f5614fbf148a0',
+        bytes: 120228,
+      },
+      {
+        style: 'bold',
+        file: 'BeVietnamPro-bold.ttf',
+        sha256: 'aef76cd15b8c9faa1ff21951bb71963a774aa381526c557e5a52f38d430c4650',
+        bytes: 126228,
+      },
+      {
+        style: 'italic',
+        file: 'BeVietnamPro-italic.ttf',
+        sha256: '91fe3a3af6fd3009f7431ab71008ec5227beb5c92d0bd1a1a61a3067989130c6',
+        bytes: 123876,
+      },
+      {
+        style: 'boldItalic',
+        file: 'BeVietnamPro-boldItalic.ttf',
+        sha256: 'a1a3f6cd93b9782dd1577e8d27f240328e563fc20be3924b139c61663e99b9e3',
+        bytes: 124224,
+      },
+    ],
+  },
+  {
+    family: 'M PLUS Rounded 1c',
+    script: 'ja',
+    files: [
+      {
+        style: 'regular',
+        file: 'MPLUSRounded1c-regular.ttf',
+        sha256: '86f9847b02207adec9963476146b606c302b56906cb41336e7f759346c3e35b3',
+        bytes: 3380464,
+      },
+      {
+        style: 'bold',
+        file: 'MPLUSRounded1c-bold.ttf',
+        sha256: 'd045dc991115f466e32b9e1460484814e01ef20621036904da214cdf6e12c740',
+        bytes: 3532960,
+      },
+    ],
+  },
+  {
+    family: 'Zen Old Mincho',
+    script: 'ja',
+    files: [
+      {
+        style: 'regular',
+        file: 'ZenOldMincho-regular.ttf',
+        sha256: '43f53fe7e3411475c9867ca889fccc9e950f1ef896618857a0cfc903f1377aea',
+        bytes: 5439900,
+      },
+      {
+        style: 'bold',
+        file: 'ZenOldMincho-bold.ttf',
+        sha256: '30d2f8074f694ab515ce3bfda1257a1aa799ce30d1ba89221e702e1857b85be3',
+        bytes: 5433848,
+      },
+    ],
+  },
+  {
+    family: 'BIZ UDGothic',
+    script: 'ja',
+    files: [
+      {
+        style: 'regular',
+        file: 'BIZUDGothic-regular.ttf',
+        sha256: '2532b6b62754f0a9627b7aa1a47b60a470e4983b0feb344ee59a004a583367fd',
+        bytes: 4407868,
+      },
+      {
+        style: 'bold',
+        file: 'BIZUDGothic-bold.ttf',
+        sha256: '943d12350f91de53fda3f173c44bf4f157c5b5616c9a90cb355a44d53ce89dad',
+        bytes: 4378560,
+      },
+    ],
+  },
+  {
+    family: 'Shippori Mincho',
+    script: 'ja',
+    files: [
+      {
+        style: 'regular',
+        file: 'ShipporiMincho-regular.ttf',
+        sha256: '9a360402da3d962ebf905ee771f738394e3656403c31fcb13e862e50ff7b0755',
+        bytes: 8342816,
+      },
+      {
+        style: 'bold',
+        file: 'ShipporiMincho-bold.ttf',
+        sha256: '90c7a624e901b30b769f70007288617645a475ac3563cdce2bf30f35a90750cf',
+        bytes: 8233368,
+      },
+    ],
+  },
+  {
+    family: 'IBM Plex Sans KR',
+    script: 'ko',
+    files: [
+      {
+        style: 'regular',
+        file: 'IBMPlexSansKR-regular.ttf',
+        sha256: 'a5fc4140a334ac3dec8076721daa713c22d5af01f7d12d8de80ea4e1262c2e2e',
+        bytes: 2787060,
+      },
+      {
+        style: 'bold',
+        file: 'IBMPlexSansKR-bold.ttf',
+        sha256: '2cc7f1b8869faf35d6e95ce80cc923dea1d31c320a8606d6be8cd6bcd0f0ea3b',
+        bytes: 2865520,
+      },
+    ],
+  },
+  {
+    family: 'Gowun Batang',
+    script: 'ko',
+    files: [
+      {
+        style: 'regular',
+        file: 'GowunBatang-regular.ttf',
+        sha256: '8bc1faf7965c79cd23cc21bea5be0a0582ba6804d33f00e50f3bb27ed10965d0',
+        bytes: 8430916,
+      },
+      {
+        style: 'bold',
+        file: 'GowunBatang-bold.ttf',
+        sha256: 'acca988be385cf6546f0e7f7da97925e99fa47e7862819a2a724aa1c2a660ee5',
+        bytes: 8175220,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Ethiopic',
+    script: 'am',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansEthiopic-regular.ttf',
+        sha256: '6d66ffc7a4a33f95d56df3c02417083d14f2bfd1f7b4c50ebcdcda3d3f89ea9c',
+        bytes: 365364,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansEthiopic-bold.ttf',
+        sha256: 'dcd2194308a22136f931c3665bbba652bd4d71b1bc33be9c7aabddaddc8ce05d',
+        bytes: 365316,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Ethiopic',
+    script: 'am',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifEthiopic-regular.ttf',
+        sha256: 'ce375c2784bbf4d57818e871e8ccb223910358b9ed281b141ee8804ebb87e6bb',
+        bytes: 303140,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifEthiopic-bold.ttf',
+        sha256: '9d9d28b7806a06053ebb3ab82b0ab411282f3eb0fb9a4b0d4bb4c218f98bfcd0',
+        bytes: 303488,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Arabic',
+    script: 'ar',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansArabic-regular.ttf',
+        sha256: '146b2193f4aee343a8da5e2295255b04db547d74339a12be51763b3a0081868d',
+        bytes: 192144,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansArabic-bold.ttf',
+        sha256: '195e8d8e1e723630e46c1d19fe7ec118a73e5825baa198737d6a96df8c4063b1',
+        bytes: 192348,
+      },
+    ],
+  },
+  {
+    family: 'Noto Naskh Arabic',
+    script: 'ar',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoNaskhArabic-regular.ttf',
+        sha256: 'e62e84cf72fe9e8953a21c3337c68155a116d4bbdcd9522d860d46686b28c6e0',
+        bytes: 197420,
+      },
+      {
+        style: 'bold',
+        file: 'NotoNaskhArabic-bold.ttf',
+        sha256: '76e7b3b17abc5068fda755d657d475863df2d48cee60dc21bd22efb11ecb2268',
+        bytes: 197532,
+      },
+    ],
+  },
+  {
+    family: 'Amiri',
+    script: 'ar',
+    files: [
+      {
+        style: 'regular',
+        file: 'Amiri-regular.ttf',
+        sha256: '7f19c4a5dc77b0ef435b430d750759170def15d6e3801006e0704dadc7f220e3',
+        bytes: 385840,
+      },
+      {
+        style: 'bold',
+        file: 'Amiri-bold.ttf',
+        sha256: '65e3e6fe6af66bb6d24959bd537a89ea35de14083f5a2e2290c246136c2b047b',
+        bytes: 368616,
+      },
+    ],
+  },
+  {
+    family: 'Cairo',
+    script: 'ar',
+    files: [
+      {
+        style: 'regular',
+        file: 'Cairo-regular.ttf',
+        sha256: '7ecb9b6a465072bce7b0e2a6d2d0355add8151fa9f8f342b516b57b26a2914c6',
+        bytes: 91500,
+      },
+      {
+        style: 'bold',
+        file: 'Cairo-bold.ttf',
+        sha256: 'cad8564334938a5867e2b8200e9b882067811bc09e26314f2d3aa95ccfe54015',
+        bytes: 91664,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Bengali',
+    script: 'bn',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansBengali-regular.ttf',
+        sha256: '89e77fc7f35436abc4a972f60701c5f6684b6bfd23e4f73880d7da8132e5c2c9',
+        bytes: 138780,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansBengali-bold.ttf',
+        sha256: 'fffa71fbfe82996f030ac55f15f785c9f6b20f540c3e77ea532b065e850d8af4',
+        bytes: 139192,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Bengali',
+    script: 'bn',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifBengali-regular.ttf',
+        sha256: 'b8db45a820e370a720766e424c2077cd9ec5a7def78a38d01f111b2e5a0a272b',
+        bytes: 244600,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifBengali-bold.ttf',
+        sha256: 'bc639f8c9e6d58fbdfb193f609c1ed27560a092d4c1285e50d3c8cd15baa830b',
+        bytes: 246804,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Gujarati',
+    script: 'gu',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansGujarati-regular.ttf',
+        sha256: 'bca081f50318974bcb1cbed113fef3f04dd918cd513a30474b0a0d626d58d4c9',
+        bytes: 173540,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansGujarati-bold.ttf',
+        sha256: '50700e4f6679aa20a13fb025ae9758de442ae0d6652622d66a1dda62cf9bef0a',
+        bytes: 173720,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Gujarati',
+    script: 'gu',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifGujarati-regular.ttf',
+        sha256: '878ec7410951db00e2a826cb97e5fd46da9b92aab8a04aa856e0ad3aad1ed30d',
+        bytes: 140520,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifGujarati-bold.ttf',
+        sha256: '51d45928af23ff5fd8cbd7cf45f53b54d7030394a28bf490e632dd5f7154955b',
+        bytes: 140444,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Hebrew',
+    script: 'he',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansHebrew-regular.ttf',
+        sha256: 'a5cc5ce90ed4f6393992728fcc63657c4dd83aed119acbd5f4ed223e40c71129',
+        bytes: 46496,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansHebrew-bold.ttf',
+        sha256: '8a65248544dde06765c38908b768b243bfefc0b06e07f88852eb4a2842593a33',
+        bytes: 46460,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Hebrew',
+    script: 'he',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifHebrew-regular.ttf',
+        sha256: 'a9aacca0bb0723459982b4d91af89a09a8845772f9d6cf149d86de7107fecb8a',
+        bytes: 54636,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifHebrew-bold.ttf',
+        sha256: '1646d2be37d4b631acf031ea2afcf17e9c94f34bf083d45fa8b52a2d3f541cab',
+        bytes: 54656,
+      },
+    ],
+  },
+  {
+    family: 'Frank Ruhl Libre',
+    script: 'he',
+    files: [
+      {
+        style: 'regular',
+        file: 'FrankRuhlLibre-regular.ttf',
+        sha256: '89478e290c257456eb61d846bea77ab06d944f09c7f84000c4fd8cdedde6845a',
+        bytes: 66932,
+      },
+      {
+        style: 'bold',
+        file: 'FrankRuhlLibre-bold.ttf',
+        sha256: '148f52c4a2be4676aab8ca8da8ef0fa07a08a94ec684e65206e1afd5f4ee6265',
+        bytes: 67000,
+      },
+    ],
+  },
+  {
+    family: 'David Libre',
+    script: 'he',
+    files: [
+      {
+        style: 'regular',
+        file: 'DavidLibre-regular.ttf',
+        sha256: '96a8a1da094a13c4ebe96fb0889c04e16a689464099d646c5dca355bdb0c8367',
+        bytes: 121700,
+      },
+      {
+        style: 'bold',
+        file: 'DavidLibre-bold.ttf',
+        sha256: '4b4b996dd36694ae360668694b8b5d0671204426c640a32a776f155a9875e812',
+        bytes: 126812,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Devanagari',
+    script: 'hi',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansDevanagari-regular.ttf',
+        sha256: '526a1b34db43de480d51a8a923c474b848489005d61b6ef45b3a850f7e141ff3',
+        bytes: 219460,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansDevanagari-bold.ttf',
+        sha256: '3b752492302c04610e0f3efe281256443778f5d4668c25df6d28ffd8dda57183',
+        bytes: 220032,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Devanagari',
+    script: 'hi',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifDevanagari-regular.ttf',
+        sha256: '39ff220273661f9b01893e61d16756a612f6f3e358c1d2546b5fc24b6b7fecbb',
+        bytes: 232404,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifDevanagari-bold.ttf',
+        sha256: 'de5246a1e11ad12d16e5bff2b08a0f2dd4d8922f36d01a73020d40dff76cacaf',
+        bytes: 232872,
+      },
+    ],
+  },
+  {
+    family: 'Hind',
+    script: 'hi',
+    files: [
+      {
+        style: 'regular',
+        file: 'Hind-regular.ttf',
+        sha256: 'f947664ff88db42e7b7dbcc5cf76f20de7e2fb46d16f50d0ac1ae3b46ac22f10',
+        bytes: 291116,
+      },
+      {
+        style: 'bold',
+        file: 'Hind-bold.ttf',
+        sha256: 'c62acc58d15d080171f637a956ff313a8a9d80b72889e788d663b38329288784',
+        bytes: 278416,
+      },
+    ],
+  },
+  {
+    family: 'Mukta',
+    script: 'hi',
+    files: [
+      {
+        style: 'regular',
+        file: 'Mukta-regular.ttf',
+        sha256: '0f15e7baff0baf25b4ed6185ac42dd80b38c28e85052e79ac62ed3b9ac7157a9',
+        bytes: 419816,
+      },
+      {
+        style: 'bold',
+        file: 'Mukta-bold.ttf',
+        sha256: '90f501c283fa657fa2d25c9f164b56989c2b7e7dd84ab1c2c532db0cf1d4d1d9',
+        bytes: 405708,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Armenian',
+    script: 'hy',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansArmenian-regular.ttf',
+        sha256: 'eb9cb9fc5344f58981b10c9f84e36797fd07e06f8357157310a1b247a63a7cba',
+        bytes: 48388,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansArmenian-bold.ttf',
+        sha256: '374c293cda37648babed0d92bbc6699ebe8f7208da2847ead95b8b58b538381d',
+        bytes: 48412,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Armenian',
+    script: 'hy',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifArmenian-regular.ttf',
+        sha256: '1f40639adc93a467cef54d31a7d3088a088a927272d6b15a637199fbfe2f18d6',
+        bytes: 53992,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifArmenian-bold.ttf',
+        sha256: '38a6e008ff56b514a4cedcf94286d383d471ee9fcc9354d948c90e7eec5257ef',
+        bytes: 53924,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Georgian',
+    script: 'ka',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansGeorgian-regular.ttf',
+        sha256: '5f304169c7922a44fc5efdf4be880966c6641a4d25d32f501a8c166f2eeaf7be',
+        bytes: 60888,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansGeorgian-bold.ttf',
+        sha256: '42790b85fe0a752049833f8c394d46c5ef44236b4befad22eb553056fb7dab6c',
+        bytes: 60840,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Georgian',
+    script: 'ka',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifGeorgian-regular.ttf',
+        sha256: 'c92a2919535b076f289348f55e7ce0fe9de1a8dcafc9d4ee4da0094deadebfcd',
+        bytes: 77228,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifGeorgian-bold.ttf',
+        sha256: '4231eadb3f95c17d0c36628e90d36f627b3bc6b9f907b56f88217a879c547023',
+        bytes: 77220,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Khmer',
+    script: 'km',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansKhmer-regular.ttf',
+        sha256: 'a6b8a41682170ee0c8df82adb86650498c1a833c4ca00c1f043c81305680dbe8',
+        bytes: 104132,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansKhmer-bold.ttf',
+        sha256: 'c82ee21a66355eb6130bf407cf86ee42f19836952976dc507d3e09cf7e1c232d',
+        bytes: 104664,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Khmer',
+    script: 'km',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifKhmer-regular.ttf',
+        sha256: 'a6dccd249e64336ae1ba4472b3e9ce6435fffd006f14dddf04772cdcc3804d32',
+        bytes: 140068,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifKhmer-bold.ttf',
+        sha256: '0182fde18cf0b85585cb8183ffa93443c3a0fd3ba5e877b3b0eafa77f132f5a3',
+        bytes: 140240,
+      },
+    ],
+  },
+  {
+    family: 'Battambang',
+    script: 'km',
+    files: [
+      {
+        style: 'regular',
+        file: 'Battambang-regular.ttf',
+        sha256: '6614d24e42d50a7e417000f8e039589629348cfc3180c696a86650c36656ad31',
+        bytes: 115124,
+      },
+      {
+        style: 'bold',
+        file: 'Battambang-bold.ttf',
+        sha256: '19c366fd69528ded0f373f96ffd9775a34c4ef0b31b8de6319961fce382f25ba',
+        bytes: 111064,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Kannada',
+    script: 'kn',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansKannada-regular.ttf',
+        sha256: '4b8dd08fc05afa13cc8daa8ac2187f35711be026286db8608e87c86f715e273d',
+        bytes: 143576,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansKannada-bold.ttf',
+        sha256: 'f2d6b3d0b32f03f6c375ad2e9a18ab67ecfe8bd86bd9a047bef936282eb36af5',
+        bytes: 143712,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Kannada',
+    script: 'kn',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifKannada-regular.ttf',
+        sha256: '2e21065ce0b9d64c8c0f605e0aa217cdd9c3075fd801eb435ef492f858264d5c',
+        bytes: 171220,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifKannada-bold.ttf',
+        sha256: '09cd0293266cf3933cd32bda119a90fecf54238e1f21d9152e567cf715cd51fc',
+        bytes: 171308,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Lao',
+    script: 'lo',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansLao-regular.ttf',
+        sha256: '394b8a502bc668afc49263ceda2f599eda308114ccffd07ee9c4f26c7443e39a',
+        bytes: 51004,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansLao-bold.ttf',
+        sha256: '8f159753b5cd9e94215de11a5ee8dbf54d7fb519e200b078d3b9e4efdc48d2bb',
+        bytes: 51148,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Lao',
+    script: 'lo',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifLao-regular.ttf',
+        sha256: 'e2ed30bb253fa529f90f3f1c81796007845d7b6d2f618393f6224fd62e25d53c',
+        bytes: 61952,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifLao-bold.ttf',
+        sha256: 'f8e192effe4dfb2041f4f2b649c550245ca68cbdd94e3fd09b878a30e2f81bc3',
+        bytes: 62108,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Malayalam',
+    script: 'ml',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansMalayalam-regular.ttf',
+        sha256: 'd069babb32b90efb3a33302cbbd25ffef95fe9b7652fe608da41fe47b0538af4',
+        bytes: 105608,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansMalayalam-bold.ttf',
+        sha256: 'f305d0f525b50454d7bfcdfffda2920ba0bfb560bdb561957ca710cbe101fb62',
+        bytes: 105568,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Malayalam',
+    script: 'ml',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifMalayalam-regular.ttf',
+        sha256: 'f3bd7d9f65bad43ae0913d7d685a167804b0b9992f70dc7d784a005eae586026',
+        bytes: 104324,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifMalayalam-bold.ttf',
+        sha256: 'c317c0c785a88a312d99daaee5d101250cb5d29a1160c569fa3b53c117e04eda',
+        bytes: 104332,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Myanmar',
+    script: 'my',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansMyanmar-regular.ttf',
+        sha256: '36bace7489176107fce4414fef846b68f5b99e5a03f73f18f7dae6a9e484cf10',
+        bytes: 181864,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansMyanmar-bold.ttf',
+        sha256: 'b1a9fc8f0866f0c62e31af77ac9a61ef49e1130b7f45aa14a2acbcc3db5ba85a',
+        bytes: 182048,
+      },
+    ],
+  },
+  {
+    family: 'Padauk',
+    script: 'my',
+    files: [
+      {
+        style: 'regular',
+        file: 'Padauk-regular.ttf',
+        sha256: 'ed2d20822f0888bc9301b63490f4f6661075068b0661d5d317ce0607e93bbd7a',
+        bytes: 161244,
+      },
+      {
+        style: 'bold',
+        file: 'Padauk-bold.ttf',
+        sha256: '9d350c5332808de2952b0324f9580df4b6930887921e206a169dfe8270f7b708',
+        bytes: 161664,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Gurmukhi',
+    script: 'pa',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansGurmukhi-regular.ttf',
+        sha256: '19fc828daafcbccb8a72856a9445e0d6f03c04ec9984b4255b45e7b1ee5ac01b',
+        bytes: 57528,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansGurmukhi-bold.ttf',
+        sha256: '5720c5b05798d6f9c6fd55b053e7f7df6b70debc0a4aec173fd63057861b5472',
+        bytes: 57592,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Gurmukhi',
+    script: 'pa',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifGurmukhi-regular.ttf',
+        sha256: '7ec896c4dbaa6bba99c67931e6ffe26209747cef46f49b7f4dc34377872a5c35',
+        bytes: 66024,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifGurmukhi-bold.ttf',
+        sha256: '8896469ba21fae666266e81fa46f237f367d12a7918a2db75cb400aa66dc8bc3',
+        bytes: 66000,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Sinhala',
+    script: 'si',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansSinhala-regular.ttf',
+        sha256: '59414cb52e3c2f1081c4788dad26008a1de7d510211b6c38300308f3557e1fe5',
+        bytes: 235928,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansSinhala-bold.ttf',
+        sha256: '62a62af72ee6abd1e68780eac4f170550671faf86851d4104fe3273ee438e70e',
+        bytes: 235604,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Sinhala',
+    script: 'si',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifSinhala-regular.ttf',
+        sha256: '5b11bfbfa98fa253ffb9056e763525a6c84b73c7ed6934d3609ce42d36445428',
+        bytes: 242752,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifSinhala-bold.ttf',
+        sha256: 'c3fb97533084524f86d435e4ad2632bb4e061f6ea789bddc2837164b6b76b183',
+        bytes: 242824,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Tamil',
+    script: 'ta',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansTamil-regular.ttf',
+        sha256: '0d36491d4b3b945d1b4d1258755e79b67cc6fffd9614531bf17fbfe532bd55f8',
+        bytes: 77724,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansTamil-bold.ttf',
+        sha256: 'abecad237d6cf136b8d72012e435a3bcbab48c8232f57a65ed353024486ce3f9',
+        bytes: 77756,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Tamil',
+    script: 'ta',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifTamil-regular.ttf',
+        sha256: '3550e9f8bcd8696aa6a873f30014ebf39e39facdec20059372b893a2162465e1',
+        bytes: 88572,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifTamil-bold.ttf',
+        sha256: '3d100a6702ed1f3085374871f0260e9c294e90c0cbe024225535aab57baacb53',
+        bytes: 88548,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Telugu',
+    script: 'te',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansTelugu-regular.ttf',
+        sha256: '431117bdd6a14d00b187e0549241d8cbf45f9ddff9847f961dd511178666d563',
+        bytes: 178492,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansTelugu-bold.ttf',
+        sha256: 'd9acc5b5312c3edc860d1f736894f0bab8fcf29205daabf7e66fe445476b57bb',
+        bytes: 178944,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Telugu',
+    script: 'te',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifTelugu-regular.ttf',
+        sha256: 'ec852add3468c269e359a88471042644d077da0f4197daff383e68c7dcc54bfc',
+        bytes: 241900,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifTelugu-bold.ttf',
+        sha256: 'c3b6f60670e972978b1c34eb8e56fa83b410c2ab2825656f439d6daa248744f9',
+        bytes: 242160,
+      },
+    ],
+  },
+  {
+    family: 'Sarabun',
+    script: 'th',
+    files: [
+      {
+        style: 'regular',
+        file: 'Sarabun-regular.ttf',
+        sha256: '5c9d6412daf0096c19356366746e0e5af10efe5f93dad67e0f76b38369310ffa',
+        bytes: 81516,
+      },
+      {
+        style: 'bold',
+        file: 'Sarabun-bold.ttf',
+        sha256: '2dae951e530434908390d84bf661be43e8de447fa18426590a7c97b26794a002',
+        bytes: 81028,
+      },
+    ],
+  },
+  {
+    family: 'Noto Sans Thai',
+    script: 'th',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSansThai-regular.ttf',
+        sha256: '6c5e4ca047263ed8f07b174be2f7c396d245504ce0f77adc1d26b0978bc95426',
+        bytes: 45660,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSansThai-bold.ttf',
+        sha256: 'fd475b89dca5b9b2ad5f294944c6c82a1641c29b0a30bc1b771227250fb826a8',
+        bytes: 45664,
+      },
+    ],
+  },
+  {
+    family: 'Noto Serif Thai',
+    script: 'th',
+    files: [
+      {
+        style: 'regular',
+        file: 'NotoSerifThai-regular.ttf',
+        sha256: '9c577a5f94f8704a3c68442b371176e8ca0041d7df17de3c91f4919289b54fee',
+        bytes: 59704,
+      },
+      {
+        style: 'bold',
+        file: 'NotoSerifThai-bold.ttf',
+        sha256: 'c7cab5c457fa9e5aee02096e97ea47c58538c25d2f7c88254275e78941da0625',
+        bytes: 59796,
       },
     ],
   },
