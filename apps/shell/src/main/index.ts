@@ -22,7 +22,6 @@ import {
   session,
   shell,
   webContents,
-  protocol,
 } from 'electron'
 import type { MenuItemConstructorOptions, NativeImage, WebContents } from 'electron'
 import { tabStripOverlay } from './title-bar-overlay'
@@ -64,9 +63,7 @@ import {
   checkUpdatesMenuItem,
   setUpdateCheckInvoker,
   installRendererProtocol,
-  SCRIPT_SCHEME_PRIVILEGE,
 } from '@genoffice/electron-utils'
-import { installScriptWorkerProtocol } from '../../../sheets/src/main/script-worker-protocol'
 import { readAppSettings, writeAppSetting, writeAppSettings } from './app-settings'
 import { OPEN_DOCUMENTS_FILE, clearOpenDocuments, publishOpenDocuments } from './open-documents'
 import { startControlServer, type ControlServer } from './control-server'
@@ -5213,15 +5210,9 @@ async function runHeadlessExportEntry(
   app.exit(headlessExitCode(outcome))
 }
 
-// The scripting sandbox worker is served from its own scheme so its response can
-// carry the sandbox CSP (a dedicated worker never sees the page's CSP); standard +
-// secure keep the scheme's CSP 'self' resolvable. Must land before app ready.
-protocol.registerSchemesAsPrivileged([SCRIPT_SCHEME_PRIVILEGE])
-
 app.whenReady().then(async () => {
   // first scan waits for the windows to come up; later ones follow folder changes
   setTimeout(() => ensureFileIndexer()?.refresh(), 4000)
-  installScriptWorkerProtocol(process.env.SHEETS_RENDERER_URL, join(SHEETS_OUT, 'renderer'))
   installRendererProtocol({
     docs: join(DOCS_OUT, 'renderer'),
     sheets: join(SHEETS_OUT, 'renderer'),

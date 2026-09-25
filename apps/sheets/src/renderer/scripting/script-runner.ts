@@ -8,7 +8,6 @@
  */
 import {
   SCRIPT_RPC_TIMEOUT_MS,
-  SCRIPT_WORKER_URL,
   dispatchRpc,
   type HostMessage,
   type ScriptHost,
@@ -34,7 +33,7 @@ export interface ScriptWorkerLike {
 export type WorkerFactory = () => ScriptWorkerLike
 
 const defaultWorkerFactory: WorkerFactory = () =>
-  new Worker(SCRIPT_WORKER_URL, {
+  new Worker(new URL('./script-worker.ts', import.meta.url), {
     type: 'module',
     name: 'genoffice-script',
   }) as unknown as ScriptWorkerLike

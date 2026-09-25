@@ -31,24 +31,15 @@ export const DOCX_MEDIA_SCHEME_PRIVILEGE: CustomScheme = {
   },
 }
 
-/** Dedicated scheme for the sheets scripting sandbox worker. A dedicated worker
- *  takes its CSP from its own response (the page's never reaches it), so the
- *  worker script is served from its own protocol whose handler attaches the
- *  sandbox CSP — eval stays available for user scripts, every network and
- *  cross-origin script load (including import()) is denied. */
-export const SCRIPT_SCHEME = 'genoffice-script'
-
-export const SCRIPT_SCHEME_PRIVILEGE: CustomScheme = {
-  scheme: SCRIPT_SCHEME,
-  privileges: {
-    standard: true,
-    secure: true,
-    supportFetchAPI: true,
-    codeCache: true,
-  },
-}
-
 export type RendererHost = 'docs' | 'sheets' | 'slides' | 'pdf' | 'markdown' | 'html'
+
+/** CSP pinned onto script-sandbox worker chunk responses by installRendererProtocol:
+ *  a dedicated worker takes its CSP from its own response (the page's never reaches
+ *  it), so the sandbox must arrive on the worker script itself — eval stays
+ *  available for user scripts, while every network request and cross-origin script
+ *  load (including dynamic import()) is denied. */
+export const SCRIPT_WORKER_CSP =
+  "default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src 'none'"
 
 export const MAX_RENDERER_QUERY_ENTRIES = 20
 export const MAX_RENDERER_QUERY_CHARS = 4_000
