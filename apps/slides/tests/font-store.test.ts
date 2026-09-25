@@ -15,10 +15,6 @@ vi.mock('electron', () => ({
 const availability = new Map<string, boolean>()
 vi.mock('../src/main/fonts', () => ({
   familyAvailable: (f: string) => availability.get(f) ?? false,
-  fontFileFamilies: (p: string) => {
-    // The magic gate runs before this; tests hand-label families per path
-    return p.includes('brand') ? ['Brand Sans'] : ['Test Family']
-  },
   setUserFontDir: vi.fn(),
 }))
 
@@ -39,6 +35,45 @@ beforeEach(() => {
   vi.mocked(net.fetch).mockReset()
 })
 afterEach(() => vi.unstubAllEnvs())
+
+/** UTF-16BE bytes: the name table's Windows-platform string encoding. */
+function utf16be(s: string): Buffer {
+  const out = Buffer.alloc(s.length * 2)
+  for (let i = 0; i < s.length; i++) out.writeUInt16BE(s.charCodeAt(i), i * 2)
+  return out
+}
+
+/** Minimal real sfnt with only a name table (nameID 1 family + 2 subfamily):
+ *  enough for the shared store parser to read the family back. */
+function buildTtf(family: string, subfamily = 'Regular'): Buffer {
+  const ids = [1, 2]
+  const strings = [utf16be(family), utf16be(subfamily)]
+  const strBase = 6 + 12 * strings.length
+  const nameLen = strBase + strings.reduce((n, s) => n + s.length, 0)
+  const name = Buffer.alloc(nameLen)
+  name.writeUInt16BE(0, 0)
+  name.writeUInt16BE(strings.length, 2)
+  name.writeUInt16BE(strBase, 4)
+  let strOff = 0
+  for (let i = 0; i < strings.length; i++) {
+    const r = 6 + 12 * i
+    name.writeUInt16BE(3, r) // platform: Windows
+    name.writeUInt16BE(1, r + 2) // encoding: UTF-16
+    name.writeUInt16BE(0x409, r + 4) // language: en-US
+    name.writeUInt16BE(ids[i]!, r + 6)
+    name.writeUInt16BE(strings[i]!.length, r + 8)
+    name.writeUInt16BE(strOff, r + 10)
+    strings[i]!.copy(name, strBase + strOff)
+    strOff += strings[i]!.length
+  }
+  const header = Buffer.alloc(12 + 16)
+  header.writeUInt32BE(0x00010000, 0) // sfnt version
+  header.writeUInt16BE(1, 4) // numTables
+  header.write('name', 12, 'ascii')
+  header.writeUInt32BE(28, 20) // table offset: right after the header
+  header.writeUInt32BE(nameLen, 24)
+  return Buffer.concat([header, name])
+}
 
 describe('font catalog', () => {
   it('every family ships regular+bold files with pinned hashes but no endpoint', () => {
@@ -139,7 +174,7 @@ describe('downloadFontFamily', () => {
 describe('installLocalFontFiles', () => {
   it('accepts sfnt files, renames to the family, and skips non-fonts', () => {
     const src = join(storeDir, 'brand_v2_final.ttf')
-    writeFileSync(src, Buffer.concat([Buffer.from([0, 1, 0, 0]), Buffer.from('x'.repeat(64))]))
+    writeFileSync(src, buildTtf('Brand Sans'))
     const junk = join(storeDir, 'junk.ttf')
     writeFileSync(junk, Buffer.from('MZ not a font'))
     const families = installLocalFontFiles([src, junk])
