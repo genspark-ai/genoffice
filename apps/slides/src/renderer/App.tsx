@@ -3863,10 +3863,7 @@ export function App() {
                                 // above the visible rows, so a long jump left its target
                                 // row as a placeholder and fast scrolling showed blanks.
                                 // The 10px gap comes from the shared `.thumb` class.
-                                height: Math.max(
-                                  1,
-                                  thumbRowHeight(s, thumbW) - THUMB_GAP_PX,
-                                ),
+                                height: Math.max(1, thumbRowHeight(s, thumbW) - THUMB_GAP_PX),
                               }}
                             />
                           )
