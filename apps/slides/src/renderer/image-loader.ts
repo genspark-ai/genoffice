@@ -176,6 +176,8 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
   const loading = new Set<string>()
   const buf = new Map<string, SlideImage>()
   let bytes = 0
+  let decoded = 0
+  let evicted = 0
   let timer: ReturnType<typeof setTimeout> | null = null
   let disposed = false
 
@@ -199,6 +201,7 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
       const image = loaded.get(url)
       loaded.delete(url)
       if (image) bytes -= imageBytes(image)
+      evicted += 1
       options.onEvict?.(url)
     }
   }
@@ -215,6 +218,7 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
     if (image && !disposed) {
       loaded.set(url, image)
       bytes += imageBytes(image)
+      decoded += 1
       buf.set(url, image)
     }
     if (buf.size >= batchSize || loading.size === 0) flush()
@@ -261,6 +265,21 @@ export function createImageLoader(apply: ApplyImages, options: ImageLoaderOption
     /** Decoded pixels retained right now (diagnostics/tests). */
     bytes(): number {
       return bytes
+    },
+    /**
+     * Counters for perf work: what this loader holds and has been through. Paging a
+     * long deck should keep `retainedBytes` near the budget — if it does and process
+     * memory is still high, the bytes are in the browser's own image cache, not here.
+     */
+    stats() {
+      return {
+        retainedBytes: bytes,
+        retainedImages: loaded.size,
+        neededImages: needed.size,
+        inFlight: loading.size,
+        decoded,
+        evicted,
+      }
     },
     /**
      * The urls needed right now. Anything else becomes evictable once the budget

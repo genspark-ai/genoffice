@@ -2478,6 +2478,11 @@ export function App() {
             }),
         },
       )
+      // Read-only diagnostic for perf work (#952): what the loader is holding, so a
+      // measurement can tell "our cache" apart from the browser's own image cache.
+      ;(
+        window as unknown as { __genofficeSlidesMediaStats?: () => unknown }
+      ).__genofficeSlidesMediaStats = () => imageLoaderRef.current?.stats() ?? null
     }
     imageLoaderRef.current.load(urls)
   }, [slides, mediaSlideRange, mediaDecodeCapPx])
