@@ -227,4 +227,5 @@ export const de = {
   aiSumSaveTemplate: 'Stilvorlage „{name}“ gespeichert',
   aiSumTemplatesEmpty: 'Stilvorlagen (leer)',
   aiSumListTemplates: '{count} Stilvorlagen aufgelistet',
+  aiPageCloudToLocal: 'Cloud nicht verfügbar — lokal generiert',
 } satisfies Record<keyof typeof zh, string>

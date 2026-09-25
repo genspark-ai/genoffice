@@ -225,4 +225,5 @@ export const nl = {
   aiSumSaveTemplate: 'Stijlsjabloon "{name}" opgeslagen',
   aiSumTemplatesEmpty: 'Stijlsjablonen (leeg)',
   aiSumListTemplates: '{count} stijlsjablonen weergegeven',
+  aiPageCloudToLocal: 'Cloud niet beschikbaar — lokaal gegenereerd',
 } satisfies Record<keyof typeof zh, string>

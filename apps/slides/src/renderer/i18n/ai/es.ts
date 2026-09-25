@@ -226,4 +226,5 @@ export const es = {
   aiSumSaveTemplate: 'Plantilla de estilo "{name}" guardada',
   aiSumTemplatesEmpty: 'Plantillas de estilo (vacío)',
   aiSumListTemplates: 'Se enumeraron {count} plantillas de estilo',
+  aiPageCloudToLocal: 'Nube no disponible — generado localmente',
 } satisfies Record<keyof typeof zh, string>

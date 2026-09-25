@@ -218,4 +218,5 @@ export const he = {
   aiSumSaveTemplate: 'תבנית הסגנון "{name}" נשמרה',
   aiSumTemplatesEmpty: 'תבניות סגנון (ריק)',
   aiSumListTemplates: 'הוצגו {count} תבניות סגנון',
+  aiPageCloudToLocal: 'הענן לא זמין — נוצר מקומית',
 } satisfies Record<keyof typeof zh, string>

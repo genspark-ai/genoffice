@@ -223,4 +223,5 @@ export const en = {
   aiSumSaveTemplate: 'Saved style template "{name}"',
   aiSumTemplatesEmpty: 'Style templates (empty)',
   aiSumListTemplates: 'Listed {count} style templates',
+  aiPageCloudToLocal: 'cloud unavailable — generated locally',
 } satisfies Record<keyof typeof zh, string>

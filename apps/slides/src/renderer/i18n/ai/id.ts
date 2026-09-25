@@ -224,4 +224,5 @@ export const id = {
   aiSumSaveTemplate: 'Menyimpan templat gaya "{name}"',
   aiSumTemplatesEmpty: 'Daftar templat gaya (kosong)',
   aiSumListTemplates: 'Menampilkan {count} templat gaya',
+  aiPageCloudToLocal: 'Awan tidak tersedia — dibuat secara lokal',
 } satisfies Record<keyof typeof zh, string>

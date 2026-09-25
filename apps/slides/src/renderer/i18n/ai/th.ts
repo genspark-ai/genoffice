@@ -221,4 +221,5 @@ export const th = {
   aiSumSaveTemplate: 'บันทึกเทมเพลตสไตล์ "{name}"',
   aiSumTemplatesEmpty: 'รายการเทมเพลตสไตล์ (ว่าง)',
   aiSumListTemplates: 'แสดงเทมเพลตสไตล์ {count} รายการ',
+  aiPageCloudToLocal: 'คลาวด์ไม่พร้อมใช้ — สร้างในเครื่อง',
 } satisfies Record<keyof typeof zh, string>

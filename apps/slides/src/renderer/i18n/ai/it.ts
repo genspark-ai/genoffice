@@ -225,4 +225,5 @@ export const it = {
   aiSumSaveTemplate: 'Modello di stile "{name}" salvato',
   aiSumTemplatesEmpty: 'Modelli di stile (vuoto)',
   aiSumListTemplates: '{count} modelli di stile elencati',
+  aiPageCloudToLocal: 'Cloud non disponibile — generato localmente',
 } satisfies Record<keyof typeof zh, string>

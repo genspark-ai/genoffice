@@ -216,4 +216,5 @@ export const zhTW = {
   aiSumSaveTemplate: '儲存風格範本"{name}"',
   aiSumTemplatesEmpty: '風格範本清單（空）',
   aiSumListTemplates: '列出 {count} 個風格範本',
+  aiPageCloudToLocal: '雲端不可用,已本地生成',
 } satisfies Record<keyof typeof zh, string>

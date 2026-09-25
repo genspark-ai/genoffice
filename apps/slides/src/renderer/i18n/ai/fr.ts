@@ -225,4 +225,5 @@ export const fr = {
   aiSumSaveTemplate: 'Modèle de style « {name} » enregistré',
   aiSumTemplatesEmpty: 'Modèles de style (vide)',
   aiSumListTemplates: '{count} modèles de style listés',
+  aiPageCloudToLocal: 'Cloud indisponible — généré localement',
 } satisfies Record<keyof typeof zh, string>

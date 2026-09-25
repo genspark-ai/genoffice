@@ -9,7 +9,6 @@ import {
 } from '@genoffice/agent-core'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import {
-  activeProvider,
   cloudToolsEnabled,
   imageGenerationAvailable,
   mediaAnalysisAvailable,
@@ -1011,13 +1010,13 @@ export function AiPanel({
       },
       isCloudPageGenEnabled: async () => {
         // Cloud page generation runs on Genspark's own slide model and spends
-        // Genspark credits, so it only applies when the effective provider is
-        // Genspark with cloud tools on. A BYOK provider (e.g. DeepSeek) must use
-        // the local spec pipeline built on the user's own model — otherwise a
-        // signed-in but free Genspark account routes every page to a
-        // credits-exhausted error even though the deck could be built locally.
+        // Genspark credits, so it is gated by the "Genspark cloud tools" toggle
+        // plus the main-process account status only — the chat provider does not
+        // gate it (search/media gate per capability, not per chat provider). A
+        // free-plan or credits-exhausted account is covered by the mid-run
+        // fallback to the local pipeline instead of disabling cloud up front.
         const cur = settingsRef.current
-        if (activeProvider(cur) !== 'genspark' || !cloudToolsEnabled(cur)) return false
+        if (!cloudToolsEnabled(cur)) return false
         try {
           return !!(await window.slidesApi.cloudGenStatus())?.enabled
         } catch {

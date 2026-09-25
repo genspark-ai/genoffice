@@ -224,4 +224,5 @@ export const ru = {
   aiSumSaveTemplate: 'Сохранён шаблон стиля «{name}»',
   aiSumTemplatesEmpty: 'Шаблоны стиля (пусто)',
   aiSumListTemplates: 'Показано шаблонов стиля: {count}',
+  aiPageCloudToLocal: 'Облако недоступно — создано локально',
 } satisfies Record<keyof typeof zh, string>

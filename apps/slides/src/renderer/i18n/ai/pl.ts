@@ -223,4 +223,5 @@ export const pl = {
   aiSumSaveTemplate: 'Zapisano szablon stylu „{name}”',
   aiSumTemplatesEmpty: 'Szablony stylu (pusto)',
   aiSumListTemplates: 'Wyświetlono szablony stylu: {count}',
+  aiPageCloudToLocal: 'Chmura niedostępna — wygenerowano lokalnie',
 } satisfies Record<keyof typeof zh, string>

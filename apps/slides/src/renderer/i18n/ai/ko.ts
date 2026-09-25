@@ -223,4 +223,5 @@ export const ko = {
   aiSumSaveTemplate: '스타일 템플릿 "{name}" 저장',
   aiSumTemplatesEmpty: '스타일 템플릿 목록(비어 있음)',
   aiSumListTemplates: '스타일 템플릿 {count}개 나열',
+  aiPageCloudToLocal: '클라우드 생성 불가 — 로컬로 생성',
 } satisfies Record<keyof typeof zh, string>

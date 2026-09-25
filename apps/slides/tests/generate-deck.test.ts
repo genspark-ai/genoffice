@@ -293,6 +293,22 @@ describe('generate_deck local page generation (cloud/gsk unavailable)', () => {
     expect(res.output).toContain('locally')
   })
 
+  it('pages that fail both pipelines during a cloud→local switch still get the retry round', async () => {
+    // Cloud is down for every page; page 2 also exhausts its two local attempts inside
+    // genOne. The retry round must give it two more local attempts (the run ended on the
+    // local pipeline), where the old !useCloud guard skipped it entirely.
+    const { access, localPageCalls, getPages } = makeAccess({
+      cloudDown: true,
+      failAttempts: { 2: 2 },
+    })
+    const skill = createSlidesSkill(access)
+    const res = (await skill.executeTool(deckCall(3))) as { output: string }
+    expect(getPages()).toBe(3)
+    // page 2: two local attempts inside genOne (both fail) + the retry round's third
+    expect(localPageCalls.filter((p) => p === 2)).toHaveLength(3)
+    expect(res.output).toContain('3/3')
+  })
+
   it('neither cloud nor local pipeline available → fails fast', async () => {
     const { access } = makeAccess({ cloudEnabled: false })
     delete (access as { generatePageLocal?: unknown }).generatePageLocal
