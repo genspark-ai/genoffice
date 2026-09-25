@@ -5647,7 +5647,7 @@ textarea:focus {
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: var(--sheets-shadow-float, 0 12px 32px rgba(0, 0, 0, 0.24));
+  box-shadow: var(--shadow-modal);
   grid-template-rows: auto 1fr auto;
 }
 
@@ -5709,7 +5709,7 @@ textarea:focus {
 
 .script-list-item.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--sheets-on-accent);
 }
 
 .script-main {
