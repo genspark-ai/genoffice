@@ -38,7 +38,13 @@ import { ZOOM_MAX, ZOOM_MIN, clampZoom, nextPreset, notchStep, prevPreset } from
 import type { DrawRect } from './draw-shape'
 import { paragraphsBlank } from './textbox-insert'
 import { SlideThumb } from './SlideThumb'
-import { WINDOWING_MIN_SLIDES, rowOffsets, thumbRowHeight, visibleRowRange } from './thumb-window'
+import {
+  THUMB_GAP_PX,
+  WINDOWING_MIN_SLIDES,
+  rowOffsets,
+  thumbRowHeight,
+  visibleRowRange,
+} from './thumb-window'
 import { MasterView } from './MasterView'
 import {
   TextEditOverlay,
@@ -3848,9 +3854,18 @@ export function App() {
                               aria-hidden
                               className={`thumb thumb-placeholder${s.hidden ? ' thumb-hidden' : ''}`}
                               style={{
+                                // A whole row, not just the stage box. `* { box-sizing:
+                                // border-box }` means setting the stage height here left
+                                // the 4px of borders *inside* the box, so every spacer was
+                                // 4px short — a drift of 4px per row against the row model
+                                // used to pick the window. At row ~300 that is 1,200px
+                                // (~17 rows against a 600px overscan): the window sat far
+                                // above the visible rows, so a long jump left its target
+                                // row as a placeholder and fast scrolling showed blanks.
+                                // The 10px gap comes from the shared `.thumb` class.
                                 height: Math.max(
                                   1,
-                                  Math.round(s.heightPx * (thumbW / Math.max(1, s.widthPx))),
+                                  thumbRowHeight(s, thumbW) - THUMB_GAP_PX,
                                 ),
                               }}
                             />
