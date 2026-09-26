@@ -36,6 +36,14 @@ const tUpd = createI18n({
     updInstall: 'Restart & Install',
     updLater: 'Remind me later',
   },
+    vi: {
+    updTitle: 'Software Update',
+    updHeadline: 'A new version is available',
+    updDesc:
+      'This update includes performance improvements and bug fixes. We recommend updating now.',
+    updInstall: 'Restart & Install',
+    updLater: 'Remind me later',
+  },
   ja: {
     updTitle: 'ソフトウェアアップデート',
     updHeadline: '新しいバージョンがあります',

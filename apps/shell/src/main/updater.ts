@@ -73,6 +73,23 @@ const tUpd = createI18n({
     updCheckFailed: "Couldn't check for updates. Check your network and try again.",
     updOpenDownload: 'Open Download Page',
   },
+    vi: {
+    updTitle: 'Software Update',
+    updHeadline: 'A new version is available',
+    updDesc:
+      'This update includes performance improvements and bug fixes. We recommend updating now.',
+    updDownload: 'Update Now',
+    updLater: 'Remind me later',
+    updInstall: 'Restart & Install',
+    updDownloading: 'Downloading update…',
+    updFailed: 'Update download failed. Check your network and try again.',
+    updRetry: 'Retry',
+    updManual:
+      'Automatic update failed. Please get the latest version from the download page and install it manually.',
+    updUpToDate: "You're up to date (version {version}).",
+    updCheckFailed: "Couldn't check for updates. Check your network and try again.",
+    updOpenDownload: 'Open Download Page',
+  },
   ja: {
     updTitle: 'ソフトウェアアップデート',
     updHeadline: '新しいバージョンがあります',
