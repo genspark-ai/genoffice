@@ -2073,7 +2073,12 @@ export function createSheetsView(
       preload: runtime.preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      // sandbox: true removed — Electron's sandboxed_renderer bootstrap
+      // intermittently fails ("Cannot destructure property 'preloadScripts'
+      // of 'binding.startupData' as it is null"), killing the preload bridge
+      // and making spare-view typing land nowhere (the flake behind
+      // open-focus-typing e2e retries). contextIsolation + nodeIntegration:
+      // false remain the primary security boundaries.
       backgroundThrottling: false,
     },
   })
