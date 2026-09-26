@@ -39,7 +39,14 @@ function mount(
   document.body.appendChild(container)
   const root: Root = createRoot(container)
   act(() => {
-    root.render(createElement(Ruler, { section: section(sectionOver), editor, onTabStopsChange }))
+    root.render(
+      createElement(Ruler, {
+        section: section(sectionOver),
+        editor,
+        onTabStopsChange,
+        onIndentsChange: () => {},
+      }),
+    )
   })
   return {
     container,

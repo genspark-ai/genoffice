@@ -6190,6 +6190,14 @@ export function App() {
                           if (!editor) return
                           setParaAttrs(editor, { tabStops: stops ? JSON.stringify(stops) : null })
                         }}
+                        onIndentsChange={(indents) => {
+                          if (!editor) return
+                          setParaAttrs(editor, {
+                            indentLeft: indents.left,
+                            indentRight: indents.right,
+                            indentFirstLine: indents.firstLine,
+                          })
+                        }}
                       />
                     )}
                     <div className={mixedPaper ? 'page-wrap paper-mixed' : 'page-wrap'}>

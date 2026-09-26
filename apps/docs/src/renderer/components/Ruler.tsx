@@ -56,15 +56,107 @@ export function directTabStops(original: TabStop[], edited: TabStop[]): TabStop[
   )
 }
 
+/**
+ * Paragraph indents as the ruler writes them back. `null` clears the direct
+ * value so the style chain shows through again — the same contract the
+ * paragraph dialog uses (0pt means "no direct indent", not "indent zero").
+ */
+export interface RulerIndents {
+  left: number | null
+  right: number | null
+  firstLine: number | null
+}
+
+/** which indent marker a drag or key press is editing */
+export type RulerIndentKind = 'left' | 'first' | 'right'
+
+/** Indents in twips as the ruler draws them: an inherited (`null`) value reads
+    as zero, which is where the marker sits for a paragraph with no direct
+    indent. Exported for tests. */
+export function rulerIndents(attrs: Record<string, unknown>): {
+  left: number
+  right: number
+  firstLine: number
+} {
+  const twips = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  return {
+    left: Math.max(0, twips(attrs.indentLeft)),
+    right: Math.max(0, twips(attrs.indentRight)),
+    firstLine: twips(attrs.indentFirstLine),
+  }
+}
+
+/** Marker positions in twips, measured from the page's left edge. The
+    first-line marker is relative to the left indent — negative is a hanging
+    indent — and the right marker measures back from the right margin.
+    Exported for tests. */
+export function rulerIndentPositions(
+  dims: RulerDims,
+  indents: { left: number; right: number; firstLine: number },
+): { left: number; first: number; right: number } {
+  const contentLeft = dims.marginLeft
+  const contentRight = dims.pageWidth - dims.marginRight
+  const clamp = (v: number) => Math.min(Math.max(v, contentLeft), contentRight)
+  return {
+    left: clamp(contentLeft + indents.left),
+    first: clamp(contentLeft + indents.left + indents.firstLine),
+    right: clamp(contentRight - indents.right),
+  }
+}
+
+/** What dropping the `kind` marker at an absolute ruler position writes back.
+    Dragging the left-indent block carries the first-line marker with it, as in
+    Word: the first-line indent is an offset, so it survives the move. The other
+    two indents are echoed unchanged — a write-back replaces the whole set.
+    Exported for tests. */
+export function indentFromRuler(
+  kind: 'left' | 'first' | 'right',
+  dims: RulerDims,
+  indents: { left: number; right: number; firstLine: number },
+  posTwips: number,
+): RulerIndents {
+  const contentWidth = Math.max(0, dims.pageWidth - dims.marginLeft - dims.marginRight)
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
+  // 0 means "no direct value"; a hanging first line is negative and must survive
+  const keep = (v: number): number | null => (v !== 0 ? v : null)
+  if (kind === 'left') {
+    return {
+      left: keep(clamp(Math.round(posTwips) - dims.marginLeft, 0, contentWidth)),
+      right: keep(indents.right),
+      firstLine: keep(indents.firstLine),
+    }
+  }
+  if (kind === 'right') {
+    return {
+      left: keep(indents.left),
+      right: keep(clamp(dims.pageWidth - dims.marginRight - Math.round(posTwips), 0, contentWidth)),
+      firstLine: keep(indents.firstLine),
+    }
+  }
+  return {
+    left: keep(indents.left),
+    right: keep(indents.right),
+    firstLine: keep(
+      clamp(
+        Math.round(posTwips) - dims.marginLeft - indents.left,
+        -indents.left,
+        Math.max(0, contentWidth - indents.left),
+      ),
+    ),
+  }
+}
+
 /** Horizontal ruler above the page: inch numbers, gray margin zones, tab stops. */
 export function Ruler({
   section,
   editor,
   onTabStopsChange,
+  onIndentsChange,
 }: {
   section: SectionSettings
   editor: Editor | null
   onTabStopsChange: (stops: TabStop[] | null) => void
+  onIndentsChange: (indents: RulerIndents) => void
 }) {
   const dims = rulerDims(section)
   const width = twipsToPx(dims.pageWidth)
@@ -94,18 +186,29 @@ export function Ruler({
     bar: 'appTabBar',
     clear: 'appTabClear',
   }
+  const INDENT_LABEL_KEYS: Record<RulerIndentKind, StringKey> = {
+    first: 'appIndentFirstLine',
+    left: 'appIndentLeft',
+    right: 'appIndentRight',
+  }
 
-  // Get current tab stops from focused paragraph. rel stops mirror w:ptab
-  // (percent positions): not draggable ruler stops, but every write-back must
-  // carry them or a ruler edit silently drops the paragraph's ptab layout.
-  const currentTabStops = (): { stops: TabStop[]; relStops: TabStop[] } => {
-    if (!editor) return { stops: [], relStops: [] }
+  /** properties of the paragraph the ruler edits — headings and list items
+   *  carry the same paragraph properties as docParagraph */
+  const paraAttrs = (): Record<string, unknown> => {
+    if (!editor) return {}
     const attrs = editor.isActive('docHeading')
       ? editor.getAttributes('docHeading')
       : editor.isActive('docListItem')
         ? editor.getAttributes('docListItem')
         : editor.getAttributes('docParagraph')
-    const raw = attrs?.tabStops as string | null
+    return (attrs ?? {}) as Record<string, unknown>
+  }
+
+  // Get current tab stops from focused paragraph. rel stops mirror w:ptab
+  // (percent positions): not draggable ruler stops, but every write-back must
+  // carry them or a ruler edit silently drops the paragraph's ptab layout.
+  const currentTabStops = (): { stops: TabStop[]; relStops: TabStop[] } => {
+    const raw = paraAttrs().tabStops as string | null
     if (!raw) return { stops: [], relStops: [] }
     try {
       const parsed = JSON.parse(raw)
@@ -117,6 +220,44 @@ export function Ruler({
   }
 
   const { stops, relStops } = currentTabStops()
+
+  // Paragraph indent markers: Word puts three on the ruler — the first-line
+  // triangle, the left-indent block beneath it, and the right-indent triangle.
+  // They were missing entirely, so a drag on the ruler could only ever place a
+  // tab stop and the paragraph indent never moved.
+  const indents = rulerIndents(paraAttrs())
+  const marks = rulerIndentPositions(dims, indents)
+
+  const startIndentDrag = (e: ReactMouseEvent<HTMLSpanElement>, kind: RulerIndentKind) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const rect = (e.currentTarget.closest('.ruler') as HTMLElement).getBoundingClientRect()
+    const marker = e.currentTarget
+    const contentLeft = marginLeft
+    const contentRight = width - marginRight
+    const clampX = (clientX: number) =>
+      Math.min(Math.max(clientX - rect.left, contentLeft), contentRight)
+    const onMouseMove = (ev: MouseEvent) => {
+      // visual only, as with the tab stops: no state update per mouse move
+      marker.style.left = `${clampX(ev.clientX)}px`
+    }
+    const onMouseUp = (ev: MouseEvent) => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      const posTwips = width > 0 ? (clampX(ev.clientX) / width) * dims.pageWidth : 0
+      onIndentsChange(indentFromRuler(kind, dims, indents, posTwips))
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+
+  const nudgeIndent = (e: ReactKeyboardEvent<HTMLSpanElement>, kind: RulerIndentKind) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const delta = (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 720 : RULER_SNAP_TWIPS)
+    onIndentsChange(indentFromRuler(kind, dims, indents, snapTabTwips(marks[kind] + delta)))
+  }
+
   const withRel = (edited: TabStop[]): TabStop[] | null => {
     const direct = directTabStops(stops, edited)
     return direct.length > 0 || relStops.length > 0 ? [...direct, ...relStops] : null
@@ -279,6 +420,36 @@ export function Ruler({
           </span>
         ),
       )}
+
+      {/* Paragraph indent markers, laid out like Word's: the first-line
+          triangle above the left-indent block, and a triangle at the right
+          margin. Each is a slider like the tab stops — drag to move, arrows to
+          nudge on the snap grid — and each swallows its own click so releasing
+          a marker never also places a tab stop. Rendered after the tab stops
+          so a tab stop stays the first slider in the ruler. */}
+      {(['first', 'left', 'right'] as RulerIndentKind[]).map((kind) => {
+        const label = t(INDENT_LABEL_KEYS[kind])
+        const contentWidth = Math.max(0, dims.pageWidth - dims.marginLeft - dims.marginRight)
+        const value = kind === 'first' ? indents.firstLine : indents[kind]
+        return (
+          <span
+            key={`indent-${kind}`}
+            data-ruler-indent={kind}
+            className={`ruler-indent ruler-indent-${kind}`}
+            style={{ left: twipsToPx(marks[kind]) }}
+            data-tip={label}
+            role="slider"
+            tabIndex={0}
+            aria-label={label}
+            aria-valuemin={kind === 'first' ? -indents.left : 0}
+            aria-valuemax={contentWidth}
+            aria-valuenow={Number.isFinite(value) ? value : 0}
+            onMouseDown={(e) => startIndentDrag(e, kind)}
+            onKeyDown={(e) => nudgeIndent(e, kind)}
+            onClick={(e) => e.stopPropagation()}
+          />
+        )
+      })}
     </div>
   )
 }
