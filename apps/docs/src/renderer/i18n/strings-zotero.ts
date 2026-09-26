@@ -354,4 +354,21 @@ export const zoteroStrings = defineStrings({
       '此文件的註腳或章節附註中含有 Zotero 引文，GenOffice 目前還無法更新它們。為保持參考文獻完整，已停用此文件的 Zotero 命令。',
     zoteroGroup: 'Zotero',
   },
+  vi: {
+    zoteroCitation: 'Zotero Citation',
+    zoteroCitationTip: 'Add a citation with Zotero; place the cursor in a citation to edit it',
+    zoteroBibliography: 'Zotero Bibliography',
+    zoteroBibliographyTip: 'Add or edit the bibliography with Zotero',
+    zoteroRefresh: 'Refresh',
+    zoteroRefreshTip: 'Refresh all Zotero citations and bibliographies',
+    zoteroDocumentSettings: 'Document Settings',
+    zoteroDocumentSettingsTip: 'Zotero document settings',
+    zoteroDocumentPreferences: 'Document Preferences',
+    zoteroRemoveCodes: 'Remove Field Codes',
+    zoteroConnectionError: 'Unable to connect to Zotero. Start Zotero and keep it running.',
+    zoteroOperationError: 'The Zotero operation failed.',
+    zoteroNoteFieldsUnsupported:
+      'This document has Zotero citations in footnotes or endnotes, which GenOffice cannot update yet. Zotero commands are turned off here so the bibliography stays intact.',
+    zoteroGroup: 'Zotero',
+  },
 })
