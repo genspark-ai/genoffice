@@ -69,7 +69,13 @@ describe('custom base URL normalization', () => {
 describe('requests against a base URL with a query', () => {
   it('puts /chat/completions in the path, not inside the query', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
-      okResponse(sseStream(['data: {"choices":[{"delta":{"content":"hi"}}]}'])),
+      okResponse(
+        sseStream([
+          'data: {"choices":[{"delta":{"content":"hi"}}]}',
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
+          'data: [DONE]',
+        ]),
+      ),
     )
     vi.stubGlobal('fetch', fetchMock)
     await streamForProvider(
