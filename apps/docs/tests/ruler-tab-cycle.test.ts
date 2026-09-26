@@ -32,7 +32,14 @@ function mountRuler(editor: Editor | null = null): {
   document.body.appendChild(container)
   const root = createRoot(container)
   act(() => {
-    root.render(createElement(Ruler, { section, editor, onTabStopsChange: () => {} }))
+    root.render(
+      createElement(Ruler, {
+        section,
+        editor,
+        onTabStopsChange: () => {},
+        onIndentsChange: () => {},
+      }),
+    )
   })
   return {
     container,
