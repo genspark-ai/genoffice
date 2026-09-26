@@ -19,7 +19,7 @@ import {
 import { platformShortcuts } from '@genoffice/i18n'
 import { Dropdown, isSymbolFontFamily, type DropdownOption } from '@genoffice/ui'
 import { useI18n, type StringKey } from '../i18n/locale'
-import { fontFamiliesFor } from '../font-list'
+import { fontFamiliesFor, partitionFontFamilies } from '../font-list'
 import { useSystemFontFamilies } from '../system-fonts'
 import { cssFontFamily } from '../line-metrics'
 import { setParaAttrs, activeParaAttrs } from './ribbon-tabs'
@@ -544,8 +544,13 @@ const FONT_STYLES: Array<{ key: string; nameKey: StringKey }> = [
 export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
   const { t, lang } = useI18n()
   const modalKeys = useModalKeys(onClose)
-  const fontFamilies = fontFamiliesFor(lang)
-  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  const { families: allSystemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
+  // Candidates the machine proves absent drop out; when enumeration is
+  // unavailable the full candidate list stays visible.
+  const { builtin: fontFamilies, system: systemFontFamilies } = partitionFontFamilies(
+    fontFamiliesFor(lang),
+    allSystemFontFamilies,
+  )
   // the dialog opens from a click, so activation is still live here
   useEffect(() => loadSystemFonts(), [loadSystemFonts])
   const textAttrs = editor.getAttributes('docTextStyle')
