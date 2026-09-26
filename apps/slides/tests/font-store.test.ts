@@ -68,6 +68,23 @@ describe('font catalog', () => {
     expect(listFontCatalog()).toEqual([])
   })
 
+  it('offers only families whose files are published', () => {
+    // The CJK serif families land before the CDN carries their files: until the mirror
+    // publishes them, a picker row would offer a download that 404s.
+    const unpublished = FONT_CATALOG.filter((f) => f.published === false)
+    expect(unpublished.length).toBeGreaterThan(0)
+    const offered = new Set(listFontCatalog().map((e) => e.family))
+    for (const fam of unpublished) expect(offered.has(fam.family)).toBe(false)
+    // …and the published rows are all still offered
+    expect(offered.has('Poppins')).toBe(true)
+  })
+
+  it('refuses to download a family that is not published', async () => {
+    const family = FONT_CATALOG.find((f) => f.published === false)!.family
+    await expect(downloadFontFamily(family)).rejects.toThrow(/not in catalog/)
+    expect(net.fetch).not.toHaveBeenCalled()
+  })
+
   it('extracts and validates the packaged CDN URL', () => {
     expect(
       extractFontCdnBaseUrl({

@@ -70,9 +70,14 @@ export interface FontCatalogEntry {
   downloading: boolean
 }
 
+/** Rows whose files are live on the CDN: the only ones the pickers may offer. */
+function isPublished(f: CatalogFamily): boolean {
+  return f.published !== false
+}
+
 export function listFontCatalog(): FontCatalogEntry[] {
   if (!fontCdnBaseUrl()) return []
-  return FONT_CATALOG.map((f) => ({
+  return FONT_CATALOG.filter(isPublished).map((f) => ({
     family: f.family,
     script: f.script,
     installed: familyAvailable(f.family),
@@ -93,7 +98,8 @@ async function fetchVerified(url: string, sha256: string): Promise<Buffer> {
  *  a concurrent call for the same family joins the in-flight download. */
 export function downloadFontFamily(family: string): Promise<void> {
   const entry = FONT_CATALOG.find((f) => f.family === family)
-  if (!entry) return Promise.reject(new Error(`not in catalog: ${family}`))
+  // unpublished rows are not offered, so a request for one comes from a stale picker
+  if (!entry || !isPublished(entry)) return Promise.reject(new Error(`not in catalog: ${family}`))
   const baseUrl = fontCdnBaseUrl()
   if (!baseUrl) return Promise.reject(new Error('font downloads are unavailable'))
   const inFlight = downloading.get(family)
