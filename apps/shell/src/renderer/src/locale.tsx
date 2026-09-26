@@ -61,6 +61,7 @@ const DATE_LOCALES: Record<Lang, string> = {
   he: 'he-IL',
   hi: 'hi-IN',
   'zh-TW': 'zh-TW',
+  vi: 'zh-TW',
 }
 
 export function useI18n(): I18n {
@@ -72,3 +73,5 @@ export function useI18n(): I18n {
     dateLocale: DATE_LOCALES[lang],
   }
 }
+
+
