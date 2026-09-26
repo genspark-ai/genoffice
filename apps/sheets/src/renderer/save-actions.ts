@@ -45,7 +45,10 @@ export interface SaveContext {
   setMessage: (message: string) => void
   /** `continueChat`: the reopen is a session swap over the same document, so
       the AI conversation carries on rather than rehydrating from the store. */
-  openLazyWorkbook: (opened: WorkbookFile, opts?: { continueChat?: boolean }) => void
+  openLazyWorkbook: (
+    opened: WorkbookFile,
+    opts?: { continueChat?: boolean; onInitialRangeLoaded?: () => void },
+  ) => void | Promise<boolean>
   /** live cell readout, for the cached values of formulas an MCP batch wrote (optional in tests) */
   readCells?: (addresses: string[], sheetId: string) => Record<string, CellState>
   /** Saving swaps the session and reinstalls the workbook, which resets the
@@ -456,7 +459,9 @@ export async function handleSave(
           : null,
       )
       ctx.stashViewRestore(viewAtSave)
-      ctx.openLazyWorkbook(result.file, { continueChat: true })
+      if ((await ctx.openLazyWorkbook(result.file, { continueChat: true })) === false) {
+        return { ok: false }
+      }
       const saved = t('appSaved')
       ctx.setMessage(saved)
       if (!quiet) showToast(saved)
@@ -499,12 +504,16 @@ export async function handleSave(
       if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       if (second.canceled) {
         ctx.stashViewRestore(viewAtSave)
-        ctx.openLazyWorkbook(result.file, { continueChat: true })
+        if ((await ctx.openLazyWorkbook(result.file, { continueChat: true })) === false) {
+          return { ok: false }
+        }
         ctx.setMessage(t('appSaveSecondCanceled'))
         return { ok: false }
       }
       ctx.stashViewRestore(viewAtSave)
-      ctx.openLazyWorkbook(second.file, { continueChat: true })
+      if ((await ctx.openLazyWorkbook(second.file, { continueChat: true })) === false) {
+        return { ok: false }
+      }
       const saved = t('appSavedTwoPhase')
       ctx.setMessage(saved)
       if (!quiet) showToast(saved)
@@ -512,7 +521,9 @@ export async function handleSave(
     } catch (error: unknown) {
       if (ctx.lazyWorkbookRef.current !== state) return { ok: false }
       ctx.stashViewRestore(viewAtSave)
-      ctx.openLazyWorkbook(result.file, { continueChat: true })
+      if ((await ctx.openLazyWorkbook(result.file, { continueChat: true })) === false) {
+        return { ok: false }
+      }
       const failed = t('appSaveSecondFailed', {
         reason: error instanceof Error ? error.message : String(error),
       })

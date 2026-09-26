@@ -1,7 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { access, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
-import { createInterface } from 'node:readline'
 import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { AgentImage, AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
@@ -63,6 +62,72 @@ const MAX_MODEL_PAGES = 10
 const CODEX_TEMP_PREFIX = 'genoffice-codex-app-server-'
 const CODEX_BASE_INSTRUCTIONS =
   'You are the language-model backend embedded in GenOffice. Never inspect or modify local files, run shell commands, browse, call MCP, use apps, or invoke any built-in Codex tool. The caller supplies the complete relevant conversation and a JSON Schema. Return exactly one assistant response matching that schema; GenOffice itself executes document tools.'
+
+/** Max buffered stdout line: a child that writes megabytes without a newline would grow the RPC
+ *  buffer until the process dies. The SSE reader and this bridge's stderr reader are both capped;
+ *  stdout is the last unbounded reader here. */
+export const MAX_RPC_LINE_BYTES = 4 * 1024 * 1024
+
+interface CodexChildOutput {
+  on(event: 'data', listener: (chunk: Buffer) => void): unknown
+  on(event: 'end' | 'close', listener: () => void): unknown
+}
+
+export interface CodexChildLike {
+  stdout: CodexChildOutput
+  kill(): unknown
+}
+
+/**
+ * Split the child's stdout into RPC lines, with a cap on the line being buffered. Over the cap the
+ * reader stops, the child is killed and `onOverflow` reports a bounded diagnostic, which fails every
+ * in-flight request instead of letting the buffer grow. A trailing line without a newline is still
+ * delivered when the stream ends, as the previous readline reader did.
+ */
+export function attachBoundedRpcStdout(
+  child: CodexChildLike,
+  onLine: (line: string) => void,
+  onOverflow: (error: Error) => void,
+): void {
+  let pending = ''
+  let stopped = false
+  const emit = (line: string): void => {
+    onLine(line.endsWith('\r') ? line.slice(0, -1) : line)
+  }
+  const flush = (): void => {
+    if (stopped) return
+    stopped = true
+    const tail = pending
+    pending = ''
+    if (tail) emit(tail)
+  }
+  child.stdout.on('end', flush)
+  child.stdout.on('close', flush)
+  child.stdout.on('data', (chunk: Buffer) => {
+    if (stopped) return
+    pending += chunk.toString('utf8')
+    const parts = pending.split('\n')
+    pending = parts.pop() ?? ''
+    for (const part of parts) {
+      emit(part)
+      if (stopped) return
+    }
+    if (pending.length > MAX_RPC_LINE_BYTES) {
+      stopped = true
+      pending = ''
+      onOverflow(
+        new Error(
+          `Codex app-server stdout line exceeded ${MAX_RPC_LINE_BYTES} bytes without a newline; the child was stopped`,
+        ),
+      )
+      try {
+        child.kill()
+      } catch {
+        /* already gone */
+      }
+    }
+  })
+}
 
 function cleanCliPath(value: string | undefined): string {
   const trimmed = (value ?? '').trim()
@@ -285,8 +350,11 @@ class CodexAppServerClient {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     })
-    const lines = createInterface({ input: this.child.stdout, crlfDelay: Infinity })
-    lines.on('line', (line) => this.onLine(line))
+    attachBoundedRpcStdout(
+      this.child,
+      (line) => this.onLine(line),
+      (error) => this.fail(error),
+    )
     this.child.stderr.on('data', (chunk: Buffer) => {
       this.stderr = appendDiagnostic(this.stderr, chunk)
     })

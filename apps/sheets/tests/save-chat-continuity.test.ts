@@ -62,6 +62,16 @@ describe('handleSave reopen keeps the AI conversation', () => {
     expect(openLazyWorkbook).toHaveBeenCalledWith(file, { continueChat: true })
   })
 
+  it('does not report success when the committed editor rejects the reopen', async () => {
+    const file = { sessionId: '33333333-3333-4333-8333-333333333333', path: '/tmp/a.xlsx' }
+    saveWorkbookEdits.mockResolvedValue({ canceled: false, file })
+    const { ctx, openLazyWorkbook } = ctxWith()
+    openLazyWorkbook.mockResolvedValue(false)
+
+    await expect(handleSave(ctx, 'save')).resolves.toEqual({ ok: false })
+    expect(openLazyWorkbook).toHaveBeenCalledTimes(1)
+  })
+
   it('a canceled save never reopens', async () => {
     saveWorkbookEdits.mockResolvedValue({ canceled: true })
     const { ctx, openLazyWorkbook } = ctxWith()
