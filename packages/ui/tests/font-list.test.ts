@@ -2,8 +2,8 @@
 //
 // The case that matters most is the one the maintainers called out: Chromium reports
 // family names in the system's language, so a non-Chinese Windows enumerates `SimSun`
-// while our candidate is `宋体`. Matching spellings literally would hide a font that
-// is really installed.
+// while our candidate holds the localized Chinese name. Matching spellings literally
+// would hide a font that is really installed.
 import { describe, expect, it } from 'vitest'
 import { BUILTIN_FONT_FAMILIES, fontFamiliesFor, partitionFontFamilies } from '../src/font-list'
 
