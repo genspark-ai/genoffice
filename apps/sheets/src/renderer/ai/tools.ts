@@ -21,6 +21,8 @@ import type {
 import { t } from '../i18n/locale'
 import { formatRangeAggregate, type RangeAggregate } from './aggregate'
 import { guideCatalogSummary, loadGuides } from './guides'
+import type { AiScriptRunResult } from '../scripting/ai-script-runner'
+import { SCRIPT_MAX_CHARS } from '../scripting/script-storage'
 
 /**
  * The workbook DSL as an AgentSkill tool set: read-only context/reader tools
@@ -229,6 +231,9 @@ export interface SheetsSkillDeps {
     sheetId: string | undefined,
     address: string,
   ): TraceDependentsOutcome | Promise<TraceDependentsOutcome>
+  /** Run AI-written script code through the scripting sandbox (scripting/ai-script-runner.ts):
+   *  same worker pipeline as the script editor, fresh worker/host per run */
+  runScript?(code: string): Promise<AiScriptRunResult>
   /** Batched statistics over a large range (lazy mode streams it through the
    * sidecar without loading the grid) — the supported path for distinct
    * counts / frequency questions that must never become COUNTIF formulas. */
@@ -553,6 +558,31 @@ export const WORKBOOK_TOOLS: AgentToolDef[] = [
         },
       },
       required: [],
+    },
+  },
+  {
+    name: 'run_script',
+    description:
+      'Run a JavaScript snippet against the live workbook inside the same sandbox the script editor uses ' +
+      '(no network, no file system, host-side method allowlist, 30 s limit). Use it for batch or rule-based ' +
+      'edits that propose_operations cannot express in one batch, and for computed multi-step derivations; ' +
+      'prefer propose_operations for straightforward cell edits. API (every call is async — await it): ' +
+      'SpreadsheetApp.getActiveSpreadsheet(), workbook.getActiveSheet()/getSheetByName(name)/getSheetNames(), ' +
+      'sheet.getRange(a1)/getDataRange(), range.getValue()/getValues()/setValue(v)/setValues(grid)/clear(), ' +
+      'Logger.log(...), Utilities.sleep(ms). Return results via Logger.log — the tool result is the captured log ' +
+      '(capped at 400 lines); thrown errors are reported back verbatim.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          description:
+            'JavaScript source; every API call returns a Promise, so await it. ' +
+            'Example: const sheet = await (await SpreadsheetApp.getActiveSpreadsheet()).getActiveSheet(); ' +
+            'const v = await (await sheet.getRange("A1")).getValue(); Logger.log(v);',
+        },
+      },
+      required: ['code'],
     },
   },
 ]
@@ -1435,6 +1465,28 @@ export function executeWorkbookTool(
             : `Created the new document "${outcome.name}" in a new tab; it saves itself into the default folder.`,
           mutated: false,
           summary: t('aiToolCreatedDocument', { name: outcome.name }),
+        }
+      })
+    }
+
+    case 'run_script': {
+      const code = typeof call.input.code === 'string' ? call.input.code.trim() : ''
+      if (!code) return fail(t('aiToolRunScript'), 'code must be a non-empty string')
+      if (code.length > SCRIPT_MAX_CHARS)
+        return fail(t('aiToolRunScript'), `Script too long (max ${SCRIPT_MAX_CHARS} chars)`)
+      if (!deps.runScript)
+        return fail(t('aiToolRunScript'), 'run_script is not available in this build')
+      // run_script is the one AI tool that can take seconds by design (the
+      // runner kills the script at 30 s); the agent loop awaits tool executions.
+      return deps.runScript!(code).then((run) => {
+        const lines = [...(run.error ? [`Error: ${run.error}`] : []), ...run.logs]
+        return {
+          output: lines.join('\n') || '(no output — the script ran without Logger.log calls)',
+          isError: !!run.error,
+          // The script may or may not have written; treat every run as mutating
+          // so downstream verification treats the workbook as changed.
+          mutated: true,
+          summary: t('aiToolRunScript'),
         }
       })
     }

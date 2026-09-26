@@ -109,6 +109,7 @@ import '@univerjs/preset-sheets-table/lib/index.css'
 import { greenTheme } from '@univerjs/themes'
 import { createUniver } from './create-univer'
 import { setUniverAPI } from './scripting/script-api-access'
+import { runScriptForAi } from './scripting/ai-script-runner'
 
 import {
   AgentLoop,
@@ -1477,6 +1478,7 @@ export function App(): React.JSX.Element {
   function sheetsSkillDeps(): SheetsSkillDeps {
     return {
       getActiveSheetInfo,
+      runScript: (code) => runScriptForAi(code),
       aggregateRange: (sheetId, bounds) => aggregateWorkbookRange(readContext(), sheetId, bounds),
       ensureRangeLoaded: async (range, sheetId) => {
         const state = lazyWorkbookRef.current

@@ -107,4 +107,5 @@ export const ru = {
   aiScopeRangeTip:
     'ИИ понимает «этот столбец / эти строки / выделенную часть» как этот диапазон; после отправки он фиксируется на весь запуск',
   aiScopeClearTitle: 'Снять область диапазона и работать со всем листом',
+  aiToolRunScript: 'Запуск скрипта',
 } satisfies Record<keyof typeof zh, string>
