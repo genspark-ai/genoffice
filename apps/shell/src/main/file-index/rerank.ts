@@ -11,6 +11,7 @@ export const DEFAULT_FILE_SEARCH_SETTINGS: FileSearchSettings = {
   rerank: false,
   jevEndpoint: 'openrouter',
   jevKeys: { openrouter: '', direct: '' },
+  ocr: false,
 }
 
 export function normalizeFileSearchSettings(raw: unknown): FileSearchSettings {
@@ -24,6 +25,7 @@ export function normalizeFileSearchSettings(raw: unknown): FileSearchSettings {
     rerank: r.rerank === true,
     jevEndpoint: r.jevEndpoint === 'direct' ? 'direct' : 'openrouter',
     jevKeys: { openrouter: key(keys.openrouter), direct: key(keys.direct) },
+    ocr: r.ocr === true,
   }
 }
 

@@ -24,7 +24,16 @@ function stripMarkup(html: string): string {
     .replace(/&#39;/g, "'")
 }
 
-export async function extractText(path: string): Promise<Extracted> {
+/** PDFs whose extracted text is shorter than this are treated as scanned (no text layer) */
+export const SCANNED_PDF_TEXT_CHARS = 32
+
+/** Optional OCR hook, wired by the worker when the user enables scanned-PDF OCR */
+export interface ExtractOcr {
+  /** OCR a PDF that has no text layer into plain text; null = engine unavailable or nothing recognized */
+  ocrPdf(path: string): Promise<string | null>
+}
+
+export async function extractText(path: string, ocr?: ExtractOcr): Promise<Extracted> {
   try {
     const st = await stat(path)
     if (st.size > MAX_EXTRACT_BYTES) return { kind: 'name-only' }
@@ -39,7 +48,15 @@ export async function extractText(path: string): Promise<Extracted> {
     if (parsed.kind === 'unsupported') return { kind: 'name-only' }
     if (!parsed.ok || parsed.kind !== 'text')
       return { kind: 'error', error: parsed.error ?? 'parse failed' }
-    return { kind: 'text', text: (parsed.text ?? '').slice(0, MAX_BODY_CHARS) }
+    let text = parsed.text ?? ''
+    // Scanned PDFs carry no text layer — the extraction comes back essentially
+    // empty. When the user opted into OCR, render the pages and recognize them
+    // (platform OCR, background worker) so the content becomes searchable.
+    if (ocr && ext === 'pdf' && text.trim().length < SCANNED_PDF_TEXT_CHARS) {
+      const ocrText = await ocr.ocrPdf(path).catch(() => null)
+      if (ocrText && ocrText.trim().length > text.trim().length) text = ocrText
+    }
+    return { kind: 'text', text: text.slice(0, MAX_BODY_CHARS) }
   } catch (e) {
     return { kind: 'error', error: e instanceof Error ? e.message : String(e) }
   }

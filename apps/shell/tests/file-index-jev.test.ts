@@ -203,6 +203,7 @@ describe('SearchReranker', () => {
       rerank: false,
       jevEndpoint: 'direct',
       jevKeys: { openrouter: '', direct: 'abc' },
+      ocr: false,
     })
   })
 })

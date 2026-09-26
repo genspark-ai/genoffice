@@ -45,6 +45,7 @@ export class FileIndexer {
     private readonly store: FileIndexStore,
     private readonly workerPath: string,
     private readonly sources: IndexerSources,
+    private readonly ocrEnabled: () => boolean = () => false,
   ) {}
 
   progress(): IndexProgress {
@@ -134,7 +135,12 @@ export class FileIndexer {
           this.store.remove([f.path])
           continue
         }
-        const res = await this.ask({ id: 0, type: 'extract', path: st.path })
+        const res = await this.ask({
+          id: 0,
+          type: 'extract',
+          path: st.path,
+          ocr: this.ocrEnabled(),
+        })
         if (res.type !== 'extract') continue
         this.apply(st, res.result)
       }

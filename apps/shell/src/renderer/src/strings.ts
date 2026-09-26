@@ -167,6 +167,9 @@ export const strings = {
     setAnalyticsDesc:
       '该功能默认开启，可随时在“设置 → 常规”中关闭。使用 Google Analytics 4；Google 会接收您的公网 IP 地址和传输元数据，但绝不收集文档内容或文件名。',
     setSearchRerank: 'Jev 搜索重排',
+    setSearchOcr: 'OCR 识别扫描件',
+    setSearchOcrDesc:
+      '对没有文字层的扫描版 PDF 做 OCR 后再建索引。默认关闭;开启后扫描件抽取会变慢,但内容可被搜索。使用系统自带的 OCR,纯本地。',
     setSearchRerankDesc:
       '把本机搜索的前 20 条命中片段发给 TypeSafe 的 Jev 模型，按相关性重新排序。默认关闭；开启后命中片段会离开本机。',
     setSearchRerankEndpoint: 'Jev 端点',
@@ -538,6 +541,9 @@ export const strings = {
     setAnalyticsDesc:
       'Enabled by default and can be turned off anytime in Settings → General. Uses Google Analytics 4; Google receives your public IP address and transport metadata, but document contents and file names are never collected.',
     setSearchRerank: 'Jev search reranking',
+    setSearchOcr: 'OCR for scanned PDFs',
+    setSearchOcrDesc:
+      'Run OCR on scanned PDFs without a text layer before indexing. Off by default; extraction gets slower but the content becomes searchable. Uses the system OCR, fully local.',
     setSearchRerankDesc:
       "Sends the top 20 local hits' excerpts to TypeSafe's Jev model and reorders them by relevance. Off by default; when on, excerpts leave this device.",
     setSearchRerankEndpoint: 'Jev endpoint',
@@ -930,6 +936,9 @@ export const strings = {
     setAnalyticsDesc:
       '既定で有効です。設定 → 一般でいつでも無効にできます。Google Analytics 4 を使用し、Google は公開 IP アドレスと通信メタデータを受け取りますが、文書の内容やファイル名は収集されません。',
     setSearchRerank: 'Jev 検索リランク',
+    setSearchOcr: 'スキャンPDFのOCR',
+    setSearchOcrDesc:
+      '文字レイヤーのないスキャンPDFにOCRを実行してからインデックスします。既定はオフ。オンにすると抽出は遅くなりますが、内容を検索できます。システムOCRを使用(ローカル処理)。',
     setSearchRerankDesc:
       'ローカル検索の上位 20 件の抜粋を TypeSafe の Jev モデルに送り、関連度で並べ替えます。既定ではオフ。オンにすると抜粋が端末外に送信されます。',
     setSearchRerankEndpoint: 'Jev エンドポイント',
@@ -1321,6 +1330,9 @@ export const strings = {
     setAnalyticsDesc:
       '기본적으로 켜져 있으며 설정 → 일반에서 언제든 끌 수 있습니다. Google Analytics 4를 사용하며 Google은 공인 IP 주소와 전송 메타데이터를 수신하지만 문서 내용이나 파일 이름은 수집하지 않습니다.',
     setSearchRerank: 'Jev 검색 재정렬',
+    setSearchOcr: '스캔 PDF OCR',
+    setSearchOcrDesc:
+      '텍스트 레이어가 없는 스캔 PDF에 OCR을 실행한 뒤 인덱싱합니다. 기본값은 꺼짐이며, 켜면 추출이 느려지지만 내용을 검색할 수 있습니다. 시스템 OCR 사용(로컬 처리).',
     setSearchRerankDesc:
       '로컬 검색 상위 20개 결과의 발췌문을 TypeSafe의 Jev 모델로 보내 관련도 순으로 재정렬합니다. 기본은 꺼짐이며, 켜면 발췌문이 기기 밖으로 전송됩니다.',
     setSearchRerankEndpoint: 'Jev 엔드포인트',
@@ -1715,6 +1727,9 @@ export const strings = {
     setAnalyticsDesc:
       'Activé par défaut et désactivable dans Paramètres → Général. Utilise Google Analytics 4 ; Google reçoit votre adresse IP publique et les métadonnées de transport, mais jamais le contenu des documents ni les noms de fichiers.',
     setSearchRerank: 'Reclassement Jev',
+    setSearchOcr: 'OCR des PDF numérisés',
+    setSearchOcrDesc:
+      "Applique l'OCR aux PDF numérisés sans couche de texte avant l'indexation. Désactivé par défaut; l'extraction est plus lente mais le contenu devient interrogeable. Utilise l'OCR système, 100 % local.",
     setSearchRerankDesc:
       'Envoie les extraits des 20 premiers résultats locaux au modèle Jev de TypeSafe et les réordonne par pertinence. Désactivé par défaut ; une fois activé, les extraits quittent cet appareil.',
     setSearchRerankEndpoint: 'Point de terminaison Jev',
@@ -2120,6 +2135,9 @@ export const strings = {
     setAnalyticsDesc:
       'Standardmäßig aktiviert und unter Einstellungen → Allgemein deaktivierbar. Verwendet Google Analytics 4; Google erhält Ihre öffentliche IP-Adresse und Transportmetadaten, aber keine Dokumentinhalte oder Dateinamen.',
     setSearchRerank: 'Jev-Neusortierung',
+    setSearchOcr: 'OCR für gescannte PDFs',
+    setSearchOcrDesc:
+      'Führt vor der Indizierung OCR für gescannte PDFs ohne Textebene aus. Standardmäßig aus; die Extraktion wird langsamer, aber der Inhalt wird durchsuchbar. Nutzt die System-OCR, vollständig lokal.',
     setSearchRerankDesc:
       'Sendet die Auszüge der 20 besten lokalen Treffer an das Jev-Modell von TypeSafe und sortiert sie nach Relevanz. Standardmäßig aus; wenn aktiv, verlassen Auszüge dieses Gerät.',
     setSearchRerankEndpoint: 'Jev-Endpunkt',
@@ -2523,6 +2541,9 @@ export const strings = {
     setAnalyticsDesc:
       'Activado de forma predeterminada y desactivable en Configuración → General. Usa Google Analytics 4; Google recibe tu IP pública y metadatos de transporte, pero nunca el contenido de documentos ni los nombres de archivo.',
     setSearchRerank: 'Reordenación con Jev',
+    setSearchOcr: 'OCR para PDF escaneados',
+    setSearchOcrDesc:
+      'Ejecuta OCR en PDF escaneados sin capa de texto antes de indexar. Desactivado por defecto; la extracción es más lenta pero el contenido se vuelve buscable. Usa el OCR del sistema, todo local.',
     setSearchRerankDesc:
       'Envía los extractos de los 20 mejores resultados locales al modelo Jev de TypeSafe y los reordena por relevancia. Desactivado por defecto; al activarlo, los extractos salen de este dispositivo.',
     setSearchRerankEndpoint: 'Punto de conexión de Jev',
@@ -2916,6 +2937,9 @@ export const strings = {
     setAnalyticsDesc:
       'เปิดใช้งานเป็นค่าเริ่มต้นและปิดได้ทุกเมื่อใน การตั้งค่า → ทั่วไป ใช้ Google Analytics 4 โดย Google จะได้รับ IP สาธารณะและข้อมูลเมตาการรับส่งข้อมูล แต่จะไม่เก็บเนื้อหาเอกสารหรือชื่อไฟล์',
     setSearchRerank: 'จัดอันดับใหม่ด้วย Jev',
+    setSearchOcr: 'OCR สำหรับ PDF สแกน',
+    setSearchOcrDesc:
+      'รัน OCR บน PDF สแกนที่ไม่มีเลเยอร์ข้อความก่อนจัดทำดัชนี ปิดอยู่โดยค่าเริ่มต้น; เปิดแล้วการดึงข้อมูลจะช้าลงแต่ค้นหาเนื้อหาได้ ใช้ OCR ของระบบ ประมวลผลในเครื่อง',
     setSearchRerankDesc:
       'ส่งข้อความตัดตอนของผลลัพธ์ 20 อันดับแรกไปยังโมเดล Jev ของ TypeSafe เพื่อจัดอันดับใหม่ตามความเกี่ยวข้อง ปิดเป็นค่าเริ่มต้น เมื่อเปิด ข้อความตัดตอนจะถูกส่งออกจากอุปกรณ์นี้',
     setSearchRerankEndpoint: 'ปลายทาง Jev',
@@ -3305,6 +3329,9 @@ export const strings = {
     setAnalyticsDesc:
       'Aktif secara default dan dapat dimatikan di Pengaturan → Umum. Menggunakan Google Analytics 4; Google menerima IP publik dan metadata transport Anda, tetapi tidak pernah mengumpulkan isi dokumen atau nama file.',
     setSearchRerank: 'Peringkat ulang Jev',
+    setSearchOcr: 'OCR untuk PDF hasil pindaian',
+    setSearchOcrDesc:
+      'Menjalankan OCR pada PDF hasil pindaian tanpa lapisan teks sebelum pengindeksan. Nonaktif secara bawaan; ekstraksi lebih lambat tetapi konten jadi dapat dicari. Memakai OCR sistem, sepenuhnya lokal.',
     setSearchRerankDesc:
       'Mengirim kutipan 20 hasil lokal teratas ke model Jev dari TypeSafe dan mengurutkannya ulang berdasarkan relevansi. Nonaktif secara bawaan; saat aktif, kutipan keluar dari perangkat ini.',
     setSearchRerankEndpoint: 'Endpoint Jev',
@@ -3697,6 +3724,9 @@ export const strings = {
     setAnalyticsDesc:
       'Включено по умолчанию и отключается в Настройки → Общие. Используется Google Analytics 4; Google получает публичный IP и транспортные метаданные, но не содержимое документов и не имена файлов.',
     setSearchRerank: 'Переранжирование Jev',
+    setSearchOcr: 'OCR для отсканированных PDF',
+    setSearchOcrDesc:
+      'Запускает OCR для отсканированных PDF без текстового слоя перед индексацией. По умолчанию выключено; извлечение медленнее, но содержимое становится доступным для поиска. Используется системный OCR, полностью локально.',
     setSearchRerankDesc:
       'Отправляет фрагменты 20 лучших локальных результатов модели Jev от TypeSafe и переупорядочивает их по релевантности. По умолчанию выключено; при включении фрагменты покидают это устройство.',
     setSearchRerankEndpoint: 'Конечная точка Jev',
@@ -4089,6 +4119,9 @@ export const strings = {
     setAnalyticsDesc:
       'مفعّل افتراضيًا ويمكن إيقافه في الإعدادات ← عام. يستخدم Google Analytics 4؛ تتلقى Google عنوان IP العام وبيانات النقل، ولكن لا يتم جمع محتوى المستندات أو أسماء الملفات.',
     setSearchRerank: 'إعادة ترتيب Jev',
+    setSearchOcr: 'OCR لملفات PDF الممسوحة ضوئيًا',
+    setSearchOcrDesc:
+      'يشغّل التعرف الضوئي على ملفات PDF الممسوحة ضوئيًا بدون طبقة نصية قبل الفهرسة. معطل افتراضيًا; يصبح الاستخراج أبطأ لكن يصبح المحتوى قابلاً للبحث. يستخدم OCR النظام، محلي بالكامل.',
     setSearchRerankDesc:
       'يرسل مقتطفات أفضل 20 نتيجة محلية إلى نموذج Jev من TypeSafe ويعيد ترتيبها حسب الصلة. معطّل افتراضيًا؛ عند التفعيل تخرج المقتطفات من هذا الجهاز.',
     setSearchRerankEndpoint: 'نقطة نهاية Jev',
@@ -4471,6 +4504,9 @@ export const strings = {
     setAnalyticsDesc:
       'Ativado por padrão e pode ser desativado em Configurações → Geral. Usa o Google Analytics 4; o Google recebe seu IP público e metadados de transporte, mas nunca o conteúdo dos documentos ou nomes de arquivos.',
     setSearchRerank: 'Reordenação com Jev',
+    setSearchOcr: 'OCR para PDFs digitalizados',
+    setSearchOcrDesc:
+      'Executa OCR em PDFs digitalizados sem camada de texto antes de indexar. Desativado por padrão; a extração fica mais lenta, mas o conteúdo se torna pesquisável. Usa o OCR do sistema, totalmente local.',
     setSearchRerankDesc:
       'Envia os trechos dos 20 melhores resultados locais ao modelo Jev da TypeSafe e os reordena por relevância. Desativado por padrão; quando ativo, os trechos saem deste dispositivo.',
     setSearchRerankEndpoint: 'Endpoint do Jev',
@@ -4861,6 +4897,9 @@ export const strings = {
     setAnalyticsDesc:
       "Attivo per impostazione predefinita e disattivabile in Impostazioni → Generali. Utilizza Google Analytics 4; Google riceve l'IP pubblico e i metadati di trasporto, ma mai contenuti o nomi dei file.",
     setSearchRerank: 'Riordino con Jev',
+    setSearchOcr: 'OCR per i PDF scansionati',
+    setSearchOcrDesc:
+      "Esegue l'OCR sui PDF scansionati senza livello di testo prima dell'indicizzazione. Disattivato per impostazione predefinita; l'estrazione è più lenta ma il contenuto diventa ricercabile. Usa l'OCR di sistema, tutto in locale.",
     setSearchRerankDesc:
       'Invia gli estratti dei 20 migliori risultati locali al modello Jev di TypeSafe e li riordina per pertinenza. Disattivato per impostazione predefinita; se attivo, gli estratti lasciano questo dispositivo.',
     setSearchRerankEndpoint: 'Endpoint Jev',
@@ -5249,6 +5288,9 @@ export const strings = {
     setAnalyticsDesc:
       'Domyślnie włączone; można wyłączyć w Ustawienia → Ogólne. Korzysta z Google Analytics 4; Google otrzymuje publiczny adres IP i metadane transportowe, ale nigdy treść dokumentów ani nazwy plików.',
     setSearchRerank: 'Ponowne sortowanie Jev',
+    setSearchOcr: 'OCR dla zeskanowanych PDF',
+    setSearchOcrDesc:
+      'Uruchamia OCR dla zeskanowanych PDF-ów bez warstwy tekstu przed indeksowaniem. Domyślnie wyłączone; ekstrakcja jest wolniejsza, ale treść staje się przeszukiwalna. Używa systemowego OCR, w pełni lokalnie.',
     setSearchRerankDesc:
       'Wysyła fragmenty 20 najlepszych lokalnych wyników do modelu Jev firmy TypeSafe i sortuje je według trafności. Domyślnie wyłączone; po włączeniu fragmenty opuszczają to urządzenie.',
     setSearchRerankEndpoint: 'Punkt końcowy Jev',
@@ -5835,6 +5877,9 @@ export const strings = {
     setAutoSaveDesc:
       'Zapne automatické ukládání ve všech editorech jako výchozí. Pro jednotlivé okno ho lze stále vypnout.',
     setSearchRerank: 'Přeřazení Jev',
+    setSearchOcr: 'OCR pro naskenované PDF',
+    setSearchOcrDesc:
+      'Před indexací spustí OCR u naskenovaných PDF bez textové vrstvy. Ve výchozím stavu vypnuto; extrakce je pomalejší, ale obsah je prohledatelný. Používá systémové OCR, zcela lokálně.',
     setSearchRerankDesc:
       'Odešle výňatky 20 nejlepších místních výsledků modelu Jev od TypeSafe a seřadí je podle relevance. Ve výchozím stavu vypnuto; po zapnutí výňatky opouštějí toto zařízení.',
     setSearchRerankEndpoint: 'Koncový bod Jev',
@@ -6017,6 +6062,9 @@ export const strings = {
     setAnalyticsDesc:
       'Standaard ingeschakeld en uit te schakelen via Instellingen → Algemeen. Gebruikt Google Analytics 4; Google ontvangt uw openbare IP en transportmetadata, maar nooit documentinhoud of bestandsnamen.',
     setSearchRerank: 'Jev-herordening',
+    setSearchOcr: "OCR voor gescande PDF's",
+    setSearchOcrDesc:
+      "Voert OCR uit op gescande PDF's zonder tekstlaag vóór indexering. Standaard uit; extractie is trager maar de inhoud wordt doorzoekbaar. Gebruikt de systeem-OCR, volledig lokaal.",
     setSearchRerankDesc:
       'Stuurt de fragmenten van de 20 beste lokale resultaten naar het Jev-model van TypeSafe en sorteert ze op relevantie. Standaard uit; indien aan verlaten fragmenten dit apparaat.',
     setSearchRerankEndpoint: 'Jev-eindpunt',
@@ -6404,6 +6452,9 @@ export const strings = {
     setAnalyticsDesc:
       'Diaktifkan secara lalai dan boleh dimatikan di Tetapan → Umum. Menggunakan Google Analytics 4; Google menerima IP awam dan metadata pengangkutan, tetapi tidak pernah kandungan dokumen atau nama fail.',
     setSearchRerank: 'Susunan semula Jev',
+    setSearchOcr: 'OCR untuk PDF imbasan',
+    setSearchOcrDesc:
+      'Menjalankan OCR pada PDF imbasan tanpa lapisan teks sebelum pengindeksan. Dimatikan secara lalai; pengekstrakan lebih perlahan tetapi kandungan boleh dicari. Menggunakan OCR sistem, sepenuhnya setempat.',
     setSearchRerankDesc:
       'Menghantar petikan 20 hasil tempatan teratas ke model Jev TypeSafe dan menyusunnya semula mengikut kaitan. Dimatikan secara lalai; apabila dihidupkan, petikan keluar dari peranti ini.',
     setSearchRerankEndpoint: 'Titik akhir Jev',
@@ -6790,6 +6841,9 @@ export const strings = {
     setAnalyticsDesc:
       'מופעל כברירת מחדל וניתן לכיבוי בהגדרות ← כללי. משתמש ב-Google Analytics 4; Google מקבלת IP ציבורי ומטא-נתוני תעבורה, אך לא תוכן מסמכים או שמות קבצים.',
     setSearchRerank: 'סידור מחדש עם Jev',
+    setSearchOcr: 'OCR עבור PDF סרוקים',
+    setSearchOcrDesc:
+      'מריץ OCR על PDF סרוקים ללא שכבת טקסט לפני האינדוקס. כבוי כברירת מחדל; החילוץ איטי יותר אך התוכן הופך לניתן לחיפוש. משתמש ב-OCR של המערכת, מקומי לחלוטין.',
     setSearchRerankDesc:
       'שולח את הקטעים של 20 התוצאות המקומיות המובילות למודל Jev של TypeSafe ומסדר אותן מחדש לפי רלוונטיות. כבוי כברירת מחדל; כשמופעל, הקטעים יוצאים מהמכשיר הזה.',
     setSearchRerankEndpoint: 'נקודת קצה של Jev',
@@ -7166,6 +7220,9 @@ export const strings = {
     setAnalyticsDesc:
       'डिफ़ॉल्ट रूप से चालू; सेटिंग्स → सामान्य में बंद किया जा सकता है। Google Analytics 4 का उपयोग होता है; Google को सार्वजनिक IP और ट्रांसपोर्ट मेटाडेटा मिलता है, लेकिन दस्तावेज़ सामग्री या फ़ाइल नाम नहीं।',
     setSearchRerank: 'Jev खोज पुनर्क्रमण',
+    setSearchOcr: 'स्कैन किए गए PDF के लिए OCR',
+    setSearchOcrDesc:
+      'अनुक्रमण से पहले बिना टेक्स्ट लेयर वाले स्कैन किए गए PDF पर OCR चलाता है। डिफ़ॉल्ट रूप से बंद; निष्कर्षण धीमा हो जाता है पर सामग्री खोजी जा सकती है। सिस्टम OCR उपयोग करता है, पूरी तरह स्थानीय।',
     setSearchRerankDesc:
       'स्थानीय खोज के शीर्ष 20 परिणामों के अंश TypeSafe के Jev मॉडल को भेजता है और उन्हें प्रासंगिकता के अनुसार पुनः क्रमित करता है। डिफ़ॉल्ट रूप से बंद; चालू होने पर अंश इस डिवाइस से बाहर जाते हैं।',
     setSearchRerankEndpoint: 'Jev एंडपॉइंट',
@@ -7545,6 +7602,9 @@ export const strings = {
     setAnalyticsDesc:
       '此功能預設開啟，可隨時在「設定 → 一般」中關閉。使用 Google Analytics 4；Google 會接收您的公開 IP 位址和傳輸中繼資料，但絕不收集文件內容或檔案名稱。',
     setSearchRerank: 'Jev 搜尋重排',
+    setSearchOcr: 'OCR 辨識掃描檔',
+    setSearchOcrDesc:
+      '對沒有文字層的掃描版 PDF 做 OCR 後再建索引。預設關閉;開啟後抽取會變慢,但內容可被搜尋。使用系統內建 OCR,純本機。',
     setSearchRerankDesc:
       '將本機搜尋前 20 筆命中片段傳給 TypeSafe 的 Jev 模型，依相關性重新排序。預設關閉；開啟後命中片段會離開本機。',
     setSearchRerankEndpoint: 'Jev 端點',

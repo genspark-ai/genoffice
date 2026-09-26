@@ -125,6 +125,8 @@ export interface FileSearchSettings {
   rerank: boolean
   jevEndpoint: JevEndpoint
   jevKeys: Record<JevEndpoint, string>
+  /** OCR scanned PDFs (no text layer) during indexing so their content is searchable; default off */
+  ocr: boolean
 }
 
 export interface FileSearchRerank {

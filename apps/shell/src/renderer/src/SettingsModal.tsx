@@ -1112,6 +1112,21 @@ function AiMediaPane({
               onClick={() => setFileSearch({ ...fileSearch, rerank: !fileSearch.rerank })}
             />
           </div>
+          <div className="set-field">
+            <div className="set-field-text">
+              <div className="set-field-stack">
+                <div className="set-field-label">{t('setSearchOcr')}</div>
+                <div className="set-field-desc">{t('setSearchOcrDesc')}</div>
+              </div>
+            </div>
+            <button
+              className="set-switch"
+              role="switch"
+              aria-checked={fileSearch.ocr}
+              aria-label={t('setSearchOcr')}
+              onClick={() => setFileSearch({ ...fileSearch, ocr: !fileSearch.ocr })}
+            />
+          </div>
           {fileSearch.rerank && (
             <>
               <div className="set-field">

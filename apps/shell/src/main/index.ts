@@ -2674,10 +2674,16 @@ function ensureFileIndexer(): FileIndexer | null {
     console.warn('[file-index] unavailable:', e instanceof Error ? e.message : e)
     return null
   }
-  fileIndexer = new FileIndexer(fileIndexStore, extractWorkerPath, {
-    roots: () => folderRootPaths().filter((root) => existsSync(root)),
-    extraPaths: () => [...readRecentFiles(), ...readStarredFiles()],
-  })
+  fileIndexer = new FileIndexer(
+    fileIndexStore,
+    extractWorkerPath,
+    {
+      roots: () => folderRootPaths().filter((root) => existsSync(root)),
+      extraPaths: () => [...readRecentFiles(), ...readStarredFiles()],
+    },
+    // read per extraction: toggling the setting applies to the next queued file
+    () => readFileSearchSettings().ocr,
+  )
   return fileIndexer
 }
 
