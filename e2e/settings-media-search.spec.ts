@@ -48,6 +48,7 @@ test('Jev reranking lives in the AI Media & Search pane, saves with it, and repo
         rerank: true,
         jevEndpoint: 'direct',
         jevKeys: { openrouter: '', direct: 'ts-key' },
+        ocr: false,
       })
   } finally {
     await closeAndSaveVideo(launched, 'settings-media-search')
