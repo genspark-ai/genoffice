@@ -10,6 +10,13 @@ export interface CatalogFamily {
   /** Primary script, for grouping in the picker */
   script: 'latin' | 'ja' | 'ko' | 'sc' | 'tc'
   files: CatalogFile[]
+  /**
+   * `false` while the mirror has not published this family's files yet: the rows stay
+   * out of the pickers (listFontCatalog) so nobody can pick a family whose download
+   * would 404. Absent means published — drop the flag in the same change that ships
+   * the files to the CDN.
+   */
+  published?: boolean
 }
 
 export const FONT_CATALOG: CatalogFamily[] = [
@@ -516,6 +523,7 @@ export const FONT_CATALOG: CatalogFamily[] = [
   // Google Fonts css2 pipeline (full static TTFs), same source as the entries above.
   {
     family: 'Noto Serif SC',
+    published: false,
     script: 'sc',
     files: [
       {
@@ -534,6 +542,7 @@ export const FONT_CATALOG: CatalogFamily[] = [
   },
   {
     family: 'Noto Serif TC',
+    published: false,
     script: 'tc',
     files: [
       {
@@ -552,6 +561,7 @@ export const FONT_CATALOG: CatalogFamily[] = [
   },
   {
     family: 'Noto Serif JP',
+    published: false,
     script: 'ja',
     files: [
       {
@@ -570,6 +580,7 @@ export const FONT_CATALOG: CatalogFamily[] = [
   },
   {
     family: 'Noto Serif KR',
+    published: false,
     script: 'ko',
     files: [
       {
@@ -588,6 +599,7 @@ export const FONT_CATALOG: CatalogFamily[] = [
   },
   {
     family: 'Nanum Myeongjo',
+    published: false,
     script: 'ko',
     files: [
       {

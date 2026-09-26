@@ -96,13 +96,62 @@ export function fontFamiliesFor(lang: Lang): readonly string[] {
 }
 
 /**
- * Split a queryLocalFonts family list into picker sections: `builtin` holds
- * the candidates that exist on this machine (all of them when enumeration is
- * unavailable or denied — offering a dead name beats hiding a real one),
- * `system` holds the rest, keeping the caller's ordering. `knownAvailable`
- * lists families the enumeration cannot see but that are known installed
- * (e.g. app-installed catalog fonts live in a private dir); they keep their
- * builtin slot without leaking into the system section.
+ * Localized ⇄ English spellings of the same family.
+ *
+ * Chromium reports family names in the system's language: a non-Chinese Windows
+ * enumerates `SimSun`, not the localized Chinese name. Matching the literal spelling
+ * alone would hide a font the machine really has, so a candidate counts as present when
+ * *any* known spelling of it is reported. Extend the table rather than adding copy-pasted
+ * spellings to the candidate lists.
+ */
+const FAMILY_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  // Simplified Chinese
+  宋体: ['SimSun'],
+  黑体: ['SimHei'],
+  微软雅黑: ['Microsoft YaHei'],
+  楷体: ['KaiTi'],
+  仿宋: ['FangSong'],
+  仿宋_GB2312: ['FangSong_GB2312'],
+  楷体_GB2312: ['KaiTi_GB2312'],
+  等线: ['DengXian'],
+  等线_Light: ['DengXian Light'],
+  // Traditional Chinese
+  微软正黑体: ['Microsoft JhengHei'],
+  新細明體: ['PMingLiU'],
+  標楷體: ['DFKai-SB'],
+  // Japanese
+  メイリオ: ['Meiryo'],
+  游ゴシック: ['Yu Gothic'],
+  游明朝: ['Yu Mincho'],
+  // Korean
+  '맑은 고딕': ['Malgun Gothic'],
+  바탕: ['Batang'],
+  돋움: ['Dotum'],
+  굴림: ['Gulim'],
+}
+
+/** Every spelling we know for a family, its own name first. */
+function familySpellings(family: string): readonly string[] {
+  const aliases = FAMILY_ALIASES[family]
+  return aliases ? [family, ...aliases] : [family]
+}
+
+function isPresent(family: string, known: ReadonlySet<string>): boolean {
+  return familySpellings(family).some((spelling) => known.has(spelling))
+}
+
+/**
+ * Split a queryLocalFonts family list into picker sections: `builtin` holds the
+ * candidates that exist on this machine, `system` holds the rest, both keeping the
+ * caller's ordering. `knownAvailable` lists families the enumeration cannot see but
+ * that are known installed (app-installed catalog fonts live in a private dir); they
+ * keep their builtin slot without leaking into the system section.
+ *
+ * Presence is alias-aware (see FAMILY_ALIASES): a localized Chinese candidate counts as
+ * present when the machine reports its English family name, so it is never dropped for a
+ * spelling difference. When the enumeration is unavailable, denied, or still loading
+ * (`known.size === 0`) every candidate is kept — offering a dead name beats hiding a
+ * real one.
  */
 export function partitionFontFamilies(
   candidates: readonly string[],
@@ -114,7 +163,7 @@ export function partitionFontFamilies(
   if (known.size === 0) return { builtin: [...candidates], system: [] }
   const candidateSet = new Set(candidates)
   return {
-    builtin: candidates.filter((f) => known.has(f)),
+    builtin: candidates.filter((f) => isPresent(f, known)),
     system: systemFamilies.filter((f) => !candidateSet.has(f)),
   }
 }
