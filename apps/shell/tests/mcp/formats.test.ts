@@ -17,8 +17,15 @@ import {
 describe('format registry', () => {
   it('mirrors the shell open routing for the mcp-driven families', () => {
     expect(formatFamily('docx').editorOpen).toEqual(['docx'])
-    expect(formatFamily('xlsx').editorOpen).toEqual(['xlsx', 'xlsm', 'xls', 'csv'])
+    expect(formatFamily('xlsx').editorOpen).toEqual(['xlsx', 'xlsm', 'xls', 'csv', 'tsv'])
     expect(formatFamily('pptx').editorOpen).toEqual(['pptx'])
+  })
+
+  it('keeps .tsv open-only: it converts on open and saves as .xlsx', () => {
+    const sheet = formatFamily('xlsx')
+    expect(sheet.editorOpen).toContain('tsv')
+    expect(sheet.editorSave).not.toContain('tsv')
+    expect(sheet.mcp?.save).not.toContain('tsv')
   })
 
   it('keeps the editor-only families (md/html) without an mcp block', () => {

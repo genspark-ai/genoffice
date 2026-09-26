@@ -274,11 +274,18 @@ export async function csvToXlsxBuffer(csvText: string, sheetName = 'Sheet1'): Pr
   return xlsxBufferFromRows(rows, sheetName)
 }
 
+/**
+ * Open-path conversion. `delimiter` pins the split for callers that already
+ * know the format (a .tsv); leaving it unset lets the sniffer and its
+ * prose-shatter guard decide, which is right for a bare .csv but unreliable
+ * for a tab-delimited file whose fields hold enough commas to out-count tabs.
+ */
 export async function csvToXlsxBufferForOpen(
   csvText: string,
   sheetName = 'Sheet1',
+  delimiter?: string,
 ): Promise<{ buffer: Buffer; empty: boolean }> {
-  const rows = parseCsv(csvText, resolveImportDelimiter(csvText))
+  const rows = parseCsv(csvText, delimiter ?? resolveImportDelimiter(csvText))
   return { buffer: await xlsxBufferFromRows(rows, sheetName), empty: rows.length === 0 }
 }
 

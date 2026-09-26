@@ -271,6 +271,42 @@ describe('csvToXlsxBufferForOpen', () => {
     expect(sheet).toContain('<t xml:space="preserve">alpha</t>')
     expect(sheet).toContain('<v>10</v>')
   })
+
+  it('honors a pinned delimiter so a comma-heavy .tsv keeps its columns', async () => {
+    // A UniProt-style export (issue #1140): few columns, and each annotation
+    // field is itself a comma-separated list, so the sniffer counts more
+    // commas than tabs and shatters every row. The .tsv extension already
+    // declares the delimiter — pin it.
+    const tsv =
+      'Entry\tProtein names\tGene names\r\n' +
+      'P38398\tBreast cancer protein 1, RING finger E3 ubiquitin protein ligase, BRC1, BRCA1, PARSUM1, PPP2R5S\tBRCA1, RNF3, c.1125dupT, 1253del7TTGGTCTAA\r\n' +
+      'Q92766\tSentrin/SUMO-specific protease 6, GCP-2, SUMO-1/sentrin-specific peptidase activity, PIASY, SENP6\tSENP6, SENP7, GCP2, CA1H5\r\n'
+    expect(sniffDelimiter(tsv)).toBe(',')
+    const lastColumn = async (buffer: Buffer): Promise<string> => {
+      const zip = await JSZip.loadAsync(buffer)
+      const sheet = await zip.file('xl/worksheets/sheet1.xml')?.async('text')
+      return /<dimension ref="A1:([A-Z]+)/.exec(sheet ?? '')?.[1] ?? ''
+    }
+
+    const pinned = await csvToXlsxBufferForOpen(tsv, 'Sheet1', '\t')
+    const sniffed = await csvToXlsxBufferForOpen(tsv)
+
+    // three tab columns instead of nine comma fragments, each field whole
+    expect(pinned.empty).toBe(false)
+    expect(await lastColumn(pinned.buffer)).toBe('C')
+    expect(await lastColumn(sniffed.buffer)).toBe('I')
+    const sheet = await (
+      await JSZip.loadAsync(pinned.buffer)
+    )
+      .file('xl/worksheets/sheet1.xml')
+      ?.async('text')
+    expect(sheet).toContain(
+      '<t xml:space="preserve">BRCA1, RNF3, c.1125dupT, 1253del7TTGGTCTAA</t>',
+    )
+    expect(sheet).toContain('<t xml:space="preserve">P38398</t>')
+    // a blank .tsv still opens as an empty workbook instead of throwing
+    expect((await csvToXlsxBufferForOpen('\r\n\r\n', 'Sheet1', '\t')).empty).toBe(true)
+  })
 })
 
 describe('blankXlsxBuffer', () => {

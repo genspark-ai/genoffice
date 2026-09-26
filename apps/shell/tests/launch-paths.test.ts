@@ -13,6 +13,14 @@ describe('collectLaunchPaths', () => {
     ).toEqual(['first.docx', 'second.xlsx'])
   })
 
+  it('accepts a .tsv from argv or the second-instance payload', () => {
+    expect(
+      collectLaunchPaths(['GenOffice.app', '/data/variants.tsv'], undefined, () => true),
+    ).toEqual(['/data/variants.tsv'])
+    // a bare .txt is still not a document
+    expect(collectLaunchPaths(['GenOffice.app', '/notes.txt'], undefined, () => true)).toEqual([])
+  })
+
   it('collects argv and second-instance payload files without duplicates', () => {
     expect(
       collectLaunchPaths(

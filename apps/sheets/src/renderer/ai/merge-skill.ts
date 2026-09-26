@@ -10,10 +10,10 @@ import type { AgentSkill } from '@genoffice/agent-core'
 import type { AttachmentMeta } from '../../shared/desktop-api'
 import type { MergeSourcesResult } from '../merge-workbooks'
 
-export const SPREADSHEET_ATTACHMENT_EXTS = new Set(['xlsx', 'xlsm', 'xls', 'csv'])
+export const SPREADSHEET_ATTACHMENT_EXTS = new Set(['xlsx', 'xlsm', 'xls', 'csv', 'tsv'])
 
 const MERGE_SYSTEM_PROMPT = `## Merging attached spreadsheets
-When the user attaches spreadsheet files (xlsx/xlsm/xls/csv) and asks to merge, combine, consolidate, or process them together:
+When the user attaches spreadsheet files (xlsx/xlsm/xls/csv/tsv) and asks to merge, combine, consolidate, or process them together:
 - Call merge_attached_workbooks FIRST. It imports every sheet of the chosen attachments into the current workbook engine-side (fast, exact) and reports the new sheet names. Never reconstruct spreadsheet contents from read_attachment text for merging — that path is lossy and slow.
 - Afterwards the data IS in the current workbook: use get_workbook_context / read_range / aggregate_range on the reported sheets, and create_document to emit new files if the user wants separate outputs.
 - Formulas in the sources arrive as their computed values.`

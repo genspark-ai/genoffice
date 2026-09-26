@@ -137,6 +137,12 @@ describe('partitionDropPayload', () => {
     expect(result.supported).toEqual(['REPORT.DOCX', 'data.CSV', 'notes.MarkDown'])
   })
 
+  it('treats a dropped .tsv as openable, not as unsupported', () => {
+    const result = partitionDropPayload(['/data/variants.tsv', '/x/y.TSV'])
+    expect(result.supported).toEqual(['/data/variants.tsv', '/x/y.TSV'])
+    expect(result.unsupportedExts).toEqual([])
+  })
+
   it('collects known-unsupported extensions uniquely, first-seen order', () => {
     const result = partitionDropPayload(['old.doc', 'x.pages', 'y.rtf', 'z.doc'])
     expect(result.supported).toEqual([])
