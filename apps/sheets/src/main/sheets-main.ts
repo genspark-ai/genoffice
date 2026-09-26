@@ -1691,6 +1691,24 @@ export function markSheetsUntitledPath(path: string): void {
   untitledWorkbookPaths.add(path)
 }
 
+/**
+ * Backing workbooks the shell created in a temp directory for "New
+ * spreadsheet". The user has no file yet — it only comes into existence at the
+ * first Save, which this routes through Save As — and a tab closed without
+ * saving discards the temp directory with it. Same shape as an .xls/.tsv
+ * import: the file the session edits is not the user's file.
+ */
+const unsavedNewWorkbooks = new Map<string, { suggestSaveAs: string; tempDir: string }>()
+
+/** shell: mark a backing workbook it just created as not-yet-saved (see above) */
+export function markSheetsUnsavedNew(
+  openPath: string,
+  suggestSaveAs: string,
+  tempDir: string,
+): void {
+  unsavedNewWorkbooks.set(openPath, { suggestSaveAs, tempDir })
+}
+
 const mcpWritablePaths = new Map<number, Set<string>>()
 
 /** MCP save_session: the shell resolved this path for the tab, so a dialog-free save may write it */
@@ -3141,6 +3159,20 @@ export function registerSheetsIpc(): void {
       if (!session || !untitledWorkbookPaths.has(session.path)) return { renamed: false }
       const base = sanitizeAutoRenameBase(z.string().min(1).max(100).parse(baseName))
       if (!base) return { renamed: false }
+      // An unsaved new workbook has no user-visible file to rename — it sits in
+      // a temp directory that closing the tab discards. Retarget the suggested
+      // Save As name instead, so the AI-derived name is what the first save
+      // offers, and leave the mark in place for a later run. No rename on disk
+      // and no open hook: the temp path must not reach the title or recents.
+      if (session.suggestSaveAs !== undefined) {
+        const suggestDir = dirname(session.suggestSaveAs)
+        let suggested = join(suggestDir, `${base}.xlsx`)
+        for (let i = 2; existsSync(suggested) && i < 100; i++) {
+          suggested = join(suggestDir, `${base}-${i}.xlsx`)
+        }
+        entry.sessions.set(validatedSessionId, { ...session, suggestSaveAs: suggested })
+        return { renamed: true, name: basename(suggested) }
+      }
       const dir = dirname(session.path)
       let target = join(dir, `${base}.xlsx`)
       for (let i = 2; existsSync(target) && i < 100; i++) target = join(dir, `${base}-${i}.xlsx`)
@@ -3993,6 +4025,18 @@ async function prepareWorkbookForOpen(
   importTempDir?: string
   restoreTarget?: string
 }> {
+  // A shell-created "New spreadsheet" opens from a temp directory and has no
+  // user-visible file yet: Save As produces it, and closing unsaved discards
+  // the directory. Consumed on first open so a reopened path is a normal file.
+  const unsavedNew = unsavedNewWorkbooks.get(path)
+  if (unsavedNew !== undefined) {
+    unsavedNewWorkbooks.delete(path)
+    return {
+      openPath: path,
+      suggestSaveAs: unsavedNew.suggestSaveAs,
+      importTempDir: unsavedNew.tempDir,
+    }
+  }
   const extension = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
   if (extension !== 'csv' && extension !== 'tsv' && extension !== 'xls') {
     // Unsaved work from a lost session: offer the recovery copy. Restoring

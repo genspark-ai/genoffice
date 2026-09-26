@@ -3,6 +3,7 @@ import {
   copyFileSync,
   cpSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   readdirSync,
   renameSync,
@@ -10,6 +11,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, join, resolve } from 'node:path'
 import {
   BrowserWindow,
@@ -169,6 +171,7 @@ import {
   markSheetsShuttingDown,
   requestSheetsClose,
   resolveSheetsSessionPath,
+  markSheetsUnsavedNew,
   markSheetsUntitledPath,
   authorizeMcpSheetWrite,
   sendSheetsMenuAction,
@@ -3157,27 +3160,49 @@ function routeDocumentPath(filePath: string): boolean {
 }
 
 /**
- * "New spreadsheet" creates the backing .xlsx in the default folder up front and
- * opens it as a regular file tab — the blank in-memory demo mode has no save
- * pipeline, so the file must exist before edits. Falls back to the old blank
- * tab if the write fails.
+ * "New spreadsheet" no longer drops a file in the default folder up front: the
+ * blank workbook is created in a temp directory and its first Save goes through
+ * Save As (the same path an .xls/.tsv import takes), so a new tab that is
+ * closed without saving leaves nothing behind to delete by hand — the temp
+ * directory is discarded with the session. The save pipeline still needs a real
+ * file to edit, hence the backing workbook rather than the in-memory blank grid.
+ * Falls back to a file in the default folder, then to the in-memory blank tab.
  */
 async function newSheetTab(): Promise<void> {
+  const suggestedPath = uniquePathIn(newFileDir('sheet'), `${tm('untitledSheet')}.xlsx`)
   try {
-    const filePath = uniquePathIn(newFileDir('sheet'), `${tm('untitledSheet')}.xlsx`)
-    writeFileSync(filePath, await blankXlsxBuffer())
+    const tempDir = join(app.getPath('temp'), 'genoffice-new', randomUUID())
+    mkdirSync(tempDir, { recursive: true })
+    const backingPath = join(tempDir, basename(suggestedPath))
+    writeFileSync(backingPath, await blankXlsxBuffer())
+    // the first Save As starts from the name the file would have had
+    markSheetsUnsavedNew(backingPath, suggestedPath, tempDir)
     // eligible for content-derived auto-rename after the first AI generation
-    markSheetsUntitledPath(filePath)
-    // route directly (not via openDocumentPath) so creating a sheet emits
-    // only file_new — the file_open event is reserved for opening existing files
-    if (routeDocumentPath(filePath)) recordStarPromptDocOpen()
+    markSheetsUntitledPath(backingPath)
+    tabManager?.openSheetsTab(backingPath)
+    startQueuedWorkbookNudge()
+    // no recent-file entry yet: there is no user-visible file until it is saved
+    recordStarPromptDocOpen()
     analytics.track('file_new', { kind: 'xlsx' })
   } catch (err) {
-    console.warn('[shell] blank workbook create failed, opening in-memory blank tab:', err)
+    console.warn('[shell] temp workbook create failed, writing to the default folder:', err)
     try {
-      tabManager?.openSheetsTab(undefined, { newBlank: true })
+      writeFileSync(suggestedPath, await blankXlsxBuffer())
+      markSheetsUntitledPath(suggestedPath)
+      // route directly (not via openDocumentPath) so creating a sheet emits
+      // only file_new — the file_open event is reserved for opening existing files
+      if (routeDocumentPath(suggestedPath)) recordStarPromptDocOpen()
+      analytics.track('file_new', { kind: 'xlsx' })
     } catch (fallbackErr) {
-      surfaceNewTabError(fallbackErr)
+      console.warn(
+        '[shell] blank workbook create failed, opening in-memory blank tab:',
+        fallbackErr,
+      )
+      try {
+        tabManager?.openSheetsTab(undefined, { newBlank: true })
+      } catch (finalErr) {
+        surfaceNewTabError(finalErr)
+      }
     }
   }
 }
