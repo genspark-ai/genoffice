@@ -127,11 +127,15 @@ describe('Dropdown active option exposure', () => {
     })
     press(host, 'ArrowDown')
     expect(activeOption(host)!.textContent).toBe('Alpha')
-    press(host, 'ArrowDown')
-    expect(host.querySelector('.gs-dd-item.active')).toBeNull()
-    expect(activeOption(host)).toBeNull()
+    // #945 made the cursor walk past a disabled row instead of landing on it,
+    // so neither the reference nor the .active class ever points at one —
+    // in either direction
     press(host, 'ArrowDown')
     expect(activeOption(host)!.textContent).toBe('Gamma')
+    expect(host.querySelector('.gs-dd-item.active')!.textContent).toBe('Gamma')
+    expect(activeOption(host)!.hasAttribute('disabled')).toBe(false)
+    press(host, 'ArrowUp')
+    expect(activeOption(host)!.textContent).toBe('Alpha')
   })
 
   it('keeps focus on the trigger while the reference changes', () => {
