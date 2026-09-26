@@ -200,6 +200,7 @@ describe('createI18n', () => {
     he: { hello: 'שלום {name}', plain: 'קבצים' },
     hi: { hello: 'नमस्ते {name}', plain: 'फ़ाइलें' },
     'zh-TW': { hello: '你好 {name}', plain: '檔案' },
+    vi: { hello: 'Xin chao {name}', plain: 'Tep' },
   })
 
   it('translates per language with interpolation', () => {

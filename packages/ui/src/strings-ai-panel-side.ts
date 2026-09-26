@@ -29,4 +29,5 @@ export const AI_PANEL_SIDE_LABELS: Record<Lang, Record<AiPanelSide, string>> = {
   he: { left: 'העברת חלונית הבינה המלאכותית לשמאל', right: 'העברת חלונית הבינה המלאכותית לימין' },
   hi: { left: 'AI पैनल को बाईं ओर ले जाएँ', right: 'AI पैनल को दाईं ओर ले जाएँ' },
   'zh-TW': { left: '將 AI 面板移到左側', right: '將 AI 面板移到右側' },
+  vi: { left: '將 AI 面板移到左側', right: '將 AI 面板移到右側' },
 }
