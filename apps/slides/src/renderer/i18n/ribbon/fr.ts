@@ -15,7 +15,7 @@ export const fr = {
   ribbonTabSlideShow: 'Diaporama',
   ribbonTabReview: 'Révision',
   ribbonCollapse: 'Réduire le ruban',
-  ribbonPin: 'Épingler le ruban',
+  ribbonExpand: 'Développer le ruban',
   ribbonTabView: 'Affichage',
   ribbonTabTableDesign: 'Création de tableau',
   ribbonTabChartDesign: 'Création de graphique',

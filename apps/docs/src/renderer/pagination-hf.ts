@@ -1,9 +1,66 @@
 // Header/footer variant resolution and page-number sequences / formats.
-import type { HeaderFooter, HfPartInfo, SectionInfo } from '@genoffice/docx-engine'
+import type { HeaderFooter, HfImage, HfPartInfo, SectionInfo } from '@genoffice/docx-engine'
 
 import type { PageSlice } from './pagination-types'
 
 export type HfVariant = 'default' | 'first' | 'even'
+
+/** the parsed strips of a one-section document, one slot per variant */
+export interface HfSet {
+  header: HeaderFooter | null
+  footer: HeaderFooter | null
+  headerFirst: HeaderFooter | null
+  footerFirst: HeaderFooter | null
+  headerEven: HeaderFooter | null
+  footerEven: HeaderFooter | null
+  titlePg: boolean
+  evenOddHf: boolean
+  /** images in each variant part (logos etc., display-only) */
+  images?: Partial<
+    Record<
+      'header' | 'footer' | 'headerFirst' | 'footerFirst' | 'headerEven' | 'footerEven',
+      HfImage[]
+    >
+  >
+}
+
+export interface PageHf {
+  header: HeaderFooter | null
+  footer: HeaderFooter | null
+  headerImages?: HfImage[]
+  footerImages?: HfImage[]
+}
+
+export type HfResolve = (kind: 'header' | 'footer') => {
+  value: HeaderFooter | null
+  images?: HfImage[]
+}
+
+/**
+ * The strips a page shows. The resolver carries the pending state (strip edits,
+ * Link to Previous) and wins whenever the host supplies one; the parsed set is
+ * the fallback for a preview mounted without it.
+ */
+export function pageHfStrips(
+  variant: HfVariant,
+  resolve: HfResolve | undefined,
+  set: HfSet,
+): PageHf {
+  if (resolve) {
+    const h = resolve('header')
+    const f = resolve('footer')
+    return { header: h.value, footer: f.value, headerImages: h.images, footerImages: f.images }
+  }
+  const slot = variant === 'default' ? '' : variant === 'first' ? 'First' : 'Even'
+  const headerSlot = `header${slot}` as const
+  const footerSlot = `footer${slot}` as const
+  return {
+    header: set[headerSlot],
+    footer: set[footerSlot],
+    headerImages: set.images?.[headerSlot],
+    footerImages: set.images?.[footerSlot],
+  }
+}
 
 export interface SectionHfRefs {
   header: Partial<Record<HfVariant, string>>

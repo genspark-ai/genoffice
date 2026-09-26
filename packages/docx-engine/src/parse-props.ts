@@ -51,15 +51,19 @@ export function staysVanished(xml: string): boolean {
  *  w:pPr is skipped so tab-stop definitions (w:tabs > w:tab) don't count. */
 const LAYOUT_RUN_CONTENT = /^w:(?:br|cr|tab|sym|footnoteReference|endnoteReference)$/
 
-export function hasLayoutRunContent(node: XNode): boolean {
+export function hasLayoutRunContent(node: XNode, pattern = LAYOUT_RUN_CONTENT): boolean {
   for (const child of childrenOf(node)) {
     const name = nameOf(child)
     if (name === 'w:pPr' || name === 'w:rPr') continue
-    if (name !== undefined && LAYOUT_RUN_CONTENT.test(name)) return true
-    if (hasLayoutRunContent(child)) return true
+    if (name !== undefined && pattern.test(name)) return true
+    if (hasLayoutRunContent(child, pattern)) return true
   }
   return false
 }
+
+/** layout run content other than line/page/column breaks */
+export const LAYOUT_RUN_CONTENT_BESIDES_BREAKS =
+  /^w:(?:cr|tab|sym|footnoteReference|endnoteReference)$/
 
 /**
  * Cross-paragraph comment range endpoints: comment ids where only one end falls in this
@@ -352,7 +356,20 @@ export function ptabDisplayStops(pNode: XNode): import('./types').TabStop[] {
 /** paragraphs whose only fields are XE / REF stay editable (extractRuns round-trips them) */
 /** Simple instructions foldable into an editable inline-field run (the cached result is the display text) */
 export const SIMPLE_INLINE_FIELD_RE =
-  /^\s*(DATE|TIME|CREATEDATE|SAVEDATE|NUMPAGES|FILENAME|AUTHOR|PAGE)\b/
+  /^\s*(DATE|TIME|CREATEDATE|SAVEDATE|NUMPAGES|FILENAME|AUTHOR|PAGEREF|PAGE)\b/
+
+/** every fldChar closes inside the paragraph: a stray end (the last TOC entry
+ *  carries the TOC field's end) or an unclosed begin must stay byte-preserved */
+export function fieldCharsBalanced(xml: string): boolean {
+  let depth = 0
+  const re = /<w:fldChar\b[^>]*\bw:fldCharType=(?:"(begin|end)"|'(begin|end)')/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(xml)) !== null) {
+    if ((m[1] ?? m[2]) === 'begin') depth++
+    else if (--depth < 0) return false
+  }
+  return depth === 0
+}
 
 /** Zotero Word fields. Their cached result is the visible citation/bibliography text. */
 export const ZOTERO_INLINE_FIELD_RE = /^\s*(?:ADDIN\s+)?(?:ZOTERO_|CSL_)(?:ITEM|BIBL|TEMP)\b/i
@@ -386,6 +403,7 @@ export function onlyXeFields(xml: string): boolean {
   if (simple.some((instr) => instr === undefined)) return false
   const instrs = xml.match(/<w:instrText[^>]*>[\s\S]*?<\/w:instrText>/g) ?? []
   if (instrs.length === 0 && simple.length === 0) return false
+  if (!fieldCharsBalanced(xml)) return false
   const simpleOk = simple.every((raw) => {
     const text = decodeEntities(raw!)
     return /^\s*XE[\s"]/.test(text) || /^\s*REF\s/.test(text) || SIMPLE_INLINE_FIELD_RE.test(text)
@@ -628,6 +646,13 @@ const SPACE_ONLY_RE = /^[ \u00a0\u3000]+$/
  */
 export function spaceOnlyRuns(runs: ReadonlyArray<{ text: string }>): boolean {
   return runs.length > 0 && runs.every((r) => SPACE_ONLY_RE.test(r.text))
+}
+
+const BREAK_ONLY_RE = /^[\f\v \u00a0\u3000]*$/
+
+/** every run is page/column breaks (\f / \v) or spaces, at least one break */
+export function breakOnlyRuns(runs: ReadonlyArray<{ text: string }>): boolean {
+  return runs.every((r) => BREAK_ONLY_RE.test(r.text)) && runs.some((r) => /[\f\v]/.test(r.text))
 }
 
 export const IMAGE_RUN_CHILDREN = new Set([
@@ -898,6 +923,7 @@ function sameStyle(a: Run, b: Run): boolean {
     a.vertAlign === b.vertAlign &&
     (a.link?.href ?? '') === (b.link?.href ?? '') &&
     (a.link?.rId ?? '') === (b.link?.rId ?? '') &&
+    (a.link?.plain ?? false) === (b.link?.plain ?? false) &&
     (a.commentIds ?? []).join(',') === (b.commentIds ?? []).join(',') &&
     sameRevision(a.ins, b.ins) &&
     sameRevision(a.del, b.del)

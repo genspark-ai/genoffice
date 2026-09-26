@@ -116,6 +116,7 @@ export const id = {
   appPasteOptSource: 'Pertahankan Format Sumber',
   appPasteOptTheme: 'Gunakan Tema Tujuan',
   appStatusPasteOptionsExpired: 'Opsi tempel tidak lagi tersedia',
+  appStatusPasteTruncated: 'Teks yang ditempel terlalu panjang dan telah dipotong',
   appCtxHideSlide: 'Sembunyikan Slide',
   appCtxUnhideSlide: 'Tampilkan Slide',
   appCtxAddSectionBefore: 'Tambahkan Bagian (sebelum slide ini)',

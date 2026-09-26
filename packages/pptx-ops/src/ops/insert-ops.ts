@@ -12,6 +12,7 @@ import {
   addPicture,
   addSmartArt,
   addTable,
+  MAX_INSERT_TABLE_DIM,
   pasteElements,
   replacePictureBytes,
   type NewChartKind,
@@ -180,8 +181,12 @@ register({
   validate(op, ctx) {
     resolveSlide(ctx, op)
     reqRect(op)
-    if (typeof op.rows !== 'number' || typeof op.cols !== 'number' || op.rows < 1 || op.cols < 1) {
-      throw new GuidedError('op "addTable" needs "rows" and "cols" (>= 1).')
+    const dimOk = (n: unknown): n is number =>
+      Number.isInteger(n) && (n as number) >= 1 && (n as number) <= MAX_INSERT_TABLE_DIM
+    if (!dimOk(op.rows) || !dimOk(op.cols)) {
+      throw new GuidedError(
+        `op "addTable" needs integer "rows" and "cols" (1..${MAX_INSERT_TABLE_DIM}).`,
+      )
     }
     const reqEmuList = (key: 'colWidthsEmu' | 'rowHeightsEmu', count: number, dim: string) => {
       const v = op[key]

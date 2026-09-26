@@ -1,5 +1,6 @@
 import { sdtCheckboxGlyphs, sdtCheckboxIsChecked, syncSdtCheckbox } from './checkbox-control'
 import type {
+  CellMargins,
   CharIndents,
   GeneratedBlock,
   ImageWrap,
@@ -572,11 +573,13 @@ function cellRunContentXml(text: string): string {
     '\n': '<w:br/>',
     '\f': '<w:br w:type="page"/>',
     '\v': '<w:br w:type="column"/>',
+    '\u001e': '<w:br w:type="textWrapping" w:clear="all"/>',
     '\u2011': '<w:noBreakHyphen/>',
     '\u00ad': '<w:softHyphen/>',
   }
-  return text
-    .split(/([\t\n\f\v\u2011\u00ad])/)
+  // eslint-disable-next-line no-control-regex
+  const parts = text.split(/([\t\n\f\v\u001e\u2011\u00ad])/)
+  return parts
     .map((seg) =>
       seg === '' ? '' : (CONTROL[seg] ?? `<w:t xml:space="preserve">${escapeXmlText(seg)}</w:t>`),
     )
@@ -1188,6 +1191,10 @@ function formatPPrChildren(format: ParaFormat | undefined): PPrChild[] {
   if (!format) return []
   const out: PPrChild[] = []
   if (format.pageBreakBefore) out.push({ name: 'w:pageBreakBefore', xml: '<w:pageBreakBefore/>' })
+  for (const tag of PPR_FLAG_TAGS) {
+    const v = format[PPR_FLAG_FIELDS[tag]]
+    if (v !== undefined) out.push({ name: tag, xml: v ? `<${tag}/>` : `<${tag} w:val="0"/>` })
+  }
   if (format.borders) {
     const style = format.borderStyle
     const defaultSz = Math.max(2, Math.round(style?.szEighths ?? 4))
@@ -1292,6 +1299,16 @@ function framePrXml(frame: ParaFrame): string {
   if (frame.anchorLock) attrs.push('w:anchorLock="1"')
   return `<w:framePr ${attrs.join(' ')}/>`
 }
+
+/** tri-state pPr flags: undefined = not edited (raw bytes kept), false = explicit w:val="0" overriding the style */
+const PPR_FLAG_FIELDS = {
+  'w:keepNext': 'keepNext',
+  'w:keepLines': 'keepLines',
+  'w:widowControl': 'widowControl',
+  'w:suppressLineNumbers': 'suppressLineNumbers',
+  'w:contextualSpacing': 'contextualSpacing',
+} as const
+const PPR_FLAG_TAGS = Object.keys(PPR_FLAG_FIELDS) as Array<keyof typeof PPR_FLAG_FIELDS>
 
 const FORMAT_MANAGED_TAGS = new Set([
   'w:pageBreakBefore',
@@ -1517,6 +1534,17 @@ function pprGroupUnchanged(
   switch (tag) {
     case 'w:pageBreakBefore':
       return rawBool(raw) === !!f.pageBreakBefore
+    case 'w:keepNext':
+    case 'w:keepLines':
+    case 'w:widowControl':
+    case 'w:suppressLineNumbers':
+    case 'w:contextualSpacing': {
+      const field = PPR_FLAG_FIELDS[tag]
+      const v = f[field]
+      // model lost a flag the parsed paragraph had: the user reset it to the style
+      if (v === undefined) return original?.[field] === undefined
+      return raw !== undefined && rawBool(raw) === v
+    }
     case 'w:bidi':
       return rawBool(raw) === !!f.bidi
     case 'w:jc': {
@@ -1606,6 +1634,10 @@ export function mergePPrFormat(
   // build set of managed tags for this format (base + conditional)
   const managedTags = new Set(FORMAT_MANAGED_TAGS)
   if (format?.tabStops !== undefined) managedTags.add('w:tabs')
+  for (const tag of PPR_FLAG_TAGS) {
+    const field = PPR_FLAG_FIELDS[tag]
+    if (format?.[field] !== undefined || original?.[field] !== undefined) managedTags.add(tag)
+  }
   if (format?.dropCap !== undefined || format?.frame !== undefined) managedTags.add('w:framePr')
   if (format?.textDirection !== undefined) managedTags.add('w:textDirection')
   // only when the model carries a size: otherwise the paragraph-mark rPr stays unmanaged
@@ -1841,6 +1873,14 @@ function cellBordersXml(borders: NonNullable<TableCell['borders']>): string {
   return `<w:tcBorders>${side('top')}${side('left')}${side('bottom')}${side('right')}</w:tcBorders>`
 }
 
+/** w:tcMar / w:tblCellMar with only the declared sides; null when nothing is declared */
+function cellMarginsXml(tag: string, margins: CellMargins | undefined): string | null {
+  const sides = (['top', 'left', 'bottom', 'right'] as const)
+    .filter((side) => margins?.[side] != null)
+    .map((side) => `<w:${side} w:w="${Math.max(0, Math.round(margins![side]!))}" w:type="dxa"/>`)
+  return sides.length ? `<${tag}>${sides.join('')}</${tag}>` : null
+}
+
 /** colSpan arrives from parsed files/ops models: Infinity would emit
  *  w:val="Infinity" and blow up the grid build (Array.from({length: Infinity})
  *  throws). Clamp to 1..1000 at every emit site. */
@@ -1890,6 +1930,17 @@ function tableCellXml(
     'w:vAlign',
     cell.vAlign && cell.vAlign !== 'top' ? `<w:vAlign w:val="${cell.vAlign}"/>` : null,
   )
+  if (cell.tcPrEdited) {
+    setTcPrChild(
+      children,
+      'w:textDirection',
+      cell.textDirection && cell.textDirection !== 'lrTb'
+        ? `<w:textDirection w:val="${cell.textDirection}"/>`
+        : null,
+    )
+    setTcPrChild(children, 'w:tcMar', cellMarginsXml('w:tcMar', cell.cellMarTwips))
+    setTcPrChild(children, 'w:noWrap', cell.noWrap ? '<w:noWrap/>' : null)
+  }
   const tcPr = children.map((c) => c.xml)
   const paragraphs = cell.richParas?.length
     ? cell.richParas
@@ -1944,6 +1995,8 @@ const TBL_PR_ORDER = [
   'w:tblLayout',
   'w:tblCellMar',
   'w:tblLook',
+  'w:tblCaption',
+  'w:tblDescription',
 ] as const
 
 /** Replace/remove/insert one tblPr child while keeping the OOXML schema order. */
@@ -2055,15 +2108,23 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
       // replaced/inserted/removed per the model
       let trPr = model.rawTrPrs?.[ri] ?? ''
       if (trPr && !trPr.endsWith('</w:trPr>')) trPr = ''
-      if (!trPr && (edges.before > 0 || edges.after > 0)) {
-        // CT_TrPr schema order: gridBefore, gridAfter, wBefore, wAfter
-        trPr =
-          '<w:trPr>' +
+      // the placeholders are the truth for the grid edges: stale raw edge tags go, the
+      // computed ones lead the trPr (CT_TrPr order: cnfStyle, divId, gridBefore, gridAfter, wBefore, wAfter, …)
+      trPr = trPr.replace(/<w:(?:gridBefore|gridAfter|wBefore|wAfter)\b[^>]*\/>/g, '')
+      if (edges.before > 0 || edges.after > 0) {
+        const edgeXml =
           (edges.before > 0 ? `<w:gridBefore w:val="${edges.before}"/>` : '') +
           (edges.after > 0 ? `<w:gridAfter w:val="${edges.after}"/>` : '') +
           (edges.before > 0 ? `<w:wBefore w:w="${edges.wBefore}" w:type="dxa"/>` : '') +
-          (edges.after > 0 ? `<w:wAfter w:w="${edges.wAfter}" w:type="dxa"/>` : '') +
-          '</w:trPr>'
+          (edges.after > 0 ? `<w:wAfter w:w="${edges.wAfter}" w:type="dxa"/>` : '')
+        if (!trPr) trPr = `<w:trPr>${edgeXml}</w:trPr>`
+        else {
+          const head =
+            /^<w:trPr(?:\s[^>]*)?>(?:<w:cnfStyle\b[^>]*\/>)?(?:<w:divId\b[^>]*\/>)?/.exec(trPr)!
+          trPr = trPr.slice(0, head[0].length) + edgeXml + trPr.slice(head[0].length)
+        }
+      } else if (/^<w:trPr(?:\s[^>]*)?>\s*<\/w:trPr>$/.test(trPr)) {
+        trPr = ''
       }
       const repeatHeader = model.repeatHeaderRows?.[ri]
       if (repeatHeader !== null && repeatHeader !== undefined) {
@@ -2071,6 +2132,18 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
         if (repeatHeader) {
           const tag = '<w:tblHeader/>'
           trPr = trPr ? trPr.replace('</w:trPr>', `${tag}</w:trPr>`) : `<w:trPr>${tag}</w:trPr>`
+        } else if (/^<w:trPr(?:\s[^>]*)?>\s*<\/w:trPr>$/.test(trPr)) {
+          trPr = ''
+        }
+      }
+      const cantSplit = model.rowCantSplit?.[ri]
+      if (cantSplit !== null && cantSplit !== undefined) {
+        trPr = trPr.replace(/<w:cantSplit(?:\s[^>]*)?\/>/g, '')
+        if (cantSplit) {
+          // CT_TrPr: cantSplit precedes trHeight and tblHeader
+          const tag = '<w:cantSplit/>'
+          const at = trPr.search(/<w:trHeight\b|<w:tblHeader\b|<\/w:trPr>/)
+          trPr = trPr ? trPr.slice(0, at) + tag + trPr.slice(at) : `<w:trPr>${tag}</w:trPr>`
         } else if (/^<w:trPr(?:\s[^>]*)?>\s*<\/w:trPr>$/.test(trPr)) {
           trPr = ''
         }
@@ -2182,6 +2255,20 @@ export function generateTableModelXml(model: TableModel, originalTableXml?: stri
       tblPr,
       'w:jc',
       model.align === 'left' ? null : `<w:jc w:val="${model.align}"/>`,
+    )
+  }
+  if (model.caption !== undefined) {
+    tblPr = setTblPrChild(
+      tblPr,
+      'w:tblCaption',
+      model.caption ? `<w:tblCaption w:val="${escapeXmlAttr(model.caption)}"/>` : null,
+    )
+  }
+  if (model.description !== undefined) {
+    tblPr = setTblPrChild(
+      tblPr,
+      'w:tblDescription',
+      model.description ? `<w:tblDescription w:val="${escapeXmlAttr(model.description)}"/>` : null,
     )
   }
   return `<w:tbl>${tblPr}${grid}${rows}</w:tbl>`
@@ -2643,7 +2730,14 @@ const RUN_MANAGED_GROUPS: Array<{ key: string; tags: string[] }> = [
   { key: 'bold', tags: ['w:b', 'w:bCs'] },
   { key: 'italic', tags: ['w:i', 'w:iCs'] },
   { key: 'strike', tags: ['w:strike'] },
+  { key: 'caps', tags: ['w:caps', 'w:smallCaps'] },
+  { key: 'dstrike', tags: ['w:dstrike'] },
+  { key: 'vanish', tags: ['w:vanish'] },
   { key: 'color', tags: ['w:color'] },
+  { key: 'spacing', tags: ['w:spacing'] },
+  { key: 'scale', tags: ['w:w'] },
+  { key: 'kern', tags: ['w:kern'] },
+  { key: 'position', tags: ['w:position'] },
   { key: 'size', tags: ['w:sz', 'w:szCs'] },
   { key: 'highlight', tags: ['w:highlight'] },
   { key: 'underline', tags: ['w:u'] },
@@ -2658,11 +2752,35 @@ const rawAttr = (xml: string | undefined, attr: string): string | undefined =>
 
 /** String version of boolProp: element present means true unless w:val negates it */
 function rawBool(xml: string | undefined): boolean {
-  if (!xml) return false
+  return rawOnOff(xml) === true
+}
+
+/** Tri-state read of a toggle element: undefined when absent */
+function rawOnOff(xml: string | undefined): boolean | undefined {
+  if (!xml) return undefined
   const val = rawAttr(xml, 'w:val')
   if (val === undefined) return true
   return !['0', 'false', 'none', 'off'].includes(val.toLowerCase())
 }
+
+const rawInt = (xml: string | undefined): number | undefined => {
+  const v = rawAttr(xml, 'w:val')
+  if (v === undefined) return undefined
+  const n = parseInt(v, 10)
+  return Number.isNaN(n) ? undefined : n
+}
+
+/** Mirrors the parse side: w:caps wins over w:smallCaps; either explicitly off reads as 'none' */
+function rawCaps(caps: string | undefined, smallCaps: string | undefined): Run['caps'] {
+  const c = rawOnOff(caps)
+  const sc = rawOnOff(smallCaps)
+  if (c) return 'all'
+  if (sc) return 'small'
+  if (c === false || sc === false) return 'none'
+  return undefined
+}
+
+const onOffXml = (tag: string, on: boolean): string => (on ? `<${tag}/>` : `<${tag} w:val="0"/>`)
 
 /** rFonts built from the model alone (no original element to preserve).
  * Latin-only keeps eastAsia empty; a lone primary font fills every slot (legacy behavior);
@@ -2752,7 +2870,7 @@ function revisionRPrChangeXml(run: Run): string | null {
 function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
   const out: PPrChild[] = []
   // a link run keeps the document's own character style (localized ids like "ae")
-  const styleId = run.styleId ?? (insideLink ? 'Hyperlink' : undefined)
+  const styleId = run.styleId ?? (insideLink && !run.link?.plain ? 'Hyperlink' : undefined)
   if (styleId) out.push({ name: 'w:rStyle', xml: `<w:rStyle w:val="${escapeXmlAttr(styleId)}"/>` })
   if (run.font || run.fontAscii || run.fontCs) {
     out.push({
@@ -2769,8 +2887,27 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
     out.push({ name: 'w:i', xml: '<w:i/>' }, { name: 'w:iCs', xml: '<w:iCs/>' })
   }
   if (run.strike) out.push({ name: 'w:strike', xml: '<w:strike/>' })
+  if (run.caps === 'all') out.push({ name: 'w:caps', xml: '<w:caps/>' })
+  else if (run.caps === 'small') out.push({ name: 'w:smallCaps', xml: '<w:smallCaps/>' })
+  else if (run.caps === 'none') {
+    out.push(
+      { name: 'w:caps', xml: onOffXml('w:caps', false) },
+      { name: 'w:smallCaps', xml: onOffXml('w:smallCaps', false) },
+    )
+  }
+  if (run.dstrike !== undefined)
+    out.push({ name: 'w:dstrike', xml: onOffXml('w:dstrike', run.dstrike) })
+  if (run.vanishOwn !== undefined)
+    out.push({ name: 'w:vanish', xml: onOffXml('w:vanish', run.vanishOwn) })
   if (run.color)
     out.push({ name: 'w:color', xml: `<w:color w:val="${escapeXmlAttr(run.color)}"/>` })
+  if (run.charSpacingTwips !== undefined)
+    out.push({ name: 'w:spacing', xml: `<w:spacing w:val="${run.charSpacingTwips}"/>` })
+  if (run.charScalePct) out.push({ name: 'w:w', xml: `<w:w w:val="${run.charScalePct}"/>` })
+  if (run.kernHalfPoints !== undefined)
+    out.push({ name: 'w:kern', xml: `<w:kern w:val="${run.kernHalfPoints}"/>` })
+  if (run.positionHalfPoints)
+    out.push({ name: 'w:position', xml: `<w:position w:val="${run.positionHalfPoints}"/>` })
   if (run.sizeHalfPoints) {
     out.push({ name: 'w:sz', xml: `<w:sz w:val="${run.sizeHalfPoints}"/>` })
     out.push({ name: 'w:szCs', xml: `<w:szCs w:val="${run.sizeHalfPoints}"/>` })
@@ -2796,7 +2933,7 @@ function modelRPrChildren(run: Run, insideLink: boolean): PPrChild[] {
  * Merge the raw rPr slice with the run model: groups whose model value matches the raw
  * encoding keep their original bytes (double underline/themeColor/all four rFonts slots
  * do not degrade); mismatched (edited) groups are rebuilt from the model; children the
- * model does not cover (caps/vanish/dstrike/bdr/shd/spacing/lang…) are always kept.
+ * model does not cover (bdr/em/lang/effects…) are always kept.
  */
 export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): string {
   const open = /^<w:rPr(?: [^>]*)?>/.exec(rawRPr)?.[0]
@@ -2829,7 +2966,9 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         const raw = rawAttr(rawOf('w:rStyle'), 'w:val')
         if (run.styleId) return raw === run.styleId
         // a run that already sat in the document's hyperlink (rId) stays unstyled if it was unstyled
-        return raw === undefined ? !insideLink || !!run.link?.rId : raw === 'Hyperlink'
+        return raw === undefined
+          ? !insideLink || !!run.link?.rId || !!run.link?.plain
+          : raw === 'Hyperlink'
       }
       case 'rFonts': {
         // mirrors the parse side: primary = eastAsia ?? ascii ?? hAnsi, latin = ascii ?? hAnsi,
@@ -2859,6 +2998,25 @@ export function mergeRPrModel(rawRPr: string, run: Run, insideLink: boolean): st
         return rawBool(rawOf(cs ? 'w:iCs' : 'w:i')) === !!run.italic
       case 'strike':
         return rawBool(rawOf('w:strike')) === !!run.strike
+      case 'caps':
+        return rawCaps(rawOf('w:caps'), rawOf('w:smallCaps')) === run.caps
+      case 'dstrike':
+        return rawBool(rawOf('w:dstrike')) === !!run.dstrike
+      // `vanish` may be style-inherited; only the run's own value is compared
+      case 'vanish':
+        return run.vanishOwn === undefined || rawOnOff(rawOf('w:vanish')) === run.vanishOwn
+      case 'spacing':
+        return rawInt(rawOf('w:spacing')) === run.charSpacingTwips
+      case 'scale': {
+        const raw = rawInt(rawOf('w:w'))
+        return (raw && raw !== 100 ? raw : undefined) === run.charScalePct
+      }
+      case 'kern': {
+        const raw = rawAttr(rawOf('w:kern'), 'w:val')
+        return (raw === undefined ? undefined : parseInt(raw, 10) || 0) === run.kernHalfPoints
+      }
+      case 'position':
+        return (rawInt(rawOf('w:position')) || undefined) === run.positionHalfPoints
       case 'color': {
         const raw = rawAttr(rawOf('w:color'), 'w:val')
         // a theme-resolved model value never equals the cached literal; rebuilding
@@ -3409,6 +3567,9 @@ function generateRunXml(run: Run, insideLink: boolean): string {
     } else if (ch === '\v') {
       flush()
       segments.push('<w:br w:type="column"/>')
+    } else if (ch === '\u001e') {
+      flush()
+      segments.push('<w:br w:type="textWrapping" w:clear="all"/>')
     } else if (ch === '\u2011') {
       flush()
       segments.push('<w:noBreakHyphen/>')

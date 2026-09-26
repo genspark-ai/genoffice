@@ -5,7 +5,12 @@ import { act } from 'react'
 import { Editor } from '@tiptap/core'
 import { editorExtensions } from '../src/renderer/editor/extensions'
 import { FindPanel, findMatches, foldCase } from '../src/renderer/components/FindPanel'
-import { clampPictureCm, PICTURE_CM_MAX, PICTURE_CM_MIN } from '../src/renderer/components/Ribbon'
+import { SCAN_THRESHOLD } from '../src/renderer/editor/find'
+import {
+  clampPictureTwips,
+  PICTURE_TWIPS_MAX,
+  PICTURE_TWIPS_MIN,
+} from '../src/renderer/components/Ribbon'
 
 function createEditor(text: string): Editor {
   return new Editor({
@@ -75,11 +80,11 @@ describe('findMatches', () => {
   })
 })
 
-describe('clampPictureCm', () => {
+describe('clampPictureTwips', () => {
   it('clamps to the Word picture size range', () => {
-    expect(clampPictureCm(0.001)).toBe(PICTURE_CM_MIN)
-    expect(clampPictureCm(999)).toBe(PICTURE_CM_MAX)
-    expect(clampPictureCm(10)).toBe(10)
+    expect(clampPictureTwips(1)).toBe(PICTURE_TWIPS_MIN)
+    expect(clampPictureTwips(999999)).toBe(PICTURE_TWIPS_MAX)
+    expect(clampPictureTwips(5670)).toBe(5670)
   })
 })
 
@@ -88,20 +93,26 @@ describe('FindPanel', () => {
     vi.useRealTimers()
   })
 
-  it('hides the replace row when the editor is read-only', () => {
+  it('hides the Replace tab when the editor is read-only', () => {
     const editor = createEditor('hello world')
     editor.setEditable(false)
     const { container, unmount } = render(createElement(FindPanel, { editor, onClose: () => {} }))
-    expect(container.querySelectorAll('.find-row')).toHaveLength(1)
+    expect(container.querySelectorAll('.find-tab')).toHaveLength(2)
     expect(container.querySelector('.find-action')).toBeNull()
     unmount()
     editor.destroy()
   })
 
-  it('shows the replace row on an editable document', () => {
+  it('shows the replace row on the Replace tab of an editable document', () => {
     const editor = createEditor('hello world')
     const { container, unmount } = render(createElement(FindPanel, { editor, onClose: () => {} }))
+    expect(container.querySelectorAll('.find-tab')).toHaveLength(3)
     expect(container.querySelectorAll('.find-row')).toHaveLength(2)
+    act(() => {
+      container.querySelectorAll<HTMLButtonElement>('.find-tab')[1].click()
+    })
+    expect(container.querySelectorAll('.find-row')).toHaveLength(3)
+    expect(container.querySelectorAll('.find-action')).toHaveLength(2)
     unmount()
     editor.destroy()
   })
@@ -126,6 +137,46 @@ describe('FindPanel', () => {
     editor.destroy()
   })
 
+  it('holds Next and Replace while a time-sliced scan is in flight', async () => {
+    vi.useFakeTimers()
+    const saved = SCAN_THRESHOLD.nodeSize
+    SCAN_THRESHOLD.nodeSize = 0
+    const editor = createEditor('hello world')
+    const { container, unmount } = render(createElement(FindPanel, { editor, onClose: () => {} }))
+    try {
+      act(() => {
+        container.querySelectorAll<HTMLButtonElement>('.find-tab')[1].click()
+      })
+      const input = container.querySelector<HTMLInputElement>('.find-input')!
+      const setValue = (el: HTMLInputElement, v: string) => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+        setter.call(el, v)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      act(() => setValue(input, 'hello'))
+      act(() => {
+        vi.advanceTimersByTime(200)
+      })
+      // the debounce fired and the scan is pending: hits are not known yet
+      expect(container.querySelector('.find-count')!.textContent).toBe('\u2026')
+      const replaceAll = container.querySelectorAll<HTMLButtonElement>('.find-action')[1]
+      expect(replaceAll.disabled).toBe(true)
+      act(() => setValue(container.querySelectorAll<HTMLInputElement>('.find-input')[1], 'X'))
+      act(() => replaceAll.click())
+      act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+      expect(editor.state.doc.textContent).toBe('hello world')
+      await act(async () => {
+        await vi.runAllTimersAsync()
+      })
+      expect(container.querySelector('.find-count')!.textContent).toBe('1/1')
+      expect(replaceAll.disabled).toBe(false)
+    } finally {
+      SCAN_THRESHOLD.nodeSize = saved
+      unmount()
+      editor.destroy()
+    }
+  })
+
   it('focuses the find input on mount and again when focusFindNonce bumps', () => {
     const editor = createEditor('hello world')
     const { container, rerender, unmount } = render(
@@ -147,6 +198,9 @@ describe('FindPanel', () => {
   it('labels both inputs and announces the match count', () => {
     const editor = createEditor('hello world')
     const { container, unmount } = render(createElement(FindPanel, { editor, onClose: () => {} }))
+    act(() => {
+      container.querySelectorAll<HTMLButtonElement>('.find-tab')[1].click()
+    })
     const [find, replace] = Array.from(container.querySelectorAll<HTMLInputElement>('.find-input'))
     expect(find!.getAttribute('aria-label')).toBeTruthy()
     expect(find!.getAttribute('aria-label')).toBe(find!.placeholder)

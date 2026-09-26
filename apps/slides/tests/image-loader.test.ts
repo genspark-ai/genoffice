@@ -33,7 +33,7 @@ describe('createImageLoader', () => {
 
   it('surfaces loaded images by timer batches while others are still pending', () => {
     const apply = vi.fn()
-    const loader = createImageLoader(apply, { batchSize: 16, delayMs: 100 })
+    const loader = createImageLoader(apply, 16, 100)
     loader.load(['a', 'b', 'c'])
     img('a').onload!()
     expect(apply).not.toHaveBeenCalled()
@@ -43,7 +43,7 @@ describe('createImageLoader', () => {
 
   it('flushes immediately when the batch size is reached', () => {
     const apply = vi.fn()
-    const loader = createImageLoader(apply, { batchSize: 2, delayMs: 100 })
+    const loader = createImageLoader(apply, 2, 100)
     loader.load(['a', 'b', 'c'])
     img('a').onload!()
     img('b').onload!()
@@ -52,7 +52,7 @@ describe('createImageLoader', () => {
 
   it('flushes the remainder when the last pending image settles, even on error', () => {
     const apply = vi.fn()
-    const loader = createImageLoader(apply, { batchSize: 16, delayMs: 100 })
+    const loader = createImageLoader(apply, 16, 100)
     loader.load(['a', 'b'])
     img('a').onload!()
     img('b').onerror!()
@@ -61,7 +61,7 @@ describe('createImageLoader', () => {
 
   it('never reloads finished urls nor discards in-flight ones on a new load call', () => {
     const apply = vi.fn()
-    const loader = createImageLoader(apply, { batchSize: 16, delayMs: 100 })
+    const loader = createImageLoader(apply, 16, 100)
     loader.load(['a', 'b'])
     img('a').onload!()
     vi.advanceTimersByTime(100)
@@ -74,7 +74,7 @@ describe('createImageLoader', () => {
 
   it('stops applying after dispose', () => {
     const apply = vi.fn()
-    const loader = createImageLoader(apply, { batchSize: 16, delayMs: 100 })
+    const loader = createImageLoader(apply, 16, 100)
     loader.load(['a'])
     loader.dispose()
     img('a').onload!()
@@ -100,7 +100,7 @@ describe('metafile rasterization waits for private fonts', () => {
 
   it('holds the EMF until the doc-fonts sync flag flips, then rasterizes', async () => {
     flag.__genofficeDocFontsSynced = false
-    const loader = createImageLoader(vi.fn(), { batchSize: 16, delayMs: 100 })
+    const loader = createImageLoader(vi.fn(), 16, 100)
     loader.load(['data:image/x-emf;base64,AQAAAA=='])
     await vi.advanceTimersByTimeAsync(300)
     expect(metafileToDataUrl).not.toHaveBeenCalled()
@@ -110,7 +110,7 @@ describe('metafile rasterization waits for private fonts', () => {
   })
 
   it('does not wait when no sync has started', async () => {
-    const loader = createImageLoader(vi.fn(), { batchSize: 16, delayMs: 100 })
+    const loader = createImageLoader(vi.fn(), 16, 100)
     loader.load(['data:image/x-emf;base64,AQAAAA=='])
     await vi.advanceTimersByTimeAsync(0)
     expect(metafileToDataUrl).toHaveBeenCalledTimes(1)
@@ -118,7 +118,7 @@ describe('metafile rasterization waits for private fonts', () => {
 
   it('refuses oversized metafiles before base64 decoding', async () => {
     const apply = vi.fn()
-    const loader = createImageLoader(apply, { batchSize: 16, delayMs: 100 })
+    const loader = createImageLoader(apply, 16, 100)
     const huge = `data:image/x-emf;base64,${'A'.repeat(MAX_METAFILE_BASE64_CHARS + 1)}`
     loader.load([huge])
     await vi.advanceTimersByTimeAsync(0)

@@ -74,8 +74,8 @@ describe('outline-only headings', () => {
     expect(STYLES_CSS).toMatch(
       /\.doc-page :where\(h1, h2, h3, h4, h5, h6\)\.doc-outline-only \{\s*font-size: inherit;/,
     )
+    // the theme paints no heading face of its own: headings follow their style chain
     const css = docThemeCss({ major: 'Aptos Display', minor: 'Aptos' }, null)
-    expect(css).toContain('.doc-page h1:where(:not(.doc-outline-only))')
-    expect(css).not.toMatch(/\.doc-page h1[ ,]/)
+    expect(css).not.toMatch(/\.doc-page h1/)
   })
 })

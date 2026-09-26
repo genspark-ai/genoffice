@@ -7,12 +7,15 @@ import { CliError, EXIT } from './result'
 /** The shell's Electron userData directory, located without Electron (GENOFFICE_USER_DATA overrides). */
 export function genofficeUserDataDir(env: NodeJS.ProcessEnv): string {
   if (env.GENOFFICE_USER_DATA) return env.GENOFFICE_USER_DATA
+  // Resolve the home from the env we were given (as os.homedir() does with process.env.HOME), so
+  // an in-process caller with a substituted HOME never lands in the real user directories.
+  const home = env.HOME || homedir()
   const base =
     process.platform === 'darwin'
-      ? join(homedir(), 'Library', 'Application Support')
+      ? join(home, 'Library', 'Application Support')
       : process.platform === 'win32'
-        ? env.APPDATA || join(homedir(), 'AppData', 'Roaming')
-        : env.XDG_CONFIG_HOME || join(homedir(), '.config')
+        ? env.APPDATA || join(home, 'AppData', 'Roaming')
+        : env.XDG_CONFIG_HOME || join(home, '.config')
   return join(base, 'GenOffice')
 }
 

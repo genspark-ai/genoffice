@@ -278,9 +278,9 @@ export function buildPivotLayout(
       case 'average':
         return numbers.reduce((total, value) => total + value, 0) / numbers.length
       case 'max':
-        return Math.max(...numbers)
+        return numbers.reduce((max, value) => (value > max ? value : max))
       case 'min':
-        return Math.min(...numbers)
+        return numbers.reduce((min, value) => (value < min ? value : min))
     }
   }
 

@@ -121,6 +121,7 @@ export const es = {
   appPasteOptSource: 'Mantener formato de origen',
   appPasteOptTheme: 'Usar tema de destino',
   appStatusPasteOptionsExpired: 'Las opciones de pegado ya no están disponibles',
+  appStatusPasteTruncated: 'El texto pegado era demasiado largo y se ha truncado',
   appCtxHideSlide: 'Ocultar diapositiva',
   appCtxUnhideSlide: 'Mostrar diapositiva',
   appCtxAddSectionBefore: 'Agregar sección (antes de esta diapositiva)',

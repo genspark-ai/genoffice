@@ -58,12 +58,45 @@ function leadingRunFont(rPr: string, text: string): string | undefined {
 /** a w:del run wrapper with its content (not the self-closing paragraph-mark w:del in pPr/rPr) */
 const DEL_WRAPPER_RE = /<w:del(?:\s[^>]*)?(?<!\/)>[\s\S]*?<\/w:del>/g
 
+/** direct paragraph geometry Word applies over the style: before/after spacing and left indent */
+function directParaGeometry(
+  pPr: string,
+): Pick<FieldDisplay, 'spaceBeforeTwips' | 'spaceAfterTwips' | 'indentLeftTwips'> {
+  const spacingAttrs = /<w:spacing ([^/>]*)\/>/.exec(pPr)?.[1] ?? ''
+  const twips = (re: RegExp, src: string): number | undefined => {
+    const v = parseInt(re.exec(src)?.[1] ?? '', 10)
+    return Number.isNaN(v) ? undefined : v
+  }
+  const before = twips(/w:before="(-?\d+)"/, spacingAttrs)
+  const after = twips(/w:after="(-?\d+)"/, spacingAttrs)
+  const indAttrs = /<w:ind ([^/>]*)\/>/.exec(pPr)?.[1] ?? ''
+  const left = twips(/w:(?:left|start)="(-?\d+)"/, indAttrs)
+  return {
+    ...(before !== undefined ? { spaceBeforeTwips: before } : {}),
+    ...(after !== undefined ? { spaceAfterTwips: after } : {}),
+    ...(left !== undefined ? { indentLeftTwips: left } : {}),
+  }
+}
+
+/** a TOC entry Word wrote without TOC styles: PAGEREF page number behind a right tab stop */
+function unstyledTocEntry(xml: string, pPr: string): boolean {
+  return (
+    /<w:instrText[^>]*>\s*PAGEREF\s/.test(xml) &&
+    /<w:tabs>[\s\S]*?<w:tab\s[^>]*w:val=(?:"right"|'right')/.test(pPr)
+  )
+}
+
 export function fieldDisplayOf(
   xml: string,
   styles?: Map<string, StyleInfo>,
 ): FieldDisplay | undefined {
   const styleId = /<w:pStyle w:val="([^"]+)"/.exec(xml)?.[1] ?? ''
-  const tocLevel = tocLevelOf(styleId, styles)
+  const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(xml)?.[0] ?? ''
+  const geometry = directParaGeometry(pPr)
+  const styledLevel = tocLevelOf(styleId, styles)
+  // unstyled entries indent through their own w:ind, styled ones through the level ladder
+  const tocLevel = styledLevel ?? (unstyledTocEntry(xml, pPr) ? 1 : null)
+  if (styledLevel !== null) delete geometry.indentLeftTwips
   if (tocLevel !== null) {
     // TOC entry: title <tab with dot leader> page number. The page number
     // follows the LAST tab — entries like "1.1.<tab>Title<tab>7" put a leading
@@ -102,7 +135,6 @@ export function fieldDisplayOf(
     const anchor = /<w:hyperlink [^>]*w:anchor="([^"]+)"/.exec(xml)?.[1]
     // direct pPr/run metrics: Word sizes TOC lines by them while the style
     // (html2docx exports) often carries nothing
-    const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(xml)?.[0] ?? ''
     const leader = tocLeaderOf(pPr, styles?.get(styleId))
     const spacingAttrs = /<w:spacing ([^/>]*)\/>/.exec(pPr)?.[1] ?? ''
     const line = lineTwipsOf(/w:line="([^"]+)"/.exec(spacingAttrs)?.[1])
@@ -157,6 +189,7 @@ export function fieldDisplayOf(
             ...(lineRule === 'auto' ? { lineSpacing: Math.round((line / 240) * 100) / 100 } : {}),
           }
         : {}),
+      ...geometry,
     }
   }
   xml = inlineEqFieldResults(xml)
@@ -200,7 +233,6 @@ export function fieldDisplayOf(
     }
     // explicit paragraph alignment: the passthrough div would inherit the
     // document default (justify in CJK docs) and stretch short lines
-    const pPr = /<w:pPr>[\s\S]*?<\/w:pPr>/.exec(xml)?.[0] ?? ''
     const jc = /<w:jc w:val="([^"]+)"/.exec(pPr)?.[1]
     const align =
       jc === 'left' || jc === 'start'
@@ -231,6 +263,7 @@ export function fieldDisplayOf(
             ...(lineRule === 'auto' ? { lineSpacing: Math.round((line / 240) * 100) / 100 } : {}),
           }
         : {}),
+      ...geometry,
     }
   }
   return undefined

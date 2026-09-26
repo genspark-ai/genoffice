@@ -182,8 +182,10 @@ export function ImageViewer({
       role="dialog"
       aria-modal="true"
       aria-label={IMAGE_VIEWER_TITLES[lang]}
+      tabIndex={-1}
       ref={focus.ref}
       onKeyDown={focus.onKeyDown}
+      onBlur={focus.onBlur}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}

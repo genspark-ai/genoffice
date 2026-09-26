@@ -2,7 +2,9 @@ export {
   buildContextMenuItems,
   contextMenuLabels,
   installContextMenu,
+  setContextMenuInterceptor,
   VIEW_IMAGE_CHANNEL,
+  type ContextMenuInterceptor,
   type ContextMenuItem,
   type ContextMenuLabels,
 } from './context-menu'
@@ -63,7 +65,6 @@ export {
   remoteImageHeaders,
 } from './remote-image'
 export { GENERATED_IMAGE_DIR, readGeneratedImage, storeGeneratedImage } from './generated-images'
-export { writeJsonAtomic } from './atomic-json'
 export {
   buildPrintableHtml,
   printHtmlToPdf,
@@ -92,8 +93,6 @@ export {
 } from './headless-export'
 export {
   RENDERER_SCHEME,
-  SLIDES_MEDIA_SCHEME,
-  SLIDES_MEDIA_SCHEME_PRIVILEGE,
   DOCX_MEDIA_SCHEME_PRIVILEGE,
   RENDERER_SCHEME_PRIVILEGE,
   rendererUrl,
@@ -101,3 +100,4 @@ export {
   type RendererHost,
 } from './renderer-scheme'
 export { installRendererProtocol, registerRendererScheme } from './renderer-protocol'
+export { atomicWriteFile, writeJsonAtomic } from './atomic-write'

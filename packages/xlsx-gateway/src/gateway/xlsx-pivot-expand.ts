@@ -353,7 +353,7 @@ const MODELLED_ELEMENTS: Readonly<Record<string, { attrs: string; children: stri
   field: { attrs: 'x', children: '' },
   rowItems: { attrs: 'count', children: 'i' },
   colItems: { attrs: 'count', children: 'i' },
-  i: { attrs: 'r t', children: 'x' },
+  i: { attrs: 'r t i', children: 'x' },
   x: { attrs: 'v', children: '' },
   pageFields: { attrs: 'count', children: 'pageField' },
   pageField: { attrs: 'fld hier', children: '' },
@@ -373,8 +373,12 @@ const MODELLED_ELEMENTS: Readonly<Record<string, { attrs: string; children: stri
   extLst: { attrs: '', children: 'ext' },
   ext: { attrs: 'uri', children: 'aio:aioPivotGroupings' },
   'aio:aioPivotGroupings': { attrs: 'v', children: '' },
+  // refreshOnLoad: set by setPivotRefreshOnLoad on every recompute/relayout
+  // save, so a pivot GenOffice itself relaid out carries it on reopen.
   pivotCacheDefinition: {
-    attrs: 'r:id refreshedBy createdVersion refreshedVersion minRefreshableVersion recordCount',
+    attrs:
+      'r:id refreshedBy createdVersion refreshedVersion minRefreshableVersion recordCount ' +
+      'refreshOnLoad',
     children: 'cacheSource cacheFields',
   },
   cacheSource: { attrs: 'type', children: 'worksheetSource' },

@@ -283,6 +283,53 @@
   font-display: block;
 }
 
+/* SimSun ASCII is half-width fixed pitch (Word PDF: 0.5em per character at
+ * 12pt); the -Che face carries the same 0.5em advances. */
+@font-face {
+  font-family: 'GenOffice SimSun Latin';
+  src: url('./GenOfficeCheLatinKR.woff2') format('woff2');
+  unicode-range: U+0020-007E;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+/* Word lays out a space touching hangul at 0.5em whatever the run font (corpus
+ * probe 2026-09-24: Batang 0.49-0.50, Malgun Gothic and Times New Roman spaces
+ * inside Korean runs 0.51-0.52em); .doc-hangul-space (styles.css) draws such
+ * spaces from the -Che face's half-width space. */
+@font-face {
+  font-family: 'GenOffice Hangul Space';
+  src: url('./GenOfficeCheLatinKR.woff2') format('woff2');
+  unicode-range: U+0020;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+/* Latin stand-in for Microsoft YaHei on machines without it: YaHei's tabular
+ * digits advance 0.586em (bold 0.617), Helvetica's 0.556, so the size-adjusted
+ * alias keeps digit-heavy cells wrapping like Word. A locally installed YaHei
+ * precedes it in the chain. */
+@font-face {
+  font-family: 'GenOffice YaHei Latin';
+  src: local('Helvetica'), local('ArialMT'), url('./LiberationSans-Regular.ttf');
+  size-adjust: 106%;
+  unicode-range: U+0020-007E;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'GenOffice YaHei Latin';
+  src: local('Helvetica-Bold'), local('Arial-BoldMT'), url('./LiberationSans-Bold.ttf');
+  size-adjust: 108%;
+  unicode-range: U+0020-007E;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+
 /*
  * Arabic fallback: unmodified Noto Naskh/Sans Arabic subsets (Arabic blocks +
  * presentation forms + digits/punctuation). Without them, missing Arabic fonts
@@ -619,6 +666,347 @@
   src: url('./LiberationSans-BoldItalic.ttf');
   size-adjust: 92.7%;
   unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+
+/* Lucida Handwriting ships with Office (Word's DFonts) and Windows, not macOS
+ * or Linux, so Chromium fell to the Helvetica-class sans: ~23% narrower per
+ * body line and 1.15 pitch instead of its 1.3794. Against Liberation Sans
+ * Italic (hmtx of both fonts over the script's Latin, 2026-09-24) its
+ * lowercase runs +30.7%, capitals +8.2%, digits +21.3%, space and punctuation
+ * +22.5%, so per-case faces carry the adjustment. Registered weight-normal
+ * only: the font has a single cut and Word synthesizes bold without changing
+ * advances. */
+@font-face {
+  font-family: 'Lucida Handwriting GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 122.5%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Lucida Handwriting GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 130.7%;
+  unicode-range: U+0061-007A, U+00DF-00F6, U+00F8-00FF;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Lucida Handwriting GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 108.2%;
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Lucida Handwriting GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 121.3%;
+  unicode-range: U+0030-0039;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+/* Montserrat is an M365 cloud font Word downloads and renders real even when
+ * the fontTable names an altName for it. Its geometry is not a uniform scale
+ * of Liberation Sans (hmtx of Word's cached faces, 2026-09-23): lowercase
+ * +17.3% (+12.1% bold), capitals +5.8%, digits +4.8% (+9.5% bold), the space
+ * and no-break space -5.7% (+1.9% bold), Cyrillic lowercase +13.9% (+9.9%
+ * bold) and capitals +10%, punctuation and extended Cyrillic +11.5%, so
+ * per-class faces carry the adjustment (later faces win inside their
+ * unicode-range). Latin-1 accented capitals share the capitals face; the
+ * accented lowercase set is vowel-heavy and measures +10% (usage-weighted),
+ * so it gets a face of its own. Pitch stays the probed 1.219
+ * (`lineHeightFactor`). */
+
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 111.5%;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 117.3%;
+  unicode-range: U+0061-007A;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 110%;
+  unicode-range: U+00DF-00F6, U+00F8-00FF;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 105.8%;
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 104.8%;
+  unicode-range: U+0030-0039;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 94.3%;
+  unicode-range: U+0020, U+00A0;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 113.9%;
+  unicode-range: U+0430-044F;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Regular.ttf');
+  size-adjust: 110%;
+  unicode-range: U+0410-042F;
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 113%;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 112.1%;
+  unicode-range: U+0061-007A;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 111.3%;
+  unicode-range: U+00DF-00F6, U+00F8-00FF;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 106.9%;
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 109.5%;
+  unicode-range: U+0030-0039;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 101.9%;
+  unicode-range: U+0020, U+00A0;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 109.9%;
+  unicode-range: U+0430-044F;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Bold.ttf');
+  size-adjust: 108.8%;
+  unicode-range: U+0410-042F;
+  font-weight: bold;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 112%;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 117.9%;
+  unicode-range: U+0061-007A;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 113.9%;
+  unicode-range: U+00DF-00F6, U+00F8-00FF;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 105.8%;
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 104.8%;
+  unicode-range: U+0030-0039;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 94.3%;
+  unicode-range: U+0020, U+00A0;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 111.4%;
+  unicode-range: U+0430-044F;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-Italic.ttf');
+  size-adjust: 110%;
+  unicode-range: U+0410-042F;
+  font-weight: normal;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 110%;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 112.5%;
+  unicode-range: U+0061-007A;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 114.2%;
+  unicode-range: U+00DF-00F6, U+00F8-00FF;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 106.9%;
+  unicode-range: U+0041-005A, U+00C0-00D6, U+00D8-00DE;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 109.5%;
+  unicode-range: U+0030-0039;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 101.9%;
+  unicode-range: U+0020, U+00A0;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 106.9%;
+  unicode-range: U+0430-044F;
+  font-weight: bold;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'Montserrat GO';
+  src: url('./LiberationSans-BoldItalic.ttf');
+  size-adjust: 109.1%;
+  unicode-range: U+0410-042F;
   font-weight: bold;
   font-style: italic;
   font-display: block;
@@ -973,6 +1361,65 @@
 @font-face {
   font-family: 'GenOffice Songti SC';
   src: local('STSongti-SC-Regular'), local('Songti SC Regular');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Same for the PMingLiU stand-in: Songti TC ships a real Bold face that is barely
+ * heavier than Regular (ink 0.055 vs 0.046), while Word synthesizes bold on PMingLiU
+ * (0.075). Registering weight-normal only makes Blink synthesize (0.082) instead of
+ * selecting the anemic face, so bold TC headings read as bold like in Word. */
+@font-face {
+  font-family: 'GenOffice Songti TC';
+  src: local('STSongti-TC-Regular'), local('Songti TC Regular');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* Office-private CJK faces (DengXian, PMingLiU) are not visible to Chromium, so
+ * their stand-ins lay lines out with the stand-in's own ascent/descent; Word
+ * lays them out with the real face: line = the probed factor, split as the
+ * face's hhea ascent/descent plus half the remainder on each side (DengXian
+ * 0.810/0.232 -> 0.969/0.391 of 1.36; PMingLiU 0.801/0.199 -> 0.952/0.351 of
+ * 1.3029). These aliases lead the chains and carry that geometry over the
+ * stand-in's glyphs; U+0020 in the range makes them the primary face for the
+ * line box, other scripts fall through to the chain. */
+@font-face {
+  font-family: 'DengXian GO';
+  src: local('DengXian'), local('PingFangSC-Regular'), local('PingFang SC Regular');
+  ascent-override: 96.9%;
+  descent-override: 39.1%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0020, U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'DengXian GO';
+  src:
+    local('DengXian-Bold'), local('DengXian Bold'), local('PingFangSC-Semibold'),
+    local('PingFang SC Semibold');
+  ascent-override: 96.9%;
+  descent-override: 39.1%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0020, U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
+  font-weight: bold;
+  font-style: normal;
+}
+/* weight-normal only: bold synthesizes like Word's faux-bold PMingLiU */
+@font-face {
+  font-family: 'PMingLiU GO';
+  src: local('PMingLiU'), local('STSongti-TC-Regular'), local('Songti TC Regular');
+  ascent-override: 95.2%;
+  descent-override: 35.1%;
+  line-gap-override: 0%;
+  unicode-range:
+    U+0020, U+2160-217F, U+2E80-303F, U+3041-33FF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F;
   font-weight: normal;
   font-style: normal;
 }

@@ -73,3 +73,20 @@ describe('docStyleCss header/footer strips under a typed grid', () => {
     expect(css).not.toContain('.doc-page .page-hf')
   })
 })
+
+describe('docStyleCss glyph shift off the typed grid', () => {
+  it('releases the grid centering in table cells and strips', () => {
+    const css = docStyleCss(parsedWith(GRID_SECT))
+    expect(css).toContain(
+      '.doc-page .doc-table :is(td, th), .doc-page .doc-table :is(td, th) *, .doc-page .page-hf, .doc-page .page-hf * { --doc-lead-grid:0 }',
+    )
+  })
+
+  it('keeps cells centred like the body when adjustLineHeightInTable snaps them', () => {
+    const parsed = parsedWith(GRID_SECT)
+    ;(parsed as unknown as { adjustLineHeightInTable: boolean }).adjustLineHeightInTable = true
+    const css = docStyleCss(parsed)
+    expect(css).toContain('.doc-page .page-hf, .doc-page .page-hf * { --doc-lead-grid:0 }')
+    expect(css).not.toContain('.doc-table :is(td, th) * { --doc-lead-grid:0 }')
+  })
+})

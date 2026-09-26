@@ -38,13 +38,7 @@ import { ZOOM_MAX, ZOOM_MIN, clampZoom, nextPreset, notchStep, prevPreset } from
 import type { DrawRect } from './draw-shape'
 import { paragraphsBlank } from './textbox-insert'
 import { SlideThumb } from './SlideThumb'
-import {
-  THUMB_GAP_PX,
-  WINDOWING_MIN_SLIDES,
-  rowOffsets,
-  thumbRowHeight,
-  visibleRowRange,
-} from './thumb-window'
+import { useVisibleThumbs } from './use-visible-thumbs'
 import { MasterView } from './MasterView'
 import {
   TextEditOverlay,
@@ -336,6 +330,11 @@ function collectRtls(node: RenderNode, out: Set<boolean>) {
   else if (node.type === 'group') for (const child of node.children) collectRtls(child, out)
 }
 
+/** Same box a SlideThumb Stage would occupy, so an unmounted thumbnail keeps the list's scroll geometry */
+function thumbBox(slide: RenderSlide, width: number) {
+  return { width, height: (slide.heightPx * width) / slide.widthPx }
+}
+
 export function App() {
   const { lang } = useI18n()
   const [slides, setSlides] = useState<RenderSlide[]>([])
@@ -420,33 +419,6 @@ export function App() {
   // ── Thumbnail sidebar width (drag the divider to resize; persisted) ─────────
   const [thumbsW, setThumbsW] = useState(loadThumbsW)
   const thumbsListRef = useRef<HTMLDivElement | null>(null)
-  // ── Thumbnail rail windowing (#763) ────────────────────────────────────
-  // Long decks used to mount a canvas per slide (409 canvases for a 409-slide
-  // deck, each with its own Konva tree) before anything was visible. The rail
-  // now mounts only the rows around the viewport; the rest keep their geometry
-  // as placeholders so scrolling, drag-reorder and the right-click insertion
-  // point behave exactly as before. See thumb-window.ts.
-  const [thumbScroll, setThumbScroll] = useState(0)
-  const [thumbViewportH, setThumbViewportH] = useState(0)
-  /** Current rail layout: slide index → its top in rail content coordinates */
-  const thumbTopsRef = useRef<number[]>([])
-  /** `.section-header` height, measured once: the row model needs it to place groups */
-  const [sectionHeaderH, setSectionHeaderH] = useState(30)
-  const thumbScrollRafRef = useRef(0)
-  const onThumbsScroll = () => {
-    const list = thumbsListRef.current
-    if (!list || thumbScrollRafRef.current) return
-    thumbScrollRafRef.current = requestAnimationFrame(() => {
-      thumbScrollRafRef.current = 0
-      setThumbScroll(list.scrollTop)
-    })
-  }
-  useEffect(
-    () => () => {
-      if (thumbScrollRafRef.current) cancelAnimationFrame(thumbScrollRafRef.current)
-    },
-    [],
-  )
   // Re-clamp when the window shrinks (max is 40% of the window), like the AI panel
   useEffect(() => {
     const onResize = () => setThumbsW((w) => clampThumbsW(w))
@@ -549,44 +521,8 @@ export function App() {
   // Follow slide changes made outside the list (arrow keys, canvas paging); viewMode/showThumbs
   // re-run it because the list remounts at scroll 0 when the normal view returns
   useEffect(() => {
-    const list = thumbsListRef.current
-    if (!list) return
-    const active = list.querySelector('.thumb.active')
-    if (active) {
-      active.scrollIntoView({ block: 'nearest' })
-      return
-    }
-    // Windowed off the rail: the active row has no element to scroll into view,
-    // so scroll to where the row model says it is.
-    const top = thumbTopsRef.current[current]
-    if (top === undefined) return
-    const slide = slides[current]
-    const h = slide ? thumbRowHeight(slide, Math.max(60, thumbsW - 24)) : 0
-    if (top < list.scrollTop) list.scrollTop = top
-    else if (top + h > list.scrollTop + list.clientHeight) {
-      list.scrollTop = top + h - list.clientHeight
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    thumbsListRef.current?.querySelector('.thumb.active')?.scrollIntoView({ block: 'nearest' })
   }, [current, showThumbs, viewMode])
-  // Rail height decides the window; it changes with the window and with the view
-  // mode. It re-runs when the deck arrives (the rail only mounts with slides).
-  useEffect(() => {
-    const list = thumbsListRef.current
-    if (!list) return
-    const measure = () => {
-      // A hidden or not-yet-laid-out rail reports 0: keep the last real value
-      // rather than windowing against an empty viewport.
-      if (list.clientHeight > 0) setThumbViewportH(list.clientHeight)
-      const header = list.querySelector('.section-header')
-      if (header) setSectionHeaderH(header.getBoundingClientRect().height)
-    }
-    measure()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(measure)
-    ro.observe(list)
-    return () => ro.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showThumbs, viewMode, slides.length > 0])
   const [masterItems, setMasterItems] = useState<MasterPartItem[] | null>(null)
   // ── Slide show: when non-null, covers the whole window (startAt is the start page index;
   //    customOrder = custom show playback sequence; rehearse = rehearsal timing mode) ────────
@@ -2263,87 +2199,18 @@ export function App() {
     () => groupSections(sections, slides.length),
     [sections, slides.length],
   )
-
-  // ── Thumbnail rail layout: row heights → offsets → the mounted window (#763) ──
-  // width = sidebar minus horizontal padding (20) and .thumb border (4)
-  const thumbW = Math.max(60, thumbsW - 24)
-  const railHeights = useMemo(() => slides.map((s) => thumbRowHeight(s, thumbW)), [slides, thumbW])
-  /** heights of every rail row, section headers included */
-  const railRowHeights = useMemo(() => {
-    if (!sectionGroups) return railHeights
-    const heights: number[] = []
-    for (const g of sectionGroups) {
-      heights.push(sectionHeaderH)
-      if (g.id != null && collapsedSecs.has(g.id)) continue
-      for (let i = g.start; i < g.end; i++) heights.push(railHeights[i] ?? 0)
-    }
-    return heights
-  }, [sectionGroups, railHeights, sectionHeaderH, collapsedSecs])
-  const railOffsets = useMemo(() => rowOffsets(railRowHeights), [railRowHeights])
-  /** rail row of each slide (flat decks: the row is the slide index) */
-  const railRowOfSlide = useMemo(() => {
-    const rows = new Array<number>(slides.length).fill(-1)
-    if (!sectionGroups) {
-      for (let i = 0; i < slides.length; i++) rows[i] = i
-      return rows
-    }
-    let row = 0
-    for (const g of sectionGroups) {
-      row += 1 // the group's header row
-      if (g.id != null && collapsedSecs.has(g.id)) continue
-      for (let i = g.start; i < g.end; i++) rows[i] = row++
-    }
-    return rows
-  }, [slides.length, sectionGroups, collapsedSecs])
-  /** rail row of each group header */
-  const railRowOfGroup = useMemo(() => {
-    if (!sectionGroups) return []
-    const rows: number[] = []
-    let row = 0
-    for (const g of sectionGroups) {
-      rows.push(row)
-      row += 1
-      if (g.id != null && collapsedSecs.has(g.id)) continue
-      row += Math.max(0, g.end - g.start)
-    }
-    return rows
-  }, [sectionGroups, collapsedSecs])
-  // A drag reads geometry off the mounted rows (drop targets, the blank-space
-  // insertion point), so the whole rail stays mounted while one is in flight —
-  // the same reasoning as a deck small enough that windowing buys nothing.
-  const railWindowed = slides.length >= WINDOWING_MIN_SLIDES && dragThumb === null
-  const railRange = useMemo(
-    () =>
-      railWindowed
-        ? visibleRowRange(railOffsets, thumbScroll, thumbViewportH)
-        : { start: 0, end: railRowHeights.length },
-    [railWindowed, railOffsets, thumbScroll, thumbViewportH, railRowHeights.length],
-  )
-  // ── Media decoded on demand (#763 follow-up) ──────────────────────────────
-  /**
-   * Slides whose media is worth decoding right now: the current slide plus a
-   * neighbour for prefetch, plus whatever the rail has mounted. Anything the app
-   * paints wholesale — the print preview, the presenter view, a deck short enough
-   * that the rail is not windowed, a reorder drag in flight — needs the whole deck.
-   */
-  const mediaSlideRange = useMemo(() => {
-    const last = slides.length - 1
-    if (last < 0) return { from: 0, to: -1 }
-    if (printDlgOpen || presenter || !railWindowed) return { from: 0, to: last }
-    let from = Math.max(0, current - 1)
-    let to = Math.min(last, current + 1)
-    for (let i = 0; i < slides.length; i++) {
-      const row = railRowOfSlide[i]!
-      if (row < 0 || row < railRange.start || row >= railRange.end) continue
-      if (i < from) from = i
-      if (i > to) to = i
-    }
-    return { from, to }
-  }, [slides, current, printDlgOpen, presenter, railWindowed, railRange, railRowOfSlide])
-  const railRowVisible = (row: number): boolean =>
-    !railWindowed || (row >= railRange.start && row < railRange.end)
-  // Keep the scroll-into-view fallback current without re-running that effect on every scroll
-  thumbTopsRef.current = railRowOfSlide.map((row) => railOffsets[row] ?? 0)
+  const sorterViewRef = useRef<HTMLDivElement | null>(null)
+  const visibleThumbs = useVisibleThumbs(thumbsListRef, '.thumb', [
+    slides.length,
+    sectionGroups,
+    collapsedSecs,
+    showThumbs,
+    viewMode,
+  ])
+  const visibleSorterItems = useVisibleThumbs(sorterViewRef, '.sorter-item', [
+    slides.length,
+    viewMode,
+  ])
 
   /** Canvas right-click: select the hit element first (replace the selection if it isn't in it), clear selection on blank */
   const onCanvasContextMenu = useCallback(
@@ -2422,77 +2289,51 @@ export function App() {
   // background images/pictures of non-current pages (otherwise unvisited pages' thumbnails are blank).
   useEffect(() => {
     if (slides.length === 0) return
-    const addFillUrl = (out: Set<string>, fill: RenderFill | undefined) => {
-      if (fill && fill.kind === 'image' && fill.dataUrl) out.add(fill.dataUrl)
+    const urls = new Set<string>()
+    const addFillUrl = (fill: RenderFill | undefined) => {
+      if (fill && fill.kind === 'image' && fill.dataUrl) urls.add(fill.dataUrl)
     }
     const addBulletUrls = (
-      out: Set<string>,
       text: { lines: Array<{ runs: Array<{ image?: string }> }> } | undefined,
     ) => {
-      for (const l of text?.lines ?? []) for (const r of l.runs) if (r.image) out.add(r.image)
+      for (const l of text?.lines ?? []) for (const r of l.runs) if (r.image) urls.add(r.image)
     }
-    const walk = (out: Set<string>, nodes: readonly RenderNode[]) => {
+    const walk = (nodes: readonly RenderNode[]) => {
       for (const n of nodes) {
-        if (n.type === 'picture' && n.dataUrl) out.add(n.dataUrl)
+        if (n.type === 'picture' && n.dataUrl) urls.add(n.dataUrl)
         if (n.type === 'shape' || n.type === 'text') {
-          if (n.fill) addFillUrl(out, n.fill)
-          addBulletUrls(out, n.text)
+          if (n.fill) addFillUrl(n.fill)
+          addBulletUrls(n.text)
         }
         if (n.type === 'chart') {
-          addFillUrl(out, (n as { bgFill?: RenderFill }).bgFill)
+          addFillUrl((n as { bgFill?: RenderFill }).bgFill)
           for (const b of (n as { bars: Array<{ fill?: RenderFill }> }).bars)
-            if (b.fill) addFillUrl(out, b.fill)
+            if (b.fill) addFillUrl(b.fill)
         }
-        if (n.type === 'group' && Array.isArray(n.children)) walk(out, n.children)
+        if (n.type === 'group' && Array.isArray(n.children)) walk(n.children)
         if (n.type === 'table' && Array.isArray(n.cells)) {
           for (const c of n.cells) {
-            if (c.fill) addFillUrl(out, c.fill)
-            addBulletUrls(out, c.text)
+            if (c.fill) addFillUrl(c.fill)
+            addBulletUrls(c.text)
           }
         }
       }
     }
-    const collect = (from: number, to: number) => {
-      const out = new Set<string>()
-      for (const s of slides.slice(from, to + 1)) {
-        if (!s) continue
-        addFillUrl(out, s.background)
-        walk(out, s.nodes)
-      }
-      return out
+    for (const s of slides) {
+      addFillUrl(s.background)
+      walk(s.nodes)
     }
-    const urls = collect(mediaSlideRange.from, mediaSlideRange.to)
     if (!imageLoaderRef.current) {
-      imageLoaderRef.current = createImageLoader(
-        (entries) => {
-          setImages((prev) => {
-            const m = new Map(prev)
-            for (const [k, v] of entries) m.set(k, v)
-            return m
-          })
-        },
-        {
-          // Media is decoded at its own size and dropped again once it leaves the
-          // visible window (#763). No downscaling: that is a fidelity trade the
-          // maintainers should decide on, and as configured it bought ~5% of the
-          // process memory while making fast scrolling visibly worse.
-          onEvict: (url) =>
-            setImages((prev) => {
-              if (!prev.has(url)) return prev
-              const m = new Map(prev)
-              m.delete(url)
-              return m
-            }),
-        },
-      )
-      // Read-only diagnostic for perf work (#952): what the loader is holding, so a
-      // measurement can tell "our cache" apart from the browser's own image cache.
-      ;(
-        window as unknown as { __genofficeSlidesMediaStats?: () => unknown }
-      ).__genofficeSlidesMediaStats = () => imageLoaderRef.current?.stats() ?? null
+      imageLoaderRef.current = createImageLoader((entries) => {
+        setImages((prev) => {
+          const m = new Map(prev)
+          for (const [k, v] of entries) m.set(k, v)
+          return m
+        })
+      })
     }
     imageLoaderRef.current.load(urls)
-  }, [slides, mediaSlideRange])
+  }, [slides])
   // Dispose on unmount and clear the ref so a remount (e.g. React Strict Mode's
   // dev double-mount) lazily recreates a fresh loader instead of reusing a disposed one.
   useEffect(
@@ -3745,6 +3586,7 @@ export function App() {
                 className="sorter-view"
                 role="listbox"
                 tabIndex={0}
+                ref={sorterViewRef}
                 onContextMenu={(e) => onGapContextMenu(e, true)}
               >
                 {slides.map((s, i) => (
@@ -3763,7 +3605,11 @@ export function App() {
                     }}
                     onContextMenu={(e) => openThumbMenu(i, e)}
                   >
-                    <SlideThumb slide={s} images={images} width={208} />
+                    {visibleSorterItems.has(i) ? (
+                      <SlideThumb slide={s} images={images} width={208} />
+                    ) : (
+                      <div className="thumb-placeholder" style={thumbBox(s, 208)} />
+                    )}
                     <span className="sorter-num">{i + 1}</span>
                     {pasteFloater?.index === i && (
                       <PasteOptionsFloater
@@ -3814,10 +3660,11 @@ export function App() {
                         tabIndex={0}
                         ref={thumbsListRef}
                         style={{ width: thumbsW }}
-                        onScroll={onThumbsScroll}
                         onContextMenu={(e) => onGapContextMenu(e)}
                       >
                         {(() => {
+                          // width = sidebar minus horizontal padding (20) and .thumb border (4)
+                          const thumbW = Math.max(60, thumbsW - 24)
                           const thumbItem = (s: RenderSlide, i: number) => (
                             <div
                               key={i}
@@ -3830,7 +3677,11 @@ export function App() {
                               onClick={(e) => selectThumb(i, e)}
                               onContextMenu={(e) => openThumbMenu(i, e)}
                             >
-                              <SlideThumb slide={s} images={images} width={thumbW} />
+                              {visibleThumbs.has(i) ? (
+                                <SlideThumb slide={s} images={images} width={thumbW} />
+                              ) : (
+                                <div className="thumb-placeholder" style={thumbBox(s, thumbW)} />
+                              )}
                               <span className="thumb-num">{i + 1}</span>
                               {pasteFloater?.index === i && (
                                 <PasteOptionsFloater
@@ -3841,101 +3692,63 @@ export function App() {
                               )}
                             </div>
                           )
-                          /**
-                           * Off-window rows keep the exact box of a real thumbnail — same
-                           * border, same margin, `data-index` included — but no Konva Stage,
-                           * so nothing is drawn for it. They exist for geometry: the rail's
-                           * scroll height and the position-based interactions stay put.
-                           */
-                          const thumbPlaceholder = (s: RenderSlide, i: number) => (
-                            <div
-                              key={`placeholder-${i}`}
-                              data-index={i}
-                              aria-hidden
-                              className={`thumb thumb-placeholder${s.hidden ? ' thumb-hidden' : ''}`}
-                              style={{
-                                // A whole row, not just the stage box. `* { box-sizing:
-                                // border-box }` means setting the stage height here left
-                                // the 4px of borders *inside* the box, so every spacer was
-                                // 4px short — a drift of 4px per row against the row model
-                                // used to pick the window. At row ~300 that is 1,200px
-                                // (~17 rows against a 600px overscan): the window sat far
-                                // above the visible rows, so a long jump left its target
-                                // row as a placeholder and fast scrolling showed blanks.
-                                // The 10px gap comes from the shared `.thumb` class.
-                                height: Math.max(1, thumbRowHeight(s, thumbW) - THUMB_GAP_PX),
-                              }}
-                            />
-                          )
-                          const thumbRow = (s: RenderSlide, i: number) =>
-                            railRowVisible(railRowOfSlide[i])
-                              ? thumbItem(s, i)
-                              : thumbPlaceholder(s, i)
-                          if (!sectionGroups) return slides.map((s, i) => thumbRow(s, i))
+                          if (!sectionGroups) return slides.map((s, i) => thumbItem(s, i))
                           return sectionGroups.map((g, gi) => {
                             const collapsed = g.id != null && collapsedSecs.has(g.id)
                             return (
                               <div key={g.id ?? `lead-${gi}`} className="section-group">
-                                {railRowVisible(railRowOfGroup[gi]) ? (
-                                  <div
-                                    className={`section-header${g.id == null ? ' section-header-none' : ''}`}
-                                    onClick={g.id != null ? () => toggleSection(g.id!) : undefined}
-                                    onContextMenu={(e) => {
-                                      e.preventDefault()
-                                      setCtxMenu({
-                                        kind: 'section',
-                                        x: e.clientX,
-                                        y: e.clientY,
-                                        sectionId: g.id,
-                                      })
-                                    }}
-                                    title={g.id != null ? t('appSectionHeaderTitle') : undefined}
-                                  >
-                                    {g.id != null && (
-                                      <span className={`section-arrow${collapsed ? '' : ' open'}`}>
-                                        ▸
-                                      </span>
-                                    )}
-                                    {renamingSec && g.id != null && renamingSec.id === g.id ? (
-                                      <input
-                                        className="section-rename-input"
-                                        autoFocus
-                                        value={renamingSec.value}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) =>
-                                          setRenamingSec({ id: g.id!, value: e.target.value })
-                                        }
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') commitRenameSection()
-                                          else if (e.key === 'Escape') setRenamingSec(null)
-                                        }}
-                                        onBlur={commitRenameSection}
-                                      />
-                                    ) : (
-                                      <span
-                                        className="section-name"
-                                        onDoubleClick={
-                                          g.id != null
-                                            ? () => setRenamingSec({ id: g.id!, value: g.name })
-                                            : undefined
-                                        }
-                                      >
-                                        {g.id == null ? t('appSectionDefault') : g.name}
-                                      </span>
-                                    )}
-                                    <span className="section-count">{g.end - g.start}</span>
-                                  </div>
-                                ) : (
-                                  <div
-                                    className="section-header section-header-placeholder"
-                                    aria-hidden
-                                    style={{ height: sectionHeaderH }}
-                                  />
-                                )}
+                                <div
+                                  className={`section-header${g.id == null ? ' section-header-none' : ''}`}
+                                  onClick={g.id != null ? () => toggleSection(g.id!) : undefined}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault()
+                                    setCtxMenu({
+                                      kind: 'section',
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      sectionId: g.id,
+                                    })
+                                  }}
+                                  title={g.id != null ? t('appSectionHeaderTitle') : undefined}
+                                >
+                                  {g.id != null && (
+                                    <span className={`section-arrow${collapsed ? '' : ' open'}`}>
+                                      ▸
+                                    </span>
+                                  )}
+                                  {renamingSec && g.id != null && renamingSec.id === g.id ? (
+                                    <input
+                                      className="section-rename-input"
+                                      autoFocus
+                                      value={renamingSec.value}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onChange={(e) =>
+                                        setRenamingSec({ id: g.id!, value: e.target.value })
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') commitRenameSection()
+                                        else if (e.key === 'Escape') setRenamingSec(null)
+                                      }}
+                                      onBlur={commitRenameSection}
+                                    />
+                                  ) : (
+                                    <span
+                                      className="section-name"
+                                      onDoubleClick={
+                                        g.id != null
+                                          ? () => setRenamingSec({ id: g.id!, value: g.name })
+                                          : undefined
+                                      }
+                                    >
+                                      {g.id == null ? t('appSectionDefault') : g.name}
+                                    </span>
+                                  )}
+                                  <span className="section-count">{g.end - g.start}</span>
+                                </div>
                                 {!collapsed &&
                                   slides
                                     .slice(g.start, g.end)
-                                    .map((s, k) => thumbRow(s, g.start + k))}
+                                    .map((s, k) => thumbItem(s, g.start + k))}
                               </div>
                             )
                           })

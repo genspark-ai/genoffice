@@ -1,6 +1,11 @@
 import type { Editor } from '@tiptap/core'
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { DATE_LOCALES, getLang, t, type StringKey } from '../i18n/locale'
 import type { PmNode } from './convert'
+
+/** hidden bookmarks that let "Remove Current Cover Page" find a gallery cover after a save/reopen */
+export const COVER_START_MARK = '_GenOfficeCoverPage'
+export const COVER_END_MARK = '_GenOfficeCoverPageEnd'
 
 /**
  * Built-in cover page library (the preset gallery behind Insert → Cover
@@ -323,13 +328,47 @@ function paraNode(p: CoverPara): PmNode {
 
 /** Cover paragraphs + one trailing page-break empty paragraph (pushes existing content to page 2) */
 export function buildCoverNodes(preset: CoverPreset): PmNode[] {
+  const paras = preset.paras.map(paraNode)
+  paras[0].attrs = { ...paras[0].attrs, hiddenBookmarks: [COVER_START_MARK] }
   return [
-    ...preset.paras.map(paraNode),
-    { type: 'docParagraph', attrs: { docxIndex: null, aiChanged: false, pageBreakBefore: true } },
+    ...paras,
+    {
+      type: 'docParagraph',
+      attrs: {
+        docxIndex: null,
+        aiChanged: false,
+        pageBreakBefore: true,
+        hiddenBookmarks: [COVER_END_MARK],
+      },
+    },
   ]
 }
 
-/** Insert the cover at the very start of the document (Word behavior: cover is always page 1) */
+/** document range of the gallery cover: first start-marked block through the first end-marked block */
+export function coverPageRange(doc: ProseMirrorNode): { from: number; to: number } | null {
+  let from = -1
+  let to = -1
+  let pos = 0
+  for (let i = 0; i < doc.childCount; i++) {
+    const child = doc.child(i)
+    const marks = child.attrs.hiddenBookmarks as string[] | null | undefined
+    if (from < 0 && marks?.includes(COVER_START_MARK)) from = pos
+    if (to < 0 && marks?.includes(COVER_END_MARK)) to = pos + child.nodeSize
+    pos += child.nodeSize
+  }
+  return from >= 0 && to > from ? { from, to } : null
+}
+
+/** Insert the cover at the very start of the document (Word behavior: cover is always page 1, a previous gallery cover is replaced) */
 export function insertCoverPage(editor: Editor, preset: CoverPreset): void {
-  editor.chain().focus().insertContentAt(0, buildCoverNodes(preset)).run()
+  const existing = coverPageRange(editor.state.doc)
+  const chain = editor.chain().focus()
+  if (existing) chain.deleteRange(existing)
+  chain.insertContentAt(0, buildCoverNodes(preset)).run()
+}
+
+export function removeCoverPage(editor: Editor): boolean {
+  const range = coverPageRange(editor.state.doc)
+  if (!range) return false
+  return editor.chain().focus().deleteRange(range).run()
 }

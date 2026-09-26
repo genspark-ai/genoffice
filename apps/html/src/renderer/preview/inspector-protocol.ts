@@ -163,14 +163,3 @@ export function isFromInspector(data: unknown): data is FromInspector {
     Number.isFinite(version)
   )
 }
-
-/**
- * Totally-open hrefs must never reach window.open from a frame message
- * (javascript:/data:/file: payloads). Returns the trimmed URL when it is
- * http(s), else null.
- */
-export function safeExternalHref(href: unknown): string | null {
-  if (typeof href !== 'string') return null
-  const trimmed = href.trim()
-  return /^https?:\/\//i.test(trimmed) ? trimmed : null
-}

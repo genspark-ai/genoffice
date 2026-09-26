@@ -670,7 +670,7 @@ export const ko = {
   appTabData: '데이터',
   appTabReview: '검토',
   appRibbonCollapse: '리본 축소',
-  appRibbonPin: '리본 고정',
+  appRibbonExpand: '리본 확장',
   appTabView: '보기',
   appTabAi: 'AI',
   appTabChartDesign: '차트 디자인',

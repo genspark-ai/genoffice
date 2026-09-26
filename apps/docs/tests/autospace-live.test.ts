@@ -4,6 +4,7 @@
  * .doc-autospace-pad span whose start margin supplies the rest, and the pads
  * must follow live edits.
  */
+import { readFileSync } from 'node:fs'
 import { Editor } from '@tiptap/core'
 import { describe, expect, it } from 'vitest'
 import type { Run } from '@genoffice/docx-engine'
@@ -96,6 +97,54 @@ describe('autospace pad decorations', () => {
   })
 })
 
+describe('hangul-space decorations', () => {
+  const H = '\ud55c\uae00'
+  const spaces = (editor: Editor) =>
+    Array.from(editor.view.dom.querySelectorAll('.doc-hangul-space'), (el) => el.textContent)
+
+  it('wraps only spaces with a hangul neighbour', () => {
+    const editor = makeEditor(paragraphDoc(`${H} ${H} A B, ${H}`))
+    expect(spaces(editor)).toEqual([' ', ' ', ' '])
+    expect(editor.view.dom.textContent).toBe(`${H} ${H} A B, ${H}`)
+    editor.destroy()
+  })
+
+  it('adds none in Latin, Japanese or Han text', () => {
+    for (const text of ['A B', '\u3042 \u3044', '\u6f22 \u5b57', `${H}, A`]) {
+      const editor = makeEditor(paragraphDoc(text))
+      expect(spaces(editor)).toEqual([])
+      editor.destroy()
+    }
+  })
+
+  it('reads the neighbour across styled-run boundaries', () => {
+    const editor = makeEditor({
+      type: 'doc',
+      content: [
+        {
+          type: 'docParagraph',
+          content: [
+            { type: 'text', text: `${H} ` },
+            {
+              type: 'text',
+              text: 'A',
+              marks: [{ type: 'docTextStyle', attrs: { sizeHalfPoints: 24 } }],
+            },
+          ],
+        },
+      ],
+    } as never)
+    expect(spaces(editor)).toEqual([' '])
+    editor.destroy()
+  })
+
+  it('stays on while the paragraph turns autoSpace off', () => {
+    const editor = makeEditor(paragraphDoc(`${H} A`, { autoSpace: false }))
+    expect(spaces(editor)).toEqual([' '])
+    editor.destroy()
+  })
+})
+
 describe('static-render autospace pads', () => {
   const run = (text: string): Run => ({ text }) as Run
 
@@ -127,8 +176,42 @@ describe('static-render autospace pads', () => {
     ])
   })
 
+  it('wraps hangul-context spaces, reading neighbours from the adjacent runs', () => {
+    const H = '\ud55c\uae00'
+    expect(runSpanSpecs(run(`${H} A B`))).toEqual([
+      ['span', {}, H, ['span', { class: 'doc-hangul-space' }, ' '], 'A B'],
+    ])
+    expect(runSpanSpecs(run('A '), undefined, false, { next: H })).toEqual([
+      ['span', {}, 'A', ['span', { class: 'doc-hangul-space' }, ' ']],
+    ])
+    expect(runSpanSpecs(run(' A'), false, false, { prev: H })).toEqual([
+      [
+        'span',
+        { style: 'text-autospace:no-autospace' },
+        ['span', { class: 'doc-hangul-space' }, ' '],
+        'A',
+      ],
+    ])
+    expect(runSpanSpecs(run('A '), undefined, false, { next: 'B' })).toEqual([['span', {}, 'A ']])
+  })
+
   it('measures astral code points as two UTF-16 units', () => {
     expect(codePointLengthAt('A\u{20000}', 1)).toBe(2)
     expect(codePointLengthAt('AB', 1)).toBe(1)
+  })
+})
+
+describe('hangul-space advance', () => {
+  const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8')
+
+  it('draws the wrapped space from the fixed half-width (0.5em) space face', () => {
+    const rule = /\.doc-hangul-space\s*\{([^}]*)\}/.exec(read('../src/renderer/styles.css'))
+    expect(rule?.[1]).toContain("font-family: 'GenOffice Hangul Space'")
+    const face = /font-family: 'GenOffice Hangul Space';([^}]*)\}/.exec(
+      read('../src/renderer/fonts/fonts.css'),
+    )
+    // GenOfficeCheLatinKR advances every glyph 0.5em (tools/build-kr-che-latin-font.py)
+    expect(face?.[1]).toContain('GenOfficeCheLatinKR.woff2')
+    expect(face?.[1]).toContain('unicode-range: U+0020;')
   })
 })

@@ -59,7 +59,7 @@ export const DECK_TOOLS: DeckTool[] = [
   {
     name: 'deck_start',
     description:
-      'Stage 1 of a new presentation: write the style sheet and the outline, check the outline, and get the design and spec guides plus the configured cloud capabilities back in one call. Call once per deck, before any deck_page. Fix every outline error it reports (call again with the corrected outline) before writing pages. The result lists the pages to write, one deck_page call each.',
+      'Stage 1 of a staged deck, for a longer or design-sensitive presentation a person will present (a short deck of up to about 5 slides with concrete content is one create_pptx call instead): write the style sheet and the outline, check the outline, and get the design and spec guides plus the configured cloud capabilities back in one call. Call once per deck, before any deck_page. Fix every outline error it reports (call again with the corrected outline) before writing pages. The result lists the pages to write, one deck_page call each.',
     shape: {
       dir: DIR,
       style: z

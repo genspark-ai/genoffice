@@ -3,7 +3,7 @@
  * Reuses SettingsModal's .modal-backdrop/.modal styles.
  */
 import React, { useState } from 'react'
-import { useEscOverlay } from '../esc-overlay'
+import { useModalDialog } from './modal-dialog'
 import { Dropdown } from '@genoffice/ui'
 import type { LinkTargetOp } from '../../shared/ipc'
 import { EQUATION_GALLERY } from '../insert-presets'
@@ -28,7 +28,7 @@ export function LinkDialog({
   onApply,
   onClose,
 }: LinkDialogProps) {
-  useEscOverlay(true, onClose)
+  const { titleId, dialogProps } = useModalDialog(onClose)
   const { t } = useI18n()
   const [mode, setMode] = useState<'url' | 'slide'>(initial?.kind === 'slide' ? 'slide' : 'url')
   const [url, setUrl] = useState(initial?.kind === 'url' ? initial.url : 'https://')
@@ -50,8 +50,8 @@ export function LinkDialog({
     // data-keep-edit: opening over a text-edit session must not commit it — the run-level
     // link applies to the saved editor selection after the dialog closes
     <div className="modal-backdrop" data-keep-edit="" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{t('ribbonDlgHyperlink')}</h2>
+      <div className="modal" {...dialogProps} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId}>{t('ribbonDlgHyperlink')}</h2>
         <div className="dlg-radio-row">
           <label className="dlg-radio">
             <input type="radio" checked={mode === 'url'} onChange={() => setMode('url')} />
@@ -121,7 +121,7 @@ interface HeaderFooterDialogProps {
 }
 
 export function HeaderFooterDialog({ initial, onApply, onClose }: HeaderFooterDialogProps) {
-  useEscOverlay(true, onClose)
+  const { titleId, dialogProps } = useModalDialog(onClose)
   const { t } = useI18n()
   const [dateOn, setDateOn] = useState(!!initial.date)
   const [dateAuto, setDateAuto] = useState(true)
@@ -132,8 +132,8 @@ export function HeaderFooterDialog({ initial, onApply, onClose }: HeaderFooterDi
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{t('ribbonDlgHeaderFooter')}</h2>
+      <div className="modal" {...dialogProps} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId}>{t('ribbonDlgHeaderFooter')}</h2>
         <label className="dlg-check">
           <input type="checkbox" checked={dateOn} onChange={(e) => setDateOn(e.target.checked)} />
           {t('ribbonDlgDateTime')}
@@ -208,14 +208,14 @@ interface EquationDialogProps {
 }
 
 export function EquationDialog({ onInsert, onClose }: EquationDialogProps) {
-  useEscOverlay(true, onClose)
+  const { titleId, dialogProps } = useModalDialog(onClose)
   const { t } = useI18n()
   const [text, setText] = useState('')
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
-        <h2>{t('ribbonDlgInsertEquation')}</h2>
+      <div className="modal modal-wide" {...dialogProps} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId}>{t('ribbonDlgInsertEquation')}</h2>
         <div className="eq-gallery">
           {EQUATION_GALLERY.map((eq) => (
             <button
@@ -261,7 +261,7 @@ export function TableInsertDialog({
   onInsert: (rows: number, cols: number) => void
   onClose: () => void
 }) {
-  useEscOverlay(true, onClose)
+  const { titleId, dialogProps } = useModalDialog(onClose)
   const { t } = useI18n()
   const [cols, setCols] = useState(5)
   const [rows, setRows] = useState(2)
@@ -288,8 +288,8 @@ export function TableInsertDialog({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{t('ribbonTableInsertDialog')}</h2>
+      <div className="modal" {...dialogProps} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId}>{t('ribbonTableInsertDialog')}</h2>
         <div className="dlg-two-col">
           {countInput(t('ribbonTableColsLabel'), cols, setCols, true)}
           {countInput(t('ribbonTableRowsLabel'), rows, setRows)}

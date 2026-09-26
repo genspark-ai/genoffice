@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { EmbeddedFont } from '@genoffice/docx-engine'
 import { adoptEmbeddedFonts } from '../src/renderer/embedded-fonts'
 
-vi.mock('../src/renderer/line-metrics', () => ({ noteEmbeddedFontsChanged: () => {} }))
+const setEmbeddedLineMetrics = vi.fn()
+vi.mock('../src/renderer/line-metrics', () => ({
+  noteEmbeddedFontsChanged: () => {},
+  setEmbeddedLineMetrics: (faces: unknown) => setEmbeddedLineMetrics(faces),
+}))
 
 class FakeFontFace {
   family: string
@@ -11,16 +16,21 @@ class FakeFontFace {
   }
   load(): Promise<this> {
     return new Promise((resolve) => {
-      FakeFontFace.gate[this.family] = () => resolve(this)
+      const earlier = FakeFontFace.gate[this.family]
+      FakeFontFace.gate[this.family] = () => {
+        earlier?.()
+        resolve(this)
+      }
     })
   }
 }
 
-const font = (family: string) => ({
+const font = (family: string, extra: Partial<EmbeddedFont> = {}) => ({
   family,
   data: new Uint8Array([0, 1, 0, 0]),
   bold: false,
   italic: false,
+  ...extra,
 })
 
 describe('adoptEmbeddedFonts', () => {
@@ -40,6 +50,23 @@ describe('adoptEmbeddedFonts', () => {
     vi.unstubAllGlobals()
     faces.clear()
     FakeFontFace.gate = {}
+    setEmbeddedLineMetrics.mockClear()
+  })
+
+  it("hands the loaded faces' line boxes over, regular cut first", async () => {
+    const box = { ascent: 0.984, descent: 0.273, lineGap: 0 }
+    const p = adoptEmbeddedFonts([
+      font('Serif', { bold: true, lineMetrics: { ascent: 1, descent: 0.3, lineGap: 0 } }),
+      font('Serif', { lineMetrics: box }),
+      font('Plain'),
+    ])
+    FakeFontFace.gate['Serif']()
+    FakeFontFace.gate['Plain']()
+    await p
+    expect(setEmbeddedLineMetrics).toHaveBeenLastCalledWith([
+      { styled: false, family: 'Serif', ...box },
+      { styled: true, family: 'Serif', ascent: 1, descent: 0.3, lineGap: 0 },
+    ])
   })
 
   it('drops a superseded adoption instead of leaking its faces', async () => {

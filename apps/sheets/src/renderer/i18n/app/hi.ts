@@ -658,7 +658,7 @@ export const hi = {
   appTabData: 'डेटा',
   appTabReview: 'समीक्षा',
   appRibbonCollapse: 'रिबन संक्षिप्त करें',
-  appRibbonPin: 'रिबन पिन करें',
+  appRibbonExpand: 'रिबन विस्तृत करें',
   appTabView: 'दृश्य',
   appTabAi: 'AI',
   appTabChartDesign: 'चार्ट डिज़ाइन',

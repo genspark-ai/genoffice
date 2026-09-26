@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createI18n } from '@genoffice/i18n'
+import { createI18n, LANGS, type Lang } from '@genoffice/i18n'
 import { normalizeRecentQuery, pageRecentPaths } from '../src/main/recent-files'
-import { fileCountKey, timelineCountKey, visiblePageCount } from '../src/renderer/src/counts'
+import { fileCountLabel, visiblePageCount } from '../src/renderer/src/counts'
 import { strings } from '../src/renderer/src/strings'
 
 const tempDirs: string[] = []
@@ -140,20 +140,39 @@ describe('recent query ext normalization', () => {
 
 describe('count labels', () => {
   const translate = createI18n(strings)
+  const label = (lang: Lang, n: number) =>
+    fileCountLabel(n, lang, (key, params) => translate(lang, key, params))
 
   it('uses singular and plural file labels', () => {
-    expect(translate('en', fileCountKey(1), { n: 1 })).toBe('1 file')
-    expect(translate('en', fileCountKey(2), { n: 2 })).toBe('2 files')
-  })
-
-  it('uses singular and plural activity item labels', () => {
-    expect(translate('en', timelineCountKey(1), { n: 1 })).toBe('1 item')
-    expect(translate('en', timelineCountKey(2), { n: 2 })).toBe('2 items')
+    expect(label('en', 1)).toBe('1 file')
+    expect(label('en', 2)).toBe('2 files')
+    expect(label('en', 0)).toBe('0 files')
   })
 
   it('picks the singular form in every locale with plural inflection', () => {
-    expect(translate('fr', fileCountKey(1), { n: 1 })).toBe('1 fichier')
-    expect(translate('de', fileCountKey(1), { n: 1 })).toBe('1 Datei')
-    expect(translate('zh', fileCountKey(1), { n: 1 })).toBe('1 个文件')
+    expect(label('fr', 1)).toBe('1 fichier')
+    expect(label('de', 1)).toBe('1 Datei')
+    expect(label('zh', 1)).toBe('1 \u4e2a\u6587\u4ef6')
+  })
+
+  it('follows CLDR categories: fr zero, cs few, ru one at 21, ar dual/many', () => {
+    expect(label('fr', 0)).toBe('0 fichier')
+    expect(label('cs', 1)).toBe('1 soubor')
+    expect(label('cs', 3)).toBe('3 soubory')
+    expect(label('cs', 5)).toBe('5 soubor\u016f')
+    expect(label('ru', 21)).toBe('21 \u0444\u0430\u0439\u043b')
+    expect(label('ru', 5)).toBe('\u0424\u0430\u0439\u043b\u043e\u0432: 5')
+    expect(label('pl', 2)).toBe('Pliki: 2')
+    expect(label('ar', 0)).toBe('لا توجد ملفات')
+    expect(label('ar', 2)).toBe('ملفان')
+    expect(label('ar', 3)).toBe('3 ملفات')
+    expect(label('ar', 11)).toBe('11 ملفًا')
+    expect(label('ar', 100)).toBe(strings.ar.fileCount.replace('{n}', '100'))
+  })
+
+  it('falls back to the one/other pair in every locale', () => {
+    for (const lang of LANGS) {
+      for (const n of [0, 1, 2, 5, 11, 21, 100]) expect(label(lang, n)).not.toContain('{n}')
+    }
   })
 })

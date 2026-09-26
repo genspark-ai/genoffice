@@ -123,6 +123,7 @@ export const it = {
   appPasteOptSource: 'Mantieni formattazione originale',
   appPasteOptTheme: 'Usa tema di destinazione',
   appStatusPasteOptionsExpired: 'Le opzioni Incolla non sono più disponibili',
+  appStatusPasteTruncated: 'Il testo incollato era troppo lungo ed è stato troncato',
   appCtxHideSlide: 'Nascondi diapositiva',
   appCtxUnhideSlide: 'Scopri diapositiva',
   appCtxAddSectionBefore: 'Aggiungi sezione (prima di questa diapositiva)',

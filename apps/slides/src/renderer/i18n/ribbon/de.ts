@@ -15,7 +15,7 @@ export const de = {
   ribbonTabSlideShow: 'Bildschirmpräsentation',
   ribbonTabReview: 'Überprüfen',
   ribbonCollapse: 'Menüband reduzieren',
-  ribbonPin: 'Menüband anheften',
+  ribbonExpand: 'Menüband erweitern',
   ribbonTabView: 'Ansicht',
   ribbonTabTableDesign: 'Tabellenentwurf',
   ribbonTabChartDesign: 'Diagrammentwurf',

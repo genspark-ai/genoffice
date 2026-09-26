@@ -1,23 +1,12 @@
-/* Office "Collapse the Ribbon" (see ribbon-collapse.tsx for the markup contract) */
+/* Word for Mac "Collapse ribbon" (see ribbon-collapse.tsx for the markup contract) */
 .ribbon-collapsible {
   position: relative;
 }
 .ribbon-collapsible [data-ribbon-body] {
   anchor-name: --ribbon-body;
 }
-.ribbon-collapsible.ribbon-collapsed:not(.ribbon-peek) [data-ribbon-body] {
+.ribbon-collapsible.ribbon-collapsed [data-ribbon-body] {
   display: none;
-}
-/* peek: the band floats over the document instead of pushing it down */
-.ribbon-collapsible.ribbon-peek [data-ribbon-body] {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  z-index: 60;
-  background: inherit;
-  border-bottom: 1px solid var(--border-strong);
-  box-shadow: var(--shadow-menu);
 }
 .ribbon-collapse-btn {
   position: absolute;

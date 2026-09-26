@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentToolCall } from '@genoffice/agent-core'
+import type { AgentMessage, AgentToolCall } from '@genoffice/agent-core'
 import { AiCreditsError, sseLines, streamForProvider } from '../src/stream'
-import { MAX_RESPONSE_BODY_BYTES, jsonBodyInsteadOfSse } from '../src/protocols/shared'
+import {
+  MAX_RESPONSE_BODY_BYTES,
+  jsonBodyInsteadOfSse,
+  parseToolInput,
+} from '../src/protocols/shared'
 import { jsonResponse, okResponse, sseStream } from './test-utils'
 
 afterEach(() => {
@@ -609,92 +613,6 @@ describe('streamForProvider: anthropic', () => {
 })
 
 describe('streamForProvider: gemini', () => {
-  it('returns a streamed function-call signature in the same part on the next turn', async () => {
-    const first = okResponse(
-      sseStream([
-        'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"write_document","args":{"title":"A"}},"thoughtSignature":"opaque-signature"}]},"finishReason":"STOP"}]}',
-      ]),
-    )
-    const second = okResponse(
-      sseStream([
-        'data: {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}]}',
-      ]),
-    )
-    const fetchMock = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second)
-    vi.stubGlobal('fetch', fetchMock)
-    const { toolCalls, cb } = collector()
-    await streamForProvider(
-      'gemini',
-      { apiKey: 'k', model: 'gemini-3.5-flash-lite' },
-      'sys',
-      [],
-      [],
-      100,
-      cb,
-    )
-    expect(toolCalls[0]).toMatchObject({
-      name: 'write_document',
-      thoughtSignature: 'opaque-signature',
-    })
-
-    await streamForProvider(
-      'gemini',
-      { apiKey: 'k', model: 'gemini-3.5-flash-lite' },
-      'sys',
-      [
-        { role: 'user', text: 'write a document' },
-        { role: 'assistant', text: '', toolCalls },
-        { role: 'tool', results: [{ id: toolCalls[0]!.id, name: 'write_document', output: 'ok' }] },
-      ],
-      [],
-      100,
-      collector().cb,
-    )
-    const request = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string)
-    expect(request.contents[1].parts).toEqual([
-      {
-        functionCall: { name: 'write_document', args: { title: 'A' } },
-        thoughtSignature: 'opaque-signature',
-      },
-    ])
-  })
-
-  it('captures snake-case function-call signatures from a JSON response', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({
-          candidates: [
-            {
-              content: {
-                parts: [
-                  {
-                    functionCall: { name: 'write_document', args: {} },
-                    thought_signature: 'json-signature',
-                  },
-                ],
-              },
-            },
-          ],
-        }),
-      ),
-    )
-    const { toolCalls, cb } = collector()
-    await streamForProvider(
-      'gemini',
-      { apiKey: 'k', model: 'gemini-3.5-flash-lite' },
-      'sys',
-      [],
-      [],
-      100,
-      cb,
-    )
-    expect(toolCalls[0]).toMatchObject({
-      name: 'write_document',
-      thoughtSignature: 'json-signature',
-    })
-  })
-
   it('emits text and a whole (non-partial) function call', async () => {
     const body = sseStream([
       'data: {"candidates":[{"content":{"parts":[{"text":"hi there"}]}}]}',
@@ -714,6 +632,110 @@ describe('streamForProvider: gemini', () => {
     expect(deltas.join('')).toBe('hi there')
     expect(toolCalls).toHaveLength(1)
     expect(toolCalls[0]).toMatchObject({ name: 'set_cell', input: { a1: '42' } })
+  })
+
+  it('flags array functionCall args as inputError (genoffice#1106)', async () => {
+    const body = sseStream([
+      'data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"set_cell","args":[1,2]}}]},"finishReason":"STOP"}]}',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { toolCalls, cb } = collector()
+    await streamForProvider(
+      'gemini',
+      { apiKey: 'k', model: 'gemini-2.5-flash' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0]!.input).toEqual({})
+    expect(toolCalls[0]!.inputError).toMatch(/must be a JSON object/)
+  })
+
+  it('captures the thoughtSignature issued with a function call (SSE and JSON body)', async () => {
+    const part = '{"functionCall":{"name":"write_document","args":{}},"thoughtSignature":"c2ln"}'
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          okResponse(
+            sseStream([
+              `data: {"candidates":[{"content":{"parts":[${part}]},"finishReason":"STOP"}]}`,
+            ]),
+          ),
+        ),
+    )
+    const sse = collector()
+    await streamForProvider('gemini', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, sse.cb)
+    expect(sse.toolCalls[0]).toMatchObject({ name: 'write_document', signature: 'c2ln' })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          candidates: [
+            {
+              content: {
+                parts: [{ functionCall: { name: 'f', args: {} }, thought_signature: 'c25ha2U=' }],
+              },
+              finishReason: 'STOP',
+            },
+          ],
+        }),
+      ),
+    )
+    const json = collector()
+    await streamForProvider('gemini', { apiKey: 'k', model: 'm' }, 'sys', [], [], 100, json.cb)
+    expect(json.toolCalls[0]).toMatchObject({ name: 'f', signature: 'c25ha2U=' })
+  })
+
+  it('echoes signatures back on history function calls; an unsigned first call gets the bypass sentinel', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        okResponse(
+          sseStream([
+            'data: {"candidates":[{"content":{"parts":[{"text":"ok"}]},"finishReason":"STOP"}]}',
+          ]),
+        ),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+    const history: AgentMessage[] = [
+      { role: 'user', text: 'go' },
+      {
+        role: 'assistant',
+        text: '',
+        toolCalls: [
+          { id: 'a', name: 'signed', input: {}, signature: 'c2ln' },
+          { id: 'b', name: 'parallel', input: {} },
+        ],
+      },
+      {
+        role: 'tool',
+        results: [
+          { id: 'a', name: 'signed', output: '1' },
+          { id: 'b', name: 'parallel', output: '2' },
+        ],
+      },
+      { role: 'assistant', text: '', toolCalls: [{ id: 'c', name: 'legacy', input: {} }] },
+      { role: 'tool', results: [{ id: 'c', name: 'legacy', output: '3' }] },
+    ]
+    const { cb } = collector()
+    await streamForProvider('gemini', { apiKey: 'k', model: 'm' }, 'sys', history, [], 100, cb)
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    expect(body.contents[1].parts).toEqual([
+      { functionCall: { name: 'signed', args: {} }, thoughtSignature: 'c2ln' },
+      { functionCall: { name: 'parallel', args: {} } },
+    ])
+    expect(body.contents[3].parts).toEqual([
+      {
+        functionCall: { name: 'legacy', args: {} },
+        thoughtSignature: 'skip_thought_signature_validator',
+      },
+    ])
   })
 
   it('aborts when a turn starts more tool calls than the count cap', async () => {
@@ -843,6 +865,28 @@ describe('streamForProvider: openai-compatible', () => {
     )
     expect(deltas.join('')).toBe('partial ')
     expect(toolCalls).toEqual([{ id: 'c1', name: 'replace', input: { x: 1 } }])
+  })
+
+  it('turns non-object tool arguments into inputError instead of executing them (genoffice#1106)', async () => {
+    const body = sseStream([
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"replace","arguments":"null"}}]}}]}',
+      'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+      'data: [DONE]',
+    ])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(body)))
+    const { toolCalls, cb } = collector()
+    await streamForProvider(
+      'openai',
+      { apiKey: 'k', model: 'gpt-4.1-mini' },
+      'sys',
+      [],
+      [],
+      100,
+      cb,
+    )
+    expect(toolCalls).toHaveLength(1)
+    expect(toolCalls[0]!.input).toEqual({})
+    expect(toolCalls[0]!.inputError).toMatch(/must be a JSON object/)
   })
 
   it('aborts when streamed tool arguments exceed the per-tool buffer limit', async () => {
@@ -1561,5 +1605,17 @@ describe('jsonBodyInsteadOfSse', () => {
       headers: { 'content-type': 'text/event-stream' },
     })
     await expect(jsonBodyInsteadOfSse(sse)).resolves.toBeNull()
+  })
+})
+
+describe('parseToolInput', () => {
+  it('rejects non-object JSON through the inputError channel (genoffice#1106)', () => {
+    for (const raw of ['null', '[]', '42', '"x"', 'true']) {
+      const r = parseToolInput(raw)
+      expect(r.input).toEqual({})
+      expect(r.error).toMatch(/must be a JSON object/)
+    }
+    expect(parseToolInput('{"a":1}')).toEqual({ input: { a: 1 } })
+    expect(parseToolInput('')).toEqual({ input: {} })
   })
 })

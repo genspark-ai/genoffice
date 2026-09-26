@@ -9,6 +9,9 @@ import type { UnicodeScript } from './script'
 
 export type Dir = 'ltr' | 'rtl'
 
+/** bookmark name an in-document link to `pageIndex` (0-based) anchors at */
+export const pageAnchorName = (pageIndex: number): string => `_pdfpage${pageIndex + 1}`
+
 /** One extracted character (the analysis layer's input unit). */
 export interface PdfChar {
   /** unicode code point (UTF-32 from FPDFText_GetUnicode) */
@@ -64,6 +67,8 @@ export interface PdfChar {
    * with this id (its own text is empty — Word regenerates the number)
    */
   noteRef?: string
+  /** link annotation covering this char: a URI, or `#_pdfpageN` for an in-document GoTo */
+  href?: string
 }
 
 /** A run of same-styled, same-script text inside one line. */
@@ -93,6 +98,8 @@ export interface Span {
   noteRef?: string
   /** invisible source text (PDF Tr 3/7) → w:vanish (P20) */
   invisible?: boolean
+  /** hyperlink target — see PdfChar.href */
+  href?: string
 }
 
 export interface Line {

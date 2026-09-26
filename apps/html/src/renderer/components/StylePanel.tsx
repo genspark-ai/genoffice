@@ -54,15 +54,13 @@ function PxInput({
       <input
         type="number"
         min={def.min}
+        max={def.max}
         value={value}
         onChange={(e) => {
           const v = e.target.value
-          // Infinity passes a >= check, so require finiteness and clamp to
-          // the field max: unbounded values would persist as Infinitypx.
+          // Infinity passes a >= check and would persist as Infinitypx
           const n = Number(v)
-          if (v !== '' && Number.isFinite(n) && n >= def.min && n <= def.max) {
-            onStyle({ [def.prop]: `${v}px` })
-          }
+          if (v !== '' && Number.isFinite(n) && n >= def.min) onStyle({ [def.prop]: `${v}px` })
         }}
       />
     </label>

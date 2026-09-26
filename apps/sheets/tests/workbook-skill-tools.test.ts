@@ -774,6 +774,72 @@ describe('executeWorkbookTool: propose_operations', () => {
     expect(proposeOperations).not.toHaveBeenCalled()
   })
 
+  it('a rejected mixed batch says nothing was applied and names the fields each bad op takes', () => {
+    const proposeOperations = vi.fn()
+    const operations = [
+      ...Array.from({ length: 7 }, (_, i) => ({
+        op: 'format_range',
+        sheetId: 'sheet-1',
+        range: `E${i + 2}`,
+        format: { numberFormat: '0.0%' },
+      })),
+      ...['A', 'B', 'C', 'D', 'E'].map((col) => ({
+        op: 'set_col_width',
+        sheetId: 'sheet-1',
+        col,
+        width: 120,
+      })),
+    ]
+    const result = execSync(
+      call('propose_operations', { operations, summary: 'format + widths' }),
+      fakeDeps({ proposeOperations }),
+    )
+    expect(result.isError).toBe(true)
+    expect(proposeOperations).not.toHaveBeenCalled()
+    expect(result.output).toContain('none of the 12 operation(s) were applied')
+    expect(result.output).toContain('resubmit the whole batch')
+    expect(result.output).toContain(
+      '- operations[7] (set_col_width): missing column (expected string), missing widthPx (expected number); unknown field(s) col, width — set_col_width takes: sheetId, column, count, widthPx',
+    )
+    expect(result.output).toContain('- operations[11] (set_col_width)')
+    expect(result.output).not.toContain('operations[0]')
+    expect(result.output).not.toContain('"path"')
+  })
+
+  it('an unknown op name lists the valid ops', () => {
+    const result = execSync(
+      call('propose_operations', {
+        operations: [{ op: 'set_column_width', sheetId: 'sheet-1', column: 'A', widthPx: 120 }],
+        summary: 'x',
+      }),
+      fakeDeps({ proposeOperations: vi.fn() }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toContain(
+      "operations[0] (set_column_width): op: Invalid discriminator value. Expected 'set_cell' | ",
+    )
+    expect(result.output).toContain("'set_col_width'")
+  })
+
+  it('a plan-level rejection also says nothing was applied', () => {
+    const result = execSync(
+      call('propose_operations', {
+        operations: [
+          { op: 'set_cell', sheetId: 'sheet-1', address: 'A1', value: 1 },
+          { op: 'set_cell', sheetId: 'sheet-1', address: 'A2', value: 2 },
+        ],
+        summary: 'x',
+      }),
+      fakeDeps({
+        proposeOperations: vi.fn().mockReturnValue({ ok: false, error: 'Unknown sheet: sheet-1' }),
+      }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.output).toBe(
+      'Rejected — none of the 2 operation(s) were applied (a batch is all-or-nothing): Unknown sheet: sheet-1',
+    )
+  })
+
   it('forwards validated operations and reports auto-applied success', () => {
     const proposeOperations = vi.fn().mockReturnValue({ ok: true, plan: EMPTY_PLAN })
     const result = execSync(
@@ -973,7 +1039,8 @@ describe('executeWorkbookTool: propose_operations', () => {
       fakeDeps({ proposeOperations }),
     )
     expect(result.isError).toBe(true)
-    expect(result.output).toBe('still streaming in')
+    expect(result.output).toContain('none of the 1 operation(s) were applied')
+    expect(result.output).toContain('still streaming in')
   })
 })
 

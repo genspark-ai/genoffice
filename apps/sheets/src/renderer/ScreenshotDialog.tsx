@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import type { ScreenSourcesResult } from '../shared/desktop-api'
 import { useI18n } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's Insert → Screenshot: a picker over the OS's capturable surfaces.
 /// Screens first, then other windows (our own window is excluded by the main
@@ -94,11 +95,13 @@ export function ScreenshotDialog({
       </>
     )
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog screenshot-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgScreenshotTitle')}
         onClick={(event) => event.stopPropagation()}
       >

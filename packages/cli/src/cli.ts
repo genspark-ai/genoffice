@@ -10,12 +10,14 @@ import { createCommand } from './commands/create'
 import { guideCommand } from './commands/guide'
 import { imageCommand } from './commands/image'
 import { mediaCommand } from './commands/media'
+import { mergeCommand } from './commands/merge'
 import { searchCommand } from './commands/search'
 import { selectionCommand } from './commands/selection'
 import { infoCommand } from './commands/info'
 import { installCommand } from './commands/install'
 import { mcpCommand } from './commands/mcp'
 import { openCommand } from './commands/open'
+import { pdfCommand } from './commands/pdf'
 import { renderCommand } from './commands/render'
 import { sheetCommand } from './commands/sheet'
 import { skillCommand } from './commands/skill'
@@ -56,6 +58,8 @@ export function defaultRegistry(): CommandRegistry {
     .register(slidesCommand)
     .register(sheetCommand)
     .register(docsCommand)
+    .register(mergeCommand)
+    .register(pdfCommand)
     .register(renderCommand)
     .register(guideCommand)
     .register(searchCommand)
@@ -173,7 +177,8 @@ export async function runCli(argv: readonly string[], opts: RunOptions = {}): Pr
       ? { ...run, warnings: [...(run.warnings ?? []), ...warnings] }
       : run
     audit('ok', EXIT.ok, result.outputPath)
-    if (!def.quiet) {
+    const quiet = typeof def.quiet === 'function' ? def.quiet(args) : def.quiet
+    if (!quiet) {
       io.stdout(json ? JSON.stringify(toJsonOk(def.name, result)) : formatHuman(result))
     }
     return EXIT.ok

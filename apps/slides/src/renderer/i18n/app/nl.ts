@@ -124,6 +124,7 @@ export const nl = {
   appPasteOptSource: 'Bronopmaak behouden',
   appPasteOptTheme: 'Doelthema gebruiken',
   appStatusPasteOptionsExpired: 'Plakopties zijn niet meer beschikbaar',
+  appStatusPasteTruncated: 'De geplakte tekst was te lang en is afgekapt',
   appCtxHideSlide: 'Dia verbergen',
   appCtxUnhideSlide: 'Dia zichtbaar maken',
   appCtxAddSectionBefore: 'Sectie toevoegen (vóór deze dia)',

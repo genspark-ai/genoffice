@@ -281,8 +281,8 @@ describe('sheet remove save', () => {
     expect(resolveRelTarget('xl/workbook.xml', 'worksheets/sheet%201.xml')).toBe(
       'xl/worksheets/sheet 1.xml',
     )
-    expect(resolveRelTarget('xl/worksheets/sheet2.xml', '../media/image%20一.png')).toBe(
-      'xl/media/image 一.png',
+    expect(resolveRelTarget('xl/worksheets/sheet2.xml', '../media/image%20\u4e00.png')).toBe(
+      'xl/media/image \u4e00.png',
     )
     expect(() => resolveRelTarget('xl/workbook.xml', 'worksheets/%ZZ.xml')).toThrow()
     expect(() => resolveRelTarget('xl/workbook.xml', '../../outside.xml')).toThrow()

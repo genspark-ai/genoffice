@@ -29,7 +29,8 @@ const CHART_KINDS: Record<string, ChartDisplay['kind']> = {
 
 /** Word's chart-area border when c:chartSpace carries no c:spPr, as rendered by Word */
 const DEFAULT_FRAME_LINE = '868686'
-const MAX_CHART_CACHE_POINTS = 100_000
+/** Largest point index honored (a full Excel column): a hostile idx/ptCount must not grow the array. */
+const MAX_CHART_CACHE_POINTS = 1_048_576
 
 /**
  * Read the display model of a chart part (word/charts/chartN.xml). Only the
@@ -359,7 +360,7 @@ function dataPointColors(ser: XNode, theme?: ThemeColors | null): (string | null
   let any = false
   for (const dPt of findChildren(ser, 'c:dPt')) {
     const idx = parseInt(attrsOf(findChild(dPt, 'c:idx') ?? {})['val'] ?? '', 10)
-    if (!Number.isFinite(idx) || idx < 0) continue
+    if (!Number.isFinite(idx) || idx < 0 || idx >= MAX_CHART_CACHE_POINTS) continue
     const color = solidFillHex(findChild(dPt, 'c:spPr'), theme)
     if (!color) continue
     out[idx] = color
@@ -587,7 +588,7 @@ function parseChartexPartXml(parsed: XNode[], partPath: string): ChartDisplay | 
       const out: (string | null)[] = []
       for (const pt of findChildren(lvl, 'cx:pt')) {
         const idx = parseInt(attrsOf(pt)['idx'] ?? '', 10)
-        if (Number.isFinite(idx) && idx >= 0) out[idx] = textOf(pt)
+        if (Number.isFinite(idx) && idx >= 0 && idx < MAX_CHART_CACHE_POINTS) out[idx] = textOf(pt)
       }
       return out
     }
@@ -988,8 +989,6 @@ function innerTextRanges(
 
 const XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
-// Series data columns start at B (column A holds the categories):
-// 0 → B … 24 → Z, 25 → AA, 26 → AB, … (plain charCode arithmetic breaks past Z).
 /**
  * Build a minimal but valid xlsx file containing one Sheet1 with the chart
  * data (header row + data rows). Returns base64-encoded bytes.

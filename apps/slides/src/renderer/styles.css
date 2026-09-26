@@ -1125,14 +1125,6 @@ body.vib .slide-list {
   opacity: 0.4;
 }
 
-/* Off-window thumbnail row (#763): keeps a real thumb's box so the rail's scroll
-   height and the position-based interactions (drag targets, blank-space insert
-   point) are unchanged, but holds no Konva Stage — nothing is drawn for it. */
-.thumb-placeholder,
-.section-header-placeholder {
-  pointer-events: none;
-}
-
 .thumb.drop-before {
   box-shadow: 0 -7px 0 -2.5px var(--accent);
 }

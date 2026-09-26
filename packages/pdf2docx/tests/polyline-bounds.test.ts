@@ -40,13 +40,28 @@ describe('authoredInkBoxes path bounds', () => {
         filled: true,
         fillAlpha: 255,
         fillColor: '000000',
-        subpaths: [{ points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }],
+        subpaths: [
+          {
+            points: [
+              { x: 0, y: 0 },
+              { x: 1, y: 1 },
+            ],
+          },
+        ],
       },
       {
         filled: false,
         fillAlpha: 255,
         fillColor: '000000',
-        subpaths: [{ points: [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }] }],
+        subpaths: [
+          {
+            points: [
+              { x: 0, y: 0 },
+              { x: 1, y: 1 },
+              { x: 2, y: 2 },
+            ],
+          },
+        ],
       },
     ])
     expect(authoredInkBoxes(page)).toEqual([])

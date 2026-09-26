@@ -10,6 +10,7 @@ import { dkBackground } from './dark-page'
 import { runBorderDecls } from './run-border'
 import { fillInk } from './shading-ink'
 import { textColorDecls } from './text-color'
+import type { RevisionDisplayMode } from './revision-view'
 import { parseTextOutlineAttr, textOutlineDecl } from './text-outline'
 import {
   charScaleXDecls,
@@ -115,6 +116,7 @@ export const LinkMark = Mark.create({
       href: { default: '' },
       rId: { default: null as string | null },
       tooltip: { default: null as string | null },
+      plain: { default: false },
     }
   },
   parseHTML() {
@@ -137,7 +139,7 @@ export const LinkMark = Mark.create({
       'a',
       {
         href: mark.attrs.href,
-        class: 'doc-link',
+        class: mark.attrs.plain ? 'doc-link doc-link-plain' : 'doc-link',
         // Word parity: hovering a link shows its target even without a
         // stored tooltip (links were uninspectable)
         title: mark.attrs.tooltip ? String(mark.attrs.tooltip) : String(mark.attrs.href ?? ''),
@@ -305,7 +307,7 @@ export const SymMark = Mark.create({
 })
 
 /** Revision display mode (synced by App; in original mode the extension below restores old formatting via decorations) */
-export const revisionDisplayState = { mode: 'all' as 'all' | 'none' | 'original' }
+export const revisionDisplayState = { mode: 'all' as RevisionDisplayMode }
 
 const revisionOriginalKey = new PluginKey('revisionOriginal')
 
@@ -483,7 +485,9 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   charSpacingTwips: 'number',
   charScaleEm: 'number',
   charScaleX: 'string',
+  charScalePct: 'number',
   kern: 'boolean',
+  kernHalfPoints: 'number',
   highlight: 'string',
   shading: 'string',
   textOutline: 'string',
@@ -498,6 +502,7 @@ const CLIPBOARD_TEXT_STYLE_TYPES: Record<string, 'string' | 'number' | 'boolean'
   italicOff: 'boolean',
   caps: 'string',
   vanish: 'boolean',
+  vanishOwn: 'boolean',
   eaLang: 'string',
   styleId: 'string',
 }
@@ -583,8 +588,12 @@ export const TextStyleMark = Mark.create({
       charScaleEm: { default: null as number | null },
       // w:w on a whitespace-free run as JSON {s,gapEm}: real glyph compression (text-effects.ts)
       charScaleX: { default: null as string | null },
+      // authored w:w percent (what saves; charScaleEm/charScaleX are its display twins)
+      charScalePct: { default: null as number | null },
       // w:kern resolved against the run size (Word kerns only when asked); null = document default
       kern: { default: null as boolean | null },
+      // authored w:kern threshold in half-points (what saves; 0 = explicitly off)
+      kernHalfPoints: { default: null as number | null },
       highlight: { default: null as string | null },
       // run shading fill, hex without '#' (w:shd w:fill)
       shading: { default: null as string | null },
@@ -594,11 +603,11 @@ export const TextStyleMark = Mark.create({
       textOutline: { default: null as string | null },
       // w:outline/w:emboss/w:imprint/w:shadow; saving is kept faithful by rawRPr
       textEffect: { default: null as string | null },
-      // w:dstrike; saving is kept faithful by rawRPr
+      // w:dstrike (false = explicit off)
       dstrike: { default: null as boolean | null },
       // w14:glow as JSON {color,radiusPt,alpha}; saving is kept faithful by rawRPr
       glow: { default: null as string | null },
-      // w:position baseline shift (half-points); saving is kept faithful by rawRPr
+      // w:position baseline shift (half-points)
       positionHalfPoints: { default: null as number | null },
       // character border (w:bdr) as JSON {val,sz,color,space}; saving is kept faithful by rawRPr
       bdr: { default: null as string | null },
@@ -608,10 +617,12 @@ export const TextStyleMark = Mark.create({
       // run-level explicit off (w:b/w:i w:val="0"): counters style-inherited bold/italic CSS
       boldOff: { default: null as boolean | null },
       italicOff: { default: null as boolean | null },
-      // w:caps ('all') / w:smallCaps ('small'), 'none' = explicit off; saving is kept faithful by rawRPr
+      // w:caps ('all') / w:smallCaps ('small'), 'none' = explicit off
       caps: { default: null as 'all' | 'small' | 'none' | null },
       // w:vanish hidden text (style chain resolved at parse); Word print hides it
       vanish: { default: null as boolean | null },
+      // the run's own w:vanish (what saves; `vanish` may be inherited)
+      vanishOwn: { default: null as boolean | null },
       // w:lang w:eastAsia of the run / its character style: gates Word's East Asian line rules
       eaLang: { default: null as string | null },
       // rtl run (w:rtl, explicit or style-inherited): save-side decode selects the Cs twins.
@@ -650,8 +661,13 @@ export const TextStyleMark = Mark.create({
     // authored colors stay the declaration; the --dk-* twins feed the dark page (dark-page.ts)
     if (mark.attrs.color && !paperColorEffect(effect))
       styles.push(...textColorDecls(String(mark.attrs.color)))
-    if (mark.attrs.sizeHalfPoints)
-      styles.push(`font-size:${Number(mark.attrs.sizeHalfPoints) / 2}pt`)
+    if (mark.attrs.sizeHalfPoints) {
+      const half = Number(mark.attrs.sizeHalfPoints)
+      styles.push(`font-size:${half / 2}pt`)
+      // a spacer run of 1pt or less inherits the block's absolute line-height and, centred
+      // on its own tiny glyph, would push the line box bottom down (Word: no effect)
+      if (half <= 2) styles.push('line-height:0')
+    }
     if (mark.attrs.font || mark.attrs.fontAscii || mark.attrs.csFont) {
       const ea = mark.attrs.font ? String(mark.attrs.font) : null
       const ascii = mark.attrs.fontAscii ? String(mark.attrs.fontAscii) : null

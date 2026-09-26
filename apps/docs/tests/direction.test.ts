@@ -9,6 +9,7 @@ import {
   alignAttrFor,
   effectiveBidi,
   firstStrongDir,
+  selectionHasBidi,
   setParagraphDirection,
   setSelectionAlign,
 } from '../src/renderer/editor/direction'
@@ -73,6 +74,19 @@ describe('firstStrongDir', () => {
     expect(firstStrongDir('123 –—… !?')).toBe(null)
     expect(firstStrongDir('\u060C\u061B\u061F')).toBe(null)
     expect(firstStrongDir('')).toBe(null)
+  })
+})
+
+describe('selectionHasBidi', () => {
+  it('is true when the cursor or the selection touches an RTL paragraph', () => {
+    const editor = createEditor([para('first'), para('\u05e9\u05dc\u05d5\u05dd', { bidi: true })])
+    select(editor, 2)
+    expect(selectionHasBidi(editor)).toBe(false)
+    select(editor, 2, editor.state.doc.content.size - 2)
+    expect(selectionHasBidi(editor)).toBe(true)
+    select(editor, editor.state.doc.content.size - 2)
+    expect(selectionHasBidi(editor)).toBe(true)
+    editor.destroy()
   })
 })
 

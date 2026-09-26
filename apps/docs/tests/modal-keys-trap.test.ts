@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { trapTab } from '../src/renderer/components/modal-keys'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { describe, expect, it, vi } from 'vitest'
+import { trapTab, useModalKeys } from '../src/renderer/components/modal-keys'
+
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 function keydown(
   key: string,
@@ -75,6 +79,60 @@ describe('trapTab', () => {
       expect(e.prevented).toBe(true)
     } finally {
       root.remove()
+    }
+  })
+})
+
+function Modal({ onClose }: { onClose: () => void }) {
+  const keys = useModalKeys(onClose)
+  return createElement(
+    'div',
+    { ref: keys.ref, onKeyDown: keys.onKeyDown },
+    createElement('button', null, 'ok'),
+  )
+}
+
+function mountModal(): { onClose: ReturnType<typeof vi.fn>; cleanup: () => void } {
+  const onClose = vi.fn()
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  act(() => root.render(createElement(Modal, { onClose })))
+  return {
+    onClose,
+    cleanup: () => {
+      act(() => root.unmount())
+      container.remove()
+    },
+  }
+}
+
+const windowEscape = () =>
+  act(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+  })
+
+describe('useModalKeys Escape fallback', () => {
+  it('closes on Escape when focus has left the modal', () => {
+    const { onClose, cleanup } = mountModal()
+    try {
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      expect(document.activeElement).toBe(document.body)
+      windowEscape()
+      expect(onClose).toHaveBeenCalledTimes(1)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('leaves Escape to the modal handler while focus is inside', () => {
+    const { onClose, cleanup } = mountModal()
+    try {
+      expect(document.activeElement?.tagName).toBe('BUTTON')
+      windowEscape()
+      expect(onClose).not.toHaveBeenCalled()
+    } finally {
+      cleanup()
     }
   })
 })

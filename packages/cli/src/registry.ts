@@ -23,7 +23,7 @@ export interface CommandDef {
   usage: string
   options?: OptionDef[]
   /** the command owns stdout for its whole run (a server on stdio); runCli prints nothing after it */
-  quiet?: boolean
+  quiet?: boolean | ((args: ParsedArgs) => boolean)
   run(args: ParsedArgs, ctx: CommandContext): Promise<CommandResult>
 }
 

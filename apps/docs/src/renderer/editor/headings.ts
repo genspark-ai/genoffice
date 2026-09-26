@@ -26,11 +26,16 @@ const HEADING_CAPABLE: Record<string, true> = { docParagraph: true, docListItem:
  * items — Word still lists them in its navigation pane and the TOC, and so does
  * this predicate when the caller supplies the document's styles.
  */
-export function collectHeadings(doc: PmNode, styles?: HeadingStyles): HeadingRef[] {
+export function collectHeadings(
+  doc: PmNode,
+  styles?: HeadingStyles,
+  /** keep blank headings (the navigation pane lists a just-inserted heading before it has text) */
+  includeEmpty = false,
+): HeadingRef[] {
   const out: HeadingRef[] = []
   doc.forEach((node, offset) => {
     if (node.type.name === 'docHeading') {
-      if (node.textContent.trim())
+      if (includeEmpty || node.textContent.trim())
         out.push({ text: node.textContent, level: Number(node.attrs.level) || 1, pos: offset })
       return
     }
@@ -39,7 +44,7 @@ export function collectHeadings(doc: PmNode, styles?: HeadingStyles): HeadingRef
     const style = styleId ? styles.get(styleId) : undefined
     // w:outlineLvl 9 on the style means body text even when a basedOn ancestor is a heading
     if (!style?.headingLevel || style.headingOutlineOff) return
-    if (!node.textContent.trim()) return
+    if (!includeEmpty && !node.textContent.trim()) return
     out.push({ text: node.textContent, level: style.headingLevel, pos: offset })
   })
   return out

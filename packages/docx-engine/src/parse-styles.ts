@@ -204,6 +204,11 @@ export async function parseStyles(
       const val = attrsOf(node)['w:val']
       return val === '0' || val === 'false' ? undefined : true
     }
+    const uiPriorityRaw = attrsOf(findChild(styleNode, 'w:uiPriority') ?? {})['w:val']
+    const uiPriority =
+      uiPriorityRaw !== undefined && /^\d+$/.test(uiPriorityRaw)
+        ? parseInt(uiPriorityRaw, 10)
+        : undefined
     let numPr: StyleInfo['numPr']
     if (type === 'paragraph') {
       const styleNumPr = findChild(findChild(styleNode, 'w:pPr') ?? {}, 'w:numPr')
@@ -226,6 +231,10 @@ export async function parseStyles(
       basedOn,
       semiHidden: onFlag('w:semiHidden'),
       qFormat: onFlag('w:qFormat'),
+      uiPriority,
+      unhideWhenUsed: onFlag('w:unhideWhenUsed'),
+      custom:
+        attrs['w:customStyle'] === '1' || attrs['w:customStyle'] === 'true' ? true : undefined,
       display: type === 'table' ? undefined : styleDisplayOf(styleNode, theme, themeFonts),
       tableDisplay:
         type === 'table' ? tableStyleDisplayOf(styleNode, theme, themeFonts) : undefined,

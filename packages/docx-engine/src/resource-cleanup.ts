@@ -166,6 +166,29 @@ function referencedRelationshipIds(xml: string): Set<string> {
   return ids
 }
 
+const DIAGRAM_TWIN_RE = /^(.*\/)(?:data|drawing)(\d+)\.xml$/
+
+// Word links the pre-rendered dsp drawing part only by relationship type (dgm:relIds
+// never names it), so it lives and dies with its dataN twin.
+function liveDiagramDrawingParts(
+  relsXml: string,
+  documentPath: string,
+  referencedIds: Set<string>,
+): Set<string> {
+  const live = new Set<string>()
+  for (const tag of relsXml.match(RELATIONSHIP_TAG_RE) ?? []) {
+    const id = xmlAttr(tag, 'Id')
+    const type = xmlAttr(tag, 'Type')
+    const target = xmlAttr(tag, 'Target')
+    if (!id || !type || !target || !referencedIds.has(id)) continue
+    if (relationshipTypeName(type) !== 'diagramdata') continue
+    const path = resolveTargetPath(documentPath, target)
+    const twin = path ? DIAGRAM_TWIN_RE.exec(path) : null
+    if (twin) live.add(`${twin[1]}drawing${twin[2]}.xml`)
+  }
+  return live
+}
+
 async function relationshipEdges(zip: JSZip): Promise<RelationshipEdge[]> {
   const edges: RelationshipEdge[] = []
   for (const path of Object.keys(zip.files)) {
@@ -219,6 +242,7 @@ export async function cleanupDocxOwnedResources(zip: JSZip, documentPath: string
   const referencedIds = referencedRelationshipIds(documentXml)
   const candidateRoots = new Set<string>()
   const relsXml = await relsFile.async('string')
+  const liveDrawings = liveDiagramDrawingParts(relsXml, documentPath, referencedIds)
   const cleanedRelsXml = relsXml.replace(RELATIONSHIP_TAG_RE, (tag) => {
     const id = xmlAttr(tag, 'Id')
     const type = xmlAttr(tag, 'Type')
@@ -232,10 +256,14 @@ export async function cleanupDocxOwnedResources(zip: JSZip, documentPath: string
     }
     const external = xmlAttr(tag, 'TargetMode')?.toLowerCase() === 'external'
     const target = xmlAttr(tag, 'Target')
-    if (!external && target) {
-      const targetPath = resolveTargetPath(documentPath, target)
-      if (targetPath && isOwnedPart(targetPath)) candidateRoots.add(targetPath)
+    const targetPath = !external && target ? resolveTargetPath(documentPath, target) : null
+    if (
+      relationshipTypeName(type) === 'diagramdrawing' &&
+      (!targetPath || !DIAGRAM_TWIN_RE.test(targetPath) || liveDrawings.has(targetPath))
+    ) {
+      return tag
     }
+    if (targetPath && isOwnedPart(targetPath)) candidateRoots.add(targetPath)
     return ''
   })
   if (cleanedRelsXml === relsXml) return

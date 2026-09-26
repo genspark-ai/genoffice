@@ -660,7 +660,7 @@ export const ms = {
   appTabData: 'Data',
   appTabReview: 'Semakan',
   appRibbonCollapse: 'Runtuhkan Reben',
-  appRibbonPin: 'Semat Reben',
+  appRibbonExpand: 'Kembangkan Reben',
   appTabView: 'Pandangan',
   appTabAi: 'AI',
   appTabChartDesign: 'Reka Bentuk Carta',

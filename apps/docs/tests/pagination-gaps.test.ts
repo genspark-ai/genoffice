@@ -845,4 +845,14 @@ describe('rowFillAttrs', () => {
     expect(rowFillAttrs(309.6, 9.6)).toEqual({ style: 'height:310px', 'data-split-extra': '10.0' })
     expect(rowFillAttrs(310.4)).toEqual({ style: 'height:310px' })
   })
+
+  // border-spacing 2px: the measured pitch is tr height + 2, so the tr gets the
+  // pitch less the gap and the extra is measured against the pitch it renders
+  it('takes the border-spacing gap out of a separate-borders row height', () => {
+    expect(rowFillAttrs(310.4, 10.4, 2)).toEqual({
+      style: 'height:308px',
+      'data-split-extra': '10.0',
+    })
+    expect(rowFillAttrs(310.4, 0, 2)).toEqual({ style: 'height:308px' })
+  })
 })

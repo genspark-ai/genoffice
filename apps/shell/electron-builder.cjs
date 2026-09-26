@@ -463,6 +463,14 @@ const config = {
       mimeType: 'text/csv',
     },
     {
+      // opens as a converted copy and saves as .xlsx (genoffice#1146)
+      ext: 'tsv',
+      name: 'TSV Document',
+      role: 'Editor',
+      icon: 'xlsx',
+      mimeType: 'text/tab-separated-values',
+    },
+    {
       ext: 'pdf',
       name: 'PDF Document',
       role: 'Editor',

@@ -2,6 +2,7 @@ import { Markdown } from '@tiptap/markdown'
 import { ImageParagraph } from './localImage'
 import { Paragraph } from '@tiptap/extension-paragraph'
 import { patchInlineParsing } from './inlineTokens'
+import { containsMathSyntax } from './mathSyntax'
 
 /**
  * `@tiptap/markdown` backslash-escapes every `[` and `]` in text, so an
@@ -38,7 +39,9 @@ export function withTableRendering<T>(fn: () => T): T {
 
 export function escapeMarkdownText(text: string): string {
   // a literal no-break space is trimmed at cell and line edges when read back; the entity is not
-  const escaped = escapeBrackets(text.replace(/([\\`*_~])/g, '\\$1')).replace(/\u00a0/g, '&nbsp;')
+  let escaped = escapeBrackets(text.replace(/([\\`*_~])/g, '\\$1')).replace(/\u00a0/g, '&nbsp;')
+  // a `\$` the author wrote is plain text after parsing; without re-escaping, `a \$b\$ c` is a formula on reopen
+  if (containsMathSyntax(text)) escaped = escaped.replace(/\$/g, '\\$')
   return inTable ? escaped.replace(/\|/g, '\\|') : escaped
 }
 

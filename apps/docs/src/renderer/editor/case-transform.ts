@@ -1,7 +1,66 @@
 import type { Editor } from '@tiptap/core'
 import { TextSelection } from '@tiptap/pm/state'
 
-export type CaseMode = 'upper' | 'lower' | 'title' | 'sentence'
+export type CaseMode =
+  'upper' | 'lower' | 'title' | 'sentence' | 'toggle' | 'halfWidth' | 'fullWidth'
+
+// Half-width katakana (U+FF61-U+FF9F) and their full-width forms, generated
+// from NFKC so voiced pairs like U+FF76 U+FF9E compose to one code point.
+const HALF_KANA_START = 0xff61
+const HALF_KANA_END = 0xff9f
+const HALF_TO_FULL_KANA = new Map<string, string>()
+const FULL_TO_HALF_KANA = new Map<string, string>()
+for (let code = HALF_KANA_START; code <= HALF_KANA_END; code++) {
+  const half = String.fromCharCode(code)
+  const full = code === 0xff9e ? '\u309b' : code === 0xff9f ? '\u309c' : half.normalize('NFKC')
+  HALF_TO_FULL_KANA.set(half, full)
+  FULL_TO_HALF_KANA.set(full, half)
+  for (const voiced of ['\uff9e', '\uff9f']) {
+    const composed = (half + voiced).normalize('NFKC')
+    if (composed.length === 1) {
+      HALF_TO_FULL_KANA.set(half + voiced, composed)
+      FULL_TO_HALF_KANA.set(composed, half + voiced)
+    }
+  }
+}
+
+function toFullWidth(s: string): string {
+  let out = ''
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!
+    const code = ch.charCodeAt(0)
+    if (code === 0x20) out += '\u3000'
+    else if (code >= 0x21 && code <= 0x7e) out += String.fromCharCode(code + 0xfee0)
+    else if (code >= HALF_KANA_START && code <= HALF_KANA_END) {
+      const pair = HALF_TO_FULL_KANA.get(ch + (s[i + 1] ?? ''))
+      if (pair) {
+        out += pair
+        i++
+      } else out += HALF_TO_FULL_KANA.get(ch) ?? ch
+    } else out += ch
+  }
+  return out
+}
+
+function toHalfWidth(s: string): string {
+  let out = ''
+  for (const ch of s) {
+    const code = ch.codePointAt(0)!
+    if (code === 0x3000) out += ' '
+    else if (code >= 0xff01 && code <= 0xff5e) out += String.fromCharCode(code - 0xfee0)
+    else out += FULL_TO_HALF_KANA.get(ch) ?? ch
+  }
+  return out
+}
+
+function toggleCase(s: string): string {
+  let out = ''
+  for (const ch of s) {
+    const lower = ch.toLowerCase()
+    out += ch === lower ? ch.toUpperCase() : lower
+  }
+  return out
+}
 
 export function transformCase(s: string, mode: CaseMode): string {
   switch (mode) {
@@ -13,6 +72,12 @@ export function transformCase(s: string, mode: CaseMode): string {
       return s.toLowerCase().replace(/(^|\s)(\p{L})/gu, (m) => m.toUpperCase())
     case 'sentence':
       return s.toLowerCase().replace(/(^\s*\p{L})|([.!?。!?]\s*\p{L})/gu, (m) => m.toUpperCase())
+    case 'toggle':
+      return toggleCase(s)
+    case 'halfWidth':
+      return toHalfWidth(s)
+    case 'fullWidth':
+      return toFullWidth(s)
   }
 }
 

@@ -17,7 +17,6 @@ import {
   useDismissablePopover,
   useRibbonCollapse,
   Dropdown,
-  RibbonCollapseButton,
   THEME_COLORS,
   THEME_COLOR_SHADES,
   STANDARD_COLORS,
@@ -1386,7 +1385,10 @@ export function Ribbon({
   // Expanded/collapsed widths are cached per group so the required width is
   // computable in every state (before the first fold the collapsed width is
   // an estimate, corrected by measurement as soon as the group first folds).
-  const collapse = useRibbonCollapse('ai-slides-ribbon-collapsed')
+  const collapse = useRibbonCollapse('ai-slides-ribbon-collapsed', {
+    collapse: t('ribbonCollapse'),
+    expand: t('ribbonExpand'),
+  })
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const inlineWidthsRef = useRef(new Map<string, number>())
   const collapsedWidthsRef = useRef(new Map<string, number>())
@@ -1847,7 +1849,8 @@ export function Ribbon({
         {TABS.filter((tb) => tb !== 'file').map((tb) => (
           <button
             key={tb}
-            className={`ribbon-tab ${tab === tb ? 'active' : ''}`}
+            className={`ribbon-tab ${collapse.tabClass(tab === tb)}`}
+            data-tip={collapse.tabTip(tab === tb)}
             onClick={() => {
               collapse.onTabPress(tab === tb)
               setTab(tb)
@@ -1860,12 +1863,12 @@ export function Ribbon({
         {contextTab && (
           <button
             key={contextTab}
-            className={`ribbon-tab ribbon-tab-context ${tab === contextTab ? 'active' : ''}`}
+            className={`ribbon-tab ribbon-tab-context ${collapse.tabClass(tab === contextTab)}`}
             onClick={() => {
               collapse.onTabPress(tab === contextTab)
               setTab(contextTab)
             }}
-            data-tip={t(TAB_LABEL[contextTab])}
+            data-tip={collapse.tabTip(tab === contextTab) ?? t(TAB_LABEL[contextTab])}
           >
             {t(TAB_LABEL[contextTab])}
           </button>
@@ -3446,10 +3449,6 @@ export function Ribbon({
           </>
         ) : null}
       </div>
-      <RibbonCollapseButton
-        state={collapse}
-        labels={{ collapse: t('ribbonCollapse'), pin: t('ribbonPin') }}
-      />
     </div>
   )
 }

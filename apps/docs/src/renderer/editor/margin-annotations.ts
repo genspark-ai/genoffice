@@ -13,12 +13,19 @@
  *   mode (Word's All Markup balloons). Bubbles stack per page and overflow
  *   past a page bottom is dropped, like Word's overflow pane.
  * - Change bars: vertical segments in the left page margin covering every line
- *   that carries a tracked revision (Word's changed-line marks).
+ *   that carries a tracked revision (Word's changed-line marks). In Simple
+ *   Markup they are the only trace of a change: deletions are hidden, so their
+ *   anchor line gets a bar too, and clicking a bar hands the position back
+ *   (App switches to All Markup and scrolls there, like Word).
+ * - Comment balloons (Simple Markup): one small icon per open thread inside
+ *   the right page margin instead of the bubble column; click focuses the
+ *   thread in the Comments panel.
  */
 import type { CommentInfo } from '@genoffice/docx-engine'
 import type { EditorView } from '@tiptap/pm/view'
 import type { Mark as PmMark, Node as PmNode } from '@tiptap/pm/model'
 import { t } from '../i18n/locale'
+import { collectRevisions } from './revisions'
 
 export const MARKUP_AREA_W = 200
 const BUBBLE_W = 168
@@ -26,23 +33,47 @@ const BUBBLE_ENTRY_X = 12
 const BUBBLE_STACK_GAP = 6
 const CHANGE_BAR_X = 24
 const REV_TEXT_MAX = 220
+const BALLOON_ICON_W = 18
+const BALLOON_ICON_X = 30
+const BALLOON_STACK_GAP = 2
 
 const REV_SELECTOR =
-  '.doc-ins, .doc-del, .has-move-from, .has-move-to, .has-rpr-change, .has-ppr-change'
+  '.doc-ins, .doc-del, .has-move-from, .has-move-to, .has-rpr-change, .has-ppr-change, ' +
+  'tr.row-rev-ins, tr.row-rev-del, td.cell-rev-ins, th.cell-rev-ins, td.cell-rev-del, th.cell-rev-del'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
-type Seg = { top: number; bottom: number }
+export type ChangeLine = { top: number; bottom: number; pos?: number }
 
-function mergeSegs(segs: Seg[]): Seg[] {
+/** touching / overlapping changed lines collapse into one bar that keeps its first document position */
+export function mergeChangeLines(segs: ChangeLine[]): ChangeLine[] {
   segs.sort((a, b) => a.top - b.top)
-  const out: Seg[] = []
+  const out: ChangeLine[] = []
   for (const s of segs) {
     const last = out[out.length - 1]
-    if (last && s.top <= last.bottom + 3) last.bottom = Math.max(last.bottom, s.bottom)
-    else out.push({ ...s })
+    if (last && s.top <= last.bottom + 3) {
+      last.bottom = Math.max(last.bottom, s.bottom)
+      if (s.pos != null && (last.pos == null || s.pos < last.pos)) last.pos = s.pos
+    } else out.push({ ...s })
   }
   return out
+}
+
+export interface MarginHandlers {
+  onChangeBar?: (pos: number) => void
+  onCommentBalloon?: (id: string) => void
+}
+
+function makeBalloonIcon(c: CommentInfo, onJump: () => void): HTMLElement {
+  const btn = document.createElement('button')
+  btn.type = 'button'
+  btn.className = 'comment-balloon'
+  btn.title = `${c.author}\n${c.text.split('\n')[0] ?? ''}`
+  btn.dataset.commentId = c.id
+  btn.innerHTML =
+    '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M 2.99 3.91 h 10.01 v 6.83 h -5.46 L 4.81 13.46 v -2.73 h -1.82 z"/><path d="M 5.27 6.18 h 5.46 M 5.27 8.46 h 3.64"/></svg>'
+  btn.addEventListener('click', onJump)
+  return btn
 }
 
 function flashEls(targets: HTMLElement[]): void {
@@ -227,14 +258,26 @@ export function anchorPointFor(view: EditorView, pm: HTMLElement, pos: number): 
   }
 }
 
+/**
+ * Bar segment for hidden (deleted) content anchored at a visible point: a line
+ * anchor gets one line of bar; a whole-row fallback rect would bar the untouched
+ * neighbor row, so it marks the seam where the deleted content was instead.
+ */
+function hiddenLineSeg(p: AnchorPoint, wrapRect: DOMRect, f: number, pos: number): ChangeLine {
+  const top = (p.top - wrapRect.top) / f
+  const bottom = (p.bottom - wrapRect.top) / f
+  if (bottom - top > 24) return { top: bottom - 8, bottom: bottom + 4, pos }
+  return { top, bottom: Math.max(bottom, top + 12), pos }
+}
+
 /** Page bands (wrap coords) from the top-level page-gap widgets; one whole-doc band when absent. */
-function pageBandsOf(pm: HTMLElement, wrapRect: DOMRect, wrapH: number, f: number): Seg[] {
+function pageBandsOf(pm: HTMLElement, wrapRect: DOMRect, wrapH: number, f: number): ChangeLine[] {
   const gaps = [...pm.querySelectorAll<HTMLElement>('.page-gap:not(.page-gap-inline)')]
     .map((g) => g.getBoundingClientRect())
     .filter((r) => r.height > 0)
     .sort((a, b) => a.top - b.top)
   if (gaps.length === 0) return [{ top: 0, bottom: wrapH }]
-  const bands: Seg[] = []
+  const bands: ChangeLine[] = []
   let top = 0
   for (const g of gaps) {
     bands.push({ top, bottom: (g.top - wrapRect.top) / f })
@@ -263,18 +306,29 @@ export function syncMarginAnnotations(
   zoomFactor: number,
   blocks?: AnchorBlock[],
   view?: EditorView,
+  handlers?: MarginHandlers,
 ): void {
   const f = zoomFactor
   const wrapRect = wrap.getBoundingClientRect()
   const pmRect = pm.getBoundingClientRect()
+  const simple = !!wrap.closest('.rev-display-simple')
+  const balloonMode = !!view && !!wrap.closest('.rev-balloon')
 
-  // change bars only in All Markup view (Word hides them in No Markup / Original)
-  const segs: Seg[] = []
+  // change bars in All / Simple Markup (Word hides them in No Markup / Original)
+  const segs: ChangeLine[] = []
   if (!wrap.closest('.rev-display-none, .rev-display-original')) {
     for (const el of pm.querySelectorAll<HTMLElement>(REV_SELECTOR)) {
+      let pos: number | undefined
+      if (simple && view) {
+        try {
+          pos = view.posAtDOM(el, 0)
+        } catch {
+          /* detached decoration node */
+        }
+      }
       for (const r of el.getClientRects()) {
         if (r.height > 0)
-          segs.push({ top: (r.top - wrapRect.top) / f, bottom: (r.bottom - wrapRect.top) / f })
+          segs.push({ top: (r.top - wrapRect.top) / f, bottom: (r.bottom - wrapRect.top) / f, pos })
       }
     }
   }
@@ -294,23 +348,31 @@ export function syncMarginAnnotations(
     make: () => HTMLElement
   }
   const placed: Placed[] = []
-  const localThread = (c: CommentInfo, rect: DOMRect, blockAnchor: HTMLElement | null): Placed => ({
-    sticky: true,
-    top: (rect.top - wrapRect.top) / f,
-    // leader start: end of the marked range, or start of the anchor paragraph's
-    // first line for range-less comments (bare w:commentReference on an empty run)
-    y: blockAnchor
-      ? (rect.top - wrapRect.top) / f + Math.min(rect.height / f, 16)
-      : (rect.bottom - wrapRect.top) / f - 1,
-    x: ((blockAnchor ? rect.left : rect.right) - wrapRect.left) / f,
-    make: () =>
-      makeBubble(
-        c,
-        comments.filter((r) => r.parentId === c.id),
-        // block-anchored threads have no .doc-comment span: flash the block itself
-        blockAnchor ? () => flashEls([blockAnchor]) : () => flashAnchors(pm, c.id),
-      ),
-  })
+  const localThread = (c: CommentInfo, rect: DOMRect, blockAnchor: HTMLElement | null): Placed => {
+    // block-anchored threads have no .doc-comment span: flash the block itself
+    const flash = blockAnchor ? () => flashEls([blockAnchor]) : () => flashAnchors(pm, c.id)
+    return {
+      sticky: true,
+      top: (rect.top - wrapRect.top) / f,
+      // leader start: end of the marked range, or start of the anchor paragraph's
+      // first line for range-less comments (bare w:commentReference on an empty run)
+      y: blockAnchor
+        ? (rect.top - wrapRect.top) / f + Math.min(rect.height / f, 16)
+        : (rect.bottom - wrapRect.top) / f - 1,
+      x: ((blockAnchor ? rect.left : rect.right) - wrapRect.left) / f,
+      make: () =>
+        simple
+          ? makeBalloonIcon(c, () => {
+              flash()
+              handlers?.onCommentBalloon?.(c.id)
+            })
+          : makeBubble(
+              c,
+              comments.filter((r) => r.parentId === c.id),
+              flash,
+            ),
+    }
+  }
   for (const c of comments) {
     if (c.parentId || c.done) continue
     const el = anchorOf.get(c.id)
@@ -332,18 +394,24 @@ export function syncMarginAnnotations(
     if (blockEl && blockRect) placed.push(localThread(c, blockRect, blockEl))
   }
 
-  // revision balloons: only in balloon mode (print view, All Markup), where the
-  // deleted text / format chips have left the flow
-  if (view && wrap.closest('.rev-balloon')) {
+  // hidden deletions (Simple Markup, balloon mode) have no rects for the bar
+  // pass above: mark their anchor line (the sibling-fallback anchor is a point
+  // — give it one line of bar); balloon mode also gets the Deleted:/Formatted: bubbles
+  if (view && simple) {
+    // deleted rows / cells leave the flow too: bar the line where they were
+    for (const r of collectRevisions(view.state.doc)) {
+      if (r.kind !== 'rowDel' && r.kind !== 'cellDel') continue
+      const p = anchorPointFor(view, pm, r.from)
+      if (p) segs.push(hiddenLineSeg(p, wrapRect, f, r.from))
+    }
+  }
+  if (view && (simple || balloonMode)) {
     for (const g of revGroupsOf(view.state.doc)) {
+      if (!balloonMode && g.kind !== 'del') continue
       const p = anchorPointFor(view, pm, g.from)
       if (!p) continue
-      // hidden deletions have no rects for the bar pass above: mark their anchor
-      // line (the sibling-fallback anchor is a point — give it one line of bar)
-      if (g.kind === 'del') {
-        const top = (p.top - wrapRect.top) / f
-        segs.push({ top, bottom: Math.max((p.bottom - wrapRect.top) / f, top + 12) })
-      }
+      if (g.kind === 'del') segs.push(hiddenLineSeg(p, wrapRect, f, g.from))
+      if (!balloonMode) continue
       placed.push({
         sticky: false,
         top: (p.top - wrapRect.top) / f,
@@ -354,7 +422,7 @@ export function syncMarginAnnotations(
     }
   }
   placed.sort((a, b) => a.top - b.top)
-  const bars = mergeSegs(segs)
+  const bars = mergeChangeLines(segs)
 
   if (bars.length === 0 && placed.length === 0) {
     clearMarginAnnotations(wrap)
@@ -369,8 +437,8 @@ export function syncMarginAnnotations(
   }
   layer.textContent = ''
 
-  wrap.classList.toggle('has-markup-area', placed.length > 0)
-  if (placed.length > 0) wrap.style.setProperty('--markup-w', `${MARKUP_AREA_W}px`)
+  wrap.classList.toggle('has-markup-area', placed.length > 0 && !simple)
+  if (placed.length > 0 && !simple) wrap.style.setProperty('--markup-w', `${MARKUP_AREA_W}px`)
 
   const barX = (pmRect.left - wrapRect.left) / f + CHANGE_BAR_X
   for (const b of bars) {
@@ -379,11 +447,28 @@ export function syncMarginAnnotations(
     el.style.left = `${barX}px`
     el.style.top = `${b.top}px`
     el.style.height = `${b.bottom - b.top}px`
+    if (simple && b.pos != null && handlers?.onChangeBar) {
+      const pos = b.pos
+      el.addEventListener('click', () => handlers.onChangeBar?.(pos))
+    }
     layer.appendChild(el)
   }
 
   if (placed.length === 0) return
   const paperRight = (pmRect.right - wrapRect.left) / f
+  if (simple) {
+    // Word's Simple Markup: a balloon glyph per commented line, stacked inside the right margin
+    let prevBottom = -Infinity
+    for (const p of placed) {
+      const icon = p.make()
+      const top = Math.max(p.top, prevBottom + BALLOON_STACK_GAP)
+      icon.style.left = `${paperRight - BALLOON_ICON_X}px`
+      icon.style.top = `${top}px`
+      layer.appendChild(icon)
+      prevBottom = top + BALLOON_ICON_W
+    }
+    return
+  }
   const bubbleLeft = paperRight + BUBBLE_ENTRY_X
   const svg = document.createElementNS(SVG_NS, 'svg')
   svg.setAttribute('class', 'comment-leaders')

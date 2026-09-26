@@ -16,10 +16,12 @@ import {
   cssRunFontFamily,
   estimateHfHeight,
   runLetterSpacingCss,
+  runsLineFactor,
 } from '../line-metrics'
 import { borderCssStyle, borderDrawnPx, isDrawnBorder } from './border-metrics'
 import { setDkBackground, setDkBorder, setDkColor } from './dark-page'
 import { INLINE_RULE_CLASS, inlineRuleDecls } from './inline-rule'
+import { hfParasOf } from './hf-text'
 
 /**
  * Plain-DOM header/footer rendering for the canvas page gaps (M4 always-on
@@ -176,8 +178,15 @@ export function hfParaIndentStyle(para: {
 export function hfCellParaStyle(
   props: HfCellParaProps | undefined,
   line: { first: boolean; last: boolean } = { first: true, last: true },
+  runs?: Run[],
 ): Record<string, string> {
   const style: Record<string, string> = {}
+  // runs declaring a face size the line by Word's factor for that face, not
+  // by the browser metrics of whatever substitute renders it
+  if (runs?.some((r) => r.fontAscii)) {
+    style['--doc-line-factor'] = runsLineFactor(runs, runs.map((r) => r.text).join(''))
+    style.lineHeight = 'calc(var(--doc-line-factor, 1.2) * 1)'
+  }
   if (!props) return style
   if (props.align) {
     style.textAlign =
@@ -192,6 +201,14 @@ export function hfCellParaStyle(
   const lh = hfParaLineHeightCss(props)
   if (lh) style.lineHeight = lh
   return style
+}
+
+/** Object.assign for style records that may carry custom properties */
+function assignStyle(el: HTMLElement, style: Record<string, string>): void {
+  for (const [k, v] of Object.entries(style)) {
+    if (k.startsWith('--')) el.style.setProperty(k, v)
+    else el.style[k as 'lineHeight'] = v
+  }
 }
 
 function applyRunStyle(span: HTMLElement, run: Run): void {
@@ -509,16 +526,6 @@ export function hfLeadIndentCss(layout: HfTabLayout): string | null {
     : `max(0px, calc(50% - ${(s.lineEndPx / 2).toFixed(1)}px))`
 }
 
-/** effective paragraphs: rich paras when present, else the legacy single line (mirrors HeaderFooterArea) */
-function parasOf(value: HeaderFooter): HfParagraph[] {
-  if (value.paras?.length) return value.paras
-  const runs: Run[] = value.text ? [{ text: value.text }] : []
-  if (value.pageNumber && !value.text.includes('#') && !value.text.includes(PAGE_MARK)) {
-    runs.push({ text: runs.length > 0 ? ` ${PAGE_MARK}` : PAGE_MARK })
-  }
-  return [{ align: 'center', runs }]
-}
-
 /**
  * Largest declared run size (pt) when every text-bearing run of the strip
  * declares one, else null (some run inherits the strip base). Whitespace-only
@@ -672,7 +679,7 @@ let mountedCssMemo: { text: string; hash: string } | null = null
 function mountedDocCssSig(): string {
   const text = Array.from(document.querySelectorAll('style[data-doc-css]'))
     .map((s) => s.textContent ?? '')
-    .join(' ')
+    .join('\0')
   if (mountedCssMemo?.text === text) return mountedCssMemo.hash
   let h = 5381
   for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0
@@ -703,7 +710,10 @@ export function hfReservedHeightPx(
 ): number {
   const est = estimateHfHeight(value, contentWidthPx, images, geom)
   const inline = (images ?? []).filter((img) => !img.floating)
-  if (!hfHasVisibleContent(value, inline) || contentWidthPx <= 0) return est
+  // blank paragraphs hold their line and spacing like any other strip paragraph
+  // (Word probes 2026-09-06/17): the rendered strip decides for them too
+  const blankParas = !!value?.paras?.some((p) => !p.boxAnchored && !p.cells)
+  if ((!hfHasVisibleContent(value, inline) && !blankParas) || contentWidthPx <= 0) return est
   if (typeof document === 'undefined' || !document.body) return est
   // cell-run images can carry megabytes of base64: key on the dataUrl length only
   const noDataUrl = (k: string, v: unknown) => (k === 'dataUrl' ? String(v).length : v)
@@ -758,8 +768,12 @@ export interface HfFloatBox {
   paraOriginY?: number
   /** raw sectPr top margin (px, before push-down): origin wrapped margin-relative images reserve from */
   sectMarginTop: number
+  /** raw sectPr bottom margin (px, before footer push-up): the bottomMargin band; absent = marginBottom */
+  sectMarginBottom?: number
   /** left edge of this page on the shared canvas paper (differing-width documents center narrower pages) */
   paperX?: number
+  /** inset of the lead host's content box from the paper edge (the canvas padding: the first section's odd-page left margin); absent = marginLeft */
+  hostLeft?: number
 }
 
 /**
@@ -772,23 +786,38 @@ export function hfFloatPagePos(
   img: HfImage | HfTextBox,
   box: HfFloatBox,
 ): { x: number; y: number; translateX: 0 | -50 | -100; translateY: 0 | -50 | -100 } {
+  // horizontal band the offset/alignment measures in (relativeFrom)
+  const [bandL, bandR]: [number, number] =
+    img.posHRel === 'page'
+      ? [0, box.pageW]
+      : img.posHRel === 'leftMargin'
+        ? [0, box.marginLeft]
+        : img.posHRel === 'rightMargin'
+          ? [box.pageW - box.marginRight, box.pageW]
+          : [box.marginLeft, box.pageW - box.marginRight]
   let x: number
   let translateX: 0 | -50 | -100 = 0
   if (img.posXPx != null) {
-    x = img.posHRel === 'page' ? img.posXPx : box.marginLeft + img.posXPx
+    x = bandL + img.posXPx
   } else if (img.posH === 'center') {
     // legacy VML entries carry no rel and keep the page center
-    x =
-      img.posHRel === 'margin'
-        ? box.marginLeft + (box.pageW - box.marginLeft - box.marginRight) / 2
-        : box.pageW / 2
+    x = img.posHRel ? (bandL + bandR) / 2 : box.pageW / 2
     translateX = -50
   } else if (img.posH === 'right') {
-    x = img.posHRel === 'page' ? box.pageW : box.pageW - box.marginRight
+    x = bandR
     translateX = -100
   } else {
-    x = img.posHRel === 'page' ? 0 : box.marginLeft
+    x = bandL
   }
+  const vRel = img.posVRel
+  const [bandT, bandB]: [number, number] =
+    vRel === 'page'
+      ? [0, box.pageH]
+      : vRel === 'topMargin'
+        ? [0, box.sectMarginTop]
+        : vRel === 'bottomMargin'
+          ? [box.pageH - (box.sectMarginBottom ?? box.marginBottom), box.pageH]
+          : [box.marginTop, box.pageH - box.marginBottom]
   let y: number
   let translateY: 0 | -50 | -100 = 0
   if (img.posYPx != null) {
@@ -798,22 +827,19 @@ export function hfFloatPagePos(
     // effective margin
     const wrapped = img.wrap && img.wrap !== 'none' && !img.behind
     y =
-      img.posVRel === 'page'
-        ? img.posYPx
-        : img.posVRel === 'paragraph'
-          ? (box.paraOriginY ?? box.headerDist) + img.posYPx
-          : (wrapped ? box.sectMarginTop : box.marginTop) + img.posYPx
+      vRel === 'paragraph'
+        ? (box.paraOriginY ?? box.headerDist) + img.posYPx
+        : vRel === 'margin' && wrapped
+          ? box.sectMarginTop + img.posYPx
+          : bandT + img.posYPx
   } else if (img.posV === 'center') {
-    y =
-      img.posVRel === 'margin'
-        ? box.marginTop + (box.pageH - box.marginTop - box.marginBottom) / 2
-        : box.pageH / 2
+    y = vRel && vRel !== 'paragraph' ? (bandT + bandB) / 2 : box.pageH / 2
     translateY = -50
   } else if (img.posV === 'bottom') {
-    y = img.posVRel === 'page' ? box.pageH : box.pageH - box.marginBottom
+    y = bandB
     translateY = -100
   } else {
-    y = img.posVRel === 'page' ? 0 : box.marginTop
+    y = bandT
   }
   return { x, y, translateX, translateY }
 }
@@ -944,7 +970,7 @@ export function makeHfFloatImgEl(img: HfImage, box: HfFloatBox, host: 'gap' | 'l
     el.dataset.paperX = paperX.toFixed(1)
     el.style.top = `calc(100% + ${p.y - box.marginTop}px)`
   } else {
-    el.style.left = `${paperX - box.marginLeft}px`
+    el.style.left = `${paperX - (box.hostLeft ?? box.marginLeft)}px`
     el.style.top = `${p.y - box.marginTop}px`
   }
   const transform = hfFloatTransform(img, p)
@@ -1010,6 +1036,7 @@ export function hfTextBoxStyle(
     marginBottom: geom.marginBottom,
     headerDist: geom.headerStripTop,
     sectMarginTop: geom.marginTop,
+    sectMarginBottom: geom.marginBottom,
   })
   const w = box.widthPx
   const h = box.heightPx
@@ -1056,6 +1083,37 @@ export function hfTextBoxStyle(
   return style
 }
 
+/** floating image whose paragraph-relative offset hangs off a strip row (cell-anchored logos) */
+export function hfImageHangsOnPara(img: HfImage): boolean {
+  return (
+    !!img.floating && img.anchorPara != null && img.posVRel === 'paragraph' && img.posYPx != null
+  )
+}
+
+/** placement of such an image inside its (position: relative) anchor row */
+export function hfAnchoredImgStyle(img: HfImage, geom?: HfStripGeom): Record<string, string> {
+  const style: Record<string, string> = { position: 'absolute', top: `${img.posYPx ?? 0}px` }
+  if (geom) {
+    const pos = hfFloatPagePos(img, {
+      pageW: geom.pageW,
+      pageH: geom.pageH,
+      marginLeft: geom.marginLeft,
+      marginRight: geom.marginRight,
+      marginTop: geom.marginTop,
+      marginBottom: geom.marginBottom,
+      headerDist: geom.headerStripTop,
+      sectMarginTop: geom.marginTop,
+      sectMarginBottom: geom.marginBottom,
+    })
+    style.left = `${pos.x - (geom.stripLeft ?? geom.marginLeft)}px`
+    if (pos.translateX) style.transform = `translateX(${pos.translateX}%)`
+  } else style.left = `${img.posXPx ?? 0}px`
+  if (img.widthPx) style.width = `${img.widthPx}px`
+  if (img.heightPx) style.height = `${img.heightPx}px`
+  if (img.behind) style.zIndex = '-1'
+  return style
+}
+
 /** paragraph element a box hangs off (paragraph-relative offsets), else null = the strip hosts it */
 export function hfBoxAnchorEl<T>(box: HfTextBox, paraEls: T[]): T | null {
   return box.posVRel === 'paragraph' && box.anchorPara != null
@@ -1097,14 +1155,15 @@ export function makeGapHfEl(opts: {
   // (growth would over-reserve push-down, prod_008/091). SAS prod_043: an
   // all-8pt header measured at the 10.5pt strut pushed the body top ~1px and
   // cost every two-column page its 42nd grid row (+1 page).
-  const strutPt = hfDeclaredStrutPt(parasOf(value))
+  const strutPt = hfDeclaredStrutPt(hfParasOf(value, images))
   if (strutPt != null) wrap.style.fontSize = `min(${strutPt}pt, var(--hf-default-fs, 10.5pt))`
-  if (images && images.length > 0) {
+  const stacked = (images ?? []).filter((img) => !img.floating)
+  if (stacked.length > 0) {
     const imgWrap = document.createElement('div')
     imgWrap.className = 'page-hf-images'
-    if (images[0].align === 'right') imgWrap.style.justifyContent = 'flex-end'
-    else if (images[0].align === 'center') imgWrap.style.justifyContent = 'center'
-    for (const img of images) {
+    if (stacked[0].align === 'right') imgWrap.style.justifyContent = 'flex-end'
+    else if (stacked[0].align === 'center') imgWrap.style.justifyContent = 'center'
+    for (const img of stacked) {
       imgWrap.append(hfImgNode(img))
     }
     wrap.append(imgWrap)
@@ -1113,7 +1172,7 @@ export function makeGapHfEl(opts: {
   let boxHost: HTMLElement | null = null
   let boxId: number | undefined
   const paraEls: HTMLElement[] = []
-  const paras = parasOf(value)
+  const paras = hfParasOf(value, images)
   const spacing = hfStackedSpacingPx(paras)
   let tabOver = 0
   for (const [index, para] of paras.entries()) {
@@ -1193,7 +1252,7 @@ export function makeGapHfEl(opts: {
           if (!tabLines) {
             const paraEl = document.createElement('div')
             paraEl.className = 'page-hf-cell-para'
-            Object.assign(paraEl.style, hfCellParaStyle(props))
+            assignStyle(paraEl, hfCellParaStyle(props, undefined, runs))
             if (runs.length === 0) paraEl.textContent = ' '
             spansOf(runs, paraEl)
             cellEl.append(paraEl)
@@ -1203,7 +1262,8 @@ export function makeGapHfEl(opts: {
             const paraEl = document.createElement('div')
             paraEl.className = 'page-hf-cell-para page-hf-tabbed'
             const pos = { first: m === 0, last: m === tabLines.length - 1 }
-            Object.assign(paraEl.style, hfCellParaStyle(props, pos), { textAlign: 'left' })
+            assignStyle(paraEl, hfCellParaStyle(props, pos, runs))
+            paraEl.style.textAlign = 'left'
             if (line.minHeightPt) paraEl.style.minHeight = `${line.minHeightPt}pt`
             spansOf(line.lead, paraEl)
             for (const seg of line.segments) {
@@ -1312,6 +1372,14 @@ export function makeGapHfEl(opts: {
     host.append(p)
   }
   if (tabOver > 0) wrap.style.setProperty('--hf-tab-over', `${tabOver.toFixed(1)}px`)
+  for (const img of (images ?? []).filter(hfImageHangsOnPara)) {
+    const anchor = paraEls[img.anchorPara!]
+    if (!anchor) continue
+    anchor.classList.add('page-hf-anchor')
+    const el = hfImgNode(img)
+    assignStyle(el, hfAnchoredImgStyle(img, geom))
+    anchor.append(el)
+  }
   return wrap
 }
 

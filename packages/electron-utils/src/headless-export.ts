@@ -73,7 +73,7 @@ export type HeadlessExportOutcome =
 
 const MODULE_BY_EXTENSION: ReadonlyArray<readonly [RegExp, HeadlessExportModule]> = [
   [/\.docx$/i, 'docs'],
-  [/\.(xlsx|xlsm|xls|csv)$/i, 'sheets'],
+  [/\.(xlsx|xlsm|xls|csv|tsv)$/i, 'sheets'],
   [/\.pptx$/i, 'slides'],
   [/\.(md|markdown)$/i, 'markdown'],
   [/\.(html|htm)$/i, 'html'],

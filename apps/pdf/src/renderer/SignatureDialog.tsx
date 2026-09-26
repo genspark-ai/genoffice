@@ -3,6 +3,7 @@ import type { ChangeEvent, PointerEvent as ReactPointerEvent, ReactElement } fro
 import { cssRgb } from './DrawLayer'
 import type { TFunc } from './i18n/locale'
 import type { SavedSignature, SignatureData, SignatureStrokes } from '../shared/ipc'
+import { useModalDialog } from './modal-dialog'
 
 export type { SignatureData, SignatureStrokes }
 
@@ -157,6 +158,7 @@ export function SignatureDialog({
   const [saved, setSaved] = useState<SavedSignature[]>([])
   const [saveForReuse, setSaveForReuse] = useState(true)
   const fileRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useModalDialog(onCancel)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const pathsRef = useRef<number[][]>([])
   const curRef = useRef<number[] | null>(null)
@@ -274,7 +276,14 @@ export function SignatureDialog({
 
   return (
     <div className="pdf-modal-mask" onClick={onCancel}>
-      <div className="pdf-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="pdf-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('signTitle')}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="pdf-modal-title">{t('signTitle')}</div>
         {saved.length > 0 && (
           <>
@@ -375,9 +384,13 @@ export function SignatureDialog({
               onChange={(e) => void pickImage(e)}
             />
             {processedImg ? (
-              <div className="pdf-sign-imgbox" onClick={() => fileRef.current?.click()}>
+              <button
+                className="pdf-sign-imgbox"
+                title={t('signAddImage')}
+                onClick={() => fileRef.current?.click()}
+              >
                 <img className="pdf-sign-img" src={processedImg.url} alt="" />
-              </div>
+              </button>
             ) : (
               <button
                 className="pdf-sign-imgbox pdf-sign-imgbox-empty"

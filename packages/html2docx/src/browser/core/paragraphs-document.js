@@ -288,6 +288,7 @@
     isVisible,
     markForScreenshot,
     boundedScreenshotSliceCount,
+    maxScreenshotSliceCount: MAX_SCREENSHOT_SLICE_COUNT,
     nextShotId: () => `h2d-${shotCounter++}`,
     processChildren,
     processElement,

@@ -5,7 +5,11 @@
  * "planned N pages but only 1 remains" for good.
  */
 import { describe, it, expect } from 'vitest'
-import { createSlidesSkill, type DeckAccess } from '../src/renderer/ai/slides-skill'
+import {
+  createSlidesSkill,
+  MAX_APPROX_PAGES,
+  type DeckAccess,
+} from '../src/renderer/ai/slides-skill'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { AgentToolCall } from '../src/shared/ipc'
 
@@ -344,6 +348,24 @@ describe('generate_deck batched planning (topic mode)', () => {
     expect(res.output).toContain('20/20')
     const ctx = skill.buildContext?.() ?? ''
     expect(ctx).toContain('all generated')
+  })
+
+  it('clamps an absurd approx_pages to MAX_APPROX_PAGES planner work (genoffice#1100)', async () => {
+    const { access, getPages } = makeAccess()
+    let planCalls = 0
+    const plan = access.planDeckOutline!
+    access.planDeckOutline = async (a) => {
+      planCalls++
+      return plan(a)
+    }
+    const skill = createSlidesSkill(access)
+    await skill.executeTool(topicCall('Everything', 100000))
+    expect(getPages()).toBe(MAX_APPROX_PAGES)
+    expect(planCalls).toBeLessThanOrEqual(Math.ceil(MAX_APPROX_PAGES / 12))
+    const schema = skill.tools.find((t) => t.name === 'generate_deck')!.inputSchema as {
+      properties: { approx_pages: { maximum?: number } }
+    }
+    expect(schema.properties.approx_pages.maximum).toBe(MAX_APPROX_PAGES)
   })
 
   it('style generated independently → the same styleSkill is passed to every page (consistent across pages)', async () => {

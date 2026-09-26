@@ -44,6 +44,16 @@ function listItemStyle(attrs: Record<string, unknown>): CSSStyleDeclaration {
   return style
 }
 
+describe('drawn borders on a list item', () => {
+  it('keep the list indent: no inline padding-left/right', () => {
+    const style = listItemStyle({ borders: 'tblr', indentLeft: 300, indentFirstLine: -360 })
+    expect(style.borderLeftStyle).toBe('solid')
+    expect(style.paddingLeft).toBe('')
+    expect(style.paddingRight).toBe('')
+    expect(style.getPropertyValue('--li-left')).toBe('15pt')
+  })
+})
+
 describe('direct w:pBdr none over a style border', () => {
   it('emits an inline border-none for the reset sides only', () => {
     const style = paraStyle({ styleId: 'HDR', borderReset: 'b' })

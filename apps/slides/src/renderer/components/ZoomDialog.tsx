@@ -6,7 +6,7 @@
 import React, { useState } from 'react'
 import type { RenderSlide } from '@genoffice/pptx-render'
 import type { SectionInfo } from '../../shared/ipc'
-import { useEscOverlay } from '../esc-overlay'
+import { useModalDialog } from './modal-dialog'
 import { useI18n } from '../i18n/locale'
 import { isToggleModifier } from '../platform-modifiers'
 import { groupSections } from '../section-groups'
@@ -46,7 +46,7 @@ export function ZoomDialog({
   onInsert: (keys: number[]) => void
   onClose: () => void
 }) {
-  useEscOverlay(true, onClose)
+  const { titleId, dialogProps } = useModalDialog(onClose)
   const { t } = useI18n()
   const groups = groupSections(sections, slides.length) ?? []
   const items: ZoomItem[] =
@@ -80,8 +80,8 @@ export function ZoomDialog({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal zoom-dlg" onClick={(e) => e.stopPropagation()}>
-        <h2>{t(TITLE_KEY[mode])}</h2>
+      <div className="modal zoom-dlg" {...dialogProps} onClick={(e) => e.stopPropagation()}>
+        <h2 id={titleId}>{t(TITLE_KEY[mode])}</h2>
         <div className="zoom-dlg-grid">
           {items.map((item) => (
             <button

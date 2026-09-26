@@ -116,6 +116,7 @@ export const ru = {
   appPasteOptSource: 'Сохранить исходное форматирование',
   appPasteOptTheme: 'Использовать конечную тему',
   appStatusPasteOptionsExpired: 'Параметры вставки больше недоступны',
+  appStatusPasteTruncated: 'Вставленный текст слишком длинный и был обрезан',
   appCtxHideSlide: 'Скрыть слайд',
   appCtxUnhideSlide: 'Показать слайд',
   appCtxAddSectionBefore: 'Добавить раздел (перед этим слайдом)',

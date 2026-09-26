@@ -104,11 +104,14 @@ it('shows one font box naming the caret script and routes picks like Word', asyn
   const render = () =>
     act(() => root.render(createElement(Ribbon, ribbonProps(editor, computeFormatState(editor)))))
   const box = () => host.querySelector<HTMLInputElement>('input.rb-font-family')
+  const setNative = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  // Enter commits; blur alone restores the shown name (Word)
   const pick = (name: string) =>
     act(() => {
       box()!.focus()
-      box()!.value = name
-      box()!.blur()
+      setNative.call(box(), name)
+      box()!.dispatchEvent(new Event('input', { bubbles: true }))
+      box()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
   try {
     render()

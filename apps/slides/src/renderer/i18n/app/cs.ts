@@ -114,6 +114,7 @@ export const cs = {
   appPasteOptSource: 'Zachovat zdrojové formátování',
   appPasteOptTheme: 'Použít cílový motiv',
   appStatusPasteOptionsExpired: 'Možnosti vložení už nejsou k dispozici',
+  appStatusPasteTruncated: 'Vložený text byl příliš dlouhý a byl zkrácen',
   appCtxHideSlide: 'Skrýt snímek',
   appCtxUnhideSlide: 'Zobrazit snímek',
   appCtxAddSectionBefore: 'Přidat oddíl (před tento snímek)',

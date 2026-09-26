@@ -29,6 +29,7 @@ import { CliError, EXIT, type CommandResult } from '../result'
 import { txnDetail, txnFailure } from './txn'
 import { BATCH_OPTIONS, batchCounts, batchMode, batchResult, failedBatch } from '../batch'
 import type { OpFailure } from '../op-errors'
+import { emuPer, isReadUnit, READ_UNITS, type ReadUnit } from '../length-units'
 
 export const slidesCommand: CommandDef = {
   name: 'slides',
@@ -56,6 +57,11 @@ export const slidesCommand: CommandDef = {
       value: 'n',
       description:
         'read: preview length per text element (default 300); clipped text ends in …(+n chars)',
+    },
+    {
+      name: 'units',
+      value: 'unit',
+      description: `read: report box and slide size lengths in ${READ_UNITS.join(', ')} (default emu; px at 96 dpi)`,
     },
     { name: 'ops', value: 'file', description: 'apply: JSON ops file, or "-" for stdin' },
     { name: 'spec', value: 'file', description: 'replace: the one-page spec file to build' },
@@ -158,6 +164,7 @@ async function read(
   args: Parameters<CommandDef['run']>[0],
   ctx: CommandContext,
 ): Promise<CommandResult> {
+  const unit = unitsFlag(args)
   const path = resolveInput(file, ctx)
   const opened = await openDeck(readInput(path))
   const index = slideFlag(args, opened.deck.slides.length)
@@ -167,15 +174,35 @@ async function read(
     flagBool(args, 'full'),
     previewChars(args, PREVIEW_CHARS),
     flagBool(args, 'layouts'),
+    unit,
   )
   return {
     summary: `${basename(path)}: ${deck.slides} slides${deck.layouts ? `, ${deck.layouts.length} layouts` : ''}`,
     detail: {
       ...deck,
-      units:
-        'EMU (914400 per inch); slide ids s_<n> and element ids e_* are durable op targets; layouts[].name/index feed addSlideWithLayout',
+      units: `${unitsNote(unit)}; slide ids s_<n> and element ids e_* are durable op targets; layouts[].name/index feed addSlideWithLayout`,
     },
   }
+}
+
+function unitsFlag(args: Parameters<CommandDef['run']>[0]): ReadUnit {
+  const value = flagString(args, 'units')
+  if (value === undefined) return 'emu'
+  if (!isReadUnit(value)) {
+    throw new CliError(
+      EXIT.usage,
+      `--units must be one of ${READ_UNITS.join(', ')}, got "${value}"`,
+      { valid_values: READ_UNITS },
+      { reason: 'invalid_argument' },
+    )
+  }
+  return value
+}
+
+function unitsNote(unit: ReadUnit): string {
+  if (unit === 'emu') return 'EMU (914400 per inch)'
+  const dpi = unit === 'px' ? ' at 96 dpi' : ''
+  return `${unit}${dpi} (${emuPer(unit)} EMU each; box and size carry unit: "${unit}"); ops take the same lengths as strings such as "1.5${unit}"`
 }
 
 async function apply(
@@ -266,6 +293,13 @@ async function audit(
     message: f.message,
     box: f.box,
     ...(f.overflowPx !== undefined ? { overflowPx: f.overflowPx } : {}),
+    ...(f.distortion_pct !== undefined
+      ? {
+          expected_ratio: f.expected_ratio,
+          actual_ratio: f.actual_ratio,
+          distortion_pct: f.distortion_pct,
+        }
+      : {}),
     ...(f.suggest ? { suggest: f.suggest } : {}),
   }))
   return {

@@ -14,7 +14,7 @@ export const pt = {
   ribbonTabSlideShow: 'Apresentação de Slides',
   ribbonTabReview: 'Revisão',
   ribbonCollapse: 'Recolher a Faixa de Opções',
-  ribbonPin: 'Fixar a Faixa de Opções',
+  ribbonExpand: 'Expandir a Faixa de Opções',
   ribbonTabView: 'Exibir',
   ribbonTabTableDesign: 'Design da Tabela',
   ribbonTabChartDesign: 'Design do Gráfico',

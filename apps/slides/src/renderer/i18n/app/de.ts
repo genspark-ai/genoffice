@@ -125,6 +125,7 @@ export const de = {
   appPasteOptSource: 'Ursprüngliche Formatierung beibehalten',
   appPasteOptTheme: 'Zieldesign verwenden',
   appStatusPasteOptionsExpired: 'Einfügeoptionen sind nicht mehr verfügbar',
+  appStatusPasteTruncated: 'Der eingefügte Text war zu lang und wurde gekürzt',
   appCtxHideSlide: 'Folie ausblenden',
   appCtxUnhideSlide: 'Folie einblenden',
   appCtxAddSectionBefore: 'Abschnitt hinzufügen (vor dieser Folie)',
