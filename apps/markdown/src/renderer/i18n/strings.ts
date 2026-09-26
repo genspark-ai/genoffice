@@ -3941,6 +3941,10 @@ export const strings = {
     zoomIn: 'ज़ूम इन',
     zoomOut: 'ज़ूम आउट',
   },
+  
+  vi: {
+    appExportingImages: '正在匯出圖片…',
+    appExportImagesProgress: '正在匯出 {count},
   'zh-TW': {
     appExportingImages: '正在匯出圖片…',
     appExportImagesProgress: '正在匯出 {count} 張圖片…',
@@ -4144,3 +4148,6 @@ export const strings = {
     zoomOut: '縮小',
   },
 } as const
+
+
+

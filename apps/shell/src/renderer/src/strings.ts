@@ -7384,6 +7384,16 @@ export const strings = {
     onbNote3: 'AI सुविधाएँ Genspark क्रेडिट खर्च कर सकती हैं।',
     onbBack: 'वापस',
   },
+  
+  vi: {
+    addFolderRoot: '加入資料夾…',
+    removeFolderRoot: '從清單移除',
+    rootUnavailable: '無法使用',
+    navRecent: '最近',
+    navStarred: '收藏',
+    navCloud: 'Genspark Projects',
+    cloudSubtitle: '在網頁端用 Genspark AI 建立的專案。編輯在瀏覽器中繼續——點擊任意專案即可開啟。',
+    cloudSearchPlaceholder: '搜尋 {n},
   'zh-TW': {
     addFolderRoot: '加入資料夾…',
     removeFolderRoot: '從清單移除',
@@ -7751,3 +7761,6 @@ export const strings = {
     onbBack: '上一步',
   },
 } as const
+
+
+

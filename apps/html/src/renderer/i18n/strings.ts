@@ -21,5 +21,10 @@ export const strings = {
   ms: { ...appStrings.ms, ...aiStrings.ms },
   he: { ...appStrings.he, ...aiStrings.he },
   hi: { ...appStrings.hi, ...aiStrings.hi },
+  
+  vi: { ...appStrings.vi, ...aiStrings.vi },
   'zh-TW': { ...appStrings['zh-TW'], ...aiStrings['zh-TW'] },
 }
+
+
+

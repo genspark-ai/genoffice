@@ -81,6 +81,18 @@ const localizedFillFormStrings = {
     formPlaceStaticHint: '点击放置；选中后可移动或缩放',
     formXfaWarning: '此 PDF 包含 XFA；当前仅支持 AcroForm，保存可能无法保留 XFA 数据',
   },
+  
+  vi: {
+    ribbonTabFillForm: '填寫表單',
+    formPreviousField: '上一欄位',
+    formNextField: '下一欄位',
+    insertText: '插入文字',
+    insertTextHint: '在 PDF 中插入可搜尋的文字',
+    insertTextTitle: '插入文字',
+    editInsertedText: '編輯插入的文字',
+    deleteInsertedText: '刪除插入的文字',
+    insertedTextDeleted: '已刪除插入的文字',
+    textInsertSkipped: '第 {pages},
   'zh-TW': {
     ribbonTabFillForm: '填寫表單',
     formPreviousField: '上一欄位',
@@ -6559,6 +6571,18 @@ export const strings = {
     propCreated: 'निर्माण समय',
     propModified: 'संशोधन समय',
   },
+  
+  vi: {
+    ribbonTabFillForm: '填寫表單',
+    formPreviousField: '上一欄位',
+    formNextField: '下一欄位',
+    insertText: '插入文字',
+    insertTextHint: '在 PDF 中插入可搜尋的文字',
+    insertTextTitle: '插入文字',
+    editInsertedText: '編輯插入的文字',
+    deleteInsertedText: '刪除插入的文字',
+    insertedTextDeleted: '已刪除插入的文字',
+    textInsertSkipped: '第 {pages},
   'zh-TW': {
     ...fillFormStringsFor('zh-TW'),
     ribbonTabHome: '常用',
@@ -6887,3 +6911,6 @@ export const strings = {
     propModified: '修改時間',
   },
 }
+
+
+
