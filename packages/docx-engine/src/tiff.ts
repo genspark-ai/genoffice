@@ -30,13 +30,12 @@ interface DomGlobals {
   OffscreenCanvas?: new (w: number, h: number) => OffscreenCanvasLike
 }
 
-/** largest page of a TIFF as RGBA pixels, or null when UTIF cannot read it */
-/** Pixel budget: a hostile word/media IFD with giant dims would allocate
- *  w*h*4 bytes on canvas. Fail closed (existing empty-frame degrade). */
-const MAX_TIFF_PIXELS = 64 * 1024 * 1024
-const MAX_TIFF_DIM = 8000
+// Pixel budget against hostile IFD dims (w*h*4 on canvas); admits a 1200 dpi Letter
+// or 600 dpi A3 scan (canvas edge limit, same pixel budget as the PDF app).
+const MAX_TIFF_PIXELS = 150_000_000
+const MAX_TIFF_DIM = 16384
 
-function tiffDimsOk(width: unknown, height: unknown): width is number {
+export function tiffDimsOk(width: unknown, height: unknown): width is number {
   return (
     typeof width === 'number' &&
     typeof height === 'number' &&
@@ -50,6 +49,7 @@ function tiffDimsOk(width: unknown, height: unknown): width is number {
   )
 }
 
+/** largest in-budget page of a TIFF as RGBA pixels, or null when UTIF cannot read it */
 function decodeTiff(
   bytes: ArrayBuffer | Uint8Array,
 ): { width: number; height: number; pixels: Uint8ClampedArray } | null {
@@ -66,20 +66,18 @@ function decodeTiff(
     width: Array.isArray(ifd.t256) ? ifd.t256[0] : (ifd as { width?: unknown }).width,
     height: Array.isArray(ifd.t257) ? ifd.t257[0] : (ifd as { height?: unknown }).height,
   })
-  let page = ifds[0]
-  let pageDims = headerDims(page)
-  if (!tiffDimsOk(pageDims.width, pageDims.height)) return null
+  let page: (typeof ifds)[number] | undefined
+  let pagePixels = 0
   for (const ifd of ifds) {
     const dims = headerDims(ifd)
     if (!tiffDimsOk(dims.width, dims.height)) continue
-    if (
-      (dims.width as number) * (dims.height as number) >
-      (pageDims.width as number) * (pageDims.height as number)
-    ) {
+    const pixels = dims.width * (dims.height as number)
+    if (!page || pixels > pagePixels) {
       page = ifd
-      pageDims = dims
+      pagePixels = pixels
     }
   }
+  if (!page) return null
   UTIF.decodeImage(buf, page)
   const width = page.width as number
   const height = page.height as number

@@ -178,7 +178,9 @@ export interface ExportHtmlRequest {
 }
 
 export type ExportResult =
-  { ok: true; path: string } | { ok: true; canceled: true } | { ok: false; error: string }
+  | { ok: true; path: string; skipped?: string[] }
+  | { ok: true; canceled: true }
+  | { ok: false; error: string }
 
 export interface ImageData {
   base64: string

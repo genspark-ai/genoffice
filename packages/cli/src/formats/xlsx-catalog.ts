@@ -78,7 +78,8 @@ const GROUP_SUMMARIES: Record<string, string> = {
 }
 
 const NOTES: Record<string, string> = {
-  set_cell: 'a string value starting with "=" is written as a formula',
+  set_cell:
+    'a string value starting with "=" is written as a formula; type: "text" keeps such a string as literal cell text',
   set_range: 'start is the top-left cell; range, when given instead, must match the values grid',
   format_range:
     'null clears a property; colors are #RRGGBB or theme slots ("accent1", "accent1+40%", "dk2-25%", {theme, tint}) that follow the workbook theme; fill = {pattern, fg, bg?} or {gradient: {angle?, stops}}; border type none removes all borders',

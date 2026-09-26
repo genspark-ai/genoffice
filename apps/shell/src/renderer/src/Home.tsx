@@ -24,12 +24,13 @@ import type {
 import type { IntegrationsApi } from '../../shared/integrations-api'
 import { markText } from '../../shared/text-marks'
 import { useDismissablePopover } from '@genoffice/ui'
-import { fileCountKey, visiblePageCount } from './counts'
+import { fileCountLabel, visiblePageCount } from './counts'
 import { useI18n } from './locale'
 import type { I18n, StringKey } from './locale'
 import { SettingsModal } from './SettingsModal'
 import type { SettingsTarget } from './SettingsModal'
 import { skillUpdateDue } from './IntegrationsPane'
+import { onFilesChanged } from './file-events'
 
 declare global {
   interface Window {
@@ -1668,6 +1669,9 @@ export function Home() {
     return () => window.removeEventListener('focus', onFocus)
   }, [])
 
+  // a rename from the tab strip happens while this renderer already has focus
+  useEffect(() => onFilesChanged(() => refreshRef.current()), [])
+
   const hasMore = entries.length < listTotal
 
   // unified dismissal: outside press, window blur, chrome press (tab strip / window drag)
@@ -3158,7 +3162,7 @@ export function Home() {
                 <span className="section-label">
                   {view === 'recent' ? t('secRecent') : t('secStarred')}
                 </span>
-                <span className="file-count">{t(fileCountKey(listTotal), { n: listTotal })}</span>
+                <span className="file-count">{fileCountLabel(listTotal, lang, t)}</span>
               </div>
             )}
           </div>

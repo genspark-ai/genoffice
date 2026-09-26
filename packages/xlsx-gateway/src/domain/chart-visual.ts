@@ -179,8 +179,8 @@ export function scatterAxisBounds(
   explicit?: { min?: number | undefined; max?: number | undefined; majorUnit?: number | undefined },
 ): ScatterAxis {
   const finite = values.filter((value) => Number.isFinite(value))
-  const dataMin = finite.length > 0 ? Math.min(...finite) : 0
-  const dataMax = finite.length > 0 ? Math.max(...finite) : 1
+  const dataMin = finite.length > 0 ? finite.reduce((min, value) => (value < min ? value : min)) : 0
+  const dataMax = finite.length > 0 ? finite.reduce((max, value) => (value > max ? value : max)) : 1
   const min = explicit?.min ?? (dataMin >= 0 ? 0 : -niceCeiling(-dataMin))
   let max = explicit?.max ?? (dataMax <= 0 ? 0 : niceCeiling(dataMax))
   if (!(max > min)) max = min + 1

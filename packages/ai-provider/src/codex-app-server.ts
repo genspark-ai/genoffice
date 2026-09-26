@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { access, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
+import { StringDecoder } from 'node:string_decoder'
 import type { AgentImage, AgentMessage, AgentToolCall, AgentToolDef } from '@genoffice/agent-core'
 import type { AiChatResponse, AiProviderConfig, CodexModelCatalog } from './types'
 import { parseToolInput, type StreamCallbacks } from './protocols/shared'
@@ -89,7 +90,12 @@ export function attachBoundedRpcStdout(
   onLine: (line: string) => void,
   onOverflow: (error: Error) => void,
 ): void {
+  // A StringDecoder keeps a multi-byte UTF-8 sequence that straddles two pipe chunks intact
+  // (Buffer#toString per chunk would turn it into U+FFFD).
+  const decoder = new StringDecoder('utf8')
   let pending = ''
+  /** UTF-8 bytes buffered for the current line, including any partial sequence held by the decoder. */
+  let pendingBytes = 0
   let stopped = false
   const emit = (line: string): void => {
     onLine(line.endsWith('\r') ? line.slice(0, -1) : line)
@@ -97,24 +103,31 @@ export function attachBoundedRpcStdout(
   const flush = (): void => {
     if (stopped) return
     stopped = true
-    const tail = pending
+    const tail = pending + decoder.end()
     pending = ''
+    pendingBytes = 0
     if (tail) emit(tail)
   }
   child.stdout.on('end', flush)
   child.stdout.on('close', flush)
   child.stdout.on('data', (chunk: Buffer) => {
     if (stopped) return
-    pending += chunk.toString('utf8')
+    pending += decoder.write(chunk)
     const parts = pending.split('\n')
     pending = parts.pop() ?? ''
-    for (const part of parts) {
-      emit(part)
-      if (stopped) return
+    if (parts.length === 0) {
+      pendingBytes += chunk.length
+    } else {
+      pendingBytes = Buffer.byteLength(pending, 'utf8')
+      for (const part of parts) {
+        emit(part)
+        if (stopped) return
+      }
     }
-    if (pending.length > MAX_RPC_LINE_BYTES) {
+    if (pendingBytes > MAX_RPC_LINE_BYTES) {
       stopped = true
       pending = ''
+      pendingBytes = 0
       onOverflow(
         new Error(
           `Codex app-server stdout line exceeded ${MAX_RPC_LINE_BYTES} bytes without a newline; the child was stopped`,
@@ -855,10 +868,14 @@ export async function waitForTurn(
       if (error) reject(error)
       else resolve(finalText)
     }
+    let interrupted = false
+    const interrupt = () => {
+      if (!turnId || interrupted) return
+      interrupted = true
+      void client.request('turn/interrupt', { threadId, turnId }).catch(() => undefined)
+    }
     const onAbort = () => {
-      if (turnId) {
-        void client.request('turn/interrupt', { threadId, turnId }).catch(() => undefined)
-      }
+      interrupt()
       finish(cancelledError())
     }
     const unsubscribe = client.onNotification((message) => {
@@ -900,6 +917,8 @@ export async function waitForTurn(
       .then((result) => {
         const turn = objectValue(objectValue(result)?.turn)
         if (typeof turn?.id === 'string') turnId = turn.id
+        // An abort that raced the turn/start response settled locally; stop the server turn too.
+        if (signal.aborted) interrupt()
       })
       .catch((error) => finish(error instanceof Error ? error : new Error(String(error))))
   })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isFromInspector, safeExternalHref } from '../src/renderer/preview/inspector-protocol'
+import { isFromInspector } from '../src/renderer/preview/inspector-protocol'
 
 describe('isFromInspector', () => {
   it('accepts well-formed inspector messages', () => {
@@ -16,21 +16,5 @@ describe('isFromInspector', () => {
     expect(isFromInspector({ type: 'gx:ready', title: 't' })).toBe(false)
     expect(isFromInspector({ type: 'gx:ready', version: '3' })).toBe(false)
     expect(isFromInspector({ type: 'gx:ready', version: Number.NaN })).toBe(false)
-  })
-})
-
-describe('safeExternalHref', () => {
-  it('passes http(s) URLs through trimmed', () => {
-    expect(safeExternalHref('https://example.com/a b')).toBe('https://example.com/a b')
-    expect(safeExternalHref('  http://example.com ')).toBe('http://example.com')
-  })
-
-  it('blocks non-web schemes and non-strings', () => {
-    expect(safeExternalHref('javascript:alert(1)')).toBeNull()
-    expect(safeExternalHref('data:text/html,<h1>x</h1>')).toBeNull()
-    expect(safeExternalHref('file:///etc/passwd')).toBeNull()
-    expect(safeExternalHref('/relative/path')).toBeNull()
-    expect(safeExternalHref(null)).toBeNull()
-    expect(safeExternalHref(42)).toBeNull()
   })
 })

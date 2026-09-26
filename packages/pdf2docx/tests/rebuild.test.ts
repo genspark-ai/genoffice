@@ -110,6 +110,7 @@ describe('rebuildDocx', () => {
         line([
           span('huge', { fontSize: 1e22 }),
           span('inf', { fontSize: Infinity }),
+          span('big', { fontSize: 2000 }),
           span('nan', { fontSize: Number.NaN }),
           span('ok', { fontSize: 12 }),
         ]),
@@ -118,7 +119,7 @@ describe('rebuildDocx', () => {
     const docx = await rebuildDocx([bad])
     const parsed = await parseDocx(docx)
     const runs = parsed.blocks.find((b) => b.runs?.length)!.runs!
-    expect(runs.map((r) => r.text).join('')).toContain('hugeinfnanok')
+    expect(runs.map((r) => r.text).join('')).toContain('hugeinfbignanok')
     const ok = runs.find((r) => r.text === 'ok')!
     expect(ok.sizeHalfPoints).toBe(24)
     for (const r of runs) {

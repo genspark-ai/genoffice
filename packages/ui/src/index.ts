@@ -43,7 +43,6 @@ export {
   useRibbonCollapse,
   RibbonCollapseButton,
   RibbonExpandButton,
-  installRibbonPeekDismiss,
   isRibbonToggleShortcut,
   readRibbonCollapsed,
   RIBBON_TOGGLE_SHORTCUT,

@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { platformShortcuts } from '@genoffice/i18n'
 import {
   Dropdown,
-  RibbonCollapseButton,
   SHAPE_GALLERY_GROUPS,
   ShapePreview,
   useDismissablePopover,
@@ -61,6 +60,7 @@ import { ConsolidateDialog } from './ConsolidateDialog'
 import type { ConsolidateConfig } from './consolidate'
 import { HeaderFooterDialog, type HeaderFooterResult } from './HeaderFooterDialog'
 import type { HeaderFooterParts } from './edit-journal'
+import { useModalDialog } from './modal-dialog'
 
 // No File tab: file commands live in the macOS
 // application menu (File → Open/Save/Save As) and the toolbar icons.
@@ -393,7 +393,10 @@ export function ExcelShell({
 }: ExcelShellProps): React.JSX.Element {
   const { t } = useI18n()
   const [activeTab, setActiveTab] = useState<RibbonTab>('Home')
-  const collapse = useRibbonCollapse('ai-sheets-ribbon-collapsed')
+  const collapse = useRibbonCollapse('ai-sheets-ribbon-collapsed', {
+    collapse: t('appRibbonCollapse'),
+    expand: t('appRibbonExpand'),
+  })
   // Persisted so a closed AI panel stays closed on next launch (docs/slides parity)
   const [isCopilotOpen, setIsCopilotOpen] = useState(
     () => localStorage.getItem('ai-sheets-show-ai') !== '0',
@@ -586,7 +589,8 @@ export function ExcelShell({
           <span className="qa-sep" aria-hidden="true" />
           {visibleTabs.map((tab) => (
             <button
-              className={`${tab === activeTab ? 'active' : ''} ${tab === 'Chart Design' ? 'contextual' : ''}`}
+              className={`${collapse.tabClass(tab === activeTab)} ${tab === 'Chart Design' ? 'contextual' : ''}`}
+              data-tip={collapse.tabTip(tab === activeTab)}
               key={tab}
               onClick={() => {
                 collapse.onTabPress(tab === activeTab)
@@ -657,10 +661,6 @@ export function ExcelShell({
           }}
           aiOpen={isCopilotOpen}
           onAiToggle={() => setIsCopilotOpen((open) => !open)}
-        />
-        <RibbonCollapseButton
-          state={collapse}
-          labels={{ collapse: t('appRibbonCollapse'), pin: t('appRibbonPin') }}
         />
       </header>
 
@@ -936,11 +936,13 @@ function SortDialog({
       previous.map((level, at) => (at === index ? { ...level, ...patch } : level)),
     )
   }
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog sort-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('appCustomSort')}
         onClick={(event) => event.stopPropagation()}
       >
@@ -1004,11 +1006,13 @@ function RemoveDuplicatesDialog({
 }): React.JSX.Element {
   const { t } = useI18n()
   const [hasHeader, setHasHeader] = useState(true)
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog sort-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('appRemoveDuplicates')}
         onClick={(event) => event.stopPropagation()}
       >
@@ -1061,11 +1065,13 @@ function ChartTextDialog({
     onCommand(`${command}:${value.trim()}`)
     onClose()
   }
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog link-dialog"
         role="dialog"
+        {...modal}
         aria-label={t(heading)}
         onClick={(event) => event.stopPropagation()}
       >
@@ -1081,7 +1087,6 @@ function ChartTextDialog({
               onChange={(event) => setValue(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') apply()
-                if (event.key === 'Escape') onClose()
               }}
             />
           </label>
@@ -1118,11 +1123,13 @@ function AxisSizeDialog({
     onCommand(`${axis === 'row' ? 'row-height' : 'col-width'}:${parsed}`)
     onClose()
   }
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog link-dialog"
         role="dialog"
+        {...modal}
         aria-label={t(axis === 'row' ? 'appRowHeight' : 'appColWidth')}
         onClick={(event) => event.stopPropagation()}
       >
@@ -1138,7 +1145,6 @@ function AxisSizeDialog({
               onChange={(event) => setValue(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') apply()
-                if (event.key === 'Escape') onClose()
               }}
             />
           </label>
@@ -1169,11 +1175,13 @@ function LinkDialog({
     if (value.trim()) onCommand(`link-set:${encodeURIComponent(value)}`)
     onClose()
   }
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog link-dialog"
         role="dialog"
+        {...modal}
         aria-label={t(currentTarget ? 'appEditLinkTitle' : 'appInsertLinkTitle')}
         onClick={(event) => event.stopPropagation()}
       >
@@ -1189,7 +1197,6 @@ function LinkDialog({
               onChange={(event) => setValue(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') apply()
-                if (event.key === 'Escape') onClose()
               }}
             />
           </label>

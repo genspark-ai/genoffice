@@ -41,6 +41,14 @@ interface Tag {
 
 const NAME_RE = /^<\/?\s*([A-Za-z_][\w:.-]*)/
 
+/**
+ * Elements whose character content is document text. A CDATA section inside one
+ * is text the parser already carries into the runs, not position-free
+ * decoration, so it must not become an opaque region (the save path would
+ * re-append it to the regenerated element and duplicate the text).
+ */
+const TEXT_ELEMENTS = new Set(['w:t', 'w:delText', 'w:instrText', 'w:delInstrText', 'a:t', 'm:t'])
+
 function opaqueEnd(documentXml: string, start: number): number | null {
   if (documentXml.startsWith('<!--', start)) {
     const at = documentXml.indexOf('-->', start + 4)
@@ -115,7 +123,11 @@ export function scanBody(documentXml: string): BodyScan {
     if (start === -1) break
     const opaque = opaqueEnd(documentXml, start)
     if (opaque !== null) {
-      if (bodyContentStart !== -1) opaqueRegions.push({ start, end: opaque })
+      const textCdata =
+        documentXml.startsWith('<![CDATA[', start) &&
+        stack.length > 0 &&
+        TEXT_ELEMENTS.has(stack[stack.length - 1]!.name)
+      if (bodyContentStart !== -1 && !textCdata) opaqueRegions.push({ start, end: opaque })
       cursor = opaque
       continue
     }

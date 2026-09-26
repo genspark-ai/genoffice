@@ -6,6 +6,7 @@
 import { useState } from 'react'
 
 import { useI18n } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 export interface AllowEditRange {
   readonly name: string
@@ -65,11 +66,13 @@ export function AllowEditRangesDialog({
     onClose()
   }
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgAllowEditRangesTitle')}
         onClick={(event) => event.stopPropagation()}
       >

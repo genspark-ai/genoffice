@@ -17,7 +17,9 @@
  * fast (100ms) reshow while "warm" — a tip was visible less than 500ms ago —
  * so sweeping the pointer along a toolbar walks the tip across the buttons,
  * and auto-hide after 5s of resting on the same control. Clicking hides the
- * tip and keeps it hidden until the pointer leaves that control. */
+ * tip and keeps it hidden until the pointer leaves that control. Keyboard
+ * focus shows the tip too, Escape or blur hides it, and the visible tip is
+ * linked to its anchor through aria-describedby. */
 
 const INITIAL_DELAY_MS = 500
 const RESHOW_DELAY_MS = 100
@@ -37,6 +39,7 @@ let tip: TipState | null = null
 let showTimer: number | null = null
 let autoHideTimer: number | null = null
 let anchor: Element | null = null
+let described: Element | null = null
 // clicked anchor: the tip stays hidden until the pointer leaves it (Office behavior)
 let suppressed: Element | null = null
 let warmUntil = 0
@@ -45,6 +48,7 @@ function ensureTip(doc: Document): TipState {
   if (tip && tip.el.isConnected) return tip
   const el = doc.createElement('div')
   el.className = 'ui-screentip'
+  el.id = 'ui-screentip'
   el.setAttribute('role', 'tooltip')
   const name = doc.createElement('span')
   name.className = 'ui-screentip-name'
@@ -75,6 +79,8 @@ function hide(): void {
     tip.el.style.visibility = 'hidden'
     warmUntil = Date.now() + WARM_WINDOW_MS
   }
+  described?.removeAttribute('aria-describedby')
+  described = null
   anchor = null
 }
 
@@ -121,6 +127,8 @@ function show(el: Element, doc: Document): void {
   t.el.style.left = `${Math.round(left)}px`
   t.el.style.top = `${Math.round(top)}px`
   t.el.style.visibility = 'visible'
+  el.setAttribute('aria-describedby', t.el.id)
+  described = el
 
   if (autoHideTimer !== null) window.clearTimeout(autoHideTimer)
   autoHideTimer = window.setTimeout(hide, AUTO_HIDE_MS)
@@ -128,9 +136,8 @@ function show(el: Element, doc: Document): void {
 
 /** Install the global ScreenTip listeners. Call once from the app entry; returns an uninstaller. */
 export function installScreenTips(doc: Document = document): () => void {
-  const onPointerOver = (e: PointerEvent): void => {
-    const target = e.target instanceof Element ? e.target : null
-    const el = target?.closest('[data-tip]') ?? null
+  const arm = (target: EventTarget | null): void => {
+    const el = (target instanceof Element ? target : null)?.closest('[data-tip]') ?? null
     if (el === anchor) return
     if (suppressed && suppressed !== el) suppressed = null
     hide()
@@ -142,6 +149,14 @@ export function installScreenTips(doc: Document = document): () => void {
       // the anchor may have been re-rendered or removed while the timer ran
       if (anchor === el && el.isConnected) show(el, doc)
     }, delay)
+  }
+  const onPointerOver = (e: PointerEvent): void => arm(e.target)
+  const onFocusIn = (e: FocusEvent): void => arm(e.target)
+  const onFocusOut = (e: FocusEvent): void => {
+    if (anchor && e.target instanceof Node && anchor.contains(e.target)) hide()
+  }
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') hide()
   }
   // pointer left the window entirely (no pointerover follows)
   const onPointerOut = (e: PointerEvent): void => {
@@ -160,6 +175,9 @@ export function installScreenTips(doc: Document = document): () => void {
   doc.addEventListener('pointerover', onPointerOver, true)
   doc.addEventListener('pointerout', onPointerOut, true)
   doc.addEventListener('pointerdown', onPointerDown, true)
+  doc.addEventListener('focusin', onFocusIn, true)
+  doc.addEventListener('focusout', onFocusOut, true)
+  doc.addEventListener('keydown', onKeyDown, true)
   doc.addEventListener('scroll', onHide, true)
   window.addEventListener('blur', onHide)
   window.addEventListener('resize', onHide)
@@ -167,6 +185,9 @@ export function installScreenTips(doc: Document = document): () => void {
     doc.removeEventListener('pointerover', onPointerOver, true)
     doc.removeEventListener('pointerout', onPointerOut, true)
     doc.removeEventListener('pointerdown', onPointerDown, true)
+    doc.removeEventListener('focusin', onFocusIn, true)
+    doc.removeEventListener('focusout', onFocusOut, true)
+    doc.removeEventListener('keydown', onKeyDown, true)
     doc.removeEventListener('scroll', onHide, true)
     window.removeEventListener('blur', onHide)
     window.removeEventListener('resize', onHide)

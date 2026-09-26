@@ -39,7 +39,7 @@ describe('layoutDiagramFallback', () => {
   })
 
   it('bounds deeply nested diagram data before layout recursion', () => {
-    const depth = 1_000
+    const depth = 20_000
     const points = Array.from(
       { length: depth },
       (_, index) => `<dgm:pt modelId="n${index}"/>`,

@@ -397,6 +397,11 @@ describe('markerTabAdvance (default tab after the marker)', () => {
   it('honors a custom default tab interval', () => {
     expect(markerTabAdvance(0, 400, 360, 708)).toBe(708)
   })
+
+  it('a zero default tab grid puts the text right after the marker, custom stops still win', () => {
+    expect(markerTabAdvance(0, 400, 360, 0)).toBe(400)
+    expect(markerTabAdvance(0, 400, 360, 0, [1080])).toBe(1080)
+  })
 })
 
 describe('picture bullets (w:numPicBullet / w:lvlPicBulletId)', () => {

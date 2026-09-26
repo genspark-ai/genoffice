@@ -110,6 +110,7 @@ export const ko = {
   appPasteOptSource: '원본 서식 유지',
   appPasteOptTheme: '대상 테마 사용',
   appStatusPasteOptionsExpired: '붙여넣기 옵션을 더 이상 사용할 수 없습니다',
+  appStatusPasteTruncated: '붙여넣은 텍스트가 너무 길어 잘렸습니다',
   appCtxHideSlide: '슬라이드 숨기기',
   appCtxUnhideSlide: '슬라이드 숨기기 취소',
   appCtxAddSectionBefore: '구역 추가(이 슬라이드 앞)',

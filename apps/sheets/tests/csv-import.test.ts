@@ -198,7 +198,7 @@ describe('resolveImportDelimiter', () => {
 
 describe('isNumericCell', () => {
   it('accepts plain decimals and scientific notation', () => {
-    for (const value of ['0', '42', '-3.5', '1e3', '0.5']) {
+    for (const value of ['0', '42', '-3.5', '1e3', '0.5', '.5', '1.', '-.5']) {
       expect(isNumericCell(value), value).toBe(true)
     }
   })

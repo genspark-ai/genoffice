@@ -57,8 +57,30 @@ describe('parseChartPartXml grouping and colors', () => {
       '<c:ser><c:idx val="0"/><c:order val="0"/>' +
       `${strCache('tx', ['S1'])}${categories}${numCache('val', [1])}</c:ser>`
     const display = parseChartPartXml(chartSpace(`<c:barChart>${ser}</c:barChart>`), 'p')!
-    expect(display.categories).toHaveLength(100_000)
-    expect(display.categories[99_999]).toBe('')
+    expect(display.categories).toHaveLength(1_048_576)
+    expect(display.categories[1_048_575]).toBe('')
+  })
+
+  it('keeps a cache index at the last Excel row and drops the one past it', () => {
+    const categories =
+      '<c:cat><c:strRef><c:f>S!$A$1</c:f><c:strCache><c:ptCount val="2"/>' +
+      '<c:pt idx="1048575"><c:v>last</c:v></c:pt>' +
+      '<c:pt idx="1048576"><c:v>past</c:v></c:pt></c:strCache></c:strRef></c:cat>'
+    const ser =
+      '<c:ser><c:idx val="0"/><c:order val="0"/>' +
+      `${strCache('tx', ['S1'])}${categories}${numCache('val', [1])}</c:ser>`
+    const display = parseChartPartXml(chartSpace(`<c:barChart>${ser}</c:barChart>`), 'p')!
+    expect(display.categories).toHaveLength(1_048_576)
+    expect(display.categories[1_048_575]).toBe('last')
+    expect(display.categories).not.toContain('past')
+  })
+
+  it('bounds sparse c:dPt point indexes', () => {
+    const dPt =
+      '<c:dPt><c:idx val="1"/><c:spPr><a:solidFill><a:srgbClr val="00FF00"/></a:solidFill></c:spPr></c:dPt>' +
+      '<c:dPt><c:idx val="999999999"/><c:spPr><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></c:spPr></c:dPt>'
+    const display = parseChartPartXml(bar('clustered', dPt), 'p')!
+    expect(display.series[0].pointColors).toEqual([null, '00FF00'])
   })
 
   it('reads explicit series solid fills, resolving schemeClr through the theme', () => {
@@ -237,6 +259,29 @@ describe('parseChartexPartXml leniency', () => {
     const display = parseChartPartXml(xml, 'word/charts/chartEx1.xml')!
     expect(display.kind).toBe('bar')
     expect(display.series[0]).toEqual({ name: 'Series1', values: [100, -40, 60] })
+  })
+
+  it('bounds sparse chartEx level point indexes', () => {
+    const xml =
+      '<cx:chartSpace xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex" ' +
+      'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+      '<cx:chartData><cx:data id="0">' +
+      '<cx:strDim type="cat"><cx:f>S!$A$2:$A$4</cx:f><cx:lvl ptCount="1000000000">' +
+      '<cx:pt idx="0">A</cx:pt><cx:pt idx="999999999">far</cx:pt></cx:lvl></cx:strDim>' +
+      '<cx:numDim type="val"><cx:f>S!$B$2:$B$4</cx:f><cx:lvl ptCount="1000000000">' +
+      '<cx:pt idx="0">100</cx:pt><cx:pt idx="999999999">7</cx:pt>' +
+      '</cx:lvl></cx:numDim></cx:data></cx:chartData>' +
+      '<cx:chart><cx:plotArea><cx:plotAreaRegion>' +
+      '<cx:series layoutId="waterfall"><cx:tx><cx:txData><cx:v>Series1</cx:v></cx:txData></cx:tx>' +
+      '<cx:dataId val="0"/></cx:series>' +
+      '</cx:plotAreaRegion></cx:plotArea></cx:chart></cx:chartSpace>'
+    const display = parseChartPartXml(xml, 'word/charts/chartEx1.xml')!
+    expect(display.categories.length).toBeLessThanOrEqual(1_048_576)
+    expect(display.categories[0]).toBe('A')
+    expect(display.categories).not.toContain('far')
+    expect(display.series[0].values.length).toBeLessThanOrEqual(1_048_576)
+    expect(display.series[0].values[0]).toBe(100)
+    expect(display.series[0].values).not.toContain(7)
   })
 })
 

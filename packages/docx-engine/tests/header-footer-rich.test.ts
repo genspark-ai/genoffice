@@ -376,7 +376,11 @@ describe('rich header / footer', () => {
     )
     const final = await parseDocx(again)
     expect(final.watermarkText).toBe('草稿')
-    expect(final.headerParas![0].runs[0]).toMatchObject({ text: '新页眉', bold: true })
+    // the watermark shape keeps its own (textless) strip line, as Word lays it out
+    expect(final.headerParas!.find((p) => p.runs.length > 0)!.runs[0]).toMatchObject({
+      text: '新页眉',
+      bold: true,
+    })
     // the watermark paragraph is not part of the text paras
     expect(final.headerText).toBe('新页眉')
   })

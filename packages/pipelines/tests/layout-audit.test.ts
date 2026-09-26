@@ -66,8 +66,15 @@ function textNode(
   }
 }
 
-function pictureNode(id: string, x: number, y: number, w: number, h: number): PictureRenderNode {
-  return { id, type: 'picture', box: placedBox(x, y, w, h), sourceId: id }
+function pictureNode(
+  id: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  extra: Partial<PictureRenderNode> = {},
+): PictureRenderNode {
+  return { id, type: 'picture', box: placedBox(x, y, w, h), sourceId: id, ...extra }
 }
 
 function slide(nodes: RenderSlide['nodes']): RenderSlide {
@@ -121,6 +128,130 @@ describe('auditSlideLayout out of bounds', () => {
       expect(f.level).toBe('error')
       expect(f.suggest?.op).toBe('setTransform')
     }
+  })
+})
+
+describe('auditSlideLayout off slide', () => {
+  it('reports a box with no canvas intersection once, as off_slide, with a clamp suggestion', () => {
+    const s = slide([
+      textNode('gone', W + 50, 100, 200, 80),
+      textNode('edge', W - 100, 300, 200, 80),
+      textNode('above', 100, -200, 200, 80),
+    ])
+    const findings = auditSlideFindings(s)
+    expect(findings.map((f) => [f.el, f.code])).toEqual([
+      ['gone', 'off_slide'],
+      ['edge', 'out_of_bounds'],
+      ['above', 'off_slide'],
+    ])
+    const gone = findings[0]!
+    expect(gone.level).toBe('error')
+    expect(gone.message).toContain('entirely outside the slide')
+    expect(gone.message).toContain('past the right edge')
+    expect(gone.suggest).toEqual({
+      op: 'setTransform',
+      target: { el: 'gone' },
+      box: { x: (W - 200) * 9525, y: 100 * 9525, cx: 200 * 9525, cy: 80 * 9525 },
+    })
+    expect(findings[2]!.suggest?.box).toMatchObject({ x: 100 * 9525, y: 0 })
+  })
+
+  it('reports a thin line just past the edge as off_slide despite the edge tolerance', () => {
+    const s = slide([textNode('rule', 100, H + 2, 400, 4)])
+    const findings = auditSlideFindings(s)
+    expect(findings.map((f) => f.code)).toEqual(['off_slide'])
+    expect(findings[0]!.message).toContain('6px past the bottom edge')
+    expect(findings[0]!.suggest?.box).toMatchObject({ y: (H - 4) * 9525 })
+  })
+
+  it('keeps a box touching the edge from outside as out_of_bounds', () => {
+    const s = slide([textNode('touch', W, 100, 200, 80)])
+    expect(auditSlideFindings(s).map((f) => f.code)).toEqual(['out_of_bounds'])
+  })
+})
+
+describe('auditSlideLayout picture distortion', () => {
+  const sizes: Record<string, { w: number; h: number }> = {
+    stretched: { w: 800, h: 400 },
+    cropped: { w: 800, h: 400 },
+    close: { w: 800, h: 400 },
+    poster: { w: 800, h: 400 },
+  }
+  const opts = { pictureSize: (id: string) => sizes[id] }
+
+  it('flags a box whose aspect strays from the source and shrinks the longer side, centred', () => {
+    const s = slide([pictureNode('stretched', 100, 100, 400, 400)])
+    const findings = auditSlideFindings(s, undefined, opts)
+    expect(findings).toHaveLength(1)
+    expect(findings[0]).toMatchObject({
+      code: 'picture_distorted',
+      level: 'warning',
+      el: 'stretched',
+      expected_ratio: 2,
+      actual_ratio: 1,
+      distortion_pct: 50,
+    })
+    expect(findings[0]!.message).toContain('Picture distorted')
+    expect(findings[0]!.suggest).toEqual({
+      op: 'setTransform',
+      target: { el: 'stretched' },
+      box: { x: 100 * 9525, y: 200 * 9525, cx: 400 * 9525, cy: 200 * 9525 },
+    })
+  })
+
+  it('shrinks a square logo in a banner box to the banner height instead of growing it', () => {
+    const s = slide([pictureNode('logo', 100, 100, 600, 100)])
+    const findings = auditSlideFindings(s, undefined, { pictureSize: () => ({ w: 256, h: 256 }) })
+    expect(findings.map((f) => f.code)).toEqual(['picture_distorted'])
+    expect(findings[0]!.suggest!.box).toEqual({
+      x: 350 * 9525,
+      y: 100 * 9525,
+      cx: 100 * 9525,
+      cy: 100 * 9525,
+    })
+  })
+
+  it('grows instead when shrinking would leave the picture under 24px', () => {
+    const s = slide([pictureNode('strip', 100, 300, 600, 10)])
+    const findings = auditSlideFindings(s, undefined, { pictureSize: () => ({ w: 256, h: 256 }) })
+    expect(findings[0]!.suggest!.box).toEqual({
+      x: 100 * 9525,
+      y: 5 * 9525,
+      cx: 600 * 9525,
+      cy: 600 * 9525,
+    })
+  })
+
+  it('compares against the cropped source region and tolerates 5%', () => {
+    const s = slide([
+      pictureNode('cropped', 100, 100, 300, 300, { srcRect: { l: 0.25, t: 0, r: 0.25, b: 0 } }),
+      pictureNode('close', 500, 100, 400, 196),
+    ])
+    expect(auditSlideFindings(s, undefined, opts)).toEqual([])
+  })
+
+  it('skips poster frames, unknown sizes and audits without a size lookup', () => {
+    const s = slide([
+      pictureNode('poster', 100, 100, 400, 400, { media: 'video' }),
+      pictureNode('unknown', 600, 100, 400, 400),
+    ])
+    expect(auditSlideFindings(s, undefined, opts)).toEqual([])
+    expect(auditSlideFindings(slide([pictureNode('stretched', 100, 100, 400, 400)]))).toEqual([])
+  })
+
+  it('scales a corrected picture down when the true aspect would not fit the canvas', () => {
+    const s = slide([pictureNode('square', 0, 0, W, 1400)])
+    const findings = auditSlideFindings(s, undefined, {
+      pictureSize: () => ({ w: 400, h: 400 }),
+    })
+    expect(findings.map((f) => f.code)).toEqual(['out_of_bounds', 'picture_distorted'])
+    expect(findings[1]!.suggest!.box).toEqual({
+      x: ((W - H) / 2) * 9525,
+      y: 0,
+      cx: H * 9525,
+      cy: H * 9525,
+    })
+    expect(findings[0]!.suggest).toEqual(findings[1]!.suggest)
   })
 })
 

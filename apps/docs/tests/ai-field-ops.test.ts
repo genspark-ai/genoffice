@@ -438,8 +438,12 @@ describe('field ops through the docx save path', () => {
     const reparsed = await parseDocx(out)
     expect(reparsed.blocks[0]!.bookmarks).toEqual(['Summary'])
     expect(reparsed.blocks[2]!.runs?.some((r) => r.refField === 'Summary')).toBe(true)
-    // PAGEREF paragraphs stay protected on re-open; the dirty field rides in the block XML
-    expect(reparsed.blocks[3]!.type).toBe('passthrough')
-    expect(reparsed.blocks[3]!.originalXml).toContain('w:dirty="true"')
+    // PAGEREF folds back into an editable inline field carrying the dirty flag
+    expect(reparsed.blocks[3]!.type).toBe('paragraph')
+    expect(reparsed.blocks[3]!.runs?.find((r) => r.instrField)).toMatchObject({
+      text: '1',
+      instrField: 'PAGEREF Summary \\h',
+      fldDirty: true,
+    })
   })
 })

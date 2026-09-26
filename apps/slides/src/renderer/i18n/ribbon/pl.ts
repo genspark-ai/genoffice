@@ -14,7 +14,7 @@ export const pl = {
   ribbonTabSlideShow: 'Pokaz slajdów',
   ribbonTabReview: 'Recenzja',
   ribbonCollapse: 'Zwiń Wstążkę',
-  ribbonPin: 'Przypnij Wstążkę',
+  ribbonExpand: 'Rozwiń Wstążkę',
   ribbonTabView: 'Widok',
   ribbonTabTableDesign: 'Projekt tabeli',
   ribbonTabChartDesign: 'Projekt wykresu',

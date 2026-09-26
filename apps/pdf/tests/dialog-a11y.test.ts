@@ -1,11 +1,12 @@
 /**
- * StampDialog accessibility: dialog semantics, Escape/backdrop close,
- * and focus-first-field with return-focus on unmount.
+ * StampDialog / SignatureDialog accessibility: dialog semantics, Escape/backdrop
+ * close, and focus-first-field with return-focus on unmount.
  */
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StampDialog } from '../src/renderer/StampDialog'
+import { SignatureDialog } from '../src/renderer/SignatureDialog'
 import type { TFunc } from '../src/renderer/i18n/locale'
 
 // Identity translator: keeps the test independent of locale data
@@ -79,5 +80,61 @@ describe('StampDialog a11y', () => {
     } finally {
       opener.remove()
     }
+  })
+})
+
+describe('SignatureDialog a11y', () => {
+  beforeAll(() => {
+    ;(window as unknown as { pdfApi: unknown }).pdfApi = {
+      listSavedSignatures: () => Promise.resolve([]),
+      removeSavedSignature: () => Promise.resolve(),
+      addSavedSignature: () => Promise.resolve(),
+    }
+  })
+
+  async function renderSign(onCancel: () => void) {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(
+        createElement(SignatureDialog, { t, color: [0, 0, 0], onCancel, onConfirm: () => {} }),
+      )
+      await Promise.resolve()
+    })
+    return container
+  }
+
+  it('is a labelled modal that takes focus and closes on Escape', async () => {
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+    const onCancel = vi.fn()
+    try {
+      const host = await renderSign(onCancel)
+      const node = host.querySelector('[role="dialog"]')!
+      expect(node.getAttribute('aria-modal')).toBe('true')
+      expect(node.getAttribute('aria-label')).toBe('signTitle')
+      expect(node.contains(document.activeElement)).toBe(true)
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      })
+      expect(onCancel).toHaveBeenCalledTimes(1)
+      await act(async () => root!.unmount())
+      root = null
+      expect(document.activeElement).toBe(opener)
+    } finally {
+      opener.remove()
+    }
+  })
+
+  it('exposes the image upload affordance as a button in image mode', async () => {
+    const host = await renderSign(() => {})
+    const tabs = host.querySelectorAll<HTMLButtonElement>('.pdf-sign-tab')
+    await act(async () => {
+      tabs[2]!.click()
+    })
+    const box = host.querySelector('.pdf-sign-imgbox')
+    expect(box?.tagName).toBe('BUTTON')
   })
 })

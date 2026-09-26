@@ -161,32 +161,6 @@ describe('AgentLoop', () => {
     expect(transport.requests[1].messageCount).toBe(3)
   })
 
-  it('keeps an opaque tool-call signature in the assistant history', async () => {
-    const transport = scriptedTransport([
-      (cb) => {
-        cb.onToolCall({
-          id: 't1',
-          name: 'do_thing',
-          input: {},
-          thoughtSignature: 'opaque-signature',
-        })
-        cb.onDone()
-      },
-      (cb) => cb.onDone(),
-    ])
-    const loop = new AgentLoop({ transport, skill: makeSkill() })
-    loop.run('make a change')
-    await flush()
-    await flush()
-    const assistant = loop.messages[1] as Extract<AgentMessage, { role: 'assistant' }>
-    expect(assistant.toolCalls?.[0]).toEqual({
-      id: 't1',
-      name: 'do_thing',
-      input: {},
-      thoughtSignature: 'opaque-signature',
-    })
-  })
-
   it('stores streamed reasoning on the tool-calling assistant message and drops it on the next run', async () => {
     const transport = scriptedTransport([
       (cb) => {
@@ -1232,6 +1206,33 @@ describe('AgentLoop compaction', () => {
     expect(toolMsg.results[0].isError).toBe(true)
     expect(toolMsg.results[0].output).toBe('boom')
     expect(onDone).toHaveBeenCalledWith({ text: 'OK', cancelled: false, turnLimit: false })
+  })
+
+  it('keeps the provider signature on stored tool calls while stripping turn-local hints', async () => {
+    const transport = scriptedTransport([
+      (cb) => {
+        cb.onToolCall({
+          id: 't1',
+          name: 'do_thing',
+          input: {},
+          signature: 'c2ln',
+          inputError: undefined,
+        })
+        cb.onDone()
+      },
+      (cb) => {
+        cb.onDelta('done')
+        cb.onDone()
+      },
+    ])
+    const loop = new AgentLoop({ transport, skill: makeSkill() })
+    loop.run('x')
+    await flush()
+    await flush()
+    const assistant = loop.messages[1] as Extract<AgentMessage, { role: 'assistant' }>
+    expect(assistant.toolCalls).toEqual([
+      { id: 't1', name: 'do_thing', input: {}, signature: 'c2ln' },
+    ])
   })
 
   it('calls with inputError are not executed; an is_error result is fed back so the model can retry', async () => {

@@ -480,7 +480,7 @@ describe('textbox patch addressing', () => {
     const img = box?.paras[0].runs.find((r) => r.image)?.image
     expect(img?.dataUrl.startsWith('data:image/png')).toBe(true)
     expect(img?.xml).toContain('r:embed="rId10"')
-    expect(img?.widthPx).toBe(27) // 259200 EMU / 9525
+    expect(img?.widthPx).toBe(27.21) // 259200 EMU / 9525
   })
 
   it('round-trips an inline picture when its textbox paragraph is regenerated', async () => {

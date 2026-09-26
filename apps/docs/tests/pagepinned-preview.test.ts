@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { pinnedFloatPage, type PageSlice } from '../src/renderer/pagination'
-import { hoistSlotOf, pinnedCloneCss } from '../src/renderer/components/PaginationPreview'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+  hoistPaperClamp,
+  hoistSlotOf,
+  pinnedCloneCss,
+} from '../src/renderer/components/PaginationPreview'
 
 const slice = (start: number, end: number): PageSlice => ({ start, end, section: 0 })
 
@@ -102,5 +109,35 @@ describe('hoistSlotOf', () => {
     expect(hoistSlotOf(box('position:absolute;right:0;top:2px'))).toBe('right')
     expect(hoistSlotOf(box('position:absolute;right:0px;top:2px'))).toBe('right')
     expect(hoistSlotOf(box('position:absolute;right:20px;top:2px'))).toBeNull()
+  })
+})
+
+describe('hoistPaperClamp', () => {
+  it('pushes a box that would start above the paper down to the page top', () => {
+    // anchor at the body top (dy 0, top margin 56.7px), box 94.5px above it
+    expect(hoistPaperClamp(0, 56.7, [-94.5])).toBeCloseTo(37.8, 5)
+    // the highest box decides: siblings ride the same shift
+    expect(hoistPaperClamp(10, 56.7, [-94.5, -20])).toBeCloseTo(37.8, 5)
+  })
+
+  it('leaves boxes that stay on the paper alone', () => {
+    expect(hoistPaperClamp(0, 56.7, [-56.7])).toBe(0)
+    expect(hoistPaperClamp(120, 56.7, [-94.5])).toBe(120)
+    expect(hoistPaperClamp(5, 56.7, [])).toBe(5)
+  })
+})
+
+describe('banded picture width', () => {
+  const css = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '../src/renderer/styles.css'),
+    'utf8',
+  )
+  it('keeps the wp:extent of a banded picture overhanging the column', () => {
+    const rule =
+      /\.doc-img-float\.img-wrap-band > \.doc-img-wrap,\s*\.doc-img-float\.img-wrap-band > \.doc-img-wrap > \.doc-protected-img\s*\{([^}]*)\}/.exec(
+        css,
+      )
+    expect(rule).not.toBeNull()
+    expect(rule![1]).toMatch(/max-width:\s*none/)
   })
 })

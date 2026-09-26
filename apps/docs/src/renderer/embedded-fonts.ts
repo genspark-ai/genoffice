@@ -1,5 +1,5 @@
-import type { EmbeddedFont } from '@genoffice/docx-engine'
-import { noteEmbeddedFontsChanged } from './line-metrics'
+import type { EmbeddedFont, EmbeddedFontLineMetrics } from '@genoffice/docx-engine'
+import { noteEmbeddedFontsChanged, setEmbeddedLineMetrics } from './line-metrics'
 
 let active: FontFace[] = []
 let generation = 0
@@ -39,11 +39,17 @@ export async function adoptEmbeddedFonts(
   const revoked = active
   for (const face of revoked) document.fonts.delete(face)
   active = []
-  for (const face of loaded) {
-    if (!face) continue
+  const boxes: Array<{ styled: boolean; family: string } & EmbeddedFontLineMetrics> = []
+  loaded.forEach((face, i) => {
+    if (!face) return
     document.fonts.add(face)
     active.push(face)
-  }
+    const f = (fonts ?? [])[i]
+    if (f?.lineMetrics)
+      boxes.push({ styled: f.bold || f.italic, family: f.family, ...f.lineMetrics })
+  })
+  // the regular cut's box stands for the family
+  setEmbeddedLineMetrics(boxes.sort((a, b) => Number(a.styled) - Number(b.styled)))
   if (revoked.length === 0 && active.length === 0) return true
   noteEmbeddedFontsChanged([...revoked, ...active].map((f) => f.family))
   // buffer-backed faces parse synchronously: the set never enters 'loading', so

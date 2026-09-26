@@ -1,5 +1,11 @@
 export * from './types'
-export { deobfuscateOdttf, isSfnt, parseFontTable, readEmbeddedFonts } from './font-table'
+export {
+  deobfuscateOdttf,
+  isSfnt,
+  parseFontTable,
+  readEmbeddedFonts,
+  sfntLineMetrics,
+} from './font-table'
 export { decodeEntities } from './parse-xml-text'
 export { sdtCheckboxGlyphs, sdtCheckboxIsChecked } from './checkbox-control'
 export {
@@ -89,7 +95,14 @@ export {
   BLANK_BULLET_NUM_ID,
   BLANK_ORDERED_NUM_ID,
   buildBlankDocx,
+  customLevelFromNumberingLevel,
+  customLevelXml,
+  mergeLevelXml,
+  numberingLevelFromCustom,
+  paperSizeForLocale,
+  paperSizeForRegion,
   type BlankDocxOptions,
+  type BlankPaperSize,
   type CustomNumberingLevel,
 } from './blank'
 export {
@@ -155,6 +168,7 @@ export {
   bulletMarkerScale,
   computeListMarkerInfos,
   computeListMarkers,
+  computeListValues,
   customEnumItems,
   formatNumber,
   markerTabAdvance,

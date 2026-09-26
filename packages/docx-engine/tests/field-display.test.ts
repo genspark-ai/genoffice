@@ -974,3 +974,128 @@ describe('dirty inline fields', () => {
     ])
   })
 })
+
+// Word's TOC without TOC styles: plain paragraphs holding a bookmark hyperlink,
+// a right tab stop with a dot leader and a nested PAGEREF field; the first
+// entry opens the TOC field, the last one closes it
+const UNSTYLED_TOC_PPR = (extra: string) =>
+  '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9746"/></w:tabs>' +
+  `<w:spacing w:after="0" w:line="240" w:lineRule="auto"/>${extra}</w:pPr>`
+const PAGEREF_ENTRY = (n: number, page: string) =>
+  `<w:hyperlink w:anchor="_Toc${n}" w:history="1">` +
+  `<w:r><w:rPr><w:b/></w:rPr><w:t>Chapter ${n}</w:t></w:r><w:r><w:tab/></w:r>` +
+  '<w:r><w:rPr><w:noProof/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r>' +
+  `<w:r><w:instrText xml:space="preserve"> PAGEREF _Toc${n} \\h </w:instrText></w:r>` +
+  '<w:r><w:fldChar w:fldCharType="separate"/></w:r>' +
+  `<w:r><w:rPr><w:noProof/></w:rPr><w:t>${page}</w:t></w:r>` +
+  '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:hyperlink>'
+const UNSTYLED_TOC =
+  `<w:p>${UNSTYLED_TOC_PPR('')}<w:r><w:fldChar w:fldCharType="begin"/></w:r>` +
+  '<w:r><w:instrText xml:space="preserve"> TOC \\o "1-2" \\h \\z \\u </w:instrText></w:r>' +
+  `<w:r><w:fldChar w:fldCharType="separate"/></w:r>${PAGEREF_ENTRY(1, '3')}</w:p>` +
+  `<w:p>${UNSTYLED_TOC_PPR('<w:ind w:left="240"/>')}${PAGEREF_ENTRY(2, '5')}</w:p>` +
+  `<w:p>${UNSTYLED_TOC_PPR('<w:ind w:left="240"/>')}${PAGEREF_ENTRY(3, '9')}` +
+  '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+
+describe('TOC entries without TOC styles (PAGEREF behind a right tab)', () => {
+  it('a PAGEREF-only entry is an editable paragraph: bookmark link, tab, inline field', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: UNSTYLED_TOC }))
+    const entry = doc.blocks[1]
+    expect(entry.type).toBe('paragraph')
+    expect(entry.format?.tabStops).toEqual([{ pos: 9746, val: 'right', leader: 'dot' }])
+    expect(entry.format?.spaceAfter).toBe(0)
+    expect(entry.runs?.map((r) => r.text).join('')).toBe('Chapter 2\t5')
+    const page = entry.runs?.find((r) => r.instrField)
+    expect(page).toMatchObject({
+      text: '5',
+      instrField: 'PAGEREF _Toc2 \\h',
+      link: { href: '#_Toc2', plain: true },
+    })
+    expect(entry.runs?.[0]).toMatchObject({ text: 'Chapter 2', bold: true, link: { plain: true } })
+  })
+
+  it('the entries opening and closing the TOC field stay protected toc lines with their own geometry', async () => {
+    const doc = await parseDocx(await buildDocx({ bodyXml: UNSTYLED_TOC }))
+    const [head, , tail] = doc.blocks
+    expect(head.type).toBe('passthrough')
+    expect(head.fieldDisplay).toMatchObject({
+      kind: 'tocLine',
+      left: 'Chapter 1',
+      right: '3',
+      level: 1,
+      leader: 'dot',
+      anchor: '_Toc1',
+      spaceAfterTwips: 0,
+    })
+    expect(head.fieldDisplay?.indentLeftTwips).toBeUndefined()
+    expect(tail.type).toBe('passthrough')
+    expect(tail.fieldDisplay).toMatchObject({
+      kind: 'tocLine',
+      left: 'Chapter 3',
+      right: '9',
+      indentLeftTwips: 240,
+      spaceAfterTwips: 0,
+    })
+  })
+
+  it('an edited entry regenerates the PAGEREF field inside its unstyled bookmark link', async () => {
+    const source = await buildDocx({ bodyXml: UNSTYLED_TOC })
+    const doc = await parseDocx(source)
+    const entry = doc.blocks[1]
+    const runs = entry.runs!.map((r) =>
+      r.text === 'Chapter 2' ? { ...r, text: 'Chapter Two' } : r,
+    )
+    const saved = await saveDocx(doc, [
+      { kind: 'original', docxIndex: 0 },
+      { kind: 'generated', block: { type: 'paragraph', runs, format: entry.format } },
+      { kind: 'original', docxIndex: 2 },
+    ] as never)
+    const xml = await documentXmlOf(saved)
+    expect(xml).toMatch(
+      /<w:hyperlink w:anchor="_Toc2">[\s\S]*Chapter Two[\s\S]*<w:tab\/>[\s\S]*<w:fldChar w:fldCharType="begin"\/>[\s\S]*<w:instrText xml:space="preserve"> PAGEREF _Toc2 \\h <\/w:instrText>[\s\S]*>5<\/w:t>[\s\S]*<w:fldChar w:fldCharType="end"\/><\/w:r><\/w:hyperlink>/,
+    )
+    expect(xml).not.toContain('w:rStyle w:val="Hyperlink"')
+    // the TOC field itself is untouched: one begin, and its end still in the last entry
+    expect(xml.match(/ TOC \\o/g)?.length).toBe(1)
+    expect(xml.match(/fldCharType="begin"/g)?.length).toBe(4)
+    expect(xml.match(/fldCharType="end"/g)?.length).toBe(4)
+    const reparsed = await parseDocx(saved)
+    expect(reparsed.blocks[1].runs?.find((r) => r.instrField)?.text).toBe('5')
+    expect(reparsed.blocks[2].type).toBe('passthrough')
+  })
+
+  it('a fldSimple PAGEREF keeps the enclosing bookmark link and saves inside it', async () => {
+    const simple =
+      '<w:p><w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9746"/></w:tabs></w:pPr>' +
+      '<w:hyperlink w:anchor="_Toc7"><w:r><w:t>Chapter 7</w:t></w:r><w:r><w:tab/></w:r>' +
+      '<w:fldSimple w:instr=" PAGEREF _Toc7 \\h "><w:r><w:t>12</w:t></w:r></w:fldSimple></w:hyperlink></w:p>'
+    const source = await buildDocx({ bodyXml: simple })
+    const doc = await parseDocx(source)
+    const entry = doc.blocks[0]
+    expect(entry.type).toBe('paragraph')
+    expect(entry.runs?.find((r) => r.instrField)).toMatchObject({
+      text: '12',
+      instrField: 'PAGEREF _Toc7 \\h',
+      link: { href: '#_Toc7', plain: true },
+    })
+    const saved = await saveDocx(doc, [
+      { kind: 'generated', block: { type: 'paragraph', runs: entry.runs, format: entry.format } },
+    ] as never)
+    const xml = await documentXmlOf(saved)
+    expect(xml).toMatch(
+      /<w:hyperlink w:anchor="_Toc7">[\s\S]*Chapter 7[\s\S]*PAGEREF _Toc7 \\h [\s\S]*>12<\/w:t>[\s\S]*<w:fldChar w:fldCharType="end"\/><\/w:r><\/w:hyperlink>/,
+    )
+    expect(xml).not.toContain('w:rStyle w:val="Hyperlink"')
+  })
+
+  it('a paragraph with a stray field end stays protected even when its own fields fold', async () => {
+    const stray =
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>' +
+      '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>4</w:t></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r>' +
+      '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+    const doc = await parseDocx(await buildDocx({ bodyXml: stray }))
+    expect(doc.blocks[0].type).toBe('passthrough')
+  })
+})

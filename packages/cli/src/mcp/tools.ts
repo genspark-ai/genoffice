@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import type { CommandRegistry, OptionDef } from '../registry'
 import type { McpMode } from './run'
+import { READ_UNITS } from '../length-units'
+import type { JsonSchema } from '../op-catalog'
+import type { TypedKey, TypedSchemas } from './op-schemas'
 
 /**
  * How a tool parameter reaches the command: `inline` values are written to a
@@ -16,6 +19,10 @@ export interface ParamSpec {
   /** the command option it becomes (`--<option>`); absent when key and option match */
   option?: string
   kind?: ParamKind
+  /** closed set of string values; the schema becomes an enum */
+  choices?: readonly string[]
+  /** inline-json parameters: the typed schema advertised to clients (op-schemas.ts); runtime stays permissive */
+  typed?: TypedKey
   description?: string
   required?: boolean
 }
@@ -43,11 +50,15 @@ export interface ToolSpec {
   readOnly?: boolean
   /** the call reaches the configured cloud provider (search, image, media) */
   openWorld?: boolean
+  /** needs the GenOffice window in front of the client, so not registered in http mode */
+  localOnly?: boolean
 }
 
 export interface ResolvedParam extends Required<Pick<ParamSpec, 'key' | 'option' | 'kind'>> {
   description: string
   required: boolean
+  choices?: readonly string[]
+  typed?: TypedKey
 }
 
 export interface ResolvedTool extends ToolSpec {
@@ -127,6 +138,7 @@ export const TOOLS: ToolSpec[] = [
         key: 'data',
         option: 'from',
         kind: OPS_JSON,
+        typed: 'xlsx-data',
         description: 'rows as a 2-D array, or { "sheets": [{ "name", "rows" }] }',
       },
       { key: 'from', description: 'path of a .csv or .json file to build from' },
@@ -152,13 +164,19 @@ export const TOOLS: ToolSpec[] = [
     name: 'create_pptx',
     command: 'create',
     description:
-      'Create a .pptx from ops on a blank one-slide deck, or from a deck spec (pages of px-positioned text, shapes and images on a 1280x720 canvas; guide slides spec). For a presentation a person will see, do not hand-place ops or a whole spec here: use deck_start, deck_page and deck_build, which check every page against an outline and a style sheet. Give exactly one of ops or spec.',
+      'Create a .pptx in one call from ops on a blank one-slide deck, or from a deck spec (pages of px-positioned text, shapes and images on a 1280x720 canvas; guide slides spec). This is the path for a short deck (up to about 5 slides) and whenever the user gives concrete content and no design brief: write the ops or the spec directly, then slides_render to look. The staged deck_start / deck_page / deck_build flow is for longer or design-sensitive presentations a person will present. Give exactly one of ops or spec.',
     fixed: ['--type', 'pptx'],
     options: [
-      { key: 'ops', kind: OPS_JSON, description: 'JSON array of slides ops (guide slides)' },
+      {
+        key: 'ops',
+        kind: OPS_JSON,
+        typed: 'slides-op-names',
+        description: 'JSON array of slides ops, the same objects slides_apply takes (guide slides)',
+      },
       {
         key: 'spec',
         kind: OPS_JSON,
+        typed: 'object',
         description: 'a deck spec object { "pages": [...] } (guide slides spec)',
       },
       {
@@ -208,7 +226,9 @@ export const TOOLS: ToolSpec[] = [
       {
         key: 'ops',
         kind: OPS_JSON,
-        description: 'JSON array of ops, every entry with "op"',
+        typed: 'docs-ops',
+        description:
+          'JSON array of ops, every entry with "op"; target is { "blockIndexes": [n] } or { "nodeType": "docHeading"|"docParagraph"|"docListItem"|"image"|"table", "headingLevel"? }',
         required: true,
       },
       'track',
@@ -228,6 +248,36 @@ export const TOOLS: ToolSpec[] = [
     description:
       'Consistency checks on a .docx: fields not evaluated, broken references, stale TOC, missing images, empty charts, empty headings; one finding per issue.',
     positionals: [{ key: 'file', description: 'path of the .docx' }],
+  },
+  {
+    name: 'merge',
+    command: 'merge',
+    description:
+      'Fill {{key}} placeholders in a .docx, .pptx or .xlsx template with values from a JSON object and write the result to out (nested objects flatten to dotted keys; whitespace inside the braces is tolerated; a whole-cell placeholder in xlsx takes the value type). The result lists used_keys, unused_keys and unresolved_placeholders with their location (block / slide + element / sheet + cell) and reason (no_key; split_placeholder when the template stores the braces across differently formatted runs; unreachable_nested inside a nested pptx group); strict makes an unresolved placeholder an error. ' +
+      GUI_OPEN,
+    positionals: [{ key: 'file', description: 'path of the template (.docx, .pptx or .xlsx)' }],
+    options: [
+      {
+        key: 'data',
+        kind: OPS_JSON,
+        typed: 'object',
+        description: 'the values as a JSON object, e.g. { "name": "Ada", "amount": 12 }',
+        required: true,
+      },
+      { key: 'out', description: 'output path (required)', required: true },
+      'force',
+      'strict',
+    ],
+  },
+  {
+    name: 'pdf_read',
+    command: 'pdf',
+    verb: 'read',
+    readOnly: true,
+    description:
+      'Text layer of a PDF page by page (1-based page, width_pt/height_pt, text clipped to 4000 characters with truncated: true) plus page count, encrypted flag and title/author/producer metadata; extracted locally with pdfium, no app process. Reads pages 1-20 by default and says how to get the rest: page or range narrows, full reads every page uncapped. Scanned pages come back with empty text (convert to docx runs OCR).',
+    positionals: [{ key: 'file', description: 'path of the .pdf' }],
+    options: ['page', 'range', 'password', 'full', 'max-chars'],
   },
   {
     name: 'sheet_read',
@@ -254,9 +304,16 @@ export const TOOLS: ToolSpec[] = [
       {
         key: 'cells',
         kind: OPS_JSON,
-        description: 'JSON array of { "cell": "B2", "sheet"?, "value"? | "formula"?, "style"? }',
+        typed: 'cells',
+        description:
+          'JSON array of { "cell": "B2", "sheet"?, "value"? | "formula"?, "style"? }; style takes the format fields of the format_range op',
       },
-      { key: 'ops', kind: OPS_JSON, description: 'JSON array of workbook DSL ops' },
+      {
+        key: 'ops',
+        kind: OPS_JSON,
+        typed: 'sheets-ops',
+        description: 'JSON array of workbook DSL ops',
+      },
       'dry-run',
       'best-effort',
       'stop-on-error',
@@ -281,7 +338,7 @@ export const TOOLS: ToolSpec[] = [
     description:
       'Structure of a .pptx: slides s_<n> with their elements e_* (kind, text preview, EMU geometry), tables and with full the whole text and speaker notes. The ids are what slides_apply ops target; ids of edited or created elements change, so read again before a second batch. layouts lists the master layouts for addSlideWithLayout.',
     positionals: [{ key: 'file', description: 'path of the .pptx' }],
-    options: ['slide', 'full', 'layouts', 'max-chars'],
+    options: ['slide', 'full', 'layouts', 'max-chars', { key: 'units', choices: READ_UNITS }],
   },
   {
     name: 'slides_apply',
@@ -294,8 +351,16 @@ export const TOOLS: ToolSpec[] = [
       GUI_OPEN,
     positionals: [{ key: 'file', description: 'path of the .pptx' }],
     options: [
-      { key: 'ops', kind: OPS_JSON, description: 'JSON array of ops', required: true },
+      {
+        key: 'ops',
+        kind: OPS_JSON,
+        typed: 'slides-ops',
+        description: 'JSON array of ops; target is { "slide": <index|"s_n">, "el"?: "e_*" }',
+        required: true,
+      },
       'dry-run',
+      'best-effort',
+      'stop-on-error',
       'isolation',
       'out',
       'force',
@@ -307,7 +372,7 @@ export const TOOLS: ToolSpec[] = [
     verb: 'audit',
     readOnly: true,
     description:
-      'Layout audit of a .pptx: text overflow, out-of-bounds and overlapping elements per slide, with the element ids and a suggested setTransform op for slides_apply. Heuristic glyph widths; confirm with slides_render.',
+      'Layout audit of a .pptx: text overflow, out-of-bounds or fully off-slide elements, overlaps and stretched pictures (box aspect off the cropped source aspect by more than 5%) per slide, with the element ids and a suggested setTransform op for slides_apply. Heuristic glyph widths; confirm with slides_render.',
     positionals: [{ key: 'file', description: 'path of the .pptx' }],
     options: ['slide'],
   },
@@ -426,10 +491,20 @@ export const TOOLS: ToolSpec[] = [
   {
     name: 'open',
     command: 'open',
+    localOnly: true,
     description:
       'Open a document in the GenOffice app for the user (starts the app if needed), optionally selecting a slide, element, block, range or page. Only when the user asks to see the file: an open tab makes later *_apply calls refuse to write.',
     positionals: [{ key: 'file', description: 'path of the document' }],
     options: ['slide', 'el', 'block', 'range', 'sheet', 'page'],
+  },
+  {
+    name: 'selection',
+    command: 'selection',
+    localOnly: true,
+    readOnly: true,
+    description:
+      "What the user currently has selected in the GenOffice editor showing this file: slide + element ids, a block range with its text, a sheet range, or a pdf page. The user's own pointer for 'this one' / 'here'; needs the file open in the app.",
+    positionals: [{ key: 'file', description: 'path of the document open in GenOffice' }],
   },
 ]
 
@@ -452,6 +527,8 @@ export function resolveTool(tool: ToolSpec, registry: CommandRegistry): Resolved
       kind: spec.kind ?? defaultKind(opt),
       description: spec.description ?? stripVerbPrefix(opt.description),
       required: spec.required ?? false,
+      ...(spec.choices ? { choices: spec.choices } : {}),
+      ...(spec.typed ? { typed: spec.typed } : {}),
     }
   })
   return { ...tool, params }
@@ -478,7 +555,16 @@ export const PATH_KEYS = new Set(['file', 'from', 'outline'])
 const REMOTE_PATH_NOTE = '; or an http(s) URL, such as the one POST /files returned for an upload'
 const REMOTE_OUT_NOTE = '; omit it and the file comes back in the result as a download URL'
 
-export function toolShape(tool: ResolvedTool, mode: McpMode = 'stdio'): ZodShape {
+/**
+ * `typed` carries the op schemas to advertise; without it (compact mode) inline JSON stays
+ * `array | object`. The typed schema is metadata on a permissive zod type, so the SDK
+ * accepts any array and the CLI's own op validation produces the structured error.
+ */
+export function toolShape(
+  tool: ResolvedTool,
+  mode: McpMode = 'stdio',
+  typed?: TypedSchemas,
+): ZodShape {
   const remote = mode === 'http'
   const shape: ZodShape = {}
   for (const p of tool.positionals ?? []) {
@@ -495,7 +581,13 @@ export function toolShape(tool: ResolvedTool, mode: McpMode = 'stdio'): ZodShape
     } else if (remote && p.kind === 'string' && PATH_KEYS.has(p.option)) {
       description += REMOTE_PATH_NOTE
     }
-    const s = kindSchema(p.kind).describe(description)
+    const typedSchema = typed && p.typed ? typed[p.typed] : undefined
+    const base = p.choices
+      ? z.enum(p.choices)
+      : typedSchema
+        ? inlineJsonSchema(typedSchema)
+        : kindSchema(p.kind)
+    const s = base.describe(description)
     shape[p.key] = required ? s : s.optional()
   }
   return shape
@@ -514,6 +606,13 @@ function kindSchema(kind: ParamKind): z.ZodTypeAny {
     default:
       return z.string()
   }
+}
+
+/** The zod type matches the JSON schema's outer shape; `.meta()` merges the typed body into the advertised schema. */
+function inlineJsonSchema(schema: JsonSchema): z.ZodTypeAny {
+  if (schema.type === 'array') return z.array(z.unknown()).meta(schema)
+  if (schema.type === 'object') return z.record(z.string(), z.unknown()).meta(schema)
+  return z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]).meta(schema)
 }
 
 export interface InlineFile {

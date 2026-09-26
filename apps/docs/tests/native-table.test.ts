@@ -21,6 +21,9 @@ import {
   type PmNode,
 } from '../src/renderer/editor/convert'
 import { editorExtensions, rowHeightCss, tableRowEatCss } from '../src/renderer/editor/extensions'
+
+/** Word default cell margins are 0 top/bottom; declared row heights carry them (2026-09-23 probe) */
+const PAD = 'var(--doc-cell-pad-t,0px) + var(--doc-cell-pad-b,0px)'
 import { renderTableSpec } from '../src/renderer/editor/protected-render'
 import { collectRevisions, type TrackChangesStorage } from '../src/renderer/editor/revisions'
 import {
@@ -202,6 +205,7 @@ describe('native editable tables', () => {
           csFont: null,
           charSpacingTwips: null,
           charScaleEm: null,
+          charScalePct: null,
           charScaleX: null,
           highlight: null,
           shading: null,
@@ -217,8 +221,10 @@ describe('native editable tables', () => {
           boldOff: null,
           italicOff: null,
           kern: null,
+          kernHalfPoints: null,
           caps: null,
           vanish: null,
+          vanishOwn: null,
           eaLang: null,
           cs: null,
           rtl: null,
@@ -727,7 +733,7 @@ describe('native editable tables', () => {
     // sz=4 eighths = 0.5pt gridline = 0.67px at 96dpi
     expect(table.style.getPropertyValue('--doc-row-eat')).toBe('0.67px')
     const tr = table.querySelector('tr') as HTMLElement
-    expect(tr.getAttribute('style')).toContain('calc(54.3px + var(--doc-row-eat,0px))')
+    expect(tr.getAttribute('style')).toContain(`calc(54.3px + ${PAD} + var(--doc-row-eat,0px))`)
     editor.destroy()
 
     const borderless =
@@ -770,10 +776,10 @@ describe('native editable tables', () => {
     expect(table.style.getPropertyValue('--doc-row-eat')).toBe('')
     const rows = Array.from(table.querySelectorAll('tr')).map((tr) => tr.getAttribute('style'))
     // explicit nil borders: no gridline, no advance; sz=4 = 0.5pt = 0.67px per lined row
-    expect(rows[0]).toMatch(/^height:\s*15(\.0)?px;?$/)
-    expect(rows[1]).toContain('calc(15.0px + 0.67px * var(--doc-row-grid,1))')
-    expect(rows[2]).toContain('calc(30.0px + 0.67px * var(--doc-row-grid,1))')
-    expect(rows[3]).toContain('calc(15.0px + var(--doc-row-eat,0px))')
+    expect(rows[0]).toContain(`calc(15.0px + ${PAD})`)
+    expect(rows[1]).toContain(`calc(15.0px + ${PAD} + 0.67px * var(--doc-row-grid,1))`)
+    expect(rows[2]).toContain(`calc(30.0px + ${PAD} + 0.67px * var(--doc-row-grid,1))`)
+    expect(rows[3]).toContain(`calc(15.0px + ${PAD} + var(--doc-row-eat,0px))`)
     editor.destroy()
 
     const spec = renderTableSpec({
@@ -794,8 +800,8 @@ describe('native editable tables', () => {
     const dom = document.createElement('div')
     dom.appendChild(DOMSerializer.renderSpec(document, spec as never).dom)
     const trs = Array.from(dom.querySelectorAll('tr')).map((tr) => tr.getAttribute('style'))
-    expect(trs[0]).toContain('calc(15.0px + 0.67px * var(--doc-row-grid,1))')
-    expect(trs[1]).toMatch(/^height:\s*15(\.0)?px;?$/)
+    expect(trs[0]).toContain(`calc(15.0px + ${PAD} + 0.67px * var(--doc-row-grid,1))`)
+    expect(trs[1]).toContain(`calc(15.0px + ${PAD})`)
   })
 
   it('row gridline: mixed cells take the larger of cell line and table gridline, spaced tables none, gap cells ignored', () => {
@@ -803,19 +809,36 @@ describe('native editable tables', () => {
     const thick = { style: 'single', szEighths: 12 }
     // one cell explicit thin, one inheriting the table insideH: whichever is wider wins at render time
     expect(rowHeightCss(225, [{ top: thin, bottom: thin }, null])).toBe(
-      'height:calc(15.0px + max(0.67px, var(--doc-row-eat,0px)) * var(--doc-row-grid,1))',
+      `height:calc(15.0px + ${PAD} + max(0.67px, var(--doc-row-eat,0px)) * var(--doc-row-grid,1))`,
     )
     expect(rowHeightCss(225, [{ top: thick, bottom: thick }])).toBe(
-      'height:calc(15.0px + 2.00px * var(--doc-row-grid,1))',
+      `height:calc(15.0px + ${PAD} + 2.00px * var(--doc-row-grid,1))`,
     )
     expect(tableRowEatCss({ insideH: thin } as never, true)).toEqual(['--doc-row-grid:0'])
     expect(tableRowEatCss({ insideH: thin } as never, false)).toEqual(['--doc-row-eat:0.67px'])
     // an all-nil row keeps its bare height even though a gap placeholder (borders null) sits in it
     const nil = { style: 'nil' }
-    expect(rowHeightCss(225, [{ top: nil, bottom: nil }])).toBe('height:15.0px')
+    expect(rowHeightCss(225, [{ top: nil, bottom: nil }])).toBe(`height:calc(15.0px + ${PAD})`)
     // nested tables must not inherit a spaced parent's grid switch or its gridline
     const css = readFileSync(resolve(__dirname, '../src/renderer/styles.css'), 'utf8')
     expect(css).toMatch(/\.doc-table \{[^}]*--doc-row-eat: 0px;[^}]*--doc-row-grid: 1;/s)
+  })
+
+  it('adds the cell margins on top of an atLeast trHeight, but not for hRule=exact (Word probe 2026-09-23)', () => {
+    // trHeight 440 twips = 22pt floors the content; tcMar 100 twips (5pt) per side
+    // makes the row 33.12pt in Word, exact rows keep the bare 22pt
+    const mar = { top: 100, bottom: 100 }
+    const noLine = { top: { style: 'nil' }, bottom: { style: 'nil' } }
+    expect(rowHeightCss(440, [noLine], [mar])).toBe('height:calc(29.3px + 13.33px)')
+    expect(rowHeightCss(440, [noLine], [mar], 'exact')).toBe('height:29.3px')
+    // a cell with no w:tcMar falls back to the table default
+    expect(rowHeightCss(440, [noLine, noLine], [mar, null])).toBe(
+      `height:calc(29.3px + max(13.33px, ${PAD}))`,
+    )
+    // one declared side only: the other falls back
+    expect(rowHeightCss(440, [noLine], [{ top: 100 }])).toBe(
+      'height:calc(29.3px + 6.67px + var(--doc-cell-pad-b,0px))',
+    )
   })
 
   it('insets cell text by max(margin, border/2) and spans the outer half-borders (Word probe 2026-09-03)', async () => {
@@ -838,16 +861,17 @@ describe('native editable tables', () => {
       content: blocksToPmDoc(parsed.blocks) as never,
     })
     const table = editor.view.dom.querySelector('table.doc-table') as HTMLElement
-    // 2 x 113px grid + half of the 1px outer borders on each side
-    expect(table.getAttribute('style')).toContain('width: min(227px,')
+    // 3400-twip grid = 227px (rounded from the total) + half of the collapsed outer lines:
+    // the first cell's 2pt (3px) tcBorder wins the left edge, the table's 1px the right
+    expect(table.getAttribute('style')).toContain('width: min(229px,')
     expect(table.style.getPropertyValue('--doc-bw-v')).toBe('1px')
     expect(table.style.getPropertyValue('--doc-bw-l')).toBe('1px')
     expect(table.style.getPropertyValue('--doc-cell-pad-l')).toBe('7.2px')
-    expect(table.style.getPropertyValue('--doc-cell-pad-t')).toBe('0.0px')
+    expect(table.style.getPropertyValue('--doc-cell-pad-t')).toBe('0px')
     const [a, b] = [...table.querySelectorAll('td')] as HTMLElement[]
     // the cell's own 2pt left border and tcMar feed the inset rule as variables, not as padding
     expect(a.style.getPropertyValue('--cell-bw-l')).toBe('3px')
-    expect(a.style.getPropertyValue('--doc-cell-pad-l')).toBe('13.3px')
+    expect(a.style.getPropertyValue('--doc-cell-pad-l')).toBe('13.333px')
     expect(a.style.paddingLeft).toBe('')
     expect(b.style.getPropertyValue('--cell-bw-l')).toBe('')
     editor.destroy()
@@ -899,7 +923,7 @@ describe('native editable tables', () => {
       content: blocksToPmDoc(parsed.blocks) as never,
     })
     const table = editor.view.dom.querySelector('table.doc-table') as HTMLElement
-    expect(table.getAttribute('style')).toContain('width: min(226px,')
+    expect(table.getAttribute('style')).toContain('width: min(227px,')
     expect(table.style.getPropertyValue('--doc-bw-share')).toBe('0')
     expect(table.style.getPropertyValue('--doc-bd-share')).toBe('1')
     editor.destroy()

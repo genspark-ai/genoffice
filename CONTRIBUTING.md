@@ -162,7 +162,8 @@ testing and local overrides:
 | `*_DEV_PORT`, `*_RENDERER_URL`                                                  | Per-app Vite dev server ports and renderer URLs (set by `npm run dev`)        |
 
 AI features degrade rather than break without credentials: requests surface an
-inline sign-in prompt, and web search falls back to a keyless backend.
+inline sign-in prompt, and web search falls back to keyless backends (Parallel's
+free Search MCP, then DuckDuckGo).
 
 ## Coding conventions
 

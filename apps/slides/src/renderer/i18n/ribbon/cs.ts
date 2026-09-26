@@ -14,7 +14,7 @@ export const cs = {
   ribbonTabSlideShow: 'Prezentace',
   ribbonTabReview: 'Revize',
   ribbonCollapse: 'Sbalit pás karet',
-  ribbonPin: 'Připnout pás karet',
+  ribbonExpand: 'Rozbalit pás karet',
   ribbonTabView: 'Zobrazení',
   ribbonTabTableDesign: 'Návrh tabulky',
   ribbonTabChartDesign: 'Návrh grafu',

@@ -161,8 +161,8 @@ describe('shared CropDialog keyboard and focus', () => {
 
   it('localizes the edge names', () => {
     mountCrop('zh')
-    expect(edge(host, 'w').getAttribute('aria-label')).toBe('左边缘')
-    expect(edge(host, 'se').getAttribute('aria-label')).toBe('右下边缘')
+    expect(edge(host, 'w').getAttribute('aria-label')).toBe('\u5de6\u8fb9\u7f18')
+    expect(edge(host, 'se').getAttribute('aria-label')).toBe('\u53f3\u4e0b\u8fb9\u7f18')
     expect(CROP_EDGE_LABELS.en.nw).toBe('Top left edge')
   })
 
@@ -222,17 +222,54 @@ describe('shared CropDialog keyboard and focus', () => {
     expect(dialog.getAttribute('aria-modal')).toBe('true')
   })
 
-  it('traps Tab inside the dialog', () => {
+  it('focuses Apply on open so Enter applies instead of cancelling', () => {
+    mountCrop()
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage() {},
+    } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,QUJD')
+    const active = document.activeElement as HTMLElement
+    expect(active.textContent).toBe('Apply')
+    key(active, 'Enter')
+    // jsdom does not run a button's Enter activation; emulate the browser default
+    if (active instanceof HTMLButtonElement) act(() => active.click())
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(onApply.mock.calls[0]![0]).toBe('QUJD')
+  })
+
+  it('wraps Tab from the last control to the first', () => {
     mountCrop()
     const dialog = host.querySelector('[role="dialog"]') as HTMLElement
-    const focusables = dialog.querySelectorAll<HTMLElement>('button, [tabindex="0"]')
+    const focusables = [...dialog.querySelectorAll<HTMLElement>('button, [tabindex="0"]')]
     const last = focusables[focusables.length - 1]!
     last.focus()
     const e = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
     act(() => {
       dialog.dispatchEvent(e)
     })
-    expect(dialog.contains(document.activeElement)).toBe(true)
+    expect(e.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(focusables[0])
+    expect(focusables[0]!.getAttribute('data-crop-edge')).toBe('nw')
+  })
+
+  it('wraps Shift+Tab from the first control to the last', () => {
+    mountCrop()
+    const dialog = host.querySelector('[role="dialog"]') as HTMLElement
+    const focusables = [...dialog.querySelectorAll<HTMLElement>('button, [tabindex="0"]')]
+    focusables[0]!.focus()
+    const e = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    act(() => {
+      dialog.dispatchEvent(e)
+    })
+    expect(e.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(focusables[focusables.length - 1])
+    expect(document.activeElement!.textContent).toBe('Apply')
   })
 
   it('restores focus to the invoking control on close', () => {

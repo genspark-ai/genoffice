@@ -14,7 +14,7 @@ export const he = {
   ribbonTabSlideShow: 'הצגת שקופיות',
   ribbonTabReview: 'סקירה',
   ribbonCollapse: 'כווץ את רצועת הכלים',
-  ribbonPin: 'הצמד את רצועת הכלים',
+  ribbonExpand: 'הרחב את רצועת הכלים',
   ribbonTabView: 'תצוגה',
   ribbonTabTableDesign: 'עיצוב טבלה',
   ribbonTabChartDesign: 'עיצוב תרשים',

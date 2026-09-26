@@ -13,9 +13,9 @@ import { appLaunch } from '../resources'
 /**
  * What the cloud commands can do on this machine, decided from GenOffice's
  * own settings without a network call: a Genspark login with cloud tools on,
- * a BYOK key, or explicitly selected free Parallel search. Unkeyed fallbacks (DuckDuckGo)
- * do not count as configured. Agents check this once before planning work
- * that needs photos or web facts.
+ * a BYOK key, or explicitly selected free Parallel search. Unkeyed fallbacks in the
+ * default chain (free Parallel MCP, DuckDuckGo) do not count as configured. Agents
+ * check this once before planning work that needs photos or web facts.
  */
 export const capabilitiesCommand: CommandDef = {
   name: 'capabilities',

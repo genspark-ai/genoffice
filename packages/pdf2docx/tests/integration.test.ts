@@ -5,6 +5,7 @@
 import { parseDocx } from '@genoffice/docx-engine'
 import { describe, expect, it } from 'vitest'
 import { convertPdfToDocx } from '../src'
+import { extractPage, withPdfDocument } from '../src/extract'
 import {
   buildCjkPdf,
   buildImagePdf,
@@ -17,6 +18,7 @@ import {
   cjkFontBytes,
   buildCheckboxFormPdf,
   buildTextFormPdf,
+  buildTextFormVariantsPdf,
   buildWideScannedPdf,
 } from './helpers/fixtures'
 import { loadPdfium } from './helpers/wasm'
@@ -134,6 +136,57 @@ describe('integration: AcroForm text widgets', () => {
     const refLine = texts.find((t) => t.includes('Reference'))
     expect(refLine).toBeDefined()
     expect(refLine!.trim()).toBe('Reference')
+  })
+
+  it('inherits /V, /DA and /Ff from a parent field, skips password fields', async () => {
+    const m = await loadPdfium()
+    const pdf = await buildTextFormVariantsPdf()
+    const page = withPdfDocument(m, pdf, (doc) => extractPage(m, doc, 0))
+    const synth = page.chars.filter((c) => c.isGenerated)
+    const inBox = (y0: number, y1: number) =>
+      synth.filter((c) => c.originY >= y0 && c.originY <= y1)
+    // parent-field /V reaches the bare kid widget, /DA 10 Tf sets its size
+    const kid = inBox(692, 712)
+    expect(kid.map((c) => c.text).join('')).toBe('Kid Value')
+    expect(kid[0]!.fontSize).toBeCloseTo(10, 5)
+    // the password value never surfaces
+    expect(inBox(520, 540)).toHaveLength(0)
+    expect(synth.map((c) => c.text).join('')).not.toContain('hunter2')
+    const all = await paraTexts((await convertPdfToDocx(pdf, { pdfium: m })).docx)
+    expect(all.join('\n')).toContain('Kid Value')
+    expect(all.join('\n')).not.toContain('hunter2')
+  })
+
+  it('lays multi-line values out top-down (y-up page space)', async () => {
+    const m = await loadPdfium()
+    const page = withPdfDocument(m, await buildTextFormVariantsPdf(), (doc) =>
+      extractPage(m, doc, 0),
+    )
+    const rows = new Map<number, string>()
+    for (const c of page.chars) {
+      if (!c.isGenerated || c.originY < 600 || c.originY > 660) continue
+      rows.set(c.originY, (rows.get(c.originY) ?? '') + c.text)
+    }
+    const baselines = [...rows.keys()].sort((a, b) => b - a) // top first
+    expect(baselines.map((y) => rows.get(y))).toEqual(['Line one', 'Line two', 'Line three'])
+    // every row sits inside the field box, first row hangs from the top
+    expect(baselines[0]!).toBeLessThan(660)
+    expect(baselines[0]!).toBeGreaterThan(640)
+    expect(baselines[baselines.length - 1]!).toBeGreaterThan(600)
+  })
+
+  it('keeps natural glyph advances instead of stretching to the field width', async () => {
+    const m = await loadPdfium()
+    const page = withPdfDocument(m, await buildTextFormVariantsPdf(), (doc) =>
+      extractPage(m, doc, 0),
+    )
+    const x = page.chars.filter((c) => c.isGenerated && c.originY >= 560 && c.originY <= 580)
+    expect(x.map((c) => c.text).join('')).toBe('X')
+    const w = x[0]!.box.x1 - x[0]!.box.x0
+    // ~0.6 em for a capital, nowhere near the 340 pt field
+    expect(w).toBeLessThan(x[0]!.fontSize)
+    expect(w).toBeGreaterThan(x[0]!.fontSize * 0.4)
+    expect(x[0]!.box.x0).toBeCloseTo(162, 0)
   })
 })
 

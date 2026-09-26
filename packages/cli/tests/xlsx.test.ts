@@ -83,6 +83,27 @@ describe('genoffice create --type xlsx / sheet', () => {
     expect(await part(csvOut, 'xl/worksheets/sheet1.xml')).toContain('<v>10.5</v>')
   })
 
+  it('derives a valid sheet name from a file stem Excel would reject', async () => {
+    const dir = tempDir()
+    const csv = join(dir, "'data[final]:v2'.csv")
+    writeFileSync(csv, 'a,b\n1,2\n')
+    const out = join(dir, 'data.xlsx')
+    const c = await run(['create', '--type', 'xlsx', '--from', csv, '--out', out, '--json'])
+    expect(c.code).toBe(0)
+    expect(await part(out, 'xl/workbook.xml')).toContain('name="data_final__v2"')
+    const conv = await run([
+      'convert',
+      csv,
+      '--to',
+      'xlsx',
+      '--out',
+      join(dir, 'conv.xlsx'),
+      '--json',
+    ])
+    expect(conv.code).toBe(0)
+    expect(conv.json().detail.sheet).toBe('data_final__v2')
+  })
+
   it('types ISO dates, honours sep= and --decimal, and --header freezes and filters', async () => {
     const dir = tempDir()
     const csv = join(dir, 'orders.csv')

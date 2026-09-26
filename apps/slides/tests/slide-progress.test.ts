@@ -96,6 +96,17 @@ describe('generation progress checklist reminds the AI to fill gaps', () => {
     expect(afterPlan).toContain('0 generated')
   })
 
+  it('caps the unfinished-page list injected into context (genoffice#1100)', async () => {
+    const { access } = makeAccess()
+    const skill = createSlidesSkill(access)
+    await skill.executeTool(planCall(150))
+    const ctx = skill.buildContext?.() ?? ''
+    expect(ctx).toContain('150 pages planned')
+    expect(ctx).toContain('page 40')
+    expect(ctx).not.toContain('page 41')
+    expect(ctx).toContain('and 110 more')
+  })
+
   it('generate_deck skips 4 of 5 failed pages → tool result and later context name the incomplete pages', async () => {
     const { access } = makeAccess({ failPages: [2, 3, 4, 5] })
     const skill = createSlidesSkill(access)

@@ -265,13 +265,38 @@ function buildEditItems(params: BuildParams, labels: ContextMenuLabels): Context
 
 // Symbol.for: survives multiple bundled copies (see navigation-guard.ts).
 const INSTALLED = Symbol.for('genoffice.context-menu-installed')
+const INTERCEPTORS = Symbol.for('genoffice.context-menu-interceptors')
+
+/** Resolves true when the renderer showed its own menu for this right-click. */
+export type ContextMenuInterceptor = (
+  contents: WebContents,
+  params: ContextMenuParams,
+) => Promise<boolean>
+
+function interceptorMap(app: App): Map<number, ContextMenuInterceptor> {
+  const holder = app as unknown as Record<symbol, Map<number, ContextMenuInterceptor> | undefined>
+  return (holder[INTERCEPTORS] ??= new Map())
+}
+
+/** Let a renderer with its own DOM context menu claim right-clicks before the native menu pops. */
+export function setContextMenuInterceptor(
+  app: App,
+  contents: WebContents,
+  interceptor: ContextMenuInterceptor | null,
+): void {
+  const map = interceptorMap(app)
+  if (interceptor) map.set(contents.id, interceptor)
+  else map.delete(contents.id)
+}
 
 export function installContextMenu(app: App, getLabels: () => ContextMenuLabels): void {
   const holder = app as unknown as Record<symbol, boolean | undefined>
   if (holder[INSTALLED]) return
   holder[INSTALLED] = true
   app.on('web-contents-created', (_event, contents) => {
-    contents.on('context-menu', (_e, params) => {
+    contents.on('context-menu', async (_e, params) => {
+      const intercept = interceptorMap(app).get(contents.id)
+      if (intercept && (await intercept(contents, params))) return
       void popupMenu(contents, params, getLabels())
     })
   })

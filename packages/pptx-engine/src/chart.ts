@@ -1192,7 +1192,7 @@ function formatDateSerial(serial: number, fmt: string, date1904: boolean): strin
 
 /** c:pt list → value array ordered by idx. */
 /** Largest point count honored: a hostile ptCount must not allocate the array. */
-const MAX_CHART_POINTS = 10000
+const MAX_CHART_POINTS = 1_048_576
 
 function readPoints(cache: any): Array<string | null> {
   const ptsRaw = cache?.['c:pt']

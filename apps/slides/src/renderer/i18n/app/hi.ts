@@ -120,6 +120,7 @@ export const hi = {
   appPasteOptSource: 'स्रोत स्वरूपण बनाए रखें',
   appPasteOptTheme: 'गंतव्य थीम का उपयोग करें',
   appStatusPasteOptionsExpired: 'चिपकाने के विकल्प अब उपलब्ध नहीं हैं',
+  appStatusPasteTruncated: 'चिपकाया गया टेक्स्ट बहुत लंबा था और उसे छोटा कर दिया गया',
   appCtxHideSlide: 'स्लाइड छिपाएँ',
   appCtxUnhideSlide: 'स्लाइड फिर से दिखाएँ',
   appCtxAddSectionBefore: 'अनुभाग जोड़ें (इस स्लाइड से पहले)',

@@ -109,6 +109,7 @@ export const th = {
   appPasteOptSource: 'คงการจัดรูปแบบต้นฉบับ',
   appPasteOptTheme: 'ใช้ธีมปลายทาง',
   appStatusPasteOptionsExpired: 'ตัวเลือกการวางไม่พร้อมใช้งานแล้ว',
+  appStatusPasteTruncated: 'ข้อความที่วางยาวเกินไปและถูกตัดให้สั้นลง',
   appCtxHideSlide: 'ซ่อนสไลด์',
   appCtxUnhideSlide: 'ยกเลิกการซ่อนสไลด์',
   appCtxAddSectionBefore: 'เพิ่มส่วน (ก่อนสไลด์นี้)',

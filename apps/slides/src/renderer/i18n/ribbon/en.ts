@@ -14,7 +14,7 @@ export const en = {
   ribbonTabSlideShow: 'Slide Show',
   ribbonTabReview: 'Review',
   ribbonCollapse: 'Collapse the Ribbon',
-  ribbonPin: 'Pin the ribbon',
+  ribbonExpand: 'Expand the Ribbon',
   ribbonTabView: 'View',
   ribbonTabTableDesign: 'Table Design',
   ribbonTabChartDesign: 'Chart Design',

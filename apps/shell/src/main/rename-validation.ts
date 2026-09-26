@@ -43,3 +43,15 @@ export function isSameFile(a: string, b: string): boolean {
     return false
   }
 }
+
+/** Save As target for an open PDF, or null when the dialog was cancelled or
+    the pick resolves to the open file itself (case/symlink variants included),
+    which would otherwise copy a file onto itself. */
+export function pdfSaveAsTarget(
+  picked: { canceled: boolean; filePath?: string },
+  currentPath: string,
+): string | null {
+  if (picked.canceled || !picked.filePath) return null
+  if (picked.filePath === currentPath || isSameFile(picked.filePath, currentPath)) return null
+  return picked.filePath
+}

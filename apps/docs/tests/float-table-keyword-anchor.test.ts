@@ -154,3 +154,22 @@ describe('keyword-anchored float shifts in the slice engine', () => {
     expect(out.floatVShifts).toEqual([{ blockTop: 200, dyPx: 0 }])
   })
 })
+
+describe('legacy cell-margin hang of a float', () => {
+  it('only a margin-anchored float without an offset hangs by its indent', () => {
+    const base = { tblFloat: 'left', tblFloatSource: 'left', tblFloatVertAnchor: 'text' }
+    const hung = tableAttrs({ ...base, tblFloatHorzAnchor: 'margin', indentTwips: -108 })
+    expect(hung.style).toContain('margin-left:-7.2px')
+    const textAnchored = tableAttrs({ ...base, tblFloatHorzAnchor: 'text', indentTwips: -108 })
+    expect(textAnchored.style ?? '').not.toContain('margin-left')
+    const unanchored = tableAttrs({ ...base, indentTwips: -108 })
+    expect(unanchored.style ?? '').not.toContain('margin-left')
+    const offset = tableAttrs({
+      ...base,
+      tblFloatHorzAnchor: 'margin',
+      tblFloatXTwips: 300,
+      indentTwips: -108,
+    })
+    expect(offset.style).not.toContain('-7.2px')
+  })
+})

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Dropdown } from '@genoffice/ui'
 import type { PivotField } from './PivotDialog'
 import { useI18n } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's Data → Subtotal, minimal: one "at each change in" column, one
 /// aggregated column, SUBTOTAL rows inserted per group plus a grand total.
@@ -28,11 +29,13 @@ export function SubtotalDialog({
   const [agg, setAgg] = useState<SubtotalConfig['agg']>('sum')
   const [error, setError] = useState<string | null>(null)
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgSubtotalTitle')}
         onClick={(event) => event.stopPropagation()}
       >

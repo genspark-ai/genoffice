@@ -113,6 +113,7 @@ export const ja = {
   appPasteOptSource: '元の書式を保持',
   appPasteOptTheme: '貼り付け先のテーマを使用',
   appStatusPasteOptionsExpired: '貼り付けオプションは利用できなくなりました',
+  appStatusPasteTruncated: '貼り付けたテキストが長すぎるため切り詰めました',
   appCtxHideSlide: '非表示スライドに設定',
   appCtxUnhideSlide: '非表示スライドの解除',
   appCtxAddSectionBefore: 'セクションの追加（このスライドの前）',

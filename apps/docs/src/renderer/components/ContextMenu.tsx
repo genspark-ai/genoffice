@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { Command } from '@tiptap/pm/state'
 import { NodeSelection, TextSelection } from '@tiptap/pm/state'
 import {
-  CellSelection,
   addColumnAfter,
   addColumnBefore,
   addRowAfter,
@@ -11,26 +10,41 @@ import {
   deleteColumn,
   deleteRow,
   deleteTable,
-  isInTable,
   mergeCells,
-  selectedRect,
   splitCell,
 } from '@tiptap/pm/tables'
 import { platformShortcuts } from '@genoffice/i18n'
-import { Dropdown, isSymbolFontFamily, type DropdownOption } from '@genoffice/ui'
+
 import { useI18n, type StringKey } from '../i18n/locale'
-import { fontFamiliesFor } from '../font-list'
-import { useSystemFontFamilies } from '../system-fonts'
-import { cssFontFamily } from '../line-metrics'
-import { setParaAttrs, activeParaAttrs } from './ribbon-tabs'
 import { wordRangeAtCaret } from '../editor/comments'
-import { setSelectionAlign } from '../editor/direction'
+import { pasteFromClipboard } from '../editor/paste-actions'
+import { setTableAutoFit } from '../editor/table-properties'
+import { distributeSelectedColumns } from '../editor/table-sizing'
+import {
+  distributeRowsEvenly,
+  inTableOrSelected,
+  selectTablePart,
+  setCellAlignment,
+  setCellTextDirection,
+  splitTableAtSelection,
+  type CellHAlign,
+  type CellTextDirection,
+  type CellVAlign,
+  type TableSelectKind,
+} from '../editor/table-ops'
+import type { TableDialogKind } from './TableDialogs'
 import { IconSparkle } from './icons'
-import { useModalKeys } from './modal-keys'
+import { spellcheckEnabled } from '../spellcheck-pref'
+import { applySpellingSuggestion } from '../editor/spell-replace'
+import { linkRangeAt, linkTarget, removeLink } from '../editor/link-actions'
+import { fieldRangeAt, toggleFieldCodes, type FieldRange } from '../editor/field-codes'
+import type { SpellLanguages } from '../../shared/ipc'
+
+export { FontDialog } from './FontDialog'
 
 /**
  * Editor context menu (right click in the document body):
- * Cut/Copy/Paste · Font… · Paragraph… · Synonyms · Translate · Hyperlink… · New Comment.
+ * Cut/Copy/Paste · Font… · Paragraph… · Synonyms · Translate · Hyperlink (insert or Edit/Open/Copy/Remove) · New Comment.
  */
 
 export interface ContextMenuState {
@@ -38,6 +52,14 @@ export interface ContextMenuState {
   y: number
   /** src of the picture under the pointer, when the click landed on one */
   imageSrc?: string | null
+  /** claim sequence of the right-click this menu answers (pairs it with Chromium's data) */
+  seq?: number
+  /** document position under the click (the caret for a keyboard-invoked menu) */
+  pos?: number | null
+  /** Chromium's misspelling under the pointer, relayed by the main process after the menu opened */
+  spell?: { word: string; suggestions: string[] } | null
+  /** hyperlink under the pointer as rendered (a TOC line counts: Word treats its entries as links) */
+  link?: { href: string; toc?: boolean; tocTitle?: string } | null
 }
 
 interface EditorContextMenuProps {
@@ -54,8 +76,21 @@ interface EditorContextMenuProps {
   /** List items: restart numbering / continue numbering (shown when the cursor is on a docListItem) */
   onRestartNumbering?: () => void
   onContinueNumbering?: () => void
+  onSetNumberingValue?: () => void
+  onAdjustListIndents?: () => void
+  onChangeListLevel?: (ilvl: number) => void
   /** F9 update fields (shown when the cursor is on an inline field) */
   onUpdateFields?: () => void
+  /** Edit Field…: open the field-code dialog for that field */
+  onEditField?: (field: FieldRange) => void
+  /** Open Hyperlink: browser for http(s), in-document jump for #bookmark */
+  onOpenLink?: (href: string) => void
+  /** Word's table dialogs (Split Cells… / Insert Cells… / Delete Cells… / Table Properties…) */
+  onTableDialog?: (kind: TableDialogKind) => void
+  /** section content width the AutoFit / Distribute commands fit the grid into */
+  sectionContentWidthPx?: number
+  /** re-mark existing text after the session dictionary or languages changed */
+  onRespell?: () => void
 }
 
 /** target languages mirrored from the Review → Translate dropdown; the localized label also goes into the LLM prompt */
@@ -71,6 +106,24 @@ const TRANSLATE_TARGETS: Array<{ labelKey: StringKey }> = [
 
 const MENU_WIDTH = 240
 
+const CTX_CELL_ALIGN: Array<[CellVAlign, CellHAlign, StringKey]> = [
+  ['top', 'left', 'ribbonAlignTopLeft'],
+  ['top', 'center', 'ribbonAlignTopCenter'],
+  ['top', 'right', 'ribbonAlignTopRight'],
+  ['center', 'left', 'ribbonAlignMiddleLeft'],
+  ['center', 'center', 'ribbonAlignMiddleCenter'],
+  ['center', 'right', 'ribbonAlignMiddleRight'],
+  ['bottom', 'left', 'ribbonAlignBottomLeft'],
+  ['bottom', 'center', 'ribbonAlignBottomCenter'],
+  ['bottom', 'right', 'ribbonAlignBottomRight'],
+]
+
+const CTX_TEXT_DIRECTIONS: Array<[CellTextDirection, StringKey]> = [
+  ['lrTb', 'ribbonTextDirectionHorizontal'],
+  ['tbRl', 'ribbonTextDirectionRotate90'],
+  ['btLr', 'ribbonTextDirectionRotate270'],
+]
+
 export function EditorContextMenu({
   editor,
   menu,
@@ -84,14 +137,92 @@ export function EditorContextMenu({
   onAiPreset,
   onRestartNumbering,
   onContinueNumbering,
+  onSetNumberingValue,
+  onAdjustListIndents,
+  onChangeListLevel,
   onUpdateFields,
+  onEditField,
+  onOpenLink,
+  onTableDialog,
+  sectionContentWidthPx = 624,
+  onRespell,
 }: EditorContextMenuProps) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const ref = useRef<HTMLDivElement>(null)
   const [submenu, setSubmenu] = useState<string | null>(null)
 
+  // ---- spelling section (Word: suggestions · Add to Dictionary · Language) ----
+  const spell = spellcheckEnabled() && editor.isEditable ? menu.spell : null
+  const [spellLangs, setSpellLangs] = useState<SpellLanguages | null>(null)
+  useEffect(() => {
+    if (!spell) return
+    let alive = true
+    void window.desktop.spellLanguages?.().then((langs) => {
+      if (alive) setSpellLangs(langs)
+    })
+    return () => {
+      alive = false
+    }
+  }, [spell])
+  const langNames = useMemo(() => {
+    try {
+      return new Intl.DisplayNames([lang], { type: 'language' })
+    } catch {
+      return null
+    }
+  }, [lang])
+  // active dictionaries first, the rest by display name
+  const spellLangOrder = useMemo(() => {
+    if (!spellLangs) return []
+    const name = (code: string) => langNames?.of(code) ?? code
+    const rest = spellLangs.available
+      .filter((code) => !spellLangs.active.includes(code))
+      .sort((a, b) => name(a).localeCompare(name(b), lang))
+    return [...spellLangs.active, ...rest]
+  }, [spellLangs, langNames, lang])
+  const applySuggestion = (replacement: string) => {
+    if (!spell) return
+    applySpellingSuggestion(
+      editor,
+      menu.pos ?? null,
+      spell.word,
+      replacement,
+      window.desktop.spellReplace,
+    )
+  }
+  const addToDictionary = () => {
+    if (spell) void window.desktop.spellAddWord?.(spell.word).then(() => onRespell?.())
+  }
+  const ignoreAll = () => {
+    if (spell) void window.desktop.spellIgnoreWord?.(spell.word).then(() => onRespell?.())
+  }
+  const toggleLanguage = (code: string) => {
+    if (!spellLangs) return
+    const active = spellLangs.active.includes(code)
+      ? spellLangs.active.filter((l) => l !== code)
+      : [...spellLangs.active, code]
+    if (!active.length) return
+    // the respell kick that follows must not run under an open menu (Word closes it too)
+    onClose()
+    void window.desktop.spellSetLanguages?.(active).then(() => onRespell?.())
+  }
+
   const { from, to } = editor.state.selection
   const hasSelection = from !== to
+  const clickPos = menu.pos ?? from
+  // ---- hyperlink / field under the pointer (Word acts on the run, not the selection) ----
+  const linkRange = linkRangeAt(editor.state, clickPos)
+  const linkHref = menu.link?.href ?? linkRange?.href ?? null
+  const onLinkRun = linkHref !== null
+  const linkEditable = !!linkRange && !menu.link?.toc && editor.isEditable
+  const editLink = () => {
+    if (linkRange) editor.commands.setTextSelection({ from: linkRange.from, to: linkRange.to })
+    onLink()
+  }
+  const copyLink = () => {
+    if (linkHref) void navigator.clipboard.writeText(linkHref)
+  }
+  const field = fieldRangeAt(editor.state, clickPos)
   const canComment = hasSelection || wordRangeAtCaret(editor) !== null
   const canEdit = editor.isEditable
   const selectedText = hasSelection ? editor.state.doc.textBetween(from, to, ' ').trim() : ''
@@ -138,12 +269,7 @@ export function EditorContextMenu({
   }
 
   // ---- table section (shown when the cursor is inside a table, Word parity) ----
-  // the move handle selects the whole table as a NodeSelection, which isInTable
-  // does not treat as "inside" — the menu must still offer the table commands then
-  const tableSelected =
-    editor.state.selection instanceof NodeSelection &&
-    editor.state.selection.node.type.name === 'docTable'
-  const inTable = isInTable(editor.state) || tableSelected
+  const inTable = inTableOrSelected(editor.state)
   /** cell commands can't run on a whole-table NodeSelection: drop the caret into the first cell */
   const enterFirstCell = () => {
     const sel = editor.state.selection
@@ -157,34 +283,6 @@ export function EditorContextMenu({
     editor.view.focus()
     enterFirstCell()
     command(editor.state, editor.view.dispatch)
-  }
-  /** anchor cell of the current selection (top-left of a multi-cell selection) */
-  const anchorCellPos = (): number | null => {
-    if (!inTable) return null
-    enterFirstCell()
-    const rect = selectedRect(editor.state)
-    return rect.tableStart + rect.map.map[rect.top * rect.map.width + rect.left]
-  }
-  const selectRowOrColumn = (kind: 'row' | 'column') => {
-    const pos = anchorCellPos()
-    if (pos === null) return
-    const $cell = editor.state.doc.resolve(pos)
-    const selection =
-      kind === 'row' ? CellSelection.rowSelection($cell) : CellSelection.colSelection($cell)
-    editor.view.focus()
-    editor.view.dispatch(editor.state.tr.setSelection(selection))
-  }
-  const selectWholeTable = () => {
-    const { $from } = editor.state.selection
-    for (let depth = $from.depth; depth >= 1; depth--) {
-      if ($from.node(depth).type.name === 'docTable') {
-        editor.view.focus()
-        editor.view.dispatch(
-          editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, $from.before(depth))),
-        )
-        return
-      }
-    }
   }
 
   const protAttrs = editor.getAttributes('docProtected')
@@ -233,53 +331,9 @@ export function EditorContextMenu({
   const bringForward = () => setZOrder(currentZOrder + 1)
   const sendBackward = () => setZOrder(currentZOrder - 1)
 
-  /** Plain-text insertion: no HTML parsing (insertContent(string) would treat < > as tags) */
-  const insertPlainText = (text: string) => {
-    const lines = text.replace(/\r/g, '').split('\n')
-    if (lines.length === 1) {
-      editor.chain().focus().insertContent({ type: 'text', text: lines[0] }).run()
-      return
-    }
-    editor
-      .chain()
-      .focus()
-      .insertContent(
-        lines.map((line) => ({
-          type: 'docParagraph',
-          ...(line ? { content: [{ type: 'text', text: line }] } : {}),
-        })),
-      )
-      .run()
-  }
-
-  const clipboard = async (action: 'cut' | 'copy' | 'paste' | 'pastePlain') => {
-    if (action === 'paste') {
-      // rich paste: prefer HTML (parsed by editor paste rules, keeps formatting), otherwise plain text
-      try {
-        const items = await navigator.clipboard.read()
-        for (const item of items) {
-          if (item.types.includes('text/html')) {
-            const html = await (await item.getType('text/html')).text()
-            editor
-              .chain()
-              .focus()
-              .insertContent(html, { parseOptions: { preserveWhitespace: true } })
-              .run()
-            return
-          }
-        }
-      } catch {
-        /* clipboard.read unavailable (permission/format): fall back to plain text */
-      }
-      const text = await navigator.clipboard.readText()
-      if (text) insertPlainText(text)
-    } else if (action === 'pastePlain') {
-      const text = await navigator.clipboard.readText()
-      if (text) insertPlainText(text)
-    } else {
-      editor.commands.focus()
-      document.execCommand(action)
-    }
+  const clipboard = (action: 'cut' | 'copy') => {
+    editor.commands.focus()
+    document.execCommand(action)
   }
 
   const item = (
@@ -317,6 +371,41 @@ export function EditorContextMenu({
       style={{ left: pos.left, top: pos.top, minWidth: MENU_WIDTH }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {spell && (
+        <>
+          {spell.suggestions.length === 0 && item(t('appSpellNoSuggestions'), { disabled: true })}
+          {spell.suggestions.slice(0, 5).map((word) => (
+            <button
+              key={word}
+              className="ctx-item ctx-item-strong"
+              onClick={run(() => applySuggestion(word))}
+            >
+              <span className="ctx-label">{word}</span>
+            </button>
+          ))}
+          <div className="ctx-sep" />
+          {item(t('appSpellIgnoreAll'), { onClick: run(ignoreAll) })}
+          {item(t('appSpellAddToDictionary'), { onClick: run(addToDictionary) })}
+          {spellLangs && spellLangs.available.length > 0 && (
+            <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+              {item(t('appSpellLanguage'), { submenuKey: 'spellLang' })}
+              {submenu === 'spellLang' && (
+                <div className="ctx-submenu ctx-submenu-scroll">
+                  {spellLangOrder.map((code) => (
+                    <button key={code} className="ctx-item" onClick={() => toggleLanguage(code)}>
+                      <span className="ctx-label">
+                        {spellLangs.active.includes(code) ? '✓ ' : ''}
+                        {langNames?.of(code) ?? code}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <div className="ctx-sep" />
+        </>
+      )}
       {menu.imageSrc && (
         <>
           {item(t('appViewImage'), { onClick: run(() => onViewImage(menu.imageSrc!)) })}
@@ -327,21 +416,21 @@ export function EditorContextMenu({
       {item(t('appCut'), {
         key: '⌘X',
         disabled: !hasSelection || !canEdit,
-        onClick: run(() => void clipboard('cut')),
+        onClick: run(() => clipboard('cut')),
       })}
       {item(t('appCopy'), {
         key: '⌘C',
         disabled: !hasSelection,
-        onClick: run(() => void clipboard('copy')),
+        onClick: run(() => clipboard('copy')),
       })}
       {item(t('appPaste'), {
         key: '⌘V',
         disabled: !canEdit,
-        onClick: run(() => void clipboard('paste')),
+        onClick: run(() => void pasteFromClipboard(editor)),
       })}
       {item(t('appPastePlain'), {
         disabled: !canEdit,
-        onClick: run(() => void clipboard('pastePlain')),
+        onClick: run(() => void pasteFromClipboard(editor, 'text')),
       })}
       <div className="ctx-sep" />
       {item(t('appFontMenu'), { key: '⌘D', onClick: run(onFontDialog) })}
@@ -369,6 +458,11 @@ export function EditorContextMenu({
                     <span className="ctx-label">{t(labelKey)}</span>
                   </button>
                 ))}
+                {onTableDialog && (
+                  <button className="ctx-item" onClick={run(() => onTableDialog('insertCells'))}>
+                    <span className="ctx-label">{t('ribbonInsertCells')}</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -391,6 +485,11 @@ export function EditorContextMenu({
                     <span className="ctx-label">{t(labelKey)}</span>
                   </button>
                 ))}
+                {onTableDialog && (
+                  <button className="ctx-item" onClick={run(() => onTableDialog('deleteCells'))}>
+                    <span className="ctx-label">{t('ribbonDeleteCells')}</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -398,15 +497,22 @@ export function EditorContextMenu({
             {item(t('ribbonSelect'), { submenuKey: 'tableSelect' })}
             {submenu === 'tableSelect' && (
               <div className="ctx-submenu">
-                <button className="ctx-item" onClick={run(() => selectRowOrColumn('row'))}>
-                  <span className="ctx-label">{t('ribbonSelectRow')}</span>
-                </button>
-                <button className="ctx-item" onClick={run(() => selectRowOrColumn('column'))}>
-                  <span className="ctx-label">{t('ribbonSelectColumn')}</span>
-                </button>
-                <button className="ctx-item" onClick={run(selectWholeTable)}>
-                  <span className="ctx-label">{t('ribbonSelectTable')}</span>
-                </button>
+                {(
+                  [
+                    ['row', 'ribbonSelectRow'],
+                    ['column', 'ribbonSelectColumn'],
+                    ['table', 'ribbonSelectTable'],
+                    ['cell', 'ribbonSelectCell'],
+                  ] as Array<[TableSelectKind, StringKey]>
+                ).map(([kind, labelKey]) => (
+                  <button
+                    key={kind}
+                    className="ctx-item"
+                    onClick={run(() => runTable(selectTablePart(kind)))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -414,16 +520,119 @@ export function EditorContextMenu({
             disabled: !canEdit || !mergeCells(editor.state),
             onClick: run(() => runTable(mergeCells)),
           })}
-          {item(t('ribbonSplitCells'), {
-            disabled: !canEdit || !splitCell(editor.state),
-            onClick: run(() => runTable(splitCell)),
+          {item(t('ribbonSplitCellsDialog'), {
+            disabled: !canEdit,
+            onClick: run(() => {
+              enterFirstCell()
+              if (onTableDialog) onTableDialog('splitCells')
+              else runTable(splitCell)
+            }),
           })}
+          {item(t('ribbonSplitTable'), {
+            disabled: !canEdit || !splitTableAtSelection()(editor.state),
+            onClick: run(() => runTable(splitTableAtSelection())),
+          })}
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonDistribute'), { submenuKey: 'tableDistribute', disabled: !canEdit })}
+            {submenu === 'tableDistribute' && canEdit && (
+              <div className="ctx-submenu">
+                <button
+                  className="ctx-item"
+                  onClick={run(() => {
+                    enterFirstCell()
+                    distributeRowsEvenly(editor.view)
+                  })}
+                >
+                  <span className="ctx-label">{t('ribbonDistributeRows')}</span>
+                </button>
+                <button
+                  className="ctx-item"
+                  onClick={run(() => runTable(distributeSelectedColumns(sectionContentWidthPx)))}
+                >
+                  <span className="ctx-label">{t('ribbonDistributeColumns')}</span>
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonCellAlignment'), { submenuKey: 'tableAlign', disabled: !canEdit })}
+            {submenu === 'tableAlign' && canEdit && (
+              <div className="ctx-submenu">
+                {CTX_CELL_ALIGN.map(([v, h, labelKey]) => (
+                  <button
+                    key={`${v}-${h}`}
+                    className="ctx-item"
+                    onClick={run(() => runTable(setCellAlignment(v, h)))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonTextDirection'), { submenuKey: 'tableTextDir', disabled: !canEdit })}
+            {submenu === 'tableTextDir' && canEdit && (
+              <div className="ctx-submenu">
+                {CTX_TEXT_DIRECTIONS.map(([dir, labelKey]) => (
+                  <button
+                    key={dir}
+                    className="ctx-item"
+                    onClick={run(() => runTable(setCellTextDirection(dir)))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('ribbonAutoFit'), { submenuKey: 'tableAutoFit', disabled: !canEdit })}
+            {submenu === 'tableAutoFit' && canEdit && (
+              <div className="ctx-submenu">
+                {(
+                  [
+                    ['contents', 'ribbonAutoFitContents'],
+                    ['window', 'ribbonAutoFitWindow'],
+                    ['fixed', 'ribbonFixedColumnWidth'],
+                  ] as Array<['contents' | 'window' | 'fixed', StringKey]>
+                ).map(([mode, labelKey]) => (
+                  <button
+                    key={mode}
+                    className="ctx-item"
+                    onClick={run(() => runTable(setTableAutoFit(mode, sectionContentWidthPx)))}
+                  >
+                    <span className="ctx-label">{t(labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {onTableDialog &&
+            item(t('ribbonTableProperties'), {
+              disabled: !canEdit,
+              onClick: run(() => {
+                enterFirstCell()
+                onTableDialog('properties')
+              }),
+            })}
         </>
       )}
-      {editor.isActive('instrField') && onUpdateFields && (
+      {(field || editor.isActive('instrField')) && onUpdateFields && (
         <>
           <div className="ctx-sep" />
           {item(t('appUpdateField'), { key: 'F9', onClick: run(() => onUpdateFields()) })}
+          {field && (
+            <>
+              {item(t('appToggleFieldCodes'), {
+                onClick: run(() => toggleFieldCodes(editor.view, field)),
+              })}
+              {item(t('appEditField'), {
+                disabled: !canEdit || !onEditField,
+                onClick: run(() => onEditField?.(field)),
+              })}
+            </>
+          )}
         </>
       )}
       {editor.isActive('docListItem') && !!editor.getAttributes('docListItem').numId && (
@@ -437,6 +646,40 @@ export function EditorContextMenu({
             disabled: !onContinueNumbering,
             onClick: run(() => onContinueNumbering?.()),
           })}
+          {item(t('appSetNumberingValue'), {
+            disabled: !onSetNumberingValue || !canEdit,
+            onClick: run(() => onSetNumberingValue?.()),
+          })}
+          {item(t('appAdjustListIndents'), {
+            disabled: !onAdjustListIndents || !canEdit,
+            onClick: run(() => onAdjustListIndents?.()),
+          })}
+          <div className="ctx-item-wrap" onMouseLeave={() => setSubmenu(null)}>
+            {item(t('appChangeListLevel'), {
+              disabled: !onChangeListLevel || !canEdit,
+              submenuKey: 'listLevel',
+            })}
+            {submenu === 'listLevel' && onChangeListLevel && canEdit && (
+              <div className="ctx-submenu">
+                {Array.from({ length: 9 }, (_, i) => (
+                  <button
+                    key={i}
+                    className="ctx-item"
+                    aria-current={
+                      (Number(editor.getAttributes('docListItem').ilvl) || 0) === i
+                        ? 'true'
+                        : undefined
+                    }
+                    onClick={run(() => onChangeListLevel(i))}
+                  >
+                    <span className="ctx-label" style={{ paddingLeft: i * 8 }}>
+                      {t('appParaOutlineLevelN', { n: String(i + 1) })}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
       <div className="ctx-sep" />
@@ -514,7 +757,22 @@ export function EditorContextMenu({
         </>
       )}
       <div className="ctx-sep" />
-      {item(t('appHyperlinkMenu'), { key: '⌘K', onClick: run(onLink) })}
+      {onLinkRun ? (
+        <>
+          {item(t('appEditHyperlink'), { disabled: !linkEditable, onClick: run(editLink) })}
+          {item(t('appOpenHyperlink'), {
+            disabled: !onOpenLink || !(linkTarget(linkHref) || menu.link?.toc),
+            onClick: run(() => onOpenLink?.(linkHref)),
+          })}
+          {item(t('appCopyHyperlink'), { onClick: run(copyLink) })}
+          {item(t('appRemoveHyperlink'), {
+            disabled: !linkEditable,
+            onClick: run(() => linkRange && removeLink(editor, linkRange)),
+          })}
+        </>
+      ) : (
+        item(t('appHyperlinkMenu'), { key: '⌘K', disabled: !canEdit, onClick: run(onLink) })
+      )}
       {item(t('appNewComment'), { disabled: !canComment, onClick: run(onNewComment) })}
     </div>
   )
@@ -530,406 +788,4 @@ export const WRAP_OPTIONS: Array<{ labelKey: StringKey; value: string | null }> 
   { labelKey: 'appWrapFront', value: 'front' },
 ]
 
-/* ================= Font dialog ================= */
-
-const FONT_SIZES = [9, 10, 10.5, 11, 12, 14, 16, 18, 20, 22, 24, 28, 36, 48, 72]
-
-const FONT_STYLES: Array<{ key: string; nameKey: StringKey }> = [
-  { key: 'regular', nameKey: 'appFontRegular' },
-  { key: 'italic', nameKey: 'appFontItalic' },
-  { key: 'bold', nameKey: 'appFontBold' },
-  { key: 'boldItalic', nameKey: 'appFontBoldItalic' },
-]
-
-export function FontDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
-  const { t, lang } = useI18n()
-  const modalKeys = useModalKeys(onClose)
-  const fontFamilies = fontFamiliesFor(lang)
-  const { families: systemFontFamilies, load: loadSystemFonts } = useSystemFontFamilies()
-  // the dialog opens from a click, so activation is still live here
-  useEffect(() => loadSystemFonts(), [loadSystemFonts])
-  const textAttrs = editor.getAttributes('docTextStyle')
-  const initialStyle = editor.isActive('bold')
-    ? editor.isActive('italic')
-      ? 'boldItalic'
-      : 'bold'
-    : editor.isActive('italic')
-      ? 'italic'
-      : 'regular'
-
-  const [fontEastAsia, setFontEastAsia] = useState((textAttrs.font as string | null) ?? '')
-  const [fontLatin, setFontLatin] = useState((textAttrs.fontAscii as string | null) ?? '')
-  const [size, setSize] = useState(
-    textAttrs.sizeHalfPoints ? Number(textAttrs.sizeHalfPoints) / 2 : 11,
-  )
-  const [style, setStyle] = useState<string>(initialStyle)
-  const [color, setColor] = useState(`#${(textAttrs.color as string | null) ?? '000000'}`)
-  // the input has no "unset" state: an untouched swatch keeps the run's colour as it was
-  const [colorTouched, setColorTouched] = useState(false)
-  const [underline, setUnderline] = useState(editor.isActive('underline'))
-  const [strike, setStrike] = useState(editor.isActive('strike'))
-  const [vertAlign, setVertAlign] = useState<string>((textAttrs.vertAlign as string | null) ?? '')
-
-  const apply = () => {
-    if (!editor.isEditable) {
-      onClose()
-      return
-    }
-    let chain = editor
-      .chain()
-      .focus()
-      .setMark('docTextStyle', {
-        color: colorTouched
-          ? color.replace('#', '').toUpperCase()
-          : ((textAttrs.color as string | null) ?? null),
-        sizeHalfPoints: Math.round(size * 2),
-        // each picker writes only its own rFonts slot; empty means inherit
-        fontAscii: fontLatin || null,
-        font: fontEastAsia || null,
-        eastAsiaFont: fontEastAsia || null,
-        eaSlotEmpty: fontEastAsia ? false : null,
-        highlight: textAttrs.highlight ?? null,
-        vertAlign: vertAlign || null,
-      })
-    const wantBold = style === 'bold' || style === 'boldItalic'
-    const wantItalic = style === 'italic' || style === 'boldItalic'
-    chain = wantBold ? chain.setMark('bold') : chain.unsetMark('bold')
-    chain = wantItalic ? chain.setMark('italic') : chain.unsetMark('italic')
-    chain = underline ? chain.setMark('underline') : chain.unsetMark('underline')
-    chain = strike ? chain.setMark('strike') : chain.unsetMark('strike')
-    chain.run()
-    onClose()
-  }
-
-  const fontPicker = (value: string, onPick: (v: string) => void, label: string) => (
-    <label>
-      {label}
-      <Dropdown
-        value={value}
-        ariaLabel={label}
-        options={[
-          { value: '', label: t('appDefaultBodyFont') } as DropdownOption,
-          ...fontFamilies.map((f): DropdownOption => ({
-            value: f,
-            label: f,
-            render: <span style={{ fontFamily: cssFontFamily(f) }}>{f}</span>,
-          })),
-          ...systemFontFamilies.map((f): DropdownOption => ({
-            value: f,
-            label: f,
-            render: (
-              // symbol fonts would render their own name as pictographs
-              <span style={{ fontFamily: isSymbolFontFamily(f) ? undefined : cssFontFamily(f) }}>
-                {f}
-              </span>
-            ),
-          })),
-          ...(value && !fontFamilies.includes(value) && !systemFontFamilies.includes(value)
-            ? [{ value, label: value } as DropdownOption]
-            : []),
-        ]}
-        onPick={onPick}
-      />
-    </label>
-  )
-
-  return (
-    <div
-      className="modal-backdrop"
-      ref={modalKeys.ref}
-      onKeyDown={modalKeys.onKeyDown}
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="modal">
-        <h2>{t('appFontDialogTitle')}</h2>
-        <div className="font-dialog-row">
-          {fontPicker(fontLatin, setFontLatin, t('ribbonFontLatin'))}
-          {fontPicker(fontEastAsia, setFontEastAsia, t('ribbonFontEastAsia'))}
-          <label>
-            {t('appFontStyleLabel')}
-            <Dropdown
-              value={style}
-              ariaLabel={t('appFontStyleLabel')}
-              options={FONT_STYLES.map((s) => ({ value: s.key, label: t(s.nameKey) }))}
-              onPick={setStyle}
-            />
-          </label>
-          <label>
-            {t('appFontSizeLabel')}
-            <Dropdown
-              value={String(size)}
-              ariaLabel={t('appFontSizeLabel')}
-              options={[
-                ...(!FONT_SIZES.includes(size) ? [String(size)] : []),
-                ...FONT_SIZES.map(String),
-              ].map((s) => ({ value: s, label: s }))}
-              onPick={(v) => setSize(Number(v))}
-            />
-          </label>
-        </div>
-        <div className="font-dialog-row">
-          <label>
-            {t('appFontColor')}
-            <input
-              type="color"
-              className="font-color-input"
-              value={color}
-              onChange={(e) => {
-                setColor(e.target.value)
-                setColorTouched(true)
-              }}
-            />
-          </label>
-          <label className="font-check">
-            <input
-              type="checkbox"
-              checked={underline}
-              onChange={(e) => setUnderline(e.target.checked)}
-            />
-            {t('appUnderline')}
-          </label>
-          <label className="font-check">
-            <input type="checkbox" checked={strike} onChange={(e) => setStrike(e.target.checked)} />
-            {t('appStrikethrough')}
-          </label>
-          <label className="font-check">
-            <input
-              type="checkbox"
-              checked={vertAlign === 'superscript'}
-              onChange={(e) => setVertAlign(e.target.checked ? 'superscript' : '')}
-            />
-            {t('appSuperscript')}
-          </label>
-          <label className="font-check">
-            <input
-              type="checkbox"
-              checked={vertAlign === 'subscript'}
-              onChange={(e) => setVertAlign(e.target.checked ? 'subscript' : '')}
-            />
-            {t('appSubscript')}
-          </label>
-        </div>
-        <div
-          className="font-preview"
-          style={{
-            fontFamily:
-              [fontLatin, fontEastAsia]
-                .filter(Boolean)
-                .map((f) => cssFontFamily(f))
-                .join(', ') || undefined,
-            fontSize: `${Math.min(size, 28)}pt`,
-            fontWeight: style === 'bold' || style === 'boldItalic' ? 600 : 400,
-            fontStyle: style === 'italic' || style === 'boldItalic' ? 'italic' : 'normal',
-            color,
-            textDecoration:
-              [underline ? 'underline' : '', strike ? 'line-through' : ''].join(' ').trim() ||
-              undefined,
-          }}
-        >
-          {t('appFontPreviewSample')}
-        </div>
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>
-            {t('appCancel')}
-          </button>
-          <button className="btn-primary" onClick={apply}>
-            {t('appOk')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ================= Paragraph dialog ================= */
-
-const PT_PER_TWIP = 1 / 20
-
-type AlignValue = 'left' | 'center' | 'right' | 'justify'
-
-/** visual alignment values; setSelectionAlign resolves them per paragraph direction */
-const ALIGN_OPTIONS: Array<{ key: AlignValue; nameKey: StringKey }> = [
-  { key: 'left', nameKey: 'appAlignLeft' },
-  { key: 'center', nameKey: 'appAlignCenter' },
-  { key: 'right', nameKey: 'appAlignRight' },
-  { key: 'justify', nameKey: 'appAlignJustify' },
-]
-
-const LINE_SPACINGS: Array<{ value: number; nameKey: StringKey }> = [
-  { value: 1, nameKey: 'appLineSingle' },
-  { value: 1.15, nameKey: 'appLine115' },
-  { value: 1.5, nameKey: 'appLine15' },
-  { value: 2, nameKey: 'appLineDouble' },
-  { value: 2.5, nameKey: 'appLine25' },
-  { value: 3, nameKey: 'appLineTriple' },
-]
-
-export function ParagraphDialog({ editor, onClose }: { editor: Editor; onClose: () => void }) {
-  const { t } = useI18n()
-  const modalKeys = useModalKeys(onClose)
-  const attrs = activeParaAttrs(editor)
-  // unset align means "start": visually left in LTR, right in RTL (same as the ribbon)
-  const [align, setAlign] = useState<AlignValue>(
-    (attrs.align as AlignValue | null) ?? (attrs.bidi === true ? 'right' : 'left'),
-  )
-  // Line spacing rule: multiples are the preset select values; 'atLeast'/'exact'
-  // take a pt value (w:spacing w:lineRule + w:line, already modeled by parse/save)
-  const rawTwips = Number(attrs.lineRawTwips) || 0
-  const initRule =
-    attrs.lineRule === 'exact' || attrs.lineRule === 'atLeast' ? (attrs.lineRule as string) : ''
-  const initMultiple =
-    Number(attrs.lineSpacing) || (attrs.lineRule === 'auto' && rawTwips ? rawTwips / 240 : 1)
-  const [lineRule, setLineRule] = useState<string>(initRule)
-  const [lineSpacing, setLineSpacing] = useState<number>(Math.round(initMultiple * 100) / 100)
-  const [linePt, setLinePt] = useState<number>(rawTwips ? Math.round(rawTwips / 2) / 10 : 12)
-  const twipsToPt = (v: unknown) => Math.round((Number(v) || 0) * PT_PER_TWIP)
-  const [indentLeft, setIndentLeft] = useState(twipsToPt(attrs.indentLeft))
-  const [indentRight, setIndentRight] = useState(twipsToPt(attrs.indentRight))
-  const [indentFirstLine, setIndentFirstLine] = useState(twipsToPt(attrs.indentFirstLine))
-  const [spaceBefore, setSpaceBefore] = useState(twipsToPt(attrs.spaceBefore))
-  const [spaceAfter, setSpaceAfter] = useState(twipsToPt(attrs.spaceAfter))
-
-  const apply = () => {
-    if (!editor.isEditable) {
-      onClose()
-      return
-    }
-    const ptToTwips = (pt: number) => (pt > 0 ? Math.round(pt / PT_PER_TWIP) : null)
-    const spacing =
-      lineRule === 'exact' || lineRule === 'atLeast'
-        ? { lineSpacing: null, lineRule, lineRawTwips: Math.max(20, Math.round(linePt * 20)) }
-        : {
-            lineSpacing: lineSpacing === 1 ? null : lineSpacing,
-            lineRule: null,
-            lineRawTwips: null,
-          }
-    // align goes through setSelectionAlign so each paragraph resolves the
-    // visual value against its own direction (null = start side)
-    setSelectionAlign(editor, align)
-    setParaAttrs(editor, {
-      ...spacing,
-      indentLeft: ptToTwips(indentLeft),
-      indentRight: ptToTwips(indentRight),
-      indentFirstLine: ptToTwips(indentFirstLine),
-      spaceBefore: ptToTwips(spaceBefore),
-      spaceAfter: ptToTwips(spaceAfter),
-    })
-    onClose()
-  }
-
-  const numInput = (label: string, value: number, set: (v: number) => void) => (
-    <label>
-      {label}
-      <span className="para-num">
-        <input
-          type="number"
-          min={0}
-          max={400}
-          value={value}
-          onChange={(e) => set(Math.max(0, Number(e.target.value) || 0))}
-        />
-        <span className="para-unit">pt</span>
-      </span>
-    </label>
-  )
-
-  return (
-    <div
-      className="modal-backdrop"
-      ref={modalKeys.ref}
-      onKeyDown={modalKeys.onKeyDown}
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="modal">
-        <h2>{t('appParagraph')}</h2>
-        <div className="font-dialog-row">
-          <label>
-            {t('appAlignment')}
-            <Dropdown
-              value={align}
-              ariaLabel={t('appAlignment')}
-              options={ALIGN_OPTIONS.map((o) => ({ value: o.key, label: t(o.nameKey) }))}
-              onPick={setAlign}
-            />
-          </label>
-          <label>
-            {t('appLineSpacingLabel')}
-            <Dropdown
-              value={lineRule || String(lineSpacing)}
-              ariaLabel={t('appLineSpacingLabel')}
-              options={[
-                ...(!lineRule && !LINE_SPACINGS.some((s) => s.value === lineSpacing)
-                  ? [
-                      {
-                        value: String(lineSpacing),
-                        label: t('appLineMultiple', { n: lineSpacing }),
-                      },
-                    ]
-                  : []),
-                ...LINE_SPACINGS.map((s) => ({ value: String(s.value), label: t(s.nameKey) })),
-                { value: 'atLeast', label: t('appLineAtLeast') },
-                { value: 'exact', label: t('appLineExactly') },
-              ]}
-              onPick={(v) => {
-                if (v === 'exact' || v === 'atLeast') {
-                  setLineRule(v)
-                } else {
-                  setLineRule('')
-                  setLineSpacing(Number(v))
-                }
-              }}
-            />
-          </label>
-          {lineRule === 'exact' || lineRule === 'atLeast' ? (
-            <label>
-              {t('appLineValue')}
-              <span className="para-num">
-                <input
-                  type="number"
-                  min={1}
-                  max={1584}
-                  step={0.5}
-                  value={linePt}
-                  onChange={(e) => setLinePt(Math.max(0, Number(e.target.value) || 0))}
-                />
-                <span className="para-unit">pt</span>
-              </span>
-            </label>
-          ) : (
-            <label>
-              {t('appLineValue')}
-              <span className="para-num">
-                <input
-                  type="number"
-                  min={0.06}
-                  max={132}
-                  step={0.05}
-                  value={lineSpacing}
-                  onChange={(e) => setLineSpacing(Math.max(0.06, Number(e.target.value) || 1))}
-                />
-                <span className="para-unit">×</span>
-              </span>
-            </label>
-          )}
-        </div>
-        <div className="font-dialog-row">
-          {numInput(t('appIndentLeft'), indentLeft, setIndentLeft)}
-          {numInput(t('appIndentRight'), indentRight, setIndentRight)}
-          {numInput(t('appIndentFirstLine'), indentFirstLine, setIndentFirstLine)}
-        </div>
-        <div className="font-dialog-row">
-          {numInput(t('appSpaceBefore'), spaceBefore, setSpaceBefore)}
-          {numInput(t('appSpaceAfter'), spaceAfter, setSpaceAfter)}
-        </div>
-        <div className="modal-actions">
-          <button className="btn-ghost" onClick={onClose}>
-            {t('appCancel')}
-          </button>
-          <button className="btn-primary" onClick={apply}>
-            {t('appOk')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+export { ParagraphDialog } from './ParagraphDialog'

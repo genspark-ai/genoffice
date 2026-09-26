@@ -2,6 +2,7 @@
 // per-block column / width / vertical-alignment specs derived from sections.
 import type { SectionInfo, SectionSettings, TextFlowDirection } from '@genoffice/docx-engine'
 
+import { mirrorShiftPx } from './page-margins'
 import { columnLineSplits } from './pagination-slices'
 import type {
   BlockBox,
@@ -608,6 +609,34 @@ export function vAlignShiftSpecs(
     }
     if (whole) specs.push(...page)
   }
+  return specs
+}
+
+/**
+ * w:mirrorMargins: the canvas pads every page by the first section's odd-page
+ * margins, so the blocks of even-numbered pages (displayed numbers, `nums`)
+ * translate by outside − inside onto the swapped text column. Same visual
+ * channel and block granularity as the column layout: a block is placed by
+ * the page holding its top, page-relative anchors undo the shift.
+ */
+export function mirrorMarginSpecs(
+  blocks: BlockBox[],
+  slices: PageSlice[],
+  sections: SectionInfo[],
+  fallback: SectionSettings | undefined,
+  nums: number[],
+): ColumnBlockPlacement[] {
+  const specs: ColumnBlockPlacement[] = []
+  let bi = 0
+  slices.forEach((slice, i) => {
+    const set = sections[Math.min(slice.section, sections.length - 1)]?.settings ?? fallback
+    const dx = set ? mirrorShiftPx(set, nums[i] ?? i + 1, true) : 0
+    while (bi < blocks.length && blocks[bi].top < slice.end - 0.5) {
+      const b = blocks[bi++]
+      if (Math.abs(dx) < 0.01 || !b.el || b.floated || b.top < slice.start - 0.5) continue
+      specs.push({ el: b.el, dx, dy: 0 })
+    }
+  })
   return specs
 }
 

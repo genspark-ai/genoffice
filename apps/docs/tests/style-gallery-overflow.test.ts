@@ -61,6 +61,9 @@ function ribbonProps(editor: Editor) {
     onSection: noop,
     activeSection: null,
     onInsertSectionBreak: noop,
+    onPaperSizeAll: noop,
+    mirrorMargins: false,
+    onMirrorMargins: noop,
     pageColor: null,
     onPageColor: noop,
     watermark: null,
@@ -83,6 +86,7 @@ function ribbonProps(editor: Editor) {
     zoom: 100,
     onZoom: noop,
     onZoomFit: noop,
+    onZoomDialog: noop,
     darkPage: false,
     onDarkPage: noop,
     onAiPreset: noop,
@@ -92,10 +96,9 @@ function ribbonProps(editor: Editor) {
     onInsertField: noop,
     footer: null,
     onFooter: noop,
-    titlePg: false,
-    onTitlePg: noop,
-    evenOddHf: false,
-    onEvenOddHf: noop,
+    hfEditing: null,
+    onHfAction: noop,
+    onHfEdit: noop,
     showMarks: false,
     onShowMarks: noop,
     showRuler: false,
@@ -104,9 +107,14 @@ function ribbonProps(editor: Editor) {
     onShowNav: noop,
     commentCount: 0,
     openCommentCount: 0,
+    resolvedCommentCount: 0,
     onShowComments: noop,
     canComment: false,
     onNewComment: noop,
+    commentAtCaret: false,
+    onDeleteComment: noop,
+    onDeleteAllComments: noop,
+    onGotoComment: noop,
     trackChanges: false,
     onTrackChanges: noop,
     spellcheck: true,
@@ -178,7 +186,7 @@ describe('style gallery overflow', () => {
 
   it('shows no expander while every card fits', () => {
     expect(container.querySelector('.style-gallery')).not.toBeNull()
-    expect(container.querySelectorAll('.style-gallery .style-card').length).toBe(6)
+    expect(container.querySelectorAll('.style-gallery .style-card').length).toBe(4)
     expect(container.querySelector('.style-gallery-more')).toBeNull()
   })
 
@@ -191,7 +199,7 @@ describe('style gallery overflow', () => {
     // the gallery is capped right after the last visible card (2 × 78 - 4 gap)
     expect((gallery as HTMLElement).style.maxWidth).toBe('152px')
 
-    setRowLayout(gallery, 6)
+    setRowLayout(gallery, 4)
     act(() => FakeResizeObserver.fire(wrap))
     expect(container.querySelector('.style-gallery-more')).toBeNull()
     expect((gallery as HTMLElement).style.maxWidth).toBe('')
@@ -208,8 +216,8 @@ describe('style gallery overflow', () => {
 
     const menu = container.querySelector('.style-gallery-menu')!
     const cards = menu.querySelectorAll<HTMLButtonElement>('.style-card')
-    // 4 paragraph styles + 2 preset character styles: nothing is dropped
-    expect(cards.length).toBe(6)
+    // the four fallback paragraph styles: nothing is dropped
+    expect(cards.length).toBe(4)
 
     editor.commands.setTextSelection(3)
     act(() => cards[1].click()) // Heading 1

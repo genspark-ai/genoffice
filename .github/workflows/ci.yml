@@ -143,33 +143,9 @@ jobs:
       # pptx-engine's OOXML schema gate validates saved decks with xmllint
       # (tools/ooxml-validate); the runner image is not guaranteed to have it.
       - name: Install xmllint
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libxml2-utils
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libxml2-utils
 
-      # PR runs only the workspaces the changed files can affect (over-approximated
-      # by tools/ci-affected-tests.mjs — it can only over-run, never under-run);
-      # main and release pushes always run the full suite as the backstop.
-      - name: Compute affected test workspaces
-        id: affected
-        env:
-          FORMAT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            FORMAT_BASE_REF=$(git rev-parse HEAD^1)
-          fi
-          node tools/ci-affected-tests.mjs --base "$FORMAT_BASE_REF" >> "$GITHUB_OUTPUT"
-
-      - name: Test (affected workspaces)
-        if: steps.affected.outputs.mode == 'some'
-        run: |
-          for ws in ${{ steps.affected.outputs.workspaces }}; do
-            echo "===== npm run test -w $ws ====="
-            npm run test -w "$ws"
-          done
-
-      - name: Test (full suite)
-        if: steps.affected.outputs.mode == 'all'
+      - name: Test
         run: npm test
 
       # Preservation gate: a no-op-adjacent edit through the OOXML gateway must
@@ -184,12 +160,6 @@ jobs:
     # spawn under xvfb even with --no-sandbox and the userns sysctl lifted
     runs-on: ubuntu-22.04
     timeout-minutes: 45
-    # Split the shell specs across three runners; within a shard, Electron
-    # instances still run serially (workers: 1) to avoid boot/focus races.
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -261,7 +231,6 @@ jobs:
         run: npx playwright install chromium
 
       - name: Markdown browser tests
-        if: matrix.shard == 1
         run: npx playwright test --config apps/markdown/playwright.config.ts
 
       # Electron needs a display server on Linux runners. DEBUG=pw:browser
@@ -270,13 +239,13 @@ jobs:
       - name: E2E (Electron shell)
         env:
           DEBUG: 'pw:browser'
-        run: xvfb-run --auto-servernum -- npm run test:e2e -- --shard=${{ matrix.shard }}/3
+        run: xvfb-run --auto-servernum -- npm run test:e2e
 
       - name: Upload E2E artifacts on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-artifacts-shard-${{ matrix.shard }}
+          name: e2e-artifacts
           path: |
             e2e/artifacts
             e2e/test-results

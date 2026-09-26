@@ -7,6 +7,8 @@ export const pt = {
   saveFailed: 'Falha ao salvar: {error}',
   saveFailedStatus: 'Falha ao salvar',
   exportFailed: 'Falha na exportação',
+  exportHtmlSkipped:
+    'Exportado, mas {count} recurso(s) não puderam ser incorporados (ex.: {first})',
   viewPreview: 'Visualizar',
   viewSplit: 'Dividido',
   viewSource: 'Código',
@@ -54,7 +56,6 @@ export const pt = {
   save: 'Salvar (⌘S)',
   saveAs: 'Salvar Como…',
   ribbonCollapse: 'Recolher a Faixa de Opções',
-  ribbonPin: 'Fixar a Faixa de Opções',
   ribbonExpand: 'Expandir a Faixa de Opções',
   ribbonGroupInsert: 'Inserir',
   editText: 'Editar texto',

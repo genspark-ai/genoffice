@@ -18,7 +18,7 @@ describe('findDocxPath', () => {
 })
 
 describe('runGuardedCandidate', () => {
-  it('guards before choosing or committing a candidate', async () => {
+  it('chooses first and guards only once a candidate exists', async () => {
     const calls: string[] = []
 
     await expect(
@@ -37,16 +37,42 @@ describe('runGuardedCandidate', () => {
       ),
     ).resolves.toBe(true)
 
-    expect(calls).toEqual(['guard', 'choose', 'commit:/tmp/candidate.docx'])
+    expect(calls).toEqual(['choose', 'guard', 'commit:/tmp/candidate.docx'])
   })
 
-  it('does not choose a candidate when the replacement is rejected', async () => {
+  it('never runs the guard when the picker is cancelled', async () => {
+    const confirm = vi.fn(async () => true)
+    const commit = vi.fn()
+
+    await expect(runGuardedCandidate(confirm, async () => null, commit)).resolves.toBe(false)
+    expect(confirm).not.toHaveBeenCalled()
+    expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('does not commit a candidate when the replacement is rejected', async () => {
     const choose = vi.fn(async () => ({ path: '/tmp/candidate.docx' }))
     const commit = vi.fn()
 
     await expect(runGuardedCandidate(async () => false, choose, commit)).resolves.toBe(false)
-    expect(choose).not.toHaveBeenCalled()
+    expect(choose).toHaveBeenCalledTimes(1)
     expect(commit).not.toHaveBeenCalled()
+  })
+
+  it('defers the guard for a candidate the caller marks as not a document yet', async () => {
+    const confirm = vi.fn(async () => true)
+    const commit = vi.fn()
+    const encrypted = { needsPassword: true as const, path: '/tmp/locked.docx' }
+
+    await expect(
+      runGuardedCandidate(
+        confirm,
+        async () => encrypted,
+        commit,
+        (candidate) => !('needsPassword' in candidate),
+      ),
+    ).resolves.toBe(true)
+    expect(confirm).not.toHaveBeenCalled()
+    expect(commit).toHaveBeenCalledWith(encrypted)
   })
 })
 

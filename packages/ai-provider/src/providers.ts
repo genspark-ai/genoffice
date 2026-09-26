@@ -50,12 +50,16 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     // bare gpt-5.6 and the gemini family dropped off it (verified 2026-08-31).
     // DeepSeek goes by the proxy's hyphenated pool id; V4.1 Flash takes images
     // (live-verified 2026-09-15). gpt-6-astra: chat, tool call and image
-    // input all live-verified through the proxy 2026-09-17
+    // input all live-verified through the proxy 2026-09-17; claude-opus-5-5,
+    // gpt-6-sol and gpt-6-luna the same way 2026-09-24
     models: [
+      'claude-opus-5-5',
       'claude-opus-4-7',
       'claude-opus-4-8',
       'claude-sonnet-4-6',
       'gpt-6-astra',
+      'gpt-6-sol',
+      'gpt-6-luna',
       'gpt-5.6-terra',
       'gpt-5.6-luna',
       DEEPSEEK_V41_FLASH,
@@ -76,10 +80,14 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'anthropic',
     label: 'Claude',
-    // current-generation ids per platform.claude.com models overview (2026-08)
+    // current-generation ids per platform.claude.com models overview (2026-09-24).
+    // Fable needs data retention enabled on the org, otherwise the API answers
+    // model_not_available; every other id is served to any key.
     models: [
-      'claude-opus-5',
+      'claude-opus-5-5',
       'claude-sonnet-5',
+      'claude-fable-5-1',
+      'claude-opus-5',
       'claude-fable-5',
       'claude-opus-4-8',
       'claude-opus-4-7',
@@ -92,15 +100,17 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
   {
     id: 'gemini',
     label: 'Gemini',
-    // 3.x lineup per ai.google.dev/gemini-api/docs/models (2026-08). 3.7 Flash is
-    // the current stable Flash; 3.1 Pro is still preview-only.
+    // 3.x lineup per ai.google.dev/gemini-api/docs/models (2026-09-23). 3.8 Flash
+    // is the current stable Flash Google recommends; 3.1 Pro is still preview-only.
     models: [
+      'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-3.1-pro-preview',
       'gemini-3.6-flash',
       'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
     ],
-    defaultModel: 'gemini-3.7-flash',
+    defaultModel: 'gemini-3.8-flash',
     keyPlaceholder: 'AIza...',
   },
   {
@@ -120,9 +130,10 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     label: 'OpenAI',
     // GPT-5.6 naming: sol is the flagship (the bare `gpt-5.6` alias resolves to
     // it, but spell it out so the picker says which tier it is), terra balances
-    // cost/intelligence, luna is the high-volume tier (2026-08). gpt-6-astra
-    // is deliberately absent: OpenAI serves its tool calls only through the
-    // Responses API, which has no protocol here (2026-09-17)
+    // cost/intelligence, luna is the high-volume tier (2026-08). The GPT-6
+    // family (astra, sol, luna) is deliberately absent: Chat Completions
+    // supports its function calling only with reasoning_effort none, full
+    // tool use needs the Responses API, which has no protocol here (2026-09-24)
     models: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
     defaultModel: 'gpt-5.6-terra',
     keyPlaceholder: 'sk-...',
@@ -192,8 +203,11 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     // there is no `openai/gpt-5.6` alias there, only the per-tier ids
     models: [
       'openrouter/auto',
+      'anthropic/claude-opus-5.5',
       'anthropic/claude-sonnet-5',
       'openai/gpt-6-astra',
+      'openai/gpt-6-sol',
+      'openai/gpt-6-luna',
       'openai/gpt-5.6-sol',
       'moonshotai/kimi-k3',
     ],
@@ -204,13 +218,16 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     id: 'requesty',
     label: 'Requesty',
     // Managed policy ids exactly as GET router.requesty.ai/v1/models/managed
-    // lists them (2026-09-11): short stable names Requesty routes across
+    // lists them (2026-09-24): short stable names Requesty routes across
     // providers, used as-is in the model field. The full vendor-prefixed
     // catalog (GET /v1/models, e.g. openai/gpt-4o-mini) works too when typed
     // in. Ids ending "@eu" route through EU providers only.
     models: [
       'claude-sonnet-5',
+      'claude-opus-5-5',
       'claude-opus-4-8',
+      'gpt-6-sol',
+      'gpt-6-luna',
       'gpt-5.6-sol',
       'gpt-5.6-terra',
       'gemini-3.7-flash',
@@ -245,11 +262,12 @@ export const AI_PROVIDERS: AiProviderMeta[] = [
     id: 'opencode-zen',
     label: 'OpenCode Zen',
     // Pay-as-you-go gateway (opencode.ai/docs/zen); ids exactly as GET
-    // /zen/v1/models lists them (2026-09-03). GPT-5.x, Grok and Muse Spark
+    // /zen/v1/models lists them (2026-09-24). GPT-5.x/6, Grok and Muse Spark
     // are served only through the Responses API, which has no protocol here,
     // so they stay out until one exists.
     models: [
       'claude-sonnet-5',
+      'claude-opus-5-5',
       'claude-opus-5',
       'claude-fable-5-1',
       'claude-haiku-4-5',

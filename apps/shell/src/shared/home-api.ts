@@ -144,6 +144,17 @@ export interface FileSearchPage {
   }
 }
 
+/**
+ * Default-app ownership of the Office document types. `others` lists the apps
+ * (display names) currently holding at least one type; `manualOnly` means the
+ * platform (Windows) only lets us open the system page.
+ */
+export interface DefaultAppStatus {
+  state: 'unsupported' | 'unknown' | 'default' | 'other'
+  others: string[]
+  manualOnly: boolean
+}
+
 export interface HomeApi {
   /** unified recents across document types, newest first (paged) */
   recents(query?: RecentQuery): Promise<RecentPage>
@@ -273,6 +284,10 @@ export interface HomeApi {
   getDefaultSaveDir(): Promise<string>
   /** directory picker to change the default save folder; resolves to the new folder, or null when canceled or the pick was unusable */
   pickDefaultSaveDir(): Promise<string | null>
+  /** who opens .docx/.xlsx/.pptx today (Settings → General "default app" row) */
+  getDefaultAppStatus(): Promise<DefaultAppStatus>
+  /** claim the Office types (mac/linux) or open the system Default Apps page (win); resolves to the refreshed status */
+  setDefaultApp(): Promise<DefaultAppStatus>
   /** theme switched anywhere (broadcast from the main process) */
   onThemeChanged(handler: (theme: UiTheme) => void): () => void
   /** open the GenTeam community page in the default browser */
@@ -507,6 +522,8 @@ export const HOME_CHANNELS = {
   getAiPanelPrefs: 'home:get-ai-panel-prefs',
   setAiPanelPrefs: 'home:set-ai-panel-prefs',
   getDefaultSaveDir: 'home:get-default-save-dir',
+  getDefaultAppStatus: 'home:get-default-app-status',
+  setDefaultApp: 'home:set-default-app',
   pickDefaultSaveDir: 'home:pick-default-save-dir',
   openGenTeam: 'home:open-genteam',
   openCreditUsage: 'home:open-credit-usage',

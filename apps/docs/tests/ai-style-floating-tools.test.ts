@@ -6,6 +6,7 @@ import { pmDocToSavePlan, type PmNode } from '../src/renderer/editor/convert'
 import { executeTool, type AiDocExtras } from '../src/renderer/ai/tools'
 import type { AiStyleInfo } from '../src/renderer/ai/style-ops'
 import { pictureNode, textBoxNode } from '../src/renderer/ai/floating-ops'
+import { MAX_FONT_SIZE_PT, MIN_FONT_SIZE_PT } from '../src/renderer/ai/ops'
 
 interface JsonNode {
   type: string
@@ -557,11 +558,33 @@ describe('pictureNode', () => {
         extras,
       )
       expect(ok.isError).toBeUndefined()
+      const setFontSize = (fontSize: number) =>
+        run(
+          editor,
+          'apply_ops',
+          { ops: [{ op: 'setFont', target: { blockIndexes: [0] }, fontSize }] },
+          extras,
+        )
+      expect((await setFontSize(MAX_FONT_SIZE_PT)).isError).toBeUndefined()
+      expect((await setFontSize(MIN_FONT_SIZE_PT)).isError).toBeUndefined()
+      const over = await setFontSize(MAX_FONT_SIZE_PT + 1)
+      expect(over.isError).toBe(true)
+      expect(String(over.output)).toContain('1-1638pt')
+      expect((await setFontSize(0.5)).isError).toBe(true)
     } finally {
       editor.destroy()
     }
     expect(
       textBoxNode({ text: 'x', width: 10, height: 10, x: 0, y: 0, fontSize: 1e9 }),
     ).toHaveProperty('error')
+    expect(
+      textBoxNode({ text: 'x', width: 10, height: 10, x: 0, y: 0, fontSize: 1639 }),
+    ).toHaveProperty('error')
+    expect(
+      textBoxNode({ text: 'x', width: 10, height: 10, x: 0, y: 0, fontSize: 0.5 }),
+    ).toHaveProperty('error')
+    expect(
+      textBoxNode({ text: 'x', width: 10, height: 10, x: 0, y: 0, fontSize: 1638 }),
+    ).not.toHaveProperty('error')
   })
 })

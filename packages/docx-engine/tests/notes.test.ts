@@ -291,6 +291,8 @@ describe('captions', () => {
       szHalfPoints: 18,
       align: 'center',
       runs: [{ text: '图 1 测试', color: '44546A', sizeHalfPoints: 18 }],
+      spaceBeforeTwips: 80,
+      spaceAfterTwips: 200,
     })
   })
 })

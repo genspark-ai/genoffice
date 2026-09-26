@@ -159,7 +159,7 @@ describe('parseCellValue', () => {
     expect(parseCellValue('123,456,789,012,345,678').kind).toBe('text')
     expect(parseCellValue('-123,456,789,012,345,678').kind).toBe('text')
     expect(parseCellValue('$1,234,567,890,123,456').kind).toBe('text')
-    expect(parseCellValue('1,234,567,890,123,456元').kind).toBe('text')
+    expect(parseCellValue('1,234,567,890,123,456\u5143').kind).toBe('text')
     expect(parseCellValue('1,234,567,890,123,456%').kind).toBe('text')
   })
 

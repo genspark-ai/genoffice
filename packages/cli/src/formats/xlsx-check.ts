@@ -105,8 +105,12 @@ function unescapeXml(text: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&#(?:x([0-9a-fA-F]+)|(\d+));/g, (reference, hex: string | undefined, dec: string) => {
+      const code = hex === undefined ? Number(dec) : parseInt(hex, 16)
+      return code <= 0x10ffff && (code < 0xd800 || code > 0xdfff)
+        ? String.fromCodePoint(code)
+        : reference
+    })
     .replace(/&amp;/g, '&')
 }
 

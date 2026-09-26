@@ -130,6 +130,7 @@ export type MenuCommand =
   | 'zoom-in'
   | 'zoom-out'
   | 'zoom-100'
+  | 'zoom-set'
   | 'zoom-page-width'
   | 'zoom-whole-page'
   | 'toggle-ai'
@@ -151,11 +152,39 @@ export type MenuCommand =
   | 'align-justify'
   | 'page-setup'
   | 'find'
+  | 'replace'
+  | 'goto'
   | 'print'
   | 'export-pdf'
   | 'export-html'
   | 'export-images'
   | 'word-count'
+  | 'autocorrect-options'
+  | 'preferences'
+  | 'table-insert-cells'
+  | 'table-insert-rows-above'
+  | 'table-insert-rows-below'
+  | 'table-insert-cols-left'
+  | 'table-insert-cols-right'
+  | 'table-delete-table'
+  | 'table-delete-columns'
+  | 'table-delete-rows'
+  | 'table-delete-cells'
+  | 'table-select-table'
+  | 'table-select-column'
+  | 'table-select-row'
+  | 'table-select-cell'
+  | 'table-merge-cells'
+  | 'table-split-cells'
+  | 'table-split-table'
+  | 'table-autofit-contents'
+  | 'table-autofit-window'
+  | 'table-autofit-fixed'
+  | 'table-distribute-rows'
+  | 'table-distribute-columns'
+  | 'table-repeat-header'
+  | 'table-gridlines'
+  | 'table-properties'
   | 'ai-proofread'
   | 'shortcuts'
 
@@ -247,9 +276,24 @@ export interface McpSaveResult {
   dataUrl?: string
 }
 
+/** Chromium's misspelling data for a claimed body right-click (`seq` = the claim it answers) */
+export interface ContextMenuRequest {
+  seq: number
+  misspelledWord: string
+  suggestions: string[]
+}
+
+export interface SpellLanguages {
+  active: string[]
+  /** empty on macOS: the OS checker picks the language itself */
+  available: string[]
+}
+
 export interface DesktopApi {
   /** current UI language (persisted by the shell in app-settings.json) */
   getLanguage(): Promise<'zh' | 'en' | 'ja' | 'ko' | 'fr' | 'de' | 'es' | 'th' | 'id' | 'ru' | 'ar'>
+  /** OS regional-settings locale (BCP 47); Word derives the new-document paper size from it */
+  getSystemLocale(): Promise<string>
   /** language switched from the shell home page */
   onLanguageChanged(
     handler: (
@@ -334,6 +378,20 @@ export interface DesktopApi {
    *  spellcheck failures are intermittent and platform-bound, so the
    *  toggle/kick lifecycle keeps a trace support can ask users for */
   spellDiag(line: string): void
+  /** opt this renderer into claiming right-clicks: claimed clicks get no native menu */
+  armContextMenu(): void
+  /** synchronous, from the DOM contextmenu handler: the React menu answers this
+   *  right-click, so Blink's request for it must not pop the native menu */
+  claimContextMenu(seq: number): void
+  /** Chromium's misspelling data for a claimed click */
+  onContextMenuRequest(handler: (request: ContextMenuRequest) => void): () => void
+  spellAddWord(word: string): Promise<boolean>
+  /** Word's Ignore All: skipped while this document is open, forgotten when it closes */
+  spellIgnoreWord(word: string): Promise<boolean>
+  /** Blink-side replacement of the misspelled word under the last right-click */
+  spellReplace(word: string): Promise<void>
+  spellLanguages(): Promise<SpellLanguages>
+  spellSetLanguages(langs: string[]): Promise<SpellLanguages>
   /** sourcePath: the document's current path — Save As uses its desired next-save
    *  password and commits that state to the chosen path only after success */
   saveDocxAs(

@@ -84,7 +84,7 @@ export function recommendCharts(
   // Two numeric vectors with no label column reads as x/y pairs.
   const scatterCandidate = !parsed.hasCategoryColumn && seriesCount >= 2 && rows >= 5
   const spread = (series: { values: number[] }): number =>
-    Math.max(...series.values.map(Math.abs), 0)
+    series.values.reduce((max, value) => Math.max(max, Math.abs(value)), 0)
   const secondSeries = parsed.series[1]
   const mixedScales =
     seriesCount === 2 &&

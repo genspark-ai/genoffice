@@ -161,7 +161,7 @@ describe('header/footer images (display-only Logo)', () => {
     expect(img.wrap).toBe('square')
     expect(img.posVRel).toBe('paragraph')
     expect(img.posYPx).toBe(-14)
-    expect(img.heightPx).toBe(101)
+    expect(img.heightPx).toBe(100.6)
     expect(img.posHRel).toBe('margin')
   })
 
@@ -531,5 +531,92 @@ describe('header/footer VML shapes and watermarks', () => {
     )
     const doc = await parseDocx(await buildHeaderLogoDocx(headerXml))
     expect(doc.headerImages ?? []).toHaveLength(0)
+  })
+})
+
+const ANCHOR_PIC = (posH: string, posV: string): string =>
+  '<w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1">' +
+  '<wp:simplePos x="0" y="0"/>' +
+  `<wp:positionH relativeFrom="${posH.slice(0, posH.indexOf(':'))}">${posH.slice(posH.indexOf(':') + 1)}</wp:positionH>` +
+  `<wp:positionV relativeFrom="${posV.slice(0, posV.indexOf(':'))}">${posV.slice(posV.indexOf(':') + 1)}</wp:positionV>` +
+  '<wp:extent cx="381000" cy="190500"/><wp:wrapNone/><wp:docPr id="1" name="Logo"/>' +
+  '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+  '<pic:pic><pic:blipFill><a:blip r:embed="rId1"/></pic:blipFill></pic:pic>' +
+  '</a:graphicData></a:graphic></wp:anchor></w:drawing></w:r>'
+
+const hdr = (inner: string): string => HEADER_XML.replace(/<w:p>[\s\S]*<\/w:p>/, inner)
+
+describe('anchored header/footer object bands (wp:positionH/V relativeFrom)', () => {
+  it('keeps the margin bands as the offset/alignment origin', async () => {
+    const xml = hdr(
+      '<w:p>' +
+        ANCHOR_PIC(
+          'rightMargin:<wp:posOffset>95250</wp:posOffset>',
+          'bottomMargin:<wp:align>center</wp:align>',
+        ) +
+        '</w:p>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(xml))
+    const img = doc.headerImages![0]
+    expect(img.floating).toBe(true)
+    expect(img.posHRel).toBe('rightMargin')
+    expect(img.posXPx).toBe(10)
+    expect(img.posV).toBe('center')
+    expect(img.posVRel).toBe('bottomMargin')
+  })
+
+  it('maps inside/outside margins onto the left/top and right/bottom bands', async () => {
+    const xml = hdr(
+      '<w:p>' +
+        ANCHOR_PIC(
+          'insideMargin:<wp:align>center</wp:align>',
+          'outsideMargin:<wp:posOffset>0</wp:posOffset>',
+        ) +
+        '</w:p>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(xml))
+    expect(doc.headerImages![0].posHRel).toBe('leftMargin')
+    expect(doc.headerImages![0].posVRel).toBe('bottomMargin')
+  })
+
+  it('measures a column offset inside a layout-table cell from that cell', async () => {
+    const xml = hdr(
+      '<w:tbl><w:tblPr><w:tblInd w:w="150" w:type="dxa"/></w:tblPr>' +
+        '<w:tblGrid><w:gridCol w:w="7860"/><w:gridCol w:w="2940"/></w:tblGrid>' +
+        '<w:tr><w:tc><w:p><w:r><w:t>Title</w:t></w:r></w:p></w:tc>' +
+        '<w:tc><w:p>' +
+        ANCHOR_PIC(
+          'column:<wp:posOffset>781050</wp:posOffset>',
+          'paragraph:<wp:posOffset>0</wp:posOffset>',
+        ) +
+        '</w:p></w:tc></w:tr></w:tbl>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(xml))
+    const img = doc.headerImages!.find((i) => i.floating)!
+    // 781050 EMU = 82 px, plus tblInd 150 + gridCol 7860 twips = 534 px
+    expect(img.posHRel).toBe('margin')
+    expect(img.posXPx).toBe(616)
+  })
+
+  it('ignores a nested table in an earlier cell when resolving the cell column', async () => {
+    const nested =
+      '<w:tbl><w:tblPr><w:tblInd w:w="9999" w:type="dxa"/></w:tblPr>' +
+      '<w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="500"/></w:tblGrid>' +
+      '<w:tr><w:tc><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr></w:tbl>'
+    const xml = hdr(
+      '<w:tbl><w:tblPr><w:tblInd w:w="150" w:type="dxa"/></w:tblPr>' +
+        '<w:tblGrid><w:gridCol w:w="7860"/><w:gridCol w:w="2940"/></w:tblGrid>' +
+        '<w:tr><w:tc>' +
+        nested +
+        '<w:p><w:r><w:t>Title</w:t></w:r></w:p></w:tc>' +
+        '<w:tc><w:p>' +
+        ANCHOR_PIC(
+          'column:<wp:posOffset>781050</wp:posOffset>',
+          'paragraph:<wp:posOffset>0</wp:posOffset>',
+        ) +
+        '</w:p></w:tc></w:tr></w:tbl>',
+    )
+    const doc = await parseDocx(await buildHeaderLogoDocx(xml))
+    expect(doc.headerImages!.find((i) => i.floating)!.posXPx).toBe(616)
   })
 })

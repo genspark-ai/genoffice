@@ -714,11 +714,11 @@ export class AgentLoop<TSnapshot = unknown> {
     this.history.push({
       role: 'assistant',
       text: this.turnText,
-      toolCalls: toolCalls.map(({ id, name, input, thoughtSignature }) => ({
+      toolCalls: toolCalls.map(({ id, name, input, signature }) => ({
         id,
         name,
         input,
-        ...(thoughtSignature ? { thoughtSignature } : {}),
+        ...(signature ? { signature } : {}),
       })),
       // interleaved-thinking models degrade in tool loops unless their reasoning is echoed back
       ...(this.turnReasoning ? { reasoning: this.turnReasoning } : {}),
@@ -879,11 +879,30 @@ export class AgentLoop<TSnapshot = unknown> {
  * prose is never rewritten.
  */
 export function sanitizeAgentPayload(payload: string): string {
-  return payload
-    .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
-    .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
-    .replace(
-      /(password|passwd|secret_key|private_key)(\s*[:=]\s*)["'][^"']+["']/gi,
-      '$1$2"[REDACTED_SECURE_TOKEN]"',
-    )
+  return (
+    payload
+      .replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+        '[REDACTED_PRIVATE_KEY]',
+      )
+      // Truncated paste: header plus base64 body lines, no END marker.
+      .replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:\r?\n[A-Za-z0-9+/=]+(?=\r?\n|$))*/g,
+        '[REDACTED_PRIVATE_KEY]',
+      )
+      .replace(/\b(?:sk-|AIza|ghp_|secret_)[A-Za-z0-9_-]{16,}/g, '[REDACTED_API_KEY]')
+      .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[REDACTED_API_KEY]')
+      .replace(/\bxox[abeoprs]-[A-Za-z0-9-]{10,}/g, '[REDACTED_API_KEY]')
+      .replace(/([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, '$1:[REDACTED_CREDENTIALS]@')
+      .replace(
+        /(password|passwd|secret_key|private_key)(\s*[:=]\s*)["'][^"']+["']/gi,
+        '$1$2"[REDACTED_SECURE_TOKEN]"',
+      )
+      // Unquoted `password=abc123`: the value must be 6+ chars with a non-letter,
+      // so "password: is in the vault" prose stays untouched.
+      .replace(
+        /(?<!\/)(\w*(?:password|passwd|secret_key|private_key))(\s*[:=]\s*)(?=[^\s"',;]*[^A-Za-z\s"',;])[^\s"',;]{6,}/gi,
+        '$1$2[REDACTED_SECURE_TOKEN]',
+      )
+  )
 }

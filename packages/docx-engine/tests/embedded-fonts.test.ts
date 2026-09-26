@@ -1,6 +1,6 @@
 /** word/fonts/*.odttf: fontTable embed slots, ECMA-376 17.8.1 de-obfuscation, face listing. */
 import { describe, expect, it } from 'vitest'
-import { deobfuscateOdttf, isSfnt, parseDocx, parseFontTable } from '../src/index'
+import { deobfuscateOdttf, isSfnt, parseDocx, parseFontTable, sfntLineMetrics } from '../src/index'
 import { buildDocx } from './helpers/build-docx'
 
 const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
@@ -49,6 +49,50 @@ describe('deobfuscateOdttf', () => {
     expect(isSfnt(Uint8Array.from([0x4f, 0x54, 0x54, 0x4f, ...new Array(12).fill(0)]))).toBe(true)
     expect(isSfnt(Uint8Array.from([0x74, 0x72, 0x75, 0x65, ...new Array(12).fill(0)]))).toBe(true)
     expect(isSfnt(new Uint8Array(4))).toBe(false)
+  })
+})
+
+/** sfnt with real head (unitsPerEm) and hhea (ascender/descender/lineGap) tables */
+function metricSfnt(upm: number, asc: number, desc: number, gap: number): Uint8Array {
+  const b = new Uint8Array(12 + 32 + 54 + 36)
+  const dv = new DataView(b.buffer)
+  dv.setUint32(0, 0x00010000)
+  dv.setUint16(4, 2)
+  const rec = (i: number, tag: string, off: number, len: number) => {
+    b.set(
+      [...tag].map((c) => c.charCodeAt(0)),
+      12 + 16 * i,
+    )
+    dv.setUint32(12 + 16 * i + 8, off)
+    dv.setUint32(12 + 16 * i + 12, len)
+  }
+  rec(0, 'head', 44, 54)
+  rec(1, 'hhea', 98, 36)
+  dv.setUint16(44 + 18, upm)
+  dv.setInt16(98 + 4, asc)
+  dv.setInt16(98 + 6, desc)
+  dv.setInt16(98 + 8, gap)
+  return b
+}
+
+describe('sfntLineMetrics', () => {
+  it('reads the hhea line box in em units', () => {
+    expect(sfntLineMetrics(metricSfnt(2000, 1968, -546, 0))).toEqual({
+      ascent: 0.984,
+      descent: 0.273,
+      lineGap: 0,
+    })
+    expect(sfntLineMetrics(metricSfnt(2048, 1854, -434, 67))).toEqual({
+      ascent: 1854 / 2048,
+      descent: 434 / 2048,
+      lineGap: 67 / 2048,
+    })
+  })
+
+  it('returns null for faces without head/hhea or a zero em', () => {
+    expect(sfntLineMetrics(fakeSfnt(1))).toBeNull()
+    expect(sfntLineMetrics(metricSfnt(0, 1, -1, 0))).toBeNull()
+    expect(sfntLineMetrics(new Uint8Array([0, 1, 0, 0, 0, 40]))).toBeNull()
   })
 })
 
@@ -140,6 +184,7 @@ describe('fontTable embed slots', () => {
     expect(doc.embeddedFonts![0].data).toEqual(regular)
     expect(doc.embeddedFonts![1].data).toEqual(bold)
     expect(doc.embeddedFonts![2].data).toEqual(italic)
+    expect(doc.embeddedFonts![0].lineMetrics).toBeUndefined()
   })
 
   it('omits embeddedFonts when the fontTable has no embed slots', async () => {

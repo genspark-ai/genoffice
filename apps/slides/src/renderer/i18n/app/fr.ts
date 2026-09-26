@@ -122,6 +122,7 @@ export const fr = {
   appPasteOptSource: 'Conserver la mise en forme source',
   appPasteOptTheme: 'Utiliser le thème de destination',
   appStatusPasteOptionsExpired: 'Les options de collage ne sont plus disponibles',
+  appStatusPasteTruncated: 'Le texte collé était trop long et a été tronqué',
   appCtxHideSlide: 'Masquer la diapositive',
   appCtxUnhideSlide: 'Afficher la diapositive',
   appCtxAddSectionBefore: 'Ajouter une section (avant cette diapositive)',

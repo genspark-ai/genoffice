@@ -125,6 +125,71 @@ describe('canonical path identity', () => {
     expect(store.loadChat(resolved.projectId, resolved.chatId).map((m) => m.text)).toEqual(['old'])
   })
 
+  describe('index entries an older macOS version keyed under the NFD spelling', () => {
+    const nfdName = 'cafe\u0301.docx'
+    const nfcName = 'caf\u00e9.docx'
+
+    /** index.json and project.json as the previous version wrote them: raw NFD keys */
+    function seedLegacyIndex(nfd: string, chatId: string | undefined): string {
+      const legacyId = createHash('sha256').update(nfd).digest('hex').slice(0, 16)
+      const indexPath = join(tmpDir, 'projects', 'index.json')
+      const index = JSON.parse(readFileSync(indexPath, 'utf8'))
+      index.fileMap[nfd] = 'default'
+      if (chatId !== undefined) index.chatIdByPath = { [nfd]: chatId }
+      writeFileSync(indexPath, JSON.stringify(index), 'utf8')
+      const projectPath = join(tmpDir, 'projects', 'default', 'project.json')
+      const project = JSON.parse(readFileSync(projectPath, 'utf8'))
+      project.files = [nfd]
+      writeFileSync(projectPath, JSON.stringify(project), 'utf8')
+      const chatsDir = join(tmpDir, 'projects', 'default', 'chats')
+      mkdirSync(chatsDir, { recursive: true })
+      writeFileSync(
+        join(chatsDir, `${legacyId}.jsonl`),
+        `${JSON.stringify({ seq: 0, ts: new Date().toISOString(), role: 'user', text: 'old' })}\n`,
+        'utf8',
+      )
+      return legacyId
+    }
+
+    function expectSingleLegacyIdentity(nfd: string, nfc: string, legacyId: string): void {
+      const viaNfd = store.resolveChatForFile(nfd)
+      expect(viaNfd.projectId).toBe('default')
+      expect(viaNfd.chatId).toBe(legacyId)
+      const viaNfc = store.resolveChatForFile(nfc)
+      expect(viaNfc.projectId).toBe('default')
+      expect(viaNfc.chatId).toBe(legacyId)
+      expect(store.loadChat('default', legacyId).map((m) => m.text)).toEqual(['old'])
+
+      const index = readIndex(tmpDir)
+      expect(Object.keys(index.fileMap)).toHaveLength(1)
+      expect(Object.keys(index.chatIdByPath ?? {})).toHaveLength(1)
+      expect(index.chatIdByPath?.[canonicalPathKey(nfd)]).toBe(legacyId)
+      expect(store.getProject('default')?.files).toHaveLength(1)
+    }
+
+    it('finds the registered chat through the NFD and the NFC spelling', () => {
+      const nfd = join(tmpDir, nfdName)
+      const nfc = join(tmpDir, nfcName)
+      writeFileSync(nfd, 'doc', 'utf8')
+      expect(canonicalPathKey(nfd)).not.toBe(nfd)
+      const legacyId = createHash('sha256').update(nfd).digest('hex').slice(0, 16)
+      seedLegacyIndex(nfd, legacyId)
+
+      expectSingleLegacyIdentity(nfd, nfc, legacyId)
+    })
+
+    it('finds an unregistered chat written under the raw NFD path hash', () => {
+      const nfd = join(tmpDir, nfdName)
+      const nfc = join(tmpDir, nfcName)
+      writeFileSync(nfd, 'doc', 'utf8')
+      const legacyId = seedLegacyIndex(nfd, undefined)
+      expect(legacyId).not.toBe(ProjectStore.chatIdForFile(nfd))
+
+      expect(store.chatIdForPath(nfd, 'default')).toBe(legacyId)
+      expectSingleLegacyIdentity(nfd, nfc, legacyId)
+    })
+  })
+
   it('rename through an equivalent spelling keeps the same chat', () => {
     const filePath = join(tmpDir, 'before.docx')
     writeFileSync(filePath, 'doc', 'utf8')

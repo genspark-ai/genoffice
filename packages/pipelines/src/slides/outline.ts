@@ -51,7 +51,7 @@ export interface OutlineIssue {
   message: string
 }
 
-export const PLACEHOLDER = /\bXX+%?|\blorem\b|\bTBD\b|\bTODO\b|\{\{|\[insert\b|\bN\/A\b/i
+export const PLACEHOLDER = /\bXX+(?:%|\b)|\blorem\b|\bTBD\b|\bTODO\b|\{\{|\[insert\b|\bN\/A\b/i
 const HAS_CJK = new RegExp('[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]')
 const MIN_BRIEF = 40
 /** Raw LLM outline budget; larger payloads are rejected before JSON.parse. */

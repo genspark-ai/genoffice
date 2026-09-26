@@ -93,6 +93,51 @@ export function imageDpiFromBytes(b: Uint8Array): ImageDpi | undefined {
   return undefined
 }
 
+export interface ImageSize {
+  w: number
+  h: number
+}
+
+/** Pixel size from a PNG IHDR or the first JPEG SOF frame header; undefined for other formats. */
+export function imageSizeFromBytes(b: Uint8Array): ImageSize | undefined {
+  if (b.length < 24) return undefined
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+    if (String.fromCharCode(b[12]!, b[13]!, b[14]!, b[15]!) !== 'IHDR') return undefined
+    return sizeOrUndefined(u32(b, 16), u32(b, 20))
+  }
+  if (b[0] === 0xff && b[1] === 0xd8) return jpegSize(b)
+  return undefined
+}
+
+function sizeOrUndefined(w: number, h: number): ImageSize | undefined {
+  return w > 0 && h > 0 ? { w, h } : undefined
+}
+
+function jpegSize(b: Uint8Array): ImageSize | undefined {
+  let o = 2
+  while (o + 4 <= b.length && b[o] === 0xff) {
+    const marker = b[o + 1]!
+    if (
+      marker === 0xd8 ||
+      (marker >= 0xd0 && marker <= 0xd7) ||
+      marker === 0x01 ||
+      marker === 0xff
+    ) {
+      o += marker === 0xff ? 1 : 2
+      continue
+    }
+    const len = (b[o + 2]! << 8) + b[o + 3]!
+    if (marker === 0xda || marker === 0xd9) return undefined
+    // SOF0..SOF15 minus DHT (C4), JPG (C8) and DAC (CC): height then width follow the precision byte
+    const isSof = marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)
+    if (isSof && o + 9 <= b.length) {
+      return sizeOrUndefined((b[o + 7]! << 8) + b[o + 8]!, (b[o + 5]! << 8) + b[o + 6]!)
+    }
+    o += 2 + len
+  }
+  return undefined
+}
+
 function plausible(x: number, y: number): ImageDpi | undefined {
   return x >= 10 && x <= 10000 && y >= 10 && y <= 10000 ? { x, y } : undefined
 }

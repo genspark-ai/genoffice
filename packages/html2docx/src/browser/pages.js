@@ -6,6 +6,7 @@
       isVisible,
       markForScreenshot,
       boundedScreenshotSliceCount,
+      maxScreenshotSliceCount,
       nextShotId,
       processChildren,
       processElement,
@@ -231,6 +232,12 @@
       const boundaries = [];
       let cursor = 0;
       while (bodyHeight - cursor > sliceBudget) {
+        // The slice cap bounds hostile heights: keep the page top and drop the
+        // tail instead of the whole composition.
+        if (boundaries.length >= maxScreenshotSliceCount - 1) {
+          boundaries.push(cursor + sliceBudget);
+          return boundaries;
+        }
         const ideal = cursor + sliceBudget;
         const minCut = cursor + Math.round(sliceBudget * 0.6);
         // Whole cards move to the next page when a gap exists; otherwise cut

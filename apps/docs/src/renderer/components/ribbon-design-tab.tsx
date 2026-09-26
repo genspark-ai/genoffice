@@ -14,18 +14,7 @@ import {
 
 /** icon size for the big icon-over-label ribbon buttons (slides ribbon parity) */
 import { BIG, TabProps, toggleDropdown } from './ribbon-tabs'
-
-const PAGE_COLORS: Array<{ nameKey: StringKey; hex: string | null }> = [
-  { nameKey: 'ribbonColorWhite', hex: null },
-  { nameKey: 'ribbonColorLightYellow', hex: 'FFF9E6' },
-  { nameKey: 'ribbonColorBeige', hex: 'F5F0E6' },
-  { nameKey: 'ribbonColorLightGreen', hex: 'EAF5EA' },
-  { nameKey: 'ribbonColorLightBlue', hex: 'E8F1FB' },
-  { nameKey: 'ribbonColorLightPurple', hex: 'F3EEFB' },
-  { nameKey: 'ribbonColorLightGray', hex: 'F2F2F2' },
-  { nameKey: 'ribbonColorDarkGray', hex: '333333' },
-  { nameKey: 'ribbonColorBlack', hex: '000000' },
-]
+import { RibbonColorPalette } from './ribbon-color-palette'
 
 /** Word-like theme presets: font pair + color scheme applied together */
 const THEME_PRESETS: Array<{ nameKey: StringKey; fonts: ThemeFonts; colors: ThemeColors }> = [
@@ -378,30 +367,14 @@ export function DesignTab({
               <span>{t('ribbonPageColor')}</span>
             </button>
             {dropdown === 'pagecolor' && (
-              <div data-rb-panel="" className="color-palette color-palette-page">
-                {PAGE_COLORS.map((c) => (
-                  <button
-                    key={c.hex ?? 'auto'}
-                    className={`color-swatch ${(pageColor ?? null) === c.hex ? 'selected' : ''}`}
-                    data-tip={t(c.nameKey)}
-                    aria-label={t(c.nameKey)}
-                    style={{ background: c.hex ? `#${c.hex}` : '#ffffff' }}
-                    onClick={() => {
-                      onPageColor(c.hex)
-                      setDropdown(() => null)
-                    }}
-                  />
-                ))}
-                <button
-                  className="color-none"
-                  onClick={() => {
-                    onPageColor(null)
-                    setDropdown(() => null)
-                  }}
-                >
-                  {t('ribbonNoColor')}
-                </button>
-              </div>
+              <RibbonColorPalette
+                current={pageColor}
+                noneLabel={t('ribbonNoColor')}
+                onPick={(hex) => {
+                  onPageColor(hex)
+                  setDropdown(() => null)
+                }}
+              />
             )}
           </div>
           <div className="rb-split-wrap">

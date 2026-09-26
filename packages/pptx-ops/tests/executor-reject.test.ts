@@ -163,4 +163,41 @@ describe('executor rejections', () => {
     expect(r.plan).toHaveLength(1)
     expect(r.failures ?? []).toEqual([])
   })
+
+  it('rejects non-integer, out-of-range and non-finite addTable dims', () => {
+    const offset = { x: 0, y: 0, cx: 1828800, cy: 914400 }
+    const bad: Array<[unknown, unknown]> = [
+      [NaN, 2],
+      [2, Infinity],
+      [0, 2],
+      [2, 76],
+      [1.5, 2],
+      ['2', 2],
+    ]
+    for (const [rows, cols] of bad) {
+      const r = runTxn(opened, {
+        ops: [{ op: 'addTable', target: { slide: 0 }, offset, rows, cols }],
+      })
+      expect(r.applied).toBe(false)
+      expect(r.failures).toHaveLength(1)
+      expect(r.failures![0]!.error).toMatch(/"rows" and "cols" \(1\.\.75\)/)
+    }
+  })
+
+  it('accepts addTable dims at the 75x75 limit', async () => {
+    const fresh = await openPptx(await createBlankPptx())
+    const r = runTxn(fresh, {
+      dryRun: true,
+      ops: [
+        {
+          op: 'addTable',
+          target: { slide: 0 },
+          offset: { x: 0, y: 0, cx: 1828800, cy: 914400 },
+          rows: 75,
+          cols: 75,
+        },
+      ],
+    })
+    expect(r.failures ?? []).toEqual([])
+  })
 })

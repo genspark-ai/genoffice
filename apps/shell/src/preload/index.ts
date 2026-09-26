@@ -13,6 +13,7 @@ import type {
   AccountLoginEvent,
   AccountStatus,
   CloudProjectsSnapshot,
+  DefaultAppStatus,
   FolderListing,
   FolderRoot,
   MoveResult,
@@ -82,6 +83,16 @@ function asSearchPage(result: unknown): FileSearchPage {
     return result as FileSearchPage
   }
   return EMPTY_SEARCH
+}
+
+function normalizeDefaultAppStatus(result: unknown): DefaultAppStatus {
+  const r = (result ?? {}) as Partial<DefaultAppStatus>
+  const state = r.state
+  return {
+    state: state === 'default' || state === 'other' || state === 'unknown' ? state : 'unsupported',
+    others: Array.isArray(r.others) ? r.others.filter((x) => typeof x === 'string') : [],
+    manualOnly: r.manualOnly === true,
+  }
 }
 
 const homeApi: HomeApi = {
@@ -370,6 +381,12 @@ const homeApi: HomeApi = {
   async getDefaultSaveDir() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.getDefaultSaveDir)
     return typeof result === 'string' ? result : ''
+  },
+  async getDefaultAppStatus() {
+    return normalizeDefaultAppStatus(await ipcRenderer.invoke(HOME_CHANNELS.getDefaultAppStatus))
+  },
+  async setDefaultApp() {
+    return normalizeDefaultAppStatus(await ipcRenderer.invoke(HOME_CHANNELS.setDefaultApp))
   },
   async pickDefaultSaveDir() {
     const result: unknown = await ipcRenderer.invoke(HOME_CHANNELS.pickDefaultSaveDir)

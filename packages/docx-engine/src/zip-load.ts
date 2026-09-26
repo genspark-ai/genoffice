@@ -1,4 +1,5 @@
 import JSZip from 'jszip'
+import { decompressionStream, streamBytes } from './byte-stream'
 import { needsOoxmlNormalization, normalizeOoxmlXml } from './ooxml-normalize'
 
 const EOCD_SIG = 0x06054b50
@@ -255,36 +256,6 @@ async function verifiedSize(bytes: Uint8Array, part: ScannedPart): Promise<numbe
 }
 
 /**
- * A `ReadableStream` over bytes already in memory, fed one slice at a time.
- *
- * `new Blob([bytes]).stream()` is one line shorter and was what this used, but
- * `Blob.prototype.stream` is not universally there: jsdom — the environment the
- * Docs app's tests run in — ships a `Blob` without it (its `ReadableStream` is
- * Node's, so streams themselves are fine). CI on #781 failed 389 docs tests with
- * "(intermediate value).stream is not a function" for exactly that reason, while
- * every Node-environment suite passed. Building the stream by hand uses only what
- * all three targets have: Node, the renderer bundle, and jsdom.
- */
-function streamBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
-  const SLICE = 64 * 1024
-  let offset = 0
-  return new ReadableStream<Uint8Array>({
-    pull(controller) {
-      if (offset >= bytes.length) {
-        controller.close()
-        return
-      }
-      const end = Math.min(offset + SLICE, bytes.length)
-      // slice() copies, so each chunk is a standalone Uint8Array whatever the
-      // caller's view is backed by, and the inflate stays metered: input arrives
-      // in bounded pieces and can be cancelled before the decompressor runs away.
-      controller.enqueue(bytes.slice(offset, end))
-      offset = end
-    },
-  })
-}
-
-/**
  * Inflates through a stream and stops reading at the claim, so neither the
  * payload nor a single large allocation is ever materialised. Same shape as the
  * gzip cap in `metafile.ts`, which is here for the same renderer reason.
@@ -292,15 +263,7 @@ function streamBytes(bytes: Uint8Array): ReadableStream<Uint8Array> {
 async function inflateRawBounded(raw: Uint8Array, part: ScannedPart): Promise<number> {
   let seen = 0
   try {
-    // The cast is for the cli build, which adds the DOM lib: there
-    // `DecompressionStream.writable` is `WritableStream<BufferSource>`, which is
-    // not assignable to the `WritableStream<Uint8Array>` `pipeThrough` asks for.
-    // Same object, same runtime contract; only the two libs' generics disagree.
-    const inflate = new DecompressionStream('deflate-raw') as unknown as {
-      readable: ReadableStream<Uint8Array>
-      writable: WritableStream<Uint8Array>
-    }
-    const reader = streamBytes(raw).pipeThrough(inflate).getReader()
+    const reader = streamBytes(raw).pipeThrough(decompressionStream('deflate-raw')).getReader()
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -312,7 +275,8 @@ async function inflateRawBounded(raw: Uint8Array, part: ScannedPart): Promise<nu
     }
   } catch (err) {
     if (err instanceof Error && err.message.startsWith('docx rejected:')) throw err
-    const message = (err as Error).message ?? String(err)
+    // DecompressionStream rejects with an empty-message TypeError on bad data.
+    const message = err instanceof Error ? err.message || err.name : String(err)
     throw new Error(`docx rejected: part ${part.name} cannot be inflated: ${message}`, {
       cause: err,
     })

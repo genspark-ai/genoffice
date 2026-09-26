@@ -82,7 +82,32 @@ interface Cell {
   '@_t'?: string
   '@_s'?: string
   v?: unknown
+  f?: unknown
   is?: Record<string, unknown>
+}
+
+type SharedFormulas = Map<string, string>
+
+function sharedIndex(cell: Cell): string | undefined {
+  const si =
+    typeof cell.f === 'object' && cell.f !== null
+      ? (cell.f as Record<string, unknown>)['@_si']
+      : undefined
+  return si === undefined ? undefined : String(si)
+}
+
+/** the master cell may well carry a cached value, so register it before the value check */
+function recordSharedFormula(cell: Cell, sharedFormulas: SharedFormulas): void {
+  const si = sharedIndex(cell)
+  const own = textOf(cell.f).trim()
+  if (si !== undefined && own) sharedFormulas.set(si, own)
+}
+
+/** openpyxl/ExcelJS write formulas with no cached <v>; the formula text is all there is until Excel recalculates */
+function formulaText(cell: Cell, sharedFormulas: SharedFormulas): string {
+  const si = sharedIndex(cell)
+  const text = textOf(cell.f).trim() || (si !== undefined ? (sharedFormulas.get(si) ?? '') : '')
+  return text ? `=${text}` : ''
 }
 
 /** cellXfs index → date/time parts, for the xf entries whose numFmt renders a calendar value */
@@ -118,9 +143,19 @@ function isDate1904(workbook: Record<string, any>): boolean {
   return flag === '1' || flag === 'true'
 }
 
-function cellText(cell: Cell, shared: string[], dates: DateStyles, date1904: boolean): string {
+function cellText(
+  cell: Cell,
+  shared: string[],
+  dates: DateStyles,
+  date1904: boolean,
+  sharedFormulas: SharedFormulas,
+): string {
   const type = cell['@_t'] ?? ''
   if (type === 'inlineStr') return cell.is ? sharedStringText(cell.is) : ''
+  if (cell.f !== undefined) {
+    recordSharedFormula(cell, sharedFormulas)
+    if (textOf(cell.v).trim() === '') return formulaText(cell, sharedFormulas)
+  }
   // <v> is ST_Xstring so it reaches the caller verbatim; the two reads that need it as a
   // scalar handle their own whitespace (Number tolerates it, the boolean compare strips it)
   const value = textOf(cell.v)
@@ -197,10 +232,11 @@ export async function xlsxToText(bytes: Uint8Array): Promise<string> {
     const lines: string[] = [`# ${String(sheet['@_name'] ?? '')}`]
     const rows = asArray(worksheet.worksheet?.sheetData?.row) as Array<Record<string, unknown>>
     let hasData = false
+    const sharedFormulas: SharedFormulas = new Map()
     for (const row of rows) {
       const cells: string[] = []
       for (const cell of asArray(row.c as Cell | Cell[])) {
-        const text = cellText(cell, shared, dateStyles, date1904)
+        const text = cellText(cell, shared, dateStyles, date1904, sharedFormulas)
         const ref = cell['@_r']
         // A malformed ref (no leading column letters) yields -1; append in
         // document order instead of writing cells[-1] which would drop text.

@@ -117,9 +117,15 @@ function findAttribute(
   return null
 }
 
-const ENTITY_RE = /&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/y
+const ENTITY_RE = /&(?:#(\d+)|#x([0-9a-fA-F]+)|[a-zA-Z][a-zA-Z0-9]*);/y
 
-/** raw index of the character at `decoded` in a text node whose entities each decode to one character */
+/** UTF-16 units the entity decodes to: an astral numeric reference is a surrogate pair */
+function entityUnits(entity: RegExpExecArray): number {
+  const code = entity[1] ? parseInt(entity[1], 10) : entity[2] ? parseInt(entity[2], 16) : 0
+  return code > 0xffff ? 2 : 1
+}
+
+/** raw index of the character at `decoded` in a text node, counting entities by their decoded width */
 export function decodedToRaw(raw: string, decoded: number): number {
   const target = Math.max(0, Math.floor(Number.isFinite(decoded) ? decoded : 0))
   let i = 0
@@ -129,7 +135,7 @@ export function decodedToRaw(raw: string, decoded: number): number {
     const entity = ENTITY_RE.exec(raw)
     if (entity) {
       i += entity[0].length
-      seen += 1
+      seen += entityUnits(entity)
       continue
     }
     const astral = raw.codePointAt(i)! > 0xffff

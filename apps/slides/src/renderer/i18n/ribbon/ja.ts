@@ -15,7 +15,7 @@ export const ja = {
   ribbonTabSlideShow: 'スライドショー',
   ribbonTabReview: '校閲',
   ribbonCollapse: 'リボンを折りたたむ',
-  ribbonPin: 'リボンの固定',
+  ribbonExpand: 'リボンを展開する',
   ribbonTabView: '表示',
   ribbonTabTableDesign: 'テーブルデザイン',
   ribbonTabChartDesign: 'グラフのデザイン',

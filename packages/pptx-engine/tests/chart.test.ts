@@ -234,7 +234,7 @@ describe('parseChartXml', () => {
     const start = Date.now()
     const m = parseChartXml(HOSTILE)!
     expect(Date.now() - start).toBeLessThan(10000)
-    expect(m.categories?.length).toBeLessThanOrEqual(10000)
+    expect(m.categories?.length).toBeLessThanOrEqual(1_048_576)
     expect(m.categories?.[0]).toBe('A')
     expect(m.series[0]!.values).toEqual([1, 2])
   })

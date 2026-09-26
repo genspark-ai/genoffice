@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { FluentIcon } from '@fluentui/react-icons'
 import { ICON_CATALOG } from './icon-catalog'
 import { useI18n } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's Insert → Icons: a categorized, searchable gallery. Icons are
 /// vector components on screen; picking one rasterizes it to a transparent
@@ -75,11 +76,13 @@ export function IconsDialog({
       .catch(() => setBusy(false))
   }
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog icons-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgIconsTitle')}
         onClick={(event) => event.stopPropagation()}
       >

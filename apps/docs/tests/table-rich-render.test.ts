@@ -519,7 +519,8 @@ describe('renderTableSpec cell inset variables', () => {
       cellMarTwips: { left: 108, right: 108 },
     }
     const table = renderTable(model)
-    expect(table.getAttribute('style')).toContain('width: min(227px,')
+    // outer half-lines: the first cell's 3px tcBorder on the left, the table's 1px on the right
+    expect(table.getAttribute('style')).toContain('width: min(228px,')
     expect(table.style.getPropertyValue('--doc-bw-v')).toBe('1px')
     expect(table.style.getPropertyValue('--doc-cell-pad-r')).toBe('7.2px')
     const td = table.querySelector('td') as HTMLElement

@@ -51,3 +51,12 @@ export function insertPageBreak(editor: Editor): boolean {
     .insertContent({ type: 'docParagraph', attrs: { pageBreakBefore: true } })
     .run()
 }
+
+export function insertColumnBreak(editor: Editor): boolean {
+  return editor.commands.insertContent({ type: 'hardBreak', attrs: { colBreak: true } })
+}
+
+/** Word's Layout > Breaks > Text Wrapping: a line break whose next line clears the floats */
+export function insertTextWrappingBreak(editor: Editor): boolean {
+  return editor.commands.insertContent({ type: 'hardBreak', attrs: { wrapBreak: true } })
+}

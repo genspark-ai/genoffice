@@ -53,6 +53,45 @@ describe('Codex app-server stdout reader', () => {
     expect(lines).toEqual(['{"method":"x"}'])
   })
 
+  it('keeps a multi-byte UTF-8 character split across two chunks intact', async () => {
+    const { child, stdout } = fakeChild()
+    const lines: string[] = []
+    attachBoundedRpcStdout(
+      child,
+      (line) => lines.push(line),
+      () => undefined,
+    )
+    const bytes = Buffer.from('{"text":"\u6587\u6863\u{1f600}"}\n', 'utf8')
+    // Cut inside the 3-byte U+6587 and again inside the 4-byte emoji.
+    const cutA = bytes.indexOf(Buffer.from('\u6587', 'utf8')) + 1
+    const cutB = bytes.indexOf(Buffer.from('😀', 'utf8')) + 2
+    stdout.write(bytes.subarray(0, cutA))
+    stdout.write(bytes.subarray(cutA, cutB))
+    stdout.write(bytes.subarray(cutB))
+    await settle()
+    expect(lines).toHaveLength(1)
+    expect(JSON.parse(lines[0]!)).toEqual({ text: '\u6587\u6863\u{1f600}' })
+    expect(lines[0]).not.toContain('\uFFFD')
+  })
+
+  it('counts the cap in UTF-8 bytes, not UTF-16 code units', async () => {
+    const { child, stdout, killed } = fakeChild()
+    const errors: Error[] = []
+    attachBoundedRpcStdout(
+      child,
+      () => undefined,
+      (error) => errors.push(error),
+    )
+    // 3 bytes per character: exceeds the byte cap while staying well under it in code units.
+    const chunk = '\u6587'.repeat(64 * 1024)
+    for (let written = 0; written <= MAX_RPC_LINE_BYTES; written += chunk.length * 3) {
+      stdout.write(chunk)
+    }
+    await settle()
+    expect(errors).toHaveLength(1)
+    expect(killed).toHaveLength(1)
+  })
+
   it('kills the child and reports a bounded diagnostic when a line never ends', async () => {
     const { child, stdout, killed } = fakeChild()
     const lines: string[] = []

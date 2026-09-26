@@ -82,9 +82,15 @@ function looksLikeWmf(bytes: Uint8Array): boolean {
  * (non-renderer environments), so callers keep their existing empty-frame
  * degrade. Failures are logged instead of silently swallowed.
  */
+export interface MetafileRasterOptions {
+  /** Longest raster side in device px; the converter scales down preserving the aspect ratio */
+  maxSidePx?: number
+}
+
 export async function metafileToDataUrl(
   bytes: ArrayBuffer | Uint8Array,
   mime: string,
+  raster: MetafileRasterOptions = {},
 ): Promise<string | null> {
   try {
     let u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
@@ -97,7 +103,11 @@ export async function metafileToDataUrl(
     if (looksLikeEmf(u8)) isEmf = true
     else if (looksLikeWmf(u8)) isEmf = false
     else isEmf = EMF_MIMES.has(mime) || EMZ_MIMES.has(mime)
-    const opts = { dpiScale: 2, fontFamilyMap: FONT_FAMILY_MAP }
+    const opts = {
+      dpiScale: 2,
+      fontFamilyMap: FONT_FAMILY_MAP,
+      ...(raster.maxSidePx ? { maxWidth: raster.maxSidePx, maxHeight: raster.maxSidePx } : {}),
+    }
     const result = isEmf
       ? await convertEmfToDataUrl(buffer, opts)
       : await convertWmfToDataUrl(buffer, opts)

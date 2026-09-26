@@ -8,6 +8,7 @@ import {
   type ConsolidateFn,
 } from './consolidate'
 import { useI18n } from './i18n/locale'
+import { useModalDialog } from './modal-dialog'
 
 /// Excel's Data → Consolidate: a function, a list of source references, and
 /// an optional "use labels in left column" mode. Output lands at the active
@@ -48,11 +49,13 @@ export function ConsolidateDialog({
     return null
   }
 
+  const modal = useModalDialog(onClose)
   return (
     <div className="dialog-backdrop" onClick={onClose}>
       <div
         className="format-cells-dialog"
         role="dialog"
+        {...modal}
         aria-label={t('dlgConsTitle')}
         onClick={(event) => event.stopPropagation()}
       >

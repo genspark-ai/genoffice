@@ -65,7 +65,7 @@ describe('anchored picture wrapping', () => {
       expect(box.bandBottomPx).toBeGreaterThan(0)
     }
     expect(boxes[0].bandTopPx).toBe(38)
-    expect(boxes[0].bandBottomPx).toBe(38 + 261)
+    expect(boxes[0].bandBottomPx).toBe(38 + 261.2)
   })
 
   it('bands a column-spanning photo row that shares its paragraph with text', async () => {
@@ -115,13 +115,41 @@ describe('anchored picture wrapping', () => {
     )
     const [left, right] = withTable.blocks[0].textboxes!
     expect(left.bandTopPx).toBe(1)
-    expect(left.bandBottomPx).toBe(1 + 174)
-    expect(right.bandBottomPx).toBe(26 + 136)
+    expect(left.bandBottomPx).toBe(1 + 173.67)
+    expect(right.bandBottomPx).toBe(26 + 135.8)
 
     const withText = await parseDocx(
       await buildDocx({ bodyXml: pics + '<w:p><w:r><w:t>text</w:t></w:r></w:p>', withImage: true }),
     )
     for (const box of withText.blocks[0].textboxes!) expect(box.bandBottomPx).toBeUndefined()
+  })
+
+  it('bands a side-wrapped picture overhanging the column with no text room beside it', async () => {
+    const square = '<wp:wrapSquare wrapText="bothSides"/>'
+    // A4 cover pinned to the paper: x = -left margin, extent = page width
+    const cover = `<w:p><w:r>${picture({ x: -914400, y: -571500, cx: 7560310, cy: 10692130, wrap: square })}</w:r></w:p>`
+    const doc = await parseDocx(await buildDocx({ bodyXml: cover, withImage: true }))
+    expect(doc.blocks[0].type).toBe('image')
+    expect(doc.blocks[0].imageBand).toBe(true)
+    expect(doc.blocks[0].anchorLine).toBeUndefined()
+
+    // overhanging the right edge alone still leaves no sliver
+    const wide = `<w:p><w:r>${picture({ x: 300000, y: 0, cx: 5731510, cy: 952500, wrap: square })}</w:r></w:p>`
+    expect(
+      (await parseDocx(await buildDocx({ bodyXml: wide, withImage: true }))).blocks[0].imageBand,
+    ).toBe(true)
+
+    // inside the column: text wraps beside it (CSS float route)
+    const inside = `<w:p><w:r>${picture({ x: 0, y: 0, cx: 2868295, cy: 2487930, wrap: square })}</w:r></w:p>`
+    const inColumn = await parseDocx(await buildDocx({ bodyXml: inside, withImage: true }))
+    expect(inColumn.blocks[0].imageBand).toBeUndefined()
+    expect(inColumn.blocks[0].anchorLine).toBeDefined()
+
+    // past the left edge but with text room on the right
+    const logo = `<w:p><w:r>${picture({ x: -457200, y: 0, cx: 1828800, cy: 952500, wrap: square })}</w:r></w:p>`
+    expect(
+      (await parseDocx(await buildDocx({ bodyXml: logo, withImage: true }))).blocks[0].imageBand,
+    ).toBeUndefined()
   })
 
   it('bands a side-wrapped picture that cannot sit beside a floating table', async () => {
@@ -224,7 +252,7 @@ describe('anchor paragraph line', () => {
     const block = doc.blocks[0]
     expect(block.type).toBe('paragraph')
     const images = block.runs!.filter((r) => r.image).map((r) => r.image!)
-    expect(images.map((im) => im.widthPx)).toEqual([86, 161])
+    expect(images.map((im) => im.widthPx)).toEqual([85.6, 161.2])
     expect(images[0].wrap).toBe('tight-right')
     expect(images[0].offsetYEmu).toBe(90951)
     expect(images[1].wrap).toBeUndefined()

@@ -190,7 +190,7 @@ function cellsInRect(map: TableMap, rect: Rect): number[] {
 }
 
 /** px per grid column when the table carries absolute widths */
-function columnWidthsPx(table: PmNode, map: TableMap): number[] | null {
+export function columnWidthsPx(table: PmNode, map: TableMap): number[] | null {
   const widths: number[] = []
   const first = table.firstChild
   if (!first) return null
@@ -219,7 +219,7 @@ function derivedWidthsPx(table: PmNode, map: TableMap): number[] {
  * array (px per grid column). `widths === null` keeps the table percentage
  * based: cells lose their px widths and colWidthsPct is renormalized.
  */
-function reflowColumns(
+export function reflowColumns(
   tr: Transaction,
   tablePos: number,
   widths: number[] | null,
@@ -250,7 +250,7 @@ function reflowColumns(
   })
 }
 
-function pctOf(table: PmNode, map: TableMap, widths: number[] | null): number[] {
+export function pctOf(table: PmNode, map: TableMap, widths: number[] | null): number[] {
   if (widths) {
     const total = widths.reduce((s, w) => s + w, 0) || 1
     return widths.map((w) => (w / total) * 100)
@@ -262,7 +262,7 @@ function pctOf(table: PmNode, map: TableMap, widths: number[] | null): number[] 
 }
 
 /** prosemirror-tables' addColumn maps through the whole transaction; this one only through its own steps */
-function insertColumnAt(tr: Transaction, tablePos: number, col: number): void {
+export function insertColumnAt(tr: Transaction, tablePos: number, col: number): void {
   const table = tr.doc.nodeAt(tablePos)!
   const map = TableMap.get(table)
   const start = tablePos + 1
@@ -295,13 +295,14 @@ const COPIED_CELL_ATTRS = [
   'vAlign',
   'cellMar',
   'textDirection',
+  'noWrap',
   'align',
   'bold',
   'color',
 ] as const
 
 /** new rows/columns take the visual attrs of the neighbouring cell, like Word */
-function copyCellFormatting(
+export function copyCellFormatting(
   tr: Transaction,
   tablePos: number,
   isNew: (rect: Rect) => boolean,
@@ -321,14 +322,15 @@ function copyCellFormatting(
     if (refRow < 0 || refRow >= map.height || refCol < 0 || refCol >= map.width) continue
     const ref = table.nodeAt(map.map[refRow * map.width + refCol]!)!
     const cell = table.nodeAt(pos)!
-    const patch: Record<string, unknown> = {}
+    // a new cell has no raw tcPr: the copied direction / margins / noWrap only reach the file when written from the attrs
+    const patch: Record<string, unknown> = { tcPrEdited: true }
     for (const k of COPIED_CELL_ATTRS) patch[k] = ref.attrs[k]
     tr.setNodeMarkup(start + pos, undefined, { ...cell.attrs, ...patch })
   }
 }
 
 /** prosemirror-tables' addRow, but positions are read from the current doc, not mapped through earlier batch steps */
-function insertRowAt(tr: Transaction, tablePos: number, row: number): void {
+export function insertRowAt(tr: Transaction, tablePos: number, row: number): void {
   const table = tr.doc.nodeAt(tablePos)!
   const map = TableMap.get(table)
   const start = tablePos + 1
