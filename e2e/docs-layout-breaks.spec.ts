@@ -134,9 +134,13 @@ test.describe('docs layout breaks menu', () => {
       expect(await page.evaluate(() => (window as unknown as AidocsWindow).__aidocs!.save!())).toBe(
         true,
       )
+      // The save lands in stages: waiting on an early marker hands the asserts
+      // below a half-written document (the second section's pgSz is what goes
+      // missing). Wait on the last thing this case expects instead, so every
+      // read after it sees the finished file.
       await expect
         .poll(() => documentXml(docPath), { timeout: 15_000 })
-        .toContain('<w:br w:type="textWrapping" w:clear="all"/>')
+        .toContain('<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1800"')
       const xml = await documentXml(docPath)
       expect(xml).toContain('<w:br w:type="column"/>')
       expect(xml).toContain('<w:pageBreakBefore/>')

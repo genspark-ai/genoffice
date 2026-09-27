@@ -94,7 +94,9 @@ test.describe('docs quick style gallery', () => {
       expect((await paraAttrs()).styleId).toBe('Quote')
       await pane.locator('.styles-pane-search').fill('')
       await pane.locator('.styles-pane-foot select').selectOption('all')
-      expect(await pane.locator('.style-pane-card').count()).toBeGreaterThan(20)
+      // count() reads once, and the list re-renders when the filter clears — the
+      // read could still see the two filtered cards above. Poll for the value.
+      await expect.poll(() => pane.locator('.style-pane-card').count()).toBeGreaterThan(20)
       await pane.locator('.nav-pane-close').click()
       await expect(pane).toHaveCount(0)
     } finally {
