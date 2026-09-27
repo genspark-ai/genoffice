@@ -53,7 +53,8 @@ export function notesPathForSlide(archive: PackageArchive, slidePath: string): s
 /** Find the body placeholder sp block in the notesSlide xml. */
 function findBodySp(xml: string): { xml: string; start: number; end: number } | null {
   for (const m of xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)) {
-    if (/<p:ph\b[^>]*type="body"/.test(m[0])) {
+    // quote-agnostic: a deck written with type='body' is still a body placeholder
+    if (/<p:ph\b[^>]*\btype=["']body["']/.test(m[0])) {
       return { xml: m[0], start: m.index!, end: m.index! + m[0].length }
     }
   }
@@ -119,8 +120,12 @@ export function setSlideNotes(opened: OpenedPptx, slideIndex: number, text: stri
   if (body) {
     const patched = body.xml.replace(/<p:txBody>[\s\S]*?<\/p:txBody>/, () => txBody)
     next = xml.slice(0, body.start) + patched + xml.slice(body.end)
-  } else {
+  } else if (!/<p:ph\b/.test(xml)) {
     next = xml.replace('</p:spTree>', () => `${NOTES_BODY_SP_OPEN}${txBody}</p:sp></p:spTree>`)
+  } else {
+    // a placeholder we did not recognize is still a placeholder: adding a body
+    // shape here would leave the notesSlide with two of them
+    return false
   }
   setEntry(archive, notesPath, next)
   return true
