@@ -329,6 +329,18 @@ export function TabBar() {
                   Math.round(event.clientY),
                 )
               }}
+              onDoubleClick={(event) => {
+                if (tab.id === 'home' || !tab.filePath) return
+                if ((event.target as HTMLElement).closest('.tab-close')) return
+                if ((event.target as HTMLElement).closest('.tab-rename-input')) return
+                const ext = fileExtension(tab.filePath)
+                const base =
+                  ext && tab.title.toLowerCase().endsWith(`.${ext.toLowerCase()}`)
+                    ? tab.title.slice(0, -(ext.length + 1))
+                    : tab.title
+                setRenaming({ id: tab.id, value: base })
+              }}
+
               onPointerDown={(event) => {
                 if (event.button !== 0) return
                 if ((event.target as HTMLElement).closest('.tab-close')) return
@@ -352,6 +364,8 @@ export function TabBar() {
                   target: index,
                   started: false,
                 }
+                // pointer capture prevents dblclick from firing — skip while renaming
+                if (renaming?.id === tab.id) return
                 event.currentTarget.setPointerCapture(event.pointerId)
               }}
               onPointerMove={(event) => {
@@ -440,21 +454,7 @@ export function TabBar() {
                   onBlur={commitRename}
                 />
               ) : (
-                <span
-                  className="tab-title"
-                  onDoubleClick={(event) => {
-                    if (tab.id === 'home' || !tab.filePath) return
-                    if ((event.target as HTMLElement).closest('.tab-close')) return
-                    const ext = fileExtension(tab.filePath)
-                    const base =
-                      ext && tab.title.toLowerCase().endsWith(`.${ext.toLowerCase()}`)
-                        ? tab.title.slice(0, -(ext.length + 1))
-                        : tab.title
-                    setRenaming({ id: tab.id, value: base })
-                  }}
-                >
-                  {tab.title}
-                </span>
+                <span className="tab-title">{tab.title}</span>
               )}
               {tab.closable && (
                 <button
