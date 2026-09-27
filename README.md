@@ -268,8 +268,8 @@ web and image search, image generation, and image/audio/video analysis.
 DeepSeek, Kimi, GLM, Qwen, Doubao, MiniMax, Grok, Mistral, OpenRouter, Requesty, Opper
 and OpenCode Zen/Go, plus a custom slot for any OpenAI-compatible endpoint (base
 URL + key), including local model servers. Search and media have their own
-per-capability providers under **AI Media & Search**: Serper, Tavily or Parallel for web
-search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax or any
+per-capability providers under **AI Media & Search**: Serper, Serply, Tavily or Parallel for
+web search, and OpenAI, Gemini, Doubao/Seedream, GLM, Grok, Qwen, MiniMax or any
 OpenAI-compatible images endpoint for image generation and image/video
 analysis, plus DeepSeek V4.1 Flash for image analysis.
 

@@ -1082,9 +1082,11 @@ function AiMediaPane({
             ? t('setAiSearchGensparkHint')
             : search.provider === 'parallel'
               ? t('setAiSearchParallelHint')
-              : searchMeta?.imageSearch
-                ? t('setAiSearchSerperHint')
-                : t('setAiSearchTavilyHint')}
+              : search.provider === 'serply'
+                ? t('setAiSearchSerplyHint')
+                : searchMeta?.imageSearch
+                  ? t('setAiSearchSerperHint')
+                  : t('setAiSearchTavilyHint')}
         </div>
         {search.provider !== 'genspark' &&
           keyRow('set-ai-search-key', searchKey, searchMeta?.keyPlaceholder ?? 'API Key', (v) =>

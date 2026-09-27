@@ -30,7 +30,8 @@ export const capabilitiesCommand: CommandDef = {
     const gskSearch = gsk && searchProvider === 'genspark'
     const customSearch = searchProvider !== 'genspark'
     const search = gskSearch || customSearch
-    const imageSearch = gskSearch || searchProvider === 'serper'
+    const keyedImageSearch = searchProvider === 'serper' || searchProvider === 'serply'
+    const imageSearch = gskSearch || keyedImageSearch
     const imageGeneration = imageGenerationAvailable(settings, hasGskAuth())
     const mediaAnalysis = mediaAnalysisAvailable(settings, hasGskAuth())
     const via = (byok: string | null | undefined) => (byok ? byok : gsk ? 'genspark' : null)
@@ -41,7 +42,7 @@ export const capabilitiesCommand: CommandDef = {
       },
       image_search: {
         available: imageSearch,
-        via: searchProvider === 'serper' ? 'serper' : gskSearch ? 'genspark' : null,
+        via: keyedImageSearch ? searchProvider : gskSearch ? 'genspark' : null,
       },
       image_generation: {
         available: imageGeneration,
